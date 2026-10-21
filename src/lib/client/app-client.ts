@@ -1,4 +1,5 @@
 import type { WorkspaceId } from '$shared/types/branded-ids';
+import type { MergeQueueEntry } from '$lib/utils/merge-queue';
 import type { SubmissionCorrelation } from '$shared/types/agent-message';
 import type { AgentPlacement } from '$shared/types/agent-node';
 import type {
@@ -2423,6 +2424,8 @@ export interface GitHubPullRequestDetails {
   url: string;
   headRef: string;
   baseRef: string;
+  /** Queue position and time-to-merge estimate; only on a `'queued'` PR whose daemon reports it. */
+  mergeQueue?: MergeQueueEntry;
 }
 
 /** One issue (`github.issues.get`, §5.27) normalized for link previews. */

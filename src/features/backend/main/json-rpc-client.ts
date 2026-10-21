@@ -40,6 +40,7 @@ export interface RepositoryConnection {
   readonly incarnation: object;
   readonly identity: object;
   readonly repositoryContext: boolean;
+  readonly reviewMonitoring?: number;
   readonly repositoryResourceRead?: boolean;
   readonly gitlabCheckout?: boolean;
   readonly gitlabCheckoutOwnerAvatar?: boolean;
@@ -202,8 +203,13 @@ export class JsonRpcClient extends EventEmitter {
   private protocolVersion: ProtocolVersion | null = null;
   private socketIncarnation: object | null = null;
   private repositoryConnection: RepositoryConnection | null = null;
+  private acknowledgedHelloIdentity: Readonly<{
+    clientId: string;
+    connectionRole: unknown;
+  }> | null = null;
   private readonly repositoryObservers = new Set<(event: RepositoryConnectionEvent) => void>();
   private helloAttempt: object | null = null;
+  private acknowledgedHello: unknown = null;
   private nodeCapabilities: Readonly<Record<string, number>> | null = null;
   // How the current connection's winning candidate reached the daemon
   // (multi-host race only; null for a single-host dial and whenever no socket
@@ -485,6 +491,18 @@ export class JsonRpcClient extends EventEmitter {
       : null;
   }
 
+  /** Main-private acknowledgement metadata; IDs here are not authorization. */
+  getAcknowledgedHelloIdentity(
+    captured: object,
+  ): Readonly<{ clientId: string; connectionRole: unknown }> | null {
+    return captured === this.getRepositoryConnection() ? this.acknowledgedHelloIdentity : null;
+  }
+
+  /** Read the existing handshake without changing the current connection's identity. */
+  getAcknowledgedHello(): unknown {
+    return this.getRepositoryConnection() ? structuredClone(this.acknowledgedHello) : null;
+  }
+
   /** Observe only the current acknowledged identity; never send or renew hello. */
   getNodeCapabilities(): Readonly<Record<string, number>> | null {
     return this.getRepositoryConnection() ? this.nodeCapabilities : null;
@@ -503,6 +521,8 @@ export class JsonRpcClient extends EventEmitter {
   private retireRepositoryIdentity(): void {
     const connection = this.repositoryConnection;
     this.repositoryConnection = null;
+    this.acknowledgedHelloIdentity = null;
+    this.acknowledgedHello = null;
     this.nodeCapabilities = null;
     if (connection) this.emitRepositoryEvent({ type: 'identity-retired', connection });
   }
@@ -565,15 +585,26 @@ export class JsonRpcClient extends EventEmitter {
       return;
     const capabilities = (result as { server?: { capabilities?: Record<string, unknown> } }).server
       ?.capabilities;
+    this.acknowledgedHello = structuredClone(result);
     this.nodeCapabilities = Object.freeze({
       agentNodes: capabilities?.agentNodes === 1 ? 1 : 0,
       localNodeIsolation: capabilities?.localNodeIsolation === 1 ? 1 : 0,
       agentPlatformRouting: capabilities?.agentPlatformRouting === 1 ? 1 : 0,
       workspaceMembershipEvents: capabilities?.workspaceMembershipEvents === 1 ? 1 : 0,
     });
+    this.acknowledgedHelloIdentity = Object.freeze({
+      clientId: result.clientId,
+      connectionRole: (result as { connectionRole?: unknown }).connectionRole,
+    });
     this.repositoryConnection = Object.freeze({
       incarnation: this.socketIncarnation,
       identity: Object.freeze({}),
+      reviewMonitoring:
+        typeof capabilities?.reviewMonitoring === 'number' &&
+        Number.isSafeInteger(capabilities.reviewMonitoring) &&
+        capabilities.reviewMonitoring >= 1
+          ? capabilities.reviewMonitoring
+          : undefined,
       repositorySelection:
         (result as { server?: { capabilities?: { repositorySelection?: unknown } } }).server
           ?.capabilities?.repositorySelection === 1,
@@ -917,6 +948,7 @@ export class JsonRpcClient extends EventEmitter {
       ),
     );
     this.confirmHello(attempt, result);
+    if (this.getRepositoryConnection()) this.emit('identity-confirmed');
     return result;
   }
 

@@ -1,3 +1,5 @@
+import { BrowserMonitorAttachment } from './browser-monitor-attachment';
+import { supportsReviewMonitoring, type PrMonitorSession } from '$shared/types/pr-monitor';
 /**
  * Browser WebSocket implementation of the `BackendTransport` interface.
  *
@@ -18,6 +20,7 @@
  * `window.electronAPI` is absent and the URL is configured. The WebSocket
  * constructor is injectable (`webSocketFactory`) so tests use a fake socket.
  */
+import type { PrincipalDiscovery } from '$shared/types/principal';
 import { parseProtocolVersion, type ProtocolVersion } from '$shared/protocol-version';
 import { assertScopedFileReadSupport } from '$shared/root-file-read-support';
 import {
@@ -195,6 +198,8 @@ export interface BrowserWebSocketLike {
 }
 
 export interface BrowserWebSocketTransportOptions {
+  /** Qualified document composition only. Production factories leave this disabled. */
+  reviewMonitoring?: number;
   /** Full `ws(s)://` daemon URL (bearer token via `?token=`, PROTOCOL §2.1). */
   url: string;
   /** WebSocket constructor seam for tests. Defaults to the global `WebSocket`. */
@@ -251,8 +256,16 @@ export class BrowserWebSocketTransport implements BackendTransport {
   }> = [];
   private clientId: string | undefined;
   private helloConfirmed = false;
+  private acknowledgedHello: unknown = null;
   private nodeCapabilities: Readonly<Record<string, number>> | null = null;
   private capabilityHelloGeneration = 0;
+  private reviewMonitoring: unknown;
+  private readonly reviewMonitoringRecipient: number | undefined;
+  private reviewMonitoringEnabled = false;
+  private ordinaryHello = false;
+  private monitorRetry: ReturnType<typeof setTimeout> | null = null;
+  private readonly monitorRetirements = new Set<() => void>();
+  private readonly monitorReady = new Set<() => void>();
   /** This socket's `client.hello` version, parsed once when the hello answers. */
   private protocolVersion: ProtocolVersion | null = null;
   private helloError: Error = new BackendError({
@@ -270,6 +283,10 @@ export class BrowserWebSocketTransport implements BackendTransport {
   private lastNotifiedStatus: BrowserWsConnectionStatus = 'disconnected';
 
   constructor(options: BrowserWebSocketTransportOptions) {
+    this.reviewMonitoringEnabled = supportsReviewMonitoring(options.reviewMonitoring);
+    this.reviewMonitoringRecipient = supportsReviewMonitoring(options.reviewMonitoring)
+      ? options.reviewMonitoring
+      : undefined;
     this.url = options.url;
     this.webSocketFactory =
       options.webSocketFactory ?? ((url) => new WebSocket(url) as unknown as BrowserWebSocketLike);
@@ -284,6 +301,28 @@ export class BrowserWebSocketTransport implements BackendTransport {
     return !this.disposed;
   }
 
+  async readPrincipal(): Promise<PrincipalDiscovery> {
+    if (this.disposed)
+      throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend transport disposed' });
+    const socket = await this.ensureConnected();
+    const generation = this.capabilityHelloGeneration;
+    const hello = structuredClone(this.acknowledgedHello);
+    const current = () =>
+      !this.disposed &&
+      this.connected &&
+      this.socket === socket &&
+      this.capabilityHelloGeneration === generation &&
+      this.acknowledgedHello !== null;
+    if (!current()) throw this.helloError;
+    const principal = await this.requestOnSocket('principal.me', {}, undefined, socket);
+    if (!current())
+      throw new BackendError({
+        code: 'UNAVAILABLE',
+        message: 'Principal discovery connection changed',
+      });
+    return { hello, principal };
+  }
+
   async observeNodeCapabilities(): Promise<unknown> {
     if (this.disposed)
       throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend transport disposed' });
@@ -291,6 +330,140 @@ export class BrowserWebSocketTransport implements BackendTransport {
     if (this.disposed || !this.connected || this.socket !== socket)
       throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend connection changed' });
     return { server: { capabilities: this.nodeCapabilities } };
+  }
+
+  onMonitorReconnected(handler: () => void): () => void {
+    this.monitorReady.add(handler);
+    const off = this.onReconnected(handler);
+    return () => {
+      this.monitorReady.delete(handler);
+      off();
+    };
+  }
+
+  async capturePrMonitorSession(workspaceId: string): Promise<PrMonitorSession> {
+    const socket = await this.ensureConnected();
+    const generation = this.capabilityHelloGeneration;
+    const unavailable = () =>
+      new BackendError({
+        code: 'PR_MONITOR_SESSION_RETIRED',
+        message: 'Monitor connection unavailable',
+      });
+    let attachment: BrowserMonitorAttachment | undefined;
+    let retired = false;
+    const listeners = new Set<() => void>();
+    const subscriptions = new Set<string>();
+    const retire = () => {
+      if (retired) return;
+      retired = true;
+      this.monitorRetirements.delete(retire);
+      attachment?.close();
+      for (const listener of listeners) listener();
+      listeners.clear();
+    };
+    const currentSource = () =>
+      !retired &&
+      !this.disposed &&
+      this.connected &&
+      this.helloConfirmed &&
+      this.socket === socket &&
+      generation === this.capabilityHelloGeneration;
+    const current = () => currentSource() && (!attachment || attachment.current());
+    if (!current()) throw unavailable();
+    this.monitorRetirements.add(retire);
+    const advertised = supportsReviewMonitoring(this.reviewMonitoring);
+    let support: PrMonitorSession['support'] = advertised ? 'consumer-pending' : 'unsupported';
+    if (advertised && this.reviewMonitoringEnabled && this.ordinaryHello && this.clientId) {
+      try {
+        attachment = new BrowserMonitorAttachment(
+          this.webSocketFactory(this.url),
+          this.clientId,
+          Math.min(this.reviewMonitoringRecipient!, this.reviewMonitoring as number),
+          currentSource,
+          this.requestTimeoutMs,
+          this.connectTimeoutMs,
+          () => {
+            const recover = currentSource();
+            retire();
+            if (recover) this.scheduleMonitorRecovery(socket, generation);
+          },
+        );
+        await attachment.ready;
+        if (!current()) throw unavailable();
+        support = 'supported';
+      } catch (error) {
+        const recover = currentSource();
+        retire();
+        if (recover) this.scheduleMonitorRecovery(socket, generation);
+        throw error;
+      }
+    }
+    const request = <T>(method: string, params: unknown): Promise<T> =>
+      attachment
+        ? attachment.request<T>(method, params)
+        : this.requestOnSocket<T>(method, params, undefined, socket);
+    return {
+      origin: {
+        backendId: sanitizeWsUrlForDisplay(this.url),
+        sessionId: crypto.randomUUID(),
+        workspaceId,
+      },
+      support,
+      onRetired(handler) {
+        if (!current()) {
+          handler();
+          return () => {};
+        }
+        listeners.add(handler);
+        return () => {
+          listeners.delete(handler);
+        };
+      },
+      onNotification: (handler) =>
+        (attachment ?? this).onNotification((notification) => {
+          if (current()) handler(notification);
+        }),
+      request: async <T>(
+        method: Parameters<PrMonitorSession['request']>[0],
+        params: Record<string, unknown>,
+      ): Promise<T> => {
+        if (!current() || support === 'consumer-pending' || params.workspaceId !== workspaceId)
+          throw unavailable();
+        const result = await request<T>(method, params);
+        const subscriptionId =
+          method === 'events.subscribe'
+            ? (result as { subscriptionId?: string })?.subscriptionId
+            : undefined;
+        if (!current()) {
+          if (
+            subscriptionId &&
+            this.socket === socket &&
+            this.connected &&
+            generation === this.capabilityHelloGeneration
+          )
+            void request('events.unsubscribe', { workspaceId, subscriptionId }).catch(() => {});
+          throw unavailable();
+        }
+        if (subscriptionId) subscriptions.add(subscriptionId);
+        if (method === 'events.unsubscribe') subscriptions.delete(String(params.subscriptionId));
+        return result;
+      },
+      release: async () => {
+        const canRelease = current();
+        retire();
+        if (canRelease && !attachment)
+          await Promise.all(
+            [...subscriptions].map((subscriptionId) =>
+              this.requestOnSocket(
+                'events.unsubscribe',
+                { workspaceId, subscriptionId },
+                undefined,
+                socket,
+              ).catch(() => {}),
+            ),
+          );
+      },
+    };
   }
 
   request<T = unknown>(
@@ -365,40 +538,68 @@ export class BrowserWebSocketTransport implements BackendTransport {
           return;
         }
         // A capability probe must not replace the identity established at connect.
-        const wireParams =
+        let wireParams =
           method === 'client.hello' && this.clientId
             ? { clientId: this.clientId, ...(params as Record<string, unknown>) }
             : params;
+        if (method === 'client.hello') {
+          const hello = { ...(wireParams as Record<string, unknown>) };
+          const capabilities = { ...(hello.capabilities as Record<string, unknown>) };
+          if (Object.prototype.hasOwnProperty.call(capabilities, 'reviewMonitoring')) {
+            this.reviewMonitoringEnabled =
+              this.reviewMonitoringRecipient !== undefined &&
+              supportsReviewMonitoring(capabilities.reviewMonitoring);
+          }
+          delete capabilities.reviewMonitoring;
+          delete hello.connectionRole;
+          if (hello.capabilities !== undefined) hello.capabilities = capabilities;
+          wireParams = hello;
+        }
         const payload = JSON.stringify({ jsonrpc: '2.0', id, method, params: wireParams });
         const capabilityGeneration =
           method === 'client.hello' ? ++this.capabilityHelloGeneration : 0;
-        if (method === 'client.hello') this.nodeCapabilities = null;
+        if (method === 'client.hello') {
+          // A replacement generation cannot borrow the preceding hello's confirmation.
+          this.helloConfirmed = false;
+          this.ordinaryHello = false;
+          this.clearMonitorRecovery();
+          this.nodeCapabilities = null;
+          this.reviewMonitoring = undefined;
+          for (const retire of [...this.monitorRetirements]) retire();
+          this.acknowledgedHello = null;
+        }
         this.pending.set(id, {
           method,
           timeout,
           resolve: (result) => {
-            if (method === 'client.hello' && this.socket === socket) {
+            if (
+              method === 'client.hello' &&
+              this.socket === socket &&
+              capabilityGeneration === this.capabilityHelloGeneration
+            ) {
               const clientId = (result as { clientId?: unknown } | null)?.clientId;
-              if (typeof clientId === 'string') this.clientId = clientId;
-              if (
-                typeof clientId === 'string' &&
-                clientId &&
-                capabilityGeneration === this.capabilityHelloGeneration
-              ) {
+              // Only the latest valid acknowledgment can establish identity or notify consumers.
+              if (typeof clientId === 'string' && clientId.length > 0) {
                 const capabilities = (
                   result as { server?: { capabilities?: Record<string, unknown> } }
                 ).server?.capabilities;
+                this.clientId = clientId;
+                this.reviewMonitoring = capabilities?.reviewMonitoring;
+                this.ordinaryHello =
+                  (result as { connectionRole?: unknown }).connectionRole === undefined;
+                this.acknowledgedHello = structuredClone(result);
                 this.nodeCapabilities = Object.freeze({
                   agentNodes: capabilities?.agentNodes === 1 ? 1 : 0,
                   localNodeIsolation: capabilities?.localNodeIsolation === 1 ? 1 : 0,
                   agentPlatformRouting: capabilities?.agentPlatformRouting === 1 ? 1 : 0,
                   workspaceMembershipEvents: capabilities?.workspaceMembershipEvents === 1 ? 1 : 0,
                 });
+                this.protocolVersion = parseProtocolVersion(
+                  (result as { protocolVersion?: unknown }).protocolVersion,
+                );
+                this.helloConfirmed = true;
+                if (this.connected) for (const handler of this.monitorReady) handler();
               }
-              this.helloConfirmed = true;
-              this.protocolVersion = parseProtocolVersion(
-                (result as { protocolVersion?: unknown } | null)?.protocolVersion,
-              );
             }
             resolve(result as T);
           },
@@ -686,7 +887,30 @@ export class BrowserWebSocketTransport implements BackendTransport {
     }
   }
 
+  private scheduleMonitorRecovery(socket: BrowserWebSocketLike, generation: number): void {
+    if (this.monitorRetry || this.disposed) return;
+    this.monitorRetry = setTimeout(() => {
+      this.monitorRetry = null;
+      if (
+        !this.disposed &&
+        this.connected &&
+        this.socket === socket &&
+        this.capabilityHelloGeneration === generation
+      )
+        for (const handler of [...this.monitorReady]) handler();
+    }, this.reconnectDelayMs);
+  }
+
+  private clearMonitorRecovery(): void {
+    if (this.monitorRetry) clearTimeout(this.monitorRetry);
+    this.monitorRetry = null;
+  }
+
   private teardownSocket(): void {
+    this.reviewMonitoring = undefined;
+    this.clearMonitorRecovery();
+    for (const retire of [...this.monitorRetirements]) retire();
+    this.acknowledgedHello = null;
     this.nodeCapabilities = null;
     this.capabilityHelloGeneration += 1;
     this.protocolVersion = null;

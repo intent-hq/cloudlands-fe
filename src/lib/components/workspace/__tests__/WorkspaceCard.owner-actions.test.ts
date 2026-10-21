@@ -96,7 +96,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', async () => {
 });
 
 vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', () => ({
-  selectPrMonitors: mocks.selector(() => []),
+  selectReviewMonitors: mocks.selector(() => []),
 }));
 
 vi.mock('$lib/components/workspace/WorkspaceHoverCard.svelte', async () => ({

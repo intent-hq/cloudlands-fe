@@ -29,6 +29,10 @@ import { selectHostRole } from './slices/principal/principal-selectors';
 vi.mock('$lib/client/live/backend-transport', () => ({
   electronAPI: () => window.electronAPI,
   observeBackendNodeCapabilities: vi.fn(async () => ({ server: { capabilities: null } })),
+  readBackendPrincipal: vi.fn(async () => ({
+    hello: { server: { capabilities: {} } },
+    principal: await backendRequest('principal.me', {}),
+  })),
   backendRequest: vi.fn(),
   backendSubscribe: vi.fn(async () => ({ subscriptionId: 'composition-events' })),
   backendUnsubscribe: vi.fn(async () => {}),
@@ -110,9 +114,9 @@ beforeEach(async () => {
   );
   appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
   await vi.waitFor(() => expect(selectHostRole.select(appStore.state)).toBe('owner'));
-  // Principal admission reads authority once; presence reuses the admitted snapshot.
+  // Principal admission reads authority once using the existing handshake.
   expect(calls('principal.me')).toEqual([['principal.me', {}]]);
-  expect(calls('client.hello')).toEqual([['client.hello', {}]]);
+  expect(calls('client.hello')).toEqual([]);
 });
 
 afterEach(() => {

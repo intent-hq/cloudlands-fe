@@ -1,4 +1,8 @@
-import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
+import type {
+  ReviewMonitorRow as PrMonitorRow,
+  ReviewMonitorExtension,
+} from '$shared/types/pr-monitor';
+import { monitorNumber } from '$lib/utils/review-monitor-presentation';
 import type { PRInfo } from '$lib/components/file-tracking/accept-changes/types';
 import { getPRTooltipContent } from '$lib/utils/pr-status';
 import { m } from '$shared/paraglide/messages.js';
@@ -22,7 +26,8 @@ export interface WorkspacePRPresentationOptions {
   getDisplayTitle: (pr: PullRequestInfo) => string;
 }
 
-export interface WorkspacePRPresentationRow {
+export interface WorkspacePRPresentationRow extends ReviewMonitorExtension {
+  numberLabel?: string;
   identity: string;
   number: number;
   title: string;
@@ -152,7 +157,8 @@ export function buildWorkspacePRPresentationModel({
   );
   const deduplicated = new Map<string, PRInfo>();
   for (const pr of combined) {
-    const key = normalizedPrIdentity(pr.crossRepo ?? workspaceRepo, pr.number);
+    const key =
+      pr.monitorIdentity ?? normalizedPrIdentity(pr.crossRepo ?? workspaceRepo, pr.number);
     const existing = deduplicated.get(key);
     if (!existing) {
       deduplicated.set(key, pr);
@@ -164,7 +170,7 @@ export function buildWorkspacePRPresentationModel({
 
   const statusOf = (pr: PRInfo): PRInfo['status'] => {
     const repo = pr.crossRepo ?? workspaceRepo;
-    return sourceByIdentity.get(normalizedPrIdentity(repo, pr.number))?.isDraft
+    return !pr.resource && sourceByIdentity.get(normalizedPrIdentity(repo, pr.number))?.isDraft
       ? 'draft'
       : pr.status;
   };
@@ -181,12 +187,17 @@ export function buildWorkspacePRPresentationModel({
     )
     .map((pr) => {
       const repo = pr.crossRepo ?? workspaceRepo;
-      const source = sourceByIdentity.get(normalizedPrIdentity(repo, pr.number));
+      const source = pr.resource
+        ? undefined
+        : sourceByIdentity.get(normalizedPrIdentity(repo, pr.number));
       const status = statusOf(pr);
       const queued = isPRQueued({ status, monitorSnapshot: pr.monitorSnapshot });
       const sourceDetails = pr.monitorSnapshot ? '' : getPRTooltipContent(source);
       return {
-        identity: prIdentity(repo, pr.number),
+        identity: pr.monitorIdentity ?? prIdentity(repo, pr.number),
+        resource: pr.resource,
+        monitorAvailability: pr.monitorAvailability,
+        numberLabel: monitorNumber(pr, pr.number),
         number: pr.number,
         title: pr.title,
         url: pr.url,

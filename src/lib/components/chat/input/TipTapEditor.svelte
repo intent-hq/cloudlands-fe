@@ -3,7 +3,12 @@
   import { onMount, onDestroy, mount, unmount, untrack } from 'svelte';
   import { Popover } from 'bits-ui';
 
-  import { Editor, getTextBetween, getTextSerializersFromSchema } from '@tiptap/core';
+  import {
+    createDocument,
+    Editor,
+    getTextBetween,
+    getTextSerializersFromSchema,
+  } from '@tiptap/core';
   import { PluginKey, TextSelection } from '@tiptap/pm/state';
   import StarterKit from '@tiptap/starter-kit';
   import Placeholder from '@tiptap/extension-placeholder';
@@ -440,6 +445,11 @@
   export async function setContent(text: string) {
     if (!editor) return;
     const html = editorHTML(text || '');
+    // Replacing a document with an identical one would only collapse the
+    // user's selection (e.g. a deferred draft hydration echo,
+    // intent-hq/intent#7479). Compare whole documents, not serialized text,
+    // so rich-only differences (images, links, chips) still get replaced.
+    if (createDocument(html, editor.schema).eq(editor.state.doc)) return;
     editor
       .chain()
       .command(({ tr }) => {

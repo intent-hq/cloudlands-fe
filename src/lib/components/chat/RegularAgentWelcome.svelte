@@ -12,6 +12,8 @@
     filterPickableSpecialists,
   } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
+  import { selectWorkspaceInitializerRecentSpecialistIds } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+  import { sortSpecialistsByRecency } from '$store/renderer/slices/workspace-initializer/utils/recent-specialists';
   import type { AgentSession } from '$shared/types/agent-session';
   import { isPendingAgentSession } from '$shared/types/agent-session';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
@@ -59,7 +61,15 @@
   let showFullPrompt = $state(false);
 
   const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();
-  const customSpecialists = $derived(filterPickableSpecialists($specialists$, $isGitHubAuth$));
+  // Recently used specialists first (most recent first), then catalog order,
+  // matching the New workspace and proposal card pickers.
+  const recentSpecialistIds$ = selectWorkspaceInitializerRecentSpecialistIds();
+  const customSpecialists = $derived(
+    sortSpecialistsByRecency(
+      filterPickableSpecialists($specialists$, $isGitHubAuth$),
+      $recentSpecialistIds$,
+    ),
+  );
 
   // Dropdown state for the specialist picker
   let pickerOpen = $state(false);

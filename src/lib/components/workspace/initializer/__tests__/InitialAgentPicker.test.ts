@@ -41,6 +41,8 @@ const mocks = vi.hoisted(() => {
     readable,
     fileSpecialistsLoaded$: writable(false),
     hydrated$: writable(true),
+    // Specialists used to create workspaces, most recent first.
+    recentSpecialistIds$: writable<string[]>([]),
     // Orchestrator powering the team card (selectOrchestratorSpecialist).
     orchestrator$: writable<{
       id: string;
@@ -188,6 +190,7 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
   selectWorkspaceInitializerHydrated: () => mocks.hydrated$,
+  selectWorkspaceInitializerRecentSpecialistIds: () => mocks.recentSpecialistIds$,
 }));
 
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
@@ -1665,6 +1668,7 @@ describe('InitialAgentPicker specialist dropdown', () => {
     vi.clearAllMocks();
     mocks.fileSpecialistsLoaded$.set(false);
     mocks.hydrated$.set(true);
+    mocks.recentSpecialistIds$.set([]);
     mocks.selectedModel$.set('');
     mocks.configuredModels$.set({});
     mocks.defaultProviderId = 'auggie';
@@ -1769,6 +1773,48 @@ describe('InitialAgentPicker specialist dropdown', () => {
     expect(
       screen.getByRole('menuitemradio', { name: /General/ }).getAttribute('aria-checked'),
     ).toBe('false');
+  });
+
+  const catalogSpecialists = [
+    { id: 'developer', name: 'Developer', description: 'Builds things' },
+    { id: 'reviewer', name: 'Reviewer', description: 'Reviews things' },
+    { id: 'researcher', name: 'Researcher', description: 'Finds things' },
+    { id: 'writer', name: 'Writer', description: 'Writes things' },
+  ];
+
+  async function openedOptionIds() {
+    await fireEvent.click(specialistTrigger());
+    await screen.findByRole('menuitemradio', { name: /General/ });
+    return [...document.querySelectorAll('[data-specialist-option]')].map((el) =>
+      el.getAttribute('data-specialist-option'),
+    );
+  }
+
+  it('lists recently used specialists first, newest first, under General', async () => {
+    mocks.specialists$.set(catalogSpecialists);
+    mocks.recentSpecialistIds$.set(['writer', 'deleted-specialist', 'reviewer']);
+    render(InitialAgentPicker, { props: { selectedSpecialist: null, isTeamMode: false } });
+
+    expect(await openedOptionIds()).toEqual([
+      'general',
+      'writer',
+      'reviewer',
+      'developer',
+      'researcher',
+    ]);
+  });
+
+  it('keeps the catalog order when no specialist has been used', async () => {
+    mocks.specialists$.set(catalogSpecialists);
+    render(InitialAgentPicker, { props: { selectedSpecialist: null, isTeamMode: false } });
+
+    expect(await openedOptionIds()).toEqual([
+      'general',
+      'developer',
+      'reviewer',
+      'researcher',
+      'writer',
+    ]);
   });
 
   it('keeps both model pickers inline and bounded by the modal collision boundary', () => {

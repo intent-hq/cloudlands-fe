@@ -46,7 +46,7 @@ import { m } from '$shared/paraglide/messages.js';
 import { providerRefBaseId, providerReplacementFromError } from '$shared/provider-profiles';
 import { selectProviderDisplayName } from '../../provider-catalog/provider-catalog-selectors';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
-import type { AgentSession, QueuedMessage } from '$shared/types';
+import type { QueuedMessage } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import { takeEveryByContextFIFO } from '../../../utils/context-saga-effects';
 import {
@@ -76,10 +76,6 @@ import type {
 import { getModelsForProviderForLoadingState } from '../../model/model-utils';
 import { selectProviderModels } from '../../model/model-selectors';
 import { CHIEF_WORKSPACE_ID } from '../../sidebar-nav/sidebar-nav-types';
-import {
-  getChiefThreadTitle,
-  isPlaceholderChiefThreadName,
-} from '../../sidebar-nav/chief-thread-title';
 import { clearChatDraft } from '../../transient-ui/transient-ui-slice';
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
 import { createChiefVirtualWorkspace } from '../../workspace-agents/chief-virtual-workspace';
@@ -187,30 +183,6 @@ function* hydrateBeforeSend(agentId: string, wsId: string): SagaGenerator<void> 
   if (session && hydration === 'settled') return;
   yield* put(refreshChatTranscriptRequested(wsId, agentId));
   yield* call(waitForTranscriptRefresh, agentId, wsId);
-}
-
-function* renameChiefThreadIfPlaceholder(
-  agentId: string,
-  fallbackText?: string,
-): SagaGenerator<void> {
-  const session: AgentSession | undefined = yield* selectAgentSession.effect(agentId);
-  if (!session || !isPlaceholderChiefThreadName(session.name)) return;
-  const hasUserMessage = session.messages.some((message) => message.role === 'user');
-  const name = hasUserMessage ? getChiefThreadTitle(session) : (fallbackText?.trim() ?? '');
-  if (isPlaceholderChiefThreadName(name)) return;
-  try {
-    const result = yield* call(
-      [appClient.agents, appClient.agents.rename],
-      agentId,
-      name,
-      undefined,
-      { skipIfExplicitlySet: true },
-    );
-    if (!result.success)
-      logger.warn('Chief thread rename was not applied', { agentId, error: result.error });
-  } catch (error) {
-    logger.warn('Chief thread rename failed', { agentId, error });
-  }
 }
 
 function* sendQueuedNow(
@@ -561,8 +533,6 @@ function* dispatchToLifecycle(
             ),
           );
         }
-        if (wsId === CHIEF_WORKSPACE_ID)
-          yield* call(renameChiefThreadIfPlaceholder, agentId, content);
         void loadChatTranscript(agentId, wsId);
         yield* call(() => hydrateAgentQueue(agentId, wsId).catch(() => undefined));
         return;
@@ -607,9 +577,6 @@ function* dispatchToLifecycle(
           );
         }
       }
-      if (wsId === CHIEF_WORKSPACE_ID) {
-        yield* call(renameChiefThreadIfPlaceholder, agentId, content);
-      }
       yield* settle('rejected');
     } catch (error) {
       if (!(yield* current())) return;
@@ -627,8 +594,6 @@ function* dispatchToLifecycle(
   try {
     if (submission) yield* put(pendingSubmissionSending(submission.scope, submission.id));
     yield* call(sendAgentMessage, agentId, content, workspace, options);
-    if ((yield* current()) && wsId === CHIEF_WORKSPACE_ID)
-      yield* call(renameChiefThreadIfPlaceholder, agentId);
   } catch (error) {
     if (!(yield* mutationIsCurrent(agentId, ownership))) return;
     if (submission && !(yield* selectPendingSubmissionEntry.effect(submission.scope))) return;

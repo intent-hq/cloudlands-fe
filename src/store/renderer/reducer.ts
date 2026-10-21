@@ -74,6 +74,7 @@ import { scriptsReducer } from './slices/scripts/scripts-slice';
 import { statsReducer } from './slices/stats/stats-slice';
 import { backgroundHooksReducer } from './slices/background-hooks/background-hooks-slice';
 import { scriptMonitorReducer } from './slices/script-monitor/script-monitor-slice';
+import { agentWorkersReducer } from './slices/agent-workers/agent-workers-slice';
 import { prMonitorReducer } from './slices/pr-monitor/pr-monitor-slice';
 import { agentFollowReducer } from './slices/agent-follow/agent-follow-slice';
 import { gitReducer } from './slices/git/git-slice';
@@ -199,6 +200,7 @@ export const reducers = {
   backgroundHooks: backgroundHooksReducer,
   prMonitor: prMonitorReducer,
   scriptMonitor: scriptMonitorReducer,
+  agentWorkers: agentWorkersReducer,
   agentFollow: agentFollowReducer,
   git: gitReducer,
   gitWrite: gitWriteReducer,

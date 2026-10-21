@@ -132,6 +132,14 @@ async function mountControls(
     },
     { theme, zoom, withAssistant },
   );
+  // Preserve the explicit counter-scale readiness assertion before geometry.
+  await expect
+    .poll(() =>
+      page
+        .locator('.window-title-bar')
+        .evaluate((element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).a),
+    )
+    .toBeCloseTo(1 / zoom, 5);
   // The initial zoom IPC resolves after mount's tick. Wait for the rendered
   // counter-scale before callers record geometry at the requested zoom.
   await expect
@@ -497,7 +505,7 @@ async function assistantBoundaryState(page: Page) {
 }
 
 for (const destination of ['current workspace', 'other workspace', 'Settings'] as const) {
-  test(`leaving Home Assistant for ${destination} ends its unread session`, async ({
+  test(`leaving Home Assistant for ${destination} ends its unread session and remembers selection`, async ({
     page,
   }, testInfo) => {
     await prepareAssistantBoundary(page);
@@ -580,6 +588,7 @@ for (const destination of ['current workspace', 'other workspace', 'Settings'] a
     const returned = await assistantBoundaryState(page);
     expect(returned.divider).toEqual({ anchorId: 'assistant-message-arrived-away' });
     expect(returned.selectedThread).toBe('assistant-route-thread');
+    expect(returned.panelItem).toBe('chief');
     await testInfo.attach('assistant-route-boundary', {
       body: JSON.stringify({ destination, before, away, returned }, null, 2),
       contentType: 'application/json',

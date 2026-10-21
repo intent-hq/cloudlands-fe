@@ -5,6 +5,13 @@ import type { DiagramPrimitive } from '../src/shared/types/notes-primitives';
 const baseUrl = process.env.UI_PREVIEW_BASE_URL;
 test.skip(!baseUrl, 'Set UI_PREVIEW_BASE_URL to the existing preview server.');
 
+// Every workbench visit renders all diagram cases before `data-preview-ready`, which
+// alone takes 17-39 s warm on a shared host. Match the workbench specs' per-visit
+// budget (above the workbench's own 45 s `readinessTimeoutMs`, see
+// diagram-state-motion.spec.ts) and give each single-visit test room after it.
+const WORKBENCH_READY_TIMEOUT_MS = 60_000;
+test.describe.configure({ timeout: 120_000 });
+
 const labels = {
   unbroken: 'w'.repeat(200),
   url: `https://example.test/${'x'.repeat(175)}.html`,
@@ -43,7 +50,9 @@ async function mountNote(page: Page, width: number, data: DiagramPrimitive, coun
   await page.setViewportSize({ width: 1300, height: 1000 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(`${baseUrl}/sandbox/diagram-workbench?state=custom-walkthrough&motion=reduced`);
-  await expect(page.locator('[data-preview-ready=true]')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('[data-preview-ready=true]')).toBeVisible({
+    timeout: WORKBENCH_READY_TIMEOUT_MS,
+  });
   for (const path of [
     'src/lib/components/diagrams/DiagramRenderer.svelte',
     'src/lib/components/diagrams/DiagramNodeHTML.svelte',

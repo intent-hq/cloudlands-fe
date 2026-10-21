@@ -23,7 +23,20 @@ import {
   unmarkWindowSessionTeardown,
 } from '../../../main/window';
 import { broadcastToRenderers } from './auto-update-broadcast';
+import { cancellableFeedOptions } from './cancellable-feed-provider';
 import { configureMacUpdateCompatibility } from './mac-update-compatibility';
+import {
+  LAST_UPDATE_CHECK_DAY_PREF,
+  SHARE_UPDATE_STATISTICS_PREF,
+  detectInstallSource,
+  installTelemetryHeaderFilter,
+  installUpdateRequestAllowlist,
+  isFirstCheckOfUtcDay,
+  resolveUpdateFeed,
+  utcDay,
+  type ResolvedUpdateFeed,
+  type UpdateCheckTrigger,
+} from './update-telemetry';
 import { isUpdateChannel, type UpdateChannel, type UpdateState, type UpdateStatus } from '../types';
 
 const { autoUpdater } = electronUpdater;
@@ -35,15 +48,28 @@ const UPDATE_CHANNEL_STORAGE_KEY = 'updateChannel';
 // Legacy boolean key, migrated to UPDATE_CHANNEL_STORAGE_KEY on first load
 const BETA_UPDATES_STORAGE_KEY = 'betaUpdatesEnabled';
 
-// How often to check for updates (1 hour in milliseconds)
+// Automatic-check tick (1 hour). Alpha/beta check on every tick; stable only
+// when no check has succeeded yet on the current UTC day and the hourly
+// attempt throttle allows it.
 const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
-// Minimum time between focus/resume checks (4 hours)
+// Alpha/beta: minimum time between focus/resume checks (4 hours). Stable
+// focus/resume checks follow the once-a-UTC-day rule instead.
 const FOCUS_RESUME_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
+// Stable: minimum time between automatic check attempts (1 hour), shared by
+// the startup, tick and focus/resume paths, so a failing install retries at
+// most hourly until a check succeeds. Manual and channel checks bypass it.
+const STABLE_AUTOMATIC_ATTEMPT_INTERVAL_MS = 60 * 60 * 1000;
+// Delay of the startup check after initialization.
+const STARTUP_CHECK_DELAY_MS = 10_000;
 // Timeout for a single update check (30 seconds)
 // If autoUpdater.checkForUpdates() doesn't resolve within this time, force error state
 const UPDATE_CHECK_TIMEOUT_MS = 30 * 1000;
 // Maximum time a check can be in 'checking' state before being considered stuck
 const CHECK_STUCK_TIMEOUT_MS = 30_000;
+// Budget for the telemetry feed request. Past it the request is aborted and
+// the check retried on GitHub, well inside the 30s main watchdog and the
+// renderer's 35s one (both re-armed when the retry starts).
+const TELEMETRY_CHECK_TIMEOUT_MS = 10_000;
 
 /**
  * Get the update base URL
@@ -61,6 +87,7 @@ class AutoUpdateService {
     progress: null,
     error: null,
     channel: 'stable',
+    shareStatistics: true,
   };
 
   private initialized = false;
@@ -98,6 +125,25 @@ class AutoUpdateService {
   private channelSwitchEpoch = 0;
   private onWindowFocus: (() => void) | null = null;
   private onResume: (() => void) | null = null;
+  // UTC day (YYYY-MM-DD) of the last successful update check on any feed,
+  // mirrored from the `lastUpdateCheckDay` local pref so each check reads it
+  // synchronously. Drives the stable channel's once-a-day automatic checks
+  // and the telemetry feed's `d=1` flag.
+  private lastSuccessfulCheckDay: string | null = null;
+  // Wall-clock time of the last automatic check attempt started on stable,
+  // successful or not. Manual/channel checks and alpha/beta checks do not
+  // set it.
+  private lastStableAutomaticAttemptAt: number | null = null;
+  // Set once a check against updates.intentapp.dev fails: every later check
+  // this session goes straight to the GitHub feed.
+  private githubFallbackActive = false;
+  // True while a telemetry-feed check is in flight. Its failure is retried on
+  // GitHub, so the 'error' event electron-updater emits for it (before the
+  // check promise rejects) must not reach the user.
+  private telemetryAttemptActive = false;
+  // Kind of the feed most recently pointed at, so a download failure on the
+  // telemetry host also moves the session to GitHub.
+  private activeFeedKind: ResolvedUpdateFeed['kind'] | null = null;
 
   /**
    * Initialize the updater. Initialization does not depend on any window
@@ -125,6 +171,8 @@ class AutoUpdateService {
 
     // Load persisted channel setting from electron-store
     await this.loadChannelFromSettings();
+    await this.loadTelemetrySettings();
+    this.installRequestAllowlist();
 
     // Set initial feed URL based on channel
     await this.setChannel(this.state.channel);
@@ -141,20 +189,68 @@ class AutoUpdateService {
       updateUrl: getUpdateBaseUrl(),
     });
 
-    // Check for updates on startup (after a short delay)
+    // Startup check (after a short delay). On stable it is skipped when a
+    // check already succeeded today.
     setTimeout(() => {
-      this.checkForUpdates().catch((err) => {
+      if (this.isDailyCadence() && !this.isStableAutomaticCheckDue('startup')) return;
+      this.checkForUpdates('startup').catch((err) => {
         logger.debug('Initial update check failed', { error: err.message });
       });
-    }, 10000); // 10 seconds after startup
+    }, STARTUP_CHECK_DELAY_MS);
 
-    // Set up periodic update checks (every hour)
+    // Hourly tick. The channel is read on every tick, so a channel switch
+    // changes the cadence immediately.
     this.updateCheckInterval = setInterval(() => {
+      if (this.isDailyCadence()) {
+        if (!this.isStableAutomaticCheckDue('daily')) return;
+        logger.info('Daily update check...');
+        this.checkForUpdates('daily').catch((err) => {
+          logger.debug('Daily update check failed', { error: err.message });
+        });
+        return;
+      }
       logger.info('Periodic update check...');
-      this.checkForUpdates().catch((err) => {
+      this.checkForUpdates('periodic').catch((err) => {
         logger.debug('Periodic update check failed', { error: err.message });
       });
     }, UPDATE_CHECK_INTERVAL_MS);
+  }
+
+  /**
+   * Stable makes at most one successful automatic check per UTC day; alpha
+   * and beta keep the startup, hourly and 4 h focus/resume checks.
+   */
+  private isDailyCadence(): boolean {
+    return this.state.channel === 'stable';
+  }
+
+  /** True when no update check has succeeded yet on the current UTC day. */
+  private isDailyCheckDue(): boolean {
+    return isFirstCheckOfUtcDay(this.lastSuccessfulCheckDay, new Date());
+  }
+
+  /**
+   * Stable automatic gate: no check has succeeded today, and the last
+   * automatic attempt (successful or not) started at least an hour ago. The
+   * throttle is elapsed-time based, so a new UTC day does not reset it; a
+   * wall clock set back before the last attempt does not block.
+   */
+  private isStableAutomaticCheckDue(reason: string): boolean {
+    if (!this.isDailyCheckDue()) {
+      logger.debug('Skipping update check (already checked today)', { reason });
+      return false;
+    }
+    if (this.lastStableAutomaticAttemptAt !== null) {
+      const elapsed = Date.now() - this.lastStableAutomaticAttemptAt;
+      if (elapsed >= 0 && elapsed < STABLE_AUTOMATIC_ATTEMPT_INTERVAL_MS) {
+        logger.debug('Skipping update check (automatic attempt within the hour)', {
+          reason,
+          elapsedMs: elapsed,
+        });
+        return false;
+      }
+    }
+    return true;
   }
 
   /**
@@ -206,6 +302,191 @@ class AutoUpdateService {
     } catch (error) {
       logger.error('Failed to load channel setting, defaulting to stable', error as Error);
       this.state.channel = 'stable';
+    }
+  }
+
+  /**
+   * Load the "Share anonymous update statistics" toggle (default on) and the
+   * last counted check day from local prefs.
+   */
+  private async loadTelemetrySettings(): Promise<void> {
+    try {
+      const { getLocalPref } = await import('../../../main/local-prefs');
+      const [share, lastDay] = await Promise.all([
+        getLocalPref<unknown>(SHARE_UPDATE_STATISTICS_PREF),
+        getLocalPref<unknown>(LAST_UPDATE_CHECK_DAY_PREF),
+      ]);
+      this.state.shareStatistics = share !== false;
+      this.lastSuccessfulCheckDay = typeof lastDay === 'string' ? lastDay : null;
+    } catch (error) {
+      logger.error('Failed to load update telemetry settings', error as Error);
+    }
+  }
+
+  /**
+   * Restrict the updater's own session to the approved feed/download hosts
+   * (see installUpdateRequestAllowlist). A custom AUTO_UPDATE_URL is allowed
+   * as well, since the user configured it explicitly. Also strip the
+   * persistent installation id from telemetry-host requests (see
+   * installTelemetryHeaderFilter).
+   */
+  private installRequestAllowlist(): void {
+    try {
+      const session = autoUpdater.netSession as unknown as
+        | (Parameters<typeof installUpdateRequestAllowlist>[0] &
+            Parameters<typeof installTelemetryHeaderFilter>[0])
+        | undefined;
+      if (!session?.webRequest) {
+        logger.warn('Updater session unavailable; update host allowlist not installed');
+        return;
+      }
+      const custom = process.env.AUTO_UPDATE_URL;
+      installUpdateRequestAllowlist(session, custom ? [custom] : [], (url) => {
+        logger.warn('Blocked update request to a non-approved host', {
+          host: safeHost(url),
+        });
+      });
+      installTelemetryHeaderFilter(session);
+    } catch (error) {
+      logger.error('Failed to install update host allowlist', error as Error);
+    }
+  }
+
+  /**
+   * Resolve the feed for a check with `trigger`: the telemetry feed (with
+   * fresh `k`/`d` parameters), the GitHub feed, or a custom AUTO_UPDATE_URL.
+   */
+  private resolveFeed(
+    channel: Exclude<UpdateChannel, 'disabled'>,
+    trigger: UpdateCheckTrigger,
+  ): ResolvedUpdateFeed {
+    const env = process.env;
+    return resolveUpdateFeed({
+      channel,
+      githubBase: DEFAULTS.AUTO_UPDATE_URL,
+      telemetryBase: DEFAULTS.AUTO_UPDATE_TELEMETRY_URL,
+      telemetry: {
+        platform: process.platform,
+        arch: process.arch,
+        version: this.state.currentVersion || app.getVersion(),
+        source: detectInstallSource(process.platform, env),
+        trigger,
+        daily: isFirstCheckOfUtcDay(this.lastSuccessfulCheckDay, new Date()),
+      },
+      shareStatistics: this.state.shareStatistics,
+      githubFallbackActive: this.githubFallbackActive,
+      env,
+    });
+  }
+
+  /**
+   * Point electron-updater at the feed for `trigger` on the current channel.
+   * With `cancellable`, a telemetry feed's manifest request is abortable
+   * through the returned token (see cancellable-feed-provider).
+   */
+  private applyFeed(
+    channel: Exclude<UpdateChannel, 'disabled'>,
+    trigger: UpdateCheckTrigger,
+    cancellable = false,
+  ): { feed: ResolvedUpdateFeed; feedToken: CancellationToken | null } {
+    const feed = this.resolveFeed(channel, trigger);
+    let feedToken: CancellationToken | null = null;
+    if (feed.kind === 'telemetry' && cancellable) {
+      feedToken = new electronUpdater.CancellationToken();
+      autoUpdater.setFeedURL(
+        cancellableFeedOptions(feed.url, feedToken) as unknown as Parameters<
+          typeof autoUpdater.setFeedURL
+        >[0],
+      );
+    } else {
+      autoUpdater.setFeedURL({ provider: 'generic', url: feed.url });
+    }
+    this.activeFeedKind = feed.kind;
+    return { feed, feedToken };
+  }
+
+  /**
+   * Record that an update check succeeded today (on any feed). Drives the
+   * stable once-a-day cadence and the telemetry `d` flag. Failed checks are
+   * never recorded, so a later tick or focus retries (on stable, at most one
+   * automatic attempt per hour; see isStableAutomaticCheckDue).
+   */
+  private markCheckSucceededToday(): void {
+    const today = utcDay(new Date());
+    if (this.lastSuccessfulCheckDay === today) return;
+    this.lastSuccessfulCheckDay = today;
+    void import('../../../main/local-prefs')
+      .then(({ setLocalPref }) => setLocalPref(LAST_UPDATE_CHECK_DAY_PREF, today))
+      .catch((error) => {
+        logger.warn('Failed to persist last update check day', {
+          error: (error as Error).message,
+        });
+      });
+  }
+
+  private activateGithubFallback(reason: string): void {
+    if (this.githubFallbackActive) return;
+    this.githubFallbackActive = true;
+    logger.warn('Update telemetry feed failed; using the GitHub feed for this session', {
+      reason,
+    });
+  }
+
+  /**
+   * Run one check. On the telemetry feed a failure (network error, non-2xx,
+   * a redirect the allowlist blocked, or no response within
+   * TELEMETRY_CHECK_TIMEOUT_MS, which aborts the request) is retried once
+   * against GitHub with a fresh watchdog window, and the session stays on
+   * GitHub afterwards.
+   */
+  private async runCheckWithFallback(
+    channel: Exclude<UpdateChannel, 'disabled'>,
+    trigger: UpdateCheckTrigger,
+  ) {
+    const { feedToken } = this.applyFeed(channel, trigger, true);
+    if (!feedToken) {
+      return autoUpdater.checkForUpdates();
+    }
+    this.telemetryAttemptActive = true;
+    // Aborting rejects the check, which also clears electron-updater's
+    // in-flight promise, so the retry below is a fresh request and the slow
+    // response can never land later.
+    const abortTimer = setTimeout(() => {
+      logger.warn('Update telemetry feed did not respond; aborting the request', {
+        timeoutMs: TELEMETRY_CHECK_TIMEOUT_MS,
+      });
+      feedToken.cancel();
+    }, TELEMETRY_CHECK_TIMEOUT_MS);
+    try {
+      const result = await autoUpdater.checkForUpdates();
+      this.telemetryAttemptActive = false;
+      return result;
+    } catch (error) {
+      this.telemetryAttemptActive = false;
+      this.activateGithubFallback((error as Error).message);
+      // The user switched to 'disabled' while the attempt ran: end this
+      // check quietly instead of retrying or reporting an error.
+      if (this.state.channel === 'disabled') {
+        this.clearCheckTimeout();
+        this.checkSessionActive = false;
+        this.isManualCheck = false;
+        this.updateStatus('idle');
+        return null;
+      }
+      this.applyFeed(this.state.channel, trigger);
+      this.startCheckTimeout();
+      // The retry's 'checking-for-update' re-arms the renderer watchdog via
+      // a 'checking' broadcast, except while an artifact is downloaded: that
+      // state is kept, so a manual check's "Checking…" toast (armed by
+      // show-toast) would time out mid-retry. Re-arm it the same way; the
+      // toast is already showing and the downloaded state is untouched.
+      if (this.isManualCheck && this.state.status === 'downloaded') {
+        broadcastToRenderers('auto-update:show-toast');
+      }
+      return autoUpdater.checkForUpdates();
+    } finally {
+      clearTimeout(abortTimer);
+      this.telemetryAttemptActive = false;
     }
   }
 
@@ -373,6 +654,19 @@ class AutoUpdateService {
     });
 
     autoUpdater.on('error', (error: Error) => {
+      if (this.telemetryAttemptActive) {
+        // checkForUpdates() retries this check on GitHub; the outcome of that
+        // retry is what the user sees.
+        logger.warn('Update check via telemetry feed failed; retrying on GitHub', {
+          error: error.message,
+        });
+        return;
+      }
+      if (this.activeFeedKind === 'telemetry') {
+        // A download through the telemetry host failed: later checks (and
+        // the downloads they start) go straight to GitHub.
+        this.activateGithubFallback(error.message);
+      }
       this.clearCheckTimeout();
       this.checkSessionActive = false;
       this.downloadCancellationToken = null;
@@ -427,11 +721,26 @@ class AutoUpdateService {
       logger.warn('Cannot set update channel: AUTO_UPDATE_URL not configured');
       return;
     }
-    const feedUrl = `${baseUrl}/${channel}`;
-    autoUpdater.setFeedURL({ provider: 'generic', url: feedUrl });
+    // checkForUpdates() re-points the feed before every check so its
+    // trigger and daily flag are current; this keeps the feed on the new
+    // channel even before then.
+    const { feed } = this.applyFeed(channel, 'channel');
     // A channel switch must never permit downgrades.
     autoUpdater.allowDowngrade = false;
-    logger.info('Update channel set', { channel, feedUrl });
+    logger.info('Update channel set', { channel, feedKind: feed.kind });
+  }
+
+  /**
+   * Settings → "Share anonymous update statistics". Off (or DO_NOT_TRACK)
+   * sends every check straight to the GitHub feed; takes effect on the next
+   * check.
+   */
+  async setShareStatistics(enabled: boolean): Promise<void> {
+    assertNormalAppOperation();
+    this.state.shareStatistics = enabled;
+    const { setLocalPref } = await import('../../../main/local-prefs');
+    await setLocalPref(SHARE_UPDATE_STATISTICS_PREF, enabled);
+    logger.info('Update statistics sharing set', { enabled });
   }
 
   private async persistChannelSetting(channel: UpdateChannel): Promise<void> {
@@ -439,7 +748,7 @@ class AutoUpdateService {
     await setLocalPref(UPDATE_CHANNEL_STORAGE_KEY, channel);
   }
 
-  private async checkForUpdates(): Promise<UpdateState> {
+  private async checkForUpdates(trigger: UpdateCheckTrigger = 'periodic'): Promise<UpdateState> {
     // 'disabled' suppresses every automatic check path funneling through
     // here (startup timer, periodic interval, focus/resume staleness check).
     if (this.state.channel === 'disabled') {
@@ -495,10 +804,14 @@ class AutoUpdateService {
 
     try {
       this.lastCheckAt = Date.now();
+      if (this.isDailyCadence() && trigger !== 'manual' && trigger !== 'channel') {
+        this.lastStableAutomaticAttemptAt = this.lastCheckAt;
+      }
       this.checkSessionActive = true;
       this.startCheckTimeout();
       const epochAtStart = this.channelSwitchEpoch;
-      const result = await autoUpdater.checkForUpdates();
+      const result = await this.runCheckWithFallback(this.state.channel, trigger);
+      if (result) this.markCheckSucceededToday();
       // autoDownload path: when this check found an update and started
       // downloading it, the result carries the token that can cancel that
       // download. Keep it so a channel switch can cancel the in-flight
@@ -567,7 +880,7 @@ class AutoUpdateService {
    * Manually check for updates (triggered by user action like menu click)
    * This will send an "up to date" notification if no updates are available
    */
-  async checkForUpdatesManual(): Promise<UpdateState> {
+  async checkForUpdatesManual(trigger: UpdateCheckTrigger = 'manual'): Promise<UpdateState> {
     assertNormalAppOperation();
     // A 'downloaded' state does not early-return: a manual check must still
     // query the feed so a newer version can supersede the pending artifact.
@@ -605,9 +918,9 @@ class AutoUpdateService {
       return this.state;
     }
 
-    logger.info('Manual update check initiated');
+    logger.info('Manual update check initiated', { trigger });
     this.isManualCheck = true;
-    return this.checkForUpdates();
+    return this.checkForUpdates(trigger);
   }
 
   /**
@@ -671,7 +984,7 @@ class AutoUpdateService {
     }
 
     this.neutralizeStaleFeedArtifact();
-    return this.checkForUpdatesManual();
+    return this.checkForUpdatesManual('channel');
   }
 
   /**
@@ -843,7 +1156,7 @@ class AutoUpdateService {
         return;
       }
       logger.info('Running queued channel-switch update check against new feed');
-      void this.checkForUpdatesManual().catch((error) => {
+      void this.checkForUpdatesManual('channel').catch((error) => {
         logger.debug('Queued channel-switch update check failed', {
           error: (error as Error).message,
         });
@@ -868,8 +1181,9 @@ class AutoUpdateService {
   }
 
   private checkForUpdatesIfStale(reason: 'focus' | 'resume') {
-    const now = Date.now();
-    if (this.lastCheckAt && now - this.lastCheckAt < FOCUS_RESUME_CHECK_INTERVAL_MS) {
+    if (this.isDailyCadence()) {
+      if (!this.isStableAutomaticCheckDue(reason)) return;
+    } else if (this.isFocusCheckTooSoon()) {
       logger.debug('Skipping update check (too soon)', {
         reason,
         lastCheckAt: this.lastCheckAt,
@@ -878,9 +1192,15 @@ class AutoUpdateService {
     }
 
     logger.info('Checking for updates due to app activity', { reason });
-    this.checkForUpdates().catch((err) => {
+    this.checkForUpdates('focus').catch((err) => {
       logger.debug('Activity-triggered update check failed', { reason, error: err.message });
     });
+  }
+
+  private isFocusCheckTooSoon(): boolean {
+    return (
+      this.lastCheckAt !== null && Date.now() - this.lastCheckAt < FOCUS_RESUME_CHECK_INTERVAL_MS
+    );
   }
 
   /**
@@ -898,6 +1218,10 @@ class AutoUpdateService {
       // 'checking' and the old gate would never fire.
       if (this.checkSessionActive) {
         logger.warn('Update check timed out after ' + UPDATE_CHECK_TIMEOUT_MS + 'ms');
+        // A hung telemetry-feed check cannot be retried in place
+        // (electron-updater dedups onto the pending request), so move the
+        // session to GitHub for the next check.
+        if (this.telemetryAttemptActive) this.activateGithubFallback('check timed out');
         this.checkSessionActive = false;
         this.state.error = m.autoUpdate_check_timeout_error();
         this.updateStatus('error');
@@ -915,6 +1239,15 @@ class AutoUpdateService {
 
   private sendToRenderer(channel: string, data: unknown) {
     broadcastToRenderers(channel, data);
+  }
+}
+
+/** Host of `url` for logs, without path or query. */
+function safeHost(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return 'invalid-url';
   }
 }
 

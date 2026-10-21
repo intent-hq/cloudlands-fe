@@ -1320,6 +1320,23 @@ describe('verification planning', () => {
     expect(otherScript.checks.map((check) => check.id)).not.toContain('architecture');
   });
 
+  it('runs the architecture gates (actionlint) when a workflow or its lint config changes', () => {
+    const changed = [
+      '.github/workflows/promote-beta.yml',
+      '.github/workflows/example.yaml',
+      '.github/actionlint.yaml',
+      '.github/actionlint.yml',
+    ];
+    const root = fixtureRoot(Object.fromEntries(changed.map((file) => [file, ''])));
+    for (const file of changed) {
+      const plan = createVerificationPlan([file], { root, ctTests: [] });
+      expect(
+        plan.checks.map((check) => check.id),
+        file,
+      ).toContain('architecture');
+    }
+  });
+
   it('lints changed scripts/ files but not e2e/ or test/ files', () => {
     const root = fixtureRoot({
       'scripts/verify-changed.mjs': '',

@@ -62,10 +62,15 @@ vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
   selectWorkspaceScriptOperations: workspaceReadable(
     (workspaceId) => mocks.operations[workspaceId] ?? {},
   ),
-  // A completed, successful read: loading and failure states are covered by
-  // WorkspaceShellList.script-list-states.test.ts through the real store.
-  selectScriptListPageState: workspaceReadable(() => ({ loading: false, error: undefined })),
+  selectScriptListPageState: workspaceReadable(() => ({ loading: false })),
   selectWorkspaceScriptsInitialized: workspaceReadable(() => true),
+  selectScriptDetectionOperation: workspaceSelector(() => undefined),
+  selectScriptWorkflowOutcome: () => ({
+    subscribe: (run: (value: undefined) => void) => {
+      run(undefined);
+      return () => {};
+    },
+  }),
 }));
 
 vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => ({
@@ -166,6 +171,19 @@ describe('WorkspaceShellList development script controls', () => {
     await fireEvent.click(within(row).getByRole('button', { name: 'Open in...' }));
     await fireEvent.click(await screen.findByRole('menuitem', { name }));
   }
+
+  it('detects scripts for the current workspace when the scripts list is empty', async () => {
+    const view = render(WorkspaceShellList, { props: { workspaceId: WS } });
+    await view.rerender({ workspaceId: 'ws-b' });
+    await fireEvent.click(screen.getByRole('button', { name: 'Detect Scripts' }));
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'scripts/detectScriptDefinitionsRequested',
+        payload: ['ws-b', expect.objectContaining({ resourceId: 'local-detection' })],
+      }),
+    );
+  });
 
   describe('panel default', () => {
     it.each([undefined, 'overlay', 'panel'] as const)(
@@ -277,15 +295,6 @@ describe('WorkspaceShellList development script controls', () => {
     expect(mocks.openUserTab).toHaveBeenCalledWith(expect.objectContaining({ scriptId: 'saved' }));
     expect(screen.queryByRole('button', { name: /History and cleanup/ })).toBeNull();
     expect(screen.queryByRole('dialog')).toBeNull();
-  });
-
-  it('renders truthful empty shell states', () => {
-    render(WorkspaceShellList, { props: { workspaceId: WS } });
-
-    expect(screen.getByText('No terminals open')).toBeTruthy();
-    expect(
-      screen.getByText('No scripts found. Add one manually or use AI detection.'),
-    ).toBeTruthy();
   });
 
   it('opens the selected terminal in a panel and closes its bottom overlay', async () => {

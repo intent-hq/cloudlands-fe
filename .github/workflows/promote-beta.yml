@@ -250,10 +250,12 @@ jobs:
           echo "Versions in promotion range (notesBase, version]:"
           cat "$RUNNER_TEMP/range-versions.txt"
 
-          echo "prev_beta=$EFFECTIVE_PREV" >> "$GITHUB_OUTPUT"
-          echo "is_first_promotion=$EFFECTIVE_FIRST" >> "$GITHUB_OUTPUT"
-          echo "notes_base=$NOTES_BASE" >> "$GITHUB_OUTPUT"
-          echo "skip_notes=$SKIP_NOTES" >> "$GITHUB_OUTPUT"
+          {
+            echo "prev_beta=$EFFECTIVE_PREV"
+            echo "is_first_promotion=$EFFECTIVE_FIRST"
+            echo "notes_base=$NOTES_BASE"
+            echo "skip_notes=$SKIP_NOTES"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Download versioned release assets
         env:

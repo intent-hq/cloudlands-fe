@@ -21,7 +21,11 @@
     selectProviderModels,
     selectDefaultReasoningEffort,
   } from '$store/renderer/slices/model/model-selectors';
-  import { selectWorkspaceInitializerHydrated } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+  import {
+    selectWorkspaceInitializerHydrated,
+    selectWorkspaceInitializerRecentSpecialistIds,
+  } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+  import { sortSpecialistsByRecency } from '$store/renderer/slices/workspace-initializer/utils/recent-specialists';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { faPlus, faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -77,6 +81,7 @@
   const customSpecialistsLoaded$ = selectCustomSpecialistsLoaded();
   const fileSpecialistsLoaded$ = selectFileSpecialistsLoaded();
   const initializerHydrated$ = selectWorkspaceInitializerHydrated();
+  const recentSpecialistIds$ = selectWorkspaceInitializerRecentSpecialistIds();
   const activeProviderId$ = selectActiveProviderId();
   const enabledProviders$ = selectEnabledProviders();
   const selectedModel$ = selectSelectedModel();
@@ -301,10 +306,14 @@
 
   // Specialists offered in the single-agent dropdown: the modal-pickable set
   // (GitHub gating + `hidden` + `role: internal` excluded) minus the
-  // orchestrator, which is represented by the team card.
+  // orchestrator, which is represented by the team card. Those used to create
+  // workspaces come first, most recent first; the rest keep catalog order.
   const customSpecialists = $derived(
-    filterModalPickableSpecialists($specialists$, $isGitHubAuth$).filter(
-      (s) => s.id !== orchestratorId,
+    sortSpecialistsByRecency(
+      filterModalPickableSpecialists($specialists$, $isGitHubAuth$).filter(
+        (s) => s.id !== orchestratorId,
+      ),
+      $recentSpecialistIds$,
     ),
   );
 

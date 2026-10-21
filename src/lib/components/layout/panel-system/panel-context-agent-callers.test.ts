@@ -12,7 +12,6 @@ const protectedAgentCallers = [
   'src/lib/components/notes/primitives/CliBlock.svelte',
   'src/lib/components/notes/primitives/DiagramBlock.svelte',
   'src/lib/components/notes/primitives/ReferenceBlock.svelte',
-  'src/lib/components/terminal/TerminalSidebar.svelte',
 ] as const;
 
 const sourceExtensions = new Set(['.js', '.svelte', '.ts', '.tsx']);

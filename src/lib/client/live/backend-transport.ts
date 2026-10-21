@@ -133,6 +133,17 @@ export async function backendRequest<T = unknown>(
   }
 }
 
+/** Read the principal and existing hello on one captured transport. */
+export async function readBackendPrincipal() {
+  const transport = resolveBackendTransport();
+  if (!transport.readPrincipal)
+    throw new BackendError({ code: 'UNAVAILABLE', message: 'Principal discovery unavailable' });
+  const result = await transport.readPrincipal();
+  if (transport !== resolveBackendTransport())
+    throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend transport changed' });
+  return result;
+}
+
 /** Observe node capabilities on one current transport without issuing client.hello. */
 export async function observeBackendNodeCapabilities(): Promise<unknown> {
   const transport = resolveBackendTransport();
@@ -243,4 +254,25 @@ export function captureBackendRepositoryCheckout(query: CheckoutCaptureQuery) {
       }),
     );
   return transport.captureRepositoryCheckout(query);
+}
+
+/** Capture monitor reads/controls on the actual main-process connection. */
+export function capturePrMonitorSession(workspaceId: string) {
+  const transport = resolveBackendTransport();
+  if (!transport.capturePrMonitorSession)
+    return Promise.reject(
+      new BackendError({
+        code: 'PR_MONITOR_SESSION_UNAVAILABLE',
+        message: 'Monitor transport unavailable',
+      }),
+    );
+  return transport.capturePrMonitorSession(workspaceId);
+}
+
+/** Monitor sessions also retire on acknowledged identity renegotiation. */
+export function onMonitorReconnected(handler: () => void): () => void {
+  const transport = resolveBackendTransport();
+  return transport.onMonitorReconnected
+    ? transport.onMonitorReconnected(handler)
+    : transport.onReconnected(handler);
 }

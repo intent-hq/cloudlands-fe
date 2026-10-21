@@ -7,6 +7,7 @@ import {
   type MockBackendMethodHandler,
 } from '../../test/ct-mock-electron-bridge';
 import { homeIntegrationsSaga } from './home-integrations-saga';
+import { selectHomeIntegrationSearchState } from './home-integrations-selectors';
 import type { DraftAttachment, DraftsClient } from '$lib/client/app-client';
 
 interface HomeIntegrationWireCall {
@@ -16,7 +17,15 @@ interface HomeIntegrationWireCall {
 interface HomeIntegrationBrowserControl {
   calls: HomeIntegrationWireCall[];
   releaseSearch: () => void;
+  readSearchState: () => {
+    generation: number;
+    status: string;
+    filter: string;
+    closed: boolean;
+    linkedIds: string[];
+  };
   readPrefill: () => WorkspaceInitializerPendingGitHubPrefill | null;
+  navigation: () => { currentTabId: string | null; tabOrder: string[] };
   resolvePrefill: () => ReturnType<typeof resolveGitHubPrefillSelection>;
 }
 declare global {
@@ -39,6 +48,20 @@ export function setupHomeIntegrationsFixtures(appStore: Pick<typeof rendererStor
   let filePageFailed = false;
   window.__homeIntegrationBrowser = {
     calls,
+    navigation: () => ({
+      currentTabId: rendererStore.state.tabState.currentTabId,
+      tabOrder: rendererStore.state.tabState.workspaceStacks.flat(),
+    }),
+    readSearchState: () => {
+      const state = selectHomeIntegrationSearchState.select(rendererStore.state);
+      return {
+        generation: state.generation,
+        status: state.status,
+        filter: state.filter,
+        closed: state.closed,
+        linkedIds: Object.keys(state.linkedItems ?? {}),
+      };
+    },
     releaseSearch: () => releaseSearch(),
     readPrefill: () => selectWorkspaceInitializerPendingGitHubPrefill.select(rendererStore.state),
     resolvePrefill: () =>

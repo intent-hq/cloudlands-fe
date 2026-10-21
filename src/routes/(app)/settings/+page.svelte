@@ -5,9 +5,11 @@
   import {
     selectIsReadyToInstall,
     selectAutoUpdateStatus,
+    selectShareUpdateStatistics,
   } from '$store/renderer/slices/auto-update/auto-update-selectors';
   import {
     installUpdate,
+    setShareUpdateStatistics,
     simulateSetState,
   } from '$store/renderer/slices/auto-update/auto-update-slice';
   import AdministratorSettings from '$lib/components/settings/AdministratorSettings.svelte';
@@ -53,6 +55,7 @@
     resetNotificationSettings,
     setAgentFontStyle,
     setChatAuroraEnabled,
+    setCollapseToolRuns,
     setCodeFontFamily,
     setNoteFontStyle,
     setShellTransparencyEnabled,
@@ -62,6 +65,7 @@
   import {
     selectAgentFontStyle,
     selectChatAuroraEnabled,
+    selectCollapseToolRuns,
     selectCodeFontFamily,
     selectCodeFontFamilyCSS,
     selectCodeFontOptions,
@@ -90,6 +94,7 @@
   const isReadyToInstall$ = selectIsReadyToInstall();
   const autoUpdateStatus$ = selectAutoUpdateStatus();
   const updateChannel$ = selectUpdateChannel();
+  const shareUpdateStatistics$ = selectShareUpdateStatistics();
   const noteFontStyle = selectNoteFontStyle();
   const isNoteMonospace = selectIsNoteMonospace();
   const agentFontStyle = selectAgentFontStyle();
@@ -97,6 +102,7 @@
   const codeFontFamilyCSS = selectCodeFontFamilyCSS();
   const codeFontOptions = selectCodeFontOptions();
   const chatAuroraEnabled = selectChatAuroraEnabled();
+  const collapseToolRuns = selectCollapseToolRuns();
   const shellTransparencyEnabled = selectShellTransparencyEnabled();
   const themePreference = selectThemePreference();
   const daemonTransport$ = selectDaemonTransport();
@@ -167,6 +173,7 @@
     theme: 'display',
     appearance: 'display',
     'chat-aurora': 'display',
+    'collapse-tool-runs': 'display',
     'translucent-window': 'display',
     'font-style': 'display',
     'color-theme': 'display',
@@ -703,6 +710,28 @@
                 </SettingsFieldRow>
               </section>
               <section
+                id="collapse-tool-runs"
+                data-highlight-id="collapse-tool-runs"
+                use:highlightTarget
+                data-slot="settings-section-body"
+                class="px-6 py-4"
+              >
+                <SettingsFieldRow
+                  id="settings-appearance-collapseToolRuns-label-field"
+                  label={m.settings_appearance_collapseToolRuns_label()}
+                  description={m.settings_appearance_collapseToolRuns_description()}
+                >
+                  <Switch
+                    id="collapse-tool-runs-switch"
+                    size="sm"
+                    class="mb-auto"
+                    checked={$collapseToolRuns}
+                    onCheckedChange={(enabled) => appStore.dispatch(setCollapseToolRuns(enabled))}
+                    ariaLabel={m.settings_appearance_collapseToolRuns_label()}
+                  />
+                </SettingsFieldRow>
+              </section>
+              <section
                 id="translucent-window"
                 data-highlight-id="translucent-window"
                 use:highlightTarget
@@ -887,6 +916,23 @@
                       </Select.Content>
                     </Select.Root>
                   </div>
+                </SettingsFieldRow>
+              </section>
+              <section data-slot="settings-section-body" class="px-6 py-4">
+                <SettingsFieldRow
+                  id="settings-shareUpdateStatistics-label-field"
+                  label={m.settings_shareUpdateStatistics_label()}
+                  description={m.settings_shareUpdateStatistics_description()}
+                >
+                  <Switch
+                    id="share-update-statistics-switch"
+                    size="sm"
+                    class="mb-auto"
+                    checked={$shareUpdateStatistics$}
+                    onCheckedChange={(enabled) =>
+                      appStore.dispatch(setShareUpdateStatistics(enabled))}
+                    ariaLabel={m.settings_shareUpdateStatistics_label()}
+                  />
                 </SettingsFieldRow>
               </section>
             </div>

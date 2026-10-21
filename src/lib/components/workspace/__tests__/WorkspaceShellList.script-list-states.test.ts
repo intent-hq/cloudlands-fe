@@ -24,7 +24,7 @@ vi.mock('svelte-fa', async () => ({
 import WorkspaceShellList from '../WorkspaceShellList.svelte';
 
 const WS = 'ws-script-list-states';
-const EMPTY = 'No scripts found. Add one manually or use AI detection.';
+const EMPTY = 'No scripts detected yet';
 const LOADING = 'Loading scripts…';
 const FAILED = "Couldn't load scripts.";
 

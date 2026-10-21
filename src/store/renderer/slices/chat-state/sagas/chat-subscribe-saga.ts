@@ -602,16 +602,19 @@ function* applyTranscript(
   if (observesLocalTurn) coordinator.locallyStartedTurns.delete(agentId);
   const protectsLocalStart =
     session && !transcript.isStreaming && coordinator.locallyStartedTurns.has(agentId);
+  // Only an idle frame can predate a daemon-started turn; a streaming frame
+  // agrees with it, so its rising edge must still reach the session.
+  const protectsDaemonStartEdge = protectsDaemonStart && !transcript.isStreaming;
   // Consume the old turn's falling edge even when a newer local send keeps
   // the session active, so replay cannot apply that edge to the new turn.
-  if (protectsLocalStart || protectsDaemonStart) entry.wasStreaming = transcript.isStreaming;
+  if (protectsLocalStart || protectsDaemonStartEdge) entry.wasStreaming = transcript.isStreaming;
   const shouldReconcileStreaming =
     (streamingChanged ||
       authoritativeIdleSnapshot ||
       observesLocalTurn ||
       observesDaemonCompletion) &&
     !protectsLocalStart &&
-    !protectsDaemonStart;
+    !protectsDaemonStartEdge;
   if (session && shouldReconcileStreaming && isCurrentSubscription(coordinator, agentId, entry)) {
     entry.wasStreaming = transcript.isStreaming;
     yield* put(

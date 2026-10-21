@@ -62,6 +62,11 @@ export const selectWorkspaceInitializerAgentByRepo = store.createSelector(
   (state) => state.workspaceInitializer.agentByRepo,
 );
 
+/** Specialist ids used to create workspaces or picked in the agent composer, most recent first. */
+export const selectWorkspaceInitializerRecentSpecialistIds = store.createSelector(
+  (state) => state.workspaceInitializer.recentSpecialistIds,
+);
+
 /** The agent setup last used to create a workspace in `repoKey` (`agentSettingsRepoKey`). */
 export const selectWorkspaceInitializerAgentForRepo = store.createSelector(
   (state, repoKey: string) => state.workspaceInitializer.agentByRepo[repoKey] ?? null,
@@ -71,11 +76,11 @@ export const selectWorkspaceInitializerPendingGitHubPrefill = store.createSelect
   (state) => state.workspaceInitializer.pendingGitHubPrefill,
 );
 
-export const selectWorkspaceInitializerDraftRestore = store.createSelector(
-  (state, id: string, requestId: string) => {
-    const restore = getItem(state.workspaceInitializer.draftRestores, id);
-    return restore?.requestId === requestId ? restore : undefined;
-  },
+export const selectWorkspaceInitializerDraftAuthority = store.createSelector(
+  (state, id: string) => ({
+    restore: getItem(state.workspaceInitializer.draftRestores, id),
+    clear: getItem(state.workspaceInitializer.draftClears, id),
+  }),
 );
 
 export const selectWorkspaceInitializationOutcome = store.createSelector(
@@ -88,6 +93,11 @@ export const selectWorkspaceInitializationOutcome = store.createSelector(
 export const selectWorkspaceInitializationOutcomeForConsumer = store.createSelector(
   (state, consumerId: string) =>
     getItem(state.workspaceInitializer.initializationOutcomes, consumerId),
+);
+
+export const selectWorkspaceInitializationResume = store.createSelector(
+  (state, consumerId: string) =>
+    getItem(state.workspaceInitializer.initializationResumes, consumerId),
 );
 
 /**

@@ -611,42 +611,59 @@ describe('scriptsClient.detect (fake files + daemon script.* seams)', () => {
     expect(scriptsCreate).not.toHaveBeenCalled();
     expect(scriptsRemove).not.toHaveBeenCalled();
   });
-});
 
-describe('scriptsClient.restoreSnapshot', () => {
-  afterEach(() => vi.clearAllMocks());
-  it.each(['saved', 'oneOff', undefined] as const)(
-    'preserves %s purpose when recreating a snapshot',
-    async (purpose) => {
-      scriptsList.mockResolvedValueOnce([]);
-      scriptsCreate.mockResolvedValueOnce({ success: true });
-      expect((await scriptsClient.restoreSnapshot('ws-1', [liveScript({ purpose })])).success).toBe(
-        true,
-      );
-      expect(scriptsCreate).toHaveBeenCalledWith(
-        'ws-1',
-        expect.objectContaining({ name: 'dev', purpose: purpose ?? 'saved' }),
-      );
-      expect(scriptsCreate.mock.calls[0][1]).not.toHaveProperty('scriptId');
-    },
-  );
-  it('does not recreate definitions after a removal failure', async () => {
-    scriptsList.mockResolvedValueOnce([liveScript()]);
-    scriptsRemove.mockResolvedValueOnce({ success: false, error: 'offline' });
-    expect(await scriptsClient.restoreSnapshot('ws-1', [liveScript()])).toEqual({
+  it('does not change definitions when active inventory is unavailable', async () => {
+    seedManifests({ 'package.json': JSON.stringify({ scripts: { dev: 'vite' } }) });
+    scriptsList.mockRejectedValueOnce(new Error('active script lists unavailable'));
+
+    expect(await scriptsClient.detect('ws-1')).toEqual({
       success: false,
-      error: 'offline',
+      error: 'active script lists unavailable',
     });
     expect(scriptsCreate).not.toHaveBeenCalled();
-  });
-  it('reports a failed restore read and permits retry', async () => {
-    scriptsList.mockRejectedValueOnce(new Error('offline'));
-    expect(await scriptsClient.restoreSnapshot('ws-1', [])).toEqual({
-      success: false,
-      error: 'offline',
-    });
-    scriptsList.mockResolvedValueOnce([]);
-    expect((await scriptsClient.restoreSnapshot('ws-1', [])).success).toBe(true);
     expect(scriptsRemove).not.toHaveBeenCalled();
   });
+
+  it.each(['create', 'update', 'remove'] as const)(
+    'reports a failed %s and stops before further script writes',
+    async (operation) => {
+      seedManifests({
+        'package.json': JSON.stringify({
+          scripts: operation === 'remove' ? {} : { dev: 'vite', test: 'vitest' },
+        }),
+      });
+      scriptsList.mockResolvedValueOnce(
+        operation === 'create'
+          ? []
+          : [
+              liveScript({ source: 'auto-detected' }),
+              liveScript({ id: 'script-2', name: 'stale', source: 'auto-detected' }),
+            ],
+      );
+      const method = operation === 'remove' ? 'script.remove' : 'script.create';
+      backendRequestMock.mockRejectedValueOnce(new Error('storage unavailable'));
+
+      expect(await scriptsClient.detect('ws-1')).toEqual({
+        success: false,
+        error: 'storage unavailable',
+      });
+      expect(backendRequestMock).toHaveBeenCalledOnce();
+      expect(backendRequestMock).toHaveBeenCalledWith(
+        method,
+        operation === 'remove'
+          ? { workspaceId: 'ws-1', scriptId: 'script-1' }
+          : {
+              workspaceId: 'ws-1',
+              name: 'dev',
+              command: 'npm run dev',
+              mode: 'service',
+              category: 'dev',
+              ...(operation === 'update'
+                ? { scriptId: 'script-1' }
+                : { purpose: 'saved', source: 'auto-detected' }),
+            },
+      );
+      expect(store.state.scripts.byWorkspaceId['ws-1'].detectionOperation).toBeUndefined();
+    },
+  );
 });

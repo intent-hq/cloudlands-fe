@@ -45,7 +45,11 @@
   // the lead row drives the trigger glyph.
   const leadRow = $derived(rows[0]);
   const triggerLabel = $derived(
-    m.workspace_sidebarPrDropdown_trigger_ariaLabel({ count: formatInteger(rows.length) }),
+    (rows.every((row) => row.resource?.repository.provider === 'gitlab')
+      ? m.workspace_sidebarMrDropdown_trigger_ariaLabel
+      : rows.some((row) => row.resource?.repository.provider === 'gitlab')
+        ? m.workspace_sidebarReviewDropdown_trigger_ariaLabel
+        : m.workspace_sidebarPrDropdown_trigger_ariaLabel)({ count: formatInteger(rows.length) }),
   );
 
   // Escape ordering: while open, occupy the top of the escape-layer stack so

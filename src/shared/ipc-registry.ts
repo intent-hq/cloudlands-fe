@@ -882,6 +882,7 @@ export const IPC_CHANNELS = {
     INSTALL: 'auto-update:install',
     GET_STATE: 'auto-update:get-state',
     SET_CHANNEL: 'auto-update:set-channel',
+    SET_SHARE_STATISTICS: 'auto-update:set-share-statistics',
     // Event channels (main → renderer)
     STATUS_CHANGED: 'auto-update:status-changed',
     PROGRESS: 'auto-update:progress',
@@ -927,6 +928,14 @@ export const IPC_CHANNELS = {
   // notifications on the BACKEND.NOTIFICATION event channel.
   BACKEND: {
     REQUEST: 'backend:request',
+    PR_MONITOR: {
+      READY: 'backend:pr-monitor:ready',
+      CAPTURE: 'backend:pr-monitor:capture',
+      REQUEST: 'backend:pr-monitor:request',
+      RELEASE: 'backend:pr-monitor:release',
+      RETIRED: 'backend:pr-monitor:retired',
+      NOTIFICATION: 'backend:pr-monitor:notification',
+    },
     NATIVE_REVIEW: {
       PREPARE: 'backend:native-review:prepare',
       EXECUTE: 'backend:native-review:execute',
@@ -963,6 +972,7 @@ export const IPC_CHANNELS = {
     UNSUBSCRIBE: 'backend:unsubscribe',
     GET_STATUS: 'backend:get-status',
     NODE_CAPABILITIES: 'backend:node-capabilities',
+    READ_PRINCIPAL: 'backend:read-principal',
     NOTIFICATION: 'backend:notification',
     STATUS: 'backend:status',
     SPAWN_SIDECAR: 'backend:spawn-sidecar',

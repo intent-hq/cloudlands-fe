@@ -1774,6 +1774,42 @@ describe('getPRStatusTooltip', () => {
     ).toBe('Merged');
   });
 
+  it('adds the merge-queue position line under Queued when the snapshot carries it', () => {
+    const queued = getPRStatusTooltip(
+      makePR({
+        status: 'open',
+        monitorSnapshot: makeSnapshot({
+          isInMergeQueue: true,
+          mergeQueue: { position: 2, queueSize: 3, estimatedTimeToMerge: 3900 },
+        }),
+      }),
+    );
+    expect(queued.split('\n').slice(0, 2)).toEqual([
+      'Queued',
+      '#2 of 3 in queue · ~1 h 5 min to merge',
+    ]);
+
+    // Older daemons (no entry) keep today's tooltip; a non-queued or settled
+    // row never shows a stale position.
+    const flagOnly = getPRStatusTooltip(
+      makePR({ status: 'open', monitorSnapshot: makeSnapshot({ isInMergeQueue: true }) }),
+    );
+    expect(flagOnly).not.toContain('in queue');
+    for (const pr of [
+      makePR({ status: 'open', monitorSnapshot: makeSnapshot({ mergeQueue: { position: 1 } }) }),
+      makePR({
+        status: 'merged',
+        monitorSnapshot: makeSnapshot({
+          state: 'merged',
+          isInMergeQueue: true,
+          mergeQueue: { position: 1 },
+        }),
+      }),
+    ]) {
+      expect(getPRStatusTooltip(pr)).not.toContain('in queue');
+    }
+  });
+
   it('adds a checks line only when the snapshot has checks', () => {
     const withChecks = getPRStatusTooltip(
       makePR({

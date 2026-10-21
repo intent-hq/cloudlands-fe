@@ -1,3 +1,9 @@
+/** Raw discovery reads from one acknowledged connection, before wire validation. */
+export interface PrincipalDiscovery {
+  hello: unknown;
+  principal: unknown;
+}
+
 /** Connected caller and discovery contract (PROTOCOL §5.49). */
 export type HostRole = 'owner' | 'member' | 'guest';
 

@@ -69,6 +69,7 @@
     resetOnboarding,
     setOnboardingFullFlowRequested,
   } from '$store/renderer/slices/onboarding/onboarding-slice';
+  import { selectPrincipalActionContext as admissionSelector } from '$store/renderer/slices/principal/principal-selectors';
   import {
     setShowCreateModal,
     setStatsOverlayOpen,
@@ -909,7 +910,7 @@
         // Explicit restart: request the full flow so OnboardingPage's
         // initial-step decision never skips ahead on setup state.
         appStore.dispatch(setOnboardingFullFlowRequested(true));
-        appStore.dispatch(resetOnboarding());
+        appStore.dispatch(resetOnboarding(admissionSelector.select(appStore.state) ?? undefined));
         goto('/workspace/new');
         return true;
       case 'enhance-prompt':

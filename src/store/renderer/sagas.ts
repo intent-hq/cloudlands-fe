@@ -95,6 +95,7 @@ import { questionUiPersistenceSaga } from './slices/question-ui/sagas/question-u
 import { providerSettingsSaga } from './slices/provider-settings/sagas/provider-settings-saga';
 import { antigravitySetupSaga } from './slices/antigravity-setup/sagas/antigravity-setup-saga';
 import { scriptMonitorSaga } from './slices/script-monitor/sagas/script-monitor-saga';
+import { agentWorkersSaga } from './slices/agent-workers/sagas/agent-workers-saga';
 import { prMonitorSaga } from './slices/pr-monitor/sagas/pr-monitor-saga';
 import { releaseNotesSaga } from './slices/release-notes/sagas/release-notes-saga';
 import { sentryAuthSaga } from './slices/sentry-auth/sagas/sentry-auth-saga';
@@ -242,6 +243,7 @@ export const sagas = [
   statsReadSaga,
   prMonitorSaga,
   scriptMonitorSaga,
+  agentWorkersSaga,
   gitRootsSaga,
   uiLayoutPersistenceSaga,
   tabStateSaga,
