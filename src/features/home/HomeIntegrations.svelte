@@ -16,6 +16,11 @@
   import HomeWorkspaceDetail from './HomeWorkspaceDetail.svelte';
   import { onDestroy, untrack, tick, type Snippet } from 'svelte';
   import { goto } from '$app/navigation';
+  import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
+  import {
+    ignoreRepeatHomeWorkspaceClick,
+    openHomeWorkspaceFromDoubleClick,
+  } from './home-workspace-opening';
   import { handleLink } from '$features/navigation/link-handler';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { Button } from '$lib/components/ui/button';
@@ -275,6 +280,10 @@
       workspaceId: linkedWorkspace ? WorkspaceId(linkedWorkspace.workspaceId) : undefined,
     });
   }
+  function goToWorkspace(id: string) {
+    appStore.dispatch(openWorkspaceTab(id));
+    void goto(`/workspace/${encodeURIComponent(id)}`);
+  }
   function openWorkspace() {
     if (!linkedWorkspace) return;
     workspacePreviewId = linkedWorkspace.workspaceId;
@@ -434,9 +443,10 @@
           getKey={(item) => item.id}
           getText={(item) => item.title}
           selectable="single"
-          selectedKeys={selectedId ? [selectedId] : []}
-          onSelectedKeysChange={(keys) =>
-            selectItem(keys[0] === undefined ? null : String(keys[0]))}
+          bind:selectedKeys={
+            () => (selectedId ? [selectedId] : []),
+            (keys) => selectItem(keys[0] === undefined ? null : String(keys[0]))
+          }
           ariaLabel={isPr ? m.home_integrations_prs() : m.home_integrations_issues()}
           class="px-5"
         >
@@ -446,8 +456,24 @@
                 : m.home_integrations_empty()}
             </p>{/snippet}
           {#snippet row({ item })}
+            {@const linked = $linkedWorkspaces$.find(
+              (link) => link.url === item.url.replace(/\/$/, '').toLowerCase(),
+            )}
             <ListRow
               class="home-list-row home-integration-row min-h-12 items-start border-b border-border px-2 py-3"
+              onclick={(event) => {
+                if (isPr) ignoreRepeatHomeWorkspaceClick(event);
+              }}
+              ondblclick={(event) => {
+                if (!isPr || !linked) return;
+                openHomeWorkspaceFromDoubleClick(event, linked.workspaceId, (id) => {
+                  const current = preview
+                    ? selectedId
+                    : selectHomeIntegrations.select(appStore.state).selectedId;
+                  if (current !== item.id) void selectItem(item.id);
+                  goToWorkspace(id);
+                });
+              }}
             >
               {#snippet leading()}{#if isPr}<HomePullState
                     state={item.state}
@@ -513,9 +539,6 @@
                 </div>
               {/snippet}
               {#snippet description()}
-                {@const linked = $linkedWorkspaces$.find(
-                  (link) => link.url === item.url.replace(/\/$/, '').toLowerCase(),
-                )}
                 {#if linked}
                   <div class="pt-2 pb-1">
                     <Button

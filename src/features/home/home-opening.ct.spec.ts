@@ -172,3 +172,18 @@ test('Home board opens a card on double-click', async ({ mount, page }) => {
   const tabs = await page.evaluate(() => window.__homeWorkspacePreview?.navigation().tabOrder);
   expect(tabs?.filter((id) => id === 'home-review')).toHaveLength(1);
 });
+
+test('Home board double-click on an already selected card keeps it selected', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(Preview, { props: { scenario: 'board' } });
+  const card = component.locator('[data-home-workspace="home-review"]');
+  await card.click();
+  await expect(card).toHaveAttribute('aria-pressed', 'true');
+  await card.dblclick();
+  await expect
+    .poll(() => page.evaluate(() => window.__homeWorkspacePreview?.navigation().currentTabId))
+    .toBe('home-review');
+  await expect(card).toHaveAttribute('aria-pressed', 'true');
+});

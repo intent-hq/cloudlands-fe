@@ -110,7 +110,12 @@
     store.dispatch(openWorkspaceTab(id));
     void goto(`/workspace/${encodeURIComponent(id)}`);
   }
+  function openSelectedWorkspace(id: string) {
+    updateView({ selectedId: id });
+    openWorkspace(id);
+  }
   function openModifiedWorkspace(event: MouseEvent | KeyboardEvent, id: string) {
+    if (event instanceof MouseEvent && ignoreRepeatHomeWorkspaceClick(event)) return;
     openHomeWorkspaceFromEvent(event, id, openWorkspace);
   }
   function showWorkspaceMenu(event: MouseEvent | KeyboardEvent, workspace: Workspace) {
@@ -896,6 +901,7 @@
                             onselect={(id) =>
                               updateView({ selectedId: selectedId === id ? null : id })}
                             onopen={openWorkspace}
+                            onopenselected={openSelectedWorkspace}
                             oncontextmenu={showWorkspaceMenu}
                             archived={filter === 'archived'}
                           />
@@ -909,15 +915,13 @@
                             <ListRow
                               class="home-list-row h-12 items-center border-b border-border px-3 py-1"
                               data-home-workspace={item.id}
-                              onclick={(event) => {
-                                if (!ignoreRepeatHomeWorkspaceClick(event))
-                                  openModifiedWorkspace(event, item.id);
-                              }}
+                              onclick={(event) => openModifiedWorkspace(event, item.id)}
                               ondblclick={(event) =>
-                                openHomeWorkspaceFromDoubleClick(event, item.id, (id) => {
-                                  updateView({ selectedId: id });
-                                  openWorkspace(id);
-                                })}
+                                openHomeWorkspaceFromDoubleClick(
+                                  event,
+                                  item.id,
+                                  openSelectedWorkspace,
+                                )}
                               oncontextmenu={(event) => showWorkspaceMenu(event, item)}
                             >
                               {#snippet leading()}

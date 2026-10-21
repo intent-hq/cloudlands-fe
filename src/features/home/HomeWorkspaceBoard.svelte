@@ -24,6 +24,7 @@
     selectedId,
     onselect,
     onopen,
+    onopenselected = onopen,
     oncontextmenu,
     archived = false,
     showRepository = true,
@@ -35,6 +36,8 @@
     selectedId: string | null;
     onselect: (id: string) => void;
     onopen: (id: string) => void;
+    /** Opens the workspace and keeps it selected in Home (double-click). */
+    onopenselected?: (id: string) => void;
     oncontextmenu?: (event: MouseEvent | KeyboardEvent, workspace: Workspace) => void;
     archived?: boolean;
     showRepository?: boolean;
@@ -110,10 +113,7 @@
                   onselect(workspace.id);
               }}
               ondblclick={(event) =>
-                openHomeWorkspaceFromDoubleClick(event, workspace.id, (id) => {
-                  if (selectedId !== id) onselect(id);
-                  onopen(id);
-                })}
+                openHomeWorkspaceFromDoubleClick(event, workspace.id, onopenselected)}
               oncontextmenu={(event) => oncontextmenu?.(event, workspace)}
               onkeydown={(event) => {
                 oncontextmenu?.(event, workspace);
