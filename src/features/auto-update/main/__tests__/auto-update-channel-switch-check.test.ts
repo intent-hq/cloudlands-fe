@@ -251,7 +251,7 @@ describe('channel-switch immediate update check', () => {
     await vi.waitFor(() => expect(checkMock).toHaveBeenCalledTimes(1));
     expect(feedMock).toHaveBeenLastCalledWith({
       provider: 'generic',
-      url: expect.stringMatching(/\/beta$/),
+      url: expect.stringMatching(/\/beta(\?|$)/),
     });
 
     // The new feed resolves to the same version (electron-updater re-resolves
@@ -306,6 +306,10 @@ describe('channel-switch immediate update check', () => {
 
   it("a genuine error after the cancellation settled via 'update-cancelled' still surfaces", async () => {
     const { setChannelHandler, checkMock, downloadMock, service } = await setup();
+    // Direct GitHub feed: this error event models the fresh check's own
+    // failure. On the telemetry feed that failure is retried on GitHub
+    // instead (auto-update-telemetry-feed.test.ts).
+    await service.setShareStatistics(false);
 
     updaterHandlers['update-available']({ version: '2.1.0', releaseDate: '2026-01-01' });
     let rejectDownload!: (e: Error) => void;
@@ -517,7 +521,7 @@ describe('channel-switch immediate update check', () => {
     await vi.waitFor(() => expect(checkMock).toHaveBeenCalledTimes(1));
     expect(feedMock).toHaveBeenLastCalledWith({
       provider: 'generic',
-      url: expect.stringMatching(/\/alpha$/),
+      url: expect.stringMatching(/\/alpha(\?|$)/),
     });
 
     // The recheck carries manual feedback for the new feed's answer.
@@ -578,7 +582,7 @@ describe('channel-switch immediate update check', () => {
     expect(service.getState().updateInfo).toBeNull();
     expect(feedMock).toHaveBeenLastCalledWith({
       provider: 'generic',
-      url: expect.stringMatching(/\/beta$/),
+      url: expect.stringMatching(/\/beta(\?|$)/),
     });
   });
 
@@ -634,7 +638,7 @@ describe('channel-switch immediate update check', () => {
     expect(service.getState().updateInfo).toBeNull();
     expect(feedMock).toHaveBeenLastCalledWith({
       provider: 'generic',
-      url: expect.stringMatching(/\/beta$/),
+      url: expect.stringMatching(/\/beta(\?|$)/),
     });
   });
 
@@ -842,7 +846,7 @@ describe("'disabled' update channel", () => {
 
     expect(feedMock).toHaveBeenLastCalledWith({
       provider: 'generic',
-      url: expect.stringMatching(/\/beta$/),
+      url: expect.stringMatching(/\/beta(\?|$)/),
     });
     await vi.waitFor(() =>
       expect(mockWindow.webContents.send).toHaveBeenCalledWith('auto-update:show-toast'),
