@@ -80,7 +80,11 @@ describe('agent workers channel', () => {
     push('sub-1', 1);
     expect(states).toEqual([]);
     push('sub-1', 0);
-    expect(last()).toEqual({ status: 'ready', snapshot: workerSnapshotFixture });
+    expect(last()).toEqual({
+      status: 'ready',
+      snapshot: workerSnapshotFixture,
+      receivedAt: expect.any(Number),
+    });
     push('other-sub', 1, { ...workerSnapshotFixture, workers: [] });
     push('sub-1', 0, { ...workerSnapshotFixture, workers: [] });
     expect(last().snapshot?.workers).toHaveLength(1);
@@ -145,6 +149,51 @@ describe('agent workers channel', () => {
     });
     await open();
     expect(last().status).toBe('failed');
+  });
+
+  it('clears cached rows when a later subscribe fails (permission or ownership loss)', async () => {
+    await open();
+    push('sub-1', 0);
+    vi.mocked(backendRequest).mockImplementation(async (method) => {
+      if (method === 'client.hello') return { server: { capabilities: { agentWorkers: 1 } } };
+      throw Object.assign(new Error('not found'), { rpcCode: -32602 });
+    });
+    reconnect();
+    await settle();
+    expect(last()).toEqual({ status: 'failed' });
+  });
+
+  it('keeps the existing binding and sequence when an acknowledgement is malformed', async () => {
+    acks = ['sub-1', ''];
+    await open();
+    push('sub-1', 0);
+    channel!.retry();
+    await settle();
+    expect(backendUnsubscribe).not.toHaveBeenCalled();
+    push('sub-1', 0, { ...workerSnapshotFixture, workers: [] });
+    expect(last().snapshot?.workers).toHaveLength(1);
+    push('sub-1', 1, { ...workerSnapshotFixture, workers: [] });
+    expect(last().snapshot?.workers).toEqual([]);
+  });
+
+  it('shows running rows as unknown as soon as the frontend disconnects and rejects later pushes', async () => {
+    await open();
+    push('sub-1', 0);
+    channel!.disconnected();
+    expect(last().snapshot?.workers[0]).toMatchObject({
+      status: 'unknown',
+      unknownReason: 'disconnected',
+    });
+    push('sub-1', 1);
+    expect(last().snapshot?.workers[0].status).toBe('unknown');
+  });
+
+  it('records when each snapshot arrived so start times survive daemon clock skew', async () => {
+    await open();
+    const before = Date.now();
+    push('sub-1', 0);
+    expect(last().receivedAt).toBeGreaterThanOrEqual(before);
+    expect(last().receivedAt).toBeLessThanOrEqual(Date.now());
   });
 
   it("stops a worker with its row's generation and releases the subscription on dispose", async () => {

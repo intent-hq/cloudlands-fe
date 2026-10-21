@@ -11,12 +11,14 @@ import {
   agentWorkerOperationUpdated,
   agentWorkerStopRequested,
   agentWorkersKey,
+  agentWorkersRemoved,
   agentWorkersRetryRequested,
   agentWorkersSubscribeRequested,
   agentWorkersUnsubscribeRequested,
   agentWorkersUpdated,
 } from '../agent-workers-slice';
 import { selectAgentWorkers } from '../agent-workers-selectors';
+import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice';
 
 type Lease = {
   count: number;
@@ -65,7 +67,15 @@ export function* agentWorkersSaga(): SagaGenerator<void> {
         if (lease && --lease.count === 0) {
           leases.delete(key);
           lease.channel.close();
+          yield* put(agentWorkersRemoved(workspaceId, agentId));
         }
+      },
+    );
+    yield* takeEvery(
+      connectionStatusChanged,
+      function* ({ payload: [status] }): SagaGenerator<void> {
+        if (status !== 'disconnected' && status !== 'connecting') return;
+        for (const lease of leases.values()) lease.service.disconnected();
       },
     );
     yield* takeEvery(
@@ -89,22 +99,24 @@ export function* agentWorkersSaga(): SagaGenerator<void> {
         );
         try {
           const result = yield* call([lease.service, lease.service.stop], asyncTaskId);
-          if (leases.get(key) !== lease) return;
+          // Always settle the pending flag, even if the lease was replaced meanwhile.
           yield* put(
             agentWorkerOperationUpdated(workspaceId, agentId, asyncTaskId, { pending: false }),
           );
           // On success the provider's own `stopped` report removes the row.
-          if (!result.stopped)
+          if (!result.stopped && leases.get(key) === lease)
             yield* call(notify.info, m.chat_agentWorkers_alreadyEnded_description());
         } catch {
-          if (leases.get(key) === lease)
-            yield* put(
-              agentWorkerOperationUpdated(workspaceId, agentId, asyncTaskId, {
-                pending: false,
-                error: true,
-                message: m.chat_agentWorkers_stop_error(),
-              }),
-            );
+          yield* put(
+            agentWorkerOperationUpdated(
+              workspaceId,
+              agentId,
+              asyncTaskId,
+              leases.get(key) === lease
+                ? { pending: false, error: true, message: m.chat_agentWorkers_stop_error() }
+                : { pending: false },
+            ),
+          );
         }
       },
     );

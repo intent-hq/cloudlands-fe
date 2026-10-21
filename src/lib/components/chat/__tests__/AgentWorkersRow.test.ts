@@ -15,6 +15,7 @@ import {
 } from '$store/renderer/slices/agent-workers/agent-workers-slice';
 import { selectAgentWorkers } from '$store/renderer/slices/agent-workers/agent-workers-selectors';
 import { removeWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
 import { setSubscriptionSnapshot } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
 import { notify } from '$lib/components/patterns/notify';
 import {
@@ -193,6 +194,65 @@ describe('agent worker rows', () => {
     expect(within(rows[0]).queryByRole('button', { name: /Actions for/ })).toBeNull();
   });
 
+  it('forgets the view when the last lease is released, so no stale Running rows remain', async () => {
+    await mountRow();
+    push(snapshot([workerFixture]));
+    await screen.findByTestId('agent-worker-row');
+    store.dispatch(agentWorkersUnsubscribeRequested(ws, agent));
+    await waitFor(() => expect(screen.queryByTestId('agent-worker-row')).toBeNull());
+    expect(selectAgentWorkers.select(store.state, ws, agent).snapshot).toBeUndefined();
+  });
+
+  it('does not leave a stop pending when the lease is replaced mid-request', async () => {
+    let answer!: (value: unknown) => void;
+    stopAnswer = () => new Promise((resolve) => (answer = resolve));
+    await mountRow();
+    push(snapshot([workerFixture]));
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Actions for Start the dev server' }),
+    );
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Stop' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('agent-worker-state').textContent).toBe('Stopping…'),
+    );
+    store.dispatch(agentWorkersUnsubscribeRequested(ws, agent));
+    store.dispatch(agentWorkersSubscribeRequested(ws, agent));
+    seq = 0;
+    push(snapshot([workerFixture]));
+    answer({ asyncTaskId: taskId, stopped: true });
+    await waitFor(() =>
+      expect(screen.getByTestId('agent-worker-state').textContent).toBe('Running'),
+    );
+    expect(
+      screen
+        .getByRole('button', { name: 'Actions for Start the dev server' })
+        .hasAttribute('disabled'),
+    ).toBe(false);
+  });
+
+  it('shows running rows as Connection lost as soon as the daemon connection drops', async () => {
+    await mountRow();
+    push(snapshot([workerFixture]));
+    await screen.findByTestId('agent-worker-row');
+    store.dispatch(connectionStatusChanged('disconnected'));
+    await waitFor(() =>
+      expect(screen.getByTestId('agent-worker-state').textContent).toBe('Connection lost'),
+    );
+    expect(screen.queryByRole('button', { name: /Actions for/ })).toBeNull();
+  });
+
+  it('measures the start time on the daemon clock, so client clock skew does not shift it', async () => {
+    await mountRow();
+    const asOf = Date.now() + 60 * 60 * 1000;
+    push({
+      ...snapshot([{ ...workerFixture, firstObservedAt: asOf - 2 * 60 * 1000, observedAt: asOf }]),
+      asOf,
+    });
+    const row = await screen.findByTestId('agent-worker-row');
+    await fireEvent.click(within(row).getAllByRole('button', { name: 'Start the dev server' })[0]);
+    expect(row.textContent).toContain('2 minutes ago');
+  });
+
   it('shows nothing when the daemon does not advertise agentWorkers', async () => {
     vi.mocked(backendRequest).mockImplementation(async (method) =>
       method === 'client.hello' ? { server: { capabilities: {} } } : undefined,
@@ -228,6 +288,38 @@ describe('agent worker rows', () => {
     push(snapshot([workerFixture]));
     expect(await card.findByTestId('agent-worker-row')).toBeTruthy();
     expect(area().getAttribute('data-has-subscriptions')).toBe('true');
+  });
+
+  it('marks the count as a lower bound when the daemon reports a truncated view', async () => {
+    store.dispatch(
+      setSubscriptionSnapshot(ws, agent, {
+        subscriptions: [],
+        delegationGroups: [],
+        agentStatuses: {},
+        waitingState: 'idle',
+      }),
+    );
+    setEventSubscriptionsExpanded(ws, agent, true);
+    const card = within(
+      render(EventSubscriptionsCard, { workspaceId: ws, agentId: agent }).container,
+    );
+    await waitFor(() =>
+      expect(backendRequest).toHaveBeenCalledWith('agent.workers.subscribe', {
+        workspaceId: ws,
+        agentId: agent,
+      }),
+    );
+    const second = {
+      ...workerFixture,
+      identity: { ...workerFixture.identity, asyncTaskId: 'bg-2' },
+    };
+    push({ ...snapshot([workerFixture, second]), truncated: false });
+    expect(await card.findAllByTestId('agent-worker-row')).toHaveLength(2);
+    expect(card.getByTestId('subscription-utility-area').textContent).not.toMatch(/2\+/);
+    push({ ...snapshot([workerFixture, second]), truncated: true });
+    await waitFor(() =>
+      expect(card.getByTestId('subscription-utility-area').textContent).toMatch(/2\+/),
+    );
   });
 });
 

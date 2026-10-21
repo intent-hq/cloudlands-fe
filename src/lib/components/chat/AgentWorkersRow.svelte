@@ -47,6 +47,13 @@
   let expanded = $state<string | null>(null);
   const label = (row: WorkerObservation) =>
     row.name?.trim() || row.taskType?.trim() || m.chat_agentWorkers_unnamed_label();
+  /** Daemon-clock age (asOf - firstObservedAt) anchored to arrival time, so skew cancels. */
+  const startedAt = (row: WorkerObservation) => {
+    const { snapshot, receivedAt } = $entry$;
+    return snapshot && receivedAt !== undefined
+      ? receivedAt - Math.max(0, snapshot.asOf - row.firstObservedAt)
+      : row.firstObservedAt;
+  };
   function toggleDetails(id: string) {
     expanded = expanded === id ? null : id;
   }
@@ -171,7 +178,7 @@
           >{/if}
         <span
           >{m.chat_agentWorkers_started_description({
-            time: formatRelativeTime(row.firstObservedAt),
+            time: formatRelativeTime(startedAt(row)),
           })}</span
         >
         {#if row.status === 'unknown'}<span>{m.chat_agentWorkers_unknown_description()}</span>{/if}

@@ -33,6 +33,9 @@ export const agentWorkersUpdated =
   createAction<[workspaceId: string, agentId: string, state: AgentWorkersState]>(
     'agentWorkers/updated',
   );
+/** The last lease was released: forget the view so no unobserved rows linger (§5.5b). */
+export const agentWorkersRemoved =
+  createAction<[workspaceId: string, agentId: string]>('agentWorkers/removed');
 export const agentWorkerStopRequested =
   createAction<[workspaceId: string, agentId: string, asyncTaskId: string]>('agentWorkers/stop');
 export const agentWorkerOperationUpdated =
@@ -72,6 +75,12 @@ agentWorkersReducer.with(
     };
   },
 );
+agentWorkersReducer.with(agentWorkersRemoved, (state, { payload: [workspaceId, agentId] }) => {
+  const key = agentWorkersKey(workspaceId, agentId);
+  if (!state.byKey[key]) return state;
+  const { [key]: _removed, ...byKey } = state.byKey;
+  return { ...state, byKey };
+});
 agentWorkersReducer.with(removeWorkspaceEntity, (state, { payload: [workspaceId] }) => ({
   ...state,
   byKey: Object.fromEntries(

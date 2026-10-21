@@ -156,7 +156,15 @@
   const workersFailed = $derived(!isolatedPreview && isActive && $workerEntry$.status === 'failed');
   const hasWorkers = $derived(workerCount > 0 || workersFailed);
   // "+": more script monitors may exist than this chat has read.
-  const countSuffix = $derived($scriptPage$.nextCursor || scriptsFailed ? '+' : '');
+  // A truncated or unavailable worker view cannot claim an exhaustive count (§5.5b).
+  const workersPartial = $derived(
+    workerCount > 0 &&
+      ($workerEntry$.snapshot?.truncated === true ||
+        $workerEntry$.snapshot?.support.status !== 'supported'),
+  );
+  const countSuffix = $derived(
+    $scriptPage$.nextCursor || scriptsFailed || workersPartial ? '+' : '',
+  );
   const monitors$ = selectAgentPrMonitors(workspaceIdStore, agentIdStore);
   const agentSubscriptionLane$ = selectAgentSubscriptionLane(workspaceIdStore, agentIdStore);
   const agentSessionsById$ = selectAgentSessionsById();

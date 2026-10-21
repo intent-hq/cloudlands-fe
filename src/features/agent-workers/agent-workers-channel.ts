@@ -77,11 +77,16 @@ function demoteDisconnected(snapshot: WorkerSnapshot): WorkerSnapshot {
 
 export interface AgentWorkersChannel {
   retry(): void;
+  /** The daemon connection dropped: the subscription is gone, so stop trusting running rows. */
+  disconnected(): void;
   stop(asyncTaskId: string): Promise<WorkerStopResult>;
   dispose(): void;
 }
 
-/** Attach the listener before subscribing: seq 0 can race the subscribe reply. Only the
+/** Attach the listener before subscribing: the daemon writes the ack before seq 0, but the
+ * ack settles through a promise while the push is dispatched synchronously, so the push can
+ * reach this listener first. Such frames are held (bounded) and admitted only if their ID
+ * matches the acknowledgement; nothing updates the view before the ack. Only the
  * currently acknowledged subscription may update the view; pushes need seq 0 first, then
  * strictly increasing seq (a gap is safe: every push is a complete replacement). */
 export function subscribeAgentWorkers(
@@ -107,7 +112,7 @@ export function subscribeAgentWorkers(
     if (frame.subscriptionId !== subscriptionId) return;
     if (lastSeq === -1 ? frame.seq !== 0 : frame.seq <= lastSeq) return;
     lastSeq = frame.seq;
-    state = { status: 'ready', snapshot: frame.snapshot };
+    state = { status: 'ready', snapshot: frame.snapshot, receivedAt: Date.now() };
     emit();
   };
   const offNotification = onBackendNotification(({ method, params }) => {
@@ -117,7 +122,7 @@ export function subscribeAgentWorkers(
     const snapshot = parseWorkerSnapshot(params.snapshot, workspaceId, agentId);
     if (!snapshot) return;
     const frame = { subscriptionId: params.subscriptionId, seq: params.seq as number, snapshot };
-    if (registering) {
+    if (registering && frame.subscriptionId !== subscriptionId) {
       // Bounded even if unrelated registrations send a burst before our ack.
       if (beforeAck.length === 32) beforeAck.shift();
       beforeAck.push(frame);
@@ -126,8 +131,6 @@ export function subscribeAgentWorkers(
 
   async function start() {
     const version = ++epoch;
-    release();
-    lastSeq = -1;
     beforeAck = [];
     registering = true;
     const stale = () => disposed || version !== epoch;
@@ -152,8 +155,16 @@ export function subscribeAgentWorkers(
           void backendUnsubscribe(ack.subscriptionId, workspaceId).catch(() => {});
         return;
       }
-      if (!wireId(ack?.subscriptionId)) throw new Error('invalid agent.workers.subscribe ack');
+      if (!wireId(ack?.subscriptionId)) {
+        // A malformed ack leaves the existing binding and sequence untouched.
+        registering = false;
+        beforeAck = [];
+        if (subscriptionId) return;
+        throw new Error('invalid agent.workers.subscribe ack');
+      }
+      release();
       subscriptionId = ack.subscriptionId;
+      lastSeq = -1;
       registering = false;
       const queued = beforeAck;
       beforeAck = [];
@@ -161,21 +172,25 @@ export function subscribeAgentWorkers(
     } catch (error) {
       if (stale()) return;
       registering = false;
-      state = isMethodMissing(error)
-        ? { status: 'unsupported' }
-        : { status: 'failed', snapshot: state.snapshot };
+      // Clear the view: a failure may be a permission or ownership loss (§5.5b).
+      state = isMethodMissing(error) ? { status: 'unsupported' } : { status: 'failed' };
+      emit();
+    }
+  }
+
+  /** The old subscription died with the connection; show its running rows as unknown. */
+  function markDisconnected() {
+    subscriptionId = undefined;
+    lastSeq = -1;
+    if (state.snapshot) {
+      state = { ...state, snapshot: demoteDisconnected(state.snapshot) };
       emit();
     }
   }
 
   const offReconnected = onBackendReconnected(() => {
     if (disposed) return;
-    // The old subscription died with the connection; show its running rows as unknown.
-    subscriptionId = undefined;
-    if (state.snapshot) {
-      state = { ...state, snapshot: demoteDisconnected(state.snapshot) };
-      emit();
-    }
+    markDisconnected();
     void start();
   });
 
@@ -184,6 +199,9 @@ export function subscribeAgentWorkers(
   return {
     retry() {
       if (!disposed) void start();
+    },
+    disconnected() {
+      if (!disposed) markDisconnected();
     },
     async stop(asyncTaskId) {
       const row = state.snapshot?.workers.find((w) => w.identity.asyncTaskId === asyncTaskId);

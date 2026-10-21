@@ -45,6 +45,8 @@ type AgentWorkersStatus = 'loading' | 'ready' | 'failed' | 'unsupported';
 export interface AgentWorkersState {
   status: AgentWorkersStatus;
   snapshot?: WorkerSnapshot;
+  /** Client clock when `snapshot` arrived; anchors daemon-clock deltas (asOf - t) so skew cancels. */
+  receivedAt?: number;
 }
 
 export interface WorkerStopResult {
