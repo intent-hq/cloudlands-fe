@@ -20,6 +20,7 @@ import type { CatalogRendererId } from './catalog-renderers';
 import { waitForCaptureStability } from './capture-stability';
 import {
   catalogContractBudgetMs,
+  renderWaitMs,
   snapshotLineCounts,
   snapshotLinesFor,
 } from './catalog-contract-budget';
@@ -124,6 +125,7 @@ const cases: ContractCase[] = [
 ].sort((left, right) => left.key.localeCompare(right.key));
 // Each entry's budget follows its committed DOM snapshot size, so heavy fixtures
 // get time in proportion to what they render (see catalog-contract-budget.ts).
+const CONTRACT_DESCRIBE = 'catalog DOM, token, and accessibility contracts';
 // A filesystem path, not `new URL(…, import.meta.url)`: Vite rewrites that into a dev-server URL.
 const snapshotPath = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -132,9 +134,18 @@ const snapshotPath = path.join(
 );
 const snapshotLines = snapshotLineCounts(
   existsSync(snapshotPath) ? readFileSync(snapshotPath, 'utf8') : '',
+  CONTRACT_DESCRIBE,
 );
-const budgetMs = (testCase: ContractCase) =>
-  catalogContractBudgetMs(snapshotLinesFor(snapshotLines, testCase.key), defaultTestTimeoutMs());
+const unsizedKeys = cases
+  .filter(({ key }) => snapshotLinesFor(snapshotLines, key) === undefined)
+  .map(({ key }) => key);
+const budgets = new Map(
+  cases.map(({ key }) => [
+    key,
+    catalogContractBudgetMs(snapshotLinesFor(snapshotLines, key), defaultTestTimeoutMs()),
+  ]),
+);
+const budgetMs = ({ key }: ContractCase) => budgets.get(key)!;
 
 const intentionalAxeAllowlist: Record<string, ReadonlyArray<{ rule: string; reason: string }>> = {
   'pattern:collection:collection-states': [
@@ -256,7 +267,7 @@ async function verifyCatalogContract(testCase: ContractCase) {
         ),
       ).not.toBeNull();
     },
-    { timeout: budgetMs(testCase) },
+    { timeout: renderWaitMs(budgetMs(testCase)) },
   );
   await tick();
   await waitForCaptureStability(document.body, { timeoutMs: 2_000 });
@@ -325,21 +336,19 @@ describe('catalog generated identity normalization', () => {
 });
 
 describe('catalog contract budgets', () => {
-  // Without this, an unreadable snapshot would silently put every entry on the fallback.
-  it.runIf(existsSync(snapshotPath))('reads entry sizes from the committed snapshot', () => {
-    expect(snapshotLines.size).toBeGreaterThan(0);
+  // Without these, an unreadable snapshot or a drift from vitest's title format
+  // would silently put every entry on the fallback budget.
+  it.runIf(existsSync(snapshotPath))('sizes most entries from the committed snapshot', () => {
+    expect(unsizedKeys.length).toBeLessThan(cases.length / 2);
   });
 
-  // CI never writes new snapshots, so there every entry must resolve to its committed
-  // snapshot; an unresolved one means the title matching drifted from vitest's format.
+  // CI never writes new snapshots, so there every entry must resolve to its snapshot.
   it.runIf(isCiEnv())('sizes every entry from its committed snapshot', () => {
-    expect(
-      cases.filter((testCase) => snapshotLinesFor(snapshotLines, testCase.key) === undefined),
-    ).toEqual([]);
+    expect(unsizedKeys).toEqual([]);
   });
 });
 
-describe.sequential('catalog DOM, token, and accessibility contracts', () => {
+describe.sequential(CONTRACT_DESCRIBE, () => {
   // One `it.each` per case keeps the `$key` titles, and so the snapshot keys, unchanged.
   for (const testCase of cases) {
     it.each([testCase])('$key', verifyCatalogContract, budgetMs(testCase));
