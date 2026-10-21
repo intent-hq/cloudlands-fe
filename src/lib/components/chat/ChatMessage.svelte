@@ -1924,6 +1924,7 @@
                         : undefined}
                       download={!fileBlock.attachmentId ? fileBlock.fileName : undefined}
                       disabled={isAttachmentHydrationLoading(fileBlock.id) ||
+                        (pendingFileHydration !== null && canHydrateFile(fileBlock)) ||
                         (!fileBlock.attachmentId && !fileBlock.data && !canHydrateFile(fileBlock))}
                       onclick={() => {
                         if (fileBlock.attachmentId) openAttachmentReference(fileBlock);

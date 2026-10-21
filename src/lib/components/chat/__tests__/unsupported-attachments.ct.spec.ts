@@ -4,6 +4,38 @@ import ChatMessage from '../ChatMessage.svelte';
 import AttachmentPreview from '../AttachmentPreview.svelte';
 import UnsupportedAttachmentHydrationHost from './UnsupportedAttachmentHydrationHost.svelte';
 
+test('two legacy file chips cannot replace an in-flight download', async ({
+  mount,
+  page,
+}, testInfo) => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"><text>Original bytes</text></svg>';
+  await mount(UnsupportedAttachmentHydrationHost, {
+    props: { data: Buffer.from(svg).toString('base64'), secondImage: true },
+  });
+  const chips = page.getByTestId('chat-message-file-chip');
+  await expect(chips).toHaveCount(2);
+  for (const index of [0, 1]) {
+    await expect(chips.nth(index)).toBeEnabled();
+    await chips.nth(index).click();
+    await expect(chips.nth(index)).toBeDisabled();
+    if (index === 0) await expect(chips.nth(1)).toBeDisabled();
+    const downloadReady = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Finish hydration' }).click();
+    const download = await downloadReady;
+    const path = testInfo.outputPath(`original-${index}.svg`);
+    await download.saveAs(path);
+    const { readFile } = await import('node:fs/promises');
+    expect(await readFile(path, 'utf8')).toBe(svg);
+    await testInfo.attach(`original-${index}.svg`, { path, contentType: 'image/svg+xml' });
+  }
+  await expect(page.getByTestId('hydration-requests')).toHaveText(
+    JSON.stringify([
+      { agentId: 'legacy-agent', messageId: 'legacy-message', blockId: 'legacy-image' },
+      { agentId: 'legacy-agent', messageId: 'legacy-message', blockId: 'second-image' },
+    ]),
+  );
+});
+
 for (const hasThumbnail of [false, true]) {
   test(`legacy SVG hydrates before download and retries failure (thumbnail: ${hasThumbnail})`, async ({
     mount,

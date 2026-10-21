@@ -5,7 +5,11 @@
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { createAttachmentHydrationFixture } from './mocks/attachment-hydration';
 
-  let { data, thumbnail }: { data: string; thumbnail?: string } = $props();
+  let {
+    data,
+    thumbnail,
+    secondImage = false,
+  }: { data: string; thumbnail?: string; secondImage?: boolean } = $props();
   let requests = $state<unknown[]>([]);
   const fixture = createAttachmentHydrationFixture((params) => {
     requests = [...requests, params];
@@ -30,6 +34,16 @@
         dataTruncated: true,
         data: thumbnail,
       },
+      ...(secondImage
+        ? [
+            {
+              id: 'second-image',
+              type: 'image' as const,
+              mimeType: 'image/svg+xml',
+              dataTruncated: true,
+            },
+          ]
+        : []),
     ],
   }}
 />

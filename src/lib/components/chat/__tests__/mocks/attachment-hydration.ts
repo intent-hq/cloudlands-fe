@@ -6,8 +6,10 @@ import { installMockElectronBridge } from '../../../../../test/ct-mock-electron-
 export function createAttachmentHydrationFixture(onRequest: (params: unknown) => void) {
   let resolveRequest: ((value: unknown) => void) | undefined;
   let rejectRequest: ((error: Error) => void) | undefined;
+  let blockId = 'legacy-image';
   installMockElectronBridge({
     'agent.getMessageBlock': (params) => {
+      blockId = (params as { blockId: string }).blockId;
       onRequest(params);
       return new Promise((resolve, reject) => {
         resolveRequest = resolve;
@@ -20,7 +22,7 @@ export function createAttachmentHydrationFixture(onRequest: (params: unknown) =>
     finish: (data: string) =>
       resolveRequest?.({
         block: {
-          id: 'legacy-image',
+          id: blockId,
           type: 'image',
           mimeType: 'image/svg+xml',
           fileName: 'original.svg',
