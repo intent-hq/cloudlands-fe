@@ -1,5 +1,9 @@
 import type { DiscussionAgentMention } from '../discussion-agent-mentions';
-import type { DiscussionAuthor, DiscussionMessage } from '$shared/types/workspace-discussion';
+import type {
+  DiscussionAuthor,
+  DiscussionMessage,
+  DiscussionReactor,
+} from '$shared/types/workspace-discussion';
 
 export interface DiscussionPendingDisplay {
   id: string;
@@ -17,4 +21,5 @@ export interface DiscussionReactionDisplay {
   emoji: string;
   count: number;
   reacted: boolean;
+  reactors?: readonly DiscussionReactor[];
 }

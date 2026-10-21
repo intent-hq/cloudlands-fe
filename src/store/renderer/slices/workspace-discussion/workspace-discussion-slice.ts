@@ -15,6 +15,7 @@ import {
   discussionAgentControlKey,
   type DiscussionAgentActivity,
   isDiscussionReactionResult,
+  hasDiscussionReactions,
   type DiscussionReactionResult,
   type DiscussionReactionValue,
   isDiscussionMessage,
@@ -110,6 +111,7 @@ export interface WorkspaceDiscussionState {
   conversationsSupported: boolean | null;
   sharingEnabled: boolean | null;
   messageActionsSupported: boolean | null;
+  reactionsSupported: boolean | null;
   agentMessagingSupported: boolean | null;
   agentActivitySupported: boolean | null;
   directories: Record<string, DiscussionDirectory>;
@@ -167,6 +169,7 @@ export const initialState: WorkspaceDiscussionState = {
   conversationsSupported: null,
   sharingEnabled: null,
   messageActionsSupported: null,
+  reactionsSupported: null,
   agentMessagingSupported: null,
   agentActivitySupported: null,
   directories: {},
@@ -227,6 +230,9 @@ export const discussionAgentControlFinished = createAction<
 export const discussionAgentCapabilityReceived = createAction<
   [context: string, supported: boolean]
 >('workspaceDiscussion/agentCapabilityReceived');
+export const discussionReactionsCapabilityReceived = createAction<
+  [context: string, supported: boolean]
+>('workspaceDiscussion/reactionsCapabilityReceived');
 export const discussionMessageActionsReceived = createAction<[context: string, supported: boolean]>(
   'workspaceDiscussion/messageActionsReceived',
 );
@@ -342,11 +348,32 @@ function current(
     ? row
     : undefined;
 }
-function matches(target: DiscussionTarget, message: DiscussionMessage): boolean {
+function matches(target: DiscussionTarget, message: DiscussionMessage, expanded = false): boolean {
   return (
+    (!expanded || hasDiscussionReactions(message)) &&
     message.workspaceId === target.workspaceId &&
     (message.conversationId ?? DEFAULT_DISCUSSION_ID) ===
       (target.conversationId ?? DEFAULT_DISCUSSION_ID)
+  );
+}
+/** A capability upgrade may add names without changing the authoritative reaction version. */
+function newerReactions(
+  previous: Pick<DiscussionMessage, 'reactions' | 'reactionVersion'>,
+  next: Pick<DiscussionMessage, 'reactions' | 'reactionVersion'>,
+): boolean {
+  if ((next.reactionVersion ?? -1) !== (previous.reactionVersion ?? -1))
+    return (next.reactionVersion ?? -1) > (previous.reactionVersion ?? -1);
+  return !!(
+    previous.reactions?.some((r) => r.reactors === undefined) &&
+    next.reactions?.length === previous.reactions.length &&
+    next.reactions.every(
+      (r) =>
+        r.reactors !== undefined &&
+        previous.reactions?.some(
+          (old) =>
+            old.reaction === r.reaction && old.count === r.count && old.reacted === r.reacted,
+        ),
+    )
   );
 }
 function receive(row: WorkspaceDiscussion, messages: DiscussionMessage[]): WorkspaceDiscussion {
@@ -356,7 +383,7 @@ function receive(row: WorkspaceDiscussion, messages: DiscussionMessage[]): Works
     const previous = merged.get(message.id);
     if (!previous) merged.set(message.id, message);
     else {
-      const newer = (message.reactionVersion ?? -1) > (previous.reactionVersion ?? -1);
+      const newer = newerReactions(previous, message);
       if (newer || (previous.replyTo === undefined && message.replyTo !== undefined))
         merged.set(message.id, {
           ...previous,
@@ -370,7 +397,7 @@ function receive(row: WorkspaceDiscussion, messages: DiscussionMessage[]): Works
     }
     const update = getItem(row.reactionUpdates, message.id);
     const currentMessage = merged.get(message.id) ?? message;
-    if (update && update.reactionVersion > (currentMessage.reactionVersion ?? -1))
+    if (update && newerReactions(currentMessage, update))
       merged.set(message.id, {
         ...currentMessage,
         reactions: update.reactions,
@@ -462,6 +489,7 @@ workspaceDiscussionReducer.with(
       conversationsSupported: null,
       sharingEnabled: null,
       messageActionsSupported: null,
+      reactionsSupported: null,
       agentMessagingSupported: null,
       agentActivitySupported: null,
       directories: {},
@@ -641,7 +669,9 @@ workspaceDiscussionReducer.with(
   discussionMessageReceived,
   (state, { payload: [target, message] }) => {
     const row = current(state, target);
-    return row && matches(target, message) ? set(state, target, receive(row, [message])) : state;
+    return row && matches(target, message, state.reactionsSupported === true)
+      ? set(state, target, receive(row, [message]))
+      : state;
   },
 );
 workspaceDiscussionReducer.with(
@@ -665,7 +695,11 @@ workspaceDiscussionReducer.with(
   discussionPageReceived,
   (state, { payload: [target, requestId, result, direction] }) => {
     const row = current(state, target);
-    if (!row || row.requestId !== requestId || result.messages.some((m) => !matches(target, m)))
+    if (
+      !row ||
+      row.requestId !== requestId ||
+      result.messages.some((m) => !matches(target, m, state.reactionsSupported === true))
+    )
       return state;
     if (result.conversation) state = rememberConversation(state, result.conversation);
     return set(state, target, {
@@ -792,13 +826,14 @@ workspaceDiscussionReducer.with(
     if (!sent) return state;
     if (
       !isDiscussionMessage(message) ||
+      (state.reactionsSupported === true && !hasDiscussionReactions(message)) ||
       (target.conversationId === NEW_DISCUSSION_ID
         ? message.workspaceId !== target.workspaceId ||
           !conversation ||
           !isDiscussionConversation(conversation) ||
           conversation.id !== message.conversationId ||
           conversation.id === DEFAULT_DISCUSSION_ID
-        : !matches(target, message)) ||
+        : !matches(target, message, state.reactionsSupported === true)) ||
       (sent.sentAgentMentions !== undefined &&
         JSON.stringify(sent.sentAgentMentions.map((m) => [m.agentId, m.name, m.start, m.end])) !==
           JSON.stringify(message.agentMentions?.map((m) => [m.agentId, m.name, m.start, m.end]))) ||
@@ -1203,6 +1238,11 @@ workspaceDiscussionReducer.with(
     state.context === context ? { ...state, agentMessagingSupported: supported } : state,
 );
 workspaceDiscussionReducer.with(
+  discussionReactionsCapabilityReceived,
+  (state, { payload: [context, supported] }) =>
+    state.context === context ? { ...state, reactionsSupported: supported } : state,
+);
+workspaceDiscussionReducer.with(
   discussionMessageActionsReceived,
   (state, { payload: [context, supported] }) =>
     state.context === context ? { ...state, messageActionsSupported: supported } : state,
@@ -1229,12 +1269,13 @@ workspaceDiscussionReducer.with(
   discussionReactionReceived,
   (state, { payload: [target, result] }) => {
     const row = current(state, target);
-    if (!row || !isDiscussionReactionResult(result)) return state;
+    if (!row || !isDiscussionReactionResult(result, state.reactionsSupported === true))
+      return state;
     const previous = getItem(row.reactionUpdates, result.messageId);
     const message = getItem(row.messages, result.messageId);
     if (
-      result.reactionVersion <=
-      Math.max(previous?.reactionVersion ?? -1, message?.reactionVersion ?? -1)
+      (previous && !newerReactions(previous, result)) ||
+      (message && !newerReactions(message, result))
     )
       return state;
     const updated = {
@@ -1285,7 +1326,11 @@ workspaceDiscussionReducer.with(
   discussionMetadataProgress,
   (state, { payload: [target, requestId, messages, before, floor] }) => {
     const row = current(state, target);
-    if (!row || row.requestId !== requestId || messages.some((m) => !matches(target, m)))
+    if (
+      !row ||
+      row.requestId !== requestId ||
+      messages.some((m) => !matches(target, m, state.reactionsSupported === true))
+    )
       return state;
     return set(state, target, {
       ...receive(row, messages),

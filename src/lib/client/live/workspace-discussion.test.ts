@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { workspaceDiscussionClient as client } from './workspace-discussion';
 import {
   isDiscussionMessageEvent,
+  isDiscussionReactionEvent,
   isDiscussionAgentActivityEvent,
   type DiscussionConversation,
 } from '$shared/types/workspace-discussion';
@@ -421,5 +422,131 @@ describe('immutable selected agent mention metadata', () => {
       wire.request.mockResolvedValue({ message: { ...row, agentMentions } });
       await expect(client.send(params, false, false, true, true)).rejects.toThrow();
     }
+  });
+});
+
+describe('expanded discussion reactions', () => {
+  const reactors = [author('me'), { ...author('unused'), principalId: null, agentId: 'agent-a' }];
+  const reaction = { reaction: '👀' as const, count: 2, reacted: true, reactors };
+  const response = { messageId: message.id, reactionVersion: 2, reactions: [reaction] };
+  const params = {
+    workspaceId: 'ws',
+    messageId: message.id,
+    reaction: '👀' as const,
+    active: true,
+  };
+  const full = {
+    ...message,
+    conversationId: 'default',
+    replyToMessageId: null,
+    replyTo: null,
+    reactionVersion: 2,
+    reactions: [reaction],
+  };
+
+  it.each([undefined, null, false, true, '1', 0, 2, {}, 1])(
+    'requires exact expanded capability %s while retaining readable history',
+    async (value) => {
+      wire.request.mockResolvedValueOnce({ discussionReactions: value });
+      const supported = await client.supportsReactions();
+      expect(supported).toBe(value === 1);
+      wire.request.mockResolvedValueOnce({ messages: [full], hasMore: false });
+      expect(
+        (await client.list({ workspaceId: 'ws' }, false, true, false, false, supported)).messages,
+      ).toEqual([full]);
+    },
+  );
+  it('fails capability discovery closed and guards new choices and legacy additions before the wire', async () => {
+    wire.request.mockRejectedValueOnce(new Error('offline'));
+    expect(await client.supportsReactions()).toBe(false);
+    wire.request.mockClear();
+    await expect(client.react(params, true)).rejects.toMatchObject({ code: 'METHOD_NOT_FOUND' });
+    await expect(client.react({ ...params, reaction: '🙂' }, true, true)).rejects.toThrow(
+      'removal-only',
+    );
+    expect(wire.request).not.toHaveBeenCalled();
+    wire.request.mockResolvedValue(response);
+    expect(await client.react(params, true, true)).toEqual(response);
+    expect(await client.react({ ...params, reaction: '🙂', active: false }, true, true)).toEqual(
+      response,
+    );
+  });
+  it('accepts mixed human and agent samples, caps them at 20, and rejects malformed identities', async () => {
+    const event = { ...response, workspaceId: 'ws', conversationId: 'default' };
+    expect(isDiscussionReactionEvent(event)).toBe(true);
+    const bounded = Array.from({ length: 20 }, (_, i) => author(`person-${i}`));
+    wire.request.mockResolvedValue({
+      ...response,
+      reactions: [{ ...reaction, count: 50, reactors: bounded }],
+    });
+    await expect(client.react(params, true, true)).resolves.toMatchObject({
+      reactions: [{ count: 50, reactors: bounded }],
+    });
+    for (const invalid of [
+      { ...reaction, reactors: undefined },
+      { ...reaction, reactors: null },
+      { ...reaction, reactors: [{ ...reactors[1], principalId: 'me' }] },
+      { ...reaction, reactors: [{ ...reactors[0], principalId: '' }] },
+      { ...reaction, reactors: [{ ...reactors[1], agentId: '' }] },
+      { ...reaction, reactors: [{ ...reactors[0], displayName: 5 }] },
+      { ...reaction, count: 1 },
+      { ...reaction, count: 50, reactors: [...bounded, author('overflow')] },
+    ]) {
+      wire.request.mockResolvedValue({ ...response, reactions: [invalid] });
+      await expect(client.react(params, true, true)).rejects.toThrow();
+      if (invalid.reactors !== undefined)
+        expect(isDiscussionReactionEvent({ ...event, reactions: [invalid] })).toBe(false);
+    }
+  });
+  it('preserves inert imported snapshots with repeated or unknown identity without weakening message authors', async () => {
+    const unknown = { principalId: null, login: null, displayName: null, avatarUrl: null };
+    const snapshots = [
+      reactors[0],
+      { ...reactors[0], displayName: 'Imported name' },
+      unknown,
+      unknown,
+    ];
+    const imported = {
+      ...full,
+      reactions: [{ ...reaction, count: 4, reacted: false, reactors: snapshots }],
+    };
+    wire.request.mockResolvedValue({ messages: [imported], hasMore: false });
+    expect(
+      (await client.list({ workspaceId: 'ws' }, false, true, false, false, true)).messages,
+    ).toEqual([imported]);
+    wire.request.mockResolvedValue({ ...response, reactions: imported.reactions });
+    await expect(client.react(params, true, true)).resolves.toMatchObject({
+      reactions: imported.reactions,
+    });
+    wire.request.mockResolvedValue({
+      messages: [{ ...imported, author: unknown }],
+      hasMore: false,
+    });
+    await expect(
+      client.list({ workspaceId: 'ws' }, false, true, false, false, true),
+    ).rejects.toThrow();
+  });
+  it('requires roster metadata on list/send and rejects wrong-message mutation replies', async () => {
+    const legacy = { ...full, reactions: [{ reaction: '👍', count: 1, reacted: true }] };
+    wire.request.mockResolvedValue({ messages: [legacy], hasMore: false });
+    await expect(client.list({ workspaceId: 'ws' }, false, true)).resolves.toMatchObject({
+      messages: [legacy],
+    });
+    await expect(
+      client.list({ workspaceId: 'ws' }, false, true, false, false, true),
+    ).rejects.toThrow();
+    wire.request.mockResolvedValue({ message: legacy });
+    await expect(
+      client.send(
+        { workspaceId: 'ws', messageId: 'retry', body: message.body },
+        false,
+        true,
+        false,
+        false,
+        true,
+      ),
+    ).rejects.toThrow();
+    wire.request.mockResolvedValue({ ...response, messageId: 'another-conversation-message' });
+    await expect(client.react(params, true, true)).rejects.toThrow();
   });
 });

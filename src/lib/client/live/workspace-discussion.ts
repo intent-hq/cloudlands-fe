@@ -7,6 +7,8 @@ import {
   isDiscussionConversation,
   isDiscussionAuthor,
   hasDiscussionMessageActions,
+  hasDiscussionReactions,
+  isDiscussionReactionValue,
   hasDiscussionAgentMessaging,
   hasDiscussionAgentActivity,
   hasDiscussionAgentMentions,
@@ -104,10 +106,29 @@ export const workspaceDiscussionClient = {
       return false;
     }
   },
-  async react(params: DiscussionReactParams, supported = false): Promise<DiscussionReactionResult> {
+  async supportsReactions(): Promise<boolean> {
+    try {
+      const result = await backendRequest<{ discussionReactions?: unknown }>(
+        'system.capabilities',
+        {},
+      );
+      return result?.discussionReactions === 1;
+    } catch {
+      return false;
+    }
+  },
+  async react(
+    params: DiscussionReactParams,
+    supported = false,
+    expanded = false,
+  ): Promise<DiscussionReactionResult> {
     requireConversations(supported);
+    if (!isDiscussionReactionValue(params.reaction)) throw new Error('Invalid discussion reaction');
+    if (params.reaction !== '👍' && params.reaction !== '🙂') requireConversations(expanded);
+    if (expanded && params.reaction === '🙂' && params.active)
+      throw new Error('Legacy discussion reaction is removal-only');
     const result = await backendRequest<DiscussionReactionResult>('discussion.react', params);
-    if (!isDiscussionReactionResult(result) || result.messageId !== params.messageId)
+    if (!isDiscussionReactionResult(result, expanded) || result.messageId !== params.messageId)
       throw new Error('Invalid discussion reaction response');
     return result;
   },
@@ -128,6 +149,7 @@ export const workspaceDiscussionClient = {
     actionsSupported = false,
     agentsSupported = false,
     activitySupported = false,
+    reactionsSupported = false,
   ): Promise<DiscussionListResult> {
     const id = params.conversationId ?? DEFAULT_DISCUSSION_ID;
     if (id !== DEFAULT_DISCUSSION_ID) requireConversations(supported);
@@ -146,6 +168,7 @@ export const workspaceDiscussionClient = {
         (message) =>
           isDiscussionMessage(message) &&
           (!actionsSupported || hasDiscussionMessageActions(message)) &&
+          (!reactionsSupported || hasDiscussionReactions(message)) &&
           (!agentsSupported || hasDiscussionAgentMessaging(message)) &&
           (!activitySupported ||
             (hasDiscussionAgentActivity(message) && hasDiscussionAgentMentions(message))) &&
@@ -176,6 +199,7 @@ export const workspaceDiscussionClient = {
     actionsSupported = false,
     agentsSupported = false,
     activitySupported = false,
+    reactionsSupported = false,
   ): Promise<DiscussionSendResult> {
     if (params.agentMentions !== undefined) {
       requireConversations(activitySupported);
@@ -207,6 +231,7 @@ export const workspaceDiscussionClient = {
     if (
       !isDiscussionMessage(result?.message) ||
       (actionsSupported && !hasDiscussionMessageActions(result?.message)) ||
+      (reactionsSupported && !hasDiscussionReactions(result?.message)) ||
       (agentsSupported && !hasDiscussionAgentMessaging(result?.message)) ||
       (activitySupported &&
         (!hasDiscussionAgentActivity(result?.message) ||

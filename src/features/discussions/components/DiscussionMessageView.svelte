@@ -7,16 +7,18 @@
   import type { Snippet } from 'svelte';
   import Fa from 'svelte-fa';
   import { faReply, faEllipsisVertical, faCopy } from '@fortawesome/free-solid-svg-icons';
-  import ThumbsUpIcon from 'phosphor-svelte/lib/ThumbsUpIcon';
   import SmileyIcon from 'phosphor-svelte/lib/SmileyIcon';
   import { Button } from '$lib/components/ui/button';
   import { ActionMenu, defineActions } from '$lib/components/patterns/action-menu';
   import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
-  import { formatTime, formatFullDateTime, formatInteger } from '$lib/i18n/format';
+  import { formatTime, formatFullDateTime } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import type { DiscussionMessage } from '$shared/types/workspace-discussion';
   import type { DiscussionPendingDisplay, DiscussionReactionDisplay } from './discussion-display';
   import DiscussionMessageBody from './DiscussionMessageBody.svelte';
+  import DiscussionReactionPicker from './DiscussionReactionPicker.svelte';
+  import DiscussionReactionChips from './DiscussionReactionChips.svelte';
+  import { discussionActionOverlay } from './discussion-action-overlay';
 
   let {
     message,
@@ -30,6 +32,7 @@
     status,
     error,
     reactions = [],
+    expandedReactions = false,
     references,
     onRetry,
     onReply,
@@ -48,6 +51,7 @@
     status?: 'sending' | 'failed';
     error?: string;
     reactions?: readonly DiscussionReactionDisplay[];
+    expandedReactions?: boolean;
     references?: Snippet;
     onRetry?: () => void;
     onReply?: () => void;
@@ -65,6 +69,7 @@
   const hasActions = $derived(!status && !!(onReply || onReaction || onCopy));
   let reactionMenuOpen = $state(false);
   let moreMenuOpen = $state(false);
+  let chipPickerOpen = $state(false);
   const replyName = $derived(
     reply?.author.displayName ||
       reply?.author.login ||
@@ -90,7 +95,7 @@
     (continuation ? 'py-1' : 'py-[7px]') +
     (replySelected ? ' bg-primary/10' : '')}
   class:opacity-60={status === 'sending'}
-  class:actions-open={reactionMenuOpen || moreMenuOpen}
+  class:actions-open={reactionMenuOpen || moreMenuOpen || chipPickerOpen}
   data-discussion-message={message.id}
   data-discussion-failed={status === 'failed' ? message.id : undefined}
   data-discussion-continuation={continuation || undefined}
@@ -145,7 +150,7 @@
     {:else}
       <PrincipalAvatar label={name} avatarUrl={message.author.avatarUrl} size={30} />
     {/if}
-    <div class="flex min-w-0 flex-1 flex-col gap-1.5">
+    <div class="relative flex min-w-0 flex-1 flex-col gap-1.5" data-discussion-message-content>
       {#if !continuation}
         <div class="flex min-w-0 flex-wrap items-center gap-1 type-caption">
           <span class="truncate font-medium text-foreground">{name}</span>
@@ -185,7 +190,7 @@
         <span class="sr-only">{name} · {formatTime(message.createdAt)}</span>
       {/if}
 
-      <div class="relative">
+      <div>
         <div
           class={isAgent
             ? 'flex min-w-0 flex-col rounded-[15px] border border-border bg-background px-[15px] py-2.5'
@@ -227,12 +232,19 @@
           {/if}
         </div>
         {#if hasActions}
-          <div class="discussion-actions-reveal">
+          <div class="discussion-actions-reveal" use:discussionActionOverlay>
             <div
               class="discussion-actions flex gap-0.5 rounded-lg border border-border bg-popover p-0.5 shadow-sm"
               data-discussion-message-actions
             >
-              {#if onReaction}
+              {#if onReaction && expandedReactions}
+                <DiscussionReactionPicker
+                  bind:open={reactionMenuOpen}
+                  {disabled}
+                  {onReaction}
+                  {reactions}
+                />
+              {:else if onReaction}
                 <ActionMenu
                   bind:open={reactionMenuOpen}
                   actions={reactionActions}
@@ -279,29 +291,13 @@
           </div>
         {/if}
       </div>
-      {#if reactions.length}
-        <div class="flex flex-wrap gap-1.5" data-discussion-reactions>
-          {#each reactions as reaction (reaction.emoji)}
-            <Button
-              variant={reaction.reacted ? 'primary' : 'outline'}
-              size="compact"
-              class="h-[26px] rounded-full px-2"
-              aria-pressed={reaction.reacted}
-              aria-label={m.workspace_discussion_reaction_label({
-                emoji: reaction.emoji,
-                count: formatInteger(reaction.count),
-              })}
-              disabled={disabled || !onReaction}
-              onclick={() => onReaction?.(reaction.emoji)}
-              ><span aria-hidden="true"
-                >{#if reaction.emoji === '👍'}<ThumbsUpIcon size={14} />{:else}<SmileyIcon
-                    size={14}
-                  />{/if}</span
-              ><span>{formatInteger(reaction.count)}</span></Button
-            >
-          {/each}
-        </div>
-      {/if}
+      <DiscussionReactionChips
+        {reactions}
+        {expandedReactions}
+        {disabled}
+        {onReaction}
+        bind:open={chipPickerOpen}
+      />
     </div>
   </div>
 </article>

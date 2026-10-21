@@ -46,6 +46,7 @@ import {
 import { takeLeadingInContext, takeLatestInContext } from '../../../utils/context-saga-effects';
 import {
   discussionMessageActionsReceived,
+  discussionReactionsCapabilityReceived,
   discussionAgentCapabilityReceived,
   discussionAgentActivityCapabilityReceived,
   discussionAgentActivityReceived,
@@ -86,6 +87,7 @@ import {
 } from '../workspace-discussion-slice';
 import {
   selectDiscussionMessageActionsSupported,
+  selectDiscussionReactionsSupported,
   selectDiscussionAgentMessagingSupported,
   selectDiscussionAgentActivitySupported,
   selectDiscussionCanControlAgent,
@@ -136,6 +138,7 @@ function* loadDiscussion(action: ReadAction): SagaGenerator<void> {
   yield* put(discussionLoadStarted(target, requestId, older));
   try {
     const actionsSupported = yield* ensureMessageActions();
+    const reactionsSupported = yield* ensureReactions();
     const agentsSupported = yield* ensureAgentMessaging();
     const activitySupported = yield* ensureAgentActivity();
     const supported =
@@ -160,6 +163,7 @@ function* loadDiscussion(action: ReadAction): SagaGenerator<void> {
         actionsSupported,
         agentsSupported,
         activitySupported,
+        reactionsSupported,
       );
       if (!(yield* isCurrent(target))) return;
       if (result.conversation && conversationId !== DEFAULT_DISCUSSION_ID) {
@@ -170,7 +174,7 @@ function* loadDiscussion(action: ReadAction): SagaGenerator<void> {
       }
       yield* put(discussionPageReceived(target, requestId, result, direction));
       if (direction !== 'newer' || !result.hasMore) {
-        if (direction === 'newer' && (actionsSupported || activitySupported))
+        if (direction === 'newer' && (actionsSupported || activitySupported || reactionsSupported))
           yield* refreshMessageMetadata(
             target,
             requestId,
@@ -178,6 +182,7 @@ function* loadDiscussion(action: ReadAction): SagaGenerator<void> {
             actionsSupported,
             agentsSupported,
             activitySupported,
+            reactionsSupported,
           );
         yield* put(discussionLoadFinished(target, requestId, null));
         return;
@@ -263,6 +268,7 @@ function* sendDiscussion(action: SendAction): SagaGenerator<void> {
   }
   try {
     const actionsSupported = yield* ensureMessageActions();
+    const reactionsSupported = yield* ensureReactions();
     const agentsSupported = yield* ensureAgentMessaging();
     const supported = (yield* select(selectDiscussionCapability.select)) === true;
     const { message, conversation } = yield* call(
@@ -288,6 +294,7 @@ function* sendDiscussion(action: SendAction): SagaGenerator<void> {
       actionsSupported,
       agentsSupported,
       activitySupported,
+      reactionsSupported,
     );
     const owner = yield* select(selectDiscussionOwner.select);
     if (
@@ -586,6 +593,15 @@ function* ensureAgentMessaging(): SagaGenerator<boolean> {
   return supported;
 }
 
+function* ensureReactions(): SagaGenerator<boolean> {
+  const known = yield* select(selectDiscussionReactionsSupported.select);
+  if (known !== null) return known;
+  const context = yield* select(selectDiscussionContext.select);
+  if (!context) return false;
+  const supported = yield* call(workspaceDiscussionClient.supportsReactions);
+  yield* put(discussionReactionsCapabilityReceived(context, supported));
+  return supported;
+}
 function* ensureMessageActions(): SagaGenerator<boolean> {
   const known = yield* select(selectDiscussionMessageActionsSupported.select);
   if (known !== null) return known;
@@ -604,8 +620,11 @@ function* reactToMessage({
   const row = yield* select(selectWorkspaceDiscussion.select, workspaceId, conversationId);
   const message = getItem(row.messages, messageId);
   if (!message) return;
+  const expanded = (yield* select(selectDiscussionReactionsSupported.select)) === true;
+  if (!expanded && reaction !== '👍' && reaction !== '🙂') return;
   const key = JSON.stringify([messageId, reaction]);
   const active = !message.reactions?.find((r) => r.reaction === reaction)?.reacted;
+  if (expanded && reaction === '🙂' && active) return;
   yield* put(discussionReactionStarted(target, key));
   try {
     const result = yield* call(
@@ -618,6 +637,7 @@ function* reactToMessage({
         active,
       },
       true,
+      expanded,
     );
     if (!(yield* isCurrent(target))) return;
     yield* put(discussionReactionReceived(target, result));
@@ -643,6 +663,7 @@ function* refreshMessageMetadata(
   actionsSupported: boolean,
   agentsSupported: boolean,
   activitySupported: boolean,
+  reactionsSupported: boolean,
 ): SagaGenerator<void> {
   const row = yield* select(
     selectWorkspaceDiscussion.select,
@@ -674,6 +695,7 @@ function* refreshMessageMetadata(
       actionsSupported,
       agentsSupported,
       activitySupported,
+      reactionsSupported,
     );
     if (!(yield* isCurrent(target))) return;
     const next = result.messages[0]?.sequence;

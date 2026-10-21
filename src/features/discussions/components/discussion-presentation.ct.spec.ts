@@ -19,6 +19,7 @@ test('message actions toggle a reaction, retain reply target, restore composer f
   await expect(reaction).toHaveAttribute('aria-pressed', 'true');
   await reaction.click();
   await expect(reaction).toHaveCount(0);
+  await expect(row.getByRole('button', { name: 'Add reaction', exact: true })).toBeFocused();
   await row.getByRole('button', { name: 'Reply', exact: true }).click();
   await expect(component.locator('[data-reply-target]')).toContainText('message-19');
   await expect(row).toHaveAttribute('data-discussion-reply-selected', 'true');

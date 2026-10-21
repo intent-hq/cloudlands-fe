@@ -15,6 +15,9 @@ interface DiscussionAgentAuthor {
   avatarUrl: string | null;
 }
 type DiscussionMessageAuthor = DiscussionAuthor | DiscussionAgentAuthor;
+/** Display-only snapshots may have unknown identity after importing legacy reactions. */
+export type DiscussionReactor =
+  DiscussionMessageAuthor | (Omit<DiscussionAuthor, 'principalId'> & { principalId: null });
 
 export interface DiscussionMessage {
   id: string;
@@ -323,11 +326,17 @@ export function isDiscussionMessageEvent(value: unknown): value is DiscussionMes
   );
 }
 
-export type DiscussionReactionValue = '👍' | '🙂';
+export type DiscussionReactionValue = '👍' | '👎' | '👀' | '✅' | '🙈' | '🙂';
+const DISCUSSION_MAX_REACTORS = 20;
+export function isDiscussionReactionValue(value: unknown): value is DiscussionReactionValue {
+  return ['👍', '👎', '👀', '✅', '🙈', '🙂'].includes(value as string);
+}
 interface DiscussionReaction {
   reaction: DiscussionReactionValue;
   count: number;
   reacted: boolean;
+  /** Bounded identity snapshots, required with discussionReactions:1. */
+  reactors?: DiscussionReactor[];
 }
 export interface DiscussionReactParams {
   workspaceId: string;
@@ -345,7 +354,21 @@ interface DiscussionReactionEvent extends DiscussionReactionResult {
   workspaceId: string;
   conversationId: string;
 }
-export function isDiscussionReactionResult(value: unknown): value is DiscussionReactionResult {
+function isDiscussionReactor(value: unknown): value is DiscussionReactor {
+  return (
+    isDiscussionMessageAuthor(value) ||
+    (record(value) &&
+      value.principalId === null &&
+      value.agentId === undefined &&
+      nullableString(value.login) &&
+      nullableString(value.displayName) &&
+      nullableString(value.avatarUrl))
+  );
+}
+export function isDiscussionReactionResult(
+  value: unknown,
+  expanded = false,
+): value is DiscussionReactionResult {
   return (
     record(value) &&
     typeof value.messageId === 'string' &&
@@ -354,19 +377,28 @@ export function isDiscussionReactionResult(value: unknown): value is DiscussionR
     Number.isSafeInteger(value.reactionVersion) &&
     value.reactionVersion >= 0 &&
     Array.isArray(value.reactions) &&
-    value.reactions.length <= 2 &&
+    value.reactions.length <= 6 &&
     new Set(value.reactions.map((r) => (record(r) ? r.reaction : undefined))).size ===
       value.reactions.length &&
     value.reactions.every(
       (r) =>
         record(r) &&
-        (r.reaction === '👍' || r.reaction === '🙂') &&
+        isDiscussionReactionValue(r.reaction) &&
         typeof r.count === 'number' &&
         Number.isSafeInteger(r.count) &&
         r.count > 0 &&
-        typeof r.reacted === 'boolean',
+        typeof r.reacted === 'boolean' &&
+        (r.reactors === undefined
+          ? !expanded
+          : Array.isArray(r.reactors) &&
+            r.reactors.length <= DISCUSSION_MAX_REACTORS &&
+            r.reactors.length <= r.count &&
+            r.reactors.every(isDiscussionReactor)),
     )
   );
+}
+export function hasDiscussionReactions(value: unknown): boolean {
+  return record(value) && isDiscussionReactionResult({ ...value, messageId: value.id }, true);
 }
 export function hasDiscussionMessageActions(value: unknown): boolean {
   if (!record(value) || !isDiscussionReactionResult({ ...value, messageId: value.id }))

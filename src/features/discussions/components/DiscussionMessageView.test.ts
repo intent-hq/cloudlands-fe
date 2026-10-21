@@ -31,6 +31,19 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 describe('discussion message presentation', () => {
+  it('keeps cached expanded reactions read-only after reconnecting to a legacy daemon', async () => {
+    const onReaction = vi.fn();
+    render(DiscussionMessageView, {
+      message,
+      onReaction,
+      reactions: [{ emoji: '👀', count: 2, reacted: true }],
+    });
+    const chip = screen.getByRole('button', { name: '👀, 2 reactions' });
+    expect(chip.getAttribute('aria-disabled')).toBe('true');
+    await fireEvent.click(chip);
+    expect(onReaction).not.toHaveBeenCalled();
+  });
+
   it('navigates the one-line reply reference above the author and outside the bubble', async () => {
     const onReplyNavigate = vi.fn();
     const { container } = render(DiscussionMessageView, { message, onReplyNavigate });

@@ -16,6 +16,7 @@ import {
   discussionReactionReceived,
   discussionReplySelected,
   discussionMessageActionsReceived,
+  discussionReactionsCapabilityReceived,
   discussionReadThrough,
   discussionRequested,
   discussionDraftChanged,
@@ -448,5 +449,58 @@ describe('discussion presentation state', () => {
     expect(reduce(state, discussionReadThrough({ ...target, context: 'stale' }, 100))).toBe(state);
     state = reduce(state, discussionReadThrough(target, 100));
     expect(state.byWorkspaceId.ws.default.readSequence).toBe(100);
+  });
+});
+
+describe('expanded reaction state', () => {
+  it('hydrates equal-version legacy counts once, preserves monotonic snapshots, and resets capability by context', () => {
+    const { target, state: initial } = setup();
+    const legacy: DiscussionMessage = {
+      ...message(1),
+      reactionVersion: 2,
+      replyTo: null,
+      replyToMessageId: null,
+      reactions: [{ reaction: '👍', count: 1, reacted: true }],
+    };
+    let state = reduce(initial, discussionMessageReceived(target, legacy));
+    expect(reduce(state, discussionReactionsCapabilityReceived('stale', true))).toBe(state);
+    state = reduce(state, discussionReactionsCapabilityReceived(target.context, true));
+    const expanded = {
+      ...legacy,
+      reactions: [{ ...legacy.reactions![0], reactors: [legacy.author] }],
+    };
+    state = reduce(state, discussionMessageReceived(target, expanded));
+    expect(getItems(state.byWorkspaceId.ws.default.messages)[0].reactions).toEqual(
+      expanded.reactions,
+    );
+    for (const wrong of [
+      legacy,
+      { ...expanded, workspaceId: 'other' },
+      { ...expanded, conversationId: 'private' },
+      { ...expanded, reactionVersion: 1, reactions: [] },
+      { ...expanded, reactions: [{ ...expanded.reactions[0], reacted: false }] },
+    ]) {
+      const next = reduce(state, discussionMessageReceived(target, wrong));
+      expect(getItems(next.byWorkspaceId.ws.default.messages)[0]).toEqual(expanded);
+    }
+    expect(
+      reduce(
+        state,
+        discussionReactionReceived(target, {
+          messageId: legacy.id,
+          reactionVersion: 3,
+          reactions: legacy.reactions!,
+        }),
+      ),
+    ).toBe(state);
+    state = reduce(state, discussionContextChanged('connection-2', 'owner-1'));
+    expect(state.reactionsSupported).toBeNull();
+    expect(getItems(state.byWorkspaceId.ws.default.messages)[0].reactions).toEqual(
+      expanded.reactions,
+    );
+    state = reduce(state, discussionContextChanged('connection-3', 'owner-2'));
+    expect(state.byWorkspaceId).toEqual({});
+    expect(state.reactionsSupported).toBeNull();
+    expect(reduce(state, discussionMessageReceived(target, expanded))).toBe(state);
   });
 });

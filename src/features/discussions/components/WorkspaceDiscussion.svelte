@@ -8,7 +8,10 @@
   import { untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import { m } from '$shared/paraglide/messages.js';
-  import type { DiscussionError } from '$shared/types/workspace-discussion';
+  import {
+    isDiscussionReactionValue,
+    type DiscussionError,
+  } from '$shared/types/workspace-discussion';
   import { EmptyState, ErrorState } from '$lib/components/patterns/screen';
   import { notify } from '$lib/components/patterns/notify';
   import { writeTextToClipboard } from '$lib/utils/clipboard';
@@ -26,6 +29,7 @@
     selectDiscussionTarget,
     selectDiscussionReply,
     selectDiscussionCanInteract,
+    selectDiscussionReactionsSupported,
     selectDiscussionSharingOff,
     selectDiscussionCanEnableSharing,
     selectDiscussionContext,
@@ -95,6 +99,7 @@
   const unread$ = selectDiscussionUnread(workspaceId$, conversationId$);
   const target$ = selectDiscussionTarget(workspaceId$, conversationId$);
   const reply$ = selectDiscussionReply(workspaceId$, conversationId$);
+  const expandedReactions$ = selectDiscussionReactionsSupported();
   const canInteract$ = selectDiscussionCanInteract(workspaceId$, conversationId$);
   const sharingOff$ = selectDiscussionSharingOff();
   const canEnableSharing$ = selectDiscussionCanEnableSharing(workspaceId$);
@@ -253,6 +258,7 @@
         : [],
     )}
     typingAuthors={$typing$}
+    expandedReactions={$expandedReactions$ === true}
     reactionsByMessage={Object.fromEntries(
       $messages$.map((message) => [
         message.id,
@@ -260,6 +266,7 @@
           emoji: r.reaction,
           count: r.count,
           reacted: r.reacted,
+          reactors: r.reactors,
         })),
       ]),
     )}
@@ -282,7 +289,10 @@
       : undefined}
     onReaction={$canInteract$
       ? (id, emoji) => {
-          if (emoji === '👍' || emoji === '🙂')
+          if (
+            isDiscussionReactionValue(emoji) &&
+            ($expandedReactions$ === true || emoji === '👍' || emoji === '🙂')
+          )
             store.dispatch(discussionReactionRequested(workspaceId, id, emoji, conversationId));
         }
       : undefined}

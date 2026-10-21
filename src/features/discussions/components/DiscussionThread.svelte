@@ -69,6 +69,7 @@
     messageReferences?: Snippet<[DiscussionMessage]>;
     pendingMessages?: readonly DiscussionPendingDisplay[];
     typingAuthors?: readonly DiscussionAuthor[];
+    expandedReactions?: boolean;
     reactionsByMessage?: Readonly<Record<string, readonly DiscussionReactionDisplay[]>>;
     unreadAfterSequence?: number | null;
     firstUnreadSequence?: number | null;
@@ -141,6 +142,7 @@
     messageReferences,
     pendingMessages = [],
     typingAuthors = [],
+    expandedReactions = false,
     reactionsByMessage = {},
     unreadAfterSequence = null,
     firstUnreadSequence = null,
@@ -729,6 +731,7 @@
               {mentionNames}
               replySelected={replyTo?.id === message.id}
               onReplyNavigate={jumpToReply}
+              {expandedReactions}
               reactions={reactionsByMessage[message.id]}
               disabled={!canSend}
               onReply={onReply

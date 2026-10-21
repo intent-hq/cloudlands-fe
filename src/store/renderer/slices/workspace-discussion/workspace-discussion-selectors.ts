@@ -281,3 +281,9 @@ export const selectDiscussionAgentControlPending = store.createSelector(
       selectWorkspaceDiscussion.select(state, workspaceId, conversationId).agentControls,
     ).map((c) => c.key),
 );
+
+export const selectDiscussionReactionsSupported = store.createSelector((state) =>
+  state.workspaceDiscussion.context === selectDiscussionContext.select(state)
+    ? state.workspaceDiscussion.reactionsSupported
+    : null,
+);

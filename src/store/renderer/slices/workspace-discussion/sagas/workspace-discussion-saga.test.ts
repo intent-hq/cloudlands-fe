@@ -133,6 +133,7 @@ describe('workspace discussion transport', () => {
     vi.useFakeTimers();
     dispose = store.init();
     vi.spyOn(workspaceDiscussionClient, 'supportsMessageActions').mockResolvedValue(false);
+    vi.spyOn(workspaceDiscussionClient, 'supportsReactions').mockResolvedValue(false);
     vi.spyOn(workspaceDiscussionClient, 'supportsAgentMessaging').mockResolvedValue(false);
     vi.spyOn(workspaceDiscussionClient, 'supportsAgentActivity').mockResolvedValue(false);
     wire.readSetting.mockReset().mockResolvedValue({ value: true });
@@ -1464,69 +1465,189 @@ describe('workspace discussion transport', () => {
     expect(row().draft).toBe('different draft');
     expect(row().replyToMessageId).toBeNull();
   });
-  it('uses explicit idempotent reaction state and rejects stale responses without changing unread/history cursors', async () => {
+  it('gates expanded mutations independently and retains confirmed state when a mutation fails', async () => {
     vi.mocked(workspaceDiscussionClient.supportsMessageActions).mockResolvedValue(true);
     wire.request.mockResolvedValue({ messages: [withActions(message(1))], hasMore: false });
     await open();
-    const late = deferred<{
-      messageId: string;
-      reactions: { reaction: '👍'; count: number; reacted: boolean }[];
-      reactionVersion: number;
-    }>();
-    wire.request.mockReturnValueOnce(late.promise);
-    store.dispatch(discussionReactionRequested('ws', 'server-1', '👍'));
+    wire.request.mockClear();
+    store.dispatch(discussionReactionRequested('ws', 'server-1', '👀'));
     await settle();
-    expect(wire.request).toHaveBeenLastCalledWith('discussion.react', {
-      workspaceId: 'ws',
-      messageId: 'server-1',
-      reaction: '👍',
-      active: true,
-    });
-    routeDaemonEventsNotification(
-      'events.event',
-      {
-        subscriptionId: 'current',
-        event: {
-          id: 'reaction-event',
-          type: 'discussion:reaction',
-          workspaceId: 'ws',
-          data: {
-            workspaceId: 'ws',
-            conversationId: 'default',
-            messageId: 'server-1',
-            reactions: [{ reaction: '👍', count: 2, reacted: true }],
-            reactionVersion: 2,
-          },
-        },
-      },
-      ['current'],
-    );
-    late.resolve({
-      messageId: 'server-1',
-      reactions: [{ reaction: '👍', count: 1, reacted: true }],
-      reactionVersion: 1,
-    });
+    expect(wire.request).not.toHaveBeenCalled();
+    vi.mocked(workspaceDiscussionClient.supportsReactions).mockResolvedValue(true);
+    store.dispatch(connectionStatusChanged('disconnected'));
     await settle();
-    expect(messages()[0]).toMatchObject({
-      reactionVersion: 2,
-      reactions: [{ reaction: '👍', count: 2, reacted: true }],
-    });
-    expect(row().syncedSequence).toBe(1);
-    expect(selectDiscussionUnread.select(store.state, 'ws').count).toBe(0);
+    store.dispatch(connectionStatusChanged('connected'));
+    store.dispatch(daemonEventsSubscribed());
+    admit();
+    wire.request.mockImplementation((_method, params) => ({
+      messages: params.afterSequence ? [] : [withActions(message(1))],
+      hasMore: false,
+    }));
+    await settle();
     wire.request.mockResolvedValue({
       messageId: 'server-1',
-      reactions: [{ reaction: '👍', count: 1, reacted: false }],
-      reactionVersion: 3,
+      reactionVersion: 1,
+      reactions: [{ reaction: '👀', count: 1, reacted: true, reactors: [message(1).author] }],
     });
-    store.dispatch(discussionReactionRequested('ws', 'server-1', '👍'));
+    store.dispatch(discussionReactionRequested('ws', 'server-1', '👀'));
     await settle();
     expect(wire.request).toHaveBeenLastCalledWith('discussion.react', {
       workspaceId: 'ws',
       messageId: 'server-1',
-      reaction: '👍',
-      active: false,
+      reaction: '👀',
+      active: true,
     });
+    const confirmed = messages()[0];
+    wire.request.mockRejectedValue(new Error('offline'));
+    store.dispatch(discussionReactionRequested('ws', 'server-1', '👀'));
+    await settle();
+    expect(messages()[0]).toEqual(confirmed);
+    expect(row().reactionError).toBe('unknown');
+    expect(row().reacting).toEqual([]);
+    wire.request.mockClear();
+    store.dispatch(discussionReactionRequested('ws', 'server-1', '🙂'));
+    await settle();
+    expect(wire.request).not.toHaveBeenCalled();
   });
+  it('refreshes equal-version reactor names after a capability upgrade on reconnect', async () => {
+    vi.mocked(workspaceDiscussionClient.supportsMessageActions).mockResolvedValue(true);
+    const legacy = {
+      ...withActions(message(1)),
+      reactionVersion: 4,
+      reactions: [{ reaction: '👍' as const, count: 1, reacted: false }],
+    };
+    wire.request.mockResolvedValue({
+      messages: [legacy, withActions(message(50))],
+      hasMore: false,
+    });
+    await open();
+    vi.mocked(workspaceDiscussionClient.supportsReactions).mockResolvedValue(true);
+    const expanded = {
+      ...legacy,
+      reactions: [{ ...legacy.reactions[0], reactors: [message(1).author] }],
+    };
+    wire.request.mockImplementation((_method, params) => ({
+      messages: params.beforeSequence ? [expanded, withActions(message(50))] : [],
+      hasMore: false,
+    }));
+    store.dispatch(connectionStatusChanged('disconnected'));
+    await settle();
+    store.dispatch(connectionStatusChanged('connected'));
+    store.dispatch(daemonEventsSubscribed());
+    admit();
+    await settle();
+    expect(messages()[0]).toEqual(expanded);
+    expect(row().syncedSequence).toBe(50);
+    expect(row().metadataBefore).toBeNull();
+    expect(workspaceDiscussionClient.supportsReactions).toHaveBeenCalledTimes(2);
+  });
+  it.each([false, true])(
+    'keeps reaction events ahead of stale replies without changing cursors (expanded=%s)',
+    async (expanded) => {
+      vi.mocked(workspaceDiscussionClient.supportsMessageActions).mockResolvedValue(true);
+      vi.mocked(workspaceDiscussionClient.supportsReactions).mockResolvedValue(expanded);
+      const roster = expanded ? { reactors: [message(1).author] } : {};
+      wire.request.mockResolvedValue({ messages: [withActions(message(1))], hasMore: false });
+      await open();
+      const late = deferred<{
+        messageId: string;
+        reactions: {
+          reaction: '👍';
+          count: number;
+          reacted: boolean;
+          reactors?: DiscussionMessage['author'][];
+        }[];
+        reactionVersion: number;
+      }>();
+      wire.request.mockReturnValueOnce(late.promise);
+      store.dispatch(discussionReactionRequested('ws', 'server-1', '👍'));
+      await settle();
+      expect(wire.request).toHaveBeenLastCalledWith('discussion.react', {
+        workspaceId: 'ws',
+        messageId: 'server-1',
+        reaction: '👍',
+        active: true,
+      });
+      routeDaemonEventsNotification(
+        'events.event',
+        {
+          subscriptionId: 'current',
+          event: {
+            id: 'reaction-event',
+            type: 'discussion:reaction',
+            workspaceId: 'ws',
+            data: {
+              workspaceId: 'ws',
+              conversationId: 'default',
+              messageId: 'server-1',
+              reactions: [{ reaction: '👍', count: 2, reacted: true, ...roster }],
+              reactionVersion: 2,
+            },
+          },
+        },
+        ['current'],
+      );
+      late.resolve({
+        messageId: 'server-1',
+        reactions: [{ reaction: '👍', count: 1, reacted: true, ...roster }],
+        reactionVersion: 1,
+      });
+      await settle();
+      expect(messages()[0]).toMatchObject({
+        reactionVersion: 2,
+        reactions: [{ reaction: '👍', count: 2, reacted: true, ...roster }],
+      });
+      if (expanded) {
+        const confirmed = messages()[0];
+        for (const invalid of [
+          {
+            workspaceId: 'ws',
+            conversationId: 'default',
+            reactions: [{ reaction: '👀', count: 1, reacted: true }],
+          },
+          {
+            workspaceId: 'other',
+            conversationId: 'default',
+            reactions: [{ reaction: '👀', count: 1, reacted: true, ...roster }],
+          },
+          {
+            workspaceId: 'ws',
+            conversationId: 'private',
+            reactions: [{ reaction: '👀', count: 1, reacted: true, ...roster }],
+          },
+        ])
+          routeDaemonEventsNotification(
+            'events.event',
+            {
+              subscriptionId: 'current',
+              event: {
+                id: 'invalid-reaction',
+                type: 'discussion:reaction',
+                workspaceId: 'ws',
+                data: { messageId: 'server-1', reactionVersion: 99, ...invalid },
+              },
+            },
+            ['current'],
+          );
+        expect(messages()[0]).toEqual(confirmed);
+      }
+      expect(row().syncedSequence).toBe(1);
+      expect(selectDiscussionUnread.select(store.state, 'ws').count).toBe(0);
+      wire.request.mockResolvedValue({
+        messageId: 'server-1',
+        reactions: [{ reaction: '👍', count: 1, reacted: false, ...roster }],
+        reactionVersion: 3,
+      });
+      store.dispatch(discussionReactionRequested('ws', 'server-1', '👍'));
+      await settle();
+      expect(wire.request).toHaveBeenLastCalledWith('discussion.react', {
+        workspaceId: 'ws',
+        messageId: 'server-1',
+        reaction: '👍',
+        active: false,
+      });
+    },
+  );
   it('refreshes reactions on old cached messages after reconnect without rewinding forward history', async () => {
     vi.mocked(workspaceDiscussionClient.supportsMessageActions).mockResolvedValue(true);
     wire.request.mockResolvedValue({
