@@ -1632,6 +1632,7 @@
   "deeplink_inviteProve_detail": "Intent는 비공개 gist로 호스트에 GitHub 신원을 증명하고 곧바로 삭제합니다. 호스트는 내 GitHub 사용자 이름, 계정 ID, 표시 이름, 아바타를 알게 됩니다.",
   "deeplink_ipc_unknown_error": "알 수 없는 오류",
   "deeplink_links_betaChannel_message": "베타 업데이트로 전환했습니다",
+  "deeplink_links_channelUnchanged_message": "업데이트 채널이 변경되지 않았습니다",
   "deeplink_links_cloneMissingRepo_error": "이 복제 링크에 저장소가 없습니다",
   "deeplink_links_openFolderFailed_error": "Intent에서 {folder}을(를) 열 수 없습니다",
   "deeplink_links_stableChannel_message": "안정 버전 업데이트로 전환했습니다",

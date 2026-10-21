@@ -16,7 +16,7 @@
  * - `settings?beta=`: switch the update channel; `settings` alone opens Settings.
  */
 
-import { call, put, take, type SagaGenerator } from 'typed-redux-saga';
+import { call, delay, put, race, take, type SagaGenerator } from 'typed-redux-saga';
 
 import { notify } from '$lib/components/patterns/notify';
 import { invoke, isElectron } from '$lib/electron-bridge';
@@ -26,8 +26,17 @@ import { DEEP_LINK_CHANNELS } from '$shared/ipc/channels';
 import { m } from '$shared/paraglide/messages.js';
 import type { Workspace } from '$shared/types';
 import { createElectronChannel } from '../../../utils/ipc-channel';
+import { selectPrincipalActionContext } from '../../principal/principal-selectors';
+import {
+  hostMembershipChanged,
+  principalContextChanged,
+  principalIdentityChanged,
+  principalReceived,
+} from '../../principal/principal-slice';
+import { selectShowCreateModal } from '../../sidebar-nav/sidebar-nav-selectors';
 import { setShowCreateModal } from '../../sidebar-nav/sidebar-nav-slice';
 import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
+import { selectUpdateChannel } from '../../user-preferences/user-preferences-selectors';
 import { setUpdateChannel } from '../../user-preferences/user-preferences-slice';
 import { workspaceClient } from '../../workspace/utils/workspace.client';
 import { setWorkspaceEntity } from '../../workspace/workspace-slice';
@@ -58,10 +67,10 @@ function* showWorkspace(workspaceId: string): SagaGenerator<void> {
   yield* call(navigateToRoute, `/workspace/${encodeURIComponent(workspaceId)}`);
 }
 
-function* openFolder(rawPath: string): SagaGenerator<void> {
+function* openFolder(rawPath: string, alias?: string): SagaGenerator<void> {
   const folder = normalizeFolderPath(rawPath);
   try {
-    const existing = findWorkspaceForFolder(yield* call(listWorkspaces), folder);
+    const existing = findWorkspaceForFolder(yield* call(listWorkspaces), [folder, alias ?? '']);
     if (existing) {
       yield* call(showWorkspace, existing.id);
       return;
@@ -101,17 +110,35 @@ function* openWorkspaceById(workspaceId: string): SagaGenerator<void> {
 function* openCreateForm(params: Record<string, string>): SagaGenerator<void> {
   const prefill = buildCreatePrefill(params);
   yield* call(() => sessionStorage.setItem(WORKSPACE_PREFILL_KEY, JSON.stringify(prefill)));
+  // The New Space modal applies the prefill when it opens; if it is already
+  // open, close it for a beat so the new link's prefill is applied instead of
+  // lingering in sessionStorage until the next open.
+  if (yield* selectShowCreateModal.effect()) {
+    yield* put(setShowCreateModal(false));
+    yield* delay(50);
+  }
   yield* put(setShowCreateModal(true));
 }
 
 function* switchUpdateChannel(beta: string): SagaGenerator<void> {
-  const channel = beta === 'true' ? 'beta' : 'stable';
+  const target = beta === 'true' ? 'beta' : beta === 'false' ? 'stable' : null;
+  if (!target) {
+    yield* call(notify.error, m.deeplink_links_unsupported_error());
+    return;
+  }
+  // A link — which any page can send — only toggles between stable and beta.
+  // It never overrides an alpha or `disabled` choice made in Settings.
+  const current = yield* selectUpdateChannel.effect();
+  if (current !== 'stable' && current !== 'beta') {
+    yield* call(notify.info, m.deeplink_links_channelUnchanged_message());
+    return;
+  }
   // The update-channel saga persists the preference and main checks the new
   // feed on switch (with its own "Checking…" feedback), so dispatching is all.
-  yield* put(setUpdateChannel(channel));
+  if (current !== target) yield* put(setUpdateChannel(target));
   yield* call(
     notify.success,
-    channel === 'beta'
+    target === 'beta'
       ? m.deeplink_links_betaChannel_message()
       : m.deeplink_links_stableChannel_message(),
   );
@@ -121,7 +148,7 @@ export function* handleDeepLinkAction(action: DeepLinkActionPayload): SagaGenera
   const params = action.params ?? {};
   switch (action.type) {
     case 'open':
-      if (params.path) return yield* call(openFolder, params.path);
+      if (params.path) return yield* call(openFolder, params.path, params.alias);
       if (params.id) return yield* call(openWorkspaceById, params.id);
       break;
     case 'create':
@@ -151,7 +178,31 @@ function isActionPayload(value: unknown): value is DeepLinkActionPayload {
   );
 }
 
+/**
+ * Wait until this window's principal is admitted on its current connection.
+ * Until then workspace mutations are rejected (`captureMutation`), so a link
+ * consumed during startup would be lost; leaving it in main's queue keeps it.
+ * A confirmed denial still admits (the context exists) and surfaces as the
+ * handler's error toast rather than a silent drop.
+ */
+function* waitForPrincipalAdmission(): SagaGenerator<void> {
+  while (!(yield* selectPrincipalActionContext.effect())) {
+    // Admission becomes ready through a principal read or context change; the
+    // periodic re-check covers a connection-side change that lands without one.
+    yield* race({
+      changed: take([
+        principalContextChanged,
+        principalReceived,
+        hostMembershipChanged,
+        principalIdentityChanged,
+      ]),
+      recheck: delay(1000),
+    });
+  }
+}
+
 export function* drainPendingDeepLinks(): SagaGenerator<void> {
+  yield* call(waitForPrincipalAdmission);
   let actions: unknown;
   try {
     const result = yield* call(

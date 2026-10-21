@@ -35,11 +35,17 @@ vi.mock('electron', () => ({
     );
     loadURL = mockLoadUrl;
     focus = vi.fn();
+    show = vi.fn();
+    restore = vi.fn();
+    isDestroyed = () => false;
+    isMinimized = () => false;
     webContents = {
       id: nextWebContentsId++,
       on: vi.fn(),
       once: vi.fn(),
       send: vi.fn(),
+      isDestroyed: () => false,
+      getURL: () => 'http://localhost/',
       session: { clearCache: vi.fn() },
     };
     on = vi.fn();
@@ -47,6 +53,7 @@ vi.mock('electron', () => ({
     constructor(options: unknown) {
       mockBrowserWindowCtor(options);
       createdWindows.push(this as unknown as { webContents: { id: number } });
+      liveWindows.push(this as unknown as { webContents: unknown });
     }
   },
   screen: { getPrimaryDisplay: () => mockGetPrimaryDisplay() },
@@ -240,11 +247,15 @@ describe('createWindowForDeepLink renderer-bound routing', () => {
     expect(consumePendingDeepLinks(mainWindow.webContents.id)).toEqual([]);
   });
 
-  it('parks the link when no target window exists yet', async () => {
+  it('opens a local window for a link when every window is closed', async () => {
     mockGetMainWindow.mockReturnValue(null);
     const handler = makeHandler();
     await createWindowForDeepLink('intent://settings?beta=true', handler);
-    expect(handler.handleDeepLink).toHaveBeenCalledWith('intent://settings?beta=true', null);
+    expect(handler.handleDeepLink).not.toHaveBeenCalled();
+    expect(createdWindows).toHaveLength(1);
+    expect(consumePendingDeepLinks(createdWindows[0].webContents.id)).toEqual([
+      { type: 'settings', params: { beta: 'true' } },
+    ]);
   });
 });
 

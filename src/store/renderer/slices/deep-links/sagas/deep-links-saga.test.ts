@@ -1,4 +1,4 @@
-import { runSaga } from 'redux-saga';
+import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   notifyError: vi.fn(),
   notifySuccess: vi.fn(),
+  notifyInfo: vi.fn(),
+  admission: 'admitted' as string | null,
 }));
 
 vi.mock('$lib/electron-bridge', () => ({ isElectron: mocks.isElectron, invoke: mocks.invoke }));
@@ -17,7 +19,15 @@ vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ warn: vi.fn(), debug: vi.fn(), info: vi.fn() }),
 }));
 vi.mock('$lib/components/patterns/notify', () => ({
-  notify: { error: mocks.notifyError, success: mocks.notifySuccess },
+  notify: { error: mocks.notifyError, success: mocks.notifySuccess, info: mocks.notifyInfo },
+}));
+vi.mock('../../principal/principal-selectors', () => ({
+  selectPrincipalActionContext: {
+    // Mirrors the real selector's saga effect: the current admission context.
+    *effect() {
+      return mocks.admission;
+    },
+  },
 }));
 vi.mock('../../workspace/utils/workspace.client', () => ({
   workspaceClient: { list: mocks.list, create: mocks.create },
@@ -46,10 +56,15 @@ const settle = async () => {
   for (let i = 0; i < 10; i++) await Promise.resolve();
 };
 
+let appState: {
+  userPreferences: { updateChannel: string };
+  sidebarNav: { showCreateModal: boolean };
+};
+
 async function run(action: DeepLinkActionPayload) {
   const dispatched: unknown[] = [];
   await runSaga(
-    { dispatch: (a) => dispatched.push(a), getState: () => ({}) },
+    { dispatch: (a) => dispatched.push(a), getState: () => appState },
     handleDeepLinkAction,
     action,
   ).toPromise();
@@ -57,6 +72,11 @@ async function run(action: DeepLinkActionPayload) {
 }
 
 beforeEach(() => {
+  mocks.admission = 'admitted';
+  appState = {
+    userPreferences: { updateChannel: 'stable' },
+    sidebarNav: { showCreateModal: false },
+  };
   sessionStorage.clear();
   mocks.list.mockResolvedValue({ ok: true, data: [] });
   mocks.isElectron.mockReturnValue(true);
@@ -79,6 +99,16 @@ describe('intent://open?path (the intent CLI)', () => {
     expect(mocks.create).not.toHaveBeenCalled();
     expect(dispatched).toContainEqual(openWorkspaceTab('home'));
     expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/home');
+  });
+
+  it('matches a workspace created through the symlinked path the CLI sends as alias', async () => {
+    mocks.list.mockResolvedValue({
+      ok: true,
+      data: [workspace({ id: 'tmp', repositoryPath: '/tmp/proj', skipWorktree: true })],
+    });
+    await run({ type: 'open', params: { path: '/private/tmp/proj', alias: '/tmp/proj' } });
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/tmp');
   });
 
   it('matches a worktree workspace by its worktree folder', async () => {
@@ -180,6 +210,12 @@ describe('intent://create and intent://clone', () => {
     expect(mocks.create).not.toHaveBeenCalled();
   });
 
+  it('reopens an already-open New Space form so the new prefill is applied', async () => {
+    appState.sidebarNav.showCreateModal = true;
+    const dispatched = await run({ type: 'create', params: { repo: '/r', prompt: 'p' } });
+    expect(dispatched).toEqual([setShowCreateModal(false), setShowCreateModal(true)]);
+  });
+
   it('prefills a clone link as a GitHub repository', async () => {
     await run({ type: 'clone', params: { repo: 'https://github.com/o/r', branch: 'dev' } });
     expect(JSON.parse(sessionStorage.getItem('workspace-prefill') ?? 'null')).toEqual({
@@ -196,15 +232,32 @@ describe('intent://create and intent://clone', () => {
 });
 
 describe('intent://settings', () => {
-  it('switches to the beta channel through the persisted preference and confirms it', async () => {
+  it('switches stable to beta through the persisted preference and confirms it', async () => {
     const dispatched = await run({ type: 'settings', params: { beta: 'true' } });
     expect(dispatched).toEqual([setUpdateChannel('beta')]);
     expect(mocks.notifySuccess).toHaveBeenCalledTimes(1);
   });
 
-  it('switches back to stable for beta=false', async () => {
+  it('switches beta back to stable for beta=false', async () => {
+    appState.userPreferences.updateChannel = 'beta';
     const dispatched = await run({ type: 'settings', params: { beta: 'false' } });
     expect(dispatched).toEqual([setUpdateChannel('stable')]);
+  });
+
+  it.each(['alpha', 'disabled'])(
+    'never overrides the %s channel chosen in Settings',
+    async (channel) => {
+      appState.userPreferences.updateChannel = channel;
+      const dispatched = await run({ type: 'settings', params: { beta: 'false' } });
+      expect(dispatched).toEqual([]);
+      expect(mocks.notifyInfo).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('rejects a beta value other than true or false', async () => {
+    const dispatched = await run({ type: 'settings', params: { beta: '0' } });
+    expect(dispatched).toEqual([]);
+    expect(mocks.notifyError).toHaveBeenCalledTimes(1);
   });
 
   it('opens Settings for a settings link without a channel', async () => {
@@ -229,10 +282,33 @@ describe('pending queue draining', () => {
       ],
     });
     mocks.list.mockResolvedValue({ ok: true, data: [workspace({ id: 'ws-1' })] });
-    await runSaga({ dispatch: () => {}, getState: () => ({}) }, drainPendingDeepLinks).toPromise();
+    await runSaga(
+      { dispatch: () => {}, getState: () => appState },
+      drainPendingDeepLinks,
+    ).toPromise();
     expect(mocks.invoke).toHaveBeenCalledWith('deep-link:consume-pending', {});
     expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/ws-1');
     expect(mocks.notifySuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps links queued in main until the principal is admitted, then drains once', async () => {
+    mocks.admission = null;
+    mocks.invoke.mockResolvedValue({ actions: [] });
+    const channel = stdChannel();
+    const task = runSaga(
+      { channel, dispatch: (a) => channel.put(a as never), getState: () => appState },
+      drainPendingDeepLinks,
+    );
+    await settle();
+    channel.put({ type: 'connections/somethingElse' });
+    await new Promise((r) => setTimeout(r, 1100));
+    await settle();
+    expect(mocks.invoke).not.toHaveBeenCalled();
+
+    mocks.admission = 'admitted';
+    channel.put({ type: 'principal/received' });
+    await task.toPromise();
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
   });
 
   it('drains on start, again on each nudge, and unsubscribes on cancel', async () => {
@@ -247,7 +323,7 @@ describe('pending queue draining', () => {
       offById,
     };
     mocks.invoke.mockResolvedValue({ actions: [] });
-    const task = runSaga({ dispatch: () => {}, getState: () => ({}) }, deepLinksSaga);
+    const task = runSaga({ dispatch: () => {}, getState: () => appState }, deepLinksSaga);
     await settle();
     expect(mocks.invoke).toHaveBeenCalledTimes(1);
 

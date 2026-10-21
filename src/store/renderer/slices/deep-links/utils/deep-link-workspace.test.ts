@@ -26,7 +26,7 @@ describe('findWorkspaceForFolder', () => {
         ws('older', { repositoryPath: '/r', updatedAt: '2026-01-01T00:00:00Z' }),
         ws('newer', { repositoryPath: '/r/', updatedAt: '2026-06-01T00:00:00Z' }),
       ],
-      '/r',
+      ['/r'],
     );
     expect(found?.id).toBe('newer');
   });
@@ -39,7 +39,7 @@ describe('findWorkspaceForFolder', () => {
           ws('archived', { repositoryPath: '/r', status: 'Archived' as Workspace['status'] }),
           ws('deleted', { repositoryPath: '/r', status: 'Deleted' as Workspace['status'] }),
         ],
-        '/r',
+        ['/r'],
       ),
     ).toBeUndefined();
   });
@@ -48,9 +48,19 @@ describe('findWorkspaceForFolder', () => {
     expect(
       findWorkspaceForFolder(
         [ws('wt', { repositoryPath: '/repo', worktreePath: '/ws/wt/repo' })],
-        '/repo',
+        ['/repo'],
       ),
     ).toBeUndefined();
+  });
+});
+
+describe('findWorkspaceForFolder with a symlinked alias', () => {
+  it('matches a workspace created through the symlinked path', () => {
+    const found = findWorkspaceForFolder(
+      [ws('tmp', { repositoryPath: '/tmp/proj' })],
+      ['/private/tmp/proj', '/tmp/proj'],
+    );
+    expect(found?.id).toBe('tmp');
   });
 });
 

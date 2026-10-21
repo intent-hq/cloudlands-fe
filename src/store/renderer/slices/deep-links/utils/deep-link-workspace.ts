@@ -27,15 +27,17 @@ function updatedAtMs(workspace: Workspace): number {
 }
 
 /**
- * The non-archived, non-deleted local workspace whose working folder is `folder`; when
- * several match, the most recently updated one. Archived workspaces never
- * match, so the caller creates a fresh workspace instead of reviving one.
+ * The non-archived, non-deleted local workspace whose working folder is one
+ * of `folders` (the `intent` CLI sends the physical path and, when it differs,
+ * the symlinked path the user reached it by); when several match, the most
+ * recently updated one. Archived workspaces never match, so the caller creates
+ * a fresh workspace instead of reviving one.
  */
 export function findWorkspaceForFolder(
   workspaces: readonly Workspace[],
-  folder: string,
+  folders: readonly string[],
 ): Workspace | undefined {
-  const target = normalizeFolderPath(folder);
+  const targets = new Set(folders.filter(Boolean).map(normalizeFolderPath));
   let best: Workspace | undefined;
   for (const workspace of workspaces) {
     if (workspace.archived || workspace.isRemote) continue;
@@ -45,7 +47,7 @@ export function findWorkspaceForFolder(
     )
       continue;
     const candidate = workspaceFolder(workspace);
-    if (!candidate || normalizeFolderPath(candidate) !== target) continue;
+    if (!candidate || !targets.has(normalizeFolderPath(candidate))) continue;
     if (!best || updatedAtMs(workspace) > updatedAtMs(best)) best = workspace;
   }
   return best;

@@ -1030,7 +1030,7 @@ export async function createWindowForDeepLink(
     return;
   }
 
-  if (action.type === 'open') {
+  const queueForLocalWindow = async (): Promise<void> => {
     await openOrFocusWindowsForBackend(LOCAL_CONNECTION_ID);
     const localWindow = findAppWindowForBackend(LOCAL_CONNECTION_ID);
     if (localWindow) {
@@ -1038,9 +1038,12 @@ export async function createWindowForDeepLink(
       focusDeepLinkWindow(localWindow);
       logger.info('Queued deep link for local window', { type: action.type });
     } else {
-      logger.info('No local window available for deep link, storing as pending');
-      await deepLinkHandler.handleDeepLink(deepLinkUrl, null);
+      logger.warn('No local window could be opened for deep link', { type: action.type });
     }
+  };
+
+  if (action.type === 'open') {
+    await queueForLocalWindow();
     return;
   }
 
@@ -1051,9 +1054,9 @@ export async function createWindowForDeepLink(
       focusDeepLinkWindow(mainWindow);
       logger.info('Queued deep link for existing window', { type: action.type });
     } else {
-      // No window yet — store as pending (will be processed after startup)
-      logger.info('No window available for deep link, storing as pending', { type: action.type });
-      await deepLinkHandler.handleDeepLink(deepLinkUrl, null);
+      // Every window is closed (e.g. macOS keeps the app in the dock): open a
+      // local one rather than parking a link nothing would drain.
+      await queueForLocalWindow();
     }
     return;
   }

@@ -12,24 +12,42 @@ set -e
 # Resolve the directory path
 DIR="${1:-.}"
 
-# Resolve to an absolute, symlink-free path so the app can match it against the
-# folders of existing workspaces.
+# Resolve the folder twice: the physical path (symlinks resolved; the folder a
+# new workspace is created on) and the logical path as the user reached it.
+# The app matches an existing workspace against either, so a workspace created
+# through a symlinked path (e.g. macOS /tmp -> /private/tmp) is still found.
 if [ ! -d "$DIR" ]; then
   echo "Error: '$DIR' is not a directory" >&2
   exit 1
 fi
-DIR="$(cd "$DIR" 2>/dev/null && pwd -P)" || {
+LOGICAL_DIR="$(cd "$DIR" 2>/dev/null && pwd -L)" || {
   echo "Error: Directory '$1' does not exist" >&2
   exit 1
 }
+DIR="$(cd "$DIR" 2>/dev/null && pwd -P)"
 
-# URL-encode the path (the path is passed as an argument, never spliced into
-# the Python source, so quotes and other special characters are safe)
-ENCODED_DIR=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe="/"))' "$DIR")
+# Git Bash / MSYS / Cygwin report /c/Users/...; the daemon stores C:/Users/...
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*)
+    if command -v cygpath >/dev/null 2>&1; then
+      DIR="$(cygpath -m "$DIR")"
+      LOGICAL_DIR="$(cygpath -m "$LOGICAL_DIR")"
+    fi
+    ;;
+esac
+
+# URL-encode a path (passed as an argument, never spliced into the Python
+# source, so quotes and other special characters are safe)
+url_encode() {
+  python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe="/"))' "$1"
+}
 
 # Open the deep link: the app opens the workspace for this folder on the local
 # daemon, or creates one on the folder (no worktree) when none exists.
-DEEP_LINK="intent://open?path=${ENCODED_DIR}"
+DEEP_LINK="intent://open?path=$(url_encode "$DIR")"
+if [ "$LOGICAL_DIR" != "$DIR" ]; then
+  DEEP_LINK="${DEEP_LINK}&alias=$(url_encode "$LOGICAL_DIR")"
+fi
 
 # Detect dev mode by checking if electron binary exists relative to this script
 # Resolve the real path of this script (following symlinks)

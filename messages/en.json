@@ -1632,6 +1632,7 @@
   "deeplink_inviteProve_detail": "Intent proves your GitHub identity to the host with a private gist that is deleted right after. The host learns your GitHub username, account ID, display name and avatar.",
   "deeplink_ipc_unknown_error": "Unknown error",
   "deeplink_links_betaChannel_message": "Switched to beta updates",
+  "deeplink_links_channelUnchanged_message": "Your update channel was left unchanged",
   "deeplink_links_cloneMissingRepo_error": "This clone link has no repository",
   "deeplink_links_openFolderFailed_error": "Couldn't open {folder} in Intent",
   "deeplink_links_stableChannel_message": "Switched to stable updates",

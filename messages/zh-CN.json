@@ -1632,6 +1632,7 @@
   "deeplink_inviteProve_detail": "Intent 通过一个私密 gist 向主机证明你的 GitHub 身份，并在之后立即删除。主机将获知你的 GitHub 用户名、账户 ID、显示名称和头像。",
   "deeplink_ipc_unknown_error": "未知错误",
   "deeplink_links_betaChannel_message": "已切换到测试版更新",
+  "deeplink_links_channelUnchanged_message": "更新通道保持不变",
   "deeplink_links_cloneMissingRepo_error": "此克隆链接未包含仓库",
   "deeplink_links_openFolderFailed_error": "无法在 Intent 中打开 {folder}",
   "deeplink_links_stableChannel_message": "已切换到稳定版更新",

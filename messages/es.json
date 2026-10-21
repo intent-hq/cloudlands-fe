@@ -1632,6 +1632,7 @@
   "deeplink_inviteProve_detail": "Intent demuestra tu identidad de GitHub al host con un gist privado que se elimina justo después. El host conoce tu nombre de usuario de GitHub, el ID de tu cuenta, tu nombre visible y tu avatar.",
   "deeplink_ipc_unknown_error": "Error desconocido",
   "deeplink_links_betaChannel_message": "Se cambió a las actualizaciones beta",
+  "deeplink_links_channelUnchanged_message": "Tu canal de actualizaciones no se ha cambiado",
   "deeplink_links_cloneMissingRepo_error": "Este enlace de clonación no tiene repositorio",
   "deeplink_links_openFolderFailed_error": "No se pudo abrir {folder} en Intent",
   "deeplink_links_stableChannel_message": "Se cambió a las actualizaciones estables",

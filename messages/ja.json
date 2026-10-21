@@ -1632,6 +1632,7 @@
   "deeplink_inviteProve_detail": "Intent は非公開 gist を使ってホストに GitHub の本人確認を行い、直後にそれを削除します。ホストが知るのは、あなたの GitHub ユーザー名、アカウント ID、表示名、アバターです。",
   "deeplink_ipc_unknown_error": "不明なエラー",
   "deeplink_links_betaChannel_message": "ベータ版のアップデートに切り替えました",
+  "deeplink_links_channelUnchanged_message": "アップデートチャネルは変更されていません",
   "deeplink_links_cloneMissingRepo_error": "このクローンリンクにはリポジトリがありません",
   "deeplink_links_openFolderFailed_error": "{folder} を Intent で開けませんでした",
   "deeplink_links_stableChannel_message": "安定版のアップデートに切り替えました",
