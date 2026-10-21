@@ -49,6 +49,7 @@ import {
   debounceWorkspaceInitializerOnboardingFormState,
   hydrateWorkspaceInitializer,
   dismissWorkspaceInitializerRecentRepo,
+  rememberWorkspaceInitializerRecentSpecialist,
   removeWorkspaceInitializerRemoteSetup,
   setCompactWorkspaceInitializerFormState,
   setWorkspaceInitializerAgentForRepo,
@@ -347,6 +348,7 @@ function* watchWorkspaceInitializerPersistence(gate: HydrationGate) {
       removeWorkspaceInitializerRemoteSetup,
       setWorkspaceInitializerLastSubmittedAgent,
       setWorkspaceInitializerAgentForRepo,
+      rememberWorkspaceInitializerRecentSpecialist,
     ],
     buffers.sliding(1),
   );

@@ -9,6 +9,7 @@ import {
   hydrateWorkspaceInitializer,
   initialState,
   removeWorkspaceInitializerRemoteSetup,
+  rememberWorkspaceInitializerRecentSpecialist,
   dismissWorkspaceInitializerRecentRepo,
   setCompactWorkspaceInitializerFormState,
   setWorkspaceInitializerAgentForRepo,
@@ -415,6 +416,35 @@ describe('workspaceInitializerReducer', () => {
       setWorkspaceInitializerLastSubmittedAgent({ selectedSpecialist: null }),
     );
     expect(next.recentSpecialistIds).toBe(state.recentSpecialistIds);
+  });
+
+  it('records a specialist picked in the agent composer without touching the last submitted agent', () => {
+    const submitted = workspaceInitializerReducer(
+      initialState,
+      setWorkspaceInitializerLastSubmittedAgent({ selectedSpecialist: 'implementor' }),
+    );
+    const state = workspaceInitializerReducer(
+      submitted,
+      rememberWorkspaceInitializerRecentSpecialist('reviewer'),
+    );
+    expect(state.recentSpecialistIds).toEqual(['reviewer', 'implementor']);
+    expect(state.lastSubmittedAgent).toBe(submitted.lastSubmittedAgent);
+
+    const repicked = workspaceInitializerReducer(
+      state,
+      rememberWorkspaceInitializerRecentSpecialist('implementor'),
+    );
+    expect(repicked.recentSpecialistIds).toEqual(['implementor', 'reviewer']);
+  });
+
+  it('ignores a General pick in the agent composer', () => {
+    const state = workspaceInitializerReducer(
+      initialState,
+      rememberWorkspaceInitializerRecentSpecialist('reviewer'),
+    );
+    expect(
+      workspaceInitializerReducer(state, rememberWorkspaceInitializerRecentSpecialist(null)),
+    ).toBe(state);
   });
 
   it('keeps a per-repo setup written before hydration over the persisted one', () => {

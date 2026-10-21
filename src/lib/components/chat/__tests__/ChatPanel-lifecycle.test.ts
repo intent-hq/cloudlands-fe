@@ -5635,6 +5635,10 @@ describe.each(['workspace-a', 'workspace-b'])(
       const save = mocks.dispatch.mock.calls
         .map(([action]) => action)
         .find((action) => action.type === 'workspaceAgents/saveAgentSessionRequested');
+      const remembered = mocks.dispatch.mock.calls
+        .map(([action]) => action)
+        .find((action) => action.type === 'workspaceInitializer/rememberRecentSpecialist');
+      expect(remembered.payload).toEqual([c.selection]);
       expect(local.payload).toEqual([
         'agent-a',
         {

@@ -1,4 +1,4 @@
-/** Specialists remembered as recently used in New workspace; the oldest drop first. */
+/** Specialists remembered as recently used (New workspace, agent composer); the oldest drop first. */
 export const MAX_RECENT_SPECIALISTS = 50;
 
 /**
