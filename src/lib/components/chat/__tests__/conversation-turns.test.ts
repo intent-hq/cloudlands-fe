@@ -33,21 +33,67 @@ describe('conversation turn indexing', () => {
           message('model', 'system', 'model_changed'),
           effort,
           message('rehome', 'system', 'provider_rehomed'),
-          message('failover', 'system', 'provider_failover'),
           message('reply', 'assistant'),
         ],
       },
     ]);
     const [turn] = indexed.groups[0].turns;
-    expect(turn.noticeMessages.map(({ id }) => id)).toEqual([
-      'model',
-      'effort',
-      'rehome',
-      'failover',
-    ]);
+    expect(turn.noticeMessages.map(({ id }) => id)).toEqual(['model', 'effort', 'rehome']);
     expect(turn.bodyMessages.map(({ id }) => id)).toEqual(['reply']);
     expect(turn.assistantMessages.map(({ id }) => id)).toEqual(['reply']);
     expect(indexed.turnKeyByMessageId.get('effort')).toBe('user');
+  });
+
+  it('keeps a quota failover notice between the failed attempt and its retry', () => {
+    const [turn] = groupIntoTurns([
+      message('user', 'user'),
+      message('partial', 'assistant'),
+      message('failover', 'system', 'provider_failover'),
+      message('backup', 'assistant'),
+    ]);
+    expect(turn.bodyMessages.map(({ id }) => id)).toEqual(['partial', 'failover', 'backup']);
+    expect(turn.assistantMessages.map(({ id }) => id)).toEqual(['partial', 'backup']);
+    expect(turn.noticeMessages).toEqual([]);
+  });
+
+  it('keeps every switch of a failover chain in transcript order', () => {
+    const indexed = indexConversationTurns([
+      {
+        messages: [
+          message('user', 'user'),
+          message('a-partial', 'assistant'),
+          message('a-to-b', 'system', 'provider_failover'),
+          message('b-partial', 'assistant'),
+          message('b-to-c', 'system', 'provider_failover'),
+          message('c-reply', 'assistant'),
+        ],
+      },
+    ]);
+    const [turn] = indexed.groups[0].turns;
+    expect(turn.bodyMessages.map(({ id }) => id)).toEqual([
+      'a-partial',
+      'a-to-b',
+      'b-partial',
+      'b-to-c',
+      'c-reply',
+    ]);
+    expect(turn.assistantMessages.map(({ id }) => id)).toEqual([
+      'a-partial',
+      'b-partial',
+      'c-reply',
+    ]);
+    expect(turn.noticeMessages).toEqual([]);
+    expect(indexed.turnKeyByMessageId.get('b-to-c')).toBe('user');
+  });
+
+  it('keeps an orphan failover notice addressable when a history page begins with it', () => {
+    const indexed = indexConversationTurns([
+      { groupKey: 'older', messages: [message('failover', 'system', 'provider_failover')] },
+    ]);
+    const [turn] = indexed.groups[0].turns;
+    expect(turn.bodyMessages.map(({ id }) => id)).toEqual(['failover']);
+    expect(turn.assistantMessages).toEqual([]);
+    expect(indexed.turnKeyByMessageId.get('failover')).toBe('group-older-turn-0');
   });
 
   it('keeps an orphan effort notice addressable when a history page begins with it', () => {

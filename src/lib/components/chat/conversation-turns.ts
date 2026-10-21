@@ -83,19 +83,17 @@ export function hasOperationalAssistantTurnBoundary(
 
 function isTurnNotice(message: AgentMessage): boolean {
   const type = message.metadata?.type;
-  return (
-    type === 'model_changed' ||
-    type === 'effort_changed' ||
-    type === 'provider_rehomed' ||
-    type === 'provider_failover'
-  );
+  return type === 'model_changed' || type === 'effort_changed' || type === 'provider_rehomed';
 }
 
+// A quota failover row stays in the ordered body stream: it marks the point
+// between a failed attempt (possibly with partial output) and its retry.
 function isInlineSystemNotice(message: AgentMessage): boolean {
   return (
-    message.role === 'system' &&
-    (message.contentBlocks?.[0]?.meta?.kind === 'interruption' ||
-      getAttentionNotice(message) !== null)
+    message.metadata?.type === 'provider_failover' ||
+    (message.role === 'system' &&
+      (message.contentBlocks?.[0]?.meta?.kind === 'interruption' ||
+        getAttentionNotice(message) !== null))
   );
 }
 
