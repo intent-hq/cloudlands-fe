@@ -3,6 +3,7 @@
  */
 import { render, screen, fireEvent, within } from '@testing-library/svelte';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import pollingProducer from '../../../../test/fixtures/qualified-monitor-polling-producer.json';
 import type { AgentMessage } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import {
@@ -1815,6 +1816,44 @@ describe('ChatMessage script monitor wake attribution', () => {
       expect(onEditSubmit).not.toHaveBeenCalled();
     },
   );
+});
+
+// Backend38c1aa82 actual ACP prompts and stored typed wakes, including retained history.
+describe('actual GitLab polling wake messages', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    agentSelectorHarness.reset();
+  });
+  for (const fixture of pollingProducer.fixtures) {
+    for (const [index, wake] of fixture.wakes.entries()) {
+      it.each([false, true])(`${fixture.terminal} wake ${index}, retained=%s`, async (retained) => {
+        const message: AgentMessage = {
+          id: 'actual-producer-wake',
+          role: 'user',
+          timestamp: new Date(),
+          contentBlocks: structuredClone(wake.content) as AgentMessage['contentBlocks'],
+          ...(retained ? {} : { metadata: wake.metadata }),
+        };
+        const stored = structuredClone(message);
+        render(ChatMessage, { props: { message } });
+        const toggle = screen.getByTestId('automated-wake-toggle');
+        await fireEvent.click(toggle);
+        expect(toggle.getAttribute('aria-expanded')).toBe('true');
+        const body = screen.getByTestId('automated-wake-details').textContent;
+        expect(body).not.toContain('[MR monitor ');
+        expect(body).toContain(wake.content[0].text.replace(/^\[MR monitor [^\]]+\]\s*/, ''));
+        expect(screen.getByTestId('pr-monitor-wake-chip').getAttribute('aria-label')).toContain(
+          'gitlab.test/forge',
+        );
+        await fireEvent.click(screen.getByTestId('pr-monitor-wake-chip'));
+        expect(handleLinkMock).toHaveBeenCalledWith(
+          wake.metadata.url,
+          expect.objectContaining({ forceExternal: true }),
+        );
+        expect(message).toEqual(stored);
+      });
+    }
+  }
 });
 
 describe('ChatMessage pending own-send sender row', () => {

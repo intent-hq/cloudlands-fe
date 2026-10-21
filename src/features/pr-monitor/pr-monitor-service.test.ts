@@ -12,14 +12,16 @@ import producerRowsRaw from './__fixtures__/legacy-monitor-rows.fixture';
 import producerProvenance from './__fixtures__/legacy-monitor-provenance.json';
 
 vi.mock('$lib/client/live/backend-transport', () => ({
+  capturePrMonitorSession: vi.fn(),
   backendRequest: vi.fn(),
   backendSubscribe: vi.fn(),
   backendUnsubscribe: vi.fn().mockResolvedValue(undefined),
   onBackendNotification: vi.fn(() => () => {}),
-  onBackendReconnected: vi.fn(() => () => {}),
+  onMonitorReconnected: vi.fn(() => () => {}),
 }));
 
 import {
+  capturePrMonitorSession,
   backendRequest,
   backendSubscribe,
   backendUnsubscribe,
@@ -35,6 +37,26 @@ import {
   type PrMonitorRow,
 } from './pr-monitor-service';
 
+import type { PrMonitorSession, ReviewMonitorRow } from '$shared/types/pr-monitor';
+const leases: Array<{ dispose(): void }> = [];
+beforeEach(() => {
+  vi.mocked(capturePrMonitorSession).mockImplementation(async (workspaceId) => ({
+    origin: { backendId: 'A', sessionId: 'session-A', workspaceId },
+    support: 'unsupported',
+    request: ((method, params) =>
+      method === 'events.subscribe'
+        ? backendSubscribe(params)
+        : backendRequest(method, params)) as PrMonitorSession['request'],
+    onNotification: (handler) => onBackendNotification(handler),
+    onRetired: () => () => {},
+    release: async () => {
+      await backendUnsubscribe('ws-sub-7', workspaceId);
+    },
+  }));
+});
+afterEach(() => {
+  for (const lease of leases.splice(0)) lease.dispose();
+});
 const mockedRequest = vi.mocked(backendRequest);
 const mockedSubscribe = vi.mocked(backendSubscribe);
 const mockedUnsubscribe = vi.mocked(backendUnsubscribe);
@@ -50,6 +72,34 @@ const producerCases: Array<{
 
 describe('Rust compact monitor producer contract', () => {
   afterEach(() => vi.clearAllMocks());
+
+  async function listProducerMonitor(fixture: (typeof producerCases)[number]) {
+    const origin = {
+      backendId: 'legacy-host',
+      sessionId: 'legacy-session',
+      workspaceId: fixture.monitor.workspaceId,
+    };
+    const request = vi.fn().mockResolvedValue({
+      monitors: [fixture.monitor, { ...fixture.monitor, workspaceId: 'other-workspace' }],
+    });
+    const release = vi.fn();
+    vi.mocked(capturePrMonitorSession).mockResolvedValueOnce({
+      origin,
+      support: 'unsupported',
+      request: request as PrMonitorSession['request'],
+      onNotification: () => () => {},
+      onRetired: () => () => {},
+      release,
+    });
+    const rows = await listPrMonitors(fixture.monitor.workspaceId);
+    expect(capturePrMonitorSession).toHaveBeenCalledWith(fixture.monitor.workspaceId);
+    expect(request).toHaveBeenCalledExactlyOnceWith('prMonitor.list', {
+      workspaceId: fixture.monitor.workspaceId,
+    });
+    expect(release).toHaveBeenCalledOnce();
+    expect(rows).toEqual([{ ...fixture.monitor, origin }]);
+    return rows[0];
+  }
 
   it('retains the exact serialized producer bytes recorded in provenance', () => {
     expect(createHash('sha256').update(producerRowsRaw).digest('hex')).toBe(
@@ -71,14 +121,9 @@ describe('Rust compact monitor producer contract', () => {
     async (name, failing, pending, totalFailed, totalPending, requiredKnown) => {
       const fixture = producerCases.find((entry) => entry.name === name)!;
       expect(fixture, `missing producer case ${name}`).toBeDefined();
-      mockedRequest.mockResolvedValueOnce({ monitors: [fixture.monitor] });
 
-      const [monitor] = await listPrMonitors(fixture.monitor.workspaceId);
+      const monitor = await listProducerMonitor(fixture);
 
-      expect(mockedRequest).toHaveBeenCalledWith('prMonitor.list', {
-        workspaceId: fixture.monitor.workspaceId,
-      });
-      expect(monitor).toEqual(fixture.monitor);
       expect(monitor.lastSnapshot?.checks.failingRequired).toBe(failing);
       expect(monitor.lastSnapshot?.checks.pendingRequired).toBe(pending);
       expect(monitor.lastSnapshot?.checks.failed).toBe(totalFailed);
@@ -100,9 +145,7 @@ describe('Rust compact monitor producer contract', () => {
     'does not invent a baseline or required counts: %s',
     async (name) => {
       const fixture = producerCases.find((entry) => entry.name === name)!;
-      mockedRequest.mockResolvedValueOnce({ monitors: [fixture.monitor] });
-      const [monitor] = await listPrMonitors(fixture.monitor.workspaceId);
-      expect(monitor).toEqual(fixture.monitor);
+      const monitor = await listProducerMonitor(fixture);
       for (const key of ['lastSnapshot', 'title', 'url']) {
         expect(monitor).not.toHaveProperty(key);
       }
@@ -119,8 +162,7 @@ describe('Rust compact monitor producer contract', () => {
     'keeps unreadable thread counts absent: %s',
     async (name) => {
       const fixture = producerCases.find((entry) => entry.name === name)!;
-      mockedRequest.mockResolvedValueOnce({ monitors: [fixture.monitor] });
-      const [monitor] = await listPrMonitors(fixture.monitor.workspaceId);
+      const monitor = await listProducerMonitor(fixture);
       expect(monitor.lastSnapshot?.threads).not.toHaveProperty('unresolved');
       if (name === 'unknown-required') {
         expect(monitor.lastSnapshot?.rulesKnown).toBe(false);
@@ -134,6 +176,7 @@ describe('Rust compact monitor producer contract', () => {
 /** PROTOCOL §6.9 prMonitor.list row (`lastSnapshot` arrives on list only). */
 function makeMonitor(overrides: Partial<PrMonitorRow> = {}): PrMonitorRow {
   return {
+    origin: { backendId: 'A', sessionId: 'session-A', workspaceId: 'ws-1' },
     monitorId: 'mon-1',
     workspaceId: 'ws-1',
     agentId: 'agent-1',
@@ -250,6 +293,14 @@ describe('foldPrMonitorEvent (§6.5 prMonitor:* lifecycle)', () => {
 });
 
 describe('wire requests (§6.9, fake transport)', () => {
+  beforeEach(async () => {
+    mockedRequest.mockResolvedValue({ monitors: [] });
+    mockedSubscribe.mockResolvedValue({ subscriptionId: 'ws-sub-7' });
+    leases.push(subscribePrMonitors('ws-1', () => {}));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    mockedRequest.mockClear();
+  });
+
   afterEach(() => vi.clearAllMocks());
 
   it('listPrMonitors forwards prMonitor.list { workspaceId } and unwraps monitors', async () => {
@@ -312,7 +363,7 @@ describe('subscribePrMonitors (prMonitor:* events.subscribe + fold)', () => {
 
   it('preserves cached rows and reports when the initial prMonitor.list seed fails', async () => {
     mockedRequest.mockRejectedValueOnce(new Error('list failed'));
-    const seen: PrMonitorRow[][] = [];
+    const seen: ReviewMonitorRow[][] = [];
     const statuses: string[] = [];
     const { dispose } = subscribePrMonitors(
       'ws-1',
@@ -332,9 +383,10 @@ describe('subscribePrMonitors (prMonitor:* events.subscribe + fold)', () => {
       () => new Promise((resolve) => (resolveSubscribe = resolve)),
     );
     mockedRequest.mockResolvedValue({ monitors: [makeMonitor()] });
-    const seen: PrMonitorRow[][] = [];
+    const seen: ReviewMonitorRow[][] = [];
     const { dispose } = subscribePrMonitors('ws-1', (monitors) => seen.push(monitors));
 
+    await Promise.resolve();
     // Both wire calls leave immediately — the seed does not wait for the ack.
     expect(mockedSubscribe).toHaveBeenCalledWith({
       eventTypes: ['prMonitor:*'],
@@ -360,7 +412,7 @@ describe('subscribePrMonitors (prMonitor:* events.subscribe + fold)', () => {
     mockedRequest
       .mockResolvedValueOnce({ monitors: [] })
       .mockResolvedValueOnce({ monitors: [makeMonitor()] });
-    const seen: PrMonitorRow[][] = [];
+    const seen: ReviewMonitorRow[][] = [];
     const { dispose } = subscribePrMonitors('ws-1', (monitors) => seen.push(monitors));
     await flush();
     expect(mockedRequest).toHaveBeenCalledTimes(1);
@@ -380,7 +432,7 @@ describe('subscribePrMonitors (prMonitor:* events.subscribe + fold)', () => {
     // the ack — so the post-ack re-list is unconditional, coalesced into
     // exactly one trailing prMonitor.list.
     mockedRequest.mockResolvedValue({ monitors: [makeMonitor()] });
-    const seen: PrMonitorRow[][] = [];
+    const seen: ReviewMonitorRow[][] = [];
     const { dispose } = subscribePrMonitors('ws-1', (monitors) => seen.push(monitors));
     await flush();
     await flush();
@@ -394,7 +446,7 @@ describe('subscribePrMonitors (prMonitor:* events.subscribe + fold)', () => {
   it('still serves the one-shot seed when events.subscribe fails', async () => {
     mockedSubscribe.mockRejectedValueOnce(new Error('subscribe failed'));
     mockedRequest.mockResolvedValue({ monitors: [makeMonitor()] });
-    const seen: PrMonitorRow[][] = [];
+    const seen: ReviewMonitorRow[][] = [];
     const { dispose } = subscribePrMonitors('ws-1', (monitors) => seen.push(monitors));
     await flush();
 
@@ -405,7 +457,7 @@ describe('subscribePrMonitors (prMonitor:* events.subscribe + fold)', () => {
 
   it('registers a workspace-scoped prMonitor:* subscription, seeds from prMonitor.list, folds events', async () => {
     mockedRequest.mockResolvedValue({ monitors: [makeMonitor()] });
-    const seen: PrMonitorRow[][] = [];
+    const seen: ReviewMonitorRow[][] = [];
     const { dispose } = subscribePrMonitors('ws-1', (monitors) => seen.push(monitors));
     await flush();
 
@@ -480,7 +532,7 @@ describe('subscribePrMonitors (prMonitor:* events.subscribe + fold)', () => {
 
   it('ignores foreign-workspace and foreign-subscription events', async () => {
     mockedRequest.mockResolvedValue({ monitors: [makeMonitor()] });
-    const seen: PrMonitorRow[][] = [];
+    const seen: ReviewMonitorRow[][] = [];
     const { dispose } = subscribePrMonitors('ws-1', (monitors) => seen.push(monitors));
     await flush();
     const baseline = seen.length;
@@ -515,7 +567,7 @@ describe('subscribePrMonitors (prMonitor:* events.subscribe + fold)', () => {
     mockedRequest
       .mockResolvedValueOnce({ monitors: [] })
       .mockResolvedValueOnce({ monitors: [makeMonitor({ monitorId: 'mon-9' })] });
-    const seen: PrMonitorRow[][] = [];
+    const seen: ReviewMonitorRow[][] = [];
     const { dispose } = subscribePrMonitors('ws-1', (monitors) => seen.push(monitors));
     await flush();
 
@@ -542,7 +594,7 @@ describe('subscribePrMonitors (prMonitor:* events.subscribe + fold)', () => {
     mockedRequest
       .mockResolvedValueOnce({ monitors: [makeMonitor()] })
       .mockImplementationOnce(() => new Promise((resolve) => (resolveSecondList = resolve)));
-    const seen: PrMonitorRow[][] = [];
+    const seen: ReviewMonitorRow[][] = [];
     const { refetch, dispose } = subscribePrMonitors('ws-1', (monitors) => seen.push(monitors));
     await flush();
     expect(seen.at(-1)).toEqual([makeMonitor()]);
@@ -577,7 +629,7 @@ describe('subscribePrMonitors (prMonitor:* events.subscribe + fold)', () => {
       .mockResolvedValueOnce({
         monitors: [makeMonitor({ pendingChanges: [], hasPendingChanges: false })],
       });
-    const seen: PrMonitorRow[][] = [];
+    const seen: ReviewMonitorRow[][] = [];
     const { refetch, dispose } = subscribePrMonitors('ws-1', (monitors) => seen.push(monitors));
     await flush();
 
@@ -617,7 +669,7 @@ describe('subscribePrMonitors (prMonitor:* events.subscribe + fold)', () => {
       .mockResolvedValueOnce({ monitors: [makeMonitor()] })
       .mockResolvedValueOnce({ monitors: [makeMonitor()] })
       .mockResolvedValueOnce({ monitors: [refreshed] });
-    const seen: PrMonitorRow[][] = [];
+    const seen: ReviewMonitorRow[][] = [];
     const { refetch, dispose } = subscribePrMonitors('ws-1', (monitors) => seen.push(monitors));
     await flush();
     await flush();
@@ -632,4 +684,96 @@ describe('subscribePrMonitors (prMonitor:* events.subscribe + fold)', () => {
     expect(seen.at(-1)).toEqual([refreshed]);
     dispose();
   });
+});
+
+describe('qualified monitor event identity', () => {
+  it('retains monitor health without losing the existing canonical target', () => {
+    const resource = {
+      repository: {
+        provider: 'gitlab' as const,
+        instanceBaseUrl: 'https://forge.test:8443/install',
+        projectPath: 'acme/widgets',
+      },
+      kind: 'merge-request' as const,
+      number: 42,
+    };
+    const row = { ...makeMonitor(), resource, monitorAvailability: { state: 'pending' as const } };
+    const data = {
+      monitorId: 'mon-1',
+      resource,
+      monitorAvailability: { state: 'backoff' as const, retryAt: '2026-10-09T16:00:00Z' },
+      changes: [],
+    };
+    const result = foldPrMonitorEvent([row], 'prMonitor:changed', data);
+    expect(result.monitors[0]).toMatchObject({
+      resource,
+      monitorAvailability: data.monitorAvailability,
+    });
+  });
+  it('rejects a matching monitor id carrying a different workspace', () => {
+    const row = makeMonitor();
+    expect(
+      foldPrMonitorEvent([row], 'prMonitor:cancelled', {
+        monitorId: row.monitorId,
+        workspaceId: 'other',
+      }).monitors,
+    ).toEqual([row]);
+  });
+});
+
+describe('equivalent provider folds', () => {
+  it.each(['github', 'gitlab'] as const)(
+    'preserves %s health, pending updates and adoption',
+    (provider) => {
+      const resource = {
+        repository: {
+          provider,
+          instanceBaseUrl:
+            provider === 'github' ? 'https://github.com' : 'https://forge.test:8443/install',
+          projectPath: 'acme/widgets',
+        },
+        kind: provider === 'github' ? ('pull-request' as const) : ('merge-request' as const),
+        number: 42,
+      };
+      const row = { ...makeMonitor(), resource };
+      for (const state of [
+        'unknown',
+        'restricted',
+        'reconnect-required',
+        'pending',
+        'disabled',
+        'unsupported',
+      ] as const) {
+        const folded = foldPrMonitorEvent([row], 'prMonitor:changed', {
+          monitorId: row.monitorId,
+          resource,
+          monitorAvailability: { state },
+          changes: [],
+        });
+        expect(folded.monitors[0]).toMatchObject({
+          resource,
+          monitorAvailability: { state },
+          hasPendingChanges: false,
+        });
+        expect(folded.needsRefetch).toBe(true);
+      }
+      const adopted = foldPrMonitorEvent([row], 'prMonitor:registered', {
+        monitorId: row.monitorId,
+        agentId: 'new-owner',
+        resource,
+      });
+      expect(adopted.monitors[0].agentId).toBe('new-owner');
+      expect(adopted.needsRefetch).toBe(true);
+      const wrongTarget = {
+        ...resource,
+        repository: { ...resource.repository, instanceBaseUrl: 'https://other.test' },
+      };
+      expect(
+        foldPrMonitorEvent([row], 'prMonitor:cancelled', {
+          monitorId: row.monitorId,
+          resource: wrongTarget,
+        }).monitors,
+      ).toEqual([row]);
+    },
+  );
 });

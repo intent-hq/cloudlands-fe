@@ -506,16 +506,14 @@
       }),
     );
   }
-
-  // Expand-state key: cross-repo monitored rows can share a bare PR number
-  // with the workspace PR, so key by repo-qualified identity (mirrors the
-  // {#each} key).
+  // Qualified keys keep same-number reviews on different forges distinct.
   function prKey(pr: PRInfo): string {
-    return pr.crossRepo ? `${pr.crossRepo}#${pr.number}` : String(pr.number);
+    return (
+      pr.monitorIdentity ?? (pr.crossRepo ? `${pr.crossRepo}#${pr.number}` : String(pr.number))
+    );
   }
 
-  // Any PR content across the three sub-sections (monorepo#2053) — the
-  // section header renders when any of them has rows.
+  // Show the header when any section has reviews.
   const hasAnyPRs = $derived(hasPRs || otherRootPRs.length > 0 || otherTrackedPRs.length > 0);
 
   function togglePRExpanded(key: string) {
@@ -999,7 +997,9 @@
                     >
                   {/if}
                 </span>
-                <span class="text-ui text-subtle">#{pr.number}</span>
+                <span class="text-ui text-subtle"
+                  >{pr.resource?.repository.provider === 'gitlab' ? '!' : '#'}{pr.number}</span
+                >
                 {#if pr.status === 'merged'}
                   <span class="text-ui text-purple-500 font-medium"
                     >{m.workspace_prSection_merged_label()}</span
@@ -1018,6 +1018,7 @@
                   variant="ghost-light"
                   size="icon-xs"
                   class="shrink-0"
+                  disabled={!pr.url}
                   onclick={() =>
                     handleLink(pr.url, {
                       workspaceId: workspaceId as WorkspaceId,

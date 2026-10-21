@@ -106,10 +106,10 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   },
 }));
 vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', () => ({
-  selectActivePrMonitors: Object.assign(() => mocks.readable(() => []), {
+  selectActiveReviewMonitors: Object.assign(() => mocks.readable(() => []), {
     select: () => [],
   }),
-  selectPrMonitors: Object.assign(() => mocks.readable(() => []), {
+  selectReviewMonitors: Object.assign(() => mocks.readable(() => []), {
     select: () => [],
   }),
 }));

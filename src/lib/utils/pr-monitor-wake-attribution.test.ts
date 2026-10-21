@@ -138,3 +138,84 @@ describe('stripPrMonitorWakePrefix', () => {
     );
   });
 });
+
+describe('qualified monitor wake identity', () => {
+  const resource = {
+    repository: {
+      provider: 'gitlab',
+      instanceBaseUrl: 'https://forge.test:8443/install',
+      projectPath: 'Team/Sub/Repo',
+    },
+    kind: 'merge-request',
+    number: 42,
+  };
+  it('retains identity and availability without manufacturing a GitHub URL', () => {
+    const attribution = getPrMonitorWakeAttribution({
+      type: 'pr_monitor_wake',
+      monitorId: 'mr',
+      repo: 'Team/Sub/Repo',
+      prNumber: 42,
+      resource,
+      monitorAvailability: { state: 'restricted' },
+    });
+    expect(attribution).toMatchObject({ resource, monitorAvailability: { state: 'restricted' } });
+    expect(getPrMonitorWakeUrl(attribution!)).toBe('');
+  });
+  it('does not downgrade malformed qualified identity to legacy prefix attribution', () => {
+    expect(
+      getPrMonitorWakeAttribution(
+        {
+          type: 'pr_monitor_wake',
+          repo: 'Team/Sub/Repo',
+          prNumber: 42,
+          resource: { ...resource, number: 43 },
+        },
+        '[PR monitor Team/Sub/Repo#42] wake',
+      ),
+    ).toBeNull();
+  });
+});
+
+describe('qualified MR transport prefix', () => {
+  const resource = {
+    repository: {
+      provider: 'gitlab',
+      instanceBaseUrl: 'https://forge.example/install',
+      projectPath: 'group/sub/project',
+    },
+    kind: 'merge-request',
+    number: 4,
+  };
+  const metadata = { type: 'pr_monitor_wake', repo: 'group/sub/project', prNumber: 4, resource };
+  it('strips only a matching prefix with validated qualified attribution', () => {
+    const attribution = getPrMonitorWakeAttribution(metadata);
+    expect(attribution).not.toBeNull();
+    expect(
+      stripPrMonitorWakePrefix('[MR monitor group/sub/project!4] Pipeline failed', attribution),
+    ).toBe('Pipeline failed');
+    for (const text of [
+      '[MR monitor other/project!4] Pipeline failed',
+      '[MR monitor group/sub/project!5] Pipeline failed',
+      'quoted [MR monitor group/sub/project!4] Pipeline failed',
+    ]) {
+      expect(stripPrMonitorWakePrefix(text, attribution)).toBe(text);
+    }
+  });
+  it('never infers an MR from text, unqualified metadata or rejected canonical identity', () => {
+    const text = '[MR monitor group/sub/project!4] Pipeline failed';
+    expect(getPrMonitorWakeAttribution(undefined, text)).toBeNull();
+    expect(stripPrMonitorWakePrefix(text)).toBe(text);
+    expect(
+      stripPrMonitorWakePrefix(
+        text,
+        getPrMonitorWakeAttribution({ ...metadata, resource: undefined }),
+      ),
+    ).toBe(text);
+    expect(
+      stripPrMonitorWakePrefix(
+        text,
+        getPrMonitorWakeAttribution({ ...metadata, resource: { ...resource, number: 5 } }),
+      ),
+    ).toBe(text);
+  });
+});

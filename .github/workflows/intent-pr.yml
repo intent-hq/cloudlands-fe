@@ -486,7 +486,7 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         run: |
           set -euo pipefail
-          # Include lifetime and checkout fixtures, the checkout transport,
+          # Include lifetime, checkout and monitor fixtures and transports,
           # shared harness/config and dependency inputs. --no-renames exposes
           # both sides of a moved test or fixture.
           changed_paths=$(mktemp)
@@ -496,7 +496,7 @@ jobs:
             echo "electron_required=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if grep -z -E '^(test/(electron-browser-lifetime[^/]*|fixtures/(browser-lifetime|repository-checkout)/|vite-harness-cache\.)|src/(features/backend/main/repository-checkout[^/]*\.ts$|lib/client/live/repository-checkout-transport\.ts$|shared/types/repository-checkout\.ts$)|\.github/workflows/(intent-pr|browser-tests)\.yml$|playwright(\.manual)?\.config\.ts$|playwright/(app-stubs/|(root|ct)-spec-pattern\.mjs$)|svelte\.config\.js$|package\.json$|pnpm-lock\.yaml$)' "$changed_paths" >/dev/null; then
+          if grep -z -E '^(test/(electron-browser-lifetime[^/]*|fixtures/(browser-lifetime|repository-checkout|pr-monitor-native)/|vite-harness-cache\.)|src/(features/backend/main/(repository-checkout[^/]*|pr-monitor-lifecycle[^/]*|backend\.ipc|json-rpc-client)\.ts$|lib/client/live/(repository-checkout-transport|pr-monitor-transport|electron-ipc-transport)\.ts$|shared/types/(repository-checkout|pr-monitor)\.ts$|preload/index\.template\.ts$)|\.github/workflows/(intent-pr|browser-tests)\.yml$|playwright(\.manual)?\.config\.ts$|playwright/(app-stubs/|(root|ct)-spec-pattern\.mjs$)|svelte\.config\.js$|package\.json$|pnpm-lock\.yaml$)' "$changed_paths" >/dev/null; then
             echo "electron_required=true" | tee -a "$GITHUB_OUTPUT"
           else
             echo "electron_required=false" | tee -a "$GITHUB_OUTPUT"
