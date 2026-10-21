@@ -48,10 +48,14 @@ const UPDATE_CHANNEL_STORAGE_KEY = 'updateChannel';
 // Legacy boolean key, migrated to UPDATE_CHANNEL_STORAGE_KEY on first load
 const BETA_UPDATES_STORAGE_KEY = 'betaUpdatesEnabled';
 
-// How often to check for updates (1 hour in milliseconds)
+// Automatic-check tick (1 hour). Alpha/beta check on every tick; stable only
+// when no check has succeeded yet on the current UTC day.
 const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
-// Minimum time between focus/resume checks (4 hours)
+// Alpha/beta: minimum time between focus/resume checks (4 hours). Stable
+// focus/resume checks follow the once-a-UTC-day rule instead.
 const FOCUS_RESUME_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
+// Delay of the startup check after initialization.
+const STARTUP_CHECK_DELAY_MS = 10_000;
 // Timeout for a single update check (30 seconds)
 // If autoUpdater.checkForUpdates() doesn't resolve within this time, force error state
 const UPDATE_CHECK_TIMEOUT_MS = 30 * 1000;
@@ -116,10 +120,11 @@ class AutoUpdateService {
   private channelSwitchEpoch = 0;
   private onWindowFocus: (() => void) | null = null;
   private onResume: (() => void) | null = null;
-  // UTC day (YYYY-MM-DD) of the last successful telemetry-feed check, mirrored
-  // from the `lastUpdateCheckDay` local pref so each check reads it
-  // synchronously. Drives the feed's once-a-day `d=1` flag.
-  private lastTelemetryCheckDay: string | null = null;
+  // UTC day (YYYY-MM-DD) of the last successful update check on any feed,
+  // mirrored from the `lastUpdateCheckDay` local pref so each check reads it
+  // synchronously. Drives the stable channel's once-a-day automatic checks
+  // and the telemetry feed's `d=1` flag.
+  private lastSuccessfulCheckDay: string | null = null;
   // Set once a check against updates.intentapp.dev fails: every later check
   // this session goes straight to the GitHub feed.
   private githubFallbackActive = false;
@@ -175,20 +180,47 @@ class AutoUpdateService {
       updateUrl: getUpdateBaseUrl(),
     });
 
-    // Check for updates on startup (after a short delay)
+    // Startup check (after a short delay). On stable it is skipped when a
+    // check already succeeded today.
     setTimeout(() => {
+      if (this.isDailyCadence() && !this.isDailyCheckDue()) {
+        logger.debug('Skipping startup update check - already checked today');
+        return;
+      }
       this.checkForUpdates('startup').catch((err) => {
         logger.debug('Initial update check failed', { error: err.message });
       });
-    }, 10000); // 10 seconds after startup
+    }, STARTUP_CHECK_DELAY_MS);
 
-    // Set up periodic update checks (every hour)
+    // Hourly tick. The channel is read on every tick, so a channel switch
+    // changes the cadence immediately.
     this.updateCheckInterval = setInterval(() => {
+      if (this.isDailyCadence()) {
+        if (!this.isDailyCheckDue()) return;
+        logger.info('Daily update check...');
+        this.checkForUpdates('daily').catch((err) => {
+          logger.debug('Daily update check failed', { error: err.message });
+        });
+        return;
+      }
       logger.info('Periodic update check...');
       this.checkForUpdates('periodic').catch((err) => {
         logger.debug('Periodic update check failed', { error: err.message });
       });
     }, UPDATE_CHECK_INTERVAL_MS);
+  }
+
+  /**
+   * Stable makes at most one successful automatic check per UTC day; alpha
+   * and beta keep the startup, hourly and 4 h focus/resume checks.
+   */
+  private isDailyCadence(): boolean {
+    return this.state.channel === 'stable';
+  }
+
+  /** True when no update check has succeeded yet on the current UTC day. */
+  private isDailyCheckDue(): boolean {
+    return isFirstCheckOfUtcDay(this.lastSuccessfulCheckDay, new Date());
   }
 
   /**
@@ -255,7 +287,7 @@ class AutoUpdateService {
         getLocalPref<unknown>(LAST_UPDATE_CHECK_DAY_PREF),
       ]);
       this.state.shareStatistics = share !== false;
-      this.lastTelemetryCheckDay = typeof lastDay === 'string' ? lastDay : null;
+      this.lastSuccessfulCheckDay = typeof lastDay === 'string' ? lastDay : null;
     } catch (error) {
       logger.error('Failed to load update telemetry settings', error as Error);
     }
@@ -309,7 +341,7 @@ class AutoUpdateService {
         version: this.state.currentVersion || app.getVersion(),
         source: detectInstallSource(process.platform, env),
         trigger,
-        daily: isFirstCheckOfUtcDay(this.lastTelemetryCheckDay, new Date()),
+        daily: isFirstCheckOfUtcDay(this.lastSuccessfulCheckDay, new Date()),
       },
       shareStatistics: this.state.shareStatistics,
       githubFallbackActive: this.githubFallbackActive,
@@ -343,11 +375,15 @@ class AutoUpdateService {
     return { feed, feedToken };
   }
 
-  /** Record that today's telemetry check has been counted (drives `d`). */
-  private markTelemetryCheckCounted(): void {
+  /**
+   * Record that an update check succeeded today (on any feed). Drives the
+   * stable once-a-day cadence and the telemetry `d` flag. Failed checks are
+   * never recorded, so the next tick or focus retries.
+   */
+  private markCheckSucceededToday(): void {
     const today = utcDay(new Date());
-    if (this.lastTelemetryCheckDay === today) return;
-    this.lastTelemetryCheckDay = today;
+    if (this.lastSuccessfulCheckDay === today) return;
+    this.lastSuccessfulCheckDay = today;
     void import('../../../main/local-prefs')
       .then(({ setLocalPref }) => setLocalPref(LAST_UPDATE_CHECK_DAY_PREF, today))
       .catch((error) => {
@@ -393,7 +429,6 @@ class AutoUpdateService {
     try {
       const result = await autoUpdater.checkForUpdates();
       this.telemetryAttemptActive = false;
-      if (result) this.markTelemetryCheckCounted();
       return result;
     } catch (error) {
       this.telemetryAttemptActive = false;
@@ -742,6 +777,7 @@ class AutoUpdateService {
       this.startCheckTimeout();
       const epochAtStart = this.channelSwitchEpoch;
       const result = await this.runCheckWithFallback(this.state.channel, trigger);
+      if (result) this.markCheckSucceededToday();
       // autoDownload path: when this check found an update and started
       // downloading it, the result carries the token that can cancel that
       // download. Keep it so a channel switch can cancel the in-flight
@@ -1111,8 +1147,12 @@ class AutoUpdateService {
   }
 
   private checkForUpdatesIfStale(reason: 'focus' | 'resume') {
-    const now = Date.now();
-    if (this.lastCheckAt && now - this.lastCheckAt < FOCUS_RESUME_CHECK_INTERVAL_MS) {
+    if (this.isDailyCadence()) {
+      if (!this.isDailyCheckDue()) {
+        logger.debug('Skipping update check (already checked today)', { reason });
+        return;
+      }
+    } else if (this.isFocusCheckTooSoon()) {
       logger.debug('Skipping update check (too soon)', {
         reason,
         lastCheckAt: this.lastCheckAt,
@@ -1124,6 +1164,12 @@ class AutoUpdateService {
     this.checkForUpdates('focus').catch((err) => {
       logger.debug('Activity-triggered update check failed', { reason, error: err.message });
     });
+  }
+
+  private isFocusCheckTooSoon(): boolean {
+    return (
+      this.lastCheckAt !== null && Date.now() - this.lastCheckAt < FOCUS_RESUME_CHECK_INTERVAL_MS
+    );
   }
 
   /**

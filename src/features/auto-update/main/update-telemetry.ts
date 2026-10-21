@@ -17,10 +17,18 @@ import type { UpdateChannel } from '../types';
 
 /** FE-local pref: the Settings → "Share anonymous update statistics" toggle. */
 export const SHARE_UPDATE_STATISTICS_PREF = 'shareUpdateStatistics';
-/** FE-local pref: UTC day (YYYY-MM-DD) of the last counted telemetry check. */
+/**
+ * FE-local pref: UTC day (YYYY-MM-DD) of the last successful update check on
+ * any feed. Gates the stable channel's once-a-day automatic checks and the
+ * telemetry `d` flag.
+ */
 export const LAST_UPDATE_CHECK_DAY_PREF = 'lastUpdateCheckDay';
 
-export type UpdateCheckTrigger = 'startup' | 'periodic' | 'focus' | 'manual' | 'channel';
+/**
+ * Why a check ran (`k`). `daily` is the stable channel's hourly tick after the
+ * UTC day rolled over; `periodic` is the alpha/beta hourly tick.
+ */
+export type UpdateCheckTrigger = 'startup' | 'daily' | 'periodic' | 'focus' | 'manual' | 'channel';
 export type InstallSource = 'dmg' | 'nsis' | 'appimage' | 'deb' | 'unknown';
 type UpdateFeedKind = 'telemetry' | 'github' | 'custom';
 
@@ -56,7 +64,7 @@ export function utcDay(now: Date): string {
   return now.toISOString().slice(0, 10);
 }
 
-/** True when no telemetry check has been counted yet on `now`'s UTC day. */
+/** True when no update check has succeeded yet on `now`'s UTC day. */
 export function isFirstCheckOfUtcDay(lastCheckDay: unknown, now: Date): boolean {
   return lastCheckDay !== utcDay(now);
 }
