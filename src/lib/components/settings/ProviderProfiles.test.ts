@@ -630,23 +630,29 @@ describe('ProviderProfiles backup and order (§5.54)', () => {
     await waitFor(() => expect(rowNames()).toEqual(['pc', 'pa', 'pb']));
   });
 
-  it('restores the order and shows an error when the daemon rejects the reorder', async () => {
-    await renderProfiles([A, B]);
+  it('blocks further moves until the daemon answers, then shows an error on rejection', async () => {
+    await renderProfiles([A, B, C]);
     await fireEvent.keyDown(grip('Beta'), { key: 'ArrowUp' });
-    await waitFor(() => expect(rowNames()).toEqual(['pb', 'pa']));
+    await waitFor(() => expect(rowNames()).toEqual(['pb', 'pa', 'pc']));
     const action = lastOf('providerProfiles/reorderRequested') as {
       payload: [{ requestId: string }];
     };
+    await waitFor(() => expect(grip('Beta').getAttribute('aria-disabled')).toBe('true'));
+    const before = mocks.dispatched.length;
+    await fireEvent.keyDown(grip('Beta'), { key: 'ArrowDown' });
+    expect(mocks.dispatched.slice(before).map((a) => a.type)).not.toContain(
+      'providerProfiles/reorderRequested',
+    );
     const { providerProfileMutationFailed } =
       await import('$store/renderer/slices/provider-settings/provider-settings-slice');
     const { store } = await import('$store/renderer/store');
     store.dispatch(providerProfileMutationFailed(action.payload[0].requestId, { kind: 'other' }));
-    await waitFor(() => expect(rowNames()).toEqual(['pa', 'pb']));
     await waitFor(() =>
       expect(mocks.notify.error).toHaveBeenCalledWith(
         m.settings_providerProfiles_reorderFailed_error(),
       ),
     );
+    await waitFor(() => expect(grip('Beta').getAttribute('aria-disabled')).toBeNull());
   });
 
   it('saves the backup toggle on edit and on create', async () => {

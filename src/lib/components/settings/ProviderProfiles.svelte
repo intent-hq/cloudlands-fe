@@ -82,6 +82,15 @@
 
   // Reorder and backup are offered only when the daemon reports `backup`.
   const canReorder = $derived($backupSupported$ && $profiles$.length > 1);
+  // One reorder per provider at a time: further moves wait until the daemon answers.
+  const reorderPending = $derived(
+    Object.values($mutations$).some(
+      (mutation) =>
+        mutation.kind === 'reorder' &&
+        mutation.status === 'pending' &&
+        mutation.baseProviderId === providerId,
+    ),
+  );
   let draggedId = $state<string | null>(null);
   let dragOverId = $state<string | null>(null);
   let dragOverPosition = $state<'before' | 'after' | null>(null);
@@ -119,17 +128,17 @@
   });
 
   $effect(() => {
+    // Only once the store has recorded and settled it (the store updates after dispatch).
     const settled = reorderRequests.filter((id) => {
       const outcome = $mutations$[id];
-      return !outcome || outcome.status !== 'pending';
+      return outcome !== undefined && outcome.status !== 'pending';
     });
     if (settled.length === 0) return;
     reorderRequests = reorderRequests.filter((id) => !settled.includes(id));
     for (const id of settled) {
-      const outcome = $mutations$[id];
-      if (!outcome) continue;
+      const outcome = $mutations$[id]!;
       appStore.dispatch(providerProfileMutationDismissed(id));
-      // The slice already restored the previous order.
+      // The saga re-reads the daemon's list; its saved order replaces ours.
       if (outcome.status === 'failure')
         notify.error(m.settings_providerProfiles_reorderFailed_error());
     }
@@ -140,6 +149,7 @@
     targetId: string,
     position: 'before' | 'after' = 'before',
   ) {
+    if (reorderPending) return;
     const ids = $profiles$.map((profile) => profile.id);
     const sourceIndex = ids.indexOf(profileId);
     const targetIndex = ids.indexOf(targetId);
@@ -166,6 +176,7 @@
   function handleReorderKeydown(event: KeyboardEvent, profileId: string) {
     if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
     event.preventDefault();
+    if (reorderPending) return;
     const direction = event.key === 'ArrowUp' ? -1 : 1;
     const index = $profiles$.findIndex(({ id }) => id === profileId);
     const target = $profiles$[index + direction];
@@ -173,6 +184,10 @@
   }
 
   function handleDragStart(event: DragEvent, profileId: string) {
+    if (reorderPending) {
+      event.preventDefault();
+      return;
+    }
     draggedId = profileId;
     dragOverId = null;
     dragOverPosition = null;
@@ -331,7 +346,8 @@
                   type="button"
                   variant="ghost"
                   size="icon-xs"
-                  draggable="true"
+                  draggable={reorderPending ? 'false' : 'true'}
+                  aria-disabled={reorderPending || undefined}
                   class="-ml-1.5 flex size-6 shrink-0 cursor-grab items-center justify-center text-muted-foreground active:cursor-grabbing"
                   aria-label={m.settings_providerProfiles_reorder_ariaLabel({ name: profile.name })}
                   aria-keyshortcuts="ArrowUp ArrowDown"

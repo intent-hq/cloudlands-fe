@@ -162,16 +162,29 @@ function withBaseOrder(
   return next ? createCollection<ProviderProfile, 'id'>('id', next) : state.items;
 }
 
-/** Optimistic reorder: show the new order now and remember the old one for rollback. */
+/** Whether a reorder of `baseProviderId` is still waiting for the daemon. */
+function hasPendingReorder(state: ProviderProfilesState, baseProviderId: string): boolean {
+  return getItems(state.mutations).some(
+    (mutation) =>
+      mutation.kind === 'reorder' &&
+      mutation.status === 'pending' &&
+      mutation.baseProviderId === baseProviderId,
+  );
+}
+
+/**
+ * Optimistic reorder: show the new order while the daemon saves it. One
+ * reorder per base provider at a time; a second request while one is pending
+ * is ignored (never recorded, never sent). A rejection keeps no client
+ * snapshot: the saga re-reads the daemon's list, whose order wins.
+ */
 const onReorder: Handler<[{ requestId: string; baseProviderId: string; profileIds: string[] }]> = (
   state,
   [{ requestId, baseProviderId, profileIds }],
 ) => {
-  const previousOrder = getItems(state.items)
-    .filter((profile) => profile.baseProviderId === baseProviderId)
-    .map((profile) => profile.id);
+  if (hasPendingReorder(state, baseProviderId)) return state;
   return {
-    ...pendingMutation(state, { id: requestId, kind: 'reorder', baseProviderId, previousOrder }),
+    ...pendingMutation(state, { id: requestId, kind: 'reorder', baseProviderId }),
     items: withBaseOrder(state, baseProviderId, profileIds),
   };
 };
@@ -201,20 +214,6 @@ const onReorderSucceeded: Handler<[string, ProviderProfile[], number]> = (
   };
 };
 
-const onFailed: Handler<[string, ProviderProfileFailure]> = (state, [requestId, failure]) => {
-  const mutation = getItem(state.mutations, requestId);
-  if (!mutation) return state;
-  const items =
-    mutation.kind === 'reorder' && mutation.baseProviderId && mutation.previousOrder
-      ? withBaseOrder(state, mutation.baseProviderId, mutation.previousOrder)
-      : state.items;
-  return {
-    ...state,
-    items,
-    mutations: updateItem(state.mutations, { id: requestId, status: 'failure', failure }),
-  };
-};
-
 export const profileHandlers = {
   loaded: onLoaded,
   loadFailed: ((state) => ({ ...state, loadStatus: 'failure' })) as Handler<[]>,
@@ -237,7 +236,13 @@ export const profileHandlers = {
   succeeded: onSucceeded,
   reorder: onReorder,
   reorderSucceeded: onReorderSucceeded,
-  failed: onFailed,
+  failed: ((state, [requestId, failure]) =>
+    getItem(state.mutations, requestId)
+      ? {
+          ...state,
+          mutations: updateItem(state.mutations, { id: requestId, status: 'failure', failure }),
+        }
+      : state) as Handler<[string, ProviderProfileFailure]>,
   dismissed: ((state, [requestId]) =>
     getItem(state.mutations, requestId)
       ? { ...state, mutations: removeItem(state.mutations, requestId) }

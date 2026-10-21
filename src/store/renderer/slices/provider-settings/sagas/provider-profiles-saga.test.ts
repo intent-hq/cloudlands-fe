@@ -447,7 +447,7 @@ describe('backup failover controls (§5.54)', () => {
     expect(mocks.list).toHaveBeenCalledTimes(1);
   });
 
-  it('rolls back a rejected reorder, records the failure and re-reads the list', async () => {
+  it("re-reads the list after a rejected reorder so the daemon's order wins", async () => {
     const h = await loadedWith([withBackup('pa', 'A'), withBackup('pb', 'B')]);
     mocks.reorder.mockRejectedValue({
       rpcCode: -32602,
@@ -464,16 +464,52 @@ describe('backup failover controls (§5.54)', () => {
       }),
     );
     await settle();
-    expect(selectProviderProfilesForBase.select(h.state(), 'codex').map((p) => p.id)).toEqual([
-      'pa',
-      'pb',
-    ]);
     expect(selectProviderProfileMutations.select(h.state()).o2).toMatchObject({
       kind: 'reorder',
       status: 'failure',
       failure: { kind: 'fieldErrors' },
     });
     expect(mocks.list).toHaveBeenCalledTimes(2);
+    expect(selectProviderProfilesForBase.select(h.state(), 'codex').map((p) => p.id)).toEqual([
+      'pa',
+      'pb',
+    ]);
+  });
+
+  it('sends one reorder per base provider at a time and drops moves made meanwhile', async () => {
+    const h = await loadedWith([
+      withBackup('pa', 'A'),
+      withBackup('pb', 'B'),
+      withBackup('pc', 'C'),
+    ]);
+    const done = deferred<{ profiles: ProviderProfile[]; revision: number }>();
+    mocks.reorder.mockReturnValueOnce(done.promise);
+    h.dispatch(
+      providerProfileReorderRequested({
+        requestId: 'o1',
+        baseProviderId: 'codex',
+        profileIds: ['pb', 'pa', 'pc'],
+      }),
+    );
+    h.dispatch(
+      providerProfileReorderRequested({
+        requestId: 'o2',
+        baseProviderId: 'codex',
+        profileIds: ['pc', 'pb', 'pa'],
+      }),
+    );
+    await settle();
+    done.resolve({
+      profiles: [withBackup('pb', 'B'), withBackup('pa', 'A'), withBackup('pc', 'C')],
+      revision: 4,
+    });
+    await settle();
+    expect(mocks.reorder).toHaveBeenCalledTimes(1);
+    expect(selectProviderProfilesForBase.select(h.state(), 'codex').map((p) => p.id)).toEqual([
+      'pb',
+      'pa',
+      'pc',
+    ]);
   });
 
   it("re-reads the list on another client's reordered event", async () => {

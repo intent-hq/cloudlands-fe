@@ -39,6 +39,7 @@ import {
 import {
   selectProfileCapableProviderIds,
   selectProviderProfile,
+  selectProviderProfileMutations,
   selectProviderSettingsHasOpenSession,
   selectProviderProfilesLoadStatus,
   selectProviderProfilesRevision,
@@ -147,12 +148,14 @@ type MutationAction =
   | ReturnType<typeof providerProfileReorderRequested>;
 
 /**
- * Save one base provider's order. The slice already shows it; a rejection
- * rolls it back there, and the list is re-read so the shown order matches
- * the daemon's.
+ * Save one base provider's order. The slice already shows it. A request the
+ * slice ignored (another reorder of that base was pending) is not sent. A
+ * rejection keeps no client snapshot: the list is re-read and the daemon's
+ * saved order wins.
  */
 function* runReorder(action: ReturnType<typeof providerProfileReorderRequested>) {
   const [{ requestId, baseProviderId, profileIds }] = action.payload;
+  if ((yield* selectProviderProfileMutations.effect())[requestId]?.status !== 'pending') return;
   try {
     const result = yield* call([appClient.providers, appClient.providers.reorderProfiles], {
       baseProviderId,
