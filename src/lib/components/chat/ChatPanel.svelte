@@ -88,8 +88,10 @@
   import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
   import {
     selectCanAdministerHost,
+    selectHostRole,
     selectPrincipalSnapshot,
   } from '$store/renderer/slices/principal/principal-selectors';
+  import { predictOwnSenderAttribution } from '$lib/utils/collaborator-sender-attribution';
   import { hydrateAgentQueue } from '$features/agent/agent-queue-read-service';
   import { ensureWorkspaceDetail } from '$features/workspace/workspace-detail-hydration';
   import { workspaceSetupScriptText } from '$features/workspace/utils/workspace-setup-script';
@@ -1270,6 +1272,19 @@
   const presenceOwnPrincipalId$ = selectPresenceOwnPrincipalId();
   const isHostOwner$ = selectCanAdministerHost();
   const queuePrincipalId = $derived($admittedPrincipal$?.principal.id ?? null);
+  // The sender row the daemon will give the viewer's own sends here, shown on
+  // pending conversation rows so it does not pop in when the row is confirmed.
+  const hostRole$ = selectHostRole();
+  const ownPendingSender = $derived(
+    predictOwnSenderAttribution({
+      hostRole: $hostRole$,
+      principal: $admittedPrincipal$?.principal,
+      workspace,
+    }),
+  );
+  const pendingConversationIds = $derived(
+    new Set($submissionDisplay$.conversation.map((submission) => submission.id)),
+  );
 
   // Queue visibility around the wizard: hidden while the wizard is expanded,
   // shown while Ignore-collapsed. Derivation shared with the regression suite.
@@ -7629,7 +7644,14 @@
                   data-send-app-message-id={message.appMessageId}
                   class:invisible={pendingSendMessageIds.has(String(message.appMessageId ?? ''))}
                 >
-                  <ChatMessage {agentId} {message} {workspace} ownsMessageIdentity={false} />
+                  <ChatMessage
+                    {agentId}
+                    {message}
+                    {workspace}
+                    ownPrincipalId={$presenceOwnPrincipalId$}
+                    pendingSender={pendingConversationIds.has(message.id) ? ownPendingSender : null}
+                    ownsMessageIdentity={false}
+                  />
                 </div>
                 {#if ownsStatus}
                   <div class={isCompactMode ? 'mb-2' : 'mb-8'}>

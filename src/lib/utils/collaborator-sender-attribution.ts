@@ -11,6 +11,9 @@ import type { AgentMessage, MessageAuthor, MessageRole } from '$shared/types/age
 import { stripLiteralHeader } from './agent-message-attribution';
 import { isUserAuthoredMetadata } from './message-authorship';
 import { isCollaborationIdentity } from '$features/collaboration-auth/identity';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import type { HostRole } from '$shared/types/principal';
+import type { WorkspaceRole } from '$shared/types';
 
 export interface CollaboratorSenderAttribution {
   /** The row's `author` projection the preamble was rebuilt from. */
@@ -165,4 +168,56 @@ export function stripCollaboratorSenderPreamble(
 ): string {
   if (!attribution || !text.startsWith(`${attribution.preamble}\n\n`)) return text;
   return stripLiteralHeader(text, attribution.preamble) ?? text;
+}
+
+/**
+ * The sender attribution the daemon will give the viewer's own human send into
+ * `workspace`, predicted for display-only pending rows so their author row does
+ * not pop in when the confirmed row arrives. Mirrors the daemon's
+ * `collaborator_sender_preamble` rule: a host member outside the chief
+ * workspace, or a guest whose workspace role is `collaborator`, gets the
+ * matching template; the workspace owner and every unknown or other role get
+ * null. The confirmed row stays authoritative; this never touches content.
+ */
+export function predictOwnSenderAttribution(input: {
+  hostRole: HostRole | null | undefined;
+  principal:
+    | {
+        id: string;
+        login: string | null;
+        displayName: string | null;
+        avatarUrl: string | null;
+        identity?: MessageAuthor['identity'];
+      }
+    | null
+    | undefined;
+  workspace:
+    | { id: string; ownerPrincipalId?: string | null; myRole?: WorkspaceRole | null }
+    | null
+    | undefined;
+}): CollaboratorSenderAttribution | null {
+  const { hostRole, principal, workspace } = input;
+  if (!principal || !workspace) return null;
+  const ownerPrincipalId = workspace.ownerPrincipalId;
+  if (typeof ownerPrincipalId !== 'string' || !ownerPrincipalId.trim()) return null;
+  if (principal.id === ownerPrincipalId) return null;
+  let role: CollaboratorSenderAttribution['role'];
+  if (hostRole === 'member' && workspace.id !== CHIEF_WORKSPACE_ID) role = 'member';
+  else if (hostRole === 'guest' && workspace.myRole === 'collaborator') role = 'guest';
+  else return null;
+  const author = asMessageAuthor({
+    principalId: principal.id,
+    login: principal.login,
+    displayName: principal.displayName,
+    avatarUrl: principal.avatarUrl,
+    ...(principal.identity ? { identity: principal.identity } : {}),
+  });
+  if (!author) return null;
+  const preamble = buildCollaboratorSenderPreamble(
+    author.login,
+    author.displayName,
+    author.principalId,
+    role === 'member' ? { role, identity: author.identity } : undefined,
+  );
+  return { author, preamble, role };
 }
