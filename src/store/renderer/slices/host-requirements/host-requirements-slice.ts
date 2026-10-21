@@ -12,7 +12,7 @@
 
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { ProviderCliWarning } from '$features/providers/utils/provider-cli-warnings';
-import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { HostRequirementsState } from './host-requirements-types';
 
@@ -118,4 +118,13 @@ hostRequirementsReducer.with(
     ...state,
     providerCli: { context, warnings: createCollection('providerId', warnings) },
   }),
+);
+
+/**
+ * Run a provider's self-update command (e.g. `codex update`) in a new root
+ * terminal on the daemon host. Resolves once the terminal is open.
+ */
+export const providerCliUpdateRequested = createAsyncAction<[providerId: string], void>(
+  'hostRequirements/providerCliUpdate',
+  'hostRequirements/providerCliUpdateRequested',
 );
