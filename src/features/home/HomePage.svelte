@@ -15,7 +15,10 @@
   } from '$lib/components/ui/sidebar-context-menu/types';
   import { selectPinnedWorkspaceIds } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
-  import { openHomeWorkspaceFromEvent } from './home-workspace-opening';
+  import {
+    createHomeDoubleClickOpener,
+    openHomeWorkspaceFromEvent,
+  } from './home-workspace-opening';
   import { createHomeWorkspaceMenu } from './home-workspace-menu';
   import { faThumbtack } from '@fortawesome/free-solid-svg-icons';
   import { tick, untrack } from 'svelte';
@@ -106,7 +109,13 @@
     store.dispatch(openWorkspaceTab(id));
     void goto(`/workspace/${encodeURIComponent(id)}`);
   }
+  function openSelectedWorkspace(id: string) {
+    updateView({ selectedId: id });
+    openWorkspace(id);
+  }
+  const doubleClick = createHomeDoubleClickOpener(openSelectedWorkspace);
   function openModifiedWorkspace(event: MouseEvent | KeyboardEvent, id: string) {
+    if (event instanceof MouseEvent) doubleClick.arm(event, id);
     openHomeWorkspaceFromEvent(event, id, openWorkspace);
   }
   function showWorkspaceMenu(event: MouseEvent | KeyboardEvent, workspace: Workspace) {
@@ -523,6 +532,7 @@
 
 <div
   bind:this={homeElement}
+  {@attach doubleClick.listen}
   class="home-layout h-full min-h-0 min-w-0 bg-sidebar text-foreground"
   class:home-assistant={destination === 'assistant' && !$collaborator$}
   data-home-page
@@ -892,6 +902,7 @@
                             onselect={(id) =>
                               updateView({ selectedId: selectedId === id ? null : id })}
                             onopen={openWorkspace}
+                            {doubleClick}
                             oncontextmenu={showWorkspaceMenu}
                             archived={filter === 'archived'}
                           />
@@ -1077,9 +1088,11 @@
                                   ? workspace.title
                                   : m.workspace_links_untitled_label()}
                               selectable="single"
-                              selectedKeys={selectedWorkspace ? [selectedWorkspace.id] : []}
-                              onSelectedKeysChange={(keys) =>
-                                updateView({ selectedId: keys[0] ? String(keys[0]) : null })}
+                              bind:selectedKeys={
+                                () => (selectedWorkspace ? [selectedWorkspace.id] : []),
+                                (keys) =>
+                                  updateView({ selectedId: keys[0] ? String(keys[0]) : null })
+                              }
                               ariaLabel={label}
                               class={scroll
                                 ? 'min-h-0 flex-1 overflow-y-auto px-5 pb-4'

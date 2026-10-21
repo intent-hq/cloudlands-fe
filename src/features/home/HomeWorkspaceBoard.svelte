@@ -12,7 +12,7 @@
   import { WorkspaceStatusEnum } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
   import { getHomeTriageGroup } from './home-model';
-  import { openHomeWorkspaceFromEvent } from './home-workspace-opening';
+  import { openHomeWorkspaceFromEvent, type HomeDoubleClickOpener } from './home-workspace-opening';
 
   let {
     workspaces,
@@ -20,6 +20,7 @@
     selectedId,
     onselect,
     onopen,
+    doubleClick,
     oncontextmenu,
     archived = false,
     showRepository = true,
@@ -31,6 +32,8 @@
     selectedId: string | null;
     onselect: (id: string) => void;
     onopen: (id: string) => void;
+    /** Home's double-click opener; card clicks arm it. */
+    doubleClick: HomeDoubleClickOpener;
     oncontextmenu?: (event: MouseEvent | KeyboardEvent, workspace: Workspace) => void;
     archived?: boolean;
     showRepository?: boolean;
@@ -101,6 +104,7 @@
               wrapContent={false}
               class="h-auto min-w-0 w-full shrink-0 flex-col items-stretch whitespace-normal rounded-xl border-border bg-background gap-0 p-3 text-left shadow-xs"
               onclick={(event) => {
+                doubleClick.arm(event, workspace.id);
                 if (!openHomeWorkspaceFromEvent(event, workspace.id, onopen))
                   onselect(workspace.id);
               }}
