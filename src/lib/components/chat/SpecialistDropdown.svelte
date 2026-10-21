@@ -13,6 +13,8 @@
     filterPickableSpecialists,
   } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
+  import { selectWorkspaceInitializerRecentSpecialistIds } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+  import { sortSpecialistsByRecency } from '$store/renderer/slices/workspace-initializer/utils/recent-specialists';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
   import SpecialistOptions from './SpecialistOptions.svelte';
@@ -32,11 +34,17 @@
 
   let dropdownOpen = $state(false);
 
-  // All available specialists (built-in + custom), filtered by GitHub auth
+  // All available specialists (built-in + custom), filtered by GitHub auth.
+  // Ordered like the New workspace picker: specialists used to create
+  // workspaces first (most recent first), the rest in catalog order.
   const allSpecialists = selectSpecialists();
   const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();
+  const recentSpecialistIds$ = selectWorkspaceInitializerRecentSpecialistIds();
   const visibleSpecialists = $derived.by(() =>
-    filterPickableSpecialists($allSpecialists, $isGitHubAuth$),
+    sortSpecialistsByRecency(
+      filterPickableSpecialists($allSpecialists, $isGitHubAuth$),
+      $recentSpecialistIds$,
+    ),
   );
   const selectedIcon = $derived($allSpecialists.find((s) => s.id === value)?.icon ?? null);
 

@@ -167,6 +167,11 @@ export const setWorkspaceInitializerLastSubmittedAgent = createAction<
   [settings: WorkspaceInitializerAgentSettings | null]
 >('workspaceInitializer/setLastSubmittedAgent');
 
+/** Record a specialist picked outside New workspace (e.g. the agent composer) as recently used. */
+export const rememberWorkspaceInitializerRecentSpecialist = createAction<
+  [specialistId: string | null]
+>('workspaceInitializer/rememberRecentSpecialist');
+
 export const setWorkspaceInitializerPendingGitHubPrefill = createAction<
   [prefill: WorkspaceInitializerPendingGitHubPrefill]
 >('workspaceInitializer/setPendingGitHubPrefill');
@@ -545,6 +550,15 @@ workspaceInitializerReducer.with(
         ? rememberRecentSpecialist(state.recentSpecialistIds, lastSubmittedAgent.selectedSpecialist)
         : state.recentSpecialistIds,
   }),
+);
+workspaceInitializerReducer.with(
+  rememberWorkspaceInitializerRecentSpecialist,
+  (state, { payload: [specialistId] }) => {
+    const recentSpecialistIds = rememberRecentSpecialist(state.recentSpecialistIds, specialistId);
+    return recentSpecialistIds === state.recentSpecialistIds
+      ? state
+      : { ...state, recentSpecialistIds };
+  },
 );
 workspaceInitializerReducer.with(
   setWorkspaceInitializerPendingGitHubPrefill,

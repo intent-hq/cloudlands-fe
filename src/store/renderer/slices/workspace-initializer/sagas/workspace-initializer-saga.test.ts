@@ -39,6 +39,7 @@ import {
   debounceWorkspaceInitializerOnboardingFormState,
   hydrateWorkspaceInitializer,
   dismissWorkspaceInitializerRecentRepo,
+  rememberWorkspaceInitializerRecentSpecialist,
   initialState,
   setCompactWorkspaceInitializerFormState,
   setWorkspaceInitializerLastSelectedRepo,
@@ -434,6 +435,36 @@ describe('workspaceInitializerSaga', () => {
     ).toPromise();
     const hydrated = workspaceInitializerReducer(initialState, dispatch.mock.calls[0][0]);
     expect(hydrated.recentSpecialistIds).toEqual(recentSpecialistIds);
+  });
+
+  it('persists a specialist recorded from the agent composer', async () => {
+    mocks.get.mockResolvedValue({ value: {} });
+    const channel = stdChannel();
+    let slice: WorkspaceInitializerState = initialState;
+    const dispatch = (action: Parameters<typeof workspaceInitializerReducer>[1]) => {
+      slice = workspaceInitializerReducer(slice, action);
+      channel.put(action);
+      return action;
+    };
+    const task = runSaga(
+      {
+        channel,
+        dispatch,
+        context: ownerContext,
+        getState: () => withLegacyPrincipal({ workspaceInitializer: slice }),
+      },
+      workspaceInitializerSaga,
+    );
+    try {
+      await settle();
+      mocks.update.mockClear();
+      dispatch(rememberWorkspaceInitializerRecentSpecialist('reviewer'));
+      await settle();
+      expect(mocks.update.mock.calls.at(-1)![0][0].value.recentSpecialistIds).toEqual(['reviewer']);
+    } finally {
+      task.cancel();
+      await task.toPromise();
+    }
   });
 
   it('coalesces pre-hydration mutations and flushes the hydrated bag once', async () => {

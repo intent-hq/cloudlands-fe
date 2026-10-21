@@ -452,6 +452,7 @@
   import { isAutomatedChatMessage } from '$lib/utils/previous-user-message';
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import { rememberWorkspaceInitializerRecentSpecialist } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
   import { matchesShortcut } from '$lib/utils/shortcut-bindings';
 
@@ -5918,6 +5919,8 @@
     if (!session) return;
 
     logger.info('Changing agent specialist', { agentId, specialistId });
+    // A composer pick counts as a recent use for every specialist picker's MRU order.
+    appStore.dispatch(rememberWorkspaceInitializerRecentSpecialist(specialistId));
 
     let behaviorPrompt: string | undefined;
     let newModel: string | null | undefined;
