@@ -11,6 +11,15 @@
   import AgentSubscriptions from './AgentSubscriptions.svelte';
   import BackgroundHooksRow from './BackgroundHooksRow.svelte';
   import MonitoredScriptsRow from './MonitoredScriptsRow.svelte';
+  import AgentWorkersRow from './AgentWorkersRow.svelte';
+  import {
+    agentWorkersSubscribeRequested,
+    agentWorkersUnsubscribeRequested,
+  } from '$store/renderer/slices/agent-workers/agent-workers-slice';
+  import {
+    selectAgentWorkerRows,
+    selectAgentWorkers,
+  } from '$store/renderer/slices/agent-workers/agent-workers-selectors';
   import {
     selectAgentScriptMonitors,
     selectScriptMonitors,
@@ -113,6 +122,20 @@
     };
   });
 
+  // Provider background workers (§5.5b) are per agent: the visible chat holds
+  // that agent's channel lease, independent of disclosure state.
+  $effect(() => {
+    if (isolatedPreview || !workspaceId || !agentId || !isActive) return;
+    const currentWorkspaceId = workspaceId;
+    const currentAgentId = agentId;
+    untrack(() =>
+      appStore.dispatch(agentWorkersSubscribeRequested(currentWorkspaceId, currentAgentId)),
+    );
+    return () => {
+      appStore.dispatch(agentWorkersUnsubscribeRequested(currentWorkspaceId, currentAgentId));
+    };
+  });
+
   const workspaceIdStore = writable('');
   const agentIdStore = writable('');
   $effect(() => {
@@ -127,6 +150,11 @@
   // failure is workspace-wide: background chats stay quiet instead of all showing it.
   const scriptsFailed = $derived(!isolatedPreview && isActive && $scriptPage$.status === 'failed');
   const hasScripts = $derived(scriptCount > 0 || !!$scriptPage$.nextCursor || scriptsFailed);
+  const workerRows$ = selectAgentWorkerRows(workspaceIdStore, agentIdStore);
+  const workerEntry$ = selectAgentWorkers(workspaceIdStore, agentIdStore);
+  const workerCount = $derived($workerRows$.length);
+  const workersFailed = $derived(!isolatedPreview && isActive && $workerEntry$.status === 'failed');
+  const hasWorkers = $derived(workerCount > 0 || workersFailed);
   // "+": more script monitors may exist than this chat has read.
   const countSuffix = $derived($scriptPage$.nextCursor || scriptsFailed ? '+' : '');
   const monitors$ = selectAgentPrMonitors(workspaceIdStore, agentIdStore);
@@ -159,18 +187,23 @@
   const hasEventSubscriptions = $derived(
     isolatedPreview
       ? isolatedPreview.count > 0
-      : $agentSubscriptionLane$.visible || hasHooks || hasPrs || hasScripts,
+      : $agentSubscriptionLane$.visible || hasHooks || hasPrs || hasScripts || hasWorkers,
   );
   const hasSubscriptions = $derived(hasEventSubscriptions);
   const totalCount = $derived(
     isolatedPreview
       ? isolatedPreview.count
-      : $agentSubscriptionLane$.count + effectiveHookCount + effectivePrCount + scriptCount,
+      : $agentSubscriptionLane$.count +
+          effectiveHookCount +
+          effectivePrCount +
+          scriptCount +
+          workerCount,
   );
   const visibleSectionCount = $derived(
     isolatedPreview
       ? 1
-      : [$agentSubscriptionLane$.visible, hasHooks, hasPrs, hasScripts].filter(Boolean).length,
+      : [$agentSubscriptionLane$.visible, hasHooks, hasPrs, hasScripts, hasWorkers].filter(Boolean)
+          .length,
   );
   const isSingleEvent = $derived(
     hasEventSubscriptions && visibleSectionCount === 1 && totalCount === 1,
@@ -179,7 +212,12 @@
   // Agent-only cards show "Waiting for N agents"; mixed/non-agent cards show "Subscribed to N events"
   const isAgentOnly = $derived(
     isolatedPreview?.mode === 'agents' ||
-      (!isolatedPreview && $agentSubscriptionLane$.visible && !hasHooks && !hasPrs && !hasScripts),
+      (!isolatedPreview &&
+        $agentSubscriptionLane$.visible &&
+        !hasHooks &&
+        !hasPrs &&
+        !hasScripts &&
+        !hasWorkers),
   );
   const agentOnlyCount = $derived(
     isolatedPreview?.mode === 'agents'
@@ -398,6 +436,14 @@
               data-testid="event-subscriptions-scripts"
             >
               <MonitoredScriptsRow {workspaceId} {agentId} showLoadFailure={scriptsFailed} />
+            </div>
+          {/if}
+          {#if hasWorkers}
+            <div
+              class={isSingleEvent ? '' : 'border-t border-border'}
+              data-testid="event-subscriptions-workers"
+            >
+              <AgentWorkersRow {workspaceId} {agentId} showLoadFailure={workersFailed} />
             </div>
           {/if}
           <div
