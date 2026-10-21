@@ -88,6 +88,34 @@ vi.mock('electron-updater', async () => {
   };
 });
 
+// The renderer's auto-update client, wired below to the main service's
+// broadcasts so the real renderer saga (and its watchdog) runs against them.
+const rendererClient = vi.hoisted(() => ({
+  listeners: {} as Record<string, (value?: unknown) => void>,
+}));
+
+vi.mock('$features/auto-update/auto-update.client', () => {
+  const on = (channel: string) => (callback: (value?: unknown) => void) => {
+    rendererClient.listeners[channel] = callback;
+    return () => {
+      delete rendererClient.listeners[channel];
+    };
+  };
+  return {
+    autoUpdateClient: {
+      getState: vi.fn(() => new Promise(() => {})),
+      setShareStatistics: vi.fn(),
+      downloadUpdate: vi.fn(),
+      installUpdate: vi.fn(),
+      onShowToast: on('auto-update:show-toast'),
+      onUpToDate: on('auto-update:up-to-date'),
+      onStatusChanged: on('auto-update:status-changed'),
+      onProgress: on('auto-update:progress'),
+      onError: on('auto-update:error'),
+    },
+  };
+});
+
 const TELEMETRY_PREFIX = 'https://updates.intentapp.dev/desktop/';
 const GITHUB_PREFIX = 'https://github.com/intent-hq/cloudlands-releases/releases/download/';
 
@@ -289,6 +317,44 @@ function recordBroadcasts(ctx: Ctx) {
     return armedAt !== null && now - armedAt >= RENDERER_CHECK_TIMEOUT_MS;
   };
   return { timeline, statuses, rendererWatchdogFired };
+}
+
+/**
+ * Run the real renderer auto-update saga against the main service's
+ * broadcasts (the preload bridge forwards each channel to its listener).
+ */
+async function startRenderer(ctx: Ctx) {
+  const { runSaga, stdChannel } = await import('redux-saga');
+  const { autoUpdateSaga } =
+    await import('../../../../store/renderer/slices/auto-update/sagas/auto-update-saga');
+  const slice = await import('../../../../store/renderer/slices/auto-update/auto-update-slice');
+  const send = ctx.mockWindow.webContents.send;
+  const previous = send.getMockImplementation();
+  send.mockImplementation((channel: string, payload?: unknown) => {
+    previous?.(channel, payload);
+    rendererClient.listeners[channel]?.(payload);
+  });
+  const channel = stdChannel();
+  const dispatched: unknown[] = [];
+  const task = runSaga(
+    {
+      channel,
+      dispatch: (action: unknown) => {
+        dispatched.push(action);
+      },
+      getState: () => ({ autoUpdate: { status: 'idle' } }),
+    },
+    autoUpdateSaga,
+  );
+  channel.put(slice.initAutoUpdate());
+  await Promise.resolve();
+  const timedOut = () =>
+    dispatched.some(
+      (action) => JSON.stringify(action) === JSON.stringify(slice.setCheckTimedOut()),
+    );
+  const saw = (action: unknown) =>
+    dispatched.some((seen) => JSON.stringify(seen) === JSON.stringify(action));
+  return { timedOut, saw, slice, stop: () => task.cancel() };
 }
 
 async function setupWithFakeTimers() {
@@ -689,6 +755,80 @@ describe('slow telemetry response', () => {
     expect(ctx.service.getState().status).toBe('not-available');
     expect(broadcasts.statuses()).not.toContain('error');
     expect(broadcasts.rendererWatchdogFired()).toBe(false);
+  });
+});
+
+describe('slow telemetry response while an update is downloaded', () => {
+  it('a menu check keeps the renderer watchdog quiet across the GitHub retry and keeps the artifact', async () => {
+    const ctx = await setupWithFakeTimers();
+    const { default: electronUpdater } = await import('electron-updater');
+    updaterHandlers['update-available']({ version: '2.220.0' });
+    updaterHandlers['update-downloaded']({ version: '2.220.0' });
+    expect(ctx.service.getState().status).toBe('downloaded');
+    expect(electronUpdater.autoUpdater.autoInstallOnAppQuit).toBe(true);
+
+    const broadcasts = recordBroadcasts(ctx);
+    const renderer = await startRenderer(ctx);
+    const slow = slowTelemetry(ctx);
+    // GitHub re-offers the downloaded version 29s into the retry; the
+    // re-resolved download lands 'downloaded' again.
+    serveChecks(ctx, [
+      slow.answer,
+      () =>
+        new Promise((resolve) =>
+          setTimeout(() => {
+            updaterHandlers['update-available']({ version: '2.220.0' });
+            resolve({
+              updateInfo: { version: '2.220.0' },
+              cancellationToken: { cancelled: false, cancel: vi.fn() },
+              downloadPromise: Promise.resolve([]),
+            });
+            queueMicrotask(() => updaterHandlers['update-downloaded']({ version: '2.220.0' }));
+          }, 29_000),
+        ),
+    ]);
+
+    // Help → Check for Updates (src/main/index.ts): toast first, then the check.
+    const { broadcastToRenderers } = await import('../auto-update-broadcast');
+    broadcastToRenderers('auto-update:show-toast');
+    expect(renderer.saw(renderer.slice.showToastChecking())).toBe(true);
+    const pending = ctx.service.checkForUpdatesManual();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(slow.abort).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(29_000);
+    await pending;
+    await drainAsyncWork();
+    await vi.advanceTimersByTimeAsync(60_000);
+    renderer.stop();
+
+    expect(renderer.timedOut()).toBe(false);
+    expect(broadcasts.statuses()).not.toContain('error');
+    expect(broadcasts.statuses()).not.toContain('checking');
+    expect(broadcasts.statuses().at(-1)).toBe('downloaded');
+    const state = ctx.service.getState();
+    expect(state.status).toBe('downloaded');
+    expect(state.updateInfo?.version).toBe('2.220.0');
+    expect(electronUpdater.autoUpdater.autoInstallOnAppQuit).toBe(true);
+    expect(ctx.checkedFeeds).toEqual([
+      expect.stringContaining(`${TELEMETRY_PREFIX}stable?`),
+      `${GITHUB_PREFIX}stable`,
+    ]);
+  });
+
+  it('an automatic check while downloaded does not pop the toast on the GitHub retry', async () => {
+    const ctx = await setupWithFakeTimers();
+    updaterHandlers['update-available']({ version: '2.220.0' });
+    updaterHandlers['update-downloaded']({ version: '2.220.0' });
+    const broadcasts = recordBroadcasts(ctx);
+    const slow = slowTelemetry(ctx);
+    serveChecks(ctx, [slow.answer, notAvailableAfter(1_000)]);
+
+    const pending = ctx.service.checkForUpdates('periodic');
+    await vi.advanceTimersByTimeAsync(11_000);
+    await pending;
+
+    expect(slow.abort).toHaveBeenCalledTimes(1);
+    expect(broadcasts.timeline.map((e) => e.channel)).not.toContain('auto-update:show-toast');
   });
 });
 

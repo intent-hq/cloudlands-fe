@@ -409,6 +409,14 @@ class AutoUpdateService {
       }
       this.applyFeed(this.state.channel, trigger);
       this.startCheckTimeout();
+      // The retry's 'checking-for-update' re-arms the renderer watchdog via
+      // a 'checking' broadcast, except while an artifact is downloaded: that
+      // state is kept, so a manual check's "Checking…" toast (armed by
+      // show-toast) would time out mid-retry. Re-arm it the same way; the
+      // toast is already showing and the downloaded state is untouched.
+      if (this.isManualCheck && this.state.status === 'downloaded') {
+        broadcastToRenderers('auto-update:show-toast');
+      }
       return autoUpdater.checkForUpdates();
     } finally {
       clearTimeout(abortTimer);
