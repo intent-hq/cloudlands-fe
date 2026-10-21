@@ -1273,7 +1273,7 @@ describe('multi-backend window sessions', () => {
       expect(url.pathname).toBe('/workspace/new');
       // The action never rides in the URL; the window pulls it from main.
       expect(url.searchParams.has('deepLink')).toBe(false);
-      expect(consumePendingDeepLinks(window.webContents.id)).toEqual([action]);
+      expect(consumePendingDeepLinks(window.webContents.id).actions).toEqual([action]);
     });
 
     it('opens a local window for an open link when only a remote window exists', async () => {
@@ -1287,8 +1287,8 @@ describe('multi-backend window sessions', () => {
 
       const local = FakeBrowserWindow.getAllWindows().filter((w) => w.backendId === 'local');
       expect(local).toHaveLength(1);
-      expect(consumePendingDeepLinks(local[0].webContents.id)).toEqual([action]);
-      expect(consumePendingDeepLinks(remote.webContents.id)).toEqual([]);
+      expect(consumePendingDeepLinks(local[0].webContents.id).actions).toEqual([action]);
+      expect(consumePendingDeepLinks(remote.webContents.id).actions).toEqual([]);
     });
   });
 
@@ -1330,9 +1330,9 @@ describe('multi-backend window sessions', () => {
       await pending;
 
       expect(FakeBrowserWindow.instances).toHaveLength(1);
-      expect(consumePendingDeepLinks(FakeBrowserWindow.instances[0].webContents.id)).toHaveLength(
-        1,
-      );
+      expect(
+        consumePendingDeepLinks(FakeBrowserWindow.instances[0].webContents.id).actions,
+      ).toHaveLength(1);
     });
 
     it('createWindowForSession waits for the gate, then restores exactly one window', async () => {

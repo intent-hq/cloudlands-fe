@@ -37,12 +37,21 @@ export function queueDeepLinkForWindow(window: BrowserWindow, action: DeepLinkAc
   window.webContents.send('deep-link', DEEP_LINK_NUDGE);
 }
 
-/** Take and clear every action queued for the renderer behind `webContentsId`. */
-export function consumePendingDeepLinks(webContentsId: number): DeepLinkAction[] {
-  const queue = queues.get(webContentsId);
-  if (!queue || queue.length === 0) return [];
-  queues.set(webContentsId, []);
-  return queue;
+/**
+ * Take and clear the actions queued for the renderer behind `webContentsId`.
+ * With `types`, only actions of those types are taken; the rest stay queued
+ * (the renderer takes desktop-only `settings` links before the daemon has
+ * admitted it, and the rest once it has). `remaining` counts what is left.
+ */
+export function consumePendingDeepLinks(
+  webContentsId: number,
+  types?: readonly string[],
+): { actions: DeepLinkAction[]; remaining: number } {
+  const queue = queues.get(webContentsId) ?? [];
+  const taken = types ? queue.filter((action) => types.includes(action.type)) : queue;
+  const left = types ? queue.filter((action) => !types.includes(action.type)) : [];
+  if (queue.length > 0) queues.set(webContentsId, left);
+  return { actions: taken, remaining: left.length };
 }
 
 export function __resetPendingDeepLinksForTesting(): void {

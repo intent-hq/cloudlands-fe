@@ -94,7 +94,7 @@ describe('DeepLinkHandler pair-link routing', () => {
     const win = makeWindow();
     await handler.handleDeepLink('intent://open?id=workspace_123', asBrowserWindow(win));
     expect(win.webContents.send).toHaveBeenCalledWith('deep-link', { pending: true });
-    expect(consumePendingDeepLinks(win.webContents.id)).toEqual([
+    expect(consumePendingDeepLinks(win.webContents.id).actions).toEqual([
       { type: 'open', params: { id: 'workspace_123' } },
     ]);
     expect(handlePairDeepLink).not.toHaveBeenCalled();

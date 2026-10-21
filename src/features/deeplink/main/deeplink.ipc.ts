@@ -10,12 +10,14 @@ import { z } from 'zod';
 import { Logger } from '$lib/utils/logger';
 import { m } from '$shared/paraglide/messages.js';
 import { DEEP_LINK_CHANNELS } from '$shared/ipc/channels';
-import { EmptySchema } from '../../../main/ipc-schemas';
 import { consumePendingDeepLinks } from './pending-deep-links';
 
 const logger = new Logger({ category: 'DeepLink-IPC' });
 
 // Validation schemas
+const ConsumePendingSchema = z
+  .object({ types: z.array(z.enum(['open', 'create', 'clone', 'settings'])).optional() })
+  .strict();
 const WriteFileSchema = z.object({
   filePath: z.string(),
   content: z.string(),
@@ -44,8 +46,8 @@ export function registerDeepLinkHandlers(): void {
   ipcMain.handle(
     DEEP_LINK_CHANNELS.CONSUME_PENDING,
     createSafeValidatedHandler(
-      EmptySchema,
-      async (event) => ({ actions: consumePendingDeepLinks(event.sender.id) }),
+      ConsumePendingSchema,
+      async (event, { types }) => consumePendingDeepLinks(event.sender.id, types),
       DEEP_LINK_CHANNELS.CONSUME_PENDING,
     ),
   );

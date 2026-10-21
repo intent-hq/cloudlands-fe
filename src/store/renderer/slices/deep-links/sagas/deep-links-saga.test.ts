@@ -273,42 +273,75 @@ it('shows an error instead of silently dropping a link it cannot handle', async 
 });
 
 describe('pending queue draining', () => {
-  it('consumes the window queue and handles every valid action in order', async () => {
-    mocks.invoke.mockResolvedValueOnce({
-      actions: [
-        { type: 'open', params: { id: 'ws-1' } },
-        'garbage',
-        { type: 'settings', params: { beta: 'true' } },
-      ],
-    });
+  const runDrain = () =>
+    runSaga({ dispatch: () => {}, getState: () => appState }, drainPendingDeepLinks).toPromise();
+
+  it('takes settings links first, then the rest once admitted, handling each in order', async () => {
+    mocks.invoke
+      .mockResolvedValueOnce({
+        actions: [{ type: 'settings', params: { beta: 'true' } }],
+        remaining: 2,
+      })
+      .mockResolvedValueOnce({
+        actions: [{ type: 'open', params: { id: 'ws-1' } }, 'garbage'],
+        remaining: 0,
+      });
     mocks.list.mockResolvedValue({ ok: true, data: [workspace({ id: 'ws-1' })] });
-    await runSaga(
-      { dispatch: () => {}, getState: () => appState },
-      drainPendingDeepLinks,
-    ).toPromise();
-    expect(mocks.invoke).toHaveBeenCalledWith('deep-link:consume-pending', {});
+
+    await expect(runDrain()).resolves.toBe(0);
+
+    expect(mocks.invoke).toHaveBeenNthCalledWith(1, 'deep-link:consume-pending', {
+      types: ['settings'],
+    });
+    expect(mocks.invoke).toHaveBeenNthCalledWith(2, 'deep-link:consume-pending', {});
+    expect(mocks.notifySuccess).toHaveBeenCalledTimes(1);
     expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/ws-1');
+  });
+
+  it('handles settings links without daemon admission and leaves the rest queued in main', async () => {
+    mocks.admission = null;
+    mocks.invoke.mockResolvedValueOnce({
+      actions: [{ type: 'settings', params: { beta: 'true' } }],
+      remaining: 1,
+    });
+
+    await expect(runDrain()).resolves.toBe(1);
+
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+    expect(mocks.invoke).toHaveBeenCalledWith('deep-link:consume-pending', { types: ['settings'] });
     expect(mocks.notifySuccess).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps links queued in main until the principal is admitted, then drains once', async () => {
+  it('retries held links once the principal is admitted', async () => {
+    const handlers = new Map<string, (payload: unknown) => void>();
+    window.electronAPI = {
+      ...window.electronAPI,
+      on: vi.fn((channel: string, handler: (payload: unknown) => void) => {
+        handlers.set(channel, handler);
+        return `listener:${channel}`;
+      }),
+      offById: vi.fn(),
+    };
     mocks.admission = null;
-    mocks.invoke.mockResolvedValue({ actions: [] });
+    mocks.invoke.mockImplementation(async (_channel: string, args: { types?: string[] }) =>
+      args.types ? { actions: [], remaining: 1 } : { actions: [], remaining: 0 },
+    );
     const channel = stdChannel();
     const task = runSaga(
       { channel, dispatch: (a) => channel.put(a as never), getState: () => appState },
-      drainPendingDeepLinks,
+      deepLinksSaga,
     );
     await settle();
-    channel.put({ type: 'connections/somethingElse' });
-    await new Promise((r) => setTimeout(r, 1100));
-    await settle();
-    expect(mocks.invoke).not.toHaveBeenCalled();
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
 
     mocks.admission = 'admitted';
     channel.put({ type: 'principal/received' });
-    await task.toPromise();
-    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+    await settle();
+    expect(mocks.invoke).toHaveBeenLastCalledWith('deep-link:consume-pending', {});
+
+    task.cancel();
+    await settle();
+    delete (window as Partial<Window>).electronAPI;
   });
 
   it('drains on start, again on each nudge, and unsubscribes on cancel', async () => {
@@ -322,7 +355,7 @@ describe('pending queue draining', () => {
       }),
       offById,
     };
-    mocks.invoke.mockResolvedValue({ actions: [] });
+    mocks.invoke.mockResolvedValue({ actions: [], remaining: 0 });
     const task = runSaga({ dispatch: () => {}, getState: () => appState }, deepLinksSaga);
     await settle();
     expect(mocks.invoke).toHaveBeenCalledTimes(1);

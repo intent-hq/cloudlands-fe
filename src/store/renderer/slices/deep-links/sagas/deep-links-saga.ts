@@ -178,44 +178,26 @@ function isActionPayload(value: unknown): value is DeepLinkActionPayload {
   );
 }
 
-/**
- * Wait until this window's principal is admitted on its current connection.
- * Until then workspace mutations are rejected (`captureMutation`), so a link
- * consumed during startup would be lost; leaving it in main's queue keeps it.
- * A confirmed denial still admits (the context exists) and surfaces as the
- * handler's error toast rather than a silent drop.
- */
-function* waitForPrincipalAdmission(): SagaGenerator<void> {
-  while (!(yield* selectPrincipalActionContext.effect())) {
-    // Admission becomes ready through a principal read or context change; the
-    // periodic re-check covers a connection-side change that lands without one.
-    yield* race({
-      changed: take([
-        principalContextChanged,
-        principalReceived,
-        hostMembershipChanged,
-        principalIdentityChanged,
-      ]),
-      recheck: delay(1000),
-    });
-  }
-}
+/** Action types that never need daemon authority (navigation, the desktop updater). */
+const DESKTOP_ONLY_TYPES = ['settings'];
 
-export function* drainPendingDeepLinks(): SagaGenerator<void> {
-  yield* call(waitForPrincipalAdmission);
-  let actions: unknown;
+/**
+ * Take this window's queued actions from main and handle them in order.
+ * Returns how many are still queued, or -1 when the queue could not be read.
+ */
+function* consumeAndHandle(types?: string[]): SagaGenerator<number> {
+  let result: { actions?: unknown; remaining?: unknown } | undefined;
   try {
-    const result = yield* call(
-      invoke<{ actions?: unknown }>,
+    result = yield* call(
+      invoke<{ actions?: unknown; remaining?: unknown }>,
       DEEP_LINK_CHANNELS.CONSUME_PENDING,
-      {},
+      types ? { types } : {},
     );
-    actions = result?.actions;
   } catch (error) {
     logger.warn('Failed to consume pending deep links', { error });
-    return;
+    return -1;
   }
-  if (!Array.isArray(actions)) return;
+  const actions = Array.isArray(result?.actions) ? result.actions : [];
   for (const action of actions) {
     if (!isActionPayload(action)) continue;
     try {
@@ -224,6 +206,21 @@ export function* drainPendingDeepLinks(): SagaGenerator<void> {
       logger.warn('Deep link handler failed', { type: action.type, error });
     }
   }
+  return typeof result?.remaining === 'number' ? result.remaining : 0;
+}
+
+/**
+ * Drain this window's queue. Desktop-only `settings` links are handled right
+ * away. Everything else needs the daemon to have admitted this window's
+ * principal (`captureMutation` rejects workspace mutations before that, so a
+ * link consumed during startup would be lost); until then it stays queued in
+ * main. Returns how many actions are still waiting there.
+ */
+export function* drainPendingDeepLinks(): SagaGenerator<number> {
+  const remaining = yield* call(consumeAndHandle, DESKTOP_ONLY_TYPES);
+  if (remaining <= 0) return 0;
+  if (!(yield* selectPrincipalActionContext.effect())) return Math.max(remaining, 1);
+  return Math.max(yield* call(consumeAndHandle), 0);
 }
 
 function* watchNudges(): SagaGenerator<void> {
@@ -237,10 +234,25 @@ function* watchNudges(): SagaGenerator<void> {
     },
   });
   try {
-    yield* call(drainPendingDeepLinks);
     while (true) {
-      yield* take(channel);
-      yield* call(drainPendingDeepLinks);
+      const waiting = yield* call(drainPendingDeepLinks);
+      if (waiting === 0) {
+        yield* take(channel);
+        continue;
+      }
+      // Links are held until admission: retry on a nudge, a principal read or
+      // context change, or a periodic re-check (a connection-side change can
+      // land without a principal action).
+      yield* race({
+        nudge: take(channel),
+        changed: take([
+          principalContextChanged,
+          principalReceived,
+          hostMembershipChanged,
+          principalIdentityChanged,
+        ]),
+        recheck: delay(1000),
+      });
     }
   } finally {
     channel.close();

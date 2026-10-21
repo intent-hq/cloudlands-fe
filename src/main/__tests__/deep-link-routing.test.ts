@@ -188,7 +188,7 @@ describe('createWindowForDeepLink pair-link routing', () => {
     mockGetMainWindow.mockReturnValue(mainWindow);
     await createWindowForDeepLink('intent://settings?section=general', makeHandler());
     expect(mainWindow.webContents.send).toHaveBeenCalledWith('deep-link', NUDGE);
-    expect(consumePendingDeepLinks(mainWindow.webContents.id)).toEqual([
+    expect(consumePendingDeepLinks(mainWindow.webContents.id).actions).toEqual([
       { type: 'settings', params: { section: 'general' } },
     ]);
     expect(handlePairDeepLink).not.toHaveBeenCalled();
@@ -202,7 +202,7 @@ describe('createWindowForDeepLink renderer-bound routing', () => {
     liveWindows.push(remoteWindow);
     mockGetMainWindow.mockReturnValue(remoteWindow);
     await createWindowForDeepLink('intent://create?repo=%2Frepo&prompt=fix', makeHandler());
-    expect(consumePendingDeepLinks(remoteWindow.webContents.id)).toEqual([
+    expect(consumePendingDeepLinks(remoteWindow.webContents.id).actions).toEqual([
       { type: 'create', params: { repo: '/repo', prompt: 'fix' } },
     ]);
     expect(remoteWindow.focus).toHaveBeenCalled();
@@ -215,23 +215,39 @@ describe('createWindowForDeepLink renderer-bound routing', () => {
     liveWindows.push(remoteWindow, localWindow);
     mockGetMainWindow.mockReturnValue(remoteWindow);
     await createWindowForDeepLink('intent://open?path=%2FUsers%2Fme%2Fmy%20dir', makeHandler());
-    expect(consumePendingDeepLinks(localWindow.webContents.id)).toEqual([
+    expect(consumePendingDeepLinks(localWindow.webContents.id).actions).toEqual([
       { type: 'open', params: { path: '/Users/me/my dir' } },
     ]);
     expect(localWindow.webContents.send).toHaveBeenCalledWith('deep-link', NUDGE);
     expect(localWindow.focus).toHaveBeenCalled();
-    expect(consumePendingDeepLinks(remoteWindow.webContents.id)).toEqual([]);
+    expect(consumePendingDeepLinks(remoteWindow.webContents.id).actions).toEqual([]);
     expect(remoteWindow.webContents.send).not.toHaveBeenCalled();
+  });
+
+  it('takes only the requested types and reports what is left queued', async () => {
+    const localWindow = makeMainWindow();
+    liveWindows.push(localWindow);
+    mockGetMainWindow.mockReturnValue(localWindow);
+    await createWindowForDeepLink('intent://open?path=%2Fp', makeHandler());
+    await createWindowForDeepLink('intent://settings?beta=true', makeHandler());
+    expect(consumePendingDeepLinks(localWindow.webContents.id, ['settings'])).toEqual({
+      actions: [{ type: 'settings', params: { beta: 'true' } }],
+      remaining: 1,
+    });
+    expect(consumePendingDeepLinks(localWindow.webContents.id)).toEqual({
+      actions: [{ type: 'open', params: { path: '/p' } }],
+      remaining: 0,
+    });
   });
 
   it('delivers each queued action exactly once', async () => {
     const localWindow = makeMainWindow();
     liveWindows.push(localWindow);
     await createWindowForDeepLink('intent://open?id=workspace_123', makeHandler());
-    expect(consumePendingDeepLinks(localWindow.webContents.id)).toEqual([
+    expect(consumePendingDeepLinks(localWindow.webContents.id).actions).toEqual([
       { type: 'open', params: { id: 'workspace_123' } },
     ]);
-    expect(consumePendingDeepLinks(localWindow.webContents.id)).toEqual([]);
+    expect(consumePendingDeepLinks(localWindow.webContents.id).actions).toEqual([]);
   });
 
   it('opens a new window for create links with newWindow=true and queues the action there', async () => {
@@ -241,10 +257,10 @@ describe('createWindowForDeepLink renderer-bound routing', () => {
     expect(mockBrowserWindowCtor).toHaveBeenCalledTimes(1);
     const loadedUrl = mockLoadUrl.mock.calls[0][0] as string;
     expect(loadedUrl).not.toContain('deepLink=');
-    expect(consumePendingDeepLinks(createdWindows[0].webContents.id)).toEqual([
+    expect(consumePendingDeepLinks(createdWindows[0].webContents.id).actions).toEqual([
       { type: 'create', params: { repo: '/repo', newWindow: 'true' } },
     ]);
-    expect(consumePendingDeepLinks(mainWindow.webContents.id)).toEqual([]);
+    expect(consumePendingDeepLinks(mainWindow.webContents.id).actions).toEqual([]);
   });
 
   it('opens a local window for a link when every window is closed', async () => {
@@ -253,7 +269,7 @@ describe('createWindowForDeepLink renderer-bound routing', () => {
     await createWindowForDeepLink('intent://settings?beta=true', handler);
     expect(handler.handleDeepLink).not.toHaveBeenCalled();
     expect(createdWindows).toHaveLength(1);
-    expect(consumePendingDeepLinks(createdWindows[0].webContents.id)).toEqual([
+    expect(consumePendingDeepLinks(createdWindows[0].webContents.id).actions).toEqual([
       { type: 'settings', params: { beta: 'true' } },
     ]);
   });
@@ -289,7 +305,7 @@ describe('createWindow cold-start argv scan', () => {
     await createWindow();
     const loadedUrl = mockLoadUrl.mock.calls[0][0] as string;
     expect(loadedUrl).not.toContain('deepLink=');
-    expect(consumePendingDeepLinks(createdWindows[0].webContents.id)).toEqual([
+    expect(consumePendingDeepLinks(createdWindows[0].webContents.id).actions).toEqual([
       { type: 'open', params: { path: '/Users/me' } },
     ]);
   });
@@ -299,8 +315,8 @@ describe('createWindow cold-start argv scan', () => {
     await createWindow();
     await createWindow();
     expect(createdWindows).toHaveLength(2);
-    expect(consumePendingDeepLinks(createdWindows[0].webContents.id)).toHaveLength(1);
-    expect(consumePendingDeepLinks(createdWindows[1].webContents.id)).toEqual([]);
+    expect(consumePendingDeepLinks(createdWindows[0].webContents.id).actions).toHaveLength(1);
+    expect(consumePendingDeepLinks(createdWindows[1].webContents.id).actions).toEqual([]);
   });
 });
 
