@@ -2,6 +2,7 @@
 import { flushSync } from 'svelte';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import type { Editor } from '@tiptap/core';
 import TipTapEditor from '../TipTapEditor.svelte';
 import TipTapEditorDeactivateHarness from './TipTapEditorDeactivateHarness.svelte';
 import { processHTMLToMarkdown, processMarkdownToHTML } from '$lib/utils/markdown-processor';
@@ -45,6 +46,33 @@ describe('TipTapEditor programmatic content updates', () => {
     expect(processHTMLToMarkdown(view.component.getHTML(), { workspaceId: 'workspace-1' })).toBe(
       markdown,
     );
+  });
+
+  it('keeps the selection when setContent repeats the text already shown', async () => {
+    // A restored draft reaches the editor through `value`, then the draft
+    // manager's deferred hydration calls setContent with the same text. That
+    // echo must not collapse a selection made in between (intent-hq/intent#7479).
+    const view = render(TipTapEditor, { value: 'Restored draft' });
+    const prose = await waitFor(() => {
+      const element = view.container.querySelector('.ProseMirror') as
+        (HTMLElement & { editor?: Editor }) | null;
+      expect(element?.textContent).toBe('Restored draft');
+      return element!;
+    });
+    // Select the text range the way Playwright's fill() and a user drag do
+    // (a TextSelection, not ProseMirror's AllSelection).
+    const editor = prose.editor!;
+    editor
+      .chain()
+      .focus()
+      .setTextSelection({ from: 1, to: editor.state.doc.content.size - 1 })
+      .run();
+    expect(editor.state.selection.empty).toBe(false);
+
+    await view.component.setContent('Restored draft');
+    expect(view.component.insertText('Replacement')).toBe(true);
+
+    expect(view.component.getTextContent()).toBe('Replacement');
   });
 
   it('does not steal focus when a background chat restores its draft', async () => {

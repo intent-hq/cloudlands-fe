@@ -439,6 +439,9 @@
    */
   export async function setContent(text: string) {
     if (!editor) return;
+    // Re-applying the text already shown would only collapse the user's
+    // selection (e.g. a deferred draft hydration echo, intent-hq/intent#7479).
+    if (serializeEditorText(editor) === text) return;
     const html = editorHTML(text || '');
     editor
       .chain()
