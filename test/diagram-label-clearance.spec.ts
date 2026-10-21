@@ -7,6 +7,13 @@ import { expectDrawingReachable } from './diagram-scroll-reachability';
 const baseUrl = process.env.UI_PREVIEW_BASE_URL;
 test.skip(!baseUrl, 'Set UI_PREVIEW_BASE_URL to the existing preview server.');
 
+// Every workbench visit renders all diagram cases before `data-preview-ready`, which
+// alone takes 17-39 s warm on a shared host. Match the workbench specs' per-visit
+// budget (above the workbench's own 45 s `readinessTimeoutMs`, see
+// diagram-state-motion.spec.ts) and give each single-visit test room after it.
+const WORKBENCH_READY_TIMEOUT_MS = 60_000;
+test.describe.configure({ timeout: 120_000 });
+
 function input(reciprocal: boolean): DiagramPrimitive {
   return {
     id: reciprocal ? 'reciprocal-clearance' : 'exhausted-clearance',
@@ -76,7 +83,9 @@ async function mountNote(page: Page, width: number, diagram: DiagramPrimitive) {
   await page.setViewportSize({ width: 1300, height: 1400 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(`${baseUrl}/sandbox/diagram-workbench?state=custom-walkthrough&motion=reduced`);
-  await expect(page.locator('[data-preview-ready=true]')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('[data-preview-ready=true]')).toBeVisible({
+    timeout: WORKBENCH_READY_TIMEOUT_MS,
+  });
   await page.evaluate(
     async ({ width, diagram }) => {
       const legacyModule = '/@id/svelte/legacy';
