@@ -4301,6 +4301,8 @@
   "providers_bridge_auggieLoginOnDaemon_instruction": "デーモンホストのターミナルでこのコマンドを実行してログインし、「再確認」をクリックしてください:",
   "providers_bridge_auggieNotInstalledOnDaemon_instruction": "デーモンホストに Auggie CLI がインストールされていません — 先にインストールしてから「再確認」をクリックしてください:",
   "providers_bridge_unknownProvider_error": "不明なプロバイダー: {providerId}",
+  "providers_cliVersionWarning_bundled_description": "インストール済みの {version} は必要な {minimumVersion} より古いため、Intent は独自の {bundledVersion} を使用しています。元に戻すには、デーモンのホストで CLI を更新してください。",
+  "providers_cliVersionWarning_bundled_title": "Intent は同梱の {provider} CLI を使用しています",
   "providers_cliVersionWarning_description": "インストール済み: {version}。{minimumVersion} 以降が必要です。デーモンのホストで CLI を更新してください。",
   "providers_cliVersionWarning_title": "{provider} CLI が古くなっています",
   "providers_cliVersionWarning_update_action": "更新",

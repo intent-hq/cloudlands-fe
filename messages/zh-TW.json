@@ -4301,6 +4301,8 @@
   "providers_bridge_auggieLoginOnDaemon_instruction": "在常駐程式主機的終端中執行此命令登入，然後點選「重新檢查」：",
   "providers_bridge_auggieNotInstalledOnDaemon_instruction": "常駐程式主機上未安裝 Auggie CLI——請先安裝，然後點選「重新檢查」：",
   "providers_bridge_unknownProvider_error": "未知的提供者：{providerId}",
+  "providers_cliVersionWarning_bundled_description": "已安裝的 {version} 低於所需的 {minimumVersion}，因此 Intent 正在執行自帶的 {bundledVersion}。請在守護程序主機上更新 CLI 以切換回來。",
+  "providers_cliVersionWarning_bundled_title": "Intent 正在使用內建的 {provider} CLI",
   "providers_cliVersionWarning_description": "已安裝 {version}，但需要 {minimumVersion} 或更新版本。請在守護程序主機上更新 CLI。",
   "providers_cliVersionWarning_title": "{provider} CLI 版本過舊",
   "providers_cliVersionWarning_update_action": "更新",

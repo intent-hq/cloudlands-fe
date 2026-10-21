@@ -32,3 +32,33 @@ describe('providerCliWarnings update command', () => {
     },
   );
 });
+
+describe('providerCliWarnings bundled CLI', () => {
+  it('carries the daemon-reported bundled version alongside the update command', () => {
+    const [warning] = providerCliWarnings([{ ...outdated('codex'), cliBundledVersion: ' 0.2.0 ' }]);
+    expect(warning).toEqual({
+      providerId: 'codex',
+      providerName: 'codex',
+      version: '0.1.0',
+      minimumVersion: '0.2.0',
+      updateCommand: 'codex update',
+      bundledVersion: '0.2.0',
+    });
+  });
+
+  it.each([undefined, '', '   '])('omits a missing or blank bundled version (%j)', (value) => {
+    const [warning] = providerCliWarnings([
+      { ...outdated('claude-code'), cliBundledVersion: value },
+    ]);
+    expect(warning).toBeDefined();
+    expect(warning).not.toHaveProperty('bundledVersion');
+  });
+
+  it('never warns about a bundled CLI for a current installed CLI', () => {
+    expect(
+      providerCliWarnings([
+        { ...outdated('codex'), cliVersionOk: true, cliBundledVersion: '0.2.0' },
+      ]),
+    ).toEqual([]);
+  });
+});

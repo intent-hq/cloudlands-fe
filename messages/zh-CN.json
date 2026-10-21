@@ -4301,6 +4301,8 @@
   "providers_bridge_auggieLoginOnDaemon_instruction": "在守护进程主机的终端中运行此命令登录，然后点击“重新检查”：",
   "providers_bridge_auggieNotInstalledOnDaemon_instruction": "守护进程主机上未安装 Auggie CLI——请先安装，然后点击“重新检查”：",
   "providers_bridge_unknownProvider_error": "未知的提供商：{providerId}",
+  "providers_cliVersionWarning_bundled_description": "已安装的 {version} 低于所需的 {minimumVersion}，因此 Intent 正在运行自带的 {bundledVersion}。请在守护进程主机上更新 CLI 以切换回来。",
+  "providers_cliVersionWarning_bundled_title": "Intent 正在使用内置的 {provider} CLI",
   "providers_cliVersionWarning_description": "已安装 {version}，但需要 {minimumVersion} 或更高版本。请在守护进程主机上更新 CLI。",
   "providers_cliVersionWarning_title": "{provider} CLI 版本过旧",
   "providers_cliVersionWarning_update_action": "更新",

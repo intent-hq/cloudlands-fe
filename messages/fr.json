@@ -4301,6 +4301,8 @@
   "providers_bridge_auggieLoginOnDaemon_instruction": "Connectez-vous en exécutant cette commande dans un terminal sur l'hôte du démon, puis cliquez sur « Vérifier à nouveau » :",
   "providers_bridge_auggieNotInstalledOnDaemon_instruction": "La CLI Auggie n'est pas installée sur l'hôte du démon — installez-la d'abord, puis cliquez sur « Vérifier à nouveau » :",
   "providers_bridge_unknownProvider_error": "Fournisseur inconnu : {providerId}",
+  "providers_cliVersionWarning_bundled_description": "La version installée {version} est antérieure à la version requise {minimumVersion} : Intent utilise donc sa propre version {bundledVersion}. Mettez à jour la CLI sur l’hôte du daemon pour y revenir.",
+  "providers_cliVersionWarning_bundled_title": "Intent utilise sa CLI {provider} intégrée",
   "providers_cliVersionWarning_description": "Installée : {version}, mais {minimumVersion} ou une version ultérieure est requise. Mettez à jour la CLI sur l’hôte du daemon.",
   "providers_cliVersionWarning_title": "La CLI {provider} n’est pas à jour",
   "providers_cliVersionWarning_update_action": "Mettre à jour",

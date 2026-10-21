@@ -25,6 +25,7 @@ interface HomeIntegrationBrowserControl {
     linkedIds: string[];
   };
   readPrefill: () => WorkspaceInitializerPendingGitHubPrefill | null;
+  navigation: () => { currentTabId: string | null; tabOrder: string[] };
   resolvePrefill: () => ReturnType<typeof resolveGitHubPrefillSelection>;
 }
 declare global {
@@ -47,6 +48,10 @@ export function setupHomeIntegrationsFixtures(appStore: Pick<typeof rendererStor
   let filePageFailed = false;
   window.__homeIntegrationBrowser = {
     calls,
+    navigation: () => ({
+      currentTabId: rendererStore.state.tabState.currentTabId,
+      tabOrder: rendererStore.state.tabState.workspaceStacks.flat(),
+    }),
     readSearchState: () => {
       const state = selectHomeIntegrationSearchState.select(rendererStore.state);
       return {
