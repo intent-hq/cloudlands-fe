@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import os from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { resolveCtBrowser } from './ct-browser.mjs';
 import { nonFontPackagesFromDryRun } from './playwright-os-deps-lib.mjs';
 
 const root = resolve(__dirname, '..');
@@ -165,7 +166,6 @@ describe('CT launcher provisioning', () => {
     expect(outputs['readiness-marker']).toBe(
       join(dir, 'browsers', '.with-deps-ct-1.58.2-pw-1.63.0-chromium-153.0.8010.12-r1243'),
     );
-    const plan = JSON.parse(readFileSync(join(dir, 'ct-browser-plan.json'), 'utf8'));
     const installed = execFileSync(
       process.execPath,
       ['scripts/run-ct-tests.mjs', '--install-browsers', '--dry-run', 'chromium'],
@@ -174,23 +174,31 @@ describe('CT launcher provisioning', () => {
     expect(installed).toContain('153.0.8010.12');
     expect(installed).toContain(join(dir, 'browsers', 'chromium_headless_shell-1243'));
     expect(installed).not.toContain('1208');
-    const deps = execFileSync(
-      process.execPath,
-      ['scripts/run-ct-tests.mjs', '--print-os-deps', 'chromium'],
-      { cwd: root, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
-    )
-      .trim()
-      .split(' ')
-      .filter(Boolean);
-    const supplierDeps = spawnSync(process.execPath, [plan.osDeps.cliPath, ...plan.osDeps.args], {
-      cwd: root,
-      env,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    expect(deps).toEqual(nonFontPackagesFromDryRun(supplierDeps.stdout, supplierDeps.status));
-    expect(deps.some((pkg) => /^(fonts-|xfonts-)/.test(pkg))).toBe(false);
   });
+
+  it.runIf(process.platform === 'linux' && existsSync('/usr/bin/apt-get'))(
+    'matches the pinned supplier dependency plan on apt-based hosts',
+    () => {
+      const plan = resolveCtBrowser({ requireInstalled: false });
+      const env = { ...process.env, DD_TRACE_STARTUP_LOGS: 'false' };
+      const deps = execFileSync(
+        process.execPath,
+        ['scripts/run-ct-tests.mjs', '--print-os-deps', 'chromium'],
+        { cwd: root, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+      )
+        .trim()
+        .split(' ')
+        .filter(Boolean);
+      const supplierDeps = spawnSync(process.execPath, [plan.osDeps.cliPath, ...plan.osDeps.args], {
+        cwd: root,
+        env,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      expect(deps).toEqual(nonFontPackagesFromDryRun(supplierDeps.stdout, supplierDeps.status));
+      expect(deps.some((pkg) => /^(fonts-|xfonts-)/.test(pkg))).toBe(false);
+    },
+  );
 });
 
 describe.runIf(process.platform === 'linux')('hosted CT provisioning failures', () => {
