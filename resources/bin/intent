@@ -1,5 +1,5 @@
 #!/bin/bash
-# intent - Open Intent with a directory pre-populated
+# intent - Open a directory as an Intent workspace on this machine
 #
 # Usage:
 #   intent [directory]
@@ -12,25 +12,24 @@ set -e
 # Resolve the directory path
 DIR="${1:-.}"
 
-# Convert to absolute path
-if [[ "$DIR" != /* ]]; then
-  DIR="$(cd "$DIR" 2>/dev/null && pwd)" || {
-    echo "Error: Directory '$1' does not exist" >&2
-    exit 1
-  }
-fi
-
-# Verify directory exists
+# Resolve to an absolute, symlink-free path so the app can match it against the
+# folders of existing workspaces.
 if [ ! -d "$DIR" ]; then
   echo "Error: '$DIR' is not a directory" >&2
   exit 1
 fi
+DIR="$(cd "$DIR" 2>/dev/null && pwd -P)" || {
+  echo "Error: Directory '$1' does not exist" >&2
+  exit 1
+}
 
-# URL-encode the path (basic encoding for spaces and special chars)
-ENCODED_DIR=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$DIR', safe='/'))")
+# URL-encode the path (the path is passed as an argument, never spliced into
+# the Python source, so quotes and other special characters are safe)
+ENCODED_DIR=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe="/"))' "$DIR")
 
-# Open the deep link
-DEEP_LINK="intent://create?repo=${ENCODED_DIR}"
+# Open the deep link: the app opens the workspace for this folder on the local
+# daemon, or creates one on the folder (no worktree) when none exists.
+DEEP_LINK="intent://open?path=${ENCODED_DIR}"
 
 # Detect dev mode by checking if electron binary exists relative to this script
 # Resolve the real path of this script (following symlinks)

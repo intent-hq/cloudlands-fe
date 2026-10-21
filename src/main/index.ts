@@ -1764,8 +1764,14 @@ const bootFlow = app.whenReady().then(async () => {
       // (only the local client is created lazily); if its client cannot be
       // built (deleted record, missing token), fall back to a local window
       // rather than one whose every RPC fails closed.
-      let windowBackendId = bootBackendId;
-      if (bootBackendId !== LOCAL_CONNECTION_ID) {
+      // An `open` link (the `intent` CLI's folder, or a workspace id) refers
+      // to this machine's daemon, so its boot window is always local.
+      const coldStartWantsLocal =
+        intentUrlArg !== undefined &&
+        !isPairLinkArg &&
+        deepLinkHandler.parseDeepLink(intentUrlArg)?.type === 'open';
+      let windowBackendId = coldStartWantsLocal ? LOCAL_CONNECTION_ID : bootBackendId;
+      if (windowBackendId !== LOCAL_CONNECTION_ID) {
         try {
           await connectBackendClient(bootBackendId);
         } catch (error) {
@@ -1811,10 +1817,13 @@ const bootFlow = app.whenReady().then(async () => {
     logger.warn('Failed to register intent:// protocol handler:', error);
   }
 
-  // Process any pending deep link URL that was received before the window was ready
+  // Route any deep link URL that arrived before the window was ready (macOS
+  // delivers a cold-start link via open-url, not argv) through the same
+  // routing as a warm link, so an `open` link still reaches a local window.
   const mainWindow = getMainWindow();
   if (mainWindow && !mainWindow.isDestroyed()) {
-    await deepLinkHandler.processPendingUrl(mainWindow);
+    const pendingUrl = deepLinkHandler.takePendingUrl();
+    if (pendingUrl) await createWindowForDeepLink(pendingUrl, deepLinkHandler);
   }
 
   // Log initial startup metrics
