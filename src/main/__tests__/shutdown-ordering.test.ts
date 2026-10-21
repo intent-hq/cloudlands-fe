@@ -91,25 +91,32 @@ function findGracefulShutdown(sf: ts.SourceFile): ts.FunctionLikeDeclaration {
 // gracefulShutdown().
 function findShutdownCleanupBody(sf: ts.SourceFile): ts.FunctionLikeDeclaration {
   const gs = findGracefulShutdown(sf);
-  let watchdogCall: ts.CallExpression | undefined;
+  let runnerCall: ts.CallExpression | undefined;
   const visit = (n: ts.Node) => {
-    if (watchdogCall) return;
-    if (ts.isCallExpression(n) && n.expression.getText() === 'runWithHardExitTimeout') {
-      watchdogCall = n;
+    if (runnerCall) return;
+    if (ts.isCallExpression(n) && n.expression.getText() === 'runGracefulShutdown') {
+      runnerCall = n;
       return;
     }
     ts.forEachChild(n, visit);
   };
   visit(gs.body!);
-  if (!watchdogCall) {
+  if (!runnerCall) {
     throw new Error(
-      'gracefulShutdown must bound its cleanup chain via runWithHardExitTimeout (intent-hq/monorepo#1300)',
+      'gracefulShutdown must bound its cleanup chain via runGracefulShutdown (hard-exit watchdog, intent-hq/monorepo#1300)',
     );
   }
-  const [runArg] = watchdogCall.arguments;
-  if (!runArg || runArg.getText() !== 'performGracefulShutdown') {
+  const [stepsArg] = runnerCall.arguments;
+  const cleanup =
+    stepsArg && ts.isObjectLiteralExpression(stepsArg)
+      ? stepsArg.properties.find(
+          (p): p is ts.PropertyAssignment =>
+            ts.isPropertyAssignment(p) && p.name.getText() === 'cleanup',
+        )
+      : undefined;
+  if (!cleanup || cleanup.initializer.getText() !== 'performGracefulShutdown') {
     throw new Error(
-      'gracefulShutdown must pass performGracefulShutdown to runWithHardExitTimeout so the cleanup chain stays reachable',
+      'gracefulShutdown must pass cleanup: performGracefulShutdown to runGracefulShutdown so the cleanup chain stays reachable',
     );
   }
   return findNamedFunction(sf, 'performGracefulShutdown');
@@ -420,6 +427,32 @@ describe('gracefulShutdown call ordering (AST)', () => {
     for (const registration of signalRegistrations) {
       expect(isInsideWhenReadyCallback(registration), registration.getText()).toBe(true);
     }
+  });
+
+  it('signal handlers persist window sessions only through gracefulShutdown (inside its watchdog)', () => {
+    // An unbounded save before gracefulShutdown() arms the hard-exit
+    // watchdog would let a stalled disk write keep the process alive.
+    const sf = parseIndex();
+    let handler: ts.Node | undefined;
+    const visit = (n: ts.Node) => {
+      if (
+        !handler &&
+        ts.isVariableDeclaration(n) &&
+        n.name.getText() === 'onShutdownSignal' &&
+        n.initializer
+      ) {
+        handler = n.initializer;
+        return;
+      }
+      ts.forEachChild(n, visit);
+    };
+    visit(sf);
+    expect(handler, 'onShutdownSignal handler').toBeDefined();
+    const calls = callsitesIn(handler!);
+    expect(calls.map((c) => c.text)).not.toContain('saveOpenWindowSessions');
+    expect(handler!.getText()).toMatch(
+      /gracefulShutdown\(\{\s*persistWindowSessions:\s*true\s*\}\)/,
+    );
   });
 });
 
