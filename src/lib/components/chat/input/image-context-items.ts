@@ -2,14 +2,13 @@
  * Shared image `File` → `ContextItem` conversion for composer surfaces
  * (SimpleRichInput, CompactWorkspaceInitializer). Reads each image as a
  * base64 data URL, enforces the caller's size cap up front, and surfaces
- * the standard toasts (added / failed / too-large) from the chat message
+ * the error toasts (failed / too-large) from the chat message
  * set. Non-image files are the caller's responsibility — pass only
  * `image/*` files here.
  */
 import { notify } from '$lib/components/patterns/notify';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
-import { formatInteger } from '$lib/i18n/format';
 import type { ContextItem } from './context-api';
 import { parseImageDataUrl } from './image-data-url';
 
@@ -63,9 +62,8 @@ export interface ImageContextItemsOptions {
 /**
  * Convert image `File`s into `ContextItem`s carrying `imageData` /
  * `imageMimeType`. Files over `maxBytes` are skipped and reported in one
- * too-large toast; unreadable/invalid files get a per-file failure toast;
- * a success toast reports the added count. Returns the created items —
- * appending them to composer state stays with the caller.
+ * too-large toast; unreadable/invalid files get a per-file failure toast.
+ * Returns the created items for the caller to display as attachments.
  */
 export async function imageFilesToContextItems(
   files: File[],
@@ -111,11 +109,6 @@ export async function imageFilesToContextItems(
 
   if (items.length > 0) {
     logger.debug(`Added ${items.length} image(s) to context`);
-    notify.success(
-      items.length === 1
-        ? m.chat_richInput_addedImages_toast_one()
-        : m.chat_richInput_addedImages_toast_many({ count: formatInteger(items.length) }),
-    );
   }
 
   if (oversizedFiles.length > 0) {
