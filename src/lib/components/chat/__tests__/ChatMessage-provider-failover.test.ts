@@ -6,13 +6,16 @@
  * failover notice, never as a message bubble.
  */
 import { render, screen } from '@testing-library/svelte';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { AgentMessage } from '$shared/types';
+
+let mockStoreState: Record<string, unknown> = {};
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: () => ({}) });
+  return createAppStoreMockModule({ state: () => mockStoreState });
 });
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
@@ -40,6 +43,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
 }));
 
 import ChatMessage from '../ChatMessage.svelte';
+import AgentMessageList from '../AgentMessageList.svelte';
 
 const DAEMON_TEXT = 'claude-code ran out of quota. Switched to the backup claude-code (Work).';
 
@@ -80,5 +84,60 @@ describe('ChatMessage — provider_failover row', () => {
     expect(notice.textContent?.trim()).toBe(DAEMON_TEXT);
     expect(container.textContent?.trim()).toBe(DAEMON_TEXT);
     expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  describe('labels from the owning workspace catalog', () => {
+    // The global catalog no longer has the backup profile; the workspace's own
+    // catalog (what the agent actually runs against) still does.
+    beforeEach(() => {
+      mockStoreState = {
+        providerCatalog: {
+          loaded: true,
+          providers: createCollection('id', [{ id: 'claude-code', displayName: 'Claude Code' }]),
+          profiles: createCollection('id', []),
+          byWorkspaceId: {
+            'ws-1': {
+              catalog: {
+                providers: [{ id: 'claude-code', displayName: 'Claude Code' }],
+                profiles: [
+                  {
+                    id: 'pwork',
+                    providerRef: 'claude-code@pwork',
+                    baseProviderId: 'claude-code',
+                    name: 'Work',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      };
+    });
+
+    const row = () =>
+      failoverRow({
+        fromProvider: 'claude-code',
+        toProvider: 'claude-code@pwork',
+        model: 'opus',
+        reason: 'quota-exceeded',
+      });
+
+    it('ChatMessage names the backup from its workspace catalog', () => {
+      render(ChatMessage, {
+        props: { message: row(), workspace: { id: 'ws-1' } as never },
+      });
+      const text = screen.getByRole('status').textContent ?? '';
+      expect(text).toContain('continuing on Work (backup)');
+      expect(text).not.toContain('Removed profile');
+    });
+
+    it('AgentMessageList names the backup from its workspace catalog', () => {
+      render(AgentMessageList, {
+        props: { messages: [row()], workspaceId: 'ws-1', enableTransitions: false },
+      });
+      const text = screen.getByRole('status').textContent ?? '';
+      expect(text).toContain('continuing on Work (backup)');
+      expect(text).not.toContain('Removed profile');
+    });
   });
 });

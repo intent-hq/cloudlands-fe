@@ -1477,6 +1477,7 @@
 {:else if modelChangeNotice}
   <!-- Daemon-persisted model-change notice row - centered inline divider -->
   <ModelChangeNotice
+    workspaceId={getOwningWorkspaceId()}
     notice={modelChangeNotice}
     fallbackText={extractAllContent(message) || undefined}
   />
@@ -1493,12 +1494,14 @@
 {:else if providerRehomedNotice}
   <!-- Daemon-persisted provider re-home notice row - centered inline divider -->
   <ProviderRehomedNotice
+    workspaceId={getOwningWorkspaceId()}
     notice={providerRehomedNotice}
     fallbackText={extractAllContent(message) || undefined}
   />
 {:else if providerFailoverNotice}
   <!-- Daemon-persisted quota failover notice row - centered inline divider -->
   <ProviderFailoverNotice
+    workspaceId={getOwningWorkspaceId()}
     notice={providerFailoverNotice}
     fallbackText={extractAllContent(message) || undefined}
   />

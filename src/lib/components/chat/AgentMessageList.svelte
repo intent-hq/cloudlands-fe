@@ -57,6 +57,11 @@
     workspace = null,
   }: Props = $props();
 
+  // Transcript notices label profiles from the owning workspace's catalog.
+  const owningWorkspaceId = $derived(
+    workspaceId ?? (workspace?.id ? String(workspace.id) : undefined),
+  );
+
   // PERF: Cache for filtered messages to avoid re-filtering on unrelated updates
   // Keyed by message count + search query + owner principal (it changes which
   // preamble text is searchable) to invalidate when relevant data changes
@@ -142,6 +147,7 @@
              Discriminated on metadata.type before role branching so it renders
              regardless of the exact role the daemon persists. -->
         <ModelChangeNotice
+          workspaceId={owningWorkspaceId}
           notice={modelChangeNotice}
           fallbackText={extractAllContent(message) || undefined}
         />
@@ -163,12 +169,14 @@
       {:else if providerRehomedNotice}
         <!-- Daemon-persisted provider re-home notice - centered inline divider. -->
         <ProviderRehomedNotice
+          workspaceId={owningWorkspaceId}
           notice={providerRehomedNotice}
           fallbackText={extractAllContent(message) || undefined}
         />
       {:else if providerFailoverNotice}
         <!-- Daemon-persisted quota failover notice - centered inline divider. -->
         <ProviderFailoverNotice
+          workspaceId={owningWorkspaceId}
           notice={providerFailoverNotice}
           fallbackText={extractAllContent(message) || undefined}
         />
