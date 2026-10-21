@@ -1105,7 +1105,11 @@
     if (!message?.contentBlocks || !Array.isArray(message.contentBlocks)) {
       return [];
     }
-    return message.contentBlocks.flatMap<ContentBlock & { fileName: string }>((block) => {
+    return mergeHydratedContent(
+      message.contentBlocks,
+      message?.id ?? messageId,
+      $hydratedBlocks$,
+    ).flatMap<ContentBlock & { fileName: string }>((block) => {
       if (isFileBlock(block)) return [block];
       if (block.type === 'image' && block.mimeType && !isSupportedImageMimeType(block.mimeType)) {
         return [
@@ -1118,6 +1122,43 @@
       }
       return [];
     });
+  });
+
+  let pendingFileHydration = $state<string | null>(null);
+
+  function canHydrateFile(block: ContentBlock): boolean {
+    return !!(block.dataTruncated && block.id && agentId && (message?.id ?? messageId));
+  }
+
+  function hydrateFileAttachment(block: ContentBlock) {
+    const hydrationMessageId = message?.id ?? messageId;
+    if (readOnly || !agentId || !hydrationMessageId || !block.id || !canHydrateFile(block)) return;
+    pendingFileHydration = block.id;
+    appStore.dispatch(messageBlockHydrationRequested(agentId, hydrationMessageId, block.id));
+  }
+
+  $effect(() => {
+    const blockId = pendingFileHydration;
+    if (!blockId) return;
+    const hydratedFromReadable = $hydratedBlocks$;
+    // Use fresh state on the click flush; the readable can still precede the request.
+    const hydrated = agentId
+      ? selectHydratedBlocks.select(appStore.state, agentId)
+      : hydratedFromReadable;
+    const hydrationMessageId = message?.id ?? messageId;
+    if (isHydrationPending(hydrated, hydrationMessageId, [blockId])) return;
+    pendingFileHydration = null;
+    const block = mergeHydratedContent(
+      message?.contentBlocks ?? [],
+      hydrationMessageId,
+      hydrated,
+    ).find((candidate) => candidate.id === blockId);
+    // Failed hydration stays actionable for retry; never download a truncated preview.
+    if (!block?.data || block.dataTruncated || block.type !== 'image') return;
+    const link = document.createElement('a');
+    link.href = `data:application/octet-stream;base64,${block.data}`;
+    link.download = block.fileName || imageAttachmentName(block.mimeType, 'image');
+    link.click();
   });
 
   // Secondary text for a file chip: size and/or mime from the block's
@@ -1878,13 +1919,15 @@
                       variant="plain"
                       data-testid="chat-message-file-chip"
                       class="type-caption flex cursor-pointer items-center gap-1.5 rounded border border-border bg-muted/50 px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                      href={!fileBlock.attachmentId && fileBlock.data
+                      href={!fileBlock.attachmentId && fileBlock.data && !fileBlock.dataTruncated
                         ? `data:application/octet-stream;base64,${fileBlock.data}`
                         : undefined}
                       download={!fileBlock.attachmentId ? fileBlock.fileName : undefined}
-                      disabled={!fileBlock.attachmentId && !fileBlock.data}
+                      disabled={isAttachmentHydrationLoading(fileBlock.id) ||
+                        (!fileBlock.attachmentId && !fileBlock.data && !canHydrateFile(fileBlock))}
                       onclick={() => {
                         if (fileBlock.attachmentId) openAttachmentReference(fileBlock);
+                        else if (fileBlock.dataTruncated) hydrateFileAttachment(fileBlock);
                       }}
                       title={m.chat_chatMessage_openAttachment_title({
                         name: `${fileBlock.fileName}`,

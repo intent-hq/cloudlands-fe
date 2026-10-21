@@ -2,6 +2,55 @@ import { expect, test } from '../../../../test/ct-test';
 import QueuedMessageAttachments from '../QueuedMessageAttachments.svelte';
 import ChatMessage from '../ChatMessage.svelte';
 import AttachmentPreview from '../AttachmentPreview.svelte';
+import UnsupportedAttachmentHydrationHost from './UnsupportedAttachmentHydrationHost.svelte';
+
+for (const hasThumbnail of [false, true]) {
+  test(`legacy SVG hydrates before download and retries failure (thumbnail: ${hasThumbnail})`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg"><text>Full original</text></svg>';
+    const data = Buffer.from(svg).toString('base64');
+    await mount(UnsupportedAttachmentHydrationHost, {
+      props: {
+        data,
+        thumbnail: hasThumbnail ? Buffer.from('partial preview').toString('base64') : undefined,
+      },
+    });
+    const chip = page.getByTestId('chat-message-file-chip');
+    const requests = page.getByTestId('hydration-requests');
+    await expect(chip).toBeEnabled();
+    await expect(chip).not.toHaveAttribute('href');
+    await chip.click();
+    await expect(chip).toBeDisabled();
+    await expect(requests).toHaveText(
+      JSON.stringify([
+        { agentId: 'legacy-agent', messageId: 'legacy-message', blockId: 'legacy-image' },
+      ]),
+    );
+    await page.getByRole('button', { name: 'Fail hydration' }).click();
+    await expect(chip).toBeEnabled();
+    await expect(chip).not.toHaveAttribute('href');
+    await chip.click();
+    await expect(chip).toBeDisabled();
+    const downloadReady = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Finish hydration' }).click();
+    const download = await downloadReady;
+    expect(download.suggestedFilename()).toBe('original.svg');
+    const path = testInfo.outputPath('hydrated-original.svg');
+    await download.saveAs(path);
+    const { readFile } = await import('node:fs/promises');
+    expect(await readFile(path, 'utf8')).toBe(svg);
+    await expect(chip).toHaveAttribute('href', `data:application/octet-stream;base64,${data}`);
+    await expect(chip).toContainText('original.svg');
+    await expect(page.getByRole('img')).toHaveCount(0);
+    await testInfo.attach('hydrated-original.svg', { path, contentType: 'image/svg+xml' });
+    await testInfo.attach('hydrated-file-chip.png', {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
+  });
+}
 
 for (const mimeType of ['image/svg+xml', 'image/tiff']) {
   test(`queued ${mimeType} opens its original attachment instead of a broken image`, async ({
