@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.226.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.226.0...v2.226.1) (2026-10-21)
+
+
+### 🐛 Bug Fixes
+
+* align toast stacking with overlay pointer handling ([#3588](https://github.com/intent-hq/cloudlands-fe/issues/3588)) ([9c7e918](https://github.com/intent-hq/cloudlands-fe/commit/9c7e9186393de36b5b5c96b6b467d7bf87575280))
+
 ## [2.226.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.225.1...v2.226.0) (2026-10-21)
 
 
