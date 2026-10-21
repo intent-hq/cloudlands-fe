@@ -50,9 +50,11 @@ test('arrow navigation and Escape return focus; focused chips describe human and
     '[data-discussion-message="reaction-first"] [data-discussion-reaction="👀"]',
   );
   await chip.focus();
-  await expect(chip).toHaveAccessibleDescription('Alex and Developer reacted with 👀');
+  await expect(page.getByRole('tooltip')).toContainText('Alex and Developer reacted with');
+  await trigger.focus();
+  await expect(page.getByRole('tooltip')).toBeHidden();
   await chip.hover();
-  await expect(page.getByRole('tooltip')).toHaveCount(0);
+  await expect(page.getByRole('tooltip')).toContainText('Alex and Developer reacted with');
 });
 
 test('bounded roster reports overflow and legacy reactions remain removable', async ({
@@ -62,7 +64,7 @@ test('bounded roster reports overflow and legacy reactions remain removable', as
   const component = await mount(Preview, { props: { initial: 'large' } });
   const eyes = component.locator(lastRow).locator('[data-discussion-reaction="👀"]');
   await eyes.focus();
-  await expect(eyes).toHaveAccessibleDescription(/1,214 others/);
+  await expect(page.getByRole('tooltip')).toContainText('1,214 others');
   await component.unmount();
   const legacy = await mount(Preview, { props: { initial: 'legacy' } });
   const chip = legacy.locator(lastRow).locator('[data-discussion-reaction="🙂"]');
