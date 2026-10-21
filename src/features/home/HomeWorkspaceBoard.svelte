@@ -15,6 +15,7 @@
   import {
     ignoreRepeatHomeWorkspaceClick,
     openHomeWorkspaceFromDoubleClick,
+    preventRepeatClickTextSelection,
     openHomeWorkspaceFromEvent,
   } from './home-workspace-opening';
 
@@ -112,6 +113,7 @@
                 if (!openHomeWorkspaceFromEvent(event, workspace.id, onopen))
                   onselect(workspace.id);
               }}
+              onmousedown={preventRepeatClickTextSelection}
               ondblclick={(event) =>
                 openHomeWorkspaceFromDoubleClick(event, workspace.id, onopenselected)}
               oncontextmenu={(event) => oncontextmenu?.(event, workspace)}

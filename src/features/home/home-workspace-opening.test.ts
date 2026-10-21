@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ignoreRepeatHomeWorkspaceClick,
   openHomeWorkspaceFromDoubleClick,
+  preventRepeatClickTextSelection,
 } from './home-workspace-opening';
 
 function mountCard(): { card: HTMLElement; title: HTMLElement; menu: HTMLButtonElement } {
@@ -18,7 +19,7 @@ function mountCard(): { card: HTMLElement; title: HTMLElement; menu: HTMLButtonE
 function dispatchOn(
   card: HTMLElement,
   target: HTMLElement,
-  type: 'click' | 'dblclick',
+  type: 'mousedown' | 'click' | 'dblclick',
   init: MouseEventInit,
   handler: (event: MouseEvent) => void,
 ): MouseEvent {
@@ -45,16 +46,16 @@ describe('openHomeWorkspaceFromDoubleClick', () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
-  it('clears the word selection a double-click leaves behind', () => {
+  it('leaves Cmd/Ctrl double-clicks to the modifier path that already opened on click 1', () => {
     const { card, title } = mountCard();
-    const range = document.createRange();
-    range.selectNodeContents(title);
-    window.getSelection()?.addRange(range);
-    expect(window.getSelection()?.toString()).not.toBe('');
-    dispatchOn(card, title, 'dblclick', { button: 0, detail: 2 }, (e) => {
-      openHomeWorkspaceFromDoubleClick(e, 'ws-1', vi.fn());
+    const onopen = vi.fn();
+    const modifier = navigator.platform.toUpperCase().includes('MAC')
+      ? { metaKey: true }
+      : { ctrlKey: true };
+    dispatchOn(card, title, 'dblclick', { button: 0, detail: 2, ...modifier }, (e) => {
+      openHomeWorkspaceFromDoubleClick(e, 'ws-1', onopen);
     });
-    expect(window.getSelection()?.toString()).toBe('');
+    expect(onopen).not.toHaveBeenCalled();
   });
 
   it('ignores double-clicks on nested controls', () => {
@@ -108,5 +109,27 @@ describe('ignoreRepeatHomeWorkspaceClick', () => {
     });
     expect(ignored).toBe(true);
     expect(outer).not.toHaveBeenCalled();
+  });
+});
+
+describe('preventRepeatClickTextSelection', () => {
+  it('blocks the word selection of a double-click on the row body', () => {
+    const { card, title } = mountCard();
+    const event = dispatchOn(card, title, 'mousedown', { detail: 2 }, (e) =>
+      preventRepeatClickTextSelection(e),
+    );
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('keeps the first press and nested controls untouched', () => {
+    const { card, title, menu } = mountCard();
+    const first = dispatchOn(card, title, 'mousedown', { detail: 1 }, (e) =>
+      preventRepeatClickTextSelection(e),
+    );
+    const nested = dispatchOn(card, menu, 'mousedown', { detail: 2 }, (e) =>
+      preventRepeatClickTextSelection(e),
+    );
+    expect(first.defaultPrevented).toBe(false);
+    expect(nested.defaultPrevented).toBe(false);
   });
 });

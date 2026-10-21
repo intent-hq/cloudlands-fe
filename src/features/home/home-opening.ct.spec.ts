@@ -158,7 +158,25 @@ test('Home double-click on a row menu button does not open the workspace', async
   const row = component.locator('[data-home-workspace="home-review"]');
   const before = await page.evaluate(() => window.__homeWorkspacePreview?.navigation());
   await row.getByRole('button').dblclick();
+  await expect(page.getByRole('menu')).toBeVisible();
   expect(await page.evaluate(() => window.__homeWorkspacePreview?.navigation())).toEqual(before);
+});
+
+test('Home Cmd/Ctrl double-click opens once through the modifier path without selecting', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(Preview);
+  const modifier = await page.evaluate(() =>
+    navigator.platform.toUpperCase().includes('MAC') ? 'Meta' : 'Control',
+  );
+  const row = component.locator('[data-home-workspace="home-review"]');
+  await row.dblclick({ modifiers: [modifier] });
+  await expect
+    .poll(() => page.evaluate(() => window.__homeWorkspacePreview?.navigation().currentTabId))
+    .toBe('home-review');
+  await expect(component.locator('[data-home-detail]')).toHaveCount(0);
+  await expect(row.locator('..')).toHaveAttribute('aria-selected', 'false');
 });
 
 test('Home board opens a card on double-click', async ({ mount, page }) => {

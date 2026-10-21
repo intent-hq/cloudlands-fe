@@ -28,19 +28,24 @@ export function openHomeWorkspaceFromEvent(
 /**
  * Opens a Home workspace on a primary-button double-click of its row or card.
  * Double-clicks that land on a nested control (row menu, PR links) keep that
- * control's own behavior.
+ * control's own behavior. A Cmd/Ctrl double-click is left alone: its first click
+ * already opened the workspace through the modifier path.
  */
 export function openHomeWorkspaceFromDoubleClick(
   event: MouseEvent,
   id: string,
   onopen: (id: string) => void,
 ): boolean {
-  if (event.button !== 0 || isNestedControl(event)) return false;
+  if (event.button !== 0 || isCmdClickModifier({ event }) || isNestedControl(event)) return false;
   event.preventDefault();
   event.stopPropagation();
-  window.getSelection()?.removeAllRanges();
   onopen(id);
   return true;
+}
+
+/** Stops the repeat mousedown of a double-click from selecting the word under the cursor. */
+export function preventRepeatClickTextSelection(event: MouseEvent): void {
+  if (event.detail > 1 && !isNestedControl(event)) event.preventDefault();
 }
 
 /**

@@ -18,6 +18,7 @@
   import {
     ignoreRepeatHomeWorkspaceClick,
     openHomeWorkspaceFromDoubleClick,
+    preventRepeatClickTextSelection,
     openHomeWorkspaceFromEvent,
   } from './home-workspace-opening';
   import { createHomeWorkspaceMenu } from './home-workspace-menu';
@@ -113,6 +114,9 @@
   function openSelectedWorkspace(id: string) {
     updateView({ selectedId: id });
     openWorkspace(id);
+  }
+  function openRowOnDoubleClick(event: MouseEvent, id: string) {
+    openHomeWorkspaceFromDoubleClick(event, id, openSelectedWorkspace);
   }
   function openModifiedWorkspace(event: MouseEvent | KeyboardEvent, id: string) {
     if (event instanceof MouseEvent && ignoreRepeatHomeWorkspaceClick(event)) return;
@@ -916,12 +920,8 @@
                               class="home-list-row h-12 items-center border-b border-border px-3 py-1"
                               data-home-workspace={item.id}
                               onclick={(event) => openModifiedWorkspace(event, item.id)}
-                              ondblclick={(event) =>
-                                openHomeWorkspaceFromDoubleClick(
-                                  event,
-                                  item.id,
-                                  openSelectedWorkspace,
-                                )}
+                              onmousedown={preventRepeatClickTextSelection}
+                              ondblclick={(event) => openRowOnDoubleClick(event, item.id)}
                               oncontextmenu={(event) => showWorkspaceMenu(event, item)}
                             >
                               {#snippet leading()}

@@ -828,5 +828,6 @@ test('double-clicking the linked workspace chip keeps the chip behavior', async 
     .filter({ hasText: '#142' });
   const before = await page.evaluate(() => window.__homeIntegrationBrowser!.navigation());
   await option.getByRole('button', { name: 'Open workspace' }).dblclick();
+  await expect(component.locator('[data-home-detail]')).toBeVisible();
   expect(await page.evaluate(() => window.__homeIntegrationBrowser!.navigation())).toEqual(before);
 });

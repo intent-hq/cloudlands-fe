@@ -20,6 +20,7 @@
   import {
     ignoreRepeatHomeWorkspaceClick,
     openHomeWorkspaceFromDoubleClick,
+    preventRepeatClickTextSelection,
   } from './home-workspace-opening';
   import { handleLink } from '$features/navigation/link-handler';
   import { WorkspaceId } from '$shared/types/branded-ids';
@@ -463,6 +464,9 @@
               class="home-list-row home-integration-row min-h-12 items-start border-b border-border px-2 py-3"
               onclick={(event) => {
                 if (isPr) ignoreRepeatHomeWorkspaceClick(event);
+              }}
+              onmousedown={(event) => {
+                if (isPr) preventRepeatClickTextSelection(event);
               }}
               ondblclick={(event) => {
                 if (!isPr || !linked) return;
