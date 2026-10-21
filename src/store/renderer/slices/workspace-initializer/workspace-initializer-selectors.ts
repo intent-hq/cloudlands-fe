@@ -62,7 +62,7 @@ export const selectWorkspaceInitializerAgentByRepo = store.createSelector(
   (state) => state.workspaceInitializer.agentByRepo,
 );
 
-/** Specialist ids used to create workspaces from New workspace, most recent first. */
+/** Specialist ids used to create workspaces or picked in the agent composer, most recent first. */
 export const selectWorkspaceInitializerRecentSpecialistIds = store.createSelector(
   (state) => state.workspaceInitializer.recentSpecialistIds,
 );

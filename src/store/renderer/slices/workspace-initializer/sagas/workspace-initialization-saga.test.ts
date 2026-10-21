@@ -24,6 +24,7 @@ vi.mock('$lib/components/patterns/notify', () => ({
 }));
 
 import { appClient } from '$lib/client';
+import { registerWorkspaceInitializationPreparation } from '$lib/components/workspace/initializer/workspace-initialization-preparation';
 import {
   chooseDefaultSetupScript,
   getLastUsedSetupScript,
@@ -39,6 +40,12 @@ import { selectPrincipalActionContext } from '$store/renderer/slices/principal/p
 import { principalContextChanged } from '$store/renderer/slices/principal/principal-slice';
 import { bootstrapNewWorkspaceLayout } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
+import {
+  goToStep,
+  resetOnboarding,
+  setOnboardingWorkspaceId,
+} from '$store/renderer/slices/onboarding/onboarding-slice';
+import { setHasCompletedProviderSetup } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { setInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { hydrateWorkspaceNavigation } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
@@ -49,6 +56,8 @@ import { createMockWorkspace } from '../../../../../test/factories/workspace.fac
 import { selectWorkspaceInitializationOutcomeForConsumer } from '../workspace-initializer-selectors';
 import {
   clearWorkspaceInitializationOutcome,
+  setCompactWorkspaceInitializerFormState,
+  setWorkspaceInitializerLastSelectedRepo,
   workspaceInitializationRequested,
   workspaceInitializationResumeRequested,
   workspaceInitializationSubmitted,
@@ -538,6 +547,71 @@ describe('workspaceInitializerSaga (registered production owner, reducer-backed 
     });
   });
 
+  it('applies onboarding domain completion exactly once in the production owner', async () => {
+    const completionActions: RecordedAction[] = [];
+    stops.push(
+      appStore.runSaga(function* () {
+        while (true) {
+          completionActions.push(
+            (yield* take([
+              resetOnboarding,
+              setHasCompletedProviderSetup,
+              setOnboardingWorkspaceId,
+              goToStep,
+            ])) as RecordedAction,
+          );
+        }
+      }),
+    );
+    const onboardingConsumer = { id: 'onboarding-1', resourceId: 'resource-onboarding' };
+    const action = workspaceInitializationSubmitted(onboardingSubmission(), onboardingConsumer);
+    appStore.dispatch(action);
+
+    await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+    await vi.waitFor(() => expect(completionActions).toHaveLength(4));
+    expect(completionActions).toEqual([
+      resetOnboarding(action.payload.submission.admission),
+      setHasCompletedProviderSetup(true),
+      setOnboardingWorkspaceId('ws-1'),
+      goToStep('ready'),
+    ]);
+  });
+
+  it('applies compact persisted completion exactly once in the production owner', async () => {
+    const completionActions: RecordedAction[] = [];
+    stops.push(
+      appStore.runSaga(function* () {
+        while (true) {
+          completionActions.push(
+            (yield* take([
+              setWorkspaceInitializerLastSelectedRepo,
+              setCompactWorkspaceInitializerFormState,
+            ])) as RecordedAction,
+          );
+        }
+      }),
+    );
+    const action = workspaceInitializationSubmitted(
+      compactSubmission({
+        repoType: 'local',
+        repoPath: '/repo',
+        remoteSetup: null,
+        branch: 'main',
+        isNewRepo: true,
+        formPersistence: true,
+      }),
+      consumer,
+    );
+    appStore.dispatch(action);
+
+    await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+    await vi.waitFor(() => expect(completionActions).toHaveLength(2));
+    expect(completionActions.map(({ type }) => type)).toEqual([
+      setWorkspaceInitializerLastSelectedRepo.type,
+      setCompactWorkspaceInitializerFormState.type,
+    ]);
+  });
+
   it('resumes a retained submitted failure without pulling or creating again', async () => {
     mocks.redeem.mockResolvedValueOnce({ items: failed, fileBlocks: [], failedCount: 1 });
     const submission = compactSubmission({
@@ -633,6 +707,48 @@ describe('workspaceInitializerSaga (registered production owner, reducer-backed 
       status: 'cancelled',
       stage: 'prepare',
     });
+  });
+
+  it('cancels deferred preparation through production registration and settles the original action', async () => {
+    const pendingPreparation = deferred<never>();
+    const prepare = vi.fn(() => pendingPreparation.promise);
+    const release = registerWorkspaceInitializationPreparation('deferred-preparation', prepare);
+    const action = workspaceInitializationSubmitted(
+      compactSubmission({ preparationId: 'deferred-preparation' }),
+      consumer,
+    );
+    appStore.dispatch(action);
+    await vi.waitFor(() => expect(prepare).toHaveBeenCalledTimes(1));
+
+    stops[1]();
+    stops[1] = () => undefined;
+
+    await expect(action.promise).rejects.toThrow('initialization-cancelled');
+    expect(create).not.toHaveBeenCalled();
+    expect(outcome()).toMatchObject({
+      seq: action.seq,
+      entrypoint: 'compact',
+      status: 'cancelled',
+      stage: 'prepare',
+    });
+    release();
+  });
+
+  it('settles deferred preparation when its form releases the correlated outcome', async () => {
+    const pendingPreparation = deferred<never>();
+    const prepare = vi.fn(() => pendingPreparation.promise);
+    registerWorkspaceInitializationPreparation('released-preparation', prepare);
+    const action = workspaceInitializationSubmitted(
+      compactSubmission({ preparationId: 'released-preparation' }),
+      consumer,
+    );
+    appStore.dispatch(action);
+    await vi.waitFor(() => expect(prepare).toHaveBeenCalledTimes(1));
+
+    appStore.dispatch(clearWorkspaceInitializationOutcome(consumer.id, action.seq));
+
+    await expect(action.promise).rejects.toThrow('initialization-cancelled');
+    expect(create).not.toHaveBeenCalled();
   });
 
   it('pulls, creates with exact params, installs, and publishes a correlated success', async () => {

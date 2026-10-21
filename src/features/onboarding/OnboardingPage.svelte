@@ -18,6 +18,7 @@
     LEGACY_ONBOARDING_PROMPT_SESSION_KEY,
   } from '$lib/components/workspace/initializer/new-workspace-draft';
   import { deserializeDraftAttachments } from '$lib/components/chat/chat-draft-attachments';
+  import { registerWorkspaceInitializationPreparation } from '$lib/components/workspace/initializer/workspace-initialization-preparation';
   import {
     enhancePrompt,
     EnhancePromptUnavailableError,
@@ -39,7 +40,6 @@
   import {
     goToStep,
     setProjectConfig,
-    setOnboardingWorkspaceId,
     resetOnboarding,
     setOnboardingFullFlowRequested,
   } from '$store/renderer/slices/onboarding/onboarding-slice';
@@ -100,7 +100,6 @@
     type SetupScriptNameSource,
   } from '$features/setup-scripts';
   import { getLastUsedSetupScript } from '$features/setup-scripts/last-used';
-  import { setHasCompletedProviderSetup } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
     cancelWorkspaceInitializerOnboardingFormStateDebounce,
     clearWorkspaceInitializationOutcome,
@@ -128,6 +127,7 @@
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import {
     selectPrincipalActionContext,
+    selectPrincipalDraftProvenance,
     selectWorkspaceCreationVisible,
   } from '$store/renderer/slices/principal/principal-selectors';
   import type {
@@ -445,11 +445,14 @@
   const onboardingDraftAuthority$ =
     selectWorkspaceInitializerDraftAuthority(onboardingDraftOwnerId);
   const onboardingDraftAdmission$ = selectPrincipalActionContext();
+  const onboardingDraftProvenance$ = selectPrincipalDraftProvenance();
   let onboardingDraftRestoreRequestId = $state(crypto.randomUUID());
   let onboardingDraftOwnerAdmission: string | null | undefined = undefined;
+  let onboardingDraftProvenance: string | undefined;
   let onboardingDraftRestoreApplied = false;
   $effect(() => {
     const admission = $onboardingDraftAdmission$;
+    const provenance = $onboardingDraftProvenance$;
     if (onboardingDraftOwnerAdmission === admission) return;
     const priorRequestId = onboardingDraftRestoreRequestId;
     const hadOwner =
@@ -462,6 +465,15 @@
         workspaceInitializerDraftOwnerReleased(onboardingDraftOwnerId, priorRequestId),
       );
     if (admission === null) return;
+    const provenanceReplaced =
+      onboardingDraftProvenance !== undefined && provenance !== onboardingDraftProvenance;
+    if (provenanceReplaced) {
+      onboardingInputValue = '';
+      onboardingImageItems = [];
+      onboardingStagedItems = [];
+      getOnboardingRichTextarea()?.clear();
+    }
+    if (provenance !== null) onboardingDraftProvenance = provenance;
     onboardingDraftRestoreRequestId = crypto.randomUUID();
     appStore.dispatch(
       workspaceInitializerDraftRestoreRequested(
@@ -469,6 +481,8 @@
         onboardingDraftRestoreRequestId,
         LEGACY_ONBOARDING_PROMPT_SESSION_KEY,
         admission,
+        provenanceReplaced,
+        provenance ?? undefined,
       ),
     );
   });
@@ -819,6 +833,7 @@
   let selectedPRNumber = $state<number | null>(null);
   let lastFetchedPRIdentifier: string | null = null;
   let onboardingContentChangeTimer: ReturnType<typeof setTimeout> | null = null;
+  let releaseOnboardingPreparation: (() => void) | null = null;
 
   onDestroy(() => {
     onboardingMounted = false;
@@ -832,6 +847,8 @@
       ),
     );
     if (activeInitializationSeq !== null) releaseInitialization(activeInitializationSeq);
+    releaseOnboardingPreparation?.();
+    releaseOnboardingPreparation = null;
     appStore.dispatch(clearWorkspaceInitializationResume(initializationConsumerId));
     if (onboardingContentChangeTimer) clearTimeout(onboardingContentChangeTimer);
     setupScriptProbeScheduler.dispose();
@@ -881,7 +898,9 @@
     // state and session handoffs are cleared by the workspace-initializer saga.
     // (resetOnboarding preserves a pending fullFlowRequested — see the slice.)
     if (isOnboarding) {
-      appStore.dispatch(resetOnboarding());
+      appStore.dispatch(
+        resetOnboarding(selectPrincipalActionContext.select(appStore.state) ?? undefined),
+      );
       appStore.dispatch(ensureProvidersChecked());
     }
   });
@@ -1200,6 +1219,9 @@
         applyInitializationFailure(outcome);
         return;
       }
+      // Domain completion already cleared the draft; suppress teardown saves
+      // throughout the local setup-card timing and navigation delay.
+      onboardingDraftCleared = true;
       onboardingStagedItems = [];
       onboardingImageItems = [];
       setupRepoStatus = 'done';
@@ -1217,12 +1239,7 @@
       await new Promise((resolve) => setTimeout(resolve, 300));
       if (!active.current()) return;
       setupAgentStatus = 'done';
-      onboardingDraftCleared = true;
       if (!active.current()) return;
-      appStore.dispatch(resetOnboarding());
-      appStore.dispatch(setHasCompletedProviderSetup(true));
-      appStore.dispatch(setOnboardingWorkspaceId(outcome.workspaceId));
-      appStore.dispatch(goToStep('ready'));
       onHoldActiveChange(true);
       onFadingOutChange(false);
       if (!active.current()) return;
@@ -1294,6 +1311,12 @@
       : promptStepRef?.getEffectiveDefaultModel();
     const richTextareaMentions = getOnboardingRichTextarea()?.getMentions() ?? [];
     const contextMentions = getOnboardingRichTextarea()?.getContextMentions() ?? [];
+    const fileMentionsSnapshot = $state.snapshot(
+      richTextareaMentions,
+    ) as OnboardingWorkspaceInitializationSubmission['fileMentions'];
+    const contextMentionsSnapshot = $state.snapshot(
+      contextMentions,
+    ) as OnboardingWorkspaceInitializationSubmission['contextMentions'];
     isOnboardingCreating = true;
     onboardingCreationError = null;
     onboardingCreationErrorCode = null;
@@ -1304,21 +1327,34 @@
 
     let handedOff = false;
     try {
-      const runtimeReferences = await parseRuntimeMentions(richTextareaMentions, logger);
-      if (!current()) return;
-      await setupScriptProbeScheduler.settled();
-      if (!current()) return;
+      releaseOnboardingPreparation?.();
+      const preparationId = crypto.randomUUID();
+      const releasePreparation = registerWorkspaceInitializationPreparation(
+        preparationId,
+        async () => {
+          const runtimeReferences = await parseRuntimeMentions(fileMentionsSnapshot, logger);
+          if (!current()) return null;
+          await setupScriptProbeScheduler.settled();
+          if (!current()) return null;
+          return {
+            runtimeReferences: runtimeReferences as unknown as WorkspaceInitializationJson[],
+            setupScript,
+            setupScriptName,
+            setupScriptNameSource,
+            repoConfigScript: repoConfigScript ?? null,
+            repoConfigScriptRepo: repoConfigScriptRepo ?? null,
+          };
+        },
+      );
+      releaseOnboardingPreparation = releasePreparation;
       const submission: OnboardingWorkspaceInitializationSubmission = {
         entrypoint: 'onboarding',
         admission,
+        preparationId,
         prompt,
-        contextMentions: $state.snapshot(
-          contextMentions,
-        ) as OnboardingWorkspaceInitializationSubmission['contextMentions'],
-        fileMentions: $state.snapshot(
-          richTextareaMentions,
-        ) as OnboardingWorkspaceInitializationSubmission['fileMentions'],
-        runtimeReferences: runtimeReferences as unknown as WorkspaceInitializationJson[],
+        contextMentions: contextMentionsSnapshot,
+        fileMentions: fileMentionsSnapshot,
+        runtimeReferences: [],
         stagedItems: $state.snapshot([
           ...onboardingStagedItems,
           ...onboardingImageItems,
@@ -1353,18 +1389,24 @@
       };
       if (!current()) return;
       handedOff = true;
-      trackWorkspaceInitialization(
-        workspaceInitializationSubmitted(submission, consumer),
-        resourceId,
-        generation,
-        current,
-      );
+      const initialization = workspaceInitializationSubmitted(submission, consumer);
+      trackWorkspaceInitialization(initialization, resourceId, generation, current);
+      const releaseSettledPreparation = () => {
+        releasePreparation();
+        if (releaseOnboardingPreparation === releasePreparation)
+          releaseOnboardingPreparation = null;
+      };
+      void initialization.promise.then(releaseSettledPreparation, releaseSettledPreparation);
     } catch (err) {
       if (!current()) return;
       logger.error('Workspace initialization preparation failed', err as Error);
       onboardingCreationError =
         err instanceof Error ? err.message : m.onboarding_page_unexpected_error();
     } finally {
+      if (!handedOff) {
+        releaseOnboardingPreparation?.();
+        releaseOnboardingPreparation = null;
+      }
       if (!handedOff && onboardingMounted && generation === onboardingInitializationGeneration)
         isOnboardingCreating = false;
     }

@@ -277,6 +277,216 @@ describe('workspaceInitializerDraftSaga', () => {
     );
   });
 
+  it('rejects an ownerless clear without intent-time authority while currently admitted', async () => {
+    channel.put(workspaceInitializerDraftClearRequested('onboarding', 'clear-without-intent'));
+    await settle();
+
+    expect(mocks.clear).not.toHaveBeenCalled();
+    expect(dispatched).toContainEqual(
+      workspaceInitializerDraftClearFinished('onboarding', 'clear-without-intent', 'failure'),
+    );
+  });
+
+  it('clears the client-scoped daemon draft and both legacy keys when provenance is replaced', async () => {
+    sessionStorage.setItem('compact-workspace-initializer-state-prompt', 'compact principal');
+    sessionStorage.setItem('onboarding-prompt', 'onboarding principal');
+
+    channel.put(
+      workspaceInitializerDraftRestoreRequested(
+        'compact',
+        'replacement-restore',
+        'compact-workspace-initializer-state-prompt',
+        A,
+        true,
+      ),
+    );
+    await settle();
+
+    expect(mocks.clear.mock.calls).toEqual([['__new-workspace__', '__initializer__']]);
+    expect(mocks.get).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem('compact-workspace-initializer-state-prompt')).toBeNull();
+    expect(sessionStorage.getItem('onboarding-prompt')).toBeNull();
+    expect(dispatched).toContainEqual(
+      workspaceInitializerDraftRestoreFinished('compact', 'replacement-restore', 'empty', '', []),
+    );
+  });
+
+  it('does not expose the replaced daemon draft when the provenance clear fails', async () => {
+    mocks.clear.mockRejectedValueOnce(new Error('offline'));
+
+    channel.put(
+      workspaceInitializerDraftRestoreRequested(
+        'compact',
+        'replacement-restore',
+        'legacy-key',
+        A,
+        true,
+      ),
+    );
+    await settle();
+
+    expect(mocks.get).not.toHaveBeenCalled();
+    expect(dispatched).toContainEqual(
+      workspaceInitializerDraftRestoreFinished('compact', 'replacement-restore', 'error', '', []),
+    );
+  });
+
+  it.each(['compact', 'onboarding'])(
+    'retries a failed replacement discard before restoring for %s',
+    async (id) => {
+      const provenance = 'stable-backend/principal';
+      mocks.clear
+        .mockRejectedValueOnce(new Error('offline'))
+        .mockRejectedValueOnce(new Error('still offline'));
+      mocks.get.mockResolvedValue({ text: 'previous principal', attachments: [] });
+
+      channel.put(
+        workspaceInitializerDraftRestoreRequested(
+          id,
+          'replacement',
+          'legacy-key',
+          A,
+          true,
+          provenance,
+        ),
+      );
+      await settle();
+      mocks.admission = B;
+      channel.put(
+        workspaceInitializerDraftRestoreRequested(
+          id,
+          'retry-1',
+          'legacy-key',
+          B,
+          undefined,
+          provenance,
+        ),
+      );
+      await settle();
+      channel.put(
+        workspaceInitializerDraftRestoreRequested(
+          id,
+          'retry-2',
+          'legacy-key',
+          B,
+          undefined,
+          provenance,
+        ),
+      );
+      await settle();
+
+      expect(mocks.clear.mock.calls).toEqual([
+        ['__new-workspace__', '__initializer__'],
+        ['__new-workspace__', '__initializer__'],
+        ['__new-workspace__', '__initializer__'],
+      ]);
+      expect(mocks.get).not.toHaveBeenCalled();
+      expect(dispatched).toContainEqual(
+        workspaceInitializerDraftRestoreFinished(id, 'retry-1', 'error', '', []),
+      );
+      expect(dispatched).toContainEqual(
+        workspaceInitializerDraftRestoreFinished(id, 'retry-2', 'empty', '', []),
+      );
+    },
+  );
+
+  it.each(['compact', 'onboarding'])(
+    'retires a failed replacement discard after saving new content for %s',
+    async (id) => {
+      const provenance = 'stable-backend/principal';
+      const attachments = [{ id: 'new-file', type: 'file', label: 'new.txt', path: '/new.txt' }];
+      const persisted = { text: 'new prompt', attachments };
+      mocks.clear.mockRejectedValueOnce(new Error('offline'));
+      mocks.get.mockResolvedValue(persisted);
+
+      channel.put(
+        workspaceInitializerDraftRestoreRequested(
+          id,
+          'replacement',
+          'legacy-key',
+          A,
+          true,
+          provenance,
+        ),
+      );
+      await settle();
+      channel.put(workspaceInitializerDraftSaveScheduled(id, persisted, 'replacement', A));
+      channel.put(flush(id, 'replacement'));
+      await settle();
+      channel.put(workspaceInitializerDraftOwnerReleased(id, 'replacement'));
+      mocks.admission = B;
+      channel.put(
+        workspaceInitializerDraftRestoreRequested(
+          id,
+          'reopen',
+          'legacy-key',
+          B,
+          undefined,
+          provenance,
+        ),
+      );
+      await settle();
+
+      expect(mocks.set.mock.calls).toEqual([
+        ['__new-workspace__', '__initializer__', 'new prompt', attachments],
+      ]);
+      expect(mocks.clear.mock.calls).toEqual([['__new-workspace__', '__initializer__']]);
+      expect(mocks.get.mock.calls).toEqual([['__new-workspace__', '__initializer__']]);
+      expect(dispatched).toContainEqual(
+        workspaceInitializerDraftRestoreFinished(
+          id,
+          'reopen',
+          'restored',
+          'new prompt',
+          attachments,
+        ),
+      );
+    },
+  );
+
+  it.each(['compact', 'onboarding'])(
+    'retires a failed replacement discard after a normal clear for %s',
+    async (id) => {
+      const provenance = 'stable-backend/principal';
+      mocks.clear.mockRejectedValueOnce(new Error('offline'));
+
+      channel.put(
+        workspaceInitializerDraftRestoreRequested(
+          id,
+          'replacement',
+          'legacy-key',
+          A,
+          true,
+          provenance,
+        ),
+      );
+      await settle();
+      channel.put(clear(id, 'normal-clear', 'replacement'));
+      await settle();
+      mocks.admission = B;
+      channel.put(
+        workspaceInitializerDraftRestoreRequested(
+          id,
+          'reopen',
+          'legacy-key',
+          B,
+          undefined,
+          provenance,
+        ),
+      );
+      await settle();
+
+      expect(mocks.clear.mock.calls).toEqual([
+        ['__new-workspace__', '__initializer__'],
+        ['__new-workspace__', '__initializer__'],
+      ]);
+      expect(mocks.get.mock.calls).toEqual([['__new-workspace__', '__initializer__']]);
+      expect(dispatched).toContainEqual(
+        workspaceInitializerDraftRestoreFinished(id, 'reopen', 'empty', '', []),
+      );
+    },
+  );
+
   it('does not publish or migrate a read that resolves under a replaced authority', async () => {
     const held = deferred<null>();
     mocks.get.mockReturnValueOnce(held.promise);
@@ -469,7 +679,9 @@ describe('workspaceInitializerDraftSaga', () => {
     await settle();
     expect(mocks.set).toHaveBeenCalledOnce();
 
-    channel.put(workspaceInitializerDraftClearRequested('onboarding', 'clear-after-migration'));
+    channel.put(
+      workspaceInitializerDraftClearRequested('onboarding', 'clear-after-migration', undefined, A),
+    );
     await settle();
     expect(mocks.clear).not.toHaveBeenCalled();
 
@@ -550,7 +762,7 @@ describe('workspaceInitializerDraftSaga', () => {
     sessionStorage.setItem('onboarding-prompt', 'onboarding');
     channel.put(restore('compact', 'compact-restore', 'unused'));
     await settle();
-    channel.put(workspaceInitializerDraftClearRequested('onboarding', 'clear-1'));
+    channel.put(workspaceInitializerDraftClearRequested('onboarding', 'clear-1', undefined, A));
     await settle();
     mocks.admission = B;
     held.resolve();
@@ -626,7 +838,9 @@ describe('workspaceInitializerDraftSaga', () => {
       },
       workspaceInitializerDraftSaga,
     );
-    channel.put(workspaceInitializerDraftClearRequested('onboarding', 'clear-after-reentry'));
+    channel.put(
+      workspaceInitializerDraftClearRequested('onboarding', 'clear-after-reentry', undefined, A),
+    );
     await settle();
 
     mocks.admission = B;
@@ -665,7 +879,9 @@ describe('workspaceInitializerDraftSaga', () => {
       },
       workspaceInitializerDraftSaga,
     );
-    channel.put(workspaceInitializerDraftClearRequested('onboarding', 'clear-after-reentry'));
+    channel.put(
+      workspaceInitializerDraftClearRequested('onboarding', 'clear-after-reentry', undefined, A),
+    );
     await settle();
     expect(mocks.clear).not.toHaveBeenCalled();
     expect(dispatched.length).toBe(dispatchedBeforeCancel);

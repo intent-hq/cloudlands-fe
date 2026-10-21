@@ -1,4 +1,13 @@
-import { call, cancelled, fork, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import {
+  call,
+  cancelled,
+  fork,
+  put,
+  race,
+  take,
+  takeEvery,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import type { ContextItem } from '$lib/components/chat/input/context-api';
@@ -7,6 +16,10 @@ import {
   retainImagePlacementIdentity,
   sendHeldFirstMessage,
 } from '$lib/components/workspace/initializer/staged-attachments';
+import {
+  releaseWorkspaceInitializationPreparation,
+  resolveWorkspaceInitializationPreparation,
+} from '$lib/components/workspace/initializer/workspace-initialization-preparation';
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
@@ -19,6 +32,12 @@ import {
 } from '../../principal/principal-selectors';
 import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
 import { setInitialAgentId } from '../../workspace-agents/workspace-agents-slice';
+import {
+  goToStep,
+  resetOnboarding,
+  setOnboardingWorkspaceId,
+} from '../../onboarding/onboarding-slice';
+import { setHasCompletedProviderSetup } from '../../user-preferences/user-preferences-slice';
 import {
   beginWorkspaceCreateProgress,
   clearWorkspaceCreateProgress,
@@ -34,6 +53,7 @@ import {
 import {
   setWorkspaceInitializerAgentForRepo,
   setWorkspaceInitializerBranchForRepo,
+  setCompactWorkspaceInitializerFormState,
   setWorkspaceInitializerLastSelectedRepo,
   setWorkspaceInitializerLastSubmittedAgent,
   workspaceInitializationFinished,
@@ -42,6 +62,7 @@ import {
   workspaceInitializationResumeRequested,
   workspaceInitializationResumeStored,
   clearWorkspaceInitializationResume,
+  clearWorkspaceInitializationOutcome,
   workspaceInitializationSubmitted,
   workspaceInitializerDraftClearRequested,
   workspaceInitializerDraftSaveCancelled,
@@ -116,7 +137,10 @@ function* finish(
   yield* finishAttempt(action.seq, action.consumer, action.request.entrypoint, outcome);
 }
 
-function* complete(request: WorkspaceInitializationRequest): SagaGenerator<void> {
+function* complete(
+  request: WorkspaceInitializationRequest,
+  workspaceId: string,
+): SagaGenerator<void> {
   const record = request.setupScriptRecord;
   if (record) {
     yield* call(
@@ -126,8 +150,9 @@ function* complete(request: WorkspaceInitializationRequest): SagaGenerator<void>
       record.githubUrl,
     );
   }
-  const { lastSelectedRepo, draft } = request.completion ?? {};
+  const { lastSelectedRepo, compactFormState, onboarding, draft } = request.completion ?? {};
   if (lastSelectedRepo) yield* put(setWorkspaceInitializerLastSelectedRepo(lastSelectedRepo));
+  if (compactFormState) yield* put(setCompactWorkspaceInitializerFormState(compactFormState));
   if (draft) {
     // Cancel the queued save before clearing so a close/unmount cannot re-save the prompt.
     yield* put(
@@ -147,6 +172,12 @@ function* complete(request: WorkspaceInitializationRequest): SagaGenerator<void>
         ),
       );
     }
+  }
+  if (onboarding) {
+    yield* put(resetOnboarding(request.admission));
+    yield* put(setHasCompletedProviderSetup(true));
+    yield* put(setOnboardingWorkspaceId(workspaceId));
+    yield* put(goToStep('ready'));
   }
 }
 
@@ -375,7 +406,7 @@ function* initialize(action: InitializationRun): SagaGenerator<void> {
     if (request.selectedPrNumber) yield* fork(storePrNumber, workspaceId, request.selectedPrNumber);
     if (request.recentGitHubRepository) yield* fork(registerRecent, request.recentGitHubRepository);
     yield* put(clearWorkspaceInitializationResume(action.consumer.id));
-    yield* call(complete, request);
+    yield* call(complete, request, workspaceId);
     yield* finish(action, {
       status: 'success',
       workspaceId,
@@ -432,6 +463,14 @@ type RequestedAction = ReturnType<typeof workspaceInitializationRequested>;
 type SubmittedAction = ReturnType<typeof workspaceInitializationSubmitted>;
 type ResumeAction = ReturnType<typeof workspaceInitializationResumeRequested>;
 
+function* waitForSubmissionRelease(action: SubmittedAction): SagaGenerator<true> {
+  while (true) {
+    const released = yield* take(clearWorkspaceInitializationOutcome);
+    const [id, seq] = released.payload;
+    if (id === action.payload.consumer.id && (seq === undefined || seq === action.seq)) return true;
+  }
+}
+
 function* requestInitialization(action: RequestedAction): SagaGenerator<void> {
   const { request, consumer, progressId } = action.payload;
   yield* call(initialize, {
@@ -449,13 +488,27 @@ function* submit(action: SubmittedAction): SagaGenerator<void> {
   const dispatch = appStore.dispatch;
   const isCurrent = () => isCurrentAttempt(action.seq, consumer, submission.admission, dispatch);
   let prepared: PreparedWorkspaceInitialization | null = null;
+  let preparationSettled = false;
   try {
     if (!isCurrent()) throw new Error('initialization-cancelled');
+    const preparationResult = submission.preparationId
+      ? yield* race({
+          preparation: call(resolveWorkspaceInitializationPreparation, submission.preparationId),
+          released: call(waitForSubmissionRelease, action),
+        })
+      : undefined;
+    if (preparationResult?.released === true) throw new Error('initialization-cancelled');
+    const preparation = preparationResult?.preparation;
+    if (submission.preparationId && (!preparation || !isCurrent()))
+      throw new Error('initialization-cancelled');
+    const preparedSubmission = preparation ? { ...submission, ...preparation } : submission;
     prepared =
-      submission.entrypoint === 'compact'
-        ? yield* call(prepareCompactWorkspaceInitialization, submission, isCurrent)
-        : yield* call(prepareOnboardingWorkspaceInitialization, submission, isCurrent);
+      preparedSubmission.entrypoint === 'compact'
+        ? yield* call(prepareCompactWorkspaceInitialization, preparedSubmission, isCurrent)
+        : yield* call(prepareOnboardingWorkspaceInitialization, preparedSubmission, isCurrent);
     if (!prepared || !isCurrent()) throw new Error('initialization-cancelled');
+    yield* put(workspaceInitializationPrepared(consumer.id, action.seq, prepared.prepared));
+    preparationSettled = true;
   } catch (error) {
     const cancelledAttempt = !isCurrent() || errorMessage(error) === 'initialization-cancelled';
     if (!cancelledAttempt)
@@ -466,9 +519,21 @@ function* submit(action: SubmittedAction): SagaGenerator<void> {
       error: errorMessage(error),
     });
     yield* put(action.failure(error instanceof Error ? error : new Error(errorMessage(error))));
+    preparationSettled = true;
     return;
+  } finally {
+    if (submission.preparationId)
+      yield* call(releaseWorkspaceInitializationPreparation, submission.preparationId);
+    if (!preparationSettled && (yield* cancelled())) {
+      const failure = new Error('initialization-cancelled');
+      yield* finishAttempt(action.seq, consumer, submission.entrypoint, {
+        status: 'cancelled',
+        stage: 'prepare',
+        error: failure.message,
+      });
+      yield* put(action.failure(failure));
+    }
   }
-  yield* put(workspaceInitializationPrepared(consumer.id, action.seq, prepared.prepared));
   yield* call(initialize, {
     seq: action.seq,
     consumer,

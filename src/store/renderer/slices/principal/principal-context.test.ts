@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { withHostPrincipal, withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
-import { getPrincipalActionContext } from './principal-context';
-import { selectPrincipalActionContext } from './principal-selectors';
+import { getPrincipalActionContext, getPrincipalDraftProvenance } from './principal-context';
+import {
+  selectPrincipalActionContext,
+  selectPrincipalDraftProvenance,
+} from './principal-selectors';
 
 function admitted() {
   return withHostPrincipal({
@@ -134,5 +137,36 @@ describe('principal action context without renderer selector dependencies', () =
     expect(after).not.toBeNull();
     expect(after).not.toBe(before);
     expect(selectPrincipalActionContext.select(state)).toBe(after);
+  });
+});
+
+describe('principal draft provenance', () => {
+  it('is absent while denied and stable across reconnect and presentation lifetimes', () => {
+    const state = admitted();
+    const expected = JSON.stringify(['host', 'principal']);
+    expect(getPrincipalDraftProvenance(state)).toBe(expected);
+    expect(selectPrincipalDraftProvenance.select(state)).toBe(expected);
+
+    state.principal.status = 'loading';
+    expect(getPrincipalDraftProvenance(state)).toBeNull();
+    state.principal.status = 'ready';
+    state.principal.presentationVersion++;
+    expect(getPrincipalDraftProvenance(state)).toBe(expected);
+
+    state.daemonHealth.connectionGeneration++;
+    state.principal.context = JSON.stringify(['host', 8, 3]);
+    expect(getPrincipalDraftProvenance(state)).toBe(expected);
+  });
+
+  it('changes for backend or principal replacement', () => {
+    const state = admitted();
+    const initial = getPrincipalDraftProvenance(state);
+    state.principal.snapshot!.principal.id = 'replacement';
+    expect(getPrincipalDraftProvenance(state)).not.toBe(initial);
+
+    const otherBackend = admitted();
+    otherBackend.connections.windowBackendId = 'other';
+    otherBackend.principal.context = JSON.stringify(['other', 7, 3]);
+    expect(getPrincipalDraftProvenance(otherBackend)).toBe(JSON.stringify(['other', 'principal']));
   });
 });

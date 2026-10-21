@@ -49,6 +49,7 @@ import {
   debounceWorkspaceInitializerOnboardingFormState,
   hydrateWorkspaceInitializer,
   dismissWorkspaceInitializerRecentRepo,
+  rememberWorkspaceInitializerRecentSpecialist,
   removeWorkspaceInitializerRemoteSetup,
   setCompactWorkspaceInitializerFormState,
   setWorkspaceInitializerAgentForRepo,
@@ -308,15 +309,20 @@ function* applyDebouncedOnboardingFormWorker(
   yield* put(setWorkspaceInitializerOnboardingFormState(action.payload[0]));
 }
 
-function* resetWorkspaceInitializerWorker() {
+function* resetWorkspaceInitializerWorker(action: ReturnType<typeof resetOnboarding>) {
   const ownerId = 'onboarding-workspace-initializer';
+  const [admission] = action.payload;
   const authority = yield* selectWorkspaceInitializerDraftAuthority.effect(ownerId);
   const clearAlreadyOwned =
     authority.clear?.status === 'pending' || authority.clear?.status === 'success';
   if (!authority.restore && !clearAlreadyOwned) {
-    yield* put(workspaceInitializerDraftClearRequested(ownerId, crypto.randomUUID()));
+    yield* put(
+      workspaceInitializerDraftClearRequested(ownerId, crypto.randomUUID(), undefined, admission),
+    );
   } else if (authority.clear?.status === 'failure') {
-    yield* put(workspaceInitializerDraftClearRequested(ownerId, crypto.randomUUID()));
+    yield* put(
+      workspaceInitializerDraftClearRequested(ownerId, crypto.randomUUID(), undefined, admission),
+    );
   }
   yield* put(setWorkspaceInitializerOnboardingFormState(null));
 }
@@ -347,6 +353,7 @@ function* watchWorkspaceInitializerPersistence(gate: HydrationGate) {
       removeWorkspaceInitializerRemoteSetup,
       setWorkspaceInitializerLastSubmittedAgent,
       setWorkspaceInitializerAgentForRepo,
+      rememberWorkspaceInitializerRecentSpecialist,
     ],
     buffers.sliding(1),
   );

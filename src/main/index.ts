@@ -138,7 +138,10 @@ import { Logger } from '../shared/logger';
 import { compareWorkspaceActivityDisplayTimeDesc } from '../shared/utils/workspace-activity-time';
 import { exportHandlerDebugInfo, setupIPCInterceptor } from './ipc-handler-wrapper';
 import { initializeWarningSuppression } from './utils/suppress-warnings';
-import { runWithHardExitTimeout } from './utils/hard-exit-timeout';
+import {
+  runGracefulShutdown,
+  type GracefulShutdownOptions,
+} from './utils/graceful-shutdown-runner';
 import { handleUncaughtException, handleUnhandledRejection } from './utils/process-error-handlers';
 import { isWebviewPopupWindow, setupWebviewSecurity } from './webview-security';
 import { attachAppCommandHistoryNavigation } from './app-command-navigation';
@@ -451,50 +454,50 @@ process.on('unhandledRejection', (reason, promise) => {
   handleUnhandledRejection(logger, reason, promise);
 });
 
-// Graceful shutdown handlers
-process.on('SIGTERM', async () => {
-  logger.info('SIGTERM received, shutting down gracefully...');
-  await gracefulShutdown();
-});
-
-process.on('SIGINT', async () => {
-  logger.info('SIGINT received, shutting down gracefully...');
-  await gracefulShutdown();
-});
+// Graceful SIGINT/SIGTERM handlers are installed at the start of the
+// app.whenReady() boot flow below (see the comment there).
 
 // Hard deadline for the gracefulShutdown() cleanup chain
 // (intent-hq/monorepo#1300). 10s sits comfortably above the sidecar's own
 // 5s SIGTERM→SIGKILL escalation inside stopIntentdSidecar().
 const GRACEFUL_SHUTDOWN_HARD_EXIT_MS = 10_000;
 
-async function gracefulShutdown() {
-  // Prevent multiple shutdown attempts
-  if (isShuttingDown) {
-    return;
-  }
-  isShuttingDown = true;
-
-  // Quit-time window closes (performGracefulShutdown's mainWindow.close())
-  // are not deliberate per-backend closes: without this mark, closing the
-  // last window of one backend while another backend's windows survive would
-  // tombstone + prune the bucket that before-quit just saved. Every quit path
-  // (before-quit, window-all-closed, SIGTERM/SIGINT) funnels through here
-  // before any window is closed.
-  markWindowSessionTeardown();
-
-  // Bound the cleanup chain with a hard-exit watchdog: if a cleanup step
-  // stalls and app.exit(0) is never reached, force-exit so SIGTERM/SIGINT
-  // always terminate the process.
-  await runWithHardExitTimeout(
-    performGracefulShutdown,
-    () => {
-      logger.warn(
-        // i18n-ignore (developer log message)
-        `Graceful shutdown did not complete within the ${GRACEFUL_SHUTDOWN_HARD_EXIT_MS}ms hard-exit timeout — forcing exit`,
-      );
-      app.exit(1);
+async function gracefulShutdown(options: GracefulShutdownOptions = {}) {
+  // Single-flight and bounded: runGracefulShutdown() claims the shutdown via
+  // beginTeardown() before any await (repeat calls are no-ops) and runs the
+  // optional window-session save plus performGracefulShutdown() inside the
+  // hard-exit watchdog, so a stalled step can never keep the process alive
+  // and SIGTERM/SIGINT always terminate it.
+  await runGracefulShutdown(
+    {
+      beginTeardown: () => {
+        if (isShuttingDown) return false;
+        isShuttingDown = true;
+        // Quit-time window closes (performGracefulShutdown's
+        // mainWindow.close()) are not deliberate per-backend closes: without
+        // this mark, closing the last window of one backend while another
+        // backend's windows survive would tombstone + prune the bucket that
+        // before-quit just saved. Every quit path (before-quit,
+        // window-all-closed, SIGTERM/SIGINT) funnels through here before any
+        // window is closed.
+        markWindowSessionTeardown();
+        return true;
+      },
+      persistWindowSessions: saveOpenWindowSessions,
+      onPersistError: (error) => {
+        logger.warn('Failed to save window sessions during shutdown:', error);
+      },
+      cleanup: performGracefulShutdown,
+      onHardExit: () => {
+        logger.warn(
+          // i18n-ignore (developer log message)
+          `Graceful shutdown did not complete within the ${GRACEFUL_SHUTDOWN_HARD_EXIT_MS}ms hard-exit timeout — forcing exit`,
+        );
+        app.exit(1);
+      },
+      hardExitMs: GRACEFUL_SHUTDOWN_HARD_EXIT_MS,
     },
-    GRACEFUL_SHUTDOWN_HARD_EXIT_MS,
+    options,
   );
 }
 
@@ -625,6 +628,25 @@ async function saveOpenWindowSessions(): Promise<void> {
 const bootWindowsGate = createBootWindowsGate();
 
 const bootFlow = app.whenReady().then(async () => {
+  // Graceful shutdown handlers. Registered here, not at module load: on
+  // POSIX, Electron installs its own SIGINT/SIGTERM handler during startup
+  // that turns the signal into app.quit(), overriding a Node handler
+  // registered earlier. The signal then never reaches gracefulShutdown() —
+  // quit runs through before-quit's running-agent prompt and the hard-exit
+  // watchdog never arms, so `kill <pid>` with an agent responding waits on a
+  // dialog forever. Registering after ready restores the prompt-free path.
+  // libuv installs the OS handler only when the first listener for a signal
+  // starts, so no other module-load SIGINT/SIGTERM listener may exist.
+  // Signal quits skip before-quit, so gracefulShutdown() persists window
+  // sessions itself — inside its hard-exit watchdog, so a stalled write
+  // cannot keep the process alive.
+  const onShutdownSignal = async (signal: 'SIGTERM' | 'SIGINT') => {
+    logger.info(`${signal} received, shutting down gracefully...`);
+    await gracefulShutdown({ persistWindowSessions: true });
+  };
+  process.on('SIGTERM', () => void onShutdownSignal('SIGTERM'));
+  process.on('SIGINT', () => void onShutdownSignal('SIGINT'));
+
   startupMetrics.start('total');
   logger.info('Setting up critical IPC handlers for fast startup');
 
