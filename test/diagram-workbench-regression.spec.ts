@@ -3371,6 +3371,18 @@ test('discovers grouped fan-out semantically and keeps wide routes centered', as
   }
 });
 
+// Expected node, route and edge-label counts, taken from the fixture itself.
+function narrowReachExpectedCounts(state: keyof typeof DIAGRAM_WORKBENCH_CASES) {
+  const target = DIAGRAM_WORKBENCH_CASES[state];
+  if (target.kind !== 'custom') throw new Error(`${state} is not a custom diagram case`);
+  const { nodes, edges } = target.diagram.model;
+  return [
+    { kind: 'node', count: nodes.length },
+    { kind: 'route', count: edges.length },
+    { kind: 'label', count: edges.filter((edge) => edge.label).length },
+  ].map(({ kind, count }) => ({ kind, start: count, end: count }));
+}
+
 // Measure whether a diagram that overflows its narrow panel horizontally is
 // still fully reachable: each box must fit the viewport width, lie inside the
 // scrollable range, show its left edge at scroll start and its right edge at
@@ -3395,23 +3407,22 @@ async function narrowDiagramReach(root: Locator) {
       new Promise<void>((resolve) =>
         requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
       );
-    const boxes = () =>
-      [
-        ...[...section.querySelectorAll<HTMLElement>('.diagram-node-html')].map((node) => ({
-          id: `node:${node.querySelector('.node-label')?.textContent?.trim()}`,
-          bounds: node.parentElement!.getBoundingClientRect(),
-        })),
-        ...[...section.querySelectorAll<SVGPathElement>('.diagram-edge path.edge-path')].map(
-          (path) => ({
-            id: `route:${path.closest('.diagram-edge')?.getAttribute('data-edge-id')}`,
-            bounds: path.getBoundingClientRect(),
-          }),
-        ),
-        ...[...section.querySelectorAll<HTMLElement>('.edge-label-html')].map((label) => ({
-          id: `label:${label.textContent?.trim()}`,
-          bounds: label.getBoundingClientRect(),
-        })),
-      ].filter(({ bounds }) => bounds.width > 0 || bounds.height > 0);
+    const boxes = () => [
+      ...[...section.querySelectorAll<HTMLElement>('.diagram-node-html')].map((node) => ({
+        id: `node:${node.querySelector('.node-label')?.textContent?.trim()}`,
+        bounds: node.parentElement!.getBoundingClientRect(),
+      })),
+      ...[...section.querySelectorAll<SVGPathElement>('.diagram-edge path.edge-path')].map(
+        (path) => ({
+          id: `route:${path.closest('.diagram-edge')?.getAttribute('data-edge-id')}`,
+          bounds: path.getBoundingClientRect(),
+        }),
+      ),
+      ...[...section.querySelectorAll<HTMLElement>('.edge-label-html')].map((label) => ({
+        id: `label:${label.textContent?.trim()}`,
+        bounds: label.getBoundingClientRect(),
+      })),
+    ];
     const viewportRect = () => {
       const outer = viewport.getBoundingClientRect();
       const left = outer.left + viewport.clientLeft;
@@ -3463,7 +3474,14 @@ async function narrowDiagramReach(root: Locator) {
       overflowX: getComputedStyle(viewport).overflowX,
       tabindex: viewport.getAttribute('tabindex'),
       endScrollLeft,
-      boxCount: start.length,
+      counts: (['node', 'route', 'label'] as const).map((kind) => ({
+        kind,
+        start: start.filter(({ id }) => id.startsWith(`${kind}:`)).length,
+        end: end.filter(({ id }) => id.startsWith(`${kind}:`)).length,
+      })),
+      emptyBoxes: start
+        .filter(({ bounds }) => bounds.width <= 0 && bounds.height <= 0)
+        .map(({ id }) => id),
       unreachable,
       verticallyClipped,
     };
@@ -3545,6 +3563,12 @@ test('uses one continuous centered-port route for the dense primary request', as
   );
   expect(reach.minimumPrimaryTextSize).toBeGreaterThanOrEqual(12);
   expect(reach.minimumSecondaryTextSize).toBeGreaterThanOrEqual(10);
+  // Guard against a vacuous pass: the measured geometry must be the full
+  // fixture at both scroll positions, with no zero-size boxes.
+  expect(reach.counts, `measured geometry ${JSON.stringify(reach)}`).toEqual(
+    narrowReachExpectedCounts('custom-topology-stress'),
+  );
+  expect(reach.emptyBoxes, `zero-size boxes ${JSON.stringify(reach)}`).toEqual([]);
   expect(reach.unreachable, `unreachable boxes ${JSON.stringify(reach)}`).toEqual([]);
   expect(reach.verticallyClipped, `vertical clipping ${JSON.stringify(reach)}`).toEqual([]);
   expect(reach.verticalOverflow).toBeLessThanOrEqual(1);
