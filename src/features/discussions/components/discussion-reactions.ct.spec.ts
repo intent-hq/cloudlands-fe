@@ -46,11 +46,13 @@ test('arrow navigation and Escape return focus; focused chips describe human and
   await page.keyboard.press('Escape');
   await expect(picker).toBeHidden();
   await expect(trigger).toBeFocused();
-  await component
-    .locator('[data-discussion-message="reaction-first"] [data-discussion-reaction="👀"]')
-    .focus();
-  await expect(page.getByRole('tooltip')).toContainText('Alex and Developer reacted with');
-  await expect(page.getByRole('tooltip').locator('img')).toHaveAttribute('width', '13');
+  const chip = component.locator(
+    '[data-discussion-message="reaction-first"] [data-discussion-reaction="👀"]',
+  );
+  await chip.focus();
+  await expect(chip).toHaveAccessibleDescription('Alex and Developer reacted with 👀');
+  await chip.hover();
+  await expect(page.getByRole('tooltip')).toHaveCount(0);
 });
 
 test('bounded roster reports overflow and legacy reactions remain removable', async ({
@@ -58,8 +60,9 @@ test('bounded roster reports overflow and legacy reactions remain removable', as
   page,
 }) => {
   const component = await mount(Preview, { props: { initial: 'large' } });
-  await component.locator(lastRow).locator('[data-discussion-reaction="👀"]').focus();
-  await expect(page.getByRole('tooltip')).toContainText('1,214 others');
+  const eyes = component.locator(lastRow).locator('[data-discussion-reaction="👀"]');
+  await eyes.focus();
+  await expect(eyes).toHaveAccessibleDescription(/1,214 others/);
   await component.unmount();
   const legacy = await mount(Preview, { props: { initial: 'legacy' } });
   const chip = legacy.locator(lastRow).locator('[data-discussion-reaction="🙂"]');
@@ -138,7 +141,10 @@ test.describe('touch reactions', () => {
   });
 });
 
-test('picker choices show readable labels on hover and keyboard focus', async ({ mount, page }) => {
+test('picker choices retain accessible labels without tooltips on hover or focus', async ({
+  mount,
+  page,
+}) => {
   const component = await mount(Preview);
   const trigger = component.locator(lastRow).locator('[data-discussion-reaction-trigger="plus"]');
   await trigger.focus();
@@ -147,12 +153,10 @@ test('picker choices show readable labels on hover and keyboard focus', async ({
   const thumbsDown = picker.getByRole('button', { name: 'Thumbs down', exact: true });
   await thumbsDown.hover();
   await expect(thumbsDown).toBeFocused();
-  await expect(page.getByRole('tooltip')).toHaveCount(1);
-  await expect(page.getByRole('tooltip')).toContainText('Thumbs down');
+  await expect(page.getByRole('tooltip')).toHaveCount(0);
   await page.mouse.move(0, 0);
   await picker.getByRole('button', { name: 'Eyes', exact: true }).focus();
-  await expect(page.getByRole('tooltip')).toHaveCount(1);
-  await expect(page.getByRole('tooltip')).toContainText('Eyes');
+  await expect(page.getByRole('tooltip')).toHaveCount(0);
   await page.keyboard.press('Enter');
   await expect(picker).toBeHidden();
   await expect(trigger).toBeFocused();

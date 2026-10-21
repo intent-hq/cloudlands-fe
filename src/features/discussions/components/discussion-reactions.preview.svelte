@@ -2,7 +2,7 @@
   import { definePreview } from '$lib/component-catalog/preview-definition';
   interface Props {
     narrow?: boolean;
-    initial?: 'mixed' | 'empty' | 'large' | 'legacy' | 'picker' | 'tooltip';
+    initial?: 'mixed' | 'empty' | 'large' | 'legacy' | 'picker' | 'focused';
   }
   export const preview = definePreview<Props>({
     id: 'discussion-reactions',
@@ -14,7 +14,7 @@
       large: { props: { initial: 'large' } },
       legacy: { props: { initial: 'legacy' } },
       picker: { props: { initial: 'picker' } },
-      tooltip: { props: { initial: 'tooltip' } },
+      focused: { props: { initial: 'focused' } },
       narrow: { props: { narrow: true } },
     },
   });
@@ -111,7 +111,7 @@
       root
         .querySelector<HTMLButtonElement>('[data-discussion-reaction-trigger="toolbar"]')
         ?.click();
-    if (initial === 'tooltip')
+    if (initial === 'focused')
       root.querySelector<HTMLButtonElement>('[data-discussion-reaction="👀"]')?.focus();
   });
 </script>

@@ -89,7 +89,6 @@
         size="icon"
         class="size-8 rounded-lg"
         aria-label={discussionReactionName(emoji)}
-        tooltip={discussionReactionName(emoji)}
         onpointerenter={(event) => event.currentTarget.focus({ preventScroll: true })}
         data-discussion-reaction-choice={emoji}
         onclick={() => {
