@@ -1020,3 +1020,34 @@ describe('native document history recipient', () => {
     expect(api.invoke.mock.calls.at(-1)?.[1]).not.toHaveProperty('reviewMonitoring');
   });
 });
+
+describe('passive principal discovery IPC', () => {
+  it('uses the dedicated read channel and preserves raw discovery fields', async () => {
+    const api = installFakeApi();
+    const raw = {
+      hello: { server: { capabilities: { hostMembership: 1, prWorkspaceLookup: 1 } } },
+      principal: { id: 'caller' },
+    };
+    api.invoke.mockResolvedValue({ ok: true, result: raw } as never);
+    await expect(createElectronIpcBackendTransport().readPrincipal!()).resolves.toEqual(raw);
+    expect(api.invoke).toHaveBeenCalledExactlyOnceWith(IPC_CHANNELS.BACKEND.READ_PRINCIPAL);
+  });
+
+  it('preserves daemon refusal fields for nonretryable discovery', async () => {
+    const api = installFakeApi();
+    api.invoke.mockResolvedValue({
+      ok: false,
+      error: {
+        code: 'FORBIDDEN',
+        rpcCode: -32003,
+        message: 'Forbidden',
+        data: { reason: 'revoked' },
+      },
+    } as never);
+    await expect(createElectronIpcBackendTransport().readPrincipal!()).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+      rpcCode: -32003,
+      data: { reason: 'revoked' },
+    });
+  });
+});

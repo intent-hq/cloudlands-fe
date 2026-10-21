@@ -1,5 +1,6 @@
 import { supportsReviewMonitoring, REVIEW_MONITOR_HISTORY_METHODS } from '$shared/types/pr-monitor';
 import { createPrMonitorTransport } from './pr-monitor-transport';
+import type { PrincipalDiscovery } from '$shared/types/principal';
 import {
   NativeReviewInputSchema,
   NativeReviewPreparedViewSchema,
@@ -213,6 +214,14 @@ export function createElectronIpcBackendTransport(
     },
     capturePrMonitorSession: createPrMonitorTransport(electronAPI, recipient),
     captureRepositorySelection,
+    async readPrincipal() {
+      const api = electronAPI();
+      if (!api) throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend unavailable' });
+      const response = await api.invoke(BACKEND.READ_PRINCIPAL);
+      if (electronAPI() !== api)
+        throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend bridge changed' });
+      return unwrap<PrincipalDiscovery>(response);
+    },
     async observeNodeCapabilities() {
       const api = electronAPI();
       if (!api) throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend unavailable' });
