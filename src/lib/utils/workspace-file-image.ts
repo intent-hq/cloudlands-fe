@@ -376,6 +376,33 @@ export function createWorkspaceFileVersion(): string {
   return `${Date.now().toString(36)}-${versionSequence.toString(36)}`;
 }
 
+/** Fresh local image request, preserving the original path and backend authority.
+ * External URLs may be signed, so retries must never rewrite their query string.
+ * Invalid URLs stay invalid rather than being normalized into a different file.
+ */
+export function imageRetryUrl(source: string): string | null {
+  if (/^https?:\/\//i.test(source)) return source;
+  if (source.includes('#')) return null;
+  const queryIndex = source.indexOf('?');
+  const path = queryIndex < 0 ? source : source.slice(0, queryIndex);
+  const search = queryIndex < 0 ? '' : source.slice(queryIndex + 1);
+  if (source.startsWith('workspace-file://')) {
+    if (!workspaceFileImageUrlToIntentFileUrl(source)) return null;
+  } else if (!/^workspace-asset:\/\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(path)) {
+    return null;
+  }
+  if (
+    queryIndex >= 0 &&
+    !/^(?:backend|v)=[A-Za-z0-9._-]+(?:&(?:backend|v)=[A-Za-z0-9._-]+)*$/.test(search)
+  ) {
+    return null;
+  }
+  const params = new URLSearchParams(search);
+  if (params.getAll('backend').length > 1 || params.getAll('v').length > 1) return null;
+  params.set('v', createWorkspaceFileVersion());
+  return `${path}?${params}`;
+}
+
 /**
  * Append `?v={version}` to every rendered `<img src="workspace-file://...">`
  * that does not already carry a query string. Videos are left alone: the
