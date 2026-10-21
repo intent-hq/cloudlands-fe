@@ -78,6 +78,7 @@ describe('renderer app saga registry', () => {
       'scriptsOperationSaga',
       'lifecycleReadSaga',
       'lifecycleIpcReadSaga',
+      'localRepoDiscoverySaga',
       'workspaceLoadSaga',
       'workspaceReconnectSaga',
       'modelSelectionSaga',
