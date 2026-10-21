@@ -1003,7 +1003,7 @@ describe('screenshot keeps painting while the app window is minimized', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it('lets the guest draw during the CDP capture, never touching the app window, then restores', async () => {
+  it('lets the guest and its app window draw during the CDP capture, then restores both', async () => {
     const service = await loadService();
     const seen: boolean[][] = [];
     const wc = withHost(
@@ -1023,9 +1023,11 @@ describe('screenshot keeps painting while the app window is minimized', () => {
     await expect(service.screenshot('tab-min')).resolves.toMatchObject({ base64: JPEG_1PX });
 
     expect(seen.length).toBeGreaterThan(0);
-    // Guest drawing, app window untouched: its Page Visibility never flips.
-    expect(seen.every(([guest, host]) => guest === false && host === true)).toBe(true);
+    // Both draw during the capture: lifting the guest alone did not paint a
+    // minimized macOS window (live test on manual build 39607559335).
+    expect(seen.every(([guest, host]) => guest === false && host === false)).toBe(true);
     expect(wc.backgroundThrottling).toBe(true);
+    expect(wc.hostWebContents.backgroundThrottling).toBe(true);
     service.unregisterTab('tab-min');
   });
 
@@ -1071,6 +1073,41 @@ describe('screenshot keeps painting while the app window is minimized', () => {
     await first;
     expect(wc.backgroundThrottling).toBe(true);
     service.unregisterTab('tab-a');
+  });
+
+  it('keeps a shared app window drawing until its last overlapping capture finishes', async () => {
+    const service = await loadService();
+    const host = { backgroundThrottling: true, isDestroyed: () => false };
+    let releaseFirst: () => void = () => {};
+    const first = Object.assign(fakeCdpWebview(76, {}), {
+      backgroundThrottling: true,
+      hostWebContents: host,
+    });
+    first.debugger.sendCommand.mockImplementation((method: string) =>
+      method === 'Page.getLayoutMetrics'
+        ? new Promise((resolve) => (releaseFirst = () => resolve(LAYOUT_METRICS)))
+        : Promise.resolve({ data: JPEG_1PX }),
+    );
+    const second = Object.assign(
+      fakeCdpWebview(77, {
+        'Page.getLayoutMetrics': LAYOUT_METRICS,
+        'Page.captureScreenshot': { data: JPEG_1PX },
+      }),
+      { backgroundThrottling: true, hostWebContents: host },
+    );
+    mocks.fromId.mockImplementation((id) => (id === 76 ? first : id === 77 ? second : undefined));
+    service.registerTab('tab-x', 76);
+    service.registerTab('tab-y', 77);
+
+    const pending = service.screenshot('tab-x');
+    await service.screenshot('tab-y');
+    expect(host.backgroundThrottling).toBe(false);
+
+    releaseFirst();
+    await pending;
+    expect(host.backgroundThrottling).toBe(true);
+    service.unregisterTab('tab-x');
+    service.unregisterTab('tab-y');
   });
 
   it('leaves a guest that already draws in the background unchanged', async () => {

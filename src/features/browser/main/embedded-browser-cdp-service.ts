@@ -2161,23 +2161,26 @@ class EmbeddedBrowserCdpService {
   }
 
   /**
-   * Keep a guest drawing frames for the duration of one capture, even while
-   * its window is minimized or covered by other apps: Chromium stops
-   * producing frames for a backgrounded window, so the capture would
-   * otherwise hang until "not-painting". Background throttling is turned
-   * off on the guest and restored when the last overlapping capture of it
-   * releases, so an idle tab keeps its normal throttling. Returns the
-   * release function; never throws.
+   * Keep a guest and the window hosting it drawing frames for the duration
+   * of one capture, even while that window is minimized or covered by other
+   * apps: Chromium stops producing frames for a backgrounded window, so the
+   * capture would otherwise hang until "not-painting". Background
+   * throttling is turned off on the guest and its host webContents and
+   * restored when the last overlapping capture releases, so an idle window
+   * keeps its normal throttling. Returns the release function; never throws.
    */
   private holdCaptureDrawing(webContentsId: number): () => void {
     const guest = webContents.fromId(webContentsId);
     if (!guest || guest.isDestroyed()) return () => {};
-    // Only the guest: lifting throttling on its host (the app window
-    // itself) would also flip the app UI's Page Visibility to visible for
-    // every capture — presence would report the user present while the
-    // window is minimized. A window with one unthrottled webContents
-    // displayed in it still draws all of them.
-    const targets = [guest];
+    // The guest and its host (the app window's own webContents). Lifting
+    // the guest alone is not enough: on a minimized macOS window both CDP
+    // and capturePage still timed out (live test, manual build 39607559335).
+    // Electron draws a window whose own webContents is unthrottled. The
+    // cost is that a hidden app UI reports itself visible for the duration
+    // of the capture; a visible window is unaffected.
+    const targets = [guest, guest.hostWebContents].filter(
+      (wc): wc is Electron.WebContents => !!wc && !wc.isDestroyed(),
+    );
     const held: Electron.WebContents[] = [];
     for (const wc of targets) {
       try {
