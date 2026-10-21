@@ -102,6 +102,8 @@
   const renderedContent = $derived(
     filterFileMedia(processedContent, allowFileMedia && canOpenFile?.() !== false),
   );
+  // Keep a stable root while media fallbacks replace child nodes.
+  const contentHtml = $derived(`<div class="markdown-content">${renderedContent}</div>`);
   // Ignore obsolete worker results, including after streaming ends or unmount.
   let renderVersion = 0;
   const STREAMING_THROTTLE_MS = 150;
@@ -447,8 +449,7 @@
     onfocusin={handleImageInteraction}
     onmouseleave={handleImageHoverLeave}
   >
-    <!-- Keep a stable root while media fallbacks replace child nodes. -->
-    {@html `<div class="markdown-content">${renderedContent}</div>`}
+    {@html contentHtml}
     {@render imageActionsOverlay()}
   </div>
 {:else if contentComplexity === 'simple' && !allowSanitizedHtml}
@@ -472,8 +473,7 @@
     onfocusin={handleImageInteraction}
     onmouseleave={handleImageHoverLeave}
   >
-    <!-- Keep a stable root while media fallbacks replace child nodes. -->
-    {@html `<div class="markdown-content">${renderedContent}</div>`}
+    {@html contentHtml}
     {@render imageActionsOverlay()}
   </div>
 {/if}
