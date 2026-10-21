@@ -54,6 +54,7 @@ type RestoreStatus = 'pending' | 'restored' | 'empty' | 'error';
 interface DraftOwner {
   requestId: string;
   admission: string;
+  discardKey: string;
   status: RestoreStatus;
   task?: Task;
 }
@@ -65,6 +66,7 @@ interface PendingSave {
   version: number;
   ownerRequestId: string;
   admission: string;
+  discardKey: string;
 }
 
 // Daemon writes are serialized across saga lifetimes: a write issued by a
@@ -290,9 +292,13 @@ export function* workspaceInitializerDraftSaga() {
     delete pending[id];
     if (!(yield* ownerAdmitted(owners, id, save.ownerRequestId, save.admission))) return;
     if (!canPersist(owners[id], save.payload)) return;
-    yield* call(persistDraft, save.payload, () =>
+    const persisted = yield* call(persistDraft, save.payload, () =>
       ownerAdmitted(owners, id, save.ownerRequestId, save.admission),
     );
+    if (persisted && pendingDiscards[save.discardKey]) {
+      delete pendingDiscards[save.discardKey];
+      yield* call(removeAllLegacyPrompts);
+    }
   }
 
   try {
@@ -368,11 +374,11 @@ export function* workspaceInitializerDraftSaga() {
               ),
             );
           }
-          owners[id] = { requestId, admission, status };
+          owners[id] = { requestId, admission, discardKey, status };
           yield* put(workspaceInitializerDraftRestoreFinished(id, requestId, status, '', []));
           continue;
         }
-        const owner: DraftOwner = { requestId, admission, status: 'pending' };
+        const owner: DraftOwner = { requestId, admission, discardKey, status: 'pending' };
         owners[id] = owner;
         owner.task = yield* fork(
           restoreDraftInBackground,
@@ -405,15 +411,23 @@ export function* workspaceInitializerDraftSaga() {
         const [id, payload, ownerRequestId, admission] = (
           action as ReturnType<typeof workspaceInitializerDraftSaveScheduled>
         ).payload;
+        const owner = owners[id];
         if (
           ownerRequestId === undefined ||
           admission === undefined ||
+          !owner ||
           !(yield* ownerAdmitted(owners, id, ownerRequestId, admission))
         )
           continue;
         mutationEpoch.value++;
         const nextVersion = ++version;
-        pending[id] = { payload, version: nextVersion, ownerRequestId, admission };
+        pending[id] = {
+          payload,
+          version: nextVersion,
+          ownerRequestId,
+          admission,
+          discardKey: owner.discardKey,
+        };
         yield* fork(draftDebounceTimer, id, nextVersion);
         continue;
       }
@@ -457,11 +471,13 @@ export function* workspaceInitializerDraftSaga() {
         const current = yield* currentAdmission();
         // An ownerless clear is the root reset; its originating intent must carry authority.
         const clearAdmission = admission;
+        const clearDiscardKey =
+          ownerRequestId === undefined ? clearAdmission : owners[id]?.discardKey;
         const admitted =
           ownerRequestId === undefined
             ? current !== undefined && clearAdmission === current
             : yield* ownerAdmitted(owners, id, ownerRequestId, admission);
-        if (!admitted || clearAdmission === undefined) {
+        if (!admitted || clearAdmission === undefined || clearDiscardKey === undefined) {
           yield* put(workspaceInitializerDraftClearFinished(id, requestId, 'failure'));
           continue;
         }
@@ -495,7 +511,7 @@ export function* workspaceInitializerDraftSaga() {
         }
         // Legacy prompts are removed only after a confirmed clear under unchanged authority.
         if (cleared) {
-          delete pendingDiscards[clearAdmission];
+          delete pendingDiscards[clearDiscardKey];
           yield* call(removeAllLegacyPrompts);
         }
         for (const [ownerId, restoreRequestId] of others) {

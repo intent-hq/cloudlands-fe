@@ -390,6 +390,103 @@ describe('workspaceInitializerDraftSaga', () => {
     },
   );
 
+  it.each(['compact', 'onboarding'])(
+    'retires a failed replacement discard after saving new content for %s',
+    async (id) => {
+      const provenance = 'stable-backend/principal';
+      const attachments = [{ id: 'new-file', type: 'file', label: 'new.txt', path: '/new.txt' }];
+      const persisted = { text: 'new prompt', attachments };
+      mocks.clear.mockRejectedValueOnce(new Error('offline'));
+      mocks.get.mockResolvedValue(persisted);
+
+      channel.put(
+        workspaceInitializerDraftRestoreRequested(
+          id,
+          'replacement',
+          'legacy-key',
+          A,
+          true,
+          provenance,
+        ),
+      );
+      await settle();
+      channel.put(workspaceInitializerDraftSaveScheduled(id, persisted, 'replacement', A));
+      channel.put(flush(id, 'replacement'));
+      await settle();
+      channel.put(workspaceInitializerDraftOwnerReleased(id, 'replacement'));
+      mocks.admission = B;
+      channel.put(
+        workspaceInitializerDraftRestoreRequested(
+          id,
+          'reopen',
+          'legacy-key',
+          B,
+          undefined,
+          provenance,
+        ),
+      );
+      await settle();
+
+      expect(mocks.set.mock.calls).toEqual([
+        ['__new-workspace__', '__initializer__', 'new prompt', attachments],
+      ]);
+      expect(mocks.clear.mock.calls).toEqual([['__new-workspace__', '__initializer__']]);
+      expect(mocks.get.mock.calls).toEqual([['__new-workspace__', '__initializer__']]);
+      expect(dispatched).toContainEqual(
+        workspaceInitializerDraftRestoreFinished(
+          id,
+          'reopen',
+          'restored',
+          'new prompt',
+          attachments,
+        ),
+      );
+    },
+  );
+
+  it.each(['compact', 'onboarding'])(
+    'retires a failed replacement discard after a normal clear for %s',
+    async (id) => {
+      const provenance = 'stable-backend/principal';
+      mocks.clear.mockRejectedValueOnce(new Error('offline'));
+
+      channel.put(
+        workspaceInitializerDraftRestoreRequested(
+          id,
+          'replacement',
+          'legacy-key',
+          A,
+          true,
+          provenance,
+        ),
+      );
+      await settle();
+      channel.put(clear(id, 'normal-clear', 'replacement'));
+      await settle();
+      mocks.admission = B;
+      channel.put(
+        workspaceInitializerDraftRestoreRequested(
+          id,
+          'reopen',
+          'legacy-key',
+          B,
+          undefined,
+          provenance,
+        ),
+      );
+      await settle();
+
+      expect(mocks.clear.mock.calls).toEqual([
+        ['__new-workspace__', '__initializer__'],
+        ['__new-workspace__', '__initializer__'],
+      ]);
+      expect(mocks.get.mock.calls).toEqual([['__new-workspace__', '__initializer__']]);
+      expect(dispatched).toContainEqual(
+        workspaceInitializerDraftRestoreFinished(id, 'reopen', 'empty', '', []),
+      );
+    },
+  );
+
   it('does not publish or migrate a read that resolves under a replaced authority', async () => {
     const held = deferred<null>();
     mocks.get.mockReturnValueOnce(held.promise);
