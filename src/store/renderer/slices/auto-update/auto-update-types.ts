@@ -12,6 +12,8 @@ export type AutoUpdateState = {
   progress: UpdateProgress | null;
   error: string | null;
   channel: UpdateChannel;
+  /** Settings → "Share anonymous update statistics" (mirrors main). */
+  shareStatistics: boolean;
   toastVisible: boolean;
   /** Timestamp (ms) when the user dismissed the "downloaded" toast. Null = never dismissed. */
   downloadedToastDismissedAt: number | null;

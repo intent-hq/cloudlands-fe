@@ -19,11 +19,15 @@ concurrency:
 env:
   # Number of intent-cache Linux runner slots: the route job bursts the heavy
   # jobs to GitHub-hosted larger runners once this many intent-cache jobs are queued or running
-  # ahead of this run. Raise it when slots are added. Jobs still blocked on
+  # ahead of this run. Set the CI_LINUX_HEAVY_SLOTS org or repo variable when
+  # slots are added; no workflow change is needed, and a malformed value sends
+  # every job hosted. Jobs still blocked on
   # `needs` are invisible to the jobs API, so a queued run ahead of us may
   # undercount. Bursted jobs don't carry the intent-cache label and stop
-  # counting, so routing returns to the slots as they free up.
-  LINUX_BURST_THRESHOLD: 2
+  # counting, so routing returns to the slots as they free up. Every routed
+  # job here asks for gh-linux-8x, so the intent-cache-xl pool (gh-linux-16x
+  # jobs in intent and intentd) is not probed.
+  LINUX_BURST_THRESHOLD: ${{ vars.CI_LINUX_HEAVY_SLOTS || '2' }}
 
 jobs:
   # Fork PRs skip every checkout/routed job. CI Gate alone still runs without
@@ -106,7 +110,7 @@ jobs:
             // (documented OOM history, monorepo#1074), and 32 GB clears its
             // 16 GB Node heap cap comfortably.
             const burst = ["gh-linux-8x"];
-            const threshold = parseInt(process.env.THRESHOLD || "2", 10);
+            const threshold = Number(process.env.THRESHOLD || "2");
             // A self-hosted job queued longer than this has no runner
             // picking it up — treat the fleet as unavailable and burst.
             const staleMs = 15 * 60 * 1000;
@@ -127,6 +131,7 @@ jobs:
             if (process.env.LINUX_RUNNER_DISABLED === "true") {
               reason = "disabled for maintenance";
             } else try {
+              if (!Number.isInteger(threshold) || threshold < 0) throw new Error("invalid queue threshold");
               // The intent-cache fleet is registered at the ORG level (shared
               // across the repos via a runner group), so probe the org
               // runner list first. That call needs the org-level

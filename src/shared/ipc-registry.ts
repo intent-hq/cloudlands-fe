@@ -882,6 +882,7 @@ export const IPC_CHANNELS = {
     INSTALL: 'auto-update:install',
     GET_STATE: 'auto-update:get-state',
     SET_CHANNEL: 'auto-update:set-channel',
+    SET_SHARE_STATISTICS: 'auto-update:set-share-statistics',
     // Event channels (main → renderer)
     STATUS_CHANGED: 'auto-update:status-changed',
     PROGRESS: 'auto-update:progress',

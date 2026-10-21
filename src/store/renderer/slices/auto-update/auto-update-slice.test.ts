@@ -6,9 +6,11 @@ import {
   hideToast,
   setCheckTimedOut,
   setProgress,
+  setShareUpdateStatistics,
   setUpdateError,
   setUpdateState,
   setUpToDate,
+  shareUpdateStatisticsReverted,
   showToast,
   showToastChecking,
   simulateSetState,
@@ -21,6 +23,7 @@ const baseState: AutoUpdateState = {
   progress: null,
   error: null,
   channel: 'stable',
+  shareStatistics: true,
   toastVisible: false,
   downloadedToastDismissedAt: null,
 };
@@ -34,9 +37,30 @@ describe('auto-update-slice reducer', () => {
       progress: null,
       error: null,
       channel: 'stable',
+      shareStatistics: true,
       toastVisible: false,
       downloadedToastDismissedAt: null,
     });
+  });
+
+  it('applies the statistics toggle optimistically, reverts it, and follows main status updates', () => {
+    let state = autoUpdateReducer(baseState, setShareUpdateStatistics(false));
+    expect(state.shareStatistics).toBe(false);
+    state = autoUpdateReducer(state, shareUpdateStatisticsReverted(true));
+    expect(state.shareStatistics).toBe(true);
+    state = autoUpdateReducer(
+      state,
+      setUpdateState({
+        status: 'idle',
+        currentVersion: '1.0.0',
+        updateInfo: null,
+        progress: null,
+        error: null,
+        channel: 'stable',
+        shareStatistics: false,
+      }),
+    );
+    expect(state.shareStatistics).toBe(false);
   });
 
   it('setUpdateState replaces the wire-owned fields and preserves toast state', () => {
