@@ -23,6 +23,7 @@ import {
   unmarkWindowSessionTeardown,
 } from '../../../main/window';
 import { broadcastToRenderers } from './auto-update-broadcast';
+import { cancellableFeedOptions } from './cancellable-feed-provider';
 import { configureMacUpdateCompatibility } from './mac-update-compatibility';
 import {
   LAST_UPDATE_CHECK_DAY_PREF,
@@ -56,6 +57,10 @@ const FOCUS_RESUME_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 const UPDATE_CHECK_TIMEOUT_MS = 30 * 1000;
 // Maximum time a check can be in 'checking' state before being considered stuck
 const CHECK_STUCK_TIMEOUT_MS = 30_000;
+// Budget for the telemetry feed request. Past it the request is aborted and
+// the check retried on GitHub, well inside the 30s main watchdog and the
+// renderer's 35s one (both re-armed when the retry starts).
+const TELEMETRY_CHECK_TIMEOUT_MS = 10_000;
 
 /**
  * Get the update base URL
@@ -312,15 +317,30 @@ class AutoUpdateService {
     });
   }
 
-  /** Point electron-updater at the feed for `trigger` on the current channel. */
+  /**
+   * Point electron-updater at the feed for `trigger` on the current channel.
+   * With `cancellable`, a telemetry feed's manifest request is abortable
+   * through the returned token (see cancellable-feed-provider).
+   */
   private applyFeed(
     channel: Exclude<UpdateChannel, 'disabled'>,
     trigger: UpdateCheckTrigger,
-  ): ResolvedUpdateFeed {
+    cancellable = false,
+  ): { feed: ResolvedUpdateFeed; feedToken: CancellationToken | null } {
     const feed = this.resolveFeed(channel, trigger);
-    autoUpdater.setFeedURL({ provider: 'generic', url: feed.url });
+    let feedToken: CancellationToken | null = null;
+    if (feed.kind === 'telemetry' && cancellable) {
+      feedToken = new electronUpdater.CancellationToken();
+      autoUpdater.setFeedURL(
+        cancellableFeedOptions(feed.url, feedToken) as unknown as Parameters<
+          typeof autoUpdater.setFeedURL
+        >[0],
+      );
+    } else {
+      autoUpdater.setFeedURL({ provider: 'generic', url: feed.url });
+    }
     this.activeFeedKind = feed.kind;
-    return feed;
+    return { feed, feedToken };
   }
 
   /** Record that today's telemetry check has been counted (drives `d`). */
@@ -347,18 +367,29 @@ class AutoUpdateService {
 
   /**
    * Run one check. On the telemetry feed a failure (network error, non-2xx,
-   * or a redirect the allowlist blocked) is retried once against GitHub with
-   * a fresh watchdog window, and the session stays on GitHub afterwards.
+   * a redirect the allowlist blocked, or no response within
+   * TELEMETRY_CHECK_TIMEOUT_MS, which aborts the request) is retried once
+   * against GitHub with a fresh watchdog window, and the session stays on
+   * GitHub afterwards.
    */
   private async runCheckWithFallback(
     channel: Exclude<UpdateChannel, 'disabled'>,
     trigger: UpdateCheckTrigger,
   ) {
-    const feed = this.applyFeed(channel, trigger);
-    if (feed.kind !== 'telemetry') {
+    const { feedToken } = this.applyFeed(channel, trigger, true);
+    if (!feedToken) {
       return autoUpdater.checkForUpdates();
     }
     this.telemetryAttemptActive = true;
+    // Aborting rejects the check, which also clears electron-updater's
+    // in-flight promise, so the retry below is a fresh request and the slow
+    // response can never land later.
+    const abortTimer = setTimeout(() => {
+      logger.warn('Update telemetry feed did not respond; aborting the request', {
+        timeoutMs: TELEMETRY_CHECK_TIMEOUT_MS,
+      });
+      feedToken.cancel();
+    }, TELEMETRY_CHECK_TIMEOUT_MS);
     try {
       const result = await autoUpdater.checkForUpdates();
       this.telemetryAttemptActive = false;
@@ -367,12 +398,20 @@ class AutoUpdateService {
     } catch (error) {
       this.telemetryAttemptActive = false;
       this.activateGithubFallback((error as Error).message);
-      // The user may have switched to 'disabled' while the attempt ran.
-      if (this.state.channel === 'disabled') throw error;
+      // The user switched to 'disabled' while the attempt ran: end this
+      // check quietly instead of retrying or reporting an error.
+      if (this.state.channel === 'disabled') {
+        this.clearCheckTimeout();
+        this.checkSessionActive = false;
+        this.isManualCheck = false;
+        this.updateStatus('idle');
+        return null;
+      }
       this.applyFeed(this.state.channel, trigger);
       this.startCheckTimeout();
       return autoUpdater.checkForUpdates();
     } finally {
+      clearTimeout(abortTimer);
       this.telemetryAttemptActive = false;
     }
   }
@@ -611,7 +650,7 @@ class AutoUpdateService {
     // checkForUpdates() re-points the feed before every check so its
     // trigger and daily flag are current; this keeps the feed on the new
     // channel even before then.
-    const feed = this.applyFeed(channel, 'channel');
+    const { feed } = this.applyFeed(channel, 'channel');
     // A channel switch must never permit downgrades.
     autoUpdater.allowDowngrade = false;
     logger.info('Update channel set', { channel, feedKind: feed.kind });

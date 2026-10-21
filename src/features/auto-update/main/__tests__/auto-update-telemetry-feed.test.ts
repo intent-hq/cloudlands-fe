@@ -14,6 +14,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import type { Mock } from 'vitest';
+import { CancellationToken } from 'electron-updater/out/types.js';
 
 let mockWindows: unknown[] = [];
 let testUserDataPath: string;
@@ -53,13 +54,10 @@ const sessionState: {
   headersListener: BeforeSendHeadersListener | null;
 } = { listener: null, headersListener: null };
 
-vi.mock('electron-updater', () => {
-  class MockCancellationToken {
-    cancelled = false;
-    cancel = vi.fn(() => {
-      this.cancelled = true;
-    });
-  }
+vi.mock('electron-updater', async () => {
+  // The real token (builder-util-runtime's), so a feed request built by the
+  // service's provider is genuinely cancellable in these tests.
+  const { CancellationToken } = await import('electron-updater/out/types.js');
   return {
     __esModule: true,
     default: {
@@ -85,7 +83,7 @@ vi.mock('electron-updater', () => {
           },
         },
       },
-      CancellationToken: MockCancellationToken,
+      CancellationToken,
     },
   };
 });
@@ -174,8 +172,129 @@ async function setup() {
     checkedFeeds,
     answerNotAvailable,
     answerFailure,
+    currentFeed,
     mockWindow,
   };
+}
+
+type Ctx = Awaited<ReturnType<typeof setup>>;
+
+type Answer = (() => Promise<unknown>) & { deduplicates?: boolean };
+
+/**
+ * Serve checks from `answers` the way electron-updater 6.x does: each fresh
+ * check emits 'checking-for-update', and a check requested while the slow
+ * telemetry request is in flight is deduplicated onto its pending promise.
+ */
+function serveChecks(ctx: Ctx, answers: Answer[]) {
+  let pending: Promise<unknown> | null = null;
+  ctx.checkMock.mockImplementation(() => {
+    if (pending) return pending;
+    const next = answers.shift();
+    if (!next) throw new Error('unexpected update check');
+    ctx.checkedFeeds.push(ctx.currentFeed());
+    updaterHandlers['checking-for-update']();
+    if (!next.deduplicates) return next();
+    const promise = next().finally(() => {
+      if (pending === promise) pending = null;
+    });
+    pending = promise;
+    return promise;
+  });
+}
+
+/**
+ * A telemetry feed request whose response never arrives. The request is
+ * issued through the provider the service configured (electron-updater's
+ * `provider: 'custom'` hook) with a fake HTTP executor; the token the
+ * provider hands the executor is the only way to abort it, as with
+ * electron-updater's real ElectronHttpExecutor.
+ */
+function slowTelemetry(ctx: Ctx) {
+  const abort = vi.fn();
+  let respond: ((body: string) => void) | null = null;
+  const answer: Answer = async () => {
+    const options = ctx.feedMock.mock.calls.at(-1)?.[0] as {
+      url: string;
+      updateProvider?: new (
+        options: unknown,
+        updater: unknown,
+        runtime: unknown,
+      ) => {
+        getLatestVersion(): Promise<unknown>;
+      };
+    };
+    if (typeof options.updateProvider !== 'function') {
+      // A stalled socket with no way to cancel it.
+      return new Promise(() => {});
+    }
+    const executor = {
+      request: (_options: unknown, token: CancellationToken = new CancellationToken()) =>
+        token.createPromise<string>((resolve, _reject, onCancel) => {
+          respond = resolve;
+          onCancel(abort);
+        }),
+    };
+    const provider = new options.updateProvider(
+      options,
+      { channel: null, isAddNoCacheQuery: false },
+      { executor, platform: 'linux', isUseMultipleRangeRequest: true },
+    );
+    try {
+      return await provider.getLatestVersion();
+    } catch (error) {
+      // electron-updater emits 'error' before the check promise rejects.
+      updaterHandlers['error'](error);
+      throw error;
+    }
+  };
+  answer.deduplicates = true;
+  return { answer, abort, lateResponse: (body: string) => respond?.(body) };
+}
+
+/** Next check answers "no update" after `ms`. */
+const notAvailableAfter = (ms: number) => () =>
+  new Promise((resolve) =>
+    setTimeout(() => {
+      updaterHandlers['update-not-available']({ version: '2.219.8' });
+      resolve({ updateInfo: { version: '2.219.8' } });
+    }, ms),
+  );
+
+/** Renderer saga watchdog (auto-update-saga.ts CHECK_TIMEOUT_MS). */
+const RENDERER_CHECK_TIMEOUT_MS = 35_000;
+
+/**
+ * Record every broadcast with its (fake) time, and replay the renderer
+ * saga's watchdog over them: armed by each 'checking' status, cancelled by
+ * any other status or up-to-date answer.
+ */
+function recordBroadcasts(ctx: Ctx) {
+  const timeline: Array<{ at: number; channel: string; status?: string }> = [];
+  ctx.mockWindow.webContents.send.mockImplementation((channel: string, payload?: unknown) => {
+    timeline.push({ at: Date.now(), channel, status: (payload as { status?: string })?.status });
+  });
+  const statuses = () =>
+    timeline.filter((e) => e.channel === 'auto-update:status-changed').map((e) => e.status);
+  const rendererWatchdogFired = (now = Date.now()) => {
+    let armedAt: number | null = null;
+    for (const event of timeline) {
+      if (armedAt !== null && event.at - armedAt >= RENDERER_CHECK_TIMEOUT_MS) return true;
+      if (event.channel === 'auto-update:status-changed') {
+        armedAt = event.status === 'checking' ? event.at : null;
+      } else if (event.channel === 'auto-update:up-to-date') {
+        armedAt = null;
+      }
+    }
+    return armedAt !== null && now - armedAt >= RENDERER_CHECK_TIMEOUT_MS;
+  };
+  return { timeline, statuses, rendererWatchdogFired };
+}
+
+async function setupWithFakeTimers() {
+  const ctx = await setup();
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+  return ctx;
 }
 
 function query(url: string): Record<string, string> {
@@ -394,6 +513,182 @@ describe('fallback to GitHub', () => {
 
     expect(state.status).toBe('not-available');
     expect(state.error).toBeNull();
+  });
+});
+
+describe('slow telemetry response', () => {
+  it('aborts the pending telemetry request and retries once on GitHub before any watchdog fires', async () => {
+    const ctx = await setupWithFakeTimers();
+    const slow = slowTelemetry(ctx);
+    // GitHub answers just inside the main 30s watchdog, so the whole check
+    // spans well past the renderer's 35s window measured from the start.
+    serveChecks(ctx, [slow.answer, notAvailableAfter(29_000)]);
+    const broadcasts = recordBroadcasts(ctx);
+
+    const pending = ctx.service.checkForUpdatesManual();
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(ctx.checkedFeeds).toHaveLength(1);
+    expect(slow.abort).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(slow.abort).toHaveBeenCalledTimes(1);
+    expect(ctx.checkedFeeds).toHaveLength(2);
+    expect(ctx.checkedFeeds[0].startsWith(`${TELEMETRY_PREFIX}stable?`)).toBe(true);
+    expect(ctx.checkedFeeds[1]).toBe(`${GITHUB_PREFIX}stable`);
+
+    await vi.advanceTimersByTimeAsync(29_000);
+    const state = await pending;
+    await drainAsyncWork();
+
+    expect(state.status).toBe('not-available');
+    expect(state.error).toBeNull();
+    expect(broadcasts.statuses()).not.toContain('error');
+    expect(broadcasts.rendererWatchdogFired()).toBe(false);
+    expect(ctx.mockWindow.webContents.send).toHaveBeenCalledWith('auto-update:up-to-date', {
+      version: '2.219.8',
+    });
+    // No further watchdog fires after the retry settled.
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(ctx.service.getState().status).toBe('not-available');
+    expect(broadcasts.statuses()).not.toContain('error');
+  });
+
+  it('a manual check during the slow attempt is not left deduplicated onto it', async () => {
+    const ctx = await setupWithFakeTimers();
+    const slow = slowTelemetry(ctx);
+    serveChecks(ctx, [slow.answer, notAvailableAfter(1_000), notAvailableAfter(1_000)]);
+    const broadcasts = recordBroadcasts(ctx);
+
+    const first = ctx.service.checkForUpdates('startup');
+    await vi.advanceTimersByTimeAsync(5_000);
+    const again = await ctx.service.checkForUpdatesManual();
+    expect(again.status).toBe('checking');
+    await vi.advanceTimersByTimeAsync(6_000);
+    await first;
+    await drainAsyncWork();
+
+    expect(slow.abort).toHaveBeenCalledTimes(1);
+    expect(ctx.checkedFeeds).toEqual([
+      expect.stringContaining(TELEMETRY_PREFIX),
+      `${GITHUB_PREFIX}stable`,
+    ]);
+    expect(ctx.service.getState().status).toBe('not-available');
+    expect(broadcasts.statuses()).not.toContain('error');
+    // The manual request still gets its answer.
+    expect(ctx.mockWindow.webContents.send).toHaveBeenCalledWith('auto-update:up-to-date', {
+      version: '2.219.8',
+    });
+
+    // The next check starts fresh (no pending promise survives the abort)
+    // and stays on GitHub for the session.
+    const next = ctx.service.checkForUpdatesManual();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await next;
+    expect(ctx.checkedFeeds.at(-1)).toBe(`${GITHUB_PREFIX}stable`);
+    expect(ctx.checkedFeeds).toHaveLength(3);
+  });
+
+  it('a telemetry response arriving after the abort cannot land', async () => {
+    const ctx = await setupWithFakeTimers();
+    const slow = slowTelemetry(ctx);
+    serveChecks(ctx, [slow.answer, notAvailableAfter(1_000)]);
+
+    const pending = ctx.service.checkForUpdatesManual();
+    await vi.advanceTimersByTimeAsync(10_000);
+    slow.lateResponse('version: 9.9.9\npath: Intent.AppImage\nsha512: abc\n');
+    await vi.advanceTimersByTimeAsync(1_000);
+    await pending;
+    await drainAsyncWork();
+
+    const state = ctx.service.getState();
+    expect(state.status).toBe('not-available');
+    expect(state.updateInfo).toBeNull();
+  });
+
+  it('switching to disabled during the slow attempt aborts it without a retry or an error', async () => {
+    const ctx = await setupWithFakeTimers();
+    const slow = slowTelemetry(ctx);
+    serveChecks(ctx, [slow.answer]);
+    const broadcasts = recordBroadcasts(ctx);
+
+    const pending = ctx.service.checkForUpdatesManual();
+    await vi.advanceTimersByTimeAsync(3_000);
+    await ctx.service.setChannel('disabled');
+    await vi.advanceTimersByTimeAsync(7_000);
+    await pending;
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(slow.abort).toHaveBeenCalledTimes(1);
+    expect(ctx.checkedFeeds).toHaveLength(1);
+    expect(broadcasts.statuses()).not.toContain('error');
+    expect(ctx.service.getState().status).toBe('idle');
+    expect(broadcasts.rendererWatchdogFired()).toBe(false);
+  });
+
+  it('a channel switch during the GitHub retry cancels its stale autoDownload and rechecks the new channel', async () => {
+    const ctx = await setupWithFakeTimers();
+    const slow = slowTelemetry(ctx);
+    const staleDownload = { cancelled: false, cancel: vi.fn() };
+    serveChecks(ctx, [
+      slow.answer,
+      () =>
+        new Promise((resolve) =>
+          setTimeout(() => {
+            updaterHandlers['update-available']({ version: '2.220.0' });
+            resolve({ updateInfo: { version: '2.220.0' }, cancellationToken: staleDownload });
+          }, 5_000),
+        ),
+      notAvailableAfter(1_000),
+    ]);
+    const broadcasts = recordBroadcasts(ctx);
+
+    const pending = ctx.service.checkForUpdatesManual();
+    await vi.advanceTimersByTimeAsync(12_000);
+    expect(ctx.checkedFeeds[1]).toBe(`${GITHUB_PREFIX}stable`);
+    await ctx.service.setChannel('beta');
+    await ctx.service.checkForUpdatesOnChannelSwitch();
+    await vi.advanceTimersByTimeAsync(3_000);
+    await pending;
+    await drainAsyncWork();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await drainAsyncWork();
+
+    expect(staleDownload.cancel).toHaveBeenCalledTimes(1);
+    expect(ctx.checkedFeeds).toEqual([
+      expect.stringContaining(`${TELEMETRY_PREFIX}stable?`),
+      `${GITHUB_PREFIX}stable`,
+      `${GITHUB_PREFIX}beta`,
+    ]);
+    expect(ctx.service.getState().status).toBe('not-available');
+    expect(ctx.service.getState().updateInfo).toBeNull();
+    expect(broadcasts.statuses()).not.toContain('error');
+  });
+
+  it('a channel switch during the slow attempt retries on the new channel and then rechecks it', async () => {
+    const ctx = await setupWithFakeTimers();
+    const slow = slowTelemetry(ctx);
+    serveChecks(ctx, [slow.answer, notAvailableAfter(1_000), notAvailableAfter(1_000)]);
+    const broadcasts = recordBroadcasts(ctx);
+
+    const pending = ctx.service.checkForUpdatesManual();
+    await vi.advanceTimersByTimeAsync(3_000);
+    await ctx.service.setChannel('beta');
+    await ctx.service.checkForUpdatesOnChannelSwitch();
+    await vi.advanceTimersByTimeAsync(8_000);
+    await pending;
+    await drainAsyncWork();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await drainAsyncWork();
+
+    expect(slow.abort).toHaveBeenCalledTimes(1);
+    expect(ctx.checkedFeeds).toEqual([
+      expect.stringContaining(`${TELEMETRY_PREFIX}stable?`),
+      `${GITHUB_PREFIX}beta`,
+      `${GITHUB_PREFIX}beta`,
+    ]);
+    expect(ctx.service.getState().status).toBe('not-available');
+    expect(broadcasts.statuses()).not.toContain('error');
+    expect(broadcasts.rendererWatchdogFired()).toBe(false);
   });
 });
 

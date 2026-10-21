@@ -249,10 +249,11 @@ describe('channel-switch immediate update check', () => {
     // ...state was reset so the fresh check actually ran against the new feed.
     expect(service.getState().updateInfo).toBeNull();
     await vi.waitFor(() => expect(checkMock).toHaveBeenCalledTimes(1));
-    expect(feedMock).toHaveBeenLastCalledWith({
-      provider: 'generic',
-      url: expect.stringMatching(/\/beta(\?|$)/),
-    });
+    expect(feedMock).toHaveBeenLastCalledWith(
+      // Telemetry feeds use the cancellable custom provider; the URL is what
+      // pins the channel.
+      expect.objectContaining({ url: expect.stringMatching(/\/beta(\?|$)/) }),
+    );
 
     // The new feed resolves to the same version (electron-updater re-resolves
     // from its downloaded-file cache): quit-install is re-enabled.
@@ -519,10 +520,11 @@ describe('channel-switch immediate update check', () => {
 
     // ...and exactly one fresh check fires, after the feed was re-pointed.
     await vi.waitFor(() => expect(checkMock).toHaveBeenCalledTimes(1));
-    expect(feedMock).toHaveBeenLastCalledWith({
-      provider: 'generic',
-      url: expect.stringMatching(/\/alpha(\?|$)/),
-    });
+    expect(feedMock).toHaveBeenLastCalledWith(
+      // Telemetry feeds use the cancellable custom provider; the URL is what
+      // pins the channel.
+      expect.objectContaining({ url: expect.stringMatching(/\/alpha(\?|$)/) }),
+    );
 
     // The recheck carries manual feedback for the new feed's answer.
     updaterHandlers['update-not-available']({ version: '2.0.0' });
@@ -580,10 +582,11 @@ describe('channel-switch immediate update check', () => {
     expect(oldToken.cancel).toHaveBeenCalledTimes(1);
     expect(updater.autoInstallOnAppQuit).toBe(false);
     expect(service.getState().updateInfo).toBeNull();
-    expect(feedMock).toHaveBeenLastCalledWith({
-      provider: 'generic',
-      url: expect.stringMatching(/\/beta(\?|$)/),
-    });
+    expect(feedMock).toHaveBeenLastCalledWith(
+      // Telemetry feeds use the cancellable custom provider; the URL is what
+      // pins the channel.
+      expect.objectContaining({ url: expect.stringMatching(/\/beta(\?|$)/) }),
+    );
   });
 
   it("switch during a check running while 'downloaded' queues the recheck instead of racing a deduped check", async () => {
@@ -636,10 +639,11 @@ describe('channel-switch immediate update check', () => {
     expect(oldToken.cancel).toHaveBeenCalledTimes(1);
     expect(updater.autoInstallOnAppQuit).toBe(false);
     expect(service.getState().updateInfo).toBeNull();
-    expect(feedMock).toHaveBeenLastCalledWith({
-      provider: 'generic',
-      url: expect.stringMatching(/\/beta(\?|$)/),
-    });
+    expect(feedMock).toHaveBeenLastCalledWith(
+      // Telemetry feeds use the cancellable custom provider; the URL is what
+      // pins the channel.
+      expect.objectContaining({ url: expect.stringMatching(/\/beta(\?|$)/) }),
+    );
   });
 
   it("switch during a downloaded-state check: an old-feed supersede outcome is neutralized without stranding 'downloading'", async () => {
@@ -844,10 +848,11 @@ describe("'disabled' update channel", () => {
     const result = await setChannelHandler({}, { channel: 'beta' });
     expect(result.success).toBe(true);
 
-    expect(feedMock).toHaveBeenLastCalledWith({
-      provider: 'generic',
-      url: expect.stringMatching(/\/beta(\?|$)/),
-    });
+    expect(feedMock).toHaveBeenLastCalledWith(
+      // Telemetry feeds use the cancellable custom provider; the URL is what
+      // pins the channel.
+      expect.objectContaining({ url: expect.stringMatching(/\/beta(\?|$)/) }),
+    );
     await vi.waitFor(() =>
       expect(mockWindow.webContents.send).toHaveBeenCalledWith('auto-update:show-toast'),
     );
