@@ -457,9 +457,13 @@
           };
         }
 
-        // Apply prompt if provided
+        // Apply prompt if provided. Push it into the editor too: the editor
+        // ignores external `value` changes while focused (it protects typing),
+        // and the modal focuses it on open — so the binding alone left a
+        // prefilled prompt (deep links, integrations) invisible.
         if (data.prompt) {
           initialPrompt = data.prompt;
+          void richTextarea?.setContent(data.prompt);
         }
 
         // Apply specialist if provided (match by specialist ID)
