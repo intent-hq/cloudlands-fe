@@ -36,15 +36,7 @@
  * admission invalidation cancels every worker and clears ephemeral projections.
  */
 
-import {
-  END,
-  buffers,
-  channel,
-  eventChannel,
-  type Channel,
-  type EventChannel,
-  type Task,
-} from 'redux-saga';
+import { buffers, channel, type Channel, type Task } from 'redux-saga';
 import {
   all,
   call,
@@ -72,12 +64,7 @@ import { backendRequest, observeBackendNodeCapabilities } from '$lib/client/live
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import { createElectronChannel } from '../../../utils/ipc-channel';
-import {
-  applyPresenceVisibilityEvent,
-  type PresenceVisibilityEvent,
-  type PresenceVisibilityGate,
-} from '../presence-visibility-gate';
+import { watchPresenceVisibility } from './presence-visibility-watcher';
 import {
   isPresenceRoster,
   isPresenceIdentity,
@@ -180,19 +167,6 @@ function supersedesSnapshot(action: ObservedAction, workspaceId: string): boolea
   );
 }
 
-/** `visibilitychange` is a document event, so the window-event helper does not apply. */
-function createVisibilityChannel(): EventChannel<boolean> {
-  return eventChannel<boolean>((emit) => {
-    if (typeof document === 'undefined') {
-      emit(END as never);
-      return () => {};
-    }
-    const handler = () => emit(document.visibilityState === 'visible');
-    document.addEventListener('visibilitychange', handler);
-    return () => document.removeEventListener('visibilitychange', handler);
-  }, buffers.sliding<boolean>(1));
-}
-
 /** Successful idle reports belong to one admitted connection lifetime only. */
 function createReportSender() {
   let lastSuccessfulKey: string | null = null;
@@ -216,49 +190,6 @@ function createReportSender() {
 }
 
 type ReportSender = ReturnType<typeof createReportSender>;
-
-function* watchVisibility(): SagaGenerator<void> {
-  const documentChannel = createVisibilityChannel();
-  // Agent captures keep a hidden window drawing, which makes the document
-  // briefly visible; main brackets each one so presence can ignore it.
-  const captures = createElectronChannel<{ active?: unknown }>(
-    IPC_CHANNELS.BROWSER.CAPTURE_DRAWING,
-    {
-      bufferPolicy: {
-        kind: 'lossless',
-        rationale: 'Capture start and end must pair up or presence would stay frozen.',
-      },
-    },
-  );
-  const documentVisible = () =>
-    typeof document === 'undefined' || document.visibilityState === 'visible';
-  let gate: PresenceVisibilityGate = { reported: documentVisible(), captureActive: false };
-  // No Electron bridge (web build, tests): the capture channel ends at once.
-  let capturesOpen = true;
-  try {
-    if (typeof document !== 'undefined') yield* put(presenceWindowVisibilityChanged(gate.reported));
-    while (true) {
-      const { visible, capture } = capturesOpen
-        ? yield* race({ visible: take(documentChannel), capture: take(captures) })
-        : { visible: yield* take(documentChannel), capture: undefined };
-      if ((visible as unknown) === END) break;
-      if ((capture as unknown) === END) {
-        capturesOpen = false;
-        continue;
-      }
-      const event: PresenceVisibilityEvent =
-        capture !== undefined
-          ? { kind: 'capture', active: capture.active === true, documentVisible: documentVisible() }
-          : { kind: 'document', visible: visible === true };
-      const next = applyPresenceVisibilityEvent(gate, event);
-      gate = next.gate;
-      if (next.report !== null) yield* put(presenceWindowVisibilityChanged(next.report));
-    }
-  } finally {
-    documentChannel.close();
-    captures.close();
-  }
-}
 
 /**
  * Debounced report: every change restarts the delay; only the last one sends.
@@ -525,7 +456,7 @@ function* runPresence({
   yield* put(presenceWorkspacesReceived(yield* select(selectPresenceWorkspaceIds.select)));
   try {
     const membershipEvents = yield* call(supportsMembershipEvents);
-    tasks.push(yield* fork(watchVisibility));
+    tasks.push(yield* fork(watchPresenceVisibility));
     tasks.push(yield* fork(watchTypingPulses, sendReport));
     tasks.push(yield* fork(watchMembershipNotifications, memberReads, membershipEvents));
     tasks.push(
