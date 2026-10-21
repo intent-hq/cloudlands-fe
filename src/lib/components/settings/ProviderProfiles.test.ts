@@ -540,6 +540,182 @@ describe('ProviderProfiles dialog outcomes', () => {
   });
 });
 
+describe('ProviderProfiles backup and order (§5.54)', () => {
+  const profileOf = (id: string, name: string, backup?: boolean): ProviderProfile => ({
+    ...WORK,
+    id,
+    providerRef: `codex@${id}`,
+    name,
+    ...(backup === undefined ? {} : { backup }),
+  });
+  const A = profileOf('pa', 'Alpha', false);
+  const B = profileOf('pb', 'Beta', true);
+  const C = profileOf('pc', 'Gamma', false);
+
+  const rowNames = () =>
+    screen.getAllByTestId('provider-profile-row').map((row) => row.getAttribute('data-profile-id'));
+  const grip = (name: string) =>
+    screen.getByRole('button', { name: m.settings_providerProfiles_reorder_ariaLabel({ name }) });
+
+  async function renderProfiles(profiles: ProviderProfile[]) {
+    await seed({ profiles });
+    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
+    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
+  }
+
+  it('hides reorder and backup controls when the daemon does not report backup', async () => {
+    await renderProfiles([profileOf('pa', 'Alpha'), profileOf('pb', 'Beta')]);
+    expect(
+      screen.queryByRole('button', {
+        name: m.settings_providerProfiles_reorder_ariaLabel({ name: 'Alpha' }),
+      }),
+    ).toBeNull();
+    expect(screen.queryByText(m.settings_providerProfiles_backupBadge_label())).toBeNull();
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.settings_providerProfiles_add_label() }),
+    );
+    const dialog = await screen.findByRole('dialog');
+    expect(
+      within(dialog).queryByRole('switch', { name: m.settings_providerProfiles_backup_label() }),
+    ).toBeNull();
+  });
+
+  it('shows a Backup badge only on backup profiles', async () => {
+    await renderProfiles([A, B]);
+    const rows = screen.getAllByTestId('provider-profile-row');
+    expect(within(rows[0]).queryByText(m.settings_providerProfiles_backupBadge_label())).toBeNull();
+    expect(within(rows[1]).getByText(m.settings_providerProfiles_backupBadge_label())).toBeTruthy();
+  });
+
+  it('moves a profile with the arrow keys and announces its new position', async () => {
+    await renderProfiles([A, B, C]);
+    await fireEvent.keyDown(grip('Alpha'), { key: 'ArrowDown' });
+    const action = lastOf('providerProfiles/reorderRequested') as {
+      payload: [{ baseProviderId: string; profileIds: string[] }];
+    };
+    expect(action.payload[0]).toMatchObject({
+      baseProviderId: 'codex',
+      profileIds: ['pb', 'pa', 'pc'],
+    });
+    await waitFor(() => expect(rowNames()).toEqual(['pb', 'pa', 'pc']));
+    expect(
+      screen.getByText(
+        m.settings_providerProfiles_reorderAnnouncement({ name: 'Alpha', position: 2 }),
+      ),
+    ).toBeTruthy();
+    // Moving past either end does nothing.
+    mocks.dispatched.length = 0;
+    await fireEvent.keyDown(grip('Beta'), { key: 'ArrowUp' });
+    expect(lastOf('providerProfiles/reorderRequested')).toBeUndefined();
+  });
+
+  it('reorders by dragging a row onto another', async () => {
+    await renderProfiles([A, B, C]);
+    const target = screen
+      .getAllByTestId('provider-profile-row')
+      .find((row) => row.getAttribute('data-profile-id') === 'pa')!;
+    vi.spyOn(target, 'getBoundingClientRect').mockReturnValue({
+      top: 0,
+      height: 40,
+      left: 0,
+      width: 300,
+    } as DOMRect);
+    await fireEvent.dragStart(grip('Gamma'));
+    await fireEvent.dragOver(target, { clientY: 5 });
+    await fireEvent.drop(target, { clientY: 5 });
+    const action = lastOf('providerProfiles/reorderRequested') as {
+      payload: [{ profileIds: string[] }];
+    };
+    expect(action.payload[0].profileIds).toEqual(['pc', 'pa', 'pb']);
+    await waitFor(() => expect(rowNames()).toEqual(['pc', 'pa', 'pb']));
+  });
+
+  it('restores the order and shows an error when the daemon rejects the reorder', async () => {
+    await renderProfiles([A, B]);
+    await fireEvent.keyDown(grip('Beta'), { key: 'ArrowUp' });
+    await waitFor(() => expect(rowNames()).toEqual(['pb', 'pa']));
+    const action = lastOf('providerProfiles/reorderRequested') as {
+      payload: [{ requestId: string }];
+    };
+    const { providerProfileMutationFailed } =
+      await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+    const { store } = await import('$store/renderer/store');
+    store.dispatch(providerProfileMutationFailed(action.payload[0].requestId, { kind: 'other' }));
+    await waitFor(() => expect(rowNames()).toEqual(['pa', 'pb']));
+    await waitFor(() =>
+      expect(mocks.notify.error).toHaveBeenCalledWith(
+        m.settings_providerProfiles_reorderFailed_error(),
+      ),
+    );
+  });
+
+  it('saves the backup toggle on edit and on create', async () => {
+    await renderProfiles([profileOf('pwork', 'Work', false)]);
+    await openEdit();
+    let dialog = await screen.findByRole('dialog');
+    const toggle = within(dialog).getByRole('switch', {
+      name: m.settings_providerProfiles_backup_label(),
+    });
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    await fireEvent.click(toggle);
+    await fireEvent.click(
+      within(dialog).getByRole('button', { name: m.settings_providerProfiles_save_label() }),
+    );
+    expect(lastOf('providerProfiles/updateRequested')?.payload).toMatchObject({
+      profileId: 'pwork',
+      backup: true,
+      name: undefined,
+      envRef: undefined,
+    });
+
+    cleanup();
+    await renderProfiles([profileOf('pwork', 'Work', false)]);
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.settings_providerProfiles_add_label() }),
+    );
+    dialog = await screen.findByRole('dialog');
+    await fireEvent.input(
+      within(dialog).getByLabelText(m.settings_providerProfiles_name_label(), {
+        selector: 'input[required]',
+      }),
+      { target: { value: 'Spare' } },
+    );
+    await fireEvent.click(
+      within(dialog).getByRole('switch', { name: m.settings_providerProfiles_backup_label() }),
+    );
+    await fireEvent.click(
+      within(dialog).getByRole('button', { name: m.settings_providerProfiles_create_label() }),
+    );
+    expect(lastOf('providerProfiles/createRequested')?.payload).toMatchObject({
+      name: 'Spare',
+      backup: true,
+    });
+  });
+
+  it('leaves backup out of an edit that does not change it', async () => {
+    await renderProfiles([profileOf('pwork', 'Work', true)]);
+    await openEdit();
+    const dialog = await screen.findByRole('dialog');
+    expect(
+      within(dialog)
+        .getByRole('switch', { name: m.settings_providerProfiles_backup_label() })
+        .getAttribute('aria-checked'),
+    ).toBe('true');
+    await fireEvent.input(
+      within(dialog).getByLabelText(m.settings_providerProfiles_name_label(), {
+        selector: 'input[required]',
+      }),
+      { target: { value: 'Office' } },
+    );
+    await fireEvent.click(
+      within(dialog).getByRole('button', { name: m.settings_providerProfiles_save_label() }),
+    );
+    const payload = lastOf('providerProfiles/updateRequested')?.payload;
+    expect(payload).toMatchObject({ name: 'Office' });
+    expect(payload).not.toHaveProperty('backup');
+  });
+});
+
 async function chooseMenuItem(label: string) {
   await fireEvent.click(
     screen.getByRole('button', {

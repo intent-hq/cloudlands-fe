@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   update: vi.fn(),
   remove: vi.fn(),
+  reorder: vi.fn(),
   catalog: vi.fn(),
 }));
 vi.mock('$lib/client', () => ({
@@ -16,6 +17,7 @@ vi.mock('$lib/client', () => ({
       createProfile: mocks.create,
       updateProfile: mocks.update,
       deleteProfile: mocks.remove,
+      reorderProfiles: mocks.reorder,
       catalog: mocks.catalog,
     },
   },
@@ -29,6 +31,7 @@ import {
   providerProfileCheckRequested,
   providerProfileCreateRequested,
   providerProfileDeleteRequested,
+  providerProfileReorderRequested,
   providerProfilesChanged,
   providerProfilesRequested,
   providerProfileSummaryStatusesEnsured,
@@ -346,6 +349,146 @@ describe('provider profiles saga', () => {
     await settle();
     expect(h.auth).toHaveBeenCalledWith('codex@pwork', true);
     expect(selectProviderProfileStatusMap.select(h.state()).pwork).toBe('ready');
+  });
+});
+
+describe('backup failover controls (§5.54)', () => {
+  const withBackup = (id: string, name: string, backup = false) => ({
+    ...profile(id, name),
+    backup,
+  });
+
+  async function loadedWith(profiles: ProviderProfile[], revision = 3) {
+    mocks.list.mockResolvedValue({ profiles, revision });
+    const h = setup();
+    task = h.task;
+    h.dispatch(providerProfilesRequested());
+    await settle();
+    return h;
+  }
+
+  it('sends backup on create and update and keeps it from the saved result', async () => {
+    const h = await loadedWith([withBackup('pwork', 'Work')]);
+    mocks.create.mockResolvedValue({ profile: withBackup('pnew', 'Spare', true), revision: 4 });
+    h.dispatch(
+      providerProfileCreateRequested({
+        requestId: 'c1',
+        baseProviderId: 'codex',
+        name: 'Spare',
+        backup: true,
+      }),
+    );
+    await settle();
+    expect(mocks.create).toHaveBeenCalledWith({
+      baseProviderId: 'codex',
+      name: 'Spare',
+      backup: true,
+    });
+    mocks.update.mockResolvedValue({
+      profile: withBackup('pwork', 'Work', true),
+      revision: 5,
+      activation: { envChanged: false, runningProcesses: 0 },
+    });
+    h.auth.mockClear();
+    h.dispatch(
+      providerProfileUpdateRequested({ requestId: 'u1', profileId: 'pwork', backup: true }),
+    );
+    await settle();
+    expect(mocks.update).toHaveBeenCalledWith({ profileId: 'pwork', backup: true });
+    // A backup-only change is not an env change: the account is not re-checked.
+    expect(h.auth).not.toHaveBeenCalled();
+    expect(
+      selectProviderProfilesForBase.select(h.state(), 'codex').map((p) => [p.id, p.backup]),
+    ).toEqual([
+      ['pwork', true],
+      ['pnew', true],
+    ]);
+  });
+
+  it('saves a reorder and adopts the daemon order and revision', async () => {
+    const h = await loadedWith([
+      withBackup('pa', 'A'),
+      withBackup('pb', 'B'),
+      withBackup('pc', 'C'),
+    ]);
+    const done = deferred<{ profiles: ProviderProfile[]; revision: number }>();
+    mocks.reorder.mockReturnValue(done.promise);
+    h.dispatch(
+      providerProfileReorderRequested({
+        requestId: 'o1',
+        baseProviderId: 'codex',
+        profileIds: ['pc', 'pa', 'pb'],
+      }),
+    );
+    await settle();
+    expect(mocks.reorder).toHaveBeenCalledWith({
+      baseProviderId: 'codex',
+      profileIds: ['pc', 'pa', 'pb'],
+    });
+    // Optimistic while the daemon is saving.
+    expect(selectProviderProfilesForBase.select(h.state(), 'codex').map((p) => p.id)).toEqual([
+      'pc',
+      'pa',
+      'pb',
+    ]);
+    done.resolve({
+      profiles: [withBackup('pc', 'C', true), withBackup('pa', 'A'), withBackup('pb', 'B')],
+      revision: 4,
+    });
+    await settle();
+    expect(selectProviderProfileMutations.select(h.state()).o1).toMatchObject({
+      kind: 'reorder',
+      status: 'success',
+    });
+    expect(selectProviderProfilesForBase.select(h.state(), 'codex')[0].backup).toBe(true);
+    // Our own `reordered` event (same revision) needs no extra read.
+    h.dispatch(providerProfilesChanged(4));
+    await settle();
+    expect(mocks.list).toHaveBeenCalledTimes(1);
+  });
+
+  it('rolls back a rejected reorder, records the failure and re-reads the list', async () => {
+    const h = await loadedWith([withBackup('pa', 'A'), withBackup('pb', 'B')]);
+    mocks.reorder.mockRejectedValue({
+      rpcCode: -32602,
+      data: {
+        code: 'invalid-params',
+        fieldErrors: [{ field: 'profileIds', code: 'profile-order-incomplete', message: 'x' }],
+      },
+    });
+    h.dispatch(
+      providerProfileReorderRequested({
+        requestId: 'o2',
+        baseProviderId: 'codex',
+        profileIds: ['pb', 'pa'],
+      }),
+    );
+    await settle();
+    expect(selectProviderProfilesForBase.select(h.state(), 'codex').map((p) => p.id)).toEqual([
+      'pa',
+      'pb',
+    ]);
+    expect(selectProviderProfileMutations.select(h.state()).o2).toMatchObject({
+      kind: 'reorder',
+      status: 'failure',
+      failure: { kind: 'fieldErrors' },
+    });
+    expect(mocks.list).toHaveBeenCalledTimes(2);
+  });
+
+  it("re-reads the list on another client's reordered event", async () => {
+    const h = await loadedWith([withBackup('pa', 'A'), withBackup('pb', 'B')]);
+    mocks.list.mockResolvedValue({
+      profiles: [withBackup('pb', 'B'), withBackup('pa', 'A')],
+      revision: 4,
+    });
+    h.dispatch(providerProfilesChanged(4));
+    await settle();
+    expect(mocks.list).toHaveBeenCalledTimes(2);
+    expect(selectProviderProfilesForBase.select(h.state(), 'codex').map((p) => p.id)).toEqual([
+      'pb',
+      'pa',
+    ]);
   });
 });
 

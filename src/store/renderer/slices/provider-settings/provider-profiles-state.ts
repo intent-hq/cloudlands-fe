@@ -12,14 +12,16 @@ import {
   addItem,
   createCollection,
   getItem,
+  getItems,
   removeItem,
   updateItem,
 } from '@themislib/themis/utils/collections/collection-utils';
-import type {
-  EnvEntryWrite,
-  ProfileActivation,
-  ProviderProfile,
-  ProviderProfileFailure,
+import {
+  permuteBaseProfiles,
+  type EnvEntryWrite,
+  type ProfileActivation,
+  type ProviderProfile,
+  type ProviderProfileFailure,
 } from '$shared/provider-profiles';
 import type {
   ProviderProfileMutation,
@@ -149,6 +151,70 @@ const onSucceeded: Handler<[string, ProfileMutationResult]> = (
   };
 };
 
+/** Re-slot one base provider's profiles; unchanged state when the ids do not match. */
+function withBaseOrder(
+  state: ProviderProfilesState,
+  baseProviderId: string,
+  orderedIds: readonly string[],
+  replacements: readonly ProviderProfile[] = [],
+): ProviderProfilesState['items'] {
+  const next = permuteBaseProfiles(getItems(state.items), baseProviderId, orderedIds, replacements);
+  return next ? createCollection<ProviderProfile, 'id'>('id', next) : state.items;
+}
+
+/** Optimistic reorder: show the new order now and remember the old one for rollback. */
+const onReorder: Handler<[{ requestId: string; baseProviderId: string; profileIds: string[] }]> = (
+  state,
+  [{ requestId, baseProviderId, profileIds }],
+) => {
+  const previousOrder = getItems(state.items)
+    .filter((profile) => profile.baseProviderId === baseProviderId)
+    .map((profile) => profile.id);
+  return {
+    ...pendingMutation(state, { id: requestId, kind: 'reorder', baseProviderId, previousOrder }),
+    items: withBaseOrder(state, baseProviderId, profileIds),
+  };
+};
+
+const onReorderSucceeded: Handler<[string, ProviderProfile[], number]> = (
+  state,
+  [requestId, profiles, revision],
+) => {
+  const mutation = getItem(state.mutations, requestId);
+  if (!mutation) return state;
+  const baseProviderId = mutation.baseProviderId ?? profiles[0]?.baseProviderId;
+  // An older result than the list already shown must not resurrect stale data.
+  const items =
+    revision > state.revision && baseProviderId
+      ? withBaseOrder(
+          state,
+          baseProviderId,
+          profiles.map((profile) => profile.id),
+          profiles,
+        )
+      : state.items;
+  return {
+    ...state,
+    items,
+    revision: Math.max(state.revision, revision),
+    mutations: updateItem(state.mutations, { id: requestId, status: 'success' }),
+  };
+};
+
+const onFailed: Handler<[string, ProviderProfileFailure]> = (state, [requestId, failure]) => {
+  const mutation = getItem(state.mutations, requestId);
+  if (!mutation) return state;
+  const items =
+    mutation.kind === 'reorder' && mutation.baseProviderId && mutation.previousOrder
+      ? withBaseOrder(state, mutation.baseProviderId, mutation.previousOrder)
+      : state.items;
+  return {
+    ...state,
+    items,
+    mutations: updateItem(state.mutations, { id: requestId, status: 'failure', failure }),
+  };
+};
+
 export const profileHandlers = {
   loaded: onLoaded,
   loadFailed: ((state) => ({ ...state, loadStatus: 'failure' })) as Handler<[]>,
@@ -169,13 +235,9 @@ export const profileHandlers = {
       profileId: payload.profileId,
     })) as Handler<[{ requestId: string; profileId: string }]>,
   succeeded: onSucceeded,
-  failed: ((state, [requestId, failure]) =>
-    getItem(state.mutations, requestId)
-      ? {
-          ...state,
-          mutations: updateItem(state.mutations, { id: requestId, status: 'failure', failure }),
-        }
-      : state) as Handler<[string, ProviderProfileFailure]>,
+  reorder: onReorder,
+  reorderSucceeded: onReorderSucceeded,
+  failed: onFailed,
   dismissed: ((state, [requestId]) =>
     getItem(state.mutations, requestId)
       ? { ...state, mutations: removeItem(state.mutations, requestId) }

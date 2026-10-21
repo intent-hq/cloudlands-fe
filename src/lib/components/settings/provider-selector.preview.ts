@@ -129,6 +129,22 @@ export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
         };
       },
     },
+    // A daemon with backup failover: profiles can be reordered (drag or arrow
+    // keys on the handle) and backups carry a badge.
+    'profiles-backup': {
+      props: {},
+      setup: () => {
+        const restoreProviders = setupProviderSelector();
+        const restoreProfiles = setupProviderProfilesPreview({
+          appOwned: true,
+          backupSupported: true,
+        });
+        return () => {
+          restoreProfiles();
+          restoreProviders();
+        };
+      },
+    },
     // Settings → Labs → Provider profiles off: saved profiles exist, but no
     // profile management is offered.
     'profiles-labs-off': {

@@ -5,7 +5,12 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import { classifyProviderProfileError, type ProviderProfile } from '$shared/provider-profiles';
+import {
+  classifyProviderProfileError,
+  permuteBaseProfiles,
+  profilesSupportBackup,
+  type ProviderProfile,
+} from '$shared/provider-profiles';
 import { LiveProvidersClient } from './live-providers-client';
 
 const PROFILE: ProviderProfile = {
@@ -179,6 +184,113 @@ describe('LiveProvidersClient profiles', () => {
         { kind: 'specialistModelOption', specialistId: 'reviewer', source: 'user', index: 1 },
       ],
     });
+  });
+});
+
+describe('LiveProvidersClient backup failover (§5.54)', () => {
+  let client: LiveProvidersClient;
+  let invoke: ReturnType<typeof vi.fn>;
+  let originalWindow: typeof globalThis.window;
+
+  beforeEach(() => {
+    originalWindow = globalThis.window;
+    client = new LiveProvidersClient();
+    invoke = vi.fn();
+    vi.stubGlobal('window', { electronAPI: { invoke, on: vi.fn(), offById: vi.fn() } });
+  });
+  afterEach(() => vi.stubGlobal('window', originalWindow));
+
+  const lastRequest = () => invoke.mock.calls.at(-1);
+  const BACKUP = { ...PROFILE, backup: true };
+
+  it('sends backup on create and update only when given', async () => {
+    invoke.mockResolvedValue({ ok: true, result: { profile: BACKUP, revision: 4 } });
+    await expect(
+      client.createProfile({ baseProviderId: 'codex', name: 'Work', backup: true }),
+    ).resolves.toMatchObject({ profile: { backup: true } });
+    expect(lastRequest()?.[1]).toEqual({
+      method: 'providers.profiles.create',
+      params: { baseProviderId: 'codex', name: 'Work', backup: true },
+    });
+    await client.createProfile({ baseProviderId: 'codex', name: 'Work' });
+    expect(lastRequest()?.[1].params).not.toHaveProperty('backup');
+
+    invoke.mockResolvedValue({
+      ok: true,
+      result: {
+        profile: { ...PROFILE, backup: false },
+        revision: 5,
+        activation: { envChanged: false, runningProcesses: 0 },
+      },
+    });
+    await client.updateProfile({ profileId: PROFILE.id, backup: false });
+    expect(lastRequest()?.[1]).toEqual({
+      method: 'providers.profiles.update',
+      params: { profileId: PROFILE.id, backup: false },
+    });
+  });
+
+  it('reorders one base provider and validates the result', async () => {
+    const second = { ...BACKUP, id: 'psecond', providerRef: 'codex@psecond', name: 'Second' };
+    invoke.mockResolvedValue({ ok: true, result: { profiles: [second, BACKUP], revision: 6 } });
+    await expect(
+      client.reorderProfiles({ baseProviderId: 'codex', profileIds: ['psecond', PROFILE.id] }),
+    ).resolves.toEqual({ profiles: [second, BACKUP], revision: 6 });
+    expect(lastRequest()).toEqual([
+      IPC_CHANNELS.BACKEND.REQUEST,
+      {
+        method: 'providers.profiles.reorder',
+        params: { baseProviderId: 'codex', profileIds: ['psecond', PROFILE.id] },
+      },
+    ]);
+    invoke.mockResolvedValue({ ok: true, result: { profiles: [{ ...BACKUP, backup: 'yes' }] } });
+    await expect(
+      client.reorderProfiles({ baseProviderId: 'codex', profileIds: [PROFILE.id] }),
+    ).rejects.toThrow();
+  });
+
+  it('classifies reorder field errors', () => {
+    expect(
+      classifyProviderProfileError({
+        data: {
+          code: 'invalid-params',
+          fieldErrors: [
+            { field: 'profileIds', code: 'profile-order-incomplete', message: 'missing' },
+          ],
+        },
+      }),
+    ).toEqual({
+      kind: 'fieldErrors',
+      fieldErrors: [{ field: 'profileIds', code: 'profile-order-incomplete', message: 'missing' }],
+    });
+  });
+});
+
+describe('profilesSupportBackup / permuteBaseProfiles', () => {
+  const p = (id: string, base: string, backup?: boolean) => ({
+    id,
+    baseProviderId: base,
+    ...(backup === undefined ? {} : { backup }),
+  });
+
+  it('detects support only when every read profile carries backup', () => {
+    expect(profilesSupportBackup([])).toBe(false);
+    expect(profilesSupportBackup([p('a', 'codex')])).toBe(false);
+    expect(profilesSupportBackup([p('a', 'codex', false), p('b', 'codex')])).toBe(false);
+    expect(profilesSupportBackup([p('a', 'codex', false), p('b', 'codex', true)])).toBe(true);
+  });
+
+  it("permutes one base provider's slots and keeps other base providers in place", () => {
+    const all = [p('a', 'codex'), p('x', 'claude-code'), p('b', 'codex'), p('c', 'codex')];
+    expect(permuteBaseProfiles(all, 'codex', ['c', 'a', 'b'])?.map(({ id }) => id)).toEqual([
+      'c',
+      'x',
+      'a',
+      'b',
+    ]);
+    expect(permuteBaseProfiles(all, 'codex', ['c', 'a'])).toBeUndefined();
+    expect(permuteBaseProfiles(all, 'codex', ['c', 'a', 'a'])).toBeUndefined();
+    expect(permuteBaseProfiles(all, 'codex', ['c', 'a', 'x'])).toBeUndefined();
   });
 });
 

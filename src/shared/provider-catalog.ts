@@ -68,6 +68,8 @@ const ProviderProfileSummarySchema = z
     providerRef: z.string().min(1),
     baseProviderId: z.string().min(1),
     name: z.string(),
+    /** Backup failover flag; absent on daemons without backup failover. */
+    backup: z.boolean().optional(),
   })
   .passthrough();
 

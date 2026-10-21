@@ -38,8 +38,12 @@ export type ProviderProfileStatus = 'configured' | 'checking' | 'ready' | 'error
 
 export type ProviderProfileMutation = {
   id: string;
-  kind: 'create' | 'update' | 'delete';
+  kind: 'create' | 'update' | 'delete' | 'reorder';
   profileId?: string;
+  /** Reorder only: the base provider whose profiles were reordered. */
+  baseProviderId?: string;
+  /** Reorder only: the order shown before the optimistic change, for rollback. */
+  previousOrder?: string[];
   status: 'pending' | 'success' | 'failure';
   failure?: ProviderProfileFailure;
   activation?: ProfileActivation;

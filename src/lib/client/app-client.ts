@@ -82,6 +82,8 @@ import type {
   ProviderProfileCreateParams,
   ProviderProfileCreateResult,
   ProviderProfileDeleteResult,
+  ProviderProfileReorderParams,
+  ProviderProfileReorderResult,
   ProviderProfilesListResult,
   ProviderProfileUpdateParams,
   ProviderProfileUpdateResult,
@@ -2192,6 +2194,8 @@ export interface ProvidersClient {
   createProfile(params: ProviderProfileCreateParams): Promise<ProviderProfileCreateResult>;
   updateProfile(params: ProviderProfileUpdateParams): Promise<ProviderProfileUpdateResult>;
   deleteProfile(profileId: string): Promise<ProviderProfileDeleteResult>;
+  /** Call only when profile reads report `backup` (backup failover support). */
+  reorderProfiles(params: ProviderProfileReorderParams): Promise<ProviderProfileReorderResult>;
 }
 
 /** Wire `period` mode for `stats.getUsage`. */
