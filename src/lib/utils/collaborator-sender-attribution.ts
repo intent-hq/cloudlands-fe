@@ -173,11 +173,15 @@ export function stripCollaboratorSenderPreamble(
 /**
  * The sender attribution the daemon will give the viewer's own human send into
  * `workspace`, predicted for display-only pending rows so their author row does
- * not pop in when the confirmed row arrives. Mirrors the daemon's
+ * not pop in when the confirmed row arrives. Follows the daemon's
  * `collaborator_sender_preamble` rule: a host member outside the chief
  * workspace, or a guest whose workspace role is `collaborator`, gets the
- * matching template; the workspace owner and every unknown or other role get
- * null. The confirmed row stays authoritative; this never touches content.
+ * matching template; every unknown or other role gets null. The viewer who
+ * owns the workspace also gets null, matching how confirmed rows render
+ * (`getCollaboratorSenderAttribution` never attributes the owner), even though
+ * the daemon still prepends the member template for a host member who owns an
+ * ordinary workspace. The confirmed row stays authoritative; this never
+ * touches content.
  */
 export function predictOwnSenderAttribution(input: {
   hostRole: HostRole | null | undefined;
