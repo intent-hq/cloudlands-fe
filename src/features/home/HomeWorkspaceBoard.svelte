@@ -12,7 +12,11 @@
   import { WorkspaceStatusEnum } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
   import { getHomeTriageGroup } from './home-model';
-  import { openHomeWorkspaceFromEvent } from './home-workspace-opening';
+  import {
+    ignoreRepeatHomeWorkspaceClick,
+    openHomeWorkspaceFromDoubleClick,
+    openHomeWorkspaceFromEvent,
+  } from './home-workspace-opening';
 
   let {
     workspaces,
@@ -101,9 +105,15 @@
               wrapContent={false}
               class="h-auto min-w-0 w-full shrink-0 flex-col items-stretch whitespace-normal rounded-xl border-border bg-background gap-0 p-3 text-left shadow-xs"
               onclick={(event) => {
+                if (ignoreRepeatHomeWorkspaceClick(event)) return;
                 if (!openHomeWorkspaceFromEvent(event, workspace.id, onopen))
                   onselect(workspace.id);
               }}
+              ondblclick={(event) =>
+                openHomeWorkspaceFromDoubleClick(event, workspace.id, (id) => {
+                  if (selectedId !== id) onselect(id);
+                  onopen(id);
+                })}
               oncontextmenu={(event) => oncontextmenu?.(event, workspace)}
               onkeydown={(event) => {
                 oncontextmenu?.(event, workspace);

@@ -15,7 +15,11 @@
   } from '$lib/components/ui/sidebar-context-menu/types';
   import { selectPinnedWorkspaceIds } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
-  import { openHomeWorkspaceFromEvent } from './home-workspace-opening';
+  import {
+    ignoreRepeatHomeWorkspaceClick,
+    openHomeWorkspaceFromDoubleClick,
+    openHomeWorkspaceFromEvent,
+  } from './home-workspace-opening';
   import { createHomeWorkspaceMenu } from './home-workspace-menu';
   import { faThumbtack } from '@fortawesome/free-solid-svg-icons';
   import { tick, untrack } from 'svelte';
@@ -905,7 +909,15 @@
                             <ListRow
                               class="home-list-row h-12 items-center border-b border-border px-3 py-1"
                               data-home-workspace={item.id}
-                              onclick={(event) => openModifiedWorkspace(event, item.id)}
+                              onclick={(event) => {
+                                if (!ignoreRepeatHomeWorkspaceClick(event))
+                                  openModifiedWorkspace(event, item.id);
+                              }}
+                              ondblclick={(event) =>
+                                openHomeWorkspaceFromDoubleClick(event, item.id, (id) => {
+                                  updateView({ selectedId: id });
+                                  openWorkspace(id);
+                                })}
                               oncontextmenu={(event) => showWorkspaceMenu(event, item)}
                             >
                               {#snippet leading()}
@@ -1077,9 +1089,11 @@
                                   ? workspace.title
                                   : m.workspace_links_untitled_label()}
                               selectable="single"
-                              selectedKeys={selectedWorkspace ? [selectedWorkspace.id] : []}
-                              onSelectedKeysChange={(keys) =>
-                                updateView({ selectedId: keys[0] ? String(keys[0]) : null })}
+                              bind:selectedKeys={
+                                () => (selectedWorkspace ? [selectedWorkspace.id] : []),
+                                (keys) =>
+                                  updateView({ selectedId: keys[0] ? String(keys[0]) : null })
+                              }
                               ariaLabel={label}
                               class={scroll
                                 ? 'min-h-0 flex-1 overflow-y-auto px-5 pb-4'

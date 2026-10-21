@@ -121,3 +121,54 @@ test('Home board supports modifier click and keyboard opening', async ({ mount, 
     .toBe('home-running');
   await expect(component.locator('[data-home-detail]')).toHaveCount(0);
 });
+
+test('Home opens a list row on double-click and keeps it selected', async ({ mount, page }) => {
+  const component = await mount(Preview);
+  const row = component.locator('[data-home-workspace="home-review"]');
+  await row.dblclick();
+  await expect
+    .poll(() => page.evaluate(() => window.__homeWorkspacePreview?.navigation().currentTabId))
+    .toBe('home-review');
+  await expect(row.locator('..')).toHaveAttribute('aria-selected', 'true');
+  const tabs = await page.evaluate(() => window.__homeWorkspacePreview?.navigation().tabOrder);
+  expect(tabs?.filter((id) => id === 'home-review')).toHaveLength(1);
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe('');
+});
+
+test('Home double-click on an already selected row opens it without deselecting', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(Preview);
+  const row = component.locator('[data-home-workspace="home-review"]');
+  await row.click();
+  await expect(row.locator('..')).toHaveAttribute('aria-selected', 'true');
+  await row.dblclick();
+  await expect
+    .poll(() => page.evaluate(() => window.__homeWorkspacePreview?.navigation().currentTabId))
+    .toBe('home-review');
+  await expect(row.locator('..')).toHaveAttribute('aria-selected', 'true');
+});
+
+test('Home double-click on a row menu button does not open the workspace', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(Preview);
+  const row = component.locator('[data-home-workspace="home-review"]');
+  const before = await page.evaluate(() => window.__homeWorkspacePreview?.navigation());
+  await row.getByRole('button').dblclick();
+  expect(await page.evaluate(() => window.__homeWorkspacePreview?.navigation())).toEqual(before);
+});
+
+test('Home board opens a card on double-click', async ({ mount, page }) => {
+  const component = await mount(Preview, { props: { scenario: 'board' } });
+  const card = component.locator('[data-home-workspace="home-review"]');
+  await card.dblclick();
+  await expect
+    .poll(() => page.evaluate(() => window.__homeWorkspacePreview?.navigation().currentTabId))
+    .toBe('home-review');
+  await expect(card).toHaveAttribute('aria-pressed', 'true');
+  const tabs = await page.evaluate(() => window.__homeWorkspacePreview?.navigation().tabOrder);
+  expect(tabs?.filter((id) => id === 'home-review')).toHaveLength(1);
+});
