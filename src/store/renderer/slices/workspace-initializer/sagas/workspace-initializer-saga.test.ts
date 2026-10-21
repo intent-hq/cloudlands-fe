@@ -34,6 +34,7 @@ vi.mock('$lib/utils/client-logger', () => ({
 }));
 
 import { resetOnboarding } from '$store/renderer/slices/onboarding/onboarding-slice';
+import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
 import {
   cancelWorkspaceInitializerOnboardingFormStateDebounce,
   debounceWorkspaceInitializerOnboardingFormState,
@@ -867,7 +868,10 @@ describe('workspaceInitializerSaga', () => {
         step: 'project',
       }),
     );
-    channel.put(resetOnboarding());
+    const admission = selectPrincipalActionContext.select(
+      withLegacyPrincipal({ workspaceInitializer: slice }),
+    );
+    channel.put(resetOnboarding(admission ?? undefined));
     await settle();
 
     expect(sessionStorage.getItem('onboarding-prompt')).toBe(null);
@@ -940,7 +944,8 @@ describe('workspaceInitializerSaga', () => {
     );
     await settle();
 
-    dispatch(resetOnboarding());
+    const admission = selectPrincipalActionContext.select(state());
+    dispatch(resetOnboarding(admission ?? undefined));
     await settle();
 
     expect(mocks.clearDraft).not.toHaveBeenCalled();

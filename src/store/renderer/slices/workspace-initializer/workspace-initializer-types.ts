@@ -276,6 +276,8 @@ export interface WorkspaceInitializationSetupScriptRecord {
 interface WorkspaceInitializationCompletion {
   draft?: { ownerId: string; restoreRequestId: string; clear: boolean };
   lastSelectedRepo?: WorkspaceInitializerRepoSelection;
+  compactFormState?: CompactWorkspaceInitializerFormState;
+  onboarding?: true;
 }
 
 /** Editor context mention (issue, PR, …) captured at submit. */
@@ -298,8 +300,20 @@ interface WorkspaceInitializationFileMention {
   meta?: Record<string, WorkspaceInitializationJson>;
 }
 
+export interface WorkspaceInitializationPreparationSnapshot {
+  runtimeReferences: WorkspaceInitializationJson[];
+  setupScript: string;
+  setupScriptName: string;
+  setupScriptNameSource: SetupScriptNameSource;
+  repoConfigScript: string | null;
+  repoConfigScriptRepo: string | null;
+  repoConfigUnavailable?: boolean;
+}
+
 interface WorkspaceInitializationSubmissionBase {
   admission: string;
+  /** One-shot component-local preparation registered outside serializable Redux state. */
+  preparationId?: string;
   prompt: string;
   contextMentions: WorkspaceInitializationContextMention[];
   fileMentions: WorkspaceInitializationFileMention[];
@@ -331,6 +345,7 @@ export interface CompactWorkspaceInitializationSubmission extends WorkspaceIniti
   remoteSetup: WorkspaceInitializerRemoteSetup | null;
   checkoutFormId: string;
   repositoryCheckout: CheckoutSelection | null;
+  repositoryCheckoutDraft?: RepositoryCheckoutDraft;
   checkoutContextUrl: string | null;
   checkoutInstanceBaseUrl: string | null;
   selectedPRBranch: string;

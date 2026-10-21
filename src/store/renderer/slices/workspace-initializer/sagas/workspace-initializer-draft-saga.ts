@@ -54,6 +54,7 @@ type RestoreStatus = 'pending' | 'restored' | 'empty' | 'error';
 interface DraftOwner {
   requestId: string;
   admission: string;
+  discardKey: string;
   status: RestoreStatus;
   task?: Task;
 }
@@ -65,6 +66,7 @@ interface PendingSave {
   version: number;
   ownerRequestId: string;
   admission: string;
+  discardKey: string;
 }
 
 // Daemon writes are serialized across saga lifetimes: a write issued by a
@@ -270,6 +272,10 @@ export function* workspaceInitializerDraftSaga() {
   );
   let pending: Record<string, PendingSave | undefined> = {};
   const owners: DraftOwners = {};
+  // A replacement clear belongs to stable backend/principal provenance. If it
+  // fails, every later restore for that provenance must retry the discard before
+  // a drafts.get can expose retained content from the previous principal.
+  const pendingDiscards: Record<string, true | undefined> = {};
   let version = 0;
   const mutationEpoch = { value: 0 };
 
@@ -286,9 +292,13 @@ export function* workspaceInitializerDraftSaga() {
     delete pending[id];
     if (!(yield* ownerAdmitted(owners, id, save.ownerRequestId, save.admission))) return;
     if (!canPersist(owners[id], save.payload)) return;
-    yield* call(persistDraft, save.payload, () =>
+    const persisted = yield* call(persistDraft, save.payload, () =>
       ownerAdmitted(owners, id, save.ownerRequestId, save.admission),
     );
+    if (persisted && pendingDiscards[save.discardKey]) {
+      delete pendingDiscards[save.discardKey];
+      yield* call(removeAllLegacyPrompts);
+    }
   }
 
   try {
@@ -302,7 +312,7 @@ export function* workspaceInitializerDraftSaga() {
       }
 
       if (action.type === workspaceInitializerDraftRestoreRequested.type) {
-        const [id, requestId, legacyKey, admission] = (
+        const [id, requestId, legacyKey, admission, discardRetained, provenance] = (
           action as ReturnType<typeof workspaceInitializerDraftRestoreRequested>
         ).payload;
         if (admission === undefined || (yield* currentAdmission()) !== admission) {
@@ -310,7 +320,65 @@ export function* workspaceInitializerDraftSaga() {
           continue;
         }
         yield* call(dropOwner, id);
-        const owner: DraftOwner = { requestId, admission, status: 'pending' };
+        const discardKey = provenance ?? admission;
+        if (discardRetained || pendingDiscards[discardKey]) {
+          pendingDiscards[discardKey] = true;
+          mutationEpoch.value++;
+          pending = {};
+          const retainedOwners: [string, DraftOwner][] = [];
+          for (const [ownerId, retainedOwner] of Object.entries(owners)) {
+            if (!retainedOwner) continue;
+            if (retainedOwner.admission !== admission) {
+              yield* call(dropOwner, ownerId);
+              continue;
+            }
+            if (retainedOwner.task) yield* cancel(retainedOwner.task);
+            retainedOwner.task = undefined;
+            retainedOwner.status = 'pending';
+            retainedOwners.push([ownerId, retainedOwner]);
+          }
+          let cleared = false;
+          try {
+            const issued = yield* call(
+              serializedWrite,
+              () =>
+                appClient.drafts.clear(
+                  NEW_WORKSPACE_DRAFT_WORKSPACE_ID,
+                  NEW_WORKSPACE_DRAFT_AGENT_ID,
+                ),
+              function* () {
+                return (yield* currentAdmission()) === admission;
+              },
+            );
+            cleared = issued && (yield* currentAdmission()) === admission;
+          } catch (error) {
+            logger.warn('drafts.clear failed while replacing draft provenance', {
+              error: String(error),
+            });
+          }
+          const status = cleared ? ('empty' as const) : ('error' as const);
+          if (cleared) {
+            delete pendingDiscards[discardKey];
+            yield* call(removeAllLegacyPrompts);
+          }
+          for (const [ownerId, retainedOwner] of retainedOwners) {
+            if (owners[ownerId] !== retainedOwner) continue;
+            retainedOwner.status = status;
+            yield* put(
+              workspaceInitializerDraftRestoreFinished(
+                ownerId,
+                retainedOwner.requestId,
+                status,
+                '',
+                [],
+              ),
+            );
+          }
+          owners[id] = { requestId, admission, discardKey, status };
+          yield* put(workspaceInitializerDraftRestoreFinished(id, requestId, status, '', []));
+          continue;
+        }
+        const owner: DraftOwner = { requestId, admission, discardKey, status: 'pending' };
         owners[id] = owner;
         owner.task = yield* fork(
           restoreDraftInBackground,
@@ -343,15 +411,23 @@ export function* workspaceInitializerDraftSaga() {
         const [id, payload, ownerRequestId, admission] = (
           action as ReturnType<typeof workspaceInitializerDraftSaveScheduled>
         ).payload;
+        const owner = owners[id];
         if (
           ownerRequestId === undefined ||
           admission === undefined ||
+          !owner ||
           !(yield* ownerAdmitted(owners, id, ownerRequestId, admission))
         )
           continue;
         mutationEpoch.value++;
         const nextVersion = ++version;
-        pending[id] = { payload, version: nextVersion, ownerRequestId, admission };
+        pending[id] = {
+          payload,
+          version: nextVersion,
+          ownerRequestId,
+          admission,
+          discardKey: owner.discardKey,
+        };
         yield* fork(draftDebounceTimer, id, nextVersion);
         continue;
       }
@@ -393,13 +469,15 @@ export function* workspaceInitializerDraftSaga() {
           action as ReturnType<typeof workspaceInitializerDraftClearRequested>
         ).payload;
         const current = yield* currentAdmission();
-        // An ownerless clear is the root reset; it acts under the current admission.
-        const clearAdmission = ownerRequestId === undefined ? (admission ?? current) : admission;
+        // An ownerless clear is the root reset; its originating intent must carry authority.
+        const clearAdmission = admission;
+        const clearDiscardKey =
+          ownerRequestId === undefined ? clearAdmission : owners[id]?.discardKey;
         const admitted =
           ownerRequestId === undefined
             ? current !== undefined && clearAdmission === current
             : yield* ownerAdmitted(owners, id, ownerRequestId, admission);
-        if (!admitted || clearAdmission === undefined) {
+        if (!admitted || clearAdmission === undefined || clearDiscardKey === undefined) {
           yield* put(workspaceInitializerDraftClearFinished(id, requestId, 'failure'));
           continue;
         }
@@ -432,7 +510,10 @@ export function* workspaceInitializerDraftSaga() {
           logger.warn('drafts.clear failed', { error: String(error) });
         }
         // Legacy prompts are removed only after a confirmed clear under unchanged authority.
-        if (cleared) yield* call(removeAllLegacyPrompts);
+        if (cleared) {
+          delete pendingDiscards[clearDiscardKey];
+          yield* call(removeAllLegacyPrompts);
+        }
         for (const [ownerId, restoreRequestId] of others) {
           const owner = owners[ownerId];
           if (owner?.requestId !== restoreRequestId) continue;

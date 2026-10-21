@@ -425,8 +425,11 @@ describe('onboarding repo-config setup script detection', () => {
     renderPage();
     const restores = () =>
       dispatchedActions().filter(
-        (action): action is ObservedAction & { payload: [string, string, string, string] } =>
-          action.type === workspaceInitializerDraftRestoreRequested.type,
+        (
+          action,
+        ): action is ObservedAction & {
+          payload: ReturnType<typeof workspaceInitializerDraftRestoreRequested>['payload'];
+        } => action.type === workspaceInitializerDraftRestoreRequested.type,
       );
 
     await waitFor(() => expect(restores()).toHaveLength(1));
@@ -443,6 +446,8 @@ describe('onboarding repo-config setup script detection', () => {
     expect(second.payload[0]).toBe(first.payload[0]);
     expect(second.payload[1]).not.toBe(first.payload[1]);
     expect(second.payload[3]).not.toBe(first.payload[3]);
+    expect(first.payload[5]).toBeTruthy();
+    expect(second.payload[5]).toBe(first.payload[5]);
   });
 
   it('restores the prompt when admission changes during submission preparation', async () => {
@@ -1992,9 +1997,9 @@ describe('onboarding first-message attachments (intent-hq/intent#4050)', () => {
 
 describe('onboarding test teardown', () => {
   it('settles a successful create through its completion before the store is disposed', async () => {
-    // A successful create keeps running after workspace.create resolves: up to
-    // two 300ms setup-card beats, then store dispatches and navigation. If
-    // afterEach disposes the store first, those late dispatches throw
+    // A successful create keeps running after workspace.create resolves: domain
+    // completion is immediate, while navigation waits up to two 300ms setup-card
+    // beats. If afterEach disposes the store first, late presentation work throws
     // "Cannot access Store.dispatch before Store.init()" as an unhandled error
     // that fails whichever shard is still running.
     mocks.workspaceCreate.mockResolvedValue({
@@ -2026,9 +2031,7 @@ describe('onboarding test teardown', () => {
 
     await settleInFlightCreates();
 
-    expect(dispatchedActions().filter((a) => a.type === 'onboarding/setWorkspaceId')).toHaveLength(
-      1,
-    );
+    expect(appStore.state.onboarding.workspaceId).toBe('ws-1');
     expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-1', { replaceState: true });
   });
 });

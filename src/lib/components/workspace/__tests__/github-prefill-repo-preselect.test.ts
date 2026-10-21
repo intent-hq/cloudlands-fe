@@ -163,13 +163,6 @@ vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
   workspaceClient: { create: vi.fn(), update: vi.fn() },
 }));
 
-vi.mock('$lib/components/workspace/initializer/new-workspace-draft', () => ({
-  LEGACY_PROMPT_SESSION_KEY: 'legacy-prompt',
-  restoreNewWorkspaceDraft: vi.fn(async () => ({ status: 'none' })),
-  createNewWorkspaceDraftSaver: vi.fn(() => ({ schedule: vi.fn(), flush: vi.fn() })),
-  clearNewWorkspaceDraft: vi.fn(),
-}));
-
 // Route the electron-bridge `git-tracking:get-remote-url` probe (used both by
 // the detected-suffix effect and the prefill repo matcher) to a per-test mock.
 vi.mock('$lib/electron-bridge', () => ({
