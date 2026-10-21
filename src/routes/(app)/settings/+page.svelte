@@ -5,9 +5,11 @@
   import {
     selectIsReadyToInstall,
     selectAutoUpdateStatus,
+    selectShareUpdateStatistics,
   } from '$store/renderer/slices/auto-update/auto-update-selectors';
   import {
     installUpdate,
+    setShareUpdateStatistics,
     simulateSetState,
   } from '$store/renderer/slices/auto-update/auto-update-slice';
   import AdministratorSettings from '$lib/components/settings/AdministratorSettings.svelte';
@@ -92,6 +94,7 @@
   const isReadyToInstall$ = selectIsReadyToInstall();
   const autoUpdateStatus$ = selectAutoUpdateStatus();
   const updateChannel$ = selectUpdateChannel();
+  const shareUpdateStatistics$ = selectShareUpdateStatistics();
   const noteFontStyle = selectNoteFontStyle();
   const isNoteMonospace = selectIsNoteMonospace();
   const agentFontStyle = selectAgentFontStyle();
@@ -913,6 +916,23 @@
                       </Select.Content>
                     </Select.Root>
                   </div>
+                </SettingsFieldRow>
+              </section>
+              <section data-slot="settings-section-body" class="px-6 py-4">
+                <SettingsFieldRow
+                  id="settings-shareUpdateStatistics-label-field"
+                  label={m.settings_shareUpdateStatistics_label()}
+                  description={m.settings_shareUpdateStatistics_description()}
+                >
+                  <Switch
+                    id="share-update-statistics-switch"
+                    size="sm"
+                    class="mb-auto"
+                    checked={$shareUpdateStatistics$}
+                    onCheckedChange={(enabled) =>
+                      appStore.dispatch(setShareUpdateStatistics(enabled))}
+                    ariaLabel={m.settings_shareUpdateStatistics_label()}
+                  />
                 </SettingsFieldRow>
               </section>
             </div>
