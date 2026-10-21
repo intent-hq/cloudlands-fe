@@ -624,14 +624,17 @@ const bootFlow = app.whenReady().then(async () => {
   // quit runs through before-quit's running-agent prompt and the hard-exit
   // watchdog never arms, so `kill <pid>` with an agent responding waits on a
   // dialog forever. Registering after ready restores the prompt-free path.
-  process.on('SIGTERM', async () => {
-    logger.info('SIGTERM received, shutting down gracefully...');
+  // libuv installs the OS handler only when the first listener for a signal
+  // starts, so no other module-load SIGINT/SIGTERM listener may exist.
+  // Signal quits skip before-quit, so persist window sessions here as
+  // before-quit does.
+  const onShutdownSignal = async (signal: 'SIGTERM' | 'SIGINT') => {
+    logger.info(`${signal} received, shutting down gracefully...`);
+    if (!isShuttingDown) await saveOpenWindowSessions();
     await gracefulShutdown();
-  });
-  process.on('SIGINT', async () => {
-    logger.info('SIGINT received, shutting down gracefully...');
-    await gracefulShutdown();
-  });
+  };
+  process.on('SIGTERM', () => void onShutdownSignal('SIGTERM'));
+  process.on('SIGINT', () => void onShutdownSignal('SIGINT'));
 
   startupMetrics.start('total');
   logger.info('Setting up critical IPC handlers for fast startup');

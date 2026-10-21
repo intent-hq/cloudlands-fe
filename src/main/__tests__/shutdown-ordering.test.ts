@@ -390,7 +390,10 @@ describe('gracefulShutdown call ordering (AST)', () => {
     const sf = parseIndex();
     const signalRegistrations: ts.CallExpression[] = [];
     const visit = (n: ts.Node) => {
-      if (ts.isCallExpression(n) && n.expression.getText() === 'process.on') {
+      if (
+        ts.isCallExpression(n) &&
+        /^process\.(on|once|addListener|prependListener)$/.test(n.expression.getText())
+      ) {
         const [evtArg] = n.arguments;
         if (evtArg && ts.isStringLiteral(evtArg) && /^SIG(INT|TERM)$/.test(evtArg.text)) {
           signalRegistrations.push(n);
