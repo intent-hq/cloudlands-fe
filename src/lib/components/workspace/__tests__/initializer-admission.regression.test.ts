@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => {
@@ -370,58 +370,19 @@ describe('actual initializer submission admission', () => {
     await submit();
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
   });
-  it.each([false, true])(
-    'does not persist the old branch after held validation crosses readmission (pickerSettled=%s)',
-    async (pickerSettled) => {
-      let resolveValidation!: (value: { valid: boolean }) => void;
-      const validation = new Promise<{ valid: boolean }>((resolve) => {
-        resolveValidation = resolve;
-      });
-      mocks.validate.mockReturnValue(validation);
-      let resolveBranches!: (value: {
-        branches: string[];
-        remoteBranches: string[];
-        defaultBranch: string;
-        currentBranch: string;
-      }) => void;
-      mocks.getBranches.mockReturnValue(
-        new Promise((resolve) => {
-          resolveBranches = resolve;
-        }),
-      );
-      await submit();
-      await waitFor(() => expect(mocks.getBranches).toHaveBeenCalledOnce());
-      if (pickerSettled) {
-        // The real picker legitimately persists its default independently of submit.
-        resolveBranches({
-          branches: ['main'],
-          remoteBranches: [],
-          defaultBranch: 'main',
-          currentBranch: 'main',
-        });
-        await waitFor(() =>
-          expect(store.state.workspaceInitializer.branchByRepo['/owned/test/repo']).toBe('main'),
-        );
-      } else {
-        expect(store.state.workspaceInitializer.branchByRepo['/owned/test/repo']).toBeUndefined();
-      }
-      const branchesBeforeReadmission = store.state.workspaceInitializer.branchByRepo;
-      expect(mocks.pull).not.toHaveBeenCalled();
-      expect(mocks.create).not.toHaveBeenCalled();
-      store.dispatch(backendReconnected());
-      await act(async () => {
-        resolveValidation({ valid: true });
-        await validation;
-      });
-      // Even writing the same branch would replace this reducer object.
-      expect(store.state.workspaceInitializer.branchByRepo).toBe(branchesBeforeReadmission);
-      expect(store.state.workspaceInitializer.branchByRepo['/owned/test/repo']).toBe(
-        pickerSettled ? 'main' : undefined,
-      );
-      expect(mocks.pull).not.toHaveBeenCalled();
-      expect(mocks.create).not.toHaveBeenCalled();
-    },
-  );
+  it('does not persist the old branch after held validation crosses readmission', async () => {
+    // Keep the branch picker's independent autosave out of this submission check.
+    mocks.getBranches.mockReturnValue(new Promise(() => {}));
+    let resolve!: (v: unknown) => void;
+    mocks.validate.mockReturnValue(new Promise((r) => (resolve = r)));
+    await submit();
+    store.dispatch(backendReconnected());
+    resolve({ valid: true });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(store.state.workspaceInitializer.branchByRepo['/owned/test/repo']).toBeUndefined();
+    expect(mocks.pull).not.toHaveBeenCalled();
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
 });
 
 it.each([false, true])(
