@@ -41,7 +41,7 @@ function* checkProviderCliRequirements() {
 type UpdateAction = ReturnType<typeof providerCliUpdateRequested>;
 
 /** Same root-terminal route as onboarding's Claude login (`openClaudeLoginWorker`). */
-export function* openProviderCliUpdateWorker(action: UpdateAction) {
+function* openProviderCliUpdateWorker(action: UpdateAction) {
   try {
     const [providerId] = action.payload;
     // Only the renderer-owned allowlist is ever executed, never a caller string.
