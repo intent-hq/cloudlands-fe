@@ -7511,6 +7511,7 @@
   "chat_failureRecovery_action_description": "The response stopped before it finished.",
   "providers_cliVersionWarning_title": "{provider} CLI is out of date",
   "providers_cliVersionWarning_description": "Installed {version}, but {minimumVersion} or later is required. Update the CLI on the daemon host.",
+  "providers_cliVersionWarning_update_action": "Update",
   "workspace_peopleActivity_actorAction_label": "{name}: {action}",
   "workspace_peopleActivity_messagedAgent_label": "Sent a message to {agent}",
   "workspace_peopleActivity_sentMessage_label": "Sent a message",
