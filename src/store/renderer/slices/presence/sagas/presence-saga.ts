@@ -72,6 +72,12 @@ import { backendRequest, observeBackendNodeCapabilities } from '$lib/client/live
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { createElectronChannel } from '../../../utils/ipc-channel';
+import {
+  applyPresenceVisibilityEvent,
+  type PresenceVisibilityEvent,
+  type PresenceVisibilityGate,
+} from '../presence-visibility-gate';
 import {
   isPresenceRoster,
   isPresenceIdentity,
@@ -212,17 +218,45 @@ function createReportSender() {
 type ReportSender = ReturnType<typeof createReportSender>;
 
 function* watchVisibility(): SagaGenerator<void> {
-  const channel = createVisibilityChannel();
+  const documentChannel = createVisibilityChannel();
+  // Agent captures keep a hidden window drawing, which makes the document
+  // briefly visible; main brackets each one so presence can ignore it.
+  const captures = createElectronChannel<{ active?: unknown }>(
+    IPC_CHANNELS.BROWSER.CAPTURE_DRAWING,
+    {
+      bufferPolicy: {
+        kind: 'lossless',
+        rationale: 'Capture start and end must pair up or presence would stay frozen.',
+      },
+    },
+  );
+  const documentVisible = () =>
+    typeof document === 'undefined' || document.visibilityState === 'visible';
+  let gate: PresenceVisibilityGate = { reported: documentVisible(), captureActive: false };
+  // No Electron bridge (web build, tests): the capture channel ends at once.
+  let capturesOpen = true;
   try {
-    if (typeof document !== 'undefined')
-      yield* put(presenceWindowVisibilityChanged(document.visibilityState === 'visible'));
+    if (typeof document !== 'undefined') yield* put(presenceWindowVisibilityChanged(gate.reported));
     while (true) {
-      const visible = yield* take(channel);
+      const { visible, capture } = capturesOpen
+        ? yield* race({ visible: take(documentChannel), capture: take(captures) })
+        : { visible: yield* take(documentChannel), capture: undefined };
       if ((visible as unknown) === END) break;
-      yield* put(presenceWindowVisibilityChanged(visible));
+      if ((capture as unknown) === END) {
+        capturesOpen = false;
+        continue;
+      }
+      const event: PresenceVisibilityEvent =
+        capture !== undefined
+          ? { kind: 'capture', active: capture.active === true, documentVisible: documentVisible() }
+          : { kind: 'document', visible: visible === true };
+      const next = applyPresenceVisibilityEvent(gate, event);
+      gate = next.gate;
+      if (next.report !== null) yield* put(presenceWindowVisibilityChanged(next.report));
     }
   } finally {
-    channel.close();
+    documentChannel.close();
+    captures.close();
   }
 }
 

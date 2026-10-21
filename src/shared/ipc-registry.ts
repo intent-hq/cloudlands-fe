@@ -590,6 +590,12 @@ export const IPC_CHANNELS = {
      * (main->renderer event)
      */
     HOST_WORKSPACE: 'browser:host-workspace',
+    /**
+     * An agent capture is (active: true) / is no longer (active: false)
+     * keeping this window drawing while hidden, so presence ignores the
+     * visibility it causes (main->renderer event)
+     */
+    CAPTURE_DRAWING: 'browser:capture-drawing',
     /** Report the workspaces this window hosts in the background (renderer->main) */
     BACKGROUND_HOSTED_WORKSPACES: 'browser:background-hosted-workspaces',
     /** Response with browser tab list (renderer->main) */
@@ -1261,6 +1267,8 @@ export const EVENT_CHANNELS = [
   'browser:list-tabs-request',
   // Background-host a workspace no window has open (agent browser ops on it)
   'browser:host-workspace',
+  // An agent capture keeps this window drawing while hidden (presence gate)
+  'browser:capture-drawing',
   // Browser tab open request from main process (agent wants to open a browser tab)
   'browser:open-tab',
   // Browser tab close request from main process (agent wants to close a browser tab)

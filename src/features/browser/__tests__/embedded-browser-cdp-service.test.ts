@@ -996,7 +996,7 @@ describe('screenshot keeps painting while the app window is minimized', () => {
   function withHost<T extends object>(guest: T, host: { backgroundThrottling: boolean }) {
     return Object.assign(guest, {
       backgroundThrottling: true,
-      hostWebContents: { ...host, isDestroyed: () => false },
+      hostWebContents: { ...host, isDestroyed: () => false, send: vi.fn() },
     });
   }
 
@@ -1075,9 +1075,42 @@ describe('screenshot keeps painting while the app window is minimized', () => {
     service.unregisterTab('tab-a');
   });
 
+  it('tells the app window a capture starts before it draws and ends after it is restored', async () => {
+    const service = await loadService();
+    const order: string[] = [];
+    const host = {
+      throttled: true,
+      isDestroyed: () => false,
+      send: vi.fn((_channel: string, data: { active: boolean }) =>
+        order.push(`send:${data.active}`),
+      ),
+      get backgroundThrottling() {
+        return this.throttled;
+      },
+      set backgroundThrottling(value: boolean) {
+        order.push(`throttling:${value}`);
+        this.throttled = value;
+      },
+    };
+    const wc = Object.assign(
+      fakeCdpWebview(78, {
+        'Page.getLayoutMetrics': LAYOUT_METRICS,
+        'Page.captureScreenshot': { data: JPEG_1PX },
+      }),
+      { backgroundThrottling: true, hostWebContents: host },
+    );
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-order', 78);
+
+    await service.screenshot('tab-order');
+
+    expect(order).toEqual(['send:true', 'throttling:false', 'throttling:true', 'send:false']);
+    service.unregisterTab('tab-order');
+  });
+
   it('keeps a shared app window drawing until its last overlapping capture finishes', async () => {
     const service = await loadService();
-    const host = { backgroundThrottling: true, isDestroyed: () => false };
+    const host = { backgroundThrottling: true, isDestroyed: () => false, send: vi.fn() };
     let releaseFirst: () => void = () => {};
     const first = Object.assign(fakeCdpWebview(76, {}), {
       backgroundThrottling: true,
@@ -1106,6 +1139,11 @@ describe('screenshot keeps painting while the app window is minimized', () => {
     releaseFirst();
     await pending;
     expect(host.backgroundThrottling).toBe(true);
+    // One start/end bracket for the whole overlap, so presence ignores it.
+    expect(host.send.mock.calls).toEqual([
+      ['browser:capture-drawing', { active: true }],
+      ['browser:capture-drawing', { active: false }],
+    ]);
     service.unregisterTab('tab-x');
     service.unregisterTab('tab-y');
   });

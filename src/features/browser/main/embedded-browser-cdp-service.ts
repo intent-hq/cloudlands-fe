@@ -2177,7 +2177,8 @@ class EmbeddedBrowserCdpService {
     // and capturePage still timed out (live test, manual build 39607559335).
     // Electron draws a window whose own webContents is unthrottled. The
     // cost is that a hidden app UI reports itself visible for the duration
-    // of the capture; a visible window is unaffected.
+    // of the capture (presence is told to ignore it); a visible window is
+    // unaffected.
     const targets = [guest, guest.hostWebContents].filter(
       (wc): wc is Electron.WebContents => !!wc && !wc.isDestroyed(),
     );
@@ -2188,6 +2189,10 @@ class EmbeddedBrowserCdpService {
         if (hold) {
           hold.count++;
         } else {
+          // Tell the app window first, so its presence ignores the
+          // visibility the lifted throttling causes; the message and the
+          // visibility change reach the renderer in this order.
+          if (wc !== guest) wc.send(IPC_CHANNELS.BROWSER.CAPTURE_DRAWING, { active: true });
           this.captureDrawingHolds.set(wc.id, { wc, previous: wc.backgroundThrottling, count: 1 });
           wc.backgroundThrottling = false;
         }
@@ -2208,7 +2213,12 @@ class EmbeddedBrowserCdpService {
         if (!hold || --hold.count > 0) continue;
         this.captureDrawingHolds.delete(wc.id);
         try {
-          if (!hold.wc.isDestroyed()) hold.wc.backgroundThrottling = hold.previous;
+          if (!hold.wc.isDestroyed()) {
+            hold.wc.backgroundThrottling = hold.previous;
+            if (hold.wc !== guest) {
+              hold.wc.send(IPC_CHANNELS.BROWSER.CAPTURE_DRAWING, { active: false });
+            }
+          }
         } catch {
           // A webContents torn down mid-capture has nothing left to restore.
         }
