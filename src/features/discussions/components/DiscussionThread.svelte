@@ -906,8 +906,9 @@
       {/if}
       <div class="flex min-w-0 flex-1 flex-col gap-1">
         <div class="relative">
+          <!-- Paint mention padding without changing the textarea's caret or wrapping. -->
           <div
-            class="pointer-events-none absolute inset-0 overflow-hidden"
+            class="pointer-events-none absolute inset-y-0 -inset-x-0.5 overflow-hidden px-0.5"
             aria-hidden="true"
             data-discussion-mention-highlights
           >
@@ -917,7 +918,7 @@
               style:transform={`translateY(${-composerScrollTop}px)`}
             >
               {#each composerParts as part}{#if typeof part !== 'string' && part.kind === 'mention'}<mark
-                    class="rounded-sm bg-primary text-primary-foreground"
+                    class="box-decoration-clone rounded-sm bg-primary text-primary-foreground ring-2 ring-primary"
                     data-discussion-composer-mention
                     data-discussion-inline-mention={part.agentId}>@{part.name}</mark
                   >{:else if typeof part === 'string'}{part}{/if}{/each}
