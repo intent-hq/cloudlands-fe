@@ -182,6 +182,8 @@ export const selectSoundEnabled = store.createSelector((state) => {
   return state.userPreferences.soundEnabled;
 });
 
+export const selectSoundPath = store.createSelector((state) => state.userPreferences.soundPath);
+
 export const selectSoundOnlyWhenUnfocused = store.createSelector((state) => {
   return state.userPreferences.soundOnlyWhenUnfocused;
 });
@@ -196,6 +198,11 @@ export const selectNotificationVolumeWrite = store.createSelector((state) => {
     hydrationEpoch: state.userPreferences.notificationVolumeHydrationEpoch,
   };
 });
+
+export const selectNotificationSettingsWrite = store.createSelector((state) => ({
+  edits: state.userPreferences.pendingNotificationSettingsEdits,
+  hydrationEpoch: state.userPreferences.notificationVolumeHydrationEpoch,
+}));
 
 export const selectActivityLogPresets = store.createSelector((state) => {
   return state.userPreferences.activityLogPresets;

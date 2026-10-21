@@ -5,6 +5,11 @@
  */
 
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, shell } from 'electron';
+import { pickNotificationSound, readNotificationSound } from './notification-audio';
+import {
+  PickNotificationSoundSchema,
+  ReadNotificationSoundSchema,
+} from '../../../shared/notification-audio';
 import { assertNormalAppOperation, isIsolatedTestBuild } from '../../../main/isolated-test-profile';
 import { spawn } from 'child_process';
 import {
@@ -67,6 +72,7 @@ import {
   APP_CHANNELS,
   DEEP_LINK_CHANNELS,
   DIALOG_CHANNELS,
+  NOTIFICATION_CHANNELS,
   JETBRAINS_CHANNELS,
   LEGACY_CHANNELS,
   SHELL_CHANNELS,
@@ -1274,6 +1280,23 @@ export function setupSystemIPC() {
         return result.response;
       },
       DIALOG_CHANNELS.MESSAGE,
+    ),
+  );
+
+  ipcMain.handle(
+    NOTIFICATION_CHANNELS.PICK_SOUND,
+    createSafeValidatedHandler(
+      PickNotificationSoundSchema,
+      pickNotificationSound,
+      NOTIFICATION_CHANNELS.PICK_SOUND,
+    ),
+  );
+  ipcMain.handle(
+    NOTIFICATION_CHANNELS.READ_SOUND,
+    createSafeValidatedHandler(
+      ReadNotificationSoundSchema,
+      readNotificationSound,
+      NOTIFICATION_CHANNELS.READ_SOUND,
     ),
   );
 

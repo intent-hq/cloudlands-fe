@@ -1,22 +1,31 @@
-import { all, call, delay, put, takeLatest } from 'typed-redux-saga';
+import { call, cancelled, delay, put, takeEvery, takeLatest } from 'typed-redux-saga';
 
-import { readSetting, updateSettings } from '$lib/client/live/live-settings-client';
+import { updateSettings } from '$lib/client/live/live-settings-client';
 import { createLogger } from '$lib/utils/client-logger';
 import {
   selectNotificationEnabled,
   selectNotificationVolume,
   selectNotificationVolumeWrite,
+  selectNotificationSettingsWrite,
   selectSoundEnabled,
+  selectSoundPath,
   selectSoundOnlyWhenUnfocused,
 } from '../user-preferences-selectors';
 import {
+  pickNotificationSoundRequested,
   notificationVolumeWriteSettled,
+  notificationSettingsWriteSettled,
   resetNotificationSettings,
   setNotificationEnabled,
   setSoundEnabled,
+  setSoundPath,
+  hydrateNotificationSettings,
   setSoundOnlyWhenUnfocused,
   setVolume,
 } from '../user-preferences-slice';
+
+import { pickLocalNotificationSound } from '$lib/utils/local-notification-audio';
+import { setNotificationSoundPath } from '$lib/utils/notification-sound';
 
 const logger = createLogger('NotificationSettingsSaga');
 const NOTIFICATION_PATHS = {
@@ -24,48 +33,19 @@ const NOTIFICATION_PATHS = {
   soundEnabled: 'notifications.soundEnabled',
   soundOnlyWhenUnfocused: 'notifications.soundOnlyWhenUnfocused',
   volume: 'notifications.volume',
+  soundPath: 'notifications.soundPath',
 } as const;
 
-type SettingResponse = { value?: unknown };
-
-export function* hydrateNotificationSettingsWorker(suppressedActions?: WeakSet<object>) {
-  try {
-    // Volume is hydrated by the revision-ordered settings snapshot/event saga.
-    // A separate settings.get here could complete after a newer live update.
-    const [enabled, soundEnabled, soundOnlyWhenUnfocused] = yield* all([
-      call(readSetting, NOTIFICATION_PATHS.enabled),
-      call(readSetting, NOTIFICATION_PATHS.soundEnabled),
-      call(readSetting, NOTIFICATION_PATHS.soundOnlyWhenUnfocused),
-    ]);
-    if (typeof (enabled as SettingResponse).value === 'boolean') {
-      const action = setNotificationEnabled((enabled as { value: boolean }).value);
-      suppressedActions?.add(action);
-      yield* put(action);
-    }
-    if (typeof (soundEnabled as SettingResponse).value === 'boolean') {
-      const action = setSoundEnabled((soundEnabled as { value: boolean }).value);
-      suppressedActions?.add(action);
-      yield* put(action);
-    }
-    if (typeof (soundOnlyWhenUnfocused as SettingResponse).value === 'boolean') {
-      const action = setSoundOnlyWhenUnfocused(
-        (soundOnlyWhenUnfocused as { value: boolean }).value,
-      );
-      suppressedActions?.add(action);
-      yield* put(action);
-    }
-  } catch (error) {
-    logger.warn('Failed to hydrate notification settings from daemon', { error });
-  }
-}
-
-export function* persistNotificationSettingsWorker() {
+function* persistNotificationSettingsWorker() {
+  yield* call(syncSoundPath);
   yield* delay(100);
   const enabled = yield* selectNotificationEnabled.effect();
   const soundEnabled = yield* selectSoundEnabled.effect();
   const soundOnlyWhenUnfocused = yield* selectSoundOnlyWhenUnfocused.effect();
   const volume = yield* selectNotificationVolume.effect();
-  const { editId, hydrationEpoch } = yield* selectNotificationVolumeWrite.effect();
+  const soundPath = yield* selectSoundPath.effect();
+  const { editId } = yield* selectNotificationVolumeWrite.effect();
+  const { edits, hydrationEpoch } = yield* selectNotificationSettingsWrite.effect();
   let revision: number | undefined;
   try {
     const result = yield* call(updateSettings, [
@@ -76,30 +56,66 @@ export function* persistNotificationSettingsWorker() {
         value: soundOnlyWhenUnfocused ?? false,
       },
       { path: NOTIFICATION_PATHS.volume, value: volume ?? 0.5 },
+      { path: NOTIFICATION_PATHS.soundPath, value: soundPath },
     ]);
     revision = result.revision;
   } catch (error) {
     logger.warn('Failed to persist notification settings to daemon', { error });
   }
   // A cancelled older save must not release a newer edit's hydration guard.
-  // Success and failure both settle the matching write; cancellation skips this put.
+  // Success and failure both settle the matching write; cancellation skips settlement.
   if (editId != null) yield* put(notificationVolumeWriteSettled(editId, hydrationEpoch, revision));
+  yield* put(notificationSettingsWriteSettled(edits, hydrationEpoch, revision));
 }
 
-/** Unregistered until the S20 middleware cutover. */
+export function* pickNotificationSoundWorker(
+  action: ReturnType<typeof pickNotificationSoundRequested>,
+) {
+  try {
+    const path = yield* call(pickLocalNotificationSound);
+    if (path !== null) yield* put(setSoundPath(path));
+    yield* put(action.success(undefined));
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  } finally {
+    if (yield* cancelled()) yield* put(action.failure(new Error('Sound picker cancelled')));
+  }
+}
+
+function* syncSoundPath() {
+  const path = yield* selectSoundPath.effect();
+  yield* call(setNotificationSoundPath, path);
+}
+
+function* watchNotificationSettings() {
+  yield* takeEvery(pickNotificationSoundRequested, pickNotificationSoundWorker);
+  yield* takeEvery([hydrateNotificationSettings, notificationSettingsWriteSettled], syncSoundPath);
+  yield* takeLatest(
+    [
+      setNotificationEnabled,
+      setSoundEnabled,
+      setSoundPath,
+      setSoundOnlyWhenUnfocused,
+      setVolume,
+      resetNotificationSettings,
+    ],
+    persistNotificationSettingsWorker,
+  );
+  // The root settingsHydrationSaga owns ordered boot snapshots and external deltas.
+  // Do not race it with a separate settings.get snapshot here.
+}
+
+/** Host-owner lifetime: reconnect/revocation cancels writes and releases their edits. */
 export function* notificationSettingsSaga() {
-  const suppressedActions = new WeakSet<object>();
-  const triggers = [
-    setNotificationEnabled,
-    setSoundEnabled,
-    setSoundOnlyWhenUnfocused,
-    setVolume,
-    resetNotificationSettings,
-  ];
-  type NotificationAction = ReturnType<(typeof triggers)[number]>;
-  // Exclude startup hydration before takeLatest can cancel a pending user save.
-  const isUserEdit = (action: { type: string }): action is NotificationAction =>
-    triggers.some((trigger) => trigger.type === action.type) && !suppressedActions.delete(action);
-  yield* takeLatest(isUserEdit, persistNotificationSettingsWorker);
-  yield* call(hydrateNotificationSettingsWorker, suppressedActions);
+  try {
+    yield* call(watchNotificationSettings);
+  } finally {
+    if (yield* cancelled()) {
+      const { edits, hydrationEpoch } = yield* selectNotificationSettingsWrite.effect();
+      const { editId } = yield* selectNotificationVolumeWrite.effect();
+      if (editId != null) yield* put(notificationVolumeWriteSettled(editId, hydrationEpoch));
+      yield* put(notificationSettingsWriteSettled(edits, hydrationEpoch));
+      yield* call(syncSoundPath);
+    }
+  }
 }
