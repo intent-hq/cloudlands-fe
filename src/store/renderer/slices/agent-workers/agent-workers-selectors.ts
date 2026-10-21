@@ -15,3 +15,17 @@ export const selectAgentWorkerRows = store.createSelector(
     );
   },
 );
+/** §5.5b: a failed, truncated or unavailable view cannot claim an exhaustive count. An
+ * agent with no session (or an unsupported provider) that lists nothing claims nothing. */
+export const selectAgentWorkersIncomplete = store.createSelector(
+  (state, workspaceId: string, agentId: string) => {
+    const entry = selectAgentWorkers.select(state, workspaceId, agentId);
+    if (entry.status === 'failed') return true;
+    if (entry.status !== 'ready' || !entry.snapshot) return false;
+    if (entry.snapshot.truncated) return true;
+    return (
+      entry.snapshot.support.status !== 'supported' &&
+      selectAgentWorkerRows.select(state, workspaceId, agentId).length > 0
+    );
+  },
+);

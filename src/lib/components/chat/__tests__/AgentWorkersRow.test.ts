@@ -230,6 +230,38 @@ describe('agent worker rows', () => {
     ).toBe(false);
   });
 
+  it('lets a late reply settle only its own stop, not a newer one for the same task', async () => {
+    const answers: Array<(value: unknown) => void> = [];
+    stopAnswer = () => new Promise((resolve) => answers.push(resolve));
+    const stop = async () => {
+      await fireEvent.click(
+        await screen.findByRole('button', { name: 'Actions for Start the dev server' }),
+      );
+      await fireEvent.click(await screen.findByRole('menuitem', { name: 'Stop' }));
+    };
+    const state = () => screen.getByTestId('agent-worker-state').textContent;
+    await mountRow();
+    push(snapshot([workerFixture]));
+    await stop();
+    await waitFor(() => expect(state()).toBe('Stopping…'));
+    store.dispatch(agentWorkersUnsubscribeRequested(ws, agent));
+    store.dispatch(agentWorkersSubscribeRequested(ws, agent));
+    seq = 0;
+    push(snapshot([workerFixture]));
+    await waitFor(() => expect(state()).toBe('Running'));
+    await stop();
+    await waitFor(() => expect(answers).toHaveLength(2));
+    await waitFor(() => expect(state()).toBe('Stopping…'));
+    answers[0]({ asyncTaskId: taskId, stopped: true });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    // A's reply must not settle B's request: B is still in flight.
+    expect(selectAgentWorkers.select(store.state, ws, agent).operations[taskId]?.pending).toBe(
+      true,
+    );
+    answers[1]({ asyncTaskId: taskId, stopped: true });
+    await waitFor(() => expect(state()).toBe('Running'));
+  });
+
   it('shows running rows as Connection lost as soon as the daemon connection drops', async () => {
     await mountRow();
     push(snapshot([workerFixture]));
@@ -320,6 +352,33 @@ describe('agent worker rows', () => {
     await waitFor(() =>
       expect(card.getByTestId('subscription-utility-area').textContent).toMatch(/2\+/),
     );
+  });
+
+  it('says some tasks may be missing when a truncated view has no rows left to show', async () => {
+    store.dispatch(
+      setSubscriptionSnapshot(ws, agent, {
+        subscriptions: [],
+        delegationGroups: [],
+        agentStatuses: {},
+        waitingState: 'idle',
+      }),
+    );
+    setEventSubscriptionsExpanded(ws, agent, true);
+    const card = within(
+      render(EventSubscriptionsCard, { workspaceId: ws, agentId: agent }).container,
+    );
+    await waitFor(() =>
+      expect(backendRequest).toHaveBeenCalledWith('agent.workers.subscribe', {
+        workspaceId: ws,
+        agentId: agent,
+      }),
+    );
+    push({
+      ...snapshot([{ ...workerFixture, providerState: 'completed', status: 'completed' }]),
+      truncated: true,
+    });
+    expect(await card.findByTestId('agent-workers-incomplete')).toBeTruthy();
+    expect(card.queryByTestId('agent-worker-row')).toBeNull();
   });
 });
 

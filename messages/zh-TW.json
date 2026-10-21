@@ -7311,6 +7311,7 @@
   "chat_agentWorkers_alreadyEnded_description": "這項背景工作已經結束。",
   "chat_agentWorkers_stop_error": "無法停止這項背景工作。請再試一次。",
   "chat_agentWorkers_loadFailed_error": "無法載入背景工作。",
+  "chat_agentWorkers_incomplete_description": "部分背景工作可能未列出。",
   "chat_agentWorkers_retry_label": "重試",
   "native_review_changeTarget_label": "變更目標分支",
   "native_review_closed_label": "已關閉",

@@ -7311,6 +7311,7 @@
   "chat_agentWorkers_alreadyEnded_description": "Diese Hintergrundaufgabe war bereits beendet.",
   "chat_agentWorkers_stop_error": "Diese Hintergrundaufgabe konnte nicht gestoppt werden. Versuche es erneut.",
   "chat_agentWorkers_loadFailed_error": "Hintergrundaufgaben konnten nicht geladen werden.",
+  "chat_agentWorkers_incomplete_description": "Einige Hintergrundaufgaben werden möglicherweise nicht angezeigt.",
   "chat_agentWorkers_retry_label": "Erneut versuchen",
   "native_review_changeTarget_label": "Zielbranch ändern",
   "native_review_closed_label": "Geschlossen",

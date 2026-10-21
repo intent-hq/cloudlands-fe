@@ -7311,6 +7311,7 @@
   "chat_agentWorkers_alreadyEnded_description": "이 백그라운드 작업은 이미 종료되었습니다.",
   "chat_agentWorkers_stop_error": "이 백그라운드 작업을 중지하지 못했습니다. 다시 시도하세요.",
   "chat_agentWorkers_loadFailed_error": "백그라운드 작업을 불러오지 못했습니다.",
+  "chat_agentWorkers_incomplete_description": "일부 백그라운드 작업이 표시되지 않을 수 있습니다.",
   "chat_agentWorkers_retry_label": "다시 시도",
   "native_review_changeTarget_label": "대상 브랜치 변경",
   "native_review_closed_label": "닫힘",

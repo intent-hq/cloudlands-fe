@@ -7311,6 +7311,7 @@
   "chat_agentWorkers_alreadyEnded_description": "此后台任务已经结束。",
   "chat_agentWorkers_stop_error": "无法停止此后台任务。请重试。",
   "chat_agentWorkers_loadFailed_error": "无法加载后台任务。",
+  "chat_agentWorkers_incomplete_description": "部分后台任务可能未列出。",
   "chat_agentWorkers_retry_label": "重试",
   "native_review_changeTarget_label": "更改目标分支",
   "native_review_closed_label": "关闭",

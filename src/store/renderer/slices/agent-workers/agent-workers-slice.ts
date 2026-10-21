@@ -5,6 +5,8 @@ import { removeWorkspaceEntity } from '../workspace/workspace-slice';
 
 export interface WorkerOperation {
   pending: boolean;
+  /** Identifies the Stop request that owns this operation; only its reply may settle it. */
+  requestId?: number;
   message?: string;
   error?: boolean;
 }

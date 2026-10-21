@@ -29,6 +29,7 @@ type Lease = {
 /** One `agent.workers.subscribe` channel per visible agent chat, shared by every lease. */
 export function* agentWorkersSaga(): SagaGenerator<void> {
   const leases = new Map<string, Lease>();
+  let nextStopRequest = 0;
   try {
     yield* takeEvery(
       agentWorkersSubscribeRequested,
@@ -94,12 +95,22 @@ export function* agentWorkersSaga(): SagaGenerator<void> {
         if (entry.operations[asyncTaskId]?.pending) return;
         const row = entry.snapshot?.workers.find((w) => w.identity.asyncTaskId === asyncTaskId);
         if (!row || row.status !== 'running' || !row.canStop) return;
+        const requestId = ++nextStopRequest;
         yield* put(
-          agentWorkerOperationUpdated(workspaceId, agentId, asyncTaskId, { pending: true }),
+          agentWorkerOperationUpdated(workspaceId, agentId, asyncTaskId, {
+            pending: true,
+            requestId,
+          }),
         );
+        // A reply settles only its own request: a newer Stop (e.g. after the lease was
+        // replaced) owns the operation now, and the old reply must not touch it.
+        const owns = function* (): SagaGenerator<boolean> {
+          const current = yield* select(selectAgentWorkers.select, workspaceId, agentId);
+          return current.operations[asyncTaskId]?.requestId === requestId;
+        };
         try {
           const result = yield* call([lease.service, lease.service.stop], asyncTaskId);
-          // Always settle the pending flag, even if the lease was replaced meanwhile.
+          if (!(yield* owns())) return;
           yield* put(
             agentWorkerOperationUpdated(workspaceId, agentId, asyncTaskId, { pending: false }),
           );
@@ -107,15 +118,13 @@ export function* agentWorkersSaga(): SagaGenerator<void> {
           if (!result.stopped && leases.get(key) === lease)
             yield* call(notify.info, m.chat_agentWorkers_alreadyEnded_description());
         } catch {
+          if (!(yield* owns())) return;
           yield* put(
-            agentWorkerOperationUpdated(
-              workspaceId,
-              agentId,
-              asyncTaskId,
-              leases.get(key) === lease
-                ? { pending: false, error: true, message: m.chat_agentWorkers_stop_error() }
-                : { pending: false },
-            ),
+            agentWorkerOperationUpdated(workspaceId, agentId, asyncTaskId, {
+              pending: false,
+              error: true,
+              message: m.chat_agentWorkers_stop_error(),
+            }),
           );
         }
       },

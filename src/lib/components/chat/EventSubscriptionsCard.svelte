@@ -19,6 +19,7 @@
   import {
     selectAgentWorkerRows,
     selectAgentWorkers,
+    selectAgentWorkersIncomplete,
   } from '$store/renderer/slices/agent-workers/agent-workers-selectors';
   import {
     selectAgentScriptMonitors,
@@ -152,16 +153,17 @@
   const hasScripts = $derived(scriptCount > 0 || !!$scriptPage$.nextCursor || scriptsFailed);
   const workerRows$ = selectAgentWorkerRows(workspaceIdStore, agentIdStore);
   const workerEntry$ = selectAgentWorkers(workspaceIdStore, agentIdStore);
+  const workersIncomplete$ = selectAgentWorkersIncomplete(workspaceIdStore, agentIdStore);
   const workerCount = $derived($workerRows$.length);
   const workersFailed = $derived(!isolatedPreview && isActive && $workerEntry$.status === 'failed');
-  const hasWorkers = $derived(workerCount > 0 || workersFailed);
-  // "+": more script monitors may exist than this chat has read.
-  // A truncated or unavailable worker view cannot claim an exhaustive count (§5.5b).
-  const workersPartial = $derived(
-    workerCount > 0 &&
-      ($workerEntry$.snapshot?.truncated === true ||
-        $workerEntry$.snapshot?.support.status !== 'supported'),
+  // A truncated view with no rows left still needs its "may not be listed" note.
+  const workersTruncated = $derived(
+    !isolatedPreview && isActive && $workerEntry$.snapshot?.truncated === true,
   );
+  const hasWorkers = $derived(workerCount > 0 || workersFailed || workersTruncated);
+  // "+": more script monitors may exist than this chat has read.
+  // A failed, truncated or unavailable worker view cannot claim an exhaustive count (§5.5b).
+  const workersPartial = $derived(!isolatedPreview && isActive && $workersIncomplete$);
   const countSuffix = $derived(
     $scriptPage$.nextCursor || scriptsFailed || workersPartial ? '+' : '',
   );

@@ -86,6 +86,15 @@
   </div>
 {/if}
 
+{#if $entry$.status === 'ready' && $entry$.snapshot?.truncated}
+  <p
+    class="type-caption text-muted-foreground {SUBSCRIPTION_WAKE_BODY_PADDING_CLASS}"
+    data-testid="agent-workers-incomplete"
+  >
+    {m.chat_agentWorkers_incomplete_description()}
+  </p>
+{/if}
+
 {#each $rows$ as row (row.identity.asyncTaskId)}
   {@const id = row.identity.asyncTaskId}
   {@const name = label(row)}

@@ -7311,6 +7311,7 @@
   "chat_agentWorkers_alreadyEnded_description": "This background task had already ended.",
   "chat_agentWorkers_stop_error": "Couldn't stop this background task. Try again.",
   "chat_agentWorkers_loadFailed_error": "Couldn't load background tasks.",
+  "chat_agentWorkers_incomplete_description": "Some background tasks may not be listed.",
   "chat_agentWorkers_retry_label": "Try again",
   "isolatedTest_invitationUnavailable_description": "This test build connects only to its private bundled daemon. Open invitations in your normal Intent app.",
   "isolatedTest_invitationUnavailable_title": "Invitations are unavailable in this test app",

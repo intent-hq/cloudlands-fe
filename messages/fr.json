@@ -7311,6 +7311,7 @@
   "chat_agentWorkers_alreadyEnded_description": "Cette tâche en arrière-plan était déjà terminée.",
   "chat_agentWorkers_stop_error": "Impossible d'arrêter cette tâche en arrière-plan. Réessayez.",
   "chat_agentWorkers_loadFailed_error": "Impossible de charger les tâches en arrière-plan.",
+  "chat_agentWorkers_incomplete_description": "Certaines tâches en arrière-plan peuvent ne pas être affichées.",
   "chat_agentWorkers_retry_label": "Réessayer",
   "native_review_changeTarget_label": "Changer la branche cible",
   "native_review_closed_label": "Fermée",
