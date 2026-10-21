@@ -451,16 +451,8 @@ process.on('unhandledRejection', (reason, promise) => {
   handleUnhandledRejection(logger, reason, promise);
 });
 
-// Graceful shutdown handlers
-process.on('SIGTERM', async () => {
-  logger.info('SIGTERM received, shutting down gracefully...');
-  await gracefulShutdown();
-});
-
-process.on('SIGINT', async () => {
-  logger.info('SIGINT received, shutting down gracefully...');
-  await gracefulShutdown();
-});
+// Graceful SIGINT/SIGTERM handlers are installed at the start of the
+// app.whenReady() boot flow below (see the comment there).
 
 // Hard deadline for the gracefulShutdown() cleanup chain
 // (intent-hq/monorepo#1300). 10s sits comfortably above the sidecar's own
@@ -625,6 +617,22 @@ async function saveOpenWindowSessions(): Promise<void> {
 const bootWindowsGate = createBootWindowsGate();
 
 const bootFlow = app.whenReady().then(async () => {
+  // Graceful shutdown handlers. Registered here, not at module load: on
+  // POSIX, Electron installs its own SIGINT/SIGTERM handler during startup
+  // that turns the signal into app.quit(), overriding a Node handler
+  // registered earlier. The signal then never reaches gracefulShutdown() —
+  // quit runs through before-quit's running-agent prompt and the hard-exit
+  // watchdog never arms, so `kill <pid>` with an agent responding waits on a
+  // dialog forever. Registering after ready restores the prompt-free path.
+  process.on('SIGTERM', async () => {
+    logger.info('SIGTERM received, shutting down gracefully...');
+    await gracefulShutdown();
+  });
+  process.on('SIGINT', async () => {
+    logger.info('SIGINT received, shutting down gracefully...');
+    await gracefulShutdown();
+  });
+
   startupMetrics.start('total');
   logger.info('Setting up critical IPC handlers for fast startup');
 

@@ -376,6 +376,48 @@ describe('gracefulShutdown call ordering (AST)', () => {
     expect(sigint).toBe(1);
     expect(sigterm).toBe(1);
   });
+
+  it('registers the SIGINT/SIGTERM handlers inside the app.whenReady() boot callback, not at module load', () => {
+    // On POSIX, Electron installs its own SIGINT/SIGTERM handler during
+    // startup and turns the signal into app.quit(). A Node handler registered
+    // at module load is overridden: the signal never reaches
+    // gracefulShutdown(), quit runs through before-quit's running-agent
+    // prompt instead, and the hard-exit watchdog never arms — so `kill <pid>`
+    // with an agent responding waits on a dialog forever (reproduced with
+    // Electron 44.4.5 on Linux; Build Smoke run 39545719291 "Owned app
+    // shutdown exceeded 30s"). Registering after ready restores the
+    // prompt-free graceful path.
+    const sf = parseIndex();
+    const signalRegistrations: ts.CallExpression[] = [];
+    const visit = (n: ts.Node) => {
+      if (ts.isCallExpression(n) && n.expression.getText() === 'process.on') {
+        const [evtArg] = n.arguments;
+        if (evtArg && ts.isStringLiteral(evtArg) && /^SIG(INT|TERM)$/.test(evtArg.text)) {
+          signalRegistrations.push(n);
+        }
+      }
+      ts.forEachChild(n, visit);
+    };
+    visit(sf);
+    expect(signalRegistrations).toHaveLength(2);
+
+    const isInsideWhenReadyCallback = (node: ts.Node): boolean => {
+      for (let cur: ts.Node | undefined = node.parent; cur; cur = cur.parent) {
+        if (
+          (ts.isArrowFunction(cur) || ts.isFunctionExpression(cur)) &&
+          ts.isCallExpression(cur.parent) &&
+          cur.parent.arguments.includes(cur as ts.Expression) &&
+          /^app\.whenReady\(\)\.then$/.test(cur.parent.expression.getText())
+        ) {
+          return true;
+        }
+      }
+      return false;
+    };
+    for (const registration of signalRegistrations) {
+      expect(isInsideWhenReadyCallback(registration), registration.getText()).toBe(true);
+    }
+  });
 });
 
 // The prompt body was extracted into confirmQuitInner() so that
