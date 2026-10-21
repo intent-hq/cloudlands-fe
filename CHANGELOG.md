@@ -4,6 +4,25 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.226.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.225.1...v2.226.0) (2026-10-21)
+
+
+### 🚀 Features
+
+* **auto-update:** check for updates through updates.intentapp.dev, once a day on stable ([#3574](https://github.com/intent-hq/cloudlands-fe/issues/3574)) ([de599b8](https://github.com/intent-hq/cloudlands-fe/commit/de599b88e105c7add9d41a1b13117fd33c40b699))
+* **home:** open workspaces on double-click ([#3567](https://github.com/intent-hq/cloudlands-fe/issues/3567)) ([e576fe3](https://github.com/intent-hq/cloudlands-fe/commit/e576fe3d48fa07881de7ce17a7ca5d6a8cd808c5))
+* preserve qualified review monitoring across desktop sessions ([#3383](https://github.com/intent-hq/cloudlands-fe/issues/3383)) ([5c97a94](https://github.com/intent-hq/cloudlands-fe/commit/5c97a94d5706efabbe8ca3ab14b07ccc78178e96))
+* **providers:** say when Intent runs its bundled CLI in the outdated-CLI toast ([#3576](https://github.com/intent-hq/cloudlands-fe/issues/3576)) ([a360290](https://github.com/intent-hq/cloudlands-fe/commit/a360290004b2f6eb8fa3be3f3278d4721b3b401e))
+* show provider background tasks in the chat card ([#3572](https://github.com/intent-hq/cloudlands-fe/issues/3572)) ([936217e](https://github.com/intent-hq/cloudlands-fe/commit/936217ef31dc20e7c015cba4a2e2c0280c2f68ab))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.22 ([#3585](https://github.com/intent-hq/cloudlands-fe/issues/3585)) ([60e6e7f](https://github.com/intent-hq/cloudlands-fe/commit/60e6e7f818d790d26f36e31dfc8bd0801bb99842))
+* bump intentd sidecar to v0.11.23 ([#3590](https://github.com/intent-hq/cloudlands-fe/issues/3590)) ([5e8b882](https://github.com/intent-hq/cloudlands-fe/commit/5e8b882914201d2e2e3bf105ea650ee998473619))
+* **chat:** show the sender row on pending own messages ([#3584](https://github.com/intent-hq/cloudlands-fe/issues/3584)) ([655a669](https://github.com/intent-hq/cloudlands-fe/commit/655a669a22dc1a9e24a002b5a6f7ad157d51ba50))
+* count suggestion-card specialists as a recent use ([#3569](https://github.com/intent-hq/cloudlands-fe/issues/3569)) ([ce9b1a9](https://github.com/intent-hq/cloudlands-fe/commit/ce9b1a952b3aa88e63d8724ee3081f9f3d7f1945))
+
 ## [2.225.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.225.0...v2.225.1) (2026-10-21)
 
 
