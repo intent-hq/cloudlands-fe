@@ -15,10 +15,10 @@ export const UNSNAPSHOTTED_BUDGET_MS = 180_000;
  * (60s on CI, whose runners starve a fork ~4x) scales the derived budgets by the
  * same factor, so heavy entries get CI's extra headroom too.
  */
-export const CALIBRATION_DEFAULT_MS = 30_000;
+const CALIBRATION_DEFAULT_MS = 30_000;
 
 /** The render wait leaves this much of the test budget for snapshot and axe. */
-export const RENDER_WAIT_RESERVE_MS = 10_000;
+const RENDER_WAIT_RESERVE_MS = 10_000;
 
 /** Never wait for the render marker for less than this. */
 export const MIN_RENDER_WAIT_MS = 20_000;
