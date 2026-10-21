@@ -299,6 +299,7 @@
     --toast-shadow: var(--elevation-overlay);
     --width: var(--app-toast-width) !important;
     width: var(--app-toast-width) !important;
+    z-index: var(--layer-toast) !important;
   }
 
   :global([data-sonner-toaster][data-toast-sized]) {
@@ -323,6 +324,8 @@
   }
 
   :global([data-sonner-toast]) {
+    /* Overlay scroll locks disable body hit testing; exposed cards remain interactive. */
+    pointer-events: auto;
     /* background-COLOR, not the shorthand: the countdown bar (below) animates
        background-size on opted-in toasts, and an !important shorthand here
        would lock every background longhand (CSS animations cannot override
@@ -662,7 +665,8 @@
     position: fixed;
     left: var(--space-4);
     bottom: var(--space-4);
-    z-index: 1000000000;
+    z-index: var(--layer-toast);
+    pointer-events: auto;
   }
 
   :global(.toast-clear-all.toast-clear-all-static) {
