@@ -4299,6 +4299,8 @@
   "providers_bridge_auggieLoginOnDaemon_instruction": "Log in by running this command in a terminal on the daemon host, then click \"Check again\":",
   "providers_bridge_auggieNotInstalledOnDaemon_instruction": "Auggie CLI is not installed on the daemon host — install it first, then click \"Check again\":",
   "providers_bridge_unknownProvider_error": "Unknown provider: {providerId}",
+  "providers_cliVersionWarning_bundled_description": "Installed {version} is older than the required {minimumVersion}, so Intent runs its own {bundledVersion}. Update the CLI on the daemon host to switch back.",
+  "providers_cliVersionWarning_bundled_title": "Intent is using its bundled {provider} CLI",
   "providers_cliVersionWarning_description": "Installed {version}, but {minimumVersion} or later is required. Update the CLI on the daemon host.",
   "providers_cliVersionWarning_title": "{provider} CLI is out of date",
   "providers_cliVersionWarning_update_action": "Update",

@@ -49,14 +49,26 @@
         warning.providerId,
         warning.version,
         warning.minimumVersion,
+        warning.bundledVersion ?? null,
       ]);
       if (shown.has(key)) continue;
       shown.add(key);
-      notify.warning(m.providers_cliVersionWarning_title({ provider: warning.providerName }), {
-        description: m.providers_cliVersionWarning_description({
-          version: warning.version,
-          minimumVersion: warning.minimumVersion,
-        }),
+      const bundledVersion = warning.bundledVersion;
+      const title = bundledVersion
+        ? m.providers_cliVersionWarning_bundled_title({ provider: warning.providerName })
+        : m.providers_cliVersionWarning_title({ provider: warning.providerName });
+      const description = bundledVersion
+        ? m.providers_cliVersionWarning_bundled_description({
+            version: warning.version,
+            minimumVersion: warning.minimumVersion,
+            bundledVersion,
+          })
+        : m.providers_cliVersionWarning_description({
+            version: warning.version,
+            minimumVersion: warning.minimumVersion,
+          });
+      notify.warning(title, {
+        description,
         ...(warning.updateCommand
           ? {
               action: {
