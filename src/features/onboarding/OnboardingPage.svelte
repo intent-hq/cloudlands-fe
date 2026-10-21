@@ -482,6 +482,7 @@
         LEGACY_ONBOARDING_PROMPT_SESSION_KEY,
         admission,
         provenanceReplaced,
+        provenance ?? undefined,
       ),
     );
   });

@@ -364,6 +364,8 @@ describe('actual initializer submission admission', () => {
     expect(second.payload[0]).toBe(first.payload[0]);
     expect(second.payload[1]).not.toBe(first.payload[1]);
     expect(second.payload[3]).not.toBe(first.payload[3]);
+    expect(first.payload[5]).toBeTruthy();
+    expect(second.payload[5]).toBe(first.payload[5]);
   });
 
   it('keeps ordinary owner submission functional with Multiplayer off', async () => {

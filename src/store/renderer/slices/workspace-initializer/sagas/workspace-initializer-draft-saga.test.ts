@@ -331,6 +331,65 @@ describe('workspaceInitializerDraftSaga', () => {
     );
   });
 
+  it.each(['compact', 'onboarding'])(
+    'retries a failed replacement discard before restoring for %s',
+    async (id) => {
+      const provenance = 'stable-backend/principal';
+      mocks.clear
+        .mockRejectedValueOnce(new Error('offline'))
+        .mockRejectedValueOnce(new Error('still offline'));
+      mocks.get.mockResolvedValue({ text: 'previous principal', attachments: [] });
+
+      channel.put(
+        workspaceInitializerDraftRestoreRequested(
+          id,
+          'replacement',
+          'legacy-key',
+          A,
+          true,
+          provenance,
+        ),
+      );
+      await settle();
+      mocks.admission = B;
+      channel.put(
+        workspaceInitializerDraftRestoreRequested(
+          id,
+          'retry-1',
+          'legacy-key',
+          B,
+          undefined,
+          provenance,
+        ),
+      );
+      await settle();
+      channel.put(
+        workspaceInitializerDraftRestoreRequested(
+          id,
+          'retry-2',
+          'legacy-key',
+          B,
+          undefined,
+          provenance,
+        ),
+      );
+      await settle();
+
+      expect(mocks.clear.mock.calls).toEqual([
+        ['__new-workspace__', '__initializer__'],
+        ['__new-workspace__', '__initializer__'],
+        ['__new-workspace__', '__initializer__'],
+      ]);
+      expect(mocks.get).not.toHaveBeenCalled();
+      expect(dispatched).toContainEqual(
+        workspaceInitializerDraftRestoreFinished(id, 'retry-1', 'error', '', []),
+      );
+      expect(dispatched).toContainEqual(
+        workspaceInitializerDraftRestoreFinished(id, 'retry-2', 'empty', '', []),
+      );
+    },
+  );
+
   it('does not publish or migrate a read that resolves under a replaced authority', async () => {
     const held = deferred<null>();
     mocks.get.mockReturnValueOnce(held.promise);

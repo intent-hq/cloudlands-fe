@@ -1074,6 +1074,7 @@
         LEGACY_PROMPT_SESSION_KEY,
         admission,
         provenanceReplaced,
+        provenance ?? undefined,
       ),
     );
   });
@@ -2088,6 +2089,10 @@
     const checkoutContextUrl = repositoryCheckout
       ? selectCheckoutForm.select(appStore.state, checkoutFormId)?.contextUrl
       : null;
+    // Preparation may await runtime widgets and the repo-config probe while the
+    // picker remains editable. Bind it to this exact repository/ref so live
+    // setup-script state can never be combined with an older submission.
+    const preparationRepoKey = setupScriptProbeKey;
     const generation = continuation ? submissionGeneration : ++submissionGeneration;
     const dispatch = appStore.dispatch;
     const current =
@@ -2108,6 +2113,7 @@
           return false;
         }
       });
+    const preparationCurrent = () => current() && setupScriptProbeKey === preparationRepoKey;
     pullContinuation = null;
     isCreating = true;
     error = null;
@@ -2154,10 +2160,10 @@
               try {
                 const { terminalManager } =
                   await import('$features/terminal/terminal-manager.svelte');
-                if (!current()) return null;
+                if (!preparationCurrent()) return null;
                 const wsId = (mention.meta?.workspaceId as string) || '';
                 const bufferContent = await terminalManager.getBufferContent(mention.id, wsId);
-                if (!current()) return null;
+                if (!preparationCurrent()) return null;
                 if (bufferContent) {
                   const contextRef = {
                     type: 'terminal',
@@ -2177,7 +2183,7 @@
               try {
                 const { selectScriptOutput, selectScriptById, selectScriptRuntime } =
                   await import('$store/renderer/slices/scripts/scripts-selectors');
-                if (!current()) return null;
+                if (!preparationCurrent()) return null;
                 const { scriptOutputToLines } = await import('$lib/utils/script-output-text');
                 if (!current()) return null;
                 const scriptId = mention.id;
@@ -2225,12 +2231,12 @@
             }
           }
 
-          if (!current()) return null;
+          if (!preparationCurrent()) return null;
           // Await any in-flight repo-config probe (bounded, sub-second) so the
           // setup-script decision below sees the committed `.intent/config.json`
           // instead of racing the probe (monorepo#1862).
           await setupScriptProbeScheduler.settled();
-          if (!current()) return null;
+          if (!preparationCurrent()) return null;
           return {
             runtimeReferences,
             setupScript,
@@ -2310,7 +2316,7 @@
         setupScriptRepoKey: setupScriptRepoKey ?? null,
         formPersistence: debugConfig.get('enableFormPersistence'),
       };
-      if (!current()) return;
+      if (!preparationCurrent()) return;
       const initialization = workspaceInitializationSubmitted(submission, {
         id: initializationConsumerId,
         resourceId: initializationResourceId,

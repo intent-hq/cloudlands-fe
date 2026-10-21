@@ -545,4 +545,34 @@ describe('CompactWorkspaceInitializer setupScript on workspace.create (monorepo#
     const request = mocks.create.mock.calls[0][0] as Record<string, unknown>;
     expect(request.setupScript).toBeUndefined();
   });
+
+  it('cancels deferred preparation when the selected repository changes', async () => {
+    const firstProbe = deferred<string | null>();
+    mocks.fetchRepoConfig.mockReturnValueOnce(firstProbe.promise).mockResolvedValueOnce(null);
+
+    seedAutoCreatePrefill();
+    const { component } = renderInitializer();
+    await component.applyPrefill();
+    await waitFor(() => expect(mocks.fetchRepoConfig).toHaveBeenCalledWith('/repo/a'));
+    await waitFor(() =>
+      expect(
+        mocks.dispatch.mock.calls.some(
+          ([action]) =>
+            (action as { asyncActionType?: string }).asyncActionType ===
+            'workspaceInitializer/initializationSubmitted',
+        ),
+      ).toBe(true),
+    );
+
+    pickerCallbacks().onRepoChange({
+      detail: { path: '/repo/b', type: 'local', isValidPath: true },
+    });
+    pickerCallbacks().onBranchChange({ detail: { branch: 'main' } });
+    await waitFor(() => expect(mocks.fetchRepoConfig).toHaveBeenCalledWith('/repo/b'));
+    firstProbe.resolve('echo stale-repo-config');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
 });

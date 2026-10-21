@@ -425,8 +425,11 @@ describe('onboarding repo-config setup script detection', () => {
     renderPage();
     const restores = () =>
       dispatchedActions().filter(
-        (action): action is ObservedAction & { payload: [string, string, string, string] } =>
-          action.type === workspaceInitializerDraftRestoreRequested.type,
+        (
+          action,
+        ): action is ObservedAction & {
+          payload: ReturnType<typeof workspaceInitializerDraftRestoreRequested>['payload'];
+        } => action.type === workspaceInitializerDraftRestoreRequested.type,
       );
 
     await waitFor(() => expect(restores()).toHaveLength(1));
@@ -443,6 +446,8 @@ describe('onboarding repo-config setup script detection', () => {
     expect(second.payload[0]).toBe(first.payload[0]);
     expect(second.payload[1]).not.toBe(first.payload[1]);
     expect(second.payload[3]).not.toBe(first.payload[3]);
+    expect(first.payload[5]).toBeTruthy();
+    expect(second.payload[5]).toBe(first.payload[5]);
   });
 
   it('restores the prompt when admission changes during submission preparation', async () => {

@@ -270,6 +270,10 @@ export function* workspaceInitializerDraftSaga() {
   );
   let pending: Record<string, PendingSave | undefined> = {};
   const owners: DraftOwners = {};
+  // A replacement clear belongs to stable backend/principal provenance. If it
+  // fails, every later restore for that provenance must retry the discard before
+  // a drafts.get can expose retained content from the previous principal.
+  const pendingDiscards: Record<string, true | undefined> = {};
   let version = 0;
   const mutationEpoch = { value: 0 };
 
@@ -302,7 +306,7 @@ export function* workspaceInitializerDraftSaga() {
       }
 
       if (action.type === workspaceInitializerDraftRestoreRequested.type) {
-        const [id, requestId, legacyKey, admission, discardRetained] = (
+        const [id, requestId, legacyKey, admission, discardRetained, provenance] = (
           action as ReturnType<typeof workspaceInitializerDraftRestoreRequested>
         ).payload;
         if (admission === undefined || (yield* currentAdmission()) !== admission) {
@@ -310,7 +314,9 @@ export function* workspaceInitializerDraftSaga() {
           continue;
         }
         yield* call(dropOwner, id);
-        if (discardRetained) {
+        const discardKey = provenance ?? admission;
+        if (discardRetained || pendingDiscards[discardKey]) {
+          pendingDiscards[discardKey] = true;
           mutationEpoch.value++;
           pending = {};
           const retainedOwners: [string, DraftOwner][] = [];
@@ -345,7 +351,10 @@ export function* workspaceInitializerDraftSaga() {
             });
           }
           const status = cleared ? ('empty' as const) : ('error' as const);
-          if (cleared) yield* call(removeAllLegacyPrompts);
+          if (cleared) {
+            delete pendingDiscards[discardKey];
+            yield* call(removeAllLegacyPrompts);
+          }
           for (const [ownerId, retainedOwner] of retainedOwners) {
             if (owners[ownerId] !== retainedOwner) continue;
             retainedOwner.status = status;
@@ -485,7 +494,10 @@ export function* workspaceInitializerDraftSaga() {
           logger.warn('drafts.clear failed', { error: String(error) });
         }
         // Legacy prompts are removed only after a confirmed clear under unchanged authority.
-        if (cleared) yield* call(removeAllLegacyPrompts);
+        if (cleared) {
+          delete pendingDiscards[clearAdmission];
+          yield* call(removeAllLegacyPrompts);
+        }
         for (const [ownerId, restoreRequestId] of others) {
           const owner = owners[ownerId];
           if (owner?.requestId !== restoreRequestId) continue;
