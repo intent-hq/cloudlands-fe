@@ -28,6 +28,7 @@ import {
   LAST_UPDATE_CHECK_DAY_PREF,
   SHARE_UPDATE_STATISTICS_PREF,
   detectInstallSource,
+  installTelemetryHeaderFilter,
   installUpdateRequestAllowlist,
   isFirstCheckOfUtcDay,
   resolveUpdateFeed,
@@ -258,12 +259,16 @@ class AutoUpdateService {
   /**
    * Restrict the updater's own session to the approved feed/download hosts
    * (see installUpdateRequestAllowlist). A custom AUTO_UPDATE_URL is allowed
-   * as well, since the user configured it explicitly.
+   * as well, since the user configured it explicitly. Also strip the
+   * persistent installation id from telemetry-host requests (see
+   * installTelemetryHeaderFilter).
    */
   private installRequestAllowlist(): void {
     try {
       const session = autoUpdater.netSession as unknown as
-        Parameters<typeof installUpdateRequestAllowlist>[0] | undefined;
+        | (Parameters<typeof installUpdateRequestAllowlist>[0] &
+            Parameters<typeof installTelemetryHeaderFilter>[0])
+        | undefined;
       if (!session?.webRequest) {
         logger.warn('Updater session unavailable; update host allowlist not installed');
         return;
@@ -274,6 +279,7 @@ class AutoUpdateService {
           host: safeHost(url),
         });
       });
+      installTelemetryHeaderFilter(session);
     } catch (error) {
       logger.error('Failed to install update host allowlist', error as Error);
     }

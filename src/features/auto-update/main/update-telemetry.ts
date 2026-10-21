@@ -176,3 +176,49 @@ export function installUpdateRequestAllowlist(
     callback({ cancel: !allowed });
   });
 }
+
+/** Header electron-updater 6.x fills from the persistent `.updaterId` file. */
+const STAGING_ID_HEADER = 'x-user-staging-id';
+
+/** The slice of Electron's `Session` the header filter needs. */
+export interface UpdaterHeaderSessionLike {
+  webRequest: {
+    onBeforeSendHeaders(
+      listener: (
+        details: { url: string; requestHeaders: Record<string, string> },
+        callback: (response: { requestHeaders: Record<string, string> }) => void,
+      ) => void,
+    ): void;
+  };
+}
+
+function isTelemetryHostUrl(rawUrl: string): boolean {
+  try {
+    return new URL(rawUrl).hostname === TELEMETRY_HOST;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * electron-updater 6.x sends the persistent per-installation `.updaterId` as
+ * `x-user-staging-id` on every feed request. Drop it (case-insensitively)
+ * from each request to the telemetry host on the updater's own session, so
+ * no identifier reaches updates.intentapp.dev, including redirect hops back
+ * to it. Direct GitHub requests keep electron-updater's headers unchanged
+ * (staged rollouts are decided locally from the same id), and other sessions
+ * are untouched.
+ */
+export function installTelemetryHeaderFilter(session: UpdaterHeaderSessionLike): void {
+  session.webRequest.onBeforeSendHeaders((details, callback) => {
+    if (!isTelemetryHostUrl(details.url)) {
+      callback({ requestHeaders: details.requestHeaders });
+      return;
+    }
+    const requestHeaders: Record<string, string> = {};
+    for (const [name, value] of Object.entries(details.requestHeaders)) {
+      if (name.toLowerCase() !== STAGING_ID_HEADER) requestHeaders[name] = value;
+    }
+    callback({ requestHeaders });
+  });
+}

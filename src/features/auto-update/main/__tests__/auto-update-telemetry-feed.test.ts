@@ -43,7 +43,15 @@ type BeforeRequestListener = (
 ) => void;
 
 const updaterHandlers: Record<string, (arg?: unknown) => void> = {};
-const sessionState: { listener: BeforeRequestListener | null } = { listener: null };
+type BeforeSendHeadersListener = (
+  details: { url: string; requestHeaders: Record<string, string> },
+  callback: (response: { requestHeaders: Record<string, string> }) => void,
+) => void;
+
+const sessionState: {
+  listener: BeforeRequestListener | null;
+  headersListener: BeforeSendHeadersListener | null;
+} = { listener: null, headersListener: null };
 
 vi.mock('electron-updater', () => {
   class MockCancellationToken {
@@ -70,6 +78,9 @@ vi.mock('electron-updater', () => {
           webRequest: {
             onBeforeRequest: vi.fn((listener: BeforeRequestListener) => {
               sessionState.listener = listener;
+            }),
+            onBeforeSendHeaders: vi.fn((listener: BeforeSendHeadersListener) => {
+              sessionState.headersListener = listener;
             }),
           },
         },
@@ -177,6 +188,7 @@ beforeEach(async () => {
   testUserDataPath = await fs.mkdtemp(path.join(os.tmpdir(), 'auto-update-telemetry-'));
   mockWindows = [];
   sessionState.listener = null;
+  sessionState.headersListener = null;
   delete process.env.AUTO_UPDATE_URL;
   delete process.env.DO_NOT_TRACK;
   vi.clearAllMocks();
@@ -402,5 +414,31 @@ describe('updater session host allowlist', () => {
     expect(decide(`${TELEMETRY_PREFIX}stable/latest-linux.yml?p=linux-x64`)).toBe(false);
     expect(decide(`${GITHUB_PREFIX}stable/latest-linux.yml`)).toBe(false);
     expect(decide('https://objects.githubusercontent.com/asset')).toBe(false);
+  });
+});
+
+describe('updater session telemetry header filter', () => {
+  it('is installed on the updater session and drops the installation id only for the telemetry host', async () => {
+    await setup();
+    const listener = sessionState.headersListener;
+    expect(listener).not.toBeNull();
+
+    const send = (url: string) => {
+      let sent: Record<string, string> | undefined;
+      listener!(
+        { url, requestHeaders: { 'x-user-staging-id': 'install-id', Accept: '*/*' } },
+        (response) => {
+          sent = response.requestHeaders;
+        },
+      );
+      return sent;
+    };
+    expect(send(`${TELEMETRY_PREFIX}stable/latest-linux.yml?p=linux-x64`)).toEqual({
+      Accept: '*/*',
+    });
+    expect(send(`${GITHUB_PREFIX}stable/latest-linux.yml`)).toEqual({
+      'x-user-staging-id': 'install-id',
+      Accept: '*/*',
+    });
   });
 });
