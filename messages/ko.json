@@ -7305,7 +7305,6 @@
   "chat_agentWorkers_unnamed_label": "백그라운드 작업",
   "chat_agentWorkers_actions_ariaLabel": "{name} 작업",
   "chat_agentWorkers_stop_label": "중지",
-  "chat_agentWorkers_command_label": "명령",
   "chat_agentWorkers_type_description": "유형: {type}",
   "chat_agentWorkers_started_description": "시작: {time}",
   "chat_agentWorkers_unknown_description": "에이전트 연결이 종료되어 이 작업이 더 이상 실행되지 않을 수 있습니다.",

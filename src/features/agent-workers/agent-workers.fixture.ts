@@ -12,8 +12,8 @@ const scope = {
 export const workerFixture: WorkerObservation = {
   identity: { ...scope, asyncTaskId: 'bg-1' },
   toolCallId: 'toolu-1',
-  // i18n-ignore (fixture shell command)
-  name: 'npm run dev',
+  // i18n-ignore (provider-written task title; Claude sends a description, not the command)
+  name: 'Start the dev server',
   taskType: 'shell',
   canStop: true,
   firstObservedAt: Date.parse('2026-10-20T10:00:00Z'),

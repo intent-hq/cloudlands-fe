@@ -10,12 +10,12 @@ test('a running background task can be stopped from the keyboard at narrow width
   const component = await mount(Preview);
   const row = component.getByTestId('agent-worker-row').first();
   await expect(row.getByTestId('agent-worker-state')).toHaveText('Running');
-  const disclosure = row.getByRole('button', { name: 'npm run dev' }).first();
+  const disclosure = row.getByRole('button', { name: 'Start the dev server' }).first();
   await disclosure.focus();
   await page.keyboard.press('Enter');
   await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
-  await expect(row.getByTestId('agent-worker-command')).toHaveText('npm run dev');
-  const trigger = row.getByRole('button', { name: 'Actions for npm run dev' });
+  await expect(row.getByText(/^Type: /)).toBeVisible();
+  const trigger = row.getByRole('button', { name: 'Actions for Start the dev server' });
   await trigger.focus();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('menuitem', { name: 'Stop' })).toBeVisible();
@@ -26,19 +26,20 @@ test('a running background task can be stopped from the keyboard at narrow width
   expect(control!.x + control!.width).toBeLessThanOrEqual(bounds!.x + bounds!.width);
 });
 
-test('long commands wrap inside the card instead of widening it', async ({ mount, page }) => {
+test('a long task title truncates instead of pushing Stop out of the card', async ({
+  mount,
+  page,
+}) => {
   await page.setViewportSize({ width: 360, height: 700 });
   const component = await mount(Preview);
   const row = component.getByTestId('agent-worker-row').nth(1);
-  await row
-    .getByRole('button', { name: /pnpm vitest/ })
-    .first()
-    .click();
-  const command = row.getByTestId('agent-worker-command');
-  await expect(command).toBeVisible();
+  const trigger = row.getByRole('button', { name: /^Actions for Watch the chat/ });
+  await expect(trigger).toBeVisible();
   const card = await component.boundingBox();
-  const box = await command.boundingBox();
-  expect(box!.x + box!.width).toBeLessThanOrEqual(card!.x + card!.width);
+  const control = await trigger.boundingBox();
+  expect(control!.x + control!.width).toBeLessThanOrEqual(card!.x + card!.width);
+  await trigger.click();
+  await expect(page.getByRole('menuitem', { name: 'Stop' })).toBeVisible();
 });
 
 test('a lost connection shows the task as unknown without a Stop action', async ({ mount }) => {

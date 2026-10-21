@@ -7305,7 +7305,6 @@
   "chat_agentWorkers_unnamed_label": "Background task",
   "chat_agentWorkers_actions_ariaLabel": "Actions for {name}",
   "chat_agentWorkers_stop_label": "Stop",
-  "chat_agentWorkers_command_label": "Command",
   "chat_agentWorkers_type_description": "Type: {type}",
   "chat_agentWorkers_started_description": "Started {time}",
   "chat_agentWorkers_unknown_description": "The agent's connection ended, so this task may no longer be running.",

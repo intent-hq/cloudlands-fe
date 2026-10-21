@@ -3,8 +3,6 @@
   import Fa from 'svelte-fa';
   import { faTerminal, faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
-  import CopyButton from '$lib/components/ui/CopyButton.svelte';
-  import { notify } from '$lib/components/patterns/notify';
   import * as Menu from '$lib/components/ui/menu';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -51,14 +49,6 @@
     row.name?.trim() || row.taskType?.trim() || m.chat_agentWorkers_unnamed_label();
   function toggleDetails(id: string) {
     expanded = expanded === id ? null : id;
-  }
-  async function copyCommand(text: string) {
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch (error) {
-      notify.error(m.chat_cliBlock_copyFailed_error());
-      throw error;
-    }
   }
 </script>
 
@@ -177,23 +167,6 @@
         class="grid min-w-0 gap-1 text-xs text-muted-foreground {SUBSCRIPTION_WAKE_BODY_PADDING_CLASS}"
         transition:safeSubscriptionSlide
       >
-        {#if row.name?.trim()}
-          <div class="grid min-w-0 gap-1">
-            <div class="flex items-center justify-between gap-2">
-              <span>{m.chat_agentWorkers_command_label()}</span>
-              <CopyButton
-                copy={() => copyCommand(row.name ?? '')}
-                label={m.chat_cliBlock_copy_tooltip()}
-                copiedLabel={m.chat_cliBlock_copied_tooltip()}
-                class="shrink-0"
-              />
-            </div>
-            <pre
-              class="type-code m-0 min-w-0 select-text whitespace-pre-wrap break-all text-foreground"
-              aria-label={m.chat_agentWorkers_command_label()}
-              data-testid="agent-worker-command"><code>{row.name}</code></pre>
-          </div>
-        {/if}
         {#if row.taskType}<span>{m.chat_agentWorkers_type_description({ type: row.taskType })}</span
           >{/if}
         <span

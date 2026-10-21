@@ -7305,7 +7305,6 @@
   "chat_agentWorkers_unnamed_label": "Tâche en arrière-plan",
   "chat_agentWorkers_actions_ariaLabel": "Actions pour {name}",
   "chat_agentWorkers_stop_label": "Arrêter",
-  "chat_agentWorkers_command_label": "Commande",
   "chat_agentWorkers_type_description": "Type : {type}",
   "chat_agentWorkers_started_description": "Démarrée {time}",
   "chat_agentWorkers_unknown_description": "La connexion de l'agent a pris fin, cette tâche ne s'exécute donc peut-être plus.",

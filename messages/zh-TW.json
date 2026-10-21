@@ -7305,7 +7305,6 @@
   "chat_agentWorkers_unnamed_label": "背景工作",
   "chat_agentWorkers_actions_ariaLabel": "{name} 的動作",
   "chat_agentWorkers_stop_label": "停止",
-  "chat_agentWorkers_command_label": "指令",
   "chat_agentWorkers_type_description": "類型：{type}",
   "chat_agentWorkers_started_description": "開始於 {time}",
   "chat_agentWorkers_unknown_description": "代理程式的連線已結束，因此這項工作可能已不再執行。",

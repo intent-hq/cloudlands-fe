@@ -7305,7 +7305,6 @@
   "chat_agentWorkers_unnamed_label": "后台任务",
   "chat_agentWorkers_actions_ariaLabel": "{name} 的操作",
   "chat_agentWorkers_stop_label": "停止",
-  "chat_agentWorkers_command_label": "命令",
   "chat_agentWorkers_type_description": "类型：{type}",
   "chat_agentWorkers_started_description": "开始于 {time}",
   "chat_agentWorkers_unknown_description": "代理的连接已结束，因此此任务可能已不再运行。",

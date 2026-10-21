@@ -7305,7 +7305,6 @@
   "chat_agentWorkers_unnamed_label": "バックグラウンドタスク",
   "chat_agentWorkers_actions_ariaLabel": "{name} の操作",
   "chat_agentWorkers_stop_label": "停止",
-  "chat_agentWorkers_command_label": "コマンド",
   "chat_agentWorkers_type_description": "種類: {type}",
   "chat_agentWorkers_started_description": "開始: {time}",
   "chat_agentWorkers_unknown_description": "エージェントの接続が終了したため、このタスクはもう実行されていない可能性があります。",

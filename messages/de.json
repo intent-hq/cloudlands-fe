@@ -7305,7 +7305,6 @@
   "chat_agentWorkers_unnamed_label": "Hintergrundaufgabe",
   "chat_agentWorkers_actions_ariaLabel": "Aktionen für {name}",
   "chat_agentWorkers_stop_label": "Stoppen",
-  "chat_agentWorkers_command_label": "Befehl",
   "chat_agentWorkers_type_description": "Typ: {type}",
   "chat_agentWorkers_started_description": "Gestartet {time}",
   "chat_agentWorkers_unknown_description": "Die Verbindung des Agenten wurde beendet, daher läuft diese Aufgabe möglicherweise nicht mehr.",

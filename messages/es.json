@@ -7305,7 +7305,6 @@
   "chat_agentWorkers_unnamed_label": "Tarea en segundo plano",
   "chat_agentWorkers_actions_ariaLabel": "Acciones de {name}",
   "chat_agentWorkers_stop_label": "Detener",
-  "chat_agentWorkers_command_label": "Comando",
   "chat_agentWorkers_type_description": "Tipo: {type}",
   "chat_agentWorkers_started_description": "Iniciada {time}",
   "chat_agentWorkers_unknown_description": "La conexión del agente terminó, así que es posible que esta tarea ya no se esté ejecutando.",

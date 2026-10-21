@@ -103,16 +103,17 @@ async function mountRow() {
 }
 
 describe('agent worker rows', () => {
-  it('lists a running worker with its command, type and start time', async () => {
+  it('lists a running worker with its title, type and start time', async () => {
     await mountRow();
     push(snapshot([workerFixture]));
     const row = await screen.findByTestId('agent-worker-row');
-    expect(row.textContent).toContain('npm run dev');
+    expect(row.textContent).toContain('Start the dev server');
     expect(within(row).getByTestId('agent-worker-state').textContent).toBe('Running');
-    await fireEvent.click(within(row).getAllByRole('button', { name: 'npm run dev' })[0]);
-    expect(within(row).getByTestId('agent-worker-command').textContent).toBe('npm run dev');
+    await fireEvent.click(within(row).getAllByRole('button', { name: 'Start the dev server' })[0]);
     expect(row.textContent).toContain('Type: shell');
     expect(row.textContent).toContain('Started');
+    // The provider sends a task title, not the command line, so nothing offers it as one.
+    expect(within(row).queryByRole('button', { name: /copy/i })).toBeNull();
   });
 
   it('stops through the provider, shows Stopping until the stopped report removes the row', async () => {
@@ -120,7 +121,9 @@ describe('agent worker rows', () => {
     stopAnswer = () => new Promise((resolve) => (answer = resolve));
     await mountRow();
     push(snapshot([workerFixture]));
-    await fireEvent.click(await screen.findByRole('button', { name: 'Actions for npm run dev' }));
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Actions for Start the dev server' }),
+    );
     await fireEvent.click(await screen.findByRole('menuitem', { name: 'Stop' }));
     await waitFor(() =>
       expect(backendRequest).toHaveBeenCalledWith('agent.workers.stop', {
@@ -143,7 +146,9 @@ describe('agent worker rows', () => {
     stopAnswer = async () => ({ asyncTaskId: taskId, stopped: false });
     await mountRow();
     push(snapshot([workerFixture]));
-    await fireEvent.click(await screen.findByRole('button', { name: 'Actions for npm run dev' }));
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Actions for Start the dev server' }),
+    );
     await fireEvent.click(await screen.findByRole('menuitem', { name: 'Stop' }));
     await waitFor(() =>
       expect(notify.info).toHaveBeenCalledWith('This background task had already ended.'),
@@ -152,7 +157,9 @@ describe('agent worker rows', () => {
     stopAnswer = async () => {
       throw new Error('provider-error');
     };
-    await fireEvent.click(await screen.findByRole('button', { name: 'Actions for npm run dev' }));
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Actions for Start the dev server' }),
+    );
     await fireEvent.click(await screen.findByRole('menuitem', { name: 'Stop' }));
     expect((await screen.findByRole('alert')).textContent).toContain(
       "Couldn't stop this background task.",

@@ -44,8 +44,8 @@
             {
               ...workerFixture,
               identity: { ...workerFixture.identity, asyncTaskId: 'bg-2' },
-              // i18n-ignore (fixture shell command)
-              name: 'pnpm vitest --watch src/lib/components/chat/__tests__/AgentWorkersRow.test.ts',
+              // i18n-ignore (provider-written task title)
+              name: 'Watch the chat component tests in src/lib/components/chat/__tests__ while editing the background tasks row',
               status,
             },
           ],
