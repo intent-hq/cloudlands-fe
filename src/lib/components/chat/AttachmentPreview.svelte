@@ -76,23 +76,18 @@
     onRetry,
   }: Props = $props();
 
-  // Generate thumbnail URL for images
-  let thumbnailUrl = $state<string | null>(null);
+  let fileThumbnailUrl = $state<string | null>(null);
+  const thumbnailUrl = $derived(
+    imageData && imageMimeType ? `data:${imageMimeType};base64,${imageData}` : fileThumbnailUrl,
+  );
 
   $effect(() => {
-    // Use base64 data if available
-    if (imageData && imageMimeType) {
-      thumbnailUrl = `data:${imageMimeType};base64,${imageData}`;
-      return undefined; // explicit - no cleanup needed for data URLs
-    }
-    // Otherwise use File object
-    if (file && type.startsWith('image/')) {
+    if (!(imageData && imageMimeType) && file && type.startsWith('image/')) {
       const url = URL.createObjectURL(file);
-      thumbnailUrl = url;
+      fileThumbnailUrl = url;
       return () => URL.revokeObjectURL(url);
     }
-    // Clear thumbnailUrl if neither condition matches
-    thumbnailUrl = null;
+    fileThumbnailUrl = null;
   });
 
   // Determine icon based on file type
@@ -157,7 +152,7 @@
   }
 </script>
 
-{#if variant === 'thumbnail' && isImage && thumbnailUrl}
+{#if variant === 'thumbnail' && isImage}
   <!-- Slack-style thumbnail for images: larger, rounded corners, X overlaid on hover -->
   <div
     class="relative group shrink-0 {className}"
@@ -167,6 +162,7 @@
     <!-- Clickable thumbnail button -->
     <Button
       variant="plain"
+      wrapContent={false}
       bind:ref={thumbnailButtonElement}
       type="button"
       class="w-16 h-16 rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity"
@@ -174,8 +170,15 @@
       onkeydown={handleThumbnailKeydown}
       aria-label={m.chat_attachmentPreview_viewFullSize_ariaLabel({ name })}
       title={name}
+      disabled={!thumbnailUrl}
     >
-      <img src={thumbnailUrl} alt={name} class="w-full h-full object-cover" />
+      {#if thumbnailUrl}
+        <img src={thumbnailUrl} alt={name} class="w-full h-full object-cover" />
+      {:else}
+        <div class="flex size-full items-center justify-center bg-muted text-subtle">
+          <Fa icon={faImage} size="15" />
+        </div>
+      {/if}
     </Button>
     {#if onRemove}
       <Button
@@ -193,7 +196,7 @@
   <!-- Image Lightbox -->
   <ImageLightbox
     bind:open={lightboxOpen}
-    imageUrl={thumbnailUrl}
+    imageUrl={thumbnailUrl ?? ''}
     imageName={name}
     openerElement={thumbnailButtonElement}
   />

@@ -12,6 +12,20 @@ for (const method of ['paste', 'drop'] as const) {
     await mount(Host);
     const editor = page.locator('.tiptap-editor');
     await editor.fill('Keep this draft');
+    const loading = await page.getByTestId('message-input').evaluateHandle((input) => {
+      const filenameChips: string[] = [];
+      const observer = new MutationObserver((records) => {
+        for (const record of records) {
+          for (const node of [...record.addedNodes, ...record.removedNodes]) {
+            for (const name of ['first.png', 'second.png']) {
+              if (node.textContent?.includes(name)) filenameChips.push(name);
+            }
+          }
+        }
+      });
+      observer.observe(input, { childList: true, subtree: true });
+      return { filenameChips, observer };
+    });
     await testInfo.attach('before-images.png', {
       body: await page.screenshot(),
       contentType: 'image/png',
@@ -32,6 +46,15 @@ for (const method of ['paste', 'drop'] as const) {
     );
     await expect(page.getByRole('img', { name: 'first.png', exact: true })).toBeVisible();
     await expect(page.getByRole('img', { name: 'second.png', exact: true })).toBeVisible();
+    const filenameChips = await loading.evaluate(({ filenameChips, observer }) => {
+      observer.disconnect();
+      return filenameChips;
+    });
+    expect(filenameChips).toEqual([]);
+    await testInfo.attach('attachment-loading.json', {
+      body: JSON.stringify({ method, filenameChips }),
+      contentType: 'application/json',
+    });
     await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
     await expect(editor).toHaveText('Keep this draft');
     await testInfo.attach('after-images.png', {
