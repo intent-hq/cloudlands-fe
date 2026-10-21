@@ -549,7 +549,10 @@ describe('alpha and beta channels keep the hourly cadence', () => {
       updateChannel: 'beta',
     });
     // Drop the startup/hourly timers so only focus/resume drive checks.
+    // clearAllTimers also resets the fake clock to the real time when fake
+    // timers were installed, so pin the test's start time again.
     vi.clearAllTimers();
+    vi.setSystemTime(new Date('2026-10-21T08:00:00Z'));
 
     focus();
     await settle();
