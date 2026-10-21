@@ -1281,6 +1281,8 @@ export interface AgentTurnIdleSample {
   reason?: string;
   agents: Array<{
     id: string;
+    /** False when the workspace lists the agent but its session is not loaded yet. */
+    hydrated: boolean;
     status?: string;
     activationState?: string | null;
     isStreaming: boolean;
@@ -1291,12 +1293,20 @@ export interface AgentTurnIdleSample {
     lastUserMessageAt: string | null;
   }>;
   /** Daemon lifecycle events from the workspace event buffer (daemon timestamps). */
-  events: Array<{ type: string; agentId: string; role?: string; timestamp: string }>;
+  events: Array<{
+    type: string;
+    agentId: string;
+    role?: string;
+    error?: string;
+    timestamp: string;
+  }>;
 }
 
 interface AgentTurnIdleVerdict {
   done: boolean;
   reason: string;
+  /** Set when the daemon reported `agent:failed` for an agent's latest turn. */
+  failure?: { agentId: string; error: string };
 }
 
 const ACTIVE_AGENT_STATUSES = ['active', 'processing', 'waiting', 'responding'];
@@ -1310,10 +1320,10 @@ function timeOf(value: string | null | undefined): number {
 /**
  * Positive, turn-scoped completion predicate for the packaged smoke harness.
  *
- * A turn is complete only when the daemon has emitted a terminal lifecycle
- * event (`agent:idle` / `agent:failed`) at or after the newest user message
- * for every agent that has received one, AND every agent's renderer state is
- * settled. The absence of a streaming indicator is never sufficient on its
+ * A turn is complete only when the daemon has emitted `agent:idle` at or
+ * after the newest user message for every agent that has received one, AND
+ * every listed agent's session is loaded and settled. An `agent:failed` at or
+ * after the newest user message is reported as `failure`, never as done. The absence of a streaming indicator is never sufficient on its
  * own: it is vacuously true before streaming starts, between tool calls, and
  * whenever the renderer misses the streaming edge.
  */
@@ -1325,6 +1335,32 @@ export function assessAgentTurnIdle(sample: AgentTurnIdleSample): AgentTurnIdleV
 
   let turns = 0;
   for (const agent of sample.agents) {
+    if (!agent.hydrated) return { done: false, reason: `${agent.id}: session not loaded` };
+  }
+  for (const agent of sample.agents) {
+    let turnStart = timeOf(agent.lastUserMessageAt);
+    for (const event of sample.events) {
+      if (event.agentId !== agent.id || event.type !== 'agent:message' || event.role !== 'user') {
+        continue;
+      }
+      const at = timeOf(event.timestamp);
+      if (Number.isFinite(at) && !(at <= turnStart)) turnStart = at;
+    }
+    if (!Number.isFinite(turnStart)) continue;
+    for (const event of sample.events) {
+      if (event.agentId !== agent.id || event.type !== 'agent:failed') continue;
+      if (timeOf(event.timestamp) >= turnStart) {
+        const error = event.error || 'unknown error';
+        return {
+          done: false,
+          reason: `${agent.id}: daemon reported agent:failed for its latest turn: ${error}`,
+          failure: { agentId: agent.id, error },
+        };
+      }
+    }
+  }
+
+  for (const agent of sample.agents) {
     let turnStart = timeOf(agent.lastUserMessageAt);
     let terminalAt = NaN;
     for (const event of sample.events) {
@@ -1333,7 +1369,7 @@ export function assessAgentTurnIdle(sample: AgentTurnIdleSample): AgentTurnIdleV
       if (!Number.isFinite(at)) continue;
       if (event.type === 'agent:message' && event.role === 'user') {
         if (!(at <= turnStart)) turnStart = at;
-      } else if (event.type === 'agent:idle' || event.type === 'agent:failed') {
+      } else if (event.type === 'agent:idle') {
         if (!(at <= terminalAt)) terminalAt = at;
       }
     }
@@ -1399,6 +1435,7 @@ async function sampleAgentTurnIdle(page: Page, workspaceId: string): Promise<Age
         }
         return {
           id,
+          hydrated: !!session,
           status: session?.status,
           activationState: session?.activationState ?? null,
           isStreaming: !!session?.isStreaming,
@@ -1420,6 +1457,7 @@ async function sampleAgentTurnIdle(page: Page, workspaceId: string): Promise<Age
           type: String(e.type),
           agentId: String(e.data?.agentId ?? e.data?.sessionId ?? ''),
           role: typeof e.data?.role === 'string' ? e.data.role : undefined,
+          error: e.data?.error == null ? undefined : String(e.data.error),
           timestamp: String(e.timestamp),
         }));
       return { available: true, agents, events };
@@ -1432,7 +1470,8 @@ async function sampleAgentTurnIdle(page: Page, workspaceId: string): Promise<Age
 /**
  * Wait until the daemon has reported every agent idle for its latest turn
  * (see {@link assessAgentTurnIdle}), then assert the chat shows no streaming
- * indicator. Throws on timeout: proceeding while an agent is still active
+ * indicator. Throws as soon as the daemon reports `agent:failed` for a latest turn,
+ * and on timeout: proceeding while an agent is still active
  * lets teardown race the turn (Build Smoke run 39545719291).
  */
 async function waitForAgentTurnIdle(page: Page, workspaceId: string, deadline: number) {
@@ -1445,6 +1484,11 @@ async function waitForAgentTurnIdle(page: Page, workspaceId: string, deadline: n
       last = assessAgentTurnIdle(await sampleAgentTurnIdle(page, workspaceId));
     } catch (err) {
       last = { done: false, reason: `sample error: ${err}` };
+    }
+    if (last.failure) {
+      throw new Error(
+        `Agent ${last.failure.agentId} failed its latest turn: ${last.failure.error}`,
+      );
     }
     if (last.done) {
       console.log(`✅ All agents complete (${last.reason})`);
