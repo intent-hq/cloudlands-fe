@@ -16,8 +16,9 @@ import { DEFAULT_CHIEF_THREAD_TITLE } from './sidebar-nav-types';
  * True when `name` is one of the creation placeholders a chief thread can
  * carry before its first real rename: empty/blank, the ChiefCard placeholder
  * (`DEFAULT_CHIEF_THREAD_TITLE`), a legacy placeholder, or a
- * generated "New thread …" name. Mirrors the daemon's Assistant-chat
- * placeholder set (intentd `is_assistant_chat_placeholder_name`).
+ * generated "New thread …" name. Display-only; the daemon's first-turn
+ * naming check (intentd `is_assistant_chat_placeholder_name`) matches the
+ * exact creation placeholders, not the "New thread …" prefix.
  */
 export function isPlaceholderChiefThreadName(name: string | undefined | null): boolean {
   const trimmed = name?.trim();
