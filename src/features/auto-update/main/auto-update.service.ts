@@ -49,11 +49,16 @@ const UPDATE_CHANNEL_STORAGE_KEY = 'updateChannel';
 const BETA_UPDATES_STORAGE_KEY = 'betaUpdatesEnabled';
 
 // Automatic-check tick (1 hour). Alpha/beta check on every tick; stable only
-// when no check has succeeded yet on the current UTC day.
+// when no check has succeeded yet on the current UTC day and the hourly
+// attempt throttle allows it.
 const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 // Alpha/beta: minimum time between focus/resume checks (4 hours). Stable
 // focus/resume checks follow the once-a-UTC-day rule instead.
 const FOCUS_RESUME_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
+// Stable: minimum time between automatic check attempts (1 hour), shared by
+// the startup, tick and focus/resume paths, so a failing install retries at
+// most hourly until a check succeeds. Manual and channel checks bypass it.
+const STABLE_AUTOMATIC_ATTEMPT_INTERVAL_MS = 60 * 60 * 1000;
 // Delay of the startup check after initialization.
 const STARTUP_CHECK_DELAY_MS = 10_000;
 // Timeout for a single update check (30 seconds)
@@ -125,6 +130,10 @@ class AutoUpdateService {
   // synchronously. Drives the stable channel's once-a-day automatic checks
   // and the telemetry feed's `d=1` flag.
   private lastSuccessfulCheckDay: string | null = null;
+  // Wall-clock time of the last automatic check attempt started on stable,
+  // successful or not. Manual/channel checks and alpha/beta checks do not
+  // set it.
+  private lastStableAutomaticAttemptAt: number | null = null;
   // Set once a check against updates.intentapp.dev fails: every later check
   // this session goes straight to the GitHub feed.
   private githubFallbackActive = false;
@@ -183,10 +192,7 @@ class AutoUpdateService {
     // Startup check (after a short delay). On stable it is skipped when a
     // check already succeeded today.
     setTimeout(() => {
-      if (this.isDailyCadence() && !this.isDailyCheckDue()) {
-        logger.debug('Skipping startup update check - already checked today');
-        return;
-      }
+      if (this.isDailyCadence() && !this.isStableAutomaticCheckDue('startup')) return;
       this.checkForUpdates('startup').catch((err) => {
         logger.debug('Initial update check failed', { error: err.message });
       });
@@ -196,7 +202,7 @@ class AutoUpdateService {
     // changes the cadence immediately.
     this.updateCheckInterval = setInterval(() => {
       if (this.isDailyCadence()) {
-        if (!this.isDailyCheckDue()) return;
+        if (!this.isStableAutomaticCheckDue('daily')) return;
         logger.info('Daily update check...');
         this.checkForUpdates('daily').catch((err) => {
           logger.debug('Daily update check failed', { error: err.message });
@@ -221,6 +227,30 @@ class AutoUpdateService {
   /** True when no update check has succeeded yet on the current UTC day. */
   private isDailyCheckDue(): boolean {
     return isFirstCheckOfUtcDay(this.lastSuccessfulCheckDay, new Date());
+  }
+
+  /**
+   * Stable automatic gate: no check has succeeded today, and the last
+   * automatic attempt (successful or not) started at least an hour ago. The
+   * throttle is elapsed-time based, so a new UTC day does not reset it; a
+   * wall clock set back before the last attempt does not block.
+   */
+  private isStableAutomaticCheckDue(reason: string): boolean {
+    if (!this.isDailyCheckDue()) {
+      logger.debug('Skipping update check (already checked today)', { reason });
+      return false;
+    }
+    if (this.lastStableAutomaticAttemptAt !== null) {
+      const elapsed = Date.now() - this.lastStableAutomaticAttemptAt;
+      if (elapsed >= 0 && elapsed < STABLE_AUTOMATIC_ATTEMPT_INTERVAL_MS) {
+        logger.debug('Skipping update check (automatic attempt within the hour)', {
+          reason,
+          elapsedMs: elapsed,
+        });
+        return false;
+      }
+    }
+    return true;
   }
 
   /**
@@ -378,7 +408,8 @@ class AutoUpdateService {
   /**
    * Record that an update check succeeded today (on any feed). Drives the
    * stable once-a-day cadence and the telemetry `d` flag. Failed checks are
-   * never recorded, so the next tick or focus retries.
+   * never recorded, so a later tick or focus retries (on stable, at most one
+   * automatic attempt per hour; see isStableAutomaticCheckDue).
    */
   private markCheckSucceededToday(): void {
     const today = utcDay(new Date());
@@ -773,6 +804,9 @@ class AutoUpdateService {
 
     try {
       this.lastCheckAt = Date.now();
+      if (this.isDailyCadence() && trigger !== 'manual' && trigger !== 'channel') {
+        this.lastStableAutomaticAttemptAt = this.lastCheckAt;
+      }
       this.checkSessionActive = true;
       this.startCheckTimeout();
       const epochAtStart = this.channelSwitchEpoch;
@@ -1148,10 +1182,7 @@ class AutoUpdateService {
 
   private checkForUpdatesIfStale(reason: 'focus' | 'resume') {
     if (this.isDailyCadence()) {
-      if (!this.isDailyCheckDue()) {
-        logger.debug('Skipping update check (already checked today)', { reason });
-        return;
-      }
+      if (!this.isStableAutomaticCheckDue(reason)) return;
     } else if (this.isFocusCheckTooSoon()) {
       logger.debug('Skipping update check (too soon)', {
         reason,

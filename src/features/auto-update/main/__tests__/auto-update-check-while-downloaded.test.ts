@@ -182,7 +182,11 @@ describe('automatic checks while an update is downloaded', () => {
     await vi.advanceTimersByTimeAsync(STARTUP_CHECK_DELAY_MS);
     expect(checkMock).toHaveBeenCalledTimes(1);
 
-    // Neither must the hourly check (due again after the UTC rollover).
+    // Neither must the hourly check (due again after the UTC rollover). The
+    // 00:30:00 tick falls inside stable's hourly attempt throttle (startup
+    // ran at 23:30:10), so the 01:30:00 tick is the one that checks.
+    await vi.advanceTimersByTimeAsync(UPDATE_CHECK_INTERVAL_MS);
+    expect(checkMock).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(UPDATE_CHECK_INTERVAL_MS);
     expect(checkMock).toHaveBeenCalledTimes(2);
     expect(service.getState().status).toBe('downloaded');

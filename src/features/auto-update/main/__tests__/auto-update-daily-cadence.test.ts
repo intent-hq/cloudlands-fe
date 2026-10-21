@@ -5,8 +5,9 @@
  * per UTC day: the startup check runs only when no check succeeded today,
  * and the hourly tick and focus/resume check only once the UTC day has
  * rolled over (`k=daily` for the tick). A failed check is not recorded, so
- * the next tick or focus retries. Manual and channel-switch checks always
- * run. Alpha and beta keep the startup check, hourly checks (`k=periodic`)
+ * a later tick or focus retries; until a check succeeds, stable makes at most
+ * one automatic attempt per hour across startup, tick, focus and resume.
+ * Manual and channel-switch checks always run and do not count as attempts. Alpha and beta keep the startup check, hourly checks (`k=periodic`)
  * and focus/resume checks after 4 h. The recorded day is the
  * `lastUpdateCheckDay` local pref, the same value the telemetry `d` flag uses.
  */
@@ -242,7 +243,7 @@ describe('stable channel: at most one successful automatic check per UTC day', (
     expect(checkMock).toHaveBeenCalledTimes(1);
   });
 
-  it('a failed check is not recorded: the next tick and focus retry', async () => {
+  it('a failed check is not recorded: a later automatic attempt retries', async () => {
     const { checkMock, focus, answerFailure, answerNotAvailable } = await setup(
       '2026-10-21T08:00:00Z',
       { lastUpdateCheckDay: '2026-10-20' },
@@ -254,21 +255,18 @@ describe('stable channel: at most one successful automatic check per UTC day', (
     expect(afterStartup).toBeGreaterThan(0);
     expect((await readPrefs()).lastUpdateCheckDay).toBe('2026-10-20');
 
-    // Focus retries straight away.
+    // An hour after the failed attempt, focus retries and its success is
+    // recorded.
+    checkMock.mockImplementation(answerNotAvailable);
+    vi.setSystemTime(new Date('2026-10-21T09:00:10Z'));
     focus();
     await settle();
-    const afterFocus = checkMock.mock.calls.length;
-    expect(afterFocus).toBeGreaterThan(afterStartup);
-
-    // The hourly tick retries too, and its success is recorded.
-    checkMock.mockImplementation(answerNotAvailable);
-    await vi.advanceTimersByTimeAsync(HOUR_MS);
-    expect(checkMock.mock.calls.length).toBe(afterFocus + 1);
+    expect(checkMock.mock.calls.length).toBe(afterStartup + 1);
     expect((await readPrefs()).lastUpdateCheckDay).toBe('2026-10-21');
 
-    // Recorded: the next tick that day is quiet.
-    await vi.advanceTimersByTimeAsync(HOUR_MS);
-    expect(checkMock.mock.calls.length).toBe(afterFocus + 1);
+    // Recorded: the rest of the day stays quiet.
+    await vi.advanceTimersByTimeAsync(3 * HOUR_MS);
+    expect(checkMock.mock.calls.length).toBe(afterStartup + 1);
   });
 
   it('a successful check on the GitHub feed (statistics off) also counts', async () => {
@@ -309,6 +307,222 @@ describe('stable channel: at most one successful automatic check per UTC day', (
     await settle();
 
     expect(triggers).toEqual(['channel', 'channel']);
+  });
+});
+
+describe('stable channel: at most one automatic attempt per hour until a check succeeds', () => {
+  it('after a failed attempt, focus, resume and the tick wait an hour', async () => {
+    const { checkMock, triggers, focus, resume, answerFailure, answerNotAvailable } = await setup(
+      '2026-10-21T08:00:00Z',
+      { lastUpdateCheckDay: '2026-10-20' },
+    );
+    // The first failure is retried on GitHub inside the same attempt, so
+    // attempts are counted by their telemetry `k` value.
+    checkMock.mockImplementation(answerFailure);
+    const attempts = () => triggers.filter((k) => k !== null);
+
+    // 08:00:10: the startup attempt fails (telemetry, then the GitHub retry).
+    await vi.advanceTimersByTimeAsync(STARTUP_CHECK_DELAY_MS);
+    expect(attempts()).toEqual(['startup']);
+    const afterStartup = checkMock.mock.calls.length;
+
+    // 08:20: repeated focus/resume within the hour stay offline.
+    await vi.advanceTimersByTimeAsync(20 * 60 * 1000 - STARTUP_CHECK_DELAY_MS);
+    focus();
+    resume();
+    focus();
+    await settle();
+    expect(checkMock.mock.calls.length).toBe(afterStartup);
+
+    // 09:00:00 tick: 59m50s after the attempt, still throttled.
+    await vi.advanceTimersByTimeAsync(40 * 60 * 1000);
+    expect(checkMock.mock.calls.length).toBe(afterStartup);
+
+    // 09:00:10: an hour has passed, focus makes exactly one attempt.
+    await vi.advanceTimersByTimeAsync(STARTUP_CHECK_DELAY_MS);
+    resume();
+    focus();
+    await settle();
+    expect(checkMock.mock.calls.length).toBe(afterStartup + 1);
+
+    // 10:00:00 tick: throttled by the 09:00:10 attempt; the 11:00:00 tick
+    // runs and succeeds, then the day stays quiet.
+    checkMock.mockImplementation(answerNotAvailable);
+    await vi.advanceTimersByTimeAsync(HOUR_MS - STARTUP_CHECK_DELAY_MS);
+    expect(checkMock.mock.calls.length).toBe(afterStartup + 1);
+    await vi.advanceTimersByTimeAsync(HOUR_MS);
+    expect(checkMock.mock.calls.length).toBe(afterStartup + 2);
+    expect((await readPrefs()).lastUpdateCheckDay).toBe('2026-10-21');
+    await vi.advanceTimersByTimeAsync(5 * HOUR_MS);
+    focus();
+    resume();
+    await settle();
+    expect(checkMock.mock.calls.length).toBe(afterStartup + 2);
+  });
+
+  it('a failed telemetry attempt retried on GitHub counts as one attempt', async () => {
+    const { checkMock, focus, answerFailure } = await setup('2026-10-21T08:00:00Z', {
+      lastUpdateCheckDay: '2026-10-20',
+    });
+    checkMock.mockImplementation(answerFailure);
+
+    await vi.advanceTimersByTimeAsync(STARTUP_CHECK_DELAY_MS);
+    // Telemetry feed, then the GitHub retry.
+    expect(checkMock).toHaveBeenCalledTimes(2);
+
+    vi.setSystemTime(new Date('2026-10-21T08:30:00Z'));
+    focus();
+    await settle();
+    expect(checkMock).toHaveBeenCalledTimes(2);
+
+    vi.setSystemTime(new Date('2026-10-21T09:00:10Z'));
+    focus();
+    await settle();
+    // The session now goes straight to GitHub: one more request.
+    expect(checkMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('a new UTC day does not reset the hourly attempt throttle', async () => {
+    const { checkMock, focus, answerFailure } = await setup('2026-10-21T23:20:00Z', {
+      lastUpdateCheckDay: '2026-10-20',
+      shareUpdateStatistics: false,
+    });
+    checkMock.mockImplementation(answerFailure);
+
+    // 23:20:10 attempt fails.
+    await vi.advanceTimersByTimeAsync(STARTUP_CHECK_DELAY_MS);
+    expect(checkMock).toHaveBeenCalledTimes(1);
+
+    // 00:05 the next UTC day: still within the hour.
+    vi.setSystemTime(new Date('2026-10-22T00:05:00Z'));
+    focus();
+    await settle();
+    expect(checkMock).toHaveBeenCalledTimes(1);
+
+    // 00:20:10: an hour after the attempt.
+    vi.setSystemTime(new Date('2026-10-22T00:20:10Z'));
+    focus();
+    await settle();
+    expect(checkMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('a successful attempt late in the day throttles the first check of the next day', async () => {
+    const { checkMock, focus } = await setup('2026-10-21T23:50:00Z', {
+      lastUpdateCheckDay: '2026-10-20',
+      shareUpdateStatistics: false,
+    });
+
+    await vi.advanceTimersByTimeAsync(STARTUP_CHECK_DELAY_MS);
+    expect(checkMock).toHaveBeenCalledTimes(1);
+    expect((await readPrefs()).lastUpdateCheckDay).toBe('2026-10-21');
+
+    vi.setSystemTime(new Date('2026-10-22T00:10:00Z'));
+    focus();
+    await settle();
+    expect(checkMock).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(new Date('2026-10-22T00:50:10Z'));
+    focus();
+    await settle();
+    expect(checkMock).toHaveBeenCalledTimes(2);
+    expect((await readPrefs()).lastUpdateCheckDay).toBe('2026-10-22');
+  });
+
+  it('manual and channel-switch checks bypass the throttle and do not consume it', async () => {
+    const { service, checkMock, focus, answerFailure } = await setup('2026-10-21T08:00:00Z', {
+      lastUpdateCheckDay: '2026-10-20',
+      shareUpdateStatistics: false,
+    });
+    checkMock.mockImplementation(answerFailure);
+
+    // 08:00:10 automatic attempt fails.
+    await vi.advanceTimersByTimeAsync(STARTUP_CHECK_DELAY_MS);
+
+    // Manual checks run immediately, repeatedly.
+    vi.setSystemTime(new Date('2026-10-21T08:10:00Z'));
+    await service.checkForUpdatesManual();
+    await settle();
+    await service.checkForUpdatesManual();
+    await settle();
+
+    // A channel switch back to stable checks immediately too.
+    await service.setChannel('beta');
+    await service.setChannel('stable');
+    await service.checkForUpdatesOnChannelSwitch();
+    await settle();
+    expect(checkMock).toHaveBeenCalledTimes(4);
+
+    // Focus is still throttled by the automatic attempt only...
+    focus();
+    await settle();
+    expect(checkMock).toHaveBeenCalledTimes(4);
+
+    // ...and not by the later manual/channel checks.
+    vi.setSystemTime(new Date('2026-10-21T09:00:10Z'));
+    focus();
+    await settle();
+    expect(checkMock).toHaveBeenCalledTimes(5);
+  });
+
+  it('beta automatic checks do not consume the stable throttle', async () => {
+    const { service, checkMock, focus, answerFailure } = await setup('2026-10-21T08:00:00Z', {
+      updateChannel: 'beta',
+      lastUpdateCheckDay: '2026-10-20',
+      shareUpdateStatistics: false,
+    });
+    checkMock.mockImplementation(answerFailure);
+
+    await vi.advanceTimersByTimeAsync(STARTUP_CHECK_DELAY_MS);
+    expect(checkMock).toHaveBeenCalledTimes(1);
+
+    // Switch to stable without the channel-switch check: the first stable
+    // automatic attempt runs at once, the next waits an hour.
+    await service.setChannel('stable');
+    focus();
+    await settle();
+    focus();
+    await settle();
+    expect(checkMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('the stable throttle survives a round trip through beta, without throttling beta', async () => {
+    const { service, checkMock, focus, answerFailure } = await setup('2026-10-21T08:00:00Z', {
+      lastUpdateCheckDay: '2026-10-20',
+      shareUpdateStatistics: false,
+    });
+    checkMock.mockImplementation(answerFailure);
+
+    // 08:00:10 stable attempt fails.
+    await vi.advanceTimersByTimeAsync(STARTUP_CHECK_DELAY_MS);
+
+    // On beta the 09:00:00 tick runs regardless of the stable throttle.
+    await service.setChannel('beta');
+    await vi.advanceTimersByTimeAsync(HOUR_MS - STARTUP_CHECK_DELAY_MS);
+    expect(checkMock).toHaveBeenCalledTimes(2);
+
+    // Back on stable within the hour after the stable attempt (wall clock set
+    // back to 08:30): focus stays throttled.
+    await service.setChannel('stable');
+    vi.setSystemTime(new Date('2026-10-21T08:30:00Z'));
+    focus();
+    await settle();
+    expect(checkMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('a wall clock moved backwards does not block automatic attempts', async () => {
+    const { checkMock, focus, answerFailure } = await setup('2026-10-21T08:00:00Z', {
+      lastUpdateCheckDay: '2026-10-20',
+      shareUpdateStatistics: false,
+    });
+    checkMock.mockImplementation(answerFailure);
+
+    await vi.advanceTimersByTimeAsync(STARTUP_CHECK_DELAY_MS);
+    expect(checkMock).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(new Date('2026-10-21T05:00:00Z'));
+    focus();
+    await settle();
+    expect(checkMock).toHaveBeenCalledTimes(2);
   });
 });
 
