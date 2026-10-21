@@ -600,6 +600,24 @@ describe('turn-boundary divider placement (rendered ChatPanel)', () => {
       anchorId: 'notice-1',
     },
     {
+      site: 'provider failover notice',
+      messages: [
+        message('user-1', 'user'),
+        message('notice-1', 'system', {
+          metadata: {
+            type: 'provider_failover',
+            fromProvider: 'claude-code',
+            toProvider: 'claude-code@pwork',
+            model: 'opus',
+            reason: 'quota-exceeded',
+          },
+        }),
+        message('user-2', 'user'),
+        message('assistant-2', 'assistant'),
+      ],
+      anchorId: 'notice-1',
+    },
+    {
       site: 'assistant row',
       messages: [
         message('user-1', 'user'),
@@ -681,6 +699,42 @@ describe('turn-boundary divider placement (rendered ChatPanel)', () => {
     expect(text).toMatch(/disabled/i);
     expect(text).toMatch(/auggie/i);
     // The notice sits between the user row and the assistant output.
+    const userRow = container.querySelector('[data-message-id="user-1"]') as Node;
+    const assistantRow = container.querySelector('[data-message-id="assistant-1"]') as Node;
+    const follows = (a: Node, b: Node) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(follows(userRow, rows[0])).toBe(true);
+    expect(follows(rows[0], assistantRow)).toBe(true);
+  });
+
+  it('renders the daemon provider failover notice once between the user row and the backup reply', async () => {
+    const daemonText = 'claude-code ran out of quota. Switched to the backup claude-code (Work).';
+    const { container, turns } = await renderTranscript(
+      [
+        message('user-1', 'user'),
+        message('failover-1', 'system', {
+          text: daemonText,
+          metadata: {
+            type: 'provider_failover',
+            fromProvider: 'claude-code',
+            toProvider: 'claude-code@pwork',
+            model: 'opus',
+            reason: 'quota-exceeded',
+          },
+        }),
+        message('assistant-1', 'assistant'),
+      ],
+      null,
+    );
+
+    expect(turns).toHaveLength(1);
+    const rows = container.querySelectorAll('[data-message-id="failover-1"]');
+    expect(rows).toHaveLength(1);
+    const notices = rows[0].querySelectorAll('[role="status"]');
+    expect(notices).toHaveLength(1);
+    expect(notices[0].textContent).toMatch(/ran out of quota/);
+    expect(notices[0].textContent).not.toContain('@pwork');
+    expect(container.textContent).not.toContain(daemonText);
     const userRow = container.querySelector('[data-message-id="user-1"]') as Node;
     const assistantRow = container.querySelector('[data-message-id="assistant-1"]') as Node;
     const follows = (a: Node, b: Node) =>

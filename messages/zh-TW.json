@@ -901,6 +901,8 @@
   "chat_proposalTray_hide_tooltip": "隱藏，直到您再次展開",
   "chat_proposalTray_stepCounter_label": "第 {current} 個，共 {total} 個",
   "chat_proposalTray_title": "待處理提議",
+  "chat_providerFailoverNotice_fallback_label": "已切換至備用提供者",
+  "chat_providerFailoverNotice_quota_label": "{from} 的配額已用盡 — 繼續使用 {to}（備用）",
   "chat_providerRehomedNotice_defaultModel_label": "預設模型",
   "chat_providerRehomedNotice_disabled_label": "{model}（{fromProvider}）已不再可用 — {fromProvider} 已在設定 > 代理中被停用；此代理現在執行於 {toProvider}。",
   "chat_providerRehomedNotice_fallback_label": "提供者已變更",

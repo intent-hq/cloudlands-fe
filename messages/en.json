@@ -901,6 +901,8 @@
   "chat_proposalTray_hide_tooltip": "Hide until you expand again",
   "chat_proposalTray_stepCounter_label": "{current} of {total}",
   "chat_proposalTray_title": "Pending Proposals",
+  "chat_providerFailoverNotice_fallback_label": "Switched to a backup provider",
+  "chat_providerFailoverNotice_quota_label": "{from} ran out of quota — continuing on {to} (backup)",
   "chat_providerRehomedNotice_defaultModel_label": "The default model",
   "chat_providerRehomedNotice_disabled_label": "{model} ({fromProvider}) is no longer available — {fromProvider} was disabled in Settings > Agents; this agent now runs on {toProvider}.",
   "chat_providerRehomedNotice_fallback_label": "Provider changed",

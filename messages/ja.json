@@ -901,6 +901,8 @@
   "chat_proposalTray_hide_tooltip": "再度展開するまで非表示にします",
   "chat_proposalTray_stepCounter_label": "{total} 件中 {current} 件目",
   "chat_proposalTray_title": "保留中の提案",
+  "chat_providerFailoverNotice_fallback_label": "バックアッププロバイダーに切り替えました",
+  "chat_providerFailoverNotice_quota_label": "{from} のクォータが上限に達しました — {to}（バックアップ）で続行します",
   "chat_providerRehomedNotice_defaultModel_label": "デフォルトモデル",
   "chat_providerRehomedNotice_disabled_label": "{model}（{fromProvider}）は利用できなくなりました — {fromProvider} は設定 > エージェントで無効化されました。このエージェントは現在 {toProvider} で実行されています。",
   "chat_providerRehomedNotice_fallback_label": "プロバイダーが変更されました",

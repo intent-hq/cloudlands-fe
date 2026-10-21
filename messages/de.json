@@ -901,6 +901,8 @@
   "chat_proposalTray_hide_tooltip": "Ausblenden, bis Sie wieder erweitern",
   "chat_proposalTray_stepCounter_label": "{current} von {total}",
   "chat_proposalTray_title": "Ausstehende Vorschläge",
+  "chat_providerFailoverNotice_fallback_label": "Zu einem Ersatzanbieter gewechselt",
+  "chat_providerFailoverNotice_quota_label": "{from} hat sein Kontingent aufgebraucht — weiter mit {to} (Ersatz)",
   "chat_providerRehomedNotice_defaultModel_label": "Das Standardmodell",
   "chat_providerRehomedNotice_disabled_label": "{model} ({fromProvider}) ist nicht mehr verfügbar — {fromProvider} wurde unter Einstellungen > Agenten deaktiviert; dieser Agent läuft jetzt auf {toProvider}.",
   "chat_providerRehomedNotice_fallback_label": "Anbieter geändert",

@@ -901,6 +901,8 @@
   "chat_proposalTray_hide_tooltip": "Masquer jusqu'à ce que vous développiez à nouveau",
   "chat_proposalTray_stepCounter_label": "{current} sur {total}",
   "chat_proposalTray_title": "Propositions en attente",
+  "chat_providerFailoverNotice_fallback_label": "Passage à un fournisseur de secours",
+  "chat_providerFailoverNotice_quota_label": "{from} a épuisé son quota — poursuite avec {to} (secours)",
   "chat_providerRehomedNotice_defaultModel_label": "Le modèle par défaut",
   "chat_providerRehomedNotice_disabled_label": "{model} ({fromProvider}) n'est plus disponible — {fromProvider} a été désactivé dans Paramètres > Agents ; cet agent s'exécute désormais sur {toProvider}.",
   "chat_providerRehomedNotice_fallback_label": "Fournisseur modifié",

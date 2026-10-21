@@ -17,6 +17,8 @@
   import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
   import { getAutoUnarchivedNotice } from './auto-unarchived-notice';
   import { getProviderRehomedNotice } from './rehome-notice';
+  import ProviderFailoverNotice from './ProviderFailoverNotice.svelte';
+  import { getProviderFailoverNotice } from './provider-failover-notice';
   import { crispOut, spring, springIn } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
   import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
@@ -121,6 +123,7 @@
     {@const questionsDismissedNotice = getQuestionsDismissedNotice(message)}
     {@const autoUnarchivedNotice = getAutoUnarchivedNotice(message)}
     {@const providerRehomedNotice = getProviderRehomedNotice(message)}
+    {@const providerFailoverNotice = getProviderFailoverNotice(message)}
     <div
       id="message-{message.id}"
       class="message-wrapper group/message"
@@ -161,6 +164,12 @@
         <!-- Daemon-persisted provider re-home notice - centered inline divider. -->
         <ProviderRehomedNotice
           notice={providerRehomedNotice}
+          fallbackText={extractAllContent(message) || undefined}
+        />
+      {:else if providerFailoverNotice}
+        <!-- Daemon-persisted quota failover notice - centered inline divider. -->
+        <ProviderFailoverNotice
+          notice={providerFailoverNotice}
           fallbackText={extractAllContent(message) || undefined}
         />
       {:else if message.role === 'user'}

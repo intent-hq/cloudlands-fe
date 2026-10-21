@@ -83,7 +83,12 @@ export function hasOperationalAssistantTurnBoundary(
 
 function isTurnNotice(message: AgentMessage): boolean {
   const type = message.metadata?.type;
-  return type === 'model_changed' || type === 'effort_changed' || type === 'provider_rehomed';
+  return (
+    type === 'model_changed' ||
+    type === 'effort_changed' ||
+    type === 'provider_rehomed' ||
+    type === 'provider_failover'
+  );
 }
 
 function isInlineSystemNotice(message: AgentMessage): boolean {

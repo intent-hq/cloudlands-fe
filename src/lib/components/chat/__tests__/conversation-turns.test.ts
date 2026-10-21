@@ -33,12 +33,18 @@ describe('conversation turn indexing', () => {
           message('model', 'system', 'model_changed'),
           effort,
           message('rehome', 'system', 'provider_rehomed'),
+          message('failover', 'system', 'provider_failover'),
           message('reply', 'assistant'),
         ],
       },
     ]);
     const [turn] = indexed.groups[0].turns;
-    expect(turn.noticeMessages.map(({ id }) => id)).toEqual(['model', 'effort', 'rehome']);
+    expect(turn.noticeMessages.map(({ id }) => id)).toEqual([
+      'model',
+      'effort',
+      'rehome',
+      'failover',
+    ]);
     expect(turn.bodyMessages.map(({ id }) => id)).toEqual(['reply']);
     expect(turn.assistantMessages.map(({ id }) => id)).toEqual(['reply']);
     expect(indexed.turnKeyByMessageId.get('effort')).toBe('user');

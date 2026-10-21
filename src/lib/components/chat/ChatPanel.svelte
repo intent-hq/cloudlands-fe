@@ -420,6 +420,8 @@
   import { getEffortChangeNotice } from './effort-change-notice';
   import ProviderRehomedNotice from './ProviderRehomedNotice.svelte';
   import { getProviderRehomedNotice } from './rehome-notice';
+  import ProviderFailoverNotice from './ProviderFailoverNotice.svelte';
+  import { getProviderFailoverNotice } from './provider-failover-notice';
   import {
     hasOperationalAssistantMessageBoundary,
     hasOperationalAssistantTurnBoundary,
@@ -4082,7 +4084,8 @@
     return Boolean(
       getModelChangeNotice(notice) ||
       getEffortChangeNotice(notice) ||
-      getProviderRehomedNotice(notice),
+      getProviderRehomedNotice(notice) ||
+      getProviderFailoverNotice(notice),
     );
   }
 
@@ -7281,11 +7284,12 @@
                       {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
                     {/if}
 
-                    <!-- Model, effort, and provider re-home notices (daemon-persisted, after the user row, before assistant output) -->
+                    <!-- Model, effort, provider re-home, and quota failover notices (daemon-persisted, after the user row, before assistant output) -->
                     {#each turn.noticeMessages as noticeMessage (noticeMessage.id)}
                       {@const notice = getModelChangeNotice(noticeMessage)}
                       {@const effortNotice = getEffortChangeNotice(noticeMessage)}
                       {@const rehomeNotice = getProviderRehomedNotice(noticeMessage)}
+                      {@const failoverNotice = getProviderFailoverNotice(noticeMessage)}
                       {#if notice}
                         <div data-message-id={noticeMessage.id} class="px-2">
                           <ModelChangeNotice
@@ -7308,6 +7312,15 @@
                           <ProviderRehomedNotice
                             workspaceId={workspace?.id}
                             notice={rehomeNotice}
+                            fallbackText={extractAllContent(noticeMessage) || undefined}
+                          />
+                        </div>
+                        {@render newMessagesDividerAfter(noticeMessage.id, dividerAtTurnBoundary)}
+                      {:else if failoverNotice}
+                        <div data-message-id={noticeMessage.id} class="px-2">
+                          <ProviderFailoverNotice
+                            workspaceId={workspace?.id}
+                            notice={failoverNotice}
                             fallbackText={extractAllContent(noticeMessage) || undefined}
                           />
                         </div>
