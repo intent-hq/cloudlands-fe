@@ -374,6 +374,27 @@ describe('CompactWorkspaceInitializer repo-config setup script detection', () =>
     });
   });
 
+  it('restores the new repository default when GitHub repositories share a clone path', async () => {
+    mocks.lastUsedSelect.mockImplementation((_path: string, githubUrl?: string) =>
+      githubUrl?.includes('owner-b')
+        ? { name: 'B saved script', content: 'echo b-saved' }
+        : { name: 'A saved script', content: 'echo a-saved' },
+    );
+
+    const result = renderInitializer();
+    await waitFor(() => expect(pickerCallbacks()).toBeTruthy());
+    selectGitHubRepo({ githubUrl: 'https://github.com/owner-a/repo' });
+    await waitFor(() => expect(result.getByText('A saved script')).toBeTruthy());
+
+    selectGitHubRepo({ githubUrl: 'https://github.com/owner-b/repo' });
+
+    await waitFor(() => expect(result.getByText('B saved script')).toBeTruthy());
+    expect(mocks.lastUsedSelect).toHaveBeenLastCalledWith(
+      '/clones/repo',
+      'https://github.com/owner-b/repo',
+    );
+  });
+
   it('does not re-probe a local repository when only its branch changes', async () => {
     mocks.savedFormState = { repoPath: '/repo/a', repoType: 'local', isValidPath: true };
     renderInitializer();

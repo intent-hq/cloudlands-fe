@@ -291,6 +291,7 @@ import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice
 import { loadEnabledProvidersFromStorage } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
 import { workspaceInitializationSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initialization-saga';
+import { workspaceInitializerRepositorySaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initializer-repository-saga';
 import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
 
 /** The repository fields the form currently shows (via the mock picker props). */
@@ -363,6 +364,7 @@ function stubGeometry(dialog: HTMLElement, trigger: HTMLButtonElement, triggerRe
 let disposeStore: () => void;
 let cancelCatalog: () => void;
 let cancelInitialization: () => void;
+let cancelRepository: () => void;
 
 describe('NewSpaceModal model-picker composition', () => {
   beforeEach(() => {
@@ -401,12 +403,14 @@ describe('NewSpaceModal model-picker composition', () => {
     });
     cancelCatalog = appStore.runSaga(modelReloadSaga);
     cancelInitialization = appStore.runSaga(workspaceInitializationSaga);
+    cancelRepository = appStore.runSaga(workspaceInitializerRepositorySaga);
   });
 
   afterEach(() => {
     cleanup();
     cancelCatalog();
     cancelInitialization();
+    cancelRepository();
     sessionStorage.clear();
     vi.useRealTimers();
     vi.restoreAllMocks();

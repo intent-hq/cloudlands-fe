@@ -318,6 +318,8 @@ import {
   hydrateWorkspaceInitializer,
   workspaceInitializerDraftOwnerReleased,
   workspaceInitializerDraftRestoreRequested,
+  workspaceInitializerDraftSaveCancelled,
+  workspaceInitializerDraftSaveScheduled,
 } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 let dispose: () => void;
 let stopInitializer: () => void;
@@ -404,6 +406,36 @@ describe('actual initializer submission admission', () => {
 
     expect(editor.textContent).toBe('typed before restore');
     expect(mocks.draftSet).toHaveBeenCalledOnce();
+  });
+
+  it('cancels a queued pre-restore save when the user clears the edited draft', async () => {
+    const pendingRestore = Promise.withResolvers<null>();
+    mocks.draftGet.mockReturnValueOnce(pendingRestore.promise);
+    const dispatch = vi.spyOn(store, 'dispatch');
+    render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    await waitFor(() => expect(mocks.draftGet).toHaveBeenCalledOnce());
+
+    const editor = screen.getByTestId('mock-rich-textarea');
+    editor.textContent = 'typed before restore';
+    await fireEvent.input(editor);
+    await waitFor(() =>
+      expect(dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: workspaceInitializerDraftSaveScheduled.type }),
+      ),
+    );
+
+    editor.textContent = '';
+    await fireEvent.input(editor);
+    await waitFor(() =>
+      expect(dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: workspaceInitializerDraftSaveCancelled.type }),
+      ),
+    );
+    window.dispatchEvent(new Event('beforeunload'));
+    await new Promise((resolve) => setTimeout(resolve, 350));
+
+    expect(mocks.draftSet).not.toHaveBeenCalled();
+    pendingRestore.resolve(null);
   });
 
   it('re-admits its draft owner after a reconnect replaces the principal context', async () => {

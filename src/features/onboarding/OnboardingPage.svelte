@@ -95,6 +95,7 @@
     getTemplateContent,
     chooseDefaultSetupScript,
     probeIdentityKey,
+    repoIdentityKey,
     REPO_CONFIG_SCRIPT_NAME,
     type SetupScriptNameSource,
   } from '$features/setup-scripts';
@@ -107,6 +108,7 @@
     workspaceInitializerDraftFlushRequested,
     workspaceInitializerDraftOwnerReleased,
     workspaceInitializerDraftRestoreRequested,
+    workspaceInitializerDraftSaveCancelled,
     workspaceInitializerDraftSaveScheduled,
     workspaceInitializationResumeRequested,
     workspaceInitializationSubmitted,
@@ -287,15 +289,16 @@
     };
 
     const key = probeIdentityKey(identity);
+    const identityKey = repoIdentityKey(identity);
     const admission = $onboardingDraftAdmission$;
     untrack(() => {
       const probeChanged = previousSetupScriptProbeKey !== key;
       const admissionChanged = previousSetupScriptProbeAdmission !== admission;
       if (!probeChanged && !admissionChanged) return;
-      const repoChanged = path !== previousSetupScriptRepoKey;
+      const repoChanged = identityKey !== previousSetupScriptRepoKey;
       const initialRepo = previousSetupScriptRepoKey === null;
       const preservedRestoredState = initialRepo && !!setupScript.trim();
-      previousSetupScriptRepoKey = path;
+      previousSetupScriptRepoKey = identityKey;
       previousSetupScriptProbeKey = key;
       previousSetupScriptProbeAdmission = admission;
       if (probeChanged) {
@@ -486,6 +489,7 @@
   let onboardingDraftOwnerAdmission: string | null | undefined = undefined;
   let onboardingDraftProvenance: string | undefined;
   let onboardingDraftRestoreApplied = false;
+  let onboardingDraftEditedBeforeRestore = false;
   $effect(() => {
     const admission = $onboardingDraftAdmission$;
     const provenance = $onboardingDraftProvenance$;
@@ -496,6 +500,7 @@
     onboardingDraftOwnerAdmission = admission;
     onboardingDraftRestored = false;
     onboardingDraftRestoreApplied = false;
+    onboardingDraftEditedBeforeRestore = false;
     if (hadOwner)
       appStore.dispatch(
         workspaceInitializerDraftOwnerReleased(onboardingDraftOwnerId, priorRequestId),
@@ -582,13 +587,28 @@
     // Pre-settle, only user-added text or attachments are scheduled: they must
     // be flushable if navigation wins the restore race. The untouched initial
     // value stays unscheduled so it cannot clobber a newer shared daemon draft.
-    if (
-      !onboardingDraftRestored &&
-      onboardingInputValue === initialOnboardingPrompt &&
-      onboardingImageItems.length === 0 &&
-      onboardingStagedItems.length === 0
-    )
-      return;
+    if (!onboardingDraftRestored) {
+      const empty =
+        !onboardingInputValue &&
+        onboardingImageItems.length === 0 &&
+        onboardingStagedItems.length === 0;
+      const changedFromInitial =
+        onboardingInputValue !== initialOnboardingPrompt ||
+        onboardingImageItems.length > 0 ||
+        onboardingStagedItems.length > 0;
+      if (changedFromInitial) onboardingDraftEditedBeforeRestore = true;
+      if (empty && onboardingDraftEditedBeforeRestore) {
+        appStore.dispatch(
+          workspaceInitializerDraftSaveCancelled(
+            onboardingDraftOwnerId,
+            onboardingDraftRestoreRequestId,
+            selectPrincipalActionContext.select(appStore.state) ?? undefined,
+          ),
+        );
+        return;
+      }
+      if (!changedFromInitial) return;
+    }
     const payload = buildNewWorkspaceDraftPayload(onboardingInputValue, [
       ...onboardingImageItems,
       ...onboardingStagedItems,

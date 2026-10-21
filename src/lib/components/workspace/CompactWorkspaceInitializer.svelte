@@ -46,6 +46,7 @@
     workspaceInitializerDraftFlushRequested,
     workspaceInitializerDraftOwnerReleased,
     workspaceInitializerDraftRestoreRequested,
+    workspaceInitializerDraftSaveCancelled,
     workspaceInitializerDraftSaveScheduled,
     clearWorkspaceInitializationResume,
     workspaceInitializationResumeRequested,
@@ -1028,6 +1029,7 @@
   let draftRestoreRequestId = $state(crypto.randomUUID());
   let draftOwnerAdmission: string | null | undefined = undefined;
   let draftProvenance: string | undefined;
+  let draftEditedBeforeRestore = false;
   // The initialization saga clears the daemon draft on a successful create.
   // Prevent the emptied local form and teardown from scheduling a second write.
   let draftCleared = false;
@@ -1040,6 +1042,7 @@
     draftOwnerAdmission = admission;
     draftRestored = false;
     draftRestoreApplied = false;
+    draftEditedBeforeRestore = false;
     if (hadOwner)
       appStore.dispatch(workspaceInitializerDraftOwnerReleased(draftOwnerId, priorRequestId));
     if (admission === null) return;
@@ -1096,7 +1099,21 @@
   // still skipped so it cannot clear a daemon draft we never got to read.
   $effect(() => {
     if (draftCleared) return;
-    if (!draftRestored && !initialPrompt && contextItems.length === 0) return;
+    const empty = !initialPrompt && contextItems.length === 0;
+    if (!draftRestored) {
+      if (!empty) draftEditedBeforeRestore = true;
+      if (empty) {
+        if (draftEditedBeforeRestore)
+          appStore.dispatch(
+            workspaceInitializerDraftSaveCancelled(
+              draftOwnerId,
+              draftRestoreRequestId,
+              selectPrincipalActionContext.select(appStore.state) ?? undefined,
+            ),
+          );
+        return;
+      }
+    }
     const payload = buildNewWorkspaceDraftPayload(initialPrompt, contextItems);
     if (payload)
       appStore.dispatch(
@@ -1783,6 +1800,7 @@
   $effect(() => {
     const identity = setupScriptIdentity;
     const path = setupScriptRepoKey;
+    const identityKey = repoIdentityKey(identity);
     const key = setupScriptProbeKey;
     const scope = checkoutScope;
     const selected = repoType === 'gitlab' ? $checkoutSelection$ : null;
@@ -1791,10 +1809,10 @@
       const probeChanged = previousSetupScriptProbeKey !== key;
       const admissionChanged = previousSetupScriptProbeAdmission !== admission;
       if (!probeChanged && !admissionChanged) return;
-      const repoChanged = path !== previousSetupScriptRepoKey;
+      const repoChanged = identityKey !== previousSetupScriptRepoKey;
       const initialRepo = previousSetupScriptRepoKey === null;
       const preservedRestoredState = initialRepo && !!setupScript.trim();
-      previousSetupScriptRepoKey = path;
+      previousSetupScriptRepoKey = identityKey;
       previousSetupScriptProbeKey = key;
       previousSetupScriptProbeAdmission = admission;
       if (probeChanged) {
