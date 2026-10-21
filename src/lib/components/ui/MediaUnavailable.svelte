@@ -89,9 +89,13 @@
   {#if onRetry || path}
     <span class="flex shrink-0 flex-wrap items-center gap-1">
       {#if onRetry}
-        <Button variant="ghost" size="compact" onclick={retry}>
+        <Button
+          variant="ghost"
+          size="icon-compact"
+          tooltip={m.chat_shared_retry_label()}
+          onclick={retry}
+        >
           <Fa icon={faRotateRight} size="xs" />
-          {m.chat_shared_retry_label()}
         </Button>
       {/if}
       {#if path}

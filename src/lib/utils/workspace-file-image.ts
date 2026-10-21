@@ -78,17 +78,13 @@ export function isWorkspaceAssetVideoCandidate(value: string): boolean {
   return /\.(?:mp4|webm)$/i.test(path.trim());
 }
 
-/** Saved assets stay on note.readAsset routing, never workspace file paths. */
-export function workspaceAssetVideoSource(
-  value: string,
-  currentWorkspaceId?: string,
-): Extract<VideoSource, { kind: 'workspace' }> | null {
+function parseWorkspaceAssetId(value: string, currentWorkspaceId?: string): string | null {
   if (value !== value.trim()) return null;
   const match = /^workspace-asset:\/\/([^/?#]+)\/([^/?#]+)(\?[^#]*)?$/.exec(value);
   if (!match || !currentWorkspaceId || !isValidWorkspaceId(currentWorkspaceId)) return null;
   if (match[1] !== currentWorkspaceId) return null;
   const assetId = decodeSegment(match[2]);
-  if (!assetId || !/^[A-Za-z0-9._-]+\.(?:mp4|webm)$/i.test(assetId)) return null;
+  if (!assetId || !/^[A-Za-z0-9._-]+$/.test(assetId)) return null;
 
   // Preserve accepted routing/cache hints verbatim; reject all other query shapes.
   const search = match[3];
@@ -108,11 +104,29 @@ export function workspaceAssetVideoSource(
     }
   }
 
+  return assetId;
+}
+
+/** Saved assets stay on note.readAsset routing, never workspace file paths. */
+export function workspaceAssetVideoSource(
+  value: string,
+  currentWorkspaceId?: string,
+): Extract<VideoSource, { kind: 'workspace' }> | null {
+  const assetId = parseWorkspaceAssetId(value, currentWorkspaceId);
+  if (!assetId || !VIDEO_EXTENSION_RE.test(assetId)) return null;
   return {
     kind: 'workspace',
     url: value,
     mimeType: assetId.toLowerCase().endsWith('.webm') ? 'video/webm' : 'video/mp4',
   };
+}
+
+export function workspaceAssetImageSource(
+  value: string,
+  currentWorkspaceId?: string,
+): string | null {
+  const assetId = parseWorkspaceAssetId(value, currentWorkspaceId);
+  return assetId && IMAGE_EXTENSION_RE.test(assetId) ? value : null;
 }
 
 /**

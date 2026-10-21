@@ -270,7 +270,7 @@
       event.stopPropagation();
       event.stopImmediatePropagation();
 
-      if (mediaPreview?.openVideo(anchor)) return;
+      if (mediaPreview?.openAsset(anchor)) return;
 
       const sourcePanelId = getSourcePanelId(event);
       const owningWorkspaceId = workspaceId ? WorkspaceId(workspaceId) : undefined;
