@@ -2309,12 +2309,12 @@ describe('browserIpcSaga', () => {
     });
 
     // Closing a workspace's tab keeps its layout in memory but resets the
-    // daemon tab-registry sync, which only reloads when the layout restores
-    // again. Background hosting a workspace whose layout is still held must
-    // therefore restore it like a reopen; answering from the held layout left
-    // new agent tabs unreported, so the daemon never confirmed them (live
-    // repro on the manual build: openTab "could not be confirmed").
-    it('restores a still-held layout when background-hosting a closed workspace', async () => {
+    // daemon tab-registry sync, which only reloads when the layout settles
+    // again. Every browser request for a held, settled layout therefore asks
+    // the registry to reconcile (the registry saga reloads only a torn-down
+    // workspace); without it new agent tabs went unreported (live repro on
+    // the manual build: openTab "could not be confirmed").
+    it('asks the registry to reconcile a held, settled layout on browser requests', async () => {
       const { actions, task } = startWithReducer();
       hostedState('ws-viewed');
       state = {
@@ -2324,19 +2324,38 @@ describe('browserIpcSaga', () => {
             'ws-closed-held': { ...emptyWorkspaceState, restoreStatus: 'restored' },
           },
         },
+        // The workspace tab was closed: its registry record was torn down.
+        browserTabRegistry: {
+          byWorkspaceId: {
+            'ws-closed-held': { generation: 2, phase: 'unmounted', reported: {}, unresolved: {} },
+          },
+          closing: {},
+        },
       };
-      seedStorage('ws-closed-held', [
-        { id: 'browser-1', type: 'browser', title: 'A', browserUrl: 'http://a/', closable: true },
-      ]);
 
       await emit({ workspaceId: 'ws-closed-held' }, 'browser:host-workspace');
-      await settle();
+      await emit(
+        {
+          url: 'http://a/',
+          workspaceId: 'ws-closed-held',
+          tabId: 'tab-x',
+          ownerAgentId: 'agent-1',
+          visible: false,
+        },
+        'browser:open-tab',
+      );
 
-      const statuses = actions
-        .filter((action: any) => action.type === 'panelLayout/setRestoreStatus')
-        .map((action: any) => action.payload);
-      expect(statuses).toContainEqual(['ws-closed-held', 'pending']);
-      expect(statuses.at(-1)?.[1]).toBe('restored');
+      const reconciles = actions.filter(
+        (action: any) => action.type === 'panelLayout/browserTabRegistryReconcileRequested',
+      );
+      expect(reconciles.map((action: any) => action.payload)).toEqual([
+        ['ws-closed-held'],
+        ['ws-closed-held'],
+      ]);
+      // Held layouts are not re-restored (that would reload live guests).
+      expect(
+        actions.filter((action: any) => action.type === 'panelLayout/initializeLayout'),
+      ).toEqual([]);
       task.cancel();
       await task.toPromise();
     });

@@ -35,6 +35,7 @@ import {
 import { dropRevealIfWorkspaceNotDisplayed } from '../../panel-layout/sagas/reveal-suppression';
 import {
   activateVisibleTab,
+  browserTabRegistryReconcileRequested,
   closeTab,
   openHiddenTab,
   openTab,
@@ -52,6 +53,7 @@ import {
   requestBrowserTabNavigation,
   requestBrowserTabRecovery,
 } from '../../tab-state/tab-state-slice';
+import { selectIsBrowserTabRegistryTornDown } from '../../browser-tab-registry/browser-tab-registry-selectors';
 import { workspaceDeleted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
 import { focusBrowserTabRequested } from '../app-layout-slice';
@@ -165,6 +167,19 @@ type LayoutReadiness =
  * cannot abort the whole browser IPC saga for the window.
  */
 
+/**
+ * A closed workspace keeps its layout settled in memory while its daemon
+ * tab-registry rows are torn down, and only a new settle reloads them — so a
+ * browser request for it (an agent op while it is background-hosted) asks
+ * the registry to reconcile; otherwise tabs opened now are never reported
+ * and the daemon cannot confirm them.
+ */
+function* requestRegistryReconcileIfTornDown(workspaceId: string): SagaGenerator<void> {
+  if (yield* selectIsBrowserTabRegistryTornDown.effect(workspaceId)) {
+    yield* put(browserTabRegistryReconcileRequested(workspaceId));
+  }
+}
+
 function* ensureWorkspaceLayoutForRequest(workspaceId: string): SagaGenerator<LayoutReadiness> {
   const held = workspaceId in (yield* selectPanelLayoutWorkspaces.effect());
   if (
@@ -186,9 +201,13 @@ function* ensureWorkspaceLayoutForRequest(workspaceId: string): SagaGenerator<La
       // and retry the hydration instead of answering untruthfully from the
       // never-restored default state. Any other status (or a reducer-created
       // live entry) is usable as-is.
-      if (after?.restoreStatus !== 'pending') return { status: 'ready' };
+      if (after?.restoreStatus !== 'pending') {
+        yield* call(requestRegistryReconcileIfTornDown, workspaceId);
+        return { status: 'ready' };
+      }
     }
     yield* call(hydrateWorkspaceLayout, workspaceId);
+    yield* call(requestRegistryReconcileIfTornDown, workspaceId);
     return { status: 'ready' };
   } catch (error) {
     return {
@@ -214,23 +233,14 @@ function* hostWorkspace(data: BrowserHostWorkspacePayload | null): SagaGenerator
       ? data.backendId
       : yield* selectActiveBackendId();
   backgroundHostedWorkspaces.set(workspaceId, backendId);
-  if (yield* call(isBackgroundHosted, workspaceId)) {
-    // Restore like a reopen even when the layout is still held: closing the
-    // workspace's tab keeps its layout in memory but resets the daemon
-    // tab-registry sync, which only reloads when the layout settles again.
-    // Answering from the held layout would leave new agent tabs unreported,
-    // so the daemon could never confirm them. A layout already restored
-    // since its last teardown is left as is.
-    try {
-      yield* call(hydrateWorkspaceLayout, workspaceId);
-    } catch (error) {
-      // Stay hosted: requests for the workspace are answered with the
-      // truthful hydration error instead of a silent timeout.
-      logger.warn('Layout hydration failed while background-hosting a workspace', {
-        workspaceId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+  const readiness = yield* call(ensureWorkspaceLayoutForRequest, workspaceId);
+  if (readiness.status === 'hydration-failed') {
+    // Stay hosted: requests for the workspace are answered with the
+    // truthful hydration error instead of a silent timeout.
+    logger.warn('Layout hydration failed while background-hosting a workspace', {
+      workspaceId,
+      error: readiness.message,
+    });
   }
   yield* call(reportBackgroundHostedWorkspaces);
 }
