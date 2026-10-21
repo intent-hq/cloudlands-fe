@@ -2736,6 +2736,38 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     expect(selectAgentSession.select(appStore.state, agentId)?.isWaitingOnTool).toBe(true);
   });
 
+  it('starts streaming when the daemon-started turn opens before the first live snapshot', () => {
+    // Build Smoke trace order: agent:status-changed (active) opens the live
+    // turn, then the first chat snapshot already reports isStreaming with only
+    // the user prompt. That snapshot agrees with the open turn, so its rising
+    // edge must reach the session instead of being consumed silently.
+    const agentId = 'agent-daemon-start-before-snapshot';
+    seedSession(agentId);
+    appStore.dispatch(
+      updateSession(agentId, {
+        liveTurnOpen: true,
+        liveTurnOpenedAt: '2026-01-01T00:00:02.000Z',
+      }),
+    );
+    const sub = openChat(agentId);
+    sub.handler({
+      ...transcript([makeMessage('prompt', 'Say hello', { role: 'user', seq: 0 })], true),
+      fromSnapshot: true,
+    });
+    expect(selectAgentSessionIsStreaming.select(appStore.state, agentId)).toBe(true);
+
+    sub.handler(
+      transcript(
+        [
+          makeMessage('prompt', 'Say hello', { role: 'user', seq: 0 }),
+          makeMessage('answer', 'Processing', { isStreaming: true }),
+        ],
+        true,
+      ),
+    );
+    expect(selectAgentSessionIsStreaming.select(appStore.state, agentId)).toBe(true);
+  });
+
   it.each([
     { name: 'equal daemon timestamps', openedAt: '2026-01-01T00:00:01.000Z', seq: 1 },
     { name: 'missing opening timestamp', openedAt: undefined, seq: 1 },
