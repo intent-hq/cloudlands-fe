@@ -163,6 +163,7 @@
                 type: 'image' as const,
                 data: image.imageData!,
                 mimeType: image.imageMimeType!,
+                ...(image.placementFileName ? { placementFileName: image.placementFileName } : {}),
               })),
             }
           : {}),

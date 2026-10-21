@@ -1,4 +1,9 @@
 <script lang="ts">
+  import {
+    canonicalImageMimeType,
+    isSupportedImageMimeType,
+    imageAttachmentName,
+  } from './input/image-attachment-format';
   import { truncatedTitle } from '$lib/actions/observe-overflow';
   /* eslint-disable max-lines */
   import {
@@ -922,6 +927,7 @@
     ).filter(
       (block: any) =>
         block.type === 'image' &&
+        !(block.mimeType && !isSupportedImageMimeType(block.mimeType)) &&
         ((block.data && block.mimeType) || block.attachmentId || block.dataTruncated === true),
     );
   });
@@ -968,7 +974,8 @@
       if (failedReferenceImages[block.attachmentId]) return null;
       return referenceImageUrls[block.attachmentId] ?? null;
     }
-    if (block.data && block.mimeType) return `data:${block.mimeType};base64,${block.data}`;
+    if (block.data && block.mimeType)
+      return `data:${canonicalImageMimeType(block.mimeType)};base64,${block.data}`;
     return null;
   }
 
@@ -1037,7 +1044,7 @@
       return;
     }
     if (!isImageBlock(imageBlock) || !imageBlock.data) return;
-    lightboxImageUrl = `data:${imageBlock.mimeType};base64,${imageBlock.data}`;
+    lightboxImageUrl = `data:${canonicalImageMimeType(imageBlock.mimeType)};base64,${imageBlock.data}`;
     lightboxImageName =
       imageBlock.fileName ||
       m.chat_chatMessage_attachedImage_fallback({ number: formatInteger(index + 1) });
@@ -1083,7 +1090,7 @@
     // Legacy slim images have no thumbnail to fall back to. Keep the tile
     // actionable for retry rather than opening an empty data URL on failure.
     if (!isImageBlock(block) || !block.data) return;
-    lightboxImageUrl = `data:${block.mimeType};base64,${block.data}`;
+    lightboxImageUrl = `data:${canonicalImageMimeType(block.mimeType)};base64,${block.data}`;
     lightboxImageName =
       block.fileName ||
       m.chat_chatMessage_attachedImage_fallback({ number: formatInteger(pending.index + 1) });
@@ -1098,7 +1105,19 @@
     if (!message?.contentBlocks || !Array.isArray(message.contentBlocks)) {
       return [];
     }
-    return message.contentBlocks.filter(isFileBlock);
+    return message.contentBlocks.flatMap<ContentBlock & { fileName: string }>((block) => {
+      if (isFileBlock(block)) return [block];
+      if (block.type === 'image' && block.mimeType && !isSupportedImageMimeType(block.mimeType)) {
+        return [
+          {
+            ...block,
+            type: 'file' as const,
+            fileName: block.fileName || imageAttachmentName(block.mimeType, 'image'),
+          },
+        ];
+      }
+      return [];
+    });
   });
 
   // Secondary text for a file chip: size and/or mime from the block's
@@ -1392,6 +1411,7 @@
               type: 'image' as const,
               data: item.imageData!,
               mimeType: item.imageMimeType!,
+              ...(item.placementFileName ? { placementFileName: item.placementFileName } : {}),
             },
       );
     const fileBlocks: FileBlock[] = editContextItems
@@ -1858,7 +1878,14 @@
                       variant="plain"
                       data-testid="chat-message-file-chip"
                       class="type-caption flex cursor-pointer items-center gap-1.5 rounded border border-border bg-muted/50 px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                      onclick={() => openAttachmentReference(fileBlock)}
+                      href={!fileBlock.attachmentId && fileBlock.data
+                        ? `data:application/octet-stream;base64,${fileBlock.data}`
+                        : undefined}
+                      download={!fileBlock.attachmentId ? fileBlock.fileName : undefined}
+                      disabled={!fileBlock.attachmentId && !fileBlock.data}
+                      onclick={() => {
+                        if (fileBlock.attachmentId) openAttachmentReference(fileBlock);
+                      }}
                       title={m.chat_chatMessage_openAttachment_title({
                         name: `${fileBlock.fileName}`,
                       })}

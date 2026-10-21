@@ -48,6 +48,10 @@
   import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import { openWorkspaceAttachment } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { observeAttachmentImageUrl } from './attachment-image-url';
+  import {
+    canonicalImageMimeType,
+    isSupportedImageMimeType,
+  } from './input/image-attachment-format';
   import { store as appStore } from '$store/renderer/store';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
   import { m } from '$shared/paraglide/messages.js';
@@ -607,7 +611,12 @@
         ...(message.deliveryGroups?.flatMap((group) => group.imageBlocks ?? []) ?? []),
       ]) {
         const attachmentId = block.attachmentId;
-        if (!attachmentId || referenceImageObservers.has(attachmentId)) continue;
+        if (
+          !attachmentId ||
+          (block.mimeType && !isSupportedImageMimeType(block.mimeType)) ||
+          referenceImageObservers.has(attachmentId)
+        )
+          continue;
         referenceImageObservers.set(
           attachmentId,
           observeAttachmentImageUrl(workspaceId, attachmentId, (url) => {
@@ -626,7 +635,8 @@
     if (block.attachmentId) {
       return referenceImageUrls[block.attachmentId] ?? null;
     }
-    if (block.data && block.mimeType) return `data:${block.mimeType};base64,${block.data}`;
+    if (block.data && block.mimeType)
+      return `data:${canonicalImageMimeType(block.mimeType)};base64,${block.data}`;
     return null;
   }
 

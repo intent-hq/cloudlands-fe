@@ -112,3 +112,27 @@ describe('imageFilesToContextItems', () => {
     expect(notify.success).not.toHaveBeenCalled();
   });
 });
+
+it('retains SVG source bytes and the original placement name', async () => {
+  const data = btoa('<svg xmlns="http://www.w3.org/2000/svg"/>');
+  const file = makeImageFile('diagram.svg', 3, 'image/svg+xml');
+  const items = await imageFilesToContextItems([file], {
+    maxBytes: 1024,
+    readFile: async () => `data:image/svg+xml;base64,${data}`,
+  });
+  expect(items[0]).toMatchObject({
+    label: 'diagram.svg',
+    placementFileName: 'diagram.svg',
+    imageData: data,
+    imageMimeType: 'image/svg+xml',
+    file,
+  });
+});
+
+it('uses an SVG extension for an unnamed SVG', async () => {
+  const items = await imageFilesToContextItems([makeImageFile('', 3, 'image/svg+xml')], {
+    maxBytes: 1024,
+    readFile: async () => 'data:image/svg+xml;base64,PHN2Zy8+',
+  });
+  expect(items[0].label).toMatch(/^image-\d+\.svg$/);
+});
