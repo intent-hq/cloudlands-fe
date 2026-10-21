@@ -88,7 +88,6 @@ import {
   presenceTypingExpired,
   presenceTypingPulse,
   presenceTypingStopped,
-  presenceWindowVisibilityChanged,
 } from '../presence-slice';
 import {
   selectPresenceContext,
