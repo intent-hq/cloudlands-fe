@@ -4,6 +4,24 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.225.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.224.0...v2.225.0) (2026-10-21)
+
+
+### 🚀 Features
+
+* **providers:** add Update button to outdated Codex CLI toast ([#3563](https://github.com/intent-hq/cloudlands-fe/issues/3563)) ([3d59a97](https://github.com/intent-hq/cloudlands-fe/commit/3d59a976bed772a5cb089dd83ae90cf69d4fb5e4))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.20 ([#3577](https://github.com/intent-hq/cloudlands-fe/issues/3577)) ([cd93b00](https://github.com/intent-hq/cloudlands-fe/commit/cd93b0053a4d143d016f8e377982e326384dcf15))
+* **chat:** keep the streaming edge when a daemon turn opens before the first snapshot ([#3571](https://github.com/intent-hq/cloudlands-fe/issues/3571)) ([923a298](https://github.com/intent-hq/cloudlands-fe/commit/923a298649992096a52ad20b3b05ab87f295e650))
+* **chat:** let Assistant chats name themselves ([#3564](https://github.com/intent-hq/cloudlands-fe/issues/3564)) ([c5c4587](https://github.com/intent-hq/cloudlands-fe/commit/c5c4587bc5437ccbb409f194c2e511b6fc78f717))
+* **ci:** let obsolete-merge sweep tolerate unbuilt queued entries ([#3568](https://github.com/intent-hq/cloudlands-fe/issues/3568)) ([bbacc48](https://github.com/intent-hq/cloudlands-fe/commit/bbacc483a01e30b42fb65124fb7dce43b026f84b))
+* **initializer:** Close draft lifetime gaps ([#3559](https://github.com/intent-hq/cloudlands-fe/issues/3559)) ([48c8256](https://github.com/intent-hq/cloudlands-fe/commit/48c8256ffa75b0163385219b41e81b6e32fc95cd))
+* **main:** register SIGTERM/SIGINT handlers after app ready so signals bypass the quit prompt ([#3573](https://github.com/intent-hq/cloudlands-fe/issues/3573)) ([b2423e2](https://github.com/intent-hq/cloudlands-fe/commit/b2423e2bd44ba95d2b2c89a60fb02850e02279f0))
+* sort proposal card and composer specialists by recent use ([#3565](https://github.com/intent-hq/cloudlands-fe/issues/3565)) ([aacd6da](https://github.com/intent-hq/cloudlands-fe/commit/aacd6dabc8fbd931fef3f1c2f8b69e8ae913f33c))
+
 ## [2.224.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.223.0...v2.224.0) (2026-10-20)
 
 
