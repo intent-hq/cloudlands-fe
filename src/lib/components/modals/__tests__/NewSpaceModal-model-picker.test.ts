@@ -76,7 +76,8 @@ vi.mock(
       mocks.readable({ selectedSpecialist: 'spec-writer', isTeamMode: true }),
     selectWorkspaceInitializerRecentRepos: () => mocks.readable(mocks.recentRepos),
     selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(null),
-    selectWorkspaceInitializerDraftRestore: () => mocks.readable(undefined),
+    selectWorkspaceInitializerDraftAuthority: () =>
+      mocks.readable({ restore: undefined, clear: undefined }),
   }),
 );
 

@@ -4286,6 +4286,7 @@
   "providers_bridge_unknownProvider_error": "Proveedor desconocido: {providerId}",
   "providers_cliVersionWarning_description": "Instalada: {version}, pero se requiere {minimumVersion} o posterior. Actualiza la CLI en el equipo del daemon.",
   "providers_cliVersionWarning_title": "La CLI de {provider} está desactualizada",
+  "providers_cliVersionWarning_update_action": "Actualizar",
   "providers_modelsClient_noResponse_error": "Sin respuesta del servicio de modelos",
   "providers_modelsClient_unknown_error": "Error desconocido",
   "providers_modelsClient_unsupportedProvider_error": "Proveedor de modelos no compatible: {id}",

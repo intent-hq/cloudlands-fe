@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   request: vi.fn(),
   warning: vi.fn(),
+  error: vi.fn(),
+  invoke: vi.fn(),
 }));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
@@ -31,7 +33,10 @@ vi.mock('$store/renderer/store', async () => {
   return module;
 });
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.request }));
-vi.mock('$lib/components/patterns/notify', () => ({ notify: { warning: mocks.warning } }));
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { warning: mocks.warning, error: mocks.error },
+}));
+vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke }));
 vi.mock('$app/stores', async () => {
   const { writable } = await import('svelte/store');
   return { page: writable({ url: new URL('http://localhost/workspace/example') }) };
@@ -89,6 +94,8 @@ function startSaga() {
     };
     emit();
     channel.put(action);
+    // Mirrors the app store: async actions resolve through their saga outcome.
+    return action.promise;
   });
   task = runSaga(
     { channel, dispatch: mocks.dispatch, getState: () => mocks.state },
@@ -104,6 +111,7 @@ beforeEach(() => {
     url: new URL('http://localhost/workspace/example'),
   });
   mocks.request.mockResolvedValue({ providers: [oldCodex] });
+  mocks.invoke.mockResolvedValue({ ok: true, terminalId: 'codex-update' });
   startSaga();
 });
 afterEach(() => task.cancel());
@@ -312,5 +320,52 @@ describe('provider CLI startup warnings', () => {
     await settle();
     expect(mocks.warning).not.toHaveBeenCalled();
     expect(mocks.state.hostRequirements.providerCli).toBeUndefined();
+  });
+
+  describe('update action', () => {
+    const toastAction = () =>
+      mocks.warning.mock.calls[0]?.[1]?.action as
+        { label: string; onClick: (event?: unknown) => void } | undefined;
+
+    it('offers an Update button that runs `codex update` in the root terminal drawer', async () => {
+      render(ProviderCliVersionToast);
+      await settle();
+      const action = toastAction();
+      expect(action?.label).toBe('Update');
+      action!.onClick();
+      await settle();
+      expect(mocks.invoke.mock.calls).toEqual([
+        [
+          'terminal:createWithCommand',
+          { workspaceId: '__root__', command: 'codex update', interactive: true },
+        ],
+      ]);
+      expect(mocks.dispatch).toHaveBeenCalledWith({
+        type: 'terminals/open',
+        payload: ['__root__', 'codex-update'],
+      });
+      expect(mocks.error).not.toHaveBeenCalled();
+    });
+
+    it('reports a terminal launch failure in an error toast', async () => {
+      mocks.invoke.mockResolvedValue({ ok: false, error: 'spawn failed' });
+      render(ProviderCliVersionToast);
+      await settle();
+      toastAction()!.onClick();
+      await vi.waitFor(() => expect(mocks.error).toHaveBeenCalledWith('spawn failed'));
+      expect(
+        mocks.dispatch.mock.calls.filter(([action]) => action.type === 'terminals/open'),
+      ).toEqual([]);
+    });
+
+    it('keeps the plain warning for a provider without a known update command', async () => {
+      mocks.request.mockResolvedValue({
+        providers: [{ ...oldCodex, id: 'other-cli', displayName: 'Other' }],
+      });
+      render(ProviderCliVersionToast);
+      await settle();
+      expect(mocks.warning).toHaveBeenCalledTimes(1);
+      expect(mocks.warning.mock.calls[0][1]).not.toHaveProperty('action');
+    });
   });
 });

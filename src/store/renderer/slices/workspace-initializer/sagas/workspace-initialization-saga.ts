@@ -26,55 +26,128 @@ import {
 import { hydrateWorkspaceNavigation } from '../../workspace-navigation/workspace-navigation-slice';
 import { setWorkspaceEntity } from '../../workspace/workspace-slice';
 import { workspaceClient } from '../../workspace/utils/workspace.client';
-import { selectWorkspaceInitializationOutcome } from '../workspace-initializer-selectors';
+import { recordLastUsedSetupScript } from '$features/setup-scripts/last-used';
+import {
+  selectWorkspaceInitializationOutcome,
+  selectWorkspaceInitializationResume,
+} from '../workspace-initializer-selectors';
 import {
   setWorkspaceInitializerAgentForRepo,
   setWorkspaceInitializerBranchForRepo,
+  setWorkspaceInitializerLastSelectedRepo,
   setWorkspaceInitializerLastSubmittedAgent,
   workspaceInitializationFinished,
+  workspaceInitializationPrepared,
   workspaceInitializationRequested,
+  workspaceInitializationResumeRequested,
+  workspaceInitializationResumeStored,
+  clearWorkspaceInitializationResume,
+  workspaceInitializationSubmitted,
+  workspaceInitializerDraftClearRequested,
+  workspaceInitializerDraftSaveCancelled,
 } from '../workspace-initializer-slice';
 import type {
+  WorkspaceInitializationConsumer,
   WorkspaceInitializationOutcome,
+  WorkspaceInitializationRequest,
+  WorkspaceInitializationResult,
   WorkspaceInitializationStagedItem,
 } from '../workspace-initializer-types';
+import {
+  buildWorkspaceInitializationResume,
+  buildWorkspaceInitializationRetry,
+  prepareCompactWorkspaceInitialization,
+  prepareOnboardingWorkspaceInitialization,
+  type PreparedWorkspaceInitialization,
+} from './workspace-initialization-submission';
 
 const logger = createLogger('WorkspaceInitializationSaga');
-type RequestAction = ReturnType<typeof workspaceInitializationRequested>;
 
-function current(action: RequestAction, dispatch = appStore.dispatch): boolean {
-  const { consumer, request } = action.payload;
+interface InitializationRun {
+  seq: number;
+  consumer: WorkspaceInitializationConsumer;
+  progressId: string;
+  request: WorkspaceInitializationRequest;
+  success: (result: WorkspaceInitializationResult) => { type: string };
+  failure: (error: Error) => { type: string };
+}
+
+function isCurrentAttempt(
+  seq: number,
+  consumer: WorkspaceInitializationConsumer,
+  admission: string,
+  dispatch: typeof appStore.dispatch,
+): boolean {
   const outcome = selectWorkspaceInitializationOutcome.select(
     appStore.state,
     consumer.id,
     consumer.resourceId,
   );
   return (
-    outcome?.seq === action.seq &&
+    outcome?.seq === seq &&
     outcome.status === 'pending' &&
     appStore.dispatch === dispatch &&
-    selectPrincipalActionContext.select(appStore.state) === request.admission &&
+    selectPrincipalActionContext.select(appStore.state) === admission &&
     selectWorkspaceCreationVisible.select(appStore.state)
   );
+}
+
+function current(action: InitializationRun, dispatch = appStore.dispatch): boolean {
+  return isCurrentAttempt(action.seq, action.consumer, action.request.admission, dispatch);
 }
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error || 'Failed to create workspace');
 }
 
-function* finish(
-  action: RequestAction,
+function* finishAttempt(
+  seq: number,
+  consumer: WorkspaceInitializationConsumer,
+  entrypoint: WorkspaceInitializationRequest['entrypoint'],
   outcome: Omit<WorkspaceInitializationOutcome, 'id' | 'resourceId' | 'seq' | 'entrypoint'>,
 ): SagaGenerator<void> {
-  const { consumer, request } = action.payload;
-  yield* put(
-    workspaceInitializationFinished({
-      ...consumer,
-      seq: action.seq,
-      entrypoint: request.entrypoint,
-      ...outcome,
-    }),
-  );
+  yield* put(workspaceInitializationFinished({ ...consumer, seq, entrypoint, ...outcome }));
+}
+
+function* finish(
+  action: InitializationRun,
+  outcome: Omit<WorkspaceInitializationOutcome, 'id' | 'resourceId' | 'seq' | 'entrypoint'>,
+): SagaGenerator<void> {
+  yield* finishAttempt(action.seq, action.consumer, action.request.entrypoint, outcome);
+}
+
+function* complete(request: WorkspaceInitializationRequest): SagaGenerator<void> {
+  const record = request.setupScriptRecord;
+  if (record) {
+    yield* call(
+      recordLastUsedSetupScript,
+      record.repoPath,
+      { name: record.name, content: record.content, nameSource: record.nameSource },
+      record.githubUrl,
+    );
+  }
+  const { lastSelectedRepo, draft } = request.completion ?? {};
+  if (lastSelectedRepo) yield* put(setWorkspaceInitializerLastSelectedRepo(lastSelectedRepo));
+  if (draft) {
+    // Cancel the queued save before clearing so a close/unmount cannot re-save the prompt.
+    yield* put(
+      workspaceInitializerDraftSaveCancelled(
+        draft.ownerId,
+        draft.restoreRequestId,
+        request.admission,
+      ),
+    );
+    if (draft.clear) {
+      yield* put(
+        workspaceInitializerDraftClearRequested(
+          draft.ownerId,
+          crypto.randomUUID(),
+          draft.restoreRequestId,
+          request.admission,
+        ),
+      );
+    }
+  }
 }
 
 function* storePrNumber(workspaceId: string, prNumber: number): SagaGenerator<void> {
@@ -85,7 +158,7 @@ function* storePrNumber(workspaceId: string, prNumber: number): SagaGenerator<vo
 }
 
 function* registerRecent(
-  repository: NonNullable<RequestAction['payload']['request']['recentGitHubRepository']>,
+  repository: NonNullable<WorkspaceInitializationRequest['recentGitHubRepository']>,
 ): SagaGenerator<void> {
   try {
     yield* call(invoke, WORKSPACE_CHANNELS.ADD_RECENT_REPOSITORY, repository);
@@ -95,12 +168,12 @@ function* registerRecent(
 }
 
 function* installWorkspace(
-  action: RequestAction,
+  action: InitializationRun,
   workspace: Workspace,
   dispatch: typeof appStore.dispatch,
   agentId?: string,
 ): SagaGenerator<void> {
-  const { request } = action.payload;
+  const { request } = action;
   try {
     const { getPanelLayoutManager } = yield* call(
       () => import('$features/layout/panel-layout-adapter'),
@@ -146,14 +219,14 @@ function* installWorkspace(
 }
 
 function* deliverHeldMessage(
-  action: RequestAction,
+  action: InitializationRun,
   workspaceId: string,
   dispatch: typeof appStore.dispatch,
   agentId: string | undefined,
 ): SagaGenerator<
   Pick<WorkspaceInitializationOutcome, 'stage' | 'error' | 'stagedItems' | 'retryImageBlocks'>
 > {
-  const { request } = action.payload;
+  const { request } = action;
   if (!request.heldMessage) return {};
   const isCurrent = () => current(action, dispatch);
   const items = request.stagedItems as ContextItem[];
@@ -203,8 +276,8 @@ function* deliverHeldMessage(
   return { stagedItems };
 }
 
-function* initialize(action: RequestAction): SagaGenerator<void> {
-  const { request, progressId } = action.payload;
+function* initialize(action: InitializationRun): SagaGenerator<void> {
+  const { request, progressId } = action;
   let settled = false;
   let stage: WorkspaceInitializationOutcome['stage'] = request.resume ? 'attachments' : 'create';
   let workspaceId = request.resume?.workspaceId;
@@ -258,6 +331,16 @@ function* initialize(action: RequestAction): SagaGenerator<void> {
     const delivery = yield* call(deliverHeldMessage, action, workspaceId, dispatch, agentId);
     if (!current(action, dispatch)) throw new Error('initialization-cancelled');
     if (delivery.stage) {
+      yield* put(
+        workspaceInitializationResumeStored(
+          buildWorkspaceInitializationResume(action.consumer.id, request, {
+            ...delivery,
+            workspaceId,
+            agentId,
+            workspacePath,
+          }),
+        ),
+      );
       yield* finish(action, {
         status: 'failure',
         ...delivery,
@@ -265,6 +348,7 @@ function* initialize(action: RequestAction): SagaGenerator<void> {
         agentId,
         workspacePath,
         ...(pullCompleted ? { pullCompleted: true } : {}),
+        resumable: true,
       });
       yield* put(action.failure(new Error(delivery.error)));
       settled = true;
@@ -290,6 +374,8 @@ function* initialize(action: RequestAction): SagaGenerator<void> {
     }
     if (request.selectedPrNumber) yield* fork(storePrNumber, workspaceId, request.selectedPrNumber);
     if (request.recentGitHubRepository) yield* fork(registerRecent, request.recentGitHubRepository);
+    yield* put(clearWorkspaceInitializationResume(action.consumer.id));
+    yield* call(complete, request);
     yield* finish(action, {
       status: 'success',
       workspaceId,
@@ -304,6 +390,21 @@ function* initialize(action: RequestAction): SagaGenerator<void> {
     const cancelledAttempt =
       !current(action, dispatch) || errorMessage(error) === 'initialization-cancelled';
     const errorCode = (error as { errorCode?: string })?.errorCode;
+    const resumable =
+      !cancelledAttempt && !!workspaceId && (stage === 'post-create' || stage === 'attachments');
+    if (resumable && workspaceId) {
+      yield* put(
+        workspaceInitializationResumeStored(
+          buildWorkspaceInitializationResume(action.consumer.id, request, {
+            workspaceId,
+            agentId,
+            workspacePath,
+          }),
+        ),
+      );
+    } else if (!cancelledAttempt && stage === 'create') {
+      yield* put(clearWorkspaceInitializationResume(action.consumer.id));
+    }
     yield* finish(action, {
       status: cancelledAttempt ? 'cancelled' : 'failure',
       stage,
@@ -313,6 +414,7 @@ function* initialize(action: RequestAction): SagaGenerator<void> {
       ...(pullCompleted ? { pullCompleted: true } : {}),
       error: errorMessage(error),
       ...(errorCode ? { errorCode } : {}),
+      ...(resumable ? { resumable: true } : {}),
     });
     yield* put(action.failure(error instanceof Error ? error : new Error(errorMessage(error))));
     settled = true;
@@ -326,6 +428,88 @@ function* initialize(action: RequestAction): SagaGenerator<void> {
   }
 }
 
+type RequestedAction = ReturnType<typeof workspaceInitializationRequested>;
+type SubmittedAction = ReturnType<typeof workspaceInitializationSubmitted>;
+type ResumeAction = ReturnType<typeof workspaceInitializationResumeRequested>;
+
+function* requestInitialization(action: RequestedAction): SagaGenerator<void> {
+  const { request, consumer, progressId } = action.payload;
+  yield* call(initialize, {
+    seq: action.seq,
+    consumer,
+    progressId,
+    request,
+    success: (result: WorkspaceInitializationResult) => action.success(result),
+    failure: (error: Error) => action.failure(error),
+  });
+}
+
+function* submit(action: SubmittedAction): SagaGenerator<void> {
+  const { submission, consumer, progressId } = action.payload;
+  const dispatch = appStore.dispatch;
+  const isCurrent = () => isCurrentAttempt(action.seq, consumer, submission.admission, dispatch);
+  let prepared: PreparedWorkspaceInitialization | null = null;
+  try {
+    if (!isCurrent()) throw new Error('initialization-cancelled');
+    prepared =
+      submission.entrypoint === 'compact'
+        ? yield* call(prepareCompactWorkspaceInitialization, submission, isCurrent)
+        : yield* call(prepareOnboardingWorkspaceInitialization, submission, isCurrent);
+    if (!prepared || !isCurrent()) throw new Error('initialization-cancelled');
+  } catch (error) {
+    const cancelledAttempt = !isCurrent() || errorMessage(error) === 'initialization-cancelled';
+    if (!cancelledAttempt)
+      logger.error('Workspace initialization preparation failed', error as Error);
+    yield* finishAttempt(action.seq, consumer, submission.entrypoint, {
+      status: cancelledAttempt ? 'cancelled' : 'failure',
+      stage: 'prepare',
+      error: errorMessage(error),
+    });
+    yield* put(action.failure(error instanceof Error ? error : new Error(errorMessage(error))));
+    return;
+  }
+  yield* put(workspaceInitializationPrepared(consumer.id, action.seq, prepared.prepared));
+  yield* call(initialize, {
+    seq: action.seq,
+    consumer,
+    progressId,
+    request: prepared.request,
+    success: (result: WorkspaceInitializationResult) => action.success(result),
+    failure: (error: Error) => action.failure(error),
+  });
+}
+
+function* resume(action: ResumeAction): SagaGenerator<void> {
+  const { input, consumer, progressId } = action.payload;
+  const stored = selectWorkspaceInitializationResume.select(appStore.state, consumer.id);
+  if (
+    !stored ||
+    stored.request.admission !== input.admission ||
+    stored.request.entrypoint !== input.entrypoint
+  ) {
+    const failure = new Error(
+      stored ? 'initialization-cancelled' : 'missing-initialization-resume',
+    );
+    yield* finishAttempt(action.seq, consumer, input.entrypoint, {
+      status: stored ? 'cancelled' : 'failure',
+      stage: 'attachments',
+      error: failure.message,
+    });
+    yield* put(action.failure(failure));
+    return;
+  }
+  yield* call(initialize, {
+    seq: action.seq,
+    consumer,
+    progressId,
+    request: buildWorkspaceInitializationRetry(stored, input),
+    success: (result: WorkspaceInitializationResult) => action.success(result),
+    failure: (error: Error) => action.failure(error),
+  });
+}
+
 export function* workspaceInitializationSaga(): SagaGenerator<void> {
-  yield* takeEvery(workspaceInitializationRequested, initialize);
+  yield* takeEvery(workspaceInitializationRequested, requestInitialization);
+  yield* takeEvery(workspaceInitializationSubmitted, submit);
+  yield* takeEvery(workspaceInitializationResumeRequested, resume);
 }

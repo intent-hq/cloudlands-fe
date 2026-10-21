@@ -4286,6 +4286,7 @@
   "providers_bridge_unknownProvider_error": "未知的提供商：{providerId}",
   "providers_cliVersionWarning_description": "已安装 {version}，但需要 {minimumVersion} 或更高版本。请在守护进程主机上更新 CLI。",
   "providers_cliVersionWarning_title": "{provider} CLI 版本过旧",
+  "providers_cliVersionWarning_update_action": "更新",
   "providers_modelsClient_noResponse_error": "模型服务无响应",
   "providers_modelsClient_unknown_error": "未知错误",
   "providers_modelsClient_unsupportedProvider_error": "不支持的模型提供商：{id}",

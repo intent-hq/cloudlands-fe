@@ -4286,6 +4286,7 @@
   "providers_bridge_unknownProvider_error": "Unknown provider: {providerId}",
   "providers_cliVersionWarning_description": "Installed {version}, but {minimumVersion} or later is required. Update the CLI on the daemon host.",
   "providers_cliVersionWarning_title": "{provider} CLI is out of date",
+  "providers_cliVersionWarning_update_action": "Update",
   "providers_modelsClient_noResponse_error": "No response from model service",
   "providers_modelsClient_unknown_error": "Unknown error",
   "providers_modelsClient_unsupportedProvider_error": "Unsupported model provider: {id}",

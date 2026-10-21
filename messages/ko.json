@@ -4286,6 +4286,7 @@
   "providers_bridge_unknownProvider_error": "알 수 없는 공급자: {providerId}",
   "providers_cliVersionWarning_description": "설치됨: {version}. {minimumVersion} 이상이 필요합니다. 데몬 호스트에서 CLI를 업데이트하세요.",
   "providers_cliVersionWarning_title": "{provider} CLI가 오래되었습니다",
+  "providers_cliVersionWarning_update_action": "업데이트",
   "providers_modelsClient_noResponse_error": "모델 서비스에서 응답 없음",
   "providers_modelsClient_unknown_error": "알 수 없는 오류",
   "providers_modelsClient_unsupportedProvider_error": "지원되지 않는 모델 공급자: {id}",

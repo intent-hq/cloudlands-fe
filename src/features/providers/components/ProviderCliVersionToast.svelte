@@ -15,7 +15,11 @@
   import { selectCurrentConnectionId } from '$store/renderer/slices/connections/connections-selectors';
   import { selectDaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { selectProviderCliRequirements } from '$store/renderer/slices/host-requirements/host-requirements-selectors';
-  import { checkProviderCliRequirementsRequested } from '$store/renderer/slices/host-requirements/host-requirements-slice';
+  import {
+    checkProviderCliRequirementsRequested,
+    providerCliUpdateRequested,
+  } from '$store/renderer/slices/host-requirements/host-requirements-slice';
+  import type { ProviderCliWarning } from '$features/providers/utils/provider-cli-warnings';
 
   const owner$ = selectHostAdministrationContext();
   const host$ = selectCurrentConnectionId();
@@ -28,6 +32,14 @@
   $effect(() => {
     if (context) appStore.dispatch(checkProviderCliRequirementsRequested());
   });
+
+  async function runUpdate(warning: ProviderCliWarning) {
+    try {
+      await appStore.dispatch(providerCliUpdateRequested(warning.providerId));
+    } catch (cause) {
+      notify.error(cause instanceof Error ? cause.message : m.terminal_adapter_openFailed_error());
+    }
+  }
 
   $effect(() => {
     if (!context || $result$?.context !== context) return;
@@ -45,6 +57,14 @@
           version: warning.version,
           minimumVersion: warning.minimumVersion,
         }),
+        ...(warning.updateCommand
+          ? {
+              action: {
+                label: m.providers_cliVersionWarning_update_action(),
+                onClick: () => void runUpdate(warning),
+              },
+            }
+          : {}),
       });
     }
   });

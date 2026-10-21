@@ -4286,6 +4286,7 @@
   "providers_bridge_unknownProvider_error": "不明なプロバイダー: {providerId}",
   "providers_cliVersionWarning_description": "インストール済み: {version}。{minimumVersion} 以降が必要です。デーモンのホストで CLI を更新してください。",
   "providers_cliVersionWarning_title": "{provider} CLI が古くなっています",
+  "providers_cliVersionWarning_update_action": "更新",
   "providers_modelsClient_noResponse_error": "モデルサービスからの応答がありません",
   "providers_modelsClient_unknown_error": "不明なエラー",
   "providers_modelsClient_unsupportedProvider_error": "未対応のモデルプロバイダー: {id}",

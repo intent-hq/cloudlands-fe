@@ -35,6 +35,7 @@ import {
   selectWorkspaceInitializerAgentByRepo,
   selectWorkspaceInitializerBranchByRepo,
   selectWorkspaceInitializerDefaultParentPath,
+  selectWorkspaceInitializerDraftAuthority,
   selectWorkspaceInitializerLastSelectedRepo,
   selectWorkspaceInitializerLastSubmittedAgent,
   selectWorkspaceInitializerOnboardingFormState,
@@ -308,12 +309,15 @@ function* applyDebouncedOnboardingFormWorker(
 }
 
 function* resetWorkspaceInitializerWorker() {
-  yield* put(
-    workspaceInitializerDraftClearRequested(
-      'onboarding-workspace-initializer',
-      crypto.randomUUID(),
-    ),
-  );
+  const ownerId = 'onboarding-workspace-initializer';
+  const authority = yield* selectWorkspaceInitializerDraftAuthority.effect(ownerId);
+  const clearAlreadyOwned =
+    authority.clear?.status === 'pending' || authority.clear?.status === 'success';
+  if (!authority.restore && !clearAlreadyOwned) {
+    yield* put(workspaceInitializerDraftClearRequested(ownerId, crypto.randomUUID()));
+  } else if (authority.clear?.status === 'failure') {
+    yield* put(workspaceInitializerDraftClearRequested(ownerId, crypto.randomUUID()));
+  }
   yield* put(setWorkspaceInitializerOnboardingFormState(null));
 }
 
