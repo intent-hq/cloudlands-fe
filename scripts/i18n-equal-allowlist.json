@@ -1,4 +1,6 @@
 {
+  "workspace_share_role_manager_label": ["de"],
+  "workspace_share_role_collaborator_label": ["fr"],
   "workspace_share_guestCount_label": "*",
   "workspace_discussion_list_label": ["fr"],
   "workspace_discussion_composer_label": ["fr"],

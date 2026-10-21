@@ -903,9 +903,10 @@ export const clearPanelLayout = createAction<[wsId: string]>('panelLayout/clearP
  */
 export const destroyTabsByType = createAction(
   'panelLayout/destroyTabsByType',
-  (wsId: string, tabType: PanelTabType, timestamp?: number) => ({
+  (wsId: string, tabType: PanelTabType, timestamp?: number, preservedScriptIds: string[] = []) => ({
     wsId,
     tabType,
+    preservedScriptIds,
     timestamp: timestamp ?? Date.now(),
   }),
 );
@@ -2829,8 +2830,10 @@ panelLayoutReducer.with(closeTabsByType, (state, { payload }) => {
 });
 // --- Destroy Tabs By Type (multiplayer w3) ---
 panelLayoutReducer.with(destroyTabsByType, (state, { payload }) => {
-  const { wsId, tabType, timestamp } = payload;
-  const isType = (tab: PanelTab) => tab.type === tabType;
+  const { wsId, tabType, timestamp, preservedScriptIds } = payload;
+  const isType = (tab: PanelTab) =>
+    tab.type === tabType &&
+    !(tab.type === 'terminal' && tab.scriptId && preservedScriptIds.includes(tab.scriptId));
   const before = getWorkspaceState(state, wsId);
   const tabsToDestroy: { tabId: string; panelId: string }[] = [];
   for (const [pId, panel] of Object.entries(before.panels)) {

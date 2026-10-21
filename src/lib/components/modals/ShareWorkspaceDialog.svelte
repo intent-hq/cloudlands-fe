@@ -4,8 +4,8 @@
    * never grants access; Copy link creates or reuses an invite for that audience.
    */
 
+  import ShareWorkspaceMemberRow from './ShareWorkspaceMemberRow.svelte';
   import WorkspaceSharingSetup from '$features/workspace-sharing/components/WorkspaceSharingSetup.svelte';
-  import { isWorkspaceGuest } from '$features/workspace-sharing/utils/workspace-guest';
   import {
     findCopyableInvite,
     type InviteAudience,
@@ -28,12 +28,11 @@
   import { notify } from '$lib/components/patterns/notify';
   import { formatInteger, formatRelativeTime } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
-  import type { WorkspaceRole } from '$shared/types';
+  import type { WorkspaceGuestRole } from '$shared/types';
   import type {
     HostPrincipal,
     IdentityProvider,
     InvitePin,
-    PrincipalIdentity,
     WorkspaceInvite,
     WorkspaceMember,
   } from '$features/workspace-sharing/types';
@@ -84,6 +83,12 @@
     identityProvider?: IdentityProvider | null;
     /** Owner of the target workspace and not withheld by the daemon. */
     canManage?: boolean;
+    /** Owner authorization combined with exact workspaceGuestRoles:1 support. */
+    canSetMemberRole?: boolean;
+    ownerPrincipalId?: string | null;
+    pendingRolePrincipalIds?: string[];
+    roleErrors?: Readonly<Record<string, string>>;
+    onSetMemberRole?: (principalId: string, role: WorkspaceGuestRole) => void;
     members?: WorkspaceMember[];
     invites?: WorkspaceInvite[];
     /**
@@ -153,6 +158,11 @@
     hostMembershipSupported = false,
     identityProvider = null,
     canManage = false,
+    canSetMemberRole = false,
+    ownerPrincipalId = null,
+    pendingRolePrincipalIds = [],
+    roleErrors = {},
+    onSetMemberRole,
     members = [],
     invites = [],
     principals = [],
@@ -521,38 +531,21 @@
   }
 
   function confirmRemoveMember(principalId: string) {
-    if (!workspaceId || !canManage || busy || confirmRemovePrincipalId !== principalId) return;
+    if (
+      !workspaceId ||
+      !canManage ||
+      busy ||
+      principalId === ownerPrincipalId ||
+      pendingRolePrincipalIds.includes(principalId) ||
+      confirmRemovePrincipalId !== principalId
+    )
+      return;
     confirmRemovePrincipalId = null;
     onRemoveMember?.(principalId);
   }
 
   function memberName(member: WorkspaceMember): string {
     return member.displayName || member.login || member.principalId;
-  }
-
-  /** `@login` on the member's forge (GitLab names the instance); the forge alone without a login. */
-  function memberHandle(member: Pick<WorkspaceMember, 'login' | 'identity'>): string {
-    const identity = member.identity;
-    if (!identity) return '';
-    if (identity.provider === 'gitlab') {
-      return member.login
-        ? m.workspace_share_member_gitlabHandle_label({
-            login: `@${member.login}`,
-            host: identity.host,
-          })
-        : m.workspace_share_pinProvider_gitlab_label({ host: identity.host });
-    }
-    return member.login ? `@${member.login}` : m.workspace_share_pinProvider_github_label();
-  }
-
-  function providerIcon(identity: Pick<PrincipalIdentity, 'provider'>) {
-    return identity.provider === 'gitlab' ? faGitlab : faGithub;
-  }
-
-  function roleLabel(role: WorkspaceRole): string {
-    return role === 'owner'
-      ? m.workspace_share_role_owner_label()
-      : m.workspace_share_role_collaborator_label();
   }
 
   function inviteAudience(invite: Pick<WorkspaceInvite, 'pinLogin' | 'pinIdentity'>): string {
@@ -1015,91 +1008,18 @@
                   class="overflow-visible rounded-lg border border-border"
                 >
                   {#snippet row({ item: member })}
-                    <div
-                      class="flex items-center justify-between gap-3 px-3.5 py-3"
-                      data-testid="share-member-row"
-                      data-principal-id={member.principalId}
-                    >
-                      <div class="flex min-w-0 items-center gap-3 text-sm">
-                        <PrincipalAvatar
-                          avatarUrl={member.avatarUrl}
-                          label={memberName(member)}
-                          size={32}
-                        />
-                        <div class="min-w-0">
-                          <div class="truncate text-sm">{memberName(member)}</div>
-                          <div class="flex min-w-0 items-center gap-1 text-xs text-subtle">
-                            {#if member.identity}
-                              <span
-                                class="flex shrink-0 items-center"
-                                data-testid="share-member-identity"
-                                data-provider={member.identity.provider}
-                              >
-                                <Fa icon={providerIcon(member.identity)} size="xs" />
-                              </span>
-                              <span class="truncate">
-                                {m.workspace_share_member_identityRole_label({
-                                  handle: memberHandle(member),
-                                  role:
-                                    member.hostRole === 'member'
-                                      ? m.collaboration_host_member_label()
-                                      : roleLabel(member.role),
-                                })}
-                              </span>
-                            {:else}
-                              <span
-                                >{member.hostRole === 'member'
-                                  ? m.collaboration_host_member_label()
-                                  : roleLabel(member.role)}</span
-                              >
-                            {/if}
-                          </div>
-                        </div>
-                      </div>
-                      {#if isWorkspaceGuest(member)}
-                        {#if confirmRemovePrincipalId === member.principalId}
-                          <div
-                            class="flex shrink-0 items-center gap-1"
-                            role="group"
-                            aria-label={m.workspace_share_removeMember_confirm_label({
-                              name: memberName(member),
-                            })}
-                            data-testid="share-remove-confirm"
-                          >
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              disabled={busy}
-                              onclick={() => confirmRemoveMember(member.principalId)}
-                              aria-label={m.workspace_share_removeMember_confirmAction_ariaLabel({
-                                name: memberName(member),
-                              })}
-                            >
-                              {m.workspace_share_removeMember_label()}
-                            </Button>
-                            <Button
-                              variant="ghost-light"
-                              size="sm"
-                              onclick={() => (confirmRemovePrincipalId = null)}
-                            >
-                              {m.workspace_share_cancel_label()}
-                            </Button>
-                          </div>
-                        {:else}
-                          <Button
-                            variant="ghost-light"
-                            size="sm"
-                            disabled={busy}
-                            onclick={() => (confirmRemovePrincipalId = member.principalId)}
-                            aria-label={m.workspace_share_removeMember_ariaLabel({
-                              name: memberName(member),
-                            })}
-                          >
-                            {m.workspace_share_removeMember_label()}
-                          </Button>
-                        {/if}
-                      {/if}
-                    </div>
+                    <ShareWorkspaceMemberRow
+                      {member}
+                      {ownerPrincipalId}
+                      editable={canSetMemberRole && !!workspaceId}
+                      disabled={loading || removingPrincipalId === member.principalId}
+                      removeDisabled={busy}
+                      pending={pendingRolePrincipalIds.includes(member.principalId)}
+                      error={roleErrors[member.principalId]}
+                      bind:confirmRemovePrincipalId
+                      onSetRole={onSetMemberRole}
+                      onRemoveMember={confirmRemoveMember}
+                    />
                   {/snippet}
                 </ListView>
               {/if}

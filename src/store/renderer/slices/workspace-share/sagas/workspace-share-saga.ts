@@ -72,6 +72,9 @@ import { isForbiddenErrorResponse } from '$lib/client/live/backend-transport-typ
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import {
+  selectShareCanSetMemberRole,
+  selectShareOwnerPrincipalId,
+  selectSharePendingRolePrincipalIds,
   selectShareSharingChecking,
   selectShareSharingEnabling,
   selectShareSharingEnabled,
@@ -110,6 +113,8 @@ import {
   shareMemberAddRequested,
   shareMemberRemoveRequested,
   shareMembershipChanged,
+  shareMemberRoleRequested,
+  shareMemberRoleSettled,
   sharePrincipalsLoaded,
   shareRosterActionSettled,
   shareRosterFailed,
@@ -679,7 +684,68 @@ export function* refreshIntegrationAuthAfterReconnect(): SagaGenerator<void> {
   yield* put(shareIntegrationAuthRequested(target.workspaceId, host || undefined));
 }
 
+function* setMemberRole(action: ReturnType<typeof shareMemberRoleRequested>): SagaGenerator<void> {
+  const target = yield* manageableTarget();
+  if (!target) return;
+  const [{ principalId, role }] = action.payload;
+  if (!(yield* selectSharePendingRolePrincipalIds.effect()).includes(principalId)) return;
+  const member = (yield* selectShareMembers.effect()).find(
+    (row) => row.principalId === principalId,
+  );
+  if (
+    !(yield* selectShareCanSetMemberRole.effect()) ||
+    !member ||
+    !isWorkspaceGuest(member) ||
+    principalId === (yield* selectShareOwnerPrincipalId.effect())
+  ) {
+    yield* put(
+      shareMemberRoleSettled({
+        target,
+        principalId,
+        error: m.workspace_share_setRoleFailed_error(),
+      }),
+    );
+    return;
+  }
+  const outcome = yield* call(
+    workspaceSharingClient.setMemberRole,
+    target.workspaceId,
+    principalId,
+    role,
+  );
+  if (!(yield* stillTargets(target))) return;
+  if (!outcome.success && outcome.code === 'forbidden') {
+    yield* put(shareAccessWithheld({ target }));
+    return;
+  }
+  yield* put(
+    shareMemberRoleSettled({
+      target,
+      principalId,
+      error: outcome.success ? null : m.workspace_share_setRoleFailed_error(),
+    }),
+  );
+  // Re-read even for idempotent success; never infer the current roster or caller privilege from a click.
+  if (outcome.success) {
+    yield* put(shareDataRequested());
+    if (yield* selectWorkspaceRosterTracked.effect(target.workspaceId))
+      yield* put(shareRosterRequested({ workspaceId: target.workspaceId }));
+  }
+}
+
 export function* workspaceShareSaga(): SagaGenerator<void> {
+  const roleFlights = new Set<string>();
+  function* changeRole(action: ReturnType<typeof shareMemberRoleRequested>): SagaGenerator<void> {
+    const target = yield* selectShareTarget.effect();
+    const key = JSON.stringify([target, action.payload[0].principalId]);
+    if (roleFlights.has(key)) return;
+    roleFlights.add(key);
+    try {
+      yield* call(setMemberRole, action);
+    } finally {
+      roleFlights.delete(key);
+    }
+  }
   const setupFlights = new Map<string, { refresh: boolean }>();
   function* setup(
     action: ReturnType<typeof sharePrerequisitesRequested | typeof shareEnableRequested>,
@@ -728,5 +794,6 @@ export function* workspaceShareSaga(): SagaGenerator<void> {
     takeEvery(shareInviteRevokeRequested, revokeInvite),
     takeEvery(shareMemberRemoveRequested, removeMember),
     takeEvery(shareMemberAddRequested, addMember),
+    takeEvery(shareMemberRoleRequested, changeRole),
   ]);
 }

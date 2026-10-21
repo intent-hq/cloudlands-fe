@@ -30,6 +30,7 @@
     shareInviteRevokeRequested,
     shareMemberAddRequested,
     shareMemberRemoveRequested,
+    shareMemberRoleRequested,
   } from '$store/renderer/slices/workspace-share/workspace-share-slice';
   import {
     selectShareTarget,
@@ -41,6 +42,10 @@
     selectShareActionError,
     selectShareAddingPrincipalId,
     selectShareCanManage,
+    selectShareCanSetMemberRole,
+    selectShareOwnerPrincipalId,
+    selectSharePendingRolePrincipalIds,
+    selectShareRoleErrors,
     selectShareCreatedLink,
     selectShareCreateError,
     selectShareCreating,
@@ -94,6 +99,10 @@
   const identitySeamSupported$ = selectDaemonSupportsIdentitySeam();
   const identityProvider$ = selectEffectiveIdentityProvider();
   const canManage$ = selectShareCanManage();
+  const canSetMemberRole$ = selectShareCanSetMemberRole();
+  const ownerPrincipalId$ = selectShareOwnerPrincipalId();
+  const pendingRolePrincipalIds$ = selectSharePendingRolePrincipalIds();
+  const roleErrors$ = selectShareRoleErrors();
   const sharingEnabled$ = selectShareSharingEnabled();
   const sharingChecking$ = selectShareSharingChecking();
   const sharingEnabling$ = selectShareSharingEnabling();
@@ -171,6 +180,10 @@
     hostMembershipSupported={$collaboration$.hostMembership}
     identityProvider={$identityProvider$}
     canManage={$canManage$}
+    canSetMemberRole={$canSetMemberRole$}
+    ownerPrincipalId={$ownerPrincipalId$}
+    pendingRolePrincipalIds={$pendingRolePrincipalIds$}
+    roleErrors={$roleErrors$}
     sharingEnabled={$sharingEnabled$}
     sharingChecking={$sharingChecking$}
     sharingEnabling={$sharingEnabling$}
@@ -217,6 +230,8 @@
     onCreateInvite={(pinLogin, pin) =>
       appStore.dispatch(shareInviteCreateRequested(pin ? { pinLogin, pin } : { pinLogin }))}
     onRevokeInvite={(inviteId) => appStore.dispatch(shareInviteRevokeRequested(inviteId))}
+    onSetMemberRole={(principalId, role) =>
+      appStore.dispatch(shareMemberRoleRequested({ principalId, role }))}
     onRemoveMember={(principalId) => appStore.dispatch(shareMemberRemoveRequested(principalId))}
     onAddMember={(principalId) => appStore.dispatch(shareMemberAddRequested(principalId))}
     onSearchUsers={(query) =>

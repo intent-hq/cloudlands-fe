@@ -1152,3 +1152,89 @@ describe('ShareWorkspaceDialog — dismissal', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 });
+
+describe('ShareWorkspaceDialog — guest roles', () => {
+  it('keeps roles fixed without the exact capability and keeps guest removal available', () => {
+    renderDialog({ onSetMemberRole: vi.fn() });
+    expect(screen.queryByRole('button', { name: 'Role for bob' })).toBeNull();
+    expect(screen.getByText('Participant')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Remove bob' })).toBeTruthy();
+  });
+
+  it('never offers guest role controls or removal for inherited host authority', () => {
+    renderDialog({
+      canSetMemberRole: true,
+      onSetMemberRole: vi.fn(),
+      members: [
+        owner,
+        { ...collaborator, hostRole: 'member' },
+        { ...collaborator, principalId: 'host-owner', login: 'host', hostRole: 'owner' },
+      ],
+    });
+    expect(screen.queryByRole('button', { name: /Role for/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Remove/ })).toBeNull();
+    expect(screen.getByText('Host member')).toBeTruthy();
+    expect(screen.getByText('Owner')).toBeTruthy();
+    expect(screen.getByText('Host owner')).toBeTruthy();
+  });
+
+  it('retains the confirmed role during pending and failed updates without locking other guests', async () => {
+    const props = {
+      ...baseProps,
+      canSetMemberRole: true,
+      onSetMemberRole: vi.fn(),
+      members: [
+        owner,
+        collaborator,
+        { ...collaborator, principalId: 'p-carol', login: 'carol', role: 'manager' as const },
+      ],
+    };
+    const { rerender } = render(ShareWorkspaceDialog, {
+      props: { ...props, pendingRolePrincipalIds: ['p-bob'] },
+    });
+    const bob = screen.getByRole('button', { name: 'Role for bob' }) as HTMLButtonElement;
+    expect(bob.disabled).toBe(true);
+    expect(bob.textContent).toContain('Participant');
+    expect(bob.getAttribute('aria-busy')).toBe('true');
+    expect((screen.getByRole('button', { name: 'Remove bob' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(
+      (screen.getByRole('button', { name: 'Role for carol' }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+    await rerender({
+      ...props,
+      pendingRolePrincipalIds: [],
+      roleErrors: { 'p-bob': 'Could not change this role. Try again.' },
+    });
+    expect(bob.disabled).toBe(false);
+    expect(bob.textContent).toContain('Participant');
+    expect(screen.getByRole('alert').textContent).toContain('Could not change this role');
+    expect(bob.getAttribute('aria-describedby')).toBe(screen.getByRole('alert').id);
+    await rerender({
+      ...props,
+      roleErrors: {},
+      members: props.members.map((member) =>
+        member.principalId === 'p-bob' ? { ...member, role: 'manager' as const } : member,
+      ),
+    });
+    expect(bob.textContent).toContain('Manager');
+  });
+
+  it('does not show role controls to a viewer without workspace management', () => {
+    renderDialog({ canManage: false, canSetMemberRole: true, onSetMemberRole: vi.fn() });
+    expect(screen.queryByRole('button', { name: /Role for/ })).toBeNull();
+  });
+});
+
+it('keeps the authoritative workspace owner fixed even when the roster projects a guest role', () => {
+  renderDialog({
+    canSetMemberRole: true,
+    ownerPrincipalId: collaborator.principalId,
+    onSetMemberRole: vi.fn(),
+    members: [{ ...collaborator, hostRole: 'guest' }],
+  });
+  expect(screen.getByText('Owner')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Role for bob' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Remove bob' })).toBeNull();
+});

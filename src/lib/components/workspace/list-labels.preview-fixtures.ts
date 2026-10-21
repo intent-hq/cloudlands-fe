@@ -1,4 +1,11 @@
 import { store } from '$store/renderer/store';
+import { WorkspaceStatus } from '$shared/types';
+import { WorkspaceId } from '$shared/types/branded-ids';
+import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
+import {
+  setWorkspaceEntity,
+  removeWorkspaceEntity,
+} from '$store/renderer/slices/workspace/workspace-slice';
 import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
 import {
   clearPanelLayout,
@@ -14,6 +21,23 @@ export function setupListLabelsPreview(initializeStore = true) {
   const dispose = initializeStore
     ? startRootStoreLifecycle(store, { startSagas: () => [] })
     : () => {};
+  admitLegacyPrincipal();
+  store.dispatch(
+    setWorkspaceEntity({
+      id: WorkspaceId(LIST_LABELS_WORKSPACE),
+      branch: 'preview/list-labels',
+      changesets: [],
+      timeline: [],
+      conversationInfo: [],
+      title: 'List labels',
+      path: '/tmp/list-labels-preview',
+      status: WorkspaceStatus.Active,
+      createdAt: '2026-09-01T00:00:00Z',
+      updatedAt: '2026-09-01T00:00:00Z',
+      myRole: 'owner',
+      canManage: true,
+    }),
+  );
   store.dispatch(
     initializeLayout(LIST_LABELS_WORKSPACE, {
       root: { type: 'panel', panelId: 'labels-panel' },
@@ -47,6 +71,7 @@ export function setupListLabelsPreview(initializeStore = true) {
     store.dispatch(removeScript(LIST_LABELS_WORKSPACE, 'fixture-test'));
     store.dispatch(removeTerminal(LIST_LABELS_WORKSPACE, 'fixture-terminal'));
     store.dispatch(clearPanelLayout(LIST_LABELS_WORKSPACE));
+    store.dispatch(removeWorkspaceEntity(LIST_LABELS_WORKSPACE));
     dispose();
   };
 }

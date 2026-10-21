@@ -1,5 +1,7 @@
 /** @vitest-environment jsdom */
 import { tick } from 'svelte';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
+import type { WorkspaceMember } from '$features/workspace-sharing/types';
 import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
 import type { StoreState } from '$store/renderer/types';
 import { fireEvent, render, screen } from '@testing-library/svelte';
@@ -36,6 +38,7 @@ vi.mock('$store/renderer/store', async () => {
 });
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectIsWorkspaceOwner: { select: () => true },
+  selectWorkspaceById: { select: () => ({ ownerPrincipalId: 'principal' }) },
   selectCanShareWorkspace: { select: () => true },
 }));
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToSettings: mocks.navigate }));
@@ -176,5 +179,53 @@ it.each(['backend', 'identity', 'session'])(
     mocks.dispatch.mockClear();
     await fireEvent.click(control);
     expect(mocks.dispatch).not.toHaveBeenCalledWith(shareEnableRequested());
+  },
+);
+
+it.each([undefined, false, true])(
+  'forwards guest role capability %s with confirmed values and row errors',
+  async (supported) => {
+    const root = mocks.state as unknown as StoreState;
+    mocks.state.principal = {
+      ...root.principal,
+      snapshot: {
+        ...root.principal.snapshot!,
+        capabilities: { ...root.principal.snapshot!.capabilities, workspaceGuestRoles: supported },
+      },
+    };
+    const member: WorkspaceMember = {
+      principalId: 'guest',
+      role: 'collaborator',
+      hostRole: 'guest',
+      login: 'alex',
+      displayName: 'Alex',
+      avatarUrl: null,
+      addedAt: '2026-10-21T00:00:00Z',
+    };
+    mocks.state.workspaceShare = {
+      ...root.workspaceShare,
+      members: createCollection('principalId', [member]),
+      pendingRolePrincipalIds: ['guest'],
+    };
+    render(ShareWorkspaceDialogHost);
+    const trigger = screen.queryByRole('button', {
+      name: 'Role for Alex',
+    }) as HTMLButtonElement | null;
+    if (!supported) {
+      expect(trigger).toBeNull();
+      return;
+    }
+    expect(trigger?.disabled).toBe(true);
+    expect(trigger?.textContent).toContain('Participant');
+    mocks.state.workspaceShare = {
+      ...(mocks.state.workspaceShare as WorkspaceShareState),
+      pendingRolePrincipalIds: [],
+      roleErrors: { guest: 'Could not change this role. Try again.' },
+    };
+    mocks.emitState();
+    await tick();
+    expect(trigger?.disabled).toBe(false);
+    expect(trigger?.textContent).toContain('Participant');
+    expect(screen.getByRole('alert').textContent).toContain('Could not change this role');
   },
 );

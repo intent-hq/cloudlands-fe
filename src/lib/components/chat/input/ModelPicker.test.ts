@@ -762,45 +762,53 @@ describe('ModelPicker guest / collaborator lock', () => {
     expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
   });
 
-  it('member with canManage can pick its specialist provider while host administration remains unavailable', async () => {
-    withWorkspaceRole('collaborator');
-    const state = withLegacyPrincipal(mockRoleState.current);
-    state.principal.snapshot!.capabilities.hostMembership = true;
-    state.principal.snapshot!.principal.hostRole = 'member';
-    state.principal.snapshot!.principal.isAdministrator = false;
-    state.workspace.workspaces.map['ws-1'].canManage = true;
-    state.workspace.loadedBackendId = state.connections.windowBackendId;
-    state.workspace.capabilityContext = selectPrincipalActionContext.select(state);
-    Object.assign(mockRoleState.current, state);
-    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
-    activeProviderId$.set('claude-code');
-    enabledProviderIds$.set(['claude-code', 'codex']);
-    availableProviderOverride$.set(['claude-code', 'codex']);
-    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => ({
-      models: [
-        {
-          value: providerId === 'codex' ? 'review-model' : 'host-default-model',
-          label: providerId === 'codex' ? 'Host reviewer' : 'Host default',
-        },
-      ],
-    }));
-    const { agentClient } = await import('$features/agent/agent.client');
-    renderAgentPicker('review-model');
-    const button = screen.getByRole('button');
-    expect(button.hasAttribute('disabled')).toBe(false);
-    await fireEvent.click(button);
-    await fireEvent.click(await screen.findByRole('option', { name: /Host reviewer/ }));
-    await waitFor(() =>
-      expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith(
-        'agent-1',
-        'review-model',
-        'ws-1',
-        'codex',
-      ),
-    );
-    expect(dispatchedTypes()).not.toContain('model/selectModel');
-    expect(screen.queryByText('Open provider settings')).toBeNull();
-  });
+  it.each(['member', 'manager'] as const)(
+    '%s can pick its specialist provider while host administration remains unavailable',
+    async (role) => {
+      withWorkspaceRole('collaborator');
+      const state = withLegacyPrincipal(mockRoleState.current);
+      state.principal.snapshot!.capabilities.hostMembership = true;
+      state.principal.snapshot!.principal.hostRole = role === 'manager' ? 'guest' : 'member';
+      state.principal.snapshot!.capabilities.workspaceGuestRoles = role === 'manager';
+      state.principal.snapshot!.principal.isAdministrator = false;
+      state.workspace.workspaces.map['ws-1'].myRole =
+        role === 'manager' ? 'manager' : 'collaborator';
+      state.workspace.workspaces.map['ws-1'].canManage = role === 'member';
+      state.workspace.loadedBackendId = state.connections.windowBackendId;
+      state.workspace.capabilityContext = selectPrincipalActionContext.select(state);
+      Object.assign(mockRoleState.current, state);
+      mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
+      activeProviderId$.set('claude-code');
+      enabledProviderIds$.set(['claude-code', 'codex']);
+      availableProviderOverride$.set(['claude-code', 'codex']);
+      vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => ({
+        models: [
+          {
+            value: providerId === 'codex' ? 'review-model' : 'host-default-model',
+            label: providerId === 'codex' ? 'Host reviewer' : 'Host default',
+          },
+        ],
+      }));
+      const { agentClient } = await import('$features/agent/agent.client');
+      renderAgentPicker('review-model');
+      const button = screen.getByRole('button');
+      expect(button.hasAttribute('disabled')).toBe(false);
+      await fireEvent.click(button);
+      await screen.findByRole('option', { name: /Host reviewer/ });
+      expect(screen.queryByTestId('model-provider-settings-button')).toBeNull();
+      await fireEvent.click(screen.getByRole('option', { name: /Host reviewer/ }));
+      await waitFor(() =>
+        expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith(
+          'agent-1',
+          'review-model',
+          'ws-1',
+          'codex',
+        ),
+      );
+      expect(dispatchedTypes()).not.toContain('model/selectModel');
+      expect(screen.queryByText('Open provider settings')).toBeNull();
+    },
+  );
 
   it('owner window: the picker stays interactive', async () => {
     withWorkspaceRole('owner');

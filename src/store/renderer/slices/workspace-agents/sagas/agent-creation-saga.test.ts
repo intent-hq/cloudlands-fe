@@ -1,7 +1,7 @@
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { SPECIALISTS, GITHUB_DEPENDENT_SPECIALIST_IDS } from '$lib/constants/specialists';
 import { runSaga, stdChannel } from 'redux-saga';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   createAgent: vi.fn(),
@@ -1565,3 +1565,43 @@ it.each([false, true])(
     }
   },
 );
+
+describe('guest Manager creation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.useRealFactory = false;
+  });
+  afterEach(() => {
+    vi.clearAllMocks();
+    mocks.useRealFactory = false;
+  });
+  it('creates through the existing factory but does not unlock task delegation', async () => {
+    const current = state(
+      '',
+      [],
+      'augment',
+      { augment: 'sonnet' },
+      withLegacyPrincipal(guestWindowIdentity(), 'guest'),
+    );
+    current.principal.snapshot!.capabilities.workspaceGuestRoles = true;
+    current.workspace.workspaces.map[WS].myRole = 'manager';
+    current.workspace.workspaces.map[WS].canManage = false;
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const run = start(() => current);
+    try {
+      run.channel.put(createAgentRequested(WS));
+      await settle();
+      expect(mocks.createAgent).toHaveBeenCalledOnce();
+      run.channel.put(delegateExistingTaskRequested(WS, NOTE, 'Task', true));
+      await settle();
+      expect(mocks.backendRequest).not.toHaveBeenCalledWith('agent.delegate', expect.anything());
+      current.workspace.workspaces.map[WS].myRole = 'collaborator';
+      run.channel.put(createAgentRequested(WS));
+      await settle();
+      expect(mocks.createAgent).toHaveBeenCalledOnce();
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+});

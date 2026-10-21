@@ -35,6 +35,10 @@ import {
   refreshScripts,
   restoreScriptDefinitionsRequested,
   deleteScriptRequested,
+  startScriptRequested,
+  stopScriptRequested,
+  restartScriptRequested,
+  getScriptDefinitionRequested,
   scriptWorkflowReleased,
   scriptsReducer,
   setScriptsData,
@@ -883,6 +887,86 @@ describe('scriptsOperationSaga definition ownership', () => {
 
     await expect(request.promise).resolves.toMatchObject({ skippedRunning: ['Check'] });
     expect(transport.upsert).not.toHaveBeenCalled();
+    await stop(run.task);
+  });
+});
+
+it('guest workspace Owner can read one-off definitions without gaining script mutation authority', async () => {
+  const run = start();
+  run.state.principal.snapshot!.principal.isAdministrator = false;
+  run.state.principal.snapshot!.capabilities.workspaceGuestRoles = true;
+  run.state.workspace.workspaces.map[WS].myRole = 'owner';
+  transport.get.mockResolvedValue({ ...definition, purpose: 'oneOff' });
+  const read = getScriptDefinitionRequested(WS, definition.id);
+  run.dispatch(read);
+  await expect(read.promise).resolves.toMatchObject({ id: definition.id, purpose: 'oneOff' });
+  run.dispatch(startScriptRequested(WS, definition.id));
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  expect(transport.start).not.toHaveBeenCalled();
+  await stop(run.task);
+});
+
+describe('Manager saved-script boundary', () => {
+  function manager() {
+    const run = start();
+    run.state.principal.snapshot!.principal.isAdministrator = false;
+    run.state.principal.snapshot!.capabilities.workspaceGuestRoles = true;
+    run.dispatch(setScriptsData(WS, [{ ...definition, purpose: 'saved' }]));
+    run.state.workspace.workspaces.map[WS].myRole = 'manager';
+    run.state.workspace.workspaces.map[WS].canManage = false;
+    return run;
+  }
+  it.each([startScriptRequested, stopScriptRequested, restartScriptRequested])(
+    'runs saved-script action %s using only its ID',
+    async (action) => {
+      const run = manager();
+      transport.start.mockResolvedValue({ success: true });
+      transport.stop.mockResolvedValue({ success: true });
+      transport.restart.mockResolvedValue({ success: true });
+      run.dispatch(action(WS, definition.id));
+      for (let i = 0; i < 20; i++) await Promise.resolve();
+      expect([
+        ...transport.start.mock.calls,
+        ...transport.stop.mock.calls,
+        ...transport.restart.mock.calls,
+      ]).toEqual([[WS, definition.id]]);
+      await stop(run.task);
+    },
+  );
+  it('rejects one-off and unknown script operations and definition reads', async () => {
+    const run = manager();
+    run.dispatch(setScriptsData(WS, [{ ...definition, purpose: 'oneOff' }]));
+    run.dispatch(startScriptRequested(WS, definition.id));
+    run.dispatch(stopScriptRequested(WS, 'unknown'));
+    transport.get.mockResolvedValue({ ...definition, purpose: 'oneOff' });
+    const read = getScriptDefinitionRequested(WS, definition.id);
+    run.dispatch(read);
+    await expect(read.promise).rejects.toThrow();
+    expect(transport.start).not.toHaveBeenCalled();
+    expect(transport.stop).not.toHaveBeenCalled();
+    await stop(run.task);
+  });
+  it('reads saved definitions but refuses create, edit and deletion', async () => {
+    const run = manager();
+    transport.get.mockResolvedValue({ ...definition, purpose: 'saved' });
+    const read = getScriptDefinitionRequested(WS, definition.id);
+    run.dispatch(read);
+    await expect(read.promise).resolves.toMatchObject({ id: definition.id });
+    const create = createScriptDefinitionRequested(WS, {
+      name: 'arbitrary',
+      command: 'echo changed',
+      mode: 'command',
+    });
+    run.dispatch(create);
+    await expect(create.promise).rejects.toThrow();
+    const edit = updateScriptDefinitionRequested(WS, definition.id, { command: 'echo changed' });
+    run.dispatch(edit);
+    await expect(edit.promise).rejects.toThrow();
+    run.dispatch(deleteScriptRequested(WS, definition.id));
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    expect(transport.create).not.toHaveBeenCalled();
+    expect(transport.upsert).not.toHaveBeenCalled();
+    expect(transport.remove).not.toHaveBeenCalled();
     await stop(run.task);
   });
 });

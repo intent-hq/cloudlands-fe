@@ -36,8 +36,9 @@ import {
   selectSpecialists,
 } from '../../specialists/specialists-selectors';
 import {
+  selectHidesAgentCreationActions,
+  selectWorkspaceAgentManagementContext,
   selectHidesAgentLifecycleActions,
-  selectWorkspaceActionContext,
   selectWorkspaceById,
 } from '../../workspace/workspace-selectors';
 import { selectGitHubAuthIsAuthenticated } from '../../github-auth/github-auth-selectors';
@@ -155,7 +156,7 @@ async function showConsumerCreationError(error: Error, source?: string): Promise
  * sentence the daemon's refusal would render.
  */
 function* refusedForCollaborator(wsId: string, notify = true): SagaGenerator<boolean> {
-  const hidden = yield* selectHidesAgentLifecycleActions.effect(wsId);
+  const hidden = yield* selectHidesAgentCreationActions.effect(wsId);
   if (!hidden) return false;
   logger.warn('Agent creation refused for a collaborator connection', { workspaceId: wsId });
   if (notify) yield* call(showCreationRefused);
@@ -226,7 +227,7 @@ function* createManualAgent(
   if (yield* call(refusedForCollaborator, wsId)) return;
   const workspace = yield* call(validateWorkspace, wsId);
   if (!workspace) return;
-  const context = yield* selectWorkspaceActionContext.effect(wsId);
+  const context = yield* selectWorkspaceAgentManagementContext.effect(wsId);
   try {
     let preferred = selectedSpecialistId;
     if (preferred === undefined && wsId !== CHIEF_WORKSPACE_ID) {
@@ -245,7 +246,7 @@ function* createManualAgent(
         if ((error as { rpcCode?: number })?.rpcCode !== -32601) throw error;
       }
     }
-    if ((yield* selectWorkspaceActionContext.effect(wsId)) !== context) return;
+    if ((yield* selectWorkspaceAgentManagementContext.effect(wsId)) !== context) return;
     const available = yield* selectSpecialists.effect(wsId);
     const authenticated = yield* selectGitHubAuthIsAuthenticated.effect();
     const specialists = filterPickableSpecialists(available, authenticated);
@@ -301,7 +302,7 @@ function* createManualAgent(
       yield* call(showCreationError, factoryFailure(result));
       return;
     }
-    if ((yield* selectWorkspaceActionContext.effect(wsId)) !== context) return;
+    if ((yield* selectWorkspaceAgentManagementContext.effect(wsId)) !== context) return;
     yield* call(registerCreatedAgent, wsId, result.agent, agents);
     yield* put(
       openAgentTabRequested(wsId, {
@@ -399,7 +400,10 @@ function* delegateExistingTask(
   action: ReturnType<typeof delegateExistingTaskRequested>,
 ): SagaGenerator<void> {
   const [wsId, noteId, , openAgent] = action.payload;
-  if (yield* call(refusedForCollaborator, wsId)) return;
+  if (yield* selectHidesAgentLifecycleActions.effect(wsId)) {
+    yield* call(showCreationRefused);
+    return;
+  }
   const workspace = yield* call(validateWorkspace, wsId);
   if (!workspace) return;
   try {
@@ -477,7 +481,7 @@ function* createFromConfig(
   action: ReturnType<typeof createAgentFromConfigRequested>,
 ): SagaGenerator<void> {
   const [wsId, config, options] = action.payload;
-  const context = yield* selectWorkspaceActionContext.effect(wsId);
+  const context = yield* selectWorkspaceAgentManagementContext.effect(wsId);
   const errorFallback =
     config.source === 'agent-action-block'
       ? m.notes_agentActionBlock_unknown_error()
@@ -506,7 +510,7 @@ function* createFromConfig(
     }
     if (existing) {
       const session = yield* call(() => existing.promise);
-      if ((yield* selectWorkspaceActionContext.effect(wsId)) === context) {
+      if ((yield* selectWorkspaceAgentManagementContext.effect(wsId)) === context) {
         yield* call(activateCreatedAgent, action, session);
         yield* finishCreation(action, 'success', session);
       } else {
@@ -528,7 +532,7 @@ function* createFromConfig(
       : yield* call([agentFactory, agentFactory.createAgent], workspace, scopedConfig);
     if (!result.success || !result.agent)
       throw creationError(factoryFailure(result), errorFallback);
-    if ((yield* selectWorkspaceActionContext.effect(wsId)) !== context) {
+    if ((yield* selectWorkspaceAgentManagementContext.effect(wsId)) !== context) {
       yield* finishCreation(action, 'cancelled');
       yield* put(action.failure(new Error(m.agent_creation_createFailed_error())));
       settled = true;
@@ -548,7 +552,7 @@ function* createFromConfig(
     settled = true;
   } catch (error) {
     const failure = creationError(error, errorFallback);
-    const contextCurrent = (yield* selectWorkspaceActionContext.effect(wsId)) === context;
+    const contextCurrent = (yield* selectWorkspaceAgentManagementContext.effect(wsId)) === context;
     if (
       contextCurrent &&
       !existing &&

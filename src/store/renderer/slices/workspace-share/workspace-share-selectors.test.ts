@@ -28,6 +28,8 @@ import {
   selectShareSharingEnabling,
   selectShareSharingError,
   selectShareCanManage,
+  selectShareCanSetMemberRole,
+  selectShareOwnerPrincipalId,
   selectShareInvitablePrincipals,
   selectWorkspaceRosterCanManage,
   selectWorkspaceRosterMembers,
@@ -264,4 +266,28 @@ it('hides prerequisite status as soon as host identity changes', () => {
   expect(selectShareSharingChecking.select(root)).toBe(false);
   expect(selectShareSharingEnabling.select(root)).toBe(false);
   expect(selectShareSharingError.select(root)).toBeNull();
+});
+
+it('uses authoritative ownership for role controls even with a collaborator projection', () => {
+  const state = stateWith(
+    { 'ws-role': 'collaborator' },
+    openShareDialog({ workspaceId: 'ws-role', workspaceTitle: 'Roles' }),
+  );
+  state.principal.snapshot!.capabilities.hostMembership = true;
+  state.principal.snapshot!.capabilities.workspaceGuestRoles = true;
+  state.principal.snapshot!.principal.hostRole = 'owner';
+  state.workspace.workspaces.map['ws-role'].canManage = true;
+  state.workspace.workspaces.map['ws-role'].ownerPrincipalId =
+    state.principal.snapshot!.principal.id;
+  state.workspace.hasLoaded = true;
+  state.workspace.loadedBackendId = state.connections.windowBackendId;
+  state.workspace.capabilityContext = selectPrincipalActionContext.select(state);
+  expect(selectShareOwnerPrincipalId.select(state)).toBe(state.principal.snapshot!.principal.id);
+  expect(selectShareCanSetMemberRole.select(state)).toBe(true);
+  state.workspace.workspaces.map['ws-role'].ownerPrincipalId = 'another-owner';
+  expect(selectShareCanSetMemberRole.select(state)).toBe(true);
+  state.principal.snapshot!.principal.hostRole = 'member';
+  expect(selectShareCanSetMemberRole.select(state)).toBe(false);
+  state.principal.snapshot!.capabilities.workspaceGuestRoles = false;
+  expect(selectShareCanSetMemberRole.select(state)).toBe(false);
 });

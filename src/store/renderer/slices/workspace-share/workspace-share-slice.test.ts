@@ -25,6 +25,8 @@ import {
   shareInviteRevokeRequested,
   shareMemberAddRequested,
   shareMemberRemoveRequested,
+  shareMemberRoleRequested,
+  shareMemberRoleSettled,
   sharePrincipalsLoaded,
   shareRosterActionSettled,
   shareRosterFailed,
@@ -858,5 +860,107 @@ describe('sharing prerequisite settlements', () => {
       openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'My Space' }),
     );
     expect(reduce(reopened, stale)).toBe(reopened);
+  });
+});
+
+describe('confirmed guest roles', () => {
+  it('keeps each row confirmed and pending independently; stale reads cannot undo a successful change', () => {
+    let state = workspaceShareReducer(
+      initialState,
+      openShareDialog({ workspaceId: 'ws-role', workspaceTitle: 'Roles' }),
+    );
+    const target = { workspaceId: 'ws-role', session: state.session };
+    const rows: WorkspaceMember[] = ['a', 'b'].map((principalId) => ({
+      principalId,
+      role: 'collaborator',
+      login: null,
+      displayName: null,
+      avatarUrl: null,
+      addedAt: '2026-10-21',
+    }));
+    state = workspaceShareReducer(
+      state,
+      shareDataLoaded({
+        target,
+        generation: 0,
+        members: rows,
+        invites: [],
+        guestCount: 2,
+        guestLimit: 5,
+      }),
+    );
+    for (const principalId of ['a', 'b'])
+      state = workspaceShareReducer(
+        state,
+        shareMemberRoleRequested({ principalId, role: 'manager' }),
+      );
+    expect(state.pendingRolePrincipalIds).toEqual(['a', 'b']);
+    expect(getItems(state.members).map((row) => row.role)).toEqual([
+      'collaborator',
+      'collaborator',
+    ]);
+    state = workspaceShareReducer(
+      state,
+      shareMemberRoleSettled({ target, principalId: 'a', error: null }),
+    );
+    expect(state.pendingRolePrincipalIds).toEqual(['b']);
+    expect(
+      workspaceShareReducer(
+        state,
+        shareDataLoaded({
+          target,
+          generation: 0,
+          members: [],
+          invites: [],
+          guestCount: 0,
+          guestLimit: 5,
+        }),
+      ),
+    ).toBe(state);
+    state = workspaceShareReducer(
+      state,
+      shareMemberRoleSettled({ target, principalId: 'b', error: 'Denied' }),
+    );
+    expect(state.roleErrors).toEqual({ b: 'Denied' });
+    expect(getItems(state.members).map((row) => row.role)).toEqual([
+      'collaborator',
+      'collaborator',
+    ]);
+  });
+  it.each([
+    { role: 'owner' as const },
+    { role: 'collaborator' as const, hostRole: 'member' as const },
+  ])('never admits role changes for owner or inherited host membership %j', (member) => {
+    let state = workspaceShareReducer(
+      initialState,
+      openShareDialog({ workspaceId: 'ws-role', workspaceTitle: 'Roles' }),
+    );
+    const target = { workspaceId: 'ws-role', session: state.session };
+    state = workspaceShareReducer(
+      state,
+      shareDataLoaded({
+        target,
+        generation: 0,
+        members: [
+          {
+            principalId: 'fixed',
+            login: null,
+            displayName: null,
+            avatarUrl: null,
+            addedAt: '2026-10-21',
+            ...member,
+          },
+        ],
+        invites: [],
+        guestCount: 0,
+        guestLimit: 5,
+      }),
+    );
+    expect(
+      workspaceShareReducer(
+        state,
+        shareMemberRoleRequested({ principalId: 'fixed', role: 'manager' }),
+      ),
+    ).toBe(state);
   });
 });

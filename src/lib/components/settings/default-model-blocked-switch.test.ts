@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
+import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 const { update, list } = vi.hoisted(() => ({
   update:
     vi.fn<
@@ -47,6 +48,7 @@ afterEach(() => {
 for (const withCallbacks of [false, true]) {
   it(`preserves ordinary effort and picker selection when legacy snapshot blocks model switch (callbacks ${withCallbacks})`, async () => {
     disposers.push(store.init());
+    admitLegacyPrincipal();
     const restore = preview.states.reasoning.setup?.();
     if (restore) disposers.push(restore);
     disposers.push(store.runSaga(backgroundAgentSettingsSaga));
@@ -101,6 +103,7 @@ it.each(['accept', 'reject'] as const)(
   'waits for daemon state while persistence can %s',
   async (outcome) => {
     disposers.push(store.init());
+    admitLegacyPrincipal();
     const restore = preview.states.reasoning.setup?.();
     if (restore) disposers.push(restore);
     applySettingsChanges([
@@ -159,6 +162,7 @@ it.each(['accept', 'reject'] as const)(
   'renders the Redux %s outcome in Default model settings before the selector closes',
   async (outcome) => {
     disposers.push(store.init());
+    admitLegacyPrincipal();
     const restore = preview.states.reasoning.setup?.();
     if (restore) disposers.push(restore);
     applySettingsChanges([
@@ -201,6 +205,7 @@ it.each(['accept', 'reject'] as const)(
 
 it('renders each daemon event while multiple Default picks are queued and Settings stays open', async () => {
   disposers.push(store.init());
+  admitLegacyPrincipal();
   const restore = preview.states.reasoning.setup?.();
   if (restore) disposers.push(restore);
   applySettingsChanges(
@@ -278,6 +283,7 @@ it('renders each daemon event while multiple Default picks are queued and Settin
 
 it('follows the accepted Redux provider for the same bare default model while Settings stays open', async () => {
   disposers.push(store.init());
+  admitLegacyPrincipal();
   const restore = preview.states.reasoning.setup?.();
   if (restore) disposers.push(restore);
   for (const providerId of ['codex', 'claude-code']) {

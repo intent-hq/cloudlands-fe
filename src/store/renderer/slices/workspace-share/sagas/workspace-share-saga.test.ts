@@ -63,6 +63,7 @@ import {
   shareInviteRevokeRequested,
   shareMemberAddRequested,
   shareMemberRemoveRequested,
+  shareMemberRoleRequested,
   shareMembershipChanged,
   sharePrincipalsLoaded,
   shareRosterLoaded,
@@ -1843,6 +1844,115 @@ describe('inline sharing prerequisites', () => {
       await settle();
       expect(calls('settings.get')).toHaveLength(2);
       expect(h.state().sharingEnabled).not.toBe(true);
+    } finally {
+      h.task.cancel();
+    }
+  });
+});
+
+describe('guest role changes', () => {
+  beforeEach(() => mocks.request.mockReset());
+  function roleSupport(state: StoreState): StoreState {
+    return {
+      ...state,
+      principal: {
+        ...state.principal,
+        snapshot: {
+          ...state.principal.snapshot!,
+          capabilities: { ...state.principal.snapshot!.capabilities, workspaceGuestRoles: true },
+        },
+      },
+    };
+  }
+  it('holds confirmed roles until the server succeeds, coalesces duplicate clicks and reloads the roster', async () => {
+    let complete!: (value: unknown) => void;
+    replyByMethod({
+      'workspace.members.setRole': () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+      'workspace.members.list': { members: [owner, { ...guestAsMember, role: 'manager' }] },
+    });
+    const h = harness(loaded([owner, guestAsMember]), undefined, roleSupport);
+    try {
+      h.dispatch(shareMemberRoleRequested({ principalId: guest.principalId, role: 'manager' }));
+      h.dispatch(shareMemberRoleRequested({ principalId: guest.principalId, role: 'manager' }));
+      await settle();
+      expect(
+        mocks.request.mock.calls.filter(([method]) => method === 'workspace.members.setRole'),
+      ).toEqual([
+        [
+          'workspace.members.setRole',
+          { workspaceId: 'ws-1', principalId: guest.principalId, role: 'manager' },
+        ],
+      ]);
+      expect(
+        getItems(h.state().members).find((row) => row.principalId === guest.principalId)?.role,
+      ).toBe('collaborator');
+      expect(h.state().pendingRolePrincipalIds).toEqual([guest.principalId]);
+      complete({
+        workspaceId: 'ws-1',
+        principalId: guest.principalId,
+        role: 'manager',
+        changed: true,
+      });
+      await settle();
+      expect(h.state().pendingRolePrincipalIds).toEqual([]);
+      expect(
+        getItems(h.state().members).find((row) => row.principalId === guest.principalId)?.role,
+      ).toBe('manager');
+    } finally {
+      h.task.cancel();
+    }
+  });
+  it('never sends role changes to an older daemon', async () => {
+    const h = harness(loaded([owner, guestAsMember]));
+    try {
+      h.dispatch(shareMemberRoleRequested({ principalId: guest.principalId, role: 'manager' }));
+      await settle();
+      expect(mocks.request).not.toHaveBeenCalledWith(
+        'workspace.members.setRole',
+        expect.anything(),
+      );
+      expect(h.state().pendingRolePrincipalIds).toEqual([]);
+      expect(h.state().roleErrors[guest.principalId]).toBeTruthy();
+    } finally {
+      h.task.cancel();
+    }
+  });
+  it('keeps the confirmed role after failure and ignores a late reply after retargeting', async () => {
+    let complete!: (value: unknown) => void;
+    replyByMethod({
+      'workspace.members.setRole': () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+    });
+    const h = harness(loaded([owner, guestAsMember]), undefined, roleSupport);
+    try {
+      h.dispatch(shareMemberRoleRequested({ principalId: guest.principalId, role: 'manager' }));
+      await settle();
+      complete({
+        workspaceId: 'wrong',
+        principalId: guest.principalId,
+        role: 'manager',
+        changed: true,
+      });
+      await settle();
+      expect(h.state().roleErrors[guest.principalId]).toBeTruthy();
+      expect(getItems(h.state().members)[1].role).toBe('collaborator');
+      h.dispatch(shareMemberRoleRequested({ principalId: guest.principalId, role: 'manager' }));
+      await settle();
+      h.dispatch(closeShareDialog());
+      complete({
+        workspaceId: 'ws-1',
+        principalId: guest.principalId,
+        role: 'manager',
+        changed: true,
+      });
+      await settle();
+      expect(h.state().members.ids).toEqual([]);
+      expect(h.state().pendingRolePrincipalIds).toEqual([]);
     } finally {
       h.task.cancel();
     }

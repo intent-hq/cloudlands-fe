@@ -107,6 +107,7 @@
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
   import {
     selectIsWorkspaceCollaborator,
+    selectWorkspaceSavedScriptContext,
     selectWorkspaceActivePullRequest,
     selectWorkspaceById,
   } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -356,12 +357,15 @@
   // selection of those tabs are withheld up front. The selector fails closed: a
   // guest window (multiplayer w4) reads as collaborator whatever `myRole` the
   // row carries, and so does every window until its identity has settled.
+  const scriptContext$ = selectWorkspaceSavedScriptContext(workspaceIdStore);
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
   const isCollaborator = $derived($isCollaborator$);
   const presencePeople$ = selectWorkspacePeopleTilePeople(workspaceIdStore);
   const showPeople = $derived($presencePeople$.length > 0);
   const selectedTabIds = selectMultiSelectSidebarSelectedTabIds(workspaceIdStore);
-  const selectedTabs = $derived(normalizeSelectedTabs($selectedTabIds, isCollaborator, showPeople));
+  const selectedTabs = $derived(
+    normalizeSelectedTabs($selectedTabIds, isCollaborator, showPeople, !!$scriptContext$),
+  );
   let agentSearchQuery = $state('');
   let contextSearchQuery = $state('');
   const expandedStripTabs = $derived(
@@ -369,7 +373,11 @@
       (definition) =>
         definition.id !== 'overview' &&
         (definition.id !== 'people' || showPeople) &&
-        !(isCollaborator && OWNER_ONLY_TAB_IDS.has(definition.id)),
+        !(
+          isCollaborator &&
+          OWNER_ONLY_TAB_IDS.has(definition.id) &&
+          !(definition.id === 'shell' && $scriptContext$)
+        ),
     ).map(({ id, label, icon }) => ({
       id,
       label,
@@ -1061,7 +1069,7 @@
                               label={m.menu_new_browser()}
                               onclick={createBrowser}
                             />
-                          {:else if tabId === 'shell'}
+                          {:else if tabId === 'shell' && !isCollaborator}
                             <SidebarHeaderAction
                               icon="plus"
                               label={m.menu_new_terminal()}
@@ -1539,6 +1547,8 @@
             />
           </div>
         {/if}
+      {/if}
+      {#if $scriptContext$}
         <div class="min-w-0" in:launcherGridReveal|global={isNewWorkspaceSession ? 0 : 5}>
           <WorkspaceTerminalDock
             {workspaceId}

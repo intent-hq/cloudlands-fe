@@ -1,3 +1,4 @@
+import { selectCanReadScriptDefinition, selectUsesGuestScriptScope } from '../scripts-selectors';
 import {
   all,
   call,
@@ -18,7 +19,11 @@ import { scriptOutputTailText } from '$lib/utils/script-output-text';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { scriptsOutputSaga } from './scripts-output-saga';
 import { takeLeadingInContext } from '../../../utils/context-saga-effects';
-import { selectWorkspaceActionContext } from '../../workspace/workspace-selectors';
+import {
+  selectWorkspaceActionContext,
+  selectWorkspaceSavedScriptContext,
+  selectWorkspaceScriptReadContext,
+} from '../../workspace/workspace-selectors';
 import {
   selectScriptById,
   selectScriptDetectionOperation,
@@ -337,6 +342,16 @@ function* requireAuthority(workspaceId: string, expected?: string): SagaGenerato
   }
   return authority;
 }
+function* requireScriptReadAuthority(
+  workspaceId: string,
+  expected?: string,
+): SagaGenerator<string> {
+  const authority = yield* selectWorkspaceScriptReadContext.effect(workspaceId);
+  if (!authority || (expected !== undefined && authority !== expected)) {
+    throw new Error(m.workspace_client_accessChanged_error());
+  }
+  return authority;
+}
 
 function* finishWorkflow(
   workspaceId: string,
@@ -352,7 +367,9 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
   const [workspaceId, scriptId, failureMessage] = action.payload;
   const operation = operationFor(action);
   if ((yield* selectScriptDetectionOperation.effect(workspaceId))?.pending) return;
-  const authority = yield* selectWorkspaceActionContext.effect(workspaceId);
+  const contextSelector =
+    operation === 'delete' ? selectWorkspaceActionContext : selectWorkspaceSavedScriptContext;
+  const authority = yield* contextSelector.effect(workspaceId);
   const pending = (yield* selectWorkspaceScriptOperations.effect(workspaceId))[scriptId];
   if (pending?.pending && pending.action !== operation) return;
   if (!authority) {
@@ -370,7 +387,11 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
       : undefined;
   let cleanedUp = false;
   try {
-    if (operation === 'delete' && !before) return;
+    if (
+      (operation === 'delete' || (yield* selectUsesGuestScriptScope.effect(workspaceId))) &&
+      !before
+    )
+      return;
     const request = (() => {
       switch (operation) {
         case 'delete':
@@ -392,7 +413,7 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
       if (operation === 'delete') yield* call(() => request);
       return;
     }
-    if (authority !== (yield* selectWorkspaceActionContext.effect(workspaceId))) return;
+    if (authority !== (yield* contextSelector.effect(workspaceId))) return;
     if (!outcome.result?.success) {
       const message = outcome.result?.error || failureMessage || 'Script operation failed';
       yield* put(scriptOperationFailed(workspaceId, scriptId, operation, message));
@@ -425,8 +446,7 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
     if (operation === 'delete') yield* put(removeScript(workspaceId, scriptId));
     else yield* put(scriptOperationSucceeded(workspaceId, scriptId, operation));
   } catch (error) {
-    if (cleanedUp || authority !== (yield* selectWorkspaceActionContext.effect(workspaceId)))
-      return;
+    if (cleanedUp || authority !== (yield* contextSelector.effect(workspaceId))) return;
     const message = errorMessage(error);
     yield* put(scriptOperationFailed(workspaceId, scriptId, operation, message));
     if (failureMessage) yield* call([notify, notify.error], message || failureMessage);
@@ -449,7 +469,11 @@ function* readDefinition(workspaceId: string, scriptId: string): SagaGenerator<S
   try {
     const definition = yield* call(() => scriptDefinitionTransport.get(workspaceId, scriptId));
     const reconciliation = yield* reconcileScriptRead(context, [definition]);
-    if (!reconciliation || reconciliation.definitionChanges.has(scriptId)) {
+    if (
+      !reconciliation ||
+      !reconciliation.scripts.some((script) => script.id === scriptId) ||
+      reconciliation.definitionChanges.has(scriptId)
+    ) {
       throw new Error(m.scripts_pendingChange_error());
     }
     return definition;
@@ -1281,9 +1305,13 @@ function* listDefinitions(
 ): SagaGenerator<void> {
   const [workspaceId, options, consumer] = action.payload;
   try {
-    const authority = yield* requireAuthority(workspaceId);
-    const result = yield* call(() => scriptDefinitionTransport.list(workspaceId, options));
-    yield* requireAuthority(workspaceId, authority);
+    const authority = yield* requireScriptReadAuthority(workspaceId);
+    const rows = yield* call(() => scriptDefinitionTransport.list(workspaceId, options));
+    const result: typeof rows = [];
+    for (const row of rows) {
+      if (yield* selectCanReadScriptDefinition.effect(workspaceId, row)) result.push(row);
+    }
+    yield* requireScriptReadAuthority(workspaceId, authority);
     yield* put(action.success(result));
     yield* finishWorkflow(workspaceId, consumer, 'success', result);
   } catch (error) {
@@ -1297,9 +1325,9 @@ function* getDefinition(
 ): SagaGenerator<void> {
   const [workspaceId, scriptId, consumer] = action.payload;
   try {
-    const authority = yield* requireAuthority(workspaceId);
+    const authority = yield* requireScriptReadAuthority(workspaceId);
     const result = yield* readDefinition(workspaceId, scriptId);
-    yield* requireAuthority(workspaceId, authority);
+    yield* requireScriptReadAuthority(workspaceId, authority);
     yield* put(action.success(result));
     yield* finishWorkflow(workspaceId, consumer, 'success', result);
   } catch (error) {

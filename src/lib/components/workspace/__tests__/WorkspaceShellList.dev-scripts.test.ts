@@ -10,6 +10,7 @@ import type { TerminalTab } from '$store/renderer/slices/terminals/terminals-sli
 const mocks = vi.hoisted(() => {
   const openUserTab = vi.fn();
   return {
+    isCollaborator: false,
     dispatch: vi.fn(),
     openUserTab,
     getPanelLayoutManager: vi.fn(() => ({ openUserTab })),
@@ -88,6 +89,10 @@ vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => ({
   },
 }));
 
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectIsWorkspaceCollaborator: workspaceReadable(() => mocks.isCollaborator),
+}));
+
 vi.mock('$features/layout/panel-layout-adapter', () => ({
   getPanelLayoutManager: mocks.getPanelLayoutManager,
 }));
@@ -119,8 +124,24 @@ function script(
 }
 
 describe('WorkspaceShellList development script controls', () => {
+  it('Manager Shell exposes saved scripts without mounting raw terminal controls', async () => {
+    mocks.isCollaborator = true;
+    mocks.terminals[WS] = [{ id: 'raw', name: 'Raw terminal' } as TerminalTab];
+    mocks.scripts[WS] = [script('saved', 'Saved check', 'idle')];
+    render(WorkspaceShellList, { props: { workspaceId: WS } });
+    expect(screen.queryByText('Raw terminal')).toBeNull();
+    expect(screen.getByText('Saved check')).toBeTruthy();
+    await fireEvent.click(screen.getByText('Saved check'));
+    expect(mocks.openUserTab).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'terminal', scriptId: 'saved' }),
+    );
+    expect(
+      mocks.dispatch.mock.calls.some(([a]) => a.type === 'terminals/openTerminalOverlay'),
+    ).toBe(false);
+  });
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.isCollaborator = false;
     mocks.scripts = {};
     mocks.operations = {};
     mocks.terminals = {};

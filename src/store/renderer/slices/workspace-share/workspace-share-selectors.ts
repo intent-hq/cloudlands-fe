@@ -6,9 +6,14 @@ import { getItem, getItems } from '@themislib/themis/utils/collections/collectio
 import { store } from '../../store';
 import {
   selectPrincipalActionContext,
+  selectPrincipalSnapshot,
   selectCanAdministerHost,
 } from '../principal/principal-selectors';
-import { selectCanShareWorkspace } from '../workspace/workspace-selectors';
+import {
+  selectCanShareWorkspace,
+  selectIsWorkspaceOwner,
+  selectWorkspaceById,
+} from '../workspace/workspace-selectors';
 import { getRosterState, type WorkspaceShareTarget } from './workspace-share-slice';
 
 export const selectShareDialogOpen = store.createSelector((state) => state.workspaceShare.open);
@@ -183,3 +188,28 @@ export const selectShareSharingEnabling = store.createSelector(
 export const selectShareSharingError = store.createSelector((state) =>
   selectSharePrerequisitesCurrent.select(state) ? state.workspaceShare.sharingError : null,
 );
+
+export const selectShareCanSetMemberRole = store.createSelector(
+  (state) =>
+    selectShareCanManage.select(state) &&
+    !!state.workspaceShare.workspaceId &&
+    (selectCanAdministerHost.select(state) ||
+      (selectShareOwnerPrincipalId.select(state)
+        ? selectShareOwnerPrincipalId.select(state) ===
+          selectPrincipalSnapshot.select(state)?.principal.id
+        : selectIsWorkspaceOwner.select(state, state.workspaceShare.workspaceId))) &&
+    selectPrincipalSnapshot.select(state)?.capabilities.workspaceGuestRoles === true,
+);
+export const selectSharePendingRolePrincipalIds = store.createSelector(
+  (state) => state.workspaceShare.pendingRolePrincipalIds,
+);
+export const selectShareRoleErrors = store.createSelector(
+  (state) => state.workspaceShare.roleErrors,
+);
+
+export const selectShareOwnerPrincipalId = store.createSelector((state) => {
+  const workspaceId = state.workspaceShare.workspaceId;
+  return workspaceId
+    ? (selectWorkspaceById.select(state, workspaceId)?.ownerPrincipalId ?? null)
+    : null;
+});

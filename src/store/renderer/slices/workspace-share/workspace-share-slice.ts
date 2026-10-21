@@ -29,6 +29,8 @@ import type {
   WorkspaceInvite,
   WorkspaceMember,
 } from '$features/workspace-sharing/types';
+import type { WorkspaceGuestRole } from '$shared/types';
+import { isWorkspaceGuest } from '$features/workspace-sharing/utils/workspace-guest';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 
 /**
@@ -142,6 +144,8 @@ export interface WorkspaceShareState {
   removingPrincipalId: string | null;
   /** `workspace.members.add` in flight for this host principal. */
   addingPrincipalId: string | null;
+  pendingRolePrincipalIds: string[];
+  roleErrors: Record<string, string>;
   actionError: string | null;
 }
 
@@ -173,6 +177,8 @@ export const initialState: WorkspaceShareState = {
   revokingInviteId: null,
   removingPrincipalId: null,
   addingPrincipalId: null,
+  pendingRolePrincipalIds: [],
+  roleErrors: {},
   actionError: null,
 };
 
@@ -337,6 +343,8 @@ function withoutRows(state: WorkspaceShareState): WorkspaceShareState {
     revokingInviteId: null,
     removingPrincipalId: null,
     addingPrincipalId: null,
+    pendingRolePrincipalIds: [],
+    roleErrors: {},
     actionError: null,
   };
 }
@@ -344,6 +352,7 @@ function withoutRows(state: WorkspaceShareState): WorkspaceShareState {
 /** A dialog mutation (revoke / remove / add) is in flight; one at a time. */
 function mutating(state: WorkspaceShareState): boolean {
   return (
+    state.pendingRolePrincipalIds.length > 0 ||
     state.revokingInviteId !== null ||
     state.removingPrincipalId !== null ||
     state.addingPrincipalId !== null
@@ -582,4 +591,64 @@ workspaceShareReducer.with(shareIntegrationAuthRequested, (state) => ({
 }));
 workspaceShareReducer.with(shareIntegrationAuthLoaded, (state, { payload: [target, auth] }) =>
   targets(state, target) ? { ...state, integrationAuth: auth } : state,
+);
+
+export const shareMemberRoleRequested = createAction<
+  [payload: { principalId: string; role: WorkspaceGuestRole }]
+>('workspaceShare/memberRoleRequested');
+export const shareMemberRoleSettled = createAction<
+  [
+    payload: {
+      target: WorkspaceShareTarget;
+      principalId: string;
+      error: string | null;
+    },
+  ]
+>('workspaceShare/memberRoleSettled');
+
+workspaceShareReducer.with(
+  shareMemberRoleRequested,
+  (state, { payload: [{ principalId, role }] }) => {
+    const member = getItem(state.members, principalId);
+    if (
+      !state.open ||
+      state.withheld ||
+      !member ||
+      !isWorkspaceGuest(member) ||
+      (role !== 'collaborator' && role !== 'manager') ||
+      member.role === role ||
+      state.pendingRolePrincipalIds.includes(principalId) ||
+      state.removingPrincipalId ||
+      state.revokingInviteId ||
+      state.addingPrincipalId
+    )
+      return state;
+    const roleErrors = { ...state.roleErrors };
+    delete roleErrors[principalId];
+    return {
+      ...state,
+      pendingRolePrincipalIds: [...state.pendingRolePrincipalIds, principalId],
+      roleErrors,
+    };
+  },
+);
+workspaceShareReducer.with(
+  shareMemberRoleSettled,
+  (state, { payload: [{ target, principalId, error }] }) => {
+    if (
+      !targets(state, target) ||
+      state.withheld ||
+      !state.pendingRolePrincipalIds.includes(principalId)
+    )
+      return state;
+    const roleErrors = { ...state.roleErrors };
+    if (error) roleErrors[principalId] = error;
+    else delete roleErrors[principalId];
+    return {
+      ...state,
+      pendingRolePrincipalIds: state.pendingRolePrincipalIds.filter((id) => id !== principalId),
+      roleErrors,
+      mutationGeneration: error === null ? state.mutationGeneration + 1 : state.mutationGeneration,
+    };
+  },
 );
