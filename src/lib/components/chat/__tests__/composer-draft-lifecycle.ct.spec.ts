@@ -1,8 +1,20 @@
+import type { Locator } from '@playwright/test';
 import { expect, test } from '../../../../test/ct-test';
 import ChatPanelComposerGeometryHost from './ChatPanelComposerGeometryHost.svelte';
 import type { ComposerDraftRequest } from './mocks/composer-draft-transport';
 
 const scope = { workspaceId: 'chat-panel-composer-geometry', agentId: 'regular-composer-agent' };
+
+/**
+ * Replace the restored draft through the editor's own select-all. The composer
+ * refocuses itself when the restore gate releases, and ProseMirror re-syncs the
+ * DOM selection shortly after a focus; a raw DOM range (what `fill()` uses) made
+ * inside that window can collapse before the text lands (intent-hq/intent#7479).
+ */
+async function replaceComposerText(editor: Locator, text: string) {
+  await editor.press('ControlOrMeta+a');
+  await editor.page().keyboard.insertText(text);
+}
 
 test('locks the composer until draft restoration settles, then persists edits', async ({
   mount,
@@ -22,7 +34,7 @@ test('locks the composer until draft restoration settles, then persists edits', 
   await component.update({ props: { ...props, holdDraftRestore: false } });
   await expect(editor).toHaveAttribute('contenteditable', 'true');
   await expect(editor).toHaveText('Saved before reopening');
-  await editor.fill('Edited after restoration');
+  await replaceComposerText(editor, 'Edited after restoration');
   await expect
     .poll(() => requests)
     .toContainEqual({
@@ -51,7 +63,7 @@ test('cancels a pending restoration when the fixture unmounts', async ({ mount }
   });
   const editor = second.getByTestId('message-input').locator('.tiptap-editor');
   await expect(editor).toHaveText('Draft from the new fixture');
-  await editor.fill('Only the new fixture saves');
+  await replaceComposerText(editor, 'Only the new fixture saves');
   await expect
     .poll(() => requests)
     .toContainEqual({
