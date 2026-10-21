@@ -1,135 +1,150 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  ignoreRepeatHomeWorkspaceClick,
-  openHomeWorkspaceFromDoubleClick,
-  preventRepeatClickTextSelection,
-} from './home-workspace-opening';
+import { createHomeDoubleClickOpener, openHomeWorkspaceFromEvent } from './home-workspace-opening';
 
-function mountCard(): { card: HTMLElement; title: HTMLElement; menu: HTMLButtonElement } {
-  const card = document.createElement('div');
-  card.setAttribute('role', 'button');
+type PressType = 'mousedown' | 'mouseup' | 'click' | 'dblclick';
+
+function mountHome() {
+  const root = document.createElement('div');
+  const row = document.createElement('div');
   const title = document.createElement('span');
   title.textContent = 'Review open pull requests';
   const menu = document.createElement('button');
-  card.append(title, menu);
-  document.body.append(card);
-  return { card, title, menu };
+  row.append(title, menu);
+  const preview = document.createElement('div');
+  const previewButton = document.createElement('button');
+  preview.append(previewButton);
+  root.append(row, preview);
+  document.body.append(root);
+  return { root, row, title, menu, previewButton };
 }
 
-function dispatchOn(
-  card: HTMLElement,
-  target: HTMLElement,
-  type: 'mousedown' | 'click' | 'dblclick',
-  init: MouseEventInit,
-  handler: (event: MouseEvent) => void,
-): MouseEvent {
-  const event = new MouseEvent(type, { bubbles: true, cancelable: true, ...init });
-  card.addEventListener(type, handler, { once: true });
+const press = (target: Element, type: PressType, init: MouseEventInit = {}) => {
+  const event = new MouseEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    button: 0,
+    clientX: 10,
+    clientY: 10,
+    ...init,
+  });
   target.dispatchEvent(event);
   return event;
+};
+
+function setup() {
+  const dom = mountHome();
+  const onopen = vi.fn();
+  const opener = createHomeDoubleClickOpener(onopen);
+  const cleanup = opener.listen(dom.root);
+  const rowClicks = vi.fn();
+  const previewClicks = vi.fn();
+  dom.row.addEventListener('click', (event) => {
+    rowClicks(event.detail);
+    opener.arm(event, 'ws-1');
+  });
+  dom.previewButton.addEventListener('click', previewClicks);
+  return { ...dom, onopen, opener, cleanup, rowClicks, previewClicks };
+}
+
+function firstClick(target: Element, init: MouseEventInit = {}) {
+  for (const type of ['mousedown', 'mouseup', 'click'] as const)
+    press(target, type, { detail: 1, ...init });
+}
+
+function secondClick(target: Element, init: MouseEventInit = {}) {
+  return (['mousedown', 'mouseup', 'click', 'dblclick'] as const).map((type) =>
+    press(target, type, { detail: 2, ...init }),
+  );
 }
 
 afterEach(() => {
   document.body.replaceChildren();
 });
 
-describe('openHomeWorkspaceFromDoubleClick', () => {
-  it('opens the workspace on a primary-button double-click inside the card', () => {
-    const { card, title } = mountCard();
-    const onopen = vi.fn();
-    let opened: boolean | undefined;
-    const event = dispatchOn(card, title, 'dblclick', { button: 0, detail: 2 }, (e) => {
-      opened = openHomeWorkspaceFromDoubleClick(e, 'ws-1', onopen);
-    });
-    expect(opened).toBe(true);
+describe('createHomeDoubleClickOpener', () => {
+  it('opens on the repeat click of a double-click on the row and keeps it from the row', () => {
+    const { title, onopen, rowClicks } = setup();
+    firstClick(title);
+    const events = secondClick(title);
     expect(onopen).toHaveBeenCalledExactlyOnceWith('ws-1');
-    expect(event.defaultPrevented).toBe(true);
+    expect(rowClicks.mock.calls).toEqual([[1]]);
+    expect(events.every((event) => event.defaultPrevented)).toBe(true);
   });
 
-  it('leaves Cmd/Ctrl double-clicks to the modifier path that already opened on click 1', () => {
-    const { card, title } = mountCard();
-    const onopen = vi.fn();
+  it('opens when the first click swapped the row for a preview under the cursor', () => {
+    const { title, previewButton, onopen, previewClicks } = setup();
+    firstClick(title);
+    secondClick(previewButton);
+    expect(onopen).toHaveBeenCalledExactlyOnceWith('ws-1');
+    expect(previewClicks).not.toHaveBeenCalled();
+  });
+
+  it('ignores a repeat press that lands away from the first click', () => {
+    const { title, previewButton, onopen, previewClicks } = setup();
+    firstClick(title);
+    secondClick(previewButton, { clientX: 200, clientY: 200 });
+    expect(onopen).not.toHaveBeenCalled();
+    expect(previewClicks).toHaveBeenCalledOnce();
+  });
+
+  it('does not arm on a nested control, a modifier click, or a non-primary button', () => {
+    const { title, menu, onopen } = setup();
     const modifier = navigator.platform.toUpperCase().includes('MAC')
       ? { metaKey: true }
       : { ctrlKey: true };
-    dispatchOn(card, title, 'dblclick', { button: 0, detail: 2, ...modifier }, (e) => {
-      openHomeWorkspaceFromDoubleClick(e, 'ws-1', onopen);
-    });
+    for (const [target, init] of [
+      [menu, {}],
+      [title, modifier],
+      [title, { shiftKey: true }],
+    ] as const) {
+      firstClick(target, init);
+      secondClick(target, init);
+    }
     expect(onopen).not.toHaveBeenCalled();
   });
 
-  it('ignores double-clicks on nested controls', () => {
-    const { card, menu } = mountCard();
-    const onopen = vi.fn();
-    let opened: boolean | undefined;
-    const event = dispatchOn(card, menu, 'dblclick', { button: 0, detail: 2 }, (e) => {
-      opened = openHomeWorkspaceFromDoubleClick(e, 'ws-1', onopen);
-    });
-    expect(opened).toBe(false);
-    expect(onopen).not.toHaveBeenCalled();
-    expect(event.defaultPrevented).toBe(false);
+  it('opens once for a triple click and re-arms after a fresh click', () => {
+    const { title, onopen } = setup();
+    firstClick(title);
+    secondClick(title);
+    for (const type of ['mousedown', 'mouseup', 'click'] as const)
+      press(title, type, { detail: 3 });
+    expect(onopen).toHaveBeenCalledOnce();
+    firstClick(title);
+    secondClick(title);
+    expect(onopen).toHaveBeenCalledTimes(2);
   });
 
-  it('ignores non-primary button double-clicks', () => {
-    const { card, title } = mountCard();
-    const onopen = vi.fn();
-    dispatchOn(card, title, 'dblclick', { button: 1, detail: 2 }, (e) => {
-      openHomeWorkspaceFromDoubleClick(e, 'ws-1', onopen);
-    });
+  it('is disarmed by an unrelated fresh press before the repeat', () => {
+    const { title, previewButton, onopen } = setup();
+    firstClick(title);
+    press(previewButton, 'mousedown', { detail: 1, clientX: 300 });
+    secondClick(title);
+    expect(onopen).not.toHaveBeenCalled();
+  });
+
+  it('stops listening after cleanup', () => {
+    const { title, onopen, cleanup } = setup();
+    cleanup();
+    firstClick(title);
+    secondClick(title);
     expect(onopen).not.toHaveBeenCalled();
   });
 });
 
-describe('ignoreRepeatHomeWorkspaceClick', () => {
-  it('lets the first click of a sequence through', () => {
-    const { card, title } = mountCard();
-    let ignored: boolean | undefined;
-    dispatchOn(card, title, 'click', { detail: 1 }, (e) => {
-      ignored = ignoreRepeatHomeWorkspaceClick(e);
-    });
-    expect(ignored).toBe(false);
-  });
-
-  it('lets keyboard-generated clicks through', () => {
-    const { card, title } = mountCard();
-    let ignored: boolean | undefined;
-    dispatchOn(card, title, 'click', { detail: 0 }, (e) => {
-      ignored = ignoreRepeatHomeWorkspaceClick(e);
-    });
-    expect(ignored).toBe(false);
-  });
-
-  it('swallows the second click of a double-click so selection is not toggled off', () => {
-    const { card, title } = mountCard();
+describe('openHomeWorkspaceFromEvent', () => {
+  it('opens on a Cmd/Ctrl click and consumes, without reopening, its repeat click', () => {
+    const { row, title } = mountHome();
+    const onopen = vi.fn();
     const outer = vi.fn();
-    document.body.addEventListener('click', outer, { once: true });
-    let ignored: boolean | undefined;
-    dispatchOn(card, title, 'click', { detail: 2 }, (e) => {
-      ignored = ignoreRepeatHomeWorkspaceClick(e);
-    });
-    expect(ignored).toBe(true);
+    document.body.addEventListener('click', outer);
+    row.addEventListener('click', (event) => openHomeWorkspaceFromEvent(event, 'ws-1', onopen));
+    const modifier = navigator.platform.toUpperCase().includes('MAC')
+      ? { metaKey: true }
+      : { ctrlKey: true };
+    press(title, 'click', { detail: 1, ...modifier });
+    press(title, 'click', { detail: 2, ...modifier });
+    expect(onopen).toHaveBeenCalledExactlyOnceWith('ws-1');
     expect(outer).not.toHaveBeenCalled();
-  });
-});
-
-describe('preventRepeatClickTextSelection', () => {
-  it('blocks the word selection of a double-click on the row body', () => {
-    const { card, title } = mountCard();
-    const event = dispatchOn(card, title, 'mousedown', { detail: 2 }, (e) =>
-      preventRepeatClickTextSelection(e),
-    );
-    expect(event.defaultPrevented).toBe(true);
-  });
-
-  it('keeps the first press and nested controls untouched', () => {
-    const { card, title, menu } = mountCard();
-    const first = dispatchOn(card, title, 'mousedown', { detail: 1 }, (e) =>
-      preventRepeatClickTextSelection(e),
-    );
-    const nested = dispatchOn(card, menu, 'mousedown', { detail: 2 }, (e) =>
-      preventRepeatClickTextSelection(e),
-    );
-    expect(first.defaultPrevented).toBe(false);
-    expect(nested.defaultPrevented).toBe(false);
   });
 });

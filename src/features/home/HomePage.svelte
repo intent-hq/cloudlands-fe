@@ -16,9 +16,7 @@
   import { selectPinnedWorkspaceIds } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import {
-    ignoreRepeatHomeWorkspaceClick,
-    openHomeWorkspaceFromDoubleClick,
-    preventRepeatClickTextSelection,
+    createHomeDoubleClickOpener,
     openHomeWorkspaceFromEvent,
   } from './home-workspace-opening';
   import { createHomeWorkspaceMenu } from './home-workspace-menu';
@@ -115,11 +113,9 @@
     updateView({ selectedId: id });
     openWorkspace(id);
   }
-  function openRowOnDoubleClick(event: MouseEvent, id: string) {
-    openHomeWorkspaceFromDoubleClick(event, id, openSelectedWorkspace);
-  }
+  const doubleClick = createHomeDoubleClickOpener(openSelectedWorkspace);
   function openModifiedWorkspace(event: MouseEvent | KeyboardEvent, id: string) {
-    if (event instanceof MouseEvent && ignoreRepeatHomeWorkspaceClick(event)) return;
+    if (event instanceof MouseEvent) doubleClick.arm(event, id);
     openHomeWorkspaceFromEvent(event, id, openWorkspace);
   }
   function showWorkspaceMenu(event: MouseEvent | KeyboardEvent, workspace: Workspace) {
@@ -536,6 +532,7 @@
 
 <div
   bind:this={homeElement}
+  {@attach doubleClick.listen}
   class="home-layout h-full min-h-0 min-w-0 bg-sidebar text-foreground"
   class:home-assistant={destination === 'assistant' && !$collaborator$}
   data-home-page
@@ -905,7 +902,7 @@
                             onselect={(id) =>
                               updateView({ selectedId: selectedId === id ? null : id })}
                             onopen={openWorkspace}
-                            onopenselected={openSelectedWorkspace}
+                            {doubleClick}
                             oncontextmenu={showWorkspaceMenu}
                             archived={filter === 'archived'}
                           />
@@ -920,8 +917,6 @@
                               class="home-list-row h-12 items-center border-b border-border px-3 py-1"
                               data-home-workspace={item.id}
                               onclick={(event) => openModifiedWorkspace(event, item.id)}
-                              onmousedown={preventRepeatClickTextSelection}
-                              ondblclick={(event) => openRowOnDoubleClick(event, item.id)}
                               oncontextmenu={(event) => showWorkspaceMenu(event, item)}
                             >
                               {#snippet leading()}

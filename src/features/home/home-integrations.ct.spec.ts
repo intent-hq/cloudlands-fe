@@ -831,3 +831,42 @@ test('double-clicking the linked workspace chip keeps the chip behavior', async 
   await expect(component.locator('[data-home-detail]')).toBeVisible();
   expect(await page.evaluate(() => window.__homeIntegrationBrowser!.navigation())).toEqual(before);
 });
+
+test('double-clicking a linked PR opens its workspace in a narrow window where the preview replaces the list', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 900, height: 900 });
+  const workspace = linkedPullWorkspace();
+  const component = await mount(Harness, { props: { workspaces: [workspace] } });
+  const option = component
+    .getByRole('listbox', { name: 'Pull requests' })
+    .getByRole('option')
+    .filter({ hasText: '#142' });
+  await humanDoubleClick(page, option.getByText('#142', { exact: true }), () =>
+    expect(option).toBeHidden(),
+  );
+  await expect
+    .poll(() => page.evaluate(() => window.__homeIntegrationBrowser!.navigation().currentTabId))
+    .toBe(workspace.id);
+  await expect(option).toBeHidden();
+  await expect(component.locator('[data-integration-close]')).toBeVisible();
+});
+
+/** A person's double-click: the second press lands after the first click re-rendered Home. */
+async function humanDoubleClick(
+  page: import('@playwright/test').Page,
+  target: import('@playwright/test').Locator,
+  afterFirstClick: () => Promise<void>,
+) {
+  const box = await target.boundingBox();
+  if (!box) throw new Error('double-click target is not visible');
+  const x = box.x + Math.min(24, box.width / 2);
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down({ clickCount: 1 });
+  await page.mouse.up({ clickCount: 1 });
+  await afterFirstClick();
+  await page.mouse.down({ clickCount: 2 });
+  await page.mouse.up({ clickCount: 2 });
+}

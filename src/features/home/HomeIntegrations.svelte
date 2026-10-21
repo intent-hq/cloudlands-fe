@@ -17,11 +17,7 @@
   import { onDestroy, untrack, tick, type Snippet } from 'svelte';
   import { goto } from '$app/navigation';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
-  import {
-    ignoreRepeatHomeWorkspaceClick,
-    openHomeWorkspaceFromDoubleClick,
-    preventRepeatClickTextSelection,
-  } from './home-workspace-opening';
+  import { createHomeDoubleClickOpener } from './home-workspace-opening';
   import { handleLink } from '$features/navigation/link-handler';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { Button } from '$lib/components/ui/button';
@@ -285,6 +281,19 @@
     appStore.dispatch(openWorkspaceTab(id));
     void goto(`/workspace/${encodeURIComponent(id)}`);
   }
+  function linkedWorkspaceFor(item: { url: string }) {
+    return $linkedWorkspaces$.find(
+      (link) => link.url === item.url.replace(/\/$/, '').toLowerCase(),
+    );
+  }
+  const doubleClick = createHomeDoubleClickOpener((itemId) => {
+    const item = items.find((candidate) => candidate.id === itemId);
+    const linked = item && linkedWorkspaceFor(item);
+    if (!linked) return;
+    const current = preview ? selectedId : selectHomeIntegrations.select(appStore.state).selectedId;
+    if (current !== itemId) void selectItem(itemId);
+    goToWorkspace(linked.workspaceId);
+  });
   function openWorkspace() {
     if (!linkedWorkspace) return;
     workspacePreviewId = linkedWorkspace.workspaceId;
@@ -295,6 +304,7 @@
 
 <div
   bind:this={root}
+  {@attach doubleClick.listen}
   class="home-integrations flex h-full min-h-0 flex-1 overflow-hidden"
   data-home-integrations={kind}
 >
@@ -457,26 +467,11 @@
                 : m.home_integrations_empty()}
             </p>{/snippet}
           {#snippet row({ item })}
-            {@const linked = $linkedWorkspaces$.find(
-              (link) => link.url === item.url.replace(/\/$/, '').toLowerCase(),
-            )}
+            {@const linked = linkedWorkspaceFor(item)}
             <ListRow
               class="home-list-row home-integration-row min-h-12 items-start border-b border-border px-2 py-3"
               onclick={(event) => {
-                if (isPr) ignoreRepeatHomeWorkspaceClick(event);
-              }}
-              onmousedown={(event) => {
-                if (isPr) preventRepeatClickTextSelection(event);
-              }}
-              ondblclick={(event) => {
-                if (!isPr || !linked) return;
-                openHomeWorkspaceFromDoubleClick(event, linked.workspaceId, (id) => {
-                  const current = preview
-                    ? selectedId
-                    : selectHomeIntegrations.select(appStore.state).selectedId;
-                  if (current !== item.id) void selectItem(item.id);
-                  goToWorkspace(id);
-                });
+                if (isPr) doubleClick.arm(event, item.id);
               }}
             >
               {#snippet leading()}{#if isPr}<HomePullState
