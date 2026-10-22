@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.226.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.226.3...v2.226.4) (2026-10-22)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.24 ([#3603](https://github.com/intent-hq/cloudlands-fe/issues/3603)) ([72ac8fc](https://github.com/intent-hq/cloudlands-fe/commit/72ac8fce8e9416a361fee2469a1e50f3bac2fef2))
+* **collection:** make ListView selection fully controlled ([#3599](https://github.com/intent-hq/cloudlands-fe/issues/3599)) ([1fcbf80](https://github.com/intent-hq/cloudlands-fe/commit/1fcbf80148f02fe9e294f598e6cc7700a1f54b8a))
+* **deeplink:** make the intent CLI open a folder's workspace or start a new one ([#3586](https://github.com/intent-hq/cloudlands-fe/issues/3586)) ([13d9b9a](https://github.com/intent-hq/cloudlands-fe/commit/13d9b9a6485b6b79b48c9484145a3d7ee60aa9f7))
+
 ## [2.226.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.226.2...v2.226.3) (2026-10-21)
 
 
