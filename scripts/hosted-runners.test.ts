@@ -490,6 +490,10 @@ describe('WarpBuild cache', () => {
 
   it('keys the pnpm store on the platform and lockfile', () => {
     const cache = (store.runs.steps as Step[]).find((s) => s.uses === './.github/actions/cache')!;
+    // The nested cache action re-reads `path` when it saves after the job; this
+    // composite's step outputs are gone by then, so the path travels in the job env.
+    expect(cache.with!.path).toBe('${{ env.PNPM_STORE_PATH }}');
+    expect(JSON.stringify(store.runs.steps)).not.toMatch(/steps\.[\w-]+\.outputs/);
     expect(cache.with!.key).toBe(
       "pnpm-store-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}",
     );

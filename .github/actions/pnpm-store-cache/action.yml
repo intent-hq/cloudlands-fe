@@ -7,12 +7,14 @@ description: >-
 runs:
   using: composite
   steps:
-    - id: store
-      shell: bash
-      run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+    # The store path goes through the job environment, not a step output: the
+    # nested cache action re-reads `path` in its post (save) step, after this
+    # composite's step outputs are gone.
+    - shell: bash
+      run: echo "PNPM_STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_ENV"
     - uses: ./.github/actions/cache
       with:
-        path: ${{ steps.store.outputs.path }}
+        path: ${{ env.PNPM_STORE_PATH }}
         key: pnpm-store-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
         restore-keys: |
           pnpm-store-${{ runner.os }}-${{ runner.arch }}-
