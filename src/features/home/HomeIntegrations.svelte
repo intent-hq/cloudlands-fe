@@ -454,10 +454,9 @@
           getKey={(item) => item.id}
           getText={(item) => item.title}
           selectable="single"
-          bind:selectedKeys={
-            () => (selectedId ? [selectedId] : []),
-            (keys) => selectItem(keys[0] === undefined ? null : String(keys[0]))
-          }
+          selectedKeys={selectedId ? [selectedId] : []}
+          onSelectedKeysChange={(keys) =>
+            selectItem(keys[0] === undefined ? null : String(keys[0]))}
           ariaLabel={isPr ? m.home_integrations_prs() : m.home_integrations_issues()}
           class="px-5"
         >
