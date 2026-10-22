@@ -1018,6 +1018,15 @@ describe('LiveNotesClient.get truncated reads (§5.2 "Truncated note reads")', (
     }
   });
 
+  it('answers "no" at once when the IPC router has no capability channel at all', async () => {
+    const unbridged = Object.assign(new Error('No mock IPC handler registered'), {
+      name: 'UnbridgedMockIpcChannelError',
+    });
+    mockedCapabilities.mockRejectedValue(unbridged);
+    await expect(new LiveNotesClient().supportsTruncatedRead()).resolves.toBe(false);
+    expect(mockedCapabilities).toHaveBeenCalledTimes(1);
+  });
+
   it('waits for the acknowledged hello while the capability is unknown (startup, reconnect)', async () => {
     vi.useFakeTimers();
     try {

@@ -95,13 +95,17 @@ export class NoteCapabilityUnknownError extends Error {
 }
 
 /**
- * Only a transport that cannot report node capabilities at all is a plain "no"
- * (no observer). Every other failure — a connection that is changing, not
- * connected yet, or a transport error from the Electron bridge — leaves the
- * capability unknown, never unsupported.
+ * Only a transport that cannot report node capabilities at all is a plain "no":
+ * one without the observer, or a renderer whose IPC router has no handler for
+ * the capability channel (the in-memory mock router of browser and component
+ * builds throws `UnbridgedMockIpcChannelError`, which no retry can change).
+ * Every other failure — a connection that is changing, not connected yet, or a
+ * transport error from the Electron bridge — leaves the capability unknown.
  */
 function isTransientCapabilityError(error: unknown): boolean {
-  return !(error instanceof Error && error.message === m.agent_placement_unavailable());
+  if (!(error instanceof Error)) return true;
+  if (error.message === m.agent_placement_unavailable()) return false;
+  return error.name !== 'UnbridgedMockIpcChannelError';
 }
 
 /** Bounded wait for an acknowledged hello while it is being renewed (~3 s). */
