@@ -32,9 +32,10 @@ env:
 jobs:
   # Fork PRs skip every checkout/routed job. CI Gate alone still runs without
   # checkout or permissions and fails red for the guarded skips.
-  # Decides where the heavy jobs (checks / build-web / test /
-  # test-integration) run:
-  # the intent-cache runner slots normally, or GitHub-hosted larger runners when every
+  # Decides where the heavy jobs (build-web / test / test-integration) run.
+  # Type Check & Lint (checks) runs on ubuntu-24.04 and keeps `needs: route`
+  # only as its fork-PR guard. The heavy jobs run on
+  # the intent-cache runner slots normally, or on GitHub-hosted larger runners when every
   # slot is occupied, the fleet is unavailable, or the CI_LINUX_RUNNER_DISABLED
   # repository variable is `true` (ported from intentd's ci.yml route job).
   # Runs on a small GitHub-hosted runner so the burst decision is independent of the
@@ -629,9 +630,10 @@ jobs:
         # main and on the cloudlands-fe#2533 merge tree that OOMed. At the job-wide
         # 4 GB cap V8 sits in its near-limit "reduce" mark-compact loop and aborts on
         # timing, so this step alone gets ~2x the measured need; other steps keep
-        # the job cap (intent-hq/intent#3352). Both runner classes (intent-cache,
-        # about 48 GB per slot, and the 32 GB burst runner) have ample RAM. run-svelte-check.mjs prints the peak RSS of
-        # every run so the margin stays visible before it is exhausted again.
+        # the job cap (intent-hq/intent#3352). The job runs on the 16 GB
+        # ubuntu-24.04 runner, so the ~4.3 GiB peak leaves about 11 GB.
+        # run-svelte-check.mjs prints the peak RSS of every run so the margin
+        # stays visible before it is exhausted again.
         env:
           NODE_OPTIONS: '--max-old-space-size=8192'
         run: pnpm run check
