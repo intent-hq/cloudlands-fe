@@ -618,9 +618,10 @@ jobs:
             intentd_target: aarch64-unknown-linux-musl
             targets: AppImage:arm64 deb:arm64
             node_heap: 12288
-    # x64 takes a free intent-cache slot first, arm64 a self-hosted ARM64
-    # runner; either bursts to WarpBuild.
-    runs-on: ${{ matrix.runner == 'gh-linux-8x' && fromJSON(needs.runner-route.outputs.slots || '{}')[format('build-linux-{0}', matrix.arch)] || fromJSON(needs.runner-route.outputs.runners || '{}')[matrix.runner] || matrix.runner }}
+    # x64 takes a free (ephemeral) intent-cache slot first, else WarpBuild.
+    # arm64 goes straight to WarpBuild: release packaging stays off persistent
+    # self-hosted ARM64 boxes, where electron-builder's fpm failed (monorepo#1286).
+    runs-on: ${{ matrix.runner == 'gh-linux-8x' && fromJSON(needs.runner-route.outputs.slots || '{}')[format('build-linux-{0}', matrix.arch)] || fromJSON(needs.runner-route.outputs.cloud || '{}')[matrix.runner] || matrix.runner }}
     timeout-minutes: 60
 
     steps:
@@ -738,6 +739,8 @@ jobs:
   # Every platform must finish building and verifying before publication.
   publish:
     needs: [resolve, build-macos, build-windows, build-linux]
+    # Explicit results: a failed runner-route (an ancestor through the builds) must not skip this job.
+    if: ${{ !cancelled() && needs.resolve.result == 'success' && needs.build-macos.result == 'success' && needs.build-windows.result == 'success' && needs.build-linux.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
 

@@ -145,7 +145,8 @@ jobs:
         run: test "$BUILD_MACOS" = true && test "$SIGN" = true
 
   smoke-macos:
-    if: ${{ inputs.smoke_macos }}
+    # Explicit results: a failed runner-route (an ancestor through the builds) must not skip this job.
+    if: ${{ !cancelled() && inputs.smoke_macos && needs.select-macos.result == 'success' && needs.build-macos.result == 'success' && needs.smoke-inputs.result == 'success' }}
     needs: [select-macos, build-macos, smoke-inputs]
     runs-on: ${{ needs.select-macos.outputs.smoke_runner }}
     timeout-minutes: 60
@@ -945,9 +946,10 @@ jobs:
             intentd_target: aarch64-unknown-linux-musl
             targets: AppImage:arm64 deb:arm64
             node_heap: 12288
-    # x64 takes a free intent-cache slot first, arm64 a self-hosted ARM64
-    # runner; either bursts to WarpBuild.
-    runs-on: ${{ matrix.runner == 'gh-linux-8x' && fromJSON(needs.runner-route.outputs.slots || '{}')[format('build-linux-{0}', matrix.arch)] || fromJSON(needs.runner-route.outputs.runners || '{}')[matrix.runner] || matrix.runner }}
+    # x64 takes a free (ephemeral) intent-cache slot first, else WarpBuild.
+    # arm64 goes straight to WarpBuild: release packaging stays off persistent
+    # self-hosted ARM64 boxes, where electron-builder's fpm failed (monorepo#1286).
+    runs-on: ${{ matrix.runner == 'gh-linux-8x' && fromJSON(needs.runner-route.outputs.slots || '{}')[format('build-linux-{0}', matrix.arch)] || fromJSON(needs.runner-route.outputs.cloud || '{}')[matrix.runner] || matrix.runner }}
     # 90 min: 60 covered the packaging job alone; a from-source intentd
     # sidecar build (intentd_ref set) adds a cold cargo build.
     timeout-minutes: 90
@@ -1215,7 +1217,8 @@ jobs:
           INTENTD_SHA: ${{ steps.intentd_sha.outputs.sha }}
 
   verify-isolated-macos:
-    if: ${{ inputs.isolated_test && inputs.build_macos }}
+    # Explicit results: a failed runner-route (an ancestor through the builds) must not skip this job.
+    if: ${{ !cancelled() && inputs.isolated_test && inputs.build_macos && needs.select-macos.result == 'success' && needs.build-macos.result == 'success' }}
     needs: [select-macos, build-macos]
     strategy:
       fail-fast: false

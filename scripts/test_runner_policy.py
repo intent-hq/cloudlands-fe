@@ -62,7 +62,7 @@ def violations(text, filename):
         # Matrix legs that may take a pool read their own slot first.
         # Reusable workflows receive the caller's route `cloud` map as an input.
         routed = routed or re.fullmatch(r"\$\{\{ fromJSON\(inputs\.cloud \|\| '\{\}'\)\['[\w.-]+'\] \|\| fromJSON\('\[\"[\w.-]+\"\]'\) \}\}", runner)
-        routed = routed or re.fullmatch(r"\$\{\{ [^|]+ && fromJSON\(needs\.(route|runner-route)\.outputs\.slots \|\| '\{\}'\)\[format\('[\w-]+-\{0\}', matrix\.\w+\)\] \|\| fromJSON\(needs\.(route|runner-route)\.outputs\.runners \|\| '\{\}'\)\[matrix\.(\w+)\] \|\| matrix\.\3 \}\}", runner)
+        routed = routed or re.fullmatch(r"\$\{\{ [^|]+ && fromJSON\(needs\.(route|runner-route)\.outputs\.slots \|\| '\{\}'\)\[format\('[\w-]+-\{0\}', matrix\.\w+\)\] \|\| fromJSON\(needs\.(route|runner-route)\.outputs\.(?:runners|cloud) \|\| '\{\}'\)\[matrix\.(\w+)\] \|\| matrix\.\3 \}\}", runner)
         if not routed and not (runner == '${{ matrix.os }}' and 'needs.route.outputs.' in body):
             errors.append(job)
     return errors
@@ -70,7 +70,7 @@ def violations(text, filename):
 
 # Free labels may still be listed; the route always gives them their GitHub label.
 POOLED = {'gh-linux-8x', 'gh-linux-16x', 'ubuntu-22.04', 'ubuntu-24.04'}
-SLOT_READ = re.compile(r"outputs\.slots \|\| '\{\}'\)\[(?:'([\w-]+)'|format\('([\w-]+)-\{0\}', matrix\.\w+\))\] \|\| (?:fromJSON\('\[\"([\w.-]+)\"\]'\)|fromJSON\(needs\.[\w-]+\.outputs\.runners \|\| '\{\}'\)\[matrix\.(\w+)\])")
+SLOT_READ = re.compile(r"outputs\.slots \|\| '\{\}'\)\[(?:'([\w-]+)'|format\('([\w-]+)-\{0\}', matrix\.\w+\))\] \|\| (?:fromJSON\('\[\"([\w.-]+)\"\]'\)|fromJSON\(needs\.[\w-]+\.outputs\.(?:runners|cloud) \|\| '\{\}'\)\[matrix\.(\w+)\])")
 
 
 def slot_list(text):
@@ -200,7 +200,8 @@ class RunnerPolicy(unittest.TestCase):
             for job, body in jobs(path.read_text()).items():
                 runner = re.search(r'^    runs-on: (.+)$', body, re.M)
                 runner = runner[1] if runner else ''
-                if (path.name, job) in EXCEPTIONS | MAINTENANCE or 'outputs.cloud' in runner or 'inputs.cloud' in runner:
+                cloud_only = ('outputs.cloud' in runner or 'inputs.cloud' in runner) and 'outputs.slots' not in runner
+                if (path.name, job) in EXCEPTIONS | MAINTENANCE or cloud_only:
                     continue
                 if not re.search(r'needs\.(route|runner-route)\.outputs\.(runners|slots)', runner):
                     continue

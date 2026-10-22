@@ -681,7 +681,9 @@ describe('manual Mac architecture selection', () => {
       );
       const smoke = jobs['smoke-macos'];
       expect(smoke.needs).toEqual(['select-macos', 'build-macos', 'smoke-inputs']);
-      expect(smoke.if).toBe('${{ inputs.smoke_macos }}');
+      expect(smoke.if).toBe(
+        "${{ !cancelled() && inputs.smoke_macos && needs.select-macos.result == 'success' && needs.build-macos.result == 'success' && needs.smoke-inputs.result == 'success' }}",
+      );
       const row = (JSON.parse(plan.matrix).include as Matrix[]).find((m) => m.arch === arches[0])!;
       const upload = step('manual-signed-build', 'build-macos', 'Upload macOS DMG artifact');
       const download = smoke.steps.find((s) => s.uses?.startsWith('actions/download-artifact@'))!;
