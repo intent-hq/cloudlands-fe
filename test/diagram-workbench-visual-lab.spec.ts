@@ -571,7 +571,7 @@ test('keeps 30 consecutive 640px readiness generations active and stable', async
       const theme = cycle === 20 ? 'light' : 'dark';
       await page
         .getByTestId('catalog-theme-control')
-        .getByRole('radio', { name: theme })
+        .getByRole('radio', { name: theme, includeHidden: true })
         .evaluate((button) => button.click());
       await page.evaluate((state) => {
         const url = new URL(window.location.href);
