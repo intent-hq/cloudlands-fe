@@ -4,6 +4,7 @@
    * overrides. The daemon validates; its field errors land on the named
    * fields. Saving env edits warns that running sessions keep their current
    * settings and names who must restart (never a frontend reconnect).
+   * Every profile also has a "Use as backup provider" flag (missing reads as off).
    */
   import { faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -11,7 +12,7 @@
   import { FormDialog } from '$lib/components/patterns/confirm';
   import { FormField } from '$lib/components/patterns/form';
   import { notify } from '$lib/components/patterns/notify';
-  import { Input } from '$lib/components/patterns/settings/custom-controls';
+  import { Input, Switch } from '$lib/components/patterns/settings/custom-controls';
   import type { ProviderProfile, ProviderProfileFailure } from '$shared/provider-profiles';
   import {
     buildEnvWrites,
@@ -49,6 +50,7 @@
 
   let name = $state('');
   let rows = $state<EnvRow[]>([]);
+  let backup = $state(false);
   let errors = $state<Record<string, string>>({});
   /** The save this open dialog is waiting on; reset when the dialog reopens. */
   let activeRequestId = $state<string | null>(null);
@@ -62,6 +64,7 @@
   $effect(() => {
     if (open && !wasOpen) {
       name = profile?.name ?? '';
+      backup = profile?.backup === true;
       rows = profile ? rowsFromSaved(profile.env, newId) : [newRow(newId)];
       errors = {};
       activeRequestId = null;
@@ -121,6 +124,8 @@
       errors = built.rowErrors;
       return;
     }
+    // Sent on create only when on, and on an edit only when it changed.
+    const sendBackup = profile ? backup !== (profile.backup === true) : backup;
     const id = crypto.randomUUID();
     activeRequestId = id;
     submissions = { ...submissions, [id]: { name, rows: writtenRows(rows) } };
@@ -131,6 +136,7 @@
           profileId: profile.id,
           ...(name !== profile.name ? { name } : {}),
           ...(built.env ? { env: built.env } : {}),
+          ...(sendBackup ? { backup } : {}),
         }),
       );
     } else {
@@ -140,6 +146,7 @@
           baseProviderId: providerId,
           name,
           ...(built.env ? { env: built.env } : {}),
+          ...(sendBackup ? { backup } : {}),
         }),
       );
     }
@@ -171,6 +178,25 @@
         <Input {...props} bind:value={name} autocomplete="off" disabled={pending} />
       {/snippet}
     </FormField>
+
+    <div class="flex items-start justify-between gap-4" data-testid="provider-profile-backup">
+      <div class="min-w-0 space-y-1">
+        <label for="provider-profile-backup-switch" class="type-body text-foreground">
+          {m.settings_providerProfiles_backup_label()}
+        </label>
+        <p id="provider-profile-backup-description" class="type-caption text-muted-foreground">
+          {m.settings_providerProfiles_backup_description()}
+        </p>
+      </div>
+      <Switch
+        id="provider-profile-backup-switch"
+        bind:checked={backup}
+        size="sm"
+        disabled={pending}
+        ariaLabel={m.settings_providerProfiles_backup_label()}
+        ariaDescribedby="provider-profile-backup-description"
+      />
+    </div>
 
     <ProviderProfileEnvEditor bind:rows {errors} disabled={pending} />
 

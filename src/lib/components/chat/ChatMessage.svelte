@@ -94,6 +94,8 @@
   import { getAutoUnarchivedNotice } from './auto-unarchived-notice';
   import ProviderRehomedNotice from './ProviderRehomedNotice.svelte';
   import { getProviderRehomedNotice } from './rehome-notice';
+  import ProviderFailoverNotice from './ProviderFailoverNotice.svelte';
+  import { getProviderSwitchNotice } from './provider-failover-notice';
   import ChatOperationalRow from './ChatOperationalRow.svelte';
   import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
 
@@ -365,6 +367,9 @@
 
   // Daemon-persisted provider re-home transcript row (metadata type "provider_rehomed")
   let providerRehomedNotice = $derived(getProviderRehomedNotice(message));
+
+  // Daemon-persisted quota failover transcript row (metadata type "provider_failover")
+  let providerFailoverNotice = $derived(getProviderSwitchNotice(message));
 
   // Daemon-persisted attention-request row (meta.kind "discussion-request"/"blocker-report")
   let attentionNotice = $derived(getAttentionNotice(message));
@@ -1472,6 +1477,7 @@
 {:else if modelChangeNotice}
   <!-- Daemon-persisted model-change notice row - centered inline divider -->
   <ModelChangeNotice
+    workspaceId={getOwningWorkspaceId()}
     notice={modelChangeNotice}
     fallbackText={extractAllContent(message) || undefined}
   />
@@ -1488,7 +1494,15 @@
 {:else if providerRehomedNotice}
   <!-- Daemon-persisted provider re-home notice row - centered inline divider -->
   <ProviderRehomedNotice
+    workspaceId={getOwningWorkspaceId()}
     notice={providerRehomedNotice}
+    fallbackText={extractAllContent(message) || undefined}
+  />
+{:else if providerFailoverNotice}
+  <!-- Daemon-persisted quota failover notice row - centered inline divider -->
+  <ProviderFailoverNotice
+    workspaceId={getOwningWorkspaceId()}
+    notice={providerFailoverNotice}
     fallbackText={extractAllContent(message) || undefined}
   />
 {:else if questionOnlyTurn && !shouldShowStoppedIndicator && !finishReasonNoticeLabel}

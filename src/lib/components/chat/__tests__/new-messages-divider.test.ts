@@ -600,6 +600,24 @@ describe('turn-boundary divider placement (rendered ChatPanel)', () => {
       anchorId: 'notice-1',
     },
     {
+      site: 'provider failover notice',
+      messages: [
+        message('user-1', 'user'),
+        message('notice-1', 'system', {
+          metadata: {
+            type: 'provider_failover',
+            fromProvider: 'claude-code',
+            toProvider: 'claude-code@pwork',
+            model: 'opus',
+            reason: 'quota-exceeded',
+          },
+        }),
+        message('user-2', 'user'),
+        message('assistant-2', 'assistant'),
+      ],
+      anchorId: 'notice-1',
+    },
+    {
       site: 'assistant row',
       messages: [
         message('user-1', 'user'),
@@ -687,6 +705,106 @@ describe('turn-boundary divider placement (rendered ChatPanel)', () => {
       Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
     expect(follows(userRow, rows[0])).toBe(true);
     expect(follows(rows[0], assistantRow)).toBe(true);
+  });
+
+  const failoverRow = (id: string, fromProvider: string, toProvider: string) =>
+    message(id, 'system', {
+      metadata: {
+        type: 'provider_failover',
+        fromProvider,
+        toProvider,
+        model: 'opus',
+        reason: 'quota-exceeded',
+      },
+    });
+  const renderedRowIds = (container: HTMLElement) =>
+    [...container.querySelectorAll<HTMLElement>('[data-message-id]')].map(
+      (row) => row.dataset.messageId,
+    );
+
+  it('keeps a quota failover notice between the partial output and the backup reply', async () => {
+    const { container, turns } = await renderTranscript(
+      [
+        message('user-1', 'user'),
+        message('partial-1', 'assistant'),
+        failoverRow('failover-1', 'claude-code', 'claude-code@pwork'),
+        message('backup-1', 'assistant'),
+      ],
+      null,
+    );
+
+    expect(turns).toHaveLength(1);
+    expect(renderedRowIds(container)).toEqual(['user-1', 'partial-1', 'failover-1', 'backup-1']);
+    const rows = container.querySelectorAll<HTMLElement>('[data-message-id="failover-1"]');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].dataset.messageRole).toBe('system');
+  });
+
+  it('keeps each switch of a failover chain after the output it interrupted', async () => {
+    const { container, turns } = await renderTranscript(
+      [
+        message('user-1', 'user'),
+        message('a-partial', 'assistant'),
+        failoverRow('a-to-b', 'claude-code', 'claude-code@pb'),
+        message('b-partial', 'assistant'),
+        failoverRow('b-to-c', 'claude-code@pb', 'claude-code@pc'),
+        message('c-reply', 'assistant'),
+      ],
+      null,
+    );
+
+    expect(turns).toHaveLength(1);
+    expect(renderedRowIds(container)).toEqual([
+      'user-1',
+      'a-partial',
+      'a-to-b',
+      'b-partial',
+      'b-to-c',
+      'c-reply',
+    ]);
+  });
+
+  it('places a returned-home notice between the user row and the home reply', async () => {
+    const { container, turns } = await renderTranscript(
+      [
+        message('user-1', 'user'),
+        message('returned-1', 'system', {
+          metadata: {
+            type: 'provider_returned',
+            fromProvider: 'claude-code@pwork',
+            toProvider: 'claude-code',
+            model: 'opus',
+            reason: 'quota-reset',
+          },
+        }),
+        message('home-1', 'assistant'),
+      ],
+      null,
+    );
+
+    expect(turns).toHaveLength(1);
+    expect(renderedRowIds(container)).toEqual(['user-1', 'returned-1', 'home-1']);
+    const row = container.querySelector<HTMLElement>('[data-message-id="returned-1"]');
+    expect(row?.dataset.messageRole).toBe('system');
+  });
+
+  it('defers the unread divider past a trailing failover notice to the turn boundary', async () => {
+    const { container, dividers, gaps, turns } = await renderTranscript(
+      [
+        message('user-1', 'user'),
+        message('partial-1', 'assistant'),
+        failoverRow('failover-1', 'claude-code', 'claude-code@pwork'),
+        message('user-2', 'user'),
+        message('assistant-2', 'assistant'),
+      ],
+      'failover-1',
+    );
+
+    expect(container.querySelector('[data-message-id="failover-1"]')).not.toBeNull();
+    expect(turns).toHaveLength(2);
+    expect(dividers).toHaveLength(1);
+    expect(turns[0].contains(dividers[0])).toBe(false);
+    expect(dividers[0].previousElementSibling).toBe(gaps[0]);
   });
 
   it('keeps the divider inline when the anchor is not the last rendered row of its turn', async () => {
