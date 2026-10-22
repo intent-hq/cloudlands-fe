@@ -18,6 +18,7 @@ export const inputMetadata = parseUiComponentMetadata({
     'src/features/home/HomeSearch.svelte',
     'src/features/home/assistant-panels.preview.svelte',
     'src/features/host-membership/HostInvitationDialog.svelte',
+    'src/features/inline-html/InlineHtmlPreview.svelte',
     'src/features/layout/components/content-header/ContentHeader.svelte',
     'src/features/onboarding/messages/DirectoryPickerView.svelte',
     'src/features/onboarding/messages/GitHubRepoTab.svelte',

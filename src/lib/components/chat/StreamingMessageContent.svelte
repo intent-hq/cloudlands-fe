@@ -555,13 +555,26 @@
   isLastBlock: boolean,
   insetProse = false,
   media: TextBlockMedia | undefined = undefined,
+  contentBlockKey = '',
 )}
   {#if insetProse}
     <div class={OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}>
-      {@render renderParsedContentBlockBody(parsedBlock, isLastBlock, insetProse, media)}
+      {@render renderParsedContentBlockBody(
+        parsedBlock,
+        isLastBlock,
+        insetProse,
+        media,
+        contentBlockKey,
+      )}
     </div>
   {:else}
-    {@render renderParsedContentBlockBody(parsedBlock, isLastBlock, insetProse, media)}
+    {@render renderParsedContentBlockBody(
+      parsedBlock,
+      isLastBlock,
+      insetProse,
+      media,
+      contentBlockKey,
+    )}
   {/if}
 {/snippet}
 
@@ -570,6 +583,7 @@
   isLastBlock: boolean,
   insetProse: boolean,
   media: TextBlockMedia | undefined,
+  contentBlockKey: string,
 )}
   {#if parsedBlock.type === 'augment_code_snippet'}
     <AugmentCodeSnippet
@@ -651,7 +665,14 @@
   {:else if parsedBlock.type === 'agent_action' && parsedBlock.metadata?.agentActionData}
     <ChatAgentActionBlock goal={parsedBlock.metadata.agentActionData.goal} />
   {:else if parsedBlock.type === 'html'}
-    <InlineHtmlBlock block={parsedBlock} {role} />
+    <InlineHtmlBlock
+      block={parsedBlock}
+      {role}
+      {workspaceId}
+      {agentId}
+      {messageId}
+      {contentBlockKey}
+    />
   {:else if parsedBlock.type === 'code'}
     <CodeBlock
       code={parsedBlock.content || ''}
@@ -736,6 +757,7 @@
             isLastBlock && parsedBlockIndex === parsedResult.blocks.length - 1,
             !nested,
             block.media,
+            block.id ?? parsedKey,
           )}
         {/each}
       {:else}

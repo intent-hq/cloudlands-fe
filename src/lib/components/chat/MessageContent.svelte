@@ -344,13 +344,14 @@
   parsedBlock: ParsedContent,
   insetProse = false,
   media: TextBlockMedia | undefined = undefined,
+  contentBlockKey = '',
 )}
   {#if insetProse}
     <div class={OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}>
-      {@render renderParsedContentBlockBody(parsedBlock, insetProse, media)}
+      {@render renderParsedContentBlockBody(parsedBlock, insetProse, media, contentBlockKey)}
     </div>
   {:else}
-    {@render renderParsedContentBlockBody(parsedBlock, insetProse, media)}
+    {@render renderParsedContentBlockBody(parsedBlock, insetProse, media, contentBlockKey)}
   {/if}
 {/snippet}
 
@@ -358,6 +359,7 @@
   parsedBlock: ParsedContent,
   insetProse: boolean,
   media: TextBlockMedia | undefined,
+  contentBlockKey: string,
 )}
   {#if parsedBlock.type === 'augment_code_snippet'}
     <AugmentCodeSnippet
@@ -438,7 +440,14 @@
       />
     </DiagramPresentation>
   {:else if parsedBlock.type === 'html'}
-    <InlineHtmlBlock block={parsedBlock} {role} />
+    <InlineHtmlBlock
+      block={parsedBlock}
+      {role}
+      {workspaceId}
+      {agentId}
+      {messageId}
+      {contentBlockKey}
+    />
   {:else if parsedBlock.type === 'code'}
     <CodeBlock
       code={parsedBlock.content || ''}
@@ -503,7 +512,12 @@
       {:else if parsedContent.length > 0}
         <!-- Render parsed content blocks -->
         {#each parsedContent as renderBlock, parsedBlockIndex (`${parsedKey}-parsed-${parsedBlockIndex}`)}
-          {@render renderParsedContentBlock(renderBlock as ParsedContent, !nested, block.media)}
+          {@render renderParsedContentBlock(
+            renderBlock as ParsedContent,
+            !nested,
+            block.media,
+            block.id ?? parsedKey,
+          )}
         {/each}
       {:else}
         <!-- Only render fallback if text has content after stripping suggested prompts -->

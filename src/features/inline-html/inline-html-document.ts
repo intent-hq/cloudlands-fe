@@ -1,5 +1,6 @@
 import interFontData from '@fontsource-variable/inter/files/inter-latin-wght-normal.woff2?inline';
 import { INLINE_HTML_STYLES } from './inline-html-styles';
+import { isInlineVisualSnapshot, type InlineVisualSnapshot } from './inline-visual-types';
 
 /** Only existing semantic tokens cross the opaque iframe boundary. */
 const THEME_TOKENS = [
@@ -144,6 +145,8 @@ function installPreviewBridge(
   channel: string,
   initialTheme: InlineHtmlTheme,
   maxScrollDelta: number,
+  initialSnapshot: InlineVisualSnapshot | null,
+  validateSnapshot: (value: unknown) => value is InlineVisualSnapshot,
 ) {
   const scroll = new MessageChannel();
   const postScroll = MessagePort.prototype.postMessage.bind(scroll.port1);
@@ -151,6 +154,38 @@ function installPreviewBridge(
   const send = (type: string, payload: Record<string, unknown> = {}) => {
     window.parent.postMessage({ channel, type, ...payload }, '*');
   };
+  let visualState = initialSnapshot?.state ?? null;
+  let pendingSnapshot: InlineVisualSnapshot | null = null;
+  let snapshotQueued = false;
+  // This is a data-only bridge. App actions stay in the trusted host toolbar.
+  Object.defineProperty(window, 'intentVisual', {
+    configurable: false,
+    writable: false,
+    value: Object.freeze({
+      get state() {
+        return visualState;
+      },
+      publish(value: unknown): boolean {
+        try {
+          if (!validateSnapshot(value)) return false;
+          const snapshot = JSON.parse(JSON.stringify(value)) as InlineVisualSnapshot;
+          visualState = snapshot.state;
+          pendingSnapshot = snapshot;
+          if (!snapshotQueued) {
+            snapshotQueued = true;
+            requestAnimationFrame(() => {
+              snapshotQueued = false;
+              if (pendingSnapshot) send('snapshot', { snapshot: pendingSnapshot });
+              pendingSnapshot = null;
+            });
+          }
+          return true;
+        } catch {
+          return false;
+        }
+      },
+    }),
+  });
   let queued = false;
   const measure = () => {
     queued = false;
@@ -287,6 +322,7 @@ function installPreviewShell(
   childDocument: string,
   frameTitle: string,
   maxScrollDelta: number,
+  validateSnapshot: (value: unknown) => value is InlineVisualSnapshot,
 ) {
   const child = document.createElement('iframe');
   child.setAttribute('sandbox', 'allow-scripts');
@@ -333,6 +369,8 @@ function installPreviewShell(
         { channel, type: 'error', message: data.message.slice(0, 300) },
         '*',
       );
+    } else if (data.type === 'snapshot' && validateSnapshot(data.snapshot)) {
+      window.parent.postMessage({ channel, type: 'snapshot', snapshot: data.snapshot }, '*');
     }
   });
   window.addEventListener(
@@ -355,6 +393,7 @@ export function buildInlineHtmlDocument(
   channel: string,
   theme: InlineHtmlTheme,
   frameTitle: string,
+  initialSnapshot: InlineVisualSnapshot | null = null,
 ): string {
   const doc = document.implementation.createHTMLDocument('');
   const template = doc.createElement('template');
@@ -391,11 +430,13 @@ export function buildInlineHtmlDocument(
     ${INLINE_HTML_STYLES}
   `;
   const bridge = doc.createElement('script');
-  const json = JSON.stringify([channel, theme, INLINE_HTML_MAX_SCROLL_DELTA]).replace(
-    /</g,
-    '\\u003c',
-  );
-  bridge.textContent = `(${installPreviewBridge.toString()})(...${json});`;
+  const json = JSON.stringify([
+    channel,
+    theme,
+    INLINE_HTML_MAX_SCROLL_DELTA,
+    isInlineVisualSnapshot(initialSnapshot) ? initialSnapshot : null,
+  ]).replace(/</g, '\\u003c');
+  bridge.textContent = `(${installPreviewBridge.toString()})(...${json}, (${isInlineVisualSnapshot.toString()}));`;
   doc.head.prepend(policy, charset, style, bridge);
   const childDocument = `<!doctype html>${doc.documentElement.outerHTML}`;
 
@@ -416,7 +457,7 @@ export function buildInlineHtmlDocument(
     frameTitle,
     INLINE_HTML_MAX_SCROLL_DELTA,
   ]).replace(/</g, '\\u003c');
-  shellBridge.textContent = `(${installPreviewShell.toString()})(...${shellJson});`;
+  shellBridge.textContent = `(${installPreviewShell.toString()})(...${shellJson}, (${isInlineVisualSnapshot.toString()}));`;
   shell.head.prepend(shellPolicy, shellCharset, shellStyle, shellBridge);
   return `<!doctype html>${shell.documentElement.outerHTML}`;
 }

@@ -7670,5 +7670,21 @@
   "inlineHtml_preview_empty_description": "沒有可預覽的 HTML。",
   "inlineHtml_preview_runtime_error": "此預覽發生錯誤。",
   "inlineHtml_preview_frame_ariaLabel": "互動式 HTML 預覽",
-  "inlineHtml_preview_loading_label": "正在載入預覽…"
+  "inlineHtml_preview_loading_label": "正在載入預覽…",
+  "inlineHtml_preview_scenarioName_label": "方案 {number}",
+  "inlineHtml_preview_scenarioName_ariaLabel": "方案名稱",
+  "inlineHtml_preview_state_error": "無法載入或儲存此設定。",
+  "inlineHtml_preview_retry_label": "重試",
+  "inlineHtml_preview_useConfiguration_label": "使用此設定",
+  "inlineHtml_preview_saveScenario_label": "儲存方案",
+  "inlineHtml_preview_compare_label": "比較",
+  "inlineHtml_preview_export_label": "匯出 JSON",
+  "inlineHtml_preview_saving_label": "儲存中…",
+  "inlineHtml_preview_saved_label": "已儲存",
+  "inlineHtml_preview_current_label": "目前",
+  "inlineHtml_preview_restore_label": "還原",
+  "inlineHtml_preview_remove_label": "移除",
+  "inlineHtml_preview_exporting_label": "正在匯出…",
+  "inlineHtml_preview_exported_description": "已儲存至 {path}",
+  "inlineHtml_preview_export_error": "無法匯出此設定。"
 }

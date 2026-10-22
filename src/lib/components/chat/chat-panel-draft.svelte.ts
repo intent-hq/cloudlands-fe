@@ -95,6 +95,8 @@ export interface ChatDraftManagerOptions {
 export interface ChatDraftManager {
   /** True while the initial draft restore gates the composer. */
   readonly gateActive: boolean;
+  /** Includes a restore still pending after the typing gate times out. */
+  readonly restorePending: boolean;
   /**
    * True once a gated restore has been in flight for `GATE_VISIBLE_DELAY_MS` —
    * drives the loading indicator so a fast restore renders no spinner at all.
@@ -135,6 +137,7 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
   const port = options.store ?? appStorePort();
   const ownerId = crypto.randomUUID();
   let gateActive = $state(false);
+  let restoring = $state(false);
   let gateVisible = $state(false);
   // Last state known to match the daemon's copy (restored or saved). Null
   // until the restore settles — while unknown, empty saves are suppressed so
@@ -168,6 +171,7 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
       if (restore.status !== 'pending') {
         const { apply } = pendingRestore;
         pendingRestore = null;
+        restoring = false;
         apply(restore);
       }
     }
@@ -191,12 +195,14 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
   ) => {
     const requestId = crypto.randomUUID();
     pendingRestore = { requestId, apply };
+    restoring = true;
     port.dispatch(chatDraftRestoreRequested(ownerId, requestId, workspaceId, agentId));
   };
 
   const dropRestore = () => {
     if (!pendingRestore) return;
     pendingRestore = null;
+    restoring = false;
     port.dispatch(chatDraftRestoreInvalidated(ownerId));
   };
 
@@ -473,6 +479,9 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
   });
 
   return {
+    get restorePending() {
+      return restoring;
+    },
     get gateActive() {
       return gateActive;
     },

@@ -7670,5 +7670,21 @@
   "inlineHtml_preview_empty_description": "No hay HTML para mostrar.",
   "inlineHtml_preview_runtime_error": "Se produjo un error en esta vista previa.",
   "inlineHtml_preview_frame_ariaLabel": "Vista previa HTML interactiva",
-  "inlineHtml_preview_loading_label": "Cargando vista previa…"
+  "inlineHtml_preview_loading_label": "Cargando vista previa…",
+  "inlineHtml_preview_scenarioName_label": "Escenario {number}",
+  "inlineHtml_preview_scenarioName_ariaLabel": "Nombre del escenario",
+  "inlineHtml_preview_state_error": "No se pudo cargar o guardar esta configuración.",
+  "inlineHtml_preview_retry_label": "Reintentar",
+  "inlineHtml_preview_useConfiguration_label": "Usar esta configuración",
+  "inlineHtml_preview_saveScenario_label": "Guardar escenario",
+  "inlineHtml_preview_compare_label": "Comparar",
+  "inlineHtml_preview_export_label": "Exportar JSON",
+  "inlineHtml_preview_saving_label": "Guardando…",
+  "inlineHtml_preview_saved_label": "Guardado",
+  "inlineHtml_preview_current_label": "Actual",
+  "inlineHtml_preview_restore_label": "Restaurar",
+  "inlineHtml_preview_remove_label": "Eliminar",
+  "inlineHtml_preview_exporting_label": "Exportando…",
+  "inlineHtml_preview_exported_description": "Guardado en {path}",
+  "inlineHtml_preview_export_error": "No se pudo exportar esta configuración."
 }

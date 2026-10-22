@@ -42,6 +42,7 @@ import { browserPersistenceSaga } from './slices/browser/sagas/browser-persisten
 import { browserClientsSaga } from './slices/browser-clients/sagas/browser-clients-saga';
 import { chatReadSaga } from './slices/chat-state/sagas/chat-read-saga';
 import { chatScrollbackSaga } from './slices/chat-state/sagas/chat-scrollback-saga';
+import { inlineVisualsSaga } from './slices/inline-visuals/sagas/inline-visuals-saga';
 import { chatDraftsSaga } from './slices/chat-drafts/sagas/chat-drafts-saga';
 import { chatPanelUiSaga } from './slices/chat-panel-ui/sagas/chat-panel-ui-saga';
 import { chatSendSaga } from './slices/chat-state/sagas/chat-send-saga';
@@ -169,6 +170,7 @@ export const sagas = [
   chatSendSaga,
   chatScrollbackSaga,
   chatDraftsSaga,
+  inlineVisualsSaga,
   chatPanelUiSaga,
   switchTimingSaga,
   permissionResponseSaga,

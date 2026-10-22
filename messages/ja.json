@@ -7670,5 +7670,21 @@
   "inlineHtml_preview_empty_description": "プレビューする HTML がありません。",
   "inlineHtml_preview_runtime_error": "プレビューでエラーが発生しました。",
   "inlineHtml_preview_frame_ariaLabel": "インタラクティブな HTML プレビュー",
-  "inlineHtml_preview_loading_label": "プレビューを読み込み中…"
+  "inlineHtml_preview_loading_label": "プレビューを読み込み中…",
+  "inlineHtml_preview_scenarioName_label": "シナリオ {number}",
+  "inlineHtml_preview_scenarioName_ariaLabel": "シナリオ名",
+  "inlineHtml_preview_state_error": "この設定を読み込むか保存できませんでした。",
+  "inlineHtml_preview_retry_label": "再試行",
+  "inlineHtml_preview_useConfiguration_label": "この設定を使用",
+  "inlineHtml_preview_saveScenario_label": "シナリオを保存",
+  "inlineHtml_preview_compare_label": "比較",
+  "inlineHtml_preview_export_label": "JSONを書き出す",
+  "inlineHtml_preview_saving_label": "保存中…",
+  "inlineHtml_preview_saved_label": "保存済み",
+  "inlineHtml_preview_current_label": "現在",
+  "inlineHtml_preview_restore_label": "復元",
+  "inlineHtml_preview_remove_label": "削除",
+  "inlineHtml_preview_exporting_label": "書き出し中…",
+  "inlineHtml_preview_exported_description": "{path} に保存しました",
+  "inlineHtml_preview_export_error": "この設定を書き出せませんでした。"
 }
