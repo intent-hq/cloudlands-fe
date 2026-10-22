@@ -30,6 +30,7 @@ export function installDiscussionTestBackend(
   options: {
     deferSend?: boolean;
     recentHistory?: boolean;
+    principalMentions?: boolean;
     rejectSend?: 'invalid' | 'forbidden';
     messageActions?: boolean;
     agentMessaging?: boolean;
@@ -99,6 +100,7 @@ export function installDiscussionTestBackend(
       createdAt: options.recentHistory ? new Date().toISOString() : '2026-10-14T12:00:00Z',
       ...(options.agentMessaging ? { recipientAgentIds: [] } : {}),
       ...(options.agentActivity ? { agentMentions: [], agentActivity: [] } : {}),
+      ...(options.principalMentions ? { principalMentions: [] } : {}),
       ...(options.messageActions !== false
         ? { replyToMessageId: null, replyTo: null, reactions: [], reactionVersion: 0 }
         : {}),
@@ -147,6 +149,7 @@ export function installDiscussionTestBackend(
   installMockElectronBridge({
     'system.capabilities': () => ({
       discussionConversations: 1,
+      ...(options.principalMentions ? { discussionPrincipalMentions: 1 } : {}),
       ...(options.agentMessaging ? { discussionAgentMessaging: 1 } : {}),
       ...(options.agentActivity ? { discussionAgentActivity: 1 } : {}),
       ...(options.messageActions !== false ? { discussionMessageActions: 1 } : {}),
@@ -281,6 +284,7 @@ export function installDiscussionTestBackend(
         ...message(35 + sendAttempts, params.body),
         id: crypto.randomUUID(),
         author: self,
+        ...(options.principalMentions ? { principalMentions: params.principalMentions ?? [] } : {}),
         ...(options.agentMessaging ? { recipientAgentIds: params.recipientAgentIds ?? [] } : {}),
         ...(options.agentActivity
           ? {
@@ -314,6 +318,33 @@ export function installDiscussionTestBackend(
   return {
     message,
     conversation,
+    receiveMessage: (conversationId: string, own = false) => {
+      const history = histories.get(conversationId) ?? [];
+      const received: DiscussionMessage = {
+        ...message((history.at(-1)?.sequence ?? 0) + 1, 'A new discussion update.'),
+        conversationId,
+        author: own ? self : recipientMembers[0],
+      };
+      histories.set(conversationId, [...history, received]);
+      routeDaemonEventsNotification(
+        'events.event',
+        {
+          subscriptionId: 'ct-discussion',
+          event: {
+            id: `discussion-${conversationId}-${received.sequence}`,
+            type: 'discussion:message',
+            workspaceId,
+            data: {
+              workspaceId,
+              conversationId,
+              conversation: conversations.find((item) => item.id === conversationId),
+              message: received,
+            },
+          },
+        },
+        ['ct-discussion'],
+      );
+    },
     lastSent: () => histories.get('default')?.at(-1),
     completeActivity: (messageId: string, agentId: string) => {
       const key = JSON.stringify([messageId, agentId]);

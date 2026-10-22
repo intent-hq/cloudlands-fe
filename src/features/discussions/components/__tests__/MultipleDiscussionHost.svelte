@@ -30,6 +30,7 @@
   const workspaceId = 'people-tile-preview';
   const { actions } = createPanelHeaderContext();
   let requests = $state<Array<{ method: string; params: unknown }>>([]);
+  let panelFocused = $state(true);
   const backend = installDiscussionTestBackend(
     workspaceId,
     () => failSend,
@@ -84,7 +85,7 @@
           {workspaceId}
           layoutId={workspaceId}
           isActive
-          isPanelFocused
+          isPanelFocused={panelFocused}
         />
       </div>
     {/if}
@@ -99,3 +100,10 @@
   >Reopen closed discussion</Button
 >
 <output data-discussion-closed>{JSON.stringify($closed$)}</output>
+<Button onclick={() => backend.receiveMessage('0199e991-0000-7000-8000-000000000001')}
+  >Receive Alex message</Button
+>
+<Button onclick={() => backend.receiveMessage('0199e991-0000-7000-8000-000000000001', true)}
+  >Receive own Alex message</Button
+>
+<Button onclick={() => (panelFocused = !panelFocused)}>Toggle pane focus</Button>

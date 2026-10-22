@@ -23,6 +23,56 @@ const panel = async (component: Locator) =>
     tabs: Array<{ id: string; title: string; data: { conversationId: string } }>;
   };
 
+test('unread navigation follows incoming messages and only clears after focused reading', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1100, height: 900 });
+  const component = await mount(MultipleDiscussionHost);
+  const alex = '0199e991-0000-7000-8000-000000000001';
+  const jordan = '0199e991-0000-7000-8000-000000000002';
+  const alexRow = component.locator(`[data-workspace-discussion-open="${alex}"]`);
+  const unread = alexRow.locator('[data-discussion-unread-badge]');
+  await alexRow.click();
+  await expect(component.getByRole('textbox', { name: 'Message', exact: true })).toBeEditable();
+  expect(await calls(component)).toContainEqual({
+    method: 'discussion.list',
+    params: { workspaceId: 'people-tile-preview', conversationId: alex, limit: 50 },
+  });
+  await component.locator(`[data-workspace-discussion-open="${jordan}"]`).click();
+  await expect(component.getByTestId('pane-stack-selector-trigger')).toContainText('Jordan');
+  await component.getByRole('button', { name: 'Receive own Alex message', exact: true }).click();
+  await expect(unread).toHaveCount(0);
+  await component.getByRole('button', { name: 'Receive Alex message', exact: true }).click();
+  await expect(unread).toContainText('1');
+  await component.getByRole('button', { name: 'Toggle pane focus' }).click();
+  await component.getByTestId('pane-stack-selector-trigger').press('Enter');
+  const menu = page.locator('[data-pane-stack-menu]');
+  const alexItem = menu.getByRole('menuitem', { name: /Alex.*1/ });
+  await expect(alexItem.locator('[data-discussion-unread-badge]')).toBeVisible();
+  const screenshot = testInfo.outputPath('discussion-unread-navigation.png');
+  const frame = await component.locator('[data-multiple-discussion-host]').boundingBox();
+  await page.screenshot({ path: screenshot, clip: frame! });
+  await testInfo.attach('Unread discussion navigation', {
+    path: screenshot,
+    contentType: 'image/png',
+  });
+  await alexItem.press('Enter');
+  await expect(component.getByRole('log')).toContainText('A new discussion update.');
+  await expect(unread).toContainText('1');
+  await component.getByRole('button', { name: 'Toggle pane focus' }).click();
+  await expect(unread).toHaveCount(0);
+
+  await component.locator(`[data-workspace-discussion-open="${jordan}"]`).click();
+  await component.getByRole('button', { name: 'Receive Alex message', exact: true }).click();
+  await expect(unread).toContainText('1');
+  const sidebarOption = alexRow.locator('..');
+  await sidebarOption.focus();
+  await page.keyboard.press('Enter');
+  await expect(component.getByTestId('pane-stack-selector-trigger')).toContainText('Alex');
+  await expect(unread).toHaveCount(0);
+});
+
 test('People plus retains a local composer, creates a group on first send, and reopens its history', async ({
   mount,
   page,

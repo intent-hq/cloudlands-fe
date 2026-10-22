@@ -47,6 +47,7 @@
 
 {#if $multiplayer$}
   <DiscussionList
+    {workspaceId}
     {rows}
     onOpen={(id, title) => openWorkspaceDiscussion(workspaceId, panelLayoutId, id, title)}
     loading={$directory$.status === 'loading'}

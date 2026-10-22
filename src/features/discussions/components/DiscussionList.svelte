@@ -6,7 +6,9 @@
   import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { ErrorState, LoadingState } from '$lib/components/patterns/screen';
+  import DiscussionUnreadBadge from './DiscussionUnreadBadge.svelte';
   let {
+    workspaceId,
     rows,
     onOpen,
     loading = false,
@@ -15,6 +17,7 @@
     onLoadMore,
     onRetry,
   }: {
+    workspaceId: string;
     rows: readonly { id: string; title: string; avatarUrl?: string | null }[];
     onOpen: (id: string, title: string) => void;
     loading?: boolean;
@@ -50,6 +53,9 @@
             />{/if}
         {/snippet}
         {#snippet title()}{item.title}{/snippet}
+        {#snippet trailing()}
+          <DiscussionUnreadBadge {workspaceId} conversationId={item.id} />
+        {/snippet}
       </ListRow>
     {/snippet}
   </ListView>
