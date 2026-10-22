@@ -20,6 +20,7 @@ import { supportsReviewMonitoring, type PrMonitorSession } from '$shared/types/p
  * `window.electronAPI` is absent and the URL is configured. The WebSocket
  * constructor is injectable (`webSocketFactory`) so tests use a fake socket.
  */
+import type { PrincipalDiscovery } from '$shared/types/principal';
 import { parseProtocolVersion, type ProtocolVersion } from '$shared/protocol-version';
 import { assertScopedFileReadSupport } from '$shared/root-file-read-support';
 import {
@@ -255,6 +256,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
   }> = [];
   private clientId: string | undefined;
   private helloConfirmed = false;
+  private acknowledgedHello: unknown = null;
   private nodeCapabilities: Readonly<Record<string, number>> | null = null;
   private capabilityHelloGeneration = 0;
   private reviewMonitoring: unknown;
@@ -297,6 +299,28 @@ export class BrowserWebSocketTransport implements BackendTransport {
 
   isAvailable(): boolean {
     return !this.disposed;
+  }
+
+  async readPrincipal(): Promise<PrincipalDiscovery> {
+    if (this.disposed)
+      throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend transport disposed' });
+    const socket = await this.ensureConnected();
+    const generation = this.capabilityHelloGeneration;
+    const hello = structuredClone(this.acknowledgedHello);
+    const current = () =>
+      !this.disposed &&
+      this.connected &&
+      this.socket === socket &&
+      this.capabilityHelloGeneration === generation &&
+      this.acknowledgedHello !== null;
+    if (!current()) throw this.helloError;
+    const principal = await this.requestOnSocket('principal.me', {}, undefined, socket);
+    if (!current())
+      throw new BackendError({
+        code: 'UNAVAILABLE',
+        message: 'Principal discovery connection changed',
+      });
+    return { hello, principal };
   }
 
   async observeNodeCapabilities(): Promise<unknown> {
@@ -542,6 +566,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
           this.nodeCapabilities = null;
           this.reviewMonitoring = undefined;
           for (const retire of [...this.monitorRetirements]) retire();
+          this.acknowledgedHello = null;
         }
         this.pending.set(id, {
           method,
@@ -562,6 +587,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
                 this.reviewMonitoring = capabilities?.reviewMonitoring;
                 this.ordinaryHello =
                   (result as { connectionRole?: unknown }).connectionRole === undefined;
+                this.acknowledgedHello = structuredClone(result);
                 this.nodeCapabilities = Object.freeze({
                   agentNodes: capabilities?.agentNodes === 1 ? 1 : 0,
                   localNodeIsolation: capabilities?.localNodeIsolation === 1 ? 1 : 0,
@@ -884,6 +910,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
     this.reviewMonitoring = undefined;
     this.clearMonitorRecovery();
     for (const retire of [...this.monitorRetirements]) retire();
+    this.acknowledgedHello = null;
     this.nodeCapabilities = null;
     this.capabilityHelloGeneration += 1;
     this.protocolVersion = null;

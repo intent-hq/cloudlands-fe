@@ -68,11 +68,6 @@ export type UserPreferencesState = {
   labsGitLabEnabled: boolean;
   /** Offers new remote setup/placement only; never restricts existing sessions or local execution. */
   labsRemoteAgentsEnabled: boolean;
-  /**
-   * Offers named provider profile management and picker groups. Existing
-   * profile selections keep running (and stay labelled) when disabled.
-   */
-  labsProviderProfilesEnabled: boolean;
   agentFontStyle: AgentFontStyle;
   noteFontStyle: NoteFontStyle;
   codeFontFamily: string;
@@ -147,7 +142,6 @@ export const initialState: UserPreferencesStoreState = {
   labsMultiplayerEnabled: false,
   labsGitLabEnabled: false,
   labsRemoteAgentsEnabled: false,
-  labsProviderProfilesEnabled: false,
   ...fontSettingsInitialState,
   ...notificationSettingsInitialState,
   notificationVolumeEditId: 0,
@@ -421,17 +415,6 @@ export const setLabsRemoteAgentsEnabled = labsRemoteAgentsPreference.setAction;
 
 export const toggleLabsRemoteAgents = labsRemoteAgentsPreference.toggleAction;
 
-const labsProviderProfilesPreference = createBooleanPreference<UserPreferencesStoreState>({
-  sliceName: 'userPreferences',
-  field: 'labsProviderProfilesEnabled',
-  setActionName: 'setLabsProviderProfilesEnabled',
-  toggleActionName: 'toggleLabsProviderProfiles',
-});
-
-export const setLabsProviderProfilesEnabled = labsProviderProfilesPreference.setAction;
-
-export const toggleLabsProviderProfiles = labsProviderProfilesPreference.toggleAction;
-
 export const userPreferencesReducer = createReducer<UserPreferencesStoreState>(initialState);
 userPreferencesReducer.with(agentRulesEditorOpened, (state) => ({
   ...state,
@@ -546,7 +529,6 @@ labsSettingsVisibilityPreference.register(userPreferencesReducer);
 labsMultiplayerPreference.register(userPreferencesReducer);
 labsGitLabPreference.register(userPreferencesReducer);
 labsRemoteAgentsPreference.register(userPreferencesReducer);
-labsProviderProfilesPreference.register(userPreferencesReducer);
 userPreferencesReducer.with(setUpdateChannel, (state, { payload: [channel] }) => ({
   ...state,
   updateChannel: channel,

@@ -675,6 +675,8 @@ export const IPC_CHANNELS = {
   // Deep Links
   DEEP_LINK: {
     HANDLE: 'deep-link:handle',
+    /** Take and clear the deep-link actions main queued for the caller's window. */
+    CONSUME_PENDING: 'deep-link:consume-pending',
   },
 
   // Legacy/Compatibility
@@ -972,6 +974,7 @@ export const IPC_CHANNELS = {
     UNSUBSCRIBE: 'backend:unsubscribe',
     GET_STATUS: 'backend:get-status',
     NODE_CAPABILITIES: 'backend:node-capabilities',
+    READ_PRINCIPAL: 'backend:read-principal',
     NOTIFICATION: 'backend:notification',
     STATUS: 'backend:status',
     SPAWN_SIDECAR: 'backend:spawn-sidecar',

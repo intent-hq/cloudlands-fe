@@ -53,6 +53,7 @@
     faCheck,
     faDownload,
     faFolder,
+    faPlus,
     faStar,
     faTerminal,
     faTriangleExclamation,
@@ -70,9 +71,9 @@
   import AuggieLogo from '../AuggieLogo.svelte';
   import ProviderPathConfig from './ProviderPathConfig.svelte';
   import ProviderProfiles from './ProviderProfiles.svelte';
+  import ProviderProfileDialog from './ProviderProfileDialog.svelte';
   import ProviderFastModeMenuItems from './ProviderFastModeMenuItems.svelte';
   import { providerProfilesRequested } from '$store/renderer/slices/provider-settings/provider-settings-slice';
-  import { selectLabsProviderProfilesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import AgentProviderIcon from '$features/agent/components/AgentProviderIcon.svelte';
   import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
   import { store as appStore } from '$store/renderer/store';
@@ -221,18 +222,31 @@
     return selectIsProviderEnabled.select(appStore.state, providerId);
   }
 
-  // Named profiles are a Labs feature: profile management (and its read) is
-  // offered only while Settings → Labs → Provider profiles is on.
-  const labsProviderProfilesEnabled$ = selectLabsProviderProfilesEnabled();
-
   // Add profile is offered only on installed rows whose catalog entry
   // advertises named profiles (§5.54); other providers never show it.
   function supportsProfiles(providerId: string): boolean {
-    return (
-      $labsProviderProfilesEnabled$ &&
-      $catalogEntries$.find((p) => p.id === providerId)?.supportsProfiles === true
-    );
+    return $catalogEntries$.find((p) => p.id === providerId)?.supportsProfiles === true;
   }
+
+  // One add-profile dialog for the page, opened from a row's actions menu.
+  // It stays mounted after closing so a pending save still reports its outcome,
+  // and a row re-rendering (status refresh) never discards a half-filled form.
+  let addProfileTarget = $state<{ providerId: string; providerName: string } | null>(null);
+  let addProfileOpen = $state(false);
+
+  function openAddProfile(providerId: string, providerName: string) {
+    addProfileTarget = { providerId, providerName };
+    addProfileOpen = true;
+  }
+
+  // Saved profiles are read once per visit, and only when some provider
+  // offers profiles at all.
+  let profilesRequested = false;
+  $effect(() => {
+    if (profilesRequested || !$catalogEntries$.some((p) => p.supportsProfiles === true)) return;
+    profilesRequested = true;
+    appStore.dispatch(providerProfilesRequested());
+  });
 
   function canManageProviderEnablement(providerId: string): boolean {
     return $catalogEntries$.find((p) => p.id === providerId)?.canBeDisabled !== false;
@@ -270,10 +284,6 @@
       appStore.dispatch(providerAvailabilityPanelClosed(sessionId));
       appStore.dispatch(providerSettingsSessionClosed(sessionId));
     };
-  });
-
-  $effect(() => {
-    if ($labsProviderProfilesEnabled$) appStore.dispatch(providerProfilesRequested());
   });
 
   function handleInstallPiMcpAdapter() {
@@ -350,6 +360,8 @@
             {@const canLogIn = provider.id !== 'antigravity' && needsLogin && provider.loginDocsUrl}
             {@const canSetDefault = provider.available && !isActive && isReady}
             {@const canInstall = provider.id !== 'antigravity' && !provider.available}
+            {@const canAddProfile =
+              !provider.statusPending && provider.available && supportsProfiles(provider.id)}
             {@const hasPiAdapterWarning =
               !provider.statusPending &&
               provider.id === 'pi' &&
@@ -607,6 +619,20 @@
                             {m.settings_providerPath_setCustomPath_label()}
                           </Menu.Item>
 
+                          {#if canAddProfile}
+                            <Menu.Item
+                              class="cursor-pointer text-foreground"
+                              onSelect={() => {
+                                openAddProfile(provider.id, provider.name);
+                              }}
+                            >
+                              <span class="flex size-4 shrink-0 items-center justify-center">
+                                <Fa icon={faPlus} class="size-3.5 text-muted-foreground" />
+                              </span>
+                              {m.settings_providerProfiles_add_label()}
+                            </Menu.Item>
+                          {/if}
+
                           {#if canSetDefault}
                             <Menu.Separator />
                             <Menu.Item
@@ -721,7 +747,7 @@
                   </div>
                 </div>
               </div>
-              {#if !provider.statusPending && provider.available && supportsProfiles(provider.id)}
+              {#if canAddProfile}
                 <ProviderProfiles providerId={provider.id} providerName={provider.name} />
               {/if}
               {#if provider.id === 'antigravity'}
@@ -734,6 +760,14 @@
     {/if}
   {/each}
 </div>
+
+{#if addProfileTarget}
+  <ProviderProfileDialog
+    bind:open={addProfileOpen}
+    providerId={addProfileTarget.providerId}
+    providerName={addProfileTarget.providerName}
+  />
+{/if}
 
 {#snippet providerIcon(providerId: string)}
   <span class="w-7 text-subtle">

@@ -485,7 +485,7 @@ describe('theme color contract', () => {
     expect(tokenValue(css, 'motion-fast')).toBe('var(--spring-fast)');
     expect(tokenValue(css, 'motion-standard')).toBe('var(--spring-moderate)');
     expect(tokenValue(css, 'motion-slow')).toBe('var(--spring-slow)');
-    for (const token of ['content-measure-reading', 'layer-base', 'layer-sticky', 'layer-toast']) {
+    for (const token of ['content-measure-reading', 'layer-base', 'layer-sticky']) {
       expect(css).not.toContain(`--${token}:`);
     }
     expect(css).not.toContain(['--surface', 'hatch:'].join('-'));

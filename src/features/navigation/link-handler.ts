@@ -90,7 +90,7 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
       }
     }
 
-    // Media-capable views consume valid saved-video links before reaching here.
+    // Media-capable views consume valid saved-media links before reaching here.
     // Reject unhandled assets before Home routing or external fallback: neither
     // a browser nor an editor can resolve these internal media URLs safely.
     if (/^workspace-asset:/i.test(url.trim())) {

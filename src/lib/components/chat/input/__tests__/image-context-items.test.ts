@@ -42,7 +42,7 @@ describe('imageFilesToContextItems', () => {
     });
     expect(items[0].id).toMatch(/^file-upload-\d+-\d+-shot\.png$/);
     expect(items[0].description).toContain('image/png');
-    expect(notify.success).toHaveBeenCalledTimes(1);
+    expect(notify.success).not.toHaveBeenCalled();
     expect(notify.error).not.toHaveBeenCalled();
   });
 
@@ -67,7 +67,7 @@ describe('imageFilesToContextItems', () => {
     );
 
     expect(items.map((i) => i.label)).toEqual(['fits.png']);
-    expect(notify.success).toHaveBeenCalledTimes(1);
+    expect(notify.success).not.toHaveBeenCalled();
     expect(notify.error).toHaveBeenCalledTimes(1);
     expect(vi.mocked(notify.error).mock.calls[0][0]).toContain('big.png');
   });
@@ -96,7 +96,7 @@ describe('imageFilesToContextItems', () => {
     expect(items.map((i) => i.label)).toEqual(['ok.png']);
     expect(notify.error).toHaveBeenCalledTimes(1);
     expect(vi.mocked(notify.error).mock.calls[0][0]).toContain('broken.png');
-    expect(notify.success).toHaveBeenCalledTimes(1);
+    expect(notify.success).not.toHaveBeenCalled();
   });
 
   it('toasts a per-file failure when reading the file rejects', async () => {

@@ -865,8 +865,10 @@
         error = m.workspace_branchSelector_fetchBranchesFailedManual_error();
       }
 
-      // Surface the failure without requiring the user to open the dropdown.
-      toast.error(error);
+      // Surface the failure without requiring the user to open the dropdown —
+      // except with no worktree on a local folder, where no branch is needed
+      // (a plain non-git folder has none) and a toast would only nag.
+      if (!(skipIsolation && effectiveRepoType === 'local')) toast.error(error);
 
       // Never fabricate branch names on failure — the error state renders and
       // the user can still type a branch name manually.

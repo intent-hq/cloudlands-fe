@@ -5,7 +5,7 @@
 
 type DeepLinkActionType = 'open' | 'create' | 'clone' | 'settings';
 
-type DeepLinkActionPayload = {
+export type DeepLinkActionPayload = {
   type: DeepLinkActionType;
   params: Record<string, string>;
 };
