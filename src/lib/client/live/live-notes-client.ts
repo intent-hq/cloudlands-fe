@@ -29,7 +29,6 @@ import type {
   Unsubscribe,
 } from '../app-client';
 import { backendRequest, observeBackendNodeCapabilities } from './backend-transport';
-import { BackendError } from './backend-transport-types';
 import { createDeltaSubscription } from './delta-subscription';
 import {
   newIdempotencyKey,
@@ -96,12 +95,13 @@ export class NoteCapabilityUnknownError extends Error {
 }
 
 /**
- * A connection that is changing, renewing its hello or not connected yet: the
- * capability is unknown for now. No transport observer at all is a plain "no".
+ * Only a transport that cannot report node capabilities at all is a plain "no"
+ * (no observer). Every other failure — a connection that is changing, not
+ * connected yet, or a transport error from the Electron bridge — leaves the
+ * capability unknown, never unsupported.
  */
 function isTransientCapabilityError(error: unknown): boolean {
-  if (error instanceof BackendError) return error.code === 'UNAVAILABLE';
-  return error instanceof Error && error.message === m.agent_placement_backendChanged();
+  return !(error instanceof Error && error.message === m.agent_placement_unavailable());
 }
 
 /** Bounded wait for an acknowledged hello while it is being renewed (~3 s). */

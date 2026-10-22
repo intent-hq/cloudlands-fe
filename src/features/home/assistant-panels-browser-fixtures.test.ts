@@ -74,7 +74,8 @@ it('cancels pending reads and removes the reader before restoring the bridge', a
   });
   const invoke = vi.spyOn(window.electronAPI, 'invoke').mockImplementation(async (...args) => {
     const response = await originalInvoke(...args);
-    await held;
+    // Hold daemon requests only; the capability check answers at once.
+    if (args[0] === IPC_CHANNELS.BACKEND.REQUEST) await held;
     return response;
   });
   const request = readNoteRequested(CHIEF_WORKSPACE_ID, 'plan');

@@ -1,5 +1,5 @@
 import { runSaga, stdChannel } from 'redux-saga';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ backendRequest: vi.fn() }));
 
@@ -100,6 +100,11 @@ describe('notesWriteSaga', () => {
   // Suite invariant (AC10): every content save for a loaded note forwards a
   // defined rev as expectedVersion. Only the never-loaded LWW test opts out.
   let expectUnloadedSave = false;
+
+  // These suites model a daemon without truncated reads unless a test says otherwise.
+  beforeEach(() => {
+    vi.spyOn(appClient.notes, 'supportsTruncatedRead').mockResolvedValue(false);
+  });
 
   afterEach(() => {
     const setContent = appClient.notes.setContent;

@@ -975,7 +975,8 @@ describe('LiveNotesClient.get truncated reads (§5.2 "Truncated note reads")', (
     await expect(client.supportsTruncatedRead()).resolves.toBe(false);
     vi.useFakeTimers();
     try {
-      mockedCapabilities.mockRejectedValue(new Error('no transport'));
+      // A transport that cannot report node capabilities at all is a plain "no".
+      mockedCapabilities.mockRejectedValue(new Error(m.agent_placement_unavailable()));
       const failing = client.supportsTruncatedRead();
       await vi.runAllTimersAsync();
       await expect(failing).resolves.toBe(false);
@@ -994,6 +995,14 @@ describe('LiveNotesClient.get truncated reads (§5.2 "Truncated note reads")', (
       () =>
         mockedCapabilities.mockRejectedValue(
           new BackendError({ code: 'UNAVAILABLE', message: 'Backend connection changed' }),
+        ),
+    ],
+    [
+      // The Electron bridge maps a not-connected backend client to TRANSPORT_ERROR.
+      'an Electron TRANSPORT_ERROR',
+      () =>
+        mockedCapabilities.mockRejectedValue(
+          new BackendError({ code: 'TRANSPORT_ERROR', message: 'Backend client is not connected' }),
         ),
     ],
   ])('rejects as unknown, not unsupported, with %s', async (_label, arrange) => {
