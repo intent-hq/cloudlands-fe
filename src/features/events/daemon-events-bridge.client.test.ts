@@ -9100,6 +9100,27 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
       expect((await readWorkspace()).pullRequests).toEqual([rootPull({ isInMergeQueue: true })]);
     });
 
+    it('applies only the PR fields, never rolling back newer row fields', async () => {
+      await seedListedRow({ title: 'Renamed after the read', pullRequests: [rootPull()] });
+      served = workspaceRow({
+        title: 'Stale title served by the read',
+        pullRequests: [rootPull({ isInMergeQueue: true })],
+      });
+      await primeBridge();
+
+      emitGitRoot('gitRoot:updated');
+      await settle();
+
+      const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
+      const state = appStore.state as { workspace: { workspaces: unknown } };
+      const row = getItem(state.workspace.workspaces as never, PR_WS) as {
+        title: string;
+        pullRequests: unknown[];
+      };
+      expect(row.title).toBe('Renamed after the read');
+      expect(row.pullRequests).toEqual([rootPull({ isInMergeQueue: true })]);
+    });
+
     it('never reads or adds a workspace this window does not hold', async () => {
       served = workspaceRow({ id: 'ws-not-loaded', pullRequests: [rootPull()] });
       await primeBridge();

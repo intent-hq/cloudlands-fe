@@ -242,11 +242,10 @@ import {
   markWorkspacePendingDeletion,
   refreshWorkspaceMembershipRequested,
   removeWorkspaceEntity,
-  setWorkspaceEntity,
   updateWorkspaceEntity,
+  workspacePullRequestsRefreshed,
 } from '$store/renderer/slices/workspace/workspace-slice';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
-import { fetchWorkspaceDetail } from '$features/workspace/workspace-detail-hydration';
 import {
   closeWorkspaceTabAndNavigateAway,
   navigateAwayIfViewing,
@@ -2226,13 +2225,18 @@ function handlePrEvent(
  * MERGED pool (workspace + git-root + monitor PRs, §5.1), whose same-URL
  * canonicalization, lifecycle and ordering rules live only in intentd, so
  * re-read `workspace.get` (the authoritative merged pool, linked PR fields
- * included) instead of re-deriving the fold here. Only rows already in this
- * window's store refresh — this never adds a workspace. Single-flighted per
- * workspace with one trailing follow-up for events arriving mid-read
- * (AGENTS.md "Event-driven refetches — single-flight and coalesced").
+ * included) instead of re-deriving the fold here, and apply ONLY its PR
+ * fields ({@link workspacePullRequestsRefreshed}) so newer event-applied
+ * fields are never rolled back. The read is issued directly rather than
+ * through the shared `fetchWorkspaceDetail` single-flight: joining a read
+ * already in flight could return a pool served before this root changed.
+ * Only rows already in this window's store refresh — this never adds a
+ * workspace. Single-flighted per workspace with one trailing follow-up for
+ * events arriving mid-read; a routing dispose drops in-flight results.
  */
 const gitRootPoolRefreshInFlight = new Set<string>();
 const gitRootPoolRefreshFollowUp = new Set<string>();
+let gitRootPoolRefreshGeneration = 0;
 
 async function refreshWorkspacePrPoolFromGitRoot(workspaceId: string): Promise<void> {
   if (!selectWorkspaceById.select(appStore.state, workspaceId)) return;
@@ -2240,16 +2244,24 @@ async function refreshWorkspacePrPoolFromGitRoot(workspaceId: string): Promise<v
     gitRootPoolRefreshFollowUp.add(workspaceId);
     return;
   }
+  const generation = gitRootPoolRefreshGeneration;
   gitRootPoolRefreshInFlight.add(workspaceId);
   try {
-    const workspace = await fetchWorkspaceDetail(workspaceId);
-    if (workspace && selectWorkspaceById.select(appStore.state, workspaceId)) {
-      appStore.dispatch(setWorkspaceEntity(workspace, { detailRead: true }));
+    const { backendRequest } = await import('$lib/client/live/backend-transport');
+    const response = (await backendRequest('workspace.get', { workspaceId })) as
+      { workspace?: Workspace } | undefined;
+    const workspace = response?.workspace;
+    if (workspace && generation === gitRootPoolRefreshGeneration) {
+      appStore.dispatch(workspacePullRequestsRefreshed(workspaceId, workspace));
     }
+  } catch {
+    // Deleted workspace or transport error: the next list/event converges.
   } finally {
-    gitRootPoolRefreshInFlight.delete(workspaceId);
-    if (gitRootPoolRefreshFollowUp.delete(workspaceId)) {
-      void refreshWorkspacePrPoolFromGitRoot(workspaceId);
+    if (generation === gitRootPoolRefreshGeneration) {
+      gitRootPoolRefreshInFlight.delete(workspaceId);
+      if (gitRootPoolRefreshFollowUp.delete(workspaceId)) {
+        void refreshWorkspacePrPoolFromGitRoot(workspaceId);
+      }
     }
   }
 }
@@ -4696,6 +4708,7 @@ export function disposeDaemonEventsRoutingState(): void {
   missingEntityFetchFollowUpWantedByWorkspace.clear();
   gitRootPoolRefreshInFlight.clear();
   gitRootPoolRefreshFollowUp.clear();
+  gitRootPoolRefreshGeneration += 1;
 }
 
 /** Test-only — reset stream accumulators and debounce state. */
