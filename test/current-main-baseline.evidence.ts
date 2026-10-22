@@ -587,6 +587,11 @@ export const semanticTestFiles = [
   ),
 ].sort();
 
+const removedAppearanceStates: Record<string, readonly string[]> = {
+  'WORKSPACE-36': ['mounted', 'cleanup'],
+  'WORKSPACE-37': ['mounted', 'cleanup', 'scroll'],
+};
+
 export function createSemanticEvidence(
   assertionsByFile: ReadonlyMap<string, readonly string[]>,
 ): SemanticEvidence[] {
@@ -599,7 +604,8 @@ export function createSemanticEvidence(
     const selectors = semanticSelectors[row.row] ?? [];
     const selectorStates = selectors.flatMap(({ states }) => states);
     const observedStates = row.states.filter(
-      (state) => !mountedStatesForRow.has(state) && selectorStates.includes(state),
+      (state) =>
+        !mountedStatesForRow.has(state) && !removedAppearanceStates[row.row]?.includes(state),
     );
     if (observedStates.length === 0) return [];
     const testFiles = row.tests.filter((file) => assertionsByFile.has(file));
