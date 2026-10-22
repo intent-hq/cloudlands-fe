@@ -64,6 +64,7 @@
   let contentHeight = $state(INLINE_HTML_MIN_HEIGHT);
   let heightLimit = $state(INLINE_HTML_MAX_HEIGHT);
   let localRecord = $state<InlineVisualRecord>(emptyInlineVisualRecord());
+  let currentSnapshot = $state.raw<InlineVisualSnapshot | undefined>();
   let previousSource: string | undefined;
   let pendingRestore = $state<InlineVisualSnapshot | undefined>();
   let compare = $state(false);
@@ -93,12 +94,13 @@
   );
 
   function updateRecord(next: InlineVisualRecord) {
-    localRecord = next;
-    onRecordChange?.(next);
+    const nextRecord = { ...next, current: currentSnapshot ?? next.current };
+    localRecord = nextRecord;
+    onRecordChange?.(nextRecord);
   }
 
   function saveScenario() {
-    if (!saved.current || saved.scenarios.length >= INLINE_VISUAL_MAX_SCENARIOS) return;
+    if (!currentSnapshot || saved.scenarios.length >= INLINE_VISUAL_MAX_SCENARIOS) return;
     updateRecord({
       ...saved,
       scenarios: [
@@ -108,7 +110,7 @@
           name: m.inlineHtml_preview_scenarioName_label({
             number: formatNumber(saved.scenarios.length + 1),
           }),
-          snapshot: structuredClone(saved.current),
+          snapshot: structuredClone($state.snapshot(currentSnapshot)),
         },
       ],
     });
@@ -127,8 +129,9 @@
   }
 
   function restoreScenario(snapshot: InlineVisualSnapshot) {
-    pendingRestore = structuredClone(snapshot);
-    updateRecord({ ...saved, current: structuredClone(snapshot) });
+    currentSnapshot = structuredClone($state.snapshot(snapshot));
+    pendingRestore = currentSnapshot;
+    updateRecord({ ...saved, current: currentSnapshot });
     reload += 1;
   }
 
@@ -176,6 +179,7 @@
     untrack(() => {
       if (previousSource !== currentSource) {
         localRecord = emptyInlineVisualRecord();
+        currentSnapshot = undefined;
         compare = false;
         pendingRestore = undefined;
         previousSource = currentSource;
@@ -190,7 +194,7 @@
             channel,
             readInlineHtmlTheme(root),
             m.inlineHtml_preview_frame_ariaLabel(),
-            pendingRestore ?? saved.current,
+            pendingRestore ?? currentSnapshot ?? saved.current,
           )
         : '';
       pendingRestore = undefined;
@@ -216,7 +220,8 @@
       } else if (data.type === 'error' && typeof data.message === 'string') {
         runtimeError = data.message.slice(0, 300);
       } else if (data.type === 'snapshot' && runnable && isInlineVisualSnapshot(data.snapshot)) {
-        updateRecord({ ...saved, current: data.snapshot });
+        currentSnapshot = data.snapshot;
+        updateRecord({ ...saved, current: currentSnapshot });
       } else if (
         data.type === 'wheel' &&
         ready &&
@@ -346,13 +351,13 @@
       </div>
     {/if}
   </div>
-  {#if saved.current && runnable}
+  {#if currentSnapshot && runnable}
     <div class="flex flex-wrap items-center gap-1 px-4 py-2" data-inline-visual-actions>
       {#if onUseConfiguration}
         <Button
           size="sm"
           disabled={!ready || Boolean(runtimeError)}
-          onclick={() => saved.current && onUseConfiguration(saved.current)}
+          onclick={() => currentSnapshot && onUseConfiguration(currentSnapshot)}
         >
           {m.inlineHtml_preview_useConfiguration_label()}
         </Button>
@@ -383,7 +388,7 @@
           variant="ghost"
           size="sm"
           disabled={!ready || exportStatus === 'saving'}
-          onclick={() => onExport(saved)}
+          onclick={() => onExport({ ...saved, current: currentSnapshot ?? null })}
         >
           {m.inlineHtml_preview_export_label()}
         </Button>
@@ -416,7 +421,7 @@
           <thead>
             <tr>
               <th class="min-w-28 pr-4 pb-3 font-normal text-muted-foreground">
-                {saved.current.title}
+                {currentSnapshot.title}
               </th>
               <th class="min-w-32 px-2 pb-3 align-top font-medium">
                 {m.inlineHtml_preview_current_label()}
@@ -466,7 +471,7 @@
               {@const fieldGroup = group as 'inputs' | 'results'}
               {@const fields = Array.from(
                 new Set([
-                  ...Object.keys(saved.current[fieldGroup]),
+                  ...Object.keys(currentSnapshot[fieldGroup]),
                   ...saved.scenarios.flatMap((entry) => Object.keys(entry.snapshot[fieldGroup])),
                 ]),
               )}
@@ -477,7 +482,7 @@
                   >
                     {name}
                   </th>
-                  {#each [saved.current, ...saved.scenarios.map((entry) => entry.snapshot)] as snapshot}
+                  {#each [currentSnapshot, ...saved.scenarios.map((entry) => entry.snapshot)] as snapshot}
                     <td class="max-w-56 px-2 py-2 align-top break-words tabular-nums">
                       {Object.hasOwn(snapshot[fieldGroup], name)
                         ? displayValue(snapshot[fieldGroup][name])

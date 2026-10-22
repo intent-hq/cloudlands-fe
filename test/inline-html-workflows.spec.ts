@@ -1,4 +1,4 @@
-import { expect, type Page, type TestInfo } from '@playwright/test';
+import { expect, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { test } from './root-browser-fixtures';
 import { createServer, type ViteDevServer } from 'vite';
 import { copyFile, mkdir } from 'node:fs/promises';
@@ -44,8 +44,10 @@ async function open(
   readFailure = false,
   theme: 'light' | 'dark' = 'light',
   width = 1024,
+  mode: 'persistent' | 'local-only' | 'remote-root' = 'persistent',
+  viewers: 1 | 2 = 1,
 ) {
-  await page.setViewportSize({ width, height: 1100 });
+  await page.setViewportSize({ width: width * viewers + (viewers - 1) * 16, height: 1100 });
   await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
   await page.goto(`${baseUrl}/src/app.html`);
   await page.evaluate((policy) => {
@@ -69,16 +71,16 @@ async function open(
         workflowHost: mount(Host, { target: document.body, props }),
       });
     },
-    { width, height: 1080, theme, readFailure },
+    { width, height: 1080, theme, readFailure, mode, viewers },
   );
-  await expect(page.locator('[data-inline-html]')).toBeVisible({ timeout: 90_000 });
+  await expect(page.locator('[data-inline-html]').first()).toBeVisible({ timeout: 90_000 });
   if (!readFailure)
-    await expect(page.locator('[data-inline-html]')).toHaveAttribute(
+    await expect(page.locator('[data-inline-html]').first()).toHaveAttribute(
       'data-inline-html-status',
       'ready',
     );
 }
-function frame(page: Page) {
+function frame(page: Page | Locator) {
   return page
     .locator('[data-inline-html] > div.relative > iframe')
     .contentFrame()
@@ -102,6 +104,189 @@ async function capture(page: Page, info: TestInfo, name: string) {
   await copyFile(path, resolve(artifacts, `${name}.png`));
   await info.attach(name, { path, contentType: 'image/png' });
 }
+
+type Dimensions = { thickness: number; opening: number; rearClearance: number };
+async function visibleConfiguration(view: Locator, dimensions: Dimensions, clearance: string) {
+  for (const [field, value] of Object.entries(dimensions))
+    await expect(frame(view).locator(`[data-workflow-number="${field}"]`)).toHaveValue(
+      String(value),
+    );
+  await expect(frame(view).locator('[data-workflow-clearance]')).toHaveText(clearance);
+}
+async function editViewer(view: Locator, field: string, value: string) {
+  const input = frame(view).locator(`[data-workflow-number="${field}"]`);
+  await input.fill(value);
+  await input.press('Tab');
+}
+async function draftConfiguration(view: Locator) {
+  const text =
+    (await view.getByTestId('message-input').locator('.tiptap-editor').textContent()) ?? '';
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start < 0 || end < start) return null;
+  return JSON.parse(text.slice(start, end + 1).replaceAll('\u00a0', ' '));
+}
+
+for (const mode of ['local-only', 'remote-root'] as const) {
+  test(`saves and restores scenarios without a local workspace root (${mode})`, async ({
+    page,
+  }, info) => {
+    await open(page, false, 'light', 900, mode);
+    const view = page.locator('[data-workflow-viewer="primary"]');
+    await editViewer(view, 'thickness', '74');
+    await visibleConfiguration(
+      view,
+      { thickness: 74, opening: 60, rearClearance: 40 },
+      '14 mm over',
+    );
+    await view.getByRole('button', { name: 'Save scenario', exact: true }).click();
+    const name = view.getByRole('textbox', { name: 'Scenario name' });
+    await name.fill('Thick desk');
+    await name.press('Tab');
+    await editViewer(view, 'thickness', '20');
+    await editViewer(view, 'opening', '90');
+    await visibleConfiguration(
+      view,
+      { thickness: 20, opening: 90, rearClearance: 40 },
+      '70 mm clearance',
+    );
+    await capture(page, info, `${mode}-scenario-divergence`);
+    await view.getByRole('button', { name: 'Restore', exact: true }).click();
+    await visibleConfiguration(
+      view,
+      { thickness: 74, opening: 60, rearClearance: 40 },
+      '14 mm over',
+    );
+    await expect(name).toHaveValue('Thick desk');
+    await expect(view.getByRole('button', { name: 'Export JSON', exact: true })).toHaveCount(0);
+    if (mode === 'remote-root') {
+      await view.getByRole('button', { name: 'Use this configuration', exact: true }).click();
+      await expect
+        .poll(() => draftConfiguration(view))
+        .toEqual({
+          inputs: {
+            'Desk thickness (mm)': 74,
+            'Clamp opening (mm)': 60,
+            'Rear clearance (mm)': 40,
+          },
+          results: { 'Opening clearance (mm)': -14, Fit: 'Opening too small' },
+        });
+      const messages = JSON.parse(
+        (await page.getByTestId('stored-messages').textContent()) ?? '[]',
+      );
+      expect(messages).toHaveLength(1);
+      expect(messages[0].role).toBe('assistant');
+    }
+    await visibleConfiguration(
+      view,
+      { thickness: 74, opening: 60, rearClearance: 40 },
+      '14 mm over',
+    );
+    expect(await inspect(page)).toEqual({ files: [], requests: [] });
+    await capture(page, info, `${mode}-scenario-restored`);
+  });
+}
+
+test('uses each simultaneous viewer’s visible configuration for save, draft handoff and export', async ({
+  page,
+}, info) => {
+  await open(page, false, 'light', 760, 'persistent', 2);
+  const primary = page.locator('[data-workflow-viewer="primary"]');
+  const secondary = page.locator('[data-workflow-viewer="secondary"]');
+  await expect(secondary.locator('[data-inline-html]')).toHaveAttribute(
+    'data-inline-html-status',
+    'ready',
+  );
+  const a = { thickness: 42, opening: 60, rearClearance: 40 };
+  const b = { thickness: 74, opening: 80, rearClearance: 25 };
+  await editViewer(primary, 'thickness', '42');
+  await editViewer(secondary, 'thickness', '74');
+  await editViewer(secondary, 'opening', '80');
+  await editViewer(secondary, 'rearClearance', '25');
+  const stableInputs = async () => {
+    await visibleConfiguration(primary, a, '18 mm clearance');
+    await visibleConfiguration(secondary, b, '6 mm clearance');
+  };
+  await stableInputs();
+  await capture(page, info, 'simultaneous-viewers-divergence');
+  await primary.getByRole('button', { name: 'Reload', exact: true }).click();
+
+  const expected = [
+    {
+      view: primary,
+      state: a,
+      inputs: { 'Desk thickness (mm)': 42, 'Clamp opening (mm)': 60, 'Rear clearance (mm)': 40 },
+      results: { 'Opening clearance (mm)': 18, Fit: 'Fits opening' },
+    },
+    {
+      view: secondary,
+      state: b,
+      inputs: { 'Desk thickness (mm)': 74, 'Clamp opening (mm)': 80, 'Rear clearance (mm)': 25 },
+      results: { 'Opening clearance (mm)': 6, Fit: 'Fits opening' },
+    },
+  ];
+  for (const [index, config] of expected.entries()) {
+    await config.view.getByRole('button', { name: 'Save scenario', exact: true }).click();
+    await expect
+      .poll(async () => (await savedState(page))?.scenarios[index]?.snapshot)
+      .toMatchObject({
+        state: config.state,
+        inputs: config.inputs,
+        results: config.results,
+      });
+    await stableInputs();
+    const editor = config.view.getByTestId('message-input').locator('.tiptap-editor');
+    const peer = expected[1 - index].view.getByTestId('message-input').locator('.tiptap-editor');
+    await editor.press('ControlOrMeta+a');
+    await page.keyboard.insertText(`Keep viewer ${index + 1}'s question.`);
+    const peerDraft = await peer.textContent();
+    await config.view.getByRole('button', { name: 'Use this configuration', exact: true }).click();
+    await expect(editor).toContainText(`Keep viewer ${index + 1}'s question.`);
+    await expect
+      .poll(() => draftConfiguration(config.view))
+      .toEqual({ inputs: config.inputs, results: config.results });
+    await expect(peer).toHaveText(peerDraft ?? '');
+    await stableInputs();
+    const exportsBefore = (await inspect(page)).requests.filter(
+      (request) =>
+        request.method === 'write' && request.path.startsWith('.intent/artifacts/visuals/'),
+    ).length;
+    await config.view.getByRole('button', { name: 'Export JSON', exact: true }).click();
+    await expect
+      .poll(
+        async () =>
+          (await inspect(page)).requests.filter(
+            (request) =>
+              request.method === 'write' && request.path.startsWith('.intent/artifacts/visuals/'),
+          ).length,
+      )
+      .toBe(exportsBefore + 1);
+    const exported = (await inspect(page)).files.find((file) =>
+      file.scope[1].startsWith('.intent/artifacts/visuals/'),
+    )!;
+    const data = JSON.parse(exported.content);
+    expect(data.record.current).toMatchObject({
+      state: config.state,
+      inputs: config.inputs,
+      results: config.results,
+    });
+    expect(data.source).toBe(`${workflowClampDemo}\n`);
+    await info.attach(`viewer-${index + 1}-export`, {
+      body: exported.content,
+      contentType: 'application/json',
+    });
+    await stableInputs();
+    await capture(page, info, `simultaneous-viewer-${index + 1}-handoff`);
+  }
+  const files = (await inspect(page)).files;
+  expect(files.filter((file) => file.scope[1].endsWith('/state.json'))).toHaveLength(1);
+  expect(
+    files.filter((file) => file.scope[1].startsWith('.intent/artifacts/visuals/')),
+  ).toHaveLength(1);
+  const messages = JSON.parse((await page.getByTestId('stored-messages').textContent()) ?? '[]');
+  expect(messages).toHaveLength(1);
+  expect(messages[0].role).toBe('assistant');
+});
 
 test('restores edited inputs and named alternatives after reopening, then exports the selected configuration', async ({
   page,
