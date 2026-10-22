@@ -47,9 +47,12 @@
     headerAction?: Snippet;
     footer?: Snippet;
     optionDescription?: Snippet<[ComboboxOption]>;
+    optionIcon?: Snippet<[ComboboxOption]>;
     optionActions?: Snippet<[ComboboxOption]>;
     groupDescription?: Snippet<[ComboboxGroup]>;
     groupAction?: Snippet<[ComboboxGroup]>;
+    groupHeader?: Snippet<[ComboboxGroup]>;
+    viewportClass?: string;
     onsearch?: (
       query: string,
     ) => ComboboxOption[] | ComboboxGroup[] | Promise<ComboboxOption[] | ComboboxGroup[]>;
@@ -59,6 +62,7 @@
     /** Accepted user activation, including reselecting the current single value. */
     oncommit?: (value: string | string[], option: ComboboxOption) => void;
     onopenchange?: (open: boolean) => void;
+    oninteractoutside?: (event: PointerEvent) => void;
   }
 
   type StaticContentChildProps = { props: Record<string, unknown> };
@@ -98,15 +102,19 @@
     headerAction,
     footer,
     optionDescription,
+    optionIcon,
     optionActions,
     groupDescription,
     groupAction,
+    groupHeader,
+    viewportClass,
     onsearch,
     onquerychange,
     onsearcherror,
     onchange,
     oncommit,
     onopenchange,
+    oninteractoutside,
   }: Props = $props();
 
   const surface = clampSurface(useSurface() + 2);
@@ -174,14 +182,16 @@
         ...group,
         options: group.options.filter((option) => optionMatchesQuery(option)),
       }))
-      .filter((group) => group.options.length > 0);
+      .filter((group) => group.keepEmpty || group.options.length > 0);
   });
   const hasOptions = $derived(filteredGroups.some((group) => group.options.length > 0));
   const ownedGroupIds = $derived(
     loading
       ? undefined
       : filteredGroups
-          .map((group, index) => (group.collapsed && !query.trim() ? '' : `${uid}-group-${index}`))
+          .map((group, index) =>
+            group.collapsed && (!query.trim() || groupHeader) ? '' : `${uid}-group-${index}`,
+          )
           .filter(Boolean)
           .join(' ') || undefined,
   );
@@ -536,22 +546,26 @@
       <div class="type-body px-3 py-2 text-muted-foreground" role="status">{emptyText}</div>
     {/if}
     <ComboboxPrimitive.Viewport
-      class="{OPTION_LIST_CONTAINER_CLASS} max-h-72 overscroll-contain overflow-y-auto"
+      class={cn(
+        OPTION_LIST_CONTAINER_CLASS,
+        'max-h-72 overscroll-contain overflow-y-auto',
+        viewportClass,
+      )}
     >
       {#snippet child({ props: viewportProps })}
         <!-- svelte-ignore a11y_no_noninteractive_tabindex (named scroll region needs keyboard scrolling when controls are outside the listbox) -->
         <div
           {...viewportProps}
           bind:this={viewportRef}
-          id={groupAction ? undefined : listboxId}
-          role={groupAction ? 'region' : 'listbox'}
-          aria-multiselectable={!groupAction && multiple ? true : undefined}
+          id={groupAction || groupHeader ? undefined : listboxId}
+          role={groupAction || groupHeader ? 'region' : 'listbox'}
+          aria-multiselectable={!groupAction && !groupHeader && multiple ? true : undefined}
           aria-labelledby={accessibleLabelId}
           aria-busy={busy}
           tabindex="0"
         >
           <ListHighlight />
-          {#if groupAction}
+          {#if groupAction || groupHeader}
             <!-- Own only option groups, not the interleaved interactive headings. -->
             <div
               id={listboxId}
@@ -571,16 +585,23 @@
               <ComboboxPrimitive.Group id={`${uid}-group-${groupIndex}`}>
                 {#snippet child({ props: groupProps })}
                   {#if group.label}
-                    <div class="type-caption px-2 py-1.5 font-medium text-muted-foreground">
-                      <ComboboxPrimitive.GroupHeading class="inline">
-                        <span>{group.label}</span>
-                        {#if groupDescription}{@render groupDescription(group)}{/if}
+                    {#if groupHeader}
+                      <ComboboxPrimitive.GroupHeading class="sr-only">
+                        {group.label}
                       </ComboboxPrimitive.GroupHeading>
-                      {#if groupAction}{@render groupAction(group)}{/if}
-                    </div>
+                      {@render groupHeader(group)}
+                    {:else}
+                      <div class="type-caption px-2 py-1.5 font-medium text-muted-foreground">
+                        <ComboboxPrimitive.GroupHeading class="inline">
+                          <span>{group.label}</span>
+                          {#if groupDescription}{@render groupDescription(group)}{/if}
+                        </ComboboxPrimitive.GroupHeading>
+                        {#if groupAction}{@render groupAction(group)}{/if}
+                      </div>
+                    {/if}
                   {/if}
                   <div {...groupProps}>
-                    {#each group.collapsed && !query.trim() ? [] : group.options as option (option.value)}
+                    {#each group.collapsed && (!query.trim() || groupHeader) ? [] : group.options as option (option.value)}
                       {#snippet optionChild({ props, selected }: OptionChildProps)}
                         <div
                           {...props}
@@ -590,6 +611,11 @@
                           aria-disabled={busy || option.disabled || undefined}
                           data-slot="combobox-option-motion"
                         >
+                          {#if optionIcon}
+                            <span class="first-line-icon shrink-0"
+                              >{@render optionIcon(option)}</span
+                            >
+                          {/if}
                           <span class="min-w-0 flex-1 truncate">
                             {option === customOption
                               ? m.ui_combobox_useCustom_label({ value: option.label })
@@ -661,6 +687,7 @@
   {#if staticPosition}
     <ComboboxPrimitive.ContentStatic
       preventScroll={false}
+      onInteractOutside={oninteractoutside}
       data-static-position
       data-surface-level={surface}
       class={cn(menuOverlay(), 'w-full max-h-72 rounded-(--radius-medium)', contentClass)}
@@ -671,6 +698,7 @@
     <ComboboxPrimitive.Portal disabled={!portal}>
       <ComboboxPrimitive.Content
         {side}
+        onInteractOutside={oninteractoutside}
         sideOffset={4}
         collisionPadding={OVERLAY_VIEWPORT_GUTTER}
         data-surface-level={surface}

@@ -475,7 +475,7 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
     expect(onchange.mock.calls[1][0].detail).toEqual({ branch: 'feature/task-29' });
   });
 
-  it('local repo: turning "work directly" off closes the menu and returns focus to the trigger', async () => {
+  it('local repo: enabling isolation keeps the menu open and restores branch selection', async () => {
     mockGetBranches.mockResolvedValue({
       branches: ['main'],
       remoteBranches: [],
@@ -483,7 +483,7 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
       currentBranch: 'main',
     });
     const onSkipIsolationChange = vi.fn();
-    const { container } = render(BranchSelector, {
+    const { container, rerender } = render(BranchSelector, {
       props: {
         repoPath: '/tmp/repo',
         repoType: 'local',
@@ -494,22 +494,19 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
     });
 
     await waitFor(() => expect(mockGetBranches).toHaveBeenCalledWith('/tmp/repo', true));
-    await openDropdown(container);
     const trigger = container.querySelector('button')!;
-    const toggle = await screen.findByRole('checkbox', {
-      name: m.workspace_branchSelector_workDirectlyOnBranch_label({ branch: 'main' }),
+    await fireEvent.click(trigger);
+    const toggle = await screen.findByRole('switch', {
+      name: m.workspace_branchSelector_isolation_label({ isolationLabel: 'worktree' }),
     });
     toggle.focus();
     expect(document.activeElement).toBe(toggle);
 
-    // Disabling the toggle closes the content directly (no selectBranch) —
-    // the unmounted toggle must not strand focus on <body> (#5197).
     await fireEvent.click(toggle);
     await waitFor(() => expect(onSkipIsolationChange).toHaveBeenCalledWith(false));
-    await waitFor(() =>
-      expect(screen.queryByPlaceholderText('Search or enter branch name...')).toBeNull(),
-    );
-    await waitFor(() => expect(document.activeElement).toBe(trigger));
+    await rerender({ skipIsolation: false });
+    await screen.findByRole('combobox');
+    expect(document.activeElement).toBe(toggle);
   });
 
   it.each([
@@ -1303,12 +1300,12 @@ describe('BranchSelector (uncommitted-changes indicator gated on skipIsolation, 
     showUncommittedIndicator: true,
   };
 
-  /** The warning status dot (trigger + dropdown notice share the same marker). */
+  /** The trigger warning status dot. */
   function uncommittedDot(root: ParentNode) {
     return root.querySelector('.bg-warning');
   }
 
-  it('shows the indicator and dropdown notice with uncommitted changes on the current branch', async () => {
+  it('shows the trigger indicator with uncommitted changes on the current branch', async () => {
     mockBranchStatus.mockResolvedValue({ behind: 0, hasUncommittedChanges: true });
     const { container } = render(BranchSelector, {
       props: { ...localProps, skipIsolation: false },
@@ -1318,14 +1315,9 @@ describe('BranchSelector (uncommitted-changes indicator gated on skipIsolation, 
     // Trigger dot appears once the status settles (isolated checkout planned →
     // uncommitted working-directory changes really are left behind).
     await waitFor(() => expect(uncommittedDot(container)).toBeTruthy());
-
-    await openDropdown(container);
-    await waitFor(() =>
-      expect(screen.getByText("Uncommitted changes won't be included.")).toBeTruthy(),
-    );
   });
 
-  it('hides the indicator and dropdown notice when skipIsolation is on', async () => {
+  it('hides the trigger indicator when skipIsolation is on', async () => {
     // Identical daemon-reported status — only skipIsolation differs. Working
     // directly on the current branch DOES include uncommitted changes, so the
     // warning would be misleading.
@@ -1338,22 +1330,18 @@ describe('BranchSelector (uncommitted-changes indicator gated on skipIsolation, 
     // Let the settled status render before asserting absence.
     await waitFor(() => expect(screen.getByText('main')).toBeTruthy());
     expect(uncommittedDot(container)).toBeNull();
-
-    await openDropdown(container);
-    expect(screen.queryByText("Uncommitted changes won't be included.")).toBeNull();
   });
 
-  it('keeps the behind-branch notice visible when skipIsolation hides the uncommitted one', async () => {
+  it('keeps direct mode on the current branch when the remote has newer commits', async () => {
     mockBranchStatus.mockResolvedValue({ behind: 2, hasUncommittedChanges: true });
     const { container } = render(BranchSelector, {
       props: { ...localProps, skipIsolation: true },
     });
 
     await waitFor(() => expect(mockBranchStatus).toHaveBeenCalledWith('/tmp/repo', 'main'));
-    await openDropdown(container);
-    await waitFor(() =>
-      expect(screen.getByText("We'll pull the latest changes into your workspace.")).toBeTruthy(),
-    );
-    expect(screen.queryByText("Uncommitted changes won't be included.")).toBeNull();
+    await fireEvent.click(container.querySelector('button')!);
+    const menu = await screen.findByRole('dialog');
+    expect(menu.textContent).toContain('main');
+    expect(screen.queryByRole('combobox')).toBeNull();
   });
 });
