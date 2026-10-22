@@ -14,6 +14,7 @@ let reconnectHandlers: Array<() => void> = [];
 
 vi.mock('./backend-transport', () => ({
   backendRequest: vi.fn(),
+  observeBackendNodeCapabilities: vi.fn(async () => null),
   onBackendNotification: vi.fn((handler: (n: { method: string; params?: unknown }) => void) => {
     notifyHandlers.push(handler);
     return () => {
@@ -33,12 +34,13 @@ vi.mock('./live-support', async (importActual) => {
   return { ...actual, resolveNoteWorkspaceId: vi.fn(() => Promise.resolve('ws-1')) };
 });
 
-import { backendRequest } from './backend-transport';
+import { backendRequest, observeBackendNodeCapabilities } from './backend-transport';
 import { resolveNoteWorkspaceId } from './live-support';
 import { LiveNotesClient, normalizeNote } from './live-notes-client';
 
 const mockedRequest = vi.mocked(backendRequest);
 const mockedResolve = vi.mocked(resolveNoteWorkspaceId);
+const mockedCapabilities = vi.mocked(observeBackendNodeCapabilities);
 
 describe('LiveNotesClient mutations (fake transport)', () => {
   afterEach(() => {
@@ -928,5 +930,59 @@ describe('LiveNotesClient.subscribe typed per-workspace note channel (PROTOCOL ย
       { subscriptionId: 'chan-1', workspaceId: 'ws-1' },
       { subscriptionId: 'chan-2', workspaceId: 'ws-2' },
     ]);
+  });
+});
+
+describe('LiveNotesClient.get truncated reads (ยง5.2 "Truncated note reads")', () => {
+  const rawNote = { id: 'n1', workspaceId: 'ws-1', title: 'Big', content: 'prefix\n', rev: 7 };
+
+  afterEach(() => {
+    vi.clearAllMocks();
+    mockedCapabilities.mockResolvedValue(null);
+  });
+
+  it('sends maxContentBytes and normalizes the truncation markers', async () => {
+    mockedRequest.mockResolvedValueOnce({
+      note: { ...rawNote, contentTruncated: true, contentBytes: 4_700_000 },
+    });
+    const note = await new LiveNotesClient().get('n1', 'ws-1', { maxContentBytes: 500_000 });
+
+    expect(mockedRequest).toHaveBeenCalledWith('note.get', {
+      workspaceId: 'ws-1',
+      noteId: 'n1',
+      maxContentBytes: 500_000,
+    });
+    expect(note?.contentTruncated).toBe(true);
+    expect(note?.contentBytes).toBe(4_700_000);
+    expect(note?.content).toBe('prefix\n');
+  });
+
+  it('keeps the unbounded request without the option', async () => {
+    mockedRequest.mockResolvedValueOnce({ note: rawNote });
+    await new LiveNotesClient().get('n1', 'ws-1');
+    expect(mockedRequest).toHaveBeenCalledWith('note.get', { workspaceId: 'ws-1', noteId: 'n1' });
+  });
+
+  it('reports support only for the exact noteTruncatedRead: 1 capability', async () => {
+    const client = new LiveNotesClient();
+    mockedCapabilities.mockResolvedValue({ server: { capabilities: { noteTruncatedRead: 1 } } });
+    await expect(client.supportsTruncatedRead()).resolves.toBe(true);
+    mockedCapabilities.mockResolvedValue({ server: { capabilities: {} } });
+    await expect(client.supportsTruncatedRead()).resolves.toBe(false);
+    mockedCapabilities.mockResolvedValue({ server: { capabilities: { noteTruncatedRead: 2 } } });
+    await expect(client.supportsTruncatedRead()).resolves.toBe(false);
+    mockedCapabilities.mockRejectedValue(new Error('no transport'));
+    await expect(client.supportsTruncatedRead()).resolves.toBe(false);
+  });
+
+  it('normalizes markers only for truncated rows', () => {
+    const full = normalizeNote({ ...rawNote, contentBytes: 9 }, 'ws-1');
+    expect(full.contentTruncated).toBeUndefined();
+    expect(full.contentBytes).toBeUndefined();
+    const truncated = normalizeNote(
+      { ...rawNote, contentTruncated: true, contentBytes: 600_000 },
+      'ws-1',
+    );
+    expect(truncated).toMatchObject({ contentTruncated: true, contentBytes: 600_000 });
   });
 });

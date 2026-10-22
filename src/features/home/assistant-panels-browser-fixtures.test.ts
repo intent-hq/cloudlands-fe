@@ -12,6 +12,11 @@ vi.mock('$features/layout/tab-types/register-all', () => ({ registerAllTabTypes:
 
 const stops: Array<() => void> = [];
 
+/** Backend requests only — view reads also observe the daemon's capabilities (§5.2). */
+function backendRequests(invoke: { mock: { calls: unknown[][] } }): unknown[][] {
+  return invoke.mock.calls.filter(([channel]) => channel === IPC_CHANNELS.BACKEND.REQUEST);
+}
+
 afterEach(() => {
   while (stops.length) stops.pop()?.();
   vi.restoreAllMocks();
@@ -30,10 +35,12 @@ it.each([false, true])(
       const read = store.dispatch(readNoteRequested(CHIEF_WORKSPACE_ID, 'plan'));
 
       await vi.waitFor(() =>
-        expect(invoke).toHaveBeenCalledExactlyOnceWith(IPC_CHANNELS.BACKEND.REQUEST, {
-          method: 'note.get',
-          params: { workspaceId: CHIEF_WORKSPACE_ID, noteId: 'plan' },
-        }),
+        expect(backendRequests(invoke)).toEqual([
+          [
+            IPC_CHANNELS.BACKEND.REQUEST,
+            { method: 'note.get', params: { workspaceId: CHIEF_WORKSPACE_ID, noteId: 'plan' } },
+          ],
+        ]),
       );
       await expect(read).resolves.toMatchObject({ content, workspaceId: CHIEF_WORKSPACE_ID });
       expect(selectNoteById.select(store.state, CHIEF_WORKSPACE_ID, 'plan')?.content).toBe(content);
@@ -47,7 +54,7 @@ it.each([false, true])(
       await expect(
         store.dispatch(readNoteRequested(CHIEF_WORKSPACE_ID, 'missing')),
       ).resolves.toBeNull();
-      expect(invoke).toHaveBeenCalledTimes(3);
+      expect(backendRequests(invoke)).toHaveLength(3);
       stops.pop()?.();
       expect(window.electronAPI).toBe(previousBridge);
     }
@@ -72,7 +79,7 @@ it('cancels pending reads and removes the reader before restoring the bridge', a
   });
   const request = readNoteRequested(CHIEF_WORKSPACE_ID, 'plan');
   store.dispatch(request);
-  await vi.waitFor(() => expect(invoke).toHaveBeenCalledOnce());
+  await vi.waitFor(() => expect(backendRequests(invoke)).toHaveLength(1));
 
   stops.pop()?.();
   expect(window.electronAPI).toBe(previousBridge);
@@ -85,5 +92,5 @@ it('cancels pending reads and removes the reader before restoring the bridge', a
   store.dispatch(readNoteRequested(CHIEF_WORKSPACE_ID, 'second'));
   await new Promise((resolve) => setTimeout(resolve, 0));
   expect(previousInvoke).not.toHaveBeenCalled();
-  expect(invoke).toHaveBeenCalledOnce();
+  expect(backendRequests(invoke)).toHaveLength(1);
 });

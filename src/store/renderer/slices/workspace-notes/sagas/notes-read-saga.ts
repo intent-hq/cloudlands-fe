@@ -16,10 +16,11 @@ import {
 } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
+import type { NoteGetOptions } from '$lib/client/app-client';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
-import { SPEC_NOTE_ID } from '$shared/constants/notes';
+import { NOTE_VIEW_MAX_CONTENT_BYTES, SPEC_NOTE_ID } from '$shared/constants/notes';
 import { isNoteContentStale } from '$shared/utils/note-content';
 import {
   commentLoadFinished,
@@ -151,6 +152,22 @@ function releaseReadSlot(coordinator: ReadCoordinator, key: string, generation: 
   }
 }
 
+/** View options for `note.get`: the truncated-read limit when the daemon supports it (§5.2). */
+async function viewReadOptions(): Promise<NoteGetOptions | undefined> {
+  return (await appClient.notes.supportsTruncatedRead())
+    ? { maxContentBytes: NOTE_VIEW_MAX_CONTENT_BYTES }
+    : undefined;
+}
+
+/**
+ * A note view read. The capability check and the read are separate effects so a
+ * read cancelled by cleanup while the check is pending never reaches the wire.
+ */
+function* readViewNote(noteId: string, workspaceId: string): SagaGenerator<Note | null> {
+  const options = yield* call(viewReadOptions);
+  return yield* call([appClient.notes, appClient.notes.get], noteId, workspaceId, options);
+}
+
 function* fetchNoteSlot(
   coordinator: ReadCoordinator,
   key: string,
@@ -173,7 +190,7 @@ function* fetchNoteSlot(
     const contentGeneration =
       (yield* selectWorkspaceNotesState.effect(workspaceId)).staleContentByNoteId[noteId] ?? 0;
     const { found, cleanup } = yield* race({
-      found: call([appClient.notes, appClient.notes.get], noteId, workspaceId),
+      found: call(readViewNote, noteId, workspaceId),
       cleanup: take((action: ObservedAction) => isNoteReadCleanup(action, workspaceId, noteId)),
     });
     if (cleanup || !found) return { note: null };
@@ -258,7 +275,9 @@ function* hydrateWorkspaceNotes(workspaceId: string, force = false) {
     const fetchSlimListAndSpec = (id: string) =>
       Promise.all([
         appClient.notes.list(id, { projection: 'slim' }),
-        appClient.notes.get(SPEC_NOTE_ID, id).catch(() => null),
+        viewReadOptions()
+          .then((options) => appClient.notes.get(SPEC_NOTE_ID, id, options))
+          .catch(() => null),
       ]);
     const [response, specNote]: Awaited<ReturnType<typeof fetchSlimListAndSpec>> = yield* call(
       fetchSlimListAndSpec,

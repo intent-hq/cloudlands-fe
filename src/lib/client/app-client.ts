@@ -1657,6 +1657,17 @@ export interface LineAttributionClient {
   computeNow(workspaceId: string, noteId: string): Promise<{ ok: boolean }>;
 }
 
+/** Options for `NotesClient.get` (`note.get`, §5.2). */
+export interface NoteGetOptions {
+  /**
+   * Opt in to a truncated read ("Truncated note reads", §5.2): a note larger
+   * than this many UTF-8 bytes comes back as a line-aligned prefix flagged
+   * `contentTruncated`. Callers must send it only when
+   * `NotesClient.supportsTruncatedRead()` is true (`noteTruncatedRead: 1`).
+   */
+  maxContentBytes?: number;
+}
+
 export interface NotesClient {
   /**
    * Notes of one workspace (`note.list`, §5.2). `options.projection: "slim"`
@@ -1674,7 +1685,9 @@ export interface NotesClient {
    * note), so callers that know the workspace MUST pass it rather than relying
    * on the live client's last-writer-wins resolver cache.
    */
-  get(noteId: string, workspaceId?: string): Promise<Note | null>;
+  get(noteId: string, workspaceId?: string, options?: NoteGetOptions): Promise<Note | null>;
+  /** Whether the daemon advertises truncated note reads (`noteTruncatedRead: 1`, §5.2). */
+  supportsTruncatedRead(): Promise<boolean>;
   subscribe(handler: SubscriptionHandler<Note[]>): Unsubscribe;
   /** Create a note (`note.create`); the live client attaches an idempotencyKey (§5.6). */
   create(request: CreateNoteRequest): Promise<MutationResult>;

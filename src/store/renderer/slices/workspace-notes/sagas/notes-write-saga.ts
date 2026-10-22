@@ -341,6 +341,13 @@ function* saveContent(command: ContentCommand): SagaGenerator<AppliedNoteContent
   // earlier save's echo may have rebased it while queued.
   const rev = draftBaseRev.get(key) ?? note?.rev;
   try {
+    // A truncated view read (§5.2 "Truncated note reads") holds only a prefix:
+    // replacing the whole note with it would drop everything after the cut, so
+    // the app never sends a whole-content write for a truncated note.
+    if (note?.contentTruncated) {
+      logger.error('Refusing a whole-content write built from a truncated note read', { noteId });
+      return undefined;
+    }
     const result: MutationResult = yield* call(
       [appClient.notes, appClient.notes.setContent],
       noteId,

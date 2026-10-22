@@ -19,13 +19,14 @@ import type {
   LineAttributionData,
   MutationResult,
   NoteAddOptions,
+  NoteGetOptions,
   NoteMetadataPatch,
   NoteRestoreResult,
   NotesClient,
   SubscriptionHandler,
   Unsubscribe,
 } from '../app-client';
-import { backendRequest } from './backend-transport';
+import { backendRequest, observeBackendNodeCapabilities } from './backend-transport';
 import { createDeltaSubscription } from './delta-subscription';
 import {
   newIdempotencyKey,
@@ -111,6 +112,13 @@ export function normalizeNote(raw: Record<string, unknown>, workspaceId: string)
     // spread) so full rows never carry stale slim markers.
     contentPreview: typeof raw.contentPreview === 'string' ? raw.contentPreview : undefined,
     contentLength: typeof raw.contentLength === 'number' ? raw.contentLength : undefined,
+    // Truncated-read markers (§5.2 "Truncated note reads"): carried only when
+    // the daemon flagged a truncated prefix, undefined otherwise.
+    contentTruncated: raw.contentTruncated === true ? true : undefined,
+    contentBytes:
+      raw.contentTruncated === true && typeof raw.contentBytes === 'number'
+        ? raw.contentBytes
+        : undefined,
     createdAt: String(raw.createdAt ?? raw.created_at ?? now),
     updatedAt: String(raw.updatedAt ?? raw.updated_at ?? now),
   } as Note;
@@ -173,7 +181,27 @@ export class LiveNotesClient implements NotesClient {
     });
   }
 
-  async get(noteId: string, explicitWorkspaceId?: string): Promise<Note | null> {
+  /**
+   * Whether the connected daemon advertises the truncated note read contract
+   * (`server.capabilities.noteTruncatedRead === 1`, §5.2 "Truncated note reads").
+   * Read from the acknowledged hello without another RPC; any failure is "no".
+   */
+  async supportsTruncatedRead(): Promise<boolean> {
+    try {
+      const hello = (await observeBackendNodeCapabilities()) as {
+        server?: { capabilities?: { noteTruncatedRead?: unknown } };
+      } | null;
+      return hello?.server?.capabilities?.noteTruncatedRead === 1;
+    } catch {
+      return false;
+    }
+  }
+
+  async get(
+    noteId: string,
+    explicitWorkspaceId?: string,
+    options?: NoteGetOptions,
+  ): Promise<Note | null> {
     // The caller's workspaceId wins over the resolver cache — note ids are not
     // globally unique (every workspace has a `spec` note) and the cache is
     // last-writer-wins across workspaces (monorepo#621).
@@ -183,6 +211,9 @@ export class LiveNotesClient implements NotesClient {
       const result = await backendRequest<{ note?: unknown } | unknown>('note.get', {
         workspaceId,
         noteId,
+        ...(options?.maxContentBytes !== undefined
+          ? { maxContentBytes: options.maxContentBytes }
+          : {}),
       });
       const raw =
         result && typeof result === 'object' && 'note' in result

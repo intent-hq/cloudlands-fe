@@ -336,6 +336,23 @@ describe('notesWriteSaga', () => {
     await run.task.toPromise();
   });
 
+  it('never sends a whole-content write for a truncated note read (§5.2)', async () => {
+    const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+      success: true,
+    });
+    const run = harness(
+      note({ content: 'prefix\n', contentTruncated: true, contentBytes: 600_000 }),
+    );
+
+    run.channel.put(updateNoteContent(WS, NOTE, 'prefix edited\n', true));
+    await settle();
+
+    expect(setContent).not.toHaveBeenCalled();
+    expect(run.getState().byWorkspaceId[WS]?.pendingContentByNoteId[NOTE]).toBeFalsy();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('refetches the canonical note after a non-conflict content failure', async () => {
     const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
       success: false,
