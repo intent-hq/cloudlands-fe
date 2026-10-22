@@ -3,8 +3,8 @@
    * Named profiles of one installed provider (§5.54), shown inside its
    * Settings → Providers row: honest per-profile status, rename/edit, and
    * removal that is blocked while saved selections still use the profile.
-   * When the daemon supports backup failover, profiles can be reordered (drag
-   * or ArrowUp/ArrowDown on the handle) and backups carry a badge.
+   * Profiles can be reordered (drag or ArrowUp/ArrowDown on the handle) and
+   * backups carry a badge; a profile without `backup` is not a backup.
    */
   import {
     faArrowsRotate,
@@ -40,7 +40,6 @@
   } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import {
     selectProviderProfileActivationMap,
-    selectProviderProfilesBackupSupported,
     selectProviderProfileMutations,
     selectProviderProfilesForBase,
     selectProviderProfilesLoadStatus,
@@ -70,7 +69,6 @@
   const defaultProviderId$ = selectActiveProviderId();
   const appOwned$ = selectIsDaemonAppOwned();
   const fastModeProviders$ = selectFastModeSupportedProviders();
-  const backupSupported$ = selectProviderProfilesBackupSupported();
   // Each profile has its own Fast mode / service tier, offered exactly when
   // the base provider's is (this whole section is already Labs-gated).
   const offersFastMode = $derived($fastModeProviders$.includes(providerId));
@@ -80,8 +78,7 @@
   let deleteRequests = $state<Record<string, { profileName: string }>>({});
   let reorderRequests = $state<string[]>([]);
 
-  // Reorder and backup are offered only when the daemon reports `backup`.
-  const canReorder = $derived($backupSupported$ && $profiles$.length > 1);
+  const canReorder = $derived($profiles$.length > 1);
   // One reorder per provider at a time: further moves wait until the daemon answers.
   const reorderPending = $derived(
     Object.values($mutations$).some(
@@ -367,7 +364,7 @@
                   {m.settings_providers_default()}
                 </span>
               {/if}
-              {#if $backupSupported$ && profile.backup}
+              {#if profile.backup === true}
                 <span
                   class="shrink-0 rounded-full bg-muted px-2 py-0.5 type-caption text-subtle"
                   data-testid="provider-profile-backup-badge"
@@ -494,10 +491,4 @@
   </Button>
 </section>
 
-<ProviderProfileDialog
-  bind:open={dialogOpen}
-  {providerId}
-  {providerName}
-  profile={editing}
-  backupSupported={$backupSupported$}
-/>
+<ProviderProfileDialog bind:open={dialogOpen} {providerId} {providerName} profile={editing} />

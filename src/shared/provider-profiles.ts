@@ -44,11 +44,7 @@ const ProviderProfileSchema = z
     createdAt: z.string(),
     updatedAt: z.string(),
     activation: ProfileReadActivationSchema.optional(),
-    /**
-     * Quota failover may switch to this profile. Absent on daemons without
-     * backup failover; its presence is how clients detect support for the
-     * backup and reorder controls.
-     */
+    /** Quota failover may switch to this profile. Absent reads as `false`. */
     backup: z.boolean().optional(),
   })
   .passthrough();
@@ -94,7 +90,6 @@ export interface ProviderProfileCreateParams {
   baseProviderId: string;
   name: string;
   env?: EnvEntryWrite[];
-  /** Send only to daemons that report `backup` on profiles. */
   backup?: boolean;
 }
 
@@ -102,7 +97,7 @@ export interface ProviderProfileUpdateParams {
   profileId: string;
   name?: string;
   env?: EnvEntryWrite[];
-  /** Send only to daemons that report `backup` on profiles; omitted keeps the saved value. */
+  /** Omitted keeps the saved value. */
   backup?: boolean;
 }
 
@@ -110,14 +105,6 @@ export interface ProviderProfileUpdateParams {
 export interface ProviderProfileReorderParams {
   baseProviderId: string;
   profileIds: string[];
-}
-
-/**
- * Whether the daemon supports backup failover (and so reorder): it reports
- * `backup` on every profile it returns. Unknown (false) until a profile is read.
- */
-export function profilesSupportBackup(profiles: readonly { backup?: unknown }[]): boolean {
-  return profiles.length > 0 && profiles.every((profile) => typeof profile.backup === 'boolean');
 }
 
 /**

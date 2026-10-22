@@ -2194,7 +2194,6 @@ export interface ProvidersClient {
   createProfile(params: ProviderProfileCreateParams): Promise<ProviderProfileCreateResult>;
   updateProfile(params: ProviderProfileUpdateParams): Promise<ProviderProfileUpdateResult>;
   deleteProfile(profileId: string): Promise<ProviderProfileDeleteResult>;
-  /** Call only when profile reads report `backup` (backup failover support). */
   reorderProfiles(params: ProviderProfileReorderParams): Promise<ProviderProfileReorderResult>;
 }
 

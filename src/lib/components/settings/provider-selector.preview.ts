@@ -129,15 +129,14 @@ export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
         };
       },
     },
-    // A daemon with backup failover: profiles can be reordered (drag or arrow
-    // keys on the handle) and backups carry a badge.
+    // Backup profiles: reorder with drag or arrow keys on the handle; backups carry a badge.
     'profiles-backup': {
       props: {},
       setup: () => {
         const restoreProviders = setupProviderSelector();
         const restoreProfiles = setupProviderProfilesPreview({
           appOwned: true,
-          backupSupported: true,
+          withBackups: true,
         });
         return () => {
           restoreProfiles();

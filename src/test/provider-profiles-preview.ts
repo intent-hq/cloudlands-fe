@@ -103,7 +103,7 @@ const previewProfiles: ProviderProfile[] = [
   },
 ];
 
-/** Extra rows for a daemon with backup failover: a second Claude Code account marked backup. */
+/** Extra row for the backups preview: a second Claude Code account marked backup. */
 const backupPreviewProfiles: ProviderProfile[] = [
   {
     id: 'pspare0000001',
@@ -126,19 +126,18 @@ const PREVIEW_AUTH: Record<string, boolean | undefined> = {
 /**
  * Run the production profiles saga against an isolated in-memory daemon:
  * masked reads, documented validation codes, and activation summaries.
- * `backupSupported` models a daemon with backup failover (`backup` on every
- * profile, `providers.profiles.reorder`).
+ * `withBackups` adds a second Claude Code account and marks backup profiles.
  */
 export function setupProviderProfilesPreview({
   appOwned = true,
   runningProcesses = 1,
   labsEnabled = true,
-  backupSupported = false,
+  withBackups = false,
 }: {
   appOwned?: boolean;
   runningProcesses?: number;
   labsEnabled?: boolean;
-  backupSupported?: boolean;
+  withBackups?: boolean;
 } = {}) {
   const restoreLab = setProviderProfilesLabForPreview(labsEnabled);
   const providers = appClient.providers;
@@ -151,12 +150,12 @@ export function setupProviderProfilesPreview({
   };
   const catalog = selectProviderCatalogEntries.select(appStore.state);
   const transport = selectDaemonTransport.select(appStore.state);
-  let profiles = backupSupported
+  let profiles: ProviderProfile[] = withBackups
     ? [...previewProfiles, ...backupPreviewProfiles].map((profile) => ({
         ...profile,
         backup: BACKUP_PROFILE_IDS.has(profile.id),
       }))
-    : previewProfiles.map((profile) => ({ ...profile }));
+    : previewProfiles.map((profile) => ({ ...profile, backup: false }));
   // Results older than the shown list are ignored, so continue from it.
   let revision = selectProviderProfilesRevision.select(appStore.state) + 1;
 
@@ -177,7 +176,7 @@ export function setupProviderProfilesPreview({
       settingsFingerprint: `fp-${id}`,
       createdAt: '2026-10-17T11:00:00Z',
       updatedAt: '2026-10-17T11:00:00Z',
-      ...(backupSupported ? { backup: backup === true } : {}),
+      backup: backup === true,
     };
     profiles = [...profiles, profile];
     return { profile, revision };
@@ -199,7 +198,7 @@ export function setupProviderProfilesPreview({
       settingsFingerprint: envChanged
         ? `${current.settingsFingerprint}+`
         : current.settingsFingerprint,
-      ...(backupSupported && backup !== undefined ? { backup } : {}),
+      ...(backup !== undefined ? { backup } : {}),
     };
     profiles = profiles.map((p) => (p.id === profileId ? profile : p));
     return {
@@ -213,9 +212,7 @@ export function setupProviderProfilesPreview({
     return { profileId, revision: ++revision };
   };
   providers.reorderProfiles = async ({ baseProviderId, profileIds }) => {
-    const next = backupSupported
-      ? permuteBaseProfiles(profiles, baseProviderId, profileIds)
-      : undefined;
+    const next = permuteBaseProfiles(profiles, baseProviderId, profileIds);
     if (!next)
       throw Object.assign(new Error('invalid'), {
         rpcCode: -32602,

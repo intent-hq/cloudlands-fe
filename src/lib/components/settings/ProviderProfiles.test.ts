@@ -563,21 +563,46 @@ describe('ProviderProfiles backup and order (§5.54)', () => {
     render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
   }
 
-  it('hides reorder and backup controls when the daemon does not report backup', async () => {
-    await renderProfiles([profileOf('pa', 'Alpha'), profileOf('pb', 'Beta')]);
-    expect(
-      screen.queryByRole('button', {
-        name: m.settings_providerProfiles_reorder_ariaLabel({ name: 'Alpha' }),
-      }),
-    ).toBeNull();
-    expect(screen.queryByText(m.settings_providerProfiles_backupBadge_label())).toBeNull();
+  it('offers the backup switch when creating the first profile', async () => {
+    await renderProfiles([]);
     await fireEvent.click(
       screen.getByRole('button', { name: m.settings_providerProfiles_add_label() }),
     );
     const dialog = await screen.findByRole('dialog');
+    await fireEvent.input(
+      within(dialog).getByLabelText(m.settings_providerProfiles_name_label(), {
+        selector: 'input[required]',
+      }),
+      { target: { value: 'Main' } },
+    );
+    await fireEvent.click(
+      within(dialog).getByRole('switch', { name: m.settings_providerProfiles_backup_label() }),
+    );
+    await fireEvent.click(
+      within(dialog).getByRole('button', { name: m.settings_providerProfiles_create_label() }),
+    );
+    expect(lastOf('providerProfiles/createRequested')?.payload).toMatchObject({
+      baseProviderId: 'codex',
+      name: 'Main',
+      backup: true,
+    });
+  });
+
+  it('treats a profile without backup as not a backup and still offers reorder', async () => {
+    await renderProfiles([profileOf('pa', 'Alpha'), profileOf('pb', 'Beta')]);
+    expect(screen.queryByText(m.settings_providerProfiles_backupBadge_label())).toBeNull();
+    await fireEvent.keyDown(grip('Alpha'), { key: 'ArrowDown' });
     expect(
-      within(dialog).queryByRole('switch', { name: m.settings_providerProfiles_backup_label() }),
-    ).toBeNull();
+      (lastOf('providerProfiles/reorderRequested') as { payload: [{ profileIds: string[] }] })
+        .payload[0].profileIds,
+    ).toEqual(['pb', 'pa']);
+    await openEditOf('Beta');
+    const dialog = await screen.findByRole('dialog');
+    expect(
+      within(dialog)
+        .getByRole('switch', { name: m.settings_providerProfiles_backup_label() })
+        .getAttribute('aria-checked'),
+    ).toBe('false');
   });
 
   it('shows a Backup badge only on backup profiles', async () => {
@@ -730,6 +755,15 @@ async function chooseMenuItem(label: string) {
   );
   const item = await screen.findByRole('menuitem', { name: label });
   await fireEvent.click(item);
+}
+
+async function openEditOf(name: string) {
+  await fireEvent.click(
+    screen.getByRole('button', { name: m.settings_providerProfiles_actions_ariaLabel({ name }) }),
+  );
+  await fireEvent.click(
+    await screen.findByRole('menuitem', { name: m.settings_providerProfiles_edit_label() }),
+  );
 }
 
 async function openEdit() {

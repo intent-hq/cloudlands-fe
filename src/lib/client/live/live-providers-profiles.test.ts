@@ -8,7 +8,6 @@ import { IPC_CHANNELS } from '$shared/ipc-registry';
 import {
   classifyProviderProfileError,
   permuteBaseProfiles,
-  profilesSupportBackup,
   type ProviderProfile,
 } from '$shared/provider-profiles';
 import { LiveProvidersClient } from './live-providers-client';
@@ -266,18 +265,11 @@ describe('LiveProvidersClient backup failover (§5.54)', () => {
   });
 });
 
-describe('profilesSupportBackup / permuteBaseProfiles', () => {
+describe('permuteBaseProfiles', () => {
   const p = (id: string, base: string, backup?: boolean) => ({
     id,
     baseProviderId: base,
     ...(backup === undefined ? {} : { backup }),
-  });
-
-  it('detects support only when every read profile carries backup', () => {
-    expect(profilesSupportBackup([])).toBe(false);
-    expect(profilesSupportBackup([p('a', 'codex')])).toBe(false);
-    expect(profilesSupportBackup([p('a', 'codex', false), p('b', 'codex')])).toBe(false);
-    expect(profilesSupportBackup([p('a', 'codex', false), p('b', 'codex', true)])).toBe(true);
   });
 
   it("permutes one base provider's slots and keeps other base providers in place", () => {

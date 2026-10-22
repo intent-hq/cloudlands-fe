@@ -3,11 +3,7 @@ import {
   selectIsHostMember,
 } from '../host-execution/host-execution-selectors';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
-import {
-  profilesSupportBackup,
-  providerRefBaseId,
-  type ProviderProfile,
-} from '$shared/provider-profiles';
+import { providerRefBaseId, type ProviderProfile } from '$shared/provider-profiles';
 import { selectProviderCatalogEntries } from '../provider-catalog/provider-catalog-selectors';
 import type {
   ProviderProfileMutation,
@@ -221,14 +217,6 @@ export const selectProviderProfilesForBase = store.createSelector(
     getItems(profilesState(state).items).filter(
       (profile) => profile.baseProviderId === baseProviderId,
     ),
-);
-
-/**
- * Whether the daemon supports backup failover: every profile it returned
- * carries `backup` (§5.54 compatibility). Gates the reorder and backup controls.
- */
-export const selectProviderProfilesBackupSupported = store.createSelector((state): boolean =>
-  profilesSupportBackup(getItems(profilesState(state).items)),
 );
 
 export const selectProviderProfile = store.createSelector(
