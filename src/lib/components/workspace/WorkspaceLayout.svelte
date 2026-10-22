@@ -88,8 +88,12 @@
   let rail: HTMLDivElement | undefined = $state();
   let previewTabId = $state<string>();
   let previewAnchor = $state<HTMLElement>();
-  const floatingTop = new Spring(0, 'moderate');
+  const floatingBounds = new Spring({ top: 0, height: 0 }, 'moderate');
+  let contentHeight = 0;
+  let snapNextSize = true;
   let availableWidth = $state(0);
+  let availableHeight = $state(0);
+  let contentMaxHeight = $state<number>();
   let expandedWidth = $state(0);
   let suppressFocusReveal = false;
   let closeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -117,18 +121,30 @@
     get tabId() {
       return previewTabId;
     },
+    get maxHeight() {
+      return contentMaxHeight ?? Math.max(0, availableHeight - 12);
+    },
     preview: reveal,
+    resize(height) {
+      contentHeight = height;
+      if (previewAnchor) alignToAnchor(previewAnchor, snapNextSize);
+      snapNextSize = false;
+    },
   });
 
-  function alignToAnchor(anchor: HTMLElement) {
+  function alignToAnchor(anchor: HTMLElement, instant = false) {
     if (!shell) return;
     const bounds = shell.getBoundingClientRect();
-    // Preserve a usable panel when a lower tab sits near the bottom of a short window.
-    const top = Math.max(
-      0,
-      Math.min(anchor.getBoundingClientRect().top - bounds.top, bounds.height - 240),
-    );
-    void floatingTop.set(top, { instant: !floatingOpen });
+    const scale = bounds.height / shell.clientHeight || 1;
+    const anchorTop = (anchor.getBoundingClientRect().top - bounds.top) / scale;
+    const availableBelow = Math.max(0, shell.clientHeight - anchorTop - 12);
+    const maxHeight = Math.min(Math.max(0, shell.clientHeight - 12), Math.max(availableBelow, 240));
+    contentMaxHeight = maxHeight;
+    const height = Math.min(contentHeight, maxHeight);
+    const top = Math.max(0, Math.min(anchorTop, shell.clientHeight - height - 12));
+    if (!instant && floatingBounds.target.top === top && floatingBounds.target.height === height)
+      return;
+    void floatingBounds.set({ top, height }, { instant: instant || !floatingOpen });
   }
 
   function reveal(tabId: string, anchor: HTMLElement, fromFocus = false) {
@@ -136,6 +152,7 @@
       return;
     cancelDismiss();
     suppressFocusReveal = false;
+    if (!floatingOpen) snapNextSize = tabId !== previewTabId;
     alignToAnchor(anchor);
     previewTabId = tabId;
     previewAnchor = anchor;
@@ -262,7 +279,11 @@
     aria-label={m.workspace_layout_ariaLabel()}
   >
     <!-- Upper Area: Sidebar + Content (shrinks when terminal is open) -->
-    <div class="upper-area flex-1 flex min-h-0" bind:clientWidth={availableWidth}>
+    <div
+      class="upper-area flex-1 flex min-h-0"
+      bind:clientWidth={availableWidth}
+      bind:clientHeight={availableHeight}
+    >
       {#if sidebarSide === 'right'}
         <!-- Main Content Area (Panel Layout) - rendered first when sidebar is on right -->
         <div class="main-content-area flex h-full min-w-0 z-10 bg-sidebar pl-2 sm:pl-3">
@@ -277,7 +298,9 @@
         class:sidebar-floating={floatingOpen && collapsed && active}
         class:sidebar-right={sidebarSide === 'right'}
         style:--floating-width={`${floatingWidth}px`}
-        style:--floating-top={`${floatingTop.current}px`}
+        style:--floating-top={`${floatingBounds.current.top}px`}
+        style:--floating-height={`${floatingBounds.current.height}px`}
+        style:--floating-max-height={`${contentMaxHeight ?? Math.max(0, availableHeight - 12)}px`}
         onpointerenter={cancelDismiss}
         onpointerleave={scheduleDismiss}
         data-workspace-sidebar-shell
@@ -367,8 +390,8 @@
   .sidebar-collapsed .sidebar-content {
     position: absolute;
     top: var(--floating-top);
-    bottom: 12px;
-    height: auto;
+    height: var(--floating-height);
+    max-height: var(--floating-max-height);
     left: 48px;
     width: var(--floating-width);
     pointer-events: none;

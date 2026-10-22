@@ -315,3 +315,38 @@ test('a wide pinned sidebar fits a narrow window and recovers its saved width', 
     contentType: 'image/png',
   });
 });
+
+test('content-sized hover panels keep long virtual lists reachable', async ({ mount }) => {
+  const component = await mount(SidebarTabsPreview, {
+    props: { collapsed: true, height: 360, items: 200, extraFiles: 200 },
+  });
+  const draft = component.getByRole('textbox', { name: 'Workspace draft' });
+  await draft.fill('Keep my draft while the preview resizes.');
+  await expect(component.locator('.workspace-sidebar-panel')).toHaveCSS('width', '0px');
+  const rail = component.locator('[data-workspace-sidebar-rail]');
+  const flyout = component.locator('[data-workspace-sidebar-flyout]');
+  await rail.getByRole('tab', { name: 'Files', exact: true }).hover();
+  const tree = flyout.getByRole('tree');
+  await expect(tree.locator('[data-file-path]').first()).toBeVisible();
+  await tree.focus();
+  await tree.press('End');
+  await expect(tree.locator('[data-file-path$="/file-99.ts"]')).toBeVisible();
+  expect(await tree.locator('[data-file-path]').count()).toBeLessThan(200);
+  await expect(
+    flyout.locator('[data-sidebar-section=files] [data-sidebar-section-header]'),
+  ).toBeVisible();
+  await rail.getByRole('tab', { name: 'Agents', exact: true }).hover();
+  const agents = flyout.locator('[data-sidebar-section=agents]');
+  const names = agents.locator('[data-agent-row-name]');
+  await expect(names.first()).toBeVisible();
+  const before = await names.allTextContents();
+  const scroll = agents.locator('.virtual-list-scroll').first();
+  await scroll.evaluate((node) => {
+    node.scrollTop = node.scrollHeight;
+  });
+  await expect.poll(() => scroll.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+  await expect.poll(() => names.allTextContents()).not.toEqual(before);
+  expect(await names.count()).toBeLessThan(200);
+  await expect(agents.locator('[data-sidebar-section-header]')).toBeVisible();
+  await expect(draft).toHaveValue('Keep my draft while the preview resizes.');
+});

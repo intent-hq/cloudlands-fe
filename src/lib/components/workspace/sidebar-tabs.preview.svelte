@@ -12,6 +12,7 @@
     collaborator?: boolean;
     filesError?: boolean;
     initialSection?: string;
+    extraFiles?: number;
   }
 
   export const preview = definePreview<Props>({
@@ -31,6 +32,9 @@
       'files-error': { props: { filesError: true } },
       'last-section': { props: { initialSection: 'shell' } },
       'tabs-narrow': { props: { width: 360, sidebarWidth: 280 } },
+      'long-files': { props: { collapsed: true, extraFiles: 200 } },
+      'short-collapsed': { props: { collapsed: true, height: 360, items: 200 } },
+      'empty-collapsed': { props: { collapsed: true, items: 0 } },
     },
   });
 </script>
@@ -85,6 +89,7 @@
     collaborator = false,
     filesError = false,
     initialSection = 'overview',
+    extraFiles = 0,
   }: Props = $props();
   const workspaceId = 'sidebar-tabs-preview';
   const timestamp = '2026-10-20T12:00:00Z';
@@ -243,6 +248,11 @@
           },
           { name: 'package.json', path: `${root}/package.json`, type: 'file' },
           { name: 'README.md', path: `${root}/README.md`, type: 'file' },
+          ...Array.from({ length: extraFiles }, (_, index) => ({
+            name: `file-${index}.ts`,
+            path: `${root}/file-${index}.ts`,
+            type: 'file',
+          })),
         ],
       } as FileNode),
     );

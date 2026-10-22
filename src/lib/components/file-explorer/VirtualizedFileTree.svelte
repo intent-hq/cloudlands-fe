@@ -1120,7 +1120,8 @@
   bind:this={treeContainer}
   class="relative h-full overflow-hidden outline-none transition-colors duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
   class:file-drop-root={isExternalFileDragOver && dropTargetPath === null}
-  style="contain: layout style;"
+  style="contain: layout style; height: var(--virtual-viewport-height, 100%); --virtual-content-height: {totalHeight}px;"
+  data-virtual-viewport
   tabindex="0"
   role="tree"
   aria-label={m.fileExplorer_tree_fileExplorer_ariaLabel()}

@@ -80,6 +80,7 @@
   import WorkspaceShellList from './WorkspaceShellList.svelte';
   import SidebarSectionTabs from './sidebar/SidebarSectionTabs.svelte';
   import { getSidebarFlyout } from './sidebar/sidebar-flyout-context';
+  import { scheduleLayoutRead, scheduleLayoutWrite } from '$lib/utils/layout-phases';
   import SidebarBrowserList from './SidebarBrowserList.svelte';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
   import {
@@ -137,6 +138,62 @@
   const collapsed$ = selectIsCollapsed();
   const flyout = getSidebarFlyout();
   const panelOnly = $derived(flyout?.collapsed ?? false);
+
+  $effect(() => {
+    if (!panelOnly || !sidebarElement || !flyout) return;
+    const section = sidebarElement.querySelector<HTMLElement>(
+      `[data-sidebar-section="${activeTabId}"]`,
+    );
+    if (!section) return;
+    const maxHeight = flyout.maxHeight;
+    const observed = new Set<HTMLElement>([section]);
+    let cancelRead: (() => void) | undefined;
+    let cancelWrite: (() => void) | undefined;
+    const measure = () => {
+      cancelRead?.();
+      cancelRead = scheduleLayoutRead(() => {
+        const body = section.querySelector<HTMLElement>('[data-sidebar-section-scroll]');
+        const header = section.querySelector<HTMLElement>('[data-sidebar-section-header]');
+        const viewports = [...section.querySelectorAll<HTMLElement>('[data-virtual-viewport]')];
+        const targets = new Set([section, ...viewports]);
+        if (body) targets.add(body);
+        if (header) targets.add(header);
+        for (const target of observed) {
+          if (!targets.has(target)) {
+            observer.unobserve(target);
+            observed.delete(target);
+          }
+        }
+        for (const target of targets) {
+          if (!observed.has(target)) {
+            observer.observe(target);
+            observed.add(target);
+          }
+        }
+        const height = section.offsetHeight;
+        const viewportHeight = viewports.reduce((sum, viewport) => sum + viewport.offsetHeight, 0);
+        const chromeHeight =
+          (header?.offsetHeight ?? 0) + (body?.scrollHeight ?? 0) - viewportHeight;
+        const available = Math.max(0, maxHeight - chromeHeight) / Math.max(1, viewports.length);
+        cancelWrite?.();
+        cancelWrite = scheduleLayoutWrite(() => {
+          section.style.setProperty('--sidebar-virtual-max-height', `${available}px`);
+          flyout.resize(height);
+        });
+      });
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(section);
+    const mutations = new MutationObserver(measure);
+    mutations.observe(section, { childList: true, subtree: true });
+    measure();
+    return () => {
+      observer.disconnect();
+      mutations.disconnect();
+      cancelRead?.();
+      cancelWrite?.();
+    };
+  });
 
   // Reactive writable store that mirrors workspaceId so Redux selectors
   // re-evaluate whenever the prop changes (called at component init time).

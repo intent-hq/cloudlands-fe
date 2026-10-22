@@ -6,7 +6,9 @@ export interface SidebarFlyoutContext {
   readonly collapsed: boolean;
   readonly open: boolean;
   readonly tabId: string | undefined;
+  readonly maxHeight: number;
   preview: (tabId: string, anchor: HTMLElement, fromFocus?: boolean) => void;
+  resize: (height: number) => void;
 }
 
 export function getSidebarFlyout(): SidebarFlyoutContext | undefined {

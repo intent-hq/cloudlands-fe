@@ -16,7 +16,9 @@
 
 [data-sidebar-panels][data-floating='true'] .sidebar-section {
   position: absolute;
-  inset: 0;
+  inset: 0 0 auto;
+  height: auto;
+  max-height: var(--floating-max-height);
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
@@ -38,6 +40,17 @@
   pointer-events: auto;
   transform: translateY(0);
   transition-delay: 0s;
+}
+
+[data-sidebar-panels][data-floating='true'] [data-sidebar-section-scroll] {
+  overflow-y: auto;
+}
+
+[data-sidebar-panels][data-floating='true'] [data-virtual-viewport] {
+  --virtual-viewport-height: min(
+    var(--virtual-content-height),
+    var(--sidebar-virtual-max-height, var(--floating-max-height))
+  );
 }
 
 @keyframes sidebar-section-enter {

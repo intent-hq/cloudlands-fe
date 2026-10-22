@@ -69,7 +69,11 @@
   });
 </script>
 
-<div class="relative overflow-hidden" style="height: {containerHeight}px;">
+<div
+  class="relative overflow-hidden"
+  style="height: var(--virtual-viewport-height, {containerHeight}px); --virtual-content-height: {totalHeight}px;"
+  data-virtual-viewport
+>
   <div
     bind:this={scrollEl}
     class="virtual-list-scroll h-full overflow-y-auto overflow-x-hidden"
