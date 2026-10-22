@@ -1170,7 +1170,7 @@
                   onblur={saveCreate}
                   onkeydown={handleCreateKeydown}
                   placeholder={m.fileExplorer_tree_filename_placeholder()}
-                  class="flex-1 type-body font-normal bg-transparent border-none outline-none! ring-0! focus:ring-0! focus:outline-none! focus-visible:ring-0! focus-visible:outline-none! min-w-0"
+                  class="flex-1 type-caption font-normal bg-transparent border-none outline-none! ring-0! focus:ring-0! focus:outline-none! focus-visible:ring-0! focus-visible:outline-none! min-w-0"
                   onclick={(e) => e.stopPropagation()}
                 />
               </div>
@@ -1239,7 +1239,7 @@
                     onblur={saveEdit}
                     onkeydown={handleEditKeydown}
                     noFocusStyle
-                    class="inline-edit-input relative z-10 min-w-0 flex-1 border-none bg-transparent hover:bg-transparent type-body font-normal outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
+                    class="inline-edit-input relative z-10 min-w-0 flex-1 border-none bg-transparent hover:bg-transparent type-caption font-normal outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
                     onclick={(e) => e.stopPropagation()}
                   />
                 </div>
@@ -1251,7 +1251,7 @@
                   aria-expanded={flatNode.isExpanded}
                   iconClass={`-ml-1 mr-1 w-3 text-muted-foreground ${gitColor}`}
                   title={displayName}
-                  titleClass={`cursor-text type-body font-normal leading-(--text-body-line-height) ${gitColor}`}
+                  titleClass={`cursor-text type-caption font-normal leading-(--text-caption-line-height) ${gitColor}`}
                   onclick={(event) => handleItemClick(flatNode, absoluteIndex, event)}
                   size="sm"
                   indent={depth}
@@ -1291,7 +1291,7 @@
                   tabindex={-1}
                   iconClass={gitColor}
                   title={displayName}
-                  titleClass={`cursor-text type-body font-normal leading-(--text-body-line-height) ${gitColor}`}
+                  titleClass={`cursor-text type-caption font-normal leading-(--text-caption-line-height) ${gitColor}`}
                   badge={isModified ? '•' : undefined}
                   badgeClass={isModified ? 'text-blue-500' : undefined}
                   onclick={(event) => handleItemClick(flatNode, absoluteIndex, event)}

@@ -600,7 +600,12 @@
           onsaved={native.startNativeRead}
         />
         {#if native.remoteSaving}
-          <p role="status">{m.repository_prRemote_saving_label()}</p>
+          <p
+            role="status"
+            class="type-caption font-normal text-muted-foreground/80 dark:text-muted-foreground/70"
+          >
+            {m.repository_prRemote_saving_label()}
+          </p>
         {:else if native.nativeMode}
           <NativeSidebarReview review={native} />
         {:else if $canAdministerHost$ && !$githubAuthIsAuthenticated$}
@@ -620,7 +625,7 @@
             : ''}
           {@const prParts = [stagedDescription, commitDescription].filter(Boolean)}
           {#if prParts.length > 0}
-            <p class="text-xs text-subtle">
+            <p class="type-caption font-normal text-muted-foreground">
               {m.workspace_prSection_includedInPr_label({
                 parts: prParts.join(m.workspace_prSection_and_separator()),
               })}
@@ -630,12 +635,12 @@
           <!-- Title -->
           {#if !isGeneratingPR}
             <div>
-              <span class="text-xs text-subtle mb-1 block"
+              <span class="type-caption font-normal text-muted-foreground mb-1 block"
                 >{m.workspace_prCreator_titleField_label()}</span
               >
               <Input
                 type="text"
-                class="w-full px-2.5 py-1.5 text-sm bg-muted/30 border border-border rounded-md placeholder:text-muted-foreground"
+                class="w-full px-2.5 py-1.5 type-caption font-normal bg-muted/30 border border-border rounded-md placeholder:text-muted-foreground"
                 placeholder={m.workspace_prSection_prTitle_placeholder()}
                 bind:value={
                   () => prTitle,
@@ -648,7 +653,7 @@
 
           <!-- Description -->
           <div>
-            <span class="text-xs text-subtle mb-1 block"
+            <span class="type-caption font-normal text-muted-foreground mb-1 block"
               >{m.workspace_prCreator_descriptionField_label()}</span
             >
             <div class="relative">
@@ -663,14 +668,16 @@
                 minHeight={80}
                 maxHeight={200}
                 readonly={isGeneratingPR}
-                class="text-sm {isGeneratingPR ? 'border-primary-ink/40 bg-muted/20' : ''}"
+                class="type-caption font-normal {isGeneratingPR
+                  ? 'border-primary-ink/40 bg-muted/20'
+                  : ''}"
               />
             </div>
           </div>
 
           <!-- Target Branch -->
           <div>
-            <span class="text-xs text-subtle mb-1 block"
+            <span class="type-caption font-normal text-muted-foreground mb-1 block"
               >{m.workspace_prSection_targetBranch_label()}</span
             >
             <BranchSelector
@@ -790,7 +797,9 @@
         <Fa icon={faArrowDown} size="xs" class="text-ghost rotate-180" />
       </DividerButton>
     {:else if !isDiverged && !isBehind && (isOwner || !(hasUnpushedCommits && unpushedCount > 0))}
-      <span class="relative flex h-8 items-center gap-1 px-2 type-caption text-muted-foreground">
+      <span
+        class="relative flex h-8 items-center gap-1 px-2 type-caption font-normal text-muted-foreground/80 dark:text-muted-foreground/70"
+      >
         <Fa icon={faCheck} size="xs" />
         <span>{m.workspace_prSection_synced_label()}</span>
       </span>
@@ -837,7 +846,7 @@
             : m.workspace_prSection_commitsBehind_many({
                 count: formatInteger($gitBehindStore ?? 0),
               })}
-        <p class="text-xs text-subtle">
+        <p class="type-caption font-normal text-muted-foreground">
           {m.workspace_prSection_forcePushLocal_before()}
           <span class="font-medium"
             >{$workspace$?.branch || m.workspace_prSection_branchFallback_label()}</span
@@ -976,7 +985,7 @@
               <Button
                 variant="ghost"
                 type="button"
-                class="flex h-8 items-center gap-2 flex-1 min-w-0 px-0 font-normal text-left cursor-pointer"
+                class="flex h-8 items-center gap-2 flex-1 min-w-0 px-2 -mx-2 type-caption font-normal text-left cursor-pointer"
                 onclick={onOpenFullPanel}
               >
                 <span class="type-caption text-subtle truncate flex-1">
@@ -1053,7 +1062,7 @@
         {#snippet prSubDivider(label: string)}
           <!-- Labeled divider between PR sub-sections (monorepo#2053) -->
           <div class="flex h-8 items-center gap-2 px-2">
-            <span class="type-caption text-muted-foreground shrink-0">{label}</span>
+            <span class="type-caption font-normal text-muted-foreground shrink-0">{label}</span>
           </div>
         {/snippet}
         {#if hasAnyPRs}
@@ -1135,15 +1144,16 @@
       </DividerButton>
     {/if}
     <DividerPanel open={connectRemote.drawerOpen}>
-      <p class="text-xs text-subtle">
+      <p class="type-caption font-normal text-muted-foreground">
         {m.workspace_prSection_addRemote_description()}
       </p>
       <div>
-        <span class="text-xs text-subtle mb-1 block">{m.workspace_prSection_remoteUrl_label()}</span
+        <span class="type-caption font-normal text-muted-foreground mb-1 block"
+          >{m.workspace_prSection_remoteUrl_label()}</span
         >
         <Input
           type="text"
-          class="w-full px-2.5 py-1.5 text-sm bg-muted/30 border border-border rounded-md placeholder:text-muted-foreground"
+          class="w-full px-2.5 py-1.5 type-caption font-normal bg-muted/30 border border-border rounded-md placeholder:text-muted-foreground"
           placeholder={m.workspace_prSection_remoteUrl_placeholder()}
           bind:value={remoteUrl}
           onkeydown={(e) => {
@@ -1170,7 +1180,7 @@
           {/if}
         </Button>
       </div>
-      <p class="text-xs text-subtle">
+      <p class="type-caption font-normal text-muted-foreground">
         {m.workspace_prSection_noRepo_label()}
         <a
           href="https://github.com/new"

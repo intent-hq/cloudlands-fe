@@ -458,7 +458,7 @@
 
   {#if loading}
     <!-- Skeleton loader while notes are loading -->
-    <div class="py-1">
+    <div class="py-1 opacity-60">
       {#each [65, 80, 55, 70] as width}
         <div class="flex h-8 items-center gap-2 px-2">
           <Skeleton class="h-3.5 w-3.5 rounded flex-shrink-0" />

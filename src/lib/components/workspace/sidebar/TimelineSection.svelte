@@ -34,12 +34,14 @@
 
 <div class="relative min-w-0 pb-1">
   <div class="flex h-8 min-w-0 items-center justify-between gap-2 px-2">
-    <Header size={5} class="type-caption min-w-0 truncate font-normal text-muted-foreground">
+    <Header size={5} class="type-caption min-w-0 flex-1 font-normal text-muted-foreground">
       {#if collapsible}
         <Button
-          variant="plain"
+          variant="ghost"
           size="compact"
-          class="h-8 min-w-0 justify-start gap-1 rounded-md px-2 -mx-2 type-caption font-normal hover:bg-muted"
+          truncateLabel
+          labelClass="text-left"
+          class="h-8 min-w-0 max-w-full justify-start gap-1 rounded-md px-2 -mx-2 type-caption font-normal text-muted-foreground"
           aria-expanded={expanded}
           onclick={onToggle}
           onkeydown={(event) => event.stopPropagation()}

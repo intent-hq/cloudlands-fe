@@ -509,7 +509,7 @@
   <div class="flex-1 min-h-0 overflow-hidden">
     {#if $feError$}
       <div class="flex flex-col items-start gap-2 px-2 py-2 text-left">
-        <p class="text-sm text-danger">{$feError$}</p>
+        <p class="type-caption text-danger">{$feError$}</p>
         <Button variant="ghost" size="compact" onclick={retryInitialization}
           >{m.fileExplorer_treeView_retry_label()}</Button
         >
@@ -517,7 +517,7 @@
     {:else if $feIsLoading$ || externalLoading || !$feIsInitialized$}
       <!-- Skeleton loaders for file tree -->
       <ScrollArea class="h-full">
-        <div class="space-y-1 py-2 px-2">
+        <div class="space-y-1 py-2 px-2 opacity-60">
           {#each Array(6) as { }}
             <div class="flex items-center gap-2 py-1">
               <Skeleton class="h-3 w-3 rounded shrink-0" />
@@ -529,7 +529,7 @@
     {:else if searchQuery && searchQuery.trim()}
       <!-- Search results - flat list -->
       {#if isSearching}
-        <div class="space-y-1 py-2 px-2">
+        <div class="space-y-1 py-2 px-2 opacity-60">
           {#each Array(4) as { }}
             <div class="flex items-center gap-2 py-1">
               <Skeleton class="h-3 w-3 rounded shrink-0" />
@@ -538,7 +538,7 @@
           {/each}
         </div>
       {:else if searchResults.length === 0}
-        <div class="px-2 py-2 text-sm text-muted-foreground">
+        <div class="px-2 py-2 type-caption text-muted-foreground/80 dark:text-muted-foreground/70">
           {m.fileExplorer_treeView_noFiles_label()}
         </div>
       {:else}
@@ -551,7 +551,7 @@
                     active={selectedFile === result.path}
                     selected={searchSelectedIndex === i}
                     title={result.name}
-                    titleClass="type-body font-normal leading-(--text-body-line-height)"
+                    titleClass="type-caption font-normal leading-(--text-caption-line-height)"
                     subtitle={result.relativePath}
                     onclick={(event) => {
                       selectedFile = result.path;

@@ -13,6 +13,7 @@
     filesError?: boolean;
     initialSection?: string;
     extraFiles?: number;
+    scriptsState?: 'ready' | 'empty' | 'loading' | 'retry';
   }
 
   export const preview = definePreview<Props>({
@@ -35,6 +36,9 @@
       'long-files': { props: { collapsed: true, extraFiles: 200 } },
       'short-collapsed': { props: { collapsed: true, height: 360, items: 200 } },
       'empty-collapsed': { props: { collapsed: true, items: 0 } },
+      'shell-empty': { props: { initialSection: 'shell', scriptsState: 'empty' } },
+      'shell-loading': { props: { initialSection: 'shell', scriptsState: 'loading' } },
+      'shell-retry': { props: { initialSection: 'shell', scriptsState: 'retry' } },
     },
   });
 </script>
@@ -73,7 +77,11 @@
     setFileExplorerWorkspacePath,
     setFileExplorerError,
   } from '$store/renderer/slices/file-explorer/file-explorer-slice';
-  import { setScriptsData } from '$store/renderer/slices/scripts/scripts-slice';
+  import {
+    setScriptsData,
+    setScriptsInitialized,
+    setScriptListState,
+  } from '$store/renderer/slices/scripts/scripts-slice';
   import { ChangeStage } from '$features/file-tracking/types';
   import { installChangesSummaryMocks } from './sidebar/changes-summary.preview-fixtures';
   import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
@@ -90,6 +98,7 @@
     filesError = false,
     initialSection = 'overview',
     extraFiles = 0,
+    scriptsState = 'ready',
   }: Props = $props();
   const workspaceId = 'sidebar-tabs-preview';
   const timestamp = '2026-10-20T12:00:00Z';
@@ -260,20 +269,29 @@
     if (filesError)
       store.dispatch(setFileExplorerError(workspaceId, 'The workspace files could not be loaded.'));
     store.dispatch(
-      setScriptsData(workspaceId, [
-        {
-          id: 'sidebar-dev-server',
-          workspaceId,
-          name: 'Preview server',
-          command: 'pnpm dev',
-          mode: 'service',
-          category: 'dev',
-          source: 'user',
-          createdAt: timestamp,
-          runtime: { status: 'running', restartCount: 0 },
-        },
-      ]),
+      setScriptsData(
+        workspaceId,
+        scriptsState === 'ready'
+          ? [
+              {
+                id: 'sidebar-dev-server',
+                workspaceId,
+                name: 'Preview server',
+                command: 'pnpm dev',
+                mode: 'service',
+                category: 'dev',
+                source: 'user',
+                createdAt: timestamp,
+                runtime: { status: 'running', restartCount: 0 },
+              },
+            ]
+          : [],
+      ),
     );
+    store.dispatch(
+      setScriptsInitialized(workspaceId, scriptsState === 'ready' || scriptsState === 'empty'),
+    );
+    store.dispatch(setScriptListState(workspaceId, scriptsState === 'loading'));
   });
 
   onDestroy(() => {

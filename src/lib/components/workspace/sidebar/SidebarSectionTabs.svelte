@@ -1,7 +1,7 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
   import * as Tabs from '$lib/components/ui/tabs';
-  import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
+  import { Tooltip } from '$lib/components/ui/tooltip';
   import { writable } from 'svelte/store';
   import { prefersReducedMotion } from '$lib/utils/reduced-motion';
   import { store } from '$store/renderer/store';

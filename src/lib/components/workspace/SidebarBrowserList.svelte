@@ -72,7 +72,7 @@
   }
 </script>
 
-<div class="flex min-w-0 flex-col gap-2" data-sidebar-browser-list>
+<div class="flex min-w-0 flex-col gap-2 type-caption font-normal" data-sidebar-browser-list>
   {#each groups as group (group.ownerAgentId ?? 'unclaimed')}
     <SidebarBrowserGroup {group} onOpenTab={openBrowserTab} onRestoreTab={restoreTab} />
   {/each}

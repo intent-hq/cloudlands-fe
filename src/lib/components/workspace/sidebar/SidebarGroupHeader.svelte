@@ -26,7 +26,7 @@
   {...restProps}
   variant="ghost"
   size="compact"
-  class="h-8 w-full justify-start gap-2 px-2 text-sm font-normal text-muted-foreground hover:text-foreground"
+  class="h-8 w-full justify-start gap-2 px-2 type-caption font-normal text-muted-foreground hover:text-foreground"
   aria-expanded={expanded}
   {onclick}
   data-sidebar-group-header

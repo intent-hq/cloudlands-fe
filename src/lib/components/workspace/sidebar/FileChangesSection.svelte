@@ -594,7 +594,7 @@
                   type="button"
                   size="compact"
                   wrapContent={false}
-                  class="group/row flex h-8 items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded-md px-2 -mx-2 font-normal hover:bg-muted"
+                  class="group/row flex h-8 items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded-md px-2 -mx-2 type-caption font-normal"
                   onclick={() => toggleAgentGroup(group.agentId)}
                 >
                   {#if isLocked}
@@ -839,7 +839,7 @@
                   type="button"
                   size="compact"
                   wrapContent={false}
-                  class="group/row flex h-8 items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded-md px-2 -mx-2 font-normal hover:bg-muted"
+                  class="group/row flex h-8 items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded-md px-2 -mx-2 type-caption font-normal"
                   onclick={() => toggleAgentGroup(group.agentId)}
                 >
                   <span class="type-caption flex-1 truncate text-muted-foreground">

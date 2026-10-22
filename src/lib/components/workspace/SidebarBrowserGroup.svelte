@@ -28,7 +28,10 @@
   const groupLabel = $derived(group.ownerName ?? m.browser_panel_unclaimedGroup_label());
 </script>
 
-<div class="flex min-w-0 flex-col" data-sidebar-browser-group={group.ownerAgentId ?? 'unclaimed'}>
+<div
+  class="flex min-w-0 flex-col type-caption font-normal"
+  data-sidebar-browser-group={group.ownerAgentId ?? 'unclaimed'}
+>
   <SidebarGroupHeader
     title={groupLabel}
     meta={formatNumber(group.entries.length)}

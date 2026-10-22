@@ -97,6 +97,7 @@ export const tooltipMetadata = parseUiComponentMetadata({
     'src/lib/components/workspace/sidebar/FlameGraph.svelte',
     'src/lib/components/workspace/sidebar/McpServersSection.svelte',
     'src/lib/components/workspace/sidebar/MergePanel.svelte',
+    'src/lib/components/workspace/sidebar/SidebarSectionTabs.svelte',
     'src/lib/components/workspace/sidebar/WorkspaceProgressCard.svelte',
     'src/lib/components/workspace/sidebar/WorkspaceTokenUsage.svelte',
     'src/routes/(app)/+layout.svelte',

@@ -512,7 +512,7 @@
       class={row.section === 'coordinator' ? 'w-full pt-1 pb-0.5' : 'w-full pt-2.5 pb-0.5'}
       data-agent-list-row="header"
     >
-      <p class="flex h-8 items-center px-2 text-sm font-normal text-muted-foreground">
+      <p class="flex h-8 items-center px-2 type-caption font-normal text-muted-foreground">
         {row.section === 'coordinator'
           ? m.workspace_agentsList_coordinator_label()
           : m.workspace_overviewTimeline_yourAgents_label()}
@@ -557,7 +557,7 @@
       <Button
         variant="ghost"
         size="compact"
-        class="flex h-8 w-full items-center gap-2 px-2 text-sm font-normal text-muted-foreground hover:text-foreground"
+        class="flex h-8 w-full items-center gap-2 px-2 type-caption font-normal text-muted-foreground hover:text-foreground"
         style="padding-left: calc(var(--agent-avatar-emphasized-surface-size) + 0.5rem);"
         onclick={(event) => {
           event.stopPropagation();
@@ -584,7 +584,7 @@
           size="xs"
           class="ml-auto shrink-0 opacity-50 transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {isExpanded
             ? ''
-            : '-rotate-90'}"
+            : 'rotate-90'}"
         />
       </Button>
     </div>
@@ -624,7 +624,7 @@
 {/if}
 
 {#if loading}
-  <div class="space-y-2 py-2">
+  <div class="space-y-2 py-2 opacity-60">
     {#each [1, 2, 3] as { }}
       <div class="flex h-10 items-center gap-2 rounded-md px-2">
         <Skeleton class="size-6 shrink-0 rounded-md" />
@@ -637,7 +637,7 @@
     message={hasActiveSearch
       ? m.workspace_agentsList_noSearchResults_label()
       : m.workspace_agentsList_empty_label()}
-    class="min-h-0 px-2 py-2 text-left"
+    class="min-h-0 px-2 py-2 text-left text-muted-foreground/80 dark:text-muted-foreground/70"
     role="status"
     aria-live="polite"
   />
@@ -685,7 +685,7 @@
   </div>
 
   {#if showDelegatedSkeleton}
-    <div class="space-y-2 py-2" data-agent-delegated-loading>
+    <div class="space-y-2 py-2 opacity-60" data-agent-delegated-loading>
       {#each [1, 2] as { }}
         <div class="flex h-10 items-center gap-2 rounded-md px-2">
           <Skeleton class="size-6 shrink-0 rounded-md" />
@@ -721,7 +721,7 @@
   </div>
 
   {#if showBackgroundSkeleton}
-    <div class="space-y-2 py-2" data-agent-background-loading>
+    <div class="space-y-2 py-2 opacity-60" data-agent-background-loading>
       {#each [1, 2] as { }}
         <div class="flex h-10 items-center gap-2 rounded-md px-2">
           <Skeleton class="size-6 shrink-0 rounded-md" />
@@ -760,7 +760,7 @@
     <!-- Lazy retired-only read in flight (or about to start): skeleton rows.
          Rows already in state (e.g. retired live via agent:retired) render
          immediately below instead — late-loaded rows merge into them. -->
-    <div class="space-y-2 py-2" data-agent-retired-loading>
+    <div class="space-y-2 py-2 opacity-60" data-agent-retired-loading>
       {#each [1, 2] as { }}
         <div class="flex h-10 items-center gap-2 rounded-md px-2">
           <Skeleton class="size-6 shrink-0 rounded-md" />

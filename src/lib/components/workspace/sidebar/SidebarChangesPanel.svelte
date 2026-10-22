@@ -849,7 +849,7 @@
   <div class="flex-1 flex flex-col min-h-0">
     {#if !hasLoadedForWorkspace}
       <!-- Loading skeleton with timeline (shown during initial load or workspace switch) -->
-      <div class="flex-1 overflow-y-auto py-2">
+      <div class="flex-1 overflow-y-auto py-2 opacity-60">
         <div class="relative">
           {#each [0, 1, 2, 3] as i (i)}
             <div class="relative px-2 mb-2">
@@ -943,7 +943,7 @@
               </Button>
             {:else}
               <div
-                class="flex h-8 flex-1 items-center gap-2 px-2 type-caption text-muted-foreground min-w-0"
+                class="flex h-8 flex-1 items-center gap-2 px-2 type-caption font-normal text-muted-foreground/80 dark:text-muted-foreground/70 min-w-0"
               >
                 <span class="type-caption truncate min-w-0 text-left flex-1"
                   >{m.workspace_sidebarChanges_noChangesYet_label()}</span
