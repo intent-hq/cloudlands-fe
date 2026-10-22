@@ -32,9 +32,10 @@ env:
 jobs:
   # Fork PRs skip every checkout/routed job. CI Gate alone still runs without
   # checkout or permissions and fails red for the guarded skips.
-  # Decides where the heavy jobs (checks / build-web / test /
-  # test-integration) run:
-  # the intent-cache runner slots normally, or their burst runner (WarpBuild,
+  # Decides where the heavy jobs (build-web / test / test-integration) run.
+  # Type Check & Lint (checks) runs on ubuntu-24.04 and keeps `needs: route`
+  # only as its fork-PR guard. The heavy jobs run on
+  # the intent-cache runner slots normally, or on their burst runner (WarpBuild,
   # or GitHub when CI_WARPBUILD_DISABLED is `true`) when every slot is
   # occupied, the fleet is unavailable, or the CI_LINUX_RUNNER_DISABLED
   # repository variable is `true`. The script is the shared probe, identical
@@ -84,10 +85,11 @@ jobs:
           # many get a slot as are free (see the slot-fitting note in the
           # script). Minutes are typical merge-queue durations; `events`
           # keeps a queue-only job from holding a slot on a PR; `shards: 4`
-          # gives each Unit Tests leg its own key (test-1..test-4).
+          # gives each Unit Tests leg its own key (test-1..test-4). Type Check
+          # & Lint is not listed: it runs on the free standard runner (see
+          # the `checks` job).
           SLOT_JOBS: >-
             [
-            {"key":"checks","label":"gh-linux-8x","minutes":14},
             {"key":"test","label":"gh-linux-8x","minutes":13,"shards":4},
             {"key":"build-web","label":"gh-linux-8x","minutes":4,"events":["merge_group"]},
             {"key":"test-integration","label":"gh-linux-8x","minutes":2,"events":["merge_group"]}
@@ -579,7 +581,10 @@ jobs:
     # a skip unless the fast path was taken.
     needs: [route, release-fast-path]
     if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
-    runs-on: ${{ fromJSON(needs.route.outputs.slots || '{}')['checks'] || fromJSON('["gh-linux-8x"]') }}
+    # Measured medium-sized (3.2 busy cores p90, 11.7 GiB peak with page
+    # cache), so it fits the free 4-vCPU / 16 GB standard runner (free for this
+    # public repository; the router never sends it to a self-hosted slot).
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
@@ -655,9 +660,10 @@ jobs:
         # main and on the cloudlands-fe#2533 merge tree that OOMed. At the job-wide
         # 4 GB cap V8 sits in its near-limit "reduce" mark-compact loop and aborts on
         # timing, so this step alone gets ~2x the measured need; other steps keep
-        # the job cap (intent-hq/intent#3352). Both runner classes (intent-cache,
-        # about 48 GB per slot, and the 32 GB burst runner) have ample RAM. run-svelte-check.mjs prints the peak RSS of
-        # every run so the margin stays visible before it is exhausted again.
+        # the job cap (intent-hq/intent#3352). The job runs on the 16 GB
+        # ubuntu-24.04 runner, so the ~4.3 GiB peak leaves about 11 GB.
+        # run-svelte-check.mjs prints the peak RSS of every run so the margin
+        # stays visible before it is exhausted again.
         env:
           NODE_OPTIONS: '--max-old-space-size=8192'
         run: pnpm run check
