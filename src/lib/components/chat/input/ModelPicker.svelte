@@ -163,7 +163,7 @@
   }
   // Group/tab label: bare names until a base has offered profiles, then
   // `<Provider> · Default` / `<Provider> · <Profile>` (§5.54). A profile
-  // reference always names its profile, even while the Labs toggle is off.
+  // reference always names its profile.
   function providerDisplayName(providerId: string): string {
     void $providerCatalogEntries$;
     const baseId = normalizeProviderId(providerRefBaseId(providerId));
@@ -172,7 +172,7 @@
     return formatProviderRefLabel(
       isProfile ? providerId : baseId,
       baseName,
-      isProfile ? $providerProfiles$ : $providerProfiles$,
+      $providerProfiles$,
       baseId,
     );
   }
@@ -1759,11 +1759,7 @@
     const baseId = normalizeProviderId(providerRefBaseId(ref));
     const isProfile = isProviderProfileRef(ref);
     return providerRefProfileName(
-      providerRefLabelParts(
-        isProfile ? ref : baseId,
-        isProfile ? $providerProfiles$ : $providerProfiles$,
-        baseId,
-      ),
+      providerRefLabelParts(isProfile ? ref : baseId, $providerProfiles$, baseId),
     );
   });
   const modelAccessibleLabel = $derived(

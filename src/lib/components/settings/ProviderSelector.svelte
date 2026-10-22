@@ -71,6 +71,7 @@
   import AuggieLogo from '../AuggieLogo.svelte';
   import ProviderPathConfig from './ProviderPathConfig.svelte';
   import ProviderProfiles from './ProviderProfiles.svelte';
+  import ProviderProfileDialog from './ProviderProfileDialog.svelte';
   import ProviderFastModeMenuItems from './ProviderFastModeMenuItems.svelte';
   import { providerProfilesRequested } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import AgentProviderIcon from '$features/agent/components/AgentProviderIcon.svelte';
@@ -227,8 +228,25 @@
     return $catalogEntries$.find((p) => p.id === providerId)?.supportsProfiles === true;
   }
 
-  // Each profile-capable row's profile list, which owns the add/edit dialog.
-  let profileSections = $state<Record<string, ProviderProfiles | undefined>>({});
+  // One add-profile dialog for the page, opened from a row's actions menu.
+  // It stays mounted after closing so a pending save still reports its outcome,
+  // and a row re-rendering (status refresh) never discards a half-filled form.
+  let addProfileTarget = $state<{ providerId: string; providerName: string } | null>(null);
+  let addProfileOpen = $state(false);
+
+  function openAddProfile(providerId: string, providerName: string) {
+    addProfileTarget = { providerId, providerName };
+    addProfileOpen = true;
+  }
+
+  // Saved profiles are read once per visit, and only when some provider
+  // offers profiles at all.
+  let profilesRequested = false;
+  $effect(() => {
+    if (profilesRequested || !$catalogEntries$.some((p) => p.supportsProfiles === true)) return;
+    profilesRequested = true;
+    appStore.dispatch(providerProfilesRequested());
+  });
 
   function canManageProviderEnablement(providerId: string): boolean {
     return $catalogEntries$.find((p) => p.id === providerId)?.canBeDisabled !== false;
@@ -262,7 +280,6 @@
     appStore.dispatch(providerSettingsSessionOpened(sessionId));
     appStore.dispatch(providerAvailabilityPanelOpened(sessionId));
     appStore.dispatch(providerPathsRequested());
-    appStore.dispatch(providerProfilesRequested());
     return () => {
       appStore.dispatch(providerAvailabilityPanelClosed(sessionId));
       appStore.dispatch(providerSettingsSessionClosed(sessionId));
@@ -606,7 +623,7 @@
                             <Menu.Item
                               class="cursor-pointer text-foreground"
                               onSelect={() => {
-                                profileSections[provider.id]?.openAdd();
+                                openAddProfile(provider.id, provider.name);
                               }}
                             >
                               <span class="flex size-4 shrink-0 items-center justify-center">
@@ -731,11 +748,7 @@
                 </div>
               </div>
               {#if canAddProfile}
-                <ProviderProfiles
-                  bind:this={profileSections[provider.id]}
-                  providerId={provider.id}
-                  providerName={provider.name}
-                />
+                <ProviderProfiles providerId={provider.id} providerName={provider.name} />
               {/if}
               {#if provider.id === 'antigravity'}
                 <AntigravityConnect bind:open={antigravityConnectOpen} />
@@ -747,6 +760,14 @@
     {/if}
   {/each}
 </div>
+
+{#if addProfileTarget}
+  <ProviderProfileDialog
+    bind:open={addProfileOpen}
+    providerId={addProfileTarget.providerId}
+    providerName={addProfileTarget.providerName}
+  />
+{/if}
 
 {#snippet providerIcon(providerId: string)}
   <span class="w-7 text-subtle">

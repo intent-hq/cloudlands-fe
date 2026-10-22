@@ -3,7 +3,7 @@
    * Named profiles of one installed provider (§5.54), shown inside its
    * Settings → Providers row: honest per-profile status, rename/edit, and
    * removal that is blocked while saved selections still use the profile.
-   * Adding starts from the provider row's actions menu via `openAdd()`.
+   * Adding starts from the provider row's actions menu (ProviderSelector).
    */
   import {
     faArrowsRotate,
@@ -99,12 +99,6 @@
       }
     }
   });
-
-  /** Opens the add-profile dialog; called from the provider row's actions menu. */
-  export function openAdd() {
-    editing = undefined;
-    dialogOpen = true;
-  }
 
   function openEdit(profile: ProviderProfile) {
     editing = profile;

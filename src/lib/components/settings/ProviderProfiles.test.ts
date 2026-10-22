@@ -116,6 +116,7 @@ const lastOf = (type: string) =>
   [...mocks.dispatched].reverse().find((action) => action.type === type);
 
 warmImport(() => import('./ProviderProfiles.svelte'));
+warmImport(() => import('./ProviderProfileDialog.svelte'));
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -140,27 +141,18 @@ describe('ProviderProfiles', () => {
     ).toBeNull();
   });
 
-  it('renders nothing for a provider without profiles until Add profile opens the dialog', async () => {
+  it('renders nothing for a provider without profiles', async () => {
     await seed({ profiles: [] });
     const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
-    const { component } = render(ProviderProfiles, {
-      providerId: 'codex',
-      providerName: 'Codex',
-    });
+    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
     expect(screen.queryByTestId('provider-profiles-codex')).toBeNull();
     expect(screen.queryByRole('dialog')).toBeNull();
-    component.openAdd();
-    const dialog = await screen.findByRole('dialog');
-    expect(
-      within(dialog).getByRole('button', { name: m.settings_providerProfiles_create_label() }),
-    ).toBeTruthy();
   });
 
   it("explains that only ~ or ~/ in CODEX_HOME and CLAUDE_CONFIG_DIR means the daemon user's home folder", async () => {
     await seed({ profiles: [] });
-    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
-    const { component } = render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
-    component.openAdd();
+    const { default: ProviderProfileDialog } = await import('./ProviderProfileDialog.svelte');
+    render(ProviderProfileDialog, { open: true, providerId: 'codex', providerName: 'Codex' });
     const dialog = await screen.findByRole('dialog');
     const help = within(dialog).getByText(m.settings_providerProfiles_env_description());
     expect(help.textContent).toMatch(/CODEX_HOME.*CLAUDE_CONFIG_DIR/);
@@ -171,11 +163,10 @@ describe('ProviderProfiles', () => {
 
   it('creates a profile with masked values, literal empty strings and daemon field errors', async () => {
     await seed({ profiles: [] });
-    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
+    const { default: ProviderProfileDialog } = await import('./ProviderProfileDialog.svelte');
     const { takeStagedProfileEnv } =
       await import('$store/renderer/slices/provider-settings/provider-profiles-state');
-    const { component } = render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
-    component.openAdd();
+    render(ProviderProfileDialog, { open: true, providerId: 'codex', providerName: 'Codex' });
     const dialog = await screen.findByRole('dialog');
     await fireEvent.input(
       within(dialog).getByLabelText(m.settings_providerProfiles_name_label(), {
@@ -478,9 +469,8 @@ describe('ProviderProfiles Fast mode', () => {
 describe('ProviderProfiles dialog outcomes', () => {
   it('creates a profile from its name alone, sending no env', async () => {
     await seed({ profiles: [] });
-    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
-    const { component } = render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
-    component.openAdd();
+    const { default: ProviderProfileDialog } = await import('./ProviderProfileDialog.svelte');
+    render(ProviderProfileDialog, { open: true, providerId: 'codex', providerName: 'Codex' });
     const dialog = await screen.findByRole('dialog');
     await fireEvent.input(
       within(dialog).getByLabelText(m.settings_providerProfiles_name_label(), {

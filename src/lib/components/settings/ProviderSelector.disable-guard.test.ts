@@ -406,9 +406,48 @@ describe('ProviderSelector profiles entry point', () => {
     ).toBeTruthy();
   });
 
-  it('requests saved profiles without any Labs opt-in', async () => {
+  it('keeps a half-filled add-profile dialog open when the provider row re-renders', async () => {
+    const result = await renderWithCatalog({ codex: true });
+    const menu = await openProviderMenu(result, 'OpenAI Codex');
+    await fireEvent.click(
+      within(menu).getByRole('menuitem', { name: m.settings_providerProfiles_add_label() }),
+    );
+    const dialog = await waitFor(() => result.getByRole('dialog'));
+    const name = within(dialog).getByLabelText(m.settings_providerProfiles_name_label(), {
+      selector: 'input[required]',
+    }) as HTMLInputElement;
+    await fireEvent.input(name, { target: { value: 'Work' } });
+
+    // The row stops offering profiles (catalog refresh): its profile list
+    // unmounts, but the page-level dialog and its draft must survive.
+    const { MOCK_PROVIDER_CATALOG } =
+      await import('../../../test/fixtures/provider-catalog.fixture');
+    const { providerCatalogLoaded, providerCatalogReducer, initialState } =
+      await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
+    mocks.state.current = {
+      ...(mocks.state.current as object),
+      providerCatalog: providerCatalogReducer(
+        initialState,
+        providerCatalogLoaded({ providers: MOCK_PROVIDER_CATALOG.providers }),
+      ),
+    };
+    const { store } = await import('$store/renderer/store');
+    (store as unknown as { emitState: () => void }).emitState();
+    await waitFor(() => expect(result.queryByTestId('provider-profiles-codex')).toBeNull());
+    expect(result.getByRole('dialog')).toBe(dialog);
+    expect(name.value).toBe('Work');
+  });
+
+  it('requests saved profiles without any Labs opt-in when a provider supports them', async () => {
     await renderWithCatalog({ codex: true });
     expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: providerProfilesRequested.type }),
+    );
+  });
+
+  it('skips the profile read when no provider supports profiles', async () => {
+    await renderWithCatalog({});
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: providerProfilesRequested.type }),
     );
   });
