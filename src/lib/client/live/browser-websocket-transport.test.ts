@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BackendError } from './backend-transport-types';
 import * as backendTransport from './backend-transport';
 import { LiveFilesClient } from './live-files-client';
+import { LiveNotesClient } from './live-notes-client';
 import {
   BrowserWebSocketTransport,
   type BrowserWebSocketLike,
@@ -941,7 +942,12 @@ describe('observational node capabilities', () => {
       result: {
         clientId: 'A',
         server: {
-          capabilities: { agentNodes: 1, agentPlatformRouting: 1, workspaceMembershipEvents: 1 },
+          capabilities: {
+            agentNodes: 1,
+            agentPlatformRouting: 1,
+            workspaceMembershipEvents: 1,
+            noteTruncatedRead: 1,
+          },
         },
       },
     });
@@ -952,6 +958,7 @@ describe('observational node capabilities', () => {
           localNodeIsolation: 0,
           agentPlatformRouting: 1,
           workspaceMembershipEvents: 1,
+          noteTruncatedRead: 1,
         },
       },
     });
@@ -977,7 +984,13 @@ describe('observational node capabilities', () => {
       id: replacement.lastFrame().id,
       result: {
         clientId: 'B',
-        server: { capabilities: { agentNodes: '1', workspaceMembershipEvents: true } },
+        server: {
+          capabilities: {
+            agentNodes: '1',
+            workspaceMembershipEvents: true,
+            noteTruncatedRead: '1',
+          },
+        },
       },
     });
     await expect(reconnecting).resolves.toEqual({
@@ -987,6 +1000,7 @@ describe('observational node capabilities', () => {
           localNodeIsolation: 0,
           agentPlatformRouting: 0,
           workspaceMembershipEvents: 0,
+          noteTruncatedRead: 0,
         },
       },
     });
@@ -1023,6 +1037,7 @@ describe('observational node capabilities', () => {
           localNodeIsolation: 0,
           agentPlatformRouting: 0,
           workspaceMembershipEvents: 0,
+          noteTruncatedRead: 0,
         },
       },
     });
@@ -1246,6 +1261,7 @@ describe('monitor replacement hello admission', () => {
                 localNodeIsolation: 0,
                 agentPlatformRouting: 0,
                 workspaceMembershipEvents: 0,
+                noteTruncatedRead: 0,
               },
             },
           });
@@ -1783,4 +1799,29 @@ describe('passive principal discovery', () => {
     await disconnected;
     h.transport.dispose();
   });
+});
+
+describe('truncated note reads capability through the browser transport (§5.2)', () => {
+  it.each([
+    [{ ...helloResult().server.capabilities, noteTruncatedRead: 1, agentNodes: 1 }, true],
+    [{ ...helloResult().server.capabilities, agentNodes: 1 }, false],
+    [{ noteTruncatedRead: true }, false],
+  ])(
+    'reads server.capabilities %j from the real hello as supported: %s',
+    async (capabilities, expected) => {
+      const { transport, socket } = createHarness();
+      vi.spyOn(backendTransport, 'observeBackendNodeCapabilities').mockImplementation(() =>
+        transport.observeNodeCapabilities(),
+      );
+      const supported = new LiveNotesClient().supportsTruncatedRead();
+      socket().open();
+      await flush();
+      socket().receive({
+        id: socket().lastFrame().id,
+        result: { ...helloResult(), server: { ...helloResult().server, capabilities } },
+      });
+      await expect(supported).resolves.toBe(expected);
+      transport.dispose();
+    },
+  );
 });
