@@ -1,7 +1,5 @@
 // @verify-changed-triggers: ./ResourceIconTile.svelte, ./resource-icon.ts,
-//   ../workspace/MultiSelectTabbedSidebar.svelte, ../workspace/SidebarBrowserLauncher.svelte,
-//   ../workspace/WorkspaceTerminalDock.svelte, ../workspace/SidebarExpandedTabStrip.svelte,
-//   ../workspace/multi-select-sidebar-transitions.css, ../workspace/multi-select-sidebar-tabs.ts,
+//   ../workspace/MultiSelectTabbedSidebar.svelte, //   ../workspace/multi-select-sidebar-tabs.ts,
 //   ../workspace/sidebar/NotesPanel.svelte, ../workspace/sidebar/ContextItemRow.svelte,
 //   ../layout/panel-system/PanelTabBar.svelte, ../layout/panel-system/PanelEmptyState.svelte,
 //   ../chat/ChatMessageNavigator.svelte, ../chat/ScrollToBottomButton.svelte,
@@ -39,20 +37,10 @@ describe('resource icon tile source contract', () => {
   });
 
   it('migrates every scoped sidebar resource surface without changing task-state icons', () => {
-    const sidebar = source('../workspace/MultiSelectTabbedSidebar.svelte');
-    const browser = source('../workspace/SidebarBrowserLauncher.svelte');
-    const terminal = source('../workspace/WorkspaceTerminalDock.svelte');
-    const strip = source('../workspace/SidebarExpandedTabStrip.svelte');
-    const transitions = source('../workspace/multi-select-sidebar-transitions.css');
     const notes = source('../workspace/sidebar/NotesPanel.svelte');
     const context = source('../workspace/sidebar/ContextItemRow.svelte');
     const tabs = source('../workspace/multi-select-sidebar-tabs.ts');
 
-    expect(sidebar).toMatch(/<ResourceIconTile\s+kind="note"/);
-    // Collapsed Changes interactions and layout are covered by launcher-geometry.ct.spec.ts.
-    expect(sidebar).toContain('variant="standard"');
-    expect(sidebar).not.toMatch(/<AgentAvatarWithState[\s\S]{0,180}\bsize=/);
-    expect(sidebar).not.toContain('$lib/icons/faNote');
     expect(notes.match(/<ResourceIconTile kind="note" \/>/g)).toHaveLength(2);
     expect(notes).toContain('<TaskStatusIcon');
     expect(notes).toContain('{:else if hasTasks}');
@@ -60,15 +48,6 @@ describe('resource icon tile source contract', () => {
     expect(context).toContain('<ResourceIconTile kind="note" />');
     expect(tabs).toContain('icon: RESOURCE_ICON_BY_KIND.note');
     expect(tabs).toContain('icon: RESOURCE_ICON_BY_KIND.changes');
-    expect(sidebar).toContain('border border-border bg-sidebar p-2');
-    expect(sidebar).toContain('border border-border bg-sidebar"');
-    expect(sidebar).toContain('background-color: hsl(var(--sidebar))');
-    expect(browser).toContain('border border-border bg-sidebar px-3');
-    expect(terminal).toContain('border border-border bg-sidebar px-3');
-    expect(strip).toContain('sidebar-expanded-tab-deck');
-    expect(strip).toContain('sidebar-expanded-tab-indicator');
-    expect(transitions).toContain('border: 1px solid hsl(var(--sidebar-border))');
-    expect(transitions).toContain('background-color: hsl(var(--sidebar))');
   });
 
   it('migrates panel tabs and compact headers while empty rows use bare glyphs', () => {

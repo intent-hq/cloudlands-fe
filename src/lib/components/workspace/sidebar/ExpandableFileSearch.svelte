@@ -5,9 +5,10 @@
   interface Props {
     query?: string;
     onKeydown?: (event: KeyboardEvent) => void;
+    active?: boolean;
   }
 
-  let { query = $bindable(''), onKeydown }: Props = $props();
+  let { query = $bindable(''), onKeydown, active = true }: Props = $props();
 </script>
 
 <SidebarExpandableSearch
@@ -16,4 +17,5 @@
   placement="toolbar"
   placeholder={m.workspace_multiSelectSidebar_searchFiles_placeholder()}
   {onKeydown}
+  {active}
 />

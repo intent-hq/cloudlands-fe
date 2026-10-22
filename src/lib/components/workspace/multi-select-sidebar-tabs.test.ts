@@ -1,45 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import {
-  LAUNCHER_GRID_POSITIONS,
-  normalizeSelectedTabs,
-  TAB_DEFINITIONS,
-} from './multi-select-sidebar-tabs';
+import { normalizeSelectedTabs } from './multi-select-sidebar-tabs';
 
 describe('multi-select sidebar tabs', () => {
-  it('keeps the canonical tab order and launcher grid', () => {
-    expect(TAB_DEFINITIONS.map(({ id }) => id)).toEqual([
-      'overview',
-      'people',
-      'agents',
-      'context',
-      'changes',
-      'files',
-      'browser',
-      'shell',
-    ]);
-    expect(LAUNCHER_GRID_POSITIONS).toEqual({
-      agents: { column: 0, row: 0 },
-      context: { column: 1, row: 0 },
-      changes: { column: 0, row: 1 },
-      files: { column: 1, row: 1 },
-    });
-  });
-
-  it('keeps only the first valid selection and defaults to overview', () => {
+  it('keeps the first valid selection and migrates the old overview to agents', () => {
     expect([...normalizeSelectedTabs(['unknown', 'changes', 'files'])]).toEqual(['changes']);
     expect([...normalizeSelectedTabs(['browser', 'shell'])]).toEqual(['browser']);
-    expect([...normalizeSelectedTabs(['unknown'])]).toEqual(['overview']);
+    expect([...normalizeSelectedTabs(['unknown'])]).toEqual(['agents']);
+    expect([...normalizeSelectedTabs(['overview'])]).toEqual(['agents']);
+    expect([...normalizeSelectedTabs([])]).toEqual(['agents']);
   });
 
   it('drops persisted browser and shell selections for collaborators (multiplayer w3)', () => {
-    expect([...normalizeSelectedTabs(['browser', 'shell'], true)]).toEqual(['overview']);
+    expect([...normalizeSelectedTabs(['browser', 'shell'], true)]).toEqual(['agents']);
     expect([...normalizeSelectedTabs(['shell', 'files'], true)]).toEqual(['files']);
     expect([...normalizeSelectedTabs(['browser', 'shell'], false)]).toEqual(['browser']);
   });
 
   it('allows People for collaborators and drops it when sharing is unavailable', () => {
     expect([...normalizeSelectedTabs(['people'], true, true)]).toEqual(['people']);
-    expect([...normalizeSelectedTabs(['people'], false, false)]).toEqual(['overview']);
+    expect([...normalizeSelectedTabs(['people'], false, false)]).toEqual(['agents']);
     expect([...normalizeSelectedTabs(['people', 'context'], true, false)]).toEqual(['context']);
   });
 });

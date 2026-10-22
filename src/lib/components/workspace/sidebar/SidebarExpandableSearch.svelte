@@ -12,6 +12,7 @@
     scope: 'agents' | 'context' | 'files';
     placement?: 'header' | 'toolbar';
     onKeydown?: (event: KeyboardEvent) => void;
+    active?: boolean;
   }
 
   let {
@@ -20,6 +21,7 @@
     scope,
     placement = 'header',
     onKeydown,
+    active = true,
   }: Props = $props();
   let expanded = $state(Boolean(query));
   let inputRef: Input | null = $state(null);
@@ -43,7 +45,7 @@
   }
 
   $effect(() => {
-    if (!expanded) return;
+    if (!expanded || !active) return;
     return pushEscapeLayer(() => {
       void close(true);
     });

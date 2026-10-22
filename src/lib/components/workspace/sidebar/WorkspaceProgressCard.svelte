@@ -909,7 +909,7 @@
             onblur={saveTitle}
             onkeydown={handleTitleKeydown}
             noFocusStyle
-            class="edit-input relative z-10 text-xl font-semibold text-foreground bg-transparent hover:bg-transparent border-none
+            class="edit-input relative z-10 text-sm font-medium text-foreground bg-transparent hover:bg-transparent border-none
                py-0.5 rounded
                outline-none w-full leading-normal
                focus:ring-none! focus:outline-none!
@@ -919,7 +919,7 @@
         {:else}
           <Button
             variant="plain"
-            class="relative z-10 text-xl font-semibold text-foreground bg-transparent {!$workspace?.title
+            class="relative z-10 text-sm font-medium text-foreground bg-transparent {!$workspace?.title
               ? 'opacity-50'
               : ''}
                border-none py-0.5 pr-1 rounded cursor-text text-left
@@ -946,6 +946,17 @@
       </div>
 
       <div class="flex shrink-0 -mt-0.5 -mr-2 items-center gap-0.5" data-workspace-header-actions>
+        <Button
+          variant="ghost-light"
+          size="icon-sm"
+          iconOnly
+          data-sidebar-collapse
+          aria-label={m.layout_titleBar_toggleSidebar_ariaLabel()}
+          tooltip={m.layout_titleBar_toggleSidebar_ariaLabel()}
+          onclick={() => appStore.dispatch(toggleSidebar())}
+        >
+          <SidebarIcon size={16} side={$sidebarSide$} />
+        </Button>
         <DropdownMenu bind:open={dropdownOpen}>
           {#snippet trigger({ props })}
             <Button
@@ -997,7 +1008,7 @@
       </div>
     </div>
     <!-- repository and branch metadata -->
-    <div class="mb-4 flex w-full flex-col gap-1" data-sidebar-workspace-metadata>
+    <div class="mb-2 flex w-full flex-col gap-1" data-sidebar-workspace-metadata>
       <div
         class="type-caption flex h-5 w-full min-w-0 items-center gap-2.5 font-normal leading-5 text-muted-foreground"
         data-sidebar-repository-branch-metadata
@@ -1124,7 +1135,7 @@
     </div>
   </div>
 
-  <div class="flex w-full flex-col gap-3.5 pb-2 text-left">
+  <div class="flex w-full flex-col gap-2 pb-2 text-left">
     {#if showFlameGraph}
       <!-- Keep the task progress placeholder visible until daemon progress arrives. -->
       <div class="flex h-5 flex-1 shrink-0" data-workspace-task-progress>

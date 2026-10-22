@@ -1,6 +1,5 @@
 import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
 import {
-  faAsterisk,
   faFolderTree,
   faGlobe,
   faRobot,
@@ -20,18 +19,6 @@ export interface TabDefinition {
 }
 
 export const TAB_DEFINITIONS: TabDefinition[] = [
-  {
-    id: 'overview',
-    get label() {
-      return m.workspace_multiSelectSidebar_overviewTab_label();
-    },
-    icon: faAsterisk,
-    get description() {
-      return m.workspace_multiSelectSidebar_overviewTab_description();
-    },
-    hideLabel: true,
-    hideHeader: true,
-  },
   {
     id: 'people',
     get label() {
@@ -103,15 +90,6 @@ export const TAB_DEFINITIONS: TabDefinition[] = [
 ];
 
 export type TabId = (typeof TAB_DEFINITIONS)[number]['id'];
-export type LauncherTabId = Exclude<TabId, 'overview'>;
-
-export const LAUNCHER_GRID_POSITIONS: Record<LauncherTabId, { column: number; row: number }> = {
-  agents: { column: 0, row: 0 },
-  context: { column: 1, row: 0 },
-  changes: { column: 0, row: 1 },
-  files: { column: 1, row: 1 },
-};
-
 function isValidTabId(value: string): value is TabId {
   return TAB_DEFINITIONS.some((tab) => tab.id === value);
 }
@@ -134,5 +112,5 @@ export function normalizeSelectedTabs(
       (tabId !== 'people' || showPeople) &&
       !(isCollaborator && OWNER_ONLY_TAB_IDS.has(tabId as TabId)),
   );
-  return new Set([(normalized[0] as TabId | undefined) ?? 'overview']);
+  return new Set([(normalized[0] as TabId | undefined) ?? 'agents']);
 }

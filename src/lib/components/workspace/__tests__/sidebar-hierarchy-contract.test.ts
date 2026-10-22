@@ -1,7 +1,6 @@
 // @verify-changed-triggers: ../MultiSelectTabbedSidebar.svelte, ../multi-select-sidebar-tabs.ts,
-//   ../multi-select-sidebar-transitions.css, ../WorkspaceAgentsList.svelte,
-//   ../WorkspaceSidebarHeader.svelte, ../TaskStatusProgress.svelte, ../SidebarBrowserLauncher.svelte,
-//   ../sidebar/WorkspaceProgressCard.svelte, ../sidebar/FlameGraph.svelte,
+//   ../WorkspaceAgentsList.svelte,
+//   ../WorkspaceSidebarHeader.svelte, ../TaskStatusProgress.svelte, //   ../sidebar/WorkspaceProgressCard.svelte, ../sidebar/FlameGraph.svelte,
 //   ../sidebar/ContextPanel.svelte, ../sidebar/NotesPanel.svelte, ../sidebar/SidebarChangesPanel.svelte,
 //   ../../layout/sidebar-nav/SidebarNav.svelte,
 //   ../../layout/WindowTitleBar.svelte, ../../../../routes/(app)/+layout.svelte
@@ -11,10 +10,6 @@ import { describe, expect, it } from 'vitest';
 
 function source(relativePath: string) {
   return readFileSync(new URL(relativePath, import.meta.url), 'utf8');
-}
-
-function selfClosingTag(componentSource: string, componentName: string) {
-  return componentSource.match(new RegExp(`<${componentName}\\b[\\s\\S]*?/>`))?.[0] ?? '';
 }
 
 describe('workspace sidebar hierarchy presentation contract', () => {
@@ -52,9 +47,6 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(metadata).toBeLessThan(progressSection);
     expect(progressSection).toBeLessThan(status);
     expect(section![0]).toMatch(/class="flex w-full flex-col"\s+data-workspace-title-section/);
-    expect(fullMode).toContain(
-      'class="mb-4 flex w-full flex-col gap-1" data-sidebar-workspace-metadata',
-    );
     expect(fullMode).toContain('type-caption flex h-5 w-full min-w-0 items-center gap-2.5');
     expect(fullMode).toContain('class="flex w-full flex-col pb-1"');
     expect(fullMode).toContain('flex w-full flex-col gap-3.5 pb-2 text-left');
@@ -99,143 +91,5 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(header).toContain('<!-- status message -->');
     expect(header).toContain('<!-- repository and branch metadata -->');
     expect(header).toContain('type-caption flex h-5 w-full min-w-0 items-center');
-  });
-
-  it('keeps one dominant section under the workspace identity and launchers at the bottom', () => {
-    const sidebar = source('../MultiSelectTabbedSidebar.svelte');
-    const tabs = source('../multi-select-sidebar-tabs.ts');
-    const agents = source('../WorkspaceAgentsList.svelte');
-    const context = source('../sidebar/ContextPanel.svelte');
-    const notes = source('../sidebar/NotesPanel.svelte');
-    const changes = source('../sidebar/SidebarChangesPanel.svelte');
-
-    expect(sidebar).toContain('shrink-0 px-6 pb-2 pt-5');
-    expect(sidebar).toContain('data-workspace-title-region');
-    const addContext = selfClosingTag(sidebar, 'AddContextSection');
-    expect(addContext).toContain('onAddNote={onCreateNote}');
-    expect(addContext).toMatch(/\bcompact\b/);
-    expect(sidebar).toContain('data-testid="agent-panel"');
-    expect(sidebar).toContain('flex h-full flex-1 flex-col px-4');
-    expect(agents).toContain('<div class="flex flex-col gap-0.5">');
-    expect(context).toContain('flush');
-    expect(notes).toContain("flush && 'px-0'");
-    expect(changes).toContain(
-      'sidebar-changes-container min-h-full flex flex-col flex-1 overflow-y-auto outline-none',
-    );
-    expect(sidebar).toContain('data-testid="sidebar-launchers"');
-    expect(sidebar).toContain('data-launcher-layout="tiles"');
-    expect(sidebar).toContain('h-56 w-full auto-rows-fr grid-cols-2 gap-3');
-    expect(sidebar).toContain('rounded-lg border border-border bg-sidebar p-2 text-foreground');
-    expect(sidebar).toContain('data-sidebar-overlay');
-    expect(sidebar).toContain('sidebar-expanded-card relative');
-    expect(tabs).toContain('m.workspace_multiSelectSidebar_contextTab_label()');
-    expect(sidebar).toContain('TAB_DEFINITIONS.filter');
-    expect(sidebar).not.toContain('tab-bar-container');
-    expect(sidebar).not.toContain('transition:slide');
-  });
-
-  it('separates section triggers from direct item actions and their tooltips', () => {
-    const sidebar = source('../MultiSelectTabbedSidebar.svelte');
-
-    expect(sidebar).toContain('data-sidebar-launcher={tab.id}');
-    expect(sidebar).toContain('in:cardMorph|global={{');
-    expect(sidebar).toContain('out:cardMorph|global={{');
-    expect(sidebar).toContain('aria-expanded="false"');
-    expect(sidebar).toContain("previousTabId === tabId ? 'overview' : tabId");
-    expect(sidebar).not.toContain('content={`${tab.label}: ${getTabDescription');
-    expect(sidebar).toContain('data-sidebar-agent={agent.id}');
-    expect(sidebar).toContain('data-sidebar-context={note.id}');
-    expect(sidebar).not.toContain('data-sidebar-change={changePath}');
-    expect(sidebar).toContain('const LAUNCHER_ICON_LIMIT = 6');
-    expect(sidebar).toContain('grid h-9 w-full min-w-0 grid-flow-col items-start overflow-visible');
-    expect(sidebar).toContain('data-launcher-pack="left"');
-    expect(sidebar).toContain('deriveAgentLauncherItems(');
-    expect(sidebar).toContain('LAUNCHER_ICON_LIMIT,');
-    expect(sidebar).toContain('deriveNoteLauncherItems(');
-    expect(sidebar).toContain('(note, allNotes) => !isChildNote(note, allNotes)');
-    expect(sidebar).toContain('{#each launcherNotes as note, index (note.id)}');
-    expect(sidebar).not.toContain('$notes.slice(0, LAUNCHER_ICON_LIMIT)');
-    expect(sidebar).toContain('const LAUNCHER_ICON_BUTTON_CLASS =');
-    expect(sidebar).toContain('data-files-open-in');
-    expect(sidebar).toContain('filePath={$fileExplorerWorkspacePath}');
-    expect(sidebar).toContain('side="top"');
-    expect(sidebar).toContain('icon={faArrowUpRightFromSquare}');
-    expect(sidebar).toContain('m.ui_openCombo_openInApp_tooltip()');
-    expect(sidebar).not.toContain('m.ui_openCombo_open_label()');
-    expect(sidebar).not.toContain('faChevronDown');
-    expect(sidebar).toContain('const sourcePanelId = selectFocusedPanelId.select(');
-    expect(sidebar).toContain('openAgentTabRequested(workspaceId, {');
-    expect(sidebar).toContain('sourcePanelId,');
-    expect(sidebar).toContain('handleOpenAgentInPanel(agent.id, event);');
-    expect(sidebar).toContain('onSelect={({ agentId, event }) =>');
-    expect(sidebar).toContain('handleOpenAgentInPanel(agentId, event)}');
-    expect(sidebar).toContain('onOpenAgent={handleOpenAgentInPanel}');
-    expect(sidebar).toContain('onSelectAgent={handleOpenAgentInPanel}');
-    expect(sidebar).toContain(
-      'onclick={(event) => handleOpenNoteInPanel(note.id as string, event)}',
-    );
-    expect(sidebar).toContain('rounded-sm outline-none transition-colors');
-    expect(sidebar).toContain('rounded-lg border border-border bg-sidebar');
-    expect(sidebar).not.toContain('focus-visible:ring-0');
-  });
-
-  it('keeps launcher morphs component-local in every workspace layout', () => {
-    const sidebar = source('../MultiSelectTabbedSidebar.svelte');
-
-    expect(sidebar).toContain('function cardMorph(');
-    expect(sidebar).toContain("direction: 'expand'");
-    expect(sidebar).toContain("direction: 'collapse'");
-    expect(sidebar).not.toContain('startViewTransition');
-    expect(sidebar).not.toContain('view-transition-name');
-  });
-
-  it('morphs the shell first and reveals destination content only as it settles', () => {
-    const sidebar = source('../MultiSelectTabbedSidebar.svelte');
-    const transitions = source('../multi-select-sidebar-transitions.css');
-
-    expect(sidebar).toContain('launcherRects.set');
-    expect(sidebar).toContain('expandedCardRects.set');
-    expect(sidebar).toContain('mountedLauncherRect ?? launcherRects.get(tabId)');
-    expect(sidebar).toContain('launcherRect.left - cardRect.left');
-    expect(sidebar).toContain('launcherRect.width / cardRect.width');
-    expect(sidebar).toContain('duration: spring.slow.settleMs');
-    expect(sidebar).toContain('transform-origin: top left');
-    expect(sidebar).toContain('getFixedContainingBlockOffset(node)');
-    expect(sidebar).toContain('position: fixed; left: ${fixedLeft}px');
-    expect(sidebar).toContain('spring.slow.exit.easing(t)');
-    expect(sidebar).toContain('data-sidebar-expanded-content');
-    expect(sidebar).toContain('prefersReducedMotion()');
-    expect(sidebar).not.toContain('--sidebar-card-content-');
-    expect(transitions).not.toContain('--sidebar-card-content-');
-    expect(transitions).not.toContain('grid-template-rows');
-    expect(transitions).not.toContain('::view-transition');
-  });
-
-  it('waits to reveal the launcher grid until the collapsing card reaches its source', () => {
-    const sidebar = source('../MultiSelectTabbedSidebar.svelte');
-
-    expect(sidebar).toContain('function launcherGridReveal(');
-    expect(sidebar).toContain('delay: spring.moderate.settleMs');
-    expect(sidebar).toContain('duration: spring.fast.settleMs');
-    expect(sidebar).toContain('in:launcherGridReveal|global');
-  });
-
-  it('opens an embedded browser from a first-class workspace launcher', () => {
-    const sidebar = source('../MultiSelectTabbedSidebar.svelte');
-    const browserLauncher = source('../SidebarBrowserLauncher.svelte');
-
-    expect(sidebar).toContain('<SidebarBrowserLauncher');
-    expect(sidebar).toContain("onExpand={() => handleTabClick('browser')}");
-    expect(browserLauncher).toContain('data-sidebar-launcher="browser"');
-    expect(browserLauncher).toContain('onclick={openBrowser}');
-    expect(browserLauncher).toContain('getPanelLayoutManager(panelLayoutId).openBrowserPanel()');
-    expect(browserLauncher).toContain(
-      'aria-label={m.workspace_browserLauncher_openBrowser_ariaLabel()}',
-    );
-    expect(browserLauncher).toContain('icon={faWindowMaximize}');
-    expect(browserLauncher).toContain('hover:bg-background/70');
-    expect(browserLauncher).toContain('focus-visible:bg-background/70');
-    expect(browserLauncher).toContain('class="size-3"');
-    expect(browserLauncher).not.toContain('faArrowUpRightFromSquare');
   });
 });

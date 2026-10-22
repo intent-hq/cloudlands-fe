@@ -1,14 +1,24 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
-  import ArrowLineRightIcon from 'phosphor-svelte/lib/ArrowLineRightIcon';
+  import SidebarIcon from '$lib/components/icons/SidebarIcon.svelte';
+  import SidebarSectionTabs from './SidebarSectionTabs.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
-  let { onExpand }: { onExpand: () => void } = $props();
+  let {
+    workspaceId,
+    side = 'left',
+    onExpand,
+    onReveal,
+  }: {
+    workspaceId?: string;
+    side?: 'left' | 'right';
+    onExpand: () => void;
+    onReveal?: () => void;
+  } = $props();
 </script>
 
-<nav
-  class="flex h-full flex-col items-center pt-[23px] pb-3"
-  aria-label={m.workspace_layout_ariaLabel()}
+<div
+  class="flex h-full w-12 min-h-0 flex-col items-center gap-3 overflow-y-auto pt-5 pb-3"
   data-workspace-sidebar-rail
 >
   <Button
@@ -16,10 +26,13 @@
     size="icon"
     iconOnly
     aria-label={m.layout_titleBar_toggleSidebar_ariaLabel()}
-    title={m.layout_titleBar_toggleSidebar_ariaLabel()}
+    tooltip={m.layout_titleBar_toggleSidebar_ariaLabel()}
     data-sidebar-rail-expand
     onclick={onExpand}
   >
-    <ArrowLineRightIcon size={16} weight="regular" />
+    <SidebarIcon size={16} {side} />
   </Button>
-</nav>
+  {#if workspaceId}
+    <SidebarSectionTabs {workspaceId} orientation="vertical" onActivate={() => onReveal?.()} />
+  {/if}
+</div>
