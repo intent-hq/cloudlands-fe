@@ -36,17 +36,39 @@ jobs:
           overwrite: true
           retention-days: 7
 
+  # Where paid-label jobs run: a free self-hosted slot first, else WarpBuild
+  # (GitHub when WarpBuild is off). See runner-route.yml.
+  runner-route:
+    uses: ./.github/workflows/runner-route.yml
+    permissions:
+      contents: read
+      actions: read
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
+
   test-ct:
+    needs: runner-route
+    # A failed route still runs the suite on its GitHub fallback label.
+    if: ${{ !cancelled() }}
     uses: ./.github/workflows/browser-tests.yml
     with:
       suite: ct
+      cloud: ${{ needs.runner-route.outputs.cloud }}
 
   test-playwright:
+    needs: runner-route
+    # A failed route still runs the suite on its GitHub fallback label.
+    if: ${{ !cancelled() }}
     uses: ./.github/workflows/browser-tests.yml
     with:
       suite: root
+      cloud: ${{ needs.runner-route.outputs.cloud }}
 
   test-electron:
+    needs: runner-route
+    # A failed route still runs the suite on its GitHub fallback label.
+    if: ${{ !cancelled() }}
     uses: ./.github/workflows/browser-tests.yml
     with:
       suite: electron
+      cloud: ${{ needs.runner-route.outputs.cloud }}

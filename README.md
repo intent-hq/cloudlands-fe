@@ -272,14 +272,28 @@ attribution and lineage details.
 
 ### CI runners
 
-Routed Linux jobs prefer free self-hosted runners and burst to the `gh-linux-8x`
-GitHub larger runner when unavailable or busy. Other checks and automation use
-GitHub-hosted runners (`ubuntu-24.04`, or `gh-linux-8x` for heavier jobs). Linux
-ARM64 builds stay native on `gh-linux-arm64-8x`, Windows builds use
-`gh-windows-16x` (Windows Server 2022, 16 CPUs), and Apple Silicon jobs use
-`macos-26-xlarge`, except signed desktop Mac builds, which stay on `macos-15-xlarge`
-(electron-builder's keychain step fails on macOS 26 images). The larger runners'
-group must allow public repositories.
+Jobs that ask for a free standard GitHub runner (`ubuntu-24.04`, `ubuntu-latest`)
+always run on GitHub: the repository is public, so those runners cost nothing.
+Jobs that ask for a paid label go through `runner-route.yml` (the same probe as
+intent and intentd; `intent-pr.yml`'s route job is an inline copy):
+
+- Linux `gh-linux-8x` jobs take a free intent-cache slot first, then burst to
+  WarpBuild `warp-ubuntu-2404-x64-8x`; `gh-linux-arm64-8x` takes a self-hosted
+  ARM64 runner first, then `warp-ubuntu-2404-arm64-8x`.
+- Jobs that need sudo or the GitHub image's browser libraries (browser suites)
+  and every Mac and Windows build read the route's `cloud` output: straight to
+  WarpBuild, never a self-hosted runner. Windows builds use
+  `warp-windows-2022-x64-16x` (Server 2022: node-gyp fails on 2025), Apple
+  Silicon jobs `warp-macos-26-arm64-6x`, and signed desktop Mac builds
+  `warp-macos-15-arm64-6x` (electron-builder's keychain step fails on macOS 26).
+- Jobs that require `RUNNER_ENVIRONMENT=github-hosted` (build smoke, the B76
+  diagnostics, the manual packaged Mac smoke and isolated-package check) stay on
+  `gh-linux-8x` / `macos-15-xlarge`. `scripts/test_runner_policy.py` lists them.
+
+Bursts use the GitHub label instead of WarpBuild for fork pull requests, while the
+`CI_WARPBUILD_DISABLED` Actions variable is `true`, or while that WarpBuild
+platform has a job queued over 10 minutes. The larger runners' group must allow
+public repositories.
 Mac desktop release and manual packaging builds target ARM64 only.
 
 From-source Rust sidecars use the self-hosted sccache without Rust cache actions.

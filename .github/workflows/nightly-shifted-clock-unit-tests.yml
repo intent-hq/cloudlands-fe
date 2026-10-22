@@ -24,9 +24,26 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Where paid-label jobs run: a free self-hosted slot first, else WarpBuild
+  # (GitHub when WarpBuild is off); `cloud` skips the self-hosted step.
+  # See runner-route.yml.
+  runner-route:
+    uses: ./.github/workflows/runner-route.yml
+    permissions:
+      contents: read
+      actions: read
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
+    with:
+      slot_jobs: >-
+        [{"key":"test-unit","label":"gh-linux-8x","minutes":15,"shards":4}]
+
   test-unit:
     name: Unit Tests at ${{ inputs.shifted_now || '23:30' }} UTC (shard ${{ matrix.shard }}/4)
-    runs-on: gh-linux-8x
+    needs: runner-route
+    # A failed route job must not block this job: it runs on its fallback label.
+    if: ${{ !cancelled() }}
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.slots || '{}')[format('test-unit-{0}', matrix.shard)] || fromJSON('["gh-linux-8x"]') }}
     strategy:
       fail-fast: false
       matrix:
@@ -64,7 +81,9 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: 'pnpm'
+      - name: Cache pnpm store
+        # WarpBuild's cache on WarpBuild Linux/macOS runners, GitHub's elsewhere.
+        uses: ./.github/actions/pnpm-store-cache
       - name: Read backend Keychain fixture pin
         id: backend-keychain-fixtures
         run: node scripts/backend-keychain-fixtures.mjs | tee -a "$GITHUB_OUTPUT"
