@@ -732,6 +732,65 @@ describe('notesWriteSaga', () => {
 
     const BIG = 'X'.repeat(600_000) + '\n';
 
+    it('keeps an agent edit that lands during a draft whose save then fails (probe H)', async () => {
+      supports(true);
+      const daemon = growingDaemon('body\n');
+      let failFirst!: () => void;
+      const firstGate = new Promise<void>((resolve) => (failFirst = resolve));
+      const setContent = vi
+        .spyOn(appClient.notes, 'setContent')
+        .mockImplementationOnce((async () => {
+          await firstGate;
+          return { success: false, error: 'network' };
+        }) as never)
+        .mockImplementation(daemon.write as never);
+      daemon.releaseFirst();
+      vi.spyOn(appClient.notes, 'list').mockRejectedValue(new Error('offline'));
+      const run = harness();
+      served(run, note({ content: 'body\n' }));
+
+      run.channel.put(
+        updateNoteContent(WS, NOTE, 'body MINE\n', {
+          immediate: true,
+          baseRev: 4,
+          baseContent: 'body\n',
+        }),
+      );
+      await vi.waitFor(() => expect(setContent).toHaveBeenCalledTimes(1));
+      // An agent edits the note; its event re-read lands while the draft is pending.
+      daemon.grow('AGENT\n');
+      reread(run, note({ content: daemon.text(), rev: daemon.rev() }));
+      failFirst();
+      await vi.waitFor(() =>
+        expect(run.getState().byWorkspaceId[WS]?.pendingContentByNoteId[NOTE]).toBeFalsy(),
+      );
+      const row = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
+      expect(row).toMatchObject({ content: 'body MINE\n', rev: 4 });
+
+      // The editor takes the row's rev as its base for the next keystroke.
+      run.channel.put(
+        updateNoteContent(WS, NOTE, 'body MINE more\n', {
+          immediate: true,
+          baseRev: row?.rev,
+          baseContent: 'body MINE\n',
+        }),
+      );
+      await vi.waitFor(() => expect(setContent).toHaveBeenCalledTimes(2));
+      await settle();
+
+      expect(setContent.mock.calls[1]).toEqual([
+        NOTE,
+        'body MINE more\n',
+        4,
+        WS,
+        { baseContentBytes: 5 },
+      ]);
+      expect(daemon.text()).toContain('AGENT');
+      expect(daemon.text()).toContain('MINE more');
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
     it('switches to the truncated view at the echo rev when the note grew during a save (probe G)', async () => {
       supports(true);
       const daemon = growingDaemon('body\n');

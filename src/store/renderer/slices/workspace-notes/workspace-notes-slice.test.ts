@@ -315,6 +315,34 @@ describe('workspaceNotesReducer', () => {
       });
     });
 
+    it('keeps the pending draft at its own base rev, never the incoming rev', () => {
+      const base = mockNote('n', WS_1, { content: 'local draft', rev: 4 });
+      let state = workspaceNotesReducer(
+        initialState,
+        loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [base] }),
+      );
+      state = {
+        ...state,
+        byWorkspaceId: {
+          ...state.byWorkspaceId,
+          [WS_1]: { ...state.byWorkspaceId[WS_1], pendingContentByNoteId: { n: true } },
+        },
+      };
+      const agent = mockNote('n', WS_1, { content: 'AGENT body', rev: 5, title: 'Renamed' });
+      const read = workspaceNotesReducer(state, applyNoteUpdated(WS_1, 'n', agent));
+      expect(getItem(read.byWorkspaceId[WS_1].notes, 'n' as Note['id'])).toMatchObject({
+        content: 'local draft',
+        rev: 4,
+        title: 'Renamed',
+      });
+      const { content: _content, ...metadata } = agent;
+      const pushed = workspaceNotesReducer(state, noteMetadataPushed(WS_1, metadata));
+      expect(getItem(pushed.byWorkspaceId[WS_1].notes, 'n' as Note['id'])).toMatchObject({
+        content: 'local draft',
+        rev: 4,
+      });
+    });
+
     it('never attaches incoming markers to a kept pending body', () => {
       const normal = mockNote('n', WS_1, { content: 'local draft', rev: 2 });
       let state = workspaceNotesReducer(

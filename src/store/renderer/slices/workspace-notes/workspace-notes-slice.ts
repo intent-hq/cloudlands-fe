@@ -403,6 +403,18 @@ function withCachedBody(note: Note, existing: Note): Note {
   };
 }
 
+/**
+ * An incoming row for a note with a pending local draft: the draft body stays,
+ * and so does the rev that body is based on. A row must never claim a rev whose
+ * exact text it does not hold — an editor would take that rev as its base and
+ * the next save would replace the newer text (the incoming change survives in
+ * the daemon and is merged in by the stale-rev save, or re-read afterwards).
+ */
+function withPendingDraft(note: Note, existing: Note): Note {
+  const { rev: _incomingRev, ...rest } = withCachedBody(note, existing);
+  return existing.rev !== undefined ? { ...rest, rev: existing.rev } : rest;
+}
+
 workspaceNotesReducer.with(
   loadWorkspaceNotesSucceeded,
   (state, { payload: [workspaceIds, notesByWorkspace] }) => {
@@ -521,7 +533,9 @@ workspaceNotesReducer.with(noteMetadataPushed, (state, { payload: [workspaceId, 
     return state;
   const next = existing
     ? {
-        ...withCachedBody({ ...note, content: '' }, existing),
+        ...(ws.pendingContentByNoteId[note.id]
+          ? withPendingDraft({ ...note, content: '' }, existing)
+          : withCachedBody({ ...note, content: '' }, existing)),
         contentLength: existing.contentLength,
         contentPreview: existing.contentPreview,
       }
@@ -597,7 +611,7 @@ workspaceNotesReducer.with(applyNoteUpdated, (state, { payload: [workspaceId, no
     ...workspaceState,
     notes: upsertItem(workspaceState.notes, {
       ...(workspaceState.pendingContentByNoteId[noteId] && existingNote
-        ? withCachedBody(note, existingNote)
+        ? withPendingDraft(note, existingNote)
         : note),
       id: existingNote?.id ?? (noteId as Note['id']),
     }),
