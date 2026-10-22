@@ -455,7 +455,6 @@ function* runPresence({
   yield* put(presenceWorkspacesReceived(yield* select(selectPresenceWorkspaceIds.select)));
   try {
     const membershipEvents = yield* call(supportsMembershipEvents);
-    tasks.push(yield* fork(watchPresenceVisibility));
     tasks.push(yield* fork(watchTypingPulses, sendReport));
     tasks.push(yield* fork(watchMembershipNotifications, memberReads, membershipEvents));
     tasks.push(
@@ -496,8 +495,10 @@ function* runPresence({
 }
 
 export function* presenceSaga(): SagaGenerator<void> {
-  // Session-long, not admission-scoped: a capture bracket must be known to
-  // a visibility watcher that (re)starts while the capture is in progress.
+  // Session-long, not admission-scoped: window visibility (gated on agent
+  // capture brackets) must stay current across admission gaps, so a hidden
+  // window is never published as visible when presence (re)admits.
   yield* fork(watchCaptureDrawing);
+  yield* fork(watchPresenceVisibility);
   yield* takeLatestFromSelector(selectPresenceContext, runPresence);
 }
