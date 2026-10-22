@@ -949,7 +949,9 @@ jobs:
     # x64 takes a free (ephemeral) intent-cache slot first, else WarpBuild.
     # arm64 goes straight to WarpBuild: release packaging stays off persistent
     # self-hosted ARM64 boxes, where electron-builder's fpm failed (monorepo#1286).
-    runs-on: ${{ matrix.runner == 'gh-linux-8x' && fromJSON(needs.runner-route.outputs.slots || '{}')[format('build-linux-{0}', matrix.arch)] || fromJSON(needs.runner-route.outputs.cloud || '{}')[matrix.runner] || matrix.runner }}
+    # A from-source intentd build (intentd_ref) installs musl-tools with sudo,
+    # which the intent-cache containers lack, so it skips the slot as well.
+    runs-on: ${{ matrix.runner == 'gh-linux-8x' && inputs.intentd_ref == '' && fromJSON(needs.runner-route.outputs.slots || '{}')[format('build-linux-{0}', matrix.arch)] || fromJSON(needs.runner-route.outputs.cloud || '{}')[matrix.runner] || matrix.runner }}
     # 90 min: 60 covered the packaging job alone; a from-source intentd
     # sidecar build (intentd_ref set) adds a cold cargo build.
     timeout-minutes: 90

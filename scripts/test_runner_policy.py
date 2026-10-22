@@ -23,6 +23,9 @@ GITHUB_HOSTED_ONLY = {
     ('manual-signed-build.yml', 'verify-isolated-macos'): 'scripts/verify-isolated-macos-package.mjs requires a GitHub-hosted runner',
 }
 EXCEPTIONS |= set(GITHUB_HOSTED_ONLY)
+# Jobs whose privileged steps only run under an input; their slot read must be
+# conditioned on the same input so those runs skip the intent-cache slots.
+PRIVILEGED_UNDER_INPUT = {('manual-signed-build.yml', 'build-linux'): "inputs.intentd_ref == ''"}
 MAINTENANCE = set()
 
 
@@ -40,7 +43,9 @@ def privileged_steps(body):
     found = []
     code = '\n'.join(line for line in body.splitlines() if not line.lstrip().startswith('#'))
     for step in re.split(r'^      - ', code, flags=re.M)[1:]:
-        guarded = re.search(r'^\s+if ! |command -v [\w-]+ >/dev/null \|\|', step, re.M)
+        # Only a guard that comes before the first sudo protects it.
+        first = re.search(r'\bsudo\b', step)
+        guarded = re.search(r'^\s+if ! |command -v [\w-]+ >/dev/null \|\|', step[:first.start()] if first else step, re.M)
         if re.search(r'\bdocker\b', step) or (re.search(r'\bsudo\b', step) and not guarded):
             found.append(step.splitlines()[0])
     return found
@@ -203,6 +208,10 @@ class RunnerPolicy(unittest.TestCase):
                 cloud_only = ('outputs.cloud' in runner or 'inputs.cloud' in runner) and 'outputs.slots' not in runner
                 if (path.name, job) in EXCEPTIONS | MAINTENANCE or cloud_only:
                     continue
+                if (path.name, job) in PRIVILEGED_UNDER_INPUT:
+                    with self.subTest(workflow=path.name, job=job):
+                        self.assertIn(f"&& {PRIVILEGED_UNDER_INPUT[(path.name, job)]} && fromJSON(needs.runner-route.outputs.slots", runner)
+                    continue
                 if not re.search(r'needs\.(route|runner-route)\.outputs\.(runners|slots)', runner):
                     continue
                 with self.subTest(workflow=path.name, job=job):
@@ -218,6 +227,8 @@ class RunnerPolicy(unittest.TestCase):
                                 'drop the exception once the job accepts WarpBuild')
 
     def test_privileged_step_detection(self):
+        # A guard after the first sudo does not protect it (manual-signed-build's from-source leg).
+        self.assertEqual(len(privileged_steps('      - run: |\n          sudo apt-get install -y musl-tools\n          if ! command -v rustup >/dev/null 2>&1; then\n            true\n          fi\n')), 1)
         self.assertEqual(privileged_steps('      - run: |\n          if ! pkg-config --exists openssl; then\n            sudo apt-get install -y libssl-dev\n          fi\n'), [])
         self.assertEqual(len(privileged_steps('      - run: sudo apt-get install -y bison\n')), 1)
         self.assertEqual(len(privileged_steps('      - run: sudo -n docker run --rm ubuntu\n')), 1)
