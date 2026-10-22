@@ -5,6 +5,12 @@ import { IPC_CHANNELS } from '../../../../shared/ipc-registry';
 
 const mocks = vi.hoisted(() => ({
   sendToWorkspaceWindows: vi.fn(),
+  adoptWorkspaceForBackgroundHosting: vi.fn(
+    (
+      _workspaceId: string,
+      _backendId: string,
+    ): { windowId: number | undefined; adopted: boolean } => ({ windowId: 1, adopted: false }),
+  ),
   connection: {},
   backendClient: {
     getConfig: vi.fn(() => ({ transport: 'uds' as const, socketPath: '/tmp/intentd.sock' })),
@@ -20,6 +26,7 @@ vi.mock('electron', () => ({
 
 vi.mock('../../../system/main/system.ipc', () => ({
   sendToWorkspaceWindows: mocks.sendToWorkspaceWindows,
+  adoptWorkspaceForBackgroundHosting: mocks.adoptWorkspaceForBackgroundHosting,
 }));
 
 vi.mock('../../../backend/main/backend.ipc', () => ({
@@ -54,10 +61,12 @@ vi.mock('../embedded-browser-cdp-service', () => ({
     reportTabViewBounds: vi.fn(),
     clearTabViewBounds: vi.fn(),
     setTabViewport: vi.fn(),
+    noteWorkspaceAdopted: vi.fn(),
   },
 }));
 
 import { registerBrowserHandlers } from '../browser.ipc';
+import { embeddedBrowserCdp } from '../embedded-browser-cdp-service';
 
 type IpcHandler = (event: unknown, data: unknown) => Promise<unknown>;
 
@@ -102,6 +111,10 @@ describe('browser:exec IPC workspace routing', () => {
       browserClientsNotified: false,
       delivered: true,
     });
+    mocks.adoptWorkspaceForBackgroundHosting
+      .mockReset()
+      .mockReturnValue({ windowId: 1, adopted: false });
+    vi.mocked(embeddedBrowserCdp.noteWorkspaceAdopted).mockReset();
     vi.spyOn(Date, 'now').mockReturnValue(123);
     vi.spyOn(Math, 'random').mockReturnValue(0.5);
   });
@@ -183,6 +196,102 @@ describe('browser:exec IPC workspace routing', () => {
     expect(
       (result as { results: Array<{ result: { tabId?: string } }> }).results[0].result.tabId,
     ).toBeUndefined();
+  });
+
+  // A workspace no window has open (tab closed, or not reopened since a
+  // restart) used to fail every browser op with "not open in any window".
+  // The batch now first asks a window on the owning backend to host it in
+  // the background, then routes as usual.
+  it('background-hosts a workspace no window has open before routing the batch', async () => {
+    mocks.adoptWorkspaceForBackgroundHosting.mockReturnValue({ windowId: 7, adopted: true });
+    const handler = registerAndGetExecHandler();
+
+    const result = await handler(
+      {},
+      {
+        actions: [{ action: 'openTab', url: 'https://example.test' }],
+        workspaceId: 'ws-closed',
+      },
+    );
+
+    expect(mocks.adoptWorkspaceForBackgroundHosting).toHaveBeenCalledExactlyOnceWith(
+      'ws-closed',
+      'local',
+    );
+    expect(embeddedBrowserCdp.noteWorkspaceAdopted).toHaveBeenCalledExactlyOnceWith('ws-closed');
+    expect(mocks.adoptWorkspaceForBackgroundHosting.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.sendToWorkspaceWindows.mock.invocationCallOrder[0],
+    );
+    expect(result).toMatchObject({
+      success: true,
+      results: [{ action: 'openTab', success: true }],
+    });
+  });
+
+  it('does not widen the reply window when a window already hosts the workspace', async () => {
+    const handler = registerAndGetExecHandler();
+
+    await handler(
+      {},
+      { actions: [{ action: 'openTab', url: 'https://example.test' }], workspaceId: 'ws-1' },
+    );
+
+    expect(mocks.adoptWorkspaceForBackgroundHosting).toHaveBeenCalledExactlyOnceWith(
+      'ws-1',
+      'local',
+    );
+    expect(embeddedBrowserCdp.noteWorkspaceAdopted).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [[{ action: 'listTunnels' }]],
+    [[{ action: 'readCapture', captureId: 'c', artifact: 'a11y.yaml' }]],
+    [
+      [
+        { action: 'endSession', sessionId: 's' },
+        { action: 'getSummary', captureDir: 'c' },
+      ],
+    ],
+    [[{ action: 42 }]],
+  ])('does not adopt for a batch that never touches a tab: %j', async (actions) => {
+    const handler = registerAndGetExecHandler();
+
+    await handler({}, { actions, workspaceId: 'ws-closed' });
+
+    expect(mocks.adoptWorkspaceForBackgroundHosting).not.toHaveBeenCalled();
+  });
+
+  it('keeps the not-open error when no window on the backend can host the workspace', async () => {
+    mocks.adoptWorkspaceForBackgroundHosting.mockReturnValue({
+      windowId: undefined,
+      adopted: false,
+    });
+    mocks.sendToWorkspaceWindows.mockReturnValue({
+      windowCount: 0,
+      browserClientsNotified: false,
+      delivered: false,
+    });
+    const handler = registerAndGetExecHandler();
+
+    const result = await handler(
+      {},
+      {
+        actions: [{ action: 'openTab', url: 'https://example.test' }],
+        workspaceId: 'ws-closed',
+      },
+    );
+
+    expect(embeddedBrowserCdp.noteWorkspaceAdopted).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      success: false,
+      results: [
+        {
+          action: 'openTab',
+          success: false,
+          result: { message: expect.stringContaining('not open in any window') },
+        },
+      ],
+    });
   });
 
   it.each([undefined, '', '   ', '\t\n', null, 42, { workspaceId: 'ws-1' }])(
