@@ -509,7 +509,7 @@
       >
         {#if mountedTabIds.includes(tabId)}
           {#if tab && !tab.hideHeader}
-            <div class="shrink-0 px-3 pt-3 pb-2" data-sidebar-section-header>
+            <div class="shrink-0 px-5 pt-3 pb-2" data-sidebar-section-header>
               <h6 class="flex min-h-7 items-center gap-2 text-sm font-medium text-foreground">
                 <span class="min-w-0 truncate">{tab.label}</span>
                 <span class="ml-auto flex min-w-0 items-center gap-1">
@@ -580,7 +580,7 @@
           {/if}
           {#key workspaceId}
             <div
-              class="min-h-0 flex-1 px-1 pb-2 {tabId === 'files' || tabId === 'changes'
+              class="min-h-0 flex-1 px-3 pb-2 {tabId === 'files' || tabId === 'changes'
                 ? 'overflow-hidden'
                 : 'overflow-y-auto'}"
               data-sidebar-section-scroll={tabId}

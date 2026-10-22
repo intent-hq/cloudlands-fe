@@ -32,7 +32,7 @@
   }: Props = $props();
 </script>
 
-<div class="relative min-w-0 pb-2">
+<div class="relative min-w-0 pb-1">
   <div class="flex h-8 min-w-0 items-center justify-between gap-2 px-2">
     <Header size={5} class="type-caption min-w-0 truncate font-normal text-muted-foreground">
       {#if collapsible}

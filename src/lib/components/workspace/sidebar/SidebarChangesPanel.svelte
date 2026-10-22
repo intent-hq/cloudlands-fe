@@ -911,7 +911,7 @@
             isOwner={canUpdateWorkspace}
           />
 
-          <div class="relative flex items-center mb-2 h-8" data-changes-summary-count>
+          <div class="relative flex items-center mb-1 h-8" data-changes-summary-count>
             {#if !onRefreshActionChange}
               {@render refreshAction()}
             {/if}
