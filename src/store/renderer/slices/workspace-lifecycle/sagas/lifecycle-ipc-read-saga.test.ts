@@ -541,6 +541,9 @@ describe('lifecycleIpcReadSaga', () => {
   it.each([true, false])(
     'settles object-shaped PR status completion success=%s',
     async (success) => {
+      // Real timers let the performance measure record. The test asserts only that
+      // measure, never the time of day, and re-pinning would freeze Date under real timers.
+      // eslint-disable-next-line intent/no-fake-clock-reset-before-assertion -- asserts a performance measure only
       vi.useRealTimers();
       const measureName = 'intent:workspace-hydration:prStatus:dispatch-to-settle';
       performance.clearMeasures(measureName);
