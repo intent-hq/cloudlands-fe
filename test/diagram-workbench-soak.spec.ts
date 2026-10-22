@@ -101,26 +101,9 @@ async function waitForStableGeometry(page: Page) {
   expect(false, 'diagram geometry did not stabilize across painted frames').toBe(true);
 }
 
-async function captureStable(locator: Locator, file: string) {
+async function capture(locator: Locator, file: string) {
   await expect(locator.page().locator('.catalog-topbar')).toBeHidden();
-  let previous = await locator.screenshot({ animations: 'disabled' });
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    await locator
-      .page()
-      .evaluate(
-        () =>
-          new Promise<void>((resolve) =>
-            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-          ),
-      );
-    const current = await locator.screenshot({ animations: 'disabled' });
-    if (current.equals(previous)) {
-      await writeFile(file, current);
-      return;
-    }
-    previous = current;
-  }
-  expect(false, `${file} did not produce two consecutive stable frames`).toBe(true);
+  await locator.screenshot({ path: file, animations: 'disabled' });
 }
 
 async function inspectGeometry(page: Page) {
@@ -354,7 +337,7 @@ async function captureInteractionStates(page: Page, passDirectory: string) {
   await binding.focus();
   await expect(binding).toBeFocused();
   await expect(binding).toHaveCSS('outline-style', 'solid');
-  await captureStable(page.locator('#custom-bindings'), path.join(passDirectory, 'focus.png'));
+  await capture(page.locator('#custom-bindings'), path.join(passDirectory, 'focus.png'));
 
   const walkthrough = page.locator('#custom-walkthrough');
   await walkthrough.locator('[data-diagram-step-index="2"]').click();
@@ -365,7 +348,7 @@ async function captureInteractionStates(page: Page, passDirectory: string) {
     'step',
   );
   await expect(fitButton).toHaveAttribute('aria-pressed', 'true');
-  await captureStable(walkthrough, path.join(passDirectory, 'walkthrough-step-3-fit.png'));
+  await capture(walkthrough, path.join(passDirectory, 'walkthrough-step-3-fit.png'));
 
   const flow = page.locator('#mermaid-flow');
   await flow.locator('.mermaid-svg-container').hover();
@@ -373,7 +356,7 @@ async function captureInteractionStates(page: Page, passDirectory: string) {
   await sourceButton.click();
   await expect(sourceButton).toHaveAttribute('aria-pressed', 'true');
   await expect(flow.locator('pre')).toBeVisible();
-  await captureStable(flow, path.join(passDirectory, 'mermaid-source.png'));
+  await capture(flow, path.join(passDirectory, 'mermaid-source.png'));
 }
 
 async function runPass(page: Page, pass: number) {
@@ -391,7 +374,7 @@ async function runPass(page: Page, pass: number) {
       issueInventory.push({ appearance: appearance.id, width, issues });
       for (const caseId of caseIds) {
         const file = path.join(directory, `${caseId}.png`);
-        await captureStable(page.locator(`#${caseId}`), file);
+        await capture(page.locator(`#${caseId}`), file);
         inventory.push({ caseId, appearance: appearance.id, width, file });
       }
       expect.soft(issues, `${appearance.id}/${width} geometry`).toEqual([]);

@@ -420,62 +420,23 @@ describe('embedded browser CDP workspace routing', () => {
       clip: { width: number; height: number; scale: number };
     };
 
-    const MARKER = 16;
-    const isMarkerRed = (r: number, g: number, b: number) => r > 180 && g < 90 && b < 90;
-
-    /**
-     * Independent model of Chromium's PageHandler::CaptureScreenshot for a
-     * <webview> guest (content/browser/devtools/protocol/page_handler.cc): the
-     * guest keeps the element's physical size because a child-frame view
-     * ignores SetSize, the handler expects clip × clip.scale × DPR pixels, and
-     * on a mismatch it fills the request by repeating the surface bitmap
-     * (SkBitmapOperations::CreateTiledBitmap). The page is white with one red
-     * MARKER×MARKER square at its origin, so a repeated page shows extra
-     * squares.
-     */
-    async function chromiumGuestCapture(
+    // Model the CDP output size from the requested clip and device density.
+    async function captureAtDeviceDensity(
       request: CaptureRequest,
-      guest: { dpr: number; elementDip: { width: number; height: number } },
+      dpr: number,
     ): Promise<{ data: string }> {
-      const surface = {
-        width: Math.round(guest.elementDip.width * guest.dpr),
-        height: Math.round(guest.elementDip.height * guest.dpr),
-      };
-      const requested = {
-        width: Math.round(request.clip.width * request.clip.scale * guest.dpr),
-        height: Math.round(request.clip.height * request.clip.scale * guest.dpr),
-      };
-      const surfaceRow = Buffer.alloc(surface.width * 4, 255);
-      const markerRow = Buffer.from(surfaceRow);
-      markerRow.fill(Buffer.from([255, 0, 0, 255]), 0, MARKER * 4);
-      const out = Buffer.alloc(requested.width * requested.height * 4);
-      for (let y = 0; y < requested.height; y++) {
-        const source = y % surface.height < MARKER ? markerRow : surfaceRow;
-        for (let x = 0; x < requested.width; x += surface.width) {
-          const span = Math.min(surface.width, requested.width - x);
-          source.copy(out, (y * requested.width + x) * 4, 0, span * 4);
-        }
-      }
-      const image = sharp(out, { raw: { ...requested, channels: 4 } });
+      const image = sharp({
+        create: {
+          width: Math.round(request.clip.width * request.clip.scale * dpr),
+          height: Math.round(request.clip.height * request.clip.scale * dpr),
+          channels: 4,
+          background: '#ffffff',
+        },
+      });
       const encoded = await (
         request.format === 'png' ? image.png() : image.jpeg({ quality: request.quality ?? 80 })
       ).toBuffer();
       return { data: encoded.toString('base64') };
-    }
-
-    async function decodeCapture(base64: string) {
-      const { data, info } = await sharp(Buffer.from(base64, 'base64'))
-        .ensureAlpha()
-        .raw()
-        .toBuffer({ resolveWithObject: true });
-      const markerPixels: Array<{ x: number; y: number }> = [];
-      for (let i = 0; i < data.length; i += info.channels) {
-        if (isMarkerRed(data[i], data[i + 1], data[i + 2])) {
-          const pixel = i / info.channels;
-          markerPixels.push({ x: pixel % info.width, y: Math.floor(pixel / info.width) });
-        }
-      }
-      return { width: info.width, height: info.height, markerPixels };
     }
 
     function screenshotWebContents(
@@ -555,15 +516,14 @@ describe('embedded browser CDP workspace routing', () => {
       }
     });
 
-    // The capture is decoded and inspected: a 1280x800 tab shown in a 640x400
-    // panel must come back as one page at the panel's physical size, never as
-    // a 2x2 repeat. The guest model above tiles on a request/surface mismatch
-    // exactly as Chromium does, so a clip.scale of 1 fails both cases.
+    // The encoded image dimensions must reflect the displayed size at each DPR,
+    // while the returned logical viewport dimensions stay unchanged.
     for (const dpr of [1, 2]) {
-      it(`captures a scale-to-fit tab untiled at its displayed size (DPR ${dpr})`, async () => {
-        const guest = { dpr, elementDip: { width: 640, height: 400 } };
+      it(`captures a scale-to-fit tab at its displayed size (DPR ${dpr})`, async () => {
         const tabId = `tab-shot-dpr-${dpr}`;
-        screenshotWebContents({ capture: (request) => chromiumGuestCapture(request, guest) });
+        const { sendCommand } = screenshotWebContents({
+          capture: (request) => captureAtDeviceDensity(request, dpr),
+        });
         ownScaledTab(tabId, 510 + dpr);
         await flushAsync();
 
@@ -571,17 +531,16 @@ describe('embedded browser CDP workspace routing', () => {
           const result = await embeddedBrowserCdp.screenshot(tabId);
           expect(result).toMatchObject({ width: 1280, height: 800 });
 
-          const image = await decodeCapture(result.base64);
-          expect({
-            width: image.width,
-            height: image.height,
-            markerSquares: Math.round(image.markerPixels.length / (MARKER * MARKER)),
-            markerWithinFirstPage: image.markerPixels.every((p) => p.x < MARKER && p.y < MARKER),
-          }).toEqual({
+          expect(sendCommand).toHaveBeenCalledWith('Page.captureScreenshot', {
+            format: 'jpeg',
+            quality: 80,
+            clip: { x: 0, y: 0, width: 1280, height: 800, scale: 0.5 },
+          });
+          const image = await sharp(Buffer.from(result.base64, 'base64')).metadata();
+          expect(image).toMatchObject({
+            format: 'jpeg',
             width: 640 * dpr,
             height: 400 * dpr,
-            markerSquares: 1,
-            markerWithinFirstPage: true,
           });
         } finally {
           embeddedBrowserCdp.unregisterTab(tabId);

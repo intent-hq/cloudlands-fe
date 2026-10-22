@@ -119,7 +119,7 @@ async function settled(page: Page) {
 async function measure(page: Page, info: TestInfo, name: string) {
   const root = await settled(page);
   const svg = root.locator('.mermaid-svg > svg');
-  const result = await svg.evaluate(async (svg: SVGSVGElement) => {
+  const result = await svg.evaluate((svg: SVGSVGElement) => {
     const rect = (e: Element) => e.getBoundingClientRect().toJSON();
     const nodes = [...svg.querySelectorAll<SVGGElement>('g.node')].map((node) => {
       const shape = node.querySelector<SVGGraphicsElement>(':scope > .label-container')!;
@@ -198,83 +198,16 @@ async function measure(page: Page, info: TestInfo, name: string) {
             : [],
         ),
     );
-    // Rasterize each actual marker, not a metadata-reconstructed arrow. A small
-    // SVG-space crop preserves the live transform, marker units and computed styles.
-    const markerPaint = [];
-    for (const path of svg.querySelectorAll<SVGPathElement>('.edgePaths path')) {
-      const markerId = getComputedStyle(path).markerEnd.match(/#([^\)"']+)/)?.[1];
-      if (!markerId) {
-        markerPaint.push([]);
-        continue;
-      }
-      const matrix = svg.getScreenCTM()!.inverse().multiply(path.getScreenCTM()!);
-      const end = path.getPointAtLength(path.getTotalLength()).matrixTransform(matrix);
-      const crop = document.createElementNS(svg.namespaceURI, 'svg') as SVGSVGElement;
-      crop.setAttribute('viewBox', `${end.x - 16} ${end.y - 16} 32 32`);
-      crop.setAttribute('width', '128');
-      crop.setAttribute('height', '128');
-      const defs = document.createElementNS(svg.namespaceURI, 'defs');
-      for (const marker of svg.querySelectorAll('marker')) {
-        const copy = marker.cloneNode(true) as SVGMarkerElement;
-        const originals = [marker, ...marker.querySelectorAll('*')];
-        [copy, ...copy.querySelectorAll('*')].forEach((element, i) => {
-          for (const property of [
-            'fill',
-            'stroke',
-            'stroke-width',
-            'stroke-linecap',
-            'stroke-linejoin',
-          ])
-            (element as SVGElement).style.setProperty(
-              property,
-              getComputedStyle(originals[i]).getPropertyValue(property),
-            );
-        });
-        defs.append(copy);
-      }
-      crop.append(defs);
-      const copy = path.cloneNode(true) as SVGPathElement;
-      copy.removeAttribute('style');
-      copy.setAttribute('transform', matrix.toString());
-      copy.style.stroke = 'transparent';
-      copy.style.fill = 'none';
-      copy.style.strokeWidth = getComputedStyle(path).strokeWidth;
-      copy.setAttribute('marker-end', `url(#${markerId})`);
-      crop.append(copy);
-      const image = new Image();
-      image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new XMLSerializer().serializeToString(crop))}`;
-      await image.decode();
-      const canvas = document.createElement('canvas');
-      canvas.width = 128;
-      canvas.height = 128;
-      const context = canvas.getContext('2d')!;
-      context.drawImage(image, 0, 0);
-      const pixels = context.getImageData(0, 0, 128, 128).data;
-      const painted = [];
-      for (let y = 0; y < 128; y++)
-        for (let x = 0; x < 128; x++) {
-          if (pixels[(y * 128 + x) * 4 + 3] < 32) continue;
-          const point = new DOMPoint(
-            end.x - 16 + (x + 0.5) / 4,
-            end.y - 16 + (y + 0.5) / 4,
-          ).matrixTransform(svg.getScreenCTM()!);
-          painted.push({ x: point.x, y: point.y });
-        }
-      markerPaint.push(painted);
-    }
-    const markerCollisions = markerPaint.flatMap((points, index) =>
-      nodes.flatMap((node) =>
-        points.some((point) => inside(point, node)) ? [`${routes[index].id}:${node.id}`] : [],
-      ),
-    );
     const frame = svg.getBoundingClientRect();
-    const clippedPaint = [...routes.flatMap((route) => route.samples), ...markerPaint.flat()].some(
-      (point) =>
-        point.x < frame.left ||
-        point.x > frame.right ||
-        point.y < frame.top ||
-        point.y > frame.bottom,
-    );
+    const clippedRoutes = routes
+      .flatMap((route) => route.samples)
+      .some(
+        (point) =>
+          point.x < frame.left ||
+          point.x > frame.right ||
+          point.y < frame.top ||
+          point.y > frame.bottom,
+      );
     const ownership = labels.map((label) => {
       const route = routes.find((route) => route.id === label.id)!;
       return {
@@ -294,9 +227,7 @@ async function measure(page: Page, info: TestInfo, name: string) {
       nodeCollisions,
       labelCollisions,
       crossings,
-      markerPaint,
-      markerCollisions,
-      clippedPaint,
+      clippedRoutes,
       ownership,
       svg: rect(svg),
       viewport: rect(svg.closest('.mermaid-svg-viewport')!),
@@ -310,15 +241,14 @@ async function measure(page: Page, info: TestInfo, name: string) {
   return result;
 }
 
-function expectClearPaint(result: Awaited<ReturnType<typeof measure>>) {
+function expectClearRoutes(result: Awaited<ReturnType<typeof measure>>) {
   expect(result.nodeCollisions).toEqual([]);
   expect(result.labelCollisions).toEqual([]);
   expect(result.crossings).toEqual([]);
-  expect(result.markerCollisions).toEqual([]);
-  expect(result.clippedPaint).toBe(false);
+  expect(result.clippedRoutes).toBe(false);
   for (const label of result.ownership) expect(label.distance).toBeLessThan(1);
   for (const node of result.nodes) expect(node.font).toBeGreaterThanOrEqual(11.9);
-  for (const [index, route] of result.routes.entries()) {
+  for (const route of result.routes) {
     expect(route.markerEnd).not.toBe('none');
     expect(route.markerStart).toBe('none');
     const target = result.nodes.find((node) => node.id === route.target)!;
@@ -328,39 +258,6 @@ function expectClearPaint(result: Awaited<ReturnType<typeof measure>>) {
       dx * (target.cx - route.end.x) + dy * (target.cy - route.end.y),
       'arrow points toward authored target',
     ).toBeGreaterThan(0);
-    const painted = result.markerPaint[index];
-    expect(painted.length, 'actual arrowhead has painted pixels').toBeGreaterThan(10);
-    const tip = painted.toSorted((a, b) => (b.x - a.x) * dx + (b.y - a.y) * dy)[0];
-    const corners = target.diamond
-      ? [
-          [target.cx, target.top],
-          [target.right, target.cy],
-          [target.cx, target.bottom],
-          [target.left, target.cy],
-        ]
-      : [
-          [target.left, target.top],
-          [target.right, target.top],
-          [target.right, target.bottom],
-          [target.left, target.bottom],
-        ];
-    const gap = Math.min(
-      ...corners.map(([x, y], i) => {
-        const [nx, ny] = corners[(i + 1) % corners.length];
-        const t = Math.max(
-          0,
-          Math.min(
-            1,
-            ((tip.x - x) * (nx - x) + (tip.y - y) * (ny - y)) / ((nx - x) ** 2 + (ny - y) ** 2),
-          ),
-        );
-        return Math.hypot(tip.x - x - t * (nx - x), tip.y - y - t * (ny - y));
-      }),
-    );
-    expect(gap, `${route.source}->${route.target} painted arrow clearance`).toBeGreaterThanOrEqual(
-      4.5,
-    );
-    expect(gap, `${route.source}->${route.target} painted arrow contact`).toBeLessThanOrEqual(5.5);
   }
 }
 
@@ -392,7 +289,7 @@ function expectRestart(result: Awaited<ReturnType<typeof measure>>) {
     { id: 'L_C_D_0', text: 'Work active' },
     { id: 'L_C_E_0', text: 'Yes' },
   ]);
-  expectClearPaint(result);
+  expectClearRoutes(result);
 }
 
 async function reachSideBranch(
@@ -453,7 +350,7 @@ for (const width of [360, 1000]) {
         // Transform roundoff is not a route change: compare the same commands
         // and coordinates within a millionth of an SVG unit, not their spelling.
         const numbers = /-?(?:\d*\.)?\d+(?:[eE][+-]?\d+)?/g;
-        for (const [index, route] of result.routes.entries()) {
+        for (const route of result.routes) {
           const before = initial.routes[index].d!;
           expect(route.d!.replace(numbers, '#')).toBe(before.replace(numbers, '#'));
           const actual = route.d!.match(numbers)!.map(Number);
@@ -489,7 +386,7 @@ for (const direction of ['TD', 'BT', 'RL'] as const) {
         else if (direction === 'BT') expect(node(a).top - node(b).bottom).toBeGreaterThan(12);
         else expect(node(a).left - node(b).right).toBeGreaterThan(12);
       }
-      if (direction === 'TD') expectClearPaint(result);
+      if (direction === 'TD') expectClearRoutes(result);
       else {
         expect(result.routes.every((r) => !r.metadata.decisionCycleRoute)).toBe(true);
         expect(result.nodes.every((n) => n.font >= 11.9)).toBe(true);
@@ -498,9 +395,7 @@ for (const direction of ['TD', 'BT', 'RL'] as const) {
   });
 }
 
-test('paint oracle rejects a false return connection and missing marker pixels', async ({
-  page,
-}, info) => {
+test('route checks reject a false return connection and missing marker', async ({ page }, info) => {
   await mountNote(page, exactSource, 1000, info);
   const result = await measure(page, info, 'control');
   expectRestart(result);
@@ -528,36 +423,5 @@ test('paint oracle rejects a false return connection and missing marker pixels',
     path.style.markerEnd = 'none';
   }, original);
   const invisible = await measure(page, info, 'invisible-marker');
-  expect(invisible.markerPaint[3]).toEqual([]);
   expect(() => expectRestart(invisible)).toThrow();
-});
-
-test('marker intrusion oracle rejects inward paint with an unchanged shaft', async ({
-  page,
-}, info) => {
-  await mountNote(page, exactSource, 1000, info);
-  const before = await measure(page, info, 'outside-marker');
-  expectRestart(before);
-  const path = page.locator('#restart-note-host .edgePaths path[id$="-L_D_C_0"]');
-  await path.evaluate((path: SVGPathElement) => {
-    const id = getComputedStyle(path).markerEnd.match(/#([^\)"']+)/)![1];
-    const marker = [...path.ownerSVGElement!.querySelectorAll('marker')].find(
-      (marker) => marker.id === id,
-    )!;
-    const inward = marker.cloneNode(true) as SVGMarkerElement;
-    inward.id = `${marker.id}-inward-control`;
-    // Move only this actual marker's paint along its existing inward orientation.
-    // The path data, transform and router metadata remain untouched.
-    inward.setAttribute('refX', String(marker.refX.baseVal.value - 15));
-    marker.parentNode!.appendChild(inward);
-    path.style.markerEnd = `url(#${inward.id})`;
-  });
-  const inward = await measure(page, info, 'inward-marker');
-  expect(inward.routes.map(({ d, samples }) => ({ d, samples }))).toEqual(
-    before.routes.map(({ d, samples }) => ({ d, samples })),
-  );
-  expect(inward.nodeCollisions).toEqual([]);
-  expect(inward.markerCollisions).toContain('L_D_C_0:C');
-  expect(() => expect(inward.markerCollisions).toEqual([])).toThrow();
-  expect(() => expectRestart(inward)).toThrow();
 });

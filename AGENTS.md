@@ -590,6 +590,26 @@ drop wire rows carrying the additive `pendingDeleteAt` field.
 - For copy-only changes, do not update unit tests. Run `pnpm run generate:i18n`,
   `pnpm run lint:i18n-completeness`, and `pnpm run lint:i18n-strings` instead.
 
+#### Pixel comparison tests are forbidden
+
+**Never add, restore, run, or regenerate pixel comparison tests. There are no
+exceptions for a component, feature, platform, theme, zoom level, or CI runner.**
+This ban covers screenshot/image snapshots, golden images, rendered pixel or alpha
+sampling, image similarity scores, and byte/hash comparisons of rendered images.
+Do not hide these checks in helpers, custom matchers, canvas redraws, or renamed
+"visual" tests. Do not add reference images, comparison tolerances, baseline update
+commands, or image-diff dependencies. Remove an existing violation; never refresh
+its baseline or loosen its threshold to make it pass.
+
+`pnpm run lint:pixel-comparisons` runs in `lint:architecture` and rejects image
+snapshot APIs, stored image baselines, and known pixel comparison machinery. Do not
+add exemptions or bypass this gate. Review must reject equivalent custom comparisons
+even when the static gate cannot detect them.
+
+Manual screenshots and probes remain required for visual review where applicable.
+They are review evidence only: never compare their pixels or use them as automated
+pass/fail baselines. Test observable behavior with independent assertions instead.
+
 #### Do not write decorative appearance tests
 
 These rules apply to unit tests and browser tests alike:
@@ -613,8 +633,8 @@ These rules apply to unit tests and browser tests alike:
 Keep real-browser checks for clipping or overlap that hides content or controls, scroll
 ownership/anchoring, focus and keyboard access, usable hit areas, accessibility contrast,
 and reduced-motion behavior. Name the user-visible failure the assertion prevents.
-Geometry and computed styles are valid evidence for those contracts; do not remove a
-behavioral assertion solely because it measures pixels or lives in a geometry-named file.
+DOM geometry and computed styles are valid evidence for those contracts. This permits
+measurements of live elements, never pixel sampling or comparison of rendered images.
 
 | Do not write                                                                   | Write or retain instead                                                                         |
 | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |

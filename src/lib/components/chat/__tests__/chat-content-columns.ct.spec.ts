@@ -1,12 +1,6 @@
 import { expect, test } from '../../../../test/ct-test';
 import type { Locator } from '@playwright/test';
 import ChatPanelOperationalGeometryHost from './ChatPanelOperationalGeometryHost.svelte';
-import {
-  applyAuroraPaintProbe,
-  colorDistance,
-  isPaintProbe,
-  samplePanelBottomPixels,
-} from './aurora-panel-pixels';
 
 const center = (box: { x: number; width: number }) => box.x + box.width / 2;
 
@@ -57,31 +51,10 @@ async function settleColumns(component: Locator) {
 const bottomSurfaceGeometry = (locator: Locator) =>
   locator.evaluate((node) => {
     const box = node.getBoundingClientRect();
-    const style = getComputedStyle(node);
     return {
       edges: [box.left, box.right, box.bottom],
-      radii: [style.borderBottomLeftRadius, style.borderBottomRightRadius],
     };
   });
-
-async function expectPanelToClipFlushAurora(aurora: Locator, panel: Locator) {
-  const [auroraGeometry, panelGeometry] = await Promise.all([
-    bottomSurfaceGeometry(aurora),
-    bottomSurfaceGeometry(panel),
-  ]);
-  expect(auroraGeometry.radii).toEqual(panelGeometry.radii);
-  expect(Number.parseFloat(panelGeometry.radii[0])).toBeGreaterThan(0);
-  await applyAuroraPaintProbe(aurora);
-  const pixels = await samplePanelBottomPixels(panel);
-  pixels.outsideCorners.forEach((corner) => expect(isPaintProbe(corner)).toBe(false));
-  pixels.insideCorners.forEach((corner) => expect(isPaintProbe(corner)).toBe(true));
-  pixels.straightEdges.forEach((edge) => {
-    expect(isPaintProbe(edge)).toBe(true);
-    pixels.outsideCorners.forEach((corner) =>
-      expect(colorDistance(edge, corner)).toBeGreaterThan(100),
-    );
-  });
-}
 
 test('caps and centers transcript, prompt, and composer at the shared 140em measure', async ({
   mount,
@@ -118,7 +91,6 @@ test('caps and centers transcript, prompt, and composer at the shared 140em meas
       expect(composerLaneBox.width).toBeCloseTo(transcriptBox.width, 1);
       expect(Math.abs(center(transcriptBox) - center(composerBox))).toBeLessThanOrEqual(0.5);
       expect(promptBox.width).toBeCloseTo(shellBox.width, 1);
-      const panel = component.locator('.panel');
       const [auroraGeometry, shellGeometry, panelContentGeometry] = await Promise.all([
         bottomSurfaceGeometry(aurora),
         bottomSurfaceGeometry(shell),
@@ -126,7 +98,6 @@ test('caps and centers transcript, prompt, and composer at the shared 140em meas
       ]);
       expect(auroraGeometry.edges).toEqual(shellGeometry.edges);
       expect(auroraGeometry.edges).toEqual(panelContentGeometry.edges);
-      await expectPanelToClipFlushAurora(aurora, panel);
       await expect(promptLayer).toHaveCSS('border-top-width', '0px');
       expect(
         await composerLane.evaluate((node) => Number.parseFloat(getComputedStyle(node).maxWidth)),
@@ -190,7 +161,6 @@ test('keeps the nested composer inset without a narrow scroll owner', async ({ m
       );
       await expect(viewport).toHaveCSS('overflow-y', 'auto');
       await expect(transcript).toHaveCSS('overflow-y', 'visible');
-      const panel = component.locator('.panel');
       const [auroraGeometry, shellGeometry, panelContentGeometry] = await Promise.all([
         bottomSurfaceGeometry(aurora),
         bottomSurfaceGeometry(shell),
@@ -198,7 +168,6 @@ test('keeps the nested composer inset without a narrow scroll owner', async ({ m
       ]);
       expect(auroraGeometry.edges).toEqual(shellGeometry.edges);
       expect(auroraGeometry.edges).toEqual(panelContentGeometry.edges);
-      await expectPanelToClipFlushAurora(aurora, panel);
     }
   }
 });

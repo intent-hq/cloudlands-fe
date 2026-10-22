@@ -199,88 +199,6 @@ test('isolates outside-dismissed task help between delegated row controls', asyn
   await expect(firstTooltip).toBeVisible();
 });
 
-async function expectSubscriptionScreenshot(component: Locator, name: string, ratio: number) {
-  try {
-    await expect(component).toHaveScreenshot(name, { maxDiffPixelRatio: ratio });
-  } finally {
-    const typography = await component.evaluate((root) => {
-      const selectors = {
-        summary: '[data-testid="one-shot-summary-title"]',
-        preview: '[data-testid="agent-card-preview"]',
-        overflow: '[data-agent-avatar-overflow]',
-        stack: '[data-agent-avatar-stack]',
-      };
-      return {
-        fontStatus: document.fonts.status,
-        fontUiToken: getComputedStyle(root).getPropertyValue('--font-ui'),
-        interBodyReady: document.fonts.check('400 15px "Inter Variable"'),
-        interOverflowReady: document.fonts.check('500 12px "Inter Variable"'),
-        samples: Object.fromEntries(
-          Object.entries(selectors).map(([key, selector]) => {
-            const element = root.querySelector(selector);
-            if (!element) return [key, null];
-            const style = getComputedStyle(element);
-            const { x, y, width, height } = element.getBoundingClientRect();
-            return [
-              key,
-              {
-                fontFamily: style.fontFamily,
-                fontSize: style.fontSize,
-                fontWeight: style.fontWeight,
-                lineHeight: style.lineHeight,
-                letterSpacing: style.letterSpacing,
-                box: { x, y, width, height },
-              },
-            ];
-          }),
-        ),
-      };
-    });
-    const renderedFonts: Record<
-      string,
-      { fonts: { familyName: string; isCustomFont: boolean }[] }
-    > = {};
-    const page = component.page();
-    const cdp = await page.context().newCDPSession(page);
-    try {
-      await cdp.send('DOM.enable');
-      await cdp.send('CSS.enable');
-      const { root } = await cdp.send('DOM.getDocument');
-      for (const selector of [
-        '[data-testid="one-shot-summary-title"]',
-        '[data-testid="agent-card-preview"]',
-        '[data-agent-avatar-overflow]',
-      ]) {
-        const { nodeId } = await cdp.send('DOM.querySelector', {
-          nodeId: root.nodeId,
-          selector: `[data-testid="subscription-inline-host"] ${selector}`,
-        });
-        if (nodeId) {
-          renderedFonts[selector] = await cdp.send('CSS.getPlatformFontsForNode', { nodeId });
-        }
-      }
-    } finally {
-      await cdp.detach();
-    }
-    await test.info().attach(`${name}-typography`, {
-      body: JSON.stringify({ ...typography, renderedFonts }, null, 2),
-      contentType: 'application/json',
-    });
-    await test.info().attach(`${name}-render`, {
-      body: await component.screenshot({ animations: 'disabled' }),
-      contentType: 'image/png',
-    });
-    const fonts = Object.values(renderedFonts).flatMap((entry) => entry.fonts);
-    expect(fonts.length).toBeGreaterThan(0);
-    for (const font of fonts) {
-      expect(font).toMatchObject({
-        familyName: expect.stringMatching(/^Inter(?: Variable)?$/),
-        isCustomFont: true,
-      });
-    }
-  }
-}
-
 async function measure(component: Locator, page: Page) {
   await expect(component.getByTestId('agent-card-preview')).toBeVisible();
   await expect(
@@ -979,46 +897,6 @@ test('centers the finished summary and gives completed avatars a muted semantic 
   }
 });
 
-for (const theme of ['light', 'dark'] as const) {
-  for (const zoom of [1, 2]) {
-    test(`screenshots the finished summary and completed participant treatment (${theme}, ${zoom * 100}%)`, async ({
-      mount,
-      page,
-    }) => {
-      // Pin relative-time labels two days after the fixture timestamps.
-      await page.clock.setFixedTime(new Date('2026-08-17T12:05:00.000Z'));
-      const component = await mount(AgentSubscriptionInlineHost, {
-        props: { mode: 'agents', agentCount: 7, finishedCount: 2, initiallyExpanded: true },
-      });
-      await component.update({
-        props: {
-          mode: 'agents',
-          agentCount: 7,
-          finishedCount: 2,
-          initiallyExpanded: true,
-          theme,
-          width: 420,
-          zoom,
-        },
-      });
-      const waitingSummary = component.getByTestId('one-shot-summary-toggle');
-      if ((await waitingSummary.getAttribute('aria-expanded')) === 'false') {
-        await waitingSummary.click();
-      }
-      const finishedSummary = component.getByTestId('finished-agent-summary');
-      if ((await finishedSummary.getAttribute('aria-expanded')) === 'false') {
-        await finishedSummary.click();
-      }
-      await expect(component.getByTestId('finished-agent-list')).toBeVisible();
-      await expectSubscriptionScreenshot(
-        component,
-        `finished-participants-${theme}-${zoom === 1 ? '100' : '200'}.png`,
-        0.02,
-      );
-    });
-  }
-}
-
 test('renders exactly one promoted Waiting disclosure in agent-only mode', async ({ mount }) => {
   const component = await mount(AgentSubscriptionInlineHost, { props: { mode: 'agents' } });
   await expect(component.getByTestId('event-subscriptions-outer-header')).toHaveCount(0);
@@ -1610,39 +1488,4 @@ for (const [agentStateScenario, expected] of canonicalAgentStateCases) {
       `${agentStateScenario} should remain ${expected} in the collapsed stack`,
     ).toHaveAttribute('data-avatar-state', expected);
   });
-}
-
-for (const theme of ['light', 'dark'] as const) {
-  for (const parentBackground of ['background', 'muted', 'accent'] as const) {
-    for (const zoom of [1, 2]) {
-      test(`screenshots participant cutouts over varied parent backgrounds (${theme}, ${parentBackground}, ${zoom * 100}%)`, async ({
-        mount,
-      }) => {
-        const component = await mount(AgentSubscriptionInlineHost, {
-          props: { mode: 'agents', agentCount: 6, width: 420, initiallyExpanded: false },
-        });
-        await component.update({
-          props: {
-            mode: 'agents',
-            agentCount: 6,
-            width: 420,
-            initiallyExpanded: false,
-            theme,
-            parentBackground,
-            zoom,
-          },
-        });
-        const summary = component.getByTestId('one-shot-summary-toggle');
-        const stack = component.getByTestId('one-shot-header').locator('[data-agent-avatar-stack]');
-        if ((await summary.getAttribute('aria-expanded')) === 'true') await summary.click();
-        await expect.poll(() => stack.locator('[data-agent-avatar-with-state]').count()).toBe(3);
-        await expect(stack.locator('[data-agent-avatar-overflow]')).toHaveText('+3');
-        await expectSubscriptionScreenshot(
-          component,
-          `participant-stack-${theme}-${parentBackground}-${zoom === 1 ? '100' : '200'}.png`,
-          0.012,
-        );
-      });
-    }
-  }
 }

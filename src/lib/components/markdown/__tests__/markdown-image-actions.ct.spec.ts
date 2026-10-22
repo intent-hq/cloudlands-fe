@@ -21,8 +21,6 @@ interface CapturedImage {
   bytes: number[];
   width: number;
   height: number;
-  foreground: number[];
-  background: number[];
 }
 
 type ClipboardTestWindow = Window & {
@@ -39,19 +37,12 @@ async function captureImageClipboard(page: Page) {
         for (const item of items) {
           const blob = await item.getType('image/png');
           const bitmap = await createImageBitmap(blob);
-          const canvas = document.createElement('canvas');
-          canvas.width = bitmap.width;
-          canvas.height = bitmap.height;
-          const context = canvas.getContext('2d')!;
-          context.drawImage(bitmap, 0, 0);
           capture.writes.push({
             types: [...item.types],
             mimeType: blob.type,
             bytes: [...new Uint8Array(await blob.arrayBuffer())],
             width: bitmap.width,
             height: bitmap.height,
-            foreground: [...context.getImageData(120, 120, 1, 1).data],
-            background: [...context.getImageData(400, 120, 1, 1).data],
           });
           bitmap.close();
         }
@@ -89,8 +80,6 @@ async function expectCopiedImage(page: Page, count: number) {
   expect(copied.mimeType).toBe('image/png');
   expect(copied.bytes.slice(0, 8)).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
   expect([copied.width, copied.height]).toEqual([480, 240]);
-  expect(copied.foreground).toEqual([101, 124, 168, 255]);
-  expect(copied.background).toEqual([232, 237, 244, 255]);
   return Buffer.from(copied.bytes);
 }
 

@@ -160,8 +160,6 @@ for (const viewport of [
       await captureIntroductionArtifacts(page, viewport.name);
 
       if (viewport.name === 'desktop') await captureKeyboardFocusEvidence(page);
-
-      expect((await page.screenshot({ fullPage: true })).byteLength).toBeGreaterThan(10_000);
     },
   );
   for (const slug of catalogSlugs) {

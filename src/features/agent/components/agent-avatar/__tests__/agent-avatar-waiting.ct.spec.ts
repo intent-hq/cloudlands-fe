@@ -143,29 +143,6 @@ test('keeps a plain idle avatar glyph visible in dark mode', async ({ mount, pag
   await expect(avatar).toHaveCSS('background-color', 'rgb(192, 206, 198)');
 });
 
-test('matches the light and dark waiting palette catalog at 20px and 200%', async ({
-  mount,
-  page,
-}) => {
-  const component = await mount(AgentAvatarWaitingHost);
-  const states = component
-    .locator('[data-catalog-avatar-design="coordinator"]')
-    .locator('.agent-avatar-catalog-states');
-
-  for (const theme of ['light', 'dark'] as const) {
-    for (const zoom of [1, 2] as const) {
-      await component.update({ props: { theme, state: 'waiting', zoom } });
-      await page.evaluate((selectedTheme) => {
-        document.documentElement.classList.toggle('dark', selectedTheme === 'dark');
-        document.documentElement.classList.toggle('light', selectedTheme === 'light');
-      }, theme);
-      await expect(states).toHaveScreenshot(
-        `agent-avatar-waiting-${theme}-${zoom === 1 ? '20px' : '200-percent'}.png`,
-      );
-    }
-  }
-});
-
 const surfaceTokenByState = {
   idle: '--agent-avatar-surface-neutral',
   unread: '--agent-avatar-surface-neutral',

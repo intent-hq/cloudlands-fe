@@ -2000,18 +2000,6 @@ async function expectActionsClearGeometry(
   expect(collisions, `${context} action collisions`).toEqual([]);
 }
 
-async function expectStableScreenshot(page: Page, state: string) {
-  const stage = page.locator(`#${state} .diagram-stage`);
-  let previous = await stage.screenshot({ animations: 'disabled' });
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    await page.waitForTimeout(100);
-    const current = await stage.screenshot({ animations: 'disabled' });
-    if (current.equals(previous)) return;
-    previous = current;
-  }
-  expect(false, `${state} did not produce two consecutive stable frames`).toBe(true);
-}
-
 test('discovers and renders all registered diagram states without application startup', async ({
   page,
 }) => {
@@ -2128,9 +2116,7 @@ test('discovers and renders all registered diagram states without application st
   expect(expectedInvalidErrors.length).toBeGreaterThan(0);
 });
 
-test('keeps token themes, reduced motion, and representative screenshots stable', async ({
-  page,
-}) => {
+test('updates token themes and respects reduced motion', async ({ page }) => {
   test.setTimeout(90_000);
   await page.setViewportSize({ width: 1400, height: 1000 });
   await openState(page, 'mermaid-dense-graph', 960, 'light');
@@ -2139,7 +2125,6 @@ test('keeps token themes, reduced motion, and representative screenshots stable'
     foreground: getComputedStyle(document.documentElement).getPropertyValue('--foreground'),
     svgId: document.querySelector('#mermaid-dense-graph .mermaid-svg > svg')?.id,
   }));
-  await expectStableScreenshot(page, 'mermaid-dense-graph');
 
   await page.getByTestId('catalog-color-theme-control').click();
   await page.getByRole('option', { name: 'Nord', exact: true }).click();
@@ -2173,7 +2158,6 @@ test('keeps token themes, reduced motion, and representative screenshots stable'
   );
   await openState(page, 'custom-long-multiline-labels', 420, 'dark');
   await expectCustomGeometry(page, 'custom-long-multiline-labels');
-  await expectStableScreenshot(page, 'custom-long-multiline-labels');
 });
 
 test('keeps flowchart edge-label content inside Mermaid viewports in every theme', async ({

@@ -105,7 +105,7 @@ test('working-hours controls are keyboard reachable without hovering', async ({ 
   await expect(card.locator('.wh-bound').last()).toContainText('17');
 });
 
-test('PNG export removes hovered and keyboard-focused controls without changing the card', async ({
+test('PNG export downloads at the expected size with focused or hovered controls', async ({
   mount,
   page,
 }, testInfo) => {
@@ -124,22 +124,17 @@ test('PNG export removes hovered and keyboard-focused controls without changing 
     const path = testInfo.outputPath(`${name}.png`);
     await download.saveAs(path);
     await testInfo.attach(name, { path, contentType: 'image/png' });
-    return readFile(path);
+    const png = await readFile(path);
+    expect([...png.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+    expect(png.readUInt32BE(16)).toBe(1080);
+    expect(png.readUInt32BE(20)).toBe(1920);
   }
 
   const controls = card.getByRole('button');
   await page.mouse.move(700, 700);
   await page.keyboard.press('Tab');
   await expect(controls.first()).toBeFocused();
-  const focused = await capture('focused-export');
+  await capture('focused-export');
   await controls.last().hover();
-  const hovered = await capture('hovered-export');
-  // Independent oracle: export the same card with the controls removed entirely.
-  // Unlike hiding via CSS, removal cannot accidentally serialize interactive chrome.
-  await controls.evaluateAll((nodes) => nodes.forEach((node) => node.remove()));
-  const withoutControls = await capture('control-free-export');
-  expect(focused.equals(withoutControls)).toBe(true);
-  expect(hovered.equals(withoutControls)).toBe(true);
-  expect(withoutControls.readUInt32BE(16)).toBe(1080);
-  expect(withoutControls.readUInt32BE(20)).toBe(1920);
+  await capture('hovered-export');
 });
