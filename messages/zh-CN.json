@@ -238,7 +238,7 @@
   "browser_embedded_url_placeholder": "输入 URL…",
   "browser_embedded_viewport_tooltip": "智能体设置的模拟视口：{width}×{height}",
   "browser_linkOpen_loopbackAmbiguity_warning": "回环 URL 已重写为守护进程主机",
-  "browser_linkOpen_ownerOnlyForward_error": "只有工作区所有者才能在守护进程主机上打开转发端口",
+  "browser_linkOpen_ownerOnlyForward_error": "端口转发需要主机所有者或主机成员的访问权限。仅受邀加入工作区不包含端口转发权限。",
   "browser_overflow_console_label": "控制台",
   "browser_overflow_copyUrl_label": "复制 URL",
   "browser_overflow_inspector_label": "检查器",

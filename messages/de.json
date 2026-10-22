@@ -238,7 +238,7 @@
   "browser_embedded_url_placeholder": "URL eingeben...",
   "browser_embedded_viewport_tooltip": "Vom Agenten festgelegter emulierter Viewport: {width}×{height}",
   "browser_linkOpen_loopbackAmbiguity_warning": "Loopback-URL wurde auf den Daemon-Host umgeschrieben",
-  "browser_linkOpen_ownerOnlyForward_error": "Nur der Workspace-Eigentümer kann weitergeleitete Ports auf dem Daemon-Host öffnen",
+  "browser_linkOpen_ownerOnlyForward_error": "Die Portweiterleitung erfordert Zugriff als Host-Eigentümer oder Host-Mitglied. Eine Workspace-Einladung allein umfasst keine Portweiterleitung.",
   "browser_overflow_console_label": "Konsole",
   "browser_overflow_copyUrl_label": "URL kopieren",
   "browser_overflow_inspector_label": "Inspektor",

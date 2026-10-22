@@ -238,7 +238,7 @@
   "browser_embedded_url_placeholder": "Introducir URL...",
   "browser_embedded_viewport_tooltip": "Viewport emulado establecido por el agente: {width}×{height}",
   "browser_linkOpen_loopbackAmbiguity_warning": "La URL de loopback se reescribió al host del daemon",
-  "browser_linkOpen_ownerOnlyForward_error": "Solo el propietario del espacio de trabajo puede abrir puertos reenviados en el host del daemon",
+  "browser_linkOpen_ownerOnlyForward_error": "El reenvío de puertos requiere acceso como propietario o miembro del host. Una invitación al espacio de trabajo por sí sola no incluye el reenvío de puertos.",
   "browser_overflow_console_label": "Consola",
   "browser_overflow_copyUrl_label": "Copiar URL",
   "browser_overflow_inspector_label": "Inspector de elementos",

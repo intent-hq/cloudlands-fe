@@ -238,7 +238,7 @@
   "browser_embedded_url_placeholder": "URL を入力...",
   "browser_embedded_viewport_tooltip": "エージェント設定のエミュレートビューポート: {width}×{height}",
   "browser_linkOpen_loopbackAmbiguity_warning": "ループバック URL はデーモンのホストに書き換えられました",
-  "browser_linkOpen_ownerOnlyForward_error": "デーモンのホストで転送ポートを開けるのはワークスペースの所有者のみです",
+  "browser_linkOpen_ownerOnlyForward_error": "ポート転送には、ホストの所有者またはメンバーとしてのアクセス権が必要です。ワークスペースへの招待だけではポート転送は利用できません。",
   "browser_overflow_console_label": "コンソール",
   "browser_overflow_copyUrl_label": "URL をコピー",
   "browser_overflow_inspector_label": "インスペクター",
