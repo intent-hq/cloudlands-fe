@@ -1,0 +1,18 @@
+name: Cache pnpm store
+description: >-
+  Restores and saves the pnpm store keyed on the lockfile, through ./.github/actions/cache
+  (WarpBuild's cache on WarpBuild Linux and macOS runners, GitHub's elsewhere).
+  Replaces setup-node's `cache: pnpm`; run it after pnpm and Node are set up and
+  before `pnpm install`.
+runs:
+  using: composite
+  steps:
+    - id: store
+      shell: bash
+      run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+    - uses: ./.github/actions/cache
+      with:
+        path: ${{ steps.store.outputs.path }}
+        key: pnpm-store-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+        restore-keys: |
+          pnpm-store-${{ runner.os }}-${{ runner.arch }}-

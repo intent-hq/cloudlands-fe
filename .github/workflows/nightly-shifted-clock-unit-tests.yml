@@ -81,7 +81,9 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: 'pnpm'
+      - name: Cache pnpm store
+        # WarpBuild's cache on WarpBuild Linux/macOS runners, GitHub's elsewhere.
+        uses: ./.github/actions/pnpm-store-cache
       - name: Read backend Keychain fixture pin
         id: backend-keychain-fixtures
         run: node scripts/backend-keychain-fixtures.mjs | tee -a "$GITHUB_OUTPUT"

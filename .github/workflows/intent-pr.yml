@@ -598,12 +598,14 @@ jobs:
           version: 10.30.3
           run_install: false
       - name: Setup Node.js
-        # Every Linux runner (GitHub-hosted or an intent-cache container) starts with
-        # an empty pnpm store, so always restore it from the Actions cache.
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: 'pnpm'
+      - name: Cache pnpm store
+        # Every runner (intent-cache container, WarpBuild or GitHub) starts with an
+        # empty pnpm store, so always restore it: WarpBuild's cache on WarpBuild
+        # Linux/macOS runners, GitHub's elsewhere.
+        uses: ./.github/actions/pnpm-store-cache
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       # Cold-checkout gate: runs the agent-facing `lint` gate BEFORE any
@@ -740,7 +742,9 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: 'pnpm'
+      - name: Cache pnpm store
+        # WarpBuild's cache on WarpBuild Linux/macOS runners, GitHub's elsewhere.
+        uses: ./.github/actions/pnpm-store-cache
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Build web renderer
@@ -832,7 +836,9 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: 'pnpm'
+      - name: Cache pnpm store
+        # WarpBuild's cache on WarpBuild Linux/macOS runners, GitHub's elsewhere.
+        uses: ./.github/actions/pnpm-store-cache
       - name: Read backend Keychain fixture pin
         id: backend-keychain-fixtures
         run: node scripts/backend-keychain-fixtures.mjs | tee -a "$GITHUB_OUTPUT"
@@ -902,7 +908,9 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: pnpm
+      - name: Cache pnpm store
+        # WarpBuild's cache on WarpBuild Linux/macOS runners, GitHub's elsewhere.
+        uses: ./.github/actions/pnpm-store-cache
       - name: Record native fixture environment
         run: |
           set -euo pipefail
@@ -980,7 +988,9 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: 'pnpm'
+      - name: Cache pnpm store
+        # WarpBuild's cache on WarpBuild Linux/macOS runners, GitHub's elsewhere.
+        uses: ./.github/actions/pnpm-store-cache
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Generate i18n messages

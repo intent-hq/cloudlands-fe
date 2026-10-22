@@ -1,0 +1,50 @@
+name: Cache
+description: >-
+  actions/cache, backed by WarpBuild's cache on WarpBuild Linux and macOS runners.
+  Routed jobs land on intent-cache slots, WarpBuild or GitHub per run (see
+  runner-route.yml), and WarpBuild's cache only works on WarpBuild runners and
+  not on WarpBuild Windows, so the backend is chosen when the step runs.
+inputs:
+  path:
+    description: Files, directories and wildcard patterns to cache and restore.
+    required: true
+  key:
+    description: Explicit key for saving and restoring the cache.
+    required: true
+  restore-keys:
+    description: Ordered, newline-separated key prefixes to restore from when the key misses.
+    required: false
+    default: ''
+outputs:
+  cache-hit:
+    description: Whether the primary key matched exactly.
+    value: ${{ steps.warpbuild.outputs.cache-hit || steps.github.outputs.cache-hit }}
+  backend:
+    description: '`warpbuild` or `github`.'
+    value: ${{ steps.backend.outputs.backend }}
+runs:
+  using: composite
+  steps:
+    # WarpBuild sets WARPBUILD_RUNNER_VERIFICATION_TOKEN on every runner it
+    # starts; only its presence is checked, never its value.
+    - id: backend
+      shell: bash
+      run: |
+        if [[ -n "${WARPBUILD_RUNNER_VERIFICATION_TOKEN:-}" && "$RUNNER_OS" != Windows ]]; then backend=warpbuild; else backend=github; fi
+        echo "Cache backend: $backend"
+        echo "backend=$backend" >> "$GITHUB_OUTPUT"
+    - id: warpbuild
+      if: steps.backend.outputs.backend == 'warpbuild'
+      # v2.0.0
+      uses: WarpBuilds/cache@dad44e2487e9dc889ad6e6bd198e77bb2d828eee
+      with:
+        path: ${{ inputs.path }}
+        key: ${{ inputs.key }}
+        restore-keys: ${{ inputs.restore-keys }}
+    - id: github
+      if: steps.backend.outputs.backend == 'github'
+      uses: actions/cache@v6
+      with:
+        path: ${{ inputs.path }}
+        key: ${{ inputs.key }}
+        restore-keys: ${{ inputs.restore-keys }}

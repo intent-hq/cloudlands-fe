@@ -1067,7 +1067,9 @@ describe('root Playwright hosted shards', () => {
     expect(jobField(testPlaywright, 'runs-on')).toBe(
       `\${{ fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["gh-linux-8x"]') }}`,
     );
-    expect(field(step('Setup Node.js'), 'cache').replaceAll("'", '')).toBe('pnpm');
+    // The pnpm store is restored by the backend-selecting cache action (WarpBuild or GitHub).
+    expect(field(step('Cache pnpm store'), 'uses')).toBe('./.github/actions/pnpm-store-cache');
+    expect(field(step('Cache Playwright browsers'), 'uses')).toBe('./.github/actions/cache');
     for (const name of ['Cache Playwright browsers', 'Install Playwright browsers']) {
       const condition = step(name).find((line) => line.trimStart().startsWith('if:'));
       expect(evaluateCondition(condition?.trim().slice(3).trim() ?? 'true', context)).toBe(true);

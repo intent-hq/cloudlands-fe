@@ -58,7 +58,9 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: pnpm
+      - name: Cache pnpm store
+        # WarpBuild's cache on WarpBuild Linux/macOS runners, GitHub's elsewhere.
+        uses: ./.github/actions/pnpm-store-cache
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Generate i18n messages
@@ -80,7 +82,7 @@ jobs:
           console.log(`readiness-marker=${plan.readinessMarker}`);
           ' "$RUNNER_TEMP/ct-browser-plan.json" >> "$GITHUB_OUTPUT"
       - name: Cache Playwright browsers
-        uses: actions/cache@v6
+        uses: ./.github/actions/cache
         id: playwright-cache
         with:
           path: ${{ steps.ct-browser.outputs.cache-dir }}
@@ -321,7 +323,9 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: 'pnpm'
+      - name: Cache pnpm store
+        # WarpBuild's cache on WarpBuild Linux/macOS runners, GitHub's elsewhere.
+        uses: ./.github/actions/pnpm-store-cache
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Generate i18n messages
@@ -346,7 +350,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Cache Playwright browsers
         # Distinct key prefix from test-ct's so the versions never alias.
-        uses: actions/cache@v6
+        uses: ./.github/actions/cache
         with:
           path: ~/.cache/ms-playwright
           key: playwright-root-browsers-${{ runner.os }}-${{ steps.root-playwright.outputs.version }}
@@ -417,7 +421,9 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: pnpm
+      - name: Cache pnpm store
+        # WarpBuild's cache on WarpBuild Linux/macOS runners, GitHub's elsewhere.
+        uses: ./.github/actions/pnpm-store-cache
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Install Electron binary

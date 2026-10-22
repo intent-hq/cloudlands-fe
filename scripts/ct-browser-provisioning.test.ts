@@ -109,7 +109,10 @@ ${command}`,
     expect(
       evaluate(ctJob.match(/^    runs-on: (.*)$/m)![1], { ...context, 'inputs.cloud': '{}' }),
     ).toEqual(['gh-linux-8x']);
-    expect.soft(value(step('Setup Node.js').match(/^          cache: (.*)$/m)![1])).toBe('pnpm');
+    // The pnpm store is restored by the backend-selecting cache action (WarpBuild or GitHub).
+    expect.soft(step('Setup Node.js')).not.toMatch(/^          cache:/m);
+    expect.soft(step('Cache pnpm store')).toContain('uses: ./.github/actions/pnpm-store-cache');
+    expect.soft(step('Cache Playwright browsers')).toContain('uses: ./.github/actions/cache');
 
     const provisioning = ctJob.split('      - name: Build CT bundle')[0];
     const activeSteps = [...provisioning.matchAll(/^      - name: (.*)$/gm)]
