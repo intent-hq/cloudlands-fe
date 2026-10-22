@@ -23,6 +23,7 @@ import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-s
 import { ensureAgentSession } from '$features/agent/agent-read-service';
 import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
 import { selectAgentIsRunning } from '$store/renderer/slices/agent-session/agent-session-selectors';
+import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
 import type { AgentSession } from '$shared/types';
 
 beforeAll(() => appStore.init());
@@ -123,6 +124,28 @@ it.each([
 
     push(agent, 'agent:status-changed', { status: 'active', isActive: true });
     expect(selectAgentIsRunning.select(appStore.state, agent.id)).toBe(true);
+  },
+);
+
+it.each(['agent:idle', 'agent:status-changed'])(
+  'preserves a persisted tool-only preview when %s settles activity',
+  (type) => {
+    const lastToolUse = { name: 'view', input: { path: 'src/a.ts' } };
+    const agent = {
+      ...knownAgent(`idle-persisted-tool-${type}`),
+      turnInFlight: true,
+      isWaitingOnTool: true,
+      lastToolUse,
+    };
+    appStore.dispatch(bulkUpsertSessions([agent]));
+
+    push(agent, type, { status: 'idle', isActive: false });
+
+    const settled = appStore.state.agentSessions.byAgentId[agent.id];
+    expect(selectAgentIsRunning.select(appStore.state, agent.id)).toBe(false);
+    expect(getAvatarStateForSession(settled)).toBe('idle');
+    expect(getAgentPeekData(settled)?.lastToolUse).toMatchObject(lastToolUse);
+    expect(pendingGets).toHaveLength(0);
   },
 );
 
