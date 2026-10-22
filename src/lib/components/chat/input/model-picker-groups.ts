@@ -21,6 +21,7 @@ type ModelPickerOptions = Parameters<typeof toDropdownOptions>[0];
 export const AUGGIE_LEGACY_GROUP_KEY = 'auggie:legacy-models';
 
 interface BuildGroupedModelOptionsParams {
+  workspaceId?: string;
   showDefaultOption: boolean;
   useDefaultOption: DropdownOption;
   effectiveProviderId: string;
@@ -56,6 +57,7 @@ interface BuildGroupedModelOptionsParams {
 }
 
 export function buildGroupedModelOptions({
+  workspaceId,
   showDefaultOption,
   useDefaultOption,
   effectiveProviderId,
@@ -81,7 +83,7 @@ export function buildGroupedModelOptions({
 
   const state = appStore.state;
   const normalizedEnabledProviderIds = new Set(
-    enabledProviderIds.map((pid) => selectNormalizedProviderId.select(state, pid)),
+    enabledProviderIds.map((pid) => selectNormalizedProviderId.select(state, pid, workspaceId)),
   );
   // Keep the agent's current provider group visible while that provider is
   // merely unavailable (or a guest window cannot see the host's settings), so
@@ -90,6 +92,7 @@ export function buildGroupedModelOptions({
   const normalizedEffectiveProviderId = selectNormalizedProviderId.select(
     state,
     effectiveProviderId,
+    workspaceId,
   );
   // Settings win: `enabledProviderIds` also carries the active provider, which
   // can still name the disabled one until the daemon re-derives the default.
@@ -98,19 +101,19 @@ export function buildGroupedModelOptions({
   // loaded for the effective provider (see availableModelsProviderId doc).
   const fallbackModelsMatchEffectiveProvider =
     availableModelsProviderId !== '' &&
-    selectNormalizedProviderId.select(state, availableModelsProviderId) ===
+    selectNormalizedProviderId.select(state, availableModelsProviderId, workspaceId) ===
       normalizedEffectiveProviderId;
 
   const groupLabel = (pid: string) =>
     formatProviderRefLabel(
       pid,
-      selectProviderDisplayName.select(state, providerRefBaseId(pid)),
+      selectProviderDisplayName.select(state, providerRefBaseId(pid), workspaceId),
       profiles,
       providerRefBaseId(pid),
     );
 
   for (const pid of expandProviderIdsWithProfiles(
-    selectAllCatalogProviderIds.select(state),
+    selectAllCatalogProviderIds.select(state, workspaceId),
     profiles,
   )) {
     const isDisabledEffectiveProvider =

@@ -1,3 +1,4 @@
+import { workspaceDiscussionSaga } from './slices/workspace-discussion/sagas/workspace-discussion-saga';
 import { homeWorkspacesSaga } from '$features/home/home-workspaces-saga';
 import { homeIntegrationsSaga } from '$features/home/home-integrations-saga';
 import { modelNameCacheSaga } from './slices/provider-models/sagas/model-name-cache-saga';
@@ -155,6 +156,7 @@ export const sagas = [
   hudSaga,
   guestSessionsSaga,
   presenceSaga,
+  workspaceDiscussionSaga,
   presenceFollowSaga,
   principalSaga,
   hostExecutionSaga,

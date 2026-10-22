@@ -23,17 +23,29 @@
   import { store as appStore } from '$store/renderer/store';
   import {
     shareIntegrationAuthRequested,
+    sharePrerequisitesRequested,
+    shareEnableRequested,
     closeShareDialog,
     shareInviteCreateRequested,
     shareInviteRevokeRequested,
     shareMemberAddRequested,
     shareMemberRemoveRequested,
+    shareMemberRoleRequested,
   } from '$store/renderer/slices/workspace-share/workspace-share-slice';
   import {
+    selectShareTarget,
     selectShareIntegrationAuth,
+    selectShareSharingEnabled,
+    selectShareSharingChecking,
+    selectShareSharingEnabling,
+    selectShareSharingError,
     selectShareActionError,
     selectShareAddingPrincipalId,
     selectShareCanManage,
+    selectShareCanSetMemberRole,
+    selectShareOwnerPrincipalId,
+    selectSharePendingRolePrincipalIds,
+    selectShareRoleErrors,
     selectShareCreatedLink,
     selectShareCreateError,
     selectShareCreating,
@@ -77,6 +89,7 @@
   const canAdministerHost$ = selectCanAdministerHost();
   const gitlabStatusReady$ = selectGitLabStatusReady();
   const open$ = selectShareDialogOpen();
+  const target$ = selectShareTarget();
   const workspaceId$ = selectShareWorkspaceId();
   const workspaceTitle$ = selectShareWorkspaceTitle();
   const githubConnected$ = selectGitHubAuthIsAuthenticated();
@@ -86,9 +99,23 @@
   const identitySeamSupported$ = selectDaemonSupportsIdentitySeam();
   const identityProvider$ = selectEffectiveIdentityProvider();
   const canManage$ = selectShareCanManage();
+  const canSetMemberRole$ = selectShareCanSetMemberRole();
+  const ownerPrincipalId$ = selectShareOwnerPrincipalId();
+  const pendingRolePrincipalIds$ = selectSharePendingRolePrincipalIds();
+  const roleErrors$ = selectShareRoleErrors();
+  const sharingEnabled$ = selectShareSharingEnabled();
+  const sharingChecking$ = selectShareSharingChecking();
+  const sharingEnabling$ = selectShareSharingEnabling();
+  const sharingError$ = selectShareSharingError();
   const members$ = selectShareMembers();
   const invites$ = selectShareInvites();
   const principalContext$ = selectPrincipalActionContext();
+  $effect(() => {
+    $principalContext$;
+    if ($open$ && $canManage$ && $canAdministerHost$) {
+      appStore.dispatch(sharePrerequisitesRequested());
+    }
+  });
   const principals$ = selectShareInvitablePrincipals();
   const guestCount$ = selectShareGuestCount();
   const guestLimit$ = selectShareGuestLimit();
@@ -138,7 +165,7 @@
   });
 </script>
 
-{#key $principalContext$}
+{#key JSON.stringify([$principalContext$, $target$?.session])}
   <ShareWorkspaceDialog
     open={$open$}
     workspaceId={$workspaceId$}
@@ -153,6 +180,24 @@
     hostMembershipSupported={$collaboration$.hostMembership}
     identityProvider={$identityProvider$}
     canManage={$canManage$}
+    canSetMemberRole={$canSetMemberRole$}
+    ownerPrincipalId={$ownerPrincipalId$}
+    pendingRolePrincipalIds={$pendingRolePrincipalIds$}
+    roleErrors={$roleErrors$}
+    sharingEnabled={$sharingEnabled$}
+    sharingChecking={$sharingChecking$}
+    sharingEnabling={$sharingEnabling$}
+    sharingError={$sharingError$}
+    onEnableSharing={() => {
+      const current = selectShareTarget.select(appStore.state);
+      if (
+        selectCanAdministerHost.select(appStore.state) &&
+        selectPrincipalActionContext.select(appStore.state) === $principalContext$ &&
+        current?.workspaceId === $target$?.workspaceId &&
+        current?.session === $target$?.session
+      )
+        appStore.dispatch(shareEnableRequested());
+    }}
     members={$members$}
     invites={$invites$}
     principals={$principals$}
@@ -185,6 +230,8 @@
     onCreateInvite={(pinLogin, pin) =>
       appStore.dispatch(shareInviteCreateRequested(pin ? { pinLogin, pin } : { pinLogin }))}
     onRevokeInvite={(inviteId) => appStore.dispatch(shareInviteRevokeRequested(inviteId))}
+    onSetMemberRole={(principalId, role) =>
+      appStore.dispatch(shareMemberRoleRequested({ principalId, role }))}
     onRemoveMember={(principalId) => appStore.dispatch(shareMemberRemoveRequested(principalId))}
     onAddMember={(principalId) => appStore.dispatch(shareMemberAddRequested(principalId))}
     onSearchUsers={(query) =>

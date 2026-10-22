@@ -91,7 +91,7 @@
   import { openTabInRightmostColumnRequested } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { resolveTerminalShortcutWorkspaceId } from '$features/terminal/terminal-shortcut-context';
   import {
-    selectHidesAgentLifecycleActions,
+    selectHidesAgentCreationActions,
     selectIsCollaboratorOnlyClient,
     selectIsWorkspaceCollaborator,
     selectWorkspaceHasLoaded,
@@ -532,7 +532,7 @@
       openNewWorkspace: () => appStore.dispatch(setShowCreateModal(true)),
       onCreateAgent: (workspaceId) => {
         // `agent.create` is refused (-32003) for a collaborator connection.
-        if (selectHidesAgentLifecycleActions.select(appStore.state, workspaceId)) return;
+        if (selectHidesAgentCreationActions.select(appStore.state, workspaceId)) return;
         appStore.dispatch(createAgentRequested(workspaceId));
       },
       onCreateNote: (workspaceId) => appStore.dispatch(createNoteRequested(workspaceId)),

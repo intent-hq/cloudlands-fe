@@ -14,7 +14,7 @@ import type { WorkspaceInvite, WorkspaceInviteRow } from './types';
 const links = new Map<string, string>();
 
 /** Park (or refresh) the link of one open invite. */
-export function storeInviteLink(inviteId: string, url: string): void {
+function storeInviteLink(inviteId: string, url: string): void {
   links.set(inviteId, url);
 }
 

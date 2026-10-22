@@ -57,7 +57,10 @@ export const selectProviderCatalogProfiles = store.createSelector(
 
 /** All provider ids in registry order. */
 export const selectAllCatalogProviderIds = store.createSelector(
-  (state): string[] => state.providerCatalog?.providers.ids ?? [],
+  (state, workspaceId?: string): string[] =>
+    workspaceId
+      ? selectProviderCatalogEntries.select(state, workspaceId).map((entry) => entry.id)
+      : (state.providerCatalog?.providers.ids ?? []),
 );
 
 /**

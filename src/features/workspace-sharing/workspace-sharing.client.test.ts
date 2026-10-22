@@ -38,6 +38,40 @@ const invite = {
 describe('workspaceSharingClient wire contract (fake transport)', () => {
   afterEach(() => vi.clearAllMocks());
 
+  it.each([true, false])(
+    'setMemberRole sends a scoped mutation and accepts changed=%s',
+    async (changed) => {
+      const result = { workspaceId: 'ws-1', principalId: 'p-bob', role: 'manager', changed };
+      mockedRequest.mockResolvedValueOnce(result);
+      await expect(
+        workspaceSharingClient.setMemberRole('ws-1', 'p-bob', 'manager'),
+      ).resolves.toEqual({ success: true, result });
+      expect(mockedRequest).toHaveBeenCalledWith('workspace.members.setRole', {
+        workspaceId: 'ws-1',
+        principalId: 'p-bob',
+        role: 'manager',
+      });
+    },
+  );
+
+  it('rejects mismatched role replies and folds old-daemon method failures', async () => {
+    mockedRequest.mockResolvedValueOnce({
+      workspaceId: 'other',
+      principalId: 'p-bob',
+      role: 'manager',
+      changed: true,
+    });
+    await expect(workspaceSharingClient.setMemberRole('ws-1', 'p-bob', 'manager')).resolves.toEqual(
+      { success: false, code: 'unknown' },
+    );
+    mockedRequest.mockRejectedValueOnce(
+      Object.assign(new Error('private transport detail'), { rpcCode: -32601 }),
+    );
+    await expect(workspaceSharingClient.setMemberRole('ws-1', 'p-bob', 'manager')).resolves.toEqual(
+      { success: false, code: 'unknown', rpcCode: -32601 },
+    );
+  });
+
   it('listMembers forwards workspace.members.list and returns the rows with the guest cap', async () => {
     mockedRequest.mockResolvedValueOnce({ members: [member], guestCount: 2, guestLimit: 5 });
     await expect(workspaceSharingClient.listMembers('ws-1')).resolves.toEqual({
