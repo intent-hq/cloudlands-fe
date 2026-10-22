@@ -1125,7 +1125,17 @@
               popup.height,
           );
           const top = Math.min(Math.max(OVERLAY_VIEWPORT_GUTTER, current.top + offsetY), lastTop);
-          return new DOMRect(current.left + offsetX, top, 0, 0);
+          const lastLeft = Math.max(
+            OVERLAY_VIEWPORT_GUTTER,
+            trigger.ownerDocument.documentElement.clientWidth -
+              OVERLAY_VIEWPORT_GUTTER -
+              popup.width,
+          );
+          const left = Math.min(
+            Math.max(OVERLAY_VIEWPORT_GUTTER, current.left + offsetX),
+            lastLeft,
+          );
+          return new DOMRect(left, top, 0, 0);
         },
       };
     }
@@ -1663,6 +1673,7 @@
         aria-label={m.workspace_branchSelector_whichBranch_label()}
         class="w-[400px] max-w-[calc(100vw-16px)] min-w-0 max-h-[min(600px,var(--bits-popover-content-available-height,100dvh))] overflow-y-auto flex flex-col"
         customAnchor={modeAnchor}
+        avoidCollisions={!modeAnchor}
         side={modeAnchor ? 'bottom' : dropUp ? 'top' : 'bottom'}
         align={modeAnchor ? 'start' : 'center'}
         sideOffset={modeAnchor ? 0 : undefined}

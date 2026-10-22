@@ -414,6 +414,70 @@ for (const { position, contract } of [
   });
 }
 
+for (const initialMode of ['direct', 'reopened-direct'] as const) {
+  test(`worktree toggle stays under the pointer when opened ${initialMode} at the bottom edge`, async ({
+    mount,
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1000, height: 900 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await mount(Pickers, {
+      props: {
+        position: 'bottom',
+        branchPreview: initialMode === 'direct' ? 'direct-mode' : undefined,
+      },
+    });
+    const trigger = page
+      .getByTestId('initializer-pickers-fixture')
+      .locator('button[aria-haspopup="dialog"]')
+      .nth(1);
+    const menu = page.getByRole('dialog');
+    const isolation = menu.getByRole('switch', { name: /Isolated/ });
+    if (initialMode === 'reopened-direct') {
+      await trigger.click();
+      await expect(menu.getByRole('combobox')).toHaveAttribute('aria-busy', 'false');
+      await isolation.click();
+      await expect(isolation).not.toBeChecked();
+      await page.keyboard.press('Escape');
+      await expect(menu).toHaveCount(0);
+      await trigger.click();
+    }
+    await expect(isolation).not.toBeChecked();
+    await isolation.hover();
+    const origin = (await menu.boundingBox())!;
+    const control = (await isolation.boundingBox())!;
+    const point = { x: control.x + control.width / 2, y: control.y + control.height / 2 };
+
+    for (const checked of [true, false, true, false]) {
+      await page.mouse.click(point.x, point.y);
+      await expect(isolation).toBeChecked({ checked });
+      await expect
+        .poll(async () => {
+          const current = (await menu.boundingBox())!;
+          return Math.hypot(current.x - origin.x, current.y - origin.y);
+        })
+        .toBeLessThanOrEqual(1);
+      await expect(isolation).toBeFocused();
+      await expectViewportBounded(menu);
+      if (checked) {
+        const results = menu.getByRole('region', { name: 'Select a branch' });
+        await expect(menu.getByRole('combobox')).toHaveAttribute('aria-busy', 'false');
+        await expect
+          .poll(() => results.evaluate((e) => e.scrollHeight > e.clientHeight))
+          .toBe(true);
+        await results.hover();
+        await page.mouse.wheel(0, 300);
+        await expect.poll(() => results.evaluate((e) => e.scrollTop)).toBeGreaterThan(0);
+      }
+    }
+    await page.setViewportSize({ width: 360, height: 500 });
+    await expectViewportBounded(menu);
+    await isolation.click();
+    await expect(isolation).toBeChecked();
+    await expectViewportBounded(menu);
+  });
+}
+
 test('branch group headers and footer toggles share expansion and search state', async ({
   mount,
   page,
