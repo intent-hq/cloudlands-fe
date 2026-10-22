@@ -39,6 +39,8 @@ export interface RepoValidationResult extends ValidationResult {
 export async function validateRepoPath(
   path: string,
   allowNewRepo: boolean = false,
+  /** Accept an existing non-git folder as-is (no-worktree workspaces work in place). */
+  allowPlainFolder: boolean = false,
 ): Promise<RepoValidationResult> {
   if (!path || path.trim().length === 0) {
     return {
@@ -56,7 +58,7 @@ export async function validateRepoPath(
   }
 
   // Otherwise, treat as local path
-  return validateLocalPath(trimmedPath, allowNewRepo);
+  return validateLocalPath(trimmedPath, allowNewRepo, allowPlainFolder);
 }
 
 /**
@@ -133,6 +135,7 @@ async function validateGitHubUrl(url: string): Promise<ValidationResult> {
 async function validateLocalPath(
   path: string,
   allowNewRepo: boolean = false,
+  allowPlainFolder: boolean = false,
 ): Promise<RepoValidationResult> {
   // Basic path validation
   if (path.includes('\0')) {
@@ -147,7 +150,10 @@ async function validateLocalPath(
     !path.startsWith('/') &&
     !path.startsWith('~') &&
     !path.startsWith('.') &&
-    !path.includes(':\\')
+    !path.includes(':\\') &&
+    // Drive-absolute with forward slashes (C:/Users/me), as the `intent` CLI
+    // and normalized workspace paths send on Windows.
+    !/^[a-zA-Z]:\//.test(path)
   ) {
     return {
       valid: false,
@@ -207,6 +213,10 @@ async function validateLocalPath(
             };
           }
 
+          // A no-worktree workspace works in the folder as-is; git is optional.
+          if (allowPlainFolder) {
+            return { valid: true, isNewRepo: false, directoryStatus: status };
+          }
           // Directory exists but is not a git repo and not inside a parent repo
           if (!allowNewRepo) {
             return {

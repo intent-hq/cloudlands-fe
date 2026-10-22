@@ -267,7 +267,9 @@ import {
   refreshWorkspaceMembershipRequested,
   removeWorkspaceEntity,
   updateWorkspaceEntity,
+  workspacePullRequestsRefreshed,
 } from '$store/renderer/slices/workspace/workspace-slice';
+import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import {
   closeWorkspaceTabAndNavigateAway,
   navigateAwayIfViewing,
@@ -2238,6 +2240,69 @@ function handlePrEvent(
   // slice folds it through `bulkUpdateWorkspaceEntities`, which is the shared
   // path for partial merges (see workspace-slice `.with(bulkUpdateWorkspaceEntities, ...)`).
   appStore.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, changes)]));
+  // Invalidate any gitRoot re-read already in flight: its snapshot may
+  // predate this event's PR fields ({@link refreshWorkspacePrPoolFromGitRoot}).
+  prEventRevisionByWorkspace.set(
+    workspaceId,
+    (prEventRevisionByWorkspace.get(workspaceId) ?? 0) + 1,
+  );
+}
+
+/**
+ * `gitRoot:*` (§6.5) — a secondary git root's PR change (status, merge-queue
+ * entry) emits only `gitRoot:updated`, never `pr:updated`, and a root's
+ * removal only `gitRoot:unregistered`. The Home row renders the daemon's
+ * MERGED pool (workspace + git-root + monitor PRs, §5.1), whose same-URL
+ * canonicalization, lifecycle and ordering rules live only in intentd, so
+ * re-read `workspace.get` (the authoritative merged pool, linked PR fields
+ * included) instead of re-deriving the fold here, and apply ONLY its PR
+ * fields ({@link workspacePullRequestsRefreshed}) so newer event-applied
+ * fields are never rolled back. The read is issued directly rather than
+ * through the shared `fetchWorkspaceDetail` single-flight: joining a read
+ * already in flight could return a pool served before this root changed.
+ * Only rows already in this window's store refresh — this never adds a
+ * workspace. Single-flighted per workspace with one trailing follow-up for
+ * events arriving mid-read; a routing dispose drops in-flight results. A
+ * `pr:*` event landing mid-read bumps the workspace's PR revision: the read
+ * may predate it, so its result is discarded and re-read instead of
+ * overwriting the newer PR fields (or restoring an unlinked active PR).
+ */
+const prEventRevisionByWorkspace = new Map<string, number>();
+const gitRootPoolRefreshInFlight = new Set<string>();
+const gitRootPoolRefreshFollowUp = new Set<string>();
+let gitRootPoolRefreshGeneration = 0;
+
+async function refreshWorkspacePrPoolFromGitRoot(workspaceId: string): Promise<void> {
+  if (!selectWorkspaceById.select(appStore.state, workspaceId)) return;
+  if (gitRootPoolRefreshInFlight.has(workspaceId)) {
+    gitRootPoolRefreshFollowUp.add(workspaceId);
+    return;
+  }
+  const generation = gitRootPoolRefreshGeneration;
+  const prRevision = prEventRevisionByWorkspace.get(workspaceId) ?? 0;
+  gitRootPoolRefreshInFlight.add(workspaceId);
+  try {
+    const { backendRequest } = await import('$lib/client/live/backend-transport');
+    const response = (await backendRequest('workspace.get', { workspaceId })) as
+      { workspace?: Workspace } | undefined;
+    const workspace = response?.workspace;
+    if (workspace && generation === gitRootPoolRefreshGeneration) {
+      if ((prEventRevisionByWorkspace.get(workspaceId) ?? 0) === prRevision) {
+        appStore.dispatch(workspacePullRequestsRefreshed(workspaceId, workspace));
+      } else {
+        gitRootPoolRefreshFollowUp.add(workspaceId);
+      }
+    }
+  } catch {
+    // Deleted workspace or transport error: the next list/event converges.
+  } finally {
+    if (generation === gitRootPoolRefreshGeneration) {
+      gitRootPoolRefreshInFlight.delete(workspaceId);
+      if (gitRootPoolRefreshFollowUp.delete(workspaceId)) {
+        void refreshWorkspacePrPoolFromGitRoot(workspaceId);
+      }
+    }
+  }
 }
 
 /**
@@ -4269,6 +4334,14 @@ export function routeDaemonEventsNotification(
     handlePrEvent(event, workspaceId, type);
     return;
   }
+  if (
+    type === 'gitRoot:registered' ||
+    type === 'gitRoot:updated' ||
+    type === 'gitRoot:unregistered'
+  ) {
+    void refreshWorkspacePrPoolFromGitRoot(workspaceId);
+    return;
+  }
 
   // `changes:agent-locks` (§6.5) — the daemon-computed
   // agent-lock snapshot. Self-sufficient payload, folded straight into the
@@ -4599,6 +4672,10 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   'changes:agent-locks',
   'line-attribution:updated',
   'pr:*',
+  // `gitRoot:*` (§6.5) — a submodule PR's status / merge-queue change only
+  // arrives as `gitRoot:updated`; without it Home badges for root-tracked PRs
+  // stay stale until the next `workspace.list` (only `displayStatus` moved).
+  'gitRoot:*',
   'mcp.servers:status-changed',
   // `github:auth-changed` (§6.5) — device-flow terminal transitions and
   // `github.revoke`; global, so the connect UX converges without polling.
@@ -4785,6 +4862,10 @@ export function disposeDaemonEventsRoutingState(): void {
   activityFetchFollowUpWantedByWorkspace.clear();
   missingEntityFetchInFlightByWorkspace.clear();
   missingEntityFetchFollowUpWantedByWorkspace.clear();
+  gitRootPoolRefreshInFlight.clear();
+  gitRootPoolRefreshFollowUp.clear();
+  gitRootPoolRefreshGeneration += 1;
+  prEventRevisionByWorkspace.clear();
 }
 
 /** Test-only — reset stream accumulators and debounce state. */

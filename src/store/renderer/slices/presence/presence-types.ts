@@ -66,6 +66,12 @@ export interface PresenceState {
   liveDiscussionTyping: Record<string, Record<string, LiveDiscussionTypingEntry>>;
   /** `document.visibilityState === 'visible'`; a hidden window reports nothing. */
   windowVisible: boolean;
+  /**
+   * An agent capture is keeping this window drawing while hidden, so the
+   * document's visibility is not the user's (main brackets each capture).
+   * Survives presence resets so a watcher started mid-capture knows.
+   */
+  captureDrawingActive: boolean;
 }
 
 /** The identity part of a roster or membership row — what a name or a typing line needs. */

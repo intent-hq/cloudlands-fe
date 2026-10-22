@@ -1891,6 +1891,15 @@ export const applyBrowserTabRegistryRow = createAction<
  * the daemon now (REV-2 §5.45). No reducer: the saga's single-flight reporter
  * is the only consumer.
  */
+/**
+ * A browser request reached this window for the workspace: if its registry
+ * rows were torn down (the workspace tab closed) while the layout stayed
+ * settled, reload them so its tabs are reported again. A no-op otherwise.
+ * Handled by the browser-tab-registry saga, not a reducer.
+ */
+export const browserTabRegistryReconcileRequested = createAction<[wsId: string]>(
+  'panelLayout/browserTabRegistryReconcileRequested',
+);
 export const browserTabRegistryReportRequested = createAction<[wsId: string]>(
   'panelLayout/browserTabRegistryReportRequested',
 );

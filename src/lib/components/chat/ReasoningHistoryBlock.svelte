@@ -85,7 +85,8 @@
 </div>
 
 <style>
-  .reasoning-history-body :global(.markdown-viewer > *) {
+  .reasoning-history-body :global(.markdown-viewer > *),
+  .reasoning-history-body :global(.markdown-content > *) {
     margin-block: 0 !important;
   }
 </style>

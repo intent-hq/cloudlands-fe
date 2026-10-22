@@ -444,6 +444,8 @@ let isShuttingDown = false;
 
 // Deep link handler for intent:// protocol URLs
 const deepLinkHandler = new DeepLinkHandler();
+/** Set once the startup pass has drained the parked deep link (see the pending pass). */
+let deepLinkStartupPassDone = false;
 
 // Global error handlers to prevent silent crashes
 process.on('uncaughtException', (error) => {
@@ -1764,8 +1766,14 @@ const bootFlow = app.whenReady().then(async () => {
       // (only the local client is created lazily); if its client cannot be
       // built (deleted record, missing token), fall back to a local window
       // rather than one whose every RPC fails closed.
-      let windowBackendId = bootBackendId;
-      if (bootBackendId !== LOCAL_CONNECTION_ID) {
+      // An `open` link (the `intent` CLI's folder, or a workspace id) refers
+      // to this machine's daemon, so its boot window is always local.
+      const coldStartWantsLocal =
+        intentUrlArg !== undefined &&
+        !isPairLinkArg &&
+        deepLinkHandler.parseDeepLink(intentUrlArg)?.type === 'open';
+      let windowBackendId = coldStartWantsLocal ? LOCAL_CONNECTION_ID : bootBackendId;
+      if (windowBackendId !== LOCAL_CONNECTION_ID) {
         try {
           await connectBackendClient(bootBackendId);
         } catch (error) {
@@ -1811,11 +1819,17 @@ const bootFlow = app.whenReady().then(async () => {
     logger.warn('Failed to register intent:// protocol handler:', error);
   }
 
-  // Process any pending deep link URL that was received before the window was ready
+  // Route any deep link URL that arrived before the window was ready (macOS
+  // delivers a cold-start link via open-url, not argv) through the same
+  // routing as a warm link, so an `open` link still reaches a local window.
   const mainWindow = getMainWindow();
   if (mainWindow && !mainWindow.isDestroyed()) {
-    await deepLinkHandler.processPendingUrl(mainWindow);
+    const pendingUrl = deepLinkHandler.takePendingUrl();
+    if (pendingUrl) await createWindowForDeepLink(pendingUrl, deepLinkHandler);
   }
+  // From here on a link that finds no window must open one rather than park:
+  // nothing drains the pending slot after this pass.
+  deepLinkStartupPassDone = true;
 
   // Log initial startup metrics
   try {
@@ -2060,8 +2074,10 @@ app.on('open-url', async (event: Electron.Event, url: string) => {
   // that window; other types open a new one — the creator itself awaits the
   // renderer-window gate). Without one, park the URL for the startup pass so
   // it can be embedded in the boot window's load URL.
+  // After startup (e.g. macOS with every window closed but the app still in
+  // the dock) route it anyway: the router opens a window when none exists.
   const mainWindow = getMainWindow();
-  if (mainWindow && !mainWindow.isDestroyed()) {
+  if (deepLinkStartupPassDone || (mainWindow && !mainWindow.isDestroyed())) {
     await createWindowForDeepLink(url, deepLinkHandler);
   } else {
     logger.info('No main window yet, storing URL for later processing');
@@ -2105,11 +2121,14 @@ if (!gotTheLock) {
       } else if (isInviteUri(deepLinkUrl)) {
         await handleInviteDeepLink(deepLinkUrl);
       } else {
-        // Route only when a main window exists to receive/anchor the link;
-        // any new window the creator opens awaits the renderer-window gate.
+        // Route once startup has finished or a main window exists; the router
+        // opens a window when none is left (any new window it creates awaits
+        // the renderer-window gate). Before that, park it for the startup pass.
         const mainWindow = getMainWindow();
-        if (mainWindow && !mainWindow.isDestroyed()) {
+        if (deepLinkStartupPassDone || (mainWindow && !mainWindow.isDestroyed())) {
           await createWindowForDeepLink(deepLinkUrl, deepLinkHandler);
+        } else {
+          await deepLinkHandler.handleDeepLink(deepLinkUrl, null);
         }
       }
     } else {

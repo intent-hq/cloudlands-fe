@@ -218,7 +218,11 @@ export const mockBackendTransportModule = {
       throw new BackendError({ code: 'UNAVAILABLE', message: 'Mock handshake unavailable' });
     return { hello: await handshake({}), principal: await mockBackendRequest('principal.me', {}) };
   },
-  observeBackendNodeCapabilities: () => mockBackendRequest('client.hello', {}),
+  // An acknowledged hello without node capabilities unless a test registers its own.
+  observeBackendNodeCapabilities: () =>
+    state.requestHandlers.has('client.hello')
+      ? mockBackendRequest('client.hello', {})
+      : Promise.resolve({ server: { capabilities: {} } }),
   backendRequest: mockBackendRequest,
   backendSubscribe: mockBackendSubscribe,
   backendUnsubscribe: mockBackendUnsubscribe,

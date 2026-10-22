@@ -35,6 +35,7 @@ import { agentSubscriptionReadSaga } from './slices/agent-subscription-ui/sagas/
 import { appLayoutNavigationSaga } from './slices/app-layout/sagas/app-layout-navigation-saga';
 import { browserIpcSaga } from './slices/app-layout/sagas/browser-ipc-saga';
 import { menuIpcSaga } from './slices/app-layout/sagas/menu-ipc-saga';
+import { deepLinksSaga } from './slices/deep-links/sagas/deep-links-saga';
 import { autoUpdateSaga } from './slices/auto-update/sagas/auto-update-saga';
 import { backgroundAgentSettingsSaga } from './slices/background-agent-settings/sagas/background-agent-settings-saga';
 import { backgroundHooksSaga } from './slices/background-hooks/sagas/background-hooks-saga';
@@ -269,6 +270,7 @@ export const sagas = [
   workspaceInitializerSaga,
   zoomIpcSaga,
   menuIpcSaga,
+  deepLinksSaga,
   browserIpcSaga,
   notificationIpcSaga,
   webNotificationSaga,

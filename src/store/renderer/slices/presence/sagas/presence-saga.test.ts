@@ -602,6 +602,33 @@ describe('presenceSaga lifecycle', () => {
     expect(store.state.presence.ownTypingSource).toBe('ts-own');
   });
 
+  // Visibility is tracked for the whole session, not only while admitted:
+  // a window hidden during an admission gap (boot, reconnect) must not be
+  // published as visible when presence admits.
+  it('records a window hidden before admission and reports it hidden once admitted', async () => {
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    try {
+      start(false);
+      await vi.advanceTimersByTimeAsync(0);
+      visibility.mockReturnValue('hidden');
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(store.state.presence.windowVisible).toBe(false);
+
+      store.dispatch(daemonEventsSubscribed());
+      admit();
+      await vi.advanceTimersByTimeAsync(500);
+      expect(mocks.invoke).toHaveBeenCalledWith('presence:report', { focus: [], typing: null });
+      expect(mocks.invoke).not.toHaveBeenCalledWith(
+        'presence:report',
+        expect.objectContaining({ focus: [{ workspaceId: 'ws-1' }] }),
+      );
+    } finally {
+      visibility.mockRestore();
+      store.dispatch(presenceWindowVisibilityChanged(true));
+    }
+  });
+
   it('stays silent at idle and while hidden input continues pulsing', async () => {
     start();
     await vi.advanceTimersByTimeAsync(500);

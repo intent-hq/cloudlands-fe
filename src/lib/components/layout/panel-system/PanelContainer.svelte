@@ -840,7 +840,6 @@
   .panel-split-child {
     min-width: 0;
     min-height: 0;
-    overflow: hidden;
   }
 
   :global(body.panel-resizing) .panel-split-child,
@@ -851,7 +850,6 @@
 
   .panel-split-container.contained {
     min-width: 0;
-    overflow: hidden;
   }
 
   .panel-split-handle-wrapper {

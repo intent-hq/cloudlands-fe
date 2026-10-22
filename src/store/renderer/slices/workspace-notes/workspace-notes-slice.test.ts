@@ -268,6 +268,108 @@ describe('workspaceNotesReducer', () => {
     expect(merged?.contentPreview).toBe('Full bo');
   });
 
+  describe('truncated-read markers travel with a reused body (§5.2)', () => {
+    const truncated = mockNote('big', WS_1, {
+      content: 'prefix\n',
+      contentTruncated: true,
+      contentBytes: 600_000,
+      rev: 7,
+    });
+    const seeded = () =>
+      workspaceNotesReducer(
+        initialState,
+        loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [truncated] }),
+      );
+    const cached = (state: typeof initialState) =>
+      getItem(state.byWorkspaceId[WS_1].notes, 'big' as Note['id']);
+
+    it('keeps them when a same-rev slim relist (e.g. after reconnect) reuses the prefix', () => {
+      const slim = mockNote('big', WS_1, {
+        content: '',
+        contentPreview: 'prefix',
+        contentLength: 600_000,
+        rev: 7,
+      });
+      const relisted = workspaceNotesReducer(
+        seeded(),
+        loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [slim] }),
+      );
+      expect(cached(relisted)).toMatchObject({
+        content: 'prefix\n',
+        contentTruncated: true,
+        contentBytes: 600_000,
+      });
+    });
+
+    it('keeps them when pushed metadata reuses the prefix', () => {
+      const { content: _content, ...metadata } = mockNote('big', WS_1, {
+        rev: 8,
+        title: 'Renamed',
+      });
+      const pushed = workspaceNotesReducer(seeded(), noteMetadataPushed(WS_1, metadata));
+      expect(cached(pushed)).toMatchObject({
+        title: 'Renamed',
+        content: 'prefix\n',
+        contentTruncated: true,
+        contentBytes: 600_000,
+      });
+    });
+
+    it('keeps the pending draft at its own base rev, never the incoming rev', () => {
+      const base = mockNote('n', WS_1, { content: 'local draft', rev: 4 });
+      let state = workspaceNotesReducer(
+        initialState,
+        loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [base] }),
+      );
+      state = {
+        ...state,
+        byWorkspaceId: {
+          ...state.byWorkspaceId,
+          [WS_1]: { ...state.byWorkspaceId[WS_1], pendingContentByNoteId: { n: true } },
+        },
+      };
+      const agent = mockNote('n', WS_1, { content: 'AGENT body', rev: 5, title: 'Renamed' });
+      const read = workspaceNotesReducer(state, applyNoteUpdated(WS_1, 'n', agent));
+      expect(getItem(read.byWorkspaceId[WS_1].notes, 'n' as Note['id'])).toMatchObject({
+        content: 'local draft',
+        rev: 4,
+        title: 'Renamed',
+      });
+      const { content: _content, ...metadata } = agent;
+      const pushed = workspaceNotesReducer(state, noteMetadataPushed(WS_1, metadata));
+      expect(getItem(pushed.byWorkspaceId[WS_1].notes, 'n' as Note['id'])).toMatchObject({
+        content: 'local draft',
+        rev: 4,
+      });
+    });
+
+    it('never attaches incoming markers to a kept pending body', () => {
+      const normal = mockNote('n', WS_1, { content: 'local draft', rev: 2 });
+      let state = workspaceNotesReducer(
+        initialState,
+        loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [normal] }),
+      );
+      state = {
+        ...state,
+        byWorkspaceId: {
+          ...state.byWorkspaceId,
+          [WS_1]: { ...state.byWorkspaceId[WS_1], pendingContentByNoteId: { n: true } },
+        },
+      };
+      const read = mockNote('n', WS_1, {
+        content: 'server prefix',
+        contentTruncated: true,
+        contentBytes: 600_000,
+        rev: 3,
+      });
+      const next = workspaceNotesReducer(state, applyNoteUpdated(WS_1, 'n', read));
+      const kept = getItem(next.byWorkspaceId[WS_1].notes, 'n' as Note['id']);
+      expect(kept?.content).toBe('local draft');
+      expect(kept?.contentTruncated).toBeUndefined();
+      expect(kept?.contentBytes).toBeUndefined();
+    });
+  });
+
   it('lets a slim row with a strictly newer rev replace outdated cached content', () => {
     const full = mockNote('note-1', WS_1, { content: 'Old body', rev: 3 });
     const slim = mockNote('note-1', WS_1, {

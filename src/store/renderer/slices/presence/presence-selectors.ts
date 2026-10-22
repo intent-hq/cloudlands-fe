@@ -32,6 +32,16 @@ export const selectPresenceProfileRevision = store.createSelector(
 );
 
 /** One admitted presentation lifetime; no saved profile is an authority fallback. */
+/** The window visibility presence last published (survives presence resets). */
+export const selectPresenceWindowVisible = store.createSelector(
+  (state): boolean => state.presence.windowVisible,
+);
+
+/** An agent capture is keeping this hidden window drawing (survives presence resets). */
+export const selectPresenceCaptureDrawingActive = store.createSelector(
+  (state): boolean => state.presence.captureDrawingActive,
+);
+
 export const selectPresenceContext = store.createSelector((state): string | null =>
   selectCollaborationReady.select(state) ? selectPrincipalActionContext.select(state) : null,
 );

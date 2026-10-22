@@ -38,7 +38,6 @@
   import {
     selectLabsGitLabEnabled,
     selectLabsRemoteAgentsEnabled,
-    selectLabsProviderProfilesEnabled,
     selectLabsMultiplayerEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
@@ -100,7 +99,6 @@
   import CommandPaletteItemTitle from './CommandPaletteItemTitle.svelte';
   import CommandPaletteFilters from './CommandPaletteFilters.svelte';
   import { COMMAND_PALETTE_COMMANDS } from './command-palette-commands';
-  import { isProfilesLabCommandHidden, runProfilesLabCommand } from './command-palette-labs';
   import IntentNavigationIcon from '$lib/icons/IntentNavigationIcon.svelte';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
@@ -145,7 +143,6 @@
   const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
   const labsGitLabEnabled$ = selectLabsGitLabEnabled();
   const labsRemoteAgentsEnabled$ = selectLabsRemoteAgentsEnabled();
-  const labsProviderProfilesEnabled$ = selectLabsProviderProfilesEnabled();
   // Collaborators (multiplayer w3) are refused on terminal + browser methods and
   // cannot create workspaces, so those commands and result groups are withheld.
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
@@ -174,8 +171,7 @@
         !($labsGitLabEnabled$ && command.id === 'enable-experimental-gitlab') &&
         !(!$labsGitLabEnabled$ && command.id === 'disable-experimental-gitlab') &&
         !($labsRemoteAgentsEnabled$ && command.id === 'enable-experimental-remote-agents') &&
-        !(!$labsRemoteAgentsEnabled$ && command.id === 'disable-experimental-remote-agents') &&
-        !isProfilesLabCommandHidden(command.id, $labsProviderProfilesEnabled$),
+        !(!$labsRemoteAgentsEnabled$ && command.id === 'disable-experimental-remote-agents'),
     ),
   );
   const currentChanges$ = selectCurrentChanges(workspaceIdStore);
@@ -851,7 +847,6 @@
       navigateToSettings({ tab: settingsCommand.settingsTab });
       return true;
     }
-    if (runProfilesLabCommand(commandId)) return true;
     switch (commandId) {
       case 'new-workspace':
         if (selectWorkspaceCreationVisible.select(appStore.state)) {

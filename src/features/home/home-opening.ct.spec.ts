@@ -237,6 +237,24 @@ async function humanDoubleClick(
   target: import('@playwright/test').Locator,
   afterFirstClick: () => Promise<void>,
 ) {
+  // A person clicks where the card is once Home has finished moving it: closing
+  // the narrow preview animates the list back in, and a box measured mid-way
+  // would aim the click at where the card was, not where it is.
+  let previous: Awaited<ReturnType<typeof target.boundingBox>> = null;
+  await expect
+    .poll(async () => {
+      const current = await target.boundingBox();
+      const settled =
+        !!current &&
+        !!previous &&
+        current.x === previous.x &&
+        current.y === previous.y &&
+        current.width === previous.width &&
+        current.height === previous.height;
+      previous = current;
+      return settled;
+    })
+    .toBe(true);
   const box = await target.boundingBox();
   if (!box) throw new Error('double-click target is not visible');
   const x = box.x + Math.min(24, box.width / 2);

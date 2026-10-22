@@ -17,3 +17,10 @@ export const SPEC_NOTE_ID = NoteId('spec');
 export function isSpecNote(noteId: string | undefined | null): boolean {
   return noteId === 'spec';
 }
+
+/**
+ * UTF-8 byte limit the note views request via `note.get` `maxContentBytes`
+ * (§5.2 "Truncated note reads"). A larger note is shown as its first 500 KB,
+ * render-only with a banner; agents and MCP keep full access.
+ */
+export const NOTE_VIEW_MAX_CONTENT_BYTES = 500_000;

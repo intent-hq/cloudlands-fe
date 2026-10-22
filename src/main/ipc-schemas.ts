@@ -720,6 +720,11 @@ export const WindowSetOpenWorkspaceTabsSchema = z.object({
   workspaceIds: z.array(z.string()),
 });
 
+/** Workspaces a window hosts in the background for agent browser ops. */
+export const BrowserBackgroundHostedWorkspacesSchema = z.object({
+  workspaceIds: z.array(z.string()),
+});
+
 export const WindowSetFullScreenSchema = z.object({
   fullScreen: z.boolean(),
 });
