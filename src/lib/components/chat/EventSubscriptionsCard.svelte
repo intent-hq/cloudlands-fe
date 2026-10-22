@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
   import type { Snippet } from 'svelte';
   import { tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
@@ -9,6 +10,25 @@
   } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
   import AgentSubscriptions from './AgentSubscriptions.svelte';
   import BackgroundHooksRow from './BackgroundHooksRow.svelte';
+  import MonitoredScriptsRow from './MonitoredScriptsRow.svelte';
+  import AgentWorkersRow from './AgentWorkersRow.svelte';
+  import {
+    agentWorkersSubscribeRequested,
+    agentWorkersUnsubscribeRequested,
+  } from '$store/renderer/slices/agent-workers/agent-workers-slice';
+  import {
+    selectAgentWorkerRows,
+    selectAgentWorkers,
+    selectAgentWorkersIncomplete,
+  } from '$store/renderer/slices/agent-workers/agent-workers-selectors';
+  import {
+    selectAgentScriptMonitors,
+    selectScriptMonitors,
+  } from '$store/renderer/slices/script-monitor/script-monitor-selectors';
+  import {
+    scriptMonitorsSubscribeRequested,
+    scriptMonitorsUnsubscribeRequested,
+  } from '$store/renderer/slices/script-monitor/script-monitor-slice';
   import MonitoredPrsRow from './MonitoredPrsRow.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
@@ -36,7 +56,7 @@
   } from './agent-subscriptions-view-state';
   import { safeSubscriptionSlide } from './subscription-disclosure';
   import { selectBackgroundHooks } from '$store/renderer/slices/background-hooks/background-hooks-selectors';
-  import { selectAgentPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
+  import { selectAgentReviewMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import { selectAgentSubscriptionLane } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-selectors';
   import { selectAgentSessionsById } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
@@ -96,7 +116,25 @@
     if (isolatedPreview || !workspaceId || !isActive) return;
     const currentWorkspaceId = workspaceId;
     untrack(() => appStore.dispatch(prMonitorsSubscribeRequested(currentWorkspaceId)));
-    return () => appStore.dispatch(prMonitorsUnsubscribeRequested(currentWorkspaceId));
+    untrack(() => appStore.dispatch(scriptMonitorsSubscribeRequested(currentWorkspaceId)));
+    return () => {
+      appStore.dispatch(prMonitorsUnsubscribeRequested(currentWorkspaceId));
+      appStore.dispatch(scriptMonitorsUnsubscribeRequested(currentWorkspaceId));
+    };
+  });
+
+  // Provider background workers (§5.5b) are per agent: the visible chat holds
+  // that agent's channel lease, independent of disclosure state.
+  $effect(() => {
+    if (isolatedPreview || !workspaceId || !agentId || !isActive) return;
+    const currentWorkspaceId = workspaceId;
+    const currentAgentId = agentId;
+    untrack(() =>
+      appStore.dispatch(agentWorkersSubscribeRequested(currentWorkspaceId, currentAgentId)),
+    );
+    return () => {
+      appStore.dispatch(agentWorkersUnsubscribeRequested(currentWorkspaceId, currentAgentId));
+    };
   });
 
   const workspaceIdStore = writable('');
@@ -106,7 +144,30 @@
     agentIdStore.set(agentId);
   });
   const hooks$ = selectBackgroundHooks(workspaceIdStore);
-  const monitors$ = selectAgentPrMonitors(workspaceIdStore, agentIdStore);
+  const scriptMonitors$ = selectAgentScriptMonitors(workspaceIdStore, agentIdStore);
+  const scriptCount = $derived($scriptMonitors$.filter((row) => row.state === 'active').length);
+  const scriptPage$ = selectScriptMonitors(workspaceIdStore);
+  // Only a chat the user is viewing holds the monitor lease that Retry acts on, and the
+  // failure is workspace-wide: background chats stay quiet instead of all showing it.
+  const scriptsFailed = $derived(!isolatedPreview && isActive && $scriptPage$.status === 'failed');
+  const hasScripts = $derived(scriptCount > 0 || !!$scriptPage$.nextCursor || scriptsFailed);
+  const workerRows$ = selectAgentWorkerRows(workspaceIdStore, agentIdStore);
+  const workerEntry$ = selectAgentWorkers(workspaceIdStore, agentIdStore);
+  const workersIncomplete$ = selectAgentWorkersIncomplete(workspaceIdStore, agentIdStore);
+  const workerCount = $derived($workerRows$.length);
+  const workersFailed = $derived(!isolatedPreview && isActive && $workerEntry$.status === 'failed');
+  // A truncated view with no rows left still needs its "may not be listed" note.
+  const workersTruncated = $derived(
+    !isolatedPreview && isActive && $workerEntry$.snapshot?.truncated === true,
+  );
+  const hasWorkers = $derived(workerCount > 0 || workersFailed || workersTruncated);
+  // "+": more script monitors may exist than this chat has read.
+  // A failed, truncated or unavailable worker view cannot claim an exhaustive count (§5.5b).
+  const workersPartial = $derived(!isolatedPreview && isActive && $workersIncomplete$);
+  const countSuffix = $derived(
+    $scriptPage$.nextCursor || scriptsFailed || workersPartial ? '+' : '',
+  );
+  const monitors$ = selectAgentReviewMonitors(workspaceIdStore, agentIdStore);
   const agentSubscriptionLane$ = selectAgentSubscriptionLane(workspaceIdStore, agentIdStore);
   const agentSessionsById$ = selectAgentSessionsById();
   const storedHookCount = $derived(
@@ -136,18 +197,23 @@
   const hasEventSubscriptions = $derived(
     isolatedPreview
       ? isolatedPreview.count > 0
-      : $agentSubscriptionLane$.visible || hasHooks || hasPrs,
+      : $agentSubscriptionLane$.visible || hasHooks || hasPrs || hasScripts || hasWorkers,
   );
   const hasSubscriptions = $derived(hasEventSubscriptions);
   const totalCount = $derived(
     isolatedPreview
       ? isolatedPreview.count
-      : $agentSubscriptionLane$.count + effectiveHookCount + effectivePrCount,
+      : $agentSubscriptionLane$.count +
+          effectiveHookCount +
+          effectivePrCount +
+          scriptCount +
+          workerCount,
   );
   const visibleSectionCount = $derived(
     isolatedPreview
       ? 1
-      : [$agentSubscriptionLane$.visible, hasHooks, hasPrs].filter(Boolean).length,
+      : [$agentSubscriptionLane$.visible, hasHooks, hasPrs, hasScripts, hasWorkers].filter(Boolean)
+          .length,
   );
   const isSingleEvent = $derived(
     hasEventSubscriptions && visibleSectionCount === 1 && totalCount === 1,
@@ -156,7 +222,12 @@
   // Agent-only cards show "Waiting for N agents"; mixed/non-agent cards show "Subscribed to N events"
   const isAgentOnly = $derived(
     isolatedPreview?.mode === 'agents' ||
-      (!isolatedPreview && $agentSubscriptionLane$.visible && !hasHooks && !hasPrs),
+      (!isolatedPreview &&
+        $agentSubscriptionLane$.visible &&
+        !hasHooks &&
+        !hasPrs &&
+        !hasScripts &&
+        !hasWorkers),
   );
   const agentOnlyCount = $derived(
     isolatedPreview?.mode === 'agents'
@@ -173,8 +244,12 @@
       return totalCount === 0
         ? m.events_ipc_subscribed_description()
         : totalCount === 1
-          ? m.chat_eventSubscriptions_heading_one({ count: formatInteger(totalCount) })
-          : m.chat_eventSubscriptions_heading_many({ count: formatInteger(totalCount) });
+          ? m.chat_eventSubscriptions_heading_one({
+              count: formatInteger(totalCount) + countSuffix,
+            })
+          : m.chat_eventSubscriptions_heading_many({
+              count: formatInteger(totalCount) + countSuffix,
+            });
     }
 
     if (isAgentOnly) {
@@ -188,8 +263,12 @@
     return totalCount === 0
       ? m.events_ipc_subscribed_description()
       : totalCount === 1
-        ? m.chat_eventSubscriptions_heading_one({ count: formatInteger(totalCount) })
-        : m.chat_eventSubscriptions_heading_many({ count: formatInteger(totalCount) });
+        ? m.chat_eventSubscriptions_heading_one({
+            count: formatInteger(totalCount) + countSuffix,
+          })
+        : m.chat_eventSubscriptions_heading_many({
+            count: formatInteger(totalCount) + countSuffix,
+          });
   });
 
   $effect(() => {
@@ -258,8 +337,8 @@
             >
               <Fa
                 icon={faBell}
-                size={14}
-                class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+                size={16}
+                class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
               />
             </span>
             <span
@@ -341,6 +420,7 @@
               {compact}
               embedded
               forceWaitingHeader={!isSingleEvent}
+              isActive={isActive && !bodyIsClosing && $agentSubscriptionLane$.visible}
               visible={$agentSubscriptionLane$.visible}
               count={$agentSubscriptionLane$.count}
               participantAgentIds={$agentSubscriptionLane$.participantAgentIds}
@@ -360,6 +440,22 @@
               bind:count={hookCount}
             />
           </div>
+          {#if hasScripts}
+            <div
+              class={isSingleEvent ? '' : 'border-t border-border'}
+              data-testid="event-subscriptions-scripts"
+            >
+              <MonitoredScriptsRow {workspaceId} {agentId} showLoadFailure={scriptsFailed} />
+            </div>
+          {/if}
+          {#if hasWorkers}
+            <div
+              class={isSingleEvent ? '' : 'border-t border-border'}
+              data-testid="event-subscriptions-workers"
+            >
+              <AgentWorkersRow {workspaceId} {agentId} showLoadFailure={workersFailed} />
+            </div>
+          {/if}
           <div
             class={isSingleEvent ? '' : 'border-t border-border'}
             class:hidden={!prsVisible}

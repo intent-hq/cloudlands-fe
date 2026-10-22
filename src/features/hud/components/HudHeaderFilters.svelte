@@ -7,7 +7,7 @@
    */
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
-  import { selectIsGuestWindow } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
+  import { selectHostRole } from '$store/renderer/slices/principal/principal-selectors';
   import {
     selectHudGridFilter,
     selectHudWorkspaceCards,
@@ -26,7 +26,7 @@
   const filter$ = selectHudGridFilter();
   // A guest window (bound to a joined host, multiplayer w4) lists only the
   // workspaces shared with it, so its "all" option is labelled accordingly.
-  const isGuestWindow$ = selectIsGuestWindow();
+  const hostRole$ = selectHostRole();
 
   let repoMenuOpen = $state(false);
   let stateMenuOpen = $state(false);
@@ -34,7 +34,9 @@
   const repos = $derived(repoOptions($cards$));
   const counts = $derived(stateCounts($cards$));
   const allWorkspacesLabel = $derived(
-    $isGuestWindow$ ? m.hud_filter_allSharedWorkspaces_label() : m.hud_filter_allWorkspaces_label(),
+    $hostRole$ === 'guest'
+      ? m.hud_filter_allSharedWorkspaces_label()
+      : m.hud_filter_allWorkspaces_label(),
   );
   const repoLabel = $derived($filter$.repo ?? allWorkspacesLabel);
   const stateLabel = $derived(

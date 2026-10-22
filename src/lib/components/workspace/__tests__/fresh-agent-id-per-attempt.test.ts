@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 /**
  * @vitest-environment jsdom
  *
@@ -9,6 +10,11 @@
  */
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const admittedFixture = vi.hoisted(() => ({ state: {} as Record<string, unknown> }));
+beforeEach(() => {
+  admittedFixture.state = withLegacyPrincipal({});
+});
 
 const mocks = vi.hoisted(() => {
   const readable = <T>(getter: () => T) => ({
@@ -50,6 +56,12 @@ const mocks = vi.hoisted(() => {
     update: vi.fn(),
     pull: vi.fn(async () => ({ success: true })),
     setReasoningEffort: vi.fn(),
+    initializationOutcome$: writable<
+      | Partial<
+          import('$store/renderer/slices/workspace-initializer/workspace-initializer-types').WorkspaceInitializationOutcome
+        >
+      | undefined
+    >(undefined),
     hydrated$: writable(false),
     compactFormState$: writable<{
       selectedSpecialist?: string | null;
@@ -81,12 +93,19 @@ vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
-    state: () => ({ workspaceCreateProgress: { byProgressId: {} } }),
+    state: () => ({ ...admittedFixture.state, workspaceCreateProgress: { byProgressId: {} } }),
     dispatch: mocks.dispatch,
   });
 });
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
+  selectWorkspaceInitializerAgentForRepo: { select: () => null },
+  selectWorkspaceInitializerGitAvailability: () => ({
+    subscribe(run: (value: boolean) => void) {
+      run(true);
+      return () => {};
+    },
+  }),
   selectWorkspaceInitializerHydrated: () => mocks.hydrated$,
   selectCompactWorkspaceInitializerFormState: () => mocks.compactFormState$,
   selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(() => null),
@@ -94,6 +113,10 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
   selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
   selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
+  selectWorkspaceInitializerDraftAuthority: () =>
+    mocks.readable(() => ({ restore: undefined, clear: undefined })),
+  selectWorkspaceInitializationOutcomeForConsumer: () => mocks.initializationOutcome$,
+  selectWorkspaceInitializationResume: { select: () => undefined },
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
@@ -103,6 +126,7 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
 
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => mocks.readable(() => 'auggie'),
+  selectEnabledProviders: () => mocks.readable(() => ({})),
 }));
 
 vi.mock('$store/renderer/slices/hardware-console/hardware-console-selectors', () => ({
@@ -231,6 +255,7 @@ vi.mock('svelte-fa', async () => ({
 
 import CompactWorkspaceInitializer from '../CompactWorkspaceInitializer.svelte';
 import { warmImport } from '../../../../test/warm-import';
+import { createWorkspaceInitializationDispatchAdapter } from './workspace-initialization-dispatch.test-helper';
 
 const PREFILL_KEY = 'workspace-prefill';
 
@@ -254,6 +279,14 @@ warmImport(() => import('../initializer/__tests__/mocks/MockComponent.svelte'));
 describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.dispatch.mockImplementation(
+      createWorkspaceInitializationDispatchAdapter({
+        create: mocks.create,
+        pull: mocks.pull,
+        setOutcome: (outcome) => mocks.initializationOutcome$.set(outcome),
+      }),
+    );
+    mocks.initializationOutcome$.set(undefined);
     sessionStorage.clear();
     mocks.hydrated$.set(false);
     mocks.compactFormState$.set(null);
@@ -541,8 +574,7 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
     );
   });
 
-  it('hydrates the daemon-created agent before opening and navigating to the workspace', async () => {
-    // Remembered orchestration choice — the coordinator layout is bootstrapped.
+  it('submits the remembered coordinator choice before navigating to the workspace', async () => {
     mocks.compactFormState$.set({ selectedSpecialist: 'spec-writer', isTeamMode: true });
     mocks.create.mockResolvedValue({
       ok: true,
@@ -573,35 +605,9 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
         initialAgent: expect.objectContaining({ prompt: 'Build the thing' }),
       }),
     );
-
-    const dispatched = mocks.dispatch.mock.calls.map(([action]) => action);
-    const hydrateIndex = dispatched.findIndex(
-      (action) => action.type === 'workspaceNavigation/hydrateWorkspaceNavigation',
-    );
-    const bootstrapIndex = dispatched.findIndex(
-      (action) => action.type === 'panelLayout/bootstrapNewWorkspaceLayout',
-    );
-    const openIndex = dispatched.findIndex((action) => action.type === 'tabState/openWorkspaceTab');
-    expect(dispatched[hydrateIndex]?.payload).toEqual([
-      'ws-created',
-      expect.objectContaining({
-        mainPanel: { type: 'empty' },
-        drawer: { open: false, type: null, itemId: null },
-      }),
-    ]);
-    expect(dispatched[bootstrapIndex]?.payload).toEqual(
-      expect.objectContaining({
-        wsId: 'ws-created',
-        initialAgentId: 'agent-created',
-        coordinator: true,
-      }),
-    );
-    expect(dispatched[openIndex]?.payload).toEqual(['ws-created']);
-    expect(bootstrapIndex).toBeLessThan(hydrateIndex);
-    expect(openIndex).toBeGreaterThan(hydrateIndex);
   });
 
-  it('applies a picked reasoning effort to the daemon-created initial agent', async () => {
+  it('sends picked effort atomically before the initial prompt can start', async () => {
     mocks.compactFormState$.set({ selectedReasoningEffort: 'high' });
     mocks.create.mockResolvedValue({
       ok: true,
@@ -624,18 +630,30 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
     });
     await component.applyPrefill();
 
-    await waitFor(() =>
-      expect(mocks.setReasoningEffort).toHaveBeenCalledWith({
-        agentId: 'agent-created',
-        workspaceId: 'ws-created',
-        reasoningEffort: 'high',
-      }),
-    );
-    expect(mocks.create.mock.calls[0][0].initialAgent).not.toHaveProperty('reasoningEffort');
+    await waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-created'));
+    expect(mocks.create.mock.calls[0][0].initialAgent).toMatchObject({
+      reasoningEffort: 'high',
+      prompt: 'Build the thing',
+    });
+    expect(mocks.setReasoningEffort).not.toHaveBeenCalled();
   });
 
   it('drops hydrated effort when the saved model belongs to another provider', async () => {
-    render(CompactWorkspaceInitializer, { props: { isExpanded: false } });
+    mocks.create.mockResolvedValue({
+      ok: true,
+      data: {
+        workspace: {
+          id: 'ws-created',
+          title: 'Created workspace',
+          path: '/tmp/ws-created',
+          repositoryPath: '/tmp/test-repo',
+          worktreePath: '/tmp/ws-created',
+          status: 'Active',
+        },
+        initialAgent: { id: 'agent-created' },
+      },
+    });
+    const { component } = render(CompactWorkspaceInitializer, { props: { isExpanded: false } });
 
     mocks.compactFormState$.set({
       selectedModel: 'codex:gpt-5.3-codex',
@@ -644,20 +662,30 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
     });
     mocks.hydrated$.set(true);
 
-    await waitFor(() => {
-      const persisted = mocks.dispatch.mock.calls
-        .map(([action]) => action)
-        .filter((action) => action.type === 'workspaceInitializer/setCompactFormState')
-        .at(-1)?.payload[0];
-      expect(persisted).toMatchObject({
-        selectedModel: undefined,
-        selectedReasoningEffort: undefined,
-      });
-    });
+    seedAutoCreatePrefill();
+    await component.applyPrefill();
+    await waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-created'));
+    const initialAgent = mocks.create.mock.calls[0][0].initialAgent;
+    expect(initialAgent.model).toBe(undefined);
+    expect(initialAgent).not.toHaveProperty('reasoningEffort');
   });
 
   it('keeps hydrated effort when the saved model matches the active provider', async () => {
-    render(CompactWorkspaceInitializer, { props: { isExpanded: false } });
+    mocks.create.mockResolvedValue({
+      ok: true,
+      data: {
+        workspace: {
+          id: 'ws-created',
+          title: 'Created workspace',
+          path: '/tmp/ws-created',
+          repositoryPath: '/tmp/test-repo',
+          worktreePath: '/tmp/ws-created',
+          status: 'Active',
+        },
+        initialAgent: { id: 'agent-created' },
+      },
+    });
+    const { component } = render(CompactWorkspaceInitializer, { props: { isExpanded: false } });
 
     mocks.compactFormState$.set({
       selectedModel: 'auggie:sonnet-4.6',
@@ -666,15 +694,11 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
     });
     mocks.hydrated$.set(true);
 
-    await waitFor(() => {
-      const persisted = mocks.dispatch.mock.calls
-        .map(([action]) => action)
-        .filter((action) => action.type === 'workspaceInitializer/setCompactFormState')
-        .at(-1)?.payload[0];
-      expect(persisted).toMatchObject({
-        selectedModel: 'auggie:sonnet-4.6',
-        selectedReasoningEffort: 'high',
-      });
-    });
+    seedAutoCreatePrefill();
+    await component.applyPrefill();
+    await waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-created'));
+    const initialAgent = mocks.create.mock.calls[0][0].initialAgent;
+    expect(initialAgent).toMatchObject({ provider: 'auggie', model: 'sonnet-4.6' });
+    expect(initialAgent.reasoningEffort).toBe('high');
   });
 });

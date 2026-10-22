@@ -2,7 +2,7 @@
  * Typed contract for the daemon's `providers.catalog` RPC (PROTOCOL §5.38 —
  * the static provider registry served over the wire, monorepo#928).
  *
- * Daemon-global: no params and no `workspaceId`. The daemon owns the registry
+ * Workspace reads carry optional routing context; direct reads may omit it. The daemon owns the registry
  * (including the env-var / feature-code `visible` verdict); the FE only
  * consumes the rows. Zod schemas validate the request/response shapes at the
  * wire boundary so a divergent payload fails loudly instead of being silently
@@ -13,8 +13,10 @@ import { z } from 'zod';
 
 export const PROVIDERS_CATALOG_METHOD = 'providers.catalog';
 
-/** `providers.catalog` request — `{}`, no parameters (§5.38). */
-export const ProviderCatalogRequestSchema = z.object({}).strict();
+/** `providers.catalog` request — optional workspace routing context (§5.38). */
+export const ProviderCatalogRequestSchema = z
+  .object({ workspaceId: z.string().min(1).optional() })
+  .strict();
 
 /**
  * One registry row (§5.38). Optional fields are omitted when unset, never
@@ -31,6 +33,8 @@ const ProviderCatalogEntrySchema = z
     shortName: z.string(),
     command: z.string(),
     canBeDisabled: z.boolean(),
+    // Daemon-authoritative historical identities. Absence provides no alias mapping.
+    legacyAliases: z.array(z.string().min(1)).optional(),
     loginCommandHint: z.string().optional(),
     loginDocsUrl: z.string().optional(),
     authErrorPatterns: z.array(z.string()).optional(),
@@ -41,6 +45,9 @@ const ProviderCatalogEntrySchema = z
     // optional here so an older daemon's rows (no such RPC) still validate —
     // consumers treat absence as unsupported.
     supportsTestPrompt: z.boolean().optional(),
+    supportsFastMode: z.boolean().optional(),
+    // Named profiles (§5.54): absence means unsupported, including older daemons.
+    supportsProfiles: z.boolean().optional(),
   })
   .passthrough();
 
@@ -50,11 +57,31 @@ const ProviderCatalogEntrySchema = z
  * array position. `.passthrough()` for the same additive-field preservation
  * as the entry schema.
  */
+/**
+ * One named profile summary (§5.54 `ProviderProfileSummary`): identity and
+ * display name only — never env. `providerRef` is the value every provider
+ * field carries; clients read it and never compose it.
+ */
+const ProviderProfileSummarySchema = z
+  .object({
+    id: z.string().min(1),
+    providerRef: z.string().min(1),
+    baseProviderId: z.string().min(1),
+    name: z.string(),
+    /** Backup failover flag; absent on daemons without backup failover. */
+    backup: z.boolean().optional(),
+  })
+  .passthrough();
+
 export const ProviderCatalogResponseSchema = z
   .object({
     providers: z.array(ProviderCatalogEntrySchema),
+    // Named profiles (§5.54): absent on older daemons and hosts without profiles.
+    profiles: z.array(ProviderProfileSummarySchema).optional(),
   })
   .passthrough();
+
+export type ProviderProfileSummary = z.infer<typeof ProviderProfileSummarySchema>;
 
 export type ProviderCatalogEntry = z.infer<typeof ProviderCatalogEntrySchema>;
 export type ProviderCatalogResult = z.infer<typeof ProviderCatalogResponseSchema>;

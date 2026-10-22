@@ -1,3 +1,19 @@
+import { AgentPlacementRequestSchema } from '$shared/types/agent-node';
+import type {
+  NativeReviewOwner,
+  NativeReviewInput,
+  NativeReviewRetirement,
+  NativeReviewSession,
+} from '$shared/types/native-review-operation';
+import { createNativeReviewTransport } from './native-review-transport';
+import type {
+  RepositorySelectionEdit,
+  SelectionRetirement,
+} from '$shared/types/repository-selection';
+import { createRepositorySelectionTransport } from './repository-selection-transport';
+import type { RepositoryContextRequest } from '$shared/types/repository-context';
+import type { RepositoryContextUpdate } from '../app-client';
+import { createRepositoryContextTransport } from './repository-context-transport';
 /**
  * Live workspaces domain backed by the intentd daemon.
  *
@@ -17,6 +33,7 @@ import type {
   WorkspaceDiskUsage,
 } from '$shared/types';
 import type { TokenUsage } from '$features/token-usage/token-usage-types';
+import { parseTokenUsage } from '$features/token-usage/token-usage-schema';
 import type { ContextItem } from '$features/context/types';
 import {
   isWorkspaceBrowserClient,
@@ -24,6 +41,7 @@ import {
 } from '$shared/types/browser-clients';
 import type {
   MutationResult,
+  PullRequestWorkspace,
   SubscriptionHandler,
   Unsubscribe,
   WorkspaceCancelDeleteResult,
@@ -81,8 +99,12 @@ function toWorkspaceStatus(value: unknown): WorkspaceStatus {
 function normalizeWorkspace(raw: Record<string, unknown>): Workspace {
   const now = new Date().toISOString();
   const id = String(raw.id ?? raw.workspaceId ?? '');
+  const { defaultAgentPlacement, ...fields } = raw;
   return {
-    ...(raw as Partial<Workspace>),
+    ...(fields as Partial<Workspace>),
+    ...(defaultAgentPlacement === undefined
+      ? {}
+      : { defaultAgentPlacement: AgentPlacementRequestSchema.parse(defaultAgentPlacement) }),
     id: createWorkspaceId(id),
     title: String(raw.title ?? raw.name ?? id),
     branch: String(raw.branch ?? ''),
@@ -139,7 +161,40 @@ function requireBrowserClient(value: unknown, method: string): WorkspaceBrowserC
   return value;
 }
 
+/** One documented `workspace.findByPullRequest` row (§5.1); anything else is a contract violation. */
+function isPullRequestWorkspace(row: unknown): row is PullRequestWorkspace {
+  if (row === null || typeof row !== 'object') return false;
+  const r = row as Record<string, unknown>;
+  return (
+    typeof r.id === 'string' &&
+    r.id.length > 0 &&
+    typeof r.title === 'string' &&
+    typeof r.archived === 'boolean' &&
+    typeof r.linkedAt === 'string'
+  );
+}
+
 export class LiveWorkspacesClient implements WorkspacesClient {
+  beginNativeReview(
+    owner: NativeReviewOwner,
+    input: NativeReviewInput,
+    handler: (kind: NativeReviewRetirement) => void,
+  ): Promise<NativeReviewSession> {
+    return createNativeReviewTransport().begin(owner, input, handler);
+  }
+  beginRepositorySelectionEdit(
+    request: RepositorySelectionEdit,
+    handler: (kind: SelectionRetirement) => void,
+  ) {
+    return createRepositorySelectionTransport().begin(request, handler);
+  }
+  observeRepositoryContext(
+    request: RepositoryContextRequest,
+    handler: (update: RepositoryContextUpdate) => void,
+  ) {
+    return createRepositoryContextTransport().observe(request, handler);
+  }
+
   private readonly listRequests = new Map<boolean, Promise<Workspace[]>>();
   private readonly getRequests = new Map<string, Promise<Workspace | null>>();
 
@@ -311,6 +366,18 @@ export class LiveWorkspacesClient implements WorkspacesClient {
     }
   }
 
+  /** Workspaces linked to a PR URL (`workspace.findByPullRequest`, §5.1). */
+  async findByPullRequest(url: string): Promise<PullRequestWorkspace[]> {
+    const result = await backendRequest<{ workspaces?: unknown }>('workspace.findByPullRequest', {
+      url,
+    });
+    const rows = result?.workspaces;
+    if (!Array.isArray(rows) || !rows.every(isPullRequestWorkspace)) {
+      throw new Error('Invalid workspace.findByPullRequest response shape');
+    }
+    return rows;
+  }
+
   /** Cancel a daemon-owned workspace delete grace window (§5.1). */
   async cancelDelete(id: string): Promise<WorkspaceCancelDeleteResult> {
     try {
@@ -353,11 +420,11 @@ export class LiveWorkspacesClient implements WorkspacesClient {
    * `workspace:tokenUsage-changed` event handled in `daemon-events-bridge`.
    */
   async getTokenUsage(workspaceId: string): Promise<TokenUsage | null> {
-    const result = await backendRequest<{ tokenUsage?: TokenUsage }>('workspace.getTokenUsage', {
+    const result = await backendRequest<{ tokenUsage?: unknown }>('workspace.getTokenUsage', {
       workspaceId,
     });
     const usage = result?.tokenUsage;
-    return usage && typeof usage === 'object' ? usage : null;
+    return usage && typeof usage === 'object' ? parseTokenUsage(usage) : null;
   }
 
   /**

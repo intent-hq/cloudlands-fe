@@ -1,6 +1,6 @@
 # Redux Selectors Guide
 
-This project guide is a concise companion to `@augmentcode/themis`. Use the
+This project guide is a concise companion to `@themislib/themis`. Use the
 installed package and Themis skills for selector API details. This file only
 records the Intent-app conventions that are easy to forget.
 
@@ -10,7 +10,7 @@ App-local selectors should be created from the configured app Store so state inf
 
 ```typescript
 import { store } from '$store/renderer/store';
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 
 export const selectTodosCollection = store.createSelector((state) => state.todos.collection);
 export const selectTodo = store.createSelector((state, id: string) =>

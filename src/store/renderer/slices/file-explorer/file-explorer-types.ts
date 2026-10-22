@@ -1,5 +1,5 @@
 import type { FileNode, FileGitStatus } from '$shared/types';
-import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 
 // ---------------------------------------------------------------------------
 // Flattened node for virtualized rendering
@@ -67,4 +67,14 @@ export interface FileExplorerWorkspaceState {
 
 export interface FileExplorerState {
   byWorkspaceId: Record<string, FileExplorerWorkspaceState>;
+  searches: Collection<FileExplorerSearch, 'consumerId'>;
+}
+
+export interface FileExplorerSearch {
+  consumerId: string;
+  workspaceId: string;
+  requestId: string;
+  paths: string[];
+  loading: boolean;
+  error: string | null;
 }

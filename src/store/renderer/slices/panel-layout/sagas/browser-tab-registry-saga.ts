@@ -101,6 +101,7 @@ import {
   browserTabClosed,
   browserTabUpserted,
   ownClientIdReceived,
+  hydrateBrowserClientsRequested,
 } from '../../browser-clients/browser-clients-slice';
 import {
   selectBrowserTabRegistryWorkspace,
@@ -141,6 +142,7 @@ import {
   PANEL_LAYOUT_HANDLED_ACTION_TYPES,
   acknowledgeBrowserTabHost,
   applyBrowserTabRegistryRow,
+  browserTabRegistryReconcileRequested,
   browserTabRegistryReportRequested,
   closeTab,
   destroyTabsByType,
@@ -440,10 +442,13 @@ function claimFromRow(tab: PanelTab, row: BrowserTab): BrowserTab | null {
   };
 }
 
-function* waitForOwnClientId(): SagaGenerator<string> {
+function* waitForOwnClientId(fences: Fences, requestIdentity = true): SagaGenerator<string> {
+  yield* check(fences);
   const known = yield* selectOwnClientId.effect();
   if (known) return known;
+  if (requestIdentity) yield* effect(fences, hydrateBrowserClientsRequested());
   const action = yield* take(ownClientIdReceived);
+  yield* check(fences);
   return action.payload[0];
 }
 
@@ -712,8 +717,33 @@ function* loadUnder(
 function* reconcileOnSettle(action: ReturnType<typeof setRestoreStatus>): SagaGenerator<void> {
   const [wsId, status] = action.payload;
   if (status !== 'restored' && status !== 'empty' && status !== 'invalid') return;
+  yield* call(reconcileWorkspace, wsId);
+}
+
+/**
+ * A browser request reached this window for the workspace. Closing a
+ * workspace's tab tears its registry state down (`unmounted`) but keeps the
+ * layout settled, and a settled layout never settles again, so nothing
+ * would reload its rows: a tab an agent opens there while the workspace is
+ * background-hosted would never be reported. Reload only in exactly that
+ * state; a loading or applied workspace, or an unsettled layout (its settle
+ * reconciles), is left alone.
+ */
+function* onReconcileRequested(
+  action: ReturnType<typeof browserTabRegistryReconcileRequested>,
+): SagaGenerator<void> {
+  const [wsId] = action.payload;
+  const layout = (yield* selectPanelLayoutWorkspaces.effect())[wsId];
+  if (!layout || !isSettled(layout)) return;
+  if ((yield* selectBrowserTabRegistryWorkspace.effect(wsId)).phase !== 'unmounted') return;
+  yield* call(reconcileWorkspace, wsId);
+}
+
+function* reconcileWorkspace(wsId: string): SagaGenerator<void> {
   if ((yield* selectDaemonHealth.effect()) === 'down') return;
-  const ownClientId = yield* waitForOwnClientId();
+  const { generation } = yield* selectBrowserTabRegistryWorkspace.effect(wsId);
+  const ownClientId = yield* fenced(waitForOwnClientId(workspaceFence(wsId, generation)));
+  if (ownClientId === null) return;
   yield* call(loadWorkspace, wsId, ownClientId);
 }
 
@@ -752,9 +782,25 @@ function changedWorkspaces(layouts: Record<string, WorkspacePanelLayoutState>): 
  * A mutation the reducer answered with the same state changes no workspace
  * and reports nothing.
  */
-function* onLayoutMutation(reports: Channel<string>): SagaGenerator<void> {
-  const changed = changedWorkspaces(yield* selectPanelLayoutWorkspaces.effect());
-  for (const wsId of changed) yield* call(requestReport, reports, wsId);
+function* onLayoutMutation(
+  reports: Channel<string>,
+  action: { type: string },
+): SagaGenerator<void> {
+  const previous = seenLayouts;
+  const layouts = yield* selectPanelLayoutWorkspaces.effect();
+  const changed = changedWorkspaces(layouts);
+  for (const wsId of changed) {
+    // Bootstrap settles a new workspace directly in the reducer. Observe
+    // that transition here too; setRestoreStatus already has its own loader.
+    if (
+      action.type !== setRestoreStatus.type &&
+      layouts[wsId] &&
+      isSettled(layouts[wsId]) &&
+      (!previous[wsId] || !isSettled(previous[wsId]))
+    )
+      yield* fork(reconcileWorkspace, wsId);
+    yield* call(requestReport, reports, wsId);
+  }
 }
 
 /**
@@ -1159,7 +1205,16 @@ function* syncOnConnect(): SagaGenerator<void> {
   syncedConnectionGeneration = generation;
   registryForbidden = false;
 
-  const ownClientId = yield* waitForOwnClientId();
+  // An empty Home session has no registry work that needs an identity probe.
+  // A restored workspace or an actual browser consumer will request it.
+  const layouts = yield* selectPanelLayoutWorkspaces.effect();
+  const ownClientId = yield* fenced(
+    waitForOwnClientId(
+      { kind: 'connection', backendId, connectionGeneration: generation },
+      Object.keys(layouts).length > 0,
+    ),
+  );
+  if (ownClientId === null) return;
   for (let attempt = 0; attempt < MAX_SYNC_ATTEMPTS; attempt++) {
     if (attempt > 0) {
       yield* delay(SYNC_RETRY_MS);
@@ -1192,6 +1247,7 @@ export function* browserTabRegistrySaga(): SagaGenerator<void> {
   yield* takeEvery(browserTabRegistryReportRequested, onReportRequested, reports);
   yield* takeSingleFlightInContext(reports, (wsId) => wsId, reportHostedTabs);
   yield* takeEvery(setRestoreStatus, reconcileOnSettle);
+  yield* takeEvery(browserTabRegistryReconcileRequested, onReconcileRequested);
   yield* takeEvery(browserTabUpserted, onRegistryRow);
   yield* takeEvery(browserTabClosed, onRegistryClose);
   yield* takeEvery(connectionStatusChanged, onConnectionStatus);

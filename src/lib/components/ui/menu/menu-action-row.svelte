@@ -38,7 +38,7 @@
   )}
 >
   {#if leading}
-    <span data-slot="action-row-leading" class="first-line-icon w-4">
+    <span data-slot="action-row-leading" class="first-line-icon w-(--menu-icon-size)">
       {@render leading()}
     </span>
   {/if}

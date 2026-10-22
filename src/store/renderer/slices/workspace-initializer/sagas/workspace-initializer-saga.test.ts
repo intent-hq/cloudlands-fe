@@ -1,17 +1,22 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection, getItem } from '@themislib/themis/utils/collections/collection-utils';
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   update: vi.fn(),
+  clearDraft: vi.fn().mockResolvedValue(undefined),
   getJSON: vi.fn(),
   getItem: vi.fn(),
   error: vi.fn(),
   warn: vi.fn(),
 }));
 vi.mock('$lib/client', () => ({
-  appClient: { settings: { get: mocks.get, update: mocks.update } },
+  appClient: {
+    settings: { get: mocks.get, update: mocks.update },
+    drafts: { clear: mocks.clearDraft },
+  },
 }));
 vi.mock('$lib/utils/safe-storage', () => ({
   safeLocalStorage: {
@@ -29,10 +34,13 @@ vi.mock('$lib/utils/client-logger', () => ({
 }));
 
 import { resetOnboarding } from '$store/renderer/slices/onboarding/onboarding-slice';
+import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
 import {
   cancelWorkspaceInitializerOnboardingFormStateDebounce,
   debounceWorkspaceInitializerOnboardingFormState,
   hydrateWorkspaceInitializer,
+  dismissWorkspaceInitializerRecentRepo,
+  rememberWorkspaceInitializerRecentSpecialist,
   initialState,
   setCompactWorkspaceInitializerFormState,
   setWorkspaceInitializerLastSelectedRepo,
@@ -48,6 +56,10 @@ import {
   persistWorkspaceInitializerWorker,
   workspaceInitializerSaga,
 } from './workspace-initializer-saga';
+
+const ownerContext = {
+  reduxStore: { getState: () => withLegacyPrincipal({}), subscribe: () => () => {} },
+};
 
 const settle = async () => {
   await Promise.resolve();
@@ -83,6 +95,8 @@ function populatedState() {
         },
       ]),
       lastSubmittedAgent: { selectedModel: 'sonnet' },
+      agentByRepo: { 'local:/repo': { selectedModel: 'opus' } },
+      recentSpecialistIds: ['implementor'],
     },
   };
 }
@@ -127,7 +141,7 @@ describe('workspaceInitializerSaga', () => {
     });
     const dispatch = vi.fn();
     const result = await runSaga(
-      { dispatch, getState: () => ({}) },
+      { dispatch, getState: () => withLegacyPrincipal({}) },
       hydrateWorkspaceInitializerWorker,
     ).toPromise();
 
@@ -164,7 +178,7 @@ describe('workspaceInitializerSaga', () => {
     mocks.getItem.mockReturnValue('/parent');
     const dispatch = vi.fn();
     await runSaga(
-      { dispatch, getState: () => ({}) },
+      { dispatch, getState: () => withLegacyPrincipal({}) },
       hydrateWorkspaceInitializerWorker,
     ).toPromise();
     const migrated: WorkspaceInitializerHydrationState = {
@@ -188,7 +202,7 @@ describe('workspaceInitializerSaga', () => {
     mocks.get.mockResolvedValue(null);
     const dispatch = vi.fn();
     const result = await runSaga(
-      { dispatch, getState: () => ({}) },
+      { dispatch, getState: () => withLegacyPrincipal({}) },
       hydrateWorkspaceInitializerWorker,
     ).toPromise();
 
@@ -209,7 +223,7 @@ describe('workspaceInitializerSaga', () => {
     const state = populatedState();
     mocks.update.mockRejectedValue(new Error('offline'));
     await runSaga(
-      { dispatch: vi.fn(), getState: () => state },
+      { dispatch: vi.fn(), getState: () => withLegacyPrincipal(state) },
       persistWorkspaceInitializerWorker,
     ).toPromise();
 
@@ -228,6 +242,7 @@ describe('workspaceInitializerSaga', () => {
               branchByRepo: { '/repo': 'main' },
               defaultParentPath: '/parent',
               recentRepos: [{ path: '/repo', type: 'local', name: 'repo' }],
+              dismissedRecentRepoKeys: {},
               remoteSetups: [
                 {
                   id: 'remote-1',
@@ -239,6 +254,8 @@ describe('workspaceInitializerSaga', () => {
                 },
               ],
               lastSubmittedAgent: { selectedModel: 'sonnet' },
+              agentByRepo: { 'local:/repo': { selectedModel: 'opus' } },
+              recentSpecialistIds: ['implementor'],
             },
           },
         ],
@@ -254,7 +271,7 @@ describe('workspaceInitializerSaga', () => {
     });
     const state = populatedState();
     await runSaga(
-      { dispatch: vi.fn(), getState: () => state },
+      { dispatch: vi.fn(), getState: () => withLegacyPrincipal(state) },
       persistWorkspaceInitializerWorker,
     ).toPromise();
     cloneSpy.mockRestore();
@@ -281,6 +298,7 @@ describe('workspaceInitializerSaga', () => {
               branchByRepo: { '/repo': 'main' },
               defaultParentPath: '/parent',
               recentRepos: [{ path: '/repo', type: 'local', name: 'repo' }],
+              dismissedRecentRepoKeys: {},
               remoteSetups: [
                 {
                   id: 'remote-1',
@@ -292,6 +310,8 @@ describe('workspaceInitializerSaga', () => {
                 },
               ],
               lastSubmittedAgent: { selectedModel: 'sonnet' },
+              agentByRepo: { 'local:/repo': { selectedModel: 'opus' } },
+              recentSpecialistIds: ['implementor'],
             },
           },
         ],
@@ -310,7 +330,7 @@ describe('workspaceInitializerSaga', () => {
     const state = populatedState();
     state.workspaceInitializer.branchByRepo = circular as Record<string, string>;
     await runSaga(
-      { dispatch: vi.fn(), getState: () => state },
+      { dispatch: vi.fn(), getState: () => withLegacyPrincipal(state) },
       persistWorkspaceInitializerWorker,
     ).toPromise();
     cloneSpy.mockRestore();
@@ -321,6 +341,131 @@ describe('workspaceInitializerSaga', () => {
     expect(mocks.error.mock.calls).toEqual([
       ['Cannot sanitize workspaceInitializer.state bag; skipping persist', { error: loggedError }],
     ]);
+  });
+
+  it.each(['high', ''])(
+    'persists and rehydrates effort %j alongside the selected provider/model',
+    async (effort) => {
+      const agent = {
+        selectedModel: 'gpt-fixture',
+        selectedProvider: 'codex',
+        selectedReasoningEffort: effort,
+      };
+      const state = {
+        workspaceInitializer: {
+          ...initialState,
+          hydrated: true,
+          compactFormState: agent,
+          lastSubmittedAgent: agent,
+        },
+      };
+      await runSaga(
+        { getState: () => withLegacyPrincipal(state) },
+        persistWorkspaceInitializerWorker,
+      ).toPromise();
+      const bag = mocks.update.mock.calls[0][0][0].value;
+      expect(bag.compactFormState).toEqual(agent);
+      expect(bag.lastSubmittedAgent).toEqual(agent);
+      mocks.get.mockResolvedValue({ value: JSON.parse(JSON.stringify(bag)) });
+      const dispatch = vi.fn();
+      await runSaga(
+        { dispatch, getState: () => withLegacyPrincipal({}) },
+        hydrateWorkspaceInitializerWorker,
+      ).toPromise();
+      const hydrated = workspaceInitializerReducer(initialState, dispatch.mock.calls[0][0]);
+      expect(hydrated.compactFormState).toEqual(agent);
+      expect(hydrated.lastSubmittedAgent).toEqual(agent);
+    },
+  );
+
+  it('round-trips per-repo agent setups through the daemon bag and drops malformed entries', async () => {
+    const team = {
+      isTeamMode: true,
+      selectedSpecialist: 'spec-writer',
+      selectedProvider: 'claude-code',
+      selectedModel: 'opus',
+      selectedReasoningEffort: 'high',
+    };
+    const solo = { isTeamMode: false, selectedSpecialist: 'implementor', selectedModel: 'sonnet' };
+    const agentByRepo = { 'github:github.com/acme/app': team, 'local:/code/app': solo };
+    const state = { workspaceInitializer: { ...initialState, hydrated: true, agentByRepo } };
+    await runSaga(
+      { getState: () => withLegacyPrincipal(state) },
+      persistWorkspaceInitializerWorker,
+    ).toPromise();
+    const bag = mocks.update.mock.calls[0][0][0].value;
+    expect(bag.agentByRepo).toEqual(agentByRepo);
+
+    mocks.get.mockResolvedValue({
+      value: {
+        ...JSON.parse(JSON.stringify(bag)),
+        agentByRepo: { ...bag.agentByRepo, 'local:/bad': 'opus', 'local:/null': null },
+      },
+    });
+    const dispatch = vi.fn();
+    await runSaga(
+      { dispatch, getState: () => withLegacyPrincipal({}) },
+      hydrateWorkspaceInitializerWorker,
+    ).toPromise();
+    const hydrated = workspaceInitializerReducer(initialState, dispatch.mock.calls[0][0]);
+    expect(hydrated.agentByRepo).toEqual(agentByRepo);
+  });
+
+  it('round-trips recently used specialists through the daemon bag and drops malformed ids', async () => {
+    const recentSpecialistIds = ['implementor', 'spec-writer'];
+    const state = {
+      workspaceInitializer: { ...initialState, hydrated: true, recentSpecialistIds },
+    };
+    await runSaga(
+      { getState: () => withLegacyPrincipal(state) },
+      persistWorkspaceInitializerWorker,
+    ).toPromise();
+    const bag = mocks.update.mock.calls[0][0][0].value;
+    expect(bag.recentSpecialistIds).toEqual(recentSpecialistIds);
+
+    mocks.get.mockResolvedValue({
+      value: {
+        ...JSON.parse(JSON.stringify(bag)),
+        recentSpecialistIds: ['implementor', 7, '', null, 'spec-writer', 'implementor'],
+      },
+    });
+    const dispatch = vi.fn();
+    await runSaga(
+      { dispatch, getState: () => withLegacyPrincipal({}) },
+      hydrateWorkspaceInitializerWorker,
+    ).toPromise();
+    const hydrated = workspaceInitializerReducer(initialState, dispatch.mock.calls[0][0]);
+    expect(hydrated.recentSpecialistIds).toEqual(recentSpecialistIds);
+  });
+
+  it('persists a specialist recorded from the agent composer', async () => {
+    mocks.get.mockResolvedValue({ value: {} });
+    const channel = stdChannel();
+    let slice: WorkspaceInitializerState = initialState;
+    const dispatch = (action: Parameters<typeof workspaceInitializerReducer>[1]) => {
+      slice = workspaceInitializerReducer(slice, action);
+      channel.put(action);
+      return action;
+    };
+    const task = runSaga(
+      {
+        channel,
+        dispatch,
+        context: ownerContext,
+        getState: () => withLegacyPrincipal({ workspaceInitializer: slice }),
+      },
+      workspaceInitializerSaga,
+    );
+    try {
+      await settle();
+      mocks.update.mockClear();
+      dispatch(rememberWorkspaceInitializerRecentSpecialist('reviewer'));
+      await settle();
+      expect(mocks.update.mock.calls.at(-1)![0][0].value.recentSpecialistIds).toEqual(['reviewer']);
+    } finally {
+      task.cancel();
+      await task.toPromise();
+    }
   });
 
   it('coalesces pre-hydration mutations and flushes the hydrated bag once', async () => {
@@ -334,7 +479,12 @@ describe('workspaceInitializerSaga', () => {
       return action;
     });
     const task = runSaga(
-      { channel, dispatch, getState: () => ({ workspaceInitializer: slice }) },
+      {
+        channel,
+        dispatch,
+        context: ownerContext,
+        getState: () => withLegacyPrincipal({ workspaceInitializer: slice }),
+      },
       workspaceInitializerSaga,
     );
     slice = workspaceInitializerReducer(slice, setWorkspaceInitializerRecentRepos([]));
@@ -366,9 +516,12 @@ describe('workspaceInitializerSaga', () => {
               lastSelectedRepo: { path: '/daemon', type: 'local' },
               branchByRepo: {},
               defaultParentPath: '~/Developer',
-              recentRepos: [{ path: '/daemon', type: 'local', name: 'daemon' }],
+              recentRepos: [],
+              dismissedRecentRepoKeys: {},
               remoteSetups: [],
               lastSubmittedAgent: null,
+              agentByRepo: {},
+              recentSpecialistIds: [],
             },
           },
         ],
@@ -378,12 +531,227 @@ describe('workspaceInitializerSaga', () => {
     await task.toPromise();
   });
 
+  it.each([false, true])(
+    'persists dismissal across reload and source refresh (pending hydration: %s)',
+    async (pending) => {
+      const repos = [
+        { path: '/app', type: 'local' as const, name: 'app' },
+        { path: 'Owner/App', type: 'github' as const, name: 'App' },
+      ];
+      let resolve!: (value: unknown) => void;
+      mocks.get.mockReturnValue(
+        new Promise((done) => {
+          resolve = done;
+        }),
+      );
+      const channel = stdChannel();
+      let slice = workspaceInitializerReducer(
+        initialState,
+        setWorkspaceInitializerRecentRepos(repos),
+      );
+      const dispatch = (action: Parameters<typeof workspaceInitializerReducer>[1]) => {
+        slice = workspaceInitializerReducer(slice, action);
+        channel.put(action);
+        return action;
+      };
+      const task = runSaga(
+        {
+          channel,
+          dispatch,
+          context: ownerContext,
+          getState: () => withLegacyPrincipal({ workspaceInitializer: slice }),
+        },
+        workspaceInitializerSaga,
+      );
+      try {
+        if (!pending) {
+          resolve({ value: { recentRepos: repos } });
+          await settle();
+        }
+        dispatch(dismissWorkspaceInitializerRecentRepo(repos[0]));
+        dispatch(dismissWorkspaceInitializerRecentRepo(repos[1]));
+        if (pending) {
+          expect(mocks.update).not.toHaveBeenCalled();
+          resolve({ value: { recentRepos: repos } });
+        }
+        await settle();
+        const saved = mocks.update.mock.calls.at(-1)![0][0].value;
+        expect(saved.recentRepos).toEqual([]);
+        expect(saved.dismissedRecentRepoKeys).toEqual({
+          'local:/app': true,
+          'github:owner/app': true,
+        });
+        expect(saved.lastSelectedRepo).toBeNull();
+
+        // A new renderer hydrates the daemon setting, then receives the same source records.
+        mocks.get.mockResolvedValue({ value: JSON.parse(JSON.stringify(saved)) });
+        let reloaded = initialState;
+        await runSaga(
+          {
+            context: ownerContext,
+            getState: () => withLegacyPrincipal({}),
+            dispatch: (action) => {
+              reloaded = workspaceInitializerReducer(reloaded, action);
+            },
+          },
+          hydrateWorkspaceInitializerWorker,
+        ).toPromise();
+        reloaded = workspaceInitializerReducer(
+          reloaded,
+          setWorkspaceInitializerRecentRepos([
+            ...repos,
+            { path: 'owner/app', type: 'github', name: 'app' },
+          ]),
+        );
+        expect(reloaded.recentRepos.ids).toEqual([]);
+      } finally {
+        task.cancel();
+        await task.toPromise();
+      }
+    },
+  );
+
+  it('persists undismissed source results when older settings arrive after source loading', async () => {
+    const app = { path: '/app', type: 'local' as const, name: 'app' };
+    const newlyFound = { path: '/newly-found', type: 'local' as const, name: 'newly-found' };
+    let resolve!: (value: unknown) => void;
+    mocks.get.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const channel = stdChannel();
+    let slice = initialState;
+    const dispatch = (action: Parameters<typeof workspaceInitializerReducer>[1]) => {
+      slice = workspaceInitializerReducer(slice, action);
+      channel.put(action);
+      return action;
+    };
+    const task = runSaga(
+      {
+        channel,
+        dispatch,
+        context: ownerContext,
+        getState: () => withLegacyPrincipal({ workspaceInitializer: slice }),
+      },
+      workspaceInitializerSaga,
+    );
+    try {
+      dispatch(setWorkspaceInitializerRecentRepos([app, newlyFound]));
+      dispatch(dismissWorkspaceInitializerRecentRepo(app));
+      resolve({ value: { recentRepos: [app] } });
+      await settle();
+      expect(slice.recentRepos.ids).toEqual(['/newly-found']);
+      expect(slice.pendingRecentRepos).toBeNull();
+      const saved = mocks.update.mock.calls.at(-1)![0][0].value;
+      expect(saved.recentRepos).toEqual([newlyFound]);
+      expect(saved).not.toHaveProperty('pendingRecentRepos');
+      expect(saved.dismissedRecentRepoKeys).toEqual({ 'local:/app': true });
+    } finally {
+      task.cancel();
+      await task.toPromise();
+    }
+  });
+
+  it('serializes dismissals behind the startup save and persists the latest queued state', async () => {
+    const repos = [
+      { path: '/app', type: 'local' as const, name: 'app' },
+      { path: '/other', type: 'local' as const, name: 'other' },
+    ];
+    let finishHydration!: (value: unknown) => void;
+    mocks.get.mockReturnValue(new Promise((resolve) => (finishHydration = resolve)));
+    let saved: WorkspaceInitializerHydrationState = {};
+    const finishWrites: Array<() => void> = [];
+    mocks.update.mockImplementation(
+      (updates) =>
+        new Promise((resolve) => {
+          finishWrites.push(() => {
+            saved = JSON.parse(JSON.stringify(updates[0].value));
+            resolve([]);
+          });
+        }),
+    );
+    const channel = stdChannel();
+    let slice = initialState;
+    const dispatch = (action: Parameters<typeof workspaceInitializerReducer>[1]) => {
+      slice = workspaceInitializerReducer(slice, action);
+      channel.put(action);
+      return action;
+    };
+    const task = runSaga(
+      {
+        channel,
+        dispatch,
+        context: ownerContext,
+        getState: () => withLegacyPrincipal({ workspaceInitializer: slice }),
+      },
+      workspaceInitializerSaga,
+    );
+    try {
+      dispatch(setWorkspaceInitializerRecentRepos(repos));
+      finishHydration({ value: { recentRepos: repos } });
+      await settle();
+      expect(mocks.update).toHaveBeenCalledTimes(1);
+
+      dispatch(dismissWorkspaceInitializerRecentRepo(repos[0]));
+      await settle();
+      expect(mocks.update).toHaveBeenCalledTimes(1);
+      finishWrites[0]();
+      await settle();
+      expect(mocks.update).toHaveBeenCalledTimes(2);
+      expect(mocks.update.mock.calls[1][0][0].value.dismissedRecentRepoKeys).toEqual({
+        'local:/app': true,
+      });
+
+      dispatch(dismissWorkspaceInitializerRecentRepo(repos[1]));
+      await settle();
+      expect(mocks.update).toHaveBeenCalledTimes(2);
+      finishWrites[1]();
+      await settle();
+      expect(mocks.update).toHaveBeenCalledTimes(3);
+      finishWrites[2]();
+      await settle();
+      expect(saved.dismissedRecentRepoKeys).toEqual({ 'local:/app': true, 'local:/other': true });
+      const reloaded = workspaceInitializerReducer(
+        initialState,
+        hydrateWorkspaceInitializer(saved),
+      );
+      const refreshed = workspaceInitializerReducer(
+        reloaded,
+        setWorkspaceInitializerRecentRepos(repos),
+      );
+      expect(refreshed.recentRepos.ids).toEqual([]);
+    } finally {
+      task.cancel();
+      await task.toPromise();
+    }
+  });
+
+  it('ignores malformed dismissal settings', async () => {
+    mocks.get.mockResolvedValue({
+      value: { dismissedRecentRepoKeys: { 'local:/app': true, 'local:/other': false, bad: 'yes' } },
+    });
+    const dispatch = vi.fn();
+    await runSaga(
+      { dispatch, context: ownerContext, getState: () => withLegacyPrincipal({}) },
+      hydrateWorkspaceInitializerWorker,
+    ).toPromise();
+    expect(dispatch.mock.calls[0][0].payload[0].dismissedRecentRepoKeys).toEqual({
+      'local:/app': true,
+    });
+  });
+
   it('drops queued writes after a failed hydration', async () => {
     let reject!: (error: Error) => void;
     mocks.get.mockReturnValue(new Promise((_resolve, fail) => (reject = fail)));
     const channel = stdChannel();
     const task = runSaga(
-      { channel, dispatch: vi.fn(), getState: () => populatedState() },
+      {
+        channel,
+        dispatch: vi.fn(),
+        context: ownerContext,
+        getState: () => withLegacyPrincipal(populatedState()),
+      },
       workspaceInitializerSaga,
     );
     channel.put(setCompactWorkspaceInitializerFormState({ repoPath: '/queued' }));
@@ -405,7 +773,12 @@ describe('workspaceInitializerSaga', () => {
       return action;
     });
     const task = runSaga(
-      { channel, dispatch, getState: () => ({ workspaceInitializer: slice }) },
+      {
+        channel,
+        dispatch,
+        context: ownerContext,
+        getState: () => withLegacyPrincipal({ workspaceInitializer: slice }),
+      },
       workspaceInitializerSaga,
     );
     await settle();
@@ -440,8 +813,11 @@ describe('workspaceInitializerSaga', () => {
               branchByRepo: {},
               defaultParentPath: '~/Developer',
               recentRepos: [],
+              dismissedRecentRepoKeys: {},
               remoteSetups: [],
               lastSubmittedAgent: null,
+              agentByRepo: {},
+              recentSpecialistIds: [],
             },
           },
         ],
@@ -476,7 +852,12 @@ describe('workspaceInitializerSaga', () => {
       return action;
     });
     const task = runSaga(
-      { channel, dispatch, getState: () => ({ workspaceInitializer: slice }) },
+      {
+        channel,
+        dispatch,
+        context: ownerContext,
+        getState: () => withLegacyPrincipal({ workspaceInitializer: slice }),
+      },
       workspaceInitializerSaga,
     );
     await settle();
@@ -487,7 +868,10 @@ describe('workspaceInitializerSaga', () => {
         step: 'project',
       }),
     );
-    channel.put(resetOnboarding());
+    const admission = selectPrincipalActionContext.select(
+      withLegacyPrincipal({ workspaceInitializer: slice }),
+    );
+    channel.put(resetOnboarding(admission ?? undefined));
     await settle();
 
     expect(sessionStorage.getItem('onboarding-prompt')).toBe(null);
@@ -504,8 +888,11 @@ describe('workspaceInitializerSaga', () => {
               branchByRepo: {},
               defaultParentPath: '~/Developer',
               recentRepos: [],
+              dismissedRecentRepoKeys: {},
               remoteSetups: [],
               lastSubmittedAgent: null,
+              agentByRepo: {},
+              recentSpecialistIds: [],
             },
           },
         ],
@@ -522,5 +909,54 @@ describe('workspaceInitializerSaga', () => {
     await task.toPromise();
     await vi.advanceTimersByTimeAsync(300);
     expect(mocks.update.mock.calls).toEqual([]);
+  });
+
+  it('reset preserves an active onboarding draft owner instead of clearing its restored draft', async () => {
+    mocks.get.mockResolvedValue({ value: {} });
+    const channel = stdChannel();
+    let slice: WorkspaceInitializerState = {
+      ...initialState,
+      onboardingFormState: { projectSelection: null, step: 'project' },
+      draftRestores: createCollection('id', [
+        {
+          id: 'onboarding-workspace-initializer',
+          requestId: 'restore-1',
+          status: 'restored',
+          text: 'saved prompt',
+          attachments: [],
+        },
+      ]),
+    };
+    const state = () => withLegacyPrincipal({ workspaceInitializer: slice });
+    const dispatch = vi.fn((action) => {
+      slice = workspaceInitializerReducer(slice, action);
+      channel.put(action);
+      return action;
+    });
+    const task = runSaga(
+      {
+        channel,
+        dispatch,
+        context: ownerContext,
+        getState: state,
+      },
+      workspaceInitializerSaga,
+    );
+    await settle();
+
+    const admission = selectPrincipalActionContext.select(state());
+    dispatch(resetOnboarding(admission ?? undefined));
+    await settle();
+
+    expect(mocks.clearDraft).not.toHaveBeenCalled();
+    expect(slice.onboardingFormState).toBe(null);
+    expect(getItem(slice.draftRestores, 'onboarding-workspace-initializer')).toMatchObject({
+      requestId: 'restore-1',
+      status: 'restored',
+      text: 'saved prompt',
+    });
+
+    task.cancel();
+    await task.toPromise();
   });
 });

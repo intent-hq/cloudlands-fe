@@ -12,6 +12,7 @@
 export const PROVIDER_AUTH_STATUS_METHOD = 'host.providerAuthStatus';
 
 export interface ProviderAuthStatusParams {
+  workspaceId?: string;
   /** Restrict the probe to one provider; omit for a full sweep. */
   providerId?: string;
   /** Bypass the daemon's result cache (must be a boolean when present). */
@@ -60,6 +61,7 @@ export function buildProviderAuthStatusParams(
   options: ProviderAuthStatusParams = {},
 ): ProviderAuthStatusParams {
   const params: ProviderAuthStatusParams = {};
+  if (options.workspaceId) params.workspaceId = options.workspaceId;
   if (typeof options.providerId === 'string' && options.providerId.length > 0) {
     params.providerId = options.providerId;
   }

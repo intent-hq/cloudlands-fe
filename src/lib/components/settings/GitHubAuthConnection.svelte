@@ -2,14 +2,12 @@
   import { Button } from '$lib/components/patterns/settings/custom-controls';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
-  import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import {
     startGitHubAuth,
     logoutGitHub,
-    checkGitHubAuthStatus,
   } from '$store/renderer/slices/github-auth/github-auth-slice';
   import {
     selectGitHubAuthIsAuthenticated,
@@ -18,10 +16,11 @@
     selectGitHubAuthUser,
     selectGitHubAuthError,
     selectGitHubAuthRequiresDaemonAuth,
+    selectGitHubAuthIsDisconnecting,
   } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import GitHubDeviceCodeCard from '$lib/components/GitHubDeviceCodeCard.svelte';
 
-  let isDisconnectingGitHub = $state(false);
+  const isDisconnectingGitHub$ = selectGitHubAuthIsDisconnecting();
 
   const isAuthenticated$ = selectGitHubAuthIsAuthenticated();
   const isAuthenticating$ = selectGitHubAuthIsAuthenticating();
@@ -30,36 +29,12 @@
   const error$ = selectGitHubAuthError();
   const requiresDaemonAuth$ = selectGitHubAuthRequiresDaemonAuth();
 
-  onMount(() => {
-    // Check auth status immediately when window gains focus
-    // This makes the UI update snappily when user returns from browser
-    const handleFocus = () => {
-      const state = appStore.state;
-      const isAuthenticating = selectGitHubAuthIsAuthenticating.select(state);
-      const deviceFlow = selectGitHubAuthDeviceFlow.select(state);
-      if (isAuthenticating && deviceFlow) {
-        appStore.dispatch(checkGitHubAuthStatus());
-      }
-    };
-
-    window.addEventListener('focus', handleFocus);
-    return () => {
-      window.removeEventListener('focus', handleFocus);
-    };
-  });
-
   function handleGitHubConnect() {
     appStore.dispatch(startGitHubAuth());
   }
 
   function handleGitHubDisconnect() {
-    isDisconnectingGitHub = true;
     appStore.dispatch(logoutGitHub());
-    // The saga handles the async logout; we just reset local UI state
-    // Use a short delay to let the saga complete
-    setTimeout(() => {
-      isDisconnectingGitHub = false;
-    }, 500);
   }
 
   function handleGitHubReconnect() {
@@ -108,9 +83,9 @@
           type="button"
           class="h-[22px] px-0"
           onclick={handleGitHubDisconnect}
-          disabled={isDisconnectingGitHub}
+          disabled={$isDisconnectingGitHub$}
         >
-          {isDisconnectingGitHub
+          {$isDisconnectingGitHub$
             ? m.settings_connections_disconnecting()
             : m.settings_connections_disconnect()}
         </Button>

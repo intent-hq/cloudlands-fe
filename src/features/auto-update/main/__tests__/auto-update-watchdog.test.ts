@@ -60,6 +60,13 @@ vi.mock('electron-updater', () => ({
         updaterHandlers[event] = handler;
       }),
     },
+    // electron-updater's real export; telemetry checks take one per attempt.
+    CancellationToken: class {
+      cancelled = false;
+      cancel() {
+        this.cancelled = true;
+      }
+    },
   },
 }));
 
@@ -164,6 +171,20 @@ describe('AutoUpdateService manual-check watchdog', () => {
     const callsBefore = mockWindow.webContents.send.mock.calls.length;
     await vi.advanceTimersByTimeAsync(UPDATE_CHECK_TIMEOUT_MS);
     expect(mockWindow.webContents.send.mock.calls.length).toBe(callsBefore);
+  });
+
+  it('reports the installed version when the legacy feed has no compatible release', async () => {
+    const { svc, mockWindow, checkForUpdatesMock } = await setupService();
+    checkForUpdatesMock.mockImplementation(async () => {
+      updaterHandlers['checking-for-update']?.();
+      updaterHandlers['update-not-available']?.({ version: '0.0.0', files: [] });
+      return { updateInfo: { version: '0.0.0', files: [] } } as never;
+    });
+    await svc.autoUpdateService.checkForUpdatesManual();
+    expect(svc.autoUpdateService.getState().status).toBe('not-available');
+    expect(mockWindow.webContents.send).toHaveBeenCalledWith('auto-update:up-to-date', {
+      version: '2.0.0',
+    });
   });
 
   it('happy path unchanged: a normal not-available check still sends the up-to-date toast for a manual check', async () => {

@@ -13,6 +13,7 @@
 import { appClient } from '$lib/client';
 
 let cached: Promise<boolean> | null = null;
+let cachedContext: string | undefined;
 
 /**
  * Whether the `workspace.cowIsolation` setting is on. Concurrent callers
@@ -20,7 +21,11 @@ let cached: Promise<boolean> | null = null;
  * `invalidateCowIsolationSetting()`. A failed read is NOT cached (the
  * rejection propagates to callers and the next call retries the wire).
  */
-export function readCowIsolationSetting(): Promise<boolean> {
+export function readCowIsolationSetting(context?: string): Promise<boolean> {
+  if (cachedContext !== context) {
+    cached = null;
+    cachedContext = context;
+  }
   if (cached) return cached;
   const inFlight = appClient.settings
     .get('workspace.cowIsolation')

@@ -10,8 +10,10 @@
  * stuck on "checking".
  */
 
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
+import type { ProviderCliWarning } from '$features/providers/utils/provider-cli-warnings';
+import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { HostRequirementsState } from './host-requirements-types';
 
 // ---------------------------------------------------------------------------
@@ -65,11 +67,16 @@ export const checkHostRequirementsComplete = createAction(
   'hostRequirements/checkHostRequirementsComplete',
 );
 
+/** A different connection or principal must obtain its own diagnostic results. */
+export const hostRequirementsReset = createAction('hostRequirements/reset');
+
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
 
 export const hostRequirementsReducer = createReducer<HostRequirementsState>(initialState);
+
+hostRequirementsReducer.with(hostRequirementsReset, () => initialState);
 
 hostRequirementsReducer.with(checkHostRequirementsStarted, (state) => ({
   ...state,
@@ -97,3 +104,27 @@ hostRequirementsReducer.with(checkHostRequirementsComplete, (state) => ({
   checking: false,
   hasCheckedOnce: true,
 }));
+
+/** Startup advisory check, independent of the onboarding requirements gate. */
+export const checkProviderCliRequirementsRequested = createAction(
+  'hostRequirements/checkProviderCliRequirementsRequested',
+);
+export const providerCliRequirementsResolved = createAction<
+  [context: string, warnings: ProviderCliWarning[]]
+>('hostRequirements/providerCliRequirementsResolved');
+hostRequirementsReducer.with(
+  providerCliRequirementsResolved,
+  (state, { payload: [context, warnings] }) => ({
+    ...state,
+    providerCli: { context, warnings: createCollection('providerId', warnings) },
+  }),
+);
+
+/**
+ * Run a provider's self-update command (e.g. `codex update`) in a new root
+ * terminal on the daemon host. Resolves once the terminal is open.
+ */
+export const providerCliUpdateRequested = createAsyncAction<[providerId: string], void>(
+  'hostRequirements/providerCliUpdate',
+  'hostRequirements/providerCliUpdateRequested',
+);

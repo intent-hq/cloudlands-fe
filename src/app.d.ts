@@ -10,7 +10,12 @@ declare module 'svelte/elements' {
 }
 
 declare global {
-  namespace App {}
+  namespace App {
+    interface PageState {
+      /** Correlates a presence follow with its route-derived tab projection only. */
+      presenceFollowRequestId?: string;
+    }
+  }
 
   const __DEV_GIT_BRANCH__: string;
 
@@ -31,6 +36,8 @@ declare global {
     };
     isStorybook?: boolean;
     electronAPI: {
+      /** Preload decoding support; never the renderer's or daemon's receipt. */
+      reviewMonitoring?: number;
       invoke: (channel: string, ...args: any[]) => Promise<any>;
       send: (channel: string, ...args: any[]) => void;
       // Returns a unique listener ID for use with offById()

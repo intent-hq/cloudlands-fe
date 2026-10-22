@@ -213,8 +213,14 @@ export const DEFAULTS = {
   /** Default remote */
   GIT_REMOTE: 'origin',
 
-  /** Auto-update base URL (GitHub Releases) */
+  /** Auto-update base URL (GitHub Releases); the direct feed and the fallback */
   AUTO_UPDATE_URL: 'https://github.com/intent-hq/cloudlands-releases/releases/download',
+
+  /**
+   * Auto-update telemetry base URL: counts the check, then redirects to the
+   * GitHub feed above. Used unless the user opts out (see update-telemetry.ts).
+   */
+  AUTO_UPDATE_TELEMETRY_URL: 'https://updates.intentapp.dev/desktop',
 } as const;
 
 // ============================================================================
@@ -465,3 +471,6 @@ export function isAtWarningThreshold(activeCount: number): boolean {
 export function isSessionTooLarge(sizeInBytes: number): boolean {
   return sizeInBytes > LIMITS.MAX_SESSION_SIZE;
 }
+
+/** Transcript request budget; independent of resident-history retention caps. */
+export const CHAT_PAGE_SIZE = 5;

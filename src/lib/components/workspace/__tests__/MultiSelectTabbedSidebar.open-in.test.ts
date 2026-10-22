@@ -1,13 +1,16 @@
 /**
  * @vitest-environment jsdom
  */
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentSession } from '$shared/types';
 import { m } from '$shared/paraglide/messages.js';
 import { spring } from '$lib/motion';
+import { initialState as presenceInitialState } from '$store/renderer/slices/presence/presence-slice';
+import { initialState as userPreferencesInitialState } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { initialState as workspaceInitialState } from '$store/renderer/slices/workspace/workspace-slice';
 
 import type { InstalledEditor } from '$store/renderer/slices/external-editors/external-editors-slice';
 import {
@@ -80,6 +83,18 @@ const mocks = vi.hoisted(() => {
     }>,
     // Legacy `Workspace.prNumber`/`prUrl` (pre-`activePullRequest`); unset by default.
     legacyPr: null as { prNumber: number; prUrl: string } | null,
+    tokenUsage: {
+      byAgentId: {},
+      byModel: {},
+      totals: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+      },
+      lastScanAt: null,
+      isStale: false,
+    },
   };
 });
 
@@ -132,6 +147,12 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   }),
 }));
 vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
+  selectAllWorkspaceScriptEntries: () => ({
+    subscribe: (run: (value: never[]) => void) => {
+      run([]);
+      return () => {};
+    },
+  }),
   selectWorkspaceScriptEntries: mocks.selector([]),
 }));
 vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => ({
@@ -161,6 +182,10 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
   selectIsLoadingBackgroundAgents: mocks.selector(false),
   selectWorkspaceHasUnreadForegroundAgents: mocks.selector(false),
 }));
+vi.mock('$store/renderer/slices/token-usage/token-usage-selectors', () => ({
+  selectWorkspaceTokenUsage: mocks.selectorFrom(() => mocks.tokenUsage),
+  selectWorkspaceTokenUsageCrossFilterRows: mocks.selector(undefined),
+}));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentIsResponding: mocks.selector(false),
   selectAgentIsWaiting: mocks.selector(false),
@@ -185,11 +210,13 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   })),
   selectWorkspaceActivePullRequest: mocks.selector(null),
   selectIsWorkspaceHostLocal: mocks.selector(true),
+  selectWorkspaceSavedScriptContext: mocks.selector('admitted'),
   isWorkspacePullRequestPoolTruncated: () => false,
   selectIsWorkspaceCollaborator: mocks.selector(false),
+  selectCanShareWorkspace: mocks.selector(false),
 }));
 vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', () => ({
-  selectPrMonitors: mocks.selector([]),
+  selectReviewMonitors: mocks.selector([]),
 }));
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectAllNotes: mocks.selectorFrom(() => mocks.notes),
@@ -259,9 +286,6 @@ vi.mock('$lib/components/ui/button', async () => ({
   Button: (await import('../../ui/__tests__/mocks/button.svelte')).default,
 }));
 
-vi.mock('../CreateAgentSection.svelte', async () => ({
-  default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
-}));
 vi.mock('../WorkspaceAgentsList.svelte', async () => ({
   default: (await import('./mocks/WorkspaceAgentsList.svelte')).default,
 }));
@@ -343,6 +367,9 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
       }),
     );
     mockStoreState = {
+      workspace: workspaceInitialState,
+      presence: presenceInitialState,
+      userPreferences: userPreferencesInitialState,
       daemonHealth: localHealth,
       externalEditors: {
         selectedAction: 'vscode',
@@ -363,6 +390,18 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     mocks.focusedPanelId = 'source-panel';
     mocks.pullRequests = [];
     mocks.legacyPr = null;
+    mocks.tokenUsage = {
+      byAgentId: {},
+      byModel: {},
+      totals: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+      },
+      lastScanAt: null,
+      isStale: false,
+    };
   });
 
   afterEach(() => {
@@ -717,6 +756,54 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     expect(getByRole('button', { name: /Agents.*0 agents total/ })).toBeTruthy();
     expect(container.querySelectorAll('[data-agent-avatar-stack-item]')).toHaveLength(0);
     expect(container.querySelector('[data-agent-avatar-overflow]')).toBeNull();
+  });
+
+  it('opens token usage from the collapsed Agents count without activating the launcher', async () => {
+    mocks.tokenUsage = {
+      byAgentId: {},
+      byModel: {},
+      totals: {
+        inputTokens: 100,
+        outputTokens: 200,
+        cacheReadTokens: 600,
+        cacheCreationTokens: 100,
+      },
+      lastScanAt: 5000,
+      isStale: false,
+    };
+    const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
+    const { container, getByTestId } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+    const agentCard = container.querySelector<HTMLElement>('[data-sidebar-launcher="agents"]')!;
+    const labelRow = agentCard.querySelector<HTMLElement>('[data-sidebar-label-row]')!;
+    const trigger = getByTestId('token-usage-disclosure');
+
+    expect(
+      labelRow.lastElementChild?.closest('[data-testid="workspace-token-usage"]'),
+    ).toBeTruthy();
+    expect(trigger.querySelector('[aria-hidden="true"]')?.textContent).toBe('1K');
+    expect(trigger.textContent).not.toContain('Cached');
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+
+    mocks.dispatch.mockClear();
+    await fireEvent.pointerDown(trigger);
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await fireEvent.click(trigger);
+
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(getByTestId('token-usage-details')).toBeTruthy();
+    expect(
+      mocks.dispatch.mock.calls.some(
+        ([action]) => action.type === 'sidebarNav/setMultiSelectSidebarSelectedTabs',
+      ),
+    ).toBe(false);
+
+    await fireEvent.click(agentCard.querySelector('.launcher-tile-action')!);
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'sidebarNav/setMultiSelectSidebarSelectedTabs',
+        payload: ['ws-1', ['agents']],
+      }),
+    );
   });
 
   it.each([1, 4, 6])('uses the shared logical-start stack at %i-item density', async (count) => {
@@ -1439,12 +1526,18 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     cleanup();
     mocks.agents = [makeAgent('agent-1')];
     mocks.selectedTabs = ['agents'];
-    const agents = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+    const onCreateAgent = vi.fn();
+    const agents = render(Sidebar, { props: { workspaceId: 'ws-1', onCreateAgent } });
     const agentsCard = agents.container.querySelector<HTMLElement>('.sidebar-expanded-card')!;
     expect(within(agentsCard).queryByText(agentsDescription)).toBeNull();
     expect(within(agentsCard).queryByText(shellDescription)).toBeNull();
     // The initializer's orchestration mode copy belongs to the picker, not the sidebar.
     expect(agents.queryByText(orchestrationLabel)).toBeNull();
     expect(agents.queryByLabelText(orchestrationLabel)).toBeNull();
+    expect(agents.queryByRole('combobox', { name: 'New agent placement' })).toBeNull();
+    expect(agents.queryByText('Remote isolated checkout')).toBeNull();
+    await fireEvent.click(agents.getByRole('button', { name: 'Create new agent' }));
+    expect(onCreateAgent).toHaveBeenCalledOnce();
+    expect(agents.queryByRole('dialog')).toBeNull();
   });
 });

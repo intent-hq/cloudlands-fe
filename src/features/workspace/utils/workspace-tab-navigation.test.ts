@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { describe, expect, it, vi } from 'vitest';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { StoreState } from '$store/renderer/types';
 import type { Workspace } from '$shared/types';
 import { initialState as workspaceInitialState } from '$store/renderer/slices/workspace/workspace-slice';
@@ -56,6 +56,7 @@ const makeTabState = (currentTabId: string | null = 'ws-1'): TabState => ({
   hydratedBackendId: null,
   mountedBrowserTabLeases: {},
   browserTabRecoveryRequests: {},
+  browserTabNavigations: {},
 });
 
 function makeStore(
@@ -89,6 +90,45 @@ function makeStore(
 }
 
 describe('cycleWorkspaceTab', () => {
+  describe.each([
+    ['next', 'ws-3'],
+    ['previous', 'ws-2'],
+  ] as const)('from Home going %s', (direction, expectedWorkspaceId) => {
+    it.each(['ws-1', 'ws-2', 'ws-3', 'ws-stale', null])(
+      'selects the displayed edge regardless of remembered workspace %s',
+      (rememberedWorkspaceId) => {
+        const store = makeStore(rememberedWorkspaceId);
+        store.state.tabState.workspaceStacks = [['ws-3', 'ws-1'], ['ws-2']];
+        const navigate = vi.fn();
+
+        expect(cycleWorkspaceTab(store, direction, '/', navigate)).toBe(expectedWorkspaceId);
+        expect(store.state.tabState.currentTabId).toBe(expectedWorkspaceId);
+        expect(navigate).toHaveBeenCalledExactlyOnceWith(`/workspace/${expectedWorkspaceId}`);
+      },
+    );
+
+    it('opens the only workspace even when it is already remembered', () => {
+      const store = makeStore('ws-2');
+      store.state.tabState.openTabs = { 'ws-2': true };
+      store.state.tabState.workspaceStacks = [['ws-2']];
+      const navigate = vi.fn();
+
+      expect(cycleWorkspaceTab(store, direction, '/', navigate)).toBe('ws-2');
+      expect(navigate).toHaveBeenCalledExactlyOnceWith('/workspace/ws-2');
+    });
+
+    it.each([null, 'ws-stale'])('stays on Home with no tabs and remembered %s', (remembered) => {
+      const store = makeStore(remembered);
+      store.state.tabState.openTabs = {};
+      store.state.tabState.workspaceStacks = [];
+      const navigate = vi.fn();
+
+      expect(cycleWorkspaceTab(store, direction, '/', navigate)).toBeNull();
+      expect(navigate).not.toHaveBeenCalled();
+      expect(store.actions).toHaveLength(0);
+    });
+  });
+
   it('cycles forward and navigates to the selected workspace route', () => {
     const store = makeStore();
     const navigate = vi.fn();
@@ -116,6 +156,67 @@ describe('cycleWorkspaceTab', () => {
 });
 
 describe('global workspace tab navigation', () => {
+  it.each([
+    ['MacIntel', false],
+    ['Linux x86_64', false],
+    ['MacIntel', true],
+    ['Linux x86_64', true],
+  ] as const)('cycles from Home through keyboard events on %s (custom: %s)', (platform, custom) => {
+    const platformSpy = vi.spyOn(navigator, 'platform', 'get').mockReturnValue(platform);
+    const manager = new KeyboardShortcutManager();
+    const store = makeStore('ws-2');
+    let currentPath = '/workspace/ws-2';
+    const navigate = vi.fn((path: string) => {
+      currentPath = path;
+    });
+
+    try {
+      registerWorkspaceTabShortcuts({
+        isMac: platform === 'MacIntel',
+        register: (shortcut) => manager.register(shortcut),
+        store,
+        getCurrentPath: () => currentPath,
+        navigate,
+        openNewWorkspace: vi.fn(),
+        resolveBinding: (id) => {
+          if (custom && id === 'global.next-space') return 'alt+j';
+          if (custom && id === 'global.previous-space') return 'alt+k';
+          return SHORTCUT_DEFAULTS[id];
+        },
+      });
+      manager.attach();
+
+      for (const previous of [false, true]) {
+        currentPath = '/';
+        const pressShortcut = () => {
+          const event = new KeyboardEvent('keydown', {
+            bubbles: true,
+            cancelable: true,
+            key: custom ? (previous ? 'k' : 'j') : 'Tab',
+            code: custom ? (previous ? 'KeyK' : 'KeyJ') : 'Tab',
+            altKey: custom,
+            ctrlKey: !custom,
+            shiftKey: !custom && previous,
+          });
+          document.dispatchEvent(event);
+          expect(event.defaultPrevented).toBe(true);
+        };
+
+        pressShortcut();
+        expect(currentPath).toBe(previous ? '/workspace/ws-3' : '/workspace/ws-1');
+        pressShortcut();
+        expect(currentPath).toBe('/workspace/ws-2');
+        pressShortcut();
+        expect(currentPath).toBe(previous ? '/workspace/ws-1' : '/workspace/ws-3');
+        pressShortcut();
+        expect(currentPath).toBe(previous ? '/workspace/ws-3' : '/workspace/ws-1');
+      }
+    } finally {
+      manager.destroy();
+      platformSpy.mockRestore();
+    }
+  });
+
   it('closes only the routed workspace tab and navigates to its successor', () => {
     const store = makeStore('ws-2');
     const navigate = vi.fn();
@@ -1220,20 +1321,49 @@ describe('global workspace tab navigation', () => {
     },
   );
 
-  it('retains all nine indexed bindings after the tab range modifier is edited', () => {
+  it.each([
+    ['macOS', true, 'mod+1-9'],
+    ['Windows/Linux', false, 'mod+1-9'],
+    ['custom modifier', true, 'alt+1-9'],
+  ] as const)('maps Home and workspace digits with %s bindings', (_platform, isMac, pattern) => {
     const shortcuts: KeyboardShortcut[] = [];
+    const store = makeStore('ws-2');
+    let currentPath = '/workspace/ws-2';
+    const navigate = vi.fn((path: string) => {
+      currentPath = path;
+    });
     registerWorkspaceTabShortcuts({
-      isMac: true,
+      isMac,
       register: (shortcut) => shortcuts.push(shortcut),
-      store: makeStore(),
-      getCurrentPath: () => '/workspace/ws-1',
-      navigate: vi.fn(),
+      store,
+      getCurrentPath: () => currentPath,
+      navigate,
       openNewWorkspace: vi.fn(),
-      resolveBinding: (id) => (id === 'navigation.go-to-tab' ? 'alt+1-9' : ''),
+      resolveBinding: (id) => (id === 'navigation.go-to-tab' ? pattern : ''),
     });
 
-    expect(shortcuts.slice(-9).map((shortcut) => shortcut.binding?.())).toEqual(
-      Array.from({ length: 9 }, (_, index) => `alt+${index + 1}`),
+    const digits = shortcuts.slice(-9);
+    expect(digits.map((shortcut) => shortcut.binding?.())).toEqual(
+      Array.from({ length: 9 }, (_, index) => pattern.replace('1-9', String(index + 1))),
     );
+    digits[0].action();
+    expect(navigate).toHaveBeenLastCalledWith('/');
+    expect(store.state.tabState.currentTabId).toBe('ws-2');
+    expect(store.actions).toHaveLength(0);
+
+    digits[1].action();
+    expect(navigate).toHaveBeenLastCalledWith('/workspace/ws-1');
+    expect(store.state.tabState.currentTabId).toBe('ws-1');
+    digits[2].action();
+    expect(navigate).toHaveBeenLastCalledWith('/workspace/ws-2');
+    expect(store.state.tabState.currentTabId).toBe('ws-2');
+    digits[8].action();
+    expect(navigate).toHaveBeenLastCalledWith('/workspace/ws-3');
+    expect(store.state.tabState.currentTabId).toBe('ws-3');
+
+    navigate.mockClear();
+    digits[7].action();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(store.state.tabState.currentTabId).toBe('ws-3');
   });
 });

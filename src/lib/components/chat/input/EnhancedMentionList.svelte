@@ -7,6 +7,8 @@
   import { faNote } from '$lib/icons/faNote';
   import Fa from 'svelte-fa';
   import MentionAgentAvatar from './MentionAgentAvatar.svelte';
+  import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
+  import { memberMentionLabel } from '$lib/utils/member-mention-token';
   import { m } from '$shared/paraglide/messages.js';
   import {
     faFile,
@@ -379,6 +381,8 @@
               {@const icon = getIcon(item)}
               {@const isSelected = visualIndex === selectedIndex}
               {@const isAgent = !isMentionGroup(item) && item.type === 'agent'}
+              {@const isMember = !isMentionGroup(item) && item.type === 'member'}
+              {@const label = isMember ? memberMentionLabel(item.label) : item.label}
               <Button
                 variant="plain"
                 wrapContent={false}
@@ -386,7 +390,7 @@
                 id={optionId(item)}
                 role="option"
                 aria-selected={isSelected}
-                aria-label={item.label}
+                aria-label={isMember && item.subtitle ? `${label} · ${item.subtitle}` : label}
                 tabindex={-1}
                 onpointerdown={(event) => event.preventDefault()}
                 onmousedown={(event) => event.preventDefault()}
@@ -395,7 +399,9 @@
                   if (!ignoreMouseUntilMove) selectedIndex = visualIndex;
                 }}
               >
-                {#if isAgent}
+                {#if isMember}
+                  <PrincipalAvatar avatarUrl={item.meta?.avatarUrl} label={item.label} size={18} />
+                {:else if isAgent}
                   <span class="mention-agent-avatar">
                     <MentionAgentAvatar agentId={item.id} />
                   </span>
@@ -407,7 +413,7 @@
 
                 <div class="mention-content">
                   <div class="mention-label-line">
-                    <span class="mention-label">{item.label}</span>
+                    <span class="mention-label">{label}</span>
                     {#if !isMentionGroup(item) && (item.type === 'agent' || item.type === 'specialist') && item.group}
                       <span class="mention-kind">{item.group}</span>
                     {/if}

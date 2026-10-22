@@ -1,3 +1,4 @@
+import { getMcpServerKey } from '$lib/components/settings/mcp/types';
 /**
  * MCP Settings Selectors
  */
@@ -10,7 +11,20 @@ const EMPTY_DISABLED_SERVERS: Record<string, true> = {};
 
 /** Select raw server list */
 export const selectMcpServers = store.createSelector(
-  (state) => state.mcpSettings.servers as McpServerConfig[],
+  (state, workspaceId?: string): McpServerConfig[] =>
+    workspaceId
+      ? (state.providerCatalog?.byWorkspaceId?.[workspaceId]?.mcpServers ?? [])
+      : state.mcpSettings.servers,
+);
+
+/** Resolve event IDs while configuration is invalidated, without a global fallback. */
+export const selectWorkspaceMcpServerName = store.createSelector(
+  (state, workspaceId: string, serverId: string): string | undefined => {
+    const snapshot = state.providerCatalog?.byWorkspaceId?.[workspaceId];
+    return snapshot
+      ? snapshot.mcpServers?.find((server) => server.id === serverId)?.name
+      : state.providerCatalog?.mcpServerNamesByWorkspaceId?.[workspaceId]?.[serverId];
+  },
 );
 
 /** Select loading state */
@@ -45,7 +59,19 @@ const selectMcpToolsMap = store.createSelector(
 
 /** Select error messages map */
 export const selectMcpErrorMessages = store.createSelector(
-  (state) => state.mcpSettings.errorMessages as Record<string, string>,
+  (state, workspaceId?: string): Record<string, string> => {
+    if (!workspaceId) return state.mcpSettings.errorMessages;
+    const snapshot = state.providerCatalog?.byWorkspaceId?.[workspaceId];
+    const keys = new Map(
+      snapshot?.mcpServers?.map((server) => [server.id, getMcpServerKey(server)]) ?? [],
+    );
+    return Object.fromEntries(
+      (snapshot?.mcpStatuses ?? []).flatMap((status) => {
+        const key = keys.get(status.serverId);
+        return key && status.lastError ? [[key, status.lastError]] : [];
+      }),
+    );
+  },
 );
 
 /** Select workspace-specific disabled servers map by workspace id */
@@ -56,8 +82,8 @@ const selectWorkspaceMcpDisabledServersByWorkspaceId = store.createSelector(
   },
 );
 
-/** Select disabled server names for a workspace */
-export const selectWorkspaceDisabledMcpServerNamesByWorkspaceId = store.createSelector(
+/** Select disabled server keys for a workspace */
+export const selectWorkspaceDisabledMcpServerKeysByWorkspaceId = store.createSelector(
   (state, workspaceId: string | null | undefined): string[] => {
     return Object.keys(selectWorkspaceMcpDisabledServersByWorkspaceId.select(state, workspaceId));
   },
@@ -72,9 +98,9 @@ export const selectMcpServersWithStatus = store.createSelector((state): McpServe
   const errorMessages = selectMcpErrorMessages.select(state);
 
   return servers.map((server) => {
-    const disabled = server.name in disabledServers;
-    const tools = toolsMap[server.name] || [];
-    let status: McpServerStatus = statusMap[server.name] || 'disconnected';
+    const disabled = getMcpServerKey(server) in disabledServers;
+    const tools = toolsMap[getMcpServerKey(server)] || [];
+    let status: McpServerStatus = statusMap[getMcpServerKey(server)] || 'disconnected';
 
     if (disabled) {
       status = 'disabled';
@@ -86,7 +112,7 @@ export const selectMcpServersWithStatus = store.createSelector((state): McpServe
       status,
       tools,
       toolCount: tools.length,
-      errorMessage: errorMessages[server.name],
+      errorMessage: errorMessages[getMcpServerKey(server)],
     };
   });
 });

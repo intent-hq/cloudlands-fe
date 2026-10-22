@@ -127,7 +127,7 @@ export function queuedMessageRowTransition(
     duration: spring.moderate.settleMs,
     easing: spring.moderate.exit.easing,
     css: (t) =>
-      `overflow:hidden;height:${t * height}px;` +
+      `overflow:hidden;min-height:0;height:${t * height}px;` +
       `padding-top:${t * numericStyle(style, 'paddingTop')}px;` +
       `padding-bottom:${t * numericStyle(style, 'paddingBottom')}px;` +
       `opacity:${t * opacity};`,

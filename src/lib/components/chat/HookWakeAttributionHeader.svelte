@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { observeOverflow } from '$lib/actions/observe-overflow';
   /**
    * HookWakeAttributionHeader
    *
@@ -24,6 +25,7 @@
   }
 
   let { attribution, class: className = '' }: Props = $props();
+  let nameOverflow = $state(false);
 
   // Post-fire state suffix: on dispatched wakes carrying the additive
   // `hookStillActive` metadata field (PROTOCOL §5.40), say whether the hook
@@ -55,7 +57,12 @@
   >
     <span
       class="min-w-0 max-w-full truncate font-normal text-muted-foreground"
-      title={attribution.rawName || attribution.displayName}
+      use:observeOverflow={(overflow) => (nameOverflow = overflow)}
+      title={attribution.rawName && attribution.rawName !== attribution.displayName
+        ? attribution.rawName
+        : nameOverflow
+          ? attribution.displayName
+          : undefined}
       data-testid="hook-wake-primary-label"
     >
       {attribution.displayName}

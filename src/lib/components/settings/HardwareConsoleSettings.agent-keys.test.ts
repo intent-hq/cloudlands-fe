@@ -54,7 +54,7 @@ import {
   initialState,
   setPromptPickerLimit,
 } from '$store/renderer/slices/hardware-console/hardware-console-slice';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 
 function workspace(id: string, title: string, lastActivity: string) {
   return {

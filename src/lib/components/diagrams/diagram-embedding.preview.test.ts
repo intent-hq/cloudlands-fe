@@ -38,7 +38,7 @@ describe('diagram embedding preview', () => {
     expect(preview.id).toBe('diagram-embedding');
     expect(preview.defaultState).toBe('note');
     expect(preview.captureReadiness).toEqual({
-      selector: '[data-diagram-settled="true"]',
+      selector: '[data-diagram-presentation-settled="true"] [data-diagram-settled="true"]',
       count: 1,
     });
     expect(Object.keys(preview.states)).toEqual(['note', 'chat']);

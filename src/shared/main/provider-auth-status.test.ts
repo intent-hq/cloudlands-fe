@@ -240,3 +240,25 @@ describe('main provider auth status cache', () => {
     expect(lifecycle.request).toHaveBeenCalledTimes(2);
   });
 });
+
+it('isolates workspace auth reads on one connection and preserves context on forced retries', async () => {
+  const a = deferred<unknown>();
+  const request = vi
+    .fn()
+    .mockImplementation(async (_method, params) =>
+      params.workspaceId === 'A'
+        ? a.promise
+        : { providers: [{ id: 'codex', authenticated: true }] },
+    );
+  const client = backendClient(request);
+  const pendingA = getProviderAuthVerdicts({ providerId: 'codex', workspaceId: 'A' }, client);
+  expect(await getProviderAuthVerdicts({ providerId: 'codex', workspaceId: 'B' }, client)).toEqual({
+    codex: { authenticated: true },
+  });
+  a.resolve({ providers: [{ id: 'codex', authenticated: false }] });
+  expect(await pendingA).toEqual({ codex: { authenticated: false } });
+  expect(await getProviderAuthVerdicts({ providerId: 'codex', workspaceId: 'B' }, client)).toEqual({
+    codex: { authenticated: true },
+  });
+  expect(request.mock.calls.map(([, params]) => params.workspaceId)).toEqual(['A', 'B']);
+});

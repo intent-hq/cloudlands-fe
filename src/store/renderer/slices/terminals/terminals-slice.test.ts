@@ -15,6 +15,9 @@ import {
   loadWorkspaceTerminals,
   hydrateHeight,
   hydratePlacements,
+  createOverlayTerminalRequested,
+  terminalCreationFinished,
+  clearTerminalCreationOutcome,
   type TerminalOverlayState,
   type TerminalTab,
 } from './terminals-slice';
@@ -22,7 +25,7 @@ import {
   createCollection,
   getItems,
   getItem,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 
 const WS = 'ws-1';
 
@@ -41,6 +44,7 @@ const initialState: TerminalOverlayState = {
   workspaceHeights: {},
   workspacePlacements: {},
   workspaces: {},
+  creationOutcomes: createCollection('id'),
 };
 
 /** Helper to get workspace state from the top-level state */
@@ -63,6 +67,63 @@ describe('terminalsReducer', () => {
   it('should return initial state', () => {
     const state = terminalsReducer(undefined, { type: '@@INIT' });
     expect(state).toEqual(initialState);
+  });
+
+  describe('overlay terminal creation outcomes', () => {
+    it('tracks, settles, and clears the current correlated request', () => {
+      const request = createOverlayTerminalRequested(WS, { id: 'mount-1', resourceId: 'overlay' });
+      let state = terminalsReducer(initialState, request);
+      expect(getItem(state.creationOutcomes, 'mount-1')).toMatchObject({
+        workspaceId: WS,
+        resourceId: 'overlay',
+        seq: request.seq,
+        status: 'pending',
+      });
+
+      state = terminalsReducer(
+        state,
+        terminalCreationFinished({
+          id: 'mount-1',
+          resourceId: 'overlay',
+          workspaceId: WS,
+          seq: request.seq,
+          status: 'success',
+          terminalId: 'pty-1',
+        }),
+      );
+      expect(getItem(state.creationOutcomes, 'mount-1')?.terminalId).toBe('pty-1');
+
+      state = terminalsReducer(state, clearTerminalCreationOutcome('mount-1', request.seq));
+      expect(getItem(state.creationOutcomes, 'mount-1')).toBeUndefined();
+    });
+
+    it('ignores stale completion and sequence-scoped release', () => {
+      const first = createOverlayTerminalRequested(WS, {
+        id: 'mount-1',
+        resourceId: 'overlay',
+      });
+      const second = createOverlayTerminalRequested(WS, {
+        id: 'mount-1',
+        resourceId: 'overlay',
+      });
+      let state = terminalsReducer(terminalsReducer(initialState, first), second);
+      state = terminalsReducer(
+        state,
+        terminalCreationFinished({
+          id: 'mount-1',
+          resourceId: 'overlay',
+          workspaceId: WS,
+          seq: first.seq,
+          status: 'failure',
+          error: 'stale',
+        }),
+      );
+      state = terminalsReducer(state, clearTerminalCreationOutcome('mount-1', first.seq));
+      expect(getItem(state.creationOutcomes, 'mount-1')).toMatchObject({
+        seq: second.seq,
+        status: 'pending',
+      });
+    });
   });
 
   describe('openTerminalOverlay', () => {

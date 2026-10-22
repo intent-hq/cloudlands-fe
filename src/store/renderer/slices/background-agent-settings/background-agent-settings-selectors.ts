@@ -17,6 +17,14 @@ export const selectBgTypeOverrides = store.createSelector(
 export const selectHasOverride = store.createSelector(
   (state, type: BackgroundAgentType): boolean => {
     const override = state.backgroundAgentSettings.typeOverrides[type];
-    return !!override && override.length > 0;
+    return Boolean(override || state.backgroundAgentSettings.typeReasoningEffortOverrides[type]);
   },
 );
+
+export const selectBgDefaultReasoningEffort = store.createSelector(
+  (state) => state.backgroundAgentSettings.defaultReasoningEffort,
+);
+export const selectBgTypeReasoningEffortOverrides = store.createSelector(
+  (state) => state.backgroundAgentSettings.typeReasoningEffortOverrides,
+);
+export const selectBgSettings = store.createSelector((state) => state.backgroundAgentSettings);

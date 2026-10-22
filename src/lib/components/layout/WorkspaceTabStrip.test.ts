@@ -424,6 +424,14 @@ describe('WorkspaceTabStrip', () => {
     expect(tab.getAttribute('aria-label')).toBe('Alpha. Running: 1 (Coordinator)');
   });
 
+  it('observes tracker state without starting a baseline outside principal admission', async () => {
+    const { activeStreamsTracker } =
+      await import('$features/agent/services/active-streams-tracker');
+    render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-1' } });
+    expect(activeStreamsTracker.subscribe).toHaveBeenCalled();
+    expect(activeStreamsTracker.startPolling).not.toHaveBeenCalled();
+  });
+
   it('dims archived workspace tab titles in current and non-current states', () => {
     const { unmount } = render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-1' } });
     const archivedTitle = screen

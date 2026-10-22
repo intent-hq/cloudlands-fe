@@ -4,7 +4,11 @@
  * Sets up all IPC handlers for the application
  */
 
-// CRITICAL: Import build-time config FIRST
+// The isolated package establishes private paths before any application dependency.
+import './isolated-test-bootstrap.js';
+import { getIsolatedTestProfile, isIsolatedTestBuild } from './isolated-test-profile.js';
+
+// CRITICAL: Import build-time config before application initialization
 // These values are baked in at build time from .env (see scripts/generate-build-config.cjs)
 import { BUILD_CONFIG } from './build-config.generated.js';
 
@@ -31,7 +35,14 @@ import {
   resolveUserDataBasePath,
   shouldIsolateDevIntentdDataDir,
 } from './utils/resolve-dev-instance.js';
-app.setPath('userData', resolveUserDataBasePath(app.getPath('appData')));
+app.setPath(
+  'userData',
+  getIsolatedTestProfile()?.userData ??
+    resolveUserDataBasePath(
+      app.getPath('appData'),
+      app.commandLine.getSwitchValue('user-data-dir'),
+    ),
+);
 
 // EARLY: Support multiple dev instances by using unique userData paths.
 // Namespaced by absolute DEV_PORT so cloudlands-fe cannot collide with other Electron
@@ -127,12 +138,16 @@ import { Logger } from '../shared/logger';
 import { compareWorkspaceActivityDisplayTimeDesc } from '../shared/utils/workspace-activity-time';
 import { exportHandlerDebugInfo, setupIPCInterceptor } from './ipc-handler-wrapper';
 import { initializeWarningSuppression } from './utils/suppress-warnings';
-import { runWithHardExitTimeout } from './utils/hard-exit-timeout';
+import {
+  runGracefulShutdown,
+  type GracefulShutdownOptions,
+} from './utils/graceful-shutdown-runner';
 import { handleUncaughtException, handleUnhandledRejection } from './utils/process-error-handlers';
 import { isWebviewPopupWindow, setupWebviewSecurity } from './webview-security';
 import { attachAppCommandHistoryNavigation } from './app-command-navigation';
 import { attachSwipeHistoryNavigation } from './swipe-navigation';
 import { attachRendererHangMonitor } from './renderer-hang-monitor';
+import { getActivationFocusClaim } from './activation-focus-claim';
 import { createBootWindowsGate, handleActivate } from './app-activate';
 import { markRendererWindowsAllowed } from './renderer-window-gate';
 import { setupHardwareConsoleMain } from '../features/hardware-console/main/hardware-console.ipc';
@@ -325,6 +340,7 @@ import {
 import { registerWorkspaceTransferHandlers } from '../features/backend/main/workspace-transfer.ipc';
 import { registerWorkspaceImportHandlers } from '../features/backend/main/workspace-import.ipc';
 import { getConnectionMode, getDaemonVersionInfo } from '../features/backend/main/connection-mode';
+import { list as listGuestSessions } from '../features/backend/main/guest-sessions-store';
 import { getActiveId, list as listConnections } from '../features/backend/main/connections-store';
 import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
 import {
@@ -374,6 +390,7 @@ import {
 import { initAppSettingsService } from '../features/workspace/main/app-settings.service';
 import { workspaceService } from '../features/workspace/main/workspace.service';
 
+import { registerCollaborationAuthHandlers } from '../features/collaboration-auth/main/collaboration-auth.ipc';
 import { registerDeepLinkHandlers } from '../features/deeplink/main/deeplink.ipc';
 import { DeepLinkHandler } from '../features/deeplink/deep-link-handler';
 import {
@@ -391,6 +408,10 @@ import { protocolAdapter } from '../features/protocol/main/protocol-adapter';
 import { registerWorkspacePRHandlers } from '../features/workspace/main/workspace-pr.ipc';
 import { ipcCleanupManager } from './ipc-cleanup-manager';
 import { setResolvedAppName } from './utils/resolve-app-title.js';
+import {
+  setupDevConsoleIPC,
+  disposeDevConsole,
+} from '../features/dev-console/main/dev-console-window';
 import { isHudWindow, isTrackedHudWindow } from './hud-window.js';
 import { getBackendIdForWindow } from './window-backend.js';
 import { buildWindowMenuEntries } from './window-menu-entries.js';
@@ -423,6 +444,8 @@ let isShuttingDown = false;
 
 // Deep link handler for intent:// protocol URLs
 const deepLinkHandler = new DeepLinkHandler();
+/** Set once the startup pass has drained the parked deep link (see the pending pass). */
+let deepLinkStartupPassDone = false;
 
 // Global error handlers to prevent silent crashes
 process.on('uncaughtException', (error) => {
@@ -433,50 +456,50 @@ process.on('unhandledRejection', (reason, promise) => {
   handleUnhandledRejection(logger, reason, promise);
 });
 
-// Graceful shutdown handlers
-process.on('SIGTERM', async () => {
-  logger.info('SIGTERM received, shutting down gracefully...');
-  await gracefulShutdown();
-});
-
-process.on('SIGINT', async () => {
-  logger.info('SIGINT received, shutting down gracefully...');
-  await gracefulShutdown();
-});
+// Graceful SIGINT/SIGTERM handlers are installed at the start of the
+// app.whenReady() boot flow below (see the comment there).
 
 // Hard deadline for the gracefulShutdown() cleanup chain
 // (intent-hq/monorepo#1300). 10s sits comfortably above the sidecar's own
 // 5s SIGTERM→SIGKILL escalation inside stopIntentdSidecar().
 const GRACEFUL_SHUTDOWN_HARD_EXIT_MS = 10_000;
 
-async function gracefulShutdown() {
-  // Prevent multiple shutdown attempts
-  if (isShuttingDown) {
-    return;
-  }
-  isShuttingDown = true;
-
-  // Quit-time window closes (performGracefulShutdown's mainWindow.close())
-  // are not deliberate per-backend closes: without this mark, closing the
-  // last window of one backend while another backend's windows survive would
-  // tombstone + prune the bucket that before-quit just saved. Every quit path
-  // (before-quit, window-all-closed, SIGTERM/SIGINT) funnels through here
-  // before any window is closed.
-  markWindowSessionTeardown();
-
-  // Bound the cleanup chain with a hard-exit watchdog: if a cleanup step
-  // stalls and app.exit(0) is never reached, force-exit so SIGTERM/SIGINT
-  // always terminate the process.
-  await runWithHardExitTimeout(
-    performGracefulShutdown,
-    () => {
-      logger.warn(
-        // i18n-ignore (developer log message)
-        `Graceful shutdown did not complete within the ${GRACEFUL_SHUTDOWN_HARD_EXIT_MS}ms hard-exit timeout — forcing exit`,
-      );
-      app.exit(1);
+async function gracefulShutdown(options: GracefulShutdownOptions = {}) {
+  // Single-flight and bounded: runGracefulShutdown() claims the shutdown via
+  // beginTeardown() before any await (repeat calls are no-ops) and runs the
+  // optional window-session save plus performGracefulShutdown() inside the
+  // hard-exit watchdog, so a stalled step can never keep the process alive
+  // and SIGTERM/SIGINT always terminate it.
+  await runGracefulShutdown(
+    {
+      beginTeardown: () => {
+        if (isShuttingDown) return false;
+        isShuttingDown = true;
+        // Quit-time window closes (performGracefulShutdown's
+        // mainWindow.close()) are not deliberate per-backend closes: without
+        // this mark, closing the last window of one backend while another
+        // backend's windows survive would tombstone + prune the bucket that
+        // before-quit just saved. Every quit path (before-quit,
+        // window-all-closed, SIGTERM/SIGINT) funnels through here before any
+        // window is closed.
+        markWindowSessionTeardown();
+        return true;
+      },
+      persistWindowSessions: saveOpenWindowSessions,
+      onPersistError: (error) => {
+        logger.warn('Failed to save window sessions during shutdown:', error);
+      },
+      cleanup: performGracefulShutdown,
+      onHardExit: () => {
+        logger.warn(
+          // i18n-ignore (developer log message)
+          `Graceful shutdown did not complete within the ${GRACEFUL_SHUTDOWN_HARD_EXIT_MS}ms hard-exit timeout — forcing exit`,
+        );
+        app.exit(1);
+      },
+      hardExitMs: GRACEFUL_SHUTDOWN_HARD_EXIT_MS,
     },
-    GRACEFUL_SHUTDOWN_HARD_EXIT_MS,
+    options,
   );
 }
 
@@ -496,6 +519,7 @@ async function performGracefulShutdown() {
 
     // Cleanup terminals gracefully - this properly cleans up PTY processes
     // to prevent Napi::Error crashes during shutdown
+    disposeDevConsole();
     await cleanupTerminals();
 
     // Allow native conpty threads to complete their exit callbacks
@@ -606,6 +630,25 @@ async function saveOpenWindowSessions(): Promise<void> {
 const bootWindowsGate = createBootWindowsGate();
 
 const bootFlow = app.whenReady().then(async () => {
+  // Graceful shutdown handlers. Registered here, not at module load: on
+  // POSIX, Electron installs its own SIGINT/SIGTERM handler during startup
+  // that turns the signal into app.quit(), overriding a Node handler
+  // registered earlier. The signal then never reaches gracefulShutdown() —
+  // quit runs through before-quit's running-agent prompt and the hard-exit
+  // watchdog never arms, so `kill <pid>` with an agent responding waits on a
+  // dialog forever. Registering after ready restores the prompt-free path.
+  // libuv installs the OS handler only when the first listener for a signal
+  // starts, so no other module-load SIGINT/SIGTERM listener may exist.
+  // Signal quits skip before-quit, so gracefulShutdown() persists window
+  // sessions itself — inside its hard-exit watchdog, so a stalled write
+  // cannot keep the process alive.
+  const onShutdownSignal = async (signal: 'SIGTERM' | 'SIGINT') => {
+    logger.info(`${signal} received, shutting down gracefully...`);
+    await gracefulShutdown({ persistWindowSessions: true });
+  };
+  process.on('SIGTERM', () => void onShutdownSignal('SIGTERM'));
+  process.on('SIGINT', () => void onShutdownSignal('SIGINT'));
+
   startupMetrics.start('total');
   logger.info('Setting up critical IPC handlers for fast startup');
 
@@ -1011,6 +1054,12 @@ const bootFlow = app.whenReady().then(async () => {
       } catch {
         // Fall back to backend ids as labels
       }
+      let guests: Awaited<ReturnType<typeof listGuestSessions>> = [];
+      try {
+        guests = await listGuestSessions();
+      } catch {
+        // Guest storage failure must not hide paired windows from the menu.
+      }
       const entries = buildWindowMenuEntries(
         liveWindows.map((w) => ({
           windowId: w.id,
@@ -1024,6 +1073,7 @@ const bootFlow = app.whenReady().then(async () => {
           hudLabel: m.menu_window_hud_label(),
           localBackendLabel: m.menu_window_localBackend_label(),
         },
+        guests,
       );
 
       windowMenuItems.push({ type: 'separator' });
@@ -1401,6 +1451,9 @@ const bootFlow = app.whenReady().then(async () => {
   app.on('connections-changed', () => {
     void rebuildMenu();
   });
+  app.on('guest-sessions-changed', () => {
+    void rebuildMenu();
+  });
 
   // Rebuild menu when workspace state changes (enables/disables tab menu items)
   app.on('window-workspace-state-changed', () => {
@@ -1486,6 +1539,7 @@ const bootFlow = app.whenReady().then(async () => {
   setupWorkspaceSummaryIPC();
   setupFileIPC();
   setupSystemIPC();
+  setupDevConsoleIPC();
   setupPowerStateIPC();
   await setupConfigIPC();
   registerIDEHandlers(); // Needed for IDE integration
@@ -1535,6 +1589,7 @@ const bootFlow = app.whenReady().then(async () => {
   // daemon is up (fire-and-forget; see refreshAboutPanelIntentdVersion above).
   void refreshAboutPanelIntentdVersion();
 
+  registerCollaborationAuthHandlers();
   registerBackendHandlers(); // Needed for live JSON-RPC transport (workspaces domain)
   registerWorkspaceTransferHandlers(); // Workspace transfer relay (wizard steps 3–4)
   registerWorkspaceImportHandlers(); // Import Workspace from File (File menu)
@@ -1711,8 +1766,14 @@ const bootFlow = app.whenReady().then(async () => {
       // (only the local client is created lazily); if its client cannot be
       // built (deleted record, missing token), fall back to a local window
       // rather than one whose every RPC fails closed.
-      let windowBackendId = bootBackendId;
-      if (bootBackendId !== LOCAL_CONNECTION_ID) {
+      // An `open` link (the `intent` CLI's folder, or a workspace id) refers
+      // to this machine's daemon, so its boot window is always local.
+      const coldStartWantsLocal =
+        intentUrlArg !== undefined &&
+        !isPairLinkArg &&
+        deepLinkHandler.parseDeepLink(intentUrlArg)?.type === 'open';
+      let windowBackendId = coldStartWantsLocal ? LOCAL_CONNECTION_ID : bootBackendId;
+      if (windowBackendId !== LOCAL_CONNECTION_ID) {
         try {
           await connectBackendClient(bootBackendId);
         } catch (error) {
@@ -1742,7 +1803,9 @@ const bootFlow = app.whenReady().then(async () => {
   // to ensure the association is set even if the installer didn't complete properly.
   // In dev mode, we pass extra args so macOS launches the Electron binary correctly.
   try {
-    if (isDev) {
+    if (isIsolatedTestBuild()) {
+      // Dedicated test packages do not claim the normal app's OS URL scheme.
+    } else if (isDev) {
       app.setAsDefaultProtocolClient('intent', process.execPath, [path.resolve(app.getAppPath())]);
       logger.info('Registered intent:// protocol handler for development mode', {
         execPath: process.execPath,
@@ -1756,11 +1819,17 @@ const bootFlow = app.whenReady().then(async () => {
     logger.warn('Failed to register intent:// protocol handler:', error);
   }
 
-  // Process any pending deep link URL that was received before the window was ready
+  // Route any deep link URL that arrived before the window was ready (macOS
+  // delivers a cold-start link via open-url, not argv) through the same
+  // routing as a warm link, so an `open` link still reaches a local window.
   const mainWindow = getMainWindow();
   if (mainWindow && !mainWindow.isDestroyed()) {
-    await deepLinkHandler.processPendingUrl(mainWindow);
+    const pendingUrl = deepLinkHandler.takePendingUrl();
+    if (pendingUrl) await createWindowForDeepLink(pendingUrl, deepLinkHandler);
   }
+  // From here on a link that finds no window must open one rather than park:
+  // nothing drains the pending slot after this pass.
+  deepLinkStartupPassDone = true;
 
   // Log initial startup metrics
   try {
@@ -2005,8 +2074,10 @@ app.on('open-url', async (event: Electron.Event, url: string) => {
   // that window; other types open a new one — the creator itself awaits the
   // renderer-window gate). Without one, park the URL for the startup pass so
   // it can be embedded in the boot window's load URL.
+  // After startup (e.g. macOS with every window closed but the app still in
+  // the dock) route it anyway: the router opens a window when none exists.
   const mainWindow = getMainWindow();
-  if (mainWindow && !mainWindow.isDestroyed()) {
+  if (deepLinkStartupPassDone || (mainWindow && !mainWindow.isDestroyed())) {
     await createWindowForDeepLink(url, deepLinkHandler);
   } else {
     logger.info('No main window yet, storing URL for later processing');
@@ -2050,11 +2121,14 @@ if (!gotTheLock) {
       } else if (isInviteUri(deepLinkUrl)) {
         await handleInviteDeepLink(deepLinkUrl);
       } else {
-        // Route only when a main window exists to receive/anchor the link;
-        // any new window the creator opens awaits the renderer-window gate.
+        // Route once startup has finished or a main window exists; the router
+        // opens a window when none is left (any new window it creates awaits
+        // the renderer-window gate). Before that, park it for the startup pass.
         const mainWindow = getMainWindow();
-        if (mainWindow && !mainWindow.isDestroyed()) {
+        if (deepLinkStartupPassDone || (mainWindow && !mainWindow.isDestroyed())) {
           await createWindowForDeepLink(deepLinkUrl, deepLinkHandler);
+        } else {
+          await deepLinkHandler.handleDeepLink(deepLinkUrl, null);
         }
       }
     } else {
@@ -2080,6 +2154,7 @@ app.on('activate', async () => {
     whenBootWindowsReady: () => bootWindowsGate.ready,
     getAllWindows: () => BrowserWindow.getAllWindows(),
     getMainWindow,
+    getClaimedWindow: () => getActivationFocusClaim<BrowserWindowType>(),
     focusWindow: (targetWindow) => {
       if (targetWindow.isMinimized()) targetWindow.restore();
       targetWindow.show();

@@ -40,7 +40,7 @@ describe('McpServerCard recovery actions', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Authenticate' }));
 
-    expect(callbacks.onReauthenticate).toHaveBeenCalledExactlyOnceWith('figma');
+    expect(callbacks.onReauthenticate).toHaveBeenCalledExactlyOnceWith('srv-figma');
     expect(callbacks.onRestart).not.toHaveBeenCalled();
     expect(screen.getByText('Authentication expired')).toBeTruthy();
   });
@@ -64,7 +64,7 @@ describe('McpServerCard recovery actions', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Restart' }));
 
-    expect(callbacks.onRestart).toHaveBeenCalledExactlyOnceWith('figma-desktop');
+    expect(callbacks.onRestart).toHaveBeenCalledExactlyOnceWith('srv-desktop');
     expect(callbacks.onReauthenticate).not.toHaveBeenCalled();
   });
 });

@@ -1,7 +1,16 @@
 <script lang="ts">
-  import { logger } from '../../../shared/logger';
-  import { appClient } from '$lib/client';
-  import { refreshAutoCommitSettings } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
+  import {
+    settingsFormOpened,
+    settingsFormClosed,
+    settingsFormLoadRequested,
+    settingsFormSaveRequested,
+    settingsFormDraftChanged,
+  } from '$store/renderer/slices/settings-events/settings-events-slice';
+  import {
+    selectSettingsForm,
+    selectSettingsFormEntries,
+    selectSettingsFormError,
+  } from '$store/renderer/slices/settings-events/settings-events-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { onMount } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -25,26 +34,59 @@
   // i18n-ignore (file path)
   const SSH_KEY_PLACEHOLDER = '~/.ssh/id_ed25519';
 
-  // Settings state
-  let worktreesLocation = $state('');
-  let sshKeyPath = $state('');
-  let autoCommit = $state(true);
-  let cowIsolation = $state(false);
-  let exposeGitCredential = $state(true);
-  let defaultShell = $state('auto');
-  let branchPrefix = $state('');
+  const identity = { formId: crypto.randomUUID(), sessionId: crypto.randomUUID() };
+  const form$ = selectSettingsForm(identity);
+  const entries$ = selectSettingsFormEntries(identity);
+  const error$ = selectSettingsFormError(identity);
+  const worktreesLocation = $derived(
+    String(
+      $form$?.drafts['workspace.worktreesLocation'] ??
+        $entries$['workspace.worktreesLocation']?.value ??
+        '',
+    ),
+  );
+  const sshKeyPath = $derived(
+    String(
+      $form$?.drafts['workspace.sshKeyPath'] ?? $entries$['workspace.sshKeyPath']?.value ?? '',
+    ),
+  );
+  const autoCommit = $derived(
+    ($form$?.drafts['git.autoCommit'] ?? $entries$['git.autoCommit']?.value) !== false,
+  );
+  const cowIsolation = $derived(
+    ($form$?.drafts['workspace.cowIsolation'] ?? $entries$['workspace.cowIsolation']?.value) ===
+      true,
+  );
+  const exposeGitCredential = $derived(
+    ($form$?.drafts['sourceControl.github.exposeGitCredentialToChildren'] ??
+      $entries$['sourceControl.github.exposeGitCredentialToChildren']?.value) === true,
+  );
+  const defaultShell = $derived(
+    String(
+      $form$?.drafts['workspace.defaultShell'] ??
+        $entries$['workspace.defaultShell']?.value ??
+        'auto',
+    ),
+  );
+  const branchPrefix = $derived(
+    String(
+      $form$?.drafts['workspace.branchPrefix'] ?? $entries$['workspace.branchPrefix']?.value ?? '',
+    ),
+  );
   let branchPrefixError = $state('');
-  let settingsError = $state('');
+  const settingsError = $derived($error$);
 
   // The git-credential toggle is only shown when the daemon reports the
   // setting (older daemons don't have it); we also never write the path back
   // to a daemon that didn't report it.
-  let gitCredentialSettingSupported = $state(false);
+  const gitCredentialSettingSupported = $derived(
+    $entries$['sourceControl.github.exposeGitCredentialToChildren'] !== undefined,
+  );
 
   // CoW toggle is visible only when the machine supports it — a direct probe
   // of the workspaces root via `system.capabilities` (PROTOCOL §5.7), with no
   // dependency on an active/hydrated workspace.
-  let cowSupported = $state(false);
+  const cowSupported = $derived($form$?.values.cowSupported === true);
   const showCowToggle = $derived(cowSupported);
 
   // Daemon setting path per field (PROTOCOL §5.12, BE-owned workspace/git group).
@@ -57,11 +99,6 @@
     branchPrefix: 'workspace.branchPrefix',
     exposeGitCredential: 'sourceControl.github.exposeGitCredentialToChildren',
   } as const;
-
-  // Last-loaded/saved value per daemon path so saves only send changed
-  // settings — `workspace.sshKeyPath` is sensitive and reads back redacted
-  // (§5.12), so its placeholder must never be written back unchanged.
-  let loadedValues: Record<string, unknown> = {};
 
   // Available shells (filtered by platform); shell names are product names — not translated
   const isWindows = navigator.platform.startsWith('Win');
@@ -83,91 +120,56 @@
   ];
 
   function handleShellChange(value: string) {
-    defaultShell = value;
+    appStore.dispatch(settingsFormDraftChanged(identity, SETTING_PATHS.defaultShell, value));
     handleSave();
   }
 
-  onMount(async () => {
-    void loadCowCapability();
-    await loadSettings();
+  onMount(() => {
+    appStore.dispatch(settingsFormOpened(identity, 'git-workspace'));
+    appStore.dispatch(
+      settingsFormLoadRequested({ ...identity, requestId: crypto.randomUUID(), resource: 'load' }),
+    );
+    return () => appStore.dispatch(settingsFormClosed(identity));
   });
 
-  async function loadCowCapability() {
-    // capabilities() always resolves ({} on failure), so unknown/error keeps
-    // the toggle hidden rather than crashing the settings pane.
-    const caps = await appClient.system.capabilities();
-    cowSupported = caps.cowSupported === true;
-  }
-
-  function stringValue(value: unknown): string {
-    return typeof value === 'string' ? value : '';
-  }
-
-  function currentValues(): Record<string, unknown> {
-    return {
-      [SETTING_PATHS.worktreesLocation]: worktreesLocation,
-      [SETTING_PATHS.sshKeyPath]: sshKeyPath,
-      [SETTING_PATHS.defaultShell]: defaultShell,
-      [SETTING_PATHS.autoCommit]: autoCommit,
-      [SETTING_PATHS.cowIsolation]: cowIsolation,
-      [SETTING_PATHS.branchPrefix]: branchPrefix,
-      ...(gitCredentialSettingSupported
-        ? { [SETTING_PATHS.exposeGitCredential]: exposeGitCredential }
-        : {}),
-    };
-  }
-
-  async function loadSettings() {
-    const settings = await appClient.settings.list();
-    if (settings.length === 0) {
-      settingsError = m.settings_gitWorkspace_loadError();
-      return;
-    }
-    settingsError = '';
-    const byPath = new Map(settings.map((entry) => [entry.path, entry.value]));
-    worktreesLocation = stringValue(byPath.get(SETTING_PATHS.worktreesLocation));
-    sshKeyPath = stringValue(byPath.get(SETTING_PATHS.sshKeyPath));
-    defaultShell = stringValue(byPath.get(SETTING_PATHS.defaultShell)) || 'auto';
-    autoCommit = byPath.get(SETTING_PATHS.autoCommit) !== false;
-    cowIsolation = byPath.get(SETTING_PATHS.cowIsolation) === true;
-    branchPrefix = stringValue(byPath.get(SETTING_PATHS.branchPrefix));
-    gitCredentialSettingSupported = byPath.has(SETTING_PATHS.exposeGitCredential);
-    // Security-sensitive: only an explicit boolean `true` counts as enabled, so
-    // malformed/unexpected values fail safe to off.
-    exposeGitCredential = byPath.get(SETTING_PATHS.exposeGitCredential) === true;
-    loadedValues = currentValues();
-  }
-
-  async function handleSave() {
-    const values = currentValues();
-    const changes = Object.entries(values)
-      .filter(([path, value]) => value !== loadedValues[path])
+  function handleSave() {
+    const form = selectSettingsForm.select(appStore.state, identity);
+    if (!form?.loaded) return;
+    const entries = selectSettingsFormEntries.select(appStore.state, identity);
+    const changes = Object.entries(form.drafts)
+      .filter(([path, value]) => entries[path]?.value !== value)
       .map(([path, value]) => ({ path, value }));
     if (changes.length === 0) return;
-    try {
-      await appClient.settings.update(changes);
-      settingsError = '';
-      loadedValues = values;
-
-      // Refresh global autoCommit so workspaces pick up the new setting
-      appStore.dispatch(refreshAutoCommitSettings());
-    } catch (error) {
-      settingsError = m.settings_gitWorkspace_saveError();
-      logger.error('Failed to save settings:', error);
-    }
+    appStore.dispatch(
+      settingsFormSaveRequested(
+        { ...identity, requestId: crypto.randomUUID(), resource: 'git-workspace' },
+        changes,
+      ),
+    );
   }
 
   /**
    * Handle branch prefix input change with validation
    */
   function handleBranchPrefixChange() {
-    const validation = validateBranchPrefix(branchPrefix);
+    const form = selectSettingsForm.select(appStore.state, identity);
+    const entries = selectSettingsFormEntries.select(appStore.state, identity);
+    const prefix = String(
+      form?.drafts[SETTING_PATHS.branchPrefix] ?? entries[SETTING_PATHS.branchPrefix]?.value ?? '',
+    );
+    const validation = validateBranchPrefix(prefix);
     if (!validation.valid) {
       branchPrefixError = validation.error || m.settings_gitWorkspace_branchPrefix_invalid();
     } else {
       branchPrefixError = '';
       // Sanitize and normalize the prefix
-      branchPrefix = sanitizeBranchPrefix(branchPrefix);
+      appStore.dispatch(
+        settingsFormDraftChanged(
+          identity,
+          SETTING_PATHS.branchPrefix,
+          sanitizeBranchPrefix(prefix),
+        ),
+      );
       handleSave();
     }
   }
@@ -176,13 +178,21 @@
    * Reset Git & Workspace settings to defaults
    */
   export function resetToDefaults() {
-    worktreesLocation = '';
-    sshKeyPath = '';
-    autoCommit = true;
-    cowIsolation = false;
-    exposeGitCredential = true;
-    defaultShell = 'auto';
-    branchPrefix = '';
+    if (!selectSettingsForm.select(appStore.state, identity)?.loaded) return;
+    const entries = selectSettingsFormEntries.select(appStore.state, identity);
+    const defaults = {
+      [SETTING_PATHS.worktreesLocation]: '',
+      [SETTING_PATHS.sshKeyPath]: '',
+      [SETTING_PATHS.autoCommit]: true,
+      [SETTING_PATHS.cowIsolation]: false,
+      [SETTING_PATHS.defaultShell]: 'auto',
+      [SETTING_PATHS.branchPrefix]: '',
+      ...(entries[SETTING_PATHS.exposeGitCredential]
+        ? { [SETTING_PATHS.exposeGitCredential]: true }
+        : {}),
+    };
+    for (const [path, value] of Object.entries(defaults))
+      appStore.dispatch(settingsFormDraftChanged(identity, path, value));
     branchPrefixError = '';
     handleSave();
   }
@@ -209,7 +219,9 @@
               placeholder: m.settings_gitWorkspace_branchPrefix_placeholder(),
               get: () => `${branchPrefix}`,
               set: (value: string) => {
-                branchPrefix = value;
+                appStore.dispatch(
+                  settingsFormDraftChanged(identity, SETTING_PATHS.branchPrefix, value),
+                );
               },
               onBlur: handleBranchPrefixChange,
               error: () => branchPrefixError || undefined,
@@ -220,7 +232,9 @@
               label: m.settings_gitWorkspace_autoCommit_label(),
               get: () => Boolean(autoCommit),
               set: (value: boolean) => {
-                autoCommit = value;
+                appStore.dispatch(
+                  settingsFormDraftChanged(identity, SETTING_PATHS.autoCommit, value),
+                );
                 void handleSave();
               },
             },
@@ -232,7 +246,9 @@
               when: () => Boolean(gitCredentialSettingSupported),
               get: () => Boolean(exposeGitCredential),
               set: (value: boolean) => {
-                exposeGitCredential = value;
+                appStore.dispatch(
+                  settingsFormDraftChanged(identity, SETTING_PATHS.exposeGitCredential, value),
+                );
                 void handleSave();
               },
             },
@@ -287,7 +303,11 @@
 {#snippet sshKeyControl()}
   <PathSettingField
     mode="file"
-    bind:value={sshKeyPath}
+    bind:value={
+      () => sshKeyPath,
+      (value) =>
+        appStore.dispatch(settingsFormDraftChanged(identity, SETTING_PATHS.sshKeyPath, value))
+    }
     placeholder={SSH_KEY_PLACEHOLDER}
     defaultPath={'~/.ssh'}
     ariaLabel={m.settings_gitWorkspace_sshKeyPath_label()}
@@ -310,7 +330,13 @@
 
 {#snippet worktreesControl()}
   <PathSettingField
-    bind:value={worktreesLocation}
+    bind:value={
+      () => worktreesLocation,
+      (value) =>
+        appStore.dispatch(
+          settingsFormDraftChanged(identity, SETTING_PATHS.worktreesLocation, value),
+        )
+    }
     placeholder={WORKTREES_PLACEHOLDER}
     ariaLabel={m.settings_gitWorkspace_worktreesLocation_label()}
     pickerTitle={m.settings_gitWorkspace_worktreesLocation_label()}
@@ -326,7 +352,7 @@
   <Checkbox
     checked={cowIsolation}
     onCheckedChange={(value) => {
-      cowIsolation = value;
+      appStore.dispatch(settingsFormDraftChanged(identity, SETTING_PATHS.cowIsolation, value));
       void handleSave();
     }}
     ariaLabelledby={labelId}

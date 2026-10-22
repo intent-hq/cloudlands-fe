@@ -11,7 +11,24 @@
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { registerMockIpcHandler, unregisterMockIpcHandler } from '$shared/ipc-mock-router';
+import { registerMockIpcHandler } from '$shared/ipc-mock-router';
+
+vi.unmock('$lib/electron-bridge');
+const integrationWire = vi.hoisted(() => ({
+  request: vi.fn(),
+  reconnect: [] as Array<() => void>,
+}));
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: integrationWire.request,
+  onBackendNotification: () => () => {},
+  onBackendReconnected: (handler: () => void) => {
+    integrationWire.reconnect.push(handler);
+    return () => {
+      integrationWire.reconnect = integrationWire.reconnect.filter((h) => h !== handler);
+    };
+  },
+}));
+import { WORKSPACE_ROUTE_CONTEXT } from '$lib/utils/workspace-route-context';
 
 const mocks = vi.hoisted(() => {
   const readable = <T>(value: T) => ({
@@ -201,9 +218,6 @@ describe('IssueSuggestions server-side search + pagination wire contract', () =>
 
   afterEach(() => {
     cleanup();
-    unregisterMockIpcHandler('git-tracking:search-github-issues');
-    unregisterMockIpcHandler('git-tracking:search-pull-requests');
-    unregisterMockIpcHandler('git-tracking:list-related-repos');
     vi.unstubAllGlobals();
     vi.useRealTimers();
   });
@@ -211,6 +225,242 @@ describe('IssueSuggestions server-side search + pagination wire contract', () =>
   async function settle(ms = 200): Promise<void> {
     await vi.advanceTimersByTimeAsync(ms);
   }
+
+  async function setupProbe(source: 'github-prs' | 'github-issues') {
+    await import('$store/renderer/seeders/integrations-bridge-seeder');
+    const { __resetGitHubAuthStatusForTests } =
+      await import('$features/github-auth/renderer/github-auth-status.client');
+    __resetGitHubAuthStatusForTests();
+    let era = 'before';
+    integrationWire.request.mockImplementation(async (method: string) => {
+      if (method === 'github.authStatus') return { isConfigured: true };
+      if (method === 'github.relatedRepos.list')
+        return { repos: [{ owner: 'o', repo: `child-${era}`, path: 'child' }] };
+      if (method === 'github.issues.search')
+        return { issues: [{ ...ghIssueIn('o', 'r', 1), title: `Issue-${era}` }], nextToken: null };
+      if (method === 'github.pulls.search')
+        return {
+          pulls: [{ ...ghPullIn('o', 'r', 1), title: `PR-${era}`, user: { login: 'fixture' } }],
+          nextToken: null,
+        };
+      throw new Error(`Unexpected ${method}`);
+    });
+    render(IssueSuggestions, {
+      props: {
+        repositoryOwner: 'o',
+        repositoryName: 'r',
+        initiallyExpanded: true,
+        initialSource: source,
+        hideSourceTabs: true,
+      },
+      context: new Map([[WORKSPACE_ROUTE_CONTEXT, { workspaceId: 'probe-a' }]]),
+    });
+    await settle(1000);
+    return () => {
+      era = 'after';
+      integrationWire.request.mockClear();
+      for (const handler of [...integrationWire.reconnect]) handler();
+    };
+  }
+
+  it('rehydrates GitHub rows and related repositories on first and subsequent reconnects', async () => {
+    const reconnect = await setupProbe('github-prs');
+    expect(screen.getByText('PR-before')).toBeTruthy();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      reconnect();
+      await settle(1000);
+      expect(screen.queryByText('PR-after')).not.toBeNull();
+      expect(integrationWire.request).toHaveBeenCalledWith('github.relatedRepos.list', {
+        owner: 'o',
+        repo: 'r',
+        workspaceId: 'probe-a',
+      });
+      expect(integrationWire.request).toHaveBeenCalledWith(
+        'github.pulls.search',
+        expect.objectContaining({ repos: [{ owner: 'o', repo: 'child-after' }] }),
+      );
+    }
+  });
+
+  it.each([
+    ['github-issues', 'success'],
+    ['github-issues', 'error'],
+    ['github-prs', 'success'],
+    ['github-prs', 'error'],
+  ] as const)(
+    'preserves %s query and paging while rejecting old connection %s',
+    async (source, outcome) => {
+      await import('$store/renderer/seeders/integrations-bridge-seeder');
+      const { __resetGitHubAuthStatusForTests } =
+        await import('$features/github-auth/renderer/github-auth-status.client');
+      __resetGitHubAuthStatusForTests();
+      let era = 0;
+      type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void };
+      const oldPages: Pending[] = [];
+      const oldRelated: Pending[] = [];
+      const method = source === 'github-prs' ? 'github.pulls.search' : 'github.issues.search';
+      const page = (title: string, nextToken: string | null = null) => ({
+        [source === 'github-prs' ? 'pulls' : 'issues']: [
+          { ...ghIssueIn('o', 'r', 1), title, user: { login: 'fixture' } },
+        ],
+        nextToken,
+      });
+      integrationWire.request.mockImplementation(
+        (name: string, params: { query?: string; nextToken?: string }) => {
+          if (name === 'github.authStatus') return Promise.resolve({ isConfigured: true });
+          if (name === 'github.relatedRepos.list') {
+            if (era === 0)
+              return new Promise((resolve, reject) => oldRelated.push({ resolve, reject }));
+            return Promise.resolve({
+              repos: [{ owner: 'o', repo: 'child-current', path: 'child' }],
+            });
+          }
+          if (name === method) {
+            if (era === 2) return Promise.reject(new Error('current connection error'));
+            if (era === 0 && params.query === 'keep')
+              return new Promise((resolve, reject) => oldPages.push({ resolve, reject }));
+            return Promise.resolve(
+              page(
+                era === 0 ? 'Original row' : 'Current row',
+                params.nextToken ? null : 'current-next',
+              ),
+            );
+          }
+          return Promise.resolve({ issues: [], pulls: [], nextToken: null });
+        },
+      );
+      const view = render(IssueSuggestions, {
+        props: {
+          repositoryOwner: 'o',
+          repositoryName: 'r',
+          initiallyExpanded: true,
+          initialSource: source,
+          hideSourceTabs: true,
+          prFilter: 'assigned',
+        },
+        context: new Map([[WORKSPACE_ROUTE_CONTEXT, { workspaceId: 'query-ws' }]]),
+      });
+      await settle(1000);
+      await fireEvent.input(view.container.querySelector('input')!, { target: { value: 'keep' } });
+      await settle(400);
+      expect(oldPages.length).toBeGreaterThan(0);
+      era = 1;
+      integrationWire.request.mockClear();
+      for (const handler of [...integrationWire.reconnect]) handler();
+      await settle(1000);
+      expect(screen.getByText('Current row')).toBeTruthy();
+      const currentCalls = integrationWire.request.mock.calls.filter(([name]) => name === method);
+      expect(
+        currentCalls.some(
+          ([, params]) => params.query === 'keep' && params.repos?.[0]?.repo === 'child-current',
+        ),
+      ).toBe(true);
+      expect(
+        currentCalls.every(
+          ([, params]) => !params.repos?.some((repo: RepoRef) => repo.repo === 'child-old'),
+        ),
+      ).toBe(true);
+      for (const pending of oldPages) {
+        if (outcome === 'success') pending.resolve(page('Late old row'));
+        else pending.reject(new Error('old page'));
+      }
+      for (const pending of oldRelated) {
+        if (outcome === 'success')
+          pending.resolve({ repos: [{ owner: 'o', repo: 'child-old', path: 'child' }] });
+        else pending.reject(new Error('old repository lookup'));
+      }
+      await settle();
+      expect(screen.queryByText('Late old row')).toBeNull();
+      expect(screen.getByText('Current row')).toBeTruthy();
+      intersectSentinel(view.container.querySelector('[aria-hidden="true"].h-px')!);
+      await settle();
+      expect(integrationWire.request).toHaveBeenCalledWith(
+        method,
+        expect.objectContaining({
+          workspaceId: 'query-ws',
+          query: 'keep',
+          nextToken: 'current-next',
+          repos: [{ owner: 'o', repo: 'child-current' }],
+          ...(source === 'github-prs' ? { filter: 'assigned' } : {}),
+        }),
+      );
+      era = 2;
+      for (const handler of [...integrationWire.reconnect]) handler();
+      await settle(1000);
+      expect(screen.queryByText('Current row')).toBeNull();
+      era = 3;
+      for (const handler of [...integrationWire.reconnect]) handler();
+      await settle(1000);
+      expect(screen.getByText('Current row')).toBeTruthy();
+      expect(view.container.querySelector('input')?.value).toBe('keep');
+    },
+  );
+
+  it('sends actual workspace picker searches through the bridge and isolates repeated repositories', async () => {
+    await import('$store/renderer/seeders/integrations-bridge-seeder');
+    const { __resetGitHubAuthStatusForTests } =
+      await import('$features/github-auth/renderer/github-auth-status.client');
+    __resetGitHubAuthStatusForTests();
+    let resolveA!: (value: unknown) => void;
+    const pendingA = new Promise((resolve) => {
+      resolveA = resolve;
+    });
+    integrationWire.request.mockImplementation(
+      async (method: string, params?: { workspaceId?: string }) => {
+        if (method === 'github.authStatus') return { isConfigured: true };
+        if (method === 'github.issues.search') {
+          if (params?.workspaceId === 'a') return pendingA;
+          return {
+            issues: [{ ...ghIssueIn('o', 'r', 1), title: 'Workspace B issue' }],
+            nextToken: null,
+          };
+        }
+        if (method === 'github.relatedRepos.list') return { repos: [] };
+        return { pulls: [], nextToken: null };
+      },
+    );
+    const props = {
+      repositoryOwner: 'o',
+      repositoryName: 'r',
+      initiallyExpanded: true,
+      initialSource: 'github-issues' as const,
+      hideSourceTabs: true,
+    };
+    const a = render(IssueSuggestions, {
+      props,
+      context: new Map([[WORKSPACE_ROUTE_CONTEXT, { workspaceId: 'a' }]]),
+    });
+    await settle();
+    expect(integrationWire.request).toHaveBeenCalledWith(
+      'github.issues.search',
+      expect.objectContaining({ workspaceId: 'a', owner: 'o', repo: 'r' }),
+    );
+    a.unmount();
+    render(IssueSuggestions, {
+      props,
+      context: new Map([[WORKSPACE_ROUTE_CONTEXT, { workspaceId: 'b' }]]),
+    });
+    await settle();
+    expect(integrationWire.request).toHaveBeenCalledWith(
+      'github.issues.search',
+      expect.objectContaining({ workspaceId: 'b', owner: 'o', repo: 'r' }),
+    );
+    expect(screen.getByText('Workspace B issue')).toBeTruthy();
+    resolveA({
+      issues: [{ ...ghIssueIn('o', 'r', 1), title: 'Late workspace A' }],
+      nextToken: null,
+    });
+    await settle();
+    expect(screen.queryByText('Late workspace A')).toBeNull();
+    integrationWire.request.mockClear();
+    for (const reconnect of [...integrationWire.reconnect]) reconnect();
+    await settle();
+    expect(integrationWire.request).toHaveBeenCalledWith('github.authStatus', { workspaceId: 'b' });
+    expect(integrationWire.request).toHaveBeenCalledWith(
+      'github.issues.search',
+      expect.objectContaining({ workspaceId: 'b' }),
+    );
+  });
 
   it('debounced typing sends a server search with the exact request shape (GH issues)', async () => {
     const issueCalls: unknown[] = [];

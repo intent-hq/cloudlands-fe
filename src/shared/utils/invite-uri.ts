@@ -12,6 +12,7 @@
  */
 
 export interface ParsedInviteUri {
+  scope: 'workspace' | 'host';
   /** Candidate hosts from `host=` (comma-separated); empty when absent. */
   hosts: string[];
   /** WSS port from `port=`; `null` when absent or not a valid port. */
@@ -63,6 +64,11 @@ export function parseInviteUri(raw: string): ParsedInviteUri | null {
     return null;
   }
   const params = parsed.searchParams;
+  const scopes = params.getAll('scope');
+  if (scopes.length > 1 || (scopes.length === 1 && !['workspace', 'host'].includes(scopes[0]))) {
+    return null;
+  }
+  const scope = scopes[0] === 'host' ? 'host' : 'workspace';
   const hosts = (params.get('host') ?? '')
     .split(',')
     .map((host) => host.trim())
@@ -75,5 +81,5 @@ export function parseInviteUri(raw: string): ParsedInviteUri | null {
   const inviteId = params.get('inviteId')?.trim() || null;
   const secret = params.get('secret')?.trim() || null;
   const tcAddress = params.get('tc')?.trim() || null;
-  return { hosts, port, fingerprint, inviteId, secret, tcAddress };
+  return { scope, hosts, port, fingerprint, inviteId, secret, tcAddress };
 }

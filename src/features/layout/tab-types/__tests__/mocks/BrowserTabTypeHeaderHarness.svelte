@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
+  import * as Menu from '$lib/components/ui/menu';
   import PanelTabBar from '$lib/components/layout/panel-system/PanelTabBar.svelte';
   import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import BrowserTabType from '../../BrowserTabType.svelte';
@@ -32,7 +33,14 @@
     />
   {:else}
     <div data-testid="panel-header">
-      {@render header.actions.current?.primary?.()}
+      {#if header.actions.current}
+        <Menu.Root>
+          <Menu.Trigger aria-label="Panel actions">Panel actions</Menu.Trigger>
+          <Menu.Content portal={false}>
+            {@render header.actions.current.actions?.()}
+          </Menu.Content>
+        </Menu.Root>
+      {/if}
     </div>
   {/if}
   {#each tabs as tab (tab.id)}

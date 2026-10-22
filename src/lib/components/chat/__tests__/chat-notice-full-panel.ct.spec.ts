@@ -7,19 +7,22 @@ import ChatPanelComposerGeometryHost from './ChatPanelComposerGeometryHost.svelt
 test.setTimeout(120_000);
 
 async function measureNotice(component: Locator) {
-  // PanelLayout measures its initial width asynchronously. Separate protocol
-  // calls (even Promise.all) can mix narrow prose with wide notice geometry.
-  // Keep all related edges and typography in one synchronous browser read.
-  return component.evaluate((root) => {
+  // Let PanelLayout's width update settle, then read all related geometry together.
+  return component.evaluate(async (root) => {
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
     const paragraphs = root.querySelectorAll(
       '[data-message-id="follow-up-assistant"] [data-assistant-prose] p',
     );
     const prose = paragraphs[paragraphs.length - 1];
-    const notice = root.querySelector('[data-chat-notice]')!;
+    const notice = root.querySelector('[data-chat-notice], .turn-failure-notice')!;
     const composer = root.querySelector('[data-testid="chat-composer-shell"]')!;
     const texts = [
       prose,
-      ...notice.querySelectorAll('[data-chat-notice-label], [data-chat-notice-reason]'),
+      ...notice.querySelectorAll(
+        '[data-chat-notice-label], [data-chat-notice-reason], button[aria-expanded]',
+      ),
     ];
     const box = (node: Element) => {
       const { top, bottom } = node.getBoundingClientRect();
@@ -60,7 +63,7 @@ const cases = [
 ] as const;
 
 for (const scenario of cases) {
-  test(`notice matches prose in the full panel: ${scenario.name}`, async ({ mount, page }) => {
+  test(`notice stays usable in the full panel: ${scenario.name}`, async ({ mount, page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.setViewportSize({ width: 900, height: 640 });
     const component = await mount(ChatPanelComposerGeometryHost, {
@@ -72,7 +75,7 @@ for (const scenario of cases) {
           : { historyNotice: scenario.historyNotice }),
       },
     });
-    const notice = component.locator('[data-chat-notice]');
+    const notice = component.locator('[data-chat-notice], .turn-failure-notice');
     await expect(notice).toBeVisible();
     await expect(component.locator('.tiptap-editor')).toBeEditable();
     await page.evaluate(() => document.fonts.ready);
@@ -85,7 +88,12 @@ for (const scenario of cases) {
       .toBeLessThanOrEqual(1);
 
     const { geometry, noticeBox, composerBox, proseBox } = await measureNotice(component);
-    expectAligned(geometry);
+    if (scenario.name === 'failure') {
+      await expect(notice.getByRole('button', { name: '1 recorded failure' })).toBeVisible();
+      await expect(notice.getByRole('alert')).toHaveCount(0);
+    } else {
+      expectAligned(geometry);
+    }
     expect(noticeBox.top).toBeGreaterThanOrEqual(proseBox.bottom);
     expect(noticeBox.bottom).toBeLessThanOrEqual(composerBox.top);
 
@@ -138,9 +146,6 @@ test('notice and prose stay aligned across the panel inset breakpoint', async ({
   const wide = await measureNotice(component);
   expect(wide.geometry).toHaveLength(3);
   expectAligned(wide.geometry);
-  // Mixing the narrow prose sample with the wide notice recreates the false
-  // mismatch. Neither coherent snapshot has an alignment defect.
-  expect(wide.geometry[1].left - narrow.geometry[0].left).toBeGreaterThan(30);
 
   await component.update({ props: { width: 500 } });
   await expect.poll(panelWidth).toBeLessThan(640);

@@ -1,4 +1,6 @@
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+import { selectPrincipalActionContext } from '../principal/principal-selectors';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { describe, expect, it } from 'vitest';
 import type { Workspace, WorkspaceRole } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
@@ -12,6 +14,7 @@ import {
   presenceReducer,
   presenceRosterReceived,
   presenceTypingExpired,
+  presenceDiscussionTypingExpired,
   presenceWindowVisibilityChanged,
   presenceTypingPulse,
   initialState,
@@ -20,10 +23,12 @@ import {
   hasOtherPresence,
   selectAgentPresencePeople,
   selectAgentTypingPeople,
+  selectDiscussionTypingPeople,
   selectOwnPresenceReport,
   selectPresenceMembershipKeys,
-  selectWorkspacePresenceFocusTargets,
   selectWorkspacePresencePeople,
+  selectWorkspacePeopleIdentities,
+  selectWorkspacePeopleTilePeople,
 } from './presence-selectors';
 import type { PresencePerson, PresenceState } from './presence-types';
 
@@ -45,15 +50,29 @@ const typing = (source: string, pulse: number, agentId = 'agent-1'): PresenceTyp
 });
 
 const reduce = (...actions: Parameters<typeof presenceReducer>[1][]): PresenceState =>
-  actions.reduce((state, action) => presenceReducer(state, action), initialState);
+  actions.reduce((state, action) => presenceReducer(state, action), {
+    ...initialState,
+    context: 'fixture',
+    workspaceIds: ['ws-1', 'ws-2', 'ws-3'],
+  });
 
-const stateWith = (presence: PresenceState, extra: Record<string, unknown> = {}): StoreState =>
-  ({
+const stateWith = (presence: PresenceState, extra: Record<string, unknown> = {}): StoreState => {
+  const state = withLegacyPrincipal({
     presence,
+    workspace: {
+      workspaces: createCollection('id', [
+        { id: WorkspaceId('ws-1'), memberCount: 2 } as Workspace,
+      ]),
+    },
     tabState: { currentTabId: null },
     panelLayout: { byWorkspaceId: {} },
     ...extra,
-  }) as unknown as StoreState;
+  });
+  return {
+    ...state,
+    presence: { ...presence, context: selectPrincipalActionContext.select(state) },
+  };
+};
 
 const ids = (people: { principalId: string }[]) => people.map((p) => p.principalId);
 
@@ -99,6 +118,37 @@ describe('presence selectors', () => {
   ]);
 
   describe('workspace people (sidebar presence row)', () => {
+    it('starts the tile with the viewer and retains offline identities for activity photos', () => {
+      const state = stateWith(
+        reduce(
+          presenceMembersReceived('ws-1', [
+            { ...accepted('me', 'owner'), avatarUrl: 'https://example.com/me.png' },
+            { ...accepted('away'), hostRole: 'member', avatarUrl: 'https://example.com/away.png' },
+          ]),
+          presenceOwnPrincipalReceived('me'),
+        ),
+      );
+      expect(selectWorkspacePeopleTilePeople.select(state, 'ws-1')).toMatchObject([
+        { principalId: 'me', self: true, avatarUrl: 'https://example.com/me.png' },
+      ]);
+      expect(selectWorkspacePeopleIdentities.select(state, 'ws-1')).toMatchObject([
+        { principalId: 'me', avatarUrl: 'https://example.com/me.png' },
+        { principalId: 'away', avatarUrl: 'https://example.com/away.png' },
+      ]);
+      const stale = { ...state, presence: { ...state.presence, context: 'expired' } };
+      expect(selectWorkspacePeopleTilePeople.select(stale, 'ws-1')).toEqual([]);
+      expect(selectWorkspacePeopleIdentities.select(stale, 'ws-1')).toEqual([]);
+    });
+
+    it('shows the admitted viewer while membership is loading, without using another session', () => {
+      const state = stateWith(reduce(presenceOwnPrincipalReceived('principal')));
+      expect(selectWorkspacePeopleTilePeople.select(state, 'ws-1')).toMatchObject([
+        { principalId: 'principal', self: true },
+      ]);
+      const unknown = { ...state, presence: { ...state.presence, ownPrincipalId: null } };
+      expect(selectWorkspacePeopleTilePeople.select(unknown, 'ws-1')).toEqual([]);
+    });
+
     it('lists every other accepted member of a shared workspace, offline included but never self, in membership order', () => {
       const state = stateWith(reduce(roster, membership, presenceOwnPrincipalReceived('me')), {
         workspace: workspacesWith(shared('ws-1', { ownerPrincipalId: 'me', memberCount: 5 })),
@@ -156,32 +206,33 @@ describe('presence selectors', () => {
       ]);
     });
 
-    it('resolves where each online member looks: their agent chat first, else their note, nothing for the bare tab', () => {
-      const focused = presenceRosterReceived({
-        workspaceId: 'ws-1',
-        members: [
-          member('viewer', {
-            focus: [
-              { workspaceId: 'ws-1' },
-              { workspaceId: 'ws-1', noteId: 'note-1' },
-              { workspaceId: 'ws-1', agentId: 'agent-1' },
-            ],
-          }),
-          member('reader', {
-            focus: [
-              { workspaceId: 'ws-2', agentId: 'agent-9' },
-              { workspaceId: 'ws-1', noteId: 'note-2' },
-            ],
-          }),
-          member('idle', { focus: [{ workspaceId: 'ws-1' }] }),
-        ],
-      });
-      const state = stateWith(reduce(focused, presenceOwnPrincipalReceived('me')));
-      expect(selectWorkspacePresenceFocusTargets.select(state, 'ws-1')).toEqual({
-        viewer: { kind: 'agent', agentId: 'agent-1' },
-        reader: { kind: 'note', noteId: 'note-2' },
-      });
-      expect(selectWorkspacePresenceFocusTargets.select(state, 'ws-9')).toEqual({});
+    it("carries each membership row's forge identity onto the person, none for a row without one", () => {
+      const gitlab = {
+        provider: 'gitlab',
+        host: 'gitlab.example.com',
+        externalUserId: '7',
+      } as const;
+      const github = { provider: 'github', host: 'github.com', externalUserId: '42' } as const;
+      const state = stateWith(
+        reduce(
+          roster,
+          presenceMembersReceived('ws-1', [
+            accepted('me', 'owner'),
+            { ...accepted('viewer'), identity: gitlab },
+            { ...accepted('idle'), identity: github },
+            accepted('away'),
+          ]),
+          presenceOwnPrincipalReceived('me'),
+        ),
+        { workspace: workspacesWith(shared('ws-1', { ownerPrincipalId: 'me', memberCount: 4 })) },
+      );
+      const people = selectWorkspacePresencePeople.select(state, 'ws-1');
+      expect(people.map((p) => [p.principalId, p.identity])).toEqual([
+        ['viewer', gitlab],
+        ['idle', github],
+        ['away', undefined],
+      ]);
+      expect('identity' in people[2]).toBe(false);
     });
 
     it('shows nothing for an unshared workspace even when its roster and membership are known', () => {
@@ -630,5 +681,48 @@ describe('presence selectors', () => {
 
     const noTab = stateWith(reduce(presenceTypingPulse('agent-1')), { panelLayout: layout });
     expect(selectOwnPresenceReport.select(noTab)).toEqual({ focus: [], typing: null });
+  });
+});
+
+describe('discussion typing people', () => {
+  it('suppresses all self connections, deduplicates people, and gates on current sharing', () => {
+    const entry = (source: string) => ({ source, pulse: 1, since: '2000-01-01T00:00:00Z' });
+    let presence = reduce(
+      presenceOwnPrincipalReceived('me'),
+      presenceOwnTypingSourceReceived('own'),
+      presenceRosterReceived({
+        workspaceId: 'ws-1',
+        members: [
+          member('me', { discussionTyping: [entry('self-other-device')] }),
+          member('a', { discussionTyping: [entry('a-phone'), entry('a-desktop')] }),
+          member('b', { discussionTyping: [entry('b')] }),
+          member('legacy'),
+        ],
+      }),
+    );
+    expect(ids(selectDiscussionTypingPeople.select(stateWith(presence), 'ws-1'))).toEqual([
+      'a',
+      'b',
+    ]);
+    presence = presenceReducer(presence, presenceDiscussionTypingExpired('ws-1', 'a-phone', 1));
+    expect(ids(selectDiscussionTypingPeople.select(stateWith(presence), 'ws-1'))).toEqual([
+      'a',
+      'b',
+    ]);
+    presence = presenceReducer(presence, presenceDiscussionTypingExpired('ws-1', 'a-desktop', 1));
+    expect(ids(selectDiscussionTypingPeople.select(stateWith(presence), 'ws-1'))).toEqual(['b']);
+    expect(
+      selectDiscussionTypingPeople.select(
+        stateWith(presence, { workspace: workspacesWith(shared('ws-1', { memberCount: 1 })) }),
+        'ws-1',
+      ),
+    ).toEqual([]);
+    const state = stateWith(presence);
+    expect(
+      selectDiscussionTypingPeople.select(
+        { ...state, presence: { ...state.presence, context: 'old' } },
+        'ws-1',
+      ),
+    ).toEqual([]);
   });
 });

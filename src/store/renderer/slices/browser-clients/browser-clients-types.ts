@@ -12,14 +12,21 @@
 import {
   createCollection,
   type Collection,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 import type { LiveClient, WorkspaceBrowserClient } from '$shared/types/browser-clients';
 
 export type LiveClientCollection = Collection<LiveClient, 'clientId'>;
+type AuthenticatedClient = LiveClient & { deviceKey: string };
+type AuthenticatedClientCollection = Collection<AuthenticatedClient, 'deviceKey'>;
 
 export type WorkspaceBrowserClientsState = {
+  consumers?: Record<string, true>;
+  /** Saved selection from a read or workspace:updated; undefined until known. */
+  pinnedClientId?: string | null;
   /** `workspace.getBrowserClient` result; null until the first read lands. */
   browserClient: WorkspaceBrowserClient | null;
+  liveClients?: LiveClientCollection;
+  liveClientsLoaded?: boolean;
   /**
    * Bumped by every `browser:tab-*` event. The panel-layout registry saga
    * reads it before and after a `browser.listTabs` read: a changed value
@@ -29,8 +36,13 @@ export type WorkspaceBrowserClientsState = {
 };
 
 export type BrowserClientsState = {
+  /** Current-person Devices projection; browser routing retains raw client IDs below. */
+  authenticatedContext?: string | null;
+  authenticatedClients?: AuthenticatedClientCollection;
   /** The `clientId` this renderer's connection presents on `client.hello`. */
   ownClientId: string | null;
+  /** Identity was confirmed on the current connection; retained IDs still host native tabs. */
+  ownClientIdConfirmed: boolean;
   /** `client.list` snapshot; empty until the first read lands. */
   liveClients: LiveClientCollection;
   /** True once a `client.list` read has completed at least once. */
@@ -41,13 +53,26 @@ export type BrowserClientsState = {
 export const createLiveClientCollection = (items?: LiveClient[]): LiveClientCollection =>
   createCollection('clientId', items);
 
+export const createAuthenticatedClientCollection = (
+  items: LiveClient[] = [],
+): AuthenticatedClientCollection =>
+  createCollection(
+    'deviceKey',
+    items.map((item) => ({
+      ...item,
+      deviceKey: JSON.stringify([item.principalId, item.clientId]),
+    })),
+  );
+
 export const emptyWorkspaceBrowserClientsState: WorkspaceBrowserClientsState = {
   browserClient: null,
   tabsRevision: 0,
 };
 
 export const initialState: BrowserClientsState = {
+  authenticatedClients: createAuthenticatedClientCollection(),
   ownClientId: null,
+  ownClientIdConfirmed: false,
   liveClients: createLiveClientCollection(),
   liveClientsLoaded: false,
   byWorkspaceId: {},

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { Button } from '$lib/components/ui/button';
   import { EmptyState } from '$lib/components/patterns/screen';
   /**
@@ -270,14 +271,16 @@
           size="sm"
           class="creation-action empty-state-row grid min-h-7 min-w-0 w-full max-w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 px-2 py-1 text-left font-medium text-foreground transition-colors duration-spring-fast ease-spring-fast hover:text-muted-foreground focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-ring motion-reduce:transition-none"
           onclick={action.action}
-          title={m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
           aria-label={m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
         >
           <span class="relative flex min-w-0 items-center gap-x-2">
             <span class="flex shrink-0 items-center" aria-hidden="true">
               <Fa icon={action.icon} class="size-[1em]" />
             </span>
-            <span class="min-w-0 truncate font-medium">
+            <span
+              class="min-w-0 truncate font-medium"
+              use:truncatedTitle={m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
+            >
               {m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
             </span>
           </span>
@@ -301,7 +304,7 @@
               ? 'reopen-hint'
               : 'recent-item'} empty-state-row grid min-h-7 min-w-0 w-full max-w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 px-2 py-1 text-left font-normal text-muted-foreground transition-colors duration-spring-fast ease-spring-fast hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-ring motion-reduce:transition-none"
             onclick={row.onSelect}
-            title={row.title}
+            title={row.isUtility ? undefined : row.title}
           >
             {#if row.icon}
               <span class="relative flex min-w-0 items-center gap-x-2">
@@ -311,7 +314,9 @@
                 <span class="relative min-w-0 truncate">{row.label}</span>
               </span>
             {:else}
-              <span class="relative min-w-0 truncate">{row.label}</span>
+              <span class="relative min-w-0 truncate" use:truncatedTitle={row.label}
+                >{row.label}</span
+              >
             {/if}
             {#if row.shortcut}
               <kbd
@@ -333,10 +338,11 @@
           size="sm"
           class="shortcut-item empty-state-row grid min-h-7 min-w-0 w-full max-w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 px-2 py-1 text-left font-normal text-muted-foreground transition-colors duration-spring-fast ease-spring-fast hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-ring motion-reduce:transition-none"
           onclick={action.action}
-          title={action.label}
           aria-label={action.label}
         >
-          <span class="relative min-w-0 truncate">{action.label}</span>
+          <span class="relative min-w-0 truncate" use:truncatedTitle={action.label}
+            >{action.label}</span
+          >
           <kbd
             class="shortcut-key relative shrink-0 justify-self-end whitespace-nowrap text-right text-muted-foreground"
           >

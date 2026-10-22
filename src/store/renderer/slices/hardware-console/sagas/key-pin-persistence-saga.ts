@@ -1,7 +1,7 @@
+import { HARDWARE_CONSOLE_SETTINGS_PATH } from '$features/hardware-console/settings-bag';
 import { all, call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import {
-  HARDWARE_CONSOLE_SETTINGS_PATH,
   loadHardwareConsoleKeyPins,
   persistHardwareConsoleKeyPins,
 } from '$features/hardware-console/assignment/key-pin-persistence-service';

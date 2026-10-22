@@ -1,4 +1,5 @@
 import { expect, test } from '../../../test/ct-test';
+import DirectoryPickerModal from './DirectoryPickerModal.svelte';
 import DirectoryPickerView from './DirectoryPickerView.svelte';
 
 const listing = {
@@ -12,6 +13,53 @@ const listing = {
     isGitRepo: false,
   })),
 };
+
+test('embedded picker keeps selection and cancel reachable in a short window', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 480 });
+  const entries = Array.from({ length: 30 }, (_, index) => ({
+    name: `project-${index}`,
+    path: `/fixture/projects/project-${index}`,
+    isDirectory: true,
+    isGitRepo: false,
+  }));
+  let selected: string | undefined;
+  let closed = false;
+  await mount(DirectoryPickerModal, {
+    props: {
+      open: true,
+      staticData: { listing: { ...listing, entries } },
+      onSelect: (path) => {
+        selected = path;
+      },
+      onClose: () => {
+        closed = true;
+      },
+    },
+  });
+  const dialog = page.getByRole('dialog');
+  const cancel = dialog.getByRole('button', { name: 'Cancel', exact: true });
+  const select = dialog.locator('footer').getByRole('button').last();
+  await expect(cancel).toBeInViewport({ ratio: 1 });
+  await expect(select).toBeInViewport({ ratio: 1 });
+  await dialog.getByRole('option').last().click();
+  await expect(dialog.locator('header')).toBeInViewport({ ratio: 1 });
+  await expect(select).toBeInViewport({ ratio: 1 });
+  expect(await dialog.evaluate((element) => element.scrollTop)).toBe(0);
+  expect(
+    await dialog.getByRole('listbox').evaluate((element) => element.scrollTop),
+  ).toBeGreaterThan(0);
+  await select.click();
+  await expect.poll(() => selected).toBe(entries.at(-1)!.path);
+  await test.info().attach('directory-picker-short-window', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await cancel.click();
+  await expect.poll(() => closed).toBe(true);
+});
 
 test('directory keyboard navigation and folder creation preserve callback paths', async ({
   mount,

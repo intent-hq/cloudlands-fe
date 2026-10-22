@@ -1,3 +1,7 @@
+import {
+  projectCommentAttribution,
+  projectLatestCommentAuthor,
+} from '$features/comments/comment-attribution';
 /**
  * Live comments domain backed by the intentd daemon.
  *
@@ -86,6 +90,7 @@ function normalizeComment(
   const reactions = normalizeReactions(raw.reactions);
 
   const base = {
+    ...projectCommentAttribution(raw),
     id,
     threadId: String(raw.threadId ?? id),
     noteId: String(raw.noteId ?? noteId),
@@ -149,7 +154,13 @@ async function fetchComments(noteId: string, explicitWorkspaceId?: string): Prom
         // Trivial fallback when `includeComments` was not honored: the
         // thread summary itself becomes a head-comment proxy (threadId,
         // status, timestamps) so the renderer at least sees the thread.
-        out.push(normalizeComment(thread as Record<string, unknown>, noteId, workspaceId));
+        out.push(
+          normalizeComment(
+            { ...thread, ...projectLatestCommentAuthor(thread as Record<string, unknown>) },
+            noteId,
+            workspaceId,
+          ),
+        );
       }
     }
     return out;
@@ -285,11 +296,28 @@ export class LiveCommentsClient implements CommentsClient {
             },
           }),
     };
-    return createDeltaSubscription<CommentV2>({
+    // §6.9 snapshots and deltas contain complete thread summaries, not flat
+    // CommentWire rows. Reconcile by threadId before flattening: replacement
+    // must drop replies absent from the new thread while retaining other threads.
+    return createDeltaSubscription<CommentV2[]>({
       channel,
-      getId: (raw) => String(raw.id ?? ''),
-      normalize: (raw) => normalizeComment(raw, noteId, channelWorkspaceId),
-      handler,
+      getId: (raw) => (typeof raw.threadId === 'string' ? raw.threadId : ''),
+      normalize: (raw) => {
+        if (raw.noteId !== noteId || !Array.isArray(raw.comments)) return null;
+        return raw.comments.flatMap((value: unknown) => {
+          if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+          const comment = value as Record<string, unknown>;
+          if (
+            typeof comment.id !== 'string' ||
+            !comment.id ||
+            comment.threadId !== raw.threadId ||
+            (comment.noteId !== undefined && comment.noteId !== noteId)
+          )
+            return [];
+          return [normalizeComment(comment, noteId, channelWorkspaceId)];
+        });
+      },
+      handler: (threads) => handler(threads.flat()),
     });
   }
 }

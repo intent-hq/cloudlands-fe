@@ -1,6 +1,5 @@
 <script lang="ts">
   import { Button, Input } from '$lib/components/patterns/settings/custom-controls';
-  /* eslint-disable intent/no-component-async-data-fetch */
   /**
    * Tool Output & Retention Settings Component
    *
@@ -20,8 +19,19 @@
    * UI state only.
    */
   import { onMount } from 'svelte';
-  import { notify } from '$lib/components/patterns/notify';
-  import { appClient } from '$lib/client';
+  import { store as appStore } from '$store/renderer/store';
+  import {
+    settingsFormOpened,
+    settingsFormClosed,
+    settingsFormLoadRequested,
+    settingsFormSaveRequested,
+    settingsFormDraftChanged,
+  } from '$store/renderer/slices/settings-events/settings-events-slice';
+  import {
+    selectSettingsForm,
+    selectSettingsFormEntries,
+    selectSettingsFormOperation,
+  } from '$store/renderer/slices/settings-events/settings-events-selectors';
   import { m } from '$shared/paraglide/messages.js';
   import {
     SettingsForm,
@@ -35,30 +45,50 @@
   const REPLAY_CHARS_PATH = 'agents.historyReplayToolContentChars';
   const RETENTION_DAYS_PATH = 'agents.toolPayloadRetentionDays';
 
-  let loading = $state(true);
-  let toonOutput = $state(true);
+  const identity = { formId: crypto.randomUUID(), sessionId: crypto.randomUUID() };
+  const form$ = selectSettingsForm(identity);
+  const entries$ = selectSettingsFormEntries(identity);
+  const maxCharsOperation$ = selectSettingsFormOperation(identity, MAX_OUTPUT_CHARS_PATH);
+  const replayOperation$ = selectSettingsFormOperation(identity, REPLAY_CHARS_PATH);
+  const retentionOperation$ = selectSettingsFormOperation(identity, RETENTION_DAYS_PATH);
+  const loading = $derived(!$form$?.loaded);
+  const toonOutput = $derived(
+    ($form$?.drafts[TOON_OUTPUT_PATH] ?? $entries$[TOON_OUTPUT_PATH]?.value) !== false,
+  );
 
   // Max output chars editing state (persisted value vs input string)
-  let persistedMaxOutputChars = $state<number>(100000);
-  let editedMaxOutputChars = $state<string>('100000');
-  let maxCharsSaving = $state(false);
+  const persistedMaxOutputChars = $derived(
+    Number($entries$[MAX_OUTPUT_CHARS_PATH]?.value ?? 100000),
+  );
+  const editedMaxOutputChars = $derived(
+    String($form$?.drafts[MAX_OUTPUT_CHARS_PATH] ?? persistedMaxOutputChars),
+  );
+  const maxCharsSaving = $derived($maxCharsOperation$?.status === 'pending');
   const maxOutputCharsValid = $derived.by(() => {
     const parsed = parseIntegerInput(editedMaxOutputChars);
     return Number.isInteger(parsed) && (parsed === 0 || (parsed >= 1000 && parsed <= 10_000_000));
   });
 
   // Replay tool content chars editing state (persisted value vs input string)
-  let persistedReplayChars = $state<number>(4000);
-  let editedReplayChars = $state<string>('4000');
-  let replayCharsSaving = $state(false);
+  const persistedReplayChars = $derived(Number($entries$[REPLAY_CHARS_PATH]?.value ?? 4000));
+  const editedReplayChars = $derived(
+    String($form$?.drafts[REPLAY_CHARS_PATH] ?? persistedReplayChars),
+  );
+  const replayCharsSaving = $derived($replayOperation$?.status === 'pending');
 
   // Tool payload retention days editing state (persisted value vs input string)
-  let persistedRetentionDays = $state<number>(0);
-  let editedRetentionDays = $state<string>('0');
-  let retentionDaysSaving = $state(false);
+  const persistedRetentionDays = $derived(Number($entries$[RETENTION_DAYS_PATH]?.value ?? 0));
+  const editedRetentionDays = $derived(
+    String($form$?.drafts[RETENTION_DAYS_PATH] ?? persistedRetentionDays),
+  );
+  const retentionDaysSaving = $derived($retentionOperation$?.status === 'pending');
 
-  onMount(async () => {
-    await loadSettings();
+  onMount(() => {
+    appStore.dispatch(settingsFormOpened(identity, 'workspace-api'));
+    appStore.dispatch(
+      settingsFormLoadRequested({ ...identity, requestId: crypto.randomUUID(), resource: 'load' }),
+    );
+    return () => appStore.dispatch(settingsFormClosed(identity));
   });
 
   // A number input bound with bind:value yields a number, or null when blank;
@@ -68,74 +98,28 @@
     return Number(raw);
   }
 
-  async function loadSettings() {
-    try {
-      loading = true;
-      const settings = await appClient.settings.list();
-      const maxChars = settings.find(
-        (s: { path: string; value: unknown }) => s.path === MAX_OUTPUT_CHARS_PATH,
-      );
-      const toon = settings.find(
-        (s: { path: string; value: unknown }) => s.path === TOON_OUTPUT_PATH,
-      );
-      const replayChars = settings.find(
-        (s: { path: string; value: unknown }) => s.path === REPLAY_CHARS_PATH,
-      );
-      const retentionDays = settings.find(
-        (s: { path: string; value: unknown }) => s.path === RETENTION_DAYS_PATH,
-      );
-      if (typeof maxChars?.value === 'number') {
-        persistedMaxOutputChars = maxChars.value;
-        editedMaxOutputChars = String(maxChars.value);
-      }
-      if (typeof replayChars?.value === 'number') {
-        persistedReplayChars = replayChars.value;
-        editedReplayChars = String(replayChars.value);
-      }
-      if (typeof retentionDays?.value === 'number') {
-        persistedRetentionDays = retentionDays.value;
-        editedRetentionDays = String(retentionDays.value);
-      }
-      toonOutput = toon?.value !== false;
-    } catch (error) {
-      notify.error(
-        m.settings_workspaceApi_loadError({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-    } finally {
-      loading = false;
-    }
+  function handleToonToggle(checked: boolean) {
+    if (!selectSettingsForm.select(appStore.state, identity)?.loaded) return;
+    appStore.dispatch(settingsFormDraftChanged(identity, TOON_OUTPUT_PATH, checked));
+    appStore.dispatch(
+      settingsFormSaveRequested(
+        { ...identity, resource: TOON_OUTPUT_PATH, requestId: crypto.randomUUID() },
+        [{ path: TOON_OUTPUT_PATH, value: checked }],
+      ),
+    );
   }
 
-  async function handleToonToggle(checked: boolean) {
-    const previousValue = toonOutput;
-    toonOutput = checked;
-    try {
-      const result = await appClient.settings.update([{ path: TOON_OUTPUT_PATH, value: checked }]);
-
-      // A missing entry means the daemon did not apply the change; treat it
-      // like a rollback.
-      const applied = result.find(
-        (r: { path: string; value: unknown }) => r.path === TOON_OUTPUT_PATH,
-      );
-      if (!applied || applied.value !== checked) {
-        notify.error(m.settings_workspaceApi_toonOutput_rollbackError());
-        toonOutput = applied ? applied.value !== false : !checked;
-        return;
-      }
-    } catch (error) {
-      notify.error(
-        m.settings_workspaceApi_toonOutput_error({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-      toonOutput = previousValue;
-    }
-  }
-
-  async function handleMaxCharsSave() {
-    const newValue = parseIntegerInput(editedMaxOutputChars);
+  function handleMaxCharsSave() {
+    const form = selectSettingsForm.select(appStore.state, identity);
+    if (!form?.loaded) return;
+    const newValue = parseIntegerInput(
+      String(
+        form.drafts[MAX_OUTPUT_CHARS_PATH] ??
+          selectSettingsFormEntries.select(appStore.state, identity)[MAX_OUTPUT_CHARS_PATH]
+            ?.value ??
+          '',
+      ),
+    );
     if (
       !Number.isInteger(newValue) ||
       newValue < 0 ||
@@ -145,118 +129,56 @@
       return; // invalid input, do nothing
     }
 
-    try {
-      maxCharsSaving = true;
-      const result = await appClient.settings.update([
-        { path: MAX_OUTPUT_CHARS_PATH, value: newValue },
-      ]);
-
-      // A missing entry means the daemon did not apply the change; treat it
-      // like a rollback.
-      const applied = result.find(
-        (r: { path: string; value: unknown }) => r.path === MAX_OUTPUT_CHARS_PATH,
-      );
-      if (!applied || applied.value !== newValue) {
-        const rolledBackValue =
-          typeof applied?.value === 'number' ? applied.value : persistedMaxOutputChars;
-        notify.error(m.settings_workspaceApi_maxOutputChars_rollbackError());
-        persistedMaxOutputChars = rolledBackValue;
-        editedMaxOutputChars = String(rolledBackValue);
-        return;
-      }
-
-      persistedMaxOutputChars = newValue;
-      notify.success(m.settings_workspaceApi_maxOutputChars_saved());
-    } catch (error) {
-      notify.error(
-        m.settings_workspaceApi_saveError({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-      editedMaxOutputChars = String(persistedMaxOutputChars);
-    } finally {
-      maxCharsSaving = false;
-    }
+    appStore.dispatch(
+      settingsFormSaveRequested(
+        { ...identity, resource: MAX_OUTPUT_CHARS_PATH, requestId: crypto.randomUUID() },
+        [{ path: MAX_OUTPUT_CHARS_PATH, value: newValue }],
+      ),
+    );
   }
 
-  async function handleReplayCharsSave() {
-    const newValue = parseIntegerInput(editedReplayChars);
+  function handleReplayCharsSave() {
+    const form = selectSettingsForm.select(appStore.state, identity);
+    if (!form?.loaded) return;
+    const newValue = parseIntegerInput(
+      String(
+        form.drafts[REPLAY_CHARS_PATH] ??
+          selectSettingsFormEntries.select(appStore.state, identity)[REPLAY_CHARS_PATH]?.value ??
+          '',
+      ),
+    );
     if (!Number.isInteger(newValue) || newValue < 500 || newValue > 100_000) {
       return; // invalid input, do nothing
     }
 
-    try {
-      replayCharsSaving = true;
-      const result = await appClient.settings.update([
-        { path: REPLAY_CHARS_PATH, value: newValue },
-      ]);
-
-      // A missing entry means the daemon did not apply the change; treat it
-      // like a rollback.
-      const applied = result.find(
-        (r: { path: string; value: unknown }) => r.path === REPLAY_CHARS_PATH,
-      );
-      if (!applied || applied.value !== newValue) {
-        const rolledBackValue =
-          typeof applied?.value === 'number' ? applied.value : persistedReplayChars;
-        notify.error(m.settings_workspaceApi_replayChars_rollbackError());
-        persistedReplayChars = rolledBackValue;
-        editedReplayChars = String(rolledBackValue);
-        return;
-      }
-
-      persistedReplayChars = newValue;
-      notify.success(m.settings_workspaceApi_replayChars_saved());
-    } catch (error) {
-      notify.error(
-        m.settings_workspaceApi_saveError({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-      editedReplayChars = String(persistedReplayChars);
-    } finally {
-      replayCharsSaving = false;
-    }
+    appStore.dispatch(
+      settingsFormSaveRequested(
+        { ...identity, resource: REPLAY_CHARS_PATH, requestId: crypto.randomUUID() },
+        [{ path: REPLAY_CHARS_PATH, value: newValue }],
+      ),
+    );
   }
 
-  async function handleRetentionDaysSave() {
-    const newValue = parseIntegerInput(editedRetentionDays);
+  function handleRetentionDaysSave() {
+    const form = selectSettingsForm.select(appStore.state, identity);
+    if (!form?.loaded) return;
+    const newValue = parseIntegerInput(
+      String(
+        form.drafts[RETENTION_DAYS_PATH] ??
+          selectSettingsFormEntries.select(appStore.state, identity)[RETENTION_DAYS_PATH]?.value ??
+          '',
+      ),
+    );
     if (!Number.isInteger(newValue) || newValue < 0 || newValue > 3650) {
       return; // invalid input, do nothing
     }
 
-    try {
-      retentionDaysSaving = true;
-      const result = await appClient.settings.update([
-        { path: RETENTION_DAYS_PATH, value: newValue },
-      ]);
-
-      // A missing entry means the daemon did not apply the change; treat it
-      // like a rollback.
-      const applied = result.find(
-        (r: { path: string; value: unknown }) => r.path === RETENTION_DAYS_PATH,
-      );
-      if (!applied || applied.value !== newValue) {
-        const rolledBackValue =
-          typeof applied?.value === 'number' ? applied.value : persistedRetentionDays;
-        notify.error(m.settings_workspaceApi_retentionDays_rollbackError());
-        persistedRetentionDays = rolledBackValue;
-        editedRetentionDays = String(rolledBackValue);
-        return;
-      }
-
-      persistedRetentionDays = newValue;
-      notify.success(m.settings_workspaceApi_retentionDays_saved());
-    } catch (error) {
-      notify.error(
-        m.settings_workspaceApi_saveError({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-      editedRetentionDays = String(persistedRetentionDays);
-    } finally {
-      retentionDaysSaving = false;
-    }
+    appStore.dispatch(
+      settingsFormSaveRequested(
+        { ...identity, resource: RETENTION_DAYS_PATH, requestId: crypto.randomUUID() },
+        [{ path: RETENTION_DAYS_PATH, value: newValue }],
+      ),
+    );
   }
   const schema = $derived.by(() =>
     defineSettings({
@@ -324,7 +246,11 @@
       type="number"
       min="0"
       max="10000000"
-      bind:value={editedMaxOutputChars}
+      value={editedMaxOutputChars}
+      oninput={(event) =>
+        appStore.dispatch(
+          settingsFormDraftChanged(identity, MAX_OUTPUT_CHARS_PATH, event.currentTarget.value),
+        )}
       disabled={maxCharsSaving || loading}
       aria-label={m.settings_workspaceApi_maxOutputChars_ariaLabel()}
       aria-labelledby={labelId}
@@ -354,7 +280,11 @@
       type="number"
       min="500"
       max="100000"
-      bind:value={editedReplayChars}
+      value={editedReplayChars}
+      oninput={(event) =>
+        appStore.dispatch(
+          settingsFormDraftChanged(identity, REPLAY_CHARS_PATH, event.currentTarget.value),
+        )}
       disabled={replayCharsSaving || loading}
       aria-label={m.settings_workspaceApi_replayChars_ariaLabel()}
       aria-describedby={[descriptionId, errorId].filter(Boolean).join(' ') || undefined}
@@ -386,7 +316,11 @@
       type="number"
       min="0"
       max="3650"
-      bind:value={editedRetentionDays}
+      value={editedRetentionDays}
+      oninput={(event) =>
+        appStore.dispatch(
+          settingsFormDraftChanged(identity, RETENTION_DAYS_PATH, event.currentTarget.value),
+        )}
       disabled={retentionDaysSaving || loading}
       aria-label={m.settings_workspaceApi_retentionDays_ariaLabel()}
       aria-describedby={[descriptionId, errorId].filter(Boolean).join(' ') || undefined}

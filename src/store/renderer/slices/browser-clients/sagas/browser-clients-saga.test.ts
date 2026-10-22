@@ -3,12 +3,19 @@ import { runSaga, stdChannel } from 'redux-saga';
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
+  reconnect: undefined as undefined | (() => void),
   ownClientId: vi.fn(),
   getBrowserClient: vi.fn(),
   setBrowserClient: vi.fn(),
   navigateTab: vi.fn(),
   closeTab: vi.fn(),
   toastError: vi.fn(),
+}));
+vi.mock('$lib/client/live/backend-transport', () => ({
+  onBackendReconnected: (fn: () => void) => {
+    mocks.reconnect = fn;
+    return () => {};
+  },
 }));
 vi.mock('$lib/client', () => ({
   appClient: {
@@ -27,7 +34,7 @@ vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: mocks.toast
 
 import type { LiveClient } from '$shared/types/browser-clients';
 import { resolveDrivingClientView } from '$lib/components/workspace/driving-indicator';
-import type { StoreAction } from '@augmentcode/themis/utils/store/create-action';
+import type { StoreAction } from '@themislib/themis/types';
 import type { StoreState } from '../../../types';
 import { removeWorkspaceEntity } from '../../workspace/workspace-slice';
 import { selectWorkspaceDrivingClient } from '../browser-clients-selectors';
@@ -35,10 +42,10 @@ import {
   initialState as lifecycleInitialState,
   workspaceDeleted,
   workspaceLifecycleReducer,
-  workspaceMounted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
+  browserClientsConsumerMounted,
   browserClientsReducer,
   browserTabClosed,
   closeBrowserTabRequested,
@@ -51,6 +58,8 @@ import {
   workspaceBrowserClientReceived,
 } from '../browser-clients-slice';
 import { browserClientsSaga } from './browser-clients-saga';
+
+const mountBrowserConsumer = (id: string) => browserClientsConsumerMounted(id, 'test-browser');
 
 const settle = async () => {
   for (let i = 0; i < 4; i++) await Promise.resolve();
@@ -106,24 +115,43 @@ function startWithReducer() {
 }
 
 describe('browserClientsSaga', () => {
+  it('keeps workspace client lists separate and discards replies from the old connection', async () => {
+    const oldA = deferred<LiveClient[]>();
+    mocks.list.mockImplementation((id: string) =>
+      id === 'A' ? oldA.promise : Promise.resolve([{ ...desk, clientId: 'B-client' }]),
+    );
+    const run = startWithReducer();
+    run.dispatch(refreshLiveClientsRequested('A'));
+    run.dispatch(refreshLiveClientsRequested('B'));
+    await settle();
+    expect(run.entry('B').liveClients?.ids).toEqual(['B-client']);
+    mocks.reconnect?.();
+    oldA.resolve([{ ...desk, clientId: 'old-A' }]);
+    await settle();
+    expect(run.entry('A')?.liveClients?.ids ?? []).toEqual([]);
+    expect(mocks.list).toHaveBeenCalledWith('A');
+    expect(mocks.list).toHaveBeenCalledWith('B');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mocks.list.mockResolvedValue([desk]);
     mocks.ownClientId.mockResolvedValue('cli-desk');
   });
 
-  it('hydrate probes the own clientId, then reads client.list once', async () => {
+  it('identity hydration does not read a roster without browser consumers', async () => {
     const { channel, task, dispatched } = start();
     channel.put(hydrateBrowserClientsRequested());
     await settle();
     task.cancel();
 
     expect(mocks.ownClientId).toHaveBeenCalledTimes(1);
-    expect(mocks.list).toHaveBeenCalledTimes(1);
+    expect(mocks.list).not.toHaveBeenCalled();
     expect(dispatched()).toEqual([
       { type: 'browserClients/ownClientIdReceived', payload: ['cli-desk'] },
       { type: 'browserClients/refreshLiveClientsRequested', payload: [] },
-      { type: 'browserClients/liveClientsReceived', payload: [[desk]] },
     ]);
   });
 
@@ -132,10 +160,10 @@ describe('browserClientsSaga', () => {
     mocks.list.mockReturnValueOnce(first.promise);
     const { channel, task, dispatched } = start();
 
-    channel.put(refreshLiveClientsRequested());
-    channel.put(refreshLiveClientsRequested());
-    channel.put(refreshLiveClientsRequested());
-    channel.put(refreshLiveClientsRequested());
+    channel.put(refreshLiveClientsRequested('ws-1'));
+    channel.put(refreshLiveClientsRequested('ws-1'));
+    channel.put(refreshLiveClientsRequested('ws-1'));
+    channel.put(refreshLiveClientsRequested('ws-1'));
     await settle();
     expect(mocks.list).toHaveBeenCalledTimes(1);
 
@@ -145,39 +173,39 @@ describe('browserClientsSaga', () => {
 
     expect(mocks.list).toHaveBeenCalledTimes(2);
     expect(dispatched().filter((a) => a.type === 'browserClients/liveClientsReceived')).toEqual([
-      { type: 'browserClients/liveClientsReceived', payload: [[]] },
-      { type: 'browserClients/liveClientsReceived', payload: [[desk]] },
+      { type: 'browserClients/liveClientsReceived', payload: [[], 'ws-1'] },
+      { type: 'browserClients/liveClientsReceived', payload: [[desk], 'ws-1'] },
     ]);
   });
 
   it('swallows a failed client.list read without dispatching a snapshot', async () => {
     mocks.list.mockRejectedValueOnce(new Error('transport down'));
     const { channel, task, dispatched } = start();
-    channel.put(refreshLiveClientsRequested());
+    channel.put(refreshLiveClientsRequested('ws-1'));
     await settle();
     task.cancel();
 
     expect(dispatched().filter((a) => a.type === 'browserClients/liveClientsReceived')).toEqual([]);
   });
 
-  it('hydrates once on the first workspace mount, then only reads that workspace browser client', async () => {
+  it('hydrates identity once and reads a separate client list for each workspace', async () => {
     const browserClient = { source: 'default', resolved: { clientId: 'cli-desk' } };
     mocks.getBrowserClient.mockResolvedValue(browserClient);
     const { dispatch, task, entry } = startWithReducer();
 
-    dispatch(workspaceMounted('ws-1'));
+    dispatch(mountBrowserConsumer('ws-1'));
     await settle();
     expect(mocks.ownClientId).toHaveBeenCalledTimes(1);
     expect(mocks.list).toHaveBeenCalledTimes(1);
     expect(mocks.getBrowserClient.mock.calls).toEqual([['ws-1']]);
     expect(entry('ws-1').browserClient).toEqual(browserClient);
 
-    dispatch(workspaceMounted('ws-2'));
+    dispatch(mountBrowserConsumer('ws-2'));
     await settle();
     task.cancel();
 
     expect(mocks.ownClientId).toHaveBeenCalledTimes(1);
-    expect(mocks.list).toHaveBeenCalledTimes(1);
+    expect(mocks.list.mock.calls).toEqual([['ws-1'], ['ws-2']]);
     expect(mocks.getBrowserClient.mock.calls).toEqual([['ws-1'], ['ws-2']]);
     expect(entry('ws-2').browserClient).toEqual(browserClient);
   });
@@ -192,11 +220,11 @@ describe('browserClientsSaga', () => {
       mocks.getBrowserClient.mockResolvedValue(pinnedLaptop);
       const { dispatch, task } = startWithReducer();
 
-      dispatch(workspaceMounted('ws-1'));
+      dispatch(mountBrowserConsumer('ws-1'));
       await settle();
       expect(mocks.getBrowserClient.mock.calls).toEqual([['ws-1']]);
 
-      dispatch(workspaceMounted('ws-2'));
+      dispatch(mountBrowserConsumer('ws-2'));
       await settle();
       dispatch(workspaceUnmounted('ws-2'));
       await settle();
@@ -206,7 +234,7 @@ describe('browserClientsSaga', () => {
       await settle();
       task.cancel();
 
-      expect(mocks.list).toHaveBeenCalledTimes(2);
+      expect(mocks.list).toHaveBeenCalledTimes(3);
       expect(mocks.getBrowserClient.mock.calls).toEqual([['ws-1']]);
     });
 
@@ -215,7 +243,7 @@ describe('browserClientsSaga', () => {
       mocks.getBrowserClient.mockResolvedValue(pinnedLaptop);
       const { dispatch, task, entry } = startWithReducer();
 
-      dispatch(workspaceMounted('ws-1'));
+      dispatch(mountBrowserConsumer('ws-1'));
       await settle();
       dispatch(browserTabClosed('ws-9', 'tab-x'));
       expect(entry('ws-9')).toBeDefined();
@@ -233,7 +261,7 @@ describe('browserClientsSaga', () => {
       mocks.getBrowserClient.mockResolvedValue(pinnedLaptop);
       const { dispatch, task } = startWithReducer();
 
-      dispatch(workspaceMounted('ws-1'));
+      dispatch(mountBrowserConsumer('ws-1'));
       await settle();
       const slow = deferred<typeof pinnedLaptop>();
       mocks.getBrowserClient.mockClear();
@@ -264,7 +292,7 @@ describe('browserClientsSaga', () => {
       mocks.getBrowserClient.mockResolvedValue(pinnedLaptop);
       const { dispatch, task, sidebar, entry } = startWithReducer();
 
-      dispatch(workspaceMounted('ws-1'));
+      dispatch(mountBrowserConsumer('ws-1'));
       await settle();
       expect(sidebar('ws-1')).toMatchObject({ mode: 'elsewhere' });
 
@@ -300,6 +328,7 @@ describe('browserClientsSaga', () => {
 
       trailing.resolve(pinnedDesk);
       await settle();
+      expect(mocks.getBrowserClient.mock.calls).toEqual([['ws-1'], ['ws-1']]);
       task.cancel();
       expect(entry('ws-1').browserClient).toEqual(pinnedDesk);
       expect(sidebar('ws-1')).toMatchObject({ mode: 'here' });
@@ -311,7 +340,7 @@ describe('browserClientsSaga', () => {
       mocks.getBrowserClient.mockResolvedValue(pinnedLaptop);
       const { dispatch, task, sidebar, entry } = startWithReducer();
 
-      dispatch(workspaceMounted('ws-1'));
+      dispatch(mountBrowserConsumer('ws-1'));
       await settle();
       expect(sidebar('ws-1')).toMatchObject({ mode: 'elsewhere' });
 
@@ -359,7 +388,7 @@ describe('browserClientsSaga', () => {
       mocks.getBrowserClient.mockResolvedValue(pinnedLaptop);
       const { dispatch, task, sidebar } = startWithReducer();
 
-      dispatch(workspaceMounted('ws-1'));
+      dispatch(mountBrowserConsumer('ws-1'));
       await settle();
       expect(sidebar('ws-1')).toMatchObject({ mode: 'elsewhere', canSwitchHere: true });
 
@@ -383,7 +412,7 @@ describe('browserClientsSaga', () => {
       mocks.getBrowserClient.mockResolvedValue({ source: 'default', resolved: laptop });
       const { dispatch, task, sidebar, entry } = startWithReducer();
 
-      dispatch(workspaceMounted('ws-1'));
+      dispatch(mountBrowserConsumer('ws-1'));
       await settle();
       expect(sidebar('ws-1')).toMatchObject({ mode: 'elsewhere' });
 
@@ -653,7 +682,7 @@ describe('browserClientsSaga', () => {
       mocks.getBrowserClient.mockReturnValueOnce(held.promise).mockReturnValueOnce(fresh.promise);
       const { dispatch, task, entry } = startWithReducer();
 
-      dispatch(workspaceMounted(WS));
+      dispatch(mountBrowserConsumer(WS));
       await settle();
       dispatch(fetchWorkspaceBrowserClientRequested(WS));
       await settle();
@@ -663,7 +692,7 @@ describe('browserClientsSaga', () => {
 
       // The remount's own read is the lane's only call; the pre-unmount
       // trailing trigger was discarded with the lane rather than carried over.
-      dispatch(workspaceMounted(WS));
+      dispatch(mountBrowserConsumer(WS));
       await settle();
       expect(mocks.getBrowserClient).toHaveBeenCalledTimes(2);
 
@@ -680,4 +709,115 @@ describe('browserClientsSaga', () => {
       expect(mocks.getBrowserClient).toHaveBeenCalledTimes(2);
     });
   });
+});
+
+it('workspace routing regression: global invalidation cannot race a workspace list', async () => {
+  const old = deferred<LiveClient[]>();
+  mocks.list
+    .mockReset()
+    .mockReturnValueOnce(old.promise)
+    .mockResolvedValue([{ ...desk, clientId: 'current' }]);
+  mocks.ownClientId.mockResolvedValue('cli-desk');
+  mocks.getBrowserClient.mockResolvedValue({
+    source: 'default',
+    resolved: { clientId: 'cli-desk' },
+  });
+  const run = startWithReducer();
+  try {
+    run.dispatch(mountBrowserConsumer('A'));
+    for (let i = 0; i < 20; i++) await settle();
+    run.dispatch(refreshLiveClientsRequested());
+    for (let i = 0; i < 20; i++) await settle();
+    expect(mocks.list).toHaveBeenCalledTimes(1);
+    old.resolve([{ ...desk, clientId: 'stale' }]);
+    for (let i = 0; i < 20; i++) await settle();
+    expect(run.entry('A').liveClients?.ids).toEqual(['current']);
+  } finally {
+    run.task.cancel();
+    await run.task.toPromise();
+  }
+});
+
+it.each([workspaceUnmounted, workspaceDeleted, removeWorkspaceEntity])(
+  'parallel client refresh cannot resurrect a cleaned workspace (%s)',
+  async (cleanupAction) => {
+    mocks.list.mockReset().mockResolvedValue([desk]);
+    mocks.ownClientId.mockResolvedValue('cli-desk');
+    mocks.getBrowserClient.mockResolvedValue({ source: 'default', resolved: desk });
+    const run = startWithReducer();
+    try {
+      run.dispatch(mountBrowserConsumer('A'));
+      run.dispatch(mountBrowserConsumer('B'));
+      for (let i = 0; i < 20; i++) await settle();
+      const pending = deferred<LiveClient[]>();
+      mocks.list.mockReset().mockReturnValue(pending.promise);
+      run.dispatch(refreshLiveClientsRequested());
+      await settle();
+      expect(mocks.list.mock.calls).toEqual([['A'], ['B']]);
+      run.dispatch(cleanupAction('B'));
+      pending.resolve([{ ...desk, clientId: 'late' }]);
+      for (let i = 0; i < 20; i++) await settle();
+      expect(run.entry('B')).toBeUndefined();
+      expect(run.entry('A').liveClients?.ids).toEqual(['late']);
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  },
+);
+
+it.each([workspaceUnmounted, workspaceDeleted, removeWorkspaceEntity])(
+  'an old client refresh cannot overwrite a remounted consumer (%s)',
+  async (cleanupAction) => {
+    mocks.list.mockReset().mockResolvedValue([desk]);
+    mocks.ownClientId.mockResolvedValue('cli-desk');
+    mocks.getBrowserClient.mockResolvedValue({ source: 'default', resolved: desk });
+    const run = startWithReducer();
+    try {
+      run.dispatch(mountBrowserConsumer('A'));
+      run.dispatch(mountBrowserConsumer('B'));
+      for (let i = 0; i < 20; i++) await settle();
+      const pending = deferred<LiveClient[]>();
+      mocks.list.mockReset().mockReturnValue(pending.promise);
+      run.dispatch(refreshLiveClientsRequested());
+      await settle();
+      run.dispatch(cleanupAction('B'));
+      mocks.list.mockResolvedValue([{ ...desk, clientId: 'remounted-B' }]);
+      run.dispatch(mountBrowserConsumer('B'));
+      for (let i = 0; i < 20; i++) await settle();
+      pending.resolve([{ ...desk, clientId: 'obsolete-B' }]);
+      for (let i = 0; i < 20; i++) await settle();
+      expect(mocks.list.mock.calls).toEqual([['A'], ['B'], ['B']]);
+      expect(run.entry('B').liveClients?.ids).toEqual(['remounted-B']);
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  },
+);
+
+it('reconnect abandons client refreshes from the old connection', async () => {
+  mocks.list.mockReset().mockResolvedValue([desk]);
+  mocks.ownClientId.mockResolvedValue('cli-desk');
+  mocks.getBrowserClient.mockResolvedValue({ source: 'default', resolved: desk });
+  const run = startWithReducer();
+  try {
+    run.dispatch(mountBrowserConsumer('A'));
+    run.dispatch(mountBrowserConsumer('B'));
+    for (let i = 0; i < 20; i++) await settle();
+    const blocked = deferred<LiveClient[]>();
+    mocks.list.mockReset().mockReturnValue(blocked.promise);
+    run.dispatch(refreshLiveClientsRequested());
+    await settle();
+    mocks.list.mockResolvedValue([{ ...desk, clientId: 'new-connection' }]);
+    mocks.reconnect?.();
+    blocked.resolve([{ ...desk, clientId: 'old-connection' }]);
+    for (let i = 0; i < 30; i++) await settle();
+    expect(mocks.list.mock.calls).toEqual([['A'], ['B'], ['A'], ['B']]);
+    expect(run.entry('A').liveClients?.ids).toEqual(['new-connection']);
+    expect(run.entry('B').liveClients?.ids).toEqual(['new-connection']);
+  } finally {
+    run.task.cancel();
+    await run.task.toPromise();
+  }
 });

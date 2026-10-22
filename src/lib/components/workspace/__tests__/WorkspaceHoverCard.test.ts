@@ -4,7 +4,8 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
+import type { ReviewMonitorRow as PrMonitorRow } from '$shared/types/pr-monitor';
+import pollingProducer from '../../../../test/fixtures/qualified-monitor-polling-producer.json';
 import type { AgentMessage, AgentSession, ContentBlock, Workspace } from '$shared/types';
 import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
@@ -18,9 +19,10 @@ import {
   presenceReducer,
   presenceRosterReceived,
 } from '$store/renderer/slices/presence/presence-slice';
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+import { selectPresenceContext } from '$store/renderer/slices/presence/presence-selectors';
 import { selectWorkspacePresencePeople } from '$store/renderer/slices/presence/presence-selectors';
-import type { StoreState } from '$store/renderer/types';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { warmImport } from '../../../../test/warm-import';
 
 vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/') } }));
@@ -79,7 +81,7 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', () => ({
-  selectPrMonitors: vi.fn(mocks.createWorkspaceReadable(() => mocks.prMonitors)),
+  selectReviewMonitors: vi.fn(mocks.createWorkspaceReadable(() => mocks.prMonitors)),
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
@@ -219,6 +221,38 @@ describe('WorkspaceHoverCard', () => {
       for (const key of Object.keys(record)) delete record[key];
     }
     mocks.storeState.state = {};
+  });
+
+  it('distinguishes canonical instances and opens only the selected linked MR', async () => {
+    const source = pollingProducer.fixtures[0].pendingRows[0] as PrMonitorRow;
+    for (const [index, instance] of [
+      'https://gitlab.test/forge',
+      'https://second.example/install',
+      'https://third.example/install',
+    ].entries()) {
+      const row = structuredClone(source);
+      row.monitorId = `instance-${index}`;
+      if (!row.resource) throw Error('Expected qualified producer');
+      row.resource.repository.instanceBaseUrl = instance;
+      row.url = index === 2 ? null : `${instance}/group/project/-/merge_requests/4`;
+      mocks.prMonitors.push(row);
+    }
+    const { container } = await renderHoverCard({
+      activePullRequest: undefined,
+      prNumber: undefined,
+    });
+    for (const host of ['gitlab.test/forge', 'second.example/install']) {
+      const button = screen.getByRole('button', { name: (name) => name.includes(host) });
+      await fireEvent.click(button);
+      await waitFor(() =>
+        expect(mocks.handleLink).toHaveBeenLastCalledWith(
+          `https://${host}/group/project/-/merge_requests/4`,
+          expect.any(Object),
+        ),
+      );
+    }
+    expect(container.querySelectorAll('button[data-workspace-hover-card-pr-row]')).toHaveLength(2);
+    expect(screen.getByRole('listitem', { name: /third.example\/install/ })).toBeTruthy();
   });
 
   it('keeps pull request numbers and status visible in the pull request column', async () => {
@@ -754,15 +788,20 @@ describe('WorkspaceHoverCard', () => {
       presenceMembersReceived('ws-1', [accepted('me', 'owner'), accepted('other', 'collaborator')]),
       presenceRosterReceived({ workspaceId: 'ws-1', members: [online('me'), online('other')] }),
       presenceOwnPrincipalReceived('me'),
-    ].reduce((state, action) => presenceReducer(state, action), presenceInitialState);
-    const state = {
+    ].reduce((state, action) => presenceReducer(state, action), {
+      ...presenceInitialState,
+      context: 'fixture',
+      workspaceIds: ['ws-1'],
+    });
+    const state = withLegacyPrincipal({
       presence,
       workspace: {
         workspaces: createCollection('id', [
           { ...baseWorkspace, id: WorkspaceId('ws-1'), ownerPrincipalId: 'me', memberCount: 2 },
         ]),
       },
-    } as unknown as StoreState;
+    });
+    state.presence.context = selectPresenceContext.select(state);
     // The sidebar's people selector does see the other person in this state.
     expect(selectWorkspacePresencePeople.select(state, 'ws-1')).toHaveLength(1);
     mocks.storeState.state = state;

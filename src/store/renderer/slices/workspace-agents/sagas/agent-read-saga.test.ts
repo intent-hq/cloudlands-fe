@@ -82,7 +82,7 @@ describe('agentReadSaga', () => {
     channel.put(ensureAgentSessionLoaded(WS, AGENT));
     await settle();
 
-    expect(mocks.get).toHaveBeenCalledWith(AGENT);
+    expect(mocks.get).toHaveBeenCalledWith(AGENT, WS);
     const upsert = dispatch.mock.calls.find(
       ([action]) => action.type === bulkUpsertSessions.type,
     )?.[0];
@@ -163,8 +163,8 @@ describe('agentReadSaga', () => {
     channel.put(ensureAgentSessionLoaded(WS, AGENT));
     channel.put(ensureAgentSessionLoaded(WS, otherAgent));
     await settle();
-    expect(mocks.get).toHaveBeenNthCalledWith(1, AGENT);
-    expect(mocks.get).toHaveBeenNthCalledWith(2, otherAgent);
+    expect(mocks.get).toHaveBeenNthCalledWith(1, AGENT, WS);
+    expect(mocks.get).toHaveBeenNthCalledWith(2, otherAgent, WS);
     const completedUpserts = dispatch.mock.calls.filter(
       ([action]) => action.type === bulkUpsertSessions.type,
     );
@@ -237,7 +237,7 @@ describe('agentReadSaga', () => {
     channel.put(ensureAgentSessionLoaded(WS, AGENT));
     await settle();
 
-    expect(mocks.get).toHaveBeenCalledWith(AGENT);
+    expect(mocks.get).toHaveBeenCalledWith(AGENT, WS);
     const upsert = dispatch.mock.calls.find(
       ([action]) => action.type === bulkUpsertSessions.type,
     )?.[0];
@@ -258,7 +258,7 @@ describe('agentReadSaga', () => {
     channel.put(ensureAgentSessionLoaded(WS, AGENT));
     await settle();
 
-    expect(mocks.get).toHaveBeenCalledWith(AGENT);
+    expect(mocks.get).toHaveBeenCalledWith(AGENT, WS);
     expect(
       dispatch.mock.calls.find(([action]) => action.type === bulkUpsertSessions.type),
     ).toBeUndefined();

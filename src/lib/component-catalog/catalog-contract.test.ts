@@ -2,10 +2,14 @@
 // Intentionally update after reviewed fixture/contract changes with:
 // NODE_OPTIONS=--max-old-space-size=4096 pnpm vitest run src/lib/component-catalog/catalog-contract.test.ts --maxWorkers=1 -u
 // Always review the generated snapshot diff before staging it; unrelated churn is not acceptable.
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { cleanup, render, waitFor } from '@testing-library/svelte';
 import axe from 'axe-core';
 import { tick } from 'svelte';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { formatRelativeTime } from '$lib/i18n/format';
 import { canonicalPatternManifest } from '$lib/components/patterns/manifest';
 import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
 import { canonicalComponentManifest } from '$lib/components/ui/manifest';
@@ -14,14 +18,30 @@ import PatternCatalogPreview from './renderers/PatternCatalogPreview.svelte';
 import { getCatalogEntry } from './catalog';
 import type { CatalogRendererId } from './catalog-renderers';
 import { waitForCaptureStability } from './capture-stability';
+import {
+  catalogContractBudgetMs,
+  renderWaitMs,
+  snapshotLineCounts,
+  snapshotLinesFor,
+} from './catalog-contract-budget';
+import { defaultTestTimeoutMs, isCiEnv } from '../../../scripts/vitest-timeouts.mjs';
 import '../../app.css';
 
-// Pin only this suite's absolute timestamps, independent of host TZ and formatter caches (#5200).
+// Pin this suite's timestamp timezone and relative-time reference, keeping real timers.
 vi.mock(import('$lib/i18n/format'), async (importOriginal) => {
   const actual = await importOriginal();
   const { getActiveLocale } = await import('$lib/i18n/locale');
   return {
     ...actual,
+    formatRelativeTime(
+      input: Parameters<typeof actual.formatRelativeTime>[0],
+      options?: Parameters<typeof actual.formatRelativeTime>[1],
+    ) {
+      return actual.formatRelativeTime(input, {
+        ...options,
+        now: options?.now ?? new Date('2026-09-01T12:00:00.000Z'),
+      });
+    },
     formatDateTime(input: Parameters<typeof actual.formatDateTime>[0]) {
       const date = input instanceof Date ? input : new Date(input);
       if (Number.isNaN(date.getTime())) return '';
@@ -103,8 +123,29 @@ const cases: ContractCase[] = [
     fixture,
   })) ?? []),
 ].sort((left, right) => left.key.localeCompare(right.key));
-const slowCases = cases.filter(({ key }) => key === 'product:fields:field-state-matrix');
-const standardCases = cases.filter(({ key }) => key !== 'product:fields:field-state-matrix');
+// Each entry's budget follows its committed DOM snapshot size, so heavy fixtures
+// get time in proportion to what they render (see catalog-contract-budget.ts).
+const CONTRACT_DESCRIBE = 'catalog DOM, token, and accessibility contracts';
+// A filesystem path, not `new URL(…, import.meta.url)`: Vite rewrites that into a dev-server URL.
+const snapshotPath = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '__snapshots__',
+  'catalog-contract.test.ts.snap',
+);
+const snapshotLines = snapshotLineCounts(
+  existsSync(snapshotPath) ? readFileSync(snapshotPath, 'utf8') : '',
+  CONTRACT_DESCRIBE,
+);
+const unsizedKeys = cases
+  .filter(({ key }) => snapshotLinesFor(snapshotLines, key) === undefined)
+  .map(({ key }) => key);
+const budgets = new Map(
+  cases.map(({ key }) => [
+    key,
+    catalogContractBudgetMs(snapshotLinesFor(snapshotLines, key), defaultTestTimeoutMs()),
+  ]),
+);
+const budgetMs = ({ key }: ContractCase) => budgets.get(key)!;
 
 const intentionalAxeAllowlist: Record<string, ReadonlyArray<{ rule: string; reason: string }>> = {
   'pattern:collection:collection-states': [
@@ -133,7 +174,7 @@ function normalizeValue(value: string): string {
   return value
     .replace(/\bsvelte-[a-z0-9]+\b/g, 'svelte-<scope>')
     .replace(/\bbits-[a-z0-9-]+/g, 'bits-<id>')
-    .replace(/\bc[0-9]+(?=-|$)/g, 'c<id>')
+    .replace(/\bc[0-9]+(?=[-\s"']|$)/g, 'c<id>')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -226,7 +267,7 @@ async function verifyCatalogContract(testCase: ContractCase) {
         ),
       ).not.toBeNull();
     },
-    { timeout: 30_000 },
+    { timeout: renderWaitMs(budgetMs(testCase)) },
   );
   await tick();
   await waitForCaptureStability(document.body, { timeoutMs: 2_000 });
@@ -252,9 +293,40 @@ async function verifyCatalogContract(testCase: ContractCase) {
   );
 }
 
+describe('catalog relative-time reference', () => {
+  it.each(['2026-09-29T13:59:59.000Z', '2026-09-29T14:00:01.000Z', '2030-03-15T12:00:00.000Z'])(
+    'keeps fixture time stable when the host date is %s',
+    async (hostDate) => {
+      const actual = await vi.importActual<typeof import('$lib/i18n/format')>('$lib/i18n/format');
+      // Mock Date only: catalog imports, capture stability and cleanup use real timers.
+      vi.setSystemTime(new Date(hostDate));
+      try {
+        expect(vi.isFakeTimers()).toBe(false);
+        expect(new Date().toISOString()).toBe(hostDate);
+        const fixtureDate = '2026-01-02T14:00:00.000Z';
+        expect(formatRelativeTime(fixtureDate)).toBe('8 months ago');
+        const options = { now: new Date('2026-01-02T14:05:00.000Z'), style: 'narrow' as const };
+        expect(formatRelativeTime(fixtureDate, options)).toBe(
+          actual.formatRelativeTime(fixtureDate, options),
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+});
+
 describe('catalog generated identity normalization', () => {
   it.each([
     ['c123', 'c<id>'],
+    ['c123 c124', 'c<id> c<id>'],
+    ['c123\tc124\nc125', 'c<id> c<id> c<id>'],
+    ['"c123"', '"c<id>"'],
+    ["'c123'", "'c<id>'"],
+    [
+      'id="c123" aria-labelledby="c123 c124-label"',
+      'id="c<id>" aria-labelledby="c<id> c<id>-label"',
+    ],
     ['c123-trigger', 'c<id>-trigger'],
     ['c123-group-0 c124-group-1', 'c<id>-group-0 c<id>-group-1'],
     ['c123label', 'c123label'],
@@ -263,7 +335,22 @@ describe('catalog generated identity normalization', () => {
   });
 });
 
-describe.sequential('catalog DOM, token, and accessibility contracts', () => {
-  it.each(standardCases)('$key', verifyCatalogContract);
-  it.each(slowCases)('$key', verifyCatalogContract, 90_000);
+describe('catalog contract budgets', () => {
+  // Without these, an unreadable snapshot or a drift from vitest's title format
+  // would silently put every entry on the fallback budget.
+  it.runIf(existsSync(snapshotPath))('sizes most entries from the committed snapshot', () => {
+    expect(unsizedKeys.length).toBeLessThan(cases.length / 2);
+  });
+
+  // CI never writes new snapshots, so there every entry must resolve to its snapshot.
+  it.runIf(isCiEnv())('sizes every entry from its committed snapshot', () => {
+    expect(unsizedKeys).toEqual([]);
+  });
+});
+
+describe.sequential(CONTRACT_DESCRIBE, () => {
+  // One `it.each` per case keeps the `$key` titles, and so the snapshot keys, unchanged.
+  for (const testCase of cases) {
+    it.each([testCase])('$key', verifyCatalogContract, budgetMs(testCase));
+  }
 });

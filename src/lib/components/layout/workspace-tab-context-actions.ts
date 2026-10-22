@@ -1,10 +1,13 @@
 import { faArrowRight, faLayerGroup, faXmark } from '@fortawesome/free-solid-svg-icons';
 import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
+import { createWorkspaceMicroKeyMenu } from '$features/hardware-console/assignment/workspace-key-menu';
 import { m } from '$shared/paraglide/messages.js';
 
 export type WorkspaceTabBulkCloseMode = 'others' | 'right';
 
 export interface WorkspaceTabContextMenuOptions {
+  microConnected?: boolean;
+  onDismiss?: () => void;
   order: string[];
   workspaceId: string;
   onClose: () => void;
@@ -16,10 +19,18 @@ export function buildWorkspaceTabContextMenu({
   workspaceId,
   onClose,
   onCloseTabs,
+  microConnected = false,
+  onDismiss = () => {},
 }: WorkspaceTabContextMenuOptions): SidebarMenuEntry[] {
   const closeOthers = getWorkspaceTabBulkCloseIds(order, workspaceId, 'others');
   const closeRight = getWorkspaceTabBulkCloseIds(order, workspaceId, 'right');
+  const assignments = createWorkspaceMicroKeyMenu(workspaceId, {
+    connected: microConnected,
+    onClose: onDismiss,
+  });
   return [
+    ...assignments,
+    ...(assignments.length ? [{ type: 'separator' as const }] : []),
     { id: 'close', label: m.layout_panelTabBar_close_label(), icon: faXmark, onClick: onClose },
     { type: 'separator' },
     {

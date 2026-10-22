@@ -83,7 +83,7 @@ const liveClient = (clientId: string, hostname: string): LiveClient => ({
 /** This renderer is `cli-me`; `live` lists the connected clients. */
 function seedClients(live: LiveClient[]) {
   let state = browserClientsReducer(browserClientsInitialState, ownClientIdReceived('cli-me'));
-  state = browserClientsReducer(state, liveClientsReceived(live));
+  state = browserClientsReducer(state, liveClientsReceived(live, 'ws-1'));
   mockState.browserClients = state;
 }
 
@@ -242,7 +242,11 @@ describe('BrowserTabsMenu', () => {
     expect(focusPanelMock).toHaveBeenCalledWith('browser');
     expect(document.activeElement).toBe(browserPanel);
     expect(triggerFocus).not.toHaveBeenCalled();
-    expect(dispatchMock).not.toHaveBeenCalled();
+    const consumerId = dispatchMock.mock.calls[0][0].payload[1];
+    expect(dispatchMock.mock.calls.map(([action]) => action)).toEqual([
+      { type: 'browserClients/consumerMounted', payload: ['ws-1', consumerId] },
+      { type: 'browserClients/consumerUnmounted', payload: ['ws-1', consumerId] },
+    ]);
 
     trigger.focus();
     await fireEvent.click(trigger);
@@ -268,7 +272,14 @@ describe('BrowserTabsMenu', () => {
   });
 });
 
-const dispatchedActions = () => dispatchMock.mock.calls.map(([action]) => action);
+const tabActions = () =>
+  dispatchMock.mock.calls
+    .map(([action]) => action)
+    .filter(
+      (action) =>
+        action.type !== 'browserClients/consumerMounted' &&
+        action.type !== 'browserClients/consumerUnmounted',
+    );
 const closeTabType = closeTab('ws', 't').type;
 const destroyHiddenType = destroyHiddenTabsByOwnerAgent('ws', 'a').type;
 
@@ -283,7 +294,7 @@ describe('permanent close actions (intent#4762)', () => {
 
     await fireEvent.click(closeButtons[0]);
 
-    const close = dispatchedActions().find((a) => a.type === closeTabType);
+    const close = tabActions().find((a) => a.type === closeTabType);
     expect(close?.payload).toMatchObject({
       wsId: 'ws-1',
       tabId: 'visible-1',
@@ -301,7 +312,7 @@ describe('permanent close actions (intent#4762)', () => {
     await fireEvent.click(screen.getByTestId('browser-tabs-trigger'));
     await fireEvent.click(screen.getAllByTestId('browser-tab-close')[1]);
 
-    const actions = dispatchedActions();
+    const actions = tabActions();
     const close = actions.find((a) => a.type === closeTabType);
     expect(close?.payload).toMatchObject({ wsId: 'ws-1', tabId: 'hidden-1', destroy: true });
     expect(
@@ -315,7 +326,7 @@ describe('permanent close actions (intent#4762)', () => {
     await fireEvent.click(screen.getByTestId('browser-tabs-trigger'));
     await fireEvent.click(screen.getByTestId('browser-tabs-close-hidden'));
 
-    const actions = dispatchedActions();
+    const actions = tabActions();
     const bulk = actions.find((a) => a.type === destroyHiddenType);
     expect(bulk?.payload).toMatchObject({ wsId: 'ws-1', agentId: 'agent-1' });
     expect(actions.some((a) => a.type === closeTabType)).toBe(false);
@@ -335,12 +346,12 @@ describe('permanent close actions (intent#4762)', () => {
     await fireEvent.click(screen.getByTestId('browser-tabs-trigger'));
     await fireEvent.click(screen.getAllByTestId('browser-tab-close')[0]);
 
-    expect(dispatchedActions().some((a) => a.type === closeTabType)).toBe(false);
+    expect(tabActions().some((a) => a.type === closeTabType)).toBe(false);
     const dialog = screen.getByRole('dialog');
     expect(dialog.getAttribute('aria-modal')).toBe('true');
 
     await fireEvent.click(screen.getByRole('button', { name: 'Close tab', exact: true }));
-    const close = dispatchedActions().find((a) => a.type === closeTabType);
+    const close = tabActions().find((a) => a.type === closeTabType);
     expect(close?.payload).toMatchObject({ wsId: 'ws-1', tabId: 'visible-1', destroy: true });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
@@ -355,8 +366,8 @@ describe('permanent close actions (intent#4762)', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Cancel', exact: true }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(dispatchedActions().some((a) => a.type === destroyHiddenType)).toBe(false);
-    expect(dispatchedActions().some((a) => a.type === closeTabType)).toBe(false);
+    expect(tabActions().some((a) => a.type === destroyHiddenType)).toBe(false);
+    expect(tabActions().some((a) => a.type === closeTabType)).toBe(false);
   });
 
   it.each(['cancel', 'escape', 'confirm'] as const)(
@@ -386,7 +397,7 @@ describe('permanent close actions (intent#4762)', () => {
 
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
       await waitFor(() => expect(document.activeElement).toBe(trigger));
-      expect(dispatchedActions().filter((a) => a.type === closeTabType)).toHaveLength(
+      expect(tabActions().filter((a) => a.type === closeTabType)).toHaveLength(
         dismissal === 'confirm' ? 1 : 0,
       );
     },
@@ -398,10 +409,10 @@ describe('permanent close actions (intent#4762)', () => {
     renderMenu();
     await fireEvent.click(screen.getByTestId('browser-tabs-trigger'));
     await fireEvent.click(screen.getByTestId('browser-tabs-close-hidden'));
-    expect(dispatchedActions().some((a) => a.type === destroyHiddenType)).toBe(false);
+    expect(tabActions().some((a) => a.type === destroyHiddenType)).toBe(false);
 
     await fireEvent.click(screen.getByRole('button', { name: 'Close hidden tabs', exact: true }));
-    const bulk = dispatchedActions().find((a) => a.type === destroyHiddenType);
+    const bulk = tabActions().find((a) => a.type === destroyHiddenType);
     expect(bulk?.payload).toMatchObject({ wsId: 'ws-1', agentId: 'agent-1' });
   });
 });
@@ -441,7 +452,7 @@ describe('mirrors hosted by another client', () => {
     await fireEvent.click(screen.getByTestId('browser-tabs-trigger'));
     await fireEvent.click(screen.getAllByTestId('browser-tab-close')[1]);
 
-    expect(dispatchedActions()).toEqual([closeBrowserTabRequested('mirror', false)]);
+    expect(tabActions()).toEqual([closeBrowserTabRequested('mirror', false)]);
   });
 
   it('still destroys a tab hosted here locally', async () => {
@@ -451,7 +462,7 @@ describe('mirrors hosted by another client', () => {
     await fireEvent.click(screen.getByTestId('browser-tabs-trigger'));
     await fireEvent.click(screen.getAllByTestId('browser-tab-close')[0]);
 
-    const actions = dispatchedActions();
+    const actions = tabActions();
     expect(actions).toHaveLength(1);
     expect(actions[0].type).toBe(closeTabType);
     expect(actions[0].payload).toMatchObject({ wsId: 'ws-1', tabId: 'mine', destroy: true });
@@ -464,7 +475,7 @@ describe('mirrors hosted by another client', () => {
     await fireEvent.click(screen.getByTestId('browser-tabs-trigger'));
     await fireEvent.click(screen.getAllByTestId('browser-tab-close')[4]);
 
-    expect(dispatchedActions()).toEqual([closeBrowserTabRequested('hidden-mirror', true)]);
+    expect(tabActions()).toEqual([closeBrowserTabRequested('hidden-mirror', true)]);
   });
 
   it('"Close hidden tabs" destroys the hidden tabs hosted here and closes hidden mirrors on their host', async () => {
@@ -474,7 +485,7 @@ describe('mirrors hosted by another client', () => {
     await fireEvent.click(screen.getByTestId('browser-tabs-trigger'));
     await fireEvent.click(screen.getByTestId('browser-tabs-close-hidden'));
 
-    const actions = dispatchedActions();
+    const actions = tabActions();
     expect(actions).toHaveLength(2);
     expect(actions[0].type).toBe(destroyHiddenType);
     expect(actions[0].payload).toMatchObject({
@@ -493,7 +504,7 @@ describe('mirrors hosted by another client', () => {
     await fireEvent.click(screen.getByTestId('browser-tabs-trigger'));
     await fireEvent.click(screen.getByTestId('browser-tabs-close-hidden'));
 
-    expect(dispatchedActions()).toEqual([closeBrowserTabRequested('hidden-mirror', true)]);
+    expect(tabActions()).toEqual([closeBrowserTabRequested('hidden-mirror', true)]);
   });
 });
 
@@ -508,5 +519,5 @@ it('lets keyboard users move between a tab and its close control without reveali
   expect(document.activeElement).toBe(close);
   await fireEvent.keyDown(close, { key: 'ArrowLeft' });
   expect(document.activeElement).toBe(item);
-  expect(dispatchMock).not.toHaveBeenCalled();
+  expect(tabActions()).toEqual([]);
 });

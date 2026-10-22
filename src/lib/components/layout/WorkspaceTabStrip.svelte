@@ -1,5 +1,6 @@
 <script lang="ts">
-  /* eslint-disable max-lines */
+  import { microConnectedReadable } from '$features/hardware-console/device/connection-status';
+  import WorkspaceMicroKeySlot from '$features/hardware-console/components/WorkspaceMicroKeySlot.svelte';
   import { Button } from '$lib/components/ui/button';
   import { goto } from '$app/navigation';
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
@@ -90,6 +91,7 @@
     leadingInsetPx = 28,
     scrollerMarginLeftPx = WORKSPACE_TAB_SCROLLER_MARGIN_LEFT_PX,
   }: Props = $props();
+  const microConnected$ = microConnectedReadable();
   const currentWorkspaceTabId$ = selectCurrentWorkspaceTabId();
   const workspaceTabOrder$ = selectWorkspaceTabOrder();
   const workspaceItems$ = selectWorkspaceItems();
@@ -182,6 +184,8 @@
       workspaceId,
       onClose: () => closeWorkspace(workspaceId),
       onCloseTabs: closeWorkspaceTabs,
+      microConnected: $microConnected$,
+      onDismiss: () => (tabContextMenu = null),
     });
   });
   const run = (sync: boolean, fn: () => void) => (sync ? flushSync(fn) : fn());
@@ -202,7 +206,6 @@
     });
   }
   onMount(() => {
-    activeStreamsTracker.startPolling();
     const unsubscribe = activeStreamsTracker.subscribe(() => activeStreamsVersion++);
     const unsubscribeTabState = appStore.getReadableState().subscribe((state) => {
       const nextTabOrder = selectWorkspaceTabOrder.select(state);
@@ -885,12 +888,14 @@
     data-workspace-tab-list
   ></div>
   <!-- Clipped tabs must not carve titlebar no-drag holes. The lead-in keeps
-       the flare visible; the right margin reserves the launcher gap on overflow. -->
+       the flare visible; the right margin reserves the launcher gap on overflow.
+       Flex shrinking bounds the strip. A percentage max-width against the intrinsic
+       parent feeds the negative margin back into overflow when no launcher exists. -->
   <div
     bind:this={stripElement}
     data-workspace-tab-scroller
     class={cn(
-      'flex w-fit min-w-0 max-w-[100%] items-center gap-0.5 overflow-x-auto overflow-y-hidden pr-3 scrollbar-none transition-[padding-left,margin-right] motion-reduce:transition-none',
+      'flex w-fit min-w-0 items-center gap-0.5 overflow-x-auto overflow-y-hidden pr-3 scrollbar-none transition-[padding-left,margin-right] motion-reduce:transition-none',
       isOverflowing ? 'mr-1' : '-mr-2.5',
       draggedWorkspaceId && 'cursor-grabbing',
     )}
@@ -1007,7 +1012,7 @@
                 showArrow={false}
                 maxWidth="none"
                 class="absolute -inset-px rounded-[inherit]"
-                contentClass="border-0 bg-transparent p-0 shadow-none"
+                contentClass="border-0! bg-transparent! p-0! shadow-none!"
                 contentContainerClass="space-y-0! p-0!"
               >
                 {#snippet content()}
@@ -1031,6 +1036,7 @@
                   id={`workspace-tab-${workspaceId}`}
                   data-workspace-tab-hover-trigger
                 >
+                  <WorkspaceMicroKeySlot {workspaceId} size="compact" />
                   <span
                     class={cn('min-w-0 flex-1 truncate', isArchived && 'opacity-60')}
                     data-workspace-tab-title>{workspaceTitle}</span

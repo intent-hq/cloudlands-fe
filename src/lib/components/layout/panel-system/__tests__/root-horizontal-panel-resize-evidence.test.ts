@@ -197,6 +197,12 @@ function startProductionSaga() {
       channel: sagaChannel,
       dispatch: (action) => appStore.dispatch(action),
       getState: () => appStore.state,
+      context: {
+        reduxStore: {
+          getState: () => appStore.state,
+          subscribe: (listener: () => void) => appStore.getReadableState().subscribe(listener),
+        },
+      },
     },
     panelLayoutSaga,
   );

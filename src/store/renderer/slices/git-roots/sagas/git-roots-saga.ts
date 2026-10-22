@@ -1,11 +1,11 @@
 import { END, buffers, eventChannel, type EventChannel } from 'redux-saga';
 import type { Task } from 'redux-saga';
-import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
+import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 import { call, cancel, delay, put, spawn, take, type SagaGenerator } from 'typed-redux-saga';
 
 import { createLogger } from '$lib/utils/client-logger';
 import { gitRootsUpdated } from '../git-roots-slice';
-import { selectActiveWorkspaceIds } from '../../tab-state/tab-state-selectors';
+import { selectGitRootConsumerWorkspaceIds } from '../git-roots-selectors';
 import { subscribeGitRoots, type GitRootRow } from '$features/git-roots/git-roots-service';
 
 const logger = createLogger('GitRootsSaga');
@@ -67,7 +67,7 @@ function* reconcileGitRootsSubscriptions(
 }
 
 function* watchActiveWorkspaces(active: Map<string, SubscriptionEntry>): SagaGenerator<void> {
-  const initialWorkspaceIds = yield* selectActiveWorkspaceIds.effect();
+  const initialWorkspaceIds = yield* selectGitRootConsumerWorkspaceIds.effect();
   // Init to now (not 0, unlike the pr-monitor/background-hooks watchers):
   // the inline reconcile below already covers the leading edge, so a change
   // arriving within the window of saga start is trailing-debounced.
@@ -75,7 +75,7 @@ function* watchActiveWorkspaces(active: Map<string, SubscriptionEntry>): SagaGen
   yield* reconcileGitRootsSubscriptions(active, initialWorkspaceIds);
 
   yield* takeLatestFromSelector(
-    selectActiveWorkspaceIds,
+    selectGitRootConsumerWorkspaceIds,
     function* ({ payload }: SelectorChannelPayload<string[]>) {
       // Leading edge is immediate: only a change arriving within the window
       // of the previous one is trailing-debounced (takeLatest cancels the

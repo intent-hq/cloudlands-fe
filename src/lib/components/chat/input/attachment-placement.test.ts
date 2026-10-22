@@ -8,6 +8,8 @@
  * through the `file.getAttachmentInfo` key arm.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { CURRENT_PROTOCOL_VERSION } from '../../../../test/current-protocol-version';
+import { parseProtocolVersion, type ProtocolVersion } from '$shared/protocol-version';
 
 const invokeMock = vi.hoisted(() => vi.fn());
 const backendRequestMock = vi.hoisted(() => vi.fn());
@@ -16,7 +18,7 @@ const mockState = vi.hoisted(() => ({
   daemonHealth: {
     hostLocality: null as 'local' | 'remote' | null,
     transport: null as { mode: string } | null,
-    stats: null as { protocolVersion?: string } | null,
+    stats: null as { protocolVersion?: ProtocolVersion | null } | null,
   },
 }));
 
@@ -106,22 +108,24 @@ beforeEach(() => {
 
 describe('supportsIdempotentPlacementProtocol', () => {
   it(/* protocol-version-ok: gate threshold */ 'accepts 9.13+, rejects older and unknown', () => {
-    expect(supportsIdempotentPlacementProtocol('9.13')).toBe(true);
-    expect(supportsIdempotentPlacementProtocol('9.14')).toBe(true);
-    expect(supportsIdempotentPlacementProtocol('10.0')).toBe(true);
-    expect(supportsIdempotentPlacementProtocol('9.12')).toBe(false);
-    expect(supportsIdempotentPlacementProtocol('9')).toBe(false);
-    expect(supportsIdempotentPlacementProtocol('8.20')).toBe(false);
-    expect(supportsIdempotentPlacementProtocol(undefined)).toBe(false);
-    expect(supportsIdempotentPlacementProtocol(null)).toBe(false);
-    expect(supportsIdempotentPlacementProtocol('')).toBe(false);
-    expect(supportsIdempotentPlacementProtocol('beta')).toBe(false);
+    expect(supportsIdempotentPlacementProtocol(parseProtocolVersion('9.13'))).toBe(true);
+    expect(supportsIdempotentPlacementProtocol(parseProtocolVersion('9.14'))).toBe(true);
+    expect(supportsIdempotentPlacementProtocol(parseProtocolVersion('10.0'))).toBe(true);
+    expect(supportsIdempotentPlacementProtocol(parseProtocolVersion('9.12'))).toBe(false);
+    expect(supportsIdempotentPlacementProtocol(parseProtocolVersion('9'))).toBe(false);
+    expect(supportsIdempotentPlacementProtocol(parseProtocolVersion('8.20'))).toBe(false);
+    expect(supportsIdempotentPlacementProtocol(parseProtocolVersion(undefined))).toBe(false);
+    expect(supportsIdempotentPlacementProtocol(parseProtocolVersion(null))).toBe(false);
+    expect(supportsIdempotentPlacementProtocol(parseProtocolVersion(''))).toBe(false);
+    expect(supportsIdempotentPlacementProtocol(parseProtocolVersion('beta'))).toBe(false);
   });
 });
 
 describe('mintPlacementIdempotencyKey', () => {
   it('mints a fresh UUID per call against a daemon with keyed placement', () => {
-    mockState.daemonHealth.stats = { protocolVersion: '9.13' };
+    mockState.daemonHealth.stats = {
+      protocolVersion: parseProtocolVersion(CURRENT_PROTOCOL_VERSION),
+    };
     const a = mintPlacementIdempotencyKey();
     const b = mintPlacementIdempotencyKey();
     expect(a).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
@@ -130,14 +134,16 @@ describe('mintPlacementIdempotencyKey', () => {
 
   it('mints nothing before the version is known or against an older daemon', () => {
     expect(mintPlacementIdempotencyKey()).toBeUndefined();
-    mockState.daemonHealth.stats = { protocolVersion: '9.12' };
+    mockState.daemonHealth.stats = { protocolVersion: parseProtocolVersion('9.12') }; // fixture-protocol-version: older daemon without keyed placement
     expect(mintPlacementIdempotencyKey()).toBeUndefined();
   });
 
   it('reuses the retained key against a daemon with keyed placement, drops it against one without', () => {
-    mockState.daemonHealth.stats = { protocolVersion: '9.13' };
+    mockState.daemonHealth.stats = {
+      protocolVersion: parseProtocolVersion(CURRENT_PROTOCOL_VERSION),
+    };
     expect(mintPlacementIdempotencyKey(KEY)).toBe(KEY);
-    mockState.daemonHealth.stats = { protocolVersion: '9.12' };
+    mockState.daemonHealth.stats = { protocolVersion: parseProtocolVersion('9.12') }; // fixture-protocol-version: older daemon without keyed placement
     expect(mintPlacementIdempotencyKey(KEY)).toBeUndefined();
   });
 });
@@ -317,25 +323,25 @@ describe('placeAttachmentViaTransport — chunked upload (>25MB remote)', () => 
     expect(backendRequestMock).toHaveBeenNthCalledWith(
       2,
       'file.attachmentUpload.chunk',
-      { uploadId: 'upload-1', seq: 0, data: 'b64-chunk-0' },
+      { workspaceId: 'ws-1', uploadId: 'upload-1', seq: 0, data: 'b64-chunk-0' },
       UPLOAD_TRANSFER_TIMEOUT,
     );
     expect(backendRequestMock).toHaveBeenNthCalledWith(
       3,
       'file.attachmentUpload.chunk',
-      { uploadId: 'upload-1', seq: 1, data: 'b64-chunk-1' },
+      { workspaceId: 'ws-1', uploadId: 'upload-1', seq: 1, data: 'b64-chunk-1' },
       UPLOAD_TRANSFER_TIMEOUT,
     );
     expect(backendRequestMock).toHaveBeenNthCalledWith(
       4,
       'file.attachmentUpload.chunk',
-      { uploadId: 'upload-1', seq: 2, data: 'b64-chunk-2' },
+      { workspaceId: 'ws-1', uploadId: 'upload-1', seq: 2, data: 'b64-chunk-2' },
       UPLOAD_TRANSFER_TIMEOUT,
     );
     expect(backendRequestMock).toHaveBeenNthCalledWith(
       5,
       'file.attachmentUpload.commit',
-      { uploadId: 'upload-1' },
+      { workspaceId: 'ws-1', uploadId: 'upload-1' },
       UPLOAD_TRANSFER_TIMEOUT,
     );
     expect(backendRequestMock).toHaveBeenCalledTimes(5);
@@ -396,6 +402,7 @@ describe('placeAttachmentViaTransport — chunked upload (>25MB remote)', () => 
     ).rejects.toThrow('received bytes exceed the declared attachment size');
 
     expect(backendRequestMock).toHaveBeenCalledWith('file.attachmentUpload.abort', {
+      workspaceId: 'ws-1',
       uploadId: 'upload-1',
     });
     const commitCalls = backendRequestMock.mock.calls.filter(
@@ -424,6 +431,7 @@ describe('placeAttachmentViaTransport — chunked upload (>25MB remote)', () => 
       placeAttachmentViaTransport('ws-1', 'big.bin', { sourcePath: '/home/user/big.bin' }),
     ).rejects.toThrow('attachment checksum mismatch');
     expect(backendRequestMock).toHaveBeenCalledWith('file.attachmentUpload.abort', {
+      workspaceId: 'ws-1',
       uploadId: 'upload-1',
     });
   });
@@ -479,6 +487,7 @@ describe('placeAttachmentViaTransport — chunked upload (>25MB remote)', () => 
     ).toHaveLength(1);
     expect(methods).not.toContain('file.attachmentUpload.commit');
     expect(backendRequestMock).toHaveBeenCalledWith('file.attachmentUpload.abort', {
+      workspaceId: 'ws-1',
       uploadId: 'upload-1',
     });
   });
@@ -545,7 +554,9 @@ describe('placeAttachmentViaTransport — chunked upload (>25MB remote)', () => 
 
 describe('placeAttachmentViaTransport — idempotencyKey (keyed placement)', () => {
   beforeEach(() => {
-    mockState.daemonHealth.stats = { protocolVersion: '9.13' };
+    mockState.daemonHealth.stats = {
+      protocolVersion: parseProtocolVersion(CURRENT_PROTOCOL_VERSION),
+    };
   });
 
   it('threads the key onto the sourcePath arm (local sidecar)', async () => {
@@ -566,7 +577,7 @@ describe('placeAttachmentViaTransport — idempotencyKey (keyed placement)', () 
   });
 
   it('sends no key when none was minted (older daemon — behavior unchanged)', async () => {
-    mockState.daemonHealth.stats = { protocolVersion: '9.12' };
+    mockState.daemonHealth.stats = { protocolVersion: parseProtocolVersion('9.12') }; // fixture-protocol-version: older daemon without keyed placement
     placeAttachmentMock.mockResolvedValueOnce(placedResult);
 
     await placeAttachmentViaTransport('ws-1', 'notes.txt', {
@@ -582,7 +593,7 @@ describe('placeAttachmentViaTransport — idempotencyKey (keyed placement)', () 
 
   it('drops a key retained across a reconnect to a daemon without keyed placement (no key sent, no lookup)', async () => {
     // The item kept its key from a keyed-placement session; the daemon connected now lacks it.
-    mockState.daemonHealth.stats = { protocolVersion: '9.12' };
+    mockState.daemonHealth.stats = { protocolVersion: parseProtocolVersion('9.12') }; // fixture-protocol-version: older daemon without keyed placement
     placeAttachmentMock.mockRejectedValueOnce(transportLoss());
 
     await expect(
@@ -720,7 +731,9 @@ describe('placeAttachmentViaTransport — chunked upload with idempotencyKey (ke
 
   beforeEach(() => {
     mockState.daemonHealth.hostLocality = 'remote';
-    mockState.daemonHealth.stats = { protocolVersion: '9.13' };
+    mockState.daemonHealth.stats = {
+      protocolVersion: parseProtocolVersion(CURRENT_PROTOCOL_VERSION),
+    };
     mockChunkedIpc(FILE_SIZE);
   });
 
@@ -843,6 +856,7 @@ describe('placeAttachmentViaTransport — chunked upload with idempotencyKey (ke
       }),
     ).rejects.toThrow('Request timed out');
     expect(backendRequestMock).toHaveBeenCalledWith('file.attachmentUpload.abort', {
+      workspaceId: 'ws-1',
       uploadId: 'upload-1',
     });
   });

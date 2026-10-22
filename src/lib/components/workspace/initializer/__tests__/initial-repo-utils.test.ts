@@ -182,6 +182,31 @@ describe('getLastSelectedRepoHydrationAction', () => {
     ).toBe('wait');
   });
 
+  it('offers a default new folder for an admitted member on an empty host', () => {
+    const emptyMember = {
+      ...readyInput,
+      hasLastSelectedRepo: false,
+      recentRepos: [],
+      canCreateMember: true,
+    };
+    expect(getLastSelectedRepoHydrationAction(emptyMember)).toBe('create-member-default');
+  });
+
+  it('never replaces a member explicit path or prefill, and waits without admission', () => {
+    const member = {
+      ...readyInput,
+      hasLastSelectedRepo: false,
+      recentRepos: [],
+      canCreateMember: true,
+    };
+    expect(getLastSelectedRepoHydrationAction({ ...member, currentRepoPath: '/chosen' })).toBe(
+      'skip',
+    );
+    expect(getLastSelectedRepoHydrationAction({ ...member, hasPrefillData: true })).toBe('wait');
+    expect(getLastSelectedRepoHydrationAction({ ...member, canCreateMember: false })).toBe('wait');
+    expect(getLastSelectedRepoHydrationAction({ ...member, isHydrated: false })).toBe('wait');
+  });
+
   it('skips when persistence is disabled', () => {
     expect(
       getLastSelectedRepoHydrationAction({ ...readyInput, isFormPersistenceEnabled: false }),

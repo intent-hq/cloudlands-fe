@@ -1,4 +1,8 @@
 <script lang="ts">
+  import { browserClientConsumer } from '$features/browser/browser-client-consumer';
+
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
+  import { selectCanShareWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
   import { Input } from '$lib/components/ui/input';
   import { Textarea } from '$lib/components/ui/textarea';
   /* eslint-disable max-lines */
@@ -12,6 +16,7 @@
     selectWorkspaceTasksInitialized,
   } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import Fa from 'svelte-fa';
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import {
     faArrowRight,
     faCodeBranch,
@@ -63,7 +68,6 @@
     selectAcceptChangesStatusLoading,
   } from '$store/renderer/slices/git/git-selectors';
   import FlameGraph from './FlameGraph.svelte';
-  import WorkspaceTokenUsage from './WorkspaceTokenUsage.svelte';
 
   import {
     requestArchiveWorkspace,
@@ -86,37 +90,29 @@
   import { store as appStore } from '$store/renderer/store';
   import { openTransferModal } from '$store/renderer/slices/workspace-transfer/workspace-transfer-slice';
   import { openShareDialog } from '$store/renderer/slices/workspace-share/workspace-share-slice';
-  import { selectLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import { selectWorkspaceDrivingClient } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
+  import {
+    selectWorkspaceDrivingClient,
+    selectWorkspaceBrowserSelectionKnown,
+    selectOwnClientIdConfirmed,
+  } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
   import { setWorkspaceBrowserClientRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
   import { selectWorkspaceHasBrowserTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import DrivingClientIndicator from '$lib/components/workspace/DrivingClientIndicator.svelte';
   import SetPrimaryClientConfirmDialog from '$lib/components/workspace/SetPrimaryClientConfirmDialog.svelte';
-  import { resolveDrivingClientSwitch } from '$lib/components/workspace/driving-indicator';
-  import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
-  import {
-    presencePersonName,
-    type PresenceCircle,
-    type PresenceCircleAction,
-  } from '$features/presence/components/presence-person';
-  import {
-    selectWorkspacePresenceFocusTargets,
-    selectWorkspacePresencePeople,
-  } from '$store/renderer/slices/presence/presence-selectors';
-  import { findSourcePanelId, navigateToNote } from '$lib/utils/workspace-navigation';
-  import { isCmdClickModifier } from '$shared/utils/link-helpers';
-  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { selectCanSetWorkspacePrimaryClient } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
+  import { browserClientDisplayName } from '$lib/components/workspace/driving-indicator';
 
   const readyLogger = createLogger('ReadyTasks');
 
   interface Props {
     workspaceId?: string;
+    active?: boolean;
     onOpenNote?: (noteId: string) => void;
     onAcceptChanges?: () => void;
   }
 
-  let { workspaceId, onOpenNote: _onOpenNote, onAcceptChanges }: Props = $props();
+  let { workspaceId, active = true, onOpenNote: _onOpenNote, onAcceptChanges }: Props = $props();
 
   const workspaceIdStore = writable('');
   $effect(() => {
@@ -132,13 +128,11 @@
   const hidesOwnerActions$ = selectHidesOwnerWorkspaceActions(workspaceIdStore);
   // Sharing is a lab: the Share entry point stays hidden until the user turns
   // the Multiplayer lab on in Settings → Labs (local preference, off by default).
-  const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
   // BE-owned task progress rollup served verbatim from the workspace-tasks slice
-  // (PROTOCOL §5.4 `task.list`.stats). The renderer never re-derives counts.
+  // (workspace.list §5.1 or task.list §5.4). The renderer never re-derives counts.
   const taskStats$ = selectWorkspaceTaskProgress(workspaceIdStore);
-  // Gate the progress placeholder on "not yet initialized" rather than "any
-  // fetch in flight" so event-driven refetches never remount the bar and
-  // replay its entrance animation (the flex-grow transition animates the diff).
+  // Aggregate progress is ready from workspace.list even when no chat has
+  // requested individual task rows. Refreshes must not replay the placeholder.
   const tasksInitialized$ = selectWorkspaceTasksInitialized(workspaceIdStore);
 
   // Aggregated presentational inputs for the workspace progress selectors. Kept
@@ -189,6 +183,7 @@
       ? `${$workspace.repositoryOwner}/${$workspace.repositoryName}`
       : ($workspace?.repositoryPath?.split('/').pop() ?? 'Repository'),
   );
+  const statusDescriptionId = $props.id();
   const currentStatusMessage = $derived($workspace?.statusMessage?.trim() ?? '');
 
   // Agent-authored status screenshot (intent-hq/monorepo#997). Content-addressed
@@ -436,17 +431,18 @@
   // neither does a guest window or a window whose identity has not settled
   // (`selectHidesOwnerWorkspaceActions`), whatever `myRole` the row carries.
   // On top of that the Multiplayer lab must be on: with it off (the default)
-  // even the owner gets no Share item — and no presence-avatar fallback either,
-  // since that fallback reuses this action.
+  // even the owner gets no Share item.
+  const canShare$ = selectCanShareWorkspace(workspaceIdStore);
   const shareAction: MenuAction | null = $derived(
-    $labsMultiplayerEnabled$ && $workspace?.myRole === 'owner' && !$hidesOwnerActions$
+    $canShare$
       ? {
           id: 'share-workspace',
           label: m.workspace_share_menu_label(),
           icon: faUserPlus,
           dividerBefore: true,
           onClick: () => {
-            if (!$workspace) return;
+            if (!$workspace || !selectCanShareWorkspace.select(appStore.state, $workspace.id))
+              return;
             appStore.dispatch(
               openShareDialog({ workspaceId: $workspace.id, workspaceTitle: $workspace.title }),
             );
@@ -454,54 +450,6 @@
         }
       : null,
   );
-
-  // Multiplayer presence row: everybody else on this shared workspace, the
-  // offline members greyscale, so the row shows even while only this window
-  // is online. An avatar takes the viewer to where that person looks right
-  // now (their agent chat, else their note); with no such focus it opens the
-  // owner's Share screen and stays inert for a non-owner.
-  const presencePeople$ = selectWorkspacePresencePeople(workspaceIdStore);
-  const presenceFocusTargets$ = selectWorkspacePresenceFocusTargets(workspaceIdStore);
-  const presencePersonAction = $derived.by(() => {
-    const targets = $presenceFocusTargets$;
-    const agents = $workspaceAgentSessions$;
-    const allNotes = $notes;
-    const wsId = $workspace?.id ? String($workspace.id) : undefined;
-    const share = shareAction?.onClick ?? null;
-    return (person: PresenceCircle): PresenceCircleAction => {
-      const name = presencePersonName(person);
-      const target = targets[person.principalId];
-      if (target?.kind === 'agent') {
-        const agent = agents.find((s) => String(s.id) === target.agentId)?.name ?? '';
-        return {
-          label: m.workspace_progressCard_presenceOnAgent_tooltip({ name, agent }),
-          onSelect: wsId
-            ? (event) =>
-                appStore.dispatch(
-                  openAgentTabRequested(wsId, {
-                    agentId: target.agentId,
-                    sourcePanelId: findSourcePanelId(event.target),
-                    openInAdjacentPanel: isCmdClickModifier({ event }),
-                  }),
-                )
-            : null,
-        };
-      }
-      if (target?.kind === 'note') {
-        const note = allNotes.find((n) => String(n.id) === target.noteId)?.title ?? '';
-        return {
-          label: m.workspace_progressCard_presenceOnNote_tooltip({ name, note }),
-          onSelect: wsId ? () => void navigateToNote(target.noteId, { workspaceId: wsId }) : null,
-        };
-      }
-      return {
-        label: person.online
-          ? m.workspace_progressCard_presenceInWorkspace_tooltip({ name })
-          : m.workspace_progressCard_presenceOffline_tooltip({ name }),
-        onSelect: share,
-      };
-    };
-  });
 
   const transferAction: MenuAction | null = $derived(
     $workspace && !$hidesOwnerActions$
@@ -526,43 +474,77 @@
   // REV-2 driving browser client (spec Model 8): the daemon resolves it; the
   // indicator renders only when the workspace has a browser tab and another
   // eligible client could take over (or the pin is offline).
+  const ownClientIdConfirmed$ = selectOwnClientIdConfirmed();
+  const browserSelectionKnown$ = selectWorkspaceBrowserSelectionKnown(workspaceIdStore);
   const drivingClient$ = selectWorkspaceDrivingClient(workspaceIdStore);
   const hasBrowserTabs$ = selectWorkspaceHasBrowserTabs(workspaceIdStore);
-  const drivingClientSwitch = $derived(resolveDrivingClientSwitch($drivingClient$));
+  const canSetPrimaryClient$ = selectCanSetWorkspacePrimaryClient(workspaceIdStore);
+  const principalActionContext$ = selectPrincipalActionContext();
+  const primaryAlreadySelected = $derived(
+    Boolean(
+      $ownClientIdConfirmed$ &&
+      $drivingClient$.ownClientId &&
+      $drivingClient$.pinnedClientId === $drivingClient$.ownClientId,
+    ),
+  );
+  const canSetPrimaryClient = $derived(
+    Boolean(
+      workspaceId &&
+      $canSetPrimaryClient$ &&
+      $browserSelectionKnown$ &&
+      $ownClientIdConfirmed$ &&
+      !primaryAlreadySelected &&
+      $drivingClient$.eligibleClients.some(
+        (client) => client.clientId === $drivingClient$.ownClientId && client.connected,
+      ),
+    ),
+  );
 
-  // "Set Current Client as Primary": pin this workspace's browser to this
-  // app; the daemon also migrates the workspace's claimed (agent-owned) tabs
-  // here (PROTOCOL §5.1 workspace.setBrowserClient). Offered only while
-  // another client drives (or the pin is offline); hidden when this app
-  // already drives or its own clientId is unknown. The menu action only opens
-  // the confirmation; the RPC is dispatched on confirm.
-  let confirmingSetPrimaryClient = $state(false);
+  // Recovery remains discoverable even when a stale claimed-tab host leaves
+  // driving unresolved. Only explicit confirmation can pin and re-home tabs.
+  let pendingPrimaryClient = $state<{
+    workspaceId: string;
+    clientId: string;
+    context: string | null;
+  } | null>(null);
 
-  const setPrimaryClientAction: MenuAction | null = $derived.by(() => {
-    const ownClientId = $drivingClient$.ownClientId;
-    if (!drivingClientSwitch?.canSwitchHere || !ownClientId || !workspaceId) return null;
-    return {
-      id: 'set-primary-client',
-      label: m.workspace_drivingClient_setPrimary_label(),
-      icon: faGlobe,
-      dividerBefore: true,
-      onClick: () => {
-        confirmingSetPrimaryClient = true;
-      },
-    };
+  const setPrimaryClientAction: MenuAction = $derived({
+    id: 'set-primary-client',
+    label: m.workspace_drivingClient_setPrimary_label(),
+    icon: faGlobe,
+    dividerBefore: true,
+    checked: primaryAlreadySelected,
+    disabled: !canSetPrimaryClient,
+    onClick: () => {
+      if (!workspaceId || !canSetPrimaryClient) return;
+      pendingPrimaryClient = {
+        workspaceId,
+        clientId: $drivingClient$.ownClientId,
+        context: $principalActionContext$,
+      };
+    },
   });
 
   function handleConfirmSetPrimaryClient() {
-    confirmingSetPrimaryClient = false;
-    const ownClientId = $drivingClient$.ownClientId;
-    if (!workspaceId || !ownClientId) return;
-    appStore.dispatch(setWorkspaceBrowserClientRequested(workspaceId, ownClientId));
+    const pending = pendingPrimaryClient;
+    pendingPrimaryClient = null;
+    // A backend change can precede the rendered selector update.
+    if (
+      !pending ||
+      !canSetPrimaryClient ||
+      pending.workspaceId !== workspaceId ||
+      pending.clientId !== $drivingClient$.ownClientId ||
+      pending.context !== $principalActionContext$ ||
+      pending.context !== selectPrincipalActionContext.select(appStore.state)
+    )
+      return;
+    appStore.dispatch(setWorkspaceBrowserClientRequested(pending.workspaceId, pending.clientId));
   }
 
   const additionalActions: MenuAction[] = $derived([
     sidebarToggleAction,
     sidebarSideAction,
-    ...(setPrimaryClientAction ? [setPrimaryClientAction] : []),
+    setPrimaryClientAction,
     ...(shareAction ? [shareAction] : []),
     ...(transferAction ? [transferAction] : []),
   ]);
@@ -659,7 +641,8 @@
   // BE-owned task progress rollup (PROTOCOL §5.4): rendered verbatim from the
   // workspace-tasks slice — no client classification of task status.
   const taskStats = $derived($taskStats$);
-  const showFlameGraph = $derived(!$tasksInitialized$ || taskStats.total > 0);
+  const taskProgressReady = $derived($tasksInitialized$ || !!$workspace?.taskStats);
+  const showFlameGraph = $derived(!taskProgressReady || taskStats.total > 0);
 
   // Tree node with computed weight (leaf count)
   interface TaskTreeNode {
@@ -898,14 +881,22 @@
 </script>
 
 {#snippet sidebarToggleIconSnippet()}
-  <SidebarIcon size={12} side={$sidebarSide$} class="opacity-50" />
+  <SidebarIcon size={16} side={$sidebarSide$} class="text-muted-foreground" />
 {/snippet}
 
 {#snippet sidebarSideIconSnippet()}
-  <SidebarIcon size={12} side={$sidebarSide$ === 'left' ? 'right' : 'left'} class="opacity-50" />
+  <SidebarIcon
+    size={16}
+    side={$sidebarSide$ === 'left' ? 'right' : 'left'}
+    class="text-muted-foreground"
+  />
 {/snippet}
 
-<div class="flex w-full flex-col" data-workspace-title-section>
+<div
+  use:browserClientConsumer={active ? workspaceId : undefined}
+  class="flex w-full flex-col"
+  data-workspace-title-section
+>
   <!-- Workspace Header -->
   <div class="flex w-full flex-col pb-1">
     <div class="flex items-center justify-between group">
@@ -970,7 +961,7 @@
               {#if isDeleting}
                 <IntentMarkLoader size={14} />
               {:else}
-                <KebabIcon class="size-4" />
+                <KebabIcon />
               {/if}
             </Button>
           {/snippet}
@@ -1041,7 +1032,7 @@
               <div class="flex min-w-0 items-center gap-2">
                 <p
                   class="min-w-0 flex-1 truncate text-sm font-medium text-popover-foreground"
-                  title={repositoryLabel}
+                  use:truncatedTitle={repositoryLabel}
                 >
                   {repositoryLabel}
                 </p>
@@ -1056,12 +1047,13 @@
                 <Button
                   variant="plain"
                   class="mt-1 h-auto w-full min-w-0 cursor-copy justify-start rounded-none text-xs font-normal text-muted-foreground underline decoration-dotted underline-offset-2 hover:opacity-80"
-                  title={workspacePath}
                   aria-label={m.workspace_progressCard_copyPath_ariaLabel()}
                   onclick={copyRepoPath}
                   data-sidebar-repository-path-copy
                 >
-                  <span class="block min-w-0 truncate">{workspacePath}</span>
+                  <span class="block min-w-0 truncate" use:truncatedTitle={workspacePath}
+                    >{workspacePath}</span
+                  >
                 </Button>
               {/if}
               {#if $workspace?.checkoutMode}
@@ -1106,7 +1098,7 @@
                 <div class="flex min-w-0 items-center gap-2">
                   <p
                     class="min-w-0 flex-1 truncate text-sm font-medium text-popover-foreground"
-                    title={$workspace.branch}
+                    use:truncatedTitle={$workspace.branch}
                   >
                     {$workspace.branch}
                   </p>
@@ -1127,16 +1119,6 @@
           </TooltipRich>
         {/if}
       </div>
-      {#if $presencePeople$.length > 0}
-        <div class="flex h-5 w-full min-w-0 items-center" data-sidebar-presence-row>
-          <PresenceAvatarStack
-            people={$presencePeople$}
-            size={18}
-            action={presencePersonAction}
-            class="pl-0.5"
-          />
-        </div>
-      {/if}
       <!-- driving browser client (REV-2); renders nothing with one eligible client or no browser tabs -->
       <DrivingClientIndicator {...$drivingClient$} hasBrowserTabs={$hasBrowserTabs$} />
     </div>
@@ -1144,13 +1126,13 @@
 
   <div class="flex w-full flex-col gap-3.5 pb-2 text-left">
     {#if showFlameGraph}
-      <!-- Keep the task progress placeholder visible until canonical tasks first load. -->
+      <!-- Keep the task progress placeholder visible until daemon progress arrives. -->
       <div class="flex h-5 flex-1 shrink-0" data-workspace-task-progress>
         <FlameGraph
           notes={$notes}
           onTaskClick={_onOpenNote}
           progress={completionRatio}
-          loading={!$tasksInitialized$}
+          loading={!taskProgressReady}
           animationKey={workspaceId}
         />
       </div>
@@ -1232,11 +1214,6 @@
       </div>
     {/if}
 
-    <!-- Token usage row (renders nothing until data is available) -->
-    {#if workspaceId}
-      <WorkspaceTokenUsage {workspaceId} />
-    {/if}
-
     <!-- Status follows identity and progress so it reads as the current update. -->
     {#if isEditingStatusMessage || currentStatusMessage}
       <div class="pt-1">
@@ -1260,20 +1237,25 @@
           {:else if $workspace && currentStatusMessage}
             <Button
               variant="plain"
-              truncateLabel={false}
-              labelClass="line-clamp-3"
-              class="type-body relative z-10 h-auto w-full cursor-text whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
+              wrapContent={false}
+              class="type-body relative z-10 h-auto w-full justify-start cursor-text whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
                      transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none leading-snug hover:text-foreground
                      focus-visible:outline focus-visible:outline-1 focus-visible:outline-ring focus-visible:outline-offset-[-1px]
                      disabled:cursor-default disabled:opacity-50"
               onclick={startEditingStatusMessage}
-              title={currentStatusMessage}
               aria-label={currentStatusMessage
                 ? m.workspace_sidebarHeader_editStatus_ariaLabel()
                 : m.workspace_sidebarHeader_addStatus_ariaLabel()}
+              aria-describedby={statusDescriptionId}
               disabled={!$workspace}
             >
-              {currentStatusMessage}
+              <span
+                id={statusDescriptionId}
+                class="min-w-0 line-clamp-3"
+                use:truncatedTitle={currentStatusMessage}
+              >
+                {currentStatusMessage}
+              </span>
             </Button>
           {/if}
           <span
@@ -1376,12 +1358,14 @@
   </div>
 </div>
 
-{#if drivingClientSwitch}
+{#if pendingPrimaryClient}
   <SetPrimaryClientConfirmDialog
-    open={confirmingSetPrimaryClient}
-    currentHost={drivingClientSwitch.hostName}
+    open
+    currentHost={$drivingClient$.driving
+      ? browserClientDisplayName($drivingClient$.driving)
+      : undefined}
     onConfirm={handleConfirmSetPrimaryClient}
-    onCancel={() => (confirmingSetPrimaryClient = false)}
+    onCancel={() => (pendingPrimaryClient = null)}
   />
 {/if}
 

@@ -69,6 +69,10 @@ async function buildState(
     await import('$store/renderer/slices/specialists/specialists-slice');
   const { initialState: modelInitialState } =
     await import('$store/renderer/slices/model/model-slice');
+  const { initialState: providerSettingsInitialState } =
+    await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+  const { initialState: availabilityInitialState } =
+    await import('$store/renderer/slices/agent-availability/agent-availability-slice');
   const {
     initialState: providerCatalogInitialState,
     providerCatalogLoaded,
@@ -86,6 +90,7 @@ async function buildState(
       providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
     ),
     providerSettings: {
+      ...providerSettingsInitialState,
       activeProviderId: 'auggie',
       enabledProviders,
       defaultProviderId: MOCK_PROVIDER_CATALOG.defaultProviderId,
@@ -96,6 +101,7 @@ async function buildState(
     featureCodes: { activeFeatures: [], initialized: true },
     githubAuth: { isAuthenticated: false },
     agentAvailability: {
+      ...availabilityInitialState,
       providerStatusMap,
       providerLoadingMap,
       providerUserInfoLoadingMap: {},
@@ -256,7 +262,10 @@ describe('ProviderSelector progressive rendering', () => {
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'providerSettings/setProviderEnabled',
-        payload: [{ providerId: 'antigravity', enabled: true }],
+        payload: [
+          { providerId: 'antigravity', enabled: true },
+          { id: expect.any(String), sessionId: expect.any(String) },
+        ],
       }),
     );
     expect(
@@ -335,7 +344,10 @@ describe('ProviderSelector progressive rendering', () => {
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'providerSettings/setProviderEnabled',
-        payload: [{ providerId: 'codex', enabled: true }],
+        payload: [
+          { providerId: 'codex', enabled: true },
+          { id: expect.any(String), sessionId: expect.any(String) },
+        ],
       }),
     );
 
@@ -493,6 +505,7 @@ describe('ProviderSelector progressive rendering', () => {
   it('moves the Pi adapter warning and install action into the overflow menu', async () => {
     mocks.checkPiMcpAdapterInstalled.mockResolvedValue(false);
     mocks.state.current = await buildState({ pi: { available: true } });
+    mocks.state.current.providerSettings.piAdapter = { installed: false, status: 'success' };
     const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
     const result = render(ProviderSelector);
     const warning = 'Pi needs the pi-mcp-adapter package to use workspace tools';
@@ -505,7 +518,13 @@ describe('ProviderSelector progressive rendering', () => {
     await fireEvent.click(result.getByRole('button', { name: 'Provider actions for Pi' }));
     expect(result.getByText(warning)).toBeTruthy();
     await fireEvent.click(result.getByRole('menuitem', { name: 'Install' }));
-    expect(mocks.installPiMcpAdapter).toHaveBeenCalledOnce();
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'providerSettings/piAdapterInstallRequested',
+        payload: [{ id: expect.any(String), sessionId: expect.any(String) }],
+      }),
+    );
+    expect(mocks.installPiMcpAdapter).not.toHaveBeenCalled();
   });
 });
 
@@ -520,7 +539,7 @@ describe('ProviderSelector model refresh rewire (intent-hq/intent#3966)', () => 
     cleanup();
   });
 
-  it('dispatches reloadModelsForProvider when retrying the availability check', async () => {
+  it('requests an availability check with model refresh intent when retrying', async () => {
     // Mount fails the aggregated check (surfacing Try Again); the retry succeeds.
     let availabilityCalls = 0;
     mocks.invoke.mockImplementation(async (channel: string) => {
@@ -535,6 +554,7 @@ describe('ProviderSelector model refresh rewire (intent-hq/intent#3966)', () => 
       return { success: true, data: {} };
     });
     mocks.state.current = await buildState({});
+    mocks.state.current.agentAvailability.discoveryError = 'availability check failed';
     const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
     const result = render(ProviderSelector);
 
@@ -548,12 +568,15 @@ describe('ProviderSelector model refresh rewire (intent-hq/intent#3966)', () => 
 
     await waitFor(() => {
       expect(mocks.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'model/reloadModelsForProvider' }),
+        expect.objectContaining({
+          type: 'agentAvailability/checkAllProvidersRequested',
+          payload: [true],
+        }),
       );
     });
   });
 
-  it('dispatches reloadModelsForProvider when switching the default provider', async () => {
+  it('correlates a default-provider save without prematurely refreshing models', async () => {
     mocks.invoke.mockImplementation(async (channel: string) => {
       if (channel === PROVIDERS_CHANNELS.GET_AVAILABILITY) return new Promise(() => {});
       if (channel === PROVIDERS_CHANNELS.GET_PATHS) {
@@ -574,8 +597,14 @@ describe('ProviderSelector model refresh rewire (intent-hq/intent#3966)', () => 
 
     await waitFor(() => {
       expect(mocks.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'model/reloadModelsForProvider' }),
+        expect.objectContaining({
+          type: 'providerSettings/setActiveProvider',
+          payload: ['codex', { id: expect.any(String), sessionId: expect.any(String) }],
+        }),
       );
     });
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'model/reloadModelsForProvider' }),
+    );
   });
 });

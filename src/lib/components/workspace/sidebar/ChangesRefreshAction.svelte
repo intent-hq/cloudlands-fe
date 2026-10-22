@@ -16,7 +16,6 @@
   aria-busy={disabled}
   aria-label={m.workspace_sidebarChanges_refreshGitStatus_tooltip()}
   tooltip={m.workspace_sidebarChanges_refreshGitStatus_tooltip()}
-  title={m.workspace_sidebarChanges_refreshGitStatus_tooltip()}
   tooltipSide="top"
   tooltipDelayDuration={300}
   data-changes-refresh

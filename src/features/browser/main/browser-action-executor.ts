@@ -27,7 +27,10 @@ import {
   type LoopbackRewriteResult,
 } from './loopback-rewrite';
 import { resolveRewrittenRemoteTarget, type TunnelProvider } from './loopback-url-resolver';
+// Visibility checks use ANY_HOST: the executor has no host for the workspace
+// (the embedded browser service keys tabs by workspace id alone).
 import { getWindowIdForWorkspace, getWindowIdsForWorkspace } from '../../system/main/system.ipc';
+import { ANY_HOST } from '../../system/main/window-workspace-tracking';
 
 const logger = new Logger('BrowserActionExecutor');
 
@@ -178,6 +181,16 @@ const GetSummaryActionSchema = z
   })
   .strict();
 
+const ReadCaptureActionSchema = z
+  .object({
+    action: z.literal('readCapture'),
+    captureId: z.string().min(1).max(512),
+    artifact: z.enum(['console.jsonl', 'network.jsonl', 'summary.json', 'session.json']),
+    offset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+    maxBytes: z.number().int().min(1).max(65536).optional(),
+  })
+  .strict();
+
 // Emulated viewport bounds for agent-owned tabs (monorepo#2857).
 const ViewportDimensionSchema = z
   .number()
@@ -300,6 +313,7 @@ const BrowserActionSchema = z.discriminatedUnion('action', [
   EndSessionActionSchema,
   ResetTabActionSchema,
   GetSummaryActionSchema,
+  ReadCaptureActionSchema,
   OpenTabActionSchema,
   ClaimTabActionSchema,
   ResizeTabActionSchema,
@@ -348,7 +362,7 @@ function requireWorkspaceId(workspaceId: string | undefined, action: string): st
  * knows nothing was brought to the front.
  */
 function workspaceNotVisibleWarning(workspaceId: string | undefined): { warning?: string } {
-  if (!workspaceId || getWindowIdForWorkspace(workspaceId) !== undefined) return {};
+  if (!workspaceId || getWindowIdForWorkspace(workspaceId, ANY_HOST) !== undefined) return {};
   return {
     // i18n-ignore (agent-facing protocol warning, not user-facing)
     warning: `Workspace ${workspaceId} is not currently visible in the app, so no UI focus was attempted; the tab and layout state were still updated.`,
@@ -429,10 +443,12 @@ async function ensureCaptureTabMounted(
     listed =
       actionName === 'navigate'
         ? await embeddedBrowserCdp.listAllTabs(workspaceId, tabId)
-        : await embeddedBrowserCdp.listAllTabs(workspaceId);
+        : deadline === undefined
+          ? await embeddedBrowserCdp.listAllTabs(workspaceId)
+          : await embeddedBrowserCdp.listAllTabs(workspaceId, undefined, { deadline });
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
-    const notVisible = getWindowIdForWorkspace(workspaceId) === undefined;
+    const notVisible = getWindowIdForWorkspace(workspaceId, ANY_HOST) === undefined;
     return {
       failure: {
         action: actionName,
@@ -456,14 +472,14 @@ async function ensureCaptureTabMounted(
   // A stale (cached) list with no window hosting the workspace means the
   // hydration nudge reached no renderer — a mount can never happen, so fail
   // fast instead of burning the full registration wait.
-  if (listed.stale && getWindowIdsForWorkspace(workspaceId).length === 0) {
+  if (listed.stale && getWindowIdsForWorkspace(workspaceId, ANY_HOST).length === 0) {
     return {
       failure: {
         action: actionName,
         success: false,
         errorCode: 'workspace-not-visible' as const,
         // i18n-ignore (agent-facing protocol error, not user-facing)
-        error: `Cannot run '${actionName}' on tab ${tabId}: the tab has no mounted webview and workspace ${workspaceId} is not open in any window, so it cannot be mounted on demand. Open the workspace in a window and retry.`,
+        error: `Cannot run '${actionName}' on tab ${tabId}: the tab has no mounted webview and no app window is available to host workspace ${workspaceId} (it is not open in any window and none could host it in the background), so it cannot be mounted on demand. Open an Intent window and retry.`,
       },
     };
   }
@@ -476,7 +492,7 @@ async function ensureCaptureTabMounted(
   if (mountBudgetMs <= 0) return exhaustedBeforeMount();
   const mounted = await embeddedBrowserCdp.waitForTabRegistration(tabId, mountBudgetMs);
   if (!mounted) {
-    const notVisible = getWindowIdForWorkspace(workspaceId) === undefined;
+    const notVisible = getWindowIdForWorkspace(workspaceId, ANY_HOST) === undefined;
     const deadlineBound = mountBudgetMs < CAPTURE_MOUNT_TIMEOUT_MS;
     return {
       failure: {
@@ -504,6 +520,30 @@ async function ensureCaptureTabMounted(
     ...workspaceNotVisibleWarning(workspaceId),
     ...(registryUrl ? { registryUrl } : {}),
   };
+}
+
+/** Actions that capture the workspace's default tab when given no `tabId`. */
+const DEFAULT_TAB_CAPTURE_ACTIONS = new Set(['snapshot', 'startSession']);
+
+/**
+ * The tab a `snapshot` / `startSession` without a `tabId` captures: the
+ * workspace's first listed tab (the capture service's own default), so the
+ * mount-on-demand step can mount that same tab first. Undefined when the
+ * list is unavailable — the capture then fails with its own error.
+ */
+async function defaultCaptureTabId(
+  workspaceId: string,
+  deadline?: number,
+): Promise<string | undefined> {
+  try {
+    const { tabs } =
+      deadline === undefined
+        ? await embeddedBrowserCdp.listAllTabs(workspaceId)
+        : await embeddedBrowserCdp.listAllTabs(workspaceId, undefined, { deadline });
+    return tabs[0]?.tabId;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Whether two URLs name different origins; false when either does not parse. */
@@ -790,7 +830,24 @@ async function executeAction(
   ownerNameCache?: OwnerNameCache,
   deadline?: number,
 ): Promise<ActionResult> {
-  const tabId = ('tabId' in action ? action.tabId : undefined) || defaultTabId;
+  let tabId = ('tabId' in action ? action.tabId : undefined) || defaultTabId;
+  // A tab-less snapshot / startSession captures the workspace's default
+  // (first) tab, which may not be mounted yet. Resolve it up front so the
+  // ownership check below, the mount on demand and the capture all target
+  // that same tab.
+  if (!tabId && workspaceId && DEFAULT_TAB_CAPTURE_ACTIONS.has(action.action)) {
+    tabId = await defaultCaptureTabId(workspaceId, deadline);
+    // Fail closed for agents: without a resolved target the capture service
+    // would pick its own first tab later, one the ownership check never saw.
+    if (!tabId && agentId) {
+      return {
+        action: action.action,
+        success: false,
+        // i18n-ignore (agent-facing protocol error, not user-facing)
+        error: `No browser tab to capture in workspace ${workspaceId}: the tab list is unavailable or empty. Pass the tabId of a tab you own (see { action: "listTabs", scope: "mine" }) and retry.`,
+      };
+    }
+  }
 
   // Ownership enforcement (monorepo#2857): resolve the tab the action will
   // actually hit — including the first-tab fallback the underlying service
@@ -808,6 +865,12 @@ async function executeAction(
   }
 
   try {
+    if ('sessionId' in action)
+      browserCapture.assertSessionOwner(
+        action.sessionId,
+        requireWorkspaceId(workspaceId, action.action),
+        agentId,
+      );
     switch (action.action) {
       case 'listTabs': {
         const scope = action.scope ?? 'all';
@@ -1018,34 +1081,89 @@ async function executeAction(
 
       case 'snapshot': {
         const captureWorkspaceId = requireWorkspaceId(workspaceId, action.action);
+        // Snapshots capture a screenshot + accessibility tree, so they mount
+        // an unmounted tab on demand and let a loading guest settle, like
+        // the capture ops above.
+        const targetTabId = tabId;
+        const mount = await ensureCaptureTabMounted(
+          action.action,
+          targetTabId,
+          captureWorkspaceId,
+          deadline,
+        );
+        if (mount.failure) return mount.failure;
+        if (!action.reload) {
+          const guest = await ensureCaptureGuestSettled(
+            action.action,
+            targetTabId,
+            mount.registryUrl,
+            deadline,
+          );
+          if (guest.failure) return guest.failure;
+        }
         const options: SnapshotOptions = {
           workspaceId: captureWorkspaceId,
-          tabId,
+          tabId: targetTabId,
           name: action.name,
           reload: action.reload,
           waitFor: action.waitFor,
         };
         const result = await browserCapture.snapshot(options);
-        return { action: 'snapshot', success: true, result };
+        return {
+          action: 'snapshot',
+          success: true,
+          result,
+          ...(mount.warning ? { warning: mount.warning } : {}),
+        };
       }
 
       case 'startSession': {
         const captureWorkspaceId = requireWorkspaceId(workspaceId, action.action);
+        const targetTabId = tabId;
+        const mount = await ensureCaptureTabMounted(
+          action.action,
+          targetTabId,
+          captureWorkspaceId,
+          deadline,
+        );
+        if (mount.failure) return mount.failure;
+        const guest = await ensureCaptureGuestSettled(
+          action.action,
+          targetTabId,
+          mount.registryUrl,
+          deadline,
+        );
+        if (guest.failure) return guest.failure;
         const options: SessionOptions = {
+          ownerAgentId: agentId,
           workspaceId: captureWorkspaceId,
-          tabId,
+          tabId: targetTabId,
           name: action.name,
         };
         const result = await browserCapture.startSession(options);
-        return { action: 'startSession', success: true, result };
+        return {
+          action: 'startSession',
+          success: true,
+          result,
+          ...(mount.warning ? { warning: mount.warning } : {}),
+        };
       }
 
       case 'startCapture': {
-        await browserCapture.startCapture(
-          action.sessionId,
-          requireWorkspaceId(workspaceId, action.action),
+        const captureWorkspaceId = requireWorkspaceId(workspaceId, action.action);
+        const mount = await ensureCaptureTabMounted(
+          action.action,
+          browserCapture.getSessionTabId(action.sessionId, captureWorkspaceId),
+          captureWorkspaceId,
+          deadline,
         );
-        return { action: 'startCapture', success: true };
+        if (mount.failure) return mount.failure;
+        await browserCapture.startCapture(action.sessionId, captureWorkspaceId);
+        return {
+          action: 'startCapture',
+          success: true,
+          ...(mount.warning ? { warning: mount.warning } : {}),
+        };
       }
 
       case 'endCapture': {
@@ -1057,26 +1175,62 @@ async function executeAction(
       }
 
       case 'captureStep': {
+        const captureWorkspaceId = requireWorkspaceId(workspaceId, action.action);
+        const sessionTabId = browserCapture.getSessionTabId(action.sessionId, captureWorkspaceId);
+        const mount = await ensureCaptureTabMounted(
+          action.action,
+          sessionTabId,
+          captureWorkspaceId,
+          deadline,
+        );
+        if (mount.failure) return mount.failure;
+        if (!action.reload && sessionTabId) {
+          const guest = await ensureCaptureGuestSettled(
+            action.action,
+            sessionTabId,
+            mount.registryUrl,
+            deadline,
+          );
+          if (guest.failure) return guest.failure;
+        }
         const options: CaptureStepOptions | undefined =
           action.reload || action.waitFor
             ? { reload: action.reload, waitFor: action.waitFor }
             : undefined;
         const result = await browserCapture.captureStep(
           action.sessionId,
-          requireWorkspaceId(workspaceId, action.action),
+          captureWorkspaceId,
           action.stepName,
           options,
         );
-        return { action: 'captureStep', success: true, result };
+        return {
+          action: 'captureStep',
+          success: true,
+          result,
+          ...(mount.warning ? { warning: mount.warning } : {}),
+        };
       }
 
       case 'startTrace': {
+        const captureWorkspaceId = requireWorkspaceId(workspaceId, action.action);
+        const mount = await ensureCaptureTabMounted(
+          action.action,
+          browserCapture.getSessionTabId(action.sessionId, captureWorkspaceId),
+          captureWorkspaceId,
+          deadline,
+        );
+        if (mount.failure) return mount.failure;
         const result = await browserCapture.startTrace(
           action.sessionId,
-          requireWorkspaceId(workspaceId, action.action),
+          captureWorkspaceId,
           action.traceName,
         );
-        return { action: 'startTrace', success: true, result };
+        return {
+          action: 'startTrace',
+          success: true,
+          result,
+          ...(mount.warning ? { warning: mount.warning } : {}),
+        };
       }
 
       case 'stopTrace': {
@@ -1101,10 +1255,23 @@ async function executeAction(
         return { action: 'resetTab', success: true, result };
       }
 
+      case 'readCapture': {
+        const result = await browserCapture.readCapture(
+          requireWorkspaceId(workspaceId, action.action),
+          action.captureId,
+          action.artifact,
+          agentId,
+          action.offset,
+          action.maxBytes,
+        );
+        return { action: 'readCapture', success: true, result };
+      }
+
       case 'getSummary': {
         const result = await browserCapture.getSummary(
           requireWorkspaceId(workspaceId, action.action),
           action.captureId,
+          agentId,
         );
         return { action: 'getSummary', success: true, result };
       }
@@ -1413,6 +1580,7 @@ async function executeAction(
           result: {
             ...result,
             ...(effectiveTabId ? { tabId: effectiveTabId } : {}),
+            ...(result.success ? { url: finalRewrite.url } : {}),
             ...(result.success && replaceTargetTabId ? { replaced: true } : {}),
             ...(displayed !== undefined ? { displayed } : {}),
             ...echo,
@@ -1749,6 +1917,7 @@ export async function executeActions(
   getLoopbackContext?: () => LoopbackRewriteContext,
   getTunnelProvider?: () => TunnelProvider | null,
   deadline?: number,
+  waitForRegistry?: (tabId: string, deadline?: number) => Promise<boolean>,
 ): Promise<ExecutionResult> {
   // Validate input against schema
   const parseResult = ActionSequenceSchema.safeParse(input);
@@ -1770,7 +1939,7 @@ export async function executeActions(
   const ownerNameCache: OwnerNameCache = new Map();
 
   for (const action of actions) {
-    const result = await executeAction(
+    let result = await executeAction(
       action,
       defaultTabId,
       openTabFn,
@@ -1781,6 +1950,31 @@ export async function executeActions(
       ownerNameCache,
       deadline,
     );
+    // Local webview registration does not make a tab addressable through
+    // the daemon. Check every successful open, including reuse/replace,
+    // before running the next action or returning the handle (#2756).
+    if (result.action === 'openTab' && result.success && waitForRegistry) {
+      const opened =
+        result.result && typeof result.result === 'object'
+          ? (result.result as Record<string, unknown>)
+          : undefined;
+      const tabId = typeof opened?.tabId === 'string' ? opened.tabId : undefined;
+      let registered = false;
+      try {
+        registered = typeof tabId === 'string' && (await waitForRegistry(tabId, deadline));
+      } catch (error) {
+        logger.warn('Could not confirm daemon tab registration', { tabId, error });
+      }
+      if (!registered) {
+        result = {
+          ...result,
+          success: false,
+          result: { ...opened, success: false },
+          // i18n-ignore (agent-facing protocol error, not user-facing)
+          error: `Tab ${tabId ?? '(unknown)'} could not be confirmed in the daemon browser registry before the registration deadline. Check { action: "listTabs" } before retrying the open.`,
+        };
+      }
+    }
     results.push(result);
 
     if (!result.success) {

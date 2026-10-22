@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render } from '@testing-library/svelte';
 import CopyIcon from 'phosphor-svelte/lib/CopyIcon';
 import GithubLogoIcon from 'phosphor-svelte/lib/GithubLogoIcon';
+import GitlabLogoIcon from 'phosphor-svelte/lib/GitlabLogoIcon';
 import AppleLogoIcon from 'phosphor-svelte/lib/AppleLogoIcon';
 import QuestionIcon from 'phosphor-svelte/lib/QuestionIcon';
 import * as compatibilityIcons from '$lib/icons/phosphor-icons';
@@ -11,6 +12,7 @@ import {
   faCopy,
   faFont,
   faGithub,
+  faGitlab,
   faSettings,
   faXmark,
 } from '$lib/icons/phosphor-icons';
@@ -27,7 +29,7 @@ describe('Phosphor icon compatibility renderer', () => {
     for (const [, value] of definitions) {
       if (typeof value !== 'object' || !('iconName' in value))
         throw new Error('Invalid icon definition');
-      const expected = ['apple', 'github'].includes(value.iconName) ? 'bold' : 'regular';
+      const expected = ['apple', 'github', 'gitlab'].includes(value.iconName) ? 'bold' : 'regular';
       expect(compatibilityIcons.getPhosphorIconWeight(value), value.iconName).toBe(expected);
     }
   });
@@ -87,6 +89,7 @@ describe('Fa optional icon weight', () => {
 
   it.each([
     { icon: faGithub, nativeIcon: GithubLogoIcon },
+    { icon: faGitlab, nativeIcon: GitlabLogoIcon },
     { icon: faApple, nativeIcon: AppleLogoIcon },
   ])('preserves the $icon.iconName brand silhouette', async ({ icon, nativeIcon }) => {
     const { container, rerender } = render(FaWrapper, { props: { icon } });

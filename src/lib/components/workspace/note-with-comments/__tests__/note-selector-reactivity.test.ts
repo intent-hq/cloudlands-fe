@@ -9,7 +9,7 @@
  */
 import { afterEach, describe, it, expect } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
-import { Store } from '@augmentcode/themis/svelte-store';
+import { Store } from '@themislib/themis/svelte-store';
 import { reducers } from '$store/renderer/reducer';
 import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
 import { ContentType, NoteVisibility, type Note } from '$shared/types';

@@ -1,17 +1,8 @@
 <script lang="ts">
-  /**
-   * Avatar stack of the people present somewhere (a workspace sidebar, an
-   * agent chat): up to `maxVisible` avatars plus a "+N" overflow chip. Each
-   * avatar is ringed by the person's standing when known — the owner blue, an
-   * online member green, an offline member grey — an offline person's avatar
-   * tile (image or coloured initials) is drawn greyscale whatever their ring,
-   * and this window's own principal is marked. The ring is a box-shadow on the
-   * outer element and a CSS filter greys everything its element paints, so the
-   * filter lives on an inner tile and the ring keeps its colour. The group's
-   * accessible name counts only the people present (never offline members).
-   * With `action` every visible avatar is a button. Renders nothing when
-   * nobody is there.
-   */
+  /** Compact presence avatars. Modern role rings remain distinct from the
+   * separate connectivity marker; legacy callers retain their existing rings. */
+  import Fa from 'svelte-fa';
+  import { faGithub, faGitlab } from '@fortawesome/free-brands-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
@@ -32,6 +23,7 @@
     maxVisible?: number;
     /** Avatar diameter in CSS px. */
     size?: number;
+    variant?: 'stack' | 'tile';
     /** Tooltip placement for the per-person names. */
     side?: 'top' | 'bottom' | 'left' | 'right';
     /** Skip the per-avatar tooltips (the parent already names the people). */
@@ -45,6 +37,7 @@
     people,
     maxVisible = 3,
     size = 16,
+    variant = 'stack',
     side = 'bottom',
     decorative = false,
     action,
@@ -74,10 +67,13 @@
             : m.presence_avatarStack_offline_many({ count: formatInteger(offlineOthers) }),
   );
   const fontSize = $derived(`${Math.max(8, Math.round(size * 0.55))}px`);
+  /** The forge badge: about half the avatar, never below a legible glyph. */
+  const badgeSize = $derived(Math.max(9, Math.round(size * 0.5)));
 
   const RING_CLASS: Record<PresenceRing, string> = {
     owner: 'ring-2 ring-info',
     member: 'ring-2 ring-success',
+    guest: 'ring-2 ring-warning-ink',
     offline: 'ring-2 ring-muted-foreground/40',
   };
 </script>
@@ -86,32 +82,59 @@
   {@const ring = presencePersonRing(person)}
   {@const offline = person.online === false}
   <span
-    class="inline-flex shrink-0 rounded-full border border-background {ring
-      ? RING_CLASS[ring]
-      : ''}"
+    class="relative inline-flex shrink-0 rounded-full border {variant === 'tile'
+      ? 'border-border'
+      : `border-background ${ring ? RING_CLASS[ring] : ''}`}"
     style:width="{size}px"
     style:height="{size}px"
     data-presence-avatar={person.principalId}
-    data-presence-ring={ring ?? undefined}
+    data-presence-ring={variant === 'stack' ? (ring ?? undefined) : undefined}
     data-presence-offline={offline || undefined}
     data-presence-self={person.self || undefined}
   >
     <span
-      class="inline-flex h-full w-full items-center justify-center overflow-hidden rounded-full font-medium leading-none text-primary-foreground {offline
-        ? 'grayscale'
-        : ''}"
+      class="inline-flex h-full w-full items-center justify-center overflow-hidden rounded-full font-medium leading-none {variant ===
+      'tile'
+        ? 'bg-muted text-muted-foreground'
+        : 'text-primary-foreground'} {offline ? 'grayscale' : ''}"
       style:font-size={fontSize}
-      style:background-color={presencePersonColor(person.principalId)}
+      style:background-color={variant === 'stack'
+        ? presencePersonColor(person.principalId)
+        : undefined}
       data-presence-avatar-tile
     >
       <PrincipalAvatar fill avatarUrl={person.avatarUrl} label={presencePersonName(person)} />
     </span>
+    {#if variant === 'stack' && person.hostRole && person.online !== undefined}
+      <span
+        class="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full border border-background {person.online
+          ? 'bg-success'
+          : 'bg-muted-foreground'}"
+        aria-hidden="true"
+        data-presence-status={person.online ? 'online' : 'offline'}
+      ></span>
+    {/if}
+    {#if variant === 'stack' && person.identity}
+      <span
+        class="absolute -right-0.5 -bottom-0.5 inline-flex items-center justify-center rounded-full bg-background text-foreground"
+        style:width="{badgeSize}px"
+        style:height="{badgeSize}px"
+        style:font-size="{Math.round(badgeSize * 0.8)}px"
+        aria-hidden="true"
+        data-presence-identity-provider={person.identity.provider}
+        data-presence-identity-host={person.identity.host}
+      >
+        <Fa icon={person.identity.provider === 'gitlab' ? faGitlab : faGithub} />
+      </span>
+    {/if}
   </span>
 {/snippet}
 
 {#if people.length > 0}
   <span
-    class="inline-flex items-center -space-x-1 {className}"
+    class="inline-flex items-center {variant === 'tile'
+      ? 'flex-wrap gap-1.25'
+      : '-space-x-1'} {className}"
     role="group"
     aria-label={label}
     data-presence-avatar-stack

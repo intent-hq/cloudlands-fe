@@ -173,7 +173,10 @@ More content here for testing purposes.`;
           {editor}
           comments={$comments$}
           onResolve={(id) => commentManager?.resolveComment(id)}
-          onReply={(id, content) => commentManager?.replyToComment(id, content)}
+          onReply={async (id, content) => {
+            if (!commentManager) return false;
+            return (await commentManager.replyToComment(id, content)) !== null;
+          }}
         />
         <div class="text-xs mt-2">After CommentsSidebar</div>
       </div>

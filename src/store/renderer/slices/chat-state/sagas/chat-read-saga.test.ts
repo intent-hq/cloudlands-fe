@@ -32,6 +32,7 @@ import {
   chatReset,
   chatStateReducer,
   chatTranscriptSnapshotApplied,
+  chatInitialHistoryProgressed,
   chatTranscriptSnapshotRerequested,
   initializeChatRequested,
   initialState as chatStateInitialState,
@@ -148,6 +149,46 @@ describe('chatReadSaga (single-transfer hydration)', () => {
     clearAllStandingChatSubscriptions();
   });
 
+  it('keeps hydration pending through delayed rows and settles only on explicit completion', async () => {
+    mocks.get.mockResolvedValue(session());
+    const run = harness();
+    try {
+      run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+      await settle();
+      run.dispatch(
+        bulkUpsertSessions([session({ messages: [message('newest', 'first visible')] })]),
+      );
+      run.dispatch(
+        chatTranscriptSnapshotApplied(AGENT, {
+          truncated: false,
+          totalMessages: 2,
+          initialHistory: { target: 20, received: 1, complete: false },
+        }),
+      );
+      await settle();
+      expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('loading');
+      run.dispatch(
+        chatInitialHistoryProgressed(AGENT, { target: 20, received: 2, complete: false }),
+      );
+      await settle();
+      expect(run.chat().byAgentId[AGENT]?.transcriptHydratedOnce).not.toBe(true);
+      run.dispatch(
+        chatTranscriptSnapshotApplied(AGENT, {
+          truncated: false,
+          totalMessages: 2,
+          nextToken: null,
+          initialHistory: { target: 20, received: 2, complete: true },
+        }),
+      );
+      await settle();
+      expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled');
+      expect(mocks.getConversation).not.toHaveBeenCalled();
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
   it('settles from the standing subscription snapshot without any conversation fetch', async () => {
     mocks.get.mockResolvedValue(session());
     const run = harness();
@@ -156,7 +197,7 @@ describe('chatReadSaga (single-transfer hydration)', () => {
     applySnapshot(run, [message('m1', 'one'), message('m2', 'two')]);
     await settle();
 
-    expect(mocks.get).toHaveBeenCalledWith(AGENT);
+    expect(mocks.get).toHaveBeenCalledWith(AGENT, WS);
     expect(mocks.getConversation).not.toHaveBeenCalled();
     expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled');
     expect(run.sessions().byAgentId[AGENT]?.messages.map((m) => m.id)).toEqual(['m1', 'm2']);
@@ -174,7 +215,7 @@ describe('chatReadSaga (single-transfer hydration)', () => {
     run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
     await settle();
 
-    expect(mocks.get).toHaveBeenCalledWith(AGENT);
+    expect(mocks.get).toHaveBeenCalledWith(AGENT, WS);
     expect(mocks.getConversation).not.toHaveBeenCalled();
     expect(run.sessions().byAgentId[AGENT]).toBeUndefined();
     run.task.cancel();
@@ -760,11 +801,12 @@ describe('chatReadSaga lazy block hydration (§5.5 slim → agent.getMessageBloc
       output: 'the full body',
     });
     const run = harness();
+    run.dispatch(bulkUpsertSessions([session()]));
     run.dispatch(messageBlockHydrationRequested(AGENT, MSG, BLOCK));
     await settle();
 
     expect(mocks.getMessageBlock).toHaveBeenCalledTimes(1);
-    expect(mocks.getMessageBlock).toHaveBeenCalledWith(AGENT, MSG, BLOCK);
+    expect(mocks.getMessageBlock).toHaveBeenCalledWith(AGENT, MSG, BLOCK, WS);
     expect(run.chat().byAgentId[AGENT]?.hydratedBlocks?.[KEY]).toMatchObject({
       status: 'loaded',
       block: { output: 'the full body' },

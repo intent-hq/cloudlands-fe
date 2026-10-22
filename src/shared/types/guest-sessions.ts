@@ -29,7 +29,7 @@ export interface GuestSessionRecord {
    * captured `hostname` and falls back to this.
    */
   label: string;
-  /** Primary remote host/IP (identity, with `port`). */
+  /** Primary remote host/IP (a route, never person identity). */
   host: string;
   /** Candidate hosts, primary first (every connect races all of them). */
   hosts: string[];
@@ -38,16 +38,21 @@ export interface GuestSessionRecord {
   fingerprint: string;
   /** tc address of the daemon's tailcat tunnel endpoint (PROTOCOL §12.3), or null. */
   tcAddress: string | null;
-  /** The remote machine's hostname (from `host.status`) once captured. */
+  /** The remote machine's pretty name or hostname (from `system.status`) once captured. */
   hostname: string | null;
   /** Principal id the daemon minted the credential for. */
   principalId: string;
-  /** GitHub login the invitee proved during the device flow. */
-  login: string;
+  /** Remote account display login, which may be unavailable. */
+  login: string | null;
+  identity?: { provider: 'github' | 'gitlab'; host: string; externalUserId: string };
+  /** Cached display hints are never permission checks. */
+  hostRole?: 'guest' | 'member';
+  pairedAt?: number;
+  detectHosts?: boolean;
   /**
    * Whether the stored credential is `safeStorage` ciphertext. `false` marks
-   * the flagged plaintext fallback taken when OS encryption was unavailable
-   * at join time — surfaced so the user can decide to forget and re-join.
+   * recoverable legacy plaintext from an older app. New writes require
+   * OS encryption; the flag remains available for recovery guidance.
    */
   tokenEncrypted: boolean;
   /** Workspaces joined on this host (local record, join order). */
@@ -106,4 +111,6 @@ export interface LeaveGuestWorkspaceResult {
   id: string;
   workspaceId: string;
   left: boolean;
+  /** Inherited access remains saved; only host membership can remove it. */
+  refused?: 'host-membership-required';
 }

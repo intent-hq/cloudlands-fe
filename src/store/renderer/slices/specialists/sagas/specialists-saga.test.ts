@@ -1,7 +1,10 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { runSaga, stdChannel } from 'redux-saga';
+import { runSaga as reduxRunSaga, stdChannel } from 'redux-saga';
+import type { SpecialistDef } from '$lib/client/app-client';
 
 const mocks = vi.hoisted(() => ({
+  catalogReads: false,
   create: vi.fn(),
   edit: vi.fn(),
   remove: vi.fn(),
@@ -10,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   subscription: undefined as ((defs: any[]) => void) | undefined,
   unsubscribe: vi.fn(),
   toastError: vi.fn(),
+  toastSuccess: vi.fn(),
   loggerError: vi.fn(),
   loggerWarn: vi.fn(),
 }));
@@ -20,6 +24,11 @@ vi.mock('$lib/client', () => ({
       edit: mocks.edit,
       delete: mocks.remove,
       list: mocks.list,
+      get listCatalog() {
+        return mocks.catalogReads
+          ? async () => ({ specialists: (await mocks.list()) as SpecialistDef[] })
+          : undefined;
+      },
       subscribe: (handler: (defs: any[]) => void) => {
         mocks.subscription = handler;
         mocks.subscribe(handler);
@@ -29,7 +38,7 @@ vi.mock('$lib/client', () => ({
   },
 }));
 vi.mock('$lib/constants/specialists', () => ({
-  GITHUB_DEPENDENT_SPECIALIST_IDS: new Set<string>(),
+  GITHUB_DEPENDENT_SPECIALIST_IDS: new Set(['pr-reviewer']),
   SPECIALISTS: [
     {
       id: 'builtin',
@@ -40,15 +49,22 @@ vi.mock('$lib/constants/specialists', () => ({
     },
   ],
 }));
-vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: mocks.toastError } }));
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: mocks.toastError, success: mocks.toastSuccess },
+}));
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ error: mocks.loggerError, warn: mocks.loggerWarn }),
 }));
 
+// Load the mocked lazy notification module before timed saga tests.
+import '$lib/components/patterns/notify';
 import { settingsChanged } from '../../settings-events/settings-events-slice';
 import type { StoreState } from '../../../types';
 import { selectSpecialists } from '../specialists-selectors';
 import {
+  createSpecialistFromDraft,
+  setSpecialistCreation,
+  updateSpecialistDraft,
   deleteFileSpecialist,
   initialState,
   refetchSpecialistsRequested,
@@ -62,6 +78,37 @@ import {
   specialistsReducer,
 } from '../specialists-slice';
 import { specialistsSaga } from './specialists-saga';
+import {
+  providerCatalogReducer,
+  workspaceCatalogReceived,
+  workspaceCatalogReadFailed,
+  workspaceCatalogRequested,
+} from '../../provider-catalog/provider-catalog-slice';
+import type { StoreAction } from '../../../types';
+
+function runSaga(
+  options: {
+    channel: ReturnType<typeof stdChannel>;
+    dispatch: (action: any) => unknown;
+    getState: () => unknown;
+  },
+  saga: typeof specialistsSaga,
+) {
+  const getState = () => withLegacyPrincipal(options.getState() as object);
+  return reduxRunSaga(
+    {
+      ...options,
+      getState,
+      context: {
+        reduxStore: { getState, subscribe: () => () => {} },
+        reportRuntimeError: (error: unknown) => {
+          throw error;
+        },
+      },
+    },
+    saga,
+  );
+}
 
 const settle = async () => {
   await Promise.resolve();
@@ -135,11 +182,11 @@ const expectedListActions = (ids: string[]) => [
 type WriteAction = ReturnType<typeof saveFileSpecialist> | ReturnType<typeof deleteFileSpecialist>;
 const successAction = (action: WriteAction) => ({
   type: `${action.type}_SUCCESS`,
-  payload: { request: action.payload, response: undefined },
+  payload: { request: action.payload, response: undefined, seq: action.seq },
 });
 const failureAction = (action: WriteAction) => ({
   type: `${action.type}_FAILURE`,
-  payload: { request: action.payload, error: expect.any(Error) },
+  payload: { request: action.payload, error: expect.any(Error), seq: action.seq },
 });
 
 describe('specialistsSaga', () => {
@@ -263,7 +310,7 @@ describe('specialistsSaga', () => {
     await task.toPromise();
   });
 
-  it('sends exact create payloads while global takeEvery processes repeated writes concurrently', async () => {
+  it('sends exact create payloads and serializes repeated writes for one specialist', async () => {
     mocks.list.mockResolvedValue([fileDef('builtin')]);
     let release!: () => void;
     mocks.create.mockReturnValue(
@@ -292,7 +339,8 @@ describe('specialistsSaga', () => {
     channel.put(action);
     channel.put(action);
     await settle();
-    expect(mocks.create).toHaveBeenCalledTimes(2);
+    // The second write waits for the first one (and its refetch).
+    expect(mocks.create).toHaveBeenCalledTimes(1);
     expect(mocks.create.mock.calls[0]).toEqual([
       'builtin',
       {
@@ -312,14 +360,88 @@ describe('specialistsSaga', () => {
     ]);
     release();
     await settle();
-    expect(mocks.create).toHaveBeenCalledTimes(2);
+    await settle();
+    // The queued write edits the file the first write created.
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+    expect(mocks.edit.mock.calls.map(([id, , scope]) => [id, scope])).toEqual([
+      ['builtin', 'project'],
+    ]);
     expect(mocks.list.mock.calls).toEqual([[], []]);
     expect(dispatch.mock.calls.map(([dispatched]) => dispatched)).toEqual([
       successAction(action),
+      ...expectedListActions(['builtin']),
       successAction(action),
       ...expectedListActions(['builtin']),
     ]);
     await expect(action.promise).resolves.toBeUndefined();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('keeps writes for different specialists concurrent', async () => {
+    let release!: () => void;
+    mocks.create.mockImplementation(
+      (id: string) =>
+        new Promise((resolve) => {
+          if (id === 'first') release = () => resolve({});
+          else resolve({});
+        }),
+    );
+    const channel = stdChannel();
+    const task = runSaga(
+      { channel, dispatch: vi.fn(), getState: () => sagaState() },
+      specialistsSaga,
+    );
+    const write = (id: string) =>
+      saveFileSpecialist({ id, name: id, description: 'd', behaviorPrompt: 'p', scope: 'user' });
+    const first = write('first');
+    const second = write('second');
+    channel.put(first);
+    channel.put(second);
+    await settle();
+
+    expect(mocks.create.mock.calls.map(([id]) => id)).toEqual(['first', 'second']);
+    await expect(second.promise).resolves.toBeUndefined();
+    release();
+    await expect(first.promise).resolves.toBeUndefined();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('edits the file a queued create just wrote instead of creating it twice', async () => {
+    // Settings: pick a model on a built-in (create), then a reasoning level
+    // before the list refetch lands (second write for the same id).
+    mocks.list.mockResolvedValue([fileDef('builtin')]);
+    let state: { specialists: any } = sagaState();
+    const channel = stdChannel();
+    const dispatch = vi.fn((action: any) => {
+      state = { specialists: specialistsReducer(state.specialists, action) };
+    });
+    const task = runSaga({ channel, dispatch, getState: () => state }, specialistsSaga);
+    const write = (patch: Record<string, unknown>) =>
+      saveFileSpecialist({
+        id: 'builtin',
+        name: 'Builtin',
+        description: 'Default',
+        behaviorPrompt: 'Default prompt',
+        scope: 'user',
+        ...patch,
+      });
+    const model = write({ codingAgent: 'codex', model: 'gpt' });
+    const effort = write({ codingAgent: 'codex', model: 'gpt', reasoningEffort: 'high' });
+    channel.put(model);
+    channel.put(effort);
+    await expect(model.promise).resolves.toBeUndefined();
+    await expect(effort.promise).resolves.toBeUndefined();
+
+    expect(mocks.create.mock.calls.map(([id]) => id)).toEqual(['builtin']);
+    expect(mocks.edit).toHaveBeenCalledTimes(1);
+    expect(mocks.edit.mock.calls[0][1]).toMatchObject({
+      codingAgent: 'codex',
+      model: 'gpt',
+      reasoningEffort: 'high',
+    });
+    expect(mocks.toastError).not.toHaveBeenCalled();
     task.cancel();
     await task.toPromise();
   });
@@ -509,6 +631,128 @@ describe('specialistsSaga', () => {
     expect(dispatch.mock.calls.map(([dispatched]) => dispatched)).toEqual([failureAction(action)]);
     expect(mocks.list).not.toHaveBeenCalled();
     expect(mocks.toastError).toHaveBeenCalledTimes(1);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('treats an already-absent override as reset when the delete allows it', async () => {
+    mocks.list.mockResolvedValue([]);
+    mocks.remove.mockRejectedValue(
+      Object.assign(new Error('specialist not found in user scope: builtin'), {
+        code: 'not-found',
+        rpcCode: -32602,
+        data: { code: 'not-found' },
+      }),
+    );
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch, getState: () => sagaState() }, specialistsSaga);
+    const action = deleteFileSpecialist({ id: 'builtin', scope: 'user', allowMissing: true });
+    channel.put(action);
+    await settle();
+
+    await expect(action.promise).resolves.toBeUndefined();
+    expect(mocks.list.mock.calls).toEqual([[]]);
+    expect(dispatch.mock.calls[0][0]).toEqual(successAction(action));
+    expect(mocks.toastError).not.toHaveBeenCalled();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it.each([
+    ['a not-found delete without allowMissing', { code: 'not-found' }, false],
+    ['another daemon rejection with allowMissing', { code: 'INVALID_PARAMS' }, true],
+    [
+      'an unstructured not-found code with allowMissing',
+      { code: 'not-found', data: { code: 'not-found' } },
+      true,
+    ],
+  ])('still reports %s', async (_name, details, allowMissing) => {
+    mocks.remove.mockRejectedValue(Object.assign(new Error('rejected'), details));
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch, getState: () => sagaState() }, specialistsSaga);
+    const action = deleteFileSpecialist({ id: 'builtin', scope: 'user', allowMissing });
+    channel.put(action);
+    await settle();
+
+    await expect(action.promise).rejects.toThrow('rejected');
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect(mocks.toastError).toHaveBeenCalledTimes(1);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('creates after a queued delete even while the project catalog still lists the file', async () => {
+    // Clearing a redundant project override deletes it; a reasoning pick right
+    // after must recreate it instead of editing the file that is now gone.
+    const project = { ...mappedFileDef('builtin'), source: 'project' as const };
+    const channel = stdChannel();
+    const task = runSaga(
+      {
+        channel,
+        dispatch: vi.fn(),
+        getState: () => ({
+          ...sagaState(),
+          providerCatalog: {
+            byWorkspaceId: {
+              'ws-1': { specialists: [{ ...fileDef('builtin'), source: 'project' }] },
+            },
+          },
+        }),
+      },
+      specialistsSaga,
+    );
+    const owner = { scope: 'project' as const, workspaceId: 'ws-1', workspacePath: '/ws' };
+    const remove = deleteFileSpecialist({ id: 'builtin', ...owner, allowMissing: true });
+    const save = saveFileSpecialist({
+      id: 'builtin',
+      name: project.name,
+      description: project.description,
+      behaviorPrompt: project.behaviorPrompt,
+      reasoningEffort: 'high',
+      ...owner,
+    });
+    channel.put(remove);
+    channel.put(save);
+    await expect(remove.promise).resolves.toBeUndefined();
+    await expect(save.promise).resolves.toBeUndefined();
+
+    expect(mocks.edit).not.toHaveBeenCalled();
+    expect(mocks.create.mock.calls.map(([id, , scope]) => [id, scope])).toEqual([
+      ['builtin', 'project'],
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('edits after a queued create even when its refetch failed', async () => {
+    mocks.list.mockRejectedValue(new Error('list failed'));
+    const channel = stdChannel();
+    const task = runSaga(
+      { channel, dispatch: vi.fn(), getState: () => sagaState() },
+      specialistsSaga,
+    );
+    const write = (reasoningEffort?: string) =>
+      saveFileSpecialist({
+        id: 'builtin',
+        name: 'Builtin',
+        description: 'Default',
+        behaviorPrompt: 'Default prompt',
+        codingAgent: 'codex',
+        model: 'gpt',
+        reasoningEffort,
+        scope: 'user',
+      });
+    const model = write();
+    const effort = write('high');
+    channel.put(model);
+    channel.put(effort);
+    await expect(model.promise).resolves.toBeUndefined();
+    await expect(effort.promise).resolves.toBeUndefined();
+
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+    expect(mocks.edit.mock.calls[0][1]).toMatchObject({ reasoningEffort: 'high' });
     task.cancel();
     await task.toPromise();
   });
@@ -745,5 +989,389 @@ describe('specialistsSaga', () => {
       task.cancel();
       await task.toPromise();
     });
+  });
+});
+
+describe.each(['list', 'listCatalog'] as const)('specialist creation via %s', (reader) => {
+  const tasks: ReturnType<typeof runSaga>[] = [];
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.catalogReads = reader === 'listCatalog';
+    mocks.list.mockReset().mockResolvedValue([]);
+    mocks.create.mockReset().mockResolvedValue({});
+  });
+  afterEach(async () => {
+    tasks.forEach((task) => task.cancel());
+    await Promise.all(tasks.splice(0).map((task) => task.toPromise()));
+    vi.useRealTimers();
+  });
+  function harness() {
+    let state = {
+      specialists: initialState,
+      githubAuth: { isAuthenticated: false },
+      providerCatalog: providerCatalogReducer(undefined, { type: '@@init' }),
+    };
+    const channel = stdChannel();
+    const dispatch = vi.fn((action: StoreAction<unknown>) => {
+      state = {
+        ...state,
+        specialists: specialistsReducer(state.specialists, action),
+        providerCatalog: providerCatalogReducer(state.providerCatalog, action),
+      };
+      channel.put(action);
+    });
+    const task = runSaga({ channel, dispatch, getState: () => state }, specialistsSaga);
+    tasks.push(task);
+    dispatch(
+      updateSpecialistDraft('user', {
+        name: 'Reviewer',
+        description: 'Reviews',
+        behaviorPrompt: 'Review carefully.',
+        codingAgent: 'codex',
+        model: 'codex:gpt',
+        reasoningEffort: 'high',
+      }),
+    );
+    return {
+      dispatch,
+      state: () => state,
+      creation: () => state.specialists.creationByContext.user,
+    };
+  }
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (error: Error) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  }
+
+  it('creates a visible unique ID instead of reusing a GitHub-gated ID', async () => {
+    const h = harness();
+    h.dispatch(updateSpecialistDraft('user', { name: 'PR Reviewer' }));
+    mocks.list.mockImplementation(async () => [fileDef(mocks.create.mock.calls[0][0])]);
+    const action = createSpecialistFromDraft('user');
+    h.dispatch(action);
+    await expect(action.promise).resolves.toBe('pr-reviewer-2');
+    expect(selectSpecialists.select(h.state() as StoreState).map((entry) => entry.id)).toContain(
+      'pr-reviewer-2',
+    );
+  });
+
+  it('does not confirm a persisted entry excluded from the sidebar by GitHub auth', async () => {
+    vi.useFakeTimers();
+    const h = harness();
+    h.dispatch(
+      setSpecialistCreation('user', {
+        draft: h.creation().draft,
+        status: 'refresh-failed',
+        specialistId: 'pr-reviewer',
+      }),
+    );
+    mocks.list.mockResolvedValue([fileDef('pr-reviewer')]);
+    const action = createSpecialistFromDraft('user');
+    h.dispatch(action);
+    await vi.advanceTimersByTimeAsync(30000);
+    await expect(action.promise).rejects.toThrow();
+    expect(h.creation().status).toBe('refresh-failed');
+    expect(mocks.toastSuccess).not.toHaveBeenCalled();
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it('keeps pending through write and catalog delays and ignores duplicate submissions', async () => {
+    const write = deferred<unknown>();
+    const catalog = deferred<ReturnType<typeof fileDef>[]>();
+    mocks.create.mockReturnValue(write.promise);
+    mocks.list.mockReturnValue(catalog.promise);
+    const h = harness();
+    const action = createSpecialistFromDraft('user');
+    const done = vi.fn();
+    void action.promise.then(done);
+    h.dispatch(action);
+    h.dispatch(createSpecialistFromDraft('user'));
+    expect(h.creation().status).toBe('saving');
+    expect(mocks.create.mock.calls).toEqual([
+      [
+        'reviewer',
+        {
+          id: 'reviewer',
+          name: 'Reviewer',
+          description: 'Reviews',
+          codingAgent: 'codex',
+          model: 'gpt',
+          reasoningEffort: 'high',
+          behaviorPrompt: 'Review carefully.',
+          source: 'user',
+        },
+        'user',
+        undefined,
+      ],
+    ]);
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect(done).not.toHaveBeenCalled();
+    write.resolve({});
+    await settle();
+    expect(h.creation().status).toBe('refreshing');
+    expect(mocks.toastSuccess).not.toHaveBeenCalled();
+    expect(done).not.toHaveBeenCalled();
+    h.dispatch(createSpecialistFromDraft('user'));
+    catalog.resolve([fileDef('reviewer')]);
+    await expect(action.promise).resolves.toBe('reviewer');
+    expect(selectSpecialists.select(h.state() as StoreState).map((s) => s.id)).toContain(
+      'reviewer',
+    );
+    expect(h.creation().draft.name).toBe('');
+    expect(h.creation().status).toBe('editing');
+    expect(mocks.toastSuccess).toHaveBeenCalledOnce();
+    expect(mocks.create).toHaveBeenCalledOnce();
+  });
+
+  it('retains every input on write failure and retries the same specialist', async () => {
+    mocks.create.mockRejectedValueOnce(new Error('Write failed'));
+    const h = harness();
+    const original = h.creation().draft;
+    const action = createSpecialistFromDraft('user');
+    h.dispatch(action);
+    await expect(action.promise).rejects.toThrow('Write failed');
+    expect(h.creation().draft).toEqual(original);
+    expect(h.creation().status).toBe('save-failed');
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect(mocks.toastSuccess).not.toHaveBeenCalled();
+    mocks.list.mockResolvedValue([fileDef('reviewer')]);
+    const retry = createSpecialistFromDraft('user');
+    h.dispatch(retry);
+    await expect(retry.promise).resolves.toBe('reviewer');
+    expect(mocks.create.mock.calls.map(([id]) => id)).toEqual(['reviewer', 'reviewer']);
+  });
+
+  it.each(['rejected', 'missing'] as const)(
+    'retries only refresh after a successful write and %s catalog',
+    async (failure) => {
+      vi.useFakeTimers();
+      if (failure === 'rejected') mocks.list.mockRejectedValueOnce(new Error('Offline'));
+      const h = harness();
+      const action = createSpecialistFromDraft('user');
+      h.dispatch(action);
+      await vi.advanceTimersByTimeAsync(30000);
+      await expect(action.promise).rejects.toThrow();
+      expect(h.creation().status).toBe('refresh-failed');
+      expect(h.creation().draft.name).toBe('Reviewer');
+      expect(mocks.toastSuccess).not.toHaveBeenCalled();
+      mocks.list.mockResolvedValue([fileDef('reviewer')]);
+      const retry = createSpecialistFromDraft('user');
+      h.dispatch(retry);
+      await expect(retry.promise).resolves.toBe('reviewer');
+      expect(mocks.create).toHaveBeenCalledOnce();
+      expect(mocks.list).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('waits for the workspace sidebar, retains recovery on its failure, and retries without writing', async () => {
+    mocks.list.mockResolvedValue([fileDef('reviewer')]);
+    const h = harness();
+    const action = createSpecialistFromDraft('user', 'A');
+    h.dispatch(action);
+    await vi.waitFor(() => expect(h.dispatch).toHaveBeenCalledWith(workspaceCatalogRequested('A')));
+    expect(h.creation().status).toBe('refreshing');
+    expect(mocks.toastSuccess).not.toHaveBeenCalled();
+    h.dispatch(workspaceCatalogReadFailed('A'));
+    await expect(action.promise).rejects.toThrow();
+    expect(h.creation().status).toBe('refresh-failed');
+    const retry = createSpecialistFromDraft('user', 'A');
+    h.dispatch(retry);
+    await vi.waitFor(() =>
+      expect(
+        h.dispatch.mock.calls.filter(([a]) => a.type === workspaceCatalogRequested.type),
+      ).toHaveLength(2),
+    );
+    h.dispatch(
+      workspaceCatalogReceived(
+        'B',
+        {
+          catalog: { providers: [] },
+          settings: [],
+          specialists: [fileDef('reviewer')],
+          readiness: {},
+        },
+        0,
+      ),
+    );
+    expect(mocks.toastSuccess).not.toHaveBeenCalled();
+    h.dispatch(
+      workspaceCatalogReceived(
+        'A',
+        {
+          catalog: { providers: [] },
+          settings: [],
+          specialists: [fileDef('reviewer')],
+          readiness: {},
+        },
+        0,
+      ),
+    );
+    await expect(retry.promise).resolves.toBe('reviewer');
+    expect(selectSpecialists.select(h.state() as StoreState, 'A').map((s) => s.id)).toContain(
+      'reviewer',
+    );
+    expect(mocks.create).toHaveBeenCalledOnce();
+  });
+
+  it('bounds waiting for a missing workspace catalog', async () => {
+    vi.useFakeTimers();
+    mocks.list.mockResolvedValue([fileDef('reviewer')]);
+    const h = harness();
+    const action = createSpecialistFromDraft('user', 'A');
+    h.dispatch(action);
+    await settle();
+    await vi.advanceTimersByTimeAsync(30000);
+    await expect(action.promise).rejects.toThrow();
+    expect(h.creation().status).toBe('refresh-failed');
+    expect(h.creation().draft.name).toBe('Reviewer');
+  });
+
+  it.each(['resolved', 'rejected', 'still pending'] as const)(
+    'confirms overlapping contexts from the newer catalog when the superseded read is %s',
+    async (olderOutcome) => {
+      const older = deferred<ReturnType<typeof fileDef>[]>();
+      const newer = deferred<ReturnType<typeof fileDef>[]>();
+      mocks.list.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
+      const h = harness();
+      const first = createSpecialistFromDraft('user');
+      h.dispatch(first);
+      await settle();
+      h.dispatch(updateSpecialistDraft('workspace:A', { name: 'Second' }));
+      const second = createSpecialistFromDraft('workspace:A', 'A');
+      h.dispatch(second);
+      await settle();
+      expect(mocks.list).toHaveBeenCalledTimes(2);
+      if (olderOutcome === 'resolved') older.resolve([fileDef('reviewer')]);
+      if (olderOutcome === 'rejected') older.reject(new Error('Obsolete read failed'));
+      await settle();
+      expect(h.creation().status).toBe('refreshing');
+      expect(mocks.toastError).not.toHaveBeenCalled();
+      h.dispatch(createSpecialistFromDraft('user'));
+      newer.resolve([fileDef('reviewer'), fileDef('second')]);
+      await expect(first.promise).resolves.toBe('reviewer');
+      expect(h.state().specialists.creationByContext['workspace:A'].status).toBe('refreshing');
+      h.dispatch(
+        workspaceCatalogReceived(
+          'A',
+          {
+            catalog: { providers: [] },
+            settings: [],
+            specialists: [fileDef('reviewer'), fileDef('second')],
+            readiness: {},
+          },
+          0,
+        ),
+      );
+      await expect(second.promise).resolves.toBe('second');
+      expect(selectSpecialists.select(h.state() as StoreState).map((entry) => entry.id)).toEqual([
+        'reviewer',
+        'second',
+      ]);
+      expect(mocks.create.mock.calls.map(([id]) => id)).toEqual(['reviewer', 'second']);
+      expect(mocks.toastSuccess).toHaveBeenCalledTimes(2);
+      expect(mocks.toastError).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects both waiting contexts on a current read failure and retries without duplicate writes', async () => {
+    vi.useFakeTimers();
+    const older = deferred<ReturnType<typeof fileDef>[]>();
+    const newer = deferred<ReturnType<typeof fileDef>[]>();
+    mocks.list.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
+    const h = harness();
+    const first = createSpecialistFromDraft('user');
+    h.dispatch(first);
+    await settle();
+    h.dispatch(updateSpecialistDraft('workspace:A', { name: 'Second' }));
+    const second = createSpecialistFromDraft('workspace:A');
+    h.dispatch(second);
+    await settle();
+    newer.reject(new Error('Current read failed'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.creation().status).toBe('refresh-failed');
+    expect(h.state().specialists.creationByContext['workspace:A'].status).toBe('refresh-failed');
+    await expect(first.promise).rejects.toThrow();
+    await expect(second.promise).rejects.toThrow();
+    expect(h.creation().status).toBe('refresh-failed');
+    expect(h.state().specialists.creationByContext['workspace:A'].status).toBe('refresh-failed');
+    expect(mocks.toastSuccess).not.toHaveBeenCalled();
+    mocks.list.mockResolvedValue([fileDef('reviewer'), fileDef('second')]);
+    const retry = createSpecialistFromDraft('user');
+    h.dispatch(retry);
+    await expect(retry.promise).resolves.toBe('reviewer');
+    const secondRetry = createSpecialistFromDraft('workspace:A');
+    h.dispatch(secondRetry);
+    await expect(secondRetry.promise).resolves.toBe('second');
+    expect(mocks.create.mock.calls.map(([id]) => id)).toEqual(['reviewer', 'second']);
+    older.resolve([fileDef('reviewer')]);
+    await settle();
+    expect(selectSpecialists.select(h.state() as StoreState).map((entry) => entry.id)).toEqual([
+      'reviewer',
+      'second',
+    ]);
+  });
+
+  it.each(['hung', 'missing'] as const)(
+    'bounds a %s global catalog and retries only the refresh',
+    async (outcome) => {
+      vi.useFakeTimers();
+      const read = deferred<ReturnType<typeof fileDef>[]>();
+      mocks.list.mockReturnValueOnce(read.promise);
+      const h = harness();
+      const action = createSpecialistFromDraft('user');
+      h.dispatch(action);
+      await settle();
+      if (outcome === 'missing') read.resolve([fileDef('someone-else')]);
+      await vi.advanceTimersByTimeAsync(29999);
+      expect(h.creation().status).toBe('refreshing');
+      expect(mocks.toastError).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(action.promise).rejects.toThrow();
+      expect(h.creation().status).toBe('refresh-failed');
+      expect(h.creation().draft.name).toBe('Reviewer');
+      mocks.list.mockResolvedValue([fileDef('reviewer')]);
+      const retry = createSpecialistFromDraft('user');
+      h.dispatch(retry);
+      await expect(retry.promise).resolves.toBe('reviewer');
+      read.resolve([fileDef('stale')]);
+      await settle();
+      expect(selectSpecialists.select(h.state() as StoreState).map((entry) => entry.id)).toEqual([
+        'reviewer',
+      ]);
+      expect(mocks.create).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('accepts a subscription catalog while its own global read is still pending', async () => {
+    const read = deferred<ReturnType<typeof fileDef>[]>();
+    mocks.list.mockReturnValue(read.promise);
+    const h = harness();
+    const action = createSpecialistFromDraft('user');
+    h.dispatch(action);
+    await settle();
+    mocks.subscription?.([fileDef('someone-else')]);
+    await settle();
+    expect(h.creation().status).toBe('refreshing');
+    mocks.subscription?.([fileDef('reviewer')]);
+    await expect(action.promise).resolves.toBe('reviewer');
+    read.reject(new Error('Obsolete read failed'));
+    await settle();
+    expect(mocks.toastError).not.toHaveBeenCalled();
+    expect(mocks.toastSuccess).toHaveBeenCalledOnce();
+    expect(mocks.create).toHaveBeenCalledOnce();
+  });
+
+  it('reserves different IDs for simultaneous contexts with the same name', async () => {
+    mocks.create.mockReturnValue(new Promise(() => {}));
+    const h = harness();
+    h.dispatch(updateSpecialistDraft('workspace:A', { name: 'Reviewer' }));
+    h.dispatch(createSpecialistFromDraft('user'));
+    h.dispatch(createSpecialistFromDraft('workspace:A'));
+    expect(mocks.create.mock.calls.map(([id]) => id)).toEqual(['reviewer', 'reviewer-2']);
   });
 });

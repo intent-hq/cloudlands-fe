@@ -5,7 +5,10 @@ import type {
   ProposalLifecycleEntry,
   ProposalLifecycleState,
 } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-types';
-import { agentScopedProposalKey } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-slice';
+import {
+  applyProposalRequested,
+  agentScopedProposalKey,
+} from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-slice';
 import { applyWorkspaceProposal } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
 import { store as appStore } from '$store/renderer/store';
 import type { PendingProposalEntry } from './pending-proposals';
@@ -51,6 +54,12 @@ export function getProposalLifecycleEntry(
 export function applyProposal(agentId: string, detail: ProposalActionDetail): void {
   const { proposal } = detail;
   rememberProposalIdentity(agentId, pendingProposalKeyOf(proposal), proposal);
+  if (proposal.kind === 'workspace-transfer') {
+    appStore.dispatch(
+      applyProposalRequested({ proposalId: getProposalId(proposal), kind: proposal.kind, detail }),
+    );
+    return;
+  }
   if (proposal.kind === 'workspace-create' || proposal.kind === 'bulk-op') {
     appStore.dispatch(
       applyWorkspaceProposal({
@@ -87,8 +96,8 @@ function requestResolution(input: {
     outcome: input.outcome,
     ...(input.detail ? { detail: input.detail } : {}),
   });
-  appStore.dispatch(action);
-  const request = action.promise
+  const request = appStore
+    .dispatch(action)
     .then(() => {
       if (!input.clearDraftBeforeRequest) clearProposalDraft(input.agentId, input.proposalId);
     })

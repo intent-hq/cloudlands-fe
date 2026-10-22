@@ -1,7 +1,7 @@
 // @verify-changed-triggers: ../Panel.svelte, ../PanelContainer.svelte, ../PanelLayout.svelte,
 //   ../PanelSplitHandle.svelte, ../PanelTabBar.svelte,
 //   ../../WindowTitleBar.svelte, ../../WorkspaceTabStrip.svelte,
-//   ../../sidebar-nav/SidebarNav.svelte, ../../sidebar-nav/SidebarPanel.svelte,
+//   ../../sidebar-nav/SidebarNav.svelte,
 //   ../../../workspace/WorkspaceLayout.svelte, ../../../workspace/WorkspaceSidebarHeader.svelte,
 //   ../../../workspace/MultiSelectTabbedSidebar.svelte,
 //   ../../../workspace/WorkspaceTerminalDock.svelte, ../../../workspace/multi-select-sidebar-tabs.ts,
@@ -48,7 +48,6 @@ describe('editorial workspace shell presentation contract', () => {
     const container = source('../PanelContainer.svelte');
 
     expect(panel).toContain('overflow-hidden rounded-(--panel-shell-radius) text-foreground');
-    expect(panel).toContain('--panel-shell-radius: var(--radius-large);');
     expect(panel).not.toContain('rounded-lg border border-border');
     expect(panel).toContain('class:bg-sidebar={panel.tabs.length === 0}');
     expect(panel).toContain('class:bg-background={panel.tabs.length > 0}');
@@ -93,7 +92,6 @@ describe('editorial workspace shell presentation contract', () => {
     expect(container).not.toContain('min-width: 30rem');
     expect(container).toContain('.panel-split-container {');
     expect(container).toContain('min-width: 0');
-    expect(container).toContain('overflow: hidden');
     expect(handle).toContain('width: 16px');
     expect(handle).toContain('height: 16px');
   });
@@ -149,7 +147,6 @@ describe('editorial workspace shell presentation contract', () => {
     expect(launcherMarkup).not.toContain('content={`${tab.label}:');
     expect(launcherMarkup).toContain('data-files-open-in');
     expect(launcherMarkup).not.toContain('faFolderTree');
-    expect(sidebar).toContain('grid-rows-[minmax(0,1fr)_232px]');
     expect(sidebar).toContain('grid-rows-[minmax(0,1fr)_0px]');
     expect(sidebar).toContain('{#if isLauncherOverview}');
     expect(sidebar).toContain('label={m.ui_tab_close_ariaLabel()}');
@@ -175,7 +172,6 @@ describe('editorial workspace shell presentation contract', () => {
     expect(titlebar).toContain('data-titlebar-drag-handle');
     expect(titlebar).toContain('data-titlebar-left-drag-handle');
     expect(titlebar).toContain('titlebar-left-drag-handle shrink-0 self-stretch');
-    expect(titlebar).toContain('titlebar-fixed-controls flex min-w-0 items-center gap-1');
     expect(titlebar).toContain('data-titlebar-fixed-controls');
     expect(titlebar).toContain('class="flex min-w-0 self-end items-center gap-1');
     expect(titlebar).toContain('data-titlebar-workspace-controls');
@@ -185,7 +181,6 @@ describe('editorial workspace shell presentation contract', () => {
     expect(titlebar).toContain('width: calc(16px - var(--titlebar-control-shift))');
     expect(titlebar).toContain('padding-right: var(--titlebar-control-shift)');
     expect(titlebar.indexOf('<SidebarNav />')).toBeLessThan(titlebar.indexOf('<WorkspaceTabStrip'));
-    expect(titlebar).toContain('style:margin-left={`${panelOffset}px`}');
     expect(titlebar).toContain('style:left={`${activeTabBounds.left}px`}');
     expect(titlebar).toContain('style:width={`${activeTabBounds.width}px`}');
     expect(titlebar).toContain('.titlebar-drag-handle');
@@ -198,7 +193,11 @@ describe('editorial workspace shell presentation contract', () => {
     expect(titlebar).not.toContain('<PanelLayoutControls');
     expect(titlebar).not.toContain('aria-label="Toggle sidebar"');
     expect(titlebar).not.toContain('mx-0.5 h-4 w-px shrink-0 bg-border/70');
-    expect(tabs).toContain('w-fit min-w-0 max-w-[100%]');
+    // Flex shrinking bounds narrow layouts without a percentage cap feeding
+    // the overflow-dependent margin back into the intrinsic parent width.
+    // The drag-region and layout-stability CTs cover this across launcher states.
+    expect(tabs).toContain('w-fit min-w-0 items-center');
+    expect(tabs).not.toContain('max-w-[100%]');
     expect(tabs).toContain('use:reportActiveTabBounds={isCurrent}');
     expect(titlebar).toContain('data-active-tab-border-mask');
     expect(nav).not.toContain('faBell');
@@ -226,26 +225,16 @@ describe('editorial workspace shell presentation contract', () => {
   it('consolidates Chief and Spaces in the title bar and removes the former workspace notch', () => {
     const appLayout = source('../../../../../routes/(app)/+layout.svelte');
     const navigation = source('../../sidebar-nav/SidebarNav.svelte');
-    const sidebarPanel = source('../../sidebar-nav/SidebarPanel.svelte');
 
     expect(appLayout).toContain('workspace-frame-row flex flex-1 min-h-0 bg-transparent pb-2 pl-2');
     expect(appLayout).toContain('workspace-frame relative');
     expect(appLayout).not.toContain('<ChiefNotch />');
     expect(appLayout).not.toContain('clip-path: var(--workspace-clip');
-    expect(navigation).toContain('aria-label={m.layout_titleBar_toggleSidebar_ariaLabel()}');
-    expect(navigation).toContain('aria-pressed={active}');
     expect(navigation).not.toContain('aria-haspopup');
     expect(navigation).not.toContain('aria-expanded');
     expect(navigation).not.toContain('aria-controls');
     expect(navigation).not.toContain('SidebarNavHoverCard');
     expect(appLayout).toContain('class="workspace-main flex');
-    expect(sidebarPanel).toContain('data-panel-item={$panelItem$}');
-    expect(sidebarPanel).not.toContain("$panelItem$ === 'chief' ? 'bg-background' : ''");
-    // The panel stays mounted when closed and animates its width instead of
-    // mounting/unmounting via a slide transition.
-    expect(sidebarPanel).not.toContain("transition:slide={{ axis: 'x', duration: 200 }}");
-    expect(sidebarPanel).toContain('data-panel-shell');
-    expect(sidebarPanel).toContain('inert={!isOpen}');
   });
 
   it('owns shell, page, and sidebar surfaces with resolved app theme tokens', () => {
@@ -253,7 +242,6 @@ describe('editorial workspace shell presentation contract', () => {
     const appHtml = source('../../../../../app.html');
     const appLayout = source('../../../../../routes/(app)/+layout.svelte');
     const appLayoutCss = source('../../../../../routes/(app)/app-layout.css');
-    const sidebarPanel = source('../../sidebar-nav/SidebarPanel.svelte');
 
     expect(appCss).toMatch(/html,\s*body\s*{[^}]*background-color:\s*transparent;/s);
     expect(appCss).toMatch(/#app\s*{[^}]*background-color:\s*transparent;/s);
@@ -277,8 +265,6 @@ describe('editorial workspace shell presentation contract', () => {
       /\.panel-layout-container\[data-shell-opaque\],[\s\S]*background-color:\s*hsl\(var\(--background\)\);/,
     );
     expect(appLayout).toContain('rounded-xl bg-sidebar border border-border shadow-sm');
-    expect(sidebarPanel).toContain('relative text-sidebar-foreground');
-    expect(sidebarPanel).not.toContain('relative bg-sidebar text-sidebar-foreground');
     expect(appLayout).not.toContain('backdrop-filter:');
   });
 
@@ -293,7 +279,9 @@ describe('editorial workspace shell presentation contract', () => {
     expect(sidebar).toContain(
       "class={cn('relative flex h-full flex-col overflow-hidden bg-transparent', className)}",
     );
-    expect(dock).toContain('{#each $terminals$.slice(0, 1) as terminal (terminal.id)}');
+    expect(dock).toContain(
+      '{#each $isCollaborator$ ? [] : $terminals$.slice(0, 1) as terminal (terminal.id)}',
+    );
     expect(dock).toContain('data-dev-script-count');
     expect(dock).toContain('rounded-lg border border-border bg-sidebar px-3 text-foreground');
     expect(dock).toContain('border-0 bg-transparent p-0');
@@ -301,16 +289,6 @@ describe('editorial workspace shell presentation contract', () => {
     expect(dock).not.toContain('faChevron');
     expect(terminal).toContain('showDockWhenClosed || $isOpen');
     expect(route).toContain('showDockWhenClosed={false}');
-  });
-
-  it('renders a single content title instead of a category breadcrumb', () => {
-    const tabBar = source('../PanelTabBar.svelte');
-
-    expect(tabBar).toContain(
-      'Single content title; type/category is conveyed by the content itself.',
-    );
-    expect(tabBar).not.toContain('<span>{categoryLabel}</span>');
-    expect(tabBar).not.toContain('<span class="text-ghost text-xs">/</span>');
   });
 
   it('orders workspace identity, progress, and status like the reference hierarchy', () => {

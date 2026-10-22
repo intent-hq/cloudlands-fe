@@ -1,5 +1,32 @@
-import { cleanup, render, screen } from '@testing-library/svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('$store/renderer/store', async () => {
+  const { runSaga, stdChannel } = await import('redux-saga');
+  const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { videoPreviewReducer, initialState } =
+    await import('$store/renderer/slices/video-preview/video-preview-slice');
+  let state = { videoPreview: initialState };
+  const channel = stdChannel();
+  const store = createAppStoreMock({
+    state: () => state,
+    dedupeEmits: true,
+    dispatch(action: { type: string }) {
+      state = { videoPreview: videoPreviewReducer(state.videoPreview, action as never) };
+      channel.put(action);
+      store.emitState();
+      return action;
+    },
+  });
+  return {
+    store: Object.assign(store, {
+      runSaga(saga: () => Generator) {
+        const task = runSaga({ channel, dispatch: store.dispatch, getState: () => state }, saga);
+        return () => task.cancel();
+      },
+    }),
+  };
+});
 
 vi.mock('./CodeEditor.svelte', async () => ({
   default: (await import('$features/layout/tab-types/__tests__/mocks/MockCodeEditor.svelte'))
@@ -7,8 +34,22 @@ vi.mock('./CodeEditor.svelte', async () => ({
 }));
 
 import FileViewer from './FileViewer.svelte';
+import { m } from '$shared/paraglide/messages.js';
+import { store as appStore } from '$store/renderer/store';
+import { videoPreviewSaga } from '$store/renderer/slices/video-preview/sagas/video-preview-saga';
 
-afterEach(cleanup);
+let stop: () => void;
+beforeEach(() => {
+  stop = appStore.runSaga(videoPreviewSaga);
+});
+
+afterEach(() => {
+  cleanup();
+  stop();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 
 function decodeSvgSource(source: string): string {
   const prefix = 'data:image/svg+xml;base64,';
@@ -48,12 +89,219 @@ describe('FileViewer SVG preview', () => {
     expect(previewSurface?.querySelector('svg')).toBeNull();
     expect(previewSurface?.querySelector('script')).toBeNull();
     expect(previewSurface?.querySelector('[onload], [onclick]')).toBeNull();
-    expect(preview.getAttributeNames().sort()).toEqual(['alt', 'class', 'src']);
+    expect(preview.getAttributeNames().sort()).toEqual([
+      'alt',
+      'class',
+      'draggable',
+      'src',
+      'style',
+    ]);
     expect(decodeSvgSource(preview.getAttribute('src') ?? '')).toBe(content);
   });
 });
 
 describe('FileViewer workspace media', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 415 })));
+  });
+  async function failVideo(code: number) {
+    const video = screen.getByTestId<HTMLVideoElement>('file-video');
+    Object.defineProperty(video, 'error', { value: { code }, configurable: true });
+    await fireEvent.error(video);
+    return video;
+  }
+
+  it.each([3, 4])(
+    'replaces failed video (MediaError %s) with original-file download',
+    async (code) => {
+      const clicked: Array<{ href: string; name: string }> = [];
+      const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function () {
+        clicked.push({ href: this.href, name: this.download });
+      });
+      try {
+        render(FileViewer, {
+          props: { filePath: 'recording.mp4', fileContent: 'AAAA', isBinary: true },
+        });
+        await failVideo(code);
+        expect(screen.getByRole('alert')).toBeTruthy();
+        expect(screen.queryByTestId('file-video')).toBeNull();
+        await fireEvent.click(
+          screen.getByRole('button', { name: m.layout_fileTab_downloadFile_label() }),
+        );
+        expect(clicked).toEqual([{ href: 'data:video/mp4;base64,AAAA', name: 'recording.mp4' }]);
+      } finally {
+        click.mockRestore();
+      }
+    },
+  );
+
+  it('distinguishes a network failure from an unsupported video', async () => {
+    render(FileViewer, {
+      props: { filePath: 'recording.mp4', sourceUrl: 'workspace-file://ws-1/recording.mp4' },
+    });
+    await failVideo(2);
+    expect(screen.getByRole('alert')).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).not.toContain(
+      m.editor_fileViewer_videoUnsupported_label(),
+    );
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('uses the workspace download callback and respects pending and disabled downloads', async () => {
+    const onDownload = vi.fn();
+    const props = {
+      filePath: 'recording.mp4',
+      sourceUrl: 'workspace-file://ws-1/recording.mp4',
+      onDownload,
+      downloading: false,
+      allowDownload: true,
+    };
+    const view = render(FileViewer, { props });
+    await failVideo(4);
+    const button = screen.getByRole<HTMLButtonElement>('button', {
+      name: m.layout_fileTab_downloadFile_label(),
+    });
+    await fireEvent.click(button);
+    expect(onDownload).toHaveBeenCalledTimes(1);
+    await view.rerender({ ...props, downloading: true });
+    expect(button.disabled).toBe(true);
+    await fireEvent.click(button);
+    expect(onDownload).toHaveBeenCalledTimes(1);
+    await view.rerender({ ...props, allowDownload: false });
+    expect(
+      screen.queryByRole('button', { name: m.layout_fileTab_downloadFile_label() }),
+    ).toBeNull();
+  });
+
+  it('recovers after source replacement and ignores errors from the retired player', async () => {
+    const props = {
+      filePath: 'recording.mp4',
+      sourceUrl: 'workspace-file://ws-1/recording.mp4?v=1',
+    };
+    const view = render(FileViewer, { props });
+    const oldVideo = await failVideo(4);
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    await view.rerender({ ...props, sourceUrl: 'workspace-file://ws-1/recording.mp4?v=2' });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByTestId<HTMLVideoElement>('file-video').getAttribute('src')).toBe(
+      'workspace-file://ws-1/recording.mp4?v=2',
+    );
+    await fireEvent.error(oldVideo);
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it.each(['decode error', 'audio-only metadata'])(
+    'tries one compatible preview after %s and releases it on unmount',
+    async (failure) => {
+      vi.mocked(fetch).mockResolvedValue(
+        new Response(new Uint8Array([1, 2, 3]), { headers: { 'Content-Type': 'video/mp4' } }),
+      );
+      const createUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:compatible');
+      const revokeUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+      const onDownload = vi.fn();
+      const view = render(FileViewer, {
+        props: {
+          filePath: 'recording.mp4',
+          sourceUrl: 'workspace-file://ws-1/recording.mp4?v=1',
+          onDownload,
+        },
+      });
+      expect(fetch).not.toHaveBeenCalled();
+      if (failure === 'decode error') await failVideo(3);
+      else await fireEvent.loadedMetadata(screen.getByTestId('file-video'));
+      await waitFor(() =>
+        expect(screen.getByTestId('file-video').getAttribute('src')).toBe('blob:compatible'),
+      );
+      expect(fetch).toHaveBeenCalledExactlyOnceWith(
+        'workspace-file://ws-1/recording.mp4?v=1&preview=h264',
+        { signal: expect.any(AbortSignal) },
+      );
+      expect(createUrl).toHaveBeenCalledTimes(1);
+      await failVideo(4);
+      expect(screen.getByRole('alert')).toBeTruthy();
+      expect(fetch).toHaveBeenCalledTimes(1);
+      await fireEvent.click(
+        screen.getByRole('button', { name: m.layout_fileTab_downloadFile_label() }),
+      );
+      expect(onDownload).toHaveBeenCalledTimes(1);
+      view.unmount();
+      expect(revokeUrl).toHaveBeenCalledExactlyOnceWith('blob:compatible');
+    },
+  );
+
+  it('cancels retired conversions and ignores late bytes on source replacement', async () => {
+    let finish!: (response: Response) => void;
+    vi.mocked(fetch).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const createUrl = vi.spyOn(URL, 'createObjectURL');
+    const props = {
+      filePath: 'recording.mp4',
+      sourceUrl: 'workspace-file://ws-1/recording.mp4?v=1',
+    };
+    const view = render(FileViewer, { props });
+    await failVideo(4);
+    expect(screen.getByRole('status')).toBeTruthy();
+    const signal = vi.mocked(fetch).mock.calls[0][1]?.signal;
+    await view.rerender({ ...props, sourceUrl: 'workspace-file://ws-1/recording.mp4?v=2' });
+    expect(signal?.aborted).toBe(true);
+    finish(new Response(new Uint8Array([1, 2, 3])));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(createUrl).not.toHaveBeenCalled();
+    expect(screen.getByTestId('file-video').getAttribute('src')).toBe(
+      'workspace-file://ws-1/recording.mp4?v=2',
+    );
+  });
+
+  it('ends a stalled conversion with an actionable error', async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetch).mockImplementation(
+      (_url, options) =>
+        new Promise((_resolve, reject) => {
+          options?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        }),
+    );
+    render(FileViewer, {
+      props: { filePath: 'recording.mp4', sourceUrl: 'workspace-file://ws-1/recording.mp4' },
+    });
+    await failVideo(4);
+    await vi.advanceTimersByTimeAsync(45_000);
+    expect(screen.getByRole('alert')).toBeTruthy();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a file-read failure during conversion as a load error', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 404 }));
+    render(FileViewer, {
+      props: { filePath: 'recording.mp4', sourceUrl: 'workspace-file://ws-1/recording.mp4' },
+    });
+    await failVideo(4);
+    expect((await screen.findByRole('alert')).textContent).not.toContain(
+      m.editor_fileViewer_videoUnsupported_label(),
+    );
+  });
+
+  it.each(['png', 'svg'])('disables downloads for a scoped %s preview', async (extension) => {
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    render(FileViewer, {
+      props: { filePath: `preview.${extension}`, fileContent: '', allowDownload: false },
+    });
+    const download = screen.getByTitle<HTMLButtonElement>('Download');
+    expect(download.disabled).toBe(true);
+    await fireEvent.click(download);
+    expect(click).not.toHaveBeenCalled();
+    click.mockRestore();
+  });
+
+  it('keeps downloads enabled for ordinary previews', () => {
+    render(FileViewer, { props: { filePath: 'preview.png', fileContent: '' } });
+    expect(screen.getByTitle<HTMLButtonElement>('Download').disabled).toBe(false);
+  });
+
   it('renders an image from the contained workspace-file source', () => {
     const sourceUrl = 'workspace-file://ws-1/.demo-artifacts/run/preview.png';
     render(FileViewer, {
@@ -93,4 +341,181 @@ describe('FileViewer workspace media', () => {
       expect(screen.getByTestId<HTMLVideoElement>('file-video').getAttribute('src')).toBe(videoUrl);
     },
   );
+});
+
+describe.each(['png', 'svg'])('FileViewer %s panning', (extension) => {
+  function setup() {
+    const result = render(FileViewer, {
+      props: {
+        filePath: `photo.${extension}`,
+        fileContent:
+          extension === 'svg'
+            ? '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="80" />'
+            : 'AAAA',
+      },
+    });
+    const image = screen.getByRole<HTMLImageElement>('img', { name: `photo.${extension}` });
+    const viewport = image.parentElement!;
+    const captures = new Set<number>();
+    viewport.setPointerCapture = vi.fn((id) => captures.add(id));
+    viewport.hasPointerCapture = vi.fn((id) => captures.has(id));
+    viewport.releasePointerCapture = vi.fn((id) => captures.delete(id));
+    return { ...result, image, viewport };
+  }
+
+  function pointer(
+    target: Element,
+    type: string,
+    init: MouseEventInit & { pointerId?: number; isPrimary?: boolean } = {},
+  ) {
+    const event = new MouseEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      buttons: 1,
+      ...init,
+    });
+    Object.defineProperties(event, {
+      pointerId: { value: init.pointerId ?? 1 },
+      isPrimary: { value: init.isPrimary ?? true },
+    });
+    return fireEvent(target, event);
+  }
+
+  it.each(['image', 'background'])(
+    'pans from the %s by the pointer distance on both axes',
+    async (target) => {
+      const { image, viewport } = setup();
+      await pointer(target === 'image' ? image : viewport, 'pointerdown', {
+        clientX: 100,
+        clientY: 90,
+      });
+      await pointer(viewport, 'pointermove', { clientX: 140, clientY: 65 });
+      expect(image.style.translate).toBe('40px -25px');
+      expect(viewport.setPointerCapture).toHaveBeenCalledWith(1);
+      expect(image.draggable).toBe(false);
+    },
+  );
+
+  it.each(['pointerup', 'pointercancel', 'lostpointercapture'])(
+    'stops panning on %s and allows a new drag',
+    async (type) => {
+      const { image, viewport } = setup();
+      await pointer(viewport, 'pointerdown');
+      await pointer(viewport, 'pointermove', { clientX: 30, clientY: 20 });
+      await pointer(viewport, type);
+      await pointer(viewport, 'pointermove', { clientX: 80, clientY: 70 });
+      expect(image.style.translate).toBe('30px 20px');
+      expect(viewport.releasePointerCapture).toHaveBeenCalledWith(1);
+      await pointer(viewport, 'pointerdown', { clientX: 80, clientY: 70 });
+      await pointer(viewport, 'pointermove', { clientX: 90, clientY: 80 });
+      expect(image.style.translate).toBe('40px 30px');
+    },
+  );
+
+  it.each([{ button: 1 }, { button: 2 }, { isPrimary: false }])(
+    'ignores non-primary input %j',
+    async (init) => {
+      const { image, viewport } = setup();
+      await pointer(viewport, 'pointerdown', init);
+      await pointer(viewport, 'pointermove', { clientX: 30 });
+      expect(image.style.translate).toBe('0px 0px');
+      expect(viewport.setPointerCapture).not.toHaveBeenCalled();
+    },
+  );
+
+  it('ignores other pointers during a drag', async () => {
+    const { image, viewport } = setup();
+    await pointer(viewport, 'pointerdown');
+    await pointer(viewport, 'pointerdown', { pointerId: 2, clientX: 100 });
+    await pointer(viewport, 'pointermove', { pointerId: 2, clientX: 200 });
+    await pointer(viewport, 'pointerup', { pointerId: 2 });
+    await pointer(viewport, 'pointermove', { clientX: 20, clientY: 10 });
+    expect(image.style.translate).toBe('20px 10px');
+  });
+
+  it('ends a drag on window blur or when the primary button is no longer held', async () => {
+    const { image, viewport } = setup();
+    await pointer(viewport, 'pointerdown');
+    await fireEvent(window, new Event('blur'));
+    await pointer(viewport, 'pointermove', { clientX: 40 });
+    expect(image.style.translate).toBe('0px 0px');
+    await pointer(viewport, 'pointerdown');
+    await pointer(viewport, 'pointermove', { clientX: 40, buttons: 0 });
+    await pointer(viewport, 'pointermove', { clientX: 80 });
+    expect(image.style.translate).toBe('0px 0px');
+  });
+
+  it('resets panning and capture when switching files and releases capture on unmount', async () => {
+    const { image, viewport, rerender, unmount } = setup();
+    await pointer(viewport, 'pointerdown');
+    await pointer(viewport, 'pointermove', { clientX: 30, clientY: 20 });
+    await rerender({ filePath: `next.${extension}`, fileContent: 'BBBB' });
+    await pointer(viewport, 'pointermove', { clientX: 80 });
+    expect(image.style.translate).toBe('0px 0px');
+    expect(viewport.releasePointerCapture).toHaveBeenCalledWith(1);
+    await pointer(viewport, 'pointerdown', { pointerId: 2 });
+    unmount();
+    expect(viewport.releasePointerCapture).toHaveBeenCalledWith(2);
+  });
+
+  it('ends the active drag and clears its offset when switching viewer types', async () => {
+    const { viewport, rerender } = setup();
+    await pointer(viewport, 'pointerdown');
+    await pointer(viewport, 'pointermove', { clientX: 30, clientY: 20 });
+    const nextFile = extension === 'png' ? 'next.svg' : 'next.png';
+    await rerender({
+      filePath: nextFile,
+      fileContent: '<svg xmlns="http://www.w3.org/2000/svg" />',
+    });
+    const nextImage = screen.getByRole<HTMLImageElement>('img', { name: nextFile });
+    await pointer(nextImage.parentElement!, 'pointermove', { clientX: 100 });
+    expect(nextImage.style.translate).toBe('0px 0px');
+    expect(viewport.releasePointerCapture).toHaveBeenCalledWith(1);
+  });
+
+  it('updates the zoom readout in 25-point steps and keeps panning in screen coordinates', async () => {
+    const { image, viewport } = setup();
+    expect(screen.getByText('100%')).toBeTruthy();
+    await fireEvent.click(screen.getByTitle('Zoom in'));
+    expect(screen.getByText('125%')).toBeTruthy();
+    expect(image.style.transform).toContain('scale(1.25)');
+    await pointer(viewport, 'pointerdown');
+    await pointer(viewport, 'pointermove', { clientX: 40, clientY: 20 });
+    await pointer(viewport, 'pointerup');
+    expect(image.style.translate).toBe('40px 20px');
+    await fireEvent.click(screen.getByTitle('Zoom out'));
+    expect(screen.getByText('100%')).toBeTruthy();
+    expect(image.style.transform).toContain('scale(1)');
+    expect(image.style.translate).toBe('40px 20px');
+    expect(screen.getByTitle('Download')).toBeTruthy();
+  });
+
+  it('keeps zoom between 25% and 500%', async () => {
+    const { image } = setup();
+    for (let i = 0; i < 5; i++) await fireEvent.click(screen.getByTitle('Zoom out'));
+    expect(screen.getByText('25%')).toBeTruthy();
+    expect(image.style.transform).toContain('scale(0.25)');
+    for (let i = 0; i < 21; i++) await fireEvent.click(screen.getByTitle('Zoom in'));
+    expect(screen.getByText('500%')).toBeTruthy();
+    expect(image.style.transform).toContain('scale(5)');
+  });
+
+  if (extension === 'png')
+    it('keeps translation independent of zoom and rotation and leaves wheel events alone', async () => {
+      const { image, viewport } = setup();
+      await fireEvent.click(screen.getByTitle('Zoom in'));
+      await fireEvent.click(screen.getByTitle('Rotate'));
+      await pointer(viewport, 'pointerdown');
+      await pointer(viewport, 'pointermove', { clientX: 40, clientY: 20 });
+      expect(image.style.translate).toBe('40px 20px');
+      expect(image.style.transform).toBe('scale(1.25) rotate(90deg)');
+      await pointer(viewport, 'pointerup');
+      await fireEvent.click(screen.getByTitle('Zoom out'));
+      expect(image.style.transform).toBe('scale(1) rotate(90deg)');
+      const wheel = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 100 });
+      await fireEvent(viewport, wheel);
+      expect(wheel.defaultPrevented).toBe(false);
+      expect(image.style.translate).toBe('40px 20px');
+    });
 });

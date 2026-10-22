@@ -1,9 +1,25 @@
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { closeTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { openTerminalOverlay } from '$store/renderer/slices/terminals/terminals-slice';
 
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', async () => {
+  const { store } = await import('$store/renderer/store');
+  return {
+    selectWorkspaceActionContext: store.createSelector(() => mockState.authority),
+    selectWorkspaceParticipationContext: store.createSelector(() => mockState.authority),
+    selectWorkspaceSavedScriptContext: store.createSelector(() => mockState.authority),
+    selectCanManageWorkspace: store.createSelector(() => mockState.authority !== null),
+  };
+});
+
 const dispatch = vi.hoisted(() => vi.fn());
+const mockState = vi.hoisted(() => ({
+  authority: 'admitted' as string | null,
+  scripts: { byWorkspaceId: {} as Record<string, any> },
+}));
+vi.mock('$lib/components/patterns/confirm', () => ({ confirm: vi.fn().mockResolvedValue(true) }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: vi.fn() } }));
 
 vi.mock('$lib/components/terminal/Terminal.svelte', async () => ({
   default: (await import('./mocks/MockTerminal.svelte')).default,
@@ -14,13 +30,20 @@ vi.mock('$lib/components/terminal/ScriptOutputViewer.svelte', async () => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ dispatch });
+  return createAppStoreMockModule({ dispatch, state: mockState });
 });
 
+import { scriptsClient } from '$features/scripts/scripts.client';
+import {
+  scriptOperationSucceeded,
+  scriptsReducer,
+} from '$store/renderer/slices/scripts/scripts-slice';
+import { confirm } from '$lib/components/patterns/confirm';
+import { store } from '$store/renderer/store';
 import TerminalTabTypeHeaderHarness from './mocks/TerminalTabTypeHeaderHarness.svelte';
 
 const action = (container: HTMLElement) =>
-  container.querySelector<HTMLButtonElement>('[data-move-to-bottom-bar]');
+  container.querySelector<HTMLElement>('[data-move-to-bottom-bar]');
 
 describe('TerminalTabType header action lifecycle', () => {
   beforeEach(() => dispatch.mockClear());
@@ -30,6 +53,7 @@ describe('TerminalTabType header action lifecycle', () => {
     const view = render(TerminalTabTypeHeaderHarness, {
       props: { activeTabId: 'terminal-tab-1' },
     });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
     await waitFor(() => expect(action(view.container)).not.toBeNull());
 
     await view.rerender({ activeTabId: 'browser-tab' });
@@ -42,9 +66,11 @@ describe('TerminalTabType header action lifecycle', () => {
     ['terminal-tab-2', 'terminal-tab-1', 'terminal-session-1'],
   ])('reassigns the action from %s to %s', async (from, to, terminalId) => {
     const view = render(TerminalTabTypeHeaderHarness, { props: { activeTabId: from } });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
     await waitFor(() => expect(action(view.container)).not.toBeNull());
 
     await view.rerender({ activeTabId: to });
+    await waitFor(() => expect(action(view.container)).not.toBeNull());
     dispatch.mockClear();
     await fireEvent.click(action(view.container)!);
 
@@ -61,10 +87,176 @@ describe('TerminalTabType header action lifecycle', () => {
     const view = render(TerminalTabTypeHeaderHarness, {
       props: { activeTabId: 'terminal-tab-1' },
     });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
     await waitFor(() => expect(action(view.container)).not.toBeNull());
 
     await view.rerender({ activeTabId: 'terminal-tab-1', firstMounted: false });
 
     await waitFor(() => expect(action(view.container)).toBeNull());
   });
+});
+
+describe('script panel deletion', () => {
+  beforeEach(() => {
+    dispatch.mockClear();
+    vi.mocked(confirm).mockReset().mockResolvedValue(true);
+    mockState.scripts.byWorkspaceId = {
+      'workspace-1': {
+        scripts: {
+          check: {
+            id: 'check',
+            name: 'Project check',
+            createdAt: '2026-10-09',
+            runtime: { status: 'idle' },
+          },
+        },
+        operations: {},
+      },
+    };
+  });
+  afterEach(cleanup);
+
+  async function openMenu() {
+    await fireEvent.click(screen.getByRole('button', { name: 'Panel actions' }));
+  }
+
+  function updateRequest() {
+    return dispatch.mock.calls.find(
+      ([candidate]) => candidate.type === 'scripts/updateScriptDefinitionRequested',
+    )![0];
+  }
+
+  it('confirms the named script and dispatches deletion from the panel menu', async () => {
+    render(TerminalTabTypeHeaderHarness, { activeTabId: 'terminal-tab-1', scriptId: 'check' });
+    await openMenu();
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Delete script' }));
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ title: expect.stringContaining('Project check') }),
+    );
+    await waitFor(() =>
+      expect(dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'scripts/deleteScriptRequested',
+          payload: ['workspace-1', 'check', expect.any(String)],
+        }),
+      ),
+    );
+  });
+
+  it.each([true, false])(
+    'disables the panel menu during a direct save (success: %s)',
+    async (success) => {
+      dispatch.mockImplementation((action) => {
+        mockState.scripts = scriptsReducer(mockState.scripts as never, action);
+        (store as any).emitState();
+      });
+      const pending = scriptsClient.update('workspace-1', 'check', { name: 'Renamed' });
+      render(TerminalTabTypeHeaderHarness, { activeTabId: 'terminal-tab-1', scriptId: 'check' });
+      await openMenu();
+      expect(
+        screen.getByRole('menuitem', { name: /Delete script/ }).getAttribute('aria-disabled'),
+      ).toBe('true');
+      const request = updateRequest();
+      if (success)
+        request.success({ ...mockState.scripts.byWorkspaceId['workspace-1'].scripts.check });
+      else request.failure(new Error('Save failed'));
+      dispatch(
+        scriptOperationSucceeded('workspace-1', 'check', 'edit', `${request.type}:${request.seq}`),
+      );
+      await pending;
+      await waitFor(() =>
+        expect(
+          screen.getByRole('menuitem', { name: /Delete script/ }).getAttribute('aria-disabled'),
+        ).not.toBe('true'),
+      );
+      dispatch.mockReset();
+    },
+  );
+
+  it('rejects deletion when a direct save starts after panel confirmation opens', async () => {
+    dispatch.mockImplementation((action) => {
+      mockState.scripts = scriptsReducer(mockState.scripts as never, action);
+      (store as any).emitState();
+    });
+    let accept!: (value: boolean) => void;
+    vi.mocked(confirm).mockReturnValue(
+      new Promise((resolve) => {
+        accept = resolve;
+      }),
+    );
+    render(TerminalTabTypeHeaderHarness, { activeTabId: 'terminal-tab-1', scriptId: 'check' });
+    await openMenu();
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Delete script' }));
+    const pending = scriptsClient.update('workspace-1', 'check', { name: 'Renamed' });
+    accept(true);
+    await Promise.resolve();
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'scripts/deleteScriptRequested' }),
+    );
+    const request = updateRequest();
+    request.success({ ...mockState.scripts.byWorkspaceId['workspace-1'].scripts.check });
+    dispatch(
+      scriptOperationSucceeded('workspace-1', 'check', 'edit', `${request.type}:${request.seq}`),
+    );
+    await pending;
+    dispatch.mockReset();
+  });
+
+  it('cancels without a deletion request', async () => {
+    vi.mocked(confirm).mockResolvedValue(false);
+    render(TerminalTabTypeHeaderHarness, { activeTabId: 'terminal-tab-1', scriptId: 'check' });
+    await openMenu();
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Delete script' }));
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('keeps deletion out of ordinary terminal menus', async () => {
+    render(TerminalTabTypeHeaderHarness, { activeTabId: 'terminal-tab-1' });
+    await openMenu();
+    expect(screen.queryByRole('menuitem', { name: 'Delete script' })).toBeNull();
+  });
+
+  it.each(['running', 'starting', 'restarting', 'unknown', undefined])(
+    'disables panel deletion for %s',
+    async (status) => {
+      mockState.scripts.byWorkspaceId['workspace-1'].scripts.check.runtime.status = status;
+      render(TerminalTabTypeHeaderHarness, { activeTabId: 'terminal-tab-1', scriptId: 'check' });
+      await openMenu();
+      expect(
+        screen.getByRole('menuitem', { name: /Delete script/ }).getAttribute('aria-disabled'),
+      ).toBe('true');
+    },
+  );
+
+  it.each(['runtime', 'pending', 'workspace', 'script', 'tab'])(
+    'rejects stale panel confirmation after %s changes',
+    async (change) => {
+      let accept!: (value: boolean) => void;
+      vi.mocked(confirm).mockReturnValue(
+        new Promise((resolve) => {
+          accept = resolve;
+        }),
+      );
+      const view = render(TerminalTabTypeHeaderHarness, {
+        activeTabId: 'terminal-tab-1',
+        scriptId: 'check',
+      });
+      await openMenu();
+      await fireEvent.click(screen.getByRole('menuitem', { name: 'Delete script' }));
+      if (change === 'runtime')
+        mockState.scripts.byWorkspaceId['workspace-1'].scripts.check.runtime.status = 'running';
+      if (change === 'pending')
+        mockState.scripts.byWorkspaceId['workspace-1'].operations.check = {
+          action: 'start',
+          pending: true,
+        };
+      if (change === 'workspace') await view.rerender({ workspaceId: 'workspace-2' });
+      if (change === 'script') await view.rerender({ scriptId: 'other' });
+      if (change === 'tab') await view.rerender({ activeTabId: 'terminal-tab-2' });
+      (store as any).emitState();
+      accept(true);
+      await Promise.resolve();
+      expect(dispatch).not.toHaveBeenCalled();
+    },
+  );
 });

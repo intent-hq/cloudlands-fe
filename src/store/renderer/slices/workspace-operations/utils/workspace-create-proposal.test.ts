@@ -174,6 +174,66 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
     expect(request.contextLinks).toEqual(contextLinks);
   });
 
+  it("fills the initial agent's provider, model and effort from an adopted repository setup", () => {
+    const request = buildCreateWorkspaceRequestFromProposal(
+      makeProposal({ repositoryPath: '/repo', initialAgent: { prompt: 'Go' } }),
+      {
+        specialist: 'coordinator',
+        agentSetup: { provider: 'claude-code', model: 'claude-opus-4-5', reasoningEffort: 'high' },
+      },
+    );
+    expect(request.initialAgent).toMatchObject({
+      specialist: 'coordinator',
+      provider: 'claude-code',
+      model: 'claude-opus-4-5',
+      reasoningEffort: 'high',
+    });
+  });
+
+  it('never overrides provider, model or effort the proposal set itself', () => {
+    const request = buildCreateWorkspaceRequestFromProposal(
+      makeProposal({
+        repositoryPath: '/repo',
+        initialAgent: {
+          prompt: 'Go',
+          provider: 'codex',
+          model: 'gpt-fixture',
+          reasoningEffort: '',
+        },
+      }),
+      {
+        agentSetup: { provider: 'claude-code', model: 'claude-opus-4-5', reasoningEffort: 'high' },
+      },
+    );
+    expect(request.initialAgent).toMatchObject({
+      provider: 'codex',
+      model: 'gpt-fixture',
+      reasoningEffort: '',
+    });
+  });
+
+  it('does not mix an adopted model into a proposal that chose its own provider', () => {
+    const request = buildCreateWorkspaceRequestFromProposal(
+      makeProposal({ repositoryPath: '/repo', initialAgent: { prompt: 'Go', provider: 'codex' } }),
+      {
+        agentSetup: { provider: 'claude-code', model: 'claude-opus-4-5', reasoningEffort: 'high' },
+      },
+    );
+    expect(request.initialAgent.provider).toBe('codex');
+    expect(request.initialAgent).not.toHaveProperty('model');
+    expect(request.initialAgent).not.toHaveProperty('reasoningEffort');
+  });
+
+  it('ignores a malformed adopted setup', () => {
+    const request = buildCreateWorkspaceRequestFromProposal(
+      makeProposal({ repositoryPath: '/repo', initialAgent: { prompt: 'Go' } }),
+      { agentSetup: { provider: 7, model: '', reasoningEffort: null } },
+    );
+    expect(request.initialAgent).not.toHaveProperty('provider');
+    expect(request.initialAgent).not.toHaveProperty('model');
+    expect(request.initialAgent).not.toHaveProperty('reasoningEffort');
+  });
+
   it('clears specialist metadata when specialist edit is null', () => {
     const request = buildCreateWorkspaceRequestFromProposal(
       makeProposal({

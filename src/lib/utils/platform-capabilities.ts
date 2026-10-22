@@ -85,10 +85,11 @@ export function isElectronRuntime(userAgent?: string): boolean {
  * web build (`dev:web` / `build:web`) never receives a preload — even when it
  * is opened inside the app's own `<webview>`, which strips preloads and shares
  * the Electron UA — so it stays eligible for the browser mock.
- * `process.env.INTENT_BUILD_TARGET` is a Vite build-time define.
+ * `process.env.INTENT_BUILD_TARGET` is a Vite build-time define; do not gate it
+ * on a runtime `process` global, which is absent in browser contexts.
  */
 export function expectsElectronPreloadBridge(userAgent?: string): boolean {
-  const buildTarget = typeof process === 'undefined' ? undefined : process.env.INTENT_BUILD_TARGET;
+  const buildTarget = process.env.INTENT_BUILD_TARGET;
   return isElectronRuntime(userAgent) && buildTarget !== 'web';
 }
 

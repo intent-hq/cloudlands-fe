@@ -6,7 +6,7 @@ import type { FileNode } from '$shared/types';
 import type { FlattenedFileNode, FileExplorerTreeNode } from './file-explorer-types';
 import { stripWorkspacePrefix } from '$lib/utils/file-utils';
 import ignore from 'ignore';
-import { getItem, type Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, type Collection } from '@themislib/themis/utils/collections/collection-utils';
 
 // ---------------------------------------------------------------------------
 // Constants

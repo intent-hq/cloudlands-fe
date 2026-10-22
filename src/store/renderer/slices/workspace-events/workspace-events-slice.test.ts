@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { WorkspaceEvent } from '$features/events/types';
+import { connectionStatusChanged } from '../daemon-health/daemon-health-slice';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   bulkEventsReceived,
   daemonEventsSubscribed,
+  daemonEventsSubscribing,
   eventReceived,
   eventsCleared,
   eventsLoaded,
@@ -13,6 +15,9 @@ import {
   loadOlderEventsRequested,
   olderEventsLoaded,
   olderEventsLoadFailed,
+  loadPeopleEventsRequested,
+  peopleEventsLoadStarted,
+  peopleEventsLoadFinished,
   setEventsLoading,
   workspaceEventsReducer,
 } from './workspace-events-slice';
@@ -35,6 +40,64 @@ describe('workspaceEventsReducer', () => {
     expect(workspaceEventsReducer(undefined, { type: '@@INIT' })).toEqual(initialState);
   });
 
+  it('keeps People request status separate from the shared Activity log', () => {
+    let state = workspaceEventsReducer(initialState, loadPeopleEventsRequested(WS_1, 'initial'));
+    expect(state).toBe(initialState);
+    state = workspaceEventsReducer(state, peopleEventsLoadStarted(WS_1, 'request'));
+    expect(state.byWorkspaceId[WS_1]).toMatchObject({
+      peopleRequestId: 'request',
+      peopleError: null,
+      loading: false,
+      loadingOlder: false,
+    });
+    state = workspaceEventsReducer(
+      state,
+      peopleEventsLoadFinished(WS_1, 'request', true, 'offline'),
+    );
+    expect(state.byWorkspaceId[WS_1]).toMatchObject({
+      peopleRequestId: null,
+      peopleInitialized: true,
+      peopleError: 'offline',
+      error: null,
+    });
+    state = workspaceEventsReducer(state, peopleEventsLoadStarted(WS_1, 'retry'));
+    expect(state.byWorkspaceId[WS_1].peopleError).toBeNull();
+    state = workspaceEventsReducer(state, peopleEventsLoadFinished(WS_1, 'retry', true, null));
+    expect(state.byWorkspaceId[WS_1]).toMatchObject({
+      peopleInitialized: true,
+      peopleRequestId: null,
+    });
+  });
+
+  it('does not let stale People completion settle a new request or recreate unmounted state', () => {
+    let state = workspaceEventsReducer(initialState, peopleEventsLoadStarted(WS_1, 'old'));
+    state = workspaceEventsReducer(state, peopleEventsLoadStarted(WS_1, 'new'));
+    expect(workspaceEventsReducer(state, peopleEventsLoadFinished(WS_1, 'old', true, 'late'))).toBe(
+      state,
+    );
+    state = workspaceEventsReducer(state, workspaceUnmounted(WS_1));
+    expect(state.byWorkspaceId[WS_1]).toMatchObject({
+      peopleRequestId: null,
+      peopleInitialized: false,
+      peopleError: null,
+    });
+    expect(workspaceEventsReducer(state, peopleEventsLoadFinished(WS_1, 'new', true, null))).toBe(
+      state,
+    );
+    state = workspaceEventsReducer(state, eventsCleared(WS_1));
+    expect(workspaceEventsReducer(state, peopleEventsLoadFinished(WS_1, 'new', true, null))).toBe(
+      state,
+    );
+  });
+
+  it('reopens automatic People filling after a shared history refresh replaces the cache', () => {
+    let state = workspaceEventsReducer(initialState, peopleEventsLoadStarted(WS_1, 'request'));
+    state = workspaceEventsReducer(state, peopleEventsLoadFinished(WS_1, 'request', true, null));
+    expect(state.byWorkspaceId[WS_1].peopleInitialized).toBe(true);
+    state = workspaceEventsReducer(state, eventsLoaded(WS_1, [mockEvent('fresh')], 'cursor'));
+    expect(state.byWorkspaceId[WS_1].peopleInitialized).toBe(false);
+  });
+
   it('counts each firehose (re)subscription without touching the workspace buffers', () => {
     expect(initialState.subscriptionGeneration).toBe(0);
     let state = workspaceEventsReducer(initialState, eventReceived(WS_1, mockEvent('evt-1')));
@@ -43,6 +106,43 @@ describe('workspaceEventsReducer', () => {
     state = workspaceEventsReducer(state, daemonEventsSubscribed());
     expect(state.subscriptionGeneration).toBe(2);
     expect(state.byWorkspaceId).toBe(buffers);
+  });
+
+  it('requires fresh acknowledgment after disconnect and rejects an old in-flight acknowledgment', () => {
+    let state = workspaceEventsReducer(initialState, daemonEventsSubscribing());
+    const oldAttempt = state.subscriptionAttempt;
+    state = workspaceEventsReducer(state, daemonEventsSubscribed(oldAttempt));
+    expect(state.subscriptionPending).toBe(false);
+    state = workspaceEventsReducer(state, connectionStatusChanged('disconnected'));
+    state = workspaceEventsReducer(state, connectionStatusChanged('connected'));
+    expect(state.subscriptionPending).toBe(true);
+    state = workspaceEventsReducer(state, daemonEventsSubscribed(oldAttempt));
+    expect(state.subscriptionPending).toBe(true);
+    expect(state.subscriptionGeneration).toBe(1);
+    state = workspaceEventsReducer(state, daemonEventsSubscribing());
+    state = workspaceEventsReducer(state, daemonEventsSubscribed(state.subscriptionAttempt));
+    expect(state.subscriptionPending).toBe(false);
+    expect(state.subscriptionGeneration).toBe(2);
+  });
+
+  it('accepts the first acknowledgment when initial connecting status follows subscribe startup', () => {
+    let state = workspaceEventsReducer(initialState, daemonEventsSubscribing());
+    const attempt = state.subscriptionAttempt;
+    state = workspaceEventsReducer(state, connectionStatusChanged('disconnected'));
+    state = workspaceEventsReducer(state, connectionStatusChanged('connecting'));
+    state = workspaceEventsReducer(state, connectionStatusChanged('connected'));
+    state = workspaceEventsReducer(state, daemonEventsSubscribed(attempt));
+    expect(state.subscriptionPending).toBe(false);
+    expect(state.subscriptionGeneration).toBe(1);
+  });
+
+  it('keeps readiness on repeated connected metadata and closes it before resubscription', () => {
+    let state = workspaceEventsReducer(initialState, daemonEventsSubscribed());
+    state = workspaceEventsReducer(state, connectionStatusChanged('connected'));
+    expect(state.subscriptionPending).toBe(false);
+    state = workspaceEventsReducer(state, daemonEventsSubscribing());
+    expect(state.subscriptionPending).toBe(true);
+    expect(state.subscriptionGeneration).toBe(1);
   });
 
   it('appends a single eventReceived into the workspace buffer', () => {

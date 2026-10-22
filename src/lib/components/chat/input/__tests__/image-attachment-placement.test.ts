@@ -110,7 +110,7 @@ describe('placeImageAttachment', () => {
     await expect(
       placeImageAttachment('ws-1', 'big.png', { data: bigData, mimeType: 'image/png' }, api),
     ).rejects.toThrow('connection reset');
-    expect(api.abortAttachmentUpload).toHaveBeenCalledWith('up-1');
+    expect(api.abortAttachmentUpload).toHaveBeenCalledWith('up-1', 'ws-1');
     expect(api.commitAttachmentUpload).not.toHaveBeenCalled();
   });
 
@@ -133,7 +133,7 @@ describe('placeImageAttachment', () => {
     );
     // 30 MiB at 16 MiB per chunk = 2 chunks, then commit.
     expect(api.sendAttachmentUploadChunk).toHaveBeenCalledTimes(2);
-    expect(api.commitAttachmentUpload).toHaveBeenCalledWith('up-1');
+    expect(api.commitAttachmentUpload).toHaveBeenCalledWith('up-1', 'ws-1');
   });
 });
 
@@ -243,7 +243,7 @@ describe('placeImageAttachment — idempotencyKey (keyed placement)', () => {
       placeImageAttachment('ws-1', 'big.png', { data: bigData, idempotencyKey: KEY }, api),
     ).rejects.toThrow('Request timed out');
     expect(api.getAttachmentInfo).not.toHaveBeenCalled();
-    expect(api.abortAttachmentUpload).toHaveBeenCalledWith('up-1');
+    expect(api.abortAttachmentUpload).toHaveBeenCalledWith('up-1', 'ws-1');
   });
 
   it('recovers through the lookup when begin says the key is already committed (lost commit reply)', async () => {
@@ -458,5 +458,32 @@ describe('toImageReferenceBlocks', () => {
       ];
       expect(imageRetryBlocks(new Error('boom'), blocks)).toBe(blocks);
     });
+  });
+});
+
+describe('unsupported image source preservation', () => {
+  it.each([
+    ['image/svg+xml', 'svg'],
+    ['IMAGE/SVG+XML; charset=utf-8', 'svg'],
+    ['image/avif', 'avif'],
+    ['image/bmp', 'bmp'],
+    ['image/tiff', 'tiff'],
+    ['image/x-icon', 'ico'],
+    ['image/heic', 'heic'],
+    ['image/heif', 'heif'],
+    ['image/jxl', 'jxl'],
+    ['image/unknown', 'bin'],
+  ])('places %s with an honest extension and unchanged bytes', async (mimeType, extension) => {
+    const api = makeApi({
+      placeAttachment: vi.fn(async () => placedResult('original', mimeType)),
+    });
+    const data = btoa('<svg xmlns="http://www.w3.org/2000/svg"/>');
+    const result = await toImageReferenceBlocks('ws-1', [{ type: 'image', data, mimeType }], api);
+    expect(api.placeAttachment).toHaveBeenCalledWith(
+      'ws-1',
+      expect.stringMatching(new RegExp(`\\.${extension}$`)),
+      { data, mimeType },
+    );
+    expect(result).toEqual([{ type: 'image', attachmentId: 'original', mimeType }]);
   });
 });

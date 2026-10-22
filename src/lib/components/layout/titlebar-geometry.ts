@@ -23,15 +23,12 @@ const WORKSPACE_TAB_CLOSED_SCROLLER_MARGIN_LEFT_PX = -6;
 export const WORKSPACE_TAB_MOTION_DURATION_MS = 200;
 export const WORKSPACE_TAB_MOTION_EASING = 'cubic-bezier(0.215, 0.61, 0.355, 1)';
 
-export function getWorkspaceTabLeadingInsetPx(sidebarPanelOpen: boolean): number {
-  const flareGap = sidebarPanelOpen ? 16 : 10;
-  return WORKSPACE_TAB_FLARE_RADIUS_PX + flareGap;
+export function getWorkspaceTabLeadingInsetPx(): number {
+  return WORKSPACE_TAB_FLARE_RADIUS_PX + 10;
 }
 
-export function getWorkspaceTabScrollerMarginLeftPx(sidebarPanelOpen: boolean): number {
-  return sidebarPanelOpen
-    ? WORKSPACE_TAB_SCROLLER_MARGIN_LEFT_PX
-    : WORKSPACE_TAB_CLOSED_SCROLLER_MARGIN_LEFT_PX;
+export function getWorkspaceTabScrollerMarginLeftPx(): number {
+  return WORKSPACE_TAB_CLOSED_SCROLLER_MARGIN_LEFT_PX;
 }
 
 export function getWorkspaceTabScrollerPaddingLeftPx(leadingInsetPx: number): number {

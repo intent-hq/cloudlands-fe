@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   /**
    * SecondaryRootChangesView - Read-only per-root changes browser
    * (multi git root tracking, monorepo#2053).
@@ -12,6 +13,7 @@
   import {
     openWorkspaceCommitChangeset,
     openWorkspaceDiff,
+    openWorkspaceFile,
     openWorkspaceLocalChanges,
   } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { selectFocusedPanelId } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
@@ -164,13 +166,27 @@
     }
   }
 
-  // Open a root-scoped diff tab for a working-tree file. `relativePath` stays
+  // Open untracked files directly; tracked files keep their root-scoped diff. `relativePath` stays
   // root-relative for the gitRootId-scoped reads; `file` / `filePath` carry the
   // root-absolute path so the tab identity cannot collide with a primary-root
   // file at the same relative path.
-  function openFileDiff(file: FileStatus, event?: MouseEvent | KeyboardEvent) {
+  function openFile(file: FileStatus, event?: MouseEvent | KeyboardEvent) {
     const rootPath = entry.path ?? '';
     const filePath = rootPath ? `${rootPath}/${file.path}` : file.path;
+    const sourcePanelId = selectFocusedPanelId.select(appStore.state, workspaceId) ?? undefined;
+    const openInAdjacentPanel = event ? isCmdClickModifier({ event }) : false;
+    if (file.status === '?' && !file.staged && file.mode !== '160000') {
+      appStore.dispatch(
+        openWorkspaceFile(workspaceId, filePath, {
+          filePathIsLiteral: true,
+          gitRootId,
+          gitRootPath: rootPath,
+          openInAdjacentPanel,
+          sourcePanelId,
+        }),
+      );
+      return;
+    }
     const changeId = `root-${gitRootId}-${file.staged ? 'staged' : 'unstaged'}-${file.path}`;
     const change: TrackedChange = {
       id: changeId,
@@ -193,14 +209,13 @@
           }
         : {}),
     };
-    const sourcePanelId = selectFocusedPanelId.select(appStore.state, workspaceId) ?? undefined;
     appStore.dispatch(
       openWorkspaceDiff(workspaceId, change, {
         gitRootId,
         gitRootPath: rootPath || undefined,
         filePath,
         changeId,
-        openInAdjacentPanel: event ? isCmdClickModifier({ event }) : false,
+        openInAdjacentPanel,
         sourcePanelId,
       }),
     );
@@ -303,19 +318,20 @@
                 type="button"
                 variant="plain"
                 class="flex h-auto w-full min-w-0 cursor-pointer items-center justify-start gap-1.5 rounded !px-1 -mx-1 py-0.5 text-left text-xs font-inherit hover:bg-muted focus-visible:bg-muted"
-                title={file.path}
                 data-testid="secondary-root-file-open"
-                onclick={(event: MouseEvent) => openFileDiff(file, event)}
+                onclick={(event: MouseEvent) => openFile(file, event)}
                 onkeydown={(event: KeyboardEvent) => {
                   if (event.key !== 'Enter' || !isCmdClickModifier({ event })) return;
                   event.preventDefault();
-                  openFileDiff(file, event);
+                  openFile(file, event);
                 }}
               >
                 <span class="shrink-0 w-3 text-center font-mono {statusColor(file.status)}"
                   >{file.status}</span
                 >
-                <span class="truncate min-w-0 text-foreground">{file.path}</span>
+                <span class="truncate min-w-0 text-foreground" use:truncatedTitle={file.path}
+                  >{file.path}</span
+                >
                 {#if file.staged}
                   <span class="shrink-0 px-1 py-px rounded bg-muted text-muted-foreground text-xs"
                     >{m.workspace_fileChanges_staged_label()}</span
@@ -454,7 +470,7 @@
         onclick={() => openCommitChangeset(commit)}
         data-testid="secondary-root-commit-open"
       >
-        <span class="text-ui text-subtle truncate flex-1" title={commit.message}
+        <span class="text-ui text-subtle truncate flex-1" use:truncatedTitle={commit.message}
           >{commit.message.split('\n')[0]}</span
         >
       </Button>

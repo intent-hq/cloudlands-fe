@@ -243,9 +243,12 @@ export const mockUserPreferences: UserPreferencesState = {
   hasCompletedProviderSetup: true,
   showReasoningBlocks: false,
   chatAuroraEnabled: true,
+  collapseToolRuns: false,
   shellTransparencyEnabled: true,
   reduceMotionOnBattery: false,
   labsMultiplayerEnabled: false,
+  labsGitLabEnabled: false,
+  labsRemoteAgentsEnabled: false,
   labsSettingsVisible: false,
   agentFontStyle: 'sans',
   noteFontStyle: 'sans',
@@ -255,6 +258,11 @@ export const mockUserPreferences: UserPreferencesState = {
   soundEnabled: true,
   soundOnlyWhenUnfocused: true,
   volume: 0.5,
+  notificationVolumeEditId: 0,
+  pendingNotificationVolumeEditId: null,
+  notificationVolumeHydrationEpoch: 0,
+  notificationVolumeConfirmedRevision: -1,
+  deferredNotificationVolume: null,
   activityLogPresets: [],
   languagePreference: 'system',
   githubLinkDefaultAction: 'show-choices',
@@ -279,6 +287,8 @@ export const mockMcpServers: McpServerConfig[] = [
 
 /** Background-agent model assignments for the background-agent settings panel. */
 export const mockBackgroundAgentSettings: BackgroundAgentSettingsState = {
+  defaultReasoningEffort: '',
+  typeReasoningEffortOverrides: {},
   defaultModel: 'mock-model',
   typeOverrides: { commit: 'mock-model', pr: 'mock-model', review: '', fast: '' },
   providerSettings: {},
@@ -324,6 +334,13 @@ export const mockGitHubPullRequestQueued: GitHubPullRequestDetails = {
   url: 'https://github.com/acme/web-app/pull/45',
   headRef: 'feat/persist-sidebar-width',
   baseRef: 'main',
+  mergeQueue: {
+    position: 2,
+    queueSize: 3,
+    state: 'queued',
+    enqueuedAt: '2026-01-03T15:30:00.000Z',
+    estimatedTimeToMerge: 2254,
+  },
 };
 
 /** One issue for the GitHub link hover card (`github.issues.get` mock). */

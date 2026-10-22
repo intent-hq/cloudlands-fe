@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy, untrack } from 'svelte';
   import { Button } from '$lib/components/patterns/settings/custom-controls';
   import { ListView } from '$lib/components/patterns/collection';
   import { Fa } from 'svelte-fa';
@@ -7,20 +8,20 @@
   import ConnectBackendModal from '$lib/components/layout/ConnectBackendModal.svelte';
   import DeviceRow, { type DevicePanelMode } from './DeviceRow.svelte';
   import { m } from '$shared/paraglide/messages.js';
-  import {
-    LOCAL_CONNECTION_ID,
-    SELECTABLE_CONNECTION_ACCENTS,
-    type ConnectionRecord,
-  } from '$shared/types/connections';
+  import { SELECTABLE_CONNECTION_ACCENTS, type ConnectionRecord } from '$shared/types/connections';
   import {
     selectConnections,
     selectConnectionsLoaded,
     selectRemoteConnections,
+    selectConnectionWorkflow,
   } from '$store/renderer/slices/connections/connections-selectors';
-  import { forgetConnectionRequested } from '$store/renderer/slices/connections/connections-slice';
+  import {
+    connectionWorkflowRequested,
+    connectionWorkflowCleared,
+  } from '$store/renderer/slices/connections/connections-slice';
   import { store as appStore } from '$store/renderer/store';
 
-  let { localSettingsRequested = $bindable(0) }: { localSettingsRequested?: number } = $props();
+  let { initialEditedMachine }: { initialEditedMachine?: string } = $props();
 
   // Full ordered list (local first) drives the rows AND the empty state (the
   // always-present local row and the "no devices" box must not render
@@ -30,18 +31,24 @@
   const loaded$ = selectConnectionsLoaded();
 
   let connectModalOpen = $state(false);
-  let activeDeviceId = $state<string | null>(null);
-  let activePanel = $state<DevicePanelMode>(null);
+  let activeDeviceId = $state<string | null>(untrack(() => initialEditedMachine ?? null));
+  let activePanel = $state<DevicePanelMode>(untrack(() => (initialEditedMachine ? 'edit' : null)));
   let removeDialogOpen = $state(false);
   let removeTarget = $state<ConnectionRecord | null>(null);
-  let removeError = $state<string | null>(null);
-  let removing = $state(false);
-
+  const consumerId = $props.id();
+  const workflow$ = selectConnectionWorkflow(consumerId);
+  const removeError = $derived(
+    $workflow$?.outcome?.kind === 'error' ? m.settings_devices_remove_error() : null,
+  );
+  const removing = $derived(!!$workflow$ && $workflow$.phase !== 'settled');
+  onDestroy(() => appStore.dispatch(connectionWorkflowCleared(consumerId)));
   $effect(() => {
-    if (localSettingsRequested > 0) {
-      openPanel(LOCAL_CONNECTION_ID, 'edit');
-      localSettingsRequested = 0;
-    }
+    if ($workflow$?.outcome?.kind !== 'done') return;
+    appStore.dispatch(connectionWorkflowCleared(consumerId));
+    untrack(() => {
+      if (activeDeviceId === removeTarget?.id) closePanel();
+      removeTarget = null;
+    });
   });
 
   const defaultAccent = $derived(
@@ -60,31 +67,19 @@
 
   function requestRemove(device: ConnectionRecord) {
     removeTarget = device;
-    removeError = null;
+    appStore.dispatch(connectionWorkflowCleared(consumerId));
     removeDialogOpen = true;
   }
 
-  async function removeDevice(device = removeTarget) {
+  function removeDevice(device = removeTarget) {
     if (!device || removing) return;
-    removing = true;
-    removeError = null;
-    try {
-      const action = forgetConnectionRequested(device.id);
-      appStore.dispatch(action);
-      await action.promise;
-      if (activeDeviceId === device.id) closePanel();
-      removeTarget = null;
-    } catch {
-      removeError = m.settings_devices_remove_error();
-    } finally {
-      removing = false;
-    }
+    appStore.dispatch(connectionWorkflowRequested(consumerId, { kind: 'forget', id: device.id }));
   }
 </script>
 
 <div class="space-y-5">
   <div>
-    <h2 class="type-caption font-medium text-muted-foreground mb-3">
+    <h2 class="type-title mb-3 text-foreground">
       {m.settings_devices_title()}
     </h2>
     <p class="max-w-2xl type-body text-muted-foreground">
@@ -121,7 +116,9 @@
     {#snippet empty()}
       <div class="rounded-xl border border-dashed border-border bg-card p-8 text-left">
         <p class="type-body font-medium text-foreground">{m.settings_devices_empty_title()}</p>
-        <p class="mt-1 type-body text-muted-foreground">{m.settings_devices_empty_description()}</p>
+        <p class="mt-1 type-body text-muted-foreground">
+          {m.settings_devices_empty_description()}
+        </p>
       </div>
     {/snippet}
   </ListView>

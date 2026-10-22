@@ -1,5 +1,6 @@
 import { logger } from '$lib/utils/client-logger';
 import { fuzzyMatch, pathFuzzyMatch } from './fuzzy-matcher';
+import { searchCacheKey } from './search-cache-key';
 
 /**
  * Debounced Search Service with Caching and Cancellation
@@ -41,7 +42,7 @@ export class DebouncedSearchService {
     this.cancelPendingSearch();
 
     // Check cache first — return immediately, no debounce
-    const cacheKey = this.getCacheKey(query, context);
+    const cacheKey = searchCacheKey(query, providers, context);
     const cached = this.cache.get(cacheKey);
     if (cached && !this.isCacheExpired(cached)) {
       logger.debug('[SearchService] Returning cached results for:', query);
@@ -77,14 +78,16 @@ export class DebouncedSearchService {
         finish();
         reject(error);
       };
-      const handleAbort = () => rejectSearch(new Error('Search cancelled'));
+      // i18n-ignore (internal cancellation signal, not displayed)
+      const handleAbort = () => rejectSearch(new DOMException('Search cancelled', 'AbortError'));
       signal.addEventListener('abort', handleAbort, { once: true });
 
       const executeSearch = async () => {
         try {
           // Check if cancelled
           if (signal.aborted) {
-            rejectSearch(new Error('Search cancelled'));
+            // i18n-ignore (internal cancellation signal, not displayed)
+            rejectSearch(new DOMException('Search cancelled', 'AbortError'));
             return;
           }
 
@@ -95,10 +98,15 @@ export class DebouncedSearchService {
           );
 
           // Perform parallel searches with all providers
+          const executingCacheKey = searchCacheKey(query, providers, context);
           const results = await Promise.all(
             providers.map((provider) => this.searchWithProvider(provider, query, context, signal)),
           );
           if (signal.aborted) return;
+          if (executingCacheKey !== searchCacheKey(query, providers, context)) {
+            resolveSearch([]);
+            return;
+          }
 
           // Combine and deduplicate results
           const combined = this.combineResults(results.flat());
@@ -116,7 +124,7 @@ export class DebouncedSearchService {
           const limited = fuzzyMatched.slice(0, this.config.maxResults);
 
           // Cache results
-          this.cache.set(cacheKey, {
+          this.cache.set(executingCacheKey, {
             results: limited,
             timestamp: Date.now(),
           });
@@ -124,8 +132,9 @@ export class DebouncedSearchService {
           logger.debug(`[SearchService] Found ${limited.length} results`);
           resolveSearch(limited);
         } catch (error) {
-          if (signal.aborted || (error as Error).name === 'AbortError') {
-            rejectSearch(new Error('Search cancelled'));
+          if (signal.aborted) {
+            // i18n-ignore (internal cancellation signal, not displayed)
+            rejectSearch(new DOMException('Search cancelled', 'AbortError'));
           } else {
             logger.error('[SearchService] Search error:', error);
             rejectSearch(error instanceof Error ? error : new Error(String(error)));
@@ -166,7 +175,9 @@ export class DebouncedSearchService {
 
       return results;
     } catch (error) {
-      logger.error(`[SearchService] Provider ${provider.id} search failed:`, error);
+      if (!signal.aborted) {
+        logger.error(`[SearchService] Provider ${provider.id} search failed:`, error);
+      }
       return [];
     }
   }
@@ -256,16 +267,6 @@ export class DebouncedSearchService {
       this.currentAbortController.abort();
       this.currentAbortController = null;
     }
-  }
-
-  private getCacheKey(query: string, context: SearchContext): string {
-    // Create a stable cache key from query and relevant context
-    const contextKey = {
-      workspaceId: context.workspaceId,
-      currentFile: context.currentFile,
-      currentNote: context.currentNote,
-    };
-    return `${query}:${JSON.stringify(contextKey)}`;
   }
 
   private isCacheExpired(cached: CachedResult): boolean {

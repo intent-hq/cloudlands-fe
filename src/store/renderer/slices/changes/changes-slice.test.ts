@@ -22,6 +22,7 @@ import {
   agentLineStatsRequestFailed,
   updateAgentStats,
   setCommitMessage,
+  setPRContent,
   setTargetBranch,
   setPendingCommitAction,
   setIsAutofillAndCommitting,
@@ -254,6 +255,38 @@ describe('fileTrackingReducer', () => {
   it('setCommitMessage stores the commit message on acceptChanges', () => {
     const state = fileTrackingReducer(initialState, setCommitMessage(WS, 'feat: add reducer'));
     expect(state.byWorkspaceId[WS].acceptChanges.commitMessage).toBe('feat: add reducer');
+  });
+
+  it('updates PR drafts together without replacing other workspace or commit drafts', () => {
+    let state = fileTrackingReducer(initialState, setCommitMessage(WS, 'keep commit draft'));
+    state = fileTrackingReducer(state, setTargetBranch(WS, 'release/next'));
+    state = fileTrackingReducer(state, setPRContent('other', 'Other title', 'Other body'));
+    const other = state.byWorkspaceId.other;
+    const next = fileTrackingReducer(state, setPRContent(WS, 'New title', 'New body'));
+
+    expect(next.byWorkspaceId[WS].acceptChanges).toMatchObject({
+      prTitle: 'New title',
+      prDescription: 'New body',
+      commitMessage: 'keep commit draft',
+      targetBranch: 'release/next',
+    });
+    expect(next.byWorkspaceId.other).toBe(other);
+    expect(state.byWorkspaceId[WS].acceptChanges.prTitle).toBe('');
+  });
+
+  it('preserves the state reference for an unchanged PR draft', () => {
+    const state = fileTrackingReducer(initialState, setPRContent(WS, 'Title', 'Body'));
+    expect(fileTrackingReducer(state, setPRContent(WS, 'Title', 'Body'))).toBe(state);
+  });
+
+  it('clears PR content explicitly and drops drafts at workspace teardown', () => {
+    const state = fileTrackingReducer(initialState, setPRContent(WS, 'Title', 'Body'));
+    const cleared = fileTrackingReducer(state, setPRContent(WS, '', ''));
+    expect(cleared.byWorkspaceId[WS].acceptChanges).toMatchObject({
+      prTitle: '',
+      prDescription: '',
+    });
+    expect(fileTrackingReducer(state, workspaceUnmounted(WS)).byWorkspaceId[WS]).toBeUndefined();
   });
 
   it('setPendingCommitAction and autofill flags update acceptChanges without touching target branch', () => {

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { appClient } from '$lib/client';
 import { gitClient } from '$features/git/git.client';
 import type { CommitInfo, GitStatus } from '$shared/types';
-import { refreshRequested } from '../../changes/changes-slice';
+import { changesEventReceived, refreshRequested } from '../../changes/changes-slice';
 import {
   workspaceDeleted,
   workspaceUnmounted,
@@ -19,6 +19,8 @@ import {
   setSecondaryRootCommitFiles,
 } from '../git-slice';
 import { gitReadSaga } from './git-read-saga';
+import { reserveGitMutation } from '../../../utils/worktree-mutation-queue';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 
 const settle = async () => {
   await Promise.resolve();
@@ -26,12 +28,183 @@ const settle = async () => {
 };
 
 describe('gitReadSaga', () => {
+  it('rejects a pending status response after the admitted backend changes', async () => {
+    let resolve!: (status: GitStatus) => void;
+    vi.spyOn(appClient.git, 'status').mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    let backend = 'local';
+    const task = runSaga(
+      {
+        channel,
+        dispatch: (action) => actions.push(action),
+        getState: () => withLegacyPrincipal({ connections: { windowBackendId: backend } }),
+      },
+      gitReadSaga,
+    );
+    channel.put(loadGitStatus('ws-1'));
+    await settle();
+    backend = 'remote';
+    resolve({
+      branch: 'local',
+      ahead: 0,
+      behind: 0,
+      files: [],
+      diverged: false,
+      hasUncommittedChanges: false,
+      hasUntrackedFiles: false,
+    });
+    await settle();
+    expect(actions).toEqual([]);
+    task.cancel();
+    await task.toPromise();
+  });
+  it('uses pushed file status and rejects an older in-flight status response', async () => {
+    let resolve!: (status: GitStatus) => void;
+    vi.spyOn(appClient.git, 'status').mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga(
+      {
+        getState: () => withLegacyPrincipal({}),
+        channel,
+        dispatch: (action) => actions.push(action),
+      },
+      gitReadSaga,
+    );
+    channel.put(loadGitStatus('ws-1'));
+    await settle();
+    const pushed = { branch: 'new', ahead: 1, behind: 0, files: [] };
+    channel.put(
+      changesEventReceived('ws-1', 'changes:git-status', { status: { gitStatus: pushed } }),
+    );
+    resolve({
+      ...pushed,
+      branch: 'old',
+      diverged: false,
+      hasUncommittedChanges: false,
+      hasUntrackedFiles: false,
+    });
+    await settle();
+    expect(actions).toEqual([
+      setGitStatus('ws-1', {
+        ...pushed,
+        diverged: false,
+        hasUncommittedChanges: false,
+        hasUntrackedFiles: false,
+      }),
+    ]);
+    expect(appClient.git.status).toHaveBeenCalledTimes(1);
+    task.cancel();
+    await task.toPromise();
+  });
   beforeEach(() => {
     vi.spyOn(appClient.git, 'diffs').mockResolvedValue([]);
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('waits for the mutation tail before fulfilling a status request', async () => {
+    const status: GitStatus = {
+      branch: 'fresh',
+      ahead: 0,
+      behind: 0,
+      diverged: false,
+      files: [],
+      hasUncommittedChanges: false,
+      hasUntrackedFiles: false,
+    };
+    vi.spyOn(appClient.git, 'status').mockResolvedValue(status);
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga(
+      {
+        getState: () => withLegacyPrincipal({}),
+        channel,
+        dispatch: (action) => actions.push(action),
+      },
+      gitReadSaga,
+    );
+    const lease = reserveGitMutation('ws-1');
+    try {
+      await lease.ready;
+      channel.put(loadGitStatus('ws-1', true));
+      await settle();
+      expect(appClient.git.status).not.toHaveBeenCalled();
+      await lease.release();
+      await vi.waitFor(() => expect(actions).toContainEqual(setGitStatus('ws-1', status)));
+      expect(appClient.git.status).toHaveBeenCalledExactlyOnceWith('ws-1', { forceRefresh: true });
+    } finally {
+      await lease.release();
+      task.cancel();
+      await task.toPromise();
+    }
+  });
+
+  it('retries a secondary-root snapshot that overlaps a mutation instead of leaving loading stuck', async () => {
+    let resolve!: (value: Awaited<ReturnType<typeof gitClient.getStatus>>) => void;
+    const first = new Promise<Awaited<ReturnType<typeof gitClient.getStatus>>>((done) => {
+      resolve = done;
+    });
+    const status: GitStatus = {
+      branch: 'fresh',
+      ahead: 0,
+      behind: 0,
+      diverged: false,
+      files: [],
+      hasUncommittedChanges: false,
+      hasUntrackedFiles: false,
+    };
+    vi.spyOn(gitClient, 'getStatus')
+      .mockReturnValueOnce(first)
+      .mockResolvedValue({ ok: true, data: status });
+    vi.spyOn(gitClient, 'getHistory').mockResolvedValue({ ok: true, data: { items: [] } });
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga(
+      {
+        getState: () => withLegacyPrincipal({}),
+        channel,
+        dispatch: (action) => actions.push(action),
+      },
+      gitReadSaga,
+    );
+    channel.put(loadSecondaryRootGit('ws-1', 'root-1'));
+    const lease = reserveGitMutation('ws-1', 'root-1');
+    try {
+      await lease.ready;
+      resolve({ ok: true, data: { ...status, branch: 'obsolete' } });
+      await settle();
+      expect(
+        actions.filter((action) => (action as { type: string }).type === setSecondaryRootGit.type),
+      ).toEqual([]);
+      await lease.release();
+      await vi.waitFor(() =>
+        expect(actions).toContainEqual(
+          expect.objectContaining({
+            type: setSecondaryRootGit.type,
+            payload: expect.objectContaining({ data: expect.objectContaining({ status }) }),
+          }),
+        ),
+      );
+      expect(gitClient.getStatus).toHaveBeenCalledTimes(2);
+    } finally {
+      await lease.release();
+      task.cancel();
+      await task.toPromise();
+    }
   });
 
   it('does not paginate history when the registration boundary is unknown', async () => {
@@ -54,7 +227,14 @@ describe('gitReadSaga', () => {
     vi.spyOn(appClient.git, 'commitDetails').mockResolvedValue({ files: [], fileDetails: [] });
     const channel = stdChannel();
     const actions: unknown[] = [];
-    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+    const task = runSaga(
+      {
+        getState: () => withLegacyPrincipal({}),
+        channel,
+        dispatch: (action) => actions.push(action),
+      },
+      gitReadSaga,
+    );
 
     channel.put(loadSecondaryRootGit('ws-1', 'root-1', undefined, 30));
     await vi.waitFor(() =>
@@ -102,7 +282,14 @@ describe('gitReadSaga', () => {
       .mockResolvedValueOnce([]);
     const channel = stdChannel();
     const actions: unknown[] = [];
-    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+    const task = runSaga(
+      {
+        getState: () => withLegacyPrincipal({}),
+        channel,
+        dispatch: (action) => actions.push(action),
+      },
+      gitReadSaga,
+    );
 
     channel.put(loadSecondaryRootGit('ws-1', 'root-1'));
     await vi.waitFor(() =>
@@ -155,7 +342,14 @@ describe('gitReadSaga', () => {
     }));
     const channel = stdChannel();
     const actions: unknown[] = [];
-    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+    const task = runSaga(
+      {
+        getState: () => withLegacyPrincipal({}),
+        channel,
+        dispatch: (action) => actions.push(action),
+      },
+      gitReadSaga,
+    );
 
     channel.put(loadSecondaryRootGit('ws-1', 'root-1', 'boundary', 30));
     await vi.waitFor(() =>
@@ -205,7 +399,14 @@ describe('gitReadSaga', () => {
     vi.spyOn(gitClient, 'getHistory').mockResolvedValue({ ok: true, data: { items: [] } });
     const channel = stdChannel();
     const actions: unknown[] = [];
-    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+    const task = runSaga(
+      {
+        getState: () => withLegacyPrincipal({}),
+        channel,
+        dispatch: (action) => actions.push(action),
+      },
+      gitReadSaga,
+    );
 
     channel.put(loadSecondaryRootGit('ws-1', 'root-1'));
     await settle();
@@ -241,7 +442,14 @@ describe('gitReadSaga', () => {
     );
     const channel = stdChannel();
     const actions: unknown[] = [];
-    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+    const task = runSaga(
+      {
+        getState: () => withLegacyPrincipal({}),
+        channel,
+        dispatch: (action) => actions.push(action),
+      },
+      gitReadSaga,
+    );
 
     channel.put(loadSecondaryRootGit('ws-1', 'root-1'));
     channel.put(loadSecondaryRootGit('ws-1', 'root-2'));
@@ -284,7 +492,14 @@ describe('gitReadSaga', () => {
     vi.spyOn(gitClient, 'getHistory').mockResolvedValue({ ok: true, data: { items: [] } });
     const channel = stdChannel();
     const actions: unknown[] = [];
-    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+    const task = runSaga(
+      {
+        getState: () => withLegacyPrincipal({}),
+        channel,
+        dispatch: (action) => actions.push(action),
+      },
+      gitReadSaga,
+    );
 
     channel.put(loadSecondaryRootGit('ws-1', 'root-1'));
     await vi.waitFor(() =>
@@ -303,7 +518,14 @@ describe('gitReadSaga', () => {
       });
     const channel = stdChannel();
     const actions: unknown[] = [];
-    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+    const task = runSaga(
+      {
+        getState: () => withLegacyPrincipal({}),
+        channel,
+        dispatch: (action) => actions.push(action),
+      },
+      gitReadSaga,
+    );
 
     channel.put(loadSecondaryRootCommitFiles('ws-1', 'root-1', 'abc123'));
     await settle();
@@ -342,7 +564,14 @@ describe('gitReadSaga', () => {
     vi.spyOn(gitClient, 'getHistory').mockResolvedValue({ ok: true, data: { items: [] } });
     const channel = stdChannel();
     const actions: unknown[] = [];
-    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+    const task = runSaga(
+      {
+        getState: () => withLegacyPrincipal({}),
+        channel,
+        dispatch: (action) => actions.push(action),
+      },
+      gitReadSaga,
+    );
 
     channel.put(loadSecondaryRootCommitFiles('ws-1', 'root-1', 'abc123'));
     await settle();
@@ -384,7 +613,14 @@ describe('gitReadSaga', () => {
     vi.spyOn(appClient.git, 'status').mockResolvedValue(wire);
     const channel = stdChannel();
     const actions: unknown[] = [];
-    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+    const task = runSaga(
+      {
+        getState: () => withLegacyPrincipal({}),
+        channel,
+        dispatch: (action) => actions.push(action),
+      },
+      gitReadSaga,
+    );
 
     channel.put(loadGitStatus('ws-1'));
     await settle();
@@ -418,7 +654,10 @@ describe('gitReadSaga', () => {
   it('leaves broad changes refreshes to the lifecycle read owner', async () => {
     vi.spyOn(appClient.git, 'status').mockResolvedValue(null);
     const channel = stdChannel();
-    const task = runSaga({ channel, dispatch: vi.fn() }, gitReadSaga);
+    const task = runSaga(
+      { getState: () => withLegacyPrincipal({}), channel, dispatch: vi.fn() },
+      gitReadSaga,
+    );
 
     channel.put(refreshRequested('ws-1'));
     await settle();
@@ -445,7 +684,14 @@ describe('gitReadSaga', () => {
     vi.spyOn(appClient.git, 'status').mockReturnValueOnce(first).mockResolvedValueOnce(second);
     const channel = stdChannel();
     const actions: unknown[] = [];
-    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+    const task = runSaga(
+      {
+        getState: () => withLegacyPrincipal({}),
+        channel,
+        dispatch: (action) => actions.push(action),
+      },
+      gitReadSaga,
+    );
 
     channel.put(loadGitStatus('ws-1'));
     await settle();
@@ -468,7 +714,7 @@ describe('gitReadSaga', () => {
 
     expect(appClient.git.status).toHaveBeenCalledTimes(2);
     expect(appClient.git.status).toHaveBeenNthCalledWith(1, 'ws-1');
-    expect(appClient.git.status).toHaveBeenNthCalledWith(2, 'ws-1');
+    expect(appClient.git.status).toHaveBeenNthCalledWith(2, 'ws-1', { forceRefresh: true });
     expect(actions).toHaveLength(2);
     task.cancel();
     await task.toPromise();
@@ -481,7 +727,14 @@ describe('gitReadSaga', () => {
     );
     const channel = stdChannel();
     const actions: unknown[] = [];
-    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+    const task = runSaga(
+      {
+        getState: () => withLegacyPrincipal({}),
+        channel,
+        dispatch: (action) => actions.push(action),
+      },
+      gitReadSaga,
+    );
 
     channel.put(loadGitStatus('ws-1'));
     channel.put(loadGitStatus('ws-2'));
@@ -525,7 +778,14 @@ describe('gitReadSaga', () => {
     );
     const channel = stdChannel();
     const actions: unknown[] = [];
-    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+    const task = runSaga(
+      {
+        getState: () => withLegacyPrincipal({}),
+        channel,
+        dispatch: (action) => actions.push(action),
+      },
+      gitReadSaga,
+    );
 
     channel.put(loadGitStatus('ws-1'));
     channel.put(loadGitStatus('ws-2'));
@@ -558,7 +818,14 @@ describe('gitReadSaga', () => {
     );
     const channel = stdChannel();
     const actions: unknown[] = [];
-    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+    const task = runSaga(
+      {
+        getState: () => withLegacyPrincipal({}),
+        channel,
+        dispatch: (action) => actions.push(action),
+      },
+      gitReadSaga,
+    );
 
     channel.put(loadGitStatus('ws-1'));
     await settle();

@@ -1,4 +1,4 @@
-import { buffers, type EventChannel } from 'redux-saga';
+import { buffers, channel as sagaChannel, type EventChannel } from 'redux-saga';
 import {
   actionChannel,
   call,
@@ -242,41 +242,49 @@ function* daemonStatusSaga() {
       },
     },
   );
-  let versionMismatchNotified = false;
-  const orphanNotifyState: OrphanNotifyState = { notified: false };
-  let initialStatus: BackendStatusPayload | null = null;
-  try {
-    // The channel is installed before GET_STATUS so a push racing the snapshot
-    // is buffered and applied after the older boot snapshot.
-    try {
-      const snapshot = yield* call(invokeGetBackendStatus);
-      yield* put(statusAction(snapshot, true));
-      initialStatus = snapshot;
-      yield* call(maybeNotifyOrphanedSidecar, snapshot.transport, orphanNotifyState);
+  // Notification imports can be slow. Keep them ordered on their own worker,
+  // never between transport transitions and subscription acknowledgments.
+  const notifications = sagaChannel<BackendStatusPayload>(buffers.expanding());
+  const notificationTask = yield* fork(function* statusNotifications() {
+    let versionMismatchNotified = false;
+    const orphanNotifyState: OrphanNotifyState = { notified: false };
+    while (true) {
+      const payload = yield* take(notifications);
+      yield* call(maybeNotifyOrphanedSidecar, payload.transport, orphanNotifyState);
       versionMismatchNotified = yield* call(
         maybeNotifyVersionMismatch,
-        snapshot.transport,
+        payload.transport,
         versionMismatchNotified,
       );
+    }
+  });
+  let initialStatus: BackendStatusPayload | null = null;
+  try {
+    // A live push supersedes the boot snapshot. Waiting for that older read
+    // would let a reconnect subscribe finish before buffered loss transitions,
+    // which would then invalidate an acknowledgment that already belongs to it.
+    try {
+      const { snapshot, push } = yield* race({
+        snapshot: call(invokeGetBackendStatus),
+        push: take(channel),
+      });
+      initialStatus = push ?? snapshot ?? null;
+      if (initialStatus) {
+        yield* put(statusAction(initialStatus, snapshot !== undefined));
+        yield* put(notifications, initialStatus);
+      }
     } catch {
       // Push events and system.status polling still converge the state.
     }
-    // Polling starts once the boot snapshot has settled either way: a
-    // successful snapshot binds the first poll to that connection, and a
-    // failed one must not leave the app without any poll until main happens
-    // to push a status.
+    // Start polling after either the snapshot or a newer push binds the
+    // connection; a failed snapshot must still leave polling available.
     yield* fork(systemPollingLoop);
 
     yield* takeWithBackoff(
       channel,
       function* handleStatusPayload(payload: BackendStatusPayload) {
         yield* put(statusAction(payload, false));
-        yield* call(maybeNotifyOrphanedSidecar, payload.transport, orphanNotifyState);
-        versionMismatchNotified = yield* call(
-          maybeNotifyVersionMismatch,
-          payload.transport,
-          versionMismatchNotified,
-        );
+        yield* put(notifications, payload);
       },
       {
         initialDelayMs: INITIAL_DISCONNECTED_BACKOFF_MS,
@@ -287,6 +295,8 @@ function* daemonStatusSaga() {
       },
     );
   } finally {
+    yield* cancel(notificationTask);
+    notifications.close();
     channel.close();
   }
 }

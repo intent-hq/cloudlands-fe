@@ -9,6 +9,7 @@ describe('multi-select sidebar tabs', () => {
   it('keeps the canonical tab order and launcher grid', () => {
     expect(TAB_DEFINITIONS.map(({ id }) => id)).toEqual([
       'overview',
+      'people',
       'agents',
       'context',
       'changes',
@@ -35,4 +36,16 @@ describe('multi-select sidebar tabs', () => {
     expect([...normalizeSelectedTabs(['shell', 'files'], true)]).toEqual(['files']);
     expect([...normalizeSelectedTabs(['browser', 'shell'], false)]).toEqual(['browser']);
   });
+
+  it('allows People for collaborators and drops it when sharing is unavailable', () => {
+    expect([...normalizeSelectedTabs(['people'], true, true)]).toEqual(['people']);
+    expect([...normalizeSelectedTabs(['people'], false, false)]).toEqual(['overview']);
+    expect([...normalizeSelectedTabs(['people', 'context'], true, false)]).toEqual(['context']);
+  });
+});
+
+it('keeps a Manager saved-script Shell selection while still stripping Browser', () => {
+  expect([...normalizeSelectedTabs(['shell'], true, true, true)]).toEqual(['shell']);
+  expect([...normalizeSelectedTabs(['browser'], true, true, true)]).toEqual(['overview']);
+  expect([...normalizeSelectedTabs(['shell'], true, true, false)]).toEqual(['overview']);
 });

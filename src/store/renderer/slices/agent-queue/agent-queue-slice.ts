@@ -1,14 +1,23 @@
 import type { QueuedMessage } from '$shared/types';
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   addItem,
   createCollection,
   getItem,
   getItems,
+  removeItem,
   replaceItem,
-} from '@augmentcode/themis/utils/collections/collection-utils';
-import type { AgentQueueEntryState, AgentQueueState } from './agent-queue-types';
+  upsertItem,
+} from '@themislib/themis/utils/collections/collection-utils';
+import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
+import type {
+  AgentQueueEntryState,
+  AgentQueueState,
+  QueuedMessageMutation,
+  QueuedMessageMutationRequest,
+  QueuedMessageMutationResult,
+} from './agent-queue-types';
 
 const RECENTLY_REMOVED_MESSAGE_ID_LIMIT = 100;
 
@@ -21,14 +30,17 @@ const createEmptyAgentQueueEntry = (): AgentQueueEntryState => ({
 
 export const initialState: AgentQueueState = {
   byAgentId: {},
+  mutations: createCollection<QueuedMessageMutation, 'requestId'>('requestId'),
 };
 
-export const hydrateAgentQueueRequested = createAction<[agentId: string]>(
+export const hydrateAgentQueueRequested = createAction<[agentId: string, workspaceId?: string]>(
   'agentQueue/hydrateRequested',
 );
 
 export const replaceAgentQueue =
-  createAction<[agentId: string, messages: QueuedMessage[]]>('agentQueue/replaceQueue');
+  createAction<[agentId: string, messages: QueuedMessage[], workspaceId?: string]>(
+    'agentQueue/replaceQueue',
+  );
 
 /** Fold one daemon-persisted mutation result into the queue without changing stable order. */
 export const upsertQueuedMessageInAgentQueue = createAction<
@@ -39,9 +51,25 @@ export const removeQueuedMessageFromAgentQueue = createAction<[agentId: string, 
   'agentQueue/removeQueuedMessage',
 );
 
-/** Saga trigger: optimistically remove a queued message and ask the backend to remove it. */
-export const removeQueuedMessageRequested = createAction<[agentId: string, messageId: string]>(
-  'agentQueue/removeRequested',
+/**
+ * Saga trigger for a queued edit/remove/send-now. The chat command FIFO runs it in
+ * per-agent order with sends; the consumer reads the settled outcome by requestId.
+ */
+export const queuedMessageMutationRequested = createAction<[request: QueuedMessageMutationRequest]>(
+  'agentQueue/mutationRequested',
+);
+
+export const queuedMessageMutationFinished = createAction<
+  [requestId: string, result: QueuedMessageMutationResult]
+>('agentQueue/mutationFinished');
+
+export const queuedMessageMutationConsumed = createAction<[consumerId: string, requestId: string]>(
+  'agentQueue/mutationConsumed',
+);
+
+/** Drop every outcome owned by a consumer that unmounted. */
+export const queuedMessageMutationsReleased = createAction<[consumerId: string]>(
+  'agentQueue/mutationsReleased',
 );
 
 /** Un-mark a recently-removed ID so a later hydration can bring the message back. */
@@ -91,10 +119,27 @@ function suppressRecentlyRemovedMessages(
     : filtered.map((message, position) => ({ ...message, position }));
 }
 
+function scopedEntry(
+  state: AgentQueueState,
+  agentId: string,
+  workspaceId?: string,
+): AgentQueueEntryState {
+  const current = state.byAgentId[agentId];
+  if (
+    workspaceId !== undefined &&
+    current?.workspaceId !== undefined &&
+    current.workspaceId !== workspaceId
+  ) {
+    return { ...createEmptyAgentQueueEntry(), workspaceId };
+  }
+  const entry = current ?? createEmptyAgentQueueEntry();
+  return workspaceId === undefined ? entry : { ...entry, workspaceId };
+}
+
 export const agentQueueReducer = createReducer<AgentQueueState>(initialState);
 
-agentQueueReducer.with(hydrateAgentQueueRequested, (state, { payload: [agentId] }) => {
-  const current = state.byAgentId[agentId] ?? createEmptyAgentQueueEntry();
+agentQueueReducer.with(hydrateAgentQueueRequested, (state, { payload: [agentId, workspaceId] }) => {
+  const current = scopedEntry(state, agentId, workspaceId);
   return setAgentQueueEntry(state, agentId, {
     ...current,
     recentlyRemovedMessageIds: current.recentlyRemovedMessageIds ?? [],
@@ -102,18 +147,21 @@ agentQueueReducer.with(hydrateAgentQueueRequested, (state, { payload: [agentId] 
     error: null,
   });
 });
-agentQueueReducer.with(replaceAgentQueue, (state, { payload: [agentId, messages] }) => {
-  const current = state.byAgentId[agentId] ?? createEmptyAgentQueueEntry();
-  const recentlyRemovedMessageIds = current.recentlyRemovedMessageIds ?? [];
-  const visibleMessages = suppressRecentlyRemovedMessages(messages, recentlyRemovedMessageIds);
-  return setAgentQueueEntry(state, agentId, {
-    ...current,
-    recentlyRemovedMessageIds,
-    messages: createCollection<QueuedMessage, 'id'>('id', visibleMessages),
-    isHydrating: false,
-    error: null,
-  });
-});
+agentQueueReducer.with(
+  replaceAgentQueue,
+  (state, { payload: [agentId, messages, workspaceId] }) => {
+    const current = scopedEntry(state, agentId, workspaceId);
+    const recentlyRemovedMessageIds = current.recentlyRemovedMessageIds ?? [];
+    const visibleMessages = suppressRecentlyRemovedMessages(messages, recentlyRemovedMessageIds);
+    return setAgentQueueEntry(state, agentId, {
+      ...current,
+      recentlyRemovedMessageIds,
+      messages: createCollection<QueuedMessage, 'id'>('id', visibleMessages),
+      isHydrating: false,
+      error: null,
+    });
+  },
+);
 agentQueueReducer.with(
   upsertQueuedMessageInAgentQueue,
   (state, { payload: [agentId, message] }) => {
@@ -176,6 +224,64 @@ agentQueueReducer.with(
     });
   },
 );
+agentQueueReducer.with(queuedMessageMutationRequested, (state, { payload: [request] }) => {
+  if (getItem(state.mutations, request.requestId)) return state;
+  const { operation, ...identity } = request;
+  return {
+    ...state,
+    mutations: addItem(state.mutations, {
+      ...identity,
+      kind: operation.kind,
+      ...(operation.kind === 'edit' && operation.editing !== undefined
+        ? { editing: operation.editing }
+        : {}),
+      status: 'pending',
+    }),
+  };
+});
+agentQueueReducer.with(queuedMessageMutationFinished, (state, { payload: [requestId, result] }) => {
+  const entry = getItem(state.mutations, requestId);
+  if (entry?.status !== 'pending') return state;
+  return {
+    ...state,
+    mutations: upsertItem(state.mutations, {
+      ...entry,
+      status: result.status,
+      ...(result.sendOutcome ? { sendOutcome: result.sendOutcome } : {}),
+      ...(result.error ? { error: result.error } : {}),
+    }),
+  };
+});
+agentQueueReducer.with(
+  queuedMessageMutationConsumed,
+  (state, { payload: [consumerId, requestId] }) => {
+    const entry = getItem(state.mutations, requestId);
+    if (entry?.consumerId !== consumerId || entry.status === 'pending') return state;
+    return { ...state, mutations: removeItem(state.mutations, requestId) };
+  },
+);
+agentQueueReducer.with(queuedMessageMutationsReleased, (state, { payload: [consumerId] }) => {
+  const owned = getItems(state.mutations).filter((entry) => entry.consumerId === consumerId);
+  if (owned.length === 0) return state;
+  return {
+    ...state,
+    mutations: owned.reduce(
+      (mutations, entry) => removeItem(mutations, entry.requestId),
+      state.mutations,
+    ),
+  };
+});
+agentQueueReducer.with(workspaceUnmounted, (state, { payload: [workspaceId] }) => {
+  const owned = getItems(state.mutations).filter((entry) => entry.workspaceId === workspaceId);
+  if (owned.length === 0) return state;
+  return {
+    ...state,
+    mutations: owned.reduce(
+      (mutations, entry) => removeItem(mutations, entry.requestId),
+      state.mutations,
+    ),
+  };
+});
 agentQueueReducer.with(clearAgentQueue, (state, { payload: [agentId] }) => {
   if (!state.byAgentId[agentId]) return state;
   const remaining = { ...state.byAgentId };

@@ -11,6 +11,8 @@ import {
 } from '$store/renderer/slices/task-agent-associations/task-agent-associations-slice';
 import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
+import { createAgentFromConfigRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import { createAgentTypeId } from '$shared/types/agent.types';
 import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
 import type { Workspace } from '$shared/types';
 import { unifiedIdService } from '$shared/services/unified-id.service';
@@ -126,7 +128,7 @@ export async function runAssignAgentTaskMenuAction({
       });
       // NOTE: the task-agent association is NOT dispatched here — the
       // placeholder id must not reach the daemon via `task.linkAgent`. The
-      // association is dispatched after `agents.create` returns the
+      // association is dispatched after the creation owner returns the
       // daemon-assigned id (Step 5b below).
     }
   }
@@ -180,7 +182,7 @@ export async function runAssignAgentTaskMenuAction({
     // Create the Task Note via the live tasks client (daemon `task.createPrerequisite`).
     // `peerOrder` is not part of the §7.9 arm and is dropped; the daemon assigns
     // ordering. The auto-agent behavior (initialMessage + `task.assignAgent`) is
-    // preserved via a follow-up `agents.create`; the initial-message send and
+    // preserved via the creation saga/factory; the initial-message send and
     // explicit assignment are NOT re-issued here (known gap versus the retired
     // main-process handler).
     const createResult = await appClient.tasks.createPrerequisite(noteId, sanitizedTitle, {
@@ -200,18 +202,25 @@ export async function runAssignAgentTaskMenuAction({
     const newTaskNoteId = createResult.id;
 
     try {
-      const createdAgent = await appClient.agents.create({
-        workspaceId: workspace.id,
-        name: sanitizedTitle,
-        agentType: 'task-loop',
-        model,
-        metadata: {
-          source: 'task-creation',
-          agentType: 'task-loop',
-          taskNoteId: newTaskNoteId,
-          isBackground: true,
-        },
-      });
+      const createdAgent = await appStore.dispatch(
+        createAgentFromConfigRequested(
+          workspace.id,
+          {
+            workspaceId: workspace.id,
+            name: sanitizedTitle,
+            agentType: createAgentTypeId('task-loop'),
+            source: 'task-creation',
+            model,
+            metadata: {
+              source: 'task-creation',
+              agentType: 'task-loop',
+              taskNoteId: newTaskNoteId,
+              isBackground: true,
+            },
+          },
+          { activateAgent: false, notifyOnError: false },
+        ),
+      );
 
       // Step 5b: adopt the daemon-assigned agent id. Re-key the task-item
       // marker and only NOW dispatch the association (which syncs to the

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import type { StoreState } from '../../types';
 import { initialState as connectionsInitialState } from '../connections/connections-slice';

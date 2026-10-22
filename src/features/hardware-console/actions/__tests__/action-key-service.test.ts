@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { m } from '$shared/paraglide/messages.js';
 import type { HardwareConsoleManager, HardwareConsoleStatus } from '../../device/device-manager';
 import {
@@ -1059,6 +1059,17 @@ describe('persistence key on the daemon bag', () => {
       ]);
     });
   });
+});
+
+it('marks fallback action mappings as unsuccessful hydration', async () => {
+  vi.mocked(appClient.settings.get).mockResolvedValue(null);
+  invokeActionKeySaga();
+  await vi.waitFor(() =>
+    expect(dispatched).toContainEqual({
+      type: 'hardwareConsole/hydrateActionMapping',
+      payload: [normalizeActionMappingsByModel(undefined), false],
+    }),
+  );
 });
 
 describe('action-key persist helpers on a failed bag read', () => {

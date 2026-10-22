@@ -5,9 +5,11 @@
   import {
     selectIsReadyToInstall,
     selectAutoUpdateStatus,
+    selectShareUpdateStatistics,
   } from '$store/renderer/slices/auto-update/auto-update-selectors';
   import {
     installUpdate,
+    setShareUpdateStatistics,
     simulateSetState,
   } from '$store/renderer/slices/auto-update/auto-update-slice';
   import AdministratorSettings from '$lib/components/settings/AdministratorSettings.svelte';
@@ -17,11 +19,11 @@
   } from '$lib/components/settings/AIBehaviorSidebar.svelte';
   import { SettingsPage, type SettingsTab } from '$lib/components/patterns/settings';
   import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
+  import MobileSettings from '$features/settings/MobileSettings.svelte';
   import GuestSessionsSettings from '$lib/components/settings/GuestSessionsSettings.svelte';
   import BackendSyncSettings from '$lib/components/settings/BackendSyncSettings.svelte';
   import VoiceSettings from '$lib/components/settings/VoiceSettings.svelte';
   import GitWorkspaceSettings from '$lib/components/settings/GitWorkspaceSettings.svelte';
-  import LegacyImportSettings from '$lib/components/settings/LegacyImportSettings.svelte';
   import OpenInAppsSettings from '$lib/components/settings/OpenInAppsSettings.svelte';
   import LanguageSettings from '$lib/components/settings/LanguageSettings.svelte';
   import GitHubLinkSettings from '$lib/components/settings/GitHubLinkSettings.svelte';
@@ -42,7 +44,10 @@
   import * as ToggleGroup from '$lib/components/ui/toggle-group';
   import { selectDaemonTransport } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { selectIsCollaboratorOnlyClient } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { selectWindowIdentitySettled } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
+  import {
+    selectPrincipalActionContext,
+    selectHostAdministrationDenied,
+  } from '$store/renderer/slices/principal/principal-selectors';
   import { selectThemePreference } from '$store/renderer/slices/theme/theme-selectors';
   import { requestThemePreferenceChange } from '$store/renderer/slices/theme/theme-slice';
   import type { ThemePreference } from '$store/renderer/slices/theme/theme-types';
@@ -50,6 +55,7 @@
     resetNotificationSettings,
     setAgentFontStyle,
     setChatAuroraEnabled,
+    setCollapseToolRuns,
     setCodeFontFamily,
     setNoteFontStyle,
     setShellTransparencyEnabled,
@@ -59,10 +65,12 @@
   import {
     selectAgentFontStyle,
     selectChatAuroraEnabled,
+    selectCollapseToolRuns,
     selectCodeFontFamily,
     selectCodeFontFamilyCSS,
     selectCodeFontOptions,
     selectIsNoteMonospace,
+    selectLabsMultiplayerEnabled,
     selectNoteFontStyle,
     selectShellTransparencyEnabled,
     selectUpdateChannel,
@@ -86,6 +94,7 @@
   const isReadyToInstall$ = selectIsReadyToInstall();
   const autoUpdateStatus$ = selectAutoUpdateStatus();
   const updateChannel$ = selectUpdateChannel();
+  const shareUpdateStatistics$ = selectShareUpdateStatistics();
   const noteFontStyle = selectNoteFontStyle();
   const isNoteMonospace = selectIsNoteMonospace();
   const agentFontStyle = selectAgentFontStyle();
@@ -93,11 +102,14 @@
   const codeFontFamilyCSS = selectCodeFontFamilyCSS();
   const codeFontOptions = selectCodeFontOptions();
   const chatAuroraEnabled = selectChatAuroraEnabled();
+  const collapseToolRuns = selectCollapseToolRuns();
   const shellTransparencyEnabled = selectShellTransparencyEnabled();
   const themePreference = selectThemePreference();
   const daemonTransport$ = selectDaemonTransport();
   const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
-  const windowIdentitySettled$ = selectWindowIdentitySettled();
+  const collaborationContext$ = selectPrincipalActionContext();
+  const hostAdministrationDenied$ = selectHostAdministrationDenied();
+  const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
 
   // UDS socket path of the connected intentd; null hides the Connection section
   // (external-ws, unknown transport, or missing target).
@@ -116,7 +128,8 @@
     'providers',
     'connections',
     'devices',
-    'guest-sessions',
+    'mobile',
+    'collaboration',
     'setup',
     'advanced',
     'input',
@@ -141,10 +154,12 @@
     devices: 'devices',
     machines: 'devices',
     'backend-sync': 'devices',
-    'websocket-api': 'devices',
-    'remote-access': 'devices',
-    'guest-sessions': 'guest-sessions',
-    sharing: 'guest-sessions',
+    mobile: 'mobile',
+    'websocket-api': 'mobile',
+    'remote-access': 'mobile',
+    collaboration: 'collaboration',
+    'guest-sessions': 'collaboration',
+    sharing: 'collaboration',
     voice: 'input',
     'keyboard-shortcuts': 'input',
     'git-workspace': 'setup',
@@ -158,6 +173,7 @@
     theme: 'display',
     appearance: 'display',
     'chat-aurora': 'display',
+    'collapse-tool-runs': 'display',
     'translucent-window': 'display',
     'font-style': 'display',
     'color-theme': 'display',
@@ -174,7 +190,6 @@
     'utility-default-model': 'providers',
     hardware: 'advanced',
     connection: 'advanced',
-    data: 'advanced',
     reset: 'advanced',
     general: 'advanced',
     developer: 'advanced',
@@ -186,6 +201,7 @@
   }
 
   function resolveLegacyTab(tabParam: string): SettingsTab | undefined {
+    if (tabParam === 'guest-sessions' || tabParam === 'sharing') return 'collaboration';
     if (tabParam === 'accounts') return 'providers';
     if (
       tabParam === 'general' ||
@@ -205,7 +221,7 @@
     const targetTab = resolveHashTab(targetId);
     if (targetTab) return targetTab;
     if (tabParam && isSettingsTab(tabParam)) return tabParam;
-    return (tabParam && resolveLegacyTab(tabParam)) || 'display';
+    return (tabParam && resolveLegacyTab(tabParam)) || 'agent-behavior';
   }
 
   function getInitialTab(): SettingsTab {
@@ -213,7 +229,6 @@
   }
 
   let activeTab = $state<SettingsTab>(getInitialTab());
-  let localSettingsRequested = $state(0);
   let contentScroll: HTMLDivElement;
 
   function resetContentScroll() {
@@ -240,15 +255,22 @@
   // Provider keys and GitHub/Linear/Sentry connections are administrator-owned
   // daemon state (multiplayer w3): a collaborator-only client cannot read or
   // change them, so those sections are withheld and their tabs redirect. The
-  // redirect waits for the window identity to settle: during boot the
+  // redirect waits for the connected principal: during boot the
   // collaborator-only default is a safe placeholder, not an answer, and
   // redirecting on it would drop a `?tab=providers` deep link for an
   // administrator (intent-hq/intent#5514).
-  const hiddenTabs = $derived<readonly SettingsTab[]>(
-    $isCollaboratorOnlyClient$ ? ['providers', 'connections'] : [],
-  );
+  const hiddenTabs = $derived.by(() => {
+    const tabs: SettingsTab[] = $isCollaboratorOnlyClient$ ? ['providers', 'connections'] : [];
+    if (!$labsMultiplayerEnabled$) tabs.push('collaboration');
+    return tabs;
+  });
   $effect(() => {
-    if ($windowIdentitySettled$ && hiddenTabs.includes(activeTab)) setActiveTab('display');
+    if (
+      hiddenTabs.includes(activeTab) &&
+      (activeTab === 'collaboration' || $hostAdministrationDenied$)
+    ) {
+      setActiveTab('display');
+    }
   });
 
   // Keep the rendered pane in sync when SvelteKit navigates within the mounted settings page.
@@ -406,7 +428,6 @@
     }
     if (typeof window === 'undefined' || !window.location.hash) return;
     const targetId = window.location.hash.slice(1);
-    if (resolveHashToTarget(targetId)?.id === 'websocket-api') localSettingsRequested += 1;
 
     // Switch to the correct tab if needed
     const targetTab = resolveHashTab(targetId);
@@ -502,6 +523,7 @@
 
 {#snippet agentsNavigation()}
   <AIBehaviorSidebar
+    workspaceId={settingsWorkspaceId ?? undefined}
     activeView={aiBehaviorView}
     onSelect={selectAiBehaviorView}
     isActive={activeTab === 'specialists'}
@@ -567,12 +589,10 @@
           <AdministratorSettings tab={activeTab} workspaceId={settingsWorkspaceId} />
         {/if}
 
-        <!-- Devices -->
+        <!-- Machines -->
         {#if activeTab === 'devices'}
           <div id="devices" class="scroll-mt-20">
-            <div id="websocket-api" data-highlight-id="websocket-api" use:highlightTarget>
-              <DevicesSettings bind:localSettingsRequested />
-            </div>
+            <DevicesSettings />
           </div>
 
           <!-- Backend sync (iCloud Keychain) -->
@@ -588,10 +608,18 @@
           </div>
         {/if}
 
+        {#if activeTab === 'mobile'}
+          <div id="mobile" data-highlight-id="mobile" use:highlightTarget class="scroll-mt-20">
+            <div id="websocket-api" data-highlight-id="websocket-api" use:highlightTarget>
+              <MobileSettings />
+            </div>
+          </div>
+        {/if}
+
         <!-- Guest sessions (multiplayer w4: hosting roster + joined hosts) -->
-        {#if activeTab === 'guest-sessions'}
-          <div id="guest-sessions" class="scroll-mt-20">
-            <GuestSessionsSettings />
+        {#if activeTab === 'collaboration' && $labsMultiplayerEnabled$}
+          <div id="collaboration" class="scroll-mt-20">
+            {#key $collaborationContext$}<GuestSessionsSettings />{/key}
           </div>
         {/if}
 
@@ -678,6 +706,28 @@
                     checked={$chatAuroraEnabled}
                     onCheckedChange={(enabled) => appStore.dispatch(setChatAuroraEnabled(enabled))}
                     ariaLabel={m.settings_appearance_chatAurora_label()}
+                  />
+                </SettingsFieldRow>
+              </section>
+              <section
+                id="collapse-tool-runs"
+                data-highlight-id="collapse-tool-runs"
+                use:highlightTarget
+                data-slot="settings-section-body"
+                class="px-6 py-4"
+              >
+                <SettingsFieldRow
+                  id="settings-appearance-collapseToolRuns-label-field"
+                  label={m.settings_appearance_collapseToolRuns_label()}
+                  description={m.settings_appearance_collapseToolRuns_description()}
+                >
+                  <Switch
+                    id="collapse-tool-runs-switch"
+                    size="sm"
+                    class="mb-auto"
+                    checked={$collapseToolRuns}
+                    onCheckedChange={(enabled) => appStore.dispatch(setCollapseToolRuns(enabled))}
+                    ariaLabel={m.settings_appearance_collapseToolRuns_label()}
                   />
                 </SettingsFieldRow>
               </section>
@@ -868,6 +918,23 @@
                   </div>
                 </SettingsFieldRow>
               </section>
+              <section data-slot="settings-section-body" class="px-6 py-4">
+                <SettingsFieldRow
+                  id="settings-shareUpdateStatistics-label-field"
+                  label={m.settings_shareUpdateStatistics_label()}
+                  description={m.settings_shareUpdateStatistics_description()}
+                >
+                  <Switch
+                    id="share-update-statistics-switch"
+                    size="sm"
+                    class="mb-auto"
+                    checked={$shareUpdateStatistics$}
+                    onCheckedChange={(enabled) =>
+                      appStore.dispatch(setShareUpdateStatistics(enabled))}
+                    ariaLabel={m.settings_shareUpdateStatistics_label()}
+                  />
+                </SettingsFieldRow>
+              </section>
             </div>
           </div>
 
@@ -1004,14 +1071,6 @@
               <HardwareConsoleSettings />
             </div>
           {/if}
-
-          <!-- Data -->
-          <div id="data" data-highlight-id="data" use:highlightTarget>
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_data()}
-            </h2>
-            <LegacyImportSettings />
-          </div>
 
           <!-- Reset -->
           <div id="reset" data-highlight-id="general" use:highlightTarget>

@@ -143,22 +143,40 @@ export class LiveTerminalsClient implements TerminalsClient {
     }
   }
 
-  async write(terminalId: string, data: string): Promise<MutationResult> {
-    return runMutation('terminal.write', { terminalId, data: encodeBase64(data) });
+  async write(terminalId: string, data: string, workspaceId?: string): Promise<MutationResult> {
+    return runMutation('terminal.write', {
+      terminalId,
+      data: encodeBase64(data),
+      ...(workspaceId !== undefined ? { workspaceId } : {}),
+    });
   }
 
-  async resize(terminalId: string, cols: number, rows: number): Promise<MutationResult> {
-    return runMutation('terminal.resize', { terminalId, cols, rows });
+  async resize(
+    terminalId: string,
+    cols: number,
+    rows: number,
+    workspaceId?: string,
+  ): Promise<MutationResult> {
+    return runMutation('terminal.resize', {
+      terminalId,
+      cols,
+      rows,
+      ...(workspaceId !== undefined ? { workspaceId } : {}),
+    });
   }
 
-  async kill(terminalId: string): Promise<MutationResult> {
-    return runMutation('terminal.kill', { terminalId });
+  async kill(terminalId: string, workspaceId?: string): Promise<MutationResult> {
+    return runMutation('terminal.kill', {
+      terminalId,
+      ...(workspaceId !== undefined ? { workspaceId } : {}),
+    });
   }
 
-  async getBuffer(terminalId: string, maxBytes?: number): Promise<string> {
+  async getBuffer(terminalId: string, maxBytes?: number, workspaceId?: string): Promise<string> {
     try {
       const result = await backendRequest<{ data?: unknown }>('terminal.getBuffer', {
         terminalId,
+        ...(workspaceId !== undefined ? { workspaceId } : {}),
         ...(maxBytes !== undefined ? { maxBytes } : {}),
       });
       return decodeBase64(result?.data);
@@ -181,8 +199,13 @@ export class LiveTerminalsClient implements TerminalsClient {
     }
   }
 
-  subscribeEvents(terminalId: string, handlers: TerminalEventHandlers): Unsubscribe {
+  subscribeEvents(
+    terminalId: string,
+    handlers: TerminalEventHandlers,
+    workspaceId?: string,
+  ): Unsubscribe {
     let disposed = false;
+    let generation = 0;
     let subscriptionId: string | undefined;
 
     // Daemon fan-out is one `events.event` per matching subscription on the
@@ -222,13 +245,19 @@ export class LiveTerminalsClient implements TerminalsClient {
       }
     });
 
-    const doSubscribe = () =>
-      backendSubscribe<{ subscriptionId?: string }>({
+    const doSubscribe = () => {
+      const attempt = ++generation;
+      return backendSubscribe<{ subscriptionId?: string }>({
         eventTypes: ['terminal:data', 'terminal:exit', 'terminal:cwd', 'terminal:title'],
+        ...(workspaceId !== undefined ? { workspaceId } : {}),
       })
         .then((result) => {
-          subscriptionId = result?.subscriptionId;
-          if (disposed && subscriptionId) void backendUnsubscribe(subscriptionId);
+          const id = result?.subscriptionId;
+          if (disposed || attempt !== generation) {
+            if (id) void backendUnsubscribe(id, workspaceId);
+            return;
+          }
+          subscriptionId = id;
         })
         .catch(() => {
           // If the daemon subscribe fails we leave `subscriptionId` unset; the
@@ -236,6 +265,7 @@ export class LiveTerminalsClient implements TerminalsClient {
           // which matches reality: without a live subscription the daemon won't
           // route terminal events to this connection in the first place.
         });
+    };
 
     doSubscribe();
 
@@ -251,7 +281,7 @@ export class LiveTerminalsClient implements TerminalsClient {
       disposed = true;
       off();
       offReconnect();
-      if (subscriptionId) void backendUnsubscribe(subscriptionId);
+      if (subscriptionId) void backendUnsubscribe(subscriptionId, workspaceId);
     };
   }
 

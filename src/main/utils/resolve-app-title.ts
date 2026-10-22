@@ -1,5 +1,6 @@
 import { resolveDevInstance } from './resolve-dev-instance';
 import type { BrowserWindow } from 'electron';
+import { isIsolatedTestBuild } from '../isolated-test-profile';
 
 /**
  * Build the window/app title.
@@ -8,6 +9,7 @@ import type { BrowserWindow } from 'electron';
  * - In dev without --name: "Electron [Dev N]" or "Electron [Dev]"
  */
 export function resolveAppTitle(): string {
+  if (isIsolatedTestBuild()) return 'Intent GitLab Test';
   const isDev = process.env.NODE_ENV === 'development';
   if (!isDev) return 'Intent';
 
@@ -19,7 +21,7 @@ export function resolveAppTitle(): string {
 }
 
 export function decorateWindowTitle(title: string): string {
-  if (process.env.NODE_ENV !== 'development') return title;
+  if (process.env.NODE_ENV !== 'development' && !isIsolatedTestBuild()) return title;
   const suffix = ` — ${resolveAppTitle()}`;
   return title.endsWith(suffix) ? title : `${title}${suffix}`;
 }

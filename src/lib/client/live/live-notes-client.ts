@@ -10,6 +10,7 @@
  * sole data path (intent-hq/monorepo#1697); there is no legacy `note:*`
  * events-driven refetch.
  */
+import { m } from '$shared/paraglide/messages.js';
 import { AuthorType, ContentType, NoteVisibility } from '$shared/types';
 import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
 import { isProjectionRejected } from '$shared/utils/note-content';
@@ -19,13 +20,15 @@ import type {
   LineAttributionData,
   MutationResult,
   NoteAddOptions,
+  NoteGetOptions,
+  NoteSetContentOptions,
   NoteMetadataPatch,
   NoteRestoreResult,
   NotesClient,
   SubscriptionHandler,
   Unsubscribe,
 } from '../app-client';
-import { backendRequest } from './backend-transport';
+import { backendRequest, observeBackendNodeCapabilities } from './backend-transport';
 import { createDeltaSubscription } from './delta-subscription';
 import {
   newIdempotencyKey,
@@ -83,6 +86,32 @@ function normalizeNoteVersion(raw: unknown): NoteVersion | null {
   };
 }
 
+/** The daemon's truncated-read capability could not be read from an acknowledged hello. */
+export class NoteCapabilityUnknownError extends Error {
+  constructor() {
+    super('Truncated note read capability is unknown: no acknowledged hello yet');
+    this.name = 'NoteCapabilityUnknownError';
+  }
+}
+
+/**
+ * Only a transport that cannot report node capabilities at all is a plain "no":
+ * one without the observer, or a renderer whose IPC router has no handler for
+ * the capability channel (the in-memory mock router of browser and component
+ * builds throws `UnbridgedMockIpcChannelError`, which no retry can change).
+ * Every other failure — a connection that is changing, not connected yet, or a
+ * transport error from the Electron bridge — leaves the capability unknown.
+ */
+function isTransientCapabilityError(error: unknown): boolean {
+  if (!(error instanceof Error)) return true;
+  if (error.message === m.agent_placement_unavailable()) return false;
+  return error.name !== 'UnbridgedMockIpcChannelError';
+}
+
+/** Bounded wait for an acknowledged hello while it is being renewed (~3 s). */
+const CAPABILITY_ATTEMPTS = 30;
+const CAPABILITY_RETRY_MS = 100;
+
 /** Coerce a raw daemon note object into the renderer `Note` shape. */
 export function normalizeNote(raw: Record<string, unknown>, workspaceId: string): Note {
   const now = new Date().toISOString();
@@ -111,6 +140,13 @@ export function normalizeNote(raw: Record<string, unknown>, workspaceId: string)
     // spread) so full rows never carry stale slim markers.
     contentPreview: typeof raw.contentPreview === 'string' ? raw.contentPreview : undefined,
     contentLength: typeof raw.contentLength === 'number' ? raw.contentLength : undefined,
+    // Truncated-read markers (§5.2 "Truncated note reads"): carried only when
+    // the daemon flagged a truncated prefix, undefined otherwise.
+    contentTruncated: raw.contentTruncated === true ? true : undefined,
+    contentBytes:
+      raw.contentTruncated === true && typeof raw.contentBytes === 'number'
+        ? raw.contentBytes
+        : undefined,
     createdAt: String(raw.createdAt ?? raw.created_at ?? now),
     updatedAt: String(raw.updatedAt ?? raw.updated_at ?? now),
   } as Note;
@@ -173,7 +209,38 @@ export class LiveNotesClient implements NotesClient {
     });
   }
 
-  async get(noteId: string, explicitWorkspaceId?: string): Promise<Note | null> {
+  /**
+   * Whether the connected daemon advertises the truncated note read contract
+   * (`server.capabilities.noteTruncatedRead === 1`, §5.2 "Truncated note reads").
+   * Read from the acknowledged hello without another RPC.
+   *
+   * Resolves `true` / `false` only from an acknowledged hello (or `false` for a
+   * transport that cannot report node capabilities at all). While the hello is
+   * being renewed (startup, reconnect) the answer is unknown, not "no": it waits
+   * briefly and then rejects with {@link NoteCapabilityUnknownError}, so a view
+   * read fails (and can be retried) instead of loading a large note whole.
+   */
+  async supportsTruncatedRead(): Promise<boolean> {
+    for (let attempt = 0; attempt < CAPABILITY_ATTEMPTS; attempt++) {
+      try {
+        const hello = (await observeBackendNodeCapabilities()) as {
+          server?: { capabilities?: { noteTruncatedRead?: unknown } | null };
+        } | null;
+        const capabilities = hello?.server?.capabilities;
+        if (capabilities) return capabilities.noteTruncatedRead === 1;
+      } catch (error) {
+        if (!isTransientCapabilityError(error)) return false;
+      }
+      await new Promise((resolve) => setTimeout(resolve, CAPABILITY_RETRY_MS));
+    }
+    throw new NoteCapabilityUnknownError();
+  }
+
+  async get(
+    noteId: string,
+    explicitWorkspaceId?: string,
+    options?: NoteGetOptions,
+  ): Promise<Note | null> {
     // The caller's workspaceId wins over the resolver cache — note ids are not
     // globally unique (every workspace has a `spec` note) and the cache is
     // last-writer-wins across workspaces (monorepo#621).
@@ -183,6 +250,9 @@ export class LiveNotesClient implements NotesClient {
       const result = await backendRequest<{ note?: unknown } | unknown>('note.get', {
         workspaceId,
         noteId,
+        ...(options?.maxContentBytes !== undefined
+          ? { maxContentBytes: options.maxContentBytes }
+          : {}),
       });
       const raw =
         result && typeof result === 'object' && 'note' in result
@@ -212,11 +282,17 @@ export class LiveNotesClient implements NotesClient {
     content: string,
     expectedVersion?: number,
     workspaceId?: string,
+    options?: NoteSetContentOptions,
   ): Promise<MutationResult> {
     return this.runNoteMutation(
       noteId,
       'note.setContent',
-      { content },
+      {
+        content,
+        ...(options?.baseContentBytes !== undefined
+          ? { baseContentBytes: options.baseContentBytes }
+          : {}),
+      },
       expectedVersion,
       workspaceId,
     );

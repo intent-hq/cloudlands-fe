@@ -41,6 +41,7 @@ import {
 } from '$shared/types';
 import type {
   ChatClient,
+  InitialChatHistory,
   ChatLiveStreamPhase,
   ChatSubscribeOptions,
   ChatTranscript,
@@ -55,6 +56,8 @@ import {
 
 /** Shape of a `chat.subscribe` seq-0 snapshot per PROTOCOL §7.1. */
 interface ChatSnapshotPayload {
+  historyDelivery?: 'progressive';
+  initialHistory?: InitialChatHistory;
   agentId?: string;
   messages?: unknown[];
   truncated?: boolean;
@@ -63,10 +66,9 @@ interface ChatSnapshotPayload {
   isResponding?: boolean;
   turnInFlight?: boolean;
   /**
-   * Resume disposition (§7.1): present ONLY when the registration carried
-   * `sinceMessageId` — `true` when `messages` is the post-anchor delta,
-   * `false` when the daemon fell back to the standard newest page (unknown/
-   * pruned anchor). Absent on non-resume snapshots.
+   * Resume/reset disposition (§7.1): `true` for a post-anchor delta;
+   * `false` for a missing anchor or a mid-stream transcript invalidation.
+   * A false flag invalidates cached history even without a resume anchor.
    */
   resumed?: boolean;
   /**
@@ -81,6 +83,7 @@ interface ChatSnapshotPayload {
 
 /** Decoded seq-0 snapshot page (mirrors `agent.getConversation` shape). */
 interface ChatSnapshotResult {
+  nextToken?: string | null;
   messages: AgentMessage[];
   truncated: boolean;
   totalMessages: number;
@@ -113,7 +116,7 @@ const MAX_RETRY_DELAY_MS = 30_000;
  * and replayed when the subscribe reply resolves — the same buffering
  * delta-subscription.ts uses.
  */
-const MAX_BUFFERED_PUSHES = 32;
+const MAX_BUFFERED_PUSHES = 256;
 
 const SNAPSHOT_MESSAGE_ROLES = new Set<string>(MESSAGE_ROLES);
 
@@ -133,6 +136,24 @@ const STRICT_SNAPSHOT_BLOCK_TYPES = new Set([
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseInitialHistory(raw: unknown): InitialChatHistory | null {
+  if (!isRecord(raw)) return null;
+  const { target, received, complete } = raw;
+  if (
+    typeof target !== 'number' ||
+    !Number.isSafeInteger(target) ||
+    target < 1 ||
+    target > 200 ||
+    typeof received !== 'number' ||
+    !Number.isSafeInteger(received) ||
+    received < 0 ||
+    received > target ||
+    typeof complete !== 'boolean'
+  )
+    return null;
+  return { target, received, complete };
 }
 
 /**
@@ -220,15 +241,17 @@ function extractSnapshot(raw: unknown, expectedAgentId?: string): ChatSnapshotRe
     : [];
   return {
     messages,
+    ...(raw.nextToken === null || typeof raw.nextToken === 'string'
+      ? { nextToken: raw.nextToken }
+      : {}),
     truncated: Boolean(raw.truncated),
     totalMessages: typeof raw.totalMessages === 'number' ? raw.totalMessages : 0,
   };
 }
 
 /**
- * The §7.1 resume disposition carried on a resume-requesting registration's
- * seq-0 snapshot, or `undefined` when the snapshot does not carry one (the
- * registration sent no `sinceMessageId`).
+ * The §7.1 resume/reset disposition on an initial or mid-stream snapshot,
+ * or `undefined` when the wire payload does not carry one.
  */
 function extractResumedFlag(raw: unknown): boolean | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
@@ -246,10 +269,11 @@ interface ChatDeltaPayload {
 /** Parsed `subscription.push` envelope for the chat channel (snapshot OR delta). */
 interface ChatPush {
   subscriptionId: string;
-  kind: 'snapshot' | 'delta';
+  kind: 'snapshot' | 'delta' | 'history';
   seq: number;
   snapshot?: unknown;
   delta?: ChatDeltaPayload;
+  history?: unknown;
 }
 
 /**
@@ -263,10 +287,11 @@ function parseChatPush(method: string, params: unknown): ChatPush | null {
   const p = params as Record<string, unknown>;
   const subscriptionId = typeof p.subscriptionId === 'string' ? p.subscriptionId : null;
   const seq = typeof p.seq === 'number' ? p.seq : null;
-  if (!subscriptionId || seq === null) return null;
+  if (!subscriptionId || seq === null || !Number.isSafeInteger(seq) || seq < 0) return null;
   if (p.kind === 'snapshot') {
     return { subscriptionId, kind: 'snapshot', seq, snapshot: p.snapshot };
   }
+  if (p.kind === 'history') return { subscriptionId, kind: 'history', seq, history: p.history };
   if (p.kind === 'delta') {
     const raw = (p.delta && typeof p.delta === 'object' ? p.delta : {}) as Record<string, unknown>;
     return {
@@ -369,7 +394,7 @@ function parseDeltaEntity(raw: unknown, incremental: boolean): ChatDeltaEntity |
     ...(typeof e.appMessageId === 'string' && e.appMessageId.length > 0
       ? { appMessageId: e.appMessageId }
       : {}),
-    ...(e.author && typeof e.author === 'object' && !Array.isArray(e.author)
+    ...(e.author === null || (e.author && typeof e.author === 'object' && !Array.isArray(e.author))
       ? { author: e.author as AgentMessage['author'] }
       : {}),
   };
@@ -459,12 +484,15 @@ function fingerprintSnapshot(raw: unknown): number {
 export class ChatTranscriptReconciler {
   private messages: AgentMessage[] = [];
   private truncated = false;
+  private nextToken: string | null | undefined;
   private totalMessages = 0;
   private streaming = false;
   private expectedSeq = 0;
   private seeded = false;
   private snapshotFingerprint = 0;
   private incremental = false;
+  private initialHistory?: InitialChatHistory;
+  private initialMessageIds = new Set<string>();
 
   constructor(private readonly expectedAgentId?: string) {}
 
@@ -472,12 +500,15 @@ export class ChatTranscriptReconciler {
   reset(): void {
     this.messages = [];
     this.truncated = false;
+    this.nextToken = undefined;
     this.totalMessages = 0;
     this.streaming = false;
     this.expectedSeq = 0;
     this.seeded = false;
     this.snapshotFingerprint = 0;
     this.incremental = false;
+    this.initialHistory = undefined;
+    this.initialMessageIds.clear();
   }
 
   /**
@@ -493,16 +524,37 @@ export class ChatTranscriptReconciler {
    * compares payload fingerprints: a divergent re-emit carries rows
    * persisted while the stream was down and must rebuild too, or they stay
    * hidden until the next gap resnapshot (intent-hq/monorepo#2716).
+   * Progressive initial snapshots are replayable after history advances:
+   * an identical seq-0 must retain the received rows and sequence. A changed
+   * snapshot or an atomic recovery snapshot still rebuilds the transcript.
    */
-  applySnapshot(seq: number, raw: unknown): boolean {
+  applySnapshot(seq: number, raw: unknown): boolean | 'invalid' {
+    const payload = isRecord(raw) ? raw : {};
+    const progress =
+      payload.historyDelivery === 'progressive'
+        ? parseInitialHistory(payload.initialHistory)
+        : undefined;
+    const snap = extractSnapshot(raw, this.expectedAgentId);
+    const initialIds = new Set(snap.messages.map((message) => message.id));
+    if (
+      progress === null ||
+      (progress &&
+        (progress.received !== initialIds.size || (!progress.complete && snap.messages.length > 1)))
+    )
+      return 'invalid';
     const fingerprint = fingerprintSnapshot(raw);
-    if (this.seeded && seq + 1 === this.expectedSeq && fingerprint === this.snapshotFingerprint) {
+    if (
+      this.seeded &&
+      fingerprint === this.snapshotFingerprint &&
+      (seq + 1 === this.expectedSeq ||
+        (seq === 0 && progress !== undefined && seq < this.expectedSeq))
+    ) {
       return false;
     }
     this.snapshotFingerprint = fingerprint;
-    const snap = extractSnapshot(raw, this.expectedAgentId);
     this.messages = snap.messages;
     this.truncated = snap.truncated;
+    this.nextToken = snap.nextToken;
     this.totalMessages = snap.totalMessages;
     // Mid-turn hydration: streaming is on when the snapshot carries a
     // synthetic in-flight assistant message or the §7.1 activity-flag overlay
@@ -517,6 +569,9 @@ export class ChatTranscriptReconciler {
     // never the request — arms the append reducer, so a daemon that ignored
     // the param (older, or full mode) keeps the full-text reduction.
     this.incremental = p.deltaEncoding === 'incremental';
+    this.initialHistory = progress;
+    this.initialMessageIds = initialIds;
+    if (this.initialHistory?.complete === false) this.nextToken = undefined;
     this.expectedSeq = seq + 1;
     this.seeded = true;
     return true;
@@ -537,8 +592,12 @@ export class ChatTranscriptReconciler {
       const entity = parseDeltaEntity(raw, this.incremental);
       if (!entity) continue;
       this.upsertBlock(entity);
-      sawUpsert = true;
-      if (entity.streamingComplete) sawTerminal = true;
+      // Persisted user/system/tool rows also carry streamingComplete (§7.1),
+      // but only assistant entities describe turn activity.
+      if (entity.role === undefined || entity.role === 'assistant') {
+        sawUpsert = true;
+        if (entity.streamingComplete) sawTerminal = true;
+      }
     }
     if (delta.removedIds.length > 0) {
       const removed = new Set(delta.removedIds);
@@ -551,13 +610,58 @@ export class ChatTranscriptReconciler {
         };
       });
     }
-    // Terminal frame: the turn is done; a live (non-terminal) upsert always
-    // means a turn is in flight. Terminal-wins assumes a §7.1 delta batch
-    // never mixes one turn's terminal frame with another turn's live blocks:
-    // deltas are emitted per agent-event, and each event belongs to exactly
-    // one in-flight turn (an agent runs at most one turn at a time).
-    if (sawTerminal) this.streaming = false;
-    else if (sawUpsert) this.streaming = true;
+    // A terminal settles its own assistant row. A newer assistant may already
+    // be streaming when the old terminal arrives; preserve that live work.
+    if (sawTerminal) {
+      this.streaming = this.messages.some(
+        (message) => message.role === 'assistant' && message.isStreaming === true,
+      );
+    } else if (sawUpsert) this.streaming = true;
+    this.expectedSeq = seq + 1;
+    return 'applied';
+  }
+
+  /** Historical rows share push ordering but never alter live activity or overwrite live rows. */
+  applyHistory(seq: number, raw: unknown): 'applied' | 'stale' | 'gap' {
+    if (!this.seeded || seq > this.expectedSeq) return 'gap';
+    if (seq < this.expectedSeq) return 'stale';
+    if (!this.initialHistory || this.initialHistory.complete || !isRecord(raw)) return 'gap';
+    const progress = parseInitialHistory(raw);
+    if (!progress || progress.target !== this.initialHistory.target) return 'gap';
+    const { received, complete } = progress;
+    const message =
+      raw.message === undefined
+        ? undefined
+        : normalizeSnapshotMessage(raw.message, this.expectedAgentId);
+    if ((!complete && !message) || (complete && raw.message !== undefined)) return 'gap';
+    const newInitialRow = message && !this.initialMessageIds.has(message.id);
+    if (received !== this.initialHistory.received + (newInitialRow ? 1 : 0)) return 'gap';
+    if (
+      complete &&
+      ((raw.nextToken !== null &&
+        (typeof raw.nextToken !== 'string' || raw.nextToken.length === 0)) ||
+        typeof raw.truncated !== 'boolean' ||
+        typeof raw.totalMessages !== 'number' ||
+        !Number.isSafeInteger(raw.totalMessages) ||
+        raw.totalMessages < received ||
+        (received < progress.target && raw.nextToken !== null))
+    )
+      return 'gap';
+    // Validate the entire frame before committing any progress, cursor or message changes.
+    if (message) {
+      this.initialMessageIds.add(message.id);
+      if (!this.messages.some((row) => row.id === message.id)) {
+        this.messages = [message, ...this.messages].sort(
+          (a, b) => (a.seq ?? Number.MAX_SAFE_INTEGER) - (b.seq ?? Number.MAX_SAFE_INTEGER),
+        );
+      }
+    }
+    this.initialHistory = progress;
+    if (complete) {
+      this.nextToken = raw.nextToken as string | null;
+      this.truncated = raw.truncated as boolean;
+      this.totalMessages = raw.totalMessages as number;
+    }
     this.expectedSeq = seq + 1;
     return 'applied';
   }
@@ -565,8 +669,10 @@ export class ChatTranscriptReconciler {
   /** Current transcript state. */
   transcript(): ChatTranscript {
     return {
+      ...(this.initialHistory ? { initialHistory: this.initialHistory } : {}),
       messages: this.messages,
       truncated: this.truncated,
+      ...(this.nextToken !== undefined ? { nextToken: this.nextToken } : {}),
       totalMessages: this.totalMessages,
       isStreaming: this.streaming,
     };
@@ -641,7 +747,7 @@ export class ChatTranscriptReconciler {
     if (entity.messageSeq !== undefined) next.seq = entity.messageSeq;
     if (entity.metadata) next.metadata = entity.metadata;
     if (entity.appMessageId) next.appMessageId = entity.appMessageId;
-    if (entity.author) next.author = entity.author;
+    if ('author' in entity) next.author = entity.author;
     this.messages = [...this.messages.slice(0, index), next, ...this.messages.slice(index + 1)];
   }
 }
@@ -654,6 +760,8 @@ export class LiveChatClient implements ChatClient {
     onPhase?: (phase: ChatLiveStreamPhase) => void,
     options?: ChatSubscribeOptions,
   ): Unsubscribe {
+    const workspaceId = options?.workspaceId;
+    const context = workspaceId !== undefined ? { workspaceId } : {};
     const reconciler = new ChatTranscriptReconciler(agentId);
     let disposed = false;
     let subscriptionId: string | undefined;
@@ -663,6 +771,13 @@ export class LiveChatClient implements ChatClient {
     // reconnect, backoff retry) need the full newest page, not a delta from
     // an anchor the reconciler no longer represents.
     let resumeAnchor = options?.sinceMessageId;
+    // A reconnect's bounded full page cannot validate the retained history:
+    // an omitted partial may have finalized outside that window, and missed
+    // rows or transcript edits may leave gaps. Reset consumers along with
+    // the reconciler, without treating optimistic sends as invalidated by
+    // the daemon (unlike a declined resume).
+    // Keep this pending across retries until a recovery snapshot applies.
+    let resetCachedTranscript = false;
     // Observational lifecycle phase (deduped). Reporting NEVER alters the
     // subscription's behavior — registration, retry, and gap semantics are
     // unchanged whether or not a listener is attached.
@@ -749,10 +864,13 @@ export class LiveChatClient implements ChatClient {
     // replayed once the registration resolves to their id.
     let buffered: ChatPush[] = [];
 
-    const emit = (diagnostic: StreamLifecycleDiagnostic): void => {
+    const emit = (diagnostic: StreamLifecycleDiagnostic, fromHistory = false): void => {
       if (disposed) return;
       try {
-        handler(reconciler.transcript());
+        handler({
+          ...reconciler.transcript(),
+          ...(fromHistory ? { fromHistory: true as const } : {}),
+        });
         reportStreamLifecycle({ ...diagnostic, callbackResult: 'delivered' });
       } catch (error) {
         reportStreamLifecycle({ ...diagnostic, callbackResult: 'threw' });
@@ -760,12 +878,13 @@ export class LiveChatClient implements ChatClient {
       }
     };
 
-    // Snapshot-apply emits carry `fromSnapshot: true` (plus the §7.1 resume
-    // disposition when the registration requested one) so consumers can seed
-    // hydration from the authoritative newest page.
+    // Snapshot-apply emits carry `fromSnapshot: true` plus any §7.1 resume/reset
+    // disposition, including mid-stream invalidation without a resume request.
+    // Consumers hydrate or discard cached history from this authoritative page.
     const emitSnapshot = (
       resumed: boolean | undefined,
       diagnostic: StreamLifecycleDiagnostic,
+      resetCache = false,
     ): void => {
       if (disposed) return;
       const transcript = reconciler.transcript();
@@ -774,11 +893,23 @@ export class LiveChatClient implements ChatClient {
           ...transcript,
           fromSnapshot: true,
           ...(resumed === undefined ? {} : { resumed }),
+          ...(resetCache ? { resetCachedTranscript: true as const } : {}),
         });
         reportStreamLifecycle({ ...diagnostic, callbackResult: 'delivered' });
       } catch (error) {
         reportStreamLifecycle({ ...diagnostic, callbackResult: 'threw' });
         throw error;
+      }
+    };
+
+    const watchInitialHistory = (): void => {
+      clearSnapshotTimer();
+      if (reconciler.transcript().initialHistory?.complete === false) {
+        snapshotTimer = setTimeout(() => {
+          snapshotTimer = undefined;
+          resetCachedTranscript = true;
+          scheduleRetry();
+        }, SNAPSHOT_TIMEOUT_MS);
       }
     };
 
@@ -815,12 +946,20 @@ export class LiveChatClient implements ChatClient {
         // §7.1 resume: the anchor rides only until the first snapshot lands
         // — after that the reconciler holds daemon-served state, and every
         // internal re-registration must take the full newest page.
-        const resumed = resumeAnchor === undefined ? undefined : extractResumedFlag(push.snapshot);
+        const resumed = extractResumedFlag(push.snapshot);
         resumeAnchor = undefined;
-        if (reconciler.applySnapshot(push.seq, push.snapshot)) {
+        const applied = reconciler.applySnapshot(push.seq, push.snapshot);
+        if (applied === 'invalid') {
+          resetCachedTranscript = sawSnapshot;
+          resnapshot();
+          return;
+        }
+        if (applied) {
+          const resetCache = resetCachedTranscript && resumed === undefined;
+          resetCachedTranscript = false;
           const reconcilerResult = sawSnapshot ? 'reset' : 'applied';
           sawSnapshot = true;
-          emitSnapshot(resumed, { ...diagnostic, reconcilerResult });
+          emitSnapshot(resumed, { ...diagnostic, reconcilerResult }, resetCache);
         } else {
           reportStreamLifecycle({
             ...diagnostic,
@@ -828,16 +967,37 @@ export class LiveChatClient implements ChatClient {
             callbackResult: 'not-invoked',
           });
         }
-        if (markerRefreshPending) {
+        watchInitialHistory();
+        if (markerRefreshPending && reconciler.transcript().initialHistory?.complete !== false) {
           markerRefreshPending = false;
           resnapshot();
         }
       } else if (!awaitingResnapshot) {
-        const outcome = reconciler.applyDelta(
-          push.seq,
-          push.delta ?? { added: [], updated: [], removedIds: [] },
-        );
-        if (outcome === 'applied') emit({ ...diagnostic, reconcilerResult: 'applied' });
+        const outcome =
+          push.kind === 'history'
+            ? reconciler.applyHistory(push.seq, push.history)
+            : reconciler.applyDelta(
+                push.seq,
+                push.delta ?? { added: [], updated: [], removedIds: [] },
+              );
+        if (outcome === 'applied') {
+          if (push.kind === 'history') {
+            // Progress during watchdog backoff makes that retry obsolete.
+            // Keep resetCachedTranscript for any subsequent recovery snapshot.
+            resetBackoff();
+            setPhase('live');
+            watchInitialHistory();
+          }
+          emit({ ...diagnostic, reconcilerResult: 'applied' }, push.kind === 'history');
+          if (
+            push.kind === 'history' &&
+            reconciler.transcript().initialHistory?.complete &&
+            markerRefreshPending
+          ) {
+            markerRefreshPending = false;
+            resnapshot();
+          }
+        }
         // Sequence gap (or a delta before any snapshot): self-heal via a
         // fresh registration whose seq-0 snapshot rebuilds the transcript.
         // Stale duplicates are ignored silently.
@@ -886,8 +1046,10 @@ export class LiveChatClient implements ChatClient {
       // blocks.
       backendRequest<{ subscriptionId?: string }>('chat.subscribe', {
         agentId,
+        ...context,
         deltaEncoding: 'incremental',
         projection: 'slim',
+        historyDelivery: 'progressive',
         ...(resumeAnchor === undefined ? {} : { sinceMessageId: resumeAnchor }),
       })
         .then((result) => {
@@ -904,9 +1066,11 @@ export class LiveChatClient implements ChatClient {
             // this attempt while it was in flight. Never store the id and
             // best-effort release the daemon-side subscription it created.
             if (id) {
-              void backendRequest('chat.unsubscribe', { subscriptionId: id }).catch(() => {
-                // Unsubscribe is best-effort.
-              });
+              void backendRequest('chat.unsubscribe', { subscriptionId: id, ...context }).catch(
+                () => {
+                  // Unsubscribe is best-effort.
+                },
+              );
             }
             return;
           }
@@ -957,7 +1121,7 @@ export class LiveChatClient implements ChatClient {
       if (!subscriptionId) return;
       const id = subscriptionId;
       subscriptionId = undefined;
-      void backendRequest('chat.unsubscribe', { subscriptionId: id }).catch(() => {
+      void backendRequest('chat.unsubscribe', { subscriptionId: id, ...context }).catch(() => {
         // Unsubscribe is best-effort.
       });
     };
@@ -1034,6 +1198,9 @@ export class LiveChatClient implements ChatClient {
     // re-register for a fresh seq-0 snapshot.
     const offReconnect = onBackendReconnected(() => {
       if (disposed) return;
+      // Before first hydration the original resume anchor still represents
+      // the consumer's baseline, so its suffix must continue to merge.
+      resetCachedTranscript ||= sawSnapshot;
       transportGeneration += 1;
       generation += 1;
       reportStreamLifecycle({

@@ -7,9 +7,12 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({ state: () => ({}), dispatch: vi.fn() });
 });
-vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
-  selectAgentSession: { select: () => undefined },
-}));
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', async () => {
+  const { readable } = await import('svelte/store');
+  return {
+    selectAgentSession: Object.assign(() => readable(undefined), { select: () => undefined }),
+  };
+});
 vi.mock('svelte-fa', async () => ({
   default: (await import('../../ui/__tests__/mocks/Fa.svelte')).default,
 }));

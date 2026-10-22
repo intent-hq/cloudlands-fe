@@ -4,6 +4,7 @@
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
   import StreamingMessageContent from '../StreamingMessageContent.svelte';
+  import MessageContent from '../MessageContent.svelte';
 
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
   onDestroy(disposeStore);
@@ -11,7 +12,12 @@
   let {
     phase = 'opening',
     isStreaming = true,
-  }: { phase?: 'opening' | 'live' | 'closed'; isStreaming?: boolean } = $props();
+    renderer = 'streaming',
+  }: {
+    phase?: 'opening' | 'live' | 'closed';
+    isStreaming?: boolean;
+    renderer?: 'streaming' | 'settled';
+  } = $props();
 
   const leadingContent = [
     {
@@ -82,4 +88,8 @@
   );
 </script>
 
-<StreamingMessageContent {content} {isStreaming} />
+{#if renderer === 'streaming'}
+  <StreamingMessageContent {content} {isStreaming} />
+{:else}
+  <MessageContent {content} {isStreaming} />
+{/if}

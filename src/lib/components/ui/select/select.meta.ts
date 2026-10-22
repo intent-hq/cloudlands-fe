@@ -29,6 +29,7 @@ export const selectMetadata = parseUiComponentMetadata({
   category: 'primitive',
   owner: '007-B6',
   callers: [
+    'src/features/host-membership/HostInvitationDialog.svelte',
     'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
     'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
     'src/lib/components/chat/TaskProgressControl.svelte',

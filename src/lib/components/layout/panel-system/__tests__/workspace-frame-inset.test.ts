@@ -5,7 +5,7 @@
  * shell is rendered with every heavy child replaced by a marker so only the
  * frame geometry classes are under test.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 
@@ -59,10 +59,6 @@ vi.mock('$features/agent/interrupted-agents-service', () => ({
 }));
 vi.mock('$lib/client/live/live-app-client', () => ({ LiveAppClient: class {} }));
 
-vi.mock('$lib/components/layout/sidebar-nav', async () => ({
-  SidebarNav: (await import('../../../../../routes/__tests__/mocks/Marker.svelte')).default,
-  SidebarPanel: (await import('../../../../../routes/__tests__/mocks/Marker.svelte')).default,
-}));
 vi.mock('$lib/components/layout/WindowTitleBar.svelte', async () => ({
   default: (await import('../../../../../routes/__tests__/mocks/Marker.svelte')).default,
 }));
@@ -142,9 +138,31 @@ describe('workspace frame outer inset', () => {
     appStore.init();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // Finish layout startup while its component and store are still alive.
+    await vi.dynamicImportSettled();
     cleanup();
     appStore.dispose();
+  });
+
+  afterAll(async () => {
+    // Real layout imports must finish within each test's cleanup, before Vitest
+    // drains the worker's console RPCs. Spies call through to preserve all output.
+    const spies = (['log', 'info', 'debug', 'warn', 'error'] as const).map((method) =>
+      vi.spyOn(console, method),
+    );
+    try {
+      await vi.dynamicImportSettled();
+      const lateMessages = spies.flatMap((spy) =>
+        spy.mock.calls.map((args) => args.map(String).join(' ')),
+      );
+      expect(
+        lateMessages,
+        'layout initialization must settle before the test suite finishes',
+      ).toEqual([]);
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
   });
 
   function renderShell() {
@@ -186,17 +204,6 @@ describe('workspace frame outer inset', () => {
     expect(main.classList.contains('overflow-hidden')).toBe(true);
     for (const scrollClass of ['flex-1', 'min-h-0', 'overflow-hidden']) {
       expect(contentSlot.classList.contains(scrollClass), scrollClass).toBe(true);
-    }
-  });
-
-  it('keeps the sidebar frame dimensions stable', () => {
-    const { frameRow } = renderShell();
-    const sidebarFrame = frameRow.querySelector<HTMLElement>('[data-sidebar-panel-frame]')!;
-
-    expect(sidebarFrame).not.toBeNull();
-    expect(sidebarFrame.parentElement).toBe(frameRow);
-    for (const frameClass of ['relative', 'z-40', 'shrink-0']) {
-      expect(sidebarFrame.classList.contains(frameClass), frameClass).toBe(true);
     }
   });
 });

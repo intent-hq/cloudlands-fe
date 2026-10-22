@@ -1,8 +1,11 @@
-import type { Store } from '@augmentcode/themis/svelte-store';
+import type { Store } from '@themislib/themis/svelte-store';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { _resetRendererStoreBridge } from './renderer-store-bridge';
+import { store as configuredStore } from './configured-store';
+import { _resetRendererStoreBridge, getRendererStore } from './renderer-store-bridge';
 import { startRootStoreLifecycle, type RootStoreHmrData } from './root-store-lifecycle';
+
+let stopConfiguredStore: (() => void) | undefined;
 
 function createStore(order: string[]): Store<any, any> {
   return {
@@ -16,6 +19,8 @@ function createStore(order: string[]): Store<any, any> {
 }
 
 afterEach(() => {
+  stopConfiguredStore?.();
+  stopConfiguredStore = undefined;
   _resetRendererStoreBridge();
 });
 
@@ -95,5 +100,20 @@ describe('root Store lifecycle', () => {
     startRootStoreLifecycle(store, { startSagas: () => [] }, hmrData);
 
     expect(order).toEqual(['legacy:stop', 'store:init']);
+  });
+
+  it('disposes and reinitializes the configured production Store through the root owner', () => {
+    stopConfiguredStore = startRootStoreLifecycle(configuredStore, { startSagas: () => [] });
+    expect(getRendererStore()).toBe(configuredStore);
+
+    stopConfiguredStore();
+    stopConfiguredStore = undefined;
+    expect(() => getRendererStore()).toThrow('Renderer store bridge not initialized');
+
+    stopConfiguredStore = startRootStoreLifecycle(configuredStore, { startSagas: () => [] });
+    expect(getRendererStore()).toBe(configuredStore);
+    expect(configuredStore.dispatch({ type: 'test/rootStoreReinitialized' })).toEqual({
+      type: 'test/rootStoreReinitialized',
+    });
   });
 });

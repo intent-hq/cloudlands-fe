@@ -14,8 +14,9 @@
 
 import type { AgentId, WorkspaceId } from './branded-ids';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
-import type { AgentMessage, MessageAuthor } from './agent-message';
+import type { AgentMessage, MessageAuthor, SubmissionCorrelation } from './agent-message';
 import { AgentStatus } from './agent.types';
+import type { AgentNodeFields } from './agent-node';
 import type { AgentMetadata } from '../types';
 
 /**
@@ -34,7 +35,9 @@ export interface QueuedMessageContextItem {
  * A message queued to be sent to an agent.
  * Stored in backend to survive workspace switches.
  */
-export interface QueuedMessage {
+export interface QueuedMessage extends SubmissionCorrelation {
+  /** Exact full-snapshot permission to predict same-principal append, not mutation authority. */
+  mergeEligible?: boolean;
   /** Unique identifier for this queued message */
   id: string;
   /**
@@ -61,6 +64,12 @@ export interface QueuedMessage {
     mimeType?: string;
     size?: number;
   }>;
+  /** Ordered original text/attachment units in a combined retry; authority belongs to this row. */
+  deliveryGroups?: Array<{
+    content: string;
+    imageBlocks?: QueuedMessage['imageBlocks'];
+    fileBlocks?: QueuedMessage['fileBlocks'];
+  }>;
   /** Position in queue (0 = next to be sent) */
   position: number;
   /**
@@ -68,6 +77,11 @@ export interface QueuedMessage {
    * and skips it during queue drain. Only included in responses when true.
    */
   editing?: boolean;
+  /** Original active edit identity when a held entry was absorbed into this survivor. */
+  editingMessageId?: string;
+  /** Server hold marker; readiness resumes at holdUntil. */
+  holdKind?: string;
+  holdUntil?: string;
   /**
    * Optional terminal-failure requeue marker (STAB-112). When true, this message
    * was requeued after a terminal provider failure and should be visually distinguished
@@ -88,7 +102,9 @@ export interface QueuedMessage {
   /**
    * Serve-time projection of the principal that enqueued the entry
    * (multiplayer w2), resolved by the daemon from the `fromPrincipalId`
-   * stamp. Authoritative when present: `null` means the principal row is
+   * stamp, or a portable human snapshot with principalId:null and no local
+   * admission. Portable display does not change queue edit/send authority.
+   * Authoritative when present: `null` means the principal row is
    * gone (no author, no fallback). Absent on older daemons, where the queue
    * surface falls back to the projections the transcript already carries.
    */
@@ -179,7 +195,13 @@ export interface AgentDelegatedCounts {
  * MIGRATION NOTE: The old `sessionId` field has been renamed to `backendSessionId`
  * for clarity. Use `backendSessionId` for new code.
  */
-export interface AgentSession {
+/** §5.54 `AgentLite.providerReplacementRequired`. */
+interface ProviderReplacementRequired {
+  providerRef: string;
+  reason: 'profile-missing' | 'provider-disabled';
+}
+
+export interface AgentSession extends AgentNodeFields {
   // ========== Primary Identifiers ==========
   /** The agent's unique identifier */
   id: AgentId;
@@ -238,6 +260,20 @@ export interface AgentSession {
 
   /** ACP provider ID (e.g., "auggie", "claude-code", "opencode"). Mutable only until first real session use, then locked. */
   provider?: string;
+
+  /**
+   * §5.54: present (always `true`) while this agent's live provider process
+   * started with settings older than its profile's saved ones. Omitted once
+   * they match or no process is live.
+   */
+  usingEarlierProfileSettings?: true;
+
+  /**
+   * §5.54: present when the next turn would be refused because the selected
+   * profile was removed or its base provider is disabled. The user must pick
+   * a replacement; the daemon never substitutes another account.
+   */
+  providerReplacementRequired?: ProviderReplacementRequired;
 
   /** System prompt for the agent */
   systemPrompt?: string;
@@ -358,8 +394,18 @@ export interface AgentSession {
   /** Last user message sent */
   lastUserMessage?: string;
 
+  /**
+   * `true` only on an agent.list row whose `lastUserMessage` the daemon's
+   * list-row preview cap shortened (PROTOCOL §5.5 truncation flags); the
+   * value is then a prefix and agent.get serves the full text.
+   */
+  lastUserMessageTruncated?: boolean;
+
   /** Last agent response */
   lastAgentResponse?: string;
+
+  /** `true` only when the list-row cap shortened `lastAgentResponse`. */
+  lastAgentResponseTruncated?: boolean;
 
   /**
    * Number of transcript messages (PROTOCOL.md §5.5 `AgentLite` additive
@@ -452,6 +498,14 @@ export interface AgentSession {
    */
   waitingOnHooks?: Array<{ hookId: string; name: string; nextRunAt?: string; expiresAt?: string }>;
 
+  /** Active script-run watches (§5.8a), omitted by the daemon when empty. */
+  waitingOnScriptMonitors?: Array<{
+    monitorId: string;
+    scriptId: string;
+    runId: string;
+    scriptName: string;
+    expiresAt: string;
+  }>;
   /**
    * Idle-visibility for PR-monitor-owning agents — the `waitingOnHooks`
    * companion for centralized PR monitoring (§5.42): light metadata for the
@@ -541,6 +595,9 @@ export interface AgentSession {
    */
   digest?: string;
 
+  /** `true` only when the list-row cap shortened `digest`. */
+  digestTruncated?: boolean;
+
   // ========== File Operations ==========
   /** File changes made by this agent */
   fileChanges?: Array<{
@@ -600,7 +657,8 @@ export function isPendingAgentSession(
 /**
  * Resolve the provider for an agent session, with fallback chain.
  * Checks top-level `provider`, then `metadata.provider`, then `config.provider`.
- * Filters out the legacy 'acp' value (protocol name, not a real provider).
+ * Explicit identities, including historical aliases, are preserved verbatim.
+ * Renderer consumers resolve aliases against the daemon's provider catalog.
  * Falls back to inferring provider from the model ID if available —
  * `defaultProviderId` (the settings-derived effective default provider)
  * attributes bare model ids.
@@ -610,10 +668,9 @@ export function getAgentProvider(
   defaultProviderId: string,
 ): string | undefined {
   const explicit =
-    session.provider ?? session.metadata?.provider ?? (session as any).config?.provider;
+    session.provider || session.metadata?.provider || (session as any).config?.provider;
 
-  // 'acp' is the protocol name, not a provider ID -- treat it as unset
-  if (explicit && explicit !== 'acp') {
+  if (explicit) {
     return explicit;
   }
 

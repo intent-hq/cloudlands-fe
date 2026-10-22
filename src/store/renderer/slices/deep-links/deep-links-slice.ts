@@ -1,4 +1,4 @@
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { DeepLinksState } from './deep-links-types';
 
 // Re-export types for backward compatibility

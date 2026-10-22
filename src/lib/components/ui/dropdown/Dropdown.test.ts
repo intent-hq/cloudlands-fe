@@ -422,10 +422,25 @@ describe('Dropdown compatibility modes', () => {
     await fireEvent.mouseDown(option);
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
 
+    // Canonical Select puts aria-controls on the inner listbox, while its
+    // portalled surface also owns the border and padding around that listbox.
+    const surface = document.createElement('div');
+    surface.setAttribute('data-slot', 'select-content');
+    popup.replaceWith(surface);
+    surface.appendChild(popup);
+    await fireEvent.mouseDown(surface);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+
     const unrelatedPopup = document.createElement('div');
     unrelatedPopup.setAttribute('role', 'listbox');
+    unrelatedPopup.setAttribute('data-slot', 'select-content');
     document.body.appendChild(unrelatedPopup);
     await fireEvent.mouseDown(unrelatedPopup);
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+
+    await fireEvent.click(trigger);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    await fireEvent.mouseDown(document.body);
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
   });
 
@@ -439,6 +454,43 @@ describe('Dropdown compatibility modes', () => {
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
     expect(document.activeElement).toBe(trigger);
   });
+
+  it.each(['pointer', 'keyboard'])(
+    'opts into staying open after %s selection',
+    async (interaction) => {
+      const onchange = vi.fn();
+      const onopenchange = vi.fn();
+      render(Dropdown, {
+        props: {
+          options: [
+            { value: 'a', label: 'Alpha' },
+            { value: 'b', label: 'Beta' },
+          ],
+          closeOnSelect: false,
+          onchange,
+          onopenchange,
+        },
+      });
+      const trigger = screen.getByRole('button');
+      await fireEvent.click(trigger);
+      const search = screen.getByRole('searchbox');
+      if (interaction === 'pointer')
+        await fireEvent.click(screen.getByRole('option', { name: 'Beta' }));
+      else {
+        await fireEvent.input(search, { target: { value: 'Beta' } });
+        await fireEvent.keyDown(search, { key: 'Enter' });
+      }
+      expect(onchange).toHaveBeenCalledWith(
+        'b',
+        interaction === 'pointer' ? expect.any(MouseEvent) : undefined,
+      );
+      expect(trigger.getAttribute('aria-expanded')).toBe('true');
+      expect(onopenchange.mock.calls).toEqual([[true]]);
+      await fireEvent.keyDown(search, { key: 'Escape' });
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+      expect(document.activeElement).toBe(trigger);
+    },
+  );
 
   it('preserves searchable keyboard selection and open-state callbacks', async () => {
     const onchange = vi.fn();

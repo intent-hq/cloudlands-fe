@@ -35,9 +35,13 @@ vi.mock('$store/renderer/slices/app-layout/app-layout-slice', () => ({
 }));
 
 vi.mock('$store/renderer/slices/agent-session/agent-session-slice', () => ({
-  replaceMessages: Object.assign(
-    (...args: unknown[]) => ({ type: 'agentSessions/replaceMessages', payload: args }),
-    { type: 'agentSessions/replaceMessages' },
+  setHistoryOldestReached: (agentId: string) => ({
+    type: 'agentSessions/setHistoryOldestReached',
+    payload: [agentId],
+  }),
+  seedHistoryAround: Object.assign(
+    (...args: unknown[]) => ({ type: 'agentSessions/seedHistoryAround', payload: args }),
+    { type: 'agentSessions/seedHistoryAround' },
   ),
 }));
 
@@ -57,7 +61,11 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => 
 }));
 
 import { goto } from '$app/navigation';
-import { openMessage, seekConversationToMessage } from './open-message';
+import {
+  openMessage,
+  seekConversationToMessage,
+  type OpenMessageEventDetail,
+} from './open-message';
 
 function stateWith({
   messages = [] as Array<{ id: string }>,
@@ -67,7 +75,7 @@ function stateWith({
   hydration?: 'loading' | 'settled';
 }) {
   return {
-    agentSessions: { byAgentId: { 'agent-1': { messages } } },
+    agentSessions: { byAgentId: { 'agent-1': { messages, workspaceId: 'ws-1' } } },
     chatState: {
       byAgentId: hydration ? { 'agent-1': { transcriptHydration: hydration } } : {},
     },
@@ -82,8 +90,14 @@ function setPathname(pathname: string) {
 }
 
 describe('openMessage', () => {
+  let handoffs: OpenMessageEventDetail[];
+  const captureHandoff = (event: Event) => {
+    handoffs.push((event as CustomEvent<OpenMessageEventDetail>).detail);
+  };
   beforeEach(() => {
     vi.useFakeTimers();
+    handoffs = [];
+    window.addEventListener('chat:open-message', captureHandoff);
     vi.clearAllMocks();
     (goto as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
     mockState.value = stateWith({ messages: [{ id: 'msg-1' }] });
@@ -91,6 +105,7 @@ describe('openMessage', () => {
   });
 
   afterEach(() => {
+    window.removeEventListener('chat:open-message', captureHandoff);
     vi.useRealTimers();
   });
 
@@ -125,6 +140,137 @@ describe('openMessage', () => {
     expect(detail.requestId).toEqual(expect.any(String));
 
     window.removeEventListener('chat:open-message', eventListener);
+  });
+
+  it('targets the already-open tab without changing the route or opening another viewer', async () => {
+    setPathname('/workspace/ws-OTHER');
+    await openMessage({
+      workspaceId: 'ws-1',
+      agentId: 'agent-1',
+      messageId: 'msg-1',
+      contentAlreadyOpen: true,
+      targetTabId: 'right-pane-agent-tab',
+    });
+    await vi.runAllTimersAsync();
+
+    expect(goto).not.toHaveBeenCalled();
+    expect(mockDispatch).not.toHaveBeenCalled();
+    expect(handoffs).toHaveLength(5);
+    expect(handoffs.every((detail) => detail.targetTabId === 'right-pane-agent-tab')).toBe(true);
+  });
+
+  it('abandons older hydration when a newer message is selected', async () => {
+    const older = openMessage({
+      workspaceId: 'ws-1',
+      agentId: 'agent-1',
+      messageId: 'msg-old',
+      contentAlreadyOpen: true,
+      targetTabId: 'target-tab',
+    });
+    await openMessage({
+      workspaceId: 'ws-1',
+      agentId: 'agent-1',
+      messageId: 'msg-1',
+      contentAlreadyOpen: true,
+      targetTabId: 'target-tab',
+    });
+    await vi.runAllTimersAsync();
+    await older;
+
+    expect(mockGetConversation).not.toHaveBeenCalled();
+    expect(handoffs.map((detail) => detail.messageId)).toEqual(Array(5).fill('msg-1'));
+  });
+
+  it('does not install an old seek response after a newer loaded destination wins', async () => {
+    mockState.value = stateWith({ messages: [{ id: 'msg-1' }], hydration: 'settled' });
+    let finishSeek!: (page: { messages: Array<{ id: string }> }) => void;
+    mockGetConversation.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishSeek = resolve;
+      }),
+    );
+    const older = openMessage({
+      workspaceId: 'ws-1',
+      agentId: 'agent-1',
+      messageId: 'msg-old',
+      contentAlreadyOpen: true,
+      targetTabId: 'target-tab',
+    });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(mockGetConversation).toHaveBeenCalledTimes(1);
+    await openMessage({
+      workspaceId: 'ws-1',
+      agentId: 'agent-1',
+      messageId: 'msg-1',
+      contentAlreadyOpen: true,
+      targetTabId: 'target-tab',
+    });
+    finishSeek({ messages: [{ id: 'msg-old' }] });
+    await older;
+    await vi.runAllTimersAsync();
+
+    expect(mockDispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'agentSessions/seedHistoryAround' }),
+    );
+    expect(handoffs.map((detail) => detail.messageId)).toEqual(Array(5).fill('msg-1'));
+  });
+
+  it('cancels old retries and the handed-off frame when another tab becomes the destination', async () => {
+    await openMessage({
+      workspaceId: 'ws-1',
+      agentId: 'agent-1',
+      messageId: 'msg-1',
+      contentAlreadyOpen: true,
+      targetTabId: 'old-tab',
+    });
+    await vi.advanceTimersByTimeAsync(150);
+    expect(handoffs).toHaveLength(1);
+    const first = handoffs[0];
+    await openMessage({
+      workspaceId: 'ws-1',
+      agentId: 'agent-1',
+      messageId: 'msg-1',
+      contentAlreadyOpen: true,
+      targetTabId: 'new-tab',
+    });
+    await vi.runAllTimersAsync();
+
+    expect(first.signal?.aborted).toBe(true);
+    expect(handoffs.slice(1).map((detail) => detail.targetTabId)).toEqual(Array(5).fill('new-tab'));
+  });
+
+  it('lets the caller cancel pending hydration when navigating to non-message content', async () => {
+    const controller = new AbortController();
+    const opening = openMessage({
+      workspaceId: 'ws-1',
+      agentId: 'agent-1',
+      messageId: 'msg-old',
+      contentAlreadyOpen: true,
+      targetTabId: 'target-tab',
+      signal: controller.signal,
+    });
+    controller.abort();
+    await vi.runAllTimersAsync();
+    await opening;
+
+    expect(mockGetConversation).not.toHaveBeenCalled();
+    expect(handoffs).toEqual([]);
+  });
+
+  it('does nothing for a destination the caller already cancelled', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await openMessage({
+      workspaceId: 'ws-1',
+      agentId: 'agent-1',
+      messageId: 'msg-1',
+      signal: controller.signal,
+    });
+    await vi.runAllTimersAsync();
+
+    expect(mockDispatch).not.toHaveBeenCalled();
+    expect(goto).not.toHaveBeenCalled();
+    expect(handoffs).toEqual([]);
   });
 
   it('navigates to the workspace route when opened cross-workspace', async () => {
@@ -166,14 +312,16 @@ describe('openMessage', () => {
     await vi.runAllTimersAsync();
 
     expect(goto).not.toHaveBeenCalled();
-    expect(mockDispatch).not.toHaveBeenCalled();
+    expect(mockDispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'agentSessions/seedHistoryAround' }),
+    );
     expect(mockGetConversation).not.toHaveBeenCalled();
     expect(eventListener).not.toHaveBeenCalled();
 
     window.removeEventListener('chat:open-message', eventListener);
   });
 
-  it('opens the Assistant panel and selects the exact Chief thread without route navigation', async () => {
+  it('opens Home and selects the exact Assistant thread', async () => {
     const done = openMessage({
       workspaceId: '__chief__',
       agentId: 'agent-1',
@@ -182,7 +330,7 @@ describe('openMessage', () => {
     await vi.runAllTimersAsync();
     await done;
 
-    expect(goto).not.toHaveBeenCalled();
+    expect(goto).toHaveBeenCalledWith('/');
     expect(mockDispatch).toHaveBeenCalledWith({
       type: 'sidebarNav/setChiefActiveAgentId',
       payload: ['agent-1'],
@@ -211,7 +359,7 @@ describe('openMessage', () => {
       prevToken: 'newer',
     };
     mockGetConversation.mockImplementation(async () => {
-      // The replaceMessages upsert lands the seek page in the store.
+      // The seedHistoryAround upsert lands the seek page in the store.
       mockState.value = stateWith({ messages: seekPage.messages, hydration: 'settled' });
       return seekPage;
     });
@@ -222,10 +370,17 @@ describe('openMessage', () => {
     await vi.runAllTimersAsync();
     await done;
 
-    expect(mockGetConversation).toHaveBeenCalledWith('agent-1', 50, undefined, 'msg-1');
+    expect(mockGetConversation).toHaveBeenCalledWith(
+      'agent-1',
+      5,
+      undefined,
+      'msg-1',
+      undefined,
+      'ws-1',
+    );
     expect(mockDispatch).toHaveBeenCalledWith({
-      type: 'agentSessions/replaceMessages',
-      payload: ['agent-1', seekPage.messages],
+      type: 'agentSessions/seedHistoryAround',
+      payload: ['agent-1', seekPage.messages, undefined],
     });
     expect(eventListener).toHaveBeenCalled();
 
@@ -249,7 +404,7 @@ describe('openMessage', () => {
       payload: ['ws-1', { agentId: 'agent-1' }],
     });
     expect(mockDispatch).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'agentSessions/replaceMessages' }),
+      expect.objectContaining({ type: 'agentSessions/seedHistoryAround' }),
     );
     expect(eventListener).not.toHaveBeenCalled();
 
@@ -284,7 +439,7 @@ describe('seekConversationToMessage', () => {
     mockState.value = stateWith({ messages: [] });
   });
 
-  it('replaces the session with the page containing the message and returns true', async () => {
+  it('seeds the history with the page containing the message and returns true', async () => {
     const seekPage = {
       messages: [{ id: 'msg-old-1' }, { id: 'msg-target' }, { id: 'msg-old-2' }],
       truncated: true,
@@ -293,17 +448,24 @@ describe('seekConversationToMessage', () => {
       prevToken: 'newer',
     };
     mockGetConversation.mockImplementation(async () => {
-      // The replaceMessages upsert lands the seek page in the store.
+      // The seedHistoryAround upsert lands the seek page in the store.
       mockState.value = stateWith({ messages: seekPage.messages });
       return seekPage;
     });
 
     await expect(seekConversationToMessage('agent-1', 'msg-target')).resolves.toBe(true);
 
-    expect(mockGetConversation).toHaveBeenCalledWith('agent-1', 50, undefined, 'msg-target');
+    expect(mockGetConversation).toHaveBeenCalledWith(
+      'agent-1',
+      5,
+      undefined,
+      'msg-target',
+      undefined,
+      'ws-1',
+    );
     expect(mockDispatch).toHaveBeenCalledWith({
-      type: 'agentSessions/replaceMessages',
-      payload: ['agent-1', seekPage.messages],
+      type: 'agentSessions/seedHistoryAround',
+      payload: ['agent-1', seekPage.messages, undefined],
     });
   });
 
@@ -318,7 +480,9 @@ describe('seekConversationToMessage', () => {
 
     await expect(seekConversationToMessage('agent-1', 'msg-target')).resolves.toBe(false);
 
-    expect(mockDispatch).not.toHaveBeenCalled();
+    expect(mockDispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'agentSessions/seedHistoryAround' }),
+    );
   });
 
   it('returns false gracefully when the seek is rejected (message deleted)', async () => {
@@ -326,6 +490,8 @@ describe('seekConversationToMessage', () => {
 
     await expect(seekConversationToMessage('agent-1', 'msg-target')).resolves.toBe(false);
 
-    expect(mockDispatch).not.toHaveBeenCalled();
+    expect(mockDispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'agentSessions/seedHistoryAround' }),
+    );
   });
 });

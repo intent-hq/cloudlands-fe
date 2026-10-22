@@ -29,6 +29,10 @@ export type TransferFailurePhase = 'preflight' | 'post-export';
 export interface TransferStartParams {
   workspaceId: string;
   destination: TransferRelayDestination;
+  /** Inline approval identity; binds retries and finalize to the same transfer. */
+  proposalId?: string;
+  sourceWorkspacePath?: string;
+  sourceConnectionId?: string;
 }
 
 /**
@@ -77,6 +81,7 @@ export interface TransferStartResult {
 
 /** `transfer:finalize` params. */
 export interface TransferFinalizeParams {
+  proposalId?: string;
   /** Archive the source workspace after settling the export (default ON in UI). */
   archiveSource: boolean;
   /** Final status message applied to the source workspace, if any. */

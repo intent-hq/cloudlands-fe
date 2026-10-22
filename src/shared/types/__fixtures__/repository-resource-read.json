@@ -1,0 +1,142 @@
+{
+  "capture": {
+    "readLifetimeId": "read-lifetime-1",
+    "scope": {
+      "daemonId": "daemon-A",
+      "authorityScopeId": "member-workspace-A",
+      "authorityGeneration": "9007199254740995"
+    },
+    "revision": {
+      "epoch": "resource-epoch-A",
+      "sequence": "9007199254740996"
+    },
+    "expiresAfterMs": 300000,
+    "retirementSequence": "0",
+    "instances": [
+      {
+        "provider": "gitlab",
+        "instanceBaseUrl": "https://gitlab.example.test:8443/forge",
+        "availability": "connected"
+      }
+    ]
+  },
+  "mergeRequest": {
+    "readLifetimeId": "read-lifetime-1",
+    "scope": {
+      "daemonId": "daemon-A",
+      "authorityScopeId": "member-workspace-A",
+      "authorityGeneration": "9007199254740995"
+    },
+    "revision": {
+      "epoch": "resource-epoch-A",
+      "sequence": "9007199254740996"
+    },
+    "quota": {
+      "resetAt": null,
+      "remaining": null,
+      "limit": null
+    },
+    "target": {
+      "repository": {
+        "provider": "gitlab",
+        "instanceBaseUrl": "https://gitlab.example.test:8443/forge",
+        "projectPath": "Team/Platform/api"
+      },
+      "kind": "merge-request",
+      "number": 42
+    },
+    "outcome": {
+      "kind": "merge-request",
+      "snapshot": {
+        "resource": {
+          "repository": {
+            "provider": "gitlab",
+            "instanceBaseUrl": "https://gitlab.example.test:8443/forge",
+            "projectPath": "Team/Platform/api"
+          },
+          "kind": "merge-request",
+          "number": 42
+        },
+        "prNumber": 42,
+        "details": {
+          "resource": {
+            "repository": {
+              "provider": "gitlab",
+              "instanceBaseUrl": "https://gitlab.example.test:8443/forge",
+              "projectPath": "Team/Platform/api"
+            },
+            "kind": "merge-request",
+            "number": 42
+          },
+          "url": "https://gitlab.example.test:8443/forge/Team/Platform/api/-/merge_requests/42",
+          "title": "Keep hover details on the original connection",
+          "body": null,
+          "state": "open",
+          "draft": false,
+          "sourceBranch": "fix/original-connection",
+          "targetBranch": "main",
+          "source": null,
+          "target": null,
+          "author": "mira",
+          "mergeable": null,
+          "mergeableState": null,
+          "headSha": null,
+          "createdAt": "2026-10-01T09:00:00Z",
+          "updatedAt": "2026-10-02T02:00:00Z"
+        },
+        "checks": {
+          "total": null,
+          "passed": null,
+          "failed": null,
+          "pending": null,
+          "failedNames": null
+        },
+        "requirements": {
+          "checks": {
+            "requiredKnown": false
+          },
+          "rulesKnown": false
+        }
+      }
+    }
+  },
+  "issue": {
+    "readLifetimeId": "read-lifetime-1",
+    "scope": {
+      "daemonId": "daemon-A",
+      "authorityScopeId": "member-workspace-A",
+      "authorityGeneration": "9007199254740995"
+    },
+    "revision": {
+      "epoch": "resource-epoch-A",
+      "sequence": "9007199254740996"
+    },
+    "quota": {
+      "resetAt": null,
+      "remaining": null,
+      "limit": null
+    },
+    "target": {
+      "repository": {
+        "provider": "gitlab",
+        "instanceBaseUrl": "https://gitlab.example.test:8443/forge",
+        "projectPath": "Team/Platform/api"
+      },
+      "kind": "issue",
+      "number": 42
+    },
+    "outcome": {
+      "kind": "issue",
+      "issue": {
+        "number": 42,
+        "title": "Preserve issue identity in notes",
+        "body": null,
+        "state": "open",
+        "url": "https://gitlab.example.test:8443/forge/Team/Platform/api/-/issues/42",
+        "author": "mira",
+        "createdAt": "2026-10-01T09:00:00Z",
+        "updatedAt": "2026-10-02T02:00:00Z"
+      }
+    }
+  }
+}

@@ -6,6 +6,8 @@ import {
   releaseBrowserTabMount,
   requestBrowserTabRecovery,
   consumeBrowserTabRecovery,
+  observeBrowserTabNavigation,
+  consumeBrowserTabNavigation,
   tabStateReducer,
   type TabState,
 } from './tab-state-slice';
@@ -13,6 +15,7 @@ import {
   selectActiveWorkspaceIds,
   selectMountedBrowserTabLeases,
   selectBrowserTabRecoveryRequests,
+  selectBrowserTabNavigations,
   selectPersistedWorkspaceTabsState,
   selectWorkspaceTabOrder,
   selectWorkspaceTabsHydrated,
@@ -34,11 +37,26 @@ const tabState: TabState = {
   hydratedBackendId: null,
   mountedBrowserTabLeases: {},
   browserTabRecoveryRequests: {},
+  browserTabNavigations: {},
 };
 
 const state = { tabState } as unknown as StoreState;
 
 describe('tab state selectors', () => {
+  it('exposes main navigation observations until the matching URL is consumed', () => {
+    const pending = tabStateReducer(
+      tabState,
+      observeBrowserTabNavigation('tab-a', 'https://a.test/'),
+    );
+    expect(selectBrowserTabNavigations.select({ ...state, tabState: pending })).toEqual({
+      'tab-a': { url: 'https://a.test/', kind: 'observed' },
+    });
+    const consumed = tabStateReducer(
+      pending,
+      consumeBrowserTabNavigation('tab-a', pending.browserTabNavigations['tab-a']),
+    );
+    expect(selectBrowserTabNavigations.select({ ...state, tabState: consumed })).toEqual({});
+  });
   it('exposes pending recovery until its matching request is consumed', () => {
     const pending = tabStateReducer(tabState, requestBrowserTabRecovery('tab-a', 'req-1'));
     expect(selectBrowserTabRecoveryRequests.select({ ...state, tabState: pending })).toEqual({

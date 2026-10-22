@@ -130,3 +130,15 @@ describe('resolveBackendTransport', () => {
     expect(factory.resolveBackendTransport()).toBe(factory.resolveBackendTransport());
   });
 });
+
+it('refuses the bound repository path on a browser transport without using a fallback request', async () => {
+  vi.resetModules();
+  vi.stubGlobal('window', { ...window, electronAPI: undefined });
+  vi.stubEnv('VITE_INTENTD_WS_URL', 'ws://localhost:9100/rpc');
+  const { captureBackendRepositoryRoute } = await import('./backend-transport');
+  await expect(
+    captureBackendRepositoryRoute({ workspaceId: 'same', kind: 'primary' }),
+  ).rejects.toMatchObject({ code: 'REPOSITORY_ROUTE_UNAVAILABLE' });
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});

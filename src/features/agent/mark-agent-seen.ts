@@ -9,7 +9,9 @@
  *   2. User send — the user sends a message in the conversation
  *      (`sendMessage`): composing there is proof they saw the transcript.
  *   3. Stop-looking boundary — the divider-session boundary seam (chat tab
- *      close / active-workspace switch) fires for the affected agents.
+ *      close / active-workspace switch, or `chatViewEnded` from a chat
+ *      surface outside the agent tabs such as the Home preview) fires for
+ *      the affected agents.
  *   4. View — the conversation becomes the currently viewed tab
  *      (`markAgentAsViewed`) while its newest persisted message is an
  *      assistant reply: opening an already-finished conversation is reading
@@ -248,6 +250,7 @@ async function fire(agentId: string, gates: FireGates): Promise<void> {
     // Dependency-light one-time state read (no selector imports).
     const state = appStore.state as {
       unreadTracking?: { currentlyViewedAgentId: string | null };
+      chatState?: { byAgentId: Record<string, { initialHistoryPending?: boolean }> };
       agentSessions?: {
         byAgentId: Record<
           string,
@@ -268,6 +271,11 @@ async function fire(agentId: string, gates: FireGates): Promise<void> {
     if (!session) return;
     const workspaceId = typeof session.workspaceId === 'string' ? session.workspaceId : '';
     if (workspaceId.length === 0) return;
+    // Preserve the entry unread boundary until older rows carrying its anchor arrive.
+    if (gates.requireAssistantTail && state.chatState?.byAgentId[agentId]?.initialHistoryPending) {
+      viewAwaitingTranscript = agentId;
+      return;
+    }
     const target = newestPersistedMessage(session.messages ?? []);
     if (!target) {
       // View trigger that beat the transcript: re-arm so the hydration

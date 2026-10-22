@@ -1,10 +1,11 @@
+import { fileContentKey } from '$features/file/utils/file-content-key';
 /**
  * Panel Layout Selectors
  *
  * Derived state selectors for the panel layout slice.
  */
 
-import { createCollection, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { store } from '../../store';
 import { emptyWorkspaceState, isRecentlyClosedPanelColumnRestorable } from './panel-layout-slice';
 import {
@@ -347,7 +348,12 @@ export const selectFileContentPrunePayload = store.createSelector<
   for (const panel of Object.values(ws.panels)) {
     for (const tab of panel.tabs) {
       if (tab.type === 'file' && typeof tab.filePath === 'string' && tab.filePath.length > 0) {
-        openPaths.add(tab.filePath);
+        openPaths.add(
+          fileContentKey(
+            tab.filePath,
+            typeof tab.data?.gitRootId === 'string' ? tab.data.gitRootId : undefined,
+          ),
+        );
       }
     }
   }

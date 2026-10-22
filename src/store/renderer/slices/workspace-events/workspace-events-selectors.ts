@@ -2,6 +2,10 @@ import { store } from '../../store';
 import type { WorkspaceEvent } from '$features/events/types';
 import { emptyWorkspaceEventsState } from './workspace-events-slice';
 
+export const selectDaemonEventsSubscriptionAttempt = store.createSelector(
+  (state) => state.workspaceEvents.subscriptionAttempt,
+);
+
 /** `0` until the daemon-events firehose is live; +1 per (re)subscription. */
 export const selectDaemonEventsSubscriptionGeneration = store.createSelector<[], number>(
   (state) => state.workspaceEvents.subscriptionGeneration,
@@ -45,4 +49,18 @@ export const selectOlderEventsEndReached = store.createSelector<[workspaceId: st
     return (state.workspaceEvents.byWorkspaceId[workspaceId] ?? emptyWorkspaceEventsState)
       .endReached;
   },
+);
+
+export const selectPeopleEventsLoading = store.createSelector<[workspaceId: string], boolean>(
+  (state, workspaceId) =>
+    (state.workspaceEvents.byWorkspaceId[workspaceId]?.peopleRequestId ?? null) !== null,
+);
+
+export const selectPeopleEventsError = store.createSelector<[workspaceId: string], string | null>(
+  (state, workspaceId) => state.workspaceEvents.byWorkspaceId[workspaceId]?.peopleError ?? null,
+);
+
+export const selectPeopleEventsInitialized = store.createSelector<[workspaceId: string], boolean>(
+  (state, workspaceId) =>
+    state.workspaceEvents.byWorkspaceId[workspaceId]?.peopleInitialized ?? false,
 );

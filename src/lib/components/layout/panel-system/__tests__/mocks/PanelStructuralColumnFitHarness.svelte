@@ -5,7 +5,10 @@
     clearPanelLayout,
     initializeLayout,
     setRestoreStatus,
+    setPanelColumnCount,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+
+  import { selectPanelColumnCount } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 
   let {
     viewportWidth = 960,
@@ -25,6 +28,16 @@
   // svelte-ignore state_referenced_locally - test props define immutable initial state
   const initialPersistedCanvasWidth = $state.snapshot(persistedCanvasWidth);
   const layoutId = `structural-column-fit-${initialViewportWidth}-${initialZoomFactor}`;
+  let availableCanvasWidth = $state<number | undefined>();
+  const columnCount$ = selectPanelColumnCount(layoutId);
+
+  function addColumn() {
+    if ($columnCount$ >= 4) return;
+    appStore.dispatch(
+      setPanelColumnCount(layoutId, $columnCount$ + 1, undefined, availableCanvasWidth),
+    );
+  }
+
   appStore.dispatch(clearPanelLayout(layoutId));
   appStore.dispatch(
     initializeLayout(layoutId, {
@@ -41,11 +54,20 @@
   appStore.dispatch(setRestoreStatus(layoutId, 'restored'));
 </script>
 
+<!-- Keep the structural column-count contract separate from the split-panel shortcut. -->
+<button data-testid="add-column-fixture" onclick={addColumn} disabled={$columnCount$ >= 4}>
+  Add column
+</button>
 <div
   data-testid="structural-column-viewport"
   style:width={`${viewportWidth / zoomFactor}px`}
   style:zoom={zoomFactor}
   class="h-96 overflow-hidden"
 >
-  <PanelLayout workspaceId={layoutId} {layoutId} canvasSizing="viewport" />
+  <PanelLayout
+    workspaceId={layoutId}
+    {layoutId}
+    canvasSizing="viewport"
+    onAvailableCanvasWidthChange={(width) => (availableCanvasWidth = width)}
+  />
 </div>

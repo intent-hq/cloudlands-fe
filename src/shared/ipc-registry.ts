@@ -9,6 +9,14 @@
  */
 
 export const IPC_CHANNELS = {
+  DEV_CONSOLE: {
+    OPEN: 'dev-console:open',
+    CONNECT: 'dev-console:connect',
+    READ: 'dev-console:read',
+    RECORD: 'dev-console:record',
+    CLEAR: 'dev-console:clear',
+    SELECT: 'dev-console:select',
+  },
   // Workspace Management
   WORKSPACE: {
     LIST: 'workspace:list',
@@ -248,6 +256,7 @@ export const IPC_CHANNELS = {
   // Provider Availability (aggregates all ACP providers)
   PROVIDERS: {
     GET_AVAILABILITY: 'providers:get-availability',
+    PREPARE_ADAPTERS: 'providers:prepare-adapters',
     GET_PATHS: 'providers:get-paths',
     CHECK_SINGLE: 'providers:check-single',
   },
@@ -333,6 +342,14 @@ export const IPC_CHANNELS = {
 
   // Invite consent (renderer-rendered GitHub identity prompt of an invite join).
   // Payload contracts live in src/shared/ipc/invite-consent.ts.
+  COLLABORATION_AUTH: {
+    POLICY: 'collaboration-auth:policy',
+    OPEN: 'collaboration-auth:open',
+    SHOW: 'collaboration-auth:show',
+    ACTION: 'collaboration-auth:action',
+    DISMISS: 'collaboration-auth:dismiss',
+  },
+
   INVITE_CONSENT: {
     /** Main → renderer: show the invite-consent modal for a request. */
     SHOW: 'invite-consent:show',
@@ -567,6 +584,20 @@ export const IPC_CHANNELS = {
     SHOW_TAB: 'browser:show-tab',
     /** Request browser tab list from renderer (main->renderer event) */
     LIST_TABS_REQUEST: 'browser:list-tabs-request',
+    /**
+     * Ask a window to host a workspace in the background (no tab, never
+     * displayed) so agent browser ops work while no window has it open
+     * (main->renderer event)
+     */
+    HOST_WORKSPACE: 'browser:host-workspace',
+    /**
+     * An agent capture is (active: true) / is no longer (active: false)
+     * keeping this window drawing while hidden, so presence ignores the
+     * visibility it causes (main->renderer event)
+     */
+    CAPTURE_DRAWING: 'browser:capture-drawing',
+    /** Report the workspaces this window hosts in the background (renderer->main) */
+    BACKGROUND_HOSTED_WORKSPACES: 'browser:background-hosted-workspaces',
     /** Response with browser tab list (renderer->main) */
     LIST_TABS_RESPONSE: 'browser:list-tabs-response',
     /** Open a browser tab in a panel - main->renderer event */
@@ -658,6 +689,8 @@ export const IPC_CHANNELS = {
   // Deep Links
   DEEP_LINK: {
     HANDLE: 'deep-link:handle',
+    /** Take and clear the deep-link actions main queued for the caller's window. */
+    CONSUME_PENDING: 'deep-link:consume-pending',
   },
 
   // Legacy/Compatibility
@@ -735,6 +768,15 @@ export const IPC_CHANNELS = {
     LIST_REPOS: 'github-auth:list-repos',
     SEARCH_REPOS: 'github-auth:search-repos',
     SEARCH_USERS: 'github-auth:search-users',
+  },
+
+  // Provider-generic forge auth (daemon `sourceControl.*`, GitHub + GitLab)
+  FORGE_AUTH: {
+    GET_STATUS: 'forge-auth:get-status',
+    CONNECT: 'forge-auth:connect',
+    CANCEL_AUTH: 'forge-auth:cancel',
+    REVOKE: 'forge-auth:revoke',
+    GET_USER: 'forge-auth:get-user',
   },
 
   // Linear Auth (via daemon API OAuth)
@@ -856,6 +898,7 @@ export const IPC_CHANNELS = {
     INSTALL: 'auto-update:install',
     GET_STATE: 'auto-update:get-state',
     SET_CHANNEL: 'auto-update:set-channel',
+    SET_SHARE_STATISTICS: 'auto-update:set-share-statistics',
     // Event channels (main → renderer)
     STATUS_CHANGED: 'auto-update:status-changed',
     PROGRESS: 'auto-update:progress',
@@ -901,9 +944,51 @@ export const IPC_CHANNELS = {
   // notifications on the BACKEND.NOTIFICATION event channel.
   BACKEND: {
     REQUEST: 'backend:request',
+    PR_MONITOR: {
+      READY: 'backend:pr-monitor:ready',
+      CAPTURE: 'backend:pr-monitor:capture',
+      REQUEST: 'backend:pr-monitor:request',
+      RELEASE: 'backend:pr-monitor:release',
+      RETIRED: 'backend:pr-monitor:retired',
+      NOTIFICATION: 'backend:pr-monitor:notification',
+    },
+    NATIVE_REVIEW: {
+      PREPARE: 'backend:native-review:prepare',
+      EXECUTE: 'backend:native-review:execute',
+      RECONCILE: 'backend:native-review:reconcile',
+      RELEASE: 'backend:native-review:release',
+      RETIRED: 'backend:native-review:retired',
+    },
+    REPOSITORY_SELECTION: {
+      CAPTURE: 'backend:repository-selection:capture',
+      CONFIRM: 'backend:repository-selection:confirm',
+      RECONCILE: 'backend:repository-selection:reconcile',
+      RELEASE: 'backend:repository-selection:release',
+      RETIRED: 'backend:repository-selection:retired',
+    },
+    REPOSITORY_CHECKOUT: {
+      CAPTURE: 'backend:repository-checkout:capture',
+      REQUEST: 'backend:repository-checkout:request',
+      RELEASE: 'backend:repository-checkout:release',
+      RETIRED: 'backend:repository-checkout:retired',
+    },
+    REPOSITORY_RESOURCE: {
+      CAPTURE: 'backend:repository-resource:capture',
+      DETAIL: 'backend:repository-resource:detail',
+      RELEASE: 'backend:repository-resource:release',
+      RETIRED: 'backend:repository-resource:retired',
+    },
+    REPOSITORY: {
+      CAPTURE: 'backend:repository:capture',
+      RETIRED: 'backend:repository:retired',
+      REQUEST: 'backend:repository:request',
+      RELEASE: 'backend:repository:release',
+    },
     SUBSCRIBE: 'backend:subscribe',
     UNSUBSCRIBE: 'backend:unsubscribe',
     GET_STATUS: 'backend:get-status',
+    NODE_CAPABILITIES: 'backend:node-capabilities',
+    READ_PRINCIPAL: 'backend:read-principal',
     NOTIFICATION: 'backend:notification',
     STATUS: 'backend:status',
     SPAWN_SIDECAR: 'backend:spawn-sidecar',
@@ -934,6 +1019,8 @@ export const IPC_CHANNELS = {
     UPDATE: 'connections:update',
     TEST: 'connections:test',
     ROTATE_SECRET: 'connections:rotate-secret',
+    GET_TUNNEL: 'connections:get-tunnel',
+    SET_TUNNEL: 'connections:set-tunnel',
     OPEN: 'connections:open',
     FORGET: 'connections:forget',
     // Ask one connected remote backend's daemon to self-update (routes
@@ -1029,6 +1116,10 @@ export const IPC_CHANNELS = {
 
 // Event channels that are sent from main to renderer
 export const EVENT_CHANNELS = [
+  IPC_CHANNELS.BACKEND.REPOSITORY_CHECKOUT.RETIRED,
+  IPC_CHANNELS.BACKEND.REPOSITORY.RETIRED,
+  IPC_CHANNELS.BACKEND.REPOSITORY_SELECTION.RETIRED,
+  IPC_CHANNELS.BACKEND.NATIVE_REVIEW.RETIRED,
   'event:workspace:created',
   'event:workspace:updated',
   'event:workspace:deleted',
@@ -1186,6 +1277,10 @@ export const EVENT_CHANNELS = [
   'browser:show-tab',
   // Browser tab list request from main process (CDP agent wants to list all browser tabs)
   'browser:list-tabs-request',
+  // Background-host a workspace no window has open (agent browser ops on it)
+  'browser:host-workspace',
+  // An agent capture keeps this window drawing while hidden (presence gate)
+  'browser:capture-drawing',
   // Browser tab open request from main process (agent wants to open a browser tab)
   'browser:open-tab',
   // Browser tab close request from main process (agent wants to close a browser tab)
@@ -1202,6 +1297,7 @@ export const EVENT_CHANNELS = [
   'token-usage:changed',
   // Live backend transport (main → renderer): daemon JSON-RPC notifications
   // and connection-status changes pushed from the main-process client.
+  'dev-console:changed',
   'backend:notification',
   'backend:status',
   // Hardware console shutdown handshake (main → renderer)

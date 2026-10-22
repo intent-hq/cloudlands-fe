@@ -1,16 +1,5 @@
-import { buffers, channel, type Channel } from 'redux-saga';
-import {
-  all,
-  call,
-  cancelled,
-  fork,
-  put,
-  race,
-  take,
-  takeEvery,
-  takeLatest,
-  type SagaGenerator,
-} from 'typed-redux-saga';
+import { buffers } from 'redux-saga';
+import { actionChannel, call, fork, put, take, type SagaGenerator } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -18,11 +7,9 @@ import { invoke } from '$shared/generated/ipc-client';
 import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 import type { CommandResponse } from '$shared/types';
 import { workspaceMounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { selectSettingsWorkspaceIds } from '../workspace-settings-selectors';
 import {
-  selectAutoCommitEnabled,
-  selectSettingsWorkspaceIds,
-} from '../workspace-settings-selectors';
-import {
+  clearWorkspaceSettings,
   loadAutoCommitSettings,
   refreshAutoCommitSettings,
   setAutoCommitEnabled,
@@ -31,6 +18,13 @@ import {
 
 const logger = createLogger('WorkspaceSettingsPersistenceSaga');
 type AutoCommitAction = ReturnType<typeof setAutoCommitEnabled>;
+type SettingsAction = ReturnType<
+  | typeof setAutoCommitEnabled
+  | typeof syncWorkspaceSettings
+  | typeof workspaceMounted
+  | typeof refreshAutoCommitSettings
+  | typeof clearWorkspaceSettings
+>;
 
 /**
  * Persists the per-workspace auto-commit override only. This must never write
@@ -43,8 +37,7 @@ type AutoCommitAction = ReturnType<typeof setAutoCommitEnabled>;
  * arrives as `{ success: false }` rather than a rejection — treat it the same.
  */
 function* persistWorkspaceAutoCommitWorker(action: AutoCommitAction): SagaGenerator<void> {
-  const [workspaceId] = action.payload;
-  const autoCommitEnabled = yield* selectAutoCommitEnabled.effect(workspaceId);
+  const [workspaceId, autoCommitEnabled] = action.payload;
 
   try {
     const response = (yield* call(invoke, WORKSPACE_CHANNELS.UPDATE_SETTINGS, {
@@ -67,123 +60,111 @@ function* persistWorkspaceAutoCommitWorker(action: AutoCommitAction): SagaGenera
   }
 }
 
-function* consumeWorkspaceQueue(queue: Channel<AutoCommitAction>): SagaGenerator<void> {
-  while (true) {
-    const action = yield* take(queue);
-    yield* call(persistWorkspaceAutoCommitWorker, action);
-  }
-}
+// Runtime queue metadata, never Redux state. Reads and writes share one owner
+// because a read started during an unacknowledged write can revert the toggle.
+type WorkspaceRequests = {
+  revision: number;
+  write?: AutoCommitAction;
+  read: boolean;
+  running: boolean;
+  cleared: boolean;
+};
 
-/**
- * Serializes writes per workspace while retaining only the latest queued value.
- * Active work is allowed to finish; a later value cannot be overwritten by an
- * older queued mutation.
- */
-function* persistAutoCommitLoop(): SagaGenerator<void> {
-  const queues = new Map<string, Channel<AutoCommitAction>>();
+function* consumeWorkspaceRequests(
+  workspaceId: string,
+  pending: WorkspaceRequests,
+  requests: Map<string, WorkspaceRequests>,
+): SagaGenerator<void> {
   try {
-    while (true) {
-      const action = yield* take(setAutoCommitEnabled);
-      const [workspaceId] = action.payload;
-      let queue = queues.get(workspaceId);
-      if (!queue) {
-        queue = channel<AutoCommitAction>(buffers.sliding(1));
-        queues.set(workspaceId, queue);
-        yield* fork(consumeWorkspaceQueue, queue);
+    while (pending.write || pending.read) {
+      if (pending.write) {
+        const action = pending.write;
+        pending.write = undefined;
+        yield* call(persistWorkspaceAutoCommitWorker, action);
+        continue;
       }
-      yield* put(queue, action);
+      pending.read = false;
+      const revision = pending.revision;
+      try {
+        const settings = yield* call(
+          [appClient.settings, appClient.settings.getWorkspaceSettings],
+          workspaceId,
+        );
+        if (pending.revision !== revision) continue;
+        if (!settings) {
+          logger.warn('workspace.getAutoCommit returned no value; keeping current toggle state', {
+            workspaceId,
+          });
+        } else {
+          yield* put(loadAutoCommitSettings(workspaceId, settings.autoCommitEnabled));
+        }
+      } catch (error) {
+        if (pending.revision === revision) {
+          logger.warn('Failed to hydrate auto-commit settings from daemon', { workspaceId, error });
+        }
+      }
     }
   } finally {
-    for (const queue of queues.values()) queue.close();
-    if (yield* cancelled()) queues.clear();
+    pending.running = false;
+    requests.delete(workspaceId);
   }
 }
 
-const isAutoCommitToggleFor =
-  (workspaceId: string) =>
-  (action: { type: string; payload?: unknown }): boolean =>
-    action.type === setAutoCommitEnabled.type &&
-    Array.isArray(action.payload) &&
-    action.payload[0] === workspaceId;
-
-/**
- * Hydrates one workspace's toggle from the daemon-resolved value
- * (`workspace.getAutoCommit`: persisted per-workspace override, else the
- * global `git.autoCommit` — PROTOCOL §5.1). A user toggle racing the read is
- * newer intent, so the stale read result is dropped; a wire failure keeps the
- * current display rather than fabricating a value.
- */
-function* hydrateWorkspaceAutoCommitWorker(workspaceId: string): SagaGenerator<void> {
+/** Serial per workspace; coalesce trailing reads/writes without cancelling wire mutations. */
+export function* workspaceSettingsSaga(): SagaGenerator<void> {
+  const requests = new Map<string, WorkspaceRequests>();
+  const actions = yield* actionChannel(
+    [
+      setAutoCommitEnabled,
+      syncWorkspaceSettings,
+      workspaceMounted,
+      refreshAutoCommitSettings,
+      clearWorkspaceSettings,
+    ],
+    buffers.expanding(),
+  );
   try {
-    const { settings, toggled } = yield* race({
-      settings: call([appClient.settings, appClient.settings.getWorkspaceSettings], workspaceId),
-      toggled: take(isAutoCommitToggleFor(workspaceId)),
-    });
-    if (toggled) return;
-    if (!settings) {
-      logger.warn('workspace.getAutoCommit returned no value; keeping current toggle state', {
-        workspaceId,
-      });
-      return;
-    }
-    yield* put(loadAutoCommitSettings(workspaceId, settings.autoCommitEnabled));
-  } catch (error) {
-    logger.warn('Failed to hydrate auto-commit settings from daemon', { workspaceId, error });
-  }
-}
-
-type HydrationTrigger = ReturnType<typeof syncWorkspaceSettings | typeof workspaceMounted>;
-
-/**
- * Hydrates the toggle whenever a workspace becomes active (route mount) or a
- * component requests a settings sync. Single-flight per workspace: triggers
- * arriving while a read is in flight are dropped — the in-flight read returns
- * the same daemon value. The `inFlight` set is shared with the refresh loop so
- * the two loops never read the same workspace concurrently.
- */
-function* hydrateAutoCommitLoop(inFlight: Set<string>): SagaGenerator<void> {
-  yield* takeEvery([syncWorkspaceSettings, workspaceMounted], function* (action: HydrationTrigger) {
-    const [workspaceId] = action.payload;
-    if (!workspaceId || inFlight.has(workspaceId)) return;
-    inFlight.add(workspaceId);
-    try {
-      yield* call(hydrateWorkspaceAutoCommitWorker, workspaceId);
-    } finally {
-      inFlight.delete(workspaceId);
-    }
-  });
-}
-
-/**
- * After a global git.autoCommit save (GitWorkspaceSettings dispatches
- * `refreshAutoCommitSettings`), re-hydrates every workspace already tracked in
- * the slice so displayed toggles pick up the daemon-resolved value. Reads run
- * serially to avoid a burst of daemon calls; a save arriving mid-sweep
- * restarts the sweep (takeLatest) so every workspace converges on the latest
- * saved value. Shares the mount/sync loop's `inFlight` set: a workspace with a
- * read already in flight is skipped, so the two loops never issue duplicate
- * concurrent reads whose responses could land out of order.
- */
-function* refreshAutoCommitLoop(inFlight: Set<string>): SagaGenerator<void> {
-  yield* takeLatest(refreshAutoCommitSettings, function* () {
-    const workspaceIds = yield* selectSettingsWorkspaceIds.effect();
-    for (const workspaceId of workspaceIds) {
-      if (inFlight.has(workspaceId)) continue;
-      inFlight.add(workspaceId);
-      try {
-        yield* call(hydrateWorkspaceAutoCommitWorker, workspaceId);
-      } finally {
-        inFlight.delete(workspaceId);
+    while (true) {
+      const action = (yield* take(actions)) as SettingsAction;
+      const workspaceIds =
+        action.type === refreshAutoCommitSettings.type
+          ? [
+              ...new Set([
+                ...(yield* selectSettingsWorkspaceIds.effect()),
+                ...[...requests].filter(([, pending]) => !pending.cleared).map(([id]) => id),
+              ]),
+            ]
+          : [action.payload?.[0]];
+      for (const workspaceId of workspaceIds) {
+        if (!workspaceId) continue;
+        let pending = requests.get(workspaceId);
+        if (!pending) {
+          if (action.type === clearWorkspaceSettings.type) continue;
+          pending = { revision: 0, read: false, running: false, cleared: false };
+          requests.set(workspaceId, pending);
+        }
+        pending.revision++;
+        if (action.type === clearWorkspaceSettings.type) {
+          pending.write = undefined;
+          pending.read = false;
+          pending.cleared = true;
+          continue;
+        }
+        pending.cleared = false;
+        if (action.type === setAutoCommitEnabled.type) {
+          pending.write = action as AutoCommitAction;
+          pending.read = false;
+        } else {
+          pending.read = true;
+        }
+        if (!pending.running) {
+          pending.running = true;
+          yield* fork(consumeWorkspaceRequests, workspaceId, pending, requests);
+        }
       }
     }
-  });
-}
-
-export function* workspaceSettingsSaga(): SagaGenerator<void> {
-  const inFlight = new Set<string>();
-  yield* all([
-    call(persistAutoCommitLoop),
-    call(hydrateAutoCommitLoop, inFlight),
-    call(refreshAutoCommitLoop, inFlight),
-  ]);
+  } finally {
+    actions.close();
+    requests.clear();
+  }
 }

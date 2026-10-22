@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { openAssistantAgentFromEvent } from '$lib/utils/assistant-agent-link';
   import { Button } from '$lib/components/ui/button';
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import type { Note, AgentMessage, AgentSession } from '$shared/types';
@@ -135,6 +136,7 @@
   });
 
   function handleAgentClick(e: MouseEvent, agentId: AgentId) {
+    if (openAssistantAgentFromEvent(e, workspaceId, agentId)) return;
     const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
     const openInAdjacentPanel = e.metaKey || e.ctrlKey;
@@ -170,9 +172,7 @@
           agentId,
         );
         if (!agent && workspace) {
-          const restoreAction = restoreAgentSessionRequested(workspace.id, agentId);
-          appStore.dispatch(restoreAction);
-          agent = await restoreAction.promise;
+          agent = await appStore.dispatch(restoreAgentSessionRequested(workspace.id, agentId));
         }
         if (agent?.messages) {
           allMessages.push(...agent.messages);

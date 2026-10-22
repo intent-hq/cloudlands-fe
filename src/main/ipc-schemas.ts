@@ -74,6 +74,8 @@ export const WORKSPACE_EVENT_TYPE_LITERALS = [
   'agent:user-message:sent',
   // Agent session stats (PROTOCOL §5.24)
   'agent:session-stats-changed',
+  // Hub checkpoint events
+  'hub:checkpoint',
   // Git events
   'git:commit',
   'git:push',
@@ -195,6 +197,8 @@ export const WorkspaceCreateSchema = z.object({
       // not send one. Kept optional for legacy callers only.
       agentId: z.string().optional(),
       name: z.string().optional(),
+      nameExplicitlySet: z.boolean().optional(),
+      rememberSpecialist: z.boolean().optional(),
       model: z.string().optional(),
       provider: z.string().optional(), // Provider ID (e.g., 'auggie', 'claude-code', 'codex')
       prompt: z.string().optional(),
@@ -581,17 +585,6 @@ export const EventsUnsubscribeSchema = z.object({
   subscriptionId: z.string().min(1, 'Subscription ID is required'),
 });
 
-export const EventsGetLastEventSchema = z.object({
-  // Mirrors `EventsEmitSchema.event.type`: drift-resistant union pulled from
-  // `WorkspaceEventType`. Reserved-but-unused types (e.g. `file:created`) are
-  // still accepted as query inputs and simply return `null` if no such event
-  // has ever been recorded.
-  type: z.enum(WORKSPACE_EVENT_TYPE_LITERALS),
-  workspaceId: WorkspaceIdSchema.optional(),
-});
-
-export const EventsGetStatisticsSchema = z.object({});
-
 export const SystemWriteClipboardSchema = z.object({
   text: z.string(),
 });
@@ -724,6 +717,11 @@ export const WindowSetInWorkspaceSchema = z.object({
 });
 
 export const WindowSetOpenWorkspaceTabsSchema = z.object({
+  workspaceIds: z.array(z.string()),
+});
+
+/** Workspaces a window hosts in the background for agent browser ops. */
+export const BrowserBackgroundHostedWorkspacesSchema = z.object({
   workspaceIds: z.array(z.string()),
 });
 
@@ -1126,6 +1124,17 @@ export const PresenceReportSchema = z.object({
     .object({ agentId: z.string().min(1, 'Agent id is required') })
     .nullable()
     .optional(),
+  discussionTyping: z
+    .object({
+      workspaceId: z.string().min(1, 'Workspace id is required'),
+      conversationId: z
+        .string()
+        .min(1)
+        .refine((id) => id !== 'new')
+        .optional(),
+    })
+    .nullable()
+    .optional(),
 });
 
 export const ConnectionsCaptureFingerprintSchema = z.object({
@@ -1185,6 +1194,14 @@ export const ConnectionsRotateSecretSchema = z.object({
 
 export const ConnectionsForgetSchema = z.object({
   id: z.string().min(1, 'Connection ID is required'),
+});
+
+export const ConnectionsGetTunnelSchema = z.object({
+  id: z.string().min(1, 'Connection ID is required'),
+});
+
+export const ConnectionsSetTunnelSchema = ConnectionsGetTunnelSchema.extend({
+  enabled: z.boolean(),
 });
 
 export const ConnectionsOpenSchema = z.object({
@@ -1260,7 +1277,7 @@ export const InviteProgressAckSchema = z.object({
 
 export const InviteProgressResponseSchema = z.object({
   requestId: z.string().min(1, 'Request ID is required'),
-  action: z.literal('cancel' satisfies InviteProgressAction),
+  action: z.enum(['cancel', 'retry'] as const satisfies readonly InviteProgressAction[]),
 });
 
 // ============================================================================

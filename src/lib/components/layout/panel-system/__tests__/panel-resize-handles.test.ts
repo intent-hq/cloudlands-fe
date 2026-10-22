@@ -7,41 +7,9 @@ import {
   configuredVisualStates,
   exerciseVisualStates,
 } from '$lib/components/__tests__/helpers/visual-state-characterization';
-import type { Workspace, WorkspaceId } from '$shared/types';
-import { WorkspaceStatusEnum } from '$shared/types';
-import { store as appStore } from '$store/renderer/store';
-import {
-  closePanel,
-  openPanel,
-  setPanelWidth,
-} from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-import { selectPanelWidth } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
-import {
-  replaceWorkspaceList,
-  setWorkspaceHasLoaded,
-} from '$store/renderer/slices/workspace/workspace-slice';
-
 import PanelCornerHandle from '../PanelCornerHandle.svelte';
 import PanelSplitHandle from '../PanelSplitHandle.svelte';
 import { setDraggedPane } from '../panel-drag';
-import SidebarPanelHarness from '../../sidebar-nav/__tests__/mocks/SidebarPanelHarness.svelte';
-
-vi.mock('$features/agent/services/active-streams-tracker', () => ({
-  activeStreamsTracker: {
-    fetchActiveStreams: vi.fn(),
-    startPolling: vi.fn(),
-    getStreamingAgentIdsForWorkspace: vi.fn(() => []),
-    subscribe: vi.fn(() => () => {}),
-  },
-}));
-
-vi.mock('$lib/electron-bridge', () => ({
-  on: vi.fn(),
-  off: vi.fn(),
-  once: vi.fn(),
-  invoke: vi.fn(),
-  listenSync: vi.fn(),
-}));
 
 afterEach(() => {
   cleanup();
@@ -128,70 +96,6 @@ describe('editorial panel resize handles', () => {
   // QuakeTerminalOverlay.test.ts (workspace + root overlays),
   // SetupScriptBanner.test.ts and SimpleRichInput.test.ts.
   // The tabbed sidebar keeps its width handle, but no longer has a split handle.
-  it('commits sidebar width changes through the shared resize handle', async () => {
-    vi.stubGlobal(
-      'ResizeObserver',
-      class {
-        observe = vi.fn();
-        unobserve = vi.fn();
-        disconnect = vi.fn();
-      },
-    );
-    vi.stubGlobal(
-      'MutationObserver',
-      class {
-        observe = vi.fn();
-        disconnect = vi.fn();
-        takeRecords = vi.fn();
-      },
-    );
-    const workspace = {
-      id: 'ws-owner' as WorkspaceId,
-      title: 'Owner',
-      branch: 'main',
-      changesets: [],
-      timeline: [],
-      conversationInfo: [],
-      status: WorkspaceStatusEnum.Active,
-      createdAt: '2026-01-01T00:00:00Z',
-      updatedAt: '2026-01-01T00:00:00Z',
-      myRole: 'owner',
-    } as Workspace;
-    let previousWidth = 288;
-    try {
-      const { container } = render(SidebarPanelHarness, {
-        props: {
-          setup: () => {
-            appStore.dispatch(replaceWorkspaceList([workspace]));
-            appStore.dispatch(setWorkspaceHasLoaded(true));
-            previousWidth = selectPanelWidth.select(appStore.state);
-            appStore.dispatch(setPanelWidth(288));
-            appStore.dispatch(openPanel('chief'));
-          },
-        },
-      });
-
-      const widthHandle = container.querySelector<HTMLElement>(
-        '[data-testid="width-resize-handle"]',
-      )!;
-      expect(widthHandle.classList).toContain('app-resize-handle');
-      expect(widthHandle.dataset.resizeAxis).toBe('x');
-      await fireEvent.mouseDown(widthHandle, { clientX: 288 });
-      expect(document.body.classList.contains('panel-resizing')).toBe(true);
-      await fireEvent.mouseMove(window, { clientX: 320 });
-      await fireEvent.mouseUp(window);
-      expect(selectPanelWidth.select(appStore.state)).toBe(320);
-      expect(document.body.classList.contains('panel-resizing')).toBe(false);
-    } finally {
-      cleanup();
-      appStore.dispatch(closePanel());
-      appStore.dispatch(setPanelWidth(previousWidth));
-      appStore.dispatch(replaceWorkspaceList([]));
-      appStore.dispatch(setWorkspaceHasLoaded(false));
-      vi.unstubAllGlobals();
-    }
-  });
-
   // Scrollbar/hit-area interplay (the clipped leading strip must let clicks
   // reach a neighboring panel's native scrollbar) is asserted behaviorally in
   // panel-resize-handle-hit-area.ct.spec.ts via document.elementFromPoint.

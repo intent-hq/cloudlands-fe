@@ -42,6 +42,12 @@ export function installMockElectronBridge(methods: Record<string, MockBackendMet
   const api = {
     versions: { electron: BROWSER_MOCK_ELECTRON_VERSION },
     invoke: async (channel: string, payload?: unknown): Promise<unknown> => {
+      // The scripted daemon acknowledges a hello: a `client.hello` handler supplies
+      // its capabilities, otherwise none (no node authority, no truncated reads).
+      if (channel === IPC_CHANNELS.BACKEND.NODE_CAPABILITIES) {
+        const hello = methods['client.hello'];
+        return { ok: true, result: hello ? await hello({}) : { server: { capabilities: {} } } };
+      }
       if (channel !== IPC_CHANNELS.BACKEND.REQUEST) return mockInvoke(channel, payload);
       const { method, params } = payload as BackendRequestPayload;
       const handler = methods[method];

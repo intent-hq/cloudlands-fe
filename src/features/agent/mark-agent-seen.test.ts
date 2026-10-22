@@ -20,6 +20,7 @@ interface MockSession {
 }
 const mockState: {
   unreadTracking: { currentlyViewedAgentId: string | null };
+  chatState?: { byAgentId: Record<string, { initialHistoryPending?: boolean }> };
   agentSessions: { byAgentId: Record<string, MockSession | undefined> };
 } = {
   unreadTracking: { currentlyViewedAgentId: null },
@@ -595,4 +596,21 @@ describe('markAgentSeenOnTranscriptHydrated (re-arms a view trigger that beat th
     await flushImmediate();
     expect(mockMarkSeen).not.toHaveBeenCalled();
   });
+});
+
+it('defers a viewed seen marker until initial history completes', async () => {
+  const agentId = nextAgentId();
+  seedSession(agentId);
+  mockState.chatState = { byAgentId: { [agentId]: { initialHistoryPending: true } } };
+  markAgentSeenOnView(agentId);
+  await fireDebounce();
+  expect(mockMarkSeen).not.toHaveBeenCalled();
+  markAgentSeenOnTranscriptHydrated(agentId);
+  await flushImmediate();
+  expect(mockMarkSeen).not.toHaveBeenCalled();
+  mockState.chatState.byAgentId[agentId].initialHistoryPending = false;
+  markAgentSeenOnTranscriptHydrated(agentId);
+  await flushImmediate();
+  expect(mockMarkSeen).toHaveBeenCalledWith({ workspaceId: 'ws-1', agentId, messageId: 'msg-1' });
+  mockState.chatState = undefined;
 });

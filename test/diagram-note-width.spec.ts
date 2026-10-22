@@ -91,6 +91,10 @@ async function settled(page: Page, kind: Kind) {
       { timeout: 30_000 },
     );
   }
+  await expect(lane.locator('[data-diagram-presentation]')).toHaveAttribute(
+    'data-diagram-presentation-settled',
+    'true',
+  );
 }
 
 async function geometry(page: Page, kind: Kind) {
@@ -665,6 +669,8 @@ async function loadComment(page: Page, content = 'Synthetic sidebar comment') {
       loadCommentsAction([
         {
           id: 'width-comment',
+          workspaceId: 'diagram-note-width-test',
+          noteId: 'diagram-width-fixture',
           threadId: 'width-thread',
           content,
           author: 'Reviewer',

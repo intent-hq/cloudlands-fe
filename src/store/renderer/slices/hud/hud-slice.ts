@@ -5,7 +5,7 @@
  * (ring buffer, live-only — no backfill), per-workspace attention/displayStatus
  * overrides pushed by daemon events, the 24h usage rollup from `stats.getUsage`
  * (PROTOCOL §5.36). The subscription lifecycle and the event→feed mapping live
- * in `$features/hud/hud-subscription` / `hud-feed-mapper`; this slice only
+ * in the root-owned HUD saga / `$features/hud/hud-feed-mapper`; this slice only
  * folds the already-narrowed payloads. Daemon online/version/uptime come from
  * the daemon-health slice (10s poll), not from here — see `selectHudSystem`.
  *
@@ -14,8 +14,8 @@
  * The UI localizes row labels off `kind`.
  */
 
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { Workspace, WorkspaceDisplayStatus } from '$shared/types';
 import { replaceWorkspaceList, setWorkspaceEntity } from '../workspace/workspace-slice';
 import {
@@ -254,7 +254,7 @@ export const hudGridFilterStateToggled = createAction<[stateKey: HudCardStateKey
 export const hudGridFilterStatesCleared = createAction('hud/gridFilterStatesCleared');
 /**
  * Persisted per-backend grid filter restored on activation (already sanitized
- * by `$features/hud/hud-grid-filter-persistence`).
+ * by the root-owned HUD saga).
  */
 export const hudGridFilterHydrated =
   createAction<[filter: HudGridFilter]>('hud/gridFilterHydrated');

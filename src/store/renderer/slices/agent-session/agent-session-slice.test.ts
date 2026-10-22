@@ -1,3 +1,5 @@
+import { principalContextChanged, principalIdentityChanged } from '../principal/principal-slice';
+import { connectionStatusChanged } from '../daemon-health/daemon-health-slice';
 import { describe, expect, it } from 'vitest';
 import {
   AgentStatus,
@@ -6,7 +8,7 @@ import {
   type QueuedMessage,
 } from '$shared/types';
 import { AgentActivationState } from '$shared/types/agent-session';
-import type { AgentSessionState } from './agent-session-types';
+import type { AgentSessionState, StoredAgentSession } from './agent-session-types';
 import type { StoreState } from '../../types';
 import {
   agentQueueReducer,
@@ -15,6 +17,7 @@ import {
 } from '../agent-queue/agent-queue-slice';
 import {
   agentSessionReducer,
+  setAgentBackgroundPending,
   initialState,
   upsertSession as upsertSessionAction,
   removeSession,
@@ -209,6 +212,20 @@ function getMsgs(state: AgentSessionState, agentId: string): AgentMessage[] {
 // ============================================================================
 
 describe('agent-session-slice reducer', () => {
+  it.each([removeSession('a1'), removeWorkspaceSessions('ws-1'), clearAllSessions()])(
+    'removes projection versions with evicted sessions: $type',
+    (action) => {
+      let state = agentSessionReducer(
+        initialState,
+        bulkUpsertSessions([makeSession('a1', 'ws-1')]),
+      );
+      state = agentSessionReducer(state, updateSession('a1', { status: AgentStatus.Active }));
+      expect(state.projectionVersions?.a1.fields.status).toBe(1);
+      state = agentSessionReducer(state, action);
+      expect(state.projectionVersions?.a1).toBeUndefined();
+    },
+  );
+
   it('returns initial state', () => {
     const state = agentSessionReducer(undefined, { type: '@@INIT', payload: undefined });
     expect(state).toEqual(initialState);
@@ -270,6 +287,25 @@ describe('agent-session-slice reducer', () => {
 
       expect(next).toBe(state);
     });
+
+    it.each([
+      ['wire upsert', upsertSession],
+      ['stored restore', (session: StoredAgentSession) => restoreStoredSessions([session])],
+    ] as const)(
+      'tracks retirement-only changes through %s without losing no-op identity',
+      (_, action) => {
+        let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1')));
+        expect(state.agentIdsByWorkspace['ws-1']).toContain('a1');
+        for (const retiredAt of ['2026-09-28T09:00:00Z', '2026-09-28T10:00:00Z', undefined]) {
+          const before = state;
+          state = agentSessionReducer(state, action({ ...state.byAgentId['a1'], retiredAt }));
+          expect(state).not.toBe(before);
+          expect(state.byAgentId['a1'].retiredAt).toBe(retiredAt);
+          expect(state.agentIdsByWorkspace['ws-1']).toEqual(['a1']);
+          expect(agentSessionReducer(state, action({ ...state.byAgentId['a1'] }))).toBe(state);
+        }
+      },
+    );
 
     it('keeps the no-op guard bounded to message count and last message ID', () => {
       const messages = [makeUniqueMessage('m1'), makeUniqueMessage('m2')];
@@ -683,6 +719,38 @@ describe('agent-session-slice reducer', () => {
       expect(next.byAgentId['a1'].metadata?.completionReport).toBe('Done — tests pass, PR ready.');
     });
 
+    it.each([false, true])(
+      'refreshes chief prompt identity with listProjection=%s without losing no-op reuse',
+      (listProjection) => {
+        const snapshot = (chiefPromptVersion?: number) =>
+          makeSession('a1', '__chief__', {
+            metadata: {
+              specialist: 'chief-of-staff',
+              ...(chiefPromptVersion !== undefined ? { chiefPromptVersion } : {}),
+            },
+          });
+        let state = agentSessionReducer(
+          initialState,
+          bulkUpsertSessions([snapshot()], { listProjection }),
+        );
+        for (const version of [3, 2, 3, undefined]) {
+          const refreshed = agentSessionReducer(
+            state,
+            bulkUpsertSessions([snapshot(version)], { listProjection }),
+          );
+          expect(refreshed).not.toBe(state);
+          expect(refreshed.byAgentId.a1.metadata?.chiefPromptVersion).toBe(version);
+          expect(
+            agentSessionReducer(
+              refreshed,
+              bulkUpsertSessions([snapshot(version)], { listProjection }),
+            ),
+          ).toBe(refreshed);
+          state = refreshed;
+        }
+      },
+    );
+
     it('applies an upsert when only metadata.dismissedQuestionsMessageId changes (cross-window reconcile)', () => {
       const state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1')));
 
@@ -993,6 +1061,121 @@ describe('agent-session-slice reducer', () => {
   });
 
   describe('updateSession', () => {
+    describe.each(['__proto__', 'constructor', 'toString'])('metadata extension key %s', (key) => {
+      it.each(['written', null, { resolution: 'applied' as const }])(
+        'stores %j as an own serializable value and counts repeated operations',
+        (value) => {
+          let state = agentSessionReducer(
+            initialState,
+            upsertSession({
+              ...makeSession('a1'),
+              metadata: { untouched: 'kept' },
+            }),
+          );
+          for (const revision of [1, 2]) {
+            state = agentSessionReducer(
+              state,
+              updateSession('a1', {
+                metadataPatch: { [key]: { op: 'set', value } },
+              }),
+            );
+            const metadata = state.byAgentId.a1.metadata!;
+            const versions = state.projectionVersions!.a1.metadata;
+            expect(Object.getPrototypeOf(metadata)).toBe(Object.prototype);
+            expect(Object.hasOwn(metadata, key)).toBe(true);
+            expect(metadata[key]).toEqual(value);
+            expect(JSON.parse(JSON.stringify(metadata))).toEqual({
+              untouched: 'kept',
+              [key]: value,
+            });
+            expect(Object.getPrototypeOf(versions)).toBe(Object.prototype);
+            expect(Object.hasOwn(versions, key)).toBe(true);
+            expect(versions[key]).toBe(revision);
+            expect(Object.hasOwn(versions, 'untouched')).toBe(false);
+          }
+          const versions = state.projectionVersions!.a1.metadata;
+          state = agentSessionReducer(state, updateSession('a1', { metadataPatch: {} }));
+          expect(state.projectionVersions!.a1.metadata).toBe(versions);
+          for (const revision of [3, 4]) {
+            state = agentSessionReducer(
+              state,
+              updateSession('a1', { metadataPatch: { [key]: { op: 'clear' } } }),
+            );
+            expect(Object.getPrototypeOf(state.byAgentId.a1.metadata)).toBe(Object.prototype);
+            expect(Object.hasOwn(state.byAgentId.a1.metadata!, key)).toBe(false);
+            expect(state.byAgentId.a1.metadata).toEqual({ untouched: 'kept' });
+            expect(state.projectionVersions!.a1.metadata[key]).toBe(revision);
+            expect(JSON.parse(JSON.stringify(state.projectionVersions!.a1.metadata))).toEqual({
+              [key]: revision,
+            });
+          }
+        },
+      );
+    });
+
+    it('applies explicit metadata operations without claiming untouched keys', () => {
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession({
+          ...makeSession('a1'),
+          metadata: { provider: 'codex', specialist: 'before', extensionTask: 'task' },
+        }),
+      );
+      state = agentSessionReducer(
+        state,
+        updateSession('a1', { metadataPatch: { provider: { op: 'set', value: 'codex' } } }),
+      );
+      const priorVersions = state.projectionVersions?.a1;
+      state = agentSessionReducer(
+        state,
+        updateSession('a1', {
+          metadataPatch: { specialist: { op: 'clear' }, extension: { op: 'set', value: null } },
+        }),
+      );
+      expect(state.byAgentId.a1.metadata).toEqual({
+        provider: 'codex',
+        extensionTask: 'task',
+        extension: null,
+      });
+      expect(state.projectionVersions?.a1).toEqual({
+        fields: {},
+        metadata: { provider: 1, specialist: 1, extension: 1 },
+      });
+      expect(priorVersions).toEqual({ fields: {}, metadata: { provider: 1 } });
+      state = agentSessionReducer(
+        state,
+        updateSession('a1', {
+          metadataPatch: { provider: { op: 'set', value: 'codex' }, specialist: { op: 'clear' } },
+        }),
+      );
+      expect(state.projectionVersions?.a1?.metadata).toEqual({
+        provider: 2,
+        specialist: 2,
+        extension: 1,
+      });
+      expect(state.byAgentId.a1).not.toHaveProperty('metadataPatch');
+    });
+
+    it('leaves metadata and revisions untouched for non-metadata and empty patches', () => {
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession({ ...makeSession('a1'), metadata: { provider: 'codex' } }),
+      );
+      const metadata = state.byAgentId.a1.metadata;
+      state = agentSessionReducer(
+        state,
+        updateSession('a1', { name: 'Renamed', metadataPatch: {} }),
+      );
+      expect(state.byAgentId.a1.metadata).toBe(metadata);
+      expect(state.projectionVersions?.a1).toEqual({ fields: { name: 1 }, metadata: {} });
+      expect(
+        agentSessionReducer(
+          initialState,
+          updateSession('missing', { metadataPatch: { provider: { op: 'set', value: 'codex' } } }),
+        ),
+      ).toBe(initialState);
+    });
+
     it('updates non-message fields', () => {
       let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
       state = agentSessionReducer(state, updateSession('a1', { name: 'New Name' }));
@@ -1252,9 +1435,16 @@ describe('agent-session-slice reducer', () => {
         expect(agentSessionReducer(state, updated({ pendingQuestionsMessageId: null }))).toBe(
           state,
         );
-        expect(agentSessionReducer(state, updated({ pendingQuestionsMessageId: 'msg-q1' }))).toBe(
-          state,
-        );
+      });
+
+      it('records repeated marker authority without claiming unrelated metadata', () => {
+        const state = seeded();
+        const next = agentSessionReducer(state, updated({ pendingQuestionsMessageId: 'msg-q1' }));
+        expect(next.byAgentId.a1.metadata).toEqual(state.byAgentId.a1.metadata);
+        expect(next.projectionVersions?.a1).toEqual({
+          fields: {},
+          metadata: { pendingQuestionsMessageId: 1 },
+        });
       });
 
       it('does not create a session for an unknown agent', () => {
@@ -1306,10 +1496,28 @@ describe('agent-session-slice reducer', () => {
             status: 'idle',
             waitingOnHooks: [{ hookId: 'h1', name: 'watch-ci' }],
             waitingOnPrMonitors: [{ monitorId: 'm1', repo: 'o/r', prNumber: 1 }],
+            waitingOnScriptMonitors: [
+              {
+                monitorId: 's1',
+                scriptId: 'checks',
+                runId: 'run-1',
+                scriptName: 'Checks',
+                expiresAt: '2026-10-02T10:10:00Z',
+              },
+            ],
           },
         } as any),
       );
 
+      expect(state.byAgentId['a1'].waitingOnScriptMonitors).toEqual([
+        {
+          monitorId: 's1',
+          scriptId: 'checks',
+          runId: 'run-1',
+          scriptName: 'Checks',
+          expiresAt: '2026-10-02T10:10:00Z',
+        },
+      ]);
       expect(state.byAgentId['a1'].waitingOnHooks).toEqual([{ hookId: 'h1', name: 'watch-ci' }]);
       expect(state.byAgentId['a1'].waitingOnPrMonitors).toEqual([
         { monitorId: 'm1', repo: 'o/r', prNumber: 1 },
@@ -1330,6 +1538,7 @@ describe('agent-session-slice reducer', () => {
       );
       expect(state.byAgentId['a1'].waitingOnHooks).toEqual([]);
       expect(state.byAgentId['a1'].waitingOnPrMonitors).toEqual([]);
+      expect(state.byAgentId['a1'].waitingOnScriptMonitors).toEqual([]);
     });
 
     it('folds the agent:subscriptions-changed waiting snapshot onto the session', () => {
@@ -3365,6 +3574,22 @@ describe('agent-session-slice reducer', () => {
   // §5.5 list projection: the marker records that the detail read landed, so
   // an absent detail-only field is "none" rather than "not loaded yet".
   describe('markAgentDetailHydrated', () => {
+    it.each([
+      principalContextChanged('next'),
+      principalIdentityChanged('other'),
+      connectionStatusChanged('disconnected'),
+    ])('invalidates accepted detail at boundary $type', (action) => {
+      let state = agentSessionReducer(
+        initialState,
+        bulkUpsertSessions([makeSession('a1', 'ws-1')]),
+      );
+      state = agentSessionReducer(state, markAgentDetailHydrated('a1'));
+      expect(state.detailHydrated?.a1).toBe(true);
+      state = agentSessionReducer(state, action);
+      expect(state.detailHydrated).toBeUndefined();
+      expect(state.byAgentId.a1).toBeDefined();
+    });
+
     it('is unset on initial state and set only for a stored session', () => {
       expect(initialState.detailHydrated).toBeUndefined();
 
@@ -6712,6 +6937,15 @@ describe('history segment (scrollback)', () => {
       expect(segment.startOrdinalEstimate).toBe(500);
     });
 
+    it('message-ID landings retain both sides without inventing an ordinal', () => {
+      let state = withSession('a1', [makeUniqueMessage('tail-1', 'user', ts(1000))]);
+      state = agentSessionReducer(state, seedHistoryAround('a1', [histMsg(500), histMsg(501)]));
+      const segment = getHistory(state, 'a1')!;
+      expect(segment.messages.map((m) => m.id)).toEqual(['hist-500', 'hist-501']);
+      expect(segment.gapToTail).toBe(true);
+      expect(segment.startOrdinalEstimate).toBeUndefined();
+    });
+
     it('landing rows overlapping the tail keep the segment contiguous (no gap)', () => {
       const tailRow = makeUniqueMessage('tail-1', 'user', ts(1000));
       let state = withSession('a1', [tailRow]);
@@ -6820,6 +7054,26 @@ describe('history segment (scrollback)', () => {
         }),
       );
       expect(getHistory(state, 'a1')).toBeUndefined();
+    });
+
+    it('local discard replay preserves loaded history before the next page', () => {
+      let state = withSession();
+      const loaded = [histMsg(10), histMsg(11), histMsg(12), histMsg(13), histMsg(14)];
+      state = agentSessionReducer(state, prependHistoryMessages('a1', loaded));
+      const before = state;
+      state = agentSessionReducer(
+        state,
+        chatTranscriptSnapshotApplied(
+          'a1',
+          { truncated: true, totalMessages: 20, resumed: false },
+          true,
+        ),
+      );
+      expect.soft(getHistory(state, 'a1')?.messages).toEqual(loaded);
+      const older = [histMsg(5), histMsg(6), histMsg(7), histMsg(8), histMsg(9)];
+      const next = agentSessionReducer(state, prependHistoryMessages('a1', older));
+      expect(getHistory(next, 'a1')?.messages).toEqual([...older, ...loaded]);
+      expect(state).toBe(before);
     });
 
     it('a resumed:true or plain snapshot keeps the segment', () => {
@@ -7085,6 +7339,18 @@ describe('tailCapPruned latch (live tail growth past the client cap)', () => {
     );
     expect(state.byAgentId['a1'].tailCapPruned).toBe(true);
 
+    // Local replay must retain the latch belonging to the current transcript.
+    const afterReplay = agentSessionReducer(
+      state,
+      chatTranscriptSnapshotApplied(
+        'a1',
+        { resumed: false, truncated: false, totalMessages: 1 },
+        true,
+      ),
+    );
+    expect(afterReplay.byAgentId['a1'].tailCapPruned).toBe(true);
+    expect(afterReplay).toBe(state);
+
     // chatReset clears it (full transcript reset).
     const afterReset = agentSessionReducer(state, chatReset('a1'));
     expect(afterReset.byAgentId['a1'].tailCapPruned).toBe(false);
@@ -7304,5 +7570,38 @@ describe('FE-owned session fields survive an agent.get refetch (FE_OWNED_FIELD_P
         expect(readField(state, key), key).toBeUndefined();
       }
     });
+  });
+});
+
+it('does not carry frontend fields or old workspace indexes across an opaque agent ID rebind', () => {
+  let state = agentSessionReducer(
+    initialState,
+    bulkUpsertSessions([makeSession('shared-origin', 'workspace-a')]),
+  );
+  state = agentSessionReducer(
+    state,
+    updateSession('shared-origin', {
+      liveTurnOpen: true,
+      metadataPatch: { pendingQuestionsMessageId: { op: 'set', value: 'a-marker' } },
+    }),
+  );
+  state = agentSessionReducer(
+    state,
+    bulkUpsertSessions([makeSession('shared-origin', 'workspace-b')]),
+  );
+  expect(state.byAgentId['shared-origin'].workspaceId).toBe('workspace-b');
+  expect(state.byAgentId['shared-origin'].liveTurnOpen).not.toBe(true);
+  expect(state.byAgentId['shared-origin'].metadata?.pendingQuestionsMessageId).toBeUndefined();
+  expect(state.agentIdsByWorkspace['workspace-a'] ?? []).not.toContain('shared-origin');
+});
+
+describe('background mode request state', () => {
+  it('tracks independent agents and clears only the settled request', () => {
+    let state = agentSessionReducer(initialState, setAgentBackgroundPending('a', true));
+    state = agentSessionReducer(state, setAgentBackgroundPending('b', true));
+    expect(state.backgroundModePending).toEqual({ a: true, b: true });
+    state = agentSessionReducer(state, setAgentBackgroundPending('a', false));
+    expect(state.backgroundModePending).toEqual({ b: true });
+    expect(state.byAgentId).toEqual({});
   });
 });

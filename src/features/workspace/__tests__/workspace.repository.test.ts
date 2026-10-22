@@ -40,7 +40,7 @@ describe('InMemoryWorkspaceRepository', () => {
       const chiefWorkspace = await repository.findById(CHIEF_WORKSPACE_ID);
 
       expect(chiefWorkspace).toEqual(getChiefWorkspace());
-      expect(chiefWorkspace?.title).toBe('Chief of Staff');
+      expect(chiefWorkspace?.id).toBe(CHIEF_WORKSPACE_ID);
       expect(chiefWorkspace?.repositoryPath).toBeUndefined();
       expect(chiefWorkspace?.worktreePath).toBeUndefined();
     });

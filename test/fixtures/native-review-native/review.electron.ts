@@ -1,0 +1,6737 @@
+/** Five finite actual-client cases against the separately attributed owned driver. */
+import {
+  _electron as electron,
+  expect,
+  test,
+  type ElectronApplication,
+  type Page,
+  type TestInfo,
+} from '@playwright/test';
+import { createHash, randomUUID } from 'node:crypto';
+import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
+import { createConnection } from 'node:net';
+import { createWriteStream, writeFileSync, constants as fsConstants } from 'node:fs';
+import {
+  open,
+  copyFile,
+  cp,
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  realpath,
+  rm,
+  lstat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
+import { basename, dirname, join, resolve, posix } from 'node:path';
+import { tmpdir } from 'node:os';
+import { isDeepStrictEqual } from 'node:util';
+import { fileURLToPath } from 'node:url';
+import { build, loadConfigFromFile, type Plugin, type UserConfig } from 'vite';
+import type { Fixture, Ready, WireRecord } from './main';
+import type {
+  NativeReviewInput,
+  NativeReviewObservation,
+  NativeReviewPreparedView,
+  NativeReviewTextCommand,
+} from '../../../src/shared/types/native-review-operation';
+
+// Private companion diagnostics are evidence, never continuation authority.
+const companionDiagnosticProfiles = Object.freeze([
+  Object.freeze({
+    index: 8,
+    title: '09 UI sidebar staged commit and child creation',
+    grep: '^ review\\.electron\\.ts 09 UI sidebar staged commit and child creation$',
+    parentPacket: 'sidebar-owner-committed',
+    nestedParent: true,
+    outcomePacket: 'sidebar-owner-created',
+    outcome: 'created',
+    posts: 1,
+    memberTransition: false,
+  } as const),
+  Object.freeze({
+    index: 9,
+    title: '10 UI sidebar held child close and original receipts',
+    grep: '^ review\\.electron\\.ts 10 UI sidebar held child close and original receipts$',
+    parentPacket: 'sidebar-held-parent',
+    nestedParent: false,
+    outcomePacket: 'sidebar-child-original-after-close',
+    outcome: 'reused',
+    posts: 0,
+    memberTransition: false,
+  } as const),
+  Object.freeze({
+    index: 10,
+    title: '11 UI sidebar Member reuse and Guest refusal',
+    grep: '^ review\\.electron\\.ts 11 UI sidebar Member reuse and Guest refusal$',
+    parentPacket: 'sidebar-member-parent',
+    nestedParent: false,
+    outcomePacket: 'sidebar-member-reused',
+    outcome: 'reused',
+    posts: 0,
+    memberTransition: true,
+  } as const),
+]);
+type CompanionDiagnosticProfile = (typeof companionDiagnosticProfiles)[number];
+
+function selectCompanionDiagnosticProfile(argv: string[]): CompanionDiagnosticProfile {
+  const greps = argv.flatMap((arg, index) =>
+    arg === '--grep' ? [argv[index + 1]] : arg.startsWith('--grep=') ? [arg.slice(7)] : [],
+  );
+  const profile = companionDiagnosticProfiles.find((candidate) => candidate.grep === greps[0]);
+  if (greps.length !== 1 || !profile)
+    throw new Error('Exactly one original diagnostic sidebar title required');
+  return profile;
+}
+
+function assertCompanionDiagnosticSelection(
+  profile: CompanionDiagnosticProfile,
+  env: NodeJS.ProcessEnv,
+  argv: string[],
+  info: Pick<
+    TestInfo,
+    'title' | 'workerIndex' | 'parallelIndex' | 'repeatEachIndex' | 'config' | 'project' | 'retry'
+  >,
+  index: number,
+) {
+  if (
+    !companionDiagnosticMode(env) ||
+    !assertSidebarSelection(env, argv) ||
+    selectCompanionDiagnosticProfile(argv) !== profile ||
+    index !== profile.index ||
+    info.title !== profile.title ||
+    info.workerIndex !== 0 ||
+    info.parallelIndex !== 0 ||
+    info.repeatEachIndex !== 0 ||
+    info.config.workers !== 1 ||
+    info.project.retries !== 0 ||
+    info.project.repeatEach !== 1 ||
+    info.retry !== 0 ||
+    !info.config.argv ||
+    !isDeepStrictEqual(info.config.argv.slice(2), argv)
+  )
+    throw new Error('Original diagnostic profile/title/worker/index mismatch');
+}
+const companionDiagnosticRoot =
+  '/home/clement/intent/workspaces/ideate-future/intent/.dev/slice-b/native-fixture-metadata-6328';
+const companionDiagnosticArtifactRoot =
+  '/home/clement/intent/workspaces/ideate-future/intent/.dev/slice-b/native-fixture-metadata-artifact-692a7716';
+const companionDiagnosticEnvelopeRoot =
+  '/home/clement/intent/workspaces/ideate-future/intent/.dev/evidence/native-fixture-metadata-6328';
+const companionDiagnosticInheritedRoot =
+  '/home/clement/intent/workspaces/ideate-future/intent/.dev/slice-b/native-companion-clock-6328';
+const companionMetadataIdentity = {
+  sourceCommit: '692a771667212edfd1040665f76a80ba348acc4f',
+  parent: '581a3c62a784e6803301b316a2bf7f8c018efb35',
+  sourceTree: '8121211b5668ba3c29e5624a07c4d88ed16402fa',
+  driverBlob: 'c7ca01aa837ad0a86d16495b78b716781803edd9',
+  sourceSha256: 'd411554e168c3460899dadbe26b140431f65cd0e5e2511456c21071cb4662519',
+  executableSha256: 'ae30b7369ee705a3b09667bfaf9d04cfdc416d3571e58a2e1f5d5b8be35d2001',
+  bytes: 269130632,
+  basename: 'e2e-native-review-wire-692a7716-x86_64-unknown-linux-gnu',
+};
+const companionStartupRoot =
+  '/home/clement/intent/workspaces/ideate-future/intent/.dev/slice-b/native-startup-milestones-692a';
+const companionStartupArtifactRoot =
+  '/home/clement/intent/workspaces/ideate-future/intent/.dev/slice-b/native-startup-opt1-artifact-26c32c9c';
+const companionStartupEnvelope =
+  '/home/clement/intent/workspaces/ideate-future/intent/.dev/evidence/native-startup-milestones-26c32c9c';
+const companionDiagnosticIdentity = {
+  sourceCommit: '26c32c9c9582e6ed72099677ff5c07bfee6f0c3f',
+  parent: '692a771667212edfd1040665f76a80ba348acc4f',
+  sourceTree: '6a08e4330b71366b146eeb7fb7ca40c740714ee9',
+  driverBlob: '51cb104282afd94cc09ddaf22eb859f7829a59eb',
+  sourceSha256: '5be8eda1a5300950bd8409b1e8dee64b18096ea89c7f61c03e2ae2944ad22518',
+  executableSha256: '3a8e07fa3cd5789009c1b7c1ef85f07d248a156b2d87b35c5b48f02b9b6aaecb',
+  bytes: 235779064,
+  basename: 'e2e-native-review-wire-26c32c9c-opt1-x86_64-unknown-linux-gnu',
+};
+
+export function companionDiagnosticMode(env: NodeJS.ProcessEnv): boolean {
+  const value = env.NATIVE_REVIEW_COMPANION_DIAGNOSTIC_6328;
+  if (value === undefined) return false;
+  if (value !== '1' || env.NATIVE_REVIEW_UI !== '1' || env.NATIVE_REVIEW_SIDEBAR_UI !== '1')
+    throw new Error('Companion diagnostic requires explicit UI and sidebar modes');
+  return true;
+}
+export async function assertCompanionDiagnosticIdentity(
+  driverSource: string,
+  artifactPath: string,
+) {
+  if (
+    driverSource !== join(companionStartupRoot, 'packages/intentd') ||
+    artifactPath !==
+      join(companionStartupArtifactRoot, 'artifact', companionDiagnosticIdentity.basename)
+  )
+    throw new Error('Unreleased diagnostic source or executable locator');
+  const git = (...args: string[]) =>
+    execFileSync('git', ['-C', driverSource, ...args], { encoding: 'utf8' }).trim();
+  const pin = companionDiagnosticIdentity;
+  if (
+    git('rev-parse', 'HEAD') !== pin.sourceCommit ||
+    git('rev-parse', 'HEAD^') !== pin.parent ||
+    git('rev-list', '--parents', '-n', '1', 'HEAD') !== pin.sourceCommit + ' ' + pin.parent ||
+    git('rev-parse', 'HEAD^{tree}') !== pin.sourceTree ||
+    git('status', '--porcelain', '--untracked-files=all') !== ''
+  )
+    throw new Error('Diagnostic source is not the accepted clean sole-parent input');
+  const fixture = 'crates/intentd/tests/e2e_native_review_wire.rs';
+  if (
+    git('rev-parse', 'HEAD:' + fixture) !== pin.driverBlob ||
+    hash(await readFile(join(driverSource, fixture))) !== pin.sourceSha256
+  )
+    throw new Error('Diagnostic driver source mismatch');
+  const observer = 'crates/intent-services/src/repository_admission/native_review.rs';
+  if (
+    git('rev-parse', 'HEAD:' + observer) !== '4f581c72785f3bf983f9bf7eb409e61ac94b58d4' ||
+    git('hash-object', observer) !== '4f581c72785f3bf983f9bf7eb409e61ac94b58d4'
+  )
+    throw new Error('Diagnostic observer source mismatch');
+  const artifact = await lstat(artifactPath);
+  if (
+    !artifact.isFile() ||
+    artifact.isSymbolicLink() ||
+    artifact.mode % 512 !== 0o555 ||
+    artifact.size !== pin.bytes ||
+    hash(await readFile(artifactPath)) !== pin.executableSha256
+  )
+    throw new Error('Diagnostic artifact mismatch');
+  const inheritedContracts = [
+    [
+      join(companionDiagnosticInheritedRoot, 'HANDOFF.json'),
+      'c30945dc3f5ca341728aceec8044c0d3023957d978f59870e29ed9b0684c2798',
+    ],
+    [
+      join(companionDiagnosticInheritedRoot, 'CONTRACT-v1.json'),
+      '5e1d773d4f5cdd98ac8a2afbe49359315b0d18798bde3353362bc64344ab7577',
+    ],
+    [
+      join(companionDiagnosticInheritedRoot, 'qualification-contract-v3.json'),
+      'd7eab6b8e449272b42a2ca68ff72034c579fe33bff925ef06a32b1a21f05e3b3',
+    ],
+    [
+      join(companionDiagnosticInheritedRoot, 'finite-plan-v3.json'),
+      'f5df33601298a00f7e043f6fb84d51e80540b1387964be9f8d8ac88b9ee921a9',
+    ],
+    [
+      join(companionDiagnosticInheritedRoot, '../native-review-owned-cleanup/CONTROL-CONTRACT.md'),
+      'cdddfbff85798cc3b071e0fa8da8f1ba16b6e57d155a9a08433d16972b176f9b',
+    ],
+    [
+      join(
+        companionDiagnosticInheritedRoot,
+        '../repository-native-review-companion/COMPILED-CONTRACT.md',
+      ),
+      '79412b9ae89ecb16886b186715072778f40a8a29f3bcac638d6f124ab46e3612',
+    ],
+  ];
+  const sourceHandoffPath = join(companionDiagnosticEnvelopeRoot, 'HANDOFF.json');
+  const metadataContractPath = join(companionDiagnosticEnvelopeRoot, 'CONTRACT.json');
+  const artifactHandoffPath = join(companionDiagnosticArtifactRoot, 'HANDOFF.json');
+  const sourceHandoffSha256 = 'c3738c1e7702a2eac82b969cd5d39e01b4b414fde28a1512e96815b490aa8661';
+  const contracts = [
+    ...inheritedContracts,
+    [sourceHandoffPath, sourceHandoffSha256],
+    [
+      join(companionDiagnosticEnvelopeRoot, 'MANIFEST.json'),
+      '304659521a30a65945cca15462f7c8a258bfa77a6212e9ecd73e562875c8c7f7',
+    ],
+    [metadataContractPath, 'ab42221bf3a79bdf0f653d89c84fceca8bcc8f9cb2ae83c1c584fa4dff046111'],
+    [artifactHandoffPath, '0f0bb7165420584660e923325af1a7535a3008e51265270e75b93bb96a7db312'],
+    [
+      join(companionDiagnosticArtifactRoot, 'MANIFEST.json'),
+      '6bc0bf57472e0d08e91e2f7c283fd32b647b9bde1fa3387b2de075b62c0b7edb',
+    ],
+  ];
+  for (const [path, expected] of contracts)
+    if (hash(await readFile(path)) !== expected)
+      throw new Error('Diagnostic contract identity mismatch');
+  // The six older contracts retain their original tuple and qualification scope.
+  const inherited = JSON.parse(await readFile(inheritedContracts[0][0], 'utf8'));
+  if (
+    inherited.source.head !== '581a3c62a784e6803301b316a2bf7f8c018efb35' ||
+    inherited.source.soleParent !== '3feca80dbdada0d334f67010a2d971c3e58cc343' ||
+    inherited.source.tree !== '78a10bf7e11a8b0a9da4a2e07ddb580e7e234e41' ||
+    inherited.artifact.artifact.path !==
+      join(
+        companionDiagnosticInheritedRoot,
+        'artifact/e2e-native-review-wire-581a3c62-x86_64-unknown-linux-gnu',
+      ) ||
+    inherited.artifact.artifact.sha256 !==
+      '4568a45c687cd734234d021254efe33247871f3336f06570d09c621b20afba94' ||
+    inherited.artifact.artifact.bytes !== 267856512 ||
+    inherited.artifact.artifact.mode !== '0o555' ||
+    inherited.manifest.sha256 !== '106a6a2bf4e039a523512d2b1afbac55e94b7bb10964a52bab0d7b2e82d2acf7'
+  )
+    throw new Error('Inherited diagnostic handoff binding mismatch');
+  const handoff = JSON.parse(await readFile(artifactHandoffPath, 'utf8'));
+  const sourceHandoff = JSON.parse(await readFile(sourceHandoffPath, 'utf8'));
+  const metadata = JSON.parse(await readFile(metadataContractPath, 'utf8'));
+  if (
+    handoff.source.head !== companionMetadataIdentity.sourceCommit ||
+    handoff.source.parent !== companionMetadataIdentity.parent ||
+    handoff.source.tree !== companionMetadataIdentity.sourceTree ||
+    handoff.source.root !== join(companionDiagnosticRoot, 'packages/intentd') ||
+    handoff.source.acceptedSourceEnvelope !== companionDiagnosticEnvelopeRoot ||
+    handoff.source.acceptedSourceHandoffSha256 !== sourceHandoffSha256 ||
+    handoff.artifact.path !==
+      join(companionDiagnosticArtifactRoot, 'artifact', companionMetadataIdentity.basename) ||
+    handoff.artifact.sha256 !== companionMetadataIdentity.executableSha256 ||
+    handoff.artifact.bytes !== companionMetadataIdentity.bytes ||
+    handoff.artifact.mode !== '0o555' ||
+    sourceHandoff.head !== companionMetadataIdentity.sourceCommit ||
+    sourceHandoff.parent !== companionMetadataIdentity.parent ||
+    sourceHandoff.tree !== companionMetadataIdentity.sourceTree ||
+    sourceHandoff.checkout !== join(companionDiagnosticRoot, 'packages/intentd') ||
+    sourceHandoff.contract !== 'CONTRACT.json' ||
+    metadata.version !== 'owned-fixture-metadata/1' ||
+    metadata.sourceHead !== companionMetadataIdentity.sourceCommit ||
+    metadata.parent !== companionMetadataIdentity.parent ||
+    metadata.sourceTree !== companionMetadataIdentity.sourceTree ||
+    metadata.partition[fixture].post.mode !== '100644' ||
+    metadata.partition[fixture].post.blob !== companionMetadataIdentity.driverBlob ||
+    metadata.partition[fixture].post.sha256 !== companionMetadataIdentity.sourceSha256 ||
+    metadata.fixtureRegistration.system !== 'StatusOnly' ||
+    metadata.fixtureRegistration.pairing !== 'LocalInfoOnly' ||
+    JSON.stringify(metadata.fixtureRegistration.methods) !==
+      JSON.stringify(['system.status', 'server.pairingInfo']) ||
+    metadata.inheritedABI !==
+      '10.13/nativeReviewCompanion:1; native/control/observer DTOs unchanged'
+  )
+    throw new Error('Diagnostic handoff binding mismatch');
+  const startupSourcePath = join(companionStartupEnvelope, 'HANDOFF.json');
+  const startupArtifactPath = join(companionStartupArtifactRoot, 'HANDOFF.json');
+  const startupContractPath = join(companionStartupEnvelope, 'CONTRACT-v1.json');
+  const startupSourceProofPath =
+    '/home/clement/intent/workspaces/ideate-future/intent/.dev/evidence/reviewer42-startup-26c3-r3z9hk9y/proof.json';
+  const startupArtifactProofPath =
+    '/home/clement/intent/workspaces/ideate-future/intent/.dev/evidence/reviewer42-opt1-26c3-mhcyalmf/proof.json';
+  const startupContracts = [
+    [startupSourcePath, 'cec7b4e0e64679a06d40a5ed00b2057297c23d607b8ca465cad6447c137fd74d'],
+    [
+      join(companionStartupEnvelope, 'MANIFEST.json'),
+      '6593f775c54da54a4a610722ca448f4eb1e73ecb040d59d8561a58de44fde2ba',
+    ],
+    [startupContractPath, '239409338ba1fa59134475a7a242ec12ceeecaea77b0902dc473d581f7daf14e'],
+    [
+      join(companionStartupEnvelope, 'CONSUMER-CONTRACT.md'),
+      'f89c54d1a3ead3cf3464739934ca16f887e2033c801c24d43f80f7e7c348feb3',
+    ],
+    [startupArtifactPath, '596c4a8a4de107d4e94478c41c109abe98ce268f6739a63653d03ff36d89bd2c'],
+    [
+      join(companionStartupArtifactRoot, 'MANIFEST.json'),
+      '4cad66bcbac8d648c17cb0450d6eafbb58b1dbf79a70ce8247de44ca0f272381',
+    ],
+    [startupSourceProofPath, 'd1bff03e755cd7560e83181bfcf14c5574863431a089380b4d5dc3bd718a13ed'],
+    [startupArtifactProofPath, '02eb6432755bf5fc8e1bf6d2180d95951f17ca933922ccd8c188a5566d39a304'],
+  ];
+  for (const [path, expected] of startupContracts)
+    if (hash(await readFile(path)) !== expected)
+      throw new Error('Startup provenance hash mismatch');
+  const startupSource = JSON.parse(await readFile(startupSourcePath, 'utf8'));
+  const startupArtifact = JSON.parse(await readFile(startupArtifactPath, 'utf8'));
+  const startupContract = JSON.parse(await readFile(startupContractPath, 'utf8'));
+  const artifactProof = JSON.parse(await readFile(startupArtifactProofPath, 'utf8'));
+  if (
+    startupSource.sourceRoot !== driverSource ||
+    startupSource.source.head !== pin.sourceCommit ||
+    startupSource.source.parent !== pin.parent ||
+    startupSource.source.tree !== pin.sourceTree ||
+    startupSource.source.postimage.blob !== pin.driverBlob ||
+    startupSource.source.postimage.sha256 !== pin.sourceSha256 ||
+    startupArtifact.source.head !== pin.sourceCommit ||
+    startupArtifact.source.parent !== pin.parent ||
+    startupArtifact.source.tree !== pin.sourceTree ||
+    startupArtifact.source.root !== driverSource ||
+    startupArtifact.source.sourceHandoff.path !== startupSourcePath ||
+    startupArtifact.source.sourceHandoff.sha256 !== startupContracts[0][1] ||
+    startupArtifact.source.sourceReview.path !== startupSourceProofPath ||
+    startupArtifact.source.sourceReview.sha256 !== startupContracts[6][1] ||
+    startupArtifact.source.startupContract.basename !== 'native-startup-milestones-v1.jsonl' ||
+    startupArtifact.source.startupContract.sha256 !== startupContracts[2][1] ||
+    startupArtifact.contract.literalFilename !== 'native-startup-milestones-v1.jsonl' ||
+    startupArtifact.contract.sha256 !== startupContracts[2][1] ||
+    startupArtifact.artifact.path !== artifactPath ||
+    startupArtifact.artifact.sha256 !== pin.executableSha256 ||
+    startupArtifact.artifact.bytes !== pin.bytes ||
+    startupArtifact.artifact.mode !== '0o555' ||
+    startupArtifact.sourceEdits !== 0 ||
+    startupArtifact.actualBuildCount !== 1 ||
+    startupArtifact.copyIdentity.regular !== true ||
+    startupArtifact.copyIdentity.distinctInode !== true ||
+    startupArtifact.copyExecuted !== false ||
+    startupArtifact.frontendExecuted !== false ||
+    startupArtifact.loaderExecuted !== false ||
+    startupArtifact.normalBinaryExecuted !== false ||
+    startupArtifact.originalExecution.executedCases !== 5 ||
+    startupArtifact.controls.passCount !== 5 ||
+    startupArtifact.controls.retries !== 0 ||
+    startupArtifact.originalOutput.path !==
+      join(
+        companionStartupArtifactRoot,
+        '.dev/artifact-target/debug/deps/e2e_native_review_wire-48bdc984553a985c',
+      ) ||
+    startupArtifact.originalOutput.sha256 !== pin.executableSha256 ||
+    startupArtifact.originalOutput.bytes !== pin.bytes ||
+    startupArtifact.originalOutput.mode !== '0o775' ||
+    startupArtifact.originalOutput.cargo.executable !== startupArtifact.originalOutput.path ||
+    !isDeepStrictEqual(startupArtifact.originalOutput.cargo.filenames, [
+      startupArtifact.originalOutput.path,
+    ]) ||
+    !isDeepStrictEqual(startupArtifact.originalOutput.cargo.features, ['default']) ||
+    startupArtifact.originalOutput.cargo.target.name !== 'e2e_native_review_wire' ||
+    !isDeepStrictEqual(startupArtifact.originalOutput.cargo.target.kind, ['test']) ||
+    !isDeepStrictEqual(startupArtifact.originalOutput.cargo.profile, {
+      debug_assertions: true,
+      debuginfo: 'line-tables-only',
+      opt_level: '1',
+      overflow_checks: true,
+      test: true,
+    }) ||
+    startupArtifact.requestedProfile.name !== 'test' ||
+    startupArtifact.requestedProfile.optLevel !== 1 ||
+    startupArtifact.requestedProfile.debugAssertions !== true ||
+    startupArtifact.requestedProfile.overflowChecks !== true ||
+    startupArtifact.requestedProfile.defaultsEnabled !== true ||
+    !isDeepStrictEqual(startupArtifact.requestedProfile.explicitFeatures, []) ||
+    startupContract.version !== 1 ||
+    startupContract.basename !== 'native-startup-milestones-v1.jsonl' ||
+    !isDeepStrictEqual(startupContract.caps, {
+      records: 96,
+      bytes: 49152,
+      frameBytes: 1024,
+      reservedConsumerRecords: 32,
+      reservedConsumerBytes: 16384,
+    }) ||
+    artifactProof.verdict !== 'APPROVED' ||
+    artifactProof.head !== pin.sourceCommit ||
+    artifactProof.tree !== pin.sourceTree ||
+    artifactProof.artifactSha256 !== pin.executableSha256 ||
+    artifactProof.artifactBytes !== pin.bytes ||
+    artifactProof.artifactMode !== '0555' ||
+    artifactProof.originalMode !== '0775' ||
+    artifactProof.originalExecutedLogicalCases !== 5 ||
+    artifactProof.originalOwnedTLSChildExecutions !== 2 ||
+    artifactProof.copyExecuted !== false ||
+    artifactProof.builds !== 1 ||
+    artifactProof.retries !== 0 ||
+    artifactProof.sourceChanges !== 0 ||
+    artifactProof.profileCounts.unchangedOtherSignatures !== true
+  )
+    throw new Error('Startup provenance shape mismatch');
+  contracts.push(...startupContracts);
+
+  return {
+    pin,
+    contracts,
+    qualification:
+      'Startup source 4 inherited46c755 controls plus1 corrected5be8 control remain historical. Reviewed26c32 opt1 original0775 output ran5 source controls once, including2 owned TLS child executions; distinct copied0555 artifact remains unexecuted. Actual emitted test profile retains debug assertions and overflow checks. Prior71a0 six prelaunch/thirteen postbuild sealing mode changes and opt1 preparation/attribution failures remain separate. Inherited692a metadata52 staged v2/v3 and older four b908 + A-prime3feca + B581a remain separate; post-project comparator UNTESTED; no native-runtime, timing-cause or performance claim',
+  };
+}
+
+// Detect duplicate keys and unsafe integers before JSON.parse can discard precision or evidence.
+export function companionJson(bytes: Buffer, maximum: number): any {
+  if (bytes.length > maximum) throw new Error('Diagnostic JSON byte bound');
+  const input = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+  let i = 0,
+    nodes = 0;
+  const ws = () => {
+    while (/[ \t\r\n]/.test(input[i] ?? '') && i < input.length) i++;
+  };
+  const string = () => {
+    const start = i++;
+    while (i < input.length) {
+      if (input[i++] === '"') return JSON.parse(input.slice(start, i)) as string;
+      if (input[i - 1] === '\\') i++;
+    }
+    throw new Error('Partial diagnostic string');
+  };
+  const value = (depth: number): any => {
+    ws();
+    if (++nodes > 8192 || depth > 12) throw new Error('Diagnostic JSON structure bound');
+    if (input[i] === '"') return string();
+    if (input[i] === '{') {
+      i++;
+      ws();
+      const result: Record<string, unknown> = Object.create(null);
+      if (input[i] === '}') {
+        i++;
+        return result;
+      }
+      while (i < input.length) {
+        ws();
+        if (input[i] !== '"') throw new Error('Diagnostic object key');
+        const key = string();
+        ws();
+        if (Object.hasOwn(result, key) || input[i++] !== ':')
+          throw new Error('Duplicate diagnostic key');
+        result[key] = value(depth + 1);
+        ws();
+        const end = input[i++];
+        if (end === '}') return result;
+        if (end !== ',') throw new Error('Diagnostic object boundary');
+      }
+    } else if (input[i] === '[') {
+      i++;
+      ws();
+      const result: unknown[] = [];
+      if (input[i] === ']') {
+        i++;
+        return result;
+      }
+      while (i < input.length) {
+        result.push(value(depth + 1));
+        ws();
+        const end = input[i++];
+        if (end === ']') return result;
+        if (end !== ',') throw new Error('Diagnostic array boundary');
+      }
+    } else {
+      for (const [literal, result] of [
+        ['true', true],
+        ['false', false],
+        ['null', null],
+      ] as const)
+        if (input.startsWith(literal, i)) {
+          i += literal.length;
+          return result;
+        }
+      const numeric = /^(0|[1-9][0-9]*)/.exec(input.slice(i));
+      if (numeric) {
+        i += numeric[0].length;
+        const result = Number(numeric[0]);
+        if (!Number.isSafeInteger(result)) throw new Error('Unsafe diagnostic u64');
+        return result;
+      }
+    }
+    throw new Error('Malformed or partial diagnostic JSON');
+  };
+  const result = value(0);
+  ws();
+  if (i !== input.length) throw new Error('Trailing diagnostic JSON');
+  return result;
+}
+export function companionKeys(value: any, keys: string[]) {
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    Array.isArray(value) ||
+    Object.keys(value).sort().join(',') !== [...keys].sort().join(',')
+  )
+    throw new Error('Unknown or missing diagnostic fields');
+}
+const companionPhases = [
+  'process',
+  'request',
+  'operation',
+  'capture',
+  'claim',
+  'witness',
+  'capacity',
+  'record-capacity',
+  'global-record-capacity',
+  'acquire',
+  'acquire-wait',
+  'authority',
+  'metadata',
+  'source',
+  'source-entered',
+  'source-cancelled',
+  'source-deadline',
+  'git-continuity',
+  'project',
+  'branch',
+  'read-authority',
+  'read-fence',
+  'read-fence-abandoned',
+  'facts',
+  'final-facts',
+  'install',
+  'body',
+  'delivery',
+  'public-error',
+  'protected-result',
+  'worker',
+  'frame-deadline',
+  'request-finish',
+  'complete',
+  'complete-normal',
+  'complete-abandoned',
+  'write-retire',
+  'full-retire',
+  'commit-witness',
+  'resource-release',
+];
+export function readCompanionDiagnostics(raw: Buffer, final: Buffer, workerPid: number) {
+  const errors: string[] = [],
+    incomplete: string[] = [],
+    frames: Record<string, any>[] = [];
+  const streams = new Map<
+    number,
+    {
+      first: Record<string, any>;
+      last: Record<string, any>;
+      active: Map<number, string>;
+      seen: Set<number>;
+      invalid: boolean;
+      finalized: boolean;
+    }
+  >();
+  const unsigned = (v: unknown) => Number.isSafeInteger(v) && (v as number) >= 0;
+  const positive = (v: unknown) => unsigned(v) && (v as number) > 0;
+  const uuid = (v: unknown) =>
+    v === null ||
+    (typeof v === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(v));
+  if (!positive(workerPid) || workerPid > 0xffffffff) errors.push('worker-pid');
+  if (!Buffer.from(raw.toString('utf8')).equals(raw)) errors.push('invalid-utf8');
+  if (raw.length > 2048 * 1025) errors.push('fixture-byte-cap');
+  const lines = raw.length <= 2048 * 1025 ? raw.toString('utf8').split('\n') : [];
+  if (lines.pop() !== '') errors.push('partial-final-line');
+  if (!lines.length || lines.length > 2048) errors.push('fixture-record-cap');
+  for (const line of lines.slice(0, 2048)) {
+    let f: Record<string, any>;
+    try {
+      f = companionJson(Buffer.from(line), 1024);
+      companionKeys(f, [
+        'version',
+        'pid',
+        'stream',
+        'domain',
+        'anchor_ms',
+        'elapsed_ns',
+        'sequence',
+        'observed',
+        'dropped',
+        'span',
+        'phase',
+        'outcome',
+        'finalized',
+        'origin_stream',
+        'method',
+        'daemon',
+        'operation',
+        'capture',
+      ]);
+      if (
+        f.version !== 1 ||
+        f.pid !== workerPid ||
+        !positive(f.stream) ||
+        !positive(f.anchor_ms) ||
+        !unsigned(f.elapsed_ns) ||
+        !positive(f.sequence) ||
+        !unsigned(f.observed) ||
+        !unsigned(f.dropped) ||
+        !(f.span === null || positive(f.span)) ||
+        !(f.origin_stream === null || positive(f.origin_stream)) ||
+        typeof f.finalized !== 'boolean' ||
+        !companionPhases.includes(f.phase) ||
+        !['enter', 'ok', 'error', 'exit', 'unwind', 'link'].includes(f.outcome) ||
+        ![null, 'prepare', 'execute', 'reconcile', 'release'].includes(f.method) ||
+        ![f.daemon, f.operation, f.capture].every(uuid) ||
+        f.domain !== `tokio-instant:${f.pid}:${f.stream}`
+      )
+        throw new Error('Diagnostic frame types or identity');
+    } catch {
+      errors.push('malformed-frame');
+      continue;
+    }
+    frames.push(f);
+    let s = streams.get(f.stream);
+    if (!s) {
+      s = {
+        first: f,
+        last: { sequence: 0, elapsed_ns: 0 },
+        active: new Map(),
+        seen: new Set(),
+        invalid: false,
+        finalized: false,
+      };
+      streams.set(f.stream, s);
+    }
+    const immutable = [
+      'domain',
+      'anchor_ms',
+      'origin_stream',
+      'method',
+      'daemon',
+      'operation',
+      'capture',
+    ];
+    let valid =
+      f.sequence === s.last.sequence + 1 &&
+      f.sequence <= 256 &&
+      f.observed === f.sequence &&
+      f.dropped === 0 &&
+      !s.finalized &&
+      f.elapsed_ns >= s.last.elapsed_ns &&
+      immutable.every((key) => f[key] === s.first[key]);
+    if (f.outcome === 'enter') {
+      valid &&= f.span !== null && !f.finalized && !s.seen.has(f.span);
+      if (f.sequence === 1) {
+        valid &&= f.span === 1 && ['process', 'request', 'operation'].includes(f.phase);
+        if (f.phase === 'process')
+          valid &&= [f.method, f.origin_stream, f.daemon, f.operation, f.capture].every(
+            (v) => v === null,
+          );
+        if (f.phase === 'request') valid &&= f.method !== null && f.origin_stream === null;
+        if (f.phase === 'operation')
+          valid &&= f.method === null && f.origin_stream !== null && f.operation !== null;
+      } else
+        valid &&=
+          s.active.has(1) && f.span !== 1 && !['process', 'request', 'operation'].includes(f.phase);
+      if (valid) {
+        s.active.set(f.span, f.phase);
+        s.seen.add(f.span);
+      }
+    } else if (f.outcome === 'link') valid &&= f.span === null && !f.finalized && s.active.has(1);
+    else {
+      valid &&= f.span !== null && s.active.get(f.span) === f.phase;
+      if (f.finalized)
+        valid &&=
+          f.span === 1 &&
+          f.phase === s.first.phase &&
+          s.active.size === 1 &&
+          ['exit', 'unwind'].includes(f.outcome);
+      else valid &&= f.span !== 1;
+      if (valid) {
+        s.active.delete(f.span);
+        if (f.finalized && !s.invalid) s.finalized = true;
+      }
+    }
+    if (!valid) {
+      s.invalid = true;
+      errors.push(`invalid:${f.stream}:${f.sequence}`);
+    }
+    if (f.outcome === 'unwind') incomplete.push(`unwind:${f.stream}:${f.sequence}`);
+    // Resultless non-root scopes describe only observed exit, not successful business work.
+    if (f.outcome === 'exit' && !['process', 'request', 'operation', 'worker'].includes(f.phase))
+      incomplete.push(`unknown-scope:${f.stream}:${f.span}`);
+    s.last = f;
+  }
+  if (![...streams.values()].some((s) => s.first.phase === 'process' && !s.invalid))
+    incomplete.push('process-unobserved');
+  for (const [id, s] of streams) {
+    if (s.invalid || !s.finalized || s.active.size) incomplete.push(`unfinalized:${id}`);
+    if (s.first.phase === 'operation') {
+      const origin = streams.get(s.first.origin_stream)?.first;
+      if (
+        !origin ||
+        origin.phase !== 'request' ||
+        origin.method !== 'prepare' ||
+        origin.daemon !== s.first.daemon ||
+        origin.capture !== s.first.capture
+      )
+        errors.push(`foreign-origin:${id}`);
+    }
+  }
+  let summary: any = null;
+  try {
+    summary = companionJson(final, 65536);
+    companionKeys(summary, ['collectorInstalled', 'observation']);
+    companionKeys(summary.observation, ['version', 'accounting', 'report', 'complete']);
+    const { accounting: a, report: r } = summary.observation;
+    companionKeys(a, [
+      'observed',
+      'written',
+      'dropped',
+      'overflow',
+      'io',
+      'malformed',
+      'unmatched',
+      'finalized',
+    ]);
+    companionKeys(r, ['records', 'errors', 'incomplete', 'producer_observed', 'producer_dropped']);
+    if (
+      summary.collectorInstalled !== true ||
+      summary.observation.version !== 1 ||
+      typeof summary.observation.complete !== 'boolean' ||
+      typeof a.finalized !== 'boolean' ||
+      Object.entries(a).some(([k, v]) => k !== 'finalized' && !unsigned(v)) ||
+      ![r.records, r.producer_observed, r.producer_dropped].every(unsigned) ||
+      !Array.isArray(r.errors) ||
+      !Array.isArray(r.incomplete) ||
+      [...r.errors, ...r.incomplete].some(
+        (v) =>
+          typeof v !== 'string' ||
+          !/^(?:fixture-cap|frame-cap|malformed|no-records|process-unobserved|invalid:[0-9]+:[0-9]+:[0-9]+|[0-9]+:[0-9]+)$/.test(
+            v,
+          ),
+      )
+    )
+      throw new Error('Diagnostic summary shape');
+    const observed = [...streams.values()].reduce((n, s) => n + s.last.observed, 0);
+    const dropped = [...streams.values()].reduce((n, s) => n + s.last.dropped, 0);
+    if (
+      !Number.isSafeInteger(observed) ||
+      !Number.isSafeInteger(dropped) ||
+      a.observed !== lines.length ||
+      a.written !== lines.length ||
+      r.records !== frames.length ||
+      r.producer_observed !== observed ||
+      r.producer_dropped !== dropped ||
+      ['dropped', 'overflow', 'io', 'malformed', 'unmatched'].some((k) => a[k] !== 0) ||
+      dropped !== 0 ||
+      r.errors.length ||
+      r.incomplete.length
+    )
+      errors.push('final-accounting');
+    if (!a.finalized || !summary.observation.complete) incomplete.push('collector-unfinalized');
+  } catch {
+    errors.push('missing-or-invalid-summary');
+  }
+  return {
+    version: 1,
+    valid: errors.length === 0,
+    complete: errors.length === 0 && incomplete.length === 0,
+    errors,
+    incomplete,
+    frames,
+    summary,
+    qualification:
+      'same-domain elapsed only; finalization is not ready, admission, delivery observation, native settlement or owned cleanup',
+  };
+}
+
+/** Run each original phase once and retain the first original rejection, including undefined. */
+export async function companionPhasesOnce(
+  phases: Array<{ name: string; run: () => unknown }>,
+  report: (rows: Array<{ name: string; ok: boolean; error?: string }>) => unknown,
+) {
+  let failed = false,
+    first: unknown;
+  const rows: Array<{ name: string; ok: boolean; error?: string }> = [];
+  for (const phase of phases) {
+    try {
+      await phase.run();
+      rows.push({ name: phase.name, ok: true });
+    } catch (error) {
+      if (!failed) {
+        failed = true;
+        first = error;
+      }
+      let description = 'Unprintable original rejection';
+      try {
+        description = String(error);
+      } catch {
+        /* Observation must not prevent the original cleanup phases. */
+      }
+      rows.push({ name: phase.name, ok: false, error: description });
+    }
+  }
+  try {
+    await report(rows);
+  } catch (error) {
+    if (!failed) {
+      failed = true;
+      first = error;
+    }
+  }
+  if (failed) throw first;
+}
+
+/** Reads only enumerated safe evidence; never traverses home, profile, TLS or credentials. */
+export async function archiveCompanionFiles(
+  directory: string,
+  destination: string,
+  stage: 'partial' | 'final',
+) {
+  await mkdir(destination, { recursive: true, mode: 0o700 });
+  await chmod(destination, 0o700);
+  const rows: Array<Record<string, unknown>> = [];
+  const names = ['companion-preparation-v1.jsonl', 'companion-preparation-v1-final.json'];
+  const allowed =
+    /^(?:descriptor|ready|worker|supervisor|ownership|worker-stopped|stopped|failed|allocation|driver|electron|failure|failure-packet|failure-packet-error|controller-[a-z-]+|original-supervisor-wait-observed|final-stop-observed|ui-quiescence|before-stop|after-stop|stop-inventory-before|stop-inventory-after|stop-begin|stop-finish|original-completions|sidebar-[a-z-]+)\.(?:json|jsonl|log)$/;
+  const sourceStat = await lstat(directory);
+  if (!sourceStat.isDirectory() || sourceStat.mode % 512 !== 0o700)
+    throw new Error('Private evidence directory required');
+  const entries = await readdir(directory, { withFileTypes: true });
+  const selected = [
+    ...new Set([...names, ...entries.map((e) => e.name).filter((n) => allowed.test(n))]),
+  ];
+  if (selected.length > 128) throw new Error('Diagnostic archive file bound');
+  for (const name of selected) {
+    try {
+      const path = join(directory, name),
+        stat = await lstat(path);
+      if (
+        !stat.isFile() ||
+        stat.isSymbolicLink() ||
+        stat.size > (names.includes(name) ? 2048 * 1025 : 32 * 1024 * 1024) ||
+        (names.includes(name) && stat.mode % 512 !== 0o600)
+      )
+        throw new Error('Unsafe or oversized evidence file');
+      const bytes = await readFile(path),
+        target = join(destination, stage + '-' + name);
+      await writeFile(target, bytes, { mode: 0o600, flag: 'wx' });
+      rows.push({
+        name,
+        stage,
+        bytes: bytes.length,
+        sha256: hash(bytes),
+        sourceMode: stat.mode % 512,
+        mode: 0o600,
+        regular: true,
+      });
+    } catch (error) {
+      rows.push({ name, stage, incomplete: true, error: String(error) });
+    }
+  }
+  record(destination, stage + '-manifest', rows);
+  if (rows.some((row) => row.incomplete))
+    throw new Error('Diagnostic originals missing or archive incomplete');
+  return rows;
+}
+
+// Private startup evidence: neither these IDs nor a completed span grant authority.
+const startupPhases = [
+  'process',
+  'validation',
+  'tls',
+  'observer',
+  'runtime',
+  'loop',
+  'host',
+  'repositories',
+  'provider',
+  'provider-endpoints',
+  'store',
+  'roles',
+  'services',
+  'wss',
+  'uds',
+  'credentials',
+  'control',
+  'identity-commit',
+  'identity-tree',
+  'identity-source',
+  'identity-executable',
+  'publication',
+  'file-open',
+  'serialize',
+  'sync',
+  'link',
+  'unlink',
+  'binding',
+  'child',
+];
+const startupOutcomes = [
+  'enter',
+  'return',
+  'error',
+  'unwind',
+  'abandoned',
+  'allocated',
+  'waited',
+  'bound',
+  'reached',
+  'complete',
+];
+type StartupBinding = {
+  run: string;
+  descriptor: string;
+  artifact: string;
+  source: string;
+  commit: string;
+  tree: string;
+};
+type StartupFrame = {
+  v: bigint;
+  pid: bigint;
+  parent: bigint;
+  wallMs: bigint;
+  clock: string;
+  seq: bigint;
+  ns: bigint;
+  phase: string;
+  outcome: string;
+  span: bigint | null;
+  host: 'a' | 'b' | null;
+  child: bigint | null;
+  code: bigint | null;
+  signal: bigint | null;
+  binding: StartupBinding | null;
+  counts: Record<string, bigint> | null;
+};
+type StartupSpan = {
+  open: StartupFrame;
+  end?: StartupFrame;
+  children: StartupSpan[];
+  links: StartupFrame[];
+};
+function startupRequire(value: unknown, category: string): asserts value {
+  if (!value) throw new Error('Startup evidence: ' + category);
+}
+/** Separate lossless scalar grammar; the older companion JSON grammar is unchanged. */
+export function startupJson(bytes: Buffer, limit = 1024): any {
+  startupRequire(bytes.length <= limit, 'frame bound');
+  const input = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+  let i = 0,
+    nodes = 0;
+  const space = () => {
+    while (i < input.length && /[ \t\r\n]/.test(input[i]!)) i++;
+  };
+  const string = () => {
+    const start = i++;
+    while (i < input.length) {
+      if (input[i++] === '"') {
+        const result = JSON.parse(input.slice(start, i)) as string;
+        startupRequire(
+          !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(result),
+          'unicode scalar',
+        );
+        return result;
+      }
+      if (input[i - 1] === '\\') i++;
+    }
+    throw new Error('Startup evidence: string');
+  };
+  const value = (depth: number): any => {
+    space();
+    startupRequire(++nodes <= 8192 && depth <= 12, 'structure bound');
+    if (input[i] === '"') return string();
+    if (input[i] === '{') {
+      i++;
+      space();
+      const out: Record<string, unknown> = Object.create(null);
+      if (input[i] === '}') {
+        i++;
+        return out;
+      }
+      while (i < input.length) {
+        space();
+        startupRequire(input[i] === '"', 'key');
+        const key = string();
+        space();
+        startupRequire(!Object.hasOwn(out, key) && input[i++] === ':', 'duplicate key');
+        out[key] = value(depth + 1);
+        space();
+        const end = input[i++];
+        if (end === '}') return out;
+        startupRequire(end === ',', 'object');
+      }
+    }
+    if (input[i] === '[') {
+      i++;
+      space();
+      const out: unknown[] = [];
+      if (input[i] === ']') {
+        i++;
+        return out;
+      }
+      while (i < input.length) {
+        out.push(value(depth + 1));
+        space();
+        const end = input[i++];
+        if (end === ']') return out;
+        startupRequire(end === ',', 'array');
+      }
+    }
+    for (const [text, result] of [
+      ['null', null],
+      ['true', true],
+      ['false', false],
+    ] as const)
+      if (input.startsWith(text, i)) {
+        i += text.length;
+        return result;
+      }
+    const number = /^-?(?:0|[1-9][0-9]*)/.exec(input.slice(i));
+    if (number) {
+      startupRequire(number[0] !== '-0', 'negative zero');
+      i += number[0].length;
+      return BigInt(number[0]);
+    }
+    throw new Error('Startup evidence: JSON');
+  };
+  const result = value(0);
+  space();
+  startupRequire(i === input.length, 'trailing JSON');
+  return result;
+}
+function startupInteger(value: unknown, bits: number, signed = false): value is bigint {
+  return (
+    typeof value === 'bigint' &&
+    value >= (signed ? -(1n << BigInt(bits - 1)) : 0n) &&
+    value < 1n << BigInt(signed ? bits - 1 : bits)
+  );
+}
+function startupBinding(value: any): asserts value is StartupBinding {
+  companionKeys(value, ['run', 'descriptor', 'artifact', 'source', 'commit', 'tree']);
+  startupRequire(
+    typeof value.run === 'string' &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.run) &&
+      value.run !== '00000000-0000-0000-0000-000000000000',
+    'run',
+  );
+  for (const key of ['descriptor', 'artifact', 'source', 'commit', 'tree'])
+    startupRequire(
+      typeof value[key] === 'string' &&
+        new RegExp('^[0-9a-f]{' + (['commit', 'tree'].includes(key) ? 40 : 64) + '}$', 'i').test(
+          value[key],
+        ),
+      'digest',
+    );
+}
+export function readStartupProducer(bytes: Buffer) {
+  const frames: StartupFrame[] = [],
+    roots: StartupSpan[] = [],
+    stack: StartupSpan[] = [];
+  let state: 'absent' | 'partial' | 'truncated' | 'malformed' | 'lost' | 'complete' = 'partial';
+  let binding: StartupBinding | null = null,
+    loss = false,
+    ended = false,
+    publication = false;
+  const children = new Map<bigint, string>();
+  try {
+    startupRequire(bytes.length <= 49152, 'byte bound');
+    if (!bytes.length) return { state: 'absent' as const, complete: false, frames, roots, binding };
+    const terminated = bytes.at(-1) === 10;
+    const lines: Buffer[] = [];
+    let start = 0;
+    for (let i = 0; i < bytes.length; i++)
+      if (bytes[i] === 10) {
+        lines.push(bytes.subarray(start, i));
+        start = i + 1;
+      }
+    startupRequire(lines.length + (terminated ? 0 : 1) <= 96, 'record bound');
+    for (const line of lines) {
+      startupRequire(
+        line.length > 0 && line.length + 1 <= 1024 && !ended,
+        'frame or trailing record',
+      );
+      const f = startupJson(line) as StartupFrame;
+      companionKeys(f, [
+        'v',
+        'pid',
+        'parent',
+        'wallMs',
+        'clock',
+        'seq',
+        'ns',
+        'phase',
+        'outcome',
+        'span',
+        'host',
+        'child',
+        'code',
+        'signal',
+        'binding',
+        'counts',
+      ]);
+      startupRequire(
+        f.v === 1n &&
+          startupInteger(f.pid, 32) &&
+          f.pid > 0n &&
+          startupInteger(f.parent, 32) &&
+          f.parent > 0n &&
+          startupInteger(f.wallMs, 64) &&
+          f.wallMs > 0n &&
+          f.clock === 'worker-instant',
+        'identity',
+      );
+      for (const key of ['seq', 'ns'] as const) startupRequire(startupInteger(f[key], 64), 'u64');
+      startupRequire(f.span === null || startupInteger(f.span, 64), 'span scalar');
+      startupRequire(
+        f.child === null || (startupInteger(f.child, 32) && f.child > 0n),
+        'child scalar',
+      );
+      startupRequire(f.code === null || startupInteger(f.code, 32, true), 'code');
+      startupRequire(f.signal === null || startupInteger(f.signal, 32, true), 'signal');
+      startupRequire(
+        startupPhases.includes(f.phase) &&
+          startupOutcomes.includes(f.outcome) &&
+          [null, 'a', 'b'].includes(f.host),
+        'enum',
+      );
+      const previous = frames.at(-1);
+      startupRequire(
+        f.seq === (previous?.seq ?? 0n) + 1n && f.ns >= (previous?.ns ?? 0n),
+        'sequence or clock',
+      );
+      if (previous)
+        startupRequire(
+          f.pid === previous.pid && f.parent === previous.parent && f.wallMs === previous.wallMs,
+          'changed identity',
+        );
+      else
+        startupRequire(
+          f.phase === 'process' && f.outcome === 'enter' && f.span === 1n && f.host === null,
+          'process opening',
+        );
+      startupRequire(f.phase === 'binding' || f.binding === null, 'binding location');
+      startupRequire(
+        f.phase === 'child' || (f.child === null && f.code === null && f.signal === null),
+        'child location',
+      );
+      startupRequire(f.phase === 'process' || f.counts === null, 'counter location');
+      if (f.outcome === 'enter') {
+        startupRequire(
+          f.span === f.seq &&
+            stack.length < 32 &&
+            f.counts === null &&
+            f.binding === null &&
+            f.child === null,
+          'opening',
+        );
+        const node: StartupSpan = { open: f, children: [], links: [] };
+        if (stack.length) stack.at(-1)!.children.push(node);
+        else roots.push(node);
+        stack.push(node);
+      } else if (f.span !== null) {
+        startupRequire(
+          ['return', 'error', 'unwind', 'abandoned', 'complete'].includes(f.outcome),
+          'terminal',
+        );
+        const node = stack.pop();
+        startupRequire(
+          node &&
+            node.open.seq === f.span &&
+            node.open.phase === f.phase &&
+            node.open.host === f.host,
+          'pair',
+        );
+        node.end = f;
+        if (f.phase === 'publication' && f.outcome === 'return') publication = true;
+        loss ||= !['return', 'complete'].includes(f.outcome);
+        if (f.phase === 'process') {
+          ended = true;
+          startupRequire(stack.length === 0 && f.counts !== null, 'final counters');
+          companionKeys(f.counts, [
+            'observed',
+            'written',
+            'dropped',
+            'overflow',
+            'io',
+            'unmatched',
+          ]);
+          for (const count of Object.values(f.counts))
+            startupRequire(startupInteger(count, 64), 'counter scalar');
+          loss ||=
+            f.outcome !== 'complete' ||
+            f.counts.observed !== f.seq ||
+            f.counts.written !== BigInt(frames.length) ||
+            ['dropped', 'overflow', 'io', 'unmatched'].some((k) => f.counts![k] !== 0n);
+        } else startupRequire(f.outcome !== 'complete' && f.counts === null, 'terminal kind');
+      } else {
+        startupRequire(stack.length > 0 && f.counts === null, 'link scope');
+        stack.at(-1)!.links.push(f);
+        if (f.phase === 'binding' && f.outcome === 'bound') {
+          startupRequire(!binding, 'duplicate binding');
+          startupBinding(f.binding);
+          binding = f.binding;
+        } else if (f.phase === 'loop' && f.outcome === 'reached')
+          startupRequire(f.host === null && f.binding === null, 'loop');
+        else if (f.phase === 'child' && ['allocated', 'waited', 'error'].includes(f.outcome)) {
+          startupRequire(f.child !== null && f.host !== null, 'child binding');
+          if (f.outcome === 'allocated') {
+            startupRequire(
+              !children.has(f.child) &&
+                ![...children.values()].includes(f.host) &&
+                f.code === null &&
+                f.signal === null,
+              'duplicate child',
+            );
+            children.set(f.child, f.host);
+          } else {
+            startupRequire(children.get(f.child) === f.host, 'foreign child');
+            loss ||= f.outcome === 'error';
+          }
+        } else throw new Error('Startup evidence: link');
+      }
+      frames.push(f);
+    }
+    state = !terminated
+      ? 'truncated'
+      : loss
+        ? 'lost'
+        : ended && binding && publication && roots.length === 1
+          ? 'complete'
+          : 'partial';
+  } catch {
+    state = 'malformed';
+  }
+  return { state, complete: state === 'complete', frames, roots, binding };
+}
+type StartupOriginals = {
+  run: string;
+  descriptor: string;
+  artifact: string;
+  source: string;
+  commit: string;
+  tree: string;
+  consumerPid: number;
+  helperPid: number;
+  worker: any;
+  supervisor: any;
+  allocation: any;
+  owned: any[];
+  wait: any;
+  helper: any;
+  stopped: any;
+  ready: any;
+  joined: boolean;
+};
+export function assertStartupNative(bytes: Buffer, o: StartupOriginals) {
+  const p = readStartupProducer(bytes);
+  startupRequire(p.complete && p.binding, 'producer incomplete');
+  const expected: StartupBinding = {
+    run: o.run,
+    descriptor: o.descriptor,
+    artifact: o.artifact,
+    source: o.source,
+    commit: o.commit,
+    tree: o.tree,
+  };
+  startupRequire(
+    Object.entries(expected).every(
+      ([key, value]) => p.binding![key as keyof StartupBinding] === value,
+    ),
+    'foreign binding',
+  );
+  startupRequire(
+    o.joined &&
+      o.worker?.owner === 'supervisor' &&
+      o.worker?.allocation === 'pidfd' &&
+      Number.isSafeInteger(o.worker.pid) &&
+      o.worker.pid > 0,
+    'original worker',
+  );
+  const first = p.frames[0]!;
+  startupRequire(
+    first.pid === BigInt(o.worker.pid) &&
+      first.parent === BigInt(o.supervisor.pid) &&
+      o.supervisor.runId === o.run &&
+      o.supervisor.pid === o.allocation.supervisorPid &&
+      o.allocation.controllerPid === o.helperPid,
+    'original parent',
+  );
+  startupRequire(
+    o.owned.filter((r) => r.kind === 'enrolled' && r.role === 'worker' && r.pid === o.worker.pid)
+      .length === 1,
+    'original enrollment',
+  );
+  startupRequire(
+    o.wait.supervisorPid === o.supervisor.pid &&
+      o.wait.waitedOriginalChild === true &&
+      o.wait.returnCode === 0 &&
+      o.wait.code === 0 &&
+      o.wait.signal === null &&
+      o.wait.failure === null &&
+      o.helper.code === 0 &&
+      o.helper.signal === null &&
+      o.stopped.success === true &&
+      o.stopped.ownership.complete === true &&
+      o.stopped.ownership.failed === false,
+    'original joined cleanup',
+  );
+  startupRequire(
+    o.ready?.pid === o.worker.pid &&
+      o.ready?.runId === o.run &&
+      isDeepStrictEqual(o.ready.identity, {
+        sourceCommit: o.commit,
+        sourceTree: o.tree,
+        sourceSha256: o.source,
+        executableSha256: o.artifact,
+      }),
+    'original ready identity',
+  );
+  const root = p.roots[0]!;
+  const ids = ['identity-commit', 'identity-tree', 'identity-source', 'identity-executable'];
+  const phases = (nodes: StartupSpan[]) => nodes.map((n) => n.open.phase);
+  const exact = (nodes: StartupSpan[], names: string[]) =>
+    startupRequire(isDeepStrictEqual(phases(nodes), names), 'native stage coverage');
+  exact(root.children, [
+    'validation',
+    'tls',
+    'validation',
+    'observer',
+    'runtime',
+    'host',
+    'host',
+    'credentials',
+    'control',
+    ...ids,
+    'publication',
+  ]);
+  for (const node of root.children)
+    startupRequire(node.end?.outcome === 'return', 'native terminal');
+  for (const node of root.children.filter((_, i) => i !== 5 && i !== 6))
+    startupRequire(node.open.host === null, 'non-host scope');
+  for (const index of [0, 2]) {
+    const n = root.children[index]!;
+    exact(n.children, ids);
+    startupRequire(
+      n.children.every(
+        (c) =>
+          c.open.host === null &&
+          c.end?.outcome === 'return' &&
+          c.children.length === 0 &&
+          c.links.length === 0,
+      ),
+      'validation identity',
+    );
+  }
+  startupRequire(
+    root.children[0]!.links.length === 1 &&
+      root.children[0]!.links[0]!.phase === 'binding' &&
+      root.children[0]!.links[0]!.host === null &&
+      root.children[0]!.children.every((c) => c.end!.seq < root.children[0]!.links[0]!.seq) &&
+      root.children[0]!.links[0]!.seq < root.children[0]!.end!.seq &&
+      root.children[2]!.links.length === 0,
+    'validation binding seam',
+  );
+  startupRequire(
+    root.links.length === 1 &&
+      root.links[0]!.phase === 'loop' &&
+      root.links[0]!.seq > root.children[4]!.end!.seq &&
+      root.links[0]!.seq < root.children[5]!.open.seq,
+    'original loop entry',
+  );
+  for (const [index, host] of ['a', 'b'].entries()) {
+    const n = root.children[5 + index]!;
+    startupRequire(n.open.host === host && n.links.length === 0, 'host scope');
+    exact(n.children, ['repositories', 'provider', 'store', 'roles', 'services', 'wss', 'uds']);
+    for (const c of n.children)
+      startupRequire(c.open.host === host && c.end?.outcome === 'return', 'host terminal');
+    const provider = n.children[1]!;
+    exact(provider.children, ['provider-endpoints']);
+    startupRequire(
+      provider.children[0]!.open.host === host &&
+        provider.children[0]!.end?.outcome === 'return' &&
+        provider.children[0]!.children.length === 0 &&
+        provider.children[0]!.links.length === 0,
+      'endpoints',
+    );
+    startupRequire(
+      provider.links.length === 1 &&
+        provider.links[0]!.outcome === 'allocated' &&
+        provider.links[0]!.host === host &&
+        provider.links[0]!.seq < provider.children[0]!.open.seq,
+      'original allocation seam',
+    );
+    const child = provider.links[0]!.child;
+    startupRequire(
+      child !== null &&
+        o.ready.hosts?.length === 2 &&
+        Number.isSafeInteger(o.ready.hosts[index].fixturePid) &&
+        child === BigInt(o.ready.hosts[index].fixturePid),
+      'host original child',
+    );
+    for (const c of n.children.filter((_, i) => i !== 1))
+      startupRequire(c.children.length === 0 && c.links.length === 0, 'host leaf');
+  }
+  const publication = root.children.at(-1)!;
+  exact(publication.children, ['file-open', 'serialize', 'sync', 'link', 'unlink']);
+  startupRequire(publication.links.length === 0, 'publication links');
+  for (const n of publication.children)
+    startupRequire(
+      n.end?.outcome === 'return' &&
+        n.children.length === 0 &&
+        n.links.length === 0 &&
+        n.open.host === null,
+      'publication leaf',
+    );
+  for (const n of root.children.filter((_, i) => ![0, 2, 5, 6, 13].includes(i)))
+    startupRequire(
+      n.children.length === 0 && n.links.length === 0 && n.open.host === null,
+      'native leaf',
+    );
+  return {
+    complete: true,
+    records: p.frames.length,
+    worker: o.worker.pid,
+    scope: 'original startup only; final native predicates remain independent',
+  };
+}
+const startupEvents = [
+  'read-enoent',
+  'read-error',
+  'parse-error',
+  'read-parsed',
+  'ready-accepted',
+  'helper-terminal',
+  'deadline',
+  'helper-wait',
+] as const;
+type StartupEvent = (typeof startupEvents)[number];
+type StartupConsumer = ReturnType<typeof createStartupConsumer>;
+export function createStartupConsumer(binding: StartupBinding, helper: number) {
+  const origin = process.hrtime.bigint(),
+    wallMs = Date.now();
+  const rows: Array<{
+    kind: StartupEvent;
+    firstNs: string;
+    lastNs: string;
+    count: number;
+    worker: number | null;
+    code: number | null;
+    signal: NodeJS.Signals | null;
+  }> = [];
+  let observed = 0,
+    coalesced = 0,
+    dropped = 0,
+    overflow = 0,
+    io = 0,
+    fault = false,
+    waited = false;
+  const header = {
+    v: 1,
+    kind: 'consumer',
+    pid: process.pid,
+    helper,
+    wallMs,
+    clock: 'consumer-hrtime',
+    binding,
+  };
+  const fail = () => {
+    fault = true;
+  };
+  const observe = (
+    kind: StartupEvent,
+    detail: { worker?: number; code?: number | null; signal?: NodeJS.Signals | null } = {},
+  ) => {
+    try {
+      observed++;
+      const ns = (process.hrtime.bigint() - origin).toString();
+      startupRequire(
+        startupEvents.includes(kind) && observed <= 1_000_000,
+        'consumer category or count',
+      );
+      const worker = detail.worker ?? null,
+        code = detail.code ?? null,
+        signal = detail.signal ?? null;
+      startupRequire(
+        worker === null || (Number.isSafeInteger(worker) && worker > 0 && worker <= 0xffffffff),
+        'consumer worker',
+      );
+      startupRequire(
+        code === null || (Number.isSafeInteger(code) && code >= -2147483648 && code <= 2147483647),
+        'consumer exit',
+      );
+      startupRequire(
+        signal === null ||
+          [
+            'SIGHUP',
+            'SIGINT',
+            'SIGQUIT',
+            'SIGILL',
+            'SIGTRAP',
+            'SIGABRT',
+            'SIGBUS',
+            'SIGFPE',
+            'SIGKILL',
+            'SIGUSR1',
+            'SIGSEGV',
+            'SIGUSR2',
+            'SIGPIPE',
+            'SIGALRM',
+            'SIGTERM',
+            'SIGCHLD',
+            'SIGCONT',
+            'SIGSTOP',
+            'SIGTSTP',
+            'SIGTTIN',
+            'SIGTTOU',
+            'SIGURG',
+            'SIGXCPU',
+            'SIGXFSZ',
+            'SIGVTALRM',
+            'SIGPROF',
+            'SIGWINCH',
+            'SIGIO',
+            'SIGPWR',
+            'SIGSYS',
+          ].includes(signal),
+        'consumer signal',
+      );
+      if (kind === 'helper-wait') {
+        startupRequire(!waited, 'duplicate original wait');
+        waited = true;
+      }
+      const last = rows.at(-1);
+      if (kind === 'read-enoent' && last?.kind === kind) {
+        last.count++;
+        last.lastNs = ns;
+        coalesced++;
+        return;
+      }
+      if (rows.length >= 30) {
+        dropped++;
+        overflow++;
+        return;
+      }
+      rows.push({ kind, firstNs: ns, lastNs: ns, count: 1, worker, code, signal });
+    } catch {
+      dropped++;
+      fault = true;
+    }
+  };
+  const snapshot = (stage: 'partial' | 'final') => {
+    const terminal = {
+      v: 1,
+      kind: 'consumer-snapshot',
+      stage,
+      observed,
+      written: rows.length,
+      coalesced,
+      dropped,
+      overflow,
+      io,
+      fault,
+      waited,
+    };
+    const bytes = Buffer.from(
+      [header, ...rows, terminal].map((x) => JSON.stringify(x)).join('\n') + '\n',
+    );
+    startupRequire(bytes.length <= 16384, 'consumer byte bound');
+    return bytes;
+  };
+  return {
+    observe,
+    fail,
+    snapshot,
+    writeFailed: () => {
+      io++;
+      fault = true;
+    },
+  };
+}
+function observeStartup(
+  consumer: StartupConsumer | undefined,
+  kind: StartupEvent,
+  detail?: Parameters<StartupConsumer['observe']>[1],
+) {
+  try {
+    consumer?.observe(kind, detail);
+  } catch {
+    try {
+      consumer?.fail();
+    } catch {
+      /* Observation never replaces original work. */
+    }
+  }
+}
+/** Keep the actual first thrown value, including undefined, while attempting the added evidence. */
+export async function retainStartupAfter<T>(
+  original: () => Promise<T>,
+  observation: () => Promise<unknown>,
+  onObservationFailure?: () => void,
+): Promise<T> {
+  let failed = false,
+    first: unknown,
+    result!: T;
+  try {
+    result = await original();
+  } catch (error) {
+    failed = true;
+    first = error;
+  }
+  try {
+    await observation();
+  } catch (error) {
+    try {
+      onObservationFailure?.();
+    } catch {
+      /* Evidence failure cannot replace the original. */
+    }
+    if (!failed) {
+      failed = true;
+      first = error;
+    }
+  }
+  if (failed) throw first;
+  return result;
+}
+async function startupDirectory(path: string) {
+  startupRequire(resolve(path) === path && (await realpath(path)) === path, 'canonical directory');
+  const handle = await open(
+    path,
+    fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW,
+  );
+  try {
+    const stat = await handle.stat();
+    startupRequire(
+      stat.isDirectory() && stat.uid === process.geteuid!() && (stat.mode & 0o777) === 0o700,
+      'private directory',
+    );
+    return handle;
+  } catch (error) {
+    await handle.close();
+    throw error;
+  }
+}
+export async function startupHelperEnvironment(enabled: boolean, path: string) {
+  if (!enabled) return {};
+  const handle = await startupDirectory(path);
+  await handle.close();
+  return { NATIVE_REVIEW_COMPANION_DIAGNOSTIC_6328: '1', NATIVE_REVIEW_EVIDENCE_DIR: path };
+}
+async function startupReadAt(
+  directory: Awaited<ReturnType<typeof startupDirectory>>,
+  name: string,
+  limit: number,
+) {
+  const handle = await open(
+    `/proc/self/fd/${directory.fd}/${name}`,
+    fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | fsConstants.O_NONBLOCK,
+  );
+  try {
+    const before = await handle.stat();
+    startupRequire(
+      before.isFile() &&
+        before.nlink === 1 &&
+        before.uid === process.geteuid!() &&
+        (before.mode & 0o777) === 0o600 &&
+        before.size <= limit,
+      'private bounded file',
+    );
+    const buffer = Buffer.alloc(limit + 1),
+      read = await handle.read(buffer, 0, buffer.length, 0),
+      after = await handle.stat();
+    startupRequire(
+      read.bytesRead <= limit &&
+        after.size <= limit &&
+        after.nlink === 1 &&
+        (after.mode & 0o777) === 0o600 &&
+        after.uid === before.uid,
+      'file changed or bound',
+    );
+    return {
+      bytes: buffer.subarray(0, read.bytesRead),
+      stable: before.size === after.size && read.bytesRead === after.size,
+    };
+  } finally {
+    await handle.close();
+  }
+}
+async function startupWriteAt(
+  directory: Awaited<ReturnType<typeof startupDirectory>>,
+  name: string,
+  bytes: Buffer,
+) {
+  const handle = await open(
+    `/proc/self/fd/${directory.fd}/${name}`,
+    fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW,
+    0o600,
+  );
+  try {
+    const stat = await handle.stat();
+    startupRequire(
+      stat.isFile() &&
+        stat.nlink === 1 &&
+        stat.uid === process.geteuid!() &&
+        (stat.mode & 0o777) === 0o600,
+      'private destination',
+    );
+    await handle.writeFile(bytes);
+  } finally {
+    await handle.close();
+  }
+}
+export async function archiveStartup(
+  root: string,
+  destination: string,
+  stage: 'partial' | 'final',
+  consumer: StartupConsumer,
+  expected: StartupBinding,
+) {
+  // The journal belongs to the configured evidence root, never to the temporary driver directory.
+  let source: Awaited<ReturnType<typeof startupDirectory>> | undefined;
+  let target: Awaited<ReturnType<typeof startupDirectory>> | undefined;
+  try {
+    source = await startupDirectory(root);
+    target = await startupDirectory(destination);
+    let state: string = 'absent',
+      size = 0,
+      digest: string | null = null,
+      stable = false;
+    let original: Awaited<ReturnType<typeof startupReadAt>> | undefined;
+    try {
+      original = await startupReadAt(source, 'native-startup-milestones-v1.jsonl', 49152);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT')
+        throw new Error('Startup evidence: producer read failed');
+    }
+    if (original) {
+      const parsed = readStartupProducer(original.bytes);
+      state = parsed.state;
+      stable = original.stable;
+      if (
+        parsed.binding &&
+        !Object.entries(expected).every(
+          ([k, v]) => parsed.binding![k as keyof StartupBinding] === v,
+        )
+      )
+        state = 'foreign';
+      size = original.bytes.length;
+      digest = hash(original.bytes);
+      await startupWriteAt(target, stage + '-native-startup-milestones-v1.jsonl', original.bytes);
+    }
+    const snapshot = consumer.snapshot(stage);
+    await startupWriteAt(target, stage + '-native-startup-consumer-v1.jsonl', snapshot);
+    await startupWriteAt(
+      target,
+      stage + '-startup-archive.json',
+      Buffer.from(
+        JSON.stringify({
+          v: 1,
+          state,
+          stable,
+          bytes: size,
+          sha256: digest,
+          consumerBytes: snapshot.length,
+          consumerSha256: hash(snapshot),
+          scope: 'startup only',
+        }) + '\n',
+      ),
+    );
+  } catch (error) {
+    consumer.writeFailed();
+    throw error;
+  } finally {
+    await target?.close();
+    await source?.close();
+  }
+}
+export function assertStartupConsumer(bytes: Buffer, o: StartupOriginals) {
+  startupRequire(
+    bytes.length > 0 && bytes.length <= 16384 && bytes.at(-1) === 10,
+    'consumer framing',
+  );
+  const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes),
+    lines = text.trimEnd().split('\n');
+  startupRequire(lines.length >= 2 && lines.length <= 32, 'consumer records');
+  const all = lines.map((line) => startupJson(Buffer.from(line), 16384)),
+    header = all[0],
+    end = all.at(-1),
+    rows = all.slice(1, -1);
+  companionKeys(header, ['v', 'kind', 'pid', 'helper', 'wallMs', 'clock', 'binding']);
+  startupBinding(header.binding);
+  startupRequire(
+    header.v === 1n &&
+      header.kind === 'consumer' &&
+      header.pid === BigInt(o.consumerPid) &&
+      header.helper === BigInt(o.helperPid) &&
+      startupInteger(header.wallMs, 64) &&
+      header.wallMs > 0n &&
+      header.clock === 'consumer-hrtime',
+    'consumer identity',
+  );
+  for (const key of ['run', 'descriptor', 'artifact', 'source', 'commit', 'tree'] as const)
+    startupRequire(header.binding[key] === o[key], 'consumer binding');
+  companionKeys(end, [
+    'v',
+    'kind',
+    'stage',
+    'observed',
+    'written',
+    'coalesced',
+    'dropped',
+    'overflow',
+    'io',
+    'fault',
+    'waited',
+  ]);
+  startupRequire(
+    end.v === 1n &&
+      end.kind === 'consumer-snapshot' &&
+      end.stage === 'final' &&
+      end.fault === false &&
+      end.waited === true &&
+      end.dropped === 0n &&
+      end.overflow === 0n &&
+      end.io === 0n,
+    'consumer incomplete',
+  );
+  let count = 0n,
+    previous = 0n;
+  for (const row of rows) {
+    companionKeys(row, ['kind', 'firstNs', 'lastNs', 'count', 'worker', 'code', 'signal']);
+    startupRequire(
+      startupEvents.includes(row.kind) &&
+        typeof row.firstNs === 'string' &&
+        typeof row.lastNs === 'string' &&
+        /^(0|[1-9][0-9]{0,19})$/.test(row.firstNs) &&
+        /^(0|[1-9][0-9]{0,19})$/.test(row.lastNs),
+      'consumer category or clock',
+    );
+    const first = BigInt(row.firstNs),
+      last = BigInt(row.lastNs);
+    startupRequire(first >= previous && last >= first && last < 1n << 64n, 'consumer monotonic');
+    previous = last;
+    startupRequire(
+      startupInteger(row.count, 32) &&
+        row.count > 0n &&
+        (row.kind === 'read-enoent' || row.count === 1n),
+      'consumer coalescing',
+    );
+    count += row.count;
+    startupRequire(
+      row.worker === null || (startupInteger(row.worker, 32) && row.worker > 0n),
+      'consumer worker scalar',
+    );
+    startupRequire(row.code === null || startupInteger(row.code, 32, true), 'consumer exit scalar');
+  }
+  startupRequire(
+    end.observed === count &&
+      end.written === BigInt(rows.length) &&
+      end.coalesced === count - BigInt(rows.length),
+    'consumer counters',
+  );
+  const kinds = rows.map((r) => r.kind),
+    missing = kinds[0] === 'read-enoent' ? 1 : 0;
+  startupRequire(
+    isDeepStrictEqual(kinds.slice(missing), ['read-parsed', 'ready-accepted', 'helper-wait']),
+    'original consumer sequence',
+  );
+  startupRequire(
+    rows
+      .slice(0, missing + 1)
+      .every((r) => r.worker === null && r.code === null && r.signal === null),
+    'read metadata',
+  );
+  const accepted = rows[missing + 1],
+    wait = rows[missing + 2];
+  startupRequire(
+    accepted.worker === BigInt(o.worker.pid) &&
+      accepted.code === null &&
+      accepted.signal === null &&
+      wait.worker === null &&
+      wait.code === 0n &&
+      wait.signal === null &&
+      o.joined,
+    'accepted ready and original helper wait',
+  );
+  return {
+    complete: true,
+    records: lines.length,
+    observed: String(count),
+    coalesced: String(end.coalesced),
+    clock: 'consumer-hrtime; no cross-clock ordering',
+  };
+}
+export async function validateStartupArchive(destination: string, o: StartupOriginals) {
+  const dir = await startupDirectory(destination);
+  try {
+    const producer = await startupReadAt(dir, 'final-native-startup-milestones-v1.jsonl', 49152),
+      consumer = await startupReadAt(dir, 'final-native-startup-consumer-v1.jsonl', 16384);
+    startupRequire(producer.stable && consumer.stable, 'final snapshot changed');
+    const report = {
+      producer: assertStartupNative(producer.bytes, o),
+      consumer: assertStartupConsumer(consumer.bytes, o),
+    };
+    await startupWriteAt(
+      dir,
+      'startup-validation.json',
+      Buffer.from(JSON.stringify(report) + '\n'),
+    );
+    return report;
+  } finally {
+    await dir.close();
+  }
+}
+
+export function correlateCompanionDiagnostics(
+  frames: Record<string, any>[],
+  sourceEvidence: ReturnType<Fixture['evidence']>,
+  parent: any,
+) {
+  const same = (a: unknown, b: unknown): boolean => {
+    if (a === b) return true;
+    if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false;
+    const ak = Object.keys(a),
+      bk = Object.keys(b);
+    return (
+      ak.length === bk.length &&
+      ak.every((k) => Object.hasOwn(b, k) && same((a as any)[k], (b as any)[k]))
+    );
+  };
+  const one = <T>(rows: T[], name: string): T => {
+    if (rows.length !== 1) throw new Error('Missing or ambiguous original ' + name);
+    return rows[0];
+  };
+  const { completions, completionFaults } = sourceEvidence;
+  if (!completions || !completionFaults) throw new Error('Original completion ledger unavailable');
+  if (
+    sourceEvidence.records.length > 1024 ||
+    completions.length > 1024 ||
+    sourceEvidence.faults.length ||
+    completionFaults.length
+  )
+    throw new Error('Original evidence incomplete');
+  const requests = sourceEvidence.records.filter(
+    (r) =>
+      r.direction === 'request' &&
+      /^accept-changes\.(prepare|execute|reconcile|release)$/.test(r.envelope.method ?? ''),
+  );
+  const joined = requests.map((request) => {
+    const e = request.envelope;
+    const call = one(
+      completions.filter(
+        (c: any) =>
+          c.layer === 'client' &&
+          c.captured === true &&
+          c.method === e.method &&
+          c.socketId === request.socketId &&
+          same(c.params, e.params) &&
+          c.wireRequests?.length === 1 &&
+          c.wireRequests[0].socketId === request.socketId &&
+          c.wireRequests[0].requestId === e.id &&
+          c.wireRequests[0].method === e.method,
+      ),
+      'captured request',
+    );
+    if (
+      !call.clientId ||
+      !call.connectionId ||
+      !call.incarnationId ||
+      !['fulfilled', 'rejected'].includes(call.state)
+    )
+      throw new Error('Original captured future not joined');
+    one(
+      sourceEvidence.allocations.filter(
+        (a) => a.socketId === request.socketId && a.host === request.host,
+      ),
+      'physical allocation',
+    );
+    const response = one(
+      sourceEvidence.records.filter(
+        (r) =>
+          r.direction === 'response' &&
+          r.socketId === request.socketId &&
+          r.host === request.host &&
+          r.envelope.id === e.id,
+      ),
+      'wire response',
+    ).envelope;
+    if (
+      call.state === 'fulfilled'
+        ? Object.hasOwn(response, 'error') || !same(call.value, response.result)
+        : !Object.hasOwn(response, 'error')
+    )
+      throw new Error('Original future/response mismatch');
+    return { request, call, response };
+  });
+  const originalParent = parent?.retained?.execute;
+  const p = originalParent?.reviewExecution?.preparation;
+  if (
+    !p ||
+    originalParent.state !== 'settled' ||
+    originalParent.success !== true ||
+    originalParent.operationId !== p.operationId ||
+    originalParent.reviewExecution.requestId !== p.operationId ||
+    originalParent.reviewExecution.outcome.status !== 'not-attempted' ||
+    originalParent.reviewExecution.gitReceipts.length !== 1 ||
+    originalParent.reviewExecution.gitReceipts[0].stage !== 'commit' ||
+    !same(parent.owner?.root, p.root)
+  )
+    throw new Error('Original retained parent commit prerequisite missing');
+  const prepare = one(
+    joined.filter(
+      (j) =>
+        j.request.envelope.method === 'accept-changes.prepare' &&
+        j.response.result?.reviewPreparation?.operationId === p.operationId,
+    ),
+    'parent preparation',
+  );
+  const execute = one(
+    joined.filter(
+      (j) =>
+        j.request.envelope.method === 'accept-changes.execute' &&
+        j.request.envelope.params?.review?.operationId === p.operationId,
+    ),
+    'parent execution',
+  );
+  if (
+    !same(execute.response.result, originalParent) ||
+    !same(prepare.response.result.reviewPreparation, p) ||
+    !same(prepare.request.envelope.params.review.root, p.root)
+  )
+    throw new Error('Parent receipt provenance mismatch');
+  const parentIpc = one(
+    (sourceEvidence.ipcRecords as any[]).filter(
+      (c) =>
+        c.channel === 'backend:native-review:prepare' &&
+        c.main === true &&
+        c.result?.ok === true &&
+        c.result.result?.preview?.reviewPreparation?.operationId === p.operationId,
+    ),
+    'parent IPC owner',
+  );
+  if (!same(parentIpc.result.result.preview.reviewPreparation, p) || !parentIpc.result.result.id)
+    throw new Error('Parent IPC preview mismatch');
+  const child = one(
+    joined.filter(
+      (j) =>
+        j.request.envelope.method === 'accept-changes.prepare' &&
+        j.request.envelope.params?.review?.choice?.kind === 'afterCommit',
+    ),
+    'child capture',
+  );
+  const choice = child.request.envelope.params.review.choice;
+  if (
+    choice.operationId !== p.operationId ||
+    !same(child.request.envelope.params.review.root, p.root) ||
+    child.request.socketId !== prepare.request.socketId ||
+    child.request.host !== prepare.request.host ||
+    ['clientId', 'connectionId', 'incarnationId'].some((k) => child.call[k] !== prepare.call[k]) ||
+    execute.request.socketId !== prepare.request.socketId
+  )
+    throw new Error('Child original owner mismatch');
+  const childIpc = one(
+    (sourceEvidence.ipcRecords as any[]).filter(
+      (c) =>
+        c.channel === 'backend:native-review:prepare' &&
+        c.main === true &&
+        c.sender === parentIpc.sender &&
+        c.frame === parentIpc.frame &&
+        c.args?.[0]?.companionOf === parentIpc.result.result.id &&
+        same(c.args[0].root, p.root),
+    ),
+    'child IPC capture',
+  );
+  if (!Object.hasOwn(childIpc, 'result') && !Object.hasOwn(childIpc, 'rejected'))
+    throw new Error('Child original IPC not joined');
+  const roots = frames.filter((f) => f.sequence === 1 && f.outcome === 'enter');
+  const childStream = one(
+    roots.filter(
+      (f) =>
+        f.phase === 'request' &&
+        f.method === 'prepare' &&
+        f.daemon === p.scope.daemonId &&
+        f.operation === p.operationId &&
+        f.capture === choice.captureId,
+    ),
+    'child request stream',
+  );
+  const allocated = roots.filter(
+    (f) => f.phase === 'operation' && f.origin_stream === childStream.stream,
+  );
+  if (
+    allocated.length > 1 ||
+    allocated.some((f) => f.daemon !== p.scope.daemonId || f.capture !== choice.captureId)
+  )
+    throw new Error('Ambiguous child allocation');
+  const returned = child.response.result?.reviewPreparation;
+  if (
+    returned &&
+    (allocated.length !== 1 ||
+      returned.operationId !== allocated[0].operation ||
+      !same(returned.root, p.root) ||
+      returned.scope.daemonId !== p.scope.daemonId ||
+      !same(childIpc.result?.result?.preview?.reviewPreparation, returned))
+  )
+    throw new Error('Allocated child and original returned preview differ');
+  const operations = new Map<string, { daemon: string; socket: string; host: number }>();
+  for (const j of joined) {
+    const view = j.response.result?.reviewPreparation;
+    if (view)
+      operations.set(view.operationId, {
+        daemon: view.scope.daemonId,
+        socket: j.request.socketId,
+        host: j.request.host,
+      });
+  }
+  const used = new Set<number>();
+  const links = joined.map((j) => {
+    const e = j.request.envelope,
+      method = e.method.slice('accept-changes.'.length),
+      c = e.params?.review?.choice;
+    const op =
+      method === 'prepare'
+        ? c?.kind === 'afterCommit'
+          ? c.operationId
+          : null
+        : (e.params?.review?.operationId ?? e.params?.operationId);
+    const actual = operations.get(op ?? j.response.result?.reviewPreparation?.operationId);
+    if (!actual || actual.socket !== j.request.socketId || actual.host !== j.request.host)
+      throw new Error('Foreign or unavailable daemon correlation');
+    const root = one(
+      roots.filter(
+        (f) =>
+          f.phase === 'request' &&
+          f.method === method &&
+          f.daemon === actual.daemon &&
+          f.operation === op &&
+          f.capture === (c?.kind === 'afterCommit' ? c.captureId : null),
+      ),
+      'request diagnostic correlation',
+    );
+    if (used.has(root.stream)) throw new Error('Diagnostic stream ambiguously reused');
+    used.add(root.stream);
+    return {
+      stream: root.stream,
+      daemon: root.daemon,
+      operation: root.operation,
+      capture: root.capture,
+      socketId: j.request.socketId,
+      host: j.request.host,
+      requestId: e.id,
+      callId: j.call.callId,
+      state: j.call.state,
+      publicError: Object.hasOwn(j.response, 'error'),
+    };
+  });
+  if (roots.some((f) => f.phase === 'request' && !used.has(f.stream)))
+    throw new Error('Unmatched diagnostic request');
+  for (const f of roots.filter((f) => f.phase === 'operation')) {
+    const request = links.find((l) => l.stream === f.origin_stream);
+    if (
+      !request ||
+      request.daemon !== f.daemon ||
+      request.capture !== f.capture ||
+      (!operations.has(f.operation) && !(allocated.length === 1 && allocated[0] === f))
+    )
+      throw new Error('Foreign operation stream');
+  }
+  return {
+    version: 1,
+    parent: {
+      operationId: p.operationId,
+      daemonId: p.scope.daemonId,
+      root: p.root,
+      handle: parentIpc.result.result.id,
+      sender: parentIpc.sender,
+      frame: parentIpc.frame,
+      owner: parent.owner,
+    },
+    child: {
+      captureId: choice.captureId,
+      stream: childStream.stream,
+      allocatedOperationId: allocated[0]?.operation ?? null,
+      returnedOperationId: returned?.operationId ?? null,
+      handle: childIpc.result?.result?.id ?? null,
+    },
+    links,
+    qualification:
+      'Original wire/future/IPC joins; diagnostic ordinals are not wire IDs; public-error delivery is not protected disclosure or renderer observation',
+  };
+}
+
+export async function retainCompanionBundle(directory: string, destination: string) {
+  await mkdir(destination, { recursive: true, mode: 0o700 });
+  const files: Array<{ path: string; bytes: number; sha256: string }> = [];
+  const visit = async (relative: string) => {
+    for (const entry of await readdir(join(directory, relative), { withFileTypes: true })) {
+      if (entry.name === 'node_modules') continue;
+      const name = posix.join(relative, entry.name),
+        path = join(directory, name);
+      if (entry.isSymbolicLink()) throw new Error('Unexpected emitted output symlink');
+      if (entry.isDirectory()) await visit(name);
+      else if (entry.isFile()) {
+        const bytes = await readFile(path);
+        const target = join(destination, name);
+        await mkdir(dirname(target), { recursive: true, mode: 0o700 });
+        await writeFile(target, bytes, { flag: 'wx', mode: 0o600 });
+        files.push({ path: name, bytes: bytes.length, sha256: hash(bytes) });
+      }
+      if (files.length > 4096) throw new Error('Emitted output inventory bound');
+    }
+  };
+  await visit('');
+  record(destination, 'retained-files', files);
+  return files;
+}
+
+/** Private main observations are evidence, never native or renderer authority. */
+function companionMainObject(value: unknown, keys?: string[]): Record<string, any> {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new Error('Missing companion main evidence object');
+  if (
+    keys &&
+    (Object.keys(value).length !== keys.length || keys.some((key) => !Object.hasOwn(value, key)))
+  )
+    throw new Error('Unexpected companion main evidence fields');
+  return value as Record<string, any>;
+}
+function companionMainRequire(condition: unknown, reason: string): asserts condition {
+  if (!condition) throw new Error('Incomplete companion main evidence: ' + reason);
+}
+function companionMainJournal(value: unknown) {
+  const journal = companionMainObject(value, [
+    'version',
+    'observed',
+    'retained',
+    'dropped',
+    'failed',
+    'recordingComplete',
+    'ownerCompletionObserved',
+    'ownerCompletionLimit',
+    'directObservationFailures',
+    'rows',
+  ]);
+  companionMainRequire(
+    journal.version === 1 &&
+      journal.ownerCompletionObserved === false &&
+      journal.ownerCompletionLimit ===
+        'The public client API exposes no original outer healthCheck join' &&
+      journal.recordingComplete === true &&
+      journal.dropped === 0 &&
+      journal.failed === 0 &&
+      journal.directObservationFailures === 0 &&
+      Array.isArray(journal.rows) &&
+      journal.rows.length <= 128 &&
+      journal.observed === journal.rows.length &&
+      journal.retained === journal.rows.length &&
+      JSON.stringify(journal.rows).length <= 1_048_576,
+    'journal counters, loss, bound or passive qualification',
+  );
+  const rows = journal.rows as Array<Record<string, any>>;
+  const phases = new Set([
+    'direct-enrolled',
+    'direct-member',
+    'direct-owner-enter',
+    'direct-owner-end',
+    'direct-request',
+    'direct-member-retired',
+    'request-enter',
+    'request-settled',
+    'request-owner-unobserved',
+    'socket-event',
+    'renderer-roots-joined',
+    'pool-retirement',
+    'ledger-join-return',
+    'pool-dispose-enter',
+    'pool-dispose-return',
+  ]);
+  for (const [i, value] of rows.entries()) {
+    const row = companionMainObject(value);
+    companionMainRequire(
+      row.sequence === i + 1 && phases.has(row.phase),
+      'journal sequence or phase',
+    );
+    const callFields = ['callId', 'clientId', 'connectionId', 'incarnationId', 'socketId'];
+    const fields: Record<string, string[]> = {
+      'direct-enrolled': ['scopeId'],
+      'direct-member': ['scopeId', 'clientId', 'generation'],
+      'direct-owner-enter': ['scopeId', 'ownerId', 'parentId', 'kind', 'callback', 'admittedAt'],
+      'direct-owner-end': ['scopeId', 'ownerId', 'completedAt', 'state'],
+      'direct-request': [
+        'scopeId',
+        'clientId',
+        'generation',
+        'callId',
+        'ownerId',
+        'site',
+        'observedAt',
+      ],
+      'direct-member-retired': [
+        'scopeId',
+        'clientId',
+        'generation',
+        'instanceId',
+        'ownersJoined',
+        'admissionSealed',
+        'outcome',
+        'failureKinds',
+        'closes',
+      ],
+      'request-enter': [
+        ...callFields,
+        'entryStatus',
+        'owner',
+        ...(row.owner === 'unknown' ? [] : ['module', 'line', 'column']),
+      ],
+      'request-settled': [...callFields, 'state'],
+      'request-owner-unobserved': callFields,
+      'socket-event': ['socketId', 'host', 'event'],
+      'renderer-roots-joined': ['producers', 'seal'],
+      'pool-retirement': [
+        'ownersJoined',
+        'admissionSealed',
+        'outcome',
+        'exclusions',
+        'clients',
+        'failureKinds',
+      ],
+      'ledger-join-return': ['producersClosed', 'pending', 'sealed', 'rows'],
+      'pool-dispose-enter': ['pending'],
+      'pool-dispose-return': ['result', 'ownerJoined'],
+    };
+    companionMainObject(row, ['sequence', 'phase', ...fields[row.phase]]);
+  }
+  return rows;
+}
+
+/** Serialized by the original app.evaluate, never imported into the renderer. */
+function observeCompanionMainActivation() {
+  const fixture = (globalThis as unknown as { nativeReviewFixture?: Fixture }).nativeReviewFixture;
+  return {
+    version: 1,
+    pid: process.pid,
+    ppid: process.ppid,
+    platform: process.platform,
+    ui: process.env.NATIVE_REVIEW_UI === '1',
+    sidebar: process.env.NATIVE_REVIEW_SIDEBAR_UI === '1',
+    diagnostic: process.env.NATIVE_REVIEW_COMPANION_DIAGNOSTIC_6328 === '1',
+    ready: fixture?.ready === true,
+    statusProducers: fixture?.evidence().statusProducers ?? null,
+  };
+}
+export function assertCompanionMainActivation(value: unknown, mainPid: number, workerPid: number) {
+  const row = companionMainObject(value, [
+    'version',
+    'pid',
+    'ppid',
+    'platform',
+    'ui',
+    'sidebar',
+    'diagnostic',
+    'ready',
+    'statusProducers',
+  ]);
+  companionMainRequire(
+    Number.isSafeInteger(mainPid) &&
+      mainPid > 0 &&
+      Number.isSafeInteger(workerPid) &&
+      workerPid > 0 &&
+      mainPid !== workerPid &&
+      row.version === 1 &&
+      row.pid === mainPid &&
+      row.ppid === workerPid &&
+      row.platform === 'linux' &&
+      row.ui === true &&
+      row.sidebar === true &&
+      row.diagnostic === true &&
+      row.ready === true,
+    'actual main identity, mode or ready profile',
+  );
+  companionMainJournal(row.statusProducers);
+  return {
+    activated: true,
+    profile: 'linux-ui-sidebar-companion',
+    completion: 'not asserted',
+  } as const;
+}
+
+/** Direct original identities supplement, never replace, the aggregate retirement fences. */
+function assertDirectStatusOwners(
+  rows: Array<Record<string, any>>,
+  calls: Map<string, Record<string, any>>,
+) {
+  const id = (value: unknown) =>
+    typeof value === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(value);
+  const positive = (value: unknown) => Number.isSafeInteger(value) && Number(value) > 0;
+  const members = new Map<string, Record<string, any>>();
+  const owners = new Map<string, Record<string, any>>();
+  const terminals = new Map<string, Record<string, any>>();
+  const requests = new Map<string, Record<string, any>>();
+  const retired = new Map<string, Record<string, any>>();
+  const generations = new Set<number>(),
+    instances = new Set<string>(),
+    points = new Set<number>();
+  let scope: string | undefined;
+  let aggregate: Record<string, any> | undefined;
+  for (const row of rows) {
+    if (row.phase === 'pool-retirement') {
+      aggregate = row;
+      continue;
+    }
+    if (!row.phase.startsWith('direct-')) continue;
+    companionMainRequire(
+      !aggregate && id(row.scopeId),
+      'direct evidence after aggregate or invalid scope',
+    );
+    if (row.phase === 'direct-enrolled') {
+      companionMainRequire(!scope, 'duplicate enrollment');
+      scope = row.scopeId;
+      continue;
+    }
+    companionMainRequire(scope === row.scopeId, 'foreign or missing enrollment');
+    if (row.phase === 'direct-member') {
+      companionMainRequire(
+        id(row.clientId) &&
+          positive(row.generation) &&
+          !members.has(row.clientId) &&
+          !generations.has(row.generation),
+        'ambiguous original member',
+      );
+      members.set(row.clientId, row);
+      generations.add(row.generation);
+    } else if (row.phase === 'direct-owner-enter') {
+      companionMainRequire(
+        id(row.ownerId) &&
+          !owners.has(row.ownerId) &&
+          positive(row.admittedAt) &&
+          !points.has(row.admittedAt) &&
+          typeof row.kind === 'string' &&
+          row.kind.length > 0 &&
+          row.kind.length <= 64 &&
+          typeof row.callback === 'boolean' &&
+          (row.parentId === null || (id(row.parentId) && owners.has(row.parentId))),
+        'original owner admission',
+      );
+      companionMainRequire(
+        !row.callback || (row.kind === 'healthCheck' && row.parentId === null),
+        'original health callback admission',
+      );
+      owners.set(row.ownerId, row);
+      points.add(row.admittedAt);
+    } else if (row.phase === 'direct-owner-end') {
+      const owner = owners.get(row.ownerId);
+      companionMainRequire(
+        owner &&
+          !terminals.has(row.ownerId) &&
+          positive(row.completedAt) &&
+          !points.has(row.completedAt) &&
+          row.completedAt > owner.admittedAt &&
+          row.state === 'fulfilled',
+        'original owner terminal',
+      );
+      terminals.set(row.ownerId, row);
+      points.add(row.completedAt);
+    } else if (row.phase === 'direct-request') {
+      const call = calls.get(row.callId),
+        owner = owners.get(row.ownerId),
+        member = members.get(row.clientId);
+      companionMainRequire(
+        call &&
+          member &&
+          owner &&
+          row.clientId === call.clientId &&
+          row.generation === member.generation &&
+          call.sequence < row.sequence &&
+          !retired.has(row.clientId) &&
+          !requests.has(row.callId) &&
+          positive(row.observedAt) &&
+          !points.has(row.observedAt) &&
+          row.observedAt > owner.admittedAt &&
+          row.site === owner.kind &&
+          [
+            'healthCheck',
+            'captureLocalDeviceKind',
+            'captureRemoteHostname',
+            'performOpenBackendWindow',
+          ].includes(row.site) &&
+          owner.callback === (row.site === 'healthCheck'),
+        'exact original request owner/member edge',
+      );
+      requests.set(row.callId, row);
+      points.add(row.observedAt);
+    } else if (row.phase === 'direct-member-retired') {
+      const member = members.get(row.clientId);
+      companionMainRequire(
+        member &&
+          row.generation === member.generation &&
+          !retired.has(row.clientId) &&
+          id(row.instanceId) &&
+          !instances.has(row.instanceId) &&
+          row.ownersJoined === true &&
+          row.admissionSealed === true &&
+          row.outcome === 'clean' &&
+          Array.isArray(row.failureKinds) &&
+          row.failureKinds.length === 0,
+        'same original member clean retirement',
+      );
+      retired.set(row.clientId, row);
+      instances.add(row.instanceId);
+    }
+  }
+  companionMainRequire(
+    scope &&
+      aggregate &&
+      members.size > 0 &&
+      members.size === retired.size &&
+      requests.size === calls.size,
+    'complete direct original coverage',
+  );
+  for (const [ownerId, owner] of owners) {
+    const end = terminals.get(ownerId);
+    companionMainRequire(end, 'unsettled original owner');
+    if (owner.parentId !== null) {
+      const parent = owners.get(owner.parentId),
+        parentEnd = terminals.get(owner.parentId);
+      companionMainRequire(
+        parent &&
+          parentEnd &&
+          parent.admittedAt < owner.admittedAt &&
+          parentEnd.completedAt > owner.admittedAt,
+        'original parent admission lifetime',
+      );
+    }
+  }
+  const ownerMembers = new Map<string, string>();
+  for (const request of requests.values()) {
+    const settlements = rows.filter(
+      (row) => row.phase === 'request-settled' && row.callId === request.callId,
+    );
+    const end = terminals.get(request.ownerId),
+      memberEnd = retired.get(request.clientId);
+    companionMainRequire(
+      end &&
+        settlements.length === 1 &&
+        settlements[0]!.state === 'fulfilled' &&
+        request.sequence < settlements[0]!.sequence &&
+        settlements[0]!.sequence < end.sequence &&
+        end.completedAt > request.observedAt &&
+        memberEnd &&
+        end.sequence < memberEnd.sequence,
+      'original callback completion before client retirement',
+    );
+    companionMainRequire(
+      !ownerMembers.has(request.ownerId) || ownerMembers.get(request.ownerId) === request.clientId,
+      'replacement client on original owner',
+    );
+    ownerMembers.set(request.ownerId, request.clientId);
+  }
+  companionMainRequire(
+    aggregate.clients.length === retired.size,
+    'direct member/aggregate cardinality',
+  );
+  for (const member of retired.values()) {
+    const results = aggregate.clients.filter(
+      (client: any) => client.generation === member.generation,
+    );
+    companionMainRequire(
+      results.length === 1 &&
+        ['ownersJoined', 'outcome', 'closes', 'failureKinds'].every(
+          (key) => JSON.stringify(results[0][key]) === JSON.stringify(member[key]),
+        ),
+      'original direct retirement/aggregate correspondence',
+    );
+  }
+}
+
+/** Validates the original aggregate API result; no generation-to-socket identity is invented. */
+async function readCompanionPacket(directory: string, name: string) {
+  if (!/^sidebar-[a-z-]+$/.test(name)) throw new Error('Unreleased sidebar packet');
+  const path = join(directory, name + '.json');
+  const before = await lstat(path);
+  if (
+    !before.isFile() ||
+    before.isSymbolicLink() ||
+    (before.mode & 0o777) !== 0o600 ||
+    before.size > 32 * 1024 * 1024
+  )
+    throw new Error('Incomplete private sidebar packet');
+  const bytes = await readFile(path);
+  const after = await lstat(path);
+  if (
+    before.ino !== after.ino ||
+    before.dev !== after.dev ||
+    before.mtimeMs !== after.mtimeMs ||
+    bytes.length !== before.size ||
+    after.size !== before.size
+  )
+    throw new Error('Original sidebar packet changed during read');
+  return companionMainObject(JSON.parse(bytes.toString('utf8')));
+}
+
+async function retainCompanionMemberDisposal(directory: string, destination: string) {
+  const name = 'sidebar-member-original-disposal';
+  const value = await readCompanionPacket(directory, name);
+  const bytes = await readFile(join(directory, name + '.json'));
+  if (!isDeepStrictEqual(JSON.parse(bytes.toString('utf8')), value))
+    throw new Error('Original Member receipt changed before retention');
+  await writeFile(join(destination, 'final-' + name + '.json'), bytes, { flag: 'wx', mode: 0o600 });
+  record(destination, 'member-disposal-retention', {
+    name: name + '.json',
+    bytes: bytes.length,
+    sha256: hash(bytes),
+    mode: 0o600,
+    originalLocation: 'body-owned evidence root',
+    scope: 'nonfinal original renderer/root/ledger receipt',
+  });
+  return value;
+}
+
+function companionDiagnosticParent(profile: CompanionDiagnosticProfile, packet: unknown) {
+  companionMainRequire(companionDiagnosticProfiles.includes(profile), 'original immutable profile');
+  const value = companionMainObject(companionMainObject(packet).value);
+  const parent = companionMainObject(profile.nestedParent ? value.parent : value);
+  companionMainRequire(
+    parent.owner?.attemptId === parent.attemptId &&
+      typeof parent.attemptId === 'string' &&
+      !!parent.retained?.execute,
+    'profile original parent',
+  );
+  return parent;
+}
+
+function assertCompanionDiagnosticOutcome(
+  profile: CompanionDiagnosticProfile,
+  packet: unknown,
+  parent: Record<string, any>,
+  correlation: ReturnType<typeof correlateCompanionDiagnostics>,
+) {
+  companionMainRequire(
+    companionDiagnosticProfiles.includes(profile) && profile.index !== 9,
+    'creation or Member outcome profile',
+  );
+  const saved = companionMainObject(packet),
+    value = companionMainObject(saved.value);
+  const result = companionMainObject(value.result),
+    original = result.retained?.execute;
+  const preparation = original?.reviewExecution?.preparation;
+  companionMainRequire(
+    isDeepStrictEqual(value.parent, parent) &&
+      result.attemptId === result.owner?.attemptId &&
+      result.attemptId !== parent.attemptId &&
+      ['root', 'admission', 'hostContext'].every((key) =>
+        isDeepStrictEqual(result.owner[key], parent.owner[key]),
+      ) &&
+      isDeepStrictEqual(parent.owner, correlation.parent.owner) &&
+      preparation?.operationId === correlation.child.returnedOperationId &&
+      preparation.operationId === correlation.child.allocatedOperationId &&
+      preparation.operationId !== correlation.parent.operationId &&
+      isDeepStrictEqual(preparation.root, parent.owner.root) &&
+      preparation.scope.daemonId === correlation.parent.daemonId &&
+      original.operationId === preparation.operationId &&
+      original.state === 'settled' &&
+      original.success === true &&
+      original.reviewExecution.requestId === preparation.operationId &&
+      original.reviewExecution.outcome.status === profile.outcome &&
+      isDeepStrictEqual(original.reviewExecution.gitReceipts, []) &&
+      original.reviewExecution.publication.state === 'local-ahead' &&
+      saved.hosts?.length === 2 &&
+      saved.hosts[0].effects.posts === profile.posts &&
+      saved.hosts.every((host: any) => host.effects.pushes === 0),
+    'original case outcome and local-versus-remote effects',
+  );
+  const rows = companionMainObject(value.renderer).attempts;
+  companionMainRequire(
+    Array.isArray(rows) && rows.filter((row: any) => isDeepStrictEqual(row, result)).length === 1,
+    'original rendered child',
+  );
+  const source = companionMainObject(saved.source);
+  const calls = source.completions.filter(
+    (call: any) =>
+      call.layer === 'client' &&
+      call.captured === true &&
+      call.method === 'accept-changes.execute' &&
+      call.params?.review?.operationId === preparation.operationId,
+  );
+  const ipc = source.ipcRecords.filter(
+    (call: any) =>
+      call.main === true &&
+      call.channel === 'backend:native-review:execute' &&
+      call.args?.[0]?.id === correlation.child.handle,
+  );
+  companionMainRequire(
+    calls.length === 1 &&
+      calls[0].state === 'fulfilled' &&
+      isDeepStrictEqual(calls[0].value, original) &&
+      correlation.links.filter(
+        (link) =>
+          link.callId === calls[0].callId &&
+          link.operation === preparation.operationId &&
+          link.socketId === calls[0].socketId &&
+          link.state === 'fulfilled' &&
+          !link.publicError,
+      ).length === 1 &&
+      ipc.length === 1 &&
+      ipc[0].sender === correlation.parent.sender &&
+      ipc[0].frame === correlation.parent.frame &&
+      ipc[0].result?.ok === true &&
+      isDeepStrictEqual(ipc[0].result.result.execute, original),
+    'original child result transfer',
+  );
+  return {
+    profile: profile.title,
+    outcome: profile.outcome,
+    posts: profile.posts,
+    parent: correlation.parent.operationId,
+    child: preparation.operationId,
+    submittedPayloadEquality: 'not asserted',
+    remoteHeadEquality: 'not asserted',
+  };
+}
+
+/** Original synchronous IPC-to-client edges; saved backend IDs are not client identities. */
+function companionDocumentReads(
+  source: Record<string, any>,
+  sender: number,
+  pathname: string,
+  from: number,
+  until: number,
+) {
+  const id = (value: unknown): value is string =>
+    typeof value === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(value);
+  const ipcIds = new Set<string>();
+  for (const row of source.completions.filter((row: any) => row.layer === 'ipc')) {
+    companionMainRequire(
+      id(row.ipcInvocationId) && !ipcIds.has(row.ipcInvocationId),
+      'unique original IPC invocation identity',
+    );
+    ipcIds.add(row.ipcInvocationId);
+  }
+  const reads = source.completions.filter(
+    (row: any) =>
+      row.layer === 'ipc' &&
+      row.channel === 'backend:request' &&
+      row.sender === sender &&
+      row.sequence >= from &&
+      row.sequence < until &&
+      ['principal.me', 'workspace.list'].includes(row.args?.method),
+  );
+  companionMainRequire(
+    ['principal.me', 'workspace.list'].every((method) =>
+      reads.some((row: any) => row.args.method === method),
+    ),
+    'both original admitted document reads',
+  );
+  const linked = reads.map((ipc: Record<string, any>) => {
+    const document = new URL(ipc.document);
+    companionMainRequire(
+      ipc.main === true &&
+        Number.isSafeInteger(ipc.frame) &&
+        ipc.frame > 0 &&
+        document.protocol === 'http:' &&
+        document.hostname === '127.0.0.1' &&
+        document.port.length > 0 &&
+        document.pathname === pathname &&
+        !document.search &&
+        !document.hash &&
+        ipc.state === 'fulfilled' &&
+        ipc.value?.ok === true &&
+        ipc.args.metadataOnly === true,
+      'original main-frame document read',
+    );
+    const clients = source.completions.filter(
+      (row: any) => row.layer === 'client' && row.ipcInvocationId === ipc.ipcInvocationId,
+    );
+    companionMainRequire(clients.length === 1, 'exact synchronous IPC client edge');
+    const call = clients[0];
+    companionMainRequire(
+      call.sequence > ipc.sequence &&
+        call.sequence < until &&
+        call.method === ipc.args.method &&
+        call.captured === false &&
+        call.state === 'fulfilled' &&
+        id(call.callId) &&
+        id(call.clientId) &&
+        id(call.socketId) &&
+        source.completions.filter((row: any) => row.callId === call.callId).length === 1 &&
+        Array.isArray(call.wireRequests) &&
+        call.wireRequests.length === 1,
+      'original client invocation completion',
+    );
+    const wire = call.wireRequests[0];
+    const packets = source.records.filter(
+      (row: any) => row.socketId === call.socketId && row.envelope?.id === wire.requestId,
+    );
+    const request = packets.filter((row: any) => row.direction === 'request');
+    const response = packets.filter((row: any) => row.direction === 'response');
+    companionMainRequire(
+      wire.socketId === call.socketId &&
+        wire.method === call.method &&
+        request.length === 1 &&
+        response.length === 1 &&
+        request[0].host === 0 &&
+        response[0].host === 0 &&
+        request[0].envelope.method === call.method &&
+        request[0].envelope.callId === call.callId &&
+        response[0].envelope.method === call.method &&
+        !Object.hasOwn(response[0].envelope, 'error') &&
+        isDeepStrictEqual(response[0].envelope.result, call.value) &&
+        source.allocations.filter((row: any) => row.socketId === call.socketId && row.host === 0)
+          .length === 1 &&
+        (call.method !== 'workspace.list' || (id(call.connectionId) && id(call.incarnationId))),
+      'original allocation wire and result edge',
+    );
+    return { ipc, call, document: document.origin };
+  });
+  const first = linked[0];
+  companionMainRequire(
+    linked.every(
+      (row: (typeof linked)[number]) =>
+        row.ipc.document === first.ipc.document &&
+        row.ipc.frame === first.ipc.frame &&
+        row.call.clientId === first.call.clientId &&
+        row.call.socketId === first.call.socketId,
+    ),
+    'one original document and client generation',
+  );
+  return {
+    linked,
+    frame: first.ipc.frame,
+    origin: first.document,
+    client: first.call.clientId,
+    socket: first.call.socketId,
+  };
+}
+
+function assertCompanionMemberTransition(
+  source: Record<string, any>,
+  finalReceipt: Record<string, any>,
+  input: { disposal: unknown; member: unknown; before: unknown; denied: unknown },
+) {
+  const receipt = companionMainObject(input.disposal, ['producers', 'joined']);
+  const member = companionMainObject(input.member),
+    before = companionMainObject(input.before),
+    denied = companionMainObject(input.denied);
+  const journal = companionMainJournal(source.statusProducers);
+  const roots = journal.filter(
+    (row) => row.phase === 'renderer-roots-joined' && row.seal === false,
+  );
+  const ledgers = journal.filter(
+    (row) => row.phase === 'ledger-join-return' && row.sealed === false,
+  );
+  companionMainRequire(
+    roots.length === 1 && ledgers.length === 1 && ledgers[0].sequence === roots[0].sequence + 1,
+    'one ordered original Member join',
+  );
+  const joined = companionMainObject(receipt.joined, [
+    'producersClosed',
+    'pending',
+    'sealed',
+    'rows',
+  ]);
+  companionMainRequire(
+    joined.producersClosed === true &&
+      joined.pending === 0 &&
+      joined.sealed === false &&
+      Number.isSafeInteger(joined.rows) &&
+      joined.rows > 0 &&
+      joined.rows < source.completions.length &&
+      ['producersClosed', 'pending', 'sealed', 'rows'].every(
+        (key) => joined[key] === ledgers[0][key],
+      ),
+    'exact intermediate unsealed row count',
+  );
+  companionMainRequire(
+    Array.isArray(receipt.producers) && receipt.producers.length === 2,
+    'two intermediate original roots',
+  );
+  const names = [
+    'connectionsSaga',
+    'daemonEventsSaga',
+    'principalSaga',
+    'lifecycleReadSaga',
+    'repositoryContextSaga',
+    'gitReadSaga',
+    'acceptChangesStatusSaga',
+  ];
+  const producers = new Map<string, Record<string, any>>(),
+    senders = new Set<number>();
+  for (const raw of receipt.producers) {
+    const producer = companionMainObject(raw, ['key', 'sender', 'receipt']),
+      r = companionMainObject(producer.receipt);
+    companionMainRequire(
+      ['host-A', 'local-B'].includes(producer.key) &&
+        !producers.has(producer.key) &&
+        Number.isSafeInteger(producer.sender) &&
+        producer.sender > 0 &&
+        !senders.has(producer.sender) &&
+        r.route?.startupSettled === true &&
+        r.route.closed === true &&
+        r.producersClosed === true &&
+        isDeepStrictEqual(r.faults, []) &&
+        Array.isArray(r.tasks) &&
+        r.tasks.length === 7 &&
+        names.every(
+          (name) =>
+            r.tasks.filter(
+              (task: any) =>
+                task.name === name && task.iteratorDone === true && task.joined === true,
+            ).length === 1,
+        ),
+      'exact intermediate seven-root receipt',
+    );
+    producers.set(producer.key, producer);
+    senders.add(producer.sender);
+  }
+  const finalA = finalReceipt.producers.find((producer: any) => producer.key === 'host-A');
+  const finalB = finalReceipt.producers.find((producer: any) => producer.key === 'local-B');
+  const original = producers.get('host-A')!,
+    local = producers.get('local-B')!;
+  const originalState = companionMainObject(original.receipt.final);
+  const next = companionMainObject(finalA?.receipt.final);
+  const memberState = companionMainObject(member.value?.renderer);
+  const guest = companionMainObject(before.value),
+    refused = companionMainObject(denied.value);
+  const identity = (state: Record<string, any>) => ({
+    role: state.role,
+    admission: state.admission,
+    workspaceAdmission: state.workspaceAdmission,
+    windowBackendId: state.windowBackendId,
+    workspaces: state.workspaces,
+  });
+  companionMainRequire(
+    original.sender === finalA?.sender &&
+      isDeepStrictEqual(local, finalB) &&
+      originalState.role === 'member' &&
+      next.role === 'guest' &&
+      typeof originalState.admission === 'string' &&
+      originalState.admission.length > 0 &&
+      typeof next.admission === 'string' &&
+      next.admission.length > 0 &&
+      originalState.admission !== next.admission &&
+      originalState.workspaceAdmission === originalState.admission &&
+      next.workspaceAdmission === next.admission &&
+      isDeepStrictEqual(identity(originalState), identity(memberState)) &&
+      isDeepStrictEqual(identity(next), identity(guest)) &&
+      isDeepStrictEqual(identity(next), identity(refused)) &&
+      originalState.workspaces.length === 1 &&
+      next.workspaces.length === 1 &&
+      originalState.workspaces[0].id === next.workspaces[0].id,
+    'original Member to fresh Guest document and cached local root receipt',
+  );
+  const admission = (state: Record<string, any>) => {
+    const value = JSON.parse(state.admission);
+    const context = JSON.parse(value[0]);
+    companionMainRequire(
+      value.length === 3 &&
+        context.length === 3 &&
+        context[0] === state.windowBackendId &&
+        Number.isSafeInteger(value[1]) &&
+        value[1] >= 0 &&
+        typeof value[2] === 'string' &&
+        value[2].length > 0 &&
+        state.hasReceivedList === true &&
+        state.workspaceLoaded === true &&
+        context[2] === state.subscriptionGeneration &&
+        Number.isSafeInteger(state.subscriptionGeneration) &&
+        state.subscriptionGeneration > 0,
+      'actual current admitted principal and workspace read',
+    );
+    return value[2];
+  };
+  companionMainRequire(
+    admission(originalState) !== admission(next) &&
+      typeof originalState.workspaces[0].hostContext === 'string' &&
+      originalState.workspaces[0].hostContext.length > 0 &&
+      next.workspaces[0].hostContext === null,
+    'distinct original Member and Guest admissions with Guest refusal',
+  );
+  const memberReads = companionDocumentReads(source, original.sender, '/host-A', 0, joined.rows);
+  const guestReads = companionDocumentReads(
+    source,
+    original.sender,
+    '/host-A-next',
+    joined.rows,
+    source.completions.length,
+  );
+  companionMainRequire(
+    memberReads.frame !== guestReads.frame &&
+      memberReads.origin === guestReads.origin &&
+      memberReads.client !== guestReads.client &&
+      memberReads.socket !== guestReads.socket,
+    'fresh original document client and allocation independent of saved backend identity',
+  );
+  for (const [read, lower, upper] of [
+    [memberReads, 0, roots[0].sequence],
+    [guestReads, ledgers[0].sequence, journal.length + 1],
+  ] as const) {
+    const enrolled = journal.filter(
+      (row) => row.phase === 'direct-member' && row.clientId === read.client,
+    );
+    companionMainRequire(
+      enrolled.length === 1 && enrolled[0].sequence > lower && enrolled[0].sequence < upper,
+      'original document client direct member phase',
+    );
+  }
+  for (const [packet, reads] of [
+    [member, memberReads],
+    [before, guestReads],
+    [denied, guestReads],
+  ] as const) {
+    companionMainRequire(
+      reads.linked.every(
+        ({ ipc, call }: (typeof reads.linked)[number]) =>
+          isDeepStrictEqual(packet.source.completions?.[ipc.sequence], ipc) &&
+          isDeepStrictEqual(packet.source.completions?.[call.sequence], call),
+      ),
+      'original read identity retained at the actual body checkpoint',
+    );
+  }
+  const prefix = source.completions.slice(0, joined.rows);
+  companionMainRequire(
+    prefix.every(
+      (row: any, i: number) =>
+        row.sequence === i && ['fulfilled', 'rejected', 'thrown'].includes(row.state),
+    ),
+    'joined original ledger prefix',
+  );
+  for (const packet of [before, denied]) {
+    const saved = companionMainObject(packet.source),
+      rows = companionMainJournal(saved.statusProducers);
+    companionMainRequire(
+      isDeepStrictEqual(saved.faults, []) &&
+        isDeepStrictEqual(saved.completionFaults, []) &&
+        rows.length >= ledgers[0].sequence &&
+        rows.length < journal.length &&
+        rows.every((row, i) => isDeepStrictEqual(row, journal[i])) &&
+        Array.isArray(saved.completions) &&
+        saved.completions.length > joined.rows &&
+        isDeepStrictEqual(saved.completions.slice(0, joined.rows), prefix),
+      'original unsealed prefix before fresh Guest work',
+    );
+  }
+  const memberRows = companionMainJournal(companionMainObject(member.source).statusProducers);
+  companionMainRequire(
+    memberRows.length < roots[0].sequence &&
+      memberRows.every((row, i) => isDeepStrictEqual(row, journal[i])),
+    'Member body precedes its original root join',
+  );
+  const native = (packet: Record<string, any>) =>
+    packet.source.records.filter(
+      (row: any) =>
+        row.direction === 'request' &&
+        /^accept-changes\.(prepare|execute|reconcile)$/.test(row.envelope.method),
+    );
+  companionMainRequire(
+    isDeepStrictEqual(native(before), native(denied)) &&
+      before.hosts?.length === 2 &&
+      denied.hosts?.length === 2 &&
+      before.hosts.every((host: any, i: number) =>
+        isDeepStrictEqual(host.effects, denied.hosts[i].effects),
+      ),
+    'original Guest no added commands or effects',
+  );
+  return {
+    roots: roots[0].sequence,
+    ledger: ledgers[0].sequence,
+    rows: joined.rows,
+    localReceipt: 'original cached receipt, not fresh work',
+  };
+}
+
+export function assertCompanionMainOwnership(
+  value: unknown,
+  quiescence: unknown,
+  activationJournal: unknown,
+  memberTransition?: { disposal: unknown; member: unknown; before: unknown; denied: unknown },
+) {
+  const source = companionMainObject(value);
+  companionMainRequire(JSON.stringify(source).length <= 32 * 1024 * 1024, 'main evidence bound');
+  const rows = companionMainJournal(source.statusProducers);
+  const initial = companionMainJournal(activationJournal);
+  companionMainRequire(
+    initial.length <= rows.length &&
+      initial.every((row, index) => JSON.stringify(row) === JSON.stringify(rows[index])),
+    'original activation journal prefix',
+  );
+  const empty = (value: unknown) => Array.isArray(value) && value.length === 0;
+  const positive = (value: unknown) => Number.isSafeInteger(value) && Number(value) > 0;
+  const id = (value: unknown) =>
+    typeof value === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(value);
+  companionMainRequire(
+    empty(source.faults) &&
+      empty(source.completionFaults) &&
+      source.pending === 0 &&
+      source.outstandingOriginals === 0 &&
+      Array.isArray(source.completions) &&
+      source.completions.length <= 1024 &&
+      Array.isArray(source.records) &&
+      source.records.length <= 1024 &&
+      Array.isArray(source.allocations),
+    'original fault-sensitive completion fence',
+  );
+  const allocations = new Map<string, number>();
+  for (const raw of source.allocations) {
+    const row = companionMainObject(raw, ['socketId', 'host', 'destroyed']);
+    companionMainRequire(
+      id(row.socketId) &&
+        (row.host === 0 || row.host === 1) &&
+        row.destroyed === true &&
+        !allocations.has(row.socketId),
+      'original allocation',
+    );
+    allocations.set(row.socketId, row.host);
+  }
+  companionMainRequire(
+    allocations.size >= 2 && allocations.size <= 128,
+    'nonempty two-host allocation inventory',
+  );
+  const receipt = companionMainObject(quiescence, ['producers', 'joined']);
+  companionMainRequire(
+    Array.isArray(receipt.producers) && receipt.producers.length === 2,
+    'two original renderer producers',
+  );
+  const keys = new Set<string>(),
+    senders = new Set<number>();
+  const taskNames = [
+    'connectionsSaga',
+    'daemonEventsSaga',
+    'principalSaga',
+    'lifecycleReadSaga',
+    'repositoryContextSaga',
+    'gitReadSaga',
+    'acceptChangesStatusSaga',
+  ];
+  for (const raw of receipt.producers) {
+    const producer = companionMainObject(raw, ['key', 'sender', 'receipt']);
+    companionMainRequire(
+      ['host-A', 'local-B'].includes(producer.key) &&
+        !keys.has(producer.key) &&
+        positive(producer.sender) &&
+        !senders.has(producer.sender),
+      'renderer identity',
+    );
+    keys.add(producer.key);
+    senders.add(producer.sender);
+    const r = companionMainObject(producer.receipt);
+    companionMainRequire(
+      r.route?.startupSettled === true &&
+        r.route.closed === true &&
+        r.producersClosed === true &&
+        empty(r.faults) &&
+        Array.isArray(r.tasks) &&
+        r.tasks.length === 7,
+      'original seven-root receipt',
+    );
+    for (const name of taskNames)
+      companionMainRequire(
+        r.tasks.filter(
+          (task: any) => task.name === name && task.iteratorDone === true && task.joined === true,
+        ).length === 1,
+        'original root join',
+      );
+  }
+  const intermediate = memberTransition
+    ? assertCompanionMemberTransition(source, receipt, memberTransition)
+    : undefined;
+  let intermediateRoots = false,
+    intermediateLedger = false;
+  const calls = new Map<string, Record<string, any>>(),
+    settled = new Set<string>(),
+    closed = new Set<string>();
+  let roots = 0,
+    retirement = 0,
+    ledger = 0,
+    closeCount = 0;
+  for (const row of rows) {
+    const base = ['sequence', 'phase'];
+    const callFields = ['callId', 'clientId', 'connectionId', 'incarnationId', 'socketId'];
+    if (row.phase.startsWith('direct-')) continue;
+    if (row.phase === 'request-enter') {
+      companionMainObject(row, [
+        ...base,
+        ...callFields,
+        'entryStatus',
+        'owner',
+        ...(row.owner === 'unknown' ? [] : ['module', 'line', 'column']),
+      ]);
+      companionMainRequire(
+        !retirement &&
+          id(row.callId) &&
+          id(row.clientId) &&
+          ['connectionId', 'incarnationId', 'socketId'].every(
+            (key) => row[key] === null || id(row[key]),
+          ) &&
+          (row.socketId === null || allocations.has(row.socketId)) &&
+          !calls.has(row.callId) &&
+          ['connecting', 'connected', 'disconnected'].includes(row.entryStatus) &&
+          (row.owner === 'unknown' ||
+            ([
+              'healthCheck',
+              'captureLocalDeviceKind',
+              'captureRemoteHostname',
+              'performOpenBackendWindow',
+            ].includes(row.owner) &&
+              /^backend\.ipc(?:-[A-Za-z0-9_-]+\.js|\.ts)$/.test(row.module) &&
+              /^\d+$/.test(row.line) &&
+              /^\d+$/.test(row.column))),
+        'original status owner',
+      );
+      calls.set(row.callId, row);
+    } else if (row.phase === 'request-settled') {
+      companionMainObject(row, [...base, ...callFields, 'state']);
+      const original = calls.get(row.callId);
+      const matches = source.completions.filter(
+        (call: any) =>
+          call.layer === 'client' && call.method === 'host.status' && call.callId === row.callId,
+      );
+      companionMainRequire(
+        !retirement &&
+          original &&
+          !settled.has(row.callId) &&
+          row.state === 'fulfilled' &&
+          matches.length === 1 &&
+          matches[0].state === row.state &&
+          callFields.every((key) => original[key] === row[key] && matches[0][key] === row[key]),
+        'original status settlement identity',
+      );
+      settled.add(row.callId);
+    } else if (row.phase === 'socket-event') {
+      companionMainObject(row, [...base, 'socketId', 'host', 'event']);
+      companionMainRequire(
+        !retirement &&
+          allocations.has(row.socketId) &&
+          allocations.get(row.socketId) === row.host &&
+          ['end', 'close'].includes(row.event),
+        'original socket event',
+      );
+      if (row.event === 'close') {
+        companionMainRequire(!closed.has(row.socketId), 'duplicate original facade close');
+        closed.add(row.socketId);
+      }
+    } else if (row.phase === 'renderer-roots-joined') {
+      companionMainObject(row, [...base, 'producers', 'seal']);
+      companionMainRequire(
+        !retirement && row.producers === 2 && typeof row.seal === 'boolean',
+        'renderer root phase',
+      );
+      if (row.seal) {
+        companionMainRequire(!roots, 'duplicate final root join');
+        roots = row.sequence;
+      } else {
+        companionMainRequire(
+          intermediate && !intermediateRoots && !roots && row.sequence === intermediate.roots,
+          'matched nonfinal Member root join',
+        );
+        intermediateRoots = true;
+      }
+    } else if (row.phase === 'pool-retirement') {
+      companionMainObject(row, [
+        ...base,
+        'ownersJoined',
+        'admissionSealed',
+        'outcome',
+        'exclusions',
+        'clients',
+        'failureKinds',
+      ]);
+      companionMainRequire(
+        roots &&
+          !retirement &&
+          calls.size === settled.size &&
+          closed.size === allocations.size &&
+          row.ownersJoined === true &&
+          row.admissionSealed === true &&
+          row.outcome === 'clean' &&
+          empty(row.exclusions) &&
+          empty(row.failureKinds) &&
+          Array.isArray(row.clients) &&
+          row.clients.length > 0 &&
+          row.clients.length <= 128,
+        'original aggregate pool retirement',
+      );
+      const generations = new Set<number>();
+      for (const raw of row.clients) {
+        const client = companionMainObject(raw, [
+          'generation',
+          'ownersJoined',
+          'outcome',
+          'closes',
+          'failureKinds',
+        ]);
+        companionMainRequire(
+          positive(client.generation) &&
+            !generations.has(client.generation) &&
+            client.ownersJoined === true &&
+            client.outcome === 'clean' &&
+            empty(client.failureKinds) &&
+            Array.isArray(client.closes) &&
+            client.closes.length > 0 &&
+            client.closes.length <= 128,
+          'original client aggregate',
+        );
+        generations.add(client.generation);
+        for (const rawClose of client.closes) {
+          const close = companionMainObject(rawClose, ['destroyRequested', 'closeObserved']);
+          companionMainRequire(
+            close.destroyRequested === true && close.closeObserved === true,
+            'original facade close join',
+          );
+          closeCount++;
+        }
+      }
+      companionMainRequire(
+        closeCount === closed.size,
+        'aggregate close count (not an identity mapping)',
+      );
+      retirement = row.sequence;
+    } else if (row.phase === 'ledger-join-return') {
+      companionMainObject(row, [...base, 'producersClosed', 'pending', 'sealed', 'rows']);
+      if (row.sealed === false) {
+        companionMainRequire(
+          intermediate &&
+            intermediateRoots &&
+            !intermediateLedger &&
+            !roots &&
+            !retirement &&
+            row.sequence === intermediate.ledger &&
+            row.producersClosed === true &&
+            row.pending === 0 &&
+            row.rows === intermediate.rows,
+          'matched unsealed Member ledger',
+        );
+        intermediateLedger = true;
+        continue;
+      }
+      companionMainRequire(
+        retirement &&
+          !ledger &&
+          row.producersClosed === true &&
+          row.pending === 0 &&
+          row.sealed === true &&
+          row.rows === source.completions.length,
+        'original sealed ledger',
+      );
+      const joined = companionMainObject(receipt.joined, [
+        'producersClosed',
+        'pending',
+        'sealed',
+        'rows',
+      ]);
+      companionMainRequire(
+        ['producersClosed', 'pending', 'sealed', 'rows'].every((key) => joined[key] === row[key]),
+        'original quiescence ledger receipt',
+      );
+      ledger = row.sequence;
+    } else throw new Error('Incomplete companion main evidence: unknown owner or legacy disposal');
+  }
+  companionMainRequire(
+    roots > 0 && retirement > roots && ledger > retirement && ledger === rows.length,
+    'complete ordered final ownership evidence',
+  );
+  companionMainRequire(
+    !intermediate || (intermediateRoots && intermediateLedger),
+    'Member phase consumed',
+  );
+  assertDirectStatusOwners(rows, calls);
+  return {
+    complete: true,
+    scope: 'original main pool aggregate',
+    privateTicketIdentity: 'not exposed',
+    facadeCloses: closeCount,
+    nativeStop: 'not asserted',
+  } as const;
+}
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+const evidence = process.env.NATIVE_REVIEW_EVIDENCE_DIR;
+const executable = process.env.NATIVE_REVIEW_DRIVER;
+const source = process.env.NATIVE_REVIEW_DRIVER_SOURCE;
+if (!evidence || !executable || !source)
+  throw new Error('Explicit evidence, pinned executable and frozen source required');
+const diagnosticMode = companionDiagnosticMode(process.env);
+const executableHash = diagnosticMode
+  ? companionDiagnosticIdentity.executableSha256
+  : 'caa06ad0c82bdde2899eae3d2fc9476003f9256c5a29e5315212fcfd28ba6f5a';
+const identity = {
+  sourceCommit: diagnosticMode
+    ? companionDiagnosticIdentity.sourceCommit
+    : '28a28e058d39533f74e46e1ce7ea15968fc6229b',
+  sourceTree: diagnosticMode
+    ? companionDiagnosticIdentity.sourceTree
+    : 'ace95266ff66ad82020fa7014f531f8266df020d',
+  executableSha256: executableHash,
+  sourceSha256: '',
+};
+const groups = [
+  ['01 routing and explicit prepared plans', ['frontend']],
+  ['02 member guest and immutable claims', ['frontend', 'held-stop']],
+  ['03 original history and authority retirement', ['frontend', 'held-stop']],
+  ['04 admitted work and document socket lifetime', ['frontend', 'held-stop']],
+  ['05 uncertain original POST without replay', ['frontend']],
+] as const;
+const uiGroups = [
+  ['06 UI Owner explicit create and cancellation', ['frontend']],
+  ['07 UI Member reuse closure and Guest denial', ['frontend', 'held-stop']],
+  ['08 UI uncertain POST and original Check result', ['frontend']],
+] as const;
+const sidebarGroups = [
+  ['09 UI sidebar staged commit and child creation', ['frontend']],
+  ['10 UI sidebar held child close and original receipts', ['frontend', 'held-stop']],
+  ['11 UI sidebar Member reuse and Guest refusal', ['frontend', 'held-stop']],
+] as const;
+const sidebarGrep =
+  '(09 UI sidebar staged commit and child creation|10 UI sidebar held child close and original receipts|11 UI sidebar Member reuse and Guest refusal)$';
+export function assertSidebarSelection(env: NodeJS.ProcessEnv, argv: string[]): boolean {
+  const diagnostic = companionDiagnosticMode(env);
+  const sidebar = env.NATIVE_REVIEW_SIDEBAR_UI === '1';
+  if (env.NATIVE_REVIEW_SIDEBAR_UI !== undefined && !sidebar)
+    throw new Error('Invalid sidebar mode');
+  if (!sidebar) return false;
+  if (env.NATIVE_REVIEW_UI !== '1') throw new Error('Sidebar requires UI mode');
+  const values = (name: string) =>
+    argv.flatMap((arg, i) =>
+      arg === name ? [argv[i + 1]] : arg.startsWith(name + '=') ? [arg.slice(name.length + 1)] : [],
+    );
+  if (
+    values('--grep').length !== 1 ||
+    values('--grep')[0] !==
+      (diagnostic ? selectCompanionDiagnosticProfile(argv).grep : sidebarGrep) ||
+    argv.some(
+      (arg) =>
+        arg.startsWith('-g') ||
+        (diagnostic &&
+          (/^-[^-]/.test(arg) ||
+            arg.startsWith('--project') ||
+            arg.startsWith('--headed') ||
+            arg.startsWith('--max-failures'))) ||
+        arg.startsWith('--repeat-each') ||
+        arg.startsWith('--shard') ||
+        arg.startsWith('--grep-invert') ||
+        arg === '--debug' ||
+        arg === '--ui',
+    ) ||
+    values('--workers').length !== 1 ||
+    values('--workers')[0] !== '1' ||
+    values('--retries').length !== 1 ||
+    values('--retries')[0] !== '0'
+  )
+    throw new Error('Exactly the three sidebar cases, one worker and no retries required');
+  return true;
+}
+const uiMode = process.env.NATIVE_REVIEW_UI === '1';
+const originalSelection =
+  process.env.NATIVE_REVIEW_SIDEBAR_UI !== '1' || process.env.TEST_WORKER_INDEX === undefined
+    ? process.argv.slice(2)
+    : JSON.parse(process.env.NATIVE_REVIEW_SIDEBAR_SELECTION ?? 'null');
+if (!Array.isArray(originalSelection) || !originalSelection.every((arg) => typeof arg === 'string'))
+  throw new Error('Original CLI selection missing');
+const sidebarMode = assertSidebarSelection(process.env, originalSelection);
+const diagnosticProfile = diagnosticMode
+  ? selectCompanionDiagnosticProfile(originalSelection)
+  : undefined;
+if (sidebarMode && process.env.TEST_WORKER_INDEX === undefined) {
+  if (process.env.NATIVE_REVIEW_SIDEBAR_SELECTION)
+    throw new Error('Inherited CLI must originate in this runner');
+  process.env.NATIVE_REVIEW_SIDEBAR_SELECTION = JSON.stringify(originalSelection);
+}
+let bundle: string;
+
+/** Owns diagnostic setup only; admission closure is not cancellation. */
+function createCompanionSetupOwner(failed: () => boolean, persist: (value: unknown) => void) {
+  const id = randomUUID();
+  const origin = process.hrtime.bigint();
+  const rows: Array<{ sequence: number; elapsedNs: string; phase: string; kind: string }> = [];
+  let sequence = 0;
+  let dropped = 0;
+  let writesFailed = 0;
+  let closed = false;
+  let ready = false;
+  let allocated: string | undefined;
+  let original: Promise<void> | undefined;
+  let settlement: 'pending' | 'fulfilled' | 'rejected' = 'pending';
+  let primary: { error: unknown } | undefined;
+  let child: ChildProcess | undefined;
+  let childClose: Promise<void> | undefined;
+  let childTerminal: { code: number | null; signal: NodeJS.Signals | null } | undefined;
+  let archive: Promise<unknown> | undefined;
+  let archiveState: 'unattempted' | 'pending' | 'fulfilled' | 'rejected' = 'unattempted';
+  let cleanup: Promise<void> | undefined;
+  let removal: 'unattempted' | 'pending' | 'fulfilled' | 'rejected' = 'unattempted';
+  const snapshot = () => ({
+    version: 1,
+    id,
+    workerPid: process.pid,
+    clock: 'process.hrtime.bigint',
+    originNs: origin.toString(),
+    bundle: allocated ? basename(allocated) : null,
+    closed,
+    ready,
+    settlement,
+    archive: archiveState,
+    removal,
+    child: child
+      ? { pid: child.pid ?? null, parentPid: process.pid, terminal: childTerminal ?? null }
+      : null,
+    sequence,
+    dropped,
+    writesFailed,
+    complete:
+      settlement === 'fulfilled' &&
+      ready &&
+      (!child || !!childTerminal) &&
+      archiveState !== 'pending' &&
+      archiveState !== 'rejected' &&
+      removal === 'fulfilled' &&
+      dropped === 0 &&
+      writesFailed === 0,
+    cancellationObserved: false,
+    rows: rows.map((row) => ({ ...row })),
+  });
+  const observe = (phase: string, kind = 'observed') => {
+    sequence++;
+    if (rows.length < 128)
+      rows.push({
+        sequence,
+        elapsedNs: (process.hrtime.bigint() - origin).toString(),
+        phase,
+        kind,
+      });
+    else dropped++;
+    try {
+      persist(snapshot());
+    } catch {
+      writesFailed++;
+    }
+  };
+  const failureKind = (error: unknown) =>
+    error instanceof Error ? 'Error' : error === null ? 'null' : typeof error;
+  const admit = (phase: string) => {
+    if (failed()) closed = true;
+    if (closed) {
+      observe(phase, 'admission-refused');
+      throw new Error('Diagnostic setup admission closed');
+    }
+    if (dropped || writesFailed) throw new Error('Diagnostic setup evidence incomplete');
+    observe(phase, 'entered');
+  };
+  return {
+    snapshot,
+    observe,
+    admit,
+    run(body: () => Promise<void>) {
+      if (original) throw new Error('Diagnostic setup already started');
+      observe('setup', 'entered');
+      original = body();
+      // Observe the same promise without replacing the caller's value or error.
+      void original.then(
+        () => {
+          settlement = 'fulfilled';
+          observe('setup', 'fulfilled');
+        },
+        (error: unknown) => {
+          primary = { error };
+          settlement = 'rejected';
+          observe('setup', failureKind(error));
+        },
+      );
+      return original;
+    },
+    allocated(path: string) {
+      if (allocated) throw new Error('Diagnostic setup allocated twice');
+      allocated = path;
+      observe('allocation', 'fulfilled');
+    },
+    child(builder: ChildProcess) {
+      if (child) throw new Error('Diagnostic setup child already owned');
+      child = builder;
+      childClose = new Promise<void>((resolveClose) => {
+        builder.once('close', (code, signal) => {
+          childTerminal = { code, signal };
+          observe('kit-child', 'close');
+          resolveClose();
+        });
+      });
+      observe('kit-child', 'spawned');
+    },
+    archive(action: () => Promise<unknown>) {
+      if (archive) return archive;
+      archiveState = 'pending';
+      observe('failure-archive', 'entered');
+      archive = action();
+      void archive.then(
+        () => {
+          archiveState = 'fulfilled';
+          observe('failure-archive', 'fulfilled');
+        },
+        (error: unknown) => {
+          archiveState = 'rejected';
+          observe('failure-archive', failureKind(error));
+        },
+      );
+      return archive;
+    },
+    publish() {
+      admit('ready');
+      ready = true;
+      observe('ready', 'published');
+      if (dropped || writesFailed) throw new Error('Diagnostic setup evidence incomplete');
+    },
+    retire(remove: (path: string) => Promise<void>) {
+      if (cleanup) return cleanup;
+      closed = true;
+      observe('cleanup', 'admission-closed');
+      cleanup = (async () => {
+        if (!original) throw new Error('Diagnostic setup owner missing');
+        try {
+          await original;
+        } catch (error) {
+          primary ??= { error };
+        }
+        // Spawn failure can reject the setup before the actual close event.
+        if (childClose) await childClose;
+        if (archive) {
+          try {
+            await archive;
+          } catch {
+            // Preserve available files if failure retention itself did not finish.
+          }
+        }
+        observe('cleanup', 'originals-joined');
+        if (archiveState === 'rejected') {
+          observe('cleanup', 'archive-incomplete');
+          if (primary) throw primary.error;
+          throw new Error('Diagnostic setup archive incomplete');
+        }
+        if (allocated) {
+          removal = 'pending';
+          observe('removal', 'entered');
+          try {
+            await remove(allocated);
+            removal = 'fulfilled';
+            observe('removal', 'fulfilled');
+          } catch (error) {
+            removal = 'rejected';
+            observe('removal', failureKind(error));
+            if (primary) throw primary.error;
+            throw error;
+          }
+        }
+        if (primary) throw primary.error;
+        if (dropped || writesFailed) throw new Error('Diagnostic setup evidence incomplete');
+      })();
+      return cleanup;
+    },
+  };
+}
+let setupOwner: ReturnType<typeof createCompanionSetupOwner> | undefined;
+let setupEvidenceReady = false;
+
+const python = '/usr/bin/python3';
+const hash = (bytes: string | Buffer) => createHash('sha256').update(bytes).digest('hex');
+const record = (dir: string, name: string, value: unknown) =>
+  writeFileSync(join(dir, `${name}.json`), JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
+const environment = (home: string) => ({
+  PATH: '/usr/bin:/bin',
+  HOME: home,
+  XDG_CONFIG_HOME: join(home, 'config'),
+  XDG_CACHE_HOME: join(home, 'cache'),
+  GIT_CONFIG_GLOBAL: '/dev/null',
+  GIT_CONFIG_SYSTEM: '/dev/null',
+  DD_TRACE_ENABLED: 'false',
+  RUST_LOG: 'error',
+  INTENTD_TEST_KEEP_TMP: '1',
+});
+const renderer = `
+import { LiveWorkspacesClient } from '${join(root, 'src/lib/client/live/live-workspaces-client.ts')}';
+const client = new LiveWorkspacesClient(); const sessions = new Map(); const work = new Map(); let demand = 0; let closeRead = () => {};
+window.native = { results: {}, errors: {}, retirements: [], current: null,
+ async begin(key, input) { const session = await client.beginNativeReview({attemptId: key,root:input.review.root,admission:'original-fixture-document',hostContext:'original-fixture-host'},input,kind=>this.retirements.push({key,kind})); sessions.set(key,session); return session.preview; },
+ start(key,command={}) { const promise = sessions.get(key).confirm(command); work.set(key,promise); promise.then(value=>this.results[key]=value,error=>this.errors[key]=String(error)); },
+ async confirm(key,command={}) { const value=await sessions.get(key).confirm(command); this.results[key]=value; return value; },
+ async reconcile(key) { const value=await sessions.get(key).reconcile(); this.results[key]=value; return value; },
+ async release(key) { await sessions.get(key).release(); },
+ async read(workspaceId) { closeRead(); this.current=null; return new Promise((resolve,reject)=> { client.observeRepositoryContext({workspaceId,binding:'fixture-read',requestId:String(++demand)}, update=> {if(update.type==='received'){this.current=update.response.context;resolve(update);} else if(update.type==='unavailable') reject(new Error('context unavailable')); else if(update.type==='retired')this.current=null;}).then(stop=>closeRead=stop,reject); }); },
+ async quiesce() { await Promise.allSettled([...work.values()]); },
+ async close() { closeRead(); await Promise.allSettled([...sessions.values()].map(s=>s.release())); }
+};
+`;
+const uiRenderer = `
+  import '$store/renderer/seeders/workspaces-seeder';
+  import { mount, unmount } from 'svelte';
+  import { all, fork, join } from 'typed-redux-saga';
+  import type { Task } from 'redux-saga';
+  import { getItems } from '@themislib/themis/utils/collections/collection-utils';
+  import { store } from '$store/renderer/store';
+  import { connectionsSaga } from '$store/renderer/slices/connections/sagas/connections-saga';
+  import { daemonEventsSaga } from '$store/renderer/slices/workspace-events/sagas/daemon-events-saga';
+  import { principalSaga } from '$store/renderer/slices/principal/sagas/principal-saga';
+  import { lifecycleReadSaga } from '$store/renderer/slices/workspace-lifecycle/sagas/lifecycle-read-saga';
+  import { repositoryContextSaga } from '$store/renderer/slices/repository-context/sagas/repository-context-saga';
+  import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
+  import {
+    selectPrincipalActionContext,
+    selectPrincipalSnapshot,
+    selectHostRole,
+  } from '$store/renderer/slices/principal/principal-selectors';
+  import {
+    selectWorkspaceItems,
+    selectWorkspaceActionContext,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectNativeReviewForOwner } from '$store/renderer/slices/repository-context/repository-context-selectors';
+  import {
+    nativeReviewEditRequested, nativeReviewEditEnded, nativeReviewEditCleared,
+    nativeReviewCompanionRequested, nativeReviewConfirmRequested, nativeReviewObserved,
+    repositoryContextDemandEnded,
+  } from '$store/renderer/slices/repository-context/repository-context-slice';
+  import { setPendingAutoAction } from '$store/renderer/slices/changes/changes-slice';
+  import { subscribeConfirmRequests } from '$lib/components/patterns/confirm/confirm-service';
+
+  import { gitReadSaga } from '$store/renderer/slices/git/sagas/git-read-saga';
+  import { acceptChangesStatusSaga } from '$store/renderer/slices/git/sagas/accept-changes-status-saga';
+  import { selectFileTrackingChanges, selectPendingAutoAction } from '$store/renderer/slices/changes/changes-selectors';
+  import { appClient } from '$lib/client';
+  import { IPC_CHANNELS } from '$shared/ipc-registry';
+
+
+import App from '${join(root, 'test/fixtures/native-review-native/ui-renderer.svelte')}';
+import '${join(root, 'src/app.css')}';
+function dismissalEvidenceJournal() {
+  const rows: unknown[] = [];
+  let observed = 0, dropped = 0, failed = 0;
+  function record(kind: string, value: unknown) {
+    observed++;
+    try {
+      const row = JSON.parse(JSON.stringify({sequence:observed,kind,value}));
+      if (rows.length >= 128 || JSON.stringify([...rows,row]).length > 1_048_576) { dropped++; return; }
+      rows.push(row);
+    } catch { failed++; }
+  }
+  function snapshot() {
+    return {version:1,observed,retained:rows.length,dropped,failed,complete:dropped===0&&failed===0,rows:JSON.parse(JSON.stringify(rows))};
+  }
+  function incomplete(kind: string) { failed++; record(kind,null); }
+  return {record,snapshot,incomplete};
+}
+export function start() {
+const target = document.getElementById('ui');
+if (!target) throw new Error('Original UI mount target missing');
+const sidebarMode = ${JSON.stringify(sidebarMode)};
+const diagnosticEvidence = ${JSON.stringify(diagnosticMode)};
+const dismissalEvidence = dismissalEvidenceJournal();
+const diagnosticActionTypes = new Set([setPendingAutoAction.type,nativeReviewEditRequested.type,nativeReviewEditEnded.type,nativeReviewEditCleared.type,nativeReviewCompanionRequested.type,nativeReviewConfirmRequested.type,nativeReviewObserved.type,repositoryContextDemandEnded.type]);
+let stopConfirmationObservation: (() => unknown) | null = diagnosticEvidence ? subscribeConfirmRequests(request => dismissalEvidence.record('confirmation', request ? {id:request.id,kind:request.kind} : null)) : null;
+  const faults: string[] = [];
+  const queueObservations: unknown[] = [];
+  let observing = true;
+  if (sidebarMode) store.addMiddleware(() => next => function (action) {
+    if (!observing || typeof action !== 'object' || action === null || !('type' in action) || typeof action.type !== 'string' || !(diagnosticEvidence ? diagnosticActionTypes.has(action.type) : ['changes/setPendingAutoAction','repositoryContext/nativeReviewEditRequested','repositoryContext/nativeReviewCompanionRequested','repositoryContext/nativeReviewConfirmRequested','repositoryContext/nativeReviewEditEnded'].includes(action.type))) return next(action);
+    let input: unknown;
+    try { input = JSON.parse(JSON.stringify(action)); } catch (error) { if (diagnosticEvidence) dismissalEvidence.incomplete('action-input-unobserved'); else faults.push('Unobserved queue input: ' + String(error)); }
+    if (diagnosticEvidence) {
+      try { dismissalEvidence.record('action-before', {input,attempts:attemptProjection()}); } catch { dismissalEvidence.incomplete('action-before-unobserved'); }
+    }
+    let result: unknown;
+    try { result = next(action); } catch (error) {
+      if (diagnosticEvidence) dismissalEvidence.record('action-threw', {type:action.type});
+      throw error;
+    }
+    try {
+      const row = {input, attempts: attemptProjection(), queue: workspaceProjection()};
+      if (diagnosticEvidence) dismissalEvidence.record('action-after', row);
+      if (queueObservations.length >= 128 || JSON.stringify([...queueObservations, row]).length > 1_048_576) throw new Error('Queue observation bound');
+      queueObservations.push(row);
+    } catch (error) { if (diagnosticEvidence) dismissalEvidence.incomplete('action-after-unobserved'); else faults.push('Unobserved queue result: ' + String(error)); }
+    return result;
+  });
+const component = mount(App, {target, props:{sidebar:sidebarMode}});
+let closing: Promise<unknown> | null = null;
+  const tasks: Array<{
+    name: string;
+    task: Task;
+    iteratorDone: boolean;
+    joined: boolean;
+    done: Promise<void>;
+  }> = [];
+  let rootStarted!: () => void;
+  const started = new Promise<void>((resolve) => (rootStarted = resolve));
+  function* roots() {
+    for (const saga of [
+      connectionsSaga,
+      daemonEventsSaga,
+      principalSaga,
+      lifecycleReadSaga,
+      repositoryContextSaga,
+      ...(sidebarMode ? [gitReadSaga, acceptChangesStatusSaga] : []),
+    ]) {
+      let finish!: () => void;
+      const row = {
+        name: saga.name,
+        task: null as unknown as Task,
+        iteratorDone: false,
+        joined: false,
+        done: new Promise<void>((resolve) => (finish = resolve)),
+      };
+      row.task = yield* fork(function* originalRoot() {
+        try {
+          yield* saga();
+        } catch (error) {
+          faults.push(saga.name + ': ' + String(error));
+          throw error;
+        } finally {
+          // Reached only after the delegated production iterator's finally has completed.
+          row.iteratorDone = true;
+          finish();
+        }
+      });
+      tasks.push(row);
+    }
+    rootStarted();
+    yield* all(tasks.map((row) => join(row.task)));
+  }
+  const stopRoot = store.runSaga(roots);
+  const api = window.electronAPI;
+  if (!api) throw new Error('The original generated Electron preload is required');
+  const buffered: any[] = [];
+  let snapshotDone = false;
+  let statusClosed = false;
+  function applyStatus(payload: any, snapshot: boolean) {
+    store.dispatch(
+      connectionStatusChanged(payload.status, payload.transport, {
+        sidecarGaveUp: payload.sidecarGaveUp,
+        sidecarStartupFailed: payload.sidecarStartupFailed,
+        reason: snapshot ? payload.sidecarStartupFailedReason : payload.reason,
+        reconnectAttempts: payload.reconnectAttempts,
+        connectionLimited: payload.connectionLimited,
+        connectionLimitRetryAfterMs: payload.connectionLimitRetryAfterMs,
+        daemonUpdateDisconnectedAt: payload.daemonUpdateDisconnectedAt,
+      }),
+    );
+  }
+  // Listener-first, original snapshot then buffered transitions; no fabricated healthy status.
+  const statusListener = api.on(IPC_CHANNELS.BACKEND.STATUS, (payload: any) => {
+    if (!snapshotDone) buffered.push(payload);
+    else if (!statusClosed) applyStatus(payload, false);
+  });
+  const bootstrap = api.invoke(IPC_CHANNELS.BACKEND.GET_STATUS).then(
+    (value) => {
+      if (!statusClosed) {
+        applyStatus(value, true);
+        for (const payload of buffered) applyStatus(payload, false);
+      }
+      buffered.length = 0;
+      snapshotDone = true;
+    },
+    (error) => {
+      faults.push('Original status snapshot: ' + String(error));
+      throw error;
+    },
+  );
+  function attemptProjection() {
+    return (store.state.repositoryContext.nativeReviewAttempts ? getItems(store.state.repositoryContext.nativeReviewAttempts) : []).map(row => ({
+      owner: row.owner, publicView: selectNativeReviewForOwner.select(store.state, row.owner),
+      ...(sidebarMode ? {attemptId:row.attemptId,status:row.status,closed:row.status === 'closed',retained:row.observation,preview:row.preview} : {}),
+    }));
+  }
+  function workspaceProjection() {
+    return selectWorkspaceItems.select(store.state).map(row => ({id:row.id,baseRef:row.baseRef,changes:selectFileTrackingChanges.select(store.state,String(row.id)),queue:selectPendingAutoAction.select(store.state,String(row.id))}));
+  }
+  function snapshot(includeEvidence = true) {
+    const state = store.state;
+    return {
+      faults,
+      ...(diagnosticEvidence && includeEvidence ? {dismissalEvidence:dismissalEvidence.snapshot()} : {}),
+      role: selectHostRole.select(state),
+      admission: selectPrincipalActionContext.select(state),
+      hasReceivedList: state.connections.hasReceivedList,
+      windowBackendId: state.connections.windowBackendId,
+      subscriptionGeneration: state.workspaceEvents.subscriptionGeneration,
+      workspaceLoaded: state.workspace.hasLoaded,
+      workspaceAdmission: state.workspace.capabilityContext,
+      workspaces: selectWorkspaceItems.select(state).map((row) => ({
+        id: row.id,
+        hostContext: selectWorkspaceActionContext.select(state, row.id),
+      })),
+      attempts: JSON.parse(JSON.stringify(attemptProjection())),
+      ...(sidebarMode ? {sidebar:JSON.parse(JSON.stringify(workspaceProjection())),queueObservations:JSON.parse(JSON.stringify(queueObservations))} : {}),
+    };
+  }
+  async function close() {
+    if (closing) return closing;
+    closing = (async () => {
+      try {
+      await component.dismiss(); // Actual child onDestroy ends the original owner/demand.
+      statusClosed = true;
+      api.offById(IPC_CHANNELS.BACKEND.STATUS, statusListener);
+      await bootstrap;
+      await started;
+      for (const row of tasks) row.task.cancel();
+      await Promise.all(
+        tasks.map(async (row) => {
+          await row.done;
+          await row.task.toPromise();
+          row.joined = true;
+        }),
+      );
+      const final = snapshot();
+      observing = false;
+      stopRoot();
+      await unmount(component);
+      return {
+        producersClosed: statusClosed && snapshotDone,
+        faults,
+        final,
+        tasks: tasks.map(({ name, iteratorDone, joined }) => ({ name, iteratorDone, joined })),
+      };
+      } finally {
+        if (diagnosticEvidence && stopConfirmationObservation) {
+          const originalStop = stopConfirmationObservation;
+          stopConfirmationObservation = null;
+          try { originalStop(); dismissalEvidence.record('confirmation-unsubscribed', null); } catch { dismissalEvidence.incomplete('confirmation-unsubscribe-failed'); }
+        }
+      }
+    })();
+    return closing;
+  }
+
+const lifetime = {snapshot,close,async dismiss(){
+  try {
+    await component.dismiss();
+    const returned = snapshot(!diagnosticEvidence);
+    if (diagnosticEvidence) dismissalEvidence.record('dismiss-return', returned);
+    return returned;
+  } catch (error) {
+    if (diagnosticEvidence) {
+      try { dismissalEvidence.record('dismiss-threw', {name:error instanceof Error ? error.name : typeof error,message:error instanceof Error ? error.message : null}); } catch { dismissalEvidence.incomplete('dismiss-error-unobserved'); }
+    }
+    throw error;
+  }
+},
+  async unstaged() {
+    if (!sidebarMode || !selectPrincipalActionContext.select(store.state) || selectWorkspaceItems.select(store.state).length !== 1) throw new Error('Original admitted sidebar workspace required');
+    return appClient.files.read(String(selectWorkspaceItems.select(store.state)[0].id), 'unstaged.txt');
+  }
+};
+Object.assign(window,{native:{ui:true},nativeUi:lifetime});
+return lifetime;
+}
+`;
+const activeRenderer = uiMode ? uiRenderer : renderer;
+// Node/libuv stdio "pipe" is a socketpair. This controller owns a genuine
+// anonymous pipe and the original supervisor Child; its wait is not a native receipt.
+const pipeController = String.raw`
+import hashlib,json,os,pathlib,selectors,stat,subprocess,sys,threading
+root=pathlib.Path(sys.argv[2]);child=None;writer=None;waiter=None;failure=None
+done=threading.Event();wait_result={};sequence=0;sent_bytes=0
+context={'version':1,'runId':sys.argv[3],'descriptorSha256':sys.argv[4],'executableSha256':sys.argv[5]}
+os.set_blocking(1,False)
+
+def record(kind,details):
+    global sequence,sent_bytes
+    value={**context,'kind':kind,'sequence':sequence,'details':details};sequence+=1
+    data=(json.dumps(value,separators=(',',':'))+'\n').encode()
+    if len(data)>2048 or sent_bytes+len(data)>8192:raise RuntimeError('metadata bound')
+    with (root/('controller-'+kind+'.json')).open('xb') as out:
+        os.chmod(out.name,0o600);out.write(data);out.flush();os.fsync(out.fileno())
+    sent_bytes+=len(data)
+    if os.write(1,data)!=len(data):raise RuntimeError('partial metadata output')
+
+def wait_original():
+    try:
+        code=child.wait()
+        wait_result.update(returnCode=code,code=code if code>=0 else None,signal=-code if code<0 else None,waitedOriginalChild=True)
+    except BaseException as error:
+        wait_result.update(waitedOriginalChild=False,error=type(error).__name__)
+    finally:done.set()
+
+selector=selectors.DefaultSelector();selector.register(0,selectors.EVENT_READ)
+try:
+    data=(root/'descriptor.json').read_bytes()
+    if len(data)>8192 or hashlib.sha256(data).hexdigest()!=context['descriptorSha256']:raise RuntimeError('descriptor identity')
+    descriptor=json.loads(data)
+    if descriptor['runId']!=context['runId'] or descriptor['executableSha256']!=context['executableSha256']:raise RuntimeError('run identity')
+    if not selector.select(5) or os.read(0,1)!=b'R':raise RuntimeError('controller bootstrap missing')
+    with (root/'driver.log').open('xb') as log:
+        os.chmod(log.name,0o600)
+        child=subprocess.Popen([sys.argv[1],'--ignored','--exact','native_review_fixture_driver','--nocapture','--test-threads=1'],stdin=subprocess.PIPE,stdout=log,stderr=log,close_fds=True,bufsize=0)
+        writer=child.stdin
+        waiter=threading.Thread(target=wait_original);waiter.start()
+        fifo=stat.S_ISFIFO(os.fstat(writer.fileno()).st_mode)
+        inheritable=os.get_inheritable(writer.fileno())
+        if not fifo or inheritable:raise RuntimeError('private anonymous pipe unavailable')
+        record('allocation',{'supervisorPid':child.pid,'controllerPid':os.getpid(),'writerIsFifo':fifo,'writerInheritable':inheritable})
+        if writer.write(b'R')!=1:raise RuntimeError('bootstrap write incomplete')
+        while not done.is_set():
+            if os.fstat(log.fileno()).st_size>8388608:raise RuntimeError('driver log bound')
+            if selector.select(.05):
+                value=os.read(0,1)
+                if value:raise RuntimeError('unexpected controller lifetime data')
+                raise RuntimeError('controller EOF before supervisor wait')
+except BaseException as error:
+    failure=str(error)[:512]
+finally:
+    if failure and writer and not writer.closed:
+        try:writer.close()
+        except OSError as error:failure+='; writer close '+type(error).__name__
+    if waiter:
+        done.wait();waiter.join()
+        try:record('supervisor-wait',{'supervisorPid':child.pid,**wait_result,'failure':failure})
+        except OSError as error:failure=failure or 'wait receipt output '+type(error).__name__
+    if writer and not writer.closed:
+        try:writer.close()
+        except OSError as error:failure=failure or 'writer close '+type(error).__name__
+    selector.close()
+    success=not failure and wait_result.get('waitedOriginalChild') is True and wait_result.get('returnCode')==0
+    try:record('helper-result',{'success':success,'failure':failure,'nativeCompletion':'not asserted'})
+    except OSError:success=False
+sys.exit(0 if success else 1)
+`;
+const actualFactory = join(root, 'src/features/backend/main/backend-connection.ts');
+const socketShim = `import {createBackendSocket as original} from ${JSON.stringify(actualFactory + '?original')};
+export * from ${JSON.stringify(actualFactory + '?original')};
+export function createBackendSocket(...args) { const socket=Reflect.apply(original,this,args); const result=globalThis.nativeReviewSocketObserver(socket,args[0]); if(result!==socket)throw new Error('Observer replaced original Duplex'); return socket; }`;
+const alias = ['shared', 'features', 'lib', 'store'].map((part) => ({
+  find: `$${part}`,
+  replacement: join(root, 'src', part),
+}));
+const modules = (label: string): Plugin => ({
+  name: 'pin-executed-inputs',
+  async generateBundle(_options, output) {
+    const ids = new Set(
+      Object.values(output).flatMap((chunk) =>
+        chunk.type === 'chunk' ? Object.keys(chunk.modules) : [],
+      ),
+    );
+    const inputs = await Promise.all(
+      [...ids].sort().map(async (id) => {
+        const virtual =
+          id === '\0native-renderer'
+            ? activeRenderer
+            : id === '\0native-socket-observer'
+              ? socketShim
+              : null;
+        if (virtual !== null) return { id, sha256: hash(virtual), source: virtual };
+        try {
+          return { id, sha256: hash(await readFile(id)) };
+        } catch {
+          return { id, virtual: id.startsWith('\0') };
+        }
+      }),
+    );
+    record(evidence!, `${label}-inputs`, inputs);
+    for (const input of inputs) {
+      if (!input.sha256) continue;
+      const bytes = 'source' in input ? Buffer.from(input.source!) : await readFile(input.id);
+      if (hash(bytes) !== input.sha256) throw new Error('Original build input changed');
+      await mkdir(join(evidence!, 'source-inputs'), { recursive: true });
+      await writeFile(join(evidence!, 'source-inputs', input.sha256), bytes);
+    }
+    if (uiMode && label === 'renderer') {
+      const required = [
+        'test/fixtures/native-review-native/ui-renderer.svelte',
+        'src/lib/components/workspace/PullRequestCreator.svelte',
+        'src/features/accept-changes/components/NativeReviewAttempt.svelte',
+        'src/lib/components/patterns/confirm/ConfirmHost.svelte',
+        'src/store/renderer/configured-store.ts',
+        'src/store/renderer/slices/principal/sagas/principal-saga.ts',
+        'src/store/renderer/slices/connections/sagas/connections-saga.ts',
+        'src/store/renderer/slices/workspace-events/sagas/daemon-events-saga.ts',
+        'src/store/renderer/slices/workspace-lifecycle/sagas/lifecycle-read-saga.ts',
+        'src/store/renderer/slices/repository-context/sagas/repository-context-saga.ts',
+        'src/store/renderer/slices/repository-context/sagas/native-review-saga.ts',
+        'src/lib/client/live/live-workspaces-client.ts',
+        'src/lib/client/live/electron-ipc-transport.ts',
+      ];
+      const proof = required.map((path) => {
+        const id = join(root, path);
+        const chunk = Object.values(output).find(
+          (item) => item.type === 'chunk' && item.modules[id]?.renderedLength > 0,
+        );
+        if (!chunk || chunk.type !== 'chunk') throw new Error('Missing actual UI path: ' + path);
+        return {
+          path,
+          input: inputs.find((item) => item.id === id),
+          renderedLength: chunk.modules[id].renderedLength,
+          chunk: chunk.fileName,
+        };
+      });
+      record(evidence!, 'ui-build-preflight', proof);
+    }
+    if (label === 'main.mjs') {
+      const clientId = join(root, 'src/features/backend/main/json-rpc-client.ts');
+      const wrapperId = '\0native-socket-observer';
+      const client = this.getModuleInfo(clientId);
+      const wrapper = this.getModuleInfo(wrapperId);
+      const original = this.getModuleInfo(actualFactory);
+      const rendered = [clientId, wrapperId, actualFactory].map((id) => {
+        const chunk = Object.values(output).find(
+          (item) => item.type === 'chunk' && item.modules[id]?.renderedLength > 0,
+        );
+        if (!chunk || chunk.type !== 'chunk') throw new Error(`Missing rendered module: ${id}`);
+        const module = chunk.modules[id];
+        if (!module.code) throw new Error(`Rendered module has no code: ${id}`);
+        return {
+          id,
+          chunk: chunk.fileName,
+          chunkHash: hash(chunk.code),
+          renderedHash: hash(module.code),
+          renderedLength: module.renderedLength,
+          renderedExports: module.renderedExports,
+          ...(id === wrapperId ? { code: module.code } : {}),
+        };
+      });
+      if (
+        !client?.isIncluded ||
+        !wrapper?.isIncluded ||
+        !original?.isIncluded ||
+        !client.importedIds.includes(wrapperId) ||
+        client.importedIds.includes(actualFactory) ||
+        !wrapper.importers.includes(clientId) ||
+        !wrapper.importedIds.includes(actualFactory) ||
+        wrapper.importedIds.some((id) => id !== actualFactory) ||
+        !original.importers.includes(wrapperId) ||
+        !rendered[1].renderedExports.includes('createBackendSocket') ||
+        !rendered[2].renderedExports.includes('createBackendSocket') ||
+        inputs.find((input) => input.id === wrapperId)?.sha256 !== hash(socketShim)
+      )
+        throw new Error('Original client -> rendered observer -> factory relation missing');
+      const wrapperChunk = output[rendered[1].chunk];
+      const clientChunk = output[rendered[0].chunk];
+      if (wrapperChunk.type !== 'chunk' || clientChunk.type !== 'chunk')
+        throw new Error('Rendered client/observer chunks missing');
+      const normalize = (node: unknown) =>
+        JSON.stringify(node, (key, value) =>
+          ['start', 'end', 'loc', 'raw'].includes(key) ? undefined : value,
+        );
+      const functions = this.parse(rendered[1].code!).body.filter(
+        (node) => node.type === 'FunctionDeclaration',
+      );
+      if (functions.length !== 1 || !functions[0].id)
+        throw new Error('Expected one rendered observer function');
+      const wrapperFunction = functions[0];
+      if (
+        !this.parse(wrapperChunk.code).body.some(
+          (node) =>
+            node.type === 'FunctionDeclaration' &&
+            node.id?.name === wrapperFunction.id!.name &&
+            normalize(node) === normalize(wrapperFunction),
+        )
+      )
+        throw new Error('Observer function absent from final emitted AST');
+      const factoryAssignments = (code: string) => {
+        const found: string[] = [];
+        let nodes = 0;
+        const visit = (node: any) => {
+          if (!node || typeof node !== 'object') return;
+          if (++nodes > 1_000_000) throw new Error('Emitted AST bound');
+          if (
+            node.type === 'AssignmentExpression' &&
+            node.left?.type === 'MemberExpression' &&
+            node.left.object?.type === 'ThisExpression' &&
+            node.left.property?.name === 'socketFactory' &&
+            node.right?.type === 'LogicalExpression' &&
+            node.right.operator === '??' &&
+            node.right.right?.name === wrapperFunction.id!.name
+          )
+            found.push(normalize(node));
+          for (const value of Object.values(node))
+            if (Array.isArray(value)) value.forEach(visit);
+            else if (value && typeof value === 'object') visit(value);
+        };
+        visit(this.parse(code));
+        return found;
+      };
+      const expectedAssignments = factoryAssignments(clientChunk.modules[clientId].code!);
+      const emittedAssignments = factoryAssignments(clientChunk.code);
+      if (expectedAssignments.length !== 1 || !emittedAssignments.includes(expectedAssignments[0]))
+        throw new Error('Original client does not select the emitted observer factory');
+      const graph = { client, wrapper, original };
+      record(evidence!, 'observer-build-preflight', {
+        wrapperSourceHash: hash(socketShim),
+        wrapperFunctionAstHash: hash(normalize(wrapperFunction)),
+        clientFactoryAssignmentAstHash: hash(expectedAssignments[0]),
+        graph: Object.fromEntries(
+          Object.entries(graph).map(([name, info]) => [
+            name,
+            { id: info.id, importedIds: info.importedIds, importers: info.importers },
+          ]),
+        ),
+        rendered,
+        qualification: 'Build import relation only; runtime allocation/forwarding still required',
+      });
+    }
+  },
+  async writeBundle(options, output) {
+    const base = options.dir;
+    if (!base) throw new Error('Original output directory required');
+    const closure = [];
+    for (const [name, emitted] of Object.entries(output)) {
+      if (name.split('/').includes('..') || name.startsWith('/'))
+        throw new Error('Non-local emitted output');
+      const bytes = await readFile(join(base, name));
+      const imports =
+        emitted.type === 'chunk' ? [...emitted.imports, ...emitted.dynamicImports] : [];
+      for (const dependency of imports) {
+        if (
+          dependency.startsWith('.') &&
+          !output[posix.normalize(posix.join(posix.dirname(name), dependency))]
+        )
+          throw new Error('Missing emitted local import: ' + dependency);
+      }
+      const artifact = join(evidence!, 'emitted', label, name);
+      await mkdir(dirname(artifact), { recursive: true });
+      await writeFile(artifact, bytes);
+      closure.push({ name, type: emitted.type, sha256: hash(bytes), bytes: bytes.length, imports });
+    }
+    record(evidence!, label + '-output-closure', closure);
+  },
+});
+
+/** Source literals for a real, isolated Kit route; no application routes or mock $app modules. */
+async function buildKitFixture(application: UserConfig) {
+  const scaffold = join(bundle, 'kit-fixture');
+  const output = join(bundle, 'ui-assets');
+  const routes = join(scaffold, 'src/routes');
+  await mkdir(join(routes, '[...fixture]'), { recursive: true });
+  await mkdir(join(scaffold, 'static'), { recursive: true });
+  const page = `<script lang="ts">
+import {onMount} from 'svelte';
+onMount(() => {
+  let retired = false;
+  let startupSettled = false;
+  let child: Awaited<ReturnType<typeof import('../../bootstrap').start>> | undefined;
+  let closing: Promise<unknown> | undefined;
+  const startup = import('../../bootstrap').then(module => {
+    if (!retired) child = module.start();
+    startupSettled = true;
+  });
+  const close = () => closing ??= (async () => {
+    retired = true;
+    await startup;
+    if (!child) throw new Error('Original UI bootstrap did not complete');
+    const receipt = await child.close();
+    return {...receipt, route: {startupSettled, closed: true}};
+  })();
+  Object.assign(window, {nativeUiRoute: {close}});
+  return () => { void close(); };
+});
+</script>
+<div id="ui"></div>
+`;
+  const aliases = application.resolve!.alias;
+  if (!Array.isArray(aliases)) throw new Error('Original application alias list required');
+  const aliasSource =
+    '[' +
+    aliases
+      .map(
+        (value) =>
+          '{find:' +
+          (value.find instanceof RegExp ? value.find.toString() : JSON.stringify(value.find)) +
+          ',replacement:' +
+          JSON.stringify(value.replacement) +
+          '}',
+      )
+      .join(',') +
+    ']';
+  const config = `import {sveltekit} from '@sveltejs/kit/vite';
+import adapter from '@sveltejs/adapter-static';
+import {vitePreprocess} from '@sveltejs/vite-plugin-svelte';
+import fs from 'node:fs';import path from 'node:path';import {createHash} from 'node:crypto';
+const hash = bytes => createHash('sha256').update(bytes).digest('hex');
+const provenance = {name:'actual-kit-fixture-inputs',generateBundle(options,output){
+  const side = options.dir.endsWith('/client') ? 'client' : 'server';
+  const entries = Object.values(output).filter(item=>item.type==='chunk').flatMap(chunk=>Object.entries(chunk.modules).map(([id,value])=>{
+    let sourceSha256=null;try{sourceSha256=hash(fs.readFileSync(id));}catch{}
+    if(sourceSha256){fs.mkdirSync(path.join(${JSON.stringify(evidence)},'source-inputs'),{recursive:true});fs.copyFileSync(id,path.join(${JSON.stringify(evidence)},'source-inputs',sourceSha256));}
+    const info=this.getModuleInfo(id);return {id,sourceSha256,importedIds:info.importedIds,importers:info.importers,renderedExports:value.renderedExports,renderedLength:value.renderedLength,renderedSha256:value.code ? hash(value.code) : null,chunk:chunk.fileName,chunkSha256:hash(chunk.code)};
+  }));
+  fs.writeFileSync(path.join(${JSON.stringify(evidence)},'kit-'+side+'-inputs.json'),JSON.stringify(entries,null,2)+'\\n');
+},writeBundle(options,output){
+  const side=options.dir.endsWith('/client')?'client':'server';const closure=[];
+  for(const [name,item] of Object.entries(output)){
+    if(name.split('/').includes('..')||name.startsWith('/'))throw Error('Non-local Kit output');
+    const bytes=fs.readFileSync(path.join(options.dir,name));const imports=item.type==='chunk'?[...item.imports,...item.dynamicImports]:[];
+    for(const dependency of imports)if(dependency.startsWith('.')&&!output[path.posix.normalize(path.posix.join(path.posix.dirname(name),dependency))])throw Error('Missing Kit local output '+dependency);
+    const target=path.join(${JSON.stringify(evidence)},'kit-emitted',side,name);fs.mkdirSync(path.dirname(target),{recursive:true});fs.writeFileSync(target,bytes);closure.push({name,type:item.type,sha256:hash(bytes),bytes:bytes.length,imports});
+  }
+  fs.writeFileSync(path.join(${JSON.stringify(evidence)},'kit-'+side+'-output-closure.json'),JSON.stringify(closure,null,2)+'\\n');
+}};
+export default {
+  root:${JSON.stringify(scaffold)},
+  resolve:{alias:${aliasSource},conditions:['browser','svelte']},
+  define:${JSON.stringify(application.define)},
+  plugins:[...await sveltekit({
+    preprocess:vitePreprocess(),compilerOptions:{compatibility:{componentApi:4}},
+    adapter:adapter({pages:${JSON.stringify(output)},assets:${JSON.stringify(output)},fallback:'index.html',precompress:false}),
+    outDir:${JSON.stringify(join(scaffold, '.kit'))},
+    files:{src:${JSON.stringify(join(scaffold, 'src'))},routes:${JSON.stringify(routes)},assets:${JSON.stringify(join(scaffold, 'static'))},lib:${JSON.stringify(join(root, 'src/lib'))},appTemplate:${JSON.stringify(join(scaffold, 'src/app.html'))},hooks:{client:${JSON.stringify(join(scaffold, 'src/hooks.client'))},server:${JSON.stringify(join(scaffold, 'src/hooks.server'))},universal:${JSON.stringify(join(scaffold, 'src/hooks'))}}},
+    env:{dir:${JSON.stringify(scaffold)}},prerender:{entries:[]},paths:{relative:false},version:{name:'native-ui-fixture'},serviceWorker:{register:false}
+  }),provenance],
+  build:{target:'es2022',minify:false,sourcemap:false},
+};
+`;
+  const buildCode =
+    "const {build}=await import('vite');await build({configFile:'vite.config.mjs',logLevel:'error'});";
+  const generated: Record<string, string> = {
+    'build.mjs': buildCode,
+    'package.json': JSON.stringify({ private: true, type: 'module' }),
+    'tsconfig.json': JSON.stringify({ extends: './.kit/tsconfig.json' }),
+    'src/app.html':
+      '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">%sveltekit.head%</head><body><div style="display: contents">%sveltekit.body%</div></body></html>',
+    'src/routes/+layout.ts': 'export const ssr = false;\nexport const prerender = false;\n',
+    'src/routes/[...fixture]/+page.svelte': page,
+    'src/bootstrap.ts': uiRenderer,
+    'vite.config.mjs': config,
+  };
+  const inputs = [];
+  for (const [name, value] of Object.entries(generated)) {
+    await writeFile(join(scaffold, name), value);
+    const artifact = join(evidence!, 'kit-generated', name);
+    await mkdir(dirname(artifact), { recursive: true });
+    await writeFile(artifact, value);
+    inputs.push({ name, sha256: hash(value), bytes: Buffer.byteLength(value) });
+  }
+  record(evidence!, 'kit-generated-inputs', inputs);
+  // Kit's post-build workers rediscover Vite config from cwd. The original child
+  // owns that cwd for every phase, without changing this worker or the application.
+  setupOwner?.admit('kit-child');
+  const builder = spawn(process.execPath, [join(scaffold, 'build.mjs')], {
+    cwd: scaffold,
+    stdio: 'inherit',
+  });
+  setupOwner?.child(builder);
+  const terminal = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
+    (resolve, reject) => {
+      builder.once('error', reject);
+      builder.once('close', (code, signal) => resolve({ code, signal }));
+    },
+  );
+  record(evidence!, 'kit-build-process', {
+    pid: builder.pid,
+    cwd: scaffold,
+    executable: process.execPath,
+    argv: [join(scaffold, 'build.mjs')],
+    ...terminal,
+    waitedOriginalChild: true,
+  });
+  if (terminal.code !== 0 || terminal.signal) throw new Error('Original Kit build child failed');
+  setupOwner?.observe('kit-child', 'original-wait-fulfilled');
+  setupOwner?.observe('kit-final-retention', 'entered');
+  // Post-build files may differ from generateBundle graph-stage digests.
+  for (const side of ['client', 'server']) {
+    const folder = join(scaffold, '.kit/output', side);
+    const final: Array<{ name: string; sha256: string; bytes: number }> = [];
+    async function retain(directory: string, relative = '') {
+      for (const name of await readdir(directory)) {
+        const original = join(directory, name),
+          local = join(relative, name);
+        const stat = await lstat(original);
+        if (stat.isDirectory()) await retain(original, local);
+        else {
+          if (!stat.isFile() || stat.isSymbolicLink())
+            throw new Error('Non-regular final Kit output');
+          const bytes = await readFile(original),
+            copy = join(evidence!, 'kit-final', side, local);
+          await mkdir(dirname(copy), { recursive: true });
+          await writeFile(copy, bytes);
+          final.push({ name: local, sha256: hash(bytes), bytes: bytes.length });
+        }
+      }
+    }
+    await retain(folder);
+    const emitted = JSON.parse(
+      await readFile(join(evidence!, 'kit-' + side + '-output-closure.json'), 'utf8'),
+    ) as Array<{ name: string }>;
+    if (emitted.some((item) => !final.some((file) => file.name === item.name)))
+      throw new Error('Final Kit closure lost an emitted file');
+    record(evidence!, 'kit-' + side + '-final-closure', final);
+  }
+
+  setupOwner?.observe('kit-final-retention', 'fulfilled');
+  const compiled: Array<{
+    id: string;
+    renderedLength: number;
+    importedIds: string[];
+    importers: string[];
+    renderedExports: string[];
+    sourceSha256: string | null;
+    chunk: string;
+  }> = JSON.parse(await readFile(join(evidence!, 'kit-client-inputs.json'), 'utf8'));
+  const required = [
+    join(root, 'test/fixtures/native-review-native/ui-renderer.svelte'),
+    ...[
+      ...(sidebarMode
+        ? [
+            'lib/components/workspace/sidebar/SidebarChangesPanel.svelte',
+            'lib/components/workspace/sidebar/PRSection.svelte',
+            'features/accept-changes/background-git-actions.service.ts',
+            'store/renderer/slices/git/sagas/git-read-saga.ts',
+            'store/renderer/slices/git/sagas/accept-changes-status-saga.ts',
+            'lib/client/live/live-git-client.ts',
+            'lib/client/live/live-files-client.ts',
+            'features/accept-changes/accept-changes.client.ts',
+            'features/file-tracking/file-tracking.client.ts',
+          ]
+        : []),
+      'lib/components/workspace/PullRequestCreator.svelte',
+      'features/accept-changes/components/NativeReviewAttempt.svelte',
+      'lib/components/patterns/confirm/ConfirmHost.svelte',
+      'store/renderer/configured-store.ts',
+      'store/renderer/slices/connections/sagas/connections-saga.ts',
+      'store/renderer/slices/workspace-events/sagas/daemon-events-saga.ts',
+      'store/renderer/slices/principal/sagas/principal-saga.ts',
+      'store/renderer/slices/workspace-lifecycle/sagas/lifecycle-read-saga.ts',
+      'store/renderer/slices/repository-context/sagas/repository-context-saga.ts',
+      'store/renderer/slices/repository-context/sagas/native-review-saga.ts',
+      'lib/client/live/live-workspaces-client.ts',
+      'lib/client/live/electron-ipc-transport.ts',
+      'store/renderer/seeders/workspaces-seeder.ts',
+      'store/renderer/slices/workspace/utils/workspace.client.ts',
+      'shared/generated/ipc-client.ts',
+      'shared/ipc-mock-router.ts',
+      'lib/client/index.ts',
+      'lib/client/live/live-app-client.ts',
+    ].map((p) => join(root, 'src', p)),
+    join(scaffold, 'src/bootstrap.ts'),
+    join(routes, '[...fixture]/+page.svelte'),
+  ];
+  const proof = required.map((id) => {
+    const item = compiled.find((item) => item.id === id && item.renderedLength > 0);
+    if (!item) throw new Error('Missing actual Kit UI module: ' + id);
+    return item;
+  });
+  const kitClient = compiled.find(
+    (item) =>
+      item.id.includes('/@sveltejs/kit/') &&
+      item.id.endsWith('/src/runtime/client/client.js') &&
+      item.renderedLength > 0,
+  );
+  if (!kitClient || !['goto', 'start'].every((name) => kitClient.renderedExports.includes(name)))
+    throw new Error('Genuine Kit navigation and startup implementation missing');
+  proof.push(kitClient);
+  for (const suffix of [
+    '/src/runtime/app/stores.js',
+    '/src/runtime/app/navigation.js',
+    '/src/runtime/client/entry.js',
+  ]) {
+    const item = compiled.find(
+      (item) => item.id.includes('/@sveltejs/kit/') && item.id.endsWith(suffix),
+    );
+    if (
+      !item ||
+      item.sourceSha256 !== hash(await readFile(item.id)) ||
+      !item.importedIds.includes(kitClient.id)
+    )
+      throw new Error('Missing original Kit runtime import relation: ' + suffix);
+    if (suffix.endsWith('/stores.js') && item.renderedLength <= 0)
+      throw new Error('Genuine Kit stores not emitted');
+    proof.push(item);
+  }
+  record(evidence!, 'ui-build-preflight', proof);
+  const bridgeRelations = [
+    [
+      join(scaffold, 'src/bootstrap.ts'),
+      join(root, 'src/store/renderer/seeders/workspaces-seeder.ts'),
+    ],
+    [
+      join(root, 'src/store/renderer/slices/workspace-lifecycle/sagas/lifecycle-read-saga.ts'),
+      join(root, 'src/store/renderer/slices/workspace/utils/workspace.client.ts'),
+    ],
+    [
+      join(root, 'src/store/renderer/slices/workspace/utils/workspace.client.ts'),
+      join(root, 'src/shared/generated/ipc-client.ts'),
+    ],
+    [join(root, 'src/shared/generated/ipc-client.ts'), join(root, 'src/shared/ipc-mock-router.ts')],
+    [
+      join(root, 'src/store/renderer/seeders/workspaces-seeder.ts'),
+      join(root, 'src/shared/ipc-mock-router.ts'),
+    ],
+    [
+      join(root, 'src/store/renderer/seeders/workspaces-seeder.ts'),
+      join(root, 'src/lib/client/index.ts'),
+    ],
+    [join(root, 'src/lib/client/index.ts'), join(root, 'src/lib/client/live/live-app-client.ts')],
+    [
+      join(root, 'src/lib/client/live/live-app-client.ts'),
+      join(root, 'src/lib/client/live/live-workspaces-client.ts'),
+    ],
+  ];
+  if (sidebarMode)
+    bridgeRelations.push(
+      ...[
+        [
+          'test/fixtures/native-review-native/ui-renderer.svelte',
+          'src/lib/components/workspace/sidebar/SidebarChangesPanel.svelte',
+        ],
+        [
+          'src/lib/components/workspace/sidebar/SidebarChangesPanel.svelte',
+          'src/lib/components/workspace/sidebar/PRSection.svelte',
+        ],
+        [
+          'src/lib/components/workspace/sidebar/PRSection.svelte',
+          'src/features/accept-changes/background-git-actions.service.ts',
+        ],
+        ['src/store/renderer/slices/git/sagas/git-read-saga.ts', 'src/lib/client/index.ts'],
+        [
+          'src/store/renderer/slices/git/sagas/accept-changes-status-saga.ts',
+          'src/features/accept-changes/accept-changes.client.ts',
+        ],
+        ['src/lib/client/live/live-app-client.ts', 'src/lib/client/live/live-git-client.ts'],
+        ['src/lib/client/live/live-app-client.ts', 'src/lib/client/live/live-files-client.ts'],
+        [
+          'src/lib/components/workspace/sidebar/SidebarChangesPanel.svelte',
+          'src/features/file-tracking/file-tracking.client.ts',
+        ],
+      ].map((edge) => edge.map((name) => join(root, name))),
+    );
+  for (const [caller, dependency] of bridgeRelations) {
+    const from = proof.find((item) => item.id === caller);
+    const to = proof.find((item) => item.id === dependency);
+    if (
+      !from?.importedIds.includes(dependency) ||
+      !to?.importers.includes(caller) ||
+      from.sourceSha256 !== hash(await readFile(caller)) ||
+      to.sourceSha256 !== hash(await readFile(dependency))
+    )
+      throw new Error('Original workspace bridge import relation missing: ' + caller);
+  }
+  record(evidence!, 'workspace-bridge-preflight', {
+    relations: bridgeRelations,
+    modules: proof.filter((item) => bridgeRelations.some((edge) => edge.includes(item.id))),
+    qualification:
+      'Rendered original bridge and Live import path; actual workspace admission still requires runtime proof',
+  });
+  const assets: Record<string, { file: string; sha256: string; bytes: number; type: string }> = {};
+  let total = 0;
+  async function inventory(folder: string) {
+    for (const name of await readdir(folder)) {
+      const path = join(folder, name),
+        stat = await lstat(path);
+      if (stat.isDirectory()) {
+        await inventory(path);
+        continue;
+      }
+      if (!stat.isFile()) throw new Error('Non-regular generated Kit asset');
+      const relative = path.slice(output.length + 1),
+        bytes = await readFile(path);
+      total += bytes.length;
+      if (Object.keys(assets).length >= 4096 || total > 268435456)
+        throw new Error('Kit asset bound');
+      const extension = relative.split('.').at(-1)!;
+      const type =
+        (
+          {
+            html: 'text/html',
+            js: 'text/javascript',
+            css: 'text/css',
+            json: 'application/json',
+            woff2: 'font/woff2',
+            woff: 'font/woff',
+            svg: 'image/svg+xml',
+            png: 'image/png',
+          } as Record<string, string>
+        )[extension] ?? 'application/octet-stream';
+      assets['/' + relative] = { file: relative, sha256: hash(bytes), bytes: bytes.length, type };
+      const copy = join(evidence!, 'kit-assets', relative);
+      await mkdir(dirname(copy), { recursive: true });
+      await copyFile(path, copy);
+    }
+  }
+  await inventory(output);
+  if (!assets['/index.html']) throw new Error('Generated Kit fallback entry missing');
+  const manifest = { version: 1, entry: '/index.html', assets, total };
+  record(output, 'asset-manifest', manifest);
+  record(evidence!, 'asset-manifest', manifest);
+  setupOwner?.observe('kit-served-retention', 'fulfilled');
+}
+
+async function prepareNativeFixture() {
+  await mkdir(evidence!, { recursive: true, mode: 0o700 });
+  setupEvidenceReady = true;
+  setupOwner?.admit('identity');
+  if (sidebarMode) {
+    const info = test.info();
+    if (
+      !(diagnosticMode
+        ? info.title === diagnosticProfile!.title
+        : sidebarGroups.some(([title]) => title === info.title)) ||
+      (diagnosticMode &&
+        (info.workerIndex !== 0 ||
+          info.parallelIndex !== 0 ||
+          info.repeatEachIndex !== 0 ||
+          !info.config.argv ||
+          JSON.stringify(info.config.argv.slice(2)) !== JSON.stringify(originalSelection) ||
+          !assertSidebarSelection(process.env, info.config.argv.slice(2)))) ||
+      info.config.workers !== 1 ||
+      info.project.retries !== 0 ||
+      info.project.repeatEach !== 1 ||
+      info.retry !== 0
+    )
+      throw new Error('Actual sidebar title/worker/retry differs from the original CLI selection');
+    if (diagnosticProfile)
+      assertCompanionDiagnosticSelection(
+        diagnosticProfile,
+        process.env,
+        originalSelection,
+        info,
+        diagnosticProfile.index,
+      );
+    record(evidence!, 'actual-runner-selection', {
+      argv: originalSelection,
+      cliGrep: diagnosticProfile ? diagnosticProfile.grep : sidebarGrep,
+      configuredGrep: String(info.config.grep),
+      title: info.title,
+      workers: info.config.workers,
+      retries: info.project.retries,
+      retry: info.retry,
+      worker: info.workerIndex,
+    });
+  }
+  if (diagnosticMode)
+    record(
+      evidence!,
+      'companion-identity',
+      await assertCompanionDiagnosticIdentity(source!, executable!),
+    );
+  const artifact = await lstat(executable!);
+  expect({
+    regular: artifact.isFile(),
+    bytes: artifact.size,
+    mode: artifact.mode & 0o777,
+    sha: hash(await readFile(executable!)),
+  }).toEqual({
+    regular: true,
+    bytes: diagnosticMode ? companionDiagnosticIdentity.bytes : 267481480,
+    mode: 0o555,
+    sha: executableHash,
+  });
+  identity.sourceSha256 = hash(
+    await readFile(join(source!, 'crates/intentd/tests/e2e_native_review_wire.rs')),
+  );
+  record(evidence!, 'frozen-cases', {
+    pipeControllerHash: hash(pipeController),
+    python: {
+      path: python,
+      resolved: await realpath(python),
+      sha256: hash(await readFile(python)),
+    },
+    groups: sidebarMode ? sidebarGroups : uiMode ? uiGroups : groups,
+    workers: 1,
+    retries: 0,
+    driverLifetimeSeconds: 150,
+    groupBudgetMs: 180000,
+    identity,
+    executable,
+    source,
+    socketShimHash: hash(socketShim),
+    rendererHash: hash(activeRenderer),
+  });
+  try {
+    setupOwner?.admit('allocation');
+    bundle = await mkdtemp(join(tmpdir(), 'native-review-electron-code-'));
+    setupOwner?.allocated(bundle);
+    setupOwner?.admit('bootstrap');
+    await symlink(await realpath(join(root, 'node_modules')), join(bundle, 'node_modules'));
+    await writeFile(join(bundle, 'pipe-controller.py'), pipeController, { mode: 0o600 });
+    await writeFile(join(evidence!, 'pipe-controller.py'), pipeController, { mode: 0o600 });
+    const shim: Plugin = {
+      name: 'observe-real-factory',
+      enforce: 'pre',
+      resolveId(id, importer) {
+        if (id === actualFactory + '?original') return actualFactory;
+        if (importer?.endsWith('/json-rpc-client.ts') && id === './backend-connection')
+          return '\0native-socket-observer';
+      },
+      load(id) {
+        if (id === '\0native-socket-observer') return socketShim;
+      },
+    };
+    for (const [entry, name] of [
+      ['test/fixtures/native-review-native/main.ts', 'main.mjs'],
+      ['src/preload/index.ts', 'preload.cjs'],
+    ]) {
+      setupOwner?.admit(name);
+      await build({
+        configFile: false,
+        logLevel: 'error',
+        resolve: { alias },
+        plugins: [shim, modules(name)],
+        build: {
+          target: 'es2022',
+          ssr: join(root, entry),
+          outDir: bundle,
+          emptyOutDir: false,
+          minify: false,
+          rollupOptions: {
+            external: ['electron'],
+            output: { format: name.endsWith('.cjs') ? 'cjs' : 'es', entryFileNames: name },
+          },
+        },
+      });
+      setupOwner?.observe(name, 'build-fulfilled');
+      setupOwner?.admit('main-output');
+      await copyFile(join(bundle, name), join(evidence!, name));
+    }
+    // Reuse the application's exact renderer resolution, including its existing
+    // icon compatibility mappings; do not replace components or install packages.
+    setupOwner?.admit('renderer-config');
+    const appConfig = uiMode
+      ? await loadConfigFromFile(
+          { command: 'build', mode: 'production' },
+          join(root, 'vite.config.mjs'),
+          root,
+          'silent',
+        )
+      : null;
+    if (uiMode && !appConfig?.config.resolve?.alias)
+      throw new Error('Original renderer aliases missing');
+    if (uiMode)
+      record(evidence!, 'renderer-config-input', {
+        path: join(root, 'vite.config.mjs'),
+        sha256: hash(await readFile(join(root, 'vite.config.mjs'))),
+        aliases: appConfig!.config.resolve!.alias,
+        qualification:
+          'Unchanged application resolution and defines only; fixture owns its build plugins and entry',
+      });
+    if (uiMode) {
+      setupOwner?.admit('kit');
+      await buildKitFixture(appConfig!.config);
+    } else {
+      await build({
+        configFile: false,
+        logLevel: 'error',
+        resolve: { alias, conditions: ['browser', 'svelte'] },
+        plugins: [
+          modules('renderer'),
+          {
+            name: 'inline-native-facade',
+            resolveId(id) {
+              if (id === 'native-renderer') return '\0native-renderer';
+            },
+            load(id) {
+              if (id === '\0native-renderer') return renderer;
+            },
+          },
+        ],
+        build: {
+          target: 'es2022',
+          outDir: bundle,
+          emptyOutDir: false,
+          minify: false,
+          rollupOptions: {
+            input: 'native-renderer',
+            output: {
+              format: 'es',
+              entryFileNames: 'renderer.js',
+              inlineDynamicImports: true,
+              assetFileNames: (asset) =>
+                asset.names.some((name) => name.endsWith('.css'))
+                  ? 'renderer.js.css'
+                  : 'assets/[name]-[hash][extname]',
+            },
+          },
+        },
+      });
+      await copyFile(join(bundle, 'renderer.js'), join(evidence!, 'renderer.js'));
+    }
+    setupOwner?.admit('compiled');
+    record(
+      evidence!,
+      'compiled',
+      await Promise.all(
+        [
+          'main.mjs',
+          'preload.cjs',
+          ...(uiMode ? ['ui-assets/asset-manifest.json'] : ['renderer.js']),
+        ].map(async (name) => ({
+          name,
+          sha256: hash(await readFile(join(bundle, name))),
+        })),
+      ),
+    );
+    if (uiMode) {
+      // Each worker owns a separate build. Keep its actual bytes before a later
+      // failed worker can overwrite the shared diagnostic paths.
+      setupOwner?.admit('epoch');
+      const epoch = join(evidence!, 'build-epochs', basename(bundle));
+      await mkdir(epoch, { recursive: true });
+      for (const name of [
+        'compiled.json',
+        'frozen-cases.json',
+        'main.mjs',
+        'main.mjs-inputs.json',
+        'preload.cjs',
+        'preload.cjs-inputs.json',
+        'pipe-controller.py',
+        'renderer-config-input.json',
+        'kit-build-process.json',
+        'kit-generated-inputs.json',
+        'kit-client-inputs.json',
+        'kit-server-inputs.json',
+        'ui-build-preflight.json',
+        'workspace-bridge-preflight.json',
+        'observer-build-preflight.json',
+        'asset-manifest.json',
+        'kit-assets',
+        'kit-generated',
+        'emitted',
+        'source-inputs',
+        'main.mjs-output-closure.json',
+        'preload.cjs-output-closure.json',
+        'kit-emitted',
+        'kit-client-output-closure.json',
+        'kit-server-output-closure.json',
+        'kit-final',
+        'kit-client-final-closure.json',
+        'kit-server-final-closure.json',
+      ])
+        await cp(join(evidence!, name), join(epoch, name), {
+          recursive: true,
+          errorOnExist: true,
+          force: false,
+        });
+      record(epoch, 'identity', {
+        bundle,
+        workerPid: process.pid,
+        workerIndex: process.env.TEST_WORKER_INDEX ?? null,
+        specSha256: hash(await readFile(fileURLToPath(import.meta.url))),
+      });
+    }
+    setupOwner?.publish();
+  } catch (error) {
+    if (diagnosticMode && bundle) {
+      try {
+        const archive = () =>
+          retainCompanionBundle(bundle, join(evidence!, 'failed-build', basename(bundle)));
+        if (setupOwner) await setupOwner.archive(archive);
+        else await archive();
+      } catch (archiveError) {
+        try {
+          record(evidence!, 'failed-build-archive-error', String(archiveError));
+        } catch {
+          /* Preserve the original build exception when evidence storage itself fails. */
+        }
+      }
+    }
+    throw error;
+  }
+}
+test.beforeAll(() => {
+  if (!diagnosticMode) return prepareNativeFixture();
+  const info = test.info();
+  info.setTimeout(300_000);
+  setupOwner = createCompanionSetupOwner(
+    () => info.status !== 'passed' || info.errors.length > 0,
+    (value) => {
+      if (setupEvidenceReady) record(evidence!, 'setup-ownership', value);
+    },
+  );
+  return setupOwner.run(prepareNativeFixture);
+});
+test.afterAll(async () => {
+  if (diagnosticMode && setupOwner) {
+    await setupOwner.retire((path) => rm(path, { recursive: true, force: true }));
+    return;
+  }
+  if (bundle) await rm(bundle, { recursive: true, force: true });
+});
+
+function control(ready: Ready, action: unknown): Promise<any> {
+  const request = { version: 1, runId: ready.runId, id: randomUUID(), action };
+  const bytes = JSON.stringify(request) + '\n';
+  if (Buffer.byteLength(bytes) > 8192) throw new Error('Control frame bound');
+  return new Promise((resolvePromise, reject) => {
+    const socket = createConnection(ready.control);
+    let input = '';
+    const timer = setTimeout(() => {
+      socket.destroy();
+      reject(new Error('Original control response deadline'));
+    }, 10000);
+    socket.on('error', (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    socket.once('connect', () => socket.write(bytes));
+    socket.on('data', (chunk) => {
+      input += chunk.toString();
+      if (input.length > 8192) {
+        clearTimeout(timer);
+        socket.destroy();
+        reject(new Error('Control reply bound'));
+        return;
+      }
+      if (!input.includes('\n')) return;
+      clearTimeout(timer);
+      socket.end();
+      try {
+        const value = JSON.parse(input.slice(0, input.indexOf('\n')));
+        if (value.id !== request.id || value.error) throw new Error(JSON.stringify(value));
+        resolvePromise(value.result);
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
+}
+async function waitFile(path: string, child: ChildProcess, startup?: StartupConsumer) {
+  const deadline = Date.now() + 25000;
+  while (Date.now() < deadline) {
+    let read = false;
+    try {
+      const bytes = await readFile(path, 'utf8');
+      read = true;
+      const value = JSON.parse(bytes);
+      observeStartup(startup, 'read-parsed');
+      return value;
+    } catch (error) {
+      observeStartup(
+        startup,
+        (error as NodeJS.ErrnoException)?.code === 'ENOENT'
+          ? 'read-enoent'
+          : read
+            ? 'parse-error'
+            : 'read-error',
+      );
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    if (child.exitCode !== null || child.signalCode !== null) {
+      observeStartup(startup, 'helper-terminal', {
+        code: child.exitCode,
+        signal: child.signalCode,
+      });
+      throw new Error('Original driver exited before ready');
+    }
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 25));
+  }
+  observeStartup(startup, 'deadline');
+  throw new Error('Original driver ready deadline');
+}
+type Main = Fixture;
+const main = <T>(app: ElectronApplication, fn: (fixture: Main) => T) =>
+  app.evaluate(({ app: _app }, code) => {
+    const fixture = (globalThis as unknown as { nativeReviewFixture: Main }).nativeReviewFixture;
+    return (0, eval)(`(${code})`)(fixture);
+  }, fn.toString()) as Promise<Awaited<T>>;
+const pageFor = async (app: ElectronApplication, key: string) => {
+  await expect
+    .poll(() =>
+      app
+        .windows()
+        .find((page) => page.url().endsWith('/' + key))
+        ?.url(),
+    )
+    .toContain('/' + key);
+  const page = app.windows().find((value) => value.url().endsWith('/' + key))!;
+  await page.waitForFunction(() => !!(window as any).native);
+  return page;
+};
+const begin = (
+  page: Page,
+  key: string,
+  input: NativeReviewInput,
+): Promise<NativeReviewPreparedView> =>
+  page.evaluate(({ key, input }) => (window as any).native.begin(key, input), { key, input });
+const confirm = (
+  page: Page,
+  key: string,
+  command: NativeReviewTextCommand = {},
+): Promise<NativeReviewObservation> =>
+  page.evaluate(({ key, command }) => (window as any).native.confirm(key, command), {
+    key,
+    command,
+  });
+const reconcile = (page: Page, key: string): Promise<NativeReviewObservation> =>
+  page.evaluate((key) => (window as any).native.reconcile(key), key);
+const inputFor = (
+  ready: Ready,
+  host: number,
+  registered = false,
+  combined = false,
+): NativeReviewInput => ({
+  workspaceId: ready.hosts[host].workspaceId,
+  action: combined ? 'commit' : 'create-pr',
+  ...(combined
+    ? { options: { stageUnstaged: false, pushAfterCommit: true, createPRAfterPush: true } }
+    : {}),
+  review: {
+    root: registered
+      ? {
+          kind: 'registered',
+          workspaceId: ready.hosts[host].workspaceId,
+          gitRootId: ready.hosts[host].registeredRootId,
+        }
+      : { kind: 'primary', workspaceId: ready.hosts[host].workspaceId },
+    choice: {
+      kind: 'explicitTarget',
+      target: {
+        provider: 'gitlab',
+        instanceBaseUrl: ready.hosts[host].instance,
+        projectPath: 'group/project',
+      },
+    },
+    targetBranch: 'trunk',
+    pushRemote: 'forge',
+  },
+});
+const settled = (value: NativeReviewObservation, expected: 'created' | 'reused' | 'uncertain') => {
+  expect(value.execute?.state).toBe('settled');
+  expect(value.execute?.reviewExecution?.outcome.status).toBe(expected);
+  return value.execute!.reviewExecution!;
+};
+async function arm(ready: Ready, operationId: string, method: 'GET' | 'POST', mode = 'hold') {
+  const status = await control(ready, { command: 'barrierStatus', host: 0 });
+  const counts = status.counts ?? {};
+  const barrier = {
+    id: randomUUID(),
+    operationId,
+    method,
+    route: 'mergeRequests',
+    ordinal: (counts[`${method}:mergeRequests`] ?? 0) + 1,
+    mode,
+    holdSeconds: 30,
+  };
+  await control(ready, { command: 'armProvider', host: 0, barrier });
+  return barrier;
+}
+async function entered(ready: Ready, id: string) {
+  let last: any;
+  await expect
+    .poll(async () => {
+      last = await control(ready, { command: 'barrierStatus', host: 0 });
+      return (
+        last.barriers?.some((barrier: any) => barrier.id === id && barrier.entered) &&
+        last.events?.some((event: any) => event.authenticated && event.phase === 'entered')
+      );
+    })
+    .toBe(true);
+  return last;
+}
+
+function stopInventory(source: ReturnType<Fixture['evidence']>) {
+  if (source.faults.length || source.records.length > 1024)
+    throw new Error('Original stop observation missing or overflowed');
+  const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+  const sameRoot = (a: any, b: any) =>
+    a?.workspaceId === b?.workspaceId && a?.kind === b?.kind && a?.gitRootId === b?.gitRootId;
+  const issued = source.records.filter(
+    (row) => row.direction === 'request' && row.envelope.method === 'accept-changes.execute',
+  );
+  if (issued.length > 16) throw new Error('Original stop request bound');
+  const rows = issued.map((row, index) => {
+    const request = {
+      host: row.host,
+      operationId: row.envelope.params?.review?.operationId,
+      socketId: row.socketId,
+      requestId: row.envelope.id,
+    };
+    if (
+      ![0, 1].includes(request.host) ||
+      typeof request.operationId !== 'string' ||
+      !uuid.test(request.operationId) ||
+      !uuid.test(request.socketId) ||
+      !(
+        typeof request.requestId === 'string' ||
+        (Number.isSafeInteger(request.requestId) && request.requestId >= 0)
+      ) ||
+      source.allocations.filter(
+        (allocation) =>
+          allocation.host === request.host && allocation.socketId === request.socketId,
+      ).length !== 1 ||
+      issued
+        .slice(0, index)
+        .some(
+          (previous) =>
+            (previous.host === request.host &&
+              previous.envelope.params?.review?.operationId === request.operationId) ||
+            (previous.socketId === request.socketId && previous.envelope.id === request.requestId),
+        )
+    )
+      throw new Error('Original stop request identity missing or duplicated');
+    const sameSocket = (candidate: WireRecord) =>
+      candidate.host === request.host && candidate.socketId === request.socketId;
+    const responses = source.records.filter(
+      (candidate) =>
+        sameSocket(candidate) &&
+        candidate.direction === 'response' &&
+        candidate.envelope.id === request.requestId,
+    );
+    if (responses.length > 1) throw new Error('Ambiguous original stop response');
+    const originalResponse = responses[0]?.envelope ?? null;
+    // Same strict settled predicate as the pinned driver's driver_completed.
+    const settled = (envelope: any) =>
+      envelope?.jsonrpc === '2.0' &&
+      !Object.hasOwn(envelope, 'error') &&
+      envelope.result?.state === 'settled' &&
+      envelope.result.operationId === request.operationId &&
+      envelope.result.reviewExecution?.requestId === request.operationId;
+    const history =
+      source.records.findLast(
+        (candidate, position) =>
+          sameSocket(candidate) &&
+          candidate.direction === 'response' &&
+          settled(candidate.envelope) &&
+          source.records
+            .slice(source.records.indexOf(row) + 1, position)
+            .some(
+              (query) =>
+                sameSocket(query) &&
+                query.direction === 'request' &&
+                query.envelope.id === candidate.envelope.id &&
+                query.envelope.method === 'accept-changes.reconcile' &&
+                query.envelope.params?.operationId === request.operationId &&
+                sameRoot(query.envelope.params?.root, row.envelope.params.review.root),
+            ),
+      )?.envelope ?? null;
+    const preparations = (source.ipcRecords as Record<string, any>[]).filter(
+      (ipc) =>
+        ipc.channel === 'backend:native-review:prepare' &&
+        ipc.main === true &&
+        ipc.result?.ok === true &&
+        ipc.result.result?.preview?.reviewPreparation?.operationId === request.operationId &&
+        sameRoot(ipc.result.result.preview.reviewPreparation.root, row.envelope.params.review.root),
+    );
+    const preparation = preparations.length === 1 ? preparations[0] : null;
+    const handlers = preparation
+      ? (source.ipcRecords as Record<string, any>[]).filter(
+          (ipc) =>
+            ipc.channel === 'backend:native-review:execute' &&
+            ipc.main === true &&
+            ipc.sender === preparation.sender &&
+            ipc.frame === preparation.frame &&
+            ipc.args?.[0]?.id === preparation.result.result.id &&
+            sameRoot(ipc.args[0].root, row.envelope.params.review.root),
+        )
+      : [];
+    // A retired renderer can receive an unavailable IPC result after a genuine wire settlement.
+    // Handler completion proves only the join; the original socket proves native completion.
+    const joined =
+      source.pending === 0 &&
+      handlers.length > 0 &&
+      handlers.every((ipc) => Object.hasOwn(ipc, 'result') || Object.hasOwn(ipc, 'rejected'));
+    return {
+      request,
+      originalResponse,
+      history,
+      joined,
+      complete: joined && (settled(originalResponse) || settled(history)),
+    };
+  });
+  return { rows, pending: rows.filter((row) => !row.complete).map((row) => row.request) };
+}
+
+async function withDriver(
+  index: number,
+  body: (context: {
+    dir: string;
+    ready: Ready;
+    app: ElectronApplication;
+    a: Page;
+    b: Page;
+    packet(name: string, value?: unknown): Promise<any>;
+  }) => Promise<void>,
+) {
+  if (diagnosticProfile)
+    assertCompanionDiagnosticSelection(
+      diagnosticProfile,
+      process.env,
+      originalSelection,
+      test.info(),
+      index,
+    );
+  if (sidebarMode !== index >= 8 || (index >= 5 && !uiMode) || index < 0 || index > 10)
+    throw new Error('Case does not match the selected fixture mode');
+  const dir = await mkdtemp(join(tmpdir(), `nrv-${index + 1}-`));
+  await chmod(dir, 0o700);
+  record(evidence!, `group-${index + 1}-location`, { dir });
+  await mkdir(join(dir, 'runtime'), { mode: 0o700 });
+  const home = join(dir, 'home');
+  await mkdir(home, { mode: 0o700 });
+  const runId = randomUUID();
+  record(dir, 'descriptor', {
+    version: 1,
+    runId,
+    ...identity,
+    lifetimeSeconds: 150,
+    scenarios:
+      index < 5
+        ? groups[index][1]
+        : index < 8
+          ? uiGroups[index - 5][1]
+          : sidebarGroups[index - 8][1],
+  });
+  const descriptorHash = hash(await readFile(join(dir, 'descriptor.json')));
+  const child = spawn(
+    python,
+    [join(bundle, 'pipe-controller.py'), executable!, dir, runId, descriptorHash, executableHash],
+    {
+      cwd: source!,
+      env: {
+        ...environment(home),
+        INTENT_REVIEW_DRIVER_DESCRIPTOR: join(dir, 'descriptor.json'),
+        ...(diagnosticMode ? await startupHelperEnvironment(true, evidence!) : {}),
+      },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    },
+  );
+  const lifecycle: Array<Record<string, any>> = [];
+  let lifecycleFault: string | null = null;
+  let metadata = '';
+  let metadataBytes = 0;
+  let stderr = '';
+  const failLifecycle = (reason: string) => {
+    lifecycleFault ??= reason;
+    child.stdin!.end();
+  };
+  child.stdout!.on('data', (chunk: Buffer) => {
+    metadataBytes += chunk.length;
+    if (metadataBytes > 8192) return failLifecycle('controller metadata bound');
+    metadata += chunk.toString('utf8');
+    while (metadata.includes('\n')) {
+      const end = metadata.indexOf('\n');
+      const line = metadata.slice(0, end);
+      metadata = metadata.slice(end + 1);
+      try {
+        const value = JSON.parse(line);
+        if (
+          Buffer.byteLength(line) > 2048 ||
+          Object.keys(value).sort().join(',') !==
+            'descriptorSha256,details,executableSha256,kind,runId,sequence,version' ||
+          value.version !== 1 ||
+          value.runId !== runId ||
+          value.descriptorSha256 !== descriptorHash ||
+          value.executableSha256 !== executableHash ||
+          value.sequence !== lifecycle.length ||
+          value.kind !== ['allocation', 'supervisor-wait', 'helper-result'][lifecycle.length] ||
+          !value.details ||
+          typeof value.details !== 'object' ||
+          Array.isArray(value.details)
+        )
+          throw new Error('invalid lifecycle message');
+        lifecycle.push(value);
+      } catch {
+        failLifecycle('controller metadata validation');
+      }
+    }
+  });
+  child.stderr!.on('data', (chunk: Buffer) => {
+    if (Buffer.byteLength(stderr) + chunk.length > 8192)
+      return failLifecycle('controller stderr bound');
+    stderr += chunk.toString('utf8');
+  });
+  child.stdin!.on('error', () => failLifecycle('controller channel write failed'));
+  const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
+    (resolvePromise) => {
+      child.once('error', () => failLifecycle('controller spawn failed'));
+      child.once('close', (code, signal) => resolvePromise({ code, signal }));
+    },
+  );
+  child.stdin!.write('R');
+  record(dir, 'allocation', { helperPid: child.pid, runId, executable, descriptorHash });
+  let app: ElectronApplication | undefined;
+  let ready: Ready | undefined;
+  let success = false;
+  const startupBindingCurrent: StartupBinding = {
+    run: runId,
+    descriptor: descriptorHash,
+    artifact: executableHash,
+    source: identity.sourceSha256,
+    commit: identity.sourceCommit,
+    tree: identity.sourceTree,
+  };
+  const startup = diagnosticMode
+    ? createStartupConsumer(startupBindingCurrent, child.pid ?? 0)
+    : undefined;
+  let startupJoined = false;
+  let startupHelperWait: { code: number | null; signal: NodeJS.Signals | null } | undefined;
+  const packet = async (name: string, value?: unknown) => {
+    const result = {
+      value,
+      source: app ? await main(app, (f) => f.evidence()) : null,
+      hosts: ready
+        ? await Promise.all([0, 1].map((host) => control(ready!, { command: 'snapshot', host })))
+        : null,
+    };
+    record(dir, name, result);
+    return result;
+  };
+  if (diagnosticMode) {
+    const observationErrors: string[] = [];
+    let bodyError: unknown;
+    let observedMainPid: number | undefined;
+    let bodyFailed = false;
+    let finalSource: ReturnType<Fixture['evidence']> | undefined;
+    await companionPhasesOnce(
+      [
+        {
+          name: 'body',
+          run: async () => {
+            try {
+              ready = await waitFile(join(dir, 'ready.json'), child, startup);
+              expect(ready!.identity).toEqual(identity);
+              expect(ready!.runId).toBe(runId);
+              expect(ready!.hosts[0].workspaceId).toBe(ready!.hosts[1].workspaceId);
+              expect(ready!.hosts[0].registeredRootId).toBe(ready!.hosts[1].registeredRootId);
+              observeStartup(startup, 'ready-accepted', {
+                worker: (ready as unknown as { pid: number }).pid,
+              });
+              app = await electron.launch({
+                args: [
+                  join(bundle, 'main.mjs'),
+                  join(dir, 'profile'),
+                  join(bundle, 'preload.cjs'),
+                  join(dir, 'ready.json'),
+                  join(bundle, uiMode ? 'ui-assets/asset-manifest.json' : 'renderer.js'),
+                ],
+                env: {
+                  ...environment(home),
+                  NATIVE_REVIEW_COMPANION_DIAGNOSTIC_6328: '1',
+                  ...(uiMode
+                    ? {
+                        NATIVE_REVIEW_UI: '1',
+                        NATIVE_REVIEW_UI_ROLE: index === 6 || index === 10 ? 'member' : 'owner',
+                        ...(sidebarMode ? { NATIVE_REVIEW_SIDEBAR_UI: '1' } : {}),
+                      }
+                    : {}),
+                  DISPLAY: process.env.DISPLAY!,
+                  XDG_RUNTIME_DIR: join(dir, 'runtime'),
+                },
+                timeout: 20000,
+              });
+              const logs = createWriteStream(join(dir, 'electron.log'), { mode: 0o600 });
+              app.process().stdout?.pipe(logs, { end: false });
+              app.process().stderr?.pipe(logs, { end: false });
+              await expect
+                .poll(() => app!.evaluate(() => !!(globalThis as any).nativeReviewFixture?.ready))
+                .toBe(true);
+              observedMainPid = app.process().pid;
+              const activation = await app.evaluate(observeCompanionMainActivation);
+              record(dir, 'electron', {
+                outer: { runId, workerPid: process.pid, mainPid: observedMainPid },
+                observed: activation,
+              });
+              assertCompanionMainActivation(activation, observedMainPid ?? 0, process.pid);
+              await body({
+                dir,
+                ready: ready!,
+                app,
+                a: await pageFor(app, 'host-A'),
+                b: await pageFor(app, 'local-B'),
+                packet,
+              });
+            } catch (error) {
+              bodyFailed = true;
+              bodyError = error;
+              try {
+                record(dir, 'failure', {
+                  error: String(error),
+                  stack: error instanceof Error ? error.stack : null,
+                });
+              } catch (recordError) {
+                observationErrors.push('body-record: ' + String(recordError));
+              }
+              try {
+                const rendererEvidence = app
+                  ? await Promise.all(
+                      app.windows().map(async (page) => {
+                        try {
+                          return {
+                            url: page.url(),
+                            evidence: await page.evaluate(() =>
+                              (window as any).nativeUi?.snapshot(),
+                            ),
+                          };
+                        } catch {
+                          return { unobserved: true };
+                        }
+                      }),
+                    )
+                  : null;
+                await packet('failure-packet', { rendererEvidence });
+              } catch (packetError) {
+                try {
+                  record(dir, 'failure-packet-error', String(packetError));
+                } catch (recordError) {
+                  observationErrors.push('packet-record: ' + String(recordError));
+                }
+              }
+              throw error;
+            }
+          },
+        },
+        {
+          name: 'original-quiesce-and-stop',
+          run: async () => {
+            if (!app || !ready) throw new Error('Original UI allocation unavailable for stop');
+            if (uiMode) record(dir, 'ui-quiescence', await main(app, (f) => f.quiesceUi()));
+            await main(app, (f) => f.join());
+            const before = await packet('before-stop');
+            if (!before.source) throw new Error('Original main observations missing');
+            const inventory = stopInventory(before.source);
+            record(dir, 'stop-inventory-before', inventory);
+            const { pending } = inventory;
+            record(
+              dir,
+              'stop-begin',
+              await control(ready!, { command: 'stop', phase: 'begin', pending, envelopes: [] }),
+            );
+            await main(app, (f) => f.join());
+            const after = await main(app, (f) => f.evidence());
+            record(dir, 'after-stop', after);
+            const finalInventory = stopInventory(after);
+            record(dir, 'stop-inventory-after', finalInventory);
+            expect(after.records.slice(0, before.source.records.length)).toEqual(
+              before.source.records,
+            );
+            expect(finalInventory.rows.map((row) => row.request)).toEqual(
+              inventory.rows.map((row) => row.request),
+            );
+            expect(after.pending).toBe(0);
+            if (uiMode) {
+              expect(after.completionFaults).toEqual([]);
+              expect(after.outstandingOriginals).toBe(0);
+              expect(after.completions).toEqual(before.source.completions);
+            }
+            const originals = finalInventory.rows.map(({ request, originalResponse, history }) => ({
+              request,
+              originalResponse,
+              history,
+            }));
+            record(dir, 'original-completions', originals);
+            const envelopes = pending.map((request) => {
+              const row = finalInventory.rows.find(
+                (candidate) => JSON.stringify(candidate.request) === JSON.stringify(request),
+              );
+              if (!row?.complete)
+                throw new Error('Original completion remains unobserved or unjoined');
+              return { request, originalResponse: row.originalResponse, history: row.history };
+            });
+            record(
+              dir,
+              'stop-finish',
+              await control(ready!, { command: 'stop', phase: 'finish', pending: [], envelopes }),
+            );
+            const result = await exited;
+            record(dir, 'controller-helper-exit', result);
+            const supervisorWait = JSON.parse(
+              await readFile(join(dir, 'controller-supervisor-wait.json'), 'utf8'),
+            );
+            record(dir, 'original-supervisor-wait-observed', supervisorWait);
+            expect(lifecycleFault).toBeNull();
+            expect(metadata).toBe('');
+            expect(lifecycle).toHaveLength(3);
+            expect(supervisorWait).toEqual(lifecycle[1]);
+            const allocation = lifecycle[0].details;
+            expect(allocation).toEqual({
+              supervisorPid: expect.any(Number),
+              controllerPid: child.pid,
+              writerIsFifo: true,
+              writerInheritable: false,
+            });
+            expect(
+              Number.isSafeInteger(allocation.supervisorPid) && allocation.supervisorPid > 0,
+            ).toBe(true);
+            expect(supervisorWait.details).toEqual({
+              supervisorPid: allocation.supervisorPid,
+              returnCode: 0,
+              code: 0,
+              signal: null,
+              waitedOriginalChild: true,
+              failure: null,
+            });
+            expect(lifecycle[2].details).toEqual({
+              success: true,
+              failure: null,
+              nativeCompletion: 'not asserted',
+            });
+            const stopped = JSON.parse(await readFile(join(dir, 'stopped.json'), 'utf8'));
+            record(dir, 'final-stop-observed', stopped);
+            expect(result).toEqual({ code: 0, signal: null });
+            expect(stopped.success).toBe(true);
+            expect(stopped.ownership.complete).toBe(true);
+            expect(stopped.ownership.failed).toBe(false);
+            expect(
+              stopped.worker.cleanup.every(
+                (row: any) => row.udsClosed && row.tcpClosed && row.reaped,
+              ),
+            ).toBe(true);
+            success = true;
+            finalSource = after;
+          },
+        },
+        {
+          name: 'partial-before-failure-cleanup',
+          run: async () => {
+            if (!success)
+              await retainStartupAfter(
+                () =>
+                  archiveCompanionFiles(
+                    dir,
+                    join(evidence!, `group-${diagnosticProfile!.index + 1}`, 'diagnostics'),
+                    'partial',
+                  ),
+                () =>
+                  archiveStartup(
+                    evidence!,
+                    join(evidence!, `group-${diagnosticProfile!.index + 1}`, 'diagnostics'),
+                    'partial',
+                    startup!,
+                    startupBindingCurrent,
+                  ),
+                () => {
+                  observationErrors.push('startup-partial-archive');
+                },
+              );
+          },
+        },
+        {
+          name: 'original-controller-wait',
+          run: async () => {
+            if (!success) child.stdin!.end();
+            const result = await exited;
+            startupJoined = true;
+            startupHelperWait = result;
+            observeStartup(startup, 'helper-wait', result);
+            record(dir, 'controller-final-wait', { ...result, success });
+            record(dir, 'controller-protocol-observed', {
+              lifecycle,
+              lifecycleFault,
+              metadata,
+              stderr,
+            });
+            child.stdin!.end();
+            if (!success || result.code !== 0 || result.signal !== null)
+              throw new Error('Original owned cleanup failed');
+          },
+        },
+        {
+          name: 'original-app-shutdown',
+          run: async () => {
+            if (app) await main(app, (f) => f.shutdown());
+          },
+        },
+        {
+          name: 'original-main-ownership-observation',
+          run: async () => {
+            if (!app) throw new Error('Original main unavailable for ownership observation');
+            record(dir, 'sidebar-main-ownership-final', await main(app, (f) => f.evidence()));
+          },
+        },
+        {
+          name: 'original-app-close',
+          run: async () => {
+            if (app) await app.close();
+          },
+        },
+        {
+          name: 'final-original-archive',
+          run: async () => {
+            await retainStartupAfter(
+              () =>
+                archiveCompanionFiles(
+                  dir,
+                  join(evidence!, `group-${diagnosticProfile!.index + 1}`, 'diagnostics'),
+                  'final',
+                ),
+              () =>
+                archiveStartup(
+                  evidence!,
+                  join(evidence!, `group-${diagnosticProfile!.index + 1}`, 'diagnostics'),
+                  'final',
+                  startup!,
+                  startupBindingCurrent,
+                ),
+              () => {
+                observationErrors.push('startup-final-archive');
+              },
+            );
+          },
+        },
+        {
+          name: 'diagnostic-validation',
+          run: async () => {
+            await retainStartupAfter(
+              async () => {
+                const destination = join(
+                  evidence!,
+                  `group-${diagnosticProfile!.index + 1}`,
+                  'diagnostics',
+                );
+                let mainCoverage: unknown;
+                let coverageFailed = false;
+                let coverageError: unknown;
+                try {
+                  const activation = companionMainObject(
+                    JSON.parse(await readFile(join(destination, 'final-electron.json'), 'utf8')),
+                    ['outer', 'observed'],
+                  );
+                  const outer = companionMainObject(activation.outer, [
+                    'runId',
+                    'workerPid',
+                    'mainPid',
+                  ]);
+                  companionMainRequire(
+                    outer.runId === runId &&
+                      outer.workerPid === process.pid &&
+                      outer.mainPid === observedMainPid,
+                    'original activation binding',
+                  );
+                  const active = assertCompanionMainActivation(
+                    activation.observed,
+                    observedMainPid ?? 0,
+                    process.pid,
+                  );
+                  const ownership = assertCompanionMainOwnership(
+                    JSON.parse(
+                      await readFile(
+                        join(destination, 'final-sidebar-main-ownership-final.json'),
+                        'utf8',
+                      ),
+                    ),
+                    JSON.parse(
+                      await readFile(join(destination, 'final-ui-quiescence.json'), 'utf8'),
+                    ),
+                    activation.observed.statusProducers,
+                    diagnosticProfile!.memberTransition
+                      ? {
+                          disposal: await retainCompanionMemberDisposal(evidence!, destination),
+                          member: await readCompanionPacket(dir, 'sidebar-member-reused'),
+                          before: await readCompanionPacket(dir, 'sidebar-guest-before'),
+                          denied: await readCompanionPacket(dir, 'sidebar-guest-denied'),
+                        }
+                      : undefined,
+                  );
+                  mainCoverage = { activation: active, ownership };
+                } catch (error) {
+                  coverageFailed = true;
+                  coverageError = error;
+                  mainCoverage = { complete: false, error: String(error) };
+                }
+                record(destination, 'main-coverage', mainCoverage);
+                const worker = JSON.parse(await readFile(join(dir, 'worker.json'), 'utf8'));
+                const supervisor = JSON.parse(await readFile(join(dir, 'supervisor.json'), 'utf8'));
+                const owned = (await readFile(join(dir, 'ownership.jsonl'), 'utf8'))
+                  .trim()
+                  .split('\n')
+                  .map((line) => JSON.parse(line));
+                if (
+                  supervisor.runId !== runId ||
+                  supervisor.pid !== lifecycle[0]?.details.supervisorPid ||
+                  worker.owner !== 'supervisor' ||
+                  worker.allocation !== 'pidfd' ||
+                  owned.filter(
+                    (row) =>
+                      row.kind === 'enrolled' && row.role === 'worker' && row.pid === worker.pid,
+                  ).length !== 1
+                )
+                  throw new Error('Original worker enrollment missing');
+                const parsed = readCompanionDiagnostics(
+                  await readFile(join(destination, 'final-companion-preparation-v1.jsonl')),
+                  await readFile(join(destination, 'final-companion-preparation-v1-final.json')),
+                  worker.pid,
+                );
+                record(destination, 'reader', parsed);
+                let correlation: unknown = null;
+                try {
+                  const observed =
+                    finalSource ??
+                    JSON.parse(await readFile(join(dir, 'failure-packet.json'), 'utf8')).source;
+                  const parent = companionDiagnosticParent(
+                    diagnosticProfile!,
+                    await readCompanionPacket(dir, diagnosticProfile!.parentPacket),
+                  );
+                  correlation = correlateCompanionDiagnostics(parsed.frames, observed, parent);
+                  if (diagnosticProfile!.index !== 9)
+                    record(
+                      destination,
+                      'case-outcome',
+                      assertCompanionDiagnosticOutcome(
+                        diagnosticProfile!,
+                        await readCompanionPacket(dir, diagnosticProfile!.outcomePacket),
+                        parent,
+                        correlation as ReturnType<typeof correlateCompanionDiagnostics>,
+                      ),
+                    );
+                  record(destination, 'correlation', correlation);
+                } catch (error) {
+                  record(destination, 'correlation-failure', String(error));
+                  throw error;
+                }
+                record(destination, 'disposition', {
+                  bodyFailed,
+                  mainCoverage,
+                  ownedCleanup: success,
+                  readerValid: parsed.valid,
+                  readerComplete: parsed.complete,
+                  correlated: !!correlation,
+                  nativeCompletion: 'original stop inventory only',
+                  historicalCause: false,
+                });
+                if (coverageFailed) throw coverageError;
+                if (!parsed.complete || !success)
+                  throw new Error('Diagnostic trace or original lifecycle incomplete');
+              },
+              async () => {
+                const read = async (name: string) =>
+                  JSON.parse(await readFile(join(dir, name + '.json'), 'utf8'));
+                await validateStartupArchive(
+                  join(evidence!, `group-${diagnosticProfile!.index + 1}`, 'diagnostics'),
+                  {
+                    ...startupBindingCurrent,
+                    consumerPid: process.pid,
+                    helperPid: child.pid ?? 0,
+                    worker: await read('worker'),
+                    supervisor: await read('supervisor'),
+                    allocation: lifecycle[0]?.details,
+                    owned: (await readFile(join(dir, 'ownership.jsonl'), 'utf8'))
+                      .trim()
+                      .split('\n')
+                      .map((line) => JSON.parse(line)),
+                    wait: lifecycle[1]?.details,
+                    helper: startupHelperWait,
+                    stopped: await read('stopped'),
+                    ready,
+                    joined: startupJoined,
+                  },
+                );
+              },
+              () => {
+                observationErrors.push('startup-validation');
+              },
+            );
+          },
+        },
+      ],
+      (rows) =>
+        record(evidence!, `group-${diagnosticProfile!.index + 1}-diagnostic-outcomes`, {
+          rows,
+          bodyFailed,
+          primaryError: bodyFailed ? String(bodyError) : null,
+          observationErrors,
+        }),
+    );
+    return;
+  } else {
+    try {
+      ready = await waitFile(join(dir, 'ready.json'), child);
+      expect(ready!.identity).toEqual(identity);
+      expect(ready!.runId).toBe(runId);
+      expect(ready!.hosts[0].workspaceId).toBe(ready!.hosts[1].workspaceId);
+      expect(ready!.hosts[0].registeredRootId).toBe(ready!.hosts[1].registeredRootId);
+      app = await electron.launch({
+        args: [
+          join(bundle, 'main.mjs'),
+          join(dir, 'profile'),
+          join(bundle, 'preload.cjs'),
+          join(dir, 'ready.json'),
+          join(bundle, uiMode ? 'ui-assets/asset-manifest.json' : 'renderer.js'),
+        ],
+        env: {
+          ...environment(home),
+          ...(uiMode
+            ? {
+                NATIVE_REVIEW_UI: '1',
+                NATIVE_REVIEW_UI_ROLE: index === 6 || index === 10 ? 'member' : 'owner',
+                ...(sidebarMode ? { NATIVE_REVIEW_SIDEBAR_UI: '1' } : {}),
+              }
+            : {}),
+          DISPLAY: process.env.DISPLAY!,
+          XDG_RUNTIME_DIR: join(dir, 'runtime'),
+        },
+        timeout: 20000,
+      });
+      const logs = createWriteStream(join(dir, 'electron.log'), { mode: 0o600 });
+      app.process().stdout?.pipe(logs, { end: false });
+      app.process().stderr?.pipe(logs, { end: false });
+      await expect
+        .poll(() => app!.evaluate(() => !!(globalThis as any).nativeReviewFixture?.ready))
+        .toBe(true);
+      await body({
+        dir,
+        ready: ready!,
+        app,
+        a: await pageFor(app, 'host-A'),
+        b: await pageFor(app, 'local-B'),
+        packet,
+      });
+      if (uiMode) record(dir, 'ui-quiescence', await main(app, (f) => f.quiesceUi()));
+      await main(app, (f) => f.join());
+      const before = await packet('before-stop');
+      if (!before.source) throw new Error('Original main observations missing');
+      const inventory = stopInventory(before.source);
+      record(dir, 'stop-inventory-before', inventory);
+      const { pending } = inventory;
+      record(
+        dir,
+        'stop-begin',
+        await control(ready!, { command: 'stop', phase: 'begin', pending, envelopes: [] }),
+      );
+      await main(app, (f) => f.join());
+      const after = await main(app, (f) => f.evidence());
+      record(dir, 'after-stop', after);
+      const finalInventory = stopInventory(after);
+      record(dir, 'stop-inventory-after', finalInventory);
+      expect(after.records.slice(0, before.source.records.length)).toEqual(before.source.records);
+      expect(finalInventory.rows.map((row) => row.request)).toEqual(
+        inventory.rows.map((row) => row.request),
+      );
+      expect(after.pending).toBe(0);
+      if (uiMode) {
+        expect(after.completionFaults).toEqual([]);
+        expect(after.outstandingOriginals).toBe(0);
+        expect(after.completions).toEqual(before.source.completions);
+      }
+      const originals = finalInventory.rows.map(({ request, originalResponse, history }) => ({
+        request,
+        originalResponse,
+        history,
+      }));
+      record(dir, 'original-completions', originals);
+      const envelopes = pending.map((request) => {
+        const row = finalInventory.rows.find(
+          (candidate) => JSON.stringify(candidate.request) === JSON.stringify(request),
+        );
+        if (!row?.complete) throw new Error('Original completion remains unobserved or unjoined');
+        return { request, originalResponse: row.originalResponse, history: row.history };
+      });
+      record(
+        dir,
+        'stop-finish',
+        await control(ready!, { command: 'stop', phase: 'finish', pending: [], envelopes }),
+      );
+      const result = await exited;
+      record(dir, 'controller-helper-exit', result);
+      const supervisorWait = JSON.parse(
+        await readFile(join(dir, 'controller-supervisor-wait.json'), 'utf8'),
+      );
+      record(dir, 'original-supervisor-wait-observed', supervisorWait);
+      expect(lifecycleFault).toBeNull();
+      expect(metadata).toBe('');
+      expect(lifecycle).toHaveLength(3);
+      expect(supervisorWait).toEqual(lifecycle[1]);
+      const allocation = lifecycle[0].details;
+      expect(allocation).toEqual({
+        supervisorPid: expect.any(Number),
+        controllerPid: child.pid,
+        writerIsFifo: true,
+        writerInheritable: false,
+      });
+      expect(Number.isSafeInteger(allocation.supervisorPid) && allocation.supervisorPid > 0).toBe(
+        true,
+      );
+      expect(supervisorWait.details).toEqual({
+        supervisorPid: allocation.supervisorPid,
+        returnCode: 0,
+        code: 0,
+        signal: null,
+        waitedOriginalChild: true,
+        failure: null,
+      });
+      expect(lifecycle[2].details).toEqual({
+        success: true,
+        failure: null,
+        nativeCompletion: 'not asserted',
+      });
+      const stopped = JSON.parse(await readFile(join(dir, 'stopped.json'), 'utf8'));
+      record(dir, 'final-stop-observed', stopped);
+      expect(result).toEqual({ code: 0, signal: null });
+      expect(stopped.success).toBe(true);
+      expect(stopped.ownership.complete).toBe(true);
+      expect(stopped.ownership.failed).toBe(false);
+      expect(
+        stopped.worker.cleanup.every((row: any) => row.udsClosed && row.tcpClosed && row.reaped),
+      ).toBe(true);
+      success = true;
+    } catch (error) {
+      record(dir, 'failure', {
+        error: String(error),
+        stack: error instanceof Error ? error.stack : null,
+      });
+      try {
+        await packet('failure-packet');
+      } catch (packetError) {
+        record(dir, 'failure-packet-error', String(packetError));
+      }
+      throw error;
+    } finally {
+      // EOF is failure cleanup, never success or a native receipt. Await this original allocation.
+      if (!success) child.stdin!.end();
+      const result = await exited;
+      record(dir, 'controller-final-wait', { ...result, success });
+      record(dir, 'controller-protocol-observed', { lifecycle, lifecycleFault, metadata, stderr });
+      child.stdin!.end();
+      if (app) {
+        try {
+          await main(app, (f) => f.shutdown());
+        } finally {
+          await app.close();
+        }
+      }
+      const destination = join(evidence!, `group-${index + 1}`);
+      await mkdir(destination, { recursive: true, mode: 0o700 });
+      for (const entry of await readdir(dir, { withFileTypes: true }))
+        if (entry.isFile() && /\.(json|jsonl|log)$/.test(entry.name))
+          await copyFile(join(dir, entry.name), join(destination, entry.name));
+    }
+  }
+}
+
+test(groups[0][0], async () =>
+  withDriver(0, async ({ ready, a, b, packet }) => {
+    const baseline = await packet('baseline');
+    await a.evaluate((id) => (window as any).native.read(id), ready.hosts[0].workspaceId);
+    const prepared = await begin(a, 'a-create', inputFor(ready, 0));
+    const created = await confirm(a, 'a-create', {
+      prTitle: 'Owned primary create',
+      prBody: 'fixture',
+    });
+    const first = await packet('primary-create', { prepared, created });
+    expect(settled(created, 'created').gitReceipts).toEqual([]);
+    expect(first.hosts[0].effects.pushes).toBe(baseline.hosts[0].effects.pushes);
+    for (const key of ['primaryHead', 'registeredHead', 'index', 'worktree'])
+      expect(first.hosts[0][key]).toEqual(baseline.hosts[0][key]);
+    expect(first.hosts[1]).toEqual(baseline.hosts[1]);
+    const combined = await begin(b, 'b-combined', inputFor(ready, 1, true, true));
+    const completed = await confirm(b, 'b-combined', {
+      commitMessage: 'Owned staged commit',
+      prTitle: 'Owned combined review',
+    });
+    const second = await packet('registered-combined', { combined, completed });
+    const receipts = settled(completed, 'created').gitReceipts;
+    expect(receipts.map((row) => row.stage)).toEqual(['commit', 'push']);
+    expect(second.hosts[1].registeredHead).not.toBe(baseline.hosts[1].registeredHead);
+    expect(second.hosts[1].remoteHead).toBe(second.hosts[1].registeredHead);
+    expect(second.hosts[0]).toEqual(first.hosts[0]);
+    const registeredDir = join(dirname(ready.hosts[1].uds), 'secondary');
+    expect(await readFile(join(registeredDir, 'unstaged.txt'), 'utf8')).toContain('unstaged');
+    await begin(a, 'a-reused', inputFor(ready, 0));
+    const reused = await confirm(a, 'a-reused');
+    const final = await packet('create-reused', reused);
+    expect(settled(reused, 'reused').gitReceipts).toEqual([]);
+    expect(final.hosts[0].effects).toEqual(first.hosts[0].effects);
+  }),
+);
+
+test(groups[1][0], async () =>
+  withDriver(1, async ({ ready, app, a, packet }) => {
+    await main(app, (f) => f.role('member'));
+    const prepared = await begin(a, 'member', inputFor(ready, 0));
+    await packet('member-prepared', prepared);
+    expect(prepared.reviewPreparation.source.connection ?? null).toBeNull();
+    expect(prepared.reviewPreparation.target.connection ?? null).toBeNull();
+    const barrier = await arm(ready, prepared.reviewPreparation.operationId, 'GET');
+    await a.evaluate(() => (window as any).native.start('member', { prTitle: 'Existing review' }));
+    const admitted = await entered(ready, barrier.id);
+    await packet('member-admitted', admitted);
+    const duplicate = confirm(a, 'member', { prTitle: 'Existing review' });
+    await control(ready, { command: 'releaseBarrier', host: 0, barrierId: barrier.id });
+    const value = await duplicate;
+    await packet('member-result', value);
+    settled(value, 'reused');
+    expect((await confirm(a, 'member', { prTitle: 'Existing review' })).execute).toEqual(
+      value.execute,
+    );
+    await expect(confirm(a, 'member', { prTitle: 'changed' })).rejects.toThrow();
+    const handle = await main(app, (f) => f.handle('host-A'));
+    expect(handle).toBeDefined();
+    await main(app, (f) => f.duplicateWindow());
+    const other = await pageFor(app, 'other-A');
+    const forged = await other.evaluate(
+      (handle) =>
+        (window as any).electronAPI.invoke('backend:native-review:execute', {
+          id: handle!.id,
+          root: handle!.input.review.root,
+          command: {},
+        }),
+      handle,
+    );
+    const wrongRoot = await a.evaluate(
+      ({ handle, gitRootId }) =>
+        (window as any).electronAPI.invoke('backend:native-review:execute', {
+          id: handle!.id,
+          root: { ...handle!.input.review.root, kind: 'registered', gitRootId },
+          command: {},
+        }),
+      { handle, gitRootId: ready.hosts[0].registeredRootId },
+    );
+    const frame = a.frames().find((value) => value !== a.mainFrame())!;
+    const subframe = await frame.evaluate(
+      (handle) =>
+        (window as any).electronAPI.invoke('backend:native-review:execute', {
+          id: handle!.id,
+          root: handle!.input.review.root,
+          command: {},
+        }),
+      handle,
+    );
+    await packet('wrong-owners', { forged, wrongRoot, subframe });
+    expect(forged.ok).toBe(false);
+    expect(wrongRoot.ok).toBe(false);
+    expect(subframe.ok).toBe(false);
+    await main(app, (f) => f.role('guest'));
+    const read = await a.evaluate(
+      (id) => (window as any).native.read(id),
+      ready.hosts[0].workspaceId,
+    );
+    await packet('guest-local-read', read);
+    expect(JSON.stringify(read)).not.toContain('accountId');
+    await expect(begin(a, 'guest-denied', inputFor(ready, 0))).rejects.toThrow();
+    const final = await packet('guest-native-denied');
+    expect(
+      final.source.records.filter(
+        (row: WireRecord) =>
+          row.direction === 'request' && row.envelope.method === 'accept-changes.execute',
+      ),
+    ).toHaveLength(1);
+  }),
+);
+
+test(groups[2][0], async () =>
+  withDriver(2, async ({ ready, app, a, packet }) => {
+    await main(app, (f) => f.role('member'));
+    await begin(a, 'known', inputFor(ready, 0));
+    const known = await confirm(a, 'known');
+    await packet('known-before-revoke', known);
+    settled(known, 'reused');
+    await control(ready, { command: 'revokeMember', host: 0 });
+    const retained = await reconcile(a, 'known');
+    await packet('history-after-revoke', retained);
+    expect(retained.execute).toEqual(known.execute);
+    expect(retained.current).toBe(false);
+    await main(app, (f) => f.role('owner'));
+    await begin(a, 'primary-before-delete', inputFor(ready, 0));
+    await begin(a, 'registered-before-delete', inputFor(ready, 0, true));
+    const scheduled = await main(app, (f) => f.pendingDelete(false));
+    let cancelled: unknown;
+    try {
+      await expect
+        .poll(() =>
+          a.evaluate(
+            () =>
+              (window as any).native.retirements.filter((row: any) =>
+                row.key.endsWith('before-delete'),
+              ).length,
+          ),
+        )
+        .toBe(2);
+    } finally {
+      cancelled = await main(app, (f) => f.pendingDelete(true));
+    }
+    await packet('pending-delete-cancel', { scheduled, cancelled });
+    expect(cancelled).toEqual({ cancelled: true });
+    await expect(confirm(a, 'primary-before-delete')).rejects.toThrow();
+    await expect(confirm(a, 'registered-before-delete')).rejects.toThrow();
+    await packet('old-roots-remain-retired');
+  }),
+);
+
+test(groups[3][0], async () =>
+  withDriver(3, async ({ ready, app, a, packet }) => {
+    const prepared = await begin(a, 'held', inputFor(ready, 0));
+    const barrier = await arm(ready, prepared.reviewPreparation.operationId, 'GET');
+    await a.evaluate(() => (window as any).native.start('held'));
+    await packet('held-entered', await entered(ready, barrier.id));
+    await main(app, (f) => f.navigate());
+    await control(ready, { command: 'releaseBarrier', host: 0, barrierId: barrier.id });
+    await main(app, (f) => f.join());
+    const next = app.windows().find((page) => page.url().endsWith('/host-A-next'))!;
+    await next.waitForFunction(() => !!(window as any).native);
+    const history = await packet('late-original-after-navigation');
+    expect(await next.evaluate(() => (window as any).native.results)).toEqual({});
+    expect(
+      history.source.records.some(
+        (row: WireRecord) =>
+          row.direction === 'response' &&
+          row.envelope.result?.reviewExecution?.outcome.status === 'reused',
+      ),
+    ).toBe(true);
+    await begin(next, 'completed-before-reconnect', inputFor(ready, 0));
+    const known = await confirm(next, 'completed-before-reconnect');
+    await packet('known-before-reconnect', known);
+    settled(known, 'reused');
+    await main(app, (f) => f.reconnect());
+    await expect(reconcile(next, 'completed-before-reconnect')).rejects.toThrow();
+    const retained = await next.evaluate(
+      () => (window as any).native.results['completed-before-reconnect'],
+    );
+    await packet('known-after-reconnect', retained);
+    expect(retained.execute).toEqual(known.execute);
+    await begin(next, 'unexecuted', inputFor(ready, 0));
+    await main(app, (f) => f.destroy());
+    await packet('destroyed-unexecuted');
+  }),
+);
+
+test(groups[4][0], async () =>
+  withDriver(4, async ({ ready, a, packet }) => {
+    const prepared = await begin(a, 'lost-post', inputFor(ready, 0));
+    const barrier = await arm(
+      ready,
+      prepared.reviewPreparation.operationId,
+      'POST',
+      'loseAfterPost',
+    );
+    const value = await confirm(a, 'lost-post', { prTitle: 'Uncertain original write' });
+    const first = await packet('lost-post-original', { barrier, value });
+    expect(settled(value, 'uncertain').gitReceipts).toEqual([]);
+    expect(first.hosts[0].effects.posts).toBe(1);
+    expect(first.hosts[0].effects.pushes).toBe(0);
+    const history = await reconcile(a, 'lost-post');
+    expect(history.reconciliation?.reviewExecution?.outcome.status).toBe('uncertain');
+    await confirm(a, 'lost-post', { prTitle: 'Uncertain original write' });
+    const final = await packet('lost-post-retained', history);
+    expect(final.hosts[0].effects).toEqual(first.hosts[0].effects);
+  }),
+);
+
+const uiSnapshot = (page: Page) => page.evaluate(() => (window as any).nativeUi.snapshot());
+async function uiReady(page: Page, role: string) {
+  if (!uiMode) throw new Error('UI cases require the actual component renderer');
+  await expect.poll(async () => (await uiSnapshot(page)).role).toBe(role);
+  await expect.poll(async () => (await uiSnapshot(page)).hasReceivedList).toBe(true);
+  await expect.poll(async () => (await uiSnapshot(page)).subscriptionGeneration).toBeTruthy();
+  await expect.poll(async () => (await uiSnapshot(page)).admission).toBeTruthy();
+  const value = await uiSnapshot(page);
+  expect(value.hasReceivedList).toBe(true);
+  expect(value.subscriptionGeneration).toBeTruthy();
+  expect(value.admission).toBeTruthy();
+  expect(value.faults).toEqual([]);
+  if (role !== 'guest') {
+    await expect
+      .poll(async () => (await uiSnapshot(page)).workspaceAdmission)
+      .toBe(value.admission);
+    await expect(page.getByRole('button', { name: 'Start a review', exact: true })).toBeVisible();
+  }
+}
+async function uiPrepare(page: Page, title: string) {
+  await page.getByRole('button', { name: 'Start a review', exact: true }).click();
+  await page.getByRole('button', { name: 'Prepare merge request', exact: true }).click();
+  await expect
+    .poll(async () => (await uiSnapshot(page)).attempts.at(-1)?.publicView?.status)
+    .toBe('ready');
+  await page.getByRole('textbox', { name: 'Title', exact: true }).fill(title);
+  await page
+    .getByRole('textbox', { name: 'Description', exact: true })
+    .fill('Text retained by the actual standalone form');
+  return (await uiSnapshot(page)).attempts.at(-1).publicView.preview as NativeReviewPreparedView;
+}
+async function uiConfirmation(page: Page, prepared: NativeReviewPreparedView, title: string) {
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Create this merge request?' });
+  await expect(dialog).toBeVisible();
+  for (const value of [
+    title,
+    prepared.reviewPreparation.target.repository.projectPath,
+    prepared.reviewPreparation.target.repository.instanceBaseUrl,
+    prepared.reviewPreparation.source.branch,
+    prepared.reviewPreparation.target.branch,
+  ])
+    await expect(dialog).toContainText(value);
+  return dialog;
+}
+async function uiOutcome(page: Page, status: 'created' | 'reused' | 'uncertain') {
+  await expect
+    .poll(
+      async () =>
+        (await uiSnapshot(page)).attempts.at(-1)?.publicView?.observation?.execute?.reviewExecution
+          ?.outcome.status,
+    )
+    .toBe(status);
+  const observation = (await uiSnapshot(page)).attempts.at(-1).publicView
+    .observation as NativeReviewObservation;
+  const execution = settled(observation, status);
+  await expect(page.locator('[data-native-outcome]').first()).toHaveAttribute(
+    'data-native-outcome',
+    status,
+  );
+  await expect(page.locator('[data-native-publication]').first()).toHaveAttribute(
+    'data-native-publication',
+    execution.publication.state,
+  );
+  expect(execution.gitReceipts).toEqual([]);
+  if (execution.outcome.status === 'created' || execution.outcome.status === 'reused') {
+    const review = execution.outcome.review;
+    await expect(page.getByRole('link', { name: review.title, exact: true })).toHaveAttribute(
+      'href',
+      review.url,
+    );
+    for (const value of [
+      review.resource.repository.projectPath,
+      review.resource.repository.instanceBaseUrl,
+      review.headSha ?? 'Unknown',
+    ])
+      await expect(
+        page.getByRole('region', { name: 'Original execution', exact: true }),
+      ).toContainText(value);
+  }
+  return observation;
+}
+function nativeRequests(packet: any, method: string) {
+  return packet.source.records.filter(
+    (row: WireRecord) =>
+      row.direction === 'request' && row.envelope.method === 'accept-changes.' + method,
+  );
+}
+function noGitChanges(before: any, after: any) {
+  for (const host of [0, 1]) {
+    for (const key of ['primaryHead', 'registeredHead', 'index', 'worktree'])
+      expect(after.hosts[host][key]).toEqual(before.hosts[host][key]);
+    expect(after.hosts[host].effects.pushes).toBe(before.hosts[host].effects.pushes);
+  }
+}
+
+test(uiGroups[0][0], async () =>
+  withDriver(5, async ({ a, b, ready, packet }) => {
+    await uiReady(a, 'owner');
+    await uiReady(b, 'owner');
+    const baseline = await packet('ui-owner-before-action', await uiSnapshot(a));
+    expect(nativeRequests(baseline, 'prepare')).toEqual([]);
+    expect(nativeRequests(baseline, 'execute')).toEqual([]);
+    const title = 'Explicit standalone Owner request';
+    const prepared = await uiPrepare(a, title);
+    expect(prepared.reviewPreparation.root).toEqual({
+      kind: 'primary',
+      workspaceId: ready.hosts[0].workspaceId,
+    });
+    const dialog = await uiConfirmation(a, prepared, title);
+    await a.screenshot({ path: join(evidence!, 'ui-owner-confirmation.png') });
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(a.getByRole('textbox', { name: 'Title', exact: true })).toHaveValue(title);
+    const cancelled = await packet('ui-owner-cancelled', await uiSnapshot(a));
+    expect(nativeRequests(cancelled, 'execute')).toEqual([]);
+    for (const host of [0, 1])
+      expect(cancelled.hosts[host].effects).toEqual(baseline.hosts[host].effects);
+    noGitChanges(baseline, cancelled);
+    await (
+      await uiConfirmation(a, prepared, title)
+    )
+      .getByRole('button', { name: 'Create', exact: true })
+      .click();
+    const observation = await uiOutcome(a, 'created');
+    const after = await packet('ui-owner-created', {
+      prepared,
+      observation,
+      renderer: await uiSnapshot(a),
+    });
+    expect(nativeRequests(after, 'execute')).toHaveLength(1);
+    expect(after.hosts[0].effects.posts).toBe(1);
+    expect(after.hosts[1].effects).toEqual(baseline.hosts[1].effects);
+    noGitChanges(baseline, after);
+    await expect(a.getByRole('textbox', { name: 'Title', exact: true })).toHaveValue(title);
+    await a.screenshot({ path: join(evidence!, 'ui-owner-created.png') });
+  }),
+);
+
+test(uiGroups[1][0], async () =>
+  withDriver(6, async ({ app, a, b, ready, packet }) => {
+    await uiReady(a, 'member');
+    await uiReady(b, 'owner');
+    const baseline = await packet('ui-member-before-action', await uiSnapshot(a));
+    const prepared = await uiPrepare(a, 'Member submitted suggestion');
+    expect(prepared.reviewPreparation.source.connection ?? null).toBeNull();
+    expect(prepared.reviewPreparation.target.connection ?? null).toBeNull();
+    await (
+      await uiConfirmation(a, prepared, 'Member submitted suggestion')
+    )
+      .getByRole('button', { name: 'Create', exact: true })
+      .click();
+    const observation = await uiOutcome(a, 'reused');
+    await packet('ui-member-reused', { prepared, observation, renderer: await uiSnapshot(a) });
+    await a.screenshot({ path: join(evidence!, 'ui-member-reused.png') });
+    // A new explicit lifetime, not a retry of the completed operation.
+    const held = await uiPrepare(a, 'Separate Member lifetime');
+    expect(held.reviewPreparation.operationId).not.toBe(prepared.reviewPreparation.operationId);
+    const barrier = await arm(ready, held.reviewPreparation.operationId, 'GET');
+    await (
+      await uiConfirmation(a, held, 'Separate Member lifetime')
+    )
+      .getByRole('button', { name: 'Create', exact: true })
+      .click();
+    await packet('ui-member-admitted', await entered(ready, barrier.id));
+    const closed = await a.evaluate(() => (window as any).nativeUi.dismiss());
+    expect(closed.attempts.every((row: any) => row.publicView === null)).toBe(true);
+    await control(ready, { command: 'releaseBarrier', host: 0, barrierId: barrier.id });
+    await main(app, (f) => f.join());
+    const finished = await packet('ui-member-original-after-unmount', await uiSnapshot(a));
+    expect(stopInventory(finished.source).rows.every((row) => row.complete)).toBe(true);
+    expect((await uiSnapshot(a)).attempts.every((row: any) => row.publicView === null)).toBe(true);
+    noGitChanges(baseline, finished);
+    record(evidence!, 'ui-member-retired-producers', await main(app, (f) => f.quiesceUi(false)));
+    await main(app, (f) => f.role('guest'));
+    await main(app, (f) => f.navigate());
+    await a.waitForFunction(() => !!(window as any).nativeUi);
+    await uiReady(a, 'guest');
+    const beforeGuest = await packet('ui-guest-before-action', await uiSnapshot(a));
+    const start = a.getByRole('button', { name: 'Start a review', exact: true });
+    await expect(start).toBeVisible();
+    if (await start.count()) {
+      await start.click();
+    }
+    const refusal = a.getByRole('status');
+    await expect(refusal).toHaveText(
+      'This review cannot be prepared with the current repository and access.',
+    );
+    await expect(refusal).toBeVisible();
+    await expect(a.getByRole('button', { name: 'Prepare merge request', exact: true })).toHaveCount(
+      0,
+    );
+    await expect(a.getByRole('button', { name: 'Create', exact: true })).toHaveCount(0);
+    const denied = await packet('ui-guest-denied', await uiSnapshot(a));
+    expect(nativeRequests(denied, 'prepare')).toEqual(nativeRequests(beforeGuest, 'prepare'));
+    expect(nativeRequests(denied, 'execute')).toEqual(nativeRequests(beforeGuest, 'execute'));
+    for (const host of [0, 1])
+      expect(denied.hosts[host].effects).toEqual(beforeGuest.hosts[host].effects);
+    noGitChanges(beforeGuest, denied);
+    await a.screenshot({ path: join(evidence!, 'ui-guest-denied.png') });
+  }),
+);
+
+test(uiGroups[2][0], async () =>
+  withDriver(7, async ({ a, ready, packet }) => {
+    await uiReady(a, 'owner');
+    const baseline = await packet('ui-uncertain-before-action');
+    const title = 'Uncertain standalone request';
+    const prepared = await uiPrepare(a, title);
+    const barrier = await arm(
+      ready,
+      prepared.reviewPreparation.operationId,
+      'POST',
+      'loseAfterPost',
+    );
+    await (
+      await uiConfirmation(a, prepared, title)
+    )
+      .getByRole('button', { name: 'Create', exact: true })
+      .click();
+    const observation = await uiOutcome(a, 'uncertain');
+    const first = await packet('ui-uncertain-original', { prepared, barrier, observation });
+    expect(first.hosts[0].effects.posts).toBe(1);
+    expect(nativeRequests(first, 'execute')).toHaveLength(1);
+    await expect(a.getByRole('textbox', { name: 'Title', exact: true })).toHaveValue(title);
+    await a.getByRole('button', { name: 'Check result', exact: true }).click();
+    await expect(
+      a.getByRole('region', { name: 'Original result check', exact: true }),
+    ).toBeVisible();
+    const checked = (await uiSnapshot(a)).attempts.at(-1).publicView
+      .observation as NativeReviewObservation;
+    expect(checked.execute).toEqual(observation.execute);
+    expect(checked.reconciliation?.reviewExecution?.outcome.status).toBe('uncertain');
+    const after = await packet('ui-uncertain-original-check', checked);
+    expect(nativeRequests(after, 'execute')).toEqual(nativeRequests(first, 'execute'));
+    expect(after.hosts[0].effects).toEqual(first.hosts[0].effects);
+    noGitChanges(baseline, after);
+    await a.screenshot({ path: join(evidence!, 'ui-uncertain-check.png') });
+  }),
+);
+
+async function sidebarReady(page: Page, role: 'owner' | 'member' | 'guest') {
+  if (!sidebarMode) throw new Error('Sidebar case requires its actual renderer');
+  await expect.poll(async () => (await uiSnapshot(page)).role).toBe(role);
+  await expect.poll(async () => (await uiSnapshot(page)).admission).toBeTruthy();
+  await expect
+    .poll(async () => {
+      const state = await uiSnapshot(page);
+      return state.workspaceAdmission === state.admission && state.workspaces.length === 1;
+    })
+    .toBe(true);
+  await expect.poll(async () => (await uiSnapshot(page)).subscriptionGeneration).toBeTruthy();
+  if (role !== 'guest') {
+    await expect
+      .poll(async () =>
+        (await uiSnapshot(page)).sidebar[0].changes.some(
+          (row: any) => row.stage === 'staged' && row.file.endsWith('staged.txt'),
+        ),
+      )
+      .toBe(true);
+    await expect(page.getByTestId('pr-create-button')).toBeVisible();
+  }
+  expect((await uiSnapshot(page)).faults).toEqual([]);
+}
+const sidebarRegion = (page: Page) =>
+  page.getByRole('region', { name: 'Create a merge request', exact: true });
+const sidebarUnstaged = (page: Page) => page.evaluate(() => (window as any).nativeUi.unstaged());
+async function sidebarDrafts(page: Page, title: string) {
+  await page.getByTestId('pr-create-button').click();
+  const branch = page.getByRole('textbox', { name: 'Target branch', exact: true });
+  await expect(branch).toHaveValue('trunk');
+  await page
+    .getByRole('textbox', { name: 'Commit Message', exact: true })
+    .fill('Original staged sidebar commit');
+  await page.getByRole('textbox', { name: 'Title', exact: true }).fill(title);
+  await page
+    .getByRole('textbox', { name: 'Description', exact: true })
+    .fill('Original separately confirmed sidebar review');
+}
+async function sidebarCommitDialog(page: Page) {
+  await sidebarRegion(page).getByRole('button', { name: 'Commit', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Commit', exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText('Original staged sidebar commit');
+  const state = await uiSnapshot(page);
+  const parent = state.attempts.at(-1);
+  expect(parent.publicView.status).toBe('ready');
+  expect(parent.publicView.preview.filesCount).toBe(1);
+  expect(parent.publicView.preview.files).toEqual([
+    expect.objectContaining({ path: 'staged.txt', staged: true }),
+  ]);
+  for (const value of [
+    parent.publicView.preview.reviewPreparation.target.repository.projectPath,
+    parent.publicView.preview.reviewPreparation.target.repository.instanceBaseUrl,
+    'trunk',
+  ])
+    await expect(dialog).toContainText(value);
+  const queued = state.queueObservations.find(
+    (row: any) =>
+      row.input?.type === 'changes/setPendingAutoAction' &&
+      row.input.payload[1]?.action === 'native-review',
+  );
+  expect(queued.input.payload[1].intent.owner).toEqual(parent.owner);
+  expect(queued.input.payload[1].intent.targetBranch).toBe('trunk');
+  return { dialog, parent };
+}
+async function sidebarParent(page: Page, dialog: Awaited<ReturnType<typeof sidebarCommitDialog>>) {
+  await dialog.dialog.getByRole('button', { name: 'Commit', exact: true }).click();
+  await expect
+    .poll(
+      async () =>
+        (await uiSnapshot(page)).attempts.find(
+          (row: any) => row.attemptId === dialog.parent.attemptId,
+        )?.retained?.execute?.state,
+    )
+    .toBe('settled');
+  const row = (await uiSnapshot(page)).attempts.find(
+    (row: any) => row.attemptId === dialog.parent.attemptId,
+  );
+  expect(row.retained.execute.success).toBe(true);
+  expect(row.retained.execute.reviewExecution.outcome.status).toBe('not-attempted');
+  expect(row.retained.execute.reviewExecution.gitReceipts).toEqual([
+    expect.objectContaining({ stage: 'commit', commitHash: expect.any(String) }),
+  ]);
+  await expect(
+    page.getByText(
+      'Completed commit: ' + row.retained.execute.reviewExecution.gitReceipts[0].commitHash,
+      { exact: true },
+    ),
+  ).toBeVisible();
+  return row;
+}
+async function sidebarChild(page: Page, parent: any, title: string) {
+  await page.getByRole('button', { name: 'Prepare merge request', exact: true }).click();
+  await expect
+    .poll(async () => (await uiSnapshot(page)).attempts.at(-1)?.publicView?.status)
+    .toBe('ready');
+  const state = await uiSnapshot(page),
+    child = state.attempts.at(-1);
+  expect(child.owner.attemptId).not.toBe(parent.owner.attemptId);
+  expect(child.owner.root).toEqual(parent.owner.root);
+  expect(child.owner.admission).toBe(parent.owner.admission);
+  expect(child.owner.hostContext).toBe(parent.owner.hostContext);
+  const continuation = state.queueObservations.find(
+    (row: any) => row.input?.type === 'repositoryContext/nativeReviewCompanionRequested',
+  );
+  expect(continuation.input.payload).toEqual([parent.owner, child.owner]);
+  const dialog = await uiConfirmation(page, child.publicView.preview, title);
+  return { child, dialog };
+}
+function stagedCommitOnly(before: any, after: any, parent: any) {
+  const receipt = parent.retained.execute.reviewExecution.gitReceipts[0];
+  expect(after.hosts[0].primaryHead).toBe(receipt.commitHash);
+  expect(after.hosts[0].primaryHead).not.toBe(before.hosts[0].primaryHead);
+  expect(
+    after.hosts[0].status.split('\n').some((line: string) => line.slice(3) === 'staged.txt'),
+  ).toBe(false);
+  expect(after.hosts[0].status).toContain('?? unstaged.txt');
+  for (const key of ['registeredHead', 'remoteHead'])
+    expect(after.hosts[0][key]).toEqual(before.hosts[0][key]);
+  expect(after.hosts[0].effects.pushes).toBe(0);
+  expect(after.hosts[1]).toEqual(before.hosts[1]);
+}
+function sidebarOriginals(packet: any, parent: any, child?: any) {
+  const prepares = nativeRequests(packet, 'prepare').map((row: WireRecord) => row.envelope.params);
+  expect(prepares).toHaveLength(child ? 2 : 1);
+  expect(prepares[0]).toMatchObject({
+    workspaceId: parent.owner.root.workspaceId,
+    action: 'commit',
+    review: {
+      root: parent.owner.root,
+      choice: { kind: 'saved' },
+      targetBranch: 'trunk',
+      companion: { kind: 'create-pr' },
+    },
+  });
+  for (const key of ['files', 'options']) expect(Object.hasOwn(prepares[0], key)).toBe(false);
+  expect(Object.hasOwn(prepares[0].review, 'pushRemote')).toBe(false);
+  if (child) {
+    expect(prepares[1].action).toBe('create-pr');
+    expect(prepares[1].review.root).toEqual(parent.owner.root);
+    expect(prepares[1].review.choice).toEqual({
+      kind: 'afterCommit',
+      operationId: parent.retained.execute.reviewExecution.preparation.operationId,
+      captureId: expect.any(String),
+    });
+  }
+}
+async function sidebarChildOutcome(page: Page, child: any, status: 'created' | 'reused') {
+  await expect
+    .poll(
+      async () =>
+        (await uiSnapshot(page)).attempts.find((row: any) => row.attemptId === child.attemptId)
+          ?.retained?.execute?.reviewExecution?.outcome.status,
+    )
+    .toBe(status);
+  const row = (await uiSnapshot(page)).attempts.find(
+    (row: any) => row.attemptId === child.attemptId,
+  );
+  const execution = settled(row.retained, status);
+  expect(execution.gitReceipts).toEqual([]);
+  if (execution.outcome.status !== 'created' && execution.outcome.status !== 'reused')
+    throw new Error('Original review outcome missing');
+  const review = execution.outcome.review;
+  await expect(page.getByRole('link', { name: review.title, exact: true })).toHaveAttribute(
+    'href',
+    review.url,
+  );
+  expect(execution.publication.state).toBe('local-ahead');
+  expect(execution.publication.localHeadSha).toBe(child.preview.reviewPreparation.localHeadSha);
+  return row;
+}
+
+if (sidebarMode) {
+  test(sidebarGroups[0][0], async () =>
+    withDriver(8, async ({ a, b, ready, packet }) => {
+      await sidebarReady(a, 'owner');
+      await sidebarReady(b, 'owner');
+      const unstaged = await sidebarUnstaged(a);
+      expect(unstaged?.localContent).toBe('owned unstaged change\n');
+      expect(unstaged.truncated).toBe(false);
+      const baseline = await packet('sidebar-owner-before', {
+        renderer: await uiSnapshot(a),
+        unstaged,
+      });
+      const title = 'Explicit sidebar created review';
+      await sidebarDrafts(a, title);
+      const first = await sidebarCommitDialog(a);
+      const prepared = await packet('sidebar-owner-first-confirmation', await uiSnapshot(a));
+      sidebarOriginals(prepared, first.parent);
+      expect(nativeRequests(prepared, 'execute')).toEqual([]);
+      noGitChanges(baseline, prepared);
+      await first.dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+      const cancelled = await packet('sidebar-owner-cancelled', await uiSnapshot(a));
+      expect(nativeRequests(cancelled, 'execute')).toEqual([]);
+      for (const host of [0, 1])
+        expect(cancelled.hosts[host].effects).toEqual(baseline.hosts[host].effects);
+      noGitChanges(baseline, cancelled);
+      const again = await sidebarCommitDialog(a);
+      expect(again.parent.owner).toEqual(first.parent.owner);
+      const parent = await sidebarParent(a, again);
+      const committed = await packet('sidebar-owner-committed', {
+        parent,
+        renderer: await uiSnapshot(a),
+      });
+      stagedCommitOnly(baseline, committed, parent);
+      await a.locator('[data-changes-refresh]').click();
+      await expect
+        .poll(async () =>
+          (await uiSnapshot(a)).sidebar[0].changes.some((row: any) => row.stage === 'staged'),
+        )
+        .toBe(false);
+      const { child, dialog } = await sidebarChild(a, parent, title);
+      const second = await packet('sidebar-owner-second-confirmation', {
+        parent,
+        child,
+        renderer: await uiSnapshot(a),
+      });
+      sidebarOriginals(second, parent, child);
+      expect(nativeRequests(second, 'execute')).toHaveLength(1);
+      noGitChanges(committed, second);
+      await a.screenshot({ path: join(evidence!, 'sidebar-owner-second-confirmation.png') });
+      await dialog.getByRole('button', { name: 'Create', exact: true }).click();
+      const result = await sidebarChildOutcome(a, child, 'created');
+      const after = await packet('sidebar-owner-created', {
+        parent,
+        result,
+        renderer: await uiSnapshot(a),
+        unstaged: await sidebarUnstaged(a),
+      });
+      expect(after.value.unstaged.localContent).toBe(unstaged.localContent);
+      expect(after.value.unstaged.truncated).toBe(false);
+      expect(nativeRequests(after, 'execute')).toHaveLength(2);
+      expect(after.hosts[0].effects.posts).toBe(1);
+      noGitChanges(committed, after);
+      expect(after.hosts[0].remoteHead).toBe(baseline.hosts[0].remoteHead);
+      expect(
+        (await uiSnapshot(a)).attempts.find((row: any) => row.attemptId === parent.attemptId)
+          .retained.execute,
+      ).toEqual(parent.retained.execute);
+      expect(parent.owner.root).toEqual({
+        kind: 'primary',
+        workspaceId: ready.hosts[0].workspaceId,
+      });
+      await a.screenshot({ path: join(evidence!, 'sidebar-owner-created.png') });
+    }),
+  );
+
+  test(sidebarGroups[1][0], async () =>
+    withDriver(9, async ({ app, a, b, ready, packet }) => {
+      await sidebarReady(a, 'owner');
+      await sidebarReady(b, 'owner');
+      const unstaged = await sidebarUnstaged(a);
+      expect(unstaged?.localContent).toBe('owned unstaged change\n');
+      const baseline = await packet('sidebar-held-before');
+      const title = 'Original held sidebar child';
+      await sidebarDrafts(a, title);
+      const parent = await sidebarParent(a, await sidebarCommitDialog(a));
+      const committed = await packet('sidebar-held-parent', parent);
+      stagedCommitOnly(baseline, committed, parent);
+      const { child, dialog } = await sidebarChild(a, parent, title);
+      const barrier = await arm(ready, child.preview.reviewPreparation.operationId, 'GET');
+      await dialog.getByRole('button', { name: 'Create', exact: true }).click();
+      await packet('sidebar-child-admitted', await entered(ready, barrier.id));
+      await a.screenshot({ path: join(evidence!, 'sidebar-child-held.png') });
+      const closed = await a.evaluate(() => (window as any).nativeUi.dismiss());
+      expect(closed.attempts.every((row: any) => row.publicView === null)).toBe(true);
+      await control(ready, { command: 'releaseBarrier', host: 0, barrierId: barrier.id });
+      await main(app, (f) => f.join());
+      await expect
+        .poll(
+          async () =>
+            (await uiSnapshot(a)).attempts.find((row: any) => row.attemptId === child.attemptId)
+              ?.retained?.execute?.state,
+        )
+        .toBe('settled');
+      const final = await packet('sidebar-child-original-after-close', {
+        renderer: await uiSnapshot(a),
+        unstaged: await sidebarUnstaged(a),
+      });
+      sidebarOriginals(final, parent, child);
+      const rows = final.value.renderer.attempts;
+      expect(rows).toHaveLength(2);
+      expect(rows.every((row: any) => row.closed && row.publicView === null)).toBe(true);
+      expect(rows.find((row: any) => row.attemptId === parent.attemptId).retained.execute).toEqual(
+        parent.retained.execute,
+      );
+      expect(
+        rows.find((row: any) => row.attemptId === child.attemptId).retained.execute.reviewExecution
+          .outcome.status,
+      ).toBe('reused');
+      expect(stopInventory(final.source).rows.every((row) => row.complete)).toBe(true);
+      expect(nativeRequests(final, 'execute')).toHaveLength(2);
+      expect(final.hosts[0].effects.posts).toBe(0);
+      noGitChanges(committed, final);
+      expect(final.value.unstaged.localContent).toBe(unstaged.localContent);
+    }),
+  );
+
+  test(sidebarGroups[2][0], async () =>
+    withDriver(10, async ({ app, a, b, packet }) => {
+      await sidebarReady(a, 'member');
+      await sidebarReady(b, 'owner');
+      const unstaged = await sidebarUnstaged(a);
+      expect(unstaged?.localContent).toBe('owned unstaged change\n');
+      const baseline = await packet('sidebar-member-before');
+      const title = 'Member sidebar review';
+      await sidebarDrafts(a, title);
+      const first = await sidebarCommitDialog(a);
+      for (const target of ['source', 'target'])
+        expect(first.parent.preview.reviewPreparation[target].connection ?? null).toBeNull();
+      const parent = await sidebarParent(a, first);
+      const committed = await packet('sidebar-member-parent', parent);
+      stagedCommitOnly(baseline, committed, parent);
+      const { child, dialog } = await sidebarChild(a, parent, title);
+      for (const target of ['source', 'target'])
+        expect(child.preview.reviewPreparation[target].connection ?? null).toBeNull();
+      await dialog.getByRole('button', { name: 'Create', exact: true }).click();
+      const result = await sidebarChildOutcome(a, child, 'reused');
+      const reused = await packet('sidebar-member-reused', {
+        parent,
+        result,
+        renderer: await uiSnapshot(a),
+        unstaged: await sidebarUnstaged(a),
+      });
+      sidebarOriginals(reused, parent, child);
+      expect(reused.hosts[0].effects.posts).toBe(0);
+      noGitChanges(committed, reused);
+      expect(reused.value.unstaged.localContent).toBe(unstaged.localContent);
+      await a.screenshot({ path: join(evidence!, 'sidebar-member-reused.png') });
+      record(
+        evidence!,
+        'sidebar-member-original-disposal',
+        await main(app, (f) => f.quiesceUi(false)),
+      );
+      await main(app, (f) => f.role('guest'));
+      await main(app, (f) => f.navigate());
+      await a.waitForFunction(() => !!(window as any).nativeUi);
+      await sidebarReady(a, 'guest');
+      const before = await packet('sidebar-guest-before', await uiSnapshot(a));
+      const refusal = a.getByText(
+        'This review cannot be prepared with the current repository and access.',
+        { exact: true },
+      );
+      await expect(refusal).toBeVisible();
+      await expect(
+        sidebarRegion(a).getByRole('button', { name: 'Commit', exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        a.getByRole('button', { name: 'Prepare merge request', exact: true }),
+      ).toHaveCount(0);
+      await expect(a.getByRole('button', { name: 'Create', exact: true })).toHaveCount(0);
+      const denied = await packet('sidebar-guest-denied', await uiSnapshot(a));
+      for (const method of ['prepare', 'execute', 'reconcile'])
+        expect(nativeRequests(denied, method)).toEqual(nativeRequests(before, method));
+      for (const host of [0, 1])
+        expect(denied.hosts[host].effects).toEqual(before.hosts[host].effects);
+      noGitChanges(before, denied);
+      await a.screenshot({ path: join(evidence!, 'sidebar-guest-denied.png') });
+    }),
+  );
+}

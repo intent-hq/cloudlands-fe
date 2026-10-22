@@ -28,6 +28,7 @@ interface WireSkill {
   name: string;
   description: string;
   location: string;
+  resourceDirectory?: string;
   scope: 'project' | 'user';
   allowedTools?: string;
   compatibility?: string;
@@ -39,6 +40,7 @@ function normalizeSkill(wire: WireSkill): SkillInfo {
     name: wire.name,
     description: wire.description,
     location: wire.location,
+    ...(wire.resourceDirectory ? { resourceDirectory: wire.resourceDirectory } : {}),
     scope: wire.scope,
   };
 }

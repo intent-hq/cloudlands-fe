@@ -15,6 +15,16 @@ export const selectBrowserTabRegistryWorkspace = store.createSelector(
     state?.browserTabRegistry?.byWorkspaceId[wsId] ?? emptyWorkspaceBrowserTabRegistryState,
 );
 
+/**
+ * Whether the workspace's registry rows were torn down (its tab closed or it
+ * was deleted) after having been tracked: a record exists and is
+ * `unmounted`. A workspace the registry never tracked has no record.
+ */
+export const selectIsBrowserTabRegistryTornDown = store.createSelector(
+  (state, wsId: string): boolean =>
+    state?.browserTabRegistry?.byWorkspaceId[wsId]?.phase === 'unmounted',
+);
+
 /** Tabs closed here whose removal the daemon has not confirmed, by tab id. */
 export const selectBrowserTabsClosing = store.createSelector(
   (state): Record<string, BrowserTabClosingState> => state?.browserTabRegistry?.closing ?? {},

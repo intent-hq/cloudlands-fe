@@ -5,7 +5,7 @@
    * Month/year: 24 local hours of day. 24H (Spec D11 addendum): the trailing
    * 24 hourly buckets in chronological order, labelled with local hours. All
    * math lives in `stats-charts.ts`. The WORKING HOURS window is adjustable
-   * via hover arrows on the start/end numbers (Spec D15); the state is
+   * via compact arrow controls on the start/end numbers (Spec D15); the state is
    * component-local and resets to 09–18 whenever the overlay reopens.
    */
   import Logo from '$lib/components/Logo.svelte';
@@ -103,17 +103,26 @@
       <div class="stat-label">{m.stats_hourCard_workingHours_label()}</div>
       <div class="stat-value mono">
         {#snippet hourBound(bound: 'start' | 'end', value: number)}
-          <!-- Hover-only stepper chrome: arrows are absolutely positioned
-               (no layout shift) and visibility-gated on :hover, so they never
-               appear in PNG exports (html-to-image serializes the non-hover
-               computed styles). -->
+          <!-- Plain Button keeps native keyboard behavior; parent-anchored global
+               selectors below reach its child DOM without changing shared Button.
+               Export filtering removes controls regardless of hover or focus. -->
           <span class="wh-bound"
             >{pad2(value)}<Button
               class="wh-arrow wh-arrow-up"
+              variant="plain"
+              size="icon-compact"
+              iconOnly
+              data-stats-export-exclude
+              disabled={bound === 'start' ? whStart >= whEnd - 1 : whEnd >= 24}
               onclick={() => stepBound(bound, 1)}
               aria-label={m.stats_hourCard_increaseBound_ariaLabel({ bound })}>▲</Button
             ><Button
               class="wh-arrow wh-arrow-down"
+              variant="plain"
+              size="icon-compact"
+              iconOnly
+              data-stats-export-exclude
+              disabled={bound === 'start' ? whStart <= 0 : whEnd <= whStart + 1}
               onclick={() => stepBound(bound, -1)}
               aria-label={m.stats_hourCard_decreaseBound_ariaLabel({ bound })}>▼</Button
             ></span
@@ -141,14 +150,14 @@
   .hour-card {
     width: 360px;
     height: 640px;
-    background: hsl(250 11% 8%);
-    border: 1px solid hsl(256 6% 24%);
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
     border-radius: 16px;
-    color: hsl(0 0% 97%);
+    color: hsl(var(--card-foreground));
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+    box-shadow: var(--surface-shadow-3);
     box-sizing: border-box;
   }
 
@@ -173,16 +182,16 @@
     font-size: 12px;
     font-weight: 600;
     letter-spacing: 0.14em;
-    color: hsl(240 5% 58%);
+    color: hsl(var(--muted-foreground));
   }
 
   .corner {
     font-size: 12px;
-    color: hsl(240 5% 40%);
+    color: hsl(var(--muted-foreground));
   }
 
   .rule {
-    border-top: 1px dashed hsl(256 6% 26%);
+    border-top: 1px dashed hsl(var(--border));
   }
 
   .hero {
@@ -192,7 +201,7 @@
   .hero-label {
     font-size: 12px;
     letter-spacing: 0.14em;
-    color: hsl(240 5% 58%);
+    color: hsl(var(--muted-foreground));
     margin-bottom: 7px;
   }
 
@@ -206,7 +215,7 @@
   .hero-sub {
     margin-top: 12px;
     font-size: 14px;
-    color: hsl(257 9% 72%);
+    color: hsl(var(--muted-foreground));
   }
 
   .chart-block {
@@ -218,7 +227,7 @@
     justify-content: flex-end;
     gap: 14px;
     font-size: 11px;
-    color: hsl(240 5% 58%);
+    color: hsl(var(--muted-foreground));
     margin-bottom: 10px;
   }
 
@@ -235,36 +244,36 @@
   }
 
   .swatch-in {
-    background: hsl(240 12% 30%);
+    background: hsl(var(--muted-foreground));
   }
 
   .swatch-out {
-    background: hsl(158 100% 34%);
+    background: hsl(var(--success));
   }
 
   .swatch-thought {
-    background: hsl(38 90% 50%);
+    background: hsl(var(--info));
   }
 
   .chart {
     position: relative;
     height: 144px;
     margin-left: 40px;
-    border-bottom: 1px solid hsl(256 6% 26%);
+    border-bottom: 1px solid hsl(var(--border));
   }
 
   .gridline {
     position: absolute;
     left: 0;
     right: 0;
-    border-top: 1px solid hsl(256 6% 18%);
+    border-top: 1px solid hsl(var(--border));
   }
 
   .grid-label {
     position: absolute;
     left: -40px;
     font-size: 10px; /* a11y-ignore: 10px grid label per design handoff */
-    color: hsl(240 5% 40%);
+    color: hsl(var(--muted-foreground));
   }
 
   .bars {
@@ -284,20 +293,20 @@
   }
 
   .bar-thought {
-    background: hsl(38 90% 50%);
+    background: hsl(var(--info));
   }
 
   .bar-out {
-    background: hsl(158 100% 34%);
+    background: hsl(var(--success));
   }
 
   .bar-in {
     flex: 1;
-    background: hsl(240 12% 30%);
+    background: hsl(var(--muted-foreground));
   }
 
   .bar-in-peak {
-    background: hsl(240 12% 40%);
+    background: hsl(var(--foreground));
   }
 
   .axis {
@@ -306,84 +315,70 @@
     margin-top: 7px;
     margin-left: 40px;
     font-size: 11px;
-    color: hsl(240 5% 40%);
+    color: hsl(var(--muted-foreground));
   }
 
   .stat-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 17px 14px;
-    padding: 22px 24px;
+    /* Reserve space below the value for the lower 24px stepper targets. */
+    padding: 22px 24px 46px;
   }
 
   .stat-label {
     font-size: 11px;
     letter-spacing: 0.14em;
-    color: hsl(240 5% 40%);
+    color: hsl(var(--muted-foreground));
   }
 
   .stat-value {
     font-size: 15px;
-    margin-top: 6px;
+    /* Label gap plus a separate 24px target above the value. */
+    margin-top: 30px;
+    white-space: nowrap;
+    line-height: 24px;
   }
 
   .wh-bound {
     position: relative;
     display: inline-block;
+    min-width: 24px;
+    text-align: center;
   }
 
-  .wh-arrow {
+  .wh-bound :global(.wh-arrow) {
     position: absolute;
     left: 0;
-    right: 0;
-    text-align: center;
-    visibility: hidden;
-    background: none;
-    border: none;
-    padding: 0;
-    cursor: pointer;
-    font-size: 8px; /* a11y-ignore: tiny decorative hover-only stepper arrow */
-    line-height: 1;
-    color: hsl(240 5% 58%);
-  }
-
-  /* Enlarged hit area: an invisible pseudo-element extends the click target
-     to at least the full width of the hour number and 24px tall (WCAG
-     2.5.8 minimum target size), biased away from the number so the two
-     arrows' targets don't overlap. Being part of the button, it also keeps
-     .wh-bound:hover (and thus arrow visibility) active while the pointer
-     is over it. Purely a hit area — no visual change and no layout shift. */
-  .wh-arrow::before {
-    content: '';
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
-    width: max(100%, 24px);
+    width: 100%;
     height: 24px;
+    padding: 0;
+    font-size: 10px; /* a11y-ignore: decorative arrow inside a 24px named button */
+    line-height: 1;
+    color: inherit;
+    opacity: 0.65;
   }
 
-  .wh-arrow:hover {
-    color: hsl(0 0% 97%);
+  .wh-bound :global(.wh-arrow:hover),
+  .wh-bound :global(.wh-arrow:focus-visible) {
+    opacity: 1;
   }
 
-  .wh-arrow-up {
+  .wh-bound :global(.wh-arrow:focus-visible) {
+    outline: 2px solid currentColor;
+    outline-offset: -2px;
+  }
+
+  .wh-bound :global(.wh-arrow:disabled) {
+    opacity: 0.25;
+  }
+
+  .wh-bound :global(.wh-arrow-up) {
     bottom: 100%;
   }
 
-  .wh-arrow-up::before {
-    bottom: -5px;
-  }
-
-  .wh-arrow-down {
+  .wh-bound :global(.wh-arrow-down) {
     top: 100%;
-  }
-
-  .wh-arrow-down::before {
-    top: -5px;
-  }
-
-  .wh-bound:hover .wh-arrow {
-    visibility: visible;
   }
 
   .footer-wrap {
@@ -391,8 +386,8 @@
   }
 
   .footer {
-    background: hsl(158 100% 30%);
-    color: hsl(0 0% 100%);
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
     display: flex;
     align-items: center;
     justify-content: space-between;

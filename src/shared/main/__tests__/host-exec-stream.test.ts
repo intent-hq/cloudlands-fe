@@ -94,6 +94,7 @@ describe('hostExecStream', () => {
     expect(handle.requestId).toBe('req-1');
     expect(mockRequest).toHaveBeenNthCalledWith(1, 'events.subscribe', {
       eventTypes: ['host:exec:stdout', 'host:exec:stderr', 'host:exec:exit'],
+      workspaceId: 'ws-1',
     });
     expect(mockRequest).toHaveBeenNthCalledWith(2, 'host.execStream', {
       command: 'auggie',
@@ -122,6 +123,55 @@ describe('hostExecStream', () => {
     expect(mockOff).toHaveBeenCalledWith('notification', expect.any(Function));
     expect(mockRequest).toHaveBeenCalledWith('events.unsubscribe', {
       subscriptionId: 'sub-1',
+      workspaceId: 'ws-1',
+    });
+  });
+
+  it('retains origin when caller options change before writes and cancellation', async () => {
+    mockRequest.mockResolvedValue({ ok: true, cancelled: true });
+    mockRequest
+      .mockResolvedValueOnce({ subscriptionId: 'sub-origin' })
+      .mockResolvedValueOnce({ requestId: 'req-origin' });
+    const options = { workspaceId: 'workspace-a' };
+    const handle = await hostExecStream('cat', options);
+    options.workspaceId = 'workspace-b';
+    await handle.writeStdin('hello');
+    await handle.writeStdinBase64('aGk=');
+    await handle.endStdin();
+    await handle.cancel();
+    emit('host:exec:exit', { requestId: 'req-origin', ok: false, cancelled: true });
+    await handle.done;
+    for (const [method, params] of mockRequest.mock.calls) {
+      expect(params.workspaceId, method).toBe('workspace-a');
+    }
+  });
+
+  it('cancels a stream whose start resolves after abort with its captured origin', async () => {
+    let finishStart!: (value: unknown) => void;
+    mockRequest.mockResolvedValue({ ok: true, cancelled: true });
+    mockRequest.mockResolvedValueOnce({ subscriptionId: 'sub-late' }).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishStart = resolve;
+        }),
+    );
+    const controller = new AbortController();
+    const pending = hostExecStream('cat', {
+      workspaceId: 'workspace-a',
+      signal: controller.signal,
+    });
+    await vi.waitFor(() => expect(finishStart).toBeTypeOf('function'));
+    controller.abort();
+    finishStart({ requestId: 'req-late' });
+    const handle = await pending;
+    await expect(handle.done).rejects.toThrow('aborted');
+    expect(mockRequest).toHaveBeenCalledWith('host.execStream.cancel', {
+      requestId: 'req-late',
+      workspaceId: 'workspace-a',
+    });
+    expect(mockRequest).toHaveBeenCalledWith('events.unsubscribe', {
+      subscriptionId: 'sub-late',
+      workspaceId: 'workspace-a',
     });
   });
 

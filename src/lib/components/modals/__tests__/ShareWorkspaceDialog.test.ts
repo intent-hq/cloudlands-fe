@@ -3,7 +3,7 @@
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type {
   HostPrincipal,
   WorkspaceInvite,
@@ -64,7 +64,7 @@ const openInvite: WorkspaceInvite = {
   pinLogin: 'carol',
   pinGithubUserId: 3,
   createdAt: '2026-09-14T00:00:00Z',
-  expiresAt: '2026-09-21T00:00:00Z',
+  expiresAt: '2099-09-21T00:00:00Z',
 };
 const openInviteUrl = 'intent://invite?v=1&h=example.test&p=5181&f=fp&t=tok-inv-1';
 
@@ -83,11 +83,97 @@ const baseProps = {
   members: [owner, collaborator],
   invites: [openInvite],
   inviteLinks,
+  userSearchQuery: 'dave',
+  userSuggestions: [{ login: 'dave', githubUserId: 4, avatarUrl: null, htmlUrl: null }],
 };
 
 function renderDialog(props: Record<string, unknown> = {}) {
   return render(ShareWorkspaceDialog, { props: { ...baseProps, ...props } });
 }
+
+async function chooseAudience(provider: 'anyone' | 'github' | 'gitlab') {
+  const trigger = screen.getByTestId('share-audience-trigger');
+  trigger.focus();
+  await fireEvent.keyDown(trigger, { key: 'Enter' });
+  await fireEvent.pointerUp(
+    await screen.findByRole('option', {
+      name:
+        provider === 'anyone'
+          ? 'Anyone with the link'
+          : provider === 'github'
+            ? 'A specific GitHub user'
+            : 'A specific GitLab user',
+      exact: true,
+    }),
+    { pointerType: 'mouse' },
+  );
+}
+async function recipientField(provider: 'github' | 'gitlab'): Promise<HTMLInputElement> {
+  const name = provider === 'github' ? 'Search GitHub users' : 'GitLab username';
+  let field = screen.queryByRole('combobox', { name });
+  if (!field) {
+    await chooseAudience(provider);
+    field = screen.getByRole('combobox', { name });
+  }
+  return field as HTMLInputElement;
+}
+
+it('offers explicit recipient pins on a capable host without repository authentication (#6392)', async () => {
+  const onCreateInvite = vi.fn();
+  const onSearchUsers = vi.fn();
+  renderDialog({
+    githubConnected: false,
+    gitlabConnected: false,
+    identitySeamSupported: true,
+    hostMembershipSupported: true,
+    onCreateInvite,
+    onSearchUsers,
+  });
+  const field = await recipientField('github');
+  await fireEvent.input(field, { target: { value: 'sam' } });
+  await fireEvent.click(screen.getByRole('button', { name: /^(Copy|Create) link$/ }));
+  expect(onCreateInvite).toHaveBeenCalledWith('sam', { provider: 'github' });
+  expect(onSearchUsers.mock.calls.filter(([query]) => query !== '')).toEqual([]);
+});
+
+it('lets a capable workspace manager pin a different canonical GitLab instance (#6392)', async () => {
+  const onCreateInvite = vi.fn();
+  renderDialog({
+    githubConnected: false,
+    gitlabConnected: false,
+    gitlabEnabled: true,
+    gitlabHost: 'repository.example',
+    gitlabStatusReady: false,
+    canAdministerHost: false,
+    identityProvider: 'gitlab',
+    identitySeamSupported: true,
+    hostMembershipSupported: true,
+    onCreateInvite,
+  });
+  await chooseAudience('gitlab');
+  await fireEvent.input(screen.getByLabelText('GitLab instance'), {
+    target: { value: 'Forge.Example:8443' },
+  });
+  await fireEvent.input(await recipientField('gitlab'), {
+    target: { value: 'sam' },
+  });
+  await fireEvent.click(screen.getByRole('button', { name: /^(Copy|Create) link$/ }));
+  expect(onCreateInvite).toHaveBeenCalledWith('sam', {
+    provider: 'gitlab',
+    host: 'forge.example:8443',
+  });
+});
+
+it('keeps inherited host members non-removable and uses daemon guest seats (#6390)', () => {
+  renderDialog({
+    members: [owner, { ...collaborator, hostRole: 'member' }],
+    guestCount: 0,
+    guestLimit: 5,
+  });
+  expect(screen.queryByRole('button', { name: /remove.*bob/i })).toBeNull();
+  expect(screen.getByText('Host member')).toBeTruthy();
+  expect(screen.getByText('0 / 5')).toBeTruthy();
+});
 
 beforeEach(() => {
   toastMocks.success.mockReset();
@@ -101,6 +187,37 @@ beforeEach(() => {
 afterEach(() => vi.clearAllMocks());
 
 describe('ShareWorkspaceDialog — owner gate', () => {
+  it('keeps new GitLab choices hidden by default and lets the host connect GitHub', async () => {
+    const onConnectGitHub = vi.fn();
+    renderDialog({ githubConnected: false, onConnectGitHub });
+    expect(screen.queryByRole('button', { name: 'Open Connections' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Connect GitHub' }));
+    expect(onConnectGitHub).toHaveBeenCalledOnce();
+  });
+
+  it('does not rewrite a selected GitLab pin when Labs is disabled', async () => {
+    const onCreateInvite = vi.fn();
+    const props = {
+      ...baseProps,
+      gitlabConnected: true,
+      gitlabEnabled: true,
+      gitlabHost: 'gitlab.example.com',
+      identitySeamSupported: true,
+      identityProvider: 'gitlab' as const,
+      onCreateInvite,
+    };
+    const { rerender } = render(ShareWorkspaceDialog, { props });
+    await fireEvent.input(await recipientField('gitlab'), {
+      target: { value: 'mara' },
+    });
+    await rerender({ ...props, gitlabEnabled: false });
+    await fireEvent.submit((await recipientField('gitlab')).closest('form')!);
+    expect(onCreateInvite).toHaveBeenCalledExactlyOnceWith('mara', {
+      provider: 'gitlab',
+      host: 'gitlab.example.com',
+    });
+  });
+
   // Regression (fe#2440 review P1): a collaborator connection (or a -32003
   // refusal) sees the owner-only notice — no rows, no controls, no link.
   it('renders only the owner-only notice when the caller cannot manage sharing', () => {
@@ -126,17 +243,286 @@ describe('ShareWorkspaceDialog — owner gate', () => {
   });
 });
 
-describe('ShareWorkspaceDialog — GitHub gate', () => {
-  it('shows the connect-first state instead of the sharing controls when GitHub is not connected', async () => {
+describe('ShareWorkspaceDialog — forge gate', () => {
+  it('leaves an unpinned invite available while canonical GitLab status is pending', async () => {
+    const onCreateInvite = vi.fn();
+    renderDialog({
+      githubConnected: false,
+      gitlabConnected: true,
+      gitlabEnabled: true,
+      identitySeamSupported: true,
+      gitlabHost: '',
+      gitlabStatusReady: false,
+      onCreateInvite,
+    });
+    const input = await recipientField('gitlab');
+    await fireEvent.input(input, { target: { value: 'mara' } });
+    expect(
+      screen.getByRole('button', { name: /^(Copy|Create) link$/ }).hasAttribute('disabled'),
+    ).toBe(true);
+    await fireEvent.submit(input.closest('form')!);
+    expect(onCreateInvite).not.toHaveBeenCalled();
+    await chooseAudience('anyone');
+    await fireEvent.click(screen.getByRole('button', { name: /^(Copy|Create) link$/ }));
+    expect(onCreateInvite).toHaveBeenCalledExactlyOnceWith('');
+  });
+  it('offers account-free sharing without an owner Connect action to a member', async () => {
+    const onCreateInvite = vi.fn();
+    renderDialog({ githubConnected: false, canAdministerHost: false, onCreateInvite });
+    expect(screen.queryByRole('button', { name: 'Connect GitHub' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: /^(Copy|Create) link$/ }));
+    expect(onCreateInvite).toHaveBeenCalledExactlyOnceWith('');
+  });
+
+  it('offers an optional owner connection alongside account-free sharing', async () => {
     const onConnectGitHub = vi.fn();
-    renderDialog({ githubConnected: false, onConnectGitHub });
+    const onOpenConnections = vi.fn();
+    renderDialog({
+      githubConnected: false,
+      gitlabEnabled: true,
+      onConnectGitHub,
+      onOpenConnections,
+    });
 
     expect(screen.getByTestId('share-github-required')).toBeTruthy();
-    expect(screen.queryByLabelText(/Restrict to a GitHub user/)).toBeNull();
-    expect(screen.queryByTestId('share-member-row')).toBeNull();
+    expect(screen.queryByRole('combobox', { name: /Restrict to a/ })).toBeNull();
+    expect(screen.getAllByTestId('share-member-row')).toHaveLength(2);
 
     await fireEvent.click(screen.getByRole('button', { name: 'Connect GitHub' }));
     expect(onConnectGitHub).toHaveBeenCalledTimes(1);
+    await fireEvent.click(screen.getByRole('button', { name: 'Open Connections' }));
+    expect(onOpenConnections).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats a GitLab connection as no identity forge while the daemon lacks the identity seam', () => {
+    renderDialog({
+      githubConnected: false,
+      gitlabConnected: true,
+      gitlabEnabled: true,
+      gitlabHost: 'gitlab.example.com',
+      identitySeamSupported: false,
+    });
+
+    expect(screen.getByTestId('share-github-required')).toBeTruthy();
+    expect(screen.queryByLabelText(/Restrict to a/)).toBeNull();
+  });
+
+  it('binds the GitLab-only pin to the canonical host without typeahead', async () => {
+    const onCreateInvite = vi.fn();
+    const onSearchUsers = vi.fn();
+    renderDialog({
+      githubConnected: false,
+      gitlabConnected: true,
+      gitlabEnabled: true,
+      gitlabHost: 'gitlab.example.com',
+      identitySeamSupported: true,
+      onCreateInvite,
+      onSearchUsers,
+    });
+
+    expect(screen.queryByTestId('share-github-required')).toBeNull();
+    expect(screen.queryByTestId('share-audience-trigger')).toBeTruthy();
+    const pin = (await recipientField('gitlab')) as HTMLInputElement;
+    await fireEvent.input(pin, { target: { value: 'dave' } });
+    expect(onSearchUsers).not.toHaveBeenCalledWith('dave');
+    expect(pin.getAttribute('aria-expanded')).toBe('false');
+
+    await fireEvent.click(screen.getByRole('button', { name: /^(Copy|Create) link$/ }));
+    // A seam-capable daemon receives the status-confirmed instance even with one forge.
+    expect(onCreateInvite).toHaveBeenCalledWith('dave', {
+      provider: 'gitlab',
+      host: 'gitlab.example.com',
+    });
+  });
+});
+
+describe('ShareWorkspaceDialog — pin forge (both forges connected)', () => {
+  const both = {
+    githubConnected: true,
+    gitlabConnected: true,
+    gitlabEnabled: true,
+    gitlabHost: 'gitlab.example.com',
+    identitySeamSupported: true,
+  };
+
+  it('keeps the GitHub-only pin (no selector, bare login) against a daemon without the identity seam', async () => {
+    const onCreateInvite = vi.fn();
+    renderDialog({
+      ...both,
+      identitySeamSupported: false,
+      identityProvider: 'gitlab',
+      onCreateInvite,
+    });
+
+    expect(screen.queryByTestId('share-audience-trigger')).toBeTruthy();
+    const pin = (await recipientField('github')) as HTMLInputElement;
+    await fireEvent.input(pin, { target: { value: 'dave' } });
+    if (pin.getAttribute('aria-label') === 'Search GitHub users')
+      await fireEvent.click(screen.getByRole('option', { name: '@dave' }));
+    await fireEvent.click(screen.getByRole('button', { name: /^(Copy|Create) link$/ }));
+
+    // No `pinProvider` / `pinHost` ride to a daemon that would reject them.
+    expect(onCreateInvite).toHaveBeenCalledWith('dave');
+  });
+
+  const pickForge = () => chooseAudience('gitlab');
+
+  it("defaults the pin's forge to the host's identity.provider and sends it with the login", async () => {
+    const onCreateInvite = vi.fn();
+    renderDialog({ ...both, identityProvider: 'gitlab', onCreateInvite });
+
+    await chooseAudience('gitlab');
+    expect(screen.getByTestId('share-audience-trigger').textContent).toContain(
+      'A specific GitLab user',
+    );
+    const pin = (await recipientField('gitlab')) as HTMLInputElement;
+    await fireEvent.input(pin, { target: { value: 'dave' } });
+    if (pin.getAttribute('aria-label') === 'Search GitHub users')
+      await fireEvent.click(screen.getByRole('option', { name: '@dave' }));
+    await fireEvent.click(screen.getByRole('button', { name: /^(Copy|Create) link$/ }));
+
+    expect(onCreateInvite).toHaveBeenCalledWith('dave', {
+      provider: 'gitlab',
+      host: 'gitlab.example.com',
+    });
+  });
+
+  it('falls back to GitHub without an identity.provider and sends the GitHub pin', async () => {
+    const onCreateInvite = vi.fn();
+    renderDialog({ ...both, identityProvider: null, onCreateInvite });
+
+    const pin = (await recipientField('github')) as HTMLInputElement;
+    await fireEvent.input(pin, { target: { value: 'dave' } });
+    if (pin.getAttribute('aria-label') === 'Search GitHub users')
+      await fireEvent.click(screen.getByRole('option', { name: '@dave' }));
+    await fireEvent.click(screen.getByRole('button', { name: /^(Copy|Create) link$/ }));
+
+    expect(onCreateInvite).toHaveBeenCalledWith('dave', { provider: 'github' });
+  });
+
+  it('switching the forge drops the GitHub typeahead pick and re-labels the field', async () => {
+    const onCreateInvite = vi.fn();
+    const onSearchUsers = vi.fn();
+    renderDialog({
+      ...both,
+      identityProvider: 'github',
+      onCreateInvite,
+      onSearchUsers,
+      userSuggestions: [
+        {
+          login: 'dave',
+          githubUserId: 4,
+          avatarUrl: 'https://avatars.githubusercontent.com/u/4',
+          htmlUrl: null,
+        },
+      ],
+      userSearchQuery: 'da',
+    });
+
+    const github = (await recipientField('github')) as HTMLInputElement;
+    await fireEvent.input(github, { target: { value: 'da' } });
+    await fireEvent.click(await screen.findByRole('option', { name: /@dave/ }));
+    expect(screen.getByTestId('share-pin-selected')).toBeTruthy();
+
+    await pickForge();
+    expect(screen.queryByTestId('share-pin-selected')).toBeNull();
+    expect(onSearchUsers).toHaveBeenLastCalledWith('');
+    const gitlab = (await recipientField('gitlab')) as HTMLInputElement;
+    await fireEvent.input(gitlab, { target: { value: 'erin' } });
+    await fireEvent.click(screen.getByRole('button', { name: /^(Copy|Create) link$/ }));
+
+    expect(onCreateInvite).toHaveBeenCalledWith('erin', {
+      provider: 'gitlab',
+      host: 'gitlab.example.com',
+    });
+  });
+
+  it('keeps a user-picked GitLab pin after Labs is turned off while editing', async () => {
+    const onCreateInvite = vi.fn();
+    const props = { ...baseProps, ...both, identityProvider: 'github' as const, onCreateInvite };
+    const { rerender } = render(ShareWorkspaceDialog, { props });
+    await pickForge();
+    await fireEvent.input(await recipientField('gitlab'), {
+      target: { value: 'invited-user' },
+    });
+    await rerender({ ...props, gitlabEnabled: false });
+    await fireEvent.click(screen.getByRole('button', { name: /^(Copy|Create) link$/ }));
+    expect(onCreateInvite).toHaveBeenCalledExactlyOnceWith('invited-user', {
+      provider: 'gitlab',
+      host: 'gitlab.example.com',
+    });
+  });
+
+  it('does not offer a new GitLab pin while off and still sends the explicit GitHub pin', async () => {
+    const onCreateInvite = vi.fn();
+    renderDialog({ ...both, gitlabEnabled: false, identityProvider: 'github', onCreateInvite });
+    expect(screen.queryByTestId('share-audience-trigger')).toBeTruthy();
+    await fireEvent.input(await recipientField('github'), {
+      target: { value: 'dave' },
+    });
+    await fireEvent.click(screen.getByRole('option', { name: '@dave' }));
+    await fireEvent.click(screen.getByRole('button', { name: /^(Copy|Create) link$/ }));
+    expect(onCreateInvite).toHaveBeenCalledExactlyOnceWith('dave', { provider: 'github' });
+  });
+
+  it('an open invite sends no pin regardless of the forge pick', async () => {
+    const onCreateInvite = vi.fn();
+    renderDialog({ ...both, identityProvider: 'gitlab', onCreateInvite });
+
+    await fireEvent.click(screen.getByRole('button', { name: /^(Copy|Create) link$/ }));
+    expect(onCreateInvite).toHaveBeenCalledWith('');
+  });
+});
+
+describe('ShareWorkspaceDialog — provider-aware rows', () => {
+  const gitlabMember: WorkspaceMember = {
+    ...collaborator,
+    principalId: 'p-gina',
+    login: 'gina',
+    identity: { provider: 'gitlab', host: 'gitlab.example.com', externalUserId: '77' },
+  };
+  const githubMember: WorkspaceMember = {
+    ...collaborator,
+    identity: { provider: 'github', host: 'github.com', externalUserId: '2' },
+  };
+
+  it('marks each member row with its identity forge and names the GitLab instance', () => {
+    renderDialog({ members: [owner, githubMember, gitlabMember] });
+
+    const rows = screen.getAllByTestId('share-member-row');
+    expect(rows).toHaveLength(3);
+    // A legacy row without an identity triple carries no forge marker.
+    expect(rows[0].querySelector('[data-testid="share-member-identity"]')).toBeNull();
+    expect(
+      rows[1].querySelector('[data-testid="share-member-identity"]')?.getAttribute('data-provider'),
+    ).toBe('github');
+    expect(rows[1].textContent).toContain('@bob');
+    expect(rows[1].textContent).not.toContain('gitlab.example.com');
+    expect(
+      rows[2].querySelector('[data-testid="share-member-identity"]')?.getAttribute('data-provider'),
+    ).toBe('gitlab');
+    expect(rows[2].textContent).toContain('@gina');
+    expect(rows[2].textContent).toContain('gitlab.example.com');
+  });
+
+  it('labels an invite pinned to a GitLab account with its instance', () => {
+    const gitlabInvite: WorkspaceInvite = {
+      ...openInvite,
+      id: 'inv-gl',
+      pinLogin: 'gina',
+      pinGithubUserId: undefined,
+      pinIdentity: { provider: 'gitlab', host: 'gitlab.example.com', externalUserId: '77' },
+    };
+    renderDialog({
+      invites: [openInvite, gitlabInvite],
+      inviteLinks: { ...inviteLinks, [gitlabInvite.id]: openInviteUrl },
+    });
+
+    const rows = screen.getAllByTestId('share-invite-row');
+    expect(rows[0].textContent).toContain('@carol');
+    expect(rows[0].textContent).not.toContain('gitlab.example.com');
+    expect(rows[1].textContent).toContain('@gina');
+    expect(rows[1].textContent).toContain('gitlab.example.com');
   });
 });
 
@@ -189,7 +575,7 @@ describe('ShareWorkspaceDialog — roster and invites', () => {
     // A single redemption takes the singular form.
     expect(details[1]).toContain('1 joined');
     expect(details[1]).toMatch(/Expires/);
-    expect(details[2]).toMatch(/Expires/);
+    expect(details[2].trim()).toBe('Invited');
     // A daemon without the reusable fields: every link is single-use.
     expect(details[3]).toMatch(/Expires/);
     // Revoke stays available on the reusable rows (and the legacy unpinned one).
@@ -215,52 +601,6 @@ describe('ShareWorkspaceDialog — roster and invites', () => {
 });
 
 describe('ShareWorkspaceDialog — create and copy', () => {
-  it('submits the trimmed pin login and clears the draft once a link arrives', async () => {
-    const onCreateInvite = vi.fn();
-    const { rerender } = renderDialog({ onCreateInvite });
-
-    const pin = screen.getByLabelText(/Restrict to a GitHub user/) as HTMLInputElement;
-    await fireEvent.input(pin, { target: { value: ' dave ' } });
-    await fireEvent.click(screen.getByRole('button', { name: /Create invite link/ }));
-
-    expect(onCreateInvite).toHaveBeenCalledWith('dave');
-    expect(pin.value).toBe(' dave ');
-
-    await rerender({ ...baseProps, createdLink, onCreateInvite });
-    await waitFor(() => expect(screen.getByTestId('share-created-link')).toBeTruthy());
-    expect(screen.getByTestId('share-created-link-url').textContent).toBe(createdUrl);
-    expect(screen.getByTestId('share-created-link').textContent).toContain('@dave');
-    expect((screen.getByLabelText(/Restrict to a GitHub user/) as HTMLInputElement).value).toBe('');
-  });
-
-  it('submits an empty pin for an open invite and labels the link for anyone', async () => {
-    const onCreateInvite = vi.fn();
-    renderDialog({
-      onCreateInvite,
-      createdLink: { ...createdLink, pinLogin: undefined },
-    });
-
-    await fireEvent.click(screen.getByRole('button', { name: /Create invite link/ }));
-
-    expect(onCreateInvite).toHaveBeenCalledWith('');
-    expect(screen.getByTestId('share-created-link').textContent).toContain('Anyone with the link');
-  });
-
-  it('hides the created link block once the store has retired the link', () => {
-    renderDialog({ createdLink: null });
-    expect(screen.queryByTestId('share-created-link')).toBeNull();
-    expect(screen.queryByRole('button', { name: /^Copy link$/ })).toBeNull();
-  });
-
-  // Regression (fe#2440 review P2 / fe#2483 verifier): once the link's vault
-  // entry is gone (dialog reopened) the copy affordance disappears with it —
-  // the store never held the url to fall back on.
-  it('hides the created link block when the url can no longer be resolved', () => {
-    renderDialog({ createdLink, inviteLinks: { [openInvite.id]: openInviteUrl } });
-    expect(screen.queryByTestId('share-created-link')).toBeNull();
-    expect(screen.queryByRole('button', { name: /^Copy link$/ })).toBeNull();
-  });
-
   it('does not submit while a create is already in flight', async () => {
     const onCreateInvite = vi.fn();
     renderDialog({ onCreateInvite, creating: true });
@@ -282,12 +622,16 @@ describe('ShareWorkspaceDialog — create and copy', () => {
     expect(counter.dataset.guestCount).toBe('2');
     expect(counter.dataset.guestLimit).toBe('5');
     expect(screen.queryByTestId('share-guest-cap-reached')).toBeNull();
-    const submit = screen.getByRole('button', { name: /Create invite link/ }) as HTMLButtonElement;
+    const submit = screen.getByRole('button', {
+      name: /^(Copy|Create) link$/,
+    }) as HTMLButtonElement;
     expect(submit.disabled).toBe(false);
 
     await rerender({ ...baseProps, onCreateInvite, guestCount: 5, guestLimit: 5 });
     await waitFor(() => expect(screen.getByTestId('share-guest-cap-reached')).toBeTruthy());
-    const blocked = screen.getByRole('button', { name: /Create invite link/ }) as HTMLButtonElement;
+    const blocked = screen.getByRole('button', {
+      name: /^(Copy|Create) link$/,
+    }) as HTMLButtonElement;
     expect(blocked.disabled).toBe(true);
     await fireEvent.submit(blocked.closest('form')!);
     expect(onCreateInvite).not.toHaveBeenCalled();
@@ -299,17 +643,8 @@ describe('ShareWorkspaceDialog — create and copy', () => {
 
     expect(screen.queryByTestId('share-guest-count')).toBeNull();
     expect(screen.queryByTestId('share-guest-cap-reached')).toBeNull();
-    await fireEvent.click(screen.getByRole('button', { name: /Create invite link/ }));
+    await fireEvent.click(screen.getByRole('button', { name: /^(Copy|Create) link$/ }));
     expect(onCreateInvite).toHaveBeenCalledWith('');
-  });
-
-  it('copies the created link to the clipboard and toasts', async () => {
-    renderDialog({ createdLink });
-
-    await fireEvent.click(screen.getByRole('button', { name: /^Copy link$/ }));
-
-    await waitFor(() => expect(toastMocks.success).toHaveBeenCalledTimes(1));
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(createdUrl);
   });
 
   it('copies an open invite row link again from the list', async () => {
@@ -350,16 +685,14 @@ describe('ShareWorkspaceDialog — create and copy', () => {
 
   it('surfaces the create error inline and keeps the field value', async () => {
     const { rerender } = renderDialog();
-    const pin = screen.getByLabelText(/Restrict to a GitHub user/) as HTMLInputElement;
+    const pin = (await recipientField('github')) as HTMLInputElement;
     await fireEvent.input(pin, { target: { value: 'nobody' } });
 
     await rerender({ ...baseProps, createError: 'No GitHub user named @nobody' });
 
     expect(screen.getByTestId('share-create-error').textContent).toContain('@nobody');
     expect(screen.queryByTestId('share-created-link')).toBeNull();
-    expect((screen.getByLabelText(/Restrict to a GitHub user/) as HTMLInputElement).value).toBe(
-      'nobody',
-    );
+    expect(((await recipientField('github')) as HTMLInputElement).value).toBe('nobody');
   });
 });
 
@@ -372,27 +705,28 @@ describe('ShareWorkspaceDialog — pin typeahead', () => {
   };
   const octokit = { login: 'octokit', githubUserId: 2, avatarUrl: null, htmlUrl: null };
 
-  const pinField = () => screen.getByRole('combobox') as HTMLInputElement;
+  const pinField = () => recipientField('github');
 
   it('dispatches a normalized search per keystroke and skips it below two characters', async () => {
     const onSearchUsers = vi.fn();
     renderDialog({ onSearchUsers });
+    await pinField();
     onSearchUsers.mockClear();
 
-    await fireEvent.input(pinField(), { target: { value: '@' } });
-    await fireEvent.input(pinField(), { target: { value: '@oc' } });
+    await fireEvent.input(await pinField(), { target: { value: '@' } });
+    await fireEvent.input(await pinField(), { target: { value: '@oc' } });
 
     expect(onSearchUsers).toHaveBeenNthCalledWith(1, '');
     expect(onSearchUsers).toHaveBeenNthCalledWith(2, 'oc');
     expect(screen.queryByTestId('share-pin-suggestions')).toBeTruthy();
-    expect(pinField().getAttribute('aria-expanded')).toBe('true');
+    expect((await pinField()).getAttribute('aria-expanded')).toBe('true');
   });
 
   it('keeps the list closed for a one-character query', async () => {
     renderDialog({ onSearchUsers: vi.fn() });
-    await fireEvent.input(pinField(), { target: { value: 'o' } });
+    await fireEvent.input(await pinField(), { target: { value: 'o' } });
     expect(screen.queryByTestId('share-pin-suggestions')).toBeNull();
-    expect(pinField().getAttribute('aria-expanded')).toBe('false');
+    expect((await pinField()).getAttribute('aria-expanded')).toBe('false');
   });
 
   it('renders the rows for the current query with avatar or initial fallback', async () => {
@@ -401,7 +735,7 @@ describe('ShareWorkspaceDialog — pin typeahead', () => {
       userSearchQuery: 'octo',
       onSearchUsers: vi.fn(),
     });
-    await fireEvent.input(pinField(), { target: { value: 'octo' } });
+    await fireEvent.input(await pinField(), { target: { value: 'octo' } });
 
     const options = screen.getAllByRole('option');
     expect(options.map((o) => o.getAttribute('data-login'))).toEqual(['octocat', 'octokit']);
@@ -416,7 +750,7 @@ describe('ShareWorkspaceDialog — pin typeahead', () => {
       userSearchQuery: 'octo',
       onSearchUsers: vi.fn(),
     });
-    await fireEvent.input(pinField(), { target: { value: 'octok' } });
+    await fireEvent.input(await pinField(), { target: { value: 'octok' } });
 
     expect(screen.queryAllByRole('option')).toHaveLength(0);
     expect(screen.getByTestId('share-pin-searching')).toBeTruthy();
@@ -441,12 +775,12 @@ describe('ShareWorkspaceDialog — pin typeahead', () => {
       setGithubUserSearchResults('octo', [octocat]),
     );
     const { rerender } = renderDialog(propsFrom(octoSettled));
-    await fireEvent.input(pinField(), { target: { value: 'octo' } });
+    await fireEvent.input(await pinField(), { target: { value: 'octo' } });
     expect(screen.getAllByRole('option').map((o) => o.getAttribute('data-login'))).toEqual([
       'octocat',
     ]);
 
-    await fireEvent.input(pinField(), { target: { value: 'hub' } });
+    await fireEvent.input(await pinField(), { target: { value: 'hub' } });
     const hubPending = githubUserSearchReducer(octoSettled, setGithubUserSearchLoading('hub'));
     await rerender(propsFrom(hubPending));
     expect(screen.queryAllByRole('option')).toHaveLength(0);
@@ -469,7 +803,7 @@ describe('ShareWorkspaceDialog — pin typeahead', () => {
       userSearchQuery: 'octo',
       onSearchUsers: vi.fn(),
     });
-    await fireEvent.input(pinField(), { target: { value: 'octo' } });
+    await fireEvent.input(await pinField(), { target: { value: 'octo' } });
     expect(screen.getByTestId('share-pin-no-results')).toBeTruthy();
 
     await rerender({
@@ -491,7 +825,7 @@ describe('ShareWorkspaceDialog — pin typeahead', () => {
       githubUserId: i,
     }));
     renderDialog({ userSuggestions: many, userSearchQuery: 'user', onSearchUsers: vi.fn() });
-    await fireEvent.input(pinField(), { target: { value: 'user' } });
+    await fireEvent.input(await pinField(), { target: { value: 'user' } });
     expect(screen.getAllByRole('option')).toHaveLength(8);
   });
 
@@ -504,7 +838,7 @@ describe('ShareWorkspaceDialog — pin typeahead', () => {
       onSearchUsers,
       onCreateInvite,
     });
-    const input = pinField();
+    const input = await pinField();
     await fireEvent.input(input, { target: { value: 'octo' } });
 
     await fireEvent.keyDown(input, { key: 'ArrowDown' });
@@ -519,27 +853,27 @@ describe('ShareWorkspaceDialog — pin typeahead', () => {
     const chip = screen.getByTestId('share-pin-selected');
     expect(chip.getAttribute('data-login')).toBe('octocat');
     expect(chip.querySelector('img')!.getAttribute('src')).toBe(octocat.avatarUrl);
-    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Search GitHub users' })).toBeNull();
     expect(screen.queryByTestId('share-pin-suggestions')).toBeNull();
     expect(onSearchUsers).toHaveBeenCalledWith('');
 
-    await fireEvent.click(screen.getByRole('button', { name: /Create invite link/ }));
+    await fireEvent.click(screen.getByRole('button', { name: /^(Copy|Create) link$/ }));
     expect(onCreateInvite).toHaveBeenCalledWith('octocat');
   });
 
   it('selects a row by click and clears the chip back to an empty field', async () => {
     renderDialog({ userSuggestions: [octocat], userSearchQuery: 'octo', onSearchUsers: vi.fn() });
-    await fireEvent.input(pinField(), { target: { value: 'octo' } });
+    await fireEvent.input(await pinField(), { target: { value: 'octo' } });
 
     await fireEvent.click(screen.getByRole('option', { name: /@octocat/ }));
     expect(screen.getByTestId('share-pin-selected')).toBeTruthy();
 
     await fireEvent.click(screen.getByRole('button', { name: /Clear selected GitHub user/ }));
     expect(screen.queryByTestId('share-pin-selected')).toBeNull();
-    expect(pinField().value).toBe('');
+    expect((await pinField()).value).toBe('');
   });
 
-  it('closes the list on Escape without closing the dialog, and Enter submits free text', async () => {
+  it('closes the list on Escape without closing the dialog and refuses unpicked free text', async () => {
     const onClose = vi.fn();
     const onCreateInvite = vi.fn();
     renderDialog({
@@ -549,7 +883,7 @@ describe('ShareWorkspaceDialog — pin typeahead', () => {
       onClose,
       onCreateInvite,
     });
-    const input = pinField();
+    const input = await pinField();
     await fireEvent.input(input, { target: { value: 'octo' } });
     expect(screen.getAllByRole('option')).toHaveLength(1);
 
@@ -561,30 +895,30 @@ describe('ShareWorkspaceDialog — pin typeahead', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
 
     await fireEvent.submit(input.closest('form')!);
-    expect(onCreateInvite).toHaveBeenCalledWith('octo');
+    expect(onCreateInvite).not.toHaveBeenCalled();
   });
 
-  it('clears the search when the dialog closes or retargets and after a link is minted', async () => {
+  it('clears the search when the dialog retargets', async () => {
     const onSearchUsers = vi.fn();
     const { rerender } = renderDialog({ onSearchUsers });
-    await fireEvent.input(pinField(), { target: { value: 'octo' } });
+    await fireEvent.input(await pinField(), { target: { value: 'octo' } });
     onSearchUsers.mockClear();
 
     await rerender({ ...baseProps, onSearchUsers, workspaceId: 'ws-2' });
     expect(onSearchUsers).toHaveBeenLastCalledWith('');
-    expect(pinField().value).toBe('');
+    expect((await pinField()).value).toBe('');
 
-    await fireEvent.input(pinField(), { target: { value: 'octo' } });
+    await fireEvent.input(await pinField(), { target: { value: 'octo' } });
     onSearchUsers.mockClear();
     await rerender({ ...baseProps, onSearchUsers, createdLink });
     expect(onSearchUsers).toHaveBeenLastCalledWith('');
-    expect(pinField().value).toBe('');
+    expect((await pinField()).value).toBe('');
   });
 
   it('never searches when GitHub is not connected', () => {
     const onSearchUsers = vi.fn();
     renderDialog({ githubConnected: false, onSearchUsers });
-    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Search GitHub users' })).toBeNull();
     expect(onSearchUsers.mock.calls.filter(([q]) => q !== '')).toHaveLength(0);
   });
 });
@@ -637,7 +971,7 @@ describe('ShareWorkspaceDialog — revoke and remove', () => {
   });
 });
 
-describe('ShareWorkspaceDialog — invite an existing GitHub user', () => {
+describe('ShareWorkspaceDialog — invite an existing user', () => {
   const erin: HostPrincipal = {
     principalId: 'p-erin',
     login: 'erin',
@@ -654,7 +988,7 @@ describe('ShareWorkspaceDialog — invite an existing GitHub user', () => {
   };
 
   async function pick(name: string | RegExp) {
-    const trigger = screen.getByRole('combobox', { name: /Invite an existing GitHub user/ });
+    const trigger = screen.getByRole('combobox', { name: /Invite an existing user/ });
     trigger.focus();
     await fireEvent.keyDown(trigger, { key: 'Enter' });
     await fireEvent.pointerUp(await screen.findByRole('option', { name }), {
@@ -663,20 +997,20 @@ describe('ShareWorkspaceDialog — invite an existing GitHub user', () => {
     return trigger;
   }
 
-  it('hides the section when no host guest is invitable', () => {
+  it('hides the section when no host guest is invitable', async () => {
     renderDialog({ principals: [] });
     expect(screen.queryByTestId('share-existing-guest')).toBeNull();
     // The link form is still there.
-    expect(screen.getByLabelText(/Restrict to a GitHub user/)).toBeTruthy();
+    expect(await recipientField('github')).toBeTruthy();
   });
 
   it('lists the host guests by login (display name without one), above the link form', async () => {
     renderDialog({ principals: [erin, frank] });
     const section = screen.getByTestId('share-existing-guest');
-    const form = screen.getByLabelText(/Restrict to a GitHub user/).closest('form')!;
+    const form = (await recipientField('github')).closest('form')!;
     expect(section.compareDocumentPosition(form) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-    const trigger = screen.getByRole('combobox', { name: /Invite an existing GitHub user/ });
+    const trigger = screen.getByRole('combobox', { name: /Invite an existing user/ });
     trigger.focus();
     await fireEvent.keyDown(trigger, { key: 'Enter' });
     expect(await screen.findAllByRole('option')).toHaveLength(2);
@@ -709,7 +1043,7 @@ describe('ShareWorkspaceDialog — invite an existing GitHub user', () => {
     await rerender({ ...baseProps, principals: [], loading: true, onAddMember });
     const invite = screen.getByTestId('share-existing-guest-invite') as HTMLButtonElement;
     const trigger = screen.getByRole('combobox', {
-      name: /Invite an existing GitHub user/,
+      name: /Invite an existing user/,
     }) as HTMLButtonElement;
     expect(trigger.disabled).toBe(true);
     expect(trigger.getAttribute('aria-busy')).toBe('true');
@@ -781,7 +1115,7 @@ describe('ShareWorkspaceDialog — invite an existing GitHub user', () => {
     expect(
       (
         screen.getByRole('combobox', {
-          name: /Invite an existing GitHub user/,
+          name: /Invite an existing user/,
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true);
@@ -817,4 +1151,90 @@ describe('ShareWorkspaceDialog — dismissal', () => {
     else await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(onClose).toHaveBeenCalledOnce();
   });
+});
+
+describe('ShareWorkspaceDialog — guest roles', () => {
+  it('keeps roles fixed without the exact capability and keeps guest removal available', () => {
+    renderDialog({ onSetMemberRole: vi.fn() });
+    expect(screen.queryByRole('button', { name: 'Role for bob' })).toBeNull();
+    expect(screen.getByText('Participant')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Remove bob' })).toBeTruthy();
+  });
+
+  it('never offers guest role controls or removal for inherited host authority', () => {
+    renderDialog({
+      canSetMemberRole: true,
+      onSetMemberRole: vi.fn(),
+      members: [
+        owner,
+        { ...collaborator, hostRole: 'member' },
+        { ...collaborator, principalId: 'host-owner', login: 'host', hostRole: 'owner' },
+      ],
+    });
+    expect(screen.queryByRole('button', { name: /Role for/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Remove/ })).toBeNull();
+    expect(screen.getByText('Host member')).toBeTruthy();
+    expect(screen.getByText('Owner')).toBeTruthy();
+    expect(screen.getByText('Host owner')).toBeTruthy();
+  });
+
+  it('retains the confirmed role during pending and failed updates without locking other guests', async () => {
+    const props = {
+      ...baseProps,
+      canSetMemberRole: true,
+      onSetMemberRole: vi.fn(),
+      members: [
+        owner,
+        collaborator,
+        { ...collaborator, principalId: 'p-carol', login: 'carol', role: 'manager' as const },
+      ],
+    };
+    const { rerender } = render(ShareWorkspaceDialog, {
+      props: { ...props, pendingRolePrincipalIds: ['p-bob'] },
+    });
+    const bob = screen.getByRole('button', { name: 'Role for bob' }) as HTMLButtonElement;
+    expect(bob.disabled).toBe(true);
+    expect(bob.textContent).toContain('Participant');
+    expect(bob.getAttribute('aria-busy')).toBe('true');
+    expect((screen.getByRole('button', { name: 'Remove bob' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(
+      (screen.getByRole('button', { name: 'Role for carol' }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+    await rerender({
+      ...props,
+      pendingRolePrincipalIds: [],
+      roleErrors: { 'p-bob': 'Could not change this role. Try again.' },
+    });
+    expect(bob.disabled).toBe(false);
+    expect(bob.textContent).toContain('Participant');
+    expect(screen.getByRole('alert').textContent).toContain('Could not change this role');
+    expect(bob.getAttribute('aria-describedby')).toBe(screen.getByRole('alert').id);
+    await rerender({
+      ...props,
+      roleErrors: {},
+      members: props.members.map((member) =>
+        member.principalId === 'p-bob' ? { ...member, role: 'manager' as const } : member,
+      ),
+    });
+    expect(bob.textContent).toContain('Manager');
+  });
+
+  it('does not show role controls to a viewer without workspace management', () => {
+    renderDialog({ canManage: false, canSetMemberRole: true, onSetMemberRole: vi.fn() });
+    expect(screen.queryByRole('button', { name: /Role for/ })).toBeNull();
+  });
+});
+
+it('keeps the authoritative workspace owner fixed even when the roster projects a guest role', () => {
+  renderDialog({
+    canSetMemberRole: true,
+    ownerPrincipalId: collaborator.principalId,
+    onSetMemberRole: vi.fn(),
+    members: [{ ...collaborator, hostRole: 'guest' }],
+  });
+  expect(screen.getByText('Owner')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Role for bob' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Remove bob' })).toBeNull();
 });

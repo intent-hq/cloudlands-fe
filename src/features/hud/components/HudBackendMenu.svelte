@@ -16,6 +16,8 @@
   import Fa from 'svelte-fa';
   import { faPlus, faCheck } from '@fortawesome/free-solid-svg-icons';
   import * as Menu from '$lib/components/ui/menu';
+  import { Button } from '$lib/components/ui/button';
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import Header from '$lib/components/ui/Header.svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
   import ConnectBackendModal from '$lib/components/layout/ConnectBackendModal.svelte';
@@ -58,9 +60,7 @@
     menuOpen = false;
     openError = null;
     try {
-      const action = openConnectionRequested(id);
-      appStore.dispatch(action);
-      const result = await action.promise;
+      const result = await appStore.dispatch(openConnectionRequested(id));
       if (result.status === 'secret-unavailable') {
         openError = m.hud_backendMenu_secretUnavailable_error({
           label: connectionDisplayLabel(id),
@@ -81,20 +81,24 @@
       data-testid="hud-footer-system"
       aria-label={m.layout_daemonStatus_connections_header()}
     >
-      <span class="hud-footer-dot" class:hud-footer-dot-online={online}></span>
-      <!-- i18n-ignore (brand/daemon name) -->
-      <span class="hud-footer-system-key">INTENTD</span>
-      {#if remoteHostname !== null}
-        <!-- i18n-ignore (daemon-reported hostname is data, not copy) -->
-        <span class="hud-footer-system-key" data-testid="hud-footer-hostname"
-          >({remoteHostname})</span
-        >
-      {/if}
-      {#if online}
-        <span class="hud-footer-online">{m.hud_system_online_label()}</span>
-      {:else}
-        <span class="hud-footer-offline">{m.hud_system_offline_label()}</span>
-      {/if}
+      {#snippet child({ props })}
+        <Button {...props} variant="plain" active={menuOpen}>
+          <span class="hud-footer-dot" class:hud-footer-dot-online={online}></span>
+          <!-- i18n-ignore (brand/daemon name) -->
+          <span class="hud-footer-system-key">INTENTD</span>
+          {#if remoteHostname !== null}
+            <!-- i18n-ignore (daemon-reported hostname is data, not copy) -->
+            <span class="hud-footer-system-key" data-testid="hud-footer-hostname"
+              >({remoteHostname})</span
+            >
+          {/if}
+          {#if online}
+            <span class="hud-footer-online">{m.hud_system_online_label()}</span>
+          {:else}
+            <span class="hud-footer-offline">{m.hud_system_offline_label()}</span>
+          {/if}
+        </Button>
+      {/snippet}
     </Menu.Trigger>
     <Menu.Content
       side="top"
@@ -121,7 +125,10 @@
               class="cursor-pointer text-xs"
               onSelect={() => handleOpenConnection(conn.id)}
             >
-              <span class="min-w-0 flex-1 truncate" title={connectionDisplayLabel(conn.id)}>
+              <span
+                class="min-w-0 flex-1 truncate"
+                use:truncatedTitle={connectionDisplayLabel(conn.id)}
+              >
                 {conn.isLocal
                   ? m.layout_daemonStatus_localConnection_label()
                   : formatConnectionLabel(conn)}

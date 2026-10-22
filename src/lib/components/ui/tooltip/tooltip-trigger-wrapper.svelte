@@ -27,7 +27,6 @@
   const forwardedAttributes = [
     'aria-describedby',
     'data-state',
-    'data-disabled',
     'data-delay-duration',
     'data-tooltip-trigger',
   ] as const;

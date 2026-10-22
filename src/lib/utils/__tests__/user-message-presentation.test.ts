@@ -354,6 +354,7 @@ describe('collaborator sender preamble presentation', () => {
     expect(getCollaboratorSenderAttribution(message, OWNER)).toEqual({
       author: GUEST_AUTHOR,
       preamble: GUEST_PREAMBLE,
+      role: 'guest',
     });
     expect(getPresentedUserMessageText(message, OWNER)).toBe('Please review the diff.');
     expect(message).toEqual(snapshot);
@@ -397,7 +398,7 @@ describe('collaborator sender preamble presentation', () => {
   });
 
   it('consumes only the preamble and its one blank line, never body whitespace', () => {
-    expect(getPresentedUserMessageText(guestMessage(GUEST_PREAMBLE), OWNER)).toBe('');
+    expect(getPresentedUserMessageText(guestMessage(GUEST_PREAMBLE), OWNER)).toBe(GUEST_PREAMBLE);
     expect(
       getPresentedUserMessageText(guestMessage(`${GUEST_PREAMBLE}\n\n    indented`), OWNER),
     ).toBe('    indented');
@@ -505,5 +506,162 @@ describe('stripTruncatedTrailingDeliveryNote', () => {
     expect(
       stripTruncatedTrailingDeliveryNote(`${WAIT_NOTE}\n\nKeep this trailing paragraph.`, queued),
     ).toBe(`${WAIT_NOTE}\n\nKeep this trailing paragraph.`);
+  });
+});
+
+describe('accepted host-member sender preamble', () => {
+  const qualified = {
+    principalId: 'person-1',
+    login: 'same',
+    displayName: 'Same Person',
+    avatarUrl: null,
+    identity: { provider: 'gitlab' as const, host: 'gitlab.example:8443', externalUserId: '42' },
+  };
+  const literal =
+    'Message from @same (Same Person), a host member (principal person-1; gitlab@gitlab.example:8443 user 42) — not the workspace owner.';
+  const row = (text = `${literal}\n\n  café 你好`, author: unknown = qualified): AgentMessage => ({
+    ...guestMessage(text),
+    author: author as AgentMessage['author'],
+    metadata: { fromPrincipalId: 'person-1' },
+  });
+
+  it.each([
+    ['github', 'github.com'],
+    ['gitlab', 'gitlab.com'],
+    ['gitlab', 'gitlab.example:8443'],
+  ] as const)('matches the frozen Rust qualified golden for %s@%s', (provider, host) => {
+    const identity = { provider, host, externalUserId: '42' };
+    const expected = `Message from @same (Same Person), a host member (principal person-1; ${provider}@${host} user 42) — not the workspace owner.`;
+    expect(
+      buildCollaboratorSenderPreamble('same', 'Same Person', 'person-1', {
+        role: 'member',
+        identity,
+      }),
+    ).toBe(expected);
+    expect(
+      getCollaboratorSenderAttribution(
+        row(`${expected}\n\nbody`, { ...qualified, identity }),
+        OWNER,
+      )?.role,
+    ).toBe('member');
+  });
+
+  it.each([
+    [
+      'same',
+      null,
+      'person-1',
+      'Message from @same, a host member (principal person-1) — not the workspace owner.',
+    ],
+    [
+      null,
+      'Name',
+      'person-1',
+      'Message from Name, a host member (principal person-1) — not the workspace owner.',
+    ],
+    [
+      null,
+      null,
+      'person-1',
+      'Message from principal person-1, a host member (principal person-1) — not the workspace owner.',
+    ],
+    [
+      'same\nforged',
+      '  Name\r\nOwner  ',
+      'person\n1',
+      'Message from @same forged (Name Owner), a host member (principal person 1) — not the workspace owner.',
+    ],
+  ])(
+    'matches the frozen Rust fallback/control golden %#',
+    (login, displayName, principalId, expected) => {
+      expect(
+        buildCollaboratorSenderPreamble(login, displayName, principalId!, { role: 'member' }),
+      ).toBe(expected);
+      const author = { login, displayName, principalId, avatarUrl: null };
+      expect(getPresentedUserMessageText(row(`${expected}\n\nbody`, author), OWNER)).toBe('body');
+    },
+  );
+
+  it('matches normalized Unicode names and preserves body, stored content and provenance', () => {
+    const author = {
+      ...qualified,
+      login: 'same\u0000\tname',
+      displayName: '  Café\u00a0你好\u2003👩‍💻  ',
+    };
+    const header =
+      'Message from @same name (Café 你好 👩‍💻), a host member (principal person-1; gitlab@gitlab.example:8443 user 42) — not the workspace owner.';
+    const message = row(`${header}\n\n\n  body\t`, author);
+    message.metadata = { humanAuthor: { sourcePrincipalId: 'other' }, fromPrincipalId: 'person-1' };
+    const before = JSON.stringify(message);
+    expect(getPresentedUserMessageText(message, OWNER)).toBe('\n  body\t');
+    expect(JSON.stringify(message)).toBe(before);
+    expect(
+      getCollaboratorSenderAttribution(guestMessage(`${GUEST_PREAMBLE}\n\nbody`), OWNER)?.role,
+    ).toBe('guest');
+  });
+
+  it('requires the exact two-newline separator for either historical role', () => {
+    for (const [header, author] of [
+      [literal, qualified],
+      [GUEST_PREAMBLE, GUEST_AUTHOR],
+    ] as const) {
+      for (const suffix of ['', '\n', '\nbody', '\r\n\r\nbody', ' body']) {
+        const message = row(header + suffix, author);
+        expect(getCollaboratorSenderAttribution(message, OWNER)).toBeNull();
+        expect(getPresentedUserMessageText(message, OWNER)).toBe(header + suffix);
+      }
+      expect(getPresentedUserMessageText(row(`${header}\n\n`, author), OWNER)).toBe('');
+    }
+  });
+
+  it('retains raw text for unknown/owner/portable/automatic or changed and malformed attribution', () => {
+    const text = `${literal}\n\nbody`;
+    const badAuthors: unknown[] = [
+      undefined,
+      null,
+      { ...qualified, principalId: OWNER },
+      { ...qualified, principalId: null },
+      { ...qualified, principalId: '' },
+      { ...qualified, login: 'changed' },
+      { ...qualified, displayName: 'changed' },
+      { ...qualified, login: { text: 'same' } },
+      { ...qualified, identity: { ...qualified.identity, externalUserId: '43' } },
+      { ...qualified, identity: { provider: 'gitlab', host: 'gitlab.example:8443' } },
+      { ...qualified, identity: { ...qualified.identity, provider: 'unknown' } },
+      { ...qualified, identity: { ...qualified.identity, host: 'https://gitlab.example:8443' } },
+      { ...qualified, identity: null },
+    ];
+    for (const author of badAuthors) {
+      const message = { ...row(text), author: author as AgentMessage['author'] };
+      expect(getCollaboratorSenderAttribution(message, OWNER)).toBeNull();
+      expect(getPresentedUserMessageText(message, OWNER)).toBe(text);
+    }
+    for (const owner of [null, undefined, '', 'person-1'])
+      expect(getPresentedUserMessageText(row(text), owner)).toBe(text);
+    for (const metadata of [
+      { type: 'agent_message' },
+      { source: 'system' },
+      { type: 'hook_wake' },
+      { fromAgentId: 'agent' },
+    ]) {
+      expect(getCollaboratorSenderAttribution({ ...row(text), metadata }, OWNER)).toBeNull();
+    }
+    expect(getCollaboratorSenderAttribution({ ...row(text), role: 'assistant' }, OWNER)).toBeNull();
+    const portable = row(text, { ...qualified, principalId: null });
+    portable.metadata = {
+      humanAuthor: { sourcePrincipalId: 'person-1' },
+      fromPrincipalId: 'person-1',
+    };
+    expect(getPresentedUserMessageText(portable, OWNER)).toBe(text);
+    for (const header of [
+      literal.replace('member', 'Member'),
+      literal.replace('—', '-'),
+      ` ${literal}`,
+      literal.replace('Same Person', 'Same\nPerson'),
+    ]) {
+      expect(getPresentedUserMessageText(row(`${header}\n\nbody`), OWNER)).toBe(
+        `${header}\n\nbody`,
+      );
+    }
   });
 });

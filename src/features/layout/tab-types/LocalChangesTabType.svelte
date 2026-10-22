@@ -1,4 +1,8 @@
 <script lang="ts">
+  import {
+    gitRootsConsumerMounted,
+    gitRootsConsumerUnmounted,
+  } from '$store/renderer/slices/git-roots/git-roots-slice';
   /**
    * Local Changes Tab Type Component
    *
@@ -6,7 +10,12 @@
    * Includes staging controls and header actions.
    */
 
+  import { toStore } from 'svelte/store';
   import type { TabTypeComponentProps } from './registry';
+  import {
+    changesConsumerMounted,
+    changesConsumerUnmounted,
+  } from '$store/renderer/slices/changes/changes-slice';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import {
     selectFileTrackingBoundarySha,
@@ -14,12 +23,7 @@
     selectFileTrackingCommits,
     selectFileTrackingLoading,
   } from '$store/renderer/slices/changes/changes-selectors';
-  import {
-    discardFiles as discardFilesViaSeam,
-    stageFiles as stageFilesViaSeam,
-    unstageFiles as unstageFilesViaSeam,
-  } from '$features/git/git-write-service';
-  import { notify } from '$lib/components/patterns/notify';
+  import { gitWriteRequested } from '$store/renderer/slices/git/git-write-slice';
 
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import ChatChangesPanel from '$lib/components/chat/ChatChangesPanel.svelte';
@@ -35,7 +39,6 @@
     toggleDiffSideBySide,
   } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
-  import { m } from '$shared/paraglide/messages.js';
   import { isAbsolutePath, normalizePath } from '$lib/utils/path-utils';
   import { store as appStore } from '$store/renderer/store';
   import {
@@ -51,25 +54,26 @@
   let { tab, workspaceId, isActive }: TabTypeComponentProps = $props();
 
   const headerContext = getPanelHeaderContext();
-  // svelte-ignore state_referenced_locally
-  const workspace = selectWorkspaceById(workspaceId);
+  const workspaceId$ = toStore(() => workspaceId);
+  const workspace = selectWorkspaceById(workspaceId$);
+  $effect(() => {
+    const wsId = workspaceId;
+    if (!isActive || !wsId || gitRootId) return;
+    appStore.dispatch(changesConsumerMounted(wsId, 'all'));
+    return () => appStore.dispatch(changesConsumerUnmounted(wsId, 'all'));
+  });
+
   const gitRootId = $derived((tab.data?.gitRootId as string) || '');
-  // svelte-ignore state_referenced_locally
-  const gitRoots$ = selectGitRoots(workspaceId);
+  const gitRoots$ = selectGitRoots(workspaceId$);
   const selectedRoot = $derived($gitRoots$.find((root) => root.id === gitRootId));
   const workspacePath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || '');
   const effectiveRootPath = $derived(selectedRoot?.path || workspacePath);
-  // svelte-ignore state_referenced_locally
-  const ftChanges$ = selectFileTrackingChanges(workspaceId);
-  // svelte-ignore state_referenced_locally
-  const ftCommits$ = selectFileTrackingCommits(workspaceId);
-  // svelte-ignore state_referenced_locally
-  const ftBoundarySha$ = selectFileTrackingBoundarySha(workspaceId);
-  // svelte-ignore state_referenced_locally
-  const ftLoading$ = selectFileTrackingLoading(workspaceId);
+  const ftChanges$ = selectFileTrackingChanges(workspaceId$);
+  const ftCommits$ = selectFileTrackingCommits(workspaceId$);
+  const ftBoundarySha$ = selectFileTrackingBoundarySha(workspaceId$);
+  const ftLoading$ = selectFileTrackingLoading(workspaceId$);
   const allCommits = $derived($ftCommits$ || []);
-  // svelte-ignore state_referenced_locally
-  const rootGitRoots$ = selectSecondaryRootGitRoots(workspaceId);
+  const rootGitRoots$ = selectSecondaryRootGitRoots(workspaceId$);
   const rootGit = $derived($rootGitRoots$[gitRootId] ?? emptySecondaryRootState);
   const rootStatus = $derived(rootGit.status);
   const rootLoading = $derived(rootGit.loading);
@@ -199,46 +203,48 @@
     return normalized.startsWith(`${root}/`) ? normalized.slice(root.length + 1) : path;
   }
 
-  // Stage/unstage/revert route through the git-write-service seam
-  // (git.stage / git.unstage / git.discard): await + toast.error on failure.
-  // The seam is the sanctioned post-saga git-mutation mechanism (it dispatches
-  // the optimistic update + reconciles the store itself), so the
-  // component-async-data-fetch heuristic — which flags any `*-service` import —
-  // is disabled for these mutation calls.
-  async function stageViaSeam(paths: string[]) {
-    // eslint-disable-next-line intent/no-component-async-data-fetch
-    const result = await stageFilesViaSeam(workspaceId, paths.map(toRepoRelative));
-    if (!result.success) {
-      notify.error(m.workspace_fileChanges_stageFailed_error(), {
-        description: result.error || m.ui_workspaceActions_unknown_error(),
-      });
-    }
+  // The operation owns reconciliation and feedback even if this tab is closed.
+  function stageViaSeam(paths: string[]) {
+    appStore.dispatch(
+      gitWriteRequested(workspaceId, crypto.randomUUID(), {
+        kind: 'stage',
+        paths: paths.map(toRepoRelative),
+        source: 'localChanges',
+      }),
+    );
   }
 
-  async function unstageViaSeam(paths: string[]) {
-    // eslint-disable-next-line intent/no-component-async-data-fetch
-    const result = await unstageFilesViaSeam(workspaceId, paths.map(toRepoRelative));
-    if (!result.success) {
-      notify.error(m.workspace_fileChanges_unstageFailed_error(), {
-        description: result.error || m.ui_workspaceActions_unknown_error(),
-      });
-    }
+  function unstageViaSeam(paths: string[]) {
+    appStore.dispatch(
+      gitWriteRequested(workspaceId, crypto.randomUUID(), {
+        kind: 'unstage',
+        paths: paths.map(toRepoRelative),
+        source: 'localChanges',
+      }),
+    );
   }
 
-  async function revertViaSeam(paths: string[]) {
-    // eslint-disable-next-line intent/no-component-async-data-fetch
-    const result = await discardFilesViaSeam(workspaceId, paths.map(toRepoRelative));
-    if (!result.success) {
-      notify.error(m.workspace_fileChanges_revertFailed_error(), {
-        description: result.error || m.ui_workspaceActions_unknown_error(),
-      });
-    }
+  function revertViaSeam(paths: string[]) {
+    appStore.dispatch(
+      gitWriteRequested(workspaceId, crypto.randomUUID(), {
+        kind: 'discard',
+        paths: paths.map(toRepoRelative),
+        source: 'localChanges',
+      }),
+    );
   }
 
   // Register header actions
   $effect(() => {
     if (!headerContext || !isActive) return;
     headerContext.registerActions({ display: changesDisplayActions });
+  });
+  const gitRootsConsumerId = crypto.randomUUID();
+  $effect(() => {
+    const wsId = workspaceId;
+    if (!(isActive && gitRootId) || !wsId) return;
+    appStore.dispatch(gitRootsConsumerMounted(wsId, gitRootsConsumerId));
+    return () => appStore.dispatch(gitRootsConsumerUnmounted(wsId, gitRootsConsumerId));
   });
 </script>
 

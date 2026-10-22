@@ -122,6 +122,7 @@ describe('TerminalHandler (daemon-backed)', () => {
 
     expect(mockRequest).toHaveBeenCalledWith('terminal.write', {
       terminalId: 'daemon-t-4',
+      workspaceId: 'ws-abc',
       data: b64('hello\n'),
     });
   });
@@ -176,7 +177,10 @@ describe('TerminalHandler (daemon-backed)', () => {
     const id = await handler.createTerminal('sh');
     await handler.killTerminal(id);
 
-    expect(mockRequest).toHaveBeenCalledWith('terminal.kill', { terminalId: 'daemon-t-7' });
+    expect(mockRequest).toHaveBeenCalledWith('terminal.kill', {
+      terminalId: 'daemon-t-7',
+      workspaceId: 'ws-abc',
+    });
   });
 
   it('drops the events subscription on dispose', async () => {
@@ -192,7 +196,10 @@ describe('TerminalHandler (daemon-backed)', () => {
     await handler.createTerminal('sh');
     await handler.dispose();
 
-    expect(mockRequest).toHaveBeenCalledWith('events.unsubscribe', { subscriptionId: 'sub-1' });
+    expect(mockRequest).toHaveBeenCalledWith('events.unsubscribe', {
+      subscriptionId: 'sub-1',
+      workspaceId: 'ws-abc',
+    });
   });
 
   it('ignores events tagged with a different subscriptionId', async () => {
@@ -235,5 +242,32 @@ describe('isLikelyLongRunningCommand', () => {
   });
   it('accepts a plain git command', () => {
     expect(isLikelyLongRunningCommand('git', ['status'])).toBeNull();
+  });
+});
+
+it('releases a late terminal subscription with its workspace after disposal', async () => {
+  mockRequest.mockReset();
+  let finish!: (result: { subscriptionId: string }) => void;
+  mockRequest.mockImplementation((method: string) => {
+    if (method === 'terminal.create') return { terminalId: 'late-terminal' };
+    if (method === 'events.subscribe')
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    return {};
+  });
+  const handler = new TerminalHandler('/workspace-a', undefined, 'workspace-a');
+  const created = handler.createTerminal('cat');
+  await vi.waitFor(() => expect(finish).toBeDefined());
+  await handler.dispose();
+  finish({ subscriptionId: 'late-sub' });
+  await created;
+  expect(mockRequest).toHaveBeenCalledWith('terminal.kill', {
+    terminalId: 'late-terminal',
+    workspaceId: 'workspace-a',
+  });
+  expect(mockRequest).toHaveBeenCalledWith('events.unsubscribe', {
+    subscriptionId: 'late-sub',
+    workspaceId: 'workspace-a',
   });
 });

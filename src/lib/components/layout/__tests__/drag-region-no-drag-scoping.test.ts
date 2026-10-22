@@ -56,7 +56,6 @@ const CLIP_CONTAINER = '.app-drag-region [data-app-region-clip]';
 const noDragSelectors = extractNoDragSelectors(`<style>${globalCss}</style>`).filter(
   (selector) => selector !== '.app-no-drag' && selector !== CLIP_CONTAINER,
 );
-const resetSelectors = extractAppRegionSelectors(`<style>${globalCss}</style>`, 'initial');
 const matchesNoDragRule = (el: Element) => noDragSelectors.some((sel) => el.matches(sel));
 
 describe('no-drag rule scoping (app.css)', () => {
@@ -126,62 +125,9 @@ describe('drag surfaces carry the .app-drag-region scope class', () => {
   });
 });
 
-describe('scroll-container app-region clipping (#2400)', () => {
-  // Chromium computes draggable regions from UNCLIPPED geometry, so tabs
-  // scrolled out of the WorkspaceTabStrip scroll container carved no-drag
-  // holes over the titlebar gap left of the tabs. The fix: the container
-  // itself is no-drag (its border box is exactly its visible area) and its
-  // interactive descendants reset to `initial` so their unclipped rects
-  // contribute nothing.
-
-  it('marks the clip container itself as no-drag', () => {
-    const allNoDrag = extractNoDragSelectors(`<style>${globalCss}</style>`);
-    expect(allNoDrag).toContain(CLIP_CONTAINER);
-  });
-
-  it('resets every interactive-element no-drag selector inside the clip container', () => {
-    // The reset list must mirror the scoped no-drag list one-to-one, so a
-    // selector added to the no-drag rule cannot silently reintroduce carving.
-    const expected = noDragSelectors.map((sel) =>
-      sel.replace(/^\.app-drag-region\s/, `${CLIP_CONTAINER} `),
-    );
-    expect(resetSelectors.sort()).toEqual(expected.sort());
-  });
-
-  it('interactive elements inside the clip container match a reset selector', () => {
-    document.body.innerHTML = `
-      <div class="app-drag-region">
-        <div data-app-region-clip>
-          <button id="btn">b</button>
-          <div role="tab" id="tab">t</div>
-          <div tabindex="0" id="focusable">f</div>
-        </div>
-      </div>`;
-    for (const id of ['btn', 'tab', 'focusable']) {
-      const el = document.getElementById(id)!;
-      // Still matched by the scoped no-drag rule (lower in cascade order)…
-      expect(matchesNoDragRule(el)).toBe(true);
-      // …but also matched by the later reset rule, which wins.
-      expect(
-        resetSelectors.some((sel) => el.matches(sel)),
-        `#${id} inside clip container must match a reset selector`,
-      ).toBe(true);
-    }
-  });
-
-  it('the reset rule is declared after the no-drag rule so it wins the cascade', () => {
-    const noDragIndex = globalCss.indexOf('.app-no-drag {');
-    const resetIndex = globalCss.indexOf('-webkit-app-region: initial');
-    expect(noDragIndex).toBeGreaterThan(-1);
-    expect(resetIndex).toBeGreaterThan(noDragIndex);
-  });
-
-  it('WorkspaceTabStrip scroll container carries data-app-region-clip', () => {
-    const source = read('lib/components/layout/WorkspaceTabStrip.svelte');
-    const container = source.match(/<div[^>]*data-workspace-tab-strip[^>]*>/s)?.[0] ?? '';
-    expect(container).toContain('data-app-region-clip');
-  });
-});
+// Scroll-container inheritance and unclipped geometry are exercised in Chromium
+// by workspace-tab-drag-region.ct.spec.ts; selector mirroring missed #2400's
+// non-interactive wrappers inheriting no-drag from their scroll container.
 
 describe('no-drag rule loads in every window, not only the (app) group (#2167)', () => {
   it('ships in app.css, which the root layout imports for all routes', () => {

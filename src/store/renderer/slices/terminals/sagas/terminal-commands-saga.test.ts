@@ -1,13 +1,20 @@
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { runSaga, stdChannel } from 'redux-saga';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   dispatchWindowEvent: vi.fn(),
   disposeTerminal: vi.fn(),
+  kill: vi.fn(),
+  error: vi.fn(),
 }));
 
 vi.mock('$lib/utils/window-events', () => ({ dispatchWindowEvent: mocks.dispatchWindowEvent }));
+vi.mock('$lib/client', () => ({ appClient: { terminals: { kill: mocks.kill } } }));
+vi.mock('$lib/utils/client-logger', () => ({
+  createLogger: () => ({ error: mocks.error }),
+}));
 vi.mock('$features/terminal/terminal-manager.svelte', () => ({
   terminalManager: { disposeTerminal: mocks.disposeTerminal },
 }));
@@ -20,6 +27,7 @@ import {
   addTerminal,
   closeActiveTerminalRequested,
   createTerminalRequested,
+  killRestoredTerminalRequested,
   terminalsReducer,
 } from '../terminals-slice';
 import { terminalCommandsSaga } from './terminal-commands-saga';
@@ -27,11 +35,11 @@ import { initialState as guestSessionsInitialState } from '../../guest-sessions/
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 
 /** The window-identity slices `selectIsWorkspaceCollaborator` reads: an owner window on the local backend. */
-const ownerWindowSlices = {
+const ownerWindowSlices = withLegacyPrincipal({
   connections: { activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID },
   // Settled owner window: guest list received, no host joined.
   guestSessions: { ...guestSessionsInitialState, hasReceivedList: true },
-};
+});
 
 const settle = async () => {
   for (let i = 0; i < 6; i += 1) await Promise.resolve();
@@ -103,7 +111,7 @@ describe('terminalCommandsSaga', () => {
     await vi.waitFor(() => expect(mocks.disposeTerminal).toHaveBeenCalledTimes(1));
 
     expect(dispatched).toEqual([{ type: 'terminals/removeTerminal', payload: ['ws-1', 'term-b'] }]);
-    expect(mocks.disposeTerminal).toHaveBeenCalledWith('term-b');
+    expect(mocks.disposeTerminal).toHaveBeenCalledWith('term-b', 'ws-1');
     expect(selectTerminalsForWorkspace.select(getState(), 'ws-1').map((t) => t.id)).toEqual([
       'term-a',
     ]);
@@ -121,6 +129,19 @@ describe('terminalCommandsSaga', () => {
     expect(dispatched).toEqual([]);
     expect(mocks.disposeTerminal).not.toHaveBeenCalled();
     expect(task.isRunning()).toBe(true);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('kills a restored terminal through terminal.kill with its workspace context', async () => {
+    mocks.kill.mockResolvedValue({ success: true });
+    const { dispatched, send, task } = startSaga();
+
+    send(killRestoredTerminalRequested('restored-pty', 'ws-1'));
+    await settle();
+
+    expect(mocks.kill).toHaveBeenCalledExactlyOnceWith('restored-pty', 'ws-1');
+    expect(dispatched).toEqual([]);
     task.cancel();
     await task.toPromise();
   });

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 
 const mocks = vi.hoisted(() => ({ list: vi.fn() }));
 vi.mock('$lib/client', () => ({ appClient: { models: { list: mocks.list } } }));
@@ -14,16 +15,22 @@ const settle = async () => {
   await Promise.resolve();
 };
 
+function workerContext(dispatch: ReturnType<typeof vi.fn>, providerId: string) {
+  const getState = () => withLegacyPrincipal({ model: { defaultProviderId: providerId } });
+  return {
+    dispatch,
+    getState,
+    context: { reduxStore: { getState, subscribe: () => () => {} } },
+  };
+}
+
 describe('modelReloadSaga', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('clears stale models and reaches the exact success state', async () => {
     mocks.list.mockResolvedValue([{ value: 'sonnet4.5', label: 'Sonnet 4.5' }]);
     const dispatch = vi.fn();
-    await runSaga(
-      { dispatch, getState: () => ({ model: { defaultProviderId: 'auggie' } }) },
-      reloadModelsWorker,
-    ).toPromise();
+    await runSaga(workerContext(dispatch, 'auggie'), reloadModelsWorker).toPromise();
 
     expect(mocks.list.mock.calls).toEqual([['auggie']]);
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
@@ -46,10 +53,7 @@ describe('modelReloadSaga', () => {
   it('reaches the exact terminal state for an empty catalog', async () => {
     mocks.list.mockResolvedValue([]);
     const dispatch = vi.fn();
-    await runSaga(
-      { dispatch, getState: () => ({ model: { defaultProviderId: 'codex' } }) },
-      reloadModelsWorker,
-    ).toPromise();
+    await runSaga(workerContext(dispatch, 'codex'), reloadModelsWorker).toPromise();
 
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
       {
@@ -79,13 +83,31 @@ describe('modelReloadSaga', () => {
         }),
       )
       .mockResolvedValueOnce([{ value: 'gpt-5', label: 'GPT-5' }]);
-    const current = { model: { defaultProviderId: 'auggie' } };
+    let current = withLegacyPrincipal({ model: { defaultProviderId: 'auggie' } });
     const channel = stdChannel();
     const dispatch = vi.fn();
-    const task = runSaga({ channel, dispatch, getState: () => current }, modelReloadSaga);
+    const listeners = new Set<() => void>();
+    const task = runSaga(
+      {
+        channel,
+        dispatch,
+        getState: () => current,
+        context: {
+          reduxStore: {
+            getState: () => current,
+            subscribe: (listener: () => void) => {
+              listeners.add(listener);
+              return () => listeners.delete(listener);
+            },
+          },
+        },
+      },
+      modelReloadSaga,
+    );
     channel.put(reloadModelsForProvider());
     await settle();
-    current.model.defaultProviderId = 'codex';
+    current = withLegacyPrincipal({ model: { defaultProviderId: 'codex' } });
+    for (const listener of listeners) listener();
     channel.put(reloadModelsForProvider());
     await settle();
     resolveFirst([{ value: 'stale', label: 'Stale' }]);
@@ -113,5 +135,6 @@ describe('modelReloadSaga', () => {
     ]);
     task.cancel();
     await task.toPromise();
+    expect(listeners.size).toBe(0);
   });
 });

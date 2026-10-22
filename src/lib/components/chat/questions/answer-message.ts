@@ -1,5 +1,7 @@
 import type { ContentBlock } from '$shared/types';
 import type { Question } from '$shared/types/question-resource';
+import { m } from '$shared/paraglide/messages.js';
+import { formatInteger } from '$lib/i18n/format';
 
 /**
  * Answer flattening for the Agent Q&A wizard (wire contract): all answers of
@@ -22,12 +24,23 @@ export interface QuestionAnswer {
   freeText: string;
   /** True when the question was explicitly skipped. */
   skipped: boolean;
+  /** Transient pasted images, in paste order for this question. */
+  imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
 }
 
 function formatAnswer(answer: QuestionAnswer): string {
   if (answer.skipped) return '(skipped)';
   const parts = [...answer.selectedLabels];
-  if (answer.freeText) parts.push(`(Other) ${answer.freeText}`);
+  const imageCount = answer.imageBlocks?.length ?? 0;
+  const attachmentNote =
+    imageCount === 0
+      ? ''
+      : imageCount === 1
+        ? m.chat_questionWizard_imagesAttached_label_one()
+        : m.chat_questionWizard_imagesAttached_label_many({ count: formatInteger(imageCount) });
+  if (answer.freeText || imageCount > 0) {
+    parts.push(`(Other) ${[answer.freeText, attachmentNote].filter(Boolean).join(' ')}`);
+  }
   // A question left unanswered without an explicit Skip (only reachable via
   // Back-then-Send edge flows) reads the same as a skip on the wire.
   if (parts.length === 0) return '(skipped)';
@@ -56,6 +69,18 @@ export function buildAnswerMessageMetadata(
   return { type: QUESTION_ANSWERS_METADATA_TYPE, answeredQuestionsMessageId };
 }
 
+/** Keep images in question order so the per-answer counts identify their grouping. */
+export function buildAnswerSubmission(answers: readonly QuestionAnswer[], messageId: string) {
+  const imageBlocks = answers.flatMap((answer) =>
+    answer.skipped ? [] : (answer.imageBlocks ?? []),
+  );
+  return {
+    text: flattenAnswersToMessage(answers),
+    messageMetadata: buildAnswerMessageMetadata(messageId),
+    ...(imageBlocks.length > 0 ? { imageBlocks } : {}),
+  };
+}
+
 interface AnswerMessageLike {
   metadata?: Record<string, unknown> | null;
   contentBlocks?: ContentBlock[];
@@ -69,24 +94,35 @@ function answeredIdFromMetadata(metadata: unknown): string | null {
   return typeof answered === 'string' && answered.length > 0 ? answered : null;
 }
 
-/**
- * Id of the question set a user message answers, or null for every other
- * message. Reads the row's `metadata` first, falling back to the text blocks'
- * `messageMetadata` (the same dual surface the daemon persists a tagged
- * message on — see `questions-dismissed-notice.ts`).
- */
-export function getAnsweredQuestionsMessageId(
-  message: AnswerMessageLike | null | undefined,
-): string | null {
-  if (!message) return null;
-  const fromRow = answeredIdFromMetadata(message.metadata);
-  if (fromRow) return fromRow;
-  const blocks = Array.isArray(message.contentBlocks) ? message.contentBlocks : [];
-  for (const block of blocks) {
-    if (block.type === 'text') {
-      const fromBlock = answeredIdFromMetadata(block.messageMetadata);
-      if (fromBlock) return fromBlock;
+/** IDs answered by all contributions to a merged human message. */
+function answeredIdsFromMetadata(metadata: unknown): string[] {
+  const id = answeredIdFromMetadata(metadata);
+  const ids = id ? [id] : [];
+  if (metadata && typeof metadata === 'object' && 'mergedMessageMetadata' in metadata) {
+    const contributions = metadata.mergedMessageMetadata;
+    if (Array.isArray(contributions)) {
+      for (const contribution of contributions) {
+        const answered = answeredIdFromMetadata(contribution);
+        if (answered && !ids.includes(answered)) ids.push(answered);
+      }
     }
   }
-  return null;
+  return ids;
+}
+
+/** Row metadata is authoritative, with text-block metadata as the legacy fallback. */
+export function getAnsweredQuestionsMessageIds(
+  message: AnswerMessageLike | null | undefined,
+): string[] {
+  if (!message) return [];
+  const fromRow = answeredIdsFromMetadata(message.metadata);
+  if (fromRow.length) return fromRow;
+  const blocks = Array.isArray(message.contentBlocks) ? message.contentBlocks : [];
+  return [
+    ...new Set(
+      blocks.flatMap((block) =>
+        block.type === 'text' ? answeredIdsFromMetadata(block.messageMetadata) : [],
+      ),
+    ),
+  ];
 }

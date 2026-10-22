@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { fireEvent, render, waitFor } from '@testing-library/svelte';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => {
   const activeSubscribers = new Set<(value: string) => void>();
@@ -134,7 +134,18 @@ vi.mock('$features/tasks/tasks-write-service', () => ({
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => ({
   delegateExistingTaskRequested: (...payload: unknown[]) => ({ type: 'delegate', payload }),
 }));
-vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToNote: mocks.navigate }));
+vi.mock('$lib/utils/workspace-navigation', () => ({
+  navigateToNote: mocks.navigate,
+  findSourcePanelId: () => undefined,
+}));
+
+import { Editor, type JSONContent } from '@tiptap/core';
+import Document from '@tiptap/extension-document';
+import Paragraph from '@tiptap/extension-paragraph';
+import Text from '@tiptap/extension-text';
+import Link from '@tiptap/extension-link';
+import TaskList from '@tiptap/extension-task-list';
+import { CustomTaskItem } from '../CustomTaskItem';
 
 import TestTaskItemNodeView from './TestTaskItemNodeView.test.svelte';
 
@@ -158,7 +169,17 @@ function linkedProps(workspaceId: string) {
     textContent: 'shared-task',
     content: { forEach: (p: any) => p({ content: { forEach: (visit: any) => visit(text) } }) },
   };
-  const editor = { state: { doc: { nodeAt: () => node } }, on: vi.fn(), off: vi.fn() } as any;
+  const editor = {
+    state: {
+      doc: {
+        nodeAt: () => node,
+        content: { size: 0 },
+        resolve: () => ({ parent: { type: { name: 'doc' } } }),
+      },
+    },
+    on: vi.fn(),
+    off: vi.fn(),
+  } as any;
   return { node, editor, getPos: () => 0, workspaceId };
 }
 
@@ -253,5 +274,191 @@ describe('TaskItemNodeView workspace ownership', () => {
       ],
     });
     expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+});
+
+describe('TaskItemNodeView dependency adjacency in the editor', () => {
+  let editor: Editor;
+  let host: HTMLElement;
+
+  const row = (id?: string, nested: JSONContent[] = []): JSONContent => ({
+    type: 'taskItem',
+    content: [
+      {
+        type: 'paragraph',
+        content: [
+          {
+            type: 'text',
+            text: id ?? 'Plain task',
+            ...(id
+              ? { marks: [{ type: 'link', attrs: { href: `intent://local/task/${id}` } }] }
+              : {}),
+          },
+        ],
+      },
+      ...nested,
+    ],
+  });
+  const list = (...content: JSONContent[]): JSONContent => ({ type: 'taskList', content });
+  const dependencyNote = (id: string) => ({ ...taskNote('workspace-a', id), id });
+  function publish(
+    dependsOn = ['previous'],
+    unmetDependsOn = ['previous'],
+    status = 'not_started',
+  ) {
+    mocks.setWorkspace('workspace-a', true, [
+      dependencyNote('previous'),
+      dependencyNote('other'),
+      { ...dependencyNote('completed'), metadata: { task: { status: 'complete' } } },
+      { ...dependencyNote('target'), metadata: { task: { status, dependsOn, unmetDependsOn } } },
+    ]);
+  }
+  function mountEditor(content = [list(row('previous'), row('target'))]) {
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    editor = new Editor({
+      element: host,
+      extensions: [
+        Document,
+        Paragraph,
+        Text,
+        Link.configure({ openOnClick: false }),
+        TaskList,
+        CustomTaskItem.configure({ workspaceId: 'workspace-a' }),
+      ],
+      content: { type: 'doc', content },
+    });
+  }
+  const badge = () =>
+    host.querySelector('[data-linked-task-note-id="target"] [data-task-row-waits-on]');
+  async function expectBadge(label: string | null) {
+    await waitFor(() => {
+      if (label === null) expect(badge()).toBeNull();
+      else expect(badge()?.textContent?.trim()).toBe(label);
+    });
+  }
+
+  beforeEach(() => {
+    mocks.reset();
+    publish();
+  });
+  afterEach(() => {
+    editor?.destroy();
+    host?.remove();
+  });
+
+  it('uses the previous label only for a sole total dependency and reacts to relation updates', async () => {
+    mountEditor();
+    await expectBadge('After Previous');
+    publish(['previous', 'completed']);
+    await expectBadge('Waits on 1');
+    publish(['other'], ['other']);
+    await expectBadge('Waits on 1');
+    publish();
+    await expectBadge('After Previous');
+  });
+
+  it.each([
+    ['first row', [list(row('target'), row('previous'))]],
+    ['non-adjacent dependency', [list(row('previous'), row('other'), row('target'))]],
+    ['intervening plain row', [list(row('previous'), row(), row('target'))]],
+    ['separate lists', [list(row('previous')), { type: 'paragraph' }, list(row('target'))]],
+    ['parent task', [list(row('previous', [list(row('target'))]))]],
+    [
+      'nested descendant of previous sibling',
+      [list(row('other', [list(row('previous'))]), row('target'))],
+    ],
+  ] satisfies [string, JSONContent[]][])(
+    'does not cross the %s boundary',
+    async (_name, content) => {
+      mountEditor(content);
+      await expectBadge('Waits on 1');
+    },
+  );
+
+  it('recognizes adjacent siblings inside a nested task list', async () => {
+    mountEditor([list(row('other', [list(row('previous'), row('target'))]))]);
+    await expectBadge('After Previous');
+  });
+
+  it('updates when another row moves between a task and its dependency', async () => {
+    mountEditor([list(row('previous'), row('target'), row('other'))]);
+    await expectBadge('After Previous');
+    const taskList = editor.state.doc.firstChild!;
+    const previous = taskList.child(0);
+    const target = taskList.child(1);
+    const other = taskList.child(2);
+    const otherPos = 1 + previous.nodeSize + target.nodeSize;
+    editor.view.dispatch(
+      editor.state.tr
+        .delete(otherPos, otherPos + other.nodeSize)
+        .insert(1 + previous.nodeSize, other),
+    );
+    await expectBadge('Waits on 1');
+    editor.view.dispatch(
+      editor.state.tr
+        .delete(1 + previous.nodeSize, 1 + previous.nodeSize + other.nodeSize)
+        .insert(otherPos, other),
+    );
+    await expectBadge('After Previous');
+  });
+
+  it('updates when the preceding link is edited without changing the dependent row', async () => {
+    mountEditor();
+    await expectBadge('After Previous');
+    const targetView = host.querySelector('[data-linked-task-note-id="target"]');
+    const previous = editor.state.doc.firstChild!.firstChild!;
+    editor.view.dispatch(
+      editor.state.tr
+        .removeMark(3, previous.nodeSize - 1, editor.schema.marks.link)
+        .addMark(
+          3,
+          previous.nodeSize - 1,
+          editor.schema.marks.link.create({ href: 'intent://local/task/other' }),
+        ),
+    );
+    await expectBadge('Waits on 1');
+    expect(host.querySelector('[data-linked-task-note-id="target"]')).toBe(targetView);
+  });
+
+  it('keeps the unmet dependency tooltip navigable with the previous label', async () => {
+    mountEditor();
+    await expectBadge('After Previous');
+    const trigger = badge()!.closest('[data-tooltip-trigger]')!;
+    await fireEvent.focus(trigger);
+    const link = await waitFor(() => {
+      const button = document.querySelector('[role="tooltip"] button');
+      expect(button?.textContent).toContain('previous');
+      return button!;
+    });
+    await fireEvent.click(link, { ctrlKey: true });
+    expect(mocks.navigate).toHaveBeenCalledWith('previous', {
+      workspaceId: 'workspace-a',
+      openInAdjacentPanel: true,
+      sourcePanelId: undefined,
+    });
+  });
+
+  it('keeps visibility daemon-owned, including when the projection is absent', async () => {
+    mountEditor();
+    await expectBadge('After Previous');
+    publish(['previous'], []);
+    await expectBadge(null);
+    publish(['previous'], ['previous'], 'complete');
+    await expectBadge(null);
+    mocks.setWorkspace('workspace-a', true, [
+      {
+        ...dependencyNote('target'),
+        metadata: {
+          task: {
+            status: 'not_started',
+            dependsOn: ['previous'],
+          },
+        },
+      },
+    ]);
+    await expectBadge(null);
+    publish(['previous', 'other'], ['previous', 'other']);
+    await expectBadge('Waits on 2');
   });
 });

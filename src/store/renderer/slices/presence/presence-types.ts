@@ -9,7 +9,8 @@
  * which is what turns an online-only roster into the brief's member circles
  * (offline members dimmed, the owner blue).
  */
-import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
+import type { PrincipalIdentity } from '$features/workspace-sharing/types';
 import type { PresenceMember } from '$shared/types/presence';
 import type { WorkspaceMember } from '../guest-sessions/guest-sessions-types';
 
@@ -35,11 +36,22 @@ export interface LiveTypingEntry {
   expired: boolean;
 }
 
+export type LiveDiscussionTypingEntry = Omit<LiveTypingEntry, 'agentId'> & {
+  conversationId: string;
+};
+
 export interface PresenceState {
+  /** Admission/presentation lifetime owning these ephemeral rows. */
+  context: string | null;
+  workspaceIds: string[];
   /** Latest roster per workspace id — a full replacement each time. */
   rosters: Record<string, PresenceMemberCollection>;
   /** Accepted membership per shared workspace on display — a full replacement each time. */
   members: Record<string, WorkspaceMemberCollection>;
+  /** Admission-local ordering for pushed profiles versus membership request start. */
+  profileRevision: number;
+  /** Retained across offline transitions, cleared with workspace/admission ownership. */
+  profileUpdates: Record<string, Record<string, { revision: number; profile: PresenceIdentity }>>;
   /** Typing bookkeeping per workspace id, keyed by the connection's `source`. */
   liveTyping: Record<string, Record<string, LiveTypingEntry>>;
   /** `principal.me` of the window's backend; `null` until read or when unknown. */
@@ -48,16 +60,33 @@ export interface PresenceState {
   ownTypingSource: string | null;
   /** The agent this window is typing to right now. */
   ownTyping: { agentId: string } | null;
+  ownDiscussionTyping: { workspaceId: string; conversationId?: string } | null;
+  discussionComposerWorkspaceId: string | null;
+  discussionComposerConversationId: string;
+  liveDiscussionTyping: Record<string, Record<string, LiveDiscussionTypingEntry>>;
   /** `document.visibilityState === 'visible'`; a hidden window reports nothing. */
   windowVisible: boolean;
+  /**
+   * An agent capture is keeping this window drawing while hidden, so the
+   * document's visibility is not the user's (main brackets each capture).
+   * Survives presence resets so a watcher started mid-capture knows.
+   */
+  captureDrawingActive: boolean;
 }
 
 /** The identity part of a roster or membership row — what a name or a typing line needs. */
 export interface PresenceIdentity {
+  hostRole?: import('$shared/types/principal').HostRole;
   principalId: string;
   login: string | null;
   displayName: string | null;
   avatarUrl: string | null;
+  /**
+   * The forge the person is identified by (`Principal.identity`), carried by
+   * a membership row of a daemon that serves the identity seam. Modern presence rosters carry the same qualified identity; older
+   * daemons remain neutral.
+   */
+  identity?: PrincipalIdentity;
 }
 
 /**
@@ -75,11 +104,3 @@ export interface PresencePerson extends PresenceIdentity {
   /** This window's own principal. */
   self: boolean;
 }
-
-/**
- * Where a person is looking right now inside one workspace, resolved from
- * their roster focus items: the agent chat they have open, else the note.
- * A person on the bare workspace tab (or offline) has no target.
- */
-export type PresenceFocusTarget =
-  { kind: 'agent'; agentId: string } | { kind: 'note'; noteId: string };

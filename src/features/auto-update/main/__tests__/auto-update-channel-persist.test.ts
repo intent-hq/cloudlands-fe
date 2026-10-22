@@ -5,7 +5,7 @@
  * so it survives restart.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
@@ -265,3 +265,46 @@ describe('GET_STATE boot gating (early renderer read)', () => {
     expect(result.data.channel).toBe('stable');
   });
 });
+
+it.each(['x64', 'arm64'] as const)(
+  'keeps %s channel switches architecture-safe and disables downgrades',
+  async (arch) => {
+    const { autoUpdateService } = await import('../auto-update.service');
+    const { default: updaterModule } = await import('electron-updater');
+    const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    const archDescriptor = Object.getOwnPropertyDescriptor(process, 'arch')!;
+    try {
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      Object.defineProperty(process, 'arch', { value: arch });
+      for (const channel of ['alpha', 'beta', 'stable'] as const) {
+        updaterModule.autoUpdater.allowDowngrade = true;
+        await autoUpdateService.setChannel(channel);
+        expect(updaterModule.autoUpdater.allowDowngrade).toBe(false);
+        // Telemetry feed (default): the channel path carries no arch
+        // suffix — electron-updater still picks latest-mac.yml — and the
+        // arch only appears in the `p` statistics parameter.
+        const setFeedURL = updaterModule.autoUpdater.setFeedURL as unknown as Mock;
+        const feed = new URL((setFeedURL.mock.lastCall?.[0] as { url: string }).url);
+        expect(feed.origin + feed.pathname).toBe(
+          `https://updates.intentapp.dev/desktop/${channel}`,
+        );
+        expect(feed.searchParams.get('p')).toBe(`darwin-${arch}`);
+
+        // Opted out: the unchanged GitHub feed released clients use.
+        process.env.DO_NOT_TRACK = '1';
+        try {
+          await autoUpdateService.setChannel(channel);
+        } finally {
+          delete process.env.DO_NOT_TRACK;
+        }
+        expect(updaterModule.autoUpdater.setFeedURL).toHaveBeenLastCalledWith({
+          provider: 'generic',
+          url: `https://github.com/intent-hq/cloudlands-releases/releases/download/${channel}`,
+        });
+      }
+    } finally {
+      Object.defineProperty(process, 'platform', platformDescriptor);
+      Object.defineProperty(process, 'arch', archDescriptor);
+    }
+  },
+);

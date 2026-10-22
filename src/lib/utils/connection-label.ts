@@ -1,5 +1,6 @@
 import { m } from '$shared/paraglide/messages.js';
 import { isTcAddress } from '$shared/tc-address';
+import { normalizeCollaborationMachineName } from '$shared/collaboration-machine-name';
 
 /**
  * Display label for a remote connection: the Name (`label`) wins outright.
@@ -32,7 +33,7 @@ export function formatGuestSessionLabel(session: {
   hostname: string | null;
   label: string;
 }): string {
-  const hostname = session.hostname?.trim();
+  const hostname = normalizeCollaborationMachineName(session.hostname ?? '');
   if (hostname) return hostname;
   return isTcAddress(session.label) ? m.connection_unknownHost_label() : session.label;
 }

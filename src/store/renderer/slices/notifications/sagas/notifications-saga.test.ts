@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 
@@ -28,7 +29,11 @@ vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
 
-import { emitMockIpcEvent, resetMockIpcRouter } from '$shared/ipc-mock-router';
+import { eventReceived } from '../../workspace-events/workspace-events-slice';
+import type { WorkspaceEvent } from '$features/events/types';
+let activeTestChannel: ReturnType<typeof stdChannel>;
+const emitAdmittedEvent = (_name: string, event: ReturnType<typeof idle>) =>
+  activeTestChannel.put(eventReceived(event.workspaceId, event as WorkspaceEvent));
 import { loadWorkspaceTabsState, openWorkspaceTab } from '../../tab-state/tab-state-slice';
 import { notificationIpcSaga, webNotificationSaga } from './notifications-saga';
 import {
@@ -52,10 +57,11 @@ class MockNotification {
   }
 }
 
-const state = (currentTabId: string | null = null) => ({
-  userPreferences: { enabled: true, soundOnlyWhenUnfocused: false },
-  tabState: { currentTabId },
-});
+const state = (currentTabId: string | null = null) =>
+  withLegacyPrincipal({
+    userPreferences: { enabled: true, soundOnlyWhenUnfocused: false },
+    tabState: { currentTabId },
+  });
 const idle = (data: Record<string, unknown> = {}, workspaceId = 'ws-1') => ({
   type: 'agent:idle',
   workspaceId,
@@ -103,6 +109,7 @@ const agentGetResult = (
 
 function startWebSaga(current = state(), dispatch = vi.fn()) {
   const channel = stdChannel();
+  activeTestChannel = channel;
   const listeners = new Set<() => void>();
   const reduxStore = {
     getState: () => current,
@@ -138,7 +145,7 @@ describe('notification sagas', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     __resetSettingsReadCacheForTests();
-    resetMockIpcRouter();
+
     mocks.platform.mockReturnValue('web');
     mocks.isElectron.mockReturnValue(false);
     mocks.callbacks = {};
@@ -175,7 +182,6 @@ describe('notification sagas', () => {
     });
   });
   afterEach(() => {
-    resetMockIpcRouter();
     vi.unstubAllGlobals();
     window.history.replaceState({}, '', '/');
     delete (window as any).electronAPI;
@@ -222,10 +228,75 @@ describe('notification sagas', () => {
     await task.toPromise();
   });
 
+  it('uses admitted known metadata without a self read and ignores foreign bridge copies', async () => {
+    const { store } = await import('$store/renderer/store');
+    const { admitLegacyPrincipal } = await import('../../../../../test/fixtures/principal-state');
+    const { bulkUpsertSessions, markAgentDetailHydrated, clearAllSessions } =
+      await import('../../agent-session/agent-session-slice');
+    const { routeDaemonEventsNotification } =
+      await import('$features/events/daemon-events-bridge.client');
+    store.init();
+    admitLegacyPrincipal();
+    store.dispatch(
+      bulkUpsertSessions([
+        {
+          id: 'agent-1',
+          workspaceId: 'ws-1',
+          name: 'Builder',
+          status: 'idle',
+          metadata: { specialist: 'implementor' },
+          messages: [],
+        } as any,
+      ]),
+    );
+    store.dispatch(markAgentDetailHydrated('agent-1'));
+    const stop = store.runSaga(webNotificationSaga);
+    try {
+      const event = idle({ taskTitle: 'Ship' });
+      routeDaemonEventsNotification('events.event', { subscriptionId: 'foreign', event }, 'ours');
+      await flush();
+      expect(MockNotification.instances).toHaveLength(0);
+      routeDaemonEventsNotification('events.event', { subscriptionId: 'ours', event }, 'ours');
+      await vi.waitFor(() => expect(MockNotification.instances).toHaveLength(1));
+      expect(MockNotification.instances[0].title).toContain('Implementor');
+      expect(mocks.backend.mock.calls.filter(([method]) => method === 'agent.get')).toHaveLength(0);
+      expect(
+        mocks.backend.mock.calls.filter(([method]) => method === 'agent.listActive'),
+      ).toHaveLength(1);
+    } finally {
+      stop();
+      store.dispatch(clearAllSessions());
+    }
+  });
+
+  it('drops an in-flight notification before following reads after the admission changes', async () => {
+    const current = state();
+    const { task } = startWebSaga(current);
+    let release!: (value: unknown) => void;
+    const previous = mocks.backend.getMockImplementation()!;
+    mocks.backend.mockImplementation((method, params) =>
+      method === 'agent.get'
+        ? new Promise((resolve) => {
+            release = resolve;
+          })
+        : previous(method, params),
+    );
+    emitAdmittedEvent('agent:idle', idle());
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    current.principal.context = null;
+    release({ agent: { id: 'agent-1' } });
+    await flush();
+    expect(MockNotification.instances).toHaveLength(0);
+    expect(
+      mocks.backend.mock.calls.filter(([method]) => method === 'agent.listActive'),
+    ).toHaveLength(0);
+    task.cancel();
+  });
+
   it('performs exact web wire reads, shows one notification, and routes clicks', async () => {
     const focus = vi.spyOn(window, 'focus').mockImplementation(() => {});
     const { task } = startWebSaga();
-    emitMockIpcEvent(
+    emitAdmittedEvent(
       'agent:idle',
       idle({ specialist: 'implementor', taskTitle: 'Ship', wire_only: 'preserve' }),
     );
@@ -250,6 +321,54 @@ describe('notification sagas', () => {
     focus.mockRestore();
   });
 
+  it('does not read old sibling IDs after a held active gate crosses principal admission', async () => {
+    const current = state();
+    const original = mocks.backend.getMockImplementation()!;
+    let resolveActive!: (value: unknown) => void;
+    mocks.backend.mockImplementation((method, params) =>
+      method === 'agent.listActive'
+        ? new Promise((resolve) => {
+            resolveActive = resolve;
+          })
+        : original(method, params),
+    );
+    const { task } = startWebSaga(current);
+    emitAdmittedEvent('agent:idle', idle());
+    await flush();
+    expect(resolveActive).toBeTypeOf('function');
+    current.principal.invalidation += 1;
+    resolveActive({ streams: [{ agentId: 'old-sibling', workspaceId: 'ws-1' }] });
+    await flush();
+    expect(mocks.backend.mock.calls.filter(([method]) => method === 'agent.get')).toEqual([
+      SELF_GET,
+    ]);
+    expect(MockNotification.instances).toEqual([]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('does not show an old notification after permission crosses principal admission', async () => {
+    const current = state();
+    let resolvePermission!: (value: NotificationPermission) => void;
+    MockNotification.permission = 'default';
+    MockNotification.requestPermission.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePermission = resolve;
+        }),
+    );
+    const { task } = startWebSaga(current);
+    emitAdmittedEvent('agent:idle', idle());
+    await flush();
+    expect(MockNotification.requestPermission).toHaveBeenCalledTimes(1);
+    current.principal.invalidation += 1;
+    resolvePermission('granted');
+    await flush();
+    expect(MockNotification.instances).toEqual([]);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('covers disabled, background, waiting, active-agent, and focused suppression paths', async () => {
     const current = state('ws-1');
     const { task } = startWebSaga(current);
@@ -259,7 +378,7 @@ describe('notification sagas', () => {
         return settingResult(params.path, params.path === 'notifications.enabled' ? false : true);
       throw new Error('unexpected');
     });
-    emitMockIpcEvent('agent:idle', idle());
+    emitAdmittedEvent('agent:idle', idle());
     await flush();
     expect(MockNotification.instances).toEqual([]);
 
@@ -279,9 +398,9 @@ describe('notification sagas', () => {
         return { streams: [{ agentId: 'other', workspaceId: 'ws-1' }] };
       throw new Error('unexpected');
     });
-    emitMockIpcEvent('agent:idle', idle({ isBackground: true }));
-    emitMockIpcEvent('agent:idle', idle({ isWaitingForOtherAgents: true }));
-    emitMockIpcEvent('agent:idle', idle());
+    emitAdmittedEvent('agent:idle', idle({ isBackground: true }));
+    emitAdmittedEvent('agent:idle', idle({ isWaitingForOtherAgents: true }));
+    emitAdmittedEvent('agent:idle', idle());
     await flush();
     expect(MockNotification.instances).toEqual([]);
     expect(
@@ -310,7 +429,7 @@ describe('notification sagas', () => {
         return { workspace: { id: params.workspaceId, title: 'My Space' } };
       throw new Error(`unexpected ${method}`);
     });
-    emitMockIpcEvent('agent:idle', idle());
+    emitAdmittedEvent('agent:idle', idle());
     await flush();
     expect(MockNotification.instances).toHaveLength(1);
     expect(
@@ -335,7 +454,7 @@ describe('notification sagas', () => {
         throw Object.assign(new Error('Agent not found: agent-1'), { rpcCode: -32602 });
       throw new Error(`unexpected ${method}`);
     });
-    emitMockIpcEvent('agent:idle', idle());
+    emitAdmittedEvent('agent:idle', idle());
     await flush();
     expect(MockNotification.instances).toEqual([]);
     expect(mocks.sound).not.toHaveBeenCalled();
@@ -355,7 +474,7 @@ describe('notification sagas', () => {
         return { workspace: { id: params.workspaceId, title: 'My Space' } };
       throw new Error(`unexpected ${method}`);
     });
-    emitMockIpcEvent('agent:idle', idle());
+    emitAdmittedEvent('agent:idle', idle());
     await flush();
     expect(MockNotification.instances).toHaveLength(1);
     expect(
@@ -374,13 +493,27 @@ describe('notification sagas', () => {
         return settingResult(params.path, params.path === 'notifications.enabled' ? true : false);
       throw new Error(`unexpected ${method}`);
     });
-    emitMockIpcEvent('agent:idle', idle({ workspaceArchived: true }));
-    emitMockIpcEvent('agent:idle', idle({ waitingOnHooks: [{ hookId: 'h1', name: 'watch-ci' }] }));
-    emitMockIpcEvent(
+    emitAdmittedEvent('agent:idle', idle({ workspaceArchived: true }));
+    emitAdmittedEvent(
+      'agent:idle',
+      idle({
+        waitingOnScriptMonitors: [
+          {
+            monitorId: 's1',
+            scriptId: 'checks',
+            runId: 'r1',
+            scriptName: 'Checks',
+            expiresAt: '2026-10-02T10:10:00Z',
+          },
+        ],
+      }),
+    );
+    emitAdmittedEvent('agent:idle', idle({ waitingOnHooks: [{ hookId: 'h1', name: 'watch-ci' }] }));
+    emitAdmittedEvent(
       'agent:idle',
       idle({ waitingOnPrMonitors: [{ monitorId: 'm1', repo: 'o/r', prNumber: 1 }] }),
     );
-    emitMockIpcEvent(
+    emitAdmittedEvent(
       'agent:idle',
       idle({
         waitingOnHooks: [{ hookId: 'h1', name: 'watch-ci' }],
@@ -403,7 +536,7 @@ describe('notification sagas', () => {
       if (method === 'workspace.get')
         return { workspace: { id: params.workspaceId, title: 'Space' } };
     });
-    emitMockIpcEvent('agent:idle', idle());
+    emitAdmittedEvent('agent:idle', idle());
     await flush();
     expect(MockNotification.instances).toEqual([]);
     expect(mocks.sound).toHaveBeenCalledTimes(1);
@@ -423,7 +556,7 @@ describe('notification sagas', () => {
         return settingResult(params.path, params.path === 'notifications.enabled' ? true : false);
       throw new Error(`unexpected ${method}`);
     });
-    emitMockIpcEvent('agent:idle', idle({ notificationsMuted: true }));
+    emitAdmittedEvent('agent:idle', idle({ notificationsMuted: true }));
     await flush();
     expect(MockNotification.instances).toEqual([]);
     expect(mocks.sound).not.toHaveBeenCalled();
@@ -442,7 +575,7 @@ describe('notification sagas', () => {
         return agentGetResult(params, [{ id: 'agent-1', notificationsMuted: true }]);
       throw new Error(`unexpected ${method}`);
     });
-    emitMockIpcEvent('agent:idle', idle());
+    emitAdmittedEvent('agent:idle', idle());
     await flush();
     expect(MockNotification.instances).toEqual([]);
     expect(mocks.sound).not.toHaveBeenCalled();
@@ -469,7 +602,7 @@ describe('notification sagas', () => {
         return { workspace: { id: params.workspaceId, title: 'My Space' } };
       throw new Error(`unexpected ${method}`);
     });
-    emitMockIpcEvent('agent:idle', idle());
+    emitAdmittedEvent('agent:idle', idle());
     await flush();
     expect(MockNotification.instances).toHaveLength(1);
     expect(mocks.sound).toHaveBeenCalledTimes(1);
@@ -503,8 +636,8 @@ describe('notification sagas', () => {
         return { workspace: { id: params.workspaceId, title: 'Space' } };
     });
     const { task } = startWebSaga(current);
-    emitMockIpcEvent('agent:idle', idle({}, 'ws-1'));
-    emitMockIpcEvent('agent:idle', idle({}, 'ws-2'));
+    emitAdmittedEvent('agent:idle', idle({}, 'ws-1'));
+    emitAdmittedEvent('agent:idle', idle({}, 'ws-2'));
     await flush();
     expect(MockNotification.requestPermission).toHaveBeenCalledTimes(1);
     resolvePermission('denied');
@@ -535,7 +668,7 @@ describe('notification sagas', () => {
     const { setWorkspaceId, task } = startWebSaga(current);
     await flush();
 
-    emitMockIpcEvent('agent:idle', idle({}, 'ws-1'));
+    emitAdmittedEvent('agent:idle', idle({}, 'ws-1'));
     await flush();
     setWorkspaceId('ws-2');
     resolveAgents({ agent: { id: 'agent-1' } });
@@ -556,13 +689,13 @@ describe('notification sagas', () => {
 
   it('closes active browser notifications, removes the web listener, and honors platform no-ops', async () => {
     const { task } = startWebSaga();
-    emitMockIpcEvent('agent:idle', idle());
+    emitAdmittedEvent('agent:idle', idle());
     await flush();
     const notification = MockNotification.instances[0];
     task.cancel();
     await task.toPromise();
     expect(notification.close.mock.calls).toEqual([[]]);
-    emitMockIpcEvent('agent:idle', idle());
+    emitAdmittedEvent('agent:idle', idle());
     await flush();
     expect(MockNotification.instances).toHaveLength(1);
 

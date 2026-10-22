@@ -30,6 +30,7 @@
   import { prefersReducedMotion } from '$lib/utils/reduced-motion';
   import { cameraMotionKeyframes, partitionSceneIds } from './diagram-motion';
   import { freeLabelFractions } from './diagram-label-placement';
+  import { equalComputedLayout } from './equal-computed-layout';
 
   interface Props {
     diagram: DiagramPrimitive;
@@ -75,6 +76,7 @@
 
   // Computed layout
   let layout = $state<ComputedLayout | null>(null);
+  let publishedLayout: ComputedLayout | null = null;
   let layoutError = $state(false);
   let fitToWidth = $state(false);
   let fitScale = $state(1);
@@ -304,6 +306,9 @@
 
   function motionSnapshot() {
     if (!rendererEl) return '';
+    // Settlement belongs to this diagram. Scrolling or moving an ancestor must
+    // not keep unchanged local geometry in the settling state.
+    const origin = rendererEl.getBoundingClientRect();
     const selector = [
       '.diagram-content',
       '.diagram-svg-layer',
@@ -328,8 +333,8 @@
           element.getAttribute('data-group-id'),
           element.getAttribute('class'),
           element.getAttribute('d'),
-          bounds.x.toFixed(3),
-          bounds.y.toFixed(3),
+          (bounds.x - origin.x).toFixed(3),
+          (bounds.y - origin.y).toFixed(3),
           bounds.width.toFixed(3),
           bounds.height.toFixed(3),
           style.opacity,
@@ -503,6 +508,8 @@
   let visibleEdges = $derived(layout?.edges.filter((e) => visibleEdgeIds.includes(e.id)) ?? []);
 
   let edgeLabelPositions = $derived.by(() => {
+    // Fixed-size nodes can retain their geometry while connector fonts change.
+    fontMeasurementRevision;
     const positions = new Map<string, EdgeLabelPosition>();
     const placedLabels: Array<{ x: number; y: number; width: number; height: number }> = [];
 
@@ -882,7 +889,7 @@
             groups,
           }
         : diagram.model;
-      layout = computeLayout(
+      const nextLayout = computeLayout(
         model,
         currentState
           ? {
@@ -900,9 +907,17 @@
         renderStyleConfig,
         layoutWidthLimit,
       );
+      // Width/font invalidations still measure again, but an unchanged result
+      // need not invalidate every node and connector downstream. Label fonts have
+      // their own invalidation because their metrics are not part of ComputedLayout.
+      if (!equalComputedLayout(publishedLayout, nextLayout)) {
+        publishedLayout = nextLayout;
+        layout = nextLayout;
+      }
       layoutError = false;
       beginDiagramSettlement();
     } catch {
+      publishedLayout = null;
       layout = null;
       layoutError = true;
     }

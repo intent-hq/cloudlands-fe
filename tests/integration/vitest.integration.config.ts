@@ -2,6 +2,7 @@ import { defineConfig } from 'vitest/config';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { generatedBuildConfigPlugin } from '../../vitest.config';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '../..');
@@ -16,7 +17,8 @@ const isCI = !!process.env.CI && process.env.CI !== 'false';
 export default defineConfig({
   root: rootDir,
   // Renderer selectors import the same Svelte-backed icon catalog as the app.
-  plugins: [svelte()],
+  // Generate the main-process input before collection, preserving an existing identity.
+  plugins: [generatedBuildConfigPlugin({ rootDir }), svelte()],
   test: {
     name: 'integration',
     globals: true,

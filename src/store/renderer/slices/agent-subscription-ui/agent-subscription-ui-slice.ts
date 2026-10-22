@@ -5,14 +5,14 @@
  * delegation groups, and woken-up indicators.
  */
 
-import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
-import { markAgentAsViewed } from '../unread-tracking/unread-tracking-slice';
+import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type {
   AgentSubscriptionUIState,
   AgentSubscriptionUIEntry,
   AgentStatus,
   Subscription,
+  EventSubscription,
   DelegationGroupStatus,
   WokenUpInfo,
 } from './agent-subscription-ui-types';
@@ -49,6 +49,7 @@ export const setSubscriptionSnapshot = createAction(
     agentId: string,
     data: {
       subscriptions: Subscription[];
+      eventSubscriptions?: EventSubscription[];
       delegationGroups: DelegationGroupStatus[];
       agentStatuses: Record<string, AgentStatus>;
       waitingState: 'idle' | 'waiting' | 'woken' | 'completed';
@@ -89,10 +90,16 @@ export const removeWatchedAgent = createAction<[workspaceId: string, watchedAgen
 
 /** Dispatched by the AgentSubscriptions component to request an initial fetch
  *  when the component mounts or the agentId changes. The saga handles the
- *  actual IPC call so no side effects live in the component. */
-export const requestSubscriptionFetch = createAction<[workspaceId: string, agentId: string]>(
-  'agentSubscriptionUI/requestSubscriptionFetch',
-);
+ *  actual IPC call so no side effects live in the component. Mount callers pass
+ *  ensure=true to reuse ready/in-flight snapshots; invalidations omit it. */
+export const requestSubscriptionFetch = createAction<
+  [workspaceId: string, agentId: string, ensure?: boolean]
+>('agentSubscriptionUI/requestSubscriptionFetch');
+
+/** Actual read demand, after the coordinator has checked prefetch freshness. */
+export const subscriptionSnapshotFetchStarted = createAction<
+  [workspaceId: string, agentId: string]
+>('agentSubscriptionUI/subscriptionSnapshotFetchStarted');
 
 /** Saga → reducer: preserve cached rows and surface the failed snapshot read. */
 export const subscriptionSnapshotFetchFailed = createAction<[workspaceId: string, agentId: string]>(
@@ -108,9 +115,9 @@ export const cancelAgentSubscriptionsRequested = createAsyncAction<
 );
 
 /** Refresh every subscription entry currently tracked for a workspace. */
-export const refreshWorkspaceSubscriptionEntriesRequested = createAction<[workspaceId: string]>(
-  'agentSubscriptionUI/refreshWorkspaceSubscriptionEntriesRequested',
-);
+export const refreshWorkspaceSubscriptionEntriesRequested = createAction<
+  [workspaceId: string, agentId?: string, watchedAgentId?: string]
+>('agentSubscriptionUI/refreshWorkspaceSubscriptionEntriesRequested');
 
 // ---------------------------------------------------------------------------
 // Reducer
@@ -127,6 +134,10 @@ agentSubscriptionUIReducer.with(setSubscriptionSnapshot, (state, { payload }) =>
       [key]: {
         ...existing,
         subscriptions: payload.data.subscriptions,
+        ...(payload.data.eventSubscriptions !== undefined ||
+        existing.eventSubscriptions !== undefined
+          ? { eventSubscriptions: payload.data.eventSubscriptions ?? [] }
+          : {}),
         delegationGroups: payload.data.delegationGroups,
         agentStatuses: payload.data.agentStatuses,
         waitingState: payload.data.waitingState,
@@ -153,21 +164,18 @@ agentSubscriptionUIReducer.with(
     };
   },
 );
-// Switch-back freshness: retain cached rows but show their view-time
-// `agent.getSubscriptions` refresh independently from transcript reveal.
-// The payload carries only the agentId; entries are keyed `${wsId}:${agentId}`,
-// so every workspace entry of the agent drops (an agent has one workspace).
-agentSubscriptionUIReducer.with(markAgentAsViewed, (state, { payload: [agentId] }) => {
-  const suffix = `:${agentId}`;
-  let changed = false;
-  const entries = { ...state.entries };
-  for (const [key, entry] of Object.entries(state.entries)) {
-    if (!key.endsWith(suffix) || entry.snapshotStatus === 'loading') continue;
-    changed = true;
-    entries[key] = { ...entry, snapshotStatus: 'loading' };
-  }
-  return changed ? { ...state, entries } : state;
-});
+agentSubscriptionUIReducer.with(
+  subscriptionSnapshotFetchStarted,
+  (state, { payload: [workspaceId, agentId] }) => {
+    const key = makeKey(workspaceId, agentId);
+    const entry = state.entries[key];
+    if (!entry || entry.snapshotStatus === 'loading') return state;
+    return {
+      ...state,
+      entries: { ...state.entries, [key]: { ...entry, snapshotStatus: 'loading' } },
+    };
+  },
+);
 agentSubscriptionUIReducer.with(setWokenUp, (state, { payload }) => {
   const key = makeKey(payload.workspaceId, payload.agentId);
   const existing = state.entries[key] ?? emptyEntry;

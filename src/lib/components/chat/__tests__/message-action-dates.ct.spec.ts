@@ -92,13 +92,15 @@ for (const role of ['user', 'assistant'] as const) {
       });
       await page.keyboard.press('Enter');
       if (role === 'assistant') {
-        await page.getByRole('menuitem', { name: /Fork conversation/ }).click();
+        await page.getByRole('menuitem', { name: 'Previous user message' }).press('Enter');
       }
       await expect.poll(() => actionCount).toBe(1);
       expect((await surface.boundingBox())!.height).toBeCloseTo(before.height, 1);
       if (role === 'assistant') {
         await page.setViewportSize({ width: 640 * zoom, height: 500 * zoom });
         await expect(toolbar.locator('[data-action-id="fork"]')).toBeVisible();
+        await toolbar.locator('[data-action-id="fork"]').press('Enter');
+        await expect.poll(() => actionCount).toBe(2);
         await expect(toolbar.locator('button[aria-haspopup="menu"]')).toHaveCount(0);
       }
     });

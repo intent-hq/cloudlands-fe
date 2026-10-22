@@ -2,7 +2,7 @@
 
 This project guide records the Intent-app migration checkpoints and repository
 paths for moving Svelte stores (`*.store.svelte.ts`) into Themis slices built on
-`@augmentcode/themis`.
+`@themislib/themis`.
 
 ## Migration policy
 

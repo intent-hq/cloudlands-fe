@@ -56,9 +56,11 @@
 
   $effect(() => {
     const wsId = workspace?.id;
-    if (wsId) {
-      appStore.dispatch(ensureAgentSessionLoaded(String(wsId), agentId));
-    }
+    if (!wsId) return;
+    // Workspace refreshes replace the object; existing preview rows stay live
+    // through shared session events and do not need another detail read.
+    if (selectAgentSession.select(appStore.state, agentId)?.workspaceId === wsId) return;
+    appStore.dispatch(ensureAgentSessionLoaded(String(wsId), agentId));
   });
 
   // Pending attention request (discussion/blocker), if any

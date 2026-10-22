@@ -3,6 +3,9 @@ import {
   acquireBrowserTabMount,
   closeWorkspaceTab,
   consumeBrowserTabRecovery,
+  consumeBrowserTabNavigation,
+  observeBrowserTabNavigation,
+  requestBrowserTabNavigation,
   endDrag,
   loadScrollPositions,
   loadWorkspaceTabsState,
@@ -50,6 +53,7 @@ describe('tabStateReducer', () => {
     hydratedBackendId: null,
     mountedBrowserTabLeases: {},
     browserTabRecoveryRequests: {},
+    browserTabNavigations: {},
   };
 
   const makeState = (overrides: Partial<TabState> = {}): TabState => ({
@@ -91,6 +95,29 @@ describe('tabStateReducer', () => {
     ).toEqual({});
     expect(serializeWorkspaceTabsState(newer)).toEqual(serializeWorkspaceTabsState(initialState));
     expect(newer.version).toBe(initialState.version);
+  });
+
+  it('consumes exact navigation intent without erasing a newer same-URL command or persisting it', () => {
+    const first = tabStateReducer(
+      initialState,
+      observeBrowserTabNavigation('tab-a', 'https://a.test/'),
+    );
+    const observed = first.browserTabNavigations['tab-a'];
+    expect(observed).toEqual({ url: 'https://a.test/', kind: 'observed' });
+    const command = tabStateReducer(first, requestBrowserTabNavigation('tab-a', 'https://a.test/'));
+    const requested = command.browserTabNavigations['tab-a'];
+    expect(requested).toEqual({ url: 'https://a.test/', kind: 'requested' });
+    expect(tabStateReducer(command, consumeBrowserTabNavigation('tab-a', observed))).toBe(command);
+    const retry = tabStateReducer(command, requestBrowserTabNavigation('tab-a', 'https://a.test/'));
+    expect(tabStateReducer(retry, consumeBrowserTabNavigation('tab-a', requested))).toBe(retry);
+    expect(
+      tabStateReducer(
+        retry,
+        consumeBrowserTabNavigation('tab-a', retry.browserTabNavigations['tab-a']),
+      ).browserTabNavigations,
+    ).toEqual({});
+    expect(serializeWorkspaceTabsState(retry)).toEqual(serializeWorkspaceTabsState(initialState));
+    expect(retry.version).toBe(initialState.version);
   });
 
   it('does not persist leases or change them when workspace tabs are rehydrated', () => {
@@ -168,6 +195,13 @@ describe('tabStateReducer', () => {
     expect(tabStateReducer(openedState, openWorkspaceTab('ws-1'))).toBe(openedState);
   });
 
+  it('keeps route ownership transient and preserves the ordinary workspace selection behavior', () => {
+    const fromRoute = tabStateReducer(initialState, openWorkspaceTab('ws-1', 'follow-request'));
+    const fromClick = tabStateReducer(initialState, openWorkspaceTab('ws-1'));
+    expect(fromRoute).toEqual(fromClick);
+    expect(serializeWorkspaceTabsState(fromRoute)).toEqual(serializeWorkspaceTabsState(fromClick));
+    expect(tabStateReducer(fromRoute, openWorkspaceTab('ws-1'))).toBe(fromRoute);
+  });
   it('never adds the onboarding route sentinel to workspace stacks', () => {
     expect(tabStateReducer(initialState, openWorkspaceTab('new'))).toBe(initialState);
   });

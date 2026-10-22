@@ -17,11 +17,13 @@
     side = 'bottom',
     portal = true,
     collisionPadding = 8,
-    alignIconColumn = false,
+    alignIconColumn = true,
     trigger,
     content,
     contentClass = '',
+    subContentClass,
     contentMaxHeight,
+    onOpenChangeComplete,
     class: className = '',
   }: {
     open?: boolean;
@@ -33,7 +35,9 @@
     trigger?: Snippet<[{ toggle: () => void; open: boolean; props: Record<string, unknown> }]>;
     content?: Snippet<[{ close: () => void }]>;
     contentClass?: string;
+    subContentClass?: string;
     contentMaxHeight?: string;
+    onOpenChangeComplete?: (open: boolean) => void;
     class?: string;
   } = $props();
 
@@ -92,7 +96,7 @@
 <svelte:document onpointerdown={handleDocumentPointerDown} />
 
 <div bind:this={rootElement} class="relative inline-block {className}">
-  <Menu.Root bind:open>
+  <Menu.Root bind:open {onOpenChangeComplete}>
     <Menu.Trigger>
       {#snippet child({ props })}
         {@render trigger?.({ toggle, open, props })}
@@ -104,6 +108,7 @@
       {portal}
       {collisionPadding}
       {alignIconColumn}
+      {subContentClass}
       preventScroll={false}
       class={contentClass}
       maxHeight={contentMaxHeight}

@@ -8,7 +8,7 @@
  * the pooled local client when a window owns one, else through a best-effort
  * startup/default-backend probe. Remote backends and an adopted external
  * daemon outlive the app, so their agents are never queried and never prompt.
- * Disrupted agent-owned browser tabs prompt on their own.
+ * Browser tabs never trigger or delay the confirmation.
  *
  * The probe suite drops the `listLocalRespondingAgents` override so the real
  * probe runs against a faked JsonRpcClient.
@@ -22,8 +22,6 @@ import type {
   QuitBrowserTabSummary,
   QuitConfirmationShowPayload,
 } from '../../shared/ipc/quit-confirmation';
-import type { WorkspaceBrowserClient } from '../../shared/types/browser-clients';
-import { stampWindowWithBackend } from '../window-backend';
 import {
   confirmQuitWithRunningAgents,
   resetQuitConfirmationStateForTests,
@@ -102,10 +100,12 @@ vi.mock('../../features/backend/main/backend-connection', () => ({
   resolveBackendConfig: vi.fn(() => ({ transport: 'uds', socketPath: '/tmp/intentd.sock' })),
 }));
 
-const { getWindowIdsForWorkspace } = vi.hoisted(() => ({
-  getWindowIdsForWorkspace: vi.fn<(workspaceId: string) => number[]>(() => []),
+const { embeddedBrowserCdp } = vi.hoisted(() => ({
+  embeddedBrowserCdp: { listAgentOwnedTabs: vi.fn() },
 }));
-vi.mock('../../features/system/main/system.ipc', () => ({ getWindowIdsForWorkspace }));
+vi.mock('../../features/browser/main/embedded-browser-cdp-service', () => ({
+  embeddedBrowserCdp,
+}));
 
 const AGENTS: RespondingAgent[] = [
   { agentId: 'agent-1', name: 'Implementor', workspaceId: 'ws-1' },
@@ -116,50 +116,37 @@ const LOCAL_AGENTS: RespondingAgent[] = [
   { agentId: 'agent-3', name: 'Local worker', workspaceId: 'ws-3' },
 ];
 
-const OWN_CLIENT_ID = 'client-self';
-
-/** `workspace.getBrowserClient` result resolving to `clientId` (PROTOCOL §5.1). */
-function drivenBy(clientId: string | null): WorkspaceBrowserClient {
-  return { source: 'default', resolved: clientId === null ? null : { clientId } };
-}
-
 function makeDeps(options: {
   agents: RespondingAgent[];
   localAgents?: RespondingAgent[];
   response?: number;
   mode?: ConnectionMode;
   remoteActive?: boolean;
-  browserTabs?: QuitBrowserTabSummary[];
   /** Renderer decision; defaults to null = renderer unavailable (native path). */
   rendererDecision?: boolean | null;
 }) {
   const client = { getStatus: () => 'connected', request: vi.fn() } as unknown as RunningAgentsRpc;
   const parentWindow = { id: 42 } as unknown as BrowserWindow;
   const dialogOptions = { message: 'agents working' } as MessageBoxOptions;
-  const tabsOnlyDialogOptions = { message: 'tabs connected' } as MessageBoxOptions;
   const backendId = options.remoteActive ? 'remote-1' : 'local';
   const deps = {
     getBackendTargets: vi.fn(() => [{ id: backendId, client }]),
     getConnectionMode: vi.fn(() => options.mode ?? ('sidecar' as ConnectionMode)),
     listRespondingAgents: vi.fn(async () => options.agents),
     listLocalRespondingAgents: vi.fn(async () => options.localAgents ?? []),
-    listDisruptedBrowserTabs: vi.fn(async () => options.browserTabs ?? []),
-    getOwnClientId: vi.fn(async () => OWN_CLIENT_ID),
-    getHostingBackendIds: vi.fn(async () => [backendId]),
-    getWorkspaceBrowserClient: vi.fn(async () => drivenBy(OWN_CLIENT_ID)),
     confirmViaRenderer: vi.fn(async () => options.rendererDecision ?? null),
     buildQuitDialogOptions: vi.fn(() => dialogOptions),
-    buildTabsOnlyQuitDialogOptions: vi.fn(() => tabsOnlyDialogOptions),
     getParentWindow: vi.fn(() => parentWindow),
     showMessageBox: vi.fn(
       async () => ({ response: options.response ?? 0 }) as MessageBoxReturnValue,
     ),
   };
-  return { deps, client, parentWindow, dialogOptions, tabsOnlyDialogOptions };
+  return { deps, client, parentWindow, dialogOptions };
 }
 
 beforeEach(() => {
   resetQuitConfirmationStateForTests();
+  embeddedBrowserCdp.listAgentOwnedTabs.mockReset().mockReturnValue(BROWSER_TABS);
 });
 
 describe('confirmQuitWithRunningAgents', () => {
@@ -304,43 +291,12 @@ describe('confirmQuitWithRunningAgents — sidecar gate', () => {
     expect(deps.showMessageBox).not.toHaveBeenCalled();
   });
 
-  it('shows no dialog when the sidecar has no agents and no tabs are disrupted', async () => {
+  it('shows no dialog when the sidecar has no agents', async () => {
     const { deps } = makeDeps({ agents: [], localAgents: [], mode: 'sidecar', remoteActive: true });
 
     await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
 
     expect(deps.showMessageBox).not.toHaveBeenCalled();
-  });
-
-  it('enumerates sidecar agents and disrupted tabs concurrently', async () => {
-    const { deps } = makeDeps({ agents: AGENTS, mode: 'sidecar' });
-    // Both lookups stay pending until released, so the call counts snapshotted
-    // below show which of them STARTED before either settled. The assertions
-    // run after the confirm call resolves: the production tab lookup fails
-    // open, so an expect() inside its mock would be swallowed.
-    let releaseAgents!: (agents: RespondingAgent[]) => void;
-    let releaseTabs!: (tabs: QuitBrowserTabSummary[]) => void;
-    const agentsGate = new Promise<RespondingAgent[]>((resolve) => {
-      releaseAgents = resolve;
-    });
-    const tabsGate = new Promise<QuitBrowserTabSummary[]>((resolve) => {
-      releaseTabs = resolve;
-    });
-    deps.listRespondingAgents.mockImplementation(() => agentsGate);
-    deps.listDisruptedBrowserTabs.mockImplementation(() => tabsGate);
-
-    const confirmed = confirmQuitWithRunningAgents(deps);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    const startedBeforeEitherSettled = {
-      agents: deps.listRespondingAgents.mock.calls.length,
-      tabs: deps.listDisruptedBrowserTabs.mock.calls.length,
-    };
-    releaseAgents(AGENTS);
-    releaseTabs([]);
-    await expect(confirmed).resolves.toBe(true);
-
-    expect(startedBeforeEitherSettled).toEqual({ agents: 1, tabs: 1 });
-    expect(deps.buildQuitDialogOptions).toHaveBeenCalledWith(AGENTS);
   });
 });
 
@@ -436,22 +392,15 @@ describe('confirmQuitWithRunningAgents — renderer round-trip', () => {
     expect(deps.showMessageBox).not.toHaveBeenCalled();
   });
 
-  it('includes disrupted browser tabs, annotated with known owner names', async () => {
-    const { deps } = makeDeps({
-      agents: AGENTS,
-      browserTabs: BROWSER_TABS,
-      rendererDecision: true,
-    });
+  it('warns only about interrupted agents even with agent-owned browser tabs', async () => {
+    const { deps } = makeDeps({ agents: AGENTS, rendererDecision: true });
 
-    await confirmQuitWithRunningAgents(deps);
+    await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
 
     const payload = deps.confirmViaRenderer.mock.calls[0][1] as QuitConfirmationShowPayload;
-    expect(payload.disruptedBrowserTabs).toEqual([
-      // agent-1 is a responding agent, so its name rides along…
-      { ...BROWSER_TABS[0], ownerAgentName: 'Implementor' },
-      // …agent-x is unknown (tab owner not among responding agents): no name.
-      BROWSER_TABS[1],
-    ]);
+    expect(payload.interrupted).toHaveLength(AGENTS.length);
+    expect(payload.disruptedBrowserTabs).toEqual([]);
+    expect(embeddedBrowserCdp.listAgentOwnedTabs).not.toHaveBeenCalled();
   });
 
   it('falls back to the native dialog when the renderer path resolves null', async () => {
@@ -467,58 +416,28 @@ describe('confirmQuitWithRunningAgents — renderer round-trip', () => {
     expect(deps.showMessageBox).toHaveBeenCalledWith(parentWindow, dialogOptions);
   });
 
-  it('fails open on tab enumeration errors: prompt still shows, without tab data', async () => {
-    const { deps } = makeDeps({ agents: AGENTS, rendererDecision: true });
-    deps.listDisruptedBrowserTabs.mockRejectedValue(new Error('cdp gone'));
+  it.each(['sidecar', 'external', 'unknown'] satisfies ConnectionMode[])(
+    'quits without a browser warning when no agents are interrupted (%s)',
+    async (mode) => {
+      const { deps } = makeDeps({ agents: [], mode, rendererDecision: false });
+
+      await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
+
+      expect(deps.confirmViaRenderer).not.toHaveBeenCalled();
+      expect(deps.showMessageBox).not.toHaveBeenCalled();
+      expect(embeddedBrowserCdp.listAgentOwnedTabs).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not show a native browser warning when the renderer is unavailable', async () => {
+    const { deps } = makeDeps({ agents: [], rendererDecision: null, response: 1 });
 
     await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
 
-    const payload = deps.confirmViaRenderer.mock.calls[0][1] as QuitConfirmationShowPayload;
-    expect(payload.disruptedBrowserTabs).toEqual([]);
-  });
-
-  it('prompts when no agents respond but disrupted tabs exist (tabs alone trigger it)', async () => {
-    const { deps } = makeDeps({ agents: [], browserTabs: BROWSER_TABS, rendererDecision: false });
-
-    await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(false);
-
-    expect(deps.confirmViaRenderer).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        interrupted: [],
-        disruptedBrowserTabs: BROWSER_TABS,
-      }),
-    );
-    expect(deps.showMessageBox).not.toHaveBeenCalled();
-  });
-
-  it('shows the native tabs-only dialog when the renderer is unavailable, honoring quit', async () => {
-    const { deps, parentWindow, tabsOnlyDialogOptions } = makeDeps({
-      agents: [],
-      browserTabs: BROWSER_TABS,
-      rendererDecision: null,
-      response: 0,
-    });
-
-    await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
-
-    expect(deps.confirmViaRenderer).toHaveBeenCalledTimes(1);
-    expect(deps.buildTabsOnlyQuitDialogOptions).toHaveBeenCalledWith(BROWSER_TABS.length);
+    expect(deps.confirmViaRenderer).not.toHaveBeenCalled();
     expect(deps.buildQuitDialogOptions).not.toHaveBeenCalled();
-    expect(deps.showMessageBox).toHaveBeenCalledWith(parentWindow, tabsOnlyDialogOptions);
-  });
-
-  it('honors cancel from the native tabs-only dialog', async () => {
-    const { deps } = makeDeps({
-      agents: [],
-      browserTabs: BROWSER_TABS,
-      rendererDecision: null,
-      response: 1,
-    });
-
-    await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(false);
-
-    expect(deps.buildTabsOnlyQuitDialogOptions).toHaveBeenCalledWith(BROWSER_TABS.length);
+    expect(deps.showMessageBox).not.toHaveBeenCalled();
+    expect(embeddedBrowserCdp.listAgentOwnedTabs).not.toHaveBeenCalled();
   });
 
   it('shares one in-flight confirmation between concurrent callers', async () => {
@@ -536,420 +455,6 @@ describe('confirmQuitWithRunningAgents — renderer round-trip', () => {
     await expect(first).resolves.toBe(true);
     await expect(second).resolves.toBe(true);
     expect(deps.listRespondingAgents).toHaveBeenCalledTimes(1);
-  });
-});
-
-/**
- * REV-2 narrowing: a hosted agent tab counts only when its workspace's
- * driving client (`workspace.getBrowserClient(...).resolved.clientId`) is this
- * app. Every lookup failure is fail-open — the tab stays counted.
- */
-describe('confirmQuitWithRunningAgents — driven-workspace tab narrowing', () => {
-  const HOSTED_TABS: QuitBrowserTabSummary[] = [
-    { tabId: 'tab-a', ownerAgentId: 'agent-a', workspaceId: 'ws-driven' },
-    { tabId: 'tab-b', ownerAgentId: 'agent-b', workspaceId: 'ws-other' },
-    { tabId: 'tab-c', ownerAgentId: 'agent-c', workspaceId: 'ws-other' },
-  ];
-
-  function driving(map: Record<string, WorkspaceBrowserClient | Error>) {
-    return async (_client: RunningAgentsRpc, workspaceId: string) => {
-      const entry = map[workspaceId];
-      if (entry === undefined) throw new Error(`unknown workspace ${workspaceId}`);
-      if (entry instanceof Error) throw entry;
-      return entry;
-    };
-  }
-
-  function shownTabs(deps: ReturnType<typeof makeDeps>['deps']): QuitBrowserTabSummary[] {
-    const payload = deps.confirmViaRenderer.mock.calls[0][1] as QuitConfirmationShowPayload;
-    return payload.disruptedBrowserTabs;
-  }
-
-  it('asks each hosted tab workspace once with the PROTOCOL params, on the pooled client', async () => {
-    const { deps, client } = makeDeps({
-      agents: [],
-      browserTabs: HOSTED_TABS,
-      rendererDecision: true,
-    });
-
-    await confirmQuitWithRunningAgents(deps);
-
-    expect(deps.getWorkspaceBrowserClient).toHaveBeenCalledTimes(2);
-    expect(deps.getWorkspaceBrowserClient).toHaveBeenCalledWith(client, 'ws-driven');
-    expect(deps.getWorkspaceBrowserClient).toHaveBeenCalledWith(client, 'ws-other');
-  });
-
-  it('drops tabs of a workspace another client drives and keeps tabs of driven ones', async () => {
-    const { deps } = makeDeps({ agents: [], browserTabs: HOSTED_TABS, rendererDecision: true });
-    deps.getWorkspaceBrowserClient.mockImplementation(
-      driving({ 'ws-driven': drivenBy(OWN_CLIENT_ID), 'ws-other': drivenBy('client-elsewhere') }),
-    );
-
-    await confirmQuitWithRunningAgents(deps);
-
-    expect(shownTabs(deps)).toEqual([HOSTED_TABS[0]]);
-  });
-
-  it('quits silently when every hosted tab belongs to a workspace another client drives', async () => {
-    const { deps } = makeDeps({
-      agents: [],
-      browserTabs: [HOSTED_TABS[1], HOSTED_TABS[2]],
-      rendererDecision: false,
-    });
-    deps.getWorkspaceBrowserClient.mockResolvedValue(drivenBy('client-elsewhere'));
-
-    await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
-
-    expect(deps.confirmViaRenderer).not.toHaveBeenCalled();
-    expect(deps.showMessageBox).not.toHaveBeenCalled();
-  });
-
-  it('still prompts for running agents when the only hosted tabs are driven elsewhere', async () => {
-    const { deps } = makeDeps({
-      agents: AGENTS,
-      browserTabs: [HOSTED_TABS[1]],
-      rendererDecision: true,
-    });
-    deps.getWorkspaceBrowserClient.mockResolvedValue(drivenBy('client-elsewhere'));
-
-    await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
-
-    expect(deps.confirmViaRenderer).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        interrupted: [
-          { agentId: 'agent-1', agentName: 'Implementor', workspaceId: 'ws-1' },
-          { agentId: 'agent-2', agentName: 'Verifier', workspaceId: 'ws-2' },
-        ],
-        disruptedBrowserTabs: [],
-      }),
-    );
-  });
-
-  it('still filters tabs through the driving-client lookup on a remote-hosted backend', async () => {
-    const { deps, client } = makeDeps({
-      agents: [],
-      browserTabs: HOSTED_TABS,
-      remoteActive: true,
-      rendererDecision: true,
-    });
-
-    await confirmQuitWithRunningAgents(deps);
-
-    // Remote targets are never asked for agents, but the tab filter still
-    // asks the hosting (remote) backend which client drives each workspace.
-    expect(deps.listRespondingAgents).not.toHaveBeenCalled();
-    expect(deps.getWorkspaceBrowserClient).toHaveBeenCalledWith(client, 'ws-driven');
-    expect(deps.getWorkspaceBrowserClient).toHaveBeenCalledWith(client, 'ws-other');
-  });
-
-  it('fails open per workspace: a rejected lookup keeps that workspace tabs counted', async () => {
-    const { deps } = makeDeps({ agents: [], browserTabs: HOSTED_TABS, rendererDecision: true });
-    deps.getWorkspaceBrowserClient.mockImplementation(
-      driving({
-        'ws-driven': drivenBy('client-elsewhere'),
-        'ws-other': new Error('Method not found: workspace.getBrowserClient'),
-      }),
-    );
-
-    await confirmQuitWithRunningAgents(deps);
-
-    expect(shownTabs(deps)).toEqual([HOSTED_TABS[1], HOSTED_TABS[2]]);
-  });
-
-  it('keeps a tab counted when no client currently drives its workspace (resolved: null)', async () => {
-    const { deps } = makeDeps({
-      agents: [],
-      browserTabs: [HOSTED_TABS[0]],
-      rendererDecision: true,
-    });
-    deps.getWorkspaceBrowserClient.mockResolvedValue(drivenBy(null));
-
-    await confirmQuitWithRunningAgents(deps);
-
-    expect(shownTabs(deps)).toEqual([HOSTED_TABS[0]]);
-  });
-
-  it('keeps a tab with no workspaceId without asking any backend', async () => {
-    const orphan: QuitBrowserTabSummary = { tabId: 'tab-o', ownerAgentId: 'agent-o' };
-    const { deps } = makeDeps({ agents: [], browserTabs: [orphan], rendererDecision: true });
-
-    await confirmQuitWithRunningAgents(deps);
-
-    expect(deps.getWorkspaceBrowserClient).not.toHaveBeenCalled();
-    expect(shownTabs(deps)).toEqual([orphan]);
-  });
-
-  it('keeps every hosted tab when the own clientId cannot be read', async () => {
-    const { deps } = makeDeps({ agents: [], browserTabs: HOSTED_TABS, rendererDecision: true });
-    deps.getOwnClientId.mockRejectedValue(new Error('prefs unreadable'));
-    deps.getWorkspaceBrowserClient.mockResolvedValue(drivenBy('client-elsewhere'));
-
-    await confirmQuitWithRunningAgents(deps);
-
-    expect(deps.getWorkspaceBrowserClient).not.toHaveBeenCalled();
-    expect(shownTabs(deps)).toEqual(HOSTED_TABS);
-  });
-
-  /**
-   * Workspace ids are daemon-local (`workspace.import` keeps the source id),
-   * so two pooled daemons can both answer for the same id. Only the backend
-   * whose window hosts the tab's workspace is authoritative.
-   */
-  describe('same workspace id on two pooled backends', () => {
-    const localClient = { getStatus: () => 'connected' } as RunningAgentsRpc;
-    const remoteClient = { getStatus: () => 'connected' } as RunningAgentsRpc;
-
-    function makeTwoBackendDeps(hostingBackendIds: string[], targetsFirst: 'local' | 'remote') {
-      const { deps } = makeDeps({
-        agents: [],
-        browserTabs: [HOSTED_TABS[1]],
-        rendererDecision: true,
-      });
-      const targets = [
-        { id: 'local', client: localClient },
-        { id: 'remote-a', client: remoteClient },
-      ];
-      deps.getBackendTargets.mockReturnValue(
-        targetsFirst === 'local' ? targets : targets.reverse(),
-      );
-      deps.getHostingBackendIds.mockResolvedValue(hostingBackendIds);
-      return deps;
-    }
-
-    it('keeps the tab when a foreign backend listed first says elsewhere but the hosting one says own', async () => {
-      const deps = makeTwoBackendDeps(['remote-a'], 'local');
-      deps.getWorkspaceBrowserClient.mockImplementation(async (target) =>
-        target === localClient ? drivenBy('client-elsewhere') : drivenBy(OWN_CLIENT_ID),
-      );
-
-      await confirmQuitWithRunningAgents(deps);
-
-      expect(deps.getHostingBackendIds).toHaveBeenCalledWith('ws-other');
-      expect(deps.getWorkspaceBrowserClient).toHaveBeenCalledTimes(1);
-      expect(deps.getWorkspaceBrowserClient).toHaveBeenCalledWith(remoteClient, 'ws-other');
-      expect(shownTabs(deps)).toEqual([HOSTED_TABS[1]]);
-    });
-
-    it('keeps the tab when a foreign backend says elsewhere but the hosting one fails', async () => {
-      const deps = makeTwoBackendDeps(['remote-a'], 'local');
-      deps.getWorkspaceBrowserClient.mockImplementation(async (target) => {
-        if (target === remoteClient) throw new Error('backend not connected');
-        return drivenBy('client-elsewhere');
-      });
-
-      await confirmQuitWithRunningAgents(deps);
-
-      expect(deps.getWorkspaceBrowserClient).not.toHaveBeenCalledWith(localClient, 'ws-other');
-      expect(shownTabs(deps)).toEqual([HOSTED_TABS[1]]);
-    });
-
-    it('drops the tab only on the hosting backend answer, whatever the target order', async () => {
-      const deps = makeTwoBackendDeps(['local'], 'remote');
-      deps.getWorkspaceBrowserClient.mockImplementation(async (target) =>
-        target === localClient ? drivenBy('client-elsewhere') : drivenBy(OWN_CLIENT_ID),
-      );
-
-      await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
-
-      expect(deps.getWorkspaceBrowserClient).toHaveBeenCalledTimes(1);
-      expect(deps.getWorkspaceBrowserClient).toHaveBeenCalledWith(localClient, 'ws-other');
-      expect(deps.confirmViaRenderer).not.toHaveBeenCalled();
-    });
-
-    it('keeps the tab without asking anyone when windows on two backends host the id', async () => {
-      const deps = makeTwoBackendDeps(['local', 'remote-a'], 'local');
-      deps.getWorkspaceBrowserClient.mockResolvedValue(drivenBy('client-elsewhere'));
-
-      await confirmQuitWithRunningAgents(deps);
-
-      expect(deps.getWorkspaceBrowserClient).not.toHaveBeenCalled();
-      expect(shownTabs(deps)).toEqual([HOSTED_TABS[1]]);
-    });
-
-    it('keeps the tab without asking anyone when no live window hosts its workspace', async () => {
-      const deps = makeTwoBackendDeps([], 'local');
-      deps.getWorkspaceBrowserClient.mockResolvedValue(drivenBy('client-elsewhere'));
-
-      await confirmQuitWithRunningAgents(deps);
-
-      expect(deps.getWorkspaceBrowserClient).not.toHaveBeenCalled();
-      expect(shownTabs(deps)).toEqual([HOSTED_TABS[1]]);
-    });
-
-    it('keeps the tab when the hosting backend has no live pooled client', async () => {
-      const deps = makeTwoBackendDeps(['remote-b'], 'local');
-      deps.getWorkspaceBrowserClient.mockResolvedValue(drivenBy('client-elsewhere'));
-
-      await confirmQuitWithRunningAgents(deps);
-
-      expect(deps.getWorkspaceBrowserClient).not.toHaveBeenCalled();
-      expect(shownTabs(deps)).toEqual([HOSTED_TABS[1]]);
-    });
-
-    it('keeps the tab when the hosting lookup itself throws', async () => {
-      const deps = makeTwoBackendDeps([], 'local');
-      deps.getHostingBackendIds.mockRejectedValue(new Error('window map unavailable'));
-      deps.getWorkspaceBrowserClient.mockResolvedValue(drivenBy('client-elsewhere'));
-
-      await confirmQuitWithRunningAgents(deps);
-
-      expect(deps.getWorkspaceBrowserClient).not.toHaveBeenCalled();
-      expect(shownTabs(deps)).toEqual([HOSTED_TABS[1]]);
-    });
-  });
-});
-
-/**
- * The default `workspace.getBrowserClient` lookup is exercised through the
- * public entry point: every dep is injected EXCEPT `getWorkspaceBrowserClient`,
- * so the real RPC wrapper runs against the injected pooled client.
- */
-describe('confirmQuitWithRunningAgents — default driving-client lookup', () => {
-  const TAB: QuitBrowserTabSummary = {
-    tabId: 'tab-a',
-    ownerAgentId: 'agent-a',
-    workspaceId: 'ws-driven',
-  };
-
-  function makeLookupDeps(status = 'connected') {
-    const { deps } = makeDeps({ agents: [], browserTabs: [TAB], rendererDecision: true });
-    const { getWorkspaceBrowserClient: _omitted, ...rest } = deps;
-    const request = vi.fn();
-    const client = { getStatus: () => status, request } as unknown as RunningAgentsRpc;
-    rest.getBackendTargets.mockReturnValue([{ id: 'local', client }]);
-    return { deps: rest, request };
-  }
-
-  it('sends workspace.getBrowserClient { workspaceId } and honors a foreign driver', async () => {
-    const { deps, request } = makeLookupDeps();
-    request.mockResolvedValue({
-      browserClient: {
-        source: 'workspace',
-        clientId: 'client-elsewhere',
-        resolved: { clientId: 'client-elsewhere', name: 'Other laptop' },
-      },
-    });
-
-    await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
-
-    expect(request).toHaveBeenCalledWith('workspace.getBrowserClient', {
-      workspaceId: 'ws-driven',
-    });
-    expect(deps.confirmViaRenderer).not.toHaveBeenCalled();
-  });
-
-  it('counts the tab when the daemon resolves this app as the driver', async () => {
-    const { deps, request } = makeLookupDeps();
-    request.mockResolvedValue({
-      browserClient: { source: 'default', resolved: { clientId: OWN_CLIENT_ID } },
-    });
-
-    await confirmQuitWithRunningAgents(deps);
-
-    const payload = deps.confirmViaRenderer.mock.calls[0][1] as QuitConfirmationShowPayload;
-    expect(payload.disruptedBrowserTabs).toEqual([TAB]);
-  });
-
-  it('fails open on a malformed result and on a disconnected backend', async () => {
-    const malformed = makeLookupDeps();
-    malformed.request.mockResolvedValue({ browserClient: { resolved: 'client-elsewhere' } });
-    await confirmQuitWithRunningAgents(malformed.deps);
-    expect(malformed.deps.confirmViaRenderer).toHaveBeenCalledTimes(1);
-
-    resetQuitConfirmationStateForTests();
-
-    const disconnected = makeLookupDeps('reconnecting');
-    disconnected.request.mockResolvedValue({
-      browserClient: { source: 'default', resolved: { clientId: 'client-elsewhere' } },
-    });
-    await confirmQuitWithRunningAgents(disconnected.deps);
-    expect(disconnected.request).not.toHaveBeenCalled();
-    expect(disconnected.deps.confirmViaRenderer).toHaveBeenCalledTimes(1);
-  });
-});
-
-/**
- * The default hosting-backend lookup is exercised through the public entry
- * point: every dep is injected EXCEPT `getHostingBackendIds`, so the real
- * window-map → stamped-backend resolution runs against the mocked
- * `getWindowIdsForWorkspace` and `BrowserWindow.fromId`.
- */
-describe('confirmQuitWithRunningAgents — default hosting-backend lookup', () => {
-  const TAB: QuitBrowserTabSummary = {
-    tabId: 'tab-b',
-    ownerAgentId: 'agent-b',
-    workspaceId: 'ws-other',
-  };
-
-  function fakeWindow(backendId: string | null, destroyed = false): BrowserWindow {
-    const window = { isDestroyed: () => destroyed } as unknown as BrowserWindow;
-    if (backendId !== null) stampWindowWithBackend(window, backendId);
-    return window;
-  }
-
-  async function installWindows(windows: Record<number, BrowserWindow>) {
-    const { BrowserWindow: MockedBrowserWindow } = await import('electron');
-    (MockedBrowserWindow as unknown as { fromId: (id: number) => BrowserWindow | null }).fromId = (
-      id,
-    ) => windows[id] ?? null;
-  }
-
-  function makeHostingDeps() {
-    const { deps } = makeDeps({ agents: [], browserTabs: [TAB], rendererDecision: true });
-    const { getHostingBackendIds: _omitted, ...rest } = deps;
-    const localClient = { getStatus: () => 'connected' } as RunningAgentsRpc;
-    const remoteClient = { getStatus: () => 'connected' } as RunningAgentsRpc;
-    rest.getBackendTargets.mockReturnValue([
-      { id: 'local', client: localClient },
-      { id: 'remote-a', client: remoteClient },
-    ]);
-    rest.getWorkspaceBrowserClient.mockResolvedValue(drivenBy('client-elsewhere'));
-    return { deps: rest, localClient, remoteClient };
-  }
-
-  beforeEach(() => {
-    getWindowIdsForWorkspace.mockReset();
-    getWindowIdsForWorkspace.mockReturnValue([]);
-  });
-
-  it('asks the backend stamped on the live windows hosting the workspace, deduplicated', async () => {
-    const { deps, remoteClient } = makeHostingDeps();
-    getWindowIdsForWorkspace.mockReturnValue([1, 2, 3, 4]);
-    await installWindows({
-      1: fakeWindow('remote-a'),
-      2: fakeWindow('remote-a'),
-      3: fakeWindow('local', true),
-    });
-
-    await expect(confirmQuitWithRunningAgents(deps)).resolves.toBe(true);
-
-    expect(getWindowIdsForWorkspace).toHaveBeenCalledWith('ws-other');
-    expect(deps.getWorkspaceBrowserClient).toHaveBeenCalledTimes(1);
-    expect(deps.getWorkspaceBrowserClient).toHaveBeenCalledWith(remoteClient, 'ws-other');
-    expect(deps.confirmViaRenderer).not.toHaveBeenCalled();
-  });
-
-  it('treats an unstamped window as the local backend', async () => {
-    const { deps, localClient } = makeHostingDeps();
-    getWindowIdsForWorkspace.mockReturnValue([7]);
-    await installWindows({ 7: fakeWindow(null) });
-
-    await confirmQuitWithRunningAgents(deps);
-
-    expect(deps.getWorkspaceBrowserClient).toHaveBeenCalledWith(localClient, 'ws-other');
-  });
-
-  it('keeps the tab without asking when windows on two backends host the workspace', async () => {
-    const { deps } = makeHostingDeps();
-    getWindowIdsForWorkspace.mockReturnValue([1, 2]);
-    await installWindows({ 1: fakeWindow('local'), 2: fakeWindow('remote-a') });
-
-    await confirmQuitWithRunningAgents(deps);
-
-    expect(deps.getWorkspaceBrowserClient).not.toHaveBeenCalled();
-    const payload = deps.confirmViaRenderer.mock.calls[0][1] as QuitConfirmationShowPayload;
-    expect(payload.disruptedBrowserTabs).toEqual([TAB]);
   });
 });
 

@@ -18,6 +18,7 @@
   import { cn } from '$lib/utils';
   import ProviderIcon from '$features/agent/components/AgentProviderIcon.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
+  import { observeOverflow } from '$lib/actions/observe-overflow';
   import { Button } from '$lib/components/ui/button';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
@@ -76,6 +77,7 @@
   // status is cached (background rechecks stay silent), so a user-initiated
   // refresh needs its own flag to surface "Checking…" until its probe settles.
   let userRefreshing = $state(false);
+  let authDetailsOverflow = $state(false);
   let wasRefreshLoading = false;
   $effect(() => {
     const loading = $providerLoadingMap$[provider.id] ?? false;
@@ -246,9 +248,16 @@
             <div class="flex items-center whitespace-nowrap truncate font-medium">
               {m.onboarding_providerCard_connected_label()}
               {#if provider.authDetails}
-                <Tooltip side="top" content={provider.authDetails} disableHoverableContent>
+                <Tooltip
+                  side="top"
+                  content={provider.authDetails}
+                  disabled={!authDetailsOverflow}
+                  class="min-w-0"
+                  disableHoverableContent
+                >
                   <div
                     class="text-xs opacity-70 font-normal truncate pl-1"
+                    use:observeOverflow={(overflow) => (authDetailsOverflow = overflow)}
                     transition:slide={{ axis: 'y', tier: 'moderate' }}
                   >
                     {m.onboarding_providerCard_connectedAs_label({ details: provider.authDetails })}

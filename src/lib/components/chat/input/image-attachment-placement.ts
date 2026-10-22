@@ -9,6 +9,7 @@
  * image; message frames stay constant-size.
  */
 import { m } from '$shared/paraglide/messages.js';
+import { imageAttachmentName } from './image-attachment-format';
 import {
   abortAttachmentUpload,
   beginAttachmentUpload,
@@ -19,6 +20,7 @@ import {
   type PlaceAttachmentResult,
 } from './context-api';
 import {
+  assertPlacementCurrent,
   extractPlacementErrorDetail,
   isAlreadyCommittedError,
   MAX_REMOTE_ATTACHMENT_BYTES,
@@ -53,13 +55,6 @@ export interface ImageReferenceBlock {
 
 /** Either arm of an image block as accepted by the daemon. */
 export type WireImageBlock = InlineImageBlock | ImageReferenceBlock;
-
-const MIME_EXTENSIONS: Record<string, string> = {
-  'image/png': 'png',
-  'image/jpeg': 'jpg',
-  'image/gif': 'gif',
-  'image/webp': 'webp',
-};
 
 /** Decode raw base64 (no data-URL prefix) into bytes. */
 function base64ToBytes(b64: string): Uint8Array {
@@ -190,15 +185,15 @@ export async function placeImageAttachment(
   try {
     for (let seq = 0; seq < totalChunks; seq++) {
       const slice = bytes.subarray(seq * chunkBytes, (seq + 1) * chunkBytes);
-      await api.sendAttachmentUploadChunk(uploadId, seq, bytesToBase64(slice));
+      await api.sendAttachmentUploadChunk(uploadId, seq, bytesToBase64(slice), workspaceId);
     }
     committing = true;
-    return await api.commitAttachmentUpload(uploadId);
+    return await api.commitAttachmentUpload(uploadId, workspaceId);
   } catch (error) {
     // Only a lost commit reply can hide a placed file behind the key.
     const recovered = committing ? await recover(error) : undefined;
     if (recovered) return recovered;
-    await api.abortAttachmentUpload(uploadId).catch(() => {
+    await api.abortAttachmentUpload(uploadId, workspaceId).catch(() => {
       // Best-effort: the daemon sweeps orphaned sessions on the next begin.
     });
     throw error;
@@ -207,8 +202,7 @@ export async function placeImageAttachment(
 
 /** Generated file name for a pasted/dropped image with no original name. */
 function imageAttachmentFileName(mimeType: string | undefined, index: number): string {
-  const ext = (mimeType && MIME_EXTENSIONS[mimeType.toLowerCase()]) || 'png';
-  return `image-${Date.now()}-${index + 1}.${ext}`;
+  return imageAttachmentName(mimeType, `image-${Date.now()}-${index + 1}`);
 }
 
 /**
@@ -255,11 +249,28 @@ export async function toImageReferenceBlocks(
   workspaceId: string,
   blocks: WireImageBlock[],
   api: ImagePlacementApi = defaultApi,
+  current: () => boolean = () => true,
 ): Promise<ImageReferenceBlock[]> {
+  const guard =
+    <A extends unknown[], R>(fn: (...args: A) => R) =>
+    (...args: A): R => {
+      assertPlacementCurrent(current);
+      return fn(...args);
+    };
+  api = {
+    placeAttachment: guard(api.placeAttachment),
+    beginAttachmentUpload: guard(api.beginAttachmentUpload),
+    sendAttachmentUploadChunk: guard(api.sendAttachmentUploadChunk),
+    commitAttachmentUpload: guard(api.commitAttachmentUpload),
+    abortAttachmentUpload: guard(api.abortAttachmentUpload),
+    getAttachmentInfo: guard(api.getAttachmentInfo),
+    mintIdempotencyKey: guard(api.mintIdempotencyKey),
+  };
   const out: ImageReferenceBlock[] = [];
   const retryBlocks: WireImageBlock[] = [];
   const failures: string[] = [];
   for (let i = 0; i < blocks.length; i++) {
+    assertPlacementCurrent(current);
     const block = blocks[i];
     if ('attachmentId' in block && block.attachmentId) {
       const reference: ImageReferenceBlock = {
@@ -310,5 +321,6 @@ export async function toImageReferenceBlocks(
       retryBlocks,
     );
   }
+  assertPlacementCurrent(current);
   return out;
 }

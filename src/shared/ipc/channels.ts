@@ -91,3 +91,5 @@ export function getAllStaticChannels(): string[] {
   extractChannels(ALL_CHANNELS);
   return channels;
 }
+
+export const COLLABORATION_AUTH_CHANNELS = IPC_CHANNELS.COLLABORATION_AUTH;

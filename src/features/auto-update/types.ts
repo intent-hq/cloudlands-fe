@@ -37,6 +37,8 @@ export interface UpdateState {
   progress: UpdateProgress | null;
   error: string | null;
   channel: UpdateChannel;
+  /** Settings → "Share anonymous update statistics" (on by default). */
+  shareStatistics: boolean;
 }
 
 /**
@@ -49,6 +51,7 @@ export const AUTO_UPDATE_CHANNELS = {
   INSTALL: 'auto-update:install',
   GET_STATE: 'auto-update:get-state',
   SET_CHANNEL: 'auto-update:set-channel',
+  SET_SHARE_STATISTICS: 'auto-update:set-share-statistics',
   // Event channels (main → renderer)
   STATUS_CHANGED: 'auto-update:status-changed',
   PROGRESS: 'auto-update:progress',

@@ -5,19 +5,22 @@
  * Provides consistent behavior across terminal, editor, markdown viewer, etc.
  *
  * Default behavior:
- * - Path-like targets (schemeless raw href or self-origin URL) → Workspace file viewer
+ * - Path-like targets (schemeless href/target or self-origin URL) → Workspace file viewer
  * - HTTP/HTTPS links → Open in external default browser
  * - Cmd+Click (⌘ on Mac, Ctrl on Windows/Linux) → Open in embedded browser panel
  * - Auth/OAuth URLs → Always open in external browser
  * - GitHub issue/PR URLs (plain click) → Configured default action
+ * - Workspace preview links → Enter the workspace and open its content panel
  * - Intent links (intent://) → Handle internally (navigate to notes/tasks)
  * - File links (file://) → Open in external editor
+ * - Saved assets (workspace-asset://) → Owning view's media preview, never a browser
  * - Other links → External browser as fallback
  */
 
 import { Logger } from '$shared/logger';
-import type { WorkspaceId } from '$shared/types/branded-ids';
+import { CHIEF_WORKSPACE_ID, WorkspaceId } from '$shared/types/branded-ids';
 import { writeTextToClipboard } from '$lib/utils/clipboard';
+import { notify } from '$lib/components/patterns/notify';
 import {
   type GitHubIssueOrPrRef,
   type LinkHandlerOptions,
@@ -29,6 +32,7 @@ import {
 import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { selectGithubLinkDefaultAction } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import {
   focusPanel,
@@ -38,6 +42,7 @@ import {
 import { m } from '$shared/paraglide/messages.js';
 import { store as appStore } from '$store/renderer/store';
 import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
+import { readLinkSource } from './link-source';
 
 const logger = new Logger('LinkHandler');
 
@@ -52,22 +57,30 @@ const logger = new Logger('LinkHandler');
  * 1. Custom handler (if provided and returns true)
  * 2. `intent://` → internal navigation
  * 3. `devspace://` → internal resources (terminals)
- * 4. Path-like targets (schemeless raw href, or resolved URL on the app's own
+ * 4. Path-like targets (schemeless href/target, or resolved URL on the app's own
  *    origin) → workspace file viewer
  * 5. Auth/OAuth URLs → external browser (always)
  * 6. `http(s)://` + forceExternal → external browser
- * 7. `http(s)://` + Cmd+Click → embedded browser panel (external browser
- *    fallback without a workspaceId)
- * 8. GitHub issue/PR URLs (plain click with coordinates) → configured default action
- * 9. `http(s)://` (plain click) → external browser
- * 10. `file://` → external editor
- * 11. Anything else → external browser (fallback)
+ * 7. `http(s)://` + Cmd+Click → embedded browser panel (external fallback without a workspaceId)
+ * 8. GitHub issue/PR URLs (plain click) → configured default action, including on Home
+ * 9. Other workspace preview links → the owning workspace's browser panel
+ * 10. `http(s)://` (plain click) → external browser
+ * 11. `file://` → external editor
+ * 12. Anything else → external browser (fallback)
  *
  * @returns true if handled, false if not
  */
 export async function handleLink(url: string, options: LinkHandlerOptions): Promise<boolean> {
   try {
-    const sourcePanelId = getSourcePanelId(options);
+    const sourceTarget = options.event?.target;
+    const source = readLinkSource(
+      sourceTarget instanceof Element ? sourceTarget : null,
+      options.workspaceId,
+    );
+    const openInWorkspace = options.openInWorkspace ?? source.openInWorkspace;
+    const sourcePanelId = openInWorkspace ? undefined : options.sourcePanelId || source.panelId;
+    const { assistantLayoutId } = source;
+    options = { ...options, openInWorkspace, sourcePanelId };
     // Try custom handler first
     if (options.customHandler) {
       const handled = await options.customHandler(url);
@@ -75,6 +88,28 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
         logger.debug('Link handled by custom handler', { url });
         return true;
       }
+    }
+
+    // Media-capable views consume valid saved-media links before reaching here.
+    // Reject unhandled assets before Home routing or external fallback: neither
+    // a browser nor an editor can resolve these internal media URLs safely.
+    if (/^workspace-asset:/i.test(url.trim())) {
+      notify.error(m.ui_linkHandler_assetUnavailable_error());
+      return false;
+    }
+
+    const gitHubRef = parseGitHubIssueOrPrUrl(url);
+    const { event } = options;
+    const githubAction =
+      gitHubRef && event && !isCmdClickModifier(options)
+        ? (options.githubLinkDefaultAction ?? selectGithubLinkDefaultAction.select(appStore.state))
+        : undefined;
+    const useHomeBrowser = !githubAction || githubAction === 'open-in-app';
+
+    if (options.workspaceId === CHIEF_WORKSPACE_ID && !options.forceExternal && useHomeBrowser) {
+      const { showAssistantContent } = await import('$features/home/assistant-panels');
+      const target = options.rawHref?.startsWith('/workspace/') ? options.rawHref : url;
+      if (await showAssistantContent(target, { layoutId: assistantLayoutId })) return true;
     }
 
     // Handle intent:// links (internal navigation to notes/tasks)
@@ -87,7 +122,7 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
       return await handleDevspaceLink(url, { ...options, sourcePanelId });
     }
 
-    // Route path-like targets (schemeless raw hrefs, or resolved URLs on the
+    // Route path-like targets (schemeless hrefs/targets, or resolved URLs on the
     // app's own origin) to the workspace file viewer — never the browser panel
     const fileTarget = extractFilePathTarget(url, options.rawHref);
     if (fileTarget) {
@@ -111,27 +146,23 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
         return await openInExternalBrowser(url);
       }
 
-      // Cmd+Click → embedded browser panel (requires a workspace), otherwise external browser
-      if (isCmdClickModifier(options)) {
+      // Home defaults must not override the configured GitHub action.
+      if ((openInWorkspace && useHomeBrowser) || isCmdClickModifier(options)) {
         if (options.workspaceId) {
-          return await openInBrowserPanel(url, options.workspaceId, sourcePanelId);
+          return await openLinkInApp(url, options.workspaceId, { ...options, assistantLayoutId });
         }
         logger.debug('No workspaceId available, opening in external browser', { url });
         return await openInExternalBrowser(url);
       }
 
       // GitHub issue/PR links (plain click) → configured default action
-      const gitHubRef = parseGitHubIssueOrPrUrl(url);
-      const { event } = options;
-      if (gitHubRef && event) {
-        const defaultAction =
-          options.githubLinkDefaultAction ?? selectGithubLinkDefaultAction.select(appStore.state);
-        switch (defaultAction) {
+      if (gitHubRef && event && githubAction) {
+        switch (githubAction) {
           case 'open-in-browser':
             return await openInExternalBrowser(url);
           case 'open-in-app':
             return options.workspaceId
-              ? await openInBrowserPanel(url, options.workspaceId, sourcePanelId)
+              ? await openLinkInApp(url, options.workspaceId, { ...options, assistantLayoutId })
               : await openInExternalBrowser(url);
           case 'copy-link':
             await writeTextToClipboard(url);
@@ -147,7 +178,7 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
             return true;
           }
           case 'show-choices':
-            return await openLinkActionMenu(url, gitHubRef, event, options.workspaceId);
+            return await openLinkActionMenu(url, gitHubRef, event, options, assistantLayoutId);
         }
       }
 
@@ -157,6 +188,7 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
 
     // Handle file:// links
     if (url.startsWith('file://')) {
+      if (options.canOpenFile?.() === false) return false;
       return await openInExternalEditor(url);
     }
 
@@ -174,10 +206,17 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
  */
 async function handleIntentLink(url: string, options: LinkHandlerOptions): Promise<boolean> {
   try {
+    const { parseIntentLink, handleIntentLink: handleIntent } =
+      await import('$lib/utils/workspaces-link-handler');
+    const info = parseIntentLink(url);
+    if (options.canOpenFile && info.type === 'file' && !options.canOpenFile()) return false;
+    const targetWorkspaceId = info.workspaceId
+      ? WorkspaceId(info.workspaceId)
+      : options.workspaceId;
+    if (info.valid) await activateLinkWorkspace(targetWorkspaceId, options);
     focusSourcePanel(options);
-    const { handleIntentLink: handleIntent } = await import('$lib/utils/workspaces-link-handler');
     return await handleIntent(url, {
-      workspaceId: options.workspaceId,
+      workspaceId: options.openInWorkspace ? targetWorkspaceId : options.workspaceId,
       sourcePanelId: options.sourcePanelId,
       openInAdjacentPanel: options.openInAdjacentPanel ?? isCmdClickModifier(options),
       openInNewAdjacentPanel: options.openInNewAdjacentPanel ?? false,
@@ -207,6 +246,7 @@ async function handleDevspaceLink(url: string, options: LinkHandlerOptions): Pro
         terminalId,
         workspaceId: options.workspaceId,
       });
+      await activateLinkWorkspace(options.workspaceId, options);
       focusSourcePanel(options);
       const terminalTab = {
         type: 'terminal' as const,
@@ -233,8 +273,9 @@ async function handleDevspaceLink(url: string, options: LinkHandlerOptions): Pro
 }
 
 /** Matches an explicit URL scheme prefix (e.g. `https:`, `intent:`, `vscode:`). */
-const SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:/;
-const WINDOWS_ABSOLUTE_PATH_PATTERN = /^[a-z]:\//i;
+const SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:/i;
+// A drive uses one separator; `x://` is a URL scheme, not a drive path.
+const WINDOWS_ABSOLUTE_PATH_PATTERN = /^[a-z]:\/(?!\/)/i;
 
 function normalizeSlashes(path: string): string {
   return path.replace(/\\/g, '/');
@@ -258,11 +299,21 @@ function normalizeWorkspaceRelativePath(path: string): string | null {
   return segments.join('/');
 }
 
-function getSourcePanelId(options: LinkHandlerOptions): string | undefined {
-  if (options.sourcePanelId) return options.sourcePanelId;
-  const target = options.event?.target;
-  if (!(target instanceof HTMLElement)) return undefined;
-  return target.closest<HTMLElement>('[data-panel-id]')?.dataset.panelId;
+async function activateLinkWorkspace(
+  workspaceId: WorkspaceId | undefined,
+  options: LinkHandlerOptions,
+): Promise<void> {
+  if (!options.openInWorkspace || !workspaceId) return;
+  const { navigateToRoute } = await import('$lib/utils/navigation.client');
+  try {
+    await navigateToRoute(`/workspace/${encodeURIComponent(workspaceId)}`);
+    appStore.dispatch(openWorkspaceTab(workspaceId));
+  } catch (error) {
+    notify.error(m.ui_linkHandler_navigationFailed_title(), {
+      description: error instanceof Error ? error.message : m.ui_linkHandler_unknownError_label(),
+    });
+    throw error;
+  }
 }
 
 function focusSourcePanel(
@@ -275,8 +326,9 @@ function focusSourcePanel(
 /**
  * Detect a path-like link target.
  *
- * - If the raw href is present and schemeless (no scheme prefix, not
- *   protocol-relative `//`, not an in-page fragment `#...`), it IS the path.
+ * - Prefer the raw href; otherwise use the target itself. If it is schemeless
+ *   (no scheme prefix, not protocol-relative `//`, not an in-page fragment
+ *   `#...`), it IS the path.
  * - Safety net: if the resolved http(s) URL sits on the app's own origin, the
  *   URL's pathname (+ hash) is treated as the path — self-origin URLs must
  *   never reach the embedded browser panel.
@@ -287,11 +339,17 @@ function extractFilePathTarget(
   url: string,
   rawHref?: string,
 ): { path: string; fromResolvedUrl: boolean } | null {
-  if (rawHref) {
+  const target = rawHref ?? url;
+  if (target) {
     // In-page fragment links keep their current behavior
-    if (rawHref.startsWith('#')) return null;
-    if (!rawHref.startsWith('//') && !SCHEME_PATTERN.test(rawHref)) {
-      return { path: rawHref, fromResolvedUrl: false };
+    if (target.startsWith('#')) return null;
+    // A drive letter or a filename's line suffix is not a URL scheme.
+    const path = parseFilePathLineSuffix(target).path;
+    if (
+      !target.startsWith('//') &&
+      (WINDOWS_ABSOLUTE_PATH_PATTERN.test(normalizeSlashes(path)) || !SCHEME_PATTERN.test(path))
+    ) {
+      return { path: target, fromResolvedUrl: false };
     }
   }
 
@@ -299,7 +357,7 @@ function extractFilePathTarget(
     try {
       const parsed = new URL(url);
       if (parsed.origin === window.location.origin) {
-        return { path: decodeURIComponent(parsed.pathname) + parsed.hash, fromResolvedUrl: true };
+        return { path: parsed.pathname + parsed.hash, fromResolvedUrl: true };
       }
     } catch {
       // Not a parseable URL — fall through to the regular handlers
@@ -325,11 +383,12 @@ async function openFilePathLink(
   fromResolvedUrl: boolean,
 ): Promise<boolean> {
   try {
-    const decodedTarget = decodePathTarget(target);
-    if (!decodedTarget || decodedTarget.includes('\0')) return false;
-
-    const parsedTarget = parseFilePathLineSuffix(decodedTarget);
-    let path = parsedTarget.path;
+    if (options.canOpenFile?.() === false) return false;
+    // Parse location syntax before decoding so encoded # or : remain filename characters.
+    const parsedTarget = parseFilePathLineSuffix(target);
+    const decodedPath = decodePathTarget(parsedTarget.path);
+    if (!decodedPath || decodedPath.includes('\0')) return false;
+    let path = decodedPath;
     const { line, column } = parsedTarget;
 
     const { workspaceId } = options;
@@ -371,9 +430,11 @@ async function openFilePathLink(
     path = normalizedPath;
 
     const openInAdjacentPanel = isCmdClickModifier(options);
+    await activateLinkWorkspace(workspaceId, options);
     focusSourcePanel(options);
     appStore.dispatch(
       openWorkspaceFile(workspaceId, path, {
+        filePathIsLiteral: true,
         line,
         openInAdjacentPanel,
         ...(options.sourcePanelId ? { sourcePanelId: options.sourcePanelId } : {}),
@@ -397,7 +458,8 @@ async function openLinkActionMenu(
   url: string,
   gitHubRef: GitHubIssueOrPrRef,
   event: MouseEvent | KeyboardEvent,
-  workspaceId?: WorkspaceId,
+  { workspaceId, openInWorkspace, sourcePanelId }: LinkHandlerOptions,
+  assistantLayoutId?: string,
 ): Promise<boolean> {
   try {
     const { showLinkActionMenu } = await import('./link-action-menu-state.svelte');
@@ -409,14 +471,18 @@ async function openLinkActionMenu(
       x = rect.left;
       y = rect.bottom;
     }
-    showLinkActionMenu({
+    const openingId = showLinkActionMenu({
       url,
       gitHubRef,
       x,
       y,
       workspaceId,
       anchorElement,
+      openInWorkspace: openInWorkspace ?? false,
+      sourcePanelId,
+      assistantLayoutId,
     });
+    if (gitHubRef.kind === 'pr') loadLinkedWorkspaces(openingId, url);
     logger.debug('Opened link action menu', { url, workspaceId });
     return true;
   } catch (error) {
@@ -426,6 +492,72 @@ async function openLinkActionMenu(
     });
     return await openInExternalBrowser(url);
   }
+}
+
+/**
+ * Optional "Open in Original Workspace" lookup for an open link menu. Kept out
+ * of the menu's fallback path: if its chunk fails to load, the menu stays as is
+ * and no external browser opens.
+ */
+function loadLinkedWorkspaces(openingId: number, url: string): void {
+  import('./link-action-menu-linked-workspaces')
+    .then(({ loadLinkActionMenuLinkedWorkspaces }) =>
+      loadLinkActionMenuLinkedWorkspaces(openingId, url),
+    )
+    .catch((error: unknown) => {
+      logger.debug('PR workspace lookup unavailable', { url, error });
+    });
+}
+
+/**
+ * Navigate to a workspace picked from the link action menu ("Open in Original
+ * Workspace"). Archived workspaces open like any other; nothing is unarchived.
+ */
+export async function openLinkedWorkspace(workspaceId: WorkspaceId): Promise<boolean> {
+  try {
+    await activateLinkWorkspace(workspaceId, { openInWorkspace: true });
+    return true;
+  } catch (error) {
+    // activateLinkWorkspace already notified the user.
+    logger.warn('Failed to open linked workspace', { workspaceId, error });
+    return false;
+  }
+}
+
+/**
+ * Open a URL "in the app". From the Assistant it shows in the Assistant side
+ * panel the action came from (`assistantLayoutId`). Otherwise it opens in the
+ * workspace's embedded browser panel: content from that workspace's Home
+ * preview (`openInWorkspace`) enters the workspace first so the panel is
+ * visible; elsewhere it opens beside `sourcePanelId` in place. Opens nothing
+ * if entering the workspace fails (the user is notified).
+ */
+export async function openLinkInApp(
+  url: string,
+  workspaceId: WorkspaceId,
+  source: Pick<LinkHandlerOptions, 'openInWorkspace' | 'sourcePanelId'> & {
+    assistantLayoutId?: string;
+  } = {},
+): Promise<boolean> {
+  if (workspaceId === CHIEF_WORKSPACE_ID) {
+    try {
+      const { showAssistantContent } = await import('$features/home/assistant-panels');
+      if (await showAssistantContent(url, { layoutId: source.assistantLayoutId })) return true;
+    } catch (error) {
+      logger.warn('Assistant panel unavailable, opening in external browser', { url, error });
+    }
+    return await openInExternalBrowser(url);
+  }
+  try {
+    await activateLinkWorkspace(workspaceId, source);
+  } catch (error) {
+    // activateLinkWorkspace already notified the user.
+    logger.warn('Failed to enter workspace for in-app link', { url, workspaceId, error });
+    return false;
+  }
+  // A Home preview's panel is not part of the workspace layout.
+  const sourcePanelId = source.openInWorkspace ? undefined : source.sourcePanelId;
+  return await openInBrowserPanel(url, workspaceId, sourcePanelId);
 }
 
 /**
@@ -554,7 +686,7 @@ export function createGlobalLinkClickHandler(
   container.addEventListener('click', clickHandler);
 
   // Also set up tooltip behavior on the same container
-  const cleanupTooltip = createLinkTooltipHandler(container);
+  const cleanupTooltip = createLinkTooltipHandler(container, options);
 
   return () => {
     container.removeEventListener('click', clickHandler);
@@ -604,12 +736,16 @@ export function createLinkClickHandler(options: LinkHandlerOptions) {
  * cleanup();
  * ```
  */
-export function createLinkTooltipHandler(container: HTMLElement): () => void {
+export function createLinkTooltipHandler(
+  container: HTMLElement,
+  options: Pick<LinkHandlerOptions, 'workspaceId'> = {},
+): () => void {
   let currentAnchor: HTMLAnchorElement | null = null;
 
   // Lazy-import the tooltip functions to avoid circular deps
   // and keep the module lightweight until first hover
-  let showFn: ((anchor: HTMLAnchorElement, url: string) => void) | null = null;
+  let showFn: ((anchor: HTMLAnchorElement, url: string, workspaceId?: string) => void) | null =
+    null;
   let hideFn: (() => void) | null = null;
 
   async function ensureImported() {
@@ -632,10 +768,14 @@ export function createLinkTooltipHandler(container: HTMLElement): () => void {
       if (anchor === currentAnchor) return; // Already tracking this anchor
       currentAnchor = anchor;
 
+      const workspaceId =
+        options.workspaceId ??
+        anchor.closest<HTMLElement>('[data-workspace-id]')?.dataset.workspaceId ??
+        anchor.closest<HTMLElement>('[data-workspace-surface]')?.dataset.workspaceSurface;
       ensureImported().then(() => {
         // Double-check we're still on the same anchor after async import
         if (currentAnchor === anchor && showFn) {
-          showFn(anchor, anchor.href);
+          showFn(anchor, anchor.href, workspaceId);
         }
       });
     } else if (currentAnchor) {

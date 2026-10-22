@@ -1,9 +1,11 @@
+import { CHAT_PAGE_SIZE } from '$shared/constants';
+import { selectAgentSessionWorkspaceId } from '../../agent-session/agent-session-selectors';
 /**
  * Chat scrollback saga — on-demand history page fetches driven by UI request
  * actions, feeding the bounded scrollback HISTORY SEGMENT (agent-session
  * slice). Tail hydration paths (chat-read-saga) are untouched.
  *
- * Two directions, ONE 200-row page per request, deduped per agent per
+ * Two directions, ONE five-row page per request, deduped per agent per
  * direction by the chat-state fetching flags (takeLeading semantics — the
  * flag is set synchronously before the wire call, so a second request
  * arriving mid-flight is dropped):
@@ -44,11 +46,23 @@
  * here too). Errors are logged and swallowed (the transcript already
  * rendered); the finally settle always clears the fetching flag.
  */
-import { all, call, delay, put, race, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import {
+  all,
+  call,
+  cancel,
+  delay,
+  fork,
+  put,
+  race,
+  take,
+  takeEvery,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { estimateSeekLandingStartOrdinal } from '$lib/utils/seek-landing-estimate';
+import { loadPreviousUserMessage } from '$lib/utils/previous-user-message-page';
 import type { AgentMessage } from '$shared/types';
 import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
 import { getQuestionFromResourceBlock, type Question } from '$shared/types/question-resource';
@@ -78,6 +92,8 @@ import {
 } from '../../agent-session/agent-session-selectors';
 import {
   chatTranscriptSnapshotApplied,
+  chatInitialHistoryProgressed,
+  chatLiveStreamPhaseChanged,
   historyGapFillRequested,
   historySeekRequested,
   olderHistoryPageRequested,
@@ -87,16 +103,25 @@ import {
   pendingQuestionRecoveryCleared,
   pendingQuestionRecoveryRequested,
   pendingQuestionRecoverySettled,
+  previousUserMessageLoadReleased,
+  previousUserMessageLoadRequested,
+  previousUserMessageLoadSettled,
   scrollbackContinuationReset,
   scrollbackFetchStarted,
   scrollbackGapPageSettled,
   scrollbackOlderPageSettled,
   scrollbackSeekSettled,
+  scrollbackSeekReleased,
+  historySeekUnsupportedDetected,
 } from '../chat-state-slice';
-import { selectChatAgentIds, selectChatAgentState } from '../chat-state-selectors';
+import {
+  selectChatAgentIds,
+  selectChatAgentState,
+  selectTranscriptSnapshotMeta,
+} from '../chat-state-selectors';
 
 const logger = createLogger('ChatScrollbackSaga');
-const PAGE_LIMIT = 200;
+const PAGE_LIMIT = CHAT_PAGE_SIZE;
 const MARKED_QUESTION_LIMIT = 1;
 const MARKED_QUESTION_RETRY_DELAYS_MS = [250, 1_000] as const;
 
@@ -182,11 +207,22 @@ function newestRowId(messages: AgentMessage[]): string | undefined {
   return undefined;
 }
 
+function* waitForInitialHistory(agentId: string): SagaGenerator<void> {
+  while ((yield* selectChatAgentState.effect(agentId)).initialHistoryPending) {
+    yield* take([
+      chatInitialHistoryProgressed,
+      chatTranscriptSnapshotApplied,
+      chatLiveStreamPhaseChanged,
+    ]);
+  }
+}
+
 /** One page: token continuation when a cursor is held, else an anchored seek. */
 function* fetchPage(
   agentId: string,
   token: string | null,
   anchor: string | undefined,
+  workspaceId: string,
 ): SagaGenerator<ConversationPage> {
   if (token) {
     return yield* call(
@@ -194,6 +230,9 @@ function* fetchPage(
       agentId,
       PAGE_LIMIT,
       token,
+      undefined,
+      undefined,
+      workspaceId,
     );
   }
   return yield* call(
@@ -202,16 +241,18 @@ function* fetchPage(
     PAGE_LIMIT,
     undefined,
     anchor,
+    undefined,
+    workspaceId,
   );
 }
 
 function* fetchOlderPageWorker(
   action: ReturnType<typeof olderHistoryPageRequested>,
 ): SagaGenerator<void> {
-  const [, agentId] = action.payload;
+  const [workspaceId, agentId] = action.payload;
   if (yield* call(isAgentDeletionPending, agentId)) return;
   const chat = yield* selectChatAgentState.effect(agentId);
-  if (chat.fetchingOlderHistory) return;
+  if (chat.initialHistoryPending || chat.fetchingOlderHistory || chat.fetchingGapFill) return;
   // Mirror of the seek worker's serial guard: a settling seek REPLACES the
   // segment, so a page anchored at the pre-seek segment must never merge
   // into the seeded one. The panel re-classifies once the seek settles.
@@ -236,17 +277,19 @@ function* fetchOlderPageWorker(
   const epoch = chat.scrollbackDiscardEpoch;
   yield* put(scrollbackFetchStarted(agentId, 'older'));
   let continuation: string | null = null;
+  let blocked = true;
   try {
-    const page = yield* fetchPage(agentId, token, anchor);
+    const page = yield* fetchPage(agentId, token, anchor, workspaceId);
     if (yield* call(isAgentDeletionPending, agentId)) return;
     // A §7.1 discard landed while the wire call was in flight: the page was
     // fetched against the discarded transcript — drop it entirely (the
     // reducer already reset the flags/cursors atomically with the snapshot).
     if (yield* discardedSince(agentId, epoch)) return;
-    if (page.messages.length > 0) {
-      yield* put(prependHistoryMessages(agentId, page.messages));
-    }
+    // Keep a segment record even for filtered/empty pages so its advancing
+    // continuation survives the post-settle hygiene check.
+    yield* put(prependHistoryMessages(agentId, page.messages));
     continuation = page.nextToken;
+    blocked = token !== null && page.nextToken === token;
     if (page.nextToken === null) {
       yield* put(setHistoryOldestReached(agentId));
     }
@@ -254,8 +297,8 @@ function* fetchOlderPageWorker(
     logger.error('Failed to fetch older scrollback page', error);
   } finally {
     if (!(yield* discardedSince(agentId, epoch))) {
-      yield* put(scrollbackOlderPageSettled(agentId, continuation));
-      yield* dropContinuationIfSegmentGone(agentId);
+      yield* put(scrollbackOlderPageSettled(agentId, continuation, blocked));
+      yield* dropContinuationIfSegmentGone(agentId, blocked);
     }
   }
 }
@@ -263,10 +306,10 @@ function* fetchOlderPageWorker(
 function* fetchGapFillWorker(
   action: ReturnType<typeof historyGapFillRequested>,
 ): SagaGenerator<void> {
-  const [, agentId] = action.payload;
+  const [workspaceId, agentId] = action.payload;
   if (yield* call(isAgentDeletionPending, agentId)) return;
   const chat = yield* selectChatAgentState.effect(agentId);
-  if (chat.fetchingGapFill) return;
+  if (chat.initialHistoryPending || chat.fetchingGapFill || chat.fetchingOlderHistory) return;
   // Mirror of the seek worker's serial guard (see fetchOlderPageWorker).
   if (chat.fetchingHistorySeek) return;
   const meta = yield* selectHistorySegmentMeta.effect(agentId);
@@ -278,8 +321,9 @@ function* fetchGapFillWorker(
   const epoch = chat.scrollbackDiscardEpoch;
   yield* put(scrollbackFetchStarted(agentId, 'gap'));
   let continuation: string | null = null;
+  let blocked = true;
   try {
-    const page = yield* fetchPage(agentId, token, anchor);
+    const page = yield* fetchPage(agentId, token, anchor, workspaceId);
     if (yield* call(isAgentDeletionPending, agentId)) return;
     // Mid-flight §7.1 discard: drop the stale page (see fetchOlderPageWorker).
     if (yield* discardedSince(agentId, epoch)) return;
@@ -287,12 +331,13 @@ function* fetchGapFillWorker(
       yield* put(appendHistoryMessages(agentId, page.messages));
     }
     continuation = page.prevToken;
+    blocked = page.prevToken === null || (token !== null && page.prevToken === token);
   } catch (error) {
     logger.error('Failed to fetch scrollback gap-refill page', error);
   } finally {
     if (!(yield* discardedSince(agentId, epoch))) {
-      yield* put(scrollbackGapPageSettled(agentId, continuation));
-      yield* dropContinuationIfSegmentGone(agentId);
+      yield* put(scrollbackGapPageSettled(agentId, continuation, blocked));
+      yield* dropContinuationIfSegmentGone(agentId, blocked);
     }
   }
 }
@@ -312,17 +357,18 @@ function isInvalidParamsError(error: unknown): boolean {
 }
 
 function* historySeekWorker(action: ReturnType<typeof historySeekRequested>): SagaGenerator<void> {
-  const [, agentId, targetOrdinal] = action.payload;
+  const [workspaceId, agentId, targetOrdinal] = action.payload;
+  yield* waitForInitialHistory(agentId);
   if (yield* call(isAgentDeletionPending, agentId)) return;
   const chat = yield* selectChatAgentState.effect(agentId);
   if (chat.fetchingHistorySeek || chat.historySeekUnsupported) return;
   // Never race a seek against an in-flight serial page: the landing REPLACES
   // the segment, and a page settling afterwards would merge into the wrong
   // segment. The panel re-classifies once the in-flight fetch settles.
-  if (chat.fetchingOlderHistory || chat.fetchingGapFill) return;
+  if (chat.initialHistoryPending || chat.fetchingOlderHistory || chat.fetchingGapFill) return;
   const target = Math.max(0, Math.round(targetOrdinal));
-  const epoch = chat.scrollbackDiscardEpoch;
   yield* put(scrollbackFetchStarted(agentId, 'seek'));
+  const epoch = (yield* selectChatAgentState.effect(agentId)).scrollbackDiscardEpoch;
   let tokens: { nextToken: string | null; prevToken: string | null } = {
     nextToken: null,
     prevToken: null,
@@ -336,6 +382,7 @@ function* historySeekWorker(action: ReturnType<typeof historySeekRequested>): Sa
       undefined,
       undefined,
       target,
+      workspaceId,
     );
     if (yield* call(isAgentDeletionPending, agentId)) return;
     // Mid-flight §7.1 discard: the landing was fetched against the discarded
@@ -387,7 +434,240 @@ function* historySeekWorker(action: ReturnType<typeof historySeekRequested>): Sa
       yield* put(scrollbackSeekSettled(agentId, tokens, unsupported));
       yield* dropContinuationIfSegmentGone(agentId);
     } else if (unsupported) {
-      yield* put(scrollbackSeekSettled(agentId, { nextToken: null, prevToken: null }, true));
+      yield* put(historySeekUnsupportedDetected(agentId));
+    }
+  }
+}
+
+type ScrollbackTokens = { nextToken: string | null; prevToken: string | null };
+
+interface PreviousUserMessageWalk {
+  /** Read synchronously by the promise-based walk between pages. */
+  stopped: boolean;
+  interruptedByInitialHistory: boolean;
+  /** Epoch captured after reserving the seek slot; null while unreserved. */
+  epoch: number | null;
+  tokens: ScrollbackTokens;
+}
+
+/** Actions that can free the seek slot, discard the window, or end the request. */
+const PREVIOUS_USER_MESSAGE_WAKE_TYPES = [
+  chatInitialHistoryProgressed.type,
+  chatLiveStreamPhaseChanged.type,
+  scrollbackFetchStarted.type,
+  scrollbackOlderPageSettled.type,
+  scrollbackGapPageSettled.type,
+  scrollbackSeekSettled.type,
+  scrollbackSeekReleased.type,
+  scrollbackContinuationReset.type,
+  chatTranscriptSnapshotApplied.type,
+  previousUserMessageLoadRequested.type,
+  previousUserMessageLoadReleased.type,
+  removeSession.type,
+  removeWorkspaceSessions.type,
+  clearAllSessions.type,
+];
+
+function isPreviousUserMessageRelease(
+  action: ObservedAction,
+  agentId: string,
+  requestId: string,
+): boolean {
+  return (
+    action.type === previousUserMessageLoadReleased.type &&
+    Array.isArray(action.payload) &&
+    action.payload[0] === agentId &&
+    action.payload[1] === requestId
+  );
+}
+
+function* previousUserMessageLoadIsCurrent(
+  agentId: string,
+  requestId: string,
+  epoch: number | null,
+): SagaGenerator<boolean> {
+  if (yield* call(isAgentDeletionPending, agentId)) return false;
+  if (!(yield* selectAgentSession.effect(agentId))) return false;
+  const chat = yield* selectChatAgentState.effect(agentId);
+  if (chat.previousUserMessageLoad?.requestId !== requestId) return false;
+  return epoch === null || (!chat.initialHistoryPending && chat.scrollbackDiscardEpoch === epoch);
+}
+
+/** Ordinal (from the oldest message) of the clicked row, for the landing estimate. */
+function* previousUserMessageSourceOrdinal(
+  agentId: string,
+  currentMessageId: string,
+): SagaGenerator<number> {
+  const history: AgentMessage[] = yield* selectAgentHistoryMessages.effect(agentId);
+  const historyIndex = history.findIndex((message) => message.id === currentMessageId);
+  if (historyIndex >= 0) {
+    const meta = yield* selectHistorySegmentMeta.effect(agentId);
+    return (meta.startOrdinalEstimate ?? 0) + historyIndex;
+  }
+  const tail: AgentMessage[] = yield* selectAgentMessages.effect(agentId);
+  const snapshot = yield* selectTranscriptSnapshotMeta.effect(agentId);
+  return (
+    Math.max(0, (snapshot?.totalMessages ?? tail.length) - tail.length) +
+    Math.max(
+      0,
+      tail.findIndex((message) => message.id === currentMessageId),
+    )
+  );
+}
+
+function* stopPreviousUserMessageWalkWhenStale(
+  walk: PreviousUserMessageWalk,
+  agentId: string,
+  requestId: string,
+  epoch: number,
+): SagaGenerator<void> {
+  while (!walk.stopped) {
+    yield* take(PREVIOUS_USER_MESSAGE_WAKE_TYPES);
+    // Latch across completion: an old page remains stale even if initial
+    // delivery finishes before its response arrives.
+    if ((yield* selectChatAgentState.effect(agentId)).initialHistoryPending) {
+      walk.interruptedByInitialHistory = true;
+      walk.stopped = true;
+    } else if (!(yield* previousUserMessageLoadIsCurrent(agentId, requestId, epoch))) {
+      walk.stopped = true;
+    }
+  }
+}
+
+function* walkPreviousUserMessage(
+  walk: PreviousUserMessageWalk,
+  workspaceId: string,
+  agentId: string,
+  requestId: string,
+  currentMessageId: string,
+): SagaGenerator<void> {
+  // Let any running page settle before reserving the shared seek slot, which
+  // excludes serial/gap/ordinal paging for this agent in every panel.
+  while (true) {
+    if (!(yield* previousUserMessageLoadIsCurrent(agentId, requestId, null))) {
+      yield* put(previousUserMessageLoadSettled(agentId, requestId, 'cancelled'));
+      return;
+    }
+    const chat = yield* selectChatAgentState.effect(agentId);
+    if (
+      !chat.initialHistoryPending &&
+      !chat.fetchingOlderHistory &&
+      !chat.fetchingGapFill &&
+      !chat.fetchingHistorySeek
+    )
+      break;
+    yield* take(PREVIOUS_USER_MESSAGE_WAKE_TYPES);
+  }
+  yield* put(scrollbackFetchStarted(agentId, 'seek'));
+  const epoch = (yield* selectChatAgentState.effect(agentId)).scrollbackDiscardEpoch;
+  walk.epoch = epoch;
+  const sourceOrdinal = yield* previousUserMessageSourceOrdinal(agentId, currentMessageId);
+  const watcher = yield* fork(
+    stopPreviousUserMessageWalkWhenStale,
+    walk,
+    agentId,
+    requestId,
+    epoch,
+  );
+  try {
+    const result = yield* call(
+      loadPreviousUserMessage,
+      currentMessageId,
+      (token?: string, anchor?: string) =>
+        appClient.agents.getConversation(
+          agentId,
+          PAGE_LIMIT,
+          token,
+          anchor,
+          undefined,
+          workspaceId,
+        ),
+      () => !walk.stopped,
+    );
+    if (!result || !(yield* previousUserMessageLoadIsCurrent(agentId, requestId, epoch))) {
+      yield* put(previousUserMessageLoadSettled(agentId, requestId, 'cancelled'));
+      return;
+    }
+    yield* put(
+      seedHistoryAround(
+        agentId,
+        result.page.messages,
+        result.page.nextToken === null ? 0 : Math.max(0, sourceOrdinal - result.rowsBeforeAnchor),
+      ),
+    );
+    yield* put(setHistoryOldestReached(agentId, result.page.nextToken === null));
+    walk.tokens = { nextToken: result.page.nextToken, prevToken: result.page.prevToken };
+    yield* put(
+      result.target
+        ? previousUserMessageLoadSettled(agentId, requestId, 'found', result.target.id)
+        : previousUserMessageLoadSettled(agentId, requestId, 'start'),
+    );
+  } catch (error) {
+    const current = yield* previousUserMessageLoadIsCurrent(agentId, requestId, epoch);
+    if (current) {
+      logger.warn('Previous user message walk failed', { agentId, currentMessageId, error });
+    }
+    yield* put(previousUserMessageLoadSettled(agentId, requestId, current ? 'error' : 'cancelled'));
+  } finally {
+    yield* cancel(watcher);
+  }
+}
+
+/**
+ * Unloaded previous-user-message walk. Owns the `getConversation` wire calls
+ * and the shared seek slot from reservation until the requesting panel
+ * releases the request (after positioning), then settles the slot with the
+ * landing cursors — unless a seek / §7.1 discard or session removal made the
+ * window stale, in which case the post-discard walk state is left untouched.
+ */
+function* previousUserMessageLoadWorker(
+  action: ReturnType<typeof previousUserMessageLoadRequested>,
+): SagaGenerator<void> {
+  const [workspaceId, agentId, requestId, currentMessageId] = action.payload;
+  const walk: PreviousUserMessageWalk = {
+    stopped: false,
+    interruptedByInitialHistory: false,
+    epoch: null,
+    tokens: { nextToken: null, prevToken: null },
+  };
+  try {
+    const { released } = yield* race({
+      walked: call(
+        walkPreviousUserMessage,
+        walk,
+        workspaceId,
+        agentId,
+        requestId,
+        currentMessageId,
+      ),
+      released: take((candidate: ObservedAction) =>
+        isPreviousUserMessageRelease(candidate, agentId, requestId),
+      ),
+    });
+    walk.stopped = true;
+    if (released || walk.epoch === null || walk.interruptedByInitialHistory) return;
+    while (true) {
+      const next = (yield* take(PREVIOUS_USER_MESSAGE_WAKE_TYPES)) as ObservedAction;
+      if ((yield* selectChatAgentState.effect(agentId)).initialHistoryPending) {
+        walk.interruptedByInitialHistory = true;
+        return;
+      }
+      if (isPreviousUserMessageRelease(next, agentId, requestId)) return;
+      if (!(yield* selectAgentSession.effect(agentId))) return;
+      if (yield* discardedSince(agentId, walk.epoch)) return;
+    }
+  } finally {
+    walk.stopped = true;
+    if (
+      walk.epoch !== null &&
+      (yield* selectAgentSession.effect(agentId)) &&
+      !(yield* discardedSince(agentId, walk.epoch))
+    ) {
+      yield* put(
+        walk.interruptedByInitialHistory
+          ? scrollbackSeekReleased(agentId)
+          : scrollbackSeekSettled(agentId, walk.tokens),
+      );
     }
   }
 }
@@ -420,10 +700,21 @@ function* recoverPendingQuestionWorker(
     return;
   }
 
+  const workspaceId = yield* selectAgentSessionWorkspaceId.effect(agentId);
   inFlight.add(key);
   try {
     for (let attempt = 0; attempt <= MARKED_QUESTION_RETRY_DELAYS_MS.length; attempt++) {
       try {
+        const { stopped } = yield* race({
+          ready: call(waitForInitialHistory, agentId),
+          stopped: take((action: ObservedAction) =>
+            stopsPendingQuestionRecovery(action, agentId, messageId),
+          ),
+        });
+        if (stopped) {
+          yield* put(pendingQuestionRecoverySettled(agentId, messageId, 'cancelled'));
+          return;
+        }
         const outcome: { page?: ConversationPage; stopped?: ObservedAction } = yield* race({
           page: call(
             [appClient.agents, appClient.agents.getConversation],
@@ -431,6 +722,8 @@ function* recoverPendingQuestionWorker(
             MARKED_QUESTION_LIMIT,
             undefined,
             messageId,
+            undefined,
+            workspaceId,
           ),
           stopped: take((action: ObservedAction) =>
             stopsPendingQuestionRecovery(action, agentId, messageId),
@@ -532,10 +825,21 @@ function* recoverPendingProposalWorker(
     return;
   }
 
+  const workspaceId = yield* selectAgentSessionWorkspaceId.effect(agentId);
   inFlight.add(key);
   try {
     for (let attempt = 0; attempt <= MARKED_QUESTION_RETRY_DELAYS_MS.length; attempt++) {
       try {
+        const { stopped } = yield* race({
+          ready: call(waitForInitialHistory, agentId),
+          stopped: take((action: ObservedAction) =>
+            stopsPendingProposalRecovery(action, agentId, messageId),
+          ),
+        });
+        if (stopped) {
+          yield* put(pendingProposalRecoverySettled(agentId, messageId, 'cancelled'));
+          return;
+        }
         const outcome: { page?: ConversationPage; stopped?: ObservedAction } = yield* race({
           page: call(
             [appClient.agents, appClient.agents.getConversation],
@@ -543,6 +847,8 @@ function* recoverPendingProposalWorker(
             MARKED_QUESTION_LIMIT,
             undefined,
             messageId,
+            undefined,
+            workspaceId,
           ),
           stopped: take((action: ObservedAction) =>
             stopsPendingProposalRecovery(action, agentId, messageId),
@@ -614,7 +920,7 @@ function* recoverPendingProposalWorker(
 }
 
 /**
- * True when a §7.1 `resumed: false` discard landed after the caller captured
+ * True when a seek or §7.1 `resumed: false` discard landed after the caller captured
  * `epoch` (before its wire call). The discard reducer already reset the
  * fetching flags + cursors atomically with the snapshot, so a worker
  * observing a bumped epoch must drop its result wholesale — no page
@@ -635,7 +941,10 @@ function* discardedSince(agentId: string, epoch: number): SagaGenerator<boolean>
  * already tail-resident (prependHistoryMessages keeps the record), and the
  * persisted cursor is the walk's only way to make progress — keep it.
  */
-function* dropContinuationIfSegmentGone(agentId: string): SagaGenerator<void> {
+function* dropContinuationIfSegmentGone(agentId: string, blocked = false): SagaGenerator<void> {
+  // A first-page error has no segment yet; preserve its stop signal while
+  // the session exists. Deletions still clear every continuation field.
+  if (blocked && (yield* selectAgentSession.effect(agentId))) return;
   if (!(yield* selectHasHistorySegment.effect(agentId))) {
     yield* put(scrollbackContinuationReset(agentId));
   }
@@ -676,9 +985,17 @@ function* bulkContinuationResetWorker(): SagaGenerator<void> {
 function* snapshotResetWorker(
   action: ReturnType<typeof chatTranscriptSnapshotApplied>,
 ): SagaGenerator<void> {
-  const [agentId, meta] = action.payload;
-  if (meta.resumed !== false) return;
+  const [agentId, meta, replayed] = action.payload;
+  if (replayed || meta.resumed !== false) return;
   yield* put(clearHistorySegment(agentId));
+  if (meta.nextToken !== undefined) {
+    yield* put(scrollbackOlderPageSettled(agentId, meta.nextToken));
+  }
+}
+
+/** Previous-user-message walk watcher; also started alone by focused navigation hosts. */
+export function* previousUserMessageLoadSaga(): SagaGenerator<void> {
+  yield* takeEvery(previousUserMessageLoadRequested, previousUserMessageLoadWorker);
 }
 
 export function* chatScrollbackSaga(): SagaGenerator<void> {
@@ -689,6 +1006,7 @@ export function* chatScrollbackSaga(): SagaGenerator<void> {
       takeEvery(olderHistoryPageRequested, fetchOlderPageWorker),
       takeEvery(historyGapFillRequested, fetchGapFillWorker),
       takeEvery(historySeekRequested, historySeekWorker),
+      call(previousUserMessageLoadSaga),
       takeEvery(
         pendingQuestionRecoveryRequested,
         recoverPendingQuestionWorker,

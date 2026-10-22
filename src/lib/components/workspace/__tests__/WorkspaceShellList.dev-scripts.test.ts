@@ -10,6 +10,7 @@ import type { TerminalTab } from '$store/renderer/slices/terminals/terminals-sli
 const mocks = vi.hoisted(() => {
   const openUserTab = vi.fn();
   return {
+    isCollaborator: false,
     dispatch: vi.fn(),
     openUserTab,
     getPanelLayoutManager: vi.fn(() => ({ openUserTab })),
@@ -49,12 +50,27 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
+  selectAllWorkspaceScriptEntries: () => ({
+    subscribe: (run: (value: never[]) => void) => {
+      run([]);
+      return () => {};
+    },
+  }),
   selectWorkspaceScriptEntries: workspaceReadable(
     (workspaceId) => mocks.scripts[workspaceId] ?? [],
   ),
   selectWorkspaceScriptOperations: workspaceReadable(
     (workspaceId) => mocks.operations[workspaceId] ?? {},
   ),
+  selectScriptListPageState: workspaceReadable(() => ({ loading: false })),
+  selectWorkspaceScriptsInitialized: workspaceReadable(() => true),
+  selectScriptDetectionOperation: workspaceSelector(() => undefined),
+  selectScriptWorkflowOutcome: () => ({
+    subscribe: (run: (value: undefined) => void) => {
+      run(undefined);
+      return () => {};
+    },
+  }),
 }));
 
 vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => ({
@@ -76,6 +92,10 @@ vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => ({
     select: (_state: unknown, workspaceId: string, id: string) =>
       mocks.placements[workspaceId]?.[id] ?? 'overlay',
   },
+}));
+
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectIsWorkspaceCollaborator: workspaceReadable(() => mocks.isCollaborator),
 }));
 
 vi.mock('$features/layout/panel-layout-adapter', () => ({
@@ -109,8 +129,24 @@ function script(
 }
 
 describe('WorkspaceShellList development script controls', () => {
+  it('Manager Shell exposes saved scripts without mounting raw terminal controls', async () => {
+    mocks.isCollaborator = true;
+    mocks.terminals[WS] = [{ id: 'raw', name: 'Raw terminal' } as TerminalTab];
+    mocks.scripts[WS] = [script('saved', 'Saved check', 'idle')];
+    render(WorkspaceShellList, { props: { workspaceId: WS } });
+    expect(screen.queryByText('Raw terminal')).toBeNull();
+    expect(screen.getByText('Saved check')).toBeTruthy();
+    await fireEvent.click(screen.getByText('Saved check'));
+    expect(mocks.openUserTab).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'terminal', scriptId: 'saved' }),
+    );
+    expect(
+      mocks.dispatch.mock.calls.some(([a]) => a.type === 'terminals/openTerminalOverlay'),
+    ).toBe(false);
+  });
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.isCollaborator = false;
     mocks.scripts = {};
     mocks.operations = {};
     mocks.terminals = {};
@@ -135,6 +171,19 @@ describe('WorkspaceShellList development script controls', () => {
     await fireEvent.click(within(row).getByRole('button', { name: 'Open in...' }));
     await fireEvent.click(await screen.findByRole('menuitem', { name }));
   }
+
+  it('detects scripts for the current workspace when the scripts list is empty', async () => {
+    const view = render(WorkspaceShellList, { props: { workspaceId: WS } });
+    await view.rerender({ workspaceId: 'ws-b' });
+    await fireEvent.click(screen.getByRole('button', { name: 'Detect Scripts' }));
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'scripts/detectScriptDefinitionsRequested',
+        payload: ['ws-b', expect.objectContaining({ resourceId: 'local-detection' })],
+      }),
+    );
+  });
 
   describe('panel default', () => {
     it.each([undefined, 'overlay', 'panel'] as const)(
@@ -187,7 +236,7 @@ describe('WorkspaceShellList development script controls', () => {
       });
     });
 
-    it.each(['idle', 'running', 'exited', 'restarting'] as const)(
+    it.each(['idle', 'starting', 'running', 'exited', 'restarting'] as const)(
       'opens a %s script in a panel even after an overlay placement',
       async (status) => {
         mocks.scripts[WS] = [script('script-1', 'Dev server', status)];
@@ -239,13 +288,13 @@ describe('WorkspaceShellList development script controls', () => {
     });
   });
 
-  it('renders truthful empty shell states', () => {
+  it('opens script output without exposing history or cleanup controls', async () => {
+    mocks.scripts[WS] = [script('saved', 'Saved build', 'idle')];
     render(WorkspaceShellList, { props: { workspaceId: WS } });
-
-    expect(screen.getByText('No terminals open')).toBeTruthy();
-    expect(
-      screen.getByText('No scripts found. Add one manually or use AI detection.'),
-    ).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'Idle Saved build' }));
+    expect(mocks.openUserTab).toHaveBeenCalledWith(expect.objectContaining({ scriptId: 'saved' }));
+    expect(screen.queryByRole('button', { name: /History and cleanup/ })).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('opens the selected terminal in a panel and closes its bottom overlay', async () => {
@@ -343,6 +392,7 @@ describe('WorkspaceShellList development script controls', () => {
   it('orders live scripts first and exposes controls for each runtime state', () => {
     mocks.scripts[WS] = [
       script('idle', 'Compile', 'idle'),
+      script('starting', 'App', 'starting'),
       script('running', 'Dev server', 'running'),
       script('exited', 'Build', 'exited'),
       script('restarting', 'Worker', 'restarting'),
@@ -352,8 +402,9 @@ describe('WorkspaceShellList development script controls', () => {
       Array.from(document.querySelectorAll('[data-sidebar-shell-script]'), (row) =>
         row.getAttribute('data-sidebar-shell-script'),
       ),
-    ).toEqual(['running', 'restarting', 'exited', 'idle']);
+    ).toEqual(['starting', 'running', 'restarting', 'exited', 'idle']);
     for (const [id, name] of [
+      ['starting', 'App'],
       ['running', 'Dev server'],
       ['restarting', 'Worker'],
     ]) {

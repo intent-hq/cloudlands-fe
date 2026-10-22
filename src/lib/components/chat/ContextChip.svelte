@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import Fa from 'svelte-fa';
   import {
     faFileLines,
@@ -102,11 +103,15 @@
       class="type-caption flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded bg-muted/70 px-2 py-0.5 text-muted-foreground transition-colors hover:bg-muted {removable
         ? 'pr-7'
         : ''}"
-      title={tooltip ?? m.chat_contextChip_open_title({ label })}
+      title={tooltip === label ? undefined : (tooltip ?? m.chat_contextChip_open_title({ label }))}
       {onclick}
     >
       <Fa icon={displayIcon} size="15" class="opacity-30" />
-      <span class="font-medium truncate" style:max-width={maxLabelWidth}>{label}</span>
+      <span
+        class="font-medium truncate"
+        style:max-width={maxLabelWidth}
+        use:truncatedTitle={!tooltip || tooltip === label ? label : undefined}>{label}</span
+      >
     </Button>
     {#if removable}
       <Button
@@ -127,10 +132,14 @@
 {:else}
   <div
     class="group/button type-caption flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded bg-muted/70 px-2 py-0.5 text-subtle"
-    title={tooltip ?? label}
+    title={tooltip !== label ? tooltip : undefined}
   >
     <Fa icon={displayIcon} size="15" class="opacity-30" />
-    <span class="font-medium truncate" style:max-width={maxLabelWidth}>{label}</span>
+    <span
+      class="font-medium truncate"
+      style:max-width={maxLabelWidth}
+      use:truncatedTitle={!tooltip || tooltip === label ? label : undefined}>{label}</span
+    >
     {#if removable}
       <Button
         variant="ghost-light"

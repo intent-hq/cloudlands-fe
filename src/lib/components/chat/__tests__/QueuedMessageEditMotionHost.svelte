@@ -22,6 +22,7 @@
       content:
         savedContent[`motion-${index}`] ??
         `Queued message ${index + 1} has enough content to exercise intrinsic row height ${refresh}`,
+      messageMetadata: { fromPrincipalId: 'preview-author' },
       queuedAt: '2026-01-01T00:00:00.000Z',
       position: reversed ? messageCount - index - 1 : index,
       editing: false,
@@ -58,6 +59,7 @@
   >
     <div class="h-[620px] px-3 py-2">Transcript history</div>
     <QueuedMessageList
+      ownPrincipalId="preview-author"
       {messages}
       onedit={async (id, content, editing) => {
         if (!editing) savedContent = { ...savedContent, [id]: content };

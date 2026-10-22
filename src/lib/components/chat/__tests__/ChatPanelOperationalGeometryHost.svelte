@@ -1,5 +1,12 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
+  import AgentSubscriptions from '../AgentSubscriptions.svelte';
+  // eslint-disable-next-line themis/forbidden-component-import -- CT fixture exercises the real watched-agent navigation route.
+  import { appLayoutNavigationSaga } from '$store/renderer/slices/app-layout/sagas/app-layout-navigation-saga';
+  // eslint-disable-next-line themis/forbidden-component-import -- CT fixture runs only the two navigation watchers it needs.
+  import { watchRightmostColumnRequests } from '$store/renderer/slices/panel-layout/sagas/panel-layout-saga';
+  import { setSubscriptionSnapshot } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
+  import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { faComment } from '@fortawesome/free-solid-svg-icons';
   import type { AgentMessage, AgentSession, ContentBlock, PendingProposalRef } from '$shared/types';
   import { AgentStatus } from '$shared/types/agent.types';
@@ -8,15 +15,20 @@
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
   import PanelLayout from '$lib/components/layout/panel-system/PanelLayout.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
+  import { startChatFixtureSagas } from '../../../../test/chat-fixture-sagas';
   import { store } from '$store/renderer/store';
   import {
     bulkUpsertSessions,
     replaceMessages,
+    updateSession,
   } from '$store/renderer/slices/agent-session/agent-session-slice';
   import {
     initializeLayout,
     setRestoreStatus,
+    setActiveTab,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+  import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queue-slice';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { setAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
@@ -30,6 +42,11 @@
     theme = 'light',
     zoom = 1,
     width = 560,
+    height = 900,
+    liveStreaming,
+    alternateMessages,
+    watchedAgent = false,
+    activeAgent = 'primary',
     seamOnly = false,
     detachedStatus = false,
     reasoningSearchOnly = false,
@@ -41,10 +58,18 @@
     cardSeamMessages,
     liveMessages,
     pendingProposals,
+    chiefWorkspace = false,
+    failureRecovery,
+    initializeStore = true,
   }: {
     theme?: 'light' | 'dark';
     zoom?: number;
     width?: number;
+    height?: number;
+    liveStreaming?: boolean;
+    alternateMessages?: AgentMessage[];
+    watchedAgent?: boolean;
+    activeAgent?: 'primary' | 'secondary';
     seamOnly?: boolean;
     detachedStatus?: boolean;
     reasoningSearchOnly?: boolean;
@@ -56,6 +81,12 @@
     cardSeamMessages?: AgentMessage[];
     liveMessages?: AgentMessage[];
     pendingProposals?: PendingProposalRef[];
+    chiefWorkspace?: boolean;
+    initializeStore?: boolean;
+    failureRecovery?: {
+      state: 'failed' | 'queued' | 'attempting' | 'recovered' | 'retired';
+      error: string;
+    };
   } = $props();
   const setupCardFixture = untrack(() => setupCardOnly);
   const reasoningSearchFixture = untrack(() => reasoningSearchOnly);
@@ -63,10 +94,27 @@
   const cardSeamFixture = untrack(() => cardSeamMessages);
   const liveFixture = untrack(() => liveMessages);
   const pendingProposalFixture = untrack(() => pendingProposals);
-  const workspaceId = 'chat-panel-operational-geometry';
+  const workspaceId = untrack(() => chiefWorkspace)
+    ? '__chief__'
+    : 'chat-panel-operational-geometry';
   const agentId = 'chat-panel-operational-agent';
   const timestamp = '2026-08-17T12:00:00.000Z';
-  const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
+  const watchedFixture = untrack(() => watchedAgent);
+  const ownsStore = untrack(() => initializeStore);
+  const disposeStore = ownsStore
+    ? startRootStoreLifecycle(store, {
+        startSagas: (appStore) => [
+          ...startChatFixtureSagas(appStore),
+          ...(watchedFixture
+            ? [
+                appStore.runSaga(appLayoutNavigationSaga),
+                appStore.runSaga(watchRightmostColumnRequests),
+              ]
+            : []),
+        ],
+      })
+    : () => {};
+  const stopFixtureSagas = ownsStore ? [] : startChatFixtureSagas(store);
 
   const operationalContent = (prefix: string, includeStreamingThinking = false) =>
     [
@@ -609,6 +657,21 @@
     } as never),
   );
   store.dispatch(bulkUpsertSessions([session], { preserveExplicitRuntimeFlags: false }));
+  const alternate = untrack(() => alternateMessages);
+  if (alternate)
+    store.dispatch(
+      bulkUpsertSessions(
+        [
+          {
+            ...session,
+            id: `${agentId}-alternate` as AgentSession['id'],
+            name: 'Alternate agent',
+            messages: alternate,
+          },
+        ],
+        { preserveExplicitRuntimeFlags: false },
+      ),
+    );
   store.dispatch(setAgents(workspaceId, [session]));
   store.dispatch(
     initializeLayout(workspaceId, {
@@ -625,6 +688,18 @@
               workspaceId,
               closable: true,
             },
+            ...(alternate && !watchedFixture
+              ? [
+                  {
+                    id: 'alternate-tab',
+                    type: 'agent' as const,
+                    title: 'Alternate agent',
+                    agentId: `${agentId}-alternate`,
+                    workspaceId,
+                    closable: true,
+                  },
+                ]
+              : []),
           ],
           activeTabId: 'agent-tab',
         },
@@ -633,12 +708,97 @@
     }),
   );
   store.dispatch(setRestoreStatus(workspaceId, 'restored'));
+  if (watchedFixture) {
+    store.dispatch(openWorkspaceTab(workspaceId));
+    store.dispatch(
+      setSubscriptionSnapshot(workspaceId, agentId, {
+        subscriptions: [
+          {
+            id: 'scale-watch',
+            agentId,
+            actorIds: [`${agentId}-alternate`],
+            eventTypes: ['agent:completed'],
+            createdAt: timestamp,
+            description: 'Watch alternate agent',
+          },
+        ],
+        delegationGroups: [],
+        agentStatuses: { [`${agentId}-alternate`]: 'waiting' },
+        waitingState: 'waiting',
+      }),
+    );
+  }
+
+  $effect(() => {
+    const streaming = liveStreaming;
+    if (streaming === undefined) return;
+    untrack(() =>
+      store.dispatch(
+        updateSession(agentId, {
+          isStreaming: streaming,
+          isProcessing: streaming,
+          isResponding: streaming,
+        }),
+      ),
+    );
+  });
+
+  $effect(() => {
+    const tabId = activeAgent === 'secondary' ? 'alternate-tab' : 'agent-tab';
+    if (alternate && !watchedFixture)
+      untrack(() => store.dispatch(setActiveTab(workspaceId, tabId, 'chat-panel')));
+  });
 
   $effect(() => {
     if (!liveFixture || !liveMessages) return;
     const nextMessages = liveMessages;
     untrack(() => {
       store.dispatch(replaceMessages(agentId, nextMessages));
+    });
+  });
+
+  $effect(() => {
+    if (!failureRecovery) return;
+    const { state, error } = failureRecovery;
+    untrack(() => {
+      admitLegacyPrincipal();
+      const active = state === 'attempting';
+      store.dispatch(
+        updateSession(agentId, {
+          status: active
+            ? AgentStatus.Active
+            : state === 'recovered'
+              ? AgentStatus.RuntimeIdle
+              : AgentStatus.Error,
+          isActive: active,
+          isStreaming: active,
+          isProcessing: active,
+          isResponding: active,
+          turnInFlight: active,
+          stopReason: state === 'recovered' ? 'end_turn' : error,
+          stopReasonTimestamp: timestamp,
+          retiredAt: state === 'retired' ? timestamp : undefined,
+        }),
+      );
+      store.dispatch(chatErrorCleared(agentId));
+      store.dispatch(
+        replaceAgentQueue(
+          agentId,
+          state === 'queued' || state === 'retired'
+            ? [
+                {
+                  id: 'recovery-queue',
+                  turnId: 'recovery-turn',
+                  content: 'Please continue the review and preserve the partial work.',
+                  queuedAt: timestamp,
+                  position: 0,
+                  requeuedAfterFailure: true,
+                },
+              ]
+            : [],
+          workspaceId,
+        ),
+      );
     });
   });
 
@@ -691,11 +851,19 @@
       }
     });
   });
-  onDestroy(disposeStore);
+  onDestroy(() => {
+    for (const stop of stopFixtureSagas) stop();
+    disposeStore();
+  });
 </script>
 
 <section class:dark={theme === 'dark'} style:zoom data-testid="chat-panel-operational-host">
-  <div style:height="900px" style:width="{width}px">
+  {#if watchedFixture}
+    <div data-testid="scale-agent-subscriptions" style:width="{width}px">
+      <AgentSubscriptions {workspaceId} {agentId} />
+    </div>
+  {/if}
+  <div style:height="{height}px" style:width="{width}px">
     <PanelLayout {workspaceId} layoutId={workspaceId} contained />
   </div>
 </section>

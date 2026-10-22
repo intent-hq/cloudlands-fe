@@ -4,8 +4,8 @@
  * Consolidated from file-tracking + line-changes slices.
  */
 
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import type {
@@ -145,6 +145,18 @@ export const clearMainPanelView = createAction('changes/clearMainPanelView');
 export const refreshRequested = createAction<[wsId: string, forceSync?: boolean]>(
   'changes/refreshRequested',
 );
+/** Admitted daemon state; file-only updates must not invalidate commit history. */
+export const changesEventReceived =
+  createAction<[wsId: string, eventType: string, data: Record<string, unknown>]>(
+    'changes/eventReceived',
+  );
+export const reconcileChangesRequested = createAction<[wsId: string]>('changes/reconcileRequested');
+type ChangesReadScope = 'files' | 'history' | 'all';
+export const changesConsumerMounted =
+  createAction<[wsId: string, scope?: ChangesReadScope]>('changes/consumerMounted');
+export const changesConsumerUnmounted = createAction<[wsId: string, scope?: ChangesReadScope]>(
+  'changes/consumerUnmounted',
+);
 export const loadWorkspaceDataRequested = createAction<[wsId: string]>(
   'changes/loadWorkspaceDataRequested',
 );
@@ -195,6 +207,8 @@ export const agentLineStatsRequestFailed = createAction(
 export const setCommitMessage = createAction<[workspaceId: string, message: string]>(
   'changes/setCommitMessage',
 );
+export const setPRContent =
+  createAction<[workspaceId: string, title: string, description: string]>('changes/setPRContent');
 export const setTargetBranch =
   createAction<[workspaceId: string, branch: string]>('changes/setTargetBranch');
 export const setPendingCommitAction = createAction<
@@ -234,6 +248,15 @@ export const setPendingAutoAction = createAction<
 // ---------------------------------------------------------------------------
 
 export const fileTrackingReducer = createReducer<FileTrackingState>(initialState);
+fileTrackingReducer.with(setPRContent, (state, { payload: [wsId, prTitle, prDescription] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  if (ws.acceptChanges.prTitle === prTitle && ws.acceptChanges.prDescription === prDescription)
+    return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    acceptChanges: { ...ws.acceptChanges, prTitle, prDescription },
+  });
+});
 // Workspace lifecycle
 fileTrackingReducer.with(clearWorkspace, (state, { payload: [wsId] }) =>
   clearWorkspaceState(state, wsId),

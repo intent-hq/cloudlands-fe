@@ -1,14 +1,22 @@
-# Custom runner labels for the self-hosted fleet, so actionlint's
-# runner-label check recognizes them (everything else it treats as unknown).
 self-hosted-runner:
   labels:
-    - m1mac
-    - tinybox
-    # GH-hosted larger runner the route job bursts the heavy jobs to.
+    # Org larger runners (GitHub-hosted, runner group Default); standard
+    # GitHub labels such as ubuntu-24.04 and macos-26-xlarge are built in.
     - gh-linux-8x
-    # GH-hosted larger ARM64 Linux runner (8-core/32 GB) the release/manual
-    # Linux arm64 legs run on (monorepo#1340 sizing).
     - gh-linux-arm64-8x
-    # GH-hosted larger Windows runner (16-core/64 GB, Server 2022 image) the
-    # Windows release/manual-build legs run on.
     - gh-windows-16x
+# Run by `pnpm run lint:workflows` (scripts/check-workflows.mjs). Keep every
+# ignore scoped to the narrowest path and message, with its reason.
+paths:
+  .github/workflows/**/*.{yml,yaml}:
+    ignore:
+      # GitHub documents `concurrency.queue: max`, which the release workflows
+      # and the nightly report writer use to retain pending runs, but
+      # actionlint 1.7.12 does not know the key yet:
+      # https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency
+      - 'unexpected key "queue" for "concurrency" section'
+  .github/workflows/member-controls-disposable.yml:
+    ignore:
+      # The job is disabled on purpose (`if: ${{ false }}`) until a separately
+      # reviewed grant enables it; the constant condition is the control.
+      - 'constant expression "false" in condition'

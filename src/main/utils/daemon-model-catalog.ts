@@ -24,6 +24,7 @@ import {
 } from '../../shared/models/wire-model-info';
 import { getBackendClientForIpcEvent } from '../../features/backend/main/backend.ipc';
 import type { JsonRpcClient } from '../../features/backend/main/json-rpc-client';
+import { modelsListProviderId } from '../../shared/provider-profiles';
 
 const logger = new Logger('DaemonModelCatalog');
 
@@ -46,9 +47,12 @@ interface ProviderModelCatalog {
 async function listProviderModels(
   client: JsonRpcClient,
   providerId: string,
-  options: { forceRefresh?: boolean } = {},
+  options: { forceRefresh?: boolean; workspaceId?: string } = {},
 ): Promise<ProviderModelCatalog> {
-  const params: { providerId: string; forceRefresh?: boolean } = { providerId };
+  const params: { providerId: string; forceRefresh?: boolean; workspaceId?: string } = {
+    providerId,
+  };
+  if (options.workspaceId) params.workspaceId = options.workspaceId;
   if (options.forceRefresh === true) {
     params.forceRefresh = true;
   }
@@ -94,13 +98,16 @@ export interface GetModelsEnvelope {
  */
 export async function getProviderModelsEnvelope(
   providerId: string,
-  params?: { forceRefresh?: boolean },
+  params?: { forceRefresh?: boolean; workspaceId?: string; providerRef?: string },
   event?: Electron.IpcMainInvokeEvent,
 ): Promise<GetModelsEnvelope> {
   try {
     const { client } = getBackendClientForIpcEvent(event);
-    const catalog = await listProviderModels(client, providerId, {
+    // A named profile's catalog (§5.54) is listed under its own reference.
+    const catalogProviderId = modelsListProviderId(providerId, params?.providerRef);
+    const catalog = await listProviderModels(client, catalogProviderId, {
       forceRefresh: params?.forceRefresh === true,
+      workspaceId: params?.workspaceId,
     });
     const envelope: GetModelsEnvelope = { success: true, data: catalog.models };
     if (catalog.warning) envelope.warning = catalog.warning;

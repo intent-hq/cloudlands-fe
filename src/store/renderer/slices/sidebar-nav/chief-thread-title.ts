@@ -2,11 +2,12 @@
  * Chief thread title derivation.
  *
  * The single shared derivation of the sidebar-visible chief thread title:
- * the first user message's text, falling back to the session name only when
- * it is a real (non-placeholder) name, and to `DEFAULT_CHIEF_THREAD_TITLE`
- * otherwise. Used by both the sidebar-nav selectors and the chat-send rename
- * trigger (`chat-send-service`) — keep it dependency-light per repo
- * convention (no stores, services, or side effects).
+ * a user-set name, then the first user message's text, a non-placeholder
+ * session name, or `DEFAULT_CHIEF_THREAD_TITLE`. Display-only: the persisted
+ * name comes from the agent's own first-turn `ws.workspace.setAgentName` (the
+ * daemon's naming instruction), so the first-message text only previews an
+ * unnamed chat. Used by the sidebar-nav selectors — keep it dependency-light
+ * per repo convention (no stores, services, or side effects).
  */
 import { extractAllContent, type AgentSession } from '$shared/types';
 import { DEFAULT_CHIEF_THREAD_TITLE } from './sidebar-nav-types';
@@ -14,26 +15,31 @@ import { DEFAULT_CHIEF_THREAD_TITLE } from './sidebar-nav-types';
 /**
  * True when `name` is one of the creation placeholders a chief thread can
  * carry before its first real rename: empty/blank, the ChiefCard placeholder
- * (`DEFAULT_CHIEF_THREAD_TITLE`), the legacy "Chief of Staff" name, or a
- * generated "New thread …" name. Shared by the title derivation below and
- * the chat-send rename trigger's "daemon-side name is still the placeholder"
- * guard (monorepo#745).
+ * (`DEFAULT_CHIEF_THREAD_TITLE`), a legacy placeholder, or a
+ * generated "New thread …" name. Display-only; the daemon's first-turn
+ * naming check (intentd `is_assistant_chat_placeholder_name`) matches the
+ * exact creation placeholders, not the "New thread …" prefix.
  */
 export function isPlaceholderChiefThreadName(name: string | undefined | null): boolean {
   const trimmed = name?.trim();
   return (
     !trimmed ||
     trimmed === DEFAULT_CHIEF_THREAD_TITLE ||
+    trimmed === 'New chat with Assistant' || // i18n-ignore (matches previously stored placeholder)
+    trimmed === 'New chat with Intent' || // i18n-ignore (matches daemon-stored legacy name)
     trimmed === 'Chief of Staff' || // i18n-ignore (matches daemon-stored legacy name)
     trimmed.startsWith('New thread ') // i18n-ignore (matches daemon-generated placeholder)
   );
 }
 
-export function getChiefThreadTitle(session: Pick<AgentSession, 'messages' | 'name'>): string {
+export function getChiefThreadTitle(
+  session: Pick<AgentSession, 'messages' | 'name' | 'nameExplicitlySet'>,
+): string {
+  const fallbackName = session.name?.trim();
+  if (session.nameExplicitlySet && fallbackName) return fallbackName;
   const firstUserMessage = session.messages.find((message) => message.role === 'user');
   const firstMessage = firstUserMessage ?? session.messages[0];
   const text = firstMessage ? extractAllContent(firstMessage).trim() : '';
-  const fallbackName = session.name?.trim();
   if (!fallbackName || isPlaceholderChiefThreadName(fallbackName)) {
     return text || DEFAULT_CHIEF_THREAD_TITLE;
   }

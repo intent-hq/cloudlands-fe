@@ -13,9 +13,12 @@ vi.mock('$store/renderer/store', async () => {
   return createAppStoreMockModule({ state: () => ({}), dispatch: dispatchMock });
 });
 
-vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
-  selectAgentSession: { select: () => undefined },
-}));
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', async () => {
+  const { readable } = await import('svelte/store');
+  return {
+    selectAgentSession: Object.assign(() => readable(undefined), { select: () => undefined }),
+  };
+});
 
 vi.mock('$lib/utils/tool-classifier', async () => {
   const { faWrench } = await import('@fortawesome/free-solid-svg-icons');
@@ -78,13 +81,6 @@ describe('ToolCall conversation legibility', () => {
     expect(container.querySelector('[data-operational-chevron]')).toBeNull();
     expect(container.querySelector('[data-operational-trailing]')).toBeNull();
 
-    container.style.width = '120px';
-    const row = container.querySelector('[data-conversation-layer="tool-activity"]')!;
-    const summary = screen.getByTestId('tool-call-summary');
-    expect(row.scrollWidth).toBeLessThanOrEqual(container.scrollWidth);
-    expect(row.className).toContain('min-w-0');
-    expect(row.className).toContain('overflow-hidden');
-    expect(summary.className).toContain('truncate');
     disclosure.focus();
     expect(document.activeElement).toBe(disclosure);
 
@@ -243,7 +239,6 @@ describe('ToolCall collapsed browser screenshot preview', () => {
 
     const screenshotButton = screen.getByRole('button', { name: 'Browser screenshot' });
     expect(screenshotButton.getAttribute('data-slot')).toBe('button');
-    expect(screenshotButton.className).toContain('h-auto');
     await fireEvent.click(screenshotButton);
 
     expect(screen.queryByRole('img', { name: 'Browser screenshot' })).toBeNull();

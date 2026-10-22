@@ -1,3 +1,12 @@
+import { workspaceInitializerGitSaga } from './workspace-initializer-git-saga';
+import { workspaceInitializationSaga } from './workspace-initialization-saga';
+import { workspaceInitializerRepositorySaga } from './workspace-initializer-repository-saga';
+import { workspaceInitializerDraftSaga } from './workspace-initializer-draft-saga';
+import {
+  selectCanAdministerHost,
+  selectHostAdministrationContext,
+} from '../../principal/principal-selectors';
+import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 import { buffers } from 'redux-saga';
 import {
   actionChannel,
@@ -19,22 +28,31 @@ import {
   getLocalStorageItem,
   getLocalStorageJSON,
 } from '$store/renderer/utils/safe-local-storage-saga';
+import { readAgentByRepo } from '../utils/agent-by-repo';
+import { readRecentSpecialists } from '../utils/recent-specialists';
 import {
   selectCompactWorkspaceInitializerFormState,
+  selectWorkspaceInitializerAgentByRepo,
   selectWorkspaceInitializerBranchByRepo,
   selectWorkspaceInitializerDefaultParentPath,
+  selectWorkspaceInitializerDraftAuthority,
   selectWorkspaceInitializerLastSelectedRepo,
   selectWorkspaceInitializerLastSubmittedAgent,
   selectWorkspaceInitializerOnboardingFormState,
   selectWorkspaceInitializerRecentRepos,
+  selectWorkspaceInitializerRecentSpecialistIds,
+  selectWorkspaceInitializerDismissedRecentRepoKeys,
   selectWorkspaceInitializerRemoteSetups,
 } from '../workspace-initializer-selectors';
 import {
   cancelWorkspaceInitializerOnboardingFormStateDebounce,
   debounceWorkspaceInitializerOnboardingFormState,
   hydrateWorkspaceInitializer,
+  dismissWorkspaceInitializerRecentRepo,
+  rememberWorkspaceInitializerRecentSpecialist,
   removeWorkspaceInitializerRemoteSetup,
   setCompactWorkspaceInitializerFormState,
+  setWorkspaceInitializerAgentForRepo,
   setWorkspaceInitializerBranchForRepo,
   setWorkspaceInitializerDefaultParentPath,
   setWorkspaceInitializerLastSelectedRepo,
@@ -43,6 +61,7 @@ import {
   setWorkspaceInitializerRecentRepos,
   setWorkspaceInitializerRemoteSetups,
   upsertWorkspaceInitializerRemoteSetup,
+  workspaceInitializerDraftClearRequested,
 } from '../workspace-initializer-slice';
 import type {
   CompactWorkspaceInitializerFormState,
@@ -64,7 +83,6 @@ const DEFAULT_PARENT_PATH_KEY = 'workspace-initializer-default-parent';
 const RECENT_REPOS_KEY = 'workspace-initializer-recent-repos';
 const REMOTE_SETUPS_KEY = 'remote-setups';
 const LAST_SUBMITTED_AGENT_KEY = 'workspace-initializer-last-agent';
-const ONBOARDING_PROMPT_SESSION_KEY = 'onboarding-prompt';
 const ONBOARDING_FORM_STATE_DEBOUNCE_MS = 300;
 
 type HydrationGate = { settled: boolean; queued: boolean };
@@ -141,8 +159,11 @@ function* buildWorkspaceInitializerBag() {
   const branchByRepo = yield* selectWorkspaceInitializerBranchByRepo.effect();
   const defaultParentPath = yield* selectWorkspaceInitializerDefaultParentPath.effect();
   const recentRepos = yield* selectWorkspaceInitializerRecentRepos.effect();
+  const dismissedRecentRepoKeys = yield* selectWorkspaceInitializerDismissedRecentRepoKeys.effect();
   const remoteSetups = yield* selectWorkspaceInitializerRemoteSetups.effect();
   const lastSubmittedAgent = yield* selectWorkspaceInitializerLastSubmittedAgent.effect();
+  const agentByRepo = yield* selectWorkspaceInitializerAgentByRepo.effect();
+  const recentSpecialistIds = yield* selectWorkspaceInitializerRecentSpecialistIds.effect();
   return {
     compactFormState,
     onboardingFormState,
@@ -150,12 +171,16 @@ function* buildWorkspaceInitializerBag() {
     branchByRepo,
     defaultParentPath,
     recentRepos,
+    dismissedRecentRepoKeys,
     remoteSetups,
     lastSubmittedAgent,
+    agentByRepo,
+    recentSpecialistIds,
   } satisfies WorkspaceInitializerHydrationState;
 }
 
 export function* persistWorkspaceInitializerWorker() {
+  if (!(yield* selectCanAdministerHost.effect())) return;
   const bag = cloneableBag(yield* call(buildWorkspaceInitializerBag));
   if (bag === null) return;
   try {
@@ -206,6 +231,7 @@ function* readLegacyBag() {
 }
 
 export function* hydrateWorkspaceInitializerWorker() {
+  if (!(yield* selectCanAdministerHost.effect())) return false;
   try {
     const setting = yield* call([appClient.settings, appClient.settings.get], SETTINGS_PATH);
     if (setting === null) throw new Error(`settings.get(${SETTINGS_PATH}) returned null`);
@@ -242,10 +268,19 @@ export function* hydrateWorkspaceInitializerWorker() {
       defaultParentPath:
         typeof daemonBag.defaultParentPath === 'string' ? daemonBag.defaultParentPath : undefined,
       recentRepos: objectArray<WorkspaceInitializerRecentRepo>(daemonBag.recentRepos),
+      dismissedRecentRepoKeys: isRecord(daemonBag.dismissedRecentRepoKeys)
+        ? Object.fromEntries(
+            Object.entries(daemonBag.dismissedRecentRepoKeys).filter(
+              (entry): entry is [string, true] => entry[1] === true,
+            ),
+          )
+        : undefined,
       remoteSetups: objectArray<WorkspaceInitializerRemoteSetup>(daemonBag.remoteSetups),
       lastSubmittedAgent: isRecord(daemonBag.lastSubmittedAgent)
         ? (daemonBag.lastSubmittedAgent as WorkspaceInitializerAgentSettings)
         : null,
+      agentByRepo: readAgentByRepo(daemonBag.agentByRepo),
+      recentSpecialistIds: readRecentSpecialists(daemonBag.recentSpecialistIds),
     };
     yield* put(hydrateWorkspaceInitializer(hydrationState));
     return true;
@@ -262,16 +297,6 @@ export function* hydrateWorkspaceInitializerWorker() {
   }
 }
 
-function removeOnboardingPrompt(): void {
-  try {
-    if (typeof sessionStorage !== 'undefined') {
-      sessionStorage.removeItem(ONBOARDING_PROMPT_SESSION_KEY);
-    }
-  } catch {
-    // Reset remains non-fatal when session storage is unavailable.
-  }
-}
-
 function* applyDebouncedOnboardingFormWorker(
   action: ReturnType<typeof debounceWorkspaceInitializerOnboardingFormState>,
 ) {
@@ -284,9 +309,22 @@ function* applyDebouncedOnboardingFormWorker(
   yield* put(setWorkspaceInitializerOnboardingFormState(action.payload[0]));
 }
 
-function* resetWorkspaceInitializerWorker() {
+function* resetWorkspaceInitializerWorker(action: ReturnType<typeof resetOnboarding>) {
+  const ownerId = 'onboarding-workspace-initializer';
+  const [admission] = action.payload;
+  const authority = yield* selectWorkspaceInitializerDraftAuthority.effect(ownerId);
+  const clearAlreadyOwned =
+    authority.clear?.status === 'pending' || authority.clear?.status === 'success';
+  if (!authority.restore && !clearAlreadyOwned) {
+    yield* put(
+      workspaceInitializerDraftClearRequested(ownerId, crypto.randomUUID(), undefined, admission),
+    );
+  } else if (authority.clear?.status === 'failure') {
+    yield* put(
+      workspaceInitializerDraftClearRequested(ownerId, crypto.randomUUID(), undefined, admission),
+    );
+  }
   yield* put(setWorkspaceInitializerOnboardingFormState(null));
-  yield* call(removeOnboardingPrompt);
 }
 
 function* watchDebouncedOnboardingForm() {
@@ -309,10 +347,13 @@ function* watchWorkspaceInitializerPersistence(gate: HydrationGate) {
       setWorkspaceInitializerBranchForRepo,
       setWorkspaceInitializerDefaultParentPath,
       setWorkspaceInitializerRecentRepos,
+      dismissWorkspaceInitializerRecentRepo,
       setWorkspaceInitializerRemoteSetups,
       upsertWorkspaceInitializerRemoteSetup,
       removeWorkspaceInitializerRemoteSetup,
       setWorkspaceInitializerLastSubmittedAgent,
+      setWorkspaceInitializerAgentForRepo,
+      rememberWorkspaceInitializerRecentSpecialist,
     ],
     buffers.sliding(1),
   );
@@ -331,16 +372,30 @@ function* watchWorkspaceInitializerPersistence(gate: HydrationGate) {
 }
 
 /** Unregistered until the S20 middleware cutover. */
-export function* workspaceInitializerSaga() {
+function* hydrateOwnerInitializer({ payload: context }: SelectorChannelPayload<string | null>) {
+  if (!context) return;
   const gate: HydrationGate = { settled: false, queued: false };
   const persistenceTask = yield* fork(watchWorkspaceInitializerPersistence, gate);
-  yield* fork(watchDebouncedOnboardingForm);
-  yield* fork(watchOnboardingReset);
 
   const hydrated = yield* call(hydrateWorkspaceInitializerWorker);
-  gate.settled = true;
-  if (gate.queued && hydrated) yield* call(persistWorkspaceInitializerWorker);
+  // Keep the watcher gated until startup writes finish. Mutations during a save
+  // request another latest-state snapshot, never a concurrent whole-bag update.
+  while (gate.queued && hydrated) {
+    gate.queued = false;
+    yield* call(persistWorkspaceInitializerWorker);
+  }
   gate.queued = false;
+  gate.settled = true;
 
   yield* join(persistenceTask);
+}
+
+export function* workspaceInitializerSaga() {
+  yield* fork(workspaceInitializerGitSaga);
+  yield* fork(workspaceInitializationSaga);
+  yield* fork(workspaceInitializerRepositorySaga);
+  yield* fork(workspaceInitializerDraftSaga);
+  yield* fork(watchDebouncedOnboardingForm);
+  yield* fork(watchOnboardingReset);
+  yield* takeLatestFromSelector(selectHostAdministrationContext, hydrateOwnerInitializer);
 }

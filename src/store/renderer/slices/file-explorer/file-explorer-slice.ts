@@ -4,17 +4,21 @@ import {
   createCollection,
   getItem,
   getItems,
+  removeItem,
+  upsertItem,
   type Collection,
-} from '@augmentcode/themis/utils/collections/collection-utils';
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+} from '@themislib/themis/utils/collections/collection-utils';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import type {
   FileExplorerWorkspaceState,
   FileExplorerState,
   FileExplorerTreeNode,
+  FileExplorerSearch,
 } from './file-explorer-types';
 import { sortNodesRecursive } from './file-explorer-utils';
+import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 
 export type { FileExplorerWorkspaceState, FileExplorerState };
 
@@ -44,6 +48,7 @@ export const emptyFileExplorerWorkspaceState: FileExplorerWorkspaceState = {
 
 export const initialState: FileExplorerState = {
   byWorkspaceId: {},
+  searches: createCollection<FileExplorerSearch, 'consumerId'>('consumerId'),
 };
 
 const { getWorkspaceState, setWorkspaceState } = createWorkspaceScopedHelpers(
@@ -101,6 +106,19 @@ export const refreshDirectoryRequested = createAction<[wsId: string, filePath: s
 export const syncGitStatusFromStoresRequested = createAction<[wsId: string]>(
   'fileExplorer/syncGitStatusFromStoresRequested',
 );
+
+export const fileSearchRequested = createAction<
+  [wsId: string, consumerId: string, requestId: string, query: string]
+>('fileExplorer/fileSearchRequested');
+export const fileSearchReleased = createAction<[wsId: string, consumerId: string]>(
+  'fileExplorer/fileSearchReleased',
+);
+export const fileSearchLoading = createAction<
+  [wsId: string, consumerId: string, requestId: string]
+>('fileExplorer/fileSearchLoading');
+export const fileSearchSettled = createAction<
+  [wsId: string, consumerId: string, requestId: string, paths: string[], error: string | null]
+>('fileExplorer/fileSearchSettled');
 
 // ---------------------------------------------------------------------------
 // Reducer actions
@@ -339,6 +357,51 @@ function replaceChildrenInCollection(
 // ---------------------------------------------------------------------------
 
 export const fileExplorerReducer = createReducer<FileExplorerState>(initialState);
+fileExplorerReducer.with(
+  fileSearchRequested,
+  (state, { payload: [workspaceId, consumerId, requestId, query] }) => {
+    const previous = getItem(state.searches, consumerId);
+    return {
+      ...state,
+      searches: upsertItem(state.searches, {
+        workspaceId,
+        consumerId,
+        requestId,
+        paths: query && previous?.workspaceId === workspaceId ? previous.paths : [],
+        loading: false,
+        error: null,
+      }),
+    };
+  },
+);
+fileExplorerReducer.with(fileSearchLoading, (state, { payload: [wsId, consumerId, requestId] }) => {
+  const search = getItem(state.searches, consumerId);
+  if (!search || search.workspaceId !== wsId || search.requestId !== requestId || search.loading)
+    return state;
+  return { ...state, searches: upsertItem(state.searches, { ...search, loading: true }) };
+});
+fileExplorerReducer.with(
+  fileSearchSettled,
+  (state, { payload: [wsId, consumerId, requestId, paths, error] }) => {
+    const search = getItem(state.searches, consumerId);
+    if (!search || search.workspaceId !== wsId || search.requestId !== requestId) return state;
+    return {
+      ...state,
+      searches: upsertItem(state.searches, { ...search, paths, error, loading: false }),
+    };
+  },
+);
+fileExplorerReducer.with(fileSearchReleased, (state, { payload: [wsId, consumerId] }) => {
+  if (getItem(state.searches, consumerId)?.workspaceId !== wsId) return state;
+  return { ...state, searches: removeItem(state.searches, consumerId) };
+});
+fileExplorerReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) => {
+  let searches = state.searches;
+  for (const search of getItems(searches)) {
+    if (search.workspaceId === wsId) searches = removeItem(searches, search.consumerId);
+  }
+  return searches === state.searches ? state : { ...state, searches };
+});
 fileExplorerReducer.with(setFileExplorerLoading, (state, { payload: [wsId, isLoading] }) => {
   const ws = getWorkspaceState(state, wsId);
   if (ws.isLoading === isLoading) return state;

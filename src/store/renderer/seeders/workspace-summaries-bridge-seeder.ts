@@ -169,6 +169,7 @@ registerMockIpcHandler(IPC_CHANNELS.WORKSPACE.GET_GIT_SUMMARY, async (arg) => {
     let behind = 0;
     try {
       const branchStatus = await backendRequest<GitBranchStatusResult>('git.branchStatus', {
+        workspaceId,
         repoPath: worktreePath,
         branchName: baseRef,
       });

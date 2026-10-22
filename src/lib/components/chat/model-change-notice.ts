@@ -10,7 +10,13 @@
  * replayed to providers); the FE renders it as a centered inline notice.
  */
 import { selectModelDisplayName } from '$store/renderer/slices/model/model-selectors';
-import { selectProviderDisplayName } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+import {
+  selectProviderCatalogLoaded,
+  selectProviderCatalogProfiles,
+  selectProviderDisplayName,
+} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+import { isProviderProfileRef, providerRefBaseId } from '$shared/provider-profiles';
+import { formatProviderRefLabel } from '$shared/provider-ref-label';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
 
@@ -48,14 +54,19 @@ export function getModelChangeNotice(
   };
 }
 
-function describeSide(providerId: string | undefined, model: string | null): string {
+function describeSide(
+  providerId: string | undefined,
+  model: string | null,
+  workspaceId?: string,
+): string {
   const providerName = providerId
     ? selectProviderDisplayName.select(appStore.state, providerId)
     : undefined;
   if (providerId && providerName && model) {
     // Pretty name from the model catalog by (provider, model id); a lookup
     // miss (catalog not loaded / unknown model) falls back to the raw id.
-    const prettyName = selectModelDisplayName.select(appStore.state, providerId, model) ?? model;
+    const prettyName =
+      selectModelDisplayName.select(appStore.state, providerId, model, workspaceId) ?? model;
     return m.chat_modelChangeNotice_model_label({
       name: prettyName,
       providerId,
@@ -69,6 +80,50 @@ function describeSide(providerId: string | undefined, model: string | null): str
 }
 
 /**
+ * A side of a switch that involves a named profile (§5.54) reads
+ * `<Model> (<Provider> · <Profile>)`: never the internal profile reference.
+ * The bare side reads `Default` when its provider has profiles, and a
+ * reference whose profile is gone reads as a removed profile.
+ */
+function describeProfileSide(
+  providerRef: string | undefined,
+  model: string | null,
+  workspaceId?: string,
+): string {
+  if (!providerRef) return model ?? '';
+  const state = appStore.state;
+  const baseId = providerRefBaseId(providerRef);
+  // Until the (workspace) catalog has loaded, a missing profile is unknown,
+  // not removed: read the bare provider name instead of "Removed profile".
+  const loaded = workspaceId
+    ? state.providerCatalog?.byWorkspaceId?.[workspaceId] !== undefined
+    : selectProviderCatalogLoaded.select(state);
+  const baseName = selectProviderDisplayName.select(
+    state,
+    baseId,
+    loaded ? workspaceId : undefined,
+  );
+  const provider = loaded
+    ? formatProviderRefLabel(
+        providerRef,
+        baseName,
+        selectProviderCatalogProfiles.select(state, workspaceId),
+        baseId,
+      )
+    : baseName;
+  if (!model) return m.chat_modelChangeNotice_profileDefaultModel_label({ provider });
+  // A profile serves its own catalog; before it loads (or after removal) the
+  // base provider's names still describe the same model ids.
+  const name =
+    selectModelDisplayName.select(state, providerRef, model, workspaceId) ??
+    (baseId !== providerRef
+      ? selectModelDisplayName.select(state, baseId, model, workspaceId)
+      : undefined) ??
+    model;
+  return m.chat_modelChangeNotice_profileModel_label({ name, provider });
+}
+
+/**
  * Format the notice's display label ("Switched from <pretty name>
  * (<providerId> / <modelId>) to <pretty name> (<providerId> / <modelId>)"),
  * or return `fallbackText` when either side of the switch cannot be
@@ -77,9 +132,14 @@ function describeSide(providerId: string | undefined, model: string | null): str
 export function formatModelChangeLabel(
   notice: ModelChangeNoticeInfo,
   fallbackText: string,
+  workspaceId?: string,
 ): string {
-  const fromLabel = describeSide(notice.fromProvider, notice.from);
-  const toLabel = describeSide(notice.toProvider, notice.to);
+  const involvesProfile = [notice.fromProvider, notice.toProvider].some(
+    (ref) => ref !== undefined && isProviderProfileRef(ref),
+  );
+  const describe = involvesProfile ? describeProfileSide : describeSide;
+  const fromLabel = describe(notice.fromProvider, notice.from, workspaceId);
+  const toLabel = describe(notice.toProvider, notice.to, workspaceId);
   return fromLabel && toLabel
     ? m.chat_modelChangeNotice_switched_label({ from: fromLabel, to: toLabel })
     : fallbackText;

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { monitorAccessibleLabel } from '$lib/utils/review-monitor-presentation';
   import { extractAllContent, type AgentMessage, type Workspace } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
   import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
@@ -42,7 +43,12 @@
       const label =
         wake.kind === 'hook'
           ? wake.attribution.displayName
-          : getPrMonitorWakeChipLabel(wake.attribution, repo);
+          : wake.kind === 'script'
+            ? wake.attribution.scriptName
+            : monitorAccessibleLabel(
+                getPrMonitorWakeChipLabel(wake.attribution, repo),
+                wake.attribution,
+              );
       return label;
     }
     if (body.trim()) return body.trim();

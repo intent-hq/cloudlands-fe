@@ -16,8 +16,11 @@ import { backendRequest } from './backend-transport';
 let ownClientIdPromise: Promise<string> | null = null;
 
 export class LiveClientsClient implements ClientsClient {
-  async list(): Promise<LiveClient[]> {
-    const result = await backendRequest<{ clients?: unknown }>('client.list');
+  async list(workspaceId?: string): Promise<LiveClient[]> {
+    const result = await backendRequest<{ clients?: unknown }>(
+      'client.list',
+      ...(workspaceId ? [{ workspaceId }] : []),
+    );
     if (!Array.isArray(result?.clients) || !result.clients.every(isLiveClient)) {
       throw new Error('Invalid client.list response shape');
     }
@@ -35,16 +38,17 @@ export class LiveClientsClient implements ClientsClient {
           return clientId;
         },
       );
-      ownClientIdPromise.catch(() => {
-        ownClientIdPromise = null;
+      const probe = ownClientIdPromise;
+      probe.catch(() => {
+        if (ownClientIdPromise === probe) ownClientIdPromise = null;
       });
     }
     return ownClientIdPromise;
   }
 }
 
-/** Test-only: forget the cached own-clientId probe. */
-export function __resetOwnClientIdForTesting(): void {
+/** Forget the previous connection's probe, including any pending flight. */
+export function invalidateOwnClientId(): void {
   ownClientIdPromise = null;
 }
 
@@ -52,3 +56,5 @@ export function __resetOwnClientIdForTesting(): void {
 const _interfaceCheck: AppClient['clients'] | undefined = undefined as
   LiveClientsClient | undefined;
 void _interfaceCheck;
+
+export const __resetOwnClientIdForTesting = invalidateOwnClientId;

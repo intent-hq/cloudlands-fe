@@ -69,20 +69,6 @@ export async function expectMenuFirstLine(row: Locator, label: Locator) {
   }
 }
 
-/** Every section on one popup uses the same painted-text origin. */
-export async function expectMenuLabelColumn(menu: Locator) {
-  const labels = menu.locator('[data-menu-item], [data-slot="menu-label"]');
-  expect(await labels.count()).toBeGreaterThan(1);
-  await expect
-    .poll(async () => {
-      const starts = await Promise.all(
-        (await labels.all()).map(async (label) => (await menuTextGeometry(label)).left),
-      );
-      return Math.max(...starts) - Math.min(...starts);
-    })
-    .toBeLessThanOrEqual(1);
-}
-
 export async function expectDestructiveMenuInk(row: Locator) {
   const page = row.page();
   const checkColor = async () => {

@@ -5,8 +5,8 @@
  * No saga needed — this is pure synchronous UI state.
  */
 
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { OnboardingState, OnboardingStep, ProjectConfig } from './onboarding-types';
 import { STEP_ORDER } from './onboarding-types';
 
@@ -40,7 +40,7 @@ export const setProjectConfig = createAction<[config: Partial<ProjectConfig>]>(
   'onboarding/setProjectConfig',
 );
 export const setOnboardingWorkspaceId = createAction<[id: string]>('onboarding/setWorkspaceId');
-export const resetOnboarding = createAction('onboarding/reset');
+export const resetOnboarding = createAction<[admission?: string]>('onboarding/reset');
 export const setOnboardingFullFlowRequested = createAction<[value: boolean]>(
   'onboarding/setFullFlowRequested',
 );

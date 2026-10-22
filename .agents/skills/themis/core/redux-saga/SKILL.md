@@ -1,9 +1,13 @@
 ---
 name: core/redux-saga
 description: >-
-  Use for redux-saga API semantics: middleware, runSaga, effects, watchers,
-  channels, buffers, tasks, cancellation, context, and testing helpers.
-type: core
+  Use for upstream redux-saga API semantics: middleware, runSaga, effects,
+  watchers, channels, buffers, tasks, cancellation, context, and testing helpers.
+  Themis saga rules take precedence.
+type: sub-skill
+requires:
+  - core
+  - core/sagas
 sources:
   - https://redux-saga.js.org/docs/api
 triggers:
@@ -20,7 +24,16 @@ triggers:
 
 > Source: official redux-saga API Reference, https://redux-saga.js.org/docs/api, retrieved 2026-05-15.
 
-Use this skill for generic redux-saga API behavior. When editing this repository's `themis` code, also follow the package-specific core saga skills in sibling `../*` skill folders, especially the `typed-redux-saga` `yield*` conventions and canonical watcher ownership rules.
+## Package guidance takes precedence
+
+Use this leaf only for generic upstream redux-saga API behavior; it is not a
+second core router. Read [Preflight](../SKILL.md#preflight), then follow
+[Do](../sagas/SKILL.md#do) and [Implementation cues](../sagas/SKILL.md#implementation-cues)
+for Themis `typed-redux-saga` / `yield*`, watcher ownership, and effect choices.
+For the configured Store's `store.runSaga` API rather than upstream `runSaga`,
+follow [Store saga lifecycle](../saga-manager/SKILL.md#store-saga-lifecycle).
+Upstream examples below do not authorize replacing Store-owned middleware or
+overriding those package-specific rules.
 
 ## Agent Preflight Compliance Contract
 
@@ -40,36 +53,9 @@ Before editing code or docs that use this skill:
 
 In themis app setup, the concrete Store owns saga middleware creation. Use this low-level API reference to understand redux-saga behavior, but configure Store-owned monitoring by passing `{ sagaMonitor: true }` in the third `Store`/`ReactStore`/`StreamingStore` constructor options argument instead of replacing the middleware. Omitted or `false` saga monitoring remains disabled.
 
-```typescript
-import { applyMiddleware, createStore } from "redux";
-import createSagaMiddleware from "redux-saga";
-import { all, call } from "redux-saga/effects";
-
-function reducer(state = { ready: false }, action: { type: string }) {
-  return action.type === "READY" ? { ready: true } : state;
-}
-
-function* rootSaga() {
-  yield all([call(backgroundSync)]);
-}
-
-const sagaMiddleware = createSagaMiddleware({
-  onError(error, { sagaStack }) {
-    console.error("uncaught saga error", error, sagaStack);
-  },
-});
-
-const store = createStore(reducer, applyMiddleware(sagaMiddleware));
-const task = sagaMiddleware.run(rootSaga);
-
-function* backgroundSync() {
-  yield call(Promise.resolve, undefined);
-}
-
-void task.toPromise();
-```
-
-`middleware.run(saga, ...args)` must be called after the saga middleware is mounted on the store. It returns a `Task` descriptor and drives yielded plain Effect objects until the generator returns, throws, or is cancelled.
+`middleware.run(saga, ...args)` returns a `Task` descriptor and drives yielded
+plain Effect objects until the generator returns, throws, or is cancelled.
+See [Common mistakes](#common-mistakes) for startup and cleanup requirements.
 
 ## Core patterns
 
@@ -77,29 +63,17 @@ void task.toPromise();
 
 Use `take(pattern)` for one action, `takeMaybe(pattern)` when the saga must receive the `END` sentinel instead of auto-terminating, and watcher helpers for common loops. Patterns can be `"*"`, strings, arrays, predicates, or action creators whose `toString()` returns an action type.
 
-```typescript
-import { call, fork, put, take, takeEvery, takeLatest, takeLeading } from "redux-saga/effects";
+`takeEvery` runs concurrent workers, `takeLatest` cancels stale workers, and
+`takeLeading` ignores new triggers while a worker runs. Generic patterns include
+wildcards; Themis code must instead use concrete action creators/arrays or
+selector channels as required by [Do](../sagas/SKILL.md#do).
 
-function* loadUser(action: { type: string; userId: string }) {
-  const user: User = yield call(api.loadUser, action.userId);
-  yield put({ type: "USER_LOADED", user });
-}
-
-export function* usersSaga() {
-  yield takeEvery("USER_REQUESTED", loadUser);     // concurrent workers
-  yield takeLatest("SEARCH_CHANGED", runSearch);   // cancel stale worker
-  yield takeLeading("SUBMIT_ORDER", submitOrder);  // ignore while running
-
-  const action: { type: string } = yield take(["LOGOUT", "SESSION_EXPIRED"]);
-  yield fork(cleanupSession, action);
-}
-```
-
-`takeEvery`, `takeLatest`, `takeLeading`, `throttle`, and `debounce` also accept a `Channel` in place of a pattern. This is native redux-saga behavior; do not create wrapper utilities unless they add cleanup, typing, or domain value beyond the API.
+`takeEvery`, `takeLatest`, `takeLeading`, `throttle`, and `debounce` also accept a
+`Channel` in place of a pattern; see [Common mistakes](#common-mistakes) before adding wrappers.
 
 ### 2. Blocking and non-blocking effects
 
-`call`, `apply`, and `cps` are blocking; `fork` and `spawn` start work without blocking the parent. `fork` is attached to the parent: parent completion waits for children, child errors bubble upward, and cancellation propagates downward. `spawn` is detached and does not share parent completion, error, or cancellation flow. In this repository, agents must use attached `fork`, not detached `spawn`, so child tasks remain cancellable and failures remain visible to the parent lifecycle.
+`call`, `apply`, and `cps` are blocking; `fork` and `spawn` start work without blocking the parent. `fork` is attached to the parent: parent completion waits for children, child errors bubble upward, and cancellation propagates downward. `spawn` is detached and does not share parent completion, error, or cancellation flow.
 
 ```typescript
 import { call, cancel, cancelled, fork, join } from "redux-saga/effects";
@@ -126,96 +100,58 @@ Use `cancel(task)`, `cancel([...tasks])`, or `cancel()` for self-cancellation. C
 
 Use `put(action)` for scheduled dispatch, `putResolve(action)` when dispatch returns a Promise and the saga must wait, `put(channel, message)` for channel output, and `select(selector, ...args)` for state reads. `setContext(props)` merges saga context; `getContext(prop)` reads one context value. `delay(ms, value)` blocks for time.
 
-```typescript
-import { call, delay, getContext, put, putResolve, retry, select, setContext } from "redux-saga/effects";
-
-function* saveProfile(action: { type: string; id: string }) {
-  const token: string = yield select((state: RootState) => state.session.token);
-  yield setContext({ requestId: action.id });
-  const requestId: string = yield getContext("requestId");
-
-  const profile: Profile = yield retry(3, 1_000, api.loadProfile, token, requestId);
-  yield put({ type: "PROFILE_LOADED", profile });
-  yield delay(250);
-  yield putResolve({ type: "PROFILE_PERSISTED" });
-}
-```
-
 `retry(maxTries, delayMs, fn, ...args)` is a blocking helper built from `call` and `delay`: it retries failures until success or attempts are exhausted, then rethrows the last error.
 
 ### 4. Channels, buffers, and cleanup
 
-Use `actionChannel(pattern, buffer?)` to queue matching store actions while a worker is blocked. Use `channel(buffer?)` for task-to-task messages and `eventChannel` to bridge external event sources; the `subscribe` function must return an unsubscribe function. Close channels in `finally`, and use `flush(channel)` to recover buffered messages during cleanup.
+Use `actionChannel(pattern, buffer?)` to queue matching store actions while a
+worker is blocked, `channel(buffer?)` for task-to-task messages, and `eventChannel`
+to bridge external sources. Use `flush(channel)` to recover buffered messages;
+follow [Common mistakes](#common-mistakes) for unsubscribe/close ownership.
+
+Buffer choices: `buffers.none()`, `fixed(limit)`, `expanding(initialSize)`, `dropping(limit)`, and `sliding(limit)`. The default `channel()` uses an expanding FIFO buffer: ten is its initial capacity, not a maximum. Choose an explicit bounded buffer when backlog memory must be limited; that choice also determines overflow behavior.
 
 ```typescript
-import { buffers, channel, eventChannel, END } from "redux-saga";
-import { actionChannel, call, flush, put, take } from "redux-saga/effects";
+import { buffers, channel } from "redux-saga";
 
-function socketChannel(socket: WebSocket) {
-  return eventChannel<string>((emit) => {
-    socket.onmessage = (event) => emit(String(event.data));
-    socket.onerror = () => emit(END);
-    return () => socket.close();
-  }, buffers.sliding(10));
-}
-
-function* serializeRequests() {
-  const requests: Channel<RequestAction> = yield actionChannel("REQUEST", buffers.expanding(10));
-  try {
-    while (true) {
-      const action: RequestAction = yield take(requests);
-      yield call(api.sendRequest, action.payload);
-    }
-  } finally {
-    const leftovers: RequestAction[] = yield flush(requests);
-    yield put({ type: "REQUESTS_FLUSHED", leftovers });
-  }
-}
-
-const mailbox = channel<string>(buffers.fixed(5));
+const defaultQueue = channel<number>(); // expands: retains all 25 queued messages
+const recentQueue = channel<number>(buffers.sliding(10)); // keeps the latest ten
+const firstQueue = channel<number>(buffers.dropping(10)); // drops new arrivals when full
+const strictQueue = channel<number>(buffers.fixed(10)); // throws on the eleventh put
 ```
 
-Buffer choices: `buffers.none()`, `fixed(limit)`, `expanding(initialSize)`, `dropping(limit)`, and `sliding(limit)`. The default `channel()` buffer queues up to 10 messages FIFO.
+These examples assume no pending taker. `eventChannel` is different: it defaults to no buffer, so pass one explicitly if events must wait for a consumer. Close owned queues when their lifetime ends.
 
 ### 5. Concurrency combinators and helpers
 
 Use `race` when the first completion wins; losing effects are automatically cancelled. Use `all` to run effects in parallel and wait for all successes, or throw when any effect rejects.
 
+`throttle(ms, patternOrChannel, saga, ...args)` suppresses new starts during the window.
+Its pattern overload creates an action channel with `buffers.sliding(1)`;
+a supplied channel retains its caller-chosen buffering/overflow policy.
+For latest-pending external messages, explicitly use `buffers.sliding(1)` when
+creating the supplied `channel` or `eventChannel`, rather than assuming throttle adds it.
+
+Here a producer puts progress messages into `latestMessages`; the owner joins its
+attached watcher and closes its channel. `handleMessage` is the app's worker.
+
 ```typescript
-import { all, call, delay, put, race, take, takeLatest, takeLeading, throttle } from "redux-saga/effects";
+import { buffers, channel } from "redux-saga";
+import { join, throttle } from "redux-saga/effects";
 
-function* fetchWithTimeout() {
-  const { response, timeout } = yield race({
-    response: call(api.fetchReport),
-    timeout: delay(5_000),
-  });
-  if (timeout) yield put({ type: "REPORT_TIMEOUT" });
-  else yield put({ type: "REPORT_READY", response });
-}
-
-function* refreshResultsAfterSettled(action: { type: string; query: string }) {
-  yield delay(300);
-  yield call(refreshResults, action.query);
-}
-
-function* refreshOncePerWindow(action: { type: string; id: string }) {
+const latestMessages = channel<{ value: number }>(buffers.sliding(1));
+function* watchLatestMessages() {
   try {
-    yield call(refreshPanel, action.id);
+    yield join(yield throttle(100, latestMessages, handleMessage));
   } finally {
-    yield delay(300);
+    latestMessages.close();
   }
-}
-
-function* rootSaga() {
-  yield all([call(fetchWithTimeout), call(watchUpload)]);
-  yield throttle(1_000, "TYPEAHEAD_CHANGED", fetchSuggestions);
-  yield takeLatest("FILTER_CHANGED", refreshResultsAfterSettled);
-  yield takeLeading("REFRESH_CLICKED", refreshOncePerWindow);
-  yield take("SHUTDOWN");
 }
 ```
 
-`throttle(ms, patternOrChannel, saga, ...args)` uses a sliding buffer of one recent message while suppressing new starts during the window. Upstream redux-saga also exposes a native `debounce(ms, patternOrChannel, saga, ...args)` helper that waits until messages settle before forking the worker, but agents must not use it for `themis` implementation examples. Repository debounce must be written explicitly with `takeLatest` or `takeLeading` plus `delay` so cancellation semantics are visible in the worker.
+Upstream's native
+`debounce(ms, patternOrChannel, saga, ...args)` waits until messages settle before
+forking the worker; Themis restrictions are in [Common mistakes](#common-mistakes).
 
 ## Interface quick reference
 
@@ -266,45 +202,21 @@ await task.toPromise();
 - `createMockTask()` from `@redux-saga/testing-utils` returns a mock `Task` for testing `fork`, `join`, and `cancel` flows.
 - Prefer effect-level assertions for small generators and integration-style saga tests for cancellation, channel cleanup, and watcher concurrency.
 
-```typescript
-import { cloneableGenerator, createMockTask } from "@redux-saga/testing-utils";
-import { cancel, fork } from "redux-saga/effects";
-
-function* worker() {}
-function* parent() {
-  const task: Task = yield fork(worker);
-  yield cancel(task);
-}
-
-const generator = cloneableGenerator(parent)();
-expect(generator.next().value).toEqual(fork(worker));
-const mockTask = createMockTask();
-expect(generator.next(mockTask).value).toEqual(cancel(mockTask));
-```
-
 ## Common mistakes
 
-### ❌ Calling `middleware.run` before mounting middleware
-
-`middleware.run` is only valid after the saga middleware is connected to the Redux store. Mount middleware first, then run the root saga. Source: redux-saga API Reference → `middleware.run(saga, ...args)`. Priority: **HIGH**.
-
-### ❌ Assuming `take` and `takeMaybe` handle `END` the same way
-
-`take(pattern)` and `take(channel)` auto-terminate when they receive `END` from the stdChannel or a closed channel. `takeMaybe` returns the `END` object so the saga can handle the closed-input case itself. Source: redux-saga API Reference → `take` / `takeMaybe`. Priority: **MEDIUM**.
-
-### ❌ Using `spawn` when parent failure/cancellation must affect the child
-
-`fork` creates an attached task; errors bubble to the parent and cancellation propagates through attached children. In this repository, do not introduce `spawn`; use `fork` so saga-manager and parent lifecycles can observe failures and cancel children. Source: redux-saga API Reference → `fork` / `spawn`. Priority: **HIGH**.
-
-### ❌ Forgetting channel unsubscribe / close cleanup
-
-`eventChannel` subscribe functions must return an unsubscribe callback, and saga consumers should close channels in `finally` when they own the channel lifecycle. Source: redux-saga API Reference → `eventChannel` / `Channel`. Priority: **HIGH**.
-
-### ❌ Recreating native channel helpers as wrappers without added value
-
-`takeEvery`, `takeLatest`, `takeLeading`, `throttle`, and `debounce` already accept channels. Add wrappers only for documented cleanup, typing, or domain-specific behavior. Source: redux-saga API Reference → channel overloads for watcher helpers. Priority: **MEDIUM**.
-
-For this repository's action debouncing, do not add wrapper-action debounce utilities; watch the real action with `takeLatest` or `takeLeading` and use `delay` inside the worker.
+- Do not call `middleware.run` before mounting saga middleware on the Redux store;
+  mount first, then start the root saga.
+- Do not treat `take` and `takeMaybe` as equivalent on `END`: `take` auto-terminates;
+  use `takeMaybe` when the saga must handle the closed-input sentinel itself.
+- Do not introduce detached `spawn` in this repository; use attached `fork` so
+  parent cancellation reaches children and child failures remain visible.
+- Do not leave external subscriptions or owned channels open: `eventChannel`
+  subscribe functions must return unsubscribe callbacks; close owned channels in `finally`.
+- Do not rely on `channel()` to bound a backlog; its default buffer expands. Choose and test an explicit overflow policy.
+- Do not wrap native channel-aware watchers without added value; use their channel
+  overloads unless a wrapper provides documented cleanup, typing, or domain behavior.
+- Do not use native `debounce` in Themis examples or add wrapper-action debounce
+  utilities; watch the real action with `takeLatest`/`takeLeading` and `delay` in the worker.
 
 ## See also
 

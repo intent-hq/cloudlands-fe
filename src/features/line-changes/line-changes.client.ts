@@ -1,13 +1,8 @@
 /**
  * Line-change metrics client — daemon-backed reads (PROTOCOL §5.20).
  *
- * Formerly invoked `line-changes:*` IPC against main-process in-memory
- * Records (module-level state lost on restart and never fed by daemon-spawned
- * agents — split-brain). The four §5.20 wire reads now go over
- * `backendRequest`; the local `update*` writers and diff calculation were
- * backend-internal (aggregation happens in intentd, PROTOCOL.md §5.20) and
- * were deleted, not ported. Transport errors propagate to the caller so the
- * lifecycle read service can fold them into the request-state actions.
+ * Agent totals are read through `backendRequest`. Transport errors propagate
+ * to the lifecycle read service, which folds them into request-state actions.
  */
 
 import { backendRequest } from '$lib/client/live/backend-transport';
@@ -34,32 +29,15 @@ function toMetrics(raw: unknown): Metrics | null {
   };
 }
 
-/** `metrics.getWorkspaceStats` — workspace line-change totals, or null when untracked. */
-export async function getWorkspaceLineStats(workspaceId: string): Promise<Metrics | null> {
-  return toMetrics(await backendRequest<unknown>('metrics.getWorkspaceStats', { workspaceId }));
-}
-
 /** `metrics.getAgentStats` — one agent's line-change totals, or null when untracked. */
-export async function getAgentLineStats(agentId: string): Promise<Metrics | null> {
-  return toMetrics(await backendRequest<unknown>('metrics.getAgentStats', { agentId }));
-}
-
-/** `metrics.getAllWorkspaceStats` — `{ [workspaceId]: Metrics }` for all workspaces. */
-export async function getAllWorkspaceLineStats(): Promise<Record<string, Metrics>> {
-  const result = await backendRequest<unknown>('metrics.getAllWorkspaceStats', {});
-  if (!result || typeof result !== 'object') return {};
-  const stats: Record<string, Metrics> = {};
-  for (const [workspaceId, value] of Object.entries(result as Record<string, unknown>)) {
-    const metrics = toMetrics(value);
-    if (metrics) stats[workspaceId] = metrics;
-  }
-  return stats;
-}
-
-/** `metrics.clearAgentStats` — resets one agent's counters; folds to a boolean. */
-export async function clearAgentLineStats(agentId: string): Promise<boolean> {
-  const result = await backendRequest<unknown>('metrics.clearAgentStats', { agentId });
-  return Boolean(
-    result && typeof result === 'object' && (result as { success?: unknown }).success === true,
+export async function getAgentLineStats(
+  agentId: string,
+  workspaceId?: string,
+): Promise<Metrics | null> {
+  return toMetrics(
+    await backendRequest<unknown>('metrics.getAgentStats', {
+      agentId,
+      ...(workspaceId !== undefined ? { workspaceId } : {}),
+    }),
   );
 }

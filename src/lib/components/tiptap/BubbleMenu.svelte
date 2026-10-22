@@ -256,8 +256,7 @@
         },
         { openAgent: true },
       );
-      appStore.dispatch(launchAction);
-      const agentData = await launchAction.promise;
+      const agentData = await appStore.dispatch(launchAction);
 
       logger.info('[BubbleMenu] Agent created successfully', {
         agentId: agentData.id,

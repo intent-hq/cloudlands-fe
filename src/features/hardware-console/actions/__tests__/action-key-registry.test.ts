@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { m } from '$shared/paraglide/messages.js';
 import type { Workspace } from '$shared/types';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
@@ -1932,13 +1932,13 @@ describe('execute dispatch', () => {
     );
   });
 
-  it('new-agent dispatches the specialist-picker creation trigger', () => {
+  it('new-agent dispatches implicit creation to restore workspace defaults', () => {
     const { context, dispatch } = makeContext(makeState());
     getActionKeyDefinition('new-agent').execute(context);
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'workspaceAgents/createAgentWithSpecialistRequested',
-        payload: ['ws-1', null],
+        type: 'workspaceAgents/createAgentRequested',
+        payload: ['ws-1'],
       }),
     );
   });

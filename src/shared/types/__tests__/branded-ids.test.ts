@@ -119,9 +119,14 @@ describe('Branded ID Types', () => {
       expect(messageId).toContain('msg_');
     });
 
-    it('should throw on invalid MessageId', () => {
-      expect(() => BrandedIds.createMessageId('invalid')).toThrow();
-    });
+    it.each(['', 'invalid', 'user-msg-', 'user-msg-not-a-uuid'])(
+      'keeps rejecting malformed IDs at the shared constructor: %j',
+      (id) => {
+        expect(BrandedIds.isValidMessageId(id)).toBe(false);
+        expect(() => BrandedIds.createMessageId(id)).toThrow('Invalid message ID format');
+        expect(() => BrandedIds.assertMessageId(id)).toThrow();
+      },
+    );
 
     it('should create root WorkspaceId for terminal context', () => {
       const workspaceId = BrandedIds.createWorkspaceId(BrandedIds.ROOT_WORKSPACE_ID);

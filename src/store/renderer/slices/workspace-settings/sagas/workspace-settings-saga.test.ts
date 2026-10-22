@@ -18,6 +18,7 @@ vi.mock('$lib/client', () => ({
 import { SETTINGS_CHANNELS, WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 import { workspaceMounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
+  clearWorkspaceSettings,
   loadAutoCommitSettings,
   refreshAutoCommitSettings,
   setAutoCommitEnabled,
@@ -338,7 +339,7 @@ describe('workspaceSettingsSaga', () => {
       await task.toPromise();
     });
 
-    it('is single-flight per workspace: concurrent triggers share one read', async () => {
+    it('is single-flight per workspace and coalesces triggers into one trailing read', async () => {
       let resolveRead!: (value: { autoCommitEnabled: boolean }) => void;
       mocks.getWorkspaceSettings.mockImplementationOnce(
         () =>
@@ -352,10 +353,12 @@ describe('workspaceSettingsSaga', () => {
       send(syncWorkspaceSettings('ws-1'));
       send(workspaceMounted('ws-1'));
       await settle();
+      expect(mocks.getWorkspaceSettings.mock.calls).toEqual([['ws-1']]);
+      mocks.getWorkspaceSettings.mockResolvedValueOnce({ autoCommitEnabled: false });
       resolveRead({ autoCommitEnabled: false });
       await settle();
 
-      expect(mocks.getWorkspaceSettings.mock.calls).toEqual([['ws-1']]);
+      expect(mocks.getWorkspaceSettings.mock.calls).toEqual([['ws-1'], ['ws-1']]);
       expect(dispatched).toEqual([loadAutoCommitSettings('ws-1', false)]);
       task.cancel();
       await task.toPromise();
@@ -393,7 +396,7 @@ describe('workspaceSettingsSaga', () => {
       await task.toPromise();
     });
 
-    it('a refresh arriving mid-sweep restarts the sweep (takeLatest) so all workspaces converge', async () => {
+    it('refreshes during pending reads coalesce without overlapping physical requests', async () => {
       const pending: Array<(value: { autoCommitEnabled: boolean }) => void> = [];
       mocks.getWorkspaceSettings
         .mockResolvedValueOnce({ autoCommitEnabled: false })
@@ -416,8 +419,8 @@ describe('workspaceSettingsSaga', () => {
       await settle();
       send(refreshAutoCommitSettings());
       await settle();
-      // Cancelled first sweep's ws-1 read resolving late must be ignored;
-      // the restarted sweep re-reads both workspaces with the latest value.
+      expect(mocks.getWorkspaceSettings.mock.calls.slice(2)).toEqual([['ws-1'], ['ws-2']]);
+      // The old responses are discarded, then each workspace gets one trailing read.
       for (const resolve of pending.splice(0)) resolve({ autoCommitEnabled: true });
       await settle();
       for (const resolve of pending.splice(0)) resolve({ autoCommitEnabled: true });
@@ -425,6 +428,7 @@ describe('workspaceSettingsSaga', () => {
 
       expect(mocks.getWorkspaceSettings.mock.calls.slice(2)).toEqual([
         ['ws-1'],
+        ['ws-2'],
         ['ws-1'],
         ['ws-2'],
       ]);
@@ -436,7 +440,7 @@ describe('workspaceSettingsSaga', () => {
       await task.toPromise();
     });
 
-    it('refresh skips a workspace whose mount hydration is still in flight (no duplicate read)', async () => {
+    it('refresh queues a trailing read behind pending mount hydration instead of dropping freshness', async () => {
       let resolveMountRead!: (value: { autoCommitEnabled: boolean }) => void;
       mocks.getWorkspaceSettings
         .mockResolvedValueOnce({ autoCommitEnabled: true })
@@ -460,12 +464,83 @@ describe('workspaceSettingsSaga', () => {
       resolveMountRead({ autoCommitEnabled: true });
       await settle();
 
-      // Sweep re-read ws-1 only; ws-2 kept its single in-flight mount read.
-      expect(mocks.getWorkspaceSettings.mock.calls).toEqual([['ws-1'], ['ws-2'], ['ws-1']]);
+      expect(mocks.getWorkspaceSettings.mock.calls).toEqual([
+        ['ws-1'],
+        ['ws-2'],
+        ['ws-1'],
+        ['ws-2'],
+      ]);
       expect(dispatched).toEqual([
         loadAutoCommitSettings('ws-1', false),
-        loadAutoCommitSettings('ws-2', true),
+        loadAutoCommitSettings('ws-2', false),
       ]);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('does not hydrate from a pre-write value while an override write is unacknowledged', async () => {
+      let resolveWrite!: (value: unknown) => void;
+      mocks.invoke.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveWrite = resolve;
+          }),
+      );
+      mocks.getWorkspaceSettings.mockResolvedValueOnce({ autoCommitEnabled: false });
+      const { send, task, getSettingsState } = startSaga();
+      send(setAutoCommitEnabled('ws-1', false));
+      send(syncWorkspaceSettings('ws-1'));
+      send(refreshAutoCommitSettings());
+      await settle();
+      expect(mocks.getWorkspaceSettings).not.toHaveBeenCalled();
+      expect(getSettingsState().byWorkspaceId['ws-1'].autoCommitEnabled).toBe(false);
+      resolveWrite({ success: true });
+      await settle();
+      expect(mocks.getWorkspaceSettings.mock.calls).toEqual([['ws-1']]);
+      expect(getSettingsState().byWorkspaceId['ws-1'].autoCommitEnabled).toBe(false);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('clearing a workspace discards late reads and queued writes without recreating its state', async () => {
+      let resolveRead!: (value: { autoCommitEnabled: boolean }) => void;
+      mocks.getWorkspaceSettings.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveRead = resolve;
+          }),
+      );
+      const { send, task, dispatched, getSettingsState } = startSaga();
+      send(workspaceMounted('ws-1'));
+      send(setAutoCommitEnabled('ws-1', false));
+      send(clearWorkspaceSettings('ws-1'));
+      resolveRead({ autoCommitEnabled: true });
+      await settle();
+      expect(dispatched).toEqual([]);
+      expect(mocks.invoke).not.toHaveBeenCalled();
+      expect(getSettingsState().byWorkspaceId).toEqual({});
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('uses the accepted toggle payload even if hydration updates the reducer while it is queued', async () => {
+      let resolveWrite!: (value: unknown) => void;
+      mocks.invoke.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveWrite = resolve;
+          }),
+      );
+      const { send, task } = startSaga();
+      send(setAutoCommitEnabled('ws-1', true));
+      send(setAutoCommitEnabled('ws-1', false));
+      send(loadAutoCommitSettings('ws-1', true));
+      resolveWrite({ success: true });
+      await settle();
+      expect(mocks.invoke).toHaveBeenLastCalledWith(WORKSPACE_CHANNELS.UPDATE_SETTINGS, {
+        id: 'ws-1',
+        settings: { autoCommitEnabled: false },
+      });
       task.cancel();
       await task.toPromise();
     });

@@ -466,7 +466,7 @@
               onpointerdown={keepPrimaryActionOutsideDropdown}
               onkeydown={keepPrimaryActionOutsideDropdown}
               onclick={handlePrimaryClick}
-              title={primaryTitle}
+              title={hasOpenCapableAction ? primaryTitle : undefined}
             >
               {#if currentAction.iconBase64}
                 <img

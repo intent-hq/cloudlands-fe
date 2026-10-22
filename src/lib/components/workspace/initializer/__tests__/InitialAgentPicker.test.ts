@@ -12,6 +12,7 @@
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { SpecialistDef } from '$lib/client/app-client';
 
 const mocks = vi.hoisted(() => {
   function writable<T>(initial: T) {
@@ -40,6 +41,8 @@ const mocks = vi.hoisted(() => {
     readable,
     fileSpecialistsLoaded$: writable(false),
     hydrated$: writable(true),
+    // Specialists used to create workspaces, most recent first.
+    recentSpecialistIds$: writable<string[]>([]),
     // Orchestrator powering the team card (selectOrchestratorSpecialist).
     orchestrator$: writable<{
       id: string;
@@ -59,22 +62,59 @@ const mocks = vi.hoisted(() => {
     // Store view of specialists carrying the daemon's resolvedModel preview
     // (PROTOCOL §5.11) in the default-provider context.
     specialists$: writable<
-      Array<{ id: string; name: string; description: string; resolvedModel?: string }>
+      Array<{
+        id: string;
+        name: string;
+        description: string;
+        resolvedModel?: string;
+        defaultModel?: string;
+        reasoningEffort?: string;
+        modelOptions?: Array<{ model: string; provider?: string; reasoningEffort?: string }>;
+      }>
     >([]),
     // `specialist.list(provider)` refetch used for per-provider previews.
-    specialistsList: vi.fn(() =>
+    specialistsList: vi.fn<
+      (
+        provider?: string,
+      ) => Promise<
+        Pick<
+          SpecialistDef,
+          | 'id'
+          | 'name'
+          | 'description'
+          | 'resolvedModel'
+          | 'resolvedProvider'
+          | 'resolvedReasoningEffort'
+        >[]
+      >
+    >(() =>
       Promise.resolve([
         { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'fable-5' },
       ]),
     ),
+    backendRequest: vi.fn(),
     getProviderAvailability: vi.fn(() => new Promise(() => {})),
+    selectedModel$: writable(''),
+    configuredModels$: writable<Record<string, string>>({}),
+    defaultProviderId: 'auggie',
+    activeProviderId$: writable('auggie'),
+    enabledProviders$: writable<Record<string, boolean>>({}),
+    enabledProviders: {} as Record<string, boolean>,
+    defaultReasoningEffort$: writable(''),
     effortLevelsByModel: {} as Record<string, string[] | undefined>,
     providerModelsByProviderId: {} as Record<
       string,
       { models: Array<{ value: string; effortLevels?: string[] }>; fetchedAt: string }
     >,
-    availableModels: [] as Array<{ value: string }>,
+    availableModels$: writable<Array<{ value: string }>>([]),
     availableModelsProviderId: '',
+    // §5.54 catalog profile summaries.
+    catalogProfiles: [] as Array<{
+      id: string;
+      providerRef: string;
+      baseProviderId: string;
+      name: string;
+    }>,
   };
 });
 
@@ -85,6 +125,7 @@ vi.mock('$store/renderer/store', async () => {
   // providerCatalog slice — hydrate the §5.38-shaped mock catalog.
   const { initialState, providerCatalogLoaded, providerCatalogReducer } =
     await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
+  const { createCollection } = await import('@themislib/themis/utils/collections/collection-utils');
   const { MOCK_PROVIDER_CATALOG } =
     await import('../../../../../test/fixtures/provider-catalog.fixture');
   const providerCatalog = providerCatalogReducer(
@@ -96,9 +137,12 @@ vi.mock('$store/renderer/store', async () => {
   // the mocked selectActiveProviderId below.
   return createAppStoreMockModule({
     state: () => ({
-      providerCatalog,
-      providerSettings: { enabledProviders: {} },
-      model: { defaultProviderId: 'auggie' },
+      providerCatalog: {
+        ...providerCatalog,
+        profiles: createCollection('id', mocks.catalogProfiles),
+      },
+      providerSettings: { enabledProviders: mocks.enabledProviders },
+      model: { defaultProviderId: mocks.defaultProviderId },
       providerModels: { byProviderId: mocks.providerModelsByProviderId, clearEpoch: 0 },
     }),
   });
@@ -115,9 +159,15 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
-  selectSelectedModel: () => mocks.readable(''),
-  selectAvailableModels: () => mocks.readable(mocks.availableModels),
-  selectAvailableModelsProviderId: () => mocks.readable(mocks.availableModelsProviderId),
+  selectSelectedModel: () => mocks.selectedModel$,
+  selectProviderModels: () => mocks.configuredModels$,
+  selectDefaultReasoningEffort: () => mocks.defaultReasoningEffort$,
+  selectAvailableModels: () => mocks.availableModels$,
+  selectAvailableModelsProviderId: () =>
+    mocks.readable(
+      mocks.availableModelsProviderId ||
+        (Object.keys(mocks.effortLevelsByModel).length ? 'auggie' : ''),
+    ),
   selectModelEffortLevels: {
     select: (_state: unknown, modelId: string | undefined) =>
       modelId ? mocks.effortLevelsByModel[modelId] : undefined,
@@ -130,12 +180,22 @@ vi.mock('$lib/client', () => ({
   },
 }));
 
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: mocks.backendRequest,
+  backendSubscribe: vi.fn(),
+  backendUnsubscribe: vi.fn(),
+  onBackendNotification: vi.fn(),
+  onBackendReconnected: vi.fn(),
+}));
+
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
   selectWorkspaceInitializerHydrated: () => mocks.hydrated$,
+  selectWorkspaceInitializerRecentSpecialistIds: () => mocks.recentSpecialistIds$,
 }));
 
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
-  selectActiveProviderId: () => mocks.readable('auggie'),
+  selectActiveProviderId: () => mocks.activeProviderId$,
+  selectEnabledProviders: () => mocks.enabledProviders$,
 }));
 
 vi.mock('$store/renderer/slices/github-auth/github-auth-selectors', () => ({
@@ -163,7 +223,9 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 import InitialAgentPicker from '../InitialAgentPicker.svelte';
+import ProviderSelectionHarness from './mocks/ProviderSelectionHarness.svelte';
 import { store as mockAppStore } from '$store/renderer/store';
+import { LiveSpecialistsClient } from '$lib/client/live/live-specialists-client';
 
 const emitStoreState = () => (mockAppStore as unknown as { emitState: () => void }).emitState();
 
@@ -190,15 +252,31 @@ async function flush() {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+function setEnabledProviders(enabled: Record<string, boolean>) {
+  mocks.enabledProviders = enabled;
+  mocks.enabledProviders$.set(enabled);
+  emitStoreState();
+}
+
+function selection() {
+  return JSON.parse(screen.getByTestId('selection').textContent ?? '{}');
+}
+
 describe('InitialAgentPicker stale model override clearing', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.fileSpecialistsLoaded$.set(false);
     mocks.hydrated$.set(true);
+    mocks.selectedModel$.set('');
+    mocks.configuredModels$.set({});
+    mocks.defaultProviderId = 'auggie';
+    mocks.activeProviderId$.set('auggie');
+    setEnabledProviders({});
+    mocks.defaultReasoningEffort$.set('');
     mocks.specialists$.set([]);
     mocks.effortLevelsByModel = {};
     mocks.providerModelsByProviderId = {};
-    mocks.availableModels = [];
+    mocks.availableModels$.set([]);
     mocks.availableModelsProviderId = '';
     mocks.getProviderAvailability.mockImplementation(() => new Promise(() => {}));
     mocks.specialistsList.mockImplementation(() =>
@@ -210,6 +288,209 @@ describe('InitialAgentPicker stale model override clearing', () => {
 
   afterEach(() => {
     cleanup();
+  });
+
+  it('keeps an Antigravity model pick when Auggie is disabled', async () => {
+    setEnabledProviders({ auggie: false, antigravity: true });
+    mocks.getProviderAvailability.mockResolvedValue({
+      hasAnyProvider: true,
+      providers: {
+        auggie: { available: true },
+        antigravity: { available: true, authenticated: true },
+      },
+    });
+    render(ProviderSelectionHarness);
+    await flush();
+    await fireEvent.click(screen.getAllByTestId('pick-antigravity')[SINGLE_PICKER]);
+    await flush();
+    expect(selection()).toEqual({
+      selectedProvider: 'antigravity',
+      selectedModel: 'gemini-4-argon',
+      modelWasOverridden: true,
+    });
+  });
+
+  it.each(['', 'auggie'])('skips disabled Auggie with active provider %j', async (active) => {
+    mocks.activeProviderId$.set(active);
+    setEnabledProviders({ auggie: false });
+    mocks.getProviderAvailability.mockResolvedValue({
+      hasAnyProvider: true,
+      providers: { auggie: { available: true }, codex: { available: true } },
+    });
+    render(ProviderSelectionHarness);
+    await waitFor(() => expect(selection().selectedProvider).toBe('codex'));
+  });
+
+  it('preserves an in-session model pick when a late availability probe reports it unavailable', async () => {
+    let resolveAvailability!: (result: unknown) => void;
+    mocks.getProviderAvailability.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveAvailability = resolve;
+        }),
+    );
+    render(ProviderSelectionHarness);
+    await fireEvent.click(screen.getAllByTestId('pick-model-with-triple')[SINGLE_PICKER]);
+    resolveAvailability({
+      hasAnyProvider: true,
+      providers: { auggie: { available: true }, codex: { available: false } },
+    });
+    await flush();
+    expect(selection()).toEqual({
+      selectedProvider: 'codex',
+      selectedModel: 'bare-picked-model',
+      modelWasOverridden: true,
+    });
+  });
+
+  describe('named provider profiles (§5.54)', () => {
+    const WORK = {
+      id: 'pwork00000001',
+      providerRef: 'codex@pwork00000001',
+      baseProviderId: 'codex',
+      name: 'Work',
+    };
+    beforeEach(() => {
+      mocks.catalogProfiles = [WORK];
+      mocks.getProviderAvailability.mockResolvedValue({
+        hasAnyProvider: true,
+        providers: { auggie: { available: true }, codex: { available: true } },
+      });
+    });
+    afterEach(() => {
+      mocks.catalogProfiles = [];
+    });
+
+    it('creates with the picked profile reference', async () => {
+      render(ProviderSelectionHarness);
+      await flush();
+      await fireEvent.click(screen.getAllByTestId('pick-profile-model')[SINGLE_PICKER]);
+      await flush();
+      expect(selection()).toEqual({
+        selectedProvider: WORK.providerRef,
+        selectedModel: 'gpt-5-work',
+        modelWasOverridden: true,
+      });
+    });
+
+    it('keeps a default profile selected after a specialist switch resets the model', async () => {
+      mocks.activeProviderId$.set(WORK.providerRef);
+      mocks.specialists$.set([{ id: 'reviewer', name: 'Reviewer', description: '' }]);
+      render(ProviderSelectionHarness);
+      await flush();
+      await fireEvent.click(screen.getAllByTestId('pick-profile-model')[SINGLE_PICKER]);
+      await flush();
+      await fireEvent.click(within(modeCards().single).getByRole('button', { name: /General/ }));
+      await fireEvent.click(await screen.findByRole('menuitemradio', { name: /Reviewer/ }));
+      await flush();
+      expect(selection().selectedProvider).toBe(WORK.providerRef);
+    });
+
+    it('keeps an existing profile selection when provider availability refreshes', async () => {
+      render(ProviderSelectionHarness);
+      await flush();
+      await fireEvent.click(screen.getAllByTestId('pick-profile-model')[SINGLE_PICKER]);
+      await flush();
+      mocks.getProviderAvailability.mockResolvedValue({
+        hasAnyProvider: true,
+        providers: { auggie: { available: true }, codex: { available: true } },
+      });
+      await flush();
+      expect(selection().selectedProvider).toBe(WORK.providerRef);
+    });
+
+    it('moves a new agent off a profile whose base provider is disabled', async () => {
+      render(ProviderSelectionHarness);
+      await flush();
+      await fireEvent.click(screen.getAllByTestId('pick-profile-model')[SINGLE_PICKER]);
+      await flush();
+      setEnabledProviders({ codex: false });
+      await waitFor(() => expect(selection().selectedProvider).toBe('auggie'));
+    });
+  });
+
+  it('switches away when settings disable the selected provider after availability loads', async () => {
+    mocks.getProviderAvailability.mockResolvedValue({
+      hasAnyProvider: true,
+      providers: { auggie: { available: true }, codex: { available: true } },
+    });
+    render(ProviderSelectionHarness);
+    await flush();
+    setEnabledProviders({ auggie: false });
+    await waitFor(() => expect(selection().selectedProvider).toBe('codex'));
+  });
+
+  it('clears a disabled restored override before availability resolves', async () => {
+    setEnabledProviders({ auggie: false });
+    mocks.fileSpecialistsLoaded$.set(true);
+    const onModelChange = vi.fn();
+    render(InitialAgentPicker, {
+      props: {
+        selectedProvider: 'auggie',
+        selectedModel: 'remembered-model',
+        modelWasOverridden: true,
+        onModelChange,
+      },
+    });
+    await waitFor(() => expect(onModelChange).toHaveBeenCalledWith(undefined));
+  });
+
+  it.each([false, undefined])(
+    'clears a restored Antigravity override without confirmed auth (%s)',
+    async (authenticated) => {
+      mocks.fileSpecialistsLoaded$.set(true);
+      mocks.getProviderAvailability.mockResolvedValue({
+        hasAnyProvider: true,
+        providers: { antigravity: { available: true, authenticated } },
+      });
+      const onModelChange = vi.fn();
+      render(InitialAgentPicker, {
+        props: {
+          selectedProvider: 'antigravity',
+          selectedModel: 'gemini-4-argon',
+          modelWasOverridden: true,
+          onModelChange,
+        },
+      });
+      await waitFor(() => expect(onModelChange).toHaveBeenCalledWith(undefined));
+    },
+  );
+
+  it('clears a disabled provider when no enabled provider is ready', async () => {
+    setEnabledProviders({ auggie: false });
+    mocks.getProviderAvailability.mockResolvedValue({
+      hasAnyProvider: true,
+      providers: { auggie: { available: true }, codex: { available: false } },
+    });
+    render(ProviderSelectionHarness);
+    await flush();
+    expect(selection()).toEqual({ selectedProvider: '', modelWasOverridden: false });
+  });
+
+  it('clears a disabled provider while availability is pending', async () => {
+    setEnabledProviders({ auggie: false });
+    render(ProviderSelectionHarness);
+    await flush();
+    expect(selection()).toEqual({ selectedProvider: '', modelWasOverridden: false });
+  });
+
+  it('clears an in-session model when its provider is disabled with no fallback', async () => {
+    setEnabledProviders({ auggie: false, antigravity: true });
+    mocks.getProviderAvailability.mockResolvedValue({
+      hasAnyProvider: true,
+      providers: { antigravity: { available: true, authenticated: true } },
+    });
+    render(ProviderSelectionHarness);
+    await fireEvent.click(screen.getAllByTestId('pick-antigravity')[SINGLE_PICKER]);
+    await flush();
+    expect(selection().selectedModel).toBe('gemini-4-argon');
+    setEnabledProviders({ auggie: false, antigravity: false });
+    await waitFor(() =>
+      expect(selection()).toEqual({
+        selectedProvider: '',
+        modelWasOverridden: false,
+      }),
+    );
   });
 
   it('exposes the active work mode and updates it when a card is selected', async () => {
@@ -229,6 +510,34 @@ describe('InitialAgentPicker stale model override clearing', () => {
 
     expect(teamMode.getAttribute('aria-pressed')).toBe('false');
     expect(singleAgent.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('does not report an automatic reset of a deleted specialist as an agent pick', async () => {
+    mocks.specialists$.set([
+      { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'fable-5' },
+    ]);
+    const onSetupPick = vi.fn();
+    const onTeamModeChange = vi.fn();
+    render(InitialAgentPicker, {
+      props: { selectedSpecialist: 'deleted-custom', onSetupPick, onTeamModeChange },
+    });
+    await flush();
+    expect(onTeamModeChange).toHaveBeenCalledWith(true);
+    expect(onSetupPick).not.toHaveBeenCalled();
+  });
+
+  it('reports user mode picks through onSetupPick', async () => {
+    const onSetupPick = vi.fn();
+    render(InitialAgentPicker, {
+      props: { selectedSpecialist: 'spec-writer', isTeamMode: true, onSetupPick },
+    });
+    // Re-selecting the active mode is not a pick.
+    await fireEvent.click(modeCards().team);
+    expect(onSetupPick).not.toHaveBeenCalled();
+    await fireEvent.click(modeCards().single);
+    expect(onSetupPick).toHaveBeenCalledTimes(1);
+    await fireEvent.click(modeCards().team);
+    expect(onSetupPick).toHaveBeenCalledTimes(2);
   });
 
   it('defaults to single-agent mode with Developer when nothing is remembered', async () => {
@@ -309,6 +618,535 @@ describe('InitialAgentPicker stale model override clearing', () => {
     expect(single.getAttribute('aria-pressed')).toBe('true');
   });
 
+  it('previews Settings effort when the default model settings arrive after mount', async () => {
+    const onReasoningEffortChange = vi.fn();
+    render(InitialAgentPicker, { props: { selectedSpecialist: null, onReasoningEffortChange } });
+    mocks.selectedModel$.set('fable-5');
+    mocks.configuredModels$.set({ auggie: 'fable-5' });
+    mocks.defaultReasoningEffort$.set('high');
+    await waitFor(() =>
+      expect(screen.getAllByTestId('picker-reasoning')[SINGLE_PICKER].textContent).toBe('high'),
+    );
+    expect(onReasoningEffortChange).not.toHaveBeenCalled();
+    mocks.defaultReasoningEffort$.set('low');
+    await waitFor(() =>
+      expect(screen.getAllByTestId('picker-reasoning')[SINGLE_PICKER].textContent).toBe('low'),
+    );
+  });
+
+  it.each([false, true])(
+    'only previews Settings effort for a configured model (configured=%j)',
+    async (configured) => {
+      mocks.defaultProviderId = 'codex';
+      // selectSelectedModel also returns a catalog isDefault/first row when
+      // Settings has no model; that fallback alone is not inheritance evidence.
+      mocks.selectedModel$.set('catalog-default');
+      mocks.configuredModels$.set(configured ? { codex: 'catalog-default' } : {});
+      mocks.defaultReasoningEffort$.set('high');
+      mocks.availableModelsProviderId = 'codex';
+      mocks.availableModels$.set([{ value: 'catalog-default' }]);
+      mocks.effortLevelsByModel = { 'catalog-default': ['low', 'high'] };
+      render(InitialAgentPicker, {
+        props: { selectedSpecialist: null, selectedProvider: 'codex' },
+      });
+      await flush();
+      expect(screen.getAllByTestId('picker-reasoning')[SINGLE_PICKER].textContent).toBe(
+        configured ? 'high' : '',
+      );
+    },
+  );
+
+  it.each(['high', ''])(
+    'keeps explicit effort %j ahead of the Settings fallback',
+    async (effort) => {
+      mocks.selectedModel$.set('fable-5');
+      mocks.configuredModels$.set({ auggie: 'fable-5' });
+      mocks.defaultReasoningEffort$.set('low');
+      render(InitialAgentPicker, {
+        props: { selectedSpecialist: null, selectedReasoningEffort: effort },
+      });
+      await flush();
+      expect(screen.getAllByTestId('picker-reasoning')[SINGLE_PICKER].textContent).toBe(effort);
+    },
+  );
+
+  it('clears an inherited Settings effort explicitly', async () => {
+    mocks.selectedModel$.set('fable-5');
+    mocks.configuredModels$.set({ auggie: 'fable-5' });
+    mocks.defaultReasoningEffort$.set('high');
+    const onReasoningEffortChange = vi.fn();
+    render(InitialAgentPicker, { props: { selectedSpecialist: null, onReasoningEffortChange } });
+    await fireEvent.click(screen.getAllByTestId('clear-reasoning')[SINGLE_PICKER]);
+    expect(onReasoningEffortChange).toHaveBeenCalledExactlyOnceWith('');
+    expect(screen.getAllByTestId('picker-reasoning')[SINGLE_PICKER].textContent).toBe('');
+  });
+
+  it.each([
+    { selectedProvider: 'codex', selectedModel: undefined, modelWasOverridden: false },
+    { selectedProvider: 'auggie', selectedModel: 'fable-5', modelWasOverridden: true },
+    { selectedProvider: 'auggie', selectedModel: 'unrelated-model', modelWasOverridden: true },
+  ])(
+    'does not leak Settings effort into a different provider or explicit model ($selectedProvider/$selectedModel)',
+    async (props) => {
+      mocks.selectedModel$.set('fable-5');
+      mocks.configuredModels$.set({ auggie: 'fable-5' });
+      mocks.defaultReasoningEffort$.set('high');
+      render(InitialAgentPicker, { props: { selectedSpecialist: null, ...props } });
+      await flush();
+      expect(screen.getAllByTestId('picker-reasoning')[SINGLE_PICKER].textContent).toBe('');
+    },
+  );
+
+  it.each([
+    { specialistSettings: { defaultModel: 'fable-5' }, expected: '' },
+    { specialistSettings: { reasoningEffort: 'low' }, expected: 'low' },
+    {
+      specialistSettings: {
+        modelOptions: [{ provider: 'auggie', model: 'fable-5', reasoningEffort: 'low' }],
+      },
+      expected: 'low',
+    },
+  ])(
+    'does not override a specialist-specific default with Settings (%j)',
+    async ({ specialistSettings, expected }) => {
+      mocks.selectedModel$.set('fable-5');
+      mocks.configuredModels$.set({ auggie: 'fable-5' });
+      mocks.defaultReasoningEffort$.set('high');
+      mocks.specialists$.set([
+        {
+          id: 'custom',
+          name: 'Custom',
+          description: '',
+          resolvedModel: 'fable-5',
+          ...specialistSettings,
+        },
+      ]);
+      mocks.specialistsList.mockImplementation(() => new Promise(() => {}));
+      render(InitialAgentPicker, { props: { selectedSpecialist: 'custom' } });
+      await flush();
+      expect(screen.getAllByTestId('picker-reasoning')[SINGLE_PICKER].textContent).toBe(expected);
+    },
+  );
+
+  it.each([
+    { name: 'frontmatter effort', reasoningEffort: 'high', modelOptions: [], expected: 'high' },
+    {
+      name: 'matching model option ahead of frontmatter',
+      reasoningEffort: 'high',
+      modelOptions: [{ model: 'picked-model', provider: 'codex', reasoningEffort: 'low' }],
+      expected: 'low',
+    },
+    {
+      name: 'foreign-provider option falls back to frontmatter',
+      reasoningEffort: 'high',
+      modelOptions: [{ model: 'picked-model', provider: 'auggie', reasoningEffort: 'low' }],
+      expected: 'high',
+    },
+    {
+      name: 'other-model option falls back to frontmatter',
+      reasoningEffort: 'high',
+      modelOptions: [{ model: 'other-model', provider: 'codex', reasoningEffort: 'low' }],
+      expected: 'high',
+    },
+    {
+      name: 'providerless option matches any provider',
+      reasoningEffort: 'high',
+      modelOptions: [{ model: 'picked-model', reasoningEffort: 'low' }],
+      expected: 'low',
+    },
+    {
+      name: 'first matching option has no effort',
+      reasoningEffort: 'high',
+      modelOptions: [
+        { model: 'picked-model', provider: 'codex' },
+        { model: 'picked-model', provider: 'codex', reasoningEffort: 'low' },
+      ],
+      expected: 'high',
+    },
+    {
+      name: 'explicit model without specialist effort excludes Settings',
+      reasoningEffort: undefined,
+      modelOptions: [{ model: 'other-model', provider: 'codex', reasoningEffort: 'low' }],
+      expected: '',
+    },
+  ])('previews specialist effort for an explicit model: $name', async (testCase) => {
+    mocks.defaultProviderId = 'codex';
+    mocks.configuredModels$.set({ codex: 'picked-model' });
+    mocks.defaultReasoningEffort$.set('high');
+    mocks.availableModelsProviderId = 'codex';
+    mocks.availableModels$.set([{ value: 'picked-model' }]);
+    mocks.effortLevelsByModel = { 'picked-model': ['low', 'high'] };
+    mocks.specialists$.set([{ id: 'custom', name: 'Custom', description: '' }]);
+    mocks.backendRequest.mockResolvedValue({
+      specialists: [
+        {
+          id: 'custom',
+          name: 'Custom',
+          description: '',
+          source: 'user',
+          codingAgent: 'auggie',
+          model: 'default-model',
+          modelOptions: [
+            { model: 'default-model', provider: 'codex', reasoningEffort: 'medium' },
+            ...testCase.modelOptions,
+          ],
+          reasoningEffort: testCase.reasoningEffort,
+          resolvedProvider: 'codex',
+          resolvedModel: 'default-model',
+          // The default-model preview is not evidence for the explicit model.
+          resolvedReasoningEffort: 'medium',
+        },
+      ],
+    });
+    const client = new LiveSpecialistsClient();
+    mocks.specialistsList.mockImplementation((provider) => client.list(provider));
+    render(InitialAgentPicker, {
+      props: {
+        selectedSpecialist: 'custom',
+        selectedProvider: 'codex',
+        selectedModel: 'picked-model',
+        modelWasOverridden: true,
+      },
+    });
+    await waitFor(() =>
+      expect(mocks.backendRequest).toHaveBeenCalledWith('specialist.list', { provider: 'codex' }),
+    );
+    await flush();
+    expect(screen.getAllByTestId('picker-reasoning')[SINGLE_PICKER].textContent).toBe(
+      testCase.expected,
+    );
+  });
+
+  it.each([
+    {
+      name: 'foreign specialist pin falls through to Settings',
+      defaultProvider: 'codex',
+      model: 'claude-only',
+      expected: 'high',
+    },
+    {
+      name: 'non-default provider has its own configured model',
+      defaultProvider: 'auggie',
+      model: undefined,
+      expected: 'high',
+    },
+    {
+      name: 'configured default provider control',
+      defaultProvider: 'codex',
+      model: undefined,
+      expected: 'high',
+    },
+    {
+      name: 'genuine specialist model pin suppresses Settings',
+      defaultProvider: 'codex',
+      model: 'gpt-fixture',
+      expected: '',
+    },
+    {
+      name: 'rejected legacy compound pin does not suppress Settings',
+      defaultProvider: 'codex',
+      model: 'codex:gpt-fixture',
+      expected: 'high',
+    },
+  ])('previews the resolved provider Settings effort: $name', async (testCase) => {
+    mocks.defaultProviderId = testCase.defaultProvider;
+    mocks.configuredModels$.set({ codex: 'gpt-fixture' });
+    mocks.defaultReasoningEffort$.set('high');
+    mocks.availableModelsProviderId = 'codex';
+    mocks.availableModels$.set([{ value: 'gpt-fixture' }]);
+    mocks.effortLevelsByModel = { 'gpt-fixture': ['low', 'high'] };
+    mocks.specialists$.set([
+      {
+        id: 'custom',
+        name: 'Custom',
+        description: '',
+        defaultModel: testCase.model,
+        resolvedModel: 'gpt-fixture',
+      },
+    ]);
+    mocks.backendRequest.mockResolvedValue({
+      specialists: [
+        {
+          id: 'custom',
+          name: 'Custom',
+          description: '',
+          source: 'user',
+          model: testCase.model,
+          resolvedProvider: 'codex',
+          resolvedModel: 'gpt-fixture',
+        },
+      ],
+    });
+    const client = new LiveSpecialistsClient();
+    mocks.specialistsList.mockImplementation((provider) => client.list(provider));
+    render(InitialAgentPicker, {
+      props: { selectedSpecialist: 'custom', selectedProvider: 'codex' },
+    });
+    await waitFor(() =>
+      expect(mocks.backendRequest).toHaveBeenCalledWith('specialist.list', { provider: 'codex' }),
+    );
+    await flush();
+    expect(screen.getAllByTestId('picker-reasoning')[SINGLE_PICKER].textContent).toBe(
+      testCase.expected,
+    );
+  });
+
+  it('uses the selected provider Settings model for General, independently of the active provider', async () => {
+    mocks.defaultProviderId = 'auggie';
+    mocks.activeProviderId$.set('auggie');
+    setEnabledProviders({});
+    mocks.selectedModel$.set('fable-5');
+    mocks.configuredModels$.set({ auggie: 'fable-5', codex: 'gpt-fixture' });
+    mocks.defaultReasoningEffort$.set('high');
+    mocks.providerModelsByProviderId = {
+      codex: {
+        models: [{ value: 'gpt-fixture', effortLevels: ['low', 'high'] }],
+        fetchedAt: '2026-09-25T00:00:00Z',
+      },
+    };
+    render(InitialAgentPicker, {
+      props: { selectedSpecialist: null, selectedProvider: 'codex' },
+    });
+    await flush();
+    expect(screen.getAllByTestId('picker-default')[SINGLE_PICKER].textContent).toBe('gpt-fixture');
+    expect(screen.getAllByTestId('picker-reasoning')[SINGLE_PICKER].textContent).toBe('high');
+  });
+
+  it('still previews Settings when specialist model options do not supply the chosen effort', async () => {
+    mocks.selectedModel$.set('fable-5');
+    mocks.configuredModels$.set({ auggie: 'fable-5' });
+    mocks.defaultReasoningEffort$.set('high');
+    mocks.specialists$.set([
+      {
+        id: 'custom',
+        name: 'Custom',
+        description: '',
+        resolvedModel: 'fable-5',
+        modelOptions: [
+          { provider: 'auggie', model: 'other-model', reasoningEffort: 'low' },
+          { provider: 'auggie', model: 'fable-5' },
+        ],
+      },
+    ]);
+    mocks.specialistsList.mockImplementation(() => new Promise(() => {}));
+    render(InitialAgentPicker, { props: { selectedSpecialist: 'custom' } });
+    await waitFor(() =>
+      expect(screen.getAllByTestId('picker-reasoning')[SINGLE_PICKER].textContent).toBe('high'),
+    );
+  });
+
+  it('filters a Settings effort the default model does not support', async () => {
+    mocks.selectedModel$.set('fable-5');
+    mocks.configuredModels$.set({ auggie: 'fable-5' });
+    mocks.defaultReasoningEffort$.set('high');
+    mocks.effortLevelsByModel = { 'fable-5': ['low'] };
+    render(InitialAgentPicker, { props: { selectedSpecialist: null } });
+    await flush();
+    expect(screen.getAllByTestId('picker-reasoning')[SINGLE_PICKER].textContent).toBe('');
+  });
+
+  it('refreshes the Settings effort preview when model capabilities change', async () => {
+    mocks.selectedModel$.set('fable-5');
+    mocks.configuredModels$.set({ auggie: 'fable-5' });
+    mocks.defaultReasoningEffort$.set('high');
+    mocks.effortLevelsByModel = { 'fable-5': ['low', 'high'] };
+    render(InitialAgentPicker, { props: { selectedSpecialist: null } });
+    await flush();
+    expect(screen.getAllByTestId('picker-reasoning')[SINGLE_PICKER].textContent).toBe('high');
+
+    mocks.effortLevelsByModel = { 'fable-5': ['low'] };
+    mocks.availableModels$.set([{ value: 'fable-5' }]);
+    await waitFor(() =>
+      expect(screen.getAllByTestId('picker-reasoning')[SINGLE_PICKER].textContent).toBe(''),
+    );
+  });
+
+  it('does not use another provider catalog to discard an explicit effort', async () => {
+    mocks.availableModelsProviderId = '';
+    mocks.effortLevelsByModel = { 'shared-model-id': ['low'] };
+    mocks.providerModelsByProviderId = {
+      codex: {
+        models: [{ value: 'shared-model-id', effortLevels: ['high'] }],
+        fetchedAt: '2026-09-25T00:00:00Z',
+      },
+    };
+    const onReasoningEffortChange = vi.fn();
+    render(InitialAgentPicker, {
+      props: {
+        selectedProvider: 'codex',
+        selectedModel: 'shared-model-id',
+        modelWasOverridden: true,
+        selectedReasoningEffort: 'high',
+        onReasoningEffortChange,
+      },
+    });
+    await flush();
+    expect(onReasoningEffortChange).not.toHaveBeenCalled();
+    expect(screen.getAllByTestId('picker-reasoning')[SINGLE_PICKER].textContent).toBe('high');
+  });
+
+  it.each([undefined, []])(
+    'preserves saved effort when late catalog effort levels are %j',
+    async (effortLevels) => {
+      const onReasoningEffortChange = vi.fn();
+      render(InitialAgentPicker, {
+        props: {
+          selectedProvider: 'codex',
+          selectedModel: 'shared-model-id',
+          modelWasOverridden: true,
+          selectedReasoningEffort: 'high',
+          onReasoningEffortChange,
+        },
+      });
+      await flush();
+      mocks.providerModelsByProviderId = {
+        codex: {
+          models: [{ value: 'shared-model-id', ...(effortLevels ? { effortLevels } : {}) }],
+          fetchedAt: '2026-09-25T00:00:00Z',
+        },
+      };
+      emitStoreState();
+      await flush();
+      expect(screen.getAllByTestId('picker-reasoning')[SINGLE_PICKER].textContent).toBe('high');
+      expect(onReasoningEffortChange).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([undefined, []])(
+    'keeps Settings fallback when global effort levels are %j',
+    async (effortLevels) => {
+      mocks.selectedModel$.set('fable-5');
+      mocks.configuredModels$.set({ auggie: 'fable-5' });
+      mocks.defaultReasoningEffort$.set('high');
+      mocks.availableModelsProviderId = 'auggie';
+      mocks.availableModels$.set([{ value: 'fable-5' }]);
+      mocks.effortLevelsByModel = { 'fable-5': effortLevels };
+      render(InitialAgentPicker, { props: { selectedSpecialist: null } });
+      await flush();
+      expect(screen.getAllByTestId('picker-reasoning')[SINGLE_PICKER].textContent).toBe('high');
+    },
+  );
+
+  it('waits for a nonempty incompatible list before clearing a saved effort', async () => {
+    const onReasoningEffortChange = vi.fn();
+    render(InitialAgentPicker, {
+      props: {
+        selectedProvider: 'codex',
+        selectedModel: 'shared-model-id',
+        modelWasOverridden: true,
+        selectedReasoningEffort: 'high',
+        onReasoningEffortChange,
+      },
+    });
+    await flush();
+    expect(onReasoningEffortChange).not.toHaveBeenCalled();
+    mocks.providerModelsByProviderId = {
+      codex: {
+        models: [{ value: 'shared-model-id', effortLevels: ['low'] }],
+        fetchedAt: '2026-09-25T00:00:00Z',
+      },
+    };
+    emitStoreState();
+    await waitFor(() => expect(onReasoningEffortChange).toHaveBeenCalledWith(undefined));
+  });
+
+  it.each([undefined, 'high', ''])(
+    'uses the daemon specialist effort preview behind explicit effort %j',
+    async (effort) => {
+      mocks.selectedModel$.set('shared-model-id');
+      mocks.defaultReasoningEffort$.set('high');
+      mocks.specialists$.set([{ id: 'custom', name: 'Custom', description: '' }]);
+      mocks.specialistsList.mockImplementation(async () => [
+        {
+          id: 'custom',
+          name: 'Custom',
+          description: '',
+          source: 'bundled',
+          resolvedProvider: 'codex',
+          resolvedModel: 'shared-model-id',
+          resolvedReasoningEffort: 'low',
+        },
+      ]);
+      const onReasoningEffortChange = vi.fn();
+      render(InitialAgentPicker, {
+        props: {
+          selectedSpecialist: 'custom',
+          selectedProvider: 'codex',
+          selectedReasoningEffort: effort,
+          onReasoningEffortChange,
+        },
+      });
+      await waitFor(() =>
+        expect(screen.getAllByTestId('picker-reasoning')[SINGLE_PICKER].textContent).toBe(
+          effort ?? 'low',
+        ),
+      );
+      expect(onReasoningEffortChange).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps same-model effort previews scoped by provider through the live client and cache', async () => {
+    const specialist = { id: 'custom', name: 'Custom', description: '' };
+    mocks.specialists$.set([specialist]);
+    let codexEffort = 'low';
+    mocks.backendRequest.mockImplementation(async (_method, params) => {
+      const provider = params?.provider ?? 'auggie';
+      return {
+        specialists: [
+          {
+            ...specialist,
+            source: 'bundled',
+            resolvedProvider: provider,
+            resolvedModel: 'shared-model-id',
+            resolvedReasoningEffort: provider === 'codex' ? codexEffort : 'high',
+          },
+        ],
+      };
+    });
+    const client = new LiveSpecialistsClient();
+    mocks.specialistsList.mockImplementation((provider) => client.list(provider));
+    const onReasoningEffortChange = vi.fn();
+    const { rerender } = render(InitialAgentPicker, {
+      props: { selectedSpecialist: 'custom', selectedProvider: 'auggie', onReasoningEffortChange },
+    });
+    const displayedEffort = () =>
+      screen.getAllByTestId('picker-reasoning')[SINGLE_PICKER].textContent;
+    await waitFor(() => expect(displayedEffort()).toBe('high'));
+    await rerender({ selectedProvider: 'codex' });
+    await waitFor(() => expect(displayedEffort()).toBe('low'));
+    await rerender({ selectedProvider: 'auggie' });
+    await waitFor(() => expect(displayedEffort()).toBe('high'));
+    expect(mocks.backendRequest.mock.calls).toEqual([
+      ['specialist.list', { provider: 'auggie' }],
+      ['specialist.list', { provider: 'codex' }],
+    ]);
+
+    // A specialist refresh invalidates every provider's preview. Returning
+    // to codex must fetch its new effort instead of either cached value.
+    codexEffort = 'medium';
+    mocks.specialists$.set([{ ...specialist }]);
+    await waitFor(() => expect(mocks.backendRequest).toHaveBeenCalledTimes(3));
+    await rerender({ selectedProvider: 'codex' });
+    await waitFor(() => expect(displayedEffort()).toBe('medium'));
+    expect(mocks.backendRequest).toHaveBeenLastCalledWith('specialist.list', { provider: 'codex' });
+    expect(onReasoningEffortChange).not.toHaveBeenCalled();
+  });
+
+  it('restores a valid single-agent effort after switching through an incompatible team model', async () => {
+    mocks.selectedModel$.set('single-model');
+    mocks.specialists$.set([
+      { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'fable-5' },
+    ]);
+    mocks.effortLevelsByModel = { 'single-model': ['low', 'high'], 'fable-5': ['low'] };
+    render(InitialAgentPicker, {
+      props: { selectedSpecialist: null, selectedReasoningEffort: 'high' },
+    });
+    await fireEvent.click(modeCards().team);
+    expect(screen.getAllByTestId('picker-reasoning')[TEAM_PICKER].textContent).toBe('');
+    await fireEvent.click(modeCards().single);
+    expect(screen.getAllByTestId('picker-reasoning')[SINGLE_PICKER].textContent).toBe('high');
+  });
+
   it('wires both pickers to controlled reasoning', async () => {
     mocks.specialists$.set([
       { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'fable-5' },
@@ -336,7 +1174,7 @@ describe('InitialAgentPicker stale model override clearing', () => {
     // Clearing from the team picker propagates back to both pickers.
     await fireEvent.click(screen.getAllByTestId('clear-reasoning')[TEAM_PICKER]);
     expect(onReasoningEffortChange).toHaveBeenCalledTimes(2);
-    expect(onReasoningEffortChange).toHaveBeenLastCalledWith(undefined);
+    expect(onReasoningEffortChange).toHaveBeenLastCalledWith('');
     expect(pickerEfforts()).toEqual(['', '']);
 
     // Picking from the team picker also reaches both pickers.
@@ -481,6 +1319,8 @@ describe('InitialAgentPicker stale model override clearing', () => {
     expect(onModelChange).not.toHaveBeenCalled();
 
     mocks.hydrated$.set(true);
+    mocks.selectedModel$.set('');
+    mocks.defaultReasoningEffort$.set('');
     await waitFor(() => expect(onModelChange).toHaveBeenCalledWith(undefined));
   });
 
@@ -513,7 +1353,7 @@ describe('InitialAgentPicker stale model override clearing', () => {
   });
 
   it('keeps a restored override valid per the global availableModels catalog', async () => {
-    mocks.availableModels = [{ value: 'fable-5' }, { value: 'opus4.6' }];
+    mocks.availableModels$.set([{ value: 'fable-5' }, { value: 'opus4.6' }]);
     mocks.availableModelsProviderId = 'auggie';
     mocks.fileSpecialistsLoaded$.set(true);
 
@@ -583,7 +1423,7 @@ describe('InitialAgentPicker stale model override clearing', () => {
   });
 
   it('clears a restored override when the global catalog for its provider loaded EMPTY', async () => {
-    mocks.availableModels = [];
+    mocks.availableModels$.set([]);
     mocks.availableModelsProviderId = 'auggie';
     mocks.fileSpecialistsLoaded$.set(true);
 
@@ -826,10 +1666,17 @@ describe('InitialAgentPicker specialist dropdown', () => {
     vi.clearAllMocks();
     mocks.fileSpecialistsLoaded$.set(false);
     mocks.hydrated$.set(true);
+    mocks.recentSpecialistIds$.set([]);
+    mocks.selectedModel$.set('');
+    mocks.configuredModels$.set({});
+    mocks.defaultProviderId = 'auggie';
+    mocks.activeProviderId$.set('auggie');
+    setEnabledProviders({});
+    mocks.defaultReasoningEffort$.set('');
     mocks.specialists$.set([]);
     mocks.effortLevelsByModel = {};
     mocks.providerModelsByProviderId = {};
-    mocks.availableModels = [];
+    mocks.availableModels$.set([]);
     mocks.availableModelsProviderId = '';
     mocks.getProviderAvailability.mockImplementation(() => new Promise(() => {}));
   });
@@ -924,6 +1771,48 @@ describe('InitialAgentPicker specialist dropdown', () => {
     expect(
       screen.getByRole('menuitemradio', { name: /General/ }).getAttribute('aria-checked'),
     ).toBe('false');
+  });
+
+  const catalogSpecialists = [
+    { id: 'developer', name: 'Developer', description: 'Builds things' },
+    { id: 'reviewer', name: 'Reviewer', description: 'Reviews things' },
+    { id: 'researcher', name: 'Researcher', description: 'Finds things' },
+    { id: 'writer', name: 'Writer', description: 'Writes things' },
+  ];
+
+  async function openedOptionIds() {
+    await fireEvent.click(specialistTrigger());
+    await screen.findByRole('menuitemradio', { name: /General/ });
+    return [...document.querySelectorAll('[data-specialist-option]')].map((el) =>
+      el.getAttribute('data-specialist-option'),
+    );
+  }
+
+  it('lists recently used specialists first, newest first, under General', async () => {
+    mocks.specialists$.set(catalogSpecialists);
+    mocks.recentSpecialistIds$.set(['writer', 'deleted-specialist', 'reviewer']);
+    render(InitialAgentPicker, { props: { selectedSpecialist: null, isTeamMode: false } });
+
+    expect(await openedOptionIds()).toEqual([
+      'general',
+      'writer',
+      'reviewer',
+      'developer',
+      'researcher',
+    ]);
+  });
+
+  it('keeps the catalog order when no specialist has been used', async () => {
+    mocks.specialists$.set(catalogSpecialists);
+    render(InitialAgentPicker, { props: { selectedSpecialist: null, isTeamMode: false } });
+
+    expect(await openedOptionIds()).toEqual([
+      'general',
+      'developer',
+      'reviewer',
+      'researcher',
+      'writer',
+    ]);
   });
 
   it('keeps both model pickers inline and bounded by the modal collision boundary', () => {

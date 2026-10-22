@@ -1,6 +1,7 @@
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { DropdownOption } from '$lib/components/ui/dropdown';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
+import { providerRefBaseId } from '$shared/provider-profiles';
 import {
   selectEffectiveDefaultProviderId,
   selectNormalizedProviderId,
@@ -171,6 +172,7 @@ export function toDropdownOptions(models: ModelPickerOptionInput[]): DropdownOpt
 }
 
 export interface IsUserProviderSettledParams {
+  workspaceId?: string;
   /** Models fetched for a disabled agent provider, or null while the fetch is pending. */
   agentProviderModels: AuggieModel[] | null;
   /** Error produced by the disabled agent-provider fetch, or null when none. */
@@ -217,7 +219,7 @@ export function isUserProviderSettled(params: IsUserProviderSettledParams): bool
   } = params;
 
   const normalizedEnabledProviderIds = enabledProviderIds.map((pid) =>
-    selectNormalizedProviderId.select(appStore.state, pid),
+    selectNormalizedProviderId.select(appStore.state, pid, params.workspaceId),
   );
   const providerEnabled = normalizedEnabledProviderIds.includes(modelProvider);
   if (!providerEnabled) return agentProviderModels !== null || agentProviderError !== null;
@@ -229,15 +231,20 @@ export function isUserProviderSettled(params: IsUserProviderSettledParams): bool
  * both sides after catalog normalization so raw aliases (e.g. `acp`) match
  * their canonical provider id.
  */
-export function isProviderEnabled(enabledProviderIds: string[], providerId: string): boolean {
-  const normalizedId = selectNormalizedProviderId.select(appStore.state, providerId);
+export function isProviderEnabled(
+  enabledProviderIds: string[],
+  providerId: string,
+  workspaceId?: string,
+): boolean {
+  const normalizedId = selectNormalizedProviderId.select(appStore.state, providerId, workspaceId);
   return enabledProviderIds.some(
-    (pid) => selectNormalizedProviderId.select(appStore.state, pid) === normalizedId,
+    (pid) => selectNormalizedProviderId.select(appStore.state, pid, workspaceId) === normalizedId,
   );
 }
 
 /**
- * Return true when `providerId` was explicitly disabled in Settings > Agents:
+ * Return true when `providerId` (or a profile reference's base provider) was
+ * explicitly disabled in Settings > Agents:
  * `providers.enabled[id] === false` for a provider whose catalog row allows
  * disabling (the daemon's `ensure_provider_enabled` gate). Unlike the
  * available+enabled set this reads settings alone — an absent entry (map not
@@ -247,10 +254,17 @@ export function isProviderEnabled(enabledProviderIds: string[], providerId: stri
 export function isProviderDisabledInSettings(
   enabledProviders: Record<string, boolean>,
   providerId: string,
+  workspaceId?: string,
 ): boolean {
   if (!providerId) return false;
-  const normalizedId = selectNormalizedProviderId.select(appStore.state, providerId);
-  const entry = selectProviderCatalogEntry.select(appStore.state, normalizedId);
+  // Enablement stays keyed by the base provider (§5.54): a profile is disabled
+  // exactly when its base provider is.
+  const normalizedId = selectNormalizedProviderId.select(
+    appStore.state,
+    providerRefBaseId(providerId),
+    workspaceId,
+  );
+  const entry = selectProviderCatalogEntry.select(appStore.state, normalizedId, workspaceId);
   if (entry?.canBeDisabled === false) return false;
   return enabledProviders[normalizedId] === false;
 }
@@ -262,16 +276,25 @@ export function isProviderDisabledInSettings(
  * matched while the global default is unresolved without conflating models
  * from different providers.
  */
-export function normalizeModelIdForMatch(modelId: string, bareProviderId?: string): string {
+export function normalizeModelIdForMatch(
+  modelId: string,
+  bareProviderId?: string,
+  workspaceId?: string,
+): string {
   const { providerId: explicitProviderId, modelId: baseModelId } = splitLegacyCompoundId(modelId);
-  const defaultProviderId = selectEffectiveDefaultProviderId.select(appStore.state);
+  const defaultProviderId = selectEffectiveDefaultProviderId.select(appStore.state, workspaceId);
   const providerId = explicitProviderId || bareProviderId || defaultProviderId;
   if (!providerId) return baseModelId;
-  const normalizedProviderId = selectNormalizedProviderId.select(appStore.state, providerId);
+  const normalizedProviderId = selectNormalizedProviderId.select(
+    appStore.state,
+    providerId,
+    workspaceId,
+  );
   return `${normalizedProviderId}:${baseModelId}`;
 }
 
 export interface FindModelFallbackOptionParams {
+  workspaceId?: string;
   /** Candidate dropdown options (may include the "use default" sentinel). */
   options: DropdownOption[];
   /** Sentinel value to exclude from candidates (the "use default" option). */
@@ -303,7 +326,10 @@ export function findModelFallbackOption(
   let candidates = options.filter((opt) => opt.value !== excludeValue);
 
   if (restrictToProvider) {
-    const defaultProviderId = selectEffectiveDefaultProviderId.select(appStore.state);
+    const defaultProviderId = selectEffectiveDefaultProviderId.select(
+      appStore.state,
+      params.workspaceId,
+    );
     candidates = candidates.filter(
       (opt) =>
         (splitLegacyCompoundId(opt.value).providerId ?? defaultProviderId) === restrictToProvider,

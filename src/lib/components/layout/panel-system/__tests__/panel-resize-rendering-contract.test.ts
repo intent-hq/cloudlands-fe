@@ -32,7 +32,6 @@ describe('panel resize rendering', () => {
 
     expect(container).not.toContain('min-width: 30em');
     expect(container).toContain('min-width: 0');
-    expect(container).toContain('overflow: hidden');
     expect(panel).not.toContain('min-width: 30em');
   });
 

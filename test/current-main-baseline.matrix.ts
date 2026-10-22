@@ -220,7 +220,7 @@ export const baselineRows = [
     'Persistent pinned-workspace indicator',
     'sidebar',
     [...visual, 'activity-precedence'],
-    ['src/lib/components/layout/sidebar-nav/__tests__/all-workspaces-card-pinned-ordering.test.ts'],
+    ['src/features/home/home.ct.spec.ts'],
   ),
   row('WORKSPACE-11', 'Workspace-hover-card sidebar placement', 'sidebar', visual, [
     'src/lib/components/workspace/__tests__/WorkspaceCard.idle-activity.test.ts',

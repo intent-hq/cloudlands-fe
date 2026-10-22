@@ -23,14 +23,16 @@ const APPROVED_BRIDGE_REGISTRATIONS = new Map([
   ['src/store/renderer/seeders/agent-ipc-bridge-seeder.ts', { registerMockIpcHandler: 2 }],
   ['src/store/renderer/seeders/antigravity-setup-bridge-seeder.ts', { registerMockIpcHandler: 2 }],
   ['src/store/renderer/seeders/auto-update-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
-  ['src/store/renderer/seeders/backend-status-bridge-seeder.ts', { registerMockIpcHandler: 5 }],
+  ['src/store/renderer/seeders/backend-status-bridge-seeder.ts', { registerMockIpcHandler: 7 }],
   ['src/store/renderer/seeders/browser-ipc-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/connections-bridge-seeder.ts', { registerMockIpcHandler: 12 }],
+  // intent:// link delivery: drains the actions main queued for this window.
+  ['src/store/renderer/seeders/deep-link-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/file-bridge-seeder.ts', { registerMockIpcHandler: 12 }],
   ['src/store/renderer/seeders/git-bridge-seeder.ts', { registerMockIpcHandler: 9 }],
   ['src/store/renderer/seeders/guest-sessions-bridge-seeder.ts', { registerMockIpcHandler: 3 }],
   ['src/store/renderer/seeders/host-bridge-seeder.ts', { registerMockIpcHandler: 16 }],
-  ['src/store/renderer/seeders/integrations-bridge-seeder.ts', { registerMockIpcHandler: 28 }],
+  ['src/store/renderer/seeders/integrations-bridge-seeder.ts', { registerMockIpcHandler: 33 }],
   ['src/store/renderer/seeders/invite-consent-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/invite-notice-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/invite-progress-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
@@ -63,10 +65,6 @@ const APPROVED_BRIDGE_REGISTRATIONS = new Map([
     { registerMockIpcHandler: 2 },
   ],
   ['src/store/renderer/seeders/workspaces-seeder.ts', { registerMockIpcHandler: 7 }],
-  [
-    'src/store/renderer/slices/notifications/sagas/notifications-saga.ts',
-    { addMockIpcListener: 1 },
-  ],
 ]);
 
 const IPC_ROUTER_PATH = 'src/shared/ipc-mock-router.ts';
@@ -129,10 +127,10 @@ export function findRendererSideEffectBoundaryViolations(files) {
     return moduleCandidates(fromPath, specifier).find((candidate) => sources.has(candidate));
   };
   const directOrigin = (fromPath, specifier, exportedName) => {
-    if (specifier === '@augmentcode/themis/types' && exportedName === 'StoreMiddleware') {
+    if (specifier === '@themislib/themis/types' && exportedName === 'StoreMiddleware') {
       return 'StoreMiddleware';
     }
-    if (specifier === '@augmentcode/themis/svelte-store' && exportedName === 'Store') {
+    if (specifier === '@themislib/themis/svelte-store' && exportedName === 'Store') {
       return 'Store';
     }
     const isRouter =
@@ -361,10 +359,10 @@ export function findRendererSideEffectBoundaryViolations(files) {
         }
       } else if (bindings && ts.isNamespaceImport(bindings)) {
         namespaceImports.set(bindings.name.text, specifier);
-        if (specifier === '@augmentcode/themis/types') {
+        if (specifier === '@themislib/themis/types') {
           storeMiddlewareNamespaces.add(bindings.name.text);
         }
-        if (specifier === '@augmentcode/themis/svelte-store') {
+        if (specifier === '@themislib/themis/svelte-store') {
           storeConstructorNamespaces.add(bindings.name.text);
         }
       }

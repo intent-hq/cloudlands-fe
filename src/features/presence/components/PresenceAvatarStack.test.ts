@@ -87,3 +87,31 @@ describe('PresenceAvatarStack default tooltip triggers', () => {
     expectSingleTriggerNamed('ada');
   });
 });
+
+describe('authoritative role rings', () => {
+  it('keeps three roles distinct from online state and names them accessibly', () => {
+    render(PresenceAvatarStack, {
+      props: {
+        people: [
+          { ...person('owner', true), hostRole: 'owner' },
+          { ...person('member', true), hostRole: 'member' },
+          { ...person('guest', false), hostRole: 'guest' },
+        ],
+      },
+    });
+    for (const [id, role, status] of [
+      ['owner', 'Host owner', 'Online'],
+      ['member', 'Host member', 'Online'],
+      ['guest', 'Workspace guest', 'Offline'],
+    ]) {
+      expect(
+        screen.getByRole('button', { name: new RegExp(id + '.*' + role + '.*' + status) }),
+      ).toBeTruthy();
+      expect(
+        document
+          .querySelector(`[data-presence-avatar="${id}"]`)
+          ?.getAttribute('data-presence-ring'),
+      ).toBe(id);
+    }
+  });
+});

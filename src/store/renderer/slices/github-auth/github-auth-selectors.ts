@@ -1,5 +1,17 @@
 import { store } from '../../store';
 
+export const selectGitHubAuthMutationRequestId = store.createSelector(
+  (state) => state.githubAuth.mutationRequestId,
+);
+
+export const selectGitHubAuthCallbacksCancelled = store.createSelector(
+  (state) => state.githubAuth.callbacksCancelled,
+);
+
+export const selectGitHubAuthIsDisconnecting = store.createSelector(
+  (state) => state.githubAuth.isDisconnecting,
+);
+
 export const selectGitHubAuthIsAuthenticated = store.createSelector(
   (state) => state.githubAuth.isAuthenticated,
 );

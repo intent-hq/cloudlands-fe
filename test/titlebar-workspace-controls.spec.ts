@@ -1,5 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { createServer, type ViteDevServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
@@ -7,21 +9,59 @@ import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 let server: ViteDevServer;
 let baseUrl = '';
 
+// Pre-bundle every dependency the browser imports before the first page loads.
+// Without explicit entries, Vite scans every HTML file in the package. On a cold
+// cache that scan can miss deep imports such as KebabIcon's
+// `phosphor-svelte/lib/*` icons, so Vite re-optimizes mid-test, logs
+// "optimized dependencies changed. reloading", and destroys the page's
+// execution context (cloudlands-fe#3392). The entries are the /src and /test
+// modules this spec dynamically imports in the page, read from its own source
+// so a newly added import is scanned too.
+const SPEC_PATH = fileURLToPath(import.meta.url);
+const BROWSER_ENTRIES = [
+  ...new Set(
+    [
+      ...readFileSync(SPEC_PATH, 'utf8').matchAll(
+        /import\(\s*(['"`])\/((?:src|test)\/[^'"`]+)\1\s*\)/g,
+      ),
+    ].map(([, , path]) => path),
+  ),
+];
+
 test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async () => {
+  // Guard the self-scan: an empty or stale list would silently fall back to the full scan.
+  expect(BROWSER_ENTRIES).toContain('test/fixtures/TitlebarWorkspaceControlsHarness.svelte');
+  for (const entry of BROWSER_ENTRIES) {
+    expect(existsSync(resolve(process.cwd(), entry)), entry).toBe(true);
+  }
   server = await createServer({
     configFile: false,
     root: process.cwd(),
     cacheDir: viteHarnessCacheDir('titlebar-workspace-controls'),
-    optimizeDeps: { include: ['bits-ui', 'svelte', 'flatstr', 'redux-saga', 'typed-redux-saga'] },
+    optimizeDeps: {
+      entries: BROWSER_ENTRIES,
+      include: ['bits-ui', 'svelte', 'flatstr', 'redux-saga', 'typed-redux-saga'],
+    },
     plugins: [svelte({ configFile: resolve(process.cwd(), 'svelte.config.js') })],
     resolve: {
       alias: [
+        {
+          find: '$lib/components/chat/ChatPanel.svelte',
+          replacement: resolve(
+            process.cwd(),
+            'src/lib/components/layout/sidebar-nav/__tests__/mocks/MockChiefChatPanel.svelte',
+          ),
+        },
         { find: '$lib', replacement: resolve(process.cwd(), 'src/lib') },
         { find: '$store', replacement: resolve(process.cwd(), 'src/store') },
         { find: '$features', replacement: resolve(process.cwd(), 'src/features') },
         { find: '$shared', replacement: resolve(process.cwd(), 'src/shared') },
+        {
+          find: /^\$app\/(state|navigation)$/,
+          replacement: resolve(process.cwd(), 'test/fixtures/titlebar-navigation.svelte.ts'),
+        },
         { find: '$app', replacement: resolve(process.cwd(), 'playwright/app-stubs') },
         {
           find: /^@fortawesome\/(?:fontawesome-common-types|fontawesome-svg-core|free-brands-svg-icons|free-regular-svg-icons|free-solid-svg-icons)$/,
@@ -42,11 +82,16 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => server?.close());
 
-async function mountControls(page: Page, theme: 'light' | 'dark', zoom: number) {
+async function mountControls(
+  page: Page,
+  theme: 'light' | 'dark',
+  zoom: number,
+  withAssistant = false,
+) {
   await page.goto(baseUrl + 'test/fixtures/titlebar-controls.html');
   await page.addStyleTag({ url: baseUrl + 'src/app.css' });
   await page.evaluate(
-    async ({ theme, zoom }) => {
+    async ({ theme, zoom, withAssistant }) => {
       Object.assign(globalThis, { process: { env: { NODE_ENV: 'test' } } });
       const [{ mount, tick }, { default: Harness }] = await Promise.all([
         import('/@id/svelte'),
@@ -78,15 +123,28 @@ async function mountControls(page: Page, theme: 'light' | 'dark', zoom: number) 
         },
       });
       document.body.style.zoom = String(zoom);
-      mount(Harness, { target });
+      mount(Harness, { target, props: { withAssistant } });
       const { store } = await import('/src/store/renderer/store.ts');
       const { zoomIpcSaga } =
         await import('/src/store/renderer/slices/user-preferences/sagas/zoom-ipc-saga.ts');
       store.runSaga(zoomIpcSaga);
       await tick();
     },
-    { theme, zoom },
+    { theme, zoom, withAssistant },
   );
+  // Preserve the explicit counter-scale readiness assertion before geometry.
+  await expect
+    .poll(() =>
+      page
+        .locator('.window-title-bar')
+        .evaluate((element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).a),
+    )
+    .toBeCloseTo(1 / zoom, 5);
+  // The initial zoom IPC resolves after mount's tick. Wait for the rendered
+  // counter-scale before callers record geometry at the requested zoom.
+  await expect
+    .poll(async () => (await page.locator('[data-titlebar-spaces-control]').boundingBox())?.width)
+    .toBeCloseTo(48, 0);
 }
 
 async function emulatePlatform(page: Page, platform: 'macOS' | 'Windows' | 'Linux') {
@@ -107,64 +165,98 @@ async function changeZoom(page: Page, zoom: number) {
   }, zoom);
 }
 
-test('keeps the Mac sidebar hit target clear of traffic lights through live zoom and reset', async ({
+test('keeps the Mac Home hit target clear of traffic lights through live zoom and reset', async ({
   page,
 }) => {
   await emulatePlatform(page, 'macOS');
   await mountControls(page, 'dark', 1);
   const toggle = page.locator('[data-titlebar-spaces-control]');
   const wrapper = page.locator('.window-title-bar-wrapper');
-  const initialLeft = (await toggle.boundingBox())!.x;
+  const homeTab = page.locator('[data-home-tab]');
+  const initialLeft = (await homeTab.boundingBox())!.x;
   // Independent safe-area requirement, not derived from the production padding.
   expect(initialLeft).toBeGreaterThanOrEqual(88);
   for (const zoom of [0.8, 0.67, 0.5, 1, 1.25, 2, 1]) {
     await changeZoom(page, zoom);
-    await expect.poll(async () => (await toggle.boundingBox())!.x).toBeCloseTo(initialLeft, 0);
+    // Measure the outer tab: Chromium rounds its 1px border at fractional zoom.
+    await expect.poll(async () => (await homeTab.boundingBox())!.x).toBeCloseTo(initialLeft, 0);
+    expect((await toggle.boundingBox())!.x).toBeGreaterThanOrEqual(88);
     await expect.poll(async () => (await wrapper.boundingBox())!.height).toBeCloseTo(35, 0);
     const box = (await toggle.boundingBox())!;
-    // #2441 settles the default icon control on --control-height-medium (32px).
-    expect(box.width).toBeCloseTo(32, 0);
+    // Home uses a 48px tab with the standard 32px control height.
+    expect(box.width).toBeCloseTo(48, 0);
     expect(box.height).toBeCloseTo(32, 0);
-    await toggle.click();
-    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
-    await toggle.press('Enter');
-    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    for (const activation of ['click', 'Enter', 'Space']) {
+      await page.evaluate(async () => {
+        const { goto, page } = await import('/test/fixtures/titlebar-navigation.svelte.ts');
+        await goto('/workspace/titlebar-test');
+        if (page.url.pathname !== '/workspace/titlebar-test')
+          throw new Error('Route did not reset');
+      });
+      await expect(toggle).not.toHaveAttribute('aria-current');
+      if (activation === 'click') await toggle.click();
+      else await toggle.press(activation);
+      await expect(toggle).toHaveAttribute('aria-current', 'page');
+    }
   }
 });
 
 for (const platform of ['Windows', 'Linux'] as const) {
-  test(`${platform} retains its existing sidebar placement`, async ({ page }) => {
+  test(`${platform} retains its existing Home placement`, async ({ page }) => {
     await emulatePlatform(page, platform);
     await mountControls(page, 'light', 1);
-    const toggle = page.locator('[data-titlebar-spaces-control]');
+    const homeTab = page.locator('[data-home-tab]');
     for (const zoom of [1, 0.5, 2, 1]) {
       await changeZoom(page, zoom);
-      await expect.poll(async () => (await toggle.boundingBox())!.x).toBeCloseTo(28, 0);
+      await expect.poll(async () => (await homeTab.boundingBox())!.x).toBeCloseTo(28, 0);
     }
   });
 }
 
-test('Mac sidebar activation preserves tab alignment, drag regions and narrow-window controls', async ({
+test('Mac Home navigation ignores the retired sidebar and keeps narrow-window controls usable', async ({
   page,
-}) => {
+}, testInfo) => {
   await emulatePlatform(page, 'macOS');
   await page.setViewportSize({ width: 640, height: 480 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await mountControls(page, 'light', 0.67);
   const toggle = page.locator('[data-titlebar-spaces-control]');
   const tabs = page.locator('[data-titlebar-workspace-controls]');
-  await toggle.click();
-  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
-  await expect.poll(async () => (await tabs.boundingBox())!.x).toBeCloseTo(296, 0);
+  const initialLeft = (await tabs.boundingBox())!.x;
   await page.evaluate(async () => {
     const { store } = await import('/src/store/renderer/store.ts');
-    const { setPanelWidth } =
-      await import('/src/store/renderer/slices/sidebar-nav/sidebar-nav-slice.ts');
-    store.dispatch(setPanelWidth(320));
+    const { sidebarNavSaga } =
+      await import('/src/store/renderer/slices/sidebar-nav/sagas/sidebar-nav-saga.ts');
+    localStorage.setItem('intent:sidebar-panel-item', JSON.stringify('all-workspaces'));
+    localStorage.setItem('intent:sidebar-panel-width', '320');
+    localStorage.setItem('intent:sidebar-card-pinned', 'true');
+    localStorage.setItem('intent:pinned-workspaces', JSON.stringify(['titlebar-test']));
+    store.runSaga(sidebarNavSaga);
   });
-  await expect.poll(async () => (await tabs.boundingBox())!.x).toBeCloseTo(328, 0);
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const { store } = await import('/src/store/renderer/store.ts');
+        return store.state.sidebarNav.pinnedWorkspaceIds;
+      }),
+    )
+    .toEqual(['titlebar-test']);
+  await expect.poll(async () => (await tabs.boundingBox())!.x).toBeCloseTo(initialLeft, 0);
+  await page.evaluate(async () => {
+    const { store } = await import('/src/store/renderer/store.ts');
+    const { openPanel } =
+      await import('/src/store/renderer/slices/sidebar-nav/sidebar-nav-slice.ts');
+    store.dispatch(openPanel('chief'));
+  });
+  await expect.poll(async () => (await tabs.boundingBox())!.x).toBeCloseTo(initialLeft, 0);
   await toggle.press('Space');
-  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await expect(toggle).toHaveAttribute('aria-current', 'page');
+  expect(
+    await page.evaluate(async () => {
+      const { store } = await import('/src/store/renderer/store.ts');
+      return store.state.sidebarNav.panelItem;
+    }),
+  ).toBe('chief');
   const toggleBox = (await toggle.boundingBox())!;
   await expect.poll(async () => (await tabs.boundingBox())!.x).toBeLessThan(200);
 
@@ -205,35 +297,371 @@ test('Mac sidebar activation preserves tab alignment, drag regions and narrow-wi
       return store.state.sidebarNav.showCreateModal;
     }),
   ).toBe(true);
+  await testInfo.attach('homepage-sidebar-upgrade', {
+    body: await page.screenshot({ animations: 'disabled', caret: 'hide' }),
+    contentType: 'image/png',
+  });
 });
 
-test('mounts accepted control geometry and shortcut tooltips', async ({ page }, testInfo) => {
-  for (const reducedMotion of ['no-preference', 'reduce'] as const) {
-    await page.emulateMedia({ reducedMotion });
-    for (const theme of ['light', 'dark'] as const) {
-      for (const zoom of [1, 2]) {
+test('keeps Home and workspace tabs separately clickable when the tab strip overflows', async ({
+  page,
+}, testInfo) => {
+  await emulatePlatform(page, 'macOS');
+  await page.setViewportSize({ width: 900, height: 240 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mountControls(page, 'light', 1);
+  await page.evaluate(async () => {
+    const { store } = await import('/src/store/renderer/store.ts');
+    const { loadWorkspaceTabsState } =
+      await import('/src/store/renderer/slices/tab-state/tab-state-slice.ts');
+    const ids = ['titlebar-test', ...Array.from({ length: 11 }, (_, i) => `overflow-${i}`)];
+    store.dispatch(
+      loadWorkspaceTabsState({
+        openTabs: ids,
+        currentTabId: ids[0],
+        pinnedTabs: [],
+        unsavedTabs: [],
+        optimisticTabs: [],
+        tabOrder: ids,
+      }),
+    );
+  });
+
+  const home = page.locator('[data-titlebar-spaces-control]');
+  const firstTab = page.locator('[data-workspace-tab="titlebar-test"] [role="tab"]');
+  const scroller = page.locator('[data-workspace-tab-scroller]');
+  for (const width of [900, 640]) {
+    await page.setViewportSize({ width, height: 240 });
+    await expect
+      .poll(() => scroller.evaluate((node) => node.scrollWidth > node.clientWidth))
+      .toBe(true);
+    await home.click();
+    await expect(home).toHaveAttribute('aria-current', 'page');
+    await expect
+      .poll(async () => {
+        const homeBounds = (await home.boundingBox())!;
+        const tabBounds = (await firstTab.boundingBox())!;
+        return tabBounds.x >= homeBounds.x + homeBounds.width;
+      })
+      .toBe(true);
+    await firstTab.click();
+    await expect(firstTab).toHaveAttribute('aria-selected', 'true');
+    await home.press('Enter');
+    await expect(home).toHaveAttribute('aria-current', 'page');
+    await testInfo.attach(`home-tab-overflow-${width}`, {
+      body: await page.locator('.window-title-bar-wrapper').screenshot(),
+      contentType: 'image/png',
+    });
+  }
+});
+
+for (const savedPanel of ['home', 'active', 'chief', 'settings', '{invalid-json']) {
+  test(`upgrade ignores saved sidebar destination ${savedPanel}`, async ({ page }, testInfo) => {
+    await mountControls(page, 'light', 1);
+    await page.evaluate(async (savedPanel) => {
+      localStorage.setItem(
+        'intent:sidebar-panel-item',
+        savedPanel.startsWith('{') ? savedPanel : JSON.stringify(savedPanel),
+      );
+      localStorage.setItem('intent:sidebar-card-pinned', 'true');
+      localStorage.setItem('intent:chief-active-agent-id', JSON.stringify('existing-thread'));
+      const [{ store }, { sidebarNavSaga }] = await Promise.all([
+        import('/src/store/renderer/store.ts'),
+        import('/src/store/renderer/slices/sidebar-nav/sagas/sidebar-nav-saga.ts'),
+      ]);
+      store.runSaga(sidebarNavSaga);
+    }, savedPanel);
+    const state = () =>
+      page.evaluate(async () => {
+        const { store } = await import('/src/store/renderer/store.ts');
+        return {
+          panelItem: store.state.sidebarNav.panelItem,
+          chiefActiveAgentId: store.state.sidebarNav.chiefActiveAgentId,
+        };
+      });
+    await expect.poll(state).toEqual({ panelItem: null, chiefActiveAgentId: 'existing-thread' });
+    const home = page.locator('[data-titlebar-spaces-control]');
+    await home.click();
+    await expect(home).toHaveAttribute('aria-current', 'page');
+    await page.evaluate(async () => {
+      const { goto } = await import('/test/fixtures/titlebar-navigation.svelte.ts');
+      await goto('/workspace/titlebar-test');
+    });
+    await expect(home).not.toHaveAttribute('aria-current');
+    expect(await state()).toEqual({ panelItem: null, chiefActiveAgentId: 'existing-thread' });
+    await testInfo.attach('upgrade-state', {
+      body: JSON.stringify({ savedPanel, state: await state() }),
+      contentType: 'application/json',
+    });
+  });
+}
+
+test('Assistant notifications open Home and select the existing thread', async ({
+  page,
+}, testInfo) => {
+  await mountControls(page, 'light', 1);
+  await page.evaluate(async () => {
+    const { handleNotificationNavigate } =
+      await import('/src/features/notifications/notification-navigation.ts');
+    await handleNotificationNavigate({
+      workspaceId: '__chief__',
+      chief: true,
+      agentId: 'notification-thread',
+    });
+  });
+  await expect(page.locator('[data-titlebar-spaces-control]')).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  const state = await page.evaluate(async () => {
+    const { store } = await import('/src/store/renderer/store.ts');
+    return {
+      panelItem: store.state.sidebarNav.panelItem,
+      chiefActiveAgentId: store.state.sidebarNav.chiefActiveAgentId,
+    };
+  });
+  expect(state).toEqual({ panelItem: 'chief', chiefActiveAgentId: 'notification-thread' });
+  await testInfo.attach('assistant-notification-navigation', {
+    body: JSON.stringify(state),
+    contentType: 'application/json',
+  });
+});
+
+async function prepareAssistantBoundary(page: Page) {
+  await mountControls(page, 'light', 1, true);
+  await page.evaluate(async () => {
+    const [{ store }, { bulkUpsertSessions }, nav, unread, { unreadTrackingSaga }, { goto }, tabs] =
+      await Promise.all([
+        import('/src/store/renderer/store.ts'),
+        import('/src/store/renderer/slices/agent-session/agent-session-slice.ts'),
+        import('/src/store/renderer/slices/sidebar-nav/sidebar-nav-slice.ts'),
+        import('/src/store/renderer/slices/unread-tracking/unread-tracking-slice.ts'),
+        import('/src/store/renderer/slices/unread-tracking/sagas/unread-tracking-saga.ts'),
+        import('/test/fixtures/titlebar-navigation.svelte.ts'),
+        import('/src/store/renderer/slices/tab-state/tab-state-slice.ts'),
+      ]);
+    const api = window.electronAPI!;
+    const invoke = api.invoke;
+    const requests: unknown[] = [];
+    Object.assign(window, { __assistantSeenRequests: requests });
+    api.invoke = async (channel, payload) => {
+      if (
+        channel === 'backend:request' &&
+        (payload as { method?: string })?.method === 'agent.markSeen'
+      ) {
+        requests.push({ channel, payload });
+        return {
+          success: true,
+          data: { success: true, lastSeenMessageId: 'assistant-message-seen' },
+        };
+      }
+      return invoke(channel, payload);
+    };
+    store.dispatch(
+      bulkUpsertSessions([
+        {
+          id: 'assistant-route-thread',
+          workspaceId: '__chief__',
+          name: 'Assistant route boundary',
+          status: 'active',
+          createdAt: '2026-10-05T12:00:00.000Z',
+          updatedAt: '2026-10-05T12:00:00.000Z',
+          messages: [
+            {
+              id: 'assistant-message-seen',
+              role: 'assistant',
+              content: 'Already viewed',
+              timestamp: '2026-10-05T12:00:00.000Z',
+            },
+          ],
+        },
+      ] as never),
+    );
+    store.dispatch(tabs.openWorkspaceTab('titlebar-other'));
+    store.dispatch(tabs.openWorkspaceTab('titlebar-test'));
+    store.runSaga(unreadTrackingSaga);
+    store.dispatch(nav.setChiefActiveAgentId('assistant-route-thread'));
+    store.dispatch(nav.openPanel('chief'));
+    await goto('/');
+    store.dispatch(unread.startDividerSession('assistant-route-thread', 'old-anchor'));
+  });
+  await expect(page.locator('[data-home-assistant]')).toBeVisible();
+  await expect(page.getByTestId('mock-chat-panel')).toContainText('assistant-route-thread');
+}
+
+async function assistantBoundaryState(page: Page) {
+  return page.evaluate(async () => {
+    const { store } = await import('/src/store/renderer/store.ts');
+    const { page } = await import('/test/fixtures/titlebar-navigation.svelte.ts');
+    return {
+      path: page.url.pathname,
+      panelItem: store.state.sidebarNav.panelItem,
+      selectedThread: store.state.sidebarNav.chiefActiveAgentId,
+      divider: store.state.unreadTracking.dividerSessionByAgentId['assistant-route-thread'] ?? null,
+      requests: (window as unknown as { __assistantSeenRequests: unknown[] })
+        .__assistantSeenRequests,
+    };
+  });
+}
+
+for (const destination of ['current workspace', 'other workspace', 'Settings'] as const) {
+  test(`leaving Home Assistant for ${destination} ends its unread session and remembers selection`, async ({
+    page,
+  }, testInfo) => {
+    await prepareAssistantBoundary(page);
+    const before = await assistantBoundaryState(page);
+    expect(before.divider).toEqual({ anchorId: 'old-anchor' });
+    if (destination === 'Settings') await page.locator('[data-titlebar-settings]').click();
+    else
+      await page
+        .locator(
+          `[data-workspace-tab="${destination === 'current workspace' ? 'titlebar-test' : 'titlebar-other'}"]`,
+        )
+        .click();
+    await expect(page.locator('[data-home-assistant]')).toHaveCount(0);
+    await expect
+      .poll(async () => {
+        const state = await assistantBoundaryState(page);
+        return { panelItem: state.panelItem, divider: state.divider, requests: state.requests };
+      })
+      .toEqual({
+        // Home remembers Assistant selection independently of its reading session.
+        panelItem: 'chief',
+        divider: null,
+        requests: [
+          {
+            channel: 'backend:request',
+            payload: {
+              method: 'agent.markSeen',
+              params: {
+                workspaceId: '__chief__',
+                agentId: 'assistant-route-thread',
+                messageId: 'assistant-message-seen',
+              },
+            },
+          },
+        ],
+      });
+    const away = await assistantBoundaryState(page);
+    expect(away.selectedThread).toBe('assistant-route-thread');
+    expect(away.path).toBe(
+      destination === 'Settings'
+        ? '/settings'
+        : `/workspace/${destination === 'current workspace' ? 'titlebar-test' : 'titlebar-other'}`,
+    );
+    await page.evaluate(async () => {
+      const [{ store }, { bulkUpsertSessions }] = await Promise.all([
+        import('/src/store/renderer/store.ts'),
+        import('/src/store/renderer/slices/agent-session/agent-session-slice.ts'),
+      ]);
+      const session = store.state.agentSessions.byAgentId['assistant-route-thread'];
+      store.dispatch(
+        bulkUpsertSessions([
+          {
+            ...session,
+            messages: [
+              ...session.messages,
+              {
+                id: 'assistant-message-arrived-away',
+                role: 'assistant',
+                content: 'Arrived while away',
+                timestamp: '2026-10-05T12:01:00.000Z',
+              },
+            ],
+          },
+        ] as never),
+      );
+    });
+    await page.locator('[data-titlebar-spaces-control]').click();
+    await expect(page.locator('[data-home-assistant]')).toBeVisible();
+    await expect(page.getByTestId('mock-chat-panel')).toContainText('assistant-route-thread');
+    // The mocked ChatPanel does not start divider sessions; model that boundary
+    // only after real Home navigation has restored the remembered Assistant.
+    await page.evaluate(async () => {
+      const { store } = await import('/src/store/renderer/store.ts');
+      const unread =
+        await import('/src/store/renderer/slices/unread-tracking/unread-tracking-slice.ts');
+      store.dispatch(
+        unread.startDividerSession('assistant-route-thread', 'assistant-message-arrived-away'),
+      );
+    });
+    const returned = await assistantBoundaryState(page);
+    expect(returned.divider).toEqual({ anchorId: 'assistant-message-arrived-away' });
+    expect(returned.selectedThread).toBe('assistant-route-thread');
+    expect(returned.panelItem).toBe('chief');
+    await testInfo.attach('assistant-route-boundary', {
+      body: JSON.stringify({ destination, before, away, returned }, null, 2),
+      contentType: 'application/json',
+    });
+    await testInfo.attach('assistant-returned', {
+      body: await page.screenshot({ animations: 'disabled', caret: 'hide' }),
+      contentType: 'image/png',
+    });
+  });
+}
+
+test('one Assistant card unmount does not close another mounted card', async ({
+  page,
+}, testInfo) => {
+  await prepareAssistantBoundary(page);
+  const mounted = await page.evaluate(async () => {
+    const [{ mount, unmount, tick }, { default: ChiefCard }, { store }, nav] = await Promise.all([
+      import('/@id/svelte'),
+      import('/src/lib/components/layout/sidebar-nav/cards/ChiefCard.svelte'),
+      import('/src/store/renderer/store.ts'),
+      import('/src/store/renderer/slices/sidebar-nav/sidebar-nav-slice.ts'),
+    ]);
+    const target = document.createElement('div');
+    document.body.append(target);
+    const second = mount(ChiefCard, { target, props: { isActive: false } });
+    await tick();
+    await unmount(second);
+    target.remove();
+    const afterFirstUnmount = {
+      panelItem: store.state.sidebarNav.panelItem,
+      divider: store.state.unreadTracking.dividerSessionByAgentId['assistant-route-thread'],
+    };
+    store.dispatch(nav.closePanel());
+    await tick();
+    return afterFirstUnmount;
+  });
+  expect(mounted).toEqual({ panelItem: 'chief', divider: { anchorId: 'old-anchor' } });
+  await expect(page.locator('[data-home-assistant]')).toHaveCount(0);
+  await expect.poll(async () => (await assistantBoundaryState(page)).divider).toBeNull();
+  await testInfo.attach('assistant-mount-ownership', {
+    body: JSON.stringify({ mounted, closed: await assistantBoundaryState(page) }, null, 2),
+    contentType: 'application/json',
+  });
+});
+
+for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+  for (const theme of ['light', 'dark'] as const) {
+    for (const zoom of [1, 2]) {
+      test(`control geometry and shortcut tooltips: ${theme}, zoom ${zoom}, motion ${reducedMotion}`, async ({
+        page,
+      }, testInfo) => {
+        await page.emulateMedia({ reducedMotion });
         await mountControls(page, theme, zoom);
         const controls = [
           page.locator('[data-titlebar-spaces-control]'),
           page.locator('[data-workspace-repo-launcher] button'),
         ];
-        // Both resolve to 32px: the sidebar control via --control-height-medium (#2441),
-        // the repo launcher via its explicit size-8.
-        const size = 32;
-        for (const control of controls) {
+        // Home is a 48px tab; the workspace launcher remains 32px.
+        for (const [index, control] of controls.entries()) {
+          const width = index === 0 ? 48 : 32;
           // Startup zoom arrives asynchronously over IPC, then selector readables
           // schedule the titlebar's inverse-zoom layout update.
-          await expect.poll(async () => (await control.boundingBox())?.width).toBeCloseTo(size, 0);
+          await expect.poll(async () => (await control.boundingBox())?.width).toBeCloseTo(width, 0);
           const box = await control.boundingBox();
-          expect(box?.height).toBeCloseTo(size, 0);
+          expect(box?.height).toBeCloseTo(32, 0);
           await expect(control).not.toHaveAttribute('title', /.+/);
         }
         const sidebarControl = controls[0];
-        await expect(sidebarControl).toHaveAttribute('aria-label', 'Toggle sidebar');
+        await expect(sidebarControl).toHaveAttribute('aria-label', 'Home');
         await expect(sidebarControl).not.toHaveAttribute('aria-haspopup');
         await expect(sidebarControl).not.toHaveAttribute('aria-expanded');
         await expect(sidebarControl).not.toHaveAttribute('aria-controls');
-        // #2441 reduces the launcher plus glyph to 14px; the sidebar glyph stays 16px.
+        // #2441 reduces the launcher plus glyph to 14px; the Home glyph stays 16px.
         const glyphs: Array<[Locator, number]> = [
           [page.locator('[data-titlebar-spaces-control] svg'), 16],
           [page.locator('[data-workspace-repo-launcher] svg'), 14],
@@ -246,8 +674,8 @@ test('mounts accepted control geometry and shortcut tooltips', async ({ page }, 
         }
         await sidebarControl.hover();
         await expect(page.locator('[data-tooltip-label]')).toBeVisible();
-        await expect(page.locator('[data-tooltip-label]')).toHaveText('Toggle sidebar');
-        await expect(page.locator('[data-tooltip-shortcut]')).toContainText(/(?:⌘|Ctrl\+)O/);
+        await expect(page.locator('[data-tooltip-label]')).toHaveText('Open Home');
+        await expect(page.locator('[data-tooltip-shortcut]')).toContainText(/(?:⌘|Ctrl\+)1/);
         await expect(page.locator('.sidebar-hover-card')).toHaveCount(0);
         if (reducedMotion === 'no-preference' && zoom === 1) {
           await testInfo.attach(theme + '-titlebar-controls', {
@@ -255,7 +683,43 @@ test('mounts accepted control geometry and shortcut tooltips', async ({ page }, 
             contentType: 'image/png',
           });
         }
-      }
+      });
     }
   }
+}
+
+test('modeled owner workspace creation remains withheld for unknown and guest callers', async ({
+  page,
+}) => {
+  await mountControls(page, 'light', 1);
+  const launcher = page.locator('[data-workspace-repo-launcher] button');
+  await expect(launcher).toBeVisible();
+  for (const role of ['unknown', 'guest'] as const) {
+    await page.evaluate(async (role) => {
+      const [{ store }, { principalContextChanged }, { admitLegacyPrincipal }] = await Promise.all([
+        import('/src/store/renderer/store.ts'),
+        import('/src/store/renderer/slices/principal/principal-slice.ts'),
+        import('/src/test/fixtures/principal-state.ts'),
+      ]);
+      if (role === 'unknown') store.dispatch(principalContextChanged(null));
+      else admitLegacyPrincipal('guest');
+    }, role);
+    await expect(launcher).toHaveCount(0);
+  }
 });
+
+import { checkFixturePrincipalLifecycle } from './fixture-principal-lifecycle';
+
+for (const borrowed of [true, false]) {
+  test(`principal lifecycle restores ${borrowed ? 'a borrowed guest' : 'a fresh store'}`, async ({
+    page,
+  }, info) => {
+    await checkFixturePrincipalLifecycle(
+      page,
+      info,
+      baseUrl,
+      'TitlebarWorkspaceControlsHarness',
+      borrowed,
+    );
+  });
+}

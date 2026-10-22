@@ -6,8 +6,14 @@
  * dropdown and the dialog. With the escape-layer stack, Escape #1 closes only
  * the dropdown (topmost layer) and Escape #2 closes the dialog.
  */
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+
+const context = vi.hoisted(() => ({ state: {} as Record<string, unknown> }));
+beforeEach(() => {
+  context.state = withLegacyPrincipal({});
+});
 
 // Stub the heavy initializer (Redux store, navigation, etc.) — the real app
 // renders RepoSelector inside it; here RepoSelector is rendered alongside the
@@ -20,7 +26,7 @@ vi.mock('$lib/components/workspace/CompactWorkspaceInitializer.svelte', async ()
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: {} });
+  return createAppStoreMockModule({ state: () => context.state });
 });
 
 vi.mock(
@@ -29,14 +35,22 @@ vi.mock(
     const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
     const store = createAppStoreMock({ state: {} });
     return {
+      selectWorkspaceInitializerHydrated: store.createSelector(() => true),
       selectWorkspaceInitializerDefaultParentPath: store.createSelector(() => ''),
+      selectWorkspaceInitializerDirectoryStatusCheck: store.createSelector(() => undefined),
       selectWorkspaceInitializerRecentRepos: store.createSelector(() => []),
+      selectWorkspaceInitializerRecentRepoRefresh: store.createSelector(() => undefined),
+      selectWorkspaceInitializerDismissedRecentRepoKeys: store.createSelector(() => []),
       selectWorkspaceInitializerRemoteSetups: store.createSelector(() => []),
     };
   },
 );
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-slice', () => ({
+  dismissWorkspaceInitializerRecentRepo: (repo: unknown) => ({
+    type: 'workspaceInitializer/dismissRecentRepo',
+    payload: [repo],
+  }),
   setWorkspaceInitializerDefaultParentPath: (path: string) => ({
     type: 'workspaceInitializer/setDefaultParentPath',
     payload: path,
@@ -52,6 +66,22 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-slic
   setWorkspaceInitializerRemoteSetups: (setups: unknown) => ({
     type: 'workspaceInitializer/setRemoteSetups',
     payload: setups,
+  }),
+  workspaceInitializerDirectoryStatusRequested: (...payload: unknown[]) => ({
+    type: 'workspaceInitializer/directoryStatusRequested',
+    payload,
+  }),
+  workspaceInitializerDirectoryStatusReleased: (...payload: unknown[]) => ({
+    type: 'workspaceInitializer/directoryStatusReleased',
+    payload,
+  }),
+  workspaceInitializerRecentReposRefreshRequested: (...payload: unknown[]) => ({
+    type: 'workspaceInitializer/recentReposRefreshRequested',
+    payload,
+  }),
+  workspaceInitializerRecentReposRefreshReleased: (...payload: unknown[]) => ({
+    type: 'workspaceInitializer/recentReposRefreshReleased',
+    payload,
   }),
 }));
 

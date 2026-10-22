@@ -11,7 +11,7 @@
  */
 
 import { store } from '../../store';
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { StoreState } from '../../types';
 import { sumHudUsageTotals, type HudFeedEntry } from './hud-slice';
 import {
@@ -68,6 +68,11 @@ export const selectHudUsage = store.createSelector((state) => state.hud.usage);
 export const selectHudUsageError = store.createSelector((state) => state.hud.usageError);
 
 export const selectHudRateHistory = store.createSelector((state) => state.hud.rateHistory);
+
+/** Raw workspace entities observed by the root-owned HUD hydration lifetime. */
+export const selectHudWorkspaceEntities = store.createSelector((state): Workspace[] =>
+  getItems(state.workspace.workspaces),
+);
 
 /**
  * 24h TOKEN BURN total — every `stats.getUsage` counter summed, `thoughtTokens`
@@ -621,8 +626,7 @@ const ZERO_TASKS = { total: 0, completed: 0, inProgress: 0 };
  * attention flags (unread travels on the `attention` flag and overlays the
  * card, intentd#1186). The only mapping left is presentational: the wire
  * `needs_attention` renders as `wait` (NEEDS ATTENTION, yellow). Unknown or
- * absent wire values default to `not_started` so the card never vanishes
- * (same convention as `AllWorkspacesCard`).
+ * absent wire values default to `not_started` so the card never vanishes.
  */
 function cardStateKey(workspace: Workspace): HudCardStateKey {
   const displayStatus = isWorkspaceDisplayStatus(workspace.displayStatus)
@@ -851,7 +855,9 @@ function agentBucketOf(state: StoreState, info: WorkspaceAgentInfo): HudAgentBuc
     (session.isWaitingForOtherAgents === true ||
       (Array.isArray(session.waitingForAgentIds) && session.waitingForAgentIds.length > 0) ||
       (Array.isArray(session.waitingOnHooks) && session.waitingOnHooks.length > 0) ||
-      (Array.isArray(session.waitingOnPrMonitors) && session.waitingOnPrMonitors.length > 0));
+      (Array.isArray(session.waitingOnPrMonitors) && session.waitingOnPrMonitors.length > 0) ||
+      (Array.isArray(session.waitingOnScriptMonitors) &&
+        session.waitingOnScriptMonitors.length > 0));
   // STAB-125 turn-liveness (§5.5, additive AgentLite field — structural read,
   // same convention as chat-read-service): `turnInFlight: true` is the
   // daemon's authoritative "an active worker is draining a turn NOW" signal,
@@ -943,7 +949,7 @@ function hudAgentScopeInputs(
   });
   return {
     parentAgentId: notSelf(info.parentAgentId) ?? notSelf(session?.parentAgentId),
-    isBackground: info.isBackground === true || session?.isBackground === true,
+    isBackground: info.isBackground ?? session?.isBackground,
     metadata: scopeMetadata(session?.metadata),
     agentMetadata: scopeMetadata(session?.agentMetadata),
   };
@@ -1030,7 +1036,9 @@ function cardAgentsOf(workspace: Workspace, state: StoreState): HudCardAgent[] {
         session?.isWaitingForOtherAgents === true ||
         waitingForAgentIds.length > 0 ||
         (Array.isArray(session?.waitingOnHooks) && session.waitingOnHooks.length > 0) ||
-        (Array.isArray(session?.waitingOnPrMonitors) && session.waitingOnPrMonitors.length > 0),
+        (Array.isArray(session?.waitingOnPrMonitors) && session.waitingOnPrMonitors.length > 0) ||
+        (Array.isArray(session?.waitingOnScriptMonitors) &&
+          session.waitingOnScriptMonitors.length > 0),
       waitingForAgentIds,
     };
   });

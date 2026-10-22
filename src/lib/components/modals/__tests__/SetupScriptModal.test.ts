@@ -12,11 +12,13 @@ function hasPrimaryVariant(button: HTMLElement): boolean {
 
 function renderModal() {
   const onClose = vi.fn();
-  render(SetupScriptModalBindingHost, { props: { onClose } });
+  const onCommit = vi.fn();
+  render(SetupScriptModalBindingHost, { props: { onClose, onCommit } });
   const boundValue = () => screen.getByLabelText('bound script value').textContent?.trim();
   const dialogState = () => screen.getByLabelText('dialog state').textContent?.trim();
   return {
     onClose,
+    onCommit,
     boundValue,
     dialogState,
     editValue: () => fireEvent.click(screen.getByTestId('edit-script')),
@@ -30,6 +32,18 @@ const saveAndDoneButton = () =>
 afterEach(cleanup);
 
 describe('SetupScriptModal primary actions', () => {
+  it('reports an explicit unchanged choice on Done, but not Cancel', async () => {
+    const done = renderModal();
+    await fireEvent.click(await doneButton());
+    expect(done.onCommit).toHaveBeenCalledOnce();
+    cleanup();
+    const cancel = renderModal();
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.modals_setupScript_cancel_label() }),
+    );
+    expect(cancel.onCommit).not.toHaveBeenCalled();
+  });
+
   it('keeps Done on the primary button variant when nothing changed', async () => {
     const { onClose, boundValue, dialogState } = renderModal();
 

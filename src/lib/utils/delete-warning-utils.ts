@@ -5,6 +5,12 @@
 import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
 import type { BackgroundHook } from '$features/hooks/background-hooks-service';
 import { ensureWorkspacePullRequestPool } from '$features/workspace/workspace-detail-hydration';
+import { isWorkspaceGuest } from '$features/workspace-sharing/utils/workspace-guest';
+import type { WorkspaceMember } from '$features/workspace-sharing/types';
+import {
+  selectPrincipalActionContext,
+  selectPrincipalSnapshot,
+} from '$store/renderer/slices/principal/principal-selectors';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { constructPrUrl } from '$lib/components/workspace/sidebar/sidebar-changes-utils';
 import { PullRequestStatus, type PullRequestInfo } from '$shared/types';
@@ -83,18 +89,49 @@ export type {
 } from '$store/renderer/slices/workspace-operations/workspace-operations-types';
 
 /**
- * Summarise the guests an archive/delete would remove from the workspace row's
- * membership summary (PROTOCOL §5.1): collaborators are the accepted members
- * minus the owner (floored at 0), plus the unredeemed invites. Both read as 0
- * on an unknown row or an older daemon that omits the fields.
- * @param workspaceId - The workspace ID to check
+ * Read the guests archive/delete removes from the daemon's effective roster.
+ * memberCount includes inherited instance members and cannot measure access loss.
+ * The seat spend and roster share one response, so pending invitations do not
+ * come from a stale workspace row. Older daemons may omit the seat spend.
+ * Null means unknown or obsolete: callers must not proceed on that preflight.
  */
-export function getGuestsSummary(workspaceId: string): GuestsWarning {
+export async function getGuestsSummary(workspaceId: string): Promise<GuestsWarning | null> {
   const workspace = selectWorkspaceById.select(appStore.state, workspaceId);
-  return {
-    collaboratorCount: Math.max(0, (workspace?.memberCount ?? 0) - 1),
-    openInviteCount: workspace?.openInviteCount ?? 0,
-  };
+  if (!workspace) return { collaboratorCount: 0, openInviteCount: 0 };
+  const context = selectPrincipalActionContext.select(appStore.state);
+  if (!context) return null;
+  const hostMembership = selectPrincipalSnapshot.select(appStore.state)?.capabilities
+    .hostMembership;
+  try {
+    const result = await backendRequest<{
+      members: WorkspaceMember[];
+      guestCount?: number;
+    }>('workspace.members.list', { workspaceId }, { timeoutMs: 10_000 });
+    if (selectPrincipalActionContext.select(appStore.state) !== context) return null;
+    if (!Array.isArray(result.members)) return null;
+    if (
+      hostMembership &&
+      result.members.some((member) => !['owner', 'member', 'guest'].includes(member.hostRole ?? ''))
+    )
+      return null;
+    const collaboratorCount = new Set(
+      result.members.filter(isWorkspaceGuest).map((member) => member.principalId),
+    ).size;
+    if (
+      result.guestCount !== undefined &&
+      (!Number.isSafeInteger(result.guestCount) || result.guestCount < collaboratorCount)
+    )
+      return null;
+    return {
+      collaboratorCount,
+      openInviteCount:
+        result.guestCount === undefined
+          ? (workspace.openInviteCount ?? 0)
+          : result.guestCount - collaboratorCount,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -174,7 +211,7 @@ export interface ActiveWorkNames {
 /**
  * Collect the in-flight work (streaming agents and active background hooks)
  * that a workspace archive/delete would stop, plus its unmerged (Open/Draft)
- * PRs, the guests it would remove (read off the stored row, no RPC) and —
+ * PRs, the guests it would remove (a fresh role-aware membership read) and —
  * only when `includeLocalChanges` is set — its local git changes.
  * Bulk flows leave it off so they never fan out `workspace.localChanges`.
  * The open-PR count needs the full pool, so a `workspace.list`-capped
@@ -185,17 +222,21 @@ export interface ActiveWorkNames {
 export async function getActiveWorkNames(
   workspaceId: string,
   { includeLocalChanges = false }: { includeLocalChanges?: boolean } = {},
-): Promise<ActiveWorkNames> {
-  const [hookNames, localChanges] = await Promise.all([
+): Promise<ActiveWorkNames | null> {
+  const context = selectPrincipalActionContext.select(appStore.state);
+  if (!context) return null;
+  const [hookNames, localChanges, guests] = await Promise.all([
     getActiveHookNames(workspaceId),
     includeLocalChanges ? getLocalChanges(workspaceId) : Promise.resolve(null),
+    getGuestsSummary(workspaceId),
     ensureWorkspacePullRequestPool(workspaceId),
   ]);
+  if (!guests || selectPrincipalActionContext.select(appStore.state) !== context) return null;
   return {
     agentNames: getRunningAgentNames(workspaceId),
     hookNames,
     openPrs: getOpenPrItems(workspaceId),
     localChanges,
-    guests: getGuestsSummary(workspaceId),
+    guests,
   };
 }

@@ -2,7 +2,7 @@
  * prMonitor slice reducer + selector tests (PROTOCOL §6.9 monitored-PRs state).
  */
 import { describe, expect, it } from 'vitest';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { removeWorkspaceEntity } from '../workspace/workspace-slice';
 import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 import {
@@ -138,5 +138,54 @@ describe('selectPrMonitors', () => {
     expect(selectPrMonitorsSnapshotStatus.select({ prMonitor: failed }, 'ws-1')).toBe('failed');
     const ready = prMonitorReducer(failed, prMonitorsUpdated('ws-1', []));
     expect(selectPrMonitorsSnapshotStatus.select({ prMonitor: ready }, 'ws-1')).toBe('ready');
+  });
+});
+
+describe('qualified rows in the shared monitor state', () => {
+  it('retains nullable checklists and resource identity while shielding legacy consumers', async () => {
+    const { selectReviewMonitors, selectPrMonitors, selectReviewMonitoringSupport } =
+      await import('./pr-monitor-selectors');
+    const { prMonitorsSupportUpdated, prMonitorsConnectionChanged } =
+      await import('./pr-monitor-slice');
+    const base = {
+      monitorId: 'gl',
+      workspaceId: 'ws-1',
+      agentId: 'a',
+      repo: 'Team/Repo',
+      prNumber: 42,
+      state: 'active' as const,
+      pendingChanges: [],
+      hasPendingChanges: false,
+      createdAt: 'now',
+      updatedAt: 'now',
+    };
+    const gl = {
+      ...base,
+      resource: {
+        repository: {
+          provider: 'gitlab' as const,
+          instanceBaseUrl: 'https://forge.test:8443/install',
+          projectPath: 'Team/Repo',
+        },
+        kind: 'merge-request' as const,
+        number: 42,
+      },
+      monitorAvailability: { state: 'restricted' as const },
+      lastSnapshot: null,
+    };
+    const gh = { ...base, monitorId: 'gh' };
+    let state = prMonitorReducer(undefined, prMonitorsUpdated('ws-1', [gh, gl]));
+    const root = { prMonitor: state } as Parameters<typeof selectReviewMonitors.select>[0];
+    expect(selectReviewMonitors.select(root, 'ws-1')).toEqual([gh, gl]);
+    expect(selectPrMonitors.select(root, 'ws-1')).toEqual([gh]);
+    state = prMonitorReducer(state, prMonitorsSupportUpdated('ws-1', 'consumer-pending'));
+    expect(selectReviewMonitoringSupport.select({ ...root, prMonitor: state }, 'ws-1')).toBe(
+      'consumer-pending',
+    );
+    state = prMonitorReducer(state, prMonitorsConnectionChanged('ws-1'));
+    expect(selectReviewMonitors.select({ ...root, prMonitor: state }, 'ws-1')).toEqual([]);
+    expect(selectReviewMonitoringSupport.select({ ...root, prMonitor: state }, 'ws-1')).toBe(
+      'unsupported',
+    );
   });
 });

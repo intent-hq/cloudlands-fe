@@ -114,6 +114,7 @@ export class TerminalHandler {
   private terminals = new Map<string, Terminal>();
   private byDaemonId = new Map<string, string>();
   private subscriptionId?: string;
+  private subscriptionGeneration = 0;
   /** Disposer for the stable-forwarder notification listener, once attached. */
   private notificationDisposer?: () => void;
   /**
@@ -223,6 +224,7 @@ export class TerminalHandler {
 
     await getBackendClient().request('terminal.write', {
       terminalId: terminal.daemonTerminalId,
+      ...(this.workspaceId ? { workspaceId: this.workspaceId } : {}),
       data: encodeBase64(data),
     });
   }
@@ -252,6 +254,7 @@ export class TerminalHandler {
     try {
       await getBackendClient().request('terminal.kill', {
         terminalId: terminal.daemonTerminalId,
+        ...(this.workspaceId ? { workspaceId: this.workspaceId } : {}),
       });
       logger.info('Terminal killed', { terminalId });
     } catch (error) {
@@ -367,11 +370,22 @@ export class TerminalHandler {
   }
 
   private async doSubscribe(client: ReturnType<typeof getBackendClient>): Promise<void> {
+    const generation = ++this.subscriptionGeneration;
+    const workspaceId = this.workspaceId;
     try {
       const result = await client.request<{ subscriptionId?: string }>('events.subscribe', {
         eventTypes: ['terminal:data', 'terminal:exit'],
         ...(this.workspaceId ? { workspaceId: this.workspaceId } : {}),
       });
+      if (generation !== this.subscriptionGeneration) {
+        if (result?.subscriptionId) {
+          await client.request('events.unsubscribe', {
+            subscriptionId: result.subscriptionId,
+            ...(workspaceId ? { workspaceId } : {}),
+          });
+        }
+        return;
+      }
       this.subscriptionId = result?.subscriptionId;
     } catch (error) {
       logger.warn(
@@ -384,6 +398,7 @@ export class TerminalHandler {
   }
 
   private async dropSubscription(): Promise<void> {
+    this.subscriptionGeneration += 1;
     const client = getBackendClient();
     if (this.notificationDisposer) {
       this.notificationDisposer();
@@ -401,7 +416,10 @@ export class TerminalHandler {
       const id = this.subscriptionId;
       this.subscriptionId = undefined;
       try {
-        await client.request('events.unsubscribe', { subscriptionId: id });
+        await client.request('events.unsubscribe', {
+          subscriptionId: id,
+          ...(this.workspaceId ? { workspaceId: this.workspaceId } : {}),
+        });
       } catch (error) {
         logger.warn('[Terminal] events.unsubscribe failed', {
           error: error instanceof Error ? error.message : String(error),

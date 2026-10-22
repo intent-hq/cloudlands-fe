@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { observeOverflow } from '$lib/actions/observe-overflow';
+
+  let commandOverflow = $state<Record<number, boolean>>({});
   /**
    * Agent memory breakdown — one row per spawned agent adapter (wire order:
    * the daemon sorts by memory descending), each expandable to its process
@@ -135,6 +138,7 @@
                       selectable) and is also exposed in full via tooltip.
                     -->
                     <Tooltip
+                      disabled={!commandOverflow[proc.pid]}
                       side="top"
                       class="min-w-0 flex-1"
                       contentClass="z-[10001] max-w-xl break-all"
@@ -142,7 +146,9 @@
                       {#snippet content()}
                         <span class="select-text font-mono">{proc.cmdline}</span>
                       {/snippet}
-                      <span class="block min-w-0 w-full truncate select-text font-mono"
+                      <span
+                        class="block min-w-0 w-full truncate select-text font-mono"
+                        use:observeOverflow={(overflow) => (commandOverflow[proc.pid] = overflow)}
                         >{proc.cmdline}</span
                       >
                     </Tooltip>

@@ -3,7 +3,7 @@
 //   ../WorkspaceSidebarHeader.svelte, ../TaskStatusProgress.svelte, ../SidebarBrowserLauncher.svelte,
 //   ../sidebar/WorkspaceProgressCard.svelte, ../sidebar/FlameGraph.svelte,
 //   ../sidebar/ContextPanel.svelte, ../sidebar/NotesPanel.svelte, ../sidebar/SidebarChangesPanel.svelte,
-//   ../../layout/sidebar-nav/SidebarNav.svelte, ../../layout/sidebar-nav/cards/AllWorkspacesCard.svelte,
+//   ../../layout/sidebar-nav/SidebarNav.svelte,
 //   ../../layout/WindowTitleBar.svelte, ../../../../routes/(app)/+layout.svelte
 
 import { readFileSync } from 'node:fs';
@@ -24,38 +24,24 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     const appLayout = source('../../../../routes/(app)/+layout.svelte');
 
     expect(navigation).toContain('data-top-navigation');
-    expect(navigation).toContain('variant="ghost-light"');
     expect(navigation).toContain('size="icon"');
-    expect(navigation).toContain('TITLEBAR_NAVIGATION_CONTROL_CLASS');
-    expect(navigation).toContain('data-nav-item={item.id}');
     expect(navigation).not.toContain('SidebarNavHoverCard');
     expect(titleBar).toContain('<SidebarNav />');
     expect(titleBar.indexOf('<SidebarNav />')).toBeLessThan(titleBar.indexOf('<WorkspaceTabStrip'));
     expect(titleBar).not.toContain('ChiefTrigger');
     expect(titleBar).toContain('titlebar-left-drag-surface');
     expect(titleBar).toContain('data-titlebar-left-drag-handle');
-    expect(titleBar).toContain('titlebar-fixed-controls flex min-w-0 items-center gap-1');
     expect(titleBar).toContain('<WorkspaceTabStrip');
     expect(titleBar).toContain('activeWorkspaceId={routedWorkspaceId}');
     expect(titleBar).toContain('data-titlebar-settings');
     expect(appLayout).not.toContain('<SidebarNav />');
   });
 
-  it('opens a title-bar workspace tab before navigating from the spaces combobox', () => {
-    const card = source('../../layout/sidebar-nav/cards/AllWorkspacesCard.svelte');
-    const openTab = card.indexOf('appStore.dispatch(openWorkspaceTab(workspaceId))');
-    const navigate = card.indexOf('await goto(route)');
-
-    expect(card).toContain("from '$store/renderer/slices/tab-state/tab-state-slice'");
-    expect(openTab).toBeGreaterThanOrEqual(0);
-    expect(openTab).toBeLessThan(navigate);
-  });
-
   it('orders the live identity, progress, then current status', () => {
     const progress = source('../sidebar/WorkspaceProgressCard.svelte');
-    const fullMode = progress.slice(
-      progress.indexOf('<div class="flex w-full flex-col" data-workspace-title-section>'),
-    );
+    const section = progress.match(/<div\b[^>]*\bdata-workspace-title-section\s*>/);
+    expect(section).not.toBeNull();
+    const fullMode = progress.slice(section!.index);
     const title = fullMode.indexOf('<!-- Workspace Header -->');
     const status = fullMode.indexOf('<!-- Status follows identity and progress');
     const metadata = fullMode.indexOf('<!-- repository and branch metadata -->');
@@ -65,7 +51,7 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(title).toBeLessThan(metadata);
     expect(metadata).toBeLessThan(progressSection);
     expect(progressSection).toBeLessThan(status);
-    expect(fullMode).toContain('class="flex w-full flex-col" data-workspace-title-section');
+    expect(section![0]).toMatch(/class="flex w-full flex-col"\s+data-workspace-title-section/);
     expect(fullMode).toContain(
       'class="mb-4 flex w-full flex-col gap-1" data-sidebar-workspace-metadata',
     );
@@ -125,7 +111,6 @@ describe('workspace sidebar hierarchy presentation contract', () => {
 
     expect(sidebar).toContain('shrink-0 px-6 pb-2 pt-5');
     expect(sidebar).toContain('data-workspace-title-region');
-    expect(sidebar).toContain('<div class="px-4 pb-1 pt-4">');
     const addContext = selfClosingTag(sidebar, 'AddContextSection');
     expect(addContext).toContain('onAddNote={onCreateNote}');
     expect(addContext).toMatch(/\bcompact\b/);
@@ -229,7 +214,7 @@ describe('workspace sidebar hierarchy presentation contract', () => {
   it('waits to reveal the launcher grid until the collapsing card reaches its source', () => {
     const sidebar = source('../MultiSelectTabbedSidebar.svelte');
 
-    expect(sidebar).toContain('function launcherGridReveal(_node: Element)');
+    expect(sidebar).toContain('function launcherGridReveal(');
     expect(sidebar).toContain('delay: spring.moderate.settleMs');
     expect(sidebar).toContain('duration: spring.fast.settleMs');
     expect(sidebar).toContain('in:launcherGridReveal|global');

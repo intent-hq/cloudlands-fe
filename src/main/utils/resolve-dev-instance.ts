@@ -13,7 +13,13 @@ export const USER_DATA_DIR_NAME = 'intent-cloudlands';
  * directory (Electron's app.getPath('appData')). Pure so it is testable without
  * Electron; callers pass the resolved appData path in.
  */
-export function resolveUserDataBasePath(appDataPath: string): string {
+export function resolveUserDataBasePath(appDataPath: string, explicitPath = ''): string {
+  // Honor Electron's explicit profile switch before any store or singleton lock
+  // is opened. Never silently fall back to the account profile for a bad path.
+  if (explicitPath) {
+    if (!path.isAbsolute(explicitPath)) throw new Error('--user-data-dir must be absolute');
+    return path.normalize(explicitPath);
+  }
   return path.join(appDataPath, USER_DATA_DIR_NAME);
 }
 

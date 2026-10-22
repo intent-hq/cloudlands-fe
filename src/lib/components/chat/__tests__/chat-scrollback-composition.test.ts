@@ -10,6 +10,7 @@ import {
   estimateSeekLandingStartOrdinal,
   estimateVirtualSpacerHeight,
   isConversationStartLoaded,
+  indexPreviousUserMessages,
   mapScrollTopToOrdinal,
   OLDER_HISTORY_INDICATOR_QUIET_MS,
   olderHistoryIndicatorAction,
@@ -257,12 +258,28 @@ describe('shouldRequestOlderHistory', () => {
     ).toBe(false);
   });
 
-  it('does not fire away from the top, while unscrollable, fetching, or exhausted', () => {
+  it('does not fire away from the top, while fetching, or exhausted', () => {
     expect(shouldRequestOlderHistory({ ...base, scrollTop: 500 })).toBe(false);
-    expect(shouldRequestOlderHistory({ ...base, canScroll: false })).toBe(false);
     expect(shouldRequestOlderHistory({ ...base, fetching: true })).toBe(false);
     expect(shouldRequestOlderHistory({ ...base, exhausted: true })).toBe(false);
   });
+
+  it.each([5, 0])(
+    'fills an unscrollable viewport with %i resident tail rows when older history exists',
+    (tailCount) => {
+      // Five short rows, or an empty resident window with known older history,
+      // must start the shared older-page path without requiring a scroll event.
+      expect(
+        shouldRequestOlderHistory({
+          ...base,
+          scrollTop: 0,
+          canScroll: false,
+          tailCount,
+          totalMessages: 120,
+        }),
+      ).toBe(true);
+    },
+  );
 
   it('extends the near-top threshold by the virtual spacer height (thumb drag)', () => {
     // Thumb dragged INTO the estimated region: scrollTop is far beyond the
@@ -656,13 +673,13 @@ describe('classifyScrollbackGesture (far-flick seek)', () => {
 
   it('inside the spacer but within the near threshold stays serial', () => {
     // 300 rows above the segment start (< 400).
-    expect(classifyScrollbackGesture({ ...base, scrollTop: 100_000 - 300 * 100 })).toBe('serial');
+    expect(classifyScrollbackGesture({ ...base, scrollTop: 100_000 - 5 * 100 })).toBe('serial');
     // Exactly at the threshold is NOT deeper than it — serial.
-    expect(classifyScrollbackGesture({ ...base, scrollTop: 100_000 - 400 * 100 })).toBe('serial');
+    expect(classifyScrollbackGesture({ ...base, scrollTop: 100_000 - 10 * 100 })).toBe('serial');
   });
 
   it('deeper than the near threshold seeks', () => {
-    expect(classifyScrollbackGesture({ ...base, scrollTop: 100_000 - 401 * 100 })).toBe('seek');
+    expect(classifyScrollbackGesture({ ...base, scrollTop: 100_000 - 11 * 100 })).toBe('seek');
     expect(classifyScrollbackGesture({ ...base, scrollTop: 0 })).toBe('seek');
   });
 
@@ -687,8 +704,8 @@ describe('classifyScrollbackGesture (far-flick seek)', () => {
     expect(result).toBe('seek');
   });
 
-  it('threshold constants: 2-3 pages of 200 rows', () => {
-    expect(SCROLLBACK_PAGE_ROWS).toBe(200);
+  it('threshold constants: 2-3 pages of five rows', () => {
+    expect(SCROLLBACK_PAGE_ROWS).toBe(5);
     expect(SCROLLBACK_SEEK_NEAR_PAGES).toBeGreaterThanOrEqual(2);
     expect(SCROLLBACK_SEEK_NEAR_PAGES).toBeLessThanOrEqual(3);
   });
@@ -875,11 +892,11 @@ describe('classifySettledPosition (settle-point driver)', () => {
 
   it('far inside the spacer → seek', () => {
     expect(classifySettledPosition(base)).toBe('seek');
-    expect(classifySettledPosition({ ...base, scrollTop: 100_000 - 401 * 100 })).toBe('seek');
+    expect(classifySettledPosition({ ...base, scrollTop: 100_000 - 11 * 100 })).toBe('seek');
   });
 
   it('near the segment start → serial (the walk reaches it quickly)', () => {
-    const scrollTop = 100_000 - 300 * 100; // 300 rows above the start (< 400)
+    const scrollTop = 100_000 - 5 * 100; // 300 rows above the start (< 400)
     expect(
       classifySettledPosition({
         ...base,
@@ -890,7 +907,7 @@ describe('classifySettledPosition (settle-point driver)', () => {
   });
 
   it('threshold boundary: exactly at nearPages x pageSize is serial, one row deeper seeks', () => {
-    const atThreshold = 100_000 - 400 * 100;
+    const atThreshold = 100_000 - 10 * 100;
     expect(
       classifySettledPosition({
         ...base,
@@ -1365,5 +1382,90 @@ describe('olderHistoryIndicatorAction (chain-scoped loading indicator)', () => {
   it('quiet window hides within the ~500ms budget', () => {
     expect(OLDER_HISTORY_INDICATOR_QUIET_MS).toBeGreaterThan(0);
     expect(OLDER_HISTORY_INDICATOR_QUIET_MS).toBeLessThanOrEqual(500);
+  });
+});
+
+describe('indexPreviousUserMessages', () => {
+  const row = (id: string, role: 'user' | 'assistant', day = '01') =>
+    msg(id, role, `2026-08-${day}T10:00:00Z`);
+
+  it('resolves history-only sources and crosses a contiguous history/live junction', () => {
+    const human = row('human', 'user');
+    const targets = indexPreviousUserMessages(
+      composeTranscript(
+        [human, row('history-reply', 'assistant')],
+        [row('live-reply', 'assistant', '02')],
+        false,
+      ),
+      true,
+    );
+    expect(targets.get('history-reply')).toBe(human);
+    expect(targets.get('live-reply')).toBe(human);
+    expect(targets.get('human')).toBeNull();
+  });
+
+  it.each(['id', 'appMessageId'] as const)(
+    'uses the rendered identity after %s overlap deduplication',
+    (key) => {
+      const oldCopy = { ...row('old-copy', 'user'), appMessageId: 'logical-prompt' };
+      const liveCopy = { ...oldCopy, id: key === 'id' ? oldCopy.id : 'live-copy' };
+      const earlier = row('earlier', 'user');
+      const composed = composeTranscript(
+        [earlier, oldCopy, row('history-reply', 'assistant')],
+        [liveCopy, row('live-reply', 'assistant')],
+        false,
+      );
+      const targets = indexPreviousUserMessages(composed, true);
+      expect(targets.get('history-reply')).toBe(earlier);
+      expect(targets.get('live-reply')).toBe(liveCopy);
+      expect(targets.get(liveCopy.id)).toBe(earlier);
+    },
+  );
+
+  it('stops at a gap but resumes after a human prompt on each loaded side', () => {
+    const historyHuman = row('history-human', 'user');
+    const liveHuman = row('live-human', 'user');
+    const wake = { ...row('wake', 'user'), metadata: { type: 'hook_wake' } };
+    const targets = indexPreviousUserMessages(
+      composeTranscript(
+        [historyHuman, row('history-reply', 'assistant')],
+        [wake, row('orphan-reply', 'assistant'), liveHuman, row('live-reply', 'assistant')],
+        true,
+      ),
+      true,
+    );
+    expect(targets.get('history-reply')).toBe(historyHuman);
+    for (const id of ['wake', 'orphan-reply', 'live-human']) expect(targets.has(id)).toBe(false);
+    expect(targets.get('live-reply')).toBe(liveHuman);
+  });
+
+  it('withholds top fallback with unloaded older history and keeps question answers human-authored', () => {
+    const answers = { ...row('answers', 'user'), metadata: { type: 'question_answers' } };
+    const targets = indexPreviousUserMessages(
+      composeTranscript(
+        [row('orphan', 'assistant'), answers, row('reply', 'assistant')],
+        [],
+        false,
+      ),
+      false,
+    );
+    expect(targets.has('orphan')).toBe(false);
+    expect(targets.has('answers')).toBe(false);
+    expect(targets.has('missing')).toBe(false);
+    expect(targets.get('reply')).toBe(answers);
+  });
+
+  it('does not mistake date boundaries for unloaded gaps', () => {
+    const human = row('human', 'user');
+    const targets = indexPreviousUserMessages(
+      composeTranscript(
+        [],
+        [human, row('reply', 'assistant', '02'), row('later-human', 'user', '03')],
+        false,
+      ),
+      true,
+    );
+    expect(targets.get('reply')).toBe(human);
+    expect(targets.get('later-human')).toBe(human);
   });
 });

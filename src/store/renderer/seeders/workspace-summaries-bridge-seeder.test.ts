@@ -179,6 +179,7 @@ describe('workspace-summaries-bridge-seeder', () => {
 
       expect(mockedRequest).toHaveBeenCalledWith('workspace.get', { workspaceId: 'ws-1' });
       expect(mockedRequest).toHaveBeenCalledWith('git.branchStatus', {
+        workspaceId: 'ws-1',
         repoPath: '/wt/ws-1',
         branchName: 'develop',
       });
@@ -212,6 +213,7 @@ describe('workspace-summaries-bridge-seeder', () => {
       })) as { success: boolean; data: Record<string, unknown> };
 
       expect(mockedRequest).toHaveBeenCalledWith('git.branchStatus', {
+        workspaceId: 'ws-1',
         repoPath: '/wt/ws-1',
         branchName: 'main',
       });

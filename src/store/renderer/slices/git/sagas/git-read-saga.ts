@@ -1,8 +1,18 @@
 import type { SagaGenerator } from 'typed-redux-saga';
-import { call, join, put, takeEvery } from 'typed-redux-saga';
+import { call, fork, join, put, select, takeEvery } from 'typed-redux-saga';
+import type { StoreState } from '../../../types';
+import { selectPrincipalActionContext } from '../../principal/principal-selectors';
+import { gitConsumerReadSaga } from './git-consumer-read-saga';
+import {
+  getGitMutationVersion,
+  isGitMutationPending,
+  waitForGitMutations,
+} from '../../../utils/worktree-mutation-queue';
 
 import { gitClient } from '$features/git/git.client';
 import { appClient } from '$lib/client';
+import { parsePushedGitStatus } from '$lib/client/live/live-git-client';
+import { changesEventReceived } from '../../changes/changes-slice';
 import { createLogger } from '$lib/utils/client-logger';
 import type { CommitFile } from '$features/file-tracking/types';
 import { LineType, type CommitInfo, type GitStatus, type WorkspaceId } from '$shared/types';
@@ -25,15 +35,36 @@ import { toGitStatus } from '../utils/git-status';
 
 const logger = createLogger('GitReadSaga');
 
-function* loadGitStatusWorker(workspaceId: string): SagaGenerator<void> {
-  try {
-    const status: GitStatus | null = yield* call(
-      [appClient.git, appClient.git.status],
-      workspaceId,
-    );
-    if (status) yield* put(setGitStatus(workspaceId, toGitStatus(status)));
-  } catch (error) {
-    logger.error('Failed to load git status', error);
+function* currentStatusReadContext(): SagaGenerator<string | null> {
+  const state: StoreState | undefined = yield* select();
+  return state ? selectPrincipalActionContext.select(state) : null;
+}
+
+function* loadGitStatusWorker(
+  versions: Map<string, number>,
+  workspaceId: string,
+  forceRefresh?: boolean,
+): SagaGenerator<void> {
+  const version = versions.get(workspaceId);
+  const context = yield* currentStatusReadContext();
+  for (;;) {
+    if (isGitMutationPending(workspaceId)) yield* call(waitForGitMutations, workspaceId);
+    const epoch = getGitMutationVersion(workspaceId);
+    try {
+      const status: GitStatus | null = yield* call(
+        [appClient.git, appClient.git.status],
+        workspaceId,
+        ...(forceRefresh ? [{ forceRefresh: true }] : []),
+      );
+      if (versions.get(workspaceId) !== version || (yield* currentStatusReadContext()) !== context)
+        return;
+      if (epoch !== getGitMutationVersion(workspaceId)) continue;
+      if (status) yield* put(setGitStatus(workspaceId, toGitStatus(status)));
+    } catch (error) {
+      if (epoch !== getGitMutationVersion(workspaceId)) continue;
+      logger.error('Failed to load git status', error);
+    }
+    return;
   }
 }
 
@@ -139,20 +170,35 @@ function* loadSecondaryRootWorker(
   const [workspaceId, gitRootId, registeredCommitSha, limit = 30] = action.payload;
   const workspaceVersion = versions.workspaces.get(workspaceId) ?? 0;
   yield* put(setSecondaryRootGitLoading(workspaceId, gitRootId));
-  try {
-    const data = yield* call(readSecondaryRoot, workspaceId, gitRootId, registeredCommitSha, limit);
+  for (;;) {
+    if (isGitMutationPending(workspaceId, gitRootId))
+      yield* call(waitForGitMutations, workspaceId, gitRootId);
     if ((versions.workspaces.get(workspaceId) ?? 0) !== workspaceVersion) return;
-    yield* put(setSecondaryRootGit(workspaceId, gitRootId, data));
-  } catch (error) {
-    if ((versions.workspaces.get(workspaceId) ?? 0) !== workspaceVersion) return;
-    logger.error('Failed to load secondary Git root', error);
-    yield* put(
-      setSecondaryRootGitError(
+    const epoch = getGitMutationVersion(workspaceId, gitRootId);
+    try {
+      const data = yield* call(
+        readSecondaryRoot,
         workspaceId,
         gitRootId,
-        error instanceof Error ? error.message : String(error),
-      ),
-    );
+        registeredCommitSha,
+        limit,
+      );
+      if ((versions.workspaces.get(workspaceId) ?? 0) !== workspaceVersion) return;
+      if (epoch !== getGitMutationVersion(workspaceId, gitRootId)) continue;
+      yield* put(setSecondaryRootGit(workspaceId, gitRootId, data));
+    } catch (error) {
+      if ((versions.workspaces.get(workspaceId) ?? 0) !== workspaceVersion) return;
+      if (epoch !== getGitMutationVersion(workspaceId, gitRootId)) continue;
+      logger.error('Failed to load secondary Git root', error);
+      yield* put(
+        setSecondaryRootGitError(
+          workspaceId,
+          gitRootId,
+          error instanceof Error ? error.message : String(error),
+        ),
+      );
+    }
+    return;
   }
 }
 
@@ -164,26 +210,39 @@ function* loadSecondaryRootCommitFilesWorker(
   const workspaceVersion = versions.workspaces.get(workspaceId) ?? 0;
   const rootKey = secondaryRootContext(action);
   const rootVersion = versions.roots.get(rootKey) ?? 0;
-  try {
-    const detail = yield* call(
-      [appClient.git, appClient.git.commitDetails],
-      workspaceId,
-      commitHash,
-      { gitRootId },
-    );
-    if (!detail) return;
+  for (;;) {
+    if (isGitMutationPending(workspaceId, gitRootId))
+      yield* call(waitForGitMutations, workspaceId, gitRootId);
     if (
       (versions.workspaces.get(workspaceId) ?? 0) !== workspaceVersion ||
       (versions.roots.get(rootKey) ?? 0) !== rootVersion
     )
       return;
-    const files: CommitFile[] =
-      detail.fileDetails.length > 0
-        ? detail.fileDetails
-        : detail.files.map((path) => ({ path, additions: 0, deletions: 0 }));
-    yield* put(setSecondaryRootCommitFiles(workspaceId, gitRootId, commitHash, files));
-  } catch (error) {
-    logger.error('Failed to load secondary-root commit details', error);
+    const epoch = getGitMutationVersion(workspaceId, gitRootId);
+    try {
+      const detail = yield* call(
+        [appClient.git, appClient.git.commitDetails],
+        workspaceId,
+        commitHash,
+        { gitRootId },
+      );
+      if (epoch !== getGitMutationVersion(workspaceId, gitRootId)) continue;
+      if (!detail) return;
+      if (
+        (versions.workspaces.get(workspaceId) ?? 0) !== workspaceVersion ||
+        (versions.roots.get(rootKey) ?? 0) !== rootVersion
+      )
+        return;
+      const files: CommitFile[] =
+        detail.fileDetails.length > 0
+          ? detail.fileDetails
+          : detail.files.map((path) => ({ path, additions: 0, deletions: 0 }));
+      yield* put(setSecondaryRootCommitFiles(workspaceId, gitRootId, commitHash, files));
+    } catch (error) {
+      if (epoch !== getGitMutationVersion(workspaceId, gitRootId)) continue;
+      logger.error('Failed to load secondary-root commit details', error);
+    }
+    return;
   }
 }
 
@@ -219,14 +278,32 @@ function* invalidateSecondaryRootWorkspace(
   versions.workspaces.set(workspaceId, (versions.workspaces.get(workspaceId) ?? 0) + 1);
 }
 
-function* loadGitStatusRequestWorker(action: GitStatusReadAction): SagaGenerator<void> {
+function* loadGitStatusRequestWorker(
+  versions: Map<string, number>,
+  action: GitStatusReadAction,
+): SagaGenerator<void> {
   const [workspaceId] = action.payload;
   if (!workspaceId) return;
   if (action.type === workspaceUnmounted.type) return;
-  yield* call(loadGitStatusWorker, workspaceId);
+  yield* call(loadGitStatusWorker, versions, workspaceId, action.payload[1]);
+}
+
+function* pushedGitStatus(
+  versions: Map<string, number>,
+  action: ReturnType<typeof changesEventReceived>,
+): SagaGenerator<void> {
+  const [workspaceId, type, data] = action.payload;
+  if (type !== 'changes:git-status' || data.gitRootId) return;
+  const status = data.status as { gitStatus?: Record<string, unknown> } | undefined;
+  const pushed = parsePushedGitStatus(status?.gitStatus);
+  if (!pushed) return;
+  versions.set(workspaceId, (versions.get(workspaceId) ?? 0) + 1);
+  yield* put(setGitStatus(workspaceId, pushed));
 }
 
 export function* gitReadSaga() {
+  const statusVersions = new Map<string, number>();
+  yield* fork(gitConsumerReadSaga);
   const secondaryRootReadVersions: SecondaryRootReadVersions = {
     workspaces: new Map<string, number>(),
     roots: new Map<string, number>(),
@@ -235,7 +312,9 @@ export function* gitReadSaga() {
     [loadGitStatus, workspaceUnmounted],
     workspaceReadContext,
     loadGitStatusRequestWorker,
+    statusVersions,
   );
+  yield* takeEvery(changesEventReceived, pushedGitStatus, statusVersions);
   yield* takeLatestInContext(
     loadSecondaryRootGit,
     secondaryRootContext,

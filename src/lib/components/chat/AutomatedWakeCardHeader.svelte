@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { observeOverflow, truncatedTitle } from '$lib/actions/observe-overflow';
+  import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
   /**
    * AutomatedWakeCardHeader
    *
@@ -10,7 +12,14 @@
    * nests interactive controls.
    */
   import Fa from 'svelte-fa';
-  import { faBolt, faChevronDown, faCodePullRequest } from '@fortawesome/free-solid-svg-icons';
+  import { faGitlab } from '@fortawesome/free-brands-svg-icons';
+  import { isMergeRequest, monitorAccessibleLabel } from '$lib/utils/review-monitor-presentation';
+  import {
+    faBolt,
+    faChevronDown,
+    faCodePullRequest,
+    faTerminal,
+  } from '@fortawesome/free-solid-svg-icons';
   import type { Workspace } from '$shared/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { handleLink } from '$features/navigation/link-handler';
@@ -48,12 +57,25 @@
     ontoggle,
     onPinnedActivate,
   }: Props = $props();
+  let hookNameOverflow = $state(false);
   const workspaceRepo = $derived(
     workspace?.repositoryOwner && workspace?.repositoryName
       ? `${workspace.repositoryOwner}/${workspace.repositoryName}`
       : undefined,
   );
   const statusLabel = $derived.by(() => {
+    if (presentation.kind === 'script') {
+      switch (presentation.attribution.reason) {
+        case 'finished':
+          return m.chat_scriptMonitor_finished_description();
+        case 'ttl-expired':
+          return m.chat_scriptMonitor_expired_description();
+        case 'output-match':
+          return m.chat_scriptMonitor_matched_description();
+        case 'line-count':
+          return m.chat_scriptMonitor_counted_description();
+      }
+    }
     if (presentation.kind === 'pr') return m.chat_prMonitorWakeAttribution_wokeAgent_after();
     if (presentation.state === 'active') {
       return m.chat_hookWakeAttribution_wokeAgentStillActive_after();
@@ -71,10 +93,11 @@
       onPinnedActivate();
       return;
     }
-    void handleLink(getPrMonitorWakeUrl(presentation.attribution), {
-      workspaceId: workspace?.id ? WorkspaceId(String(workspace.id)) : undefined,
-      forceExternal: true,
-    });
+    if (getPrMonitorWakeUrl(presentation.attribution))
+      void handleLink(getPrMonitorWakeUrl(presentation.attribution), {
+        workspaceId: workspace?.id ? WorkspaceId(String(workspace.id)) : undefined,
+        forceExternal: true,
+      });
   }
 
   function handleRowClick(event: MouseEvent) {
@@ -95,9 +118,15 @@
 >
   <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS} aria-hidden="true">
     <Fa
-      icon={presentation.kind === 'hook' ? faBolt : faCodePullRequest}
-      size={14}
-      class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+      icon={presentation.kind === 'hook'
+        ? faBolt
+        : presentation.kind === 'script'
+          ? faTerminal
+          : presentation.kind === 'pr' && isMergeRequest(presentation.attribution)
+            ? faGitlab
+            : faCodePullRequest}
+      size={16}
+      class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
     />
   </span>
   <span
@@ -107,11 +136,22 @@
     {#if presentation.kind === 'hook'}
       <span
         class="min-w-0 max-w-full truncate text-muted-foreground"
-        title={presentation.attribution.rawName}
+        use:observeOverflow={(overflow) => (hookNameOverflow = overflow)}
+        title={presentation.attribution.rawName !== presentation.attribution.displayName
+          ? presentation.attribution.rawName
+          : hookNameOverflow
+            ? presentation.attribution.displayName
+            : undefined}
         data-testid="automated-wake-primary-label"
       >
         {presentation.attribution.displayName}
       </span>
+    {:else if presentation.kind === 'script'}
+      <span
+        class="min-w-0 truncate text-muted-foreground"
+        use:truncatedTitle={presentation.attribution.scriptName}
+        >{presentation.attribution.scriptName}</span
+      >
     {:else}
       {@const chipLabel = getPrMonitorWakeChipLabel(presentation.attribution, workspaceRepo)}
       <Button
@@ -119,9 +159,13 @@
         variant="plain"
         class="type-body h-auto! min-w-0 max-w-full justify-start overflow-hidden whitespace-nowrap p-0! text-left font-inherit text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         data-testid="pr-monitor-wake-chip"
+        aria-label={monitorAccessibleLabel(chipLabel, presentation.attribution)}
+        disabled={!onPinnedActivate && !getPrMonitorWakeUrl(presentation.attribution)}
         title={onPinnedActivate
           ? m.chat_stickyMessageHeader_scrollToPrevious_title()
-          : m.chat_prMonitorWakeAttribution_openPrWithLabel_tooltip({ label: chipLabel })}
+          : m.chat_prMonitorWakeAttribution_openPrWithLabel_tooltip({
+              label: monitorAccessibleLabel(chipLabel, presentation.attribution),
+            })}
         onclick={openPr}
       >
         <span class="min-w-0 truncate">
@@ -132,7 +176,7 @@
     <span
       class="type-body min-w-0 truncate whitespace-nowrap font-normal text-muted-foreground"
       data-testid="wake-status"
-      title={statusLabel}
+      use:truncatedTitle={statusLabel}
     >
       {statusLabel}
     </span>

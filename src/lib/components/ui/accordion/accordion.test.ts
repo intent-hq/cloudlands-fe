@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
 import { parseUiComponentMetadata } from '../component-metadata';
 import AccordionHarness from './AccordionHarness.svelte';
@@ -28,7 +28,7 @@ describe('Accordion', () => {
     expect(second.getAttribute('aria-expanded')).toBe('true');
   });
 
-  it('keeps content mounted and delegates panel height to an inner animatedHeight wrapper', () => {
+  it('keeps content mounted and delegates panel height to an inner animatedHeight wrapper', async () => {
     const { getByText } = render(AccordionHarness);
     const firstPanel = getByText('First panel').closest('[data-accordion-content]') as HTMLElement;
     const secondPanel = getByText('Second panel').closest(
@@ -44,8 +44,10 @@ describe('Accordion', () => {
     expect(firstPanel).not.toBe(firstMotion);
     expect(firstPanel.style.height).toBe('');
     expect(secondPanel.style.height).toBe('');
-    expect(firstMotion.style.overflow).toBe('clip');
-    expect(secondMotion.style.height).toBe('0px');
+    await waitFor(() => {
+      expect(firstMotion.style.overflow).toBe('clip');
+      expect(secondMotion.style.height).toBe('0px');
+    });
   });
 
   it('publishes catalog metadata for both selection modes and reduced motion', () => {

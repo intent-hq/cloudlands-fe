@@ -146,6 +146,27 @@ describe('AgentMessage Type Consolidation', () => {
       expect(normalized.metadata?.fromPrincipalId).toBe('principal-guest');
     });
 
+    it('preserves portable, explicit-null and absent author states without changing content or provenance', () => {
+      const contentBlocks = [{ type: 'text', text: '  imported content\n' }];
+      const metadata = {
+        humanAuthor: { sourcePrincipalId: 'same-local-string' },
+        originalMetadata: ['inert'],
+      };
+      const row = {
+        id: 'portable',
+        role: 'user',
+        timestamp: '2026-01-01T00:00:00Z',
+        contentBlocks,
+        metadata,
+      };
+      const author = { principalId: null, login: null, displayName: null, avatarUrl: null };
+      expect(normalizeAgentMessage({ ...row, author }).author).toEqual(author);
+      expect(normalizeAgentMessage({ ...row, author: null })).toHaveProperty('author', null);
+      expect(normalizeAgentMessage(row)).not.toHaveProperty('author');
+      expect(normalizeAgentMessage({ ...row, author }).contentBlocks).toBe(contentBlocks);
+      expect(normalizeAgentMessage({ ...row, author }).metadata).toBe(metadata);
+    });
+
     it('should throw on AgentMessage missing the canonical `id` field', () => {
       expect(() =>
         normalizeAgentMessage({

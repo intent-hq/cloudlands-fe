@@ -26,6 +26,8 @@ export interface ResolvedBrowserClients {
   ownClientId: string;
   /** Effective browser client for the workspace; null when none resolves. */
   driving: BrowserClientSummary | null;
+  /** Explicit workspace pin; a resolved default is not an explicit selection. */
+  pinnedClientId?: string | null;
 }
 
 export interface DrivingClientInput extends ResolvedBrowserClients {

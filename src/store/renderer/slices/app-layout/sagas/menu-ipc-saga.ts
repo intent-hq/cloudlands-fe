@@ -1,4 +1,4 @@
-import type { GenericAction } from '@augmentcode/themis/types';
+import type { GenericAction } from '@themislib/themis/types';
 import type { Task } from 'redux-saga';
 import { all, call, join, put, type SagaGenerator } from 'typed-redux-saga';
 

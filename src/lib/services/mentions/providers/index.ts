@@ -1,3 +1,4 @@
+import { scriptCommandLabel } from '$features/scripts/types';
 /**
  * Provider Registry and Additional Providers
  */
@@ -5,6 +6,7 @@
 import type { Provider, MentionCandidate, SearchContext, MentionType } from '../types';
 import { SPECIAL_MENTIONS } from '../types';
 import { FileProvider } from './file-provider';
+import { MemberProvider } from './member-provider';
 import { logger } from '$lib/utils/client-logger';
 import { fuzzyMatch } from '$lib/services/mentions/fuzzy-matcher';
 import {
@@ -116,17 +118,20 @@ export class NoteProvider implements Provider {
   }
 
   /**
-   * Fetch notes from a specific workspace via the live notes client (note.list, PROTOCOL §5.2)
+   * Fetch notes from a specific workspace through the root-owned note read saga.
    */
   private async fetchNotesFromWorkspace(
     workspaceId: string,
     workspaceTitle?: string,
   ): Promise<Array<{ note: any; workspaceId: string; workspaceTitle?: string }>> {
     try {
-      const { appClient } = await import('$lib/client');
+      const [{ store: appStore }, { listSlimNotesRequested }] = await Promise.all([
+        import('$store/renderer/store'),
+        import('$store/renderer/slices/workspace-notes/workspace-notes-slice'),
+      ]);
       // Slim projection (§5.2): mention search matches/previews against the
       // first ~500 chars (contentPreview) instead of pulling full bodies.
-      const notes = await appClient.notes.list(workspaceId, { projection: 'slim' });
+      const notes = await appStore.dispatch(listSlimNotesRequested(workspaceId));
       return notes.map((note) => ({
         note,
         workspaceId,
@@ -541,7 +546,9 @@ class ScriptProvider implements Provider {
       const filtered =
         query && !isTypingTrigger
           ? scripts.filter(
-              (s) => fuzzyMatch(query, s.name) !== null || fuzzyMatch(query, s.command) !== null,
+              (s) =>
+                fuzzyMatch(query, s.name) !== null ||
+                fuzzyMatch(query, scriptCommandLabel(s)) !== null,
             )
           : scripts;
 
@@ -557,7 +564,7 @@ class ScriptProvider implements Provider {
           id: script.id,
           type: 'script' as MentionType,
           label: script.name,
-          subtitle: `${statusLabel} · ${script.command}`,
+          subtitle: `${statusLabel} · ${scriptCommandLabel(script)}`,
           description: m.chat_mentions_scriptOutput_description(),
           icon: '▶️',
           uri: `devspace://script/${encodeURIComponent(script.id)}`,
@@ -736,9 +743,19 @@ class ProviderRegistry {
     this.register(new ScriptProvider());
     this.register(new AgentProvider());
     this.register(new SpecialistProvider());
+    this.register(new MemberProvider());
 
     // Set default providers
-    this.defaultProviders = ['file', 'folder', 'note', 'terminal', 'script', 'agent', 'specialist'];
+    this.defaultProviders = [
+      'file',
+      'folder',
+      'note',
+      'terminal',
+      'script',
+      'agent',
+      'specialist',
+      'member',
+    ];
   }
 
   register(provider: Provider) {

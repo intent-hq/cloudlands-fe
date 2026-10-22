@@ -82,7 +82,7 @@ describe('decideBootRoute', () => {
     });
   });
 
-  it('redirects a legacy / boot to an existing workspace', () => {
+  it('preserves Home on reload even when workspaces exist', () => {
     const decision = decideBootRoute(
       input({
         bootPathname: '/',
@@ -94,8 +94,8 @@ describe('decideBootRoute', () => {
     );
     expect(decision).toEqual({
       kind: 'resolve',
-      target: '/workspace/ws-1',
-      openTabWorkspaceId: 'ws-1',
+      target: null,
+      openTabWorkspaceId: null,
     });
   });
 

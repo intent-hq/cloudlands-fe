@@ -1,11 +1,14 @@
-import { END, buffers, eventChannel, type EventChannel } from 'redux-saga';
-import { call, put, take } from 'typed-redux-saga';
+import { selectCanAdministerHost } from '../../principal/principal-selectors';
+import { selectModelBootContext } from '../model-selectors';
+import { createChannelFromSelector } from '@themislib/themis/saga';
+import { buffers, eventChannel, type EventChannel } from 'redux-saga';
+import { call, flush, race, take } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { selectActiveProviderId } from '../../provider-settings/provider-settings-selectors';
-import { setAvailableModels, setLoadingStateForProvider } from '../model-slice';
+import { loadModelCatalog } from './model-catalog-request';
 
 const logger = createLogger('ModelBootSaga');
 
@@ -19,40 +22,31 @@ const logger = createLogger('ModelBootSaga');
  * The active provider is read from the slice when settings hydration has
  * already landed, otherwise from the daemon (`settings.getProviderSettings`)
  * so the load does not race the hydration saga. Seeder semantics are kept:
- * dispatch only on a non-empty catalog and stay silent on failure — the
- * reload saga owns loading/error transitions for explicit provider switches.
+ * dispatch only on a non-empty catalog and stay silent on failure. If an
+ * explicit reload joins this read, the shared request owns its loading/error state.
  *
  * Returns whether the catalog load is settled: `true` when models were
  * dispatched (or an explicit provider switch took ownership mid-flight),
  * `false` when nothing landed and a retry on the next backend connect could
  * still help.
  */
-export function* loadModelsOnBootWorker() {
+export function* loadModelsOnBootWorker(force = false) {
+  const context = yield* selectModelBootContext.effect();
+  if (!context) return false;
   try {
     let providerId = yield* selectActiveProviderId.effect();
     if (!providerId) {
+      if (!(yield* selectCanAdministerHost.effect())) return false;
       const providerSettings: Awaited<ReturnType<typeof appClient.settings.getProviderSettings>> =
         yield* call([appClient.settings, appClient.settings.getProviderSettings]);
       providerId = providerSettings?.activeProviderId ?? '';
     }
-    if (!providerId) return false;
+    if (!providerId || context !== (yield* selectModelBootContext.effect())) return false;
 
-    const models: Awaited<ReturnType<typeof appClient.models.list>> = yield* call(
-      [appClient.models, appClient.models.list],
-      providerId,
-    );
-
-    // Provider mismatch guard: if the active provider changed while the list
-    // was in flight, the reload saga owns that provider's load — drop ours.
-    const activeProviderId = yield* selectActiveProviderId.effect();
-    if (activeProviderId && activeProviderId !== providerId) return true;
-    if (models.length === 0) return false;
-
-    yield* put(setAvailableModels(models, providerId));
-    yield* put(setLoadingStateForProvider({ providerId, status: 'success', retryAttempt: 0 }));
-    return true;
+    return yield* call(loadModelCatalog, providerId, context, false, force);
   } catch (error) {
-    logger.warn('boot model catalog load failed; pickers will retry on demand', { error });
+    if (context === (yield* selectModelBootContext.effect()))
+      logger.warn('boot model catalog load failed; pickers will retry on demand', { error });
     return false;
   }
 }
@@ -77,7 +71,6 @@ interface BackendStatusPayload {
 function createBackendConnectedChannel(): EventChannel<{ reconnected: boolean }> {
   return eventChannel<{ reconnected: boolean }>((emit) => {
     if (typeof window === 'undefined' || !window.electronAPI) {
-      emit(END as never);
       return () => {};
     }
     const api = window.electronAPI;
@@ -94,7 +87,10 @@ function createBackendConnectedChannel(): EventChannel<{ reconnected: boolean }>
 
 /**
  * Boot-time load of the active provider's model catalog, kept converged with
- * the daemon connection (intent-hq/monorepo#1830):
+ * caller/provider readiness and daemon connection (intent-hq/monorepo#1830):
+ *
+ * - Admission and delayed settings/member execution projections wake the same
+ *   sequential loader. An unchanged readiness value never retries on unrelated writes.
  *
  * - On a plain `connected` (first successful connect, backend switch) the
  *   load is re-run only if the previous attempt did not land — a boot-time
@@ -108,17 +104,36 @@ function createBackendConnectedChannel(): EventChannel<{ reconnected: boolean }>
  * fetches — with signals during a fetch coalesced by the sliding buffer.
  */
 export function* modelBootSaga() {
+  const readinessChannel = yield* createChannelFromSelector(selectModelBootContext);
   const connectedChannel = yield* call(createBackendConnectedChannel);
   try {
-    let loaded = yield* call(loadModelsOnBootWorker);
+    let attemptedContext: string | null = null;
+    let loaded = false;
+    let retryConnection = false;
     while (true) {
-      const signal = yield* take(connectedChannel);
-      if (signal === (END as unknown as { reconnected: boolean })) return;
-      if (signal.reconnected || !loaded) {
-        loaded = yield* call(loadModelsOnBootWorker);
+      const context = yield* selectModelBootContext.effect();
+      if (!context) {
+        attemptedContext = null;
+        loaded = false;
+      } else if (context !== attemptedContext || retryConnection) {
+        attemptedContext = context;
+        loaded = yield* call(loadModelsOnBootWorker, retryConnection);
       }
+      const signal = yield* race({
+        readiness: take(readinessChannel),
+        connected: take(connectedChannel),
+      });
+      // Both channels can accumulate during the same request. Drain together
+      // so admission/provider/connect bursts yield only one current trailing load.
+      const queuedConnections = yield* flush(connectedChannel);
+      yield* flush(readinessChannel);
+      retryConnection =
+        signal.connected?.reconnected === true ||
+        queuedConnections.some((queued) => queued.reconnected) ||
+        (!loaded && (!!signal.connected || queuedConnections.length > 0));
     }
   } finally {
+    readinessChannel.close();
     connectedChannel.close();
   }
 }

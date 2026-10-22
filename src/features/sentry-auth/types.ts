@@ -81,6 +81,7 @@ export interface SentryIssueResult {
  * Request to fetch Sentry issues
  */
 export interface FetchIssuesRequest {
+  workspaceId?: string;
   /** Project slug to filter by (optional) */
   project?: string;
   /** Status filter */

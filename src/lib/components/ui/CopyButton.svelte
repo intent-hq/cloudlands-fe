@@ -81,7 +81,6 @@
   tooltipShortcut={shortcut}
   tooltipDelayDuration={300}
   aria-label={feedbackLabel}
-  title={feedbackLabel}
   {disabled}
   class={className}
   onclick={copyToClipboard}

@@ -1,5 +1,17 @@
-import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import type { InitialChatHistory } from '$lib/client/app-client';
+import { pendingSubmissionSettled } from '../pending-submissions/pending-submissions-slice';
+import { sameSubmissionScope } from '../pending-submissions/pending-submissions-model';
+import {
+  buildQueuedRecordedAttempt,
+  buildProcessedRecordedAttempt,
+} from '$features/agent/utils/build-recorded-attempt';
+import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
+import {
+  createCollection,
+  getItem,
+  getItems,
+} from '@themislib/themis/utils/collections/collection-utils';
 import type {
   ChatAgentState,
   ChatStateSlice,
@@ -10,10 +22,10 @@ import type {
   ModelUnavailableInfo,
   QuotaExceededInfo,
   QueuedRetryRecord,
-  QueuedMessageSendOutcome,
   SendMessagePayload,
   InitializeChatOptions,
   PendingProposalRecovery,
+  QueuedMessageSendOutcome,
   StreamStatusContext,
   StreamFailureCorrelation,
   TranscriptSnapshotMeta,
@@ -61,8 +73,11 @@ export const emptyChatAgentState: ChatAgentState = {
   lastChunkReceivedAt: 0,
   liveStreamPhase: null,
   fetchingOlderHistory: false,
+  scrollbackOlderBlocked: false,
+  scrollbackGapBlocked: false,
   fetchingGapFill: false,
   scrollbackOlderToken: null,
+  scrollbackWalkStarted: false,
   scrollbackGapToken: null,
   fetchingHistorySeek: false,
   historySeekUnsupported: false,
@@ -101,7 +116,15 @@ function updateAgent(
   partial: Partial<ChatAgentState>,
 ): ChatStateSlice {
   const current = getAgent(state, agentId);
-  return setAgent(state, agentId, { ...current, ...partial });
+  return setAgent(state, agentId, {
+    ...current,
+    ...partial,
+    ...('lastAttemptedMessage' in partial &&
+    partial.lastAttemptedMessage !== current.lastAttemptedMessage &&
+    partial.attemptGeneration === undefined
+      ? { attemptGeneration: (current.attemptGeneration ?? 0) + 1 }
+      : {}),
+  });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -110,9 +133,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /**
  * Structural equality over serializable retry payloads (plain objects, arrays,
- * primitives — the only shapes Redux state may hold). Used by the parked-park
- * reducer to recognize the caller's own mid-turn `lastAttemptedMessage`
- * overwrite (#1011) without clobbering a concurrently recorded attempt.
+ * primitives — the only shapes Redux state may hold). Used to avoid replacing
+ * unchanged parked payloads, never to identify an attempted send.
  */
 function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
@@ -272,10 +294,11 @@ function reduceAgentIdleReconcile(
 /**
  * Daemon-authoritative content sync for parked retry records (#1011): the
  * `agent:queue:updated` snapshot carries the current content of every queued
- * entry, so a parked record whose entry is still PRESENT syncs its text —
+ * entry, so a parked record whose entry is still PRESENT syncs its text,
+ * attachments and contribution metadata. This preserves a merged send on retry;
  * an edit is reflected even when the save's self-drain (agent idle at save,
  * STAB-27 release awaits the drain BEFORE the RPC response returns) promotes
- * the record before ChatPanel's post-response `chatQueuedRetryRecordUpdated`
+ * the record before the edit saga's post-response `chatQueuedRetryRecordUpdated`
  * can run. Also covers edits made from another client/window. Present-entry
  * matching is turnId-aware: a terminal-failure requeue mints a NEW entry id
  * but keeps the original turnId, so the requeued entry still counts as
@@ -283,8 +306,7 @@ function reduceAgentIdleReconcile(
  *
  * Promotion is NOT inferred from snapshots (monorepo#1057): the exact
  * drain-start signal is `agent:queue:processing` (or the
- * `agent.sendQueuedMessageNow` RPC response, which carries the turnId
- * instead of the event, §5.5) — see reduceQueueProcessing. A record whose
+ * `agent.sendQueuedMessageNow` RPC response as a legacy fallback, §5.5) — see reduceQueueProcessing. A record whose
  * entry vanishes from the snapshot stays PARKED: promoting on the vanishing
  * id would misfire on a requeue (entry re-appears under a new id), and a
  * whole-queue discard (`agent.editAndRegenerate`) drops records at the flow
@@ -299,24 +321,24 @@ function reduceQueueContentSync(
 ): ChatStateSlice {
   const agent = state.byAgentId[agentId];
   if (!agent) return state;
-  if (Object.keys(agent.queuedRetryRecords).length === 0) return state;
   const presentById = new Map(queue.map((message) => [message.id, message]));
   const presentByTurnId = new Map<string, QueuedMessage>();
   for (const message of queue) {
     if (message.turnId !== undefined) presentByTurnId.set(message.turnId, message);
   }
-  let textSynced = false;
+  let payloadSynced = false;
   const next: Record<string, QueuedRetryRecord> = {};
   for (const [id, parked] of Object.entries(agent.queuedRetryRecords)) {
     const present = presentById.get(id) ?? presentByTurnId.get(parked.turnId);
-    if (present && parked.record.text !== present.content) {
-      textSynced = true;
-      next[id] = { ...parked, record: { ...parked.record, text: present.content } };
+    const record = present ? buildQueuedRecordedAttempt(present, parked.record) : parked.record;
+    if (!deepEqual(parked.record, record)) {
+      payloadSynced = true;
+      next[id] = { ...parked, record };
     } else {
       next[id] = parked;
     }
   }
-  return textSynced ? updateAgent(state, agentId, { queuedRetryRecords: next }) : state;
+  return payloadSynced ? updateAgent(state, agentId, { queuedRetryRecords: next }) : state;
 }
 
 /**
@@ -336,30 +358,71 @@ function findParkedRecordKey(agent: ChatAgentState, turnId: string | undefined):
 }
 
 /**
- * Exact drain-start promotion (monorepo#1057): `agent:queue:processing` (or
- * the `agent.sendQueuedMessageNow` delivered response, which carries the
- * `turnId` instead of the event, §5.5) says the daemon dequeued THIS entry to
- * run it — promote its parked record into `lastAttemptedMessage` (including
- * the stale-banner clear: the promoted record's turn is now the active turn,
- * so a previous turn's failure banner must not persist over it). A no-op
- * when nothing matches: the entry was never parked by this client, or the
- * record was already promoted (it left `queuedRetryRecords`, so a duplicate
- * event cannot double-promote).
+ * Promote retry records using the exact consumed entries and provider turn from
+ * processing. Keep this authority for an enqueue acknowledgement that arrives
+ * later. A repeated admission after recovery refreshes the same operation;
+ * legacy events/Send-now responses can promote a parked record but cannot erase
+ * a richer event's payload. Distinct local attempts have their own generation.
  */
 function reduceQueueProcessing(
   state: ChatStateSlice,
   agentId: string,
   turnId: string | undefined,
+  messages?: QueuedMessage[],
 ): ChatStateSlice {
+  if (turnId === undefined) return state;
   const agent = state.byAgentId[agentId];
   if (!agent) return state;
-  const key = findParkedRecordKey(agent, turnId);
-  if (key === null) return state;
-  const parked = agent.queuedRetryRecords[key];
+  const consumedTurns = new Set(messages?.map((entry) => entry.turnId) ?? [turnId]);
+  const keys = Object.keys(agent.queuedRetryRecords).filter((key) =>
+    consumedTurns.has(agent.queuedRetryRecords[key].turnId),
+  );
+  const previous = agent.processedQueuedTurn;
+  const entryTurns = messages
+    ? Object.fromEntries(
+        messages.flatMap((message) =>
+          message.turnId === undefined ? [] : [[message.id, message.turnId] as const],
+        ),
+      )
+    : undefined;
+  // A recovered entry may start processing again with a richer payload under the
+  // same turn. Refresh that operation only, never a subsequent local attempt.
+  // Send-now's legacy response must not erase authoritative event data.
+  if (previous?.turnId === turnId && !keys.length) {
+    if (!messages) return state;
+    const record = previous.record
+      ? buildProcessedRecordedAttempt(messages, previous.record)
+      : undefined;
+    return updateAgent(state, agentId, {
+      processedQueuedTurn: {
+        ...previous,
+        messages: createCollection('id', messages),
+        record,
+        entryTurns: { ...previous.entryTurns, ...entryTurns },
+      },
+      ...(record && previous.attemptGeneration === (agent.attemptGeneration ?? 0)
+        ? { lastAttemptedMessage: record, attemptGeneration: previous.attemptGeneration }
+        : {}),
+    });
+  }
+  const attemptGeneration = (agent.attemptGeneration ?? 0) + (keys.length ? 1 : 0);
+  const processedQueuedTurn = {
+    turnId,
+    messages: messages ? createCollection('id', messages) : undefined,
+    entryTurns,
+    attemptGeneration,
+  };
+  if (!keys.length) return updateAgent(state, agentId, { processedQueuedTurn });
+  const parked = agent.queuedRetryRecords[keys[0]];
   const remaining = { ...agent.queuedRetryRecords };
-  delete remaining[key];
+  for (const key of keys) delete remaining[key];
+  const processedRecord = messages
+    ? buildProcessedRecordedAttempt(messages, parked.record)
+    : parked.record;
   return updateAgent(state, agentId, {
-    lastAttemptedMessage: parked.record,
+    processedQueuedTurn: { ...processedQueuedTurn, record: processedRecord },
+    attemptGeneration,
+    lastAttemptedMessage: processedRecord,
     queuedRetryRecords: remaining,
     error: null,
     modelUnavailable: null,
@@ -515,12 +578,20 @@ export const chatInitialized = createAction<
 export const chatInitFailed =
   createAction<[agentId: string, error: string]>('chatState/initFailed');
 
-/** Begin sending a message — sets processing/streaming flags */
+/** Begin a turn; daemon stream starts additionally identify the assistant row. */
 export const chatSendStarted = createAction(
   'chatState/sendStarted',
-  (agentId: string, wsId?: string, timestamp = Date.now()) => ({
+  (
+    agentId: string,
+    wsId?: string,
+    timestamp = Date.now(),
+    assistantMessageId?: string,
+    userAppMessageId?: string,
+  ) => ({
     agentId,
     wsId,
+    ...(assistantMessageId ? { assistantMessageId } : {}),
+    ...(userAppMessageId ? { userAppMessageId } : {}),
     timestamp,
     timestampIso: new Date(timestamp).toISOString(),
   }),
@@ -546,8 +617,17 @@ export const chatLastAttemptedMessageSet = createAction<
  * exactly on `agent:queue:processing` / `chatSendFailed` turnId matches. The
  * pinned daemon (≥0.2.12) returns it on every enqueue path.
  */
+/** Open local tracking before the enqueue RPC can race with queue events. */
+export const chatQueuedSendStarted = createAction<[agentId: string]>('chatState/queuedSendStarted');
+
 export const chatQueuedRetryRecordSet = createAction<
-  [agentId: string, messageId: string, record: LastAttemptedMessage, turnId: string]
+  [
+    agentId: string,
+    messageId: string,
+    record: LastAttemptedMessage,
+    turnId: string,
+    onlyIfProcessed?: boolean,
+  ]
 >('chatState/queuedRetryRecordSet');
 
 /**
@@ -560,15 +640,25 @@ export const chatQueuedRetryRecordSet = createAction<
  * the record under the queued entry's id (drain-start promotion then
  * re-activates it for the turn that actually runs it, see
  * reduceQueueProcessing) and undoes the mid-turn overwrite:
- * `lastAttemptedMessage` is cleared only when it still structurally equals
- * the parked payload, so a concurrently recorded attempt is never clobbered.
+ * `lastAttemptedMessage` is cleared only for the same explicit attempt generation
+ * (or the same object for legacy callers), never a distinct identical submission.
  * Dispatched by the agent-stream-lifecycle queued branch. `turnId`
  * (monorepo#1057) — see `chatQueuedRetryRecordSet`; here it comes from the
  * auto-queued `agent.sendMessage` response's top-level `turnId` (or the
- * echoed `queuedMessage.turnId`).
+ * echoed `queuedMessage.turnId`). The optional canonicalRecord supplies the
+ * reconciled payload; null only clears the optimistic attempt when the row
+ * has already drained, preserving any record promoted by its processing event.
  */
 export const chatQueuedRetryRecordParked = createAction<
-  [agentId: string, messageId: string, record: LastAttemptedMessage, turnId: string]
+  [
+    agentId: string,
+    messageId: string,
+    record: LastAttemptedMessage,
+    turnId: string,
+    canonicalRecord?: LastAttemptedMessage | null,
+    onlyIfProcessed?: boolean,
+    attemptGenerationAtSend?: number,
+  ]
 >('chatState/queuedRetryRecordParked');
 
 /**
@@ -578,7 +668,7 @@ export const chatQueuedRetryRecordParked = createAction<
  * PRE-edit text. Only the text changes (the edit RPC carries no
  * model/noteIds/imageBlocks); `seq` and recorded options are preserved. A
  * no-op when nothing is parked under the id (e.g. the entry predates this
- * chat's records). Dispatched by ChatPanel's edit-queued handler.
+ * chat's records). Dispatched by the queued-edit saga from the daemon's echoed entry.
  */
 export const chatQueuedRetryRecordUpdated = createAction<
   [agentId: string, messageId: string, text: string]
@@ -635,9 +725,9 @@ export const chatSendFailed = createAction<
  * the events bridge (and chat-send-service's "Send now" success branch,
  * whose RPC response carries the turnId instead of the event, §5.5).
  */
-export const chatQueueProcessingReceived = createAction<[agentId: string, turnId?: string]>(
-  'chatState/queueProcessingReceived',
-);
+export const chatQueueProcessingReceived = createAction<
+  [agentId: string, turnId?: string, messages?: QueuedMessage[]]
+>('chatState/queueProcessingReceived');
 
 /** Agent was interrupted — clear streaming without error */
 export const chatInterrupted = createAction<[agentId: string]>('chatState/interrupted');
@@ -747,10 +837,15 @@ export const transcriptHydrationFailed = createAction<[agentId: string]>(
  * to the store (single-transfer hydration). Dispatched by the chat-subscribe
  * saga with the snapshot's page metadata; the reducer stamps a per-agent
  * monotonic `seq` so waiters can both read the latest snapshot from state and
- * `take` this action for the arrival signal.
+ * `take` this action for the arrival signal. `replayed` marks a local hydration
+ * replay, which must not repeat the original snapshot's scrollback discard.
  */
+export const chatInitialHistoryProgressed = createAction<
+  [agentId: string, progress: InitialChatHistory]
+>('chatState/initialHistoryProgressed');
+
 export const chatTranscriptSnapshotApplied = createAction<
-  [agentId: string, meta: Omit<TranscriptSnapshotMeta, 'seq'>]
+  [agentId: string, meta: Omit<TranscriptSnapshotMeta, 'seq' | 'replayed'>, replayed?: true]
 >('chatState/transcriptSnapshotApplied');
 
 /** Standing chat.subscribe lifecycle phase reported by the live client. */
@@ -806,7 +901,7 @@ export const chatTranscriptSnapshotRerequested = createAction<[wsId: string, age
 // --- Scrollback paging actions (on-demand history segment fetches) ---
 
 /**
- * UI request: fetch ONE older-history page (200 rows) into the scrollback
+ * UI request: fetch ONE older-history page into the scrollback
  * history segment. Deduped per agent by the `fetchingOlderHistory` flag
  * (takeLeading semantics per agent); a no-op once `oldestReached`.
  */
@@ -815,7 +910,7 @@ export const olderHistoryPageRequested = createAction<[wsId: string, agentId: st
 );
 
 /**
- * UI request: fetch ONE page (200 rows) refilling the hole between the
+ * UI request: fetch ONE page refilling the hole between the
  * scrollback history segment and the live tail. Deduped per agent by the
  * `fetchingGapFill` flag; a no-op unless the segment's `gapToTail` is open.
  */
@@ -871,6 +966,36 @@ export const pendingProposalRecoveryPruned = createAction<
   [agentId: string, keepMessageIds: string[]]
 >('chatState/pendingProposalRecoveryPruned');
 
+/**
+ * UI request: resolve the human predecessor of `currentMessageId`, which is
+ * outside the loaded transcript, with an anchored backward walk
+ * (`aroundMessageId`, then backward cursors). The saga reserves the shared
+ * seek slot, commits only the landing page, and holds the slot until
+ * `previousUserMessageLoadReleased` with the same `requestId`.
+ */
+export const previousUserMessageLoadRequested = createAction<
+  [wsId: string, agentId: string, requestId: string, currentMessageId: string]
+>('chatState/previousUserMessageLoadRequested');
+
+export const previousUserMessageLoadSettled = createAction<
+  [
+    agentId: string,
+    requestId: string,
+    outcome: 'found' | 'start' | 'error' | 'cancelled',
+    targetId?: string,
+  ]
+>('chatState/previousUserMessageLoadSettled');
+
+/** The requesting panel took the settled outcome for positioning. */
+export const previousUserMessageLoadConsumed = createAction<[agentId: string, requestId: string]>(
+  'chatState/previousUserMessageLoadConsumed',
+);
+
+/** The requesting panel finished or cancelled: drop the request and free the seek slot. */
+export const previousUserMessageLoadReleased = createAction<[agentId: string, requestId: string]>(
+  'chatState/previousUserMessageLoadReleased',
+);
+
 /** A scrollback page fetch entered flight for the given direction. */
 export const scrollbackFetchStarted = createAction<
   [agentId: string, direction: 'older' | 'gap' | 'seek']
@@ -884,9 +1009,9 @@ export const scrollbackFetchStarted = createAction<
  * newest side, so a forward walk continuing from the old position would
  * skip the pruned rows.
  */
-export const scrollbackOlderPageSettled = createAction<[agentId: string, nextToken: string | null]>(
-  'chatState/scrollbackOlderPageSettled',
-);
+export const scrollbackOlderPageSettled = createAction<
+  [agentId: string, nextToken: string | null, blocked?: boolean]
+>('chatState/scrollbackOlderPageSettled');
 
 /**
  * A gap-refill scrollback page fetch settled (success or swallowed error).
@@ -896,9 +1021,9 @@ export const scrollbackOlderPageSettled = createAction<[agentId: string, nextTok
  * so a backward walk continuing from the old position would skip the
  * pruned rows.
  */
-export const scrollbackGapPageSettled = createAction<[agentId: string, prevToken: string | null]>(
-  'chatState/scrollbackGapPageSettled',
-);
+export const scrollbackGapPageSettled = createAction<
+  [agentId: string, prevToken: string | null, blocked?: boolean]
+>('chatState/scrollbackGapPageSettled');
 
 /**
  * An `aroundIndex` seek fetch settled. Clears `fetchingHistorySeek` and — on
@@ -914,6 +1039,16 @@ export const scrollbackSeekSettled = createAction<
     unsupported?: boolean,
   ]
 >('chatState/scrollbackSeekSettled');
+
+/** Release an interrupted seek without overwriting a reconnect's cursors. */
+export const scrollbackSeekReleased = createAction<[agentId: string]>(
+  'chatState/scrollbackSeekReleased',
+);
+
+/** Latch daemon capability without settling another request's active window. */
+export const historySeekUnsupportedDetected = createAction<[agentId: string]>(
+  'chatState/historySeekUnsupportedDetected',
+);
 
 /**
  * Drop the agent's scrollback continuation state (both cursors + fetching
@@ -956,11 +1091,16 @@ export const sendMessage = createAction(
   (agentId: string, payload: SendMessagePayload & { wsId: string }) => ({ agentId, payload }),
 );
 
-/** Acknowledged atomic send-now: never copies or removes the queued payload locally. */
-export const sendQueuedMessageNowRequested = createAsyncAction<
-  [agentId: string, wsId: string, messageId: string],
+/** Snapshot bulk queue actions remain compatibility callers while row mutations use agentQueue. */
+export const sendQueuedMessagesNowRequested = createAsyncAction<
+  [agentId: string, wsId: string, messageIds: string[]],
   QueuedMessageSendOutcome
->('chatState/sendQueuedMessageNow', 'chatState/sendQueuedMessageNowRequested');
+>('chatState/sendQueuedMessagesNow', 'chatState/sendQueuedMessagesNowRequested');
+
+export const clearQueuedMessagesRequested = createAsyncAction<
+  [agentId: string, wsId: string, messageIds: string[]],
+  void
+>('chatState/clearQueuedMessages', 'chatState/clearQueuedMessagesRequested');
 
 // ============================================================================
 // Reducer
@@ -999,12 +1139,56 @@ chatStateReducer.with(chatSendStarted, (state, { payload: { agentId, timestamp }
 chatStateReducer.with(
   chatLastAttemptedMessageSet,
   (state, { payload: [agentId, lastAttemptedMessage] }) =>
-    updateAgent(state, agentId, { lastAttemptedMessage }),
+    updateAgent(state, agentId, {
+      lastAttemptedMessage,
+      attemptGeneration: (getAgent(state, agentId).attemptGeneration ?? 0) + 1,
+    }),
 );
+chatStateReducer.with(chatQueuedSendStarted, (state, { payload: [agentId] }) =>
+  state.byAgentId[agentId] ? state : updateAgent(state, agentId, { agentId }),
+);
+
+/** Resolve an enqueue acknowledgement only against its exact processed turn. */
+function isProcessedEntry(agent: ChatAgentState, messageId: string, turnId: string) {
+  const processed = agent.processedQueuedTurn;
+  return processed?.messages
+    ? processed.entryTurns?.[messageId] === turnId ||
+        getItem(processed.messages, messageId)?.turnId === turnId
+    : processed?.turnId === turnId;
+}
+
+function acknowledgedProcessedAttempt(
+  agent: ChatAgentState,
+  messageId: string,
+  turnId: string,
+  record: LastAttemptedMessage,
+) {
+  const processed = agent.processedQueuedTurn;
+  if (
+    !processed ||
+    !isProcessedEntry(agent, messageId, turnId) ||
+    processed.attemptGeneration !== (agent.attemptGeneration ?? 0)
+  )
+    return undefined;
+  // Only entries captured at admission outrank a canonical ACK. Legacy snapshots
+  // have no mutation revision and cannot establish a newer payload.
+  return processed.messages
+    ? (processed.record ?? buildProcessedRecordedAttempt(getItems(processed.messages), record))
+    : record;
+}
+
 chatStateReducer.with(
   chatQueuedRetryRecordSet,
-  (state, { payload: [agentId, messageId, record, turnId] }) => {
+  (state, { payload: [agentId, messageId, record, turnId, onlyIfProcessed] }) => {
     const agent = getAgent(state, agentId);
+    const processed = acknowledgedProcessedAttempt(agent, messageId, turnId, record);
+    if (processed && agent.processedQueuedTurn)
+      return updateAgent(state, agentId, {
+        lastAttemptedMessage: processed,
+        attemptGeneration: agent.processedQueuedTurn.attemptGeneration,
+        processedQueuedTurn: { ...agent.processedQueuedTurn, record: processed },
+      });
+    if (onlyIfProcessed || isProcessedEntry(agent, messageId, turnId)) return state;
     return updateAgent(state, agentId, {
       agentId,
       queuedRetryRecords: parkRetryRecord(agent, messageId, record, turnId),
@@ -1013,15 +1197,46 @@ chatStateReducer.with(
 );
 chatStateReducer.with(
   chatQueuedRetryRecordParked,
-  (state, { payload: [agentId, messageId, record, turnId] }) => {
+  (
+    state,
+    {
+      payload: [
+        agentId,
+        messageId,
+        record,
+        turnId,
+        canonicalRecord,
+        onlyIfProcessed,
+        attemptGenerationAtSend,
+      ],
+    },
+  ) => {
     const agent = getAgent(state, agentId);
+    const processed = acknowledgedProcessedAttempt(
+      agent,
+      messageId,
+      turnId,
+      canonicalRecord ?? record,
+    );
+    if (processed && agent.processedQueuedTurn)
+      return updateAgent(state, agentId, {
+        lastAttemptedMessage: processed,
+        attemptGeneration: agent.processedQueuedTurn.attemptGeneration,
+        processedQueuedTurn: { ...agent.processedQueuedTurn, record: processed },
+      });
+    if (isProcessedEntry(agent, messageId, turnId)) return state;
     return updateAgent(state, agentId, {
       agentId,
-      queuedRetryRecords: parkRetryRecord(agent, messageId, record, turnId),
-      // Undo the caller's own mid-turn overwrite (#1011) — but only when the
-      // slot still holds this exact payload; a different value means another
-      // attempt recorded itself since and must keep its record.
-      lastAttemptedMessage: deepEqual(agent.lastAttemptedMessage, record)
+      queuedRetryRecords:
+        canonicalRecord === null || onlyIfProcessed
+          ? agent.queuedRetryRecords
+          : parkRetryRecord(agent, messageId, canonicalRecord ?? record, turnId),
+      // Clear only the exact optimistic attempt belonging to this auto-queued send.
+      lastAttemptedMessage: (
+        attemptGenerationAtSend === undefined
+          ? agent.lastAttemptedMessage === record
+          : (agent.attemptGeneration ?? 0) === attemptGenerationAtSend
+      )
         ? null
         : agent.lastAttemptedMessage,
     });
@@ -1054,8 +1269,10 @@ chatStateReducer.with(
   (state, { payload: [agentId, messageId] }) =>
     reduceQueuedRecordRemoved(state, agentId, messageId),
 );
-chatStateReducer.with(chatQueueProcessingReceived, (state, { payload: [agentId, turnId] }) =>
-  reduceQueueProcessing(state, agentId, turnId),
+chatStateReducer.with(
+  chatQueueProcessingReceived,
+  (state, { payload: [agentId, turnId, messages] }) =>
+    reduceQueueProcessing(state, agentId, turnId, messages),
 );
 chatStateReducer.with(
   chatSendFailed,
@@ -1193,37 +1410,59 @@ chatStateReducer.with(transcriptHydrationSettled, (state, { payload: [agentId] }
 chatStateReducer.with(transcriptHydrationFailed, (state, { payload: [agentId] }) =>
   updateAgent(state, agentId, { agentId, transcriptHydration: 'error' }),
 );
-chatStateReducer.with(chatTranscriptSnapshotApplied, (state, { payload: [agentId, meta] }) => {
-  const agent = getAgent(state, agentId);
-  return updateAgent(state, agentId, {
-    agentId,
-    transcriptSnapshot: { ...meta, seq: (agent.transcriptSnapshot?.seq ?? 0) + 1 },
-    // A snapshot from the CURRENT subscription is exactly what the
-    // switch-back reveal gate waits for — reveal the transcript.
-    awaitingSwitchBackSnapshot: false,
-    // §7.1 `resumed: false` discard: the retained transcript (history
-    // segment included) is dropped, so the whole scrollback walk resets
-    // ATOMICALLY with the snapshot — stranded fetching flags from a wire
-    // call that died with the socket would otherwise freeze the spacer
-    // reconcile and suppress every walk driver forever. The epoch bump
-    // invalidates workers still awaiting their wire call: a page resolving
-    // after the discard must not recreate a segment or persist a cursor
-    // minted against the discarded transcript. The saga's
-    // `clearHistorySegment` chain still runs (and is idempotent here);
-    // the `historySeekUnsupported` latch is a daemon capability, not walk
-    // state, and survives.
-    ...(meta.resumed === false
-      ? {
-          fetchingOlderHistory: false,
-          fetchingGapFill: false,
-          fetchingHistorySeek: false,
-          scrollbackOlderToken: null,
-          scrollbackGapToken: null,
-          scrollbackDiscardEpoch: agent.scrollbackDiscardEpoch + 1,
-        }
-      : {}),
-  });
-});
+chatStateReducer.with(chatInitialHistoryProgressed, (state, { payload: [agentId, progress] }) =>
+  updateAgent(state, agentId, {
+    initialHistory: progress,
+    initialHistoryPending: !progress.complete,
+  }),
+);
+chatStateReducer.with(
+  chatTranscriptSnapshotApplied,
+  (state, { payload: [agentId, meta, replayed] }) => {
+    const agent = getAgent(state, agentId);
+    return updateAgent(state, agentId, {
+      agentId,
+      initialHistory: meta.initialHistory,
+      initialHistoryPending: meta.initialHistory?.complete === false,
+      transcriptSnapshot: {
+        ...meta,
+        ...(replayed ? { replayed } : {}),
+        seq: (agent.transcriptSnapshot?.seq ?? 0) + 1,
+      },
+      // A snapshot from the CURRENT subscription is exactly what the
+      // switch-back reveal gate waits for — reveal the transcript.
+      awaitingSwitchBackSnapshot: false,
+      // Replaying a locally retained snapshot is only a hydration signal:
+      // its original discard/cursors must not restart an existing walk.
+      ...(!replayed ? { scrollbackOlderBlocked: false, scrollbackGapBlocked: false } : {}),
+      ...(!agent.scrollbackWalkStarted && meta.resumed !== true && meta.nextToken !== undefined
+        ? { scrollbackOlderToken: meta.nextToken }
+        : {}),
+      // §7.1 `resumed: false` discard: the retained transcript (history
+      // segment included) is dropped, so the whole scrollback walk resets
+      // ATOMICALLY with the snapshot — stranded fetching flags from a wire
+      // call that died with the socket would otherwise freeze the spacer
+      // reconcile and suppress every walk driver forever. The epoch bump
+      // invalidates workers still awaiting their wire call: a page resolving
+      // after the discard must not recreate a segment or persist a cursor
+      // minted against the discarded transcript. The saga's
+      // `clearHistorySegment` chain still runs (and is idempotent here);
+      // the `historySeekUnsupported` latch is a daemon capability, not walk
+      // state, and survives.
+      ...(!replayed && meta.resumed === false
+        ? {
+            fetchingOlderHistory: false,
+            fetchingGapFill: false,
+            fetchingHistorySeek: false,
+            scrollbackWalkStarted: false,
+            scrollbackOlderToken: meta.nextToken ?? null,
+            scrollbackGapToken: null,
+            scrollbackDiscardEpoch: agent.scrollbackDiscardEpoch + 1,
+          }
+        : {}),
+    });
+  },
+);
 chatStateReducer.with(
   messageBlockHydrationRequested,
   (state, { payload: [agentId, messageId, blockId] }) => {
@@ -1275,11 +1514,23 @@ chatStateReducer.with(chatLiveStreamPhaseChanged, (state, { payload: [agentId, p
     return updateAgent(state, agentId, {
       agentId,
       liveStreamPhase: null,
+      initialHistory: undefined,
+      initialHistoryPending: false,
       transcriptSnapshot: undefined,
       awaitingSwitchBackSnapshot: false,
     });
   }
-  return updateAgent(state, agentId, { agentId, liveStreamPhase: phase });
+  return updateAgent(state, agentId, {
+    agentId,
+    liveStreamPhase: phase,
+    ...(phase === 'connecting' || phase === 'resyncing'
+      ? {
+          initialHistoryPending: true,
+          initialHistory: undefined,
+          transcriptSnapshot: undefined,
+        }
+      : {}),
+  });
 });
 // Switch-back transcript reveal gate: armed SYNCHRONOUSLY with the view
 // switch (same dispatch that triggers the subscribe saga's subscription
@@ -1314,42 +1565,114 @@ chatStateReducer.with(eventReceived, (state, { payload: [, event] }) => {
 chatStateReducer.with(scrollbackFetchStarted, (state, { payload: [agentId, direction] }) =>
   updateAgent(state, agentId, {
     agentId,
+    scrollbackWalkStarted: true,
     ...(direction === 'older'
       ? { fetchingOlderHistory: true }
       : direction === 'gap'
         ? { fetchingGapFill: true }
-        : { fetchingHistorySeek: true }),
+        : {
+            fetchingHistorySeek: true,
+            fetchingOlderHistory: false,
+            fetchingGapFill: false,
+            // Every seek owns a new window; late pages from the prior
+            // window must not merge or overwrite its continuation cursors.
+            scrollbackDiscardEpoch: getAgent(state, agentId).scrollbackDiscardEpoch + 1,
+          }),
   }),
 );
-chatStateReducer.with(scrollbackOlderPageSettled, (state, { payload: [agentId, nextToken] }) =>
-  updateAgent(state, agentId, {
-    agentId,
-    fetchingOlderHistory: false,
-    scrollbackOlderToken: nextToken,
-    scrollbackGapToken: null,
-  }),
+chatStateReducer.with(
+  scrollbackOlderPageSettled,
+  (state, { payload: [agentId, nextToken, blocked] }) =>
+    updateAgent(state, agentId, {
+      agentId,
+      fetchingOlderHistory: false,
+      scrollbackOlderToken: nextToken,
+      scrollbackWalkStarted: true,
+      scrollbackOlderBlocked: blocked === true,
+      scrollbackGapToken: null,
+    }),
 );
-chatStateReducer.with(scrollbackGapPageSettled, (state, { payload: [agentId, prevToken] }) =>
-  updateAgent(state, agentId, {
-    agentId,
-    fetchingGapFill: false,
-    scrollbackGapToken: prevToken,
-    scrollbackOlderToken: null,
-  }),
+chatStateReducer.with(
+  scrollbackGapPageSettled,
+  (state, { payload: [agentId, prevToken, blocked] }) =>
+    updateAgent(state, agentId, {
+      agentId,
+      fetchingGapFill: false,
+      scrollbackGapToken: prevToken,
+      scrollbackWalkStarted: true,
+      scrollbackGapBlocked: blocked === true,
+      scrollbackOlderToken: null,
+    }),
 );
 chatStateReducer.with(scrollbackSeekSettled, (state, { payload: [agentId, tokens, unsupported] }) =>
   updateAgent(state, agentId, {
     agentId,
     fetchingHistorySeek: false,
+    scrollbackOlderBlocked: false,
+    scrollbackGapBlocked: false,
     scrollbackOlderToken: tokens.nextToken,
+    scrollbackWalkStarted: true,
     scrollbackGapToken: tokens.prevToken,
     ...(unsupported ? { historySeekUnsupported: true } : {}),
   }),
+);
+chatStateReducer.with(scrollbackSeekReleased, (state, { payload: [agentId] }) =>
+  updateAgent(state, agentId, { fetchingHistorySeek: false }),
+);
+chatStateReducer.with(historySeekUnsupportedDetected, (state, { payload: [agentId] }) =>
+  updateAgent(state, agentId, { historySeekUnsupported: true }),
+);
+chatStateReducer.with(
+  previousUserMessageLoadRequested,
+  (state, { payload: [, agentId, requestId, currentMessageId] }) =>
+    updateAgent(state, agentId, {
+      agentId,
+      previousUserMessageLoad: { requestId, currentMessageId, status: 'loading' },
+    }),
+);
+chatStateReducer.with(
+  previousUserMessageLoadSettled,
+  (state, { payload: [agentId, requestId, outcome, targetId] }) => {
+    const agent = state.byAgentId[agentId];
+    const load = agent?.previousUserMessageLoad;
+    if (!load || load.requestId !== requestId || load.status !== 'loading') return state;
+    return updateAgent(state, agentId, {
+      previousUserMessageLoad: {
+        requestId,
+        currentMessageId: load.currentMessageId,
+        status: outcome,
+        ...(outcome === 'found' && targetId ? { targetId } : {}),
+        epoch: agent.scrollbackDiscardEpoch,
+      },
+    });
+  },
+);
+chatStateReducer.with(
+  previousUserMessageLoadConsumed,
+  (state, { payload: [agentId, requestId] }) => {
+    const load = state.byAgentId[agentId]?.previousUserMessageLoad;
+    if (!load || load.requestId !== requestId || load.status === 'loading' || load.consumed) {
+      return state;
+    }
+    return updateAgent(state, agentId, { previousUserMessageLoad: { ...load, consumed: true } });
+  },
+);
+chatStateReducer.with(
+  previousUserMessageLoadReleased,
+  (state, { payload: [agentId, requestId] }) => {
+    const agent = state.byAgentId[agentId];
+    if (agent?.previousUserMessageLoad?.requestId !== requestId) return state;
+    const { previousUserMessageLoad: _released, ...rest } = agent;
+    return setAgent(state, agentId, rest);
+  },
 );
 chatStateReducer.with(scrollbackContinuationReset, (state, { payload: [agentId] }) => {
   const agent = state.byAgentId[agentId];
   if (!agent) return state;
   if (
+    !agent.scrollbackWalkStarted &&
+    !agent.scrollbackOlderBlocked &&
+    !agent.scrollbackGapBlocked &&
     !agent.fetchingOlderHistory &&
     !agent.fetchingGapFill &&
     !agent.fetchingHistorySeek &&
@@ -1359,6 +1682,9 @@ chatStateReducer.with(scrollbackContinuationReset, (state, { payload: [agentId] 
     return state;
   }
   return updateAgent(state, agentId, {
+    scrollbackWalkStarted: false,
+    scrollbackOlderBlocked: false,
+    scrollbackGapBlocked: false,
     fetchingOlderHistory: false,
     fetchingGapFill: false,
     fetchingHistorySeek: false,
@@ -1454,4 +1780,17 @@ chatStateReducer.with(workspaceDeleted, (state, { payload: [, agentIds] }) => {
     }
   }
   return changed ? { ...state, byAgentId } : state;
+});
+
+// Keep local delivery provenance without advancing the provider-turn retry generation.
+chatStateReducer.with(pendingSubmissionSettled, (state, { payload: [scope, id, outcome] }) => {
+  const current = getAgent(state, scope.agentId);
+  const attempt = current.lastAttemptedMessage;
+  const prior = attempt?.submission;
+  if (!prior || prior.reference.id !== id || !sameSubmissionScope(prior.reference.scope, scope))
+    return state;
+  return updateAgent(state, scope.agentId, {
+    lastAttemptedMessage: { ...attempt, submission: { ...prior, outcome } },
+    attemptGeneration: current.attemptGeneration,
+  });
 });

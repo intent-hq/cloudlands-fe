@@ -13,6 +13,7 @@ import type {
   ResolveResult,
 } from './types';
 import { DebouncedSearchService } from './search-service';
+import { searchCacheKey } from './search-cache-key';
 import { providerRegistry } from './providers';
 import { BreadcrumbController } from './breadcrumb-controller.svelte';
 import { logger } from '$lib/utils/client-logger';
@@ -181,7 +182,9 @@ export class MentionSystem {
     try {
       return await this.searchService.search(sanitizedQuery, providers, context);
     } catch (error) {
-      logger.error('[MentionSystem] Search failed:', error);
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        logger.error('[MentionSystem] Search failed:', error);
+      }
       return [];
     }
   }
@@ -202,9 +205,7 @@ export class MentionSystem {
       return [];
     }
 
-    // Generate cache key from either workspaceId or repoPath
-    const cacheKeyPrefix = context.workspaceId || context.repoPath || 'default';
-    const cacheKey = `${cacheKeyPrefix}:${query}`;
+    const cacheKey = searchCacheKey(query, this.getProvidersForQuery(query), context);
     const now = Date.now();
 
     // Check cache
@@ -284,10 +285,10 @@ export class MentionSystem {
 
   private async updateCache(query: string, context: SearchContext): Promise<void> {
     try {
+      const cacheKey = searchCacheKey(query, this.getProvidersForQuery(query), context);
       // Run async search and update cache
       const results = await this.search(query, context);
-      const cacheKeyPrefix = context.workspaceId || context.repoPath || 'default';
-      const cacheKey = `${cacheKeyPrefix}:${query}`;
+      if (cacheKey !== searchCacheKey(query, this.getProvidersForQuery(query), context)) return;
 
       // Store with timestamp for LRU tracking
       const entry: CacheEntry = {

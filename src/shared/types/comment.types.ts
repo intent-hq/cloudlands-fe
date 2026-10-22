@@ -1,3 +1,5 @@
+import type { PrincipalIdentity } from '$features/workspace-sharing/types';
+
 /**
  * Comment Types
  *
@@ -5,10 +7,14 @@
  * main process and renderer process code.
  */
 
-/**
- * Represents a comment on a note
- */
-export interface NoteComment {
+/** Server-produced creator attribution; never mutation authority. */
+export interface CommentAttribution {
+  authorPrincipalId?: string;
+  authorIdentity?: PrincipalIdentity;
+}
+
+/** Represents a comment on a note. */
+export interface NoteComment extends CommentAttribution {
   id: string;
   noteId: string;
   author: string;

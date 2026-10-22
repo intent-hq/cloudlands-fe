@@ -12,13 +12,18 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const storeControl = vi.hoisted(() => ({ reset: () => {} }));
+const storeControl = vi.hoisted(() => ({
+  reset: () => {},
+  load: vi.fn(async () => []),
+  add: vi.fn(async () => true),
+}));
 
 vi.mock('$store/renderer/store', async () => {
   const { createStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
-  const { commentsReducer, initialState } = await vi.importActual<
-    typeof import('$store/renderer/slices/comments/comments-slice')
-  >('$store/renderer/slices/comments/comments-slice');
+  const { addCommentAction, commentsReducer, initialState, removeCommentAction } =
+    await vi.importActual<typeof import('$store/renderer/slices/comments/comments-slice')>(
+      '$store/renderer/slices/comments/comments-slice',
+    );
   let state = { comments: initialState };
   storeControl.reset = () => {
     state = { comments: initialState };
@@ -30,7 +35,24 @@ vi.mock('$store/renderer/store', async () => {
     },
   });
   const mockStore = {
-    dispatch: (action: unknown) => {
+    dispatch: (action: any) => {
+      if (action?.asyncActionType === 'workspaceNotes/loadNoteCommentsRequested') {
+        void storeControl.load(...action.payload).then(action.success, action.failure);
+        return action.promise;
+      }
+      if (action?.asyncActionType === 'workspaceNotes/addCommentRequested') {
+        const optimistic = action.payload[1];
+        state = { comments: commentsReducer(state.comments, addCommentAction(optimistic)) };
+        void storeControl.add(action.payload[0], action.payload[2]).then((success) => {
+          if (!success) {
+            state = {
+              comments: commentsReducer(state.comments, removeCommentAction(optimistic.id)),
+            };
+          }
+          action.success(success);
+        }, action.failure);
+        return action.promise;
+      }
       state = { comments: commentsReducer(state.comments, action as never) };
       return action;
     },
@@ -50,22 +72,10 @@ vi.mock('$store/renderer/store', async () => {
   return createStoreMockModule(mockStore);
 });
 
-vi.mock('../comment-loader', () => ({
-  loadComments: vi.fn(async () => []),
-  resolveComment: vi.fn(async () => true),
-}));
-
-vi.mock('../comments-write-service', () => ({
-  addComment: vi.fn(async () => true),
-  respondToComment: vi.fn(async () => true),
-  deleteComment: vi.fn(async () => ({ existed: true, success: true })),
-}));
-
 import { Editor } from '@tiptap/core';
 import { createEditorConfig, mentionRenderText } from '$lib/utils/editor-config';
 import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
 import { CommentManagerV2 } from '../comment-manager-v2';
-import * as commentsWrite from '../comments-write-service';
 
 // Verbatim excerpt of the failing paragraph from spec note version 16:
 // markdown links rendered as plain `#359`-style text plus the bare filename
@@ -108,6 +118,8 @@ describe('comment.add params with mention chips in the selection', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    storeControl.load.mockResolvedValue([]);
+    storeControl.add.mockResolvedValue(true);
     storeControl.reset();
     const html = await processMarkdownToHTML(SPEC_V16_EXCERPT);
     ({ editor, container } = createEditor(html));
@@ -143,9 +155,8 @@ describe('comment.add params with mention chips in the selection', () => {
     const added = await manager.addComment('needs follow-up');
     expect(added).not.toBeNull();
 
-    const addMock = vi.mocked(commentsWrite.addComment);
-    expect(addMock).toHaveBeenCalledTimes(1);
-    const [noteId, , params] = addMock.mock.calls[0];
+    expect(storeControl.add).toHaveBeenCalledTimes(1);
+    const [noteId, params] = storeControl.add.mock.calls[0];
     expect(noteId).toBe('spec');
     expect(params.commentTarget).toContain('@KNOWN_ISSUES.md');
     expect(params.searchContext).toContain('@KNOWN_ISSUES.md');
@@ -156,7 +167,7 @@ describe('comment.add params with mention chips in the selection', () => {
   });
 
   it('on persist failure: logs one bounded [CommentDiag] line, scrubs anchors, returns null', async () => {
-    vi.mocked(commentsWrite.addComment).mockResolvedValueOnce(false);
+    storeControl.add.mockResolvedValueOnce(false);
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     editor.commands.setTextSelection({ from: 1, to: editor.state.doc.content.size - 1 });
 

@@ -11,57 +11,67 @@
 </script>
 
 <script lang="ts">
-  import { onDestroy } from 'svelte';
   import { AskUserQuestions } from '$lib/components/ui/ask-user-questions';
   import type { AskUserAnswer, AskUserQuestion } from '$lib/components/ui/ask-user-questions';
   import { Button } from '$lib/components/ui/button';
+  import { onDestroy } from 'svelte';
+  import AttachmentPreview from '../AttachmentPreview.svelte';
+  import type { ContextItem } from '../input/context-api';
+  import {
+    imageFilesToContextItems,
+    INLINE_IMAGE_MAX_BYTES,
+    REFERENCE_IMAGE_MAX_BYTES,
+  } from '../input/image-context-items';
   import { crispOut, springIn } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
+  import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+  import type {
+    QuestionWizardDraft,
+    QuestionWizardDraftAnswer,
+  } from '$store/renderer/slices/question-ui/question-ui-types';
   import DismissQuestionsConfirmDialog from './DismissQuestionsConfirmDialog.svelte';
-  import {
-    clearWizardDraft,
-    loadWizardDraft,
-    saveWizardDraft,
-    type WizardDraft,
-  } from './wizard-draft-storage';
 
   interface Props {
     questions: Question[];
-    /** Immutable per mounted question set; absent means no persistence. */
-    draftKey?: string;
+    workspaceId?: string;
+    draft?: QuestionWizardDraft;
+    onDraftChange?: (draft: QuestionWizardDraft) => void;
+    onResolved?: () => void;
     collapsed?: boolean;
     onToggleCollapsed?: (collapsed: boolean) => void;
-    onComplete?: (answers: QuestionAnswer[]) => void;
+    /** Return false to decline admission; legacy notification callbacks remain valid. */
+    onComplete?: ((answers: QuestionAnswer[]) => boolean) | ((answers: QuestionAnswer[]) => void);
     onDismiss?: () => Promise<void> | void;
-  }
-
-  interface DraftAnswer {
-    sel: number[];
-    text: string;
-    skipped: boolean;
   }
 
   let {
     questions,
-    draftKey = undefined,
+    workspaceId,
+    draft = undefined,
+    onDraftChange,
+    onResolved,
     collapsed = false,
     onToggleCollapsed,
     onComplete,
     onDismiss,
   }: Props = $props();
 
-  // svelte-ignore state_referenced_locally
-  const draftStorageKey = draftKey;
-  // svelte-ignore state_referenced_locally
-  const restoredDraft = draftStorageKey ? loadWizardDraft(draftStorageKey, questions) : null;
-
-  let idx = $state(restoredDraft?.idx ?? 0);
+  let localDraft = $state<QuestionWizardDraft>({
+    idx: 0,
+    answers: questions.map(() => ({ sel: [], text: '', skipped: false })),
+  });
+  const activeDraft = $derived(draft ?? localDraft);
+  const idx = $derived(activeDraft.idx);
+  const answers = $derived(activeDraft.answers);
   let completed = $state(false);
   let confirmingDismiss = $state(false);
-  // svelte-ignore state_referenced_locally
-  let answers = $state<DraftAnswer[]>(
-    restoredDraft?.answers ?? questions.map(() => ({ sel: [], text: '', skipped: false })),
-  );
+  // Images never enter the host-owned, persisted wizard draft.
+  let answerImages = $state<Record<string, ContextItem[]>>({});
+  let readingImages = $state(false);
+  let destroyed = false;
+  onDestroy(() => {
+    destroyed = true;
+  });
 
   const multiStep = $derived(questions.length > 1);
   const primitiveQuestions = $derived<AskUserQuestion[]>(
@@ -95,6 +105,7 @@
             questionId: question.attachmentId,
             selectedIds: answer.sel.map(String),
             otherText: answer.text || undefined,
+            hasAttachments: (answerImages[question.attachmentId]?.length ?? 0) > 0,
             skipped: answer.skipped,
           } satisfies AskUserAnswer,
         ];
@@ -102,62 +113,21 @@
     ),
   );
 
-  const DRAFT_SAVE_DEBOUNCE_MS = 300;
-  let draftSaveTimer: ReturnType<typeof setTimeout> | null = null;
-  let pendingDraftSave: WizardDraft | null = null;
   let draftResolved = false;
-  let draftEffectPrimed = false;
-
-  function cancelPendingDraftSave() {
-    if (draftSaveTimer !== null) {
-      clearTimeout(draftSaveTimer);
-      draftSaveTimer = null;
-    }
-    pendingDraftSave = null;
-  }
 
   function resolveDraft() {
-    if (!draftStorageKey) return;
+    if (draftResolved) return;
     draftResolved = true;
-    cancelPendingDraftSave();
-    clearWizardDraft(draftStorageKey);
+    onResolved?.();
   }
 
-  $effect(() => {
-    const key = draftStorageKey;
-    if (!key) return;
-    const snapshot: WizardDraft = {
-      idx,
-      answers: answers.map((answer) => ({
-        sel: [...answer.sel],
-        text: answer.text,
-        skipped: answer.skipped,
-      })),
-    };
-    if (!draftEffectPrimed) {
-      draftEffectPrimed = true;
-      return;
-    }
+  function updateDraft(next: QuestionWizardDraft) {
     if (draftResolved) return;
-    pendingDraftSave = snapshot;
-    if (draftSaveTimer !== null) clearTimeout(draftSaveTimer);
-    draftSaveTimer = setTimeout(() => {
-      draftSaveTimer = null;
-      if (pendingDraftSave && !draftResolved) {
-        saveWizardDraft(key, pendingDraftSave);
-        pendingDraftSave = null;
-      }
-    }, DRAFT_SAVE_DEBOUNCE_MS);
-  });
+    if (onDraftChange) onDraftChange(next);
+    else localDraft = next;
+  }
 
-  onDestroy(() => {
-    if (draftStorageKey && pendingDraftSave && !draftResolved) {
-      saveWizardDraft(draftStorageKey, pendingDraftSave);
-    }
-    cancelPendingDraftSave();
-  });
-
-  function toDraftAnswers(next: Record<string, AskUserAnswer>): DraftAnswer[] {
+  function toDraftAnswers(next: Record<string, AskUserAnswer>): QuestionWizardDraftAnswer[] {
     return questions.map((question) => {
       const answer = next[question.attachmentId];
       if (!answer || answer.skipped)
@@ -172,14 +142,14 @@
             optionIndex < question.options.length,
         );
       return {
-        sel: !question.multiSelect && text.length > 0 ? [] : sel,
+        sel: !question.multiSelect && (text.length > 0 || answer.hasAttachments) ? [] : sel,
         text,
         skipped: false,
       };
     });
   }
 
-  function buildAnswers(source: DraftAnswer[]): QuestionAnswer[] {
+  function buildAnswers(source: QuestionWizardDraftAnswer[]): QuestionAnswer[] {
     return questions.map((question, questionIndex) => {
       const answer = source[questionIndex];
       return {
@@ -187,25 +157,67 @@
         selectedLabels: answer.sel.map((optionIndex) => question.options[optionIndex].label),
         freeText: answer.text.trim(),
         skipped: answer.skipped,
+        ...(!answer.skipped && answerImages[question.attachmentId]?.length
+          ? {
+              imageBlocks: answerImages[question.attachmentId].map((image) => ({
+                type: 'image' as const,
+                data: image.imageData!,
+                mimeType: image.imageMimeType!,
+                ...(image.placementFileName ? { placementFileName: image.placementFileName } : {}),
+              })),
+            }
+          : {}),
       };
     });
   }
 
   function handleAnswersChange(next: Record<string, AskUserAnswer>) {
-    if (!completed) answers = toDraftAnswers(next);
+    if (completed) return;
+    for (const question of questions) {
+      if (next[question.attachmentId]?.skipped) answerImages[question.attachmentId] = [];
+    }
+    updateDraft({ idx, answers: toDraftAnswers(next) });
+  }
+
+  async function handleOtherPaste(event: ClipboardEvent, questionId: string) {
+    const files = Array.from(event.clipboardData?.items ?? [])
+      .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null);
+    if (files.length === 0) return;
+    event.preventDefault();
+    if (readingImages || completed || draftResolved) return;
+    readingImages = true;
+    try {
+      const maxBytes =
+        workspaceId === CHIEF_WORKSPACE_ID ? INLINE_IMAGE_MAX_BYTES : REFERENCE_IMAGE_MAX_BYTES;
+      const images = await imageFilesToContextItems(files, { maxBytes });
+      if (destroyed || completed || draftResolved || images.length === 0) return;
+      answerImages[questionId] = [...(answerImages[questionId] ?? []), ...images];
+      updateDraft({
+        idx,
+        answers: answers.map((answer, index) =>
+          questions[index].attachmentId === questionId
+            ? { ...answer, sel: questions[index].multiSelect ? answer.sel : [], skipped: false }
+            : answer,
+        ),
+      });
+    } finally {
+      readingImages = false;
+    }
   }
 
   function handleComplete(next: Record<string, AskUserAnswer>) {
     if (completed) return;
     const completedAnswers = toDraftAnswers(next);
-    answers = completedAnswers;
+    updateDraft({ idx, answers: completedAnswers });
+    if (onComplete?.(buildAnswers(completedAnswers)) === false) return;
     completed = true;
     resolveDraft();
-    onComplete?.(buildAnswers(completedAnswers));
   }
 
   function handleBack(currentIndex: number) {
-    if (!completed) idx = Math.max(0, currentIndex - 1);
+    if (!completed) updateDraft({ idx: Math.max(0, currentIndex - 1), answers });
   }
 
   let root = $state<HTMLDivElement>();
@@ -217,6 +229,17 @@
     // Keep the outgoing surface at its last screen position while the host reflows.
     previousBounds = (collapsed ? expandedElement : collapsedElement)?.getBoundingClientRect();
   });
+
+  /** Focus never selects an answer or changes the saved draft. */
+  export function focusQuestion(): boolean {
+    if (collapsed || completed || confirmingDismiss) return false;
+    const control = expandedElement?.querySelector<HTMLElement>(
+      '[role="radio"]:not([aria-disabled="true"]), [role="checkbox"]:not([aria-disabled="true"]), textarea:not(:disabled), button:not(:disabled)',
+    );
+    if (!control) return false;
+    control.focus({ preventScroll: true });
+    return document.activeElement === control;
+  }
 
   function enterState(node: HTMLElement, expanded: boolean) {
     // Svelte can reuse an outgoing branch when a disclosure is toggled rapidly.
@@ -243,6 +266,30 @@
     return crispOut(node, { tier: 'moderate', y: 8, scale: 0.98 });
   }
 </script>
+
+{#snippet otherAttachments(questionId: string)}
+  {#if answerImages[questionId]?.length}
+    <div class="flex min-w-0 items-center gap-2 overflow-x-auto py-1">
+      {#each answerImages[questionId] as image (image.id)}
+        <AttachmentPreview
+          id={image.id}
+          name={image.label}
+          type={image.imageMimeType}
+          imageData={image.imageData}
+          imageMimeType={image.imageMimeType}
+          variant="thumbnail"
+          onRemove={completed || confirmingDismiss || readingImages
+            ? undefined
+            : (id) => {
+                answerImages[questionId] = answerImages[questionId].filter(
+                  (item) => item.id !== id,
+                );
+              }}
+        />
+      {/each}
+    </div>
+  {/if}
+{/snippet}
 
 {#snippet dismissAction()}
   {#if onDismiss}
@@ -319,10 +366,12 @@
         questions={primitiveQuestions}
         currentIndex={idx}
         answers={primitiveAnswers}
-        onCurrentIndexChange={(nextIndex) => {
-          if (!completed) idx = nextIndex;
+        onCurrentIndexChange={(nextIndex, nextAnswers) => {
+          if (!completed) updateDraft({ idx: nextIndex, answers: toDraftAnswers(nextAnswers) });
         }}
         onAnswersChange={handleAnswersChange}
+        onOtherPaste={handleOtherPaste}
+        {otherAttachments}
         onComplete={handleComplete}
         showBack={multiStep}
         onBack={handleBack}
@@ -334,7 +383,7 @@
         clearOnSkip
         globalKeyboardShortcuts
         restoreFocusOnNavigate
-        disabled={completed || confirmingDismiss || collapsed}
+        disabled={completed || confirmingDismiss || collapsed || readingImages}
         {footerActions}
         class="max-w-none max-h-[var(--question-max-height,60dvh)] overflow-y-auto bg-popover [box-shadow:none]!"
         skipLabel={m.chat_questionWizard_skip_label()}

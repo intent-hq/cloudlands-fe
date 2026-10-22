@@ -1,5 +1,5 @@
 import type { WorkspaceTask, WorkspaceTaskStats } from '$shared/types';
-import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 
 /** Per-workspace canonical task state. */
 export interface WorkspaceTasksWorkspaceState {
@@ -14,6 +14,18 @@ export interface WorkspaceTasksWorkspaceState {
   error: string | null;
   /** True once tasks have been loaded at least once for this workspace. */
   initialized: boolean;
+  /** Unique visible consumer leases; duplicate acquire/release is harmless. */
+  demandIds: string[];
+  /** An event or failed read requires revalidation on the next demand. */
+  stale: boolean;
+  revision: number;
+  /** Revision captured when the current read was admitted. */
+  readRevision: number;
+  statsPushed: boolean;
+  statsRevision: number;
+  readStatsRevision: number;
+  /** Pushes overlapping hydration are replayed onto its snapshot. */
+  pendingPushes: Record<string, WorkspaceTask | null>;
 }
 
 /** Root workspace-tasks state, keyed by workspace ID. */

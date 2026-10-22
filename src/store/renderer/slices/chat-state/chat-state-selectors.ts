@@ -8,6 +8,7 @@ import type {
   LastAttemptedMessage,
   LiveStreamPhase,
   ModelUnavailableInfo,
+  PreviousUserMessageLoad,
   QuotaExceededInfo,
   TranscriptHydrationStatus,
   TranscriptSnapshotMeta,
@@ -129,6 +130,13 @@ export const selectChatLiveStreamPhase = store.createSelector(
  * subscription, or undefined when none has arrived yet (single-transfer
  * hydration; consumed by the chat-read saga).
  */
+export const selectInitialChatHistory = store.createSelector(
+  (state, agentId: string) => getAgentChatState(state, agentId).initialHistory,
+);
+export const selectInitialChatHistoryPending = store.createSelector(
+  (state, agentId: string) => getAgentChatState(state, agentId).initialHistoryPending === true,
+);
+
 export const selectTranscriptSnapshotMeta = store.createSelector(
   (state, agentId: string): TranscriptSnapshotMeta | undefined =>
     getAgentChatState(state, agentId).transcriptSnapshot,
@@ -173,6 +181,12 @@ export const selectHistoryExhausted = store.createSelector(
 /** Result of the bounded authoritative question-marker recovery, if attempted. */
 export const selectPendingQuestionRecovery = store.createSelector(
   (state, agentId: string) => getAgentChatState(state, agentId).pendingQuestionRecovery,
+);
+
+/** Current unloaded previous-user-message walk (request, outcome, epoch), if any. */
+export const selectPreviousUserMessageLoad = store.createSelector(
+  (state, agentId: string): PreviousUserMessageLoad | undefined =>
+    getAgentChatState(state, agentId).previousUserMessageLoad,
 );
 
 /** Per-messageId results of the pending-proposal carrying-message recoveries. */

@@ -32,13 +32,32 @@
  * links at render time. Failures are logged as bounded codes only.
  */
 
+import {
+  readSetting,
+  updateSettings,
+  invalidateSettingsReadCache,
+} from '$lib/client/live/live-settings-client';
+import { isWorkspaceGuest } from '$features/workspace-sharing/utils/workspace-guest';
+import { canonicalInviteHost } from '$features/workspace-sharing/utils/invite-pin';
+import { selectLabsGitLabEnabled } from '../../user-preferences/user-preferences-selectors';
+import { clearGithubUserSearch } from '../../github-user-search/github-user-search-slice';
+import { selectGitLabAuthHost } from '../../gitlab-auth/gitlab-auth-selectors';
+import { selectGitHubAuthIsAuthenticated } from '../../github-auth/github-auth-selectors';
+import {
+  selectGitLabAuthIsConfigured,
+  selectGitLabStatusReady,
+} from '../../gitlab-auth/gitlab-auth-selectors';
+import { selectHostExecutionContext } from '../../host-execution/host-execution-selectors';
+import {
+  selectCanAdministerHost,
+  selectCollaborationCapabilities,
+  selectPrincipalActionContext,
+} from '../../principal/principal-selectors';
+import { selectWorkspaceManagementDenied } from '../../workspace/workspace-selectors';
+import { integrationReconnectSettled } from '$features/integrations-request-context';
 import { all, call, put, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 
-import {
-  clearInviteLinks,
-  storeInviteLink,
-  vaultInviteLinks,
-} from '$features/workspace-sharing/invite-link-vault';
+import { clearInviteLinks, vaultInviteLinks } from '$features/workspace-sharing/invite-link-vault';
 import {
   workspaceSharingClient,
   type ShareFailure,
@@ -48,11 +67,20 @@ import type {
   WorkspaceInviteRow,
   WorkspaceMembersList,
 } from '$features/workspace-sharing/types';
+import { initializeIdentity } from '../../identity/identity-slice';
 import { isForbiddenErrorResponse } from '$lib/client/live/backend-transport-types';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import {
+  selectShareCanSetMemberRole,
+  selectShareOwnerPrincipalId,
+  selectSharePendingRolePrincipalIds,
+  selectShareSharingChecking,
+  selectShareSharingEnabling,
+  selectShareSharingEnabled,
   selectShareAddingPrincipalId,
+  selectShareMembers,
+  selectWorkspaceRosterMembers,
   selectShareCanManage,
   selectShareCreateRequest,
   selectShareHasMember,
@@ -65,6 +93,12 @@ import {
   selectWorkspaceRosterTracked,
 } from '../workspace-share-selectors';
 import {
+  sharePrerequisitesRequested,
+  shareEnableRequested,
+  sharePrerequisitesStarted,
+  sharePrerequisitesSettled,
+  shareIntegrationAuthRequested,
+  shareIntegrationAuthLoaded,
   closeShareDialog,
   openShareDialog,
   shareAccessWithheld,
@@ -79,6 +113,8 @@ import {
   shareMemberAddRequested,
   shareMemberRemoveRequested,
   shareMembershipChanged,
+  shareMemberRoleRequested,
+  shareMemberRoleSettled,
   sharePrincipalsLoaded,
   shareRosterActionSettled,
   shareRosterFailed,
@@ -180,8 +216,10 @@ function readShareData(workspaceId: string): {
 function* manageableTarget(): SagaGenerator<WorkspaceShareTarget | null> {
   const target = yield* selectShareTarget.effect();
   if (!target) return null;
-  if (yield* selectShareCanManage.effect()) return target;
-  yield* put(shareAccessWithheld({ target }));
+  if (yield* selectShareCanManage.effect())
+    return { ...target, authority: yield* selectPrincipalActionContext.effect() };
+  if (yield* selectWorkspaceManagementDenied.effect(target.workspaceId))
+    yield* put(shareAccessWithheld({ target }));
   return null;
 }
 
@@ -195,7 +233,9 @@ function* stillTargets(target: WorkspaceShareTarget): SagaGenerator<boolean> {
   return (
     current !== null &&
     current.workspaceId === target.workspaceId &&
-    current.session === target.session
+    current.session === target.session &&
+    (yield* selectShareCanManage.effect()) &&
+    target.authority === (yield* selectPrincipalActionContext.effect())
   );
 }
 
@@ -216,6 +256,7 @@ function* loadShareData(): SagaGenerator<void> {
       guestCount,
       guestLimit,
     } = yield* call(() => read.result);
+    if (!(yield* stillTargets(target))) return;
     const invites = yield* call(vaultInviteLinks, rows);
     yield* put(shareDataLoaded({ target, generation, members, invites, guestCount, guestLimit }));
     if (principals) yield* put(sharePrincipalsLoaded({ target, principals }));
@@ -233,22 +274,83 @@ function* loadShareData(): SagaGenerator<void> {
   yield* call(() => read.settled);
 }
 
-/**
- * Inline error for a failed `workspace.invite.create`: the pin failure names
- * the login; `listener-down` (Remote access off, so the daemon cannot serve
- * an invite) and `tunnel-down` (the Tailcat tunnel is off, so no tunnel-only
- * link can be minted) each name the one setting to turn on; `guest-limit`
- * (the cap was spent between the dialog's read and the create) names the
- * cap; anything else stays generic.
- */
+const SHARING_PATHS = ['server.wsApi.enabled', 'server.tunnel.enabled'] as const;
+
+/** Both values must be known. A missing or failed setting is never “disabled”. */
+async function readSharingPrerequisites(): Promise<boolean[]> {
+  invalidateSettingsReadCache(SHARING_PATHS);
+  const results = await Promise.allSettled(SHARING_PATHS.map((path) => readSetting(path)));
+  return results.map((result) => {
+    if (result.status === 'rejected') throw result.reason;
+    if (typeof result.value?.value !== 'boolean') throw new Error('Missing sharing setting');
+    return result.value.value;
+  });
+}
+
+/** One setup operation per admitted dialog; duplicate clicks never issue another write. */
+function* sharingPrerequisites(
+  action: ReturnType<typeof sharePrerequisitesRequested | typeof shareEnableRequested>,
+): SagaGenerator<void> {
+  const target = yield* manageableTarget();
+  if (!target || !(yield* selectCanAdministerHost.effect())) return;
+  if ((yield* selectShareSharingChecking.effect()) || (yield* selectShareSharingEnabling.effect()))
+    return;
+  const enabling = action.type === shareEnableRequested.type;
+  if (enabling && (yield* selectShareSharingEnabled.effect()) === true) return;
+  yield* put(sharePrerequisitesStarted({ target, enabling }));
+  try {
+    let values = yield* call(readSharingPrerequisites);
+    if (!(yield* stillTargets(target)) || !(yield* selectCanAdministerHost.effect())) return;
+    if (enabling) {
+      // Listener first: starting Tailcat requires it. Leave all other settings alone.
+      const changes = SHARING_PATHS.flatMap((path, index) =>
+        values[index] ? [] : [{ path, value: true }],
+      );
+      if (changes.length) {
+        yield* call(updateSettings, changes);
+        if (!(yield* stillTargets(target)) || !(yield* selectCanAdministerHost.effect())) return;
+        values = yield* call(readSharingPrerequisites);
+        if (!(yield* stillTargets(target)) || !(yield* selectCanAdministerHost.effect())) return;
+      }
+    }
+    const enabled = values.every(Boolean);
+    yield* put(
+      sharePrerequisitesSettled({
+        target,
+        enabled,
+        error: enabling && !enabled ? m.workspace_share_sharingEnableFailed_error() : null,
+      }),
+    );
+  } catch (error) {
+    if (!(yield* stillTargets(target)) || !(yield* selectCanAdministerHost.effect())) return;
+    // A rejected batch can roll back applied settings. Discard pre-write cached values.
+    invalidateSettingsReadCache(SHARING_PATHS);
+    const message = error instanceof Error ? error.message : '';
+    const missingTailcat =
+      /tailcat/i.test(message) && /not found|not installed|missing|no such file/i.test(message);
+    yield* put(
+      sharePrerequisitesSettled({
+        target,
+        enabled: null,
+        error: isForbiddenErrorResponse(error)
+          ? m.workspace_share_sharingAdminRequired_notice()
+          : missingTailcat
+            ? m.workspace_share_sharingTailcatMissing_error()
+            : enabling
+              ? m.workspace_share_sharingEnableFailed_error()
+              : m.workspace_share_sharingLoadFailed_error(),
+      }),
+    );
+  }
+}
+
+/** Inline error for an invite failure unrelated to host setup. */
 function createInviteErrorMessage(code: ShareFailure['code'], requestedPin: string): string {
   switch (code) {
     case 'invite-pin-unknown':
       return m.workspace_share_pinUnknown_error({ login: `@${requestedPin}` });
-    case 'listener-down':
-      return m.workspace_share_listenerDown_error();
-    case 'tunnel-down':
-      return m.workspace_share_tunnelDown_error();
+    case 'identity-unverifiable':
+      return m.collaboration_pin_unverifiable_error();
     case 'guest-limit':
       return m.workspace_share_guestLimit_error();
     default:
@@ -260,15 +362,73 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
   const target = yield* manageableTarget();
   if (!target) return;
   const request = yield* selectShareCreateRequest.effect();
-  const [{ pinLogin }] = action.payload;
+  if (
+    (yield* selectCanAdministerHost.effect()) &&
+    ((yield* selectShareSharingEnabled.effect()) === false ||
+      (yield* selectShareSharingChecking.effect()) ||
+      (yield* selectShareSharingEnabling.effect()))
+  ) {
+    yield* put(
+      shareInviteCreateFailed({
+        target,
+        request,
+        error: m.workspace_share_sharingRequired_notice(),
+      }),
+    );
+    return;
+  }
+  const [{ pinLogin, pin }] = action.payload;
   const requestedPin = pinLogin.trim();
+  const independentPins = (yield* selectCollaborationCapabilities.effect()).hostMembership;
+  if (
+    requestedPin &&
+    independentPins &&
+    (!pin || !canonicalInviteHost(pin.provider, pin.host ?? ''))
+  ) {
+    yield* put(
+      shareInviteCreateFailed({ target, request, error: m.collaboration_pin_invalid_error() }),
+    );
+    return;
+  }
+  if (
+    requestedPin &&
+    pin?.provider === 'gitlab' &&
+    (independentPins
+      ? !(yield* selectLabsGitLabEnabled.effect())
+      : !(yield* selectCanAdministerHost.effect()) ||
+        !(yield* selectGitLabStatusReady.effect()) ||
+        pin.host !== (yield* selectGitLabAuthHost.effect()))
+  ) {
+    yield* put(
+      shareInviteCreateFailed({ target, request, error: m.workspace_share_createFailed_error() }),
+    );
+    return;
+  }
   const outcome = yield* call(workspaceSharingClient.createInvite, target.workspaceId, {
     pinLogin: requestedPin,
+    pin:
+      independentPins && pin
+        ? { provider: pin.provider, host: canonicalInviteHost(pin.provider, pin.host ?? '')! }
+        : pin,
   });
   if (!(yield* stillTargets(target))) return;
   if (!outcome.success) {
     if (outcome.code === 'forbidden') {
       yield* put(shareAccessWithheld({ target }));
+      return;
+    }
+    if (outcome.code === 'listener-down' || outcome.code === 'tunnel-down') {
+      const administrator = yield* selectCanAdministerHost.effect();
+      yield* put(
+        shareInviteCreateFailed({
+          target,
+          request,
+          error: administrator
+            ? m.workspace_share_createFailed_error()
+            : m.workspace_share_sharingAdminRequired_notice(),
+        }),
+      );
+      if (administrator) yield* put(sharePrerequisitesRequested());
       return;
     }
     logFailure('Creating an invite', target.workspaceId, outcome);
@@ -282,12 +442,22 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
     return;
   }
   const inviteId = outcome.result.invite.id;
-  yield* call(storeInviteLink, inviteId, outcome.result.url);
+  const [invite] = yield* call(vaultInviteLinks, [
+    {
+      ...outcome.result.invite,
+      url: outcome.result.url,
+    },
+  ]);
   yield* put(
     shareInviteCreated({
       target,
       request,
-      link: { inviteId, pinLogin: outcome.result.invite.pinLogin },
+      invite,
+      link: {
+        inviteId,
+        pinLogin: outcome.result.invite.pinLogin,
+        pinIdentity: outcome.result.invite.pinIdentity,
+      },
     }),
   );
   yield* put(shareDataRequested());
@@ -324,6 +494,13 @@ function* removeMember(action: ReturnType<typeof shareMemberRemoveRequested>): S
   if (!target) return;
   const [principalId] = action.payload;
   if ((yield* selectShareRemovingPrincipalId.effect()) !== principalId) return;
+  const member = (yield* selectShareMembers.effect()).find(
+    (row) => row.principalId === principalId,
+  );
+  if (member && !isWorkspaceGuest(member)) {
+    yield* put(shareActionSettled({ target, error: m.collaboration_workspace_inherited_error() }));
+    return;
+  }
   const result = yield* call(workspaceSharingClient.removeMember, target.workspaceId, principalId);
   if (!(yield* stillTargets(target))) return;
   if (!result.success) {
@@ -332,7 +509,15 @@ function* removeMember(action: ReturnType<typeof shareMemberRemoveRequested>): S
       return;
     }
     logFailure('Removing a member', target.workspaceId, result);
-    yield* put(shareActionSettled({ target, error: m.workspace_share_removeMemberFailed_error() }));
+    yield* put(
+      shareActionSettled({
+        target,
+        error:
+          result.code === 'host-membership-required'
+            ? m.collaboration_workspace_inherited_error()
+            : m.workspace_share_removeMemberFailed_error(),
+      }),
+    );
     return;
   }
   yield* put(shareActionSettled({ target, error: null }));
@@ -381,6 +566,9 @@ function* addMember(action: ReturnType<typeof shareMemberAddRequested>): SagaGen
 function* requestDataOnOpen(): SagaGenerator<void> {
   yield* call(clearInviteLinks);
   yield* put(shareDataRequested());
+  yield* put(sharePrerequisitesRequested());
+  // The pin's default forge follows the host's `identity.provider` setting.
+  yield* put(initializeIdentity());
 }
 
 function* clearLinksOnClose(): SagaGenerator<void> {
@@ -413,7 +601,22 @@ function* removeRosterMember(
   }
   // The reducer admits one removal at a time; a request it declined is not issued.
   if ((yield* selectWorkspaceRosterRemovingPrincipalId.effect(workspaceId)) !== principalId) return;
+  const context = yield* selectPrincipalActionContext.effect();
+  const member = (yield* selectWorkspaceRosterMembers.effect(workspaceId)).find(
+    (row) => row.principalId === principalId,
+  );
+  if (member && !isWorkspaceGuest(member)) {
+    yield* put(
+      shareRosterActionSettled({ workspaceId, error: m.collaboration_workspace_inherited_error() }),
+    );
+    return;
+  }
   const result = yield* call(workspaceSharingClient.removeMember, workspaceId, principalId);
+  if (
+    !(yield* selectWorkspaceRosterCanManage.effect(workspaceId)) ||
+    context !== (yield* selectPrincipalActionContext.effect())
+  )
+    return;
   if (!result.success) {
     if (result.code === 'forbidden') {
       yield* put(shareRosterWithheld({ workspaceId }));
@@ -423,7 +626,10 @@ function* removeRosterMember(
     yield* put(
       shareRosterActionSettled({
         workspaceId,
-        error: m.workspace_share_removeMemberFailed_error(),
+        error:
+          result.code === 'host-membership-required'
+            ? m.collaboration_workspace_inherited_error()
+            : m.workspace_share_removeMemberFailed_error(),
       }),
     );
     return;
@@ -447,8 +653,126 @@ function* refreshOnMembershipChange(
   }
 }
 
+function* loadIntegrationAuth(
+  action: ReturnType<typeof shareIntegrationAuthRequested>,
+): SagaGenerator<void> {
+  const [workspaceId] = action.payload;
+  const target = yield* manageableTarget();
+  if (!target || target.workspaceId !== workspaceId) return;
+  // No owner auth reads from a member/guest Share. The owner admission owns
+  // canonical status; members use only the existing allowlisted execution projection.
+  const owner = yield* selectCanAdministerHost.effect();
+  const execution = yield* selectHostExecutionContext.effect();
+  const github = owner
+    ? yield* selectGitHubAuthIsAuthenticated.effect()
+    : execution?.repositoryConnections.some((r) => r.provider === 'github' && r.configured) ===
+      true;
+  const gitlab =
+    owner &&
+    (yield* selectGitLabStatusReady.effect()) &&
+    (yield* selectGitLabAuthIsConfigured.effect());
+  if (yield* stillTargets(target))
+    yield* put(shareIntegrationAuthLoaded(target, { github, gitlab }));
+}
+
+export function* refreshIntegrationAuthAfterReconnect(): SagaGenerator<void> {
+  yield* call(integrationReconnectSettled);
+  yield* put(clearGithubUserSearch());
+  const target = yield* selectShareTarget.effect();
+  if (!target) return;
+  const host = yield* selectGitLabAuthHost.effect();
+  yield* put(shareIntegrationAuthRequested(target.workspaceId, host || undefined));
+}
+
+function* setMemberRole(action: ReturnType<typeof shareMemberRoleRequested>): SagaGenerator<void> {
+  const target = yield* manageableTarget();
+  if (!target) return;
+  const [{ principalId, role }] = action.payload;
+  if (!(yield* selectSharePendingRolePrincipalIds.effect()).includes(principalId)) return;
+  const member = (yield* selectShareMembers.effect()).find(
+    (row) => row.principalId === principalId,
+  );
+  if (
+    !(yield* selectShareCanSetMemberRole.effect()) ||
+    !member ||
+    !isWorkspaceGuest(member) ||
+    principalId === (yield* selectShareOwnerPrincipalId.effect())
+  ) {
+    yield* put(
+      shareMemberRoleSettled({
+        target,
+        principalId,
+        error: m.workspace_share_setRoleFailed_error(),
+      }),
+    );
+    return;
+  }
+  const outcome = yield* call(
+    workspaceSharingClient.setMemberRole,
+    target.workspaceId,
+    principalId,
+    role,
+  );
+  if (!(yield* stillTargets(target))) return;
+  if (!outcome.success && outcome.code === 'forbidden') {
+    yield* put(shareAccessWithheld({ target }));
+    return;
+  }
+  yield* put(
+    shareMemberRoleSettled({
+      target,
+      principalId,
+      error: outcome.success ? null : m.workspace_share_setRoleFailed_error(),
+    }),
+  );
+  // Re-read even for idempotent success; never infer the current roster or caller privilege from a click.
+  if (outcome.success) {
+    yield* put(shareDataRequested());
+    if (yield* selectWorkspaceRosterTracked.effect(target.workspaceId))
+      yield* put(shareRosterRequested({ workspaceId: target.workspaceId }));
+  }
+}
+
 export function* workspaceShareSaga(): SagaGenerator<void> {
+  const roleFlights = new Set<string>();
+  function* changeRole(action: ReturnType<typeof shareMemberRoleRequested>): SagaGenerator<void> {
+    const target = yield* selectShareTarget.effect();
+    const key = JSON.stringify([target, action.payload[0].principalId]);
+    if (roleFlights.has(key)) return;
+    roleFlights.add(key);
+    try {
+      yield* call(setMemberRole, action);
+    } finally {
+      roleFlights.delete(key);
+    }
+  }
+  const setupFlights = new Map<string, { refresh: boolean }>();
+  function* setup(
+    action: ReturnType<typeof sharePrerequisitesRequested | typeof shareEnableRequested>,
+  ): SagaGenerator<void> {
+    const target = yield* manageableTarget();
+    if (!target || !(yield* selectCanAdministerHost.effect())) return;
+    const key = JSON.stringify(target);
+    const flight = setupFlights.get(key);
+    if (flight) {
+      if (action.type === sharePrerequisitesRequested.type) flight.refresh = true;
+      return;
+    }
+    const mine = { refresh: false };
+    setupFlights.set(key, mine);
+    try {
+      yield* call(sharingPrerequisites, action);
+      while (mine.refresh && (yield* stillTargets(target))) {
+        mine.refresh = false;
+        yield* call(sharingPrerequisites, sharePrerequisitesRequested());
+      }
+    } finally {
+      setupFlights.delete(key);
+    }
+  }
   yield* all([
+    takeLatest(shareIntegrationAuthRequested, loadIntegrationAuth),
+    takeEvery([sharePrerequisitesRequested, shareEnableRequested], setup),
     takeEvery(openShareDialog, requestDataOnOpen),
     takeEvery(closeShareDialog, clearLinksOnClose),
     takeEvery(shareMembershipChanged, refreshOnMembershipChange),
@@ -470,5 +794,6 @@ export function* workspaceShareSaga(): SagaGenerator<void> {
     takeEvery(shareInviteRevokeRequested, revokeInvite),
     takeEvery(shareMemberRemoveRequested, removeMember),
     takeEvery(shareMemberAddRequested, addMember),
+    takeEvery(shareMemberRoleRequested, changeRole),
   ]);
 }

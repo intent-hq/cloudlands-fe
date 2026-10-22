@@ -29,8 +29,8 @@ const PATTERN_EFFECTS = new Set([...WILDCARD_EFFECTS, 'takeLatestByContext']);
 // Exceptions are anchored per action (`<slice file>#<action name>$`), never per
 // file, so a new dispatch in the same slice is not silently exempted. Each entry
 // names the non-syntactic consumer that observes the action (today: a predicate
-// comparing `action.type` inside an `actionChannel` filter, which the scanner
-// cannot attribute). An entry whose pattern matches no action origin at all
+// comparing `action.type` inside a named `actionChannel` filter, which the
+// scanner does not follow). An entry whose pattern matches no action origin at all
 // fails the gate as stale, so exceptions cannot outlive the action they cover.
 //
 // Analysis bounds — the gate is syntactic:
@@ -43,7 +43,11 @@ const PATTERN_EFFECTS = new Set([...WILDCARD_EFFECTS, 'takeLatestByContext']);
 // - Consumers: `reducer.with(pattern, ...)` and the recognized watcher effects
 //   (`take*`, `actionChannel`, `takeLatestByContext`, ...) whose pattern is a
 //   creator, a local creator array, a `creator.type` access, or the literal
-//   type string.
+//   type string. Inline actionChannel predicates may return finite positive
+//   type equalities / disjunctions, with read-only guards and const payload aliases.
+//   Every surviving branch must name a type; expansion is capped at 64 branches.
+//   Named predicates, control flow, mutations and calls inside predicates are
+//   deliberately unsupported; this is not general satisfiability analysis.
 // Not covered: creators reached through aliases or re-exports the resolvers
 // do not follow, hand-built plain action objects (`{ type: 'x/y' }`), and
 // watcher wrappers such as `fork(takeLeading, pattern, worker)` — those
@@ -131,6 +135,298 @@ function collectActions(sources, actionFactory) {
   return { actions, typeIndex };
 }
 
+// Bind one file lazily: the existing provenance resolver follows module exports,
+// while the TypeScript binder distinguishes imports from same-named local bindings.
+function predicateBindings(source) {
+  const options = { noResolve: true, noLib: true };
+  const host = ts.createCompilerHost(options);
+  host.getSourceFile = (fileName) => (fileName === source.fileName ? source : undefined);
+  const checker = ts.createProgram([source.fileName], options, host).getTypeChecker();
+  const symbol = (node) => checker.getSymbolAtLocation(node);
+  const sourceReference = (node, seen = new Set()) => {
+    if (ts.isPropertyAccessExpression(node)) return sourceReference(node.expression, seen);
+    if (!ts.isIdentifier(node)) return false;
+    const binding = symbol(node);
+    if (!binding || seen.has(binding) || binding.declarations?.length !== 1) return false;
+    const declaration = binding.declarations[0];
+    if (ts.isImportSpecifier(declaration) || ts.isNamespaceImport(declaration)) return true;
+    if (
+      !ts.isVariableDeclaration(declaration) ||
+      !ts.isVariableDeclarationList(declaration.parent) ||
+      !(declaration.parent.flags & ts.NodeFlags.Const) ||
+      declaration.parent.parent.parent !== source
+    )
+      return false;
+    seen.add(binding);
+    // A creator factory call is resolved by the existing action provenance gate.
+    return (
+      declaration.initializer &&
+      (ts.isCallExpression(declaration.initializer) ||
+        sourceReference(declaration.initializer, seen))
+    );
+  };
+  return { symbol, sourceReference };
+}
+
+function unwrap(expression) {
+  while (
+    ts.isParenthesizedExpression(expression) ||
+    ts.isAsExpression(expression) ||
+    ts.isTypeAssertionExpression(expression) ||
+    ts.isNonNullExpression(expression) ||
+    ts.isSatisfiesExpression(expression)
+  )
+    expression = expression.expression;
+  return expression;
+}
+
+// This is deliberately a bounded expression interpreter, not a search for `.type`
+// anywhere in a callback. Every possible returned branch must positively name an
+// action; unsupported syntax invalidates the predicate instead of broadening it.
+function inlineChannelConsumers(pattern, bindings, resolveType) {
+  const predicate = unwrap(pattern);
+  if (
+    !(ts.isArrowFunction(predicate) || ts.isFunctionExpression(predicate)) ||
+    predicate.asteriskToken ||
+    predicate.modifiers?.some((item) => item.kind === ts.SyntaxKind.AsyncKeyword) ||
+    predicate.parameters.length !== 1
+  )
+    return [];
+  const parameter = predicate.parameters[0];
+  if (!ts.isIdentifier(parameter.name) || parameter.initializer || parameter.dotDotDotToken)
+    return [];
+  const owner = bindings.symbol(parameter.name);
+  const aliases = new Map();
+  const expand = (node) => {
+    node = unwrap(node);
+    return ts.isIdentifier(node) && aliases.has(bindings.symbol(node))
+      ? expand(aliases.get(bindings.symbol(node)))
+      : node;
+  };
+  const literal = (node) => {
+    if (ts.isStringLiteralLike(node)) return { value: node.text };
+    if (ts.isNumericLiteral(node)) return { value: Number(node.text) };
+    if (node.kind === ts.SyntaxKind.TrueKeyword) return { value: true };
+    if (node.kind === ts.SyntaxKind.FalseKeyword) return { value: false };
+    if (node.kind === ts.SyntaxKind.NullKeyword) return { value: null };
+    if (ts.isIdentifier(node) && !bindings.symbol(node)?.declarations?.length) {
+      if (node.text === 'undefined') return { value: undefined };
+      if (node.text === 'NaN') return { value: NaN };
+    }
+    return undefined;
+  };
+  // Read-only guard expressions. Calls, assignments, nested functions, dynamic
+  // indexing, and type checks on a foreign object never establish consumption.
+  const valueKey = (input) => {
+    const node = expand(input);
+    const constant = literal(node);
+    if (constant) return `literal:${typeof constant.value}:${String(constant.value)}`;
+    if (ts.isIdentifier(node)) return `id:${node.text}`;
+    if (ts.isPropertyAccessExpression(node) && node.name.text !== 'type') {
+      const base = valueKey(node.expression);
+      // Dot/bracket and optional spelling identify the same static property.
+      // Structured keys keep payload["a.b"] distinct from payload.a.b.
+      return base && JSON.stringify(['get', base, node.name.text]);
+    }
+    if (ts.isElementAccessExpression(node) && literal(unwrap(node.argumentExpression))) {
+      // Bracket spelling must not bypass the dedicated owner/type analysis.
+      if (literal(unwrap(node.argumentExpression)).value === 'type') return undefined;
+      const base = valueKey(node.expression);
+      return (
+        base &&
+        JSON.stringify(['get', base, String(literal(unwrap(node.argumentExpression)).value)])
+      );
+    }
+    if (ts.isTypeOfExpression(node)) {
+      const operand = valueKey(node.expression);
+      return operand && `typeof:${operand}`;
+    }
+    if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.ExclamationToken) {
+      const operand = valueKey(node.operand);
+      return operand && `!${operand}`;
+    }
+    if (ts.isConditionalExpression(node)) {
+      const parts = [node.condition, node.whenTrue, node.whenFalse].map(valueKey);
+      return parts.every(Boolean) ? JSON.stringify(parts) : undefined;
+    }
+    if (
+      ts.isBinaryExpression(node) &&
+      [
+        ts.SyntaxKind.AmpersandAmpersandToken,
+        ts.SyntaxKind.BarBarToken,
+        ts.SyntaxKind.EqualsEqualsEqualsToken,
+        ts.SyntaxKind.ExclamationEqualsEqualsToken,
+      ].includes(node.operatorToken.kind)
+    ) {
+      const parts = [valueKey(node.left), valueKey(node.right)];
+      return parts.every(Boolean) ? JSON.stringify([node.operatorToken.kind, ...parts]) : undefined;
+    }
+    return undefined;
+  };
+  // Compound values require evaluation, not opaque equality facts: for example
+  // `(enabled && false) === true` cannot be credited as an unknown owner guard.
+  // Refuse them here rather than attempting general boolean/value reasoning.
+  const comparisonKey = (input) => {
+    const node = expand(input);
+    if (ts.isTypeOfExpression(node)) {
+      const operand = comparisonKey(node.expression);
+      return operand && `typeof:${operand}`;
+    }
+    if (
+      ts.isBinaryExpression(node) ||
+      ts.isConditionalExpression(node) ||
+      ts.isPrefixUnaryExpression(node)
+    )
+      return undefined;
+    return valueKey(node);
+  };
+  let returned = predicate.body;
+  if (ts.isBlock(returned)) {
+    const statements = returned.statements;
+    const last = statements.at(-1);
+    if (!last || !ts.isReturnStatement(last) || !last.expression) return [];
+    for (const statement of statements.slice(0, -1)) {
+      if (
+        !ts.isVariableStatement(statement) ||
+        !(statement.declarationList.flags & ts.NodeFlags.Const)
+      )
+        return [];
+      for (const declaration of statement.declarationList.declarations) {
+        if (
+          !ts.isIdentifier(declaration.name) ||
+          !declaration.initializer ||
+          !valueKey(declaration.initializer)
+        )
+          return [];
+        const binding = bindings.symbol(declaration.name);
+        // Reject self/forward references, including references inside an alias's
+        // initializer. This also keeps recursive alias expansion impossible.
+        let forward = false;
+        visit(declaration.initializer, (node) => {
+          if (!ts.isIdentifier(node)) return;
+          const referenced = bindings.symbol(node)?.valueDeclaration;
+          if (
+            referenced &&
+            ts.isVariableDeclaration(referenced) &&
+            referenced.parent.parent.parent === predicate.body &&
+            !aliases.has(bindings.symbol(node))
+          )
+            forward = true;
+        });
+        if (forward) return [];
+        aliases.set(binding, declaration.initializer);
+      }
+    }
+    returned = last.expression;
+  }
+  const ownType = (input) => {
+    const node = expand(input);
+    return (
+      ts.isPropertyAccessExpression(node) &&
+      !node.questionDotToken &&
+      node.name.text === 'type' &&
+      ts.isIdentifier(expand(node.expression)) &&
+      bindings.symbol(expand(node.expression)) === owner
+    );
+  };
+  const originFor = (input) => {
+    const node = expand(input);
+    if (ts.isStringLiteralLike(node)) return resolveType(node);
+    return ts.isPropertyAccessExpression(node) &&
+      node.name.text === 'type' &&
+      bindings.sourceReference(node.expression)
+      ? resolveType(node)
+      : undefined;
+  };
+  const branch = (type = undefined, facts = new Map()) => ({ type, facts });
+  const merge = (left, right) => {
+    if (left.type && right.type && left.type !== right.type) return undefined;
+    const facts = new Map(left.facts);
+    for (const [key, value] of right.facts) {
+      if (facts.has(key) && facts.get(key) !== value) return undefined;
+      facts.set(key, value);
+    }
+    return branch(left.type ?? right.type, facts);
+  };
+  const evaluate = (input) => {
+    const node = expand(input);
+    const constant = literal(node);
+    if (constant) return constant.value ? [branch()] : [];
+    if (ts.isBinaryExpression(node)) {
+      const op = node.operatorToken.kind;
+      if (op === ts.SyntaxKind.AmpersandAmpersandToken || op === ts.SyntaxKind.BarBarToken) {
+        const left = evaluate(node.left);
+        const right = evaluate(node.right);
+        if (!left || !right) return undefined;
+        if (op === ts.SyntaxKind.BarBarToken) {
+          // Even an enclosing type guard does not turn a broad OR into an
+          // explicit finite consumer. False arms, however, contribute nothing.
+          if ([...left, ...right].some((item) => !item.type)) return undefined;
+          return left.length + right.length <= 64 ? [...left, ...right] : undefined;
+        }
+        if (left.length * right.length > 64) return undefined;
+        return left.flatMap((a) => right.map((b) => merge(a, b)).filter(Boolean));
+      }
+      if (op === ts.SyntaxKind.EqualsEqualsEqualsToken) {
+        const origin = ownType(node.left)
+          ? originFor(node.right)
+          : ownType(node.right)
+            ? originFor(node.left)
+            : undefined;
+        if (origin) return [branch(origin, new Map([[`truth:${valueKey(parameter.name)}`, true]]))];
+      }
+      if (
+        op === ts.SyntaxKind.EqualsEqualsEqualsToken ||
+        op === ts.SyntaxKind.ExclamationEqualsEqualsToken
+      ) {
+        const left = comparisonKey(node.left);
+        const right = comparisonKey(node.right);
+        if (!left || !right) return undefined;
+        const a = literal(expand(node.left));
+        const b = literal(expand(node.right));
+        const equal = op === ts.SyntaxKind.EqualsEqualsEqualsToken;
+        // The intrinsic NaN is never strictly equal to any value, including
+        // itself. literal() leaves shadowed identifiers as ordinary guard values.
+        if ((a && Number.isNaN(a.value)) || (b && Number.isNaN(b.value)))
+          return equal ? [] : [branch()];
+        if ((a && b) || left === right)
+          return (a && b ? a.value === b.value : true) === equal ? [branch()] : [];
+        const facts = new Map([[JSON.stringify([left, right].sort()), equal]]);
+        // Distinct strict literal equalities for the same value cannot both hold.
+        if (equal && (a || b)) {
+          const key = a ? right : left;
+          facts.set(`equal:${key}`, a ? left : right);
+          facts.set(`truth:${key}`, Boolean((a ?? b).value));
+        }
+        return [branch(undefined, facts)];
+      }
+      return undefined;
+    }
+    if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.ExclamationToken) {
+      const operand = expand(node.operand);
+      const value = literal(operand);
+      if (value) return value.value ? [] : [branch()];
+      if (
+        !ts.isIdentifier(operand) &&
+        !ts.isPropertyAccessExpression(operand) &&
+        !ts.isElementAccessExpression(operand)
+      )
+        return undefined;
+      const key = valueKey(operand);
+      return key ? [branch(undefined, new Map([[`truth:${key}`, false]]))] : undefined;
+    }
+    // A conditional return is outside the finite equality grammar. Conditional
+    // payload aliases remain usable as read-only values in owner guards.
+    if (ts.isConditionalExpression(node)) return undefined;
+    const key = valueKey(node);
+    return key ? [branch(undefined, new Map([[`truth:${key}`, true]]))] : undefined;
+  };
+  const branches = evaluate(returned);
+  return branches && branches.every((item) => item.type)
+    ? [...new Set(branches.map((item) => item.type))]
+    : [];
+}
+
 export function inspectUnconsumedActions(
   files,
   { exceptions = UNCONSUMED_ACTION_EXCEPTIONS } = {},
@@ -168,6 +464,7 @@ export function inspectUnconsumedActions(
       filePath,
       provenance.effects,
     );
+    let bindings;
     visit(source, (node) => {
       if (!ts.isCallExpression(node)) return;
       const dispatched = resolveCreator(filePath, node.expression);
@@ -189,6 +486,24 @@ export function inspectUnconsumedActions(
       if (!effect || !PATTERN_EFFECTS.has(effect)) return;
       const pattern = watcherPattern(effect, node);
       if (!pattern) return;
+      if (effect === 'ownedActionChannel') {
+        // This helper applies the finite type list before the original owner filter.
+        // A same-named local callback cannot claim the imported helper's contract.
+        bindings ??= predicateBindings(source);
+        if (!bindings.sourceReference(callee)) return;
+      }
+      if (
+        effect === 'actionChannel' &&
+        (ts.isArrowFunction(unwrap(pattern)) || ts.isFunctionExpression(unwrap(pattern)))
+      ) {
+        bindings ??= predicateBindings(source);
+        if (bindings.sourceReference(callee)) {
+          for (const origin of inlineChannelConsumers(pattern, bindings, (expression) =>
+            resolvePattern(filePath, expression),
+          ))
+            handled.add(origin);
+        }
+      }
       const candidates = localArray(source, pattern);
       for (const candidate of candidates.length > 0 ? candidates : [pattern]) {
         const origin = resolvePattern(filePath, candidate);

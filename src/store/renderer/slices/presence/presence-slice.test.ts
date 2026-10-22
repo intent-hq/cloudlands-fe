@@ -1,11 +1,14 @@
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { describe, expect, it } from 'vitest';
 import type { PresenceMember, PresenceRoster, PresenceTypingEntry } from '$shared/types/presence';
 import type { WorkspaceRole } from '$shared/types';
 import type { WorkspaceMember } from '../guest-sessions/guest-sessions-types';
 import {
-  initialState,
+  initialState as emptyState,
   presenceMembersReceived,
+  presenceContextReceived,
+  presenceWorkspaceRemoved,
+  presenceWorkspacesReceived,
   presenceOwnPrincipalReceived,
   presenceOwnTypingSourceReceived,
   presenceReducer,
@@ -13,11 +16,16 @@ import {
   presenceRosterReceived,
   presenceSnapshotReceived,
   presenceTypingExpired,
+  presenceDiscussionComposerFocused,
+  presenceDiscussionTypingPulse,
+  presenceDiscussionTypingStopped,
+  presenceDiscussionTypingExpired,
   presenceTypingPulse,
   presenceTypingStopped,
   presenceWindowVisibilityChanged,
 } from './presence-slice';
 
+const initialState = { ...emptyState, context: 'test', workspaceIds: ['ws-1', 'ws-2', 'ws-3'] };
 const member = (principalId: string, overrides: Partial<PresenceMember> = {}): PresenceMember => ({
   principalId,
   login: principalId,
@@ -51,8 +59,72 @@ const accepted = (principalId: string, role: WorkspaceRole = 'collaborator'): Wo
 
 describe('presence slice', () => {
   it('starts empty and visible', () => {
-    expect(presenceReducer(undefined, { type: '@@init' })).toEqual(initialState);
+    expect(presenceReducer(undefined, { type: '@@init' })).toEqual(emptyState);
     expect(initialState.windowVisible).toBe(true);
+  });
+
+  it('uses pushed identities for known accepted members without inventing membership or persisting typing', () => {
+    let state = presenceReducer(initialState, presenceMembersReceived('ws-1', [accepted('other')]));
+    state = presenceReducer(
+      state,
+      presenceRosterReceived(
+        roster([
+          member('other', {
+            login: 'renamed',
+            displayName: 'New name',
+            hostRole: 'member',
+            typing: [typing('remote', 1)],
+          }),
+          member('unknown'),
+        ]),
+      ),
+    );
+    expect(getItems(state.members['ws-1'])).toEqual([
+      {
+        ...accepted('other'),
+        login: 'renamed',
+        displayName: 'New name',
+        hostRole: 'member',
+      },
+    ]);
+    state = presenceReducer(state, presenceRosterReceived(roster([])));
+    expect(getItem(state.members['ws-1'], 'other')?.login).toBe('renamed');
+  });
+
+  it.each(['removed', 'hidden', 'reset', 'context'] as const)(
+    'discards pushed profile history when ownership is %s',
+    (change) => {
+      let state = presenceReducer(
+        initialState,
+        presenceRosterReceived(roster([member('a', { login: 'previous-admission' })])),
+      );
+      expect(state.profileUpdates['ws-1'].a.profile.login).toBe('previous-admission');
+      if (change === 'removed') state = presenceReducer(state, presenceWorkspaceRemoved('ws-1'));
+      if (change === 'hidden') state = presenceReducer(state, presenceWorkspacesReceived([]));
+      if (change === 'reset') state = presenceReducer(state, presenceReset());
+      if (change === 'context')
+        state = presenceReducer(state, presenceContextReceived('new', 'self'));
+      expect(state.profileUpdates['ws-1']).toBeUndefined();
+      state = presenceReducer(
+        { ...state, context: 'new', workspaceIds: ['ws-1'] },
+        presenceMembersReceived('ws-1', [accepted('a')], 0),
+      );
+      expect(getItem(state.members['ws-1'], 'a')?.login).toBe('a');
+    },
+  );
+
+  it('does not retain removed membership or its pushed profile after a reply', () => {
+    let state = presenceReducer(
+      initialState,
+      presenceMembersReceived('ws-1', [accepted('removed')]),
+    );
+    state = presenceReducer(
+      state,
+      presenceRosterReceived(roster([member('removed', { login: 'latest' })])),
+    );
+    state = presenceReducer(state, presenceMembersReceived('ws-1', [], 0));
+    expect(getItems(state.members['ws-1'])).toEqual([]);
+    expect(state.profileUpdates['ws-1']).toEqual({});
   });
 
   it('replaces a workspace roster and keeps other workspaces', () => {
@@ -65,7 +137,7 @@ describe('presence slice', () => {
     expect(getItem(state.rosters['ws-1'], 'c')?.principalId).toBe('c');
   });
 
-  it('applies a fenced snapshot exactly like a pushed roster, typing included', () => {
+  it('applies snapshot roster and typing without treating a read as a pushed profile', () => {
     const pushed = presenceReducer(
       initialState,
       presenceRosterReceived(roster([member('a', { typing: [typing('ts-1', 1)] })])),
@@ -74,7 +146,11 @@ describe('presence slice', () => {
       initialState,
       presenceSnapshotReceived(roster([member('a', { typing: [typing('ts-1', 1)] })])),
     );
-    expect(snapshotted).toEqual(pushed);
+    expect(snapshotted.rosters).toEqual(pushed.rosters);
+    expect(snapshotted.liveTyping).toEqual(pushed.liveTyping);
+    expect(snapshotted.profileRevision).toBe(0);
+    expect(snapshotted.profileUpdates).toEqual({});
+    expect(pushed.profileRevision).toBe(1);
     expect(presenceSnapshotReceived.type).not.toBe(presenceRosterReceived.type);
   });
 
@@ -176,6 +252,91 @@ describe('presence slice', () => {
     state = presenceReducer(state, presenceOwnPrincipalReceived('me'));
     state = presenceReducer(state, presenceTypingPulse('agent-1'));
     const reset = presenceReducer(state, presenceReset());
-    expect(reset).toEqual({ ...initialState, windowVisible: false });
+    expect(reset).toEqual({ ...emptyState, windowVisible: false });
+  });
+});
+
+describe('discussion typing state', () => {
+  it('requires composer focus and fresh input; unrelated cleanup cannot stop another workspace', () => {
+    let state = presenceReducer(initialState, presenceDiscussionTypingPulse('ws-1'));
+    expect(state.ownDiscussionTyping).toBeNull();
+    state = presenceReducer(state, presenceDiscussionComposerFocused('ws-1', true));
+    expect(state.ownDiscussionTyping).toBeNull();
+    state = presenceReducer(state, presenceDiscussionTypingPulse('ws-1'));
+    expect(state.ownDiscussionTyping).toEqual({ workspaceId: 'ws-1' });
+    expect(presenceReducer(state, presenceDiscussionTypingPulse('ws-1'))).toBe(state);
+    expect(presenceReducer(state, presenceDiscussionComposerFocused('ws-2', false))).toBe(state);
+    state = presenceReducer(state, presenceTypingPulse('agent'));
+    state = presenceReducer(state, presenceDiscussionTypingStopped('ws-1'));
+    expect(state.ownTyping).toEqual({ agentId: 'agent' });
+    expect(state.ownDiscussionTyping).toBeNull();
+    state = presenceReducer(state, presenceDiscussionTypingPulse('ws-1'));
+    state = presenceReducer(state, presenceWindowVisibilityChanged(false));
+    state = presenceReducer(state, presenceWindowVisibilityChanged(true));
+    expect(state.ownDiscussionTyping).toBeNull();
+    expect(state.discussionComposerWorkspaceId).toBeNull();
+  });
+  it('expires by source/pulse, ignores old timers, preserves stale expiry, and removes absent entries', () => {
+    const update = (pulse: number) =>
+      presenceRosterReceived(
+        roster([
+          member('other', {
+            discussionTyping: [{ source: 's', pulse, since: '2099-01-01T00:00:00Z' }],
+          }),
+        ]),
+      );
+    let state = presenceReducer(initialState, update(1));
+    state = presenceReducer(state, update(2));
+    state = presenceReducer(state, presenceDiscussionTypingExpired('ws-1', 's', 1));
+    expect(state.liveDiscussionTyping['ws-1'].s.expired).toBe(false);
+    state = presenceReducer(state, presenceDiscussionTypingExpired('ws-1', 's', 2));
+    const expired = state.liveDiscussionTyping['ws-1'].s;
+    state = presenceReducer(state, update(2));
+    expect(state.liveDiscussionTyping['ws-1'].s).toBe(expired);
+    state = presenceReducer(state, update(3));
+    expect(state.liveDiscussionTyping['ws-1'].s.expired).toBe(false);
+    state = presenceReducer(state, presenceRosterReceived(roster([member('other')])));
+    expect(state.liveDiscussionTyping['ws-1']).toEqual({});
+    state = presenceReducer(state, update(4));
+    state = presenceReducer(state, presenceWorkspaceRemoved('ws-1'));
+    expect(state.liveDiscussionTyping['ws-1']).toBeUndefined();
+    expect(presenceReducer(state, presenceReset()).liveDiscussionTyping).toEqual({});
+  });
+});
+
+describe('conversation typing isolation', () => {
+  it('switches the focused conversation and ignores old blur/stop/timer actions', () => {
+    let state = presenceReducer(
+      initialState,
+      presenceDiscussionComposerFocused('ws-1', true, 'c1'),
+    );
+    state = presenceReducer(state, presenceDiscussionTypingPulse('ws-1', 'c1'));
+    expect(state.ownDiscussionTyping).toEqual({ workspaceId: 'ws-1', conversationId: 'c1' });
+    state = presenceReducer(state, presenceDiscussionComposerFocused('ws-1', true, 'c2'));
+    expect(state.ownDiscussionTyping).toBeNull();
+    state = presenceReducer(state, presenceDiscussionTypingPulse('ws-1', 'c2'));
+    state = presenceReducer(state, presenceDiscussionTypingStopped('ws-1', 'c1'));
+    state = presenceReducer(state, presenceDiscussionComposerFocused('ws-1', false, 'c1'));
+    expect(state.ownDiscussionTyping).toEqual({ workspaceId: 'ws-1', conversationId: 'c2' });
+    const update = (conversationId: string, pulse: number) =>
+      presenceRosterReceived(
+        roster([
+          member('other', {
+            discussionTyping: [
+              { source: 's', since: '2099-01-01T00:00:00Z', pulse, conversationId },
+            ],
+          }),
+        ]),
+      );
+    state = presenceReducer(state, update('c1', 1));
+    state = presenceReducer(state, update('c2', 2));
+    state = presenceReducer(state, presenceDiscussionTypingExpired('ws-1', 's', 1, 'c1'));
+    expect(state.liveDiscussionTyping['ws-1'].s).toMatchObject({
+      conversationId: 'c2',
+      expired: false,
+    });
+    state = presenceReducer(state, presenceDiscussionTypingExpired('ws-1', 's', 2, 'c2'));
+    state = presenceReducer(state, update('c2', 2));
+    expect(state.liveDiscussionTyping['ws-1'].s.expired).toBe(true);
   });
 });

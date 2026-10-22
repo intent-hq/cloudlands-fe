@@ -20,9 +20,9 @@ export type McpServerRuntimeStatus = {
   lastError?: string;
 };
 
-/** Per-workspace MCP disabled server names. */
+/** Per-workspace MCP disabled server keys. */
 export type WorkspaceMcpSettingsState = {
-  /** Server names disabled for this workspace. Absence means enabled. */
+  /** Server keys disabled for this workspace. Absence means enabled. */
   disabledServers: Record<string, true>;
 };
 
@@ -30,13 +30,13 @@ export type WorkspaceMcpSettingsState = {
 export type McpSettingsState = {
   /** Server configurations loaded from settings */
   servers: McpServerConfig[];
-  /** Server status map (name -> status) */
+  /** Server status map (key -> status) */
   statusMap: Record<string, McpServerStatus>;
-  /** Server error messages (name -> error message) */
+  /** Server error messages (key -> error message) */
   errorMessages: Record<string, string>;
-  /** Server tools map (name -> tools[]) */
+  /** Server tools map (key -> tools[]) */
   toolsMap: Record<string, McpTool[]>;
-  /** Per-server disabled state (name -> true). Uses Record instead of Set for serializability. */
+  /** Per-server disabled state (key -> true). Uses Record instead of Set for serializability. */
   disabledServers: Record<string, true>;
   /** Whether servers are currently being loaded */
   loading: boolean;
@@ -50,6 +50,6 @@ export type McpSettingsState = {
   advancedSaveStatus: 'idle' | 'saving' | 'saved' | 'error';
   /** Advanced JSON editor save error (set when advancedSaveStatus === "error") */
   advancedSaveError: string | null;
-  /** Per-workspace disabled server names. */
+  /** Per-workspace disabled server keys. */
   byWorkspaceId: Record<string, WorkspaceMcpSettingsState>;
 };

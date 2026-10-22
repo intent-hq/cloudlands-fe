@@ -1,4 +1,4 @@
-import type { Store } from '@augmentcode/themis/svelte-store';
+import type { Store } from '@themislib/themis/svelte-store';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({

@@ -61,7 +61,7 @@ describe('WorkspaceLayout panel insets', () => {
     expect(hasOuterGutter(mainArea)).toBe(true);
   });
 
-  it('matches the responsive outer gutter beside a collapsed left sidebar', async () => {
+  it('keeps content flush beside the collapsed left rail', async () => {
     const { mainArea, sidebarPanel } = renderLayout({ sidebarSide: 'left' });
 
     // Sidebar first, content after, no gutter while the sidebar is expanded.
@@ -70,9 +70,9 @@ describe('WorkspaceLayout panel insets', () => {
     expect(mainArea.classList.contains('bg-sidebar')).toBe(true);
     expect(hasOuterGutter(mainArea)).toBe(false);
 
-    // The store-owned collapsed flag adds the gutter and removing it takes it away.
+    // The rail supplies the leading space when the sidebar is collapsed.
     appStore.dispatch(setCollapsed(true));
-    await waitFor(() => expect(hasOuterGutter(mainArea)).toBe(true));
+    await waitFor(() => expect(hasOuterGutter(mainArea)).toBe(false));
     appStore.dispatch(setCollapsed(false));
     await waitFor(() => expect(hasOuterGutter(mainArea)).toBe(false));
   });

@@ -1,3 +1,4 @@
+import { learnedModelName } from './model-name-cache';
 /**
  * Provider Models Cache Selectors
  *
@@ -8,28 +9,31 @@
  * before reading, mirroring how entries are written.
  */
 import { store } from '../../store';
-import type { ProviderModelsCacheEntry } from './provider-models-types';
+import type { ProviderModelsCacheEntry, ProviderModelsRequest } from './provider-models-types';
+import { providerModelsContextKey } from './provider-models-utils';
 
 /**
  * The full cache map keyed by normalized provider id. `{}` before any fetch
  * lands (fresh session / after a reconnect clear).
  */
 export const selectProviderModelsCacheMap = store.createSelector(
-  (state): Record<string, ProviderModelsCacheEntry> => state.providerModels?.byProviderId ?? {},
+  (state, workspaceId?: string): Record<string, ProviderModelsCacheEntry> =>
+    (workspaceId
+      ? state.providerModels?.byWorkspaceId?.[workspaceId]
+      : state.providerModels?.byProviderId) ?? {},
 );
 
 /**
  * One provider's cached catalog; `undefined` on a cache miss (never fetched
  * this session, or the cache was cleared on reconnect).
  *
- * Hydration consumes only `entry.models`; cached `warning`/`stale` are NOT
- * replayed on mount — warning notices live in the renderer-global
- * loading-state slice (`setLoadingStateForProvider`), which survives remounts
- * on its own. The fields are stored verbatim per the fetch-result contract.
+ * Workspace pickers also read warning/stale fields from their own entries.
+ * Direct pickers retain the global loading-state slice. The fields are
+ * stored verbatim per the fetch-result contract.
  */
 export const selectProviderModelsCacheEntry = store.createSelector(
-  (state, providerId: string): ProviderModelsCacheEntry | undefined =>
-    state.providerModels?.byProviderId[providerId],
+  (state, providerId: string, workspaceId?: string): ProviderModelsCacheEntry | undefined =>
+    selectProviderModelsCacheMap.select(state, workspaceId)[providerId],
 );
 
 /**
@@ -40,4 +44,38 @@ export const selectProviderModelsCacheEntry = store.createSelector(
  */
 export const selectProviderModelsClearEpoch = store.createSelector(
   (state): number => state.providerModels?.clearEpoch ?? 0,
+);
+
+export const selectProviderModelsRequests = store.createSelector(
+  (state, workspaceId?: string): Record<string, ProviderModelsRequest> =>
+    (workspaceId
+      ? state.providerModels?.requestsByWorkspaceId?.[workspaceId]?.map
+      : state.providerModels?.requests?.map) ?? {},
+);
+
+export const selectObservedModelProviders = store.createSelector(
+  (state): Record<string, { providerId: string; workspaceId?: string }> =>
+    Object.fromEntries(
+      Object.values(state.providerModels?.observers?.map ?? {}).flatMap(
+        ({ providerIds, workspaceId }) =>
+          providerIds.map((providerId) => [
+            providerModelsContextKey(providerId, workspaceId),
+            { providerId, workspaceId },
+          ]),
+      ),
+    ),
+);
+
+export const selectObservedModelProviderKeys = store.createSelector((state): string[] =>
+  Object.keys(selectObservedModelProviders.select(state)).sort(),
+);
+
+/** Local, display-only lookup by normalized provider and bare model ID. */
+export const selectLearnedModelDisplayName = store.createSelector(
+  (state, providerId: string, modelId: string): string | undefined =>
+    learnedModelName(state.providerModels?.learnedNames ?? {}, providerId, modelId),
+);
+
+export const selectLearnedModelNames = store.createSelector(
+  (state) => state.providerModels.learnedNames,
 );

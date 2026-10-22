@@ -1,7 +1,7 @@
 import ts from 'typescript';
 
 const REDUCER_PATH = /^src\/store\/(?:main|renderer)\/slices\/.+\/[^/]+-slice\.ts$/;
-const CREATE_REDUCER_MODULE = '@augmentcode/themis/utils/store/create-reducer';
+const CREATE_REDUCER_MODULE = '@themislib/themis/utils/store/create-reducer';
 
 function normalize(filePath) {
   return filePath.split('\\').join('/').replace(/^\.\//, '');

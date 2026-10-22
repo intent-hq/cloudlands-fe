@@ -1,4 +1,4 @@
-import type { Store } from '@augmentcode/themis/svelte-store';
+import type { Store } from '@themislib/themis/svelte-store';
 
 import {
   REDUX_DEBUG_LS_KEY,

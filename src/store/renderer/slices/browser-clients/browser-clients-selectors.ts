@@ -2,7 +2,7 @@
  * Browser Clients Selectors (renderer)
  */
 
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { LiveClient, WorkspaceBrowserClient } from '$shared/types/browser-clients';
 import type { BrowserTabHost } from '$lib/components/browser/browser-tab-host';
 import {
@@ -11,11 +11,19 @@ import {
   type ResolvedBrowserClients,
 } from '$lib/components/workspace/driving-indicator';
 import { store } from '../../store';
-import { emptyWorkspaceBrowserClientsState, initialState } from './browser-clients-types';
+import {
+  createLiveClientCollection,
+  emptyWorkspaceBrowserClientsState,
+  initialState,
+} from './browser-clients-types';
 
 /** This connection's own `clientId` (null until the hello probe lands). */
 export const selectOwnClientId = store.createSelector(
   (state): string | null => state?.browserClients?.ownClientId ?? null,
+);
+
+export const selectOwnClientIdConfirmed = store.createSelector(
+  (state): boolean => state?.browserClients?.ownClientIdConfirmed === true,
 );
 
 /** Every connected logical client (`client.list` order). */
@@ -24,7 +32,10 @@ export const selectLiveClients = store.createSelector((state): LiveClient[] =>
 );
 
 export const selectLiveClientsLoaded = store.createSelector(
-  (state): boolean => state?.browserClients?.liveClientsLoaded ?? false,
+  (state, workspaceId?: string): boolean =>
+    workspaceId
+      ? (state?.browserClients?.byWorkspaceId[workspaceId]?.liveClientsLoaded ?? false)
+      : (state?.browserClients?.liveClientsLoaded ?? false),
 );
 
 /** One connected client by id, or undefined when it is not (or no longer) listed. */
@@ -37,6 +48,14 @@ export const selectLiveClient = store.createSelector(
 export const selectWorkspaceBrowserClient = store.createSelector(
   (state, wsId: string): WorkspaceBrowserClient | null =>
     (state?.browserClients?.byWorkspaceId[wsId] ?? emptyWorkspaceBrowserClientsState).browserClient,
+);
+
+/** An event can confirm selection even while its resolution read is unavailable. */
+export const selectWorkspaceBrowserSelectionKnown = store.createSelector(
+  (state, wsId: string): boolean => {
+    const workspace = state?.browserClients?.byWorkspaceId[wsId];
+    return workspace?.pinnedClientId !== undefined || workspace?.browserClient != null;
+  },
 );
 
 /**
@@ -60,19 +79,30 @@ function liveClientSummary(client: LiveClient): BrowserClientSummary {
 export const selectWorkspaceDrivingClient = store.createSelector(
   (state, wsId: string): ResolvedBrowserClients => {
     const slice = state?.browserClients ?? initialState;
-    const eligibleClients = getItems(slice.liveClients)
+    const clients = slice.byWorkspaceId[wsId]?.liveClients ?? createLiveClientCollection();
+    const eligibleClients = getItems(clients)
       .filter((client) => client.capabilities.browserExec === true)
       .map(liveClientSummary);
     const browserClient = (slice.byWorkspaceId[wsId] ?? emptyWorkspaceBrowserClientsState)
       .browserClient;
     let driving: BrowserClientSummary | null = null;
     if (browserClient?.resolved) {
-      const live = getItem(slice.liveClients, browserClient.resolved.clientId);
+      const live = getItem(clients, browserClient.resolved.clientId);
       driving = live ? liveClientSummary(live) : { ...browserClient.resolved, connected: true };
     } else if (browserClient?.source === 'workspace') {
       driving = { clientId: browserClient.clientId, connected: false };
     }
-    return { eligibleClients, ownClientId: slice.ownClientId ?? '', driving };
+    return {
+      eligibleClients,
+      ownClientId: slice.ownClientId ?? '',
+      driving,
+      pinnedClientId:
+        slice.byWorkspaceId[wsId]?.pinnedClientId !== undefined
+          ? slice.byWorkspaceId[wsId].pinnedClientId
+          : browserClient?.source === 'workspace'
+            ? browserClient.clientId
+            : null,
+    };
   },
 );
 
@@ -84,13 +114,19 @@ export const selectWorkspaceDrivingClient = store.createSelector(
  * An offline host has no live hello, so its name falls back to the id.
  */
 export const selectBrowserTabHost = store.createSelector(
-  (state, hostClientId: string): BrowserTabHost => {
+  (state, hostClientId: string, workspaceId?: string): BrowserTabHost => {
     const slice = state?.browserClients ?? initialState;
-    const live = getItem(slice.liveClients, hostClientId);
+    const clients = workspaceId
+      ? (slice.byWorkspaceId[workspaceId]?.liveClients ?? createLiveClientCollection())
+      : slice.liveClients;
+    const loaded = workspaceId
+      ? slice.byWorkspaceId[workspaceId]?.liveClientsLoaded
+      : slice.liveClientsLoaded;
+    const live = getItem(clients, hostClientId);
     if (live) return { name: browserClientDisplayName(liveClientSummary(live)), connected: true };
     return {
       name: browserClientDisplayName({ clientId: hostClientId, connected: false }),
-      connected: !slice.liveClientsLoaded,
+      connected: !loaded,
     };
   },
 );
@@ -102,4 +138,11 @@ export const selectBrowserTabHost = store.createSelector(
 export const selectWorkspaceBrowserTabsRevision = store.createSelector(
   (state, wsId: string): number =>
     (state?.browserClients?.byWorkspaceId[wsId] ?? emptyWorkspaceBrowserClientsState).tabsRevision,
+);
+
+/** Demand is independent of warm workspace sessions and open tabs. */
+export const selectBrowserClientConsumerWorkspaceIds = store.createSelector((state): string[] =>
+  Object.entries(state.browserClients?.byWorkspaceId ?? {})
+    .filter(([, entry]) => Object.keys(entry.consumers ?? {}).length > 0)
+    .map(([id]) => id),
 );

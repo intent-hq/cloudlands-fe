@@ -4,16 +4,19 @@ import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'n
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { escape as escapeGlob, globSync } from 'glob';
-import {
-  CT_TEST_DIR,
-  ctGeometryScene,
-  hasCtSpecSuffix,
-  isCtSpec,
-} from '../playwright/ct-spec-pattern.mjs';
+import ts from 'typescript';
+import { CT_TEST_DIR, hasCtSpecSuffix, isCtSpec } from '../playwright/ct-spec-pattern.mjs';
 import { isIgnoredRootSpec, isRootSpec, ROOT_TEST_DIR } from '../playwright/root-spec-pattern.mjs';
 import { checkDepsFresh, checkNodeSupport, ensureI18nFresh } from './check-deps-fresh.mjs';
 import { isCtContractPath } from './ct-contract-paths.mjs';
+import { gitignoreDirExcludes } from './gitignore-dir-excludes.mjs';
+import { isEnforcedFile } from './hardcoded-strings-scope.mjs';
 import { pnpmInvocation } from './pnpm-launcher.mjs';
+import { resolveUnitSelections } from './verify-unit-selection.mjs';
+import {
+  generatedBuildConfigPrerequisite,
+  requiresTransferSelectionFixtures,
+} from './unit-test-prerequisites.mjs';
 import {
   acquireVerificationLock,
   ctLockKey,
@@ -26,6 +29,27 @@ import {
   selectDeclaredSuites,
   TRIGGER_MARKER,
 } from './verify-changed-triggers.mjs';
+import {
+  buildCoverage,
+  laneConfig,
+  obligationsFor,
+  reconcile,
+  remainingLaneFiles,
+  UNIT_LANES,
+} from './verify-changed-coverage.mjs';
+import {
+  commandIdentity,
+  CONFIG_ENV,
+  configurationIdentity,
+  createAttempt,
+  INVOCATION_ENV,
+  LANE_ENV,
+  loadAttempts,
+  loadTree,
+  readResults,
+  RESULTS_ENV,
+  sourceIdentity,
+} from './verify-changed-receipts.mjs';
 
 export { acquireVerificationLock, defaultLockPath, lockTimeout };
 
@@ -61,6 +85,18 @@ const FORMAT_EXTENSIONS = new Set([
   '.yml',
 ]);
 const UNIT_TEST_RE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
+// This suite executes the full required scan with the checked-in baseline.
+const TRANSLATION_INVENTORY_SUITE = 'scripts/check-hardcoded-strings.test.ts';
+// Its final test executes the checker against the real repository catalogs.
+const LOCALE_COMPLETENESS_SUITE = 'scripts/check-i18n-completeness.test.ts';
+const LOCALE_COMPLETENESS_INPUTS = new Set([
+  'project.inlang/settings.json',
+  'scripts/i18n-equal-allowlist.json',
+  'scripts/check-i18n-completeness.mjs',
+  LOCALE_COMPLETENESS_SUITE,
+  'package.json',
+  'pnpm-lock.yaml',
+]);
 // Mirrors the runner-owned excludes in vitest.config.ts /
 // tests/integration/vitest.integration.config.ts. Neither Playwright pattern is
 // mirrored: `isCtSpec` and playwright-ct.config.ts both read
@@ -114,12 +150,20 @@ function assertCanonicalPathInsideRoot(path, root, displayPath) {
 }
 
 export function parseArgs(argv) {
-  const result = { base: null, dryRun: false, help: false, paths: [] };
+  const result = { base: null, dryRun: false, help: false, paths: [], resume: false };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--') continue;
     if (arg === '--dry-run') result.dryRun = true;
-    else if (arg === '--help' || arg === '-h') result.help = true;
+    else if (arg === '--resolved-plan') result.resolvedPlan = true;
+    else if (arg === '--resume') result.resume = true;
+    else if (arg === '--max-unit-files' || arg.startsWith('--max-unit-files=')) {
+      const value =
+        arg === '--max-unit-files' ? argv[(index += 1)] : arg.slice('--max-unit-files='.length);
+      if (!/^\d+$/.test(value ?? '') || !Number.isSafeInteger(Number(value)))
+        throw new Error('--max-unit-files requires a nonnegative safe integer');
+      result.maxUnitFiles = Number(value);
+    } else if (arg === '--help' || arg === '-h') result.help = true;
     else if (arg === '--base' || arg.startsWith('--base=')) {
       const value = arg === '--base' ? argv[(index += 1)] : arg.slice('--base='.length);
       if (!value || value.startsWith('-')) throw new Error('missing value for option: --base');
@@ -127,6 +171,10 @@ export function parseArgs(argv) {
     } else if (arg.startsWith('-')) throw new Error(`unknown option: ${arg}`);
     else result.paths.push(arg);
   }
+  if (result.dryRun && (result.resolvedPlan || result.maxUnitFiles !== undefined))
+    throw new Error('Use --resolved-plan instead of --dry-run to resolve or bound unit files');
+  if (result.dryRun && result.resume)
+    throw new Error('Use --resolved-plan --resume instead of --dry-run to preview a continuation');
   return result;
 }
 
@@ -249,32 +297,9 @@ function importTargets(source, testPath, root) {
   return targets;
 }
 
-function geometrySnapshotTargets(testPath, root, readText) {
-  const geometry = ctGeometryScene(testPath);
-  if (!geometry) return new Set();
-  const { directory, scene } = geometry;
-  const targets = new Set([
-    `${directory}__geometry__/${scene}.geometry.json`,
-    ...['svelte', 'ts', 'tsx', 'js', 'mjs'].map(
-      (extension) => `${directory}${scene}.preview.${extension}`,
-    ),
-    ...['svelte', 'ts', 'tsx', 'js', 'mjs'].map(
-      (extension) => `${directory}${scene}.preview-fixtures.${extension}`,
-    ),
-  ]);
-
-  for (const previewPath of [...targets].filter((path) => /\.preview\.[^.]+$/.test(path))) {
-    if (!existsSync(resolve(root, previewPath))) continue;
-    for (const imported of importTargets(readText(previewPath), previewPath, root)) {
-      if (imported.endsWith('.svelte')) targets.add(imported);
-    }
-  }
-  return targets;
-}
-
 // A CT spec usually mounts a host/harness `.svelte` that composes the component
 // under test, so follow one hop through each directly imported `.svelte` file
-// and add the `.svelte` files it imports (mirrors `geometrySnapshotTargets`).
+// and add the `.svelte` files it imports.
 function hostComponentTargets(targets, root, readText) {
   const hosted = new Set();
   for (const host of [...targets].filter((target) => target.endsWith('.svelte'))) {
@@ -300,9 +325,7 @@ export function findRelatedCtTests(files, options = {}) {
     if (selected.has(test)) continue;
     const targets = importTargets(readText(test), test, root);
     for (const hosted of hostComponentTargets(targets, root, readText)) targets.add(hosted);
-    const geometryTargets = geometrySnapshotTargets(test, root, readText);
-    if (files.some((file) => geometryTargets.has(file))) selected.add(test);
-    else if (sourceFiles.some((file) => targets.has(file))) selected.add(test);
+    if (sourceFiles.some((file) => targets.has(file))) selected.add(test);
   }
   return [...selected].sort();
 }
@@ -331,15 +354,184 @@ export function testRunner(file) {
 // Vitest's default `test.include`; vitest.config.ts does not override it.
 const VITEST_INCLUDE_GLOB = '**/*.{test,spec}.?(c|m)[jt]s?(x)';
 
+// Bounded static interpretation only: never evaluate a project's config while
+// planning. Unknown expressions must not establish equivalent inventory coverage.
+function literalProperty(object, name) {
+  if (
+    !object ||
+    !ts.isObjectLiteralExpression(object) ||
+    object.properties.some(
+      (property) => ts.isSpreadAssignment(property) || ts.isComputedPropertyName(property.name),
+    )
+  )
+    return null;
+  const matches = object.properties.filter((property) => property.name.text === name);
+  if (matches.length > 1 || (matches.length && !ts.isPropertyAssignment(matches[0]))) return null;
+  return matches[0]?.initializer;
+}
+
+function vitestExclusions(root, configFile = 'vitest.config.ts') {
+  const unknown = { patterns: [], exclusionsKnown: false, complete: false };
+  const configPath = resolve(root, configFile);
+  if (!existsSync(configPath)) return unknown;
+  const source = ts.createSourceFile(
+    configPath,
+    readFileSync(configPath, 'utf8'),
+    ts.ScriptTarget.Latest,
+    false,
+  );
+  if (source.parseDiagnostics.length) return unknown;
+  const imports = new Map();
+  for (const statement of source.statements.filter(ts.isImportDeclaration)) {
+    const clause = statement.importClause;
+    if (clause?.name) imports.set(clause.name.text, [statement.moduleSpecifier.text, 'default']);
+    if (clause?.namedBindings && ts.isNamedImports(clause.namedBindings)) {
+      for (const binding of clause.namedBindings.elements)
+        imports.set(binding.name.text, [
+          statement.moduleSpecifier.text,
+          (binding.propertyName ?? binding.name).text,
+        ]);
+    }
+  }
+  const imported = (node, module, name) =>
+    node && ts.isIdentifier(node) && imports.get(node.text)?.join(':') === `${module}:${name}`;
+  const shadowed = new Set();
+  const forgetBindings = (node) => {
+    if (ts.isIdentifier(node)) {
+      imports.delete(node.text);
+      shadowed.add(node.text);
+    } else if (ts.isBindingElement(node)) forgetBindings(node.name);
+    else ts.forEachChild(node, forgetBindings);
+  };
+  for (const statement of source.statements.filter(ts.isVariableStatement))
+    for (const declaration of statement.declarationList.declarations)
+      forgetBindings(declaration.name);
+  const exports = source.statements.filter(ts.isExportAssignment);
+  if (exports.length !== 1 || exports[0].isExportEquals) return unknown;
+  let config = exports[0].expression;
+  if (
+    ts.isCallExpression(config) &&
+    imported(config.expression, 'vitest/config', 'defineConfig') &&
+    config.arguments.length === 1
+  ) {
+    config = config.arguments[0];
+    if (ts.isArrowFunction(config) && config.parameters.length === 0 && ts.isBlock(config.body)) {
+      const statements = config.body.statements;
+      const returned = statements.at(-1);
+      if (
+        !returned ||
+        !ts.isReturnStatement(returned) ||
+        !statements.slice(0, -1).every(ts.isVariableStatement)
+      )
+        return unknown;
+      // A callback-local binding must not masquerade as one of the known imports.
+      for (const statement of statements.slice(0, -1))
+        for (const declaration of statement.declarationList.declarations)
+          forgetBindings(declaration.name);
+      config = returned.expression;
+    }
+  }
+  const test = literalProperty(config, 'test');
+  const exclude = literalProperty(test, 'exclude');
+  if (exclude === null || (exclude && !ts.isArrayLiteralExpression(exclude))) return unknown;
+  // Discovery and execution filters need a real config evaluator; keep the scan then.
+  const complete =
+    literalProperty(config, 'root') === undefined &&
+    [
+      'include',
+      'dir',
+      'root',
+      'projects',
+      'workspace',
+      'testNamePattern',
+      'typecheck',
+      'related',
+      'changed',
+      'shard',
+      'tagsFilter',
+      'cliExclude',
+      'listTags',
+      'clearCache',
+      'mergeReports',
+    ].every((name) => literalProperty(test, name) === undefined);
+  const patterns = [];
+  let exclusionsKnown = true;
+  for (const element of exclude?.elements ?? []) {
+    if (ts.isStringLiteral(element)) {
+      patterns.push(element.text);
+      continue;
+    }
+    // The repo's one computed exclusion source has an existing pure helper.
+    // Accept only its imported call with the exact root .gitignore argument.
+    const call = ts.isSpreadElement(element) ? element.expression : null;
+    const argument =
+      call && ts.isCallExpression(call) && call.arguments.length === 1 ? call.arguments[0] : null;
+    const callee = argument && ts.isCallExpression(argument) ? argument.expression : null;
+    if (
+      call &&
+      ts.isCallExpression(call) &&
+      imported(call.expression, './scripts/gitignore-dir-excludes.mjs', 'gitignoreDirExcludes') &&
+      callee &&
+      ts.isPropertyAccessExpression(callee) &&
+      callee.name.text === 'join' &&
+      (imported(callee.expression, 'path', 'default') ||
+        imported(callee.expression, 'node:path', 'default')) &&
+      argument.arguments.length === 2 &&
+      ts.isIdentifier(argument.arguments[0]) &&
+      argument.arguments[0].text === '__dirname' &&
+      !shadowed.has('__dirname') &&
+      ts.isStringLiteral(argument.arguments[1]) &&
+      argument.arguments[1].text === '.gitignore' &&
+      existsSync(resolve(root, '.gitignore'))
+    ) {
+      patterns.push(...gitignoreDirExcludes(resolve(root, '.gitignore')));
+    } else exclusionsKnown = false;
+  }
+  return { patterns, exclusionsKnown, complete: complete && exclusionsKnown };
+}
+
 export function vitestExcludePatterns(root = REPO_ROOT) {
-  const configPath = resolve(root, 'vitest.config.ts');
-  if (!existsSync(configPath)) return [];
-  const block = /\bexclude:\s*\[([\s\S]*?)\]/.exec(readFileSync(configPath, 'utf8'))?.[1] ?? '';
-  const code = block
-    .split('\n')
-    .map((line) => line.replace(/\/\/.*$/, ''))
-    .join('\n');
-  return [...code.matchAll(/'([^']+)'/g)].map((match) => match[1]);
+  return vitestExclusions(root).patterns;
+}
+
+function snapshotOwner(file, root) {
+  // Vitest's default external snapshot path preserves the complete test basename.
+  // Do not guess custom layouts or search for similarly named tests.
+  if (basename(dirname(file)) !== '__snapshots__') return null;
+  const owner = slash(join(dirname(dirname(file)), basename(file, '.snap')));
+  const runner = testRunner(owner);
+  if (!runner || runner === 'manual' || !CODE_EXTENSIONS.has(extname(owner))) return null;
+  try {
+    assertCanonicalPathInsideRoot(resolve(root, owner), root, owner);
+    if (!statSync(resolve(root, owner), { throwIfNoEntry: false })?.isFile()) return null;
+  } catch {
+    return null;
+  }
+
+  const exclusions =
+    runner === 'vitest'
+      ? vitestExclusions(root)
+      : runner === 'integration'
+        ? vitestExclusions(root, 'tests/integration/vitest.integration.config.ts')
+        : { patterns: ['**/node_modules/**'], exclusionsKnown: true };
+  // Unknown excludes must not look like an empty policy. Integration's supported
+  // root/include settings do not make its literal exclusion policy unknown.
+  if (!exclusions.exclusionsKnown) return null;
+  const exclude = exclusions.patterns;
+  const gitignore = resolve(root, '.gitignore');
+  // Only the unit config derives exclusions from .gitignore. The integration
+  // config has its own excludes; both Playwright configs set an explicit testDir.
+  if (runner === 'vitest' && existsSync(gitignore)) {
+    exclude.push(...gitignoreDirExcludes(gitignore));
+  }
+  const matches = globSync(escapeGlob(owner, { windowsPathsNoEscape: true }), {
+    cwd: root,
+    ignore: exclude,
+    nodir: true,
+    dot: true,
+    posix: true,
+  });
+  return matches.includes(owner) ? owner : null;
 }
 
 function hasRunnableUnitTests(directory, root, exclude) {
@@ -374,11 +566,17 @@ function isKnownNonCode(file) {
   );
 }
 
+// `lint:workflows` (actionlint) inputs: the workflows and their lint config.
+function isWorkflowLintInput(file) {
+  return /^\.github\/(?:workflows\/[^/]+|actionlint)\.ya?ml$/.test(file);
+}
+
 function isArchitectureSource(file) {
   return (
     (file.startsWith('src/') && CODE_EXTENSIONS.has(extname(file))) ||
     /^scripts\/check-[^/]+\.mjs$/.test(file) ||
     file === 'scripts/type-check.ts' ||
+    isWorkflowLintInput(file) ||
     basename(file) === 'AGENTS.md'
   );
 }
@@ -416,6 +614,22 @@ function command(id, label, args, lockKind = null) {
   };
 }
 
+// Playwright's html reporter defaults to `open: 'on-failure'`, which serves the
+// report and waits for Ctrl+C: a local run with one failure sat ~2 h on
+// "Serving HTML report" and never exited (cloudlands-fe#3392). Every browser
+// stage therefore runs non-interactively and retries like CI (retries: 2 in
+// both Playwright configs under CI), without CI=1's other effects
+// (forbidOnly, one worker).
+// CT stages pass it after `--`: npm drops unknown flags before the separator,
+// pnpm forwards the separator literally, and the CT launcher strips it only as
+// its first argument (a later `--` would turn `--retries=2` into a file filter).
+export const PLAYWRIGHT_RETRIES_ARG = '--retries=2';
+export const PLAYWRIGHT_CHECK_ENV = Object.freeze({ PLAYWRIGHT_HTML_OPEN: 'never' });
+
+function playwrightCommand(id, label, args, lockKind = null) {
+  return { ...command(id, label, args, lockKind), env: { ...PLAYWRIGHT_CHECK_ENV } };
+}
+
 export function createVerificationPlan(files, options = {}) {
   const root = options.root ?? REPO_ROOT;
   const declared = options.declaredSuites
@@ -424,16 +638,22 @@ export function createVerificationPlan(files, options = {}) {
   const existing = files.filter((file) => isExisting(file, root));
   const formatFiles = existing.filter((file) => FORMAT_EXTENSIONS.has(extname(file)));
   const lintFiles = existing.filter(isLintable);
-  const directTests = (runner) => existing.filter((file) => testRunner(file) === runner);
+  const snapshots = new Map(
+    files
+      .filter((file) => extname(file) === '.snap')
+      .map((file) => [file, snapshotOwner(file, root)]),
+  );
+  const testFiles = [...new Set([...existing, ...[...snapshots.values()].filter(Boolean)])];
+  const directTests = (runner) => testFiles.filter((file) => testRunner(file) === runner);
   const directCt = directTests('ct');
   const directIntegration = directTests('integration');
   const directPlaywright = directTests('playwright');
   const deletedUnitTests = files.filter(
     (file) => testRunner(file) === 'vitest' && !isExisting(file, root),
   );
-  const vitestExclude = deletedUnitTests.length ? vitestExcludePatterns(root) : [];
+  const vitestExclude = vitestExclusions(root);
   const deletedUnitDirectories = deletedUnitTests
-    .map((file) => survivingUnitTestDirectory(file, root, vitestExclude))
+    .map((file) => survivingUnitTestDirectory(file, root, vitestExclude.patterns))
     .filter(Boolean);
   const directUnit = [...new Set([...directTests('vitest'), ...deletedUnitDirectories])];
   const relatedSources = existing.filter(
@@ -444,7 +664,7 @@ export function createVerificationPlan(files, options = {}) {
   );
   const uiInvariants = files.some(isRendererSource);
   const declaredUnit = selectDeclaredSuites(declared.suites, files).filter(
-    (suite) => !directUnit.includes(suite),
+    (suite) => !directUnit.some((direct) => suite === direct || suite.startsWith(`${direct}/`)),
   );
   let architecture = files.some(isArchitectureSource);
   const typeCheckWrapper = files.includes('scripts/type-check.ts');
@@ -463,6 +683,8 @@ export function createVerificationPlan(files, options = {}) {
   const fallbackReasons = [];
 
   for (const file of files) {
+    // A resolved snapshot selects its runner above; it did not change source or types.
+    if (snapshots.get(file)) continue;
     addBoundary(boundaries, file);
     if (file.endsWith('.svelte')) svelteCheck = true;
     if (file === 'tsconfig.json') boundaries.add('renderer');
@@ -481,7 +703,7 @@ export function createVerificationPlan(files, options = {}) {
       /^(?:eslint|playwright|postcss|prettier|svelte|tailwind|tsconfig|vite|vitest)[^/]*\./.test(
         file,
       );
-    if (FULL_RISK_FILES.has(file) || !known) {
+    if (snapshots.has(file) || FULL_RISK_FILES.has(file) || !known) {
       fallbackReasons.push(file);
       architecture = true;
       fullUnit = true;
@@ -518,6 +740,37 @@ export function createVerificationPlan(files, options = {}) {
         'type-check:validate',
       ]),
     );
+  // Selected test coverage is only equivalent if the real-repository test can run.
+  const suiteCovered = (requiredSuite) =>
+    vitestExclude.complete &&
+    (fullUnit ||
+      [...directUnit, ...declaredUnit].some(
+        (suite) => suite === requiredSuite || requiredSuite.startsWith(`${suite}/`),
+      )) &&
+    globSync(requiredSuite, {
+      cwd: root,
+      ignore: vitestExclude.patterns,
+      nodir: true,
+    }).length > 0;
+  if (files.some(isEnforcedFile) && !suiteCovered(TRANSLATION_INVENTORY_SUITE))
+    checks.push(
+      command('i18n-strings', 'Translation strings (required inventory scan)', [
+        'run',
+        'lint:i18n-strings',
+      ]),
+    );
+  if (
+    files.some(
+      (file) => /^messages\/[^/]+\.json$/.test(file) || LOCALE_COMPLETENESS_INPUTS.has(file),
+    ) &&
+    !suiteCovered(LOCALE_COMPLETENESS_SUITE)
+  )
+    checks.push(
+      command('i18n-completeness', 'Locale catalog completeness', [
+        'run',
+        'lint:i18n-completeness',
+      ]),
+    );
   if (deadCode)
     checks.push(command('knip', 'Dead code (knip, repo-wide)', ['run', 'lint:dead-code']));
   if (fullUnit)
@@ -542,18 +795,21 @@ export function createVerificationPlan(files, options = {}) {
         ]),
       );
     }
-    if (directIntegration.length) {
-      checks.push(
-        command('vitest-integration', 'Vitest integration (changed tests)', [
-          'exec',
-          'vitest',
-          'run',
-          '--config',
-          'tests/integration/vitest.integration.config.ts',
-          ...directIntegration,
-        ]),
-      );
-    }
+  }
+  // The unit fallback excludes integration tests, so it cannot replace this lane.
+  if (directIntegration.length) {
+    checks.push(
+      command('vitest-integration', 'Vitest integration (changed tests)', [
+        'exec',
+        'vitest',
+        'run',
+        '--config',
+        'tests/integration/vitest.integration.config.ts',
+        ...directIntegration,
+      ]),
+    );
+  }
+  if (!fullUnit) {
     if (relatedSources.length) {
       checks.push(
         command('vitest-related', 'Vitest (tests related to changed sources)', [
@@ -598,31 +854,38 @@ export function createVerificationPlan(files, options = {}) {
       });
   if (fullCt)
     checks.push(
-      command('ct-full', 'Playwright component suite (safe fallback)', ['run', 'test:ct'], 'ct'),
+      playwrightCommand(
+        'ct-full',
+        'Playwright component suite (safe fallback)',
+        ['run', 'test:ct', '--', PLAYWRIGHT_RETRIES_ARG],
+        'ct',
+      ),
     );
   else if (relatedCt.length) {
     checks.push(
-      command(
+      playwrightCommand(
         'ct-related',
         'Playwright component tests (colocated imports)',
-        ['run', 'test:ct', '--', ...relatedCt],
+        ['run', 'test:ct', '--', PLAYWRIGHT_RETRIES_ARG, ...relatedCt],
         'ct',
       ),
     );
   }
   if (fullPlaywright)
     checks.push(
-      command('playwright-full', 'Playwright browser suite (config changed)', [
+      playwrightCommand('playwright-full', 'Playwright browser suite (config changed)', [
         'run',
         'test:playwright',
+        PLAYWRIGHT_RETRIES_ARG,
       ]),
     );
   else if (directPlaywright.length) {
     checks.push(
-      command('playwright-direct', 'Playwright browser tests (changed specs)', [
+      playwrightCommand('playwright-direct', 'Playwright browser tests (changed specs)', [
         'exec',
         'playwright',
         'test',
+        PLAYWRIGHT_RETRIES_ARG,
         ...directPlaywright,
       ]),
     );
@@ -671,8 +934,42 @@ export function createVerificationPlan(files, options = {}) {
       ]),
     );
   }
+  // These are planner-owned selections using the standard unit config. Pass only
+  // their file filters to the shared launcher policy; related selection remains
+  // conservative because it can reach any consumer through the import graph.
+  const unitSelections = new Map([
+    ['vitest-direct', directUnit],
+    ['vitest-declared', declaredUnit],
+    ['vitest-full', []],
+    ['vitest-related', ['related', ...relatedSources]],
+  ]);
+  const prerequisiteId = 'transfer-selection-fixtures';
+  const prerequisites = [];
+  const buildConfig = generatedBuildConfigPrerequisite({ root });
+  for (const check of checks) {
+    // Every unit lane imports generated config, including repo-wide UI invariants.
+    if (!check.id.startsWith('vitest-')) continue;
+    check.dependsOn = [buildConfig.id];
+    const selection = unitSelections.get(check.id);
+    if (selection && requiresTransferSelectionFixtures(selection, { root })) {
+      check.dependsOn.push(prerequisiteId);
+    }
+  }
+  if (checks.some((check) => check.dependsOn?.includes(buildConfig.id))) {
+    prerequisites.push(buildConfig);
+  }
+  if (checks.some((check) => check.dependsOn?.includes(prerequisiteId))) {
+    prerequisites.push({
+      id: prerequisiteId,
+      label: 'Validate canonical transfer-selection fixtures',
+      executable: process.execPath,
+      args: [resolve(REPO_ROOT, 'scripts/transfer-selection-fixtures.mjs')],
+      lockKind: null,
+    });
+  }
   return {
     files,
+    prerequisites,
     checks,
     fallbackReasons: [...new Set(fallbackReasons)].sort(),
     triggerViolations: declared.violations.map((entry) => entry.path),
@@ -700,21 +997,53 @@ export function printPlan(plan, dryRun, log = console.log) {
       `verify:changed: warning: ${plan.triggerViolations.length} vitest suite(s) read the tree from disk without a ${TRIGGER_MARKER} header and are never selected here; see pnpm run lint:verify-changed-triggers`,
     );
   }
+  if (plan.prerequisites?.length) {
+    log('verify:changed: prerequisites (before all selected checks)');
+    for (const prerequisite of plan.prerequisites) {
+      log(
+        `  - ${prerequisite.id}: ${[prerequisite.executable, ...prerequisite.args].map(shellQuote).join(' ')}`,
+      );
+    }
+  }
   log(`verify:changed: ${plan.checks.length} check(s)`);
   for (const check of plan.checks) {
-    log(`  - ${check.label}: ${[check.executable, ...check.args].map(shellQuote).join(' ')}`);
+    const dependencies = check.dependsOn?.length
+      ? ` [requires: ${check.dependsOn.join(', ')}]`
+      : '';
+    const env = Object.entries(check.env ?? {}).map(([key, value]) => `${key}=${value}`);
+    log(
+      `  - ${check.label}${dependencies}: ${[...env, check.executable, ...check.args].map(shellQuote).join(' ')}`,
+    );
   }
   if (dryRun) log('verify:changed: dry-run; no commands were run');
 }
 
+const activeChildren = new Set();
+// Set once a termination signal arrives; no further check starts afterwards.
+let terminating = false;
+
+/**
+ * The environment a check's child process runs with: the caller's env, no git
+ * prompts, the check's own pinned variables (which win, so an inherited
+ * `PLAYWRIGHT_HTML_OPEN=always` cannot reintroduce the hang), and the
+ * held-lock marker when the parent already owns the lock.
+ */
+export function checkEnvironment(check, { heldLock = null, baseEnv = process.env } = {}) {
+  const env = { ...baseEnv, GIT_TERMINAL_PROMPT: '0', ...(check.env ?? {}) };
+  if (heldLock) env[HELD_LOCK_ENV] = heldLock;
+  return env;
+}
+
 async function runCheck(check, root, { heldLock = null } = {}) {
   console.log(`\n[verify:changed] ${check.label}`);
-  const launcher = pnpmInvocation(check.args);
+  const launcher =
+    check.executable === 'pnpm'
+      ? pnpmInvocation(check.args)
+      : { executable: check.executable, args: check.args, shell: false };
   // A locked check spawns the CT launcher, which takes the same `ct-<port>`
   // lock for direct runs; tell it the lock is already held so it does not
   // wait on its own parent.
-  const env = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
-  if (heldLock) env[HELD_LOCK_ENV] = heldLock;
+  const env = checkEnvironment(check, { heldLock });
   await new Promise((resolveRun, reject) => {
     const child = spawn(launcher.executable, launcher.args, {
       cwd: root,
@@ -722,17 +1051,193 @@ async function runCheck(check, root, { heldLock = null } = {}) {
       shell: launcher.shell,
       env,
     });
-    child.on('error', reject);
+    activeChildren.add(child);
+    child.on('error', (error) => {
+      activeChildren.delete(child);
+      reject(error);
+    });
     child.on('exit', (code, signal) => {
+      activeChildren.delete(child);
       if (code === 0) resolveRun();
       else
         reject(
-          new Error(
-            `${check.label} failed${signal ? ` with ${signal}` : ` with exit code ${code ?? 1}`}`,
+          Object.assign(
+            new Error(
+              `${check.label} failed${signal ? ` with ${signal}` : ` with exit code ${code ?? 1}`}`,
+            ),
+            { exitCode: code, signal },
           ),
         );
     });
   });
+}
+
+const REPORTER_PATH = resolve(REPO_ROOT, 'scripts/verify-changed-receipt-reporter.mjs');
+const RUN_FILES_PATH = resolve(REPO_ROOT, 'scripts/verify-changed-run-files.mjs');
+// Generated modules that tests import, keyed by the tracked inputs that regenerate
+// them; `vitest related` cannot see through the generator otherwise.
+const GENERATED_MODULES = [
+  {
+    input: (file) => /^messages\/[^/]+\.json$/.test(file) || file.startsWith('project.inlang/'),
+    modules: ['src/shared/paraglide/messages.js', 'src/shared/paraglide/runtime.js'],
+  },
+  { input: (file) => file === 'src/preload/index.template.ts', modules: ['src/preload/index.ts'] },
+];
+
+/**
+ * Unit test files whose earlier results the changes in `changed` can affect,
+ * using the planner's own selection rules (direct edits, the Vitest import
+ * graph, declared triggers, UI invariants and full-risk fallbacks). Anything
+ * the rules cannot attribute returns `{ all: true }`.
+ */
+export async function invalidatedUnitFiles(changed, root = REPO_ROOT, options = {}) {
+  const resolveSelections = options.resolveUnitSelections ?? resolveUnitSelections;
+  // A deleted module or asset (.json, .css, ?raw import) can break an unchanged
+  // importer that the current graph no longer shows. Only tests and docs are exempt.
+  const deleted = changed.find(
+    (file) => !isExisting(file, root) && testRunner(file) === null && extname(file) !== '.md',
+  );
+  if (deleted) return { all: true, reason: `deleted module ${deleted}` };
+  const plan = createVerificationPlan(changed, { root, ctTests: [] });
+  if (plan.checks.some((check) => check.id === 'vitest-full'))
+    return { all: true, reason: `full unit fallback (${plan.fallbackReasons.join(', ')})` };
+  const checks = plan.checks.filter((check) =>
+    ['vitest-direct', 'vitest-declared', 'vitest-ui-invariants'].includes(check.id),
+  );
+  const generated = GENERATED_MODULES.filter((entry) => changed.some(entry.input))
+    .flatMap((entry) => entry.modules)
+    .filter((file) => isExisting(file, root));
+  const related = [
+    ...changed.filter((file) => isExisting(file, root) && testRunner(file) === null),
+    ...generated,
+  ];
+  if (related.length)
+    checks.push(
+      command('vitest-related', 'Invalidation (related)', [
+        'exec',
+        'vitest',
+        'related',
+        '--run',
+        '--config',
+        'vitest.config.ts',
+        ...related,
+      ]),
+    );
+  // Undeclared disk-reading suites cannot be attributed to any change.
+  const files = new Set(plan.triggerViolations ?? []);
+  for (const file of changed) if (testRunner(file) === 'vitest') files.add(file);
+  if (checks.length) {
+    try {
+      const selections = await resolveSelections({ ...plan, checks }, root, { allowEmpty: true });
+      for (const selection of selections) for (const file of selection.files) files.add(file);
+    } catch (error) {
+      return { all: true, reason: `invalidation discovery failed: ${error.message}` };
+    }
+  }
+  return { all: false, files };
+}
+
+/** Source, configuration, command and resolved-selection identities of a plan. */
+export function planIdentities(plan, selections, root) {
+  return {
+    source: sourceIdentity(root),
+    configuration: configurationIdentity(root),
+    commands: plan.checks.map((check) => ({
+      id: check.id,
+      digest: commandIdentity(check),
+      executable: check.executable,
+      args: check.args,
+    })),
+    selections: selections.map((selection) => ({
+      id: selection.id,
+      config: laneConfig(plan.checks.find((check) => check.id === selection.id) ?? { args: [] }),
+      files: selection.files,
+    })),
+  };
+}
+
+// Options of a planner-owned unit command, or null when its shape is unknown
+// and the lane must run unchanged.
+function plannedVitestOptions(check) {
+  if (check.id === 'vitest-ui-invariants') return ['--config', 'vitest.config.ts'];
+  if (check.args[0] !== 'exec' || check.args[1] !== 'vitest') return null;
+  const args = check.args.slice(2);
+  if (args[0] !== 'run' && args[0] !== 'related') return null;
+  const options = [];
+  for (let index = 1; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--run') continue;
+    if (arg === '--config') options.push(arg, args[(index += 1)]);
+    else if (/^--maxWorkers=\S+$/.test(arg)) options.push(arg);
+    else if (arg.startsWith('-')) return null;
+  }
+  return options;
+}
+
+function executionFor(check, selections, credits, attempt, invocation) {
+  if (credits?.checks.has(check.id)) {
+    const source = credits.checks.get(check.id);
+    return {
+      skip: source ? `passed in ${source}` : 'every selected file passed in compatible attempts',
+    };
+  }
+  if (!UNIT_LANES.has(check.id) || !attempt) return { check };
+  let next = check;
+  const laneFiles = selections.find((selection) => selection.id === check.id)?.files ?? [];
+  const remaining = remainingLaneFiles(check.id, selections, credits) ?? laneFiles;
+  const options = plannedVitestOptions(check);
+  if (remaining.length < laneFiles.length && options) {
+    const list = attempt.writeFile(`remaining-${check.id}.json`, JSON.stringify(remaining));
+    next = {
+      ...check,
+      label: `${check.label} [resume: ${remaining.length} of ${laneFiles.length} file(s)]`,
+      executable: process.execPath,
+      args: [RUN_FILES_PATH, list, ...options],
+    };
+  }
+  return {
+    check: {
+      ...next,
+      args: [...next.args, '--reporter=default', `--reporter=${REPORTER_PATH}`],
+      env: {
+        ...(next.env ?? {}),
+        [RESULTS_ENV]: attempt.resultsPath,
+        [LANE_ENV]: check.id,
+        [INVOCATION_ENV]: invocation,
+        [CONFIG_ENV]: laneConfig(check),
+      },
+    },
+  };
+}
+
+function printResume(plan, selections, credits, log) {
+  const remaining = new Set();
+  const lines = [];
+  for (const check of plan.checks) {
+    if (credits.checks.has(check.id)) {
+      lines.push(`  - ${check.id}: satisfied by compatible receipts`);
+      continue;
+    }
+    const files = remainingLaneFiles(check.id, selections, credits);
+    if (!UNIT_LANES.has(check.id) || !files) {
+      lines.push(`  - ${check.id}: to run`);
+      continue;
+    }
+    const total = selections.find((selection) => selection.id === check.id).files.length;
+    for (const file of files) remaining.add(file);
+    lines.push(`  - ${check.id}: ${files.length} of ${total} file(s) to run`);
+  }
+  const checks = credits.obligations.checks.length;
+  log(
+    `verify:changed: resume: ${credits.checks.size} of ${checks} check(s) and ${credits.files.size} of ${credits.obligations.files.length} unit file obligation(s) satisfied by compatible receipts; ${remaining.size} unique unit file(s) to run`,
+  );
+  for (const line of lines) log(line);
+}
+
+function describeCoverage(coverage) {
+  const part = (counts) =>
+    `${counts['executed-passed']} executed, ${counts['resumed-passed']} resumed, ${counts.failed} failed, ${counts.unfinished} unfinished`;
+  return `checks ${part(coverage.counts.checks)}; unit files ${part(coverage.counts.unitFiles)}`;
 }
 
 export async function runVerificationPlan(plan, root, options = {}) {
@@ -742,25 +1247,168 @@ export async function runVerificationPlan(plan, root, options = {}) {
   const lockPath = options.lockPath ?? defaultLockPath;
   const log = options.log ?? console.log;
 
-  for (const check of plan.checks) {
-    const lockKey = verificationLockKey(check, env);
-    if (!lockKey) {
-      await run(check, root);
-      continue;
-    }
+  // Keep prerequisites separate from checks so {...plan, checks: selectedChecks}
+  // retains them. Resolve every reference before spawning anything, then validate
+  // once before ALL selected checks, including an earlier unrelated test lane.
+  const required = new Set(plan.checks.flatMap((check) => check.dependsOn ?? []));
+  const prerequisites = [...required].map((id) => {
+    const prerequisite = plan.prerequisites?.find((entry) => entry.id === id);
+    if (!prerequisite) throw new Error(`Missing prerequisite ${id} in verification plan`);
+    return prerequisite;
+  });
+  for (const prerequisite of prerequisites) await run(prerequisite, root);
 
-    const timeoutMs = lockTimeout(lockKey, env.VERIFY_CHANGED_LOCK_TIMEOUT_MS);
-    log(`\n[verify:changed] waiting up to ${timeoutMs}ms for ${lockKey} lock`);
-    const releaseLock = await acquireLock({
-      lockPath: lockPath(lockKey),
-      timeoutMs,
-      cwd: root,
-    });
-    try {
-      await run(check, root, { heldLock: lockKey });
-    } finally {
-      releaseLock();
+  let selections;
+  const printSelections = (resolved, complete) => {
+    const files = [...new Set(resolved.flatMap((selection) => selection.files))].sort();
+    log(
+      `verify:changed: ${complete ? 'resolved' : 'partially resolved'} unit files: ${files.length} unique`,
+    );
+    for (const file of files) log(`  - ${file}`);
+    for (const selection of resolved) {
+      log(`  ${selection.id}: ${selection.files.length} file(s)`);
+      for (const file of selection.files) log(`    - ${file}`);
     }
+    return files;
+  };
+  try {
+    selections = await (options.resolveUnitSelections ?? resolveUnitSelections)(plan, root);
+  } catch (error) {
+    printSelections(error.selections ?? [], false);
+    throw new Error(
+      `${error.message}\nNo selected checks ran. Repair discovery and retry --resolved-plan; for an explicit full unit run: pnpm run test:unit --maxWorkers=1`,
+      { cause: error },
+    );
+  }
+  const unitFiles = printSelections(selections, true);
+  if (options.maxUnitFiles !== undefined && unitFiles.length > options.maxUnitFiles) {
+    throw new Error(
+      `${unitFiles.length} unit files exceed --max-unit-files ${options.maxUnitFiles}. No selected checks ran; no coverage was truncated.\nReview --resolved-plan, then rerun the same command with --max-unit-files ${unitFiles.length} (or omit the limit). Explicit full unit run: pnpm run test:unit --maxWorkers=1`,
+    );
+  }
+
+  // Receipts are recorded whenever requested; resuming requires them. Without
+  // identities nothing can be proven compatible, so everything runs.
+  let identities = null;
+  if (options.resume || (options.record && !options.resolvedPlan)) {
+    try {
+      identities = (options.identities ?? planIdentities)(plan, selections, root);
+    } catch (error) {
+      log(
+        `verify:changed: warning: receipts unavailable (${error.message}); every selected check runs and nothing is recorded`,
+      );
+    }
+  }
+  let credits = null;
+  if (options.resume && identities) {
+    credits = await reconcile({
+      plan,
+      selections,
+      configuration: identities.configuration,
+      source: identities.source,
+      attempts: loadAttempts(root),
+      loadTree: (treeDigest) => loadTree(root, treeDigest),
+      invalidatedFiles: (changed) =>
+        invalidatedUnitFiles(changed, root, {
+          resolveUnitSelections: options.resolveUnitSelections,
+        }),
+    });
+    printResume(plan, selections, credits, log);
+  }
+  if (options.resolvedPlan) {
+    log('verify:changed: resolved-plan; prerequisites and discovery only, no selected checks ran');
+    return;
+  }
+
+  const attempt = identities
+    ? createAttempt(root, { argv: options.argv ?? [], resume: !!options.resume, identities })
+    : null;
+  let coverage = null;
+  const finish = () => {
+    if (!attempt || coverage) return coverage;
+    coverage = buildCoverage({
+      attemptId: attempt.id,
+      obligations: credits?.obligations ?? obligationsFor(plan, selections),
+      credits,
+      results: readResults(attempt.resultsPath) ?? [],
+    });
+    attempt.writeFile('coverage.json', `${JSON.stringify(coverage, null, 2)}\n`);
+    log(
+      `verify:changed: coverage ${coverage.complete ? 'complete' : 'incomplete'}: ${describeCoverage(coverage)}`,
+    );
+    log(`verify:changed: record: ${attempt.path}`);
+    return coverage;
+  };
+  options.onAttempt?.({ attempt, finish });
+  if (attempt) log(`verify:changed: record: ${attempt.path}`);
+
+  try {
+    for (const check of plan.checks) {
+      if (terminating) throw new Error('verification interrupted');
+      const invocation = attempt?.nextInvocation(check.id) ?? null;
+      const execution = executionFor(check, selections, credits, attempt, invocation);
+      if (execution.skip) {
+        log(`\n[verify:changed] ${check.label}: resumed (${execution.skip})`);
+        continue;
+      }
+      const command = commandIdentity(check);
+      attempt?.append({
+        type: 'check-start',
+        id: check.id,
+        invocation,
+        command,
+        executed: { executable: execution.check.executable, args: execution.check.args },
+      });
+      try {
+        const lockKey = verificationLockKey(check, env);
+        if (!lockKey) await run(execution.check, root);
+        else {
+          const timeoutMs = lockTimeout(lockKey, env.VERIFY_CHANGED_LOCK_TIMEOUT_MS);
+          log(`\n[verify:changed] waiting up to ${timeoutMs}ms for ${lockKey} lock`);
+          const releaseLock = await acquireLock({
+            lockPath: lockPath(lockKey),
+            timeoutMs,
+            cwd: root,
+          });
+          try {
+            await run(execution.check, root, { heldLock: lockKey });
+          } finally {
+            releaseLock();
+          }
+        }
+      } catch (error) {
+        attempt?.append({
+          type: 'check-end',
+          id: check.id,
+          invocation,
+          command,
+          // A check stopped by a termination signal is unfinished, not failed.
+          status: terminating ? 'interrupted' : 'failed',
+          exitCode: error?.exitCode ?? null,
+          signal: error?.signal ?? null,
+        });
+        throw error;
+      }
+      attempt?.append({
+        type: 'check-end',
+        id: check.id,
+        invocation,
+        command,
+        status: 'passed',
+        exitCode: 0,
+      });
+    }
+  } finally {
+    finish();
+  }
+  if (coverage && !coverage.complete) {
+    const missing = [...coverage.checks, ...coverage.unitFiles].filter(
+      (entry) => entry.status !== 'executed-passed' && entry.status !== 'resumed-passed',
+    );
+    const first = missing[0];
+    throw new Error(
+      `coverage incomplete: ${missing.length} obligation(s) not satisfied (first: ${first.file ? `${first.lane} ${first.file}` : first.id}, ${first.status}). See ${attempt.path}/coverage.json`,
+    );
   }
 }
 
@@ -772,7 +1420,12 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
   const runPlan = options.runPlan ?? runVerificationPlan;
   const args = parseArgs(argv);
   if (args.help) {
-    log('Usage: pnpm run verify:changed -- [--dry-run] [--base <ref>] [paths...]');
+    log(
+      'Usage: pnpm run verify:changed -- [--dry-run | --resolved-plan] [--resume] [--max-unit-files N] [--base <ref>] [paths...]',
+    );
+    log(
+      '  --resume: reuse compatible passing receipts from earlier attempts and run only what remains; completes only when every current check and unit file is covered.',
+    );
     log(
       `  With no paths: verifies the working-tree changes; when the worktree is clean and HEAD is ahead of ${DEFAULT_BASE}, defaults to --base ${DEFAULT_BASE}.`,
     );
@@ -804,14 +1457,55 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
   if (!deps.ok) throw new Error(deps.reason);
   const i18n = await ensureI18n(root);
   if (!i18n.ok) throw new Error(i18n.reason);
-  await runPlan(plan, root);
+  await runPlan(plan, root, {
+    resolvedPlan: args.resolvedPlan,
+    maxUnitFiles: args.maxUnitFiles,
+    resume: args.resume,
+    record: true,
+    argv,
+    onAttempt: options.onAttempt,
+    log,
+  });
   return 0;
+}
+
+/**
+ * On SIGINT/SIGTERM, forwards the signal to running checks and writes the
+ * current attempt's coverage so a later --resume can continue from it.
+ */
+export function installTerminationHandlers({ graceMs = 10_000 } = {}) {
+  let current = null;
+  const stop = async (signal, code) => {
+    terminating = true;
+    // A terminal Ctrl+C already reached the whole process group; forwarding it
+    // again can force Vitest into a hard exit that drops in-flight records.
+    if (signal !== 'SIGINT') for (const child of activeChildren) child.kill(signal);
+    // Let checks settle so their final records land before coverage is written.
+    const deadline = Date.now() + graceMs;
+    while (activeChildren.size && Date.now() < deadline)
+      await new Promise((done) => setTimeout(done, 50));
+    for (const child of activeChildren) child.kill('SIGKILL');
+    try {
+      current?.finish();
+    } catch (error) {
+      console.error(`[verify:changed] could not write coverage: ${error.message}`);
+    }
+    process.exit(code);
+  };
+  process.once('SIGINT', () => stop('SIGINT', 130));
+  process.once('SIGTERM', () => stop('SIGTERM', 143));
+  return {
+    onAttempt: (attempt) => {
+      current = attempt;
+    },
+  };
 }
 
 const isDirectRun =
   process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
 if (isDirectRun) {
-  runCli()
+  const { onAttempt } = installTerminationHandlers();
+  runCli(process.argv.slice(2), REPO_ROOT, { onAttempt })
     .then((code) => {
       process.exitCode = code;
     })

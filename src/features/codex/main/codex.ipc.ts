@@ -34,7 +34,11 @@ export function setupCodexIPC() {
   });
 
   // Get available models for Codex — daemon-owned catalog (PROTOCOL §6.7)
-  ipcMain.handle(CODEX_CHANNELS.GET_MODELS, async (event, params?: { forceRefresh?: boolean }) =>
-    getProviderModelsEnvelope('codex', params, event),
+  ipcMain.handle(
+    CODEX_CHANNELS.GET_MODELS,
+    async (
+      event,
+      params?: { forceRefresh?: boolean; workspaceId?: string; providerRef?: string },
+    ) => getProviderModelsEnvelope('codex', params, event),
   );
 }

@@ -1,3 +1,4 @@
+import type { PrincipalSnapshot, HostRole } from './principal';
 /**
  * REV-2 browser-client routing wire shapes (PROTOCOL §5.17 `client.list`,
  * `workspace.getBrowserClient` / `workspace.setBrowserClient`, and the
@@ -16,6 +17,12 @@ type ClientCapabilities = Record<string, unknown> & { browserExec?: boolean };
  * `prettyHostname ?? hostname ?? name`.
  */
 export interface LiveClient {
+  principalId?: string;
+  hostRole?: HostRole;
+  login?: string | null;
+  displayName?: string | null;
+  avatarUrl?: string | null;
+  identity?: PrincipalSnapshot['principal']['identity'];
   clientId: string;
   name?: string;
   capabilities: ClientCapabilities;

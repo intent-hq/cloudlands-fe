@@ -47,6 +47,9 @@ const BROWSER_INVOKE_CHANNELS = [
   // workspace archive; without the forward, main's CDP/ownership
   // registrations would never be cleared in the packaged app.
   IPC_CHANNELS.BROWSER.CLEAR_AGENT_TABS,
+  // Background-hosting report (agent browser ops on a workspace no window
+  // has open): confirms main's adoption; swallowed, main would let it lapse.
+  IPC_CHANNELS.BROWSER.BACKGROUND_HOSTED_WORKSPACES,
 ] as const;
 
 /** Register the browser CDP invoke bridge handlers. Idempotent. */

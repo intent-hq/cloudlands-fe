@@ -172,7 +172,7 @@ describe('AgentCard harness version context-menu item', () => {
     const menuButton = item.closest('[role="menuitem"]')!;
     expect(menuButton.getAttribute('aria-disabled')).toBe('true');
     expect(get).toHaveBeenCalledTimes(1);
-    expect(get).toHaveBeenCalledWith(agentId);
+    expect(get).toHaveBeenCalledWith(agentId, 'ws-1');
 
     // Re-open while the first read is still in flight: no second request.
     await openContextMenu();
@@ -215,7 +215,7 @@ describe('AgentCard harness version context-menu item', () => {
 
     await openContextMenu();
     expect(get).toHaveBeenCalledTimes(1);
-    expect(get).toHaveBeenCalledWith(agentId);
+    expect(get).toHaveBeenCalledWith(agentId, 'ws-1');
     await waitFor(() => {
       expect(
         screen
@@ -232,7 +232,7 @@ describe('AgentCard harness version context-menu item', () => {
     render(AgentCard, { props: { agentId, workspace: WORKSPACE } });
 
     await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
-    expect(get).toHaveBeenCalledWith(agentId);
+    expect(get).toHaveBeenCalledWith(agentId, 'ws-1');
     await waitFor(() => expect(screen.getByText('Harnessed Agent')).toBeTruthy());
   });
 

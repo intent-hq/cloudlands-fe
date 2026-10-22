@@ -1,54 +1,47 @@
 <script lang="ts">
   import './markdown-math.css';
+  import { canLoadMediaUrl, filterFileMedia } from '$lib/utils/media-provenance';
   import { classifyMarkdownContent } from '$lib/utils/markdown-content-complexity';
-  import { mount, onDestroy, unmount } from 'svelte';
+  import { getAllContexts, onDestroy } from 'svelte';
   import { logger } from '$lib/utils/client-logger';
   import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
   import { handleLink } from '$features/navigation/link-handler';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
-  import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
+  import MarkdownMediaPreview from './MarkdownMediaPreview.svelte';
   import ImageActionsMenu from '$lib/components/ui/ImageActionsMenu.svelte';
-  import VideoActionsMenu from '$lib/components/ui/VideoActionsMenu.svelte';
   import ChatVideoBlock from '$lib/components/chat/ChatVideoBlock.svelte';
   import { splitWorkspaceVideoMarkdown } from '$lib/utils/workspace-file-video';
   import RecursiveMarkdownViewer from './MarkdownViewer.svelte';
-  import MediaUnavailable from '$lib/components/ui/MediaUnavailable.svelte';
-  import MediaLoadingPlaceholder from '$lib/components/ui/MediaLoadingPlaceholder.svelte';
-  import { parseWorkspaceFileImageUrl, supportsImageActions } from '$lib/utils/image-actions';
+  import { supportsImageActions } from '$lib/utils/image-actions';
   import {
     imageActionsHaveFocus,
     imageActionsPosition,
     imageAtTarget,
     isActionableImage,
-    sizedImageLabel,
   } from './markdown-image-dom';
-  import {
-    createWorkspaceFileVersion,
-    parseIntentFileTarget,
-    workspaceAssetVideoSource,
-  } from '$lib/utils/workspace-file-image';
-  import {
-    IMAGE_SIZED_ATTR,
-    stampMarkdownImageDimensions,
-  } from '$lib/utils/markdown-image-dimensions';
+  import { createWorkspaceFileVersion } from '$lib/utils/workspace-file-image';
+  import { stampMarkdownImageDimensions } from '$lib/utils/markdown-image-dimensions';
   import type { TextBlockMedia } from '$shared/types/content-block';
-
+  import { markdownDiagrams } from './markdown-diagrams';
+  import { markdownMediaFallbacks } from './markdown-media-fallbacks';
   import {
     openWorkspaceFile,
     openWorkspaceNote,
   } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
-  import { WorkspaceId } from '$shared/types/branded-ids';
+  import { CHIEF_WORKSPACE_ID, WorkspaceId } from '$shared/types/branded-ids';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
-
-  type MediaUnavailableReason = 'missing' | 'unsupported' | 'load-failed';
-
   interface Props {
     content: string;
     isStreaming?: boolean;
     className?: string;
     workspaceId?: string;
+    relativeMediaBase?: string; // File viewer: workspace dir that relative images resolve from.
     onCodeBlockAction?: (action: string, code: string, language?: string) => void;
+    /** File-only policy; external web and note links remain usable. */
+    canOpenFile?: () => boolean;
+    /** Reactive authority for automatically loaded file media. */
+    allowFileMedia?: boolean;
     onFileClick?: (
       path: string,
       options?: { line?: number; openInAdjacentPanel?: boolean; sourcePanelId?: string },
@@ -60,33 +53,34 @@
     forceExternalLinks?: boolean;
     /** Show rich fenced blocks as source when no TipTap node views are mounted. */
     renderRichFencesAsCode?: boolean;
-    /**
-     * Text-block image dimension sidecar (PROTOCOL §7.1), keyed by Markdown
-     * `src`. Matching images render in a pre-sized frame with a placeholder
-     * until they load; images without an entry keep the legacy rendering.
-     */
+    /** Mount read-only diagrams while keeping other rich fences as visible source. */
+    renderDiagrams?: boolean;
+    /** GitHub-style embedded HTML, still sanitized before rendering. */
+    allowSanitizedHtml?: boolean;
+    /** PROTOCOL §7.1 dimensions keyed by Markdown src; reserve image space while loading. */
     media?: TextBlockMedia;
   }
-
   let {
     content,
     isStreaming = false,
     className = '',
     workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined,
-
+    relativeMediaBase,
     onCodeBlockAction: _onCodeBlockAction,
     onFileClick,
+    canOpenFile,
+    allowFileMedia = true,
     taskBlockRenderMode = 'placeholder',
     chatImageThumbnails = false,
     forceExternalLinks = false,
     renderRichFencesAsCode = false,
+    renderDiagrams = false,
+    allowSanitizedHtml = false,
     media,
   }: Props = $props();
 
-  // One cache-busting token per viewer instance: re-processing the same
-  // message (streaming ticks, prop changes) keeps its image URLs stable, while
-  // a newly mounted viewer fetches the file's current bytes.
   const workspaceFileVersion = createWorkspaceFileVersion();
+  const diagramContext = getAllContexts();
 
   const mediaSegments = $derived(splitWorkspaceVideoMarkdown(content, workspaceId));
   const hasVideoSegments = $derived(mediaSegments.some((segment) => segment.type === 'video'));
@@ -98,11 +92,19 @@
 
   const contentComplexity = $derived(classifyMarkdownContent(markdownContent));
 
-  // Track static content element for click handling
   let staticContentElement: HTMLElement | null = $state(null);
   let processedContent = $state('');
-  // Only the latest requested render may publish, including when an older worker
-  // finishes after streaming has ended or the viewer has been destroyed.
+  function canUseMedia(url: string) {
+    return canLoadMediaUrl(url, allowFileMedia && canOpenFile?.() !== false);
+  }
+  // Recheck live authority on publication as well as reactive placement changes.
+  // Filtering happens in an inert template, before any media enters the live DOM.
+  const renderedContent = $derived(
+    filterFileMedia(processedContent, allowFileMedia && canOpenFile?.() !== false),
+  );
+  // Keep a stable root while media fallbacks replace child nodes.
+  const contentHtml = $derived(`<div class="markdown-content">${renderedContent}</div>`);
+  // Ignore obsolete worker results, including after streaming ends or unmount.
   let renderVersion = 0;
   const STREAMING_THROTTLE_MS = 150;
   let lastUpdateTime = -Infinity;
@@ -116,11 +118,15 @@
     version: number,
   ) {
     try {
-      const html = await processMarkdownToHTML(markdown, options);
+      const html = await processMarkdownToHTML(markdown, { ...options, readOnly: true });
       if (version !== renderVersion) return;
-      // Svelte owns this HTML and the adjacent image-actions overlay. Replacing
-      // the container's innerHTML would remove Svelte's anchors and the overlay.
-      processedContent = stampMarkdownImageDimensions(html, imageMedia, options?.workspaceId);
+      // Svelte owns the HTML and overlay anchors; never replace its container manually.
+      processedContent = stampMarkdownImageDimensions(
+        html,
+        imageMedia,
+        options?.workspaceId,
+        options?.relativeMediaBase,
+      );
     } catch (error) {
       if (version !== renderVersion) return;
       logger.error('Failed to process markdown:', error);
@@ -159,8 +165,7 @@
   }
 
   $effect(() => {
-    // Capture every rendering dependency now, not in the trailing timer or after
-    // awaiting the processor. A new input immediately invalidates in-flight work.
+    // Capture dependencies before yielding; new input invalidates in-flight work.
     const markdown = markdownContent;
     const options = {
       allowEmpty: true,
@@ -168,7 +173,11 @@
       preserveAnchors: true,
       taskBlockRenderMode,
       workspaceId,
-      renderRichFencesAsCode,
+      relativeMediaBase:
+        relativeMediaBase ?? (workspaceId && workspaceId !== CHIEF_WORKSPACE_ID ? '' : undefined),
+      renderRichFencesAsCode: renderRichFencesAsCode || renderDiagrams,
+      processPrimitives: !renderDiagrams,
+      allowSanitizedHtml,
       renderMath: !isStreaming,
       workspaceFileVersion,
     };
@@ -185,15 +194,9 @@
     }
   });
 
-  // Lightbox state for supported inline images.
-  let lightboxOpen = $state(false);
-  let lightboxImageUrl = $state('');
-  let lightboxImageAlt = $state<string | undefined>(undefined);
-  let lightboxOpenerElement = $state<HTMLElement | null>(null);
+  let mediaPreview: MarkdownMediaPreview | undefined = $state();
 
-  // Hover overlay: supported image sources share one image actions menu.
-  // The images live in {@html}-managed DOM, so a single Svelte-rendered
-  // trigger is positioned over whichever image is hovered or focused.
+  // One shared actions trigger follows the hovered/focused image in {@html} DOM.
   let hoveredImage = $state<HTMLImageElement | null>(null);
   let hoveredImagePosition = $state({ top: 0, right: 0 });
   let imageActionsOpen = $state(false);
@@ -209,7 +212,7 @@
       return;
     const target = event.target;
     const image = imageAtTarget(target);
-    if (image && isActionableImage(image)) {
+    if (image && isActionableImage(image) && canUseMedia(image.getAttribute('src') || '')) {
       if (hoveredImage === image) return;
       hoveredImage = image;
       hoveredImagePosition = imageActionsPosition(image, event.currentTarget as HTMLElement);
@@ -228,165 +231,38 @@
 
   function handleImageContextMenu(event: MouseEvent): void {
     const image = imageAtTarget(event.target);
-    if (!image || !isActionableImage(image)) return;
+    if (!image || !isActionableImage(image) || !canUseMedia(image.getAttribute('src') || ''))
+      return;
     event.preventDefault();
     event.stopPropagation();
     handleImageInteraction(event);
     imageActionsOpen = true;
   }
 
-  const IMAGE_FRAME_CLASS = 'markdown-image-frame';
-
   function mediaFallbacks(node: HTMLElement) {
-    const mountedPlaceholders = new Map<HTMLElement, ReturnType<typeof mount>>();
-
-    function imageFrame(media: HTMLElement): HTMLElement | null {
-      const parent = media.parentElement;
-      return parent?.classList.contains(IMAGE_FRAME_CLASS) ? parent : null;
-    }
-
-    // Sized images (`width`/`height` from the text block's media sidecar)
-    // sit in a frame that already occupies their final box and shows an
-    // icon + path placeholder until the bytes arrive.
-    function frameSizedImage(image: HTMLImageElement) {
-      const width = Number(image.getAttribute('width'));
-      const height = Number(image.getAttribute('height'));
-      if (!(width > 0 && height > 0)) return;
-      const frame = document.createElement('span');
-      frame.className = IMAGE_FRAME_CLASS;
-      frame.style.aspectRatio = `${width} / ${height}`;
-      frame.style.width = `min(${width}px, 100%)`;
-      frame.dataset.loaded = 'false';
-      image.replaceWith(frame);
-      frame.appendChild(image);
-      const placeholderHost = frame.appendChild(document.createElement('span'));
-      placeholderHost.className = 'markdown-image-frame-placeholder';
-      mountedPlaceholders.set(
-        placeholderHost,
-        mount(MediaLoadingPlaceholder, {
-          target: placeholderHost,
-          props: { name: sizedImageLabel(image, workspaceId) },
-        }),
-      );
-      const reveal = () => {
-        frame.dataset.loaded = 'true';
-        const placeholder = mountedPlaceholders.get(placeholderHost);
-        if (placeholder) {
-          void unmount(placeholder);
-          mountedPlaceholders.delete(placeholderHost);
-        }
-        placeholderHost.remove();
-      };
-      if (image.complete && image.naturalWidth > 0) reveal();
-      else image.addEventListener('load', reveal, { once: true });
-    }
-
-    function replaceMedia(
-      media: HTMLImageElement | HTMLVideoElement,
-      reason: MediaUnavailableReason,
-    ) {
-      const source = media.getAttribute('src') || media.getAttribute('data-media-src') || '';
-      const workspaceFile = parseWorkspaceFileImageUrl(source);
-      const intentFile = parseIntentFileTarget(source, workspaceId);
-      const path = workspaceFile?.path ?? intentFile?.path;
-      const owningWorkspaceId = workspaceFile?.workspaceId ?? intentFile?.workspaceId;
-      const name =
-        media.getAttribute('data-name') ||
-        media.getAttribute('alt') ||
-        path?.split('/').pop() ||
-        undefined;
-      const host = document.createElement(media instanceof HTMLVideoElement ? 'div' : 'span');
-      host.className = 'media-unavailable-host';
-      (imageFrame(media) ?? media).replaceWith(host);
-      if (hoveredImage === media) hoveredImage = null;
-      const fallback = mount(MediaUnavailable, {
-        target: host,
-        props: { name, reason, path, workspaceId: owningWorkspaceId },
-      });
-      mountedPlaceholders.set(host, fallback);
-      if (media instanceof HTMLVideoElement) {
-        host.classList.add('flex', 'items-center', 'gap-2');
-        const actionsHost = host.appendChild(document.createElement('span'));
-        mountedPlaceholders.set(
-          actionsHost,
-          mount(VideoActionsMenu, {
-            target: actionsHost,
-            props: {
-              videoUrl: source,
-              videoName: name,
-              sourceKind: 'workspace',
-              mimeType: workspaceAssetVideoSource(source, workspaceId)?.mimeType,
-            },
-          }),
-        );
-      }
-    }
-
-    function reconcile() {
-      for (const image of node.querySelectorAll<HTMLImageElement>('img')) {
-        if (isActionableImage(image) && !image.closest('a')) {
-          image.tabIndex = 0;
-          image.setAttribute('role', 'button');
-        }
-        if (image.hasAttribute(IMAGE_SIZED_ATTR) && !imageFrame(image)) frameSizedImage(image);
-      }
-      for (const media of node.querySelectorAll<HTMLImageElement>('[data-media-unsupported]')) {
-        replaceMedia(media, 'unsupported');
-      }
-      for (const media of node.querySelectorAll<HTMLImageElement>('[data-media-unavailable]')) {
-        replaceMedia(media, 'load-failed');
-      }
-      for (const [host, component] of mountedPlaceholders) {
-        if (!node.contains(host)) {
-          void unmount(component);
-          mountedPlaceholders.delete(host);
-        }
-      }
-    }
-
-    function handleMediaError(event: Event) {
-      const media = event.target;
-      if (!(media instanceof HTMLImageElement || media instanceof HTMLVideoElement)) return;
-      // Decode and transport errors do not establish that the underlying asset is absent.
-      replaceMedia(media, 'load-failed');
-    }
-
-    const observer = new MutationObserver(reconcile);
-    observer.observe(node, { childList: true, subtree: true });
-    node.addEventListener('error', handleMediaError, true);
-    queueMicrotask(reconcile);
-
-    return {
-      destroy() {
-        observer.disconnect();
-        node.removeEventListener('error', handleMediaError, true);
-        for (const component of mountedPlaceholders.values()) void unmount(component);
-        mountedPlaceholders.clear();
+    return markdownMediaFallbacks(node, {
+      getWorkspaceId: () => workspaceId,
+      canUseMedia,
+      onMediaRemoved: (media) => {
+        if (hoveredImage === media) hoveredImage = null;
       },
-    };
+    });
   }
 
   // PERF: Single reusable link click handler - shared between streaming and static content
-  // Routes all link clicks through the unified link handler for consistent behavior:
-  // - Click → embedded browser panel (for http/https)
-  // - Cmd+Click → external browser
-  // - intent:// → internal navigation
+  // Route anchor clicks through the unified link handler.
   function handleLinkClick(event: MouseEvent | KeyboardEvent): void {
     const target = event.target as HTMLElement;
     const anchor = target.closest('a');
 
-    // Supported inline images open in the lightbox (unless wrapped in a
-    // link, in which case the link wins)
+    // Supported inline images open in the lightbox unless wrapped in a link (the link wins).
     if (!anchor && target instanceof HTMLImageElement) {
       const src = target.getAttribute('src') || '';
-      if (supportsImageActions(src)) {
+      if (supportsImageActions(src) && canUseMedia(src)) {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
-        lightboxImageUrl = src;
-        lightboxImageAlt = target.getAttribute('alt') || undefined;
-        lightboxOpenerElement = target;
-        lightboxOpen = true;
+        mediaPreview?.openImage(target);
         return;
       }
     }
@@ -396,11 +272,14 @@
       event.stopPropagation();
       event.stopImmediatePropagation();
 
+      if (mediaPreview?.openAsset(anchor)) return;
+
       const sourcePanelId = getSourcePanelId(event);
       const owningWorkspaceId = workspaceId ? WorkspaceId(workspaceId) : undefined;
 
       handleLink(anchor.href, {
         workspaceId: owningWorkspaceId,
+        canOpenFile,
         sourcePanelId,
         event,
         rawHref: anchor.getAttribute('href') ?? undefined,
@@ -417,6 +296,7 @@
       const meta = JSON.parse(mentionEl.getAttribute('data-meta') || '{}');
 
       if (type === 'file') {
+        if (canOpenFile?.() === false) return;
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
@@ -485,7 +365,8 @@
 
   function handleImageCopy(event: KeyboardEvent | ClipboardEvent): void {
     const image = imageAtTarget(event.target);
-    if (!image || !isActionableImage(image)) return;
+    if (!image || !isActionableImage(image) || !canUseMedia(image.getAttribute('src') || ''))
+      return;
     imageActionsMenu?.handleCopy(event, image.getAttribute('src') || '');
   }
 
@@ -501,12 +382,9 @@
   });
 </script>
 
-<!-- PERF: Use separate rendering paths based on content complexity -->
-<!-- streaming: live updates with processed HTML -->
-<!-- simple: plain text, no markdown - just <p> -->
-<!-- static: processed HTML without TipTap (links, code blocks, task lists, tables, etc.) -->
+<!-- Streaming/static Markdown use processed HTML; simple text bypasses processing. -->
 {#snippet imageActionsOverlay()}
-  {#if hoveredImage}
+  {#if hoveredImage && canUseMedia(hoveredImage.getAttribute('src') || '')}
     <div
       bind:this={imageActionsOverlayElement}
       class="image-actions-overlay absolute z-10"
@@ -527,18 +405,29 @@
   <div class="markdown-video-segments {className}">
     {#each mediaSegments as segment}
       {#if segment.type === 'video'}
-        <ChatVideoBlock source={segment.source} name={segment.name} poster={segment.poster} />
+        <ChatVideoBlock
+          {allowFileMedia}
+          {canOpenFile}
+          source={segment.source}
+          name={segment.name}
+          poster={segment.poster}
+        />
       {:else}
         <RecursiveMarkdownViewer
           content={segment.content}
           {isStreaming}
           {workspaceId}
+          {relativeMediaBase}
           onCodeBlockAction={_onCodeBlockAction}
           {onFileClick}
+          {canOpenFile}
+          {allowFileMedia}
           {taskBlockRenderMode}
           {chatImageThumbnails}
           {forceExternalLinks}
           {renderRichFencesAsCode}
+          {renderDiagrams}
+          {allowSanitizedHtml}
           {media}
         />
       {/if}
@@ -551,6 +440,7 @@
     class="markdown-viewer streaming-content {className}"
     class:chat-image-thumbnails={chatImageThumbnails}
     use:mediaFallbacks
+    use:markdownDiagrams={{ enabled: renderDiagrams, workspaceId, context: diagramContext }}
     onclick={handleLinkClick}
     onkeydown={handleLinkKeydown}
     oncopy={handleImageCopy}
@@ -559,17 +449,14 @@
     onfocusin={handleImageInteraction}
     onmouseleave={handleImageHoverLeave}
   >
-    {@html processedContent}
+    {@html contentHtml}
     {@render imageActionsOverlay()}
   </div>
-{:else if contentComplexity === 'simple'}
-  <!-- PERF: Simple text - render directly without any processing -->
+{:else if contentComplexity === 'simple' && !allowSanitizedHtml}
   <div class="markdown-viewer simple-content {className}">
     <p class="whitespace-pre-wrap">{markdownContent}</p>
   </div>
 {:else}
-  <!-- PERF: Static content - use processed HTML without TipTap -->
-  <!-- This path handles links, code blocks, task lists, tables, etc. without the overhead of TipTap -->
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_mouse_events_have_key_events, a11y_no_static_element_interactions, a11y_no_noninteractive_element_interactions -->
   <div
     role="group"
@@ -577,6 +464,7 @@
     class:chat-image-thumbnails={chatImageThumbnails}
     bind:this={staticContentElement}
     use:mediaFallbacks
+    use:markdownDiagrams={{ enabled: renderDiagrams, workspaceId, context: diagramContext }}
     onclick={handleLinkClick}
     onkeydown={handleLinkKeydown}
     oncopy={handleImageCopy}
@@ -585,20 +473,12 @@
     onfocusin={handleImageInteraction}
     onmouseleave={handleImageHoverLeave}
   >
-    {@html processedContent}
+    {@html contentHtml}
     {@render imageActionsOverlay()}
   </div>
 {/if}
 
-{#if lightboxImageUrl}
-  <ImageLightbox
-    bind:open={lightboxOpen}
-    imageUrl={lightboxImageUrl}
-    imageName={lightboxImageAlt}
-    openerElement={lightboxOpenerElement}
-    showActionsMenu
-  />
-{/if}
+<MarkdownMediaPreview bind:this={mediaPreview} {workspaceId} {canUseMedia} />
 
 <style>
   .markdown-viewer {
@@ -612,13 +492,10 @@
     color: hsl(var(--foreground));
   }
 
-  /* PERF: Streaming content uses contain for rendering isolation */
-  .streaming-content {
-    contain: layout style;
-  }
-
-  /* PERF: Simple content - minimal styling */
-  .simple-content {
+  /* Isolate layout and style work for each Markdown surface. */
+  .streaming-content,
+  .simple-content,
+  .static-content {
     contain: layout style;
   }
 
@@ -626,18 +503,7 @@
     margin: 0;
   }
 
-  /* PERF: Static content - processed HTML without TipTap */
-  .static-content {
-    contain: layout style;
-  }
-
-  /* Paragraph spacing must not offset the positioned image controls. */
-  .markdown-viewer.static-content > :global(* + :not(.image-actions-overlay)) {
-    margin-top: 0.75rem;
-  }
-
-  /* PERF: Apply same styles to streaming content (direct children) */
-  .markdown-viewer.streaming-content > :global(* + :not(.image-actions-overlay)) {
+  .markdown-viewer :global(.markdown-content > * + *) {
     margin-top: 0.75rem;
   }
 
@@ -1046,11 +912,6 @@
     max-width: 100%;
     overflow: hidden;
     border-radius: 0.5rem;
-  }
-
-  .markdown-viewer :global(.markdown-image-frame[data-loaded='false']) {
-    border: 1px dashed hsl(var(--border));
-    background: hsl(var(--muted) / 0.3);
   }
 
   .markdown-viewer :global(.markdown-image-frame > img) {

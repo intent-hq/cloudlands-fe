@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { ReduxStoreContext } from '$store/renderer/types';
 import { initAppStore, store as appStore } from '$store/renderer/store';
 import {

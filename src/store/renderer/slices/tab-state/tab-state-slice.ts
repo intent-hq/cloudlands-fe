@@ -1,5 +1,6 @@
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
+import type { BrowserTabNavigation } from './tab-state-types';
 import { omitKey } from '../../utils/utils';
 
 type HandleDropZoneType = 'row-above' | 'row-below' | 'column-left' | 'column-right';
@@ -62,6 +63,8 @@ export type TabState = {
   mountedBrowserTabLeases: Record<string, Record<string, true>>;
   /** One-shot renderer DOM recovery requests, keyed by tab; never persisted. */
   browserTabRecoveryRequests: Record<string, string>;
+  /** Distinguish already-started navigations from renderer commands; never persisted. */
+  browserTabNavigations: Record<string, BrowserTabNavigation>;
 };
 
 const MAX_RECENTLY_CLOSED_TABS = 10;
@@ -194,6 +197,7 @@ const initialState: TabState = {
   hydratedBackendId: null,
   mountedBrowserTabLeases: {},
   browserTabRecoveryRequests: {},
+  browserTabNavigations: {},
 };
 
 const pruneClosedTabAt = (
@@ -218,7 +222,11 @@ export const saveScrollPosition = createAction<[tabId: string, scrollTop: number
 export const loadScrollPositions = createAction<[positions: Record<string, number>]>(
   'tabState/loadScrollPositions',
 );
-export const openWorkspaceTab = createAction<[workspaceId: string]>('tabState/openWorkspaceTab');
+/** Route renderers may carry the originating navigation request ID. User
+ * selections leave it absent, even when reselecting the same workspace. */
+export const openWorkspaceTab = createAction<[workspaceId: string, routeRequestId?: string]>(
+  'tabState/openWorkspaceTab',
+);
 export const closeWorkspaceTab = createAction(
   'tabState/closeWorkspaceTab',
   (workspaceId: string, timestamp?: number): [workspaceId: string, timestamp: number] => [
@@ -231,11 +239,21 @@ export const reopenLastClosedWorkspaceTab = createAction('tabState/reopenLastClo
  * Re-add a workspace tab to the strip WITHOUT focusing it — unlike
  * `openWorkspaceTab`, `currentTabId` is never touched. Used by the daemon
  * events bridge when a workspace transitions back to Active (unarchive) so the
- * tab reappears in the background instead of stealing focus.
+ * tab reappears in the background instead of stealing focus, and when a
+ * workspace-create proposal creates a workspace so it appears unfocused.
  */
 export const restoreWorkspaceTab = createAction<[workspaceId: string]>(
   'tabState/restoreWorkspaceTab',
 );
+/**
+ * The daemon created `workspaceId` from a workspace-create proposal emitted in
+ * `sourceWorkspaceId` (`workspace:created` `data.origin`, PROTOCOL §6.5). The
+ * proposal-workspace tab saga adds it as a background tab once it is loaded,
+ * when this window has the source workspace's tab open.
+ */
+export const proposalWorkspaceCreated = createAction<
+  [workspaceId: string, sourceWorkspaceId: string]
+>('tabState/proposalWorkspaceCreated');
 export const moveWorkspace =
   createAction<[workspaceId: string, targetWorkspaceId: string, placement: WorkspaceDropPlacement]>(
     'tabState/moveWorkspace',
@@ -271,6 +289,15 @@ export const requestBrowserTabRecovery = createAction<[tabId: string, requestId:
 export const consumeBrowserTabRecovery = createAction<[tabId: string, requestId: string]>(
   'tabState/consumeBrowserTabRecovery',
 );
+export const observeBrowserTabNavigation = createAction<[tabId: string, url: string]>(
+  'tabState/observeBrowserTabNavigation',
+);
+export const requestBrowserTabNavigation = createAction<[tabId: string, url: string]>(
+  'tabState/requestBrowserTabNavigation',
+);
+export const consumeBrowserTabNavigation = createAction<
+  [tabId: string, navigation: BrowserTabNavigation]
+>('tabState/consumeBrowserTabNavigation');
 
 /** Actions whose reducer handlers may change the canonical current workspace tab. */
 export const CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS = [
@@ -284,6 +311,19 @@ export const CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS = [
 ];
 
 export const tabStateReducer = createReducer<TabState>(initialState);
+tabStateReducer.with(observeBrowserTabNavigation, (state, { payload: [tabId, url] }) => ({
+  ...state,
+  browserTabNavigations: { ...state.browserTabNavigations, [tabId]: { url, kind: 'observed' } },
+}));
+tabStateReducer.with(requestBrowserTabNavigation, (state, { payload: [tabId, url] }) => ({
+  ...state,
+  browserTabNavigations: { ...state.browserTabNavigations, [tabId]: { url, kind: 'requested' } },
+}));
+tabStateReducer.with(consumeBrowserTabNavigation, (state, { payload: [tabId, navigation] }) => {
+  // An older action must not consume a newer command, even for the same URL.
+  if (state.browserTabNavigations[tabId] !== navigation) return state;
+  return { ...state, browserTabNavigations: omitKey(state.browserTabNavigations, tabId) };
+});
 tabStateReducer.with(requestBrowserTabRecovery, (state, { payload: [tabId, requestId] }) => {
   if (state.browserTabRecoveryRequests[tabId] === requestId) return state;
   return {

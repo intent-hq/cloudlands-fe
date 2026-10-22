@@ -1,3 +1,4 @@
+import { observeSubmissionTranscript } from '$features/agent/submission-evidence';
 /**
  * Chat subscribe saga — feeds the STANDING `chat.subscribe` transcript
  * (PROTOCOL §7.1) into the agent-session slice so ChatPanel renders from the
@@ -87,9 +88,9 @@
  * Streaming flags are reconciled from `transcript.isStreaming` (the §7.1
  * snapshot activity-flag overlay / synthetic in-flight message, and the delta
  * stream's terminal `streamingComplete` frame): a rising edge sets
- * isStreaming/isProcessing, a falling edge clears all three responding flags.
- * An authoritative idle snapshot also clears retained flags after reconnect or
- * HMR, except for one snapshot that races a locally observed `chatSendStarted`.
+ * isStreaming/isProcessing, a falling edge settles turn activity. An idle
+ * snapshot also settles retained activity after reconnect or HMR. A newer local
+ * send remains protected until the transcript observes a new assistant identity.
  *
  * SOLE-WRITER INVARIANT: while a standing registration covers an agent (the
  * chat-subscription-registry, marked at install / cleared at close), the
@@ -121,14 +122,21 @@ import {
   type SagaGenerator,
 } from 'typed-redux-saga';
 import type { ChatLiveStreamPhase, ChatTranscript } from '$lib/client/app-client';
-import type { AgentMessage, AgentSession } from '$shared/types';
+import { AgentStatus, type AgentMessage, type AgentSession } from '$shared/types';
+import { isAgentRunningState } from '$shared/utils/agent-runtime-state';
 import { appClient } from '$lib/client';
+import { store as appStore } from '$store/renderer/store';
+import { readAgentSessionAfterCurrent } from '$features/agent/agent-read-service';
+import { claimAgentReadOwnership } from '$features/agent/agent-read-ownership';
 import { INITIAL_RETRY_DELAY_MS, SNAPSHOT_TIMEOUT_MS } from '$lib/client/live/live-chat-client';
 import {
   chatLiveStreamPhaseChanged,
   chatSendStarted,
+  streamStatusReceived,
+  streamActivityReceived,
   chatSwitchBackRevealTimedOut,
   chatTranscriptSnapshotApplied,
+  chatInitialHistoryProgressed,
   chatTranscriptSnapshotRerequested,
   initializeChatRequested,
   retainedChatTranscriptsSet,
@@ -138,6 +146,7 @@ import {
 import {
   selectAwaitingSwitchBackSnapshot,
   selectTranscriptHydration,
+  selectInitialChatHistoryPending,
 } from '$store/renderer/slices/chat-state/chat-state-selectors';
 import {
   bulkUpsertSessions,
@@ -148,6 +157,7 @@ import {
   restoreStoredSessions,
   updateSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
+import { agentStreamUpdateReceived } from '$store/renderer/slices/workspace-agents/workspace-agents-stream-slice';
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import {
   clearCurrentlyViewedAgent,
@@ -176,10 +186,19 @@ import {
 import {
   selectAgentMessages,
   selectAgentSession,
+  selectAgentSessionProjection,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import { selectCurrentlyViewedAgentId } from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
 
 const logger = createLogger('ChatSubscribeSaga');
+
+interface IdleConfirmation {
+  projection: ReturnType<typeof selectAgentSessionProjection.select>;
+  localStart: object | undefined;
+  activityVersion: number;
+  phaseVersion: number;
+  task?: Task;
+}
 
 interface SubscriptionEntry {
   acquisition: SubscriptionAcquisition;
@@ -192,16 +211,30 @@ interface SubscriptionEntry {
   wasStreaming: boolean;
   /** Last reconciled transcript, re-applied on transcriptHydrationSettled. */
   lastTranscript?: ChatTranscript;
+  /** Last transcript whose submission evidence actually reached a hydrated session. */
+  lastObservedTranscript?: ChatTranscript;
+  /** Immutable correlation/bounds evidence, cleared on stream continuity loss. */
+  lastSubmissionEvidence?: string;
   /**
    * A seq-0 snapshot that arrived BEFORE the session shell existed (the
    * chat-read saga's `agents.get` was still pending), held back so its meta
    * is never recorded without its messages; replayed on the shell's upsert.
    */
   pendingSnapshot?: ChatTranscript;
+  /** Invalidates pending confirmations on activity and stream continuity loss. */
+  activityVersion?: number;
+  phaseVersion?: number;
+  idleConfirmation?: IdleConfirmation;
 }
 
 type ChatSubscriptionEvent =
-  | { kind: 'transcript'; agentId: string; token: object; transcript: ChatTranscript }
+  | {
+      kind: 'transcript';
+      agentId: string;
+      token: object;
+      transcript: ChatTranscript;
+      replayed?: true;
+    }
   | { kind: 'phase'; agentId: string; token: object; phase: ChatLiveStreamPhase };
 
 type MaybePromise<T> = T | Promise<T>;
@@ -242,8 +275,16 @@ interface SubscriptionCoordinator {
   subscriptions: Map<string, SubscriptionEntry>;
   slots: Map<string, AgentTransitionSlot>;
   events: Channel<ChatSubscriptionEvent>;
-  /** Agents whose next idle snapshot may predate a locally-started turn. */
-  locallyStartedTurns: Set<string>;
+  /** Assistant identities known before a local send; old deliveries cannot settle that send. */
+  locallyStartedTurns: Map<
+    string,
+    {
+      priorMessageIds: Set<string>;
+      assistantMessageId?: string;
+      userAppMessageId?: string;
+      userSeq?: number;
+    }
+  >;
   /** One bounded reveal-gate watcher per agent (see revealGateWatcher). */
   revealGateWatchers: Map<string, Task>;
   /**
@@ -294,7 +335,7 @@ function createSubscriptionAcquisition(
   agentId: string,
   onTranscript: (transcript: ChatTranscript) => void,
   onPhase: (phase: ChatLiveStreamPhase) => void,
-  options?: { sinceMessageId: string },
+  options?: { sinceMessageId?: string; workspaceId?: string },
 ): SubscriptionAcquisition {
   let unsubscribe: AsyncUnsubscribe | undefined;
   let disposeRequested = false;
@@ -321,7 +362,7 @@ function createSubscriptionAcquisition(
     agentId: string,
     handler: (transcript: ChatTranscript) => void,
     onPhase: (phase: ChatLiveStreamPhase) => void,
-    options?: { sinceMessageId: string },
+    options?: { sinceMessageId?: string; workspaceId?: string },
   ) => MaybePromise<AsyncUnsubscribe>;
   const raw = options
     ? subscribe(agentId, onTranscript, onPhase, options)
@@ -392,6 +433,8 @@ function isCurrentSubscription(
  * The protocol mandates discarding the cached transcript and rehydrating
  * from this snapshot as if freshly subscribed; a not-yet-echoed optimistic
  * row is dropped with them and reappears on its daemon echo.
+ * A local reconnect reset keeps unacknowledged optimistic user rows while
+ * discarding the canonical cache; it does not assert a daemon invalidation.
  */
 function* applyTranscript(
   coordinator: SubscriptionCoordinator,
@@ -399,6 +442,7 @@ function* applyTranscript(
   entry: SubscriptionEntry,
   transcript: ChatTranscript,
   discardStoreOnly = false,
+  restoration = false,
 ): SagaGenerator<void> {
   const session = yield* selectAgentSession.effect(agentId);
   if (!isCurrentSubscription(coordinator, agentId, entry)) {
@@ -407,6 +451,38 @@ function* applyTranscript(
     reportSnapshotGuard(transcript, 'snapshot-dropped-superseded-mid-apply', 'ignored');
     return;
   }
+  // Generic activity can announce the next daemon turn before the ordered
+  // chat lane delivers the old terminal or idle snapshot. Persisted seq marks
+  // a daemon timestamp; provisional renderer times cannot establish ordering.
+  const terminal = !transcript.isStreaming
+    ? transcript.messages.findLast(
+        (message) =>
+          message.role === 'assistant' &&
+          (message.streamingComplete === true ||
+            (transcript.fromSnapshot === true && !claimsLiveness(message))),
+      )
+    : undefined;
+  const terminalTime =
+    terminal?.seq !== undefined && typeof terminal.timestamp === 'string'
+      ? Date.parse(terminal.timestamp)
+      : undefined;
+  const openedAt =
+    session?.liveTurnOpen === true && session.liveTurnOpenedAt !== undefined
+      ? Date.parse(session.liveTurnOpenedAt)
+      : undefined;
+  const protectsDaemonStart =
+    openedAt !== undefined &&
+    (terminalTime !== undefined && Number.isFinite(terminalTime) && Number.isFinite(openedAt)
+      ? terminalTime < openedAt
+      : transcript.fromSnapshot === true);
+  // The old terminal may already have consumed the streaming edge. A current
+  // authoritative terminal still settles the newer turn's first-frame reply.
+  const observesDaemonCompletion =
+    !restoration &&
+    !transcript.fromHistory &&
+    terminalTime !== undefined &&
+    openedAt !== undefined &&
+    terminalTime >= openedAt;
   // Read before the flag reconcile below consumes the marker: a snapshot that
   // may predate a locally-started turn is not authoritative about liveness.
   const racesLocalStart = coordinator.locallyStartedTurns.has(agentId);
@@ -416,13 +492,19 @@ function* applyTranscript(
       if (typeof message.id === 'string') transcriptIds.add(message.id);
       if (typeof message.appMessageId === 'string') transcriptIds.add(message.appMessageId);
     }
-    const storeOnly = discardStoreOnly
-      ? []
-      : (session.messages ?? []).filter(
-          (message) =>
-            !(typeof message.id === 'string' && transcriptIds.has(message.id)) &&
-            !(typeof message.appMessageId === 'string' && transcriptIds.has(message.appMessageId)),
-        );
+    const storeOnly = (session.messages ?? []).filter(
+      (message) =>
+        !(typeof message.id === 'string' && transcriptIds.has(message.id)) &&
+        !(typeof message.appMessageId === 'string' && transcriptIds.has(message.appMessageId)) &&
+        // Local reconnect recovery invalidates cached canonical history, not
+        // unacknowledged sends. A daemon reset still discards everything.
+        (!discardStoreOnly ||
+          (transcript.resetCachedTranscript === true &&
+            transcript.resumed !== false &&
+            message.role === 'user' &&
+            message.seq === undefined &&
+            typeof message.appMessageId === 'string')),
+    );
     // A snapshot is the authoritative newest page with the in-flight turn
     // MERGED INTO IT (§7.1), so a retained row the page does not cover cannot
     // still be in flight — settle its streaming flags, exactly as the
@@ -431,16 +513,11 @@ function* applyTranscript(
     // budget re-mints `truncated` after the live-turn merge) keeps rendering
     // as a live turn beside the daemon's real one, and the firehose cannot
     // clear it while this registration is the sole writer.
-    // Trade-off of the `racesLocalStart` exemption: a snapshot pending since
-    // before a local send may predate the turn the renderer just started, so
-    // it must not settle the optimistic in-flight row — but skipping the
-    // settle also spares a frozen PRIOR-turn row, and when that snapshot is
-    // itself `isStreaming: true` the flag reconcile below consumes the
-    // marker, so the frozen row persists until some LATER snapshot arrives
-    // (which a healthy standing registration may never emit). Protecting the
-    // optimistic row matters more than closing that residual window.
+    // A snapshot racing a new local send cannot settle that send's optimistic
+    // rows. Keep this exemption until a new assistant identity appears; repeated
+    // snapshots of the older turn are not evidence of progress on the new turn.
     const retained =
-      transcript.fromSnapshot === true && !racesLocalStart
+      transcript.fromSnapshot === true && !restoration && !racesLocalStart && !protectsDaemonStart
         ? storeOnly.map((message) => (claimsLiveness(message) ? settleStreaming(message) : message))
         : storeOnly;
     const merged =
@@ -448,6 +525,22 @@ function* applyTranscript(
         ? transcript.messages
         : deduplicateAgentMessages([...retained, ...transcript.messages]);
     if (isCurrentSubscription(coordinator, agentId, entry)) {
+      // Hydration settlement restores the live transcript after a history read.
+      // Re-observing that same evidence would invalidate the read and schedule
+      // another refresh forever. Accepted deliveries only preserve settled queue
+      // authority when their submission correlation and history bounds agree.
+      if (
+        (!transcript.fromHistory || transcript.initialHistory?.complete === true) &&
+        (!restoration || entry.lastObservedTranscript !== transcript)
+      ) {
+        entry.lastSubmissionEvidence = observeSubmissionTranscript(
+          agentId,
+          session.workspaceId,
+          transcript,
+          entry.lastSubmissionEvidence,
+        );
+        entry.lastObservedTranscript = transcript;
+      }
       yield* put(replaceMessages(agentId, merged));
     } else {
       reportSnapshotGuard(transcript, 'snapshot-dropped-superseded-mid-apply', 'ignored');
@@ -458,14 +551,70 @@ function* applyTranscript(
   // pre-hydration emit must not swallow the transition, so the next emit
   // against the hydrated session still sees the edge and dispatches it.
   const streamingChanged = transcript.isStreaming !== entry.wasStreaming;
+  // Hydration replay restores content, not a second idle verdict from a
+  // snapshot that may already have raced (and spared) a new local send.
   const authoritativeIdleSnapshot =
-    transcript.fromSnapshot === true && transcript.isStreaming === false;
-  const protectsLocalStart = session
-    ? authoritativeIdleSnapshot && coordinator.locallyStartedTurns.delete(agentId)
-    : false;
-  if (session && transcript.isStreaming) coordinator.locallyStartedTurns.delete(agentId);
+    transcript.fromSnapshot === true && transcript.isStreaming === false && !restoration;
+  const localStart = coordinator.locallyStartedTurns.get(agentId);
+  // Legacy callers can omit the send's appMessageId; capture their optimistic
+  // user row before its canonical echo replaces it. Supported submissions carry
+  // the identity on chatSendStarted because they have no optimistic session row.
+  // A completed assistant after that echo also proves this send reached the
+  // ordered transcript, even when reconnect skipped every streaming chunk.
+  if (localStart && !localStart.userAppMessageId) {
+    localStart.userAppMessageId = session?.messages.find(
+      (message) =>
+        message.role === 'user' &&
+        message.seq === undefined &&
+        message.appMessageId !== undefined &&
+        !localStart.priorMessageIds.has(message.id),
+    )?.appMessageId;
+  }
+  const localUserSeq = localStart?.userAppMessageId
+    ? transcript.messages.find(
+        (message) =>
+          message.role === 'user' && message.appMessageId === localStart.userAppMessageId,
+      )?.seq
+    : undefined;
+  if (localStart && localUserSeq !== undefined) localStart.userSeq = localUserSeq;
+  // Retain the confirmed sequence: a bounded recovery snapshot may contain
+  // only the completed reply and omit its already-observed user echo.
+  const confirmedUserSeq = localStart?.userSeq;
+  // A late frame (including a repeated active snapshot of the OLD turn) is
+  // not evidence that a new local send has started streaming. Keep protecting
+  // it until the ordered transcript introduces its new assistant identity.
+  const observesLocalTurn =
+    session &&
+    localStart &&
+    !restoration &&
+    !transcript.fromHistory &&
+    transcript.messages.some(
+      (message) =>
+        message.role === 'assistant' &&
+        (localStart.assistantMessageId
+          ? message.id === localStart.assistantMessageId
+          : !localStart.priorMessageIds.has(message.id) &&
+            ((transcript.isStreaming && claimsLiveness(message)) ||
+              (confirmedUserSeq !== undefined &&
+                message.seq !== undefined &&
+                message.seq > confirmedUserSeq))),
+    );
+  if (observesLocalTurn) coordinator.locallyStartedTurns.delete(agentId);
+  const protectsLocalStart =
+    session && !transcript.isStreaming && coordinator.locallyStartedTurns.has(agentId);
+  // Only an idle frame can predate a daemon-started turn; a streaming frame
+  // agrees with it, so its rising edge must still reach the session.
+  const protectsDaemonStartEdge = protectsDaemonStart && !transcript.isStreaming;
+  // Consume the old turn's falling edge even when a newer local send keeps
+  // the session active, so replay cannot apply that edge to the new turn.
+  if (protectsLocalStart || protectsDaemonStartEdge) entry.wasStreaming = transcript.isStreaming;
   const shouldReconcileStreaming =
-    streamingChanged || (authoritativeIdleSnapshot && !protectsLocalStart);
+    (streamingChanged ||
+      authoritativeIdleSnapshot ||
+      observesLocalTurn ||
+      observesDaemonCompletion) &&
+    !protectsLocalStart &&
+    !protectsDaemonStartEdge;
   if (session && shouldReconcileStreaming && isCurrentSubscription(coordinator, agentId, entry)) {
     entry.wasStreaming = transcript.isStreaming;
     yield* put(
@@ -473,9 +622,117 @@ function* applyTranscript(
         agentId,
         transcript.isStreaming
           ? { isStreaming: true, isProcessing: true }
-          : { isStreaming: false, isProcessing: false, isResponding: false },
+          : completedActivityFields(session),
       ),
     );
+  }
+  // A snapshot without current-turn content cannot date its idle verdict.
+  // Confirm once after the observation, rather than treating an old row's
+  // timestamp as capture time or guessing from elapsed renderer time.
+  const daemonAcceptedStart =
+    !localStart || localStart.assistantMessageId !== undefined || localStart.userSeq !== undefined;
+  if (
+    session &&
+    authoritativeIdleSnapshot &&
+    !transcript.fromHistory &&
+    daemonAcceptedStart &&
+    (protectsDaemonStart || protectsLocalStart)
+  ) {
+    yield* confirmSnapshotIdle(coordinator, agentId, entry);
+  }
+}
+
+function completedActivityFields(session: AgentSession) {
+  return {
+    isStreaming: false,
+    isProcessing: false,
+    isResponding: false,
+    liveTurnOpen: false,
+    liveTurnOpenedAt: undefined,
+    turnInFlight: false,
+    isWaitingOnTool: false,
+    ...(session.lastToolUse?.status?.toLowerCase() === 'running' ? { lastToolUse: undefined } : {}),
+    // Completion settles activity, preserving lifecycle and peer-wait state.
+    ...(isAgentRunningState({ status: session.status }) ? { status: AgentStatus.RuntimeIdle } : {}),
+  };
+}
+
+function* confirmSnapshotIdle(
+  coordinator: SubscriptionCoordinator,
+  agentId: string,
+  entry: SubscriptionEntry,
+): SagaGenerator<void> {
+  const session = yield* selectAgentSession.effect(agentId);
+  if (!session || !isCurrentSubscription(coordinator, agentId, entry)) return;
+  const projection = yield* selectAgentSessionProjection.effect(agentId);
+  const localStart = coordinator.locallyStartedTurns.get(agentId);
+  const activityVersion = entry.activityVersion ?? 0;
+  const phaseVersion = entry.phaseVersion ?? 0;
+  const previous = entry.idleConfirmation;
+  if (
+    previous &&
+    previous.projection === projection &&
+    previous.localStart === localStart &&
+    previous.activityVersion === activityVersion &&
+    previous.phaseVersion === phaseVersion
+  )
+    return;
+  if (previous?.task) yield* cancel(previous.task);
+  const confirmation: IdleConfirmation = { projection, localStart, activityVersion, phaseVersion };
+  entry.idleConfirmation = confirmation;
+  confirmation.task = yield* fork(
+    confirmSnapshotIdleWorker,
+    coordinator,
+    agentId,
+    entry,
+    confirmation,
+    session.workspaceId,
+  );
+}
+
+function* confirmSnapshotIdleWorker(
+  coordinator: SubscriptionCoordinator,
+  agentId: string,
+  entry: SubscriptionEntry,
+  confirmation: IdleConfirmation,
+  workspaceId: string,
+): SagaGenerator<void> {
+  const ownership = claimAgentReadOwnership(agentId, workspaceId);
+  let retired = false;
+  const isCurrent = () =>
+    !retired &&
+    ownership.isCurrent() &&
+    isCurrentSubscription(coordinator, agentId, entry) &&
+    entry.idleConfirmation === confirmation &&
+    (entry.activityVersion ?? 0) === confirmation.activityVersion &&
+    (entry.phaseVersion ?? 0) === confirmation.phaseVersion &&
+    coordinator.locallyStartedTurns.get(agentId) === confirmation.localStart &&
+    selectAgentSessionProjection.select(appStore.state, agentId) === confirmation.projection;
+  try {
+    const incoming = yield* call(readAgentSessionAfterCurrent, agentId, workspaceId, isCurrent);
+    if (
+      !incoming ||
+      !isCurrent() ||
+      String(incoming.id) !== agentId ||
+      incoming.workspaceId !== workspaceId ||
+      incoming.pendingDeleteAt ||
+      incoming.isResponding !== false ||
+      incoming.turnInFlight !== false ||
+      incoming.isWaitingOnTool !== false ||
+      incoming.lastToolUse?.status?.toLowerCase() === 'running' ||
+      (yield* call(isAgentDeletionPending, agentId))
+    )
+      return;
+    const session = yield* selectAgentSession.effect(agentId);
+    if (!session || session.workspaceId !== workspaceId || !isCurrent()) return;
+    coordinator.locallyStartedTurns.delete(agentId);
+    entry.wasStreaming = false;
+    yield* put(updateSession(agentId, completedActivityFields(session)));
+    yield* clearStaleStreamingMessageFlags(agentId);
+  } catch (error) {
+    logger.warn('Could not confirm idle chat snapshot', { agentId, error });
+  } finally {
+    retired = true;
   }
 }
 
@@ -566,7 +823,12 @@ function* handleSubscriptionEvent(
   }
   try {
     if (event.kind === 'phase') {
+      if (event.phase !== 'live') {
+        entry.phaseVersion = (entry.phaseVersion ?? 0) + 1;
+        if (entry.idleConfirmation?.task) yield* cancel(entry.idleConfirmation.task);
+      }
       if (isCurrentSubscription(coordinator, event.agentId, entry)) {
+        if (event.phase !== 'live') entry.lastSubmissionEvidence = undefined;
         yield* put(chatLiveStreamPhaseChanged(event.agentId, event.phase));
       }
       return;
@@ -579,6 +841,9 @@ function* handleSubscriptionEvent(
       reportSnapshotGuard(event.transcript, 'snapshot-dropped-superseded-registration', 'ignored');
       return;
     }
+    if (event.transcript.isStreaming && !event.replayed && !event.transcript.fromHistory) {
+      entry.activityVersion = (entry.activityVersion ?? 0) + 1;
+    }
     entry.hasEmitted = true;
     entry.lastTranscript = event.transcript;
     // Pre-session seq-0 race: `initializeChatRequested` starts this saga and
@@ -589,10 +854,13 @@ function* handleSubscriptionEvent(
     // healthy subscription never emits. Defer the WHOLE application until
     // the session shell upserts (replayed by the lifecycle loop), so meta is
     // only ever recorded after the messages actually landed.
-    if (event.transcript.fromSnapshot === true) {
+    if (event.transcript.fromSnapshot === true || event.transcript.initialHistory !== undefined) {
       const preSession = yield* selectAgentSession.effect(event.agentId);
       if (!preSession) {
-        entry.pendingSnapshot = event.transcript;
+        entry.pendingSnapshot = event.transcript.fromSnapshot
+          ? event.transcript
+          : { ...entry.pendingSnapshot, ...event.transcript, fromSnapshot: true };
+        entry.lastTranscript = entry.pendingSnapshot;
         setReplayableChatSnapshot(event.agentId, true);
         reportSnapshotGuard(event.transcript, 'snapshot-held-pre-session', 'buffered');
         return;
@@ -605,21 +873,44 @@ function* handleSubscriptionEvent(
     // immediately instead of stranding a wait window (monorepo#2864).
     setReplayableChatSnapshot(
       event.agentId,
-      entry.pendingSnapshot !== undefined || event.transcript.fromSnapshot === true,
+      entry.pendingSnapshot !== undefined ||
+        event.transcript.fromSnapshot === true ||
+        event.transcript.fromHistory === true,
     );
+    if (
+      event.transcript.initialHistory?.complete === false &&
+      event.transcript.fromSnapshot !== true
+    ) {
+      yield* put(chatInitialHistoryProgressed(event.agentId, event.transcript.initialHistory));
+    }
     // §7.1 `resumed: false` snapshot: the retained transcript MUST be
     // discarded (see applyTranscript). Snapshot emits only — the settled
     // re-apply of the same transcript must not wipe the background
     // older-history pages fetched after it.
+    const resetsCachedHistory =
+      event.transcript.resumed === false || event.transcript.resetCachedTranscript === true;
     const discardStoreOnly =
-      event.transcript.fromSnapshot === true && event.transcript.resumed === false;
-    yield* applyTranscript(coordinator, event.agentId, entry, event.transcript, discardStoreOnly);
+      !event.replayed && event.transcript.fromSnapshot === true && resetsCachedHistory;
+    // Retry re-emits an already-applied snapshot to restore hydration, not to
+    // deliver new idle evidence. Deferred pre-session snapshots omit replayed
+    // because their first application must still reconcile stale activity.
+    yield* applyTranscript(
+      coordinator,
+      event.agentId,
+      entry,
+      event.transcript,
+      discardStoreOnly,
+      event.replayed === true,
+    );
     // Seq-0 snapshot applied (single-transfer hydration): seed the firehose
     // stream accumulator with the snapshot's in-flight assistant message so
     // subsequent agent:stream:chunk dispatches carry the full block prefix,
     // then record the snapshot metadata for the chat-read saga (it settles
     // hydration on it and anchors the background older-history fetch).
-    if (event.transcript.fromSnapshot === true) {
+    if (
+      event.transcript.fromSnapshot === true ||
+      (event.transcript.fromHistory === true && event.transcript.initialHistory?.complete)
+    ) {
       const session = yield* selectAgentSession.effect(event.agentId);
       const wsId = entry.wsId ?? session?.workspaceId;
       const inFlight = event.transcript.messages.find(
@@ -632,18 +923,32 @@ function* handleSubscriptionEvent(
         (message) => typeof message.id === 'string' && message.id.length > 0,
       );
       yield* put(
-        chatTranscriptSnapshotApplied(event.agentId, {
-          truncated: event.transcript.truncated,
-          totalMessages: event.transcript.totalMessages,
-          ...(oldest ? { oldestMessageId: oldest.id } : {}),
-          ...(event.transcript.resumed === undefined ? {} : { resumed: event.transcript.resumed }),
-        }),
+        chatTranscriptSnapshotApplied(
+          event.agentId,
+          {
+            ...(event.transcript.initialHistory
+              ? { initialHistory: event.transcript.initialHistory }
+              : {}),
+            truncated: event.transcript.truncated,
+            ...(event.transcript.nextToken !== undefined
+              ? { nextToken: event.transcript.nextToken }
+              : {}),
+            totalMessages: event.transcript.totalMessages,
+            ...(oldest ? { oldestMessageId: oldest.id } : {}),
+            ...(resetsCachedHistory
+              ? { resumed: false }
+              : event.transcript.resumed === undefined
+                ? {}
+                : { resumed: event.transcript.resumed }),
+          },
+          event.replayed,
+        ),
       );
       // §7.1 resume fallback: the daemon did not honor the requested
       // `sinceMessageId` (unknown/pruned anchor) and served the standard
       // newest page instead — the retained older history may be stale, so
       // trigger a full rehydration through the chat-read saga.
-      if (event.transcript.resumed === false && wsId) {
+      if (!event.replayed && resetsCachedHistory && wsId) {
         yield* put(refreshChatTranscriptRequested(wsId, event.agentId));
       }
     }
@@ -698,7 +1003,8 @@ function newestPersistedMessageId(messages: AgentMessage[]): string | undefined 
  */
 function* resolveResumeAnchor(agentId: string): SagaGenerator<string | undefined> {
   const hydration = yield* selectTranscriptHydration.effect(agentId);
-  if (hydration !== 'settled') return undefined;
+  if (hydration !== 'settled' || (yield* selectInitialChatHistoryPending.effect(agentId)))
+    return undefined;
   const messages = yield* selectAgentMessages.effect(agentId);
   const captured = resumeAnchors.get(agentId);
   if (captured === '') return undefined;
@@ -759,7 +1065,10 @@ function* openSubscription(
         emit({ kind: 'transcript', agentId, token: transition.token, transcript }),
       (phase: ChatLiveStreamPhase) =>
         emit({ kind: 'phase', agentId, token: transition.token, phase }),
-      sinceMessageId === undefined ? undefined : { sinceMessageId },
+      {
+        ...(sinceMessageId !== undefined ? { sinceMessageId } : {}),
+        ...(transition.wsId !== undefined ? { workspaceId: transition.wsId } : {}),
+      },
     );
     slot.acquisition = acquisition;
     const unsubscribe = yield* call(acquisition.wait);
@@ -833,6 +1142,7 @@ function* closeSubscription(
     return;
   }
   coordinator.subscriptions.delete(agentId);
+  if (entry.idleConfirmation?.task) yield* cancel(entry.idleConfirmation.task);
   // Sole-writer handoff back: the firehose stream path resumes writing
   // message content for this agent. Its accumulator kept accumulating the
   // whole time, so a mid-turn close loses nothing the fallback writer would
@@ -847,7 +1157,8 @@ function* closeSubscription(
     // below — afterwards a partial row can no longer be told apart.
     if (!clearResumeAnchor) {
       const messages = (yield* selectAgentSession.effect(agentId))?.messages ?? [];
-      resumeAnchors.set(agentId, newestPersistedMessageId(messages) ?? '');
+      const incomplete = yield* selectInitialChatHistoryPending.effect(agentId);
+      resumeAnchors.set(agentId, incomplete ? '' : (newestPersistedMessageId(messages) ?? ''));
     }
   } catch (error) {
     logger.error('Failed to capture chat resume anchor', error);
@@ -886,7 +1197,7 @@ function* applyHydrationSettled(
 ): SagaGenerator<void> {
   const entry = coordinator.subscriptions.get(agentId);
   if (entry?.hasEmitted && entry.lastTranscript) {
-    yield* applyTranscript(coordinator, agentId, entry, entry.lastTranscript);
+    yield* applyTranscript(coordinator, agentId, entry, entry.lastTranscript, false, true);
   }
 }
 
@@ -1356,12 +1667,16 @@ function* emitOrCycleSnapshot(
     replayPendingSnapshot(coordinator, agentId);
     return;
   }
-  if (entry?.lastTranscript?.fromSnapshot === true) {
+  // Incomplete history has its own progress watchdog. Replaying it cannot settle
+  // hydration, and cycling here would abort a healthy transfer after a fast burst.
+  if (entry?.lastTranscript?.initialHistory?.complete === false) return;
+  if (entry?.lastTranscript?.fromSnapshot === true || entry?.lastTranscript?.fromHistory === true) {
     coordinator.events.put({
       kind: 'transcript',
       agentId,
       token: entry.token,
       transcript: entry.lastTranscript,
+      replayed: true,
     });
     return;
   }
@@ -1373,6 +1688,9 @@ type ChatSubscribeAction =
   | ReturnType<typeof initializeChatRequested>
   | ReturnType<typeof retainedChatTranscriptsSet>
   | ReturnType<typeof chatSendStarted>
+  | ReturnType<typeof streamStatusReceived>
+  | ReturnType<typeof streamActivityReceived>
+  | ReturnType<typeof agentStreamUpdateReceived>
   | ReturnType<typeof markAgentAsViewed>
   | ReturnType<typeof transcriptHydrationSettled>
   | ReturnType<typeof refreshChatTranscriptRequested>
@@ -1394,14 +1712,47 @@ function* routeLifecycleAction(
       typeof initializeChatRequested
     >['payload'];
     if (agentId) yield* enqueueOpen(coordinator, agentId, wsId);
+  } else if (
+    action.type === streamStatusReceived.type ||
+    action.type === streamActivityReceived.type
+  ) {
+    const [agentId] = action.payload as ReturnType<typeof streamActivityReceived>['payload'];
+    const entry = coordinator.subscriptions.get(agentId);
+    if (entry) entry.activityVersion = (entry.activityVersion ?? 0) + 1;
+  } else if (action.type === agentStreamUpdateReceived.type) {
+    const [update] = action.payload as ReturnType<typeof agentStreamUpdateReceived>['payload'];
+    const entry = coordinator.subscriptions.get(update.agentId);
+    if (entry) entry.activityVersion = (entry.activityVersion ?? 0) + 1;
   } else if (action.type === retainedChatTranscriptsSet.type) {
     const [ownerId, wsId, agentIds] = action.payload as ReturnType<
       typeof retainedChatTranscriptsSet
     >['payload'];
     yield* setRetainedChatTranscripts(coordinator, ownerId, wsId, agentIds);
   } else if (action.type === chatSendStarted.type) {
-    const { agentId } = action.payload as ReturnType<typeof chatSendStarted>['payload'];
-    if (coordinator.slots.has(agentId)) coordinator.locallyStartedTurns.add(agentId);
+    const { agentId, assistantMessageId, userAppMessageId } = action.payload as ReturnType<
+      typeof chatSendStarted
+    >['payload'];
+    if (coordinator.slots.has(agentId)) {
+      const localStart = coordinator.locallyStartedTurns.get(agentId);
+      // A delayed start for a known prior assistant must not replace the
+      // newer send's protection. Same-turn starts may arrive after content,
+      // so compare against the send's original boundary, not today's rows.
+      if (assistantMessageId && localStart) {
+        if (
+          localStart.priorMessageIds.has(assistantMessageId) &&
+          localStart.assistantMessageId !== assistantMessageId
+        )
+          return;
+        coordinator.locallyStartedTurns.set(agentId, { ...localStart, assistantMessageId });
+        return;
+      }
+      const session = yield* selectAgentSession.effect(agentId);
+      coordinator.locallyStartedTurns.set(agentId, {
+        priorMessageIds: new Set(session?.messages.map((message) => message.id)),
+        assistantMessageId,
+        userAppMessageId,
+      });
+    }
   } else if (action.type === markAgentAsViewed.type) {
     const [agentId] = action.payload as ReturnType<typeof markAgentAsViewed>['payload'];
     // The reducer armed the switch-back snapshot gate synchronously with this
@@ -1574,7 +1925,7 @@ export function* chatSubscribeSaga(): SagaGenerator<void> {
     subscriptions: new Map(),
     slots: new Map(),
     events: createChannel(buffers.expanding<ChatSubscriptionEvent>()),
-    locallyStartedTurns: new Set(),
+    locallyStartedTurns: new Map(),
     revealGateWatchers: new Map(),
     leaseReleases: createChannel(buffers.expanding<string>()),
     pendingSweepCloses: new Set(),
@@ -1589,6 +1940,9 @@ export function* chatSubscribeSaga(): SagaGenerator<void> {
       initializeChatRequested,
       retainedChatTranscriptsSet,
       chatSendStarted,
+      streamStatusReceived,
+      streamActivityReceived,
+      agentStreamUpdateReceived,
       markAgentAsViewed,
       transcriptHydrationSettled,
       refreshChatTranscriptRequested,

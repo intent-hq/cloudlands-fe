@@ -1,4 +1,4 @@
-import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
+import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 import { call, delay, join, put } from 'typed-redux-saga';
 import {
   closeAntigravitySetup,

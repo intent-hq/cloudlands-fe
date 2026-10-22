@@ -12,6 +12,50 @@ const tab = (id: string, values: Partial<PanelTab>): PanelTab => ({
 });
 
 describe('panel tab canonical identity', () => {
+  it('reuses a discussion only within its workspace', () => {
+    const existing = tab('discussion', { type: 'discussion' });
+    expect(panelTabsAreEquivalent(existing, tab('same', { type: 'discussion' }))).toBe(true);
+    expect(
+      panelTabsAreEquivalent(existing, tab('other', { type: 'discussion', workspaceId: 'ws-2' })),
+    ).toBe(false);
+    expect(
+      panelTabsAreEquivalent(
+        existing,
+        tab('unscoped', { type: 'discussion', workspaceId: undefined }),
+      ),
+    ).toBe(false);
+  });
+
+  it('keeps saved conversations and the new composer distinct while restoring legacy default tabs', () => {
+    const existing = tab('one', { type: 'discussion', data: { conversationId: 'one' } });
+    expect(
+      panelTabsAreEquivalent(
+        existing,
+        tab('same', { type: 'discussion', data: { conversationId: 'one' } }),
+      ),
+    ).toBe(true);
+    for (const conversationId of ['two', 'new', 'default']) {
+      expect(
+        panelTabsAreEquivalent(
+          existing,
+          tab('other', { type: 'discussion', data: { conversationId } }),
+        ),
+      ).toBe(false);
+    }
+    expect(
+      panelTabsAreEquivalent(
+        tab('legacy', { type: 'discussion' }),
+        tab('default', { type: 'discussion', data: { conversationId: 'default' } }),
+      ),
+    ).toBe(true);
+    expect(
+      panelTabsAreEquivalent(
+        tab('draft', { type: 'discussion', data: { conversationId: 'new' } }),
+        tab('draft-again', { type: 'discussion', data: { conversationId: 'new' } }),
+      ),
+    ).toBe(true);
+  });
+
   it('normalizes file paths and keeps terminal identities distinct', () => {
     expect(
       panelTabsAreEquivalent(tab('f', { filePath: '/repo/src/a.ts' }), {
@@ -39,6 +83,25 @@ describe('panel tab canonical identity', () => {
         workspaceId: 'ws-1',
         scriptId: 'dev',
       }),
+    ).toBe(true);
+  });
+
+  it('separates scoped file tabs from unscoped editors and other root identities', () => {
+    const scoped = tab('root-file', { filePath: '/repo/new.md', data: { gitRootId: 'root-a' } });
+    expect(panelTabsAreEquivalent(scoped, tab('ordinary', { filePath: '/repo/new.md' }))).toBe(
+      false,
+    );
+    expect(
+      panelTabsAreEquivalent(
+        scoped,
+        tab('other', { filePath: '/repo/new.md', data: { gitRootId: 'root-b' } }),
+      ),
+    ).toBe(false);
+    expect(
+      panelTabsAreEquivalent(
+        scoped,
+        tab('same', { filePath: '/repo/./new.md', data: { gitRootId: 'root-a' } }),
+      ),
     ).toBe(true);
   });
 

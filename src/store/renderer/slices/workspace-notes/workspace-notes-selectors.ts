@@ -7,7 +7,7 @@
 import { store } from '../../store';
 import { SPEC_NOTE_ID } from '$shared/constants/notes';
 import type { Note } from '$shared/types';
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { emptyWorkspaceNotesState } from './workspace-notes-slice';
 import type { NoteVersionsState, WorkspaceNotesWorkspaceState } from './workspace-notes-types';
 
@@ -37,6 +37,62 @@ export const selectSelectedNoteId = store.createSelector(
 export const selectNewlyCreatedNoteId = store.createSelector(
   (state, workspaceId: string): string | null =>
     state.workspaceNotes.byWorkspaceId[workspaceId]?.newlyCreatedNoteId ?? null,
+);
+
+export const selectHasPendingNoteContent = store.createSelector(
+  (state, workspaceId: string, noteId: string): boolean =>
+    state.workspaceNotes.byWorkspaceId[workspaceId]?.pendingContentByNoteId[noteId] === true,
+);
+
+export const selectNoteWindowVisible = store.createSelector(
+  (state): boolean => state.presence.windowVisible,
+);
+
+/** Persistent leases exist only while a mounted body consumer is visible. */
+export const selectHasVisibleNoteContent = store.createSelector(
+  (state, workspaceId: string, noteId: string): boolean =>
+    getItems(
+      state.workspaceNotes.byWorkspaceId[workspaceId]?.contentViews ??
+        emptyWorkspaceNotesState.contentViews,
+    ).some((view) => view.noteId === noteId),
+);
+
+export const selectNoteContentView = store.createSelector(
+  (state, workspaceId: string, consumerId: string) =>
+    getItem(
+      state.workspaceNotes.byWorkspaceId[workspaceId]?.contentViews ??
+        emptyWorkspaceNotesState.contentViews,
+      consumerId,
+    ),
+);
+
+export const selectNoteWorkspaceRoot = store.createSelector(
+  (state, workspaceId: string, consumerId: string) =>
+    getItem(
+      state.workspaceNotes.byWorkspaceId[workspaceId]?.workspaceRoots ??
+        emptyWorkspaceNotesState.workspaceRoots,
+      consumerId,
+    ),
+);
+
+export const selectNotePresenceView = store.createSelector(
+  (state, workspaceId: string, consumerId: string) => {
+    const view = getItem(
+      state.workspaceNotes.byWorkspaceId[workspaceId]?.presenceViews ??
+        emptyWorkspaceNotesState.presenceViews,
+      consumerId,
+    );
+    return view ? { ...view, viewers: getItems(view.viewers) } : undefined;
+  },
+);
+
+export const selectNoteAttributionView = store.createSelector(
+  (state, workspaceId: string, consumerId: string) =>
+    getItem(
+      state.workspaceNotes.byWorkspaceId[workspaceId]?.attributionViews ??
+        emptyWorkspaceNotesState.attributionViews,
+      consumerId,
+    ),
 );
 
 // ============================================================================

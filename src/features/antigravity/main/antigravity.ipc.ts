@@ -23,7 +23,7 @@ function closeSetup(sender: WebContents, expected?: AntigravitySetupSession): vo
 export function setupAntigravityIPC() {
   ipcMain.handle(
     ANTIGRAVITY_CHANNELS.GET_MODELS,
-    async (event, params?: { forceRefresh?: boolean }) =>
+    async (event, params?: { forceRefresh?: boolean; workspaceId?: string }) =>
       getProviderModelsEnvelope('antigravity', params, event),
   );
   ipcMain.handle(ANTIGRAVITY_CHANNELS.CLOSE_SETUP, (event) => {

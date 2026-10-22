@@ -54,7 +54,7 @@ const laptop: LiveClient = {
 
 function seedClients(live: LiveClient[]) {
   let state = browserClientsReducer(browserClientsInitialState, ownClientIdReceived('cli-desk'));
-  state = browserClientsReducer(state, liveClientsReceived(live));
+  state = browserClientsReducer(state, liveClientsReceived(live, 'workspace-1'));
   mockState.browserClients = state;
 }
 
@@ -146,7 +146,11 @@ describe('BrowserTabType viewer (mirror) rendering — REV-2 Model 3', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Close anyway' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Change favicon' }));
 
-    const [navigate, ...rest] = dispatch.mock.calls.map(([a]) => a);
+    const [demand, navigate, ...rest] = dispatch.mock.calls.map(([a]) => a);
+    expect(demand).toEqual({
+      type: 'browserClients/consumerMounted',
+      payload: ['workspace-1', expect.any(String)],
+    });
     expect(navigate).toMatchObject({
       type: navigateBrowserTabRequested.type,
       payload: ['browser-tab', 'https://next.example/'],

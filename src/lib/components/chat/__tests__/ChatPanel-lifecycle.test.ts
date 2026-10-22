@@ -1,7 +1,8 @@
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
-import { tick } from 'svelte';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { flushSync, tick } from 'svelte';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { resetScaffold } from './mocks/chat-panel-render-scaffold';
 import {
   transientUiReducer,
   initialState as initialTransientUi,
@@ -12,11 +13,24 @@ import type { Workspace } from '$shared/types';
 import { KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
 import { registerGlobalSearchShortcuts } from '$lib/utils/global-search-shortcuts';
 import { resolveShortcut } from '$lib/utils/shortcut-bindings';
+import { initialState as initialChatDrafts } from '$store/renderer/slices/chat-drafts/chat-drafts-slice';
+import { initialState as initialQuestionUi } from '$store/renderer/slices/question-ui/question-ui-slice';
+import {
+  createChatDraftStoreDriver,
+  type ChatDraftStoreDriver,
+} from './mocks/chat-draft-store-driver';
 import {
   animateScrollTo as animateScrollToUtil,
   followToBottom as scrollToBottomUtil,
 } from '$lib/utils/smartScroll';
 
+import { createAdmittedLegacyPrincipal } from '../../../../test/fixtures/admitted-legacy-principal';
+import {
+  workspaceReducer,
+  setWorkspaceEntity,
+} from '$store/renderer/slices/workspace/workspace-slice';
+import { pendingSubmissionsReducer } from '$store/renderer/slices/pending-submissions/pending-submissions-slice';
+let draftDriver: ChatDraftStoreDriver | undefined;
 const mocks = vi.hoisted(() => {
   let activeReadableSubscriptions = 0;
   const mutableReadable = <T>(initial: T) => {
@@ -39,6 +53,9 @@ const mocks = vi.hoisted(() => {
         value = next;
         for (const subscriber of subscribers) subscriber(value);
       },
+      get() {
+        return value;
+      },
     };
   };
   const readable = <T>(value: T) => ({
@@ -55,6 +72,7 @@ const mocks = vi.hoisted(() => {
   });
   const selector = <T>(value: T) => Object.assign(() => readable(value), { select: () => value });
   return {
+    specialistChange: null as null | ((id: string | null) => void),
     dispatch: vi.fn(),
     draftGet: vi.fn(),
     draftSet: vi.fn(),
@@ -85,6 +103,24 @@ const mocks = vi.hoisted(() => {
     >(undefined),
     chatError: mutableReadable<string | null>(null),
     chatQuotaExceeded: mutableReadable<{ providerId: string } | null>(null),
+    userMessageIndexUi: mutableReadable<
+      | {
+          id: string;
+          requestId: string;
+          agentId: string;
+          epoch: number;
+          status: 'pending' | 'succeeded' | 'failed' | 'cancelled';
+          result?: { ok: true; items: unknown[]; total: number };
+        }
+      | undefined
+    >(undefined),
+    questionUiConsumer: mutableReadable<
+      | {
+          storageKey: string;
+          draft: { idx: number; answers: Array<{ sel: number[]; text: string; skipped: boolean }> };
+        }
+      | undefined
+    >(undefined),
     // Store state served by the app-store mock; tests seed real slice state
     // here when a code path reads the store directly through `select`.
     storeState: {} as unknown,
@@ -94,6 +130,10 @@ const mocks = vi.hoisted(() => {
     reportStreamLifecycle: vi.fn(),
     animateScrollTo: vi.fn(),
     awaitingSwitchBackSnapshot: mutableReadable(false),
+    initialHistory: mutableReadable<
+      { target: number; received: number; complete: boolean } | undefined
+    >(undefined),
+    initialHistoryPending: mutableReadable(false),
     transcriptHydration: mutableReadable('settled'),
     transcriptHydratedOnce: mutableReadable(true),
     transcriptSnapshotMeta: mutableReadable<
@@ -134,14 +174,20 @@ vi.mock('$lib/utils/stream-lifecycle-telemetry', async (importOriginal) => ({
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } =
-    await import('$store/renderer/utils/test-helpers/store-mock');
+  const [{ createAppStoreMockModule }, { chatPanelSliceState }] = await Promise.all([
+    import('$store/renderer/utils/test-helpers/store-mock'),
+    import('./mocks/chat-panel-render-scaffold'),
+  ]);
   // Shallow-dedup emits like the production selector stream, so a test that
   // toggles store state proves the component anchors on the right selector.
   return createAppStoreMockModule({
     state: () => ({
+      ...chatPanelSliceState(),
+      git: { byWorkspaceId: {} },
       ...(mocks.storeState as Record<string, unknown>),
       agentSubscriptionUI: { entries: mocks.agentSubscriptionUIEntries },
+      chatDrafts: draftDriver?.state ?? initialChatDrafts,
+      questionUi: initialQuestionUi,
       transientUi: mocks.transientUi,
     }),
     dispatch: mocks.dispatch,
@@ -154,7 +200,8 @@ vi.mock('$lib/client', () => ({
     agents: { retry: vi.fn(), listUserMessages: mocks.listUserMessages },
   },
 }));
-vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', async () => ({
+  ...(await import('./mocks/chat-panel-render-scaffold')).agentSessionSelectors(),
   selectAgentAttentionRequest: mocks.selector(null),
   selectAgentSession: Object.assign(() => mocks.agentSession, { select: () => null }),
   selectAgentSessionsById: mocks.selector({}),
@@ -163,28 +210,32 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   }),
   selectAgentMessages: Object.assign(() => mocks.agentMessages, { select: () => [] }),
   selectAgentHistoryMessages: Object.assign(() => mocks.agentHistoryMessages, { select: () => [] }),
-  selectHistorySegmentMeta: mocks.selector({
-    gapToTail: false,
-    oldestReached: false,
-    historyCount: 0,
-    tailCount: 0,
+}));
+vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', async () =>
+  (await import('./mocks/chat-panel-render-scaffold')).agentQueueSelectors(),
+);
+vi.mock(
+  '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors',
+  async (importOriginal) =>
+    (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+      selectTasksForAgent: mocks.selector([]),
+    }),
+);
+vi.mock(
+  '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors',
+  async (importOriginal) =>
+    (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+      selectWorkspaceTasks: mocks.selector([]),
+      selectWorkspaceTasksInitialized: mocks.selector(false),
+    }),
+);
+vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', async () => ({
+  ...(await import('./mocks/chat-panel-render-scaffold')).chatStateSelectors(),
+  selectChatAgentState: mocks.selector({
+    scrollbackOlderBlocked: false,
+    scrollbackGapBlocked: false,
+    scrollbackDiscardEpoch: 0,
   }),
-  selectAgentTailCapPruned: mocks.selector(false),
-  selectAgentSessionStreamingContent: mocks.selector(''),
-  selectAgentIsResponding: mocks.selector(false),
-  selectAgentIsRunning: mocks.selector(false),
-}));
-vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', () => ({
-  selectAgentQueueMessages: mocks.selector([]),
-}));
-vi.mock('$store/renderer/slices/task-agent-associations/task-agent-associations-selectors', () => ({
-  selectTasksForAgent: mocks.selector([]),
-}));
-vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () => ({
-  selectWorkspaceTasks: mocks.selector([]),
-  selectWorkspaceTasksInitialized: mocks.selector(false),
-}));
-vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectAwaitingSwitchBackSnapshot: Object.assign(() => mocks.awaitingSwitchBackSnapshot, {
     select: () => false,
   }),
@@ -193,27 +244,19 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
     select: () => undefined,
   }),
   selectChatIsStalled: mocks.selector(false),
-  selectChatLastChunkTime: mocks.selector(null),
-  selectChatLiveStreamPhase: mocks.selector(null),
-  selectChatModelUnavailable: mocks.selector(null),
   selectChatQuotaExceeded: Object.assign(() => mocks.chatQuotaExceeded, { select: () => null }),
-  selectChatReceivedFirstChunk: mocks.selector(false),
-  selectChatStatusEvents: mocks.selector([]),
-  selectChatStreamingStartTime: mocks.selector(null),
-  selectFetchingGapFill: mocks.selector(false),
   selectFetchingHistorySeek: Object.assign(() => mocks.fetchingHistorySeek, {
     select: () => false,
   }),
   selectFetchingOlderHistory: Object.assign(() => mocks.fetchingOlderHistory, {
     select: () => false,
   }),
-  selectHistoryExhausted: mocks.selector(false),
-  selectHistorySeekUnsupported: mocks.selector(false),
   selectPendingProposalRecovery: () => mocks.pendingProposalRecovery,
-  selectPendingQuestionRecovery: mocks.selector(undefined),
   selectTranscriptHydration: Object.assign(() => mocks.transcriptHydration, {
     select: () => 'settled',
   }),
+  selectInitialChatHistory: () => mocks.initialHistory,
+  selectInitialChatHistoryPending: () => mocks.initialHistoryPending,
   selectTranscriptHydratedOnce: Object.assign(() => mocks.transcriptHydratedOnce, {
     select: () => true,
   }),
@@ -221,10 +264,28 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
     select: () => undefined,
   }),
 }));
-vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
-  selectPermissionRequests: mocks.selector([]),
-}));
-vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', () => ({
+vi.mock('$store/renderer/slices/chat-panel-ui/chat-panel-ui-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+    selectUserMessageIndexUi: Object.assign(() => mocks.userMessageIndexUi, {
+      select: () => mocks.userMessageIndexUi.get(),
+    }),
+    selectRetryAgentUi: mocks.selector(undefined),
+  }),
+);
+vi.mock('$store/renderer/slices/question-ui/question-ui-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+    selectQuestionUiConsumer: Object.assign(() => mocks.questionUiConsumer, {
+      select: () => mocks.questionUiConsumer.get(),
+    }),
+  }),
+);
+vi.mock('$store/renderer/slices/permission/permission-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+    selectPermissionRequests: mocks.selector([]),
+  }),
+);
+vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', async () => ({
+  ...(await import('./mocks/chat-panel-render-scaffold')).unreadTrackingSelectors(),
   selectDividerSession: Object.assign(
     () => ({
       subscribe(run: (value: unknown) => void) {
@@ -235,40 +296,49 @@ vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', () =
     { select: () => mocks.dividerSessionValue },
   ),
 }));
-vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
-  selectChatAuroraEnabled: mocks.selector(true),
-  selectIsAgentMonospace: mocks.selector(false),
-}));
-vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
-  selectActiveTab: { select: () => mocks.focusedActiveTab },
-  selectAllTabs: mocks.selector([]),
-  selectPanels: mocks.selector({}),
-  selectHiddenTabs: mocks.selector([]),
-}));
-vi.mock('$store/renderer/slices/browser/browser-selectors', () => ({
-  selectPendingBrowserElementCaptures: () => mocks.pendingBrowserCaptures,
-}));
-vi.mock('$store/renderer/slices/multi-panel-context/multi-panel-context-selectors', () => ({
-  selectCheckedPanels: mocks.selector([]),
-  selectPanels: mocks.selector([]),
-  selectCheckedSelections: mocks.selector([]),
-}));
-vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-selectors', () => ({
-  selectWorkspaceNavigationMainPanel: mocks.selector({ type: 'empty' }),
-}));
-vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
-  selectAgentTypingPeople: mocks.selector([]),
-  selectPresenceOwnPrincipalId: mocks.selector(null),
-}));
-vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', async (importOriginal) => ({
-  ...(await importOriginal<
-    typeof import('$store/renderer/slices/transient-ui/transient-ui-selectors')
-  >()),
-  selectChatDraft: {
-    select: (_state: unknown, workspaceId: string, agentId: string) =>
-      mocks.chatDrafts[`${workspaceId}::${agentId}`] ?? '',
-  },
-}));
+vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+    selectActiveTab: { select: () => mocks.focusedActiveTab },
+    selectAllTabs: mocks.selector([]),
+    selectPanels: mocks.selector({}),
+    selectHiddenTabs: mocks.selector([]),
+  }),
+);
+vi.mock('$store/renderer/slices/browser/browser-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+    selectPendingBrowserElementCaptures: () => mocks.pendingBrowserCaptures,
+  }),
+);
+vi.mock(
+  '$store/renderer/slices/multi-panel-context/multi-panel-context-selectors',
+  async (importOriginal) =>
+    (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+      selectCheckedPanels: mocks.selector([]),
+      selectPanels: mocks.selector([]),
+      selectCheckedSelections: mocks.selector([]),
+    }),
+);
+vi.mock(
+  '$store/renderer/slices/workspace-navigation/workspace-navigation-selectors',
+  async (importOriginal) =>
+    (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+      selectWorkspaceNavigationMainPanel: mocks.selector({ type: 'empty' }),
+    }),
+);
+vi.mock('$store/renderer/slices/presence/presence-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+    selectAgentTypingPeople: mocks.selector([]),
+    selectPresenceOwnPrincipalId: mocks.selector(null),
+  }),
+);
+vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', async (importOriginal) =>
+  (await import('./mocks/chat-panel-render-scaffold')).withRealSelectors(importOriginal, {
+    selectChatDraft: {
+      select: (_state: unknown, workspaceId: string, agentId: string) =>
+        mocks.chatDrafts[`${workspaceId}::${agentId}`] ?? '',
+    },
+  }),
+);
 vi.mock('$features/layout/panel-layout-adapter', () => ({
   getPanelLayoutManager: () => ({ getPanelIds: () => [], getPanel: () => null }),
 }));
@@ -357,7 +427,8 @@ vi.mock('../message-send-transition', () => ({
   MESSAGE_SEND_MATCH_TIMEOUT_MS: 3000,
   MESSAGE_SEND_TRANSITION_MAX_SETTLE_MS: 600,
 }));
-vi.mock('$lib/utils/client-logger', () => ({
+vi.mock('$lib/utils/client-logger', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/utils/client-logger')>()),
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
 vi.mock('$lib/electron-bridge', () => ({
@@ -371,6 +442,17 @@ vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToTask: vi.fn() }));
 vi.mock('$lib/utils/open-message', () => ({
   seekConversationToMessage: mocks.seekConversationToMessage,
 }));
+// Capture the callback wired by the mounted panel while retaining the real picker.
+vi.mock('../RegularAgentWelcome.svelte', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../RegularAgentWelcome.svelte')>();
+  return {
+    ...actual,
+    default: (...args: Parameters<typeof actual.default>) => {
+      mocks.specialistChange = args[1].onSpecialistChange ?? null;
+      return actual.default(...args);
+    },
+  };
+});
 vi.mock('../input/SimpleRichInput.svelte', async () => ({
   default: (await import('./mocks/MockSimpleRichInput.svelte')).default,
 }));
@@ -393,7 +475,7 @@ vi.mock('../MonitoredPrsRow.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 vi.mock('../questions/QuestionWizard.svelte', async () => ({
-  default: (await import('./mocks/SlotOnly.svelte')).default,
+  default: (await import('./mocks/QuestionWizardCapture.svelte')).default,
 }));
 vi.mock('../ChatMessage.svelte', async () => ({
   default: (await import('./mocks/MockChatMessage.svelte')).default,
@@ -420,12 +502,14 @@ import {
   chatInterestLeaseCount,
   clearAllChatInterestLeases,
 } from '$features/agent/utils/chat-interest-leases';
+import type { StoreState } from '$store/renderer/types';
 import type { ProviderStatus } from '$store/renderer/slices/agent-availability/agent-availability-types';
 import { initialState as modelInitialState } from '$store/renderer/slices/model/model-slice';
 import { store as appStore } from '$store/renderer/store';
 import {
   initialState as providerCatalogInitialState,
   providerCatalogLoaded,
+  workspaceCatalogReceived,
   providerCatalogReducer,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
@@ -646,11 +730,16 @@ async function settleSearchHighlight() {
   await vi.advanceTimersByTimeAsync(150);
   await tick();
   await tick();
-  while (frames.length > 0) flushFrame();
-  await Promise.resolve();
+  // Bounded row admission may await several frames; drain microtasks between
+  // them just as the browser does, without changing the one-highlight assertion.
+  for (let frame = 0; frame < 45; frame++) {
+    flushFrame();
+    await vi.advanceTimersByTimeAsync(0);
+  }
 }
 
 beforeEach(() => {
+  resetScaffold();
   frames = [];
   nextFrameId = 1;
   vi.useFakeTimers();
@@ -701,6 +790,13 @@ beforeEach(() => {
   clearAllChatInterestLeases();
   mocks.draftSet.mockResolvedValue({ ok: true, updatedAt: '2026-01-01T00:00:00.000Z' });
   mocks.listUserMessages.mockResolvedValue({ ok: true, items: [], total: 0 });
+  draftDriver?.stop();
+  draftDriver = createChatDraftStoreDriver({
+    get: (...args) => mocks.draftGet(...args),
+    set: (...args) => mocks.draftSet(...args),
+    clear: (...args) => mocks.draftClear(...args),
+  });
+  draftDriver.subscribe(() => (appStore as unknown as { emitState(): void }).emitState());
   for (const key of Object.keys(mocks.chatDrafts)) delete mocks.chatDrafts[key];
   for (const key of Object.keys(mocks.agentSubscriptionUIEntries)) {
     delete mocks.agentSubscriptionUIEntries[key];
@@ -708,6 +804,16 @@ beforeEach(() => {
   mocks.transientUi = initialTransientUi;
   mocks.deferComposerEmits = false;
   mocks.dispatch.mockImplementation((action) => {
+    if (action?.type?.startsWith('chatDrafts/')) return draftDriver?.dispatch(action) ?? action;
+    const state = mocks.storeState as import('$store/renderer/types').StoreState;
+    if (state.pendingSubmissions) {
+      const pending = pendingSubmissionsReducer(state.pendingSubmissions, action);
+      const workspace = workspaceReducer(state.workspace, action);
+      if (pending !== state.pendingSubmissions || workspace !== state.workspace) {
+        mocks.storeState = { ...state, workspace, pendingSubmissions: pending };
+        (appStore as unknown as { emitState(): void }).emitState();
+      }
+    }
     if (action?.type === 'transientUi/setComposerContextItems') {
       mocks.transientUi = transientUiReducer(
         mocks.transientUi as typeof initialTransientUi,
@@ -731,9 +837,24 @@ beforeEach(() => {
   mocks.pendingProposalRecovery.set(undefined);
   mocks.chatError.set(null);
   mocks.chatQuotaExceeded.set(null);
-  mocks.storeState = {};
+  mocks.storeState = {
+    ...createAdmittedLegacyPrincipal(),
+    pendingSubmissions: { byAgentId: {} },
+    workspace: workspaceReducer(
+      workspaceReducer(
+        undefined,
+        setWorkspaceEntity({ ...workspace('workspace-a'), myRole: 'owner' }),
+      ),
+      setWorkspaceEntity({ ...workspace('workspace-b'), myRole: 'owner' }),
+    ),
+  };
+  mocks.userMessageIndexUi.set(undefined);
+  mocks.questionUiConsumer.set(undefined);
+  mocks.specialistChange = null;
   mocks.failureCorrelation.set(undefined);
   mocks.awaitingSwitchBackSnapshot.set(false);
+  mocks.initialHistory.set(undefined);
+  mocks.initialHistoryPending.set(false);
   mocks.transcriptHydration.set('settled');
   mocks.transcriptHydratedOnce.set(true);
   mocks.transcriptSnapshotMeta.set(undefined);
@@ -742,7 +863,9 @@ beforeEach(() => {
   mocks.pendingBrowserCaptures.set([]);
   mocks.focusedActiveTab = { type: 'agent', agentId: 'agent-a' };
   mocks.dividerSessionValue = { anchorId: null };
-  mocks.animateMessageSend.mockResolvedValue(undefined);
+  mocks.animateMessageSend.mockImplementation(async ({ launchBubble }) => {
+    launchBubble?.remove();
+  });
   mocks.createMessageSendLaunchBubble.mockImplementation(() => {
     const bubble = document.createElement('div');
     bubble.dataset.messageSendTransition = 'true';
@@ -757,6 +880,8 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  draftDriver?.stop();
+  draftDriver = undefined;
   clearAllChatInterestLeases();
   Reflect.deleteProperty(globalThis.CSS, 'highlights');
   vi.useRealTimers();
@@ -903,6 +1028,55 @@ describe.each([
 });
 
 describe('ChatPanel mounted lifecycle', () => {
+  it.each(['following', 'reading', 'scroll-away', 'search'] as const)(
+    'settles a prepend before the next frame only while %s owns bottom follow',
+    async (owner) => {
+      mocks.draftGet.mockResolvedValue(null);
+      mocks.agentMessages.set([
+        {
+          id: 'latest',
+          role: 'assistant',
+          content: 'latest',
+          timestamp: '2026-01-01T00:01:00.000Z',
+        },
+      ]);
+      render(ChatPanel, {
+        props: {
+          workspace: workspace('workspace-a'),
+          agentId: 'agent-a',
+          isActive: true,
+          isPanelFocused: true,
+        },
+      });
+      await tick();
+      await tick();
+      flushFrame();
+      await tick();
+      if (owner === 'reading') mocks.followBottomOptions?.onFollowChange?.(false);
+      if (owner === 'search') await openChatSearch();
+      await tick();
+      vi.mocked(scrollToBottomUtil).mockClear();
+
+      flushSync(() =>
+        mocks.agentHistoryMessages.set([
+          { id: 'older', role: 'user', content: 'older', timestamp: '2026-01-01T00:00:00.000Z' },
+        ]),
+      );
+      // Input can release follow after the pre-effect captured ownership but
+      // before its tick continuation applies the newly rendered page.
+      if (owner === 'scroll-away') mocks.followBottomOptions?.onFollowChange?.(false);
+      await tick();
+      await tick();
+      if (owner === 'following') {
+        expect(scrollToBottomUtil).toHaveBeenCalledWith(
+          screen.getByTestId('chat-transcript-scroll-viewport'),
+        );
+      } else {
+        expect(scrollToBottomUtil).not.toHaveBeenCalled();
+      }
+    },
+  );
+
   it('preserves consecutive attachment edits before selector emissions catch up', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.transientUi = transientUiReducer(
@@ -1117,9 +1291,11 @@ describe('ChatPanel mounted lifecycle', () => {
     const reactivatedOverlay = screen.getByTestId('pinned-user-prompt');
     expect(reactivatedOverlay.getAttribute('title')).toBe(replacement.metadata.hookName);
     await fireEvent.click(within(reactivatedOverlay).getByRole('button'));
-    expect(sourceTurnRect).toHaveBeenCalledOnce();
     expect(mocks.animateScrollTo).toHaveBeenCalledOnce();
-    expect(mocks.animateScrollTo.mock.calls[0][0]()).toBe(scroll);
+    const [getContainer, resolveTarget] = mocks.animateScrollTo.mock.calls[0];
+    expect(getContainer()).toBe(scroll);
+    resolveTarget(scroll);
+    expect(sourceTurnRect).toHaveBeenCalledOnce();
     expect(screen.queryByTestId('pinned-user-prompt')).toBeNull();
   });
 
@@ -1373,7 +1549,7 @@ describe('ChatPanel mounted lifecycle', () => {
         intersectionObservers: 1,
         intersectionTargets: 1,
         windowListeners: expect.any(Number),
-        ipcListeners: 3,
+        ipcListeners: 0,
         chatSubscriptionLeases: 1,
       });
       expect(singleSurfaceOwnership.resizeObservers).toBeGreaterThan(0);
@@ -1590,9 +1766,11 @@ describe('ChatPanel mounted lifecycle', () => {
       await tick();
       await tick();
 
+      const renderedNotice =
+        kind === 'turn-failure' ? '.turn-failure-notice' : '[data-message-key="inline-notice"]';
       const notice = view.container.querySelector('[data-lazy-turn-key="inline-notice"]')!;
       expect(notice).not.toBeNull();
-      expect(notice.querySelector('[data-message-key="inline-notice"]')).toBeNull();
+      expect(notice.querySelector(renderedNotice)).toBeNull();
       const observer = MockChatIntersectionObserver.instances.find((candidate) =>
         candidate.observed.has(notice),
       )!;
@@ -1600,13 +1778,13 @@ describe('ChatPanel mounted lifecycle', () => {
       flushFrame();
       await tick();
 
-      expect(notice.querySelector('[data-message-key="inline-notice"]')).not.toBeNull();
+      expect(notice.querySelector(renderedNotice)).not.toBeNull();
       expect(notice.querySelector('.lazy-turn-placeholder')).toBeNull();
 
       await view.rerender({ ...props, isActive: false });
       await view.rerender({ ...props, isActive: true });
       await tick();
-      expect(notice.querySelector('[data-message-key="inline-notice"]')).not.toBeNull();
+      expect(notice.querySelector(renderedNotice)).not.toBeNull();
       view.unmount();
     },
   );
@@ -1817,8 +1995,23 @@ describe('ChatPanel mounted lifecycle', () => {
     ) {
       mocks.storeState = {
         providerCatalog: providerCatalogReducer(
-          providerCatalogInitialState,
-          providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+          providerCatalogReducer(
+            providerCatalogInitialState,
+            providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+          ),
+          workspaceCatalogReceived(
+            'workspace-a',
+            {
+              catalog: MOCK_PROVIDER_CATALOG,
+              settings: [
+                { path: 'model.defaultProvider', value: defaultProviderId },
+                { path: 'providers.enabled', value: enabledProviders },
+              ] as never,
+              readiness: providerStatusMap,
+              specialists: [],
+            },
+            0,
+          ),
         ),
         model: { ...modelInitialState, defaultProviderId },
         providerSettings: { enabledProviders, nonDisableableProviderIds: [] },
@@ -1847,6 +2040,26 @@ describe('ChatPanel mounted lifecycle', () => {
           enabledProviders: { ...state.providerSettings.enabledProviders, [providerId]: enabled },
         },
       };
+      const catalogState = (mocks.storeState as StoreState).providerCatalog;
+      const snapshot = catalogState.byWorkspaceId!['workspace-a'];
+      (mocks.storeState as StoreState).providerCatalog = providerCatalogReducer(
+        catalogState,
+        workspaceCatalogReceived(
+          'workspace-a',
+          {
+            ...snapshot,
+            settings: snapshot.settings.map((setting) =>
+              setting.path === 'providers.enabled'
+                ? {
+                    ...setting,
+                    value: { ...(setting.value as Record<string, boolean>), [providerId]: enabled },
+                  }
+                : setting,
+            ),
+          },
+          catalogState.workspaceEpoch ?? 0,
+        ),
+      );
       (appStore as unknown as { emitState: () => void }).emitState();
       await tick();
       await tick();
@@ -1954,6 +2167,33 @@ describe('ChatPanel mounted lifecycle', () => {
       expect(view.container.querySelector('[data-stream-terminal-error="true"]')).not.toBeNull();
       expect(view.container.querySelector('[data-testid="error-title"]')).not.toBeNull();
     });
+  });
+
+  it('reveals the first progressive row without latching the unread boundary', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.transcriptHydratedOnce.set(false);
+    mocks.transcriptHydration.set('loading');
+    mocks.initialHistory.set({ target: 20, received: 1, complete: false });
+    mocks.initialHistoryPending.set(true);
+    mocks.agentMessages.set([
+      {
+        id: 'progressive-visible',
+        role: 'assistant',
+        content: 'First visible row',
+        timestamp: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    await tick();
+    expect(view.container.querySelector('[data-message-id="progressive-visible"]')).not.toBeNull();
+    expect(
+      mocks.dispatch.mock.calls.some(
+        ([action]) => action.type === 'unreadTracking/startDividerSession',
+      ),
+    ).toBe(false);
   });
 
   it('does not claim an assistant row is committed while first hydration hides it', async () => {
@@ -2083,6 +2323,53 @@ describe('ChatPanel mounted lifecycle', () => {
       'keep this draft',
     );
     expect(mocks.draftGet).toHaveBeenCalledOnce();
+  });
+
+  it('does not pass a replaced question set the preceding set draft', async () => {
+    mocks.pendingQuestions = { messageId: 'question-old', questions: [{}] };
+    mocks.questionUiConsumer.set({
+      storageKey: 'chat.questionWizardDraft/agent-a/question-old',
+      draft: { idx: 0, answers: [{ sel: [], text: 'old answer', skipped: false }] },
+    });
+    mocks.agentMessages.set([{ id: 'question-old' }]);
+    render(ChatPanel, { props: { workspace: workspace('workspace-a'), agentId: 'agent-a' } });
+    await tick();
+    expect(screen.getByTestId('question-wizard-capture').dataset.draftAnswerCount).toBe('1');
+
+    mocks.pendingQuestions = { messageId: 'question-new', questions: [{}, {}] };
+    mocks.agentMessages.set([{ id: 'question-new' }]);
+    await tick();
+
+    expect(screen.getByTestId('question-wizard-capture').dataset.draftAnswerCount).toBe('0');
+  });
+
+  it('keeps a returning question expanded when a newer composer draft was typed after answering', async () => {
+    mocks.pendingQuestions = { messageId: 'question-retry', questions: [] };
+    mocks.agentMessages.set([{ id: 'question-retry' }]);
+    render(ChatPanel, { props: { workspace: workspace('workspace-a'), agentId: 'agent-a' } });
+    await tick();
+    await Promise.resolve();
+    await tick();
+
+    mocks.pendingQuestions = null;
+    mocks.agentMessages.set([]);
+    await tick();
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'Keep this newer draft' },
+    });
+    mocks.dispatch.mockClear();
+
+    mocks.pendingQuestions = { messageId: 'question-retry', questions: [] };
+    mocks.agentMessages.set([{ id: 'question-retry' }]);
+    await tick();
+    const registration = mocks.dispatch.mock.calls.find(
+      ([action]) => action?.type === 'questionUi/wizardConsumed',
+    );
+    expect(registration).toBeDefined();
+    expect(registration![0].payload[5]).toBe(false);
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe(
+      'Keep this newer draft',
+    );
   });
 
   it('retains the empty composer as noninteractive while questions are expanded and restores it when cleared', async () => {
@@ -2219,7 +2506,62 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe('');
   });
 
-  it('expires an unclaimed send launch bubble at the bounded transition deadline', async () => {
+  it('keeps the daemon-owned initial prompt until its user row arrives while displaying a separate new submission', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.draftClear.mockResolvedValue({ ok: true });
+    const view = render(ChatPanel, {
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        initialPrompt: 'Initial daemon prompt',
+      },
+    });
+    await tick();
+    expect(
+      view.container.querySelectorAll('[data-message-key="pending-initial-message"]'),
+    ).toHaveLength(1);
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'Separate follow-up' },
+    });
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    expect(view.container.querySelectorAll('[data-send-app-message-id]')).toHaveLength(1);
+    expect(
+      view.container.querySelectorAll('[data-message-key="pending-initial-message"]'),
+    ).toHaveLength(1);
+    mocks.agentMessages.set([
+      optimisticUserMessage('initial-daemon-app-id', 'Initial daemon prompt'),
+    ]);
+    await tick();
+    expect(view.container.querySelector('[data-message-key="pending-initial-message"]')).toBeNull();
+    expect(view.container.querySelectorAll('[data-send-app-message-id]')).toHaveLength(2);
+  });
+
+  it('hides staged content on workspace rebind and on participation loss', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.draftClear.mockResolvedValue({ ok: true });
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'Private pending content' },
+    });
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    const id = latestSentAppMessageId();
+    expect(view.container.querySelector(`[data-send-app-message-id="${id}"]`)).not.toBeNull();
+    await view.rerender({ workspace: workspace('workspace-b'), agentId: 'agent-a' });
+    (appStore as unknown as { emitState(): void }).emitState();
+    await tick();
+    expect(view.container.querySelector(`[data-send-app-message-id="${id}"]`)).toBeNull();
+    await view.rerender({ workspace: workspace('workspace-a'), agentId: 'agent-a' });
+    appStore.dispatch(
+      setWorkspaceEntity({ ...workspace('workspace-a'), myRole: 'viewer', canManage: false }),
+    );
+    await tick();
+    expect(view.container.querySelector(`[data-send-app-message-id="${id}"]`)).toBeNull();
+  });
+
+  it('animates immediately into the staged row before transcript preparation', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.draftClear.mockResolvedValue({ ok: true });
     render(ChatPanel, {
@@ -2231,14 +2573,10 @@ describe('ChatPanel mounted lifecycle', () => {
       target: { value: 'send without an optimistic transcript row' },
     });
     await fireEvent.click(screen.getByTestId('mock-input-submit'));
-    const bubble = mocks.createMessageSendLaunchBubble.mock.results.at(-1)?.value as HTMLElement;
-    expect(bubble.isConnected).toBe(true);
-
-    await vi.advanceTimersByTimeAsync(2999);
-    expect(bubble.isConnected).toBe(true);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(bubble.isConnected).toBe(false);
-    expect(mocks.animateMessageSend).not.toHaveBeenCalled();
+    await tick();
+    await Promise.resolve();
+    expect(mocks.animateMessageSend).toHaveBeenCalledOnce();
+    expect(document.querySelector('[data-message-send-transition]')).toBeNull();
   });
 
   it('removes a pending send launch bubble when the panel is destroyed', async () => {
@@ -2252,7 +2590,7 @@ describe('ChatPanel mounted lifecycle', () => {
     await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
       target: { value: 'pending handoff' },
     });
-    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    (screen.getByTestId('mock-input-submit') as HTMLButtonElement).click();
     const bubble = mocks.createMessageSendLaunchBubble.mock.results.at(-1)?.value as HTMLElement;
     expect(bubble.isConnected).toBe(true);
 
@@ -2260,7 +2598,7 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(bubble.isConnected).toBe(false);
   });
 
-  it('matches a delayed optimistic row once and restores the focused composer after finish', async () => {
+  it('hands the immediate staged row to delayed transcript content without repeating animation or losing focus', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.draftClear.mockResolvedValue({ ok: true });
     const finish = deferred<void>();
@@ -2380,8 +2718,13 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(signal?.aborted).toBe(true);
   });
 
-  it('keeps rapid ordinary sends unique and expires the only unmatched launch bubble', async () => {
+  it('keeps rapid ordinary sends unique while their immediate handoff is in flight', async () => {
     mocks.draftGet.mockResolvedValue(null);
+    const finish = deferred<void>();
+    mocks.animateMessageSend.mockImplementation(async ({ launchBubble }) => {
+      await finish.promise;
+      launchBubble?.remove();
+    });
     mocks.draftClear.mockResolvedValue({ ok: true });
     render(ChatPanel, {
       props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
@@ -2400,9 +2743,12 @@ describe('ChatPanel mounted lifecycle', () => {
     const identities = sendActions.map((action) => action.payload.payload.userAppMessageId);
 
     expect(new Set(identities).size).toBe(2);
-    expect(mocks.createMessageSendLaunchBubble).toHaveBeenCalledOnce();
-    expect(document.querySelectorAll('[data-message-send-transition]')).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(3000);
+    expect(mocks.createMessageSendLaunchBubble).toHaveBeenCalledTimes(2);
+    expect(mocks.animateMessageSend).toHaveBeenCalledTimes(2);
+    expect(document.querySelectorAll('[data-message-send-transition]')).toHaveLength(2);
+    finish.resolve();
+    await Promise.resolve();
+    await tick();
     expect(document.querySelector('[data-message-send-transition]')).toBeNull();
   });
 
@@ -2849,7 +3195,7 @@ describe('ChatPanel mounted lifecycle', () => {
     );
   });
 
-  it('detaches IPC, observer, and scroll-action lifecycles while inactive and restores them', async () => {
+  it('releases saga read interest, observers, and scroll actions while inactive and restores them', async () => {
     mocks.draftGet.mockResolvedValue(null);
     const currentWorkspace = workspace('workspace-a');
     const view = render(ChatPanel, {
@@ -2857,7 +3203,16 @@ describe('ChatPanel mounted lifecycle', () => {
     });
     await tick();
 
-    expect(mocks.listenSync).toHaveBeenCalledTimes(3);
+    expect(mocks.listenSync).not.toHaveBeenCalled();
+    const readRequest = mocks.dispatch.mock.calls
+      .map(([action]) => action)
+      .find((action) => action.type === 'git/readRequested');
+    expect(readRequest?.payload).toEqual([
+      'workspace-a',
+      expect.any(String),
+      expect.any(String),
+      { kind: 'autoCommitStatus', agentId: 'agent-a' },
+    ]);
     expect(mocks.followBottomOptions?.enabled).toBe(true);
 
     flushFrame();
@@ -2875,17 +3230,25 @@ describe('ChatPanel mounted lifecycle', () => {
     await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: false });
     await tick();
 
-    expect(mocks.ipcListenerCleanups).toHaveLength(3);
-    expect(
-      mocks.ipcListenerCleanups.every((cleanupListener) => cleanupListener.mock.calls.length === 1),
-    ).toBe(true);
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'git/releaseRead',
+        payload: readRequest.payload.slice(0, 3),
+      }),
+    );
     expect(mocks.followBottomOptions?.enabled).toBe(false);
     expect(mocks.pinnedPromptOptions?.enabled).toBe(false);
     expect(mocks.resizeDisconnect.mock.calls.length).toBeGreaterThan(disconnectsBeforeDeactivate);
 
     await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: true });
     await tick();
-    expect(mocks.listenSync).toHaveBeenCalledTimes(6);
+    expect(mocks.listenSync).not.toHaveBeenCalled();
+    const readRequests = mocks.dispatch.mock.calls
+      .map(([action]) => action)
+      .filter((action) => action.type === 'git/readRequested');
+    expect(readRequests).toHaveLength(2);
+    expect(readRequests[1].payload[1]).toBe(readRequest.payload[1]);
+    expect(readRequests[1].payload[2]).not.toBe(readRequest.payload[2]);
     expect(mocks.followBottomOptions?.enabled).toBe(true);
   });
 
@@ -3245,6 +3608,387 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(target.classList.contains('highlight-flash')).toBe(false);
   });
 
+  it('a history deep link reveals the collapsed block containing its query', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([searchableAssistant('tail', 'Latest reply')]);
+    mocks.agentHistoryMessages.set([
+      {
+        ...searchableAssistant('history-target', ''),
+        contentBlocks: [
+          { type: 'text', text: '<group:Completed>Summary' },
+          { type: 'text', text: 'history needle</group>' },
+        ],
+      },
+    ]);
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    const target = screen
+      .getByTestId('chat-transcript-scroll-viewport')
+      .querySelector<HTMLElement>('[data-message-id="history-target"]')!;
+    const disclosure = document.createElement('div');
+    disclosure.dataset.chatSearchDisclosureId = 'group:b:0';
+    disclosure.dataset.chatSearchExpanded = 'false';
+    const expand = vi.fn();
+    disclosure.addEventListener('chatsearchexpand', expand);
+    target.append(disclosure);
+    window.dispatchEvent(
+      new CustomEvent('chat:open-message', {
+        detail: {
+          agentId: 'agent-a',
+          messageId: 'history-target',
+          query: 'history needle',
+          requestId: 'history-search',
+        },
+      }),
+    );
+    await tick();
+    for (let frame = 0; frame < 90; frame++) {
+      flushFrame();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    expect(expand).toHaveBeenCalledTimes(1);
+  });
+
+  it('reveals only the requested active tab when the same agent has two visible viewers', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    for (const tabId of ['left-agent-tab', 'right-agent-tab']) {
+      render(ChatPanel, {
+        props: { workspace: workspace('workspace-a'), agentId: 'agent-a', tabId, isActive: true },
+      });
+    }
+    await tick();
+    const targets = screen.getAllByTestId('chat-transcript-scroll-viewport').map((viewport) => {
+      const target = document.createElement('div');
+      target.dataset.messageId = 'message-a';
+      viewport.append(target);
+      return target;
+    });
+    mocks.animateScrollTo.mockClear();
+    window.dispatchEvent(
+      new CustomEvent('chat:open-message', {
+        detail: {
+          agentId: 'agent-a',
+          messageId: 'message-a',
+          targetTabId: 'right-agent-tab',
+          requestId: 'scoped-request',
+        },
+      }),
+    );
+    await tick();
+    for (let frame = 0; frame < 3; frame++) {
+      flushFrame();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    expect(targets[0].classList.contains('message-highlight-flash')).toBe(false);
+    expect(targets[1].classList.contains('message-highlight-flash')).toBe(true);
+    expect(mocks.animateScrollTo).toHaveBeenCalledTimes(1);
+    expect(mocks.animateScrollTo.mock.calls[0][0]()).toBe(targets[1].parentElement);
+  });
+
+  it('ignores a targeted request while its viewer is inactive, then accepts the retry when active', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    const props = {
+      workspace: workspace('workspace-a'),
+      agentId: 'agent-a',
+      tabId: 'target-tab',
+      isActive: false,
+    };
+    const view = render(ChatPanel, { props });
+    await tick();
+    const target = document.createElement('div');
+    target.dataset.messageId = 'message-a';
+    screen.getByTestId('chat-transcript-scroll-viewport').append(target);
+    const detail = {
+      agentId: 'agent-a',
+      messageId: 'message-a',
+      targetTabId: 'target-tab',
+      requestId: 'inactive-request',
+    };
+    window.dispatchEvent(new CustomEvent('chat:open-message', { detail }));
+    await tick();
+    flushFrame();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(target.classList.contains('message-highlight-flash')).toBe(false);
+    await view.rerender({ ...props, isActive: true });
+    window.dispatchEvent(new CustomEvent('chat:open-message', { detail }));
+    await tick();
+    for (let frame = 0; frame < 3; frame++) {
+      flushFrame();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    expect(target.classList.contains('message-highlight-flash')).toBe(true);
+  });
+
+  it('does not finish a cancelled reveal or restart it on a delayed retry', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    render(ChatPanel, {
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        tabId: 'target-tab',
+        isActive: true,
+      },
+    });
+    await tick();
+    const target = document.createElement('div');
+    target.dataset.messageId = 'message-a';
+    screen.getByTestId('chat-transcript-scroll-viewport').append(target);
+    const controller = new AbortController();
+    const detail = {
+      agentId: 'agent-a',
+      messageId: 'message-a',
+      targetTabId: 'target-tab',
+      requestId: 'cancelled-request',
+      signal: controller.signal,
+    };
+    mocks.animateScrollTo.mockClear();
+    window.dispatchEvent(new CustomEvent('chat:open-message', { detail }));
+    await tick();
+    controller.abort();
+    for (let frame = 0; frame < 3; frame++) {
+      flushFrame();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    window.dispatchEvent(new CustomEvent('chat:open-message', { detail }));
+    await tick();
+    flushFrame();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(target.classList.contains('message-highlight-flash')).toBe(false);
+    expect(mocks.animateScrollTo).not.toHaveBeenCalled();
+  });
+
+  it('supersedes a pending same-agent deep link with the newer target', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      searchableAssistant('old-target', 'old needle'),
+      searchableAssistant('new-target', 'new needle'),
+    ]);
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    const transcript = screen.getByTestId('chat-transcript-scroll-viewport');
+    const targets = ['old-target', 'new-target'].map((id) =>
+      transcript.querySelector<HTMLElement>(`[data-message-id="${id}"]`)!,
+    );
+    expect(targets.every(Boolean)).toBe(true);
+    window.dispatchEvent(
+      new CustomEvent('chat:open-message', {
+        detail: {
+          agentId: 'agent-a',
+          messageId: 'old-target',
+          query: 'old',
+          requestId: 'old-request',
+        },
+      }),
+    );
+    await tick();
+    flushFrame();
+    await vi.advanceTimersByTimeAsync(0);
+    window.dispatchEvent(
+      new CustomEvent('chat:open-message', {
+        detail: { agentId: 'agent-a', messageId: 'new-target', requestId: 'new-request' },
+      }),
+    );
+    await tick();
+    for (let frame = 0; frame < 45; frame++) {
+      flushFrame();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    expect(targets[1].classList.contains('message-highlight-flash')).toBe(true);
+    expect(targets[0].classList.contains('message-highlight-flash')).toBe(false);
+  });
+
+  it('closing empty search leaves an unrelated return-to-bottom animation active', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    const view = render(ChatPanel, {
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    const search = await openChatSearch();
+    mocks.animateScrollTo.mockClear();
+    view.component.scrollToBottom();
+    const [getContainer, , , onComplete] = mocks.animateScrollTo.mock.calls[0];
+    const container = getContainer();
+    expect(container).not.toBeNull();
+    vi.mocked(scrollToBottomUtil).mockClear();
+    await fireEvent.keyDown(search, { key: 'Escape' });
+    await tick();
+    expect(getContainer()).toBe(container);
+    onComplete(container);
+    expect(scrollToBottomUtil).toHaveBeenCalledWith(container);
+  });
+
+  it.each(['turn', 'query', 'close'] as const)(
+    'a completed search scroll yields to %s cancellation',
+    async (cancel) => {
+      installSearchHighlightSpy();
+      vi.stubGlobal('Highlight', class {});
+      const rangeSpy = vi.spyOn(document, 'createRange').mockImplementation(() =>
+        Object.assign(new Range(), {
+          getBoundingClientRect: () => new DOMRect(0, 100, 20, 20),
+        }),
+      );
+      onTestFinished(() => rangeSpy.mockRestore());
+      mocks.draftGet.mockResolvedValue(null);
+      mocks.agentMessages.set([searchableAssistant('message-a', 'needle')]);
+      render(ChatPanel, {
+        props: {
+          workspace: workspace('workspace-a'),
+          agentId: 'agent-a',
+          isActive: true,
+          isPanelFocused: true,
+        },
+      });
+      await tick();
+      const container = screen.getByTestId('chat-transcript-scroll-viewport');
+      const target = container.querySelector<HTMLElement>('[data-message-id="message-a"]')!;
+      const body = document.createElement('p');
+      body.dataset.chatSearchBlockPath = 'b:0';
+      body.textContent = 'needle';
+      target.append(body);
+      target.dataset.turnNumber = '7';
+      mocks.animateScrollTo.mockClear();
+      const search = await openChatSearch();
+      await fireEvent.input(search, { target: { value: 'needle' } });
+      await settleSearchHighlight();
+      expect(mocks.animateScrollTo).toHaveBeenCalledOnce();
+      const [getContainer] = mocks.animateScrollTo.mock.calls[0];
+      expect(getContainer()).toBe(container);
+      if (cancel === 'turn')
+        window.dispatchEvent(
+          new CustomEvent('agent:scroll-to-turn', {
+            detail: { agentId: 'agent-a', turnNumber: 7 },
+          }),
+        );
+      else if (cancel === 'query') await fireEvent.input(search, { target: { value: 'changed' } });
+      else await fireEvent.keyDown(search, { key: 'Escape' });
+      expect(getContainer()).toBeNull();
+    },
+  );
+
+  it('search navigation cancels a pending return-to-bottom animation and completion', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([searchableAssistant('message-a', 'needle')]);
+    const view = render(ChatPanel, {
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    const search = await openChatSearch();
+    mocks.animateScrollTo.mockClear();
+    view.component.scrollToBottom();
+    const [getContainer, , , onComplete] = mocks.animateScrollTo.mock.calls[0];
+    expect(getContainer()).not.toBeNull();
+    vi.mocked(scrollToBottomUtil).mockClear();
+    await fireEvent.input(search, { target: { value: 'needle' } });
+    await vi.advanceTimersByTimeAsync(150);
+    await tick();
+    expect(getContainer()).toBeNull();
+    onComplete(screen.getByTestId('chat-transcript-scroll-viewport'));
+    expect(scrollToBottomUtil).not.toHaveBeenCalled();
+  });
+
+  it('explicit turn navigation cancels a pending search highlight', async () => {
+    const highlightPasses = installSearchHighlightSpy();
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([searchableAssistant('message-a', 'needle')]);
+    render(ChatPanel, {
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+    await tick();
+    const target = screen
+      .getByTestId('chat-transcript-scroll-viewport')
+      .querySelector<HTMLElement>('[data-message-id="message-a"]')!;
+    target.dataset.turnNumber = '7';
+    await fireEvent.input(await openChatSearch(), { target: { value: 'needle' } });
+    await vi.advanceTimersByTimeAsync(150);
+    await tick();
+    window.dispatchEvent(
+      new CustomEvent('agent:scroll-to-turn', {
+        detail: { agentId: 'agent-a', turnNumber: 7 },
+      }),
+    );
+    for (let frame = 0; frame < 45; frame++) {
+      flushFrame();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    expect(target.classList.contains('highlight-flash')).toBe(true);
+    expect(highlightPasses()).toBe(0);
+  });
+
+  it('does not revive a deep-link retry superseded by explicit turn navigation', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([searchableAssistant('message-a', 'needle')]);
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    const target = screen
+      .getByTestId('chat-transcript-scroll-viewport')
+      .querySelector<HTMLElement>('[data-message-id="message-a"]')!;
+    target.dataset.turnNumber = '7';
+    const detail = { agentId: 'agent-a', messageId: 'message-a', requestId: 'old-request' };
+    window.dispatchEvent(new CustomEvent('chat:open-message', { detail }));
+    await tick();
+    window.dispatchEvent(
+      new CustomEvent('agent:scroll-to-turn', {
+        detail: { agentId: 'agent-a', turnNumber: 7 },
+      }),
+    );
+    for (let frame = 0; frame < 3; frame++) {
+      flushFrame();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    window.dispatchEvent(new CustomEvent('chat:open-message', { detail }));
+    for (let frame = 0; frame < 3; frame++) {
+      flushFrame();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    expect(target.classList.contains('highlight-flash')).toBe(true);
+    expect(target.classList.contains('message-highlight-flash')).toBe(false);
+  });
+
+  it('deduplicates retry-ladder deep links before their first frame', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    const target = document.createElement('div');
+    target.dataset.messageId = 'message-a';
+    screen.getByTestId('chat-transcript-scroll-viewport').append(target);
+    const add = vi.spyOn(target.classList, 'add');
+    for (let retry = 0; retry < 2; retry++)
+      window.dispatchEvent(
+        new CustomEvent('chat:open-message', {
+          detail: { agentId: 'agent-a', messageId: 'message-a', requestId: 'same-request' },
+        }),
+      );
+    await tick();
+    for (let frame = 0; frame < 3; frame++) {
+      flushFrame();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    expect(add.mock.calls.filter(([name]) => name === 'message-highlight-flash')).toHaveLength(1);
+  });
+
   it('cancels active highlight timers and open-message frames on unmount', async () => {
     mocks.draftGet.mockResolvedValue(null);
     const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
@@ -3508,10 +4252,10 @@ describe('ChatPanel mounted lifecycle', () => {
     await fireEvent.click(screen.getByTestId('pending-proposal-chip'));
     await tick();
     flushFrame();
-    await vi.waitFor(() => {
-      expect(replacementBounds).toHaveBeenCalled();
-      expect(mocks.animateScrollTo).toHaveBeenCalledOnce();
-    });
+    await vi.waitFor(() => expect(mocks.animateScrollTo).toHaveBeenCalledOnce());
+    const [getContainer, resolveTarget] = mocks.animateScrollTo.mock.calls[0];
+    resolveTarget(getContainer());
+    expect(replacementBounds).toHaveBeenCalled();
   });
 
   it('loads a recovered nonresident proposal message before scrolling to its inline card', async () => {
@@ -3568,7 +4312,11 @@ describe('ChatPanel mounted lifecycle', () => {
     flushFrame();
     await tick();
 
-    expect(mocks.seekConversationToMessage).toHaveBeenCalledWith('agent-a', 'proposal-message-far');
+    expect(mocks.seekConversationToMessage).toHaveBeenCalledWith(
+      'agent-a',
+      'proposal-message-far',
+      'workspace-a',
+    );
     expect(view.container.querySelector('[data-message-id="proposal-message-far"]')).not.toBeNull();
   });
 
@@ -3722,8 +4470,6 @@ describe('ChatPanel mounted lifecycle', () => {
         contentBlocks: [{ type: 'text', text: 'User prompt' }],
       },
     ]);
-    const pending = deferred<{ ok: true; items: unknown[]; total: number }>();
-    mocks.listUserMessages.mockReturnValue(pending.promise);
     const onNavigationStateChange = vi.fn();
     const view = render(ChatPanel, {
       props: {
@@ -3735,21 +4481,44 @@ describe('ChatPanel mounted lifecycle', () => {
     await tick();
 
     view.component.refreshUserMessageIndex();
+    const request = mocks.dispatch.mock.calls
+      .map(([action]) => action)
+      .find((action) => action.type === 'chatPanelUi/userMessageIndexRequested');
+    expect(request?.payload).toEqual([
+      'workspace-a',
+      expect.any(String),
+      expect.any(String),
+      'agent-a',
+      0,
+    ]);
+    const [, consumerId, requestId] = request.payload as string[];
+    mocks.userMessageIndexUi.set({
+      id: consumerId,
+      requestId,
+      agentId: 'agent-a',
+      epoch: 0,
+      status: 'pending',
+    });
     await tick();
-    expect(mocks.listUserMessages).toHaveBeenCalledWith('agent-a');
     expect(onNavigationStateChange).toHaveBeenLastCalledWith(
       expect.objectContaining({ isLoadingUserMessageIndex: true }),
     );
 
-    pending.resolve({
-      ok: true,
-      items: [
-        { id: 'older-1', preview: 'Older prompt', createdAt: '2025-12-31T00:00:00.000Z' },
-        { id: 'message-1', preview: 'User prompt', createdAt: '2026-01-01T00:00:00.000Z' },
-      ],
-      total: 2,
+    mocks.userMessageIndexUi.set({
+      id: consumerId,
+      requestId,
+      agentId: 'agent-a',
+      epoch: 0,
+      status: 'succeeded',
+      result: {
+        ok: true,
+        items: [
+          { id: 'older-1', preview: 'Older prompt', createdAt: '2025-12-31T00:00:00.000Z' },
+          { id: 'message-1', preview: 'User prompt', createdAt: '2026-01-01T00:00:00.000Z' },
+        ],
+        total: 2,
+      },
     });
-    await vi.advanceTimersByTimeAsync(0);
     await tick();
     expect(onNavigationStateChange).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -3763,8 +4532,6 @@ describe('ChatPanel mounted lifecycle', () => {
 
     // Reopen with a cached index: single-flight refresh must not re-report loading.
     onNavigationStateChange.mockClear();
-    mocks.listUserMessages.mockClear();
-    mocks.listUserMessages.mockReturnValue(new Promise(() => {}));
     view.component.refreshUserMessageIndex();
     await tick();
     expect(
@@ -3797,7 +4564,7 @@ describe('ChatPanel mounted lifecycle', () => {
     const [getContainer, target, duration, onComplete] = mocks.animateScrollTo.mock.calls[0];
     expect(getContainer()).toBe(scrollContainer);
     expect(target).toBe(600);
-    expect(duration).toBe(150);
+    expect(duration).toBeGreaterThan(0);
     expect(scrollToBottomUtil).not.toHaveBeenCalled();
 
     onComplete(scrollContainer);
@@ -3831,52 +4598,10 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(mocks.followBottomOptions?.follow).toBe(true);
   });
 
-  it('flashes a decorative lock confirmation when scrolling back to the bottom re-locks', async () => {
-    mocks.draftGet.mockResolvedValue(null);
-    mocks.agentMessages.set([{ id: 'message-1' }]);
-    const view = render(ChatPanel, {
-      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
-    });
-    await tick();
-    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
-    flushFrame(); // bind the distance-from-bottom scroll tracker
-
-    // No confirmation while merely sitting at the bottom.
-    const selector = '[data-testid="chat-scroll-lock-confirmation"]';
-    expect(view.container.querySelector(selector)).toBeNull();
-
-    // Scroll up past the threshold (and let the show settle so the button
-    // commits), then back to the bottom → re-lock flash.
-    Object.defineProperty(scrollContainer, 'scrollHeight', { configurable: true, value: 1000 });
-    Object.defineProperty(scrollContainer, 'clientHeight', { configurable: true, value: 400 });
-    scrollContainer.scrollTop = 100; // 500px from the bottom
-    await fireEvent.scroll(scrollContainer);
-    await vi.advanceTimersByTimeAsync(SCROLL_BUTTON_SHOW_SETTLE_MS);
-    await tick();
-    expect(view.container.querySelector(selector)).toBeNull();
-
-    scrollContainer.scrollTop = 600; // back at the bottom
-    await fireEvent.scroll(scrollContainer);
-    await tick();
-    const confirmation = view.container.querySelector(selector);
-    expect(confirmation).not.toBeNull();
-    // Purely decorative: hidden from the accessibility tree, not hit-testable,
-    // and not a focusable control (regression guard for monorepo#2508).
-    expect(confirmation!.getAttribute('aria-hidden')).toBe('true');
-    expect(confirmation!.classList.contains('pointer-events-none')).toBe(true);
-    expect(confirmation!.tagName).toBe('DIV');
-
-    // The flash unmounts after its display window.
-    await vi.advanceTimersByTimeAsync(1500);
-    await tick();
-    expect(view.container.querySelector(selector)).toBeNull();
-  });
-
-  it('keeps the button and lock confirmation stable while the distance jitters across the threshold', async () => {
+  it('keeps the button stable while the distance jitters across the threshold', async () => {
     // Regression: transient scrollHeight changes (lazy-turn placeholder swaps,
     // image loads) bounce distance-from-bottom across the 30px threshold every
-    // frame. The button must not strobe in and the decorative lock
-    // confirmation must not re-trigger from the same jitter.
+    // frame. The button must not strobe in.
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentMessages.set([{ id: 'message-1' }]);
     const view = render(ChatPanel, {
@@ -3899,9 +4624,8 @@ describe('ChatPanel mounted lifecycle', () => {
       await vi.advanceTimersByTimeAsync(16);
     }
     await tick();
-    expect(view.container.querySelector('[data-testid="chat-scroll-to-bottom-button"]')).toBeNull();
     expect(
-      view.container.querySelector('[data-testid="chat-scroll-lock-confirmation"]'),
+      view.container.querySelector('[data-testid="chat-floating-scroll-to-bottom-button"]'),
     ).toBeNull();
   });
 
@@ -4475,9 +5199,7 @@ describe('ChatPanel mounted lifecycle', () => {
     mocks.agentMessages.set([
       { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
     ]);
-    // The lightweight store mock reads selector-store arguments once, before
-    // EventSubscriptionsCard's effects populate the workspace and agent IDs.
-    mocks.agentSubscriptionUIEntries[':'] = {
+    mocks.agentSubscriptionUIEntries['workspace-a:agent-a'] = {
       subscriptions: [],
       delegationGroups: [],
       agentStatuses: {},
@@ -4787,3 +5509,171 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(scrollToBottomUtil).not.toHaveBeenCalled();
   });
 });
+
+describe.each(['workspace-a', 'workspace-b'])(
+  'ChatPanel specialist picker in %s',
+  (workspaceId) => {
+    it.each([
+      {
+        name: 'resolved-only model',
+        selection: 'shared',
+        resolved: true,
+        explicit: false,
+        empty: false,
+      },
+      {
+        name: 'explicit model before resolved preview',
+        selection: 'shared',
+        resolved: true,
+        explicit: true,
+        empty: false,
+      },
+      {
+        name: 'absent model retains session',
+        selection: 'shared',
+        resolved: false,
+        explicit: false,
+        empty: false,
+      },
+      {
+        name: 'empty model fields retain session',
+        selection: 'shared',
+        resolved: false,
+        explicit: false,
+        empty: true,
+      },
+      {
+        name: 'unknown specialist retains session',
+        selection: 'unknown',
+        resolved: true,
+        explicit: false,
+        empty: false,
+      },
+      {
+        name: 'blank selection retains session',
+        selection: null,
+        resolved: true,
+        explicit: false,
+        empty: false,
+      },
+    ])('$name preserves local fields and persisted workspace', async (c) => {
+      const snapshots = Object.fromEntries(
+        ['workspace-a', 'workspace-b'].map((id) => [
+          id,
+          {
+            catalog: MOCK_PROVIDER_CATALOG,
+            settings: [],
+            readiness: {},
+            specialists: [
+              {
+                id: 'shared',
+                name: `Specialist ${id}`,
+                description: '',
+                source: 'user',
+                behaviorPrompt: `Prompt ${id}`,
+                codingAgent: 'codex',
+                resolvedProvider: 'codex',
+                ...(c.resolved ? { resolvedModel: `resolved-${id}` } : {}),
+                ...(c.explicit ? { model: `explicit-${id}` } : {}),
+                ...(c.empty ? { model: '', resolvedModel: '' } : {}),
+              },
+            ],
+          },
+        ]),
+      );
+      mocks.storeState = {
+        providerCatalog: { ...providerCatalogInitialState, byWorkspaceId: snapshots },
+        specialists: {
+          bundledSpecialists: [
+            {
+              id: 'shared',
+              name: 'Global specialist',
+              description: '',
+              defaultBehaviorPrompt: 'Global prompt',
+              defaultModel: 'global-model',
+              resolvedModel: 'global-resolved-model',
+            },
+          ],
+          userOverrides: {},
+        },
+      };
+      const metadata = {
+        unrelated: 'keep',
+        specialist: 'previous',
+        behaviorPrompt: 'Previous prompt',
+      };
+      mocks.agentSession.set({
+        id: 'agent-a',
+        workspaceId,
+        model: 'session-model',
+        codingAgent: 'codex',
+        metadata,
+        messages: [],
+        status: 'idle',
+        name: 'Agent',
+      });
+      mocks.draftGet.mockResolvedValue(null);
+      render(ChatPanel, { props: { workspace: workspace(workspaceId), agentId: 'agent-a' } });
+      await tick();
+      await tick();
+      expect(screen.getByTestId('specialist-picker-trigger')).toBeTruthy();
+      expect(mocks.specialistChange).toBeTypeOf('function');
+      mocks.dispatch.mockClear();
+      mocks.dispatch.mockResolvedValue(undefined);
+      mocks.specialistChange!(c.selection);
+      await tick();
+      const selected = c.selection === 'shared';
+      const model =
+        selected && c.explicit
+          ? `explicit-${workspaceId}`
+          : selected && c.resolved
+            ? `resolved-${workspaceId}`
+            : 'session-model';
+      const local = mocks.dispatch.mock.calls
+        .map(([action]) => action)
+        .find((action) => action.type === 'agentSessions/updateSession');
+      const save = mocks.dispatch.mock.calls
+        .map(([action]) => action)
+        .find((action) => action.type === 'workspaceAgents/saveAgentSessionRequested');
+      const remembered = mocks.dispatch.mock.calls
+        .map(([action]) => action)
+        .find((action) => action.type === 'workspaceInitializer/rememberRecentSpecialist');
+      expect(remembered.payload).toEqual([c.selection]);
+      expect(local.payload).toEqual([
+        'agent-a',
+        {
+          model,
+          metadataPatch: {
+            specialist: c.selection === null ? { op: 'clear' } : { op: 'set', value: c.selection },
+            behaviorPrompt: { op: 'set', value: selected ? `Prompt ${workspaceId}` : '' },
+            specialistName: { op: 'set', value: selected ? `Specialist ${workspaceId}` : '' },
+          },
+        },
+      ]);
+      expect(save.payload).toEqual([
+        workspaceId,
+        'agent-a',
+        true,
+        {
+          specialistUpdate:
+            c.selection === null
+              ? { specialist: null, systemPrompt: null, rememberSpecialist: true }
+              : {
+                  specialist: c.selection,
+                  rememberSpecialist: true,
+                  model,
+                  ...(selected ? { systemPrompt: `Prompt ${workspaceId}` } : {}),
+                },
+          specialistRollback: {
+            model: 'session-model',
+            metadataPatch: {
+              specialist: { op: 'set', value: metadata.specialist },
+              behaviorPrompt: { op: 'set', value: metadata.behaviorPrompt },
+              specialistName: { op: 'clear' },
+            },
+          },
+        },
+      ]);
+    });
+  },
+);

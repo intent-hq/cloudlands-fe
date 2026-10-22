@@ -1,3 +1,4 @@
+import { DEFAULT_DISCUSSION_ID, discussionKey } from '$shared/types/workspace-discussion';
 /**
  * Presence Saga (multiplayer w5, PROTOCOL §5.46)
  *
@@ -26,15 +27,17 @@
  * Membership: the roster only lists who is online, so the accepted members
  * of every open SHARED workspace tab (`memberCount > 1`) are read from
  * `workspace.members.list` (Member+) — on attach, when such a tab opens and
- * whenever the daemon's `workspace:updated` moves its `memberCount`. Reads
+ * whenever the daemon's `workspace:updated` flags `members` or moves its
+ * `memberCount`. Hosts advertising workspaceMembershipEvents=1 need no roster
+ * invalidation; older hosts retain it for offline same-count role changes. Reads
  * are fenced like the snapshots (a backend switch or a newer read of the
  * same workspace supersedes).
  *
- * Identity: `principal.me` is read per backend so the roster's own row can be
- * told apart; a backend switch resets every roster first.
+ * Identity: reuse current admitted principal state. Multiplayer/presentation or
+ * admission invalidation cancels every worker and clears ephemeral projections.
  */
 
-import { END, buffers, eventChannel, type EventChannel, type Task } from 'redux-saga';
+import { buffers, channel, type Channel, type Task } from 'redux-saga';
 import {
   all,
   call,
@@ -46,48 +49,69 @@ import {
   race,
   select,
   take,
+  takeEvery,
   type SagaGenerator,
 } from 'typed-redux-saga';
 import {
-  createChannelFromSelector,
   takeEveryFromSelector,
   takeLatestFromSelector,
   type SelectorChannelPayload,
-} from '@augmentcode/themis/saga';
+} from '@themislib/themis/saga';
 
-import { backendRequest } from '$lib/client/live/backend-transport';
+import {
+  takeLatestInContext,
+  takeSingleFlightInContext,
+} from '../../../utils/context-saga-effects';
+import { takeEveryFromWindowEvent } from '../../../utils/ipc-channel';
+import { backendRequest, observeBackendNodeCapabilities } from '$lib/client/live/backend-transport';
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { watchCaptureDrawing, watchPresenceVisibility } from './presence-visibility-watcher';
 import {
   isPresenceRoster,
+  isPresenceIdentity,
   type PresenceReportParams,
   type PresenceReportResult,
   type PresenceRoster,
 } from '$shared/types/presence';
 import { selectCurrentConnectionId } from '../../connections/connections-selectors';
 import type { WorkspaceMembersListResult } from '../../guest-sessions/guest-sessions-types';
-import { selectActiveWorkspaceIds } from '../../tab-state/tab-state-selectors';
-import { selectDaemonEventsSubscriptionGeneration } from '../../workspace-events/workspace-events-selectors';
+import { selectPrincipalSnapshot } from '../../principal/principal-selectors';
 import {
   presenceMembersReceived,
-  presenceOwnPrincipalReceived,
+  presenceMembershipChanged,
+  presenceContextReceived,
+  presenceWorkspaceRemoved,
+  presenceWorkspacesReceived,
   presenceOwnTypingSourceReceived,
   presenceReset,
   presenceRosterReceived,
   presenceSnapshotReceived,
+  presenceDiscussionComposerFocused,
+  presenceDiscussionTypingExpired,
+  presenceDiscussionTypingPulse,
+  presenceDiscussionTypingStopped,
   presenceTypingExpired,
   presenceTypingPulse,
   presenceTypingStopped,
-  presenceWindowVisibilityChanged,
 } from '../presence-slice';
 import {
+  selectPresenceContext,
+  selectPresenceWorkspaceIds,
   selectOwnPresenceReport,
   selectOwnPresenceReportKey,
   selectPresenceLiveTyping,
+  selectPresenceLiveDiscussionTyping,
+  selectDiscussionTypingTarget,
   selectPresenceMembershipKeys,
+  selectPresenceProfileRevision,
 } from '../presence-selectors';
-import { PRESENCE_TYPING_EXPIRY_MS, type LiveTypingEntry } from '../presence-types';
+import {
+  PRESENCE_TYPING_EXPIRY_MS,
+  type LiveTypingEntry,
+  type LiveDiscussionTypingEntry,
+} from '../presence-types';
 
 const logger = createLogger('PresenceSaga');
 const PRESENCE = IPC_CHANNELS.PRESENCE;
@@ -108,20 +132,11 @@ type ObservedAction = { type: string; payload?: unknown };
 /** Saga-local ordinal of the latest read issued per workspace (one map per read kind). */
 type RosterReads = Map<string, number>;
 
-async function readOwnPrincipalId(): Promise<string | null> {
-  try {
-    const result = await backendRequest<{ id?: unknown }>('principal.me', {});
-    return typeof result?.id === 'string' ? result.id : null;
-  } catch {
-    return null;
-  }
-}
-
 /** `null` for a non-member / unknown workspace or an older daemon; both leave the roster empty. */
 async function readRosterSnapshot(workspaceId: string): Promise<PresenceRoster | null> {
   try {
     const result = await backendRequest<unknown>('presence.snapshot', { workspaceId });
-    return isPresenceRoster(result) ? result : null;
+    return isPresenceRoster(result) && result.workspaceId === workspaceId ? result : null;
   } catch (error) {
     logger.debug('presence.snapshot failed', { workspaceId, error: String(error) });
     return null;
@@ -134,7 +149,15 @@ async function readMembership(workspaceId: string): Promise<WorkspaceMembersList
     const result = await backendRequest<WorkspaceMembersListResult>('workspace.members.list', {
       workspaceId,
     });
-    return Array.isArray(result?.members) ? result : null;
+    return Array.isArray(result?.members) &&
+      result.members.every(
+        (member) =>
+          isPresenceIdentity(member) &&
+          (member.role === 'owner' || member.role === 'collaborator') &&
+          typeof member.addedAt === 'string',
+      )
+      ? result
+      : null;
   } catch (error) {
     logger.debug('workspace.members.list failed', { workspaceId, error: String(error) });
     return null;
@@ -143,6 +166,12 @@ async function readMembership(workspaceId: string): Promise<WorkspaceMembersList
 
 function supersedesSnapshot(action: ObservedAction, workspaceId: string): boolean {
   if (action.type === presenceReset.type) return true;
+  if (
+    action.type === presenceWorkspaceRemoved.type &&
+    Array.isArray(action.payload) &&
+    action.payload[0] === workspaceId
+  )
+    return true;
   return (
     action.type === presenceRosterReceived.type &&
     Array.isArray(action.payload) &&
@@ -150,53 +179,42 @@ function supersedesSnapshot(action: ObservedAction, workspaceId: string): boolea
   );
 }
 
-/** `visibilitychange` is a document event, so the window-event helper does not apply. */
-function createVisibilityChannel(): EventChannel<boolean> {
-  return eventChannel<boolean>((emit) => {
-    if (typeof document === 'undefined') {
-      emit(END as never);
-      return () => {};
+/** Successful idle reports belong to one admitted connection lifetime only. */
+function createReportSender() {
+  let lastSuccessfulKey: string | null = null;
+  let ordinal = 0;
+  return function* sendReport(): SagaGenerator<void> {
+    const params = yield* select(selectOwnPresenceReport.select);
+    const key = JSON.stringify(params);
+    if (!params.typing && !params.discussionTyping && key === lastSuccessfulKey) return;
+    const current = ++ordinal;
+    lastSuccessfulKey = null;
+    try {
+      const result = yield* call(invokeReport, params);
+      if (current !== ordinal) return;
+      // A null source can mean a failed send; leave the next report retryable.
+      if (result.typingSource !== null)
+        lastSuccessfulKey = params.typing || params.discussionTyping ? null : key;
+      yield* put(presenceOwnTypingSourceReceived(result.typingSource));
+    } catch (error) {
+      logger.debug('presence:report failed', { error: String(error) });
     }
-    const handler = () => emit(document.visibilityState === 'visible');
-    document.addEventListener('visibilitychange', handler);
-    return () => document.removeEventListener('visibilitychange', handler);
-  }, buffers.sliding<boolean>(1));
+  };
 }
 
-function* sendReport(): SagaGenerator<void> {
-  const params = yield* select(selectOwnPresenceReport.select);
-  try {
-    const result = yield* call(invokeReport, params);
-    yield* put(presenceOwnTypingSourceReceived(result.typingSource));
-  } catch (error) {
-    logger.debug('presence:report failed', { error: String(error) });
-  }
-}
-
-function* watchVisibility(): SagaGenerator<void> {
-  const channel = createVisibilityChannel();
-  try {
-    if (typeof document !== 'undefined')
-      yield* put(presenceWindowVisibilityChanged(document.visibilityState === 'visible'));
-    while (true) {
-      const visible = yield* take(channel);
-      if ((visible as unknown) === END) break;
-      yield* put(presenceWindowVisibilityChanged(visible));
-    }
-  } finally {
-    channel.close();
-  }
-}
+type ReportSender = ReturnType<typeof createReportSender>;
 
 /**
  * Debounced report: every change restarts the delay; only the last one sends.
  * The channel's initial emission is skipped — the boot report is owned by
- * `restartAttach`.
+ * `runPresence`.
  */
-function* reportOnChange({ prevPayload }: SelectorChannelPayload<string>): SagaGenerator<void> {
-  if (prevPayload == null) return;
-  yield* delay(PRESENCE_FOCUS_DEBOUNCE_MS);
-  yield* sendReport();
+function reportOnChange(sendReport: ReportSender) {
+  return function* ({ prevPayload }: SelectorChannelPayload<string>): SagaGenerator<void> {
+    if (prevPayload == null) return;
+    yield* delay(PRESENCE_FOCUS_DEBOUNCE_MS);
+    yield* sendReport();
+  };
 }
 
 /**
@@ -206,7 +224,7 @@ function* reportOnChange({ prevPayload }: SelectorChannelPayload<string>): SagaG
  * advancing for the receivers' 3 s timers. Idle for PRESENCE_TYPING_IDLE_MS
  * ends the episode.
  */
-function* watchTypingPulses(): SagaGenerator<void> {
+function* watchTypingPulses(sendReport: ReportSender): SagaGenerator<void> {
   let lastPulseAt = 0;
   let episodeAgentId: string | null = null;
   let generation = 0;
@@ -229,6 +247,93 @@ function* watchTypingPulses(): SagaGenerator<void> {
     if (now - lastPulseAt < PRESENCE_TYPING_PULSE_MS) continue;
     lastPulseAt = now;
     yield* fork(sendReport);
+  }
+}
+
+/** Discussion input has its own episode and idle timer; it never clears agent typing. */
+function* watchDiscussionTypingPulses(sendReport: ReportSender): SagaGenerator<void> {
+  let episode: string | null = null;
+  let lastPulseAt = 0;
+  let idle: Task | undefined;
+  const pulses = yield* takeEvery(
+    presenceDiscussionTypingPulse,
+    function* ({
+      payload: [workspaceId, conversationId = DEFAULT_DISCUSSION_ID],
+    }): SagaGenerator<void> {
+      if (
+        (yield* select(selectDiscussionTypingTarget.select)) !==
+        discussionKey(workspaceId, conversationId)
+      )
+        return;
+      if (idle) yield* cancel(idle);
+      idle = yield* fork(function* () {
+        yield* delay(PRESENCE_TYPING_IDLE_MS);
+        yield* put(presenceDiscussionTypingStopped(workspaceId, conversationId));
+      });
+      const now = Date.now();
+      if (episode !== discussionKey(workspaceId, conversationId)) {
+        episode = discussionKey(workspaceId, conversationId);
+        lastPulseAt = now;
+        return;
+      }
+      if (now - lastPulseAt < PRESENCE_TYPING_PULSE_MS) return;
+      lastPulseAt = now;
+      yield* fork(sendReport);
+    },
+  );
+  const stops = yield* takeEvery(
+    presenceDiscussionTypingStopped,
+    function* ({
+      payload: [workspaceId, conversationId = DEFAULT_DISCUSSION_ID],
+    }): SagaGenerator<void> {
+      if (episode !== discussionKey(workspaceId, conversationId)) return;
+      episode = null;
+      if (idle) yield* cancel(idle);
+    },
+  );
+  try {
+    yield* join([pulses, stops]);
+  } finally {
+    yield* cancel([pulses, stops]);
+    if (idle) yield* cancel(idle);
+  }
+}
+
+function* clearDiscussionWindowFocus(): SagaGenerator<void> {
+  const target = yield* select(selectDiscussionTypingTarget.select);
+  if (target) {
+    const [ws, id] = JSON.parse(target);
+    yield* put(presenceDiscussionComposerFocused(ws, false, id));
+  }
+}
+
+function* clearUnfocusedDiscussion({
+  payload,
+  prevPayload,
+}: SelectorChannelPayload<string | null>): SagaGenerator<void> {
+  if (prevPayload && prevPayload !== payload) {
+    const [ws, id] = JSON.parse(prevPayload);
+    yield* put(presenceDiscussionComposerFocused(ws, false, id));
+    yield* put(presenceDiscussionTypingStopped(ws, id));
+  }
+}
+
+function* armDiscussionTypingTimers({
+  payload,
+  prevPayload,
+}: SelectorChannelPayload<
+  Record<string, Record<string, LiveDiscussionTypingEntry>>
+>): SagaGenerator<void> {
+  for (const [workspaceId, entries] of Object.entries(payload)) {
+    for (const [source, entry] of Object.entries(entries)) {
+      if (entry.expired || prevPayload?.[workspaceId]?.[source] === entry) continue;
+      yield* fork(function* () {
+        yield* delay(PRESENCE_TYPING_EXPIRY_MS);
+        yield* put(
+          presenceDiscussionTypingExpired(workspaceId, source, entry.pulse, entry.conversationId),
+        );
+      });
+    }
   }
 }
 
@@ -284,15 +389,30 @@ function* hydrateRosters(reads: RosterReads, workspaceIds: string[]): SagaGenera
 }
 
 /** Opening a workspace tab publishes nothing daemon-side, so its roster is read. */
-function onDisplayedWorkspacesChanged(reads: RosterReads) {
+function onDisplayedWorkspacesChanged(reads: RosterReads, memberReads: RosterReads) {
   return function* ({ payload, prevPayload }: SelectorChannelPayload<string[]>) {
     if (prevPayload == null) return;
+    yield* put(presenceWorkspacesReceived(payload));
     const known = new Set(prevPayload);
+    for (const workspaceId of prevPayload.filter((id) => !payload.includes(id))) {
+      reads.set(workspaceId, (reads.get(workspaceId) ?? 0) + 1);
+      memberReads.set(workspaceId, (memberReads.get(workspaceId) ?? 0) + 1);
+      yield* put(presenceWorkspaceRemoved(workspaceId));
+    }
     yield* hydrateRosters(
       reads,
       payload.filter((workspaceId) => !known.has(workspaceId)),
     );
   };
+}
+
+function supersedesMembership(action: ObservedAction, workspaceId: string): boolean {
+  return (
+    action.type === presenceReset.type ||
+    (action.type === presenceWorkspaceRemoved.type &&
+      Array.isArray(action.payload) &&
+      action.payload[0] === workspaceId)
+  );
 }
 
 /**
@@ -303,12 +423,13 @@ function onDisplayedWorkspacesChanged(reads: RosterReads) {
 function* hydrateMembership(reads: RosterReads, workspaceId: string): SagaGenerator<void> {
   const ordinal = (reads.get(workspaceId) ?? 0) + 1;
   reads.set(workspaceId, ordinal);
+  const startedProfileRevision = yield* select(selectPresenceProfileRevision.select);
   const { membership } = yield* race({
     membership: call(readMembership, workspaceId),
-    superseded: take(presenceReset),
+    superseded: take((action: ObservedAction) => supersedesMembership(action, workspaceId)),
   });
   if (membership && reads.get(workspaceId) === ordinal)
-    yield* put(presenceMembersReceived(workspaceId, membership.members));
+    yield* put(presenceMembersReceived(workspaceId, membership.members, startedProfileRevision));
 }
 
 /** A membership key is `${workspaceId}:${memberCount}`; the count only makes the key change. */
@@ -330,106 +451,163 @@ function onMembershipKeysChanged(reads: RosterReads) {
   };
 }
 
-/** Identity first, so the seeded rosters never show this window's own row. */
-function* attachBackend(attachment: Attachment): SagaGenerator<void> {
-  const principalId = yield* call(readOwnPrincipalId);
-  yield* put(presenceOwnPrincipalReceived(principalId));
-  const workspaceIds = yield* select(selectActiveWorkspaceIds.select);
-  const membershipKeys = yield* select(selectPresenceMembershipKeys.select);
-  yield* all([
-    call(hydrateRosters, attachment.reads, workspaceIds),
-    call(hydrateMemberships, attachment.memberReads, membershipKeys),
-  ]);
+type MembershipNotification =
+  | ReturnType<typeof presenceMembershipChanged>
+  | ReturnType<typeof presenceWorkspaceRemoved>
+  | ReturnType<typeof presenceRosterReceived>;
+type MembershipRefresh = { workspaceId: string; cancel: boolean };
+
+function membershipNotificationWorkspace(action: MembershipNotification): string {
+  const payload = action.payload[0];
+  return typeof payload === 'string' ? payload : payload.workspaceId;
 }
 
-/**
- * The one attach in flight. Boot, every resubscribe and a backend switch each
- * replace it, so a slow earlier attach can never land its identity or rosters
- * after a later one has.
- */
-interface Attachment {
-  reads: RosterReads;
-  memberReads: RosterReads;
-  task: Task | null;
+function* queueMembershipRefresh(
+  notifications: Channel<MembershipRefresh>,
+  action: MembershipNotification,
+): SagaGenerator<void> {
+  const workspaceId = membershipNotificationWorkspace(action);
+  const removed = action.type === presenceWorkspaceRemoved.type;
+  if (!removed) {
+    if (!(yield* select(selectPresenceWorkspaceIds.select)).includes(workspaceId)) return;
+    const membershipKey = (yield* select(selectPresenceMembershipKeys.select)).find(
+      (key) => membershipKeyWorkspaceId(key) === workspaceId,
+    );
+    yield* delay(PRESENCE_FOCUS_DEBOUNCE_MS);
+    // A count change in the same workspace delta already started hydration.
+    if (!(yield* select(selectPresenceMembershipKeys.select)).includes(membershipKey ?? '')) return;
+  }
+  yield* put(notifications, { workspaceId, cancel: removed });
 }
 
-/**
- * Every attach ends with one report. `reportOnChange` skips the selector
- * channel's initial emission, so a window whose focus was already settled at
- * boot would otherwise never announce itself; after a resubscribe or a backend
- * switch the connection is fresh (main re-sends its merged `presence.update`
- * when the pooled connection comes back) and the report also learns the
- * connection's current `typingSource`.
- */
-function* restartAttach(attachment: Attachment): SagaGenerator<void> {
-  if (attachment.task) yield* cancel(attachment.task);
-  attachment.task = yield* fork(function* () {
-    yield* attachBackend(attachment);
-    yield* sendReport();
-  });
+function* refreshNotifiedMembership(
+  reads: RosterReads,
+  { workspaceId }: MembershipRefresh,
+): SagaGenerator<void> {
+  if (
+    (yield* select(selectPresenceMembershipKeys.select)).some(
+      (key) => membershipKeyWorkspaceId(key) === workspaceId,
+    )
+  )
+    yield* call(hydrateMembership, reads, workspaceId);
 }
 
-/**
- * Attach once the firehose subscription is live (`daemonEventsSaga` bumps the
- * generation on boot and after every resubscribe) — never before, or the
- * snapshot may predate the subscription.
- */
-function* watchSubscription(attachment: Attachment): SagaGenerator<void> {
-  const channel = yield* createChannelFromSelector(selectDaemonEventsSubscriptionGeneration);
-  let generation = yield* select(selectDaemonEventsSubscriptionGeneration.select);
-  if (generation > 0) yield* restartAttach(attachment);
+/** Refresh on an explicit workspace membership invalidation. Offline role
+ * changes require workspace:updated changes.members=true too; an online-only
+ * presence roster (even identical) cannot signal that distinction to guests.
+ * Hosts without the explicit hello capability retain roster-triggered reads.
+ * Debounce bursts, serialize reads per workspace and discard pending work when
+ * that workspace leaves the current admission. */
+function* watchMembershipNotifications(
+  reads: RosterReads,
+  membershipEvents: boolean,
+): SagaGenerator<void> {
+  const notifications = channel<MembershipRefresh>(buffers.expanding());
+  const refresh = yield* takeSingleFlightInContext(
+    notifications,
+    ({ workspaceId, cancel }) => (cancel ? { context: workspaceId, cancel: true } : workspaceId),
+    refreshNotifiedMembership,
+    reads,
+  );
+  const debounce = yield* takeLatestInContext(
+    [
+      presenceMembershipChanged,
+      presenceWorkspaceRemoved,
+      ...(membershipEvents ? [] : [presenceRosterReceived]),
+    ],
+    membershipNotificationWorkspace,
+    queueMembershipRefresh,
+    notifications,
+  );
   try {
-    while (true) {
-      const { payload } = yield* take(channel);
-      if (payload === generation) continue;
-      generation = payload;
-      yield* restartAttach(attachment);
-    }
+    yield* join([refresh, debounce]);
   } finally {
-    channel.close();
+    yield* cancel([refresh, debounce]);
+    notifications.close();
   }
 }
 
-/**
- * A local window's backend id never changes after boot; a change nonetheless
- * drops the attach in flight, resets every roster and identity, and attaches
- * the new backend. The channel's initial emission carries the current id and
- * is not a change.
- */
-function* watchBackend(attachment: Attachment): SagaGenerator<void> {
-  const channel = yield* createChannelFromSelector(selectCurrentConnectionId);
-  let backendId = yield* select(selectCurrentConnectionId.select);
+/** Observe the acknowledged hello once per admission, without another daemon RPC. */
+async function supportsMembershipEvents(): Promise<boolean> {
   try {
-    while (true) {
-      const { payload } = yield* take(channel);
-      if (payload === backendId) continue;
-      if (attachment.task) yield* cancel(attachment.task);
-      attachment.task = null;
-      if (backendId) yield* put(presenceReset());
-      backendId = payload;
-      if (backendId) yield* restartAttach(attachment);
-    }
+    const hello = (await observeBackendNodeCapabilities()) as {
+      server?: { capabilities?: { workspaceMembershipEvents?: unknown } };
+    } | null;
+    return hello?.server?.capabilities?.workspaceMembershipEvents === 1;
+  } catch {
+    return false;
+  }
+}
+
+/** The admitted principal owns all workers and their pending reads/reports. */
+function* runPresence({
+  payload: context,
+}: SelectorChannelPayload<string | null>): SagaGenerator<void> {
+  yield* put(presenceReset());
+  if (!context) return;
+  const snapshot = yield* select(selectPrincipalSnapshot.select);
+  if (!snapshot) return;
+  const backendId = yield* select(selectCurrentConnectionId.select);
+  yield* put(presenceContextReceived(context, snapshot.principal.id));
+  const reads: RosterReads = new Map();
+  const memberReads: RosterReads = new Map();
+  const tasks: Task[] = [];
+  const sendReport = createReportSender();
+  yield* put(presenceWorkspacesReceived(yield* select(selectPresenceWorkspaceIds.select)));
+  try {
+    const membershipEvents = yield* call(supportsMembershipEvents);
+    tasks.push(yield* fork(watchTypingPulses, sendReport));
+    tasks.push(yield* fork(watchDiscussionTypingPulses, sendReport));
+    tasks.push(yield* takeEveryFromWindowEvent('blur', clearDiscussionWindowFocus));
+    tasks.push(
+      yield* takeEveryFromSelector(selectDiscussionTypingTarget, clearUnfocusedDiscussion),
+    );
+    tasks.push(
+      yield* takeEveryFromSelector(selectPresenceLiveDiscussionTyping, armDiscussionTypingTimers),
+    );
+    tasks.push(yield* fork(watchMembershipNotifications, memberReads, membershipEvents));
+    tasks.push(
+      yield* takeLatestFromSelector(selectOwnPresenceReportKey, reportOnChange(sendReport)),
+    );
+    tasks.push(yield* takeEveryFromSelector(selectPresenceLiveTyping, armTypingTimers));
+    tasks.push(
+      yield* takeEveryFromSelector(
+        selectPresenceWorkspaceIds,
+        onDisplayedWorkspacesChanged(reads, memberReads),
+      ),
+    );
+    tasks.push(
+      yield* takeEveryFromSelector(
+        selectPresenceMembershipKeys,
+        onMembershipKeysChanged(memberReads),
+      ),
+    );
+    const workspaceIds = yield* select(selectPresenceWorkspaceIds.select);
+    const membershipKeys = yield* select(selectPresenceMembershipKeys.select);
+    yield* fork(hydrateRosters, reads, workspaceIds);
+    yield* fork(hydrateMemberships, memberReads, membershipKeys);
+    yield* sendReport();
+    yield* all(tasks.map((task) => join(task)));
   } finally {
-    channel.close();
+    for (const task of tasks) yield* cancel(task);
+    yield* put(presenceReset());
+    // Empty only this window's contribution. Never route old-host cleanup
+    // through a window which has already switched to another backend.
+    if (backendId === (yield* select(selectCurrentConnectionId.select))) {
+      try {
+        yield* call(invokeReport, { focus: [], typing: null });
+      } catch {
+        /* A disconnected connection already dropped its ephemeral state. */
+      }
+    }
   }
 }
 
 export function* presenceSaga(): SagaGenerator<void> {
-  const reads: RosterReads = new Map();
-  const memberReads: RosterReads = new Map();
-  const attachment: Attachment = { reads, memberReads, task: null };
-  const tasks = [
-    yield* fork(watchVisibility),
-    yield* fork(watchTypingPulses),
-    yield* fork(watchSubscription, attachment),
-    yield* fork(watchBackend, attachment),
-    yield* takeLatestFromSelector(selectOwnPresenceReportKey, reportOnChange),
-    yield* takeEveryFromSelector(selectPresenceLiveTyping, armTypingTimers),
-    yield* takeEveryFromSelector(selectActiveWorkspaceIds, onDisplayedWorkspacesChanged(reads)),
-    yield* takeEveryFromSelector(
-      selectPresenceMembershipKeys,
-      onMembershipKeysChanged(memberReads),
-    ),
-  ];
-  yield* all(tasks.map((task) => join(task)));
+  // Session-long, not admission-scoped: window visibility (gated on agent
+  // capture brackets) must stay current across admission gaps, so a hidden
+  // window is never published as visible when presence (re)admits.
+  yield* fork(watchCaptureDrawing);
+  yield* fork(watchPresenceVisibility);
+  yield* takeLatestFromSelector(selectPresenceContext, runPresence);
 }

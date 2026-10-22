@@ -1,6 +1,6 @@
 import { store } from '../../store';
 import type { KnownRepo } from '$shared/types/known-repo';
-import { getItems, type Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems, type Collection } from '@themislib/themis/utils/collections/collection-utils';
 
 export const selectKnownReposCollection = store.createSelector(
   (state): Collection<KnownRepo, 'path'> => {

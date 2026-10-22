@@ -1,5 +1,5 @@
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
@@ -7,7 +7,7 @@ import {
   addItem as collectionAddItem,
   removeItem as collectionRemoveItem,
   updateItem as collectionUpdateItem,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 import type { ContextItem } from '$features/context/types';
 import type { ContextState, ContextWorkspaceState } from './context-types';
 

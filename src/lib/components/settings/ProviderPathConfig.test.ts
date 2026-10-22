@@ -4,6 +4,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
+import { store } from '$store/renderer/store';
+import { providerSettingsSaga } from '$store/renderer/slices/provider-settings/sagas/provider-settings-saga';
 import ProviderPathConfigHost from './__tests__/ProviderPathConfigHost.svelte';
 import { warmImport } from '../../../test/warm-import';
 
@@ -61,6 +63,7 @@ warmImport(
 );
 
 describe('ProviderPathConfig', () => {
+  let stop: () => void;
   it('saves the Antigravity ACP path without overwriting another provider', async () => {
     mocks.mockSettingsGet.mockResolvedValue({ value: { codex: '/keep/codex' } });
     render(ProviderPathConfigHost, {
@@ -81,12 +84,16 @@ describe('ProviderPathConfig', () => {
   });
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.mockSettingsGet.mockResolvedValue({ value: {} });
-    mocks.mockSettingsUpdate.mockResolvedValue([]);
+    mocks.mockSettingsGet.mockReset().mockResolvedValue({ value: {} });
+    mocks.mockSettingsUpdate.mockReset().mockResolvedValue([]);
+    store.init();
+    stop = store.runSaga(providerSettingsSaga);
   });
 
   afterEach(() => {
     cleanup();
+    stop();
+    store.dispose();
   });
 
   it('loads a configured override', () => {
@@ -243,8 +250,80 @@ describe('ProviderPathConfig', () => {
         value: { codex: '/old/codex', 'claude-code': '/Users/me/src' },
       },
     ]);
-    expect(onPathChange).toHaveBeenCalledExactlyOnceWith('/Users/me/src');
+    await waitFor(() => expect(onPathChange).toHaveBeenCalledExactlyOnceWith('/Users/me/src'));
   });
+
+  it('delivers only the latest successful callback after its write acknowledges', async () => {
+    let first!: (value: unknown[]) => void;
+    let second!: (value: unknown[]) => void;
+    mocks.mockSettingsUpdate
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          first = resolve;
+        }),
+      )
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          second = resolve;
+        }),
+      );
+    const onPathChange = vi.fn();
+    render(ProviderPathConfigHost, {
+      props: {
+        providerId: 'codex',
+        providerName: 'Codex',
+        cliCommand: 'codex',
+        onPathChange,
+      },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Choose file' }));
+    await flush();
+    await fireEvent.click(screen.getByTestId('mock-picker-select'));
+    await waitFor(() => expect(mocks.mockSettingsUpdate).toHaveBeenCalledTimes(1));
+    expect(onPathChange).not.toHaveBeenCalled();
+    // Floating UI hides the portaled content in jsdom's zero-size layout.
+    await fireEvent.click(
+      screen.getByLabelText('Clear path and restore default', { selector: 'button' }),
+    );
+    first([]);
+    await waitFor(() => expect(mocks.mockSettingsUpdate).toHaveBeenCalledTimes(2));
+    await flush();
+    expect(onPathChange).not.toHaveBeenCalled();
+    second([]);
+    await waitFor(() => expect(onPathChange).toHaveBeenCalledExactlyOnceWith(''));
+  });
+
+  it.each(['failure', 'teardown', 'unmount'] as const)(
+    'does not deliver a callback after %s',
+    async (outcome) => {
+      let resolve!: (value: unknown[]) => void;
+      let reject!: (cause: Error) => void;
+      mocks.mockSettingsUpdate.mockReturnValueOnce(
+        new Promise((ok, fail) => {
+          resolve = ok;
+          reject = fail;
+        }),
+      );
+      const onPathChange = vi.fn();
+      const view = render(ProviderPathConfigHost, {
+        props: {
+          providerId: 'codex',
+          providerName: 'Codex',
+          cliCommand: 'codex',
+          configuredPath: '/old',
+          onPathChange,
+        },
+      });
+      await fireEvent.click(screen.getByRole('button', { name: 'Clear path and restore default' }));
+      await waitFor(() => expect(mocks.mockSettingsUpdate).toHaveBeenCalledTimes(1));
+      if (outcome === 'teardown') stop();
+      if (outcome === 'unmount') view.unmount();
+      if (outcome === 'failure') reject(new Error('offline'));
+      else resolve([]);
+      await flush();
+      expect(onPathChange).not.toHaveBeenCalled();
+    },
+  );
 
   it('keeps the form popover and remote picker mounted while the picker is open', async () => {
     // jsdom's zero-size layout makes Floating UI's hide middleware mark the
@@ -363,6 +442,6 @@ describe('ProviderPathConfig', () => {
         value: { 'claude-code': '', codex: '/old/codex' },
       },
     ]);
-    expect(onPathChange).toHaveBeenCalledExactlyOnceWith('');
+    await waitFor(() => expect(onPathChange).toHaveBeenCalledExactlyOnceWith(''));
   });
 });

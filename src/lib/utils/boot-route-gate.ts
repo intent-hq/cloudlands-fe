@@ -2,8 +2,8 @@
  * Boot-route facts for the backend-derived setup gate.
  *
  * Fresh windows boot at the workspace bootstrap route ('/workspace/new'),
- * which renders the full-page onboarding, and legacy sessions can still boot
- * at '/'. Whether onboarding is actually appropriate depends on the connected
+ * which renders the full-page onboarding, and Home can boot at '/'.
+ * Whether onboarding is actually appropriate depends on the connected
  * backend — it needs first-run setup only when it has no workspaces AND no
  * ready providers (`selectBackendSetupGate`) — and that decision resolves
  * asynchronously after boot.
@@ -100,7 +100,8 @@ export type BootRouteDecision =
  * Decide where a boot-route page load should land. Pure — the (app) layout
  * feeds it store state and applies the returned decision (dispatch + goto).
  *
- * - Backend has workspaces (or a ready provider): land on the persisted tab
+ * - Home stays at / unless first-run setup is required.
+ * - A bootstrap window with workspaces lands on the persisted tab
  *   or the first available workspace.
  * - Active backend (local or remote) genuinely needs first-run setup: stay on
  *   /workspace/new (which renders onboarding / provider setup).
@@ -137,6 +138,9 @@ export function decideBootRoute(input: BootRouteDecisionInput): BootRouteDecisio
       target: currentPathname === '/workspace/new' ? null : '/workspace/new',
       openTabWorkspaceId: null,
     };
+  }
+  if (currentPathname === '/') {
+    return { kind: 'resolve', target: null, openTabWorkspaceId: null };
   }
   // 'none' (or a timed-out 'pending' degraded to it): no forced onboarding.
   // Wait for the workspace list AND the active backend's persisted tab strip

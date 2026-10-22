@@ -4,10 +4,12 @@
  *
  * Roots are registered by agents (`ws.git.registerRoot`) or auto-detected by
  * the daemon; the FE reads via `gitRoot.list` and stays live by folding the
- * `gitRoot:*` event family into the list. Like `prMonitor:*`, the family is
- * not part of the bridge firehose's bare-category expansion, so this module
- * owns its own `events.subscribe` with a `gitRoot:*` prefix filter, scoped to
- * one workspace.
+ * `gitRoot:*` event family into the list. This module owns its own
+ * `events.subscribe` with a `gitRoot:*` prefix filter, scoped to one
+ * workspace, for the root list. The global bridge firehose also subscribes
+ * to `gitRoot:*`, but only to re-read the workspace's merged PR pool for
+ * Home rows (`refreshWorkspacePrPoolFromGitRoot`); it never touches the
+ * root list.
  */
 import {
   backendRequest,
@@ -194,7 +196,7 @@ export function subscribeGitRoots(
         if (disposed || epoch !== registerEpoch) {
           // Stale registration (disposed or superseded by a reconnect) —
           // drop the ack and release its server-side subscription.
-          if (acked) void backendUnsubscribe(acked);
+          if (acked) void backendUnsubscribe(acked, workspaceId);
           return;
         }
         subscriptionId = acked;
@@ -248,7 +250,7 @@ export function subscribeGitRoots(
       disposed = true;
       offNotification();
       offReconnected();
-      if (subscriptionId) void backendUnsubscribe(subscriptionId);
+      if (subscriptionId) void backendUnsubscribe(subscriptionId, workspaceId);
     },
   };
 }

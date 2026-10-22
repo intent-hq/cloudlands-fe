@@ -42,7 +42,19 @@ function* openAgentTab(action: ReturnType<typeof openAgentTabRequested>): SagaGe
             force: true,
             sourcePanelId: detail.sourcePanelId,
           })
-        : openTabInRightmostColumnRequested(targetWorkspaceId, tab, { force: true });
+        : detail.sourcePanelId
+          ? openTab(
+              targetWorkspaceId,
+              tab,
+              detail.sourcePanelId,
+              undefined,
+              true,
+              undefined,
+              undefined,
+              undefined,
+              true,
+            )
+          : openTabInRightmostColumnRequested(targetWorkspaceId, tab, { force: true });
   yield* put(openAction);
 }
 

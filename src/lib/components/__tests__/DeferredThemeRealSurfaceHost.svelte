@@ -117,7 +117,7 @@
     </aside>
 
     <section class="min-w-0" style:height="34rem" data-real-surface="chief">
-      <ChiefCard expanded />
+      <ChiefCard isActive />
     </section>
 
     <section class="h-48 overflow-hidden rounded-lg border border-border" data-real-surface="note">

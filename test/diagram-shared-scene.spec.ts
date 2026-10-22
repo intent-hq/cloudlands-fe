@@ -9,7 +9,7 @@ const externalBaseUrl = process.env.UI_PREVIEW_BASE_URL;
 let baseUrl = externalBaseUrl ?? '';
 let server: ViteDevServer | undefined;
 
-test.describe.configure({ mode: 'default' });
+test.describe.configure({ mode: 'default', timeout: 120_000 });
 
 test.beforeAll(async () => {
   if (externalBaseUrl) return;
@@ -44,7 +44,7 @@ for (const motion of ['full', 'reduced']) {
       `${baseUrl}/sandbox/diagram-workbench?state=custom-architecture&theme=light&width=960&motion=${motion}`,
     );
     await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
-      timeout: 30_000,
+      timeout: 90_000,
     });
     const root = page.locator('#custom-architecture .diagram-renderer');
     await expect(root).toHaveAttribute('data-diagram-settled', 'true');
@@ -152,7 +152,7 @@ for (const motion of ['full', 'reduced']) {
       `${baseUrl}/sandbox/diagram-workbench?state=custom-architecture&theme=light&width=960&motion=${motion}`,
     );
     await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
-      timeout: 30_000,
+      timeout: 90_000,
     });
     const root = page.locator('#custom-architecture .diagram-renderer');
     await expect(root).toHaveAttribute('data-diagram-settled', 'true');

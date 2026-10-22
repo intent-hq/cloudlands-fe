@@ -99,12 +99,12 @@ describe('design token audit', () => {
     }
   });
 
-  it('recognizes the Bits UI menu available size without exempting other menu properties', () => {
+  it('recognizes Bits UI menu sizing without exempting other menu properties', () => {
     const directory = mkdtempSync(path.join(tmpdir(), 'design-token-audit-'));
     try {
       writeFileSync(
         path.join(directory, 'product.svelte'),
-        '<div style="max-width: var(--bits-dropdown-menu-content-available-width); max-height: var(--bits-menu-content-available-height); transform-origin: var(--bits-dropdown-menu-content-transform-origin)" />',
+        '<div style="width: var(--bits-dropdown-menu-anchor-width); min-width: var(--bits-dropdown-menu-anchor-wdith); max-width: var(--bits-dropdown-menu-content-available-width); max-height: var(--bits-menu-content-available-height); transform-origin: var(--bits-dropdown-menu-content-transform-origin)" />',
       );
       const output = execFileSync(process.execPath, [script, 'undefined'], {
         encoding: 'utf8',
@@ -112,6 +112,8 @@ describe('design token audit', () => {
       });
       expect(output).not.toContain('--bits-dropdown-menu-content-available-width');
       expect(output).not.toContain('--bits-menu-content-available-height');
+      expect(output).not.toContain('--bits-dropdown-menu-anchor-width');
+      expect(output).toContain('--bits-dropdown-menu-anchor-wdith');
       expect(output).toContain('--bits-dropdown-menu-content-transform-origin');
     } finally {
       rmSync(directory, { recursive: true, force: true });

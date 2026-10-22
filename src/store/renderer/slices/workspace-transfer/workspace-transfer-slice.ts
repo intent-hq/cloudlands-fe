@@ -8,8 +8,8 @@
  * shows the result with the archive-source checkbox + finalize.
  */
 
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { TransferFailurePhase } from '$shared/types/workspace-transfer';
 import type {
   TransferDestination,

@@ -31,13 +31,25 @@ vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
+  const { repositoryCheckoutReducer } =
+    await import('$store/renderer/slices/repository-checkout/repository-checkout-slice');
   return createAppStoreMockModule({
-    state: () => ({ hardwareConsole: { pttRecording: false, voiceTranscribing: false } }),
+    state: () => ({
+      hardwareConsole: { pttRecording: false, voiceTranscribing: false },
+      repositoryCheckout: repositoryCheckoutReducer(undefined, { type: '@@INIT' }),
+    }),
     dispatch: mocks.dispatch,
   });
 });
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
+  selectWorkspaceInitializerAgentForRepo: { select: () => null },
+  selectWorkspaceInitializerGitAvailability: () => ({
+    subscribe(run: (value: boolean) => void) {
+      run(true);
+      return () => {};
+    },
+  }),
   selectWorkspaceInitializerHydrated: () => mocks.readable(() => false),
   selectCompactWorkspaceInitializerFormState: () => mocks.readable(() => null),
   selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(() => null),
@@ -45,6 +57,10 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
   selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
   selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
+  selectWorkspaceInitializerDraftAuthority: () =>
+    mocks.readable(() => ({ restore: undefined, clear: undefined })),
+  selectWorkspaceInitializationOutcomeForConsumer: () => mocks.readable(() => undefined),
+  selectWorkspaceInitializationResume: { select: () => undefined },
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
@@ -54,6 +70,7 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
 
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => mocks.readable(() => 'auggie'),
+  selectEnabledProviders: () => mocks.readable(() => ({})),
 }));
 
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
@@ -130,12 +147,6 @@ vi.mock('$shared/generated/ipc-client', () => ({
 
 vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
   workspaceClient: { create: vi.fn(), update: vi.fn() },
-}));
-
-vi.mock('$lib/components/workspace/initializer/new-workspace-draft', () => ({
-  restoreNewWorkspaceDraft: vi.fn(async () => ({ status: 'none' })),
-  createNewWorkspaceDraftSaver: vi.fn(() => ({ schedule: vi.fn(), flush: vi.fn() })),
-  clearNewWorkspaceDraft: vi.fn(),
 }));
 
 // The component gates the remote-URL probe on `window.electronAPI` (provided

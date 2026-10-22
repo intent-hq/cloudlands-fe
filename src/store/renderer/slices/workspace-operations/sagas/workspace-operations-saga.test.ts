@@ -1,6 +1,18 @@
+import { store } from '../../../store';
+import {
+  installMockBackend,
+  resetMockBackend,
+} from '../../../../../test/mocks/backend-transport.mock';
+import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
+
+vi.mock('$lib/client/live/backend-transport', async () => {
+  const mod = await import('../../../../../test/mocks/backend-transport.mock');
+  return mod.mockBackendTransportModule;
+});
 
 const mocks = vi.hoisted(() => ({
   archive: vi.fn(),
@@ -12,14 +24,14 @@ const mocks = vi.hoisted(() => ({
   navigateToRoute: vi.fn(),
   getActiveWorkNames: vi.fn(),
   invoke: vi.fn(),
-  notify: { warning: vi.fn(), success: vi.fn(), error: vi.fn(), info: vi.fn() },
+  notify: { warning: vi.fn(), success: vi.fn(), error: vi.fn(), info: vi.fn(), dismiss: vi.fn() },
 }));
 vi.mock('../../workspace/utils/workspace.client', () => ({
   workspaceClient: {
     archive: mocks.archive,
     unarchive: mocks.unarchive,
-    delete: mocks.deleteWorkspace,
-    cancelDelete: mocks.cancelDelete,
+    delete: (...args: unknown[]) => mocks.deleteWorkspace(...args.slice(0, 2)),
+    cancelDelete: (id: string) => mocks.cancelDelete(id),
     create: mocks.create,
   },
 }));
@@ -41,11 +53,10 @@ import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
 import type { BulkOperationProposal, WorkspaceCreateProposal } from '$shared/types/proposal';
 import type { Specialist } from '$lib/constants/specialists';
 import { initialState as githubAuthInitialState } from '../../github-auth/github-auth-slice';
-import {
-  initialState as proposalLifecycleInitialState,
-  proposalLifecycleReducer,
-} from '../../proposal-lifecycle/proposal-lifecycle-slice';
+import { initialState as proposalLifecycleInitialState } from '../../proposal-lifecycle/proposal-lifecycle-slice';
 import { initialState as specialistsInitialState } from '../../specialists/specialists-slice';
+import { initialState as workspaceInitializerInitialState } from '../../workspace-initializer/workspace-initializer-slice';
+import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
 import {
   initialState as workspaceInitialState,
   removeWorkspaceEntity,
@@ -154,29 +165,22 @@ function harness(seed: Workspace[], bundledSpecialists: Specialist[] = []) {
   let workspaceState = workspaceInitialState;
   for (const item of seed)
     workspaceState = workspaceReducer(workspaceState, setWorkspaceEntity(item));
-  let operations = operationsInitialState;
-  let proposalLifecycle = proposalLifecycleInitialState;
+  const operations = operationsInitialState;
+  const proposalLifecycle = proposalLifecycleInitialState;
   const specialists = { ...specialistsInitialState, bundledSpecialists };
-  const dispatch = vi.fn((action) => {
-    workspaceState = workspaceReducer(workspaceState, action);
-    operations = workspaceOperationsReducer(operations, action);
-    proposalLifecycle = proposalLifecycleReducer(proposalLifecycle, action);
-    return action;
-  });
-  const task = runSaga(
-    {
-      channel,
-      dispatch,
-      getState: () => ({
-        workspace: workspaceState,
-        workspaceOperations: operations,
-        proposalLifecycle,
-        specialists,
-        githubAuth: githubAuthInitialState,
-      }),
-    },
-    workspaceOperationsSaga,
+  store.dispose();
+  store.init(
+    withLegacyPrincipal({
+      workspace: workspaceState,
+      workspaceOperations: operations,
+      proposalLifecycle,
+      specialists,
+      githubAuth: githubAuthInitialState,
+      workspaceInitializer: workspaceInitializerInitialState,
+    }),
   );
+  const dispatch = vi.fn((action) => store.dispatch(action));
+  const task = runSaga({ channel, dispatch, getState: () => store.state }, workspaceOperationsSaga);
   const send = (action: Parameters<typeof workspaceOperationsReducer>[1]) => {
     dispatch(action);
     channel.put(action);
@@ -186,11 +190,7 @@ function harness(seed: Workspace[], bundledSpecialists: Specialist[] = []) {
     dispatch,
     send,
     task,
-    state: () => ({
-      workspace: workspaceState,
-      workspaceOperations: operations,
-      proposalLifecycle,
-    }),
+    state: () => store.state,
   };
 }
 
@@ -200,7 +200,148 @@ describe('workspaceOperationsSaga', () => {
     mocks.getActiveWorkNames.mockResolvedValue(noActiveWork);
     mocks.navigate.mockResolvedValue(undefined);
   });
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => {
+    store.dispose();
+    vi.useRealTimers();
+  });
+
+  it.each([
+    { name: 'instance members only', guests: 0, invites: 0, warns: false },
+    { name: 'mixed instance members and workspace guests', guests: 2, invites: 1, warns: true },
+    {
+      name: 'instance members and pending workspace invitations',
+      guests: 0,
+      invites: 2,
+      warns: true,
+    },
+  ])('uses the real role-aware preflight for $name', async ({ guests, invites, warns }) => {
+    const backend = installMockBackend();
+    backend.onRequest('hook.list', () => ({ hooks: [] }));
+    backend.onRequest('workspace.localChanges', () => ({
+      hasUnpushedCommits: false,
+      hasUncommittedChanges: false,
+      roots: [],
+    }));
+    backend.onRequest('workspace.members.list', () => ({
+      members: [
+        {
+          principalId: 'owner',
+          role: 'owner',
+          hostRole: 'owner',
+          login: null,
+          displayName: null,
+          avatarUrl: null,
+          addedAt: '2026-10-01T00:00:00Z',
+        },
+        {
+          principalId: 'instance-member',
+          role: 'collaborator',
+          hostRole: 'member',
+          login: 'shared',
+          displayName: null,
+          avatarUrl: null,
+          addedAt: '2026-10-01T00:00:00Z',
+        },
+        ...Array.from({ length: guests }, (_, index) => ({
+          principalId: `guest-${index}`,
+          role: 'collaborator',
+          hostRole: 'guest',
+          login: 'shared',
+          displayName: null,
+          avatarUrl: null,
+          addedAt: '2026-10-01T00:00:00Z',
+        })),
+      ],
+      guestCount: guests + invites,
+      guestLimit: 10,
+    }));
+    const actual = await vi.importActual<typeof import('$lib/utils/delete-warning-utils')>(
+      '$lib/utils/delete-warning-utils',
+    );
+    mocks.getActiveWorkNames.mockImplementation(actual.getActiveWorkNames);
+    mocks.archive.mockResolvedValue({ ok: true, data: undefined });
+    const run = harness([{ ...workspace('ws-1'), memberCount: guests + 2, openInviteCount: 0 }]);
+    try {
+      run.send(requestArchiveWorkspace('ws-1'));
+      await vi.waitFor(() => {
+        if (warns) expect(run.state().workspaceOperations.showArchiveWarning).toBe(true);
+        else expect(mocks.archive).toHaveBeenCalledExactlyOnceWith('ws-1');
+      });
+      expect(run.state().workspaceOperations.showArchiveWarning).toBe(warns);
+      if (warns) {
+        expect(run.state().workspaceOperations.guestsForArchive).toEqual({
+          collaboratorCount: guests,
+          openInviteCount: invites,
+        });
+        expect(mocks.archive).not.toHaveBeenCalled();
+      } else expect(mocks.archive).toHaveBeenCalledExactlyOnceWith('ws-1');
+      expect(backend.requests.filter((r) => r.method === 'workspace.members.list')).toEqual([
+        {
+          method: 'workspace.members.list',
+          params: { workspaceId: 'ws-1' },
+          options: { timeoutMs: 10000 },
+        },
+      ]);
+    } finally {
+      run.task.cancel();
+      resetMockBackend();
+    }
+  });
+
+  it.each(['archive', 'delete'] as const)(
+    'stops %s when guest impact is unavailable',
+    async (kind) => {
+      mocks.getActiveWorkNames.mockResolvedValue(null);
+      const run = harness([workspace('ws-1')]);
+      run.send(
+        kind === 'archive' ? requestArchiveWorkspace('ws-1') : requestDeleteWorkspace('ws-1'),
+      );
+      await settle();
+      expect(mocks.archive).not.toHaveBeenCalled();
+      expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
+      expect(mocks.notify.error).toHaveBeenCalledOnce();
+      run.task.cancel();
+    },
+  );
+
+  it('discards archive preflight after a connection change without a stale notification', async () => {
+    let finish!: (value: typeof noActiveWork) => void;
+    mocks.getActiveWorkNames.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const run = harness([workspace('ws-1')]);
+    run.send(requestArchiveWorkspace('ws-1'));
+    run.send(connectionStatusChanged('disconnected'));
+    finish(noActiveWork);
+    await settle();
+    expect(mocks.archive).not.toHaveBeenCalled();
+    expect(mocks.notify.error).not.toHaveBeenCalled();
+    expect(run.state().workspaceOperations.showArchiveWarning).toBe(false);
+    run.task.cancel();
+  });
+
+  it.each(['archive', 'delete'] as const)(
+    'closes an unavailable bulk %s preflight without enabling confirmation',
+    async (kind) => {
+      mocks.getActiveWorkNames.mockResolvedValue(null);
+      const run = harness([workspace('ws-1')]);
+      run.send(
+        kind === 'archive'
+          ? openBulkArchiveConfirm({ workspaceIds: ['ws-1'], groupLabel: 'Controlled' })
+          : openBulkDeleteConfirm({ workspaceIds: ['ws-1'], groupLabel: 'Controlled' }),
+      );
+      await settle();
+      run.send(kind === 'archive' ? confirmBulkArchive() : confirmBulkDelete());
+      await settle();
+      expect(mocks.archive).not.toHaveBeenCalled();
+      expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
+      expect(mocks.notify.error).toHaveBeenCalledOnce();
+      run.task.cancel();
+    },
+  );
 
   it('uses the exact archive wire call and reports a failed result without updating state', async () => {
     mocks.archive
@@ -845,7 +986,11 @@ describe('workspaceOperationsSaga', () => {
     run.send(confirmBulkDelete());
     await vi.advanceTimersByTimeAsync(50);
     expect(mocks.navigate.mock.calls).toEqual([['ws-1'], ['ws-2'], ['ws-3']]);
-    expect(mocks.deleteWorkspace.mock.calls).toEqual([['ws-1'], ['ws-2'], ['ws-3']]);
+    expect(mocks.deleteWorkspace.mock.calls).toEqual([
+      ['ws-1', undefined],
+      ['ws-2', undefined],
+      ['ws-3', undefined],
+    ]);
     expect(mocks.deleteWorkspace).toHaveBeenCalledTimes(3);
     expect(mocks.notify.success).toHaveBeenCalledTimes(1);
     expect(mocks.notify.info).toHaveBeenCalledTimes(1);
@@ -876,7 +1021,7 @@ describe('workspaceOperationsSaga', () => {
     run.send(confirmBulkDelete());
     await vi.advanceTimersByTimeAsync(50);
 
-    expect(mocks.deleteWorkspace.mock.calls).toEqual([['ws-1']]);
+    expect(mocks.deleteWorkspace.mock.calls).toEqual([['ws-1', undefined]]);
     expect(mocks.notify.success).toHaveBeenCalledWith('Permanently deleted 1 workspace');
     await vi.advanceTimersByTimeAsync(WORKSPACE_DELETION_TOMBSTONE_TTL_MS);
     run.task.cancel();
@@ -931,11 +1076,14 @@ describe('workspaceOperationsSaga', () => {
     run.send(openBulkDeleteConfirm({ workspaceIds: ['ws-2'], groupLabel: 'Overlapping group' }));
     run.send(confirmBulkDelete());
     await vi.advanceTimersByTimeAsync(50);
-    expect(mocks.deleteWorkspace.mock.calls).toEqual([['ws-1']]);
+    expect(mocks.deleteWorkspace.mock.calls).toEqual([['ws-1', undefined]]);
 
     resolveFirst({ ok: true, data: undefined });
     await vi.advanceTimersByTimeAsync(50);
-    expect(mocks.deleteWorkspace.mock.calls).toEqual([['ws-1'], ['ws-2']]);
+    expect(mocks.deleteWorkspace.mock.calls).toEqual([
+      ['ws-1', undefined],
+      ['ws-2', undefined],
+    ]);
     resolveSecond({ ok: true, data: undefined });
     await vi.advanceTimersByTimeAsync(50);
     expect(mocks.deleteWorkspace).toHaveBeenCalledTimes(2);
@@ -1082,6 +1230,70 @@ describe('workspaceOperationsSaga', () => {
       errorCode: 'base-ref-unresolvable',
     });
     expect(mocks.notify.error).toHaveBeenCalledWith('cannot resolve base ref');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('adds a created proposal workspace as a background tab without stealing focus', async () => {
+    mocks.create
+      .mockResolvedValueOnce({ ok: true, data: { workspace: workspace('ws-from-proposal') } })
+      .mockResolvedValueOnce({ ok: false, error: 'cannot resolve base ref' });
+    const run = harness([]);
+    store.dispatch(openWorkspaceTab('ws-current'));
+    const tabs = () => run.state().tabState;
+    const tabOrder = () => tabs().workspaceStacks.flat();
+
+    const proposal = createProposal('create-background-tab');
+    run.send(applyWorkspaceProposal({ proposal }));
+    await settle();
+    expect(tabOrder()).toEqual(['ws-current', 'ws-from-proposal']);
+    expect(tabs().currentTabId).toBe('ws-current');
+    expect(mocks.navigateToRoute).not.toHaveBeenCalled();
+
+    run.send(applyWorkspaceProposal({ proposal }));
+    await settle();
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+    expect(tabOrder()).toEqual(['ws-current', 'ws-from-proposal']);
+
+    run.send(applyWorkspaceProposal({ proposal: createProposal('create-background-failure') }));
+    await settle();
+    expect(tabOrder()).toEqual(['ws-current', 'ws-from-proposal']);
+    expect(tabs().currentTabId).toBe('ws-current');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('records the applied specialist as recently used only after a successful create', async () => {
+    mocks.create
+      .mockResolvedValueOnce({ ok: false, error: 'cannot resolve base ref' })
+      .mockResolvedValueOnce({ ok: true, data: { workspace: workspace('ws-general') } })
+      .mockResolvedValueOnce({ ok: true, data: { workspace: workspace('ws-reviewer') } });
+    const run = harness([]);
+    const recents = () => run.state().workspaceInitializer.recentSpecialistIds;
+
+    run.send(
+      applyWorkspaceProposal({
+        proposal: createProposal('recent-failure'),
+        editedFields: { specialist: 'implementor' },
+      }),
+    );
+    await settle();
+    expect(run.state().proposalLifecycle['recent-failure']).toMatchObject({ status: 'failed' });
+    expect(recents()).toEqual([]);
+
+    run.send(applyWorkspaceProposal({ proposal: createProposal('recent-general') }));
+    await settle();
+    expect(recents()).toEqual([]);
+
+    run.send(
+      applyWorkspaceProposal({
+        proposal: createProposal('recent-success'),
+        editedFields: { specialist: 'reviewer' },
+      }),
+    );
+    await settle();
+    expect(mocks.create.mock.calls[2]?.[0]?.initialAgent?.specialist).toBe('reviewer');
+    expect(recents()).toEqual(['reviewer']);
     run.task.cancel();
     await run.task.toPromise();
   });

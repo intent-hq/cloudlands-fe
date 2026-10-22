@@ -1,4 +1,4 @@
-import type { StoreMiddleware } from '@augmentcode/themis/types';
+import type { StoreMiddleware } from '@themislib/themis/types';
 
 import { safeLocalStorage } from '$lib/utils/safe-storage';
 import { createStoreGuardMiddleware } from '../../store/utils/store-guard-middleware';

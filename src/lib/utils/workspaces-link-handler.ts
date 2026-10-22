@@ -181,8 +181,11 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
 
     if (resourceType === 'file') {
       const lineFragment = /^#L\d+(?:-\d+|C\d+)?$/.test(urlObj.hash) ? urlObj.hash : '';
-      const parsedFilePath = parseFilePathLineSuffix(resourceId + lineFragment);
-      resourceId = parsedFilePath.path;
+      // Parse location syntax before decoding: %23L42 and %3A17 belong to the
+      // filename, even when followed by a separate unescaped line location.
+      const encodedPath = rawSegments.slice(workspaceId ? 2 : 1).join('/');
+      const parsedFilePath = parseFilePathLineSuffix(encodedPath + lineFragment);
+      resourceId = decodeFilePathSegments(parsedFilePath.path.split('/'));
       line = parsedFilePath.line;
 
       // Reject traversal-looking or absolute paths (e.g. "..", encoded slashes)
@@ -461,6 +464,7 @@ async function navigateToFile(
 
     appStore.dispatch(
       openWorkspaceFile(info.workspaceId, info.resourceId, {
+        filePathIsLiteral: true,
         ...(info.line !== undefined ? { line: info.line } : {}),
         openInAdjacentPanel: isCrossWorkspace ? false : (options.openInAdjacentPanel ?? false),
         sourcePanelId: isCrossWorkspace ? undefined : options.sourcePanelId,
@@ -476,6 +480,7 @@ async function navigateToFile(
 
   appStore.dispatch(
     openWorkspaceFile(sourceWorkspaceId, info.resourceId, {
+      filePathIsLiteral: true,
       ...(info.line !== undefined ? { line: info.line } : {}),
       openInAdjacentPanel: options.openInAdjacentPanel ?? false,
       sourcePanelId: options.sourcePanelId,

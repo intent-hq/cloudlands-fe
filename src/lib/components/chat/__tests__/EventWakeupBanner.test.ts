@@ -415,10 +415,9 @@ describe('EventWakeupBanner details disclosure', () => {
 
     const summary = screen.getByTestId('event-wakeup-summary');
     expect(summary.getAttribute('aria-label')).toBe(expected);
-    expect(within(summary).getByTitle(expected)).toBeTruthy();
   });
 
-  it('keeps five-event bursts count-only and exposes the full truncated header accessibly', async () => {
+  it('keeps five-event bursts count-only and exposes the full header accessibly', async () => {
     const events = Array.from({ length: 5 }, (_, index) => ({
       type: 'agent:completed',
       timestamp: `2026-08-16T03:0${index}:00.000Z`,
@@ -451,7 +450,6 @@ describe('EventWakeupBanner details disclosure', () => {
     });
     const fullLabel = `${longName} failed`;
     expect(screen.getByTestId('event-wakeup-summary').getAttribute('aria-label')).toBe(fullLabel);
-    expect(within(screen.getByTestId('event-wakeup-summary')).getByTitle(fullLabel)).toBeTruthy();
   });
 
   it('renders PR notifications and a navigable legacy completion avatar inside the same surface', async () => {

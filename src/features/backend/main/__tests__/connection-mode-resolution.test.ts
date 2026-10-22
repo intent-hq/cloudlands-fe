@@ -73,6 +73,7 @@ import {
   getConnectionMode,
   getDaemonVersionInfo,
 } from '../connection-mode';
+import { CURRENT_PROTOCOL_VERSION } from '../../../../test/current-protocol-version';
 
 const mockConnect = vi.mocked(net.connect);
 const mockSpawn = vi.mocked(spawn);
@@ -136,7 +137,7 @@ describe('startIntentdSidecar connection-mode resolution', () => {
           running: true,
           version: '0.1.0',
           buildCommit: '0123456789abcdef',
-          protocolVersion: '1',
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
         },
       }),
     );
@@ -185,7 +186,7 @@ describe('startIntentdSidecar updateSupported recapture after mode resolution', 
       JSON.stringify({
         jsonrpc: '2.0',
         id: 1,
-        result: { running: true, version: '0.1.0', protocolVersion: '1' },
+        result: { running: true, version: '0.1.0', protocolVersion: CURRENT_PROTOCOL_VERSION },
       }),
     );
     const { refreshLocalUpdateSupported } = await import('../backend.ipc');
@@ -261,7 +262,7 @@ describe('startIntentdSidecar version-mismatch matrix (daemon-present × version
           running: true,
           version: '0.1.0',
           buildCommit: '0123456789abcdef',
-          protocolVersion: '1',
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
         },
       }),
     );
@@ -283,7 +284,7 @@ describe('startIntentdSidecar version-mismatch matrix (daemon-present × version
       JSON.stringify({
         jsonrpc: '2.0',
         id: 1,
-        result: { running: true, version: '9.9.9', protocolVersion: '1' },
+        result: { running: true, version: '9.9.9', protocolVersion: CURRENT_PROTOCOL_VERSION },
       }),
     );
     await startIntentdSidecar({ INTENTD_SIDECAR: '1' }, false, '/resources', '/cwd');

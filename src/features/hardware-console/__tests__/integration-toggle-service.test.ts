@@ -1,3 +1,4 @@
+import { readHardwareConsoleSettingsBag } from '../settings-bag';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('$lib/client', () => ({
@@ -10,11 +11,7 @@ vi.mock('$lib/client', () => ({
 }));
 
 import { appClient } from '$lib/client';
-import {
-  parseEnabled,
-  persistHardwareConsoleEnabled,
-  readHardwareConsoleSettingsBag,
-} from '../integration-toggle-service';
+import { parseEnabled, persistHardwareConsoleEnabled } from '../integration-toggle-service';
 
 beforeEach(() => {
   vi.clearAllMocks();

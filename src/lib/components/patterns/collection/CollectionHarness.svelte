@@ -20,7 +20,8 @@
   getKey={(item) => item.id}
   getText={(item) => item.name}
   selectable="multi"
-  bind:selectedKeys
+  {selectedKeys}
+  onSelectedKeysChange={(keys) => (selectedKeys = keys)}
   ariaLabel="Test collection"
 >
   {#snippet row({ item })}

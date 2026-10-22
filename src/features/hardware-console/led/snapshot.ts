@@ -15,7 +15,7 @@ import { AgentStatus, type Workspace } from '$shared/types';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
 import { sessionHasPendingQuestion } from '$lib/components/chat/questions/pending-questions';
-import { getItems, type Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems, type Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
 import type { DaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-types';
 import { isKeyAssignableWorkspace, resolveKeySlots } from '../assignment/key-assignment';

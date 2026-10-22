@@ -10,7 +10,11 @@ import {
   setAllProvidersLoading,
 } from '../agent-availability/agent-availability-slice';
 import { selectHasCheckedOnce } from '../agent-availability/agent-availability-selectors';
-import { initialState as modelInitialState, modelReducer } from '../model/model-slice';
+import {
+  initialState as modelInitialState,
+  hydrateDefaultProvider,
+  modelReducer,
+} from '../model/model-slice';
 import {
   initialState as providerCatalogInitialState,
   providerCatalogLoaded,
@@ -21,10 +25,7 @@ import {
   initialState as providerSettingsInitialState,
   loadEnabledProvidersFromStorage,
   providerSettingsReducer,
-  setActiveProvider,
-  setProviderEnabled,
 } from './provider-settings-slice';
-import { hydrateDefaultProvider } from '../model/model-slice';
 import { PROVIDER_AVAILABILITY_KEY_TO_ID } from '$shared/types/provider-availability';
 import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
 import {
@@ -132,30 +133,32 @@ describe('provider-settings selectors', () => {
       expect(selectEnabledProviderIds.select(state)).not.toContain('auggie');
     });
 
+    // §5.54: a default profile keeps its base provider listed; the reference
+    // itself is not a provider id in the enabled set.
+    it('keeps the base provider of a default profile reference', () => {
+      const ids = selectEnabledProviderIds.select(mockState({ auggie: true }, 'codex@pwork'));
+      expect(ids).toContain('codex');
+      expect(ids).not.toContain('codex@pwork');
+    });
+
     it('should re-include a provider when explicitly re-enabled', () => {
       const state = mockState({ auggie: true }, 'codex');
       expect(selectEnabledProviderIds.select(state)).toContain('auggie');
     });
 
-    it('guest backend: unhydrated settings leave only the first-catalog-row default enabled', () => {
+    it('guest backend: absent daemon receipts do not synthesize a default provider', () => {
       // A guest window's backend is the host daemon, whose `settings.list` is
       // administrator-only: `providers.enabled` never hydrates and the model
-      // slice falls back to the first catalog row at catalog hydration. The
-      // enabled set is therefore just that default — the host agent's own
-      // provider (claude-code) is outside it, so the picker must resolve the
-      // agent's provider from the session, never from this set.
-      const model = modelReducer(modelInitialState, providerCatalogLoaded(MOCK_PROVIDER_CATALOG));
+      // slice receives no default-provider receipt. The renderer must not
+      // infer one from the catalog; the picker resolves an agent provider from
+      // the session rather than treating catalog order as a saved preference.
       const state = {
         ...mockState({}),
-        model,
+        model: modelInitialState,
       } as StoreState;
 
-      expect(selectEffectiveDefaultProviderId.select(state)).toBe(
-        MOCK_PROVIDER_CATALOG.providers[0].id,
-      );
-      expect(selectEnabledProviderIds.select(state)).toEqual([
-        MOCK_PROVIDER_CATALOG.providers[0].id,
-      ]);
+      expect(selectEffectiveDefaultProviderId.select(state)).toBe('');
+      expect(selectEnabledProviderIds.select(state)).toEqual([]);
       expect(selectEnabledProviderIds.select(state)).not.toContain('claude-code');
     });
 
@@ -261,6 +264,20 @@ describe('provider-settings selectors', () => {
     it('should report the active provider as available when it is in the available set', () => {
       const state = mockState({}, 'auggie', { auggie: { available: true } });
       expect(selectIsActiveProviderAvailable.select(state)).toBe(true);
+    });
+
+    it('reports a default profile as available while its base provider is', () => {
+      const status = { available: true, authenticated: true };
+      expect(
+        selectIsActiveProviderAvailable.select(
+          mockState({ codex: true }, 'codex@pwork', { codex: status }),
+        ),
+      ).toBe(true);
+      expect(
+        selectIsActiveProviderAvailable.select(
+          mockState({ codex: true }, 'codex@pwork', { codex: { available: false } }),
+        ),
+      ).toBe(false);
     });
 
     it('should report the active provider as unavailable when it is not in the available set', () => {
@@ -396,15 +413,13 @@ describe("install-mid-onboarding regression (false 'No provider available' on st
       checkSingleProviderSuccess('claude-code', { available: true, authenticated: true }, 3),
     );
 
-    // (d) The user picks claude-code on step 3 (AgentGrid's
-    // handleSelectProvider dispatch sequence; the model slice mirrors
-    // setActiveProvider into its defaultProviderId/normalization).
+    // (d) The daemon reports the persisted pick after the user selection.
+    // Displayed settings stay unchanged until this receipt arrives.
     settings = providerSettingsReducer(
       settings,
-      setProviderEnabled({ providerId: 'claude-code', enabled: true }),
+      loadEnabledProvidersFromStorage({ 'claude-code': true }),
     );
-    settings = providerSettingsReducer(settings, setActiveProvider('claude-code'));
-    model = modelReducer(model, setActiveProvider('claude-code'));
+    model = modelReducer(model, hydrateDefaultProvider('claude-code'));
 
     // Step 4's gate: claude-code is available+enabled, so ModelPicker's
     // hasNoAvailableProvider condition is false.
@@ -417,9 +432,7 @@ describe("install-mid-onboarding regression (false 'No provider available' on st
     // fallback — so isEnhancePromptAvailable is false and the button hides.
     expect(selectEffectiveDefaultProviderId.select(state)).toBe('claude-code');
 
-    // (d') The daemon echoes the persisted pick back via settings:changed
-    // (model.defaultProvider / providers.enabled hydration) — the echo must
-    // not wipe or displace the pick.
+    // (d') Repeating the same daemon receipt is idempotent.
     settings = providerSettingsReducer(
       settings,
       loadEnabledProvidersFromStorage({ 'claude-code': true }),

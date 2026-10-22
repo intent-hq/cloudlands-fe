@@ -1,19 +1,48 @@
+import {
+  selectHostExecutionContext,
+  selectHostExecutionGeneration,
+  selectIsHostMember,
+} from '../host-execution/host-execution-selectors';
 import { store } from '../../store';
+import { selectHostRole, selectPrincipalActionContext } from '../principal/principal-selectors';
 import {
   getItem,
   getItems,
   type Collection,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import { getAgentProvider } from '$shared/types/agent-session';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
+import { modelIdForDisplay, resolveModelDisplayName } from '$shared/utils/model-display-name';
+import { selectLearnedModelDisplayName } from '../provider-models/provider-models-selectors';
 import {
   selectActiveProviderId,
   selectAvailableEnabledProviderIds,
 } from '../provider-settings/provider-settings-selectors';
 import { resolveDefaultModel } from './model-selection-utils';
 import type { ModelLoadingState } from './model-types';
-import { selectEffectiveDefaultProviderId } from '../provider-catalog/provider-catalog-selectors';
+import {
+  selectEffectiveDefaultProviderId,
+  selectNormalizedProviderId,
+} from '../provider-catalog/provider-catalog-selectors';
+
+/** Persistence/hydration ownership; UI selectors use the selected fields only. */
+export const selectModelSelectionState = store.createSelector((state) => state.model);
+
+/** Unscoped catalogs belong to one admitted owner/member and provider projection. */
+export const selectModelBootContext = store.createSelector((state): string | null => {
+  const admission = selectPrincipalActionContext.select(state);
+  const role = selectHostRole.select(state);
+  if (!admission || (role !== 'owner' && role !== 'member')) return null;
+  const provider = selectActiveProviderId.select(state);
+  // Members get defaults from host.executionContext, never owner settings.
+  if (role === 'member' && !provider) return null;
+  return JSON.stringify([
+    admission,
+    provider,
+    role === 'member' ? selectHostExecutionGeneration.select(state) : null,
+  ]);
+});
 
 function getEffectiveProviderId(state: any, providerId?: string): string {
   return providerId ?? selectActiveProviderId.select(state);
@@ -37,7 +66,12 @@ export const selectSelectedModel = store.createSelector((state, providerId?: str
     state.model.availableModelsProviderId === effectiveProviderId
       ? getItems<AuggieModel, 'value'>(state.model.availableModels)
       : [];
-  const persisted = state.model.providerModels[effectiveProviderId];
+  const context = selectHostExecutionContext.select(state);
+  const persisted = selectIsHostMember.select(state)
+    ? context?.defaultProviderId === effectiveProviderId
+      ? context.defaultModelId
+      : null
+    : state.model.providerModels[effectiveProviderId];
   // Catalogs can be cold, stale, or partial. They supply defaults only when
   // the user has no persisted choice; absence is not a new model selection.
   if (persisted) return persisted;
@@ -170,26 +204,46 @@ export const selectModelFallbackInfo = store.createSelector((state, agentId: str
   return state.model.fallbackInfoByAgentId[agentId] ?? null;
 });
 
-/**
- * Pretty display name (catalog `label`) for a (provider, bare model id) pair,
- * or `undefined` on a lookup miss (catalog not loaded for that provider /
- * unknown model). Catalog rows carry bare ids: the active catalog resolves
- * when its `availableModelsProviderId` provenance matches, and other
- * providers resolve through the session-lifetime provider-models cache.
- */
-export const selectModelDisplayName = store.createSelector(
-  (state, providerId: string, modelId: string): string | undefined => {
-    const bareId = splitLegacyCompoundId(modelId).modelId;
+/** Authoritative model metadata only; learned display names never establish capabilities. */
+export const selectModelCatalogEntry = store.createSelector(
+  (state, providerId: string, modelId: string, workspaceId?: string): AuggieModel | undefined => {
+    const normalize = (id: string) => selectNormalizedProviderId.select(state, id, workspaceId);
+    const provider = normalize(providerId);
+    const bareId = modelIdForDisplay(modelId, provider, normalize);
     const models: Collection<AuggieModel, 'value'> | undefined = state.model?.availableModels;
-    if (models && (!providerId || providerId === state.model.availableModelsProviderId)) {
-      const label = getItem(models, bareId)?.label;
-      if (label) return label;
+    if (
+      !workspaceId &&
+      models &&
+      (!provider || provider === state.model.availableModelsProviderId)
+    ) {
+      const row = getItem(models, modelId) ?? getItem(models, bareId);
+      if (row) return row;
     }
-    if (providerId) {
-      const cached = state.providerModels?.byProviderId[providerId];
-      return cached?.models.find((model) => model.value === bareId)?.label;
-    }
-    return undefined;
+    const cached = workspaceId
+      ? state.providerModels?.byWorkspaceId?.[workspaceId]?.[provider]
+      : state.providerModels?.byProviderId?.[provider];
+    return (
+      cached?.models.find((model) => model.value === modelId) ??
+      cached?.models.find((model) => modelIdForDisplay(model.value, provider, normalize) === bareId)
+    );
+  },
+);
+
+/** Live labels in the requested scope win; persisted names are a synchronous display-only fallback. */
+export const selectModelDisplayName = store.createSelector(
+  (state, providerId: string, modelId: string, workspaceId?: string): string | undefined => {
+    const normalize = (id: string) => selectNormalizedProviderId.select(state, id, workspaceId);
+    const provider = normalize(providerId);
+    const bareId = modelIdForDisplay(modelId, provider, normalize);
+    const live = (id: string) =>
+      selectModelCatalogEntry.select(state, provider, id, workspaceId)?.label;
+    const learned = (id: string) => selectLearnedModelDisplayName.select(state, provider, id);
+    return (
+      resolveModelDisplayName(modelId, live) ??
+      (bareId !== modelId ? resolveModelDisplayName(bareId, live) : undefined) ??
+      learned(modelId) ??
+      resolveModelDisplayName(bareId, learned)
+    );
   },
 );
 
@@ -232,15 +286,18 @@ export const selectProviderModelEffortLevels = store.createSelector(
     state,
     providerId: string | undefined,
     modelId: string | null | undefined,
+    workspaceId?: string,
   ): string[] | undefined => {
     if (!modelId) return undefined;
-    if (!providerId || providerId === state.model?.availableModelsProviderId) {
+    if (!workspaceId && (!providerId || providerId === state.model?.availableModelsProviderId)) {
       const levels = selectModelEffortLevels.select(state, modelId);
       if (levels) return levels;
     }
     if (providerId) {
       const baseId = toBaseModelId(modelId);
-      const cached = state.providerModels?.byProviderId[providerId];
+      const cached = workspaceId
+        ? state.providerModels?.byWorkspaceId?.[workspaceId]?.[providerId]
+        : state.providerModels?.byProviderId[providerId];
       return cached?.models.find((model) => toBaseModelId(model.value) === baseId)?.effortLevels;
     }
     return undefined;
@@ -264,8 +321,35 @@ export const selectAgentModelEffortLevels = store.createSelector(
     if (Array.isArray(session.effortLevels) && session.effortLevels.length > 0) {
       return session.effortLevels;
     }
-    const providerId = getAgentProvider(session, selectEffectiveDefaultProviderId.select(state));
-    const model = session.model ?? selectSelectedModel.select(state, providerId);
-    return selectModelEffortLevels.select(state, model);
+    const settings = session.workspaceId
+      ? (state.providerCatalog?.byWorkspaceId?.[session.workspaceId]?.settings ?? [])
+      : undefined;
+    const configuredProvider = settings?.find(
+      (entry) => entry.path === 'model.defaultProvider',
+    )?.value;
+    const fallbackProvider = settings
+      ? typeof configuredProvider === 'string'
+        ? configuredProvider
+        : ''
+      : selectEffectiveDefaultProviderId.select(state);
+    const rawProviderId = getAgentProvider(session, fallbackProvider);
+    const providerId = selectNormalizedProviderId.select(
+      state,
+      rawProviderId ?? fallbackProvider,
+      session.workspaceId,
+    );
+    const defaults = settings?.find((entry) => entry.path === 'model.providerDefaults')?.value;
+    const configuredModel =
+      defaults && typeof defaults === 'object'
+        ? (defaults as Record<string, unknown>)[providerId]
+        : undefined;
+    const model =
+      session.model ??
+      (settings
+        ? typeof configuredModel === 'string'
+          ? configuredModel
+          : ''
+        : selectSelectedModel.select(state, providerId));
+    return selectProviderModelEffortLevels.select(state, providerId, model, session.workspaceId);
   },
 );

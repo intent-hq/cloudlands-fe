@@ -40,7 +40,7 @@ import {
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { writeTextToClipboard } from '$lib/utils/clipboard';
-import { getItem, type Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, type Collection } from '@themislib/themis/utils/collections/collection-utils';
 import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
 import { m } from '$shared/paraglide/messages.js';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -61,6 +61,7 @@ import {
 } from './prompt-dictation-target';
 import {
   beginTranscriptionSession,
+  cancelActiveTranscription,
   endTranscriptionSession,
   isTranscriptionSessionCurrent,
 } from './transcription-cancellation';
@@ -205,6 +206,14 @@ export interface TranscriptionDeps {
 export interface TranscriptionFlowOptions {
   /** Trigger the composer's send after insertion (double-press gestures). */
   autoSend?: boolean;
+  /** Explicit draft destination for non-agent composers. Never auto-sends. */
+  target?: {
+    workspaceId: string;
+    isActive: () => boolean;
+    insertText: (text: string) => void;
+    onStarted: (cancel: () => void) => void;
+    onFinished?: () => void;
+  };
 }
 
 /**
@@ -455,18 +464,20 @@ export async function handleFinishedRecording(
 ): Promise<void> {
   const dispatch = deps.dispatch ?? ((action: unknown) => appStore.dispatch(action as never));
   const transcribe = deps.transcribe ?? transcribeWithSelectedEngine;
-  const promptTarget = consumePromptDictationTarget();
-  // Consumed unconditionally (one-shot) even when a higher-precedence route
-  // wins, so this session's capture can never leak into a later session.
-  const composerAgentId = consumeComposerDictationTarget();
+  const explicitTarget = options.target;
+  if (explicitTarget && !explicitTarget.isActive()) return;
+  const promptTarget = explicitTarget ? null : consumePromptDictationTarget();
+  // Explicit destinations own their session; ordinary focus routing consumes
+  // its one-shot agent capture even when a higher-precedence prompt wins.
+  const composerAgentId = explicitTarget ? null : consumeComposerDictationTarget();
   // Captured synchronously at recording-finish time, before any await —
   // the modal is what holds focus right now, whatever happens later.
   const dialogFocused = isFocusInsideDialog();
 
   const state = appStore.state as unknown as VoiceContextState;
-  const routeWorkspaceId = (
-    deps.getCurrentWorkspaceId ?? (() => selectCurrentWorkspaceTabId.select(appStore.state))
-  )();
+  const routeWorkspaceId =
+    explicitTarget?.workspaceId ??
+    (deps.getCurrentWorkspaceId ?? (() => selectCurrentWorkspaceTabId.select(appStore.state)))();
   // A focused modal keeps the insertion: null target → focused-editable
   // caret path, never `focusAgentComposer` stealing focus from the modal.
   const targetAgentId = dialogFocused
@@ -497,16 +508,23 @@ export async function handleFinishedRecording(
     clearInterval(hudRefresh);
     dispatch(voiceTranscriptionFinished());
     dispatch(actionHudHidden());
+    explicitTarget?.onFinished?.();
   };
   // Register the run as the cancellable in-flight session: the mic
   // buttons' cancel affordance runs `settle` immediately (spinner clears,
   // a new recording can start) and abandons the session, so the checks
   // below discard the late-arriving result instead of applying it.
   const sessionToken = beginTranscriptionSession(settle);
+  explicitTarget?.onStarted(() => {
+    if (isTranscriptionSessionCurrent(sessionToken)) cancelActiveTranscription();
+  });
 
   try {
     const result = await transcribe(recording.blob, recording.mimeType, context, workspaceId);
-    if (!isTranscriptionSessionCurrent(sessionToken)) {
+    if (
+      !isTranscriptionSessionCurrent(sessionToken) ||
+      (explicitTarget && !explicitTarget.isActive())
+    ) {
       logger.info('Transcription session was cancelled; discarding the late result');
       return;
     }
@@ -514,9 +532,13 @@ export async function handleFinishedRecording(
     const text = result.text;
     if (typeof text !== 'string' || text.trim().length === 0) {
       logger.info('voice.transcribe returned an empty transcript; nothing to insert');
-      if (options.autoSend && !promptTarget && !dialogFocused) {
+      if (options.autoSend && !explicitTarget && !promptTarget && !dialogFocused) {
         await triggerComposerSend(targetAgentId, deps);
       }
+      return;
+    }
+    if (explicitTarget) {
+      if (explicitTarget.isActive()) explicitTarget.insertText(text);
       return;
     }
     const inserted = promptTarget
@@ -558,7 +580,10 @@ export async function handleFinishedRecording(
       send();
     }
   } catch (error) {
-    if (!isTranscriptionSessionCurrent(sessionToken)) {
+    if (
+      !isTranscriptionSessionCurrent(sessionToken) ||
+      (explicitTarget && !explicitTarget.isActive())
+    ) {
       logger.info('Transcription session was cancelled; discarding the late failure', { error });
       return;
     }

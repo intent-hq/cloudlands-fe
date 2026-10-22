@@ -170,7 +170,7 @@ describe('subscribeGitRoots (gitRoot:* events.subscribe + fold)', () => {
     expect(seen.at(-1)).toEqual([]);
 
     dispose();
-    expect(mockedUnsubscribe).toHaveBeenCalledWith('ws-sub-7');
+    expect(mockedUnsubscribe).toHaveBeenCalledWith('ws-sub-7', 'ws-1');
   });
 
   it('ignores foreign-workspace and foreign-subscription events', async () => {

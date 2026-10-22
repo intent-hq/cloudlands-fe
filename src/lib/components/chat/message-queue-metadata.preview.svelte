@@ -5,6 +5,7 @@
 
   interface Props {
     isSticky?: boolean;
+    role?: 'user' | 'assistant';
     showQueueInfo?: boolean;
   }
 
@@ -16,15 +17,16 @@
       default: { props: {} },
       pinned: { props: { isSticky: true } },
       plain: { props: { showQueueInfo: false } },
+      assistant: { props: { role: 'assistant', showQueueInfo: false } },
     },
   });
 </script>
 
 <script lang="ts">
-  let { isSticky = false, showQueueInfo = true }: Props = $props();
+  let { isSticky = false, showQueueInfo = true, role = 'user' }: Props = $props();
   const message = $derived<AgentMessage>({
     id: 'synthetic-delivered-message',
-    role: 'user',
+    role,
     timestamp: '2026-09-16T12:01:39.000Z',
     contentBlocks: [
       { type: 'text', text: 'Review the spacing and preserve the existing keyboard shortcuts.' },
@@ -34,8 +36,18 @@
       : {}),
   });
   let previousRequests = $state(0);
+  let regenerateRequests = $state(0);
 </script>
 
-<div data-testid="delivered-queue-preview" data-previous-requests={previousRequests}>
-  <ChatMessage {message} {isSticky} onScrollToPrevious={() => previousRequests++} />
+<div
+  data-testid="delivered-queue-preview"
+  data-previous-requests={previousRequests}
+  data-regenerate-requests={regenerateRequests}
+>
+  <ChatMessage
+    {message}
+    {isSticky}
+    onScrollToPrevious={() => previousRequests++}
+    onRegenerate={() => regenerateRequests++}
+  />
 </div>

@@ -10,14 +10,39 @@
  * daemon's registry order — informational per §5.38, consumers must key rows
  * by `id`, never by array position).
  */
-import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type { ProviderCatalogEntry } from '$shared/provider-catalog';
 
 export type { ProviderCatalogEntry } from '$shared/provider-catalog';
 
 export interface ProviderCatalogState {
+  byWorkspaceId?: Record<string, WorkspaceCatalogSnapshot>;
+  workspaceEpoch?: number;
+  /** Accepted snapshot generation; cached display can outlive its freshness. */
+  workspaceSnapshotEpochs?: Record<string, number>;
+  /** Event identity only; retained during refresh, cleared on connection/lifetime changes. */
+  mcpServerNamesByWorkspaceId?: Record<string, Record<string, string>>;
   /** Wire rows, id-keyed with `ids` preserving the registry order. */
   providers: Collection<ProviderCatalogEntry, 'id'>;
   /** Flips true once the first `providers.catalog` hydration lands. */
   loaded: boolean;
+  /** Named profile summaries (§5.54 top-level `profiles`), id-keyed in daemon order; empty on older daemons. */
+  profiles?: Collection<import('$shared/provider-catalog').ProviderProfileSummary, 'id'>;
 }
+
+export interface WorkspaceCatalogSnapshot {
+  importDiagnostics?: import('$lib/client/app-client').SpecialistImportDiagnostic[];
+  mcpServers?: import('../mcp-settings/mcp-settings-types').McpServerConfig[];
+  mcpStatuses?: import('../mcp-settings/mcp-settings-types').McpServerRuntimeStatus[];
+  readiness: Record<string, import('$shared/types/provider-availability').ProviderStatus>;
+  catalog: import('$shared/provider-catalog').ProviderCatalogResult;
+  settings: import('$lib/client/app-client').SettingDefinitionWithValue[];
+  specialists: import('$lib/client/app-client').SpecialistDef[];
+}
+
+/** Read only the resources whose invalidation payload is incomplete. */
+export type WorkspaceCatalogResource = 'catalog' | 'settings' | 'specialists' | 'readiness' | 'mcp';
+export type WorkspaceCatalogUpdate =
+  | { kind: 'settings'; changes: import('$lib/client/app-client').AppliedSettingChange[] }
+  | { kind: 'status'; status: import('../mcp-settings/mcp-settings-types').McpServerRuntimeStatus }
+  | { kind: 'toggle'; serverId: string; workspaceDisabled: boolean };

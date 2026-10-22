@@ -3,7 +3,7 @@ import { runSaga, stdChannel } from 'redux-saga';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { WorkspaceGitStatus } from '$features/accept-changes/types';
-import { refreshAcceptChangesStatus } from '../../changes/changes-slice';
+import { changesEventReceived, refreshAcceptChangesStatus } from '../../changes/changes-slice';
 import { openWorkspaceTab, tabStateReducer } from '../../tab-state/tab-state-slice';
 import {
   backendReconnected,
@@ -51,9 +51,6 @@ function status(branch: string): WorkspaceGitStatus {
     uncommittedCount: 1,
     stagedCount: 0,
     localCommits: [],
-    canMergeDirectly: false,
-    hasConflicts: false,
-    hasDivergedFromRemote: false,
   };
 }
 
@@ -85,6 +82,31 @@ async function stop(task: Task) {
 
 describe('acceptChangesStatusSaga', () => {
   beforeEach(() => vi.resetAllMocks());
+
+  it('uses a complete status push and fences an older pending response', async () => {
+    const old = deferred<WorkspaceGitStatus>();
+    mocks.getStatus.mockReturnValueOnce(old.promise);
+    const run = harness();
+    run.dispatch(acceptChangesConsumerMounted(WS_A));
+    await settle();
+    run.dispatch(changesEventReceived(WS_A, 'changes:git-status', { status: status('pushed') }));
+    old.resolve(status('old'));
+    await settle();
+    expect(run.state().git.byWorkspaceId[WS_A]?.acceptChangesStatus?.branch).toBe('pushed');
+    expect(mocks.getStatus).toHaveBeenCalledTimes(1);
+    await stop(run.task);
+  });
+
+  it('applies a hidden status push without reads when the view reopens', async () => {
+    const run = harness(WS_B);
+    run.dispatch(changesEventReceived(WS_A, 'changes:git-status', { status: status('pushed') }));
+    run.dispatch(acceptChangesConsumerMounted(WS_A));
+    run.dispatch(openWorkspaceTab(WS_A));
+    await settle();
+    expect(run.state().git.byWorkspaceId[WS_A]?.acceptChangesStatus?.branch).toBe('pushed');
+    expect(mocks.getStatus).not.toHaveBeenCalled();
+    await stop(run.task);
+  });
 
   it('loads once for the first visible consumer with the exact workspace parameter', async () => {
     mocks.getStatus.mockResolvedValue(status('feature/first'));

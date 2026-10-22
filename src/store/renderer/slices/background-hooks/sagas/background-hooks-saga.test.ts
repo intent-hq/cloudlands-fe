@@ -139,7 +139,7 @@ describe('backgroundHooksSaga', () => {
     expect(getState().byWorkspaceId['ws-1']).toBeDefined();
 
     dispatch(backgroundHooksUnsubscribeRequested('ws-1'));
-    await vi.waitFor(() => expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-1'));
+    await vi.waitFor(() => expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-1', 'ws-1'));
     // The entry is RETAINED (stale-marked, not cleared) so a warm re-subscribe
     // keeps the delivered latch set.
     expect(getState().byWorkspaceId['ws-1'].stale).toBe(true);
@@ -313,7 +313,7 @@ describe('backgroundHooksSaga', () => {
     dispatch(backgroundHooksRefetchRequested('ws-1'));
     dispatch(backgroundHooksRefetchRequested('ws-1'));
     dispatch(backgroundHooksUnsubscribeRequested('ws-1'));
-    await vi.waitFor(() => expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-1'));
+    await vi.waitFor(() => expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-1', 'ws-1'));
     expect(getState().byWorkspaceId['ws-1']).toBeUndefined();
 
     pending.resolve({ hooks: [makeHook({ lastLogs: 'late' })] });
@@ -347,7 +347,7 @@ describe('backgroundHooksSaga', () => {
       expect(getState().byWorkspaceId['ws-1'].hooks.map['hook-1']).toEqual(next),
     );
     await stop(task);
-    expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-new');
+    expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-new', 'ws-1');
   });
 
   it('releases a stale subscribe acknowledgement and resubscribes after reconnect', async () => {
@@ -362,7 +362,7 @@ describe('backgroundHooksSaga', () => {
 
     emitReconnect();
     first.resolve({ subscriptionId: 'sub-stale' });
-    await vi.waitFor(() => expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-stale'));
+    await vi.waitFor(() => expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-stale', 'ws-1'));
     await vi.waitFor(() => expect(mocks.subscribe).toHaveBeenCalledTimes(2));
     await vi.waitFor(() => expect(getState().byWorkspaceId['ws-1']).toBeDefined());
     expect(mocks.subscribe).toHaveBeenNthCalledWith(2, {
@@ -371,7 +371,7 @@ describe('backgroundHooksSaga', () => {
     });
 
     await stop(task);
-    expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-new');
+    expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-new', 'ws-1');
     expect(mocks.notificationHandlers).toHaveLength(0);
     expect(mocks.reconnectHandlers).toHaveLength(0);
     expect(getState().byWorkspaceId['ws-1'].stale).toBe(true);
@@ -387,7 +387,7 @@ describe('backgroundHooksSaga', () => {
     dispatch(backgroundHooksRefetchRequested('ws-1'));
 
     await stop(task);
-    expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-1');
+    expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-1', 'ws-1');
     expect(mocks.notificationHandlers).toHaveLength(0);
     expect(mocks.reconnectHandlers).toHaveLength(0);
     expect(getState().byWorkspaceId['ws-1']).toBeUndefined();
@@ -565,7 +565,7 @@ describe('backgroundHooksSaga', () => {
           workspaceId: 'ws-3',
         });
         await vi.waitFor(() => expect(getState().byWorkspaceId['ws-3']).toBeDefined());
-        expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-ws-1');
+        expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-ws-1', 'ws-1');
         expect(getState().byWorkspaceId['ws-1']?.stale).toBe(true);
         await stop(task);
       } finally {
@@ -598,7 +598,7 @@ describe('backgroundHooksSaga', () => {
 
       dispatch(openWorkspaceTab('ws-2'));
       await vi.waitFor(() => expect(getState().byWorkspaceId['ws-2']).toBeDefined());
-      await vi.waitFor(() => expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-ws-1'));
+      await vi.waitFor(() => expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-ws-1', 'ws-1'));
       // Retained stale-marked: the delivered latch survives the swap.
       expect(getState().byWorkspaceId['ws-1'].stale).toBe(true);
       await stop(task);
@@ -632,7 +632,7 @@ describe('backgroundHooksSaga', () => {
 
       // Switch away: the entry is retained stale-marked, rows intact.
       dispatch(openWorkspaceTab('ws-2'));
-      await vi.waitFor(() => expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-ws-1'));
+      await vi.waitFor(() => expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-ws-1', 'ws-1'));
       expect(getState().byWorkspaceId['ws-1'].stale).toBe(true);
       expect(getState().byWorkspaceId['ws-1'].hooks.map['hook-1']).toEqual(makeHook());
 

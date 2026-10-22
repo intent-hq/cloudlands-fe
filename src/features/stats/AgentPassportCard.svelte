@@ -90,14 +90,14 @@
   .card {
     width: 360px;
     height: 640px;
-    background: hsl(250 11% 8%);
-    border: 1px solid hsl(256 6% 24%);
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
     border-radius: 16px;
-    color: hsl(0 0% 97%);
+    color: hsl(var(--card-foreground));
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+    box-shadow: var(--surface-shadow-3);
     box-sizing: border-box;
   }
   .head {
@@ -115,15 +115,15 @@
     font-size: 12px;
     font-weight: 600;
     letter-spacing: 0.14em;
-    color: hsl(240 5% 58%);
+    color: hsl(var(--muted-foreground));
   }
   .head-label {
     font-family: 'JetBrains Mono', monospace;
     font-size: 12px;
-    color: hsl(240 5% 40%);
+    color: hsl(var(--muted-foreground));
   }
   .rule {
-    border-top: 1px dashed hsl(256 6% 26%);
+    border-top: 1px dashed hsl(var(--border));
     margin: 0 0 5px;
   }
   .hero {
@@ -132,7 +132,7 @@
   .hero-label {
     font-size: 12px;
     letter-spacing: 0.14em;
-    color: hsl(240 5% 58%);
+    color: hsl(var(--muted-foreground));
     margin-bottom: 7px;
   }
   .hero-value {
@@ -152,19 +152,19 @@
     white-space: nowrap;
   }
   .counter-in {
-    color: hsl(160 84% 39%);
+    color: hsl(var(--primary-ink));
   }
   .counter-out {
-    color: hsl(257 9% 72%);
+    color: hsl(var(--muted-foreground));
   }
   .counter-cread {
-    color: hsl(158 35% 62%);
+    color: hsl(var(--success));
   }
   .counter-cwrite {
-    color: hsl(240 5% 58%);
+    color: hsl(var(--muted-foreground));
   }
   .counter-thoughts {
-    color: hsl(38 90% 55%);
+    color: hsl(var(--info));
   }
   .grid {
     display: grid;
@@ -176,7 +176,7 @@
   .stat-label {
     font-size: 11px;
     letter-spacing: 0.14em;
-    color: hsl(240 5% 40%);
+    color: hsl(var(--muted-foreground));
   }
   .stat-big {
     font-family: 'JetBrains Mono', monospace;
@@ -195,8 +195,8 @@
   }
   .foot {
     margin-top: auto;
-    background: hsl(158 100% 30%);
-    color: hsl(0 0% 100%);
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
     display: flex;
     align-items: center;
     justify-content: space-between;

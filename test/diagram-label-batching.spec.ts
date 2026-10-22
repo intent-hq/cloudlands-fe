@@ -350,6 +350,7 @@ test('real 24-block note accepts pending inputs and exposes successful offscreen
   await expect(note.locator('.diagram-renderer[data-diagram-settled=true]')).toHaveCount(12, {
     timeout: 30_000,
   });
+  await expect(note.locator('[data-diagram-presentation-settled=true]')).toHaveCount(24);
   const metrics = await page.evaluate(() => {
     const w = window as typeof window & {
       __batchingMetrics: { started: number };

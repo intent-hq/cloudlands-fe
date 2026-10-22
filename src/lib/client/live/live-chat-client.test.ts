@@ -46,7 +46,7 @@ vi.mock('./backend-transport', () => {
 });
 
 import * as transport from './backend-transport';
-import { LiveChatClient } from './live-chat-client';
+import { LiveChatClient, ChatTranscriptReconciler } from './live-chat-client';
 
 const mockedRequest = vi.mocked(transport.backendRequest);
 const emit = (transport as unknown as { __emit: (n: BackendNotification) => void }).__emit;
@@ -125,6 +125,389 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
   });
 
   it.each([
+    null,
+    {},
+    { target: 0, received: 1, complete: false },
+    { target: 20, received: -1, complete: false },
+    { target: 20, received: 1.5, complete: false },
+    { target: 20, received: 2, complete: false },
+    { target: 20, received: 1, complete: 'yes' },
+  ])('rejects malformed snapshot progress before replacing state: %j', (initialHistory) => {
+    const reconciler = new ChatTranscriptReconciler('agent-1');
+    reconciler.applySnapshot(0, SEEDED_SNAPSHOT);
+    const before = reconciler.transcript();
+    expect(
+      reconciler.applySnapshot(0, {
+        ...SEEDED_SNAPSHOT,
+        historyDelivery: 'progressive',
+        initialHistory,
+      }),
+    ).toBe('invalid');
+    expect(reconciler.transcript()).toEqual(before);
+  });
+
+  it.each([
+    { nextToken: 42 },
+    { nextToken: '' },
+    { truncated: 'yes' },
+    { totalMessages: -1 },
+    { totalMessages: 1.5 },
+    { received: 2 },
+    { target: 21 },
+    { complete: 'yes' },
+    { nextToken: 'premature-continuation', truncated: true },
+  ])('rejects malformed completion without changing progress: %j', (patch) => {
+    const reconciler = new ChatTranscriptReconciler('agent-1');
+    reconciler.applySnapshot(0, {
+      ...SEEDED_SNAPSHOT,
+      historyDelivery: 'progressive',
+      initialHistory: { target: 20, received: 1, complete: false },
+    });
+    const before = reconciler.transcript();
+    expect(
+      reconciler.applyHistory(1, {
+        target: 20,
+        received: 1,
+        complete: true,
+        nextToken: null,
+        truncated: false,
+        totalMessages: 1,
+        ...patch,
+      }),
+    ).toBe('gap');
+    expect(reconciler.transcript()).toEqual(before);
+  });
+
+  it('counts duplicate historical identities once and keeps newer live content', () => {
+    const reconciler = new ChatTranscriptReconciler('agent-1');
+    reconciler.applySnapshot(0, {
+      ...SEEDED_SNAPSHOT,
+      historyDelivery: 'progressive',
+      initialHistory: { target: 20, received: 1, complete: false },
+    });
+    const older = { ...SEEDED_SNAPSHOT.messages[0], id: 'older', seq: 0 };
+    expect(
+      reconciler.applyHistory(1, { target: 20, received: 3, complete: false, message: older }),
+    ).toBe('gap');
+    expect(
+      reconciler.applyHistory(1, { target: 20, received: 2, complete: false, message: older }),
+    ).toBe('applied');
+    expect(
+      reconciler.applyHistory(2, { target: 20, received: 3, complete: false, message: older }),
+    ).toBe('gap');
+    expect(
+      reconciler.applyHistory(2, { target: 20, received: 2, complete: false, message: older }),
+    ).toBe('applied');
+    expect(reconciler.transcript().messages).toHaveLength(2);
+    reconciler.applyDelta(3, {
+      added: [],
+      removedIds: [],
+      updated: [
+        {
+          messageId: 'older',
+          role: 'user',
+          block: { id: 'live-block', type: 'text', text: 'live revision' },
+          streamingComplete: true,
+        },
+      ],
+    });
+    expect(
+      reconciler.applyHistory(4, { target: 20, received: 2, complete: false, message: older }),
+    ).toBe('applied');
+    expect(reconciler.transcript().messages[0].contentBlocks).toContainEqual(
+      expect.objectContaining({ text: 'live revision' }),
+    );
+  });
+
+  it.each([false, true])(
+    'ignores initial progressive snapshot replay after history (complete: %s)',
+    (complete) => {
+      const reconciler = new ChatTranscriptReconciler('agent-1');
+      const initial = {
+        ...SEEDED_SNAPSHOT,
+        historyDelivery: 'progressive',
+        initialHistory: { target: 20, received: 1, complete: false },
+      };
+      reconciler.applySnapshot(0, initial);
+      expect(
+        reconciler.applyHistory(1, {
+          target: 20,
+          received: 2,
+          complete: false,
+          message: { ...SEEDED_SNAPSHOT.messages[0], id: 'older', seq: 0 },
+        }),
+      ).toBe('applied');
+      if (complete)
+        expect(
+          reconciler.applyHistory(2, {
+            target: 20,
+            received: 2,
+            complete: true,
+            nextToken: null,
+            truncated: false,
+            totalMessages: 2,
+          }),
+        ).toBe('applied');
+      const before = reconciler.transcript();
+      expect(reconciler.applySnapshot(0, structuredClone(initial))).toBe(false);
+      expect(reconciler.transcript()).toEqual(before);
+      expect(
+        reconciler.applyDelta(complete ? 3 : 2, { added: [], updated: [], removedIds: [] }),
+      ).toBe('applied');
+      // A changed restart remains authoritative even with seq reset to zero.
+      expect(
+        reconciler.applySnapshot(0, {
+          ...initial,
+          messages: [{ ...SEEDED_SNAPSHOT.messages[0], id: 'restart' }],
+        }),
+      ).toBe(true);
+      expect(reconciler.transcript().messages.map((message) => message.id)).toEqual(['restart']);
+      expect(
+        reconciler.applyHistory(1, {
+          target: 20,
+          received: 1,
+          complete: true,
+          nextToken: null,
+          truncated: false,
+          totalMessages: 1,
+        }),
+      ).toBe('applied');
+      expect(reconciler.applySnapshot(2, SEEDED_SNAPSHOT)).toBe(true);
+      expect(reconciler.transcript().initialHistory).toBeUndefined();
+    },
+  );
+
+  it.each([false, true])(
+    'cancels watchdog retry when history resumes during backoff (complete: %s)',
+    async (complete) => {
+      vi.useFakeTimers();
+      mockChatSubscribe();
+      const seen: Array<import('../app-client').ChatTranscript> = [];
+      const phases: string[] = [];
+      const off = new LiveChatClient().subscribe(
+        'agent-1',
+        (value) => seen.push(value),
+        (phase) => phases.push(phase),
+      );
+      try {
+        await vi.advanceTimersByTimeAsync(0);
+        snapshotPush('sub-1', 0, {
+          ...SEEDED_SNAPSHOT,
+          historyDelivery: 'progressive',
+          initialHistory: { target: 20, received: 1, complete: false },
+        });
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(phases.at(-1)).toBe('delayed');
+        emit({
+          method: 'subscription.push',
+          params: {
+            subscriptionId: 'sub-1',
+            kind: 'history',
+            seq: 1,
+            history: {
+              target: 20,
+              received: complete ? 1 : 2,
+              complete,
+              ...(complete
+                ? { nextToken: null, truncated: false, totalMessages: 1 }
+                : { message: { ...SEEDED_SNAPSHOT.messages[0], id: 'older', seq: 0 } }),
+            },
+          },
+        });
+        expect(seen.at(-1)?.initialHistory?.complete).toBe(complete);
+        expect(phases.at(-1)).toBe('live');
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(
+          mockedRequest.mock.calls.filter(([method]) => method === 'chat.subscribe'),
+        ).toHaveLength(1);
+        if (!complete) {
+          // Accepted progress starts a fresh watchdog; a later genuine stall still resets cache.
+          await vi.advanceTimersByTimeAsync(5000);
+          expect(
+            mockedRequest.mock.calls.filter(([method]) => method === 'chat.subscribe'),
+          ).toHaveLength(2);
+          snapshotPush('sub-2', 0, SEEDED_SNAPSHOT);
+          expect(seen.at(-1)?.resetCachedTranscript).toBe(true);
+        }
+      } finally {
+        off();
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it('recovers stalled progressive delivery and rejects the old completion', async () => {
+    vi.useFakeTimers();
+    mockChatSubscribe();
+    const seen: Array<import('../app-client').ChatTranscript> = [];
+    const off = new LiveChatClient().subscribe('agent-1', (value) => seen.push(value));
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      snapshotPush('sub-1', 0, {
+        ...SEEDED_SNAPSHOT,
+        historyDelivery: 'progressive',
+        initialHistory: { target: 20, received: 1, complete: false },
+      });
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(
+        mockedRequest.mock.calls.filter(([method]) => method === 'chat.subscribe'),
+      ).toHaveLength(2);
+      emit({
+        method: 'subscription.push',
+        params: {
+          subscriptionId: 'sub-1',
+          kind: 'history',
+          seq: 1,
+          history: { target: 20, received: 1, complete: true, nextToken: null },
+        },
+      });
+      expect(seen.at(-1)?.initialHistory?.complete).toBe(false);
+      snapshotPush('sub-2', 0, SEEDED_SNAPSHOT);
+      expect(seen.at(-1)).toMatchObject({
+        fromSnapshot: true,
+        resetCachedTranscript: true,
+        nextToken: null,
+      });
+      expect(seen.at(-1)?.initialHistory).toBeUndefined();
+    } finally {
+      off();
+      vi.useRealTimers();
+    }
+  });
+
+  it('buffers fifty progressive frames before the subscribe reply', async () => {
+    let acknowledge!: (value: { subscriptionId: string }) => void;
+    mockedRequest.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          acknowledge = resolve;
+        }),
+    );
+    const seen: Array<import('../app-client').ChatTranscript> = [];
+    const off = new LiveChatClient().subscribe('agent-1', (value) => seen.push(value));
+    const row = (seq: number) => ({ ...SEEDED_SNAPSHOT.messages[0], id: `m-${seq}`, seq });
+    snapshotPush('buffered', 0, {
+      ...SEEDED_SNAPSHOT,
+      messages: [row(49)],
+      totalMessages: 50,
+      historyDelivery: 'progressive',
+      initialHistory: { target: 50, received: 1, complete: false },
+    });
+    for (let received = 2; received <= 50; received++) {
+      emit({
+        method: 'subscription.push',
+        params: {
+          subscriptionId: 'buffered',
+          kind: 'history',
+          seq: received - 1,
+          history: { target: 50, received, complete: false, message: row(50 - received) },
+        },
+      });
+    }
+    emit({
+      method: 'subscription.push',
+      params: {
+        subscriptionId: 'buffered',
+        kind: 'history',
+        seq: 50,
+        history: {
+          target: 50,
+          received: 50,
+          complete: true,
+          nextToken: null,
+          truncated: false,
+          totalMessages: 50,
+        },
+      },
+    });
+    acknowledge({ subscriptionId: 'buffered' });
+    await flush();
+    expect(seen.at(-1)?.messages.map((message) => message.seq)).toEqual(
+      Array.from({ length: 50 }, (_, index) => index),
+    );
+    expect(seen.at(-1)?.initialHistory?.complete).toBe(true);
+    off();
+  });
+
+  it.each([0, 1, 19, 20, 21])(
+    'delivers %i initial rows progressively without live activity',
+    async (total) => {
+      mockChatSubscribe();
+      const seen: Array<import('../app-client').ChatTranscript> = [];
+      const off = new LiveChatClient().subscribe('agent-1', (value) => seen.push(value));
+      await flush();
+      expect(mockedRequest).toHaveBeenCalledWith('chat.subscribe', {
+        agentId: 'agent-1',
+        deltaEncoding: 'incremental',
+        projection: 'slim',
+        historyDelivery: 'progressive',
+      });
+      const count = Math.min(20, total);
+      const row = (seq: number) => ({
+        ...SEEDED_SNAPSHOT.messages[0],
+        id: `m-${seq}`,
+        seq,
+        contentBlocks: [],
+      });
+      snapshotPush('sub-1', 0, {
+        ...SEEDED_SNAPSHOT,
+        messages: count ? [row(total - 1)] : [],
+        nextToken: undefined,
+        totalMessages: total,
+        historyDelivery: 'progressive',
+        initialHistory: { target: 20, received: count ? 1 : 0, complete: count === 0 },
+      });
+      expect(seen.at(-1)).toMatchObject({
+        initialHistory: { complete: count === 0 },
+        isStreaming: false,
+      });
+      if (count === 0) {
+        off();
+        return;
+      }
+      for (let received = 2; received <= count; received++) {
+        emit({
+          method: 'subscription.push',
+          params: {
+            subscriptionId: 'sub-1',
+            kind: 'history',
+            seq: received - 1,
+            history: { message: row(total - received), target: 20, received, complete: false },
+          },
+        });
+        expect(seen.at(-1)?.messages.map((message) => message.id)).toEqual(
+          Array.from({ length: received }, (_, index) => `m-${total - received + index}`),
+        );
+        expect(seen.at(-1)?.nextToken).toBeUndefined();
+        expect(seen.at(-1)?.isStreaming).toBe(false);
+      }
+      emit({
+        method: 'subscription.push',
+        params: {
+          subscriptionId: 'sub-1',
+          kind: 'history',
+          seq: Math.max(1, count),
+          history: {
+            target: 20,
+            received: count,
+            complete: true,
+            nextToken: total > 20 ? 'older' : null,
+            truncated: total > 20,
+            totalMessages: total,
+          },
+        },
+      });
+      expect(seen.at(-1)).toMatchObject({
+        initialHistory: { target: 20, received: count, complete: true },
+        nextToken: total > 20 ? 'older' : null,
+        totalMessages: total,
+        isStreaming: false,
+      });
+      off();
+    },
+  );
+
+  it.each([
     { stopReason: 'interrupted', interruptReason: 'preempted_by_message' },
     { finishReason: 'refusal' },
   ])('recovers an empty terminal row with canonical order: %j', async (ending) => {
@@ -142,6 +525,7 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
       agentId: 'agent-1',
       deltaEncoding: 'incremental',
       projection: 'slim',
+      historyDelivery: 'progressive',
     });
     await flush();
 
@@ -246,6 +630,7 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
       agentId: 'agent-1',
       deltaEncoding: 'incremental',
       projection: 'slim',
+      historyDelivery: 'progressive',
     });
     await flush();
     for (let i = 4; i < 8; i++) {
@@ -341,6 +726,56 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     );
   });
 
+  it('keeps the newer assistant streaming through an older terminal and duplicate delivery', async () => {
+    mockChatSubscribe();
+    const seen: Array<import('../app-client').ChatTranscript> = [];
+    const off = new LiveChatClient().subscribe('agent-1', (value) => seen.push(value));
+    try {
+      await flush();
+      expect(mockedRequest).toHaveBeenCalledWith('chat.subscribe', {
+        agentId: 'agent-1',
+        deltaEncoding: 'incremental',
+        projection: 'slim',
+        historyDelivery: 'progressive',
+      });
+      snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
+      const frame = (messageId: string, complete = false) => ({
+        added: [
+          {
+            id: `${messageId}:0`,
+            messageId,
+            agentId: 'agent-1',
+            role: 'assistant',
+            block: { id: `${messageId}:0`, type: 'text', text: messageId },
+            ...(complete
+              ? {
+                  streamingComplete: true,
+                  timestamp: '2026-06-27T01:00:01.000Z',
+                  messageSeq: messageId === 'old' ? 1 : 2,
+                }
+              : {}),
+          },
+        ],
+        updated: [],
+        removedIds: [],
+      });
+      deltaPush('sub-1', 1, frame('old'));
+      deltaPush('sub-1', 2, frame('new'));
+      deltaPush('sub-1', 3, frame('old', true));
+      expect(seen.at(-1)?.messages.find((m) => m.id === 'old')?.streamingComplete).toBe(true);
+      expect(seen.at(-1)?.isStreaming).toBe(true);
+      const deliveries = seen.length;
+      deltaPush('sub-1', 3, frame('old', true));
+      expect(seen).toHaveLength(deliveries);
+      expect(seen.at(-1)?.isStreaming).toBe(true);
+      deltaPush('sub-1', 4, frame('new', true));
+      expect(seen.at(-1)?.isStreaming).toBe(false);
+    } finally {
+      off();
+    }
+    expect(mockedRequest).toHaveBeenCalledWith('chat.unsubscribe', { subscriptionId: 'sub-1' });
+  });
+
   it('registers chat.subscribe, emits the seq-0 snapshot, and unsubscribes on dispose', async () => {
     mockChatSubscribe();
     const client = new LiveChatClient();
@@ -352,6 +787,7 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
       agentId: 'agent-1',
       deltaEncoding: 'incremental',
       projection: 'slim',
+      historyDelivery: 'progressive',
     });
     snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
 
@@ -607,6 +1043,7 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
       agentId: 'agent-1',
       deltaEncoding: 'incremental',
       projection: 'slim',
+      historyDelivery: 'progressive',
     });
     const contentBlocks = [
       ...SEEDED_SNAPSHOT.messages[0].contentBlocks,
@@ -1372,6 +1809,72 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     off();
   });
 
+  it('preserves an effort notice through live delivery, repeated deltas, and history reload', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<import('../app-client').ChatTranscript> = [];
+    let off = client.subscribe('agent-1', (transcript) => seen.push(transcript));
+    await flush();
+    expect(mockedRequest).toHaveBeenCalledWith('chat.subscribe', {
+      agentId: 'agent-1',
+      deltaEncoding: 'incremental',
+      projection: 'slim',
+      historyDelivery: 'progressive',
+    });
+    snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
+
+    // PROTOCOL §5.5 effort_changed row, projected to the §7.1 block delta.
+    const metadata = { type: 'effort_changed', from: null, to: 'none' };
+    const block = { type: 'text', id: 'effort:0', text: 'Effort changed from auto to none.' };
+    const entity = {
+      agentId: 'agent-1',
+      messageId: 'effort',
+      role: 'system',
+      messageSeq: 1,
+      timestamp: '2026-09-26T12:00:00Z',
+      streamingComplete: true,
+      metadata,
+      block,
+    };
+    deltaPush('sub-1', 1, { added: [entity], updated: [], removedIds: [] });
+    deltaPush('sub-1', 2, { added: [], updated: [entity], removedIds: [] });
+    const live = seen.at(-1)!;
+    expect(live.messages.map(({ id }) => id)).toEqual(['0190a1b2-user', 'effort']);
+    expect(live.messages[1]).toMatchObject({
+      id: 'effort',
+      role: 'system',
+      metadata,
+      contentBlocks: [block],
+      isStreaming: false,
+    });
+    expect(live.isStreaming).toBe(false);
+    off();
+
+    off = client.subscribe('agent-1', (transcript) => seen.push(transcript));
+    await flush();
+    snapshotPush('sub-2', 0, {
+      ...SEEDED_SNAPSHOT,
+      messages: [
+        ...SEEDED_SNAPSHOT.messages,
+        {
+          id: 'effort',
+          agentId: 'agent-1',
+          seq: 1,
+          role: 'system',
+          timestamp: entity.timestamp,
+          metadata,
+          contentBlocks: [block],
+        },
+      ],
+      totalMessages: 2,
+    });
+    const reloaded = seen.at(-1)!;
+    expect(reloaded.messages.map(({ id }) => id)).toEqual(['0190a1b2-user', 'effort']);
+    expect(reloaded.messages[1].metadata).toEqual(live.messages[1].metadata);
+    expect(reloaded.messages[1].contentBlocks).toEqual(live.messages[1].contentBlocks);
+    off();
+  });
+
   it("carries the user-row entity's metadata onto the materialized message (sender chip live)", async () => {
     // A child→coordinator row is persisted with
     // `metadata: { type: "agent_message", fromAgentId, fromAgentName }` and
@@ -1487,6 +1990,56 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     off();
   });
 
+  it('preserves portable authors across snapshot, delta and recovery without merging null identities', async () => {
+    mockChatSubscribe();
+    const seen: Array<import('../app-client').ChatTranscript> = [];
+    const off = new LiveChatClient().subscribe('agent-1', (t) => seen.push(t));
+    try {
+      await flush();
+      const first = {
+        principalId: null,
+        login: 'same',
+        displayName: null,
+        avatarUrl: null,
+        identity: { provider: 'gitlab', host: 'one.example', externalUserId: '42' },
+      };
+      const second = { ...first, identity: { ...first.identity, host: 'two.example' } };
+      const metadata = {
+        humanAuthor: { sourcePrincipalId: 'destination-self' },
+        originalMetadata: ['inert'],
+      };
+      const raw = { ...SEEDED_SNAPSHOT.messages[0], author: first, metadata };
+      const before = JSON.stringify(raw);
+      snapshotPush('sub-1', 0, { ...SEEDED_SNAPSHOT, messages: [raw] });
+      const entity = {
+        agentId: 'agent-1',
+        messageId: 'portable-two',
+        role: 'user',
+        messageSeq: 1,
+        timestamp: raw.timestamp,
+        author: second,
+        metadata,
+        block: { id: 'portable-two:0', type: 'text', text: 'second body' },
+      };
+      deltaPush('sub-1', 1, { added: [entity], updated: [], removedIds: [] });
+      expect(seen.at(-1)!.messages.map((row) => row.author)).toEqual([first, second]);
+      const { author: _author, ...absent } = entity;
+      deltaPush('sub-1', 2, { added: [], updated: [absent], removedIds: [] });
+      expect(seen.at(-1)!.messages[1].author).toEqual(second);
+      deltaPush('sub-1', 3, { added: [], updated: [{ ...entity, author: null }], removedIds: [] });
+      expect(seen.at(-1)!.messages[1]).toHaveProperty('author', null);
+      expect(seen.at(-1)!.messages[1].metadata).toEqual(metadata);
+      expect(seen.at(-1)!.messages[1].contentBlocks?.[0].text).toBe('second body');
+      emitReconnect();
+      await flush();
+      snapshotPush('sub-2', 0, { ...SEEDED_SNAPSHOT, messages: [raw] });
+      expect(seen.at(-1)!.messages[0].author).toEqual(first);
+      expect(JSON.stringify(raw)).toBe(before);
+    } finally {
+      off();
+    }
+  });
+
   it("carries the user-row entity's author projection onto the materialized message (intentd#1869)", async () => {
     // A user row served live carries the daemon's serve-time `author`
     // projection lifted onto each §7.1 entity, exactly as the snapshot page
@@ -1585,7 +2138,7 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     last = seen[seen.length - 1];
     const legacy = last.messages[2] as Authored;
     expect(legacy.id).toBe('user-msg-legacy-2');
-    expect(legacy.author).toBeUndefined();
+    expect(legacy.author).toBeNull();
     off();
   });
 
@@ -1668,6 +2221,7 @@ describe('LiveChatClient.subscribe canonical delta validation', () => {
         agentId: 'agent-1',
         deltaEncoding: 'incremental',
         projection: 'slim',
+        historyDelivery: 'progressive',
       });
 
       snapshotPush('sub-1', 0, {
@@ -1774,6 +2328,7 @@ describe('LiveChatClient.subscribe canonical delta validation', () => {
       agentId: 'agent-1',
       deltaEncoding: 'incremental',
       projection: 'slim',
+      historyDelivery: 'progressive',
     });
     const result = {
       type: 'tool_result',
@@ -2568,7 +3123,12 @@ describe('LiveChatClient.subscribe self-heal retry (intent-hq/monorepo#1394)', (
       expect(subscribeCalls()).toHaveLength(4);
       expect(subscribeCalls().at(-1)).toEqual([
         'chat.subscribe',
-        { agentId: 'agent-1', deltaEncoding: 'incremental', projection: 'slim' },
+        {
+          agentId: 'agent-1',
+          deltaEncoding: 'incremental',
+          projection: 'slim',
+          historyDelivery: 'progressive',
+        },
       ]);
       expect(seen.at(-1)?.messages.map(({ id, seq }) => [id, seq])).toEqual([
         ['0190a1b2-user', 0],
@@ -2701,7 +3261,15 @@ describe('LiveChatClient.subscribe self-heal retry (intent-hq/monorepo#1394)', (
 
     // First registration rejected: exactly one wire attempt, phase delayed.
     expect(subscribeCalls()).toEqual([
-      ['chat.subscribe', { agentId: 'agent-1', deltaEncoding: 'incremental', projection: 'slim' }],
+      [
+        'chat.subscribe',
+        {
+          agentId: 'agent-1',
+          deltaEncoding: 'incremental',
+          projection: 'slim',
+          historyDelivery: 'progressive',
+        },
+      ],
     ]);
     expect(phases).toEqual(['connecting', 'delayed']);
 
@@ -2710,8 +3278,24 @@ describe('LiveChatClient.subscribe self-heal retry (intent-hq/monorepo#1394)', (
     expect(subscribeCalls()).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(subscribeCalls()).toEqual([
-      ['chat.subscribe', { agentId: 'agent-1', deltaEncoding: 'incremental', projection: 'slim' }],
-      ['chat.subscribe', { agentId: 'agent-1', deltaEncoding: 'incremental', projection: 'slim' }],
+      [
+        'chat.subscribe',
+        {
+          agentId: 'agent-1',
+          deltaEncoding: 'incremental',
+          projection: 'slim',
+          historyDelivery: 'progressive',
+        },
+      ],
+      [
+        'chat.subscribe',
+        {
+          agentId: 'agent-1',
+          deltaEncoding: 'incremental',
+          projection: 'slim',
+          historyDelivery: 'progressive',
+        },
+      ],
     ]);
     // A rejected registration acked no id — no unsubscribe frame on retry.
     expect(unsubscribeCalls()).toEqual([]);
@@ -2796,7 +3380,15 @@ describe('LiveChatClient.subscribe self-heal retry (intent-hq/monorepo#1394)', (
     );
     await vi.advanceTimersByTimeAsync(0);
     expect(subscribeCalls()).toEqual([
-      ['chat.subscribe', { agentId: 'agent-1', deltaEncoding: 'incremental', projection: 'slim' }],
+      [
+        'chat.subscribe',
+        {
+          agentId: 'agent-1',
+          deltaEncoding: 'incremental',
+          projection: 'slim',
+          historyDelivery: 'progressive',
+        },
+      ],
     ]);
 
     // Acked but no seq-0 within SNAPSHOT_TIMEOUT_MS: delayed + retry armed.
@@ -2808,8 +3400,24 @@ describe('LiveChatClient.subscribe self-heal retry (intent-hq/monorepo#1394)', (
     await vi.advanceTimersByTimeAsync(1_000);
     expect(unsubscribeCalls()).toEqual([['chat.unsubscribe', { subscriptionId: 'sub-1' }]]);
     expect(subscribeCalls()).toEqual([
-      ['chat.subscribe', { agentId: 'agent-1', deltaEncoding: 'incremental', projection: 'slim' }],
-      ['chat.subscribe', { agentId: 'agent-1', deltaEncoding: 'incremental', projection: 'slim' }],
+      [
+        'chat.subscribe',
+        {
+          agentId: 'agent-1',
+          deltaEncoding: 'incremental',
+          projection: 'slim',
+          historyDelivery: 'progressive',
+        },
+      ],
+      [
+        'chat.subscribe',
+        {
+          agentId: 'agent-1',
+          deltaEncoding: 'incremental',
+          projection: 'slim',
+          historyDelivery: 'progressive',
+        },
+      ],
     ]);
 
     // The recovery seq-0 snapshot (§7.1) hydrates the transcript.
@@ -2983,6 +3591,62 @@ describe('LiveChatClient.subscribe resume (sinceMessageId, §7.1)', () => {
     reset();
   });
 
+  it('resets retained history on reconnect after an empty resume suffix, only once', async () => {
+    mockChatSubscribe();
+    const seen: Array<import('../app-client').ChatTranscript> = [];
+    const off = new LiveChatClient().subscribe('agent-1', (value) => seen.push(value), undefined, {
+      sinceMessageId: '0190a1b2-user',
+    });
+    try {
+      await flush();
+      snapshotPush('sub-1', 0, { ...SEEDED_SNAPSHOT, messages: [], resumed: true });
+      expect(seen.at(-1)).toMatchObject({ messages: [], resumed: true });
+      emitReconnect();
+      await flush();
+      expect(mockedRequest).toHaveBeenLastCalledWith('chat.subscribe', {
+        agentId: 'agent-1',
+        deltaEncoding: 'incremental',
+        projection: 'slim',
+        historyDelivery: 'progressive',
+      });
+      snapshotPush('sub-2', 0, SEEDED_SNAPSHOT);
+      expect(seen.at(-1)).toMatchObject({ resetCachedTranscript: true, fromSnapshot: true });
+      expect(seen.at(-1)).not.toHaveProperty('resumed');
+      deltaPush('sub-2', 1, { added: [], updated: [], removedIds: [] });
+      expect(seen.at(-1)).not.toHaveProperty('resetCachedTranscript');
+      // An ordinary later snapshot has no local reset disposition.
+      snapshotPush('sub-2', 2, SEEDED_SNAPSHOT);
+      expect(seen.at(-1)).not.toHaveProperty('resumed');
+      expect(seen.at(-1)).not.toHaveProperty('resetCachedTranscript');
+    } finally {
+      off();
+    }
+  });
+
+  it('preserves the initial resume request across reconnect before any snapshot', async () => {
+    mockChatSubscribe();
+    const seen: Array<import('../app-client').ChatTranscript> = [];
+    const off = new LiveChatClient().subscribe('agent-1', (value) => seen.push(value), undefined, {
+      sinceMessageId: '0190a1b2-user',
+    });
+    try {
+      await flush();
+      emitReconnect();
+      await flush();
+      expect(mockedRequest).toHaveBeenLastCalledWith('chat.subscribe', {
+        agentId: 'agent-1',
+        deltaEncoding: 'incremental',
+        projection: 'slim',
+        historyDelivery: 'progressive',
+        sinceMessageId: '0190a1b2-user',
+      });
+      snapshotPush('sub-2', 0, { ...SEEDED_SNAPSHOT, messages: [], resumed: true });
+      expect(seen.at(-1)).toMatchObject({ messages: [], resumed: true });
+    } finally {
+      off();
+    }
+  });
+
   it('sends sinceMessageId on chat.subscribe and stamps resumed: true on the seq-0 emit', async () => {
     mockChatSubscribe();
     const client = new LiveChatClient();
@@ -2996,6 +3660,7 @@ describe('LiveChatClient.subscribe resume (sinceMessageId, §7.1)', () => {
       agentId: 'agent-1',
       deltaEncoding: 'incremental',
       projection: 'slim',
+      historyDelivery: 'progressive',
       sinceMessageId: '0190a1b2-user',
     });
 
@@ -3040,6 +3705,36 @@ describe('LiveChatClient.subscribe resume (sinceMessageId, §7.1)', () => {
     off();
   });
 
+  it('hands the five-message snapshot cursor to history consumers unchanged', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: unknown[] = [];
+    const off = client.subscribe('agent-1', (value) => seen.push(value));
+    try {
+      await flush();
+      snapshotPush('sub-1', 0, {
+        ...SEEDED_SNAPSHOT,
+        messages: Array.from({ length: 5 }, (_, index) => ({
+          ...SEEDED_SNAPSHOT.messages[0],
+          id: `newest-${index}`,
+          seq: 115 + index,
+        })),
+        totalMessages: 120,
+        truncated: true,
+        nextToken: 'opaque-before-newest-five',
+      });
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toMatchObject({
+        fromSnapshot: true,
+        totalMessages: 120,
+        truncated: true,
+        nextToken: 'opaque-before-newest-five',
+      });
+    } finally {
+      off();
+    }
+  });
+
   it('stamps resumed: false when the daemon falls back to the full newest page', async () => {
     mockChatSubscribe();
     const client = new LiveChatClient();
@@ -3058,6 +3753,40 @@ describe('LiveChatClient.subscribe resume (sinceMessageId, §7.1)', () => {
     off();
   });
 
+  it.each([undefined, '0190a1b2-user'])(
+    'forwards a mid-stream reset after initial hydration (anchor %s)',
+    async (sinceMessageId) => {
+      mockChatSubscribe();
+      const client = new LiveChatClient();
+      const seen: Array<{ resumed?: boolean; messages: unknown[] }> = [];
+      const off = client.subscribe('agent-1', (t) => seen.push(t), undefined, {
+        sinceMessageId,
+      });
+      await flush();
+      expect(mockedRequest).toHaveBeenCalledWith('chat.subscribe', {
+        agentId: 'agent-1',
+        deltaEncoding: 'incremental',
+        projection: 'slim',
+        historyDelivery: 'progressive',
+        ...(sinceMessageId === undefined ? {} : { sinceMessageId }),
+      });
+      snapshotPush('sub-1', 0, {
+        ...SEEDED_SNAPSHOT,
+        ...(sinceMessageId === undefined ? {} : { resumed: true }),
+      });
+      snapshotPush('sub-1', 1, {
+        ...SEEDED_SNAPSHOT,
+        messages: [],
+        totalMessages: 0,
+        resumed: false,
+      });
+      expect(seen).toHaveLength(2);
+      expect(seen[1].resumed).toBe(false);
+      expect(seen[1].messages).toEqual([]);
+      off();
+    },
+  );
+
   it('omits sinceMessageId entirely when no resume is requested', async () => {
     mockChatSubscribe();
     const client = new LiveChatClient();
@@ -3069,6 +3798,7 @@ describe('LiveChatClient.subscribe resume (sinceMessageId, §7.1)', () => {
       agentId: 'agent-1',
       deltaEncoding: 'incremental',
       projection: 'slim',
+      historyDelivery: 'progressive',
     });
     snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
     expect(seen).toHaveLength(1);
@@ -3097,6 +3827,7 @@ describe('LiveChatClient.subscribe resume (sinceMessageId, §7.1)', () => {
       agentId: 'agent-1',
       deltaEncoding: 'incremental',
       projection: 'slim',
+      historyDelivery: 'progressive',
     });
     off();
   });
@@ -3127,6 +3858,7 @@ describe('LiveChatClient.subscribe resume (sinceMessageId, §7.1)', () => {
       agentId: 'agent-1',
       deltaEncoding: 'incremental',
       projection: 'slim',
+      historyDelivery: 'progressive',
       sinceMessageId: '0190a1b2-user',
     });
     vi.useRealTimers();
@@ -3774,4 +4506,34 @@ describe('LiveChatClient.subscribe text-block media sidecar (§7.1)', () => {
     expect(firstBlock(seen)).toEqual(live);
     off();
   });
+});
+
+it('captures chat workspace for reconnect and cleanup after caller options change', async () => {
+  mockChatSubscribe('origin');
+  const options = { workspaceId: 'workspace-a', sinceMessageId: 'last-message' };
+  const dispose = new LiveChatClient().subscribe('agent-a', vi.fn(), undefined, options);
+  await flush();
+  options.workspaceId = 'workspace-b';
+  emitReconnect();
+  await flush();
+  dispose();
+  const requests = mockedRequest.mock.calls.filter(
+    ([method]) => method === 'chat.subscribe' || method === 'chat.unsubscribe',
+  );
+  expect(
+    requests.map(([method, params]) => [method, (params as { workspaceId: string }).workspaceId]),
+  ).toEqual([
+    ['chat.subscribe', 'workspace-a'],
+    ['chat.subscribe', 'workspace-a'],
+    ['chat.unsubscribe', 'workspace-a'],
+  ]);
+  expect(requests[0][1]).toEqual({
+    agentId: 'agent-a',
+    workspaceId: 'workspace-a',
+    sinceMessageId: 'last-message',
+    deltaEncoding: 'incremental',
+    projection: 'slim',
+    historyDelivery: 'progressive',
+  });
+  expect(requests.at(-1)![1]).toEqual({ subscriptionId: 'origin-2', workspaceId: 'workspace-a' });
 });

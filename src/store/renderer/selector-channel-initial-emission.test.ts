@@ -1,6 +1,6 @@
 import { runSaga, stdChannel } from 'redux-saga';
 import { put } from 'typed-redux-saga';
-import { takeEveryFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
+import { takeEveryFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { selectCurrentWorkspaceTabId } from './slices/tab-state/tab-state-selectors';
@@ -14,7 +14,7 @@ const settle = async () => {
   await Promise.resolve();
 };
 
-// Regression coverage for the patched @augmentcode/themis selector channel
+// Regression coverage for the patched @themislib/themis selector channel
 // (patches/@augmentcode__themis@0.2.7.patch, intent-hq/intent#5008 and
 // intent-hq/intent#5040): the synchronous initial emission must be retained
 // until the first take so a selector-driven worker sees the value the store

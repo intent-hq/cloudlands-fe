@@ -1,10 +1,16 @@
 <script lang="ts">
   /* eslint-disable max-lines */
+  import { selectIsHostMember } from '$store/renderer/slices/host-execution/host-execution-selectors';
+  import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
+  const hostMember$ = selectIsHostMember();
+  const connection$ = selectPrincipalConnectionContext();
+  let previousConnection: string | null = null;
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import Checkbox from '$lib/components/ui/checkbox/checkbox.svelte';
   import * as Popover from '$lib/components/ui/popover';
+  import { useDialogPortalTarget } from '$lib/components/ui/dialog';
   import { Combobox, type ComboboxGroup } from '$lib/components/ui/combobox';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { toast } from '$lib/components/ui/toast';
@@ -15,7 +21,6 @@
   import { parseGitHubUrl } from '$lib/utils/workspace-validation';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
 
-  import { setWorkspaceInitializerBranchForRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import { selectWorkspaceInitializerBranchByRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
@@ -37,6 +42,7 @@
   import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('BranchSelector');
+  const dialogPortalTarget = useDialogPortalTarget();
   const branchByRepo$ = selectWorkspaceInitializerBranchByRepo();
 
   /** Status of the branch relative to its upstream */
@@ -287,19 +293,46 @@
 
   // Track current fetch to allow cancellation
   let currentFetchAbortController: AbortController | null = null;
+  let branchContextGeneration = 0;
 
-  // Cleanup on component destroy
-  onDestroy(() => {
-    // Cancel any pending debounced fetch
+  function captureBranchContext() {
+    const connection = selectPrincipalConnectionContext.select(appStore.state);
+    return connection && repoPath
+      ? {
+          connection,
+          repoPath,
+          repoType,
+          githubUrl,
+          generation: branchContextGeneration,
+          cacheKey: JSON.stringify([connection, repoPath, repoType, githubUrl]),
+        }
+      : null;
+  }
+
+  function isCurrentBranchContext(context: NonNullable<ReturnType<typeof captureBranchContext>>) {
+    return (
+      context.generation === branchContextGeneration &&
+      context.connection === selectPrincipalConnectionContext.select(appStore.state) &&
+      context.repoPath === repoPath &&
+      context.repoType === repoType &&
+      context.githubUrl === githubUrl
+    );
+  }
+
+  function cancelBranchFetch() {
     if (fetchBranchesDebounceTimer) {
       clearTimeout(fetchBranchesDebounceTimer);
       fetchBranchesDebounceTimer = null;
     }
-    // Cancel any in-flight fetch
-    if (currentFetchAbortController) {
-      currentFetchAbortController.abort();
-      currentFetchAbortController = null;
-    }
+    currentFetchAbortController?.abort();
+    currentFetchAbortController = null;
+  }
+
+  // Cleanup on component destroy
+  onDestroy(() => {
+    branchContextGeneration++;
+    githubSearchRequestId++;
+    cancelBranchFetch();
     // Clear search debounce timer
     if (searchDebounceTimer) {
       clearTimeout(searchDebounceTimer);
@@ -316,12 +349,6 @@
       return '';
     }
     return $branchByRepo$[targetRepoPath] || '';
-  }
-
-  function saveBranchForRepo(targetRepoPath: string, branch: string) {
-    if (debugConfig.get('enableFormPersistence') && targetRepoPath) {
-      appStore.dispatch(setWorkspaceInitializerBranchForRepo(targetRepoPath, branch));
-    }
   }
 
   // Update internal state when value prop changes
@@ -352,16 +379,7 @@
    * (e.g., when both repoPath and repoType change at the same time).
    */
   function debouncedFetchBranches() {
-    // Cancel any pending debounced fetch
-    if (fetchBranchesDebounceTimer) {
-      clearTimeout(fetchBranchesDebounceTimer);
-    }
-
-    // Cancel any in-flight fetch
-    if (currentFetchAbortController) {
-      currentFetchAbortController.abort();
-      currentFetchAbortController = null;
-    }
+    cancelBranchFetch();
 
     // Surface the loading state for the entire waiting window, including the
     // debounce delay before the fetch actually starts.
@@ -377,6 +395,9 @@
   // Fetch branches when repo changes
   $effect(() => {
     // Capture current values (read these first to establish dependencies)
+    const currentConnection = $connection$;
+    const connectionChanged = currentConnection !== previousConnection;
+    previousConnection = currentConnection;
     const currentRepoPath = repoPath;
     const currentRepoType = repoType;
     const currentGithubUrl = githubUrl;
@@ -385,9 +406,11 @@
     const repoChanged = currentRepoPath !== previousRepoPath;
     const typeChanged = currentRepoType !== previousRepoType;
     const urlChanged = currentGithubUrl !== previousGithubUrl;
+    if (connectionChanged) branchCache.clear();
 
     // Check if anything actually changed
-    const needsRefetch = repoChanged || (currentRepoPath && (typeChanged || urlChanged));
+    const needsRefetch =
+      connectionChanged || repoChanged || (currentRepoPath && (typeChanged || urlChanged));
 
     // Update previous values BEFORE any async operations
     previousRepoPath = currentRepoPath;
@@ -396,8 +419,21 @@
 
     // Only refetch if something meaningful changed
     if (needsRefetch) {
+      branchContextGeneration++;
+      cancelBranchFetch();
       pendingGithubSelection = null;
-      if (currentRepoPath) {
+      remoteBranches = [];
+      showRemoteBranches = false;
+      isLoadingRemote = false;
+      hasAttemptedRemoteFetch = false;
+      currentBranch = '';
+      githubAuthNeeded = 'none';
+      githubSearchRequestId++;
+      githubSearchBranches = [];
+      error = null;
+      resetBranchStatus();
+      clearSearch();
+      if (currentRepoPath && currentConnection) {
         // Try to load saved branch for this repo if persistence is enabled.
         const savedBranch = getSavedBranchForRepo(currentRepoPath);
 
@@ -410,17 +446,7 @@
         });
         internalSelectedBranch = savedBranch;
         defaultBranch = '';
-        currentBranch = '';
         branches = [];
-        remoteBranches = [];
-        showRemoteBranches = false;
-        hasAttemptedRemoteFetch = false; // Reset so we can fetch for new repo
-        githubAuthNeeded = 'none'; // Reset auth state for new repo
-        githubSearchRequestId++; // Discard in-flight prefix searches from the previous repo
-        githubSearchBranches = []; // Drop prefix-search results from the previous repo
-        error = null;
-        resetBranchStatus(); // Reset stale branch status from previous repo
-        clearSearch(); // A typed filter belongs to the previous repo's branch list
 
         // Use debounced fetch to prevent rapid repeated calls
         debouncedFetchBranches();
@@ -478,7 +504,8 @@
   }
 
   async function fetchBranches() {
-    if (!repoPath) {
+    const context = captureBranchContext();
+    if (!context) {
       isLoading = false;
       return;
     }
@@ -493,6 +520,7 @@
     // Create a new abort controller for this fetch
     const abortController = new AbortController();
     currentFetchAbortController = abortController;
+    const isCurrent = () => !abortController.signal.aborted && isCurrentBranchContext(context);
 
     // Debug logging to diagnose branch fetching issues
     logger.debug('fetchBranches called', { repoPath, repoType, githubUrl });
@@ -530,7 +558,7 @@
 
     // Check cache first (if caching is enabled)
     if (debugConfig.get('enableBranchCaching')) {
-      const cached = branchCache.get(repoPath);
+      const cached = branchCache.get(context.cacheKey);
       if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
         branches = cached.branches;
         remoteBranches = cached.remoteBranches || [];
@@ -565,6 +593,7 @@
             setInternalBranch(branches[0]);
           }
         }
+        if (!isCurrent()) return;
         notifyBranchesLoaded();
         isLoading = false;
         return;
@@ -582,13 +611,15 @@
       if (debugConfig.get('simulateSlowNetwork')) {
         await new Promise((resolve) => setTimeout(resolve, debugConfig.get('networkDelay') || 0));
       }
+      if (!isCurrent()) return;
 
       if (effectiveRepoType === 'local') {
         // Fetch branches from the local git repo via the daemon
         // (`git.getBranches`, PROTOCOL §5.6). The live seam folds
         // transport/gate errors to null; we surface an explicit error state —
         // never a fabricated branch list.
-        const result = await appClient.git.getBranches(repoPath, true);
+        const result = await appClient.git.getBranches(context.repoPath, true);
+        if (!isCurrent()) return;
         if (result) {
           branches = result.branches;
           remoteBranches = result.remoteBranches;
@@ -641,7 +672,7 @@
         void appClient.integrations.githubBranchesCached(owner, repo).then((cachedListing) => {
           // A superseded fetch must not clobber a newer repo's state, and the
           // authoritative list wins once it has settled (either way).
-          if (abortController.signal.aborted || freshListingSettled) return;
+          if (!isCurrent() || freshListingSettled) return;
           // Paint whatever branches came back (warm cache OR ls-remote
           // fallback); an empty listing keeps today's behavior (skeleton
           // until the API responds).
@@ -654,6 +685,7 @@
             const valueBeforePaint = value;
             const explicitSelectionRevision = explicitBranchSelectionRevision;
             applyGithubBranchSelection();
+            if (!isCurrent()) return;
             pendingGithubSelection = {
               autoSelectedBranch: internalSelectedBranch,
               valueBeforePaint,
@@ -678,7 +710,7 @@
         try {
           const listing = await appClient.integrations.githubBranches(owner, repo);
           // Check if we were aborted while waiting for the response
-          if (abortController.signal.aborted) {
+          if (!isCurrent()) {
             logger.debug('Branch fetch aborted after response');
             return;
           }
@@ -693,7 +725,10 @@
             count: branches.length,
           });
         } catch (githubError) {
+          if (!isCurrent()) return;
           freshListingSettled = true;
+          // Members use daemon-classified recovery; repository errors never offer account replacement.
+          if ($hostMember$) throw githubError;
           const message = githubError instanceof Error ? githubError.message : String(githubError);
           // The daemon reports a missing/failed GitHub token as
           // "GitHub is not configured." (§5.27 error conventions).
@@ -711,9 +746,10 @@
         }
       }
 
+      if (!isCurrent()) return;
       // Cache the results (if caching is enabled)
       if (debugConfig.get('enableBranchCaching')) {
-        branchCache.set(repoPath, {
+        branchCache.set(context.cacheKey, {
           branches,
           remoteBranches,
           default: defaultBranch,
@@ -734,8 +770,7 @@
             explicitBranchSelectionRevision === cachedSelection.explicitSelectionRevision &&
             (!value || value === cachedSelection.autoSelectedBranch)
           ) {
-            // Use the saved value captured BEFORE the cached paint — the
-            // cached auto-selection persisted itself via saveBranchForRepo.
+            // Use the saved value captured before the cached paint.
             const saved = cachedSelection.savedBranchBeforePaint;
             const preferred =
               saved && (branches.includes(saved) || remoteBranches.includes(saved))
@@ -750,7 +785,7 @@
 
       // Don't export a superseded fetch's branch list to consumers — a newer
       // fetch (e.g. after a repo change) owns the notification.
-      if (fetchSucceeded && !abortController.signal.aborted) {
+      if (fetchSucceeded && isCurrent()) {
         pendingGithubSelection = null;
         notifyBranchesLoaded();
       }
@@ -763,7 +798,7 @@
 
       // A superseded fetch must not overwrite the newer fetch's state with an
       // error/empty list (e.g. a refresh started while this one was in flight).
-      if (abortController.signal.aborted) {
+      if (!isCurrent()) {
         logger.debug('Branch fetch aborted; skipping error-state write');
         return;
       }
@@ -830,17 +865,19 @@
         error = m.workspace_branchSelector_fetchBranchesFailedManual_error();
       }
 
-      // Surface the failure without requiring the user to open the dropdown.
-      toast.error(error);
+      // Surface the failure without requiring the user to open the dropdown —
+      // except with no worktree on a local folder, where no branch is needed
+      // (a plain non-git folder has none) and a toast would only nag.
+      if (!(skipIsolation && effectiveRepoType === 'local')) toast.error(error);
 
       // Never fabricate branch names on failure — the error state renders and
       // the user can still type a branch name manually.
       branches = [];
     } finally {
-      performanceMonitor.end(`fetchBranches-${repoPath}`);
+      performanceMonitor.end(`fetchBranches-${context.repoPath}`);
       // Only clear the loading state if this was the current fetch — a stale
       // aborted fetch must not clear the loading state of a newer scheduled one
-      if (currentFetchAbortController === abortController) {
+      if (currentFetchAbortController === abortController && isCurrent()) {
         isLoading = false;
         currentFetchAbortController = null;
       }
@@ -852,7 +889,8 @@
    * This is called on-demand when user clicks "Show remote branches".
    */
   async function fetchRemoteBranches() {
-    if (!repoPath || repoType !== 'local') return;
+    const context = captureBranchContext();
+    if (!context || context.repoType !== 'local') return;
     if (isLoadingRemote || hasAttemptedRemoteFetch) return; // Prevent duplicate requests
 
     isLoadingRemote = true;
@@ -863,16 +901,17 @@
       // Daemon-backed read (`git.getBranches`, PROTOCOL §5.6) with
       // includeRemote; the live seam folds errors to null. Remote branches are
       // optional, so a failed fetch stays silent (no error state).
-      const result = await appClient.git.getBranches(repoPath, true);
+      const result = await appClient.git.getBranches(context.repoPath, true);
+      if (!isCurrentBranchContext(context)) return;
       if (result) {
         // Use the separate remoteBranches field from the response (already filtered & sorted)
         remoteBranches = result.remoteBranches || [];
 
         // Update cache with remote branches
         if (debugConfig.get('enableBranchCaching')) {
-          const cached = branchCache.get(repoPath);
+          const cached = branchCache.get(context.cacheKey);
           if (cached) {
-            branchCache.set(repoPath, {
+            branchCache.set(context.cacheKey, {
               ...cached,
               remoteBranches,
             });
@@ -882,10 +921,11 @@
         logger.debug('Fetched remote branches', { count: remoteBranches.length });
       }
     } catch (err) {
+      if (!isCurrentBranchContext(context)) return;
       logger.error('Failed to fetch remote branches', err);
       // Don't show error to user - remote branches are optional
     } finally {
-      isLoadingRemote = false;
+      if (isCurrentBranchContext(context)) isLoadingRemote = false;
     }
   }
 
@@ -910,8 +950,9 @@
    * Only works for local repos with a valid repoPath.
    */
   async function fetchBranchStatus(branchName: string) {
+    const context = captureBranchContext();
     // Only fetch status for local repos with valid path and branch
-    if (!branchName || !repoPath || repoType !== 'local') {
+    if (!branchName || !context || context.repoType !== 'local') {
       // Reset status for non-local repos
       branchStatusBehind = 0;
       branchStatusHasUncommittedChanges = false;
@@ -931,10 +972,10 @@
         // the new path-based wire that replaces the legacy `git:getBranchStatus`
         // Electron IPC. The live seam folds transport/gate errors to `null`,
         // so we surface a clean "no info" state without crashing on undefined.
-        const result = await appClient.git.branchStatus(repoPath, branchName);
+        const result = await appClient.git.branchStatus(context.repoPath, branchName);
 
         // Only update state if this is still the branch we're interested in
-        if (pendingStatusBranch !== branchName) {
+        if (!isCurrentBranchContext(context) || pendingStatusBranch !== branchName) {
           logger.debug('Ignoring stale branch status response', {
             requested: branchName,
             current: pendingStatusBranch,
@@ -964,12 +1005,13 @@
         }
       }
     } catch (err) {
+      if (!isCurrentBranchContext(context) || pendingStatusBranch !== branchName) return;
       // Don't show error to user - branch status is informational
       logger.error('Failed to fetch branch status', err);
       branchStatusBehind = 0;
       branchStatusHasUncommittedChanges = false;
     } finally {
-      if (pendingStatusBranch === branchName) {
+      if (isCurrentBranchContext(context) && pendingStatusBranch === branchName) {
         branchStatusIsLoading = false;
       }
     }
@@ -991,6 +1033,8 @@
    * Also fetches branch status for the selected branch.
    */
   function setInternalBranch(branchName: string) {
+    const context = captureBranchContext();
+    if (!context) return;
     internalSelectedBranch = branchName;
     // Never reset the search here: this runs when a background fetch settles,
     // which can be while the user is typing a filter they are about to commit
@@ -1009,8 +1053,7 @@
       logger.error('Error in onchange callback', e);
     }
 
-    // Persist auto-selected/default branches the same way explicit selections are persisted.
-    saveBranchForRepo(repoPath, branchName);
+    if (!isCurrentBranchContext(context)) return;
 
     // Fetch branch status for the newly selected branch
     fetchBranchStatus(branchName);
@@ -1043,9 +1086,6 @@
         logger.error('Error in onSkipIsolationChange callback', e);
       }
     }
-
-    // Save via Redux if persistence is enabled (per-repo branch only).
-    saveBranchForRepo(repoPath, branch);
 
     // Fetch branch status for the newly selected branch
     fetchBranchStatus(branch);
@@ -1101,7 +1141,8 @@
 
   async function handleRefresh() {
     // Clear cache for this repo
-    branchCache.delete(repoPath);
+    const context = captureBranchContext();
+    if (context) branchCache.delete(context.cacheKey);
     githubAuthNeeded = 'none'; // Reset auth state
     await fetchBranches();
   }
@@ -1110,6 +1151,7 @@
    * Handle connecting to GitHub for private repo access
    */
   async function handleConnectGitHub() {
+    if ($hostMember$) return;
     isConnectingGitHub = true;
     error = null;
 
@@ -1259,8 +1301,9 @@
   // Failures are silent — the already-loaded first page still filters
   // locally.
   $effect(() => {
+    const connection = $connection$;
     const prefix = debouncedSearchValue.trim();
-    if (repoType !== 'github' || !prefix) {
+    if (!connection || repoType !== 'github' || !prefix) {
       githubSearchRequestId++; // Discard any in-flight response
       githubSearchBranches = [];
       return;
@@ -1273,6 +1316,8 @@
       githubSearchBranches = [];
       return;
     }
+    const context = captureBranchContext();
+    if (!context) return;
     const requestId = ++githubSearchRequestId;
     // Drop the previous prefix's results immediately: while the new request
     // is in flight (or if it fails), only the loaded first page may match —
@@ -1281,7 +1326,7 @@
     void appClient.integrations
       .githubBranches(parsed.owner, parsed.repo, prefix)
       .then((listing) => {
-        if (requestId !== githubSearchRequestId) return; // Superseded by a newer prefix
+        if (!isCurrentBranchContext(context) || requestId !== githubSearchRequestId) return;
         githubSearchBranches = listing.branches;
       })
       .catch(() => {
@@ -1542,6 +1587,8 @@
         aria-label={m.workspace_branchSelector_whichBranch_label()}
         class="w-[400px] max-w-[calc(100vw-16px)] min-w-0 max-h-[min(600px,var(--bits-popover-content-available-height,100dvh))] overflow-y-auto flex flex-col"
         side={dropUp ? 'top' : 'bottom'}
+        portalProps={{ to: dialogPortalTarget() }}
+        strategy={dialogPortalTarget() ? 'absolute' : 'fixed'}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           void tick().then(() => {
@@ -1638,7 +1685,7 @@
         </div>
 
         <div class="min-h-16 overflow-y-auto flex-1" data-testid="branch-results">
-          {#if githubAuthNeeded === 'not-authenticated' && !isConnectingGitHub}
+          {#if !$hostMember$ && githubAuthNeeded === 'not-authenticated' && !isConnectingGitHub}
             <!-- Connect with GitHub prompt for private repos -->
             <Button
               variant="ghost"

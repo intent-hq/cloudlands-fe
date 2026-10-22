@@ -17,15 +17,20 @@
 import {
   createCollection,
   getItem,
+  upsertItem,
   type Collection,
-} from '@augmentcode/themis/utils/collections/collection-utils';
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+} from '@themislib/themis/utils/collections/collection-utils';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type {
   HostPrincipal,
+  InvitePin,
+  PrincipalIdentity,
   WorkspaceInvite,
   WorkspaceMember,
 } from '$features/workspace-sharing/types';
+import type { WorkspaceGuestRole } from '$shared/types';
+import { isWorkspaceGuest } from '$features/workspace-sharing/utils/workspace-guest';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 
 /**
@@ -36,6 +41,8 @@ import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
  * link once the dialog has been closed or retargeted to workspace B.
  */
 export interface WorkspaceShareTarget {
+  /** Captured only by the request owner; omitted on pure presentation actions. */
+  authority?: string | null;
   workspaceId: string;
   session: number;
 }
@@ -49,6 +56,8 @@ export interface WorkspaceShareTarget {
 export interface WorkspaceShareCreatedLink {
   inviteId: string;
   pinLogin?: string;
+  /** The pinned account's forge, as the daemon resolved it. */
+  pinIdentity?: PrincipalIdentity;
 }
 
 /** Hover-card roster of one workspace (see `WorkspaceShareState.byWorkspaceId`). */
@@ -74,6 +83,13 @@ export const initialRosterState: WorkspaceRosterState = {
 };
 
 export interface WorkspaceShareState {
+  integrationAuth: { github: boolean; gitlab: boolean };
+  /** Prerequisites belong to one admitted host identity and dialog session. */
+  sharingContext: string | null;
+  sharingEnabled: boolean | null;
+  sharingChecking: boolean;
+  sharingEnabling: boolean;
+  sharingError: string | null;
   /** Hover-card rosters by workspace id; absent until a card asks for one. */
   byWorkspaceId: Record<string, WorkspaceRosterState>;
   open: boolean;
@@ -128,10 +144,18 @@ export interface WorkspaceShareState {
   removingPrincipalId: string | null;
   /** `workspace.members.add` in flight for this host principal. */
   addingPrincipalId: string | null;
+  pendingRolePrincipalIds: string[];
+  roleErrors: Record<string, string>;
   actionError: string | null;
 }
 
 export const initialState: WorkspaceShareState = {
+  integrationAuth: { github: false, gitlab: false },
+  sharingContext: null,
+  sharingEnabled: null,
+  sharingChecking: false,
+  sharingEnabling: false,
+  sharingError: null,
   byWorkspaceId: {},
   open: false,
   workspaceId: null,
@@ -153,6 +177,8 @@ export const initialState: WorkspaceShareState = {
   revokingInviteId: null,
   removingPrincipalId: null,
   addingPrincipalId: null,
+  pendingRolePrincipalIds: [],
+  roleErrors: {},
   actionError: null,
 };
 
@@ -160,6 +186,16 @@ export const initialState: WorkspaceShareState = {
 export const openShareDialog = createAction<
   [payload: { workspaceId: string; workspaceTitle: string }]
 >('workspaceShare/openDialog');
+
+/** Recheck the current host without resetting the dialog's selections. */
+export const sharePrerequisitesRequested = createAction('workspaceShare/prerequisitesRequested');
+export const shareEnableRequested = createAction('workspaceShare/enableRequested');
+export const sharePrerequisitesStarted = createAction<
+  [payload: { target: WorkspaceShareTarget; enabling: boolean }]
+>('workspaceShare/prerequisitesStarted');
+export const sharePrerequisitesSettled = createAction<
+  [payload: { target: WorkspaceShareTarget; enabled: boolean | null; error: string | null }]
+>('workspaceShare/prerequisitesSettled');
 
 /** Close the Share dialog and drop every loaded row. */
 export const closeShareDialog = createAction('workspaceShare/closeDialog');
@@ -211,14 +247,24 @@ export const shareAccessWithheld = createAction<[payload: { target: WorkspaceSha
   'workspaceShare/accessWithheld',
 );
 
-/** Mint an invite link; `pinLogin` (trimmed, may be empty) restricts redemption. */
-export const shareInviteCreateRequested = createAction<[payload: { pinLogin: string }]>(
-  'workspaceShare/inviteCreateRequested',
-);
+/**
+ * Mint an invite link; `pinLogin` (trimmed, may be empty) restricts redemption
+ * and `pin` names the forge it lives on (absent: the host's identity forge).
+ */
+export const shareInviteCreateRequested = createAction<
+  [payload: { pinLogin: string; pin?: InvitePin }]
+>('workspaceShare/inviteCreateRequested');
 
-/** Saga: the invite for `target` / `request` was created; the link is shown once. */
+/** Saga: creation succeeded; publish the secret-free row before refreshing the roster. */
 export const shareInviteCreated = createAction<
-  [payload: { target: WorkspaceShareTarget; request: number; link: WorkspaceShareCreatedLink }]
+  [
+    payload: {
+      target: WorkspaceShareTarget;
+      request: number;
+      link: WorkspaceShareCreatedLink;
+      invite: WorkspaceInvite;
+    },
+  ]
 >('workspaceShare/inviteCreated');
 
 /** Saga: invite creation failed (`error` already localized). */
@@ -297,6 +343,8 @@ function withoutRows(state: WorkspaceShareState): WorkspaceShareState {
     revokingInviteId: null,
     removingPrincipalId: null,
     addingPrincipalId: null,
+    pendingRolePrincipalIds: [],
+    roleErrors: {},
     actionError: null,
   };
 }
@@ -304,6 +352,7 @@ function withoutRows(state: WorkspaceShareState): WorkspaceShareState {
 /** A dialog mutation (revoke / remove / add) is in flight; one at a time. */
 function mutating(state: WorkspaceShareState): boolean {
   return (
+    state.pendingRolePrincipalIds.length > 0 ||
     state.revokingInviteId !== null ||
     state.removingPrincipalId !== null ||
     state.addingPrincipalId !== null
@@ -331,6 +380,36 @@ workspaceShareReducer.with(closeShareDialog, (state) => ({
   byWorkspaceId: state.byWorkspaceId,
   session: state.session,
 }));
+workspaceShareReducer.with(
+  sharePrerequisitesStarted,
+  (state, { payload: [{ target, enabling }] }) => {
+    if (!targets(state, target) || state.withheld || !target.authority) return state;
+    return {
+      ...state,
+      sharingContext: target.authority,
+      createError: enabling ? null : state.createError,
+      sharingEnabled: null,
+      sharingChecking: !enabling,
+      sharingEnabling: enabling,
+      sharingError: null,
+    };
+  },
+);
+workspaceShareReducer.with(
+  sharePrerequisitesSettled,
+  (state, { payload: [{ target, enabled, error }] }) => {
+    if (!targets(state, target) || state.withheld || state.sharingContext !== target.authority)
+      return state;
+    return {
+      ...state,
+      sharingEnabled: enabled,
+      createError: state.sharingEnabling && enabled === true ? null : state.createError,
+      sharingChecking: false,
+      sharingEnabling: false,
+      sharingError: error,
+    };
+  },
+);
 workspaceShareReducer.with(shareRosterRequested, (state, { payload: [{ workspaceId }] }) => {
   const roster = getRosterState(state, workspaceId);
   if (roster.withheld) return state;
@@ -423,7 +502,16 @@ workspaceShareReducer.with(shareDataFailed, (state, { payload: [{ target, error 
 });
 workspaceShareReducer.with(shareAccessWithheld, (state, { payload: [{ target }] }) => {
   if (!targets(state, target)) return state;
-  return { ...withoutRows(state), withheld: true, loadStatus: 'loaded', loadError: null };
+  return {
+    ...withoutRows(state),
+    sharingEnabled: null,
+    sharingChecking: false,
+    sharingEnabling: false,
+    sharingError: null,
+    withheld: true,
+    loadStatus: 'loaded',
+    loadError: null,
+  };
 });
 workspaceShareReducer.with(shareInviteCreateRequested, (state) => {
   if (!state.open || state.withheld) return state;
@@ -436,13 +524,18 @@ workspaceShareReducer.with(shareInviteCreateRequested, (state) => {
 });
 workspaceShareReducer.with(
   shareInviteCreated,
-  (state, { payload: [{ target, request, link }] }) => {
+  (state, { payload: [{ target, request, link, invite }] }) => {
     if (!targets(state, target) || state.createRequest !== request || state.withheld) return state;
     return {
       ...state,
       creating: false,
       createError: null,
       createdLink: link,
+      invites: upsertItem(state.invites, invite),
+      guestCount:
+        state.guestCount === null || getItem(state.invites, invite.id)
+          ? state.guestCount
+          : state.guestCount + 1,
       mutationGeneration: state.mutationGeneration + 1,
     };
   },
@@ -482,6 +575,80 @@ workspaceShareReducer.with(
       removingPrincipalId: null,
       addingPrincipalId: null,
       actionError: error,
+    };
+  },
+);
+
+export const shareIntegrationAuthRequested = createAction<
+  [workspaceId: string, gitlabHost?: string]
+>('workspaceShare/integrationAuthRequested');
+export const shareIntegrationAuthLoaded = createAction<
+  [target: WorkspaceShareTarget, auth: { github: boolean; gitlab: boolean }]
+>('workspaceShare/integrationAuthLoaded');
+workspaceShareReducer.with(shareIntegrationAuthRequested, (state) => ({
+  ...state,
+  integrationAuth: { github: false, gitlab: false },
+}));
+workspaceShareReducer.with(shareIntegrationAuthLoaded, (state, { payload: [target, auth] }) =>
+  targets(state, target) ? { ...state, integrationAuth: auth } : state,
+);
+
+export const shareMemberRoleRequested = createAction<
+  [payload: { principalId: string; role: WorkspaceGuestRole }]
+>('workspaceShare/memberRoleRequested');
+export const shareMemberRoleSettled = createAction<
+  [
+    payload: {
+      target: WorkspaceShareTarget;
+      principalId: string;
+      error: string | null;
+    },
+  ]
+>('workspaceShare/memberRoleSettled');
+
+workspaceShareReducer.with(
+  shareMemberRoleRequested,
+  (state, { payload: [{ principalId, role }] }) => {
+    const member = getItem(state.members, principalId);
+    if (
+      !state.open ||
+      state.withheld ||
+      !member ||
+      !isWorkspaceGuest(member) ||
+      (role !== 'collaborator' && role !== 'manager') ||
+      member.role === role ||
+      state.pendingRolePrincipalIds.includes(principalId) ||
+      state.removingPrincipalId ||
+      state.revokingInviteId ||
+      state.addingPrincipalId
+    )
+      return state;
+    const roleErrors = { ...state.roleErrors };
+    delete roleErrors[principalId];
+    return {
+      ...state,
+      pendingRolePrincipalIds: [...state.pendingRolePrincipalIds, principalId],
+      roleErrors,
+    };
+  },
+);
+workspaceShareReducer.with(
+  shareMemberRoleSettled,
+  (state, { payload: [{ target, principalId, error }] }) => {
+    if (
+      !targets(state, target) ||
+      state.withheld ||
+      !state.pendingRolePrincipalIds.includes(principalId)
+    )
+      return state;
+    const roleErrors = { ...state.roleErrors };
+    if (error) roleErrors[principalId] = error;
+    else delete roleErrors[principalId];
+    return {
+      ...state,
+      pendingRolePrincipalIds: state.pendingRolePrincipalIds.filter((id) => id !== principalId),
+      roleErrors,
+      mutationGeneration: error === null ? state.mutationGeneration + 1 : state.mutationGeneration,
     };
   },
 );

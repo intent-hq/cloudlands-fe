@@ -48,8 +48,17 @@ const mocks = vi.hoisted(() => {
     },
   ]);
 
-  return { specialists$, writable, navigateToSettings: vi.fn() };
+  return {
+    specialists$,
+    recentSpecialistIds$: writable<string[]>([]),
+    writable,
+    navigateToSettings: vi.fn(),
+  };
 });
+
+vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
+  selectWorkspaceInitializerRecentSpecialistIds: () => mocks.recentSpecialistIds$,
+}));
 
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
   selectSpecialists: () => mocks.specialists$,
@@ -86,9 +95,43 @@ function session(specialist?: string): AgentSession {
 describe('RegularAgentWelcome specialist picker', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.recentSpecialistIds$.set([]);
   });
 
   afterEach(cleanup);
+
+  async function openOptionIds(): Promise<string[]> {
+    await fireEvent.click(screen.getByTestId('specialist-picker-trigger'));
+    await screen.findByRole('menuitemradio', { name: /General/ });
+    return screen
+      .getAllByRole('menuitemradio')
+      .map((item) => item.getAttribute('data-specialist-option') ?? '');
+  }
+
+  it('keeps catalog order when nothing has been used', async () => {
+    render(RegularAgentWelcome, { props: { session: session(), onSpecialistChange: vi.fn() } });
+
+    expect(await openOptionIds()).toEqual([
+      'general',
+      'spec-writer',
+      'implementor',
+      'verifier',
+      'ui-designer',
+    ]);
+  });
+
+  it('lists recently used specialists first, newest first, then the rest in catalog order', async () => {
+    mocks.recentSpecialistIds$.set(['ui-designer', 'removed-specialist', 'verifier']);
+    render(RegularAgentWelcome, { props: { session: session(), onSpecialistChange: vi.fn() } });
+
+    expect(await openOptionIds()).toEqual([
+      'general',
+      'ui-designer',
+      'verifier',
+      'spec-writer',
+      'implementor',
+    ]);
+  });
 
   it('shows rich specialist details and selects a specialist', async () => {
     const onSpecialistChange = vi.fn();
@@ -154,3 +197,7 @@ describe('RegularAgentWelcome specialist picker', () => {
     });
   });
 });
+
+vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', () => ({
+  selectContextSpecialists: () => mocks.specialists$,
+}));

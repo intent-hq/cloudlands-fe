@@ -4,7 +4,10 @@
  * first-class `agent.update` `reasoningEffort` wire and the legacy
  * compound-model `agent.setModel` wire.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { runSaga, stdChannel, type Task } from 'redux-saga';
+import { withLegacyPrincipal } from '../../test/fixtures/principal-state';
+import { CURRENT_PROTOCOL_VERSION } from '../../test/current-protocol-version';
 
 const mockSetReasoningEffort = vi.hoisted(() =>
   vi.fn(
@@ -34,7 +37,7 @@ const storeState = vi.hoisted(() => ({
       }
     >,
   },
-  daemonHealth: { stats: { protocolVersion: '6.1' } },
+  daemonHealth: { stats: { protocolVersion: null as string | null } }, // Set per test in beforeEach.
 }));
 const mockDispatch = vi.hoisted(() => vi.fn());
 
@@ -42,14 +45,43 @@ vi.mock('$lib/client', () => ({
   appClient: { agents: { setReasoningEffort: mockSetReasoningEffort } },
 }));
 vi.mock('./agent.client', () => ({ agentClient: { setModel: mockSetModel } }));
-vi.mock('$store/renderer/store', () => ({
-  store: {
-    dispatch: mockDispatch,
-    get state() {
-      return storeState;
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  const module = createAppStoreMockModule({
+    state: () =>
+      withLegacyPrincipal({
+        ...storeState,
+        agentModel: mutationState,
+        agentSessions: {
+          byAgentId: {
+            'agent-1': { workspaceId: 'ws-1', ...storeState.agentSessions.byAgentId['agent-1'] },
+          },
+        },
+        connections: { hasReceivedList: true, windowBackendId: 'local' },
+        guestSessions: { hasReceivedList: true, sessions: { ids: [], map: {} } },
+        workspace: {
+          workspaces: { ids: ['ws-1'], map: { 'ws-1': { id: 'ws-1', myRole: 'owner' } } },
+        },
+      }),
+    dispatch: (action) => {
+      mutationState = agentModelReducer(mutationState, action);
+      if (action.type === updateSession.type) mockDispatch(action);
+      channel.put(action);
+      return action;
     },
-  },
-}));
+  });
+  const { select } = await import('redux-saga/effects');
+  const createSelector = module.store.createSelector;
+  module.store.createSelector = (fn) => {
+    const selector = createSelector(fn);
+    selector.effect = function* (...args) {
+      return yield select(fn, ...args);
+    };
+    return selector;
+  };
+  return module;
+});
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentProvider: {
     select: (_state: unknown, agentId: string) => {
@@ -71,7 +103,28 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
 vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: mockToastError } }));
 
 import { updateSession } from '$store/renderer/slices/agent-session/agent-session-slice';
-import { applyReasoningEffort, reconcileAgentReasoningEffort } from './reasoning-effort';
+import { agentModelReducer } from '$store/renderer/slices/agent-model/agent-model-slice';
+import { agentModelSaga } from '$store/renderer/slices/agent-model/sagas/agent-model-saga';
+import { store } from '$store/renderer/store';
+import {
+  applyReasoningEffort,
+  markReasoningEffortIntent,
+  reconcileAgentReasoningEffort,
+  releaseReasoningEffortIntent,
+} from './reasoning-effort';
+
+let channel: ReturnType<typeof stdChannel>;
+let task: Task;
+let mutationState = agentModelReducer(undefined, { type: 'init' });
+beforeEach(() => {
+  mutationState = agentModelReducer(undefined, { type: 'init' });
+  channel = stdChannel();
+  task = runSaga(
+    { channel, dispatch: store.dispatch, getState: () => store.state },
+    agentModelSaga,
+  );
+});
+afterEach(() => task.cancel());
 
 function setStoredEffort(agentId: string, effort: string | null) {
   storeState.agentSessions.byAgentId[agentId] = {
@@ -89,7 +142,7 @@ describe('applyReasoningEffort', () => {
       data: { success: true, modelId },
     }));
     storeState.agentSessions.byAgentId = {};
-    storeState.daemonHealth.stats.protocolVersion = '6.1';
+    storeState.daemonHealth.stats.protocolVersion = CURRENT_PROTOCOL_VERSION;
     mockDispatch.mockImplementation((action: { payload?: unknown[] }) => {
       const [agentId, patch] = (action.payload ?? []) as [
         string,
@@ -107,7 +160,7 @@ describe('applyReasoningEffort', () => {
     expect(applied).toBe(true);
     expect(mockDispatch).toHaveBeenCalledTimes(1);
     expect(mockDispatch).toHaveBeenCalledWith(
-      updateSession('agent-1', { reasoningEffort: 'high' }),
+      updateSession('agent-1', { reasoningEffort: 'high' }, { reasoningEffortSource: 'control' }),
     );
     expect(mockSetReasoningEffort).toHaveBeenCalledWith({
       agentId: 'agent-1',
@@ -127,7 +180,7 @@ describe('applyReasoningEffort', () => {
   });
 
   it('uses the compound-model agent.setModel wire when the daemon lacks the reasoningEffort field', async () => {
-    storeState.daemonHealth.stats.protocolVersion = '5.1';
+    storeState.daemonHealth.stats.protocolVersion = '5.1'; // fixture-protocol-version: legacy compound-model effort wire (before 5.2)
     storeState.agentSessions.byAgentId['agent-1'] = {
       reasoningEffort: null,
       model: 'gpt-5.3-codex',
@@ -142,7 +195,7 @@ describe('applyReasoningEffort', () => {
   });
 
   it('resolves a legacy provider from session metadata before building the model id', async () => {
-    storeState.daemonHealth.stats.protocolVersion = '5.1';
+    storeState.daemonHealth.stats.protocolVersion = '5.1'; // fixture-protocol-version: legacy compound-model effort wire (before 5.2)
     storeState.agentSessions.byAgentId['agent-1'] = {
       reasoningEffort: null,
       model: 'gpt-5.1-codex',
@@ -156,7 +209,7 @@ describe('applyReasoningEffort', () => {
   });
 
   it('uses catalog-advertised legacy effort variants for an Auggie model', async () => {
-    storeState.daemonHealth.stats.protocolVersion = '5.1';
+    storeState.daemonHealth.stats.protocolVersion = '5.1'; // fixture-protocol-version: legacy compound-model effort wire (before 5.2)
     storeState.agentSessions.byAgentId['agent-1'] = {
       reasoningEffort: null,
       model: 'gpt5.6-sol',
@@ -171,7 +224,7 @@ describe('applyReasoningEffort', () => {
   });
 
   it('clears a legacy compound-model effort by selecting the base model', async () => {
-    storeState.daemonHealth.stats.protocolVersion = '5.1';
+    storeState.daemonHealth.stats.protocolVersion = '5.1'; // fixture-protocol-version: legacy compound-model effort wire (before 5.2)
     storeState.agentSessions.byAgentId['agent-1'] = {
       reasoningEffort: 'high',
       model: 'gpt-5.3-codex/high',
@@ -224,7 +277,7 @@ describe('applyReasoningEffort', () => {
     expect(applied).toBe(false);
     expect(mockDispatch).toHaveBeenCalledTimes(1);
     expect(mockDispatch).toHaveBeenCalledWith(
-      updateSession('agent-1', { reasoningEffort: 'xhigh' }),
+      updateSession('agent-1', { reasoningEffort: 'xhigh' }, { reasoningEffortSource: 'control' }),
     );
     expect(mockToastError).not.toHaveBeenCalled();
   });
@@ -242,6 +295,96 @@ describe('applyReasoningEffort', () => {
     );
     expect(mockToastError).toHaveBeenCalledWith('unsupported');
   });
+
+  it('suppresses a late failure toast if the caller is disposed during rollback', async () => {
+    mockSetReasoningEffort.mockResolvedValue({ success: false, error: 'unsupported' });
+    let live = true;
+    mockDispatch.mockImplementation(
+      (action: { payload: [string, { reasoningEffort: string }] }) => {
+        const [agentId, patch] = action.payload;
+        setStoredEffort(agentId, patch.reasoningEffort);
+        if (patch.reasoningEffort === 'low') live = false;
+      },
+    );
+
+    const applied = await applyReasoningEffort('agent-1', 'ws-1', 'high', 'low', {
+      canMutate: () => live,
+    });
+
+    expect(applied).toBe(false);
+    expect(storeState.agentSessions.byAgentId['agent-1']?.reasoningEffort).toBe('low');
+    expect(mockToastError).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])(
+    'serializes overlapping choices and rolls back to the accepted baseline (first accepted: %s)',
+    async (accepted) => {
+      let settle!: (result: { success: boolean; error?: string }) => void;
+      mockSetReasoningEffort.mockImplementationOnce(
+        () => new Promise((resolve) => (settle = resolve)),
+      );
+      mockSetReasoningEffort.mockResolvedValueOnce({ success: false, error: 'latest failed' });
+      const first = applyReasoningEffort('agent-1', 'ws-1', 'low', null);
+      const latest = applyReasoningEffort('agent-1', 'ws-1', 'high', 'medium');
+      expect(mockSetReasoningEffort).toHaveBeenCalledTimes(1);
+      expect(storeState.agentSessions.byAgentId['agent-1'].reasoningEffort).toBe('high');
+      settle({ success: accepted, error: 'old failed' });
+      expect(await first).toBe(accepted);
+      expect(await latest).toBe(false);
+      expect(storeState.agentSessions.byAgentId['agent-1'].reasoningEffort).toBe(
+        accepted ? 'low' : null,
+      );
+      expect(mockToastError).toHaveBeenCalledExactlyOnceWith('latest failed');
+      expect(await applyReasoningEffort('agent-1', 'ws-1', 'medium', accepted ? 'low' : null)).toBe(
+        true,
+      );
+    },
+  );
+
+  it('does not roll back a newer coalescing choice with the same effort value', async () => {
+    let settle!: (result: { success: boolean; error?: string }) => void;
+    mockSetReasoningEffort.mockImplementationOnce(
+      () => new Promise((resolve) => (settle = resolve)),
+    );
+    const first = applyReasoningEffort('agent-1', 'ws-1', 'high', null);
+    const intent = markReasoningEffortIntent('agent-1', 'ws-1');
+    settle({ success: false, error: 'old failed' });
+    expect(await first).toBe(false);
+    expect(storeState.agentSessions.byAgentId['agent-1'].reasoningEffort).toBe('high');
+    expect(mockToastError).not.toHaveBeenCalled();
+    expect(
+      await applyReasoningEffort('agent-1', 'ws-1', 'high', null, { source: 'encoder', intent }),
+    ).toBe(true);
+  });
+
+  it.each([false, true])(
+    'reconciles a released issued success only when its caller permits it (%s)',
+    async (canReconcile) => {
+      let settle!: (result: { success: boolean }) => void;
+      mockSetReasoningEffort.mockImplementationOnce(
+        () => new Promise((resolve) => (settle = resolve)),
+      );
+      let live = true;
+      const intent = markReasoningEffortIntent('agent-1', 'ws-1');
+      const writing = applyReasoningEffort('agent-1', 'ws-1', 'low', null, {
+        source: 'encoder',
+        intent,
+        canSend: () => live,
+        canMutate: () => live,
+        canReconcileAccepted: () => canReconcile,
+      });
+      live = false;
+      releaseReasoningEffortIntent('agent-1', 'ws-1', intent);
+      setStoredEffort('agent-1', null);
+      settle({ success: true });
+      expect(await writing).toBe(true);
+      expect(storeState.agentSessions.byAgentId['agent-1'].reasoningEffort).toBe(
+        canReconcile ? 'low' : null,
+      );
+      expect(mockSetReasoningEffort).toHaveBeenCalledTimes(1);
+      expect(mockToastError).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe('reconcileAgentReasoningEffort', () => {

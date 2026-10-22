@@ -60,7 +60,7 @@ describe('ChiefCard null-safe agentId access', () => {
     window.addEventListener('error', onError);
 
     try {
-      const { queryByTestId } = render(ChiefCard, { props: { expanded: true } });
+      const { queryByTestId } = render(ChiefCard);
       await waitFor(() => expect(queryByTestId('mock-chat-panel')).not.toBeNull());
 
       appStore.dispatch(removeSession(agentId));

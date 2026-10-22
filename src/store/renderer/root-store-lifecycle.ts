@@ -1,4 +1,4 @@
-import type { Store } from '@augmentcode/themis/svelte-store';
+import type { Store } from '@themislib/themis/svelte-store';
 
 import type { AppSagaCancel } from './sagas';
 import { initAppStore } from './store';

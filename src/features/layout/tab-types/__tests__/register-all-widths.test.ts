@@ -9,6 +9,7 @@ vi.mock('../TerminalTabType.svelte', mockTabType);
 vi.mock('../CodeReviewTabType.svelte', mockTabType);
 vi.mock('../AgentOverviewTabType.svelte', mockTabType);
 vi.mock('../AgentTabType.svelte', mockTabType);
+vi.mock('../DiscussionTabType.svelte', mockTabType);
 vi.mock('../NoteTabType.svelte', mockTabType);
 vi.mock('../FileTabType.svelte', mockTabType);
 vi.mock('../DiffTabType.svelte', mockTabType);
@@ -26,6 +27,7 @@ import { RESOURCE_ICON_BY_KIND } from '$lib/components/shared/resource-icon';
 
 const expectedTiers = {
   agent: 'chat',
+  discussion: 'chat',
   'agent-overview': 'narrow',
   'activity-changes': 'wide',
   browser: 'wide',
@@ -38,6 +40,7 @@ const expectedTiers = {
   'local-changes': 'wide',
   note: 'medium',
   overview: 'narrow',
+  workspace: 'wide',
   settings: 'narrow',
   terminal: 'medium',
 } satisfies Partial<Record<PanelTabType, PanelDefaultWidthTier>>;
@@ -73,6 +76,19 @@ describe('registered panel default width tiers', () => {
     await preloadRestoredTabTypes({
       restoreStatus: 'restored',
       panels: {
+        discussion: {
+          id: 'discussion',
+          activeTabId: 'discussion-tab',
+          tabs: [
+            {
+              id: 'discussion-tab',
+              type: 'discussion',
+              workspaceId: 'ws-1',
+              title: 'Workspace discussion',
+              closable: true,
+            },
+          ],
+        },
         first: {
           id: 'first',
           activeTabId: 'terminal-tab',
@@ -85,6 +101,7 @@ describe('registered panel default width tiers', () => {
     });
 
     expect(tabTypeRegistry.getLoadedComponent('terminal')).toBeDefined();
+    expect(tabTypeRegistry.getLoadedComponent('discussion')).toBeDefined();
     expect(tabTypeRegistry.getLoadedComponent('file')).toBeUndefined();
   });
 });

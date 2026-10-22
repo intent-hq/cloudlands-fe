@@ -1,5 +1,8 @@
 import { call, delay, put, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 
+import { selectGithubUserSearchRevision } from '../github-user-search-selectors';
+import { store } from '$store/renderer/store';
+import { captureIntegrationContext } from '$features/integrations-request-context';
 import { githubAuthClient } from '$features/github-auth/renderer/github-auth.client';
 import type { GithubUserSearchHit } from '$features/github-auth/types';
 import {
@@ -30,6 +33,9 @@ function normalizeUser(user: GithubUserSearchHit): GithubUserSearchItem {
 function* searchGithubUsersWorker(
   action: ReturnType<typeof searchGithubUsers>,
 ): SagaGenerator<void> {
+  const context = captureIntegrationContext(action.payload[1]);
+  const revision = yield* selectGithubUserSearchRevision.effect();
+  const isCurrent = () => context.isCurrent() && store.state.githubUserSearch.revision === revision;
   const query = normalizeGithubUserQuery(action.payload[0]);
   if (query.length < GITHUB_USER_QUERY_MIN_LENGTH) {
     yield* put(clearGithubUserSearch());
@@ -37,11 +43,14 @@ function* searchGithubUsersWorker(
   }
 
   yield* delay(USER_SEARCH_DEBOUNCE_MS);
+  if (!isCurrent()) return;
   yield* put(setGithubUserSearchLoading(query));
   const result: Awaited<ReturnType<typeof githubAuthClient.searchUsers>> = yield* call(
     [githubAuthClient, githubAuthClient.searchUsers],
     query,
+    ...(context.workspaceId === undefined ? [] : [context.workspaceId]),
   );
+  if (!isCurrent()) return;
   if (!result.success) {
     // The wire error is not user copy; surface the localized message instead.
     yield* put(setGithubUserSearchError(query, m.workspace_share_userSearchFailed_error()));

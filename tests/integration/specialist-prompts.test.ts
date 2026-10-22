@@ -11,12 +11,28 @@
  * 3. Catch accidental prompt regressions
  */
 
-import { describe, it, expect, vi, beforeAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { SPECIALISTS, getSpecialistById } from '../../src/lib/constants/specialists';
 import {
   formatSpecialistsForPrompt,
+  getEffectiveSpecialist,
   initSpecialistsService,
 } from '../../src/features/agent/main/specialists.service';
+
+// Own the root before the service's transitive IPC debug tracker resolves userData.
+const { specialistRoot, resolveSpecialistRoot } = await vi.hoisted(async () => {
+  const { createSpecialistTestRoot } = await import('./helpers/specialist-test-root');
+  const specialistRoot = await createSpecialistTestRoot();
+  return {
+    specialistRoot,
+    resolveSpecialistRoot: vi.fn(() => specialistRoot.path),
+  };
+});
+
+vi.mock('../../src/shared/main/utils', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/shared/main/utils')>()),
+  getSafeHomeDir: resolveSpecialistRoot,
+}));
 
 // Mock electron-store for initSpecialistsService
 vi.mock('electron-store', () => ({
@@ -34,7 +50,7 @@ vi.mock('electron-store', () => ({
 // Mock electron app for file paths
 vi.mock('electron', () => ({
   app: {
-    getPath: () => '/tmp/test-augment',
+    getPath: () => specialistRoot.path,
     isPackaged: false,
   },
 }));
@@ -42,7 +58,16 @@ vi.mock('electron', () => ({
 describe('Specialist Prompts Verification', () => {
   // Initialize the specialists service to populate the file cache with bundled specialists
   beforeAll(async () => {
+    expect(resolveSpecialistRoot).not.toHaveBeenCalled();
     await initSpecialistsService();
+  });
+
+  afterAll(async () => {
+    await specialistRoot?.dispose();
+    resolveSpecialistRoot.mockImplementation(() => {
+      throw new Error('Specialist fixture root is released');
+    });
+    vi.restoreAllMocks();
   });
 
   describe('Specialist Definitions', () => {
@@ -102,19 +127,18 @@ describe('Specialist Prompts Verification', () => {
       expect(uiDesigner!.defaultModel).toBeUndefined();
     });
 
-    it('chief-of-staff should use the user default model and document app workflows', () => {
-      const chief = getSpecialistById('chief-of-staff');
-      expect(chief).toBeDefined();
-      expect(chief!.defaultModel).toBeUndefined();
-      expect(chief!.defaultBehaviorPrompt).toContain('Chief of Staff');
-      expect(chief!.defaultBehaviorPrompt).toContain('ws.app.workspaces.*');
-      expect(chief!.defaultBehaviorPrompt).toContain('proposal cards');
-      expect(chief!.defaultBehaviorPrompt).toContain('confirmation cards');
-      expect(chief!.defaultBehaviorPrompt).toContain('NavLink');
+    it('chief-of-staff should load bundled app workflows and inherit the user default model', () => {
+      const chief = getEffectiveSpecialist('chief-of-staff');
+      expect(chief).not.toBeNull();
+      expect(chief!.model).toBe('');
+      expect(chief!.behaviorPrompt).toContain('ws.app.workspaces.*');
+      expect(chief!.behaviorPrompt).toContain('proposal cards');
+      expect(chief!.behaviorPrompt).toContain('confirmation cards');
+      expect(chief!.behaviorPrompt).toContain('NavLink');
     });
 
-    it('chief-of-staff should document positional completion-only messaging', () => {
-      const prompt = getSpecialistById('chief-of-staff')!.defaultBehaviorPrompt;
+    it('chief-of-staff should load positional completion-only messaging', () => {
+      const prompt = getEffectiveSpecialist('chief-of-staff')!.behaviorPrompt;
 
       expect(prompt).toContain('ws.app.agents.send(agentId, message, priority?)');
       expect(prompt).toContain('ws.app.agents.ask(agentId, message, priority?)');

@@ -3,7 +3,7 @@ import { getQuestionFromResourceBlock, type Question } from '$shared/types/quest
 import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
 import { isAgentRunningState, toAgentRuntimeStateInput } from '$shared/utils/agent-runtime-state';
 import { isQuestionMessageDismissed } from '$shared/utils/question-dismissal';
-import { getAnsweredQuestionsMessageId } from './answer-message';
+import { getAnsweredQuestionsMessageIds } from './answer-message';
 
 /**
  * Pending Agent Q&A questions for the composer-slot wizard. The daemon's
@@ -51,7 +51,8 @@ export function isQuestionSetAnswered(
   messageId: string,
 ): boolean {
   return messages.some(
-    (message) => message.role === 'user' && getAnsweredQuestionsMessageId(message) === messageId,
+    (message) =>
+      message.role === 'user' && getAnsweredQuestionsMessageIds(message).includes(messageId),
   );
 }
 
@@ -65,8 +66,8 @@ export function isQuestionSetAnsweredInQueue(
   queuedMessages: readonly QueuedMessage[],
   messageId: string,
 ): boolean {
-  return queuedMessages.some(
-    (queued) => getAnsweredQuestionsMessageId({ metadata: queued.messageMetadata }) === messageId,
+  return queuedMessages.some((queued) =>
+    getAnsweredQuestionsMessageIds({ metadata: queued.messageMetadata }).includes(messageId),
   );
 }
 

@@ -82,6 +82,48 @@ describe('updateOffscreenWebviewCache', () => {
     ]);
   });
 
+  describe('explicit recovery admission', () => {
+    const candidates = [candidate('a'), candidate('b'), candidate('c')];
+
+    it.each([1_000, 500])('admits an evicted target even at clock time %i', (now) => {
+      const first = updateOffscreenWebviewCache(new Map(), candidates, 1_000, 2);
+      const recovered = updateOffscreenWebviewCache(first, candidates, now, 2, new Set(['c']));
+      expect([...recovered.keys()]).toEqual(['a', 'c']);
+      const settled = updateOffscreenWebviewCache(recovered, candidates, 2_000, 2);
+      expect([...settled.keys()]).toEqual(['a', 'c']);
+      expect(areOffscreenWebviewCachesEqual(recovered, settled)).toBe(true);
+    });
+
+    it('does not refresh a mounted target or admit an unknown tab', () => {
+      const first = updateOffscreenWebviewCache(new Map(), candidates, 1_000, 2);
+      const next = updateOffscreenWebviewCache(
+        first,
+        candidates,
+        2_000,
+        2,
+        new Set(['a', 'unknown']),
+      );
+      expect(areOffscreenWebviewCachesEqual(first, next)).toBe(true);
+    });
+
+    it('preserves pinned guests and the cap when several evicted tabs request recovery', () => {
+      const withPinned = [{ ...candidate('owned'), pinned: true }, ...candidates];
+      const first = updateOffscreenWebviewCache(new Map(), withPinned, 1_000, 1);
+      const next = updateOffscreenWebviewCache(first, withPinned, 2_000, 1, new Set(['b', 'c']));
+      expect([...next.keys()]).toEqual(['owned', 'b']);
+      expect([...updateOffscreenWebviewCache(next, withPinned, 3_000, 1).keys()]).toEqual([
+        'owned',
+        'b',
+      ]);
+    });
+
+    it('respects a zero unowned cap even for explicit recovery', () => {
+      const first = updateOffscreenWebviewCache(new Map(), candidates, 1_000, 0);
+      const next = updateOffscreenWebviewCache(first, candidates, 2_000, 0, new Set(['c']));
+      expect(next.size).toBe(0);
+    });
+  });
+
   // intent#4650: evicted-but-eligible candidates used to be re-stamped `now`
   // on every reconcile, so they displaced live guests on unchanged input.
   describe('repeated reconciliation above the cap', () => {

@@ -15,6 +15,9 @@ for (const zoom of [1, 2]) {
   }) => {
     const component = await mount(WorkspaceAgentsListGeometryHarness, {
       props: { width: 300, zoom },
+      hooksConfig: {
+        mockBackend: { 'agent.rename': { success: true, name: 'Alpha  Beta  42!?' } },
+      },
     });
     const row = component.locator('[data-agent-panel-row="long-name"]');
     await expect(component.locator('[data-selected-agent]')).toHaveAttribute(

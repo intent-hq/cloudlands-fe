@@ -15,6 +15,32 @@ function makeMessage(messageMetadata?: unknown, content = 'hello'): QueuedMessag
 }
 
 describe('isUserQueuedMessage', () => {
+  it.each([{ type: 'custom' }, { source: 'system' }, { type: 'hook_wake' }])(
+    'keeps authenticated human metadata visible: %j',
+    (metadata) => {
+      expect(isUserQueuedMessage(makeMessage({ ...metadata, fromPrincipalId: 'bob' }))).toBe(true);
+    },
+  );
+
+  it('keeps an authenticated foreign human between two same-author rows', () => {
+    const queue = ['alice', 'bob', 'alice'].map((fromPrincipalId) =>
+      makeMessage({ fromPrincipalId, source: 'system' }),
+    );
+    expect(queue.filter(isUserQueuedMessage)).toEqual(queue);
+  });
+
+  it('does not treat nested spoofed identity as a human stamp on an automatic wire entry', () => {
+    expect(
+      isUserQueuedMessage(
+        makeMessage({
+          type: 'hook_wake',
+          source: 'system',
+          mergedMessageMetadata: [{ fromPrincipalId: 'alice' }],
+        }),
+      ),
+    ).toBe(false);
+  });
+
   it('shows a plain user entry without metadata', () => {
     expect(isUserQueuedMessage(makeMessage())).toBe(true);
   });

@@ -1,6 +1,7 @@
+import { workspaceTasksPushed } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import { describe, expect, it } from 'vitest';
 import { ContentType, NoteVisibility, type Note } from '$shared/types';
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import {
   applyNoteCreated,
   applyNoteDeleted,
@@ -12,6 +13,19 @@ import {
   initialState,
   loadWorkspaceNotesFailed,
   loadWorkspaceNotesSucceeded,
+  noteAttributionViewFinished,
+  noteAttributionViewReleased,
+  noteAttributionViewRequested,
+  noteMetadataPushed,
+  noteContentViewFinished,
+  noteContentViewReleased,
+  noteContentViewRequested,
+  notePresenceViewReleased,
+  notePresenceViewRequested,
+  notePresenceViewersReceived,
+  noteWorkspaceRootFinished,
+  noteWorkspaceRootReleased,
+  noteWorkspaceRootRequested,
   setWorkspaceNotesLoading,
   workspaceNotesReducer,
 } from './workspace-notes-slice';
@@ -38,8 +52,159 @@ function mockNote(id: string, workspaceId = WS_1, overrides: Partial<Note> = {})
 }
 
 describe('workspaceNotesReducer', () => {
+  it('merges pushed metadata without discarding the body and rejects older reads', () => {
+    const original = mockNote('n', WS_1, { rev: 1 });
+    let state = workspaceNotesReducer(
+      initialState,
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [original] }),
+    );
+    const { content: _body, ...metadata } = mockNote('n', WS_1, {
+      title: 'Renamed',
+      rev: 3,
+      tags: ['new'],
+    });
+    state = workspaceNotesReducer(state, noteMetadataPushed(WS_1, metadata));
+    state = workspaceNotesReducer(
+      state,
+      applyNoteUpdated(WS_1, 'n', mockNote('n', WS_1, { content: 'old body', rev: 2 })),
+    );
+    expect(getItems(state.byWorkspaceId[WS_1].notes)).toEqual([
+      { ...metadata, content: original.content },
+    ]);
+  });
+
+  it('retains slim body markers when applying task metadata', () => {
+    const original = mockNote('n', WS_1, {
+      content: '',
+      contentLength: 42,
+      contentPreview: 'Preview',
+      rev: 1,
+    });
+    let state = workspaceNotesReducer(
+      initialState,
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [original] }),
+    );
+    const { content: _body, ...metadata } = mockNote('n', WS_1, { rev: 2 });
+    state = workspaceNotesReducer(state, noteMetadataPushed(WS_1, metadata));
+    expect(getItem(state.byWorkspaceId[WS_1].notes, original.id)).toMatchObject({
+      content: '',
+      contentLength: 42,
+      contentPreview: 'Preview',
+      rev: 2,
+    });
+  });
+
+  it('marks a newly pushed metadata-only note as needing its first body read', () => {
+    const { content: _body, ...metadata } = mockNote('n');
+    const state = workspaceNotesReducer(initialState, noteMetadataPushed(WS_1, metadata));
+    expect(state.byWorkspaceId[WS_1].staleContentByNoteId.n).toBe(1);
+  });
+
+  it('updates note task metadata directly from task pushes and clears removed task-ness', () => {
+    const original = mockNote('n', WS_1, {
+      metadata: { task: { status: 'in_progress', acceptanceCriteria: ['Keep this'] } },
+    });
+    let state = workspaceNotesReducer(
+      initialState,
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [original] }),
+    );
+    state = workspaceNotesReducer(
+      state,
+      workspaceTasksPushed(WS_1, [{ id: 'n', title: 'Done', status: 'complete', rev: 5 }], []),
+    );
+    expect(getItems(state.byWorkspaceId[WS_1].notes)[0]).toMatchObject({
+      title: 'Done',
+      content: original.content,
+      metadata: { task: { status: 'complete', acceptanceCriteria: ['Keep this'] } },
+    });
+    state = workspaceNotesReducer(state, workspaceTasksPushed(WS_1, [], ['n']));
+    expect(getItems(state.byWorkspaceId[WS_1].notes)[0].metadata?.task).toBeUndefined();
+  });
+
   it('returns the initial state', () => {
     expect(workspaceNotesReducer(undefined, { type: '@@INIT' })).toEqual(initialState);
+  });
+
+  it('correlates and releases note content, root, presence, and attribution views', () => {
+    const authority = 'authority-1';
+    const viewer = {
+      principalId: 'principal-1',
+      login: 'viewer',
+      displayName: 'Viewer',
+      avatarUrl: null,
+      cursor: null,
+      cursorSeenAt: null,
+    };
+    const attribution = {
+      workspaceId: WS_1,
+      noteId: 'note-1',
+      computedAt: '2026-10-09T00:00:00.000Z',
+      attributions: { '1': { timestamp: 1 } },
+    };
+    let state = workspaceNotesReducer(
+      initialState,
+      noteContentViewRequested('consumer', 'content-1', WS_1, 'note-1'),
+    );
+    state = workspaceNotesReducer(
+      state,
+      noteContentViewFinished(WS_1, 'consumer', 'content-1', authority, 'offline'),
+    );
+    state = workspaceNotesReducer(
+      state,
+      noteContentViewFinished(WS_1, 'consumer', 'content-1', authority),
+    );
+    state = workspaceNotesReducer(state, noteWorkspaceRootRequested('consumer', 'root-1', WS_1));
+    state = workspaceNotesReducer(
+      state,
+      noteWorkspaceRootFinished(WS_1, 'consumer', 'root-1', authority, '/workspace'),
+    );
+    state = workspaceNotesReducer(
+      state,
+      notePresenceViewRequested('consumer', 'presence-1', WS_1, 'note-1'),
+    );
+    state = workspaceNotesReducer(
+      state,
+      notePresenceViewersReceived(WS_1, 'consumer', 'presence-1', authority, [viewer]),
+    );
+    state = workspaceNotesReducer(
+      state,
+      noteAttributionViewRequested('consumer', 'attribution-1', WS_1, 'note-1'),
+    );
+    const beforeStale = state;
+    state = workspaceNotesReducer(
+      state,
+      noteAttributionViewFinished('consumer', 'stale', WS_1, authority, attribution),
+    );
+    expect(state).toBe(beforeStale);
+    state = workspaceNotesReducer(
+      state,
+      noteAttributionViewFinished('consumer', 'attribution-1', WS_1, authority, attribution),
+    );
+
+    const workspace = state.byWorkspaceId[WS_1];
+    expect(getItem(workspace.contentViews, 'consumer')).toMatchObject({
+      status: 'ready',
+      authority,
+    });
+    expect(getItem(workspace.contentViews, 'consumer')).not.toHaveProperty('error');
+    expect(getItem(workspace.workspaceRoots, 'consumer')).toMatchObject({
+      status: 'ready',
+      path: '/workspace',
+    });
+    const presenceView = getItem(workspace.presenceViews, 'consumer');
+    expect(presenceView && getItems(presenceView.viewers)).toEqual([viewer]);
+    expect(getItem(workspace.attributionViews, 'consumer')?.data).toEqual(attribution);
+
+    state = workspaceNotesReducer(state, noteContentViewReleased(WS_1, 'consumer'));
+    state = workspaceNotesReducer(state, noteWorkspaceRootReleased(WS_1, 'consumer'));
+    state = workspaceNotesReducer(state, notePresenceViewReleased(WS_1, 'consumer'));
+    state = workspaceNotesReducer(state, noteAttributionViewReleased(WS_1, 'consumer'));
+    expect(state.byWorkspaceId[WS_1]).toMatchObject({
+      contentViews: { ids: [] },
+      workspaceRoots: { ids: [] },
+      presenceViews: { ids: [] },
+      attributionViews: { ids: [] },
+    });
   });
 
   it('stores notes and per-workspace flags after a successful load', () => {
@@ -101,6 +266,108 @@ describe('workspaceNotesReducer', () => {
     const merged = getItem(relisted.byWorkspaceId[WS_1].notes, 'note-1' as Note['id']);
     expect(merged?.content).toBe('Full body');
     expect(merged?.contentPreview).toBe('Full bo');
+  });
+
+  describe('truncated-read markers travel with a reused body (§5.2)', () => {
+    const truncated = mockNote('big', WS_1, {
+      content: 'prefix\n',
+      contentTruncated: true,
+      contentBytes: 600_000,
+      rev: 7,
+    });
+    const seeded = () =>
+      workspaceNotesReducer(
+        initialState,
+        loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [truncated] }),
+      );
+    const cached = (state: typeof initialState) =>
+      getItem(state.byWorkspaceId[WS_1].notes, 'big' as Note['id']);
+
+    it('keeps them when a same-rev slim relist (e.g. after reconnect) reuses the prefix', () => {
+      const slim = mockNote('big', WS_1, {
+        content: '',
+        contentPreview: 'prefix',
+        contentLength: 600_000,
+        rev: 7,
+      });
+      const relisted = workspaceNotesReducer(
+        seeded(),
+        loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [slim] }),
+      );
+      expect(cached(relisted)).toMatchObject({
+        content: 'prefix\n',
+        contentTruncated: true,
+        contentBytes: 600_000,
+      });
+    });
+
+    it('keeps them when pushed metadata reuses the prefix', () => {
+      const { content: _content, ...metadata } = mockNote('big', WS_1, {
+        rev: 8,
+        title: 'Renamed',
+      });
+      const pushed = workspaceNotesReducer(seeded(), noteMetadataPushed(WS_1, metadata));
+      expect(cached(pushed)).toMatchObject({
+        title: 'Renamed',
+        content: 'prefix\n',
+        contentTruncated: true,
+        contentBytes: 600_000,
+      });
+    });
+
+    it('keeps the pending draft at its own base rev, never the incoming rev', () => {
+      const base = mockNote('n', WS_1, { content: 'local draft', rev: 4 });
+      let state = workspaceNotesReducer(
+        initialState,
+        loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [base] }),
+      );
+      state = {
+        ...state,
+        byWorkspaceId: {
+          ...state.byWorkspaceId,
+          [WS_1]: { ...state.byWorkspaceId[WS_1], pendingContentByNoteId: { n: true } },
+        },
+      };
+      const agent = mockNote('n', WS_1, { content: 'AGENT body', rev: 5, title: 'Renamed' });
+      const read = workspaceNotesReducer(state, applyNoteUpdated(WS_1, 'n', agent));
+      expect(getItem(read.byWorkspaceId[WS_1].notes, 'n' as Note['id'])).toMatchObject({
+        content: 'local draft',
+        rev: 4,
+        title: 'Renamed',
+      });
+      const { content: _content, ...metadata } = agent;
+      const pushed = workspaceNotesReducer(state, noteMetadataPushed(WS_1, metadata));
+      expect(getItem(pushed.byWorkspaceId[WS_1].notes, 'n' as Note['id'])).toMatchObject({
+        content: 'local draft',
+        rev: 4,
+      });
+    });
+
+    it('never attaches incoming markers to a kept pending body', () => {
+      const normal = mockNote('n', WS_1, { content: 'local draft', rev: 2 });
+      let state = workspaceNotesReducer(
+        initialState,
+        loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [normal] }),
+      );
+      state = {
+        ...state,
+        byWorkspaceId: {
+          ...state.byWorkspaceId,
+          [WS_1]: { ...state.byWorkspaceId[WS_1], pendingContentByNoteId: { n: true } },
+        },
+      };
+      const read = mockNote('n', WS_1, {
+        content: 'server prefix',
+        contentTruncated: true,
+        contentBytes: 600_000,
+        rev: 3,
+      });
+      const next = workspaceNotesReducer(state, applyNoteUpdated(WS_1, 'n', read));
+      const kept = getItem(next.byWorkspaceId[WS_1].notes, 'n' as Note['id']);
+      expect(kept?.content).toBe('local draft');
+      expect(kept?.contentTruncated).toBeUndefined();
+      expect(kept?.contentBytes).toBeUndefined();
+    });
   });
 
   it('lets a slim row with a strictly newer rev replace outdated cached content', () => {

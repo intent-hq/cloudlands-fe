@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentMessage } from '$shared/types';
 import {
@@ -63,6 +63,24 @@ function message(
 }
 
 describe('ChatMessage action overlays', () => {
+  it('routes assistant navigation independently from regeneration', async () => {
+    const onScrollToPrevious = vi.fn();
+    const onRegenerate = vi.fn();
+    render(ChatMessage, {
+      props: {
+        message: message('assistant', '2026-09-29T06:00:00.000Z'),
+        onScrollToPrevious,
+        onRegenerate,
+      },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Previous user message' }));
+    expect(onScrollToPrevious).toHaveBeenCalledExactlyOnceWith();
+    expect(onRegenerate).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByRole('button', { name: 'Regenerate response' }));
+    expect(onRegenerate).toHaveBeenCalledExactlyOnceWith();
+    expect(onScrollToPrevious).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps one canonical identity when an outer transcript row owns it', () => {
     const standalone = render(ChatMessage, {
       props: { message: message('user', '2026-06-02T14:35:20.000Z') },

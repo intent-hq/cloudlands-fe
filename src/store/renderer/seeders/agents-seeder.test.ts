@@ -8,7 +8,7 @@
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentSession } from '../slices/agent-session/agent-session-types';
-import { StreamingStore } from '@augmentcode/themis/streaming-store';
+import { StreamingStore } from '@themislib/themis/streaming-store';
 import { reducers } from '../reducer';
 
 // Mock the AppClient seam

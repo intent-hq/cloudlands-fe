@@ -11,9 +11,18 @@
     theme?: 'light' | 'dark';
     width?: number;
     zoom?: number;
+    showShortcutHints?: boolean;
+    reserveShortcutHintSpace?: boolean;
   }
 
-  let { compact = false, theme = 'light', width = 480, zoom = 1 }: Props = $props();
+  let {
+    compact = false,
+    theme = 'light',
+    width = 480,
+    zoom = 1,
+    showShortcutHints = true,
+    reserveShortcutHintSpace = false,
+  }: Props = $props();
   let selected = $state('');
   let edited = $state('');
   let selectionCount = $state(0);
@@ -44,7 +53,8 @@
         edited = prompt;
         editCount += 1;
       }}
-      showShortcutHints
+      {showShortcutHints}
+      {reserveShortcutHintSpace}
       {compact}
     />
     <div class="mt-4" data-testid="tool-call-reference">

@@ -2,6 +2,7 @@
  * Enhanced Mention System Types
  */
 import { m } from '$shared/paraglide/messages.js';
+import type { WorkspaceMember } from '$store/renderer/slices/guest-sessions/guest-sessions-types';
 
 export interface MentionCandidate {
   id: string;
@@ -22,6 +23,9 @@ interface MentionMeta {
   fullUrl?: string;
   isExternalLink?: boolean;
   workspaceId?: string;
+  principalId?: string;
+  identity?: WorkspaceMember['identity'];
+  avatarUrl?: string;
   range?: MentionRange;
   rev?: string;
   branch?: string;
@@ -60,6 +64,7 @@ export type MentionType =
   | 'personality'
   | 'workspace'
   | 'agent'
+  | 'member'
   | 'specialist'
   | 'symbol'
   | 'branch'
@@ -149,6 +154,9 @@ export interface Provider {
   default?: boolean;
 
   search(query: string, context: SearchContext): Promise<MentionCandidate[]>;
+
+  /** State that affects cached search results, read again before an in-flight search can land. */
+  getCacheKey?(context: SearchContext): string;
 
   // Optional enhanced capabilities
   supportsRanges?: boolean;

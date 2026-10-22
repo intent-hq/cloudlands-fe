@@ -59,6 +59,7 @@ Output only the JSON object, nothing else.`,
       systemPrompt:
         // i18n-ignore (LLM prompt content)
         'You extract 2-word slugs from task descriptions. Respond with a single JSON object {"slug": "word-word"}. No explanations, no code fences, just the JSON object.',
+      type: 'fast',
       timeoutMs: SLUG_GENERATION_TIMEOUT_MS,
     });
 

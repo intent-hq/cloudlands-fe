@@ -1,0 +1,69 @@
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
+import { put, select, type SagaGenerator } from 'typed-redux-saga';
+import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
+import { store } from '../../../store';
+import { selectWorkspaceScriptReadContext } from '../../workspace/workspace-selectors';
+import { selectPrincipalConnectionContext } from '../../principal/principal-selectors';
+import { scriptReadStarted } from '../scripts-slice';
+import { replayScriptRead } from '$features/scripts/utils/script-change';
+import type { ScriptListEntry } from '../scripts-types';
+import { selectCanReadScriptDefinition, selectScriptReadJournal } from '../scripts-selectors';
+
+export function* beginScriptRead(workspaceId: string): SagaGenerator<ScriptReadContext> {
+  const context = {
+    workspaceId,
+    requestId: crypto.randomUUID(),
+    dispatch: store.dispatch,
+    authority: yield* selectWorkspaceScriptReadContext.effect(workspaceId),
+    connection: yield* selectPrincipalConnectionContext.effect(),
+    backendId: yield* selectActiveBackendId(),
+  };
+  yield* put(scriptReadStarted(workspaceId, context.requestId));
+  return context;
+}
+
+export type ScriptReadContext = {
+  workspaceId: string;
+  requestId: string;
+  dispatch: typeof store.dispatch;
+  authority: string | null;
+  connection: string | null;
+  backendId: string;
+};
+
+export function* isScriptReadCurrent(context: ScriptReadContext): SagaGenerator<boolean> {
+  const { workspaceId, requestId, authority, connection, dispatch, backendId } = context;
+  const pending = yield* selectScriptReadJournal.effect(workspaceId, requestId);
+  return (
+    !!pending &&
+    dispatch === store.dispatch &&
+    backendId === (yield* selectActiveBackendId()) &&
+    authority === (yield* selectWorkspaceScriptReadContext.effect(workspaceId)) &&
+    connection === (yield* selectPrincipalConnectionContext.effect())
+  );
+}
+
+export function* reconcileScriptRead(
+  context: ScriptReadContext,
+  entries: ScriptListEntry[],
+): SagaGenerator<{ scripts: ScriptListEntry[]; definitionChanges: Set<string> } | undefined> {
+  if (!(yield* isScriptReadCurrent(context))) return;
+  const journal = yield* selectScriptReadJournal.effect(context.workspaceId, context.requestId);
+  if (!journal) return;
+  const changes = getItems(journal);
+  const state = yield* select((state: typeof store.state) => state);
+  return {
+    scripts: replayScriptRead(entries, changes).filter((script) =>
+      selectCanReadScriptDefinition.select(state, context.workspaceId, script),
+    ),
+    definitionChanges: new Set(
+      changes.flatMap((change) =>
+        change.kind === 'snapshot' || change.kind === 'read'
+          ? [change.script.id]
+          : change.kind === 'removed'
+            ? [change.scriptId]
+            : [],
+      ),
+    ),
+  };
+}

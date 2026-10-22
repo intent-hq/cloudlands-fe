@@ -1,3 +1,7 @@
+import type { PrincipalDiscovery } from '$shared/types/principal';
+import type { RepositoryResourceSession } from '$shared/types/repository-resource-read';
+import type { NativeReviewInput, NativeReviewSession } from '$shared/types/native-review-operation';
+import type { RepositorySelectionSession } from '$shared/types/repository-selection';
 /**
  * Transport-agnostic contract for the renderer's live backend seam.
  *
@@ -9,6 +13,8 @@
  * the module-level functions in `backend-transport.ts`, which delegate to the
  * factory-selected transport.
  */
+
+import type { RepositoryRootIdentity } from '$shared/types/repository-context';
 
 /** Serializable error payload returned by the transport. */
 export interface BackendErrorPayload {
@@ -87,6 +93,30 @@ export interface BackendRequestOptions {
   timeoutMs?: number;
 }
 
+/** Original operation facts; current=false forbids application to the current UI. */
+export interface BoundRepositoryResult<T> {
+  operationId: string;
+  current: boolean;
+  settlement:
+    { status: 'fulfilled'; value: T } | { status: 'rejected'; error: BackendErrorPayload };
+}
+
+/**
+ * Main owns the opaque ID and scope. This object captures one bridge instance.
+ * The operation owner releases it in finally after completion or cancellation;
+ * interstage calls keep the original route, never a newly captured one.
+ */
+export interface BoundRepositoryRoute {
+  /** Subscribe immediately; an already retired route calls back synchronously. */
+  onRetired(listener: () => void): () => void;
+  request<T = unknown>(
+    method: string,
+    params: Record<string, unknown>,
+    options?: { timeoutMs?: number },
+  ): Promise<BoundRepositoryResult<T>>;
+  release(): Promise<void>;
+}
+
 /**
  * Pluggable transport carrying the renderer's live JSON-RPC traffic to the
  * intentd daemon. Implementations must throw `BackendError` on request /
@@ -95,6 +125,26 @@ export interface BackendRequestOptions {
  * the underlying bridge is unavailable.
  */
 export interface BackendTransport {
+  onMonitorReconnected?(handler: () => void): () => void;
+  capturePrMonitorSession?(
+    workspaceId: string,
+  ): Promise<import('$shared/types/pr-monitor').PrMonitorSession>;
+  /** Discover the caller without renegotiating the acknowledged connection. */
+  readPrincipal?(): Promise<PrincipalDiscovery>;
+  /** Read the current acknowledged hello; never initiate a replacement handshake. */
+  observeNodeCapabilities?(): Promise<unknown>;
+  captureRepositoryCheckout?(
+    query: import('$shared/types/repository-checkout').CheckoutCaptureQuery,
+  ): Promise<
+    import('$shared/types/repository-checkout').CheckoutResult<
+      import('$shared/types/repository-checkout').RepositoryCheckoutSession
+    >
+  >;
+  captureRepositoryResource?(workspaceId: string): Promise<RepositoryResourceSession>;
+  prepareNativeReview?(input: NativeReviewInput): Promise<NativeReviewSession>;
+  captureRepositorySelection?(root: RepositoryRootIdentity): Promise<RepositorySelectionSession>;
+  /** Absent on older or non-Electron transports; never fall back to ordinary request. */
+  captureRepositoryRoute?(root: RepositoryRootIdentity): Promise<BoundRepositoryRoute>;
   /** Whether the live backend bridge is reachable in this environment. */
   isAvailable(): boolean;
   /** Forward a JSON-RPC request to the daemon. */
@@ -106,7 +156,7 @@ export interface BackendTransport {
   /** Subscribe to daemon events (`events.subscribe`). Returns its raw result. */
   subscribe<T = { subscriptionId?: string }>(params: unknown): Promise<T>;
   /** Unsubscribe from daemon events (`events.unsubscribe`). Best-effort. */
-  unsubscribe(subscriptionId: string): Promise<void>;
+  unsubscribe(subscriptionId: string, workspaceId?: string): Promise<void>;
   /** Listen for daemon notifications. Returns a disposer. */
   onNotification(handler: (notification: BackendNotification) => void): () => void;
   /**

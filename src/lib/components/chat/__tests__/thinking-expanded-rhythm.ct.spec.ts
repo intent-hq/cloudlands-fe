@@ -6,7 +6,10 @@ test.setTimeout(120_000);
 const expectedCompleteTags = ['P', 'H2', 'UL', 'PRE', 'P'];
 
 for (const zoom of [1, 2]) {
-  test(`keeps expanded reasoning chunks at one gap at ${zoom * 100}%`, async ({ mount, page }) => {
+  test(`keeps expanded reasoning chunks at one gap at ${zoom * 100}%`, async ({
+    mount,
+    page,
+  }, testInfo) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     const component = await mount(ThinkingExpandedRhythmHost, {
       props: { width: 280, zoom, streamStage: 'partial' },
@@ -23,7 +26,9 @@ for (const zoom of [1, 2]) {
       fixture.locator('[data-reasoning-expanded-body]').evaluate((body) => {
         const viewer = body.querySelector<HTMLElement>('.markdown-viewer');
         if (!viewer) return null;
-        const chunkRoot = viewer.querySelector<HTMLElement>(':scope > .ProseMirror') ?? viewer;
+        const chunkRoot =
+          viewer.querySelector<HTMLElement>(':scope > :is(.ProseMirror, .markdown-content)') ??
+          viewer;
         const rootBox = chunkRoot.getBoundingClientRect();
         const chunks = Array.from(chunkRoot.children).map((chunk) => {
           const box = chunk.getBoundingClientRect();
@@ -95,5 +100,13 @@ for (const zoom of [1, 2]) {
     await expect(streamingViewer).toHaveAttribute('data-reconciliation-anchor', 'stable');
     await assertRhythm(streamingFixture, expectedCompleteTags);
     await expect(streamingFixture.getByText('First streamed paragraph with')).toHaveCount(1);
+    await testInfo.attach(`reasoning-spacing-${zoom * 100}.json`, {
+      body: JSON.stringify({
+        zoom,
+        static: await measure(staticFixture),
+        streaming: await measure(streamingFixture),
+      }),
+      contentType: 'application/json',
+    });
   });
 }

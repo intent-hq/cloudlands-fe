@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import sharp from 'sharp';
+import native from './macos-native.cjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ICON_NAME = 'Intent';
@@ -159,6 +160,8 @@ export async function compileModernMacOSIcon({
 
 export default function buildModernMacOSIcon(context) {
   if (context.electronPlatformName !== 'darwin') return;
+  const arch = native.builderMacArch(context);
+  native.validateStagedMacBinaries(path.resolve(__dirname, '..'), arch);
   return compileModernMacOSIcon();
 }
 

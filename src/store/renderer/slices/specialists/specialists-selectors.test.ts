@@ -22,7 +22,7 @@ import {
   selectSpecialistName,
   selectSpecialistSourceLabel,
 } from './specialists-selectors';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { initialState } from './specialists-slice';
 import type { StoreState } from '../../types';
 import { SPECIALISTS } from '$lib/constants/specialists';

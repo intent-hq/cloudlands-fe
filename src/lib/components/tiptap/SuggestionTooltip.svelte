@@ -66,21 +66,11 @@
   {/if}
 
   <div class="suggestion-tooltip-actions">
-    <Button
-      variant="ghost"
-      class="accept"
-      onclick={handleAccept}
-      title={m.tiptap_suggestionTooltip_accept_tooltip()}
-    >
+    <Button variant="ghost" class="accept" onclick={handleAccept}>
       <Fa icon={faCheck} size="xs" class="inline mr-1" />
       {m.tiptap_suggestionTooltip_accept_label()}
     </Button>
-    <Button
-      variant="ghost"
-      class="reject"
-      onclick={handleReject}
-      title={m.tiptap_suggestionTooltip_reject_tooltip()}
-    >
+    <Button variant="ghost" class="reject" onclick={handleReject}>
       <Fa icon={faXmark} size="xs" class="inline mr-1" />
       {m.tiptap_suggestionTooltip_reject_label()}
     </Button>

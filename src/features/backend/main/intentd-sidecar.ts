@@ -17,6 +17,10 @@
  * connect-only (disables spawning).
  */
 import { spawn, type ChildProcess } from 'node:child_process';
+import {
+  assertIsolatedTestEnvironment,
+  isIsolatedTestBuild,
+} from '../../../main/isolated-test-profile';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as os from 'node:os';
@@ -829,6 +833,7 @@ export function buildSidecarSpawnEnv(
   env: NodeJS.ProcessEnv,
   resolveTailcat: () => string | null = () => resolveTailcatBinaryPath(env),
 ): NodeJS.ProcessEnv {
+  assertIsolatedTestEnvironment(env);
   const spawnEnv = { ...env };
   if (env.INTENTD_DATA_DIR?.trim()) {
     spawnEnv.INTENTD_DATA_DIR = env.INTENTD_DATA_DIR.trim();
@@ -1036,6 +1041,7 @@ export async function startIntentdSidecar(
   resourcesPath: string,
   cwd: string,
 ): Promise<void> {
+  assertIsolatedTestEnvironment(env);
   const decision = shouldSpawnSidecar(env, isPackaged);
   if (!decision.shouldSpawn) {
     // Not spawning: whatever daemon the FE connects to (env override target,
@@ -1056,6 +1062,9 @@ export async function startIntentdSidecar(
   // the baseline once it connects.
   if (probe.protocolVersion) localDaemonProtocolVersion = probe.protocolVersion;
   if (probe.alive) {
+    if (isIsolatedTestBuild()) {
+      throw new Error('The isolated test socket is already owned; refusing daemon adoption');
+    }
     // A live daemon owns the socket (and the data dir behind it): ALWAYS
     // adopt it — never spawn a second daemon alongside. Version mismatch is
     // warn-only, surfaced to the renderer via the transport payload.
@@ -1253,6 +1262,7 @@ export function spawnSidecarOnDemand(
   resourcesPath: string,
   cwd: string,
 ): Promise<SpawnSidecarOnDemandResult> {
+  assertIsolatedTestEnvironment(env);
   if (spawnOnDemandInFlight) return spawnOnDemandInFlight;
   spawnOnDemandInFlight = doSpawnSidecarOnDemand(env, isPackaged, resourcesPath, cwd).finally(
     () => {
@@ -1273,6 +1283,9 @@ async function doSpawnSidecarOnDemand(
   }
   const socketPath = resolveSocketPath(env);
   if (await healthCheckProbe(socketPath)) {
+    if (isIsolatedTestBuild()) {
+      return { ok: false, spawned: false, reason: 'isolated test socket is already owned' };
+    }
     setConnectionMode('external');
     // The client hello that reconnected to this revived socket may have fired
     // while the mode was still 'sidecar' (clearing the flag) — re-run the

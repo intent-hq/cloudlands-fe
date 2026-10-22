@@ -26,6 +26,7 @@
     footer?: Snippet;
     onkeydown?: (event: KeyboardEvent) => void;
     onkeydowncapture?: (event: KeyboardEvent) => void;
+    onCloseAutoFocus?: ComponentProps<typeof Dialog.Content>['onCloseAutoFocus'];
     onClose?: () => void;
   }
 
@@ -51,6 +52,7 @@
     footer,
     onkeydown,
     onkeydowncapture,
+    onCloseAutoFocus,
     onClose,
   }: Props = $props();
   let closed = $state(false);
@@ -89,6 +91,7 @@
     onEscapeKeydown={(event) => {
       if (busy) event.preventDefault();
     }}
+    {onCloseAutoFocus}
     {onkeydown}
     {onkeydowncapture}
   >

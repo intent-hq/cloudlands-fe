@@ -9,7 +9,8 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { tick } from 'svelte';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { StoreState } from '$store/renderer/types';
 import type { InstalledEditor } from '$store/renderer/slices/external-editors/external-editors-slice';
 import type { BackendTransportInfo } from '$store/renderer/slices/daemon-health/daemon-health-types';
@@ -23,6 +24,7 @@ const mockDispatch = vi.fn();
 const electronBridgeMocks = vi.hoisted(() => ({
   invoke: vi.fn().mockResolvedValue(undefined),
   canOpenExternalEditors: true,
+  notifyError: vi.fn(),
 }));
 
 vi.mock('$store/renderer/store', async () => {
@@ -71,6 +73,11 @@ vi.mock('$lib/components/ui/button/button.svelte', async () => {
 vi.mock('$lib/electron-bridge', () => ({
   invoke: electronBridgeMocks.invoke,
   listenSync: vi.fn(() => () => {}),
+}));
+
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: electronBridgeMocks.notifyError },
+  withToastCountdown: vi.fn(),
 }));
 
 vi.mock('$lib/client', () => ({
@@ -181,9 +188,14 @@ async function renderMenu(workspaceId = '') {
 }
 
 function openInLabels(container: HTMLElement): string[] {
-  return Array.from(
-    container.querySelectorAll<HTMLSpanElement>('button span[title^="Open in "]'),
-  ).map((label) => label.textContent?.trim() ?? '');
+  return within(container)
+    .getAllByRole('button', { name: /^Open in / })
+    .map(
+      (button) =>
+        within(button)
+          .getByText(/^Open in /)
+          .textContent?.trim() ?? '',
+    );
 }
 
 // Pre-warm the component module graph so the cold dynamic import is not
@@ -191,6 +203,7 @@ function openInLabels(container: HTMLElement): string[] {
 warmImport(() => import('./mocks/Fa.svelte'));
 warmImport(() => import('./mocks/button.svelte'));
 warmImport(() => import('./mocks/WorkspaceActionsMenuSubmenuHarness.svelte'));
+warmImport(() => import('./mocks/WorkspaceActionsMenuAsyncHarness.svelte'));
 warmImport(() => import('$features/workspace/components/WorkspaceActionsMenu.svelte'));
 warmImport(() => import('$lib/components/workspace/WorkspaceSidebarHeader.svelte'));
 warmImport(() => import('$lib/components/workspace/sidebar/WorkspaceProgressCard.svelte'));
@@ -623,5 +636,122 @@ describe('WorkspaceActionsMenu workspace-locality gating (monorepo#2171)', () =>
 
     expect(container.textContent).toContain('Open in Visual Studio Code');
     expect(container.textContent).toContain('Choose app');
+  });
+});
+
+describe('WorkspaceActionsMenu asynchronous editor completion', () => {
+  const jetbrainsEditor: InstalledEditor = {
+    ...mockEditors[0],
+    id: 'intellij',
+    name: 'IntelliJ IDEA',
+    appName: 'IntelliJ IDEA',
+    handlerType: 'jetbrains',
+  };
+  type Launch = ReturnType<typeof Promise.withResolvers<{ success: boolean }>>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockStoreState = makeState({ mode: 'sidecar-uds' }, null, [jetbrainsEditor]);
+  });
+
+  async function startLaunch(
+    channel = 'jetbrains:open',
+    label = 'Open in IntelliJ IDEA',
+    props: { filePath?: string; workspaceId?: string; isDirectory?: boolean } = {},
+  ) {
+    const launch = Promise.withResolvers<{ success: boolean }>();
+    electronBridgeMocks.invoke.mockImplementation((requestedChannel) => {
+      if (requestedChannel === channel) return launch.promise;
+      if (requestedChannel === 'workspace:get') {
+        return Promise.resolve({ success: true, data: { worktreePath: '/tmp/project' } });
+      }
+      return Promise.resolve(undefined);
+    });
+    const Harness = (await import('./mocks/WorkspaceActionsMenuAsyncHarness.svelte')).default;
+    render(Harness, { props });
+    await fireEvent.click(screen.getByRole('button', { name: 'Actions' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Open in...' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: label }));
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    return launch;
+  }
+
+  async function finishLaunch(launch: Launch) {
+    launch.resolve({ success: true });
+    await launch.promise;
+    // Flush the invoke wrapper and async action continuations after the menu unmounts.
+    await tick();
+  }
+
+  it.each([
+    ['JetBrains', jetbrainsEditor, 'jetbrains:open', '/tmp/project'],
+    ['VS Code', mockEditors[0], 'vscode:open', '/tmp/project'],
+    [
+      'Xcode',
+      { ...mockEditors[0], id: 'xcode', name: 'Xcode', appName: 'Xcode', handlerType: 'xcode' },
+      'xcode:open',
+      '/tmp/project',
+    ],
+    [
+      'generic editor',
+      { ...mockEditors[0], id: 'zed', name: 'Zed', appName: 'Zed', handlerType: 'generic' },
+      'external-editors:open',
+      { editorId: 'zed', path: '/tmp/project' },
+    ],
+  ] as const)(
+    'does not report a %s launch failure after the menu has closed',
+    async (_name, editor, channel, args) => {
+      mockStoreState = makeState({ mode: 'sidecar-uds' }, null, [editor]);
+      const launch = await startLaunch(channel, `Open in ${editor.appName}`);
+      expect(electronBridgeMocks.invoke).toHaveBeenCalledWith(channel, args);
+      await finishLaunch(launch);
+      expect(electronBridgeMocks.notifyError).not.toHaveBeenCalled();
+    },
+  );
+
+  it('preserves the JetBrains file and workspace paths after menu dismissal', async () => {
+    const launch = await startLaunch('jetbrains:open', 'Open in IntelliJ IDEA', {
+      filePath: 'src/main.ts',
+      workspaceId: 'ws-local',
+      isDirectory: false,
+    });
+    expect(electronBridgeMocks.invoke).toHaveBeenCalledWith('jetbrains:open', {
+      folder: '/tmp/project',
+      file: '/tmp/project/src/main.ts',
+    });
+    await finishLaunch(launch);
+    expect(electronBridgeMocks.notifyError).not.toHaveBeenCalled();
+  });
+
+  it('keeps a reopened menu open when an older launch completes', async () => {
+    const launch = await startLaunch();
+    await fireEvent.click(screen.getByRole('button', { name: 'Actions' }));
+    const reopenedMenu = await screen.findByRole('menu');
+    await finishLaunch(launch);
+    expect(screen.getByRole('menu')).toBe(reopenedMenu);
+    expect(electronBridgeMocks.notifyError).not.toHaveBeenCalled();
+  });
+
+  it('still reports a real JetBrains launch error after the menu has closed', async () => {
+    const launch = await startLaunch();
+    launch.reject(new Error('JetBrains launch failed'));
+    await waitFor(() =>
+      expect(electronBridgeMocks.notifyError).toHaveBeenCalledWith('JetBrains launch failed'),
+    );
+    expect(electronBridgeMocks.notifyError).toHaveBeenCalledTimes(1);
+  });
+
+  it('still closes a mounted list menu when the launch completes', async () => {
+    const launch = Promise.withResolvers<{ success: boolean }>();
+    electronBridgeMocks.invoke.mockReturnValue(launch.promise);
+    const onClose = vi.fn();
+    const Component = (await import('$features/workspace/components/WorkspaceActionsMenu.svelte'))
+      .default;
+    render(Component, { props: { filePath: '/tmp/project', onClose } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Open in IntelliJ IDEA' }));
+    expect(onClose).not.toHaveBeenCalled();
+    await finishLaunch(launch);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(electronBridgeMocks.notifyError).not.toHaveBeenCalled();
   });
 });

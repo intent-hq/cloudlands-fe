@@ -1,11 +1,11 @@
 <script lang="ts">
+  import { monitorAccessibleLabel } from '$lib/utils/review-monitor-presentation';
   /* eslint-disable max-lines -- merging hover-card keyboard and interaction behavior exceeds the limit */
   import { page } from '$app/state';
   import {
     faArrowUpRightFromSquare,
     faBoxArchive,
     faCheck,
-    faKeyboard,
     faRightLeft,
     faThumbtack,
     faTrash,
@@ -36,40 +36,25 @@
     getSidebarContextPosition,
     type SidebarContextPosition,
     type SidebarMenuEntry,
-    type SidebarMenuItem,
   } from '$lib/components/ui/sidebar-context-menu/types';
-  import {
-    incrementContextMenuOpen,
-    decrementContextMenuOpen,
-  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import type { Workspace } from '$shared/types';
   import type { PullRequestInfo } from '$shared/types';
   import { writable } from 'svelte/store';
   import { store as appStore } from '$store/renderer/store';
-  import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import {
     requestArchiveWorkspace,
     requestDeleteWorkspace,
   } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import { openTransferModal } from '$store/renderer/slices/workspace-transfer/workspace-transfer-slice';
-  import {
-    markKeySlotUnassigned,
-    pinWorkspaceToKey,
-  } from '$store/renderer/slices/hardware-console/hardware-console-slice';
-  import {
-    selectWorkspacePinnedKeySlot,
-    selectWorkspaceResolvedKeySlot,
-    selectHardwareConsoleKeySlots,
-  } from '$store/renderer/slices/hardware-console/hardware-console-selectors';
-  import { AGENT_KEY_COUNT } from '$features/hardware-console/assignment/key-assignment';
+  import { selectWorkspaceResolvedKeySlot } from '$store/renderer/slices/hardware-console/hardware-console-selectors';
+  import { createWorkspaceMicroKeyMenu } from '$features/hardware-console/assignment/workspace-key-menu';
   import { microConnectedReadable } from '$features/hardware-console/device/connection-status';
   import MicroKeySlotBadge from '$lib/components/workspace/MicroKeySlotBadge.svelte';
   import {
     selectHidesOwnerWorkspaceActions,
     selectWorkspaceActivePullRequest,
-    selectWorkspaceById,
   } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
+  import { selectReviewMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import { constructPrUrl } from '$lib/components/workspace/sidebar/sidebar-changes-utils';
   import {
     buildWorkspacePRPresentationModel,
@@ -178,7 +163,7 @@
   });
   // Agent PR monitors (PROTOCOL §6.9): all monitors (active + completed) feed
   // the shared presentation model used by the row and hover card.
-  const prMonitors$ = selectPrMonitors(workspaceIdStore);
+  const prMonitors$ = selectReviewMonitors(workspaceIdStore);
 
   // Micro-key slot badge/menus: only while a micro is connected (manager
   // status connected — not mere presence).
@@ -189,13 +174,6 @@
   // daemon for collaborators (`require_owner`), so a collaborator row hides
   // them instead of offering a failing action.
   const hidesOwnerActions$ = selectHidesOwnerWorkspaceActions(workspaceIdStore);
-
-  // Load canonical tasks for progress display (no-op once initialized).
-  $effect(() => {
-    const workspaceId = workspace?.id;
-    if (!workspaceId) return;
-    appStore.dispatch(ensureWorkspaceTasksLoaded(String(workspaceId)));
-  });
 
   const workspaceStatusState = $derived(resolveWorkspaceStatusState(workspace ?? {}));
   const workspaceStatusPresentation = $derived(
@@ -466,10 +444,13 @@
   // the compact row shows only that PR so the sidebar stays scannable.
   const primaryPr = $derived<WorkspacePRPresentationRow | undefined>(workspacePrRows[0]);
   function getWorkspacePrLabel(pr: WorkspacePRPresentationRow): string {
-    const identity = pr.repo
-      ? m.workspace_card_prBadge_repoLine_tooltip({ repo: pr.repo, number: pr.number })
-      : m.workspace_card_prBadge_label({ number: ` #${pr.number}` });
-    return [identity, pr.title, pr.details].filter(Boolean).join('\n');
+    const identity =
+      pr.resource?.repository.provider === 'gitlab'
+        ? `${pr.repo} !${pr.number}`
+        : pr.repo
+          ? m.workspace_card_prBadge_repoLine_tooltip({ repo: pr.repo, number: pr.number })
+          : m.workspace_card_prBadge_label({ number: ` #${pr.number}` });
+    return [monitorAccessibleLabel(identity, pr), pr.title, pr.details].filter(Boolean).join('\n');
   }
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter') onClick?.(e);
@@ -592,7 +573,6 @@
 
   let contextMenu: (SidebarContextPosition & { workspaceId: string }) | null = $state(null);
   let overflowMenuOpen = $state(false);
-  let hadContextMenu = false;
   let menuWorkspaceId: string | undefined;
 
   $effect(() => {
@@ -630,14 +610,6 @@
 
   $effect(() => {
     if (overflowMenuOpen) contextMenu = null;
-    const isOpen = contextMenu !== null || overflowMenuOpen;
-
-    if (isOpen && !hadContextMenu) {
-      appStore.dispatch(incrementContextMenuOpen());
-    } else if (!isOpen && hadContextMenu) {
-      appStore.dispatch(decrementContextMenuOpen());
-    }
-    hadContextMenu = isOpen;
   });
 
   onDestroy(() => {
@@ -648,7 +620,6 @@
       hoverCardFocusSuppressionTimer = null;
     }
     closeHoverCard();
-    if (hadContextMenu) appStore.dispatch(decrementContextMenuOpen());
   });
 
   function getContextMenuItems(): SidebarMenuEntry[] {
@@ -667,52 +638,12 @@
       });
     }
 
-    if ($microConnected$) {
-      const pinnedSlot = selectWorkspacePinnedKeySlot.select(appStore.state, workspace.id);
-      const resolvedSlot = selectWorkspaceResolvedKeySlot.select(appStore.state, workspace.id);
-      const occupiedSlots = selectHardwareConsoleKeySlots.select(appStore.state);
-      const assignSubmenu: SidebarMenuItem[] = [];
-      for (let slot = 0; slot < AGENT_KEY_COUNT; slot += 1) {
-        const occupantId = occupiedSlots[slot];
-        const occupant =
-          occupantId && occupantId !== workspace.id
-            ? selectWorkspaceById.select(appStore.state, occupantId)
-            : undefined;
-        assignSubmenu.push({
-          id: `assign-micro-key-${slot + 1}`,
-          label: occupant
-            ? m.workspace_card_assignOccupiedMicroKey_label({
-                number: formatInteger(slot + 1),
-                title: occupant.title,
-              })
-            : m.workspace_card_assignMicroKeyNumber_label({ number: formatInteger(slot + 1) }),
-          checked: pinnedSlot === slot,
-          closeOnSelect: true,
-          onClick: () => {
-            appStore.dispatch(pinWorkspaceToKey(slot, workspace.id));
-            closeContextMenu();
-          },
-        });
-      }
-      items.push({
-        id: 'assign-micro-key',
-        label: m.workspace_card_assignMicroKey_label(),
-        icon: faKeyboard,
-        onClick: () => {},
-        selection: 'single',
-        submenu: assignSubmenu,
-      });
-      if (resolvedSlot !== null) {
-        items.push({
-          id: 'unassign-micro-key',
-          label: m.workspace_card_unassignMicroKey_label(),
-          onClick: () => {
-            appStore.dispatch(markKeySlotUnassigned(resolvedSlot));
-            closeContextMenu();
-          },
-        });
-      }
-    }
+    items.push(
+      ...createWorkspaceMicroKeyMenu(workspace.id, {
+        connected: $microConnected$,
+        onClose: closeContextMenu,
+      }),
+    );
 
     if ($hidesOwnerActions$) return items;
 
@@ -950,7 +881,9 @@
         {@const pr = primaryPr}
         <span
           class="flex shrink-0 items-center"
-          aria-label={m.workspace_hoverCard_pullRequest_label()}
+          aria-label={pr.resource?.repository.provider === 'gitlab'
+            ? m.workspace_hoverCard_mergeRequest_label()
+            : m.workspace_hoverCard_pullRequest_label()}
           data-workspace-card-pr-list
         >
           <Tooltip content={getWorkspacePrLabel(pr)} side="bottom" sideOffset={4}>

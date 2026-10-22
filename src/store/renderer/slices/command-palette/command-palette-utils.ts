@@ -22,6 +22,9 @@ export interface WorkspaceObject {
   url?: string;
   _time?: string;
   breadcrumbs?: string;
+  /** Explicit note ownership; id may be an encoded MRU identity. */
+  noteId?: string;
+  workspaceId?: string;
 }
 
 export type MRUEntry = PaletteMruEntry;
@@ -214,8 +217,23 @@ export function buildRecentItems(
   allObjects: WorkspaceObject[],
   mruEntries: MRUEntry[],
 ): WorkspaceObject[] {
+  const seen = new Set<string>();
   return mruEntries
-    .map((entry) => allObjects.find((obj) => obj.type === entry.type && obj.id === entry.id))
+    .map(
+      (entry) =>
+        allObjects.find((obj) => obj.type === entry.type && obj.id === entry.id) ??
+        // Legacy note IDs were bare. Callers supply current-workspace local notes,
+        // so compatibility must never infer an owner from a global search result.
+        (entry.type === 'note'
+          ? allObjects.find((obj) => obj.type === 'note' && obj.noteId === entry.id)
+          : undefined),
+    )
     .filter((obj): obj is WorkspaceObject => obj !== undefined)
+    .filter((obj) => {
+      const key = JSON.stringify([obj.type, obj.id]);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
     .slice(0, MAX_RECENT_ITEMS);
 }

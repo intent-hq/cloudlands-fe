@@ -1,7 +1,10 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import { Terminal } from '@xterm/xterm';
+  import '@xterm/xterm/css/xterm.css';
   import PanelLayout from '../../PanelLayout.svelte';
   import PanelNavigator from '../../PanelNavigator.svelte';
+  import { disposeXtermAfterViewportSync } from '$features/terminal/utils/xterm-lifecycle';
   import { KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
   import { registerWorkspaceTabShortcuts } from '$features/workspace/utils/workspace-tab-navigation';
   import { store as appStore } from '$store/renderer/store';
@@ -25,28 +28,51 @@
     selectCurrentWorkspaceTabId,
     selectWorkspaceTabOrder,
   } from '$store/renderer/slices/tab-state/tab-state-selectors';
+  import {
+    resetShortcutOverride,
+    setShortcutOverride,
+  } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
   let {
     zoomFactor = 1,
     panelCount = 3,
     isMac = false,
-  }: { zoomFactor?: number; panelCount?: 1 | 3; isMac?: boolean } = $props();
+    createColumnShortcut,
+    includeTerminal = false,
+  }: {
+    zoomFactor?: number;
+    panelCount?: 1 | 3;
+    isMac?: boolean;
+    createColumnShortcut?: string;
+    includeTerminal?: boolean;
+  } = $props();
   // svelte-ignore state_referenced_locally - component-test props are fixed for each mount
   const initialZoomFactor = $state.snapshot(zoomFactor);
   // svelte-ignore state_referenced_locally - component-test props are fixed for each mount
   const initialPanelCount = $state.snapshot(panelCount);
   // svelte-ignore state_referenced_locally - component-test props are fixed for each mount
   const initialIsMac = $state.snapshot(isMac);
+  // svelte-ignore state_referenced_locally - component-test props are fixed for each mount
+  const initialCreateColumnShortcut = createColumnShortcut;
+  // svelte-ignore state_referenced_locally - component-test props are fixed for each mount
+  const initialIncludeTerminal = includeTerminal;
   const platform = initialIsMac ? 'mac' : 'non-mac';
   const workspaceId = `mod-w-browser-${platform}-${initialZoomFactor}-${initialPanelCount}`;
   const panelIds = Array.from({ length: initialPanelCount }, (_, index) => `p${index + 1}`);
   const focusedPanelId = panelIds[Math.floor(panelIds.length / 2)];
   const initialSizes = initialPanelCount === 3 ? [20, 50, 30] : [100];
   const disposeStore = appStore.init();
+  if (initialCreateColumnShortcut) {
+    appStore.dispatch(
+      setShortcutOverride('panel.create-column-right', initialCreateColumnShortcut),
+    );
+  }
   let viewport: HTMLElement | null = $state(null);
   let panelRoot: HTMLElement | null = $state(null);
   let navigationCount = $state(0);
   let navigationPath = $state('');
+  let terminalContainer: HTMLElement | null = $state(null);
+  let terminalInput = $state('');
 
   appStore.dispatch(
     loadWorkspaceTabsState({
@@ -120,10 +146,24 @@
       openNewWorkspace: () => undefined,
     });
     shortcutManager.attach();
+    if (initialIncludeTerminal && terminalContainer) {
+      const terminal = new Terminal({ cols: 80, rows: 8 });
+      const subscription = terminal.onData((data) => {
+        terminalInput += data;
+      });
+      terminal.open(terminalContainer);
+      return () => {
+        subscription.dispose();
+        disposeXtermAfterViewportSync(terminal);
+      };
+    }
   });
 
   onDestroy(() => {
     shortcutManager.destroy();
+    if (initialCreateColumnShortcut) {
+      appStore.dispatch(resetShortcutOverride('panel.create-column-right'));
+    }
     appStore.dispatch(clearPanelLayout(workspaceId));
     disposeStore();
   });
@@ -145,12 +185,17 @@
   data-navigation-count={navigationCount}
   data-navigation-path={navigationPath}
   data-workspace-id={workspaceId}
+  data-terminal-input={JSON.stringify(terminalInput)}
 ></output>
 <div class="sr-only" data-testid="editable-panel-content">
   <input data-testid="shortcut-input" />
+  <textarea data-testid="shortcut-textarea"></textarea>
   <div contenteditable="true" role="textbox" tabindex="0" data-testid="shortcut-editor"></div>
   <textarea class="xterm-helper-textarea" data-testid="shortcut-terminal"></textarea>
 </div>
+{#if initialIncludeTerminal}
+  <div bind:this={terminalContainer} class="h-40 w-240" data-testid="real-terminal"></div>
+{/if}
 <div class="relative h-96 w-240" style:zoom={initialZoomFactor}>
   <div bind:this={viewport} class="h-full overflow-x-auto" data-testid="mod-w-viewport">
     <div bind:this={panelRoot} class="h-full min-w-0">

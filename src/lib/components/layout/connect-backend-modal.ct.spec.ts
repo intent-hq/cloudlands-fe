@@ -12,7 +12,7 @@ for (const { width, height } of [
     await page.setViewportSize({ width, height });
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await mount(ConnectBackendModalPreview, {
-      hooksConfig: { geometrySnapshot: { scene: 'connect-backend-modal', state: 'icloud' } },
+      hooksConfig: { previewScene: { scene: 'connect-backend-modal', state: 'icloud' } },
     });
     const dialog = page.getByRole('dialog');
     const trigger = dialog.getByRole('combobox');
@@ -168,7 +168,7 @@ for (const { width, height } of [
 
 test('omits unavailable iCloud controls without hiding IP detection', async ({ mount, page }) => {
   await mount(ConnectBackendModalPreview, {
-    hooksConfig: { geometrySnapshot: { scene: 'connect-backend-modal', state: 'unsupported' } },
+    hooksConfig: { previewScene: { scene: 'connect-backend-modal', state: 'unsupported' } },
   });
   await expect(page.getByRole('switch', { name: 'Save to iCloud' })).toHaveCount(0);
   const detection = page.getByRole('switch', { name: 'Detect all backend IPs' });

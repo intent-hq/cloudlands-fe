@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 /**
  * @vitest-environment jsdom
  *
@@ -10,6 +11,11 @@
  */
 import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const admittedFixture = vi.hoisted(() => ({ state: {} as Record<string, unknown> }));
+beforeEach(() => {
+  admittedFixture.state = withLegacyPrincipal({});
+});
 
 const mocks = vi.hoisted(() => {
   const readable = <T>(getter: () => T) => ({
@@ -35,14 +41,25 @@ vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
-    state: () => ({ hardwareConsole: { pttRecording: false, voiceTranscribing: false } }),
+    state: () => ({
+      ...admittedFixture.state,
+      hardwareConsole: { pttRecording: false, voiceTranscribing: false },
+    }),
     dispatch: mocks.dispatch,
   });
 });
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
+  selectWorkspaceInitializerAgentForRepo: { select: () => null },
+  selectWorkspaceInitializerGitAvailability: () => ({
+    subscribe(run: (value: boolean) => void) {
+      run(true);
+      return () => {};
+    },
+  }),
   selectWorkspaceInitializerHydrated: () => mocks.readable(() => false),
   selectCompactWorkspaceInitializerFormState: () => mocks.readable(() => null),
+  selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
   selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(() => null),
   selectWorkspaceInitializerLastSubmittedAgent: () => mocks.readable(() => null),
   selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => mocks.recentRepos),
@@ -54,6 +71,10 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
       return () => mocks.prefillSubscribers.delete(run);
     },
   }),
+  selectWorkspaceInitializerDraftAuthority: () =>
+    mocks.readable(() => ({ restore: undefined, clear: undefined })),
+  selectWorkspaceInitializationOutcomeForConsumer: () => mocks.readable(() => undefined),
+  selectWorkspaceInitializationResume: { select: () => undefined },
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
@@ -63,6 +84,7 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
 
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => mocks.readable(() => 'auggie'),
+  selectEnabledProviders: () => mocks.readable(() => ({})),
 }));
 
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
@@ -139,12 +161,6 @@ vi.mock('$shared/generated/ipc-client', () => ({
 
 vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
   workspaceClient: { create: vi.fn(), update: vi.fn() },
-}));
-
-vi.mock('$lib/components/workspace/initializer/new-workspace-draft', () => ({
-  restoreNewWorkspaceDraft: vi.fn(async () => ({ status: 'none' })),
-  createNewWorkspaceDraftSaver: vi.fn(() => ({ schedule: vi.fn(), flush: vi.fn() })),
-  clearNewWorkspaceDraft: vi.fn(),
 }));
 
 // Route the electron-bridge `git-tracking:get-remote-url` probe (used both by
@@ -406,5 +422,46 @@ describe('CompactWorkspaceInitializer GitHub-prefill repo preselection', () => {
     // The prefill mention is still applied; repo selection is left unchanged.
     await waitFor(() => expect(textOf(result, 'picker-repo-path')).toBe(''));
     expect(textOf(result, 'picker-repo-type')).toBe('local');
+  });
+
+  describe('githubUrl from a workspace-prefill (clone / "Fix in Intent" links)', () => {
+    it('replaces an already-selected repo with the linked GitHub repo', async () => {
+      mocks.recentRepos = [{ path: '/repos/other', type: 'local', name: 'other' }];
+      const result = renderInitializer();
+      // A repo is already selected (the old code skipped githubUrl whenever
+      // one was, so the workspace would be created on the wrong repo).
+      sessionStorage.setItem('workspace-prefill', JSON.stringify({ repoPath: '/repos/other' }));
+      await result.component.applyPrefill();
+      await waitFor(() => expect(textOf(result, 'picker-repo-path')).toBe('/repos/other'));
+
+      sessionStorage.setItem(
+        'workspace-prefill',
+        JSON.stringify({ githubUrl: 'https://github.com/intent-hq/monorepo', branch: 'fix-x' }),
+      );
+      await result.component.applyPrefill();
+
+      await waitFor(() => {
+        expect(textOf(result, 'picker-repo-type')).toBe('github');
+        expect(textOf(result, 'picker-github-url')).toBe('https://github.com/intent-hq/monorepo');
+        expect(textOf(result, 'picker-branch')).toBe('fix-x');
+      });
+    });
+
+    it('selects a known local checkout of the linked GitHub repo', async () => {
+      mocks.recentRepos = [
+        { path: '/repos/monorepo', type: 'local', name: 'monorepo', owner: 'intent-hq' },
+      ];
+      const result = renderInitializer();
+      sessionStorage.setItem(
+        'workspace-prefill',
+        JSON.stringify({ githubUrl: 'https://github.com/intent-hq/monorepo.git' }),
+      );
+      await result.component.applyPrefill();
+
+      await waitFor(() => {
+        expect(textOf(result, 'picker-repo-path')).toBe('/repos/monorepo');
+        expect(textOf(result, 'picker-repo-type')).toBe('local');
+      });
+    });
   });
 });

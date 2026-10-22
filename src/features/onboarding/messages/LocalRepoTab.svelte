@@ -303,7 +303,7 @@
             id="local-repo-option-{index}"
             role="option"
             aria-selected={isCommitted}
-            class={cn(menuItem(), 'gap-3 px-3 py-2.5 cursor-pointer', {
+            class={cn(menuItem(), 'h-auto items-center gap-3 px-3 py-2.5 cursor-pointer', {
               'bg-foreground text-background pl-2.5': isCommitted,
               'bg-muted/40': isFocused && !isCommitted,
               'hover:bg-muted/30': !isFocused && !isCommitted,

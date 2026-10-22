@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test';
+import { expect } from '@playwright/test';
+import { test } from './root-browser-fixtures';
 import { resolve } from 'node:path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { createServer, type ViteDevServer } from 'vite';
@@ -42,6 +43,7 @@ test.afterAll(async () => server?.close());
 test('keeps resource tiles and compact header insets exact across the geometry matrix', async ({
   page,
 }) => {
+  test.setTimeout(120_000);
   await page.goto(`${baseUrl}src/app.html`);
   await page.addStyleTag({ url: `${baseUrl}src/app.css` });
   await page.evaluate(async () => {
@@ -64,8 +66,6 @@ test('keeps resource tiles and compact header insets exact across the geometry m
         '[data-resource-icon-tile]',
         '[data-resource-icon-glyph]',
         '[data-panel-tab-bar] [data-resource-icon-tile]',
-        '[data-testid="chat-message-navigator-trigger"] svg',
-        '[data-testid="chat-scroll-to-bottom-button"] svg',
         '[data-testid="panel-actions-trigger"] svg',
         '[data-testid="panel-close-button"] svg',
       ]) {
@@ -80,12 +80,6 @@ test('keeps resource tiles and compact header insets exact across the geometry m
         '[data-panel-tab-bar] [data-resource-icon-tile]',
       )!;
       const probe = scenario.querySelector<HTMLElement>('[data-resource-semantic-probe]')!;
-      const listGlyph = scenario.querySelector<HTMLElement>(
-        '[data-testid="chat-message-navigator-trigger"] svg',
-      )!;
-      const arrowGlyph = scenario.querySelector<HTMLElement>(
-        '[data-testid="chat-scroll-to-bottom-button"] svg',
-      )!;
       const kebabGlyph = scenario.querySelector<HTMLElement>(
         '[data-testid="panel-actions-trigger"] svg',
       )!;
@@ -102,6 +96,7 @@ test('keeps resource tiles and compact header insets exact across the geometry m
       return {
         scenario: (scenario as HTMLElement).dataset.resourceGeometryCase,
         scale: Number((scenario as HTMLElement).dataset.zoom),
+        width: Number((scenario as HTMLElement).dataset.width),
         kind: tile.dataset.resourceKind,
         tileWidth: tileStyle.width,
         tileHeight: tileStyle.height,
@@ -112,10 +107,6 @@ test('keeps resource tiles and compact header insets exact across the geometry m
         foreground: tileStyle.color,
         expectedBackground: probeStyle.backgroundColor,
         expectedForeground: probeStyle.color,
-        listWidth: getComputedStyle(listGlyph).width,
-        listHeight: getComputedStyle(listGlyph).height,
-        arrowWidth: getComputedStyle(arrowGlyph).width,
-        arrowHeight: getComputedStyle(arrowGlyph).height,
         kebabWidth: getComputedStyle(kebabGlyph).width,
         kebabHeight: getComputedStyle(kebabGlyph).height,
         closeWidth: getComputedStyle(closeGlyph).width,
@@ -137,17 +128,32 @@ test('keeps resource tiles and compact header insets exact across the geometry m
 
   expect(results).toHaveLength(48);
   for (const result of results) {
-    expect(result.tileWidth, result.scenario).toBe('24px');
-    expect(result.tileHeight, result.scenario).toBe('24px');
-    expect(result.radius, result.scenario).toBe('7px');
+    // Panel actions mount in a portal only while their owning menu is open.
+    // Bind each measurement to this scenario's trigger, not another panel's menu.
+    const scenario = page.locator(`[data-resource-geometry-case="${result.scenario}"]`);
+    const trigger = scenario
+      .locator('[data-panel-tabless-header]')
+      .getByTestId('panel-actions-trigger');
+    await trigger.press('Enter');
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    const menuId = await trigger.getAttribute('aria-controls');
+    expect(menuId, result.scenario).toBeTruthy();
+    const menu = page.locator(`[id="${menuId}"]`);
+    await expect(menu).toBeVisible();
+    for (const testId of ['chat-message-navigator-trigger', 'chat-scroll-to-bottom-button']) {
+      const icon = menu.getByTestId(testId).locator('svg');
+      await expect(icon, result.scenario).toHaveCount(1);
+      await expect(icon, result.scenario).toHaveCSS('width', '16px');
+      await expect(icon, result.scenario).toHaveCSS('height', '16px');
+    }
+    await page.keyboard.press('Escape');
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await expect(menu).toBeHidden();
+    expect(result.tileWidth, result.scenario).toBe('26px');
+    expect(result.tileHeight, result.scenario).toBe('26px');
+    expect(result.radius, result.scenario).toBe('5px');
     expect(result.glyphWidth, result.scenario).toBe('16px');
     expect(result.glyphHeight, result.scenario).toBe('16px');
-    // Shared-control alignment: the navigator trigger uses CHAT_ICON_SIZE.compact (16px, 898107a1 #2531)
-    // and the panel kebab/close icons moved from 14px to 16px (8eb767aa #2533); scroll keeps its 16px icon.
-    expect(result.listWidth, result.scenario).toBe('16px');
-    expect(result.listHeight, result.scenario).toBe('16px');
-    expect(result.arrowWidth, result.scenario).toBe('16px');
-    expect(result.arrowHeight, result.scenario).toBe('16px');
     expect(result.kebabWidth, result.scenario).toBe('16px');
     expect(result.kebabHeight, result.scenario).toBe('16px');
     expect(result.closeWidth, result.scenario).toBe('16px');
@@ -159,19 +165,21 @@ test('keeps resource tiles and compact header insets exact across the geometry m
     expect(result.stripHeight, result.scenario).toBe('20px');
     expect(result.centerX, result.scenario).toBeLessThanOrEqual(0.5);
     expect(result.centerY, result.scenario).toBeLessThanOrEqual(0.5);
-    // Upstream pane-stack polish (668dd5c2) adds 4px inline inset and retains the 0.5px optical offset.
-    expect((result.leftInset - result.topInset) / result.scale, result.scenario).toBeCloseTo(
-      3.5,
+    // Header simplification (#2973) uses a centered 26px tile in a 52px header.
+    // Its 8px outer inset + 1px selector border + 4px padding is 13px;
+    // compact selectors (<=420px) use 6px padding, increasing that inset to 15px.
+    expect(result.leftInset / result.scale, result.scenario).toBeCloseTo(
+      result.width <= 420 ? 15 : 13,
       1,
     );
-    expect((result.leftInset - result.bottomInset) / result.scale, result.scenario).toBeCloseTo(
-      4.5,
-      1,
-    );
+    expect(result.topInset / result.scale, result.scenario).toBeCloseTo(13, 1);
+    expect(result.bottomInset / result.scale, result.scenario).toBeCloseTo(13, 1);
   }
 });
 
 test('keeps sidebar card paint and visible-surface label alignment exact', async ({ page }) => {
+  // Measure settled card geometry, not the staggered entrance animation.
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   test.setTimeout(120_000);
   await page.setViewportSize({ width: 1800, height: 1400 });
   const scenarios = [

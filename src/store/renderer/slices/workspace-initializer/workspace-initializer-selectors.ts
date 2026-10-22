@@ -1,5 +1,9 @@
+import {
+  selectCanCreateWorkspace,
+  selectPrincipalActionContext,
+} from '../principal/principal-selectors';
 import { store } from '../../store';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import {
   selectOrchestratorSpecialist,
   selectSpecialists,
@@ -34,6 +38,18 @@ export const selectWorkspaceInitializerRecentRepos = store.createSelector((state
   getItems(state.workspaceInitializer.recentRepos),
 );
 
+export const selectWorkspaceInitializerRecentRepoRefresh = store.createSelector(
+  (state, id: string) => getItem(state.workspaceInitializer.recentRepoRefreshes, id),
+);
+
+export const selectWorkspaceInitializerDirectoryStatusCheck = store.createSelector(
+  (state, id: string) => getItem(state.workspaceInitializer.directoryStatusChecks, id),
+);
+
+export const selectWorkspaceInitializerDismissedRecentRepoKeys = store.createSelector(
+  (state) => state.workspaceInitializer.dismissedRecentRepoKeys,
+);
+
 export const selectWorkspaceInitializerRemoteSetups = store.createSelector((state) =>
   getItems(state.workspaceInitializer.remoteSetups),
 );
@@ -42,8 +58,46 @@ export const selectWorkspaceInitializerLastSubmittedAgent = store.createSelector
   (state) => state.workspaceInitializer.lastSubmittedAgent,
 );
 
+export const selectWorkspaceInitializerAgentByRepo = store.createSelector(
+  (state) => state.workspaceInitializer.agentByRepo,
+);
+
+/** Specialist ids used to create workspaces or picked in the agent composer, most recent first. */
+export const selectWorkspaceInitializerRecentSpecialistIds = store.createSelector(
+  (state) => state.workspaceInitializer.recentSpecialistIds,
+);
+
+/** The agent setup last used to create a workspace in `repoKey` (`agentSettingsRepoKey`). */
+export const selectWorkspaceInitializerAgentForRepo = store.createSelector(
+  (state, repoKey: string) => state.workspaceInitializer.agentByRepo[repoKey] ?? null,
+);
+
 export const selectWorkspaceInitializerPendingGitHubPrefill = store.createSelector(
   (state) => state.workspaceInitializer.pendingGitHubPrefill,
+);
+
+export const selectWorkspaceInitializerDraftAuthority = store.createSelector(
+  (state, id: string) => ({
+    restore: getItem(state.workspaceInitializer.draftRestores, id),
+    clear: getItem(state.workspaceInitializer.draftClears, id),
+  }),
+);
+
+export const selectWorkspaceInitializationOutcome = store.createSelector(
+  (state, consumerId: string, resourceId: string) => {
+    const outcome = getItem(state.workspaceInitializer.initializationOutcomes, consumerId);
+    return outcome?.resourceId === resourceId ? outcome : undefined;
+  },
+);
+
+export const selectWorkspaceInitializationOutcomeForConsumer = store.createSelector(
+  (state, consumerId: string) =>
+    getItem(state.workspaceInitializer.initializationOutcomes, consumerId),
+);
+
+export const selectWorkspaceInitializationResume = store.createSelector(
+  (state, consumerId: string) =>
+    getItem(state.workspaceInitializer.initializationResumes, consumerId),
 );
 
 /**
@@ -60,3 +114,18 @@ export const selectNewWorkspaceDefaultSpecialist = store.createSelector((state):
     orchestratorId: selectOrchestratorSpecialist.select(state)?.id ?? null,
   }),
 );
+
+/** A probe is requested on mount and renewed after connection/identity admission changes. */
+export const selectWorkspaceInitializerGitCheckContext = store.createSelector((state) => {
+  const request = state.workspaceInitializer.gitCheckRequest;
+  const context = selectPrincipalActionContext.select(state);
+  return request && context && selectCanCreateWorkspace.select(state)
+    ? JSON.stringify([context, request])
+    : null;
+});
+
+export const selectWorkspaceInitializerGitAvailability = store.createSelector((state) => {
+  const context = selectWorkspaceInitializerGitCheckContext.select(state);
+  const result = state.workspaceInitializer.gitCheck;
+  return context && result?.context === context ? result.available : null;
+});

@@ -123,7 +123,6 @@ export function createWorkspaceReadScheduler(
 }
 
 export const WORKSPACE_HYDRATION_BRANCHES = [
-  'tasks',
   'events',
   'scripts',
   'skills',
@@ -147,7 +146,6 @@ export interface WorkspaceHydrationConsumers {
 }
 
 const alwaysVisibleBranches: readonly WorkspaceHydrationBranch[] = [
-  'tasks',
   'agents',
   'terminals',
   'taskAgentLinks',
@@ -156,8 +154,8 @@ const alwaysVisibleBranches: readonly WorkspaceHydrationBranch[] = [
 
 const panelBranches: Partial<Record<PanelTabType, readonly WorkspaceHydrationBranch[]>> = {
   activity: ['events'],
-  agent: ['agents', 'tasks', 'taskAgentLinks'],
-  'agent-overview': ['agents', 'tasks', 'taskAgentLinks'],
+  agent: ['agents', 'taskAgentLinks'],
+  'agent-overview': ['agents', 'taskAgentLinks'],
   'activity-changes': ['changes'],
   'chat-changes': ['changes'],
   changes: ['changes', 'prStatus'],
@@ -165,14 +163,14 @@ const panelBranches: Partial<Record<PanelTabType, readonly WorkspaceHydrationBra
   diff: ['changes'],
   'hook-script': ['scripts'],
   note: ['notes'],
-  overview: ['agents', 'tasks', 'notes', 'prStatus'],
+  overview: ['agents', 'notes', 'prStatus'],
   settings: ['skills', 'scripts', 'context'],
   terminal: ['terminals'],
 };
 
 const sidebarBranches: Record<string, readonly WorkspaceHydrationBranch[]> = {
   overview: ['agents', 'notes', 'terminals'],
-  agents: ['agents', 'tasks', 'taskAgentLinks'],
+  agents: ['agents', 'taskAgentLinks'],
   context: ['notes', 'context'],
   changes: ['changes', 'prStatus'],
   files: ['fileExplorer'],

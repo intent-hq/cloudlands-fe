@@ -98,6 +98,18 @@ describe('buildWindowMenuEntries', () => {
     ]);
   });
 
+  it('uses the guest machine name for its window and refreshes a saved fallback', () => {
+    const windows = [win({ backendId: 'opaque-guest-id' })];
+    const guest = { id: 'opaque-guest-id', label: 'host.example', hostname: null as string | null };
+    expect(buildWindowMenuEntries(windows, CONNECTIONS, LABELS, [guest])[0].label).toBe(
+      'Intent [host.example]',
+    );
+    guest.hostname = 'Remote Studio';
+    expect(buildWindowMenuEntries(windows, CONNECTIONS, LABELS, [guest])[0].label).toBe(
+      'Intent [Remote Studio]',
+    );
+  });
+
   it('returns no entries for no windows', () => {
     expect(buildWindowMenuEntries([], CONNECTIONS, LABELS)).toEqual([]);
   });

@@ -86,6 +86,7 @@
 
   // Validate server name and return error message, or empty string if valid
   function validateName(name: string): string {
+    if (editMode && name === initialValues?.name) return '';
     const trimmed = name.trim();
     if (!trimmed) {
       return m.settings_mcp_form_nameRequired();

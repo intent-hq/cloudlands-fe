@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { browserClientConsumer } from '$features/browser/browser-client-consumer';
+
   /**
    * OffscreenWebviewHost — keeps browser-tab webviews of background (hosted
    * but not displayed) workspaces alive offscreen, so content-level browser
@@ -27,9 +29,13 @@
   import { selectOwnClientId } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
   import {
     selectBrowserTabRecoveryRequests,
+    selectBrowserTabNavigations,
     selectMountedBrowserTabLeases,
   } from '$store/renderer/slices/tab-state/tab-state-selectors';
-  import { consumeBrowserTabRecovery } from '$store/renderer/slices/tab-state/tab-state-slice';
+  import {
+    consumeBrowserTabRecovery,
+    consumeBrowserTabNavigation,
+  } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { store as appStore } from '$store/renderer/store';
   import { selectPanelLayoutWorkspaces } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
@@ -53,6 +59,7 @@
   const ownClientId$ = selectOwnClientId();
   const mountedBrowserTabLeases$ = selectMountedBrowserTabLeases();
   const recoveryRequests$ = selectBrowserTabRecoveryRequests();
+  const navigations$ = selectBrowserTabNavigations();
   let recoveryKeys = $state<Record<string, string>>({});
 
   function recoverGuest(tabId: string, requestId: string) {
@@ -60,6 +67,8 @@
   }
 
   function isKeepAliveUrl(url: string): boolean {
+    // Navigation needs a mounted guest before it can leave the neutral document.
+    if (url === 'about:blank') return true;
     try {
       return BROWSER_PROTOCOLS.NAVIGATION_ALLOWED.includes(new URL(url).protocol);
     } catch {
@@ -133,9 +142,16 @@
   $effect(() => {
     const currentCandidates = candidates;
     const currentMax = maxWebviews;
+    const recoveryTabIds = new Set(Object.keys($recoveryRequests$));
     const { currentCache, nextCache } = untrack(() => ({
       currentCache: cache,
-      nextCache: updateOffscreenWebviewCache(cache, currentCandidates, Date.now(), currentMax),
+      nextCache: updateOffscreenWebviewCache(
+        cache,
+        currentCandidates,
+        Date.now(),
+        currentMax,
+        recoveryTabIds,
+      ),
     }));
     if (!areOffscreenWebviewCachesEqual(currentCache, nextCache)) {
       for (const candidate of currentCandidates) {
@@ -169,6 +185,7 @@
               recoveryRequestId: $recoveryRequests$[tabId],
               recoverGuest,
               desiredUrl: liveUrlByTabId.get(tabId),
+              navigation: $navigations$[tabId],
             },
           ]
         : [];
@@ -178,6 +195,11 @@
   $effect(() => {
     const eligible = new Set(candidates.map((candidate) => candidate.tabId));
     const mounted = cache;
+    for (const [tabId, navigation] of Object.entries($navigations$)) {
+      if (!eligible.has(tabId) || !mounted.has(tabId)) {
+        untrack(() => appStore.dispatch(consumeBrowserTabNavigation(tabId, navigation)));
+      }
+    }
     for (const [tabId, requestId] of Object.entries($recoveryRequests$)) {
       if (!eligible.has(tabId) || !mounted.has(tabId)) {
         untrack(() => appStore.dispatch(consumeBrowserTabRecovery(tabId, requestId)));
@@ -219,6 +241,7 @@
           partition={BROWSER_PANEL_PARTITION}
           allowpopups
           data-offscreen-webview-tab={entry.tabId}
+          use:browserClientConsumer={entry.workspaceId}
           use:offscreenWebview={entry}
         ></webview>
       {/key}

@@ -11,6 +11,9 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BackendError } from './backend-transport-types';
+import * as backendTransport from './backend-transport';
+import { LiveFilesClient } from './live-files-client';
+import { LiveNotesClient } from './live-notes-client';
 import {
   BrowserWebSocketTransport,
   type BrowserWebSocketLike,
@@ -18,6 +21,7 @@ import {
   resolveBrowserWsUrl,
   sanitizeWsUrlForDisplay,
 } from './browser-websocket-transport';
+import { CURRENT_PROTOCOL_VERSION } from '../../../test/current-protocol-version';
 
 class FakeWebSocket implements BrowserWebSocketLike {
   onopen: ((event?: unknown) => void) | null = null;
@@ -61,6 +65,7 @@ class FakeWebSocket implements BrowserWebSocketLike {
 
 /** Transport wired to fake sockets; tracks every socket the factory creates. */
 function createHarness(options?: {
+  reviewMonitoring?: number;
   requestTimeoutMs?: number;
   reconnectDelayMs?: number;
   maxReconnectDelayMs?: number;
@@ -83,6 +88,32 @@ function createHarness(options?: {
 async function flush(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
+}
+
+function helloResult(clientId = 'browser-1') {
+  return {
+    clientId,
+    protocolVersion: CURRENT_PROTOCOL_VERSION,
+    server: {
+      locality: 'local',
+      hasDisplay: false,
+      osArch: 'linux/x86_64',
+      version: '0.1.0',
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
+      capabilities: { liveState: true },
+    },
+  };
+}
+
+/** Complete the real connect handshake for tests exercising unrelated RPC behavior. */
+async function connect(socket: FakeWebSocket): Promise<void> {
+  socket.open();
+  await flush();
+  const hello = socket.lastFrame();
+  expect(hello).toMatchObject({ method: 'client.hello' });
+  socket.sent.pop();
+  socket.receive({ jsonrpc: '2.0', id: hello.id, result: helloResult() });
+  await flush();
 }
 
 afterEach(() => {
@@ -155,6 +186,239 @@ describe('sanitizeWsUrlForDisplay', () => {
 });
 
 describe('BrowserWebSocketTransport', () => {
+  it('holds cold-start presence until client.hello succeeds on that socket', async () => {
+    const { transport, socket } = createHarness();
+    const presence = transport.request('presence.update', { focus: [], typing: null });
+    // Keep the assertion failure from leaving an unhandled teardown rejection.
+    void presence.catch(() => undefined);
+    try {
+      socket().open();
+      await flush();
+      expect(socket().sent.map((raw) => JSON.parse(raw).method)).toEqual(['client.hello']);
+      const hello = socket().lastFrame();
+      socket().receive({
+        jsonrpc: '2.0',
+        id: hello.id,
+        result: helloResult(),
+      });
+      await flush();
+      const report = socket().lastFrame();
+      expect(report).toMatchObject({
+        method: 'presence.update',
+        params: { focus: [], typing: null },
+      });
+      socket().receive({ jsonrpc: '2.0', id: report.id, result: { typingSource: 'ts-1' } });
+      await expect(presence).resolves.toEqual({ typingSource: 'ts-1' });
+    } finally {
+      transport.dispose();
+    }
+  });
+
+  it('replays hello with the same identity before reconnect subscriptions and presence', async () => {
+    vi.useFakeTimers();
+    const { transport, socket } = createHarness();
+    const initial = transport.request('presence.update', { focus: [], typing: null });
+    await connect(socket());
+    socket().receive({
+      jsonrpc: '2.0',
+      id: socket().lastFrame().id,
+      result: { typingSource: 'ts-1' },
+    });
+    await initial;
+    const replay = vi.fn(() => transport.subscribe({ events: ['presence:changed'] }));
+    transport.onReconnected(replay);
+    socket().drop();
+    const next = transport.request('presence.update', {
+      focus: [{ workspaceId: 'ws-b' }],
+      typing: null,
+    });
+    await vi.advanceTimersByTimeAsync(1_000);
+    socket().open();
+    await flush();
+    expect(replay).not.toHaveBeenCalled();
+    expect(transport.getConnectionStatus()).toBe('connecting');
+    expect(socket().sent).toHaveLength(1);
+    expect(socket().lastFrame()).toMatchObject({
+      method: 'client.hello',
+      params: { clientId: 'browser-1' },
+    });
+    socket().receive({ jsonrpc: '2.0', id: socket().lastFrame().id, result: helloResult() });
+    await flush();
+    expect(replay).toHaveBeenCalledOnce();
+    const frames = socket().sent.map((raw) => JSON.parse(raw));
+    for (const frame of frames.slice(1)) {
+      socket().receive({
+        jsonrpc: '2.0',
+        id: frame.id,
+        result:
+          frame.method === 'presence.update'
+            ? { typingSource: 'ts-2' }
+            : { subscriptionId: 'sub-2' },
+      });
+    }
+    expect(frames.map((f) => f.method).sort()).toEqual([
+      'client.hello',
+      'events.subscribe',
+      'presence.update',
+    ]);
+    await expect(next).resolves.toEqual({ typingSource: 'ts-2' });
+    await expect(replay.mock.results[0].value).resolves.toEqual({ subscriptionId: 'sub-2' });
+    transport.dispose();
+  });
+
+  it.each(['pending', 'answered'] as const)(
+    'ignores an obsolete %s hello when the socket is replaced',
+    async (phase) => {
+      vi.useFakeTimers();
+      const { transport, socket } = createHarness();
+      const first = transport
+        .request('presence.update', { focus: [], typing: null })
+        .catch((e: BackendError) => e.code);
+      socket().open();
+      const oldSocket = socket();
+      const oldMessage = oldSocket.onmessage!;
+      const oldReply = {
+        data: JSON.stringify({
+          jsonrpc: '2.0',
+          id: oldSocket.lastFrame().id,
+          result: helloResult('old-client'),
+        }),
+      };
+      if (phase === 'answered') oldMessage(oldReply);
+      oldSocket.drop();
+      await expect(first).resolves.toBe('TRANSPORT_ERROR');
+      const second = transport.request('presence.update', { focus: [], typing: null });
+      await vi.advanceTimersByTimeAsync(1_000);
+      socket().open();
+      oldMessage(oldReply);
+      await flush();
+      expect(transport.getConnectionStatus()).toBe('connecting');
+      expect(socket().sent.map((raw) => JSON.parse(raw).method)).toEqual(['client.hello']);
+      socket().receive({ jsonrpc: '2.0', id: socket().lastFrame().id, result: helloResult() });
+      await flush();
+      expect(socket().lastFrame()).toMatchObject({ method: 'presence.update' });
+      socket().receive({
+        jsonrpc: '2.0',
+        id: socket().lastFrame().id,
+        result: { typingSource: 'ts-new' },
+      });
+      await expect(second).resolves.toEqual({ typingSource: 'ts-new' });
+      transport.dispose();
+    },
+  );
+
+  it('rejects queued presence on disposal and ignores the delayed hello reply', async () => {
+    vi.useFakeTimers();
+    const { transport, socket, sockets } = createHarness();
+    const presence = transport.request('presence.update', { focus: [], typing: null });
+    socket().open();
+    const onMessage = socket().onmessage!;
+    const hello = socket().lastFrame();
+    transport.dispose();
+    await expect(presence).rejects.toMatchObject({ code: 'UNAVAILABLE' });
+    onMessage({ data: JSON.stringify({ jsonrpc: '2.0', id: hello.id, result: helloResult() }) });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(transport.getConnectionStatus()).toBe('disconnected');
+    expect(socket().sent.map((raw) => JSON.parse(raw).method)).toEqual(['client.hello']);
+    expect(sockets).toHaveLength(1);
+  });
+
+  it.each([-32601, -32602, -32603])(
+    'rejects presence locally after hello error %s while unrelated RPCs still work',
+    async (code) => {
+      const { transport, socket } = createHarness();
+      const presence = transport.request('presence.update', { focus: [], typing: null });
+      const rejected = expect(presence).rejects.toMatchObject({ rpcCode: code });
+      const unrelated = transport.request('workspace.list', {});
+      socket().open();
+      socket().receive({
+        jsonrpc: '2.0',
+        id: socket().lastFrame().id,
+        error: { code, message: 'hello failed' },
+      });
+      await rejected;
+      await flush();
+      expect(socket().sent.map((raw) => JSON.parse(raw).method)).toEqual([
+        'client.hello',
+        'workspace.list',
+      ]);
+      socket().receive({ jsonrpc: '2.0', id: socket().lastFrame().id, result: { workspaces: [] } });
+      await expect(unrelated).resolves.toEqual({ workspaces: [] });
+      await expect(
+        transport.request('presence.update', { focus: [], typing: null }),
+      ).rejects.toMatchObject({ rpcCode: code });
+      transport.dispose();
+    },
+  );
+
+  it('bounds unanswered hello at five seconds without sending presence, even after a late reply', async () => {
+    vi.useFakeTimers();
+    const { transport, socket } = createHarness();
+    const presence = transport.request('presence.update', { focus: [], typing: null });
+    const rejected = expect(presence).rejects.toMatchObject({ code: 'TIMEOUT' });
+    const unrelated = transport.request('workspace.list', {});
+    socket().open();
+    const hello = socket().lastFrame();
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(socket().sent).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await rejected;
+    expect(transport.getConnectionStatus()).toBe('connected');
+    expect(socket().lastFrame()).toMatchObject({ method: 'workspace.list' });
+    socket().receive({ jsonrpc: '2.0', id: socket().lastFrame().id, result: { workspaces: [] } });
+    await unrelated;
+    socket().receive({ jsonrpc: '2.0', id: hello.id, result: helloResult() });
+    await expect(
+      transport.request('presence.update', { focus: [], typing: null }),
+    ).rejects.toMatchObject({ code: 'TIMEOUT' });
+    expect(socket().sent.map((raw) => JSON.parse(raw).method)).toEqual([
+      'client.hello',
+      'workspace.list',
+    ]);
+    transport.dispose();
+  });
+
+  it('does not release a report that timed out waiting for hello', async () => {
+    vi.useFakeTimers();
+    const { transport, socket } = createHarness();
+    const presence = transport.request(
+      'presence.update',
+      { focus: [], typing: null },
+      { timeoutMs: 100 },
+    );
+    const rejected = expect(presence).rejects.toMatchObject({ code: 'TIMEOUT' });
+    socket().open();
+    await vi.advanceTimersByTimeAsync(100);
+    await rejected;
+    socket().receive({ jsonrpc: '2.0', id: socket().lastFrame().id, result: helloResult() });
+    await flush();
+    expect(socket().sent.map((raw) => JSON.parse(raw).method)).toEqual(['client.hello']);
+    transport.dispose();
+  });
+
+  it('preserves handshake identity when the renderer probes capabilities', async () => {
+    const { transport, socket } = createHarness();
+    const probe = transport.request('client.hello', { name: 'Browser' });
+    socket().open();
+    socket().receive({
+      jsonrpc: '2.0',
+      id: socket().lastFrame().id,
+      result: helloResult('stable-client'),
+    });
+    await flush();
+    expect(socket().lastFrame()).toMatchObject({
+      method: 'client.hello',
+      params: { name: 'Browser', clientId: 'stable-client' },
+    });
+    socket().receive({
+      jsonrpc: '2.0',
+      id: socket().lastFrame().id,
+      result: helloResult('stable-client'),
+    });
+    await expect(probe).resolves.toEqual(helloResult('stable-client'));
+    transport.dispose();
+  });
+
   it('rejects local-machine requests instead of sending them to the browser daemon', async () => {
     const { transport, sockets } = createHarness();
     await expect(
@@ -177,8 +441,7 @@ describe('BrowserWebSocketTransport', () => {
     expect(sockets).toHaveLength(1);
     expect(socket().url).toBe('ws://127.0.0.1:9100/rpc?token=test');
 
-    socket().open();
-    await flush();
+    await connect(socket());
     expect(socket().lastFrame()).toEqual({
       jsonrpc: '2.0',
       id: 1,
@@ -194,15 +457,14 @@ describe('BrowserWebSocketTransport', () => {
   it('correlates concurrent requests by id, including out-of-order responses', async () => {
     const { transport, socket } = createHarness();
     const first = transport.request('note.get', { noteId: 'a' });
-    socket().open();
-    await flush();
+    await connect(socket());
     const second = transport.request('note.get', { noteId: 'b' });
     await flush();
 
     const frames = socket().sent.map((raw) => JSON.parse(raw) as { id: number });
-    expect(frames.map((f) => f.id)).toEqual([1, 2]);
+    expect(frames.map((f) => f.id)).toEqual([1, 3]);
 
-    socket().receive({ jsonrpc: '2.0', id: 2, result: 'second' });
+    socket().receive({ jsonrpc: '2.0', id: 3, result: 'second' });
     socket().receive({ jsonrpc: '2.0', id: 1, result: 'first' });
     await expect(first).resolves.toBe('first');
     await expect(second).resolves.toBe('second');
@@ -212,8 +474,7 @@ describe('BrowserWebSocketTransport', () => {
   it('rejects with a BackendError mapping the numeric JSON-RPC code', async () => {
     const { transport, socket } = createHarness();
     const promise = transport.request('nope.method');
-    socket().open();
-    await flush();
+    await connect(socket());
 
     socket().receive({
       jsonrpc: '2.0',
@@ -232,8 +493,7 @@ describe('BrowserWebSocketTransport', () => {
   it("prefers the daemon's data.code and preserves extra data fields", async () => {
     const { transport, socket } = createHarness();
     const promise = transport.request('note.update');
-    socket().open();
-    await flush();
+    await connect(socket());
 
     socket().receive({
       jsonrpc: '2.0',
@@ -254,8 +514,7 @@ describe('BrowserWebSocketTransport', () => {
   it('maps reserved server-range codes to SERVER_ERROR', async () => {
     const { transport, socket } = createHarness();
     const promise = transport.request('thing.do');
-    socket().open();
-    await flush();
+    await connect(socket());
 
     socket().receive({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'boom' } });
     const error = (await promise.catch((e: unknown) => e)) as BackendError;
@@ -267,8 +526,7 @@ describe('BrowserWebSocketTransport', () => {
     vi.useFakeTimers();
     const { transport, socket } = createHarness();
     const promise = transport.request('slow.method');
-    socket().open();
-    await flush();
+    await connect(socket());
     expect(socket().sent).toHaveLength(1);
 
     const rejection = expect(promise).rejects.toMatchObject({
@@ -284,8 +542,7 @@ describe('BrowserWebSocketTransport', () => {
     vi.useFakeTimers();
     const { transport, socket } = createHarness();
     const promise = transport.request('git.pull', undefined, { timeoutMs: 60_000 });
-    socket().open();
-    await flush();
+    await connect(socket());
 
     await vi.advanceTimersByTimeAsync(45_000);
     socket().receive({ jsonrpc: '2.0', id: 1, result: 'ok' });
@@ -298,8 +555,7 @@ describe('BrowserWebSocketTransport', () => {
     const seen: unknown[] = [];
     const off = transport.onNotification((n) => seen.push(n));
     const promise = transport.request('events.subscribe', {});
-    socket().open();
-    await flush();
+    await connect(socket());
     socket().receive({ jsonrpc: '2.0', id: 1, result: { subscriptionId: 'sub-1' } });
     await promise;
 
@@ -324,8 +580,7 @@ describe('BrowserWebSocketTransport', () => {
   it('sends events.subscribe / events.unsubscribe via subscribe()/unsubscribe()', async () => {
     const { transport, socket } = createHarness();
     const promise = transport.subscribe({ events: ['workspace:*'] });
-    socket().open();
-    await flush();
+    await connect(socket());
     expect(socket().lastFrame()).toEqual({
       jsonrpc: '2.0',
       id: 1,
@@ -339,12 +594,26 @@ describe('BrowserWebSocketTransport', () => {
     await flush();
     expect(socket().lastFrame()).toEqual({
       jsonrpc: '2.0',
-      id: 2,
+      id: 3,
       method: 'events.unsubscribe',
       params: { subscriptionId: 'sub-9' },
     });
-    socket().receive({ jsonrpc: '2.0', id: 2, error: { code: -32602, message: 'unknown sub' } });
+    socket().receive({ jsonrpc: '2.0', id: 3, error: { code: -32602, message: 'unknown sub' } });
     await expect(unsub).resolves.toBeUndefined();
+    transport.dispose();
+  });
+
+  it('sends workspace origin on browser subscription cleanup', async () => {
+    const { transport, socket } = createHarness();
+    const pending = transport.unsubscribe('sub-a', 'workspace-a');
+    await connect(socket());
+    const frame = socket().lastFrame();
+    expect(frame).toMatchObject({
+      method: 'events.unsubscribe',
+      params: { subscriptionId: 'sub-a', workspaceId: 'workspace-a' },
+    });
+    socket().receive({ jsonrpc: '2.0', id: frame.id, result: { unsubscribed: true } });
+    await pending;
     transport.dispose();
   });
 
@@ -358,8 +627,7 @@ describe('BrowserWebSocketTransport', () => {
     transport.onReconnected(reconnected);
 
     const promise = transport.request('workspace.list');
-    socket().open();
-    await flush();
+    await connect(socket());
 
     socket().drop();
     await expect(promise).rejects.toMatchObject({ code: 'TRANSPORT_ERROR' });
@@ -374,14 +642,13 @@ describe('BrowserWebSocketTransport', () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(sockets).toHaveLength(3);
 
-    socket().open();
-    await flush();
+    await connect(socket());
     expect(reconnected).toHaveBeenCalledOnce();
 
     const after = transport.request('workspace.list');
     await flush();
     expect(socket().lastFrame()).toMatchObject({ method: 'workspace.list' });
-    socket().receive({ jsonrpc: '2.0', id: 2, result: [] });
+    socket().receive({ jsonrpc: '2.0', id: socket().lastFrame().id, result: [] });
     await expect(after).resolves.toEqual([]);
     transport.dispose();
   });
@@ -402,16 +669,15 @@ describe('BrowserWebSocketTransport', () => {
       expect(recovered).not.toHaveBeenCalled();
 
       await vi.advanceTimersByTimeAsync(100);
-      socket().open();
-      await flush();
+      await connect(socket());
       expect(recovered).toHaveBeenCalledOnce();
       expect(socket().lastFrame()).toEqual({
         jsonrpc: '2.0',
-        id: 2,
+        id: expect.any(Number),
         method: 'workspace.list',
         params: {},
       });
-      socket().receive({ jsonrpc: '2.0', id: 2, result: { workspaces: [] } });
+      socket().receive({ jsonrpc: '2.0', id: socket().lastFrame().id, result: { workspaces: [] } });
       await expect(recovered.mock.results[0].value).resolves.toEqual({ workspaces: [] });
       transport.dispose();
     },
@@ -424,8 +690,7 @@ describe('BrowserWebSocketTransport', () => {
       maxReconnectDelayMs: 30_000,
     });
     transport.request('a').catch(() => {});
-    socket().open();
-    await flush();
+    await connect(socket());
     socket().drop();
     expect(sockets).toHaveLength(1);
 
@@ -437,10 +702,9 @@ describe('BrowserWebSocketTransport', () => {
 
     await vi.advanceTimersByTimeAsync(1_000);
     expect(sockets).toHaveLength(2);
-    socket().open();
-    await flush();
+    await connect(socket());
     expect(socket().lastFrame()).toMatchObject({ method: 'b' });
-    socket().receive({ jsonrpc: '2.0', id: 2, result: 'ok' });
+    socket().receive({ jsonrpc: '2.0', id: socket().lastFrame().id, result: 'ok' });
     await expect(queued).resolves.toBe('ok');
     transport.dispose();
   });
@@ -462,8 +726,7 @@ describe('BrowserWebSocketTransport', () => {
     await rejection;
 
     // A late connect must not send the already-timed-out request.
-    socket().open();
-    await flush();
+    await connect(socket());
     expect(socket().sent).toHaveLength(0);
     transport.dispose();
   });
@@ -489,10 +752,9 @@ describe('BrowserWebSocketTransport', () => {
     await vi.advanceTimersByTimeAsync(1_000);
     expect(sockets).toHaveLength(2);
     const after = transport.request('workspace.list');
-    socket().open();
-    await flush();
+    await connect(socket());
     expect(socket().lastFrame()).toMatchObject({ method: 'workspace.list' });
-    socket().receive({ jsonrpc: '2.0', id: 2, result: [] });
+    socket().receive({ jsonrpc: '2.0', id: socket().lastFrame().id, result: [] });
     await expect(after).resolves.toEqual([]);
     transport.dispose();
   });
@@ -502,8 +764,7 @@ describe('BrowserWebSocketTransport', () => {
     const reconnected = vi.fn();
     transport.onReconnected(reconnected);
     const promise = transport.request('system.health');
-    socket().open();
-    await flush();
+    await connect(socket());
     expect(reconnected).not.toHaveBeenCalled();
     socket().receive({ jsonrpc: '2.0', id: 1, result: 'ok' });
     await promise;
@@ -517,15 +778,13 @@ describe('BrowserWebSocketTransport', () => {
       maxReconnectDelayMs: 30_000,
     });
     transport.request('x').catch(() => {});
-    socket().open();
-    await flush();
+    await connect(socket());
     socket().drop();
     await vi.advanceTimersByTimeAsync(1_000);
     socket().drop();
     await vi.advanceTimersByTimeAsync(2_000);
     expect(sockets).toHaveLength(3);
-    socket().open();
-    await flush();
+    await connect(socket());
 
     socket().drop();
     await vi.advanceTimersByTimeAsync(1_000);
@@ -536,8 +795,7 @@ describe('BrowserWebSocketTransport', () => {
   it('replies -32601 to daemon-initiated reverse requests', async () => {
     const { transport, socket } = createHarness();
     const promise = transport.request('system.health');
-    socket().open();
-    await flush();
+    await connect(socket());
 
     socket().receive({ jsonrpc: '2.0', id: 'rev-1', method: 'permission.request', params: {} });
     expect(socket().lastFrame()).toEqual({
@@ -555,8 +813,7 @@ describe('BrowserWebSocketTransport', () => {
     const { transport, socket } = createHarness();
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const promise = transport.request('system.health');
-    socket().open();
-    await flush();
+    await connect(socket());
 
     socket().receiveRaw('not json{');
     socket().receiveRaw(new ArrayBuffer(4));
@@ -572,8 +829,7 @@ describe('BrowserWebSocketTransport', () => {
     vi.useFakeTimers();
     const { transport, sockets, socket } = createHarness({ reconnectDelayMs: 1_000 });
     const promise = transport.request('workspace.list');
-    socket().open();
-    await flush();
+    await connect(socket());
 
     transport.dispose();
     await expect(promise).rejects.toMatchObject({ code: 'UNAVAILABLE' });
@@ -594,4 +850,978 @@ describe('BrowserWebSocketTransport', () => {
     transport.dispose();
     expect(transport.isAvailable()).toBe(false);
   });
+});
+
+// protocol-version-ok-file: connection-generation compatibility regression fixtures.
+describe('root file reads on the sending connection', () => {
+  it.each(
+    ['file.read', 'file.readChunk'].flatMap((method) =>
+      ['11.1', '12.0', '13.0', '14.0', '15.0'].flatMap((protocolVersion) =>
+        ['11.0', '12.0', '13.0', '14.0', '15.0', '16.0', 'invalid', undefined].map(
+          (nextVersion) => ({
+            method,
+            protocolVersion,
+            nextVersion,
+          }),
+        ),
+      ),
+    ),
+  )(
+    'rechecks $method after reconnecting from $protocolVersion to $nextVersion',
+    async ({ method, protocolVersion, nextVersion }) => {
+      vi.useFakeTimers();
+      const { transport, sockets } = createHarness({ reconnectDelayMs: 10 });
+      const params = {
+        workspaceId: 'ws',
+        path: 'same.txt',
+        gitRootId: 'root-a',
+        ...(method === 'file.readChunk' ? { offset: 0, length: 1024 } : {}),
+      };
+      const response = method === 'file.read' ? 'R' : { content: 'Ug==', size: 1, bytesRead: 1 };
+      const first = transport.request(method, params);
+      sockets[0].open();
+      await flush();
+      sockets[0].receive({
+        jsonrpc: '2.0',
+        id: sockets[0].lastFrame().id,
+        result: { clientId: 'client', protocolVersion },
+      });
+      await flush();
+      expect(sockets[0].lastFrame()).toMatchObject({ method, params });
+      sockets[0].receive({ jsonrpc: '2.0', id: sockets[0].lastFrame().id, result: response });
+      expect(await first).toEqual(response);
+      sockets[0].drop();
+      await vi.advanceTimersByTimeAsync(10);
+      const second = transport.request(method, params).catch((error) => error);
+      sockets[1].open();
+      await flush();
+      expect(sockets[1].sent.map((frame) => JSON.parse(frame).method)).toEqual(['client.hello']);
+      sockets[1].receive({
+        jsonrpc: '2.0',
+        id: sockets[1].lastFrame().id,
+        result: { clientId: 'client', protocolVersion: nextVersion },
+      });
+      await flush();
+      if (sockets[1].lastFrame().method === method) {
+        sockets[1].receive({
+          jsonrpc: '2.0',
+          id: sockets[1].lastFrame().id,
+          result: response,
+        });
+      }
+      const result = await second;
+      transport.dispose();
+      if (
+        nextVersion === '12.0' ||
+        nextVersion === '13.0' ||
+        nextVersion === '14.0' ||
+        nextVersion === '15.0' ||
+        // No upper bound: clients never cap the protocol version (intent-hq/intent#7206).
+        nextVersion === '16.0'
+      ) {
+        expect(result).toEqual(response);
+        expect(sockets[1].lastFrame()).toMatchObject({ method, params });
+      } else {
+        expect(result).toBeInstanceOf(Error);
+        expect(sockets[1].sent.map((frame) => JSON.parse(frame).method)).toEqual(['client.hello']);
+      }
+    },
+  );
+});
+
+describe('observational node capabilities', () => {
+  it('uses the initial handshake and invalidates on re-hello, reconnect and disposal', async () => {
+    vi.useFakeTimers();
+    const h = createHarness({ reconnectDelayMs: 1 });
+    const observing = h.transport.observeNodeCapabilities();
+    const socket = h.socket();
+    socket.open();
+    await flush();
+    socket.receive({
+      id: socket.lastFrame().id,
+      result: {
+        clientId: 'A',
+        server: {
+          capabilities: {
+            agentNodes: 1,
+            agentPlatformRouting: 1,
+            workspaceMembershipEvents: 1,
+            noteTruncatedRead: 1,
+          },
+        },
+      },
+    });
+    await expect(observing).resolves.toEqual({
+      server: {
+        capabilities: {
+          agentNodes: 1,
+          localNodeIsolation: 0,
+          agentPlatformRouting: 1,
+          workspaceMembershipEvents: 1,
+          noteTruncatedRead: 1,
+        },
+      },
+    });
+    await h.transport.observeNodeCapabilities();
+    expect(socket.sent).toHaveLength(1);
+    const rehello = h.transport.request('client.hello', {});
+    await expect(h.transport.observeNodeCapabilities()).resolves.toEqual({
+      server: { capabilities: null },
+    });
+    socket.receive({ id: socket.lastFrame().id, error: { code: -32601, message: 'rejected' } });
+    await expect(rehello).rejects.toThrow('rejected');
+    await expect(h.transport.observeNodeCapabilities()).resolves.toEqual({
+      server: { capabilities: null },
+    });
+    socket.drop();
+    const reconnecting = h.transport.observeNodeCapabilities();
+    await vi.advanceTimersByTimeAsync(1);
+    const replacement = h.socket();
+    expect(replacement).not.toBe(socket);
+    replacement.open();
+    await flush();
+    replacement.receive({
+      id: replacement.lastFrame().id,
+      result: {
+        clientId: 'B',
+        server: {
+          capabilities: {
+            agentNodes: '1',
+            workspaceMembershipEvents: true,
+            noteTruncatedRead: '1',
+          },
+        },
+      },
+    });
+    await expect(reconnecting).resolves.toEqual({
+      server: {
+        capabilities: {
+          agentNodes: 0,
+          localNodeIsolation: 0,
+          agentPlatformRouting: 0,
+          workspaceMembershipEvents: 0,
+          noteTruncatedRead: 0,
+        },
+      },
+    });
+    h.transport.dispose();
+    await expect(h.transport.observeNodeCapabilities()).rejects.toThrow();
+  });
+  it('does not let an older concurrent hello restore obsolete capabilities', async () => {
+    const h = createHarness();
+    const observing = h.transport.observeNodeCapabilities();
+    h.socket().open();
+    await flush();
+    h.socket().receive({ id: h.socket().lastFrame().id, result: helloResult() });
+    await observing;
+    const older = h.transport.request('client.hello', {});
+    const oldId = h.socket().lastFrame().id;
+    const newer = h.transport.request('client.hello', {});
+    h.socket().receive({
+      id: h.socket().lastFrame().id,
+      result: { clientId: 'new', server: { capabilities: {} } },
+    });
+    await newer;
+    h.socket().receive({
+      id: oldId,
+      result: {
+        clientId: 'old',
+        server: { capabilities: { agentNodes: 1, workspaceMembershipEvents: 1 } },
+      },
+    });
+    await older;
+    await expect(h.transport.observeNodeCapabilities()).resolves.toEqual({
+      server: {
+        capabilities: {
+          agentNodes: 0,
+          localNodeIsolation: 0,
+          agentPlatformRouting: 0,
+          workspaceMembershipEvents: 0,
+          noteTruncatedRead: 0,
+        },
+      },
+    });
+    h.transport.dispose();
+  });
+});
+
+describe('binary file reads through browser transport normalization', () => {
+  it.each([
+    ['stream did not contain valid UTF-8', 'binary'],
+    ['No such file or directory (os error 2)', 'missing'],
+    ['Permission denied (os error 13)', 'error'],
+    [undefined, 'error'],
+    [{ detail: { message: 'stream did not contain valid UTF-8' } }, 'error'],
+  ])('classifies the actual daemon error data %j as %s', async (data, expected) => {
+    const { transport, socket } = createHarness();
+    const request = vi
+      .spyOn(backendTransport, 'backendRequest')
+      .mockImplementation((method, params) => transport.request(method, params));
+    try {
+      const pending = new LiveFilesClient()
+        .read('ws-1', '.intent/artifacts/report.xlsx')
+        .catch((error) => error);
+      await connect(socket());
+      expect(socket().lastFrame()).toMatchObject({ method: 'file.read' });
+      socket().receive({
+        jsonrpc: '2.0',
+        id: socket().lastFrame().id,
+        error: { code: -32603, message: 'Internal error', data },
+      });
+      const result = await pending;
+      if (expected === 'binary')
+        expect(result).toMatchObject({ isBinary: true, originalContent: null });
+      else if (expected === 'missing') expect(result).toBeNull();
+      else expect(result).toBeInstanceOf(BackendError);
+    } finally {
+      transport.dispose();
+      request.mockRestore();
+    }
+  });
+});
+
+describe('monitor session socket ownership', () => {
+  it('keeps legacy hello and exact monitor params, then rejects controls after reconnect', async () => {
+    vi.useFakeTimers();
+    const h = createHarness({ reconnectDelayMs: 10 });
+    const capture = h.transport.capturePrMonitorSession('ws');
+    await connect(h.socket());
+    const session = await capture;
+    expect(session.support).toBe('unsupported');
+    const read = session.request('prMonitor.list', { workspaceId: 'ws' });
+    expect(h.socket().lastFrame()).toMatchObject({
+      method: 'prMonitor.list',
+      params: { workspaceId: 'ws' },
+    });
+    h.socket().receive({ id: h.socket().lastFrame().id, result: { monitors: [] } });
+    await expect(read).resolves.toEqual({ monitors: [] });
+    const retired = vi.fn();
+    session.onRetired(retired);
+    h.socket().drop();
+    expect(retired).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(10);
+    await connect(h.socket());
+    const count = h.socket().sent.length;
+    await expect(
+      session.request('prMonitor.cancel', { workspaceId: 'ws', monitorId: 'm' }),
+    ).rejects.toThrow();
+    expect(h.socket().sent).toHaveLength(count);
+    await session.release();
+    h.transport.dispose();
+  });
+  it('retires on re-hello and observes support only after the new acknowledgment', async () => {
+    const h = createHarness();
+    const capture = h.transport.capturePrMonitorSession('ws');
+    await connect(h.socket());
+    const session = await capture;
+    const retired = vi.fn();
+    session.onRetired(retired);
+    const ready = vi.fn();
+    const off = h.transport.onMonitorReconnected(ready);
+    const hello = h.transport.request('client.hello', {});
+    expect(retired).toHaveBeenCalledOnce();
+    expect(h.socket().lastFrame().params).toEqual({ clientId: 'browser-1' });
+    h.socket().receive({
+      id: h.socket().lastFrame().id,
+      result: { ...helloResult(), server: { capabilities: { reviewMonitoring: 1 } } },
+    });
+    await hello;
+    expect(ready).toHaveBeenCalledOnce();
+    const replacement = await h.transport.capturePrMonitorSession('ws');
+    expect(replacement.support).toBe('consumer-pending');
+    expect(replacement.origin.sessionId).not.toBe(session.origin.sessionId);
+    await expect(
+      session.request('prMonitor.flush', { workspaceId: 'ws', monitorId: 'm' }),
+    ).rejects.toThrow();
+    await replacement.release();
+    await session.release();
+    off();
+    h.transport.dispose();
+  });
+});
+
+describe('monitor replacement hello admission', () => {
+  it.each(['pending', 'failed', 'timed-out', 'missing-id', 'empty-id', 'non-string-id', 'null'])(
+    'refuses new monitor controls after a %s replacement hello',
+    async (phase) => {
+      vi.useFakeTimers();
+      const h = createHarness();
+      const firstCapture = h.transport.capturePrMonitorSession('ws');
+      await connect(h.socket());
+      const first = await firstCapture;
+      const ready = vi.fn();
+      h.transport.onMonitorReconnected(ready);
+      const hello = h.transport.request('client.hello', {}, { timeoutMs: 10 }).catch((e) => e);
+      const id = h.socket().lastFrame().id;
+      try {
+        if (phase === 'failed')
+          h.socket().receive({ id, error: { code: -32603, message: 'failed' } });
+        else if (phase === 'timed-out') await vi.advanceTimersByTimeAsync(10);
+        else if (phase !== 'pending')
+          h.socket().receive({
+            id,
+            result:
+              phase === 'null'
+                ? null
+                : {
+                    clientId: phase === 'empty-id' ? '' : phase === 'non-string-id' ? 1 : undefined,
+                  },
+          });
+        if (phase !== 'pending') await hello;
+        // Exercise the exact wire escape reproduced by the independent reviewer.
+        const replacement = await h.transport.capturePrMonitorSession('ws').catch(() => null);
+        if (replacement) {
+          const cancel = replacement.request('prMonitor.cancel', {
+            workspaceId: 'ws',
+            monitorId: 'm',
+          });
+          h.socket().receive({ id: h.socket().lastFrame().id, result: { ok: true } });
+          await cancel;
+          await replacement.release();
+        }
+        expect(h.socket().sent.map((frame) => JSON.parse(frame).method)).not.toContain(
+          'prMonitor.cancel',
+        );
+        expect(replacement).toBeNull();
+        expect(ready).not.toHaveBeenCalled();
+        await expect(
+          first.request('prMonitor.flush', { workspaceId: 'ws', monitorId: 'm' }),
+        ).rejects.toThrow();
+      } finally {
+        h.transport.dispose();
+        await hello;
+      }
+    },
+  );
+
+  it.each(['pending', 'failed', 'timed-out', 'malformed', 'confirmed'])(
+    'ignores an older success after the newer hello is %s',
+    async (phase) => {
+      vi.useFakeTimers();
+      const h = createHarness();
+      const initial = h.transport.capturePrMonitorSession('ws');
+      await connect(h.socket());
+      await initial;
+      const ready = vi.fn();
+      h.transport.onMonitorReconnected(ready);
+      const older = h.transport.request('client.hello', {});
+      const olderId = h.socket().lastFrame().id;
+      const newer = h.transport.request('client.hello', {}, { timeoutMs: 10 }).catch((e) => e);
+      const newerId = h.socket().lastFrame().id;
+      try {
+        if (phase === 'failed')
+          h.socket().receive({ id: newerId, error: { code: -32603, message: 'failed' } });
+        if (phase === 'timed-out') await vi.advanceTimersByTimeAsync(10);
+        if (phase === 'malformed') h.socket().receive({ id: newerId, result: {} });
+        if (phase === 'confirmed')
+          h.socket().receive({
+            id: newerId,
+            result: {
+              ...helloResult('latest'),
+              server: { capabilities: {} },
+            },
+          });
+        if (phase !== 'pending') await newer;
+        const current =
+          phase === 'confirmed' ? await h.transport.capturePrMonitorSession('ws') : null;
+        const retired = vi.fn();
+        current?.onRetired(retired);
+        h.socket().receive({
+          id: olderId,
+          result: {
+            ...helloResult('obsolete'),
+            protocolVersion: 'obsolete',
+            server: {
+              capabilities: { reviewMonitoring: 1, agentNodes: 1, workspaceMembershipEvents: 1 },
+            },
+          },
+        });
+        await older;
+        expect(ready).toHaveBeenCalledTimes(phase === 'confirmed' ? 1 : 0);
+        expect(retired).not.toHaveBeenCalled();
+        if (current) {
+          expect(current.support).toBe('unsupported');
+          const cancel = current.request('prMonitor.cancel', { workspaceId: 'ws', monitorId: 'm' });
+          expect(h.socket().lastFrame()).toMatchObject({
+            method: 'prMonitor.cancel',
+            params: { workspaceId: 'ws', monitorId: 'm' },
+          });
+          h.socket().receive({ id: h.socket().lastFrame().id, result: { ok: true } });
+          await cancel;
+          const read = h.transport
+            .request('file.read', { workspaceId: 'ws', gitRootId: 'root', path: 'a' })
+            .catch((e) => e);
+          if (h.socket().lastFrame().method === 'file.read')
+            h.socket().receive({ id: h.socket().lastFrame().id, result: 'latest protocol' });
+          await expect(read).resolves.toBe('latest protocol');
+          await expect(h.transport.observeNodeCapabilities()).resolves.toEqual({
+            server: {
+              capabilities: {
+                agentNodes: 0,
+                localNodeIsolation: 0,
+                agentPlatformRouting: 0,
+                workspaceMembershipEvents: 0,
+                noteTruncatedRead: 0,
+              },
+            },
+          });
+        } else {
+          await expect(h.transport.capturePrMonitorSession('ws')).rejects.toThrow();
+        }
+        // The next hello must carry the latest acknowledged ID, not the older response's ID.
+        const finalHello = h.transport.request('client.hello', {}).catch((e) => e);
+        expect(h.socket().lastFrame().params).toEqual({
+          clientId: phase === 'confirmed' ? 'latest' : 'browser-1',
+        });
+        h.socket().receive({ id: h.socket().lastFrame().id, result: helloResult('final') });
+        await finalHello;
+        const finalSession = await h.transport.capturePrMonitorSession('ws');
+        expect(finalSession.support).toBe('unsupported');
+        const flush = finalSession.request('prMonitor.flush', {
+          workspaceId: 'ws',
+          monitorId: 'm',
+          check: true,
+        });
+        h.socket().receive({ id: h.socket().lastFrame().id, result: { ok: true } });
+        await flush;
+        await finalSession.release();
+      } finally {
+        h.transport.dispose();
+        await newer;
+      }
+    },
+  );
+});
+
+async function acknowledgeAttachment(
+  h: ReturnType<typeof createHarness>,
+  overrides: Record<string, unknown> = {},
+) {
+  await flush();
+  await flush();
+  const socket = h.socket();
+  expect(h.sockets.length).toBeGreaterThan(1);
+  socket.open();
+  const hello = socket.lastFrame();
+  expect(hello).toMatchObject({
+    method: 'client.hello',
+    params: { connectionRole: 'review-monitor' },
+  });
+  socket.receive({
+    id: hello.id,
+    result: {
+      ...helloResult((hello.params as { clientId: string }).clientId),
+      connectionRole: 'review-monitor',
+      server: { capabilities: { reviewMonitoring: 1 } },
+      ...overrides,
+    },
+  });
+  await flush();
+  return socket;
+}
+
+describe('document review monitor receipt', () => {
+  it('advertises only the enabled document and requires the acknowledged server capability', async () => {
+    const capable = createHarness({ reviewMonitoring: 1 });
+    const legacy = createHarness();
+    try {
+      const captures = [capable, legacy].map((h) => h.transport.capturePrMonitorSession('ws'));
+      for (const h of [capable, legacy]) {
+        h.socket().open();
+        await flush();
+        const hello = h.socket().lastFrame();
+        h.socket().receive({
+          id: hello.id,
+          result: { ...helloResult(), server: { capabilities: { reviewMonitoring: 1 } } },
+        });
+      }
+      const recipient = await acknowledgeAttachment(capable);
+      const [qualified, old] = await Promise.all(captures);
+      expect(capable.socket().lastFrame().params).toMatchObject({
+        capabilities: { reviewMonitoring: 1 },
+      });
+      expect(qualified.support).toBe('supported');
+      expect(old.support).toBe('consumer-pending');
+      expect(legacy.socket().lastFrame().params).not.toHaveProperty(
+        'capabilities.reviewMonitoring',
+      );
+      const withdrawing = capable.transport.request('client.hello', {
+        capabilities: { reviewMonitoring: 0 },
+      });
+      const frame = capable.sockets[0].lastFrame();
+      expect(recipient.closed).toBe(true);
+      await expect(
+        qualified.request('prMonitor.cancel', { workspaceId: 'ws', monitorId: 'm' }),
+      ).rejects.toThrow();
+      capable.sockets[0].receive({
+        id: frame.id,
+        result: { ...helloResult(), server: { capabilities: { reviewMonitoring: 1 } } },
+      });
+      await withdrawing;
+      expect((await capable.transport.capturePrMonitorSession('ws')).support).toBe(
+        'consumer-pending',
+      );
+    } finally {
+      capable.transport.dispose();
+      legacy.transport.dispose();
+    }
+  });
+
+  it('does not let an ordinary hello opt an unqualified document into private output', async () => {
+    const h = createHarness();
+    try {
+      const capture = h.transport.capturePrMonitorSession('ws');
+      await connect(h.socket());
+      await capture;
+      const probe = h.transport.request('client.hello', {
+        capabilities: { reviewMonitoring: 1, other: true },
+      });
+      const hello = h.socket().lastFrame();
+      h.socket().receive({
+        id: hello.id,
+        result: { ...helloResult(), server: { capabilities: { reviewMonitoring: 1 } } },
+      });
+      await probe;
+      expect(hello.params).toMatchObject({ capabilities: { other: true } });
+      expect(hello.params).not.toHaveProperty('capabilities.reviewMonitoring');
+      expect((await h.transport.capturePrMonitorSession('ws')).support).toBe('consumer-pending');
+    } finally {
+      h.transport.dispose();
+    }
+  });
+});
+
+describe('qualified browser reconnect', () => {
+  it.each([undefined, 0, false, '1', 1.5])(
+    'keeps server support %s unsupported even for a capable document',
+    async (version) => {
+      const h = createHarness({ reviewMonitoring: 1 });
+      try {
+        const capture = h.transport.capturePrMonitorSession('ws');
+        h.socket().open();
+        await flush();
+        h.socket().receive({
+          id: h.socket().lastFrame().id,
+          result: { ...helloResult(), server: { capabilities: { reviewMonitoring: version } } },
+        });
+        expect((await capture).support).toBe('unsupported');
+      } finally {
+        h.transport.dispose();
+      }
+    },
+  );
+  it('renegotiates support on the replacement socket without reviving an original control', async () => {
+    vi.useFakeTimers();
+    const h = createHarness({ reviewMonitoring: 1, reconnectDelayMs: 1 });
+    try {
+      const capture = h.transport.capturePrMonitorSession('ws');
+      const original = h.socket();
+      original.open();
+      await flush();
+      original.receive({
+        id: original.lastFrame().id,
+        result: { ...helloResult(), server: { capabilities: { reviewMonitoring: 1 } } },
+      });
+      const recipient = await acknowledgeAttachment(h);
+      const first = await capture;
+      expect(first.support).toBe('supported');
+      expect(original.lastFrame().params).not.toHaveProperty('capabilities.reviewMonitoring');
+      original.drop();
+      expect(recipient.closed).toBe(true);
+      await vi.advanceTimersByTimeAsync(1);
+      const replacement = h.socket();
+      replacement.open();
+      await flush();
+      const next = h.transport.capturePrMonitorSession('ws');
+      const hello = replacement.lastFrame();
+      expect(hello.params).not.toHaveProperty('capabilities.reviewMonitoring');
+      replacement.receive({ id: hello.id, result: helloResult('new') });
+      expect((await next).support).toBe('unsupported');
+      await expect(
+        first.request('prMonitor.flush', { workspaceId: 'ws', monitorId: 'm' }),
+      ).rejects.toThrow();
+      expect(replacement.sent.map((x) => JSON.parse(x).method)).not.toContain('prMonitor.flush');
+    } finally {
+      h.transport.dispose();
+    }
+  });
+});
+
+describe('browser dedicated monitor attachment contract', () => {
+  async function start(h: ReturnType<typeof createHarness>) {
+    const capture = h.transport.capturePrMonitorSession('ws');
+    const ordinary = h.socket();
+    ordinary.open();
+    ordinary.receive({
+      id: ordinary.lastFrame().id,
+      result: {
+        ...helloResult('canonical/source'),
+        server: { capabilities: { reviewMonitoring: 1 } },
+      },
+    });
+    await flush();
+    await flush();
+    return { capture, ordinary };
+  }
+
+  it.each([
+    { connectionRole: undefined },
+    { connectionRole: 'ordinary' },
+    { connectionRole: null },
+    { connectionRole: 1 },
+    { clientId: 'wrong' },
+    { clientId: '' },
+    { clientId: null },
+    { server: { capabilities: {} } },
+    { server: { capabilities: { reviewMonitoring: '1' } } },
+  ])('refuses an unqualified attachment acknowledgement %j', async (reply) => {
+    const h = createHarness({ reviewMonitoring: 1 });
+    try {
+      const { capture, ordinary } = await start(h);
+      const rejection = expect(capture).rejects.toThrow();
+      const attachment = await acknowledgeAttachment(h, reply);
+      await rejection;
+      expect(attachment.closed).toBe(true);
+      expect(ordinary.closed).toBe(false);
+      expect(ordinary.sent.map((x) => JSON.parse(x).method)).toEqual(['client.hello']);
+    } finally {
+      h.transport.dispose();
+    }
+  });
+
+  it('routes controls and events only through the acknowledged canonical attachment and closes it on release', async () => {
+    const h = createHarness({ reviewMonitoring: 1 });
+    try {
+      const { capture, ordinary } = await start(h);
+      let resolved = false;
+      void capture.then(() => {
+        resolved = true;
+      });
+      expect(resolved).toBe(false);
+      const attachment = await acknowledgeAttachment(h);
+      expect(JSON.parse(attachment.sent[0]).params).toEqual({
+        clientId: 'canonical/source',
+        connectionRole: 'review-monitor',
+        capabilities: { reviewMonitoring: 1 },
+      });
+      expect(JSON.parse(ordinary.sent[0]).params).toEqual({});
+      const session = await capture;
+      expect(session.support).toBe('supported');
+      const notify = vi.fn();
+      const retire = vi.fn();
+      session.onNotification(notify);
+      session.onRetired(retire);
+      const event = {
+        method: 'events.event',
+        params: {
+          event: { type: 'prMonitor:changed', data: { workspaceId: 'ws', monitorId: 'm' } },
+        },
+      };
+      ordinary.receive(event);
+      expect(notify).not.toHaveBeenCalled();
+      attachment.receive(event);
+      expect(notify).toHaveBeenCalledWith(event);
+      await expect(
+        session.request('prMonitor.cancel', { workspaceId: 'other', monitorId: 'm' }),
+      ).rejects.toThrow();
+      for (const method of [
+        'prMonitor.list',
+        'prMonitor.cancel',
+        'prMonitor.flush',
+        'events.subscribe',
+        'events.unsubscribe',
+      ] as const) {
+        const params = { workspaceId: 'ws', monitorId: 'm', eventTypes: ['prMonitor:*'] };
+        const response = session.request(method, params);
+        expect(attachment.lastFrame()).toMatchObject({ method, params });
+        const result = method === 'events.subscribe' ? { subscriptionId: 'sub' } : { ok: true };
+        attachment.receive({ id: attachment.lastFrame().id, result });
+        await expect(response).resolves.toEqual(result);
+      }
+      const staleCallback = attachment.onmessage;
+      await session.release();
+      expect(attachment.closed).toBe(true);
+      expect(ordinary.closed).toBe(false);
+      expect(retire).toHaveBeenCalledTimes(1);
+      staleCallback?.({ data: JSON.stringify(event) });
+      expect(notify).toHaveBeenCalledTimes(1);
+      await expect(session.request('prMonitor.flush', { workspaceId: 'ws' })).rejects.toThrow();
+      expect(ordinary.sent.map((x) => JSON.parse(x).method)).toEqual(['client.hello']);
+    } finally {
+      h.transport.dispose();
+    }
+  });
+
+  it('retires pending work on attachment loss and reacquires without reusing the recipient', async () => {
+    vi.useFakeTimers();
+    const h = createHarness({ reviewMonitoring: 1, reconnectDelayMs: 10 });
+    try {
+      const { capture, ordinary } = await start(h);
+      const firstSocket = await acknowledgeAttachment(h);
+      const first = await capture;
+      const ready = vi.fn();
+      h.transport.onMonitorReconnected(ready);
+      const response = first.request('prMonitor.list', { workspaceId: 'ws' });
+      const failed = expect(response).rejects.toThrow();
+      firstSocket.drop();
+      await failed;
+      expect(ordinary.closed).toBe(false);
+      await vi.advanceTimersByTimeAsync(10);
+      expect(ready).toHaveBeenCalledTimes(1);
+      const next = h.transport.capturePrMonitorSession('ws');
+      await flush();
+      await flush();
+      const secondSocket = await acknowledgeAttachment(h);
+      const second = await next;
+      expect(secondSocket).not.toBe(firstSocket);
+      expect(second.origin).not.toEqual(first.origin);
+      expect(second.support).toBe('supported');
+      await expect(first.request('prMonitor.cancel', { workspaceId: 'ws' })).rejects.toThrow();
+      await second.release();
+    } finally {
+      h.transport.dispose();
+    }
+  });
+
+  it('retires an in-flight attachment when the ordinary source rehellos with the same ID', async () => {
+    const h = createHarness({ reviewMonitoring: 1 });
+    try {
+      const { capture, ordinary } = await start(h);
+      const attachment = h.socket();
+      const failed = expect(capture).rejects.toThrow();
+      const hello = h.transport.request('client.hello', {});
+      expect(attachment.closed).toBe(true);
+      ordinary.receive({
+        id: ordinary.lastFrame().id,
+        result: {
+          ...helloResult('canonical/source'),
+          server: { capabilities: { reviewMonitoring: 1 } },
+        },
+      });
+      await hello;
+      await failed;
+      const next = h.transport.capturePrMonitorSession('ws');
+      await flush();
+      await flush();
+      const replacement = await acknowledgeAttachment(h);
+      expect(replacement).not.toBe(attachment);
+      await (await next).release();
+    } finally {
+      h.transport.dispose();
+    }
+  });
+
+  it.each(['ordinary', 'review-monitor', null])(
+    'does not attach to a source hello with role %s',
+    async (connectionRole) => {
+      const h = createHarness({ reviewMonitoring: 1 });
+      try {
+        const capture = h.transport.capturePrMonitorSession('ws');
+        const source = h.socket();
+        source.open();
+        source.receive({
+          id: source.lastFrame().id,
+          result: {
+            ...helloResult(),
+            connectionRole,
+            server: { capabilities: { reviewMonitoring: 1 } },
+          },
+        });
+        const session = await capture;
+        expect(session.support).toBe('consumer-pending');
+        expect(h.sockets).toHaveLength(1);
+        await expect(session.request('prMonitor.list', { workspaceId: 'ws' })).rejects.toThrow();
+        await session.release();
+      } finally {
+        h.transport.dispose();
+      }
+    },
+  );
+
+  it('keeps workspace attachments independent and closes all of them on transport disposal', async () => {
+    const h = createHarness({ reviewMonitoring: 1 });
+    try {
+      const { capture, ordinary } = await start(h);
+      const aSocket = await acknowledgeAttachment(h);
+      const a = await capture;
+      const bCapture = h.transport.capturePrMonitorSession('other');
+      await flush();
+      await flush();
+      const bSocket = await acknowledgeAttachment(h);
+      const b = await bCapture;
+      await a.release();
+      expect(aSocket.closed).toBe(true);
+      expect(bSocket.closed).toBe(false);
+      const result = b.request('prMonitor.list', { workspaceId: 'other' });
+      expect(bSocket.lastFrame().params).toEqual({ workspaceId: 'other' });
+      const failed = expect(result).rejects.toThrow();
+      h.transport.dispose();
+      await failed;
+      expect(bSocket.closed).toBe(true);
+      expect(ordinary.closed).toBe(true);
+      await expect(b.request('prMonitor.cancel', { workspaceId: 'other' })).rejects.toThrow();
+    } finally {
+      h.transport.dispose();
+    }
+  });
+
+  it('does not accept a notification or reverse request as the attachment hello reply', async () => {
+    const h = createHarness({ reviewMonitoring: 1 });
+    try {
+      const { capture } = await start(h);
+      const socket = h.socket();
+      socket.open();
+      const id = socket.lastFrame().id;
+      let ready = false;
+      void capture.then(() => {
+        ready = true;
+      });
+      const result = {
+        ...helloResult('canonical/source'),
+        connectionRole: 'review-monitor',
+        server: { capabilities: { reviewMonitoring: 1 } },
+      };
+      socket.receive({ method: 'events.event', result });
+      socket.receive({ id, method: 'client.hello', result });
+      await flush();
+      expect(ready).toBe(false);
+      expect(socket.lastFrame()).toMatchObject({ id, error: { code: -32601 } });
+      socket.receive({ id, result });
+      await (await capture).release();
+    } finally {
+      h.transport.dispose();
+    }
+  });
+
+  it('times out a missing attachment hello and closes only the dedicated socket', async () => {
+    vi.useFakeTimers();
+    const h = createHarness({ reviewMonitoring: 1, connectTimeoutMs: 50, requestTimeoutMs: 20 });
+    try {
+      const { capture, ordinary } = await start(h);
+      const failed = expect(capture).rejects.toThrow();
+      const socket = h.socket();
+      socket.open();
+      await vi.advanceTimersByTimeAsync(20);
+      await failed;
+      expect(socket.closed).toBe(true);
+      expect(ordinary.closed).toBe(false);
+    } finally {
+      h.transport.dispose();
+    }
+  });
+});
+
+describe('passive principal discovery', () => {
+  it('uses one initial handshake and refreshes principal without another hello', async () => {
+    const h = createHarness();
+    const discovery = h.transport.readPrincipal();
+    const socket = h.socket();
+    socket.open();
+    const hello = {
+      ...helloResult(),
+      server: {
+        capabilities: {
+          hostMembership: 1,
+          personalPairing: 1,
+          collaborationIdentity: 1,
+          submissionCorrelation: 1,
+          gitlabCheckout: 1,
+        },
+      },
+    };
+    socket.receive({ id: socket.lastFrame().id, result: hello });
+    await flush();
+    expect(socket.lastFrame()).toMatchObject({ method: 'principal.me' });
+    socket.receive({ id: socket.lastFrame().id, result: { id: 'first' } });
+    await expect(discovery).resolves.toEqual({ hello, principal: { id: 'first' } });
+    const refresh = h.transport.readPrincipal();
+    await flush();
+    socket.receive({ id: socket.lastFrame().id, result: { id: 'updated' } });
+    await expect(refresh).resolves.toEqual({ hello, principal: { id: 'updated' } });
+    expect(socket.sent.map((frame) => JSON.parse(frame).method)).toEqual([
+      'client.hello',
+      'principal.me',
+      'principal.me',
+    ]);
+    h.transport.dispose();
+  });
+
+  it('refuses an old principal result after same-socket renegotiation', async () => {
+    const h = createHarness();
+    await (async () => {
+      const initial = h.transport.observeNodeCapabilities();
+      await connect(h.socket());
+      await initial;
+    })();
+    const discovery = h.transport.readPrincipal();
+    const rejected = expect(discovery).rejects.toMatchObject({ code: 'UNAVAILABLE' });
+    await flush();
+    const principalId = h.socket().lastFrame().id;
+    const renegotiation = h.transport.request('client.hello', {});
+    h.socket().receive({ id: h.socket().lastFrame().id, result: helloResult('new-identity') });
+    await renegotiation;
+    h.socket().receive({ id: principalId, result: { id: 'old-principal' } });
+    await rejected;
+    h.transport.dispose();
+  });
+
+  it('does not read principal after an unacknowledged handshake and preserves its refusal', async () => {
+    const h = createHarness();
+    const discovery = h.transport.readPrincipal();
+    const rejected = expect(discovery).rejects.toMatchObject({ rpcCode: -32003 });
+    h.socket().open();
+    h.socket().receive({
+      id: h.socket().lastFrame().id,
+      error: { code: -32003, message: 'Forbidden' },
+    });
+    await rejected;
+    expect(h.socket().sent.map((frame) => JSON.parse(frame).method)).toEqual(['client.hello']);
+    h.transport.dispose();
+  });
+
+  it('preserves principal refusals and rejects discovery interrupted by disconnect', async () => {
+    const h = createHarness();
+    const initial = h.transport.observeNodeCapabilities();
+    await connect(h.socket());
+    await initial;
+    const forbidden = h.transport.readPrincipal();
+    const refused = expect(forbidden).rejects.toMatchObject({ rpcCode: -32003 });
+    await flush();
+    h.socket().receive({
+      id: h.socket().lastFrame().id,
+      error: { code: -32003, message: 'Forbidden' },
+    });
+    await refused;
+    const discovery = h.transport.readPrincipal();
+    const disconnected = expect(discovery).rejects.toMatchObject({ code: 'TRANSPORT_ERROR' });
+    await flush();
+    h.socket().drop();
+    await disconnected;
+    h.transport.dispose();
+  });
+});
+
+describe('truncated note reads capability through the browser transport (§5.2)', () => {
+  it.each([
+    [{ ...helloResult().server.capabilities, noteTruncatedRead: 1, agentNodes: 1 }, true],
+    [{ ...helloResult().server.capabilities, agentNodes: 1 }, false],
+    [{ noteTruncatedRead: true }, false],
+  ])(
+    'reads server.capabilities %j from the real hello as supported: %s',
+    async (capabilities, expected) => {
+      const { transport, socket } = createHarness();
+      vi.spyOn(backendTransport, 'observeBackendNodeCapabilities').mockImplementation(() =>
+        transport.observeNodeCapabilities(),
+      );
+      const supported = new LiveNotesClient().supportsTruncatedRead();
+      socket().open();
+      await flush();
+      socket().receive({
+        id: socket().lastFrame().id,
+        result: { ...helloResult(), server: { ...helloResult().server, capabilities } },
+      });
+      await expect(supported).resolves.toBe(expected);
+      transport.dispose();
+    },
+  );
 });

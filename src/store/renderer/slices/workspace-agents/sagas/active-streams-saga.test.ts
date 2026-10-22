@@ -1,63 +1,57 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { runSaga } from 'redux-saga';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+import { describe, expect, it, vi } from 'vitest';
+import { runSaga, stdChannel } from 'redux-saga';
+import type { WorkspaceEvent } from '$features/events/types';
+import { eventReceived } from '../../workspace-events/workspace-events-slice';
 
-const mocks = vi.hoisted(() => ({
-  subscribe: vi.fn(),
-  unsubscribe: vi.fn(),
+const tracker = vi.hoisted(() => ({
   startPolling: vi.fn(),
   stopPolling: vi.fn(),
-  listener: undefined as (() => void) | undefined,
+  applyEvent: vi.fn(),
 }));
-
 vi.mock('$features/agent/services/active-streams-tracker', () => ({
-  activeStreamsTracker: {
-    subscribe: (listener: () => void) => {
-      mocks.listener = listener;
-      mocks.subscribe(listener);
-      return mocks.unsubscribe;
-    },
-    startPolling: mocks.startPolling,
-    stopPolling: mocks.stopPolling,
-  },
+  activeStreamsTracker: tracker,
 }));
-
-import { bumpActiveStreamsVersion } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { activeStreamsSaga } from './active-streams-saga';
 
 describe('activeStreamsSaga', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.listener = undefined;
-  });
-
-  it('subscribes before starting the single tracker polling owner and forwards changes', async () => {
-    const dispatch = vi.fn();
-    const task = runSaga({ dispatch }, activeStreamsSaga);
-
-    expect(mocks.subscribe).toHaveBeenCalledTimes(1);
-    expect(mocks.startPolling).toHaveBeenCalledTimes(1);
-    expect(mocks.subscribe.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.startPolling.mock.invocationCallOrder[0],
+  it('restarts and clears the tracker on admission changes and keeps pushes scan-free', async () => {
+    const channel = stdChannel();
+    let state = withLegacyPrincipal({});
+    const listeners = new Set<() => void>();
+    const reduxStore = {
+      getState: () => state,
+      subscribe: (fn: () => void) => {
+        listeners.add(fn);
+        return () => listeners.delete(fn);
+      },
+    };
+    const task = runSaga(
+      { channel, getState: reduxStore.getState, context: { reduxStore } },
+      activeStreamsSaga,
     );
-    mocks.listener!();
-    await Promise.resolve();
-    expect(dispatch).toHaveBeenCalledWith(bumpActiveStreamsVersion());
-
+    await vi.waitFor(() => expect(tracker.startPolling).toHaveBeenCalledTimes(1));
+    const event = {
+      type: 'agent:status-changed',
+      workspaceId: 'ws-1',
+      timestamp: '2026-10-12T00:00:00Z',
+      data: { agentId: 'agent-1', status: 'active', isActive: true },
+    } as WorkspaceEvent;
+    channel.put(eventReceived('ws-1', event));
+    channel.put(eventReceived('ws-1', { ...event, type: 'agent:idle' } as WorkspaceEvent));
+    expect(tracker.startPolling).toHaveBeenCalledTimes(1);
+    expect(tracker.applyEvent).toHaveBeenCalledTimes(2);
+    expect(tracker.applyEvent).toHaveBeenNthCalledWith(1, event);
+    expect(tracker.stopPolling).not.toHaveBeenCalled();
+    state = { ...state, principal: { ...state.principal, status: 'loading' } };
+    listeners.forEach((fn) => fn());
+    await vi.waitFor(() => expect(tracker.stopPolling).toHaveBeenCalledTimes(1));
+    channel.put(eventReceived('ws-1', event));
+    expect(tracker.applyEvent).toHaveBeenCalledTimes(2);
+    state = withLegacyPrincipal({ daemonHealth: { connectionGeneration: 2 } });
+    listeners.forEach((fn) => fn());
+    await vi.waitFor(() => expect(tracker.startPolling).toHaveBeenCalledTimes(2));
     task.cancel();
-    await task.toPromise();
-  });
-
-  it('unsubscribes and stops polling on cancellation without forwarding later changes', async () => {
-    const dispatch = vi.fn();
-    const task = runSaga({ dispatch }, activeStreamsSaga);
-    const listener = mocks.listener!;
-    task.cancel();
-    await task.toPromise();
-
-    expect(mocks.unsubscribe).toHaveBeenCalledTimes(1);
-    expect(mocks.stopPolling).toHaveBeenCalledTimes(1);
-    listener();
-    await Promise.resolve();
-    expect(dispatch).not.toHaveBeenCalled();
+    expect(tracker.stopPolling).toHaveBeenCalledTimes(2);
   });
 });

@@ -1,9 +1,12 @@
+import producer from '../../../../test/fixtures/qualified-monitor-producer.json';
 /** Chief footer regression: real card, selectors, saga and service; fake wire only for PRs. */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('$lib/client/live/backend-transport', () => ({
+  capturePrMonitorSession: vi.fn(),
+  onMonitorReconnected: vi.fn(() => () => {}),
   backendRequest: vi.fn(),
   backendSubscribe: vi.fn(),
   backendUnsubscribe: vi.fn().mockResolvedValue(undefined),
@@ -18,6 +21,7 @@ vi.mock('../BackgroundHooksRow.svelte', async () => ({
 }));
 
 import {
+  capturePrMonitorSession,
   backendRequest,
   backendSubscribe,
   backendUnsubscribe,
@@ -32,6 +36,7 @@ import {
   openWorkspaceTab,
 } from '$store/renderer/slices/tab-state/tab-state-slice';
 import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
+import type { PrMonitorSession } from '$shared/types/pr-monitor';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { resetAgentSubscriptionsViewStateForTests } from '../agent-subscriptions-view-state';
 import EventSubscriptionsCard from '../EventSubscriptionsCard.svelte';
@@ -76,6 +81,27 @@ beforeEach(() => {
   vi.mocked(backendSubscribe).mockImplementation(async ({ workspaceId }) => ({
     subscriptionId: `pr-sub-${workspaceId}`,
   }));
+  let nextSession = 0;
+  vi.mocked(capturePrMonitorSession).mockImplementation(async (workspaceId) => {
+    let subscriptionId: string | undefined;
+    return {
+      origin: { backendId: 'test-host', sessionId: `session-${++nextSession}`, workspaceId },
+      support: 'unsupported',
+      request: (async (method, params) => {
+        if (method === 'events.subscribe') {
+          const result = await backendSubscribe(params);
+          subscriptionId = result.subscriptionId;
+          return result;
+        }
+        return backendRequest(method, params);
+      }) as PrMonitorSession['request'],
+      onNotification: (handler) => onBackendNotification(handler),
+      onRetired: () => () => {},
+      release: async () => {
+        if (subscriptionId) await backendUnsubscribe(subscriptionId, workspaceId);
+      },
+    };
+  });
   stopSaga = appStore.runSaga(prMonitorSaga);
 });
 afterEach(() => {
@@ -89,6 +115,24 @@ afterEach(() => {
 });
 
 describe('Chief PR-monitor subscription ownership', () => {
+  it('renders mixed same-number rows from the actual producer through the real service and Redux selectors', async () => {
+    const mr = { ...producer, workspaceId: CHIEF_WORKSPACE_ID, agentId: AGENT };
+    const gh = {
+      ...monitor(),
+      repo: producer.repo,
+      prNumber: producer.prNumber,
+      monitorId: 'github-same-number',
+    };
+    vi.mocked(backendRequest).mockResolvedValue({ monitors: [gh, mr] });
+    render(EventSubscriptionsCard, { workspaceId: CHIEF_WORKSPACE_ID, agentId: AGENT });
+    await waitFor(() => expect(screen.getAllByTestId('monitored-pr-summary')).toHaveLength(2));
+    const labels = screen.getAllByTestId('monitored-pr-summary').map((node) => node.textContent);
+    expect(labels.some((label) => label?.includes('!4'))).toBe(true);
+    expect(labels.some((label) => label?.includes('#4'))).toBe(true);
+    expect(backendRequest).toHaveBeenCalledWith('prMonitor.list', {
+      workspaceId: CHIEF_WORKSPACE_ID,
+    });
+  });
   it.each([null, OTHER_WORKSPACE])(
     'requests Chief without changing selected tab %s and hides a confirmed empty footer',
     async (selected) => {
@@ -157,13 +201,16 @@ describe('Chief PR-monitor subscription ownership', () => {
     vi.mocked(backendRequest).mockResolvedValue({ monitors: [] });
     await view.rerender({ workspaceId: OTHER_WORKSPACE, agentId: AGENT });
     await waitFor(() => expect(screen.queryByTestId('monitored-pr-chip')).toBeNull());
-    expect(backendUnsubscribe).toHaveBeenCalledWith(`pr-sub-${CHIEF_WORKSPACE_ID}`);
+    expect(backendUnsubscribe).toHaveBeenCalledWith(
+      `pr-sub-${CHIEF_WORKSPACE_ID}`,
+      CHIEF_WORKSPACE_ID,
+    );
     expect(backendSubscribe).toHaveBeenLastCalledWith({
       eventTypes: ['prMonitor:*'],
       workspaceId: OTHER_WORKSPACE,
     });
     view.unmount();
-    expect(backendUnsubscribe).toHaveBeenCalledWith(`pr-sub-${OTHER_WORKSPACE}`);
+    expect(backendUnsubscribe).toHaveBeenCalledWith(`pr-sub-${OTHER_WORKSPACE}`, OTHER_WORKSPACE);
   });
 
   it('keeps one live subscription while collapsed and shares it across mounted cards', async () => {
@@ -208,7 +255,10 @@ describe('Chief PR-monitor subscription ownership', () => {
     first.unmount();
     expect(backendUnsubscribe).not.toHaveBeenCalled();
     second.unmount();
-    expect(backendUnsubscribe).toHaveBeenCalledExactlyOnceWith(`pr-sub-${CHIEF_WORKSPACE_ID}`);
+    expect(backendUnsubscribe).toHaveBeenCalledExactlyOnceWith(
+      `pr-sub-${CHIEF_WORKSPACE_ID}`,
+      CHIEF_WORKSPACE_ID,
+    );
   });
 
   it.each([false, true])(
@@ -229,7 +279,10 @@ describe('Chief PR-monitor subscription ownership', () => {
       expect(backendSubscribe).toHaveBeenCalledTimes(1);
       expect(backendUnsubscribe).not.toHaveBeenCalled();
       await view.rerender({ workspaceId: CHIEF_WORKSPACE_ID, agentId: AGENT, isActive: false });
-      expect(backendUnsubscribe).toHaveBeenCalledExactlyOnceWith(`pr-sub-${CHIEF_WORKSPACE_ID}`);
+      expect(backendUnsubscribe).toHaveBeenCalledExactlyOnceWith(
+        `pr-sub-${CHIEF_WORKSPACE_ID}`,
+        CHIEF_WORKSPACE_ID,
+      );
 
       vi.mocked(backendRequest).mockClear().mockResolvedValue({ monitors: [] });
       await view.rerender({ workspaceId: CHIEF_WORKSPACE_ID, agentId: AGENT, isActive: true });
@@ -261,7 +314,10 @@ describe('Chief PR-monitor subscription ownership', () => {
 
     appStore.dispatch(closeWorkspaceTab(OTHER_WORKSPACE));
     await waitFor(() =>
-      expect(backendUnsubscribe).toHaveBeenCalledExactlyOnceWith(`pr-sub-${OTHER_WORKSPACE}`),
+      expect(backendUnsubscribe).toHaveBeenCalledExactlyOnceWith(
+        `pr-sub-${OTHER_WORKSPACE}`,
+        OTHER_WORKSPACE,
+      ),
     );
     view.unmount();
     expect(backendUnsubscribe).toHaveBeenCalledTimes(1);

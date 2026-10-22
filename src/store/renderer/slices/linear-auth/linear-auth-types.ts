@@ -1,6 +1,8 @@
 import type { LinearIssueResult } from '$features/linear-auth/renderer/linear-auth.client';
+import type { ProviderAuthOperation } from '../provider-auth/provider-auth-types';
 
 export type LinearAuthSliceState = {
+  operation: ProviderAuthOperation | null;
   /** Whether user is authenticated with Linear via the daemon */
   isAuthenticated: boolean;
   /** Whether user needs to authenticate with the daemon first */

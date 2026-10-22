@@ -2,6 +2,7 @@
 // Matches VSCode chat webview canonical @-token style
 
 import type { MentionCandidate, MentionType } from './types';
+import { serializeMemberMention } from '$lib/utils/member-mention-token';
 
 /**
  * Helper to strip leading @ from a path if present
@@ -18,6 +19,8 @@ export function toPromptToken(
   const meta = item.meta || ({} as any);
 
   switch (type) {
+    case 'member':
+      return serializeMemberMention(item);
     case 'file':
     case 'file-range': {
       const rawPath: string = meta.fullPath || meta.path || item.label || item.id;

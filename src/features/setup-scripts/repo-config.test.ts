@@ -5,6 +5,10 @@
  * (repo config > last-used > generic template).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 vi.mock('$lib/electron-bridge', () => ({
   invoke: vi.fn(),
@@ -238,9 +242,7 @@ describe('chooseDefaultSetupScript', () => {
     expect(choice).toEqual({ content: 'echo saved', name: 'Custom', source: 'named' });
   });
 
-  it('honors the persisted nameSource of a last-used entry', () => {
-    // An edited repo-config script recorded as last-used keeps its sentinel
-    // identity, so its restore renders localized.
+  it('restores a legacy repo-config entry as custom without current committed provenance', () => {
     const choice = chooseDefaultSetupScript({
       repoConfigScript: null,
       lastUsed: {
@@ -252,8 +254,8 @@ describe('chooseDefaultSetupScript', () => {
     });
     expect(choice).toEqual({
       content: 'echo edited',
-      name: REPO_CONFIG_SCRIPT_NAME,
-      source: 'repo-config',
+      name: 'Custom',
+      source: 'custom',
     });
   });
 });
@@ -262,6 +264,7 @@ describe('resolveSetupScriptParam (monorepo#1862)', () => {
   const base = {
     setupScript: 'echo default',
     setupScriptName: 'Copy config files only',
+    setupScriptNameSource: 'named' as const,
     repoPath: '/repo/a',
     repoConfigScript: null as string | null,
     repoConfigScriptRepo: null as string | null,
@@ -270,6 +273,12 @@ describe('resolveSetupScriptParam (monorepo#1862)', () => {
   it('sends the shown script (trimmed), touched or not', () => {
     expect(resolveSetupScriptParam(base)).toBe('echo default');
     expect(resolveSetupScriptParam({ ...base, setupScript: 'echo edited\n' })).toBe('echo edited');
+  });
+
+  it('suppresses committed config for an explicitly empty choice', () => {
+    expect(resolveSetupScriptParam({ ...base, setupScript: '', explicitChoice: true })).toBe(
+      'cd .',
+    );
   });
 
   it('omits an empty/blank script', () => {
@@ -283,10 +292,74 @@ describe('resolveSetupScriptParam (monorepo#1862)', () => {
         ...base,
         setupScript: 'echo repo-config\n',
         setupScriptName: REPO_CONFIG_SCRIPT_NAME,
+        setupScriptNameSource: 'repo-config',
         repoConfigScript: 'echo repo-config',
         repoConfigScriptRepo: '/repo/a',
       }),
     ).toBeUndefined();
+  });
+
+  it.each(['', '  \n\t'])(
+    'executes an explicit blank %j as a successful isolated shell command',
+    (setupScript) => {
+      const command = resolveSetupScriptParam({ ...base, setupScript, explicitChoice: true });
+      expect(command).toBe('cd .');
+      // workspace.create runs a script file inside a timing wrapper. The empty
+      // override must succeed AND return to that wrapper (plain exit breaks cmd).
+      const directory = mkdtempSync(join(tmpdir(), 'setup-empty-'));
+      const windows = process.platform === 'win32';
+      const script = join(directory, windows ? 'setup.cmd' : 'setup.sh');
+      try {
+        writeFileSync(script, command!);
+        let result;
+        if (windows) {
+          const wrapper = join(directory, 'wrapper.cmd');
+          writeFileSync(
+            wrapper,
+            '@echo off\r\nsetlocal\r\ncall "%INTENT_SETUP_SCRIPT%"\r\nset "code=%ERRORLEVEL%"\r\necho wrapper-completed\r\nexit /b %code%\r\n',
+          );
+          result = spawnSync('cmd.exe', ['/d', '/c', wrapper], {
+            encoding: 'utf8',
+            timeout: 10000,
+            cwd: directory,
+            env: { ...process.env, INTENT_SETUP_SCRIPT: script },
+          });
+        } else {
+          result = spawnSync(
+            '/bin/sh',
+            [
+              '-c',
+              '/bin/sh "$1"; code=$?; printf "wrapper-completed\\n"; exit "$code"',
+              'sh',
+              script,
+            ],
+            {
+              encoding: 'utf8',
+              timeout: 10000,
+              cwd: directory,
+            },
+          );
+        }
+        expect(result.error).toBeUndefined();
+        expect(result.status).toBe(0);
+        expect(result.stdout).toContain('wrapper-completed');
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it('sends a custom script even when its name and content match the committed script', () => {
+    expect(
+      resolveSetupScriptParam({
+        ...base,
+        setupScript: 'echo repo-config',
+        setupScriptName: REPO_CONFIG_SCRIPT_NAME,
+        setupScriptNameSource: 'custom',
+        repoConfigScript: 'echo repo-config',
+        repoConfigScriptRepo: '/repo/a',
+      }),
+    ).toBe('echo repo-config');
   });
 
   it('sends an edited repo-config script', () => {
@@ -295,6 +368,7 @@ describe('resolveSetupScriptParam (monorepo#1862)', () => {
         ...base,
         setupScript: 'echo repo-config && echo edited',
         setupScriptName: REPO_CONFIG_SCRIPT_NAME,
+        setupScriptNameSource: 'repo-config',
         repoConfigScript: 'echo repo-config',
         repoConfigScriptRepo: '/repo/a',
       }),
@@ -309,6 +383,7 @@ describe('resolveSetupScriptParam (monorepo#1862)', () => {
         ...base,
         setupScript: 'echo repo-config',
         setupScriptName: REPO_CONFIG_SCRIPT_NAME,
+        setupScriptNameSource: 'repo-config',
         repoConfigScript: 'echo repo-config',
         repoConfigScriptRepo: '/repo/b',
       }),

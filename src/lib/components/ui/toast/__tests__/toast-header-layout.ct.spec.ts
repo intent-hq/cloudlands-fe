@@ -135,10 +135,10 @@ for (const { status, width } of [
     expect(geometry.root.right).toBeLessThanOrEqual(width);
     expect(geometry.scroll).toBeLessThanOrEqual(geometry.client + 1);
     if (status === 'multiline-warning') {
-      expect(geometry.lines).toBeGreaterThanOrEqual(4);
+      expect(geometry.lines).toBe(2);
       await expect(toast.locator('[data-description]')).toHaveCount(0);
     } else {
-      expect(geometry.lines).toBe(status === 'details' ? 1 : 3);
+      expect(geometry.lines).toBe(status === 'details' ? 1 : 2);
       const disclosure = toast.locator('details');
       await expect(disclosure).not.toHaveAttribute('open');
       await disclosure.locator('summary').press('Enter');

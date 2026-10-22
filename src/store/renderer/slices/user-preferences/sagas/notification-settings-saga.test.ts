@@ -10,6 +10,7 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 vi.mock('$lib/utils/client-logger', () => ({ createLogger: () => ({ warn: mocks.warn }) }));
 
 import {
+  notificationVolumeWriteSettled,
   resetNotificationSettings,
   setNotificationEnabled,
   setSoundEnabled,
@@ -27,7 +28,6 @@ const paths = [
   'notifications.enabled',
   'notifications.soundEnabled',
   'notifications.soundOnlyWhenUnfocused',
-  'notifications.volume',
 ];
 
 const settle = async () => {
@@ -44,12 +44,11 @@ describe('notificationSettingsSaga', () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  it('hydrates all four exact setting paths and dispatches valid values', async () => {
+  it('hydrates the boolean setting paths; ordered settings hydration owns volume', async () => {
     const values: Record<string, unknown> = {
       'notifications.enabled': false,
       'notifications.soundEnabled': true,
       'notifications.soundOnlyWhenUnfocused': false,
-      'notifications.volume': 0.7,
     };
     mocks.backendRequest.mockImplementation((_method: string, params: { path: string }) =>
       Promise.resolve({
@@ -76,7 +75,6 @@ describe('notificationSettingsSaga', () => {
       [setNotificationEnabled(false)],
       [setSoundEnabled(true)],
       [setSoundOnlyWhenUnfocused(false)],
-      [setVolume(0.7)],
     ]);
   });
 
@@ -110,19 +108,19 @@ describe('notificationSettingsSaga', () => {
   });
 
   it('writes the exact post-reducer snapshot after 100ms', async () => {
-    mocks.backendRequest.mockResolvedValue({});
+    mocks.backendRequest.mockResolvedValue({ applied: [], revision: 11 });
     const state = {
       userPreferences: {
         enabled: false,
         soundEnabled: true,
         soundOnlyWhenUnfocused: false,
         volume: 0.8,
+        pendingNotificationVolumeEditId: 3,
+        notificationVolumeHydrationEpoch: 2,
       },
     };
-    const task = runSaga(
-      { dispatch: vi.fn(), getState: () => state },
-      persistNotificationSettingsWorker,
-    );
+    const dispatch = vi.fn();
+    const task = runSaga({ dispatch, getState: () => state }, persistNotificationSettingsWorker);
     await vi.advanceTimersByTimeAsync(100);
     await task.toPromise();
 
@@ -139,19 +137,23 @@ describe('notificationSettingsSaga', () => {
         },
       ],
     ]);
+    expect(dispatch.mock.calls).toEqual([[notificationVolumeWriteSettled(3, 2, 11)]]);
   });
 
   it('swallows persistence failures', async () => {
     mocks.backendRequest.mockRejectedValue(new Error('denied'));
+    const dispatch = vi.fn();
     const task = runSaga(
       {
-        dispatch: vi.fn(),
+        dispatch,
         getState: () => ({
           userPreferences: {
             enabled: true,
             soundEnabled: true,
             soundOnlyWhenUnfocused: false,
             volume: 0.5,
+            pendingNotificationVolumeEditId: 4,
+            notificationVolumeHydrationEpoch: 2,
           },
         }),
       },
@@ -161,6 +163,7 @@ describe('notificationSettingsSaga', () => {
     await task.toPromise();
 
     expect(mocks.warn.mock.calls).toHaveLength(1);
+    expect(dispatch.mock.calls).toEqual([[notificationVolumeWriteSettled(4, 2, undefined)]]);
   });
 
   it('debounces every notification trigger to the latest snapshot', async () => {

@@ -37,7 +37,7 @@ import {
   extractTaskChangesFromMessages,
   extractDelegationBatchMap,
 } from '$lib/components/agent-overview/graph-helpers';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { AgentSession, Note } from '$shared/types';
 import { agentDelegationParentOf, classifyAgentScope } from '$shared/utils/agent-scope';
 import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';

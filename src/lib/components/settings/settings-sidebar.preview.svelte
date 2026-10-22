@@ -5,11 +5,16 @@
     id: 'settings-sidebar',
     title: 'Settings sidebar navigation',
     defaultState: 'default',
-    states: { default: { props: {} }, narrow: { props: { narrow: true } } },
+    states: {
+      default: { props: {} },
+      narrow: { props: { narrow: true } },
+      guest: { props: { guest: true } },
+    },
   });
 </script>
 
 <script lang="ts">
+  import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
   import { onMount } from 'svelte';
   import { store } from '$store/renderer/store';
   import { setBundledSpecialists } from '$store/renderer/slices/specialists/specialists-slice';
@@ -18,12 +23,13 @@
   import SettingsSidebarBack from './SettingsSidebarBack.svelte';
   import AIBehaviorSidebar, { type AIBehaviorView } from './AIBehaviorSidebar.svelte';
 
-  let { narrow = false }: { narrow?: boolean } = $props();
-  let activeTab = $state<SettingsTab>('display');
+  let { narrow = false, guest = false }: { narrow?: boolean; guest?: boolean } = $props();
+  let activeTab = $state<SettingsTab>('agent-behavior');
   let activeView = $state<AIBehaviorView>({ type: 'system-prompt' });
   let backCount = $state(0);
 
   onMount(() => {
+    admitLegacyPrincipal(guest ? 'guest' : 'owner');
     const previous = store.state.specialists.bundledSpecialists;
     store.dispatch(
       setBundledSpecialists([

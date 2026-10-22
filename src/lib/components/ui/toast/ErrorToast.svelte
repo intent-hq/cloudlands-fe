@@ -44,8 +44,8 @@
 
   <!-- Content -->
   <div class="flex-1 min-w-0">
-    <p class="toast-title line-clamp-2 break-words">{error.title}</p>
-    <p class="toast-description line-clamp-2 break-words">{error.message}</p>
+    <p class="toast-title" data-toast-title>{error.title}</p>
+    <p class="toast-description" data-toast-description>{error.message}</p>
 
     <!-- Action buttons -->
     <div class="toast-actions">
@@ -70,14 +70,6 @@
 </div>
 
 <style>
-  .line-clamp-2 {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
   .toast-title,
   .toast-first-line {
     color: hsl(var(--foreground));

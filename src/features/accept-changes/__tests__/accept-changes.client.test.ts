@@ -8,13 +8,23 @@
  * execute/mergePR/resetToTrunk.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { runSaga, stdChannel, type Task } from 'redux-saga';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+import { withLegacyPrincipal } from '../../../test/fixtures/principal-state';
+import { store } from '$store/renderer/store';
+import { initialState as guestInitialState } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
+import { acceptWorkflowSaga } from '$store/renderer/slices/accept-workflow/sagas/accept-workflow-saga';
+import { isGitMutationPending } from '$store/renderer/utils/worktree-mutation-queue';
 import { AcceptChangesClient } from '../accept-changes.client';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 
 const mocks = vi.hoisted(() => ({
   backendRequest: vi.fn(),
 }));
+vi.mock('$lib/client', () => ({ appClient: {} }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: {} }));
 
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: mocks.backendRequest,
@@ -35,9 +45,154 @@ const gitStatus = {
 };
 
 describe('AcceptChangesClient (accept-changes.* over backendRequest)', () => {
+  let task: Task;
+  let state: ReturnType<typeof withLegacyPrincipal>;
   beforeEach(() => {
     mocks.backendRequest.mockReset();
+    const channel = stdChannel();
+    state = withLegacyPrincipal({
+      workspace: { workspaces: createCollection('id', [{ id: WS, myRole: 'owner' }]) },
+      connections: { activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID },
+      guestSessions: { ...guestInitialState, hasReceivedList: true },
+    });
+    vi.spyOn(store, 'state', 'get').mockImplementation(() => state);
+    task = runSaga(
+      { channel, dispatch: (action) => channel.put(action), getState: () => state },
+      acceptWorkflowSaga,
+    );
+    vi.spyOn(store, 'dispatch', 'get').mockReturnValue(((action: {
+      promise: Promise<unknown>;
+      type: string;
+    }) => {
+      channel.put(action);
+      return action.promise;
+    }) as typeof store.dispatch);
   });
+  afterEach(async () => {
+    task.cancel();
+    await task.toPromise();
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    {
+      name: 'execute',
+      invoke: () => AcceptChangesClient.execute(WS, 'commit', { commitMessage: 'msg' }),
+      method: 'accept-changes.execute',
+      params: {
+        workspaceId: WS,
+        action: 'commit',
+        files: undefined,
+        commitMessage: 'msg',
+        prTitle: undefined,
+        prBody: undefined,
+        targetBranch: undefined,
+        mergeStrategy: undefined,
+        upToCommitHash: undefined,
+        undoCommitsMetadata: undefined,
+        options: {
+          stageUnstaged: undefined,
+          pushAfterCommit: undefined,
+          createPRAfterPush: undefined,
+          rebaseFirst: undefined,
+          localOnly: undefined,
+        },
+      },
+    },
+    {
+      name: 'mergePR',
+      invoke: () => AcceptChangesClient.mergePR(WS, 42, { mergeMethod: 'squash' }),
+      method: 'accept-changes.mergePR',
+      params: {
+        workspaceId: WS,
+        prNumber: 42,
+        mergeMethod: 'squash',
+        commitTitle: undefined,
+        commitMessage: undefined,
+      },
+    },
+    {
+      name: 'resetToTrunk',
+      invoke: () => AcceptChangesClient.resetToTrunk(WS),
+      method: 'accept-changes.execute',
+      params: { workspaceId: WS, action: 'reset-to-trunk' },
+    },
+  ])(
+    '$name resolves cancellation as an in-band failure after sending its exact wire request',
+    async ({ invoke, method, params }) => {
+      let resolve!: (value: { success: boolean; steps: never[] }) => void;
+      mocks.backendRequest.mockReturnValue(
+        new Promise((done) => {
+          resolve = done;
+        }),
+      );
+      const result = invoke();
+      try {
+        await vi.waitFor(() =>
+          expect(mocks.backendRequest).toHaveBeenCalledExactlyOnceWith(method, params),
+        );
+        task.cancel();
+        await task.toPromise();
+        await expect(result).resolves.toEqual({
+          success: false,
+          steps: [],
+          error: 'Accept workflow cancelled',
+        });
+        expect(isGitMutationPending(WS)).toBe(true);
+      } finally {
+        resolve({ success: true, steps: [] });
+        await vi.waitFor(() => expect(isGitMutationPending(WS)).toBe(false));
+      }
+    },
+  );
+
+  it.each([
+    {
+      name: 'prepare',
+      invoke: () => AcceptChangesClient.prepare(WS, 'commit', ['a.ts']),
+      method: 'accept-changes.prepare',
+      params: { workspaceId: WS, action: 'commit', files: ['a.ts'] },
+      response: {
+        valid: true,
+        warnings: [],
+        errors: [],
+        filesCount: 0,
+        additions: 0,
+        deletions: 0,
+        files: [],
+      },
+    },
+    {
+      name: 'addRemote',
+      invoke: () => AcceptChangesClient.addRemote(WS, 'git@github.com:o/r.git'),
+      method: 'accept-changes.addRemote',
+      params: { workspaceId: WS, remoteUrl: 'git@github.com:o/r.git' },
+      response: gitStatus,
+    },
+  ])(
+    '$name still rejects cancellation after sending its exact wire request',
+    async ({ invoke, method, params, response }) => {
+      let resolve!: (value: unknown) => void;
+      mocks.backendRequest.mockReturnValue(
+        new Promise((done) => {
+          resolve = done;
+        }),
+      );
+      const result = invoke();
+      const rejected = expect(result).rejects.toThrow('Accept workflow cancelled');
+      try {
+        await vi.waitFor(() =>
+          expect(mocks.backendRequest).toHaveBeenCalledExactlyOnceWith(method, params),
+        );
+        task.cancel();
+        await task.toPromise();
+        await rejected;
+      } finally {
+        resolve(response);
+        await vi.waitFor(() => expect(isGitMutationPending(WS)).toBe(false));
+      }
+    },
+  );
 
   it('getStatus sends accept-changes.getStatus with workspaceId and returns the status', async () => {
     mocks.backendRequest.mockResolvedValue(gitStatus);
@@ -49,6 +204,54 @@ describe('AcceptChangesClient (accept-changes.* over backendRequest)', () => {
   });
 
   describe('getStatus single-flight', () => {
+    it.each(['backend', 'principal', 'reconnect'] as const)(
+      'does not share a held same-workspace response across a %s change',
+      async (boundary) => {
+        let resolveOld!: (value: typeof gitStatus) => void;
+        mocks.backendRequest.mockImplementationOnce(
+          () =>
+            new Promise((done) => {
+              resolveOld = done;
+            }),
+        );
+        const old = AcceptChangesClient.getStatus(WS);
+        if (boundary === 'backend') {
+          state = withLegacyPrincipal({
+            ...state,
+            connections: { ...state.connections, windowBackendId: 'remote' },
+          });
+        } else if (boundary === 'principal') {
+          const snapshot = state.principal.snapshot;
+          if (!snapshot) throw new Error('Test principal was not admitted');
+          state = {
+            ...state,
+            principal: {
+              ...state.principal,
+              snapshot: {
+                ...snapshot,
+                principal: { ...snapshot.principal, id: 'different-principal' },
+              },
+            },
+          };
+        } else {
+          state = withLegacyPrincipal({
+            ...state,
+            daemonHealth: {
+              ...state.daemonHealth,
+              connectionGeneration: state.daemonHealth.connectionGeneration + 1,
+            },
+          });
+        }
+        mocks.backendRequest.mockResolvedValueOnce({ ...gitStatus, branch: 'new-context' });
+        const fresh = AcceptChangesClient.getStatus(WS);
+        resolveOld({ ...gitStatus, branch: 'old-context' });
+        const [oldResult, freshResult] = await Promise.all([old, fresh]);
+        expect(mocks.backendRequest).toHaveBeenCalledTimes(2);
+        expect(oldResult.branch).toBe('old-context');
+        expect(freshResult.branch).toBe('new-context');
+      },
+    );
+
     it('coalesces two concurrent calls for the same workspace into one backendRequest', async () => {
       let resolveRequest!: (value: typeof gitStatus) => void;
       mocks.backendRequest.mockReturnValue(

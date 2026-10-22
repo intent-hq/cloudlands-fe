@@ -13,17 +13,24 @@ const HARNESS_NAME = /^[a-z0-9][a-z0-9._-]*$/i;
  * Resolve the per-harness Vite `cacheDir`.
  *
  * @param {string} name Stable harness name, e.g. the spec file's base name.
- * @param {{ override?: string, root?: string }} [options] `override` wins when
+ * @param {{ override?: string, root?: string, workerIndex?: number }} [options] `override` selects the cache root when
  *   set (used to keep existing `*_VITE_CACHE_DIR` env knobs working); `root`
- *   defaults to `process.cwd()`.
+ *   defaults to `process.cwd()`. `workerIndex` isolates concurrent Playwright
+ *   workers of the same spec while retaining stable paths for cold/warm runs.
  * @returns {string} Absolute cache directory path.
  */
-export function viteHarnessCacheDir(name, { override, root = process.cwd() } = {}) {
-  if (override) return path.resolve(root, override);
+export function viteHarnessCacheDir(name, { override, root = process.cwd(), workerIndex } = {}) {
+  if (workerIndex !== undefined && (!Number.isSafeInteger(workerIndex) || workerIndex < 0)) {
+    throw new Error('Vite harness workerIndex must be a nonnegative safe integer.');
+  }
+  if (override && workerIndex === undefined) return path.resolve(root, override);
   if (typeof name !== 'string' || !HARNESS_NAME.test(name)) {
     throw new Error(
       `Vite harness name must match ${HARNESS_NAME} (received ${JSON.stringify(name)}).`,
     );
   }
-  return path.join(root, VITE_HARNESS_CACHE_ROOT, name);
+  const cache = override
+    ? path.resolve(root, override)
+    : path.join(root, VITE_HARNESS_CACHE_ROOT, name);
+  return workerIndex === undefined ? cache : path.join(cache, `worker-${workerIndex}`);
 }

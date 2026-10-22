@@ -14,9 +14,12 @@ export const linearAuthClient = {
   /**
    * Check if user is authenticated with Linear
    */
-  async isAuthenticated(): Promise<boolean> {
+  async isAuthenticated(workspaceId?: string): Promise<boolean> {
     try {
-      return await invoke<boolean>(LINEAR_AUTH_CHANNELS.IS_AUTHENTICATED);
+      return await invoke<boolean>(
+        LINEAR_AUTH_CHANNELS.IS_AUTHENTICATED,
+        ...(workspaceId === undefined ? [] : [{ workspaceId }]),
+      );
     } catch {
       return false;
     }
@@ -26,9 +29,13 @@ export const linearAuthClient = {
    * Get full authentication state for UI
    * @param forceRefresh - If true, bypass cache and fetch fresh status from API
    */
-  async getAuthState(forceRefresh = false): Promise<LinearAuthState> {
+  async getAuthState(forceRefresh = false, workspaceId?: string): Promise<LinearAuthState> {
     try {
-      return await invoke<LinearAuthState>(LINEAR_AUTH_CHANNELS.GET_AUTH_STATE, forceRefresh);
+      return await invoke<LinearAuthState>(
+        LINEAR_AUTH_CHANNELS.GET_AUTH_STATE,
+        forceRefresh,
+        ...(workspaceId === undefined ? [] : [{ workspaceId }]),
+      );
     } catch {
       return {
         isAuthenticated: false,
@@ -40,9 +47,12 @@ export const linearAuthClient = {
   /**
    * Get Linear status from daemon API
    */
-  async getStatus(): Promise<LinearAuthStatus> {
+  async getStatus(workspaceId?: string): Promise<LinearAuthStatus> {
     try {
-      return await invoke<LinearAuthStatus>(LINEAR_AUTH_CHANNELS.GET_STATUS);
+      return await invoke<LinearAuthStatus>(
+        LINEAR_AUTH_CHANNELS.GET_STATUS,
+        ...(workspaceId === undefined ? [] : [{ workspaceId }]),
+      );
     } catch {
       return {
         isConfigured: false,
@@ -57,8 +67,11 @@ export const linearAuthClient = {
    */
   async fetchMyIssues(
     filter: 'assigned' | 'created' | 'subscribed' | 'team' | 'all' = 'assigned',
+    workspaceId?: string,
   ): Promise<LinearIssueResult[]> {
-    return (await this.fetchMyIssuesPage(filter)).issues;
+    return (
+      await this.fetchMyIssuesPage(filter, workspaceId === undefined ? undefined : { workspaceId })
+    ).issues;
   },
 
   /**
@@ -79,8 +92,10 @@ export const linearAuthClient = {
   /**
    * Search issues by query (first page only).
    */
-  async searchIssues(query: string): Promise<LinearIssueResult[]> {
-    return (await this.searchIssuesPage(query)).issues;
+  async searchIssues(query: string, workspaceId?: string): Promise<LinearIssueResult[]> {
+    return (
+      await this.searchIssuesPage(query, workspaceId === undefined ? undefined : { workspaceId })
+    ).issues;
   },
 
   /**
@@ -101,6 +116,7 @@ export const linearAuthClient = {
 
 /** Cursor-pagination options for the issue reads (PROTOCOL §5.28). */
 export interface LinearIssuePageOptions {
+  workspaceId?: string;
   limit?: number;
   /** Opaque cursor from a previous page's `nextToken`. */
   nextToken?: string;

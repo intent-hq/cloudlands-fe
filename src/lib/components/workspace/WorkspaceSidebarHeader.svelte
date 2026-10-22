@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
+  import SidebarIcon from '$lib/components/icons/SidebarIcon.svelte';
   import { Input } from '$lib/components/ui/input';
   import { Textarea } from '$lib/components/ui/textarea';
   import { logger } from '$lib/utils/client-logger';
@@ -8,12 +10,7 @@
   import { Button } from '$lib/components/ui/button';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { TooltipRich } from '$lib/components/ui/tooltip';
-  import {
-    faBars,
-    faKeyboard,
-    faRightLeft,
-    faTableColumns,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faKeyboard, faRightLeft } from '@fortawesome/free-solid-svg-icons';
   import { tick } from 'svelte';
   import { writable } from 'svelte/store';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
@@ -75,6 +72,7 @@
   let branchInputRef: HTMLInputElement | null = $state(null);
   let isSavingBranch = $state(false);
 
+  const statusDescriptionId = $props.id();
   const currentStatusMessage = $derived(workspace?.statusMessage?.trim() ?? '');
   const repositoryLabel = $derived(
     workspace?.repositoryOwner && workspace?.repositoryName
@@ -350,7 +348,7 @@
   const sidebarToggleAction: MenuAction = {
     id: 'toggle-sidebar',
     label: m.ui_sidebar_toggle_label(),
-    icon: faBars,
+    iconSnippet: sidebarToggleIconSnippet,
     dividerBefore: true,
     shortcut: 'mod+b',
     onClick: () => {
@@ -364,7 +362,7 @@
       $sidebarSide$ === 'left'
         ? m.workspace_sidebarHeader_moveSidebarRight_label()
         : m.workspace_sidebarHeader_moveSidebarLeft_label(),
-    icon: faTableColumns,
+    iconSnippet: sidebarSideIconSnippet,
     onClick: () => {
       appStore.dispatch(toggleSidebarSide());
     },
@@ -470,6 +468,18 @@
   });
 </script>
 
+{#snippet sidebarToggleIconSnippet()}
+  <SidebarIcon size={16} side={$sidebarSide$} class="text-muted-foreground" />
+{/snippet}
+
+{#snippet sidebarSideIconSnippet()}
+  <SidebarIcon
+    size={16}
+    side={$sidebarSide$ === 'left' ? 'right' : 'left'}
+    class="text-muted-foreground"
+  />
+{/snippet}
+
 <div class="group flex h-full items-start justify-between gap-2">
   <div class="flex min-w-0 flex-1 flex-col gap-1">
     <div class="relative flex w-full min-w-0 items-center">
@@ -529,8 +539,7 @@
     {:else if workspace}
       <Button
         variant="ghost"
-        truncateLabel={false}
-        labelClass="line-clamp-3"
+        wrapContent={false}
         class="type-body h-auto cursor-pointer rounded border-none bg-transparent py-0.5 text-left text-muted-foreground {!currentStatusMessage
           ? 'italic text-ghost'
           : ''}
@@ -541,13 +550,20 @@
                focus-visible:outline-ring focus-visible:outline-offset-[-1px]
                disabled:cursor-default disabled:opacity-50"
         onclick={startEditingStatusMessage}
-        title={currentStatusMessage || m.workspace_sidebarHeader_addStatus_tooltip()}
+        title={currentStatusMessage ? undefined : m.workspace_sidebarHeader_addStatus_tooltip()}
         aria-label={currentStatusMessage
           ? m.workspace_sidebarHeader_editStatus_ariaLabel()
           : m.workspace_sidebarHeader_addStatus_ariaLabel()}
+        aria-describedby={currentStatusMessage ? statusDescriptionId : undefined}
         disabled={!workspace}
       >
-        {currentStatusMessage || m.workspace_sidebarHeader_addStatus_label()}
+        <span
+          id={statusDescriptionId}
+          class="min-w-0 line-clamp-3"
+          use:truncatedTitle={currentStatusMessage}
+        >
+          {currentStatusMessage || m.workspace_sidebarHeader_addStatus_label()}
+        </span>
       </Button>
     {/if}
 
@@ -559,7 +575,7 @@
       {#if repositoryLabel}
         <span
           class="flex h-5 min-w-0 max-w-[45%] shrink items-center truncate leading-5"
-          title={repositoryLabel}
+          use:truncatedTitle={repositoryLabel}
           data-sidebar-repository
         >
           {repositoryLabel}
@@ -608,7 +624,8 @@
                 <div class="w-56 p-2.5" data-sidebar-branch-hover-card>
                   <p
                     class="truncate text-sm font-medium text-popover-foreground"
-                    title={workspace.branch || m.workspace_sidebarHeader_noBranch_label()}
+                    use:truncatedTitle={workspace.branch ||
+                      m.workspace_sidebarHeader_noBranch_label()}
                   >
                     {workspace.branch || m.workspace_sidebarHeader_noBranch_label()}
                   </p>
@@ -641,7 +658,7 @@
           {#if isDeleting}
             <IntentMarkLoader size={14} />
           {:else}
-            <KebabIcon class="size-3.5" />
+            <KebabIcon />
           {/if}
         </Button>
       {/snippet}

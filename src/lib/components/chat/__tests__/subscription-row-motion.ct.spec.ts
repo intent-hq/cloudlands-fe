@@ -22,10 +22,6 @@ test('uses descriptive ordered headers for small wakes and count-only text for f
       'aria-label',
       label,
     );
-    await expect(component.getByTestId('event-wakeup-summary').locator('[title]')).toHaveAttribute(
-      'title',
-      label,
-    );
   }
 });
 

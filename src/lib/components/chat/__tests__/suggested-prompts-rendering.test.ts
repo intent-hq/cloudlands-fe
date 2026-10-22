@@ -1,7 +1,8 @@
 /**
  * @vitest-environment jsdom
  */
-import { cleanup, render, screen } from '@testing-library/svelte';
+import { cleanup, screen } from '@testing-library/svelte';
+import { render } from './operational-renderer-test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ContentBlock } from '$shared/types';
 import { ChatTranscriptReconciler } from '$lib/client/live/live-chat-client';
@@ -87,6 +88,7 @@ describe('suggested prompts rendering', () => {
       await vi.advanceTimersByTimeAsync(800);
       expect(disclosure.getAttribute('aria-expanded')).toBe('true');
     } finally {
+      cleanup();
       vi.useRealTimers();
     }
   });

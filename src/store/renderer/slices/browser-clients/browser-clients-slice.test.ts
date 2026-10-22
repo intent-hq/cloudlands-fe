@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 
 vi.mock('svelte', async (importOriginal) => ({
   ...(await importOriginal<typeof import('svelte')>()),
@@ -17,7 +18,14 @@ import {
   workspaceUnmounted,
 } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
+  browserClientsConsumerMounted,
+  browserClientsConsumerUnmounted,
+  browserClientReadsReleased,
   browserClientsReducer,
+  browserConnectionInvalidated,
+  workspaceBrowserClientPinReceived,
+  authenticatedClientsReceived,
+  authenticatedClientsCleared,
   browserTabClosed,
   browserTabUpserted,
   initialState,
@@ -32,6 +40,7 @@ import {
   selectLiveClientsLoaded,
   selectOwnClientId,
   selectWorkspaceBrowserClient,
+  selectWorkspaceBrowserSelectionKnown,
   selectWorkspaceBrowserTabsRevision,
   selectWorkspaceDrivingClient,
 } from './browser-clients-selectors';
@@ -140,11 +149,41 @@ describe('browserClientsReducer', () => {
     expect(selectWorkspaceBrowserClient.select(asState(state), 'ws-1')).toEqual(cleared);
   });
 
+  it('applies saved pin events without inventing resolution or disturbing other workspace state', () => {
+    let state = browserClientsReducer(initialState, liveClientsReceived([desk], 'ws-1'));
+    state = browserClientsReducer(state, browserTabClosed('ws-1', 'tab-closed'));
+    state = browserClientsReducer(
+      state,
+      workspaceBrowserClientReceived('ws-2', {
+        source: 'workspace',
+        clientId: 'cli-laptop',
+        resolved: null,
+      }),
+    );
+    const other = state.byWorkspaceId['ws-2'];
+    state = browserClientsReducer(state, workspaceBrowserClientPinReceived('ws-1', 'cli-desk'));
+    expect(selectWorkspaceDrivingClient.select(asState(state), 'ws-1').pinnedClientId).toBe(
+      'cli-desk',
+    );
+    expect(selectWorkspaceBrowserSelectionKnown.select(asState(state), 'ws-1')).toBe(true);
+    expect(selectWorkspaceBrowserClient.select(asState(state), 'ws-1')).toBeNull();
+    expect(selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-1')).toBe(1);
+    expect(selectLiveClientsLoaded.select(asState(state), 'ws-1')).toBe(true);
+    expect(state.byWorkspaceId['ws-2']).toBe(other);
+    state = browserClientsReducer(state, workspaceBrowserClientPinReceived('ws-1', null));
+    expect(selectWorkspaceDrivingClient.select(asState(state), 'ws-1').pinnedClientId).toBeNull();
+    expect(selectWorkspaceBrowserSelectionKnown.select(asState(state), 'ws-1')).toBe(true);
+    state = browserClientsReducer(state, browserConnectionInvalidated());
+    expect(selectWorkspaceBrowserSelectionKnown.select(asState(state), 'ws-1')).toBe(false);
+    expect(selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-1')).toBe(1);
+  });
+
   it('derives the driving-client indicator input from the live list and the workspace pin', () => {
     expect(selectWorkspaceDrivingClient.select(asState(initialState), 'ws-1')).toEqual({
       eligibleClients: [],
       ownClientId: '',
       driving: null,
+      pinnedClientId: null,
     });
 
     const viewer: LiveClient = {
@@ -156,7 +195,7 @@ describe('browserClientsReducer', () => {
       connectedAt: '2026-09-07T00:00:03.000Z',
     };
     let state = browserClientsReducer(initialState, ownClientIdReceived('cli-desk'));
-    state = browserClientsReducer(state, liveClientsReceived([desk, laptop, viewer]));
+    state = browserClientsReducer(state, liveClientsReceived([desk, laptop, viewer], 'ws-1'));
     state = browserClientsReducer(
       state,
       workspaceBrowserClientReceived('ws-1', {
@@ -171,6 +210,7 @@ describe('browserClientsReducer', () => {
         { clientId: 'cli-laptop', name: 'Intent Desktop', connected: true },
       ],
       ownClientId: 'cli-desk',
+      pinnedClientId: null,
       driving: { clientId: 'cli-laptop', name: 'Intent Desktop', connected: true },
     });
 
@@ -198,7 +238,7 @@ describe('browserClientsReducer', () => {
 
   it('gates the indicator on browser tabs and two clients, except for an offline pin', () => {
     let state = browserClientsReducer(initialState, ownClientIdReceived('cli-desk'));
-    state = browserClientsReducer(state, liveClientsReceived([desk, laptop]));
+    state = browserClientsReducer(state, liveClientsReceived([desk, laptop], 'ws-1'));
     state = browserClientsReducer(
       state,
       workspaceBrowserClientReceived('ws-1', {
@@ -221,7 +261,7 @@ describe('browserClientsReducer', () => {
     });
 
     // One client with a browser tab: hidden.
-    state = browserClientsReducer(state, liveClientsReceived([desk]));
+    state = browserClientsReducer(state, liveClientsReceived([desk], 'ws-1'));
     state = browserClientsReducer(
       state,
       workspaceBrowserClientReceived('ws-1', {
@@ -291,4 +331,112 @@ describe('browserClientsReducer', () => {
     expect(selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-1')).toBe(0);
     expect(selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-2')).toBe(1);
   });
+});
+
+describe('authenticated Devices view lifetime', () => {
+  it('replaces server rows and clears only the matching view context', () => {
+    const admitted = browserClientsReducer(
+      initialState,
+      authenticatedClientsReceived('host-b-person-b', [desk]),
+    );
+    expect(selectLiveClients.select({ browserClients: admitted } as StoreState)).toEqual([desk]);
+    expect(browserClientsReducer(admitted, authenticatedClientsCleared('old-host'))).toBe(admitted);
+    const cleared = browserClientsReducer(admitted, authenticatedClientsCleared('host-b-person-b'));
+    expect(selectLiveClients.select({ browserClients: cleared } as StoreState)).toEqual([]);
+    expect(cleared.authenticatedContext).toBeNull();
+    expect(cleared.liveClientsLoaded).toBe(false);
+  });
+  it('retains principal/client tuples while leaving raw browser-routing IDs unchanged', () => {
+    const a = { ...desk, principalId: 'person-a', hostRole: 'owner' as const, connections: 2 };
+    const b = { ...desk, principalId: 'person-b', hostRole: 'member' as const, name: 'B phone' };
+    let state = browserClientsReducer(
+      initialState,
+      authenticatedClientsReceived('context', [a, b]),
+    );
+    const rows = () => getItems(state.authenticatedClients!);
+    expect(rows()).toMatchObject([a, b]);
+    expect(rows().map((row) => row.clientId)).toEqual(['cli-desk', 'cli-desk']);
+    expect(selectLiveClient.select({ browserClients: state } as StoreState, 'cli-desk')).toEqual(b);
+    state = browserClientsReducer(
+      state,
+      authenticatedClientsReceived('context', [a, { ...b, name: 'B tablet' }]),
+    );
+    expect(rows()).toMatchObject([a, { ...b, name: 'B tablet' }]);
+    state = browserClientsReducer(state, authenticatedClientsReceived('context', [b]));
+    expect(rows()).toMatchObject([b]);
+    state = browserClientsReducer(
+      state,
+      authenticatedClientsReceived('context', [a, { ...a, connections: 3 }]),
+    );
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0]).toMatchObject({
+      principalId: 'person-a',
+      clientId: 'cli-desk',
+      connections: 3,
+    });
+    state = browserClientsReducer(state, authenticatedClientsCleared('context'));
+    expect(rows()).toEqual([]);
+  });
+  it('does not alias tuples whose fields contain delimiters', () => {
+    const state = browserClientsReducer(
+      initialState,
+      authenticatedClientsReceived('context', [
+        { ...desk, principalId: 'a:b', clientId: 'c' },
+        { ...desk, principalId: 'a', clientId: 'b:c' },
+      ]),
+    );
+    expect(getItems(state.authenticatedClients!)).toHaveLength(2);
+  });
+});
+
+// Exact persisted targets remain offline; a matching suffix is not continuity.
+describe('identity drift selectors', () => {
+  it.each(['desktop', 'alice:desktop'])(
+    'does not alias stale pin or tab host %s to a nested ID',
+    (stale) => {
+      const nested = { ...desk, clientId: `bob:${stale}` };
+      let state = browserClientsReducer(initialState, liveClientsReceived([nested]));
+      state = browserClientsReducer(state, liveClientsReceived([nested], 'ws-1'));
+      state = browserClientsReducer(state, ownClientIdReceived(nested.clientId));
+      state = browserClientsReducer(
+        state,
+        workspaceBrowserClientReceived('ws-1', {
+          source: 'workspace',
+          clientId: stale,
+          resolved: null,
+        }),
+      );
+      expect(selectWorkspaceDrivingClient.select(asState(state), 'ws-1').driving).toEqual({
+        clientId: stale,
+        connected: false,
+      });
+      expect(selectBrowserTabHost.select(asState(state), stale).connected).toBe(false);
+      expect(selectLiveClient.select(asState(state), stale)).toBeUndefined();
+      expect(selectBrowserTabHost.select(asState(state), nested.clientId).connected).toBe(true);
+    },
+  );
+});
+
+it('tracks browser consumers independently and invalidates released routing without losing identity', () => {
+  let state = browserClientsReducer(initialState, ownClientIdReceived('desktop'));
+  state = browserClientsReducer(state, browserClientsConsumerMounted('ws', 'panel'));
+  state = browserClientsReducer(state, browserClientsConsumerMounted('ws', 'offscreen'));
+  state = browserClientsReducer(state, liveClientsReceived([desk], 'ws'));
+  state = browserClientsReducer(
+    state,
+    workspaceBrowserClientReceived('ws', { source: 'default', resolved: desk }),
+  );
+  state = browserClientsReducer(state, browserClientsConsumerUnmounted('ws', 'panel'));
+  expect(state.byWorkspaceId.ws.consumers).toEqual({ offscreen: true });
+  expect(browserClientsReducer(state, browserClientsConsumerUnmounted('ws', 'unknown'))).toBe(
+    state,
+  );
+  state = browserClientsReducer(state, browserClientsConsumerUnmounted('ws', 'offscreen'));
+  state = browserClientsReducer(state, browserClientReadsReleased('ws'));
+  expect(state.byWorkspaceId.ws.liveClientsLoaded).toBe(false);
+  expect(state.byWorkspaceId.ws.browserClient).toBeNull();
+  expect(state.ownClientId).toBe('desktop');
+  state = browserClientsReducer(state, workspaceUnmounted('ws'));
+  expect(browserClientsReducer(state, browserClientsConsumerUnmounted('ws', 'panel'))).toBe(state);
+  expect(browserClientsReducer(state, browserClientReadsReleased('ws'))).toBe(state);
 });

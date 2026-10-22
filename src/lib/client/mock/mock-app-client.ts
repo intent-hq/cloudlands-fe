@@ -96,7 +96,7 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
     setMcpServers: async () => OK,
     getMcpServerStatuses: async () => [],
     restartMcpServer: async (serverId) => ({ serverId, state: 'running' }),
-    getWorkspaceDisabledMcpServerNames: async () => [],
+    getWorkspaceDisabledMcpServerKeys: async () => [],
     toggleWorkspaceMcpServer: async () => OK,
     getWorkspaceSettings: async () => fx.mockWorkspaceSettings,
     setWorkspaceSettings: async () => OK,
@@ -106,10 +106,37 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
   };
 
   readonly scripts: AppClient['scripts'] = {
+    listPage: async (workspaceId) => ({
+      view: 'summary',
+      scripts: fx.mockScripts
+        .filter((s) => s.workspaceId === workspaceId && !s.archivedAt)
+        .map(
+          ({
+            command,
+            cwd: _cwd,
+            env: _env,
+            archivedAt: _archived,
+            lastRunAt: _run,
+            healthUrl: _health,
+            readyPattern: _ready,
+            ...row
+          }) => ({
+            ...row,
+            commandPreview: command,
+            commandTruncated: false,
+          }),
+        ),
+    }),
+    get: async (workspaceId, scriptId) => {
+      const row = fx.mockScripts.find(
+        (s) => s.workspaceId === workspaceId && s.id === scriptId && !s.archivedAt,
+      );
+      if (!row) throw new Error('Unknown script');
+      return row;
+    },
     list: async (workspaceId) =>
       fx.mockScripts.filter((script) => script.workspaceId === workspaceId),
     create: async () => OK,
-    remove: async () => OK,
     start: async () => OK,
     stop: async () => OK,
     restart: async () => OK,
@@ -190,6 +217,10 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
   };
 
   readonly integrations: AppClient['integrations'] = {
+    captureRepositoryCheckout: async () => ({ status: 'unavailable', reason: 'disabled' }),
+    captureRepositoryResource: async () => {
+      throw new Error('REPOSITORY_RESOURCE_UNAVAILABLE');
+    },
     githubUser: async () => fx.mockGitHubUser,
     githubPullRequest: async (owner, repo, number) => ({
       ...(number === fx.mockGitHubPullRequestQueued.number

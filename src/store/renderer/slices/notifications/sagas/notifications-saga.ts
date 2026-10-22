@@ -1,5 +1,6 @@
+import type { StoreState } from '../../../types';
 import { END, buffers, eventChannel, type EventChannel } from 'redux-saga';
-import { actionChannel, all, call, flush, fork, race, take } from 'typed-redux-saga';
+import { actionChannel, all, call, flush, fork, getContext, race, take } from 'typed-redux-saga';
 
 import type { AgentIdleEvent } from '$features/events/types';
 import { handleNotificationNavigate } from '$features/notifications/notification-navigation';
@@ -8,10 +9,16 @@ import { readIdleNotificationGate } from '$features/notifications/utils/idle-gat
 import { buildNotificationContent } from '$features/notifications/utils/notification-content';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { readSetting } from '$lib/client/live/live-settings-client';
+import { selectHostAdministrationContext } from '../../principal/principal-selectors';
 import { isElectron } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { getPlatform } from '$lib/utils/platform-capabilities';
-import { addMockIpcListener } from '$shared/ipc-mock-router';
+import { eventReceived } from '../../workspace-events/workspace-events-slice';
+import {
+  selectAgentSession,
+  selectAgentDetailHydrated,
+} from '../../agent-session/agent-session-selectors';
+import { selectPrincipalActionContext } from '../../principal/principal-selectors';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import {
   selectNotificationEnabled,
@@ -48,19 +55,6 @@ function createNativeNotificationChannel(): EventChannel<NativeNotificationEvent
       for (const [channel, id] of listeners) window.electronAPI.offById(channel, id);
     };
   }, buffers.sliding(1_000));
-}
-
-function createWebNotificationChannel(): EventChannel<AgentIdleEvent> {
-  return eventChannel<AgentIdleEvent>(
-    (emit) =>
-      addMockIpcListener('agent:idle', (payload) => {
-        const event = payload as AgentIdleEvent | undefined;
-        if (event?.type === 'agent:idle' && event.data) {
-          emit(event);
-        }
-      }),
-    buffers.expanding<AgentIdleEvent>(),
-  );
 }
 
 async function resolvePermission(): Promise<NotificationPermission> {
@@ -104,10 +98,11 @@ function* showBrowserNotification(
   body: string,
   workspaceId: string,
   agentId: string,
+  context: string,
 ) {
   yield* fork(playNotificationSoundPerSettings);
   const granted: boolean = yield* call(ensurePermission);
-  if (!granted) return;
+  if (!granted || context !== (yield* selectPrincipalActionContext.effect())) return;
   try {
     const notification: Notification = yield* call(createBrowserNotification, title, body);
     activeNotifications.add(notification);
@@ -138,7 +133,17 @@ function* showBrowserNotification(
 function* handleWebIdle(event: AgentIdleEvent, activeWorkspaceId: string | null) {
   try {
     const workspaceId = event.workspaceId;
-    if (!workspaceId) return;
+    const context = yield* selectPrincipalActionContext.effect();
+    if (!workspaceId || !context) return;
+    const reduxStore = yield* getContext<{ getState: () => StoreState }>('reduxStore');
+    const request = async (method: string, params: Record<string, unknown>): Promise<unknown> => {
+      if (context !== selectPrincipalActionContext.select(reduxStore.getState()))
+        throw new Error('Notification admission changed');
+      const result = await backendRequest(method, params);
+      if (context !== selectPrincipalActionContext.select(reduxStore.getState()))
+        throw new Error('Notification admission changed');
+      return result;
+    };
     const [fallbackEnabled, fallbackSoundOnly] = yield* all([
       selectNotificationEnabled.effect(),
       selectSoundOnlyWhenUnfocused.effect(),
@@ -146,10 +151,14 @@ function* handleWebIdle(event: AgentIdleEvent, activeWorkspaceId: string | null)
     let enabled = fallbackEnabled ?? true;
     let soundOnlyWhenUnfocused = fallbackSoundOnly ?? true;
     try {
-      const [enabledResult, soundResult] = yield* all([
-        call(readSetting, 'notifications.enabled'),
-        call(readSetting, 'notifications.soundOnlyWhenUnfocused'),
-      ]);
+      const ownerContext = yield* selectHostAdministrationContext.effect();
+      const [enabledResult, soundResult] = ownerContext
+        ? yield* all([
+            call(readSetting, 'notifications.enabled'),
+            call(readSetting, 'notifications.soundOnlyWhenUnfocused'),
+          ])
+        : [null, null];
+      if (ownerContext !== (yield* selectHostAdministrationContext.effect())) return;
       const enabledValue = enabledResult?.value;
       const soundValue = soundResult?.value;
       if (typeof enabledValue === 'boolean') enabled = enabledValue;
@@ -174,18 +183,23 @@ function* handleWebIdle(event: AgentIdleEvent, activeWorkspaceId: string | null)
       event.data.notificationsMuted === true ||
       event.data.isWaitingForOtherAgents ||
       (event.data.waitingOnHooks?.length ?? 0) > 0 ||
-      (event.data.waitingOnPrMonitors?.length ?? 0) > 0
+      (event.data.waitingOnPrMonitors?.length ?? 0) > 0 ||
+      (event.data.waitingOnScriptMonitors?.length ?? 0) > 0
     ) {
       return;
     }
 
-    // Bounded wire gate (idle-gate.ts, intent#5531 — never the unscoped
-    // `agent.list`): `agent.get` for the idle agent's own flags, then
-    // `agent.listActive` + per-active-sibling `agent.get`.
-    const verdict = yield* call(readIdleNotificationGate, backendRequest, {
+    if (context !== (yield* selectPrincipalActionContext.effect())) return;
+    const known = yield* selectAgentSession.effect(event.data.agentId);
+    const hydrated = yield* selectAgentDetailHydrated.effect(event.data.agentId);
+    // Accepted detail metadata already supplies self flags and specialist.
+    // The global sibling gate still needs backend truth for unloaded agents.
+    const verdict = yield* call(readIdleNotificationGate, request, {
       workspaceId,
       agentId: event.data.agentId,
+      knownIdleAgent: hydrated && known?.workspaceId === workspaceId ? known : undefined,
     });
+    if (context !== (yield* selectPrincipalActionContext.effect())) return;
     if (verdict.kind !== 'notify') return;
     const idleAgent = verdict.idleAgent;
 
@@ -193,13 +207,14 @@ function* handleWebIdle(event: AgentIdleEvent, activeWorkspaceId: string | null)
     let workspaceTitle: string | undefined;
     if (!isChief) {
       try {
-        const response = (yield* call(backendRequest, 'workspace.get', { workspaceId })) as
+        const response = (yield* call(request, 'workspace.get', { workspaceId })) as
           { workspace?: { title?: string } } | undefined;
         if (response?.workspace?.title) workspaceTitle = response.workspace.title;
       } catch {
         // Missing workspace context is non-fatal.
       }
     }
+    if (context !== (yield* selectPrincipalActionContext.effect())) return;
     const content = buildNotificationContent(
       {
         isChief,
@@ -224,6 +239,7 @@ function* handleWebIdle(event: AgentIdleEvent, activeWorkspaceId: string | null)
       content.body,
       workspaceId,
       event.data.agentId,
+      context,
     );
   } catch (error) {
     logger.error('Failed to handle agent:idle event', error);
@@ -255,7 +271,7 @@ export function* notificationIpcSaga() {
 
 export function* webNotificationSaga() {
   if (getPlatform() !== 'web') return;
-  const channel = createWebNotificationChannel();
+  const channel = yield* actionChannel(eventReceived, buffers.expanding());
   const workspaceChanges = yield* actionChannel(
     CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS,
     buffers.expanding(),
@@ -272,8 +288,10 @@ export function* webNotificationSaga() {
         activeWorkspaceId = yield* selectCurrentWorkspaceTabId.effect();
         continue;
       }
-      if (!event || event === (END as unknown as AgentIdleEvent)) break;
-      yield* fork(handleWebIdle, event, activeWorkspaceId);
+      if (!event) break;
+      const idle = event.payload[1];
+      if (idle.type === 'agent:idle' && idle.data)
+        yield* fork(handleWebIdle, idle as AgentIdleEvent, activeWorkspaceId);
     }
   } finally {
     workspaceChanges.close();

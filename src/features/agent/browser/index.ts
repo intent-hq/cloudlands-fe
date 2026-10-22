@@ -171,6 +171,6 @@ export function notifyAgentSubscribers(agentId: string, targetWorkspaceId?: Work
 // lifecycle (agent:lifecycle:*), messaging (agent:messaging:*) and
 // persistence (persistence:*) IPC proxies were retired with the legacy agent
 // IPC surface: none had production callers (agent creation goes through
-// UnifiedAgentFactory, deletion through the agent-mutation middleware's
+// UnifiedAgentFactory, deletion through the agent-mutation saga's
 // soft-hide-then-commit → daemon agent.delete, and persistence is owned by
 // the daemon on the main side via direct agent.* RPCs, PROTOCOL.md §5.5).

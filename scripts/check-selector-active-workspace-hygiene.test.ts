@@ -206,7 +206,7 @@ describe('selector active-workspace hygiene gate', () => {
     withFixture(
       {
         'example-saga.ts': `
-          import { takeLatestFromSelector } from '@augmentcode/themis/saga';
+          import { takeLatestFromSelector } from '@themislib/themis/saga';
           import { selectActiveWorkspace } from './workspace-selectors';
 
           export function* exampleSaga() {

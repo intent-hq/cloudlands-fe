@@ -1,3 +1,4 @@
+import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 /**
  * Behavioral test for the Chief auto-start provider gate.
  *
@@ -7,13 +8,16 @@
  * the auto-start effect retries and fires exactly one launch.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, cleanup, fireEvent, screen, waitFor } from '@testing-library/svelte';
+import { render, cleanup, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { m } from '$shared/paraglide/messages.js';
 import { store as appStore } from '$store/renderer/store';
-import { setAgentsLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
-import { setActiveProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
-import { setChiefCollapsed } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import {
+  agentCreationFinished,
+  createAgentFromConfigRequested,
+  setAgentsLoaded,
+} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
 import { guestSessionsListReceived } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -25,14 +29,14 @@ vi.mock('$lib/components/chat/ChatPanel.svelte', async () => ({
   default: (await import('./mocks/MockChiefChatPanel.svelte')).default,
 }));
 
-const LAUNCH_TYPE = 'agentSessions/launchAgentRequested';
-
 describe('ChiefCard auto-start provider gate', () => {
   let dispatchSpy: ReturnType<typeof vi.spyOn>;
-  let launchActions: unknown[];
+  let launchActions: ReturnType<typeof createAgentFromConfigRequested>[];
 
   beforeEach(() => {
     appStore.init();
+    admitLegacyPrincipal();
+    appStore.dispatch(hydrateDefaultProvider(''));
     // A settled owner window: the guest session list hydrated with no joined
     // host. The guest-window case below replaces it with a joined host.
     appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
@@ -41,12 +45,26 @@ describe('ChiefCard auto-start provider gate', () => {
     launchActions = [];
     const originalDispatch = appStore.dispatch.bind(appStore);
     dispatchSpy = vi.spyOn(appStore, 'dispatch').mockImplementation((action: any) => {
-      if (action?.type === LAUNCH_TYPE) {
-        // Swallow the launch (no saga/wire round-trip) and settle its promise
-        // so the component's await resolves like a successful agent.create.
+      if (action?.type === createAgentFromConfigRequested.type) {
+        // Exercise the real pending reducer, then acknowledge this consumer
+        // like the creation owner without a saga/wire round-trip.
         launchActions.push(action);
-        action.success({ id: 'agent-chief-gate-test' } as unknown as AgentSession);
-        return action;
+        const result = originalDispatch(action);
+        const [workspaceId, , { consumer }] = action.payload;
+        queueMicrotask(() => {
+          originalDispatch(
+            agentCreationFinished({
+              ...consumer,
+              workspaceId,
+              seq: action.seq,
+              status: 'success',
+              agentId: 'agent-chief-gate-test',
+              completedAt: '2026-10-01T00:00:00.000Z',
+            }),
+          );
+          originalDispatch(action.success({ id: 'agent-chief-gate-test' } as AgentSession));
+        });
+        return result;
       }
       return originalDispatch(action);
     });
@@ -55,11 +73,11 @@ describe('ChiefCard auto-start provider gate', () => {
   afterEach(() => {
     cleanup();
     dispatchSpy.mockRestore();
-    appStore.dispatch(setActiveProvider(''));
+    appStore.dispatch(hydrateDefaultProvider(''));
   });
 
   it('skips the launch while provider-less, then fires exactly once when configured', async () => {
-    render(ChiefCard, { props: { expanded: true } });
+    render(ChiefCard, { props: {} });
 
     // Provider-less: the auto-start effect must skip without dispatching.
     await tick();
@@ -67,7 +85,7 @@ describe('ChiefCard auto-start provider gate', () => {
     expect(launchActions).toHaveLength(0);
 
     // Configure a provider: the ungated effect re-runs and launches once.
-    appStore.dispatch(setActiveProvider('auggie'));
+    appStore.dispatch(hydrateDefaultProvider('auggie'));
     await waitFor(() => expect(launchActions).toHaveLength(1));
 
     // The latch is set after the successful gate pass — no duplicate launch.
@@ -76,34 +94,18 @@ describe('ChiefCard auto-start provider gate', () => {
     expect(launchActions).toHaveLength(1);
   });
 
-  it('preserves the collapsed preference when auto-start creates the first thread', async () => {
-    appStore.dispatch(setChiefCollapsed(true));
-    appStore.dispatch(setActiveProvider('auggie'));
-    dispatchSpy.mockClear();
-
-    render(ChiefCard, {
-      props: { expanded: true, embedded: true, collapsed: true, ontoggle: vi.fn() },
-    });
-
-    await waitFor(() => expect(launchActions).toHaveLength(1));
-    expect(
-      dispatchSpy.mock.calls.some(([action]) => action?.type === 'sidebarNav/setChiefCollapsed'),
-    ).toBe(false);
-    expect(appStore.state.sidebarNav.isChiefCollapsed).toBe(true);
-  });
-
   it('does not auto-start in an inactive tab and starts once when Intent becomes active', async () => {
-    appStore.dispatch(setActiveProvider('auggie'));
+    appStore.dispatch(hydrateDefaultProvider('auggie'));
     const { rerender } = render(ChiefCard, {
-      props: { expanded: true, embedded: true, isActive: false },
+      props: { isActive: false },
     });
     await tick();
     expect(launchActions).toHaveLength(0);
 
-    await rerender({ expanded: true, embedded: true, isActive: true });
+    await rerender({ isActive: true });
     await waitFor(() => expect(launchActions).toHaveLength(1));
-    await rerender({ expanded: true, embedded: true, isActive: false });
-    await rerender({ expanded: true, embedded: true, isActive: true });
+    await rerender({ isActive: false });
+    await rerender({ isActive: true });
     expect(launchActions).toHaveLength(1);
   });
 
@@ -144,9 +146,10 @@ describe('ChiefCard auto-start provider gate', () => {
         windowBackendId: host.id,
       }),
     );
-    appStore.dispatch(setActiveProvider('auggie'));
+    admitLegacyPrincipal('guest');
+    appStore.dispatch(hydrateDefaultProvider('auggie'));
 
-    render(ChiefCard, { props: { expanded: true, embedded: true, collapsed: false } });
+    render(ChiefCard, { props: {} });
 
     await tick();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -154,29 +157,5 @@ describe('ChiefCard auto-start provider gate', () => {
     expect(
       screen.queryByRole('button', { name: m.layout_chiefCard_newThread_tooltip() }),
     ).toBeNull();
-  });
-
-  it('expands the preference and creates a thread when the expanded + is clicked', async () => {
-    appStore.dispatch(setChiefCollapsed(true));
-    dispatchSpy.mockClear();
-    render(ChiefCard, { props: { expanded: true, embedded: true, collapsed: false } });
-
-    const newThreadButton = screen.getByRole('button', {
-      name: m.layout_chiefCard_newThread_tooltip(),
-    });
-    // The Button component boundary can give auto-start time to acquire the
-    // double-submit guard before this test acts. Wait for that creation to
-    // settle so the click below is the launch under assertion.
-    await waitFor(() => expect((newThreadButton as HTMLButtonElement).disabled).toBe(false));
-    launchActions = [];
-    dispatchSpy.mockClear();
-
-    await fireEvent.click(newThreadButton);
-
-    await waitFor(() => expect(launchActions).toHaveLength(1));
-    expect(
-      dispatchSpy.mock.calls.some(([action]) => action?.type === 'sidebarNav/setChiefCollapsed'),
-    ).toBe(true);
-    expect(appStore.state.sidebarNav.isChiefCollapsed).toBe(false);
   });
 });

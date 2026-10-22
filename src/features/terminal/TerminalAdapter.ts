@@ -347,7 +347,11 @@ export class TerminalAdapter {
           // Terminal exists on backend - restore from `terminal.getBuffer`
           // (PROTOCOL §5.13); the live client decodes the base64 payload.
           try {
-            const buffer = await this.terminals.getBuffer(this.terminalId);
+            const buffer = await this.terminals.getBuffer(
+              this.terminalId,
+              undefined,
+              this.workspaceId,
+            );
             if (buffer) {
               logger.info(`Restoring ${buffer.length} bytes of buffered output from backend`);
               this.xterm.write(buffer);
@@ -638,26 +642,30 @@ export class TerminalAdapter {
     // dispatched into the queue.
     let handlerDisabled = false;
 
-    const unsubscribe = this.terminals.subscribeEvents(this.terminalId, {
-      onData: ({ chunk }) => {
-        if (handlerDisabled || this.isDisposed) return;
-        if (!this.stateMachine.canAcceptInput()) return;
-        this.xterm.write(chunk);
-        this.parseTerminalOutput(chunk);
+    const unsubscribe = this.terminals.subscribeEvents(
+      this.terminalId,
+      {
+        onData: ({ chunk }) => {
+          if (handlerDisabled || this.isDisposed) return;
+          if (!this.stateMachine.canAcceptInput()) return;
+          this.xterm.write(chunk);
+          this.parseTerminalOutput(chunk);
+        },
+        onExit: ({ exitCode }) => {
+          if (handlerDisabled || this.isDisposed) return;
+          this.exitedNormally = true;
+          this.hideCursorOnExit();
+          this.callbacks.onExit?.(exitCode);
+          this.stateMachine.transition('disconnect');
+        },
+        onCwd: ({ cwd }) => {
+          if (handlerDisabled || this.isDisposed) return;
+          this.lastCwd = cwd;
+          this.callbacks.onCwdChanged?.(cwd);
+        },
       },
-      onExit: ({ exitCode }) => {
-        if (handlerDisabled || this.isDisposed) return;
-        this.exitedNormally = true;
-        this.hideCursorOnExit();
-        this.callbacks.onExit?.(exitCode);
-        this.stateMachine.transition('disconnect');
-      },
-      onCwd: ({ cwd }) => {
-        if (handlerDisabled || this.isDisposed) return;
-        this.lastCwd = cwd;
-        this.callbacks.onCwdChanged?.(cwd);
-      },
-    });
+      this.workspaceId,
+    );
 
     this.ipcCleanup = () => {
       handlerDisabled = true;
@@ -1221,7 +1229,7 @@ export class TerminalAdapter {
     }
 
     this.terminals
-      .write(this.terminalId, data)
+      .write(this.terminalId, data, this.workspaceId)
       .then((result) => {
         if (!result.success) {
           logger.error(`[write] Terminal ${this.terminalId}: write failed - ${result.error}`);
@@ -1243,7 +1251,7 @@ export class TerminalAdapter {
       return;
     }
 
-    this.terminals.resize(this.terminalId, cols, rows).catch((error) => {
+    this.terminals.resize(this.terminalId, cols, rows, this.workspaceId).catch((error) => {
       logger.error('Failed to resize terminal:', error);
     });
   }
@@ -2084,7 +2092,7 @@ export class TerminalAdapter {
     if (options.killPty !== false) {
       // Close PTY connection via `terminal.kill` (PROTOCOL §5.13); the daemon
       // emits `terminal:exit` once the PTY is reaped.
-      this.terminals.kill(this.terminalId).catch((error) => {
+      this.terminals.kill(this.terminalId, this.workspaceId).catch((error) => {
         logger.error('Error killing PTY connection:', error);
       });
     }

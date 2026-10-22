@@ -1,7 +1,6 @@
 <script lang="ts">
   import { SettingsFieldRow } from '$lib/components/patterns/settings';
-  import { untrack } from 'svelte';
-  import WebSocketApiSettings from './WebSocketApiSettings.svelte';
+  import { onDestroy, untrack } from 'svelte';
   import {
     Button,
     Input,
@@ -17,6 +16,7 @@
   } from '$lib/components/patterns/collection';
   import DeviceIcon from '$lib/components/DeviceIcon.svelte';
   import DeviceIconPicker from '$lib/components/DeviceIconPicker.svelte';
+  import RemoteTunnelSettings from '$features/devices/RemoteTunnelSettings.svelte';
   import { cn } from '$lib/utils';
   import {
     CONNECTION_ACCENT_CLASSES,
@@ -41,14 +41,11 @@
     selectCurrentConnectionId,
     selectKeychainSyncState,
     selectPinnedDaemonVersion,
+    selectConnectionWorkflow,
   } from '$store/renderer/slices/connections/connections-selectors';
   import {
-    openConnectionRequested,
-    rotateConnectionSecretRequested,
-    setKeychainSyncEnabledRequested,
-    testConnectionRequested,
-    updateBackendRequested,
-    updateConnectionRequested,
+    connectionWorkflowRequested,
+    connectionWorkflowCleared,
   } from '$store/renderer/slices/connections/connections-slice';
   import {
     faArrowsRotate,
@@ -89,16 +86,91 @@
   // confirmed submit (and any fingerprint re-submit) proceed.
   let cloudRemovalPending = $state(false);
   let cloudRemovalConfirmed = $state(false);
-  let busy = $state<'update' | 'test' | null>(null);
-  let daemonUpdating = $state(false);
-  let feedbackOperation = $state<'update' | 'test' | null>(null);
-  let feedback = $state<{ kind: 'success' | 'error' | 'progress'; message: string } | null>(null);
-  let connectionError = $state(false);
-  let pendingFingerprint = $state<{
-    operation: 'update' | 'secret';
-    expected: string;
-    actual: string;
-  } | null>(null);
+  const consumerId = $props.id();
+  const openConsumerId = `${consumerId}:open`;
+  const daemonConsumerId = `${consumerId}:daemon`;
+  const workflow$ = selectConnectionWorkflow(consumerId);
+  const openWorkflow$ = selectConnectionWorkflow(openConsumerId);
+  const daemonWorkflow$ = selectConnectionWorkflow(daemonConsumerId);
+  const busy = $derived(
+    $workflow$ && $workflow$.phase !== 'settled'
+      ? $workflow$.kind === 'test'
+        ? 'test'
+        : 'update'
+      : null,
+  );
+  const daemonUpdating = $derived(!!$daemonWorkflow$ && $daemonWorkflow$.phase !== 'settled');
+  const connectionError = $derived($openWorkflow$?.outcome?.kind === 'error');
+  const feedbackOperation = $derived($workflow$?.kind === 'test' ? 'test' : 'update');
+  const pendingFingerprint = $derived.by(() => {
+    const outcome = $workflow$?.outcome;
+    return outcome?.kind === 'blocked' &&
+      outcome.operation !== 'test' &&
+      outcome.result.status === 'fingerprint-confirmation-required'
+      ? {
+          operation: outcome.operation,
+          expected: outcome.result.expectedFingerprint,
+          actual: outcome.result.actualFingerprint,
+        }
+      : null;
+  });
+  const feedback = $derived.by(
+    (): { kind: 'success' | 'error' | 'progress'; message: string } | null => {
+      const workflow = $workflow$;
+      if (!workflow || workflow.kind === 'localIcon') return null;
+      if (busy)
+        return {
+          kind: 'progress',
+          message:
+            workflow.phase === 'secret'
+              ? m.settings_devices_replacingSecret_label()
+              : workflow.phase === 'sync'
+                ? m.settings_devices_enablingSync_label()
+                : busy === 'test'
+                  ? m.settings_devices_testing_label()
+                  : m.settings_devices_updating_label(),
+        };
+      const outcome = workflow.outcome;
+      if (outcome?.kind === 'tested')
+        return { kind: 'success', message: m.settings_devices_testSuccess_label() };
+      if (outcome?.kind === 'blocked')
+        return { kind: 'error', message: blockedMessage(outcome.result) };
+      if (outcome?.kind === 'syncError')
+        return { kind: 'error', message: m.settings_devices_enableSync_error() };
+      if (outcome?.kind === 'error')
+        return {
+          kind: 'error',
+          message:
+            workflow.kind === 'test'
+              ? m.settings_devices_testFailed_error()
+              : m.settings_devices_update_error(),
+        };
+      return null;
+    },
+  );
+  onDestroy(() => {
+    for (const id of [consumerId, openConsumerId, daemonConsumerId])
+      appStore.dispatch(connectionWorkflowCleared(id));
+  });
+  $effect(() => {
+    if ($workflow$?.secretReplaced) secret = '';
+    const outcome = $workflow$?.outcome;
+    if (outcome?.kind === 'done') {
+      const close = $workflow$?.kind === 'save';
+      appStore.dispatch(connectionWorkflowCleared(consumerId));
+      if (close) untrack(closePanel);
+    } else if (outcome?.kind === 'secretUnavailable') {
+      appStore.dispatch(connectionWorkflowCleared(consumerId));
+      untrack(openEditForSecretRecovery);
+    } else if (outcome?.kind === 'error' && $workflow$?.kind === 'localIcon')
+      localDeviceIcon = savedDeviceIcon;
+    if ($openWorkflow$?.outcome?.kind === 'secretUnavailable') {
+      appStore.dispatch(connectionWorkflowCleared(openConsumerId));
+      untrack(openEditForSecretRecovery);
+    }
+    if ($daemonWorkflow$?.phase === 'settled')
+      appStore.dispatch(connectionWorkflowCleared(daemonConsumerId));
+  });
   let initializedPanel = $state<string | null>(null);
   let actionsButton: HTMLButtonElement | null = $state(null);
   let firstEditInput: HTMLInputElement | null = $state(null);
@@ -201,10 +273,7 @@
     pushToCloud = savedPushToCloud;
     cloudRemovalPending = false;
     cloudRemovalConfirmed = false;
-    busy = null;
-    feedbackOperation = null;
-    feedback = null;
-    pendingFingerprint = null;
+    appStore.dispatch(connectionWorkflowCleared(consumerId));
   }
 
   $effect(() => {
@@ -234,8 +303,7 @@
   }
 
   function openEditForSecretRecovery() {
-    feedback = null;
-    pendingFingerprint = null;
+    appStore.dispatch(connectionWorkflowCleared(consumerId));
     if (panelMode === 'edit') {
       requestAnimationFrame(() => secretInput?.focus());
     } else {
@@ -244,31 +312,15 @@
     }
   }
 
-  async function connectDevice() {
-    connectionError = false;
-    try {
-      const action = openConnectionRequested(device.id);
-      appStore.dispatch(action);
-      const result = await action.promise;
-      if (result.status === 'secret-unavailable') openEditForSecretRecovery();
-    } catch {
-      connectionError = true;
-    }
+  function connectDevice() {
+    appStore.dispatch(connectionWorkflowRequested(openConsumerId, { kind: 'open', id: device.id }));
   }
 
-  async function requestDaemonUpdate() {
+  function requestDaemonUpdate() {
     if (daemonUpdating) return;
-    daemonUpdating = true;
-    try {
-      const action = updateBackendRequested(device.id);
-      appStore.dispatch(action);
-      await action.promise;
-    } catch {
-      // Outcomes (success and every failure mode) surface as saga-owned
-      // toasts; nothing more to do here.
-    } finally {
-      daemonUpdating = false;
-    }
+    appStore.dispatch(
+      connectionWorkflowRequested(daemonConsumerId, { kind: 'updateBackend', id: device.id }),
+    );
   }
 
   function handleRowAction(id: string) {
@@ -355,25 +407,19 @@
     };
   }
 
-  async function updateLocalDeviceIcon(nextDeviceIcon: DeviceIconChoice) {
+  function updateLocalDeviceIcon(nextDeviceIcon: DeviceIconChoice) {
     if (!device.isLocal || busy) return;
-    busy = 'update';
-    try {
-      const action = updateConnectionRequested({
-        id: device.id,
-        label: device.label,
-        accent: null,
-        deviceIcon: nextDeviceIcon,
-      });
-      appStore.dispatch(action);
-      await action.promise;
-    } catch {
-      localDeviceIcon = savedDeviceIcon;
-      const { toast } = await import('$lib/components/ui/toast');
-      toast.error(m.settings_devices_update_error());
-    } finally {
-      busy = null;
-    }
+    appStore.dispatch(
+      connectionWorkflowRequested(consumerId, {
+        kind: 'localIcon',
+        params: {
+          id: device.id,
+          label: device.label,
+          accent: null,
+          deviceIcon: nextDeviceIcon,
+        },
+      }),
+    );
   }
 
   // Any change of the switch invalidates the removal prompt and an earlier
@@ -395,7 +441,7 @@
     void updateDevice();
   }
 
-  async function updateDevice(confirmedFingerprint?: string, confirmedSecretFingerprint?: string) {
+  function updateDevice(confirmedFingerprint?: string, confirmedSecretFingerprint?: string) {
     if (editInvalid || busy) return;
     if (savedPushToCloud && !pushToCloud && !cloudRemovalConfirmed) {
       cloudRemovalPending = true;
@@ -404,105 +450,40 @@
     // Captured up front: the connections broadcast can refresh `device`
     // before the update promise settles.
     const enableSyncAfterUpdate = !savedPushToCloud && pushToCloud && !syncEnabled;
-    busy = 'update';
-    feedbackOperation = 'update';
-    feedback = { kind: 'progress', message: m.settings_devices_updating_label() };
-    pendingFingerprint = null;
-    try {
-      const token = secret.trim();
-      if (token) {
-        feedback = { kind: 'progress', message: m.settings_devices_replacingSecret_label() };
-        const rotateAction = rotateConnectionSecretRequested({
-          id: device.id,
-          token,
-          ...(confirmedSecretFingerprint
-            ? { confirmedFingerprint: confirmedSecretFingerprint }
-            : {}),
-        });
-        appStore.dispatch(rotateAction);
-        const rotateResult = await rotateAction.promise;
-        if (rotateResult.status === 'fingerprint-confirmation-required') {
-          pendingFingerprint = {
-            operation: 'secret',
-            expected: rotateResult.expectedFingerprint,
-            actual: rotateResult.actualFingerprint,
-          };
-          feedback = { kind: 'error', message: blockedMessage(rotateResult) };
-          return;
-        }
-        if (rotateResult.status !== 'updated') {
-          feedback = { kind: 'error', message: blockedMessage(rotateResult) };
-          return;
-        }
-        secret = '';
-        feedback = { kind: 'progress', message: m.settings_devices_updating_label() };
-      }
-      const action = updateConnectionRequested(updateParams(confirmedFingerprint));
-      appStore.dispatch(action);
-      const result = await action.promise;
-      if (result.status === 'updated') {
-        if (enableSyncAfterUpdate) {
-          // Re-including a record only reaches the keychain once the
-          // machine-global sync pref is on; enable it after the update
-          // succeeded so a rejected edit leaves no machine-global side effect.
-          feedback = { kind: 'progress', message: m.settings_devices_enablingSync_label() };
-          try {
-            const syncAction = setKeychainSyncEnabledRequested(true);
-            appStore.dispatch(syncAction);
-            await syncAction.promise;
-          } catch {
-            feedback = { kind: 'error', message: m.settings_devices_enableSync_error() };
-            return;
-          }
-        }
-        closePanel();
-      } else if (result.status === 'secret-unavailable') {
-        openEditForSecretRecovery();
-      } else if (result.status === 'fingerprint-confirmation-required') {
-        pendingFingerprint = {
-          operation: 'update',
-          expected: result.expectedFingerprint,
-          actual: result.actualFingerprint,
-        };
-        feedback = { kind: 'error', message: blockedMessage(result) };
-      } else {
-        feedback = { kind: 'error', message: blockedMessage(result) };
-      }
-    } catch {
-      feedback = { kind: 'error', message: m.settings_devices_update_error() };
-    } finally {
-      busy = null;
-    }
+    const token = secret.trim();
+    appStore.dispatch(
+      connectionWorkflowRequested(consumerId, {
+        kind: 'save',
+        params: updateParams(confirmedFingerprint),
+        enableSync: enableSyncAfterUpdate,
+        ...(token
+          ? {
+              secret: {
+                id: device.id,
+                token,
+                ...(confirmedSecretFingerprint
+                  ? { confirmedFingerprint: confirmedSecretFingerprint }
+                  : {}),
+              },
+            }
+          : {}),
+      }),
+    );
   }
 
-  async function testDevice() {
+  function testDevice() {
     if (hostInvalid || portInvalid || busy) return;
-    busy = 'test';
-    feedbackOperation = 'test';
-    pendingFingerprint = null;
-    feedback = { kind: 'progress', message: m.settings_devices_testing_label() };
-    try {
-      const action = testConnectionRequested({
-        id: device.id,
-        host: trimmedHost,
-        port: portNumber,
-        ...(secret.trim() ? { token: secret.trim() } : {}),
-      });
-      appStore.dispatch(action);
-      const result = await action.promise;
-      if (result.status === 'secret-unavailable') {
-        openEditForSecretRecovery();
-      } else {
-        feedback =
-          result.status === 'success'
-            ? { kind: 'success', message: m.settings_devices_testSuccess_label() }
-            : { kind: 'error', message: blockedMessage(result) };
-      }
-    } catch {
-      feedback = { kind: 'error', message: m.settings_devices_testFailed_error() };
-    } finally {
-      busy = null;
-    }
+    appStore.dispatch(
+      connectionWorkflowRequested(consumerId, {
+        kind: 'test',
+        params: {
+          id: device.id,
+          host: trimmedHost,
+          port: portNumber,
+          ...(secret.trim() ? { token: secret.trim() } : {}),
+        },
+      }),
+    );
   }
 
   function confirmFingerprint() {
@@ -574,37 +555,32 @@
     </p>
   {/if}
 
-  {#if device.isLocal}
-    <div
-      class="px-4 pb-4 sm:px-5"
-      hidden={$currentConnectionId$ !== device.id && panelMode !== 'edit'}
-    >
-      <WebSocketApiSettings expanded={panelMode === 'edit'} onEnabled={() => onOpenPanel('edit')}>
-        <SettingsFieldRow id="local-device-icon" label={m.settings_devices_icon_label()}>
-          {#snippet control()}
-            <DeviceIconPicker
-              record={device}
-              bind:value={localDeviceIcon}
-              disabled={busy !== null}
-              portal={true}
-              onchange={(value) => void updateLocalDeviceIcon(value)}
-            />
-          {/snippet}
-        </SettingsFieldRow>
-      </WebSocketApiSettings>
+  {#if device.isLocal && panelMode === 'edit'}
+    <div class="px-4 pb-4 sm:px-5">
+      <SettingsFieldRow id="local-device-icon" label={m.settings_devices_icon_label()}>
+        {#snippet control()}
+          <DeviceIconPicker
+            record={device}
+            bind:value={localDeviceIcon}
+            disabled={busy !== null}
+            portal={true}
+            onchange={(value) => void updateLocalDeviceIcon(value)}
+          />
+        {/snippet}
+      </SettingsFieldRow>
     </div>
   {/if}
 
   {#if panelMode === 'edit' && !device.isLocal}
     <form
-      class="space-y-4 border-t border-border bg-muted/20 px-4 py-4 sm:px-5"
+      class="@container space-y-4 border-t border-border bg-muted/20 px-4 py-4 sm:px-5"
       aria-label={m.settings_devices_editForm_ariaLabel({ name: displayName })}
       onsubmit={(event) => {
         event.preventDefault();
         void updateDevice();
       }}
     >
-      <div class="grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(12rem,1fr)]">
+      <div class="grid gap-4 @2xl:grid-cols-[minmax(0,2fr)_auto]">
         <div class="space-y-3">
           <div class="space-y-1">
             <Label for={`device-${device.id}-edit-name`}>{m.settings_devices_name_label()}</Label>
@@ -662,18 +638,20 @@
             />
           </div>
         </div>
-        <div class="space-y-4">
-          <fieldset class="space-y-1" disabled={busy !== null}>
-            <legend class="type-body font-medium text-foreground"
-              >{m.settings_devices_accent_label()}</legend
-            >
-            <div class="flex flex-wrap gap-1">
+        <div class="flex min-w-0 items-center gap-2 self-start">
+          <fieldset class="flex min-w-0 items-center gap-2" disabled={busy !== null}>
+            <legend class="sr-only">{m.settings_devices_accent_label()}</legend>
+            <span class="shrink-0 type-body font-medium text-foreground" aria-hidden="true">
+              {m.settings_devices_accent_label()}
+            </span>
+            <div class="-m-1 flex min-w-0 items-center overflow-x-auto p-1 @sm:gap-1">
               {#each accentOptions as option}
                 <Button
                   type="button"
                   variant="plain"
+                  truncateLabel={false}
                   class={cn(
-                    'flex size-7 cursor-pointer items-center justify-center rounded-full border border-transparent bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                    'flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full border border-transparent bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 @sm:size-7',
                     option === accent
                       ? option === null
                         ? 'bg-muted/50'
@@ -685,6 +663,8 @@
                     : m.settings_devices_accentOption_ariaLabel({ color: accentLabel(option) })}
                   aria-pressed={option === accent}
                   onclick={() => (accent = option)}
+                  onfocus={(event) =>
+                    event.currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest' })}
                 >
                   {#if option === null}
                     <span
@@ -760,6 +740,12 @@
           {/if}
         </dl>
         <div class="space-y-3">
+          <RemoteTunnelSettings
+            deviceId={device.id}
+            connected={$connectedIds$.includes(device.id)}
+            disabled={busy !== null || $openWorkflow$?.phase === 'running'}
+            onConnect={connectDevice}
+          />
           <SettingsFieldRow
             id={`device-${device.id}-detect-hosts-field`}
             compact
@@ -837,7 +823,10 @@
             </div>
           </dl>
           <div class="flex justify-end gap-2">
-            <Button variant="ghost-light" size="sm" onclick={() => (pendingFingerprint = null)}
+            <Button
+              variant="ghost-light"
+              size="sm"
+              onclick={() => appStore.dispatch(connectionWorkflowCleared(consumerId))}
               >{m.settings_devices_cancel_label()}</Button
             >
             <Button size="sm" onclick={confirmFingerprint}

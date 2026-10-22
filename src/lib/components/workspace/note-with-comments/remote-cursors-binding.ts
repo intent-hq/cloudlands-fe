@@ -31,6 +31,7 @@ import type {
   NotePresenceSession,
   RemoteNoteViewer,
 } from '$features/notes/note-presence/note-presence-service';
+import { observeOwnedNotePresenceSession } from '$features/notes/note-presence/note-presence-service';
 import type { NoteViewerCursor } from '$features/notes/note-presence/note-presence.client';
 
 export interface RemoteCursorsBindingOptions {
@@ -185,5 +186,26 @@ export function bindRemoteCursors(options: RemoteCursorsBindingOptions): () => v
       setRemoteCursors(editor.view, []);
       editor.unregisterPlugin(remoteCursorsPluginKey);
     }
+  };
+}
+
+export function bindRemoteCursorsToOwnedPresence(
+  options: Omit<RemoteCursorsBindingOptions, 'session'> & {
+    workspaceId: string;
+    noteId: string;
+  },
+): () => void {
+  let unbind: (() => void) | undefined;
+  const stopObserving = observeOwnedNotePresenceSession(
+    options.workspaceId,
+    options.noteId,
+    (session) => {
+      unbind?.();
+      unbind = session ? bindRemoteCursors({ ...options, session }) : undefined;
+    },
+  );
+  return () => {
+    stopObserving();
+    unbind?.();
   };
 }

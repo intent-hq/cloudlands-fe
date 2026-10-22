@@ -78,6 +78,7 @@ export function createTranscriptQuery(
   let requestId = 0;
 
   const cancel = () => {
+    ++requestId;
     if (timeout) {
       clearTimeout(timeout);
       timeout = null;
@@ -87,7 +88,7 @@ export function createTranscriptQuery(
   return {
     query(term, preferWorkspaceId, workspaceItems) {
       cancel();
-      const id = ++requestId;
+      const id = requestId;
       onUpdate({ loading: true });
       timeout = setTimeout(async () => {
         const items = await fetchTranscriptMatches(term, preferWorkspaceId, workspaceItems);
@@ -98,7 +99,6 @@ export function createTranscriptQuery(
     },
     clear() {
       cancel();
-      ++requestId;
       onUpdate({ items: [], loading: false });
     },
     cancel,

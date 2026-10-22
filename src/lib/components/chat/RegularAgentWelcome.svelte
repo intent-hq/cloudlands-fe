@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { writable } from 'svelte/store';
+  import { selectContextSpecialists } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
   import Fa from 'svelte-fa';
   import { faGear, faChevronDown, faPlus } from '@fortawesome/free-solid-svg-icons';
   import SpecialistOptions from './SpecialistOptions.svelte';
@@ -6,11 +8,12 @@
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import type { Specialist } from '$lib/constants/specialists';
   import {
-    selectSpecialists,
     selectUserOverrides,
     filterPickableSpecialists,
   } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
+  import { selectWorkspaceInitializerRecentSpecialistIds } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+  import { sortSpecialistsByRecency } from '$store/renderer/slices/workspace-initializer/utils/recent-specialists';
   import type { AgentSession } from '$shared/types/agent-session';
   import { isPendingAgentSession } from '$shared/types/agent-session';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
@@ -23,12 +26,15 @@
   interface Props {
     onSpecialistChange?: (specialistId: string | null) => void;
     session?: AgentSession | null;
+    workspaceId?: string;
   }
 
-  let { onSpecialistChange, session }: Props = $props();
+  let { onSpecialistChange, session, workspaceId }: Props = $props();
 
   // Reactive store subscriptions for Svelte reactivity
-  const specialists$ = selectSpecialists();
+  const workspaceIdStore = writable(workspaceId ?? '');
+  $effect(() => workspaceIdStore.set(workspaceId ?? ''));
+  const specialists$ = selectContextSpecialists(workspaceIdStore);
   const userOverrides$ = selectUserOverrides();
   $effect(() => {
     void $userOverrides$;
@@ -55,7 +61,15 @@
   let showFullPrompt = $state(false);
 
   const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();
-  const customSpecialists = $derived(filterPickableSpecialists($specialists$, $isGitHubAuth$));
+  // Recently used specialists first (most recent first), then catalog order,
+  // matching the New workspace and proposal card pickers.
+  const recentSpecialistIds$ = selectWorkspaceInitializerRecentSpecialistIds();
+  const customSpecialists = $derived(
+    sortSpecialistsByRecency(
+      filterPickableSpecialists($specialists$, $isGitHubAuth$),
+      $recentSpecialistIds$,
+    ),
+  );
 
   // Dropdown state for the specialist picker
   let pickerOpen = $state(false);

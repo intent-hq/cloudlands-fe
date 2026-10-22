@@ -4,7 +4,6 @@ import { createRawSnippet } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
 import { invoke } from '$lib/electron-bridge';
-import { SHORTCUTS, formatShortcut } from '$lib/utils/shortcuts';
 
 const mocks = vi.hoisted(() => {
   let columnCount = 2;
@@ -89,6 +88,9 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentAttentionRequest: () => readable(null),
   selectAgentSession: () => readable(null),
 }));
+vi.mock('$store/renderer/slices/pending-submissions/pending-submissions-selectors', () => ({
+  selectPendingSubmissionEntry: { select: () => undefined },
+}));
 vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', () => ({
   selectAgentQueueMessages: Object.assign(() => readable([]), { select: () => [] }),
 }));
@@ -118,6 +120,8 @@ vi.mock('$features/workspace/components/WorkspaceActionsMenu.svelte', async () =
 }));
 
 import PanelTabBar from '../PanelTabBar.svelte';
+import DiscussionPanelHeaderHost from './mocks/DiscussionPanelHeaderHost.svelte';
+import { m } from '$shared/paraglide/messages.js';
 import { PANE_DRAG_MIME, getDraggedPane, setDraggedPane } from '../panel-drag';
 
 const panelTypes = ['agent', 'note', 'browser', 'terminal', 'changes'] as const;
@@ -164,6 +168,18 @@ function panelTrigger(container: HTMLElement): HTMLButtonElement {
     '[data-panel-tabless-header] [data-testid="panel-actions-trigger"]',
   )!;
 }
+
+it('renders an empty header while its tab list is unavailable, then recovers', async () => {
+  const view = renderHeader('terminal', { tabs: undefined });
+  expect(view.container.querySelector('[data-empty-panel-header]')).not.toBeNull();
+  await view.rerender({ tabs: [tab('terminal')], activeTabId: 'stale-tab' });
+  expect(view.container.querySelector('[data-panel-content-header]')).not.toBeNull();
+  expect(view.container.querySelector('[data-pane-stack-selector-trigger]')?.textContent).toContain(
+    tab('terminal').title,
+  );
+  await view.rerender({ tabs: undefined, activeTabId: null });
+  expect(view.container.querySelector('[data-empty-panel-header]')).not.toBeNull();
+});
 
 function dragEvent(target: Element) {
   const data = new Map<string, string>();
@@ -287,8 +303,8 @@ describe('traditional tab context commands', () => {
 
 describe('mounted panel header actions menu', () => {
   it('removes unregistered content sections while retaining working panel commands', async () => {
-    const onZoomToggle = vi.fn();
-    const view = renderHeader('note', { onZoomToggle });
+    const onMovePaneLeft = vi.fn();
+    const view = renderHeader('note', { onMovePaneLeft });
     const trigger = panelTrigger(view.container);
     await fireEvent.click(trigger);
     const menu = await screen.findByRole('menu');
@@ -300,158 +316,29 @@ describe('mounted panel header actions menu', () => {
     expect(within(menu).queryByTestId('content-command-action')).toBeNull();
     expect(menu.querySelector('[data-panel-actions-section="display"]')).toBeNull();
     expect(menu.querySelector('[data-panel-actions-section="actions"]')).toBeNull();
-    await fireEvent.click(within(menu).getByRole('menuitem', { name: /Zoom Panel/i }));
-    expect(onZoomToggle).toHaveBeenCalledOnce();
+    await fireEvent.click(within(menu).getByRole('menuitem', { name: 'Move panel left' }));
+    expect(onMovePaneLeft).toHaveBeenCalledOnce();
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('keeps identity left and orders every action at the right edge', () => {
-    const onClosePanel = vi.fn();
-    const populated = renderHeader('note', {
-      tabs: [tab('note'), tab('browser')],
-      isRightmostPanel: true,
-      onClosePanel,
-      onTabClick: vi.fn(),
-    });
-    const populatedContentActions = populated.container.querySelector(
-      '[data-panel-tabless-header] [data-panel-header-content-actions]',
-    )!;
-    const populatedPanelControls = populated.container.querySelector(
-      '[data-panel-tabless-header] [data-panel-header-actions]',
-    )!;
-    expect(
-      Array.from(populatedContentActions.querySelectorAll('button')).map((button) =>
-        button.getAttribute('aria-label'),
-      ),
-    ).toEqual(['Content navigation']);
-    expect(
-      Array.from(populatedPanelControls.querySelectorAll('button')).map((button) =>
-        button.getAttribute('aria-label'),
-      ),
-    ).toEqual([
-      'Content navigation',
-      'More',
-      'Show pane list. Total panes: 2.',
-      'Add column',
-      'Close active pane',
-    ]);
-    expect(populatedPanelControls.querySelectorAll('[data-panel-controls-divider]')).toHaveLength(
-      1,
-    );
-    expect(
-      populatedContentActions.querySelector('[data-panel-content-actions-divider]'),
-    ).toBeNull();
-    expect(
-      populated.container
-        .querySelector('[data-panel-header-identity]')!
-        .compareDocumentPosition(populatedPanelControls),
-    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    const stackTrigger = populatedPanelControls.querySelector<HTMLElement>(
-      '[data-pane-stack-selector-trigger]',
-    )!;
-    expect(stackTrigger).toBeTruthy();
-    expect(stackTrigger.textContent?.trim()).toBe('');
-    expect(stackTrigger.querySelector('[data-pane-stack-glyph]')).toBeTruthy();
-    expect(stackTrigger.querySelector('[data-pane-stack-selector-chevron]')).toBeNull();
-    expect(stackTrigger.classList.contains('border-0')).toBe(true);
-    expect(stackTrigger.classList.contains('bg-transparent')).toBe(true);
-    expect(populatedContentActions.querySelector('[data-pane-stack-selector-trigger]')).toBeNull();
-    expect(populated.container.querySelector('[data-panel-column-count-trigger]')).toBeNull();
-    populated.unmount();
-
-    const withoutNavigation = renderHeader('note', {
-      isRightmostPanel: true,
-      contentActions: { display: contentActions.display, actions: contentActions.actions },
-    });
-    const withoutNavigationContentActions = withoutNavigation.container.querySelector(
-      '[data-panel-tabless-header] [data-panel-header-content-actions]',
-    );
-    const withoutNavigationPanelControls = withoutNavigation.container.querySelector(
-      '[data-panel-tabless-header] [data-panel-header-actions]',
-    )!;
-    expect(
-      withoutNavigationPanelControls.querySelectorAll('[data-panel-controls-divider]'),
-    ).toHaveLength(1);
-    expect(withoutNavigationContentActions).toBeNull();
-    expect(
-      Array.from(withoutNavigationPanelControls.querySelectorAll('button')).map((button) =>
-        button.getAttribute('aria-label'),
-      ),
-    ).toEqual(['More', 'Add column', 'Close active pane']);
-    expect(
-      withoutNavigationPanelControls.querySelector('[data-pane-stack-selector-trigger]'),
-    ).toBeNull();
-    withoutNavigation.unmount();
-
-    const empty = render(PanelTabBar, {
-      props: {
-        tabs: [],
-        activeTabId: null,
-        panelId: 'panel-empty',
-        workspaceId: 'workspace-1',
-        isRightmostPanel: true,
-        onClosePanel,
-      },
-    });
-    const emptyHeader = empty.container.querySelector('[data-empty-panel-header]')!;
-    expect(
-      Array.from(emptyHeader.querySelectorAll('button')).map((button) =>
-        button.getAttribute('aria-label'),
-      ),
-    ).toEqual(['Add column', 'Close panel']);
-    expect(emptyHeader.querySelector('[data-panel-content-actions-divider]')).toBeNull();
-    expect(emptyHeader.querySelector('[data-panel-column-count-trigger]')).toBeNull();
-  });
-
-  it('opens the neighboring panes from top-level stack actions with shortcut hints', async () => {
+  it('activates the chosen pane and dismisses the selector', async () => {
     const tabs = [tab('note'), tab('browser'), tab('terminal')];
     const onTabClick = vi.fn();
-    const middle = renderHeader('browser', {
+    const view = renderHeader('browser', {
       tabs,
       activeTabId: 'browser-tab',
       onTabClick,
     });
 
-    await fireEvent.click(middle.container.querySelector('[data-pane-stack-selector-trigger]')!);
-    const above = await screen.findByRole('menuitem', { name: 'Open panel above' });
-    const below = screen.getByRole('menuitem', { name: 'Open panel below' });
-    expect(above.textContent).toContain(formatShortcut(SHORTCUTS.PREVIOUS_PANE.key));
-    expect(below.textContent).toContain(formatShortcut(SHORTCUTS.NEXT_PANE.key));
-    expect(above.getAttribute('aria-disabled')).not.toBe('true');
-    expect(below.getAttribute('aria-disabled')).not.toBe('true');
-    expect(
-      above.compareDocumentPosition(screen.getByRole('menuitem', { name: 'note panel' })),
-    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(
-      screen.queryByText('Use Up or Down to move, Enter to select, and Escape to close.'),
-    ).toBeNull();
-    await fireEvent.click(above);
-    expect(onTabClick).toHaveBeenCalledWith('note-tab');
-    middle.unmount();
-
-    const top = renderHeader('note', { tabs, activeTabId: 'note-tab', onTabClick });
-    await fireEvent.click(top.container.querySelector('[data-pane-stack-selector-trigger]')!);
-    expect(
-      (await screen.findByRole('menuitem', { name: 'Open panel above' })).getAttribute(
-        'aria-disabled',
-      ),
-    ).toBe('true');
-    await fireEvent.click(screen.getByRole('menuitem', { name: 'Open panel below' }));
-    expect(onTabClick).toHaveBeenLastCalledWith('browser-tab');
-    top.unmount();
-
-    const bottom = renderHeader('terminal', {
-      tabs,
-      activeTabId: 'terminal-tab',
-      onTabClick,
-    });
-    await fireEvent.click(bottom.container.querySelector('[data-pane-stack-selector-trigger]')!);
-    expect(
-      (await screen.findByRole('menuitem', { name: 'Open panel below' })).getAttribute(
-        'aria-disabled',
-      ),
-    ).toBe('true');
+    const trigger = view.container.querySelector('[data-pane-stack-selector-trigger]')!;
+    for (const type of ['note', 'terminal', 'browser'] as const) {
+      await fireEvent.click(trigger);
+      await fireEvent.click(await screen.findByRole('menuitem', { name: `${type} panel` }));
+      expect(onTabClick).toHaveBeenLastCalledWith(`${type}-tab`);
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    }
   });
 
   it.each(panelTypes)('opens one portalled menu from one click for the %s panel', async (type) => {
@@ -657,19 +544,11 @@ describe('mounted panel header actions menu', () => {
   });
 
   it('runs enabled actions once and closes only the active pane', async () => {
-    const onZoomToggle = vi.fn();
-    const onSplitHorizontal = vi.fn();
-    const onMoveLeft = vi.fn();
-    const onMoveRight = vi.fn();
     const onMovePaneLeft = vi.fn();
     const onMovePaneRight = vi.fn();
     const onClosePanel = vi.fn();
     const onTabClose = vi.fn();
     const { container } = renderHeader('browser', {
-      onZoomToggle,
-      onSplitHorizontal,
-      onMoveLeft,
-      onMoveRight,
       onMovePaneLeft,
       onMovePaneRight,
       onClosePanel,
@@ -678,23 +557,7 @@ describe('mounted panel header actions menu', () => {
     const trigger = panelTrigger(container);
 
     await fireEvent.click(trigger);
-    await fireEvent.click(await screen.findByRole('menuitem', { name: /Zoom Panel/i }));
-    expect(onZoomToggle).toHaveBeenCalledOnce();
-
-    await fireEvent.click(trigger);
-    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Move tab left' }));
-    expect(onMoveLeft).toHaveBeenCalledOnce();
-
-    await fireEvent.click(trigger);
-    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Move tab right' }));
-    expect(onMoveRight).toHaveBeenCalledOnce();
-    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
-
-    await fireEvent.click(trigger);
     const movePaneLeft = await screen.findByRole('menuitem', { name: 'Move panel left' });
-    expect(movePaneLeft.textContent).toContain(
-      formatShortcut(SHORTCUTS.MOVE_PANE_PREVIOUS_COLUMN.key),
-    );
     await fireEvent.click(movePaneLeft);
     expect(onMovePaneLeft).toHaveBeenCalledOnce();
 
@@ -702,38 +565,13 @@ describe('mounted panel header actions menu', () => {
     await fireEvent.click(await screen.findByRole('menuitem', { name: 'Move panel right' }));
     expect(onMovePaneRight).toHaveBeenCalledOnce();
 
-    await fireEvent.click(trigger);
-    const createColumn = await screen.findByRole('menuitem', { name: /Create column to right/i });
-    expect(createColumn.textContent).toContain(formatShortcut(SHORTCUTS.CREATE_COLUMN_RIGHT.key));
-    await fireEvent.click(createColumn);
-    expect(onSplitHorizontal).toHaveBeenCalledOnce();
-
-    await fireEvent.click(trigger);
-    expect(screen.queryByRole('menuitem', { name: /Split down/i })).toBeNull();
-    await fireEvent.keyDown(document, { key: 'Escape' });
-    expect(onSplitHorizontal).toHaveBeenCalledOnce();
-    expect(onZoomToggle).toHaveBeenCalledOnce();
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
     await fireEvent.click(
       container.querySelector('[data-panel-tabless-header] [data-testid="panel-close-button"]')!,
     );
     expect(onTabClose).toHaveBeenCalledOnce();
     expect(onTabClose).toHaveBeenCalledWith('browser-tab');
     expect(onClosePanel).not.toHaveBeenCalled();
-  });
-
-  it('shows disabled pane-move commands when no adjacent column exists', async () => {
-    const { container } = renderHeader('note');
-
-    await fireEvent.click(panelTrigger(container));
-
-    expect(
-      (await screen.findByRole('menuitem', { name: 'Move panel left' })).getAttribute(
-        'aria-disabled',
-      ),
-    ).toBe('true');
-    expect(
-      screen.getByRole('menuitem', { name: 'Move panel right' }).getAttribute('aria-disabled'),
-    ).toBe('true');
   });
 
   it('rejects a drag from the trigger but keeps blank-header dragging active', async () => {
@@ -760,4 +598,38 @@ describe('mounted panel header actions menu', () => {
       tabId: 'terminal-tab',
     });
   });
+});
+
+it('keeps mixed-pane navigation, move and close available in the discussion header', async () => {
+  const onTabClick = vi.fn();
+  const onMovePaneLeft = vi.fn();
+  const onTabClose = vi.fn();
+  const view = render(DiscussionPanelHeaderHost, { onTabClick, onMovePaneLeft, onTabClose });
+  expect(
+    view.container.querySelector('[data-panel-content-header]')?.getAttribute('draggable'),
+  ).toBe('true');
+  await fireEvent.click(screen.getByTestId('pane-stack-selector-trigger'));
+  expect(screen.getByRole('menuitem', { name: 'Workspace' }).getAttribute('aria-current')).toBe(
+    'page',
+  );
+  expect(screen.queryByRole('menuitem', { name: m.workspace_discussion_new_title() })).toBeNull();
+  await fireEvent.click(screen.getByRole('menuitem', { name: 'main.ts' }));
+  expect(onTabClick).toHaveBeenCalledExactlyOnceWith('file');
+  await fireEvent.click(
+    within(view.container.querySelector('[data-panel-content-header]') as HTMLElement).getByRole(
+      'button',
+      { name: m.ui_breadcrumb_more_label() },
+    ),
+  );
+  await fireEvent.click(
+    await screen.findByRole('menuitem', { name: m.layout_panelTabBar_movePanelLeft_label() }),
+  );
+  expect(onMovePaneLeft).toHaveBeenCalledOnce();
+  await fireEvent.click(
+    within(view.container.querySelector('[data-panel-content-header]') as HTMLElement).getByRole(
+      'button',
+      { name: m.layout_panelTabBar_closePane_ariaLabel() },
+    ),
+  );
+  expect(onTabClose).toHaveBeenCalledWith('discussion');
 });

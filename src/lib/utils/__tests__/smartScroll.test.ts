@@ -3,6 +3,7 @@ import {
   animateScrollTo,
   beforeFollowBottomMutation,
   captureScrollAnchor,
+  canRestoreScrollAnchor,
   followBottom,
   followToBottom,
   hasActiveFollowBottomMutation,
@@ -65,6 +66,40 @@ describe('animateScrollTo', () => {
     expect(rafCallbacks).toHaveLength(0);
     expect(onComplete).toHaveBeenCalledOnce();
     expect(onComplete).toHaveBeenCalledWith(container);
+  });
+
+  it('tracks a destination that moves during the animation', () => {
+    const container = makeContainer(300);
+    let destination = 100;
+    const resolveDestination = vi.fn(() => destination);
+    const onComplete = vi.fn();
+    animateScrollTo(() => container, resolveDestination, 150, onComplete);
+
+    runFrames(75);
+    expect(container.scrollTop).toBeGreaterThan(100);
+    expect(container.scrollTop).toBeLessThan(300);
+    // A lazy row above the destination contracts while navigation owns scroll.
+    destination = 40;
+    runFrames(150);
+    expect(container.scrollTop).toBe(40);
+    expect(onComplete).toHaveBeenCalledExactlyOnceWith(container);
+    expect(rafCallbacks).toHaveLength(0);
+  });
+
+  it('does not resolve a moving destination after navigation is superseded', () => {
+    let current: HTMLElement | null = makeContainer(300);
+    const container = current;
+    const resolveDestination = vi.fn(() => 100);
+    animateScrollTo(() => current, resolveDestination, 150);
+    runFrames(75);
+    const readingPosition = container.scrollTop;
+    resolveDestination.mockClear();
+
+    current = null;
+    runFrames(150);
+    expect(resolveDestination).not.toHaveBeenCalled();
+    expect(container.scrollTop).toBe(readingPosition);
+    expect(rafCallbacks).toHaveLength(0);
   });
 
   it('stops cleanly when the container becomes null mid-animation', () => {
@@ -210,6 +245,89 @@ describe('captureScrollAnchor / restoreScrollAnchor', () => {
 
     expect(() => restoreScrollAnchor(container, anchor)).not.toThrow();
     expect(container.scrollTop).toBe(500);
+  });
+
+  it('re-resolves a replaced anchor row by its message id', () => {
+    // A prepended older row can regroup the anchored row into a new turn,
+    // which re-creates its element under the same data-message-id.
+    const container = makeScrollContainer({
+      scrollTop: 500,
+      scrollHeight: 2000,
+      clientHeight: 400,
+    });
+    const original = addMessage(container, 'reading', 20);
+    const anchor = captureScrollAnchor(container);
+    expect(anchor.element).toBe(original);
+
+    original.remove();
+    // The replacement sits 62px lower after the prepend.
+    addMessage(container, 'reading', 82);
+    restoreScrollAnchor(container, anchor);
+    expect(container.scrollTop).toBe(562);
+  });
+
+  it('follows the first visible message when the anchored turn wrapper is replaced', () => {
+    const container = makeScrollContainer({
+      scrollTop: 500,
+      scrollHeight: 2000,
+      clientHeight: 400,
+    });
+    const turn = document.createElement('div');
+    turn.setAttribute('data-lazy-turn-key', 'turn-a');
+    turn.getBoundingClientRect = () =>
+      ({ top: 10, bottom: 90, left: 0, right: 0, width: 0, height: 80 }) as DOMRect;
+    container.appendChild(turn);
+    addMessage(turn, 'reading', 20);
+    const anchor = captureScrollAnchor(container);
+    expect(anchor.element).toBe(turn);
+
+    // Regrouping re-keys the turn: wrapper and row are both re-created, and
+    // the row lands 62px lower.
+    turn.remove();
+    const regrouped = document.createElement('div');
+    regrouped.setAttribute('data-lazy-turn-key', 'turn-b');
+    container.appendChild(regrouped);
+    addMessage(regrouped, 'reading', 82);
+    restoreScrollAnchor(container, anchor);
+    expect(container.scrollTop).toBe(562);
+  });
+
+  it('prefers the message row over a connected wrapper reused for other content', () => {
+    // Index-keyed turn wrappers stay connected across a prepend but render a
+    // different turn; the reader's message row is the reliable reference.
+    const container = makeScrollContainer({
+      scrollTop: 500,
+      scrollHeight: 2000,
+      clientHeight: 400,
+    });
+    const wrapper = document.createElement('div');
+    wrapper.setAttribute('data-lazy-turn-key', 'group-0-turn-1');
+    wrapper.getBoundingClientRect = () =>
+      ({ top: 10, bottom: 90, left: 0, right: 0, width: 0, height: 80 }) as DOMRect;
+    container.appendChild(wrapper);
+    const row = addMessage(wrapper, 'reading', 20);
+    const anchor = captureScrollAnchor(container);
+    expect(anchor.element).toBe(wrapper);
+
+    // The wrapper is unmoved but now holds an older turn; the row moved down.
+    row.remove();
+    addMessage(container, 'reading', 120);
+    expect(canRestoreScrollAnchor(container, anchor)).toBe(true);
+    restoreScrollAnchor(container, anchor);
+    expect(container.scrollTop).toBe(600);
+  });
+
+  it('reports no restorable target when neither the row nor the element is rendered', () => {
+    const container = makeScrollContainer({
+      scrollTop: 500,
+      scrollHeight: 2000,
+      clientHeight: 400,
+    });
+    const el = addMessage(container, 'gone', 20);
+    const anchor = captureScrollAnchor(container);
+    expect(canRestoreScrollAnchor(container, anchor)).toBe(true);
+    el.remove();
+    expect(canRestoreScrollAnchor(container, anchor)).toBe(false);
   });
 });
 

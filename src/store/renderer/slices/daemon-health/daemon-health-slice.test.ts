@@ -39,6 +39,7 @@ import type {
   SystemStatusWirePayload,
   UnslothStatusWirePayload,
 } from './daemon-health-types';
+import { CURRENT_PROTOCOL_VERSION } from '../../../../test/current-protocol-version';
 
 describe('daemonHealthReducer', () => {
   it('has the correct initial state', () => {
@@ -658,7 +659,7 @@ describe('daemonHealthReducer', () => {
         agentProcessCount: 2,
         fingerprint: 'abc123',
         hostname: 'studio.local',
-        protocolVersion: '2.0',
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
         host: {
           os: 'macos',
           arch: 'aarch64',
@@ -679,7 +680,8 @@ describe('daemonHealthReducer', () => {
         port: null,
         version: '0.1.0',
         buildCommit: '0123456789abcdef',
-        protocolVersion: '2.0',
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
+        protocolVersionText: CURRENT_PROTOCOL_VERSION,
         uptimeSeconds: 120,
         cpuPercent: 12.34,
         memoryBytes: 104857600,
@@ -699,12 +701,33 @@ describe('daemonHealthReducer', () => {
       expect(next.hostLocality).toBe('local');
     });
 
+    it('parses protocolVersion once, keeping only the wire text of a malformed one', () => {
+      const poll = (protocolVersion: unknown) =>
+        daemonHealthReducer(
+          { ...initialState, polling: true },
+          systemStatusSuccess(
+            {
+              ...collaboratorSystemStatusProjection,
+              protocolVersion,
+            } as unknown as SystemStatusWirePayload,
+            '2026-09-16T13:00:00.000Z',
+            0,
+          ),
+        ).stats;
+      expect(poll(' 16.0 ')?.protocolVersion).toBe('16.0');
+      // Malformed: no gate can use it, but the status panel still shows the text.
+      expect(poll('16-dev')?.protocolVersion).toBeUndefined();
+      expect(poll('16-dev')?.protocolVersionText).toBe('16-dev');
+      expect(poll(undefined)?.protocolVersion).toBeUndefined();
+      expect(poll(undefined)?.protocolVersionText).toBeUndefined();
+    });
+
     it('keeps counts and telemetry absent for the collaborator projection (intentd #1934)', () => {
       // Exactly the guest-safe key set a Collaborator caller receives — the
       // typed literal lives in a check-covered module so a re-required wire
       // field fails `pnpm run check`, not only this runtime test.
       const payload = collaboratorSystemStatusProjection;
-      // COLLABORATOR_STATUS_FIELDS / COLLABORATOR_STATUS_HOST_FIELDS @ 60de0618.
+      // COLLABORATOR_STATUS_FIELDS / COLLABORATOR_STATUS_HOST_FIELDS, including intent#6788.
       expect(Object.keys(payload).sort()).toEqual(
         [
           'running',
@@ -718,6 +741,7 @@ describe('daemonHealthReducer', () => {
           'tcAddress',
           'hostname',
           'prettyHostname',
+          'collaborationName',
           'host',
         ].sort(),
       );
@@ -740,6 +764,7 @@ describe('daemonHealthReducer', () => {
         version: payload.version,
         buildCommit: payload.buildCommit,
         protocolVersion: payload.protocolVersion,
+        protocolVersionText: payload.protocolVersion,
         hostname: payload.hostname,
         os: payload.host.os,
         arch: payload.host.arch,
@@ -771,7 +796,7 @@ describe('daemonHealthReducer', () => {
         // maxAgents, version, uptimeSeconds, cpuPercent, memoryBytes,
         // workspacesDisk* missing (older daemon)
         fingerprint: null,
-        protocolVersion: '2.0',
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
         host: {
           os: 'linux',
           arch: 'x86_64',
@@ -794,7 +819,8 @@ describe('daemonHealthReducer', () => {
         port: 9000,
         version: undefined,
         buildCommit: undefined,
-        protocolVersion: '2.0',
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
+        protocolVersionText: CURRENT_PROTOCOL_VERSION,
         uptimeSeconds: undefined,
         cpuPercent: undefined,
         memoryBytes: undefined,
@@ -815,7 +841,7 @@ describe('daemonHealthReducer', () => {
         transports: ['uds'],
         clients: 1,
         agents: 0,
-        protocolVersion: '2.0',
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
         host: { os: 'macos', arch: 'aarch64', hasDisplay: true },
       } as unknown as SystemStatusWirePayload;
       const state = { ...initialState, hostLocality: 'local' as const };
@@ -854,7 +880,7 @@ describe('daemonHealthReducer', () => {
         cpuPercent: 1.0,
         memoryBytes: 1024,
         fingerprint: 'abc123',
-        protocolVersion: '2.0',
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
         host: {
           os: 'macos',
           arch: 'aarch64',
@@ -879,7 +905,7 @@ describe('daemonHealthReducer', () => {
       port: null,
       clients: 1,
       agents: 0,
-      protocolVersion: '2.0',
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
       host: { os: 'macos', arch: 'aarch64', hasDisplay: true, locality: 'local' },
     };
     const failure = { kind: 'timeout' as const, failedAt: '2026-09-05T10:00:00.000Z' };
@@ -1135,7 +1161,7 @@ describe('daemonHealthReducer', () => {
       port: null,
       clients: 1,
       agents: 0,
-      protocolVersion: '2.0',
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
       host: { os: 'macos', arch: 'aarch64', hasDisplay: true, locality: 'local' },
     };
 

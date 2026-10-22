@@ -7,7 +7,8 @@
  * `script.list/create/remove/start/stop/restart/output/status/run` and (b)
  * PROTOCOL-shaped responses pass through verbatim.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { CURRENT_PROTOCOL_VERSION } from '../../../test/current-protocol-version';
 
 // FAKE transport only: the backend bridge is mocked so no request ever
 // reaches the user's real daemon.
@@ -41,15 +42,31 @@ const DEV_SCRIPT: ScriptWithState = {
 };
 
 describe('LiveScriptsClient (fake transport)', () => {
-  afterEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.spyOn(LiveScriptsClient.prototype, 'supportsLifecycle').mockResolvedValue(true);
+  });
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.restoreAllMocks();
+  });
 
   it('list forwards script.list with workspaceId and returns scripts verbatim', async () => {
-    mockedRequest.mockResolvedValueOnce({ scripts: [DEV_SCRIPT] });
+    mockedRequest
+      .mockResolvedValueOnce({
+        server: {
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
+          capabilities: { scriptActiveLists: 1 },
+        },
+      })
+      .mockResolvedValueOnce({ scripts: [DEV_SCRIPT] });
     const client = new LiveScriptsClient();
 
     const scripts = await client.list('ws-1');
 
-    expect(mockedRequest).toHaveBeenCalledWith('script.list', { workspaceId: 'ws-1' });
+    expect(mockedRequest).toHaveBeenCalledWith('script.list', {
+      workspaceId: 'ws-1',
+      archive: 'active',
+    });
     expect(scripts).toEqual([DEV_SCRIPT]);
   });
 
@@ -58,22 +75,32 @@ describe('LiveScriptsClient (fake transport)', () => {
       ...DEV_SCRIPT,
       runtime: { status: 'idle', restartCount: 0, previouslyRunning: true },
     };
-    mockedRequest.mockResolvedValueOnce({ scripts: [previouslyRunning] });
+    mockedRequest
+      .mockResolvedValueOnce({
+        server: {
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
+          capabilities: { scriptActiveLists: 1 },
+        },
+      })
+      .mockResolvedValueOnce({ scripts: [previouslyRunning] });
     const client = new LiveScriptsClient();
 
     const scripts = await client.list('ws-1');
 
-    expect(mockedRequest).toHaveBeenCalledWith('script.list', { workspaceId: 'ws-1' });
+    expect(mockedRequest).toHaveBeenCalledWith('script.list', {
+      workspaceId: 'ws-1',
+      archive: 'active',
+    });
     expect(scripts).toEqual([previouslyRunning]);
     expect(scripts[0].runtime.previouslyRunning).toBe(true);
   });
 
-  it('list folds malformed results and transport failures to an empty list', async () => {
+  it('list surfaces malformed results and transport failures', async () => {
     const client = new LiveScriptsClient();
     mockedRequest.mockResolvedValueOnce({});
-    expect(await client.list('ws-1')).toEqual([]);
+    await expect(client.list('ws-1')).rejects.toThrow();
     mockedRequest.mockRejectedValueOnce(new Error('uds boom'));
-    expect(await client.list('ws-1')).toEqual([]);
+    await expect(client.list('ws-1')).rejects.toThrow();
   });
 
   it('create sends the exact §5.8 request and surfaces the created definition', async () => {
@@ -89,7 +116,6 @@ describe('LiveScriptsClient (fake transport)', () => {
       env: { PORT: '3000' },
       category: 'dev',
       autoStart: true,
-      scriptId: 's-1',
     });
 
     expect(mockedRequest).toHaveBeenCalledWith('script.create', {
@@ -101,10 +127,41 @@ describe('LiveScriptsClient (fake transport)', () => {
       env: { PORT: '3000' },
       category: 'dev',
       autoStart: true,
-      scriptId: 's-1',
     });
     expect(result).toEqual({ success: true, id: 's-1', script: definition });
   });
+
+  it('refuses an ID upsert through the public creation API', async () => {
+    const client = new LiveScriptsClient();
+    const input = { name: 'renamed', command: 'true', mode: 'command' as const, scriptId: 's-1' };
+    // @ts-expect-error Existing IDs are forbidden even through a widened object.
+    const result = await client.create('ws-1', input);
+    expect(result.success).toBe(false);
+    expect(mockedRequest).not.toHaveBeenCalled();
+  });
+
+  it.each(['saved', 'oneOff'] as const)(
+    'forwards explicit %s purpose and returns the stored definition',
+    async (purpose) => {
+      const { runtime: _runtime, ...definition } = {
+        ...DEV_SCRIPT,
+        mode: 'command' as const,
+        autoStart: false,
+        purpose,
+      };
+      mockedRequest.mockResolvedValueOnce(definition);
+      const input = { name: 'test', command: 'pnpm test', mode: 'command' as const, purpose };
+      expect(await new LiveScriptsClient().create('ws-1', input)).toEqual({
+        success: true,
+        id: definition.id,
+        script: definition,
+      });
+      expect(mockedRequest).toHaveBeenCalledWith('script.create', {
+        workspaceId: 'ws-1',
+        ...input,
+      });
+    },
+  );
 
   it('create omits optional params and folds a daemon error to a failed result', async () => {
     const client = new LiveScriptsClient();
@@ -123,7 +180,6 @@ describe('LiveScriptsClient (fake transport)', () => {
   });
 
   it.each([
-    ['remove', 'script.remove'],
     ['start', 'script.start'],
     ['stop', 'script.stop'],
     ['restart', 'script.restart'],

@@ -10,7 +10,11 @@
 import { createLogger } from '$lib/utils/client-logger';
 import { describeUrlForLog } from '$shared/utils/sanitize-credentials';
 import { updateTabBrowserUrl } from '$store/renderer/slices/panel-layout/panel-layout-slice';
-import { consumeBrowserTabRecovery } from '$store/renderer/slices/tab-state/tab-state-slice';
+import {
+  consumeBrowserTabRecovery,
+  consumeBrowserTabNavigation,
+} from '$store/renderer/slices/tab-state/tab-state-slice';
+import type { BrowserTabNavigation } from '$store/renderer/slices/tab-state/tab-state-types';
 import { store as appStore } from '$store/renderer/store';
 
 const logger = createLogger('OffscreenWebview');
@@ -27,6 +31,8 @@ export type OffscreenWebviewEntry = {
    * the guest's actual URL.
    */
   desiredUrl?: string;
+  /** Main navigation observations and explicit renderer replacement commands. */
+  navigation?: BrowserTabNavigation;
   recoveryKey?: string;
   recoveryRequestId?: string;
   recoverGuest?: (tabId: string, requestId: string) => void;
@@ -47,6 +53,8 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
   // Track the guest's committed target independently of the last received prop
   // so dom-ready (or an unrelated action update) cannot replay the stale URL.
   let desiredUrl = entry.desiredUrl;
+  let initiatedDesiredUrl: string | undefined;
+  let handledNavigation: BrowserTabNavigation | undefined;
   // A recovery boots on a neutral document. Do not reopen the self-closing
   // page or persist about:blank while main waits to send the requested URL.
   let awaitingNavigation = Boolean(entry.recoveryKey);
@@ -77,12 +85,26 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
 
   const syncDesiredUrl = () => {
     const desired = desiredUrl;
+    const navigation = current.navigation;
+    if (navigation && navigation !== handledNavigation && navigation.url === desired) {
+      handledNavigation = navigation;
+      // An explicit replacement can retry the same saved URL after a failed
+      // main navigation. A notification only acknowledges an existing load.
+      initiatedDesiredUrl = navigation.kind === 'observed' ? desired : undefined;
+      appStore.dispatch(consumeBrowserTabNavigation(current.tabId, navigation));
+    }
     if (!domReady || !desired || awaitingNavigation) return;
+    // getURL can still report the old document after main started navigating.
+    // Do not replay a started load through unrelated prop updates or failure.
+    // An explicit replacement, a different URL or a new guest can retry.
+    if (desired === initiatedDesiredUrl) return;
     try {
       // Equal URLs mean the change came from our own did-navigate sync (or
       // the guest is already there) — never reload in that case.
       if (webview.getURL?.() === desired) return;
-      webview.loadURL?.(desired)?.catch((err) => {
+      const pending = webview.loadURL?.(desired);
+      initiatedDesiredUrl = desired;
+      pending?.catch((err) => {
         logger.warn('Failed to navigate offscreen tab to updated browserUrl', {
           tabId: current.tabId,
           error: err,
@@ -103,6 +125,7 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
     try {
       const webContentsId = webview.getWebContentsId();
       if (webContentsId !== lastRegisteredWebContentsId) {
+        if (lastRegisteredWebContentsId !== undefined) initiatedDesiredUrl = undefined;
         lastRegisteredWebContentsId = webContentsId;
         logger.info('Registering offscreen browser tab for CDP', {
           tabId: entry.tabId,
@@ -174,6 +197,7 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
       url: describeUrlForLog(current.url),
     });
     domReady = false;
+    initiatedDesiredUrl = undefined;
     lastRegisteredWebContentsId = undefined;
   };
 
@@ -193,7 +217,10 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
 
   return {
     update(next: OffscreenWebviewEntry) {
-      if (next.desiredUrl !== current.desiredUrl) desiredUrl = next.desiredUrl;
+      if (next.desiredUrl !== current.desiredUrl) {
+        desiredUrl = next.desiredUrl;
+        initiatedDesiredUrl = undefined;
+      }
       current = next;
       recoverIfRequested();
       syncDesiredUrl();

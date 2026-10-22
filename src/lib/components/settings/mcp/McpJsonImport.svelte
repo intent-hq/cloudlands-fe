@@ -69,8 +69,7 @@
       placeholder={/* i18n-ignore (JSON config example) */ `{"my-server": {"command": "npx", "args": ["-y", "@some/mcp-server"]}}`}
       rows={12}
       class="w-full px-3 py-2 type-body font-mono rounded-md border border-border
-             bg-background focus:outline-none focus:ring-2 focus:ring-primary-ink/30
-             focus:border-primary-ink resize-none"
+             bg-background resize-none"
     />
     <p class="type-body text-subtle mt-1">
       {m.settings_mcp_import_formatHint()}

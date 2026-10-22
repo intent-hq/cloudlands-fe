@@ -21,17 +21,11 @@ import {
 } from '../agent-session/agent-session-slice';
 import {
   selectCurrentChiefThread,
-  selectChiefThreadPreview,
   selectChiefThreads,
   selectReusableChiefThread,
-  selectShowArchivedWorkspaces,
 } from './sidebar-nav-selectors';
 import { CHIEF_WORKSPACE_ID } from './sidebar-nav-types';
-import {
-  CHIEF_PROMPT_V2_INTRODUCED_AT,
-  CHIEF_PROMPT_VERSION,
-  CHIEF_SPECIALIST_ID,
-} from '$shared/chief-agent-config';
+import { CHIEF_PROMPT_VERSION, CHIEF_SPECIALIST_ID } from '$shared/chief-agent-config';
 
 function message(
   id: string,
@@ -118,35 +112,8 @@ describe('sidebar nav Chief selectors', () => {
     expect(result.map((thread) => thread.agentId)).toEqual([newer.id, older.id]);
     expect(result[0]).toMatchObject({
       title: 'Newer task',
-      preview: 'Latest answer',
       isActive: true,
       messageCount: 2,
-    });
-  });
-
-  it('uses the workspace index for the latest Chief preview when present', () => {
-    const latest = session(
-      'agent-chief-indexed',
-      CHIEF_WORKSPACE_ID,
-      [message('m5', 'user', 'Indexed Chief thread', '2026-01-01T13:00:00.000Z')],
-      '2026-01-01T13:00:00.000Z',
-    );
-    const unindexed = session(
-      'agent-chief-unindexed',
-      CHIEF_WORKSPACE_ID,
-      [message('m6', 'user', 'Should not appear', '2026-01-01T14:00:00.000Z')],
-      '2026-01-01T14:00:00.000Z',
-    );
-
-    const result = selectChiefThreadPreview.select(
-      stateWithSessions([latest, unindexed], [String(latest.id)]),
-    );
-
-    expect(result).toMatchObject({
-      agentId: latest.id,
-      title: 'Indexed Chief thread',
-      preview: 'Indexed Chief thread',
-      messageCount: 1,
     });
   });
 
@@ -188,8 +155,7 @@ describe('sidebar nav Chief selectors', () => {
     expect(result).toEqual([
       expect.objectContaining({
         agentId: chief.id,
-        title: 'New chat with Intent',
-        preview: 'No messages yet.',
+        title: 'New chat',
         messageCount: 0,
       }),
     ]);
@@ -206,8 +172,7 @@ describe('sidebar nav Chief selectors', () => {
     expect(result).toEqual([
       expect.objectContaining({
         agentId: chief.id,
-        title: 'New chat with Intent',
-        preview: 'No messages yet.',
+        title: 'New chat',
         messageCount: 0,
       }),
     ]);
@@ -298,10 +263,12 @@ describe('sidebar nav Chief selectors', () => {
       }));
 
       try {
-        const normalizedSessions = await new LiveAgentsClient().list(CHIEF_WORKSPACE_ID);
+        const normalizedSessions = await new LiveAgentsClient().list(CHIEF_WORKSPACE_ID, {
+          scope: 'topLevel',
+        });
         const agentSessions = agentSessionReducer(
           agentSessionInitialState,
-          bulkUpsertSessions(normalizedSessions, { preserveExplicitRuntimeFlags: false }),
+          bulkUpsertSessions(normalizedSessions, { listProjection: true }),
         );
         const state = { agentSessions } as unknown as StoreState;
 
@@ -379,32 +346,189 @@ describe('sidebar nav Chief selectors', () => {
     });
   });
 
-  it('recognizes a post-rollout Chief after AgentLite drops custom metadata', () => {
-    const rehydrated = session(
-      'agent-chief-rehydrated',
+  it.each([
+    {
+      label: 'missing marker on a recent chat',
+      version: undefined,
+      createdAt: '2026-09-24T00:00:00Z',
+    },
+    {
+      label: 'missing marker on a future chat',
+      version: undefined,
+      createdAt: '2099-01-01T00:00:00Z',
+    },
+    {
+      label: 'old marker on a future chat',
+      version: CHIEF_PROMPT_VERSION - 1,
+      createdAt: '2099-01-01T00:00:00Z',
+    },
+    {
+      label: 'newer unsupported marker',
+      version: CHIEF_PROMPT_VERSION + 1,
+      createdAt: '2099-01-01T00:00:00Z',
+    },
+    {
+      label: 'numeric string',
+      version: String(CHIEF_PROMPT_VERSION),
+      createdAt: '2099-01-01T00:00:00Z',
+    },
+    { label: 'null marker', version: null, createdAt: '2099-01-01T00:00:00Z' },
+    { label: 'boolean marker', version: true, createdAt: '2099-01-01T00:00:00Z' },
+  ])('fails closed after reloading $label', async ({ version, createdAt }) => {
+    const backend = installMockBackend();
+    backend.onRequest('agent.list', () => ({
+      agents: [
+        wireChief({
+          createdAt,
+          metadata: {
+            specialist: 'chief-of-staff',
+            ...(version !== undefined ? { chiefPromptVersion: version } : {}),
+          },
+        }),
+      ],
+    }));
+
+    try {
+      const sessions = await new LiveAgentsClient().list(CHIEF_WORKSPACE_ID, { scope: 'topLevel' });
+      const agentSessions = agentSessionReducer(
+        agentSessionInitialState,
+        bulkUpsertSessions(sessions, { listProjection: true }),
+      );
+      const state = { agentSessions } as unknown as StoreState;
+
+      expect(selectCurrentChiefThread.select(state)).toBeNull();
+      expect(selectReusableChiefThread.select(state)).toBeNull();
+      // Identity rejection must not remove legacy conversations from history.
+      expect(selectChiefThreads.select(state).map((thread) => thread.agentId)).toEqual([
+        'chief-wire',
+      ]);
+    } finally {
+      resetMockBackend();
+    }
+  });
+
+  it.each([undefined, 'implementor'])('requires the chief specialist, not %s', (specialist) => {
+    const chief = session(
+      'agent-wrong-specialist',
       CHIEF_WORKSPACE_ID,
       [],
-      CHIEF_PROMPT_V2_INTRODUCED_AT,
-      {
-        metadata: { specialist: CHIEF_SPECIALIST_ID },
-      },
+      '2099-01-01T00:00:00Z',
+      { metadata: { specialist, chiefPromptVersion: CHIEF_PROMPT_VERSION } },
     );
+    expect(selectCurrentChiefThread.select(stateWithSessions([chief]))).toBeNull();
+    expect(selectReusableChiefThread.select(stateWithSessions([chief]))).toBeNull();
+  });
 
-    expect(selectCurrentChiefThread.select(stateWithSessions([rehydrated]))).toMatchObject({
-      agentId: rehydrated.id,
+  it('applies marker-only get responses and authoritative omissions without changing timestamps', async () => {
+    const backend = installMockBackend();
+    let version: number | undefined;
+    backend.onRequest('agent.get', () => ({
+      agent: wireChief({
+        metadata: {
+          specialist: 'chief-of-staff',
+          ...(version !== undefined ? { chiefPromptVersion: version } : {}),
+        },
+      }),
+    }));
+    const client = new LiveAgentsClient();
+    let agentSessions = agentSessionInitialState;
+    try {
+      for (const [incoming, expectedId] of [
+        [undefined, null],
+        [CHIEF_PROMPT_VERSION, 'chief-wire'],
+        [2, null],
+        [CHIEF_PROMPT_VERSION, 'chief-wire'],
+        [undefined, null],
+      ] as const) {
+        version = incoming;
+        const reloaded = await client.get('chief-wire');
+        expect(reloaded).not.toBeNull();
+        agentSessions = agentSessionReducer(agentSessions, bulkUpsertSessions([reloaded!]));
+        const state = { agentSessions } as unknown as StoreState;
+        expect(selectCurrentChiefThread.select(state)?.agentId ?? null).toBe(expectedId);
+        expect(selectReusableChiefThread.select(state)?.agentId ?? null).toBe(expectedId);
+      }
+      expect(
+        backend.requests.filter(({ method }) => method === 'agent.get').map(({ params }) => params),
+      ).toEqual(Array(5).fill({ agentId: 'chief-wire' }));
+    } finally {
+      resetMockBackend();
+    }
+  });
+
+  it('refreshes reuse eligibility from collection snapshots and marker-only deltas', async () => {
+    const backend = installMockBackend();
+    backend.onRequest('workspace.list', () => ({ workspaces: [{ id: CHIEF_WORKSPACE_ID }] }));
+    backend.onRequest('agent.subscribe', () => ({ subscriptionId: 'chief-channel' }));
+    backend.onRequest('agent.unsubscribe', () => ({ success: true }));
+    let agentSessions = agentSessionInitialState;
+    const unsubscribe = new LiveAgentsClient().subscribe((sessions) => {
+      agentSessions = agentSessionReducer(
+        agentSessions,
+        bulkUpsertSessions(sessions, { listProjection: true }),
+      );
     });
-    expect(selectReusableChiefThread.select(stateWithSessions([rehydrated]))).toMatchObject({
-      agentId: rehydrated.id,
-    });
+    try {
+      await vi.waitFor(() =>
+        expect(backend.requests.filter(({ method }) => method === 'agent.subscribe')).toEqual([
+          { method: 'agent.subscribe', params: { workspaceId: CHIEF_WORKSPACE_ID } },
+        ]),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      backend.pushSubscriptionPush({
+        subscriptionId: 'chief-channel',
+        kind: 'snapshot',
+        seq: 0,
+        snapshot: [wireChief()],
+      });
+      expect(
+        selectReusableChiefThread.select({ agentSessions } as unknown as StoreState)?.agentId,
+      ).toBe('chief-wire');
+      backend.pushSubscriptionPush({
+        subscriptionId: 'chief-channel',
+        kind: 'delta',
+        seq: 1,
+        delta: { updated: [wireChief({ metadata: { specialist: 'chief-of-staff' } })] },
+      });
+      expect(
+        selectReusableChiefThread.select({ agentSessions } as unknown as StoreState),
+      ).toBeNull();
+      backend.pushSubscriptionPush({
+        subscriptionId: 'chief-channel',
+        kind: 'delta',
+        seq: 2,
+        delta: { updated: [wireChief()] },
+      });
+      expect(
+        selectReusableChiefThread.select({ agentSessions } as unknown as StoreState)?.agentId,
+      ).toBe('chief-wire');
+    } finally {
+      unsubscribe();
+      resetMockBackend();
+    }
   });
 });
 
-describe('sidebar nav list preferences', () => {
-  it('selects archived workspace visibility', () => {
-    const state = {
-      sidebarNav: { showArchivedWorkspaces: true },
-    } as unknown as StoreState;
-
-    expect(selectShowArchivedWorkspaces.select(state)).toBe(true);
-  });
-});
+// AgentLite fixture: no transcript or system prompt is included in a wire read.
+function wireChief(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'chief-wire',
+    workspaceId: CHIEF_WORKSPACE_ID,
+    name: 'My saved conversation',
+    nameExplicitlySet: true,
+    status: 'idle',
+    isActive: false,
+    isStreaming: false,
+    isProcessing: false,
+    isResponding: false,
+    isWaitingOnTool: false,
+    isWaitingForOtherAgents: false,
+    waitingForAgentIds: [],
+    turnInFlight: false,
+    createdAt: '2026-09-24T00:00:00Z',
+    updatedAt: '2026-09-24T00:00:00Z',
+    messageCount: 0,
+    metadata: { specialist: 'chief-of-staff', chiefPromptVersion: CHIEF_PROMPT_VERSION },
+    ...overrides,
+  };
+}

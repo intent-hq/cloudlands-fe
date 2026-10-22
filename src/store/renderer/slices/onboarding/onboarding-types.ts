@@ -5,7 +5,7 @@
  */
 
 export type OnboardingStep =
-  'requirements' | 'welcome' | 'github' | 'project' | 'configuring' | 'ready';
+  'requirements' | 'welcome' | 'forge' | 'project' | 'configuring' | 'ready';
 
 export type ProjectConfig = {
   repoUrl: string | null;
@@ -35,7 +35,7 @@ export type OnboardingState = {
 export const STEP_ORDER: OnboardingStep[] = [
   'requirements',
   'welcome',
-  'github',
+  'forge',
   'project',
   'configuring',
   'ready',

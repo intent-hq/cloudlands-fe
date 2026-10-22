@@ -21,10 +21,7 @@ import {
   AgentId as BrandedAgentId,
   createWorkspaceId,
 } from '../../../shared/types/branded-ids';
-import {
-  createCollection,
-  upsertItem,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection, upsertItem } from '@themislib/themis/utils/collections/collection-utils';
 import { randomUUID } from 'crypto';
 import {
   errorHandler,

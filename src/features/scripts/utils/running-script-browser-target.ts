@@ -1,4 +1,4 @@
-import type { ScriptWithState } from '../types';
+import type { ScriptListEntry } from '../types';
 
 export interface RunningScriptBrowserTarget {
   scriptId: string;
@@ -7,7 +7,7 @@ export interface RunningScriptBrowserTarget {
 }
 
 export function getRunningScriptBrowserTarget(
-  scripts: ScriptWithState[],
+  scripts: ScriptListEntry[],
 ): RunningScriptBrowserTarget | null {
   const candidates = scripts.filter(
     (script) => script.runtime.status === 'running' && script.runtime.detectedUrl?.trim(),

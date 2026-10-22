@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  cycleWorkspaceId,
-  nextAllSpacesViewMode,
-  orderWorkspacesForCycling,
-} from '../workspace-cycle';
+import { cycleWorkspaceId, orderWorkspacesForCycling } from '../workspace-cycle';
 
 const ws = (
   id: string,
@@ -78,13 +74,5 @@ describe('cycleWorkspaceId', () => {
   it('cycles into a single non-active workspace', () => {
     expect(cycleWorkspaceId(['only'], null, 'cw')).toBe('only');
     expect(cycleWorkspaceId(['only'], 'other', 'ccw')).toBe('only');
-  });
-});
-
-describe('nextAllSpacesViewMode', () => {
-  it('cycles Recent → Repo → Status → Recent', () => {
-    expect(nextAllSpacesViewMode('recent')).toBe('repo');
-    expect(nextAllSpacesViewMode('repo')).toBe('status');
-    expect(nextAllSpacesViewMode('status')).toBe('recent');
   });
 });

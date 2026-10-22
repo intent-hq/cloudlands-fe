@@ -246,6 +246,9 @@ for (const width of [360, 248]) {
     await page.mouse.up();
     await expect(page.getByRole('menu')).toBeVisible();
     await page.keyboard.press('Escape');
+    // Finish animated dismissal before checking the closed launcher's tab order.
+    await expect(page.getByRole('menu')).toHaveCount(0);
+    await expect(trigger).toBeFocused();
     await page.keyboard.press('Tab');
     await page.keyboard.press('Shift+Tab');
     await expect(trigger).toBeFocused();

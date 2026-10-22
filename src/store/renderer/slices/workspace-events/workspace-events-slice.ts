@@ -1,6 +1,7 @@
+import { connectionStatusChanged } from '../daemon-health/daemon-health-slice';
 import type { WorkspaceEvent } from '$features/events/types';
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import { sanitizeWorkspaceEvent, sanitizeWorkspaceEventsList } from './workspace-events-sanitizer';
@@ -20,6 +21,9 @@ export type WorkspaceEventsWorkspaceState = {
   olderError: string | null;
   nextToken: string | null;
   endReached: boolean;
+  peopleRequestId: string | null;
+  peopleInitialized: boolean;
+  peopleError: string | null;
 };
 
 export type WorkspaceEventsState = {
@@ -30,6 +34,10 @@ export type WorkspaceEventsState = {
    * every event delivered from then on; one read before it may miss a change.
    */
   subscriptionGeneration: number;
+  /** Readiness belongs to the current subscribe attempt, not a previous socket. */
+  subscriptionPending: boolean;
+  subscriptionAttempt: number;
+  hasObservedConnection: boolean;
 };
 
 export const emptyWorkspaceEventsState: WorkspaceEventsWorkspaceState = {
@@ -42,11 +50,17 @@ export const emptyWorkspaceEventsState: WorkspaceEventsWorkspaceState = {
   olderError: null,
   nextToken: null,
   endReached: false,
+  peopleRequestId: null,
+  peopleInitialized: false,
+  peopleError: null,
 };
 
 export const initialState: WorkspaceEventsState = {
   byWorkspaceId: {},
   subscriptionGeneration: 0,
+  subscriptionPending: true,
+  subscriptionAttempt: 0,
+  hasObservedConnection: false,
 };
 
 const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
@@ -109,6 +123,16 @@ export const loadEventsRequested = createAction<[workspaceId: string]>(
 export const loadOlderEventsRequested = createAction<[workspaceId: string]>(
   'workspaceEvents/loadOlderEventsRequested',
 );
+/** Initial opens reuse history; force explicitly retries a completed/failed initial attempt. */
+export const loadPeopleEventsRequested = createAction<
+  [workspaceId: string, mode: 'initial' | 'more', force?: boolean]
+>('workspaceEvents/loadPeopleEventsRequested');
+export const peopleEventsLoadStarted = createAction<[workspaceId: string, requestId: string]>(
+  'workspaceEvents/peopleEventsLoadStarted',
+);
+export const peopleEventsLoadFinished = createAction<
+  [workspaceId: string, requestId: string, initialized: boolean, error: string | null]
+>('workspaceEvents/peopleEventsLoadFinished');
 export const olderEventsLoaded = createAction<
   [workspaceId: string, events: WorkspaceEvent[], nextToken: string | null]
 >('workspaceEvents/olderEventsLoaded');
@@ -119,17 +143,43 @@ export const setEventsLoading = createAction<[workspaceId: string, loading: bool
   'workspaceEvents/setEventsLoading',
 );
 /** The daemon-events firehose subscription was (re)established on the connection. */
-export const daemonEventsSubscribed = createAction('workspaceEvents/daemonEventsSubscribed');
+export const daemonEventsSubscribing = createAction('workspaceEvents/daemonEventsSubscribing');
+export const daemonEventsSubscribed = createAction<[attempt?: number]>(
+  'workspaceEvents/daemonEventsSubscribed',
+);
 
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
 
 export const workspaceEventsReducer = createReducer<WorkspaceEventsState>(initialState);
-workspaceEventsReducer.with(daemonEventsSubscribed, (state) => ({
-  ...state,
-  subscriptionGeneration: state.subscriptionGeneration + 1,
-}));
+function invalidateSubscription(state: WorkspaceEventsState): WorkspaceEventsState {
+  return {
+    ...state,
+    subscriptionPending: true,
+    subscriptionAttempt: state.subscriptionAttempt + 1,
+  };
+}
+workspaceEventsReducer.with(daemonEventsSubscribing, invalidateSubscription);
+workspaceEventsReducer.with(connectionStatusChanged, (state, { payload: [status] }) => {
+  if (status === 'connected')
+    return state.hasObservedConnection ? state : { ...state, hasObservedConnection: true };
+  // The boot status snapshot can arrive after subscribe starts but before the
+  // first connection. Only an observed connection/subscription can be lost.
+  return (status === 'disconnected' || status === 'connecting') &&
+    (state.hasObservedConnection || state.subscriptionGeneration > 0)
+    ? invalidateSubscription(state)
+    : state;
+});
+workspaceEventsReducer.with(daemonEventsSubscribed, (state, { payload: [attempt] }) =>
+  attempt !== undefined && attempt !== state.subscriptionAttempt
+    ? state
+    : {
+        ...state,
+        subscriptionPending: false,
+        subscriptionGeneration: state.subscriptionGeneration + 1,
+      },
+);
 workspaceEventsReducer.with(eventReceived, (state, { payload: [workspaceId, event] }) => {
   const safeEvent = sanitizeWorkspaceEvent(event, workspaceId);
   if (!safeEvent) return state;
@@ -221,6 +271,7 @@ workspaceEventsReducer.with(
       olderError: null,
       nextToken,
       endReached: nextToken === null,
+      peopleInitialized: false,
     });
   },
 );
@@ -279,9 +330,36 @@ workspaceEventsReducer.with(workspaceUnmounted, (state, { payload: [workspaceId]
     loadingOlder: false,
     nextToken: null,
     endReached: false,
+    peopleRequestId: null,
+    peopleInitialized: false,
+    peopleError: null,
   });
 });
 workspaceEventsReducer.with(setEventsLoading, (state, { payload: [workspaceId, loading] }) => {
   const wsState = getWorkspaceState(state, workspaceId);
   return setWorkspaceState(state, workspaceId, { ...wsState, loading });
 });
+workspaceEventsReducer.with(
+  peopleEventsLoadStarted,
+  (state, { payload: [workspaceId, requestId] }) => {
+    const wsState = getWorkspaceState(state, workspaceId);
+    return setWorkspaceState(state, workspaceId, {
+      ...wsState,
+      peopleRequestId: requestId,
+      peopleError: null,
+    });
+  },
+);
+workspaceEventsReducer.with(
+  peopleEventsLoadFinished,
+  (state, { payload: [workspaceId, requestId, initialized, error] }) => {
+    const wsState = getWorkspaceState(state, workspaceId);
+    if (wsState.peopleRequestId !== requestId) return state;
+    return setWorkspaceState(state, workspaceId, {
+      ...wsState,
+      peopleRequestId: null,
+      peopleInitialized: initialized,
+      peopleError: error,
+    });
+  },
+);

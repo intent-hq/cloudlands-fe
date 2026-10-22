@@ -810,7 +810,9 @@ describe('LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL Â
     workspaceIds = ['ws-1'];
     fireWorkspaceSetEvent('workspace:deleted');
     await vi.waitFor(() => {
-      expect(requestsFor('task.unsubscribe')).toEqual([{ subscriptionId: 'chan-2' }]);
+      expect(requestsFor('task.unsubscribe')).toEqual([
+        { subscriptionId: 'chan-2', workspaceId: 'ws-2' },
+      ]);
     });
     const evicted = handler.mock.calls.at(-1)?.[0] as Array<{ id: string }>;
     expect(evicted.map((t) => t.id)).toEqual(['a']);
@@ -875,7 +877,9 @@ describe('LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL Â
         { workspaceId: 'ws-1' },
         { workspaceId: 'ws-2' },
       ]);
-      expect(requestsFor('task.unsubscribe')).toEqual([{ subscriptionId: 'chan-4' }]);
+      expect(requestsFor('task.unsubscribe')).toEqual([
+        { subscriptionId: 'chan-4', workspaceId: 'ws-2' },
+      ]);
     });
 
     // The surviving ws-1 channel's recovery snapshot re-populates with only
@@ -895,8 +899,8 @@ describe('LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL Â
 
     unsubscribe();
     expect(requestsFor('task.unsubscribe')).toEqual([
-      { subscriptionId: 'chan-1' },
-      { subscriptionId: 'chan-2' },
+      { subscriptionId: 'chan-1', workspaceId: 'ws-1' },
+      { subscriptionId: 'chan-2', workspaceId: 'ws-2' },
     ]);
   });
 });

@@ -1,5 +1,5 @@
 import { store } from '../../store';
-import { getItems, type Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems, type Collection } from '@themislib/themis/utils/collections/collection-utils';
 import { selectIsDaemonLocal } from '../daemon-health/daemon-health-selectors';
 import { selectIsWorkspaceHostLocal } from '../workspace/workspace-selectors';
 import type { InstalledEditor, OpenAction } from './external-editors-slice';

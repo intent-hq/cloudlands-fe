@@ -72,6 +72,8 @@ export class HardwareConsoleManager {
   /** Next index into OPEN_RETRY_DELAYS_MS; reset when the retry cycle ends. */
   private retryAttempt = 0;
   private openInFlight: Promise<boolean> | null = null;
+  /** A replacement lifetime must not reuse a HID handle until its close settles. */
+  private closeInFlight: Promise<void> | null = null;
   /**
    * Lifecycle generation token, incremented by every start()/stop(). Async
    * lifecycle paths capture it before awaiting and bail when it has moved
@@ -187,7 +189,7 @@ export class HardwareConsoleManager {
    */
   async requestConnect(): Promise<boolean> {
     if (!this.platform) return false;
-    if (this.currentStatus === 'connected') return true;
+    if (this.currentStatus === 'connected' && this.device) return true;
     // An explicit user gesture starts a fresh auto-retry cycle: without the
     // reset, a Retry after the backoff schedule is exhausted would arm no
     // further retries, and a mid-cycle Retry would consume the shared
@@ -303,6 +305,9 @@ export class HardwareConsoleManager {
   }
 
   private async openDevice(device: HidDeviceLike): Promise<void> {
+    const generation = this.generation;
+    if (this.closeInFlight) await this.closeInFlight;
+    if (generation !== this.generation) return;
     // `opening` closes the async gap between this guard and `this.device`
     // being assigned below: without it, a hotplug arrival racing an in-flight
     // open would attach a SECOND transport whose subscription is never torn
@@ -413,6 +418,17 @@ export class HardwareConsoleManager {
   }
 
   private async teardown(reason: string): Promise<void> {
+    if (this.closeInFlight) return this.closeInFlight;
+    const close = this.performTeardown(reason);
+    this.closeInFlight = close;
+    try {
+      await close;
+    } finally {
+      if (this.closeInFlight === close) this.closeInFlight = null;
+    }
+  }
+
+  private async performTeardown(reason: string): Promise<void> {
     const { device, transport, rpcClient } = this;
     this.device = null;
     this.transport = null;

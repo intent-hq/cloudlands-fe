@@ -9,6 +9,18 @@ import { settingsMetadata } from './settings.meta';
 afterEach(cleanup);
 
 describe('settings pattern', () => {
+  it('keeps switches controlled by accepted get/set state, including rejected changes', async () => {
+    render(SettingsHarness);
+    const toggle = screen.getByRole('switch', { name: 'Enable feature' });
+    await fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    await fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    await fireEvent.click(screen.getByRole('button', { name: 'Reveal condition' }));
+    const rejected = screen.getByRole('switch', { name: 'Conditional feature' });
+    await fireEvent.click(rejected);
+    expect(rejected.getAttribute('aria-checked')).toBe('false');
+  });
   it('keeps custom control registration keyed by schema entry id', () => {
     const renderer = () => undefined;
     const controls = defineSettingsCustomControls({ advanced: renderer });

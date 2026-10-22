@@ -11,142 +11,93 @@
    * like other daemon-backed settings (e.g., AgentBackendSettings.svelte).
    */
 
-  import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
-  import { invoke } from '$shared/generated/ipc-client';
-  import { appClient } from '$lib/client';
-
-  import {
-    addTerminal,
-    openTerminalOverlay,
-  } from '$store/renderer/slices/terminals/terminals-slice';
-  import { ROOT_WORKSPACE_ID } from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
   import { store as appStore } from '$store/renderer/store';
-  import { notify } from '$lib/components/patterns/notify';
+  import {
+    settingsFormOpened,
+    settingsFormClosed,
+  } from '$store/renderer/slices/settings-events/settings-events-slice';
+  import {
+    selectSettingsForm,
+    selectSettingsFormOperation,
+    selectSettingsFormError,
+  } from '$store/renderer/slices/settings-events/settings-events-selectors';
+  import { rtkSettingsRequested } from '$store/renderer/slices/rtk-settings/rtk-settings-slice';
   import {
     SettingsForm,
     defineSettings,
     defineSettingsCustomControls,
   } from '$lib/components/patterns/settings';
 
-  let rtkAvailable = $state(false);
-  let rtkEnabled = $state(false);
-  let loaded = $state(false);
-  let settingKnown = $state(false);
-  let checking = $state(false);
-  let settingsError = $state('');
-  let updating = $state(false);
+  const identity = { formId: crypto.randomUUID(), sessionId: crypto.randomUUID() };
+  const form$ = selectSettingsForm(identity);
+  const save$ = selectSettingsFormOperation(identity, 'save');
+  const probe$ = selectSettingsFormOperation(identity, 'probe');
+  const error$ = selectSettingsFormError(identity);
+  const rtkAvailable = $derived($form$?.values.available === true);
+  let draftEnabled = $state<boolean | null>(null);
+  const updating = $derived($save$?.status === 'pending');
+  const rtkEnabled = $derived(draftEnabled ?? $form$?.values.enabled === true);
+  const loaded = $derived($form$?.values.loaded === true);
+  const settingKnown = $derived($form$?.values.settingKnown === true);
+  const checking = $derived($probe$?.status === 'pending');
+  const settingsError = $derived($error$);
 
-  const SETTING_PATH = 'rtk.enabled';
-
-  onMount(async () => {
-    // Read rtk.enabled from daemon settings catalog (LiveSettingsClient.get folds errors to null)
-    try {
-      const entry = await appClient.settings.get(SETTING_PATH);
-      if (entry === null) {
-        settingsError = m.settings_rtk_loadError();
-        console.error('Failed to load RTK settings: daemon returned null');
-      } else {
-        rtkEnabled = typeof entry.value === 'boolean' ? entry.value : false;
-        settingKnown = true;
-        settingsError = '';
-      }
-    } catch (error) {
-      settingsError = m.settings_rtk_loadError();
-      console.error('Failed to load RTK settings:', error);
-    }
-
-    // Check if rtk is installed (separate failure domain)
-    try {
-      const availResult = await invoke<any>(SYSTEM_CHANNELS.CHECK_RTK, undefined);
-      rtkAvailable = availResult?.data?.available ?? false;
-    } catch (error) {
-      console.error('Failed to check RTK availability:', error);
-      // rtkAvailable stays false, toggle will be disabled
-    }
-
-    loaded = true;
+  $effect(() => {
+    if (!$save$ || $save$.status === 'pending' || draftEnabled === null) return;
+    let active = true;
+    // Show the controlled switch's optimistic frame even when a rejection is immediate.
+    void tick().then(() => {
+      if (active) draftEnabled = null;
+    });
+    return () => {
+      active = false;
+    };
   });
 
-  async function recheckRtk() {
+  onMount(() => {
+    appStore.dispatch(settingsFormOpened(identity, 'rtk'));
+    appStore.dispatch(
+      rtkSettingsRequested(
+        { ...identity, resource: 'load', requestId: crypto.randomUUID() },
+        { kind: 'load' },
+      ),
+    );
+    return () => {
+      appStore.dispatch(settingsFormClosed(identity));
+    };
+  });
+
+  function recheckRtk() {
     if (checking) return;
-    checking = true;
-    try {
-      const availResult = await invoke<any>(SYSTEM_CHANNELS.CHECK_RTK, undefined);
-      rtkAvailable = availResult?.data?.available ?? false;
-    } catch {
-      // Silently fail
-    } finally {
-      checking = false;
-    }
+    appStore.dispatch(
+      rtkSettingsRequested(
+        { ...identity, resource: 'probe', requestId: crypto.randomUUID() },
+        { kind: 'probe' },
+      ),
+    );
   }
 
-  async function installRtk() {
-    try {
-      // Daemon-first create (`terminal.create`, PROTOCOL §5.13): key the tab
-      // by the daemon-assigned id so hydration/writes address the real PTY.
-      const result = await appClient.terminals.create({
-        workspaceId: ROOT_WORKSPACE_ID,
-        cols: 80,
-        rows: 24,
-      });
-      if (!result.success || !result.id) {
-        // Daemon-first invariant: never fabricate a tab without a PTY behind
-        // it — surface the failure instead.
-        console.error(
-          // i18n-ignore -- developer-only diagnostic; the user sees the localized notification below
-          'Failed to create install terminal:',
-          result.success ? 'missing id' : result.error,
-        );
-        notify.error(m.terminal_adapter_openFailed_error());
-        return;
-      }
-      const termId = result.id;
-      appStore.dispatch(
-        addTerminal(ROOT_WORKSPACE_ID, termId, m.settings_rtk_installTerminalTitle()),
-      );
-      appStore.dispatch(openTerminalOverlay(ROOT_WORKSPACE_ID, termId));
-
-      // Wait briefly for the terminal to initialize, then write the command
-      // via `terminal.write` (PROTOCOL §5.13) using the daemon-assigned id.
-      setTimeout(async () => {
-        try {
-          await appClient.terminals.write(termId, 'brew install rtk\n');
-        } catch {
-          // Terminal might not be ready yet - user can type manually
-        }
-      }, 1000);
-
-      // Poll for rtk availability after install (brew install typically takes 10-30s)
-      const pollIntervals = [10000, 20000, 30000];
-      for (const delay of pollIntervals) {
-        setTimeout(() => recheckRtk(), delay);
-      }
-    } catch (error) {
-      // Daemon-first invariant: no fabricated fallback tab — surface the
-      // failure instead.
-      // i18n-ignore -- developer-only diagnostic; the user sees the localized notification below
-      console.error('Failed to create install terminal:', error);
-      notify.error(m.terminal_adapter_openFailed_error());
-    }
+  function installRtk() {
+    appStore.dispatch(
+      rtkSettingsRequested(
+        { ...identity, resource: 'install', requestId: crypto.randomUUID() },
+        { kind: 'install' },
+      ),
+    );
   }
 
-  async function handleToggle(checked: boolean) {
-    if (updating) return; // Guard against re-entrancy
-    const previousValue = rtkEnabled;
-    rtkEnabled = checked;
-    updating = true;
-    try {
-      await appClient.settings.update([{ path: SETTING_PATH, value: checked }]);
-      settingsError = '';
-    } catch (error) {
-      rtkEnabled = previousValue;
-      settingsError = m.settings_rtk_saveError();
-      console.error('Failed to update rtk.enabled setting:', error);
-    } finally {
-      updating = false;
-    }
+  function handleToggle(checked: boolean) {
+    if (selectSettingsFormOperation.select(appStore.state, identity, 'save')?.status === 'pending')
+      return;
+    draftEnabled = checked;
+    appStore.dispatch(
+      rtkSettingsRequested(
+        { ...identity, resource: 'save', requestId: crypto.randomUUID() },
+        { kind: 'toggle', enabled: checked },
+      ),
+    );
   }
 
   const schema = $derived.by(() =>

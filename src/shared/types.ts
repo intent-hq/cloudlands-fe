@@ -1,3 +1,4 @@
+import type { AgentPlacement, AgentPlacementRequest } from './types/agent-node';
 /**
  * Unified Type Definitions
  *
@@ -311,10 +312,10 @@ export function isWorkspaceAttention(value: unknown): value is WorkspaceAttentio
   );
 }
 
-/** The caller's role in a workspace (PROTOCOL §5.1 membership summary,
- *  multiplayer w1). `collaborator` connections are refused (-32003) on every
- *  owner-only method, so the desktop hides those surfaces up front. */
-export type WorkspaceRole = 'owner' | 'collaborator';
+/** Guest roles retain collaborator as the Participant wire default. Manager
+ * adds scoped agent setup and saved-script operations, never full management. */
+export type WorkspaceGuestRole = 'collaborator' | 'manager';
+export type WorkspaceRole = 'owner' | WorkspaceGuestRole;
 
 export interface Workspace {
   id: WorkspaceId;
@@ -365,11 +366,17 @@ export interface Workspace {
    *  on older daemons. */
   ownerPrincipalId?: string;
   myRole?: WorkspaceRole;
+  /** Caller-relative management capability (PROTOCOL §5.49); absent on older daemons. */
+  canManage?: boolean;
   memberCount?: number;
   openInviteCount?: number;
   createdAt: string;
   updatedAt: string;
   lastActivity?: string;
+  /** Latest recorded user/assistant message or note timestamp. Excludes workspace
+   *  metadata and usage maintenance; retained after content deletion. Absent on
+   *  older daemons or when no valid content timestamp is known. */
+  lastContentActivity?: string;
   tags?: string[];
   path?: string;
   repositoryPath?: string;
@@ -421,6 +428,7 @@ export interface Workspace {
   /** Copy-on-Write filesystem capability of the workspaces root (a machine capability, independent of the workspace or checkout mode). */
   cowSupported?: boolean;
   /** How the daemon provisioned this workspace's checkout (PROTOCOL §5.1). Immutable; omitted for rows without a daemon-provisioned checkout (skip-isolation, remote, …). `direct` = standalone local clone (cache-hydrated picked repos, isNewRepo). */
+  defaultAgentPlacement?: AgentPlacementRequest;
   checkoutMode?: 'cow' | 'worktree' | 'direct';
   /** Cached physical disk usage of the workspace directory (PROTOCOL §5.1); omitted until the daemon's first computation completes. */
   diskUsage?: WorkspaceDiskUsage;
@@ -915,6 +923,14 @@ export interface Note {
    */
   contentPreview?: string;
   contentLength?: number;
+  /**
+   * Truncated-read markers (§5.2 "Truncated note reads", `noteTruncatedRead: 1`).
+   * Present only when a `note.get` with `maxContentBytes` returned a prefix of
+   * a larger note: `content` is then that prefix and `contentBytes` the full
+   * UTF-8 size of the stored content. A truncated note is render-only in the app.
+   */
+  contentTruncated?: boolean;
+  contentBytes?: number;
   createdAt: string;
   updatedAt: string;
   is_pinned?: boolean; // Legacy compatibility
@@ -1176,6 +1192,9 @@ export interface AgentMetadata {
   source?: 'workspace-initializer' | 'contextual-menu' | 'chat-panel' | 'api' | string; // Source of agent creation
   agentType?: string; // Type of agent (e.g., "investigate", "implement", "verify")
   specialist?: string; // Specialist type (e.g., "spec-writer", "implementor", "verifier")
+  // Creation-time prompt identity, persisted and served by AgentLite (§5.5).
+  // Omitted on legacy sessions; creation dates never imply a version.
+  chiefPromptVersion?: number;
   isInitialAgent?: boolean; // Whether this is the initial agent for a workspace
   isInitialWorkspaceAgent?: boolean; // Alias for isInitialAgent
   originalAgentId?: string; // Original agent ID if this is a restored/migrated agent
@@ -1220,6 +1239,16 @@ export interface AgentMetadata {
   // agent.get / agent.list AgentLite metadata (PROTOCOL §5.5); feeds
   // AgentCard's effectiveCompletionReport preview.
   completionReport?: string;
+  // `true` only on an agent.list row whose `completionReport` the daemon's
+  // list-row preview cap shortened (PROTOCOL §5.5 truncation flags); omitted
+  // otherwise. The value is then a prefix; agent.get serves the full text.
+  completionReportTruncated?: boolean;
+  // Pending attention request reason as served on AgentLite metadata (see
+  // AgentSession.attentionRequestReason for the lifecycle).
+  attentionRequestReason?: string;
+  // `true` only when the list-row cap shortened `attentionRequestReason`; the
+  // reason is then a prefix and agent.get serves the full text.
+  attentionRequestReasonTruncated?: boolean;
   // Id of the parent agent that delegated/created this session (PROTOCOL §5.5,
   // served on AgentLite metadata). Absent on top-level agents; drives the
   // Agents-panel tree nesting, hud-selectors' top-level gating, and the
@@ -1627,6 +1656,7 @@ export interface ContextLink {
 }
 
 export interface CreateWorkspaceRequest {
+  repositoryCheckout?: import('./types/repository-checkout').CheckoutSelection;
   idempotencyKey?: string;
   title?: string;
   statusMessage?: string;
@@ -1644,6 +1674,7 @@ export interface CreateWorkspaceRequest {
   progressId?: string; // FE-minted correlation id echoed on git:clone:progress/done frames emitted during this create (PROTOCOL §5.1)
   contextLinks?: ContextLink[]; // Issue/PR context links persisted on the workspace row (PROTOCOL §5.1); omitted when there are none — older daemons ignore the field
   initialAgent?: {
+    placement?: AgentPlacement;
     /**
      * DEPRECATED: the daemon assigns the initial agent's id and returns it on
      * the `workspace.create` result (`initialAgent.id`). Clients must no
@@ -1652,7 +1683,13 @@ export interface CreateWorkspaceRequest {
      */
     agentId?: string;
     name?: string;
+    /** False for a generated label so first-message naming remains available. */
+    nameExplicitlySet?: boolean;
+    /** Remember the successful manual initial specialist selection. */
+    rememberSpecialist?: boolean;
     model?: string;
+    /** Persisted before the first turn. Omit to inherit defaults; blank explicitly clears. */
+    reasoningEffort?: string;
     prompt?: string;
     rules?: string;
     agentType?: string;
@@ -1693,6 +1730,7 @@ export interface CreateWorkspaceRequest {
 }
 
 export interface UpdateWorkspaceRequest {
+  defaultAgentPlacement?: AgentPlacementRequest | null;
   id: WorkspaceId;
   title?: string;
   branch?: string;

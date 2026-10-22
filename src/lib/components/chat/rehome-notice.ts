@@ -62,6 +62,7 @@ export function getProviderRehomedNotice(
 export function formatProviderRehomedLabel(
   notice: ProviderRehomedNoticeInfo,
   fallbackText: string,
+  workspaceId?: string,
 ): string {
   if (notice.reason !== 'provider_disabled' || !notice.fromProvider || !notice.toProvider) {
     return fallbackText;
@@ -70,8 +71,12 @@ export function formatProviderRehomedLabel(
   const toProvider = selectProviderDisplayName.select(appStore.state, notice.toProvider);
   if (!fromProvider || !toProvider) return fallbackText;
   const model = notice.from
-    ? (selectModelDisplayName.select(appStore.state, notice.fromProvider, notice.from) ??
-      notice.from)
+    ? (selectModelDisplayName.select(
+        appStore.state,
+        notice.fromProvider,
+        notice.from,
+        workspaceId,
+      ) ?? notice.from)
     : m.chat_providerRehomedNotice_defaultModel_label();
   return m.chat_providerRehomedNotice_disabled_label({ model, fromProvider, toProvider });
 }

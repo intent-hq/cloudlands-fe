@@ -79,14 +79,14 @@
   .card {
     width: 360px;
     height: 640px;
-    background: hsl(250 11% 8%);
-    border: 1px solid hsl(256 6% 24%);
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
     border-radius: 16px;
-    color: hsl(0 0% 97%);
+    color: hsl(var(--card-foreground));
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+    box-shadow: var(--surface-shadow-3);
     box-sizing: border-box;
   }
   .head {
@@ -104,15 +104,15 @@
     font-size: 12px;
     font-weight: 600;
     letter-spacing: 0.14em;
-    color: hsl(240 5% 58%);
+    color: hsl(var(--muted-foreground));
   }
   .head-label {
     font-family: 'JetBrains Mono', monospace;
     font-size: 12px;
-    color: hsl(240 5% 40%);
+    color: hsl(var(--muted-foreground));
   }
   .rule {
-    border-top: 1px dashed hsl(256 6% 26%);
+    border-top: 1px dashed hsl(var(--border));
   }
   .body {
     padding: 24px;
@@ -132,7 +132,7 @@
   }
   .bar-empty {
     width: 100%;
-    background: hsl(240 12% 16%);
+    background: hsl(var(--muted));
   }
   .list {
     display: flex;
@@ -143,7 +143,7 @@
     justify-content: space-between;
     align-items: baseline;
     padding: 14px 0;
-    border-bottom: 1px solid hsl(256 6% 18%);
+    border-bottom: 1px solid hsl(var(--border));
   }
   .row-last {
     border-bottom: none;
@@ -159,26 +159,26 @@
   .row-amt {
     font-family: 'JetBrains Mono', monospace;
     font-size: 14px;
-    color: hsl(257 9% 72%);
+    color: hsl(var(--muted-foreground));
     white-space: nowrap;
   }
   .row-pct {
-    color: hsl(0 0% 97%);
+    color: hsl(var(--card-foreground));
   }
   .row-empty {
     font-size: 13px;
-    color: hsl(240 5% 46%);
+    color: hsl(var(--muted-foreground));
   }
   .callout {
-    background: hsl(240 12% 12%);
-    border: 1px solid hsl(256 6% 18%);
+    background: hsl(var(--muted));
+    border: 1px solid hsl(var(--border));
     border-radius: 10px;
     padding: 14px 17px;
   }
   .callout-label {
     font-size: 11px;
     letter-spacing: 0.14em;
-    color: hsl(240 5% 40%);
+    color: hsl(var(--muted-foreground));
   }
   .callout-model {
     font-family: 'JetBrains Mono', monospace;
@@ -190,13 +190,13 @@
   }
   .callout-sub {
     font-size: 13px;
-    color: hsl(240 5% 58%);
+    color: hsl(var(--muted-foreground));
     margin-top: 4px;
   }
   .foot {
     margin-top: auto;
-    background: hsl(158 100% 30%);
-    color: hsl(0 0% 100%);
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
     display: flex;
     align-items: center;
     justify-content: space-between;

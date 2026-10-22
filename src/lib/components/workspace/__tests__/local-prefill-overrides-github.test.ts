@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 /**
  * @vitest-environment jsdom
  *
@@ -7,8 +8,15 @@
  * persistence, so the modal opens on the Copy local repo tab instead of the
  * github tab left behind by a persisted last selection.
  */
-import { cleanup, render, waitFor } from '@testing-library/svelte';
+import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const admittedFixture = vi.hoisted(() => ({ state: {} as Record<string, unknown> }));
+beforeEach(() => {
+  admittedFixture.state = withLegacyPrincipal({
+    hardwareConsole: { pttRecording: false, voiceTranscribing: false },
+  });
+});
 
 const mocks = vi.hoisted(() => {
   const readable = <T>(getter: () => T) => ({
@@ -33,16 +41,31 @@ vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: () => ({}), dispatch: mocks.dispatch });
+  return createAppStoreMockModule({
+    state: () => ({ ...admittedFixture.state }),
+    dispatch: mocks.dispatch,
+  });
 });
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
+  selectWorkspaceInitializerAgentForRepo: { select: () => null },
+  selectWorkspaceInitializerGitAvailability: () => ({
+    subscribe(run: (value: boolean) => void) {
+      run(true);
+      return () => {};
+    },
+  }),
   selectWorkspaceInitializerHydrated: () => mocks.readable(() => true),
   selectCompactWorkspaceInitializerFormState: () => mocks.readable(() => mocks.formState),
+  selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
   selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(() => null),
   selectWorkspaceInitializerLastSubmittedAgent: () => mocks.readable(() => null),
   selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
   selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
+  selectWorkspaceInitializerDraftAuthority: () =>
+    mocks.readable(() => ({ restore: undefined, clear: undefined })),
+  selectWorkspaceInitializationOutcomeForConsumer: () => mocks.readable(() => undefined),
+  selectWorkspaceInitializationResume: { select: () => undefined },
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
@@ -52,6 +75,7 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
 
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => mocks.readable(() => 'auggie'),
+  selectEnabledProviders: () => mocks.readable(() => ({})),
 }));
 
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
@@ -161,7 +185,7 @@ vi.mock('$lib/components/workspace/initializer/IssueSuggestions.svelte', async (
 }));
 
 vi.mock('$lib/components/workspace/initializer/RepoAndBranchPicker.svelte', async () => ({
-  default: (await import('../initializer/__tests__/mocks/MockComponent.svelte')).default,
+  default: (await import('./mocks/MockRepoAndBranchPicker.svelte')).default,
 }));
 
 vi.mock('$lib/components/chat/AttachmentPreview.svelte', async () => ({
@@ -173,7 +197,6 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 import CompactWorkspaceInitializer from '../CompactWorkspaceInitializer.svelte';
-import { setCompactWorkspaceInitializerFormState } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 import { warmImport } from '../../../../test/warm-import';
 
 const PREFILL_KEY = 'workspace-prefill';
@@ -193,16 +216,19 @@ function githubFormState() {
   };
 }
 
-/** Latest form state persisted through Redux by the component's save $effect. */
-function lastPersistedFormState(): Record<string, unknown> | undefined {
-  const calls = mocks.dispatch.mock.calls.filter(
-    ([action]) => action?.type === setCompactWorkspaceInitializerFormState.type,
-  );
-  return calls.at(-1)?.[0]?.payload?.[0];
+/** The repository selection the form currently shows (via the mock picker props). */
+function shownSelection() {
+  const text = (id: string) => screen.getByTestId(id).textContent ?? '';
+  return {
+    repoPath: text('picker-repo-path'),
+    repoType: text('picker-repo-type'),
+    githubUrl: text('picker-github-url'),
+    branch: text('picker-branch'),
+    isNewRepo: text('picker-is-new-repo') === 'true',
+    remoteWorkspacePath: text('picker-remote-path'),
+  };
 }
 
-// Pre-warm the component module graph so the cold dynamic import is not
-// billed to the first test's timeout (intent-hq/monorepo#1464).
 warmImport(() => import('./mocks/MockRichTextarea.svelte'));
 warmImport(() => import('../initializer/__tests__/mocks/MockComponent.svelte'));
 
@@ -222,24 +248,20 @@ describe('local repoPath prefill overrides a restored github selection', () => {
     sessionStorage.setItem(PREFILL_KEY, JSON.stringify({ repoPath: LOCAL_REPO }));
 
     const { component } = render(CompactWorkspaceInitializer, {
-      props: { isExpanded: false },
+      props: { isExpanded: true },
     });
     await component.applyPrefill();
 
     await waitFor(() => {
-      const persisted = lastPersistedFormState();
-      expect(persisted).toBeDefined();
-      expect(persisted).toMatchObject({
+      expect(shownSelection()).toEqual({
         repoPath: LOCAL_REPO,
         repoType: 'local',
         githubUrl: '',
         isNewRepo: false,
-        isValidPath: true,
-        scope: '',
         // Stale remote/branch state from the persisted selection is cleared
         // so submission can't target the previous remote checkout or a branch
         // that doesn't exist in the local repo.
-        remoteSetup: null,
+        remoteWorkspacePath: '',
         branch: '',
       });
     });
@@ -249,7 +271,7 @@ describe('local repoPath prefill overrides a restored github selection', () => {
     // No prefill at mount: the form restores the persisted github selection,
     // leaving repoPath non-empty ('owner/repo' shorthand).
     const { component } = render(CompactWorkspaceInitializer, {
-      props: { isExpanded: false },
+      props: { isExpanded: true },
     });
 
     // Then an explicit local-entry click stores the prefill and the modal
@@ -258,16 +280,12 @@ describe('local repoPath prefill overrides a restored github selection', () => {
     await component.applyPrefill();
 
     await waitFor(() => {
-      const persisted = lastPersistedFormState();
-      expect(persisted).toBeDefined();
-      expect(persisted).toMatchObject({
+      expect(shownSelection()).toEqual({
         repoPath: LOCAL_REPO,
         repoType: 'local',
         githubUrl: '',
         isNewRepo: false,
-        isValidPath: true,
-        scope: '',
-        remoteSetup: null,
+        remoteWorkspacePath: '',
         branch: '',
       });
     });
@@ -282,17 +300,15 @@ describe('local repoPath prefill overrides a restored github selection', () => {
     );
 
     const { component } = render(CompactWorkspaceInitializer, {
-      props: { isExpanded: false },
+      props: { isExpanded: true },
     });
     await component.applyPrefill();
 
     await waitFor(() => {
-      const persisted = lastPersistedFormState();
-      expect(persisted).toBeDefined();
-      expect(persisted).toMatchObject({
+      expect(shownSelection()).toMatchObject({
         repoPath: LOCAL_REPO,
         repoType: 'local',
-        remoteSetup: null,
+        remoteWorkspacePath: '',
         // The persisted 'main' is dropped, but the prefill's own branch wins.
         branch: 'feature-x',
       });

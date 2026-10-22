@@ -3,7 +3,7 @@
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
 
   import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
-  import { updateNoteContent } from '$features/notes/notes-write-service';
+  import { updateNoteContent } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { selectLineWrapping } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import { store as appStore } from '$store/renderer/store';
 
@@ -70,13 +70,21 @@
   let editorContentNoteId = getInitialNoteId();
   let isUserEditing = $state(false);
   let saveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-  let userEditingTimer: ReturnType<typeof setTimeout> | null = null;
   let pendingRawSave: PendingRawSave | null = null;
+  let propsBeforeSave: { content: string; rev: number | undefined } | null = null;
 
   $effect(() => {
     const latestContent = currentContent;
     const latestRev = rev;
     if (isUserEditing) return;
+    if (
+      editorContentWorkspaceId === workspaceId &&
+      editorContentNoteId === noteId &&
+      propsBeforeSave?.content === latestContent &&
+      propsBeforeSave.rev === latestRev
+    )
+      return;
+    propsBeforeSave = null;
     if (latestContent !== editorContent) {
       editorContent = latestContent;
       lastSavedContent = latestContent;
@@ -91,23 +99,21 @@
   }
 
   function setNoteContentFromEditor(nextContent: string): void {
+    if (nextContent === editorContent) return;
     editorContent = nextContent;
     editorContentWorkspaceId = workspaceId;
     editorContentNoteId = noteId;
     if (!editable) return;
 
     isUserEditing = true;
-    if (userEditingTimer) clearTimeout(userEditingTimer);
-    userEditingTimer = setTimeout(() => {
-      isUserEditing = false;
-    }, 1000);
-
     if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
     const pendingSave = createPendingRawSave(nextContent);
     pendingRawSave = pendingSave;
     saveDebounceTimer = setTimeout(() => {
       saveDebounceTimer = null;
       saveRawContent(pendingSave);
+      // Publish the draft to Redux before allowing incoming content to sync.
+      isUserEditing = false;
     }, 1000);
   }
 
@@ -130,13 +136,16 @@
 
     if (target.workspaceId === workspaceId && target.noteId === noteId) {
       lastSavedContent = target.content;
+      // Selector emissions are coalesced: these props still precede the staged draft.
+      propsBeforeSave = { content: currentContent, rev };
     }
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- sanctioned post-saga notes-write-service seam (dispatches optimistic store updates + AppClient mutation); not a component data fetch.
-    updateNoteContent(target.workspaceId, target.noteId, target.content, {
-      immediate,
-      baseRev: target.baseRev,
-      baseContent: target.lastSavedContent,
-    });
+    appStore.dispatch(
+      updateNoteContent(target.workspaceId, target.noteId, target.content, {
+        immediate,
+        baseRev: target.baseRev,
+        baseContent: target.lastSavedContent,
+      }),
+    );
   }
 
   export function flushPendingSave(): void {
@@ -154,7 +163,6 @@
   }
 
   onDestroy(() => {
-    if (userEditingTimer) clearTimeout(userEditingTimer);
     flushPendingSave();
   });
 </script>

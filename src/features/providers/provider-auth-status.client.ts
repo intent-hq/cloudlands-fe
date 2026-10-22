@@ -1,3 +1,5 @@
+import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
+import { store } from '$store/renderer/store';
 import {
   backendRequest,
   onBackendNotification,
@@ -22,8 +24,15 @@ const cache = new Map<string, Cached>();
 const pending = new Map<string, Pending>();
 const trailing = new Map<string, Trailing>();
 let generation = 0;
+let connectionGeneration = 0;
 
-const keyFor = (options: ProviderAuthStatusParams): string => options.providerId ?? '*';
+const keyFor = (options: ProviderAuthStatusParams): string =>
+  JSON.stringify([
+    selectPrincipalConnectionContext.select(store.state),
+    connectionGeneration,
+    options.workspaceId ?? null,
+    options.providerId ?? '*',
+  ]);
 
 function eventType(notification: { method: string; params?: unknown }): string | undefined {
   if (notification.method !== 'events.event' || !notification.params) return undefined;
@@ -36,18 +45,33 @@ function eventType(notification: { method: string; params?: unknown }): string |
 export function invalidateProviderAuthStatus(providerId?: string): void {
   generation += 1;
   if (providerId) {
-    cache.delete(providerId);
-    cache.delete('*');
+    for (const key of cache.keys()) {
+      const [, , , cachedProvider] = JSON.parse(key) as [
+        string | null,
+        number,
+        string | null,
+        string,
+      ];
+      if (cachedProvider === providerId || cachedProvider === '*') cache.delete(key);
+    }
   } else cache.clear();
 }
 
 if (typeof onBackendNotification === 'function') {
   onBackendNotification((notification) => {
-    if (eventType(notification) === 'provider:auth-changed') invalidateProviderAuthStatus();
+    if (
+      ['provider:auth-changed', 'host:execution-context-changed'].includes(
+        eventType(notification) ?? '',
+      )
+    )
+      invalidateProviderAuthStatus();
   });
 }
 if (typeof onBackendReconnected === 'function') {
-  onBackendReconnected(() => invalidateProviderAuthStatus());
+  onBackendReconnected(() => {
+    connectionGeneration += 1;
+    invalidateProviderAuthStatus();
+  });
 }
 
 export function getProviderAuthVerdicts(
@@ -75,7 +99,7 @@ export function getProviderAuthVerdicts(
       .then(() => {
         if (trailing.get(key) === queuedState) trailing.delete(key);
         return getProviderAuthVerdicts({
-          providerId: options.providerId,
+          ...options,
           force: queuedState.force,
         });
       })

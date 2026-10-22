@@ -9,7 +9,7 @@ import type {
   FlattenedFileNode,
 } from './file-explorer-types';
 import { flattenVisibleNodes } from './file-explorer-utils';
-import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import {
   selectWorkspaceById,
   selectWorkspaceEnvironmentConfig,
@@ -25,6 +25,13 @@ export const selectFileExplorerState = store.createSelector<
 >((state, wsId) => {
   return state.fileExplorer.byWorkspaceId[wsId] ?? emptyFileExplorerWorkspaceState;
 });
+
+export const selectFileExplorerSearch = store.createSelector(
+  (state, wsId: string, consumerId: string) => {
+    const search = getItem(state.fileExplorer.searches, consumerId);
+    return search?.workspaceId === wsId ? search : undefined;
+  },
+);
 
 // ---------------------------------------------------------------------------
 // Individual field selectors

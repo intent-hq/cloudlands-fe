@@ -1,3 +1,4 @@
+import { backendReconnected } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import { describe, it, expect } from 'vitest';
 import {
   prStatusReducer,
@@ -52,4 +53,9 @@ describe('prStatusReducer', () => {
     expect(state.byWorkspaceId['ws-1'].isRefreshing).toBe(false);
     expect(state.byWorkspaceId['ws-2'].isRefreshing).toBe(true);
   });
+});
+
+it('retires PR refresh metadata when the connection changes', () => {
+  const old = prStatusReducer(initialState, prStatusRefreshCompleted('same-id', true));
+  expect(prStatusReducer(old, backendReconnected())).toEqual(initialState);
 });

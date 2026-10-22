@@ -19,6 +19,13 @@ export type ProposalLifecycleAction = 'apply' | 'undo' | 'dismiss';
 // extend this shape with their own optional fields.
 export interface ProposalApplyResult {
   workspaceId?: WorkspaceId;
+  transfer?: {
+    workspaceId: string;
+    sourceWorkspacePath: string;
+    sourceConnectionId: string;
+    destinationConnectionId: string;
+    phase: 'transferring' | 'imported';
+  };
 }
 
 export interface ProposalLifecycleEntry {
@@ -34,6 +41,7 @@ export interface ProposalLifecycleEntry {
    * `error` prose, but never key behavior off the bridge-mapped values.
    */
   errorCode?: string;
+  transferProgress?: 'building' | 'relaying' | 'committing';
   startedAt?: number;
   completedAt?: number;
   lastAction?: ProposalLifecycleAction;

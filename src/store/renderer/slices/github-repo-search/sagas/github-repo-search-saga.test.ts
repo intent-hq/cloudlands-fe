@@ -17,7 +17,7 @@ import {
   clearGithubRepoSearch,
   searchGithubRepos,
 } from '$store/renderer/slices/github-repo-search/github-repo-search-slice';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { githubRepoSearchSaga, SEARCH_DEBOUNCE_MS } from './github-repo-search-saga';
 
 type Fn = ReturnType<typeof vi.fn>;

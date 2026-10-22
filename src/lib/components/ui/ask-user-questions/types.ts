@@ -34,6 +34,8 @@ export interface AskUserAnswer {
   questionId: string;
   selectedIds: string[];
   otherText?: string;
+  /** Attachment bytes and presentation remain owned by the caller. */
+  hasAttachments?: boolean;
   skipped?: boolean;
 }
 
@@ -41,7 +43,8 @@ export interface AskUserQuestionsProps {
   questions: AskUserQuestion[];
   currentIndex?: number;
   defaultCurrentIndex?: number;
-  onCurrentIndexChange?: (index: number) => void;
+  /** Includes answers written during the same interaction, before controlled props refresh. */
+  onCurrentIndexChange?: (index: number, answers: Record<string, AskUserAnswer>) => void;
   answers?: Record<string, AskUserAnswer>;
   defaultAnswers?: Record<string, AskUserAnswer>;
   onAnswersChange?: (answers: Record<string, AskUserAnswer>) => void;
@@ -54,6 +57,8 @@ export interface AskUserQuestionsProps {
   headerActions?: Snippet;
   /** Leading actions in the bottom row, before question navigation. */
   footerActions?: Snippet;
+  onOtherPaste?: (event: ClipboardEvent, questionId: string) => void;
+  otherAttachments?: Snippet<[questionId: string]>;
   /** Center the heading and action groups for a focused question surface. */
   centered?: boolean;
   showCounter?: boolean;

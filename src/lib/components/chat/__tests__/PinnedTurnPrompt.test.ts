@@ -59,6 +59,25 @@ describe('pinned response trigger', () => {
     ['legacy hook', message('[Background hook "Legacy watch"] Tests passed'), 'Legacy watch'],
     ['PR', message('[PR monitor intent-hq/intent#42] Checks passed'), 'intent-hq/intent #42'],
     [
+      'MR without URL',
+      message('Pipeline passed', {
+        type: 'pr_monitor_wake',
+        monitorId: 'mr',
+        repo: 'Team/Sub/Repo',
+        prNumber: 42,
+        resource: {
+          repository: {
+            provider: 'gitlab',
+            instanceBaseUrl: 'https://forge.test/install',
+            projectPath: 'Team/Sub/Repo',
+          },
+          kind: 'merge-request',
+          number: 42,
+        },
+      }),
+      'Team/Sub/Repo !42',
+    ],
+    [
       'event',
       message('[WORKSPACE EVENTS]\nRaw dispatch payload', {
         type: 'event_notification',
@@ -88,8 +107,8 @@ describe('pinned response trigger', () => {
       render(PinnedTurnPrompt, { props: { message: source, onActivate } });
       const button = returnButton();
       const surface = screen.getByTestId('pinned-user-prompt');
-      expect(surface.title).toContain(label);
-      expect(surface.title).not.toMatch(
+      expect(surface.textContent).toContain(label);
+      expect(surface.textContent).not.toMatch(
         /\[WORKSPACE EVENTS\]|\[MESSAGE FROM AGENT|\[Background hook|\[PR monitor/,
       );
       await fireEvent.click(button);
@@ -109,8 +128,8 @@ describe('pinned response trigger', () => {
       onActivate,
     });
     const surface = screen.getByTestId('pinned-user-prompt');
-    expect(surface.title).toContain('New watch');
-    expect(surface.title).not.toContain('First human prompt');
+    expect(surface.textContent).toContain('New watch');
+    expect(surface.textContent).not.toContain('First human prompt');
     await fireEvent.click(returnButton());
     expect(onActivate).toHaveBeenCalledOnce();
   });
@@ -127,7 +146,9 @@ describe('pinned response trigger', () => {
         onActivate: vi.fn(),
       },
     });
-    expect((screen.getByRole('button') as HTMLButtonElement).title).toBe('Review the result');
+    expect(screen.getByTestId('pinned-user-prompt-text').textContent?.trim()).toBe(
+      'Review the result',
+    );
   });
 
   it('preserves reference-attachment context and Chief attribution across updates', async () => {
@@ -142,7 +163,9 @@ describe('pinned response trigger', () => {
       },
     ];
     const view = render(PinnedTurnPrompt, { props: { message: source, onActivate } });
-    expect((screen.getByRole('button') as HTMLButtonElement).title).toBe('layout-reference.txt');
+    expect(screen.getByTestId('pinned-user-prompt-text').textContent?.trim()).toBe(
+      'layout-reference.txt',
+    );
     await view.rerender({
       message: message('Continue the review', {
         type: 'chief_message',
@@ -151,8 +174,8 @@ describe('pinned response trigger', () => {
       onActivate,
     });
     const surface = screen.getByTestId('pinned-user-prompt');
-    expect(surface.title).not.toContain('Continue the review');
-    expect(surface.title).not.toContain('layout-reference.txt');
+    expect(surface.textContent).not.toContain('Continue the review');
+    expect(surface.textContent).not.toContain('layout-reference.txt');
     await fireEvent.click(returnButton());
     expect(onActivate).toHaveBeenCalledOnce();
   });
@@ -232,14 +255,18 @@ describe('pinned response trigger', () => {
       const button = screen.getByRole('button') as HTMLButtonElement;
 
       // Mirrors the daemon's legacy-file text projection, not a filename-only attachment reference.
-      expect(button.title).toBe('Attached file: layout-reference.txt');
+      expect(screen.getByTestId('pinned-user-prompt-text').textContent?.trim()).toBe(
+        'Attached file: layout-reference.txt',
+      );
       expect(source).toEqual(original);
       await fireEvent.click(button);
       expect(onActivate).toHaveBeenCalledOnce();
 
       await view.rerender({ message: message('Continue the review'), onActivate });
-      expect(button.title).toBe('Continue the review');
-      expect(button.title).not.toContain('layout-reference.txt');
+      expect(screen.getByTestId('pinned-user-prompt-text').textContent?.trim()).toBe(
+        'Continue the review',
+      );
+      expect(button.textContent).not.toContain('layout-reference.txt');
     },
   );
 });

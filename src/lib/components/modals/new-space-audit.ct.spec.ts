@@ -1,7 +1,7 @@
 import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { expect, test } from '../../../test/ct-test';
-import NewSpaceModal from './NewSpaceModal.svelte';
+import GitVerificationHarness from './__tests__/GitVerificationAuditHarness.svelte';
 import SelectedHarness from './NewSpaceSelectedAuditHarness.svelte';
 
 for (const selected of [false, true]) {
@@ -24,12 +24,20 @@ for (const selected of [false, true]) {
         'unsloth',
       ].map((id) => [id, { available: id === 'codex', authenticated: id === 'codex' }]),
     );
-    await mount(selected ? SelectedHarness : NewSpaceModal, {
+    await mount(selected ? SelectedHarness : GitVerificationHarness, {
       props: { open: true },
       hooksConfig: {
-        mockBackend: { 'drafts.get': null, 'drafts.set': null },
+        mockBackend: {
+          'drafts.get': null,
+          'drafts.set': null,
+          'host.toolAvailability': { tools: { git: { available: true } } },
+        },
         mockIpc: {
-          'system:check-git': { success: true, data: { available: true, version: '2.50.0' } },
+          ...(selected
+            ? {
+                'system:check-git': { success: true, data: { available: true, version: '2.50.0' } },
+              }
+            : {}),
           'providers:get-availability': {
             success: true,
             data: { hasAnyProvider: true, providers },
@@ -41,7 +49,10 @@ for (const selected of [false, true]) {
     await expect(dialog).toBeVisible();
     if (selected)
       await expect(dialog.getByText('design-system', { exact: true }).first()).toBeVisible();
-    await expect(page.getByText(/Git availability could not be verified/)).toHaveCount(0);
+    if (!selected) await expect(page.locator('[data-git-probe-result]')).toHaveText('true');
+    await expect(
+      page.getByText('Unable to verify Git (connection issue)', { exact: true }),
+    ).toHaveCount(0);
     await page.getByRole('button', { name: /Close/, exact: false }).first().focus();
     if (process.env.MODAL_AUDIT_CAPTURE_DIR) {
       const directory = resolve(process.env.MODAL_AUDIT_CAPTURE_DIR);

@@ -1,4 +1,4 @@
-import type { StoreMiddleware } from '@augmentcode/themis/types';
+import type { StoreMiddleware } from '@themislib/themis/types';
 
 /**
  * Batching middleware - groups rapid-fire actions to reduce re-renders.

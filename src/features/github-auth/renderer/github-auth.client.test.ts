@@ -56,3 +56,11 @@ describe('githubAuthClient user search', () => {
     });
   });
 });
+
+it('preserves a repository discovery failure instead of presenting an empty list', async () => {
+  mocks.invoke.mockResolvedValueOnce({
+    success: false,
+    error: 'Ask the connected host owner to configure Git authorization.',
+  });
+  await expect(githubAuthClient.listRepos()).rejects.toThrow('host owner');
+});

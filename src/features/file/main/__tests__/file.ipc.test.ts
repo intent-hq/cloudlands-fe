@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, Function>(),
   sendToWorkspaceWindows: vi.fn(),
+  getBackendIdForIpcSender: vi.fn(() => 'remote-1'),
   access: vi.fn(),
   mkdir: vi.fn(),
   writeFile: vi.fn(),
@@ -48,6 +49,11 @@ vi.mock('../../../system/main/system.ipc', () => ({
   sendToWorkspaceWindows: mocks.sendToWorkspaceWindows,
 }));
 
+vi.mock('../../../backend/main/backend.ipc', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../backend/main/backend.ipc')>()),
+  getBackendIdForIpcSender: mocks.getBackendIdForIpcSender,
+}));
+
 vi.mock('../../../../shared/main/file-sync-utils', () => ({
   renameWithRetry: mocks.renameWithRetry,
 }));
@@ -70,8 +76,9 @@ describe('file IPC content emitter contract', () => {
     const handler = mocks.handlers.get(FILE_CHANNELS.WRITE);
     expect(handler).toBeDefined();
 
+    const sender = { id: 7 };
     const result = await handler?.(
-      {},
+      { sender },
       {
         workspaceId: 'ws-1',
         path: '/repo/src/app.ts',
@@ -80,13 +87,20 @@ describe('file IPC content emitter contract', () => {
     );
 
     expect(result).toEqual({ success: true, data: { bytesWritten: 'updated content'.length } });
-    expect(mocks.sendToWorkspaceWindows).toHaveBeenCalledWith('ws-1', 'file:content-changed', {
-      workspaceId: 'ws-1',
-      path: '/repo/src/app.ts',
-      relativePath: '/repo/src/app.ts',
-      content: 'updated content',
-      source: 'user',
-    });
+    // Only the saving window's host receives the update.
+    expect(mocks.getBackendIdForIpcSender).toHaveBeenCalledWith(sender);
+    expect(mocks.sendToWorkspaceWindows).toHaveBeenCalledWith(
+      'ws-1',
+      'file:content-changed',
+      {
+        workspaceId: 'ws-1',
+        path: '/repo/src/app.ts',
+        relativePath: '/repo/src/app.ts',
+        content: 'updated content',
+        source: 'user',
+      },
+      'remote-1',
+    );
   });
 });
 

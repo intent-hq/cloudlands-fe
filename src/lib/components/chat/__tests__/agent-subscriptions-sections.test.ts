@@ -56,7 +56,12 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
     ),
   selectAgentSessionsById: Object.assign(
     () => makeReadable(Object.fromEntries(sessionState.byId)),
-    { select: () => Object.fromEntries(sessionState.byId) },
+    {
+      select: () => Object.fromEntries(sessionState.byId),
+      effect: function* () {
+        return Object.fromEntries(sessionState.byId);
+      },
+    },
   ),
   selectAgentHistoryMessages: Object.assign(() => makeReadable([]), {
     select: (_state: unknown, agentId: string) => sessionState.historyById.get(agentId) ?? [],
@@ -64,6 +69,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentIsResponding: (agentId: { subscribe: (run: (value: string) => void) => () => void }) =>
     makeDerivedReadable(agentId, (id) => mockIsResponding.get(id) ?? false),
   selectAgentDetailHydrated: () => makeReadable(false),
+  selectAgentBackgroundPending: () => makeReadable(false),
   selectAgentPreview: Object.assign(
     (agentId: { subscribe: (run: (value: string) => void) => () => void }) =>
       makeDerivedReadable(agentId, (id) => {
@@ -102,17 +108,6 @@ vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
 vi.mock('$features/agent/components/agent-avatar/AgentAvatarWithState.svelte', async () => ({
   default: (await import('./mocks/MockAvatarWithState.svelte')).default,
 }));
-vi.mock('$lib/components/ui/tooltip', async () => {
-  const SlotOnly = (await import('./mocks/SlotOnly.svelte')).default;
-  return {
-    Provider: SlotOnly,
-    Root: SlotOnly,
-    Trigger: SlotOnly,
-    Content: SlotOnly,
-    TooltipShortcut: SlotOnly,
-  };
-});
-
 import { store as appStore } from '$store/renderer/store';
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
@@ -620,7 +615,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
 
     const trailingSlot = within(agentRow('agent-active')).getByTestId('agent-card-trailing-slot');
     expect(trailingSlot.className).toContain('w-14');
-    const timestamp = trailingSlot.querySelector('[title]');
+    const timestamp = trailingSlot.querySelector('[data-tooltip-trigger]');
     expect(timestamp?.className).toContain('type-caption');
     expect(timestamp?.className).toContain('text-right');
     expect(timestamp?.className).toContain('group-hover/watch:opacity-0');
@@ -667,7 +662,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       const distinctSurfaceClass = /^(?:bg-(?!transparent$)|shadow(?:-|$))/;
 
       expect(summary.getAttribute('aria-expanded')).toBe('false');
-      expect(summary.classList).toContain('px-3!');
+      expect(summary.classList).toContain('subscription-card-row-inset');
       expect(summary.classList).toContain('py-2!');
       expect(summary.textContent?.trim()).toBe('2 agents finished');
       expect(
@@ -725,7 +720,9 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       expect(finishedLeadingColumn.className).toContain('--agent-avatar-standard-surface-size');
       expect(finishedLeadingColumn.className).not.toMatch(/^-m(?:[lrxse])?-/);
       expect(screen.getByTestId('one-shot-agent-list').classList).not.toContain('px-1');
-      expect(screen.getByTestId('one-shot-summary-toggle').classList).toContain('px-3!');
+      expect(screen.getByTestId('one-shot-summary-toggle').classList).toContain(
+        'subscription-card-row-inset',
+      );
       expect(finishedIcon).toBeTruthy();
       expect(finishedSummary.querySelector('[data-icon="check"]')).toBeNull();
       expect(finishedIcon?.classList).toContain('text-muted-foreground!');
@@ -734,10 +731,6 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       expect(waitingIcon?.classList).toContain('text-muted-foreground!');
       expect(waitingIcon?.classList).toContain('opacity-100');
       expect(finishedIcon?.className.baseVal).not.toMatch(/green/);
-      for (const token of ['h-3.5!', 'w-3.5!', 'shrink-0']) {
-        expect(finishedIcon?.classList).toContain(token);
-        expect(waitingIcon?.classList).toContain(token);
-      }
     },
   );
 
@@ -928,6 +921,90 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     expect(appStore.state.tabState.currentTabId).toBe(wsId);
     expect(navigateToRouteSpy).toHaveBeenCalledWith(`/workspace/${wsId}`);
   });
+
+  it.each([
+    ['keydown', 0],
+    ['pointerdown', 0],
+    ['keydown', 150],
+    ['pointerdown', 150],
+  ] as const)('lets a later %s supersede watched-agent focus after %dms', async (type, elapsed) => {
+    const wsId = 'ws-agent-panel-user-focus';
+    seedSession('agent-target', '2026-01-03T00:00:00.000Z', 'responding', wsId);
+    await renderWithSnapshot(
+      wsId,
+      snapshot([oneShotSubscription('watch-target', wsId, ['agent-target'])]),
+    );
+    seedWorkspace(wsId);
+    seedPanelLayout(wsId, { parent: { id: 'parent', tabs: [], activeTabId: null } }, 'parent');
+    await expandWaitingAgents();
+    const focusEvents: CustomEvent[] = [];
+    const onFocus = (event: Event) => focusEvents.push(event as CustomEvent);
+    window.addEventListener('panel:focus-content', onFocus);
+    vi.useFakeTimers();
+    try {
+      await fireEvent.click(within(agentRow('agent-target')).getAllByRole('button')[0]);
+      await vi.advanceTimersByTimeAsync(elapsed);
+      const delivered = focusEvents.length;
+      expect(delivered).toBe(elapsed === 0 ? 0 : 1);
+      // Opening Find or choosing another control is newer user intent. Neither
+      // the first pending focus nor the second retry may take that focus back.
+      if (type === 'keydown') await fireEvent.keyDown(window, { key: 'f', ctrlKey: true });
+      else await fireEvent.pointerDown(window);
+      await vi.advanceTimersByTimeAsync(600);
+      expect(focusEvents).toHaveLength(delivered);
+    } finally {
+      vi.useRealTimers();
+      window.removeEventListener('panel:focus-content', onFocus);
+    }
+  });
+
+  it.each([
+    ['input', 0],
+    ['textarea', 0],
+    ['select', 0],
+    ['contenteditable', 0],
+    ['input', 150],
+    ['textarea', 150],
+    ['select', 150],
+    ['contenteditable', 150],
+  ] as const)(
+    'preserves %s focus acquired after %dms of watched-agent reveal',
+    async (kind, elapsed) => {
+      const wsId = `ws-agent-panel-editable-${kind}-${elapsed}`;
+      seedSession('agent-target', '2026-01-03T00:00:00.000Z', 'responding', wsId);
+      await renderWithSnapshot(
+        wsId,
+        snapshot([oneShotSubscription('watch-target', wsId, ['agent-target'])]),
+      );
+      seedWorkspace(wsId);
+      seedPanelLayout(wsId, { parent: { id: 'parent', tabs: [], activeTabId: null } }, 'parent');
+      await expandWaitingAgents();
+      const focusEvents: CustomEvent[] = [];
+      const onFocus = (event: Event) => focusEvents.push(event as CustomEvent);
+      const control = document.createElement(kind === 'contenteditable' ? 'div' : kind);
+      if (kind === 'contenteditable') {
+        control.setAttribute('contenteditable', 'true');
+        control.tabIndex = 0;
+      }
+      document.body.append(control);
+      window.addEventListener('panel:focus-content', onFocus);
+      vi.useFakeTimers();
+      try {
+        await fireEvent.click(within(agentRow('agent-target')).getAllByRole('button')[0]);
+        await vi.advanceTimersByTimeAsync(elapsed);
+        expect(focusEvents).toHaveLength(elapsed === 0 ? 0 : 1);
+        control.focus();
+        expect(document.activeElement).toBe(control);
+        await vi.advanceTimersByTimeAsync(600 - elapsed);
+        expect(focusEvents).toHaveLength(elapsed === 0 ? 0 : 1);
+        expect(document.activeElement).toBe(control);
+      } finally {
+        control.remove();
+        vi.useRealTimers();
+        window.removeEventListener('panel:focus-content', onFocus);
+      }
+    },
+  );
 
   it('cancels delayed focus when navigation makes the watched workspace stale', async () => {
     const wsId = 'ws-agent-panel-stale-focus';
@@ -1218,7 +1295,10 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     backendRequestSpy.mockClear();
     await fireEvent.click(within(agentRow('agent-a')).getByTestId('one-shot-stop'));
     await flush();
-    expect(backendRequestSpy.mock.calls).toContainEqual(['agent.stop', { agentId: 'agent-a' }]);
+    expect(backendRequestSpy.mock.calls).toContainEqual([
+      'agent.stop',
+      { agentId: 'agent-a', workspaceId: 'ws-waiting-actions-shot' },
+    ]);
     await fireEvent.click(within(agentRow('agent-a')).getByTestId('one-shot-cancel'));
     await flush();
     expect(backendRequestSpy.mock.calls).toContainEqual([
@@ -1564,7 +1644,10 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     backendRequestSpy.mockClear();
     await fireEvent.click(within(agentRow('agent-b')).getByTestId('one-shot-stop'));
     await flush();
-    expect(backendRequestSpy.mock.calls).toContainEqual(['agent.stop', { agentId: 'agent-b' }]);
+    expect(backendRequestSpy.mock.calls).toContainEqual([
+      'agent.stop',
+      { agentId: 'agent-b', workspaceId: 'ws-waiting-actions-group' },
+    ]);
     await fireEvent.click(within(agentRow('agent-b')).getByTestId('one-shot-cancel'));
     await flush();
     expect(backendRequestSpy.mock.calls).toContainEqual([
@@ -1689,7 +1772,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     expect(screen.queryByTestId('agent-card-preview')).toBeNull();
   });
 
-  it('truncates long streaming activity without changing row height', async () => {
+  it('preserves long streaming activity in the preview', async () => {
     const wsId = 'ws-long-activity';
     const longText =
       'This is a very long streaming activity message that should be truncated to prevent horizontal overflow and maintain compact row height across different viewport sizes and zoom levels';
@@ -1713,11 +1796,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
 
     const preview = await screen.findByTestId('agent-card-preview');
 
-    // Verify truncation classes are applied
-    expect(preview.className).toContain('truncate');
-    expect(preview.className).toContain('whitespace-nowrap');
-    // Verify the full long text is set as title attribute for accessibility
-    expect(preview.getAttribute('title')).toContain('very long streaming');
+    expect(preview.textContent?.trim()).toBe(longText);
   });
 
   it('handles Unicode and emoji in streaming activity text', async () => {

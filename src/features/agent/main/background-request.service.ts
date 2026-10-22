@@ -6,7 +6,7 @@
  * that are NOT rendered in the UI and MUST NOT create a durable agent session.
  *
  * The daemon owns the lifecycle via `agent.completeOnce` (PROTOCOL §5.32):
- * it spawns the auggie CLI, cleans the reply, and reaps the process on any
+ * it uses the configured provider, cleans the reply, and reaps the process on any
  * failure path (timeout / cancel / drop). No client-side agent
  * create→send→read→delete orchestration and nothing to garbage-collect on
  * the error path — the previous ACPProvider spawn is retired.
@@ -36,10 +36,13 @@ export interface BackgroundRequestOptions {
    */
   workingDirectory?: string;
   /**
-   * Optional model — forwarded to the CLI as `--model`. Omitted when unset,
+   * Optional explicit model, forwarded to the daemon. Omitted when unset,
    * so the daemon/CLI default applies (PROTOCOL §5.32).
    */
   model?: string;
+  /** Quick-action settings key; model and effort fallback are resolved by the daemon. */
+  type?: 'commit' | 'pr' | 'review' | 'fast';
+  reasoningEffort?: string | null;
   /** Override the default timeout (ms). Daemon clamps at 120000. */
   timeoutMs?: number;
   /** System prompt (composed with `prompt` by the daemon). */
@@ -77,6 +80,8 @@ export async function makeBackgroundRequest(
       ? Math.min(requestedTimeout, DAEMON_TIMEOUT_CAP_MS)
       : BACKGROUND_REQUEST_TIMEOUT_MS;
   const params: Record<string, unknown> = { prompt, timeoutMs };
+  if (options.type) params.type = options.type;
+  if (options.reasoningEffort?.trim()) params.reasoningEffort = options.reasoningEffort;
   if (options.model) params.model = options.model;
   if (options.systemPrompt) params.systemPrompt = options.systemPrompt;
 

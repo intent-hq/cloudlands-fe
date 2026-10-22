@@ -8,6 +8,7 @@ export type SkillInfo = {
   name: string;
   description: string;
   location: string;
+  resourceDirectory?: string;
   scope?: 'project' | 'user';
 };
 

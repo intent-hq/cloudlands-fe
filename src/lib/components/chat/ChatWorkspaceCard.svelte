@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+  import { showAssistantContent } from '$features/home/assistant-panels';
   import { goto } from '$app/navigation';
   import { untrack } from 'svelte';
   import {
@@ -27,9 +29,10 @@
 
   interface Props {
     workspaceIds: string[];
+    workspaceId?: string;
   }
 
-  let { workspaceIds }: Props = $props();
+  let { workspaceIds, workspaceId: sourceWorkspaceId }: Props = $props();
   let workspacesById = $state<Record<string, Workspace | undefined>>({});
 
   function blockContextMenuCapture(node: HTMLElement) {
@@ -77,6 +80,11 @@
   async function handleWorkspaceClick(workspaceId: string, event?: MouseEvent | KeyboardEvent) {
     if (event?.metaKey || event?.ctrlKey) {
       handleWorkspaceOpenInNewWindow(workspaceId);
+      return;
+    }
+
+    if (sourceWorkspaceId === CHIEF_WORKSPACE_ID) {
+      await showAssistantContent(`/workspace/${workspaceId}`);
       return;
     }
 

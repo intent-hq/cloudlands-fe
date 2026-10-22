@@ -6,8 +6,9 @@
  * into a tri-state health value (healthy/degraded/down) plus stats payload.
  */
 
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
+import { parseProtocolVersion } from '$shared/protocol-version';
 import type {
   AgentMemoryUsageWirePayload,
   DaemonHealthState,
@@ -390,7 +391,8 @@ daemonHealthReducer.with(
       port: wirePayload.port ?? null,
       version: wirePayload.version,
       buildCommit: wirePayload.buildCommit,
-      protocolVersion: wirePayload.protocolVersion,
+      protocolVersion: parseProtocolVersion(wirePayload.protocolVersion) ?? undefined,
+      protocolVersionText: wirePayload.protocolVersion,
       uptimeSeconds: wirePayload.uptimeSeconds,
       cpuPercent: wirePayload.cpuPercent,
       memoryBytes: wirePayload.memoryBytes,

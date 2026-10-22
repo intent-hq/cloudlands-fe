@@ -44,6 +44,12 @@ describe('LiveClientsClient (REV-2 PROTOCOL §5.17, fake transport)', () => {
     expect(mockedRequest).toHaveBeenCalledWith('client.list');
   });
 
+  it('carries workspace context without filtering the returned registry', async () => {
+    mockedRequest.mockResolvedValueOnce({ clients: [DESKTOP_ROW] });
+    expect(await new LiveClientsClient().list('workspace-A')).toEqual([DESKTOP_ROW]);
+    expect(mockedRequest).toHaveBeenCalledWith('client.list', { workspaceId: 'workspace-A' });
+  });
+
   it('list rejects a malformed clients[] row instead of healing it', async () => {
     mockedRequest.mockResolvedValueOnce({ clients: [{ clientId: 'x' }] });
     const client = new LiveClientsClient();

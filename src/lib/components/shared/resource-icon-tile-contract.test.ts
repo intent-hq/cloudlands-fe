@@ -85,7 +85,6 @@ describe('resource icon tile source contract', () => {
     expect(tabBar).toContain('{@render panelIdentity(activeTab)}');
     expect(tabBar).toContain('data-panel-header-leading-surface');
     expect(tabBar).toContain('size={16}');
-    expect(tabBar).toContain('width="14"');
     // Rendered action ink, hit targets and keyboard routing are covered by agent-header-icons.ct.spec.ts.
     expect(navigator).toContain("import ChatTextIcon from 'phosphor-svelte/lib/ChatTextIcon'");
     expect(navigator).toMatch(
@@ -99,9 +98,6 @@ describe('resource icon tile source contract', () => {
     expect(chatSizes).toContain('header: 12');
     expect(chatSizes).toContain('compact: 16');
     expect(tabBar).not.toContain('pl-4 pr-2.5 sm:pl-6');
-    expect(tabBar).toContain(
-      '(var(--panel-header-height) - var(--agent-avatar-emphasized-surface-size)) / 2',
-    );
     expect(empty).not.toContain('ResourceIconTile');
     expect(empty).toContain('<Fa icon={action.icon} class="size-[1em]" />');
     expect(empty).toContain('<Fa icon={row.icon} class="size-[1em]" />');

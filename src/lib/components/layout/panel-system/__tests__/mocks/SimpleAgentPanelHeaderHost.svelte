@@ -9,8 +9,12 @@
   import {
     clearPanelLayout,
     initializeLayout,
+    setPanelColumnCount,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
-  import { selectPanelColumnCount } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import {
+    selectExpandedPanelId,
+    selectPanelColumnCount,
+  } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import TaskProgressControl from '$lib/components/chat/TaskProgressControl.svelte';
   import BrowserTabsMenu from '$lib/components/chat/BrowserTabsMenu.svelte';
   import ChatMessageNavigator from '$lib/components/chat/ChatMessageNavigator.svelte';
@@ -22,12 +26,14 @@
     width = 560,
     theme = 'light',
     fullActions = false,
+    initialColumnCount = 1,
   }: {
     activeAgent?: 'root' | 'delegated';
     stackCount?: 1 | 2;
     width?: number;
     theme?: 'light' | 'dark';
     fullActions?: boolean;
+    initialColumnCount?: 1 | 2;
   } = $props();
 
   const workspaceId = WorkspaceId('simple-agent-header-workspace');
@@ -35,6 +41,7 @@
   const delegatedAgentId = AgentId('simple-agent-header-delegated');
   const panelId = 'simple-agent-header-panel';
   const columnCount$ = selectPanelColumnCount(workspaceId);
+  const expandedPanelId$ = selectExpandedPanelId(workspaceId);
   const timestamp = '2026-08-24T00:00:00.000Z';
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
   let rootName = $state('Root coordinator with a deliberately long current agent name');
@@ -106,6 +113,9 @@
         columnCount: 1,
       }),
     );
+    if (initialColumnCount > 1) {
+      store.dispatch(setPanelColumnCount(workspaceId, initialColumnCount));
+    }
     return () => store.dispatch(clearPanelLayout(workspaceId));
   });
 
@@ -119,42 +129,43 @@
 </script>
 
 {#snippet primaryActions()}
-  <div class="flex min-w-0 items-center gap-0.5">
-    <TaskProgressControl
-      tasks={[{ id: 'review', status: 'review_required', title: 'Review the header' }]}
-      presentation="checklist"
-    />
-    <BrowserTabsMenu
-      {workspaceId}
-      agentId={rootAgentId}
-      entries={[
-        {
-          tab: {
-            id: 'header-browser',
-            type: 'browser',
-            title: 'Header preview',
-            ownerAgentId: rootAgentId,
-            closable: true,
-          },
-          panelId,
-          active: true,
-          hidden: false,
+  <TaskProgressControl
+    embedded
+    tasks={[{ id: 'review', status: 'review_required', title: 'Review the header' }]}
+    presentation="checklist"
+  />
+  <BrowserTabsMenu
+    embedded
+    {workspaceId}
+    agentId={rootAgentId}
+    entries={[
+      {
+        tab: {
+          id: 'header-browser',
+          type: 'browser',
+          title: 'Header preview',
+          ownerAgentId: rootAgentId,
+          closable: true,
         },
-      ]}
-    />
-    <ChatMessageNavigator
-      messages={[
-        { id: 'first', text: 'Review header layout' },
-        { id: 'last', text: 'Keep actions usable' },
-      ]}
-      isAtBottom={atBottom}
-      onSelectMessage={(id) => {
-        selectedMessage = id;
-        return true;
-      }}
-      onScrollToBottom={() => (atBottom = true)}
-    />
-  </div>
+        panelId,
+        active: true,
+        hidden: false,
+      },
+    ]}
+  />
+  <ChatMessageNavigator
+    embedded
+    messages={[
+      { id: 'first', text: 'Review header layout' },
+      { id: 'last', text: 'Keep actions usable' },
+    ]}
+    isAtBottom={atBottom}
+    onSelectMessage={(id) => {
+      selectedMessage = id;
+      return true;
+    }}
+    onScrollToBottom={() => (atBottom = true)}
+  />
 {/snippet}
 
 <section
@@ -168,6 +179,7 @@
   data-rename-count={renameCount}
   data-close-count={closeCount}
   data-zoom-count={zoomCount}
+  data-expanded-panel-id={$expandedPanelId$ ?? ''}
   data-column-count={$columnCount$}
   data-selected-message={selectedMessage}
 >
@@ -178,7 +190,7 @@
     {workspaceId}
     isFocused
     onTabRename={(tab, name) => renameAgent(tab.id, name)}
-    contentActions={fullActions ? { primary: primaryActions } : undefined}
+    contentActions={fullActions ? { additional: primaryActions } : undefined}
     onTabClick={(id) => (activeAgent = id === 'root-tab' ? 'root' : 'delegated')}
     onZoomToggle={() => (zoomCount += 1)}
     onTabClose={() => (closeCount += 1)}

@@ -3,6 +3,8 @@ type KnownWindowEventName =
   | 'agent:scroll-to-activity'
   | 'agent:scroll-to-turn'
   | 'app:deep-link-create'
+  // Browser-emitted focus loss; the presence saga clears discussion typing.
+  | 'blur'
   | 'chat:attach-context'
   | 'chat:attach-files'
   | 'chat:enhance-prompt'
@@ -31,7 +33,6 @@ type KnownWindowEventName =
   | 'workspace:go-to-line'
   | 'workspace:new-terminal'
   | 'workspace:tab-moved'
-  | 'workspace:toggle-left-sidebar'
   // Orphan listener saga (`watchWaitingForFirstMessageSaga` in
   // workspace-agents-saga.ts) — no dispatcher exists today. Tracked as a
   // follow-up cleanup, kept in the union so the listener type-checks.

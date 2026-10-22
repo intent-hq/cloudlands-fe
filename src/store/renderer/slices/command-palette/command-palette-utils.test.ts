@@ -341,3 +341,36 @@ describe('buildMessageTitleSegments', () => {
     ).toBeUndefined();
   });
 });
+
+describe('note MRU ownership', () => {
+  const local: WorkspaceObject = {
+    id: JSON.stringify(['ws-1', 'spec']),
+    noteId: 'spec',
+    workspaceId: 'ws-1',
+    type: 'note',
+    label: 'Spec',
+    icon: {},
+  };
+  const other: WorkspaceObject = {
+    ...local,
+    id: JSON.stringify(['ws-2', 'spec']),
+    workspaceId: 'ws-2',
+  };
+  it('reads composite identities without confusing duplicate note IDs', () => {
+    expect(
+      buildRecentItems([local, other], [{ type: 'note', id: other.id, timestamp: 1 }]),
+    ).toEqual([other]);
+    expect(buildRecentItems([local], [{ type: 'note', id: other.id, timestamp: 1 }])).toEqual([]);
+  });
+  it('reads legacy bare IDs against the current workspace and deduplicates old/new entries', () => {
+    expect(
+      buildRecentItems(
+        [local],
+        [
+          { type: 'note', id: 'spec', timestamp: 2 },
+          { type: 'note', id: local.id, timestamp: 1 },
+        ],
+      ),
+    ).toEqual([local]);
+  });
+});

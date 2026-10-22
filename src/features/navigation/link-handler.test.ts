@@ -1,7 +1,15 @@
+import { showLinkTooltip } from '$lib/components/ui/tooltip/link-tooltip-state.svelte';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { handleLink, createGlobalLinkClickHandler, createLinkClickHandler } from './link-handler';
+import {
+  handleLink,
+  createGlobalLinkClickHandler,
+  createLinkClickHandler,
+  createLinkTooltipHandler,
+  openLinkInApp,
+} from './link-handler';
 import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-import type { WorkspaceId } from '$shared/types/branded-ids';
+import { CHIEF_WORKSPACE_ID, type WorkspaceId } from '$shared/types/branded-ids';
+import type { GithubLinkDefaultAction, LinkHandlerOptions } from '$shared/utils/link-helpers';
 import type { Workspace } from '$shared/types';
 import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
@@ -9,9 +17,18 @@ import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/sli
 const TEST_WORKSPACE_ID = 'ws-1' as WorkspaceId;
 const TEST_WORKTREE_ROOT = '/repo/root';
 
+const preferences = vi.hoisted(() => ({
+  githubLinkDefaultAction: 'show-choices' as GithubLinkDefaultAction,
+}));
+const showAssistantContentMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
+vi.mock('$features/home/assistant-panels', () => ({
+  showAssistantContent: showAssistantContentMock,
+}));
+
 const handleIntentLinkMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 // Mock the dynamic imports used by handleLink
-vi.mock('$lib/utils/workspaces-link-handler', () => ({
+vi.mock('$lib/utils/workspaces-link-handler', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/utils/workspaces-link-handler')>()),
   handleIntentLink: handleIntentLinkMock,
 }));
 
@@ -40,6 +57,11 @@ vi.mock('./link-action-menu-state.svelte', () => ({
   hideLinkActionMenu: vi.fn(),
 }));
 
+const loadLinkedWorkspacesMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+vi.mock('./link-action-menu-linked-workspaces', () => ({
+  loadLinkActionMenuLinkedWorkspaces: loadLinkedWorkspacesMock,
+}));
+
 const writeTextToClipboardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 vi.mock('$lib/utils/clipboard', () => ({
   writeTextToClipboard: writeTextToClipboardMock,
@@ -49,12 +71,14 @@ const gotoMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 vi.mock('$app/navigation', () => ({ goto: gotoMock }));
 
 // Workspace entity lookup used to relativize absolute paths
+const workspaceRoots = vi.hoisted(() => ({
+  worktreePath: '/repo/root' as string | undefined,
+  path: '/repo/clone',
+}));
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: {
     select: (_state: unknown, wsId: string) =>
-      wsId === 'ws-1'
-        ? ({ id: 'ws-1', worktreePath: '/repo/root' } as unknown as Workspace)
-        : undefined,
+      wsId === 'ws-1' ? ({ id: 'ws-1', ...workspaceRoots } as unknown as Workspace) : undefined,
   },
 }));
 
@@ -71,6 +95,7 @@ vi.mock('$store/renderer/store', async () => {
 
   return createAppStoreMockModule({
     state: () => ({
+      userPreferences: preferences,
       panelLayout: {
         byWorkspaceId: {
           'ws-1': { panels: { 'panel-chat': { tabs: [] } } },
@@ -78,6 +103,154 @@ vi.mock('$store/renderer/store', async () => {
       },
     }),
     dispatch: reduxDispatchMock,
+  });
+});
+
+describe.each(['Assistant', 'workspace preview'] as const)('Home GitHub links in %s', (surface) => {
+  const url = 'https://github.com/acme/widgets/pull/7#discussion_r42';
+  let options: LinkHandlerOptions;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    preferences.githubLinkDefaultAction = 'show-choices';
+    const container = document.createElement('div');
+    if (surface === 'Assistant') container.dataset.assistantLayoutId = 'assistant-thread-1';
+    else container.dataset.workspaceLinkTarget = TEST_WORKSPACE_ID;
+    const anchor = document.createElement('a');
+    container.append(anchor);
+    const event = new MouseEvent('click', { clientX: 100, clientY: 200 });
+    Object.defineProperty(event, 'target', { value: anchor });
+    options = {
+      workspaceId: surface === 'Assistant' ? CHIEF_WORKSPACE_ID : TEST_WORKSPACE_ID,
+      event,
+    };
+  });
+
+  afterEach(() => {
+    preferences.githubLinkDefaultAction = 'show-choices';
+  });
+
+  it.each(['click', 'Enter'] as const)(
+    'uses the saved external-browser preference on %s',
+    async (activation) => {
+      preferences.githubLinkDefaultAction = 'open-in-browser';
+      if (activation === 'Enter') {
+        const event = new KeyboardEvent('keydown', { key: 'Enter' });
+        Object.defineProperty(event, 'target', { value: options.event!.target });
+        options.event = event;
+      }
+
+      expect(await handleLink(url, options)).toBe(true);
+
+      expect(invokeIpcMock).toHaveBeenCalledExactlyOnceWith('shell:openExternal', { url });
+      expect(showAssistantContentMock).not.toHaveBeenCalled();
+      expect(openBrowserPanelMock).not.toHaveBeenCalled();
+      expect(showLinkActionMenuMock).not.toHaveBeenCalled();
+      expect(gotoMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it('shows choices without opening a browser or leaving Home', async () => {
+    expect(await handleLink(url, options)).toBe(true);
+
+    expect(showLinkActionMenuMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url,
+        workspaceId: options.workspaceId,
+        gitHubRef: { owner: 'acme', repo: 'widgets', number: 7, kind: 'pr' },
+        // Only a workspace preview has a workspace for Open in app to enter.
+        openInWorkspace: surface === 'workspace preview',
+        assistantLayoutId: surface === 'Assistant' ? 'assistant-thread-1' : undefined,
+      }),
+    );
+    expect(showAssistantContentMock).not.toHaveBeenCalled();
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
+    expect(invokeIpcMock).not.toHaveBeenCalled();
+    expect(gotoMock).not.toHaveBeenCalled();
+  });
+
+  it('looks up the linked workspaces for that menu opening', async () => {
+    showLinkActionMenuMock.mockReturnValueOnce(42);
+    expect(await handleLink(url, options)).toBe(true);
+
+    await vi.waitFor(() =>
+      expect(loadLinkedWorkspacesMock).toHaveBeenCalledExactlyOnceWith(42, url),
+    );
+  });
+
+  it('keeps the menu and opens no browser when the linked-workspace lookup fails', async () => {
+    loadLinkedWorkspacesMock.mockRejectedValueOnce(new Error('chunk failed to load'));
+    expect(await handleLink(url, options)).toBe(true);
+
+    await vi.waitFor(() => expect(loadLinkedWorkspacesMock).toHaveBeenCalled());
+    await Promise.resolve();
+    expect(showLinkActionMenuMock).toHaveBeenCalledTimes(1);
+    expect(invokeIpcMock).not.toHaveBeenCalled();
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
+  });
+
+  it('copies the link without opening a browser or leaving Home', async () => {
+    preferences.githubLinkDefaultAction = 'copy-link';
+    expect(await handleLink(url, options)).toBe(true);
+
+    expect(writeTextToClipboardMock).toHaveBeenCalledExactlyOnceWith(url);
+    expect(showAssistantContentMock).not.toHaveBeenCalled();
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
+    expect(invokeIpcMock).not.toHaveBeenCalled();
+    expect(gotoMock).not.toHaveBeenCalled();
+  });
+
+  it('starts a workspace with the clicked pull request', async () => {
+    preferences.githubLinkDefaultAction = 'start-workspace';
+    expect(await handleLink(url, options)).toBe(true);
+
+    expect(reduxDispatchMock).toHaveBeenCalledWith(
+      setWorkspaceInitializerPendingGitHubPrefill({
+        owner: 'acme',
+        repo: 'widgets',
+        number: 7,
+        kind: 'pr',
+        url,
+      }),
+    );
+    expect(reduxDispatchMock).toHaveBeenCalledWith(setShowCreateModal(true));
+    expect(showAssistantContentMock).not.toHaveBeenCalled();
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
+    expect(invokeIpcMock).not.toHaveBeenCalled();
+    expect(gotoMock).not.toHaveBeenCalled();
+  });
+
+  it.each(['preference', 'modifier'] as const)(
+    'opens in the owning app panel through the %s',
+    async (trigger) => {
+      preferences.githubLinkDefaultAction =
+        trigger === 'preference' ? 'open-in-app' : 'open-in-browser';
+      if (trigger === 'modifier') options.modifiers = { metaKey: true, ctrlKey: true };
+      expect(await handleLink(url, options)).toBe(true);
+
+      if (surface === 'Assistant') {
+        expect(showAssistantContentMock).toHaveBeenCalledExactlyOnceWith(url, {
+          layoutId: 'assistant-thread-1',
+        });
+        expect(openBrowserPanelMock).not.toHaveBeenCalled();
+        expect(gotoMock).not.toHaveBeenCalled();
+      } else {
+        expect(gotoMock).toHaveBeenCalledWith('/workspace/ws-1');
+        expect(openBrowserPanelMock).toHaveBeenCalledWith(url, undefined, undefined, undefined);
+        expect(showAssistantContentMock).not.toHaveBeenCalled();
+      }
+      expect(invokeIpcMock).not.toHaveBeenCalled();
+      expect(showLinkActionMenuMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps explicit external actions above the in-app preference', async () => {
+    preferences.githubLinkDefaultAction = 'open-in-app';
+    expect(await handleLink(url, { ...options, forceExternal: true })).toBe(true);
+    expect(invokeIpcMock).toHaveBeenCalledExactlyOnceWith('shell:openExternal', { url });
+    expect(showAssistantContentMock).not.toHaveBeenCalled();
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
+    expect(gotoMock).not.toHaveBeenCalled();
   });
 });
 
@@ -338,6 +511,8 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
   const resolvedUrl = (rawHref: string) => new URL(rawHref, window.location.href).href;
 
   beforeEach(() => {
+    workspaceRoots.worktreePath = TEST_WORKTREE_ROOT;
+    workspaceRoots.path = '/repo/clone';
     reduxDispatchMock.mockClear();
     openBrowserPanelMock.mockClear();
     invokeIpcMock.mockClear();
@@ -345,6 +520,164 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     handleIntentLinkMock.mockClear();
     (window as unknown as { electronAPI?: object }).electronAPI = {};
   });
+
+  it.each(['docs/design.md', './docs/design.md', `${TEST_WORKTREE_ROOT}/docs/design.md`])(
+    'opens a direct file target without rawHref: %s',
+    async (target) => {
+      expect(await handleLink(target, { workspaceId: TEST_WORKSPACE_ID })).toBe(true);
+      expect(reduxDispatchMock).toHaveBeenCalledWith(
+        openWorkspaceFile(TEST_WORKSPACE_ID, 'docs/design.md', {
+          filePathIsLiteral: true,
+          line: undefined,
+          openInAdjacentPanel: false,
+        }),
+      );
+      expect(invokeIpcMock).not.toHaveBeenCalled();
+      expect(openBrowserPanelMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    'HTTPS://example.com/docs',
+    'Https://example.com/docs',
+    'MAILTO:user@example.com',
+    'custom.scheme:resource',
+    'CUSTOM.SCHEME:resource',
+    'custom.scheme:resource.txt:17',
+    'x://example.com/docs',
+    'X://example.com/docs',
+    '//example.com/docs',
+    '#heading',
+  ])('keeps non-file targets external with or without a workspace: %s', async (target) => {
+    expect(await handleLink(target, { workspaceId: TEST_WORKSPACE_ID })).toBe(true);
+    expect(await handleLink(target, {})).toBe(true);
+    expect(reduxDispatchMock).not.toHaveBeenCalled();
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
+    expect(invokeIpcMock).toHaveBeenCalledTimes(2);
+    expect(invokeIpcMock).toHaveBeenNthCalledWith(1, 'shell:openExternal', { url: target });
+    expect(invokeIpcMock).toHaveBeenNthCalledWith(2, 'shell:openExternal', { url: target });
+  });
+
+  it.each(['c:/repo/root', 'C:/repo/root', 'c:\\repo\\root', 'C:\\repo\\root'])(
+    'recognizes drive-letter paths without confusing them with URL schemes: %s',
+    async (root) => {
+      workspaceRoots.worktreePath = root;
+      const separator = root.includes('\\') ? '\\' : '/';
+      const target = `${root}${separator}docs${separator}design.md`;
+      expect(await handleLink(target, { workspaceId: TEST_WORKSPACE_ID })).toBe(true);
+      expect(await handleLink(target, { workspaceId: TEST_WORKSPACE_ID, rawHref: target })).toBe(
+        true,
+      );
+      expect(reduxDispatchMock).toHaveBeenCalledTimes(2);
+      expect(reduxDispatchMock).toHaveBeenCalledWith(
+        openWorkspaceFile(TEST_WORKSPACE_ID, 'docs/design.md', {
+          filePathIsLiteral: true,
+          line: undefined,
+          openInAdjacentPanel: false,
+        }),
+      );
+      expect(invokeIpcMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['readme.md:17', 'readme.md:17:4', 'readme.md#L17'])(
+    'recognizes a bare filename with a supported line suffix: %s',
+    async (target) => {
+      expect(await handleLink(target, { workspaceId: TEST_WORKSPACE_ID })).toBe(true);
+      expect(reduxDispatchMock).toHaveBeenCalledWith(
+        openWorkspaceFile(TEST_WORKSPACE_ID, 'readme.md', {
+          filePathIsLiteral: true,
+          line: 17,
+          openInAdjacentPanel: false,
+        }),
+      );
+      expect(invokeIpcMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['raw href', 'direct target', 'resolved URL'])(
+    'preserves encoded filenames and line locations from %s',
+    async (source) => {
+      const cases = [
+        ['docs/a%20b%23c%3Fd.md', 'docs/a b#c?d.md', undefined],
+        ['docs/100%25.md', 'docs/100%.md', undefined],
+        ['docs/literal%2520.md', 'docs/literal%20.md', undefined],
+        ['docs/design.md%23L42', 'docs/design.md#L42', undefined],
+        ['docs/design.md%3A17', 'docs/design.md:17', undefined],
+        ['docs/100%25.md#L42', 'docs/100%.md', 42],
+        ['docs/100%25.md:17:4', 'docs/100%.md', 17],
+      ] as const;
+      for (const [target, path, line] of cases) {
+        reduxDispatchMock.mockClear();
+        expect(
+          await handleLink(source === 'direct target' ? target : resolvedUrl(target), {
+            workspaceId: TEST_WORKSPACE_ID,
+            ...(source === 'raw href' ? { rawHref: target } : {}),
+          }),
+        ).toBe(true);
+        expect(reduxDispatchMock).toHaveBeenCalledWith(
+          openWorkspaceFile(TEST_WORKSPACE_ID, path, {
+            filePathIsLiteral: true,
+            line,
+            openInAdjacentPanel: false,
+          }),
+        );
+      }
+      expect(invokeIpcMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([TEST_WORKTREE_ROOT, `${TEST_WORKTREE_ROOT}/`])(
+    'uses the owning worktree root with optional trailing separator: %s',
+    async (root) => {
+      workspaceRoots.worktreePath = root;
+      const rawHref = `${TEST_WORKTREE_ROOT}/packages/cloudlands-fe/src/app.html`;
+      await handleLink('https://different.example/wrong/path', {
+        workspaceId: TEST_WORKSPACE_ID,
+        rawHref,
+      });
+      expect(reduxDispatchMock).toHaveBeenCalledWith(
+        openWorkspaceFile(TEST_WORKSPACE_ID, 'packages/cloudlands-fe/src/app.html', {
+          filePathIsLiteral: true,
+          line: undefined,
+          openInAdjacentPanel: false,
+        }),
+      );
+      expect(invokeIpcMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it('falls back to the repository root only when there is no worktree', async () => {
+    workspaceRoots.worktreePath = undefined;
+    await handleLink('/repo/clone/docs/design.md', { workspaceId: TEST_WORKSPACE_ID });
+    expect(reduxDispatchMock).toHaveBeenCalledWith(
+      openWorkspaceFile(TEST_WORKSPACE_ID, 'docs/design.md', {
+        filePathIsLiteral: true,
+        line: undefined,
+        openInAdjacentPanel: false,
+      }),
+    );
+  });
+
+  it.each(['/repo/root-other/docs/design.md', '/repo/clone/docs/design.md'])(
+    'does not reinterpret an outside-worktree absolute target: %s',
+    async (target) => {
+      await handleLink(target, { workspaceId: TEST_WORKSPACE_ID });
+      expect(reduxDispatchMock).not.toHaveBeenCalled();
+      expect(invokeIpcMock).toHaveBeenCalledWith('shell:openExternal', {
+        url: `vscode://file/${target}`,
+      });
+    },
+  );
+
+  it.each(['../outside.md', 'docs/%2e%2e/outside.md', 'docs/%00.md', 'docs/%ZZ.md', './'])(
+    'rejects invalid direct file targets: %s',
+    async (target) => {
+      expect(await handleLink(target, { workspaceId: TEST_WORKSPACE_ID })).toBe(false);
+      expect(reduxDispatchMock).not.toHaveBeenCalled();
+      expect(invokeIpcMock).not.toHaveBeenCalled();
+    },
+  );
 
   it('should route a relative raw href to openWorkspaceFile', async () => {
     const rawHref = 'src/main.rs';
@@ -356,6 +689,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     expect(result).toBe(true);
     expect(reduxDispatchMock).toHaveBeenCalledWith(
       openWorkspaceFile(TEST_WORKSPACE_ID, 'src/main.rs', {
+        filePathIsLiteral: true,
         line: undefined,
         openInAdjacentPanel: false,
       }),
@@ -373,6 +707,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     expect(result).toBe(true);
     expect(reduxDispatchMock).toHaveBeenCalledWith(
       openWorkspaceFile(TEST_WORKSPACE_ID, 'src/lib.rs', {
+        filePathIsLiteral: true,
         line: undefined,
         openInAdjacentPanel: false,
       }),
@@ -390,6 +725,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     expect(reduxDispatchMock).toHaveBeenNthCalledWith(
       1,
       openWorkspaceFile(TEST_WORKSPACE_ID, relative, {
+        filePathIsLiteral: true,
         line: undefined,
         openInAdjacentPanel: false,
       }),
@@ -397,6 +733,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     expect(reduxDispatchMock).toHaveBeenNthCalledWith(
       2,
       openWorkspaceFile(TEST_WORKSPACE_ID, relative, {
+        filePathIsLiteral: true,
         line: undefined,
         openInAdjacentPanel: false,
       }),
@@ -409,6 +746,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
 
     expect(reduxDispatchMock).toHaveBeenCalledWith(
       openWorkspaceFile(TEST_WORKSPACE_ID, 'packages/cloudlands-fe/src/app.html', {
+        filePathIsLiteral: true,
         line: undefined,
         openInAdjacentPanel: false,
       }),
@@ -468,6 +806,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     expect(result).toBe(true);
     expect(reduxDispatchMock).toHaveBeenCalledWith(
       openWorkspaceFile(TEST_WORKSPACE_ID, 'src/main.rs', {
+        filePathIsLiteral: true,
         line: undefined,
         openInAdjacentPanel: false,
       }),
@@ -485,6 +824,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     expect(result).toBe(true);
     expect(reduxDispatchMock).toHaveBeenCalledWith(
       openWorkspaceFile(TEST_WORKSPACE_ID, 'src/main.rs', {
+        filePathIsLiteral: true,
         line: 42,
         openInAdjacentPanel: false,
       }),
@@ -501,6 +841,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     expect(result).toBe(true);
     expect(reduxDispatchMock).toHaveBeenCalledWith(
       openWorkspaceFile(TEST_WORKSPACE_ID, 'src/main.rs', {
+        filePathIsLiteral: true,
         line: 17,
         openInAdjacentPanel: false,
       }),
@@ -518,6 +859,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     expect(result).toBe(true);
     expect(reduxDispatchMock).toHaveBeenCalledWith(
       openWorkspaceFile(TEST_WORKSPACE_ID, 'src/main.rs', {
+        filePathIsLiteral: true,
         line: undefined,
         openInAdjacentPanel: true,
       }),
@@ -548,6 +890,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     expect(reduxDispatchMock).toHaveBeenNthCalledWith(
       2,
       openWorkspaceFile(TEST_WORKSPACE_ID, 'src/scoped.ts', {
+        filePathIsLiteral: true,
         line: undefined,
         openInAdjacentPanel: false,
         sourcePanelId: 'panel-chat',
@@ -656,6 +999,7 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     });
     expect(reduxDispatchMock).toHaveBeenCalledWith(
       openWorkspaceFile(TEST_WORKSPACE_ID, 'src/main.rs', {
+        filePathIsLiteral: true,
         line: undefined,
         openInAdjacentPanel: false,
       }),
@@ -772,9 +1116,40 @@ describe('handleLink – flipped http(s) routing and link action menu', () => {
       y: 200,
       workspaceId: TEST_WORKSPACE_ID,
       anchorElement: null,
+      openInWorkspace: false,
     });
     expect(invokeIpcMock).not.toHaveBeenCalled();
     expect(openBrowserPanelMock).not.toHaveBeenCalled();
+  });
+
+  it('reads the source panel from the page when the caller passes an empty one', async () => {
+    const url = 'https://github.com/acme/widgets/issues/42';
+    const { container, anchor } = buildContainerWithLink(url);
+    container.dataset.panelId = 'panel-chat';
+    const event = new MouseEvent('click', { clientX: 5, clientY: 6 });
+    Object.defineProperty(event, 'target', { value: anchor });
+
+    await handleLink(url, { workspaceId: TEST_WORKSPACE_ID, event, sourcePanelId: '' });
+
+    expect(showLinkActionMenuMock).toHaveBeenCalledWith(
+      expect.objectContaining({ sourcePanelId: 'panel-chat' }),
+    );
+    container.remove();
+  });
+
+  it('passes the source panel to the menu for a click inside a workspace panel', async () => {
+    const url = 'https://github.com/acme/widgets/issues/42';
+    const { container, anchor } = buildContainerWithLink(url);
+    container.dataset.panelId = 'panel-chat';
+    const event = new MouseEvent('click', { clientX: 5, clientY: 6 });
+    Object.defineProperty(event, 'target', { value: anchor });
+
+    expect(await handleLink(url, { workspaceId: TEST_WORKSPACE_ID, event })).toBe(true);
+
+    expect(showLinkActionMenuMock).toHaveBeenCalledWith(
+      expect.objectContaining({ openInWorkspace: false, sourcePanelId: 'panel-chat' }),
+    );
+    container.remove();
   });
 
   it('keyboard activation (0,0 click) anchors the menu to the link element rect', async () => {
@@ -922,5 +1297,140 @@ describe('handleLink – flipped http(s) routing and link action menu', () => {
     expect(result).toBe(true);
     expect(showLinkActionMenuMock).not.toHaveBeenCalled();
     expect(invokeIpcMock).toHaveBeenCalledWith('shell:openExternal', { url });
+  });
+});
+
+it('captures the hovered workspace before its tooltip module resolves', async () => {
+  const { container, anchor } = buildContainerWithLink('https://github.com/org/repo/pull/1');
+  container.dataset.workspaceId = 'a';
+  const cleanup = createLinkTooltipHandler(container);
+  anchor.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+  container.dataset.workspaceId = 'b';
+  await vi.waitFor(() => expect(showLinkTooltip).toHaveBeenCalledWith(anchor, anchor.href, 'a'));
+  cleanup();
+  container.remove();
+});
+
+describe('chat and note resource hover context', () => {
+  it('uses each actual workspace ancestor without normalizing the original URL', async () => {
+    vi.mocked(showLinkTooltip).mockClear();
+    const container = document.createElement('div');
+    document.body.append(container);
+    const stop = createLinkTooltipHandler(container);
+    const original =
+      'https://gitlab.example.test:8443/forge/Team/Platform/api/-/merge_requests/42/diffs?view=parallel#note_42';
+    try {
+      for (const workspaceId of ['chat-workspace', 'note-workspace']) {
+        const surface = document.createElement('section');
+        surface.dataset.workspaceSurface = workspaceId;
+        const anchor = document.createElement('a');
+        anchor.href = original;
+        surface.append(anchor);
+        container.append(surface);
+        anchor.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+        await vi.dynamicImportSettled();
+        expect(showLinkTooltip).toHaveBeenLastCalledWith(anchor, original, workspaceId);
+        anchor.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+      }
+      const anchor = document.createElement('a');
+      anchor.href = original;
+      container.append(anchor);
+      anchor.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      await vi.dynamicImportSettled();
+      expect(showLinkTooltip).toHaveBeenLastCalledWith(anchor, original, undefined);
+    } finally {
+      stop();
+      container.remove();
+    }
+  });
+});
+
+describe('openLinkInApp', () => {
+  const url = 'https://github.com/acme/widgets/pull/7';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('enters the owning workspace before opening its browser panel', async () => {
+    const order: string[] = [];
+    gotoMock.mockImplementationOnce(async () => {
+      order.push('goto');
+    });
+    openBrowserPanelMock.mockImplementationOnce(() => order.push('panel'));
+
+    expect(await openLinkInApp(url, TEST_WORKSPACE_ID, { openInWorkspace: true })).toBe(true);
+
+    expect(gotoMock).toHaveBeenCalledWith('/workspace/ws-1');
+    expect(getPanelLayoutManagerMock).toHaveBeenCalledWith(TEST_WORKSPACE_ID);
+    expect(openBrowserPanelMock).toHaveBeenCalledWith(url, undefined, undefined, undefined);
+    expect(order).toEqual(['goto', 'panel']);
+    expect(invokeIpcMock).not.toHaveBeenCalled();
+  });
+
+  it('stays in the current workspace and opens beside the source panel', async () => {
+    expect(
+      await openLinkInApp(url, TEST_WORKSPACE_ID, {
+        openInWorkspace: false,
+        sourcePanelId: 'panel-chat',
+      }),
+    ).toBe(true);
+
+    expect(gotoMock).not.toHaveBeenCalled();
+    expect(openBrowserPanelMock).toHaveBeenCalledWith(url, undefined, 'panel-chat', undefined);
+  });
+
+  it('shows the link in the Assistant side panel it came from', async () => {
+    expect(
+      await openLinkInApp(url, CHIEF_WORKSPACE_ID, {
+        openInWorkspace: false,
+        assistantLayoutId: 'assistant-thread-1',
+      }),
+    ).toBe(true);
+
+    expect(showAssistantContentMock).toHaveBeenCalledExactlyOnceWith(url, {
+      layoutId: 'assistant-thread-1',
+    });
+    expect(gotoMock).not.toHaveBeenCalled();
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
+    expect(invokeIpcMock).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the external browser when the Assistant cannot show the link', async () => {
+    showAssistantContentMock.mockResolvedValueOnce(false);
+
+    expect(await openLinkInApp(url, CHIEF_WORKSPACE_ID)).toBe(true);
+
+    expect(invokeIpcMock).toHaveBeenCalledExactlyOnceWith('shell:openExternal', { url });
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the external browser when the Assistant panel fails', async () => {
+    showAssistantContentMock.mockRejectedValueOnce(new Error('chunk failed to load'));
+
+    expect(await openLinkInApp(url, CHIEF_WORKSPACE_ID)).toBe(true);
+
+    expect(invokeIpcMock).toHaveBeenCalledExactlyOnceWith('shell:openExternal', { url });
+  });
+
+  it('ignores the Home panel once it enters the workspace', async () => {
+    expect(
+      await openLinkInApp(url, TEST_WORKSPACE_ID, {
+        openInWorkspace: true,
+        sourcePanelId: 'home-panel',
+      }),
+    ).toBe(true);
+
+    expect(gotoMock).toHaveBeenCalledWith('/workspace/ws-1');
+    expect(openBrowserPanelMock).toHaveBeenCalledWith(url, undefined, undefined, undefined);
+  });
+
+  it('opens nothing when entering the workspace fails', async () => {
+    gotoMock.mockRejectedValueOnce(new Error('route rejected'));
+
+    expect(await openLinkInApp(url, TEST_WORKSPACE_ID, { openInWorkspace: true })).toBe(false);
+
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
+    expect(invokeIpcMock).not.toHaveBeenCalled();
   });
 });

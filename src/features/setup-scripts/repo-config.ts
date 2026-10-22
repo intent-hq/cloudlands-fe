@@ -158,14 +158,21 @@ export async function fetchGitHubRepoConfigSetupScript(
 export function resolveSetupScriptParam(options: {
   setupScript: string;
   setupScriptName: string;
+  setupScriptNameSource: SetupScriptNameSource;
+  /** An explicit empty selection must suppress the daemon's repo-config fallback. */
+  explicitChoice?: boolean;
   repoPath: string | null;
   /** Cached repo-config script and the repo it was fetched for. */
   repoConfigScript: string | null;
   repoConfigScriptRepo: string | null;
 }): string | undefined {
   const script = options.setupScript.trim();
-  if (!script) return undefined;
+  // The wire treats an empty script as omitted. A shell no-op preserves an
+  // explicit empty choice without accidentally running the committed script.
+  // i18n-ignore (shell command, execute-only wire override)
+  if (!script) return options.explicitChoice ? 'cd .' : undefined;
   const isUneditedRepoConfigScript =
+    options.setupScriptNameSource === 'repo-config' &&
     options.setupScriptName === REPO_CONFIG_SCRIPT_NAME &&
     options.repoConfigScriptRepo === options.repoPath &&
     script === (options.repoConfigScript ?? '').trim();
@@ -197,8 +204,8 @@ export function chooseDefaultSetupScript(options: {
   if (lastUsed) {
     return {
       content: lastUsed.content,
-      name: lastUsed.name,
-      source: lastUsed.nameSource ?? 'named',
+      name: lastUsed.nameSource === 'repo-config' ? 'Custom' : lastUsed.name,
+      source: lastUsed.nameSource === 'repo-config' ? 'custom' : (lastUsed.nameSource ?? 'named'),
     };
   }
   if (genericTemplate) {

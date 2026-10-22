@@ -3,11 +3,18 @@ import type { GitHubDeviceFlow, GitHubUser } from '$features/github-auth/types';
 /**
  * In-flight device-flow codes shown to the user (PROTOCOL §5.27) — the shared
  * wire shape minus `status`, which the slice models via `isAuthenticating` /
- * `error` instead.
+ * `error` instead — plus the `flowId` `github.connect` returned, which scopes
+ * the cancel to this flow (absent for a flow resumed from `authStatus` or an
+ * older daemon).
  */
-export type GitHubDeviceFlowInfo = Omit<GitHubDeviceFlow, 'status'>;
+export type GitHubDeviceFlowInfo = Omit<GitHubDeviceFlow, 'status'> & { flowId?: string };
 
 export type GitHubAuthState = {
+  /** Latest queued/in-flight credential mutation; null once its I/O settles. */
+  mutationRequestId: string | null;
+  /** Locally cancelled flows cannot publish uncorrelated daemon callbacks. */
+  callbacksCancelled: boolean;
+  isDisconnecting: boolean;
   /** Whether user is authenticated with GitHub via the daemon */
   isAuthenticated: boolean;
   /** Whether user needs to authenticate with the daemon first */

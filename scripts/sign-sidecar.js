@@ -20,6 +20,7 @@ import { promisify } from 'util';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
+import native from './macos-native.cjs';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -464,6 +465,8 @@ async function signSidecar(context) {
 
   const appName = packager.appInfo.productFilename;
   const appPath = path.join(appOutDir, `${appName}.app`);
+  // Check the actual copied payload before either signed or unsigned packaging.
+  native.validatePackagedMacBinaries(appPath, native.builderMacArch(context));
   const sidecarPath = path.join(appPath, 'Contents', 'Resources', 'intentd', 'intentd');
   // Optional tailcat tunnel client (scripts/fetch-tailcat.cjs); absent when
   // the staging build skipped it (TAILCAT_SKIP=1).

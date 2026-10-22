@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { crispOut, springIn } from '$lib/motion';
   import type { McpServerWithStatus } from './types';
-  import { serverToJson } from './types';
+  import { getMcpServerKey, serverToJson } from './types';
   import { findMatchingPreset } from './mcp-options';
   import McpIcon from './McpIcon.svelte';
   import { Button, Switch } from '$lib/components/patterns/settings/custom-controls';
@@ -20,11 +21,11 @@
 
   interface Props {
     server: McpServerWithStatus;
-    onToggle: (name: string) => void;
+    onToggle: (key: string) => void;
     onEdit: (server: McpServerWithStatus) => void;
-    onDelete: (name: string) => void;
-    onReauthenticate: (name: string) => void;
-    onRestart: (name: string) => void;
+    onDelete: (key: string) => void;
+    onReauthenticate: (key: string) => void;
+    onRestart: (key: string) => void;
   }
 
   let { server, onToggle, onEdit, onDelete, onReauthenticate, onRestart }: Props = $props();
@@ -115,10 +116,10 @@
     switch (action) {
       case 'authenticate':
       case 'reauthenticate':
-        onReauthenticate(server.name);
+        onReauthenticate(getMcpServerKey(server));
         break;
       case 'restart':
-        onRestart(server.name);
+        onRestart(getMcpServerKey(server));
         break;
       case 'edit':
         onEdit(server);
@@ -127,7 +128,7 @@
         handleCopyJson();
         break;
       case 'delete':
-        onDelete(server.name);
+        onDelete(getMcpServerKey(server));
         break;
     }
   }
@@ -174,7 +175,9 @@
       </div>
     {/snippet}
     {#snippet title()}
-      <span class="type-body font-medium" title={matchedPreset ? matchedPreset.label : server.name}
+      <span
+        class="block truncate type-body font-medium"
+        use:truncatedTitle={matchedPreset ? matchedPreset.label : server.name}
         >{matchedPreset ? matchedPreset.label : server.name}</span
       >
     {/snippet}
@@ -255,7 +258,7 @@
           <div class="flex items-center">
             <Switch
               checked={!server.disabled}
-              onCheckedChange={() => onToggle(server.name)}
+              onCheckedChange={() => onToggle(getMcpServerKey(server))}
               size="sm"
             />
           </div>

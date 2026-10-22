@@ -150,6 +150,7 @@ const mentionIconMap = {
   'personality-analytical': 'chart-line',
 
   // Agent types
+  member: 'users',
   agent: 'robot',
   'agent-active': 'robot',
   'agent-idle': 'robot',

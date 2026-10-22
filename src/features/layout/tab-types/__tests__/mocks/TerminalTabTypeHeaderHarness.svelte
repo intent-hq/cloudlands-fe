@@ -1,25 +1,31 @@
 <script lang="ts">
   import { createPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
+  import * as Menu from '$lib/components/ui/menu';
   import TerminalTabType from '../../TerminalTabType.svelte';
 
   let {
     activeTabId,
+    scriptId,
+    workspaceId = 'workspace-1',
     firstMounted = true,
     secondMounted = true,
   }: {
     activeTabId: string;
+    scriptId?: string;
+    workspaceId?: string;
     firstMounted?: boolean;
     secondMounted?: boolean;
   } = $props();
 
-  const firstTab: PanelTab = {
+  const firstTab: PanelTab = $derived({
     id: 'terminal-tab-1',
     type: 'terminal',
     title: 'Terminal 1',
     closable: true,
-    terminalId: 'terminal-session-1',
-  };
+    terminalId: scriptId ? undefined : 'terminal-session-1',
+    scriptId,
+  });
   const secondTab: PanelTab = {
     id: 'terminal-tab-2',
     type: 'terminal',
@@ -33,7 +39,7 @@
 {#if firstMounted}
   <TerminalTabType
     tab={firstTab}
-    workspaceId="workspace-1"
+    {workspaceId}
     layoutId="layout-1"
     isActive={activeTabId === firstTab.id}
     isPanelFocused={activeTabId === firstTab.id}
@@ -42,7 +48,7 @@
 {#if secondMounted}
   <TerminalTabType
     tab={secondTab}
-    workspaceId="workspace-1"
+    {workspaceId}
     layoutId="layout-1"
     isActive={activeTabId === secondTab.id}
     isPanelFocused={activeTabId === secondTab.id}
@@ -50,6 +56,10 @@
 {/if}
 <div data-testid="browser-tab" data-active={activeTabId === 'browser-tab'}></div>
 
-{#if header.actions.current?.primary}
-  {@render header.actions.current.primary()}
-{/if}
+<!-- The production header keeps its menu mounted while content registrations change. -->
+<Menu.Root>
+  <Menu.Trigger aria-label="Panel actions">Panel actions</Menu.Trigger>
+  <Menu.Content portal={false}>
+    {@render header.actions.current?.actions?.()}
+  </Menu.Content>
+</Menu.Root>

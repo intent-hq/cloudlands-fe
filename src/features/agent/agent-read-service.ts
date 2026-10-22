@@ -1,7 +1,9 @@
+import { claimAgentReadOwnership, getAgentReadContext } from './agent-read-ownership';
+import { onBackendReconnected } from '$lib/client/live/backend-transport';
 /**
  * Reusable agent-session read seam used by the agent read saga and event router.
  *
- * `ensureAgentSession(agentId)` fetches `appClient.agents.get` and hydrates the
+ * `ensureAgentSession(agentId, workspaceId)` fetches `appClient.agents.get` and hydrates the
  * store: `bulkUpsertSessions([session])` populates the agent-session slice
  * (`byAgentId` + messages = the conversation), and `upsertSession(session)`
  * registers the agent id in the workspace-agents index. `upsertSession` alone is
@@ -17,15 +19,15 @@
  *
  * Conversation note: the agent session's `messages` array IS the conversation.
  * On the mock seam this carries the sample transcript; on the live daemon
- * `agent.get` currently returns message COUNTS only (no transcript) and the chat
- * domain is still mock-delegated, so live transcripts are a documented BE gap
- * (Track C chat snapshot) — this service does not fabricate them.
+ * `agent.get` returns message COUNTS only. chat.subscribe owns live history;
+ * metadata reads preserve that separately hydrated transcript.
  *
  * Dependency-light per src/store AGENTS.md: imports only the AppClient seam, the
  * configured store, the slice actions, and the logger.
  */
 import { appClient } from '$lib/client';
 import type { AgentSession } from '$shared/types';
+import type { AgentSessionProjectionVersions } from '$store/renderer/slices/agent-session/agent-session-types';
 import { store as appStore } from '$store/renderer/store';
 import {
   bulkUpsertSessions,
@@ -38,6 +40,26 @@ import { isAgentNotFoundError } from './utils/agent-not-found-error';
 import { staleRuntimeFlagClearUpsertOptions } from './utils/stale-runtime-flag-clear';
 
 const logger = createLogger('AgentReadService');
+let connectionGeneration = 0;
+let lifecycleInstalled = false;
+function readKey(agentId: string, workspaceId?: string): string {
+  if (!lifecycleInstalled) {
+    lifecycleInstalled = true;
+    onBackendReconnected(() => {
+      connectionGeneration += 1;
+      inFlight.clear();
+      hydrationInFlight.clear();
+      pendingEventRerun.clear();
+      markerProjectionGeneration.clear();
+    });
+  }
+  return JSON.stringify([
+    connectionGeneration,
+    getAgentReadContext(),
+    workspaceId ?? null,
+    agentId,
+  ]);
+}
 
 /** In-flight wire reads keyed by agent id; shared by every metadata caller. */
 const inFlight = new Map<string, Promise<AgentSession | null>>();
@@ -61,8 +83,9 @@ let readGeneration = 0;
 const markerProjectionGeneration = new Map<string, number>();
 const QUESTION_MARKER_KEYS = ['pendingQuestionsMessageId', 'dismissedQuestionsMessageId'] as const;
 
-export function notePendingQuestionMarkerProjection(agentId: string): void {
-  markerProjectionGeneration.set(agentId, readGeneration);
+export function notePendingQuestionMarkerProjection(agentId: string, workspaceId?: string): void {
+  workspaceId ??= appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
+  markerProjectionGeneration.set(readKey(agentId, workspaceId), readGeneration);
 }
 
 function preserveProjectedQuestionMarkers(
@@ -71,9 +94,10 @@ function preserveProjectedQuestionMarkers(
   session: AgentSession | null,
 ): AgentSession | null {
   if (!session) return session;
-  const projectedAt = markerProjectionGeneration.get(agentId);
+  const projectedAt = markerProjectionGeneration.get(readKey(agentId, session.workspaceId));
   if (projectedAt === undefined || generation > projectedAt) return session;
-  const stored = appStore.state.agentSessions?.byAgentId[agentId]?.metadata;
+  const current = appStore.state.agentSessions?.byAgentId[agentId];
+  const stored = current?.workspaceId === session.workspaceId ? current.metadata : undefined;
   if (!stored) return session;
   let metadata = session.metadata;
   for (const key of QUESTION_MARKER_KEYS) {
@@ -84,33 +108,94 @@ function preserveProjectedQuestionMarkers(
   return metadata === session.metadata ? session : { ...session, metadata };
 }
 
+/** A read started before a push must not roll its fields back on arrival. */
+function preserveLocalUpdates(
+  before: AgentSession | undefined,
+  incoming: AgentSession | null,
+  beforeProjection: AgentSessionProjectionVersions | undefined,
+): AgentSession | null {
+  if (!incoming || !before || before.workspaceId !== incoming.workspaceId) return incoming;
+  const current = appStore.state.agentSessions?.byAgentId[String(incoming.id)];
+  if (!current || current.workspaceId !== incoming.workspaceId) return incoming;
+  const projected = appStore.state.agentSessions.projectionVersions?.[String(incoming.id)];
+  const merged = { ...incoming };
+  for (const key of new Set([
+    ...Object.keys(current),
+    ...Object.keys(projected?.fields ?? {}),
+  ]) as Set<keyof AgentSession>) {
+    if (key === 'metadata') continue;
+    if (current[key] !== before[key] || projected?.fields[key] !== beforeProjection?.fields[key])
+      Object.assign(merged, { [key]: current[key] });
+  }
+  const metadata = { ...incoming.metadata };
+  for (const key of new Set([
+    ...Object.keys(before.metadata ?? {}),
+    ...Object.keys(current.metadata ?? {}),
+    ...Object.keys(projected?.metadata ?? {}),
+  ])) {
+    // Extension keys can name Object.prototype members. Only own values and
+    // revisions represent metadata; a missing own key is an explicit deletion.
+    const hasCurrent = Object.hasOwn(current.metadata ?? {}, key);
+    const hasBefore = Object.hasOwn(before.metadata ?? {}, key);
+    const currentValue = hasCurrent ? current.metadata?.[key] : undefined;
+    const beforeValue = hasBefore ? before.metadata?.[key] : undefined;
+    const revision = Object.hasOwn(projected?.metadata ?? {}, key)
+      ? projected?.metadata[key]
+      : undefined;
+    const beforeRevision = Object.hasOwn(beforeProjection?.metadata ?? {}, key)
+      ? beforeProjection?.metadata[key]
+      : undefined;
+    if (hasCurrent !== hasBefore || currentValue !== beforeValue || revision !== beforeRevision) {
+      if (hasCurrent) {
+        Object.defineProperty(metadata, key, {
+          value: currentValue,
+          enumerable: true,
+          configurable: true,
+          writable: true,
+        });
+      } else delete metadata[key];
+    }
+  }
+  merged.metadata = metadata;
+  return merged;
+}
+
 /**
  * Refresh after a daemon event without losing an update behind an older read.
  * If a read is already in flight, one trailing read is scheduled after it;
  * further events during that read share the same trailing promise.
  */
-export async function refreshAgentSessionAfterEvent(agentId: string): Promise<void> {
-  const pending = inFlight.get(agentId);
-  if (!pending) return ensureAgentSession(agentId);
+export async function refreshAgentSessionAfterEvent(
+  agentId: string,
+  workspaceId?: string,
+): Promise<void> {
+  workspaceId ??= appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
+  const key = readKey(agentId, workspaceId);
+  const ownership = claimAgentReadOwnership(agentId, workspaceId);
+  const pending = inFlight.get(key);
+  if (!pending) return ensureAgentSession(agentId, workspaceId);
 
-  const scheduledRerun = pendingEventRerun.get(agentId);
+  const connection = connectionGeneration;
+  const scheduledRerun = pendingEventRerun.get(key);
   if (scheduledRerun) return scheduledRerun;
 
   // Delete before the trailing read so events during that read can coalesce
   // into one further trailing refresh instead of getting lost.
   const rerun = pending.then(
     () => {
-      pendingEventRerun.delete(agentId);
-      return ensureAgentSession(agentId);
+      pendingEventRerun.delete(key);
+      if (connection === connectionGeneration && ownership.isCurrent())
+        return ensureAgentSession(agentId, workspaceId);
     },
     () => {
       // A rejected leading read is not cached and must not suppress the event's
       // authoritative trailing retry.
-      pendingEventRerun.delete(agentId);
-      return ensureAgentSession(agentId);
+      pendingEventRerun.delete(key);
+      if (connection === connectionGeneration && ownership.isCurrent())
+        return ensureAgentSession(agentId, workspaceId);
     },
   );
-  pendingEventRerun.set(agentId, rerun);
+  pendingEventRerun.set(key, rerun);
   return rerun;
 }
 
@@ -118,38 +203,98 @@ export async function refreshAgentSessionAfterEvent(agentId: string): Promise<vo
  * Shared raw `agent.get` read for callers that need the returned projection.
  * Rejections propagate so each caller can preserve its existing error policy;
  * the failed promise is always evicted and is never treated as cached data.
- * The only reconciliation applied is the question-marker guard above: a
- * response to a request that started before an `agent:updated` marker
- * projection keeps the store's projected marker values.
+ * Fields changed by local pushes while the request was in flight stay current;
+ * the explicit question-marker guard also protects repeated marker clears.
  */
-export function readAgentSession(agentId: string): Promise<AgentSession | null> {
-  const pending = inFlight.get(agentId);
+export function readAgentSession(
+  agentId: string,
+  workspaceId?: string,
+): Promise<AgentSession | null> {
+  workspaceId ??= appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
+  const key = readKey(agentId, workspaceId);
+  const pending = inFlight.get(key);
   if (pending) return pending;
 
+  // Explicit-workspace raw readers also run outside the initialized renderer
+  // (for example isolated saga stores). Only renderer reads have local pushes
+  // to preserve; keep the raw seam usable without a mounted store.
+  let beforeRead: AgentSession | undefined;
+  let beforeProjection: AgentSessionProjectionVersions | undefined;
+  try {
+    beforeRead = appStore.state.agentSessions?.byAgentId[agentId];
+    beforeProjection = appStore.state.agentSessions?.projectionVersions?.[agentId];
+  } catch {
+    beforeRead = undefined;
+  }
+  const context = getAgentReadContext();
   const generation = ++readGeneration;
+  const connection = connectionGeneration;
   const run = appClient.agents
-    .get(agentId)
-    .then((session) => preserveProjectedQuestionMarkers(agentId, generation, session))
+    .get(agentId, workspaceId)
+    .then((session) =>
+      connection === connectionGeneration && context === getAgentReadContext()
+        ? preserveLocalUpdates(
+            beforeRead,
+            preserveProjectedQuestionMarkers(agentId, generation, session),
+            beforeProjection,
+          )
+        : null,
+    )
     .finally(() => {
-      if (inFlight.get(agentId) === run) inFlight.delete(agentId);
+      if (inFlight.get(key) === run) inFlight.delete(key);
     });
-  inFlight.set(agentId, run);
+  inFlight.set(key, run);
   return run;
 }
 
-async function hydrateAgentSession(agentId: string): Promise<AgentSession | null> {
+/**
+ * Confirm state after a caller's observation. A shared read already in flight
+ * may predate that observation: drain it once, then use the existing raw lane
+ * for a fresh request. Concurrent callers behind that read coalesce there.
+ * This performs no hydration and never retries its own confirmation request.
+ */
+export async function readAgentSessionAfterCurrent(
+  agentId: string,
+  workspaceId: string,
+  isCurrent: () => boolean,
+): Promise<AgentSession | null> {
+  const key = readKey(agentId, workspaceId);
+  const connection = connectionGeneration;
+  const ownership = claimAgentReadOwnership(agentId, workspaceId);
+  const pending = inFlight.get(key);
+  if (pending) await pending.catch(() => null);
+  if (connection !== connectionGeneration || !ownership.isCurrent() || !isCurrent()) return null;
+  const session = await readAgentSession(agentId, workspaceId);
+  return connection === connectionGeneration && ownership.isCurrent() && isCurrent()
+    ? session
+    : null;
+}
+
+async function hydrateAgentSession(
+  agentId: string,
+  ownership: ReturnType<typeof claimAgentReadOwnership>,
+  workspaceId?: string,
+): Promise<AgentSession | null> {
+  workspaceId ??= appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
   try {
-    const storedBefore = appStore.state.agentSessions?.byAgentId[agentId];
+    const prior = appStore.state.agentSessions?.byAgentId[agentId];
+    const storedBefore = prior?.workspaceId === workspaceId ? prior : undefined;
     const hadInFlightPairBeforeFetch =
       storedBefore?.isStreaming === true && storedBefore?.isProcessing === true;
-    const session = await readAgentSession(agentId);
+    const session = await readAgentSession(agentId, workspaceId);
+    if (session) ownership.bindWorkspace(session.workspaceId);
     // Re-check after the fetch: a deletion may have become pending while
     // `agent.get` was in flight; upserting now would resurrect the
     // soft-hidden session. Also drop rows carrying the daemon's
     // delete-grace-window deadline (PROTOCOL §5.5 `pendingDeleteAt`)
     // — a deletion scheduled by another window/client (or before an FE
     // restart) is not in this window's local registry.
-    if (session && !session.pendingDeleteAt && !isAgentDeletionPending(agentId)) {
+    if (
+      ownership.isCurrent() &&
+      session &&
+      !session.pendingDeleteAt &&
+      !isAgentDeletionPending(agentId)
+    ) {
       // `agent.get` returns AgentLite (PROTOCOL §5.5) — session metadata and
       // message COUNTS only, not the retained transcript. `normalizeAgent`
       // fills the missing `messages` field with `[]`, so dispatching this
@@ -158,7 +303,10 @@ async function hydrateAgentSession(agentId: string): Promise<AgentSession | null
       // messages so this metadata-only refresh never erases the seq-0 user
       // message (nor any subsequent history).
       const existing = appStore.state.agentSessions?.byAgentId[agentId];
-      const merged = existing ? { ...session, messages: existing.messages } : session;
+      const merged =
+        existing?.workspaceId === session.workspaceId
+          ? { ...session, messages: existing.messages }
+          : session;
       appStore.dispatch(
         bulkUpsertSessions(
           [merged],
@@ -181,7 +329,7 @@ async function hydrateAgentSession(agentId: string): Promise<AgentSession | null
     }
     return null;
   } finally {
-    hydrationInFlight.delete(agentId);
+    hydrationInFlight.delete(ownership.key);
   }
 }
 
@@ -191,17 +339,20 @@ async function hydrateAgentSession(agentId: string): Promise<AgentSession | null
  * intact rather than clearing it. Concurrent calls for the same agent share one
  * fetch.
  */
-export async function ensureAgentSession(agentId: string): Promise<void> {
+export async function ensureAgentSession(agentId: string, workspaceId?: string): Promise<void> {
+  workspaceId ??= appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
+  const ownership = claimAgentReadOwnership(agentId, workspaceId);
+  const key = ownership.key;
   // A soft-hidden deletion is pending (undo window still open): the daemon
   // still returns the agent from `agent.get`, so refetching would resurrect
   // the deleted session. Skip entirely.
   if (isAgentDeletionPending(agentId)) return;
-  const pending = hydrationInFlight.get(agentId);
+  const pending = hydrationInFlight.get(key);
   if (pending) {
     await pending;
     return;
   }
-  const run = hydrateAgentSession(agentId);
-  hydrationInFlight.set(agentId, run);
+  const run = hydrateAgentSession(agentId, ownership, workspaceId);
+  hydrationInFlight.set(key, run);
   await run;
 }

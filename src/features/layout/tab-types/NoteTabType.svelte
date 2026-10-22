@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   /**
@@ -22,13 +22,24 @@
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     selectNoteById,
+    selectNoteWindowVisible,
+    selectNoteContentView,
+    selectNotePresenceView,
+    selectNoteWorkspaceRoot,
     selectWorkspaceNotesState,
   } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
-  import { createNote, deleteNote } from '$features/notes/notes-write-service';
-  import { ensureNoteContentLoaded } from '$features/notes/notes-read-service';
-  import { isSpecNote } from '$shared/constants/notes';
+  import {
+    createNotePersistRequested,
+    deleteNotePersistRequested,
+    noteContentViewReleased,
+    noteContentViewRequested,
+    notePresenceViewReleased,
+    notePresenceViewRequested,
+    noteWorkspaceRootReleased,
+    noteWorkspaceRootRequested,
+  } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+  import { isSpecNote, NOTE_VIEW_MAX_CONTENT_BYTES } from '$shared/constants/notes';
   import { isNoteContentStale } from '$shared/utils/note-content';
-  import { invoke } from '$lib/electron-bridge';
   import { createLogger } from '$lib/utils/client-logger';
   import NoteWithComments from '$lib/components/workspace/NoteWithComments.svelte';
   import NoteVersionHistory from '$lib/components/workspace/NoteVersionHistory.svelte';
@@ -40,8 +51,12 @@
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import NoteViewSettingsDropdown from './NoteViewSettingsDropdown.svelte';
   import RenderedNotePreview from './RenderedNotePreview.svelte';
+  import TruncatedNoteView from './TruncatedNoteView.svelte';
   import NotePresenceAvatarStack from '$features/notes/note-presence/NotePresenceAvatarStack.svelte';
-  import { selectAllScrollPositions } from '$store/renderer/slices/tab-state/tab-state-selectors';
+  import {
+    selectCurrentWorkspaceTabId,
+    selectAllScrollPositions,
+  } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { saveScrollPosition } from '$store/renderer/slices/tab-state/tab-state-slice';
 
   import Fa from 'svelte-fa';
@@ -50,12 +65,15 @@
   import { store as appStore } from '$store/renderer/store';
   import NoteContentSurface, { type NoteContentState } from './NoteContentSurface.svelte';
   import { selectNoteViewMode } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
+  import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
 
   const logger = createLogger('NoteTabType');
 
-  let { tab, workspaceId, isActive, isPanelFocused }: TabTypeComponentProps = $props();
+  let { tab, workspaceId, layoutId, isActive, isPanelFocused }: TabTypeComponentProps = $props();
 
   const headerContext = getPanelHeaderContext();
+  const contentInstanceId = $props.id();
+  const contentConsumerId = `note-content:${contentInstanceId}`;
 
   // svelte-ignore state_referenced_locally
   const workspace = selectWorkspaceById(workspaceId);
@@ -74,6 +92,24 @@
   $effect(() => noteViewNoteIdStore.set(tab.noteId ?? ''));
   const noteViewModeStore = selectNoteViewMode(noteViewWorkspaceIdStore, noteViewNoteIdStore);
   const noteViewMode = $derived($noteViewModeStore);
+  // svelte-ignore state_referenced_locally - selector targets are retargeted by the effects below
+  const noteUiConsumerStore = writable(`note-tab:${tab.id}`);
+  $effect(() => noteUiConsumerStore.set(`note-tab:${tab.id}`));
+  const noteContentView = selectNoteContentView(noteViewWorkspaceIdStore, contentConsumerId);
+  const noteWorkspaceRoot = selectNoteWorkspaceRoot(noteViewWorkspaceIdStore, noteUiConsumerStore);
+  const notePresenceView = selectNotePresenceView(noteViewWorkspaceIdStore, noteUiConsumerStore);
+  const principalConnectionContext = selectPrincipalConnectionContext();
+  const currentWorkspaceTabId = selectCurrentWorkspaceTabId();
+  const noteWindowVisible = selectNoteWindowVisible();
+  const contentVisible = $derived(
+    isActive && $noteWindowVisible && $currentWorkspaceTabId === (layoutId ?? workspaceId),
+  );
+  let noteUiRequestSequence = 0;
+
+  function nextNoteUiRequestId(consumerId: string, kind: string): string {
+    noteUiRequestSequence += 1;
+    return `${consumerId}:${kind}:${noteUiRequestSequence}`;
+  }
 
   // Version history state
   let showVersionHistory = $state(false);
@@ -90,40 +126,65 @@
     }
   });
 
-  // Slim note.list rows carry no content (§5.2); fetch the full body when this
-  // tab shows a note whose content has not been loaded yet. A failed fetch
-  // leaves the row stale (notes.get swallows errors), so track it locally and
-  // surface an error state with retry instead of a permanent loading state.
+  // Slim note.list rows carry no content (§5.2); the read saga owns the request
+  // and its consumer/resource/authority-correlated outcome.
   const noteContentStale = $derived(isNoteContentStale($note));
-  let contentLoadFailedNoteId = $state<string | null>(null);
+  // A truncated read (§5.2 "Truncated note reads") is render-only: only the
+  // Markdown renderer and a banner, and none of the editor, comment, presence,
+  // attribution, version or content actions are created for it. A live update
+  // that brings the note back under the limit returns to the normal view.
+  const noteTruncated = $derived($note?.contentTruncated === true);
   const noteContentLoadFailed = $derived(
-    noteContentStale && contentLoadFailedNoteId === tab.noteId,
+    noteContentStale &&
+      $noteContentView?.workspaceId === workspaceId &&
+      $noteContentView?.noteId === tab.noteId &&
+      $noteContentView?.status === 'error',
   );
   $effect(() => {
     const noteId = tab.noteId;
-    if (!isActive || !noteId || !noteContentStale || contentLoadFailedNoteId === noteId) return;
-    void ensureNoteContentLoaded(workspaceId, noteId).then((loaded) => {
-      if (!loaded && tab.noteId === noteId) contentLoadFailedNoteId = noteId;
-    });
+    const consumerId = contentConsumerId;
+    if (!contentVisible || !noteId || !$principalConnectionContext) return;
+    const contentWorkspaceId = workspaceId;
+    untrack(() =>
+      appStore.dispatch(
+        noteContentViewRequested(
+          consumerId,
+          nextNoteUiRequestId(consumerId, 'content'),
+          contentWorkspaceId,
+          noteId,
+        ),
+      ),
+    );
+    return () => appStore.dispatch(noteContentViewReleased(contentWorkspaceId, consumerId));
   });
 
   function retryNoteContentLoad() {
-    contentLoadFailedNoteId = null;
+    const noteId = tab.noteId;
+    const consumerId = contentConsumerId;
+    if (!noteId) return;
+    appStore.dispatch(
+      noteContentViewRequested(
+        consumerId,
+        nextNoteUiRequestId(consumerId, 'content'),
+        workspaceId,
+        noteId,
+      ),
+    );
   }
 
-  // Get actual workspace root for file path
-  let actualWorkspaceRoot = $state<string | null>(null);
+  // Get the actual workspace root through the saga-owned correlated read.
   $effect(() => {
-    if (isActive && workspaceId) {
-      invoke<string>('workspace:get-root', { workspaceId }).then((rootPath) => {
-        if (rootPath) actualWorkspaceRoot = rootPath;
-      });
-    }
+    const consumerId = `note-tab:${tab.id}`;
+    if (!isActive || !workspaceId || !$principalConnectionContext) return;
+    appStore.dispatch(
+      noteWorkspaceRootRequested(consumerId, nextNoteUiRequestId(consumerId, 'root'), workspaceId),
+    );
+    return () => appStore.dispatch(noteWorkspaceRootReleased(workspaceId, consumerId));
   });
 
   const noteFilePath = $derived(
-    actualWorkspaceRoot && $note?.id
-      ? `${actualWorkspaceRoot}/.workspace/notes/${$note.id}.md`
+    $noteWorkspaceRoot?.status === 'ready' && $noteWorkspaceRoot.path && $note?.id
+      ? `${$noteWorkspaceRoot.path}/.workspace/notes/${$note.id}.md`
       : '',
   );
 
@@ -173,13 +234,15 @@
     if (isSpecNote(tab.noteId)) return !isInitialSpecWriteInProgress;
     return true;
   });
-  const showRenderedPreview = $derived(noteViewMode === 'preview' && !showSpecOnboarding);
-
+  const showRenderedPreview = $derived(
+    (noteViewMode === 'preview' || !$workspace) && !showSpecOnboarding,
+  );
   const noteContentState = $derived.by<NoteContentState>(() => {
     if (!tab.noteId) return 'missing';
     if (!$note) return $notesState.loading || !$notesState.initialized ? 'loading' : 'missing';
     if (noteContentLoadFailed) return 'error';
     if (noteContentStale) return 'loading';
+    if (noteTruncated) return 'read-only';
     if (!noteEditable) return 'read-only';
     if (showRenderedPreview) return 'read-only';
     if (!$note.content?.trim()) return 'empty';
@@ -218,8 +281,8 @@
     const noteTitle = $note?.title || m.layout_tabTypes_note_title();
     isNoteDeleting = true;
     try {
-      appStore.dispatch(closeTab(workspaceId, tab.id));
-      void deleteNote(workspaceId, noteIdToDelete);
+      appStore.dispatch(closeTab(layoutId ?? workspaceId, tab.id));
+      void appStore.dispatch(deleteNotePersistRequested(workspaceId, noteIdToDelete));
 
       // Show undo toast
       const { notify } = await import('$lib/components/patterns/notify');
@@ -233,14 +296,16 @@
                   label: m.ui_workspaceActions_undo_label(),
                   onClick: () => {
                     try {
-                      void createNote(savedNote.workspaceId, {
-                        title: savedNote.title,
-                        content: savedNote.content,
-                        contentType: savedNote.contentType,
-                        tags: savedNote.tags,
-                        parentId: savedNote.parentId,
-                        visibility: savedNote.visibility,
-                      });
+                      void appStore.dispatch(
+                        createNotePersistRequested(savedNote.workspaceId, {
+                          title: savedNote.title,
+                          content: savedNote.content,
+                          contentType: savedNote.contentType,
+                          tags: savedNote.tags,
+                          parentId: savedNote.parentId,
+                          visibility: savedNote.visibility,
+                        }),
+                      );
                       notify.dismiss(toastId);
                     } catch (err) {
                       logger.error('Failed to restore note', err);
@@ -263,13 +328,32 @@
   }
 
   // Other people's presence is only possible in a shared workspace.
-  const showPresenceStack = $derived(($workspace?.memberCount ?? 0) >= 2 && !!tab.noteId);
+  const showPresenceStack = $derived(
+    ($workspace?.memberCount ?? 0) >= 2 && !!tab.noteId && !noteTruncated,
+  );
+
+  // Viewing presence belongs to the visible tab, including raw/preview mode.
+  // The saga owns the lease; the lazy menu renders its serializable projection.
+  $effect(() => {
+    const noteId = tab.noteId;
+    const consumerId = `note-tab:${tab.id}`;
+    if (!isActive || !showPresenceStack || !noteId || !$principalConnectionContext) return;
+    appStore.dispatch(
+      notePresenceViewRequested(
+        consumerId,
+        nextNoteUiRequestId(consumerId, 'presence'),
+        workspaceId,
+        noteId,
+      ),
+    );
+    return () => appStore.dispatch(notePresenceViewReleased(workspaceId, consumerId));
+  });
 
   // Register header actions
   $effect(() => {
     if (!headerContext || !isActive) return;
-    headerContext.registerActions({
-      primary: showPresenceStack ? notePrimaryActions : undefined,
+    if (noteTruncated) return headerContext.registerActions({});
+    return headerContext.registerActions({
       display: noteDisplayActions,
       actions: noteActions,
       destructive: tab.noteId && !isSpecNote(tab.noteId) ? noteDestructiveActions : undefined,
@@ -277,19 +361,21 @@
   });
 </script>
 
-{#snippet notePrimaryActions()}
-  {#if tab.noteId}
-    <NotePresenceAvatarStack {workspaceId} noteId={tab.noteId} />
-  {/if}
-{/snippet}
-
 {#snippet noteDisplayActions()}
   {#if tab.noteId}
-    <NoteViewSettingsDropdown {workspaceId} noteId={tab.noteId} embedded />
+    <NoteViewSettingsDropdown
+      {workspaceId}
+      noteId={tab.noteId}
+      canEdit={!!$workspace && noteEditable}
+      embedded
+    />
   {/if}
 {/snippet}
 
 {#snippet noteActions()}
+  {#if showPresenceStack && tab.noteId}
+    <NotePresenceAvatarStack viewers={$notePresenceView?.viewers ?? []} embedded />
+  {/if}
   <Menu.CommandItem
     icon={noteCopyFeedback ? faCheck : faCopy}
     label={noteCopyFeedback || m.layout_noteTab_copyFullNote_tooltip()}
@@ -312,59 +398,74 @@
   {/if}
 {/snippet}
 
-<NoteContentSurface state={noteContentState}>
-  {#if tab.noteId}
-    {#if noteContentLoadFailed}
-      <div class="flex flex-col items-center justify-center h-full text-subtle gap-3">
-        <p>{m.layout_noteTab_contentLoadFailed_error()}</p>
-        <Button variant="outline" size="sm" onclick={retryNoteContentLoad}>
-          {m.ui_errorToast_retry_label()}
-        </Button>
-      </div>
-    {:else if !$note}
-      <div class="flex flex-col h-full">
-        <div class="flex-1 p-4 space-y-4">
-          <Skeleton class="h-8 w-3/4" />
-          <Skeleton class="h-4 w-full" />
-          <Skeleton class="h-4 w-5/6" />
-          <Skeleton class="h-4 w-4/5" />
-          <Skeleton class="h-4 w-full" />
+<div class="flex h-full min-h-0 flex-col">
+  <div class="min-h-0 flex-1">
+    <NoteContentSurface state={noteContentState}>
+      {#if tab.noteId}
+        {#if noteContentLoadFailed}
+          <div class="flex flex-col items-center justify-center h-full text-subtle gap-3">
+            <p>{m.layout_noteTab_contentLoadFailed_error()}</p>
+            <Button variant="outline" size="sm" onclick={retryNoteContentLoad}>
+              {m.ui_errorToast_retry_label()}
+            </Button>
+          </div>
+        {:else if !$note}
+          <div class="flex flex-col h-full">
+            <div class="flex-1 p-4 space-y-4">
+              <Skeleton class="h-8 w-3/4" />
+              <Skeleton class="h-4 w-full" />
+              <Skeleton class="h-4 w-5/6" />
+              <Skeleton class="h-4 w-4/5" />
+              <Skeleton class="h-4 w-full" />
+            </div>
+          </div>
+        {:else if noteTruncated}
+          <TruncatedNoteView
+            content={$note.content || ''}
+            contentBytes={$note.contentBytes}
+            shownBytes={NOTE_VIEW_MAX_CONTENT_BYTES}
+            {workspaceId}
+            noteId={tab.noteId}
+            scrollKey={tab.id}
+            initialScrollPosition={scrollPosition}
+            onScrollPositionSave={handlePreviewScrollPositionSave}
+          />
+        {:else if showVersionHistory && $workspace}
+          <NoteVersionHistory
+            workspace={$workspace}
+            noteId={tab.noteId}
+            currentContent={$note?.content || ''}
+            onRestore={() => (showVersionHistory = false)}
+          />
+        {:else if showSpecOnboarding}
+          <!-- Show onboarding when coordinator is writing initial spec -->
+          <SpecWritingOnboarding agentId={initialSpecWriterAgentId} {workspaceId} />
+        {:else if showRenderedPreview}
+          <RenderedNotePreview
+            content={$note.content || ''}
+            {workspaceId}
+            noteId={tab.noteId}
+            scrollKey={tab.id}
+            initialScrollPosition={scrollPosition}
+            onScrollPositionSave={handlePreviewScrollPositionSave}
+          />
+        {:else if $workspace}
+          <NoteWithComments
+            workspace={$workspace}
+            noteId={tab.noteId}
+            editable={noteEditable}
+            {isPanelFocused}
+            initialScrollPosition={scrollPosition}
+            onScrollPositionSave={(scrollTop: number) =>
+              appStore.dispatch(saveScrollPosition(tab.id, scrollTop))}
+          />
+        {/if}
+      {:else}
+        <div class="flex flex-col items-center justify-center h-full text-subtle gap-2">
+          <Fa icon={faNoteSticky} class="text-4xl opacity-50" />
+          <p>{m.layout_noteTab_noNoteSelected_label()}</p>
         </div>
-      </div>
-    {:else if showVersionHistory && $workspace}
-      <NoteVersionHistory
-        workspace={$workspace}
-        noteId={tab.noteId}
-        currentContent={$note?.content || ''}
-        onRestore={() => (showVersionHistory = false)}
-      />
-    {:else if showSpecOnboarding}
-      <!-- Show onboarding when coordinator is writing initial spec -->
-      <SpecWritingOnboarding agentId={initialSpecWriterAgentId} {workspaceId} />
-    {:else if showRenderedPreview}
-      <RenderedNotePreview
-        content={$note.content || ''}
-        {workspaceId}
-        noteId={tab.noteId}
-        scrollKey={tab.id}
-        initialScrollPosition={scrollPosition}
-        onScrollPositionSave={handlePreviewScrollPositionSave}
-      />
-    {:else if $workspace}
-      <NoteWithComments
-        workspace={$workspace}
-        noteId={tab.noteId}
-        editable={noteEditable}
-        {isPanelFocused}
-        initialScrollPosition={scrollPosition}
-        onScrollPositionSave={(scrollTop: number) =>
-          appStore.dispatch(saveScrollPosition(tab.id, scrollTop))}
-      />
-    {/if}
-  {:else}
-    <div class="flex flex-col items-center justify-center h-full text-subtle gap-2">
-      <Fa icon={faNoteSticky} class="text-4xl opacity-50" />
-      <p>{m.layout_noteTab_noNoteSelected_label()}</p>
-    </div>
-  {/if}
-</NoteContentSurface>
+      {/if}
+    </NoteContentSurface>
+  </div>
+</div>

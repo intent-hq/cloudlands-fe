@@ -1,4 +1,4 @@
-import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
+import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 import { call, delay, select, type SagaGenerator } from 'typed-redux-saga';
 
 import { closeWorkspaceTabAndNavigateAway } from '$features/workspace/navigate-away-if-viewing';

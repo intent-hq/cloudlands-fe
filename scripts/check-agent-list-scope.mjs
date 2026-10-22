@@ -21,8 +21,6 @@ export const ALLOWLIST = Object.freeze({
     'dev-only (`NODE_ENV === development`) human-triggered debug dump that lists every bin',
   'src/store/renderer/seeders/agents-seeder.ts':
     'test-harness seeder — `mock-bootstrap` seeders run only in focused tests, never in production',
-  'src/lib/constants/specialists.ts':
-    'agent-facing prompt text naming the MCP `ws.app.agents.list` binding, not a request',
 });
 
 export const REMEDIATION_HINT = [

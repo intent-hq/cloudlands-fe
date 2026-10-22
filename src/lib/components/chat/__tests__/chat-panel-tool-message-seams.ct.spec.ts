@@ -20,6 +20,12 @@ for (const theme of ['light', 'dark'] as const) {
       ] as const;
 
       for (const [beforeId, afterId, owner] of pairs) {
+        await component
+          .getByTestId('chat-transcript-scroll-viewport')
+          .evaluate((node) => node.dispatchEvent(new WheelEvent('wheel', { deltaY: -20 })));
+        await component
+          .locator(`[data-message-id="${beforeId}"]`)
+          .evaluate((node) => node.scrollIntoView({ block: 'center' }));
         const before = row(beforeId);
         const after = row(afterId);
         await expect(before).toBeVisible();
@@ -79,6 +85,9 @@ for (const theme of ['light', 'dark'] as const) {
         );
       }
 
+      await component
+        .locator('[data-message-id="assistant-production-search"]')
+        .evaluate((node) => node.scrollIntoView({ block: 'center' }));
       const productionRows = [
         'assistant-production-search',
         'assistant-production-reopen',

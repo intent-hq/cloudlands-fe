@@ -81,6 +81,18 @@ interface Word {
 
 /** Uncovered suites with a reason they have no CI job: path → one-line justification. */
 const ALLOWLIST: Readonly<Record<string, string>> = Object.freeze({
+  'test/fixtures/native-review-native/playwright.config.ts':
+    '2026-09-29: manual Electron native-client proof requiring explicit evidence, digest-pinned 5bed0a98 composed driver and private lifetime pipe/display/profiles/two hosts; provider API is loopback HTTP and Git is verified HTTPS; normal provider TLS and hosted CI remain unproven',
+  'test/fixtures/repository-route/playwright.config.ts':
+    '2026-09-29: opt-in disposable Electron/generated-preload harness with fixture authority, not the accepted daemon; requires a private display and profiles, with hosted CI provisioning and execution pending',
+  'test/fixtures/repository-context-native/playwright.config.ts':
+    '2026-09-29: opt-in Electron integration requiring an explicit evidence path, the digest-pinned 82ca038d normal daemon and private disposable two-daemon/display/profiles; hosted CI provisioning and execution pending',
+  'test/fixtures/repository-selection-native/playwright.config.ts':
+    '2026-09-29: opt-in Electron selection integration requiring an explicit evidence path, the digest-pinned 410a7447 normal daemon and private disposable two-host/display/profiles; hosted CI provisioning and execution pending',
+  'playwright-ct-lifetime.config.ts':
+    '2026-09-25: opt-in browser lifetime comparison for intent-hq/intent#5481; deliberately timed-out tests verify cancellation and late responses with explicitly identified diagnostic browsers',
+  'playwright-ct-evidence.config.ts':
+    '2026-09-25: opt-in intentional first-attempt failure for intent-hq/intent#5481; proves artifact retention and a red strict-flaky exit after a passing retry, so it cannot run in the passing CI lane',
   'src/lib/components/ui/card/operate-patterns.playwright.config.ts':
     '2026-09-21: intentionally manual visual harness; its spec renders Operate pattern contact sheets into a dated .demo-artifacts/ directory for human review, with no checked-in baselines to compare against in CI',
   'vitest.text-rebase-bench.config.ts':

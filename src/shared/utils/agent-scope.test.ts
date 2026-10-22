@@ -123,6 +123,22 @@ describe('agentDelegationParentOf (§5.5 delegatedCounts byParent key)', () => {
 });
 
 describe('isBackgroundAgentSession', () => {
+  it('honors an explicit false before stale metadata projections', () => {
+    expect(
+      isBackgroundAgentSession(
+        row({ isBackground: false, metadata: meta({ isBackground: true }) }),
+      ),
+    ).toBe(false);
+    expect(
+      isBackgroundAgentSession(
+        row({
+          metadata: meta({ isBackground: false }),
+          agentMetadata: meta({ isBackground: true }),
+        }),
+      ),
+    ).toBe(false);
+  });
+
   it('reads the persisted flag from either location', () => {
     expect(isBackgroundAgentSession(row())).toBe(false);
     expect(isBackgroundAgentSession(row({ isBackground: true }))).toBe(true);

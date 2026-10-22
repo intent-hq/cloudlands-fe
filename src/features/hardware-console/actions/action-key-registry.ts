@@ -37,7 +37,7 @@ import { m } from '$shared/paraglide/messages.js';
 import { type Workspace } from '$shared/types';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { SPEC_NOTE_ID } from '$shared/constants/notes';
-import { type Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { type Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
 import { agentSessionStopChatRequested } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
@@ -48,7 +48,7 @@ import {
   setShowCreateModal,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import {
-  createAgentWithSpecialistRequested,
+  createAgentRequested,
   hydrateAgentsRequested,
   setActiveAgentId,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -673,7 +673,7 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
       const { dispatch } = context;
       const wsId = activeWorkspaceId(context);
       if (wsId === null) return;
-      dispatch(createAgentWithSpecialistRequested(wsId, null));
+      dispatch(createAgentRequested(wsId));
     },
   },
   {

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ScriptWithState } from './types';
 import type { FileContentEntry } from '$store/renderer/slices/files/files-types';
 
@@ -29,12 +29,39 @@ const { scriptsList, scriptsCreate, scriptsRemove, filesRead, backendRequestMock
     filesRead: vi.fn<(workspaceId: string, path: string) => Promise<unknown>>(() =>
       Promise.resolve(null),
     ),
-    backendRequestMock: vi.fn(() => Promise.resolve({ config: {} })),
+    backendRequestMock: vi.fn(async (method: string, params: any) => {
+      if (method === 'script.remove') {
+        const result = await scriptsRemove(params.workspaceId, params.scriptId);
+        if (!result.success) throw new Error(result.error);
+        return { ok: true };
+      }
+      if (method === 'script.create') {
+        const { workspaceId, ...definition } = params;
+        const result = await scriptsCreate(workspaceId, definition);
+        if (!result.success) throw new Error(result.error);
+        return (
+          result.script ?? {
+            ...definition,
+            id: definition.scriptId,
+            workspaceId,
+            source: 'user',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            runtime: { status: 'idle', restartCount: 0 },
+          }
+        );
+      }
+      return { config: {} };
+    }),
   }),
 );
 vi.mock('$lib/client', () => ({
   appClient: {
-    scripts: { list: scriptsList, create: scriptsCreate, remove: scriptsRemove },
+    scripts: {
+      list: scriptsList,
+      get: async (workspaceId: string, id: string) =>
+        (await scriptsList(workspaceId)).find((s: any) => s.id === id),
+      create: scriptsCreate,
+    },
     files: { read: filesRead },
   },
 }));
@@ -43,11 +70,30 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 }));
 
 import { scriptsClient } from './scripts.client';
+import { store } from '$store/renderer/store';
+import { setScriptsData } from '$store/renderer/slices/scripts/scripts-slice';
+import { scriptsOperationSaga } from '$store/renderer/slices/scripts/sagas/scripts-operation-saga';
+import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
+import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+
+let stop: () => void;
+beforeEach(() => {
+  store.dispose();
+  store.init();
+  admitLegacyPrincipal();
+  store.dispatch(setWorkspaceEntity({ id: 'ws-1', title: 'Scripts', myRole: 'owner' } as never));
+  stop = store.runSaga(scriptsOperationSaga);
+});
+afterEach(() => {
+  stop();
+  store.dispose();
+});
 
 function fileEntry(path: string, content: string): FileContentEntry {
   return {
     path,
     absolutePath: null,
+    kind: 'editable-text',
     originalContent: content,
     localContent: content,
     lastUpdated: 0,
@@ -96,6 +142,8 @@ describe('scriptsClient.saveToRepo (repoConfig.save partial-update semantics)', 
         cwd: 'packages/app',
         env: { NODE_ENV: 'development' },
         autoStart: true,
+        healthUrl: 'http://localhost:3100/health',
+        readyPattern: 'READY',
       }),
       liveScript({ id: 'script-test', name: 'test', command: 'pnpm test', mode: 'command' }),
     ]);
@@ -103,7 +151,7 @@ describe('scriptsClient.saveToRepo (repoConfig.save partial-update semantics)', 
 
     const result = await scriptsClient.saveToRepo('ws-1');
 
-    expect(scriptsList).toHaveBeenCalledWith('ws-1');
+    expect(scriptsList).toHaveBeenCalledWith('ws-1', { archive: 'active' });
     expect(backendRequestMock).toHaveBeenCalledTimes(1);
     expect(backendRequestMock).toHaveBeenCalledWith('repoConfig.save', {
       workspaceId: 'ws-1',
@@ -117,6 +165,8 @@ describe('scriptsClient.saveToRepo (repoConfig.save partial-update semantics)', 
             cwd: 'packages/app',
             env: { NODE_ENV: 'development' },
             autoStart: true,
+            healthUrl: 'http://localhost:3100/health',
+            readyPattern: 'READY',
           },
           { name: 'test', command: 'pnpm test', mode: 'command' },
         ],
@@ -177,7 +227,35 @@ describe('scriptsClient.saveToRepo (repoConfig.save partial-update semantics)', 
   });
 });
 
+describe('scriptsClient.create purpose forwarding', () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it.each(['saved', 'oneOff', undefined] as const)(
+    'preserves %s creation intent',
+    async (purpose) => {
+      const definition = liveScript({ mode: 'command', purpose: purpose ?? 'oneOff' });
+      scriptsCreate.mockResolvedValueOnce({ success: true, script: definition });
+      const input = {
+        name: 'test',
+        command: 'pnpm test',
+        mode: 'command' as const,
+        ...(purpose ? { purpose } : {}),
+      };
+      expect(await scriptsClient.create('ws-1', input)).toEqual({
+        success: true,
+        data: definition,
+      });
+      const sent = scriptsCreate.mock.calls[0][1];
+      if (purpose) expect(sent).toHaveProperty('purpose', purpose);
+      else expect(sent).not.toHaveProperty('purpose');
+    },
+  );
+});
+
 describe('scriptsClient.update (script.create scriptId upsert, §5.8)', () => {
+  beforeEach(() =>
+    store.dispatch(setScriptsData('ws-1', [liveScript(), liveScript({ id: 'script-auto-dev' })])),
+  );
   afterEach(() => vi.clearAllMocks());
 
   it('merges partial updates into the existing definition and upserts via script.create with the existing scriptId', async () => {
@@ -207,8 +285,29 @@ describe('scriptsClient.update (script.create scriptId upsert, §5.8)', () => {
         category: 'dev',
       }),
     );
+    expect(backendRequestMock).toHaveBeenCalledWith('script.create', {
+      workspaceId: 'ws-1',
+      scriptId: 'script-auto-dev',
+      name: 'dev',
+      command: 'pnpm dev',
+      mode: 'service',
+      category: 'dev',
+      cwd: undefined,
+      env: undefined,
+      autoStart: undefined,
+    });
     expect(result.success).toBe(true);
   });
+
+  it.each(['saved', 'oneOff', undefined] as const)(
+    'leaves stored %s purpose authoritative on an omitted-purpose update',
+    async (purpose) => {
+      scriptsList.mockResolvedValueOnce([liveScript({ mode: 'command', purpose })]);
+      scriptsCreate.mockResolvedValueOnce({ success: true });
+      await scriptsClient.update('ws-1', 'script-1', { name: 'renamed' });
+      expect(scriptsCreate.mock.calls[0][1]).not.toHaveProperty('purpose');
+    },
+  );
 
   it('refuses the upsert when the target script is running — no script.create goes out on the wire', async () => {
     // The scriptId upsert tears down the live PTY group daemon-side (§5.8),
@@ -246,19 +345,23 @@ describe('scriptsClient.detect (fake files + daemon script.* seams)', () => {
     const result = await scriptsClient.detect('ws-1');
 
     expect(filesRead).toHaveBeenCalledWith('ws-1', 'package.json');
-    expect(scriptsList).toHaveBeenCalledWith('ws-1');
+    expect(scriptsList).toHaveBeenCalledWith('ws-1', { archive: 'active' });
     expect(scriptsCreate).toHaveBeenCalledTimes(2);
     expect(scriptsCreate).toHaveBeenNthCalledWith(1, 'ws-1', {
       name: 'dev',
       command: 'npm run dev',
+      purpose: 'saved',
       mode: 'service',
       category: 'dev',
+      source: 'auto-detected',
     });
     expect(scriptsCreate).toHaveBeenNthCalledWith(2, 'ws-1', {
       name: 'test',
       command: 'npm run test',
+      purpose: 'saved',
       mode: 'command',
       category: 'test',
+      source: 'auto-detected',
     });
     expect(scriptsRemove).not.toHaveBeenCalled();
     expect(result).toEqual({
@@ -334,6 +437,26 @@ describe('scriptsClient.detect (fake files + daemon script.* seams)', () => {
     expect(result).toMatchObject({ added: 0, removed: 0, packageManager: 'pnpm' });
     expect(result).not.toHaveProperty('skippedRunning');
   });
+
+  it.each(['saved', 'oneOff', undefined] as const)(
+    'does not reclassify existing %s detected commands',
+    async (purpose) => {
+      seedManifests({ 'package.json': JSON.stringify({ scripts: { test: 'vitest' } }) });
+      scriptsList.mockResolvedValueOnce([
+        liveScript({
+          name: 'test',
+          command: 'yarn test',
+          mode: 'command',
+          source: 'auto-detected',
+          purpose,
+        }),
+      ]);
+      scriptsCreate.mockResolvedValueOnce({ success: true });
+      await scriptsClient.detect('ws-1');
+      expect(scriptsCreate).toHaveBeenCalledTimes(1);
+      expect(scriptsCreate.mock.calls[0][1]).not.toHaveProperty('purpose');
+    },
+  );
 
   it('never sends the script.create upsert when the target script is running — skips and reports it', async () => {
     // Same changed-command diff as the upsert case above, but the existing
@@ -488,4 +611,59 @@ describe('scriptsClient.detect (fake files + daemon script.* seams)', () => {
     expect(scriptsCreate).not.toHaveBeenCalled();
     expect(scriptsRemove).not.toHaveBeenCalled();
   });
+
+  it('does not change definitions when active inventory is unavailable', async () => {
+    seedManifests({ 'package.json': JSON.stringify({ scripts: { dev: 'vite' } }) });
+    scriptsList.mockRejectedValueOnce(new Error('active script lists unavailable'));
+
+    expect(await scriptsClient.detect('ws-1')).toEqual({
+      success: false,
+      error: 'active script lists unavailable',
+    });
+    expect(scriptsCreate).not.toHaveBeenCalled();
+    expect(scriptsRemove).not.toHaveBeenCalled();
+  });
+
+  it.each(['create', 'update', 'remove'] as const)(
+    'reports a failed %s and stops before further script writes',
+    async (operation) => {
+      seedManifests({
+        'package.json': JSON.stringify({
+          scripts: operation === 'remove' ? {} : { dev: 'vite', test: 'vitest' },
+        }),
+      });
+      scriptsList.mockResolvedValueOnce(
+        operation === 'create'
+          ? []
+          : [
+              liveScript({ source: 'auto-detected' }),
+              liveScript({ id: 'script-2', name: 'stale', source: 'auto-detected' }),
+            ],
+      );
+      const method = operation === 'remove' ? 'script.remove' : 'script.create';
+      backendRequestMock.mockRejectedValueOnce(new Error('storage unavailable'));
+
+      expect(await scriptsClient.detect('ws-1')).toEqual({
+        success: false,
+        error: 'storage unavailable',
+      });
+      expect(backendRequestMock).toHaveBeenCalledOnce();
+      expect(backendRequestMock).toHaveBeenCalledWith(
+        method,
+        operation === 'remove'
+          ? { workspaceId: 'ws-1', scriptId: 'script-1' }
+          : {
+              workspaceId: 'ws-1',
+              name: 'dev',
+              command: 'npm run dev',
+              mode: 'service',
+              category: 'dev',
+              ...(operation === 'update'
+                ? { scriptId: 'script-1' }
+                : { purpose: 'saved', source: 'auto-detected' }),
+            },
+      );
+      expect(store.state.scripts.byWorkspaceId['ws-1'].detectionOperation).toBeUndefined();
+    },
+  );
 });

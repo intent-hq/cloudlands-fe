@@ -14,7 +14,6 @@ const mocks = vi.hoisted(() => ({
   mockTerminalsCreate: vi.fn(),
   mockTerminalsWrite: vi.fn(),
   mockInvoke: vi.fn(),
-  mockDispatch: vi.fn(),
   mockToastError: vi.fn(),
 }));
 
@@ -35,26 +34,32 @@ vi.mock('$shared/generated/ipc-client', () => ({
   invoke: mocks.mockInvoke,
 }));
 
-// Mock store - minimal implementation
-vi.mock('$store/renderer/store', () => ({
-  store: {
-    dispatch: mocks.mockDispatch,
-    createSelector: vi.fn((fn) => fn),
-    state: {},
-  },
-}));
+import { store } from '$store/renderer/store';
+import { rtkSettingsSaga } from '$store/renderer/slices/rtk-settings/sagas/rtk-settings-saga';
+import {
+  selectActiveTerminalId,
+  selectTerminals,
+  selectIsTerminalOverlayOpenForWorkspace,
+} from '$store/renderer/slices/terminals/terminals-selectors';
+import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
 
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: { success: vi.fn(), info: vi.fn(), error: mocks.mockToastError, warning: vi.fn() },
 }));
 
 describe('RtkSettings', () => {
+  let stop: () => void;
   beforeEach(() => {
     vi.clearAllMocks();
+    store.init();
+    stop = store.runSaga(rtkSettingsSaga);
   });
 
   afterEach(() => {
     cleanup();
+    stop();
+    store.dispose();
+    vi.restoreAllMocks();
   });
 
   it('shows loading through both settings and availability without exposing or writing a false value', async () => {
@@ -173,7 +178,7 @@ describe('RtkSettings', () => {
     const toggle = await screen.findByRole('switch');
     await fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-checked')).toBe('true');
-    expect(toggle.hasAttribute('disabled')).toBe(true);
+    await waitFor(() => expect(toggle.hasAttribute('disabled')).toBe(true));
 
     await fireEvent.click(toggle);
     expect(mocks.mockSettingsUpdate).toHaveBeenCalledTimes(1);
@@ -259,7 +264,10 @@ describe('RtkSettings', () => {
 
       await renderUnavailableAndClickInstall();
 
-      expect(mocks.mockDispatch).not.toHaveBeenCalled();
+      expect(selectTerminals.select(store.state, ROOT_WORKSPACE_ID)).toEqual([]);
+      expect(selectIsTerminalOverlayOpenForWorkspace.select(store.state, ROOT_WORKSPACE_ID)).toBe(
+        false,
+      );
       expect(mocks.mockToastError).toHaveBeenCalled();
     });
 
@@ -268,7 +276,10 @@ describe('RtkSettings', () => {
 
       await renderUnavailableAndClickInstall();
 
-      expect(mocks.mockDispatch).not.toHaveBeenCalled();
+      expect(selectTerminals.select(store.state, ROOT_WORKSPACE_ID)).toEqual([]);
+      expect(selectIsTerminalOverlayOpenForWorkspace.select(store.state, ROOT_WORKSPACE_ID)).toBe(
+        false,
+      );
       expect(mocks.mockToastError).toHaveBeenCalled();
     });
 
@@ -279,13 +290,14 @@ describe('RtkSettings', () => {
       await renderUnavailableAndClickInstall();
 
       await waitFor(() => {
-        expect(mocks.mockDispatch).toHaveBeenCalled();
+        expect(selectActiveTerminalId.select(store.state, ROOT_WORKSPACE_ID)).toBe('pty-daemon-7');
       });
-      const dispatched = mocks.mockDispatch.mock.calls.map(
-        (call) => call[0] as { type: string; payload: unknown[] },
+      expect(selectTerminals.select(store.state, ROOT_WORKSPACE_ID).map(({ id }) => id)).toEqual([
+        'pty-daemon-7',
+      ]);
+      expect(selectIsTerminalOverlayOpenForWorkspace.select(store.state, ROOT_WORKSPACE_ID)).toBe(
+        true,
       );
-      const addAction = dispatched.find((action) => action.type === 'terminals/addTerminal');
-      expect(addAction?.payload[1]).toBe('pty-daemon-7');
       expect(mocks.mockToastError).not.toHaveBeenCalled();
     });
   });
@@ -305,6 +317,6 @@ describe('RtkSettings', () => {
     await waitFor(() =>
       expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([{ path: 'rtk.enabled', value: true }]),
     );
-    expect(toggle.getAttribute('data-state')).toBe('unchecked');
+    await waitFor(() => expect(toggle.getAttribute('data-state')).toBe('unchecked'));
   });
 });

@@ -345,15 +345,9 @@ export function createPanelKeyboardShortcuts(
     layoutManager: PanelLayoutManager,
     direction: PanelCycleDirection,
   ): boolean {
-    const panelIds = selectPanelIds.select(appStore.state, layoutManager.workspaceId);
     const panel = selectFocusedPanel.select(appStore.state, layoutManager.workspaceId);
-    if (!panel?.activeTabId) return false;
-    const currentIndex = panelIds.indexOf(panel.id);
-    const targetIndex = currentIndex + (direction === 'next' ? 1 : -1);
-    const targetPanelId = panelIds[targetIndex];
-    if (!targetPanelId) return false;
-    layoutManager.moveTabToPanel(panel.activeTabId, panel.id, targetPanelId);
-    return true;
+    if (!panel) return false;
+    return layoutManager.moveActivePaneToColumn(panel.id, direction);
   }
 
   function createColumnToRight(layoutManager: PanelLayoutManager): boolean {
@@ -402,6 +396,15 @@ export function createPanelKeyboardShortcuts(
       return handled;
     }
 
+    if (matches('panel.create-column-right')) {
+      const handled = createColumnToRight(getLayoutManager());
+      if (handled) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      return handled;
+    }
+
     const target = e.target instanceof Element ? e.target : null;
     if (isFocusInTerminal(target as HTMLElement | null) || isFocusInEditableElement(target)) {
       return false;
@@ -417,12 +420,6 @@ export function createPanelKeyboardShortcuts(
         : null;
     if (movePaneDirection) {
       const handled = moveActivePane(layoutManager, movePaneDirection);
-      if (handled) e.preventDefault();
-      return handled;
-    }
-
-    if (matches('panel.create-column-right')) {
-      const handled = createColumnToRight(layoutManager);
       if (handled) e.preventDefault();
       return handled;
     }

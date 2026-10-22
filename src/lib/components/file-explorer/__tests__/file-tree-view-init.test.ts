@@ -103,12 +103,21 @@ vi.mock('$store/renderer/slices/file-explorer/file-explorer-slice', () => ({
   expandAllRequested: vi.fn(),
   clearExpandedPathsExceptRoot: vi.fn(),
   syncGitStatusFromStoresRequested: vi.fn(),
+  fileSearchRequested: (...payload: unknown[]) => ({
+    type: 'fileExplorer/fileSearchRequested',
+    payload,
+  }),
+  fileSearchReleased: (...payload: unknown[]) => ({
+    type: 'fileExplorer/fileSearchReleased',
+    payload,
+  }),
 }));
 vi.mock('$store/renderer/slices/file-explorer/file-explorer-selectors', () => ({
   selectFileExplorerRootNode: () => createReadable(null),
   selectFileExplorerIsLoading: () => createReadable(false),
   selectFileExplorerIsInitialized: () => createReadable(true),
   selectFileExplorerError: () => error$,
+  selectFileExplorerSearch: () => createReadable(undefined),
   selectFileExplorerGitStatus: () => createReadable({}),
   selectFlattenedNodes: () => createReadable([]),
   selectHasExpandedDirectories: { select: vi.fn(() => false) },
@@ -172,6 +181,31 @@ describe('FileTreeView initialization trigger', () => {
   });
 
   afterEach(() => cleanup());
+
+  it('keeps a stable per-tree search consumer and releases the old workspace on switch and teardown', async () => {
+    shouldInitializeState.value = false;
+    const first = render(FileTreeView, { workspaceId: 'ws-1', searchQuery: 'first' });
+    const second = render(FileTreeView, { workspaceId: 'ws-1', searchQuery: 'second' });
+    const requests = () =>
+      dispatchMock.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action.type === 'fileExplorer/fileSearchRequested');
+    await waitFor(() => expect(requests()).toHaveLength(2));
+    const consumer = requests()[0].payload[1];
+    expect(requests()[1].payload[1]).not.toBe(consumer);
+    await first.rerender({ workspaceId: 'ws-2', searchQuery: 'next' });
+    expect(requests().at(-1).payload).toEqual(['ws-2', consumer, expect.any(String), 'next']);
+    expect(dispatchMock).toHaveBeenCalledWith({
+      type: 'fileExplorer/fileSearchReleased',
+      payload: ['ws-1', consumer],
+    });
+    first.unmount();
+    expect(dispatchMock).toHaveBeenCalledWith({
+      type: 'fileExplorer/fileSearchReleased',
+      payload: ['ws-2', consumer],
+    });
+    second.unmount();
+  });
 
   it('does not duplicate dispatches while a request for the same path is pending', async () => {
     await renderTree();

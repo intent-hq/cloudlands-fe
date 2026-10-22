@@ -1,5 +1,6 @@
 // @verify-changed-triggers: .github/workflows/intent-pr.yml, scripts/ct-contract-paths.mjs,
-//   playwright/ct-spec-pattern.mjs
+//   playwright/ct-spec-pattern.mjs, .github/workflows/browser-tests.yml,
+//   .github/workflows/nightly-browser-tests.yml, scripts/browser-test-artifacts.mjs
 // @vitest-environment node
 
 /**
@@ -8,9 +9,9 @@
  * `verify:changed` consumes the list locally; the PR workflow must consume the
  * same module so `test-ct` runs on `pull_request` when the diff touches a
  * CT-contract path (cloudlands-fe#2441 was ejected from the merge queue with 40
- * CT failures after green PR CI) or a CT spec / geometry golden
- * (cloudlands-fe#2533 changed 22 specs and 1 golden with CT skipped on the PR and
- * was ejected three times). The step script and the gate script are
+ * CT failures after green PR CI), a CT spec, or a direct fixture dependency
+ * of a discovered spec.
+ * The step script and the gate script are
  * extracted from the workflow and executed under bash across a scenario table,
  * and the `test-ct` `if:` expression is evaluated the same way, so the
  * assertions hold against runtime behaviour rather than source spelling.
@@ -18,9 +19,11 @@
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { devNull, tmpdir } from 'node:os';
+import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { BROWSER_ARTIFACTS } from './browser-test-artifacts.mjs';
 
 const WORKFLOW_PATH = '.github/workflows/intent-pr.yml';
 const MODULE_PATH = 'scripts/ct-contract-paths.mjs';
@@ -30,6 +33,7 @@ const CLI_INVOCATION = `${MODULE_PATH} --diff`;
 const CT_OUTPUT = 'needs.release-fast-path.outputs.ct_required';
 const ROOT_PLAYWRIGHT_OUTPUT = 'needs.release-fast-path.outputs.root_playwright_required';
 const FAST_PATH_OUTPUT = 'needs.release-fast-path.outputs.fast_path';
+const ELECTRON_OUTPUT = 'needs.release-fast-path.outputs.electron_required';
 
 const workflow = readFileSync(resolve(WORKFLOW_PATH), 'utf-8');
 const workflowLines = workflow.split('\n');
@@ -37,10 +41,10 @@ const workflowLines = workflow.split('\n');
 const isComment = (text: string) => text.trim().startsWith('#');
 
 // Top-level job blocks live at a two-space indent under `jobs:`.
-function jobLines(name: string): string[] {
-  const start = workflowLines.indexOf(`  ${name}:`);
+function jobLines(name: string, lines = workflowLines): string[] {
+  const start = lines.indexOf(`  ${name}:`);
   if (start === -1) throw new Error(`job ${name} not found in ${WORKFLOW_PATH}`);
-  const rest = workflowLines.slice(start + 1);
+  const rest = lines.slice(start + 1);
   const end = rest.findIndex((text) => /^ {2}[\w-]+:/.test(text));
   return rest.slice(0, end === -1 ? rest.length : end);
 }
@@ -109,6 +113,8 @@ function commitFile(root: string, file: string, content: string) {
 function checkoutWith(headFile: string, moduleSource?: string, headFiles: string[] = []) {
   const root = temporaryDirectory('ct-contract-paths-ci-');
   git(root, 'init', '-q');
+  // Detached maintenance can remove a lock during rmSync and leave the fixture behind.
+  git(root, 'config', 'maintenance.auto', 'false');
   git(root, 'config', 'user.name', 'ct-contract-paths-ci test');
   git(root, 'config', 'user.email', 'ct-contract-paths-ci@example.invalid');
   git(root, 'config', 'commit.gpgsign', 'false');
@@ -142,6 +148,8 @@ const LARGE_DIFF_FILLER = Array.from(
 function checkoutDeleting(file: string) {
   const root = temporaryDirectory('ct-contract-paths-ci-');
   git(root, 'init', '-q');
+  // Detached maintenance can remove a lock during rmSync and leave the fixture behind.
+  git(root, 'config', 'maintenance.auto', 'false');
   git(root, 'config', 'user.name', 'ct-contract-paths-ci test');
   git(root, 'config', 'user.email', 'ct-contract-paths-ci@example.invalid');
   git(root, 'config', 'commit.gpgsign', 'false');
@@ -151,6 +159,37 @@ function checkoutDeleting(file: string) {
   git(root, 'commit', '-q', '-m', `delete ${file}`);
   return { root, base };
 }
+
+describe('disposable Git fixture ownership', () => {
+  it.each(['addition', 'deletion'] as const)(
+    'does not launch automatic maintenance for a %s checkout',
+    (change) => {
+      const trace = join(temporaryDirectory('ct-fixture-trace-'), 'events.json');
+      // Exercise the real Git process tree without the developer's Git config.
+      vi.stubEnv('GIT_CONFIG_GLOBAL', devNull);
+      vi.stubEnv('GIT_CONFIG_NOSYSTEM', '1');
+      vi.stubEnv('GIT_TRACE2_EVENT', trace);
+      try {
+        if (change === 'addition') checkoutWith('test/example.spec.ts');
+        else checkoutDeleting('test/example.spec.ts');
+
+        const children = readFileSync(trace, 'utf8')
+          .trim()
+          .split('\n')
+          .map((line) => JSON.parse(line) as { event: string; argv?: string[] })
+          .filter((event) => event.event === 'child_start')
+          .map((event) => event.argv ?? []);
+        // A synchronous commit waits for its direct child, but detached Git
+        // housekeeping can still remove locks/objects during fixture cleanup.
+        expect(
+          children.filter((argv) => argv.includes('maintenance') || argv.includes('gc')),
+        ).toEqual([]);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    },
+  );
+});
 
 // The `outputs:` block of a job, one line per output.
 function jobOutputs(lines: string[]): string[] {
@@ -164,7 +203,15 @@ function jobOutputs(lines: string[]): string[] {
 const releaseFastPath = jobLines('release-fast-path');
 const testCt = jobLines('test-ct');
 const testPlaywright = jobLines('test-playwright');
+const testElectron = jobLines('test-electron');
 const gate = jobLines('gate');
+const browserWorkflow = readFileSync(resolve('.github/workflows/browser-tests.yml'), 'utf8').split(
+  '\n',
+);
+const nightlyWorkflow = readFileSync(
+  resolve('.github/workflows/nightly-browser-tests.yml'),
+  'utf8',
+).split('\n');
 
 describe(`${WORKFLOW_PATH} consumes ${MODULE_PATH}`, () => {
   const invocations = workflowLines
@@ -200,11 +247,9 @@ describe(`${WORKFLOW_PATH} consumes ${MODULE_PATH}`, () => {
 
     it.each([
       ['a CT-contract path', 'src/lib/styles/tokens.css'],
-      ['a CT spec', 'src/lib/components/ui/button/button.geometry.ct.spec.ts'],
-      [
-        'a geometry golden',
-        'src/lib/components/workspace/__geometry__/workspace-hover-card.geometry.json',
-      ],
+      ['a CT spec', 'src/lib/components/ui/button/button.keyboard.ct.spec.ts'],
+      ['the dependency manifest', 'package.json'],
+      ['the dependency lockfile', 'pnpm-lock.yaml'],
     ])('writes ct_required=true when the diff touches %s', (_name, file) => {
       const { root, base } = checkoutWith(file);
       const result = runStep(root, base);
@@ -313,7 +358,7 @@ describe(`${WORKFLOW_PATH} computes root Playwright relevance in release-fast-pa
 
     it.each([
       ['a .svelte component only', 'src/features/agent/view.svelte'],
-      ['a CT spec under src/', 'src/lib/components/ui/button/button.geometry.ct.spec.ts'],
+      ['a CT spec under src/', 'src/lib/components/ui/button/button.keyboard.ct.spec.ts'],
       ['a src/ path containing test/', 'src/test/helpers.ts'],
       ['a test-prefixed sibling directory', 'test-results/last-run.json'],
       ['the CT Playwright config', 'playwright-ct.config.ts'],
@@ -343,6 +388,14 @@ type Context = {
   rootPlaywrightRequired: string;
   fastPath: string;
   route: string;
+  linuxBurst?: string;
+  cancelled?: boolean;
+  failed?: boolean;
+  electronRequired?: string;
+  suite?: string;
+  fork?: boolean;
+  shard?: number;
+  buildOutcome?: string;
 };
 
 // Evaluates a workflow `if:` expression built from `!cancelled()`, context
@@ -355,19 +408,31 @@ function evaluateCondition(expression: string, context: Context): boolean {
     [ROOT_PLAYWRIGHT_OUTPUT]: context.rootPlaywrightRequired,
     [FAST_PATH_OUTPUT]: context.fastPath,
     'needs.route.result': context.route,
+    'needs.route.outputs.linux_burst': context.linuxBurst ?? 'false',
+    [ELECTRON_OUTPUT]: context.electronRequired ?? 'false',
+    'inputs.suite': context.suite ?? '',
+    'github.event.pull_request.head.repo.full_name': context.fork
+      ? 'someone/fork'
+      : 'intent-hq/cloudlands-fe',
+    'github.repository': 'intent-hq/cloudlands-fe',
+    'steps.ct-build.outcome': context.buildOutcome ?? 'success',
   };
   let source = expression.replace(/^\$\{\{\s*/, '').replace(/\s*\}\}$/, '');
-  source = source.replaceAll('!cancelled()', 'true');
+  source = source
+    .replaceAll('cancelled()', String(context.cancelled ?? false))
+    .replaceAll('failure()', String(context.failed ?? false))
+    .replaceAll('always()', 'true')
+    .replaceAll('matrix.shard', String(context.shard ?? 1));
   for (const [name, value] of Object.entries(lookups)) {
     source = source.replaceAll(name, JSON.stringify(value));
   }
   source = source.replaceAll('!=', ' NE ').replaceAll('==', '===').replaceAll(' NE ', '!==');
-  const residue = source.replace(/"[^"]*"|'[^']*'|true|===|!==|&&|\|\||[()\s]/g, '');
+  const residue = source.replace(/"[^"]*"|'[^']*'|true|false|===|!==|&&|\|\||[!()\d\s]/g, '');
   if (residue !== '') throw new Error(`unsupported token(s) in if: expression: ${residue}`);
   return Boolean(new Function(`return (${source});`)());
 }
 
-describe('test-ct runs on pull_request when ct_required is true', () => {
+describe('test-ct runs on merge_group when ct_required is true', () => {
   const condition = jobField(testCt, 'if');
 
   it('depends on release-fast-path and route', () => {
@@ -377,44 +442,42 @@ describe('test-ct runs on pull_request when ct_required is true', () => {
   });
 
   const ok: Context = {
-    event: 'pull_request',
+    event: 'merge_group',
     ctRequired: 'true',
     rootPlaywrightRequired: 'false',
     fastPath: 'false',
     route: 'success',
   };
   it.each<[string, Partial<Context>, boolean]>([
-    ['CT-relevant PR (contract path, spec, or golden)', {}, true],
-    ['ordinary PR', { ctRequired: 'false' }, false],
-    ['release-shaped PR touching package.json', { fastPath: 'true' }, false],
-    ['PR whose relevance output is empty (fork / failed job)', { ctRequired: '' }, false],
-    ['PR whose route failed', { route: 'failure' }, false],
+    ['CT-relevant queue (contract path, spec, or direct import)', {}, true],
+    ['ordinary queue', { ctRequired: 'false' }, false],
+    ['release-shaped queue touching package.json', { fastPath: 'true' }, false],
+    ['queue whose relevance output is empty (fork / failed job)', { ctRequired: '' }, false],
+    ['queue whose route failed', { route: 'failure' }, false],
+    ['cancelled queue', { cancelled: true }, false],
+    ['PR with empty outputs', { event: 'pull_request', ctRequired: '', fastPath: '' }, false],
     [
-      'merge_group with empty outputs',
-      { event: 'merge_group', ctRequired: '', fastPath: '' },
-      true,
-    ],
-    [
-      'merge_group whose route failed',
-      { event: 'merge_group', ctRequired: '', fastPath: '', route: 'failure' },
+      'pull_request whose route failed',
+      { event: 'pull_request', ctRequired: '', fastPath: '', route: 'failure' },
       false,
     ],
     [
-      'release-shaped merge_group entry',
-      { event: 'merge_group', ctRequired: 'true', fastPath: 'true' },
+      'release-shaped pull_request entry',
+      { event: 'pull_request', ctRequired: 'true', fastPath: 'true' },
       false,
     ],
     [
-      'non-release merge_group entry with computed outputs',
-      { event: 'merge_group', ctRequired: 'false', fastPath: 'false' },
-      true,
+      'non-release pull_request entry with computed outputs',
+      { event: 'pull_request', ctRequired: 'false', fastPath: 'false' },
+      false,
     ],
+    ['CT-relevant pull_request', { event: 'pull_request', ctRequired: 'true' }, false],
   ])('%s → runs=%s', (_name, overrides, expected) => {
     expect(evaluateCondition(condition, { ...ok, ...overrides })).toBe(expected);
   });
 });
 
-describe('test-playwright runs on pull_request when root_playwright_required is true', () => {
+describe('test-playwright runs on merge_group when root_playwright_required is true', () => {
   const condition = jobField(testPlaywright, 'if');
 
   it('depends on release-fast-path and route', () => {
@@ -429,53 +492,655 @@ describe('test-playwright runs on pull_request when root_playwright_required is 
   });
 
   const ok: Context = {
-    event: 'pull_request',
+    event: 'merge_group',
     ctRequired: 'false',
     rootPlaywrightRequired: 'true',
     fastPath: 'false',
     route: 'success',
   };
   it.each<[string, Partial<Context>, boolean]>([
-    ['root-relevant PR (test/** or playwright.config.ts)', {}, true],
-    ['ordinary PR', { rootPlaywrightRequired: 'false' }, false],
+    ['root-relevant queue (test/** or playwright.config.ts)', {}, true],
+    ['ordinary queue', { rootPlaywrightRequired: 'false' }, false],
     [
-      'CT-relevant PR that touches no root path',
+      'CT-relevant queue that touches no root path',
       { ctRequired: 'true', rootPlaywrightRequired: 'false' },
       false,
     ],
-    ['release-shaped PR touching package.json', { fastPath: 'true' }, false],
+    ['release-shaped queue touching package.json', { fastPath: 'true' }, false],
     [
-      'PR whose relevance output is empty (fork / failed job)',
+      'queue whose relevance output is empty (fork / failed job)',
       { rootPlaywrightRequired: '' },
       false,
     ],
-    ['PR whose route failed', { route: 'failure' }, false],
+    ['queue whose route failed', { route: 'failure' }, false],
+    ['fork queue whose route is skipped', { route: 'skipped' }, false],
+    ['cancelled queue', { cancelled: true }, false],
     [
-      'merge_group with empty outputs',
-      { event: 'merge_group', rootPlaywrightRequired: '', fastPath: '' },
-      true,
-    ],
-    [
-      'merge_group whose route failed',
-      { event: 'merge_group', rootPlaywrightRequired: '', fastPath: '', route: 'failure' },
+      'PR with empty outputs',
+      { event: 'pull_request', rootPlaywrightRequired: '', fastPath: '' },
       false,
     ],
     [
-      'release-shaped merge_group entry',
-      { event: 'merge_group', rootPlaywrightRequired: 'true', fastPath: 'true' },
+      'pull_request whose route failed',
+      { event: 'pull_request', rootPlaywrightRequired: '', fastPath: '', route: 'failure' },
       false,
     ],
     [
-      'non-release merge_group entry with computed outputs',
-      { event: 'merge_group', rootPlaywrightRequired: 'false', fastPath: 'false' },
-      true,
+      'release-shaped pull_request entry',
+      { event: 'pull_request', rootPlaywrightRequired: 'true', fastPath: 'true' },
+      false,
+    ],
+    [
+      'non-release pull_request entry with computed outputs',
+      { event: 'pull_request', rootPlaywrightRequired: 'false', fastPath: 'false' },
+      false,
+    ],
+    [
+      'root-relevant pull_request',
+      { event: 'pull_request', rootPlaywrightRequired: 'true' },
+      false,
     ],
   ])('%s → runs=%s', (_name, overrides, expected) => {
     expect(evaluateCondition(condition, { ...ok, ...overrides })).toBe(expected);
   });
 });
 
-describe('CI Gate accepts a test-ct skip only through an output', () => {
+describe('portable fixture relevance', () => {
+  const script = stepRunBlock(releaseFastPath, 'Evaluate portable fixture relevance');
+  it.each([
+    ['src/features/dev-console/TrafficInspector.test.ts', true],
+    ['src/features/backend/main/backend-connection.test.ts', true],
+    ['src/features/backend/main/__tests__/isolated-test-package.test.ts', true],
+    ['src/main/isolated-test-profile.test.ts', true],
+    ['src/test/fixtures/isolated-profile-home.ts', true],
+    ['.github/workflows/intent-pr.yml', true],
+    ['src/other.test.ts', false],
+  ])('classifies %s without requiring unrelated native suites', (file, required) => {
+    const { root, base } = checkoutWith(file);
+    const output = join(root, 'github-output');
+    const result = bash(script, { BASE_SHA: base, GITHUB_OUTPUT: output }, root);
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(output, 'utf8').trim()).toBe(`portable_fixtures_required=${required}`);
+  });
+
+  it('requires native tests if the diff cannot be read', () => {
+    const { root } = checkoutWith('src/other.ts');
+    const output = join(root, 'github-output');
+    const result = bash(script, { BASE_SHA: 'missing-ref', GITHUB_OUTPUT: output }, root);
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(output, 'utf8').trim()).toBe('portable_fixtures_required=true');
+  });
+});
+
+describe('authored browser tests require their complete PR suites', () => {
+  it.each([
+    ['Evaluate CT relevance', 'ct_required', 'src/components/example.ct.spec.ts'],
+    ['Evaluate root Playwright relevance', 'root_playwright_required', 'test/example.spec.ts'],
+    [
+      'Evaluate root Playwright relevance',
+      'root_playwright_required',
+      'test/example.spec.ts-snapshots/result.png',
+    ],
+    ['Evaluate Electron relevance', 'electron_required', 'test/electron-browser-lifetime.spec.ts'],
+    [
+      'Evaluate Electron relevance',
+      'electron_required',
+      'test/fixtures/browser-lifetime/Harness.svelte',
+    ],
+    ...['café', 'a"quote', 'a\\backslash', 'a\ttab', 'a\nnewline'].flatMap((name) => [
+      ['Evaluate root Playwright relevance', 'root_playwright_required', `test/${name}.spec.ts`],
+      [
+        'Evaluate Electron relevance',
+        'electron_required',
+        `test/fixtures/browser-lifetime/${name}.svelte`,
+      ],
+    ]),
+  ])('classifies additions, edits and moves: %s / %s / %s', (step, outputKey, file) => {
+    const script = stepRunBlock(releaseFastPath, step);
+    const { root, base: originalBase } = checkoutWith(file);
+    git(root, 'config', 'core.quotePath', 'true');
+    let base = originalBase;
+    for (const change of ['add', 'edit', 'rename']) {
+      if (change === 'edit') {
+        base = git(root, 'rev-parse', 'HEAD');
+        commitFile(root, file, '// edited browser test');
+      } else if (change === 'rename') {
+        base = git(root, 'rev-parse', 'HEAD');
+        // Renaming out of a watched directory must still require the suite.
+        git(root, 'mv', file, 'renamed-test.txt');
+        git(root, 'commit', '-q', '-m', 'move browser test');
+      }
+      const output = join(root, 'github-output');
+      writeFileSync(output, '');
+      const result = bash(script, { BASE_SHA: base, GITHUB_OUTPUT: output }, root);
+      expect(result.status, `${change}: ${result.stderr}`).toBe(0);
+      expect(readFileSync(output, 'utf8').trim(), change).toBe(`${outputKey}=true`);
+    }
+  });
+
+  it.each([
+    ['Evaluate root Playwright relevance', 'root_playwright_required'],
+    ['Evaluate Electron relevance', 'electron_required'],
+  ])('does not split a newline in an irrelevant filename: %s', (step, outputKey) => {
+    const { root, base } = checkoutWith('src/irrelevant\ntest/electron-browser-lifetime.spec.ts');
+    const output = join(root, 'github-output');
+    const result = bash(
+      stepRunBlock(releaseFastPath, step),
+      { BASE_SHA: base, GITHUB_OUTPUT: output },
+      root,
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(output, 'utf8').trim()).toBe(`${outputKey}=false`);
+  });
+
+  it.each([
+    ['playwright.manual.config.ts', true],
+    ['playwright.config.ts', true],
+    ['playwright/root-spec-pattern.mjs', true],
+    ['playwright/ct-spec-pattern.mjs', true],
+    ['playwright/app-stubs/navigation.ts', true],
+    ['test/vite-harness-cache.mjs', true],
+    ['test/fixtures/browser-lifetime/main.cjs', true],
+    ['test/fixtures/repository-checkout/playwright.config.ts', true],
+    ['test/fixtures/repository-checkout/main.ts', true],
+    ['src/features/backend/main/repository-checkout-feed.ts', true],
+    ['src/lib/client/live/repository-checkout-transport.ts', true],
+    ['src/shared/types/repository-checkout.ts', true],
+    ['test/fixtures/pr-monitor-native/main.ts', true],
+    ['test/fixtures/pr-monitor-native/monitor.electron.ts', true],
+    ['test/fixtures/pr-monitor-native/playwright.config.ts', true],
+    ['src/features/backend/main/pr-monitor-lifecycle.ts', true],
+    ['src/features/backend/main/backend.ipc.ts', true],
+    ['src/features/backend/main/json-rpc-client.ts', true],
+    ['src/lib/client/live/pr-monitor-transport.ts', true],
+    ['src/lib/client/live/electron-ipc-transport.ts', true],
+    ['src/shared/types/pr-monitor.ts', true],
+    ['src/preload/index.template.ts', true],
+    ['.github/workflows/browser-tests.yml', true],
+    ['.github/workflows/intent-pr.yml', true],
+    ['package.json', true],
+    ['pnpm-lock.yaml', true],
+    ['svelte.config.js', true],
+    ['test/unrelated.spec.ts', false],
+    ['src/features/browser/view.svelte', false],
+    ['playwright-ct.config.ts', false],
+    ['test/fixtures/browser-lifetime-other/main.cjs', false],
+    ['test/fixtures/repository-checkout-other/main.ts', false],
+    ['test/fixtures/pr-monitor-native-other/main.ts', false],
+  ])('classifies Electron setup path %s as required=%s', (file, required) => {
+    const { root, base } = checkoutWith(file);
+    const output = join(root, 'github-output');
+    const result = bash(
+      stepRunBlock(releaseFastPath, 'Evaluate Electron relevance'),
+      { BASE_SHA: base, GITHUB_OUTPUT: output },
+      root,
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(output, 'utf8').trim()).toBe(`electron_required=${required}`);
+  });
+
+  it('requires Electron if the relevance diff cannot be read', () => {
+    const root = temporaryDirectory('electron-relevance-');
+    const output = join(root, 'github-output');
+    const result = bash(
+      stepRunBlock(releaseFastPath, 'Evaluate Electron relevance'),
+      { BASE_SHA: 'missing', GITHUB_OUTPUT: output },
+      root,
+    );
+    expect(result.status).toBe(0);
+    expect(readFileSync(output, 'utf8').trim()).toBe('electron_required=true');
+  });
+
+  it.each([
+    'package.json',
+    'pnpm-lock.yaml',
+    'svelte.config.js',
+    'playwright/app-stubs/navigation.ts',
+  ])('requires the root suite for shared setup %s', (file) => {
+    const { root, base } = checkoutWith(file);
+    const output = join(root, 'github-output');
+    const result = bash(
+      stepRunBlock(releaseFastPath, 'Evaluate root Playwright relevance'),
+      { BASE_SHA: base, GITHUB_OUTPUT: output },
+      root,
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(output, 'utf8').trim()).toBe('root_playwright_required=true');
+  });
+});
+
+describe('selective Electron queue routing', () => {
+  const ok: Context = {
+    event: 'merge_group',
+    ctRequired: 'false',
+    rootPlaywrightRequired: 'false',
+    electronRequired: 'true',
+    fastPath: 'false',
+    route: 'success',
+  };
+  it.each<[string, Partial<Context>, boolean]>([
+    ['lifetime tests changed', {}, true],
+    ['ordinary queue', { electronRequired: 'false' }, false],
+    ['missing relevance output', { electronRequired: '' }, false],
+    ['release-shaped queue', { fastPath: 'true' }, false],
+    ['route failed', { route: 'failure' }, false],
+    ['cancelled queue', { cancelled: true }, false],
+    ['queue with relevant changes', { event: 'pull_request' }, false],
+    ['queue with empty outputs', { event: 'pull_request', electronRequired: '' }, false],
+  ])('%s → runs=%s', (_name, context, expected) => {
+    expect(evaluateCondition(jobField(testElectron, 'if'), { ...ok, ...context })).toBe(expected);
+  });
+});
+
+describe('shared browser jobs and nightly routing', () => {
+  const suites = [
+    ['test-ct', 'ct'],
+    ['test-playwright', 'root'],
+    ['test-electron', 'electron'],
+  ];
+  const context: Context = {
+    event: 'pull_request',
+    ctRequired: 'true',
+    rootPlaywrightRequired: 'true',
+    electronRequired: 'true',
+    fastPath: 'false',
+    route: 'success',
+  };
+
+  it('schedules complete nightly and manual runs without filter inputs', () => {
+    const triggers = nightlyWorkflow.slice(
+      nightlyWorkflow.indexOf('on:') + 1,
+      nightlyWorkflow.indexOf('permissions:'),
+    );
+    expect(triggers.filter((line) => /^ {2}\w+:/.test(line)).map((line) => line.trim())).toEqual([
+      'schedule:',
+      'workflow_dispatch:',
+    ]);
+    expect(triggers.filter((line) => line.includes('cron:')).map((line) => line.trim())).toEqual([
+      "- cron: '17 2 * * *'",
+    ]);
+    expect(triggers.some((line) => line.trimStart().startsWith('inputs:'))).toBe(false);
+    for (const [job, suite] of suites) {
+      const nightly = jobLines(job, nightlyWorkflow);
+      expect(jobField(nightly, 'uses')).toBe('./.github/workflows/browser-tests.yml');
+      expect(nightly).toContain(`      suite: ${suite}`);
+      // Nightly suites wait only for the runner route and still run if it fails.
+      expect(jobField(nightly, 'needs')).toBe('runner-route');
+      expect(jobField(nightly, 'if')).toBe('${{ !cancelled() }}');
+      expect(nightly).toContain('      cloud: ${{ needs.runner-route.outputs.cloud }}');
+      expect(jobField(jobLines(job), 'uses')).toBe(jobField(nightly, 'uses'));
+      expect(jobLines(job)).toContain(`      suite: ${suite}`);
+      expect(jobLines(job)).toContain('      cloud: ${{ needs.route.outputs.cloud }}');
+    }
+  });
+
+  it.each(suites)(
+    '%s only executes on authorized PR, scheduled and manual events',
+    (job, suite) => {
+      const lines = jobLines(job, browserWorkflow);
+      for (const event of [
+        'pull_request',
+        'schedule',
+        'workflow_dispatch',
+        'merge_group',
+        'push',
+      ]) {
+        for (const fork of [false, true]) {
+          const value = { ...context, suite, event, fork };
+          expect(evaluateCondition(jobField(lines, 'if'), value)).toBe(
+            ['schedule', 'workflow_dispatch'].includes(event) || event === 'merge_group',
+          );
+          expect(evaluateCondition(jobField(lines, 'if'), { ...value, cancelled: true })).toBe(
+            false,
+          );
+          expect(evaluateCondition(jobField(lines, 'if'), { ...value, suite: 'unknown' })).toBe(
+            false,
+          );
+        }
+      }
+      // Straight to the burst runner (WarpBuild, or GitHub), never a self-hosted slot.
+      expect(jobField(lines, 'runs-on')).toBe(
+        `\${{ fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["gh-linux-8x"]') }}`,
+      );
+    },
+  );
+
+  it('prevents forks from reaching the routed self-hosted jobs', () => {
+    for (const name of ['route', 'release-fast-path']) {
+      expect(evaluateCondition(jobField(jobLines(name), 'if'), { ...context, fork: true })).toBe(
+        false,
+      );
+      expect(evaluateCondition(jobField(jobLines(name), 'if'), context)).toBe(true);
+    }
+  });
+
+  function step(lines: string[], name: string) {
+    const start = lines.indexOf(`      - name: ${name}`);
+    if (start < 0) throw new Error(`Missing step: ${name}`);
+    const rest = lines.slice(start + 1);
+    const end = rest.findIndex((line) => line.startsWith('      - '));
+    return rest.slice(0, end < 0 ? rest.length : end);
+  }
+  function field(lines: string[], name: string) {
+    const line = lines.find((value) => value.trimStart().startsWith(`${name}:`));
+    if (!line) throw new Error(`Missing field: ${name}`);
+    return line
+      .trim()
+      .slice(name.length + 1)
+      .trim();
+  }
+
+  it('retains all four independent CT shards and their build/test memory budgets', () => {
+    const ct = jobLines('test-ct', browserWorkflow);
+    expect(JSON.parse(field(ct, 'shard'))).toEqual([1, 2, 3, 4]);
+    expect(field(ct, 'fail-fast')).toBe('false');
+    expect(jobField(ct, 'timeout-minutes')).toBe('50');
+    expect(field(step(ct, 'Build CT bundle'), 'NODE_OPTIONS').replaceAll("'", '')).toBe(
+      '--max-old-space-size=8192',
+    );
+    expect(field(step(ct, 'Component tests'), 'NODE_OPTIONS').replaceAll("'", '')).toBe(
+      '--max-old-space-size=4096',
+    );
+  });
+
+  it('keeps quarantine advisory and limited to shard one after a successful bundle build', () => {
+    const ct = jobLines('test-ct', browserWorkflow);
+    const quarantine = step(ct, 'Quarantined component tests (advisory)');
+    expect(field(quarantine, 'continue-on-error')).toBe('true');
+    for (const shard of [1, 2, 3, 4]) {
+      for (const failed of [false, true]) {
+        expect(evaluateCondition(field(quarantine, 'if'), { ...context, shard, failed })).toBe(
+          shard === 1,
+        );
+        expect(
+          evaluateCondition(field(quarantine, 'if'), {
+            ...context,
+            shard,
+            failed,
+            buildOutcome: 'failure',
+          }),
+        ).toBe(false);
+      }
+    }
+    expect(field(quarantine, 'PLAYWRIGHT_JSON_OUTPUT_FILE')).toBe(
+      'playwright-report-quarantine/results.json',
+    );
+  });
+
+  it.each(BROWSER_ARTIFACTS)(
+    'uploads complete $artifactName evidence on success, failure or cancellation',
+    (artifact) => {
+      const job =
+        artifact.suite === 'ct' || artifact.suite === 'quarantine'
+          ? 'test-ct'
+          : artifact.suite === 'root'
+            ? 'test-playwright'
+            : 'test-electron';
+      const lines = jobLines(job, browserWorkflow);
+      const name =
+        artifact.suite === 'quarantine'
+          ? 'Upload quarantine report'
+          : artifact.suite === 'electron'
+            ? 'Upload electron lifetime report'
+            : 'Upload playwright report';
+      const upload = step(lines, name);
+      expect(field(upload, 'name').replaceAll('${{ matrix.shard }}', String(artifact.shard))).toBe(
+        artifact.artifactName,
+      );
+      const paths = upload.filter((line) => /^ {12}\S/.test(line)).map((line) => line.trim());
+      expect(paths).toContain(artifact.outcomePath);
+      expect(paths).toContain(`${dirname(artifact.reportPath)}/`);
+      expect(paths).toContain(artifact.advisory ? 'test-results-quarantine/' : 'test-results/');
+      expect(field(upload, 'overwrite')).toBe('true');
+      expect(field(upload, 'if-no-files-found')).toBe('error');
+      expect(field(upload, 'retention-days')).toBe('7');
+      for (const status of [{}, { failed: true }, { cancelled: true }]) {
+        expect(
+          evaluateCondition(field(upload, 'if'), { ...context, shard: artifact.shard, ...status }),
+        ).toBe(true);
+      }
+      const record = step(
+        lines,
+        artifact.advisory ? 'Record quarantine outcome' : 'Record browser outcome',
+      );
+      for (const status of [{}, { failed: true }, { cancelled: true }]) {
+        expect(
+          evaluateCondition(field(record, 'if'), { ...context, shard: artifact.shard, ...status }),
+        ).toBe(true);
+      }
+      expect(field(record, 'BROWSER_TEST_OUTCOME')).toBe(
+        `\${{ steps.${artifact.advisory ? 'quarantine' : 'tests'}.outcome }}`,
+      );
+      expect(field(record, 'run').replaceAll('${{ matrix.shard }}', String(artifact.shard))).toBe(
+        `node scripts/browser-test-artifacts.mjs record ${artifact.suite} ${artifact.shard}`,
+      );
+    },
+  );
+
+  it.each([
+    ['test-ct', 'Component tests'],
+    ['test-playwright', 'Root Playwright tests'],
+    ['test-electron', 'Electron browser lifetime tests'],
+  ])(
+    '%s preserves failed exits and forbids zero-test success in its required lane',
+    (job, stepName) => {
+      const lines = jobLines(job, browserWorkflow);
+      const testStep = step(lines, stepName);
+      expect(testStep.some((line) => line.trimStart().startsWith('continue-on-error:'))).toBe(
+        false,
+      );
+      const run = field(testStep, 'run');
+      const command = (run === '|' ? stepRunBlock(lines, stepName) : run).replaceAll(
+        '${{ matrix.shard }}',
+        '1',
+      );
+      const root = temporaryDirectory('browser-required-command-');
+      writeFileSync(join(root, 'pnpm'), '#!/bin/sh\nprintf "%s\\n" "$@" > "$ARGS"\nexit 7\n', {
+        mode: 0o755,
+      });
+      writeFileSync(join(root, 'xvfb-run'), '#!/bin/sh\nshift\nexec "$@"\n', { mode: 0o755 });
+      const argsFile = join(root, 'args');
+      const result = bash(command, { PATH: `${root}:${process.env.PATH}`, ARGS: argsFile }, root);
+      expect(result.status, result.stderr).toBe(7);
+      const args = readFileSync(argsFile, 'utf8').trim().split('\n');
+      expect(args).not.toContain('--pass-with-no-tests');
+      expect(args).not.toContain('--only-changed=HEAD');
+      expect(args).toContain('--reporter=list,html,json');
+      expect(field(testStep, 'PLAYWRIGHT_JSON_OUTPUT_FILE')).toBe('playwright-report/results.json');
+      if (job === 'test-ct') {
+        expect(args).toContain('--shard=1/4');
+        expect(args).toContain('--fail-on-flaky-tests');
+      } else if (job === 'test-playwright') expect(args).toContain('--shard=1/4');
+      // Exercise Playwright's real discovery/exit policy without starting a browser.
+      // Reuse the required lane's flags with an isolated empty test directory.
+      const config = join(root, 'empty.config.cjs');
+      writeFileSync(
+        config,
+        "module.exports = { testDir: '.', testMatch: 'nothing.spec.ts', projects: [{ name: 'chromium' }] };\n",
+      );
+      const discovery = spawnSync(
+        process.execPath,
+        [
+          createRequire(import.meta.url).resolve('@playwright/test/cli'),
+          'test',
+          '--config',
+          config,
+          ...args.slice(2),
+        ],
+        {
+          cwd: root,
+          encoding: 'utf8',
+          env: {
+            PATH: process.env.PATH,
+            CI: 'true',
+            PLAYWRIGHT_HTML_OPEN: 'never',
+            PLAYWRIGHT_JSON_OUTPUT_FILE: join(root, 'playwright-report/results.json'),
+          },
+        },
+      );
+      // Empty shards return zero in Playwright; the outcome recorder must turn
+      // those into a failed required job while preserving the empty report.
+      const recorded = spawnSync(
+        process.execPath,
+        [
+          resolve('scripts/browser-test-artifacts.mjs'),
+          'record',
+          job === 'test-ct' ? 'ct' : job === 'test-playwright' ? 'root' : 'electron',
+          '1',
+        ],
+        {
+          cwd: root,
+          encoding: 'utf8',
+          env: {
+            BROWSER_TEST_OUTCOME: discovery.status === 0 ? 'success' : 'failure',
+            BROWSER_JOB_STATUS: discovery.status === 0 ? 'success' : 'failure',
+          },
+        },
+      );
+      expect(
+        discovery.status === 0 ? recorded.status : discovery.status,
+        discovery.stdout + discovery.stderr + recorded.stderr,
+      ).toBe(1);
+      expect(JSON.parse(readFileSync(join(root, 'browser-outcome.json'), 'utf8'))).toMatchObject({
+        reportPresent: true,
+        testCount: 0,
+      });
+    },
+  );
+});
+
+describe('root Playwright hosted shards', () => {
+  const testPlaywright = jobLines(
+    'test-playwright',
+    readFileSync(resolve('.github/workflows/browser-tests.yml'), 'utf8').split('\n'),
+  );
+  function step(name: string): string[] {
+    const start = testPlaywright.indexOf(`      - name: ${name}`);
+    if (start === -1) throw new Error(`root step ${name} not found`);
+    const rest = testPlaywright.slice(start + 1);
+    const end = rest.findIndex((line) => line.startsWith('      - '));
+    return rest.slice(0, end === -1 ? rest.length : end);
+  }
+
+  function field(lines: string[], key: string): string {
+    const line = lines.find((value) => value.trimStart().startsWith(`${key}:`));
+    if (!line) throw new Error(`root field ${key} not found`);
+    return line
+      .trim()
+      .slice(key.length + 1)
+      .trim();
+  }
+
+  const expandShard = (value: string, shard: number) =>
+    value.replaceAll('${{ matrix.shard }}', String(shard));
+  const ok: Context = {
+    event: 'pull_request',
+    ctRequired: 'false',
+    rootPlaywrightRequired: 'true',
+    fastPath: 'false',
+    route: 'success',
+  };
+
+  it('schedules four shards independently within the existing worker and memory budgets', () => {
+    const shards: number[] = JSON.parse(field(testPlaywright, 'shard'));
+    expect(shards).toEqual([1, 2, 3, 4]);
+    expect(field(testPlaywright, 'fail-fast')).toBe('false');
+    expect(
+      new Set(shards.map((shard) => expandShard(jobField(testPlaywright, 'name'), shard))).size,
+    ).toBe(shards.length);
+    expect(jobField(testPlaywright, 'timeout-minutes')).toBe('45');
+    expect(field(testPlaywright, 'NODE_OPTIONS').replaceAll("'", '')).toBe(
+      '--max-old-space-size=4096',
+    );
+    expect(testPlaywright.some((line) => line.trimStart().startsWith('continue-on-error:'))).toBe(
+      false,
+    );
+  });
+
+  it.each([
+    ['pull_request', 'false'],
+    ['pull_request', 'true'],
+    ['schedule', 'false'],
+    ['workflow_dispatch', 'true'],
+  ])('provisions hosted runners on %s with linux_burst=%s', (event, linuxBurst) => {
+    const context = { ...ok, event, linuxBurst };
+    expect(jobField(testPlaywright, 'runs-on')).toBe(
+      `\${{ fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["gh-linux-8x"]') }}`,
+    );
+    // The pnpm store is restored by the backend-selecting cache action (WarpBuild or GitHub).
+    expect(field(step('Cache pnpm store'), 'uses')).toBe('./.github/actions/pnpm-store-cache');
+    for (const name of ['Cache Playwright browsers', 'Install Playwright browsers']) {
+      const condition = step(name).find((line) => line.trimStart().startsWith('if:'));
+      expect(evaluateCondition(condition?.trim().slice(3).trim() ?? 'true', context)).toBe(true);
+    }
+    expect(field(step('Install Playwright browsers'), 'timeout-minutes')).toBe('8');
+    expect(
+      testPlaywright.some((line) => line.startsWith('      - name:') && line.includes('(tinybox)')),
+    ).toBe(false);
+  });
+
+  it.each([1, 2, 3, 4])(
+    'passes the complete selection for shard %i and preserves a failed exit',
+    (shard) => {
+      const root = temporaryDirectory('root-playwright-shard-');
+      writeFileSync(join(root, 'pnpm'), '#!/bin/sh\nprintf "%s\\n" "$@"\nexit "$TEST_EXIT"\n', {
+        mode: 0o755,
+      });
+      expect(expandShard(jobField(testPlaywright, 'name'), shard)).toBe(
+        `Playwright (root ${shard}/4)`,
+      );
+      const command = expandShard(field(step('Root Playwright tests'), 'run'), shard);
+      for (const status of [0, 7]) {
+        const result = bash(
+          command,
+          { PATH: `${root}:${process.env.PATH}`, TEST_EXIT: String(status) },
+          root,
+        );
+        expect(result.status, result.stderr).toBe(status);
+        expect(result.stdout.trim().split('\n')).toEqual([
+          'run',
+          'test:playwright',
+          '--project=chromium',
+          '--workers=1',
+          `--shard=${shard}/4`,
+          '--reporter=list,html,json',
+        ]);
+      }
+      const install = bash(
+        field(step('Install Playwright browsers'), 'run'),
+        {
+          PATH: `${root}:${process.env.PATH}`,
+          TEST_EXIT: '7',
+        },
+        root,
+      );
+      expect(install.status).toBe(7);
+      expect(install.stdout.trim().split('\n')).toEqual([
+        'exec',
+        'playwright',
+        'install',
+        'chromium',
+      ]);
+    },
+  );
+
+  it('retains separate reports for either failed or cancelled shards', () => {
+    const upload = step('Upload playwright report');
+    const name = field(upload, 'name');
+    expect(new Set([expandShard(name, 1), expandShard(name, 2)]).size).toBe(2);
+    expect(field(upload, 'retention-days')).toBe('7');
+    expect(upload.filter((line) => /^ {12}\S/.test(line)).map((line) => line.trim())).toEqual([
+      'playwright-report/',
+      'test-results/',
+      'browser-outcome.json',
+    ]);
+    for (const context of [{ failed: true }, { cancelled: true }, {}]) {
+      expect(evaluateCondition(field(upload, 'if'), { ...ok, ...context })).toBe(true);
+    }
+  });
+});
+
+describe('CI Gate accepts browser skips only by event or explicit relevance output', () => {
   const script = stepRunBlock(gate, 'Check results')
     .replaceAll('${{ github.event_name }}', '"$EVENT_NAME"')
     .replace(
@@ -503,14 +1168,19 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
   // test-playwright (the root Playwright suite) mirrors test-ct's gating
   // shape, so the CT scenarios drive both jobs with the same result and
   // relevance output; the root-specific rows below vary them independently.
-  const results = (ct: string, event = 'pull_request') => ({
+  const results = (ct: string, event = 'merge_group') => ({
     EVENT_NAME: event,
     RESULT_route: 'success',
+    RESULT_pr_static: event === 'pull_request' ? 'success' : 'skipped',
+    RESULT_release_fast_path: 'success',
+    RESULT_test_electron: 'skipped',
     RESULT_pr_title: event === 'merge_group' ? 'skipped' : 'success',
     RESULT_conflict_markers: event === 'merge_group' ? 'skipped' : 'success',
     RESULT_checks: 'success',
     RESULT_build_web: 'success',
     RESULT_test: 'success',
+    RESULT_test_portable_fixtures: 'skipped',
+    PORTABLE_FIXTURES_REQUIRED: 'false',
     RESULT_test_integration: event === 'merge_group' ? 'success' : 'skipped',
     RESULT_test_ct: ct,
     RESULT_test_playwright: ct,
@@ -527,7 +1197,183 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
   };
 
   const runGate = (env: Record<string, string>) =>
-    bash(script, { ROOT_PLAYWRIGHT_REQUIRED: env.CT_REQUIRED ?? '', ...env }, tmpdir());
+    bash(
+      script,
+      { ROOT_PLAYWRIGHT_REQUIRED: env.CT_REQUIRED ?? '', ELECTRON_REQUIRED: 'false', ...env },
+      tmpdir(),
+    );
+
+  it.each([
+    ['edit', true],
+    ['add', true],
+    ['delete', true],
+    ['rename', true],
+    ['unreferenced host', false],
+    ['unit-only fixture', false],
+    ['computed import', true],
+    ['unreadable diff', true],
+  ] as const)(
+    'routes a fixture-only %s through classification, job selection and gate',
+    (change, required) => {
+      const host = 'src/lib/components/chat/input/__tests__/MemberMentionsHost.svelte';
+      const spec = 'src/lib/components/chat/input/__tests__/member-mentions.ct.spec.ts';
+      const { root } = checkoutWith(host);
+      commitFile(
+        root,
+        spec,
+        change === 'computed import'
+          ? "const host = './MemberMentionsHost.svelte'; import(host);"
+          : "import Host from './MemberMentionsHost.svelte';",
+      );
+      commitFile(root, 'src/lib/unit.test.ts', "import data from './unit-data.json';");
+      if (change === 'add') {
+        git(root, 'rm', host);
+        git(root, 'commit', '-q', '-m', 'prepare missing fixture');
+      }
+      const base = git(root, 'rev-parse', 'HEAD');
+      if (change === 'delete') {
+        git(root, 'rm', host);
+        git(root, 'commit', '-q', '-m', 'delete fixture');
+      } else if (change === 'rename') {
+        // Only the old name is imported: Git's rename must retain that dependency.
+        git(root, 'mv', host, 'renamed-host.svelte');
+        git(root, 'commit', '-q', '-m', 'move fixture');
+      } else {
+        const changed =
+          change === 'unreferenced host'
+            ? 'src/lib/components/chat/input/__tests__/UnreferencedHost.svelte'
+            : change === 'unit-only fixture'
+              ? 'src/lib/unit-data.json'
+              : host;
+        commitFile(root, changed, '<div>updated fixture</div>');
+      }
+      // No changed spec or contract path may mask fixture dependency classification.
+      const changedPaths = git(root, 'diff', '--name-only', '--no-renames', base, 'HEAD').split(
+        '\n',
+      );
+      expect(changedPaths).toEqual(
+        change === 'rename'
+          ? ['renamed-host.svelte', host]
+          : [
+              change === 'unreferenced host'
+                ? 'src/lib/components/chat/input/__tests__/UnreferencedHost.svelte'
+                : change === 'unit-only fixture'
+                  ? 'src/lib/unit-data.json'
+                  : host,
+            ],
+      );
+      const output = join(root, 'github-output');
+      const classified = bash(
+        stepRunBlock(releaseFastPath, 'Evaluate CT relevance'),
+        {
+          BASE_SHA: change === 'unreadable diff' ? 'missing-ref' : base,
+          GITHUB_OUTPUT: output,
+        },
+        root,
+      );
+      expect(classified.status, classified.stderr).toBe(0);
+      const line = readFileSync(output, 'utf8').trim();
+      expect(line).toBe(`ct_required=${required}`);
+      if (change === 'computed import' || change === 'unreadable diff') {
+        expect(classified.stderr).toContain('requiring CT (fail-safe)');
+      } else {
+        expect(classified.stderr).not.toContain('requiring CT (fail-safe)');
+      }
+      const ctRequired = line.split('=')[1];
+      const context: Context = {
+        event: 'merge_group',
+        ctRequired,
+        rootPlaywrightRequired: 'false',
+        fastPath: 'false',
+        route: 'success',
+      };
+      expect(evaluateCondition(jobField(testCt, 'if'), context)).toBe(required);
+      for (const outcome of ['success', 'failure', 'cancelled', 'skipped', '']) {
+        const result = runGate({
+          ...results(outcome),
+          FAST_PATH: 'false',
+          CT_REQUIRED: ctRequired,
+          ROOT_PLAYWRIGHT_REQUIRED: 'false',
+          RESULT_test_playwright: 'skipped',
+        });
+        expect(result.status, `${outcome}: ${result.stdout}${result.stderr}`).toBe(
+          outcome === 'success' || (!required && outcome === 'skipped') ? 0 : 1,
+        );
+      }
+      // PRs and release-only entries skip browser execution explicitly.
+      for (const override of [{ event: 'pull_request' }, { fastPath: 'true' }]) {
+        const routed = { ...context, ...override };
+        expect(evaluateCondition(jobField(testCt, 'if'), routed)).toBe(false);
+        const result = runGate({
+          ...results('skipped', routed.event),
+          FAST_PATH: routed.fastPath,
+          CT_REQUIRED: ctRequired,
+          ROOT_PLAYWRIGHT_REQUIRED: 'false',
+        });
+        expect(result.status, result.stdout + result.stderr).toBe(0);
+      }
+    },
+  );
+
+  it.each(['pull_request', 'merge_group'])(
+    'requires native fixture success on relevant %s diffs',
+    (event) => {
+      for (const outcome of ['success', 'failure', 'cancelled', 'skipped', '']) {
+        const result = runGate({
+          ...results('success', event),
+          FAST_PATH: 'false',
+          CT_REQUIRED: 'true',
+          PORTABLE_FIXTURES_REQUIRED: 'true',
+          RESULT_test_portable_fixtures: outcome,
+        });
+        expect(result.status, result.stdout + result.stderr).toBe(
+          outcome === 'success' || (event === 'pull_request' && outcome === 'skipped') ? 0 : 1,
+        );
+      }
+    },
+  );
+
+  it('rejects missing native fixture classification even with a successful job', () => {
+    const result = runGate({
+      ...results('success'),
+      FAST_PATH: 'false',
+      CT_REQUIRED: 'true',
+      PORTABLE_FIXTURES_REQUIRED: '',
+      RESULT_test_portable_fixtures: 'success',
+    });
+    expect(result.status, result.stdout + result.stderr).toBe(1);
+  });
+
+  it('waits for the root matrix and runs even when a shard fails or is cancelled', () => {
+    const start = gate.indexOf('    needs:');
+    const end = gate.findIndex((line, index) => index > start && line.trim() === ']');
+    expect(gate.slice(start, end).some((line) => line.trim() === 'test-playwright,')).toBe(true);
+    expect(jobField(gate, 'if')).toBe('always()');
+  });
+
+  it.each(['pull_request', 'merge_group'])(
+    'requires root success or a deliberate queue skip on %s',
+    (event) => {
+      // GitHub supplies one aggregate result for a matrix in needs. With no
+      // continue-on-error, any failed/cancelled leg must keep this gate red.
+      for (const [aggregate, expected] of [
+        ['success', 0],
+        ['failure', 1],
+        ['cancelled', 1],
+        ['skipped', event === 'pull_request' ? 0 : 1],
+        ['', 1],
+      ] as const) {
+        const result = runGate({
+          ...results('success', event),
+          RESULT_test_playwright: aggregate,
+          FAST_PATH: 'false',
+          CT_REQUIRED: 'true',
+          ROOT_PLAYWRIGHT_REQUIRED: 'true',
+        });
+        expect(result.status, `${aggregate}: ${result.stdout}${result.stderr}`).toBe(expected);
+      }
+    },
+  );
 
   it.each<[string, Record<string, string>, number]>([
     [
@@ -594,7 +1440,7 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
     [
       'merge_group, CT passed',
       { ...results('success', 'merge_group'), FAST_PATH: '', CT_REQUIRED: '' },
-      0,
+      1,
     ],
     [
       'merge_group, CT skipped',
@@ -622,7 +1468,7 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
     [
       'merge_group, fast path false, CT skipped',
       { ...results('skipped', 'merge_group'), FAST_PATH: 'false', CT_REQUIRED: 'false' },
-      1,
+      0,
     ],
     [
       'merge_group, fast path false, integration skipped',
@@ -723,11 +1569,63 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
         CT_REQUIRED: 'true',
         ROOT_PLAYWRIGHT_REQUIRED: 'false',
       },
-      1,
+      0,
     ],
   ])('%s → exit %i', (_name, env, expected) => {
     const result = runGate(env);
     expect(result.status, result.stdout + result.stderr).toBe(expected);
+  });
+
+  it.each(['test_ct', 'test_playwright', 'test_electron'])(
+    'requires a relevant %s PR run to succeed',
+    (job) => {
+      for (const outcome of ['failure', 'cancelled', 'skipped', '']) {
+        const result = runGate({
+          ...results('success'),
+          FAST_PATH: 'false',
+          CT_REQUIRED: 'true',
+          ROOT_PLAYWRIGHT_REQUIRED: 'true',
+          ELECTRON_REQUIRED: 'true',
+          RESULT_test_electron: 'success',
+          [`RESULT_${job}`]: outcome,
+        });
+        expect(result.status, result.stdout + result.stderr).toBe(1);
+      }
+    },
+  );
+
+  it.each(['CT_REQUIRED', 'ROOT_PLAYWRIGHT_REQUIRED', 'ELECTRON_REQUIRED'])(
+    'rejects missing %s even when all jobs report success',
+    (output) => {
+      const result = runGate({
+        ...results('success'),
+        FAST_PATH: 'false',
+        CT_REQUIRED: 'true',
+        ROOT_PLAYWRIGHT_REQUIRED: 'true',
+        ELECTRON_REQUIRED: 'true',
+        RESULT_test_electron: 'success',
+        [output]: '',
+      });
+      expect(result.status, result.stdout + result.stderr).toBe(1);
+    },
+  );
+
+  it.each([
+    'checks',
+    'build_web',
+    'test',
+    'test_integration',
+    'monorepo_consumer_checks',
+    'release_fast_path',
+  ])('still requires %s in the queue when every browser suite skips', (job) => {
+    for (const outcome of ['failure', 'cancelled', 'skipped']) {
+      const result = runGate({
+        ...results('skipped', 'merge_group'),
+        FAST_PATH: 'false',
+        [`RESULT_${job}`]: outcome,
+      });
+      expect(result.status, result.stdout + result.stderr).toBe(1);
+    }
   });
 
   it.each(['pull_request', 'merge_group'])(

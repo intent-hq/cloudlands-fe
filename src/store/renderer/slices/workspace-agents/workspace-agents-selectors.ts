@@ -4,6 +4,25 @@ import { classifyAgentScope } from '$shared/utils/agent-scope';
 import type { StoreState } from '../../types';
 import { selectAgentSession } from '../agent-session/agent-session-selectors';
 import { emptyWorkspaceAgentState } from './workspace-agents-slice';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
+
+export const selectAgentCreationOutcome = store.createSelector(
+  (state, consumerId: string, workspaceId: string, resourceId: string) => {
+    const outcomes = state.workspaceAgents.creationOutcomes;
+    const outcome = outcomes ? getItem(outcomes, consumerId) : undefined;
+    return outcome?.workspaceId === workspaceId && outcome.resourceId === resourceId
+      ? outcome
+      : undefined;
+  },
+);
+
+export const selectAgentRetirementSupported = store.createSelector((state) => {
+  const support = state.workspaceAgents.retirementSupport;
+  return (
+    support?.connectionGeneration === state.daemonHealth.connectionGeneration &&
+    support?.supported === true
+  );
+});
 
 function getWorkspaceAgentState(state: StoreState, wsId: string) {
   return state.workspaceAgents.byWorkspaceId[wsId] ?? emptyWorkspaceAgentState;
@@ -228,6 +247,29 @@ export function resolveCanonicalInitialAgent(agents: AgentSession[]): AgentSessi
   );
 }
 
+/** First-open defaults use list order, preferring the existing top-level coordinator. */
+export function resolveExistingWorkspaceDefaultAgent(
+  agents: AgentSession[],
+  workspaceId: string,
+): AgentSession | null {
+  const eligible = agents.filter(
+    (agent) =>
+      String(agent.workspaceId) === workspaceId &&
+      agent.status !== 'deleted' &&
+      !agent.pendingDeleteAt &&
+      !agent.retiredAt &&
+      classifyAgentScope(agent) === 'topLevel' &&
+      !agent.parentSessionId,
+  );
+  return (
+    eligible.find(
+      (agent) => (agent.metadata?.specialist ?? agent.agentMetadata?.specialist) === 'spec-writer',
+    ) ??
+    eligible[0] ??
+    null
+  );
+}
+
 /** Resolve the primary agent that should fill an otherwise empty restored layout. */
 export function resolveEmptyLayoutAgent(
   agents: AgentSession[],
@@ -394,4 +436,15 @@ export const selectDiskMessageCount = store.createSelector(
   (state, wsId: string, agentId: string): number => {
     return getWorkspaceAgentState(state, wsId).diskMessageCounts[agentId] ?? 0;
   },
+);
+
+const noNodeSupport = { agentNodes: false, localNodeIsolation: false };
+export const selectNodeCapabilities = store.createSelector((state) => {
+  const support = state.workspaceAgents.nodeSupport;
+  return support?.generation === state.daemonHealth.connectionGeneration
+    ? support.capabilities
+    : noNodeSupport;
+});
+export const selectNodeOperationBusy = store.createSelector(
+  (state) => state.workspaceAgents.nodeOperationBusy === true,
 );

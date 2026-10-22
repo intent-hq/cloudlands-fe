@@ -16,6 +16,7 @@
  * surfaced; a same-key retry against the daemon replays the bound placement
  * instead of placing a collision-suffixed duplicate.
  */
+import { protocolVersionAtLeast, type ProtocolVersion } from '$shared/protocol-version';
 import { invoke } from '$lib/electron-bridge';
 import { m } from '$shared/paraglide/messages.js';
 import { store as appStore } from '$store/renderer/store';
@@ -95,13 +96,10 @@ export function isRemoteBackend(): boolean {
  * (PROTOCOL §5.9). Older daemons reject unknown params, so the key
  * is never sent to them.
  */
-export function supportsIdempotentPlacementProtocol(protocolVersion?: string | null): boolean {
-  if (!protocolVersion) return false;
-  const match = protocolVersion.trim().match(/^([0-9]+)(?:\.([0-9]+))?/);
-  if (!match) return false;
-  const major = Number(match[1]);
-  const minor = Number(match[2] ?? 0);
-  return major > 9 || (major === 9 && minor >= 13);
+export function supportsIdempotentPlacementProtocol(
+  protocolVersion?: ProtocolVersion | null,
+): boolean {
+  return protocolVersionAtLeast(protocolVersion, 9, 13);
 }
 
 /** Whether the daemon connected right now accepts keyed placement. */
@@ -202,10 +200,13 @@ async function placeWithRecovery(
   idempotencyKey: string | undefined,
   signal: AbortSignal | undefined,
   attempt: () => Promise<PlaceAttachmentResult>,
+  current: () => boolean = () => true,
 ): Promise<PlaceAttachmentResult> {
   try {
+    assertPlacementCurrent(current);
     return await attempt();
   } catch (error) {
+    assertPlacementCurrent(current);
     if (shouldRecoverPlacement(error, idempotencyKey, signal)) {
       const recovered = await recoverPlacementByKey(workspaceId, idempotencyKey);
       if (recovered) return recovered;
@@ -325,19 +326,27 @@ export async function placeAttachmentViaTransport(
   source: { sourcePath: string; mimeType?: string; idempotencyKey?: string },
   onProgress?: UploadProgressCallback,
   signal?: AbortSignal,
+  current: () => boolean = () => true,
 ): Promise<PlaceAttachmentResult> {
+  assertPlacementCurrent(current);
   const idempotencyKey = daemonSupportsIdempotentPlacement() ? source.idempotencyKey : undefined;
   const keyed = idempotencyKey !== undefined ? { idempotencyKey } : {};
   if (!isRemoteBackend()) {
-    return placeWithRecovery(workspaceId, idempotencyKey, signal, () =>
-      placeAttachment(workspaceId, fileName, {
-        sourcePath: source.sourcePath,
-        mimeType: source.mimeType,
-        ...keyed,
-      }),
+    return placeWithRecovery(
+      workspaceId,
+      idempotencyKey,
+      signal,
+      () =>
+        placeAttachment(workspaceId, fileName, {
+          sourcePath: source.sourcePath,
+          mimeType: source.mimeType,
+          ...keyed,
+        }),
+      current,
     );
   }
   const size = await statFileSize(source.sourcePath);
+  assertPlacementCurrent(current);
   if (size > MAX_REMOTE_ATTACHMENT_TOTAL_BYTES) {
     throw new Error(
       m.chat_attachmentPlacement_tooLargeRemote_error({
@@ -354,12 +363,18 @@ export async function placeAttachmentViaTransport(
       size,
       onProgress,
       signal,
+      current,
     );
   }
   const data = await readFileBase64(source.sourcePath);
+  assertPlacementCurrent(current);
   throwIfAborted(signal);
-  return placeWithRecovery(workspaceId, idempotencyKey, signal, () =>
-    placeAttachment(workspaceId, fileName, { data, mimeType: source.mimeType, ...keyed }),
+  return placeWithRecovery(
+    workspaceId,
+    idempotencyKey,
+    signal,
+    () => placeAttachment(workspaceId, fileName, { data, mimeType: source.mimeType, ...keyed }),
+    current,
   );
 }
 
@@ -380,8 +395,11 @@ async function placeAttachmentChunked(
   size: number,
   onProgress?: UploadProgressCallback,
   signal?: AbortSignal,
+  current: () => boolean = () => true,
 ): Promise<PlaceAttachmentResult> {
+  assertPlacementCurrent(current);
   const sha256 = await hashFileSha256(source.sourcePath);
+  assertPlacementCurrent(current);
   throwIfAborted(signal);
   let uploadId: string;
   let maxChunkBytes: number;
@@ -397,6 +415,7 @@ async function placeAttachmentChunked(
       },
     ));
   } catch (error) {
+    assertPlacementCurrent(current);
     if (source.idempotencyKey !== undefined && isAlreadyCommittedError(error)) {
       const recovered = await recoverPlacementByKey(workspaceId, source.idempotencyKey);
       if (recovered) return recovered;
@@ -408,26 +427,32 @@ async function placeAttachmentChunked(
   let committing = false;
   try {
     for (let seq = 0; seq < totalChunks; seq++) {
+      assertPlacementCurrent(current);
       throwIfAborted(signal);
       const { content } = await readFileChunkBase64(
         source.sourcePath,
         seq * chunkBytes,
         chunkBytes,
       );
-      await sendAttachmentUploadChunk(uploadId, seq, content);
+      assertPlacementCurrent(current);
+      await sendAttachmentUploadChunk(uploadId, seq, content, workspaceId);
+      assertPlacementCurrent(current);
       onProgress?.((seq + 1) / totalChunks);
     }
     throwIfAborted(signal);
+    assertPlacementCurrent(current);
     committing = true;
-    return await commitAttachmentUpload(uploadId);
+    return await commitAttachmentUpload(uploadId, workspaceId);
   } catch (error) {
+    assertPlacementCurrent(current);
     // Only a commit can have placed the file before its reply was lost; a
     // failed chunk never binds the key, so no lookup is attempted for it.
     if (committing && shouldRecoverPlacement(error, source.idempotencyKey, signal)) {
       const recovered = await recoverPlacementByKey(workspaceId, source.idempotencyKey);
       if (recovered) return recovered;
     }
-    await abortAttachmentUpload(uploadId).catch(() => {
+    assertPlacementCurrent(current);
+    await abortAttachmentUpload(uploadId, workspaceId).catch(() => {
       // Best-effort: the daemon sweeps orphaned sessions on the next begin.
     });
     throw error;
@@ -459,4 +484,10 @@ export function extractPlacementErrorDetail(error: unknown): string | undefined 
     return message.trim();
   }
   return undefined;
+}
+
+/** Original submission authority must survive every local read and wire step. */
+export function assertPlacementCurrent(current: () => boolean): void {
+  // i18n-ignore (internal cancellation, never shown for an obsolete form)
+  if (!current()) throw new DOMException('Obsolete attachment submission', 'AbortError');
 }

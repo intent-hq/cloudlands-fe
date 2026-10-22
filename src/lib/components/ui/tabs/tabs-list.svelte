@@ -40,7 +40,7 @@
       {#if !context.state.selectedIndexes.includes(context.state.hover.activeIndex ?? -1)}
         <ProximityHighlight store={context.state.hover} selectedIndexes={[]} />
       {/if}
-    {:else}
+    {:else if context.variant === 'subtle'}
       <ProximityHighlight
         store={context.state.hover}
         selectedIndexes={context.state.selectedIndexes}

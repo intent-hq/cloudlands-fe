@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AttachmentInfo } from './input/context-api';
-import { observeAttachmentImageUrl } from './attachment-image-url';
+import { observeAttachmentImageUrl, resolveAttachmentImageUrl } from './attachment-image-url';
 
 const { backendRequest, reconnectHandlers } = vi.hoisted(() => ({
   backendRequest: vi.fn(),
@@ -15,7 +15,7 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 }));
 
 beforeEach(() => backendRequest.mockReset());
-afterEach(() => expect(reconnectHandlers.size).toBe(0));
+afterEach(() => expect(reconnectHandlers.size).toBe(1));
 
 describe('attachment image observation', () => {
   it('coalesces reconnects during a failed lookup into one trailing lookup', async () => {
@@ -41,6 +41,7 @@ describe('attachment image observation', () => {
       }
       expect(backendRequest).toHaveBeenCalledExactlyOnceWith('file.getAttachmentInfo', {
         attachmentId,
+        workspaceId: 'workspace-one',
       });
       rejectLookup(new Error('connection lost'));
       await vi.waitFor(() =>
@@ -49,7 +50,10 @@ describe('attachment image observation', () => {
         ),
       );
       expect(backendRequest).toHaveBeenCalledTimes(2);
-      expect(backendRequest).toHaveBeenLastCalledWith('file.getAttachmentInfo', { attachmentId });
+      expect(backendRequest).toHaveBeenLastCalledWith('file.getAttachmentInfo', {
+        attachmentId,
+        workspaceId: 'workspace-one',
+      });
       expect(onUrl.mock.calls).toEqual([
         [null],
         ['workspace-file://workspace-one/.intent/attachments/retry.png'],
@@ -85,6 +89,36 @@ describe('attachment image observation', () => {
     expect(onUrl).not.toHaveBeenCalled();
     expect(backendRequest).toHaveBeenCalledExactlyOnceWith('file.getAttachmentInfo', {
       attachmentId,
+      workspaceId: 'workspace-two',
     });
   });
+});
+
+it('isolates the same attachment id by workspace and discards replies from an old connection', async () => {
+  let resolveOld!: (value: unknown) => void;
+  backendRequest.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        resolveOld = resolve;
+      }),
+  );
+  const old = resolveAttachmentImageUrl('origin-a', 'same-id');
+  for (const reconnect of reconnectHandlers) reconnect();
+  backendRequest.mockResolvedValue({ exists: true, path: '.intent/attachments/new.png' });
+  expect(await resolveAttachmentImageUrl('origin-b', 'same-id')).toBe(
+    'workspace-file://origin-b/.intent/attachments/new.png',
+  );
+  expect(await resolveAttachmentImageUrl('origin-a', 'same-id')).toBe(
+    'workspace-file://origin-a/.intent/attachments/new.png',
+  );
+  resolveOld({ exists: true, path: '.intent/attachments/old.png' });
+  expect(await old).toBeNull();
+  expect(await resolveAttachmentImageUrl('origin-a', 'same-id')).toBe(
+    'workspace-file://origin-a/.intent/attachments/new.png',
+  );
+  expect(backendRequest.mock.calls.map((c) => c[1])).toEqual([
+    { attachmentId: 'same-id', workspaceId: 'origin-a' },
+    { attachmentId: 'same-id', workspaceId: 'origin-b' },
+    { attachmentId: 'same-id', workspaceId: 'origin-a' },
+  ]);
 });

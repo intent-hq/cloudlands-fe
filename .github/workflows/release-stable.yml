@@ -28,19 +28,35 @@ permissions:
   contents: read
   pull-requests: read
 
-# Never cancel a release in progress
+# Shared with source releases, alpha, beta and cleanup. Queue pending writers.
 concurrency:
-  group: cloudlands-stable-promotion
+  group: cloudlands-release
   cancel-in-progress: false
+  queue: max
 
 jobs:
+  # Where paid-label jobs run: a free self-hosted slot first, else WarpBuild
+  # (GitHub when WarpBuild is off); `cloud` skips the self-hosted step.
+  # See runner-route.yml.
+  runner-route:
+    uses: ./.github/workflows/runner-route.yml
+    permissions:
+      contents: read
+      actions: read
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
+
   promote-to-stable:
     # GH-hosted larger runner (ephemeral): download/re-upload-heavy promotion
     # work. Scratch files still live under RUNNER_TEMP — harmless on an
     # ephemeral runner and it keeps the guarantee that a previous run's
     # assets can never leak into this promotion (#553) even if this ever
-    # moves back to a persistent runner.
-    runs-on: gh-linux-8x
+    # moves back to a persistent runner. Routed: an ephemeral intent-cache
+    # slot when one is free, else WarpBuild.
+    needs: runner-route
+    # A failed route job must not block this job: it runs on its fallback label.
+    if: ${{ !cancelled() }}
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.runners || '{}')['gh-linux-8x'] || fromJSON('["gh-linux-8x"]') }}
     timeout-minutes: 30
 
     steps:
@@ -140,7 +156,7 @@ jobs:
       - name: Read current stable version
         id: stable_version
         run: |
-          # Attempt to fetch latest-mac.yml from stable; tolerate 404 (first promotion)
+          # Read the standard Mac feed from stable; tolerate 404 (first promotion)
           STABLE_YML_URL="https://github.com/intent-hq/cloudlands-releases/releases/download/stable/latest-mac.yml"
           PREV_STABLE=""
 
@@ -263,6 +279,31 @@ jobs:
           echo "Downloaded assets:"
           ls -lh
 
+      - name: Checkout publication tools
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-tools
+
+      - name: Setup publication pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+
+      - name: Setup publication Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Install feed dependencies
+        working-directory: .release-tools
+        run: pnpm install --frozen-lockfile --prod --ignore-scripts
+
+      - name: Prepare architecture-safe Mac channel feeds
+        env:
+          VERSION: ${{ inputs.version }}
+        run: node .release-tools/scripts/mac-channel-feeds.mjs "$RUNNER_TEMP/release-assets" stable "$VERSION"
+
       - name: Ensure stable release exists
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
@@ -288,13 +329,12 @@ jobs:
         run: |
           cd "$RUNNER_TEMP/release-assets"
 
-          # Auto-updater feed files, one per platform. latest-mac.yml is
-          # required; the others are promoted when present so older mac-only
-          # releases can still be promoted.
+          # The Mac feed is required. Other platform feeds are promoted
+          # when present so older Mac-only releases can still be promoted.
           FEED_FILES=(latest-mac.yml latest.yml latest-linux.yml latest-linux-arm64.yml)
 
           if [ ! -f "latest-mac.yml" ]; then
-            echo "::error::Missing required latest-mac.yml"
+            echo "::error::Missing required Mac update feed"
             exit 1
           fi
 
@@ -329,8 +369,7 @@ jobs:
             gh release upload stable --repo intent-hq/cloudlands-releases --clobber -- "${UPLOAD_FILES[@]}"
           fi
 
-          # Replace the feed files last with --clobber (atomic switch of all
-          # auto-updater feeds, after every referenced asset is in place)
+          # Replace feeds only after every referenced asset is in place.
           echo "Replacing auto-updater feeds: ${PROMOTED_FEEDS[*]}"
           gh release upload stable --repo intent-hq/cloudlands-releases --clobber -- "${PROMOTED_FEEDS[@]}"
 
@@ -351,7 +390,8 @@ jobs:
             fi
           done
 
-          # Clean up old versioned assets from stable release
+          # Remove obsolete assets, including the retired Mac feed alias, only
+          # after the new canonical feed and payloads were uploaded successfully.
           echo "Cleaning up old versioned assets (keeping newly promoted files)"
           gh release view stable --repo intent-hq/cloudlands-releases --json assets --jq '.assets[].name' | while read -r asset; do
             if [ -z "$asset" ]; then
@@ -380,6 +420,14 @@ jobs:
           VERSION: ${{ inputs.version }}
           PROMOTED_FEEDS: ${{ steps.upload_assets.outputs.promoted_feeds }}
         run: |
+          # Hash the whole feed: the legacy feed digest covers only one Mac CPU.
+          # This also works for older releases with an ARM-only Mac feed.
+          feed_hash() {
+            local content
+            content=$(curl -fsSL "$1") || return 1
+            [ -n "$content" ] || return 1
+            printf '%s' "$content" | sha512sum | awk '{print $1}'
+          }
           read -ra FEEDS <<< "$PROMOTED_FEEDS"
           if [ ${#FEEDS[@]} -eq 0 ]; then
             echo "::error::No promoted feeds recorded by the upload step"
@@ -389,10 +437,16 @@ jobs:
           for feed in "${FEEDS[@]}"; do
             echo "Verifying $feed"
 
-            # Fetch versioned release sha512
-            VERSIONED_SHA=$(curl -sfL "https://github.com/intent-hq/cloudlands-releases/releases/download/v${VERSION}/${feed}" | awk '/^sha512:/{print $2; exit}' | tr -d '\r')
+            # Compare the exact prepared feed from the selected versioned release.
+            # Both Mac aliases describe that release's Apple Silicon payload.
+            if [ -f "$RUNNER_TEMP/release-assets/$feed" ]; then
+              VERSIONED_SHA=$(cat "$RUNNER_TEMP/release-assets/$feed")
+              VERSIONED_SHA=$(printf '%s' "$VERSIONED_SHA" | sha512sum | awk '{print $1}')
+            else
+              VERSIONED_SHA=""
+            fi
             if [ -z "$VERSIONED_SHA" ]; then
-              echo "::error::Failed to fetch or parse sha512 for $feed from versioned release v${VERSION}"
+              echo "::error::Missing prepared feed digest for $feed"
               exit 1
             fi
 
@@ -400,30 +454,30 @@ jobs:
             MAX_RETRIES=5
             RETRY_DELAY=2
             for i in $(seq 1 "$MAX_RETRIES"); do
-              STABLE_SHA=$(curl -sL "https://github.com/intent-hq/cloudlands-releases/releases/download/stable/${feed}?t=$(date +%s)" | awk '/^sha512:/{print $2; exit}' | tr -d '\r')
+              STABLE_SHA=$(feed_hash "https://github.com/intent-hq/cloudlands-releases/releases/download/stable/${feed}?t=$(date +%s)") || STABLE_SHA=""
 
               if [ -z "$STABLE_SHA" ]; then
-                echo "::warning::Retry $i/$MAX_RETRIES: Failed to fetch or parse sha512 for $feed from stable release"
+                echo "::warning::Retry $i/$MAX_RETRIES: Failed to fetch feed digest for $feed from stable release"
                 if [ "$i" -lt "$MAX_RETRIES" ]; then
                   sleep "$RETRY_DELAY"
                   RETRY_DELAY=$((RETRY_DELAY * 2))
                   continue
                 else
-                  echo "::error::Failed to fetch stable sha512 for $feed after $MAX_RETRIES retries"
+                  echo "::error::Failed to fetch stable feed digest for $feed after $MAX_RETRIES retries"
                   exit 1
                 fi
               fi
 
               if [ "$VERSIONED_SHA" = "$STABLE_SHA" ]; then
-                echo "✓ Stable $feed sha512 matches versioned release ($VERSIONED_SHA) [attempt $i]"
+                echo "✓ Stable $feed feed digest matches prepared publication ($VERSIONED_SHA) [attempt $i]"
                 break
               else
-                echo "::warning::Retry $i/$MAX_RETRIES: $feed sha512 mismatch - versioned: $VERSIONED_SHA, stable: $STABLE_SHA (likely CDN propagation delay)"
+                echo "::warning::Retry $i/$MAX_RETRIES: $feed feed digest mismatch - versioned: $VERSIONED_SHA, stable: $STABLE_SHA (likely CDN propagation delay)"
                 if [ "$i" -lt "$MAX_RETRIES" ]; then
                   sleep "$RETRY_DELAY"
                   RETRY_DELAY=$((RETRY_DELAY * 2))
                 else
-                  echo "::error::$feed sha512 mismatch after $MAX_RETRIES retries - versioned: $VERSIONED_SHA, stable: $STABLE_SHA"
+                  echo "::error::$feed feed digest mismatch after $MAX_RETRIES retries - versioned: $VERSIONED_SHA, stable: $STABLE_SHA"
                   exit 1
                 fi
               fi
@@ -754,7 +808,7 @@ jobs:
         run: |
           feed_platform() {
             case "$1" in
-              latest-mac.yml) echo "macOS" ;;
+              latest-mac.yml) echo "macOS (Apple Silicon)" ;;
               latest.yml) echo "Windows" ;;
               latest-linux.yml) echo "Linux x64" ;;
               latest-linux-arm64.yml) echo "Linux arm64" ;;
@@ -789,7 +843,7 @@ jobs:
             echo ""
             echo "### Verification"
             echo "- ✓ Assets copied from versioned release v$VERSION"
-            echo "- ✓ sha512 verification passed for: ${FEEDS[*]}"
+            echo "- ✓ Complete-feed verification passed for: ${FEEDS[*]}"
             if [ "$SKIP_NOTES" = "true" ]; then
               echo "- ⚠ Release notes left untouched (idempotent re-run, no notes-base marker)"
             else

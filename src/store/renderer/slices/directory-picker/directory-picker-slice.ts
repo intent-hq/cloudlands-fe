@@ -15,8 +15,8 @@
  * for (or `null` for "daemon-host home") so the read service can echo it back
  * with the success/error action and the slice can ignore stale responses.
  */
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 
 /** One directory entry returned by `host.listDirectory`. */
 export interface DirectoryPickerEntry {

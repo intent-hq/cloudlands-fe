@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import {
   contextReducer,
   initialState,

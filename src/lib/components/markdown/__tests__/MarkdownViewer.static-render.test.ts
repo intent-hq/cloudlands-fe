@@ -19,6 +19,20 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+// jsdom does not perform image requests; deliver each failed attempt explicitly.
+async function exhaustImageRetries(image: HTMLImageElement) {
+  vi.useFakeTimers();
+  try {
+    await fireEvent.error(image);
+    await vi.advanceTimersByTimeAsync(300);
+    await fireEvent.error(image);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await fireEvent.error(image);
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
 describe('MarkdownViewer static rendering', () => {
   it('renders plain text through the simple path', () => {
     const { container } = render(MarkdownViewer, {
@@ -152,6 +166,53 @@ describe('MarkdownViewer static rendering', () => {
     await fireEvent.click(snapshot);
     expect(screen.getByRole('dialog')).toBeTruthy();
     expect(screen.getByTestId('chat-video-player')).toBeTruthy();
+  });
+
+  it('resolves relative images against the Markdown file directory', async () => {
+    const { container } = render(MarkdownViewer, {
+      props: {
+        content: '![Chart](charts/chart.png)',
+        workspaceId: 'ws-abc',
+        relativeMediaBase: 'report',
+      },
+    });
+
+    const image = await waitFor(() => {
+      const element = container.querySelector<HTMLImageElement>('img');
+      expect(element?.getAttribute('src')).toMatch(
+        /^workspace-file:\/\/ws-abc\/report\/charts\/chart\.png\?v=/,
+      );
+      return element!;
+    });
+    expect(image.getAttribute('alt')).toBe('Chart');
+  });
+
+  it('decodes HTML entities in relative image paths through marked', async () => {
+    const { container } = render(MarkdownViewer, {
+      props: {
+        content: '![Chart](charts/chart&#32;one.png)',
+        workspaceId: 'ws-abc',
+        relativeMediaBase: 'report',
+      },
+    });
+
+    await waitFor(() =>
+      expect(container.querySelector('img')?.getAttribute('src')).toMatch(
+        /^workspace-file:\/\/ws-abc\/report\/charts\/chart%20one\.png\?v=/,
+      ),
+    );
+  });
+
+  it('resolves relative images from the workspace without a Markdown file directory', async () => {
+    const { container } = render(MarkdownViewer, {
+      props: { content: '![Chart](charts/chart.png)', workspaceId: 'ws-abc' },
+    });
+
+    await waitFor(() =>
+      expect(container.querySelector('img')?.getAttribute('src')).toMatch(
+        /^workspace-file:\/\/ws-abc\/charts\/chart\.png\?v=/,
+      ),
+    );
   });
 
   it.each(['Enter', ' '])('opens workspace image lightbox with %s', async (key) => {
@@ -426,7 +487,7 @@ describe('MarkdownViewer static rendering', () => {
     await waitFor(() => expect(container.querySelector('img')).toBeTruthy());
     const image = container.querySelector<HTMLImageElement>('img')!;
 
-    await fireEvent.error(image);
+    await exhaustImageRetries(image);
 
     expect(screen.getByTestId('media-unavailable').dataset.reason).toBe('load-failed');
     await fireEvent.click(screen.getByRole('button', { name: /copy path/i }));
@@ -488,6 +549,51 @@ describe('MarkdownViewer static rendering', () => {
     expect(status.textContent).toContain('Media could not load');
     expect(container.querySelector('img[src^="intent://"]')).toBeNull();
     expect(container.querySelector('img')).toBeNull();
+  });
+
+  it('explains that an image from another workspace cannot be shown in a workspace chat', async () => {
+    const { container } = render(MarkdownViewer, {
+      props: {
+        content: 'Latest chart: ![chart](intent://local/other-ws/file/charts/a.png)',
+        workspaceId: 'workspace-1',
+      },
+    });
+
+    const status = await screen.findByTestId('media-unavailable');
+    expect(status.dataset.reason).toBe('other-workspace');
+    expect(status.textContent).toContain('chart');
+    expect(status.textContent).toContain('This media is from another workspace');
+    expect(container.querySelector('img')).toBeNull();
+  });
+
+  it('explains an invalid workspace media link instead of rendering a raw intent:// src', async () => {
+    const { container } = render(MarkdownViewer, {
+      props: {
+        content: 'Latest chart: ![chart](intent://local/file/../a.png)',
+        workspaceId: 'workspace-1',
+      },
+    });
+
+    const status = await screen.findByTestId('media-unavailable');
+    expect(status.dataset.reason).toBe('invalid-link');
+    expect(status.textContent).toContain('This media link is not valid');
+    expect(container.querySelector('img')).toBeNull();
+  });
+
+  it('renders another workspace image in the Assistant chat', async () => {
+    const { container } = render(MarkdownViewer, {
+      props: {
+        content: '![chart](intent://local/other-ws/file/charts/a.png)',
+        workspaceId: '__chief__',
+      },
+    });
+
+    await waitFor(() =>
+      expect(container.querySelector('img')?.getAttribute('src')).toMatch(
+        /^workspace-file:\/\/other-ws\/charts\/a\.png/,
+      ),
+    );
+    expect(screen.queryByTestId('media-unavailable')).toBeNull();
   });
 
   it('renders unsupported workspace media as a link instead of an image', async () => {
@@ -554,7 +660,7 @@ describe('MarkdownViewer static rendering', () => {
       const { container, image } = await renderSized();
       await waitFor(() => expect(image.parentElement?.dataset.loaded).toBe('false'));
 
-      await fireEvent.error(image);
+      await exhaustImageRetries(image);
 
       expect(screen.getByTestId('media-unavailable').dataset.reason).toBe('load-failed');
       expect(screen.queryByTestId('media-loading-placeholder')).toBeNull();

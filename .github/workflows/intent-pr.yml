@@ -3,42 +3,11 @@ name: Intent PR Checks
 on:
   pull_request:
     branches: ['main', 'feat/up-clean-3-shared-controls']
-  # Merge-queue runs (intent-hq/monorepo#2893): the queue tests the actual
-  # merged tree before it lands on main. The heavy jobs are tiered by event:
-  # checks / build-web / test run on BOTH pull_request and merge_group (fast
-  # PR signal, re-validated on the merged tree); test-integration is
-  # merge-queue-only — it skips on pull_request (the gate accepts that
-  # skip) and runs only on merge_group, where the gate requires its
-  # success. test-ct always runs on merge_group and ALSO on pull_request
-  # when the PR diff is CT-relevant: a CT-contract path (the token/stylesheet
-  # contract, the CT harness, the dependency manifests — the one list in
-  # scripts/ct-contract-paths.mjs) or a CT spec / geometry golden, both
-  # classified by that module and evaluated by release-fast-path as
-  # ct_required; otherwise it skips on pull_request and the gate accepts
-  # that skip only because ct_required says so (cloudlands-fe#2441 rewrote
-  # tokens.css with green PR CI and was ejected from the queue with 40 CT
-  # failures; cloudlands-fe#2533 changed 22 specs and 1 golden with CT
-  # skipped on the PR and was ejected three times). test-playwright (the
-  # root `test/*.spec.ts` suite via playwright.config.ts) follows the same
-  # shape: always on merge_group, and on pull_request only when the diff
-  # touches test/**, playwright.config.ts, or the playwright/*-spec-pattern.mjs
-  # modules it reads (release-fast-path's
-  # root_playwright_required output, computed from the same base..head
-  # diff); otherwise it skips on pull_request and the gate accepts that skip
-  # only because root_playwright_required says so. Merge groups are created
-  # by the repo's own ruleset from already-filed PRs, so they need no
-  # same-repo fork guard.
-  # pr-title / conflict-markers are PR-metadata checks that stay
-  # pull_request-only — the gate accepts their skip on merge_group.
-  # release-fast-path runs on BOTH events: a queue entry's diff
-  # (merge_group.base_sha..head_sha) is exactly the PR's own change, so a
-  # release-shaped entry skips the heavy jobs in the queue too (the gate
-  # accepts those skips only via the fast_path output). Safe under the
-  # queue's ALLGREEN grouping: the entry's tree is the previous entry's
-  # (or main's) tree plus the version flip, and that tree was already
-  # validated by the previous entry's own run (release PR fe#2549 was
-  # ejected three times by unrelated CT flakes while the fast path was
-  # pull_request-only; intent-hq/intent#5279).
+  # PRs run metadata, static consumer contracts, the CI policy test, type/lint
+  # and unit tests. The merge queue reruns type/lint and unit tests on the
+  # merged tree and adds build, integration and relevant browser/native suites
+  # (browser suites also run nightly/manually). Release-shaped diffs retain the
+  # existing fast path; CI Gate rejects all other unexpected skips.
   merge_group:
 
 # Cancel in progress workflows on pull_requests.
@@ -48,55 +17,43 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Burst the heavy jobs to GH-hosted larger runners when more than this many
-  # self-hosted Linux jobs are queued/running ahead of this run (see the route
-  # job). Jobs still blocked on `needs` are invisible to the jobs API, so a
-  # queued run ahead of us may undercount — with 8 tinybox slots, clearing
-  # this threshold means every slot is occupied and a genuine backlog is
-  # queued behind them. Bursted jobs don't carry the self-hosted+Linux
-  # labels and stop counting toward the depth, so the system naturally falls
-  # back to tinybox as it frees up.
-  LINUX_BURST_THRESHOLD: 8
+  # Number of intent-cache Linux runner slots: the route job bursts the heavy
+  # jobs to WarpBuild (see runner-route.yml) once this many intent-cache jobs are queued or running
+  # ahead of this run. Set the CI_LINUX_HEAVY_SLOTS org or repo variable when
+  # slots are added; no workflow change is needed, and a malformed value sends
+  # every job hosted. Jobs still blocked on
+  # `needs` are invisible to the jobs API, so a queued run ahead of us may
+  # undercount. Bursted jobs don't carry the intent-cache label and stop
+  # counting, so routing returns to the slots as they free up. Every routed
+  # job here asks for gh-linux-8x, so the intent-cache-xl pool (gh-linux-16x
+  # jobs in intent and intentd) is not probed.
+  LINUX_BURST_THRESHOLD: ${{ vars.CI_LINUX_HEAVY_SLOTS || '2' }}
 
 jobs:
-  # Fork-PR hardening: external (fork) PRs are not accepted (contribution
-  # policy: issues on intent-hq/intent) and get NO CI — in particular,
-  # nothing from a fork may ever reach the self-hosted tinybox runner. Every
-  # job in this workflow carries the same-repo guard, either directly via an
-  # `if:` on `github.event.pull_request.head.repo.full_name ==
-  # github.repository` or transitively through `needs` on a guarded job
-  # (checks / build-web / test / test-integration / test-ct /
-  # test-playwright skip when the guarded route job skips, via their
-  # existing `needs.route.result == 'success'` condition; test-integration
-  # additionally never runs on pull_request at all, and test-ct /
-  # test-playwright run on pull_request only when release-fast-path's
-  # ct_required / root_playwright_required output is 'true' — the diff
-  # touches a CT-contract path / test/** or the root Playwright config and
-  # its spec-pattern modules — and
-  # always on merge_group; see their job comments)
-  # — EXCEPT the
-  # gate, which deliberately still runs on fork PRs so the required "CI
-  # Gate" context fails red there (a skipped job would SATISFY a required
-  # check; see the gate job's comment). Fork PRs are auto-closed by
-  # close-fork-prs.yml.
-
-  # Decides where the heavy jobs (checks / build-web / test /
-  # test-integration / test-ct / test-playwright) run:
-  # the local tinybox runner normally, or GH-hosted larger runners when the
-  # tinybox queue is backed up or the fleet is unavailable (ported from
-  # intentd's ci.yml route job). Runs on a small GH-hosted runner so the burst
-  # decision is independent of the tinybox queue: probing from tinybox
-  # would queue behind the very backlog it measures (and deadlock entirely
-  # with tinybox offline). The probe FAILS OPEN TO GH-HOSTED (gh-linux-8x):
-  # on API errors, when no online self-hosted Linux runner is visible, or
-  # when a self-hosted job has sat queued past the staleness cutoff, the
-  # heavy jobs burst instead of queueing behind an offline fleet — CI must
-  # not deadlock when tinybox is down. If the job itself fails (runner
+  # Fork PRs skip every checkout/routed job. CI Gate alone still runs without
+  # checkout or permissions and fails red for the guarded skips.
+  # Decides where the heavy jobs (build-web / test / test-integration) run.
+  # Type Check & Lint (checks) runs on ubuntu-24.04 and keeps `needs: route`
+  # only as its fork-PR guard. The heavy jobs run on
+  # the intent-cache runner slots normally, or on their burst runner (WarpBuild,
+  # or GitHub when CI_WARPBUILD_DISABLED is `true`) when every slot is
+  # occupied, the fleet is unavailable, or the CI_LINUX_RUNNER_DISABLED
+  # repository variable is `true`. The script is the shared probe, identical
+  # to runner-route.yml in intent, intentd and here (runner-policy.test.cjs).
+  # Runs on a small GitHub-hosted runner so the burst decision is independent of the
+  # slots' queue: probing from a slot would queue behind the very backlog it
+  # measures (and deadlock entirely with the slots offline). The probe FAILS
+  # OPEN TO THE BURST RUNNER: on API errors, when no online
+  # intent-cache runner is visible, or when an intent-cache job has sat queued
+  # past the staleness cutoff, the heavy jobs burst instead of queueing behind
+  # an offline fleet — CI must not deadlock when the slots are down. If the job itself fails (runner
   # outage, timeout), the routed jobs are skipped and need a re-run — a
   # deliberate trade-off. The seconds-long jobs (pr-title / conflict-markers
-  # / gate) are not routed — they pin directly to ubuntu-latest.
+  # / gate) are not routed — they pin directly to ubuntu-24.04. Required
+  # test-ct and test-playwright also have fixed hosted runners, but keep
+  # route's fail-safe guard.
   route:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Same-repo PRs only (see fork-PR hardening note above); a skip here also
     # skips the routed heavy jobs through their needs.route.result guard.
     # Runs on merge_group (see the trigger comment) — merge groups come from
@@ -110,20 +67,41 @@ jobs:
     outputs:
       linux_labels: ${{ steps.decide.outputs.linux_labels }}
       linux_burst: ${{ steps.decide.outputs.linux_burst }}
+      slots: ${{ steps.decide.outputs.slots }}
+      cloud: ${{ steps.decide.outputs.cloud }}
     steps:
       - id: decide
         uses: actions/github-script@v9
         env:
           THRESHOLD: ${{ env.LINUX_BURST_THRESHOLD }}
+          LINUX_RUNNER_DISABLED: ${{ vars.CI_LINUX_RUNNER_DISABLED }}
+          # Same switches and limits as runner-route.yml, so every caller honors them.
+          XL_THRESHOLD: ${{ vars.CI_LINUX_XL_SLOTS || '0' }}
+          WINDOWS_RUNNER_DISABLED: ${{ vars.CI_WINDOWS_RUNNER_DISABLED }}
+          MACOS_RUNNER_DISABLED: ${{ vars.CI_MACOS_RUNNER_DISABLED }}
+          # `true` sends every burst to GitHub-hosted runners instead of WarpBuild.
+          WARPBUILD_DISABLED: ${{ vars.CI_WARPBUILD_DISABLED }}
+          # The routed heavy jobs; each reads outputs.slots[key] and only as
+          # many get a slot as are free (see the slot-fitting note in the
+          # script). Minutes are typical merge-queue durations; `events`
+          # keeps a queue-only job from holding a slot on a PR; `shards: 4`
+          # gives each Unit Tests leg its own key (test-1..test-4). Type Check
+          # & Lint is not listed: it runs on the free standard runner (see
+          # the `checks` job).
+          SLOT_JOBS: >-
+            [
+            {"key":"test","label":"gh-linux-8x","minutes":13,"shards":4},
+            {"key":"build-web","label":"gh-linux-8x","minutes":4,"events":["merge_group"]},
+            {"key":"test-integration","label":"gh-linux-8x","minutes":2,"events":["merge_group"]}
+            ]
         with:
-          # tinybox serves several repos on one runner slot, so the probe
+          # The intent-cache slots serve several repos, so the probe
           # wants to size the queue across all of them — but the default
           # GITHUB_TOKEN is repo-scoped and can only see cloudlands-fe. Set
           # the CI_QUEUE_READ_TOKEN secret (fine-grained PAT with
           # actions:read on the sibling repos) to enable cross-repo counting;
-          # without it those repos are skipped and contribute 0. Routing to
-          # tinybox additionally requires the token to list the tinybox
-          # fleet: the runners are registered at the ORG level (shared
+          # without it the sibling queue reads fail and every job bursts. Routing to
+          # the slots additionally requires the token to list them: the runners are registered at the ORG level (shared
           # across the repos via a runner group), so the token needs the
           # org-level "Self-hosted runners" read permission for the org
           # list to succeed. The default GITHUB_TOKEN cannot carry that
@@ -131,127 +109,181 @@ jobs:
           # the org list errors and the probe falls back to this repo's own
           # runner list (fine-grained "Administration" repository
           # permission, read) — currently empty, so every run bursts (safe:
-          # burst is the fail-open default; it just never uses tinybox).
+          # burst is the fail-open default; it just never uses the slots).
           github-token: ${{ secrets.CI_QUEUE_READ_TOKEN || github.token }}
           script: |
-            const tinybox = ["self-hosted", "Linux", "X64"];
-            // All the routed heavy jobs burst to the 8-core / 32 GB runner:
-            // build-web needs well over 8 GB of heap with sourcemaps on
-            // (documented OOM history, monorepo#1074), and 32 GB clears its
-            // 16 GB Node heap cap comfortably.
-            const burst = ["gh-linux-8x"];
-            const threshold = parseInt(process.env.THRESHOLD || "8", 10);
-            // A self-hosted job queued longer than this has no runner
-            // picking it up — treat the fleet as unavailable and burst.
-            const staleMs = 15 * 60 * 1000;
-            // FAIL OPEN TO BURST: tinybox is only selected when the probe
-            // positively confirms (a) an online self-hosted Linux runner
-            // visible to this repo (org-level list, or the repo-level
-            // fallback), (b) no self-hosted job stuck queued past the
-            // staleness cutoff, and (c) a queue depth within the
-            // threshold. Any probe error — including a token that cannot
-            // list runners — routes to burst, so CI cannot queue-deadlock
-            // when the fleet is offline or unreadable (mirrors intentd's
-            // ci.yml route job).
-            let useBurst = true;
-            let reason = "fail-open default";
+            // No checkout: routing never executes code from a pull request.
+            // Org runners with these labels must be in groups shared with all three CI repos.
+            const fleets = {
+              // Heavy jobs (compile Rust or run over ~5 minutes): 8 cores / 48 GB per slot.
+              linux: ['self-hosted', 'linux', 'x64', 'intent-cache'],
+              // 16-core jobs: 16 threads per slot.
+              xl: ['self-hosted', 'linux', 'x64', 'intent-cache-xl'],
+              arm: ['self-hosted', 'Linux', 'ARM64'],
+              windows: ['self-hosted', 'Windows', 'X64'],
+              macos: ['self-hosted', 'macOS', 'ARM64'],
+              intel: ['self-hosted', 'macOS', 'X64'],
+            };
+            const disabled = {
+              linux: process.env.LINUX_RUNNER_DISABLED === 'true',
+              xl: process.env.LINUX_RUNNER_DISABLED === 'true',
+              arm: process.env.LINUX_RUNNER_DISABLED === 'true',
+              windows: process.env.WINDOWS_RUNNER_DISABLED === 'true',
+              macos: process.env.MACOS_RUNNER_DISABLED === 'true',
+              intel: process.env.MACOS_RUNNER_DISABLED === 'true',
+            };
+            // Standard GitHub-hosted runners are free for public repositories, so
+            // jobs asking for them always run there and never take a self-hosted slot.
+            const free = ['ubuntu-22.04', 'ubuntu-24.04', 'ubuntu-latest', 'ubuntu-24.04-arm', 'windows-2022', 'windows-2025'];
+            // Paid GitHub labels and the WarpBuild runner each bursts to instead
+            // (same cores; Windows stays on Server 2022, macOS 15 keeps signed builds
+            // off macOS 26). Intel Macs have no WarpBuild equivalent and stay on GitHub.
+            const warp = {
+              'gh-linux-8x': 'warp-ubuntu-2404-x64-8x',
+              'gh-linux-16x': 'warp-ubuntu-2404-x64-16x',
+              'gh-linux-arm64-8x': 'warp-ubuntu-2404-arm64-8x',
+              'gh-windows-16x': 'warp-windows-2022-x64-16x',
+              'macos-26-xlarge': 'warp-macos-26-arm64-6x',
+              'macos-15-xlarge': 'warp-macos-15-arm64-6x',
+            };
+            // WarpBuild health is tracked per OS and architecture (ubuntu-x64, ubuntu-arm64, windows-x64, macos-arm64).
+            const family = (label) => {
+              const m = /^warp-(ubuntu|windows|macos)-.*-(x64|arm64)-/.exec(String(label).toLowerCase());
+              return m ? `${m[1]}-${m[2]}` : null;
+            };
+            // A queued job older than `minutes`; `unknownIsOld` decides a job whose age is unreadable.
+            const queuedOver = (j, minutes, unknownIsOld) => j.status === 'queued' &&
+              (Number.isFinite(Date.parse(j.created_at)) ? Date.parse(j.created_at) < Date.now() - minutes * 60 * 1000 : unknownIsOld);
+            const burst = Object.fromEntries(Object.keys(fleets).map(k => [k, true]));
+            const reasons = Object.fromEntries(Object.keys(fleets).map(k => [k, 'availability not established']));
+            // Free slots per Linux pool: online slots (capped by the threshold) minus jobs queued or running on them.
+            const slotsFree = {};
+            const pr = context.payload?.pull_request;
+            const fork = context.eventName === 'pull_request' && pr?.head?.repo?.full_name !== `${context.repo.owner}/${context.repo.repo}`;
+            // Fork pull requests never spend WarpBuild minutes; the kill switch sends everything to GitHub.
+            const warpOn = !fork && process.env.WARPBUILD_DISABLED !== 'true';
+            // A WarpBuild OS/architecture whose jobs sit queued for 10 minutes is treated as down.
+            // An unreadable queue says nothing about WarpBuild, so it keeps WarpBuild.
+            const warpStuck = Object.fromEntries(Object.values(warp).map(label => [family(label), false]));
             try {
-              // The tinybox fleet is registered at the ORG level (shared
-              // across the repos via a runner group), so probe the org
-              // runner list first. That call needs the org-level
-              // "Self-hosted runners" read permission on the token (see the
-              // github-token comment above); when it errors, fall back to
-              // the repo-level list, which only sees repo-registered
-              // runners (currently none — the degraded mode keeps
-              // bursting). An empty list still routes to burst by design
-              // (never deadlock on an invisible fleet).
-              // NOTE: the org list is NOT scoped to the runner groups this
-              // repo can access, so the probe assumes every online
-              // self-hosted+Linux+X64 org runner is the tinybox fleet in a
-              // group visible to this repo. Ops invariant: keep the fleet's
-              // group visible to the CI repos, and never register
-              // generically-labeled org runners outside it — a matching but
-              // inaccessible runner would route jobs onto labels nothing
-              // can serve. (Group-scoped listing via the runner-groups API
-              // was considered and rejected: it needs extra calls per group
-              // and fails on plans without runner-group support, which
-              // would silently regress the probe to always-burst.)
+              if (fork) throw new Error('fork pull request requires an isolated hosted runner');
               let runners;
-              let runnerSource = "org";
               try {
-                runners = await github.paginate(
-                  github.rest.actions.listSelfHostedRunnersForOrg,
-                  { org: context.repo.owner, per_page: 100 }
-                );
-              } catch (e) {
-                core.info(`org runner list failed (${e.message}); falling back to repo-level list`);
-                runnerSource = "repo";
-                runners = await github.paginate(
-                  github.rest.actions.listSelfHostedRunnersForRepo,
-                  { owner: context.repo.owner, repo: context.repo.repo, per_page: 100 }
-                );
+                runners = await github.paginate(github.rest.actions.listSelfHostedRunnersForOrg, {org: context.repo.owner, per_page: 100});
+              } catch (error) {
+                core.info(`org runner list failed (${error.message}); trying repository-visible runners`);
+                runners = await github.paginate(github.rest.actions.listSelfHostedRunnersForRepo, {...context.repo, per_page: 100});
               }
-              const online = runners.filter(r =>
-                r.status === "online" &&
-                tinybox.every(l => (r.labels || []).some(x => x.name === l))
-              );
-              if (online.length === 0) {
-                reason = `no online self-hosted Linux runner (${runnerSource} list)`;
-              } else {
-                // Count self-hosted Linux jobs that are queued or running in
-                // queued/in-progress runs: a running job occupies a tinybox
-                // slot just as much as a queued one. GH-hosted jobs —
-                // including this route job and bursted heavy jobs — don't
-                // match the self-hosted+Linux label filter, so they never
-                // inflate the depth. Sibling-repo probe failures are the
-                // documented degraded mode (skip, contribute 0); a failure
-                // on this repo's own probe means the depth is unknowable,
-                // so it rethrows into the fail-open burst path. A queued
-                // job older than staleMs means nothing is draining the
-                // queue despite the runner looking online — burst.
-                const owner = context.repo.owner;
-                const repos = ["intentd", "cloudlands-fe", "monorepo"];
-                let depth = 0;
-                let staleQueued = false;
-                for (const repo of repos) {
-                  try {
-                    for (const status of ["queued", "in_progress"]) {
-                      const runs = await github.rest.actions.listWorkflowRunsForRepo({ owner, repo, status, per_page: 20 });
-                      for (const run of runs.data.workflow_runs.filter(r => r.id !== context.runId).slice(0, 10)) {
-                        const jobs = await github.rest.actions.listJobsForWorkflowRun({ owner, repo, run_id: run.id, per_page: 100 });
-                        for (const j of jobs.data.jobs) {
-                          if ((j.status === "queued" || j.status === "in_progress") && j.labels.includes("self-hosted") && j.labels.includes("Linux")) {
-                            depth += 1;
-                            if (j.status === "queued" && Date.parse(j.created_at) < Date.now() - staleMs) staleQueued = true;
-                          }
-                        }
-                      }
+              const online = Object.fromEntries(Object.entries(fleets).map(([key, labels]) => [key,
+                runners.filter(r => r.status === 'online' && labels.every(l => (r.labels || []).some(x => x.name?.toLowerCase() === l.toLowerCase()))),
+              ]));
+              const jobs = [];
+              // A missing sibling view is unknown demand, not zero demand. Fail open to burst runners.
+              if (warpOn || Object.values(online).some(rs => rs.length)) {
+                for (const repo of new Set(['intent', 'intentd', 'cloudlands-fe', context.repo.repo])) {
+                  const seen = new Set();
+                  for (const status of ['queued', 'in_progress']) {
+                    const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {owner: context.repo.owner, repo, status, per_page: 100});
+                    for (const run of runs) {
+                      if (run.id === context.runId || seen.has(run.id)) continue;
+                      seen.add(run.id);
+                      jobs.push(...await github.paginate(github.rest.actions.listJobsForWorkflowRun, {owner: context.repo.owner, repo, run_id: run.id, per_page: 100}));
                     }
-                  } catch (e) {
-                    if (repo === context.repo.repo) throw e;
-                    core.info(`queue probe skipped ${repo}: ${e.message}`);
                   }
                 }
-                if (staleQueued) {
-                  reason = `self-hosted job queued past staleness cutoff (fleet not draining) online=${online.length} (${runnerSource} list)`;
-                } else {
-                  useBurst = depth > threshold;
-                  reason = `queue depth=${depth} threshold=${threshold} online=${online.length} (${runnerSource} list)`;
-                }
               }
-            } catch (e) {
-              useBurst = true;
-              reason = `probe failed (${e.message})`;
+              for (const j of jobs) {
+                if (!queuedOver(j, 10, false)) continue;
+                for (const label of j.labels || []) if (family(label) in warpStuck) warpStuck[family(label)] = true;
+              }
+              const thresholds = {linux: Number(process.env.THRESHOLD || '2'), xl: Number(process.env.XL_THRESHOLD || '0')};
+              if (Object.values(thresholds).some(n => !Number.isInteger(n) || n < 0)) throw new Error('invalid queue threshold');
+              for (const [key, labels] of Object.entries(fleets)) {
+                const demand = jobs.filter(j => ['queued', 'in_progress'].includes(j.status) && labels.every(l => (j.labels || []).some(x => x.toLowerCase() === l.toLowerCase())));
+                const stale = demand.some(j => queuedOver(j, 15, true));
+                const native = !(key in thresholds);
+                const capacity = native ? online[key].filter(r => r.busy === false).length : online[key].length;
+                const limit = native ? capacity - 1 : Math.min(thresholds[key], capacity);
+                const depth = native ? demand.filter(j => j.status === 'queued').length : demand.length;
+                burst[key] = disabled[key] || capacity === 0 || stale || (native ? depth > limit : depth >= limit);
+                if (!native) slotsFree[key] = burst[key] ? 0 : limit - depth;
+                reasons[key] = disabled[key] ? 'disabled for maintenance' : capacity === 0 ? 'no available compatible runner' : stale ? 'stalled or unknown-age queue' : `queue depth=${depth} threshold=${limit} online=${online[key].length}${native ? '' : ` free=${slotsFree[key]}`}`;
+              }
+            } catch (error) {
+              for (const key of Object.keys(fleets)) reasons[key] = `probe failed (${error.message})`;
+              for (const key of Object.keys(slotsFree)) slotsFree[key] = 0;
             }
-            core.info(`linux routing: burst=${useBurst} (${reason})`);
-            core.setOutput("linux_labels", JSON.stringify(useBurst ? burst : tinybox));
-            core.setOutput("linux_burst", String(useBurst));
+            // Where a GitHub label runs when it does not take a self-hosted slot:
+            // its WarpBuild runner while WarpBuild is on and moving, else itself.
+            const cloud = (label) => warpOn && warp[label] && !warpStuck[family(warp[label])] ? [warp[label]] : [label];
+            // Keys are the GitHub labels jobs ask for; values are the self-hosted
+            // fleet labels, or the burst runner when the fleet bursts.
+            // A label listed under several pools takes the first with a free slot.
+            const hosted = {
+              // 16-core jobs prefer xl slots and overflow to heavy slots before
+              // bursting, so with no xl slot free they route as they did
+              // before xl existed. 8-core jobs never take an xl slot.
+              xl: ['gh-linux-16x'],
+              linux: ['gh-linux-8x', 'gh-linux-16x'],
+              arm: ['gh-linux-arm64-8x'],
+              windows: ['gh-windows-16x'],
+              macos: ['macos-26-xlarge'],
+              intel: ['macos-latest-large'],
+            };
+            // Free slots go to the caller's listed jobs one at a time: Rust-compiling
+            // jobs first (they reuse the slot's local cache), then the longest, then
+            // list order. Listed jobs that do not fit, or that skip this event, get
+            // their burst runner directly; matrix legs are ranked separately.
+            // Concurrent runs read the same free count before either job is queued,
+            // so a pool may briefly run a job or two over its slot count.
+            let requests = [];
+            try {
+              requests = JSON.parse(process.env.SLOT_JOBS || '[]').flatMap(j => (j.legs || (j.shards ? Array.from({length: j.shards}, (_, n) => n + 1) : null))?.map(leg => ({...j, key: `${j.key}-${leg}`})) ?? [j]);
+            } catch (error) {
+              core.info(`slot list unreadable (${error.message}); listed jobs use burst runners`);
+            }
+            const slots = {};
+            const granted = Object.fromEntries(Object.keys(slotsFree).map(k => [k, 0]));
+            const ranked = requests.map((r, i) => ({...r, i})).sort((a, b) => (b.rust === true) - (a.rust === true) || (b.minutes || 0) - (a.minutes || 0) || a.i - b.i);
+            for (const r of ranked) {
+              const runs = !Array.isArray(r.events) || r.events.includes(context.eventName);
+              const key = runs && Object.keys(hosted).find(k => k in slotsFree && hosted[k].includes(r.label) && slotsFree[k] > 0);
+              if (key) {
+                slotsFree[key] -= 1;
+                granted[key] += 1;
+                slots[r.key] = fleets[key];
+              } else slots[r.key] = cloud(r.label);
+            }
+            // Unlisted jobs (single-job workflows, jobs that start after the listed
+            // ones) use a pool only while a slot is still free.
+            for (const key of Object.keys(slotsFree)) {
+              burst[key] = slotsFree[key] <= 0;
+              if (granted[key]) reasons[key] += ` granted=${granted[key]}`;
+            }
+            const mapping = Object.fromEntries(free.map(label => [label, [label]]));
+            for (const [key, labels] of Object.entries(hosted)) {
+              for (const label of labels) if (!mapping[label] || mapping[label][0] !== 'self-hosted') mapping[label] = burst[key] ? cloud(label) : fleets[key];
+            }
+            // Jobs that must not use a self-hosted runner (sudo, Docker, release signing) read `cloud`.
+            const clouds = Object.fromEntries([...free, ...Object.keys(warp), 'macos-latest-large'].map(label => [label, cloud(label)]));
+            for (const key of Object.keys(fleets)) core.info(`${key} routing: burst=${burst[key]} (${reasons[key]})`);
+            for (const key of Object.keys(warpStuck)) core.info(`warpbuild ${key}: ${!warpOn ? (fork ? 'off (fork pull request)' : 'off (CI_WARPBUILD_DISABLED)') : warpStuck[key] ? 'off (queued over 10 minutes)' : 'on'}`);
+            core.setOutput('runners', JSON.stringify(mapping));
+            core.setOutput('slots', JSON.stringify(slots));
+            core.setOutput('cloud', JSON.stringify(clouds));
+            const linuxLabels = mapping[`gh-linux-${process.env.LINUX_SIZE || '8'}x`];
+            core.setOutput('linux_labels', JSON.stringify(linuxLabels));
+            core.setOutput('linux_burst', String(linuxLabels[0] !== 'self-hosted'));
+            core.setOutput('check_labels', JSON.stringify(mapping['gh-linux-8x']));
+            core.setOutput('windows_labels', JSON.stringify(mapping['gh-windows-16x']));
+            core.setOutput('macos_labels', JSON.stringify(mapping['macos-26-xlarge']));
+            for (const key of ['windows', 'macos']) core.setOutput(`${key}_burst`, String(burst[key]));
 
   pr-title:
     name: Validate PR Title
     # Seconds-long job: pinned to the smallest GH-hosted runner rather than
-    # routed — not worth a tinybox slot or a burst decision.
-    runs-on: ubuntu-latest
+    # routed — not worth a self-hosted slot or a burst decision.
+    runs-on: ubuntu-24.04
     # Same-repo PRs only (see fork-PR hardening note above); guarded directly
     # rather than through needs so it isn't delayed behind the route probe.
     # PR-metadata check: pull_request-only, skipped on merge_group (the gate
@@ -308,8 +340,8 @@ jobs:
   # don't false-positive.
   conflict-markers:
     name: Conflict Markers
-    # Seconds-long job: pinned to ubuntu-latest (see pr-title).
-    runs-on: ubuntu-latest
+    # Lightweight job on a standard GitHub-hosted Linux runner.
+    runs-on: ubuntu-24.04
     # Same-repo PRs only (see fork-PR hardening note above). PR-diff check:
     # pull_request-only, skipped on merge_group (the gate accepts the skip
     # there).
@@ -376,9 +408,10 @@ jobs:
   # exist).
   # The same checkout + base fetch also computes CT relevance: ct_required
   # is 'true' when the PR diff touches a CT-contract path (the one list in
-  # scripts/ct-contract-paths.mjs, shared with verify:changed) or a CT spec /
-  # geometry golden (same module), which makes test-ct run on pull_request
-  # (see test-ct / gate). Fail-safe the other
+  # scripts/ct-contract-paths.mjs, shared with verify:changed), a CT spec,
+  # or a direct local import of a discovered CT spec in either
+  # base or head (same module). Fixture changes keep focused local selection
+  # but require the hosted suite (see test-ct / gate). Fail-safe the other
   # way round from fast_path: the script prints ct_required=true on any
   # internal error, and the step writes 'true' if the script exits non-zero
   # or prints nothing — a broken relevance check runs CT, never skips it.
@@ -388,18 +421,12 @@ jobs:
   # is exactly the entry's own change — the same shape as the pull_request
   # merge ref, so the script needs no event-specific handling (its
   # merge-base fallback covers the shallow checkout either way). ct_required
-  # is computed in the queue too but is informational there: test-ct's `if:`
-  # runs it on every merge_group entry regardless, unless fast_path is 'true'.
-  # root_playwright_required is the same idea for the root Playwright suite
-  # (test-playwright): 'true' when the diff touches test/**,
-  # playwright.config.ts, or the playwright/*-spec-pattern.mjs modules it
-  # reads, computed inline from the same base..head diff with
-  # the same fail-safe (a git failure requires the suite), and likewise
-  # informational in the queue.
+  # is computed in the queue too, and browser suites execute there.
+  # Root and Electron relevance use the same diff and fail-safe behavior.
   release-fast-path:
     name: Release PR Fast Path
-    # Seconds-long job: pinned to ubuntu-latest (see pr-title).
-    runs-on: ubuntu-latest
+    # Lightweight job on a standard GitHub-hosted Linux runner.
+    runs-on: ubuntu-24.04
     # Same-repo PRs only (see fork-PR hardening note above); merge groups
     # come from the repo's own ruleset, so no same-repo guard applies there.
     if: github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
@@ -410,6 +437,8 @@ jobs:
       fast_path: ${{ steps.decide.outputs.fast_path }}
       ct_required: ${{ steps.ct.outputs.ct_required }}
       root_playwright_required: ${{ steps.root-playwright.outputs.root_playwright_required }}
+      electron_required: ${{ steps.electron.outputs.electron_required }}
+      portable_fixtures_required: ${{ steps.portable-fixtures.outputs.portable_fixtures_required }}
     steps:
       - uses: actions/checkout@v7
       - name: Fetch diff base commit
@@ -456,25 +485,66 @@ jobs:
         run: |
           set -euo pipefail
           # The root suite (playwright.config.ts: test/**/*.spec.ts) is
-          # required on pull_request when the diff touches the specs, their
+          # required on merge_group when the diff touches the specs, their
           # fixtures / snapshots / harness helpers (all under test/), the
           # config itself, or the playwright/*-spec-pattern.mjs modules the
           # config reads its testDir/testMatch/testIgnore from (the same set
           # scripts/verify-changed.mjs selects `playwright-full` for). Same
           # base..head diff and flags as ct-contract-paths.mjs. Fail-safe: a
           # git failure requires the suite, never skips it.
-          if ! changed=$(git diff --name-only --no-renames --diff-filter=ACMD "$BASE_SHA" HEAD); then
+          # Keep NUL-delimited paths in a file, never a Bash scalar: otherwise
+          # Git quoting or embedded newlines can hide a relevant filename.
+          changed_paths=$(mktemp)
+          trap 'rm -f "$changed_paths"' EXIT
+          if ! git diff --name-only -z --no-renames --diff-filter=ACMD "$BASE_SHA" HEAD > "$changed_paths"; then
             echo "git diff failed — requiring the root Playwright suite (fail-safe)"
             echo "root_playwright_required=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # grep must drain its whole input: with `-q` it exits on the first
-          # match, printf takes SIGPIPE on a diff larger than the pipe buffer,
-          # and pipefail turns a matched diff into the false branch.
-          if printf '%s\n' "$changed" | grep -E '^(test/|playwright\.config\.ts$|playwright/(root|ct)-spec-pattern\.mjs$)' >/dev/null; then
+          if grep -z -E '^(test/|playwright\.config\.ts$|playwright/(app-stubs/|(root|ct)-spec-pattern\.mjs$)|svelte\.config\.js$|package\.json$|pnpm-lock\.yaml$)' "$changed_paths" >/dev/null; then
             echo "root_playwright_required=true" | tee -a "$GITHUB_OUTPUT"
           else
             echo "root_playwright_required=false" | tee -a "$GITHUB_OUTPUT"
+          fi
+
+      - name: Evaluate Electron relevance
+        id: electron
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        run: |
+          set -euo pipefail
+          # Include lifetime, checkout and monitor fixtures and transports,
+          # shared harness/config and dependency inputs. --no-renames exposes
+          # both sides of a moved test or fixture.
+          changed_paths=$(mktemp)
+          trap 'rm -f "$changed_paths"' EXIT
+          if ! git diff --name-only -z --no-renames --diff-filter=ACMD "$BASE_SHA" HEAD > "$changed_paths"; then
+            echo "git diff failed — requiring Electron lifetime tests (fail-safe)"
+            echo "electron_required=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if grep -z -E '^(test/(electron-browser-lifetime[^/]*|fixtures/(browser-lifetime|repository-checkout|pr-monitor-native)/|vite-harness-cache\.)|src/(features/backend/main/(repository-checkout[^/]*|pr-monitor-lifecycle[^/]*|backend\.ipc|json-rpc-client)\.ts$|lib/client/live/(repository-checkout-transport|pr-monitor-transport|electron-ipc-transport)\.ts$|shared/types/(repository-checkout|pr-monitor)\.ts$|preload/index\.template\.ts$)|\.github/workflows/(intent-pr|browser-tests)\.yml$|playwright(\.manual)?\.config\.ts$|playwright/(app-stubs/|(root|ct)-spec-pattern\.mjs$)|svelte\.config\.js$|package\.json$|pnpm-lock\.yaml$)' "$changed_paths" >/dev/null; then
+            echo "electron_required=true" | tee -a "$GITHUB_OUTPUT"
+          else
+            echo "electron_required=false" | tee -a "$GITHUB_OUTPUT"
+          fi
+
+      - name: Evaluate portable fixture relevance
+        id: portable-fixtures
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        run: |
+          set -euo pipefail
+          changed_paths=$(mktemp)
+          trap 'rm -f "$changed_paths"' EXIT
+          if ! git diff --name-only -z --no-renames --diff-filter=ACMD "$BASE_SHA" HEAD > "$changed_paths"; then
+            echo "portable_fixtures_required=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if grep -z -E '^(src/features/dev-console/|src/features/backend/main/(backend-connection|__tests__/isolated-test-package)\.test\.ts$|src/main/isolated-test-profile[^/]*\.ts$|src/test/fixtures/isolated-profile-home\.ts$|src/test(-global)?-setup\.ts$|scripts/run-unit-tests\.mjs$|vitest\.config\.ts$|package\.json$|pnpm-lock\.yaml$|\.github/workflows/intent-pr\.yml$)' "$changed_paths" >/dev/null; then
+            echo "portable_fixtures_required=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "portable_fixtures_required=false" >> "$GITHUB_OUTPUT"
           fi
 
   # Consolidated typecheck + lint job. Previously four separate ubuntu-latest
@@ -483,6 +553,22 @@ jobs:
   # checkout + pnpm install (and queue serially in the single-slot era).
   # One job on the 64-core box runs the shared setup once and all checks
   # back-to-back.
+  pr-static:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - run: python3 -m pip install 'PyYAML==6.0.3'
+      - name: Verify event routing and gate failures without application dependencies
+        run: python3 -I -B scripts/test-ci-event-policy.py
+      # Also runs scripts/runner-policy.test.cjs (the shared route probe) under node.
+      - name: Verify runner routing policy
+        run: python3 -I -B scripts/test_runner_policy.py
+
   checks:
     name: Type Check & Lint
     # Skipped at job level when the diff is release-PR-shaped (fast_path ==
@@ -494,8 +580,11 @@ jobs:
     # alone would run it without runner labels); the gate still fails on such
     # a skip unless the fast path was taken.
     needs: [route, release-fast-path]
-    if: ${{ !cancelled() && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
-    runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
+    # Measured medium-sized (3.2 busy cores p90, 11.7 GiB peak with page
+    # cache), so it fits the free 4-vCPU / 16 GB standard runner (free for this
+    # public repository; the router never sends it to a self-hosted slot).
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
@@ -506,22 +595,33 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
       - name: Setup pnpm
+        id: pnpm_setup
+        # Registry timeouts can exhaust the installer's fetch retries before
+        # signature verification (intent-hq/intent#6200). Replay setup once;
+        # the second attempt must pass the same identity validation and pin.
+        continue-on-error: true
         uses: pnpm/action-setup@v6
         with:
           version: 10.30.3
           run_install: false
-          # Per-runner-instance dest: concurrent tinybox slots share $HOME and
-          # race on the default ~/setup-pnpm (monorepo#1239).
-          dest: ~/setup-pnpm-${{ runner.name }}
+      - name: Wait before retrying pnpm setup
+        if: steps.pnpm_setup.outcome == 'failure'
+        run: sleep 10
+      - name: Retry pnpm setup
+        if: steps.pnpm_setup.outcome == 'failure'
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+          run_install: false
       - name: Setup Node.js
-        # cache: 'pnpm' only on the burst path — ephemeral GH-hosted runners
-        # start cold, while tinybox's persistent pnpm store makes the GH
-        # Actions cache tarball round-trip pure overhead (burst-gated, like
-        # intentd's rust-cache pattern).
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: ${{ needs.route.outputs.linux_burst == 'true' && 'pnpm' || '' }}
+      - name: Cache pnpm store
+        # Every runner (intent-cache container, WarpBuild or GitHub) starts with an
+        # empty pnpm store, so always restore it: WarpBuild's cache on WarpBuild
+        # Linux/macOS runners, GitHub's elsewhere.
+        uses: ./.github/actions/pnpm-store-cache
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       # Cold-checkout gate: runs the agent-facing `lint` gate BEFORE any
@@ -540,6 +640,11 @@ jobs:
       # part of this gate too, and the generated paths are Prettier-ignored
       # (.prettierignore plus Prettier's default .gitignore handling), so
       # running it before generation loses no coverage.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - run: python3 -m pip install 'PyYAML==6.0.3'
+      - run: python3 -I -B scripts/test-ci-event-policy.py
       - name: Cold-checkout gates
         run: pnpm run lint
       - name: Generate build config
@@ -555,9 +660,10 @@ jobs:
         # main and on the cloudlands-fe#2533 merge tree that OOMed. At the job-wide
         # 4 GB cap V8 sits in its near-limit "reduce" mark-compact loop and aborts on
         # timing, so this step alone gets ~2x the measured need; other steps keep
-        # the job cap (intent-hq/intent#3352). Both runner classes (tinybox,
-        # gh-linux-8x) have ample RAM. run-svelte-check.mjs prints the peak RSS of
-        # every run so the margin stays visible before it is exhausted again.
+        # the job cap (intent-hq/intent#3352). The job runs on the 16 GB
+        # ubuntu-24.04 runner, so the ~4.3 GiB peak leaves about 11 GB.
+        # run-svelte-check.mjs prints the peak RSS of every run so the margin
+        # stays visible before it is exhausted again.
         env:
           NODE_OPTIONS: '--max-old-space-size=8192'
         run: pnpm run check
@@ -619,13 +725,13 @@ jobs:
 
   build-web:
     name: Build (web)
-    # Moved from m1mac to the self-hosted Linux runner (tinybox, 64 cores /
-    # 125 GB) so the single-slot Mac is free for release/signing work.
+    # Moved from m1mac to the self-hosted Linux runners so the single-slot
+    # Mac is free for release/signing work.
     # Skipped at job level on release-fast-path PRs — see the checks job's
     # comment for the full skip/fail-safe rationale.
     needs: [route, release-fast-path]
-    if: ${{ !cancelled() && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
-    runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
+    if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
+    runs-on: ${{ fromJSON(needs.route.outputs.slots || '{}')['build-web'] || fromJSON('["gh-linux-8x"]') }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -636,10 +742,10 @@ jobs:
       # the 8192 cap on the old 2-core / 7 GB ubuntu-latest runner
       # (~7.7 GB at death, monorepo#1074), which forced
       # INTENT_DISABLE_SOURCEMAPS=1. Sourcemaps stay enabled everywhere this
-      # job routes now: 8192 OOMed even on the 125 GB tinybox (the 64-core
-      # box runs more build work in parallel), so the cap is 16384 — within
-      # tinybox's RAM and the burst runner's 32 GB (gh-linux-8x; never burst
-      # this job to anything smaller).
+      # job routes now: 8192 OOMed on a 64-core self-hosted host (more build
+      # work in parallel), so the cap is 16384 — within an intent-cache
+      # slot's ~48 GB and the burst runner's 32 GB (never burst this job to
+      # anything smaller).
       NODE_OPTIONS: '--max-old-space-size=16384'
     steps:
       - name: Checkout
@@ -649,14 +755,13 @@ jobs:
         with:
           version: 10.30.3
           run_install: false
-          # Per-runner-instance dest (see checks).
-          dest: ~/setup-pnpm-${{ runner.name }}
       - name: Setup Node.js
-        # cache: 'pnpm' only on the burst path (see checks).
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: ${{ needs.route.outputs.linux_burst == 'true' && 'pnpm' || '' }}
+      - name: Cache pnpm store
+        # WarpBuild's cache on WarpBuild Linux/macOS runners, GitHub's elsewhere.
+        uses: ./.github/actions/pnpm-store-cache
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Build web renderer
@@ -670,20 +775,24 @@ jobs:
           echo "✓ dist/web/index.html present."
 
   test:
-    # Two-way Vitest shard matrix (intent-hq/monorepo#4260). The job ran
+    # Four-way Vitest shard matrix (two-way since intent-hq/monorepo#4260;
+    # four-way because each of two legs took ~26 min on an intent-cache heavy
+    # slot and ~23 min on gh-linux-8x against the 30-min timeout, runs
+    # 39243214256 / 39265196837). The legs route like the other heavy jobs
+    # (slots first, hosted overflow). The job ran
     # unsharded while the box had a single runner slot (shards would have
-    # queued serially there, each paying its own checkout/install); with 8
-    # tinybox slots plus the burst route that rationale is stale, and the
+    # queued serially there, each paying its own checkout/install); with two
+    # self-hosted slots plus the burst route that rationale is stale, and the
     # unit step is the workflow's long pole (p50 ~7.5 min, p90 ~18 min on
     # the burst runner) against ~0.5 min of per-leg setup. Vitest's
-    # --shard=N/2 is a stable partition of the sorted test-file list, so
-    # the two legs cover the full suite exactly once (shard-completeness
+    # --shard=N/4 is a stable partition of the sorted test-file list, so
+    # the four legs cover the full suite exactly once (shard-completeness
     # proof in the #4260 follow-up PR). Integration tests moved to the
     # separate unsharded test-integration job so they still run exactly
     # once.
     # Known trade-off: vitest.config.ts caps CI workers per JOB (min(16,
-    # cores/2), monorepo#3082), so two concurrent legs on one tinybox host
-    # can run 2x that fork count (plus the now-concurrent test-integration
+    # cores/2), monorepo#3082), so concurrent legs on one self-hosted host
+    # can run a multiple of that fork count (plus the now-concurrent test-integration
     # job). Per-leg wall time halves the exposure window and the 60s CI
     # test timeout gives slack; if #3082-class load flakes reappear, halve
     # the vitest.config.ts worker cap when --shard is in play.
@@ -691,16 +800,16 @@ jobs:
     # comment for the full skip/fail-safe rationale (a job-level skip
     # reports 'skipped' for the whole matrix; no per-leg required contexts
     # exist — "CI Gate" is the only required check).
-    name: Unit Tests (shard ${{ matrix.shard }}/2)
+    name: Unit Tests (shard ${{ matrix.shard }}/4)
     needs: [route, release-fast-path]
-    if: ${{ !cancelled() && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
-    runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
+    runs-on: ${{ fromJSON(needs.route.outputs.slots || '{}')[format('test-{0}', matrix.shard)] || fromJSON('["gh-linux-8x"]') }}
     strategy:
       # Let the sibling shard finish so one flaky leg doesn't hide the
       # other leg's results (same rationale as test-ct).
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, 4]
     timeout-minutes: 30
     permissions:
       contents: read
@@ -711,9 +820,25 @@ jobs:
       # OOM lesson — monorepo#3352 — was a job-wide 8 GB cap, not this).
       NODE_OPTIONS: '--max-old-space-size=4096'
       LINT_BASELINE_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+      TRANSFER_SELECTION_FIXTURE_ROOT: ${{ github.workspace }}/.cache/transfer-selection-contract/docs/protocol/fixtures/transfer-selection
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+      - name: Setup Python for script regression tests
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Checkout shared transfer-selection fixtures
+        uses: actions/checkout@v7
+        with:
+          repository: intent-hq/intent
+          ref: main
+          path: .cache/transfer-selection-contract
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/protocol/fixtures/transfer-selection/
+            /scripts/
       - name: Fetch baseline comparison commit
         run: |
           if [ -n "$LINT_BASELINE_BASE_REF" ]; then
@@ -724,16 +849,34 @@ jobs:
         with:
           version: 10.30.3
           run_install: false
-          # Per-runner-instance dest (see checks) — also what lets two
-          # shard legs share a tinybox $HOME without the monorepo#1239
-          # installer races.
-          dest: ~/setup-pnpm-${{ runner.name }}
       - name: Setup Node.js
-        # cache: 'pnpm' only on the burst path (see checks).
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: ${{ needs.route.outputs.linux_burst == 'true' && 'pnpm' || '' }}
+      - name: Cache pnpm store
+        # WarpBuild's cache on WarpBuild Linux/macOS runners, GitHub's elsewhere.
+        uses: ./.github/actions/pnpm-store-cache
+      - name: Read backend Keychain fixture pin
+        id: backend-keychain-fixtures
+        run: node scripts/backend-keychain-fixtures.mjs | tee -a "$GITHUB_OUTPUT"
+      - name: Checkout pinned backend Keychain contract
+        uses: actions/checkout@v7
+        with:
+          repository: intent-hq/intent
+          ref: ${{ steps.backend-keychain-fixtures.outputs.sourceCommit }}
+          path: .cache/backend-keychain-contract
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/protocol/fixtures/backend-keychain/v1/
+            /scripts/backend-keychain-contract.mjs
+      - name: Verify backend Keychain fixture provenance
+        env:
+          SOURCE_COMMIT: ${{ steps.backend-keychain-fixtures.outputs.sourceCommit }}
+        run: >-
+          node .cache/backend-keychain-contract/scripts/backend-keychain-contract.mjs verify
+          --source-root .cache/backend-keychain-contract --source-commit "$SOURCE_COMMIT"
+          --component cloudlands-fe --component-root .
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Generate IPC channels
@@ -743,7 +886,89 @@ jobs:
         # so a leg never depends on test internals to stay self-contained.
         run: pnpm run generate:ipc-channels
       - name: Unit tests
-        run: pnpm run test:unit --shard=${{ matrix.shard }}/2
+        run: |
+          contract_sha=$(git -C .cache/transfer-selection-contract rev-parse HEAD)
+          echo "Transfer selection contract: intent-hq/intent@$contract_sha"
+          echo "Transfer selection contract: intent-hq/intent@$contract_sha" >> "$GITHUB_STEP_SUMMARY"
+          node scripts/transfer-selection-fixtures.mjs
+          pnpm run test:unit --shard=${{ matrix.shard }}/4
+
+  test-portable-fixtures:
+    name: Portable Fixtures (macOS ARM64, ${{ matrix.zone.name }})
+    # Straight to the burst runner (WarpBuild macOS 26, or GitHub's
+    # macos-26-xlarge when WarpBuild is off or the route job failed); never
+    # the persistent self-hosted Mac.
+    needs: [route, release-fast-path]
+    if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.release-fast-path.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' && needs.release-fast-path.outputs.portable_fixtures_required != 'false' }}
+    runs-on: ${{ fromJSON(needs.route.outputs.cloud || '{}')['macos-26-xlarge'] || fromJSON('["macos-26-xlarge"]') }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        zone:
+          - { name: UTC, tz: UTC }
+          - { name: Los_Angeles, tz: America/Los_Angeles }
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+          run_install: false
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Cache pnpm store
+        # WarpBuild's cache on WarpBuild Linux/macOS runners, GitHub's elsewhere.
+        uses: ./.github/actions/pnpm-store-cache
+      - name: Record native fixture environment
+        run: |
+          set -euo pipefail
+          mkdir -p .cache/portable-fixtures
+          {
+            git rev-parse HEAD
+            sw_vers
+            uname -sm
+            node --version
+            pnpm --version
+            printf 'TMPDIR=%s\n' "$TMPDIR"
+            ifconfig lo0
+          } | tee .cache/portable-fixtures/environment.log
+          test "$(uname -m)" = arm64
+          test "$(node -p process.arch)" = arm64
+          if ifconfig lo0 | grep -E 'inet 127\.0\.0\.2 ' >/dev/null; then
+            echo 'Fixture validation requires ordinary loopback without a 127.0.0.2 alias'
+            exit 1
+          fi
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Run portable fixture suites
+        env:
+          TZ: ${{ matrix.zone.tz }}
+        run: |
+          set -euo pipefail
+          printf 'TZ=%s\n' "$TZ" | tee .cache/portable-fixtures/tests.log
+          pnpm run test:unit \
+            src/features/dev-console/TrafficInspector.test.ts \
+            src/features/backend/main/__tests__/isolated-test-package.test.ts \
+            src/main/isolated-test-profile.test.ts \
+            src/features/backend/main/backend-connection.test.ts \
+            --maxWorkers=2 2>&1 | tee -a .cache/portable-fixtures/tests.log
+      - name: Retain native fixture evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: portable-fixtures-${{ matrix.zone.name }}-${{ github.run_attempt }}
+          path: .cache/portable-fixtures/
+          retention-days: 7
+          if-no-files-found: error
 
   test-integration:
     # The integration suite from the pre-split Unit & Integration Tests job
@@ -761,7 +986,7 @@ jobs:
     name: Integration Tests
     needs: [route, release-fast-path]
     if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
-    runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
+    runs-on: ${{ fromJSON(needs.route.outputs.slots || '{}')['test-integration'] || fromJSON('["gh-linux-8x"]') }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -776,14 +1001,13 @@ jobs:
         with:
           version: 10.30.3
           run_install: false
-          # Per-runner-instance dest (see checks).
-          dest: ~/setup-pnpm-${{ runner.name }}
       - name: Setup Node.js
-        # cache: 'pnpm' only on the burst path (see checks).
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: ${{ needs.route.outputs.linux_burst == 'true' && 'pnpm' || '' }}
+      - name: Cache pnpm store
+        # WarpBuild's cache on WarpBuild Linux/macOS runners, GitHub's elsewhere.
+        uses: ./.github/actions/pnpm-store-cache
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Generate i18n messages
@@ -796,582 +1020,37 @@ jobs:
       - name: Integration tests
         run: pnpm run test:integration
 
-  # Playwright component tests (*.ct.spec.ts via playwright-ct.config.ts;
-  # monorepo#2091). Routed through the probe like checks / build-web / test
-  # / test-integration:
-  # tinybox when healthy, gh-linux-8x on burst (the burst runner replaces
-  # the old ubuntu-latest pin; its 8 cores / 32 GB also clear the 16 GB
-  # ubuntu-latest VMs whose memory exhaustion killed shard legs,
-  # monorepo#3352). Browser provisioning (`playwright install --with-deps`,
-  # sudo apt) works on tinybox too — the runner user has passwordless sudo
-  # (see intentd ci.yml's libssl-dev step) — with the co-tenant caveats
-  # handled per step below. The suite has grown to ~350
-  # tests across ~56 files running serially (workers: 1 on CI — deliberate),
-  # so a single job straddled the 30-min budget (monorepo#2887); it runs as a
-  # shard matrix instead (Playwright shards by file), 4-way since the 2-way
-  # legs started dying to runner-VM memory exhaustion (monorepo#3352) —
-  # fewer tests per leg bounds per-leg memory accretion. Browsers are
-  # installed via the run-ct-tests.mjs launcher so their version matches the
-  # CT-aligned playwright runner (1.58.x, NOT the repo's top-level playwright
-  # — see monorepo#1586), and the binary cache is keyed on that same version.
-  # MERGE-QUEUE ALWAYS, PLUS CT-RELEVANT PRs (see the trigger comment): the
-  # ~20 min of shard wall time stays off ordinary PR pushes — the suite runs
-  # once per queue entry against the merged tree, where the gate requires
-  # it — but a PR whose diff touches a CT-contract path or a CT spec /
-  # geometry golden (release-fast-path's ct_required output, computed from
-  # scripts/ct-contract-paths.mjs) runs the full matrix on pull_request too,
-  # so a token/stylesheet/harness/spec/golden change gets CT signal before it
-  # can be ejected from the queue (cloudlands-fe#2441, cloudlands-fe#2533).
-  # On every other pull_request the whole matrix reports 'skipped' and the
-  # gate accepts that skip only when ct_required is exactly 'false'.
-  # Release-shaped diffs (fast_path == 'true') skip the matrix on both
-  # events; the gate accepts that skip via the fast_path output.
+  # Browser suites run selectively on PRs; nightly-browser-tests.yml runs all.
+  # Keep route as a direct guard so failed routing and fork PRs stay fail-safe.
   test-ct:
-    name: Component Tests (shard ${{ matrix.shard }}/4)
-    # The event term runs this matrix on every merge_group; the ct_required
-    # term adds CT-relevant pull_requests (in the queue the event term
-    # already holds, so ct_required is not consulted there). The
-    # route.result guard is kept for the same reasons as
-    # test-integration: it subsumes the old explicit same-repo `if:` guard
-    # (fork-PR hardening note — fork PRs skip the guarded route job, and
-    # release-fast-path too, so ct_required is empty on them), and a route
-    # failure skips this matrix and fails the gate (fail-safe). The
-    # fast_path term keeps release-shaped diffs skipping CT on both events
-    # even though they touch package.json (the gate accepts that skip via
-    # fast_path).
     needs: [route, release-fast-path]
-    if: ${{ !cancelled() && (github.event_name == 'merge_group' || needs.release-fast-path.outputs.ct_required == 'true') && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
-    runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
-    strategy:
-      # Let the sibling shards finish so one flaky leg doesn't hide the
-      # other legs' results.
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4]
-    # Per-shard budget: a healthy leg runs ~5-7 min of tests (a quarter of
-    # the ~18-26 min serial suite) plus a few minutes of fixed setup
-    # (install / browsers / CT bundle build), so 30 min leaves >2x headroom
-    # for retry bursts and slow runners.
-    timeout-minutes: 30
+    if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.release-fast-path.outputs.ct_required == 'true' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
     permissions:
       contents: read
-    env:
-      GIT_TERMINAL_PROMPT: '0'
-      # NODE_OPTIONS is deliberately NOT set at job level: a job-wide 8 GB
-      # --max-old-space-size (needed only for the CT Vite build) also let
-      # the long-lived Playwright runner balloon through the test phase
-      # before V8 GC engaged, exhausting the 16 GB VM until the runner was
-      # killed mid-run (monorepo#3352). Heap caps are scoped per step below.
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 10.30.3
-          run_install: false
-          # Per-runner-instance dest (see checks).
-          dest: ~/setup-pnpm-${{ runner.name }}
-      - name: Setup Node.js
-        # cache: 'pnpm' only on the burst path (see checks).
-        uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-          cache: ${{ needs.route.outputs.linux_burst == 'true' && 'pnpm' || '' }}
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Generate i18n messages
-        # The CT bundle imports paraglide messages; the compiled output is
-        # gitignored. (build-config / ipc-channels are main-process-only and
-        # not needed by the CT vite build.)
-        run: pnpm run generate:i18n
-      - name: Resolve CT playwright version
-        id: ct-playwright
-        run: echo "version=$(node scripts/run-ct-tests.mjs --print-playwright-version)" >> "$GITHUB_OUTPUT"
-      - name: Point Playwright at per-slot paths (tinybox)
-        # The 8 tinybox runner slots share one $HOME: concurrent shards
-        # installing into the default ~/.cache/ms-playwright would clobber
-        # each other, so the browsers dir is keyed per $RUNNER_NAME (same
-        # pattern as intentd ci.yml's per-slot CARGO_TARGET_DIR). The CT
-        # harness also binds a fixed Vite endpoint port (ctPort 3100), which
-        # co-tenant shards would collide on — derive a per-slot CT_PORT from
-        # the runner name's slot number (tinybox-1..8 → 3101..3108;
-        # playwright-ct.config.ts honors the override).
-        # Playwright's transform compilation cache also defaults to a
-        # SHARED, PERSISTENT dir (/tmp/playwright-transform-cache-<euid> —
-        # same uid across all slots, never cleaned between runs). The CT
-        # component registry is rebuilt from that cache's .data sidecars on
-        # every cache hit, and an entry whose .data is missing/stale is
-        # silently skipped — so one torn delete (clearOldCacheEntries, run
-        # inside every addToCache, removes an entry's files one rmSync at a
-        # time; interrupt it — e.g. an OOM kill — and .data dies while .js
-        # survives) or a cross-version clobber (the 1.58.x CT runner and the
-        # repo's top-level 1.62.x share the dir and delete each other's
-        # entries) permanently drops a spec's components on that slot:
-        # every later run fails with
-        # "Unregistered component" until someone clears /tmp by hand
-        # (monorepo#4214). Point it at $RUNNER_TEMP, which the runner wipes
-        # between jobs: each run re-transforms specs cold (seconds — the
-        # ~2.5 min Vite CT bundle build is a separate cache and unaffected)
-        # in exchange for no cross-run, cross-slot, or cross-version state.
-        if: needs.route.outputs.linux_burst != 'true'
-        run: |
-          echo "PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright-$RUNNER_NAME" >> "$GITHUB_ENV"
-          slot=$(printf '%s' "$RUNNER_NAME" | grep -oE '[0-9]+$' || true)
-          echo "CT_PORT=$((3100 + ${slot:-0}))" >> "$GITHUB_ENV"
-          echo "PWTEST_CACHE_DIR=$RUNNER_TEMP/playwright-transform-cache" >> "$GITHUB_ENV"
-      - name: Cache Playwright browsers
-        # Burst path only: tinybox's per-slot browsers dir (above) is
-        # persistent, so the GH cache tarball round-trip would be pure
-        # overhead there (same rationale as the burst-gated pnpm cache).
-        if: needs.route.outputs.linux_burst == 'true'
-        uses: actions/cache@v6
-        id: playwright-cache
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-browsers-${{ runner.os }}-${{ steps.ct-playwright.outputs.version }}
-      - name: Harden apt against mirror stalls
-        # Burst path only: the mirror+file indirection is specific to the
-        # GH-hosted image, and the step persistently edits /etc/apt — it
-        # must never mutate the shared tinybox host.
-        if: needs.route.outputs.linux_burst == 'true'
-        # The runner image prefers the azure.archive.ubuntu.com mirror, which
-        # has stalled mid-transfer until the 30-min job budget expired —
-        # twice, before any test ran (monorepo#2832). The image routes apt
-        # through mirror+file indirection (/etc/apt/sources.list.d/*.sources
-        # says mirror+file:/etc/apt/apt-mirrors.txt; the azure hostname lives
-        # ONLY in that mirror list), so drop the azure entry from the list —
-        # the canonical archive.ubuntu.com + security.ubuntu.com fallbacks
-        # remain. The plain-hostname rewrite over the sources files is kept
-        # as a fail-safe in case a future image drops the indirection. Also
-        # bound every fetch: without an explicit Acquire timeout a
-        # dead-but-open connection can hang apt indefinitely — and the second
-        # recorded hang was on archive.ubuntu.com itself, so the timeout (not
-        # the mirror swap) is the load-bearing bound. Belt-and-braces with
-        # the step timeout below.
-        run: |
-          set -euo pipefail
-          if [ -f /etc/apt/apt-mirrors.txt ]; then
-            sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
-            echo "apt-mirrors.txt now:" && cat /etc/apt/apt-mirrors.txt
-          fi
-          for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list; do
-            [ -e "$f" ] || continue
-            sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' "$f"
-          done
-          if grep -Rq 'azure\.archive\.ubuntu\.com' /etc/apt; then
-            echo "::warning::azure.archive.ubuntu.com still referenced under /etc/apt — mirror swap ineffective (Acquire bounds still apply)"
-          fi
-          printf '%s\n' \
-            'Acquire::Retries "3";' \
-            'Acquire::http::Timeout "30";' \
-            'Acquire::https::Timeout "30";' \
-            | sudo tee /etc/apt/apt.conf.d/99-bounded-acquire >/dev/null
-      - name: Install Playwright browsers
-        if: needs.route.outputs.linux_burst == 'true'
-        # The browser download self-skips when already present. OS deps are
-        # NOT installed with --with-deps: it re-runs apt on every run, and on
-        # the gh-linux-8x image every Chromium shared library is already
-        # present — the only NEW packages were ~21 MB of fonts-*/xfonts-*,
-        # fetched from archive.ubuntu.com at ~100 KB/s, which alone blew this
-        # step's budget and ejected PRs from the merge queue (intent#4723).
-        # The CT harness uses the repo-bundled Inter Variable font and waits
-        # on document.fonts.ready, so no suite depends on those system fonts.
-        # Instead: take the package list from the CT-aligned playwright's own
-        # `install-deps --dry-run` (parsed strictly and font-filtered by the
-        # launcher's --print-os-deps helper; see playwright-os-deps-lib.mjs),
-        # and call apt only for packages dpkg reports missing — zero network
-        # on a warm image, and a missing non-font lib still gets installed (or
-        # fails loudly, naming it). Step-level timeout so an apt/download
-        # stall the Acquire bounds somehow miss fails here in minutes — with
-        # logs attributing the failure to this step — instead of eating the
-        # 30-min job budget (monorepo#2832). Normal runs take ~1-2 min.
-        timeout-minutes: 8
-        run: |
-          set -euo pipefail
-          node scripts/run-ct-tests.mjs --install-browsers chromium
-          if ! pkgs="$(node scripts/run-ct-tests.mjs --print-os-deps chromium)" || [ -z "$pkgs" ]; then
-            echo "::error::Could not derive the non-font Chromium OS dependency list from install-deps --dry-run"
-            exit 1
-          fi
-          echo "Non-font Chromium OS deps: $pkgs"
-          missing=""
-          for p in $pkgs; do
-            status="$(dpkg-query -W -f='${Status}' "$p" 2>/dev/null || true)"
-            case "$status" in
-              *"install ok installed"*) ;;
-              *) missing="$missing $p" ;;
-            esac
-          done
-          if [ -z "$missing" ]; then
-            echo "All non-font Chromium OS deps already installed; skipping apt."
-            exit 0
-          fi
-          echo "Missing Chromium OS deps:$missing"
-          for i in 1 2; do
-            if sudo apt-get update && sudo apt-get install -y --no-install-recommends $missing; then
-              exit 0
-            fi
-            [ "$i" -eq 2 ] || sleep 15
-          done
-          echo "::error::Failed to install missing Chromium OS deps:$missing"
-          exit 1
-      - name: Install Playwright browsers (tinybox)
-        # Same install with the co-tenant apt caveat: --with-deps drives
-        # sudo apt-get itself, so intentd ci.yml's DPkg::Lock::Timeout
-        # option can't be injected and a co-tenant apt lock race
-        # (monorepo#1515) would fail the run — retry the whole (idempotent)
-        # install instead. OS deps persist on the host once installed, so a
-        # per-version marker in the per-slot browsers dir skips apt entirely
-        # on warm runs (the browser download self-skips when present).
-        if: needs.route.outputs.linux_burst != 'true'
-        timeout-minutes: 8
-        run: |
-          set -euo pipefail
-          marker="$PLAYWRIGHT_BROWSERS_PATH/.with-deps-${{ steps.ct-playwright.outputs.version }}"
-          if [ -f "$marker" ]; then
-            node scripts/run-ct-tests.mjs --install-browsers chromium
-          else
-            for i in 1 2 3; do
-              if node scripts/run-ct-tests.mjs --install-browsers --with-deps chromium; then
-                touch "$marker"
-                break
-              fi
-              if [ "$i" -eq 3 ]; then exit 1; fi
-              sleep $((i * 15))
-            done
-          fi
-      - name: Build CT bundle
-        id: ct-build
-        # The full CT Vite bundle transforms more than 7,400 modules and
-        # needs an 8 GB heap while Rollup renders chunks — but ONLY here.
-        # Playwright CT has no standalone build command, so this uses
-        # --only-changed=HEAD: dependency population runs the Vite build
-        # (and caches the bundle under the port-keyed playwright/.cache-<CT_PORT>,
-        # shared with the test step below because both read the same CT_PORT
-        # from GITHUB_ENV) during test
-        # loading, before the changed-file filter applies; on a fresh CI
-        # checkout `git diff HEAD` is empty, so zero tests are selected and
-        # --pass-with-no-tests exits green without running any. Caveat:
-        # --only-changed also scans UNTRACKED non-ignored files, so every
-        # generated input (e.g. the paraglide output, which self-ignores)
-        # must stay gitignored — a non-ignored generated file imported by
-        # CT specs would silently make this step run those tests. The test
-        # step below reuses the cached bundle (validated by source mtimes,
-        # which don't change between steps) under a much smaller heap.
-        env:
-          NODE_OPTIONS: '--max-old-space-size=8192'
-        run: pnpm run test:ct --only-changed=HEAD --pass-with-no-tests --reporter=list
-      - name: Component tests
-        # list for readable logs; html feeds the failure artifact below (it
-        # never auto-opens when CI is set); json writes
-        # playwright-report/results.json into that same artifact so
-        # `pnpm ct:failures <run-id>` can list failed/flaky cases per shard
-        # with their spec file and status instead of scraping the log.
-        # The 4 GB heap cap covers the runner + accumulated per-test state
-        # for a quarter-shard; the memory-hungry Vite build already ran
-        # above. The sampler streams `free -m` + top-RSS processes into
-        # this step's live log every 15s — logs stream to GitHub as they
-        # are written, so the evidence survives even a runner-VM OOM kill
-        # that prevents post-steps/artifact uploads from running
-        # (monorepo#3352).
-        env:
-          NODE_OPTIONS: '--max-old-space-size=4096'
-          PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-report/results.json
-        run: |
-          set -euo pipefail
-          (
-            # Shed the inherited errexit/pipefail: a transient free/ps
-            # failure or a SIGPIPE from head must not silently kill the
-            # sampler for the rest of the run.
-            set +e +o pipefail
-            while true; do
-              echo "[mem] $(date -u +%H:%M:%S) $(free -m | awk '/^Mem:/{printf "used=%sMiB free=%sMiB avail=%sMiB", $3, $4, $7}')"
-              ps -eo rss,comm --sort=-rss | head -4 | tail -3 | awk '{printf "[mem]   top-rss: %s %dMiB\n", $2, $1/1024}'
-              sleep 15
-            done
-          ) &
-          SAMPLER_PID=$!
-          trap 'kill "$SAMPLER_PID" 2>/dev/null || true' EXIT
-          # Required lane: everything NOT tagged @quarantine. Retries stay
-          # on (retries: 2 in playwright-ct.config.ts, trace on first retry)
-          # so a real flake still leaves a trace behind, but
-          # --fail-on-flaky-tests turns a pass-on-retry into a red shard
-          # instead of silent 3x runtime. This job is merge-queue-only, so
-          # a red shard ejects the queue entry: a flaky test must be fixed
-          # or explicitly parked under the @quarantine tag below.
-          pnpm run test:ct --shard=${{ matrix.shard }}/4 --grep-invert '@quarantine\b' --fail-on-flaky-tests --reporter=list,html,json
-      - name: Upload playwright report
-        # Also on cancellation, so a timeout overrun still leaves the report
-        # and traces behind for diagnosis (monorepo#2887).
-        if: failure() || cancelled()
-        uses: actions/upload-artifact@v7
-        with:
-          name: playwright-ct-report-${{ matrix.shard }}-of-4
-          path: |
-            playwright-report/
-            test-results/
-          retention-days: 7
-      - name: Quarantined component tests (advisory)
-        # Advisory lane for tests tagged @quarantine (a known-flaky test
-        # that has an owner and a tracking issue — see AGENTS.md → Component
-        # tests). Runs unsharded on shard 1 only (so once per merge-queue
-        # entry, like the rest of this job), after the required lane,
-        # reusing the CT bundle that is already built and cached in this
-        # job — no fifth setup/build leg. continue-on-error keeps the job
-        # (and the CI Gate) green while the failure stays visible in the
-        # step log and the artifact below. Separate output directories so
-        # a quarantine failure cannot overwrite the required lane's report.
-        # !cancelled() replaces the implicit success() guard so the lane
-        # still runs when the required step on this shard is red; gating on
-        # the build step's outcome keeps it from re-running the 8 GB Vite
-        # build under the 4 GB cap when setup itself already failed.
-        # The tag regex is word-anchored so a future '@quarantine-*' tag or
-        # a title that merely mentions the word does not match.
-        if: ${{ !cancelled() && matrix.shard == 1 && steps.ct-build.outcome == 'success' }}
-        id: quarantine
-        continue-on-error: true
-        env:
-          NODE_OPTIONS: '--max-old-space-size=4096'
-          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report-quarantine
-        run: pnpm run test:ct --grep '@quarantine\b' --pass-with-no-tests --reporter=list,html --output=test-results-quarantine
-      - name: Upload quarantine report
-        if: ${{ !cancelled() && matrix.shard == 1 && steps.ct-build.outcome == 'success' && steps.quarantine.outcome == 'failure' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: playwright-ct-report-quarantine
-          path: |
-            playwright-report-quarantine/
-            test-results-quarantine/
-          retention-days: 7
+    uses: ./.github/workflows/browser-tests.yml
+    with:
+      suite: ct
+      cloud: ${{ needs.route.outputs.cloud }}
 
-  # Root Playwright suite (test/**/*.spec.ts via playwright.config.ts, run
-  # by `pnpm run test:playwright`): browser-level specs that each start
-  # their own Vite harness (test/vite-harness-cache.mjs) — no CT bundle, no
-  # shard matrix. Uses the repo's TOP-LEVEL @playwright/test, not the
-  # CT-aligned runner test-ct provisions, so its browsers dir, cache key and
-  # --with-deps marker are keyed on `pnpm exec playwright --version`
-  # instead of run-ct-tests.mjs's version: the two Playwright versions
-  # install different Chromium builds and must never clobber each other in
-  # a shared tinybox $HOME (see test-ct's per-slot paths note).
-  # Event gating mirrors test-ct: every merge_group, plus pull_requests
-  # whose diff touches test/**, playwright.config.ts, or the
-  # playwright/*-spec-pattern.mjs modules it reads
-  # (root_playwright_required from release-fast-path); the gate's
-  # check_root_playwright accepts a pull_request skip only via that output
-  # or fast_path. Before this job the suite had no automated path at all.
   test-playwright:
-    name: Playwright (root)
     needs: [route, release-fast-path]
-    if: ${{ !cancelled() && (github.event_name == 'merge_group' || needs.release-fast-path.outputs.root_playwright_required == 'true') && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
-    runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
-    # The single-worker suite exhausted a 30-minute job budget near completion.
-    # Allow setup and suite headroom within the 60-minute queue budget (intent#5843).
-    timeout-minutes: 45
+    if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.release-fast-path.outputs.root_playwright_required == 'true' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
     permissions:
       contents: read
-    env:
-      GIT_TERMINAL_PROMPT: '0'
-      NODE_OPTIONS: '--max-old-space-size=4096'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 10.30.3
-          run_install: false
-          # Per-runner-instance dest (see checks).
-          dest: ~/setup-pnpm-${{ runner.name }}
-      - name: Setup Node.js
-        # cache: 'pnpm' only on the burst path (see checks).
-        uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-          cache: ${{ needs.route.outputs.linux_burst == 'true' && 'pnpm' || '' }}
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Generate i18n messages
-        # The spec harnesses import renderer modules that pull in paraglide
-        # messages; the compiled output is gitignored.
-        run: pnpm run generate:i18n
-      - name: Generate IPC channels
-        # src/preload/index.ts is generated and untracked; harnesses that
-        # load the preload surface (or its types) need it present.
-        run: pnpm run generate:ipc-channels
-      - name: Resolve root playwright version
-        id: root-playwright
-        # Strict semver extraction so incidental stdout noise cannot leak
-        # into the cache key or the marker file name.
-        run: |
-          set -euo pipefail
-          version="$(pnpm exec playwright --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)"
-          if [ -z "$version" ]; then
-            echo "::error::Could not resolve the top-level @playwright/test version"
-            exit 1
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-      - name: Point Playwright at per-slot paths (tinybox)
-        # Same shared-$HOME rationale as test-ct: per-slot browsers dir and
-        # a $RUNNER_TEMP transform cache so concurrent slots (and the
-        # CT-aligned 1.58.x runner) never clobber this job's state.
-        if: needs.route.outputs.linux_burst != 'true'
-        run: |
-          echo "PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright-$RUNNER_NAME" >> "$GITHUB_ENV"
-          echo "PWTEST_CACHE_DIR=$RUNNER_TEMP/playwright-transform-cache" >> "$GITHUB_ENV"
-      - name: Cache Playwright browsers
-        # Burst path only (see test-ct). Distinct key prefix from test-ct's
-        # so the two versions' tarballs never alias.
-        if: needs.route.outputs.linux_burst == 'true'
-        uses: actions/cache@v6
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-root-browsers-${{ runner.os }}-${{ steps.root-playwright.outputs.version }}
-      - name: Install Playwright browsers
-        # Burst path: the gh-linux-8x image already ships every Chromium
-        # shared library, and --with-deps only adds the fonts-*/xfonts-*
-        # packages whose fetch blew test-ct's budget (intent#4723) — so
-        # install the browser alone; a missing lib fails the first spec
-        # loudly rather than silently. Step-level timeout so a download
-        # stall fails here in minutes instead of exhausting the overall job budget.
-        if: needs.route.outputs.linux_burst == 'true'
-        timeout-minutes: 8
-        run: pnpm exec playwright install chromium
-      - name: Install Playwright browsers (tinybox)
-        # Same --with-deps marker pattern as test-ct, keyed on the top-level
-        # version: OS deps persist on the host once installed, so warm runs
-        # skip apt entirely; the co-tenant apt lock race (monorepo#1515) is
-        # covered by retrying the whole (idempotent) install.
-        if: needs.route.outputs.linux_burst != 'true'
-        timeout-minutes: 8
-        run: |
-          set -euo pipefail
-          marker="$PLAYWRIGHT_BROWSERS_PATH/.with-deps-${{ steps.root-playwright.outputs.version }}"
-          if [ -f "$marker" ]; then
-            pnpm exec playwright install chromium
-          else
-            for i in 1 2 3; do
-              if pnpm exec playwright install --with-deps chromium; then
-                touch "$marker"
-                break
-              fi
-              if [ "$i" -eq 3 ]; then exit 1; fi
-              sleep $((i * 15))
-            done
-          fi
-      - name: Root Playwright tests
-        # --workers=1: playwright.config.ts already pins CI to one worker;
-        # explicit here because every spec boots its own Vite harness and
-        # concurrent cold compiles must stay bounded. list for readable
-        # logs; html feeds the failure artifact below and never auto-opens.
-        env:
-          PLAYWRIGHT_HTML_OPEN: never
-        run: pnpm run test:playwright --project=chromium --workers=1 --reporter=list,html
-      - name: Upload playwright report
-        # Also on cancellation, so a timeout overrun still leaves the report
-        # and traces behind for diagnosis (same as test-ct).
-        if: failure() || cancelled()
-        uses: actions/upload-artifact@v7
-        with:
-          name: playwright-root-report
-          path: |
-            playwright-report/
-            test-results/
-          retention-days: 7
+    uses: ./.github/workflows/browser-tests.yml
+    with:
+      suite: root
+      cloud: ${{ needs.route.outputs.cloud }}
 
-  # Real-Electron browser-lifetime harness
-  # (test/electron-browser-lifetime.spec.ts via playwright.manual.config.ts,
-  # cloudlands-fe#2537): launches the fixture Electron app from
-  # node_modules/electron under Xvfb and asserts retained guest identity
-  # across workspace / panel switches. It is NOT part of the default
-  # `test:playwright` config (testIgnore) because it needs a display and
-  # ~2 min of wall time per run, so this job is its only automated path.
-  # MERGE-QUEUE-ONLY, same guards as test-integration / test-ct.
-  # ADVISORY: the test step is continue-on-error, the job is NOT in the
-  # gate's needs list, and its result never affects the queue. Promotion
-  # criterion: add `test-electron` to the gate's needs + check_queue_only
-  # (and drop continue-on-error) only once the lane has been green on at
-  # least 10 consecutive merge-queue entries — the explicit-close poll was
-  # still intermittent in the single-worker manual runs (7/8, passes in
-  # isolation) that motivated this lane.
   test-electron:
-    name: Electron Browser Lifetime (advisory)
     needs: [route, release-fast-path]
-    if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
-    runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
-    # 8 tests × ≤120 s test timeout is the theoretical ceiling; a healthy
-    # single-worker run takes ~2-3 min plus setup.
-    timeout-minutes: 30
+    if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.release-fast-path.outputs.electron_required == 'true' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
     permissions:
       contents: read
-    env:
-      GIT_TERMINAL_PROMPT: '0'
-      NODE_OPTIONS: '--max-old-space-size=4096'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 10.30.3
-          run_install: false
-          # Per-runner-instance dest (see checks).
-          dest: ~/setup-pnpm-${{ runner.name }}
-      - name: Setup Node.js
-        # cache: 'pnpm' only on the burst path (see checks).
-        uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-          cache: ${{ needs.route.outputs.linux_burst == 'true' && 'pnpm' || '' }}
-      - name: Install dependencies
-        # Also downloads the Electron binary (electron is in
-        # pnpm.onlyBuiltDependencies) that the harness launches.
-        run: pnpm install --frozen-lockfile
-      - name: Generate i18n messages
-        # The fixture renderer imports paraglide messages through the
-        # production browser panel; the compiled output is gitignored.
-        run: pnpm run generate:i18n
-      - name: Ensure Xvfb
-        # Electron needs a display even with show:false windows. xvfb is
-        # preinstalled on the GH-hosted image; on tinybox it persists once
-        # installed, so this is a no-op on warm slots. Retried for the
-        # co-tenant apt lock race (monorepo#1515).
-        timeout-minutes: 5
-        run: |
-          set -euo pipefail
-          if command -v xvfb-run >/dev/null 2>&1; then
-            echo "xvfb-run present; skipping apt."
-            exit 0
-          fi
-          for i in 1 2 3; do
-            if sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb; then
-              exit 0
-            fi
-            if [ "$i" -eq 3 ]; then exit 1; fi
-            sleep $((i * 15))
-          done
-      - name: Electron browser lifetime tests (advisory)
-        id: lifetime
-        # continue-on-error keeps the job green while the failure stays
-        # visible in the step log and the artifact below (see the
-        # promotion criterion in the job comment). --workers=1: each test
-        # launches its own Electron + Vite dev server, and the two-worker
-        # manual runs raced on Electron startup.
-        continue-on-error: true
-        env:
-          PLAYWRIGHT_HTML_OPEN: never
-        run: xvfb-run -a pnpm run test:playwright:manual:browser-lifetime --workers=1 --reporter=list,html
-      - name: Upload electron lifetime report
-        # The evidence JSON (electron-lifetime-evidence.json per test) and
-        # capture PNGs are Playwright attachments under test-results/.
-        if: ${{ !cancelled() && steps.lifetime.outcome == 'failure' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: playwright-electron-lifetime-report
-          path: |
-            playwright-report/
-            test-results/
-          retention-days: 7
+    uses: ./.github/workflows/browser-tests.yml
+    with:
+      suite: electron
+      cloud: ${{ needs.route.outputs.cloud }}
 
   # Monorepo consumer checks (intent-hq/intent#4558, #5479, #5489, #5497):
   # the monorepo's docs-check job compares the pinned submodules against
@@ -1384,82 +1063,38 @@ jobs:
   # packages/cloudlands-fe pin, so the breakage is red on the PR first. Fix
   # order when red: the checks compare against monorepo main and tolerate
   # docs that lead the pin, so land the monorepo docs PR its step summary
-  # names, then re-run this job. check-mcp-bindings is advisory in the
+  # names, then re-run all jobs or push (re-running only failed jobs keeps
+  # the monorepo commit `@main` resolved to on the first attempt). Keep
+  # `@main`: a SHA pin also pins those docs, so a docs-first fix needed a
+  # hand pin bump (intent-hq/intentd#2476). check-mcp-bindings is advisory in the
   # called workflow, and a failed monorepo checkout is fail-soft there
   # (warning, job green), so a monorepo outage never blocks this repo.
   # Runs on pull_request AND merge_group; the caller's own `if:` carries
-  # the same-repo guard (fork-PR hardening note). No secrets are passed and
-  # `contents: read` is all the called workflow needs. Not routed: it runs
-  # on GH-hosted ubuntu-latest inside the called workflow.
+  # the same-repo guard (fork-PR hardening note). Actions-read permission and
+  # the declared routing/cache secrets support the shared runner routing and
+  # queue-only connected runtime proof; PRs run static consumer checks.
   monorepo-consumer-checks:
     if: github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
     permissions:
+      actions: read
       contents: read
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
+      INTENT_SCCACHE_TOKEN: ${{ secrets.INTENT_SCCACHE_TOKEN }}
     uses: intent-hq/intent/.github/workflows/consumer-checks.yml@main
     with:
       component: cloudlands-fe
       head-sha: ${{ github.event.pull_request.head.sha || github.sha }}
 
-  # Single required status check for branch protection: fans in pr-title,
-  # conflict-markers, the heavy jobs (checks / build-web / test /
-  # test-integration / test-ct / test-playwright), and
-  # monorepo-consumer-checks. pr-title /
-  # conflict-markers must succeed outright on every PR;
-  # on merge_group they are job-skipped (PR-metadata checks, already
-  # validated on the PR) and the gate accepts the skip — event-aware, so PR
-  # semantics stay unweakened. The every-event heavy jobs (checks /
-  # build-web / test) must succeed outright too, EXCEPT on
-  # release-shaped diffs (fast_path == 'true', on either event), where
-  # their job-level skip is the expected outcome (see release-fast-path).
-  # The acceptance keys on the fast-path OUTPUT — never on the skipped
-  # status itself — so a skip from any other cause (a route failure, or a
-  # failed release-fast-path job leaving the output empty) still fails the
-  # gate: fail-safe, not fail-open (mirrors intentd's event/shape-aware
-  # gate reasoning). The merge-queue-only job (test-integration) is
-  # event-aware the other way round: on pull_request its skip is BY DESIGN
-  # and accepted unconditionally (any other non-success result still
-  # fails); on merge_group it must succeed outright, except that a skip is
-  # accepted via fast_path == 'true' (release-shaped queue entry) — any
-  # other skip in the queue can only mean a route failure and fails.
-  # test-ct has its own check: on merge_group it must succeed outright like
-  # test-integration, with the same fast_path skip acceptance; on
-  # pull_request its skip is accepted only via an OUTPUT, never the skipped
-  # status itself — either fast_path == 'true' (release-shaped PR) or
-  # ct_required == 'false' (the diff touches no CT-contract path, CT spec,
-  # or geometry golden). ct_required == 'true' means the matrix had to run
-  # and must have succeeded, and an EMPTY ct_required (a failed
-  # release-fast-path job, a fork PR) rejects the skip too — fail-safe,
-  # symmetric with check_heavy. test-playwright (the root Playwright suite)
-  # has the identical check shape keyed on root_playwright_required
-  # instead: on pull_request its skip is accepted only via fast_path ==
-  # 'true' or root_playwright_required == 'false' (the diff touches neither
-  # test/** nor the root Playwright config and its spec-pattern modules);
-  # 'true' or EMPTY rejects the skip.
-  # Fork PRs stay red regardless: checks /
-  # build-web / test skip on them with fast_path empty, which check_heavy
-  # rejects.
-  # test and test-ct are shard matrices: their needs.result aggregates the
-  # legs (success only when every shard passes; a job-level skip reports
-  # 'skipped' for the whole matrix, same as before). test-electron is
-  # deliberately absent from needs: it is advisory until it meets the
-  # promotion criterion in its job comment.
-  # monorepo-consumer-checks must succeed outright on BOTH events: it is
-  # not fast-path-gated (minutes-long, and a release-shaped diff still has
-  # to satisfy the monorepo consumers), so its only skip cause is the
-  # same-repo guard on a fork PR, where the gate must be red anyway. A
-  # monorepo outage is fail-soft inside the called workflow (green with a
-  # warning), so it never surfaces here as a failure.
-  # route is a DIRECT gate input, checked first: a route failure skips every
-  # heavy job, and when fast_path == 'true' those skips are exactly what the
-  # fast-path acceptance above expects — so without this check a broken
-  # probe on a release-shaped run was indistinguishable from a legitimate
-  # fast-path skip and passed the gate (cloudlands-fe#2573 review). The
-  # check is unconditional: route's only skip cause is a fork PR (its `if:`
-  # is merge_group-or-same-repo), where the gate must be red anyway.
+  # CI Gate is the required context on both events. PRs require metadata,
+  # static consumer contracts and routing policy. Queue entries require builds,
+  # tests and every relevant browser/native suite. Only validated release-only
+  # diffs or explicit irrelevant-path outputs can skip queued work. Route and
+  # classification failures never authorize skips. Forks get a red gate.
   gate:
     name: CI Gate
-    # Seconds-long job: pinned to ubuntu-latest (see pr-title).
-    runs-on: ubuntu-latest
+    # Lightweight job on a standard GitHub-hosted Linux runner.
+    runs-on: ubuntu-24.04
     permissions: {}
     # Deliberately UNGUARDED (the one exception to the fork-PR hardening
     # note): a job skipped by its own `if:` reports a skipped conclusion,
@@ -1475,22 +1110,27 @@ jobs:
       [
         route,
         release-fast-path,
+        pr-static,
         pr-title,
         conflict-markers,
         checks,
         build-web,
         test,
         test-integration,
+        test-portable-fixtures,
         test-ct,
         test-playwright,
+        test-electron,
         monorepo-consumer-checks,
       ]
     steps:
       - name: Check results
         env:
           FAST_PATH: ${{ needs.release-fast-path.outputs.fast_path }}
+          PORTABLE_FIXTURES_REQUIRED: ${{ needs.release-fast-path.outputs.portable_fixtures_required }}
           CT_REQUIRED: ${{ needs.release-fast-path.outputs.ct_required }}
           ROOT_PLAYWRIGHT_REQUIRED: ${{ needs.release-fast-path.outputs.root_playwright_required }}
+          ELECTRON_REQUIRED: ${{ needs.release-fast-path.outputs.electron_required }}
         run: |
           # route must have succeeded on every run (see the gate comment): a
           # route failure skips the heavy jobs, and a fast-path skip
@@ -1498,6 +1138,10 @@ jobs:
           # fail here — still red, as required.
           if [ "${{ needs.route.result }}" != "success" ]; then
             echo "route result '${{ needs.route.result }}' not acceptable — the heavy jobs cannot have run (fast_path='$FAST_PATH')"
+            exit 1
+          fi
+          if [ "${{ needs.release-fast-path.result }}" != "success" ]; then
+            echo "release-fast-path must succeed so skips are backed by a classified diff"
             exit 1
           fi
           # pr-title / conflict-markers are PR-metadata checks that only run
@@ -1520,8 +1164,8 @@ jobs:
           fi
           check_pr_meta "pr-title" "${{ needs.pr-title.result }}"
           check_pr_meta "conflict-markers" "${{ needs.conflict-markers.result }}"
-          # Every-event heavy jobs (checks / build-web / test): success, or
-          # skipped ONLY via the release-PR fast path.
+          # Heavy jobs required on this event: success, or skipped ONLY via the
+          # release-PR fast path. Shared by the PR suites and the queue jobs.
           check_heavy() {
             if [ "$2" = "success" ]; then
               return 0
@@ -1530,115 +1174,63 @@ jobs:
               echo "$1 skipped via release-PR fast path — accepted"
               return 0
             fi
-            echo "$1 result '$2' not acceptable (fast_path='$FAST_PATH')"
+            echo "$1 result '$2' not acceptable on ${{ github.event_name }} (fast_path='$FAST_PATH')"
             exit 1
           }
+          # PRs run the Linux policy job, static consumer contracts, type/lint
+          # and unit tests before queueing. Type/lint and unit tests may skip
+          # only via the release-PR fast path; the remaining heavy jobs are
+          # queue-only. Failed/missing results are never intentional skips.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            check_pr_meta "pr-static" "${{ needs.pr-static.result }}"
+            check_pr_meta "monorepo-consumer-checks" "${{ needs.monorepo-consumer-checks.result }}"
+            check_heavy "checks" "${{ needs.checks.result }}"
+            check_heavy "test" "${{ needs.test.result }}"
+            case "${{ needs.build-web.result }}" in success|skipped) ;; *) exit 1 ;; esac
+            case "${{ needs.test-portable-fixtures.result }}" in success|skipped) ;; *) exit 1 ;; esac
+            case "${{ needs.test-ct.result }}" in success|skipped) ;; *) exit 1 ;; esac
+            case "${{ needs.test-playwright.result }}" in success|skipped) ;; *) exit 1 ;; esac
+            case "${{ needs.test-electron.result }}" in success|skipped) ;; *) exit 1 ;; esac
+            case "${{ needs.test-integration.result }}" in success|skipped) ;; *) exit 1 ;; esac
+            exit 0
+          fi
+          case "${{ needs.pr-static.result }}" in success|skipped) ;; *) exit 1 ;; esac
+          # Queued heavy jobs (checks / build-web / test): success, or
+          # skipped ONLY via the release-PR fast path (check_heavy above).
           check_heavy "checks" "${{ needs.checks.result }}"
           check_heavy "build-web" "${{ needs.build-web.result }}"
           check_heavy "test" "${{ needs.test.result }}"
-          # Merge-queue-only job (test-integration): skipped by design on
-          # pull_request (its `if:` is event-gated) — accepted unconditionally
-          # there; on merge_group it must succeed, or be skipped ONLY via the
-          # release-PR fast path (the output, never the skipped status).
-          if [ "${{ github.event_name }}" = "merge_group" ]; then
-            check_queue_only() {
-              if [ "$2" = "success" ]; then
-                return 0
-              fi
-              if [ "$2" = "skipped" ] && [ "$FAST_PATH" = "true" ]; then
-                echo "$1 skipped on merge_group via release-PR fast path — accepted"
-                return 0
-              fi
-              echo "$1 result '$2' not acceptable on merge_group (merge-queue-only job must run and pass; fast_path='$FAST_PATH')"
-              exit 1
-            }
-          else
-            check_queue_only() {
-              if [ "$2" = "skipped" ]; then
-                echo "$1 skipped on ${{ github.event_name }} — merge-queue-only job, accepted"
-                return 0
-              fi
-              if [ "$2" != "success" ]; then
-                echo "$1 result '$2' not acceptable"
-                exit 1
-              fi
-            }
+          # Native fixture validation runs on relevant queue entries.
+          # Missing classification or an unexpected skip must not certify portability.
+          if [ "$PORTABLE_FIXTURES_REQUIRED" != "true" ] && [ "$PORTABLE_FIXTURES_REQUIRED" != "false" ]; then
+            echo "portable fixture relevance is missing or invalid"
+            exit 1
           fi
-          check_queue_only "test-integration" "${{ needs.test-integration.result }}"
-          # test-ct: must succeed on merge_group, or be skipped ONLY via the
-          # release-PR fast path; on pull_request a skip is accepted only via
-          # an output — fast_path == 'true' (release-shaped PR) or
-          # ct_required == 'false' (no CT-contract path, CT spec, or geometry
-          # golden in the diff).
-          # ct_required == 'true' or EMPTY (failed release-fast-path job, fork
-          # PR) rejects the skip: fail-safe, never fail-open.
-          if [ "${{ github.event_name }}" = "merge_group" ]; then
-            check_ct() {
-              if [ "$2" = "success" ]; then
-                return 0
-              fi
-              if [ "$2" = "skipped" ] && [ "$FAST_PATH" = "true" ]; then
-                echo "$1 skipped on merge_group via release-PR fast path — accepted"
-                return 0
-              fi
-              echo "$1 result '$2' not acceptable on merge_group (component tests must run and pass in the queue; fast_path='$FAST_PATH')"
+          portable_result="${{ needs.test-portable-fixtures.result }}"
+          if [ "$portable_result" != "success" ]; then
+            if [ "$portable_result" != "skipped" ] || { [ "$FAST_PATH" != "true" ] && [ "$PORTABLE_FIXTURES_REQUIRED" != "false" ]; }; then
+              echo "portable fixtures result '$portable_result' not acceptable"
               exit 1
-            }
-          else
-            check_ct() {
-              if [ "$2" = "success" ]; then
-                return 0
-              fi
-              if [ "$2" = "skipped" ] && [ "$FAST_PATH" = "true" ]; then
-                echo "$1 skipped via release-PR fast path — accepted"
-                return 0
-              fi
-              if [ "$2" = "skipped" ] && [ "$CT_REQUIRED" = "false" ]; then
-                echo "$1 skipped — the diff touches no CT-contract path, CT spec, or geometry golden (ct_required=false), accepted"
-                return 0
-              fi
-              echo "$1 result '$2' not acceptable (ct_required='$CT_REQUIRED', fast_path='$FAST_PATH')"
-              exit 1
-            }
+            fi
           fi
-          check_ct "test-ct" "${{ needs.test-ct.result }}"
-          # test-playwright: same shape as check_ct, keyed on
-          # root_playwright_required — on merge_group it must succeed, or be
-          # skipped ONLY via the release-PR fast path; on pull_request a skip
-          # is accepted only via fast_path == 'true' or
-          # root_playwright_required == 'false' (neither test/** nor the
-          # root Playwright config and its spec-pattern modules in the diff).
-          # 'true' or EMPTY rejects the skip: fail-safe, never fail-open.
-          if [ "${{ github.event_name }}" = "merge_group" ]; then
-            check_root_playwright() {
-              if [ "$2" = "success" ]; then
-                return 0
-              fi
-              if [ "$2" = "skipped" ] && [ "$FAST_PATH" = "true" ]; then
-                echo "$1 skipped on merge_group via release-PR fast path — accepted"
-                return 0
-              fi
-              echo "$1 result '$2' not acceptable on merge_group (root Playwright suite must run and pass in the queue; fast_path='$FAST_PATH')"
+          check_heavy "test-integration" "${{ needs.test-integration.result }}"
+          # Queue classification must be present even when a job reports success.
+          check_browser() {
+            if [ "$3" != "true" ] && [ "$3" != "false" ]; then
+              echo "$1 relevance output '$3' is missing or invalid"
               exit 1
-            }
-          else
-            check_root_playwright() {
-              if [ "$2" = "success" ]; then
-                return 0
-              fi
-              if [ "$2" = "skipped" ] && [ "$FAST_PATH" = "true" ]; then
-                echo "$1 skipped via release-PR fast path — accepted"
-                return 0
-              fi
-              if [ "$2" = "skipped" ] && [ "$ROOT_PLAYWRIGHT_REQUIRED" = "false" ]; then
-                echo "$1 skipped — the diff touches neither test/** nor the root Playwright config and its spec-pattern modules (root_playwright_required=false), accepted"
-                return 0
-              fi
-              echo "$1 result '$2' not acceptable (root_playwright_required='$ROOT_PLAYWRIGHT_REQUIRED', fast_path='$FAST_PATH')"
-              exit 1
-            }
-          fi
-          check_root_playwright "test-playwright" "${{ needs.test-playwright.result }}"
+            fi
+            if [ "$2" = "success" ]; then return 0; fi
+            if [ "$2" = "skipped" ] && { [ "$FAST_PATH" = "true" ] || [ "$3" = "false" ]; }; then
+              echo "$1 skipped via release fast path or irrelevant diff — accepted"
+              return 0
+            fi
+            echo "$1 result '$2' not acceptable (required='$3', fast_path='$FAST_PATH')"
+            exit 1
+          }
+          check_browser "test-ct" "${{ needs.test-ct.result }}" "$CT_REQUIRED"
+          check_browser "test-playwright" "${{ needs.test-playwright.result }}" "$ROOT_PLAYWRIGHT_REQUIRED"
+          check_browser "test-electron" "${{ needs.test-electron.result }}" "$ELECTRON_REQUIRED"
           # monorepo-consumer-checks: success outright on both events (see
           # the gate comment) — no fast-path or event-based skip acceptance.
           if [ "${{ needs.monorepo-consumer-checks.result }}" != "success" ]; then

@@ -1,5 +1,5 @@
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { AutoUpdateState } from './auto-update-types';
 import type { UpdateProgress, UpdateState } from '$features/auto-update/types';
 import { m } from '$shared/paraglide/messages.js';
@@ -11,6 +11,7 @@ const initialState: AutoUpdateState = {
   progress: null,
   error: null,
   channel: 'stable',
+  shareStatistics: true,
   toastVisible: false,
   downloadedToastDismissedAt: null,
 };
@@ -25,6 +26,16 @@ export const setProgress = createAction<[progress: UpdateProgress]>('autoUpdate/
 
 /** Set update error */
 export const setUpdateError = createAction<[error: string]>('autoUpdate/setUpdateError');
+
+/** User toggled "Share anonymous update statistics" (optimistic; saga persists it). */
+export const setShareUpdateStatistics = createAction<[enabled: boolean]>(
+  'autoUpdate/setShareUpdateStatistics',
+);
+
+/** Persisting the toggle failed: restore the previous value. */
+export const shareUpdateStatisticsReverted = createAction<[enabled: boolean]>(
+  'autoUpdate/shareUpdateStatisticsReverted',
+);
 
 /** Show the update toast */
 export const showToast = createAction('autoUpdate/showToast');
@@ -73,6 +84,15 @@ autoUpdateReducer.with(setUpdateState, (state, { payload: [updateState] }) => ({
   progress: updateState.progress,
   error: updateState.error,
   channel: updateState.channel,
+  shareStatistics: updateState.shareStatistics,
+}));
+autoUpdateReducer.with(setShareUpdateStatistics, (state, { payload: [enabled] }) => ({
+  ...state,
+  shareStatistics: enabled,
+}));
+autoUpdateReducer.with(shareUpdateStatisticsReverted, (state, { payload: [enabled] }) => ({
+  ...state,
+  shareStatistics: enabled,
 }));
 autoUpdateReducer.with(setProgress, (state, { payload: [progress] }) => ({
   ...state,

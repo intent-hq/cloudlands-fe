@@ -6,11 +6,13 @@ import { sanitizeMarkdownHTML } from './html-sanitizer';
 import {
   createWorkspaceFileVersion,
   rewriteIntentFileImageSrcs,
+  rewriteRelativeImageSrcs,
   stampWorkspaceFileImageVersions,
   workspaceFileImageUrlToIntentFileUrl,
   workspaceFileMediaUrlToIntentFileUrl,
 } from './workspace-file-image';
 import { toPromptToken } from '$lib/services/mentions/format';
+import { memberMentionLabel, parseMemberMention } from '$lib/utils/member-mention-token';
 import { NotesPrimitivesSerializer } from './notes-primitives-serializer';
 import type { MarkdownWorkerResponse } from './markdown-worker';
 import { decodeDiffContent } from './diff-patch-utils';
@@ -81,7 +83,6 @@ function getMarkdownWorker(): Worker {
       const { id, html, error } = event.data;
       const callback = workerCallbacks.get(id);
       if (callback) {
-        workerCallbacks.delete(id);
         if (error) {
           callback.reject(new Error(error));
         } else {
@@ -131,39 +132,42 @@ function parseMarkdownInWorker(
   pipeline?: { preserveAnchors: boolean; renderMath: boolean },
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    try {
-      const id = workerRequestId++;
-      let settled = false;
+    const id = workerRequestId++;
+    let settled = false;
 
-      const timeoutHandle = setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        workerCallbacks.delete(id);
-        logger.warn('[markdown-worker] Worker timed out, falling back to main thread', {
-          id,
-          markdownLength: markdown.length,
-          timeoutMs: WORKER_TIMEOUT_MS,
-        });
-        // Fall back to main-thread parsing with full pipeline
-        parseMarkdownMainThread(markdown, pipeline).then(resolve, reject);
-      }, WORKER_TIMEOUT_MS);
+    const retireRequest = () => {
+      if (settled) return false;
+      settled = true;
+      clearTimeout(timeoutHandle);
+      workerCallbacks.delete(id);
+      return true;
+    };
 
-      workerCallbacks.set(id, {
-        resolve: (html) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timeoutHandle);
-          resolve(html);
-        },
-        reject: (err) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timeoutHandle);
-          reject(err);
-        },
+    const timeoutHandle = setTimeout(() => {
+      if (!retireRequest()) return;
+      logger.warn('[markdown-worker] Worker timed out, falling back to main thread', {
+        id,
+        markdownLength: markdown.length,
+        timeoutMs: WORKER_TIMEOUT_MS,
       });
+      // Fall back to main-thread parsing with full pipeline
+      parseMarkdownMainThread(markdown, pipeline).then(resolve, reject);
+    }, WORKER_TIMEOUT_MS);
+
+    workerCallbacks.set(id, {
+      resolve: (html) => {
+        if (!retireRequest()) return;
+        resolve(html);
+      },
+      reject: (err) => {
+        if (!retireRequest()) return;
+        reject(err);
+      },
+    });
+    try {
       getMarkdownWorker().postMessage({ id, markdown, pipeline });
     } catch (err) {
+      if (!retireRequest()) return;
       // Worker failed to create — fall back to main thread with full pipeline
       logger.warn('[markdown-worker] Failed to post to worker, falling back to main thread', err);
       parseMarkdownMainThread(markdown, pipeline).then(resolve, reject);
@@ -597,6 +601,8 @@ export async function processMarkdownToHTML(
     allowEmpty?: boolean;
     /** Whether to skip processing if content already looks like HTML */
     skipIfHTML?: boolean;
+    /** Parse embedded HTML through marked, then apply the canonical sanitizer. */
+    allowSanitizedHtml?: boolean;
     /** Whether to preserve comment anchors */
     preserveAnchors?: boolean;
     /** Whether to process ws-block primitives */
@@ -605,10 +611,22 @@ export async function processMarkdownToHTML(
     taskBlockRenderMode?: 'placeholder' | 'content';
     /** Workspace ID used to resolve short-form intent://local/file/... image links */
     workspaceId?: string;
+    /**
+     * Workspace-relative directory of the Markdown file being rendered (`''`
+     * for the workspace root). When set, relative image paths resolve against
+     * it; when omitted (notes, chat), relative paths are left untouched.
+     */
+    relativeMediaBase?: string;
     /** Render Mermaid and diff fences as visible source instead of TipTap node placeholders */
     renderRichFencesAsCode?: boolean;
     /** Render supported TeX delimiters for read-only Markdown consumers. */
     renderMath?: boolean;
+    /**
+     * The output is displayed, never edited and serialized back to markdown:
+     * explain unrenderable workspace media with placeholders, and let the
+     * Assistant chat show other workspaces' media (intent-hq/intent#7185).
+     */
+    readOnly?: boolean;
     /**
      * Cache-busting token appended as `?v=` to rewritten workspace-file image
      * URLs. Defaults to a fresh token per call so a regenerated file renders
@@ -623,12 +641,15 @@ export async function processMarkdownToHTML(
   const {
     allowEmpty = true,
     skipIfHTML = true,
+    allowSanitizedHtml = false,
     preserveAnchors = true,
     processPrimitives = true,
     taskBlockRenderMode = 'placeholder',
     workspaceId,
+    relativeMediaBase,
     renderRichFencesAsCode = false,
     renderMath = false,
+    readOnly = false,
     workspaceFileVersion,
   } = options;
 
@@ -661,7 +682,7 @@ export async function processMarkdownToHTML(
   // Check cache first — use a fast hash + length instead of the full content string as key.
   // Including content.length virtually eliminates hash collision risk (different-length
   // strings that produce the same 53-bit hash would be needed).
-  const cacheKey = `${fastHash(content)}:${content.length}|${allowEmpty}|${skipIfHTML}|${preserveAnchors}|${processPrimitives}|${taskBlockRenderMode}|${workspaceId ?? ''}|${renderRichFencesAsCode}|${renderMath}`;
+  const cacheKey = `${fastHash(content)}:${content.length}|${allowEmpty}|${skipIfHTML}|${preserveAnchors}|${processPrimitives}|${taskBlockRenderMode}|${workspaceId ?? ''}|${relativeMediaBase === undefined ? '-' : `base:${relativeMediaBase}`}|${renderRichFencesAsCode}|${renderMath}|${allowSanitizedHtml}|${readOnly}`;
   const cached = getCachedMarkdown(cacheKey);
   if (cached !== null) {
     return stampVersions(cached);
@@ -691,7 +712,9 @@ export async function processMarkdownToHTML(
 
     // Escape HTML-like tags FIRST, before any processing that generates HTML
     // This prevents user content like <COMPANY>Adobe</COMPANY> from being interpreted as HTML
-    const contentWithEscapedTags = escapeHtmlTags(contentWithTaskBlocksRendered);
+    const contentWithEscapedTags = allowSanitizedHtml
+      ? contentWithTaskBlocksRendered
+      : escapeHtmlTags(contentWithTaskBlocksRendered);
     const t1 = isLargeContent ? performance.now() : 0;
 
     // Process ws-block primitives (needs NotesPrimitivesSerializer, must run on main thread)
@@ -747,7 +770,10 @@ export async function processMarkdownToHTML(
 
     // Rewrite intent://.../file/... image sources to workspace-file:// URLs so
     // inline markdown images referencing workspace files render in the transcript
-    htmlOut = rewriteIntentFileImageSrcs(htmlOut, workspaceId);
+    if (relativeMediaBase !== undefined) {
+      htmlOut = rewriteRelativeImageSrcs(htmlOut, relativeMediaBase);
+    }
+    htmlOut = rewriteIntentFileImageSrcs(htmlOut, workspaceId, { readOnly });
     const t5 = isLargeContent ? performance.now() : 0;
 
     // Debug: Check if primitive divs survived marked parsing
@@ -759,6 +785,7 @@ export async function processMarkdownToHTML(
     // Sanitize the HTML to prevent XSS
     htmlOut = sanitizeMarkdownHTML(htmlOut, workspaceId, {
       preserveKatexLayoutStyles: renderMath,
+      readOnly,
     });
     const t6 = isLargeContent ? performance.now() : 0;
 
@@ -839,12 +866,15 @@ function convertHTMLCommentsToSpanAnchors(html: string): string {
  */
 function injectMentionSpans(html: string): string {
   if (typeof document === 'undefined') return html;
-  const container = document.createElement('div');
+  // Detached active-document images can load immediately. Keep preparation
+  // inert until the consumer has checked media provenance and mounts the HTML.
+  const template = document.createElement('template');
   // The HTML here is generated by our own pipeline (marked.parse + regex transforms).
   // The caller (processMarkdownToHTML) sanitizes with DOMPurify *after* this function
   // returns, so we skip the redundant sanitization here to avoid a double DOMPurify pass
   // that was costing ~200-400ms on large notes.
-  container.innerHTML = html;
+  template.innerHTML = html;
+  const container = template.content;
 
   const BLOCK_TAGS = new Set(['CODE', 'PRE', 'SCRIPT', 'STYLE']);
 
@@ -863,7 +893,7 @@ function injectMentionSpans(html: string): string {
     if (attrs.uri) span.setAttribute('data-uri', attrs.uri);
     span.setAttribute('data-meta', JSON.stringify(attrs.meta || {}));
     span.className = 'mention-chip';
-    span.textContent = attrs.label;
+    span.textContent = attrs.type === 'member' ? memberMentionLabel(attrs.label) : attrs.label;
     return span;
   };
 
@@ -930,6 +960,8 @@ function injectMentionSpans(html: string): string {
         groups?: string[];
         kind: string;
       }> = [];
+      const member = find(/@member\[[^\]\s]*\]/g);
+      if (member) cands.push({ ...member, kind: 'member' });
       const n = find(noteRe);
       if (n) cands.push({ ...n, kind: 'note' });
       const r = find(rulesRe);
@@ -965,7 +997,10 @@ function injectMentionSpans(html: string): string {
       pushText(m.start);
 
       // Create mention span
-      if (m.type === 'note') {
+      if (m.type === 'member') {
+        const member = parseMemberMention(m.value);
+        frag.appendChild(member ? createMentionSpan(member) : document.createTextNode(m.value));
+      } else if (m.type === 'note') {
         const id = m.groups?.[0] || '';
         frag.appendChild(createMentionSpan({ type: 'note', id, label: id }));
       } else if (m.type === 'rule') {
@@ -1224,7 +1259,7 @@ function injectMentionSpans(html: string): string {
     walk(child, false);
   }
 
-  return container.innerHTML;
+  return template.innerHTML;
 }
 
 /**

@@ -1,4 +1,4 @@
-import { Store } from '@augmentcode/themis/svelte-store';
+import { Store } from '@themislib/themis/svelte-store';
 import { writable } from 'svelte/store';
 
 const initialShell = {

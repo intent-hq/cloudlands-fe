@@ -8,6 +8,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { parseProtocolVersion } from '$shared/protocol-version';
 import type { StoreState } from '../../types';
 import type { BackendTransportInfo } from './daemon-health-types';
 import {
@@ -21,6 +22,10 @@ import {
   selectSidecarRunLogError,
   selectDaemonVersionComparison,
   selectDaemonStatusCheckFailure,
+  selectDaemonSupportsIdentitySeam,
+  selectDaemonSupportsSourceControlAuth,
+  supportsIdentitySeamProtocol,
+  supportsSourceControlAuthProtocol,
 } from './daemon-health-selectors';
 import { initialState } from './daemon-health-slice';
 
@@ -193,6 +198,100 @@ describe('selectDaemonVersionComparison', () => {
       comparison: 'unknown',
       daemonVersion: 'dev-build',
       pinnedVersion: '0.9.3',
+    });
+  });
+});
+
+describe('supportsSourceControlAuthProtocol / selectDaemonSupportsSourceControlAuth', () => {
+  function protocolState(protocolVersion?: string): StoreState {
+    return {
+      daemonHealth: {
+        ...initialState,
+        stats: {
+          clients: 0,
+          agents: 0,
+          listenMode: 'uds',
+          os: 'linux',
+          arch: 'x64',
+          ...(protocolVersion === undefined
+            ? {}
+            : { protocolVersion: parseProtocolVersion(protocolVersion) ?? undefined }),
+        },
+      },
+    } as unknown as StoreState;
+  }
+
+  it('accepts the first version carrying sourceControl.* auth and every later one', () => {
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('10.5'))).toBe(true);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('10.5.2'))).toBe(true);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('10.12'))).toBe(true);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('11.0'))).toBe(true);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion(' 10.5 '))).toBe(true);
+  });
+
+  it('rejects every earlier version, comparing minor numerically rather than lexically', () => {
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('10.4'))).toBe(false);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('10.4.9'))).toBe(false);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('9.14'))).toBe(false);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('10'))).toBe(false);
+  });
+
+  it('treats a missing or unparsable version as unsupported', () => {
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion(undefined))).toBe(false);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion(null))).toBe(false);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion(''))).toBe(false);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('dev-build'))).toBe(false);
+  });
+
+  it('rejects a malformed version even when it starts with a supporting numeric prefix', () => {
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('10.5garbage'))).toBe(false);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('10.5.2broken'))).toBe(false);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('11x'))).toBe(false);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('10.'))).toBe(false);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('10.5.'))).toBe(false);
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('v10.5'))).toBe(false); // protocol-version-ok: malformed-shape fixture under test
+    expect(supportsSourceControlAuthProtocol(parseProtocolVersion('10.5-rc1'))).toBe(false);
+  });
+
+  it('reads stats.protocolVersion from the last system.status poll', () => {
+    expect(selectDaemonSupportsSourceControlAuth.select(protocolState('10.5'))).toBe(true);
+    expect(selectDaemonSupportsSourceControlAuth.select(protocolState('10.4'))).toBe(false);
+  });
+
+  it('is unsupported before the first poll or when the poll omits the version', () => {
+    const empty = { daemonHealth: { ...initialState } } as unknown as StoreState;
+    expect(selectDaemonSupportsSourceControlAuth.select(empty)).toBe(false);
+    expect(selectDaemonSupportsSourceControlAuth.select(protocolState(undefined))).toBe(false);
+  });
+
+  describe('supportsIdentitySeamProtocol / selectDaemonSupportsIdentitySeam', () => {
+    it('accepts the first version carrying the identity seam and every later one', () => {
+      expect(supportsIdentitySeamProtocol(parseProtocolVersion('10.8'))).toBe(true);
+      expect(supportsIdentitySeamProtocol(parseProtocolVersion('10.8.1'))).toBe(true);
+      expect(supportsIdentitySeamProtocol(parseProtocolVersion('10.12'))).toBe(true);
+      expect(supportsIdentitySeamProtocol(parseProtocolVersion('11.0'))).toBe(true);
+    });
+
+    it('rejects the image-sidecar and sourceControl.* auth versions and everything earlier', () => {
+      expect(supportsIdentitySeamProtocol(parseProtocolVersion('10.7'))).toBe(false);
+      expect(supportsIdentitySeamProtocol(parseProtocolVersion('10.7.9'))).toBe(false);
+      expect(supportsIdentitySeamProtocol(parseProtocolVersion('10.5'))).toBe(false);
+      expect(supportsIdentitySeamProtocol(parseProtocolVersion('10.5.9'))).toBe(false);
+      expect(supportsIdentitySeamProtocol(parseProtocolVersion('9.14'))).toBe(false);
+      expect(supportsIdentitySeamProtocol(parseProtocolVersion('10'))).toBe(false);
+      expect(supportsIdentitySeamProtocol(parseProtocolVersion(undefined))).toBe(false);
+      expect(supportsIdentitySeamProtocol(parseProtocolVersion(null))).toBe(false);
+      expect(supportsIdentitySeamProtocol(parseProtocolVersion('dev-build'))).toBe(false);
+      expect(supportsIdentitySeamProtocol(parseProtocolVersion('10.8garbage'))).toBe(false);
+    });
+
+    it('reads stats.protocolVersion and is unsupported before the first poll', () => {
+      expect(selectDaemonSupportsIdentitySeam.select(protocolState('10.8'))).toBe(true);
+      expect(selectDaemonSupportsIdentitySeam.select(protocolState('10.7'))).toBe(false);
+      expect(selectDaemonSupportsIdentitySeam.select(protocolState('10.5'))).toBe(false);
+      const empty = { daemonHealth: { ...initialState } } as unknown as StoreState;
+      expect(selectDaemonSupportsIdentitySeam.select(empty)).toBe(false);
+      expect(selectDaemonSupportsIdentitySeam.select(protocolState(undefined))).toBe(false);
     });
   });
 });

@@ -5,6 +5,12 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { warmImport } from '../../../../test/warm-import';
 import type { InterruptedAgent } from '$lib/client/app-client';
+import {
+  installInterruptedAgentsService,
+  notifyInterruptedAgentUpdated,
+  notifyInterruptedAgentsModalClosed,
+  resolveInterruptedAgents,
+} from '$features/agent/interrupted-agents-service';
 
 vi.mock('svelte-fa', async () => ({
   default: (await import('../../workspace/sidebar/__tests__/mocks/Fa.svelte')).default,
@@ -244,6 +250,43 @@ describe('InterruptedAgentsModal', () => {
     );
     await fireEvent.click(screen.getByRole('button', { name: /Resume selected/ }));
     expect(onResumeSelected).toHaveBeenLastCalledWith(['a2'], []);
+  });
+
+  it('keeps a newly failed agent discoverable through the automatic resolution close callback', async () => {
+    const previousApi = window.electronAPI;
+    window.electronAPI = {
+      invoke: vi.fn().mockResolvedValue({ status: 'connected' }),
+      on: vi.fn().mockReturnValue('test-listener'),
+      offById: vi.fn(),
+    } as unknown as Window['electronAPI'];
+    const client = {
+      agents: {
+        listInterrupted: vi.fn().mockResolvedValue([AGENTS[0]]),
+        resolveInterrupted: vi
+          .fn()
+          .mockResolvedValue({ resumed: ['a1'], abandoned: [], failed: [] }),
+      },
+    };
+    const show = vi.fn();
+    const dispose = installInterruptedAgentsService(client, show);
+    try {
+      await waitFor(() => expect(show).toHaveBeenCalledWith([AGENTS[0]]));
+      show.mockClear();
+      const Modal = (await import('../InterruptedAgentsModal.svelte')).default;
+      render(Modal, {
+        open: true,
+        agents: [AGENTS[0]],
+        onResumeSelected: (resume, abandon) => resolveInterruptedAgents(client, resume, abandon),
+        onClose: notifyInterruptedAgentsModalClosed,
+      });
+      client.agents.listInterrupted.mockResolvedValue([AGENTS[1]]);
+      notifyInterruptedAgentUpdated('a2', true);
+      await fireEvent.click(screen.getByRole('button', { name: /Resume selected/ }));
+      await waitFor(() => expect(show).toHaveBeenCalledWith([AGENTS[1]]));
+    } finally {
+      dispose();
+      window.electronAPI = previousApi;
+    }
   });
 
   it('blocks duplicate submission and dismissal until resolution finishes', async () => {

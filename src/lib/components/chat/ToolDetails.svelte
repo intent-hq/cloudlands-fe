@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { openAssistantAgentFromEvent } from '$lib/utils/assistant-agent-link';
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
+  import { commentAuthorLabel } from '$features/comments/comment-attribution';
   /* eslint-disable max-lines */
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { writable } from 'svelte/store';
@@ -14,6 +17,7 @@
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 
   import { isGenericAgentName } from '$lib/utils/agent-name-generator';
+  import { findSourcePanelId } from '$lib/utils/workspace-navigation';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import {
     focusBrowserTabRequested,
@@ -23,6 +27,7 @@
     openWorkspaceFile,
     openWorkspaceNote,
   } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { canOpenAgentPath } from './agent-path-actions';
   import { store as appStore } from '$store/renderer/store';
   import { formatDate, formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
@@ -45,6 +50,7 @@
     /** The tool is classified as a terminal command (gates the terminal-style pending view). */
     isTerminal?: boolean;
     workspaceId?: string;
+    agentId?: string;
     suppressOkOnlyResult?: boolean;
   }
 
@@ -56,6 +62,7 @@
     pending = false,
     isTerminal = false,
     workspaceId,
+    agentId,
     suppressOkOnlyResult = false,
   }: Props = $props();
 
@@ -351,7 +358,12 @@
                     const openInAdjacentPanel = e.metaKey || e.ctrlKey;
                     const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
                     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-                    if (!workspaceId || !parsedResult?.filePath) return;
+                    if (
+                      !workspaceId ||
+                      !parsedResult?.filePath ||
+                      !canOpenAgentPath(appStore.state, agentId)
+                    )
+                      return;
                     appStore.dispatch(
                       openWorkspaceFile(workspaceId, parsedResult.filePath, {
                         line,
@@ -394,7 +406,12 @@
                   const openInAdjacentPanel = e.metaKey || e.ctrlKey;
                   const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
                   const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-                  if (!workspaceId || !parsedResult?.filePath) return;
+                  if (
+                    !workspaceId ||
+                    !parsedResult?.filePath ||
+                    !canOpenAgentPath(appStore.state, agentId)
+                  )
+                    return;
                   appStore.dispatch(
                     openWorkspaceFile(workspaceId, parsedResult.filePath, {
                       openInAdjacentPanel,
@@ -532,7 +549,12 @@
                     const openInAdjacentPanel = e.metaKey || e.ctrlKey;
                     const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
                     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-                    if (!workspaceId || !parsedResult?.filePath) return;
+                    if (
+                      !workspaceId ||
+                      !parsedResult?.filePath ||
+                      !canOpenAgentPath(appStore.state, agentId)
+                    )
+                      return;
                     appStore.dispatch(
                       openWorkspaceFile(workspaceId, parsedResult.filePath, {
                         line,
@@ -623,9 +645,11 @@
                   class="flex items-center gap-2 p-2 rounded bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer text-left w-full"
                   onclick={(e) => {
                     if (!workspaceId) return;
+                    if (openAssistantAgentFromEvent(e, workspaceId, agent.agentId)) return;
                     appStore.dispatch(
                       openAgentTabRequested(workspaceId, {
                         agentId: agent.agentId,
+                        sourcePanelId: findSourcePanelId(e.currentTarget),
                         openInAdjacentPanel: e.metaKey || e.ctrlKey,
                       }),
                     );
@@ -745,9 +769,11 @@
                     class="inline-flex items-center gap-1 text-foreground font-medium hover:text-foreground cursor-pointer bg-transparent border-0 p-0"
                     onclick={(e) => {
                       if (!workspaceId) return;
+                      if (openAssistantAgentFromEvent(e, workspaceId, agentId)) return;
                       appStore.dispatch(
                         openAgentTabRequested(workspaceId, {
                           agentId,
+                          sourcePanelId: findSourcePanelId(e.currentTarget),
                           openInAdjacentPanel: e.metaKey || e.ctrlKey,
                         }),
                       );
@@ -808,6 +834,21 @@
                         {m.chat_toolDetails_noAnchor_label()}
                       {/if}
                     </span>
+                    {#if thread.latestAuthor || thread.latestAuthorIdentity}
+                      {@const authorLabel = commentAuthorLabel({
+                        author: thread.latestAuthor,
+                        authorType: thread.latestAuthorType,
+                        authorIdentity: thread.latestAuthorIdentity,
+                      })}
+                      <span
+                        data-comment-author
+                        aria-label={authorLabel}
+                        use:truncatedTitle={authorLabel}
+                        class="text-xs text-subtle truncate"
+                      >
+                        {authorLabel}
+                      </span>
+                    {/if}
                     <span class="text-xs px-1.5 py-0.5 rounded bg-muted text-subtle shrink-0">
                       {thread.status}
                     </span>

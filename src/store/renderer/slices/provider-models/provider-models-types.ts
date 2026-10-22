@@ -13,7 +13,28 @@
  * map is dropped on backend reconnect, when a restarted daemon may serve
  * different adapters/catalogs.
  */
+import type { LearnedModelNames } from './model-name-cache';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
+import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
+
+export type ProviderModelsRequestMode = 'background' | 'refresh' | 'retry' | 'silentRetry';
+
+export interface ProviderModelsRequest {
+  providerId: string;
+  workspaceId?: string;
+  requestId: string;
+  epoch: number;
+  mode: ProviderModelsRequestMode;
+  status: 'loading' | 'success' | 'error' | 'cancelled';
+  /** Last actionable load failure; silent retries retain it until a catalog is cached. */
+  error?: string;
+}
+
+export interface ProviderModelsObserver {
+  id: string;
+  providerIds: string[];
+  workspaceId?: string;
+}
 
 /** Successful `getModelsForProviderForLoadingState`-shaped fetch result. */
 export interface ProviderModelsFetchResult {
@@ -32,8 +53,14 @@ export interface ProviderModelsCacheEntry extends ProviderModelsFetchResult {
 }
 
 export interface ProviderModelsState {
+  /** Persistent display-only labels, retained across catalog invalidation. */
+  learnedNames: LearnedModelNames;
   /** Cached entries keyed by normalized provider id. */
   byProviderId: Record<string, ProviderModelsCacheEntry>;
+  byWorkspaceId?: Record<string, Record<string, ProviderModelsCacheEntry>>;
+  requests: Collection<ProviderModelsRequest, 'providerId'>;
+  requestsByWorkspaceId?: Record<string, Collection<ProviderModelsRequest, 'providerId'>>;
+  observers: Collection<ProviderModelsObserver, 'id'>;
   /**
    * Monotonic clear counter, bumped by `providerModelsCacheCleared`. Writers
    * capture it (via `selectProviderModelsClearEpoch`) when their fetch STARTS

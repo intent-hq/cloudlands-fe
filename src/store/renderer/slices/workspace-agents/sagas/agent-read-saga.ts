@@ -20,7 +20,7 @@ const logger = createLogger('AgentReadSaga');
 function* loadAgentSessionSaga(wsId: string, agentId: string) {
   if (yield* call(isAgentDeletionPending, agentId)) return;
   try {
-    const session: AgentSession | null = yield* call(readAgentSession, agentId);
+    const session: AgentSession | null = yield* call(readAgentSession, agentId, wsId);
     if (!session || String(session.workspaceId) !== wsId) return;
     // Skip rows carrying the daemon's delete-grace-window deadline (PROTOCOL
     // §5.5 `pendingDeleteAt`) — the deletion is pending daemon-side.

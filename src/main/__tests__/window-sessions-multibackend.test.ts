@@ -23,17 +23,22 @@ const mockGetDisplayMatching = vi.fn();
 
 /** A live BrowserWindow test double: constructable + destroyable + URL-bearing. */
 const { FakeBrowserWindow, mockRegisterWindowTitleListener } = vi.hoisted(() => {
+  let nextWebContentsId = 1;
   class FakeBrowserWindow {
     static instances: FakeBrowserWindow[] = [];
     static focused: FakeBrowserWindow | null = null;
     backendId = 'local';
     destroyed = false;
+    minimized = false;
     fullScreen = false;
     bounds: { x: number; y: number; width: number; height: number };
     handlers = new Map<string, (...args: unknown[]) => void>();
     private url = 'about:blank';
     webContents = {
+      id: nextWebContentsId++,
       on: vi.fn(),
+      send: vi.fn(),
+      isDestroyed: () => this.destroyed,
       getURL: () => this.url,
       session: { clearCache: () => Promise.resolve() },
     };
@@ -83,7 +88,7 @@ const { FakeBrowserWindow, mockRegisterWindowTitleListener } = vi.hoisted(() => 
       return this;
     }
     isMinimized() {
-      return false;
+      return this.minimized;
     }
     isFullScreen() {
       return this.fullScreen;
@@ -91,7 +96,9 @@ const { FakeBrowserWindow, mockRegisterWindowTitleListener } = vi.hoisted(() => 
     setFullScreen = vi.fn((flag: boolean) => {
       this.fullScreen = flag;
     });
-    restore = vi.fn();
+    restore = vi.fn(() => {
+      this.minimized = false;
+    });
     show = vi.fn();
     focus = vi.fn(() => {
       FakeBrowserWindow.focused = this;
@@ -132,7 +139,8 @@ vi.mock('../utils/resolve-app-title', () => ({
 }));
 
 import type { DeepLinkHandler } from '../../features/deeplink/deep-link-handler';
-import { _resetHudWindowRefForTests, isTrackedHudWindow } from '../hud-window';
+import { consumePendingDeepLinks } from '../../features/deeplink/main/pending-deep-links';
+import { _resetHudWindowRefForTests, isTrackedHudWindow, registerHudWindow } from '../hud-window';
 import {
   _resetRendererWindowGateForTests,
   markRendererWindowsAllowed,
@@ -307,6 +315,23 @@ describe('multi-backend window sessions', () => {
       expect(readMap()).toEqual({
         local: [{ route: '/work/local', bounds: local.bounds }],
       });
+    });
+
+    it('excludes diagnostic windows from persistence and ignores stale saved console routes', async () => {
+      const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      seedLiveWindow('app://workspaces/dev-console', undefined, 'local');
+      await saveAllWindowSessions();
+      expect(readMap().local).toEqual([{ route: '/work/local', bounds: local.bounds }]);
+      fs.writeFileSync(
+        getWindowSessionsPath(),
+        JSON.stringify({
+          local: [
+            { route: '/dev-console', bounds: local.bounds },
+            { route: '/work/local', bounds: local.bounds },
+          ],
+        }),
+      );
+      expect(loadWindowSessions('local')).toEqual([{ route: '/work/local', bounds: local.bounds }]);
     });
 
     it('an aggregate save in flight during the sync prune cannot resurrect the bucket', async () => {
@@ -813,6 +838,123 @@ describe('multi-backend window sessions', () => {
       expect(remote.focus).toHaveBeenCalledOnce();
     });
 
+    it.each([
+      ['loaded production HUD', 'app://workspaces/hud', false],
+      ['loaded development HUD', 'http://127.0.0.1:5190/hud', false],
+      ['tracked HUD before navigation', 'about:blank', true],
+    ])(
+      'skips a %s and restores the first app window for the selected backend',
+      async (_, url, tracked) => {
+        const local = seedLiveWindow('app://workspaces/work/local');
+        const hud = seedLiveWindow(url, undefined, 'remote-1');
+        if (tracked) registerHudWindow(hud as never);
+        const closed = seedLiveWindow('app://workspaces/work/closed', undefined, 'remote-1');
+        closed.destroy();
+        const first = seedLiveWindow('app://workspaces/work/first', undefined, 'remote-1');
+        const second = seedLiveWindow('app://workspaces/work/second', undefined, 'remote-1');
+        first.minimized = true;
+        vi.mocked(setMainWindow).mockClear();
+
+        await openOrFocusWindowsForBackend('remote-1');
+
+        expect(FakeBrowserWindow.getAllWindows()).toEqual([local, hud, first, second]);
+        expect(first.restore).toHaveBeenCalledOnce();
+        expect(first.isMinimized()).toBe(false);
+        expect(first.show).toHaveBeenCalledOnce();
+        expect(first.focus).toHaveBeenCalledOnce();
+        expect(FakeBrowserWindow.getFocusedWindow()).toBe(first);
+        expect(setMainWindow).toHaveBeenCalledExactlyOnceWith(first);
+        for (const skipped of [local, hud, closed, second]) {
+          expect(skipped.restore).not.toHaveBeenCalled();
+          expect(skipped.show).not.toHaveBeenCalled();
+          expect(skipped.focus).not.toHaveBeenCalled();
+        }
+      },
+    );
+
+    it('opens and focuses a fresh app window when only a live HUD exists', async () => {
+      const hud = seedLiveWindow('app://workspaces/hud', undefined, 'remote-1');
+      vi.mocked(setMainWindow).mockClear();
+
+      await openOrFocusWindowsForBackend('remote-1');
+
+      const live = FakeBrowserWindow.getAllWindows();
+      expect(live).toHaveLength(2);
+      expect(live[1].backendId).toBe('remote-1');
+      expect(new URL(live[1].webContents.getURL()).pathname).toBe('/workspace/new');
+      expect(FakeBrowserWindow.getFocusedWindow()).toBe(live[1]);
+      expect(setMainWindow).toHaveBeenLastCalledWith(live[1]);
+      expect(setMainWindow).not.toHaveBeenCalledWith(hud);
+      expect(hud.focus).not.toHaveBeenCalled();
+    });
+
+    it.each([false, true])(
+      'restores saved app sessions without selecting the HUD (live HUD: %s)',
+      async (hasLiveHud) => {
+        const local = seedLiveWindow('app://workspaces/work/local');
+        const hud = hasLiveHud ? seedLiveWindow('about:blank', undefined, 'remote-1') : null;
+        if (hud) registerHudWindow(hud as never);
+        const bounds = { x: 100, y: 100, width: 1024, height: 768 };
+        fs.writeFileSync(
+          getWindowSessionsPath(),
+          JSON.stringify({
+            'remote-1': [
+              { route: '/hud', bounds },
+              { route: '/work/first', bounds },
+              { route: '/work/second', bounds },
+            ],
+          }),
+        );
+        vi.mocked(setMainWindow).mockClear();
+
+        await openOrFocusWindowsForBackend('remote-1');
+
+        const live = FakeBrowserWindow.getAllWindows();
+        expect(live).toHaveLength(4);
+        const remote = live.filter((window) => window.backendId === 'remote-1');
+        expect(remote).toHaveLength(3);
+        const [restoredHud, first, second] = remote;
+        if (hud) expect(restoredHud).toBe(hud);
+        expect(new URL(first.webContents.getURL()).pathname).toBe('/work/first');
+        expect(new URL(second.webContents.getURL()).pathname).toBe('/work/second');
+        expect(FakeBrowserWindow.getFocusedWindow()).toBe(first);
+        expect(setMainWindow).toHaveBeenLastCalledWith(first);
+        expect(setMainWindow).not.toHaveBeenCalledWith(restoredHud);
+        expect(restoredHud.focus).not.toHaveBeenCalled();
+        expect(local.focus).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([false, true])(
+      'opens a regular app for HUD-only saved sessions (live HUD: %s)',
+      async (hasLiveHud) => {
+        const hud = hasLiveHud
+          ? seedLiveWindow('app://workspaces/hud', undefined, 'remote-1')
+          : null;
+        const bounds = { x: 100, y: 100, width: 1024, height: 768 };
+        fs.writeFileSync(
+          getWindowSessionsPath(),
+          JSON.stringify({
+            'remote-1': [{ route: '/hud', bounds }],
+          }),
+        );
+        vi.mocked(setMainWindow).mockClear();
+
+        await openOrFocusWindowsForBackend('remote-1');
+
+        const live = FakeBrowserWindow.getAllWindows();
+        expect(live).toHaveLength(2);
+        const [restoredHud, regular] = live;
+        if (hud) expect(restoredHud).toBe(hud);
+        expect(regular.backendId).toBe('remote-1');
+        expect(new URL(regular.webContents.getURL()).pathname).toBe('/workspace/new');
+        expect(FakeBrowserWindow.getFocusedWindow()).toBe(regular);
+        expect(setMainWindow).toHaveBeenLastCalledWith(regular);
+        expect(setMainWindow).not.toHaveBeenCalledWith(restoredHud);
+        expect(restoredHud.focus).not.toHaveBeenCalled();
+      },
+    );
+
     it('resolves the focused window backend for menu and quit consumers', () => {
       const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
       const remote = seedLiveWindow('app://workspaces/work/remote', undefined, 'remote-1');
@@ -1086,6 +1228,22 @@ describe('multi-backend window sessions', () => {
       expect(loadedPaths()).toEqual(['/workspace/new']);
     });
 
+    it('keeps empty invited people in separate backend buckets across a full session reload', async () => {
+      // Backend ids are the distinct persistent person rows, even on the same pinned host.
+      const people = ['invited-person-B', 'invited-person-C'];
+      for (const id of people) await restoreWindowsForBackend(id);
+      expect(loadedPaths()).toEqual(['/workspace/new', '/workspace/new']);
+      expect(FakeBrowserWindow.getAllWindows().map((w) => w.backendId)).toEqual(people);
+      await saveAllWindowSessions();
+      FakeBrowserWindow.instances = [];
+      _resetWindowSessionsCacheForTests();
+      const connect = vi.fn().mockResolvedValue({});
+      await restoreAllBackendWindowSessions('local', connect);
+      expect(loadedPaths()).toEqual(['/workspace/new', '/workspace/new']);
+      expect(FakeBrowserWindow.getAllWindows().map((w) => w.backendId)).toEqual(people);
+      expect(connect.mock.calls.map(([id]) => id)).toEqual(people);
+    });
+
     it('restores a legacy root session onto the bootstrap route and keeps other routes', async () => {
       fs.writeFileSync(
         getWindowSessionsPath(),
@@ -1103,9 +1261,9 @@ describe('multi-backend window sessions', () => {
       expect(loadedPaths()).toEqual(['/workspace/new', '/workspace/kept']);
     });
 
-    it('opens deep-link windows on the bootstrap route carrying the encoded action', async () => {
-      const action = { type: 'open' as const, params: { id: 'workspace_123' } };
-      await createWindowForDeepLink('intent://open?id=workspace_123', {
+    it('opens newWindow create links on the bootstrap route and queues the action there', async () => {
+      const action = { type: 'create' as const, params: { repo: '/r', newWindow: 'true' } };
+      await createWindowForDeepLink('intent://create?repo=%2Fr&newWindow=true', {
         parseDeepLink: () => action,
         handleDeepLink: vi.fn(async () => {}),
       } as unknown as DeepLinkHandler);
@@ -1113,18 +1271,34 @@ describe('multi-backend window sessions', () => {
       const [window] = FakeBrowserWindow.getAllWindows();
       const url = new URL(window.webContents.getURL());
       expect(url.pathname).toBe('/workspace/new');
-      expect(JSON.parse(url.searchParams.get('deepLink') ?? 'null')).toEqual(action);
+      // The action never rides in the URL; the window pulls it from main.
+      expect(url.searchParams.has('deepLink')).toBe(false);
+      expect(consumePendingDeepLinks(window.webContents.id).actions).toEqual([action]);
+    });
+
+    it('opens a local window for an open link when only a remote window exists', async () => {
+      const remote = new FakeBrowserWindow();
+      remote.backendId = 'remote-1';
+      const action = { type: 'open' as const, params: { path: '/Users/me' } };
+      await createWindowForDeepLink('intent://open?path=%2FUsers%2Fme', {
+        parseDeepLink: () => action,
+        handleDeepLink: vi.fn(async () => {}),
+      } as unknown as DeepLinkHandler);
+
+      const local = FakeBrowserWindow.getAllWindows().filter((w) => w.backendId === 'local');
+      expect(local).toHaveLength(1);
+      expect(consumePendingDeepLinks(local[0].webContents.id).actions).toEqual([action]);
+      expect(consumePendingDeepLinks(remote.webContents.id).actions).toEqual([]);
     });
   });
 
   describe('renderer window gate', () => {
     const bounds = { x: 100, y: 100, width: 1024, height: 768 };
-    // A non-pair deep link whose action opens a NEW window (not `settings`,
-    // not `create` without newWindow) — the only deep-link branch that
-    // constructs a BrowserWindow.
-    const openDeepLink = 'intent://open?id=workspace_123';
+    // A non-pair deep link whose action opens a NEW window (`create` with
+    // newWindow=true) — the deep-link branch that always constructs one.
+    const openDeepLink = 'intent://create?repo=%2Fr&newWindow=true';
     const openDeepLinkHandler = {
-      parseDeepLink: () => ({ type: 'open' as const, params: { id: 'workspace_123' } }),
+      parseDeepLink: () => ({ type: 'create' as const, params: { repo: '/r', newWindow: 'true' } }),
       handleDeepLink: vi.fn(async () => {}),
     } as unknown as DeepLinkHandler;
 
@@ -1156,7 +1330,9 @@ describe('multi-backend window sessions', () => {
       await pending;
 
       expect(FakeBrowserWindow.instances).toHaveLength(1);
-      expect(FakeBrowserWindow.instances[0].webContents.getURL()).toContain('deepLink=');
+      expect(
+        consumePendingDeepLinks(FakeBrowserWindow.instances[0].webContents.id).actions,
+      ).toHaveLength(1);
     });
 
     it('createWindowForSession waits for the gate, then restores exactly one window', async () => {

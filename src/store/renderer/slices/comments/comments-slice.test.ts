@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import {
   commentsReducer,
   initialState,
@@ -7,7 +7,11 @@ import {
   updateCommentAction,
   removeCommentAction,
   loadCommentsAction,
+  replaceNoteCommentsAction,
   clearCommentsAction,
+  commentLoadFinished,
+  commentLoadReleased,
+  commentLoadRequested,
   selectCommentAction,
 } from './comments-slice';
 import type { CommentV2 } from '$features/comments/comment-types-v2';
@@ -33,6 +37,96 @@ describe('commentsReducer', () => {
   it('should return initial state', () => {
     const state = reduce(undefined, { type: '@@INIT' });
     expect(state).toEqual(initialState);
+  });
+
+  it('correlates comment load outcomes, clears retry errors, and releases consumers', () => {
+    let state = reduce(
+      initialState,
+      commentLoadRequested('consumer', 'request-1', 'workspace-1', 'note-1'),
+    );
+    state = reduce(
+      state,
+      commentLoadFinished('consumer', 'request-1', 'workspace-1', 'authority-1', 'offline'),
+    );
+    const stale = reduce(
+      state,
+      commentLoadFinished('consumer', 'stale', 'workspace-1', 'authority-1'),
+    );
+    expect(stale).toBe(state);
+    state = reduce(
+      state,
+      commentLoadFinished('consumer', 'request-1', 'workspace-1', 'authority-1'),
+    );
+    expect(getItem(state.loadsByConsumer, 'consumer')).toMatchObject({
+      status: 'ready',
+      authority: 'authority-1',
+    });
+    expect(getItem(state.loadsByConsumer, 'consumer')).not.toHaveProperty('error');
+    state = reduce(state, commentLoadReleased('consumer'));
+    expect(getItem(state.loadsByConsumer, 'consumer')).toBeUndefined();
+  });
+
+  describe('replaceNoteCommentsAction', () => {
+    it('replaces only the exact workspace/note and rebuilds threads', () => {
+      const own = makeComment({
+        id: 'own',
+        workspaceId: 'a',
+        noteId: 'spec',
+        threadId: 'own-thread',
+      });
+      const otherWorkspace = makeComment({
+        id: 'other',
+        workspaceId: 'b',
+        noteId: 'spec',
+        threadId: 'other-thread',
+      });
+      const otherNote = makeComment({
+        id: 'task',
+        workspaceId: 'a',
+        noteId: 'task',
+        threadId: 'task-thread',
+      });
+      let state = reduce(initialState, loadCommentsAction([own, otherWorkspace, otherNote]));
+      state = reduce(state, selectCommentAction('other'));
+      const fresh = makeComment({
+        id: 'fresh',
+        workspaceId: 'a',
+        noteId: 'spec',
+        threadId: 'fresh-thread',
+      });
+      const reply = makeComment({
+        id: 'reply',
+        workspaceId: 'a',
+        noteId: 'spec',
+        threadId: 'fresh-thread',
+        parentId: 'fresh',
+      });
+      state = reduce(state, replaceNoteCommentsAction('a', 'spec', [fresh, reply]));
+      expect(getItems(state.commentsById).map((c) => c.id)).toEqual([
+        'other',
+        'task',
+        'fresh',
+        'reply',
+      ]);
+      expect(getItem(state.threadsById, 'own-thread')).toBeUndefined();
+      expect(getItem(state.threadsById, 'fresh-thread')?.commentIds).toEqual(['fresh', 'reply']);
+      expect(state.selectedCommentId).toBe('other');
+      state = reduce(state, replaceNoteCommentsAction('a', 'spec', []));
+      expect(getItems(state.commentsById).map((c) => c.id)).toEqual(['other', 'task']);
+      expect(getItem(state.threadsById, 'fresh-thread')).toBeUndefined();
+    });
+
+    it('rejects foreign or unowned rows in a scoped snapshot', () => {
+      const state = reduce(
+        initialState,
+        replaceNoteCommentsAction('a', 'spec', [
+          makeComment({ id: 'unknown', noteId: 'spec' }),
+          makeComment({ id: 'foreign', workspaceId: 'b', noteId: 'spec' }),
+          makeComment({ id: 'task', workspaceId: 'a', noteId: 'task' }),
+        ]),
+      );
+      expect(getItems(state.commentsById)).toEqual([]);
+    });
   });
 
   describe('addCommentAction', () => {

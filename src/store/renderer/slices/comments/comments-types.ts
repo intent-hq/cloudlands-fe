@@ -4,7 +4,7 @@
  * Safe to import from any process (no renderer-only dependencies).
  */
 
-import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type { CommentV2 } from '$features/comments/comment-types-v2';
 
 export type { CommentV2 };
@@ -15,6 +15,16 @@ export interface CommentThread {
   commentIds: string[];
   status: 'open' | 'resolved';
   lastActivity: string;
+}
+
+interface CommentLoadState {
+  consumerId: string;
+  requestId: string;
+  workspaceId: string;
+  noteId: string;
+  authority: string | null;
+  status: 'loading' | 'ready' | 'error';
+  error?: string;
 }
 
 export type CommentsV2State = {
@@ -30,4 +40,5 @@ export type CommentsV2State = {
   hoveredCommentId: string | null;
   /** Set of expanded thread ids (Record<string, true>) */
   expandedThreadIds: Record<string, true>;
+  loadsByConsumer: Collection<CommentLoadState, 'consumerId'>;
 };

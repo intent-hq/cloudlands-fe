@@ -4,7 +4,7 @@
 
 import { runSaga, stdChannel } from 'redux-saga';
 import { describe, expect, it, vi } from 'vitest';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import type { ConnectionRecord } from '../../connections/connections-types';
 import { initialState as connectionsInitialState } from '../../connections/connections-slice';

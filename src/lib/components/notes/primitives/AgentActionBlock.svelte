@@ -11,48 +11,88 @@
     faCheck,
   } from '@fortawesome/free-solid-svg-icons';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
-  import { notify } from '$lib/components/patterns/notify';
+  import { onDestroy } from 'svelte';
+  import { v4 as uuidv4 } from 'uuid';
   import { parseAgentTypeId } from '$shared/types/agent.types';
-  import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
+  import {
+    selectContextSelectedModel,
+    selectContextDefaultProvider,
+  } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
   import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
   import { writable } from 'svelte/store';
 
   import { WorkspaceId } from '$shared/types/branded-ids';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
-  import { createLogger } from '$lib/utils/client-logger';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
-  import { createAgentFromConfigRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import {
+    clearAgentCreationOutcome,
+    createAgentFromConfigRequested,
+  } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { selectAgentCreationOutcome } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
-
-  const logger = createLogger('AgentActionBlock');
 
   // TipTap NodeViewProps
   let { node, updateAttributes, extension }: NodeViewProps = $props();
 
   // Get primitive data from node
   let primitive = $derived(node?.attrs?.data as AgentActionPrimitive);
-
-  // Component state
-  let running = $state(false);
-  let agentId = $state<string | null>(null);
+  const primitiveId = $derived(primitive?.id ?? '');
 
   // Get workspaceId from extension options
   let workspaceId = $derived(extension?.options?.workspaceId as string | undefined);
   const wsIdStore = writable<string>('');
+  const resourceIdStore = writable<string>('');
+  const consumerId = uuidv4();
   $effect(() => {
     wsIdStore.set(workspaceId ?? '');
+    resourceIdStore.set(primitiveId);
+    return () => appStore.dispatch(clearAgentCreationOutcome(consumerId));
   });
+  const creationOutcome$ = selectAgentCreationOutcome(consumerId, wsIdStore, resourceIdStore);
+  const running = $derived($creationOutcome$?.status === 'pending');
+  const agentId = $derived($creationOutcome$?.agentId ?? primitive?.createdByAgentId ?? null);
+  onDestroy(() => appStore.dispatch(clearAgentCreationOutcome(consumerId)));
   // Running the action creates an agent (`agent.create`), refused (-32003) for
   // a collaborator connection: the run affordance is withheld. Viewing an
   // already-linked agent is not a lifecycle action and stays available.
   const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(wsIdStore);
 
-  function getErrorMessage(err: unknown): string {
-    if (err instanceof Error) return err.message;
-    if (typeof err === 'string') return err;
-    return m.notes_agentActionBlock_unknown_error();
-  }
+  // TipTap owns this widget's document. Consume only this mount/resource's
+  // acknowledged result; business work and notifications remain saga-owned.
+  $effect(() => {
+    const outcome = $creationOutcome$;
+    if (
+      !outcome ||
+      outcome.status === 'pending' ||
+      !primitive ||
+      outcome.workspaceId !== workspaceId ||
+      outcome.resourceId !== primitiveId
+    )
+      return;
+    if (outcome.status === 'success') {
+      updateAttributes?.({
+        data: {
+          ...primitive,
+          createdByAgentId: outcome.agentId,
+          lastRun: { status: 'running', startedAt: outcome.completedAt },
+        },
+      });
+    } else if (outcome.status === 'failure') {
+      updateAttributes?.({
+        data: {
+          ...primitive,
+          lastRun: {
+            status: 'error',
+            startedAt: outcome.completedAt,
+            finishedAt: outcome.completedAt,
+            errorMessage: outcome.error,
+          },
+        },
+      });
+    }
+    appStore.dispatch(clearAgentCreationOutcome(consumerId, outcome.seq));
+  });
 
   // Get button state
   let buttonState = $derived.by(() => {
@@ -72,31 +112,28 @@
   });
 
   // Run the agent action
-  async function runAction() {
-    if (!primitive || running) return;
-    if (!workspaceId) {
-      notify.error(m.notes_agentActionBlock_noWorkspace_error());
-      return;
-    }
-    running = true;
+  function runAction() {
+    if (!primitive || running || (workspaceId && $hidesAgentLifecycleActions$)) return;
+    const wsId = workspaceId ?? '';
+    // Build context references from primitive inputs
+    const contextReferences =
+      primitive.inputs?.map((input) => ({
+        type: input.kind === 'semantic_ref' ? 'file' : input.kind,
+        path: input.semanticId || input.pattern || input.heading,
+        content: input.content,
+      })) || [];
 
-    try {
-      // Build context references from primitive inputs
-      const contextReferences =
-        primitive.inputs?.map((input) => ({
-          type: input.kind === 'semantic_ref' ? 'file' : input.kind,
-          path: input.semanticId || input.pattern || input.heading,
-          content: input.content,
-        })) || [];
-
-      const state = appStore.state;
-      const action = createAgentFromConfigRequested(workspaceId, {
+    const state = appStore.state;
+    const action = createAgentFromConfigRequested(
+      wsId,
+      {
         name: primitive.goal.length > 40 ? primitive.goal.slice(0, 40) + '...' : primitive.goal,
         // Derived from the primitive goal, not user-chosen — keep the session
         // self-renameable.
         nameExplicitlySet: false,
-        workspaceId: WorkspaceId(workspaceId),
-        model: selectSelectedModel.select(state),
+        workspaceId: WorkspaceId(wsId),
+        model: selectContextSelectedModel.select(state, wsId),
+        provider: selectContextDefaultProvider.select(state, wsId),
         agentType: parseAgentTypeId(primitive.agentId || '') || 'chat',
         source: 'agent-action-block',
         initialMessage: primitive.goal,
@@ -105,58 +142,10 @@
           source: 'agent-action-block',
           primitiveId: primitive.id,
         },
-      });
-      appStore.dispatch(action);
-
-      const createdAgent = await action.promise;
-      // The daemon assigns the agent id; adopt it from the created session.
-      agentId = createdAgent.id;
-      running = false;
-
-      // Update primitive with running status and agent link
-      const now = new Date().toISOString();
-      if (updateAttributes) {
-        updateAttributes({
-          data: {
-            ...primitive,
-            createdByAgentId: agentId,
-            lastRun: {
-              status: 'running',
-              startedAt: now,
-            },
-          },
-        });
-      }
-
-      notify.success(m.notes_agentActionBlock_started_label());
-    } catch (err) {
-      const errorMessage = getErrorMessage(err);
-      logger.error('[runAction] Error running agent action', {
-        error: err,
-        workspaceId,
-        agentId: primitive?.agentId,
-      });
-      running = false;
-      agentId = null;
-
-      // Update with error status
-      if (updateAttributes && primitive) {
-        const now = new Date().toISOString();
-        updateAttributes({
-          data: {
-            ...primitive,
-            lastRun: {
-              status: 'error',
-              startedAt: now,
-              finishedAt: now,
-              errorMessage,
-            },
-          },
-        });
-      }
-
-      notify.error(errorMessage);
-    }
+      },
+      { consumer: { id: consumerId, resourceId: primitive.id } },
+    );
+    appStore.dispatch(action);
   }
 
   // Handle button click

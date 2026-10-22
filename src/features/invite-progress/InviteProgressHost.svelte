@@ -7,14 +7,21 @@
   import { onMount } from 'svelte';
   import InviteProgressModal from '$lib/components/modals/InviteProgressModal.svelte';
   import type { InviteProgressShowPayload } from '$shared/ipc/invite-progress';
-  import { cancelInviteProgress, installInviteProgressService } from './invite-progress-service';
-
+  import {
+    cancelInviteProgress,
+    retryInviteProgress,
+    installInviteProgressService,
+  } from './invite-progress-service';
+  let recoveryState = $state({ busy: false, failed: false });
   let open = $state(false);
   let payload = $state<InviteProgressShowPayload | null>(null);
 
   onMount(() =>
     // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous IPC listener install/dispose for a transient main-process progress dialog (ephemeral UI state, not Redux domain data)
     installInviteProgressService({
+      onRecoveryState: (next) => {
+        recoveryState = next;
+      },
       onShow: (next) => {
         payload = next;
         open = true;
@@ -36,4 +43,14 @@
   }
 </script>
 
-<InviteProgressModal bind:open {payload} onCancel={cancel} />
+<InviteProgressModal
+  bind:open
+  {payload}
+  onCancel={cancel}
+  busy={recoveryState.busy}
+  failed={recoveryState.failed}
+  onEnable={() => {
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- explicit enable for an ephemeral main-process invitation; no domain data is fetched here
+    void retryInviteProgress().catch(() => {});
+  }}
+/>

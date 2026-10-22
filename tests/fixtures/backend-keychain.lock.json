@@ -1,0 +1,11 @@
+{
+  "lockVersion": 1,
+  "sourceRepository": "intent-hq/intent",
+  "sourcePath": "docs/protocol/fixtures/backend-keychain/v1",
+  "sourceCommit": "fa94fd072642d05e0bce4da90215ff57bb0b2021",
+  "corpusSha256": "d7fd3e5d8574faaf9c5aec62ca5be7c3874d7ed6cb5ee63a4580a792300fc04c",
+  "files": {
+    "corpus.json": "d7fd3e5d8574faaf9c5aec62ca5be7c3874d7ed6cb5ee63a4580a792300fc04c",
+    "manifest.json": "630636a6322615c3a3cf59294ee27c26395ca8b16e7f2b7678b9f76715e28734"
+  }
+}

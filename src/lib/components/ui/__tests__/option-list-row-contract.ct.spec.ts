@@ -154,14 +154,14 @@ for (const theme of ['light', 'dark'] as const) {
       for (const item of await menu.locator('[data-menu-item]').all()) {
         const start = await firstTextStart(item);
         const hasIcon = await item.locator('[data-slot="menu-item-leading"]').count();
-        expect(start - (await item.boundingBox())!.x).toBeCloseTo(hasIcon ? 32 : 8, 0);
+        expect(start - (await item.boundingBox())!.x).toBeCloseTo(hasIcon ? 34 : 8, 0);
       }
       const indicator = row.locator('[data-slot="menu-item-indicator"]');
       expect(
         (await row.boundingBox())!.x +
           (await row.boundingBox())!.width -
           (await indicator.boundingBox())!.x,
-      ).toBe(24);
+      ).toBe(26);
       // Batch 18-E: the moving highlight is the menu's keyboard-focus indicator.
       await expect(row).toBeFocused();
       await expect(row).toHaveCSS('outline-style', 'none');

@@ -22,6 +22,13 @@ import { TC_ADDRESS } from '../../../../test/fixtures/tc-address.fixture';
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Backend state is reloaded per case, but the generated translation catalog is
+// immutable for this suite. Keep its real exports shared: recompiling every
+// locale on each reset retains enough VM code to exhaust the worker heap.
+vi.mock('../../../../shared/paraglide/messages.js', async (importOriginal) =>
+  importOriginal<typeof import('../../../../shared/paraglide/messages.js')>(),
+);
+
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
@@ -32,6 +39,13 @@ const lifecycle = vi.hoisted(() => ({ events: [] as Array<{ type: string; seq: n
 /** Steerable per-method RPC responder for the fake client (tests override). */
 const rpc = vi.hoisted(() => ({
   handler: (async () => ({})) as (method: string) => Promise<unknown>,
+  principal: (async () => ({
+    id: 'prn_7',
+    login: 'octocat',
+    displayName: null,
+    avatarUrl: null,
+    isAdministrator: false,
+  })) as () => Promise<unknown>,
   calls: [] as string[],
   payloads: [] as Array<[string, unknown]>,
   /** Per-call `params` argument, parallel to `calls`. */
@@ -81,7 +95,7 @@ vi.mock('../json-rpc-client', () => {
       rpc.payloads.push([method, params]);
       rpc.params.push(params);
       rpc.options.push(options);
-      return rpc.handler(method);
+      return method === 'principal.me' ? rpc.principal() : rpc.handler(method);
     });
     registerMethod(): () => void {
       return () => {};
@@ -142,11 +156,21 @@ vi.mock('../intentd-version-pin', () => ({
 
 // Preserve the real PinMismatchError + resolveBackendConfig; stub captureFingerprint.
 const mockCaptureFingerprint = vi.hoisted(() => vi.fn());
+const mockTestWssConnection = vi.hoisted(() => vi.fn());
 vi.mock('../backend-connection', async (importActual) => {
   const actual = await importActual<typeof import('../backend-connection')>();
-  return { ...actual, captureFingerprint: mockCaptureFingerprint };
+  return {
+    ...actual,
+    captureFingerprint: mockCaptureFingerprint,
+    testWssConnection: mockTestWssConnection,
+  };
 });
 
+const importedPrincipal = vi.hoisted(() => ({ inspect: vi.fn() }));
+vi.mock('../invited-principal', async (actual) => ({
+  ...(await actual<typeof import('../invited-principal')>()),
+  inspectPersonalCredential: importedPrincipal.inspect,
+}));
 // Connections store: in-test doubles for the CRUD + active-id surface.
 const store = vi.hoisted(() => ({
   list: vi.fn(),
@@ -191,10 +215,12 @@ vi.mock('../connections-store', () => ({
 // simulated against the pool.
 const guestStore = vi.hoisted(() => ({
   list: vi.fn(),
+  add: vi.fn(),
   findById: vi.fn(),
   forget: vi.fn(),
   leaveWorkspace: vi.fn(),
   setWorkspaces: vi.fn(),
+  setPrincipal: vi.fn(async () => true),
   getDecryptedToken: vi.fn(),
   setTcAddress: vi.fn(),
   setHosts: vi.fn(),
@@ -203,10 +229,13 @@ const guestStore = vi.hoisted(() => ({
 }));
 vi.mock('../guest-sessions-store', () => ({
   list: guestStore.list,
+  add: guestStore.add,
   findById: guestStore.findById,
   forget: guestStore.forget,
   leaveWorkspace: guestStore.leaveWorkspace,
   setWorkspaces: guestStore.setWorkspaces,
+  setPrincipal: guestStore.setPrincipal,
+  createInvitedSyncAdapter: vi.fn(() => ({})),
   getDecryptedToken: guestStore.getDecryptedToken,
   setHostname: vi.fn(async () => false),
   setTcAddress: guestStore.setTcAddress,
@@ -297,7 +326,7 @@ const GUEST = {
   host: '10.0.0.9',
   hosts: ['10.0.0.9'],
   port: 8443,
-  fingerprint: 'EE:FF:00:11',
+  fingerprint: 'ef'.repeat(32),
   tcAddress: null,
   hostname: null,
   principalId: 'prn_7',
@@ -382,7 +411,24 @@ beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
   lifecycle.events = [];
+  importedPrincipal.inspect.mockResolvedValue({
+    principal: {
+      id: 'owner',
+      login: null,
+      displayName: null,
+      avatarUrl: null,
+      isAdministrator: true,
+    },
+    capabilities: { hostMembership: false },
+  });
   rpc.handler = async () => ({});
+  rpc.principal = async () => ({
+    id: GUEST.principalId,
+    login: GUEST.login,
+    displayName: null,
+    avatarUrl: null,
+    isAdministrator: false,
+  });
   rpc.calls = [];
   rpc.payloads = [];
   rpc.params = [];
@@ -392,6 +438,7 @@ beforeEach(() => {
   store.list.mockResolvedValue([LOCAL, REMOTE]);
   store.setActiveId.mockResolvedValue(undefined);
   store.getDecryptedToken.mockResolvedValue('secret-token');
+  mockTestWssConnection.mockReset().mockResolvedValue(undefined);
   store.setHostname.mockResolvedValue(undefined);
   store.setDaemonVersion.mockResolvedValue(false);
   store.setHosts.mockResolvedValue(undefined);
@@ -400,6 +447,7 @@ beforeEach(() => {
   guestStore.findById.mockResolvedValue(null);
   guestStore.forget.mockResolvedValue(true);
   guestStore.leaveWorkspace.mockResolvedValue(true);
+  guestStore.setPrincipal.mockResolvedValue(true);
   guestStore.setWorkspaces.mockResolvedValue(false);
   guestStore.getDecryptedToken.mockResolvedValue(null);
   guestStore.setTcAddress.mockResolvedValue(false);
@@ -446,6 +494,57 @@ describe('openBackendWindow connect-before-open', () => {
     // The open never flips the persisted whole-app selection.
     expect(store.setActiveId).not.toHaveBeenCalled();
     expect(openOrFocus).toHaveBeenCalledWith('remote-1');
+  });
+
+  it('registers pooled clients for capture and releases registrations on disposal and replacement', async () => {
+    const { devConsoleCapture } = await import('../../../dev-console/main/dev-console-service');
+    const release = vi.fn();
+    const register = vi.spyOn(devConsoleCapture, 'registerClient').mockReturnValue(release);
+    const mod = await import('../backend.ipc');
+    const first = mod.getLocalBackendClient();
+    expect(register).toHaveBeenCalledWith('local', 'local', first);
+    mod.disconnectBackendClient('local');
+    expect(release).toHaveBeenCalledTimes(1);
+    const replacement = mod.getLocalBackendClient();
+    expect(replacement).not.toBe(first);
+    expect(register).toHaveBeenLastCalledWith('local', 'local', replacement);
+    mod.disposeAllBackendClients();
+    expect(release).toHaveBeenCalledTimes(2);
+    register.mockRestore();
+  });
+
+  it('rechecks an invitation lifetime after its queued open is released', async () => {
+    guestStore.list.mockResolvedValue([GUEST]);
+    guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
+    guestStore.getDecryptedToken.mockResolvedValue('guest-token');
+    const { mod, openOrFocus } = await loadModule();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    openOrFocus.mockImplementationOnce(async () => gate);
+    const first = mod.openBackendWindow('remote-1');
+    await vi.waitFor(() => expect(openOrFocus).toHaveBeenCalledTimes(1));
+    let current = true;
+    const next = mod.openBackendWindow(GUEST.id, { mayOpen: () => current });
+    const rejected = expect(next).rejects.toThrow(/no longer current/);
+    current = false;
+    release();
+    await first;
+    await rejected;
+    expect(openOrFocus).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancelling a second open preserves the client serving an existing window', async () => {
+    const { mod, openOrFocus } = await loadModule();
+    await mod.openBackendWindow('remote-1');
+    const original = mod.getBackendClientForConnection('remote-1');
+    let checks = 0;
+    await expect(
+      mod.openBackendWindow('remote-1', { mayOpen: () => ++checks === 1 }),
+    ).rejects.toThrow(/no longer current/);
+    expect(openOrFocus).toHaveBeenCalledTimes(1);
+    expect(mod.getBackendClientForConnection('remote-1')).toBe(original);
   });
 
   it('opens a remote window immediately while its host.status never answers (black-holed host)', async () => {
@@ -771,9 +870,17 @@ describe('openBackendWindow connect-before-open', () => {
     client.hello({ server: { version: '6.8.0' } });
 
     await vi.waitFor(() => {
-      expect(guestStore.setTcAddress).toHaveBeenCalledWith(GUEST.id, 'tc7f2a91.tailcat.net');
+      expect(guestStore.setTcAddress).toHaveBeenCalledWith(
+        GUEST.id,
+        'tc7f2a91.tailcat.net',
+        expect.any(Function),
+      );
       // Loopback never becomes a dial candidate.
-      expect(guestStore.setHosts).toHaveBeenCalledWith(GUEST.id, ['10.0.0.9', '10.0.0.42']);
+      expect(guestStore.setHosts).toHaveBeenCalledWith(
+        GUEST.id,
+        ['10.0.0.9', '10.0.0.42'],
+        expect.any(Function),
+      );
     });
     // The owner registry is never asked to persist a guest's routes (an
     // unknown id there would silently drop them).
@@ -1185,6 +1292,53 @@ describe('WSS auth-rejection propagation', () => {
 // ---------------------------------------------------------------------------
 
 describe('connections:* IPC handlers', () => {
+  it('rejects shared sync, publication and remote pairing in an isolated test package before effects', async () => {
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const { BUILD_CONFIG } = await import('../../../../main/build-config.generated');
+    const original = Object.getOwnPropertyDescriptor(BUILD_CONFIG, 'ISOLATED_TEST_BUILD_ID')!;
+    Object.defineProperty(BUILD_CONFIG, 'ISOLATED_TEST_BUILD_ID', { value: 'manual-123-1' });
+    try {
+      const before = { rpc: [...rpc.calls], prefs: localPrefs.setLocalPref.mock.calls.length };
+      for (const [channel, params] of [
+        ['connections:sync-set-enabled', { enabled: true }],
+        ['connections:publish-self', undefined],
+        [
+          'connections:capture-fingerprint',
+          { host: 'normal.local', port: 8443, token: 'test-only' },
+        ],
+        [
+          'connections:add',
+          {
+            label: 'Normal',
+            host: 'normal.local',
+            port: 8443,
+            token: 'test-only',
+            fingerprint: 'ab'.repeat(32),
+          },
+        ],
+      ] as const) {
+        const handler = findHandler(channel);
+        expect(handler).toBeDefined();
+        await expect(handler!({}, params)).rejects.toThrow('disabled in the isolated test app');
+      }
+      await expect(
+        findHandler('connections:update-backend')!({}, { id: 'local' }),
+      ).resolves.toMatchObject({
+        ok: false,
+        reason: 'unsupported',
+      });
+      expect(rpc.calls).toEqual(before.rpc);
+      expect(localPrefs.setLocalPref).toHaveBeenCalledTimes(before.prefs);
+      expect(importedPrincipal.inspect).not.toHaveBeenCalled();
+      expect(mockCaptureFingerprint).not.toHaveBeenCalled();
+      expect(store.add).not.toHaveBeenCalled();
+      expect(keychainSync.requestReconcile).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(BUILD_CONFIG, 'ISOLATED_TEST_BUILD_ID', original);
+    }
+  });
+
   it('connections:list returns the list + active selection', async () => {
     const { mod } = await loadModule();
     mod.registerBackendHandlers();
@@ -1992,7 +2146,48 @@ describe('connections:* IPC handlers', () => {
     expect(send).toHaveBeenCalledWith('connections:changed', expect.any(Object));
   });
 
+  it.each([
+    { hosts: [REMOTE.host, '192.168.1.5'], tcAddress: null },
+    { hosts: [REMOTE.host], tcAddress: TC_ADDRESS },
+  ])(
+    'tests the saved fallback routes when the entered address is unchanged (%j)',
+    async (routes) => {
+      store.list.mockResolvedValue([LOCAL, { ...REMOTE, ...routes }]);
+      mockCaptureFingerprint.mockResolvedValue({ ok: false, code: 'connect-failed' });
+      const { mod, openOrFocus } = await loadModule();
+      const liveClient = await mod.connectBackendClient(REMOTE.id);
+      const lifecycleBefore = [...lifecycle.events];
+      mod.registerBackendHandlers();
+      const handler = findHandler('connections:test')!;
+
+      await expect(
+        handler({}, { id: REMOTE.id, host: REMOTE.host, port: REMOTE.port }),
+      ).resolves.toEqual({ status: 'success', fingerprint: REMOTE.fingerprint });
+      expect(mockTestWssConnection).toHaveBeenCalledWith({
+        transport: 'wss',
+        host: REMOTE.host,
+        hosts: routes.hosts,
+        port: REMOTE.port,
+        fingerprint: REMOTE.fingerprint,
+        token: 'secret-token',
+        tcAddress: routes.tcAddress ?? undefined,
+      });
+      expect(mockCaptureFingerprint).not.toHaveBeenCalled();
+      expect(mod.getBackendClientForConnection(REMOTE.id)).toBe(liveClient);
+      expect(lifecycle.events).toEqual(lifecycleBefore);
+      expect(store.updateMetadata).not.toHaveBeenCalled();
+      expect(store.replaceSecret).not.toHaveBeenCalled();
+      expect(store.setActiveId).not.toHaveBeenCalled();
+      expect(store.setHosts).not.toHaveBeenCalled();
+      expect(openOrFocus).not.toHaveBeenCalled();
+    },
+  );
+
   it('tests unsaved address values with the saved secret without saving or opening a window', async () => {
+    store.list.mockResolvedValue([
+      LOCAL,
+      { ...REMOTE, hosts: [REMOTE.host, '192.168.1.5'], tcAddress: TC_ADDRESS },
+    ]);
     mockCaptureFingerprint.mockResolvedValue({
       ok: true,
       fingerprint: REMOTE.fingerprint,
@@ -2022,7 +2217,130 @@ describe('connections:* IPC handlers', () => {
     expect(store.updateMetadata).not.toHaveBeenCalled();
     expect(store.replaceSecret).not.toHaveBeenCalled();
     expect(openOrFocus).not.toHaveBeenCalled();
+    expect(mockTestWssConnection).not.toHaveBeenCalled();
   });
+
+  it('validates an edited port explicitly even when a saved fallback works', async () => {
+    store.list.mockResolvedValue([LOCAL, { ...REMOTE, tcAddress: TC_ADDRESS }]);
+    mockCaptureFingerprint.mockResolvedValueOnce({ ok: false, code: 'timeout' });
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await expect(
+      findHandler('connections:test')!({}, { id: REMOTE.id, host: REMOTE.host, port: 9443 }),
+    ).resolves.toEqual({ status: 'failed', reason: 'timeout' });
+    expect(mockCaptureFingerprint).toHaveBeenCalledWith({ host: REMOTE.host, port: 9443 });
+    expect(mockTestWssConnection).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, false])(
+    'uses the store route list without enabling detected hosts (%s)',
+    async (detectHosts) => {
+      store.list.mockResolvedValue([LOCAL, { ...REMOTE, hosts: [REMOTE.host], detectHosts }]);
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+
+      await expect(
+        findHandler('connections:test')!(
+          {},
+          { id: REMOTE.id, host: REMOTE.host, port: REMOTE.port },
+        ),
+      ).resolves.toMatchObject({ status: 'success' });
+      expect(mockTestWssConnection).toHaveBeenCalledWith(
+        expect.objectContaining({
+          host: REMOTE.host,
+          hosts: [REMOTE.host],
+          tcAddress: undefined,
+        }),
+      );
+      expect(store.getDetectHosts).not.toHaveBeenCalled();
+      expect(store.setHosts).not.toHaveBeenCalled();
+    },
+  );
+
+  it('uses sanitized dial hosts instead of a legacy saved loopback primary', async () => {
+    store.list.mockResolvedValue([LOCAL, { ...REMOTE, host: '127.0.0.1', hosts: ['10.0.0.5'] }]);
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    await expect(
+      findHandler('connections:test')!({}, { id: REMOTE.id, host: '127.0.0.1', port: REMOTE.port }),
+    ).resolves.toMatchObject({ status: 'success' });
+    expect(mockTestWssConnection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        host: '10.0.0.5',
+        hosts: ['10.0.0.5'],
+      }),
+    );
+  });
+
+  it('uses the write-only token override for all saved routes without decrypting or persisting', async () => {
+    store.list.mockResolvedValue([LOCAL, { ...REMOTE, tcAddress: TC_ADDRESS }]);
+    store.getDecryptedToken.mockRejectedValue(new Error('undecryptable saved token'));
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+
+    const result = await findHandler('connections:test')!(
+      {},
+      {
+        id: REMOTE.id,
+        host: REMOTE.host,
+        port: REMOTE.port,
+        token: 'preview-token',
+      },
+    );
+    expect(result).toEqual({ status: 'success', fingerprint: REMOTE.fingerprint });
+    expect(mockTestWssConnection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        token: 'preview-token',
+        tcAddress: TC_ADDRESS,
+      }),
+    );
+    expect(store.getDecryptedToken).not.toHaveBeenCalled();
+    expect(store.replaceSecret).not.toHaveBeenCalled();
+    expect(store.updateMetadata).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      'pin',
+      {
+        status: 'fingerprint-confirmation-required',
+        expectedFingerprint: REMOTE.fingerprint,
+        actualFingerprint: 'DD:EE:FF',
+      },
+    ],
+    ['no-certificate', { status: 'failed', reason: 'no-certificate' }],
+    ['auth', { status: 'authentication-rejected', statusCode: 403 }],
+    ['timeout', { status: 'failed', reason: 'timeout' }],
+    ['unreachable', { status: 'failed', reason: 'connect-failed' }],
+  ])(
+    'returns structured guidance for a saved-route %s failure without raw errors',
+    async (kind, expected) => {
+      const { AuthRejectedError, PinMismatchError } = await import('../backend-connection');
+      const error =
+        kind === 'pin' || kind === 'no-certificate'
+          ? new PinMismatchError(REMOTE.fingerprint, kind === 'pin' ? 'DD:EE:FF' : '')
+          : kind === 'auth'
+            ? new AuthRejectedError(403)
+            : Object.assign(new Error('raw failure with secret-material'), {
+                code: kind === 'timeout' ? 'ETIMEDOUT' : 'ECONNREFUSED',
+              });
+      mockTestWssConnection.mockRejectedValue(error);
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+
+      await expect(
+        findHandler('connections:test')!(
+          {},
+          { id: REMOTE.id, host: REMOTE.host, port: REMOTE.port },
+        ),
+      ).resolves.toEqual(expected);
+      expect(mockCaptureFingerprint).not.toHaveBeenCalled();
+      expect(store.updateMetadata).not.toHaveBeenCalled();
+      expect(store.replaceSecret).not.toHaveBeenCalled();
+    },
+  );
 
   it('tests a write-only secret override without decrypting or persisting it', async () => {
     store.getDecryptedToken.mockRejectedValue(new Error('stored secret is undecryptable'));
@@ -2781,6 +3099,222 @@ describe('connections:* IPC handlers', () => {
 // Keychain-sync settings IPC (T4)
 // ---------------------------------------------------------------------------
 
+describe('remote Tailcat settings IPC', () => {
+  const settings = (enabled: boolean) => ({
+    settings: [
+      { path: 'server.tunnel.enabled', type: 'boolean', value: enabled },
+      { path: 'server.bindAddress', type: 'string', value: '10.0.0.5' },
+      { path: 'server.tunnel.only', type: 'boolean', value: false },
+    ],
+    revision: 1,
+  });
+
+  async function connectedHandlers() {
+    const loaded = await loadModule();
+    loaded.mod.registerBackendHandlers();
+    await loaded.mod.openBackendWindow(REMOTE.id);
+    const client = loaded.mod.getBackendClientForId(REMOTE.id);
+    await vi.waitFor(() => expect(client.request).toHaveBeenCalledWith('server.pairingInfo'));
+    client.emit('status', 'connected');
+    await vi.waitFor(() => expect(store.setTcAddress).toHaveBeenCalledWith(REMOTE.id, null));
+    vi.mocked(client.request).mockClear();
+    store.setTcAddress.mockClear();
+    store.setHosts.mockClear();
+    return {
+      ...loaded,
+      client,
+      get: findHandler('connections:get-tunnel')!,
+      set: findHandler('connections:set-tunnel')!,
+    };
+  }
+
+  it.each([true, false])(
+    'reads the selected remote setting (%s), never the local client',
+    async (enabled) => {
+      const { mod, client, get } = await connectedHandlers();
+      const local = mod.getLocalBackendClient();
+      vi.mocked(local.request).mockClear();
+      vi.mocked(client.request).mockResolvedValue(settings(enabled));
+
+      await expect(get({}, { id: REMOTE.id })).resolves.toEqual({ supported: true, enabled });
+      expect(client.request).toHaveBeenCalledExactlyOnceWith('settings.list', undefined);
+      expect(
+        vi.mocked(local.request).mock.calls.filter(([method]) => method.startsWith('settings.')),
+      ).toEqual([]);
+    },
+  );
+
+  it.each([true, false])(
+    'writes only tunnel.enabled=%s and refreshes the saved address',
+    async (enabled) => {
+      const { client, set } = await connectedHandlers();
+      store.getDetectHosts.mockResolvedValue(false);
+      vi.mocked(client.request).mockImplementation(async (method) => {
+        if (method === 'settings.list') return settings(!enabled);
+        if (method === 'settings.update') {
+          return { applied: [{ path: 'server.tunnel.enabled', value: enabled }], revision: 2 };
+        }
+        if (method === 'server.pairingInfo') {
+          return {
+            token: 'must-stay-in-main',
+            certFingerprint: REMOTE.fingerprint,
+            localIps: ['10.0.0.99'],
+            ...(enabled ? { tcAddress: TC_ADDRESS } : {}),
+          };
+        }
+        throw new Error(`Unexpected request: ${method}`);
+      });
+
+      await expect(set({}, { id: REMOTE.id, enabled })).resolves.toEqual({
+        supported: true,
+        enabled,
+      });
+      expect(client.request).toHaveBeenCalledWith('settings.update', {
+        changes: [{ path: 'server.tunnel.enabled', value: enabled }],
+      });
+      expect(store.setTcAddress).toHaveBeenCalledWith(REMOTE.id, enabled ? TC_ADDRESS : null);
+      expect(store.setHosts).not.toHaveBeenCalled();
+      expect(store.updateMetadata).not.toHaveBeenCalled();
+      expect(store.replaceSecret).not.toHaveBeenCalled();
+    },
+  );
+
+  it('reports unsupported without writing when the setting is absent', async () => {
+    const { client, get, set } = await connectedHandlers();
+    vi.mocked(client.request).mockResolvedValue({ settings: [], revision: 1 });
+    await expect(get({}, { id: REMOTE.id })).resolves.toEqual({ supported: false, enabled: false });
+    await expect(set({}, { id: REMOTE.id, enabled: true })).resolves.toEqual({
+      supported: false,
+      enabled: false,
+    });
+    expect(vi.mocked(client.request).mock.calls.map(([method]) => method)).toEqual([
+      'settings.list',
+      'settings.list',
+    ]);
+  });
+
+  it.each([null, {}, { settings: [{ path: 'server.tunnel.enabled', value: 'true' }] }])(
+    'rejects malformed settings instead of showing a disabled tunnel',
+    async (response) => {
+      const { client, get } = await connectedHandlers();
+      vi.mocked(client.request).mockResolvedValue(response);
+      await expect(get({}, { id: REMOTE.id })).rejects.toThrow(/Invalid Tailcat/);
+    },
+  );
+
+  it.each([{}, { applied: [{ path: 'server.tunnel.enabled', value: false }], revision: 2 }])(
+    'rejects an unverified update result',
+    async (response) => {
+      const { client, set } = await connectedHandlers();
+      vi.mocked(client.request)
+        .mockResolvedValueOnce(settings(false))
+        .mockResolvedValueOnce(response);
+      await expect(set({}, { id: REMOTE.id, enabled: true })).rejects.toThrow(/Tailcat/);
+      expect(store.setTcAddress).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([true, false])('checks a no-op update against the saved value (%s)', async (enabled) => {
+    const { client, set } = await connectedHandlers();
+    vi.mocked(client.request)
+      .mockResolvedValueOnce(settings(enabled))
+      .mockResolvedValueOnce({ applied: [], revision: 1 })
+      .mockResolvedValueOnce(settings(enabled))
+      .mockResolvedValue({ localIps: ['10.0.0.5'] });
+    const operation = set({}, { id: REMOTE.id, enabled: true });
+    if (enabled) await expect(operation).resolves.toEqual({ supported: true, enabled: true });
+    else await expect(operation).rejects.toThrow(/did not apply/);
+    expect(
+      vi.mocked(client.request).mock.calls.filter(([method]) => method === 'settings.list'),
+    ).toHaveLength(2);
+  });
+
+  it.each(['settings.list', 'settings.update'])('surfaces %s errors', async (failedMethod) => {
+    const { client, set } = await connectedHandlers();
+    vi.mocked(client.request).mockImplementation(async (method) => {
+      if (method === failedMethod) throw new Error('Daemon refused the operation');
+      return settings(false);
+    });
+    await expect(set({}, { id: REMOTE.id, enabled: true })).rejects.toThrow(
+      'Daemon refused the operation',
+    );
+    expect(store.setTcAddress).not.toHaveBeenCalled();
+  });
+
+  it('keeps a verified save successful when the address refresh fails', async () => {
+    const { client, set } = await connectedHandlers();
+    vi.mocked(client.request)
+      .mockResolvedValueOnce(settings(false))
+      .mockResolvedValueOnce({
+        applied: [{ path: 'server.tunnel.enabled', value: true }],
+        revision: 2,
+      })
+      .mockRejectedValueOnce(new Error('server.pairingInfo unavailable'));
+    await expect(set({}, { id: REMOTE.id, enabled: true })).resolves.toEqual({
+      supported: true,
+      enabled: true,
+    });
+    expect(store.setTcAddress).not.toHaveBeenCalled();
+  });
+
+  it.each(['local', 'missing', 'guest-1', REMOTE.id])(
+    'rejects unavailable target %s without creating a client',
+    async (id) => {
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+      for (const channel of ['connections:get-tunnel', 'connections:set-tunnel']) {
+        await expect(findHandler(channel)!({}, { id, enabled: true })).rejects.toThrow();
+      }
+      expect(lifecycle.events).not.toContainEqual(expect.objectContaining({ type: 'construct' }));
+      expect(rpc.calls).toEqual([]);
+    },
+  );
+
+  it.each(['disconnected', 'connecting'])('rejects a pooled client that is %s', async (status) => {
+    const { client, get, set } = await connectedHandlers();
+    client.emit('status', status);
+    await expect(get({}, { id: REMOTE.id })).rejects.toThrow(/not connected/);
+    await expect(set({}, { id: REMOTE.id, enabled: true })).rejects.toThrow(/not connected/);
+    expect(client.request).not.toHaveBeenCalled();
+  });
+
+  it('rejects a reply from a removed client before writing settings', async () => {
+    const { mod, client, set } = await connectedHandlers();
+    let resolve!: (value: unknown) => void;
+    vi.mocked(client.request).mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const operation = set({}, { id: REMOTE.id, enabled: true });
+    const rejected = expect(operation).rejects.toThrow(/not connected/);
+    await vi.waitFor(() => expect(client.request).toHaveBeenCalledWith('settings.list', undefined));
+    mod.disconnectBackendClient(REMOTE.id);
+    resolve(settings(false));
+    await rejected;
+    expect(client.request).toHaveBeenCalledTimes(1);
+  });
+
+  it('validates the IPC payload and retains standard app-window authorization', async () => {
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    await expect(findHandler('connections:get-tunnel')!({}, { id: '' })).rejects.toThrow(
+      /Validation failed/,
+    );
+    await expect(
+      findHandler('connections:set-tunnel')!({}, { id: REMOTE.id, enabled: 'true' }),
+    ).rejects.toThrow(/Validation failed/);
+    const { createAuthorizedIpcHandler } = await import('../../../../main/ipc-authorization');
+    for (const channel of ['connections:get-tunnel', 'connections:set-tunnel']) {
+      const handler = createAuthorizedIpcHandler(channel, findHandler(channel)!);
+      await expect(handler({}, { id: REMOTE.id, enabled: true })).rejects.toThrow(
+        /Unauthorized IPC/,
+      );
+    }
+    expect(rpc.calls).toEqual([]);
+  });
+});
+
 describe('keychain-sync settings IPC (T4)', () => {
   const onMac = process.platform === 'darwin';
 
@@ -2915,45 +3449,48 @@ describe('self-publish IPC', () => {
     };
   }
 
-  it('connections:publish-self builds the record from pairingInfo and upserts it (token stays in main)', async () => {
-    installPairingInfo();
-    store.add.mockResolvedValue(SELF_RECORD);
-    const send = installWindow();
-    const { mod } = await loadModule();
-    mod.registerBackendHandlers();
-    const handler = findHandler('connections:publish-self')!;
+  it.each([5181, 5183])(
+    'connections:publish-self builds the record from pairingInfo at port %i (token stays in main)',
+    async (port) => {
+      installPairingInfo({ port });
+      store.add.mockResolvedValue(SELF_RECORD);
+      const send = installWindow();
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+      const handler = findHandler('connections:publish-self')!;
 
-    const result = (await handler({}, undefined)) as { connection: { id: string } };
+      const result = (await handler({}, undefined)) as { connection: { id: string } };
 
-    // Record per spec Mechanics: label = hostname (pretty preferred), host =
-    // first local IP, port = bound wsApi port, fingerprint + token from
-    // pairingInfo, detectHosts on. The token goes to the store only. Publishing
-    // is explicit user intent to sync, so the exclusion flag is force-cleared.
-    expect(store.add).toHaveBeenCalledWith({
-      label: "Clement's Mac Studio",
-      host: '192.168.1.10',
-      port: 5181,
-      fingerprint: '11:22:33:44',
-      token: 'a'.repeat(64),
-      detectedDeviceKind: 'macStudio',
-      detectHosts: true,
-      syncExcluded: false,
-    });
-    // All local IPs persist as candidate hosts; the hostname persists too.
-    expect(store.setHosts).toHaveBeenCalledWith('self-1', ['192.168.1.10', '10.0.0.5']);
-    expect(store.setHostname).toHaveBeenCalledWith('self-1', "Clement's Mac Studio");
-    expect(store.add).toHaveBeenCalledWith(
-      expect.objectContaining({ detectedDeviceKind: 'macStudio' }),
-    );
-    expect(store.setDetectedDeviceKind).toHaveBeenCalledWith('local', 'macStudio');
-    // Self fingerprint persisted (normalized) + suppression marker cleared.
-    expect(localPrefs.values.get('selfBackendFingerprint')).toBe('11:22:33:44');
-    expect(localPrefs.values.has('selfPublishSuppressed')).toBe(false);
-    // Returned record is token-free (the store's shape) and the list rebroadcast.
-    expect(result.connection.id).toBe('self-1');
-    expect(result.connection).not.toHaveProperty('token');
-    expect(send.mock.calls.some(([c]) => c === 'connections:changed')).toBe(true);
-  });
+      // Record per spec Mechanics: label = hostname (pretty preferred), host =
+      // first local IP, port = bound wsApi port, fingerprint + token from
+      // pairingInfo, detectHosts on. The token goes to the store only. Publishing
+      // is explicit user intent to sync, so the exclusion flag is force-cleared.
+      expect(store.add).toHaveBeenCalledWith({
+        label: "Clement's Mac Studio",
+        host: '192.168.1.10',
+        port,
+        fingerprint: '11:22:33:44',
+        token: 'a'.repeat(64),
+        detectedDeviceKind: 'macStudio',
+        detectHosts: true,
+        syncExcluded: false,
+      });
+      // All local IPs persist as candidate hosts; the hostname persists too.
+      expect(store.setHosts).toHaveBeenCalledWith('self-1', ['192.168.1.10', '10.0.0.5']);
+      expect(store.setHostname).toHaveBeenCalledWith('self-1', "Clement's Mac Studio");
+      expect(store.add).toHaveBeenCalledWith(
+        expect.objectContaining({ detectedDeviceKind: 'macStudio' }),
+      );
+      expect(store.setDetectedDeviceKind).toHaveBeenCalledWith('local', 'macStudio');
+      // Self fingerprint persisted (normalized) + suppression marker cleared.
+      expect(localPrefs.values.get('selfBackendFingerprint')).toBe('11:22:33:44');
+      expect(localPrefs.values.has('selfPublishSuppressed')).toBe(false);
+      // Returned record is token-free (the store's shape) and the list rebroadcast.
+      expect(result.connection.id).toBe('self-1');
+      expect(result.connection).not.toHaveProperty('token');
+      expect(send.mock.calls.some(([c]) => c === 'connections:changed')).toBe(true);
+    },
+  );
 
   it('connections:publish-self rejects override-only device kinds from pairingInfo', async () => {
     installPairingInfo({ deviceKind: 'robot' });
@@ -3934,7 +4471,7 @@ describe('forget/add decisions inside the connection-operation queue (monorepo#2
     label: 'Laptop',
     host: '10.0.0.6',
     port: 8443,
-    fingerprint: 'EE:FF:00:11',
+    fingerprint: 'ef'.repeat(32),
     isLocal: false,
   };
 
@@ -4235,6 +4772,59 @@ describe('per-window backend IPC routing', () => {
     });
   });
 
+  it.each([
+    ['pairing.getSelfInfo', undefined],
+    ['client.list', undefined],
+    ['host.executionContext', {}],
+    ['host.toolAvailability', { tools: ['git'] }],
+    ['host.checkGit', undefined],
+    ['providers.catalog', {}],
+    ['models.list', { providerId: 'claude-code' }],
+    ['agent.getModels', { agentId: 'agent-reviewer', workspaceId: 'host-workspace' }],
+    [
+      'agent.setModel',
+      {
+        agentId: 'agent-reviewer',
+        workspaceId: 'host-workspace',
+        providerId: 'codex',
+        modelId: 'host-review-model',
+      },
+    ],
+    ['agent.create', { workspaceId: 'host-workspace', specialistId: 'verifier' }],
+    [
+      'agent.delegate',
+      { workspaceId: 'host-workspace', taskNoteId: 'task', specialist: 'verifier' },
+    ],
+    ['repo.list', {}],
+    ['github.repos.list', {}],
+    ['github.repos.search', { query: 'host-project' }],
+    [
+      'workspace.create',
+      {
+        title: 'Host checkout',
+        githubUrl: 'https://github.com/team/project',
+        initialAgent: { provider: 'claude-code', model: 'host-sonnet' },
+      },
+    ],
+    ['git.pull', { repoPath: '/host/github-project', branchName: 'main' }],
+    ['git.status', { workspaceId: 'gitlab-origin-workspace' }],
+    ['pr.refresh', { workspaceId: 'github-workspace' }],
+  ])(
+    'routes shared execution %s through the member window instead of the local default',
+    async (method, params) => {
+      const { mod } = await loadModule();
+      const localClient = mod.getBackendClient();
+      const remoteClient = await mod.connectBackendClient('remote-1');
+      const { remoteSender } = installBackendWindows();
+      mod.registerBackendHandlers();
+      vi.mocked(localClient.request).mockClear();
+      vi.mocked(remoteClient.request).mockClear();
+      await findHandler('backend:request')!({ sender: remoteSender }, { method, params });
+      expect(remoteClient.request).toHaveBeenCalledWith(method, params, { timeoutMs: undefined });
+      expect(localClient.request).not.toHaveBeenCalled();
+    },
+  );
+
   it('routes explicit host settings requests from a remote window to the local client', async () => {
     const { mod } = await loadModule();
     const localClient = mod.getBackendClient();
@@ -4346,6 +4936,43 @@ describe('guest-sessions:* IPC handlers', () => {
     guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
     guestStore.getDecryptedToken.mockResolvedValue('guest-token-v1');
   }
+
+  it.each(['member', 'guest'] as const)(
+    'keeps personal Devices reads on the admitted %s connection, including refusal',
+    async (role) => {
+      installGuest();
+      rpc.principal = async () => ({
+        id: GUEST.principalId,
+        login: null,
+        displayName: null,
+        avatarUrl: null,
+        isAdministrator: false,
+        hostRole: role,
+        hostMembershipRevision: 1,
+      });
+      installWindow(GUEST.id);
+      const { mod } = await loadModule();
+      const local = mod.getBackendClient();
+      const remote = await mod.connectBackendClient(GUEST.id);
+      mod.registerBackendHandlers();
+      const sender = BrowserWindow.getAllWindows()[0].webContents;
+      const request = findHandler('backend:request')!;
+      vi.mocked(local.request).mockClear();
+      vi.mocked(remote.request).mockClear();
+      for (const method of ['pairing.getSelfInfo', 'client.list']) {
+        await request({ sender }, { method });
+        expect(remote.request).toHaveBeenCalledWith(method, undefined, { timeoutMs: undefined });
+      }
+      vi.mocked(remote.request).mockRejectedValueOnce(new Error('access-revoked'));
+      await expect(request({ sender }, { method: 'pairing.getSelfInfo' })).resolves.toMatchObject({
+        ok: false,
+      });
+      expect(local.request).not.toHaveBeenCalled();
+      expect(vi.mocked(remote.request).mock.calls.map(([method]) => method)).not.toContain(
+        'server.pairingInfo',
+      );
+    },
+  );
 
   it('guest-sessions:list distinguishes no pooled client, open-disconnected and open-connected', async () => {
     installGuest();
@@ -4474,6 +5101,102 @@ describe('guest-sessions:* IPC handlers', () => {
   describe('joined-workspace hydration on guest connect', () => {
     type HelloClient = { hello(result: unknown): void };
     const hello = { server: { version: '6.8.0', buildCommit: 'abc123' } };
+
+    it('refreshes the remote role and empty-host list after host membership events (controlled advertised fixture)', async () => {
+      installGuest();
+      let role = 'member';
+      rpc.principal = async () => ({
+        id: GUEST.principalId,
+        login: null,
+        displayName: null,
+        avatarUrl: null,
+        isAdministrator: false,
+        hostRole: role,
+        hostMembershipRevision: 1,
+      });
+      rpc.handler = async (method) =>
+        method === 'events.subscribe'
+          ? { subscriptionId: 'host-events' }
+          : method === 'workspace.list'
+            ? { workspaces: [] }
+            : {};
+      const { mod } = await loadModule();
+      const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as HelloClient & {
+        emit(event: string, value: unknown): void;
+      };
+      guest.hello({ server: { ...hello.server, capabilities: { hostMembership: 1 } } });
+      await vi.waitFor(() => expect(rpc.calls).toContain('events.subscribe'));
+      expect(rpc.payloads.find(([method]) => method === 'events.subscribe')?.[1]).toMatchObject({
+        eventTypes: expect.arrayContaining(['workspace:created', 'host:members-changed']),
+      });
+      role = 'guest';
+      guest.emit('notification', {
+        method: 'events.event',
+        params: {
+          subscriptionId: 'host-events',
+          event: {
+            type: 'host:members-changed',
+            data: {
+              principalId: GUEST.principalId,
+              hostRole: 'guest',
+              action: 'removed',
+              revision: 2,
+            },
+          },
+        },
+      });
+      await vi.waitFor(() =>
+        expect(guestStore.setPrincipal).toHaveBeenLastCalledWith(
+          GUEST.id,
+          expect.objectContaining({ hostRole: 'guest' }),
+          expect.any(Function),
+        ),
+      );
+      expect(rpc.calls.filter((method) => method === 'principal.me')).toHaveLength(2);
+      expect(guestStore.forget).not.toHaveBeenCalled();
+    });
+
+    it('does not hydrate or refresh routes before the exact remote invited principal is known', async () => {
+      installGuest();
+      rpc.principal = async () => ({
+        id: 'another-person',
+        login: null,
+        displayName: null,
+        avatarUrl: null,
+        isAdministrator: false,
+      });
+      const { mod } = await loadModule();
+      const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as HelloClient;
+      guest.hello(hello);
+      await vi.waitFor(() => expect(rpc.calls).toContain('principal.me'));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(rpc.calls).not.toContain('workspace.list');
+      expect(rpc.calls).not.toContain('system.status');
+      expect(guestStore.setWorkspaces).not.toHaveBeenCalled();
+      expect(guestStore.forget).not.toHaveBeenCalled();
+    });
+
+    it('a disconnect fences an outstanding cache and route read on the same client', async () => {
+      installGuest();
+      let finish!: (value: unknown) => void;
+      const pending = new Promise((resolve) => {
+        finish = resolve;
+      });
+      rpc.handler = async (method) =>
+        method === 'workspace.list' || method === 'system.status' ? pending : {};
+      const { mod } = await loadModule();
+      const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as HelloClient & {
+        emit(event: string, value: unknown): void;
+      };
+      guest.hello(hello);
+      await vi.waitFor(() => expect(rpc.calls).toContain('workspace.list'));
+      guest.emit('status', 'disconnected');
+      finish({ workspaces: [], tcAddress: 'late-route', localIps: ['10.0.0.77'] });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(guestStore.setWorkspaces).not.toHaveBeenCalled();
+      expect(guestStore.setTcAddress).not.toHaveBeenCalled();
+      expect(guestStore.setHosts).not.toHaveBeenCalled();
+    });
 
     it('reconciles the cached list from workspace.list through the guest connection and re-broadcasts', async () => {
       installGuest();
@@ -4865,7 +5588,7 @@ describe('guest-sessions:* IPC handlers', () => {
           guest.hello(hello);
           guest.hello(hello);
           await vi.waitFor(() =>
-            expect(rpc.calls.filter((m) => m === 'workspace.list').length).toBe(3),
+            expect(rpc.calls.filter((m) => m === 'workspace.list').length).toBe(2),
           );
           expect(releases).toHaveLength(1);
 
@@ -4913,7 +5636,7 @@ describe('guest-sessions:* IPC handlers', () => {
           // hello reuses that lease.
           guest.hello(hello);
           guest.hello(hello);
-          await vi.waitFor(() => expect(reads()).toBe(before + 2));
+          await vi.waitFor(() => expect(reads()).toBe(before + 1));
           await new Promise((resolve) => setTimeout(resolve, 0));
           expect(subscribes()).toBe(2);
           guest.emit('status', 'connected');
@@ -4925,7 +5648,7 @@ describe('guest-sessions:* IPC handlers', () => {
               changes: { title: 'Fresh' },
             }),
           );
-          await vi.waitFor(() => expect(reads()).toBe(before + 3));
+          await vi.waitFor(() => expect(reads()).toBe(before + 2));
         });
 
         it('a registry read crossing a reconnect never sends a stale subscribe on the new socket', async () => {
@@ -5191,10 +5914,11 @@ describe('guest-sessions:* IPC handlers', () => {
         }));
         vi.mocked(app.getPath).mockReturnValue(directory);
         real = await vi.importActual<RealStore>('../guest-sessions-store');
-        await real.applyRemoteSyncRecord({ ...GUEST, detectHosts: false, token: 'fixture-token' });
+        await real.add({ ...GUEST, detectHosts: false, token: 'fixture-token' });
         sessionId = (await real.list())[0].id;
         guestStore.list.mockImplementation(real.list);
         guestStore.findById.mockImplementation(real.findById);
+        guestStore.setPrincipal.mockImplementation(real.setPrincipal);
         guestStore.setWorkspaces.mockImplementation(real.setWorkspaces);
         guestStore.leaveWorkspace.mockImplementation(real.leaveWorkspace);
         guestStore.getDecryptedToken.mockImplementation(real.getDecryptedToken);
@@ -5212,6 +5936,7 @@ describe('guest-sessions:* IPC handlers', () => {
         for (const fn of [
           guestStore.list,
           guestStore.findById,
+          guestStore.setPrincipal,
           guestStore.setWorkspaces,
           guestStore.leaveWorkspace,
           guestStore.getDecryptedToken,
@@ -5385,6 +6110,35 @@ describe('guest-sessions:* IPC handlers', () => {
     expect(rpc.calls).not.toContain('principal.revokeSelf');
     expect(guestStore.forget).not.toHaveBeenCalled();
     expect(closeForBackend).not.toHaveBeenCalled();
+  });
+
+  it('retains the saved workspace on inherited-membership refusal (#6390)', async () => {
+    installGuest();
+    const { JsonRpcError } = await import('../json-rpc-errors');
+    rpc.handler = async (method) => {
+      if (method === 'workspace.members.leave')
+        throw new JsonRpcError({
+          code: -32602,
+          message: 'private-marker',
+          data: { code: 'host-membership-required' },
+        });
+      return {};
+    };
+    const { mod } = await loadModule();
+    const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as { status: string };
+    guest.status = 'connected';
+    mod.registerBackendHandlers();
+    const result = await findHandler('guest-sessions:leave-workspace')!(
+      {},
+      { id: GUEST.id, workspaceId: 'ws-guest' },
+    );
+    expect(guestStore.leaveWorkspace).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      id: GUEST.id,
+      workspaceId: 'ws-guest',
+      left: false,
+      refused: 'host-membership-required',
+    });
   });
 
   it('guest-sessions:leave-workspace asks the host over the pooled client (10 s bound) and drops the workspace locally', async () => {
@@ -5586,4 +6340,68 @@ describe('guest-sessions:* IPC handlers', () => {
     expect(mod.getBackendClientForConnection(REMOTE.id)).toBeDefined();
     expect(store.forget).not.toHaveBeenCalled();
   });
+});
+
+describe('personal credential import classification', () => {
+  it('an invited credential cannot rotate an owner connection secret', async () => {
+    importedPrincipal.inspect.mockResolvedValue({
+      principal: { id: 'member', isAdministrator: false, hostRole: 'member' },
+      capabilities: { hostMembership: true },
+    });
+    mockCaptureFingerprint.mockResolvedValue({
+      ok: true,
+      fingerprint: REMOTE.fingerprint,
+      tokenValid: true,
+      connected: true,
+    });
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    await expect(
+      findHandler('connections:rotate-secret')!({}, { id: REMOTE.id, token: 'member-token' }),
+    ).rejects.toThrow();
+    expect(store.replaceSecret).not.toHaveBeenCalled();
+  });
+});
+
+it('reopens a saved instance through IPC after navigation policy is republished and its window pool was released', async () => {
+  const { EventEmitter } = await import('node:events');
+  const { COLLABORATION_AUTH } = await import('../../../collaboration-auth/types');
+  const member = { ...GUEST, hostRole: 'member' as const };
+  guestStore.findById.mockImplementation(async (id: string) => (id === member.id ? member : null));
+  guestStore.list.mockResolvedValue([member]);
+  guestStore.getDecryptedToken.mockResolvedValue('controlled-invited-secret');
+  const { mod, openOrFocus } = await loadModule();
+  mod.registerBackendHandlers();
+  const { registerCollaborationAuthHandlers } =
+    await import('../../../collaboration-auth/main/collaboration-auth.ipc');
+  registerCollaborationAuthHandlers();
+  const sender = Object.assign(new EventEmitter(), { id: 418, isDestroyed: () => false });
+  const event = { sender };
+  const publish = findHandler(COLLABORATION_AUTH.POLICY)!;
+  const open = findHandler('connections:open')!;
+  try {
+    await publish(event, { multiplayer: true, gitlab: false });
+    await expect(open(event, { id: member.id })).resolves.toEqual({
+      status: 'opened',
+      id: member.id,
+    });
+    const first = mod.getBackendClientForConnection(member.id);
+    sender.emit('did-navigate-in-page');
+    await expect(open(event, { id: member.id })).rejects.toThrow(/Multiplayer is unavailable/);
+    mod.disconnectBackendClient(member.id);
+    await publish(event, { multiplayer: true, gitlab: false });
+    await expect(open(event, { id: member.id })).resolves.toEqual({
+      status: 'opened',
+      id: member.id,
+    });
+    expect(mod.getBackendClientForConnection(member.id)).not.toBe(first);
+    expect(openOrFocus).toHaveBeenNthCalledWith(1, member.id);
+    expect(openOrFocus).toHaveBeenNthCalledWith(2, member.id);
+    expect(store.setActiveId).not.toHaveBeenCalled();
+    await publish(event, { multiplayer: false, gitlab: false });
+    await expect(open(event, { id: member.id })).rejects.toThrow(/Multiplayer is unavailable/);
+    expect(openOrFocus).toHaveBeenCalledTimes(2);
+  } finally {
+    sender.emit('destroyed');
+  }
 });

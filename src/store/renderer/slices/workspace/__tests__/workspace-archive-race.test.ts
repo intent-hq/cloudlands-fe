@@ -12,7 +12,7 @@
 import type { Workspace, WorkspaceId } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import { describe, expect, it } from 'vitest';
-import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import {
   bulkUpdateWorkspaceEntities,
   clearWorkspacePendingDeletion,

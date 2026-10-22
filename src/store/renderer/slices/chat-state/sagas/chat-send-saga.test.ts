@@ -1,13 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection, getItem } from '@themislib/themis/utils/collections/collection-utils';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 
 const mocks = vi.hoisted(() => ({
   send: vi.fn(),
   queue: vi.fn(),
   hydrateQueue: vi.fn(async () => undefined),
   sendQueuedNow: vi.fn(),
+  sendQueuedMessagesNow: vi.fn(),
   removeQueued: vi.fn(),
+  editQueued: vi.fn(),
   stop: vi.fn(),
   rename: vi.fn(),
   toastInfo: vi.fn(),
@@ -17,6 +20,10 @@ const mocks = vi.hoisted(() => ({
   // handler brackets; both are stubbed per-test.
   getModelsForProvider: vi.fn(),
   setModel: vi.fn(),
+  // Daemon-side redrive (`agent.retry`) — the provider retry's fallback when
+  // the failed turn has no renderer-side record to resend (wake-started
+  // turns, or after a reload; intent-hq/intent#7226).
+  agentRetry: vi.fn(),
   // Image pre-upload (monorepo#3338): default maps each inline block to a
   // deterministic reference block; individual tests override to assert the
   // failure path.
@@ -47,9 +54,12 @@ vi.mock('$lib/client', () => ({
     agents: {
       queue: mocks.queue,
       sendQueuedNow: mocks.sendQueuedNow,
+      sendQueuedMessagesNow: mocks.sendQueuedMessagesNow,
       removeQueued: mocks.removeQueued,
+      editQueued: mocks.editQueued,
       stop: mocks.stop,
       rename: mocks.rename,
+      retry: mocks.agentRetry,
     },
   },
 }));
@@ -77,14 +87,24 @@ import {
 import {
   agentQueueReducer,
   initialState as queueInitialState,
-  removeQueuedMessageRequested,
+  queuedMessageMutationRequested,
   replaceAgentQueue,
 } from '../../agent-queue/agent-queue-slice';
+import type { QueuedMessageMutationOperation } from '../../agent-queue/agent-queue-types';
 import {
   __resetAgentQueueReadServiceForTests,
   noteAgentQueueEventSnapshotApplied,
 } from '$features/agent/agent-queue-read-service';
 import { initialState as workspaceInitialState } from '../../workspace/workspace-slice';
+import {
+  pendingScopeActivated,
+  pendingSubmissionsReducer,
+} from '../../pending-submissions/pending-submissions-slice';
+import type {
+  PendingSubmissionsState,
+  SubmissionScope,
+} from '../../pending-submissions/pending-submissions-types';
+import { selectWorkspaceParticipationContext } from '../../workspace/workspace-selectors';
 import {
   chatQueueProcessingReceived,
   chatQueuedRetryRecordSet,
@@ -94,16 +114,32 @@ import {
   chatStateReducer,
   refreshChatTranscriptRequested,
   sendMessage,
-  sendQueuedMessageNowRequested,
   streamActivityReceived,
   streamStatusReceived,
   transcriptHydrationSettled,
 } from '../chat-state-slice';
+import { selectChatError } from '../chat-state-selectors';
+import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 import { chatSendSaga } from './chat-send-saga';
 
 const WS = 'ws-send';
 const AGENT = 'agent-send';
 const OTHER_AGENT = 'agent-other';
+let mutationSeq = 0;
+function queuedMutation(
+  messageId: string,
+  operation: QueuedMessageMutationOperation,
+  workspaceId = WS,
+): ReturnType<typeof queuedMessageMutationRequested> {
+  return queuedMessageMutationRequested({
+    requestId: `request-${++mutationSeq}`,
+    consumerId: 'panel-a',
+    workspaceId,
+    agentId: AGENT,
+    messageId,
+    operation,
+  });
+}
 const settle = async () => {
   await Promise.resolve();
   await Promise.resolve();
@@ -148,6 +184,7 @@ function harness(
   let agentSessions = agentSessionReducer(sessionInitialState, bulkUpsertSessions(seedSessions));
   let chatState = chatInitialState;
   let agentQueue = queueInitialState;
+  let pendingSubmissions: PendingSubmissionsState = { byAgentId: {} };
   const workspaceEntities =
     workspaceRecord === null
       ? []
@@ -156,10 +193,20 @@ function harness(
     ...workspaceInitialState,
     workspaces: createCollection('id', workspaceEntities),
   };
+  const state = () =>
+    withLegacyPrincipal({
+      agentSessions,
+      chatState,
+      agentQueue,
+      pendingSubmissions,
+      workspace,
+      model: { providerModels },
+    });
   const dispatch = vi.fn((action) => {
     agentSessions = agentSessionReducer(agentSessions, action);
     chatState = chatStateReducer(chatState, action);
     agentQueue = agentQueueReducer(agentQueue, action);
+    pendingSubmissions = pendingSubmissionsReducer(pendingSubmissions, action);
     return action;
   });
   const task = runSaga(
@@ -169,7 +216,7 @@ function harness(
       getState: () => {
         const error = getStateError?.();
         if (error) throw error;
-        return { agentSessions, chatState, agentQueue, workspace, model: { providerModels } };
+        return state();
       },
     },
     chatSendSaga,
@@ -178,6 +225,19 @@ function harness(
     channel,
     dispatch,
     task,
+    state,
+    /** Dispatch a queued mutation through the reducer and the saga channel, as the store does. */
+    request: (action: ReturnType<typeof queuedMessageMutationRequested>) => {
+      agentQueue = agentQueueReducer(agentQueue, action);
+      channel.put(action);
+      return action;
+    },
+    outcome: async (action: ReturnType<typeof queuedMessageMutationRequested>) => {
+      const id = action.payload[0].requestId;
+      await vi.waitFor(() => expect(getItem(agentQueue.mutations, id)?.status).not.toBe('pending'));
+      return getItem(agentQueue.mutations, id);
+    },
+    queue: () => agentQueue,
     setChat: (
       action:
         ReturnType<typeof chatLastAttemptedMessageSet> | ReturnType<typeof streamStatusReceived>,
@@ -361,6 +421,56 @@ describe('chatSendSaga', () => {
     await run.task.toPromise();
   });
 
+  // Assistant chats name themselves through the daemon's first-turn naming
+  // instruction (`ws.workspace.setAgentName`), like workspace agents; the
+  // renderer must not pre-empt that by renaming to the message text.
+  it('leaves a placeholder-named Assistant chat for the agent to name after a direct send', async () => {
+    const chiefWorkspaceId = '__chief__';
+    mocks.send.mockResolvedValue(undefined);
+    const run = harness(
+      session({ workspaceId: chiefWorkspaceId, name: 'New chat', nameExplicitlySet: false }),
+      undefined,
+      null,
+    );
+
+    run.channel.put(sendMessage(AGENT, { wsId: chiefWorkspaceId, text: 'Plan my week' }));
+    await vi.waitFor(() => expect(mocks.send).toHaveBeenCalledTimes(1));
+    await settle();
+
+    expect(mocks.rename).not.toHaveBeenCalled();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('leaves a placeholder-named Assistant chat for the agent to name after a queued send', async () => {
+    const chiefWorkspaceId = '__chief__';
+    mocks.queue.mockResolvedValue({
+      success: true,
+      turnId: 'turn-queued',
+      queuedMessage: { id: 'queued-1', content: 'Plan my week', timestamp: 1 },
+    });
+    const run = harness(
+      session({
+        workspaceId: chiefWorkspaceId,
+        name: 'New chat',
+        nameExplicitlySet: false,
+        status: AgentStatus.Active,
+        isStreaming: true,
+        isProcessing: true,
+      }),
+      undefined,
+      null,
+    );
+
+    run.channel.put(sendMessage(AGENT, { wsId: chiefWorkspaceId, text: 'Plan my week' }));
+    await vi.waitFor(() => expect(mocks.queue).toHaveBeenCalledTimes(1));
+    await settle();
+
+    expect(mocks.rename).not.toHaveBeenCalled();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('lets stop bypass a blocked send while ordinary same-agent commands remain FIFO', async () => {
     const gates = Array.from({ length: 3 }, () => {
       let resolve!: () => void;
@@ -392,13 +502,13 @@ describe('chatSendSaga', () => {
     run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'first' }));
 
     await vi.waitFor(() => expect(order).toEqual(['send']));
-    run.channel.put(removeQueuedMessageRequested(AGENT, 'queued-1'));
+    run.request(queuedMutation('queued-1', { kind: 'remove' }));
     run.channel.put(retry);
     run.channel.put(stop);
     await stop.promise;
 
     expect(order).toEqual(['send', 'stop']);
-    expect(mocks.stop).toHaveBeenCalledWith(AGENT);
+    expect(mocks.stop).toHaveBeenCalledWith(AGENT, WS);
     expect(mocks.removeQueued).not.toHaveBeenCalled();
     await settle();
     expect(order).toEqual(['send', 'stop']);
@@ -410,7 +520,7 @@ describe('chatSendSaga', () => {
     gates[2].resolve();
     await retry.promise;
 
-    expect(mocks.removeQueued).toHaveBeenCalledWith(AGENT, 'queued-1');
+    expect(mocks.removeQueued).toHaveBeenCalledWith(AGENT, 'queued-1', WS);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -452,22 +562,81 @@ describe('chatSendSaga', () => {
     const stop = agentSessionStopChatRequested(AGENT);
 
     run.channel.put(stop);
-    run.channel.put(removeQueuedMessageRequested(AGENT, 'queued-after-failure'));
+    run.request(queuedMutation('queued-after-failure', { kind: 'remove' }));
 
     await expect(stop.promise).rejects.toThrow('stop failed');
     await vi.waitFor(() =>
-      expect(mocks.removeQueued).toHaveBeenCalledWith(AGENT, 'queued-after-failure'),
+      expect(mocks.removeQueued).toHaveBeenCalledWith(AGENT, 'queued-after-failure', WS),
     );
     run.task.cancel();
     await run.task.toPromise();
   });
+
+  it.each([
+    ['edit', { kind: 'edit', content: 'revised' }],
+    ['remove', { kind: 'remove' }],
+  ] as const)(
+    'rejects a queued %s when submission reconciliation blocks it at execution time',
+    async (_kind, operation) => {
+      const preceding: QueuedMessage = {
+        id: 'preceding',
+        content: 'first',
+        queuedAt: '2026-10-05T00:00:00.000Z',
+        position: 0,
+      };
+      const message: QueuedMessage = {
+        id: 'reconciling',
+        content: 'original',
+        queuedAt: '2026-10-05T00:00:00.000Z',
+        position: 1,
+      };
+      let resolveFirst!: (result: { success: true }) => void;
+      mocks.removeQueued.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+      );
+      const run = harness(session(), undefined, {
+        id: WS,
+        name: 'Workspace',
+        path: '/repo',
+        myRole: 'owner',
+      } as Workspace);
+      run.dispatch(replaceAgentQueue(AGENT, [preceding, message], WS));
+      run.request(queuedMutation(preceding.id, { kind: 'remove' }));
+      await vi.waitFor(() => expect(mocks.removeQueued).toHaveBeenCalledTimes(1));
+      const currentState = run.state();
+      const scope: SubmissionScope = {
+        agentId: AGENT,
+        workspaceId: WS,
+        authority: 'authority',
+        principalId: currentState.principal.snapshot!.principal.id,
+        participation: selectWorkspaceParticipationContext.select(currentState, WS)!,
+        owner: 'owner',
+      };
+      run.dispatch(pendingScopeActivated(scope, 1));
+
+      const action = run.request(queuedMutation(message.id, operation));
+      resolveFirst({ success: true });
+
+      await expect(run.outcome(action)).resolves.toMatchObject({ status: 'failed' });
+      expect(mocks.editQueued).not.toHaveBeenCalled();
+      expect(mocks.removeQueued).toHaveBeenCalledTimes(1);
+      expect(getItem(run.queue().byAgentId[AGENT]!.messages, message.id)).toMatchObject({
+        id: message.id,
+        content: message.content,
+      });
+      run.task.cancel();
+      await run.task.toPromise();
+    },
+  );
 
   it('keeps send-now atomic and queue removal optimistic when transport fails', async () => {
     mocks.sendQueuedNow.mockResolvedValue({ success: true, turnId: 'turn-1' });
     mocks.removeQueued.mockRejectedValue(new Error('offline'));
     const run = harness();
     run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'ignored', queuedMessageId: 'queued-1' }));
-    run.channel.put(removeQueuedMessageRequested(AGENT, 'queued-2'));
+    run.request(queuedMutation('queued-2', { kind: 'remove' }));
     await settle();
 
     expect(mocks.sendQueuedNow).toHaveBeenCalledWith({
@@ -477,7 +646,7 @@ describe('chatSendSaga', () => {
     });
     expect(run.dispatch).toHaveBeenCalledWith(chatQueueProcessingReceived(AGENT, 'turn-1'));
     expect(mocks.send).not.toHaveBeenCalled();
-    expect(mocks.removeQueued).toHaveBeenCalledWith(AGENT, 'queued-2');
+    expect(mocks.removeQueued).toHaveBeenCalledWith(AGENT, 'queued-2', WS);
     expect(
       run.dispatch.mock.calls.some(([action]) => action.type === 'agentQueue/removeQueuedMessage'),
     ).toBe(true);
@@ -507,9 +676,12 @@ describe('chatSendSaga', () => {
       run.dispatch(replaceAgentQueue(AGENT, entries));
       run.setChat(chatLastAttemptedMessageSet(AGENT, { text: 'running turn' }));
       run.dispatch.mockClear();
-      const action = sendQueuedMessageNowRequested(AGENT, WS, 'chosen');
-      run.channel.put(action);
-      await expect(action.promise).resolves.toBe(outcome);
+      const action = run.request(queuedMutation('chosen', { kind: 'sendNow' }));
+      await expect(run.outcome(action)).resolves.toMatchObject({
+        consumerId: 'panel-a',
+        status: 'succeeded',
+        sendOutcome: outcome,
+      });
       expect(mocks.sendQueuedNow).toHaveBeenCalledExactlyOnceWith({
         agentId: AGENT,
         workspaceId: WS,
@@ -523,7 +695,7 @@ describe('chatSendSaga', () => {
           ([sent]) =>
             sent.type === 'transientUi/clearChatDraft' ||
             sent.type === chatLastAttemptedMessageSet.type ||
-            sent.type.startsWith('agentQueue/'),
+            (sent.type.startsWith('agentQueue/') && sent.type !== 'agentQueue/mutationFinished'),
         ),
       ).toBe(false);
       if (outcome === 'delivered') {
@@ -538,24 +710,78 @@ describe('chatSendSaga', () => {
     },
   );
 
+  it.each(['before', 'after'] as const)(
+    'keeps send-now processing payload when its event arrives %s the response',
+    async (eventOrder) => {
+      const run = harness();
+      const original: QueuedMessage = {
+        id: 'chosen',
+        turnId: 'turn-now',
+        content: 'first',
+        position: 0,
+        queuedAt: '2026-10-02T00:00:00Z',
+      };
+      const admitted: QueuedMessage = {
+        ...original,
+        content: 'first\n\nsecond',
+        fileBlocks: [{ type: 'file', attachmentId: 'f', fileName: 'file.txt' }],
+        messageMetadata: {
+          mergedMessageMetadata: [
+            { answeredQuestionsMessageId: 'one' },
+            { answeredQuestionsMessageId: 'two' },
+          ],
+        },
+      };
+      run.dispatch(
+        chatQueuedRetryRecordSet(AGENT, original.id, { text: original.content }, original.turnId!),
+      );
+      run.dispatch(replaceAgentQueue(AGENT, [original], WS));
+      mocks.sendQueuedNow.mockImplementation(async () => {
+        if (eventOrder === 'before')
+          run.dispatch(chatQueueProcessingReceived(AGENT, 'turn-now', [admitted]));
+        return { success: true, queued: false, turnId: 'turn-now' };
+      });
+      const action = run.request(queuedMutation(original.id, { kind: 'sendNow' }));
+      await expect(run.outcome(action)).resolves.toMatchObject({ sendOutcome: 'delivered' });
+      if (eventOrder === 'after')
+        run.dispatch(chatQueueProcessingReceived(AGENT, 'turn-now', [admitted]));
+      run.dispatch(replaceAgentQueue(AGENT, [original], WS));
+      run.dispatch(replaceAgentQueue(AGENT, [], WS));
+      run.dispatch(chatSendFailed(AGENT, 'provider failed', 'turn-now'));
+      run.channel.put(agentSessionRetryLastMessageRequested(AGENT, WS));
+      await settle();
+      await settle();
+      expect(mocks.send).toHaveBeenCalledWith(
+        AGENT,
+        admitted.content,
+        expect.anything(),
+        expect.objectContaining({
+          fileBlocks: admitted.fileBlocks,
+          messageMetadata: admitted.messageMetadata,
+        }),
+      );
+      run.task.cancel();
+      await run.task.toPromise();
+    },
+  );
+
   it('rejects failed and cancelled send-now requests without retrying or dropping the queued item', async () => {
     mocks.sendQueuedNow.mockResolvedValueOnce({ success: false, error: 'already drained' });
     const run = harness();
-    const failed = sendQueuedMessageNowRequested(AGENT, WS, 'gone');
-    run.channel.put(failed);
-    await expect(failed.promise).rejects.toThrow('already drained');
+    const failed = run.request(queuedMutation('gone', { kind: 'sendNow' }));
+    await expect(run.outcome(failed)).resolves.toMatchObject({
+      status: 'failed',
+      error: 'already drained',
+    });
     mocks.sendQueuedNow.mockReturnValue(new Promise(() => {}));
-    const active = sendQueuedMessageNowRequested(AGENT, WS, 'waiting');
-    const queued = sendQueuedMessageNowRequested(AGENT, WS, 'later');
-    run.channel.put(active);
-    run.channel.put(queued);
-    const cancelled = Promise.all([
-      expect(active.promise).rejects.toThrow('cancelled'),
-      expect(queued.promise).rejects.toThrow('cancelled'),
-    ]);
+    const active = run.request(queuedMutation('waiting', { kind: 'sendNow' }));
+    const queued = run.request(queuedMutation('later', { kind: 'sendNow' }));
+    await vi.waitFor(() => expect(mocks.sendQueuedNow).toHaveBeenCalledTimes(2));
     run.task.cancel();
-    await cancelled;
     await run.task.toPromise();
+    for (const action of [active, queued]) {
+      expect(getItem(run.queue().mutations, action.payload[0].requestId)?.status).toBe('cancelled');
+    }
     expect(mocks.sendQueuedNow).toHaveBeenCalledTimes(2);
     expect(mocks.send).not.toHaveBeenCalled();
     expect(mocks.removeQueued).not.toHaveBeenCalled();
@@ -591,6 +817,38 @@ describe('chatSendSaga', () => {
     await run.task.toPromise();
   });
 
+  // §5.54: a turn refused because the selected profile was removed (or its
+  // base provider disabled) asks for a replacement and flags the picker.
+  it('turns a provider-profile-replacement-required refusal into a replacement prompt', async () => {
+    const { BackendError } = await import('$lib/client/live/backend-transport-types');
+    mocks.send.mockRejectedValue(
+      new BackendError({
+        code: 'invalid_params',
+        rpcCode: -32602,
+        message: 'provider profile codex@pwork needs a replacement',
+        data: {
+          code: 'provider-profile-replacement-required',
+          providerRef: 'codex@pwork',
+          reason: 'profile-missing',
+        },
+      }),
+    );
+    const run = harness();
+    run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'next turn' }));
+    await settle();
+
+    const failed = run.dispatch.mock.calls
+      .map(([action]) => action)
+      .find((action) => action.type === chatSendFailed.type);
+    expect(failed?.payload[1]).toMatch(/Choose another model/);
+    expect(run.state().agentSessions.byAgentId[AGENT]?.providerReplacementRequired).toEqual({
+      providerRef: 'codex@pwork',
+      reason: 'profile-missing',
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('queues a normal send for a busy agent with the exact daemon payload', async () => {
     mocks.queue.mockResolvedValue({
       success: true,
@@ -616,6 +874,7 @@ describe('chatSendSaga', () => {
     // Queued sends carry the converted reference blocks too — the retry
     // record matches the wire payload (no re-upload on retry).
     expect(mocks.queue).toHaveBeenCalledWith(AGENT, 'later', {
+      workspaceId: WS,
       imageBlocks: [{ type: 'image', attachmentId: 'attach-0', mimeType: 'image/png' }],
     });
     expect(mocks.send).not.toHaveBeenCalled();
@@ -652,6 +911,7 @@ describe('chatSendSaga', () => {
     await settle();
 
     expect(mocks.queue).toHaveBeenCalledWith(AGENT, 'Q: Auth method\nA: OAuth', {
+      workspaceId: WS,
       messageMetadata,
     });
     expect(mocks.send).not.toHaveBeenCalled();
@@ -671,7 +931,7 @@ describe('chatSendSaga', () => {
       turnId: 'turn-superseded',
     };
     mocks.queue.mockImplementation(async () => {
-      noteAgentQueueEventSnapshotApplied(AGENT);
+      noteAgentQueueEventSnapshotApplied(AGENT, WS);
       return {
         success: true,
         turnId: 'turn-superseded',
@@ -685,9 +945,8 @@ describe('chatSendSaga', () => {
     await settle();
     await settle();
 
-    // The turn-scoped retry record is still parked (cleaned by
-    // agent:queue:processing) — only the queue seed is guarded.
-    expect(run.dispatch).toHaveBeenCalledWith(
+    // A drained row must not regain a stale parked retry payload.
+    expect(run.dispatch).not.toHaveBeenCalledWith(
       chatQueuedRetryRecordSet(AGENT, 'queued-superseded', { text: 'later' }, 'turn-superseded'),
     );
     expect(run.dispatch.mock.calls.some(([action]) => action.type === replaceAgentQueue.type)).toBe(
@@ -697,7 +956,200 @@ describe('chatSendSaga', () => {
     // apply order cannot rank the superseding snapshot against the echo, so
     // the daemon's true queue is re-read instead of trusting either side
     // (monorepo#2486 review).
-    expect(mocks.hydrateQueue).toHaveBeenCalledWith(AGENT);
+    expect(mocks.hydrateQueue).toHaveBeenCalledWith(AGENT, WS);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it.each(
+    [true, false].flatMap((prior) =>
+      [
+        'snapshot-first',
+        'processing-first',
+        'ack-only',
+        'lagged-old-snapshot',
+        'stale-after-processing',
+        'legacy-lagged',
+        'batch',
+        'recovered-before-ack',
+      ].map((order) => [prior, order] as const),
+    ),
+  )(
+    'retries the processed snapshot after a delayed response (prior record: %s, order: %s)',
+    async (hasPriorRecord, order) => {
+      const first: QueuedMessage = {
+        id: 'survivor',
+        turnId: 'survivor',
+        content: 'first',
+        position: 0,
+        queuedAt: '2026-10-02T00:00:00Z',
+      };
+      const latest: QueuedMessage = {
+        ...first,
+        content: 'first\n\nsecond\n\nthird',
+        fileBlocks: [
+          { type: 'file', attachmentId: 'first-file', fileName: 'first.txt' },
+          { type: 'file', attachmentId: 'third-file', fileName: 'third.txt' },
+        ],
+        messageMetadata: {
+          mergedMessageMetadata: [
+            { type: 'question_answers', answeredQuestionsMessageId: 'question-one' },
+            { type: 'question_answers', answeredQuestionsMessageId: 'question-two' },
+          ],
+        },
+      };
+      const run = harness(session({ isStreaming: true, isProcessing: true }));
+      const bob: QueuedMessage = {
+        ...first,
+        id: 'bob',
+        turnId: 'bob-turn',
+        content: 'Bob input',
+        fileBlocks: [{ type: 'file', attachmentId: 'bob-file', fileName: 'bob.txt' }],
+        messageMetadata: {
+          fromPrincipalId: 'bob',
+          type: 'question_answers',
+          answeredQuestionsMessageId: 'question-bob',
+        },
+      };
+      const processedRows = order === 'batch' ? [latest, bob] : [latest];
+      const expectedContent = order === 'batch' ? latest.content + '\n\nBob input' : latest.content;
+      const expectedFiles =
+        order === 'batch' ? [...latest.fileBlocks!, ...bob.fileBlocks!] : latest.fileBlocks;
+      const expectedMetadata =
+        order === 'batch'
+          ? {
+              mergedMessageMetadata: [
+                ...(latest.messageMetadata!.mergedMessageMetadata as unknown[]),
+                bob.messageMetadata,
+              ],
+            }
+          : latest.messageMetadata;
+      if (hasPriorRecord)
+        run.dispatch(chatQueuedRetryRecordSet(AGENT, first.id, { text: first.content }, first.id));
+      run.dispatch(replaceAgentQueue(AGENT, [first], WS));
+      mocks.queue.mockImplementation(async () => {
+        if (order === 'lagged-old-snapshot' || order === 'legacy-lagged') {
+          run.dispatch(replaceAgentQueue(AGENT, [first], WS));
+          noteAgentQueueEventSnapshotApplied(AGENT, WS);
+        }
+        if (order !== 'snapshot-first')
+          run.dispatch(
+            chatQueueProcessingReceived(
+              AGENT,
+              first.id,
+              order === 'legacy-lagged'
+                ? undefined
+                : order === 'recovered-before-ack'
+                  ? [first]
+                  : processedRows,
+            ),
+          );
+        if (order !== 'ack-only' && order !== 'lagged-old-snapshot' && order !== 'legacy-lagged') {
+          run.dispatch(replaceAgentQueue(AGENT, [latest], WS));
+          noteAgentQueueEventSnapshotApplied(AGENT, WS);
+        }
+        if (order === 'snapshot-first')
+          run.dispatch(
+            chatQueueProcessingReceived(
+              AGENT,
+              first.id,
+              order === 'legacy-lagged'
+                ? undefined
+                : order === 'recovered-before-ack'
+                  ? [first]
+                  : processedRows,
+            ),
+          );
+        if (order === 'recovered-before-ack') {
+          run.dispatch(
+            chatQueueProcessingReceived(AGENT, first.id, [{ ...latest, id: 'recovered-id' }]),
+          );
+        }
+        if (order === 'stale-after-processing') {
+          run.dispatch(replaceAgentQueue(AGENT, [first], WS));
+          noteAgentQueueEventSnapshotApplied(AGENT, WS);
+        }
+        run.dispatch(replaceAgentQueue(AGENT, [], WS));
+        noteAgentQueueEventSnapshotApplied(AGENT, WS);
+        return {
+          success: true,
+          turnId: order === 'batch' ? bob.turnId : first.id,
+          queuedMessage:
+            order === 'batch'
+              ? bob
+              : order === 'ack-only' || order === 'lagged-old-snapshot' || order === 'legacy-lagged'
+                ? latest
+                : { ...first, content: 'first\n\nsecond' },
+        };
+      });
+      run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'second' }));
+      await settle();
+      await settle();
+      run.dispatch(chatSendFailed(AGENT, 'turn failed', first.id));
+      run.dispatch(bulkUpsertSessions([session()]));
+      run.channel.put(agentSessionRetryLastMessageRequested(AGENT, WS));
+      await settle();
+      await settle();
+      expect(mocks.send).toHaveBeenCalledWith(
+        AGENT,
+        expectedContent,
+        expect.anything(),
+        expect.objectContaining({
+          fileBlocks: expectedFiles,
+          messageMetadata: expectedMetadata,
+        }),
+      );
+      run.task.cancel();
+      await run.task.toPromise();
+    },
+  );
+
+  it('replaces the surviving row in place after append and parks the full retry payload', async () => {
+    const original: QueuedMessage = {
+      id: 'surviving',
+      turnId: 'surviving',
+      content: 'first',
+      queuedAt: '2026-10-02T00:00:00Z',
+      position: 0,
+      messageMetadata: { fromPrincipalId: 'alice' },
+      imageBlocks: [{ type: 'image', attachmentId: 'first-image' }],
+    };
+    const system: QueuedMessage = {
+      id: 'system',
+      content: 'wake',
+      queuedAt: original.queuedAt,
+      position: 1,
+      messageMetadata: { source: 'system' },
+    };
+    const merged = {
+      ...original,
+      content: 'first\n\nsecond',
+      fileBlocks: [{ type: 'file' as const, attachmentId: 'second-file', fileName: 'report.txt' }],
+    };
+    mocks.queue.mockResolvedValue({ success: true, turnId: 'surviving', queuedMessage: merged });
+    const run = harness(session({ isStreaming: true, isProcessing: true }));
+    run.dispatch(replaceAgentQueue(AGENT, [original, system], WS));
+    run.channel.put(
+      sendMessage(AGENT, { wsId: WS, text: 'second', fileBlocks: merged.fileBlocks }),
+    );
+    await settle();
+    await settle();
+    expect(run.dispatch).toHaveBeenCalledWith(replaceAgentQueue(AGENT, [merged, system], WS));
+    expect(run.dispatch).toHaveBeenCalledWith(
+      chatQueuedRetryRecordSet(
+        AGENT,
+        'surviving',
+        {
+          text: 'first\n\nsecond',
+          options: {
+            imageBlocks: original.imageBlocks,
+            fileBlocks: merged.fileBlocks,
+            messageMetadata: original.messageMetadata,
+          },
+        },
+        'surviving',
+      ),
+    );
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -721,7 +1173,7 @@ describe('chatSendSaga', () => {
     run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'later' }));
     await settle();
 
-    expect(run.dispatch).toHaveBeenCalledWith(replaceAgentQueue(AGENT, [freshQueuedMessage]));
+    expect(run.dispatch).toHaveBeenCalledWith(replaceAgentQueue(AGENT, [freshQueuedMessage], WS));
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -757,14 +1209,20 @@ describe('chatSendSaga', () => {
     mocks.queue.mockResolvedValue({
       success: true,
       turnId: 'turn-queued',
-      queuedMessage: { id: 'queued-1', content: 'later file', timestamp: 1 },
+      queuedMessage: {
+        id: 'queued-1',
+        content: '',
+        queuedAt: '2026-10-02T00:00:00Z',
+        position: 0,
+        fileBlocks,
+      },
     });
     const queueRun = harness(
       session({ status: AgentStatus.Active, isStreaming: true, isProcessing: true }),
     );
     queueRun.channel.put(sendMessage(AGENT, { wsId: WS, text: '', fileBlocks }));
     await settle();
-    expect(mocks.queue).toHaveBeenCalledWith(AGENT, '', { fileBlocks });
+    expect(mocks.queue).toHaveBeenCalledWith(AGENT, '', { workspaceId: WS, fileBlocks });
     expect(mocks.send).not.toHaveBeenCalled();
     expect(queueRun.dispatch).toHaveBeenCalledWith(
       chatQueuedRetryRecordSet(
@@ -815,11 +1273,11 @@ describe('chatSendSaga', () => {
     const successfulStop = agentSessionStopChatRequested(AGENT);
     run.channel.put(successfulStop);
     await expect(successfulStop.promise).resolves.toBeUndefined();
-    expect(mocks.stop).toHaveBeenNthCalledWith(1, AGENT);
+    expect(mocks.stop).toHaveBeenNthCalledWith(1, AGENT, WS);
     const failedStop = agentSessionStopChatRequested(AGENT);
     run.channel.put(failedStop);
     await expect(failedStop.promise).rejects.toThrow('stop failed');
-    expect(mocks.stop).toHaveBeenNthCalledWith(2, AGENT);
+    expect(mocks.stop).toHaveBeenNthCalledWith(2, AGENT, WS);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -861,7 +1319,7 @@ describe('chatSendSaga', () => {
     const modelRetrySettlement = concurrentModelRetry.promise.catch((error) => error);
 
     run.channel.put(activeStop);
-    await vi.waitFor(() => expect(mocks.stop).toHaveBeenCalledWith(AGENT));
+    await vi.waitFor(() => expect(mocks.stop).toHaveBeenCalledWith(AGENT, WS));
     run.channel.put(concurrentRetry);
     await vi.waitFor(() => expect(mocks.send).toHaveBeenCalledTimes(1));
     run.channel.put(concurrentModelRetry);
@@ -947,7 +1405,7 @@ describe('chatSendSaga', () => {
     run.channel.put(retry);
     await expect(retry.promise).resolves.toBeUndefined();
 
-    expect(mocks.stop).toHaveBeenCalledWith(AGENT);
+    expect(mocks.stop).toHaveBeenCalledWith(AGENT, WS);
     expect(mocks.send).toHaveBeenCalledWith(
       AGENT,
       'stalled send',
@@ -1036,7 +1494,7 @@ describe('chatSendSaga', () => {
     run.channel.put(retry);
     await expect(retry.promise).resolves.toBeUndefined();
 
-    expect(mocks.stop).toHaveBeenCalledWith(AGENT);
+    expect(mocks.stop).toHaveBeenCalledWith(AGENT, WS);
     expect(mocks.send).not.toHaveBeenCalled();
     await vi.waitFor(() => expect(mocks.toastInfo).toHaveBeenCalledTimes(1));
     run.task.cancel();
@@ -1057,6 +1515,7 @@ describe('chatSendSaga', () => {
       mocks.setModel.mockReset();
       mocks.send.mockReset();
       mocks.queue.mockReset();
+      mocks.agentRetry.mockReset();
       mocks.getModelsForProvider.mockResolvedValue({
         models: [
           { value: 'gpt-5-mini', label: 'Mini' },
@@ -1084,7 +1543,7 @@ describe('chatSendSaga', () => {
       run.channel.put(retry);
       await expect(retry.promise).resolves.toBeUndefined();
 
-      expect(mocks.getModelsForProvider).toHaveBeenCalledWith(OTHER_PROVIDER);
+      expect(mocks.getModelsForProvider).toHaveBeenCalledWith(OTHER_PROVIDER, { workspaceId: WS });
       expect(mocks.setModel).toHaveBeenCalledWith(AGENT, 'gpt-5-codex', WS, OTHER_PROVIDER);
       // The redrive MUST carry the newly picked model as an explicit
       // override on the wire: the plain last-message retry resolves the
@@ -1150,7 +1609,7 @@ describe('chatSendSaga', () => {
       expect(send1).toBeLessThan(switch2);
       expect(switch2).toBeLessThan(queue2);
       expect(mocks.queue).toHaveBeenCalledTimes(1);
-      expect(mocks.queue).toHaveBeenCalledWith(AGENT, 'retry me');
+      expect(mocks.queue).toHaveBeenCalledWith(AGENT, 'retry me', { workspaceId: WS });
       expect(mocks.toastError).not.toHaveBeenCalled();
       run.task.cancel();
       await run.task.toPromise();
@@ -1203,6 +1662,7 @@ describe('chatSendSaga', () => {
         ],
       });
       const run = harness();
+      run.setChat(chatLastAttemptedMessageSet(AGENT, { text: 'retry me', options: {} }));
 
       const retry = agentSessionRetryWithProviderRequested(AGENT, WS, OTHER_PROVIDER);
       run.channel.put(retry);
@@ -1277,6 +1737,131 @@ describe('chatSendSaga', () => {
       await vi.waitFor(() => expect(mocks.toastError).toHaveBeenCalledTimes(1));
       run.task.cancel();
       await run.task.toPromise();
+    });
+
+    describe('error session redrives through agent.retry (intent-hq/intent#7226)', () => {
+      // A turn started by a wake (PR monitor, hook, sibling agent) — or any
+      // turn after an app reload — has no `lastAttemptedMessage`: that record
+      // only exists for composer sends. The daemon, however, parked the
+      // session in `error` with the failed message requeued at the queue
+      // front, so `agent.retry` redrives it on the session's CURRENT model —
+      // the one setModel just switched to. That holds for composer turns too.
+      const errored = () => session({ status: AgentStatus.Error });
+      const sessionStatus = (run: ReturnType<typeof harness>) =>
+        selectAgentSession.select(run.state(), AGENT)?.status;
+
+      it('switches provider, then redrives the requeued turn through agent.retry', async () => {
+        mocks.agentRetry.mockResolvedValue({ ok: true, redriven: true, turnId: 'turn-1' });
+        const run = harness(errored());
+        run.dispatch(chatSendFailed(AGENT, 'usage limit'));
+
+        const retry = agentSessionRetryWithProviderRequested(AGENT, WS, OTHER_PROVIDER);
+        run.channel.put(retry);
+        await expect(retry.promise).resolves.toBeUndefined();
+
+        expect(mocks.setModel).toHaveBeenCalledWith(AGENT, 'gpt-5-codex', WS, OTHER_PROVIDER);
+        expect(mocks.agentRetry).toHaveBeenCalledWith(AGENT, WS);
+        // Switch BEFORE redrive, or the redrive runs on the exhausted provider.
+        const [switched] = mocks.setModel.mock.invocationCallOrder;
+        const [redriven] = mocks.agentRetry.mock.invocationCallOrder;
+        expect(switched).toBeLessThan(redriven);
+        // No client-side resend, and no "nothing to retry" dead end.
+        expect(mocks.send).not.toHaveBeenCalled();
+        expect(mocks.toastInfo).not.toHaveBeenCalled();
+        expect(mocks.toastError).not.toHaveBeenCalled();
+        expect(selectChatError.select(run.state(), AGENT)).toBeNull();
+        expect(sessionStatus(run)).toBe(AgentStatus.Pending);
+        run.task.cancel();
+        await run.task.toPromise();
+      });
+
+      it('redrives through agent.retry even when a composer message is on record', async () => {
+        // The daemon requeued the failed message, so a renderer-side resend
+        // would run the prompt twice — and the record may be a leftover from
+        // an earlier composer turn rather than the turn that failed.
+        mocks.agentRetry.mockResolvedValue({ ok: true, redriven: true });
+        const run = harness(errored());
+        run.setChat(chatLastAttemptedMessageSet(AGENT, { text: 'older prompt', options: {} }));
+
+        const retry = agentSessionRetryWithProviderRequested(AGENT, WS, OTHER_PROVIDER);
+        run.channel.put(retry);
+        await expect(retry.promise).resolves.toBeUndefined();
+
+        expect(mocks.setModel).toHaveBeenCalledWith(AGENT, 'gpt-5-codex', WS, OTHER_PROVIDER);
+        expect(mocks.agentRetry).toHaveBeenCalledWith(AGENT, WS);
+        expect(mocks.send).not.toHaveBeenCalled();
+        expect(mocks.queue).not.toHaveBeenCalled();
+        expect(sessionStatus(run)).toBe(AgentStatus.Pending);
+        run.task.cancel();
+        await run.task.toPromise();
+      });
+
+      it('drops the stale failure when the agent was deleted', async () => {
+        mocks.agentRetry.mockResolvedValue({ ok: false, notFound: true, error: 'not found' });
+        const run = harness(errored());
+        run.dispatch(chatSendFailed(AGENT, 'usage limit'));
+
+        const retry = agentSessionRetryWithProviderRequested(AGENT, WS, OTHER_PROVIDER);
+        run.channel.put(retry);
+        await expect(retry.promise).resolves.toBeUndefined();
+
+        expect(selectChatError.select(run.state(), AGENT)).toBeNull();
+        expect(mocks.toastError).not.toHaveBeenCalled();
+        run.task.cancel();
+        await run.task.toPromise();
+      });
+
+      it('does not switch provider when the session is not in error', async () => {
+        const run = harness();
+
+        const retry = agentSessionRetryWithProviderRequested(AGENT, WS, OTHER_PROVIDER);
+        run.channel.put(retry);
+        await expect(retry.promise).resolves.toBeUndefined();
+
+        // Nothing can be redriven, so moving the session would only leave it
+        // on a different provider with nothing re-run.
+        expect(mocks.getModelsForProvider).not.toHaveBeenCalled();
+        expect(mocks.setModel).not.toHaveBeenCalled();
+        expect(mocks.agentRetry).not.toHaveBeenCalled();
+        await vi.waitFor(() => expect(mocks.toastInfo).toHaveBeenCalledTimes(1));
+        run.task.cancel();
+        await run.task.toPromise();
+      });
+
+      it('reports nothing to retry when the daemon queue turned out empty', async () => {
+        mocks.agentRetry.mockResolvedValue({ ok: true, redriven: false });
+        const run = harness(errored());
+
+        const retry = agentSessionRetryWithProviderRequested(AGENT, WS, OTHER_PROVIDER);
+        run.channel.put(retry);
+        await expect(retry.promise).resolves.toBeUndefined();
+
+        expect(mocks.agentRetry).toHaveBeenCalledWith(AGENT, WS);
+        expect(sessionStatus(run)).toBe(AgentStatus.RuntimeIdle);
+        await vi.waitFor(() => expect(mocks.toastInfo).toHaveBeenCalledTimes(1));
+        run.task.cancel();
+        await run.task.toPromise();
+      });
+
+      it('keeps the failure visible and reports it when agent.retry fails', async () => {
+        mocks.agentRetry.mockResolvedValue({ ok: false, error: 'Agent not in error status' });
+        const run = harness(errored());
+        run.dispatch(chatSendFailed(AGENT, 'usage limit'));
+
+        const retry = agentSessionRetryWithProviderRequested(AGENT, WS, OTHER_PROVIDER);
+        await expect(
+          (async () => {
+            run.channel.put(retry);
+            return retry.promise;
+          })(),
+        ).rejects.toThrow('Agent not in error status');
+
+        expect(mocks.send).not.toHaveBeenCalled();
+        expect(selectChatError.select(run.state(), AGENT)).toBe('usage limit');
+        await vi.waitFor(() => expect(mocks.toastError).toHaveBeenCalledTimes(1));
+        run.task.cancel();
+        await run.task.toPromise();
+      });
     });
   });
 });

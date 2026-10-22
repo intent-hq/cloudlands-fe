@@ -7,11 +7,19 @@
  * sites must read it, not only the legacy `content` field the FE's own
  * <think>-tag parser produces.
  */
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { cleanup, screen } from '@testing-library/svelte';
+import { fireEvent, render } from './operational-renderer-test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentMessage, ContentBlock } from '$shared/types';
 import { warmImport } from '../../../../test/warm-import';
 import { findChatSearchMatches } from '../chat-search';
+import {
+  followingTitle,
+  growingHistory,
+  growthBody,
+  growthTitles,
+  titleToolHistory,
+} from './compact-reasoning-fixtures';
 
 vi.mock('svelte-fa', async () => {
   const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
@@ -60,6 +68,111 @@ async function renderStatic(content: ContentBlock[]) {
 }
 
 describe('thinking blocks — StreamingMessageContent', () => {
+  for (const [rendererName, renderer] of [
+    ['MessageContent', renderMessage],
+    ['StreamingMessageContent', renderStreaming],
+  ] as const) {
+    for (const layout of ['nested', 'standalone'] as const) {
+      it(`keeps explicit titles and paired tools once in order in ${rendererName} ${layout}`, async () => {
+        const view = await renderer(titleToolHistory(layout, true), false);
+        if (layout === 'nested')
+          await fireEvent.click(screen.getByTestId('response-group-disclosure'));
+        const thinkingBlocks = [
+          ...view.container.querySelectorAll('[data-message-content-block="thinking"]'),
+        ];
+        const rows = thinkingBlocks.flatMap((block) => [
+          ...block.querySelectorAll('[data-chat-operational-row]'),
+        ]);
+        expect(rows.map((row) => row.textContent?.trim())).toEqual([
+          ...growthTitles,
+          followingTitle,
+          'Validating renderer output',
+        ]);
+        expect(
+          thinkingBlocks.flatMap((block) => [...block.querySelectorAll('button')]),
+        ).toHaveLength(0);
+        expect(view.container.querySelectorAll('[data-tool-use-id]')).toHaveLength(1);
+        expect(
+          view.container.querySelectorAll('[data-message-content-block="tool_result"]'),
+        ).toHaveLength(0);
+        expect(view.container.textContent).not.toContain('Paired source result');
+        const text = view.container.textContent ?? '';
+        const tool = view.container.querySelector('[data-tool-use-id]')!;
+        expect(
+          Boolean(rows[2].compareDocumentPosition(tool) & Node.DOCUMENT_POSITION_FOLLOWING),
+        ).toBe(true);
+        expect(
+          Boolean(tool.compareDocumentPosition(rows[3]) & Node.DOCUMENT_POSITION_FOLLOWING),
+        ).toBe(true);
+        for (const title of [...growthTitles, followingTitle, 'Validating renderer output']) {
+          expect(text.split(title)).toHaveLength(2);
+        }
+      });
+
+      for (const shape of ['single', 'multiple'] as const) {
+        it(`preserves ${shape} same-block body growth through completion, reopening and remount in ${rendererName} ${layout}`, async () => {
+          const initial = growingHistory(layout, shape, 'titles');
+          let view = await renderer(initial, true);
+          const openDetails = async () => {
+            const group = screen.queryByTestId('response-group-disclosure');
+            if (group?.getAttribute('aria-expanded') === 'false') await fireEvent.click(group);
+            if (layout === 'standalone') {
+              for (const toggle of screen.queryAllByTestId('reasoning-disclosure')) {
+                if (toggle.getAttribute('aria-expanded') === 'false') await fireEvent.click(toggle);
+              }
+            }
+          };
+          const assertContent = (withBody: boolean, withFollowing: boolean) => {
+            const expected = [
+              ...(shape === 'single' ? growthTitles.slice(0, 1) : growthTitles),
+              ...(withBody ? growthBody.split('\n\n') : []),
+              ...(withFollowing ? [followingTitle] : []),
+            ];
+            const text = view.container.textContent ?? '';
+            let previous = -1;
+            for (const value of expected) {
+              expect(text.split(value), value).toHaveLength(2);
+              expect(text.indexOf(value), value).toBeGreaterThan(previous);
+              previous = text.indexOf(value);
+            }
+          };
+          await openDetails();
+          assertContent(false, false);
+          // The same thinking ID gains real paragraphs before the next block is appended.
+          await view.rerender({
+            content: growingHistory(layout, shape, 'body'),
+            isStreaming: true,
+          });
+          await openDetails();
+          assertContent(true, false);
+          await view.rerender({
+            content: growingHistory(layout, shape, 'following'),
+            isStreaming: true,
+          });
+          await openDetails();
+          assertContent(true, true);
+          const completed = growingHistory(layout, shape, 'completed');
+          await view.rerender({ content: completed, isStreaming: false });
+          await openDetails();
+          assertContent(true, true);
+          const disclosure =
+            layout === 'nested'
+              ? screen.getByTestId('response-group-disclosure')
+              : screen.getAllByTestId('reasoning-disclosure')[0];
+          await fireEvent.click(disclosure);
+          expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+          expect(view.container.textContent).not.toContain(growthBody.split('\n\n')[0]);
+          await fireEvent.click(disclosure);
+          assertContent(true, true);
+          view.unmount();
+          view = await renderer(completed, false);
+          await openDetails();
+          assertContent(true, true);
+        });
+      }
+    }
+  }
+
   it('renders the daemon `text` field while streaming (auto-expanded)', async () => {
     await renderStreaming([thinking('msg_1:0', 'Checking the schema first')], true);
 
@@ -558,12 +671,26 @@ describe('thinking blocks — StreamingMessageContent', () => {
 
     expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
     expect(screen.getByTestId('response-group-name').textContent).toBe('Reasoning');
-    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'thinking', 'tool_use']);
+    expect(visibleChildTypes()).toEqual([
+      'text',
+      'thinking',
+      'tool_use',
+      'thinking',
+      'thinking',
+      'tool_use',
+    ]);
     expect(document.body.textContent).toContain('Then I will read the current spec');
 
     await fireEvent.click(groupDisclosure);
     expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
-    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'thinking', 'tool_use']);
+    expect(visibleChildTypes()).toEqual([
+      'text',
+      'thinking',
+      'tool_use',
+      'thinking',
+      'thinking',
+      'tool_use',
+    ]);
     const responseGroup = screen.getByTestId('response-group');
     expect(responseGroup.querySelectorAll('[data-testid="reasoning-disclosure"]')).toHaveLength(0);
     expect(responseGroup.textContent?.match(/Reasoning/g)).toHaveLength(1);
@@ -575,7 +702,8 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(history[1]).toContain('Invoking workspace API to set title');
     expect(history[2]).toContain('Set workspace title and read the current spec');
     expect(history[3]).toContain('Planning clarification questions on formatting issues');
-    expect(history[4]).toContain('Ask for the expected agent chat layout');
+    expect(history[4]).toContain('Planning code inspection and question sequencing');
+    expect(history[5]).toContain('Ask for the expected agent chat layout');
     const historyTitles = [
       ...responseGroup.querySelectorAll('[data-testid="reasoning-history-title"]'),
     ].map((title) => title.textContent?.trim());
@@ -606,7 +734,14 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(document.body.textContent).toContain('Workspace ready');
     await fireEvent.click(groupDisclosure);
     expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
-    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'thinking', 'tool_use']);
+    expect(visibleChildTypes()).toEqual([
+      'text',
+      'thinking',
+      'tool_use',
+      'thinking',
+      'thinking',
+      'tool_use',
+    ]);
     expect(document.body.textContent).toContain('Then I will read the current spec');
 
     const completedContent = [
@@ -624,7 +759,14 @@ describe('thinking blocks — StreamingMessageContent', () => {
 
     await fireEvent.click(groupDisclosure);
     expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
-    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'thinking', 'tool_use']);
+    expect(visibleChildTypes()).toEqual([
+      'text',
+      'thinking',
+      'tool_use',
+      'thinking',
+      'thinking',
+      'tool_use',
+    ]);
     expect(responseGroup.textContent?.match(/Reasoning/g)).toHaveLength(1);
     expect(responseGroup.textContent?.match(/Then I will read the current spec/g)).toHaveLength(1);
   });
@@ -858,7 +1000,10 @@ describe('thinking blocks — StreamingMessageContent', () => {
 
     const childBoundaries = group.querySelectorAll('[data-reasoning-section-boundary]');
     expect(childBoundaries).toHaveLength(2);
-    expect(childBoundaries[1].previousElementSibling?.textContent).toContain('Review input.');
+    expect(
+      childBoundaries[1].closest('[data-operational-window-key]')?.previousElementSibling
+        ?.textContent,
+    ).toContain('Review input.');
     expect(childBoundaries[1].textContent).toContain('Specifying task requirements');
     expect(group.textContent?.match(/Review input\./g)).toHaveLength(1);
     expect(group.textContent?.match(/Specifying task requirements/g)).toHaveLength(1);

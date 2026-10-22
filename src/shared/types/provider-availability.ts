@@ -14,8 +14,8 @@ export interface ProviderStatus {
   error?: string;
   /**
    * User-facing warning about a degraded-but-detectable state (e.g. the
-   * claude CLI is installed but npx is missing, so the ACP adapter cannot
-   * run). Rendered in the provider status UI.
+   * daemon reports npx missing and the Claude ACP adapter unavailable).
+   * Rendered in the provider status UI.
    */
   warning?: string;
   /** Whether this provider supports npx fallback when binary is unresolved. */
@@ -86,6 +86,33 @@ export const PROVIDER_AVAILABILITY_KEY_TO_ID: Record<string, string> = {
   unsloth: 'unsloth',
   antigravity: 'antigravity',
 };
+
+const PROVIDER_AVAILABILITY_ID_TO_KEY = new Map(
+  Object.entries(PROVIDER_AVAILABILITY_KEY_TO_ID).map(([key, id]) => [
+    id,
+    key as keyof ProviderAvailabilityResult['providers'],
+  ]),
+);
+
+/** Look up a provider without duplicating the wire-key translation. */
+export function getProviderStatusFromResult(
+  result: ProviderAvailabilityResult | null | undefined,
+  providerId: string,
+): ProviderStatus | undefined {
+  const key = PROVIDER_AVAILABILITY_ID_TO_KEY.get(providerId);
+  return key === undefined ? undefined : result?.providers[key];
+}
+
+/** A ready provider is available and passes its authentication gate. */
+export function isProviderReadyInResult(
+  result: ProviderAvailabilityResult | null | undefined,
+  providerId: string,
+): boolean {
+  const status = getProviderStatusFromResult(result, providerId);
+  return (
+    status?.available === true && isProviderAuthenticationReady(providerId, status.authenticated)
+  );
+}
 
 /**
  * npx-only providers whose `providers.paths` override the daemon honors

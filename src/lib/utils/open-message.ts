@@ -1,3 +1,4 @@
+import { CHAT_PAGE_SIZE } from '$shared/constants';
 /**
  * Deep-open a conversation at a specific message.
  *
@@ -15,7 +16,7 @@
  *      absent even after a full hydrate — once hydration settles without it,
  *      seek the page
  *      CONTAINING the message via `agent.getConversation`'s `aroundMessageId`
- *      (PROTOCOL §5.5) and `replaceMessages` the session with that page.
+ *      (PROTOCOL §5.5) and seed the history segment with that page, retaining the live tail.
  *   4. Hand the DOM work to the mounted ChatPanel through the
  *      'chat:open-message' window event (dispatched on a retry ladder to
  *      cover slow cross-workspace mounts): the panel force-renders the
@@ -31,12 +32,20 @@ import type { AgentMessage } from '$shared/types';
 import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
-import { replaceMessages } from '$store/renderer/slices/agent-session/agent-session-slice';
+import {
+  seedHistoryAround,
+  setHistoryOldestReached,
+} from '$store/renderer/slices/agent-session/agent-session-slice';
 import {
   openPanel,
   setChiefActiveAgentId,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { setActiveAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import {
+  scrollbackFetchStarted,
+  scrollbackSeekSettled,
+} from '$store/renderer/slices/chat-state/chat-state-slice';
+import { selectChatAgentState } from '$store/renderer/slices/chat-state/chat-state-selectors';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { dispatchWindowEvent } from './window-events';
 import { navigateToRoute } from './navigation.client';
@@ -49,13 +58,21 @@ export interface OpenMessageOptions {
   messageId: string;
   /** Search query whose matched terms get highlighted inside the message. */
   query?: string;
+  /** The caller already opened a conversation viewer in another layout. */
+  contentAlreadyOpen?: boolean;
+  /** Reveal only in this tab, even when the same agent is visible in another pane. */
+  targetTabId?: string;
+  /** Cancel when the caller navigates elsewhere while history is loading. */
+  signal?: AbortSignal;
 }
 
 /** Detail payload of the 'chat:open-message' window event ChatPanel consumes. */
-interface OpenMessageEventDetail {
+export interface OpenMessageEventDetail {
   agentId: string;
   messageId: string;
   query?: string;
+  targetTabId?: string;
+  signal?: AbortSignal;
   /** Unique per openMessage() call so the panel handles retries exactly once. */
   requestId: string;
 }
@@ -66,7 +83,10 @@ const HYDRATION_TIMEOUT_MS = 15_000;
 const MIN_POLLS_BEFORE_SETTLED = 2;
 /** Retry ladder for the scroll hand-off event (ChatPanel may still be mounting). */
 const SCROLL_DISPATCH_DELAYS_MS = [150, 400, 800, 1500, 3000];
-const SEEK_PAGE_LIMIT = 50;
+const SEEK_PAGE_LIMIT = CHAT_PAGE_SIZE;
+// A new explicit message destination supersedes the previous deep-open, even
+// if its history request or DOM hand-off has not finished yet.
+let pendingOpenMessage: AbortController | undefined;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -74,7 +94,10 @@ function sleep(ms: number): Promise<void> {
 
 /** Dependency-light state reads straight off `appStore.state` (no selectors). */
 type StoreStateView = {
-  agentSessions?: { byAgentId: Record<string, { messages?: AgentMessage[] }> };
+  agentSessions?: {
+    byAgentId: Record<string, { messages?: AgentMessage[] }>;
+    historySegmentsByAgentId?: Record<string, { messages: AgentMessage[] }>;
+  };
   chatState?: {
     byAgentId: Record<string, { transcriptHydration?: 'loading' | 'settled' }>;
   };
@@ -83,7 +106,11 @@ type StoreStateView = {
 function isMessageInStore(agentId: string, messageId: string): boolean {
   const state = appStore.state as StoreStateView;
   const messages = state.agentSessions?.byAgentId[agentId]?.messages;
-  return Boolean(messages?.some((message) => message.id === messageId));
+  const history = state.agentSessions?.historySegmentsByAgentId?.[agentId]?.messages;
+  return Boolean(
+    messages?.some((message) => message.id === messageId) ||
+    history?.some((message) => message.id === messageId),
+  );
 }
 
 function hydrationStatus(agentId: string): 'loading' | 'settled' | undefined {
@@ -97,42 +124,81 @@ function hydrationStatus(agentId: string): 'loading' | 'settled' | undefined {
  * is only honored after a couple of polls: a stale settled marker from a
  * previous load can predate the fresh init the just-mounted ChatPanel kicks.
  */
-async function waitForMessage(agentId: string, messageId: string): Promise<boolean> {
+async function waitForMessage(
+  agentId: string,
+  messageId: string,
+  signal: AbortSignal,
+): Promise<boolean> {
   const deadline = Date.now() + HYDRATION_TIMEOUT_MS;
   let polls = 0;
   while (Date.now() < deadline) {
+    if (signal.aborted) return false;
     if (isMessageInStore(agentId, messageId)) return true;
-    if (polls >= MIN_POLLS_BEFORE_SETTLED && hydrationStatus(agentId) === 'settled') {
+    if (
+      polls >= MIN_POLLS_BEFORE_SETTLED &&
+      hydrationStatus(agentId) === 'settled' &&
+      !selectChatAgentState.select(appStore.state, agentId).initialHistoryPending
+    ) {
       return false;
     }
     polls++;
     await sleep(HYDRATION_POLL_INTERVAL_MS);
   }
-  return isMessageInStore(agentId, messageId);
+  return !signal.aborted && isMessageInStore(agentId, messageId);
 }
 
 /**
  * Fetch the page containing the message (§5.5 `aroundMessageId` seek) and
- * replace the session's messages with it. Returns false when the message no
+ * seed the history segment with it. Returns false when the message no
  * longer exists (-32602) or the session is not in the store.
  *
  * Also exported for ChatPanel's message navigator: selecting an index-only
- * row (outside the loaded window) reuses this seek + replace before the
+ * row (outside the loaded window) reuses this seek before the
  * panel force-renders and scrolls to the message.
  */
 export async function seekConversationToMessage(
   agentId: string,
   messageId: string,
+  workspaceId?: string,
+  signal?: AbortSignal,
 ): Promise<boolean> {
+  // A timeout waiting for a row is not permission to race the initial transfer.
+  const deadline = Date.now() + HYDRATION_TIMEOUT_MS;
+  while (selectChatAgentState.select(appStore.state, agentId).initialHistoryPending) {
+    if (signal?.aborted || Date.now() >= deadline) return false;
+    await sleep(HYDRATION_POLL_INTERVAL_MS);
+  }
+  const session = appStore.state.agentSessions?.byAgentId[agentId];
+  if (!session || signal?.aborted) return false;
+  if (isMessageInStore(agentId, messageId)) return true;
+  workspaceId ??= session.workspaceId;
+  const previous = selectChatAgentState.select(appStore.state, agentId);
+  let tokens = { nextToken: previous.scrollbackOlderToken, prevToken: previous.scrollbackGapToken };
+  appStore.dispatch(scrollbackFetchStarted(agentId, 'seek'));
+  const epoch = selectChatAgentState.select(appStore.state, agentId).scrollbackDiscardEpoch;
+  const ownsSeek = () =>
+    Boolean(appStore.state.agentSessions?.byAgentId[agentId]) &&
+    selectChatAgentState.select(appStore.state, agentId).scrollbackDiscardEpoch === epoch;
   try {
     const page = await appClient.agents.getConversation(
       agentId,
       SEEK_PAGE_LIMIT,
       undefined,
       messageId,
+      undefined,
+      workspaceId,
     );
-    if (!page.messages.some((message) => message.id === messageId)) return false;
-    appStore.dispatch(replaceMessages(agentId, page.messages));
+    if (
+      signal?.aborted ||
+      !ownsSeek() ||
+      !page.messages.some((message) => message.id === messageId)
+    )
+      return false;
+    // Retain the live tail and use persisted sequence numbers for the window's
+    // position. Legacy rows without a sequence leave that estimate unknown.
+    appStore.dispatch(seedHistoryAround(agentId, page.messages, page.messages[0]?.seq));
+    if (page.nextToken === null) appStore.dispatch(setHistoryOldestReached(agentId));
+    tokens = { nextToken: page.nextToken, prevToken: page.prevToken };
     return isMessageInStore(agentId, messageId);
   } catch (error) {
     logger.warn('[seekConversationToMessage] Seek fetch failed (message may no longer exist)', {
@@ -141,6 +207,8 @@ export async function seekConversationToMessage(
       error,
     });
     return false;
+  } finally {
+    if (ownsSeek()) appStore.dispatch(scrollbackSeekSettled(agentId, tokens));
   }
 }
 
@@ -150,7 +218,13 @@ export async function seekConversationToMessage(
  * highlight flash — and highlight the `query` terms when provided.
  */
 export async function openMessage(options: OpenMessageOptions): Promise<void> {
-  const { workspaceId, agentId, messageId, query } = options;
+  if (options.signal?.aborted) return;
+  pendingOpenMessage?.abort();
+  pendingOpenMessage = new AbortController();
+  const signal = options.signal
+    ? AbortSignal.any([pendingOpenMessage.signal, options.signal])
+    : pendingOpenMessage.signal;
+  const { workspaceId, agentId, messageId, query, targetTabId } = options;
   logger.info('[openMessage] Deep-opening conversation at message', {
     workspaceId,
     agentId,
@@ -158,13 +232,18 @@ export async function openMessage(options: OpenMessageOptions): Promise<void> {
   });
 
   const isChiefMessage = workspaceId === CHIEF_WORKSPACE_ID;
+  if (isChiefMessage && !options.contentAlreadyOpen) {
+    appStore.dispatch(setChiefActiveAgentId(agentId));
+    appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, agentId));
+    appStore.dispatch(openPanel('chief'));
+  }
+  const targetPathname = isChiefMessage ? '/' : `/workspace/${workspaceId}`;
 
   if (
-    !isChiefMessage &&
+    !options.contentAlreadyOpen &&
     typeof window !== 'undefined' &&
-    window.location.pathname !== `/workspace/${workspaceId}`
+    window.location.pathname !== targetPathname
   ) {
-    const targetPathname = `/workspace/${workspaceId}`;
     try {
       // navigateToRoute no-ops in the HUD pop-out window (never leaves /hud).
       await navigateToRoute(targetPathname);
@@ -172,23 +251,21 @@ export async function openMessage(options: OpenMessageOptions): Promise<void> {
       logger.warn('[openMessage] Workspace navigation failed', { workspaceId, error });
       return;
     }
+    if (signal.aborted) return;
     if (window.location.pathname !== targetPathname) {
       logger.warn('[openMessage] Workspace navigation was not confirmed', { workspaceId });
       return;
     }
   }
 
-  if (isChiefMessage) {
-    appStore.dispatch(setChiefActiveAgentId(agentId));
-    appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, agentId));
-    appStore.dispatch(openPanel('chief'));
-  } else {
+  if (!options.contentAlreadyOpen && !isChiefMessage) {
     appStore.dispatch(openAgentTabRequested(workspaceId, { agentId }));
   }
 
-  const present = (await waitForMessage(agentId, messageId))
+  const present = (await waitForMessage(agentId, messageId, signal))
     ? true
-    : await seekConversationToMessage(agentId, messageId);
+    : await seekConversationToMessage(agentId, messageId, workspaceId, signal);
+  if (signal.aborted) return;
   if (!present) {
     logger.warn('[openMessage] Message not found; conversation opened at tail', {
       agentId,
@@ -198,8 +275,17 @@ export async function openMessage(options: OpenMessageOptions): Promise<void> {
   }
 
   const requestId = `open-message-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const detail: OpenMessageEventDetail = { agentId, messageId, query, requestId };
+  const detail: OpenMessageEventDetail = {
+    agentId,
+    messageId,
+    query,
+    targetTabId,
+    requestId,
+    signal,
+  };
   for (const delay of SCROLL_DISPATCH_DELAYS_MS) {
-    setTimeout(() => dispatchWindowEvent('chat:open-message', detail), delay);
+    setTimeout(() => {
+      if (!signal.aborted) dispatchWindowEvent('chat:open-message', detail);
+    }, delay);
   }
 }

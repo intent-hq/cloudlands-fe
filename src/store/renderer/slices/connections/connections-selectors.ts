@@ -3,7 +3,7 @@
  */
 
 import { store } from '../../store';
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type {
   ConnectionHostCertWarning,
   ConnectionOpenStatus,
@@ -11,6 +11,26 @@ import type {
 } from './connections-types';
 
 const NO_CERT_WARNINGS: ConnectionHostCertWarning[] = [];
+
+export const selectConnectionWorkflow = store.createSelector((state, consumerId: string) =>
+  getItem(state.connections.workflows, consumerId),
+);
+export const selectKeychainSyncRequestState = store.createSelector((state) => ({
+  writing: state.connections.keychainWritesPending > 0,
+  loadFailed: state.connections.keychainLoadError,
+  saveFailed: state.connections.keychainSaveError,
+}));
+export const selectSelfPublication = store.createSelector(
+  (state) => state.connections.selfPublication,
+);
+export const selectSelfPublicationBusy = store.createSelector(
+  (state) => state.connections.selfPublicationBusy,
+);
+
+export const selectConnectionRecoveryTarget = store.createSelector((state, id: string) => ({
+  guest: getItem(state.guestSessions.sessions, id),
+  connection: getItem(state.connections.connections, id),
+}));
 
 /** Full ordered connections list (local first, then remotes). */
 export const selectConnections = store.createSelector((state) =>

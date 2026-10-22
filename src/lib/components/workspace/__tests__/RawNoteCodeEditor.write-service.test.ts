@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { afterEach, beforeAll, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { ContentType, NoteVisibility, type Note } from '$shared/types';
@@ -11,7 +11,14 @@ import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
 // service against the REAL configured store, so the draft chain (base rev,
 // echo rebase, pending replay) is exercised end to end.
 vi.mock('$lib/client', () => ({
-  appClient: { notes: { setContent: vi.fn(), list: vi.fn(async () => []) } },
+  appClient: {
+    notes: {
+      setContent: vi.fn(),
+      list: vi.fn(async () => []),
+      // Daemon without truncated reads: saves carry no baseContentBytes (§5.2).
+      supportsTruncatedRead: vi.fn(async () => false),
+    },
+  },
 }));
 vi.mock('svelte-sonner', () => ({ toast: { warning: vi.fn(), error: vi.fn() } }));
 vi.mock('$store/renderer/slices/ui-layout/ui-layout-selectors', () => ({
@@ -32,6 +39,7 @@ import { store as appStore } from '$store/renderer/store';
 import { loadWorkspaceNotesSucceeded } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
 import { flushNoteContent } from '$features/notes/notes-write-service';
+import { startWorkspaceNotesSagaFixture } from '../../../../test/fixtures/workspace-notes-saga-fixture';
 import RawNoteCodeEditor from '../RawNoteCodeEditor.svelte';
 
 const testStore = appStore as typeof appStore & {
@@ -63,7 +71,12 @@ function seed(content: string, rev: number) {
   appStore.dispatch(loadWorkspaceNotesSucceeded([WS], { [WS]: [note] }));
 }
 
-beforeAll(() => appStore.init());
+let stopWorkspaceNotesSaga: (() => void) | undefined;
+beforeAll(() => {
+  appStore.init();
+  [stopWorkspaceNotesSaga] = startWorkspaceNotesSagaFixture(appStore);
+});
+afterAll(() => stopWorkspaceNotesSaga?.());
 afterEach(() => {
   cleanup();
   vi.clearAllTimers();
@@ -106,8 +119,7 @@ it('replays a draft typed before a superseded echo onto the rebased pending draf
   await vi.advanceTimersByTimeAsync(1000);
   await syncStore();
   const first = flushNoteContent(WS, NOTE);
-  await Promise.resolve();
-  expect(wire).toHaveBeenLastCalledWith(NOTE, 'body first', 4, WS);
+  await vi.waitFor(() => expect(wire).toHaveBeenLastCalledWith(NOTE, 'body first', 4, WS));
 
   await fireEvent.input(input, { target: { value: 'body first second' } });
   await vi.advanceTimersByTimeAsync(1000);

@@ -59,6 +59,8 @@ describe('SettingsSidebarNav', () => {
     'providers',
     'connections',
     'devices',
+    'mobile',
+    'collaboration',
     'setup',
     'advanced',
   ] as const)('preserves selection through the %s tab identifier', async (id) => {
@@ -74,6 +76,35 @@ describe('SettingsSidebarNav', () => {
     expect(button.getAttribute('data-state')).toBe('active');
     await fireEvent.click(button);
     expect(onSelect).toHaveBeenCalledWith(id);
+  });
+
+  it('selects Machines through the existing devices identifier and Mobile through its own identifier', async () => {
+    const onSelect = vi.fn();
+    render(SettingsSidebarNav, {
+      activeTab: 'providers',
+      onSelect,
+      agentsNavigation: createSpecialistsNavigation(),
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Machines' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Mobile' }));
+
+    expect(onSelect.mock.calls).toEqual([['devices'], ['mobile']]);
+  });
+
+  it('keeps Mobile selectable when Collaboration is unavailable', async () => {
+    const onSelect = vi.fn();
+    render(SettingsSidebarNav, {
+      activeTab: 'devices',
+      onSelect,
+      agentsNavigation: createSpecialistsNavigation(),
+      hiddenTabs: ['collaboration'],
+    });
+
+    expect(screen.queryByRole('button', { name: 'Collaboration' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Mobile' }));
+
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('mobile');
   });
 
   it('withholds hidden categories while keeping the rest navigable (collaborator, multiplayer w3)', () => {

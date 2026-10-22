@@ -1,6 +1,6 @@
 import '../../../../app.css';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { render } from '@testing-library/svelte';
+import { render, fireEvent } from '@testing-library/svelte';
 import AttachmentPreview from '../AttachmentPreview.svelte';
 import StreamingStatus from '../StreamingStatus.svelte';
 import TurnFailureNotice from '../TurnFailureNotice.svelte';
@@ -60,21 +60,21 @@ describe('destructive state semantics', () => {
     expectDangerForeground(failedAttachment!);
   });
 
-  test('shows a streaming error message', () => {
-    const { getByTestId, getByText } = render(StreamingStatus, {
+  test('discloses raw diagnostics below the current failure heading', async () => {
+    const { getByTestId, getByText, getByRole } = render(StreamingStatus, {
       props: { error: 'Test error message', isStreaming: false },
     });
+    await fireEvent.click(getByRole('button', { name: 'Details', exact: true }));
     expect(getByText('Test error message')).toBeTruthy();
     expectDangerForeground(getByTestId('error-title'));
   });
 
-  test('keeps turn failures exposed as alerts at 200% zoom', () => {
+  test('keeps historical failure details inspectable at 200% zoom', async () => {
     const { container, getByRole } = render(TurnFailureNotice, {
       props: { reason: 'Test failure reason' },
     });
     container.style.zoom = '2';
-    const alert = getByRole('alert');
-    expect(alert.textContent).toContain('Test failure reason');
-    expectDangerForeground(alert);
+    await fireEvent.click(getByRole('button', { name: '1 recorded failure' }));
+    expect(getByRole('region').textContent).toContain('Test failure reason');
   });
 });

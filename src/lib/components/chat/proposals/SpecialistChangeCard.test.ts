@@ -161,3 +161,24 @@ describe('SpecialistChangeCard', () => {
     });
   });
 });
+
+it('workspace routing regression: project card carries its real origin', async () => {
+  selectorState.status = 'idle';
+  selectorState.applied = null;
+  selectorState.error = null;
+  const { WORKSPACE_ROUTE_CONTEXT } = await import('$lib/utils/workspace-route-context');
+  const proposal = makeProposal();
+  (proposal as any).payload.scope = 'project';
+  const onApply = vi.fn();
+  const view = render(SpecialistChangeCard, {
+    props: { proposal, onApply },
+    context: new Map([[WORKSPACE_ROUTE_CONTEXT, { workspaceId: 'workspace-A' }]]),
+  });
+  try {
+    await fireEvent.click(screen.getByRole('button', { name: 'Save specialist' }));
+    expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: 'workspace-A' }));
+  } finally {
+    view.unmount();
+    cleanup();
+  }
+});

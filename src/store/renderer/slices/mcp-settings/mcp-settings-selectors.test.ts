@@ -5,7 +5,7 @@ import type { McpSettingsState, McpServerConfig } from './mcp-settings-types';
 import {
   selectMcpServerErrorMessage,
   selectMcpServersWithStatus,
-  selectWorkspaceDisabledMcpServerNamesByWorkspaceId,
+  selectWorkspaceDisabledMcpServerKeysByWorkspaceId,
 } from './mcp-settings-selectors';
 
 const servers: McpServerConfig[] = [
@@ -59,7 +59,7 @@ describe('mcp-settings selectors', () => {
       },
     });
 
-    expect(selectWorkspaceDisabledMcpServerNamesByWorkspaceId.select(state, 'ws-1')).toEqual([
+    expect(selectWorkspaceDisabledMcpServerKeysByWorkspaceId.select(state, 'ws-1')).toEqual([
       'linear',
     ]);
   });
@@ -70,4 +70,25 @@ describe('mcp-settings selectors', () => {
     expect(selectMcpServerErrorMessage.select(state, 'linear')).toBe('Unauthorized');
     expect(selectMcpServerErrorMessage.select(state, 'filesystem')).toBeUndefined();
   });
+});
+
+it('joins same-name server metadata only by ID', () => {
+  const state = mockState({
+    servers: [
+      { id: 'a', name: 'same', type: 'http' },
+      { id: 'b', name: 'same', type: 'http' },
+    ],
+    disabledServers: { b: true },
+    statusMap: { a: 'error', b: 'connected' },
+    errorMessages: { a: 'failed' },
+    toolsMap: { a: [{ name: 'tool' }] },
+  });
+  expect(
+    selectMcpServersWithStatus
+      .select(state)
+      .map(({ id, status, errorMessage, toolCount }) => ({ id, status, errorMessage, toolCount })),
+  ).toEqual([
+    { id: 'a', status: 'error', errorMessage: 'failed', toolCount: 1 },
+    { id: 'b', status: 'disabled', errorMessage: undefined, toolCount: 0 },
+  ]);
 });

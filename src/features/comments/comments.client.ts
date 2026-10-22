@@ -1,3 +1,7 @@
+import {
+  projectCommentAttribution,
+  projectLatestCommentAuthor,
+} from '$features/comments/comment-attribution';
 /**
  * Comments Client
  *
@@ -7,8 +11,8 @@
  * (JSON files) — a split-brain store agents never wrote to. All operations now
  * go over `backendRequest` so UI comments and agent comments share the daemon
  * store. Anchored comment creation and deletion live in
- * `comments-write-service` (appClient.comments.*); this client covers the
- * legacy `NoteComment`-shaped surface used by `comment-loader`.
+ * `comments-write-service` (appClient.comments.*); this client retains the
+ * legacy `NoteComment`-shaped compatibility surface for remaining callers.
  */
 
 import type { Result, NoteComment } from '../../shared/types';
@@ -62,6 +66,7 @@ function normalizeComment(raw: Record<string, unknown>, noteId: string): NoteCom
         }
       : undefined;
   return {
+    ...projectCommentAttribution(raw),
     id,
     noteId: String(raw.noteId ?? noteId),
     threadId: String(raw.threadId ?? id),
@@ -114,7 +119,12 @@ class CommentsClient {
           }
         } else {
           // Thread summary fallback when `includeComments` was not honored.
-          comments.push(normalizeComment(thread as Record<string, unknown>, noteId));
+          comments.push(
+            normalizeComment(
+              { ...thread, ...projectLatestCommentAuthor(thread as Record<string, unknown>) },
+              noteId,
+            ),
+          );
         }
       }
       if (params?.type && params.type !== 'all') {
@@ -158,6 +168,12 @@ class CommentsClient {
         ...(params.authorType ? { authorType: params.authorType } : {}),
       });
       const raw = (response ?? {}) as Record<string, unknown>;
+      if (raw.comment && typeof raw.comment === 'object' && !Array.isArray(raw.comment)) {
+        return {
+          ok: true,
+          data: normalizeComment(raw.comment as Record<string, unknown>, params.noteId),
+        };
+      }
       const now = new Date().toISOString();
       // Echo the created reply; the subscribe→refetch loop reconciles the
       // store to the canonical daemon state.

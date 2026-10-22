@@ -10,13 +10,7 @@
   import { onDestroy } from 'svelte';
   import { crispOut, fade } from '$lib/motion';
   import Fa from 'svelte-fa';
-  import {
-    faRotateRight,
-    faExclamationTriangle,
-    faCopy,
-    faCheck,
-    faStop,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faRotateRight, faExclamationTriangle, faStop } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils/cn';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
@@ -31,6 +25,7 @@
     getStatusMarkVariant,
   } from './streaming-status-utils';
   import { m } from '$shared/paraglide/messages.js';
+  import FailureDetails from './FailureDetails.svelte';
   import StreamingTypingIndicator from './StreamingTypingIndicator.svelte';
 
   interface Props {
@@ -46,6 +41,7 @@
     streamingContentLength?: number;
     /** Error message if connection failed */
     error?: string | null;
+    recoveryState?: 'attempting' | 'queued' | 'action-needed' | 'inactive';
     /**
      * Daemon-derived corrupted-session flag (monorepo#940) — when true, the
      * error surface shows recreate-aware copy instead of the raw error.
@@ -99,7 +95,7 @@
      * the wait instead of leaving a bare "Thinking" that looks stalled.
      */
     processQueueHint?: FeOwnedSessionState['processQueueHint'];
-    /** Callback to retry the last message */
+    /** Guarded retry callback; queued input may still need terminal session recovery. */
     onRetry?: () => void;
     /** Callback to retry with a specific model */
     onRetryWithModel?: (model: string) => void;
@@ -125,6 +121,7 @@
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     streamingContentLength = 0,
     error = null,
+    recoveryState,
     sessionCorrupted = false,
     failedAt = null,
     authGuidance = null,
@@ -147,7 +144,11 @@
   // Determine current status
   type Status = 'normal' | 'error' | 'model-unavailable' | 'quota-exceeded';
 
+  const attempting = $derived(
+    recoveryState ? recoveryState === 'attempting' : isStreaming || isProcessing,
+  );
   let status: Status = $derived.by(() => {
+    if (attempting) return 'normal';
     if (modelUnavailable) return 'model-unavailable';
     // Only claim the quota surface when there is somewhere to go: with no
     // usable alternative provider the offer would be a dead end, so fall
@@ -247,35 +248,15 @@
       : null,
   );
 
-  // Status message: the raw error when one is set, otherwise "Thinking"
-  let statusMessage = $derived.by(() => {
-    if (error) {
-      return error;
-    }
-    return m.chat_streamingStatus_thinking_label();
-  });
-
   // Error surface copy: recreate-aware when the daemon flagged the session
   // corrupted (monorepo#940), otherwise identical to the raw-error rendering.
   let errorDisplay = $derived(deriveErrorDisplay(error, sessionCorrupted));
-  let errorExpanded = $state(false);
-  let errorCopied = $state(false);
-
-  async function handleCopyError() {
-    if (!errorDisplay) return;
-    const fullError = [errorDisplay.title, errorDisplay.message, errorDisplay.detail]
-      .filter(Boolean)
-      .join('\n\n');
-    await navigator.clipboard.writeText(fullError);
-    errorCopied = true;
-    setTimeout(() => (errorCopied = false), 2000);
-  }
 </script>
 
 <StreamingTypingIndicator
   visible={thinkingVisible}
-  message={statusMessage}
-  showMessage={Boolean(error)}
+  message={m.chat_streamingStatus_thinking_label()}
+  showMessage={false}
   lifecycleMessage={latestStatusEvent?.message}
   elapsed={elapsedTime}
   onHoverChange={(hovered) => (thinkingHovered = hovered)}
@@ -365,8 +346,9 @@
       role={status === 'error' ? 'alert' : undefined}
       aria-live={status === 'error' ? 'assertive' : undefined}
       data-stream-terminal-error="true"
+      data-testid="failure-recovery-card"
       class={cn(
-        'type-caption flex flex-col gap-0 py-2 pr-1',
+        'type-caption flex min-w-0 flex-col gap-2 rounded-md border border-border bg-card p-3',
         status === 'error' && 'mt-2',
         (status === 'model-unavailable' || status === 'quota-exceeded') &&
           'rounded-md border border-warning/20 bg-warning/5 pl-2 pr-3',
@@ -375,7 +357,7 @@
       in:fade={{ tier: 'moderate' }}
       out:fade={{ tier: 'moderate' }}
     >
-      <div class="flex items-start gap-2">
+      <div class="flex min-w-0 flex-col gap-2">
         <div class="flex min-w-0 flex-1 items-start gap-2">
           {#if status === 'model-unavailable' && modelUnavailable}
             <Fa icon={faExclamationTriangle} class="shrink-0 text-warning-ink" />
@@ -396,7 +378,9 @@
           {:else if status === 'error' && errorDisplay}
             <div class="flex min-w-0 flex-1 flex-col gap-0.5">
               <span class="font-medium text-danger" data-testid="error-title"
-                >{errorDisplay.title}{#if failedAt}
+                >{errorDisplay.corrupted
+                  ? errorDisplay.title
+                  : m.chat_failureRecovery_title_label()}{#if failedAt}
                   <span
                     class="type-caption ml-1.5 leading-4 font-normal text-muted-foreground"
                     data-testid="error-failed-at"
@@ -405,70 +389,44 @@
                   </span>
                 {/if}</span
               >
-              <div
-                class="relative grid min-h-5 w-full min-w-0 grid-cols-[1.75rem_minmax(0,1fr)] items-start gap-x-1.5 py-0"
+              <span class="text-muted-foreground" data-testid="error-message"
+                >{errorDisplay.corrupted
+                  ? errorDisplay.message
+                  : recoveryState === 'queued'
+                    ? m.chat_failureRecovery_queued_description()
+                    : m.chat_failureRecovery_action_description()}</span
               >
-                <Button
-                  variant="ghost-light"
-                  size="icon-sm"
-                  onclick={handleCopyError}
-                  iconOnly
-                  tooltip={m.error_boundary_copyDetails_tooltip()}
-                  aria-label={m.error_boundary_copyDetails_tooltip()}
-                  class="absolute top-2 left-0 -translate-y-1/2 text-muted-foreground"
-                >
-                  <Fa icon={errorCopied ? faCheck : faCopy} class="shrink-0" />
-                </Button>
-                <div class="col-start-2 flex min-w-0 flex-col">
-                  <Button
-                    variant="plain"
-                    class="type-caption h-auto! min-w-0 max-w-full justify-start text-left leading-4 text-muted-foreground"
-                    onclick={() => (errorExpanded = !errorExpanded)}
-                    aria-expanded={errorExpanded}
+              <span class="type-caption text-muted-foreground"
+                >{recoveryState === 'queued'
+                  ? m.chat_failureRecovery_queued_label()
+                  : m.chat_failureRecovery_action_label()}</span
+              >
+              {#if authGuidance}
+                <div class="mt-1.5 flex flex-col gap-1" data-testid="error-auth-guidance">
+                  <span class="type-caption leading-4 text-muted-foreground"
+                    >{m.settings_providers_runToLogIn_label()}</span
                   >
-                    <span
-                      class={cn(
-                        'block min-w-0 max-w-full text-left',
-                        errorExpanded ? 'whitespace-pre-wrap break-words' : 'truncate',
-                      )}
-                      data-testid="error-message">{errorDisplay.message}</span
+                  <div class="flex items-center gap-1">
+                    <code
+                      class="rounded bg-muted px-1.5 py-0.5 text-ui"
+                      data-testid="error-auth-login-command">{authGuidance.loginCommandHint}</code
                     >
-                  </Button>
-                  {#if errorDisplay.detail && errorExpanded}
+                    <CopyButton text={authGuidance.loginCommandHint} size="xs" />
+                  </div>
+                  {#if authGuidance.showClaudeDesktopNote}
                     <span
-                      class="type-caption leading-4 whitespace-pre-wrap break-words text-muted-foreground"
-                      data-testid="error-detail">{errorDisplay.detail}</span
+                      class="type-caption leading-4 text-muted-foreground"
+                      data-testid="error-auth-claude-desktop-note"
+                      >{m.settings_providers_claudeDesktopNote_label()}</span
                     >
-                  {/if}
-                  {#if authGuidance}
-                    <div class="mt-1.5 flex flex-col gap-1" data-testid="error-auth-guidance">
-                      <span class="type-caption leading-4 text-muted-foreground"
-                        >{m.settings_providers_runToLogIn_label()}</span
-                      >
-                      <div class="flex items-center gap-1">
-                        <code
-                          class="rounded bg-muted px-1.5 py-0.5 text-ui"
-                          data-testid="error-auth-login-command"
-                          >{authGuidance.loginCommandHint}</code
-                        >
-                        <CopyButton text={authGuidance.loginCommandHint} size="xs" />
-                      </div>
-                      {#if authGuidance.showClaudeDesktopNote}
-                        <span
-                          class="type-caption leading-4 text-muted-foreground"
-                          data-testid="error-auth-claude-desktop-note"
-                          >{m.settings_providers_claudeDesktopNote_label()}</span
-                        >
-                      {/if}
-                    </div>
                   {/if}
                 </div>
-              </div>
+              {/if}
             </div>
           {/if}
         </div>
 
-        <div class="flex items-center gap-1">
+        <div class="flex flex-wrap items-center gap-2">
           {#if status === 'quota-exceeded' && onRetryWithProvider}
             {#each quotaRetryProviders as alt (alt.id)}
               <Button
@@ -494,19 +452,18 @@
                 model: modelUnavailable.nextAvailableModel,
               })}
             </Button>
-          {:else if status === 'error' && onRetry && !isStreaming && !isProcessing}
+          {:else if status === 'error' && onRetry && !attempting}
             <Button
-              variant="ghost-light"
-              size="icon-xs"
+              variant="secondary"
+              size="sm"
               onclick={onRetry}
-              iconOnly
-              tooltip={m.chat_streamingStatus_tryAgain_label()}
-              aria-label={m.chat_streamingStatus_tryAgain_label()}
               class="shrink-0 text-muted-foreground"
             >
               <Fa icon={faRotateRight} class="size-3" />
+              {m.chat_shared_retry_label()}
             </Button>
           {/if}
+          {#if error}<FailureDetails text={error} />{/if}
         </div>
       </div>
     </div>

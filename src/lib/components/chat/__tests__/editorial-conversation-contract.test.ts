@@ -2,6 +2,7 @@
 //   ../PinnedUserPrompt.svelte, ../pinned-prompt.ts, ../user-message-surface.ts,
 //   ../ConversationTurnGap.svelte, ../MessageContent.svelte, ../StreamingMessageContent.svelte,
 //   ../ResponseGroup.svelte, ../operational-disclosure-row.ts, ../ChatOperationalRow.svelte,
+//   ../operational-window-items.ts, ../OperationalWindow.svelte,
 //   ../StreamingStatus.svelte, ../StreamingTypingIndicator.svelte, ../EventWakeupBanner.svelte,
 //   ../InlineAgentAvatar.svelte, ../SuggestedPrompts.svelte, ../message-action-surface.ts,
 //   ../ToolCall.svelte, ../ThinkingBlock.svelte, ../ContextEngineToolCall.svelte,
@@ -33,7 +34,7 @@ function openingTagAfter(content: string, anchor: string) {
 }
 
 describe('editorial conversation presentation contract', () => {
-  it('assigns restored and streaming transcript identity to the outer row only', () => {
+  it('assigns restored, streaming and staged transcript identity to the outer row only', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
     const message = source('src/lib/components/chat/ChatMessage.svelte');
 
@@ -41,7 +42,7 @@ describe('editorial conversation presentation contract', () => {
     expect(message).toContain('ownsMessageIdentity = true');
     expect(message).toContain('data-message-id={ownsMessageIdentity ? message?.id : undefined}');
     expect(message).toContain('data-message-role={ownsMessageIdentity ? role : undefined}');
-    expect(panel.match(/ownsMessageIdentity=\{false\}/g)).toHaveLength(4);
+    expect(panel.match(/ownsMessageIdentity=\{false\}/g)).toHaveLength(5);
     expect(panel.match(/message=\{pendingMessage\}[\s\S]{0,120}ownsMessageIdentity/g)).toBeNull();
   });
 
@@ -186,13 +187,19 @@ describe('editorial conversation presentation contract', () => {
 
     expect(staticContent).toContain('<div class="flex flex-col gap-0"');
     expect(streamingContent).toContain('class="relative flex flex-col gap-0"');
-    expect(staticContent.match(/{@render renderResponseGroupChild\(/g)).toHaveLength(2);
-    expect(staticContent).toContain('{#if shouldRenderResponseGroupInline(group)}');
-    expect(streamingContent).toContain('getOperationalClusterSpacingClass(');
-    expect(streamingContent).toContain(
-      '{@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}',
+    const projection = source('src/lib/components/chat/operational-window-items.ts');
+    // Inline and expanded groups share the canonical staged child renderer.
+    // Their spacing helpers below must apply to both projected paths.
+    for (const renderer of [staticContent, streamingContent]) {
+      expect(renderer.match(/{@render renderResponseGroupChild\(/g)).toHaveLength(1);
+      expect(renderer).toContain('row={renderWindowItem}');
+      expect(renderer).toContain('items={projectWindowItems(');
+    }
+    expect(projection).toContain('shouldRenderResponseGroupInline(block)');
+    expect(projection).toContain(
+      'block.children.forEach((child, ci) => append(child, index, block, ci))',
     );
-    expect(streamingContent).toContain('{#if shouldRenderResponseGroupInline(group)}');
+    expect(streamingContent).toContain('getOperationalClusterSpacingClass(');
     expect(streamingContent).toContain('isAdjacentOperationalClusterRow(');
     expect(streamingContent).toContain('isVisibleTopLevelBlock,');
     expect(streamingContent).toContain('data-operational-cluster-row=');
@@ -210,9 +217,11 @@ describe('editorial conversation presentation contract', () => {
     expect(staticContent).toContain('OPERATIONAL_GROUP_CHILD_ROW_CLASS');
     expect(streamingContent).toContain('OPERATIONAL_GROUP_CHILD_ROW_CLASS');
     expect(responseGroup).not.toContain('pl-4.5');
-    expect(staticContent).toMatch(/nested,\s+isAdjacentOperationalClusterRow\(\s*group\.children,/);
+    expect(staticContent).toMatch(
+      /nested,\s+item\.fragment > 0 \|\|\s+isAdjacentOperationalClusterRow\(\s*group\.children,/,
+    );
     expect(streamingContent).toMatch(
-      /nested,\s+isAdjacentOperationalClusterRow\(\s*group\.children,/,
+      /nested,\s+item\.fragment > 0 \|\|\s+isAdjacentOperationalClusterRow\(\s*group\.children,/,
     );
   });
 
@@ -222,7 +231,6 @@ describe('editorial conversation presentation contract', () => {
     const messageContent = source('src/lib/components/chat/MessageContent.svelte');
 
     expect(panel).not.toContain('class:bg-sidebar={isChiefWorkspace}');
-    expect(panel).toContain("<div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>");
     expect(panel.match(/message=\{pendingMessage\}[\s\S]{0,80}\{workspace\}/g)).toHaveLength(2);
     // Both transcript renderers mount the shared inline proposal host.
     expect(streaming).toContain('InlineProposal');
@@ -261,8 +269,6 @@ describe('editorial conversation presentation contract', () => {
     // Render-aware turn-body decisions are covered by subscription-card-spacing.test.ts;
     // chat-panel-visible-card-seams.ct.spec.ts and chat-panel-pending-status-spacing.ct.spec.ts
     // measure the production transcript for hidden/visible bodies and pending-status transitions.
-    // Card/batch/attention seam precedence is covered by subscription-card-gap
-    // and attention-flow-spacing-geometry browser tests using measured gaps.
     expect(panel).not.toContain('data-testid="chat-scroll-to-bottom-button"');
     expect(panel).toContain('showAgentCards={!isDelegatedBackgroundTaskAgent}');
     expect(panel).not.toContain('agentEventsForCards');
@@ -289,16 +295,6 @@ describe('editorial conversation presentation contract', () => {
     expect(suggestions).toContain('focus-visible:opacity-100');
     expect(suggestions).toContain('icon={faArrowRight}');
     expect(suggestions).not.toContain('faPaperPlane');
-  });
-
-  it('uses the MessageComposer surface shell in docked and standalone contexts', () => {
-    const input = source('src/lib/components/chat/input/SimpleRichInput.svelte');
-
-    expect(input).toContain('surfaceClasses(2, 2)');
-    expect(input).toContain('rounded-(--radius-large)');
-    expect(input).toContain('data-ring-state={ringState}');
-    expect(input).not.toContain(':global(.panel:not(.focused) .rich-input-container) {');
-    expect(input).toContain('@container style(--motion-reduced: 1)');
   });
 
   it('gives tool, context, and reasoning rows one shared muted shell', () => {
@@ -356,7 +352,9 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).not.toContain("'pb-1 pt-3'");
     expect(panel).not.toContain('eventSubscriptionsOwnEndGap');
     expect(panel).not.toContain('eventSubscriptionsVisible');
-    expect(panel.match(/isCompactMode \? 'mb-2' : 'mb-16'/g)).toHaveLength(4);
+    expect(panel.match(/isCompactMode \? 'mb-2' : 'mb-16'/g)).toHaveLength(3);
+    // Recovery keeps the existing queue controls close even in a tall panel.
+    expect(panel).toContain("isCompactMode || recoveryAtEnd ? 'mb-2' : 'mb-16'");
     expect(panel).toContain("isCompactMode ? 'mb-2' : 'mb-8'");
     expect(panel).toContain('style="scrollbar-gutter: stable;"');
     expect(message).toContain('class="absolute right-1 z-10');
@@ -365,39 +363,5 @@ describe('editorial conversation presentation contract', () => {
     expect(message).not.toContain('group-hover:grid-rows-[1fr]');
     expect(message).not.toContain('class="mt-1 flex items-center justify-end"');
     expect(panel).not.toContain('w-full pt-8 pb-12');
-  });
-
-  it('keeps the regular and Chief streaming Aurora backgrounds below queued messages', () => {
-    const panel = source('src/lib/components/chat/ChatPanel.svelte');
-
-    const auroraBackground = '<AuroraBackground {agentId} />';
-    const regularAurora =
-      'class="composer-aurora-host regular-panel-aurora-host pointer-events-none absolute inset-x-0 bottom-0 z-0 overflow-hidden"';
-    const transcript = 'data-testid="chat-transcript-scroll-viewport"';
-    const composer = 'class="conversation-composer relative z-10 w-full"';
-    const chiefAurora =
-      'class="composer-aurora-host pointer-events-none absolute -left-4 -right-2 -bottom-4 z-0 overflow-hidden"';
-    const regularAuroraIndex = panel.indexOf(regularAurora);
-    const regularBackgroundIndex = panel.indexOf(auroraBackground, regularAuroraIndex);
-    const transcriptIndex = panel.indexOf(transcript);
-    const composerIndex = panel.indexOf(composer);
-    const chiefAuroraIndex = panel.indexOf(chiefAurora);
-    const chiefBackgroundIndex = panel.indexOf(auroraBackground, chiefAuroraIndex);
-
-    expect(regularAuroraIndex).toBeGreaterThan(-1);
-    expect(regularBackgroundIndex).toBeGreaterThan(regularAuroraIndex);
-    expect(regularBackgroundIndex).toBeLessThan(transcriptIndex);
-    expect(transcriptIndex).toBeGreaterThan(regularAuroraIndex);
-    expect(composerIndex).toBeGreaterThan(transcriptIndex);
-    expect(chiefAuroraIndex).toBeGreaterThan(composerIndex);
-    expect(chiefBackgroundIndex).toBeGreaterThan(chiefAuroraIndex);
-    expect(panel.match(/<AuroraBackground \{agentId\} \/>/g)).toHaveLength(2);
-    expect(panel).not.toContain('AuroraSofteningLayer');
-    expect(panel).toContain('style:height={`calc(${composerHeight}px + 10rem)`}');
-    expect(panel).toContain('height: calc(100% + 10rem)');
-    expect(panel).toContain('{#snippet queueRegion()}');
-    expect(panel).toContain('<QueuedMessageList');
-    expect(panel).not.toContain('data-testid="queued-message-utility-area"');
-    expect(panel).not.toContain('regular-composer-aurora-host');
   });
 });

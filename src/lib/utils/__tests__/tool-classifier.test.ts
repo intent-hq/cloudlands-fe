@@ -679,6 +679,81 @@ describe('tool-classifier', () => {
     });
   });
 
+  describe('quoted file paths in ACP titles', () => {
+    it.each([
+      ["Read '/work/docs/gotchas.md'", {}],
+      ['Read "/work/docs/gotchas.md"', {}],
+      ['Read `/work/docs/gotchas.md`', {}],
+      ['read', { _acpTitle: "Read '/work/docs/gotchas.md'" }],
+      ['read', { _acpTitle: 'Read "/work/docs/gotchas.md"' }],
+      ['read', { _acpTitle: 'Read `/work/docs/gotchas.md`' }],
+      ["View '/work/docs/gotchas.md'", {}],
+      ['Edit "/work/docs/gotchas.md"', {}],
+      ["Save '/work/docs/gotchas.md'", {}],
+      ["Write '/work/docs/gotchas.md'", {}],
+      ["Create '/work/docs/gotchas.md'", {}],
+      ["Delete '/work/docs/gotchas.md'", {}],
+      ['Remove "/work/docs/gotchas.md"', {}],
+      ['write', { file_content: '', _acpTitle: "Write '/work/docs/gotchas.md'" }],
+    ])('extracts the file link target from %s with %j', (name, input) => {
+      const result = classifyTool(name, input);
+
+      expect(result.filePath).toBe('/work/docs/gotchas.md');
+      expect(result.subject).toBe('gotchas.md');
+      expect(result.path).toBe('/work/docs');
+    });
+
+    it.each([
+      ["Read '/work/My Notes/Gotchas.md'", '/work/My Notes/Gotchas.md', 'Gotchas.md'],
+      ["Read 'Makefile'", 'Makefile', 'Makefile'],
+      ['Read "/work/author\'s notes.md"', "/work/author's notes.md", "author's notes.md"],
+      ['Read "/work/gotchas.md\'"', "/work/gotchas.md'", "gotchas.md'"],
+      ['Read \'/work/"gotchas".md\'', '/work/"gotchas".md', '"gotchas".md'],
+      ['Read "\'gotchas.md\'"', "'gotchas.md'", "'gotchas.md'"],
+    ])('preserves the filename inside %s', (name, path, subject) => {
+      const result = classifyTool(name, {});
+
+      expect(result.filePath).toBe(path);
+      expect(result.subject).toBe(subject);
+      expect(result.isDirectory).toBeFalsy();
+    });
+
+    it.each(["/work/gotchas.md'", "'/work/gotchas.md", '\'/work/gotchas.md"'])(
+      'preserves an unmatched quote in title path %s',
+      (path) => {
+        expect(classifyTool('read', { _acpTitle: `Read ${path}` }).filePath).toBe(path);
+      },
+    );
+
+    it.each(['path', 'file_path'])('preserves literal quotes in structured %s', (key) => {
+      const result = classifyTool('read', {
+        [key]: "'gotchas.md'",
+        _acpTitle: "Read '/work/other.md'",
+        view_range: [10, 20],
+      });
+
+      expect(result.filePath).toBe("'gotchas.md'");
+      expect(result.subject).toBe("'gotchas.md':10-20");
+      expect(result.fileLine).toBe(10);
+    });
+
+    it('keeps an explicitly marked quoted directory as a directory', () => {
+      const result = classifyTool('read', { _acpTitle: "List Contents '/work/docs'" });
+
+      expect(result.filePath).toBe('/work/docs');
+      expect(result.subject).toBe('docs');
+      expect(result.isDirectory).toBe(true);
+    });
+
+    it('keeps shell command quotes intact', () => {
+      const command = "cat '/work/docs/gotchas.md'";
+      const result = classifyTool('shell', { command });
+
+      expect(result.category).toBe('terminal');
+      expect(result.subject).toBe(command);
+    });
+  });
+
   describe('backtick-wrapped ACP names', () => {
     it('should extract file path from "read `src/lib/App.svelte`" name', () => {
       const result = classifyTool('Read `src/lib/App.svelte`', {});

@@ -9,94 +9,24 @@
  * its own `events.subscribe` with a `prMonitor:*` prefix filter, scoped to
  * one workspace.
  */
-import {
-  backendRequest,
-  backendSubscribe,
-  backendUnsubscribe,
-  onBackendNotification,
-  onBackendReconnected,
-} from '$lib/client/live/backend-transport';
+import { capturePrMonitorSession, onMonitorReconnected } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
 
 const logger = createLogger('PrMonitorService');
 
-/** `lastSnapshot` merge-requirements projection (`prMonitor.list` rows). */
-export interface PrMonitorSnapshot {
-  state: string;
-  isDraft: boolean;
-  hasConflicts: boolean;
-  isBehind: boolean;
-  mergeable?: boolean | null;
-  mergeBlockedReason?: string | null;
-  checks: {
-    total: number;
-    passed: number;
-    failed: number;
-    pending: number;
-    failingRequired: number;
-    pendingRequired: number;
-    /** "required" flags are only meaningful when true. */
-    requiredKnown: boolean;
-  };
-  approvals: {
-    decision: string;
-    have: number;
-    needed?: number | null;
-    changesRequested: number;
-  };
-  threads: {
-    /** Absent (never `null`) when the host could not read thread resolution
-     * state — the count is unknown, not zero. */
-    unresolved?: number;
-    resolutionRequired?: boolean | null;
-  };
-  /** Additive: present (true) when the host reports the PR queued to merge;
-   * absent when not queued or unknown. */
-  isInMergeQueue?: boolean;
-  rulesKnown: boolean;
-}
-
-/** Wire `prMonitor.list` row. Cancelled monitors are excluded server-side;
- * `title`/`url`/`lastSnapshot` are absent until the first successful poll. */
-export interface PrMonitorRow {
-  monitorId: string;
-  workspaceId: string;
-  agentId: string;
-  /** `<owner>/<name>`. */
-  repo: string;
-  prNumber: number;
-  state: 'active' | 'completed';
-  pendingChanges: string[];
-  hasPendingChanges: boolean;
-  createdAt: string;
-  updatedAt: string;
-  pendingSince?: string;
-  lastChangeAt?: string;
-  lastPolledAt?: string;
-  lastError?: string;
-  /** RFC 3339 deadline of the daemon's forge rate-limit pause; present on
-   * ACTIVE rows only while polling is suspended (`lastSnapshot` is stale
-   * until the first post-pause poll clears it). */
-  pausedUntil?: string;
-  title?: string;
-  url?: string;
-  lastSnapshot?: PrMonitorSnapshot;
-}
-
-/** `prMonitor:*` event payload (§6.5): canonical identity fields plus
- * per-type extras (`changes` on `prMonitor:changed`). */
-export interface PrMonitorEventData {
-  workspaceId?: string;
-  agentId?: string;
-  monitorId?: string;
-  repo?: string;
-  prNumber?: number;
-  state?: string;
-  changes?: string[];
-}
+export type { PrMonitorRow, PrMonitorSnapshot, PrMonitorEventData } from '$shared/types/pr-monitor';
+import type {
+  ReviewMonitorRow,
+  PrMonitorEventData,
+  PrMonitorOrigin,
+  PrMonitorSession,
+  ReviewMonitoringSupport,
+} from '$shared/types/pr-monitor';
+import { MonitorAvailabilitySchema, MonitorResourceSchema } from '$shared/types/pr-monitor';
+import { reviewTargetKey } from '$shared/types/repository-context';
 
 export interface PrMonitorFoldResult {
-  monitors: PrMonitorRow[];
+  monitors: ReviewMonitorRow[];
   /** The event referenced an unknown monitor, or carried a change the list
    * cannot reconstruct (`lastSnapshot` never rides events) — re-run
    * `prMonitor.list` to converge. */
@@ -109,35 +39,70 @@ export interface PrMonitorFoldResult {
  * snapshot-bearing transitions request a refetch to converge.
  */
 export function foldPrMonitorEvent(
-  monitors: PrMonitorRow[],
+  monitors: ReviewMonitorRow[],
   eventType: string,
   data: PrMonitorEventData,
 ): PrMonitorFoldResult {
+  if (data.resource !== undefined) {
+    const resource = MonitorResourceSchema.safeParse(data.resource);
+    if (
+      !resource.success ||
+      (data.prNumber !== undefined && resource.data.number !== data.prNumber) ||
+      (data.repo !== undefined && resource.data.repository.projectPath !== data.repo)
+    )
+      return { monitors, needsRefetch: false };
+  }
+  if (data.monitorAvailability)
+    data = {
+      ...data,
+      monitorAvailability: MonitorAvailabilitySchema.parse(data.monitorAvailability),
+    };
   const monitorId = data.monitorId;
   if (!monitorId) return { monitors, needsRefetch: false };
 
+  const matches = (row: ReviewMonitorRow) =>
+    row.monitorId === monitorId &&
+    (!data.workspaceId || row.workspaceId === data.workspaceId) &&
+    (!data.resource ||
+      !row.resource ||
+      reviewTargetKey(row.resource) === reviewTargetKey(data.resource));
+  const existing = monitors.find(matches);
+  if (!existing && monitors.some((row) => row.monitorId === monitorId))
+    return { monitors, needsRefetch: false };
+  if (existing && (data.resource || data.monitorAvailability)) {
+    monitors = monitors.map((row) =>
+      matches(row)
+        ? {
+            ...row,
+            ...(data.resource ? { resource: data.resource } : {}),
+            ...(data.monitorAvailability ? { monitorAvailability: data.monitorAvailability } : {}),
+          }
+        : row,
+    );
+  }
   if (eventType === 'prMonitor:cancelled') {
-    const next = monitors.filter((m) => m.monitorId !== monitorId);
+    const next = monitors.filter((m) => !matches(m));
     return { monitors: next, needsRefetch: false };
   }
 
-  const existing = monitors.find((m) => m.monitorId === monitorId);
   if (!existing) return { monitors, needsRefetch: true };
 
   switch (eventType) {
     case 'prMonitor:registered':
       return {
         monitors: monitors.map((m) =>
-          m.monitorId === monitorId ? { ...m, state: 'active' as const } : m,
+          matches(m)
+            ? { ...m, state: 'active' as const, ...(data.agentId ? { agentId: data.agentId } : {}) }
+            : m,
         ),
-        needsRefetch: false,
+        needsRefetch: !!data.agentId && existing.agentId !== data.agentId,
       };
     case 'prMonitor:changed':
       // `changes` is the full accumulated pending list; the refreshed
       // lastSnapshot only arrives via prMonitor.list.
       return {
         monitors: monitors.map((m) =>
-          m.monitorId === monitorId
+          matches(m)
             ? {
                 ...m,
                 pendingChanges: data.changes ?? m.pendingChanges,
@@ -150,16 +115,21 @@ export function foldPrMonitorEvent(
     case 'prMonitor:emitted':
       return {
         monitors: monitors.map((m) =>
-          m.monitorId === monitorId ? { ...m, pendingChanges: [], hasPendingChanges: false } : m,
+          matches(m) ? { ...m, pendingChanges: [], hasPendingChanges: false } : m,
         ),
         needsRefetch: false,
       };
+    case 'prMonitor:refreshed':
+      // UI-only re-read hint: only the informational merge-queue entry
+      // (position / estimate) moved. Nothing to fold; re-list for the
+      // fresh lastSnapshot.
+      return { monitors, needsRefetch: true };
     case 'prMonitor:completed':
       // Terminal PR lifecycle (merged/closed): the row stays listed but the
       // final snapshot only arrives via prMonitor.list.
       return {
         monitors: monitors.map((m) =>
-          m.monitorId === monitorId
+          matches(m)
             ? { ...m, state: 'completed' as const, pendingChanges: [], hasPendingChanges: false }
             : m,
         ),
@@ -170,184 +140,229 @@ export function foldPrMonitorEvent(
   }
 }
 
-/** `prMonitor.list` (§6.9) — active + completed monitors in the workspace. */
-export async function listPrMonitors(workspaceId: string): Promise<PrMonitorRow[]> {
-  const result = await backendRequest<{ monitors?: PrMonitorRow[] }>('prMonitor.list', {
+/** Routing leases only; monitor data remains in the shared Redux slice. */
+const sessions = new Map<string, PrMonitorSession>();
+function originalSession(workspaceId: string, origin?: PrMonitorOrigin): PrMonitorSession {
+  const candidates = [...sessions.values()].filter(
+    (session) =>
+      session.origin.workspaceId === workspaceId &&
+      (!origin ||
+        (session.origin.sessionId === origin.sessionId &&
+          session.origin.backendId === origin.backendId &&
+          origin.workspaceId === workspaceId)),
+  );
+  if (candidates.length !== 1) throw new Error('Monitor connection unavailable');
+  return candidates[0];
+}
+
+export async function listPrMonitors(
+  workspaceId: string,
+  session?: PrMonitorSession,
+): Promise<ReviewMonitorRow[]> {
+  const captured = session ?? (await capturePrMonitorSession(workspaceId));
+  try {
+    const result = await captured.request<{ monitors?: ReviewMonitorRow[] }>('prMonitor.list', {
+      workspaceId,
+    });
+    return Array.isArray(result?.monitors)
+      ? result.monitors
+          .filter((row) => row.workspaceId === workspaceId)
+          .map((row) => {
+            if (row.resource !== undefined) {
+              const resource = MonitorResourceSchema.parse(row.resource);
+              if (resource.number !== row.prNumber || resource.repository.projectPath !== row.repo)
+                throw new Error('Monitor identity mismatch');
+            }
+            return {
+              ...row,
+              ...(row.monitorAvailability
+                ? { monitorAvailability: MonitorAvailabilitySchema.parse(row.monitorAvailability) }
+                : {}),
+              origin: captured.origin,
+            };
+          })
+      : [];
+  } finally {
+    if (!session) await captured.release();
+  }
+}
+
+export async function cancelPrMonitor(
+  workspaceId: string,
+  monitorId: string,
+  origin?: PrMonitorOrigin,
+): Promise<void> {
+  await originalSession(workspaceId, origin).request('prMonitor.cancel', {
     workspaceId,
+    monitorId,
   });
-  return Array.isArray(result?.monitors) ? result.monitors : [];
 }
-
-/** `prMonitor.cancel` (§6.9) — the `prMonitor:cancelled` event drops the row. */
-export async function cancelPrMonitor(workspaceId: string, monitorId: string): Promise<void> {
-  await backendRequest('prMonitor.cancel', { workspaceId, monitorId });
-}
-
-/** `prMonitor.flush` (§6.9) — deliver the pending debounced changes now;
- * a no-op (`flushed: false`) when nothing is pending. `check: true` (§5.42,
- * additive) makes the daemon re-poll the PR first and flush anything that
- * changed vs. the emit baseline; omitted, semantics are unchanged. */
 export async function flushPrMonitor(
   workspaceId: string,
   monitorId: string,
   check?: boolean,
+  origin?: PrMonitorOrigin,
 ): Promise<void> {
-  await backendRequest('prMonitor.flush', {
+  await originalSession(workspaceId, origin).request('prMonitor.flush', {
     workspaceId,
     monitorId,
     ...(check !== undefined ? { check } : {}),
   });
 }
 
-/** `events.event` envelope subset this module consumes (§6.3). */
 interface PrMonitorEventNotification {
   subscriptionId?: string;
   event?: { type?: string; workspaceId?: string; data?: PrMonitorEventData };
 }
-
-/** Handle returned by {@link subscribePrMonitors}. */
 export interface PrMonitorsSubscription {
-  /** On-demand `prMonitor.list` re-seed — e.g. to refresh `lastSnapshot`,
-   * which `prMonitor:*` events never carry. */
   refetch: () => void;
-  /** Tear down the subscription and notification listeners. */
   dispose: () => void;
 }
+export type PrMonitorServiceStatus = 'failed' | 'reconnecting';
 
-/**
- * Live monitor list for one workspace: registers a `prMonitor:*`
- * `events.subscribe` with the `prMonitor.list` seed issued concurrently
- * (single RTT; an unconditional post-ack re-list — coalesced into the
- * in-flight seed's trailing run — closes the event-gap race), folds
- * subsequent events, and re-seeds after a backend reconnect (RESUB-1). The handler receives the full list on every change
- * (active + completed — callers filter). Returns a handle exposing an
- * on-demand `refetch` plus the disposer.
- */
+/** Same seed/fold/refetch flow, scoped to one captured document/socket lifetime. */
 export function subscribePrMonitors(
   workspaceId: string,
-  handler: (monitors: PrMonitorRow[]) => void,
-  statusHandler?: (status: 'failed') => void,
+  handler: (monitors: ReviewMonitorRow[]) => void,
+  statusHandler?: (status: PrMonitorServiceStatus) => void,
+  supportHandler?: (support: ReviewMonitoringSupport) => void,
 ): PrMonitorsSubscription {
   let disposed = false;
-  let subscriptionId: string | undefined;
-  let monitors: PrMonitorRow[] = [];
-  let refetchInFlight = false;
-  let refetchQueued = false;
-  // Monitors cancelled by a fold: a `prMonitor.list` response that was already
-  // in flight when the `prMonitor:cancelled` event arrived can still carry the
-  // row, so list responses filter these until the server stops returning them.
-  const locallyCancelled = new Set<string>();
-  // Guards against a late-resolving subscribe from a previous registration
-  // (e.g. rapid reconnect flaps) overwriting the current subscriptionId.
-  let registerEpoch = 0;
-
-  const emit = () => {
-    if (!disposed) handler(monitors);
-  };
-
-  const refetch = (): Promise<void> => {
-    if (disposed) return Promise.resolve();
-    if (refetchInFlight) {
-      refetchQueued = true;
-      return Promise.resolve();
-    }
-    refetchInFlight = true;
-    return listPrMonitors(workspaceId)
-      .then((fetched) => {
-        if (disposed) return;
-        // Prune ids the server no longer returns (converged), then drop rows
-        // cancelled locally while this list was in flight.
-        for (const id of [...locallyCancelled]) {
-          if (!fetched.some((m) => m.monitorId === id)) locallyCancelled.delete(id);
-        }
-        monitors = fetched.filter((m) => !locallyCancelled.has(m.monitorId));
-        emit();
-      })
-      .catch((error) => {
-        logger.warn('prMonitor.list failed', { workspaceId, error });
-        // Preserve cached rows, then independently surface the failed read.
-        emit();
+  let epoch = 0;
+  let active: { refetch(): void; dispose(): void } | undefined;
+  const register = async () => {
+    const registration = ++epoch;
+    active?.dispose();
+    active = undefined;
+    let session: PrMonitorSession;
+    try {
+      session = await capturePrMonitorSession(workspaceId);
+    } catch (error) {
+      if (!disposed && registration === epoch) {
+        logger.warn('Monitor capture failed', { workspaceId, error });
         statusHandler?.('failed');
-      })
-      .finally(() => {
-        refetchInFlight = false;
-        if (refetchQueued) {
-          refetchQueued = false;
-          refetch();
-        }
-      });
-  };
-
-  const register = () => {
-    const epoch = ++registerEpoch;
-    // Seed CONCURRENTLY with the subscribe (~1 RTT instead of 2 serial RTTs).
-    // Event-gap race: response ordering proves nothing about SNAPSHOT
-    // ordering — the list handler can snapshot before the subscription
-    // window opens yet respond after the ack — so the ack handler always
-    // re-lists. `refetch` is single-flight with a trailing coalesce: a seed
-    // still in flight absorbs the re-list into one trailing `prMonitor.list`
-    // that starts after the seed settles, converging every ordering. Folds
-    // landing while a list is in flight are covered by the notification
-    // handler's trailing-refetch clause.
-    void refetch();
-    backendSubscribe<{ subscriptionId?: string }>({ eventTypes: ['prMonitor:*'], workspaceId })
-      .then((result) => {
-        const acked = result?.subscriptionId;
-        if (disposed || epoch !== registerEpoch) {
-          // Stale registration (disposed or superseded by a reconnect) —
-          // drop the ack and release its server-side subscription.
-          if (acked) void backendUnsubscribe(acked);
-          return;
-        }
-        subscriptionId = acked;
-        void refetch();
-      })
-      .catch((error) => {
-        logger.warn('events.subscribe (prMonitor:*) failed', { workspaceId, error });
-        // The concurrent seed already serves the one-shot snapshot.
-      });
-  };
-
-  const offNotification = onBackendNotification((n) => {
-    if (disposed || n.method !== 'events.event') return;
-    const params = n.params as PrMonitorEventNotification | undefined;
-    const event = params?.event;
-    if (!event?.type?.startsWith('prMonitor:')) return;
-    if (event.workspaceId !== workspaceId) return;
-    // Match on our subscription id once known; before the ack lands, accept
-    // any prMonitor event for this workspace (the folds are idempotent).
-    if (subscriptionId && params?.subscriptionId && params.subscriptionId !== subscriptionId) {
+      }
       return;
     }
-    const result = foldPrMonitorEvent(monitors, event.type, event.data ?? {});
-    monitors = result.monitors;
-    if (event.type === 'prMonitor:cancelled' && event.data?.monitorId) {
-      locallyCancelled.add(event.data.monitorId);
+    if (disposed || registration !== epoch) {
+      void session.release();
+      return;
     }
-    emit();
-    // A fold landing while a list request is in flight would be clobbered by
-    // that older response — queue a trailing refetch (single-flight,
-    // coalesced) so the list converges.
-    if (result.needsRefetch || refetchInFlight) refetch();
-  });
-
-  // Subscriptions are per-connection (§6.1) — replay after a reconnect and
-  // re-seed so anything missed during the outage converges.
-  const offReconnected = onBackendReconnected(() => {
+    let stopped = false;
+    let subscriptionId: string | undefined;
+    let monitors: ReviewMonitorRow[] = [];
+    let inFlight = false;
+    let queued = false;
+    let revision = 0;
+    const locallyCancelled = new Set<string>();
+    const current = () => !disposed && !stopped && registration === epoch;
+    const emit = () => {
+      if (current()) handler(monitors);
+    };
+    const refetch = () => {
+      if (!current()) return;
+      if (inFlight) {
+        queued = true;
+        return;
+      }
+      inFlight = true;
+      const seedRevision = revision;
+      void listPrMonitors(workspaceId, session)
+        .then((fetched) => {
+          if (!current()) return;
+          // Any intervening event makes this seed stale, even if its response is later.
+          if (seedRevision !== revision) {
+            queued = true;
+            return;
+          }
+          for (const id of locallyCancelled)
+            if (!fetched.some((row) => row.monitorId === id)) locallyCancelled.delete(id);
+          monitors = fetched.filter((row) => !locallyCancelled.has(row.monitorId));
+          emit();
+        })
+        .catch((error) => {
+          if (!current()) return;
+          logger.warn('prMonitor.list failed', { workspaceId, error });
+          emit();
+          statusHandler?.('failed');
+        })
+        .finally(() => {
+          inFlight = false;
+          if (queued && current()) {
+            queued = false;
+            refetch();
+          }
+        });
+    };
+    sessions.set(session.origin.sessionId, session);
+    const offNotification = session.onNotification((n) => {
+      if (!current() || n.method !== 'events.event') return;
+      const params = n.params as PrMonitorEventNotification | undefined;
+      const event = params?.event;
+      if (
+        !event?.type?.startsWith('prMonitor:') ||
+        event.workspaceId !== workspaceId ||
+        (event.data?.workspaceId && event.data.workspaceId !== workspaceId)
+      )
+        return;
+      // Pre-ack gaps converge through the unconditional post-ack seed.
+      if (!subscriptionId || params?.subscriptionId !== subscriptionId) return;
+      revision++;
+      const result = foldPrMonitorEvent(monitors, event.type, event.data ?? {});
+      const folded = result.monitors !== monitors;
+      monitors = result.monitors;
+      if (folded && event.type === 'prMonitor:cancelled' && event.data?.monitorId)
+        locallyCancelled.add(event.data.monitorId);
+      emit();
+      if (result.needsRefetch || inFlight) refetch();
+    });
+    let offRetired = () => {};
+    const disposeSession = () => {
+      if (stopped) return;
+      stopped = true;
+      sessions.delete(session.origin.sessionId);
+      offNotification();
+      offRetired();
+      void session.release();
+    };
+    active = { refetch, dispose: disposeSession };
+    offRetired = session.onRetired(() => {
+      if (!current()) return;
+      disposeSession();
+      handler([]);
+      statusHandler?.('reconnecting');
+    });
+    if (!current()) return;
+    supportHandler?.(session.support);
+    refetch();
+    void session
+      .request<{ subscriptionId?: string }>('events.subscribe', {
+        eventTypes: ['prMonitor:*'],
+        workspaceId,
+      })
+      .then((result) => {
+        if (!current()) return;
+        subscriptionId = result?.subscriptionId;
+        refetch();
+      })
+      .catch((error) => {
+        if (current()) logger.warn('Monitor subscription failed', { workspaceId, error });
+      });
+  };
+  const offReconnected = onMonitorReconnected(() => {
     if (disposed) return;
-    subscriptionId = undefined;
-    register();
+    handler([]);
+    statusHandler?.('reconnecting');
+    void register();
   });
-
-  register();
-
+  void register();
   return {
-    refetch,
+    refetch: () => active?.refetch(),
     dispose: () => {
       disposed = true;
-      offNotification();
+      ++epoch;
       offReconnected();
-      if (subscriptionId) void backendUnsubscribe(subscriptionId);
+      active?.dispose();
     },
   };
 }

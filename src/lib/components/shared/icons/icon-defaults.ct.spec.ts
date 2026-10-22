@@ -4,7 +4,7 @@ import Preview from './icon-defaults.preview.svelte';
 import { expectDestructiveMenuInk, expectMenuFirstLine } from '../../../../test/menu-geometry';
 
 async function expectLeftAlignedCopy(rows: Locator) {
-  const labels = await rows.locator('span[title]').evaluateAll((elements) =>
+  const labels = await rows.locator('span.truncate:not(:has(.truncate))').evaluateAll((elements) =>
     elements.map((label) => {
       const range = document.createRange();
       range.selectNodeContents(label);

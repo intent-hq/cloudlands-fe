@@ -5,8 +5,10 @@
  */
 
 import type { SentryProject } from '$features/sentry-auth/types';
+import type { ProviderAuthOperation } from '../provider-auth/provider-auth-types';
 
 export type SentryAuthState = {
+  operation: ProviderAuthOperation | null;
   /** Whether user is authenticated with Sentry */
   isAuthenticated: boolean;
   /** Configured organization slug */

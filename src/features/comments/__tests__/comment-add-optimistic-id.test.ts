@@ -12,13 +12,23 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const storeControl = vi.hoisted(() => ({ reset: () => {} }));
+const storeControl = vi.hoisted(() => ({
+  reset: () => {},
+  load: vi.fn(async () => []),
+  add: vi.fn(async () => true),
+}));
 
 vi.mock('$store/renderer/store', async () => {
   const { createStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
-  const { commentsReducer, initialState } = await vi.importActual<
-    typeof import('$store/renderer/slices/comments/comments-slice')
-  >('$store/renderer/slices/comments/comments-slice');
+  const {
+    addCommentAction,
+    commentsReducer,
+    initialState,
+    removeCommentAction,
+    replaceNoteCommentsAction,
+  } = await vi.importActual<typeof import('$store/renderer/slices/comments/comments-slice')>(
+    '$store/renderer/slices/comments/comments-slice',
+  );
   let state = { comments: initialState };
   storeControl.reset = () => {
     state = { comments: initialState };
@@ -30,7 +40,32 @@ vi.mock('$store/renderer/store', async () => {
     },
   });
   const mockStore = {
-    dispatch: (action: unknown) => {
+    dispatch: (action: any) => {
+      if (action?.asyncActionType === 'workspaceNotes/loadNoteCommentsRequested') {
+        void storeControl.load(...action.payload).then((comments) => {
+          state = {
+            comments: commentsReducer(
+              state.comments,
+              replaceNoteCommentsAction(action.payload[0], action.payload[1], comments),
+            ),
+          };
+          action.success(comments);
+        }, action.failure);
+        return action.promise;
+      }
+      if (action?.asyncActionType === 'workspaceNotes/addCommentRequested') {
+        const optimistic = action.payload[1];
+        state = { comments: commentsReducer(state.comments, addCommentAction(optimistic)) };
+        void storeControl.add(action.payload[0], action.payload[2]).then((success) => {
+          if (!success) {
+            state = {
+              comments: commentsReducer(state.comments, removeCommentAction(optimistic.id)),
+            };
+          }
+          action.success(success);
+        }, action.failure);
+        return action.promise;
+      }
       state = { comments: commentsReducer(state.comments, action as never) };
       return action;
     },
@@ -49,11 +84,6 @@ vi.mock('$store/renderer/store', async () => {
   };
   return createStoreMockModule(mockStore);
 });
-
-vi.mock('../comment-loader', () => ({
-  loadComments: vi.fn(async () => []),
-  resolveComment: vi.fn(async () => true),
-}));
 
 // FAKE seam: appClient.comments.add is stubbed so no mutation reaches a
 // daemon; the REAL comments-write-service runs so the optimistic dispatch,
@@ -150,6 +180,10 @@ describe('comment.add carries the optimistic comment id (clobber/ghosting root c
   beforeEach(async () => {
     vi.clearAllMocks();
     addMock.mockResolvedValue({ success: true });
+    storeControl.load.mockResolvedValue([]);
+    storeControl.add.mockImplementation(async (noteId, params) =>
+      Boolean((await addMock(noteId, params)).success),
+    );
     storeControl.reset();
     const html = await processMarkdownToHTML('The quick brown fox jumps over the lazy dog.');
     ({ editor, container } = createEditor(html));

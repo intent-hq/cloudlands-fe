@@ -1,15 +1,16 @@
 <script lang="ts">
+  import { openDevConsole } from '$features/dev-console/dev-console-client';
+  import { getSettingsPaletteCommands } from '$features/settings/settings-palette-commands';
+  import {
+    selectPrincipalConnectionContext,
+    selectWorkspaceCreationVisible,
+  } from '$store/renderer/slices/principal/principal-selectors';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { ActionRow } from '$lib/components/ui/menu';
+  import { EmptyState } from '$lib/components/patterns/screen';
   import { ShortcutChip } from '$lib/components/ui/kbd';
-  /**
-   * Global Modal Command Palette (Cmd/Ctrl+K)
-   *
-   * App-wide palette for commands, files, workspace search, notes and headings.
-   * This is the app-wide palette, not the inline slash-command suggester used
-   * in text inputs.
-   */
+  /** App-wide palette for commands, files, workspace search, notes and headings. */
   import { onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import { goto } from '$app/navigation';
@@ -24,22 +25,29 @@
     faCommentDots,
     faFileAlt,
     faCodeBranch,
-    faPlus,
     faGlobe,
   } from '@fortawesome/free-solid-svg-icons';
   import { backendRequest } from '$lib/client/live/backend-transport';
   import { openMessage } from '$lib/utils/open-message';
+  import { openPaletteNote } from '$lib/utils/palette-note-navigation';
   import { createTranscriptQuery } from '$lib/utils/palette-transcript-search';
   import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
-
   import { selectBrowserRecentUrls } from '$store/renderer/slices/browser/browser-selectors';
-  import { selectLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import {
+    selectLabsGitLabEnabled,
+    selectLabsRemoteAgentsEnabled,
+    selectLabsMultiplayerEnabled,
+  } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import {
+    setLabsGitLabEnabled,
+    setLabsRemoteAgentsEnabled,
+    setLabsMultiplayerEnabled,
+  } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
   import {
-    selectHidesAgentLifecycleActions,
+    selectHidesAgentCreationActions,
     selectIsCollaboratorOnlyClient,
     selectIsWorkspaceCollaborator,
     selectWorkspaceItems,
@@ -50,10 +58,7 @@
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { invoke } from '$lib/electron-bridge';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
-  import {
-    openWorkspaceBrowser,
-    openWorkspaceNote,
-  } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { openWorkspaceBrowser } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import {
     commandPaletteNewFileRequested,
     openAgentTabRequested,
@@ -63,31 +68,36 @@
     resetOnboarding,
     setOnboardingFullFlowRequested,
   } from '$store/renderer/slices/onboarding/onboarding-slice';
+  import { selectPrincipalActionContext as admissionSelector } from '$store/renderer/slices/principal/principal-selectors';
   import {
     setShowCreateModal,
     setStatsOverlayOpen,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
-    type PaletteFilter,
     type WorkspaceObject,
     FILTER_PREFIXES,
     fuzzyScore,
     formatRelativeTime,
     parseQueryFilter,
     buildNoteBreadcrumbs,
+    buildMessageTitleSegments,
     buildRecentItems,
   } from '$store/renderer/slices/command-palette/command-palette-utils';
   import {
     recordPaletteFileMru,
     recordPaletteMruItem,
+    paletteNoteSearchReleased,
+    paletteNoteSearchRequested,
   } from '$store/renderer/slices/palette/palette-slice';
   import {
     selectPaletteFileMru,
     selectPaletteMruEntries,
+    selectPaletteNoteSearch,
   } from '$store/renderer/slices/palette/palette-selectors';
   import { computeResults } from '$store/renderer/slices/command-palette/command-palette-results';
   import { Skeleton } from './ui/skeleton';
   import CommandPaletteItemTitle from './CommandPaletteItemTitle.svelte';
+  import CommandPaletteFilters from './CommandPaletteFilters.svelte';
   import { COMMAND_PALETTE_COMMANDS } from './command-palette-commands';
   import IntentNavigationIcon from '$lib/icons/IntentNavigationIcon.svelte';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
@@ -102,9 +112,11 @@
     getWorkspaceActivityDisplayTime,
   } from '$shared/utils/workspace-activity-time';
   import { store as appStore } from '$store/renderer/store';
-
+  import {
+    changesConsumerMounted,
+    changesConsumerUnmounted,
+  } from '$store/renderer/slices/changes/changes-slice';
   const logger = createLogger('CommandPalette');
-
   interface Props {
     isOpen: boolean;
     initialQuery?: string;
@@ -113,7 +125,6 @@
     /** Callback when a file is selected. Includes openInAdjacentPanel for cmd+Enter support. */
     onSelectFile?: (detail: { path: string; line?: number; openInAdjacentPanel?: boolean }) => void;
   }
-
   let {
     isOpen = $bindable(false),
     initialQuery = '',
@@ -130,24 +141,37 @@
   let searchQuery = $state('');
   const workspaceItems = selectWorkspaceItems();
   const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
+  const labsGitLabEnabled$ = selectLabsGitLabEnabled();
+  const labsRemoteAgentsEnabled$ = selectLabsRemoteAgentsEnabled();
   // Collaborators (multiplayer w3) are refused on terminal + browser methods and
   // cannot create workspaces, so those commands and result groups are withheld.
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
   const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
+  const canCreate$ = selectWorkspaceCreationVisible();
   // Agent create is likewise refused (-32003) for a collaborator connection.
-  const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceIdStore);
+  const hidesAgentLifecycleActions$ = selectHidesAgentCreationActions(workspaceIdStore);
   const WORKSPACE_OWNER_ONLY_COMMAND_IDS: ReadonlySet<string> = new Set([
     'new-terminal',
     'open-url',
   ]);
   const commands = $derived(
-    COMMAND_PALETTE_COMMANDS.filter(
+    [
+      ...COMMAND_PALETTE_COMMANDS,
+      ...getSettingsPaletteCommands({
+        isCollaboratorOnlyClient: $isCollaboratorOnlyClient$,
+        multiplayerEnabled: $labsMultiplayerEnabled$,
+      }),
+    ].filter(
       (command) =>
         !($isCollaborator$ && WORKSPACE_OWNER_ONLY_COMMAND_IDS.has(command.id)) &&
         !($hidesAgentLifecycleActions$ && command.id === 'new-agent') &&
-        !($isCollaboratorOnlyClient$ && command.id === 'new-workspace') &&
+        !(!$canCreate$ && command.id === 'new-workspace') &&
         !($labsMultiplayerEnabled$ && command.id === 'enable-experimental-multiplayer') &&
-        !(!$labsMultiplayerEnabled$ && command.id === 'disable-experimental-multiplayer'),
+        !(!$labsMultiplayerEnabled$ && command.id === 'disable-experimental-multiplayer') &&
+        !($labsGitLabEnabled$ && command.id === 'enable-experimental-gitlab') &&
+        !(!$labsGitLabEnabled$ && command.id === 'disable-experimental-gitlab') &&
+        !($labsRemoteAgentsEnabled$ && command.id === 'enable-experimental-remote-agents') &&
+        !(!$labsRemoteAgentsEnabled$ && command.id === 'disable-experimental-remote-agents'),
     ),
   );
   const currentChanges$ = selectCurrentChanges(workspaceIdStore);
@@ -161,22 +185,23 @@
   let inputRef: HTMLInputElement | undefined = $state(undefined);
   let resultsRef: HTMLDivElement | undefined = $state(undefined);
   let isLoadingFiles = $state(false);
-  let activeFilter: PaletteFilter | null = $state(null); // Filter by type
-
-  // Derived: parse search query for filter prefix (uses extracted pure function)
   let parsedQuery = $derived(parseQueryFilter(searchQuery));
+  let activeFilter = $derived(parsedQuery.filter);
+  let filtersRef: { cycle: (direction: 1 | -1) => void } | undefined = $state();
+  const resultCount = $derived(searchResults.filter(isSelectableResult).length);
 
-  // Go to Line mode: detect when query starts with ':'
+  function applyFilter(prefix: string) {
+    searchQuery = prefix + parsedQuery.searchTerm;
+    selectedIndex = 0;
+    resultsRef?.scrollTo?.({ top: 0 });
+    void tick().then(() => inputRef?.focus());
+  }
+
   let isGoToLineMode = $derived(searchQuery.trimStart().startsWith(':'));
   let goToLineNumber = $derived.by(() => {
     if (!isGoToLineMode) return null;
     const num = parseInt(searchQuery.trimStart().slice(1).trim(), 10);
     return Number.isNaN(num) ? null : num;
-  });
-
-  // Update activeFilter when parsed query changes
-  $effect(() => {
-    activeFilter = parsedQuery.filter;
   });
 
   // Debounce timer for file queries
@@ -186,7 +211,6 @@
   // RAF handle for deferred result computation
   let resultComputeRaf: number | null = null;
 
-  // Workspace objects state
   let agents: WorkspaceObject[] = $derived.by(() => {
     if (!workspaceId) return [];
 
@@ -217,11 +241,13 @@
       .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
   });
   let notes: WorkspaceObject[] = $derived.by(() => {
+    if (!workspaceId) return [];
     const activeNotes = $allNotes$.filter((n) => !n.isArchived);
-
     return activeNotes
       .map((n) => ({
-        id: n.id,
+        id: JSON.stringify([workspaceId, n.id]),
+        noteId: n.id,
+        workspaceId,
         type: 'note' as const,
         label: n.title,
         description: n.tags?.join(', '),
@@ -298,10 +324,6 @@
     }
   }
 
-  // MRU, formatRelativeTime, buildNoteBreadcrumbs, fuzzyScore, parseQueryFilter,
-  // FILTER_PREFIXES, and WorkspaceObject types are now imported from
-  // '$store/renderer/slices/command-palette/command-palette-utils'
-
   // Load workspace objects when the workspace changes. Terminal metadata
   // titles are localized at read time; a runtime language switch remounts the
   // palette via the root +layout.svelte {#key $resolvedLocale$} block, which
@@ -349,17 +371,13 @@
     });
   });
 
-  // fuzzyScore is now imported from command-palette-utils
-
-  // Grouped results state (only files need async loading)
   let groupFiles: any[] = $state([]);
 
   // Daemon helper to query files (search.fileNames, PROTOCOL §5.15) and map to palette items (with fuzzy/MRU)
-  async function queryFiles(pattern: string): Promise<any[]> {
-    if (!workspaceId) return [];
+  async function queryFiles(pattern: string, wsId: string): Promise<any[]> {
     try {
       const resp = await backendRequest<{ files?: string[] }>('search.fileNames', {
-        workspaceId,
+        workspaceId: wsId,
         pattern: (pattern || '').trim(),
         limit: 50,
       });
@@ -398,12 +416,11 @@
     }
   }
 
-  // Debounce constant
   const FILE_QUERY_DEBOUNCE_MS = 150;
 
   // Keep file group in sync with current query/workspace (debounced)
   $effect(() => {
-    const q = (searchQuery || '').trim();
+    const q = parsedQuery.searchTerm;
     const wsId = workspaceId;
 
     // Clear any pending debounce timer and invalidate in-flight requests first,
@@ -414,17 +431,7 @@
     }
     const requestId = ++currentFileRequestId;
 
-    // Skip file queries in Go to Line mode
-    if (q.startsWith(':')) {
-      untrack(() => {
-        groupFiles = [];
-        isLoadingFiles = false;
-      });
-      return;
-    }
-
-    // If no workspace, clear files immediately (untracked write)
-    if (!wsId) {
+    if (!isOpen || isGoToLineMode || !wsId || (activeFilter && activeFilter !== 'file')) {
       untrack(() => {
         groupFiles = [];
         isLoadingFiles = false;
@@ -440,7 +447,7 @@
     // Debounce the actual IPC call
     fileQueryTimeout = setTimeout(async () => {
       try {
-        const files = await queryFiles(q);
+        const files = await queryFiles(q, wsId);
         // Only update if this is still the current request (untracked to avoid effect loop)
         if (requestId === currentFileRequestId) {
           untrack(() => {
@@ -458,7 +465,7 @@
     }, FILE_QUERY_DEBOUNCE_MS);
 
     return () => {
-      // Cleanup: cancel pending timeout
+      ++currentFileRequestId;
       if (fileQueryTimeout) {
         clearTimeout(fileQueryTimeout);
         fileQueryTimeout = null;
@@ -477,26 +484,60 @@
     });
   });
 
-  // Keep transcript group in sync with current query.
+  // Keep transcript group in sync only while the palette is visible.
   $effect(() => {
+    if (!isOpen) return transcriptQuery.clear();
     const term = parsedQuery.searchTerm;
-    const wsId = workspaceId;
-    const wsItems = $workspaceItems || [];
 
     // Skip in Go to Line mode and when there is no search term to match
-    if ((searchQuery || '').trimStart().startsWith(':') || !term) {
+    if (isGoToLineMode || !term || (activeFilter && activeFilter !== 'message')) {
       transcriptQuery.clear();
       return;
     }
 
-    transcriptQuery.query(term, wsId, wsItems);
+    transcriptQuery.query(term, workspaceId, []);
 
     return () => transcriptQuery.cancel();
   });
 
-  // computeResults is now imported from command-palette-results.
-  // This wrapper bridges component state to the pure function's input interface.
-  function buildResults(q: string, files: any[], messages: any[]) {
+  // Global indexed note results complement local fuzzy title/tag discovery.
+  const noteSearchConsumerId = crypto.randomUUID();
+  const noteResults = selectPaletteNoteSearch(noteSearchConsumerId);
+  const principalConnectionContext = selectPrincipalConnectionContext();
+  const indexedNotes = $derived(
+    $noteResults.items
+      .filter((item) => !item.isArchived)
+      .map((item) => ({
+        ...item,
+        workspaceName: item.workspaceId,
+        ...buildMessageTitleSegments(
+          ($workspaceItems || []).find((w) => w.id === item.workspaceId),
+        ),
+        isArchivedWorkspace: item.isArchivedWorkspace,
+        icon: faFileAlt,
+        _time: formatRelativeTime(item.updatedAt),
+      })),
+  );
+  $effect(() => {
+    const authority = $principalConnectionContext;
+    if (!authority) return;
+    if (!isOpen) {
+      appStore.dispatch(paletteNoteSearchRequested(noteSearchConsumerId, crypto.randomUUID(), ''));
+      return;
+    }
+    const term = parsedQuery.searchTerm;
+    if (isGoToLineMode || !term || (activeFilter && activeFilter !== 'note')) {
+      appStore.dispatch(paletteNoteSearchRequested(noteSearchConsumerId, crypto.randomUUID(), ''));
+      return;
+    }
+    appStore.dispatch(
+      paletteNoteSearchRequested(noteSearchConsumerId, crypto.randomUUID(), term, workspaceId),
+    );
+    return () =>
+      appStore.dispatch(paletteNoteSearchRequested(noteSearchConsumerId, crypto.randomUUID(), ''));
+  });
+  onMount(() => () => appStore.dispatch(paletteNoteSearchReleased(noteSearchConsumerId)));
+  function buildResults(q: string, files: any[], messages: any[], remoteNotes: WorkspaceObject[]) {
     const wsItems = ($workspaceItems || [])
       .filter((w: any) => w.id !== workspaceId)
       .sort(compareWorkspaceActivityDisplayTimeDesc)
@@ -514,13 +555,13 @@
           _activityTime: activityTime,
         };
       });
-
     return computeResults({
       query: q,
       activeFilter,
       workspaceId,
       agents,
       notes,
+      indexedNotes: remoteNotes,
       changes,
       terminals,
       browserUrls,
@@ -531,14 +572,12 @@
       messages,
     });
   }
-
   // PERF: Debounce timer for rapid typing
   let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   const SEARCH_DEBOUNCE_MS = 16; // ~1 frame, prevents excessive RAF calls during fast typing
 
   // Recompute flat results - debounced and deferred via RAF to not block typing
   $effect(() => {
-    // Use the parsed search term (with prefix stripped)
     const q = parsedQuery.searchTerm;
     // Skip result computation in Go to Line mode
     if ((searchQuery || '').trimStart().startsWith(':')) {
@@ -556,12 +595,21 @@
       });
       return;
     }
+    // Read before the deferred callback so live Labs changes refresh command results.
+    commands;
+    $workspaceItems; // Metadata updates presentation without restarting remote queries.
     const files = groupFiles;
-    const messages = groupMessages;
-    // Track activeFilter to trigger recomputation when it changes
+    const messages = groupMessages.map((item) => ({
+      ...item,
+      ...buildMessageTitleSegments(($workspaceItems || []).find((w) => w.id === item.workspaceId)),
+    }));
+    const remoteNotes = indexedNotes;
+    // Local-note updates and workspace switches must refresh local fallback/browsing too.
+    notes;
+    workspaceId;
+    recentItems;
     activeFilter;
 
-    // Cancel any pending computation
     if (resultComputeRaf !== null) {
       cancelAnimationFrame(resultComputeRaf);
       resultComputeRaf = null;
@@ -576,7 +624,7 @@
       searchDebounceTimer = null;
       resultComputeRaf = requestAnimationFrame(() => {
         resultComputeRaf = null;
-        const flat = buildResults(q, files, messages);
+        const flat = buildResults(q, files, messages, remoteNotes);
         // Use untrack for all state updates to avoid effect loops
         untrack(() => {
           searchResults = flat;
@@ -605,7 +653,6 @@
     };
   });
 
-  // MRU utilities for files
   function getMRUMap(): Map<string, number> {
     return new Map(Object.entries($paletteFileMru$));
   }
@@ -678,7 +725,6 @@
       }
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      // Handle Go to Line mode
       if (isGoToLineMode) {
         if (goToLineNumber != null && goToLineNumber > 0) {
           dispatchWindowEvent('workspace:go-to-line', { line: goToLineNumber });
@@ -699,17 +745,17 @@
   function handleContainerKeyDown(e: KeyboardEvent) {
     if (e.key === 'Tab') {
       e.preventDefault();
+      if (!isGoToLineMode) {
+        filtersRef?.cycle(e.shiftKey ? -1 : 1);
+      }
       queueMicrotask(() => inputRef?.focus());
     }
   }
 
-  function selectItem(item: any, options?: { openInAdjacentPanel?: boolean }) {
+  async function selectItem(item: any, options?: { openInAdjacentPanel?: boolean }) {
     if (!item) return;
-    // Skip group labels
     if (item._groupLabel) return;
-
     const openInAdjacentPanel = options?.openInAdjacentPanel ?? false;
-
     // Handle "show more" button - insert the appropriate prefix
     if (item._showMore) {
       const prefix = Object.keys(FILTER_PREFIXES).find(
@@ -722,16 +768,12 @@
       }
       return;
     }
-
     let shouldClose = true;
-
-    // Handle workspace objects
     if (item.type) {
       // Transcript rows are not MRU-tracked ('message' is not a PaletteMruEntryType)
-      if (item.type !== 'message') {
+      if (item.type !== 'message' && item.type !== 'note') {
         appStore.dispatch(recordPaletteMruItem(item.type, item.id, Date.now()));
       }
-
       switch (item.type) {
         case 'message':
           void openMessage({
@@ -749,9 +791,14 @@
           }
           break;
         case 'note':
-          if (workspaceId) {
-            appStore.dispatch(openWorkspaceNote(workspaceId, item.id, { openInAdjacentPanel }));
-          }
+          if (
+            !(await openPaletteNote(
+              item.workspaceId ?? workspaceId,
+              item.noteId ?? item.id,
+              openInAdjacentPanel,
+            ))
+          )
+            return;
           break;
         case 'change':
           if (item.path) {
@@ -791,18 +838,23 @@
       const close = handleCommand(item.id);
       if (close === false) shouldClose = false;
     }
-
     if (shouldClose) onClose?.();
   }
-
   function handleCommand(commandId: string): boolean {
+    const settingsCommand = commands.find((command) => command.id === commandId);
+    if (settingsCommand && 'settingsTab' in settingsCommand) {
+      appStore.dispatch(setShowCreateModal(false));
+      navigateToSettings({ tab: settingsCommand.settingsTab });
+      return true;
+    }
     switch (commandId) {
       case 'new-workspace':
-        if (!$isCollaboratorOnlyClient$) {
+        if (selectWorkspaceCreationVisible.select(appStore.state)) {
           appStore.dispatch(setShowCreateModal(true));
         }
         return true;
       case 'settings':
+        appStore.dispatch(setShowCreateModal(false));
         navigateToSettings();
         return true;
       case 'enable-experimental-multiplayer':
@@ -810,6 +862,18 @@
         return true;
       case 'disable-experimental-multiplayer':
         appStore.dispatch(setLabsMultiplayerEnabled(false));
+        return true;
+      case 'enable-experimental-gitlab':
+        appStore.dispatch(setLabsGitLabEnabled(true));
+        return true;
+      case 'disable-experimental-gitlab':
+        appStore.dispatch(setLabsGitLabEnabled(false));
+        return true;
+      case 'enable-experimental-remote-agents':
+        appStore.dispatch(setLabsRemoteAgentsEnabled(true));
+        return true;
+      case 'disable-experimental-remote-agents':
+        appStore.dispatch(setLabsRemoteAgentsEnabled(false));
         return true;
       case 'new-agent':
         if (workspaceId && !$hidesAgentLifecycleActions$) {
@@ -841,7 +905,7 @@
         // Explicit restart: request the full flow so OnboardingPage's
         // initial-step decision never skips ahead on setup state.
         appStore.dispatch(setOnboardingFullFlowRequested(true));
-        appStore.dispatch(resetOnboarding());
+        appStore.dispatch(resetOnboarding(admissionSelector.select(appStore.state) ?? undefined));
         goto('/workspace/new');
         return true;
       case 'enhance-prompt':
@@ -852,6 +916,9 @@
         return true;
       case 'attach-files':
         dispatchWindowEvent('chat:attach-files');
+        return true;
+      case 'open-dev-console':
+        void openDevConsole();
         return true;
       case 'open-hud':
         void invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route: '/hud' });
@@ -872,7 +939,6 @@
 
   $effect(() => {
     if (isOpen && inputRef) {
-      // Focus input when palette opens
       queueMicrotask(() => inputRef?.focus());
     }
   });
@@ -905,18 +971,22 @@
     const currentInitialQuery = initialQuery || '';
     if (currentInitialQuery !== prevInitialQuery) {
       prevInitialQuery = currentInitialQuery;
-      // Only update searchQuery if the initialQuery actually changed to a non-empty value
-      if (currentInitialQuery !== '') {
-        untrack(() => {
-          searchQuery = currentInitialQuery;
-        });
-      }
+      // Ordinary opens clear recovery/go-to-line queries. Unchanged props must
+      // leave user typing intact across unrelated parent or store updates.
+      untrack(() => {
+        searchQuery = currentInitialQuery;
+      });
     }
+  });
+  $effect(() => {
+    const wsId = workspaceId;
+    if (!wsId || !isOpen) return;
+    appStore.dispatch(changesConsumerMounted(wsId, 'files'));
+    return () => appStore.dispatch(changesConsumerUnmounted(wsId, 'files'));
   });
 </script>
 
 {#if isOpen}
-  <!-- Backdrop -->
   <div
     class="fixed inset-0 z-50 bg-black/15 cursor-pointer"
     role="button"
@@ -934,9 +1004,11 @@
 {/if}
 
 {#if isOpen}
-  <!-- Command Palette -->
+  <!-- Width follows the filter strip (640px floor, viewport cap); other sections use
+       contain-inline-size so long titles or queries truncate instead of widening it.
+       Centered with auto margins, not a translate, so odd widths avoid half-pixel offsets. -->
   <div
-    class="fixed top-[12%] left-1/2 -translate-x-1/2 w-[calc(100%-1rem)] max-w-[560px] z-50"
+    class="fixed inset-x-0 top-[12%] mx-auto w-max min-w-[min(640px,calc(100%-1rem))] max-w-[calc(100%-1rem)] z-50"
     role="dialog"
     aria-modal="true"
     aria-label={m.lib_commandPalette_quickActions_ariaLabel()}
@@ -945,44 +1017,51 @@
     transition:fly={{ axis: 'y', distance: 6, tier: 'moderate' }}
   >
     <div
-      class="flex max-h-[80dvh] flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-(--elevation-overlay)"
+      class="flex max-h-[80dvh] flex-col overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-(--elevation-overlay)"
       role="document"
       tabindex="-1"
     >
-      <!-- Search Input -->
-      <div class="flex shrink-0 items-center gap-2 px-3 py-2">
-        <Fa icon={faSearch} class="size-4 shrink-0 text-muted-foreground" />
+      <div class="flex shrink-0 items-center gap-3 px-5 py-3 contain-inline-size">
+        <Fa icon={faSearch} class="size-5 shrink-0 text-muted-foreground" />
 
         <Input
           bind:ref={inputRef}
           bind:value={searchQuery}
           onkeydown={handleKeyDown}
           type="text"
+          aria-label={m.lib_commandPalette_filter_placeholder()}
           placeholder={isGoToLineMode
             ? m.lib_commandPalette_goToLine_placeholder()
             : m.lib_commandPalette_filter_placeholder()}
           noFocusStyle
-          class="min-w-0 flex-1 border-0 bg-transparent px-0 shadow-none"
+          class="min-w-0 flex-1 border-0 bg-transparent px-0 type-body shadow-none"
           autocorrect="off"
           autocapitalize="off"
           spellcheck="false"
         />
-        <div
-          aria-live="polite"
-          style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;"
-        >
-          {m.lib_commandPalette_resultsCount_status({ count: searchResults.length })}
+        <div aria-live="polite" class="sr-only">
+          {m.lib_commandPalette_resultsCount_status({ count: resultCount })}
         </div>
-
-        <ShortcutChip>{m.lib_commandPalette_esc_label()}</ShortcutChip>
       </div>
 
-      <!-- Divider -->
       <div class="h-px shrink-0 bg-border"></div>
 
-      <!-- Go to Line mode -->
+      <!-- Go-to-line hides the strip but keeps it mounted, so the palette width does not jump. -->
+      <div
+        class={isGoToLineMode ? 'invisible h-0 overflow-hidden' : 'contents'}
+        inert={isGoToLineMode}
+      >
+        <CommandPaletteFilters
+          bind:this={filtersRef}
+          {workspaceId}
+          {activeFilter}
+          isCollaborator={$isCollaborator$}
+          onFilter={applyFilter}
+        />
+      </div>
+
       {#if isGoToLineMode}
-        <div class="min-h-0 max-h-[480px] overflow-y-auto p-1">
+        <div class="min-h-0 max-h-[480px] overflow-y-auto p-1 contain-inline-size">
           <div class="px-3 py-2">
             {#if goToLineNumber != null && goToLineNumber > 0}
               <Button
@@ -1006,57 +1085,21 @@
             {/if}
           </div>
         </div>
-        <!-- Results -->
-      {:else if searchResults.length > 0 || isLoadingFiles || isLoadingMessages}
+      {:else if searchResults.length > 0 || isLoadingFiles || isLoadingMessages || $noteResults.loading}
         <div
           bind:this={resultsRef}
-          class="min-h-0 max-h-[480px] overflow-y-auto p-1"
+          class="min-h-0 max-h-[440px] overflow-y-auto overscroll-contain p-2 contain-inline-size"
           data-palette-results
         >
           {#each searchResults as item, index (item._idx !== undefined ? item._idx : `fallback-${index}`)}
             {#if item._borderAbove}
-              <!-- Border above section -->
               <div class="my-1.5 h-px bg-border"></div>
             {:else if item._newActionsRow}
-              <!-- New Actions Row (horizontal pills) - no label -->
-              <div class="flex flex-wrap items-center justify-between gap-2 px-2 py-1.5">
-                <!-- Left side: workspace-specific actions -->
-                <div class="flex flex-wrap gap-2">
-                  {#each searchResults.filter((r) => r._newAction && !r._newWorkspace) as action}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      active={selectedIndex === action._idx}
-                      aria-current={selectedIndex === action._idx ? 'true' : undefined}
-                      data-palette-index={action._idx}
-                      onclick={() => selectItem(action)}
-                      onpointermove={() => (selectedIndex = action._idx)}
-                    >
-                      {#snippet leadingIcon()}<Fa icon={faPlus} class="size-3.5" />{/snippet}
-                      {action.pillLabel ?? action.label}
-                    </Button>
-                  {/each}
-                </div>
-
-                <!-- Right side: New Workspace -->
-                {#each searchResults.filter((r) => r._newWorkspace) as wsAction}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    active={selectedIndex === wsAction._idx}
-                    aria-current={selectedIndex === wsAction._idx ? 'true' : undefined}
-                    data-palette-index={wsAction._idx}
-                    onclick={() => selectItem(wsAction)}
-                    onpointermove={() => (selectedIndex = wsAction._idx)}
-                  >
-                    {#snippet leadingIcon()}<Fa icon={faPlus} class="size-3.5" />{/snippet}
-                    {wsAction.pillLabel ?? wsAction.label}
-                  </Button>
-                {/each}
+              <div class="px-3 pb-2 pt-3 type-caption text-muted-foreground">
+                {m.layout_commandPalette_commands_group()}
               </div>
             {:else if item._groupLabel}
-              <!-- Group Label with shortcut key -->
-              <div class="px-2 pt-2 pb-1 {index > 0 ? 'mt-0.5' : ''}">
+              <div class="px-3 pb-2 pt-3 {index > 0 ? 'mt-2' : ''}">
                 <div class="flex items-center justify-between type-caption text-muted-foreground">
                   <span>{item._groupLabel}</span>
                   {#if item._shortcutKey}
@@ -1065,10 +1108,11 @@
                 </div>
               </div>
             {:else if item._showMore}
-              <!-- Show More Button -->
               <ActionRow
                 data-palette-index={index}
                 selected={selectedIndex === index}
+                class="px-3 py-2"
+                onpointerdown={(event) => event.preventDefault()}
                 onclick={() => selectItem(item)}
               >
                 {#snippet title()}
@@ -1077,27 +1121,13 @@
                   >
                 {/snippet}
               </ActionRow>
-            {:else if !item._newAction}
-              <!-- Regular Item -->
-              {#snippet rowDescription()}
-                <span class="block truncate">
-                  {#if item.type === 'note' && item.breadcrumbs}
-                    {item.breadcrumbs}
-                  {:else if item.type === 'change' || item.type === 'file'}
-                    {item.path || item.description}
-                  {:else}
-                    {item.description}
-                  {/if}
-                </span>
-              {/snippet}
+            {:else}
               <ActionRow
                 data-palette-index={index}
                 data-palette-result
+                class="items-center gap-3 rounded-md px-3 py-2.5 type-body"
                 selected={selectedIndex === index}
                 aria-current={selectedIndex === index ? 'true' : undefined}
-                description={item.description || item.breadcrumbs || item.path
-                  ? rowDescription
-                  : undefined}
                 onclick={() => selectItem(item)}
                 onpointermove={() => (selectedIndex = index)}
                 onpointerdown={(event) => event.preventDefault()}
@@ -1121,58 +1151,45 @@
                 {/snippet}
 
                 {#snippet trailing()}
-                  {#if item.shortcut}
-                    <ShortcutChip>{item.shortcut}</ShortcutChip>
-                  {/if}
-
-                  {#if selectedIndex === index && !item._groupLabel}
-                    <ShortcutChip>↵</ShortcutChip>
-                  {/if}
+                  <span aria-hidden="true" class="flex min-w-6 items-center justify-end gap-2">
+                    {#if item.shortcut}
+                      <ShortcutChip>{item.shortcut}</ShortcutChip>
+                    {/if}
+                    {#if selectedIndex === index}
+                      <ShortcutChip class="rounded bg-muted px-1.5 py-1">↵</ShortcutChip>
+                    {/if}
+                  </span>
                 {/snippet}
               </ActionRow>
             {/if}
           {/each}
 
-          <!-- Loading skeletons for files/transcripts -->
-          {#if (isLoadingFiles && workspaceId) || isLoadingMessages}
+          {#if (isLoadingFiles && workspaceId) || isLoadingMessages || $noteResults.loading}
             {#each [0, 1, 2] as i}
-              <div class="w-full px-3 h-[32px] flex items-center gap-3">
+              <div class="w-full px-3 h-11 flex items-center gap-3">
                 <Skeleton class="w-4 h-4 rounded flex-none" />
                 <Skeleton class="h-4 rounded" style="width: {100 + i * 40}px;" />
               </div>
             {/each}
           {/if}
         </div>
-      {:else if searchQuery && !isLoadingFiles && !isLoadingMessages}
-        <div class="px-3 py-6 text-center">
-          <p class="text-[13px] text-subtle">
-            {m.lib_commandPalette_noResults_message({ query: searchQuery })}
-          </p>
-        </div>
+      {:else if searchQuery && !isLoadingFiles && !isLoadingMessages && !$noteResults.loading}
+        <EmptyState
+          class="min-h-0 flex-1 overflow-y-auto py-10 contain-inline-size"
+          contentClass="break-words"
+        >
+          {#snippet icon()}<Fa icon={faSearch} class="size-5" />{/snippet}
+          {#snippet title()}
+            {parsedQuery.searchTerm
+              ? m.lib_commandPalette_noResults_message({ query: parsedQuery.searchTerm })
+              : m.lib_commandPalette_emptyFilter_message()}
+          {/snippet}
+        </EmptyState>
       {:else if !searchQuery}
-        <div class="px-3 py-6 text-center">
+        <div class="px-3 py-6 text-center contain-inline-size">
           <p class="text-[13px] text-subtle">{m.lib_commandPalette_startTyping_message()}</p>
         </div>
       {/if}
-
-      <!-- Footer -->
-      <div class="h-px shrink-0 bg-border"></div>
-      <div
-        class="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2 px-3 py-2 type-caption text-muted-foreground"
-      >
-        <span class="flex items-center gap-1.5">
-          <ShortcutChip>↑↓</ShortcutChip>
-          <span>{m.lib_commandPalette_navigate_label()}</span>
-        </span>
-        <span class="flex items-center gap-1.5">
-          <ShortcutChip>↵</ShortcutChip>
-          <span>{m.lib_commandPalette_select_label()}</span>
-        </span>
-        <span class="flex items-center gap-1.5">
-          <ShortcutChip>{m.lib_commandPalette_esc_label()}</ShortcutChip>
-          <span>{m.lib_commandPalette_footerClose_label()}</span>
-        </span>
-      </div>
     </div>
   </div>
 {/if}

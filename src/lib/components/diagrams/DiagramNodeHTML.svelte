@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   /**
    * Diagram Node Component (HTML-based)
    */
@@ -163,7 +164,6 @@
   onmouseleave={() => onHover?.(null)}
   onfocus={() => onHover?.(node.id)}
   onblur={() => onHover?.(null)}
-  title={node.label.length > 50 ? node.label : undefined}
 >
   <div class="node-content">
     <div class="node-row">
@@ -177,7 +177,7 @@
         />
       </span>
       <div class="node-copy">
-        <div class="node-label">
+        <div class="node-label" use:truncatedTitle={node.label}>
           {#if filenameUnits}
             {#each filenameUnits as unit, index}
               <span class="semantic-filename-unit">{unit}</span

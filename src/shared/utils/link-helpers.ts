@@ -28,6 +28,8 @@ export interface LinkHandlerOptions {
   /** The raw (unresolved) `href` attribute of the clicked anchor, e.g. `src/main.rs`.
    *  Used to detect schemeless path-like targets that the DOM resolves against the app's own origin. */
   rawHref?: string;
+  /** Recheck originating content provenance before opening a file path. */
+  canOpenFile?: () => boolean;
   /** The original activation event (used to detect Mod-click and Mod+Enter). */
   event?: MouseEvent | KeyboardEvent;
   /** Explicitly open internal note/task links beside the source panel. */
@@ -38,6 +40,8 @@ export interface LinkHandlerOptions {
   modifiers?: ModifierFlags;
   /** Force external browser even for HTTP/HTTPS links */
   forceExternal?: boolean;
+  /** Enter the target workspace and show links in its file, note, or browser panel. */
+  openInWorkspace?: boolean;
   /** Override the persisted plain-click action for GitHub issue and PR links. */
   githubLinkDefaultAction?: GithubLinkDefaultAction;
   /** Custom handler for specific link types */

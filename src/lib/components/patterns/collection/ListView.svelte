@@ -3,6 +3,7 @@
   import { EmptyState, ErrorState, LoadingState } from '$lib/components/patterns/screen';
   import { createProximityHover, proximityItem, type ProximityHover } from '$lib/interaction';
   import { cn } from '$lib/utils';
+  import { slide } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
   import { untrack, type Snippet } from 'svelte';
   import type { Action } from 'svelte/action';
@@ -10,15 +11,18 @@
   import { LIST_STATE_GEOMETRY, type StateDensity } from '../state-geometry';
   import type { ListKey, ListRowContext, SelectionMode } from './types';
 
-  interface Props extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
+  interface BaseProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
     items: readonly T[];
     row: Snippet<[ListRowContext<T>]>;
     getKey?: (item: T, index: number) => ListKey;
     getText?: (item: T, index: number) => string;
-    selectable?: SelectionMode;
-    selectedKeys?: ListKey[];
     /** Use indicator when each row supplies a visible selection control. */
     selectionAppearance?: 'surface' | 'indicator';
+    /**
+     * Reports the keys a user interaction asks for. ListView does not apply them; the owner
+     * decides and passes the result back through `selectedKeys`. Toggles compute from the current
+     * `selectedKeys`, so owners should commit synchronously.
+     */
     onSelectedKeysChange?: (keys: ListKey[]) => void;
     onActivate?: (item: T, index: number) => void;
     status?: 'ready' | 'loading' | 'error';
@@ -26,6 +30,7 @@
     loading?: Snippet;
     error?: Snippet;
     virtualize?: boolean | 'auto';
+    animateRows?: boolean;
     rowHeight?: number;
     overscan?: number;
     stateDensity?: StateDensity;
@@ -33,13 +38,24 @@
     class?: string;
   }
 
+  /**
+   * Selection is controlled: `selectedKeys` is the only source of truth for which rows are
+   * selected, and ListView never keeps its own copy. A selectable list must therefore be given
+   * `selectedKeys`; the highlight only moves once the owner passes new keys back.
+   */
+  type SelectionProps =
+    | { selectable?: false; selectedKeys?: readonly ListKey[] }
+    | { selectable: Exclude<SelectionMode, false>; selectedKeys: readonly ListKey[] };
+
+  type Props = BaseProps & SelectionProps;
+
   let {
     items,
     row,
     getKey = (_item, index) => index,
     getText = (item, index) => String(getKey(item, index)),
     selectable = false,
-    selectedKeys = $bindable([]),
+    selectedKeys = [],
     selectionAppearance = 'surface',
     onSelectedKeysChange,
     onActivate,
@@ -48,6 +64,7 @@
     loading,
     error,
     virtualize = 'auto',
+    animateRows = false,
     rowHeight = LIST_STATE_GEOMETRY.default.rowHeight,
     overscan = 4,
     stateDensity = 'compact',
@@ -79,6 +96,9 @@
   const visibleRows = $derived(
     items.slice(startIndex, endIndex).map((item, offset) => ({ item, index: startIndex + offset })),
   );
+  function rowTransition(node: Element) {
+    return animateRows && !isVirtualized ? slide(node, { tier: 'fast' }) : { duration: 0 };
+  }
   const selectedSet = $derived(new Set(selectedKeys));
   const selectedIndexes = $derived(
     items.flatMap((item, index) => (selectedSet.has(getKey(item, index)) ? [index] : [])),
@@ -117,6 +137,22 @@
     if (activeIndex >= items.length) activeIndex = Math.max(0, items.length - 1);
   });
 
+  $effect(() => {
+    if (
+      !isVirtualized ||
+      !viewport ||
+      !content ||
+      !hover ||
+      visibleRows.length === 0 ||
+      typeof IntersectionObserver === 'undefined'
+    )
+      return;
+    const instance = hover;
+    const observer = new IntersectionObserver(() => instance.measure(), { root: viewport });
+    for (const row of content.querySelectorAll('[data-list-index]')) observer.observe(row);
+    return () => observer.disconnect();
+  });
+
   const registerRow: Action<HTMLElement, { store: ProximityHover | null; index: number }> = (
     node,
     options,
@@ -142,22 +178,17 @@
     };
   };
 
-  function setSelection(next: ListKey[]) {
-    selectedKeys = next;
-    onSelectedKeysChange?.(next);
-  }
-
   function toggleSelection(index: number) {
     if (!selectable) return;
     const key = getKey(items[index], index);
     if (selectable === 'single') {
-      setSelection(selectedSet.has(key) ? [] : [key]);
+      onSelectedKeysChange?.(selectedSet.has(key) ? [] : [key]);
       return;
     }
     const next = new Set(selectedKeys);
     if (next.has(key)) next.delete(key);
     else next.add(key);
-    setSelection([...next]);
+    onSelectedKeysChange?.([...next]);
   }
 
   function focusIndex(index: number) {
@@ -286,7 +317,9 @@
           {@const key = getKey(item, index)}
           <!-- svelte-ignore a11y_no_noninteractive_tabindex (listbox uses roving option focus; role is selected at runtime) -->
           <div
+            transition:rowTransition
             data-slot="list-view-item"
+            class:cursor-pointer={!!selectable || !!onActivate}
             data-list-index={index}
             data-highlighted={hover?.activeIndex === index || undefined}
             class="group/collection-row relative z-10 min-w-0 rounded-(--radius-row) focus-visible:-outline-offset-1 has-[>[data-inset=card]]:mx-2 [&>[data-inset=card]]:mx-0"

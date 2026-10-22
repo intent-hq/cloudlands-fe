@@ -25,6 +25,7 @@ import { isElectronPlatform } from '$lib/utils/platform-capabilities';
 import { selectProviderDisplayName } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
+import { isProviderProfileRef, providerRefBaseId } from '$shared/provider-profiles';
 
 const logger = createLogger('ProviderModelsClient');
 
@@ -87,7 +88,7 @@ function toProviderError(providerId: string, message: string): Error {
   // lookup falls back to the default provider for unknown IDs, which would
   // mislabel the error with a different provider's name.
   const providerName =
-    providerId in PROVIDER_MODEL_CHANNELS
+    providerRefBaseId(providerId) in PROVIDER_MODEL_CHANNELS
       ? selectProviderDisplayName.select(appStore.state, providerId) || providerId
       : providerId;
   return new Error(
@@ -116,7 +117,7 @@ async function invokeModelChannel<T>(channel: string, data?: unknown): Promise<T
  */
 export async function getProviderModels(
   providerId: string,
-  options: { forceRefresh?: boolean } = {},
+  options: { forceRefresh?: boolean; workspaceId?: string } = {},
 ): Promise<ProviderModelsResult> {
   // Skip in Node.js environment (backend)
   if (typeof window === 'undefined') {
@@ -124,7 +125,10 @@ export async function getProviderModels(
     return { models: [] };
   }
 
-  const channel = PROVIDER_MODEL_CHANNELS[providerId];
+  // A named profile (§5.54) is served by its base provider's channel with the
+  // reference passed through, so models.list answers for that profile.
+  const channel = PROVIDER_MODEL_CHANNELS[providerRefBaseId(providerId)];
+  const providerRef = isProviderProfileRef(providerId) ? providerId : undefined;
   if (!channel) {
     throw toProviderError(
       providerId,
@@ -139,7 +143,13 @@ export async function getProviderModels(
     });
     const result = await invokeModelChannel<GetModelsEnvelope>(
       channel,
-      options.forceRefresh === true ? { forceRefresh: true } : undefined,
+      options.forceRefresh === true || options.workspaceId || providerRef
+        ? {
+            ...(options.forceRefresh === true ? { forceRefresh: true } : {}),
+            ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
+            ...(providerRef ? { providerRef } : {}),
+          }
+        : undefined,
     );
 
     if (!result?.success) {

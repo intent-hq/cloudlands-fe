@@ -4,6 +4,8 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { SvelteURL } from 'svelte/reactivity';
 import { initAppStore, store as appStore } from '$store/renderer/store';
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
+import { m } from '$shared/paraglide/messages.js';
+import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 
 const mocks = vi.hoisted(() => ({ page: { url: new URL('http://localhost/settings') } }));
 vi.mock('$app/state', () => ({ page: mocks.page }));
@@ -37,7 +39,7 @@ function renderSettings(url: string) {
   return render(SettingsPage, { context: new Map([['redux-store-context', storeContext]]) });
 }
 
-it('consumes the local edit request while allowing a later remote-access deep link', async () => {
+it('reopens Mobile from an older remote-access hash after visiting Machines', async () => {
   storeContext = initAppStore(appStore);
   appStore.dispatch(
     connectionsListReceived({
@@ -59,18 +61,25 @@ it('consumes the local edit request while allowing a later remote-access deep li
       pinnedVersion: null,
     }),
   );
+  admitLegacyPrincipal();
   renderSettings('/settings#websocket-api');
-  const local = () => screen.getByRole('article', { name: 'This machine (local)' });
-  await waitFor(() =>
-    expect(within(local()).getByRole('button', { name: 'Advanced', exact: true })).toBeTruthy(),
-  );
   const navigation = screen.getByRole('navigation', { name: 'Settings' });
-  await fireEvent.click(within(navigation).getByRole('button', { name: 'General', exact: true }));
-  await fireEvent.click(within(navigation).getByRole('button', { name: 'Devices', exact: true }));
-  expect(within(local()).queryByRole('button', { name: 'Advanced', exact: true })).toBeNull();
+  const mobileTab = within(navigation).getByRole('button', { name: 'Mobile', exact: true });
+  const advanced = () =>
+    within(screen.getByRole('main')).getByRole('button', {
+      name: m.settings_devices_advanced_label(),
+      exact: true,
+    });
+  await waitFor(() => expect(mobileTab.getAttribute('aria-current')).toBe('page'));
+  await fireEvent.click(advanced());
+  await waitFor(() => expect(advanced().getAttribute('aria-expanded')).toBe('true'));
+  await fireEvent.click(within(navigation).getByRole('button', { name: 'Machines', exact: true }));
+  await waitFor(() => expect(document.getElementById('devices')).not.toBeNull());
+  expect(document.getElementById('websocket-api')).toBeNull();
   window.history.replaceState({}, '', '/settings#remote-access');
   await fireEvent(window, new Event('hashchange'));
-  await waitFor(() =>
-    expect(within(local()).getByRole('button', { name: 'Advanced', exact: true })).toBeTruthy(),
-  );
+  await waitFor(() => expect(mobileTab.getAttribute('aria-current')).toBe('page'));
+  expect(document.getElementById('websocket-api')).not.toBeNull();
+  expect(document.getElementById('devices')).toBeNull();
+  expect(advanced().getAttribute('aria-expanded')).toBe('false');
 });

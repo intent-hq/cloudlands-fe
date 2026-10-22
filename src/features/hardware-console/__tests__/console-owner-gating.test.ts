@@ -8,7 +8,7 @@
  * window's HardwareConsoleManager sees the same raw channel-2 stream.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { HardwareConsoleManager, HardwareConsoleStatus } from '../device/device-manager';
 import { normalizeActionMappingsByModel } from '../actions/action-mapping';
 import { normalizeCycleScopeByFamily } from '../actions/cycle-scope';
@@ -20,6 +20,8 @@ const mockState = {
     keyPins: [null, null, null, null, null, null] as (string | null)[],
     excludedWorkspaceIds: [] as string[],
     encoderHudWorkspaceId: null as string | null,
+    encoderBehavior: 'workspace-switch',
+    encoderBehaviorHydrated: true,
     actionMappingByModel: normalizeActionMappingsByModel(undefined),
     cycleScopeByFamily: normalizeCycleScopeByFamily(undefined),
     promptUsage: [] as unknown[],
@@ -34,9 +36,9 @@ const mockState = {
   panelLayout: { byWorkspaceId: {} as Record<string, unknown> },
   agentSessions: { byAgentId: {} },
   workspaceAgents: { byWorkspaceId: {} as Record<string, { foregroundAgentIds: string[] }> },
+  homeWorkspaces: { tab: 'workspaces', groupBy: 'none' },
   sidebarNav: {
     panelItem: null as string | null,
-    allSpacesViewMode: 'recent',
     multiSelectTabOrder: [],
     multiSelectSelectedTabIdsByWorkspaceId: {},
     showCreateModal: false,
@@ -238,7 +240,7 @@ describe('encoder (two windows, one owner)', () => {
 
     owner = 'B';
     manager.detent('ENC_CW');
-    expect(navigateA).toHaveBeenCalledTimes(1);
+    expect(navigateA).toHaveBeenCalledTimes(2);
     expect(navigateB).toHaveBeenCalledTimes(1);
   });
 });

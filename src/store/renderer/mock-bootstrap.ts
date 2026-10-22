@@ -3,7 +3,7 @@
  * in insertion order. Production renderer hydration is saga-owned; this module
  * remains for focused tests that need an explicit seeding harness.
  */
-import type { Store } from '@augmentcode/themis/svelte-store';
+import type { Store } from '@themislib/themis/svelte-store';
 
 import type { AppClient } from '$lib/client';
 import { appClient } from '$lib/client';

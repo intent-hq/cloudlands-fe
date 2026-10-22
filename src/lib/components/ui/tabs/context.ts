@@ -1,7 +1,7 @@
 import type { ChoiceGroupState } from '../choice-group-state.svelte';
 import type { UiSize } from '$lib/components/ui/size-context';
 
-export type TabsVariant = 'default' | 'subtle';
+export type TabsVariant = 'default' | 'subtle' | 'underline';
 
 export const TABS_CONTEXT = Symbol('tabs');
 

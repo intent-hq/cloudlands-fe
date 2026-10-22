@@ -6,6 +6,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { BackendConnectionConfig } from '../../backend/main/backend-connection';
+import { CURRENT_PROTOCOL_VERSION } from '../../../test/current-protocol-version';
 
 const mocks = vi.hoisted(() => ({
   forwardPort: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock('../main/embedded-browser-cdp-service', () => ({
     registerTab: vi.fn(),
     unregisterTab: vi.fn(),
     openDevToolsPanel: vi.fn(),
+    listAllTabs: vi.fn(),
   },
 }));
 vi.mock('../main/browser-action-executor', () => ({
@@ -37,6 +39,8 @@ vi.mock('../../system/main/system.ipc', () => ({
     browserClientsNotified: false,
     delivered: true,
   })),
+  // The workspace is open in a window, so no background-hosting adoption.
+  adoptWorkspaceForBackgroundHosting: vi.fn(() => ({ windowId: 1, adopted: false })),
 }));
 vi.mock('../../backend/main/backend.ipc', () => ({
   BACKEND_CLIENT_DISCONNECTED_EVENT: 'backend-client-disconnected',
@@ -180,6 +184,7 @@ describe('browser:resolve-url IPC handler', () => {
         allowDuplicate: true,
         pin: true,
       }),
+      'remote-1',
     );
   });
 
@@ -219,6 +224,7 @@ describe('browser:resolve-url IPC handler', () => {
         emulatedSize: { width: 1280, height: 800 },
         visible: false,
       }),
+      'remote-1',
     );
   });
 
@@ -343,9 +349,9 @@ describe('browser:resolve-url IPC handler', () => {
     // The CREDIT gate reads the ORIGINATING backend's live hello version,
     // re-evaluated on each call so a tunnel reconnect sees an upgrade.
     mocks.getConnectedDaemonProtocolVersion.mockImplementation((id: string) =>
-      id === 'remote-saved' ? '10.4' : null,
+      id === 'remote-saved' ? CURRENT_PROTOCOL_VERSION : null,
     );
-    expect(tunnelOptions.getProtocolVersion()).toBe('10.4');
+    expect(tunnelOptions.getProtocolVersion()).toBe(CURRENT_PROTOCOL_VERSION);
     expect(mocks.getConnectedDaemonProtocolVersion).toHaveBeenLastCalledWith('remote-saved');
     mocks.getConnectedDaemonProtocolVersion.mockReturnValue(null);
     expect(tunnelOptions.getProtocolVersion()).toBeNull();
@@ -453,6 +459,172 @@ describe('browser:resolve-url IPC handler', () => {
     const result = await handler({}, { url: 'http://localhost:3000/', mode: 'probe-hard' });
     expect(result.success).toBe(false);
     expect(result.error.code).toBe('VALIDATION_ERROR');
+  });
+});
+
+describe('browser open daemon registration', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  const connection = {};
+  const registeredTab = {
+    tabId: 'tab-new',
+    workspaceId: 'ws-1',
+    ownerAgentId: 'agent-1',
+    hostClientId: 'cli-desk',
+    visibility: 'hidden',
+    url: 'https://example.com',
+    hostConnected: true,
+    createdAt: '2026-10-05T06:00:00Z',
+    updatedAt: '2026-10-05T06:00:00Z',
+  };
+  async function registryWait(
+    request: Mock,
+    agentId = 'agent-1',
+    getConnection = () => connection as object | null,
+  ) {
+    const { executeActions } = await import('../main/browser-action-executor');
+    vi.mocked(executeActions).mockResolvedValue({ success: true, results: [] });
+    const { executeBrowserActions } = await import('../main/browser.ipc');
+    const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+    vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValue({
+      tabs: [
+        {
+          tabId: 'tab-new',
+          ownerAgentId: 'agent-1',
+          url: 'https://example.com',
+          title: 'Example',
+          mounted: true,
+          webContentsId: 1,
+          viewport: { mode: 'fit' },
+        },
+      ],
+      stale: false,
+    });
+    const client = {
+      getRepositoryConnection: getConnection,
+      requestOnCapturedConnection: (_connection: object, ...args: unknown[]) => request(...args),
+    };
+    await executeBrowserActions([], undefined, agentId, 'ws-1', {
+      client: client as any,
+      backendId: 'remote-1',
+      savedRemote: true,
+    });
+    return vi.mocked(executeActions).mock.calls.at(-1)![7]!;
+  }
+
+  it('waits for a daemon listing with the requested tab and owner on the request backend', async () => {
+    vi.useFakeTimers();
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce({ tabs: [] })
+      .mockResolvedValueOnce({ tabs: [{ ...registeredTab, ownerAgentId: 'other-agent' }] })
+      .mockResolvedValue({ tabs: [registeredTab] });
+    const wait = await registryWait(request);
+    const done = vi.fn();
+    const pending = wait('tab-new').then(done);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(done).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(done).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(100);
+    await pending;
+    expect(done).toHaveBeenCalledWith(true);
+    expect(request).toHaveBeenCalledWith(
+      'browser.listTabs',
+      { workspaceId: 'ws-1' },
+      { timeoutMs: 5_000 },
+    );
+    expect(request).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    { workspaceId: 'different-workspace' },
+    { tabId: 'different-tab' },
+    { hostConnected: false },
+  ])('does not confirm an unrelated or disconnected row: %j', async (change) => {
+    vi.useFakeTimers();
+    const wait = await registryWait(
+      vi.fn().mockResolvedValue({ tabs: [{ ...registeredTab, ...change }] }),
+    );
+    const pending = wait('tab-new', Date.now() + 100);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(await pending).toBe(false);
+  });
+
+  it('rejects a listing reply from a connection replaced while it was in flight', async () => {
+    let current: object | null = connection;
+    let reply!: (value: unknown) => void;
+    const request = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          reply = resolve;
+        }),
+    );
+    const wait = await registryWait(request, 'agent-1', () => current);
+    const pending = wait('tab-new');
+    current = {};
+    reply({ tabs: [registeredTab] });
+    expect(await pending).toBe(false);
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not start registration on a disconnected client', async () => {
+    const request = vi.fn();
+    const wait = await registryWait(request, 'agent-1', () => null);
+    expect(await wait('tab-new')).toBe(false);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])(
+    'rejects a row when the renderer closed the tab or the layout is stale (%s)',
+    async (stale) => {
+      const wait = await registryWait(vi.fn().mockResolvedValue({ tabs: [registeredTab] }));
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValueOnce({ tabs: [], stale });
+      expect(await wait('tab-new')).toBe(false);
+    },
+  );
+
+  it('shares the deadline with a renderer refresh that never answers', async () => {
+    vi.useFakeTimers();
+    const wait = await registryWait(vi.fn().mockResolvedValue({ tabs: [registeredTab] }));
+    const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+    vi.mocked(embeddedBrowserCdp.listAllTabs).mockImplementationOnce(() => new Promise(() => {}));
+    const pending = wait('tab-new', Date.now() + 150);
+    await vi.advanceTimersByTimeAsync(150);
+    expect(await pending).toBe(false);
+  });
+
+  it('bounds missing registration by the remaining request deadline', async () => {
+    vi.useFakeTimers();
+    const request = vi.fn().mockResolvedValue({ tabs: [] });
+    const wait = await registryWait(request);
+    const pending = wait('tab-new', Date.now() + 150);
+    await vi.advanceTimersByTimeAsync(150);
+    expect(await pending).toBe(false);
+    expect(request.mock.calls.map((call) => call[2])).toEqual([
+      { timeoutMs: 150 },
+      { timeoutMs: 50 },
+    ]);
+    request.mockClear();
+    expect(await wait('tab-new', Date.now())).toBe(false);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('bounds registration when no transport deadline was supplied', async () => {
+    vi.useFakeTimers();
+    const wait = await registryWait(vi.fn().mockResolvedValue({ tabs: [] }));
+    const pending = wait('tab-new');
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await pending).toBe(false);
+  });
+
+  it('propagates a failed daemon read to the action failure boundary', async () => {
+    const wait = await registryWait(vi.fn().mockRejectedValue(new Error('disconnected')));
+    await expect(wait('tab-new')).rejects.toThrow('disconnected');
   });
 });
 

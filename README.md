@@ -4,6 +4,15 @@ Electron + SvelteKit + TypeScript desktop frontend for **Intent** that talks to
 the `intentd` daemon. It is consumed as the `packages/cloudlands-fe` git
 submodule of [intent-hq/intent](https://github.com/intent-hq/intent).
 
+## CI
+
+PR updates run Linux metadata, static consumer contracts, workflow policy checks,
+type/lint checks, and unit tests. The merge queue reruns type/lint and unit tests
+and adds builds, integration tests, and relevant browser/native fixture suites
+against the merged tree. Browser suites also retain complete nightly/manual runs.
+Release-only diffs keep their validated exemptions; the required CI Gate rejects
+unexpected PR or queue skips and failed jobs.
+
 ## Architecture
 
 The renderer is a SvelteKit application running inside Electron. It never talks
@@ -130,7 +139,11 @@ matching a `vX.Y.Z` / `vX.Y.Z-beta.N` tag on
 [intent-hq/intentd](https://github.com/intent-hq/intentd).
 
 - **Bumping the pin**: edit `intentd.version` in a normal reviewable PR, then run
-  `node scripts/fetch-sidecar.cjs` to confirm the release assets exist and verify.
+  `node scripts/fetch-sidecar.cjs` to confirm the release assets exist and verify, and
+  `node scripts/sync-intentd-protocol-version.mjs` to regenerate the tests' default
+  `CURRENT_PROTOCOL_VERSION` (`src/test/current-protocol-version.ts`); commit both files.
+  `auto-pin-intentd` does all three, and `lint:intentd-protocol-pin` fails a pin that
+  skipped the sync.
 - **Fetching the pinned sidecar**: `node scripts/fetch-sidecar.cjs` downloads the
   cargo-dist release asset for the current platform/arch, verifies its sha256
   against the release's `.sha256` asset, and stages the binary at
@@ -162,6 +175,21 @@ each pointing the auto-updater at the latest build for that channel:
   `beta` release.
 - **stable** — same promotion model via `.github/workflows/release-stable.yml`;
   it additionally marks the promoted version as Latest.
+
+Mac desktop builds support **Apple Silicon only**; new Intel Mac builds are no
+longer published. Each channel publishes the selected release's ARM64 metadata
+under `latest-mac.yml`, restoring automatic discovery for older native Apple
+Silicon installations. Beta and stable feeds
+advance only when that version is promoted to the respective channel.
+
+Alpha builds using the retired `latest-arm64-mac.yml` feed need a one-time Apple
+Silicon reinstall to return to the standard feed. That feed never reached beta
+or stable.
+
+Intel Macs are unsupported and cannot use the Apple Silicon installer.
+
+The pinned prerelease cleanup command protects versions referenced by the Mac
+feed in both the source and release-mirror repositories.
 
 ## Project layout
 
@@ -241,3 +269,37 @@ wired to the `intentd` daemon through the AppClient JSON-RPC boundary. It
 
 Licensed under the [Apache License 2.0](./LICENSE). See [NOTICE](./NOTICE) for
 attribution and lineage details.
+
+### CI runners
+
+Jobs that ask for a free standard GitHub runner (`ubuntu-24.04`, `ubuntu-latest`)
+always run on GitHub: the repository is public, so those runners cost nothing.
+Jobs that ask for a paid label go through `runner-route.yml` (the same probe as
+intent and intentd; `intent-pr.yml`'s route job is an inline copy):
+
+- Linux `gh-linux-8x` jobs take a free intent-cache slot first, then burst to
+  WarpBuild `warp-ubuntu-2404-x64-8x`; `gh-linux-arm64-8x` takes a self-hosted
+  ARM64 runner first, then `warp-ubuntu-2404-arm64-8x`.
+- Jobs that need sudo or the GitHub image's browser libraries (browser suites)
+  and every Mac and Windows build read the route's `cloud` output: straight to
+  WarpBuild, never a self-hosted runner. Windows builds use
+  `warp-windows-2022-x64-16x` (Server 2022: node-gyp fails on 2025), Apple
+  Silicon jobs `warp-macos-26-arm64-6x`, and signed desktop Mac builds
+  `warp-macos-15-arm64-6x` (electron-builder's keychain step fails on macOS 26).
+- Jobs that require `RUNNER_ENVIRONMENT=github-hosted` (build smoke, the B76
+  diagnostics, the manual packaged Mac smoke and isolated-package check) stay on
+  `gh-linux-8x` / `macos-15-xlarge`. `scripts/test_runner_policy.py` lists them.
+
+Bursts use the GitHub label instead of WarpBuild for fork pull requests, while the
+`CI_WARPBUILD_DISABLED` Actions variable is `true`, or while that WarpBuild
+platform has a job queued over 10 minutes. The larger runners' group must allow
+public repositories.
+Mac desktop release and manual packaging builds target ARM64 only.
+
+From-source Rust sidecars use the self-hosted sccache without Rust cache actions.
+The setup script installs a pinned, checksum-verified binary. When the
+`INTENT_SCCACHE_ENDPOINT` Actions variable is set, it uses the self-hosted
+cache with the `INTENT_SCCACHE_TOKEN` secret (read-write unless
+`INTENT_SCCACHE_MODE` says otherwise). Without the variable or a token (for
+example fork pull requests), compilation proceeds uncached with a notice.
+pnpm dependency caching remains unchanged.

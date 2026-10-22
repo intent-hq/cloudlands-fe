@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   /**
    * BackgroundHooksRow Component
@@ -256,7 +257,7 @@
               data-testid="background-hook-icon"
               aria-hidden="true"
             >
-              <Fa icon={faHourglass} size={14} class="h-3.5 w-3.5" />
+              <Fa icon={faHourglass} size={16} class={CHAT_OPERATIONAL_ICON_CLASS} />
             </span>
             <span
               id={titleId}

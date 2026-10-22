@@ -51,6 +51,14 @@ export interface GithubRepo {
 }
 
 /**
+ * Options for cancelling a device flow: `flowId` scopes the daemon's
+ * `github.cancelAuth` to the flow `github.connect` started (§5.27).
+ */
+export interface CancelAuthOptions {
+  flowId?: string;
+}
+
+/**
  * Options for starting GitHub authentication
  */
 export interface StartAuthOptions {
@@ -90,6 +98,11 @@ export interface StartAuthResult {
   needsScopeUpdate?: boolean;
   /** New scopes that need to be authorized */
   updatedScopes?: string;
+  /**
+   * Identifies the device flow `github.connect` started (§5.27); scopes the
+   * later `github.cancelAuth` to that flow. Absent from an older daemon.
+   */
+  flowId?: string;
   /** Device-flow code the user enters at `verificationUri` (§5.27 `github.connect`). */
   userCode?: string;
   /** Where the user enters `userCode` (usually https://github.com/login/device). */

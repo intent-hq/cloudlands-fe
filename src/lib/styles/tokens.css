@@ -15,6 +15,11 @@
   --color-accent-foreground: hsl(var(--accent-foreground));
   --color-muted: hsl(var(--muted));
   --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-shortcut-foreground: color-mix(
+    in srgb,
+    hsl(var(--muted-foreground)) 85%,
+    hsl(var(--background))
+  );
   --color-danger: hsl(var(--danger));
   --color-danger-background: hsl(var(--danger-background));
   --color-border: hsl(var(--border));
@@ -98,6 +103,7 @@
   --theme-light-input: 0 0% 0%;
   --theme-light-ring: 217.2 91.2% 59.8%;
   --theme-light-info: 260 58% 46%;
+  --theme-light-token-usage-input: 217 72% 53%;
   --theme-light-info-foreground: 0 0% 100%;
   --theme-light-success: 145 67% 28%;
   --theme-light-success-foreground: 0 0% 100%;
@@ -141,6 +147,7 @@
   --theme-dark-input: 20 4.7619047619% 87.6470588235%;
   --theme-dark-ring: 213.1 93.9% 67.8%;
   --theme-dark-info: 260 80% 72%;
+  --theme-dark-token-usage-input: 213 88% 68%;
   --theme-dark-info-foreground: 154 25% 9%;
   --theme-dark-success: 145 58% 55%;
   --theme-dark-success-foreground: 154 25% 9%;
@@ -166,10 +173,12 @@
   --theme-light-hover: rgb(var(--theme-light-overlay) / 0.04);
   --theme-light-active: rgb(var(--theme-light-overlay) / 0.07);
   --theme-light-selected: 0 0% 94%;
+  --theme-light-home-selected: 0 0% 90%;
   --theme-dark-overlay: 255 255 255;
   --theme-dark-hover: rgb(var(--theme-dark-overlay) / 0.06);
   --theme-dark-active: rgb(var(--theme-dark-overlay) / 0.1);
   --theme-dark-selected: 0 0% 18%;
+  --theme-dark-home-selected: 0 0% 24%;
 
   /*
    * Surface ladder: level 1 is the page substrate; overlays rise two levels, capped at 8.
@@ -292,6 +301,7 @@
   --theme-input: var(--theme-light-input);
   --theme-ring: var(--theme-light-ring);
   --theme-info: var(--theme-light-info);
+  --theme-token-usage-input: var(--theme-light-token-usage-input);
   --theme-info-foreground: var(--theme-light-info-foreground);
   --theme-success: var(--theme-light-success);
   --theme-success-foreground: var(--theme-light-success-foreground);
@@ -333,6 +343,7 @@
   --theme-hover: var(--theme-light-hover);
   --theme-active: var(--theme-light-active);
   --theme-selected: var(--theme-light-selected);
+  --theme-home-selected: var(--theme-light-home-selected);
 
   --background: var(--theme-background);
   --foreground: var(--theme-foreground);
@@ -360,7 +371,9 @@
   --hover: var(--theme-hover);
   --active: var(--theme-active);
   --selected: var(--theme-selected);
+  --home-selected: var(--theme-home-selected);
   --info: var(--theme-info);
+  --token-usage-input: var(--theme-token-usage-input);
   --info-foreground: var(--theme-info-foreground);
   --success: var(--theme-success);
   --success-foreground: var(--theme-success-foreground);
@@ -524,6 +537,7 @@
   --control-height-small: 1.75rem;
   --control-height-medium: 2rem;
   --control-height-large: 2.25rem;
+  --menu-icon-size: 1.125rem;
   --radius-base: 8px;
   --radius-small: 8px;
   --radius-medium: 8px;
@@ -568,6 +582,8 @@
   --ease-standard: var(--spring-moderate-ease);
   --ease-emphasized-out: var(--spring-slow-ease);
   --layer-chrome: 20;
+  --layer-connection-overlay: 30;
+  --layer-toast: 35;
   --layer-popover: 40;
   --layer-modal: 50;
   --layer-tooltip: 70;
@@ -642,6 +658,7 @@
   --theme-input: var(--theme-dark-input);
   --theme-ring: var(--theme-dark-ring);
   --theme-info: var(--theme-dark-info);
+  --theme-token-usage-input: var(--theme-dark-token-usage-input);
   --theme-info-foreground: var(--theme-dark-info-foreground);
   --theme-success: var(--theme-dark-success);
   --theme-success-foreground: var(--theme-dark-success-foreground);
@@ -683,6 +700,7 @@
   --theme-hover: var(--theme-dark-hover);
   --theme-active: var(--theme-dark-active);
   --theme-selected: var(--theme-dark-selected);
+  --theme-home-selected: var(--theme-dark-home-selected);
 }
 
 /* ===== Reduced motion ===== */

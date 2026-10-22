@@ -14,6 +14,8 @@
     verificationUri: string;
     /** Compact layout for tight surfaces like the sidebar banner. */
     compact?: boolean;
+    /** Label of the open-verification-page button (defaults to the GitHub copy). */
+    openLabel?: string;
     /**
      * Override for the "Open GitHub" action. When set, the card does not open
      * the URL itself — the caller owns the open (e.g. the invite consent modal,
@@ -22,14 +24,22 @@
     onOpen?: () => void;
   }
 
-  let { userCode, verificationUri, compact = false, onOpen }: Props = $props();
+  let {
+    userCode,
+    verificationUri,
+    compact = false,
+    openLabel = m.lib_githubDeviceCode_openGithub_label(),
+    onOpen,
+  }: Props = $props();
+
+  const verificationSegments = $derived(verificationUri.split(/(?<=\/)/));
 
   function handleOpenGitHub() {
     if (onOpen) {
       onOpen();
       return;
     }
-    // GitHub URLs always route to the external browser via the link handler.
+    // Forge URLs always route to the external browser via the link handler.
     void handleLink(verificationUri, {});
   }
 </script>
@@ -59,11 +69,13 @@
     class={compact ? undefined : 'w-full'}
     onclick={handleOpenGitHub}
   >
-    <span>{m.lib_githubDeviceCode_openGithub_label()}</span>
+    <span>{openLabel}</span>
     <Fa icon={faArrowUpRightFromSquare} size="xs" />
   </Button>
-  <p class="text-xs text-subtle">
+  <p class="min-w-0 text-xs text-subtle">
     {m.lib_githubDeviceCode_enterCodeAt_before()}
-    <span class="font-mono break-all">{verificationUri}</span>
+    <span class="block max-w-full select-all font-mono [overflow-wrap:anywhere]">
+      {#each verificationSegments as segment, index (index)}{segment}<wbr />{/each}
+    </span>
   </p>
 </div>

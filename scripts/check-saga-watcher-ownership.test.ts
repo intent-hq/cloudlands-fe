@@ -9,7 +9,7 @@ const root = (entries: string[], imports: string[] = []) => ({
 const actionOwner = (path: string, names: string[]) => ({
   path,
   content: [
-    "import { createAction } from '@augmentcode/themis/utils/store/create-action';",
+    "import { createAction } from '@themislib/themis/utils/store/create-action';",
     ...names.map((name) => `export const ${name} = createAction('test/${name}');`),
   ].join('\n'),
 });
@@ -137,8 +137,8 @@ describe('saga watcher ownership guard', () => {
       {
         path: 'src/store/renderer/slices/bad/canonical-actions.ts',
         content: [
-          "import * as factory from '@augmentcode/themis/utils/store/create-action';",
-          "import { createAction as defineAction } from '@augmentcode/themis/utils/store/create-action';",
+          "import * as factory from '@themislib/themis/utils/store/create-action';",
+          "import { createAction as defineAction } from '@themislib/themis/utils/store/create-action';",
           "export const launchChannel = factory.createAction('test/openChannel');",
           "const refreshRequested = defineAction('test/refreshRequested');",
           'export { refreshRequested };',
@@ -333,6 +333,42 @@ describe('saga watcher ownership guard', () => {
     ]);
   });
 
+  it.each([
+    ['changes', 'changesEventReceived', false],
+    ['changes', 'refreshRequested', true],
+    ['changes', 'loadWorkspaceDataRequested', true],
+    ['changes', 'changesEventReceivedElsewhere', true],
+    ['other', 'changesEventReceived', true],
+  ] as const)(
+    'limits admitted changes projection fanout to its canonical origin (%s/%s)',
+    (slice, action, rejected) => {
+      const owners = ['gitStatus', 'acceptStatus', 'fileHistory'];
+      const origin = `src/store/renderer/slices/${slice}/${slice}-slice.ts`;
+      const result = inspectSagaWatcherOwnership([
+        root(
+          owners,
+          owners.map((name) => `import { ${name} } from './slices/${name}/sagas/owner';`),
+        ),
+        actionOwner(origin, [action]),
+        ...owners.map((name) => ({
+          path: `src/store/renderer/slices/${name}/sagas/owner.ts`,
+          content: [
+            "import { takeEvery } from 'typed-redux-saga';",
+            `import { ${action} as received } from '$store/renderer/slices/${slice}/${slice}-slice';`,
+            `export function* ${name}() { yield* takeEvery(received, project); }`,
+          ].join('\n'),
+        })),
+      ]);
+      expect(result.violations).toEqual(
+        rejected
+          ? [expect.stringContaining(`duplicate watcher ownership for ${origin}#${action}`)]
+          : [],
+      );
+      expect(result.watcherCount).toBe(1);
+      expect(result.auditedFiles).toHaveLength(4);
+    },
+  );
+
   it('rejects duplicate watcher ownership for the same action', () => {
     const source = [
       "import { takeEvery, takeLatest } from 'typed-redux-saga';",
@@ -392,7 +428,7 @@ describe('saga watcher ownership guard', () => {
       {
         path: 'src/store/renderer/slices/shared/factory-barrel.ts',
         content:
-          "export { createAction as defineAction } from '@augmentcode/themis/utils/store/create-action';",
+          "export { createAction as defineAction } from '@themislib/themis/utils/store/create-action';",
       },
       {
         path: 'src/store/renderer/slices/shared/canonical-actions.ts',

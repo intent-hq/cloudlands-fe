@@ -7,15 +7,18 @@
  * `ShareFailure` (code + numeric rpc code, never the raw message — a transport
  * or daemon string may echo invite material) so callers never catch.
  */
+import type { WorkspaceGuestRole } from '$shared/types';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { isForbiddenErrorResponse } from '$lib/client/live/backend-transport-types';
 import {
   INVITE_ERROR_CODES,
   type HostPrincipal,
   type InviteErrorCode,
+  type InvitePin,
   type WorkspaceInviteCreateResult,
   type WorkspaceInviteRow,
   type WorkspaceMember,
+  type WorkspaceMemberRoleResult,
   type WorkspaceMembersAddResult,
   type WorkspaceMembersList,
 } from './types';
@@ -82,6 +85,8 @@ export type ShareMutationOutcome = { success: true } | ShareFailure;
 export type InviteCreateOutcome =
   { success: true; result: WorkspaceInviteCreateResult } | ShareFailure;
 
+export type MemberRoleOutcome = { success: true; result: WorkspaceMemberRoleResult } | ShareFailure;
+
 export type MemberAddOutcome = { success: true; result: WorkspaceMembersAddResult } | ShareFailure;
 
 /**
@@ -104,6 +109,32 @@ function shareFailure(error: unknown): ShareFailure {
 }
 
 export const workspaceSharingClient = {
+  async setMemberRole(
+    workspaceId: string,
+    principalId: string,
+    role: WorkspaceGuestRole,
+  ): Promise<MemberRoleOutcome> {
+    if (role !== 'collaborator' && role !== 'manager') return { success: false, code: 'unknown' };
+    try {
+      const result = await backendRequest<WorkspaceMemberRoleResult>('workspace.members.setRole', {
+        workspaceId,
+        principalId,
+        role,
+      });
+      if (
+        result?.workspaceId !== workspaceId ||
+        result.principalId !== principalId ||
+        result.role !== role ||
+        typeof result.changed !== 'boolean'
+      ) {
+        return { success: false, code: 'unknown' };
+      }
+      return { success: true, result };
+    } catch (error) {
+      return shareFailure(error);
+    }
+  },
+
   /**
    * `workspace.members.list` — Member+ may read; the daemon filters
    * non-members (-32602). Returns the roster with the guest cap
@@ -161,17 +192,29 @@ export const workspaceSharingClient = {
 
   /**
    * `workspace.invite.create` — owner only. `pinLogin` restricts redemption to
-   * one GitHub account; the daemon resolves it to a user id and echoes the
-   * canonical login on `invite.pinLogin`. The raw `secret` comes back once;
-   * the `url` is also listed on the open invite row afterwards.
+   * one forge account; the daemon resolves it on `pin.provider` / `pin.host`
+   * (its own identity forge when `pin` is absent) and echoes the canonical
+   * login on `invite.pinLogin`. The raw `secret` comes back once; the `url`
+   * is also listed on the open invite row afterwards.
    */
   async createInvite(
     workspaceId: string,
-    options: { pinLogin?: string } = {},
+    options: { pinLogin?: string; pin?: InvitePin } = {},
   ): Promise<InviteCreateOutcome> {
     const pinLogin = options.pinLogin?.trim();
-    const params: { workspaceId: string; pinLogin?: string } = { workspaceId };
-    if (pinLogin) params.pinLogin = pinLogin;
+    const params: {
+      workspaceId: string;
+      pinLogin?: string;
+      pinProvider?: InvitePin['provider'];
+      pinHost?: string;
+    } = { workspaceId };
+    if (pinLogin) {
+      params.pinLogin = pinLogin;
+      if (options.pin) {
+        params.pinProvider = options.pin.provider;
+        if (options.pin.host) params.pinHost = options.pin.host;
+      }
+    }
     try {
       const result = await backendRequest<WorkspaceInviteCreateResult>(
         'workspace.invite.create',

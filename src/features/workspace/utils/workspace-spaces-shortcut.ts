@@ -13,7 +13,7 @@ export function registerWorkspaceSpacesShortcut(
     binding: () =>
       options.resolveBinding?.('global.toggle-spaces') ??
       resolveShortcut('global.toggle-spaces', {}),
-    description: 'Toggle All Spaces', // i18n-ignore (shortcut registry metadata)
+    description: 'Open Home', // i18n-ignore (shortcut registry metadata)
     action: options.toggleSpaces,
   });
 }

@@ -2,13 +2,14 @@
   import CheckCircleIcon from 'phosphor-svelte/lib/CheckCircleIcon';
   import ChatCircleDotsIcon from 'phosphor-svelte/lib/ChatCircleDotsIcon';
   import CircleNotchIcon from 'phosphor-svelte/lib/CircleNotchIcon';
+  import ConfettiIcon from 'phosphor-svelte/lib/ConfettiIcon';
   import DownloadSimpleIcon from 'phosphor-svelte/lib/DownloadSimpleIcon';
   import InfoIcon from 'phosphor-svelte/lib/InfoIcon';
   import WarningCircleIcon from 'phosphor-svelte/lib/WarningCircleIcon';
   import WarningIcon from 'phosphor-svelte/lib/WarningIcon';
 
   type ToastGlyphVariant =
-    'success' | 'error' | 'warning' | 'info' | 'loading' | 'update' | 'discussion';
+    'success' | 'error' | 'warning' | 'info' | 'loading' | 'update' | 'celebrate' | 'discussion';
 
   let { variant }: { variant: ToastGlyphVariant } = $props();
 </script>
@@ -26,6 +27,8 @@
     <CircleNotchIcon size={16} weight="regular" aria-hidden="true" />
   {:else if variant === 'update'}
     <DownloadSimpleIcon size={16} weight="regular" aria-hidden="true" />
+  {:else if variant === 'celebrate'}
+    <ConfettiIcon size={16} weight="fill" aria-hidden="true" />
   {:else}
     <ChatCircleDotsIcon size={16} aria-hidden="true" />
   {/if}

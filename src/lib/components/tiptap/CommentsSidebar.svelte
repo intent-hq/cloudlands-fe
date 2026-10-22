@@ -26,7 +26,7 @@
     onResolve?: (commentId: string) => void;
     onAccept?: (commentId: string) => void;
     onReject?: (commentId: string) => void;
-    onReply?: (commentId: string, content: string) => void;
+    onReply?: (commentId: string, content: string) => boolean | void | Promise<boolean | void>;
     onMarkUnread?: (commentId: string) => void;
     onEdit?: (commentId: string) => void;
     onCopyLink?: (commentId: string) => void;
@@ -429,6 +429,7 @@
   // Watch for selected comment from the store
   $effect(() => {
     const selected = $selectedComment$?.id ?? null;
+    if (!comments.some((comment) => comment.id === selected)) return;
 
     // Only update if the selected comment actually changed
     if (selected && selected !== selectedCommentId) {
@@ -619,11 +620,7 @@
             }}
             onShow={() => focusComment(comment.id)}
             onClose={() => (focusedCommentId = null)}
-            onReply={(content) => {
-              onReply?.(comment.id, content);
-              // Clear the reply content after sending
-              replyContentStore[comment.id] = '';
-            }}
+            onReply={(content) => onReply?.(comment.id, content)}
             onAccept={() => onAccept?.(comment.id)}
             onReject={() => onReject?.(comment.id)}
             onResolve={() => onResolve?.(comment.id)}

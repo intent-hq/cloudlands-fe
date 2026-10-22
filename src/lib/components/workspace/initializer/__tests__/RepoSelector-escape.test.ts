@@ -6,10 +6,11 @@
  * Also covers the Recent list rendering (owner-qualified repo names) and
  * plain-text search filtering from the "Pick a repo" tab (intent-hq/monorepo#859).
  */
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 
 const mockRepos = vi.hoisted(() => ({
+  state: {} as Record<string, unknown>,
   recentRepos: [] as Array<{
     path: string;
     type: 'local' | 'github';
@@ -27,17 +28,29 @@ const mockRepos = vi.hoisted(() => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: {} });
+  const module = createAppStoreMockModule({
+    state: () => mockRepos.state,
+    dispatch: (action) => {
+      if (action.type === 'workspaceInitializer/setRecentRepos') {
+        mockRepos.recentRepos = action.payload;
+        module.store.emitState();
+      }
+    },
+  });
+  return module;
 });
 
 vi.mock(
   '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors',
   async () => {
-    const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
-    const store = createAppStoreMock({ state: {} });
+    const { store } = await import('$store/renderer/store');
     return {
+      selectWorkspaceInitializerDismissedRecentRepoKeys: store.createSelector(() => ({})),
+      selectWorkspaceInitializerHydrated: store.createSelector(() => true),
       selectWorkspaceInitializerDefaultParentPath: store.createSelector(() => ''),
+      selectWorkspaceInitializerDirectoryStatusCheck: store.createSelector(() => undefined),
       selectWorkspaceInitializerRecentRepos: store.createSelector(() => mockRepos.recentRepos),
+      selectWorkspaceInitializerRecentRepoRefresh: store.createSelector(() => undefined),
       selectWorkspaceInitializerRemoteSetups: store.createSelector(() => []),
     };
   },
@@ -59,6 +72,22 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-slic
   setWorkspaceInitializerRemoteSetups: (setups: unknown) => ({
     type: 'workspaceInitializer/setRemoteSetups',
     payload: setups,
+  }),
+  workspaceInitializerDirectoryStatusRequested: (...payload: unknown[]) => ({
+    type: 'workspaceInitializer/directoryStatusRequested',
+    payload,
+  }),
+  workspaceInitializerDirectoryStatusReleased: (...payload: unknown[]) => ({
+    type: 'workspaceInitializer/directoryStatusReleased',
+    payload,
+  }),
+  workspaceInitializerRecentReposRefreshRequested: (...payload: unknown[]) => ({
+    type: 'workspaceInitializer/recentReposRefreshRequested',
+    payload,
+  }),
+  workspaceInitializerRecentReposRefreshReleased: (...payload: unknown[]) => ({
+    type: 'workspaceInitializer/recentReposRefreshReleased',
+    payload,
   }),
 }));
 
@@ -155,6 +184,11 @@ vi.mock('$lib/components/workspace/initializer/AddRemoteSetupModal.svelte', asyn
 }));
 
 import RepoSelector from '../RepoSelector.svelte';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+
+beforeEach(() => {
+  mockRepos.state = withLegacyPrincipal({});
+});
 import { warmImport } from '../../../../../test/warm-import';
 
 const DROPDOWN_HEADING = 'What repo should we work on?';
@@ -258,9 +292,12 @@ describe('RepoSelector Recent list owner rendering', () => {
       expect(screen.getAllByText('(acme/app)').length).toBe(2);
     });
 
-    const rowTexts = screen
-      .getAllByRole('button')
-      .map((button) => button.textContent?.replace(/\s+/g, ' ').trim());
+    // The shared avatar's decorative initial is aria-hidden; inspect the visible
+    // repository label independently, and retain the exact accessible names below.
+    const rowTexts = Array.from(
+      screen.getByTestId('recent-repositories').querySelectorAll('[data-recent-repo-label]'),
+      (label) => label.textContent?.replace(/\s+/g, ' ').trim(),
+    );
 
     // The two clones are visually distinct via their folder names.
     expect(rowTexts).toContain('app (acme/app)');
@@ -268,6 +305,12 @@ describe('RepoSelector Recent list owner rendering', () => {
 
     // The ownerless row must render the folder name only — no stray suffix.
     expect(rowTexts).toContain('solo');
+    for (const name of ['app (acme/app)', 'app-2 (acme/app)', 'solo']) {
+      expect(screen.getByRole('button', { name, exact: true })).toBeTruthy();
+    }
+    for (const suffix of screen.getAllByText('(acme/app)')) {
+      expect(suffix.className).toContain('text-subtle');
+    }
 
     // Local entries no longer use the GitHub "owner /" prefix.
     expect(screen.queryByText('acme /')).toBeNull();
@@ -345,42 +388,6 @@ describe('RepoSelector mode tabs', () => {
       .map((tab) => tab.textContent?.trim())
       .filter((label): label is string => Boolean(label && expectedLabels.has(label)));
     expect(tabLabels).toEqual(['Pick a repo', 'Copy local repo', 'New repo']);
-  });
-});
-
-describe('RepoSelector Recent list daemon-owned exclusions', () => {
-  afterEach(() => {
-    mockRepos.recentRepos = [];
-    mockRepos.workspaces = [];
-    cleanup();
-  });
-
-  it('excludes persisted recents whose path is a workspace-owned standalone checkout', async () => {
-    // A GitHub-pick workspace: the checkout is its own worktree, so its path
-    // is not a copyable local repo even when a stale persisted recent has it.
-    mockRepos.workspaces = [
-      {
-        repositoryPath: '/ws/standalone',
-        worktreePath: '/ws/standalone',
-        repositoryName: 'standalone',
-      },
-    ];
-    mockRepos.recentRepos = [
-      { path: '/ws/standalone', type: 'local', name: 'standalone' },
-      { path: '/Users/dev/app', type: 'local', name: 'app' },
-    ];
-    const { container } = render(RepoSelector, { props: {} });
-    await openDropdown(container);
-    await waitFor(() => {
-      expect(screen.getByText(DROPDOWN_HEADING)).toBeTruthy();
-    });
-
-    await fireEvent.click(screen.getByText('Copy local repo'));
-
-    await waitFor(() => {
-      expect(screen.getByText('app')).toBeTruthy();
-    });
-    expect(screen.queryByText('standalone')).toBeNull();
   });
 });
 

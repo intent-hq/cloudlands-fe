@@ -1,3 +1,19 @@
+import { hasUnresolvedQueueProcessing } from '../../pending-submissions/pending-submissions-model';
+import { hydrateAgentQueue } from '$features/agent/agent-queue-read-service';
+import { loadChatTranscript } from '$features/agent/chat-read-service';
+import { takeSingleFlightInContext } from '../../../utils/context-saga-effects';
+import {
+  selectPendingSubmissionEntry,
+  selectAgentSubmissionDisplay,
+} from '../../pending-submissions/pending-submissions-selectors';
+import {
+  pendingSubmissionAccepted,
+  pendingSubmissionSettled,
+  pendingEvidenceObserved,
+  pendingLifecycleObserved,
+  pendingScopeReleased,
+} from '../../pending-submissions/pending-submissions-slice';
+import { selectAgentSessionWorkspaceId } from '$store/renderer/slices/agent-session/agent-session-selectors';
 /**
  * Chat read saga — SINGLE-TRANSFER hydration. Opening a chat transfers the
  * conversation once: the standing `chat.subscribe` subscription's seq-0
@@ -50,6 +66,7 @@ import {
 } from '$features/agent/utils/chat-subscription-registry';
 import {
   acquireChatInterestLease,
+  HYDRATION_LEASE_HOLDER_PREFIX,
   releaseChatInterestLease,
 } from '$features/agent/utils/chat-interest-leases';
 import {
@@ -63,6 +80,7 @@ import { cleanupDeletedAgentTabs } from '../../workspace-agents/sagas/deleted-ag
 import {
   chatReset,
   chatTranscriptSnapshotApplied,
+  chatInitialHistoryProgressed,
   chatTranscriptSnapshotRerequested,
   initializeChatRequested,
   messageBlockHydrated,
@@ -141,12 +159,12 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
   // cannot close the standing registration the wait depends on, released in
   // the finally (which also runs on saga cancellation).
   hydrationLeaseSeq += 1;
-  const leaseHolder = `chat-read:${hydrationLeaseSeq}`;
+  const leaseHolder = `${HYDRATION_LEASE_HOLDER_PREFIX}${hydrationLeaseSeq}`;
   yield* call(acquireChatInterestLease, agentId, leaseHolder);
   try {
     yield* put(transcriptHydrationStarted(agentId));
     started = true;
-    const session: AgentSession | null = yield* call(readAgentSession, agentId);
+    const session: AgentSession | null = yield* call(readAgentSession, agentId, wsId);
     if (!session || String(session.workspaceId) !== wsId) {
       return { started, succeeded: true };
     }
@@ -176,17 +194,23 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
     // missing the live turn. The channel is opened BEFORE the state read so
     // a dispatch landing between the two cannot be missed.
     const isSnapshotForAgent = (action: { type: string; payload?: unknown }) =>
-      action.type === chatTranscriptSnapshotApplied.type &&
+      (action.type === chatTranscriptSnapshotApplied.type ||
+        action.type === chatInitialHistoryProgressed.type) &&
       Array.isArray(action.payload) &&
       action.payload[0] === agentId;
     const snapshotChannel = yield* actionChannel(isSnapshotForAgent);
     try {
       let meta = yield* selectTranscriptSnapshotMeta.effect(agentId);
+      const initialHistoryInProgress = meta?.initialHistory?.complete === false;
       const visible: AgentMessage[] = yield* selectAgentMessages.effect(agentId);
       // Re-settle instantly only when the already-applied snapshot is still
       // reflected in the store (refresh with live meta); otherwise wait for
       // a fresh application.
-      if (!(meta && (meta.totalMessages === 0 || visible.length > 0))) {
+      if (!(
+        meta &&
+        meta.initialHistory?.complete !== false &&
+        (meta.totalMessages === 0 || visible.length > 0)
+      )) {
         meta = undefined;
         // Fast path (intent-hq/monorepo#2864 defense-in-depth): the standing
         // subscription already holds a replayable snapshot (deferred
@@ -210,7 +234,7 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
         const deadWait =
           !(yield* call(hasStandingChatSubscription, agentId)) &&
           !(yield* call(hasChatSubscriptionAcquisitionInFlight, agentId));
-        if (replayable || deadWait) {
+        if ((replayable || deadWait) && !initialHistoryInProgress) {
           yield* put(chatTranscriptSnapshotRerequested(wsId, agentId));
         }
         for (let attempt = 1; attempt <= SNAPSHOT_WAIT_ATTEMPTS && !meta; attempt += 1) {
@@ -220,6 +244,12 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
           });
           if (applied) {
             meta = yield* selectTranscriptSnapshotMeta.effect(agentId);
+            if (meta?.initialHistory?.complete === false) meta = undefined;
+            // Valid progress resets the inactivity window; only explicit completion settles hydration.
+            if (!meta) {
+              attempt = 0;
+              continue;
+            }
           }
           // Escalate on ANY non-final iteration that ends without valid meta
           // (window timed out, or an application raced a session reset and
@@ -333,9 +363,9 @@ function* refreshChatWorker(
  * accumulator was seeded. No-op unless hydration sits in `error`.
  */
 function* snapshotRecoveryWorker(action: ReturnType<typeof chatTranscriptSnapshotApplied>) {
-  const [agentId] = action.payload;
+  const [agentId, meta] = action.payload;
   const hydration = yield* selectTranscriptHydration.effect(agentId);
-  if (hydration !== 'error') return;
+  if (hydration !== 'error' || meta.initialHistory?.complete === false) return;
   yield* put(transcriptHydrationSettled(agentId));
 }
 
@@ -366,6 +396,7 @@ function* hydrateMessageBlockWorker(
       agentId,
       messageId,
       blockId,
+      yield* selectAgentSessionWorkspaceId.effect(agentId),
     );
     yield* put(messageBlockHydrated(agentId, messageId, blockId, block));
   } catch (error) {
@@ -377,11 +408,43 @@ function* hydrateMessageBlockWorker(
   }
 }
 
+const queueReconciliationActions = [
+  pendingSubmissionAccepted,
+  pendingSubmissionSettled,
+  pendingEvidenceObserved,
+  pendingLifecycleObserved,
+  pendingScopeReleased,
+];
+type QueueReconciliationAction = ReturnType<(typeof queueReconciliationActions)[number]>;
+
+/** Coalesce evidence bursts and wait for the authoritative event mirror to publish. */
+function* reconcileQueueSubmissionDisplay(action: QueueReconciliationAction): SagaGenerator<void> {
+  yield* delay(0);
+  const [scope] = action.payload;
+  const entry = yield* selectPendingSubmissionEntry.effect(scope);
+  if (!entry?.supported || !entry.refreshNeeded || hasUnresolvedQueueProcessing(entry)) return;
+  const display = yield* selectAgentSubmissionDisplay.effect(scope.agentId, scope.workspaceId);
+  if (!display.queue.length) return;
+  // Both services retain their existing scope/connection/read fences and trailing coalescing.
+  yield* all([
+    ...(!entry.queueFresh ? [call(hydrateAgentQueue, scope.agentId, scope.workspaceId)] : []),
+    call(loadChatTranscript, scope.agentId, scope.workspaceId),
+  ]);
+}
+
 export function* chatReadSaga() {
   const hydrationTails: HydrationTails = new Map();
   const inFlightBlocks = new Set<string>();
   try {
     yield* all([
+      takeSingleFlightInContext(
+        queueReconciliationActions,
+        (action: QueueReconciliationAction) => {
+          const context = JSON.stringify(action.payload[0]);
+          return action.type === pendingScopeReleased.type ? { context, cancel: true } : context;
+        },
+        reconcileQueueSubmissionDisplay,
+      ),
       takeEvery(initializeChatRequested, initializeChatWorker, hydrationTails),
       takeEvery(refreshChatTranscriptRequested, refreshChatWorker, hydrationTails),
       takeEvery(chatTranscriptSnapshotApplied, snapshotRecoveryWorker),

@@ -68,6 +68,7 @@ describe('IntentSlugGenerator', () => {
       await generateCompleteIntentSlug('add dark mode to the app');
       expect(mockMakeBackgroundRequest).toHaveBeenCalledWith(
         expect.objectContaining({
+          type: 'fast',
           prompt: expect.stringContaining('{"slug": "word-word"}'),
           systemPrompt: expect.stringContaining('{"slug": "word-word"}'),
         }),

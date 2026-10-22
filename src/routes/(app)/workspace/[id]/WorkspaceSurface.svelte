@@ -1,4 +1,11 @@
 <script lang="ts">
+  import CompactWorkspaceInitializer from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
+  import {
+    selectHostRole,
+    selectWorkspaceCreationVisible,
+  } from '$store/renderer/slices/principal/principal-selectors';
+  const hostRole$ = selectHostRole();
+  const canCreate$ = selectWorkspaceCreationVisible();
   /**
    * Workspace Detail Page - Unified State Version
    *
@@ -18,7 +25,6 @@
     dispatchCreateFileRequest,
     handleCommandPaletteCreateFile,
   } from './composables/create-file-command';
-  import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { commandPaletteActionConsumed } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectPendingCommandPaletteAction } from '$store/renderer/slices/app-layout/app-layout-selectors';
 
@@ -28,12 +34,16 @@
   import { selectMainPanelView } from '$store/renderer/slices/changes/changes-selectors';
   import { selectBootRouteGateResolved } from '$store/renderer/slices/setup-prompt/setup-prompt-selectors';
   import { isBootRouteLoad } from '$lib/utils/boot-route-gate';
-  import { clearMainPanelView as ftClearMainPanelView } from '$store/renderer/slices/changes/changes-slice';
+  import {
+    clearMainPanelView as ftClearMainPanelView,
+    changesConsumerMounted,
+    changesConsumerUnmounted,
+  } from '$store/renderer/slices/changes/changes-slice';
   import {
     selectWorkspaceIsEmpty,
     selectIsNewWorkspaceSession,
     selectIsWorkspaceCollaborator,
-    selectHidesAgentLifecycleActions,
+    selectHidesAgentCreationActions,
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     selectWorkspaceLoadResult,
@@ -46,6 +56,7 @@
   } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
   import {
+    setCollapsed,
     setPanelVisibility,
     type PanelVisibilityState,
   } from '$store/renderer/slices/ui-layout/ui-layout-slice';
@@ -189,7 +200,7 @@
   // Agent create / delegate / delete are refused (-32003) for a collaborator
   // connection; the sidebar and panel creation affordances are withheld by
   // passing no handler, exactly as the terminal / browser ones are.
-  const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceIdStore);
+  const hidesAgentLifecycleActions$ = selectHidesAgentCreationActions(workspaceIdStore);
   // Guest window (multiplayer w4): `/workspace/new` shows the guest empty
   // state instead of the (administrator-only) workspace onboarding, and the
   // nav bar stays visible so Settings → Guest Sessions remains reachable.
@@ -242,12 +253,9 @@
   // and explicitly click to proceed, so they can review agent setup.
 
   // Track previous showOnboarding state to detect onboarding→workspace transition
-  let prevShowOnboarding = $state(true);
+  let prevShowOnboarding = $state(untrack(() => showOnboarding));
 
-  // Expand the sidebar when transitioning from onboarding to workspace.
-  // The sidebar starts collapsed (width 0) during onboarding via initiallyCollapsed.
-  // ResizablePanel only reads initiallyCollapsed at init time, so we dispatch
-  // the toggle event to animate it open after workspace creation.
+  // Only a real onboarding exit changes the saved sidebar preference.
   $effect(() => {
     if (!active) return;
     // While the boot-route gate is holding, showOnboarding is suppressed but
@@ -256,11 +264,7 @@
     // next to the wizard when the gate resolves to stay on onboarding).
     if (bootGateHolding) return;
     if (prevShowOnboarding && !showOnboarding) {
-      // Onboarding just ended — expand sidebar with animation
-      dispatchWindowEvent('workspace:toggle-left-sidebar', {
-        collapsed: false,
-        restoreWidth: 350,
-      });
+      appStore.dispatch(setCollapsed(false));
     }
     prevShowOnboarding = showOnboarding;
   });
@@ -436,6 +440,12 @@
     selectedNoteIdStore.set(pageState?.mainPanel?.selectedNoteId ?? null);
   });
   const isNewWorkspaceSession$ = selectIsNewWorkspaceSession(workspaceIdStore, selectedNoteIdStore);
+  $effect(() => {
+    const wsId = workspaceId;
+    if (!wsId || !$isNewWorkspaceSession$) return;
+    appStore.dispatch(changesConsumerMounted(wsId, 'history'));
+    return () => appStore.dispatch(changesConsumerUnmounted(wsId, 'history'));
+  });
 
   // Restore scroll position after workspace state is created
   $effect(() => {
@@ -782,6 +792,7 @@
         : ''}
     >
       <MultiSelectTabbedSidebar
+        {active}
         workspaceId={$workspace?.id || workspaceId}
         {panelLayoutId}
         onCreateNote={handleCreateNote}
@@ -799,10 +810,15 @@
 
 <!-- Main Content Snippet -->
 {#snippet mainContent()}
-  <div class="h-full w-full relative">
-    {#if showOnboarding && $windowGuestSession$}
+  <div
+    class="h-full w-full relative"
+    data-workspace-id={workspaceId === 'new' ? undefined : workspaceId}
+  >
+    {#if showOnboarding && $hostRole$ === 'member' && $canCreate$}
+      <CompactWorkspaceInitializer isExpanded={true} />
+    {:else if showOnboarding && $hostRole$ === 'guest' && $windowGuestSession$}
       <GuestEmptyState session={$windowGuestSession$} />
-    {:else if showOnboarding}
+    {:else if showOnboarding && $hostRole$ === 'owner'}
       <OnboardingPage
         {isOnboarding}
         fadingOut={onboardingFadingOut}

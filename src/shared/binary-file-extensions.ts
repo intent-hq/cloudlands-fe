@@ -406,7 +406,7 @@ export const KNOWN_TEXT_EXTENSIONS = new Set([
  * @param sampleSize - How many bytes to sample (default 8192)
  * @returns true if the content appears to be binary
  */
-export function detectBinaryContent(buffer: Buffer, sampleSize = 8192): boolean {
+export function detectBinaryContent(buffer: Uint8Array, sampleSize = 8192): boolean {
   const sample = buffer.subarray(0, Math.min(sampleSize, buffer.length));
 
   // Check for null bytes - strong indicator of binary

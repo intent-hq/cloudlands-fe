@@ -30,7 +30,7 @@
 <script lang="ts">
   import type { IconWeight } from 'phosphor-svelte';
   import { invoke } from '$lib/electron-bridge';
-  import { appClient } from '$lib/client';
+  import { openGitXcodeRequested } from '$store/renderer/slices/git/git-slice';
   import { fetchEditors } from '$store/renderer/slices/external-editors/external-editors-slice';
   import { selectInstalledEditorsFiltered } from '$store/renderer/slices/external-editors/external-editors-selectors';
   import { selectIsWorkspaceHostLocal } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -48,7 +48,7 @@
     faTrash,
     faUpRightFromSquare,
   } from '@fortawesome/free-solid-svg-icons';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { writable } from 'svelte/store';
   import { notify } from '$lib/components/patterns/notify';
   import { withToastCountdown } from '$lib/components/patterns/notify';
@@ -69,6 +69,7 @@
     onClose?: () => void;
     showDeleteOption?: boolean;
     showArchiveOption?: boolean;
+    showPathCopy?: boolean;
     showFileNameCopy?: boolean;
     showFileActions?: boolean;
     workspaceFolderPath?: string;
@@ -94,6 +95,7 @@
     onClose = undefined,
     showDeleteOption = true,
     showArchiveOption = false,
+    showPathCopy = true,
     showFileNameCopy = false,
     showFileActions = true,
     workspaceFolderPath = '',
@@ -105,6 +107,17 @@
   }: Props = $props();
 
   const logger = createLogger('WorkspaceActionsMenu');
+
+  // Menu selection can destroy this component before an async action finishes.
+  // Do not read snippet-owned callbacks after teardown or close a reopened menu.
+  let destroyed = false;
+  onDestroy(() => {
+    destroyed = true;
+  });
+
+  function closeMenu() {
+    if (!destroyed) onClose?.();
+  }
 
   // External editors / "Choose app" are Electron-only; on web only copy
   // actions are offered.
@@ -224,7 +237,7 @@
           filePath: resolvedPath,
           workspacePath: resolvedFolderPath || undefined,
         });
-        onClose?.();
+        closeMenu();
         return;
       }
 
@@ -255,7 +268,7 @@
       }
 
       await invoke('vscode:open', pathToOpen);
-      onClose?.();
+      closeMenu();
     } catch (error) {
       logger.error('Failed to open in VSCode:', error);
       // i18n-ignore (brand name)
@@ -286,7 +299,7 @@
       }
 
       await invoke('jetbrains:open', pathToOpen);
-      onClose?.();
+      closeMenu();
     } catch (error) {
       logger.error('Failed to open in JetBrains:', error);
       // i18n-ignore (brand name)
@@ -304,22 +317,16 @@
       return;
     }
     try {
-      // Fetch changed files to help find the right Xcode project in monorepos.
-      // Daemon-backed read (`git.status`, PROTOCOL §5.6) via the appClient seam.
-      let changedFiles: string[] = [];
       if (workspaceId && resolvedFolderPath) {
-        try {
-          const status = await appClient.git.status(workspaceId);
-          if (status?.files) {
-            changedFiles = status.files.map((f) => f.path);
-            logger.info('[WorkspaceActionsMenu] Found changed files for Xcode', {
-              count: changedFiles.length,
-            });
-          }
-        } catch (err) {
-          // Non-fatal - we can still open Xcode without changed files
-          logger.debug('[WorkspaceActionsMenu] Could not get changed files for Xcode', err);
-        }
+        appStore.dispatch(
+          openGitXcodeRequested(
+            workspaceId,
+            resolvedFolderPath,
+            isDirectory ? undefined : resolvedPath,
+          ),
+        );
+        closeMenu();
+        return;
       }
 
       // If we have a resolved folder path, open the workspace folder with the file
@@ -332,18 +339,16 @@
         pathToOpen = {
           folder: resolvedFolderPath,
           file: resolvedPath,
-          changedFiles: changedFiles.length > 0 ? changedFiles : undefined,
         };
       } else if (resolvedFolderPath) {
         // For directories, just open the workspace folder with changed files for smart detection
         pathToOpen = {
           folder: resolvedFolderPath,
-          changedFiles: changedFiles.length > 0 ? changedFiles : undefined,
         };
       }
 
       await invoke('xcode:open', pathToOpen);
-      onClose?.();
+      closeMenu();
     } catch (error) {
       logger.error('Failed to open in Xcode:', error);
       // i18n-ignore (brand name)
@@ -413,7 +418,7 @@
           break;
         }
       }
-      onClose?.();
+      closeMenu();
     } catch (error) {
       logger.error(`[WorkspaceActionsMenu] Failed to open in ${editor.appName}:`, error);
       notify.error(
@@ -460,7 +465,7 @@
         return;
       }
 
-      onClose?.();
+      closeMenu();
     } catch (error) {
       logger.error('Failed to open with other app:', error);
       notify.error(
@@ -473,7 +478,7 @@
     if (!resolvedPath) return;
     try {
       await navigator.clipboard.writeText(toNativePath(resolvedPath));
-      onClose?.();
+      closeMenu();
     } catch (error) {
       logger.error('Failed to copy path:', error);
     }
@@ -498,7 +503,7 @@
       }
 
       await navigator.clipboard.writeText(toNativePath(pathToCopy));
-      onClose?.();
+      closeMenu();
     } catch (error) {
       logger.error('Failed to copy workspace path:', error);
     }
@@ -509,7 +514,7 @@
     try {
       const fileName = filePath.split(/[/\\]/).pop() || '';
       await navigator.clipboard.writeText(fileName);
-      onClose?.();
+      closeMenu();
     } catch (error) {
       logger.error('Failed to copy file name:', error);
     }
@@ -518,7 +523,7 @@
   function handleDelete() {
     if (onDelete) {
       onDelete();
-      onClose?.();
+      closeMenu();
     }
   }
 
@@ -549,7 +554,7 @@
 
       if (result?.success) {
         onFileDeleted?.();
-        onClose?.();
+        closeMenu();
 
         const toastId = notify.warning(
           m.ui_workspaceActions_deletedFile_label({ name: fileName }),
@@ -596,10 +601,10 @@
   function handleArchive() {
     if (isArchived && onUnarchive) {
       onUnarchive();
-      onClose?.();
+      closeMenu();
     } else if (!isArchived && onArchive) {
       onArchive();
-      onClose?.();
+      closeMenu();
     }
   }
 
@@ -632,17 +637,18 @@
           ],
         });
       }
-      result.push({
-        id: 'copy-absolute-path',
-        label: m.ui_workspaceActions_copyAbsolutePath_label(),
-        icon: faCopy,
-        disabled: !resolvedPath,
-        dividerBefore: result.length > 0,
-        onClick: () => {
-          void copyAbsolutePath();
-        },
-      });
-      if (!isWorkspaceRoot)
+      if (showPathCopy)
+        result.push({
+          id: 'copy-absolute-path',
+          label: m.ui_workspaceActions_copyAbsolutePath_label(),
+          icon: faCopy,
+          disabled: !resolvedPath,
+          dividerBefore: result.length > 0,
+          onClick: () => {
+            void copyAbsolutePath();
+          },
+        });
+      if (showPathCopy && !isWorkspaceRoot)
         result.push({
           id: 'copy-relative-path',
           label: m.ui_workspaceActions_copyRelativePath_label(),
@@ -669,7 +675,7 @@
         submenu: action.submenu ? additional(action.submenu) : undefined,
         onClick: () => {
           action.onClick();
-          onClose?.();
+          closeMenu();
         },
       }));
     result.push(...additional(additionalActions));

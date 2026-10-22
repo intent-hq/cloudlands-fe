@@ -27,7 +27,7 @@ const logger = createLogger('NotificationNavigation');
 /** Payload of `notification:navigate` (sent on notification click). */
 export interface NotificationNavigatePayload {
   workspaceId?: string;
-  /** Set for chief-of-staff completions — route to the sidebar Assistant panel. */
+  /** Set for chief-of-staff completions — route to the homepage Assistant. */
   chief?: boolean;
   /** Chief chat thread (agent) to select in the Assistant panel. */
   agentId?: string;
@@ -36,7 +36,7 @@ export interface NotificationNavigatePayload {
 /**
  * Route a notification click: `goto(/workspace/{workspaceId})`, guarding
  * null/missing payloads. Chief-of-staff payloads (`chief: true` or the chief
- * virtual workspace id) open the sidebar Assistant panel and select the chat
+ * virtual workspace id) open the homepage Assistant and select the chat
  * thread instead — the chief workspace page is hidden. No-ops in the HUD
  * pop-out window so a stray `notification:navigate` IPC can never replace
  * the /hud route with a workspace view. Never rejects; errors are logged.
@@ -58,13 +58,14 @@ export async function handleNotificationNavigate(
   }
 
   // Chief-of-staff completions: never navigate to the hidden chief workspace
-  // page — open the sidebar Assistant panel and select the chat thread.
+  // page — open the homepage Assistant and select the chat thread.
   if (data.chief === true || data.workspaceId === CHIEF_WORKSPACE_ID) {
     try {
       if (data.agentId) {
         appStore.dispatch(setChiefActiveAgentId(data.agentId));
       }
       appStore.dispatch(openPanel('chief'));
+      await navigateToRoute('/');
     } catch (error) {
       logger.warn('Failed to open Assistant panel from notification click', { error });
     }

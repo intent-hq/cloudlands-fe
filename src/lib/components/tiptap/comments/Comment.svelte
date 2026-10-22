@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
+  import { commentAuthorLabel } from '$features/comments/comment-attribution';
+  import type { CommentAttribution } from '$shared/types/comment.types';
   import Fa from 'svelte-fa';
   import { differenceInDays } from 'date-fns';
   import { formatDistanceToNow, formatFullDateTime, formatShortDate } from '$lib/i18n/format';
@@ -20,7 +23,8 @@
 
   type CommentType = 'comment' | 'suggestion' | 'change-request' | 'question' | string;
 
-  interface CommentLike {
+  interface CommentLike extends CommentAttribution {
+    authorType?: 'user' | 'agent';
     id: string;
     author?: string;
     type?: CommentType;
@@ -208,6 +212,7 @@
   const authorSize = $derived(isCollapsed || isCompact ? 'text-[13px]' : 'text-sm');
   const timestampSize = $derived(isCollapsed || isCompact ? 'text-xs' : 'text-xs');
   const contentSize = $derived(isCompact ? 'text-[14px]' : 'text-sm');
+  const authorLabel = $derived(commentAuthorLabel(comment));
 </script>
 
 <div class="group flex gap-2">
@@ -228,8 +233,11 @@
         class:mt-0.5={!isCollapsed && !isCompact}
         class:mt-1={isCollapsed}
       >
-        <span class="font-medium text-foreground truncate {authorSize}"
-          >{comment.author || m.tiptap_comment_unknownAuthor_label()}</span
+        <span
+          data-comment-author
+          aria-label={authorLabel}
+          use:truncatedTitle={authorLabel}
+          class="font-medium text-foreground truncate {authorSize}">{authorLabel}</span
         >
         {#if comment.createdAt}
           <span
@@ -238,10 +246,7 @@
           >
         {/if}
         {#if showType && comment.type && comment.type !== 'comment'}
-          <span
-            class="comment-type-badge px-1.5 py-0.5 text-ui font-mono bg-muted/50 text-subtle"
-            title={m.tiptap_comment_type_tooltip()}
-          >
+          <span class="comment-type-badge px-1.5 py-0.5 text-ui font-mono bg-muted/50 text-subtle">
             {comment.type}
           </span>
         {/if}

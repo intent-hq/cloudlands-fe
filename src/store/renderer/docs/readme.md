@@ -1,7 +1,7 @@
 # Redux Documentation Index
 
 This directory contains app-specific Redux companion notes. The store API
-surface is provided by Themis, imported via `@augmentcode/themis/...`.
+surface is provided by Themis, imported via `@themislib/themis/...`.
 
 If a guide here disagrees with the shim implementation, treat the shim as
 current and fix or remove the stale companion text.

@@ -12,6 +12,7 @@
  * store instance bound to the first init()'s state stream, so re-rendering
  * the layout after dispose()/init() would read stale state.
  */
+import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
@@ -75,10 +76,6 @@ vi.mock('$features/agent/interrupted-agents-service', () => ({
 }));
 vi.mock('$lib/client/live/live-app-client', () => ({ LiveAppClient: class {} }));
 
-vi.mock('$lib/components/layout/sidebar-nav', async () => ({
-  SidebarNav: (await import('./mocks/Marker.svelte')).default,
-  SidebarPanel: (await import('./mocks/Marker.svelte')).default,
-}));
 vi.mock('$lib/components/layout/WindowTitleBar.svelte', async () => ({
   default: (await import('./mocks/Marker.svelte')).default,
 }));
@@ -181,6 +178,7 @@ describe('(app)/+layout.svelte boot-route setup gate (regression)', () => {
     setBootRoutePathnameForTesting('/workspace/new');
 
     appStore.init();
+    admitLegacyPrincipal();
     appStore.dispatch(
       replaceWorkspaceList([
         {

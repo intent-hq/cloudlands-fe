@@ -1,8 +1,8 @@
 import type { VoiceOpenAiModel, VoiceProvider } from '$features/voice/voice-settings-service';
 import { VOICE_VOCABULARY_TERM_MAX_LENGTH } from '$features/voice/voice-settings-constants';
 import type { VoiceEngine } from '$features/voice/voice-engine-preference';
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { VoiceInputDevice, VoiceSettingsSliceState } from './voice-settings-types';
 
 export const initialState: VoiceSettingsSliceState = {

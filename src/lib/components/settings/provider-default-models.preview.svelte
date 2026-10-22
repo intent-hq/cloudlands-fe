@@ -4,6 +4,8 @@
   export const preview = definePreview<{
     narrowPane?: boolean;
     quickActionDefaultModel?: string;
+    quickActionEffort?: string;
+    quickActionProvider?: string;
   }>({
     id: 'provider-default-models',
     title: 'Provider default models',
@@ -11,12 +13,36 @@
     states: {
       default: { props: {} },
       'narrow-pane': { props: { narrowPane: true } },
+      'auggie-effort-unavailable': {
+        props: {
+          quickActionProvider: 'auggie',
+          quickActionDefaultModel: 'auggie-preview-balanced',
+          quickActionEffort: 'medium',
+        },
+      },
+      'quick-action-effort': {
+        props: {
+          quickActionDefaultModel: 'codex:codex-preview-balanced',
+          quickActionEffort: 'medium',
+        },
+      },
     },
   });
 </script>
 
 <script lang="ts">
   import { onDestroy } from 'svelte';
+  import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
+  import { selectProviderCatalogEntries } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { checkSingleProviderSuccess } from '$store/renderer/slices/agent-availability/agent-availability-slice';
+  import { selectProviderStatusMap } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
+  import { providerModelsLoaded } from '$store/renderer/slices/provider-models/provider-models-slice';
+  import { selectProviderModelsClearEpoch } from '$store/renderer/slices/provider-models/provider-models-selectors';
+  import { setupModelPickerPreviewHandler } from '../../../test/catalog-preview-ipc';
+  import {
+    hydrateDefaultProvider,
+    setAvailableModels,
+  } from '$store/renderer/slices/model/model-slice';
   import { store as appStore } from '$store/renderer/store';
   import { preview as modelPreview } from '../chat/input/model-picker.preview';
   import {
@@ -24,13 +50,15 @@
     selectProviderModels,
   } from '$store/renderer/slices/model/model-selectors';
   import {
-    setSelectedModel,
+    loadProviderModelsFromStorage,
     loadDefaultReasoningEffortFromStorage,
   } from '$store/renderer/slices/model/model-slice';
   import { selectFileSpecialists } from '$store/renderer/slices/specialists/specialists-selectors';
   import { setFileSpecialists } from '$store/renderer/slices/specialists/specialists-slice';
   import {
     selectBgDefaultModel,
+    selectBgDefaultReasoningEffort,
+    selectBgTypeReasoningEffortOverrides,
     selectBgTypeOverrides,
   } from '$store/renderer/slices/background-agent-settings/background-agent-settings-selectors';
   import { hydrateSettings } from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
@@ -41,23 +69,84 @@
   let {
     narrowPane = false,
     quickActionDefaultModel = '',
-  }: { narrowPane?: boolean; quickActionDefaultModel?: string } = $props();
+    quickActionEffort = '',
+    quickActionProvider = 'codex',
+  }: {
+    narrowPane?: boolean;
+    quickActionDefaultModel?: string;
+    quickActionEffort?: string;
+    quickActionProvider?: string;
+  } = $props();
   // The sandbox/CT root owns the isolated store; no persistence sagas run here.
   const previous = {
     models: selectProviderModels.select(appStore.state),
     effort: selectDefaultReasoningEffort.select(appStore.state),
     specialists: selectFileSpecialists.select(appStore.state),
     defaultModel: selectBgDefaultModel.select(appStore.state),
+    defaultReasoningEffort: selectBgDefaultReasoningEffort.select(appStore.state),
+    typeReasoningEffortOverrides: selectBgTypeReasoningEffortOverrides.select(appStore.state),
     typeOverrides: selectBgTypeOverrides.select(appStore.state),
   };
+  const previousAuggieStatus = selectProviderStatusMap.select(appStore.state).auggie;
   const restoreModels = modelPreview.states.reasoning.setup?.();
-  appStore.dispatch(setSelectedModel({ providerId: 'codex', model: 'codex-preview-balanced' }));
+  let restoreAuggie: (() => void) | undefined;
+  if (quickActionProvider === 'auggie') {
+    // Ordinary Auggie sessions advertise effort; --print quick actions cannot apply it.
+    const rows = [
+      {
+        value: 'auggie-preview-balanced',
+        label: 'Balanced',
+        isDefault: true,
+        effortLevels: ['low', 'medium', 'high'],
+      },
+    ];
+    appStore.dispatch(
+      providerCatalogLoaded({
+        providers: [
+          ...selectProviderCatalogEntries.select(appStore.state),
+          {
+            id: 'auggie',
+            displayName: 'Auggie',
+            shortName: 'Auggie',
+            command: 'auggie',
+            canBeDisabled: false,
+            visible: true,
+          },
+        ],
+      }),
+    );
+    appStore.dispatch(
+      checkSingleProviderSuccess('auggie', { available: true, authenticated: true }),
+    );
+    appStore.dispatch(hydrateDefaultProvider('auggie'));
+    appStore.dispatch(
+      providerModelsLoaded(
+        'auggie',
+        { models: rows },
+        selectProviderModelsClearEpoch.select(appStore.state),
+      ),
+    );
+    appStore.dispatch(setAvailableModels(rows, 'auggie'));
+    appStore.dispatch(
+      loadProviderModelsFromStorage({ ...previous.models, auggie: 'auggie-preview-balanced' }),
+    );
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- Preview-only synchronous IPC fixture registration; no domain data is fetched.
+    restoreAuggie = setupModelPickerPreviewHandler('auggie', rows);
+  }
+  appStore.dispatch(
+    loadProviderModelsFromStorage({
+      ...selectProviderModels.select(appStore.state),
+      codex: 'codex-preview-balanced',
+    }),
+  );
   appStore.dispatch(loadDefaultReasoningEffortFromStorage('medium'));
   appStore.dispatch(
     hydrateSettings({
       defaultModel: quickActionDefaultModel,
+      defaultReasoningEffort: quickActionEffort,
+      typeReasoningEffortOverrides: {},
       typeOverrides: {
-        commit: 'claude-code:claude-code-preview-deep',
+        commit: quickActionEffort ? '' : 'claude-code:claude-code-preview-deep',
         pr: '',
         review: '',
         fast: '',
@@ -81,13 +170,18 @@
   const defaultModel$ = selectBgDefaultModel();
   const overrides$ = selectBgTypeOverrides();
   const effort$ = selectDefaultReasoningEffort();
+  const quickEffort$ = selectBgDefaultReasoningEffort();
+  const quickEffortOverrides$ = selectBgTypeReasoningEffortOverrides();
   onDestroy(() => {
     appStore.dispatch(hydrateSettings(previous));
     appStore.dispatch(setFileSpecialists(previous.specialists));
     appStore.dispatch(loadDefaultReasoningEffortFromStorage(previous.effort));
-    appStore.dispatch(
-      setSelectedModel({ providerId: 'codex', model: previous.models.codex ?? '' }),
-    );
+    appStore.dispatch(loadProviderModelsFromStorage(previous.models));
+    restoreAuggie?.();
+    if (quickActionProvider === 'auggie')
+      appStore.dispatch(
+        checkSingleProviderSuccess('auggie', previousAuggieStatus ?? { available: false }),
+      );
     restoreModels?.();
   });
 </script>
@@ -112,6 +206,8 @@
       defaultModel: $defaultModel$,
       overrides: $overrides$,
       effort: $effort$,
+      quickEffort: $quickEffort$,
+      quickEffortOverrides: $quickEffortOverrides$,
     })}</output
   >
 </div>

@@ -12,7 +12,7 @@ import {
   sessionHasPendingQuestion,
   sessionPendingQuestions,
 } from '../pending-questions';
-import { buildAnswerMessageMetadata, getAnsweredQuestionsMessageId } from '../answer-message';
+import { buildAnswerMessageMetadata, getAnsweredQuestionsMessageIds } from '../answer-message';
 import {
   deriveAgentHasPendingQuestion,
   deriveMarkedQuestionRecoveryState,
@@ -20,7 +20,7 @@ import {
 } from '../wizard-gate';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import type { AgentMessage, AgentSession, ContentBlock, QueuedMessage } from '$shared/types';
-import { createCollection, addItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection, addItem } from '@themislib/themis/utils/collections/collection-utils';
 import type { StoreState } from '$store/renderer/types';
 import { selectAgentIsRunning } from '$store/renderer/slices/agent-session/agent-session-selectors';
 
@@ -115,11 +115,34 @@ describe('classifyPendingQuestionMarker', () => {
   });
 });
 
-describe('getAnsweredQuestionsMessageId', () => {
+describe('getAnsweredQuestionsMessageIds', () => {
+  it('recognizes every answered question set inside a merged queue entry and transcript row', () => {
+    const metadata = {
+      fromPrincipalId: 'alice',
+      mergedMessageMetadata: [
+        null,
+        buildAnswerMessageMetadata('question-one'),
+        buildAnswerMessageMetadata('question-two'),
+        buildAnswerMessageMetadata('question-one'),
+      ],
+    };
+    expect(getAnsweredQuestionsMessageIds({ metadata })).toEqual(['question-one', 'question-two']);
+    const queued: QueuedMessage = {
+      id: 'survivor',
+      content: 'hello\n\nanswers',
+      position: 0,
+      queuedAt: '2026-10-02T00:00:00Z',
+      messageMetadata: metadata,
+    };
+    expect(isQuestionSetAnsweredInQueue([queued], 'question-one')).toBe(true);
+    expect(isQuestionSetAnsweredInQueue([queued], 'question-two')).toBe(true);
+    expect(isQuestionSetAnsweredInQueue([queued], 'other')).toBe(false);
+  });
+
   it('reads the row metadata tag', () => {
-    expect(getAnsweredQuestionsMessageId(answerMessage('msg-a1'))).toBe('msg-a1');
-    expect(getAnsweredQuestionsMessageId(userMessage())).toBeNull();
-    expect(getAnsweredQuestionsMessageId(undefined)).toBeNull();
+    expect(getAnsweredQuestionsMessageIds(answerMessage('msg-a1'))).toEqual(['msg-a1']);
+    expect(getAnsweredQuestionsMessageIds(userMessage())).toEqual([]);
+    expect(getAnsweredQuestionsMessageIds(undefined)).toEqual([]);
   });
 
   it('falls back to a text block messageMetadata tag when the row is untagged', () => {
@@ -135,7 +158,7 @@ describe('getAnsweredQuestionsMessageId', () => {
       ],
       timestamp: new Date().toISOString(),
     } as unknown as AgentMessage;
-    expect(getAnsweredQuestionsMessageId(blockTagged)).toBe('msg-a1');
+    expect(getAnsweredQuestionsMessageIds(blockTagged)).toEqual(['msg-a1']);
 
     const emptyId = {
       id: 'msg-answer-empty',
@@ -149,7 +172,7 @@ describe('getAnsweredQuestionsMessageId', () => {
       ],
       timestamp: new Date().toISOString(),
     } as unknown as AgentMessage;
-    expect(getAnsweredQuestionsMessageId(emptyId)).toBeNull();
+    expect(getAnsweredQuestionsMessageIds(emptyId)).toEqual([]);
   });
 });
 

@@ -221,6 +221,7 @@ export function workspaceTabLifecycleMotion(
   let appliedScrollLeft = pinnedScrollLeft;
   let previousLauncherLeft = preparedGroup?.launcherLeft ?? null;
   let appliedSlotOffset = 0;
+  let launcherReleased = false;
 
   if (duration === 0) {
     if (strip && preparedOutro?.managesGroup && preparedGroup) {
@@ -362,7 +363,20 @@ export function workspaceTabLifecycleMotion(
       if (controls && tracksLauncher) {
         const desiredOffset = slotProgress * launcherOffset;
         const currentLeft = launcherLeft;
-        if (currentLeft != null && previousLauncherLeft != null) {
+        const naturalLeft = currentLeft == null ? null : currentLeft - appliedLauncherOffset;
+        // The compensation only ever moves the launcher left. When the strip grows
+        // under the outro (e.g. a restored tab list replaces the mounted one), the
+        // natural position moves right of the held one and the offset would be
+        // retained forever, so release it to the natural position instead.
+        launcherReleased ||=
+          launcherTargetLeft === null &&
+          naturalLeft !== null &&
+          previousLauncherLeft !== null &&
+          naturalLeft > previousLauncherLeft + 0.5;
+        if (launcherReleased) {
+          appliedLauncherOffset = 0;
+          previousLauncherLeft = naturalLeft ?? previousLauncherLeft;
+        } else if (currentLeft != null && previousLauncherLeft != null) {
           const desiredLeft =
             launcherTargetLeft !== null && launcherStartLeft !== null
               ? launcherTargetLeft + releaseProgress * (launcherStartLeft - launcherTargetLeft)

@@ -1,9 +1,13 @@
+import { applyAgentMetadataPatch } from './agent-metadata-patch';
+import { principalContextChanged, principalIdentityChanged } from '../principal/principal-slice';
+import { connectionStatusChanged } from '../daemon-health/daemon-health-slice';
+import { agentNodeUpdates, currentAgentCheckpoint } from '$shared/utils/agent-node';
 import { deepEqual, shallowEqual } from 'fast-equals';
 import type { AgentMetadata, AgentSession, AgentMessage, SessionStats } from '$shared/types';
 import { AgentStatus } from '$shared/types/agent.types';
 import type { CanonicalAgentStatusFields, WorkspaceEvent } from '$features/events/types';
-import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type {
   AgentHistorySegment,
   AgentSessionForkOptions,
@@ -11,6 +15,7 @@ import type {
   AgentSessionLaunchOptions,
   AgentSessionSendMessageOptions,
   AgentSessionState,
+  AgentSessionUpdate,
   FeOwnedSessionState,
   StoredAgentSession,
   WireAgentSession,
@@ -281,8 +286,12 @@ function removeHistorySegmentsFor(
   return next;
 }
 
-/** Drop the detail-hydrated marker for `agentId`; no-op when absent. */
+/** Drop detail trust and projection versions when a session is evicted. */
 function removeDetailHydrated(state: AgentSessionState, agentId: string): AgentSessionState {
+  if (state.projectionVersions?.[agentId]) {
+    const { [agentId]: _, ...rest } = state.projectionVersions;
+    state = { ...state, projectionVersions: rest };
+  }
   if (!state.detailHydrated || !(agentId in state.detailHydrated)) return state;
   const { [agentId]: _, ...rest } = state.detailHydrated;
   return { ...state, detailHydrated: rest };
@@ -473,6 +482,38 @@ function replaceSessionMessageById(
   });
 }
 
+/** A same-value push is still newer authority than a pending detail response. */
+function recordSessionProjection(
+  state: AgentSessionState,
+  agentId: string,
+  updates: AgentSessionUpdate,
+): AgentSessionState {
+  if (!getSession(state, agentId)) return state;
+  const metadataKeys = Object.entries(updates.metadataPatch ?? {})
+    .filter(([, op]) => op !== undefined)
+    .map(([key]) => key);
+  const fieldKeys = Object.keys(updates).filter(
+    (key) => key !== 'metadata' && key !== 'metadataPatch' && key !== 'messages',
+  );
+  if (!fieldKeys.length && !metadataKeys.length) return state;
+  const prior = state.projectionVersions?.[agentId];
+  const fields = { ...prior?.fields };
+  const metadata = {
+    ...prior?.metadata,
+    ...Object.fromEntries(
+      metadataKeys.map((key) => [
+        key,
+        (prior?.metadata && Object.hasOwn(prior.metadata, key) ? prior.metadata[key] : 0) + 1,
+      ]),
+    ),
+  };
+  for (const key of fieldKeys) fields[key] = (fields[key] ?? 0) + 1;
+  return {
+    ...state,
+    projectionVersions: { ...state.projectionVersions, [agentId]: { fields, metadata } },
+  };
+}
+
 function updateSessionFields(
   state: AgentSessionState,
   agentId: string,
@@ -492,6 +533,8 @@ type CanonicalAgentSessionUpdates = {
   isStreaming?: boolean;
   isProcessing?: boolean;
   isResponding?: boolean;
+  turnInFlight?: boolean;
+  isWaitingOnTool?: boolean;
   stopReason?: string | null;
   stopReasonTimestamp?: string | null;
   sessionCorrupted?: boolean;
@@ -501,6 +544,7 @@ type CanonicalAgentSessionUpdates = {
   waitingForAgentIds?: string[];
   waitingOnHooks?: AgentSession['waitingOnHooks'];
   waitingOnPrMonitors?: AgentSession['waitingOnPrMonitors'];
+  waitingOnScriptMonitors?: AgentSession['waitingOnScriptMonitors'];
   liveTurnOpen?: boolean;
   liveTurnOpenedAt?: string | undefined;
 };
@@ -513,6 +557,7 @@ const RUNNING_STATUSES: ReadonlySet<string> = new Set([
   'Processing',
   'responding',
   'Responding',
+  'resuming',
 ]);
 
 /** Wire statuses that mean the turn/session ended (lowercase IPC + PascalCase enum). */
@@ -524,6 +569,7 @@ const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
   'failed',
   'error',
   'deleted',
+  'halted',
 ]);
 
 // ============================================================================
@@ -758,6 +804,8 @@ function canonicalSessionUpdates(
   // empty), so an idle event always clears a stale list; other canonical
   // event types that don't carry the field leave the existing value alone.
   if (Array.isArray(fields.waitingOnHooks)) updates.waitingOnHooks = fields.waitingOnHooks;
+  if (Array.isArray(fields.waitingOnScriptMonitors))
+    updates.waitingOnScriptMonitors = fields.waitingOnScriptMonitors;
   if (Array.isArray(fields.waitingOnPrMonitors)) {
     updates.waitingOnPrMonitors = fields.waitingOnPrMonitors;
   }
@@ -786,6 +834,9 @@ function canonicalSessionUpdates(
     updates.isStreaming = fields.isStreaming ?? false;
     updates.isProcessing = fields.isProcessing ?? false;
     updates.isResponding = fields.isResponding ?? false;
+    // Snapshots can leave these busy until the next detail read; idle ends them too.
+    updates.turnInFlight = false;
+    updates.isWaitingOnTool = false;
     updates.liveTurnOpen = false;
     updates.liveTurnOpenedAt = undefined;
   }
@@ -806,6 +857,12 @@ function canonicalSessionUpdates(
     updates.processQueueHint = undefined;
   }
 
+  if (fields.status === AgentStatus.Halted) {
+    updates.isActive = false;
+    updates.isStreaming = false;
+    updates.isProcessing = false;
+    updates.isResponding = false;
+  }
   return updates;
 }
 
@@ -837,6 +894,7 @@ function canonicalFieldsFromWorkspaceEvent(event: {
         // default to [] so a stale list from a prior idle is cleared.
         waitingOnHooks: data.waitingOnHooks ?? [],
         waitingOnPrMonitors: data.waitingOnPrMonitors ?? [],
+        waitingOnScriptMonitors: data.waitingOnScriptMonitors ?? [],
       },
     ];
   }
@@ -872,7 +930,11 @@ function canonicalFieldsFromWorkspaceEvent(event: {
       },
     ];
   }
-  if (event.type === 'agent:status-changed' || event.type === 'agent:session-updated') {
+  if (
+    event.type === 'agent:status-changed' ||
+    event.type === 'agent:session-updated' ||
+    event.type === 'agent:updated'
+  ) {
     return [agentId, data];
   }
   if (event.type === 'agent:subscriptions-changed') {
@@ -1012,6 +1074,7 @@ type SessionComparisonSnapshot = Pick<
   | 'acpSessionId'
   | 'createdAt'
   | 'updatedAt'
+  | 'retiredAt'
   | 'lastActivity'
   | 'hasUnread'
   | 'currentTurnNumber'
@@ -1030,7 +1093,9 @@ type SessionComparisonSnapshot = Pick<
   attentionRequestKind: string | undefined;
   attentionRequestReason: string | undefined;
   attentionRequestTimestamp: string | undefined;
+  attentionRequestReasonTruncated: boolean;
   specialist: string | undefined;
+  chiefPromptVersion: number | undefined;
   completionReport: string | undefined;
   taskNoteId: string | undefined;
   dismissedQuestionsMessageId: string | undefined;
@@ -1045,6 +1110,7 @@ type SessionComparisonSnapshot = Pick<
   harnessVersion: string | undefined;
   harnessFeaturesKey: string | undefined;
   detailFieldsKey: string;
+  nodeFieldsKey: string;
 };
 
 function toSessionComparisonSnapshot(session: StoredAgentSession): SessionComparisonSnapshot {
@@ -1073,6 +1139,7 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     acpSessionId: session.acpSessionId,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
+    retiredAt: session.retiredAt,
     lastActivity: session.lastActivity,
     hasUnread: session.hasUnread,
     currentTurnNumber: session.currentTurnNumber,
@@ -1085,7 +1152,9 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     attentionRequestKind: attentionRequest?.kind,
     attentionRequestReason: attentionRequest?.reason,
     attentionRequestTimestamp: attentionRequest?.timestamp,
+    attentionRequestReasonTruncated: attentionRequest?.reasonTruncated === true,
     specialist: typeof metadata?.specialist === 'string' ? metadata.specialist : undefined,
+    chiefPromptVersion: metadata?.chiefPromptVersion,
     completionReport:
       typeof metadata?.completionReport === 'string' ? metadata.completionReport : undefined,
     taskNoteId: typeof metadata?.taskNoteId === 'string' ? metadata.taskNoteId : undefined,
@@ -1119,6 +1188,7 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
           .join(',')
       : undefined,
     detailFieldsKey: detailFieldsComparisonKey(session),
+    nodeFieldsKey: JSON.stringify(agentNodeUpdates(session)),
     messageCount: messages.length,
     wireMessageCount: typeof session.messageCount === 'number' ? session.messageCount : undefined,
     lastMessageId: messages.length === 0 ? undefined : messages[messages.length - 1]?.id,
@@ -1156,7 +1226,8 @@ function applySessionUpsert(
   const finalSession = toStoredSession(session);
   const agentId = String(finalSession.id);
   const wsId = String(session.workspaceId);
-  const existing = getSession(state, agentId);
+  const prior = getSession(state, agentId);
+  const existing = prior?.workspaceId === session.workspaceId ? prior : undefined;
 
   // FE-owned fields never ride the wire snapshot: each one's stored value
   // comes from its FE_OWNED_FIELD_POLICY entry, never from `session`.
@@ -1271,12 +1342,44 @@ function applySessionUpsert(
     }
   }
 
+  // Placement survives wakes. A legacy-shaped or in-flight pre-placement
+  // snapshot must not erase known path provenance and re-enable head actions.
+  if (existing) {
+    const previousNodeFields = agentNodeUpdates(existing);
+    for (const key of [
+      'nodeId',
+      'leaseId',
+      'placement',
+      'effectiveIsolation',
+      'nodeState',
+      'nodePath',
+    ] as const) {
+      if (
+        !Object.prototype.hasOwnProperty.call(session, key) &&
+        previousNodeFields[key] !== undefined
+      ) {
+        Object.assign(finalSession, { [key]: previousNodeFields[key] });
+      }
+    }
+  }
+  finalSession.checkpoint = currentAgentCheckpoint(existing?.checkpoint, finalSession.checkpoint);
+  if (finalSession.status === AgentStatus.Halted) {
+    finalSession.isStreaming = false;
+    finalSession.isProcessing = false;
+    finalSession.isResponding = false;
+    finalSession.isActive = false;
+    finalSession.turnInFlight = false;
+    finalSession.liveTurnOpen = false;
+    finalSession.liveTurnOpenedAt = undefined;
+  }
+
   const alreadyIndexed = (state.agentIdsByWorkspace[wsId] ?? []).includes(agentId);
   if (existing && alreadyIndexed && isSessionEquivalent(existing, finalSession)) {
     return state;
   }
 
-  let next = setSession(state, agentId, finalSession);
+  const ownedState = prior && !existing ? removeFromWorkspaceIndex(state, agentId) : state;
+  let next = setSession(ownedState, agentId, finalSession);
   next = registerInWorkspaceIndex(next, agentId, wsId);
   return next;
 }
@@ -1339,6 +1442,10 @@ export const initialState: AgentSessionState = {
 // Actions
 // ============================================================================
 
+export const setAgentBackgroundPending = createAction<[agentId: string, pending: boolean]>(
+  'agentSessions/setAgentBackgroundPending',
+);
+
 /**
  * Upsert a wire session — normalize dates, order/prune messages to
  * `MAX_MESSAGES_PER_AGENT`, register in workspace index. The payload rejects
@@ -1394,7 +1501,8 @@ export const replaceMessageById = createAction<
 export const updateSession = createAction<
   [
     agentId: string,
-    updates: Partial<AgentSession> & Pick<StoredAgentSession, 'liveTurnOpen' | 'liveTurnOpenedAt'>,
+    updates: AgentSessionUpdate,
+    options?: { reasoningEffortSource?: 'control' | 'encoder'; projectedMetadataKeys?: never },
   ]
 >('agentSessions/updateSession');
 
@@ -1657,7 +1765,7 @@ export const setHistoryOldestReached = createAction<[agentId: string, oldestReac
  * newest end ⇒ contiguous, mirroring the append overlap rule).
  */
 export const seedHistoryAround = createAction<
-  [agentId: string, messages: AgentMessage[], startOrdinalEstimate: number]
+  [agentId: string, messages: AgentMessage[], startOrdinalEstimate?: number]
 >('agentSessions/seedHistoryAround');
 
 /** Drop an agent's scrollback history segment entirely. */
@@ -1670,6 +1778,12 @@ export const clearHistorySegment = createAction<[agentId: string]>(
 // ============================================================================
 
 export const agentSessionReducer = createReducer<AgentSessionState>(initialState);
+agentSessionReducer.with(setAgentBackgroundPending, (state, { payload: [agentId, pending] }) => {
+  if (pending)
+    return { ...state, backgroundModePending: { ...state.backgroundModePending, [agentId]: true } };
+  const { [agentId]: _removed, ...rest } = state.backgroundModePending ?? {};
+  return { ...state, backgroundModePending: rest };
+});
 agentSessionReducer.with(removeSession, (state, { payload: [agentId] }) => {
   if (!state.byAgentId[agentId]) return state;
 
@@ -1680,6 +1794,14 @@ agentSessionReducer.with(removeSession, (state, { payload: [agentId] }) => {
   next = removeDetailHydrated(next, agentId);
   return next;
 });
+// Detail metadata from a previous connection/principal is not authoritative
+// for notification flags or detail-only UI fields after re-admission.
+function invalidateAgentDetail(state: AgentSessionState): AgentSessionState {
+  return state.detailHydrated ? { ...state, detailHydrated: undefined } : state;
+}
+agentSessionReducer.with(principalContextChanged, invalidateAgentDetail);
+agentSessionReducer.with(principalIdentityChanged, invalidateAgentDetail);
+agentSessionReducer.with(connectionStatusChanged, invalidateAgentDetail);
 agentSessionReducer.with(markAgentDetailHydrated, (state, { payload: [agentId] }) => {
   if (!state.byAgentId[agentId] || state.detailHydrated?.[agentId]) return state;
   return { ...state, detailHydrated: { ...state.detailHydrated, [agentId]: true } };
@@ -1730,8 +1852,15 @@ agentSessionReducer.with(replaceMessageById, (state, { payload: [agentId, oldId,
 agentSessionReducer.with(updateSession, (state, { payload: [agentId, updates] }) => {
   const session = getSession(state, agentId);
   if (!session) return state;
-  const { messages, ...otherUpdates } = updates;
-  let merged: StoredAgentSession = { ...session, ...otherUpdates };
+  state = recordSessionProjection(state, agentId, updates);
+  const { messages, metadataPatch, ...otherUpdates } = updates;
+  let merged: StoredAgentSession = {
+    ...session,
+    ...otherUpdates,
+    metadata: metadataPatch
+      ? applyAgentMetadataPatch(session.metadata, metadataPatch)
+      : session.metadata,
+  };
   let droppedResident = 0;
   if (messages && Array.isArray(messages)) {
     const ordered = normalizeSortHistoryMessages(messages);
@@ -1748,6 +1877,14 @@ agentSessionReducer.with(updateSession, (state, { payload: [agentId, updates] })
   return next;
 });
 agentSessionReducer.with(eventReceived, (state, { payload: [, event] }) => {
+  if (['agent:updated', 'agent:status-changed', 'hub:checkpoint'].includes(event.type)) {
+    const agentId = event.data?.agentId;
+    const existing = typeof agentId === 'string' ? getSession(state, agentId) : undefined;
+    if (existing && existing.workspaceId === event.workspaceId) {
+      const fields = agentNodeUpdates(event.data, existing);
+      if (Object.keys(fields).length) state = updateSessionFields(state, agentId, fields);
+    }
+  }
   const userMessage = userMessageFromWorkspaceEvent(event);
   if (userMessage) {
     return addMessageToSession(state, userMessage[0], userMessage[1]);
@@ -1766,16 +1903,20 @@ agentSessionReducer.with(eventReceived, (state, { payload: [, event] }) => {
   if (markers) {
     const [agentId, fields] = markers;
     const existing = getSession(state, agentId);
-    if (!existing) return state;
-    const metadata = existing.metadata ?? {};
-    if (
-      Object.entries(fields).every(
-        ([key, value]) => metadata[key as keyof typeof metadata] === value,
-      )
-    ) {
+    if (!existing || (event.workspaceId && existing.workspaceId !== event.workspaceId))
       return state;
-    }
-    return updateSessionFields(state, agentId, { metadata: { ...metadata, ...fields } });
+    const metadataPatch: NonNullable<AgentSessionUpdate['metadataPatch']> = {};
+    if (fields.pendingQuestionsMessageId !== undefined)
+      metadataPatch.pendingQuestionsMessageId = {
+        op: 'set',
+        value: fields.pendingQuestionsMessageId,
+      };
+    if (fields.dismissedQuestionsMessageId !== undefined)
+      metadataPatch.dismissedQuestionsMessageId = {
+        op: 'set',
+        value: fields.dismissedQuestionsMessageId,
+      };
+    return agentSessionReducer(state, updateSession(agentId, { metadataPatch }));
   }
 
   const canonical = canonicalFieldsFromWorkspaceEvent(event);
@@ -1786,20 +1927,20 @@ agentSessionReducer.with(eventReceived, (state, { payload: [, event] }) => {
     typeof event.timestamp === 'string' ? event.timestamp : undefined,
   );
   if (Object.keys(updates).length === 0) return state;
-  // Fresh running edge (the sticky liveTurnOpen slot transitions closed →
-  // open): clear the previous turn's `lastToolUse` so it cannot render as a
-  // live tool chip during the startup window before the first
-  // `agent:stream:activity` ping of the new turn arrives. Keyed on the slot
-  // EDGE, not on every running status event — mid-turn status ticks (slot
-  // already open) must not wipe the current turn's live tool. The first
-  // tool-arm ping of the new turn repopulates the field.
+  // Idle clears running overlays but keeps persisted tool previews. A fresh
+  // running edge clears the previous turn's preview until new activity arrives.
   const existing = getSession(state, agentId);
+  if (existing && event.workspaceId && existing.workspaceId !== event.workspaceId) return state;
   const opensLiveTurn = updates.liveTurnOpen === true && existing?.liveTurnOpen !== true;
-  const merged: Partial<Omit<StoredAgentSession, 'messages'>> = {
-    ...(updates as Partial<Omit<StoredAgentSession, 'messages'>>),
-    ...(opensLiveTurn && existing?.lastToolUse ? { lastToolUse: undefined } : {}),
+  const clearsRunningTool =
+    updates.liveTurnOpen === false && existing?.lastToolUse?.status?.toLowerCase() === 'running';
+  const merged: AgentSessionUpdate = {
+    ...updates,
+    ...(clearsRunningTool || (opensLiveTurn && existing?.lastToolUse)
+      ? { lastToolUse: undefined }
+      : {}),
   };
-  return updateSessionFields(state, agentId, merged);
+  return updateSessionFields(recordSessionProjection(state, agentId, merged), agentId, merged);
 });
 agentSessionReducer.with(renameSession, (state, { payload: [agentId, name] }) => {
   const session = getSession(state, agentId);
@@ -2179,7 +2320,9 @@ agentSessionReducer.with(
       // An estimated 0 start is still an estimate — exact only via the
       // walk's nextToken === null (setHistoryOldestReached).
       oldestReached: false,
-      startOrdinalEstimate: Math.max(0, Math.round(startOrdinalEstimate)),
+      ...(startOrdinalEstimate === undefined
+        ? {}
+        : { startOrdinalEstimate: Math.max(0, Math.round(startOrdinalEstimate)) }),
     });
   },
 );
@@ -2191,14 +2334,18 @@ agentSessionReducer.with(clearHistorySegment, (state, { payload: [agentId] }) =>
 // transcript — is dropped in the SAME dispatch the chat-state reducer resets
 // the walk cursors and fetching flags in (atomic walk reset; the scrollback
 // saga's clearHistorySegment chain still runs and is idempotent here).
-agentSessionReducer.with(chatTranscriptSnapshotApplied, (state, { payload: [agentId, meta] }) => {
-  if (meta.resumed !== false) return state;
-  // Fresh (non-resumed) transcript: clear the FE-owned cap-pruned latch with
-  // the segment — both described the discarded transcript. Only touch the
-  // session when actually latched so an unlatched apply stays a state no-op.
-  const next =
-    getSession(state, agentId)?.tailCapPruned === true
-      ? updateSessionFields(state, agentId, { tailCapPruned: false })
-      : state;
-  return removeHistorySegment(next, agentId);
-});
+agentSessionReducer.with(
+  chatTranscriptSnapshotApplied,
+  (state, { payload: [agentId, meta, replayed] }) => {
+    // Local replay retains the walk cursor, so its history and cap latch must survive too.
+    if (replayed || meta.resumed !== false) return state;
+    // Fresh (non-resumed) transcript: clear the FE-owned cap-pruned latch with
+    // the segment — both described the discarded transcript. Only touch the
+    // session when actually latched so an unlatched apply stays a state no-op.
+    const next =
+      getSession(state, agentId)?.tailCapPruned === true
+        ? updateSessionFields(state, agentId, { tailCapPruned: false })
+        : state;
+    return removeHistorySegment(next, agentId);
+  },
+);

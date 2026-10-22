@@ -118,11 +118,14 @@ describe('context image grid interactions', () => {
     for (const handler of reconnectHandlers) handler();
     await waitFor(() => expect(screen.getByAltText('reconnect.png').getAttribute('src')).toBe(url));
     expect(backendRequest).toHaveBeenCalledTimes(2);
-    expect(backendRequest).toHaveBeenLastCalledWith('file.getAttachmentInfo', { attachmentId });
+    expect(backendRequest).toHaveBeenLastCalledWith('file.getAttachmentInfo', {
+      attachmentId,
+      workspaceId: 'one',
+    });
     await fireEvent.click(screen.getByRole('button', { name: /view reconnect.png full size/i }));
     expect(await screen.findByRole('dialog')).toBeTruthy();
     view.unmount();
-    expect(reconnectHandlers.size).toBe(0);
+    expect(reconnectHandlers.size).toBe(1);
   });
 
   it.each([
@@ -235,6 +238,7 @@ describe('context image grid interactions', () => {
       ),
     );
     expect(backendRequest).toHaveBeenCalledExactlyOnceWith('file.getAttachmentInfo', {
+      workspaceId: 'one',
       attachmentId,
     });
     await fireEvent.click(screen.getByRole('button', { name: /view drawing #1.png full size/i }));
@@ -264,6 +268,7 @@ describe('context image grid interactions', () => {
     });
     await waitFor(() =>
       expect(backendRequest).toHaveBeenCalledExactlyOnceWith('file.getAttachmentInfo', {
+        workspaceId: 'one',
         attachmentId,
       }),
     );

@@ -42,6 +42,16 @@ describe('isInviteUri', () => {
 });
 
 describe('parseInviteUri', () => {
+  it('preserves host scope and defaults only omitted scope to workspace', () => {
+    expect(parseInviteUri(`${FULL_URI}&scope=host`)).toMatchObject({ scope: 'host' });
+    expect(parseInviteUri(FULL_URI)).toMatchObject({ scope: 'workspace' });
+    expect(parseInviteUri(`${FULL_URI}&scope=workspace`)).toMatchObject({ scope: 'workspace' });
+  });
+
+  it.each(['', 'HOST', 'admin', 'host&scope=workspace'])('rejects ambiguous scope %s', (scope) => {
+    expect(parseInviteUri(`${FULL_URI}&scope=${scope}`)).toBeNull();
+  });
+
   it('parses an invite whose action carries URL-stripped line breaks', () => {
     expect(parseInviteUri('intent://inv\nite?inviteId=inv_42&sec\tret=s3cr3t')).toMatchObject({
       inviteId: 'inv_42',
@@ -51,6 +61,7 @@ describe('parseInviteUri', () => {
 
   it('parses every component field including the tc= tunnel address', () => {
     expect(parseInviteUri(FULL_URI)).toEqual({
+      scope: 'workspace',
       hosts: ['192.168.1.10', '10.0.0.5'],
       port: 5181,
       fingerprint: 'AA:BB:CC',
@@ -68,6 +79,7 @@ describe('parseInviteUri', () => {
         'intent://invite?v=1&port=5181&fp=AA%3ABB%3ACC&inviteId=inv_42&secret=s3cr3t&tc=tc7f2a91.tailcat.net',
       ),
     ).toEqual({
+      scope: 'workspace',
       hosts: [],
       port: 5181,
       fingerprint: 'AA:BB:CC',
@@ -84,6 +96,7 @@ describe('parseInviteUri', () => {
 
   it('reports missing or invalid fields individually as null', () => {
     expect(parseInviteUri('intent://invite?v=1&host=h&port=99999&fp=&inviteId=i')).toEqual({
+      scope: 'workspace',
       hosts: ['h'],
       port: null,
       fingerprint: null,

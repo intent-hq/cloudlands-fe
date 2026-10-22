@@ -1,4 +1,4 @@
-import type { AgentSession, AgentMessage } from '$shared/types';
+import type { AgentSession, AgentMessage, AgentMetadata } from '$shared/types';
 import type { UnifiedAgentConfig } from '$shared/types/agent.types';
 
 interface AgentSessionSendContextItem {
@@ -154,6 +154,22 @@ export type StoredAgentSession = Omit<AgentSession, 'messages' | keyof FeOwnedSe
   messages: AgentMessage[];
 } & FeOwnedSessionState;
 
+/** Explicit intent for one key; clear cannot accidentally carry a stale value. */
+type MetadataOperation<T> =
+  { op: 'set'; value: Exclude<T, undefined> } | { op: 'clear'; value?: never };
+
+/** Omitted keys are untouched. Known metadata keys retain their value types. */
+export type AgentMetadataPatch = {
+  [K in keyof AgentMetadata]?: MetadataOperation<AgentMetadata[K]>;
+};
+
+/** Raw metadata is forbidden even on variables/spreads containing other valid fields. */
+export type AgentSessionUpdate = Partial<Omit<AgentSession, 'metadata'>> &
+  Pick<StoredAgentSession, 'liveTurnOpen' | 'liveTurnOpenedAt'> & {
+    metadata?: never;
+    metadataPatch?: AgentMetadataPatch;
+  };
+
 /**
  * Bounded, on-demand history segment for infinite scrollback.
  *
@@ -208,7 +224,17 @@ export interface AgentHistorySegment {
  * All Date fields are stored as ISO strings (serializable).
  * Messages are stored as an ordered, serializable array.
  */
+/** Per-field local projection order, independent of value equality or daemon timestamps. */
+export interface AgentSessionProjectionVersions {
+  fields: Record<string, number>;
+  metadata: Record<string, number>;
+}
+
 export interface AgentSessionState {
+  /** Never persisted; removed with the session. Used to fence pending detail reads. */
+  projectionVersions?: Record<string, AgentSessionProjectionVersions>;
+  /** In-flight mode mutations; never persisted with agent sessions. */
+  backgroundModePending?: Record<string, true>;
   /** Agent sessions keyed by agentId */
   byAgentId: Record<string, StoredAgentSession>;
   /** Index: workspace ID → array of agent IDs belonging to that workspace */

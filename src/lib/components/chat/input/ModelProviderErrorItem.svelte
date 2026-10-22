@@ -15,13 +15,18 @@
   const displayText = $derived(`${providerLabel}: ${error}`);
 </script>
 
-<Fa
-  icon={faTriangleExclamation}
+<span
   class={compact
-    ? 'h-3 w-3 text-warning-ink shrink-0 mt-0.5'
-    : 'h-3.5 w-3.5 text-warning-ink shrink-0 mt-0.5'}
-/>
-<div class={compact ? 'min-w-0 leading-tight' : 'flex-1 min-w-0'}>
+    ? 'first-line-icon w-(--menu-icon-size) leading-tight'
+    : 'first-line-icon w-(--menu-icon-size) type-caption leading-tight'}
+>
+  <Fa icon={faTriangleExclamation} class="size-(--menu-icon-size) text-warning-ink" />
+</span>
+<div
+  class={compact
+    ? 'min-w-0 whitespace-normal [overflow-wrap:anywhere] leading-tight'
+    : 'flex-1 min-w-0 whitespace-normal [overflow-wrap:anywhere]'}
+>
   {#if compact}
     <span class="font-medium text-foreground">{displayText}</span>
     {#if hint}

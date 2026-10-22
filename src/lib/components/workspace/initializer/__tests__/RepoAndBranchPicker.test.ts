@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../RepoSelector.svelte', async () => ({
@@ -19,6 +19,36 @@ vi.mock('$lib/client', () => ({
 }));
 
 import RepoAndBranchPicker from '../RepoAndBranchPicker.svelte';
+import type { GitLabBranchPickerProps } from '../gitlab-picker-types';
+
+function gitlabBranchProps(): GitLabBranchPickerProps {
+  return {
+    scopeKey: 'owner/connection-a/project-a',
+    instanceBaseUrl: 'https://git.example.test/Forge',
+    projectPath: 'group/project',
+    query: '',
+    page: {
+      status: 'ready',
+      items: [{ name: 'release/next', commitSha: 'a'.repeat(40), protected: false }],
+      hasMore: false,
+    },
+    placeholder: 'Choose a branch',
+    protectedLabel: 'Protected',
+    copy: {
+      searchLabel: 'Search branches',
+      searchPlaceholder: 'Branch name',
+      listLabel: 'GitLab branches',
+      loadingLabel: 'Loading branches',
+      emptyLabel: 'No branches',
+      emptySearchLabel: 'No matching branches',
+      loadMoreLabel: 'Load more branches',
+      loadingMoreLabel: 'Loading more branches',
+    },
+    onSearch: vi.fn(),
+    onMore: vi.fn(),
+    onSelect: vi.fn(),
+  };
+}
 
 const metadataSurfaceTokens = [
   'rounded-md',
@@ -44,6 +74,41 @@ function expectMetadataPill(element: HTMLElement) {
 }
 
 describe('RepoAndBranchPicker', () => {
+  it('keeps GitLab branch selection separate from legacy branch and main defaults', async () => {
+    const gitlabBranch = gitlabBranchProps();
+    const onBranchChange = vi.fn();
+    render(RepoAndBranchPicker, {
+      repoType: 'gitlab',
+      field: 'branch',
+      branch: 'stale-local',
+      gitlabBranch,
+      onBranchChange,
+    });
+    expect(screen.queryByTestId('branch-selector')).toBeNull();
+    expect(screen.queryByText('main')).toBeNull();
+    expect(screen.queryByText('stale-local')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Choose a branch' }));
+    await fireEvent.click(screen.getByRole('option', { name: 'release/next' }));
+    expect(gitlabBranch.onSelect).toHaveBeenCalledWith(
+      { name: 'release/next', commitSha: 'a'.repeat(40) },
+      gitlabBranch.scopeKey,
+    );
+    expect(onBranchChange).not.toHaveBeenCalled();
+  });
+
+  it('renders the restored GitLab branch in the metadata row', () => {
+    const gitlabBranch = gitlabBranchProps();
+    gitlabBranch.selectedBranch = { name: 'release/from-page-two', commitSha: 'b'.repeat(40) };
+    render(RepoAndBranchPicker, {
+      repoType: 'gitlab',
+      field: 'branch',
+      presentation: 'metadata',
+      gitlabBranch,
+    });
+    expect(screen.getByRole('button', { name: 'release/from-page-two' })).toBeTruthy();
+    expect(screen.queryByTestId('branch-selector')).toBeNull();
+  });
+
   it.each([
     {
       kind: 'local',

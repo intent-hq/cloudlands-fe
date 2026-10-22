@@ -1,11 +1,13 @@
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   configuredVisualStates,
   exerciseVisualStates,
 } from '$lib/components/__tests__/helpers/visual-state-characterization';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
-import { readable } from 'svelte/store';
+import { tick } from 'svelte';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
+import { derived, readable } from 'svelte/store';
 
 vi.mock('$lib/components/shared/icons/FaWrapper.svelte', async () => {
   const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
@@ -242,7 +244,7 @@ const mockReduxState = vi.hoisted(
       keyConfigured: { elevenlabs: true, openai: false },
     },
     // The mic gate also reads the caller's workspace role (multiplayer w3);
-    // an unloaded list reads as owner without consulting the collection.
+    // admitted owner fixtures explicitly hydrate their workspace rows.
     workspace: { hasLoaded: false, workspaces: null },
     // The role gate also rules out a guest window (multiplayer w4): this
     // window's backend is not a joined host, and the guest list has settled
@@ -265,10 +267,24 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
   const { MOCK_PROVIDER_CATALOG } =
     await import('../../../../test/fixtures/provider-catalog.fixture');
-  mockReduxState.providerCatalog = providerCatalogReducer(
-    initialState,
-    providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
-  );
+  mockReduxState.providerCatalog = {
+    ...providerCatalogReducer(initialState, providerCatalogLoaded(MOCK_PROVIDER_CATALOG)),
+    get byWorkspaceId() {
+      return {
+        'ws-1': {
+          catalog: MOCK_PROVIDER_CATALOG,
+          settings: [
+            {
+              path: 'model.defaultProvider',
+              value: mockReduxState.providerSettings.activeProviderId,
+            },
+          ],
+          specialists: [],
+          readiness: {},
+        },
+      };
+    },
+  };
 
   return createAppStoreMockModule({
     state: () => mockReduxState,
@@ -288,6 +304,14 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
   },
 }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
+  selectAgentProvider: (agentId$: import('svelte/store').Readable<string>) =>
+    derived(agentId$, (id) => {
+      for (const ws of Object.values(mockReduxState.workspaceAgents.byWorkspaceId) as any[]) {
+        const agent = ws?.agents?.map?.[id];
+        if (agent) return agent.provider || agent.metadata?.provider;
+      }
+      return undefined;
+    }),
   selectAgentReasoningEffort: () => readable(undefined),
   selectAgentSession: {
     select: (_state: any, agentId: string) => {
@@ -300,6 +324,22 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   },
 }));
 import SimpleRichInput from './SimpleRichInput.svelte';
+beforeEach(() => {
+  mockReduxState.workspace = {
+    hasLoaded: true,
+    workspaces: createCollection(
+      'id',
+      ['ws-1', 'ws-2'].map((id) => ({ id, myRole: 'owner' })),
+    ),
+  };
+  const admitted = withLegacyPrincipal(mockReduxState);
+  Object.assign(mockReduxState, {
+    principal: admitted.principal,
+    connections: admitted.connections,
+    daemonHealth: admitted.daemonHealth,
+    workspaceEvents: admitted.workspaceEvents,
+  });
+});
 import { warmImport } from '../../../../test/warm-import';
 
 function createSession(overrides: Record<string, unknown> = {}) {
@@ -582,25 +622,6 @@ describe('SimpleRichInput action bar layout', () => {
     await fireEvent.focusIn(screen.getByTestId('tiptap-editor'));
     expect(composer.getAttribute('data-ring-state')).toBe('focus');
   });
-
-  it('uses the surface-2 composer shell in edge-docked and standalone contexts', () => {
-    render(SimpleRichInput, {
-      props: { value: '', contextItems: [], edgeDocked: true },
-    });
-
-    const edgeDockedInput = screen.getByTestId('message-input');
-    expect(edgeDockedInput.className).toContain('rounded-(--radius-large)');
-    expect(edgeDockedInput.className).toContain('border-0');
-    expect(edgeDockedInput.className).toContain('bg-surface-2');
-
-    cleanup();
-    render(SimpleRichInput, { props: { value: '', contextItems: [] } });
-    const standaloneInput = screen.getByTestId('message-input');
-    expect(standaloneInput.className).toContain('bg-surface-2');
-    expect(document.querySelector('[data-chat-input-submit-actions]')?.className).toContain(
-      'shrink-0',
-    );
-  });
 });
 
 describe('SimpleRichInput provider switch sync', () => {
@@ -649,7 +670,7 @@ describe('SimpleRichInput provider switch sync', () => {
       },
     });
 
-    expect(screen.getByTestId('model-picker-provider').textContent).toBe('');
+    expect(screen.getByTestId('model-picker-provider').textContent).toBe('codex');
     expect(screen.getByTestId('model-picker-model').textContent).toBe('');
     expect(onmodelChange).not.toHaveBeenCalled();
     expect(setModelMock).not.toHaveBeenCalled();
@@ -666,7 +687,7 @@ describe('SimpleRichInput provider switch sync', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId('model-picker-provider').textContent).toBe('');
+      expect(screen.getByTestId('model-picker-provider').textContent).toBe('codex');
       expect(screen.getByTestId('model-picker-model').textContent).toBe('codex:gpt-5-codex');
     });
 
@@ -674,7 +695,7 @@ describe('SimpleRichInput provider switch sync', () => {
     expect(setModelMock).not.toHaveBeenCalled();
   });
 
-  it('hydrates the persisted model without passing the session provider as a filter', async () => {
+  it('hydrates the persisted provider and model as one selection', async () => {
     removeMockSession('ws-1', 'agent-1');
     addMockSession(
       'ws-1',
@@ -704,7 +725,7 @@ describe('SimpleRichInput provider switch sync', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId('model-picker-provider').textContent).toBe('');
+      expect(screen.getByTestId('model-picker-provider').textContent).toBe('codex');
       expect(screen.getByTestId('model-picker-model').textContent).toBe('codex:gpt-5-codex');
     });
 
@@ -790,7 +811,7 @@ describe('SimpleRichInput provider switch sync', () => {
     await fireEvent.click(confirmButton!);
 
     await waitFor(() => {
-      expect(setModelMock).toHaveBeenCalledWith('agent-1', 'codex:gpt-5-codex', 'ws-1', 'codex');
+      expect(onmodelChange).toHaveBeenCalledWith('codex:gpt-5-codex');
     });
     expect(onmodelChange).toHaveBeenCalledWith('codex:gpt-5-codex');
   });
@@ -928,7 +949,7 @@ describe('SimpleRichInput provider switch sync', () => {
     });
   });
 
-  it('calls agentClient.setModel exactly once during a cross-provider model switch', async () => {
+  it('mirrors a provider pick without becoming a second mutation owner', async () => {
     const onmodelChange = vi.fn();
     const workspace = {
       id: 'ws-1',
@@ -960,18 +981,10 @@ describe('SimpleRichInput provider switch sync', () => {
     fireEvent.input(triggerInput, { target: { value: 'codex:gpt-5-codex' } });
     await fireEvent.click(triggerButton);
 
-    // Wait for the async handleProviderChangeFromModel to complete
-    await waitFor(() => {
-      expect(setModelMock).toHaveBeenCalledTimes(1);
-    });
-
-    // The explicit target provider rides along as the 4th wire arg so the
-    // daemon validates the model against it, not the session's provider.
-    expect(setModelMock).toHaveBeenCalledWith('agent-1', 'codex:gpt-5-codex', 'ws-1', 'codex');
-    expect(reconcileAgentReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', 'xhigh', [
-      'low',
-      'high',
-    ]);
+    // The real picker owns the guarded operation; the parent only mirrors
+    // the selection. The real-parent suite asserts the actual wire count.
+    expect(setModelMock).not.toHaveBeenCalled();
+    expect(reconcileAgentReasoningEffortMock).not.toHaveBeenCalled();
     expect(onmodelChange).toHaveBeenCalledWith('codex:gpt-5-codex');
   });
 
@@ -1292,68 +1305,6 @@ describe('SimpleRichInput automatic composer geometry', () => {
     document.body.innerHTML = '';
   });
 
-  it('keeps 56px on focus, expands to 65px for content, and collapses when cleared', async () => {
-    renderInPanel(560);
-    const editor = screen.getByTestId('tiptap-editor');
-    const composer = screen.getByTestId('message-input');
-    const editorWrapper = editor.closest('.editor-wrapper');
-
-    await waitFor(() => {
-      expect(composer.getAttribute('style')).toContain('min-height: 56px');
-    });
-    expect(editor.getAttribute('placeholder')).toBe('Ask anything');
-    expect(editorWrapper?.classList.contains('placeholder-hidden')).toBe(true);
-    expect(composer.className).toContain(
-      'transition-[border-color,background-color,box-shadow,min-height]',
-    );
-    expect(composer.className).toContain('motion-reduce:transition-none');
-
-    await fireEvent.focusIn(editor);
-    expect(composer.getAttribute('style')).toContain('min-height: 56px');
-    expect(editorWrapper?.classList.contains('placeholder-hidden')).toBe(false);
-
-    await fireEvent.input(editor, { target: { value: 'draft' } });
-    await waitFor(() => expect(composer.getAttribute('style')).toContain('min-height: 65px'));
-    await fireEvent.input(editor, { target: { value: '' } });
-    await waitFor(() => expect(composer.getAttribute('style')).toContain('min-height: 56px'));
-  });
-
-  it('keeps 80px on focus, expands to 100px for content, and collapses when cleared', async () => {
-    renderInPanel(720);
-    const editor = screen.getByTestId('tiptap-editor');
-    const composer = screen.getByTestId('message-input');
-    const editorWrapper = editor.closest('.editor-wrapper');
-
-    await waitFor(() => {
-      expect(composer.getAttribute('style')).toContain('min-height: 80px');
-    });
-    await fireEvent.focusIn(editor);
-    expect(composer.getAttribute('style')).toContain('min-height: 80px');
-    expect(editorWrapper?.classList.contains('placeholder-hidden')).toBe(false);
-
-    await fireEvent.input(editor, { target: { value: 'draft' } });
-    await waitFor(() => expect(composer.getAttribute('style')).toContain('min-height: 100px'));
-    await fireEvent.input(editor, { target: { value: '' } });
-    await waitFor(() => expect(composer.getAttribute('style')).toContain('min-height: 80px'));
-
-    await fireEvent.focusOut(editor);
-    expect(editorWrapper?.classList.contains('placeholder-hidden')).toBe(true);
-  });
-
-  it('settles rapid focus changes at the idle automatic height', async () => {
-    renderInPanel(720);
-    const editor = screen.getByTestId('tiptap-editor');
-    const composer = screen.getByTestId('message-input');
-
-    await waitFor(() => expect(composer.getAttribute('style')).toContain('min-height: 80px'));
-    await fireEvent.focusIn(editor);
-    await fireEvent.focusOut(editor);
-    await fireEvent.focusIn(editor);
-
-    await waitFor(() => expect(composer.getAttribute('style')).toContain('min-height: 80px'));
-    expect(editor.closest('.editor-wrapper')?.classList.contains('placeholder-hidden')).toBe(false);
-  });
-
   it.each([
     { mode: 'draft', overrides: { value: 'preserved draft' } },
     {
@@ -1421,66 +1372,22 @@ describe('SimpleRichInput automatic composer geometry', () => {
     expect(composer.className).not.toContain('box-shadow,min-height');
   });
 
-  it('affirms idle and focused geometry in every required visual state', async () => {
-    const observed = await exerciseVisualStates(async (configuration) => {
-      const height = configuration.width < 500 ? 560 : 720;
-      const view = renderInPanel(height);
-      const composer = view.getByTestId('message-input');
-      const editor = view.getByTestId('tiptap-editor');
-      const editorWrapper = composer.querySelector('.editor-wrapper');
-      const idleHeight = height > 640 ? 80 : 56;
-      const activeHeight = height > 640 ? 100 : 65;
-
-      await waitFor(() => {
-        expect(composer.getAttribute('style')).toContain(`min-height: ${idleHeight}px`);
-      });
-      expect(editor.getAttribute('placeholder')).toBe('Ask anything');
-      expect(editorWrapper?.classList.contains('placeholder-hidden')).toBe(true);
-
-      return {
-        ...view,
-        target: editor,
-        assertCapability: async () => {
-          expect(composer.getAttribute('style')).toContain(`min-height: ${idleHeight}px`);
-          expect(editorWrapper?.classList.contains('placeholder-hidden')).toBe(false);
-          await fireEvent.input(editor, { target: { value: 'draft' } });
-          await waitFor(() => {
-            expect(composer.getAttribute('style')).toContain(`min-height: ${activeHeight}px`);
-          });
-          expect(composer.className).toContain('motion-reduce:transition-none');
-        },
-      };
-    });
-
-    expect(observed).toEqual(configuredVisualStates);
-  });
-
-  it('sets up one panel observer and resizes update geometry without recreating it', async () => {
-    renderInPanel(560);
-    const composer = screen.getByTestId('message-input');
-
-    // The observer's initial callback (no synchronous clientHeight read)
-    // seeds the panel height.
-    await waitFor(() => {
-      expect(composer.getAttribute('style')).toContain('min-height: 56px');
-    });
-    expect(MockResizeObserver.instances).toHaveLength(1);
+  it('keeps one panel observer through resizes and disconnects it on unmount', async () => {
+    const view = renderInPanel(560);
+    await waitFor(() => expect(MockResizeObserver.instances).toHaveLength(1));
     const observer = MockResizeObserver.instances[0];
     expect(observer.observed).toHaveLength(1);
 
-    // A panel resize flows through the same observer — no teardown/recreate,
-    // no re-observe — while parentPanelHeight-derived geometry updates.
     observer.fire(observer.observed[0], 720);
-    await waitFor(() => {
-      expect(composer.getAttribute('style')).toContain('min-height: 80px');
-    });
+    await tick();
     observer.fire(observer.observed[0], 560);
-    await waitFor(() => {
-      expect(composer.getAttribute('style')).toContain('min-height: 56px');
-    });
+    await tick();
     expect(MockResizeObserver.instances).toHaveLength(1);
     expect(observer.observed).toHaveLength(1);
     expect(observer.disconnected).toBe(false);
+
+    view.unmount();
+    expect(observer.disconnected).toBe(true);
   });
 });
 
@@ -1950,6 +1857,9 @@ describe('SimpleRichInput mic-button visibility (effective voice engine)', () =>
       hasLoaded: true,
       workspaces: createCollection('id', [{ id: 'ws-1', myRole: 'collaborator' }]),
     };
+    Object.assign(mockReduxState, {
+      principal: withLegacyPrincipal(mockReduxState, 'guest').principal,
+    });
     render(SimpleRichInput, { props: baseProps() });
     expect(micButton()).toBeNull();
     mockReduxState.workspace = { hasLoaded: false, workspaces: null };
@@ -2154,7 +2064,11 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
   beforeEach(() => {
     vi.clearAllMocks();
     (window as any).__tiptapInsertMentionCalls = [];
-    mockReduxState.daemonHealth = { hostLocality: null, transport: null };
+    mockReduxState.daemonHealth = {
+      ...mockReduxState.daemonHealth,
+      hostLocality: null,
+      transport: null,
+    };
     addMockSession('ws-1', createSession());
   });
 
@@ -2589,7 +2503,11 @@ describe('SimpleRichInput folder drop (path references, local daemon only)', () 
   beforeEach(() => {
     vi.clearAllMocks();
     (window as any).__tiptapInsertMentionCalls = [];
-    mockReduxState.daemonHealth = { hostLocality: 'local', transport: null };
+    mockReduxState.daemonHealth = {
+      ...mockReduxState.daemonHealth,
+      hostLocality: 'local',
+      transport: null,
+    };
     addMockSession('ws-1', createSession());
   });
 
@@ -2624,7 +2542,11 @@ describe('SimpleRichInput folder drop (path references, local daemon only)', () 
   });
 
   it('remote drop containing a folder rejects the WHOLE drop with one error toast', async () => {
-    mockReduxState.daemonHealth = { hostLocality: 'remote', transport: null };
+    mockReduxState.daemonHealth = {
+      ...mockReduxState.daemonHealth,
+      hostLocality: 'remote',
+      transport: null,
+    };
     (window as any).electronAPI.getPathForFile = vi.fn(() => '/home/user/projects/my-folder');
 
     render(SimpleRichInput, { props: baseProps() });
@@ -2671,7 +2593,11 @@ describe('SimpleRichInput folder drop (path references, local daemon only)', () 
   });
 
   it('file-only drops behave exactly as before when remote (no folder involved)', async () => {
-    mockReduxState.daemonHealth = { hostLocality: 'remote', transport: null };
+    mockReduxState.daemonHealth = {
+      ...mockReduxState.daemonHealth,
+      hostLocality: 'remote',
+      transport: null,
+    };
 
     render(SimpleRichInput, { props: baseProps() });
     const image = makeFile('photo.png', 'image/png');

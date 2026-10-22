@@ -18,6 +18,17 @@ const visibleImage = (container: HTMLElement) =>
   ) ?? null;
 
 describe('GitHubAvatar', () => {
+  it('uses the supplied GitHub bot avatar and retries when its URL changes', async () => {
+    const avatarUrl = 'https://avatars.githubusercontent.com/in/12345?v=4';
+    const { container, rerender } = render(GitHubAvatar, {
+      props: { identity: 'devin-ai-integration[bot]', avatarUrl },
+    });
+    expect(visibleImage(container)!.src).toBe(avatarUrl);
+    await fireEvent.error(visibleImage(container)!);
+    expect(visibleImage(container)).toBeNull();
+    await rerender({ identity: 'devin-ai-integration[bot]', avatarUrl: avatarUrl + '&s=80' });
+    expect(visibleImage(container)!.src).toBe(avatarUrl + '&s=80');
+  });
   it('shows the avatar again after an identity switch follows a failed load', async () => {
     const { container, rerender } = render(GitHubAvatar, { props: { identity: 'octo' } });
 

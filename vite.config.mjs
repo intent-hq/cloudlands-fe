@@ -421,6 +421,15 @@ export default defineConfig(({ command, mode, isPreview }, testOverrides = {}) =
             ? true
             : 'hidden',
       rollupOptions: {
+        onLog(level, log, handler) {
+          if (log.code === 'MISSING_EXPORT') {
+            // Rollup can replace a missing namespace member with undefined.
+            // Vite's default error logger does not throw: reject explicitly,
+            // retaining the importer, binding, exporter, and source location.
+            throw Object.assign(new Error(log.message), log);
+          }
+          handler(level, log);
+        },
         external: [
           'electron',
           'fs',

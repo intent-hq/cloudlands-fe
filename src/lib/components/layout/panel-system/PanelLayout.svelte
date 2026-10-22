@@ -46,7 +46,7 @@
   import { fade } from '$lib/motion';
   import { flattenPanels, openTabFromConfig } from './panel-ai-layout-helpers';
   import { NoteId } from '$shared/types/branded-ids';
-  import { updateNoteTitle } from '$features/notes/notes-write-service';
+  import { updateNoteTitlePersistRequested } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { renameWithUndo } from '$lib/utils/reversible-actions';
   import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -1075,14 +1075,39 @@
     layoutManager.moveTabToPanel(tabId, fromPanelId, targetPanelId, insertIndex);
   }
 
+  let movedPaneToFocus = $state<string | null>(null);
+  $effect(() => {
+    const tabId = movedPaneToFocus;
+    if (!tabId || $panels$ !== selectPanels.select(appStore.state, effectiveLayoutId)) return;
+    const target = Object.values($panels$).find((panel) => panel.activeTabId === tabId);
+    if (!target || $focusedPanelId$ !== target.id) return;
+    void tick().then(() =>
+      requestAnimationFrame(() => {
+        if (movedPaneToFocus !== tabId || !panelLayoutMotionElement) return;
+        const panel = findPanelElement(panelLayoutMotionElement, target.id);
+        const trigger = panel?.querySelector<HTMLElement>(
+          '[data-panel-tabless-header] [data-testid="panel-actions-trigger"]',
+        );
+        if (!trigger) return;
+        // The source trigger can disappear during a split. Restore keyboard focus
+        // only after the store-driven destination header has mounted.
+        trigger.focus({ preventScroll: true });
+        movedPaneToFocus = null;
+      }),
+    );
+  });
+
   function handleMoveActivePane(panelId: string, direction: PanelCycleDirection) {
-    const panelIds = selectPanelIds.select(appStore.state, workspaceId);
-    const panelIndex = panelIds.indexOf(panelId);
-    const targetIndex = panelIndex + (direction === 'next' ? 1 : -1);
-    const targetPanelId = panelIds[targetIndex];
-    const activeTabId = layoutManager.getPanel(panelId)?.activeTabId;
-    if (targetPanelId && activeTabId) {
-      layoutManager.moveTabToPanel(activeTabId, panelId, targetPanelId);
+    const tabId = layoutManager.getPanel(panelId)?.activeTabId;
+    if (layoutManager.moveActivePaneToColumn(panelId, direction) && tabId) {
+      movedPaneToFocus = tabId;
+    }
+  }
+
+  function handleMoveActivePaneVertically(panelId: string, direction: 'up' | 'down') {
+    const tabId = layoutManager.getPanel(panelId)?.activeTabId;
+    if (layoutManager.moveActivePaneVertically(panelId, direction) && tabId) {
+      movedPaneToFocus = tabId;
     }
   }
 
@@ -1122,12 +1147,12 @@
         oldName,
         newName,
         () => {
-          void updateNoteTitle(workspaceId, noteId, newName);
+          void appStore.dispatch(updateNoteTitlePersistRequested(workspaceId, noteId, newName));
           // Update the tab title in the layout manager
           layoutManager.updateTabTitle(tab.id, newName);
         },
         () => {
-          void updateNoteTitle(workspaceId, noteId, oldName);
+          void appStore.dispatch(updateNoteTitlePersistRequested(workspaceId, noteId, oldName));
           layoutManager.updateTabTitle(tab.id, oldName);
         },
       );
@@ -1155,9 +1180,7 @@
           // Persist the rename via the mutation middleware (`agent.rename`,
           // PROTOCOL §5.5) so other windows pick it up immediately.
           try {
-            const action = renameAgentSessionRequested(workspaceId, agentId, newName);
-            appStore.dispatch(action);
-            await action.promise;
+            await appStore.dispatch(renameAgentSessionRequested(workspaceId, agentId, newName));
           } catch (err) {
             // Revert optimistic UI so tab title and Redux match disk, then
             // rethrow so ReversibleActionManager surfaces the error toast
@@ -1183,9 +1206,7 @@
           );
           layoutManager.updateTabTitle(tab.id, oldName);
           try {
-            const action = renameAgentSessionRequested(workspaceId, agentId, oldName);
-            appStore.dispatch(action);
-            await action.promise;
+            await appStore.dispatch(renameAgentSessionRequested(workspaceId, agentId, oldName));
           } catch (err) {
             // Revert the revert: undo failed, so restore the new name in the UI
             // and rethrow so the user sees the error.
@@ -1485,6 +1506,7 @@
       <div class:opacity-0={panelMovePreviewRoot !== null} class="h-full w-full min-w-0">
         <PanelContainer
           node={viewportOuterResizeRoot}
+          layoutRoot={$root$}
           panels={$panels$}
           panelOrder={$panelIds$}
           focusedPanelId={active ? $focusedPanelId$ : null}
@@ -1521,6 +1543,7 @@
           onPaneDropPreview={handlePaneDropPreview}
           onPaneDragFinish={finishPaneDrag}
           onMoveActivePane={handleMoveActivePane}
+          onMoveActivePaneVertically={handleMoveActivePaneVertically}
           onPanelMove={handlePanelMove}
           onTabDropToSplitHandle={handleTabDropToSplitHandle}
           onTabRename={handleTabRename}

@@ -5,6 +5,8 @@
  * Safe to import from any process.
  */
 
+import type { ProtocolVersion } from '$shared/protocol-version';
+
 /**
  * Tri-state health value derived from connection + heartbeat status.
  */
@@ -86,6 +88,8 @@ export interface SystemStatusWirePayload {
   fingerprint?: string | null;
   /** Local OS hostname (additive routing field, §5.7). May be missing on older daemons. */
   hostname?: string;
+  /** Collaborator-only display override; null restores the ordinary hostname. */
+  collaborationName?: string | null;
   protocolVersion: string;
   host: {
     os: string;
@@ -219,8 +223,18 @@ export interface DaemonHealthStats {
   version?: string;
   /** Source commit embedded in the running daemon build. */
   buildCommit?: string;
-  /** Optional for backward compatibility with older daemons. */
-  protocolVersion?: string;
+  /**
+   * Parsed once from the `system.status` wire string. Absent when the daemon
+   * omits it (older daemons) or reports a malformed version — gates treat
+   * both as unproven.
+   */
+  protocolVersion?: ProtocolVersion;
+  /**
+   * The `system.status` protocol version exactly as reported, for the status
+   * panel only — including a malformed one, which is useful when debugging.
+   * Never gate on it: use {@link DaemonHealthStats.protocolVersion}.
+   */
+  protocolVersionText?: string;
   uptimeSeconds?: number;
   /** Daemon process CPU usage in percent (sysinfo convention, may exceed 100%). Optional for older daemons. */
   cpuPercent?: number;

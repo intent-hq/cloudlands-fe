@@ -1,4 +1,4 @@
-import type { StoreMiddleware } from '@augmentcode/themis/types';
+import type { StoreMiddleware } from '@themislib/themis/types';
 
 /**
  * Action-type ring buffer.

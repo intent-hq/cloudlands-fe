@@ -216,6 +216,8 @@ export async function hostExecStream(
   command: string,
   options: HostExecStreamOptions = {},
 ): Promise<HostExecStreamHandle> {
+  const workspaceId = options.workspaceId;
+  const context = workspaceId !== undefined ? { workspaceId } : {};
   const client = options.backendId
     ? getBackendClientForConnection(options.backendId)
     : getBackendClient();
@@ -227,6 +229,7 @@ export async function hostExecStream(
   try {
     const subResult = await client.request<{ subscriptionId?: string }>('events.subscribe', {
       eventTypes: EXEC_EVENT_TYPES,
+      ...context,
     });
     if (typeof subResult?.subscriptionId === 'string' && subResult.subscriptionId.length > 0) {
       subscriptionId = subResult.subscriptionId;
@@ -244,8 +247,8 @@ export async function hostExecStream(
   if (typeof options.cwd === 'string' && options.cwd.length > 0) params.cwd = options.cwd;
   if (options.env && Object.keys(options.env).length > 0) params.env = options.env;
   if (typeof options.timeoutMs === 'number') params.timeoutMs = options.timeoutMs;
-  if (typeof options.workspaceId === 'string' && options.workspaceId.length > 0) {
-    params.workspaceId = options.workspaceId;
+  if (typeof workspaceId === 'string' && workspaceId.length > 0) {
+    params.workspaceId = workspaceId;
   }
   if (typeof options.stdin === 'string') params.stdin = options.stdin;
   if (typeof options.stdinBase64 === 'string') params.stdinBase64 = options.stdinBase64;
@@ -273,11 +276,13 @@ export async function hostExecStream(
     if (subscriptionId) {
       const idToRelease = subscriptionId;
       subscriptionId = undefined;
-      client.request('events.unsubscribe', { subscriptionId: idToRelease }).catch((err) => {
-        logger.debug('events.unsubscribe after host.execStream failed', {
-          error: err instanceof Error ? err.message : String(err),
+      client
+        .request('events.unsubscribe', { subscriptionId: idToRelease, ...context })
+        .catch((err) => {
+          logger.debug('events.unsubscribe after host.execStream failed', {
+            error: err instanceof Error ? err.message : String(err),
+          });
         });
-      });
     }
     if (options.signal && abortHandler) {
       options.signal.removeEventListener('abort', abortHandler);
@@ -354,7 +359,7 @@ export async function hostExecStream(
     try {
       const res = await client.request<{ ok?: boolean; cancelled?: boolean }>(
         'host.execStream.cancel',
-        { requestId },
+        { requestId, ...context },
       );
       return { ok: res?.ok === true, cancelled: res?.cancelled === true };
     } catch (error) {
@@ -409,7 +414,10 @@ export async function hostExecStream(
     backendId: options.backendId,
     terminate: settleBackendSwitch,
   };
-  if (isDraining(inflightEntry)) {
+  if (settled) {
+    void cancelRpc();
+    inflightEntry = null;
+  } else if (isDraining(inflightEntry)) {
     // A backend switch snapshotted the registry before this stream's
     // `host.execStream` response landed. Attaching to the now-doomed client
     // would leave `done` hanging once it is disposed, so settle inline with the
@@ -422,13 +430,13 @@ export async function hostExecStream(
   const handle: HostExecStreamHandle = {
     requestId,
     writeStdin: async (input: string) => {
-      await client.request('host.execStream.write', { requestId, stdin: input });
+      await client.request('host.execStream.write', { requestId, stdin: input, ...context });
     },
     writeStdinBase64: async (base64: string) => {
-      await client.request('host.execStream.write', { requestId, stdinBase64: base64 });
+      await client.request('host.execStream.write', { requestId, stdinBase64: base64, ...context });
     },
     endStdin: async () => {
-      await client.request('host.execStream.write', { requestId, eof: true });
+      await client.request('host.execStream.write', { requestId, eof: true, ...context });
     },
     cancel: cancelRpc,
     done,

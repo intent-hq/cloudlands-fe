@@ -30,6 +30,9 @@
     // Scripts are invoked via package.json scripts, CI workflows (.github/workflows),
     // and electron-builder hooks (notarize/sign) — not via imports
     "scripts/*.{js,cjs,mjs,ts}",
+    // Frozen c9 v1 writer: preserve its full exports for executable compatibility
+    // tests. invited-session-key.test.ts verifies the original source hash.
+    "src/features/backend/main/__fixtures__/invited-session-v2/keychain-sync-c9.fixture.ts",
     // Spawned by path from the build-smoke specs (MOCK_AGENT_SCRIPT_PATH), not imported
     "e2e/mock-acp-agent.js",
     // $app alias stubs wired in playwright-ct.config.ts ctViteConfig (alias resolution
@@ -42,12 +45,19 @@
     // Loaded via <script type="module"> in test/fixtures/browser-lifetime/index.html
     // (test/electron-browser-lifetime.spec.ts); knip does not parse HTML
     "test/fixtures/browser-lifetime/Harness.svelte",
+    // Bundled by Vite's computed SSR entry in repository-route/routing.electron.ts.
+    "test/fixtures/repository-route/main.ts",
+    "test/fixtures/repository-checkout/main.ts",
+    "test/fixtures/repository-context-native/main.ts",
+    "test/fixtures/repository-selection-native/main.ts",
+    "test/fixtures/native-review-native/main.ts",
+    "test/fixtures/pr-monitor-native/main.ts",
+    "test/fixtures/native-review-native/ui-renderer.svelte",
     // Substituted for production components through Vite alias/resolveId plugins inside
-    // the specs' createServer() config (electron-browser-lifetime.spec.ts,
-    // sidebar-shell-background.spec.ts); alias resolution is not followed by knip
+    // the specs' createServer() config (electron-browser-lifetime.spec.ts);
+    // alias resolution is not followed by knip
     "test/fixtures/browser-lifetime/BrowserContent.svelte",
     "test/fixtures/browser-lifetime/Empty.svelte",
-    "test/fixtures/SidebarShellChiefStub.svelte",
     // Dynamically imported as import('$lib/dev-tools') in src/routes/(app)/+layout.svelte
     // (DEV-only); knip does not follow this aliased dynamic import inside .svelte
     "src/lib/dev-tools.ts",
@@ -95,7 +105,10 @@
     "src/lib/motion/index.ts",
     // Compile-time type-assertion file, checked by tsc (pnpm run check), never imported
     "src/store/renderer/utils/context-saga-effects.typecheck.ts",
+    "src/features/file/utils/file-content.typecheck.ts",
     "src/store/renderer/slices/agent-session/agent-session-slice.typecheck.ts",
+    "src/test/fixtures/admitted-legacy-principal.typecheck.ts",
+    "src/test/fixtures/recent-repositories-client.typecheck.ts",
   ],
   "ignore": [
     // Accordion namespace members are used in NavigationPrimitivesCatalogPreview.svelte markup; knip misses them.
@@ -161,6 +174,12 @@
       "playwright.config.ts",
       "playwright-ct.config.ts",
       "e2e/build-smoke.config.ts",
+      "test/fixtures/repository-route/playwright.config.ts",
+      "test/fixtures/repository-checkout/playwright.config.ts",
+      "test/fixtures/repository-context-native/playwright.config.ts",
+      "test/fixtures/repository-selection-native/playwright.config.ts",
+      "test/fixtures/native-review-native/playwright.config.ts",
+      "test/fixtures/pr-monitor-native/playwright.config.ts",
       "src/lib/components/ui/card/operate-patterns.playwright.config.ts",
       // playwright.config.ts: testDir ./test, testMatch **/*.spec.ts
       "test/**/*.spec.ts",
@@ -170,6 +189,13 @@
       "src/**/*.visual.spec.ts",
       // e2e/build-smoke.config.ts: testMatch **/build-smoke*.e2e.ts
       "e2e/**/*.e2e.ts",
+      // repository-route/playwright.config.ts: testDir ., testMatch routing.electron.ts
+      "test/fixtures/repository-route/routing.electron.ts",
+      "test/fixtures/repository-checkout/checkout.electron.ts",
+      "test/fixtures/repository-context-native/context.electron.ts",
+      "test/fixtures/repository-selection-native/selection.electron.ts",
+      "test/fixtures/native-review-native/review.electron.ts",
+      "test/fixtures/pr-monitor-native/monitor.electron.ts",
     ],
   },
   "playwright-ct": {

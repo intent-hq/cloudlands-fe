@@ -549,7 +549,7 @@ describe('LiveCommentsClient.subscribe typed comment channel (PROTOCOL §6.9)', 
   const requestsFor = (method: string) =>
     mockedRequest.mock.calls.filter((c) => c[0] === method).map((c) => c[1]);
 
-  // PROTOCOL §8.7-shaped Comment entity as carried by the §6.9 channel.
+  // CommentWire rows are nested inside the thread summaries carried by §6.9.
   const wireComment = (id: string, content: string) => ({
     id,
     threadId: id,
@@ -563,6 +563,21 @@ describe('LiveCommentsClient.subscribe typed comment channel (PROTOCOL §6.9)', 
     anchorText: content,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
+  });
+
+  const wireThread = (threadId: string, comments: Array<Record<string, unknown>>) => ({
+    threadId,
+    noteId: 'note-1',
+    targetedText: null,
+    anchorId: null,
+    status: 'open',
+    createdAt: '2026-01-01T00:00:00Z',
+    lastActivity: '2026-01-01T00:00:00Z',
+    latestCommentAuthor: comments.at(-1)?.author ?? '',
+    latestCommentAuthorType: comments.at(-1)?.authorType ?? 'user',
+    latestCommentAt: '2026-01-01T00:00:00Z',
+    commentCount: comments.length,
+    comments,
   });
 
   const pushSnapshot = (subscriptionId: string, seq: number, snapshot: unknown[]) =>
@@ -599,6 +614,188 @@ describe('LiveCommentsClient.subscribe typed comment channel (PROTOCOL §6.9)', 
     mockedResolve.mockResolvedValue('ws-1');
   });
 
+  it('replaces canonical attribution from complete thread deltas while retaining untouched threads', async () => {
+    const handler = vi.fn();
+    const unsubscribe = new LiveCommentsClient().subscribe('note-1', handler, 'ws-A');
+    try {
+      await vi.waitFor(() => expect(requestsFor('comment.subscribe')).toHaveLength(1));
+      await flush();
+      const identity = { provider: 'github', host: 'github.com', externalUserId: '42' };
+      const creator = {
+        ...wireComment('c', 'body'),
+        authorPrincipalId: 'creator',
+        authorIdentity: identity,
+      };
+      const untouched = wireComment('other', 'other thread');
+      pushSnapshot('chan-1', 0, [wireThread('c', [creator]), wireThread('other', [untouched])]);
+      const initial = handler.mock.calls.at(-1)?.[0];
+      expect(initial).toHaveLength(2);
+      expect(initial[0]).toMatchObject({
+        authorPrincipalId: 'creator',
+        authorIdentity: identity,
+        workspaceId: 'ws-A',
+      });
+      const changed = {
+        ...creator,
+        author: 'canonical',
+        authorPrincipalId: 'canonical-id',
+        authorIdentity: { ...identity, externalUserId: '84' },
+      };
+      pushDelta('chan-1', 1, { updated: [wireThread('c', [changed])] });
+      const updated = handler.mock.calls.at(-1)?.[0];
+      expect(updated[0]).toMatchObject({
+        author: 'canonical',
+        authorPrincipalId: 'canonical-id',
+        authorIdentity: changed.authorIdentity,
+        content: creator.content,
+        updatedAt: creator.updatedAt,
+      });
+      expect(updated[1]).toEqual(initial[1]);
+      pushDelta('chan-1', 2, {
+        updated: [wireThread('c', [{ ...wireComment('c', 'body'), author: 'legacy' }])],
+      });
+      const cleared = handler.mock.calls.at(-1)?.[0];
+      expect(cleared[0].author).toBe('legacy');
+      expect(cleared[0]).not.toHaveProperty('authorIdentity');
+      expect(cleared[0]).not.toHaveProperty('authorPrincipalId');
+      expect(cleared[1]).toEqual(initial[1]);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('replaces whole threads, removes absent replies, and applies thread-keyed removals and snapshots', async () => {
+    const handler = vi.fn();
+    const unsubscribe = new LiveCommentsClient().subscribe('note-1', handler, 'ws-A');
+    try {
+      await vi.waitFor(() => expect(requestsFor('comment.subscribe')).toHaveLength(1));
+      await flush();
+      const root = { ...wireComment('root', 'root'), threadId: 'thread-1' };
+      const reply = {
+        ...wireComment('reply', 'reply'),
+        threadId: 'thread-1',
+        parentId: 'root',
+        anchor: undefined,
+        noteId: undefined,
+      };
+      pushSnapshot('chan-1', 0, [
+        wireThread('thread-1', [root, reply]),
+        wireThread('other', [wireComment('other', 'other')]),
+      ]);
+      expect(handler.mock.calls.at(-1)?.[0].map((c: { id: string }) => c.id)).toEqual([
+        'root',
+        'reply',
+        'other',
+      ]);
+      expect(handler.mock.calls.at(-1)?.[0][1]).not.toHaveProperty('anchor');
+      expect(handler.mock.calls.at(-1)?.[0][1]).toMatchObject({
+        threadId: 'thread-1',
+        noteId: 'note-1',
+        parentId: 'root',
+      });
+      pushDelta('chan-1', 1, { updated: [wireThread('thread-1', [root])] });
+      expect(handler.mock.calls.at(-1)?.[0].map((c: { id: string }) => c.id)).toEqual([
+        'root',
+        'other',
+      ]);
+      // Generic §6.9 removal keys identify the thread, not a nested reply.
+      // The retained comment_delta producer currently emits updated threads only.
+      pushDelta('chan-1', 2, { removedIds: ['thread-1'] });
+      expect(handler.mock.calls.at(-1)?.[0].map((c: { id: string }) => c.id)).toEqual(['other']);
+      pushSnapshot('chan-1', 3, [
+        wireThread('fresh', [wireComment('fresh', 'replacement snapshot')]),
+      ]);
+      expect(handler.mock.calls.at(-1)?.[0].map((c: { id: string }) => c.id)).toEqual(['fresh']);
+      pushDelta('chan-1', 4, { updated: [wireThread('fresh', [])] });
+      expect(handler.mock.calls.at(-1)?.[0]).toEqual([]);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('keeps foreign subscriptions and mismatched note/thread payloads out of the scoped collection', async () => {
+    const handler = vi.fn();
+    const unsubscribe = new LiveCommentsClient().subscribe('note-1', handler, 'ws-A');
+    try {
+      await vi.waitFor(() => expect(requestsFor('comment.subscribe')).toHaveLength(1));
+      await flush();
+      pushSnapshot('chan-1', 0, [wireThread('c', [wireComment('c', 'admitted')])]);
+      expect(handler.mock.calls.at(-1)?.[0]).toHaveLength(1);
+      const before = handler.mock.calls.length;
+      pushSnapshot('foreign-channel', 0, [
+        wireThread('secret', [wireComment('secret', 'foreign')]),
+      ]);
+      expect(handler).toHaveBeenCalledTimes(before);
+      pushDelta('chan-1', 1, {
+        updated: [
+          {
+            ...wireThread('foreign-note', [wireComment('foreign-note', 'foreign')]),
+            noteId: 'other-note',
+          },
+          wireThread('bad-nested', [
+            { ...wireComment('bad-nested', 'foreign'), noteId: 'other-note' },
+          ]),
+          wireThread('wrong-thread', [wireComment('wrong-parent', 'wrong thread')]),
+        ],
+      });
+      expect(handler.mock.calls.at(-1)?.[0].map((c: { id: string }) => c.id)).toEqual(['c']);
+      expect(handler.mock.calls.at(-1)?.[0][0]).toMatchObject({
+        noteId: 'note-1',
+        workspaceId: 'ws-A',
+      });
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('ignores late frames after disposal of a populated thread subscription', async () => {
+    const handler = vi.fn();
+    const unsubscribe = new LiveCommentsClient().subscribe('note-1', handler, 'ws-A');
+    await vi.waitFor(() => expect(requestsFor('comment.subscribe')).toHaveLength(1));
+    await flush();
+    pushSnapshot('chan-1', 0, [wireThread('c', [wireComment('c', 'admitted')])]);
+    expect(handler.mock.calls.at(-1)?.[0]).toHaveLength(1);
+    const retainedListener = notifyHandler;
+    unsubscribe();
+    const count = handler.mock.calls.length;
+    retainedListener?.({
+      method: 'subscription.push',
+      params: {
+        subscriptionId: 'chan-1',
+        kind: 'delta',
+        seq: 1,
+        delta: { updated: [wireThread('c', [wireComment('c', 'late')])] },
+      },
+    });
+    expect(handler).toHaveBeenCalledTimes(count);
+    expect(requestsFor('comment.unsubscribe')).toEqual([
+      { subscriptionId: 'chan-1', workspaceId: 'ws-A' },
+    ]);
+  });
+
+  it('drops a held subscribe acknowledgement after disposal and releases its server lease', async () => {
+    let acknowledge!: (value: { subscriptionId: string }) => void;
+    mockedRequest.mockImplementation((method: string) =>
+      method === 'comment.subscribe'
+        ? new Promise((resolve) => {
+            acknowledge = resolve;
+          })
+        : Promise.resolve({ success: true }),
+    );
+    const handler = vi.fn();
+    const unsubscribe = new LiveCommentsClient().subscribe('note-1', handler, 'ws-A');
+    await vi.waitFor(() => expect(requestsFor('comment.subscribe')).toHaveLength(1));
+    pushSnapshot('held', 0, [wireThread('c', [wireComment('c', 'buffered')])]);
+    unsubscribe();
+    acknowledge({ subscriptionId: 'held' });
+    await vi.waitFor(() =>
+      expect(requestsFor('comment.unsubscribe')).toEqual([
+        { subscriptionId: 'held', workspaceId: 'ws-A' },
+      ]),
+    );
+    expect(handler).not.toHaveBeenCalled();
+  });
+
   it('registers comment.subscribe with { workspaceId, noteId } when the caller supplies workspaceId', async () => {
     const client = new LiveCommentsClient();
     const unsubscribe = client.subscribe('note-1', () => {}, 'ws-A');
@@ -622,7 +819,7 @@ describe('LiveCommentsClient.subscribe typed comment channel (PROTOCOL §6.9)', 
 
     // The push-path normalizer stamps the resolver-provided workspace id.
     await flush();
-    pushSnapshot('chan-1', 0, [wireComment('c-1', 'hello')]);
+    pushSnapshot('chan-1', 0, [wireThread('c-1', [wireComment('c-1', 'hello')])]);
     const last = handler.mock.calls.at(-1)?.[0] as Array<Record<string, unknown>>;
     expect(last).toHaveLength(1);
     expect(last[0]).toMatchObject({ id: 'c-1', workspaceId: 'ws-1', noteId: 'note-1' });
@@ -648,7 +845,7 @@ describe('LiveCommentsClient.subscribe typed comment channel (PROTOCOL §6.9)', 
     await vi.waitFor(() => expect(requestsFor('comment.subscribe')).toHaveLength(1));
     await flush();
 
-    pushSnapshot('chan-1', 0, [wireComment('c-1', 'hello')]);
+    pushSnapshot('chan-1', 0, [wireThread('c-1', [wireComment('c-1', 'hello')])]);
     const snapshotted = handler.mock.calls.at(-1)?.[0] as Array<Record<string, unknown>>;
     expect(snapshotted).toHaveLength(1);
     expect(snapshotted[0]).toMatchObject({
@@ -661,10 +858,37 @@ describe('LiveCommentsClient.subscribe typed comment channel (PROTOCOL §6.9)', 
       status: 'open',
     });
 
-    pushDelta('chan-1', 1, { added: [wireComment('c-2', 'second')] });
+    pushDelta('chan-1', 1, { updated: [wireThread('c-2', [wireComment('c-2', 'second')])] });
     const afterDelta = handler.mock.calls.at(-1)?.[0] as Array<{ id: string }>;
     expect(afterDelta.map((c) => c.id)).toEqual(['c-1', 'c-2']);
     unsubscribe();
+  });
+
+  it('resnapshots a sequence gap without dropping accepted threads or accepting stale frames', async () => {
+    const handler = vi.fn();
+    const unsubscribe = new LiveCommentsClient().subscribe('note-1', handler, 'ws-A');
+    try {
+      await vi.waitFor(() => expect(requestsFor('comment.subscribe')).toHaveLength(1));
+      await flush();
+      pushSnapshot('chan-1', 0, [wireThread('c', [wireComment('c', 'accepted')])]);
+      const accepted = handler.mock.calls.at(-1)?.[0];
+      expect(accepted).toHaveLength(1);
+      const count = handler.mock.calls.length;
+      pushDelta('chan-1', 2, { updated: [wireThread('c', [wireComment('c', 'gap')])] });
+      await vi.waitFor(() => expect(requestsFor('comment.subscribe')).toHaveLength(2));
+      await flush();
+      expect(handler).toHaveBeenCalledTimes(count);
+      pushSnapshot('chan-1', 3, [wireThread('c', [wireComment('c', 'obsolete')])]);
+      expect(handler).toHaveBeenCalledTimes(count);
+      pushSnapshot('chan-2', 0, [wireThread('fresh', [wireComment('fresh', 'resnapshot')])]);
+      expect(handler.mock.calls.at(-1)?.[0].map((c: { id: string }) => c.id)).toEqual(['fresh']);
+      expect(requestsFor('comment.subscribe')[1]).toEqual({
+        workspaceId: 'ws-A',
+        noteId: 'note-1',
+      });
+    } finally {
+      unsubscribe();
+    }
   });
 
   it('sends comment.unsubscribe with the subscriptionId on dispose', async () => {
@@ -674,7 +898,9 @@ describe('LiveCommentsClient.subscribe typed comment channel (PROTOCOL §6.9)', 
     await flush();
 
     unsubscribe();
-    expect(requestsFor('comment.unsubscribe')).toEqual([{ subscriptionId: 'chan-1' }]);
+    expect(requestsFor('comment.unsubscribe')).toEqual([
+      { subscriptionId: 'chan-1', workspaceId: 'ws-A' },
+    ]);
   });
 
   it('sends comment.unsubscribe on dispose for the resolver-backed registration too', async () => {
@@ -684,7 +910,9 @@ describe('LiveCommentsClient.subscribe typed comment channel (PROTOCOL §6.9)', 
     await flush();
 
     unsubscribe();
-    expect(requestsFor('comment.unsubscribe')).toEqual([{ subscriptionId: 'chan-1' }]);
+    expect(requestsFor('comment.unsubscribe')).toEqual([
+      { subscriptionId: 'chan-1', workspaceId: 'ws-1' },
+    ]);
   });
 
   it('re-registers the channel with the same params after reconnect', async () => {
@@ -693,7 +921,7 @@ describe('LiveCommentsClient.subscribe typed comment channel (PROTOCOL §6.9)', 
     const unsubscribe = client.subscribe('note-1', handler, 'ws-A');
     await vi.waitFor(() => expect(requestsFor('comment.subscribe')).toHaveLength(1));
     await flush();
-    pushSnapshot('chan-1', 0, [wireComment('c-1', 'hello')]);
+    pushSnapshot('chan-1', 0, [wireThread('c-1', [wireComment('c-1', 'hello')])]);
 
     reconnectHandler?.();
     await vi.waitFor(() => expect(requestsFor('comment.subscribe')).toHaveLength(2));
@@ -706,10 +934,116 @@ describe('LiveCommentsClient.subscribe typed comment channel (PROTOCOL §6.9)', 
       noteId: 'note-1',
     });
 
+    const beforeOldFrame = handler.mock.calls.length;
+    pushSnapshot('chan-1', 1, [wireThread('old', [wireComment('old', 'stale')])]);
+    expect(handler).toHaveBeenCalledTimes(beforeOldFrame);
+
     // The recovery seq-0 snapshot re-populates the collection.
-    pushSnapshot('chan-2', 0, [wireComment('c-1', 'hello'), wireComment('c-2', 'second')]);
+    pushSnapshot('chan-2', 0, [
+      wireThread('c-1', [wireComment('c-1', 'hello')]),
+      wireThread('c-2', [wireComment('c-2', 'second')]),
+    ]);
     const recovered = handler.mock.calls.at(-1)?.[0] as Array<{ id: string }>;
     expect(recovered.map((c) => c.id)).toEqual(['c-1', 'c-2']);
     unsubscribe();
+  });
+});
+
+describe('qualified comment wire projections', () => {
+  afterEach(() => vi.clearAllMocks());
+  const identity = { provider: 'github', host: 'github.com', externalUserId: '42' };
+  it('never forwards output creator fields through live add or respond', async () => {
+    mockedRequest.mockResolvedValue({ ok: true });
+    const client = new LiveCommentsClient();
+    const extras = { authorPrincipalId: 'not-authority', authorIdentity: identity };
+    const add = {
+      workspaceId: 'ws-1',
+      searchContext: 'context',
+      commentTarget: 'context',
+      comment: 'body',
+      ...extras,
+    };
+    const reply = { workspaceId: 'ws-1', commentId: 'parent', comment: 'reply', ...extras };
+    await client.add('note-1', add);
+    await client.respond('note-1', reply);
+    expect(mockedRequest).toHaveBeenCalledTimes(2);
+    for (const [, params] of mockedRequest.mock.calls) {
+      expect(params).not.toHaveProperty('authorPrincipalId');
+      expect(params).not.toHaveProperty('authorIdentity');
+    }
+  });
+  it('keeps safe output fields and omits invalid identities without borrowing a label identity', async () => {
+    const rows = [
+      {
+        id: 'local',
+        author: 'same',
+        authorType: 'user',
+        authorPrincipalId: 'creator',
+        authorIdentity: { ...identity, credential: 'not-a-display-field' },
+      },
+      {
+        id: 'imported',
+        author: 'same',
+        authorType: 'user',
+        authorPrincipalId: null,
+        authorIdentity: { ...identity, provider: 'gitlab', host: 'gitlab.example' },
+      },
+      ...[
+        null,
+        { ...identity, provider: 'future' },
+        { ...identity, host: 'https://github.com' },
+        { ...identity, externalUserId: ' ' },
+      ].map((authorIdentity, n) => ({
+        id: `unknown-${n}`,
+        author: 'same',
+        authorType: 'user',
+        authorIdentity,
+      })),
+      {
+        id: 'agent',
+        author: 'agent',
+        authorType: 'agent',
+        authorPrincipalId: 'spoof',
+        authorIdentity: identity,
+      },
+    ];
+    mockedRequest.mockResolvedValueOnce({ threads: [{ comments: rows }] });
+    const result = await new LiveCommentsClient().list('note-1', 'ws-1');
+    expect(result[0]).toMatchObject({ authorPrincipalId: 'creator', authorIdentity: identity });
+    expect(result[0].authorIdentity).toEqual(identity);
+    expect(result[1]).toMatchObject({
+      authorIdentity: { ...identity, provider: 'gitlab', host: 'gitlab.example' },
+    });
+    expect(result[1]).not.toHaveProperty('authorPrincipalId');
+    for (const row of result.slice(2)) expect(row).not.toHaveProperty('authorIdentity');
+    expect(result.at(-1)).not.toHaveProperty('authorPrincipalId');
+  });
+  it('maps summary attribution from exactly the selected latest comment', async () => {
+    mockedRequest.mockResolvedValueOnce({
+      threads: [
+        {
+          threadId: 't',
+          latestCommentAuthor: 'latest',
+          latestCommentAuthorType: 'user',
+          latestCommentAuthorIdentity: identity,
+          authorPrincipalId: 'root-must-not-win',
+        },
+        {
+          threadId: 'u',
+          latestCommentAuthor: 'unknown',
+          latestCommentAuthorType: 'user',
+          authorIdentity: identity,
+        },
+      ],
+    });
+    const result = await new LiveCommentsClient().list('note-1', 'ws-1');
+    expect(result[0]).toMatchObject({
+      author: 'latest',
+      authorType: 'user',
+      authorIdentity: identity,
+    });
+    expect(result[0]).not.toHaveProperty('authorPrincipalId');
+    expect(result[1]).toMatchObject({ author: 'unknown' });
+    expect(result[1]).not.toHaveProperty('authorIdentity');
   });
 });

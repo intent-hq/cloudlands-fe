@@ -10,9 +10,12 @@ export const labelMetadata = parseUiComponentMetadata({
   category: 'primitive',
   owner: '007-B2',
   callers: [
+    'src/features/collaboration-auth/renderer/CollaborationSignInModal.svelte',
+    'src/features/host-membership/HostInvitationDialog.svelte',
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
     'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
     'src/lib/component-catalog/renderers/ModalCatalogPreview.svelte',
+    'src/lib/components/GitLabConnectForm.svelte',
     'src/lib/components/debug/DebugPanel.svelte',
     'src/lib/components/modals/InputDialog.svelte',
     'src/lib/components/modals/ShareWorkspaceDialog.svelte',

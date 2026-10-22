@@ -50,6 +50,9 @@
     'type-caption relative z-10 inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-(--radius-medium) border-0 bg-transparent px-3 text-muted-foreground transition-colors duration-spring-fast ease-spring-fast disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none',
     context.size === 'compact' ? 'h-(--control-height-compact)' : 'h-(--control-height-medium)',
     (selected || proximityActive) && 'text-foreground',
+    context.variant === 'underline' &&
+      'h-12 shrink-0 rounded-none border-b-2 border-transparent px-1 whitespace-nowrap hover:text-foreground',
+    context.variant === 'underline' && selected && 'border-foreground',
     className,
   )}
   {...restProps as any}

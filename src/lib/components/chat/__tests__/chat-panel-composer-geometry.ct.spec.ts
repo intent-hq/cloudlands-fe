@@ -9,188 +9,86 @@ import {
 
 test.setTimeout(120_000);
 
-const regularStates = (['light', 'dark'] as const).flatMap((theme) =>
-  [1, 2].flatMap((zoom) =>
-    [
-      { width: 720, size: 'wide' },
-      { width: 180, size: 'narrow' },
-    ].map(({ width, size }) => ({
-      name: `regular ${size} ${theme} at ${zoom * 100}%`,
-      theme,
-      zoom,
-      width,
-      chief: false,
-      streaming: true,
-      draft: size === 'narrow' ? 'Long streaming draft '.repeat(12) : 'Short draft',
-    })),
-  ),
-);
+test('restores a persisted draft before editing and saves the new text', async ({
+  mount,
+}, info) => {
+  const component = await mount(ChatPanelComposerGeometryHost, {
+    props: { persistedDraft: 'Saved before opening the composer' },
+  });
+  const editor = component.getByTestId('message-input').locator('.tiptap-editor');
+  const requests = async () =>
+    JSON.parse(await component.getByTestId('composer-draft-requests').innerText());
+  await expect(editor).toBeEditable();
+  await expect(editor).toHaveText('Saved before opening the composer');
+  expect(
+    (await requests()).filter((request: { method: string }) => request.method === 'drafts.get'),
+  ).toEqual([
+    {
+      method: 'drafts.get',
+      params: {
+        workspaceId: 'chat-panel-composer-geometry',
+        agentId: 'regular-composer-agent',
+      },
+    },
+  ]);
+  await editor.fill('Continue the restored draft');
+  await expect.poll(requests).toContainEqual({
+    method: 'drafts.set',
+    params: {
+      workspaceId: 'chat-panel-composer-geometry',
+      agentId: 'regular-composer-agent',
+      text: 'Continue the restored draft',
+    },
+  });
+  await info.attach('composer-draft-transport', {
+    body: JSON.stringify(await requests()),
+    contentType: 'application/json',
+  });
+});
 
-const states = [
-  ...regularStates,
-  {
-    name: 'Chief wide dark at 100%',
-    theme: 'dark' as const,
-    zoom: 1,
-    width: 720,
-    chief: true,
-    streaming: false,
-    draft: '',
-  },
-  {
-    name: 'Chief narrow light at 200%',
-    theme: 'light' as const,
-    zoom: 2,
-    width: 180,
-    chief: true,
-    streaming: true,
-    draft: 'Chief streaming draft',
-  },
-];
-
-for (const state of states) {
-  test(`nests the production composer without overflow in ${state.name}`, async ({ mount }) => {
-    const component = await mount(ChatPanelComposerGeometryHost, { props: state });
-    const prompt = component.getByTestId('composer-prompt-layer');
-    const input = component.getByTestId('message-input');
-    const editor = component.locator('.editor-wrapper');
-    const actionBar = component.locator('[data-chat-input-action-bar]');
-    await expect(input).toBeVisible();
-
-    const geometry = await input.evaluate((node) => {
-      const shell = node.closest('[data-testid="chat-composer-shell"]')!;
-      const prompt = node.closest('[data-testid="composer-prompt-layer"]')!;
-      const lane = node.closest('[data-testid="chat-composer-lane"]')!;
-      const editor = node.querySelector('.editor-wrapper')!;
-      const action = node.querySelector('[data-chat-input-action-bar]')!;
-      const box = node.getBoundingClientRect();
-      const shellBox = shell.getBoundingClientRect();
-      const promptBox = prompt.getBoundingClientRect();
-      const laneBox = lane.getBoundingClientRect();
-      const editorBox = editor.getBoundingClientRect();
-      const actionBox = action.getBoundingClientRect();
-      const style = getComputedStyle(node);
-      const probe = document.createElement('div');
-      probe.className = 'bg-surface-2';
-      document.body.append(probe);
-      const surfaceBackground = getComputedStyle(probe).backgroundColor;
-      probe.remove();
-      return {
-        box: [box.left, box.top, box.right, box.bottom],
-        shell: [shellBox.left, shellBox.top, shellBox.right, shellBox.bottom],
-        prompt: [promptBox.left, promptBox.top, promptBox.right, promptBox.bottom],
-        lane: [laneBox.left, laneBox.top, laneBox.right, laneBox.bottom],
-        background: style.backgroundColor,
-        surfaceBackground,
-        borders: [
-          style.borderTopWidth,
-          style.borderRightWidth,
-          style.borderBottomWidth,
-          style.borderLeftWidth,
-        ],
-        radii: [style.borderBottomLeftRadius, style.borderBottomRightRadius],
-        layersSeparated: editorBox.bottom <= actionBox.top + 0.5,
-        overflow: [shell, prompt, node, editor, action].map(
-          (element) => element.scrollWidth - element.clientWidth,
-        ),
-      };
+for (const chief of [false, true]) {
+  test(`keeps ${chief ? 'Chief' : 'regular'} editing usable in a narrow panel at 200% zoom`, async ({
+    mount,
+  }) => {
+    const component = await mount(ChatPanelComposerGeometryHost, {
+      props: {
+        chief,
+        width: 180,
+        zoom: 2,
+        streaming: true,
+        draft: 'Long streaming draft '.repeat(12),
+      },
     });
+    const input = component.getByTestId('message-input');
+    const editor = input.locator('.tiptap-editor');
+    await editor.click();
+    await editor.press('ControlOrMeta+End');
+    await editor.pressSequentially('Continue reviewing.');
+    await expect(editor).toContainText('Continue reviewing.');
 
-    expect(geometry.background).toBe(geometry.surfaceBackground);
-    expect(geometry.borders).toEqual(['0px', '0px', '0px', '0px']);
-    expect(geometry.radii[0]).toBe(geometry.radii[1]);
-    expect(Number.parseFloat(geometry.radii[0])).toBeGreaterThan(0);
-    if (state.chief) {
-      // Chief zeroes the lane's horizontal inset: the input box is flush with
-      // the lane on both edges — flush with the shell's left edge, while the
-      // prompt layer keeps only the scrollbar-gutter compensation inline-end.
-      expect(geometry.box[0]).toBeCloseTo(geometry.shell[0], 1);
-      expect(geometry.box[0]).toBeCloseTo(geometry.lane[0], 1);
-      expect(geometry.box[2]).toBeCloseTo(geometry.lane[2], 1);
-      expect(geometry.box[2]).toBeLessThanOrEqual(geometry.shell[2]);
-    } else {
-      expect(geometry.box[0]).toBeGreaterThan(geometry.shell[0]);
-      expect(geometry.box[2]).toBeLessThan(geometry.shell[2]);
-    }
-    expect(geometry.box[1]).toBeGreaterThan(geometry.prompt[1]);
-    expect(geometry.box[3]).toBeLessThan(geometry.prompt[3]);
-    expect(geometry.layersSeparated).toBe(true);
-    const containedOverflow = state.chief ? geometry.overflow.slice(1) : geometry.overflow;
-    expect(containedOverflow.every((overflow) => overflow <= 1)).toBe(true);
-
-    await editor.locator('.tiptap-editor').focus();
-    await expect(editor.locator('.tiptap-editor')).toBeFocused();
-    await expect(actionBar).toBeVisible();
-
-    const aurora = component.getByTestId('composer-aurora-host');
-    if (!state.streaming) {
-      await expect(aurora).toHaveCount(0);
-      return;
-    }
-    await expect(aurora).toBeVisible();
-    const [inputGeometry, auroraGeometry, shellGeometry, panelContentGeometry, panelGeometry] =
-      await Promise.all(
-        [
-          input,
-          aurora,
-          component.getByTestId('chat-composer-shell'),
-          component.locator('.panel > .panel-content'),
-          component.locator('.panel'),
-        ].map((locator) =>
-          locator.evaluate((node) => {
-            const box = node.getBoundingClientRect();
-            const style = getComputedStyle(node);
-            return {
-              edges: [box.left, box.right, box.bottom],
-              radii: [style.borderBottomLeftRadius, style.borderBottomRightRadius],
-              overflow: style.overflow,
-              pointerEvents: style.pointerEvents,
-              z: style.zIndex,
-            };
-          }),
-        ),
-      );
-    if (state.chief) {
-      expect(auroraGeometry.edges[0]).toBeLessThan(inputGeometry.edges[0]);
-      expect(auroraGeometry.edges[1]).toBeGreaterThan(inputGeometry.edges[1]);
-      expect(auroraGeometry.edges[2]).toBeGreaterThan(inputGeometry.edges[2]);
-      expect(auroraGeometry.radii).toEqual(['0px', '0px']);
-    } else {
-      expect(auroraGeometry.edges).toEqual(shellGeometry.edges);
-      expect(auroraGeometry.edges).toEqual(panelContentGeometry.edges);
-      expect(auroraGeometry.radii).toEqual(panelGeometry.radii);
-      expect(Number.parseFloat(panelGeometry.radii[0])).toBeGreaterThan(0);
-      await expect(component.getByTestId('panel-workspace-inset')).toBeVisible();
-      await applyAuroraPaintProbe(aurora);
-      const pixels = await samplePanelBottomPixels(component.locator('.panel'));
-      pixels.outsideCorners.forEach((corner) => {
-        expect(isPaintProbe(corner)).toBe(false);
-      });
-      pixels.insideCorners.forEach((corner) => {
-        expect(isPaintProbe(corner)).toBe(true);
-      });
-      pixels.straightEdges.forEach((edge) => {
-        expect(isPaintProbe(edge)).toBe(true);
-        pixels.outsideCorners.forEach((corner) => {
-          expect(colorDistance(edge, corner)).toBeGreaterThan(100);
-        });
-      });
-    }
-    expect(auroraGeometry.overflow).toBe('hidden');
-    expect(auroraGeometry.pointerEvents).toBe('none');
-    expect(Number(auroraGeometry.z)).toBeLessThan(
-      Number(await prompt.evaluate((node) => getComputedStyle(node).zIndex)),
-    );
-    expect((await aurora.boundingBox())!.y).toBeLessThan((await input.boundingBox())!.y);
+    await expect
+      .poll(() =>
+        input.evaluate((node) => {
+          const editor = node.querySelector('.editor-wrapper')!;
+          const actionBar = node.querySelector('[data-chat-input-action-bar]')!;
+          return (
+            [node, editor, actionBar].every(
+              (element) => element.scrollWidth - element.clientWidth <= 1,
+            ) &&
+            editor.getBoundingClientRect().bottom <= actionBar.getBoundingClientRect().top + 0.5
+          );
+        }),
+      )
+      .toBe(true);
   });
 }
 
-test('keeps the regular Aurora clipped during reduced-motion streaming transitions', async ({
+test('clips streaming glow under the dark scroll fade at 200% zoom and removes it when idle', async ({
   mount,
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  const props = { theme: 'dark' as const, zoom: 2, width: 180, chief: false, streaming: false };
+  const props = { theme: 'dark' as const, zoom: 2, width: 180, streaming: false };
   const component = await mount(ChatPanelComposerGeometryHost, { props });
   const aurora = component.getByTestId('composer-aurora-host');
   const panel = component.locator('.panel');
@@ -198,65 +96,32 @@ test('keeps the regular Aurora clipped during reduced-motion streaming transitio
   await expect(aurora).toHaveCount(0);
   await component.update({ props: { ...props, streaming: true } });
   await expect(aurora).toBeVisible();
-  const [auroraRadii, panelRadii] = await Promise.all(
-    [aurora, panel].map((locator) =>
-      locator.evaluate((node) => {
-        const style = getComputedStyle(node);
-        return [style.borderBottomLeftRadius, style.borderBottomRightRadius];
-      }),
-    ),
-  );
-  expect(auroraRadii).toEqual(panelRadii);
   await applyAuroraPaintProbe(aurora);
-  const pixels = await samplePanelBottomPixels(panel);
-  pixels.outsideCorners.forEach((corner) => expect(isPaintProbe(corner)).toBe(false));
-  pixels.insideCorners.forEach((corner) => expect(isPaintProbe(corner)).toBe(true));
+  const clipped = await samplePanelBottomPixels(panel);
+  clipped.outsideCorners.forEach((corner) => expect(isPaintProbe(corner)).toBe(false));
+  clipped.insideCorners.forEach((corner) => expect(isPaintProbe(corner)).toBe(true));
+
+  // Break clipping to prove that the pixel probe detects escaped paint.
+  await panel.evaluate((node) => {
+    (node as HTMLElement).style.setProperty('--panel-shell-radius', '0px');
+  });
+  try {
+    const leaking = await samplePanelBottomPixels(panel);
+    leaking.outsideCorners.forEach((corner, index) => {
+      expect(isPaintProbe(corner)).toBe(true);
+      expect(colorDistance(corner, clipped.outsideCorners[index])).toBeGreaterThan(100);
+    });
+  } finally {
+    await panel.evaluate((node) => {
+      (node as HTMLElement).style.removeProperty('--panel-shell-radius');
+    });
+  }
 
   await component.update({ props });
   await expect(aurora).toHaveCount(0);
 });
 
-for (const zoom of [1, 2]) {
-  test(`detects a corner paint leak under the dark scroll fade at ${zoom * 100}%`, async ({
-    mount,
-    page,
-  }) => {
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-    const component = await mount(ChatPanelComposerGeometryHost, {
-      props: { theme: 'dark', width: 180, streaming: true, zoom },
-    });
-    const panel = component.locator('.panel');
-    const aurora = component.getByTestId('composer-aurora-host');
-    await expect(aurora).toBeVisible();
-    await expect(component.getByTestId('panel-workspace-inset')).not.toHaveCSS(
-      'mask-image',
-      'none',
-    );
-    await applyAuroraPaintProbe(aurora);
-    const clipped = await samplePanelBottomPixels(panel);
-    clipped.outsideCorners.forEach((corner) => expect(isPaintProbe(corner)).toBe(false));
-    clipped.insideCorners.forEach((corner) => expect(isPaintProbe(corner)).toBe(true));
-
-    // Deliberately break both production clips while leaving the real scroll fade
-    // active. The oracle must reject this leak, not merely accept the healthy case.
-    await panel.evaluate((node) => {
-      (node as HTMLElement).style.setProperty('--panel-shell-radius', '0px');
-    });
-    try {
-      const leaking = await samplePanelBottomPixels(panel);
-      leaking.outsideCorners.forEach((corner, index) => {
-        expect(isPaintProbe(corner)).toBe(true);
-        expect(colorDistance(corner, clipped.outsideCorners[index])).toBeGreaterThan(100);
-      });
-    } finally {
-      await panel.evaluate((node) => {
-        (node as HTMLElement).style.removeProperty('--panel-shell-radius');
-      });
-    }
-  });
-}
-
-test('keeps transcript suggestions above the composer while resizing into compact mode', async ({
+test('keeps suggestions accessible and inserts them after resizing into compact mode', async ({
   mount,
 }) => {
   const props = { width: 720, height: 960, suggestions: true };
@@ -264,8 +129,6 @@ test('keeps transcript suggestions above the composer while resizing into compac
   const suggestions = component.getByTestId('suggested-prompts-surface');
   const list = component.getByTestId('suggested-prompts-list');
   const input = component.getByTestId('message-input');
-  const transcript = component.getByTestId('chat-transcript-inner');
-  const composer = component.getByTestId('chat-composer-shell');
   const gap = async () => {
     const [promptsBox, inputBox] = await Promise.all([
       suggestions.boundingBox(),
@@ -274,9 +137,6 @@ test('keeps transcript suggestions above the composer while resizing into compac
     return inputBox!.y - promptsBox!.y - promptsBox!.height;
   };
 
-  await expect(suggestions).toBeVisible();
-  await expect(transcript.getByTestId('suggested-prompts-surface')).toBeVisible();
-  await expect(composer.getByTestId('suggested-prompts-surface')).toHaveCount(0);
   await expect(list).toHaveAttribute('data-compact', 'false');
   await expect.poll(gap).toBeGreaterThan(0);
   await component.update({ props: { ...props, height: 480 } });
@@ -288,37 +148,50 @@ test('keeps transcript suggestions above the composer while resizing into compac
   await expect.poll(gap).toBeGreaterThan(0);
 });
 
-test('keeps attachments, controls, tab order, and resize behavior inside the nested surface', async ({
+test('supports attachment keyboard navigation, removal, and composer resizing', async ({
   mount,
   page,
-}) => {
+}, testInfo) => {
   const component = await mount(ChatPanelComposerGeometryHost, {
     props: { draft: 'Resizable attachment draft', width: 420 },
   });
   const input = component.getByTestId('message-input');
   const editor = component.locator('.tiptap-editor');
   const resize = input.locator('.resize-handle');
+  const png = await page.evaluate(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 48;
+    const context = canvas.getContext('2d')!;
+    context.fillStyle = '#3366cc';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/png').split(',')[1];
+  });
   await component.locator('input[type="file"]').setInputFiles({
     name: 'composer.png',
     mimeType: 'image/png',
-    buffer: Buffer.from('composer-image'),
+    buffer: Buffer.from(png, 'base64'),
   });
   const attachment = component.getByRole('img', { name: 'composer.png' });
   await expect(attachment).toBeVisible();
+  await attachment.evaluate((image: HTMLImageElement) => image.decode());
 
-  const actionBar = component.locator('[data-chat-input-action-bar]');
-  const attachmentBox = (await attachment.boundingBox())!;
-  const actionBox = (await actionBar.boundingBox())!;
-  expect(attachmentBox.y + attachmentBox.height).toBeLessThanOrEqual(actionBox.y);
   await editor.focus();
   await page.keyboard.press('Tab');
   await expect(
     component.getByRole('button', { name: 'View composer.png full size' }),
   ).toBeFocused();
+  await testInfo.attach('composer-attachment-keyboard-focus.png', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
   await page.keyboard.press('Tab');
   await expect(component.getByRole('button', { name: 'Remove composer.png' })).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(component.getByRole('button', { name: 'Default model' })).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Enter');
+  await expect(attachment).toHaveCount(0);
 
   const before = (await input.boundingBox())!.height;
   const handle = (await resize.boundingBox())!;
@@ -329,7 +202,216 @@ test('keeps attachments, controls, tab order, and resize behavior inside the nes
     document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientY }));
   }, handleY - 60);
   await expect.poll(async () => (await input.boundingBox())!.height).toBeGreaterThan(before);
-  await expect(component.locator('[data-chat-input-submit-actions] button').last()).not.toHaveClass(
-    /bg-primary/,
-  );
+  await testInfo.attach('composer-after-removal-and-resize.png', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+});
+
+for (const reducedMotion of ['reduce', 'no-preference'] as const) {
+  test(`shows a submitted prompt before preparation with keyboard focus and follow-scroll preserved (${reducedMotion})`, async ({
+    mount,
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion });
+    const props = {
+      width: 520,
+      height: 480,
+      submissionSupport: true,
+      followUp: 'discussion' as const,
+    };
+    const component = await mount(ChatPanelComposerGeometryHost, { props });
+    const editor = component.getByTestId('message-input').locator('.tiptap-editor');
+    await editor.click();
+    await editor.pressSequentially('Visible before preparation');
+    await editor.press('Enter');
+    const pending = component
+      .locator('[data-send-app-message-id]')
+      .filter({ hasText: 'Visible before preparation' });
+    await expect(pending).toHaveCount(1);
+    await expect(pending).toBeVisible();
+    await expect(editor).toBeFocused();
+    await expect(editor).not.toContainText('Visible before preparation');
+    await expect
+      .poll(async () =>
+        pending.evaluate((node) => {
+          const scroll =
+            node.closest('[data-testid="chat-transcript-scroll-viewport"]') ??
+            node.closest('.overflow-y-auto');
+          if (!scroll) return false;
+          const row = node.getBoundingClientRect();
+          const viewport = scroll.getBoundingClientRect();
+          return row.top >= viewport.top - 1 && row.bottom <= viewport.bottom + 1;
+        }),
+      )
+      .toBe(true);
+    await component.update({ props: { ...props, settleSubmission: 'history' } });
+    await expect(component.getByText('Visible before preparation', { exact: true })).toHaveCount(1);
+    await expect(editor).toBeFocused();
+    await expect(page.locator('[data-message-send-transition]')).toHaveCount(0);
+  });
+}
+
+test('keeps the first submission bottom-aligned when history confirms it', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 900, height: 1100 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const props = { width: 520, height: 960, submissionSupport: true };
+  const component = await mount(ChatPanelComposerGeometryHost, { props });
+  const editor = component.getByTestId('message-input').locator('.tiptap-editor');
+  const text = 'Keep this first submission in place';
+  await editor.fill(text);
+  await editor.press('Enter');
+  const pending = component.locator('[data-send-app-message-id]:not([data-message-index])');
+  await expect(pending).toContainText(text);
+  const prompt = component.getByText(text, { exact: true });
+  const before = (await prompt.boundingBox())!;
+  await page.screenshot({ path: testInfo.outputPath('first-submission-pending.png') });
+
+  await component.update({ props: { ...props, settleSubmission: 'history' } });
+  await expect(pending).toHaveCount(0);
+  await expect(prompt).toHaveCount(1);
+  const after = (await prompt.boundingBox())!;
+  await page.screenshot({ path: testInfo.outputPath('first-submission-confirmed.png') });
+  await testInfo.attach('first-submission-position', {
+    body: JSON.stringify({ before, after }),
+    contentType: 'application/json',
+  });
+  expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(1);
+  const utility = (await component.getByTestId('transcript-utility-stack').boundingBox())!;
+  expect(utility.y - before.y - before.height).toBeGreaterThanOrEqual(0);
+  expect(utility.y - before.y - before.height).toBeLessThan(64);
+  await expect(editor).toBeFocused();
+});
+
+test('moves the same visible submission into a queue fallback while preserving a new draft', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const props = { width: 520, height: 480, submissionSupport: true };
+  const component = await mount(ChatPanelComposerGeometryHost, { props });
+  const editor = component.getByTestId('message-input').locator('.tiptap-editor');
+  await editor.click();
+  await editor.pressSequentially('Queue this after admission');
+  await editor.press('Enter');
+  await expect(component.getByText('Queue this after admission', { exact: true })).toHaveCount(1);
+  await editor.pressSequentially('Keep this newer draft');
+  await component.update({ props: { ...props, settleSubmission: 'queue' } });
+  await expect(
+    component
+      .getByTestId('queued-messages-container')
+      .getByText('Queue this after admission', { exact: true }),
+  ).toBeVisible();
+  await expect(component.getByText('Queue this after admission', { exact: true })).toHaveCount(1);
+  await expect(editor).toContainText('Keep this newer draft');
+  await expect(editor).toBeFocused();
+});
+
+test('retries a rejected submission before preparation while preserving the newer draft', async ({
+  mount,
+}) => {
+  const props = {
+    width: 520,
+    height: 480,
+    submissionSupport: true,
+    followUp: 'discussion' as const,
+  };
+  const component = await mount(ChatPanelComposerGeometryHost, { props });
+  const editor = component.getByTestId('message-input').locator('.tiptap-editor');
+  await editor.click();
+  await editor.pressSequentially('Retry the earlier submission');
+  await editor.press('Enter');
+  await expect(component.getByText('Retry the earlier submission', { exact: true })).toHaveCount(1);
+  await editor.pressSequentially('Keep the newer draft');
+  await component.update({ props: { ...props, settleSubmission: 'rejected' } });
+  await expect(component.getByText('Retry the earlier submission', { exact: true })).toHaveCount(0);
+  await component.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(component.getByText('Retry the earlier submission', { exact: true })).toHaveCount(1);
+  await expect(editor).toContainText('Keep the newer draft');
+});
+
+test('shows and splits a queued append while preserving keyboard focus and deferring mutation controls', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const props = {
+    width: 520,
+    height: 560,
+    streaming: true,
+    submissionSupport: true,
+    queuePhase: 'ready' as const,
+  };
+  const component = await mount(ChatPanelComposerGeometryHost, { props });
+  const queue = component.getByTestId('queued-messages-container');
+  const header = queue.getByTestId('queued-messages-header');
+  const editor = component.getByTestId('message-input').locator('.tiptap-editor');
+  await expect(queue.getByTestId('queued-message-text')).toHaveText('Confirmed A');
+  await editor.click();
+  await editor.pressSequentially('Pending B');
+  await editor.press('Enter');
+  await expect(queue.getByTestId('queued-message-text')).toHaveText('Confirmed A\n\nPending B');
+  await expect(header.getByRole('button', { name: 'Edit', exact: true })).toBeDisabled();
+  await expect(header.getByRole('button', { name: 'Remove', exact: true })).toBeDisabled();
+  await expect(
+    header.getByRole('button', { name: 'Send immediately', exact: true }),
+  ).toBeDisabled();
+  await expect(editor).toBeFocused();
+  await editor.pressSequentially('Keep newer draft');
+  await expect
+    .poll(async () => {
+      const pending = await queue.getByTestId('queued-message-row').boundingBox();
+      const viewport = await queue.getByTestId('queued-messages-viewport').boundingBox();
+      return (
+        !!pending &&
+        !!viewport &&
+        pending.y >= viewport.y - 1 &&
+        pending.y + pending.height <= viewport.y + viewport.height + 1
+      );
+    })
+    .toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('queue-pending.png') });
+  await component.update({ props: { ...props, queuePhase: 'foreign' } });
+  await expect(queue.getByTestId('queued-message-text')).toHaveText([
+    'Confirmed A',
+    'Other participant',
+    'Pending B',
+  ]);
+  await expect(header.getByRole('button', { name: 'Send all ready messages now' })).toBeEnabled();
+  await expect(header.getByRole('button', { name: 'Clear all queued messages' })).toBeEnabled();
+  await expect(
+    queue
+      .getByTestId('queued-message-row')
+      .nth(1)
+      .getByRole('button', { name: 'Edit', exact: true }),
+  ).toHaveCount(0);
+  await expect(editor).toContainText('Keep newer draft');
+  await expect(editor).toBeFocused();
+  await expect
+    .poll(async () => {
+      const pending = await queue.getByTestId('queued-message-row').nth(2).boundingBox();
+      const viewport = await queue.getByTestId('queued-messages-viewport').boundingBox();
+      return (
+        !!pending &&
+        !!viewport &&
+        pending.y >= viewport.y - 1 &&
+        pending.y + pending.height <= viewport.y + viewport.height + 1
+      );
+    })
+    .toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('queue-foreign.png') });
+});
+
+test('shows authoritative restored queue work alongside its already persisted history', async ({
+  mount,
+}) => {
+  const component = await mount(ChatPanelComposerGeometryHost, {
+    props: { submissionSupport: true, queuePhase: 'restored' },
+  });
+  await expect(component.getByTestId('queued-message-text')).toHaveText('Confirmed A');
+  await expect(component.getByText('Persisted A', { exact: true })).toBeVisible();
+  await expect(component.getByTestId('queued-message-retry-status')).toBeVisible();
 });

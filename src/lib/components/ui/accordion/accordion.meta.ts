@@ -31,7 +31,7 @@ export const accordionMetadata = {
 </Accordion.Root>`,
   category: 'primitive',
   owner: 'design-system',
-  callers: [],
+  callers: ['src/features/home/HomePullCode.svelte', 'src/features/home/HomePullSummary.svelte'],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/accordion/accordion.test.ts',
   removalGate: 'Retain while exported; disclosure, height motion, and keyboard tests must pass.',

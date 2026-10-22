@@ -1274,6 +1274,38 @@ function respondWith(output: string, exitCode = 0): FakeChild {
 const HELPER = '/fake/intent-keychain-helper';
 
 describe('createHelperKeychainClient', () => {
+  it('uses native create-only insertion and returns duplicate bytes unchanged', async () => {
+    const payload = '{"v":2,"kind":"removal","future":true}';
+    const child = respondWith(JSON.stringify({ ok: true, inserted: false, payload }));
+    const client = createHelperKeychainClient({
+      platform: 'darwin',
+      helperPath: HELPER,
+      service: KEYCHAIN_SERVICE_GUEST_SESSIONS,
+    });
+    expect(await client.insert!('invited-v2-r:digest', payload)).toEqual({
+      ok: true,
+      inserted: false,
+      payload,
+    });
+    expect(vi.mocked(spawn).mock.calls.at(-1)?.[1]).toEqual([
+      '--service',
+      KEYCHAIN_SERVICE_GUEST_SESSIONS,
+      'insert',
+      'invited-v2-r:digest',
+    ]);
+    expect(child.stdin.written).toBe(JSON.stringify({ payload }));
+  });
+
+  it('treats an incomplete invited-service list as unknown state', async () => {
+    respondWith(JSON.stringify({ ok: true, items: [{ account: 'invited-v2-r:unreadable' }] }));
+    const client = createHelperKeychainClient({
+      platform: 'darwin',
+      helperPath: HELPER,
+      service: KEYCHAIN_SERVICE_GUEST_SESSIONS,
+    });
+    expect(await client.list()).toMatchObject({ ok: false, code: 'helper-failed' });
+  });
+
   beforeEach(() => {
     vi.mocked(spawn).mockReset();
   });

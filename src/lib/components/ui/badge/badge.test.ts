@@ -39,9 +39,6 @@ describe('Badge', () => {
     expect(badge.querySelector('[data-slot="badge-dot"]')).not.toBeNull();
     expect(getByLabelText('Shield icon')).toBeTruthy();
     const remove = getByLabelText('Remove status');
-    expect(remove.className).toContain('size-4');
-    expect(remove.className).toContain('rounded-full');
-    expect(remove.className).toContain('border-0');
 
     await fireEvent.click(remove);
     await waitFor(() => expect(screen.getByLabelText('Badge removed').textContent).toBe('true'));

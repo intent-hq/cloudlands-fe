@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../test/fixtures/principal-state';
 /**
  * @vitest-environment jsdom
  */
@@ -29,13 +30,14 @@ vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
-    state: () => ({ uiHighlight: { activeById: {} } }),
+    state: () => withLegacyPrincipal({ uiHighlight: { activeById: {} } }),
   });
 });
 
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
   selectSpecialists: () => mocks.specialists$,
   selectFileSpecialists: () => mocks.fileSpecialists$,
+  selectSpecialistImportDiagnostics: () => mocks.readable([]),
   filterSpecialistsByGitHubAuth: (specialists: unknown[]) => specialists,
   selectHasOverrides: { select: () => false },
   selectSpecialistSourceLabel: { select: () => undefined },

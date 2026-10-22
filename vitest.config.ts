@@ -2,14 +2,16 @@ import { defineConfig } from 'vitest/config';
 import path from 'path';
 import os from 'os';
 import { readFileSync } from 'fs';
+import { execFileSync } from 'node:child_process';
 import { gitignoreDirExcludes } from './scripts/gitignore-dir-excludes.mjs';
 import { PARAGLIDE_STALE_MESSAGE, ensureRepoParaglide } from './scripts/paraglide-inputs-hash.mjs';
 import { FORK_EXEC_ARGV } from './scripts/vitest-fork-exec-argv.mjs';
+import { defaultTestTimeoutMs, isCiEnv } from './scripts/vitest-timeouts.mjs';
 
 // CI-only tuning for shared self-hosted runners (intent-hq/monorepo#3082; the
-// recurrence class #3032/#2586/#1406/#1171/#545). The CI unit job runs on the
-// 64-core tinybox, which hosts up to 8 concurrent jobs across repos (including
-// intentd cargo builds): 50% of cores there means 32 jsdom forks on an
+// recurrence class #3032/#2586/#1406/#1171/#545). On a shared 64-core
+// self-hosted host running up to 8 concurrent jobs across repos (including
+// intentd cargo builds), 50% of cores meant 32 jsdom forks on an
 // already-loaded box, and under external load rotating test files blow the 30s
 // budget (observed ~34s for tests that take ~8s locally) while passing in
 // isolation. CI caps workers at min(50%, 16) — halving the fork count on the
@@ -17,7 +19,7 @@ import { FORK_EXEC_ARGV } from './scripts/vitest-fork-exec-argv.mjs';
 // unchanged. Local runs keep the plain 50% cap.
 // std-env semantics (what vitest itself uses): CI=false in a dev shell means
 // "not CI", so the local path keeps the plain 50% cap there too.
-const isCI = !!process.env.CI && process.env.CI !== 'false';
+const isCI = isCiEnv();
 // Math.round matches how vitest resolves '50%' (getWorkersCountByPercentage),
 // so on any core count the CI path differs from '50%' only via the 16 cap.
 const ciMaxWorkers = Math.max(1, Math.min(16, Math.round(os.availableParallelism() / 2)));
@@ -41,6 +43,21 @@ export function generatedParaglidePlugin({ ensure = ensureRepoParaglide } = {}) 
   };
 }
 
+/** Main-process imports need the same generated input in a cold unit checkout. */
+export function generatedBuildConfigPlugin({ rootDir = __dirname } = {}) {
+  return {
+    name: 'ensure-generated-build-config',
+    enforce: 'pre' as const,
+    buildStart() {
+      execFileSync(
+        process.execPath,
+        [path.join(rootDir, 'scripts/generate-build-config.cjs'), '--if-missing'],
+        { cwd: rootDir, stdio: 'pipe' },
+      );
+    },
+  };
+}
+
 export default defineConfig(async () => {
   const { svelte } = await import('@sveltejs/vite-plugin-svelte');
 
@@ -49,7 +66,7 @@ export default defineConfig(async () => {
   const packageJson = JSON.parse(readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
 
   return {
-    plugins: [generatedParaglidePlugin(), svelte()],
+    plugins: [generatedBuildConfigPlugin(), generatedParaglidePlugin(), svelte()],
     test: {
       globals: true,
       environment: 'jsdom',
@@ -78,8 +95,8 @@ export default defineConfig(async () => {
       // still fail, just a bit later. CI doubles the budget to 60s: external
       // runner load can starve a worker ~4x (intent-hq/monorepo#3082), and the
       // concurrency cap alone cannot absorb every load spike.
-      testTimeout: isCI ? 60_000 : 30_000,
-      hookTimeout: isCI ? 60_000 : 30_000,
+      testTimeout: defaultTestTimeoutMs(),
+      hookTimeout: defaultTestTimeoutMs(),
       teardownTimeout: 10000,
       // Pin typescript-eslint's single-run inference off in every worker so the
       // ESLint rule tests behave the same locally and on CI (cloudlands-fe#2506).
@@ -100,6 +117,8 @@ export default defineConfig(async () => {
         'test/**', // Exclude Playwright tests directory (package-root only; do not swallow src/test/**)
         // Required CI runs this suite separately with its Node-specific setup.
         'tests/integration/**',
+        // node:test suite shared with intent and intentd; scripts/test_runner_policy.py runs it.
+        'scripts/runner-policy.test.cjs',
         '**/*.ct.spec.ts', // Exclude Playwright component tests
         '**/*.visual.spec.ts', // Exclude Playwright visual harnesses (browser-owned environment)
         // Remote-environment suites need a real daemon/host; not part of the unit gate.

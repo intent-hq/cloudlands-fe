@@ -425,6 +425,22 @@ export interface RotateConnectionSecretParams {
 export type RotateConnectionSecretResult =
   { status: 'updated'; connection: ConnectionRecord } | ConnectionValidationBlockedResult;
 
+/** Read Tailcat settings from one connected saved remote device. */
+export interface GetConnectionTunnelParams {
+  id: string;
+}
+
+/** Change only the selected remote device's Tailcat enabled setting. */
+export interface SetConnectionTunnelParams extends GetConnectionTunnelParams {
+  enabled: boolean;
+}
+
+/** No settings or pairing credentials cross the IPC boundary. */
+export interface ConnectionTunnelResult {
+  supported: boolean;
+  enabled: boolean;
+}
+
 /** `connections:open` params. */
 export interface OpenConnectionParams {
   id: string;

@@ -30,7 +30,7 @@ import {
 } from './hud-selectors';
 import type { DaemonHealthState } from '../daemon-health/daemon-health-types';
 import { initialState as daemonHealthInitialState } from '../daemon-health/daemon-health-slice';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { WorkspaceTask } from '$shared/types';
 import {
   agentSessionReducer,
@@ -406,6 +406,16 @@ describe('HUD agent scope goes through the shared classifier (§5.5 row-scope bi
     const state = scopeState(summary, session);
     expect(probeRow(state)).toMatchObject({ topLevel: false, isBackground: true });
     expect(gatedRunning(state)).toEqual([]);
+  });
+
+  it.each([
+    ['summary', { isBackground: false }, { isBackground: true }],
+    ['session', {}, { isBackground: false, metadata: { isBackground: true } }],
+    ['metadata', {}, { metadata: { isBackground: false }, agentMetadata: { isBackground: true } }],
+  ])('an explicit foreground %s overrides older background values', (_f, summary, session) => {
+    const state = scopeState(summary, session);
+    expect(probeRow(state)).toMatchObject({ topLevel: true, isBackground: false });
+    expect(gatedRunning(state)).toEqual(['Probe']);
   });
 
   it('a background CHILD is delegated, and stays background', () => {

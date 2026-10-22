@@ -9,6 +9,12 @@
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+const authority = vi.hoisted(() => ({ state: {} as object }));
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } = await import('../utils/test-helpers/store-mock');
+  return createAppStoreMockModule({ state: () => authority.state });
+});
+
 // FAKE transport only: the daemon bridge is mocked so no IPC ever fires.
 // Each test asserts the JSON-RPC method + params the handler emits and how
 // it maps the daemon result back to the renderer envelope.
@@ -24,6 +30,8 @@ const mockedRequest = vi.mocked(backendRequest);
 
 describe('host-bridge-seeder', () => {
   beforeAll(async () => {
+    const { withLegacyPrincipal } = await import('../../../test/fixtures/principal-state');
+    authority.state = withLegacyPrincipal({});
     // Importing the seeder runs its `registerMockIpcHandler` side effects.
     await import('./host-bridge-seeder');
   });
@@ -910,6 +918,8 @@ describe('misc-ui-events-seeder window:open-new bridge', () => {
   // here alongside the other window.open-backed handler so the window-locus
   // bridges stay covered together.
   beforeAll(async () => {
+    const { withLegacyPrincipal } = await import('../../../test/fixtures/principal-state');
+    authority.state = withLegacyPrincipal({});
     await import('./misc-ui-events-seeder');
   });
 

@@ -11,8 +11,10 @@
     faGlobe,
     faRobot,
     faUserTie,
+    faUser,
   } from '@fortawesome/free-solid-svg-icons';
   import type { MentionCandidate, MentionType } from '$lib/services/mentions/types';
+  import { memberMentionLabel, memberMentionSubtitle } from '$lib/utils/member-mention-token';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -38,6 +40,7 @@
     command: faTerminal,
     'external-source': faGlobe,
     agent: faRobot,
+    member: faUser,
     personality: faUserTie,
     workspace: faFolder,
     symbol: faFile,
@@ -49,6 +52,7 @@
 
   // Get the path to display (relative path preferred)
   function getDisplayPath(): string {
+    if (mention.type === 'member') return memberMentionSubtitle(mention);
     const meta = mention.meta as Record<string, any> | undefined;
     return meta?.relativePath || meta?.fullPath || meta?.path || '';
   }
@@ -99,7 +103,9 @@
       <Fa icon={getIcon()} />
     </div>
     <div class="preview-text">
-      <span class="filename">{mention.label}</span>
+      <span class="filename"
+        >{mention.type === 'member' ? memberMentionLabel(mention.label) : mention.label}</span
+      >
       {#if displayPath}
         <span class="path">{displayPath}</span>
       {/if}

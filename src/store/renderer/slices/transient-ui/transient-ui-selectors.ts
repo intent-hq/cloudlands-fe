@@ -1,6 +1,6 @@
 import { store } from '../../store';
 import { emptyWorkspaceTransientUiState, type NoteViewMode } from './transient-ui-slice';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { ComposerContextItem } from './transient-ui-types';
 
 const selectTransientUiWorkspaceState = store.createSelector((state, workspaceId: string) => {

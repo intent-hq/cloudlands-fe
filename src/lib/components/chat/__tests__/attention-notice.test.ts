@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, fireEvent } from '@testing-library/svelte';
 import { getAttentionNotice, hasMatchingAttentionNotice } from '../attention-notice';
 import DiscussionRequestNotice from '../DiscussionRequestNotice.svelte';
 import BlockerReportNotice from '../BlockerReportNotice.svelte';
@@ -72,8 +72,46 @@ describe('hasMatchingAttentionNotice', () => {
     timestamp: '2026-09-23T03:00:00.000Z',
   };
 
-  it('matches a saved notice using its kind, reason, and timestamp', () => {
+  it('matches a saved notice using its kind and timestamp', () => {
     expect(hasMatchingAttentionNotice([notice], request)).toBe(true);
+  });
+
+  // intent-hq/intent#7250: `agent.list` caps `metadata.attentionRequestReason`
+  // at 400 bytes while the saved notice keeps the full text, so the pending
+  // reason is a shortened copy. The daemon's provider-stall blocker reason
+  // (intentd `agent_session.rs`) is longer than that cap.
+  const stallReason =
+    'Turn ended after a provider stall: no session/update from the provider for 1200.089s ' +
+    'with no tool call in flight (terminal threshold 1200s; error class: provider stall). ' +
+    'The provider is neither streaming nor running a tool, so the turn was failed instead ' +
+    'of waiting for the idle timeout; the agent is stopping with status error and its ' +
+    'provider process is restarted on the next turn. Retry the turn to continue.';
+  const AGENT_LIST_PREVIEW_CAP_BYTES = 400;
+
+  it.each([
+    ['blocker', 'blocker-report'],
+    ['discussion', 'discussion-request'],
+  ] as const)(
+    'matches a %s notice whose pending reason was shortened by agent.list',
+    (kind, metaKind) => {
+      expect(stallReason.length).toBeGreaterThan(AGENT_LIST_PREVIEW_CAP_BYTES);
+      const saved = { ...systemMessage(metaKind, stallReason), timestamp: notice.timestamp };
+      const pending = {
+        kind,
+        reason: stallReason.slice(0, AGENT_LIST_PREVIEW_CAP_BYTES),
+        timestamp: request.timestamp,
+      };
+      expect(hasMatchingAttentionNotice([saved], pending)).toBe(true);
+    },
+  );
+
+  it('identifies the request by kind and timestamp, not by its reason text', () => {
+    const saved = {
+      ...systemMessage('blocker-report', 'A different reason'),
+      timestamp: notice.timestamp,
+    };
+    expect(hasMatchingAttentionNotice([saved], request)).toBe(true);
+    expect(hasMatchingAttentionNotice([notice], { ...request, reason: undefined })).toBe(true);
   });
 
   it('matches Date timestamps without discarding milliseconds', () => {
@@ -107,7 +145,6 @@ describe('hasMatchingAttentionNotice', () => {
     { ...notice, role: 'assistant' as const },
     { ...systemMessage('discussion-request', request.reason), timestamp: notice.timestamp },
     { ...systemMessage('turn-failure', request.reason), timestamp: notice.timestamp },
-    { ...systemMessage('blocker-report', 'A different reason'), timestamp: notice.timestamp },
   ])('does not hide a request behind an unrelated notice: %j', (message) => {
     expect(hasMatchingAttentionNotice([message], request)).toBe(false);
   });
@@ -148,20 +185,18 @@ describe('DiscussionRequestNotice', () => {
 });
 
 describe('TurnFailureNotice', () => {
-  it('renders the title and reason with alert semantics', () => {
+  it('discloses historical details without live alert semantics', async () => {
     render(TurnFailureNotice, { props: { reason: 'Provider stream aborted' } });
 
-    const alert = screen.getByRole('alert');
-    expect(alert).toBeTruthy();
-    expect(alert.getAttribute('aria-live')).toBe('polite');
-    expect(screen.getByText(/Turn failed/i)).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: '1 recorded failure' }));
     expect(screen.getByText('Provider stream aborted')).toBeTruthy();
   });
 
   it('renders the title alone when no reason is provided', () => {
     render(TurnFailureNotice);
 
-    expect(screen.getByText(/Turn failed/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: '1 recorded failure' })).toBeTruthy();
   });
 
   it('applies custom class when provided', () => {

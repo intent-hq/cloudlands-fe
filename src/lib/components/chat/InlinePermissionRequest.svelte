@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { selectWorkspacePermissionContext } from '$store/renderer/slices/workspace/workspace-selectors';
   import { fly } from '$lib/motion';
   import { onMount, onDestroy } from 'svelte';
   import { selectPermissionOption } from '$store/renderer/slices/permission/permission-slice';
@@ -52,7 +53,12 @@
   }
 
   function handleSelectOption(optionId: string) {
-    if (isProcessing) return;
+    if (
+      isProcessing ||
+      !request.workspaceId ||
+      !selectWorkspacePermissionContext.select(appStore.state, request.workspaceId)
+    )
+      return;
     isProcessing = true;
     appStore.dispatch(selectPermissionOption(request.requestId, optionId));
     isProcessing = false;

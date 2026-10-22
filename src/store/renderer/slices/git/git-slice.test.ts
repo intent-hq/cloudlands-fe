@@ -10,11 +10,15 @@ import {
   setSecondaryRootCommitFiles,
   setAcceptChangesStatus,
   setAcceptChangesStatusLoading,
+  gitReadRequested,
+  releaseGitRead,
+  gitReadStarted,
+  gitReadCompleted,
 } from './git-slice';
 import type { CommitInfo, GitStatus } from '$shared/types';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import type { WorkspaceGitStatus } from '$features/accept-changes/types';
-import { createCollection, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection, getItems } from '@themislib/themis/utils/collections/collection-utils';
 
 const reduce = gitReducer;
 
@@ -30,6 +34,76 @@ const makeGitStatus = (overrides: Partial<GitStatus> = {}): GitStatus => ({
 });
 
 describe('gitReducer', () => {
+  it('retains shared read results until the last correlated consumer releases them', () => {
+    let state = reduce(
+      initialState,
+      gitReadRequested('ws', 'a', 'a-1', { kind: 'showFile', ref: 'HEAD', filePath: 'a.ts' }),
+    );
+    state = reduce(
+      state,
+      gitReadRequested('ws', 'b', 'b-1', { kind: 'showFile', ref: 'HEAD', filePath: 'a.ts' }),
+    );
+    const key = getItems(getGitWorkspaceState(state, 'ws').reads)[0].readKey;
+    state = reduce(state, gitReadStarted('ws', key, 'generation'));
+    state = reduce(
+      state,
+      gitReadCompleted('ws', key, 'old-generation', { kind: 'showFile', content: 'stale' }, null),
+    );
+    expect(getItems(getGitWorkspaceState(state, 'ws').reads)[0].result).toBeNull();
+    state = reduce(
+      state,
+      gitReadCompleted('ws', key, 'generation', { kind: 'showFile', content: 'fresh' }, null),
+    );
+    state = reduce(state, releaseGitRead('ws', 'a', 'a-1'));
+    expect(getItems(getGitWorkspaceState(state, 'ws').reads)[0]).toMatchObject({
+      loading: false,
+      result: { content: 'fresh' },
+    });
+    expect(reduce(state, releaseGitRead('ws', 'b', 'old-b'))).toBe(state);
+    state = reduce(state, releaseGitRead('ws', 'b', 'b-1'));
+    expect(getItems(getGitWorkspaceState(state, 'ws').reads)).toEqual([]);
+  });
+
+  it('normalizes details and clears obsolete path state without retaining runtime callbacks', () => {
+    let state = reduce(
+      initialState,
+      gitReadRequested('ws', 'a', 'a-1', { kind: 'commitDetails', commitHash: 'sha' }, () => true),
+    );
+    const key = getItems(getGitWorkspaceState(state, 'ws').reads)[0].readKey;
+    state = reduce(state, gitReadStarted('ws', key, 'generation'));
+    state = reduce(
+      state,
+      gitReadCompleted(
+        'ws',
+        key,
+        'generation',
+        {
+          kind: 'commitDetails',
+          details: { files: ['a.ts'], fileDetails: [{ path: 'a.ts', additions: 1, deletions: 0 }] },
+        },
+        null,
+      ),
+    );
+    const result = getItems(getGitWorkspaceState(state, 'ws').reads)[0].result;
+    expect(result).toMatchObject({
+      kind: 'commitDetails',
+      details: { fileDetails: { ids: ['a.ts'] } },
+    });
+    expect(JSON.parse(JSON.stringify(state))).toEqual(state);
+    state = reduce(
+      state,
+      gitReadRequested('ws', 'a', 'a-2', { kind: 'showFile', ref: 'HEAD', filePath: 'b.ts' }),
+    );
+    expect(getItems(getGitWorkspaceState(state, 'ws').reads)).toEqual([
+      expect.objectContaining({
+        request: { kind: 'showFile', ref: 'HEAD', filePath: 'b.ts' },
+        loading: true,
+      }),
+    ]);
+    state = reduce(state, workspaceUnmounted('ws'));
+    expect(state.byWorkspaceId.ws).toBeUndefined();
+  });
+
   it('should return initial state', () => {
     const state = reduce(undefined, { type: '@@INIT' });
     expect(state).toEqual(initialState);

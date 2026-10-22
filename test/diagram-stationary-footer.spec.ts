@@ -99,6 +99,11 @@ function readGeometry(element: Element) {
   return {
     state: element.getAttribute('data-diagram-state'),
     settled: element.getAttribute('data-diagram-settled'),
+    presentationSettled:
+      !element.closest('[data-diagram-presentation]') ||
+      element
+        .closest('[data-diagram-presentation]')
+        ?.getAttribute('data-diagram-presentation-settled') === 'true',
     naturalHeight: Math.ceil(svg.getBoundingClientRect().height + 20),
     heightCap: window.innerHeight * 0.9,
     clipTop,
@@ -184,6 +189,7 @@ async function expectLifecycleReady(
           ]);
         const actionable =
           geometry?.settled === 'true' &&
+          geometry.presentationSettled &&
           !activeAnimations &&
           !element.classList.contains('resizing') &&
           geometry.hitTargets[target];
@@ -221,7 +227,9 @@ async function sampleAction(
         samples.push(read(element));
       } while (
         performance.now() - start < 4000 &&
-        (performance.now() - start < 1000 || samples.at(-1)!.settled !== 'true')
+        (performance.now() - start < 1000 ||
+          samples.at(-1)!.settled !== 'true' ||
+          !samples.at(-1)!.presentationSettled)
       );
       return samples;
     })();
@@ -254,6 +262,7 @@ async function sampleClick(
 
 function expectAttached(samples: ReturnType<typeof readGeometry>[]) {
   expect(samples.at(-1)!.settled).toBe('true');
+  expect(samples.at(-1)!.presentationSettled).toBe(true);
   for (const sample of samples) {
     expect(sample.minFont).toBeGreaterThanOrEqual(12);
     expect(sample.viewport.height).toBeGreaterThan(0);
@@ -287,6 +296,7 @@ function expectStationary(
   samples: ReturnType<typeof readGeometry>[],
 ) {
   expect(samples.at(-1)!.settled).toBe('true');
+  expect(samples.at(-1)!.presentationSettled).toBe(true);
   expect(Math.min(...samples.map((sample) => sample.minFont))).toBeGreaterThanOrEqual(12);
   for (const sample of samples) {
     for (const target of ['next', 'previous'] as const)
@@ -678,7 +688,9 @@ test('rapid height reversal retargets from the currently displayed height', asyn
           await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
           samples.push(read(element));
         } while (
-          (performance.now() - reversed < 1000 || samples.at(-1)!.settled !== 'true') &&
+          (performance.now() - reversed < 1000 ||
+            samples.at(-1)!.settled !== 'true' ||
+            !samples.at(-1)!.presentationSettled) &&
           performance.now() - reversed < 4000
         );
         return { start, interrupted, samples };
@@ -797,6 +809,7 @@ test('user wheel input interrupts step scrolling without fighting or leaving anc
   );
   expect(samples.at(-1)!.state).toBe('connect');
   expect(samples.at(-1)!.settled).toBe('true');
+  expect(samples.at(-1)!.presentationSettled).toBe(true);
   expect(samples.at(-1)!.noteScroll).toBeGreaterThan(0);
   const moving = samples.filter((s) => s.noteScroll > before.noteScroll);
   expect(moving.length).toBeGreaterThan(0);

@@ -2,6 +2,7 @@
  * Daemon Health Selectors
  */
 
+import { protocolVersionAtLeast, type ProtocolVersion } from '$shared/protocol-version';
 import { compareToPinnedVersion, type PinComparison } from '$shared/intentd-version-compare';
 import { store } from '../../store';
 import type { BackendTransportInfo } from './daemon-health-types';
@@ -82,6 +83,66 @@ export const selectDaemonVersionComparison = store.createSelector(
 );
 
 /**
+ * First protocol version (major, minor) whose daemon serves the
+ * provider-generic `sourceControl.*` auth methods (`authStatus`, `connect`,
+ * `cancelAuth`, `revoke`, `getUser`) the GitLab connection flows call.
+ */
+const SOURCE_CONTROL_AUTH_MIN_PROTOCOL = { major: 10, minor: 5 } as const;
+
+/**
+ * True when a daemon reporting `protocolVersion` serves the `sourceControl.*`
+ * auth methods. Compares (major, minor) only — patch segments never change
+ * method availability. An unknown version (absent, or malformed when
+ * parsed) is unsupported: a daemon too old to report
+ * the field also predates the methods.
+ */
+export function supportsSourceControlAuthProtocol(
+  protocolVersion?: ProtocolVersion | null,
+): boolean {
+  const { major, minor } = SOURCE_CONTROL_AUTH_MIN_PROTOCOL;
+  return protocolVersionAtLeast(protocolVersion, major, minor);
+}
+
+/**
+ * True when the connected daemon (per the last system.status poll) serves the
+ * `sourceControl.*` auth methods behind the GitLab connection flows. False
+ * before the first poll — the GitLab surfaces stay hidden until the daemon
+ * has proven the capability rather than offering a connect that would fail.
+ */
+export const selectDaemonSupportsSourceControlAuth = store.createSelector((state): boolean =>
+  supportsSourceControlAuthProtocol(state.daemonHealth.stats?.protocolVersion),
+);
+
+/**
+ * First protocol version (major, minor) whose daemon serves the
+ * provider-neutral identity seam: `Principal.identity` on `principal.me` /
+ * `workspace.members.list`, the `identity.provider` setting and
+ * `principal:identity-changed`, `pinProvider` / `pinHost` on
+ * `workspace.invite.create`, and `sourceControl.identityProof.*` with the
+ * `provider` / `host` / `proofId` params of `invite.prove`.
+ */
+const IDENTITY_SEAM_MIN_PROTOCOL = { major: 10, minor: 8 } as const;
+
+/**
+ * True when a daemon reporting `protocolVersion` serves the identity seam
+ * above. Same comparison rules as `supportsSourceControlAuthProtocol`.
+ */
+export function supportsIdentitySeamProtocol(protocolVersion?: ProtocolVersion | null): boolean {
+  const { major, minor } = IDENTITY_SEAM_MIN_PROTOCOL;
+  return protocolVersionAtLeast(protocolVersion, major, minor);
+}
+
+/**
+ * True when the connected daemon (per the last system.status poll) serves the
+ * identity seam. False before the first poll — the identity choice, provider
+ * pins and provider-aware member rows stay hidden until the daemon has proven
+ * the capability, and the GitHub-only shapes are sent instead.
+ */
+export const selectDaemonSupportsIdentitySeam = store.createSelector((state): boolean =>
+  supportsIdentitySeamProtocol(state.daemonHealth.stats?.protocolVersion),
+);
+
+/**
  * Whether a transport reaches a daemon on THIS machine (PROTOCOL §5.14
  * locality: UDS ⇒ local, WebSocket ⇒ remote). A `null` transport — no
  * backend:status/backend:get-status info yet — is treated as local: the only
@@ -109,6 +170,15 @@ export const selectIsDaemonLocal = store.createSelector((state): boolean => {
   if (reported === 'local' || reported === 'remote') return reported === 'local';
   return isLocalTransport(state.daemonHealth.transport);
 });
+
+/**
+ * True only when this app spawned the daemon it is connected to (the desktop
+ * sidecar). Restart guidance names Intent then; otherwise it names intentd
+ * on the provider host. UDS locality alone does not mean app-owned (§5.54).
+ */
+export const selectIsDaemonAppOwned = store.createSelector(
+  (state): boolean => state.daemonHealth.transport?.mode === 'sidecar-uds',
+);
 
 /** True when the sidecar supervisor gave up restarting the daemon (#439). */
 export const selectSidecarGaveUp = store.createSelector(

@@ -1,9 +1,9 @@
 /**
- * Header presence avatar stack: mounted (and the note-presence lease taken)
- * only in a shared workspace (AC 6); renders the roster the session emits.
+ * Note presence tab: holds a presence lease independently of its lazy menu
+ * (AC 6) and renders the roster emitted by the session.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
 const mockState = vi.hoisted(() => {
   type Subscriber<T> = (value: T) => void;
@@ -36,8 +36,6 @@ const mockState = vi.hoisted(() => {
     createdAt: '2026-05-11T00:00:00.000Z',
     updatedAt: '2026-05-11T00:00:00.000Z',
   };
-  type Listener = (viewers: unknown[]) => void;
-  const listeners = new Set<Listener>();
   return {
     dispatch: vi.fn(),
     noteViewMode: store<'editor' | 'raw' | 'preview'>('editor'),
@@ -52,21 +50,20 @@ const mockState = vi.hoisted(() => {
       branchName: 'main',
     }),
     note: store(note),
-    listeners,
-    release: vi.fn(),
-    joinNotePresence: vi.fn(() => ({
-      getViewers: () => [],
-      subscribe: (listener: Listener) => {
-        listeners.add(listener);
-        return () => listeners.delete(listener);
-      },
-      publishCursor: vi.fn(),
-      release: mockState.release,
-    })),
+    noteContentView: store<unknown>(undefined),
+    noteWorkspaceRoot: store<unknown>(undefined),
+    notePresenceView: store<{ viewers: unknown[] } | undefined>(undefined),
+    windowVisible: store(true),
+    currentWorkspace: store('ws-1'),
+    principalConnectionContext: store('test-connection'),
   };
 });
 
 vi.mock('$lib/components/workspace/NoteWithComments.svelte', async () => ({
+  default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
+    .default,
+}));
+vi.mock('../RenderedNotePreview.svelte', async () => ({
   default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
     .default,
 }));
@@ -100,7 +97,14 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectNoteById: Object.assign(() => mockState.note, { select: () => mockState.note.get() }),
+  selectNoteContentView: () => mockState.noteContentView,
+  selectNoteWorkspaceRoot: () => mockState.noteWorkspaceRoot,
+  selectNotePresenceView: () => mockState.notePresenceView,
   selectWorkspaceNotesState: () => mockState.notesState,
+  selectNoteWindowVisible: () => mockState.windowVisible,
+}));
+vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({
+  selectPrincipalConnectionContext: () => mockState.principalConnectionContext,
 }));
 vi.mock('$features/notes/notes-write-service', () => ({
   createNote: vi.fn(),
@@ -119,23 +123,33 @@ vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', ()
 }));
 vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
   selectAllScrollPositions: () => mockState.scrollPositions,
+  selectCurrentWorkspaceTabId: () => mockState.currentWorkspace,
 }));
 vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', () => ({
   selectNoteViewMode: () => mockState.noteViewMode,
 }));
-vi.mock('$features/notes/note-presence/note-presence-service', () => ({
-  joinNotePresence: mockState.joinNotePresence,
-}));
-
 import NoteTabTypeHeaderHarness from './mocks/NoteTabTypeHeaderHarness.svelte';
+import {
+  notePresenceViewReleased,
+  notePresenceViewRequested,
+} from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 
 const tab = { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' };
 
+function dispatchedPresenceActions(type: string) {
+  return (
+    mockState.dispatch.mock.calls.map(([action]) => action) as Array<{
+      type: string;
+      payload: unknown;
+    }>
+  ).filter((action) => action.type === type);
+}
+
 describe('NoteTabType presence avatar stack', () => {
   beforeEach(() => {
-    mockState.joinNotePresence.mockClear();
-    mockState.release.mockClear();
-    mockState.listeners.clear();
+    mockState.dispatch.mockClear();
+    mockState.noteViewMode.set('editor');
+    mockState.notePresenceView.set(undefined);
   });
 
   afterEach(() => {
@@ -145,20 +159,26 @@ describe('NoteTabType presence avatar stack', () => {
   it('does not mount or take a presence lease when the viewer is alone (AC 6)', async () => {
     mockState.workspace.set({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main', memberCount: 1 });
     render(NoteTabTypeHeaderHarness, { props: { tab } });
-    await screen.findByRole('button', { name: 'Panel actions' });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
 
-    expect(mockState.joinNotePresence).not.toHaveBeenCalled();
+    expect(dispatchedPresenceActions(notePresenceViewRequested.type)).toHaveLength(0);
     expect(screen.queryByTestId('note-presence-avatar-stack')).toBeNull();
   });
 
-  it('mounts in a shared workspace and renders the peers the session emits', async () => {
+  it('requests a shared presence view and renders its projected peers', async () => {
     mockState.workspace.set({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main', memberCount: 2 });
     const { unmount } = render(NoteTabTypeHeaderHarness, { props: { tab } });
-    await waitFor(() => expect(mockState.joinNotePresence).toHaveBeenCalledWith('ws-1', 'note-1'));
-    expect(screen.queryByTestId('note-presence-avatar-stack')).toBeNull();
-
-    for (const listener of mockState.listeners) {
-      listener([
+    await waitFor(() =>
+      expect(dispatchedPresenceActions(notePresenceViewRequested.type)).toHaveLength(1),
+    );
+    expect(dispatchedPresenceActions(notePresenceViewRequested.type)[0].payload).toEqual([
+      'note-tab:tab-1',
+      expect.stringMatching(/^note-tab:tab-1:presence:/),
+      'ws-1',
+      'note-1',
+    ]);
+    mockState.notePresenceView.set({
+      viewers: [
         {
           principalId: 'p-b',
           login: 'bea',
@@ -175,24 +195,82 @@ describe('NoteTabType presence avatar stack', () => {
           cursor: null,
           cursorSeenAt: null,
         },
-      ]);
-    }
-    const stack = await screen.findByRole('group', { name: /2/ });
-    expect(stack.querySelectorAll('[data-principal-id]')).toHaveLength(2);
-    expect(stack.querySelector('img')?.getAttribute('src')).toBe('https://x/cy.png');
+      ],
+    });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
+    expect(screen.queryByTestId('note-presence-avatar-stack')).toBeNull();
 
-    // Every avatar trigger is keyboard reachable and named after its viewer,
-    // whether it renders an image or an initial.
-    const bea = within(stack).getByRole('button', { name: 'Bea' });
-    const cy = within(stack).getByRole('button', { name: 'cy' });
-    expect(bea.getAttribute('tabindex')).toBe('0');
-    expect(cy.getAttribute('tabindex')).toBe('0');
-    expect(within(stack).getAllByRole('button')).toHaveLength(2);
-    cy.focus();
-    await fireEvent.focus(cy);
-    expect(await screen.findByRole('tooltip', { name: 'cy', hidden: true })).not.toBeNull();
+    expect(await screen.findByRole('menuitem', { name: 'Bea', exact: true })).not.toBeNull();
+    expect(await screen.findByRole('menuitem', { name: 'cy', exact: true })).not.toBeNull();
 
     unmount();
-    expect(mockState.release).toHaveBeenCalledTimes(1);
+    expect(dispatchedPresenceActions(notePresenceViewReleased.type)).toHaveLength(1);
+  });
+
+  it.each(['preview', 'raw'] as const)(
+    'keeps %s presence across menu dismissal and reopening',
+    async (mode) => {
+      mockState.noteViewMode.set(mode);
+      mockState.workspace.set({ id: 'ws-1', memberCount: 2 });
+      const { unmount } = render(NoteTabTypeHeaderHarness, { props: { tab } });
+      await waitFor(() =>
+        expect(dispatchedPresenceActions(notePresenceViewRequested.type)).toHaveLength(1),
+      );
+      mockState.notePresenceView.set({
+        viewers: [
+          {
+            principalId: 'peer',
+            displayName: 'Peer',
+            login: 'peer',
+            cursor: null,
+            cursorSeenAt: null,
+            avatarUrl: null,
+          },
+        ],
+      });
+      const trigger = screen.getByRole('button', { name: 'Panel actions' });
+      await fireEvent.click(trigger);
+      expect(await screen.findByRole('menuitem', { name: 'Peer', exact: true })).not.toBeNull();
+      await fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+      expect(dispatchedPresenceActions(notePresenceViewReleased.type)).toHaveLength(0);
+      await fireEvent.click(trigger);
+      expect(await screen.findByRole('menuitem', { name: 'Peer', exact: true })).not.toBeNull();
+      expect(dispatchedPresenceActions(notePresenceViewRequested.type)).toHaveLength(1);
+      unmount();
+      expect(dispatchedPresenceActions(notePresenceViewReleased.type)).toHaveLength(1);
+    },
+  );
+
+  it('releases and retargets the visible lease on activation, identity and membership changes', async () => {
+    mockState.workspace.set({ id: 'ws-1', memberCount: 2 });
+    const { rerender, unmount } = render(NoteTabTypeHeaderHarness, {
+      props: { tab, isActive: false },
+    });
+    expect(dispatchedPresenceActions(notePresenceViewRequested.type)).toHaveLength(0);
+    await rerender({ tab, isActive: true });
+    await waitFor(() =>
+      expect(dispatchedPresenceActions(notePresenceViewRequested.type)).toHaveLength(1),
+    );
+    await rerender({ tab, isActive: false });
+    expect(dispatchedPresenceActions(notePresenceViewReleased.type)).toHaveLength(1);
+    await rerender({ tab, isActive: true });
+    await waitFor(() =>
+      expect(dispatchedPresenceActions(notePresenceViewRequested.type)).toHaveLength(2),
+    );
+    await rerender({ tab: { ...tab, noteId: 'note-2' }, workspaceId: 'ws-2' });
+    expect(dispatchedPresenceActions(notePresenceViewReleased.type)).toHaveLength(2);
+    expect(dispatchedPresenceActions(notePresenceViewRequested.type).at(-1)?.payload).toEqual([
+      'note-tab:tab-1',
+      expect.stringMatching(/^note-tab:tab-1:presence:/),
+      'ws-2',
+      'note-2',
+    ]);
+    mockState.workspace.set({ id: 'ws-2', memberCount: 1 });
+    await waitFor(() =>
+      expect(dispatchedPresenceActions(notePresenceViewReleased.type)).toHaveLength(3),
+    );
+    unmount();
+    expect(dispatchedPresenceActions(notePresenceViewReleased.type)).toHaveLength(3);
   });
 });

@@ -5,9 +5,19 @@
    * Renders a terminal session.
    */
 
-  import Fa from 'svelte-fa';
-  import { faChevronDown } from '$lib/icons/phosphor-icons';
-  import { Button } from '$lib/components/ui/button';
+  import { faChevronDown, faTrash } from '$lib/icons/phosphor-icons';
+  import { writable } from 'svelte/store';
+  import { onDestroy } from 'svelte';
+  import {
+    selectWorkspaceActionContext,
+    selectWorkspaceSavedScriptContext,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { confirmScriptDeletion } from '$features/scripts/confirm-script-deletion';
+  import {
+    selectCanDeleteScript,
+    selectScriptById,
+  } from '$store/renderer/slices/scripts/scripts-selectors';
+  import * as Menu from '$lib/components/ui/menu';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import Terminal from '$lib/components/terminal/Terminal.svelte';
   import ScriptOutputViewer from '$lib/components/terminal/ScriptOutputViewer.svelte';
@@ -26,7 +36,38 @@
   const scriptId = $derived(tab.scriptId);
   const headerContext = getPanelHeaderContext();
 
+  const workspaceIdStore = writable('');
+  const scriptIdStore = writable('');
+  $effect(() => workspaceIdStore.set(workspaceId));
+  $effect(() => scriptIdStore.set(scriptId ?? ''));
+  const fullContext$ = selectWorkspaceActionContext(workspaceIdStore);
+  const scriptContext$ = selectWorkspaceSavedScriptContext(workspaceIdStore);
+  const script$ = selectScriptById(workspaceIdStore, scriptIdStore);
+  const canDeleteScript$ = selectCanDeleteScript(workspaceIdStore, scriptIdStore);
+  let mounted = true;
+  onDestroy(() => {
+    mounted = false;
+  });
+
+  function deleteScript() {
+    if (!scriptId) return;
+    const targetWorkspace = workspaceId;
+    const targetScript = scriptId;
+    const targetTab = tab.id;
+    return confirmScriptDeletion(
+      targetWorkspace,
+      targetScript,
+      () =>
+        mounted &&
+        isActive &&
+        workspaceId === targetWorkspace &&
+        scriptId === targetScript &&
+        tab.id === targetTab,
+    );
+  }
+
   function moveToBottomBar() {
+    if (!$fullContext$) return;
     if (scriptId) appStore.dispatch(selectScript(workspaceId, scriptId));
     appStore.dispatch(openTerminalOverlay(workspaceId, terminalId));
     appStore.dispatch(closeTab(layoutId ?? workspaceId, tab.id));
@@ -34,35 +75,35 @@
 
   $effect(() => {
     if (!headerContext || !isActive) return;
-    return headerContext.registerActions({ primary: surfaceAction });
+    return headerContext.registerActions({ actions: surfaceAction });
   });
 </script>
 
 {#snippet surfaceAction()}
-  <Button
-    variant="ghost-light"
-    size="icon-sm"
-    onclick={moveToBottomBar}
-    tooltip={m.workspace_shell_showInBottomBar_tooltip()}
-    tooltipSide="bottom"
-    tooltipDelayDuration={300}
-    aria-label={m.workspace_shell_showInBottomBar_tooltip()}
-    data-move-to-bottom-bar
-  >
-    <Fa icon={faChevronDown} size="xs" />
-  </Button>
+  {#if $fullContext$}
+    <Menu.CommandItem
+      icon={faChevronDown}
+      label={m.workspace_shell_showInBottomBar_tooltip()}
+      onclick={moveToBottomBar}
+      data-move-to-bottom-bar
+    />
+    {#if scriptId}
+      <Menu.CommandItem
+        icon={faTrash}
+        label={m.scripts_delete_label()}
+        destructive
+        disabledReason={$canDeleteScript$ ? undefined : m.scripts_delete_disabled_description()}
+        onclick={deleteScript}
+      />
+    {/if}
+  {/if}
 {/snippet}
 
-{#if scriptId && isActive}
+{#if scriptId && isActive && $scriptContext$ && ($fullContext$ || $script$)}
   {#key scriptId}
-    <ScriptOutputViewer
-      {scriptId}
-      {workspaceId}
-      class="h-full"
-      onDelete={() => appStore.dispatch(closeTab(layoutId ?? workspaceId, tab.id))}
-    />
+    <ScriptOutputViewer {scriptId} {workspaceId} class="h-full" />
   {/key}
-{:else if terminalId && isActive}
+{:else if terminalId && isActive && $fullContext$}
   {#key terminalId}
     <Terminal {terminalId} {workspaceId} class="h-full" />
   {/key}

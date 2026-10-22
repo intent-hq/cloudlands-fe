@@ -59,8 +59,10 @@ function getClientState(client: JsonRpcClient): ClientState {
 function invalidateClientState(state: ClientState, providerId?: string): void {
   state.generation += 1;
   if (providerId) {
-    state.cache.delete(providerId);
-    state.cache.delete('*');
+    for (const key of state.cache.keys()) {
+      const [, cachedProvider] = JSON.parse(key) as [string | null, string];
+      if (cachedProvider === providerId || cachedProvider === '*') state.cache.delete(key);
+    }
   } else state.cache.clear();
 }
 
@@ -99,7 +101,7 @@ export async function getProviderAuthVerdicts(
   const backend = client ?? getBackendClient();
   const state = getClientState(backend);
   const params = buildProviderAuthStatusParams(options);
-  const key = params.providerId ?? '*';
+  const key = JSON.stringify([params.workspaceId ?? null, params.providerId ?? '*']);
   if (params.force) invalidateClientState(state, params.providerId);
   else {
     const cached = state.cache.get(key);
@@ -119,10 +121,7 @@ export async function getProviderAuthVerdicts(
     const next = active.promise
       .then(() => {
         if (state.trailing.get(key) === queuedState) state.trailing.delete(key);
-        return getProviderAuthVerdicts(
-          { providerId: params.providerId, force: queuedState.force },
-          backend,
-        );
+        return getProviderAuthVerdicts({ ...params, force: queuedState.force }, backend);
       })
       .finally(() => {
         if (state.trailing.get(key) === queuedState) state.trailing.delete(key);
@@ -140,7 +139,7 @@ export async function getProviderAuthVerdicts(
         params,
       );
       const verdicts = toAuthVerdictMap(response);
-      if (requestGeneration === state.generation) {
+      if (requestGeneration === state.generation && state.lifecycleEpoch === lifecycleEpoch) {
         state.cache.set(key, { verdicts, expiresAt: Date.now() + PROVIDER_AUTH_CACHE_TTL_MS });
       }
       return verdicts;
@@ -166,9 +165,9 @@ export function __resetProviderAuthStatusForTests(): void {
 /** Single-provider convenience over {@link getProviderAuthVerdicts}. */
 export async function getProviderAuthVerdict(
   providerId: string,
-  options: { force?: boolean } = {},
+  options: { force?: boolean; workspaceId?: string } = {},
   client?: JsonRpcClient,
 ): Promise<ProviderAuthVerdict | undefined> {
-  const verdicts = await getProviderAuthVerdicts({ providerId, force: options.force }, client);
+  const verdicts = await getProviderAuthVerdicts({ ...options, providerId }, client);
   return verdicts[providerId];
 }

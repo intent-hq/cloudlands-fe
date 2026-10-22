@@ -17,8 +17,6 @@ type StoreReadableStateSource = {
   getReadableState?: () => { subscribe: (listener: (state: any) => void) => () => void };
 };
 
-const noop = () => {};
-
 const resolveState = (state: AppStoreMockOptions['state']) =>
   typeof state === 'function' ? (state as () => unknown)() : (state ?? {});
 
@@ -74,7 +72,12 @@ export const createAppStoreMock = ({
     get state() {
       return resolveState(state);
     },
-    dispatch: (...args: any[]) => (dispatch ?? noop)(...args),
+    dispatch: (action: any) => {
+      const result = dispatch ? dispatch(action) : action;
+      // The public Store returns the original request promise, not the raw
+      // Redux dispatch result. The supplied handler still owns settlement.
+      return action?.asyncActionType ? action.promise : result;
+    },
     emitState: () => {
       for (const notify of [...listeners]) notify();
     },

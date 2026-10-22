@@ -17,7 +17,7 @@ triggers:
 
 > Use a concrete app-local helper module such as `examples/utils/safe-local-storage-saga.ts` — never call `window.localStorage` directly in sagas or components, and do not import localStorage helpers from the package.
 
-Source: `../SKILL.md §15`, `examples/utils/safe-local-storage-saga.ts`.
+Source: [API](#api) and [Rules](#rules), `examples/utils/safe-local-storage-saga.ts`.
 
 ## API
 
@@ -118,7 +118,7 @@ for (const key of draftKeys) {
 - ✅ Always use a concrete app-local saga helper module (for example `examples/utils/safe-local-storage-saga.ts`).
 - ✅ Keep storage keys as constants at the top of the file.
 - ✅ Use `getLocalStorageKeysWithPrefix(prefix)` for helper-safe key enumeration.
-- ❌ Never import localStorage helpers from `@augmentcode/themis/saga` or package utility subpaths.
+- ❌ Never import localStorage helpers from `@themislib/themis/saga` or package utility subpaths.
 - ❌ **Never** call `window.localStorage` directly in sagas.
 - ❌ **Never** put localStorage calls in components — they belong in sagas.
 - ❌ Never assume localStorage always succeeds — it can throw on quota or in private browsing.
@@ -139,7 +139,7 @@ yield* call([window.localStorage, "setItem"], key, value);
 yield* call(setLocalStorageItem, key, value);
 ```
 
-Source: `../SKILL.md §15`. Priority: **HIGH**.
+Source: [Rules](#rules). Priority: **HIGH**.
 
 ### ❌ Calling localStorage from a component
 
@@ -160,7 +160,7 @@ yield* takeEvery(setTheme, function* () {
 });
 ```
 
-Source: `../SKILL.md §15`. Priority: **HIGH**.
+Source: [Rules](#rules). Priority: **HIGH**.
 
 ### ❌ Assuming `JSON.parse` will never throw
 
@@ -183,7 +183,7 @@ try {
 return defaults;
 ```
 
-Source: `../SKILL.md §15`. Priority: **MEDIUM**.
+Source: [API](#api) and [Core Patterns](#core-patterns). Priority: **MEDIUM**.
 
 ## See also
 

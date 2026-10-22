@@ -1,8 +1,10 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { readable } from 'svelte/store';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 
 const mocks = vi.hoisted(() => ({
+  state: {} as Record<string, unknown>,
   loadState: { status: 'idle', error: null } as {
     status: 'idle' | 'loading' | 'cached-ready' | 'optimistic' | 'ready' | 'not-found' | 'error';
     error: null | { kind: 'not_found' | 'error'; message: string };
@@ -26,7 +28,11 @@ const mockPart = vi.hoisted(() => (marker: string) => async () => {
   };
 });
 
-vi.mock('$store/renderer/store', () => ({ store: { state: {}, dispatch: mocks.dispatch } }));
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  return createAppStoreMockModule({ state: () => mocks.state, dispatch: mocks.dispatch });
+});
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
@@ -75,6 +81,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => {
     selectIsNewWorkspaceSession: () => readable(false),
     selectIsWorkspaceCollaborator: () => readable(false),
     selectHidesAgentLifecycleActions: () => readable(mocks.hidesAgentLifecycleActions),
+    selectHidesAgentCreationActions: () => readable(mocks.hidesAgentLifecycleActions),
   };
 });
 vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
@@ -109,13 +116,11 @@ vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
   loadWorkspacesRequested: action('workspace/loadWorkspacesRequested'),
 }));
 vi.mock('$store/renderer/slices/ui-layout/ui-layout-slice', () => ({
+  setCollapsed: action('uiLayout/setCollapsed'),
   setPanelVisibility: action('uiLayout/setPanelVisibility'),
 }));
 vi.mock('$store/renderer/slices/note-read-tracking/note-read-tracking-slice', () => ({
   createNoteRequested: action('notes/createNoteRequested'),
-}));
-vi.mock('$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice', () => ({
-  workspaceLoadRequested: action('workspace-lifecycle/workspaceLoadRequested'),
 }));
 vi.mock('$store/renderer/slices/sidebar-nav/sidebar-nav-slice', () => ({
   setOnboardingActive: action('sidebarNav/setOnboardingActive'),
@@ -141,6 +146,7 @@ vi.mock('$lib/components/workspace/WorkspaceModals.svelte', mockPart('modals'));
 vi.mock('$lib/components/modals/InputDialog.svelte', mockPart('input-dialog'));
 vi.mock('$lib/components/terminal/QuakeTerminalOverlay.svelte', mockPart('quake-terminal'));
 vi.mock('$features/onboarding/OnboardingPage.svelte', mockPart('onboarding'));
+vi.mock('$lib/components/workspace/CompactWorkspaceInitializer.svelte', mockPart('initializer'));
 vi.mock('$features/guest-sessions/GuestEmptyState.svelte', mockPart('guest-empty-state'));
 vi.mock('$store/renderer/slices/guest-sessions/guest-sessions-selectors', () => ({
   selectWindowGuestSession: () => readable(mocks.guestSession),
@@ -169,6 +175,7 @@ function renderHost(workspaceId = 'workspace-1') {
 
 afterEach(cleanup);
 beforeEach(() => {
+  mocks.state = withLegacyPrincipal({});
   mocks.loadState = { status: 'idle', error: null };
   mocks.workspace = null;
   mocks.guestSession = null;
@@ -227,6 +234,7 @@ describe('WorkspaceSurface zero-workspace route (/workspace/new)', () => {
 
   it('shows the guest empty state instead of onboarding in a guest window and keeps the nav (multiplayer w4)', () => {
     mocks.guestSession = { id: 'guest-1', label: 'studio.local' };
+    mocks.state = withLegacyPrincipal({}, 'guest');
     const { container } = renderHost('new');
     expect(
       container.querySelector('[data-workspace-surface-part="guest-empty-state"]'),

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
   import { tick, untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import { faUserTie } from '@fortawesome/free-solid-svg-icons';
@@ -15,6 +16,8 @@
   import { getProposalId } from './proposal-id';
   import { m } from '$shared/paraglide/messages.js';
   import ProposalCardHeader from './ProposalCardHeader.svelte';
+
+  const originatingWorkspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
 
   interface Props {
     proposal: SpecialistEditProposal;
@@ -104,7 +107,12 @@
   }
 
   function buildDetail(): ProposalActionDetail {
-    return { proposal, editedFields: {}, selectedBulkItemIds: [] };
+    return {
+      proposal,
+      editedFields: {},
+      selectedBulkItemIds: [],
+      ...(originatingWorkspaceId ? { workspaceId: originatingWorkspaceId } : {}),
+    };
   }
 
   function getStatusMessage(): string {

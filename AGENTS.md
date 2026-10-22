@@ -2,6 +2,20 @@
 
 Quick routing guide for AI agents. Start here, then open the smallest relevant doc.
 
+**Assistant app guide:** When adding, changing, moving, renaming, or removing a
+user-facing feature, update the affected section of the canonical
+[`packages/intentd/crates/intent-services/resources/assistant-app-guide.md`](../intentd/crates/intent-services/resources/assistant-app-guide.md)
+in the same change, coordinating the companion intentd change (also from standalone
+frontend checkouts). Keep it concise; replace obsolete paths, labels, and prerequisites.
+Keep the guide and user-facing help focused on features ready for users. Do not promote
+unfinished, experimental, Labs-only, internal, or unreleased features as normal options;
+code or tool availability is not proof of readiness. When explicitly asked about such
+a feature, or assigned to develop or test it, discuss it honestly and label its status.
+Update the guide and its source pointers when readiness or UI behavior changes.
+Before opening a PR, record the affected guide section (and companion intentd PR
+for frontend changes), or explain why the change has no user-help impact. Coordinate
+companion releases; this checkpoint does not require simultaneous cross-repo merges.
+
 > **Merge permission**: never merge a PR or arm auto-merge without explicit permission
 > from a human — approved + green is not enough. See the monorepo root
 > [`AGENTS.md`](../../AGENTS.md) (resolves in a monorepo checkout) for the full rule.
@@ -65,7 +79,7 @@ in a monorepo checkout, where this repo mounts at `packages/cloudlands-fe/`.
 | alignment / text-rebase perf claims                                     | `pnpm perf:text-rebase --base <ref>` — paired head/base runs of `src/lib/notes/text-rebase-bench.runner.ts` in fresh processes, interleaved with the pair order alternating per run so drift hits both sides (`--head <ref>`, `--runs`, `--repeats`, `--shapes`, `--json`); cite its table in the PR. Bare packages resolve from the current `node_modules` for both trees; the header labels each tree's mapper mode and warns when a pre-#2740 base (`legacy-two-mapper`) is not comparable like-for-like  |
 | debugging                                                               | ../../docs/fe/TROUBLESHOOTING_GUIDE.md, ../../docs/fe/IPC_DEBUG_GUIDE.md                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | prod stack traces                                                       | `pnpm resolve-stack <tag> < stack.txt` — rebuilds the tag with sourcemaps, maps frames                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| CT run failures (queue ejection triage)                                 | `pnpm ct:failures <run-id \| run-url>` — every failed/flaky CT case of an `Intent PR Checks` run, per shard, from the shard's JSON report artifact (list-log summary fallback); `--attempt N`, `--json`                                                                                                                                                                                                                                                                                                      |
+| CT run failures (PR or nightly triage)                                  | `pnpm ct:failures <run-id \| run-url>` — every failed/flaky CT case of an `Intent PR Checks` or `Nightly Browser Tests` run, per shard, from the shard's JSON report artifact (list-log summary fallback); `--attempt N`, `--json`                                                                                                                                                                                                                                                                           |
 | error handling                                                          | ../../docs/fe/ERROR_HANDLING_SYSTEM.md                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | TypeScript/types                                                        | ../../docs/fe/TYPE_SYSTEM_GUIDE.md                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | events/IPC                                                              | ../../docs/fe/EVENT_SYSTEM.md                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
@@ -119,7 +133,7 @@ corepack pnpm run test:playwright
 
 A test that budgets wall time (perf guards, alignment work bounds) must fit its timeout
 under CI runner load, not just in isolation — the local 30 s `testTimeout` by default
-(`vitest.config.ts` raises it to 60 s on CI) or the documented per-test budget.
+(`vitest.config.ts` raises it to 60 s on CI, from `scripts/vitest-timeouts.mjs`) or the documented per-test budget; catalog contract entries derive theirs from their snapshot size (`src/lib/component-catalog/catalog-contract-budget.ts`).
 `intent/no-wall-clock-assertions-in-tests` (in `pnpm run lint`) flags a raw
 `performance.now()` / `Date.now()` elapsed-time assertion against a millisecond budget and
 names the alternatives; today's offenders are baselined under
@@ -159,9 +173,9 @@ instead of polling or rescheduling an expired hook.
 
 ### Visual verification
 
-For every component change that has a sandbox scene, capture geometry before and after
-the change and put both probe outputs (or their diff) in the task report. After the
-change, also capture and inspect a screenshot:
+For a component change that has a sandbox scene, capture and inspect a screenshot.
+Use before/after geometry probes when they help explain a layout change, and include
+the useful evidence in the task report:
 
 ```bash
 pnpm sandbox:probe workspace-hover-card --state landscape-wide
@@ -197,39 +211,11 @@ pixel dimensions, and URL. `sandbox:probe` prints stable JSON to stdout; pass
 .demo-artifacts/sandbox/<name>.json` to save it. `.demo-artifacts/sandbox/` is
 git-ignored; never commit these visual-review artifacts.
 
-Registered scenes also have co-located `*.geometry.ct.spec.ts` suites and checked-in
-`__geometry__/<scene>.geometry.json` baselines. A missing key, an extra key, or a numeric
-field that moves by more than 1px fails with `state/width/key.field expected→actual`.
-Regenerate baselines only for an intentional geometry change, with either equivalent command:
-
-```bash
-SANDBOX_GEOMETRY_UPDATE=1 pnpm run test:ct -- --grep 'geometry snapshot'
-pnpm sandbox:geometry:update
-```
-
-Linux CI is the only verifier and Inter shapes text differently elsewhere, so run the update
-on a Linux host only: it refuses to write off Linux, every baseline records
-`"$meta": { "generatedOn": "<platform>" }` (the geometry spec rejects any value but `linux`),
-and `SANDBOX_GEOMETRY_UPDATE_ALLOW_NON_LINUX=1` is for uncommitted local experiments only.
-Inspect the JSON diff and justify every regenerated snapshot in the PR description. To
-register a scene, add a co-located `<scene>.geometry.ct.spec.ts` that statically imports the
-preview's default component and passes it to `defineGeometrySnapshotSuite` with the scene,
-named states, contract widths, and `__geometry__/<scene>.geometry.json` path; the shared CT
-hook resolves the preview in the browser, so no per-scene registration is needed. Run the
-update command once to create the baseline. See
+Probe output is manual review evidence, not a checked-in pixel baseline or an automated
+pass/fail contract. Register sandbox scenes for visual review without blanket coordinate
+or size snapshot tests. Add browser assertions only for the user-visible contracts in
+[Testing](#do-not-write-decorative-appearance-tests). See
 `../../docs/fe/DEVELOPER_GUIDE.md#fast-ui-preview-workflow` for the manual preview loop.
-
-```ts
-import Preview from './example.preview.svelte';
-
-defineGeometrySnapshotSuite({
-  scene: 'example',
-  component: Preview,
-  states: ['default'],
-  widths: [420],
-  snapshotPath,
-});
-```
 
 ### Put a preview screenshot in user chat
 
@@ -346,6 +332,23 @@ short-lived workflow artifacts (7-day retention), version-suffixed `-manual.<run
 Nothing publishes to intent-hq/cloudlands-releases and no auto-updater manifest is
 produced — manual install/testing only.
 
+## Update compatibility
+
+Released clients are part of the compatibility contract. Changes to update feed
+filenames or URLs, channel metadata, installers, or architecture support must preserve
+an automatic upgrade path for existing supported installations within each channel.
+A migration must not require users to install the migration code manually first.
+
+Test behavior shipped in a prior release, including its requested feed filenames and
+architecture selection. New-client tests and successful builds/uploads are insufficient.
+Keep these regression tests in required verification. For Mac feeds, extend
+`scripts/mac-channel-feeds.test.ts`: `latest-mac.yml`, used by released beta/stable
+clients, must advertise the selected release for each channel independently.
+
+If a compatibility break is unavoidable, identify the exact affected installations and
+obtain explicit human authorization for that break. Documenting a workaround is not
+authorization; ending Intel support does not authorize stranding native Apple Silicon.
+
 ## Verification
 
 Use `pnpm run verify:changed -- <paths...>` during local work. With no paths, it reads
@@ -356,8 +359,33 @@ that working-tree set is empty and `HEAD` is ahead of `origin/main`, it defaults
 merge-base), so the bare command is correct on a committed PR branch; `--base <ref>` still
 overrides. Only a change set that is empty either way — a clean checkout on or behind
 `origin/main`, or no `origin/main` ref at all — exits 2 instead of passing silently. Add
-`--dry-run` to inspect the
-selected commands without running them. The command runs scoped Prettier and ESLint,
+`--dry-run` to inspect commands without running them, or `--resolved-plan` to run
+prerequisites and Vitest discovery only: it prints every selected unit-test path per
+lane and the unique file count, including UI invariants and full-risk fallbacks.
+Normal execution resolves this same plan before any selected check runs.
+`--max-unit-files N` rejects the entire run when the unique count exceeds N; it never
+truncates coverage. Review the resolved plan, then raise or omit the limit to run all
+selected checks. Discovery failures also stop before checks; fix the reported config
+or source error and retry. `pnpm run test:unit --maxWorkers=1` explicitly runs the full
+unit suite. For a budgeted preview, combine `--resolved-plan` with `--max-unit-files`.
+
+Each run prints `record: <path>` for its attempt under `.dev/verify-changed/attempts/`:
+`run.json` holds the source, configuration, command and resolved-selection identities;
+`results.jsonl` appends check outcomes and each unit file's result as it finishes; and
+`coverage.json` lists every current check and resolved unit file per lane as
+`executed-passed`, `resumed-passed` (with its source attempt), `failed` or `unfinished`.
+The run passes only when every entry is satisfied. To continue after a failure or
+interruption, rerun with `--resume`; never hand-pick stages. It reruns anything not
+proven compatible. A configuration, lockfile, Node, Vitest setup or runner change voids
+all credit. A non-unit check needs an identical command on identical sources. A unit
+file keeps its pass unless the plan for the changes since then would select it (direct
+edit, `vitest related`, declared trigger, UI invariant, full-risk fallback or deleted
+module). Credit follows the file across lanes, so an edited test that moves from the
+declared to the direct lane simply reruns there (cloudlands-fe#3439).
+`--resolved-plan --resume` previews the continuation; `--max-unit-files` still bounds
+the full resolved plan. Attempts untouched for seven days are pruned.
+
+The command runs scoped Prettier and ESLint,
 related Vitest tests, colocated component tests that import the changed file directly or
 through a host `.svelte` they import (one hop, `.svelte` imports only — a change to a `.ts`
 module the host imports, or to a component two hops deep, does not select the spec), and
@@ -512,14 +540,15 @@ on the BE rather than looping on the client.
 
 ### Saga-owned mutations & soft-hide-then-commit
 
-Some async-action triggers (`*Requested` actions with a `.promise`) lost their handlers
-when the saga runtime was removed. They are re-homed in a **mutation middleware** rather
-than a new saga: `createAgentMutationMiddleware()` in
-`src/features/agent/agent-mutation-service.ts` observes dispatched actions and, after the
-reducer runs, calls the `AppClient` seam and dispatches the per-dispatch
-`action.success`/`action.failure` so the awaited promise settles. Keep these middlewares
-dependency-light (no selector imports — they evaluate `store.createSelector` at chain
-construction); read state directly off `appStore.state` and import the toast lib lazily.
+Agent lifecycle mutations are owned by `agentMutationSaga` in
+`src/store/renderer/slices/agent-session/sagas/agent-mutation-saga.ts`, registered once
+in `src/store/renderer/sagas.ts`. Creation is owned by `agentCreationSaga` and routes
+through `agentFactory.createAgent()`. Extend these owners, not a mutation middleware
+or a second runtime. Existing async-action callers (`*Requested` actions with a
+`.promise`) remain supported: settle through the originating action's
+`action.success`/`action.failure` helpers so each dispatch retains its correlation.
+New UI consumers dispatch intent and read correlated selector outcomes; the saga
+owns transport calls, rollback and notifications.
 
 Agent **deletion** uses the **daemon-owned delete grace window** (PROTOCOL §5.5,
 `agent.delete { undoDelayMs }`; the handlers live in the agent mutation saga):
@@ -561,11 +590,77 @@ drop wire rows carrying the additive `pendingDeleteAt` field.
 - For copy-only changes, do not update unit tests. Run `pnpm run generate:i18n`,
   `pnpm run lint:i18n-completeness`, and `pnpm run lint:i18n-strings` instead.
 
+#### Do not write decorative appearance tests
+
+These rules apply to unit tests and browser tests alike:
+
+- **Do not pin decorative choices:** exact colors, font families/sizes/weights, spacing,
+  border widths/radii, shadows, or icon alignment. A browser measurement does not make
+  a decorative assertion a behavioral contract.
+- **Do not use source text, markup order, or CSS-class strings to prove appearance.**
+  Those checks constrain implementation spelling without establishing browser behavior.
+  `intent/no-class-name-assertions-in-tests` rejects new `className` / `classList` /
+  `toHaveClass` assertions in `src/**/*.test.ts`; existing ones are counted in
+  `eslint-rules/baselines/no-class-name-assertions-in-tests/`, which may only shrink.
+- **Do not claim layout coverage from jsdom dimensions.** jsdom does not perform layout;
+  assigning a width or mocking a bounding box and checking it cannot prove containment.
+- **Do not build circular style oracles:** importing a production class constant and
+  checking for those same classes, or copying production spacing into a fixture and
+  measuring that fixture, does not independently verify the app.
+- **Do not multiply themes, widths, or zoom levels without a named behavioral reason
+  for each variation.** Use the smallest set that exercises distinct contracts.
+
+Keep real-browser checks for clipping or overlap that hides content or controls, scroll
+ownership/anchoring, focus and keyboard access, usable hit areas, accessibility contrast,
+and reduced-motion behavior. Name the user-visible failure the assertion prevents.
+Geometry and computed styles are valid evidence for those contracts; do not remove a
+behavioral assertion solely because it measures pixels or lives in a geometry-named file.
+
+| Do not write                                                                   | Write or retain instead                                                                         |
+| ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| Assert `rounded-lg`, an 8px radius, or an exact shadow.                        | Exercise opening, dismissal, and focus restoration of the actual dialog.                        |
+| Assert an icon is centered within 1px or text uses a particular font size.     | Verify long or zoomed content leaves the control readable and operable.                         |
+| Assert a warning equals an imported color token.                               | Check the warning appears for the relevant state and meets accessibility contrast requirements. |
+| Read a Svelte file and expect padding classes or their source order.           | Exercise the production component in a browser and check content is not clipped or obscured.    |
+| Set a jsdom container width and compare its `scrollWidth` to `clientWidth`.    | Mount the real component at a meaningful narrow viewport and check overflow and interaction.    |
+| Import a style constant and assert every token occurs in the rendered classes. | Dispatch an action or change a prop and assert the resulting state, content, or interaction.    |
+| Repeat an appearance assertion across every theme × width × zoom combination.  | Select named cases such as narrow keyboard access or zoomed control containment.                |
+
+Blanket coordinate/size snapshot tests and saved baselines are prohibited, including
+for registered sandbox scenes. Do not recreate them under another name or regenerate
+baselines to accept changed measurements. `pnpm run lint:geometry-snapshots`, included
+in `lint:architecture`, rejects retired baseline paths, snapshot APIs and regeneration
+hooks. Review must also reject equivalent mechanisms under new names. Manual probes
+and screenshot review remain available under [Visual verification](#visual-verification);
+automated geometry assertions must protect a named behavioral contract.
+
 ### Component tests (Playwright CT) — when and how
 
+CT keeps compiler/runner 1.58.2 and explicitly launches Chromium 153.0.8010.12
+(revision 1243), supplied by the exact `ct-browser` alias for Playwright core 1.63.0.
+`scripts/ct-browser.mjs` owns the checked identity, OS-specific executable resolution,
+cache key and dependency marker. Install with
+`node scripts/run-ct-tests.mjs --install-browsers chromium` (add `--with-deps` when
+needed); `--print-browser-plan` reports the resolved plan. Use the same
+`PLAYWRIGHT_BROWSERS_PATH` for installation and tests, including per-runner caches.
+The shared fixture rejects missing installs and wrong `Browser.getVersion` results;
+each attempt attaches `ct-runtime.json` with runner/browser versions and source hashes.
+The two-line `playwright-core@1.58.2` patch backports error classification from
+[Playwright PR 41868](https://github.com/microsoft/playwright/pull/41868), without
+retaining or intercepting promises. This browser is an integration experiment for
+intent-hq/intent#5481: the opt-in weak-inner-promise diagnostic still fails completion.
+
+Traces use `retain-on-first-failure`: the original failed attempt survives a passing
+retry. The opt-in `playwright-ct-evidence.config.ts` control requires a fresh
+`CT_EVIDENCE_OUTPUT` directory and is expected to fail the strict flaky gate with
+`--retries=1 --fail-on-flaky-tests`. The separate lifetime diagnostic config requires
+`CT_LIFETIME_EXECUTABLE`, `CT_LIFETIME_VERSION` and `CT_LIFETIME_OUTPUT`; these
+diagnostics are outside default discovery and do not change the ordinary pin.
+
 Playwright CT (`*.ct.spec.ts`, run by `pnpm run test:ct`) is for behavior that only a
-real browser can observe: layout/geometry, focus and keyboard handling, native browser
-APIs, CSS/motion. State, wire, validation, and routing logic belong in Vitest — a CT spec
+real browser can observe: functional layout/geometry, focus and keyboard handling, native
+browser APIs, and motion behavior under the rules above. State, wire, validation, and
+routing logic belong in Vitest — a CT spec
 is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxed on CI.
 
 - **Matrix cells must map to a named contract.** Loop over a width only when that width
@@ -579,15 +674,47 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   share ordered state.
 - **A pass-on-retry fails the required CT lane** (`--fail-on-flaky-tests`). Fix the flake
   or, if it needs more time, tag the individual test
-  `{ tag: '@quarantine' }` — never a whole file. The CT job runs on every merge-queue
-  entry, and on `pull_request` only when the diff touches a CT-contract path, a CT spec,
-  or a geometry golden (classified by `scripts/ct-contract-paths.mjs`, shared with
-  `verify:changed`), so on other PRs a pass-on-retry ejects the PR from the queue rather
-  than reddening a PR check. To see which cases ejected a run without opening four shard
-  logs, run `pnpm ct:failures <run-id>` (see Where to look).
-  Quarantined tests still run on every queue entry as an advisory (non-blocking) step on
-  shard 1 and must carry an open tracking issue and an owner; quarantine is temporary,
-  not a parking lot — remove the tag in the PR that fixes the flake.
+  `{ tag: '@quarantine' }` — never a whole file. The full four-shard CT suite
+  runs nightly at 02:17 UTC and on manual dispatch (`nightly-browser-tests.yml`).
+  Merge-queue entries that touch CT-contract paths, specs or their direct local imports
+  also require it (classified by `scripts/ct-contract-paths.mjs`, shared with
+  `verify:changed`). Root Playwright test/config/fixture changes require its four shards
+  in the queue; Electron lifetime test/harness/config changes require its Electron suite.
+  Both also run nightly/manual. Browser suites never run on PR updates (PRs run only
+  type/lint, unit tests and static checks); ordinary application changes can therefore
+  reveal browser regressions in the queue or after merge.
+  `pnpm ct:failures <run-id>` lists failed/flaky CT cases from queue or nightly artifacts.
+  All browser lanes retain JSON, HTML and traces for seven days; the nightly
+  manifest and per-lane outcomes distinguish missing reports from successful runs.
+  `nightly-browser-report.yml` processes every nightly/main manual completion,
+  including green runs with retries or quarantine failures. Its isolated writer
+  uses main's code and `MONOREPO_ISSUES_TOKEN` (central-tracker Issues write, with
+  permission to set Bug Type, labels and assignees). New issues go to
+  `intent-hq/intent`, owned by @panghy; matched issues retain their owners and human
+  text. Exact markers and complete open/closed issue/comment listings deduplicate
+  occurrences using each job's own attempt and completion time; retained shards
+  do not count again. Fixed regressions reopen, current duplicates follow their
+  canonical issue, and an explicit duplicate undo overrides old comments.
+  Not-planned closures stay closed with recurrence evidence. No green run
+  automatically closes an issue. Quarantine failures reuse an existing strong
+  match or an `issue`/`quarantine` annotation containing its tracking issue URL.
+  Missing reports or stale rerun evidence produce a separate CI incident.
+  Collection and publication bind the triggering attempt; a later source attempt
+  fails reporting with saved event/evidence-gap metadata instead of replacing it.
+  For read-only diagnosis, run
+  `node scripts/nightly-test-failures.mjs collect --run <id> --out /tmp/nightly-report`
+  (add `--attempt <n>` to pin the source attempt, or `--historical` for older/non-nightly artifacts).
+  `publish --out /tmp/nightly-report` previews issue actions; writes
+  require the trusted completion workflow. Its saved plan, receipts, summary and
+  original archives survive reporting errors; rerun that workflow after correcting
+  auth/API failures. Python 3 reads bounded ZIP members without extracting files.
+  Writers use GitHub's `concurrency.queue: max` to retain pending completions;
+  `.github/actionlint.yaml` ignores only actionlint's unknown-`queue` diagnostic for
+  this [documented key](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
+  `pnpm run lint:workflows` (part of `lint:architecture`) runs the pinned actionlint
+  with shellcheck over every workflow; add path-scoped ignores with a reason there.
+  Quarantined CT tests still run as an advisory step on shard 1 and must carry an
+  open tracking issue and an owner. Remove the tag in the PR that fixes the flake.
 - Motion specs that sample animation progress mid-flight are the historical flake source;
   prefer asserting start/end states and `getAnimations()` counts over timed midpoints.
 - **Every CT spec imports `test` / `expect` from `src/test/ct-test.ts`** — lint-enforced

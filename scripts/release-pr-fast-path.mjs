@@ -7,7 +7,11 @@
 // shape-based match, fail-safe fallback to full CI).
 //
 // Usage: node scripts/release-pr-fast-path.mjs <base-ref-or-sha> [<head-ref-or-sha>]
-//   <head> defaults to HEAD.
+//   <head> defaults to HEAD. Pass --release-only to exclude sidecar pin bumps
+//   when authorizing a direct release merge, or --pin-only to accept ONLY the
+//   sidecar pin-bump shape when authorizing a direct pin merge
+//   (auto-pin-merge-route.mjs). CI keeps both shapes by default. Both direct
+//   modes also require unchanged regular-file modes.
 //
 // Output contract (for CI):
 //   - Prints `fast_path=true` and exits 0 when the diff matches the shape.
@@ -32,13 +36,19 @@
 //
 // Pin-bump shape (all must hold; mutually exclusive with the release shape —
 // a diff mixing intentd.version with any other file matches neither):
-//   1. The diff is exactly one file, intentd.version, a pure modification.
+//   1. The diff is intentd.version, a pure modification, optionally plus the
+//      generated src/test/current-protocol-version.ts (also a modification).
 //   2. Base and head each contain exactly one non-comment, non-blank pin
 //      line; both parse as a bare X.Y.Z(-prerelease) version (no leading
 //      'v'; same grammar as parseVersionPin), and old pin A != new pin B.
 //   3. The head file is byte-identical to the base file after replacing the
 //      new pin line B with the old pin line A — i.e. nothing but the pin
 //      value changed (a comment edit or added line breaks the match).
+//   4. When the generated protocol-version module exists at base it must be in the
+//      diff (a pin bump that skipped its regeneration takes full CI), and only its
+//      `// source-pin: A` line moved to `// source-pin: B`. A changed
+//      CURRENT_PROTOCOL_VERSION is a protocol bump: every fake-hello test must
+//      re-run against it (intent-hq/intent#7206), so it takes full CI.
 //
 // Git history requirements (shallow CI checkouts): the <base> and <head>
 // commits — and ideally their merge-base — must be present locally. With
@@ -55,6 +65,8 @@ import { fileURLToPath } from 'node:url';
 const ALLOWED_FILES = new Set(['CHANGELOG.md', 'package.json', '.release-please-manifest.json']);
 const VERSION_RE = /^[0-9A-Za-z][0-9A-Za-z.+-]*$/;
 const PIN_FILE = 'intentd.version';
+// Regenerated with every pin bump by scripts/sync-intentd-protocol-version.mjs.
+const PROTOCOL_VERSION_FILE = 'src/test/current-protocol-version.ts';
 // Pins are bare X.Y.Z(-prerelease) versions (no leading 'v'); same grammar as
 // the canonical pin parser (parseVersionPin in scripts/fetch-sidecar-lib.mjs
 // and src/features/backend/main/intentd-version-pin.ts).
@@ -78,7 +90,13 @@ function noMatch(reason) {
  * or { fastPath: false, reason }.
  * Throws on unexpected errors (unresolvable refs, git failures).
  */
-export function evaluateFastPath(baseRef, headRef, cwd = process.cwd()) {
+export function evaluateFastPath(
+  baseRef,
+  headRef,
+  cwd = process.cwd(),
+  { releaseOnly = false, pinOnly = false } = {},
+) {
+  if (releaseOnly && pinOnly) throw new Error('releaseOnly and pinOnly are mutually exclusive');
   const rev = (ref) => {
     try {
       return git(cwd, 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`).trim();
@@ -103,11 +121,27 @@ export function evaluateFastPath(baseRef, headRef, cwd = process.cwd()) {
   if (diff.length === 0) return noMatch('empty diff');
 
   const show = (revision, path) => git(cwd, 'show', `${revision}:${path}`);
+  // name-status M includes chmod and changed symlink targets. Neither
+  // qualifies for bypassing the merge queue in the direct-merge modes.
+  const regularModeUnchanged = (path) => {
+    const baseMode = git(cwd, 'ls-tree', mergeBase, '--', path).split(' ')[0];
+    const headMode = git(cwd, 'ls-tree', head, '--', path).split(' ')[0];
+    return /^100(644|755)$/.test(baseMode) && headMode === baseMode;
+  };
 
   // --- Pin-bump shape: intentd.version alone, pure modification --------------
-  if (diff.length === 1 && diff[0][1] === PIN_FILE) {
-    const [status] = diff[0];
-    if (status !== 'M') return noMatch(`non-modification change (${status} ${PIN_FILE})`);
+  const diffPaths = diff.map(([, path]) => path);
+  const isPinBumpDiff =
+    diffPaths.includes(PIN_FILE) &&
+    diffPaths.every((path) => path === PIN_FILE || path === PROTOCOL_VERSION_FILE);
+  if (pinOnly && !isPinBumpDiff) return noMatch('not a sidecar pin-bump diff');
+  if (!releaseOnly && isPinBumpDiff) {
+    for (const [status, path] of diff) {
+      if (status !== 'M') return noMatch(`non-modification change (${status} ${path})`);
+      if (pinOnly && !regularModeUnchanged(path)) {
+        return noMatch(`non-regular file or mode change: ${path}`);
+      }
+    }
     const pinBase = show(mergeBase, PIN_FILE);
     const pinHead = show(head, PIN_FILE);
     const baseLines = pinLines(pinBase);
@@ -131,6 +165,33 @@ export function evaluateFastPath(baseRef, headRef, cwd = process.cwd()) {
       .map((line) => (line === pinB ? pinA : line))
       .join('\n');
     if (reverted !== pinBase) return noMatch(`non-pin change in ${PIN_FILE}`);
+    // A pin bump that skipped the regeneration would leave fake hellos on the old
+    // daemon's protocol; it must run the checks job, whose lint:intentd-protocol-pin
+    // names the fix, instead of skipping it here.
+    let moduleAtBase = true;
+    try {
+      show(mergeBase, PROTOCOL_VERSION_FILE);
+    } catch {
+      moduleAtBase = false;
+    }
+    if (moduleAtBase && !diffPaths.includes(PROTOCOL_VERSION_FILE)) {
+      return noMatch(`${PROTOCOL_VERSION_FILE} not regenerated for the pin bump`);
+    }
+    if (diffPaths.includes(PROTOCOL_VERSION_FILE)) {
+      const moduleBase = show(mergeBase, PROTOCOL_VERSION_FILE);
+      const moduleHead = show(head, PROTOCOL_VERSION_FILE);
+      const pinLine = (pin) => `// source-pin: ${pin}`;
+      const moduleLines = moduleHead.split('\n');
+      if (!moduleBase.split('\n').includes(pinLine(pinA)) || !moduleLines.includes(pinLine(pinB))) {
+        return noMatch(`${PROTOCOL_VERSION_FILE} source-pin does not move ${pinA} -> ${pinB}`);
+      }
+      const revertedModule = moduleLines
+        .map((line) => (line === pinLine(pinB) ? pinLine(pinA) : line))
+        .join('\n');
+      if (revertedModule !== moduleBase) {
+        return noMatch(`protocol version change in ${PROTOCOL_VERSION_FILE}`);
+      }
+    }
     return { fastPath: true };
   }
 
@@ -138,6 +199,9 @@ export function evaluateFastPath(baseRef, headRef, cwd = process.cwd()) {
   for (const [status, path] of diff) {
     if (status !== 'M') return noMatch(`non-modification change (${status} ${path})`);
     if (!ALLOWED_FILES.has(path)) return noMatch(`disallowed file: ${path}`);
+    if (releaseOnly && !regularModeUnchanged(path)) {
+      return noMatch(`non-regular file or mode change: ${path}`);
+    }
   }
   const changed = new Set(diff.map(([, path]) => path));
   if (!changed.has('package.json')) return noMatch('package.json unchanged (no version delta)');
@@ -164,8 +228,10 @@ export function evaluateFastPath(baseRef, headRef, cwd = process.cwd()) {
   if (verA === verB) return noMatch('no version change in package.json');
 
   // --- Condition 3: package.json is version-only -----------------------------
+  // Replace only one literal occurrence so nested version changes cannot
+  // hide alongside the top-level version delta.
   // Literal (non-regex) replacement of `"version": "B"` -> `"version": "A"`.
-  if (pkgHead.replaceAll(`"version": "${verB}"`, `"version": "${verA}"`) !== pkgBase) {
+  if (pkgHead.replace(`"version": "${verB}"`, `"version": "${verA}"`) !== pkgBase) {
     return noMatch('non-version change in package.json');
   }
 
@@ -179,7 +245,7 @@ export function evaluateFastPath(baseRef, headRef, cwd = process.cwd()) {
     if (parseJson(mfHead)?.['.'] !== verB) {
       return noMatch(`manifest "." at head is not '${verB}'`);
     }
-    if (mfHead.replaceAll(`"${verB}"`, `"${verA}"`) !== mfBase) {
+    if (mfHead.replace(`"${verB}"`, `"${verA}"`) !== mfBase) {
       return noMatch('non-version change in .release-please-manifest.json');
     }
   }
@@ -190,13 +256,21 @@ export function evaluateFastPath(baseRef, headRef, cwd = process.cwd()) {
 const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
 if (isDirectRun) {
   const args = process.argv.slice(2);
+  const releaseOnly = args[0] === '--release-only';
+  const pinOnly = args[0] === '--pin-only';
+  if (releaseOnly || pinOnly) args.shift();
   if (args.length < 1 || args.length > 2) {
-    console.error('usage: release-pr-fast-path.mjs <base-ref-or-sha> [<head-ref-or-sha>]');
+    console.error(
+      'usage: release-pr-fast-path.mjs [--release-only | --pin-only] <base-ref-or-sha> [<head-ref-or-sha>]',
+    );
     process.exit(2);
   }
   let result;
   try {
-    result = evaluateFastPath(args[0], args[1] ?? 'HEAD');
+    result = evaluateFastPath(args[0], args[1] ?? 'HEAD', process.cwd(), {
+      releaseOnly,
+      pinOnly,
+    });
   } catch (err) {
     console.error(`error: ${err instanceof Error ? err.message : err}`);
     process.exit(2);

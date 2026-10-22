@@ -3,6 +3,7 @@ import type { SpecialistFileScope } from '../specialist-file-types';
 
 export const PROPOSAL_KINDS = [
   'workspace-create',
+  'workspace-transfer',
   'settings-change',
   'specialist-edit',
   'bulk-op',
@@ -90,6 +91,16 @@ export type WorkspaceCreateProposal = BaseProposal<
   { operation: 'workspace.create'; params?: Record<string, unknown> }
 >;
 
+export type WorkspaceTransferProposal = BaseProposal<
+  'workspace-transfer',
+  {
+    operation: 'workspace.transfer';
+    workspaceId: string;
+    sourceWorkspacePath: string;
+    destination?: string;
+  }
+>;
+
 type SpecialistProposalOperation = 'create' | 'edit' | 'delete';
 
 export type SpecialistEditProposal = BaseProposal<
@@ -118,9 +129,15 @@ export type BulkOperationProposal = BaseProposal<
 >;
 
 export type Proposal =
-  WorkspaceCreateProposal | SettingsChangeProposal | SpecialistEditProposal | BulkOperationProposal;
+  | WorkspaceCreateProposal
+  | WorkspaceTransferProposal
+  | SettingsChangeProposal
+  | SpecialistEditProposal
+  | BulkOperationProposal;
 
 export interface ProposalActionDetail {
+  /** Workspace owning the proposal; captured by the rendering surface. */
+  workspaceId?: string;
   proposal: Proposal;
   editedFields: Record<string, unknown>;
   selectedBulkItemIds: string[];

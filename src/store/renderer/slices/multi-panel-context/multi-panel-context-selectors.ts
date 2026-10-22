@@ -1,5 +1,5 @@
 import { store } from '../../store';
-import { getItems, type Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems, type Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type { PanelContextItem, SelectionContextItem } from './multi-panel-context-slice';
 
 const selectPanelsCollection = store.createSelector((state): Collection<PanelContextItem, 'id'> => {

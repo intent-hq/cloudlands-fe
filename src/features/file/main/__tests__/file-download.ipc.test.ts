@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   renameWithRetry: vi.fn(),
   createZipFromPaths: vi.fn(),
   backendRequest: vi.fn(),
+  getBackendClientForIpcEvent: vi.fn(),
   getConfig: vi.fn(),
   shouldUseTransferConnection: vi.fn(),
   withTransferConnection: vi.fn(),
@@ -44,6 +45,7 @@ vi.mock('fs', () => ({
 }));
 
 vi.mock('../../../backend/main/backend.ipc', () => ({
+  getBackendClientForIpcEvent: mocks.getBackendClientForIpcEvent,
   getBackendClient: () => ({
     request: mocks.backendRequest,
     getConfig: mocks.getConfig,
@@ -185,6 +187,10 @@ describe('file:download-attachment IPC handler', () => {
     mocks.renameWithRetry.mockResolvedValue(undefined);
     mocks.getConfig.mockReturnValue({ transport: 'uds', socketPath: '/tmp/i.sock' });
     mocks.shouldUseTransferConnection.mockReturnValue(false);
+    mocks.getBackendClientForIpcEvent.mockReturnValue({
+      backendId: 'local',
+      client: { request: mocks.backendRequest, getConfig: mocks.getConfig },
+    });
   });
 
   it('local backend: copies from the workspace root resolved via workspace.get', async () => {
@@ -219,6 +225,105 @@ describe('file:download-attachment IPC handler', () => {
       '/home/u/worktrees/ws-1/.intent/attachments/photo.png',
       expect.stringMatching(TEMP_PATH_RE),
     );
+  });
+
+  it('remote window: ignores a same-ID local workspace and owns the transfer on the sender backend', async () => {
+    const event = { sender: { id: 42 } };
+    const remoteConfig = { transport: 'wss', url: 'wss://remote.example' };
+    const remoteRequest = vi.fn();
+    mocks.getBackendClientForIpcEvent.mockImplementation((ipcEvent) => {
+      if (ipcEvent !== event) throw new Error('Unknown sender');
+      return {
+        backendId: 'remote-42',
+        client: { request: remoteRequest, getConfig: () => remoteConfig },
+      };
+    });
+    mocks.backendRequest.mockResolvedValue({ workspace: { path: '/local/same-id-workspace' } });
+    mocks.shouldUseTransferConnection.mockImplementation(
+      (_method, config) => config.transport !== 'uds',
+    );
+    mocks.showSaveDialog.mockResolvedValue({ filePath: '/dest/photo.png', canceled: false });
+    const bytes = Buffer.from([0, 255, 17, 128]);
+    const requestChunk = vi.fn().mockResolvedValue({
+      content: bytes.toString('base64'),
+      bytesRead: bytes.length,
+      size: bytes.length,
+    });
+    mocks.withTransferConnection.mockImplementation(async (_config, fn) =>
+      fn({ request: requestChunk }),
+    );
+    const write = vi.fn().mockResolvedValue({ bytesWritten: bytes.length });
+    const close = vi.fn().mockResolvedValue(undefined);
+    mocks.open.mockResolvedValue({ write, close });
+
+    const result = await getDownloadAttachmentHandler()(event, request);
+
+    expect(result).toEqual({ success: true, data: { filePath: '/dest/photo.png' } });
+    expect(mocks.withTransferConnection).toHaveBeenCalledExactlyOnceWith(
+      remoteConfig,
+      expect.any(Function),
+      'remote-42',
+    );
+    expect(requestChunk).toHaveBeenCalledExactlyOnceWith('file.readChunk', {
+      workspaceId: 'ws-1',
+      path: '.intent/attachments/photo.png',
+      offset: 0,
+      length: 16 * 1024 * 1024,
+    });
+    expect(write).toHaveBeenCalledExactlyOnceWith(bytes, 0);
+    expect(close).toHaveBeenCalledOnce();
+    expect(mocks.backendRequest).not.toHaveBeenCalled();
+    expect(remoteRequest).not.toHaveBeenCalled();
+    expect(mocks.copyFile).not.toHaveBeenCalled();
+  });
+
+  it('captures the sender backend before the Save dialog can outlive a window backend switch', async () => {
+    const event = { sender: { id: 42 } };
+    const selectedRequest = vi
+      .fn()
+      .mockResolvedValue({ workspace: { path: '/selected/workspace' } });
+    mocks.getBackendClientForIpcEvent.mockReturnValue({
+      backendId: 'selected',
+      client: { request: selectedRequest, getConfig: mocks.getConfig },
+    });
+    mocks.backendRequest.mockResolvedValue({ workspace: { path: '/wrong/workspace' } });
+    mocks.showSaveDialog.mockImplementation(async () => {
+      mocks.getBackendClientForIpcEvent.mockImplementation(() => {
+        throw new Error('window switched');
+      });
+      return { filePath: '/dest/photo.png', canceled: false };
+    });
+
+    const result = await getDownloadAttachmentHandler()(event, request);
+
+    expect(result.success).toBe(true);
+    expect(mocks.getBackendClientForIpcEvent).toHaveBeenCalledExactlyOnceWith(event);
+    expect(selectedRequest).toHaveBeenCalledExactlyOnceWith('workspace.get', {
+      workspaceId: 'ws-1',
+    });
+    expect(mocks.copyFile).toHaveBeenCalledWith(
+      '/selected/workspace/.intent/attachments/photo.png',
+      expect.stringMatching(TEMP_PATH_RE),
+    );
+    expect(mocks.backendRequest).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the sender backend is unavailable even if a local workspace shares its ID', async () => {
+    mocks.getBackendClientForIpcEvent.mockImplementation(() => {
+      throw new Error('remote disconnected');
+    });
+    mocks.backendRequest.mockResolvedValue({ workspace: { path: '/local/same-id-workspace' } });
+    mocks.showSaveDialog.mockResolvedValue({ filePath: '/dest/photo.png', canceled: false });
+
+    const result = await getDownloadAttachmentHandler()({ sender: { id: 42 } }, request);
+
+    expect(result).toEqual({
+      success: false,
+      error: { code: 'DOWNLOAD_FAILED', message: expect.stringContaining('photo.png') },
+    });
+    expect(mocks.backendRequest).not.toHaveBeenCalled();
+    expect(mocks.copyFile).not.toHaveBeenCalled();
+    expect(mocks.withTransferConnection).not.toHaveBeenCalled();
   });
 
   it('remote backend: loops file.readChunk over a per-transfer connection and streams chunks', async () => {

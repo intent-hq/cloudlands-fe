@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { openAssistantAgentFromEvent } from '$lib/utils/assistant-agent-link';
   /**
    * AgentsList Component
    *
@@ -87,6 +88,7 @@
 
   function handleAgentClick(event: MouseEvent, agent: AgentSession) {
     if (agent && agent.id) {
+      if (openAssistantAgentFromEvent(event, agent.workspaceId, agent.id)) return;
       const panelElement = (event.target as HTMLElement)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
       const openInAdjacentPanel = event.metaKey || event.ctrlKey;

@@ -2,6 +2,7 @@
   let {
     value = $bindable(''),
     language = 'plaintext',
+    readOnly = false,
     fileName = '',
     filePath = '',
     lineWrapping = false,
@@ -24,4 +25,5 @@
   data-external-content-version={externalContentVersion}
   data-jump-to-line={jumpTo?.line}
   data-initial-value={initialValue}
+  readonly={readOnly}
   bind:value></textarea>

@@ -5,8 +5,8 @@
  * Tracks which agent is being followed and the current file/note context.
  */
 
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { AgentFollowState, PendingChange } from './agent-follow-types';
 
 // ---------------------------------------------------------------------------

@@ -64,6 +64,56 @@ describe('ImageActionsMenu copy shortcuts', () => {
     expect(document.activeElement).toBe(screen.getByRole('button', { name: /image options/i }));
   });
 
+  it.each([{ metaKey: true }, { ctrlKey: true }])(
+    'finishes the third copy after the portalled menu closes with %j',
+    async (modifier) => {
+      const original = new Blob(['original pixels'], { type: 'image/png' });
+      let release!: (blob: Blob) => void;
+      const pendingBlob = new Promise<Blob>((resolve) => {
+        release = resolve;
+      });
+      let holdCopy = false;
+      const fetchImage = vi.fn().mockImplementation(async () => ({
+        ok: true,
+        blob: () => (holdCopy ? pendingBlob : Promise.resolve(original)),
+      }));
+      vi.stubGlobal('fetch', fetchImage);
+      const write = captureImageCopies();
+      const { rerender } = render(ImageActionsMenu, {
+        props: { imageUrl: 'https://image.test/original' },
+      });
+      try {
+        const trigger = screen.getByRole('button', { name: /image options/i });
+        trigger.focus();
+        expect(await fireEvent.keyDown(trigger, { key: 'c', metaKey: true })).toBe(false);
+        await waitFor(() => expect(write).toHaveBeenCalledTimes(1));
+        expect(await fireEvent.copy(trigger)).toBe(false);
+        await waitFor(() => expect(write).toHaveBeenCalledTimes(2));
+
+        await openMenu();
+        const download = screen.getByRole('menuitem', { name: /download/i });
+        await waitFor(() => expect(document.activeElement).toBe(download));
+        holdCopy = true;
+        expect(await fireEvent.keyDown(download, { key: 'c', ...modifier })).toBe(false);
+        await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+        await waitFor(() => expect(document.activeElement).toBe(trigger));
+        expect(write).toHaveBeenCalledTimes(2);
+        expect(fetchImage).toHaveBeenLastCalledWith('https://image.test/original');
+
+        // Hydration can change the next copy target while this action is in flight.
+        await rerender({ imageUrl: 'https://image.test/replacement' });
+        release(original);
+        await waitFor(() => expect(write).toHaveBeenCalledTimes(3));
+        for (const [items] of write.mock.calls) {
+          expect(items[0].items['image/png']).toBe(original);
+        }
+        expect(notify.error).not.toHaveBeenCalled();
+      } finally {
+        release(original);
+      }
+    },
+  );
+
   it.each([
     { key: 'c' },
     { key: 'c', metaKey: true, shiftKey: true },

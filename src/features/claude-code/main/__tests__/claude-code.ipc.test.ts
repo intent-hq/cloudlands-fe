@@ -1,12 +1,4 @@
-/**
- * Tests for the Claude Code IPC handlers.
- *
- * Availability resolves the `claude` CLI (prerequisite) and `npx` (the adapter
- * runner) through `host.findBinary` (PROTOCOL §5.14); GET_MODELS reads the
- * per-provider catalog (`models.list { providerId: 'claude-code' }`, PROTOCOL
- * §6.7). These tests pin the three-way availability verdict, including the
- * `CLAUDE_CODE_NPX_MISSING_WARNING` case.
- */
+/** Claude availability uses daemon discovery; model listing uses the daemon catalog. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CLAUDE_CODE_NPX_MISSING_WARNING } from '../../../../shared/constants/claude-code';
@@ -52,56 +44,61 @@ describe('claude-code IPC availability', () => {
     vi.clearAllMocks();
     mocks.handlers.clear();
     mocks.findBinary.mockReset();
+    mocks.backendRequest.mockReset();
   });
 
-  it('reports available when the daemon resolves both the claude CLI and npx', async () => {
-    mocks.findBinary.mockImplementation(async (name: string) =>
-      name === 'claude' ? '/opt/homebrew/bin/claude' : '/opt/homebrew/bin/npx',
-    );
-
-    const handler = await setupAndGetHandler('claude-code:check-availability');
-    const result = await handler({});
-
-    expect(mocks.findBinary).toHaveBeenCalledWith('claude', {
-      commonPaths: ['/opt/homebrew/bin/claude'],
-    });
-    expect(mocks.findBinary).toHaveBeenCalledWith('npx', {
-      commonPaths: ['/opt/homebrew/bin/npx'],
-    });
-    expect(result).toEqual({ success: true, available: true });
-  });
-
-  it('reports unavailable without a warning when the claude CLI does not resolve', async () => {
+  it.each([
+    [
+      'bundled runtime without a standalone CLI',
+      { installed: true, resolvedPath: '/usr/bin/npx' },
+      true,
+      undefined,
+    ],
+    ['valid adapter override without npx', { installed: true }, true, undefined],
+    ['uninstalled', { installed: false }, false, CLAUDE_CODE_NPX_MISSING_WARNING],
+    ['gated', { installed: false, gatedOff: 'TEST_GATE' }, false, undefined],
+    ['missing', null, false, undefined],
+  ])('uses daemon discovery for %s', async (_label, row, available, warning) => {
     mocks.findBinary.mockResolvedValue(null);
-
+    mocks.backendRequest.mockResolvedValue({
+      providers: row
+        ? [
+            {
+              id: 'claude-code',
+              displayName: 'Claude Code',
+              command: 'npx',
+              hasNpxFallback: false,
+              ...row,
+            },
+          ]
+        : [],
+      npx:
+        row && 'resolvedPath' in row && row.resolvedPath
+          ? { resolvedPath: row.resolvedPath, version: '10.0.0', versionOk: true }
+          : { resolvedPath: null, version: null, versionOk: false },
+    });
     const handler = await setupAndGetHandler('claude-code:check-availability');
     const result = await handler({});
-
-    expect(result).toEqual({ success: true, available: false });
-    expect(mocks.findBinary).toHaveBeenCalledTimes(1);
-    expect(mocks.findBinary).not.toHaveBeenCalledWith('npx', expect.anything());
+    expect(result).toEqual({ success: true, available, ...(warning ? { warning } : {}) });
+    expect(mocks.backendRequest.mock.calls).toEqual([['host.providerDiscovery', {}]]);
+    expect(mocks.findBinary).not.toHaveBeenCalled();
   });
 
-  it('carries CLAUDE_CODE_NPX_MISSING_WARNING when claude resolves but npx does not', async () => {
-    mocks.findBinary.mockImplementation(async (name: string) =>
-      name === 'claude' ? '/opt/homebrew/bin/claude' : null,
-    );
-
-    const handler = await setupAndGetHandler('claude-code:check-availability');
-
-    expect(await handler({})).toEqual({
-      success: true,
-      available: false,
-      warning: CLAUDE_CODE_NPX_MISSING_WARNING,
+  it('does not invent missing-runner guidance without an npx verdict', async () => {
+    mocks.backendRequest.mockResolvedValue({
+      providers: [{ id: 'claude-code', installed: false }],
     });
+    const handler = await setupAndGetHandler('claude-code:check-availability');
+    expect(await handler({})).toEqual({ success: true, available: false });
+    expect(mocks.findBinary).not.toHaveBeenCalled();
   });
 
-  it('reports unavailable when the binary lookup throws', async () => {
-    mocks.findBinary.mockRejectedValue(new Error('daemon unreachable'));
-
+  it('preserves the legacy unavailable envelope when discovery throws', async () => {
+    mocks.backendRequest.mockRejectedValue(new Error('daemon unreachable'));
     const handler = await setupAndGetHandler('claude-code:check-availability');
-
     expect(await handler({})).toEqual({ success: true, available: false });
+    expect(mocks.backendRequest).toHaveBeenCalledWith('host.providerDiscovery', {});
+    expect(mocks.findBinary).not.toHaveBeenCalled();
   });
 });
 

@@ -5,6 +5,7 @@
  * with a Cancel button in the focused window during the two silent phases of
  * an `intent://invite` join (`features/deeplink/main/invite-deep-link.ts`):
  *
+ * - `admission`: the original window offers manual Multiplayer enable/retry before any RPC.
  * - `connecting`: the link was parsed and main is reaching the host, up to
  *   the moment the consent (Join) prompt appears.
  * - `opening`: the host committed the join (point of no return) and main is
@@ -48,10 +49,10 @@
  */
 
 /** Which silent phase of the join the dialog describes. */
-export type InviteProgressPhase = 'connecting' | 'opening';
+export type InviteProgressPhase = 'admission' | 'connecting' | 'opening';
 
-/** The only action the dialog offers. */
-export type InviteProgressAction = 'cancel';
+/** Cancel is always available; retry is admitted only by an admission request. */
+export type InviteProgressAction = 'cancel' | 'retry';
 
 /** `invite-progress:show` payload (main → renderer). */
 export interface InviteProgressShowPayload {

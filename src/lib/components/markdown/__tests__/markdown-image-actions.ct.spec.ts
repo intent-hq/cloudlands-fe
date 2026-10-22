@@ -75,9 +75,13 @@ async function captureImageClipboard(page: Page) {
 }
 
 async function expectCopiedImage(page: Page, count: number) {
-  await expect
-    .poll(() => page.evaluate(() => (window as ClipboardTestWindow).imageCopyTest.writes.length))
-    .toBe(count);
+  // Keep browser frames active while native canvas PNG encoding finishes. Node-side
+  // polling can leave Chromium's idle encoder waiting beyond this same 5s budget.
+  await page.waitForFunction(
+    (expected) => (window as ClipboardTestWindow).imageCopyTest.writes.length === expected,
+    count,
+    { polling: 'raf', timeout: 5_000 },
+  );
   const copied = await page.evaluate(() =>
     (window as ClipboardTestWindow).imageCopyTest.writes.at(-1)!,
   );

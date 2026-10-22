@@ -277,7 +277,17 @@ function exportedNames(source: string, file: string): string[] {
     }
     const modifiers = ts.canHaveModifiers(statement) ? ts.getModifiers(statement) : undefined;
     if (!modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)) continue;
-    if ('name' in statement && statement.name && ts.isIdentifier(statement.name)) {
+    if (
+      (ts.isClassDeclaration(statement) ||
+        ts.isFunctionDeclaration(statement) ||
+        ts.isInterfaceDeclaration(statement) ||
+        ts.isTypeAliasDeclaration(statement) ||
+        ts.isEnumDeclaration(statement) ||
+        ts.isModuleDeclaration(statement) ||
+        ts.isImportEqualsDeclaration(statement)) &&
+      statement.name &&
+      ts.isIdentifier(statement.name)
+    ) {
       names.add(statement.name.text);
     } else if (ts.isVariableStatement(statement)) {
       for (const declaration of statement.declarationList.declarations) {
