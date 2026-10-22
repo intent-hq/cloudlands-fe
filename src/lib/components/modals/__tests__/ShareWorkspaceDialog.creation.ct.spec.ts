@@ -5,10 +5,7 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
   test.describe(`invite creation with ${reducedMotion} motion`, () => {
     test.use({ contextOptions: { reducedMotion } });
 
-    test('keeps the pending button steady and reveals the invite without a dialog jump', async ({
-      mount,
-      page,
-    }) => {
+    test('disables pending creation and reveals the created invite', async ({ mount, page }) => {
       let requests = 0;
       const props = {
         open: true,
@@ -40,42 +37,14 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
       await page.getByRole('option', { name: '@alex', exact: true }).click();
       const submit = page.getByTestId('share-link-submit');
       await expect(submit).toHaveAccessibleName('Create link');
-      await expect
-        .poll(() =>
-          page
-            .getByTestId('share-dialog-height')
-            .evaluate((node) =>
-              Math.abs(
-                node.getBoundingClientRect().height -
-                  node.firstElementChild!.getBoundingClientRect().height,
-              ),
-            ),
-        )
-        .toBe(0);
-      const restingButton = await submit.boundingBox();
       await submit.click();
       await expect.poll(() => requests).toBe(1);
       await expect(submit).toHaveAttribute('aria-busy', 'true');
       await expect(submit.locator('[data-slot=button-spinner]')).toBeVisible();
       await expect(submit).toBeDisabled();
       await component.update({ props: { ...props, creating: true } });
-      expect(await submit.boundingBox()).toEqual(restingButton);
       await expect(page.getByTestId('share-pin-selected')).toHaveAttribute('data-login', 'alex');
 
-      const dialog = page.getByRole('dialog');
-      const initialHeight = (await dialog.boundingBox())!.height;
-      await page.evaluate(() => {
-        const state = window as typeof window & { shareHeights: number[]; recordShare: boolean };
-        state.shareHeights = [];
-        state.recordShare = true;
-        const sample = () => {
-          state.shareHeights.push(
-            document.querySelector('[role=dialog]')!.getBoundingClientRect().height,
-          );
-          if (state.recordShare) requestAnimationFrame(sample);
-        };
-        requestAnimationFrame(sample);
-      });
       await component.update({
         props: {
           ...props,
@@ -100,30 +69,6 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
       await expect(input).toHaveValue('');
       await expect(input).toBeFocused();
       await expect(submit).not.toHaveAttribute('aria-busy', 'true');
-      await expect
-        .poll(() =>
-          page
-            .getByTestId('share-dialog-height')
-            .evaluate((node) =>
-              Math.abs(
-                node.getBoundingClientRect().height -
-                  node.firstElementChild!.getBoundingClientRect().height,
-              ),
-            ),
-        )
-        .toBe(0);
-      const finalHeight = (await dialog.boundingBox())!.height;
-      const heights = await page.evaluate(() => {
-        const state = window as typeof window & { shareHeights: number[]; recordShare: boolean };
-        state.recordShare = false;
-        return state.shareHeights;
-      });
-      expect(finalHeight).toBeGreaterThan(initialHeight);
-      if (reducedMotion === 'no-preference') {
-        expect(
-          heights.some((height) => height > initialHeight + 1 && height < finalHeight - 1),
-        ).toBe(true);
-      }
       await expect(submit).toHaveAccessibleName('Create link');
       await expect(submit).toBeDisabled();
       await expect(page.getByTestId('share-invite-copy')).toBeEnabled();

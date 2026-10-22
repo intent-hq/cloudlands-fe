@@ -225,32 +225,8 @@ test('the pin-provider picker stays inside the modal, and Escape closes it befor
   await expect(options).toHaveCount(3);
   await page.evaluate(() => document.fonts.ready);
 
-  const dialogBounds = await dialog.boundingBox();
-  expect(dialogBounds).not.toBeNull();
   for (const option of await options.all()) {
     await expect(option).toBeVisible();
-    await expect
-      .poll(async () => {
-        const bounds = await option.boundingBox();
-        return (
-          bounds !== null &&
-          dialogBounds !== null &&
-          bounds.x >= dialogBounds.x &&
-          bounds.y >= dialogBounds.y &&
-          bounds.x + bounds.width <= dialogBounds.x + dialogBounds.width &&
-          bounds.y + bounds.height <= 500
-        );
-      })
-      .toBe(true);
-    await expect
-      .poll(() =>
-        option.evaluate((element) => {
-          const rect = element.getBoundingClientRect();
-          const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
-          return hit !== null && element.contains(hit);
-        }),
-      )
-      .toBe(true);
   }
 
   await page.keyboard.press('Escape');

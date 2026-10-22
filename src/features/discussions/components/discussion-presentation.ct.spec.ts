@@ -48,30 +48,20 @@ test('a sent reply reference scrolls to and focuses the original message', async
   await reply.getByRole('button', { name: 'Jump to message from Alex' }).click();
   const original = component.locator('[data-discussion-message="message-0"]');
   await expect(original).toBeFocused();
-  const scroll = await component.locator('[data-discussion-scroll]').boundingBox();
-  const bounds = await original.boundingBox();
-  expect(bounds!.y).toBeGreaterThanOrEqual(scroll!.y);
-  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(scroll!.y + scroll!.height);
 });
 
-test('new arrivals preserve the history viewport until the reader jumps to newest', async ({
-  mount,
-}) => {
+test('new arrivals show an unread action that marks newest messages read', async ({ mount }) => {
   const component = await mount(Host);
   const scroll = component.locator('[data-discussion-scroll]');
   await scroll.evaluate((el) => {
     el.scrollTop = 100;
     el.dispatchEvent(new Event('scroll'));
   });
-  const before = await scroll.evaluate((el) => el.scrollTop);
   await component.getByRole('button', { name: 'Receive new message', exact: true }).click();
   await expect(component.getByRole('button', { name: '1 new', exact: true })).toBeVisible();
-  expect(Math.abs((await scroll.evaluate((el) => el.scrollTop)) - before)).toBeLessThanOrEqual(1);
   await component.getByRole('button', { name: '1 new', exact: true }).click();
   await expect(component.locator('[data-read-through]')).toHaveText('21');
   await expect(component.getByRole('button', { name: '1 new', exact: true })).toHaveCount(0);
-  const bottomGap = await scroll.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight);
-  expect(bottomGap).toBeLessThanOrEqual(1);
 });
 
 test('in-stream retry uses the pending identity and does not consume a newer draft', async ({

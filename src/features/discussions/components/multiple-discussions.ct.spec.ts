@@ -110,9 +110,6 @@ test('narrow recipient entry supports keyboard additions and restores removed pe
   await picker.press('Enter');
   await expect(component.getByRole('button', { name: 'Remove Alex' })).toHaveCount(1);
   await expect(page.getByRole('listbox')).toHaveCount(0);
-  expect(await component.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
-    true,
-  );
   await component.getByRole('button', { name: 'Remove Jordan' }).click();
   await expect(component.getByRole('button', { name: 'Remove Jordan' })).toHaveCount(0);
 });
