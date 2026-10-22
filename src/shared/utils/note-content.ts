@@ -51,3 +51,29 @@ export function exceedsNoteViewLimit(content: string | undefined): boolean {
   if (!content || content.length * 3 <= NOTE_VIEW_MAX_CONTENT_BYTES) return false;
   return new TextEncoder().encode(content).length > NOTE_VIEW_MAX_CONTENT_BYTES;
 }
+
+/**
+ * The daemon's truncated-read cut (§5.2 "Truncated note reads", cut rule): the
+ * longest prefix of `content` within `limit` UTF-8 bytes that ends right after
+ * a line feed; with no line feed in range, the longest prefix ending on a
+ * character boundary (stepping back off a `\r` that a `\n` follows). Returns
+ * `null` when the content fits, so nothing is cut.
+ */
+export function cutNoteContentForView(
+  content: string,
+  limit: number = NOTE_VIEW_MAX_CONTENT_BYTES,
+): { content: string; contentBytes: number } | null {
+  const bytes = new TextEncoder().encode(content);
+  if (bytes.length <= limit) return null;
+  let end = bytes.lastIndexOf(0x0a, limit - 1) + 1;
+  if (end === 0) {
+    end = limit;
+    // Step back to a UTF-8 character boundary (never inside a continuation byte).
+    while (end > 0 && (bytes[end] & 0xc0) === 0x80) end--;
+    if (end > 0 && bytes[end - 1] === 0x0d && bytes[end] === 0x0a) end--;
+  }
+  return {
+    content: new TextDecoder().decode(bytes.subarray(0, end)),
+    contentBytes: bytes.length,
+  };
+}

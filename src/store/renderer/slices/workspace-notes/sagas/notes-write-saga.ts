@@ -18,7 +18,11 @@ import type { MutationResult, NoteMetadataPatch } from '$lib/client';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { NoteCapabilityUnknownError } from '$lib/client/live/live-notes-client';
 import { rebaseText } from '$lib/notes/text-rebase';
-import { exceedsNoteViewLimit, isNoteContentStale } from '$shared/utils/note-content';
+import {
+  cutNoteContentForView,
+  exceedsNoteViewLimit,
+  isNoteContentStale,
+} from '$shared/utils/note-content';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import { ContentType, NoteVisibility } from '$shared/types';
@@ -172,10 +176,6 @@ const draftOrigin = new Map<string, string>();
 // Notes whose draft was already rebased once after a `content-base-mismatch`;
 // a second refusal offers the text to the user instead of looping.
 const mismatchRebased = new Set<string>();
-// Notes whose save echo was over the view limit (the note grew past 500 KB
-// while a draft was pending): the echo is never put in the editor cache, and a
-// bounded view re-read runs once the drafts settle (§5.2 "Truncated note reads").
-const boundedRefreshAfterSettle = new Set<string>();
 const utf8 = new TextEncoder();
 const workspaceMutationGenerations = new Map<string, number>();
 let noteMutationQueue: Channel<MutationEnvelope> | undefined;
@@ -331,7 +331,6 @@ function* rebasePendingDrafts(
   echoed: string,
   echoedRev: number | undefined,
   storeIsNewer: boolean,
-  echoTooLarge = false,
 ) {
   const { workspaceId, noteId } = command;
   const key = noteKey(workspaceId, noteId);
@@ -347,7 +346,7 @@ function* rebasePendingDrafts(
   const newest = later[later.length - 1];
   if (!newest) return undefined;
   const stored = yield* selectNoteById.effect(workspaceId, noteId);
-  if (!storeIsNewer && !echoTooLarge && stored?.content !== newest.content) {
+  if (!storeIsNewer && stored?.content !== newest.content) {
     yield* put(applyLocalNoteUpdate(workspaceId, noteId, { content: newest.content }));
   }
   return newest.content;
@@ -366,10 +365,17 @@ function* applyContentSaveResult(
   command: ContentCommand,
   sentRev: number | undefined,
   result: MutationResult,
+  truncatedReads = false,
 ): SagaGenerator<AppliedNoteContent> {
   const { workspaceId, noteId, seq } = command;
   const echoed = result.newContent ?? command.content;
   const nextRev = result.noteRev ?? (sentRev !== undefined ? sentRev + 1 : undefined);
+  // The note grew past the view limit while the save was pending (§5.2): it is
+  // now too large to edit in the app. Switch to the render-only view at once.
+  const cut = truncatedReads && nextRev !== undefined ? cutNoteContentForView(echoed) : null;
+  if (cut && nextRev !== undefined) {
+    return yield* call(switchToTruncatedView, command, nextRev, cut);
+  }
   // An echo with its rev is daemon text: a later chain may be based on it.
   if (result.newContent !== undefined && result.noteRev !== undefined) {
     recordDaemonText(workspaceId, noteId, {
@@ -381,21 +387,10 @@ function* applyContentSaveResult(
   const stored = yield* selectNoteById.effect(workspaceId, noteId);
   const superseded = latestEditSeq.get(noteKey(workspaceId, noteId)) !== seq;
   const storeIsNewer = stored?.rev !== undefined && nextRev !== undefined && stored.rev > nextRev;
-  // A merged echo over the view limit never enters the editor cache; it only
-  // settles the rev, and a bounded re-read follows once the drafts settle.
-  const echoTooLarge = exceedsNoteViewLimit(echoed);
-  if (echoTooLarge) boundedRefreshAfterSettle.add(noteKey(workspaceId, noteId));
   let rebased: string | undefined;
   if (superseded) {
-    rebased = yield* call(
-      rebasePendingDrafts,
-      command,
-      echoed,
-      nextRev,
-      storeIsNewer,
-      echoTooLarge,
-    );
-  } else if (!storeIsNewer && !echoTooLarge && stored?.content !== echoed) {
+    rebased = yield* call(rebasePendingDrafts, command, echoed, nextRev, storeIsNewer);
+  } else if (!storeIsNewer && stored?.content !== echoed) {
     yield* put(applyLocalNoteUpdate(workspaceId, noteId, { content: echoed }));
   }
   if (nextRev !== undefined) yield* call(setRevisionIfNewer, workspaceId, noteId, nextRev);
@@ -407,6 +402,51 @@ function* applyContentSaveResult(
   return applied.rev !== undefined
     ? { content: applied.content, rev: applied.rev }
     : { content: applied.content };
+}
+
+/**
+ * A save echo over the view limit: the note grew past 500 KB while the draft
+ * was pending. An editor must never claim a rev whose exact text it does not
+ * hold, so the row becomes, at the echo's rev, the daemon's truncated prefix
+ * (same cut rule) with its markers — render-only — and the prefix is recorded
+ * as a truncated base, so no later whole-content write can be built on it.
+ * Every pending and queued save for the note is retired; text typed after the
+ * acknowledged save is offered for copying. A bounded re-read follows.
+ */
+function* switchToTruncatedView(
+  command: ContentCommand,
+  rev: number,
+  cut: { content: string; contentBytes: number },
+): SagaGenerator<AppliedNoteContent> {
+  const { workspaceId, noteId } = command;
+  const key = noteKey(workspaceId, noteId);
+  const later = (unackedDrafts.get(key) ?? []).filter((draft) => draft.seq > command.seq);
+  const unsaved = later.at(-1)?.content;
+  yield* call(dropDrafts, workspaceId, noteId);
+  recordDaemonText(workspaceId, noteId, { rev, content: cut.content, truncated: true });
+  const stored = yield* selectNoteById.effect(workspaceId, noteId);
+  if (stored) {
+    const { contentPreview: _preview, contentLength: _length, ...row } = stored;
+    yield* put(
+      applyNoteUpdated(workspaceId, noteId, {
+        ...row,
+        content: cut.content,
+        contentTruncated: true,
+        contentBytes: cut.contentBytes,
+        rev,
+      }),
+    );
+  }
+  logger.warn('Note grew past the view limit during a save; switched to the truncated view', {
+    noteId,
+  });
+  if (unsaved !== undefined && unsaved !== command.content) offerUnsavedText(unsaved, 'too-large');
+  const read = readNoteRequested(workspaceId, noteId);
+  read.promise.catch((error: unknown) =>
+    logger.error('Failed to re-read a note that grew past the view limit', error),
+  );
+  yield* put(read);
+  return { content: cut.content, rev };
 }
 
 /** The truncated-read capability: `'unknown'` while no hello is acknowledged. */
@@ -578,7 +618,7 @@ function* saveContent(command: ContentCommand): SagaGenerator<AppliedNoteContent
       return undefined;
     }
     mismatchRebased.delete(key);
-    return yield* call(applyContentSaveResult, command, rev, result);
+    return yield* call(applyContentSaveResult, command, rev, result, support === true);
   } catch (error) {
     logger.error('Failed to save note content', error);
     yield* call(refetchWorkspaceNotes, workspaceId);
@@ -595,15 +635,6 @@ function* saveContent(command: ContentCommand): SagaGenerator<AppliedNoteContent
     }
     if ((unackedDrafts.get(key)?.length ?? 0) === 0) {
       yield* put(setNoteContentPending(workspaceId, noteId, false));
-      if (boundedRefreshAfterSettle.delete(key)) {
-        // The note grew past the limit: re-read it bounded (it comes back
-        // truncated, so the view switches to render-only).
-        const read = readNoteRequested(workspaceId, noteId);
-        read.promise.catch((error: unknown) =>
-          logger.error('Failed to re-read a note that grew past the view limit', error),
-        );
-        yield* put(read);
-      }
     }
     // After this command's cleanup, so the new chain's state is not cleared.
     if (resubmit) {
@@ -1163,9 +1194,6 @@ function* cleanupWorkspace(action: WorkspaceCleanupAction) {
   for (const key of mismatchRebased) {
     if (key.startsWith(`${workspaceId}:`)) mismatchRebased.delete(key);
   }
-  for (const key of boundedRefreshAfterSettle) {
-    if (key.startsWith(`${workspaceId}:`)) boundedRefreshAfterSettle.delete(key);
-  }
   forgetWorkspaceDaemonTexts(workspaceId);
   for (const key of unackedDrafts.keys()) {
     if (key.startsWith(`${workspaceId}:`)) unackedDrafts.delete(key);
@@ -1234,7 +1262,6 @@ export function* notesWriteSaga() {
     draftBase.clear();
     draftOrigin.clear();
     mismatchRebased.clear();
-    boundedRefreshAfterSettle.clear();
     clearDaemonTexts();
     unackedDrafts.clear();
     workspaceMutationGenerations.clear();

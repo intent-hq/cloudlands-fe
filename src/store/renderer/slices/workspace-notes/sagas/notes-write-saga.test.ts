@@ -39,6 +39,7 @@ import {
   workspaceNotesReducer,
 } from '../workspace-notes-slice';
 import { NoteCapabilityUnknownError } from '$lib/client/live/live-notes-client';
+import { rebaseText } from '$lib/notes/text-rebase';
 import { recordDaemonNote } from './note-daemon-text';
 import { NOTE_CONTENT_SAVE_DEBOUNCE_MS, notesWriteSaga } from './notes-write-saga';
 
@@ -691,39 +692,125 @@ describe('notesWriteSaga', () => {
       await run.task.toPromise();
     });
 
-    it('never caches an echo over the limit and re-reads bounded once the save settles', async () => {
+    /** A daemon that keeps every rev, enforces the guard and merges stale-rev writes. */
+    function growingDaemon(initial: string) {
+      const enc = new TextEncoder();
+      const texts = new Map<number, string>([[4, initial]]);
+      let cur = 4;
+      let releaseFirst!: () => void;
+      const firstGate = new Promise<void>((resolve) => (releaseFirst = resolve));
+      let first = true;
+      const write = async (
+        _noteId: string,
+        content: string,
+        rev?: number,
+        _workspaceId?: string,
+        options?: { baseContentBytes?: number },
+      ) => {
+        if (first) {
+          first = false;
+          await firstGate;
+        }
+        const exact = rev === undefined || rev === cur;
+        const base = exact ? texts.get(cur) : texts.get(rev);
+        if (
+          options?.baseContentBytes !== undefined &&
+          (base === undefined || enc.encode(base).length !== options.baseContentBytes)
+        ) {
+          return { success: false, error: 'mismatch', contentBaseMismatch: true as const };
+        }
+        const stored = exact ? content : rebaseText(base ?? '', texts.get(cur) ?? '', content);
+        cur += 1;
+        texts.set(cur, stored);
+        return { success: true, newContent: stored, noteRev: cur };
+      };
+      const grow = (big: string) => {
+        cur += 1;
+        texts.set(cur, (texts.get(cur - 1) ?? '') + big);
+      };
+      return { write, grow, releaseFirst, text: () => texts.get(cur) ?? '', rev: () => cur };
+    }
+
+    const BIG = 'X'.repeat(600_000) + '\n';
+
+    it('switches to the truncated view at the echo rev when the note grew during a save (probe G)', async () => {
       supports(true);
-      let ack!: (result: MutationResult) => void;
-      vi.spyOn(appClient.notes, 'setContent').mockReturnValueOnce(
-        new Promise((resolve) => (ack = resolve)),
-      );
+      const daemon = growingDaemon('body\n');
+      const setContent = vi
+        .spyOn(appClient.notes, 'setContent')
+        .mockImplementation(daemon.write as never);
       const run = harness();
-      served(run, note({ content: 'old body' }));
+      served(run, note({ content: 'body\n' }));
 
-      run.channel.put(updateNoteContent(WS, NOTE, 'old body MINE', true));
-      await vi.waitFor(() => expect(appClient.notes.setContent).toHaveBeenCalledTimes(1));
-      // An agent grows the note past the limit while the save is pending; the
-      // bounded event read lands first (its markers are held back by the draft).
-      reread(
-        run,
-        note({ content: 'old body\n', contentTruncated: true, contentBytes: 600_000, rev: 5 }),
+      run.channel.put(
+        updateNoteContent(WS, NOTE, 'body A\n', {
+          immediate: true,
+          baseRev: 4,
+          baseContent: 'body\n',
+        }),
       );
-      const merged = 'old body MINE\n' + 'x'.repeat(600_000);
-      ack({ success: true, noteRev: 6, newContent: merged });
+      await settle();
+      daemon.grow(BIG); // an agent appends 600 KB while the save is pending
+      daemon.releaseFirst();
       await vi.waitFor(() =>
-        expect(run.actions.some((action) => action.type === readNoteRequested.type)).toBe(true),
+        expect(run.getState().byWorkspaceId[WS]?.notes.map[NOTE]?.contentTruncated).toBe(true),
       );
+      const row = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
+      expect(row).toMatchObject({ content: 'body A\n', rev: daemon.rev() });
+      expect(row?.contentBytes).toBe(new TextEncoder().encode(daemon.text()).length);
 
-      const cached = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
-      expect(cached?.content.length).toBeLessThan(500_000);
-      expect(
-        run.actions.some(
-          (action) =>
-            action.type === applyLocalNoteUpdate.type &&
-            (action.payload as { updates?: { content?: string } }).updates?.content === merged,
-        ),
-      ).toBe(false);
+      // The old editor types once more, claiming the echo rev as its base.
+      run.channel.put(
+        updateNoteContent(WS, NOTE, 'body A typed\n', {
+          immediate: true,
+          baseRev: row?.rev,
+          baseContent: 'body A\n',
+        }),
+      );
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
+      await settle();
+
+      expect(setContent).toHaveBeenCalledTimes(1);
+      expect(daemon.text()).toContain(BIG);
+      expect(run.getState().byWorkspaceId[WS]?.notes.map[NOTE]?.contentTruncated).toBe(true);
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('retires queued drafts and offers their text when a superseded echo is over the limit', async () => {
+      supports(true);
+      const daemon = growingDaemon('body\n');
+      const setContent = vi
+        .spyOn(appClient.notes, 'setContent')
+        .mockImplementation(daemon.write as never);
+      const run = harness();
+      served(run, note({ content: 'body\n' }));
+
+      run.channel.put(updateNoteContent(WS, NOTE, 'body A\n', true));
+      await vi.waitFor(() => expect(setContent).toHaveBeenCalledTimes(1));
+      // Typed while the save is in flight: queued behind it, rebased on its echo.
+      run.channel.put(updateNoteContent(WS, NOTE, 'body A more\n', true));
+      await settle();
+      daemon.grow(BIG);
+      daemon.releaseFirst();
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
+      await settle();
+
+      expect(setContent).toHaveBeenCalledTimes(1);
+      expect(daemon.text()).toContain(BIG);
+      const row = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
+      expect(row?.contentTruncated).toBe(true);
+      expect(row?.content.length).toBeLessThan(500_000);
       expect(run.getState().byWorkspaceId[WS]?.pendingContentByNoteId[NOTE]).toBeFalsy();
+      expect(run.actions.some((action) => action.type === readNoteRequested.type)).toBe(true);
+      const options = vi.mocked(notify.warning).mock.calls[0][1] as {
+        action: { onClick: () => void };
+      };
+      const writeText = vi.fn(async () => {});
+      vi.stubGlobal('navigator', { clipboard: { writeText } });
+      options.action.onClick();
+      expect(writeText).toHaveBeenCalledWith('body A more\n');
+      vi.unstubAllGlobals();
       run.task.cancel();
       await run.task.toPromise();
     });
