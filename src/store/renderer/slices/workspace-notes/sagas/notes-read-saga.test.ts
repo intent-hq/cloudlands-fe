@@ -2,6 +2,7 @@ import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { appClient } from '$lib/client';
+import { NoteCapabilityUnknownError } from '$lib/client/live/live-notes-client';
 import { NOTE_VIEW_MAX_CONTENT_BYTES, SPEC_NOTE_ID } from '$shared/constants/notes';
 import { ContentType, NoteVisibility, type Note } from '$shared/types';
 import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
@@ -257,6 +258,21 @@ describe('notesReadSaga', () => {
       }),
       selectNote(WS, SPEC_NOTE_ID),
     ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('fails a view read instead of loading it unbounded while the capability is unknown', async () => {
+    vi.spyOn(appClient.notes, 'supportsTruncatedRead').mockRejectedValue(
+      new NoteCapabilityUnknownError(),
+    );
+    const get = vi.spyOn(appClient.notes, 'get').mockResolvedValue(note('note-1'));
+    const run = harness([note('note-1')]);
+
+    const read = readNoteRequested(WS, 'note-1');
+    run.channel.put(read);
+    await expect(read.promise).rejects.toBeInstanceOf(NoteCapabilityUnknownError);
+    expect(get).not.toHaveBeenCalled();
     run.task.cancel();
     await run.task.toPromise();
   });

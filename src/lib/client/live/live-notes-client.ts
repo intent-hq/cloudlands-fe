@@ -29,6 +29,7 @@ import type {
   Unsubscribe,
 } from '../app-client';
 import { backendRequest, observeBackendNodeCapabilities } from './backend-transport';
+import { BackendError } from './backend-transport-types';
 import { createDeltaSubscription } from './delta-subscription';
 import {
   newIdempotencyKey,
@@ -84,6 +85,23 @@ function normalizeNoteVersion(raw: unknown): NoteVersion | null {
     ...(author ? { author } : {}),
     createdAt: String(r.date ?? ''),
   };
+}
+
+/** The daemon's truncated-read capability could not be read from an acknowledged hello. */
+export class NoteCapabilityUnknownError extends Error {
+  constructor() {
+    super('Truncated note read capability is unknown: no acknowledged hello yet');
+    this.name = 'NoteCapabilityUnknownError';
+  }
+}
+
+/**
+ * A connection that is changing, renewing its hello or not connected yet: the
+ * capability is unknown for now. No transport observer at all is a plain "no".
+ */
+function isTransientCapabilityError(error: unknown): boolean {
+  if (error instanceof BackendError) return error.code === 'UNAVAILABLE';
+  return error instanceof Error && error.message === m.agent_placement_backendChanged();
 }
 
 /** Bounded wait for an acknowledged hello while it is being renewed (~3 s). */
@@ -190,10 +208,13 @@ export class LiveNotesClient implements NotesClient {
   /**
    * Whether the connected daemon advertises the truncated note read contract
    * (`server.capabilities.noteTruncatedRead === 1`, §5.2 "Truncated note reads").
-   * Read from the acknowledged hello without another RPC. While the hello is
-   * being renewed (startup, reconnect) the capability is unknown, not absent:
-   * wait briefly for the acknowledgment instead of falling back to an
-   * unbounded read. Still unknown after the wait, or any failure, is "no".
+   * Read from the acknowledged hello without another RPC.
+   *
+   * Resolves `true` / `false` only from an acknowledged hello (or `false` for a
+   * transport that cannot report node capabilities at all). While the hello is
+   * being renewed (startup, reconnect) the answer is unknown, not "no": it waits
+   * briefly and then rejects with {@link NoteCapabilityUnknownError}, so a view
+   * read fails (and can be retried) instead of loading a large note whole.
    */
   async supportsTruncatedRead(): Promise<boolean> {
     for (let attempt = 0; attempt < CAPABILITY_ATTEMPTS; attempt++) {
@@ -204,15 +225,11 @@ export class LiveNotesClient implements NotesClient {
         const capabilities = hello?.server?.capabilities;
         if (capabilities) return capabilities.noteTruncatedRead === 1;
       } catch (error) {
-        // Only a connection that changed under the read is worth another look;
-        // no transport, or one without the observer, is a plain "no".
-        if (!(error instanceof Error) || error.message !== m.agent_placement_backendChanged()) {
-          return false;
-        }
+        if (!isTransientCapabilityError(error)) return false;
       }
       await new Promise((resolve) => setTimeout(resolve, CAPABILITY_RETRY_MS));
     }
-    return false;
+    throw new NoteCapabilityUnknownError();
   }
 
   async get(

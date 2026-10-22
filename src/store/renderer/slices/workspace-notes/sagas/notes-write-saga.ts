@@ -16,6 +16,7 @@ import {
 import { appClient } from '$lib/client';
 import type { MutationResult, NoteMetadataPatch } from '$lib/client';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { NoteCapabilityUnknownError } from '$lib/client/live/live-notes-client';
 import { rebaseText } from '$lib/notes/text-rebase';
 import { exceedsNoteViewLimit, isNoteContentStale } from '$shared/utils/note-content';
 import { createLogger } from '$lib/utils/client-logger';
@@ -392,6 +393,16 @@ function* applyContentSaveResult(
     : { content: applied.content };
 }
 
+/** The truncated-read capability: `'unknown'` while no hello is acknowledged. */
+function* truncatedReadSupport(): SagaGenerator<boolean | 'unknown'> {
+  try {
+    return yield* call([appClient.notes, appClient.notes.supportsTruncatedRead]);
+  } catch (error) {
+    if (error instanceof NoteCapabilityUnknownError) return 'unknown';
+    throw error;
+  }
+}
+
 /** The newest text the user typed for a note, saved or not. */
 function newestDraftText(key: string, fallback: string): string {
   return (unackedDrafts.get(key) ?? []).at(-1)?.content ?? fallback;
@@ -447,8 +458,8 @@ function* recoverDraftOnFreshRead(
 ): SagaGenerator<{ content: string; rev: number } | undefined> {
   const { workspaceId, noteId } = command;
   const key = noteKey(workspaceId, noteId);
-  const draft = newestDraftText(key, command.content);
-  yield* call(dropDrafts, workspaceId, noteId);
+  // The chain stays open during the read: edits typed meanwhile join it and are
+  // part of the newest draft taken below; the queue is held by this command.
   let fresh: Note | null = null;
   try {
     const options = yield* call(viewReadOptions);
@@ -459,6 +470,10 @@ function* recoverDraftOnFreshRead(
   if (fresh && (String(fresh.workspaceId) !== workspaceId || String(fresh.id) !== noteId)) {
     fresh = null;
   }
+  // The newest text, including edits typed during the read. Dropping the drafts
+  // also retires every queued save built on the old base (see `saveContent`).
+  const draft = newestDraftText(key, command.content);
+  yield* call(dropDrafts, workspaceId, noteId);
   if (fresh) {
     const note = toRuntimeNote(fresh);
     recordDaemonNote(workspaceId, note);
@@ -514,14 +529,18 @@ function* saveContent(command: ContentCommand): SagaGenerator<AppliedNoteContent
     }
     // A client that reads with `maxContentBytes` must guard every whole-content
     // write with the size of its base; older daemons never see the param.
-    const supported = yield* call([appClient.notes, appClient.notes.supportsTruncatedRead]);
+    const support = yield* call(truncatedReadSupport);
     // Every whole-content write is guarded: with no known base size, re-read and
     // rebase rather than send an unguarded write.
-    if (supported && (base === null || base.rev !== rev)) {
+    if (support === true && (base === null || base.rev !== rev)) {
       resubmit = yield* call(recoverDraftOnFreshRead, command, origin);
       return undefined;
     }
-    const guarded = supported && base !== null;
+    // Capability unknown (no acknowledged hello yet): a known base is still sent
+    // guarded — a daemon without the capability may ignore the param (§5.2) —
+    // and with no base the save fails like a dropped connection; the text stays.
+    if (support === 'unknown' && base === null) throw new NoteCapabilityUnknownError();
+    const guarded = support !== false && base !== null;
     const result: MutationResult = yield* call(
       [appClient.notes, appClient.notes.setContent],
       noteId,

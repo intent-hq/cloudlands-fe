@@ -37,7 +37,8 @@ vi.mock('./live-support', async (importActual) => {
 
 import { backendRequest, observeBackendNodeCapabilities } from './backend-transport';
 import { resolveNoteWorkspaceId } from './live-support';
-import { LiveNotesClient, normalizeNote } from './live-notes-client';
+import { BackendError } from './backend-transport-types';
+import { LiveNotesClient, NoteCapabilityUnknownError, normalizeNote } from './live-notes-client';
 
 const mockedRequest = vi.mocked(backendRequest);
 const mockedResolve = vi.mocked(resolveNoteWorkspaceId);
@@ -978,6 +979,31 @@ describe('LiveNotesClient.get truncated reads (§5.2 "Truncated note reads")', (
       const failing = client.supportsTruncatedRead();
       await vi.runAllTimersAsync();
       await expect(failing).resolves.toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    [
+      'no acknowledged hello',
+      () => mockedCapabilities.mockResolvedValue({ server: { capabilities: null } }),
+    ],
+    [
+      'a connection that never settles',
+      () =>
+        mockedCapabilities.mockRejectedValue(
+          new BackendError({ code: 'UNAVAILABLE', message: 'Backend connection changed' }),
+        ),
+    ],
+  ])('rejects as unknown, not unsupported, with %s', async (_label, arrange) => {
+    vi.useFakeTimers();
+    try {
+      arrange();
+      const supported = new LiveNotesClient().supportsTruncatedRead();
+      const settled = supported.catch((error: unknown) => error);
+      await vi.runAllTimersAsync();
+      expect(await settled).toBeInstanceOf(NoteCapabilityUnknownError);
     } finally {
       vi.useRealTimers();
     }

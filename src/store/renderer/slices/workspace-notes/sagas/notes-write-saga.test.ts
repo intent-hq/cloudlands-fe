@@ -37,6 +37,7 @@ import {
   updateNoteTitle,
   workspaceNotesReducer,
 } from '../workspace-notes-slice';
+import { NoteCapabilityUnknownError } from '$lib/client/live/live-notes-client';
 import { recordDaemonNote } from './note-daemon-text';
 import { NOTE_CONTENT_SAVE_DEBOUNCE_MS, notesWriteSaga } from './notes-write-saga';
 
@@ -523,6 +524,55 @@ describe('notesWriteSaga', () => {
       // The queued draft is dropped outright, not recovered a second time.
       expect(get).toHaveBeenCalledTimes(1);
       expect(notify.warning).not.toHaveBeenCalled();
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('keeps edits typed while the recovery re-read is pending', async () => {
+      supports(true);
+      const setContent = vi
+        .spyOn(appClient.notes, 'setContent')
+        .mockResolvedValueOnce({ success: false, error: 'mismatch', contentBaseMismatch: true })
+        .mockResolvedValue({ success: true });
+      let finishRead!: (value: Note) => void;
+      vi.spyOn(appClient.notes, 'get').mockReturnValue(
+        new Promise<Note>((resolve) => (finishRead = resolve)),
+      );
+      const run = harness();
+      served(run, note({ content: 'body' }));
+
+      run.channel.put(updateNoteContent(WS, NOTE, 'body A', true));
+      await vi.waitFor(() => expect(appClient.notes.get).toHaveBeenCalledTimes(1));
+      // The user keeps typing while the note is re-read.
+      run.channel.put(updateNoteContent(WS, NOTE, 'body A more', true));
+      await settle();
+      finishRead(note({ content: 'AGENT\nbody', rev: 6 }));
+      await forwardResubmit(run);
+      await vi.waitFor(() => expect(setContent).toHaveBeenCalledTimes(2));
+      await settle();
+
+      expect(setContent.mock.calls).toEqual([
+        [NOTE, 'body A', 4, WS, { baseContentBytes: 4 }],
+        [NOTE, 'AGENT\nbody A more', 6, WS, { baseContentBytes: 10 }],
+      ]);
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('still guards a save with a known base while the capability is unknown', async () => {
+      vi.spyOn(appClient.notes, 'supportsTruncatedRead').mockRejectedValue(
+        new NoteCapabilityUnknownError(),
+      );
+      const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+        success: true,
+      });
+      const run = harness();
+      served(run, note({ content: 'body' }));
+
+      run.channel.put(updateNoteContent(WS, NOTE, 'body!', true));
+      await vi.waitFor(() => expect(setContent).toHaveBeenCalledTimes(1));
+
+      expect(setContent.mock.calls).toEqual([[NOTE, 'body!', 4, WS, { baseContentBytes: 4 }]]);
       run.task.cancel();
       await run.task.toPromise();
     });
