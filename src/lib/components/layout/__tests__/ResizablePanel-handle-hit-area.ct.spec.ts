@@ -54,7 +54,6 @@ test('left-side panel handle yields its leading half to the panel scrollbar', as
   await expect(component.locator('.app-resize-handle')).toBeVisible();
 
   const probe = await probeHandle(page, 'x');
-  expect(probe.size).toBe(16);
   // Leading 8px sits over the panel's own right edge, where its vertical
   // scrollbar renders — clicks there must reach the scroll container.
   expect(probe.leading).toBe('panel-scroll');
@@ -72,7 +71,6 @@ test('right-side panel handle yields its leading half to the neighbor scrollbar'
   await expect(component.locator('.app-resize-handle')).toBeVisible();
 
   const probe = await probeHandle(page, 'x');
-  expect(probe.size).toBe(16);
   // Leading 8px sits over the left neighbor's right edge, where its vertical
   // scrollbar renders — clicks there must reach the neighbor.
   expect(probe.leading).toBe('neighbor-scroll');
@@ -90,7 +88,6 @@ test('top-edge vertical handle yields its leading half to the upper neighbor scr
   await expect(component.locator('.app-resize-handle')).toBeVisible();
 
   const probe = await probeHandle(page, 'y');
-  expect(probe.size).toBe(16);
   // Leading 8px sits over the upper neighbor's bottom edge, where its
   // horizontal scrollbar renders — clicks there must reach that neighbor.
   expect(probe.leading).toBe('neighbor-scroll');
@@ -152,8 +149,6 @@ test('short resize indicator follows pointer and keyboard interaction without a 
     const style = getComputedStyle(node, '::before');
     return { width: parseFloat(style.width), height: parseFloat(style.height) };
   });
-  expect(box.width).toBe(16);
-  expect(line).toEqual({ width: 2, height: 40 });
   expect(line.height).toBeLessThan(box.height);
 
   // Use the unclipped trailing half; the leading half belongs to the scrollbar.

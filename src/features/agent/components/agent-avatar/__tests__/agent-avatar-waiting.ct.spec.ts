@@ -1,7 +1,6 @@
 import type { Locator, Page } from '@playwright/experimental-ct-svelte';
 import { expect, test } from '../../../../../test/ct-test';
 import AgentAvatarWaitingHost from './AgentAvatarWaitingHost.svelte';
-import { agentAvatarGeometry } from '../avatar-size';
 import type { AvatarState } from '../avatar-state';
 
 type Rgb = readonly [number, number, number];
@@ -180,10 +179,6 @@ test('paints every state from its semantic surface token on one clipped rounded 
     .getByTestId('reactive-waiting-avatar')
     .locator('[data-agent-avatar-with-state]');
   const glyph = reactive.locator('[data-agent-avatar]');
-  const radius = `${agentAvatarGeometry.standard.radius}px`;
-
-  await expect(reactive).toHaveCSS('border-radius', radius);
-  await expect(reactive).toHaveCSS('clip-path', `inset(0px round ${radius})`);
   await expect(reactive).toHaveCSS('box-shadow', 'none');
   expect(await reactive.evaluate((node) => getComputedStyle(node, '::after').content)).toBe('none');
   await expect(reactive).toHaveCSS('transition-property', 'background-color');
@@ -247,7 +242,6 @@ test('maps every state to a forced-colors system surface with a CanvasText outli
     await expect(reactive).toHaveCSS('background-color', background);
     await expect(glyph).toHaveCSS('background-color', background);
     await expect(reactive).toHaveCSS('outline-style', 'solid');
-    await expect(reactive).toHaveCSS('outline-width', '1px');
     await expect(reactive).toHaveCSS('outline-color', canvasText);
   }
 
@@ -258,45 +252,9 @@ test('maps every state to a forced-colors system surface with a CanvasText outli
   );
 });
 
-test('keeps a legacy numeric size on a 1px clear space', async ({ mount }) => {
+test('honors an explicit legacy numeric size', async ({ mount }) => {
   const component = await mount(AgentAvatarWaitingHost);
   const legacy = component.getByTestId('legacy-sized-avatar').locator('[data-agent-avatar]');
 
   await expect(legacy).toHaveCSS('width', '18px');
-  await expect(legacy).toHaveCSS('padding', '1px');
-});
-
-test('cuts every overlapped stack layer with the rounded-square silhouette', async ({ mount }) => {
-  const component = await mount(AgentAvatarWaitingHost);
-  const layers = component.locator(
-    '[data-agent-avatar-catalog-stack] [data-agent-avatar-stack-item]',
-  );
-  const geometry = agentAvatarGeometry.emphasized;
-  // The catalog stack shows three of six items, so every visible layer is
-  // overlapped by a later layer or by the overflow chip.
-  const layerCount = await layers.count();
-  expect(layerCount).toBeGreaterThan(1);
-
-  for (let index = 0; index < layerCount; index += 1) {
-    const layer = layers.nth(index);
-    await expect(layer).toHaveCSS('border-radius', `${geometry.radius}px`);
-    await expect(layer).toHaveCSS('mask-size', '100% 100%');
-    const maskImage = await layer.evaluate((node) => getComputedStyle(node).maskImage);
-    expect(maskImage, `layer ${index}`).not.toContain('radial-gradient');
-    const encoded = maskImage.match(/^url\("data:image\/svg\+xml,(.*)"\)$/)?.[1];
-    expect(encoded, `layer ${index}`).toBeTruthy();
-    const cutout = decodeURIComponent(encoded!).match(
-      /<rect x='([^']+)' y='([^']+)' width='([^']+)' height='([^']+)' rx='([^']+)'/,
-    );
-    expect(cutout?.slice(1).map(Number), `layer ${index}`).toEqual([
-      geometry.surface - geometry.overlap - geometry.ring,
-      -geometry.ring,
-      geometry.surface + 2 * geometry.ring,
-      geometry.surface + 2 * geometry.ring,
-      geometry.radius + geometry.ring,
-    ]);
-    expect(decodeURIComponent(encoded!), `layer ${index}`).toContain(
-      `viewBox='0 0 ${geometry.surface} ${geometry.surface}'`,
-    );
-  }
 });

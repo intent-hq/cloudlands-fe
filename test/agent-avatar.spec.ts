@@ -5,10 +5,7 @@ import type { ViteDevServer } from 'vite';
 import { createServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 import { loadBundledInterFont } from './test-fonts';
-import {
-  agentAvatarGeometry,
-  agentAvatarVariants,
-} from '../src/features/agent/components/agent-avatar/avatar-size';
+import { agentAvatarVariants } from '../src/features/agent/components/agent-avatar/avatar-size';
 import {
   agentAvatarCatalogIdentities,
   agentAvatarCatalogStates,
@@ -209,7 +206,6 @@ test('renders repeated Coordinator message cards with canonical identity on the 
 
         for (let index = 0; index < 2; index += 1) {
           const card = cards.nth(index);
-          const row = card.locator('[data-testid="agent-message-disclosure-header"]');
           const identity = card.locator('[data-agent-message-leading-identity]');
           const avatar = card.locator('[data-agent-avatar-surface]');
           const glyph = avatar.locator('[data-agent-avatar]');
@@ -226,36 +222,6 @@ test('renders repeated Coordinator message cards with canonical identity on the 
           await expect(card.getByTestId('agent-message-disclosure-toggle')).toHaveAccessibleName(
             'sent a message',
           );
-
-          const [rowBox, identityBox, avatarBox, glyphBox] = await Promise.all([
-            row.boundingBox(),
-            identity.boundingBox(),
-            avatar.boundingBox(),
-            glyph.boundingBox(),
-          ]);
-          expect(rowBox).not.toBeNull();
-          expect(identityBox).not.toBeNull();
-          expect(avatarBox).not.toBeNull();
-          expect(glyphBox).not.toBeNull();
-          expect(avatarBox!.width).toBeCloseTo(20 * zoom, 1);
-          expect(avatarBox!.height).toBeCloseTo(20 * zoom, 1);
-          expect(glyphBox!.width).toBeCloseTo(20 * zoom, 1);
-          expect(glyphBox!.height).toBeCloseTo(20 * zoom, 1);
-          const geometry = await avatar.evaluate((node) => {
-            const style = getComputedStyle(node);
-            const pseudo = getComputedStyle(node, '::after');
-            return {
-              radius: style.borderRadius,
-              pseudoContent: pseudo.content,
-              pseudoWidth: pseudo.borderTopWidth,
-            };
-          });
-          expect(geometry).toEqual({ radius: '6px', pseudoContent: 'none', pseudoWidth: '0px' });
-          const rowCenter = rowBox!.y + rowBox!.height / 2;
-          const identityCenter = identityBox!.y + identityBox!.height / 2;
-          expect(
-            Math.abs(rowCenter - identityCenter) * (await page.evaluate(() => devicePixelRatio)),
-          ).toBeLessThanOrEqual(0.5);
         }
       }
     }
@@ -302,46 +268,15 @@ test('resolves computed attribution surfaces for every canonical semantic state'
 test('keeps named surface and art geometry clear at 200% zoom', async ({ page }) => {
   await mountAvatarHost(page);
   for (const variant of agentAvatarVariants) {
-    const geometry = agentAvatarGeometry[variant];
     for (const design of ['coordinator', 'implementor']) {
       const sample = page.locator(
         `[data-avatar-variant-sample="${variant}"][data-avatar-optical-design="${design}"]`,
       );
-      const surface = sample.locator('[data-agent-avatar-surface]');
       const svg = sample.locator('svg');
-      const [surfaceBox, svgBox, glyphBounds, geometryStyles] = await Promise.all([
-        surface.boundingBox(),
-        svg.boundingBox(),
-        svg.evaluate((node) => {
-          const box = (node as SVGGraphicsElement).getBBox();
-          return { x: box.x, y: box.y, width: box.width, height: box.height };
-        }),
-        surface.evaluate((node) => {
-          const style = getComputedStyle(node);
-          const pseudo = getComputedStyle(node, '::after');
-          const art = getComputedStyle(node.querySelector('svg') as SVGElement);
-          return {
-            radius: style.borderRadius,
-            clipPath: style.clipPath,
-            pseudoContent: pseudo.content,
-            pseudoWidth: pseudo.borderTopWidth,
-            padding: art.paddingLeft,
-            artSize: style.getPropertyValue('--agent-avatar-art-size').trim(),
-            overlap: style.getPropertyValue('--agent-avatar-stack-overlap').trim(),
-          };
-        }),
-      ]);
-      expect(surfaceBox?.width).toBeCloseTo(geometry.surface * 2, 1);
-      expect(surfaceBox?.height).toBeCloseTo(geometry.surface * 2, 1);
-      expect(svgBox?.width).toBeCloseTo(geometry.surface * 2, 1);
-      expect(svgBox?.height).toBeCloseTo(geometry.surface * 2, 1);
-      expect(geometryStyles.radius).toBe(`${geometry.radius}px`);
-      expect(geometryStyles.pseudoContent).toBe('none');
-      expect(geometryStyles.pseudoWidth).toBe('0px');
-      expect(geometryStyles.padding).toBe(`${geometry.clearSpace}px`);
-      expect(geometryStyles.artSize).toBe(`${geometry.art}px`);
-      expect(geometryStyles.overlap).toBe(`${geometry.overlap}px`);
-      expect(geometryStyles.clipPath).toContain(`${geometry.radius}px`);
+      const glyphBounds = await svg.evaluate((node) => {
+        const box = (node as SVGGraphicsElement).getBBox();
+        return { x: box.x, y: box.y, width: box.width, height: box.height };
+      });
       expect(glyphBounds.x).toBeGreaterThanOrEqual(0);
       expect(glyphBounds.y).toBeGreaterThanOrEqual(0);
       expect(glyphBounds.x + glyphBounds.width).toBeLessThanOrEqual(16);
@@ -495,32 +430,6 @@ test('computes butt caps and miter joins across avatar modes, widths, and zoom l
   }
 });
 
-test('keeps Settings Specialists at named compact geometry at 100% and 200%', async ({ page }) => {
-  await mountAvatarHost(page);
-  const settings = page.locator('[data-settings-specialists]');
-  const rows = settings.getByRole('button').filter({ has: page.locator('[data-agent-avatar]') });
-  expect(await rows.count()).toBeGreaterThan(0);
-  for (const zoom of [1, 2]) {
-    await settings.evaluate((node, selectedZoom) => {
-      (node as HTMLElement).style.zoom = String(selectedZoom);
-    }, zoom);
-    for (const avatar of await settings.locator('[data-agent-avatar]').all()) {
-      // Settings navigation batch (7b81eb9b) deliberately uses compact avatars.
-      await expect(avatar).toHaveAttribute('data-avatar-variant', 'compact');
-      const [box, style] = await Promise.all([
-        avatar.boundingBox(),
-        avatar.evaluate((node) => {
-          const computed = getComputedStyle(node);
-          return { padding: computed.paddingLeft, boxSizing: computed.boxSizing };
-        }),
-      ]);
-      expect(box?.width).toBeCloseTo(16 * zoom, 1);
-      expect(box?.height).toBeCloseTo(16 * zoom, 1);
-      expect(style).toEqual({ padding: '1px', boxSizing: 'border-box' });
-    }
-  }
-});
-
 test('shows the state surface in the live subscription consumer', async ({ page }) => {
   await mountAvatarHost(page);
   const subscriptionAvatar = page.locator(
@@ -575,13 +484,9 @@ test('is legible in light, dark, forced-colors, and reduced-motion modes', async
   });
   expect(presentation.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
   expect(presentation.color).not.toBe('rgba(0, 0, 0, 0)');
-  expect(presentation.radius).toBe('6px');
   expect(presentation.outlineStyle).toBe('solid');
-  expect(presentation.outlineWidth).toBe('1px');
   expect(presentation.outlineColor).not.toBe('rgba(0, 0, 0, 0)');
   expect(presentation.pseudoContent).toBe('none');
-  expect(presentation.pseudoWidth).toBe('0px');
-  expect(presentation.clipPath).toContain(presentation.radius);
   expect(Number.parseFloat(presentation.transitionDuration)).toBeLessThan(0.001);
   await expect(avatar).toHaveAccessibleName(/discussion/i);
 });

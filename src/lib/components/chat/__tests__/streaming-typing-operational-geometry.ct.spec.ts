@@ -3,10 +3,7 @@ import StreamingTypingOperationalGeometryHost from './StreamingTypingOperational
 
 test.setTimeout(120_000);
 
-test('matches adjacent tool-row geometry with a modest 12px top gap and progress-only visible copy', async ({
-  mount,
-  page,
-}) => {
+test('keeps only progress copy visible while streaming', async ({ mount, page }) => {
   const component = await mount(StreamingTypingOperationalGeometryHost);
 
   for (const theme of ['light', 'dark'] as const) {
@@ -22,125 +19,26 @@ test('matches adjacent tool-row geometry with a modest 12px top gap and progress
           await page.waitForTimeout(220);
 
           const geometry = await component.evaluate((root) => {
-            const measure = (
-              row: Element,
-              leadingSelector: string,
-              summarySelector: string,
-              iconSelector: string,
-            ) => {
-              const leading = row.querySelector(leadingSelector)!;
-              const summary = row.querySelector<HTMLElement>(summarySelector)!;
-              const icon = row.querySelector(iconSelector)!;
-              const box = row.getBoundingClientRect();
-              const leadingBox = leading.getBoundingClientRect();
-              const summaryBox = summary.getBoundingClientRect();
-              const iconBox = icon.getBoundingClientRect();
-              const style = getComputedStyle(row);
-              const summaryStyle = getComputedStyle(summary);
-              const baselineProbe = document.createElement('span');
-              baselineProbe.style.cssText =
-                'display:inline-block;width:0;height:0;margin:0;padding:0;vertical-align:baseline';
-              summary.append(baselineProbe);
-              const baseline = baselineProbe.getBoundingClientRect().bottom - box.top;
-              baselineProbe.remove();
-              return {
-                left: box.left,
-                right: box.right,
-                height: box.height,
-                leadingWidth: leadingBox.width,
-                leadingCenterX: (leadingBox.left + leadingBox.right) / 2,
-                leadingCenterY: (leadingBox.top + leadingBox.bottom) / 2 - box.top,
-                iconCenterX: (iconBox.left + iconBox.right) / 2,
-                iconCenterY: (iconBox.top + iconBox.bottom) / 2 - box.top,
-                iconWidth: iconBox.width,
-                iconHeight: iconBox.height,
-                labelStart: summaryBox.left,
-                baseline,
-                marginTop: style.marginTop,
-                paddingInline: [style.paddingLeft, style.paddingRight],
-                columnGap: style.columnGap,
-                summary: [
-                  summaryStyle.minWidth,
-                  summaryStyle.overflow,
-                  summaryStyle.textOverflow,
-                  summaryStyle.whiteSpace,
-                ],
-              };
-            };
-
-            const beforeContainer = root.querySelector('[data-testid="streaming-tool-before"]')!;
-            const beforeRow = beforeContainer.querySelector('[data-operational-disclosure-row]')!;
-            const thinkingRow = root.querySelector('[data-streaming-typing-row]')!;
-            const afterContainer = root.querySelector('[data-testid="streaming-tool-after"]')!;
-            const afterRow = afterContainer.querySelector('[data-operational-disclosure-row]')!;
+            const row = root.querySelector('[data-streaming-typing-row]')!;
+            const summary = row.querySelector('[data-operational-summary]')!;
+            const style = getComputedStyle(summary);
+            const label = root
+              .querySelector('[data-testid="streaming-status-thinking-label"]')!
+              .getBoundingClientRect();
             return {
-              before: measure(
-                beforeRow,
-                '[data-operational-leading]',
-                '[data-operational-summary]',
-                '[data-testid="fixture-tool-icon"]',
-              ),
-              thinking: measure(
-                thinkingRow,
-                '[data-operational-leading]',
-                '[data-operational-summary]',
-                '[data-slot="intent-mark-loader"]',
-              ),
-              after: measure(
-                afterRow,
-                '[data-operational-leading]',
-                '[data-operational-summary]',
-                '[data-testid="fixture-tool-icon"]',
-              ),
-              topGap:
-                thinkingRow.getBoundingClientRect().top -
-                beforeContainer.getBoundingClientRect().bottom,
-              bottomGap:
-                afterContainer.getBoundingClientRect().top -
-                thinkingRow.getBoundingClientRect().bottom,
-              text: thinkingRow.textContent,
-              genericLabel: (() => {
-                const rect = root
-                  .querySelector('[data-testid="streaming-status-thinking-label"]')!
-                  .getBoundingClientRect();
-                return { width: rect.width, height: rect.height };
-              })(),
+              thinking: {
+                summary: [style.minWidth, style.overflow, style.textOverflow, style.whiteSpace],
+              },
+              text: row.textContent,
+              genericLabel: { width: label.width, height: label.height },
             };
           });
-
-          expect(geometry.thinking.marginTop).toBe('12px');
-          expect(geometry.topGap).toBeCloseTo(12 * zoom, 1);
-          expect(geometry.bottomGap).toBeCloseTo(0, 1);
-          expect(geometry.thinking.height).toBeCloseTo(28 * zoom, 1);
-          expect(geometry.thinking.leadingWidth).toBeCloseTo(20 * zoom, 1);
-          expect(geometry.thinking.labelStart - geometry.thinking.left).toBeCloseTo(36 * zoom, 1);
-          expect(geometry.thinking.paddingInline).toEqual(['8px', '8px']);
-          expect(geometry.thinking.columnGap).toBe('8px');
           expect(geometry.thinking.summary).toEqual(['0px', 'hidden', 'ellipsis', 'nowrap']);
-          expect(geometry.thinking.iconWidth).toBeCloseTo(16 * zoom, 1);
-          expect(geometry.thinking.iconHeight).toBeCloseTo(16 * zoom, 1);
           expect(geometry.text).toContain('Thinking');
           expect(geometry.text).toContain('Sent prompt…');
           expect(geometry.text).not.toContain('·');
           expect(geometry.genericLabel.width).toBeLessThanOrEqual(zoom);
           expect(geometry.genericLabel.height).toBeLessThanOrEqual(zoom);
-
-          for (const tool of [geometry.before, geometry.after]) {
-            for (const [thinking, adjacent] of [
-              [geometry.thinking.left, tool.left],
-              [geometry.thinking.right, tool.right],
-              [geometry.thinking.height, tool.height],
-              [geometry.thinking.leadingWidth, tool.leadingWidth],
-              [geometry.thinking.leadingCenterX, tool.leadingCenterX],
-              [geometry.thinking.leadingCenterY, tool.leadingCenterY],
-              [geometry.thinking.iconCenterX, tool.iconCenterX],
-              [geometry.thinking.iconCenterY, tool.iconCenterY],
-              [geometry.thinking.labelStart, tool.labelStart],
-              [geometry.thinking.baseline, tool.baseline],
-            ]) {
-              expect(Math.abs(thinking - adjacent)).toBeLessThanOrEqual(0.5);
-            }
-          }
 
           const mark = component.getByRole('status', { name: 'Loading' });
           const semanticColors = await mark.evaluate((node) => ({

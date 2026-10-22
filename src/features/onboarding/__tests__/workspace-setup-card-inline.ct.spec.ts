@@ -79,15 +79,8 @@ for (const status of ['active', 'done'] as const) {
       expect(metrics.font).toBe(metrics.sentenceFont);
       expect(metrics.lineHeight).toBe(metrics.sentenceLineHeight);
       expect(metrics.weight).toBe(metrics.sentenceWeight);
-      expect(metrics.padding).toBe('0px');
       expect(metrics.verticalAlign).toBe('baseline');
     }
-    const icon = await component.getByTestId('workspace-setup-step-icon').first().boundingBox();
-    const sentence = await component
-      .getByTestId('workspace-setup-step-content')
-      .first()
-      .boundingBox();
-    expect(sentence!.x - icon!.x - icon!.width).toBeCloseTo(4, 1);
     await expectAttachedPunctuation(
       component.getByRole('button', { name: 'origin/main', exact: true }),
       'origin/main',

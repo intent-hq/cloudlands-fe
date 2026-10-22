@@ -8,7 +8,7 @@ import AgentAvatarWithState from './AgentAvatarWithState.svelte';
 import AgentAvatarCatalog from './AgentAvatarCatalog.svelte';
 import { agentAvatarCatalogStates, agentAvatarCatalogIdentities } from './agent-avatar.catalog';
 import { getAgentAvatarStateLabel } from './avatar-state-label';
-import { agentAvatarGeometry, agentAvatarVariants } from './avatar-size';
+import { agentAvatarVariants } from './avatar-size';
 
 // Computed-style contracts (semantic surface tokens per state, clipped rounded
 // square, forced-colors surfaces, reduced-motion, stack silhouette) live in
@@ -222,19 +222,7 @@ describe('AgentAvatarWithState', () => {
     }
   });
 
-  it('defines the named geometry contract and uses it in owned consumers', () => {
-    expect(agentAvatarGeometry.standard.surface).toBe(20);
-    expect(agentAvatarGeometry.emphasized.surface).toBe(24);
-    expect(agentAvatarGeometry['card-stack']).toEqual(agentAvatarGeometry.emphasized);
-    expect(agentAvatarGeometry.prominent.surface).toBe(40);
-    expect(agentAvatarGeometry.compact.surface).toBe(16);
-    for (const variant of agentAvatarVariants) {
-      const geometry = agentAvatarGeometry[variant];
-      expect(geometry.surface - geometry.art).toBe(geometry.clearSpace * 2);
-      expect(geometry.overlap).toBeLessThanOrEqual(geometry.surface / 4);
-      expect(geometry.radius).toBeLessThan(geometry.surface / 2);
-    }
-
+  it('uses named variants in owned consumers', () => {
     const { container } = render(AgentAvatarCatalog);
     const stateAvatars = container.querySelectorAll<HTMLElement>(
       '.agent-avatar-catalog-states [data-agent-avatar-with-state]',

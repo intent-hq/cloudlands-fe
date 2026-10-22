@@ -365,11 +365,6 @@ for (const kind of ['mermaid', 'custom', 'stateful'] as const) {
       expectLane(result);
       expectPaint(result, paintCounts[kind], kind === 'mermaid');
       if (kind === 'mermaid') await expectHorizontalReachability(page, info, 'note-geometry');
-      const inset = kind === 'mermaid' ? 8 : 0;
-      expect(result.viewport.left - result.presentation.left).toBeCloseTo(inset, 0);
-      expect(result.presentation.right - result.viewport.right).toBeCloseTo(inset, 0);
-      expect(result.prose.left - result.note.left).toBeCloseTo(48, 0);
-      expect(result.note.right - result.prose.right).toBeCloseTo(48, 0);
     });
   }
 
@@ -503,7 +498,10 @@ test('small diagrams retain intrinsic paint size and fullscreen uses the window,
   await opener.click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
-  expect(await dialog.boundingBox()).toEqual({ x: 0, y: 0, width: 1500, height: 1000 });
+  const viewport = page.viewportSize()!;
+  const dialogBox = (await dialog.boundingBox())!;
+  expect(dialogBox.width).toBe(viewport.width);
+  expect(dialogBox.height).toBe(viewport.height);
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
   await expect(opener).toBeFocused();
@@ -737,8 +735,6 @@ for (const width of [320, 960]) {
     expect(active.noteOverflow).toBeLessThanOrEqual(1);
     expect(active.pageOverflow).toBeLessThanOrEqual(1);
     const comment = (await sidebar.boundingBox())!;
-    expect(active.lane.left - active.note.left).toBeCloseTo(width === 320 ? 4 : 48, 0);
-    expect(active.prose.left - active.note.left).toBeCloseTo(48, 0);
     expect(active.actions.right).toBeLessThanOrEqual(comment.x);
     expect(active.viewport.right).toBeLessThanOrEqual(comment.x);
     const collapsed = await commentBounds(sidebar);
@@ -746,9 +742,6 @@ for (const width of [320, 960]) {
     await sidebar.focus();
     await page.keyboard.press('Enter');
     await expect(sidebar.locator('[contenteditable="true"]')).toBeVisible();
-    await expect
-      .poll(async () => (await sidebar.boundingBox())!.x + (await sidebar.boundingBox())!.width)
-      .toBeCloseTo(active.note.right - 50, 0);
     const focused = await commentBounds(sidebar);
     const focusedDiagram = await geometry(page, 'mermaid');
     await page
@@ -827,12 +820,8 @@ test('focused comments keep long text and controls usable through narrow-wide-na
       );
     }
     await settled(page, 'mermaid');
-    await expect
-      .poll(async () => (await commentBounds(sidebar)).card.width)
-      .toBeCloseTo(width === 320 ? 270 : 300, 0);
     const diagram = await geometry(page, 'mermaid');
     const comment = await commentBounds(sidebar);
-    expect(comment.card.right).toBeCloseTo(diagram.note.right - 50, 0);
     for (const bounds of [comment.card, ...comment.controls]) {
       expect(bounds.left).toBeGreaterThanOrEqual(diagram.note.left - 1);
       expect(bounds.right).toBeLessThanOrEqual(diagram.note.right + 1);

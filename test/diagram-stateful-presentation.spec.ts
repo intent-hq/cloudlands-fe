@@ -95,19 +95,8 @@ for (const width of [960, 420]) {
     // that wrapper, bounds usable space; readable content may use prose gutters.
     expect(lane.left).toBeGreaterThanOrEqual(0);
     expect(lane.right).toBeGreaterThanOrEqual(0);
-    expect(lane.left).toBeCloseTo(lane.right, 0);
     for (const prose of lane.prose) {
       expect(lane.presentation.width).toBeGreaterThanOrEqual(prose.width);
-      expect((lane.presentation.left + lane.presentation.right) / 2).toBeCloseTo(
-        (prose.left + prose.right) / 2,
-        0,
-      );
-      // This roomy host fits the small initial scene without spending gutters.
-      // The narrow host instead permits intrinsic width beyond the prose minimum.
-      if (width === 960) {
-        expect(lane.presentation.left).toBeCloseTo(prose.left, 0);
-        expect(lane.presentation.right).toBeCloseTo(prose.right, 0);
-      }
     }
     expect(lane.labels.length).toBeGreaterThan(0);
     for (const label of lane.labels) {

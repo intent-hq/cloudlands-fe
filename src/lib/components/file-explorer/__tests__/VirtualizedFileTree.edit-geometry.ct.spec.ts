@@ -37,7 +37,6 @@ async function expectRenameDecorationInsideTree(component: Locator, path: string
   expect(after).not.toBeNull();
   expect(after!.y).toBeCloseTo(before!.y, 1);
   expect(after!.height).toBeCloseTo(before!.height, 1);
-  expect(geometry.borderWidths).toEqual(['1px', '1px', '1px', '1px']);
 
   for (const ancestor of [geometry.scroll, geometry.tree]) {
     expect(geometry.decoration.left).toBeGreaterThanOrEqual(ancestor.left - 0.5);

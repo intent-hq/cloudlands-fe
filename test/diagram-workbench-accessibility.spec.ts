@@ -109,7 +109,6 @@ test('supports keyboard diagram actions, walkthroughs, bindings, and fullscreen'
   });
   expect(labelConnections.length).toBeGreaterThan(0);
   expect(labelConnections.every(({ pathDistance }) => pathDistance <= 1)).toBe(true);
-  expect(labelConnections.every(({ borderWidth }) => borderWidth === '0px')).toBe(true);
 
   await gotoPreview(
     page,

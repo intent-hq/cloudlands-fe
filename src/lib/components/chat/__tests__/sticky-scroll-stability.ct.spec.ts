@@ -36,6 +36,7 @@ async function geometry(scroll: Locator, anchor: Locator, source: Locator) {
         scrollHeight: node.scrollHeight,
         clientHeight: node.clientHeight,
         anchorDocumentTop: anchorNode.getBoundingClientRect().top + node.scrollTop * scale,
+        responseHeight: anchorNode.getBoundingClientRect().height / scale,
         sourceHeight: sourceNode.getBoundingClientRect().height,
       };
     },
@@ -124,7 +125,6 @@ test('pins automated triggers without shifting the transcript and returns to eac
     expect(after.scrollTop).toBeCloseTo(entry, 1);
     const bounds = (await pinned.boundingBox())!;
     expect(bounds.width).toBeLessThanOrEqual(320);
-    expect(bounds.height).toBeLessThan(60);
     if (index === 0) {
       await component.update({ props: { ...config, streamGrowth: 90 } });
       await settle(page);
@@ -175,7 +175,10 @@ for (const config of [
     await settle(page);
     const streamed = await geometry(scroll, anchor, source);
     expect(streamed.scrollTop).toBeCloseTo(entry, 1);
-    expect(streamed.scrollHeight - entered.scrollHeight).toBeCloseTo(90, 1);
+    expect(streamed.scrollHeight - entered.scrollHeight).toBeCloseTo(
+      streamed.responseHeight - entered.responseHeight,
+      1,
+    );
 
     for (let crossing = 0; crossing < 4; crossing += 1) {
       await scroll.evaluate((node, top) => node.scrollTo(0, top as number), entry - 5);

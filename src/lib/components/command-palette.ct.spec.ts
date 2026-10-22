@@ -173,7 +173,6 @@ test('palette widens to show every filter without scrolling at 1280px', async ({
   const box = (await dialog.boundingBox())!;
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(1280);
-  expect(Math.abs(box.x + box.width / 2 - 640)).toBeLessThanOrEqual(1);
   await testInfo.attach('palette-all-filters-1280px', {
     body: await dialog.screenshot(),
     contentType: 'image/png',

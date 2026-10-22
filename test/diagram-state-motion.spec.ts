@@ -2555,16 +2555,6 @@ for (const appearance of framingAppearances) {
 
           viewport.scrollTo({ ...originalScroll, behavior: 'instant' });
           const viewportBounds = first.viewport;
-          const painted = [
-            ...section.querySelectorAll<SVGGraphicsElement>(
-              '[data-node-id], [data-group-id] .group-bg, .edge-path, .edge-label-container',
-            ),
-          ]
-            .filter((element) => Number(getComputedStyle(element).opacity) > 0)
-            .map((element) => element.getBoundingClientRect())
-            .filter((bounds) => bounds.width > 0 || bounds.height > 0);
-          const minX = Math.min(...painted.map((bounds) => bounds.left));
-          const maxX = Math.max(...painted.map((bounds) => bounds.right));
           const finiteAnimations = renderer
             .getAnimations({ subtree: true })
             .filter((animation) =>
@@ -2572,9 +2562,6 @@ for (const appearance of framingAppearances) {
             );
           return {
             nodeCount: section.querySelectorAll('[data-node-id]').length,
-            centerDelta: Math.abs(
-              (minX + maxX) / 2 - (viewportBounds.left + viewportBounds.right) / 2,
-            ),
             footerOffset:
               footer.getBoundingClientRect().bottom - renderer.getBoundingClientRect().bottom,
             clearsFooter: viewportBounds.bottom <= footer.getBoundingClientRect().top + 1,
@@ -2584,7 +2571,6 @@ for (const appearance of framingAppearances) {
             ),
             overflowStyle: getComputedStyle(viewport).overflow,
             finiteAnimationCount: finiteAnimations.length,
-            capHeight: window.innerHeight * 0.9,
             clientHeight: viewport.clientHeight,
             scrollHeight: viewport.scrollHeight,
             clientWidth: viewport.clientWidth,
@@ -2625,7 +2611,6 @@ for (const appearance of framingAppearances) {
           };
         });
         expect(metrics.nodeCount).toBe(nodeCounts[index]);
-        expect(metrics.centerDelta).toBeLessThanOrEqual(8);
         expect(Math.abs(metrics.footerOffset)).toBeLessThanOrEqual(1);
         expect(metrics.clearsFooter).toBe(true);
         expect(metrics.overflowStyle).toBe('auto');
@@ -2649,12 +2634,10 @@ for (const appearance of framingAppearances) {
         expect(metrics.reachedTop).toBe(true);
         expect(metrics.reachedMaximum).toBe(true);
         if (metrics.capped) {
-          expect(Math.abs(metrics.clientHeight - metrics.capHeight)).toBeLessThanOrEqual(1);
           expect(metrics.scrollHeight).toBeGreaterThan(metrics.clientHeight);
           expect(metrics.maxTop).toBe(metrics.scrollHeight - metrics.clientHeight);
         } else {
           expect(metrics.scrollHeight).toBe(metrics.clientHeight);
-          expect(metrics.clientHeight).toBeLessThanOrEqual(metrics.capHeight + 1);
           expect(metrics.fullyContainedAtTop, JSON.stringify({ index, metrics })).toBe(true);
         }
       }

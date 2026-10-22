@@ -847,51 +847,16 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
       relativePath: `file-${index}.ts`,
     }));
     const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
-    const { container, getByRole } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+    const { container } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
     const agentCard = container.querySelector<HTMLElement>('[data-sidebar-launcher="agents"]')!;
     const agentStack = agentCard.querySelector<HTMLElement>('[data-agent-avatar-stack]')!;
     const agentOverflow = agentStack.querySelector<HTMLElement>('[data-agent-avatar-overflow]')!;
-    const contextStack = container.querySelector<HTMLElement>(
-      '[data-sidebar-launcher="context"] [data-sidebar-launcher-icons]',
-    )!;
-    const noteOverflow = getByRole('button', { name: /2 more notes/ });
-    const expectNoteOverflowStyle = (overflow: HTMLElement) => {
-      expect(overflow.className).toContain('launcher-overflow-button');
-      expect(overflow.className).toContain('text-xs');
-      expect(overflow.className).toContain('font-medium');
-      expect(overflow.className).toContain('leading-3');
-      expect(overflow.className).toContain('text-muted-foreground');
-      expect(overflow.className).toContain('whitespace-nowrap');
-      expect(overflow.className).toContain('bg-muted!');
-      expect(overflow.className).toContain('border-0!');
-      expect(overflow.className).toContain('px-1.5!');
-      expect(overflow.className).toContain('shadow-none!');
-      expect(overflow.className).toContain('min-w-5');
-      expect(overflow.className).toContain('rounded-md!');
-      expect(overflow.className).toContain('hover:bg-muted\/80!');
-      expect(overflow.className).toContain('hover:text-foreground');
-      expect(overflow.className).toContain('focus-visible:text-foreground');
-      expect(overflow.className).not.toMatch(/font-semibold/);
-      const style = getComputedStyle(overflow);
-      expect(overflow.style.fontSize).toBe('');
-      expect(style.lineHeight).toBe('12px');
-      expect(style.fontWeight).toBe('500');
-      expect(style.borderRadius).toBe('6px');
-      expect(overflow.style.background).toContain('--muted');
-      expect(style.paddingTop).toBe('0px');
-      expect(style.boxShadow).toBe('none');
-    };
-
     expect(agentCard.classList.contains('overflow-hidden')).toBe(true);
     expect(agentStack.querySelectorAll('[data-agent-avatar-stack-item]')).toHaveLength(6);
     expect(agentStack.querySelectorAll('button[data-sidebar-agent]')).toHaveLength(6);
     expect(agentOverflow.matches('button, [role="button"], [tabindex]')).toBe(false);
     expect(agentOverflow.textContent).toBe('+2');
     expect(agentOverflow.className).toContain('agent-avatar-stack-overflow');
-    expect(contextStack.style.gridTemplateColumns).toBe(
-      'max-content repeat(4, 15px) 36px max-content',
-    );
-    expectNoteOverflowStyle(noteOverflow);
     for (const theme of ['light', 'dark'] as const) {
       document.documentElement.classList.toggle('dark', theme === 'dark');
       document.documentElement.dataset.theme = theme;

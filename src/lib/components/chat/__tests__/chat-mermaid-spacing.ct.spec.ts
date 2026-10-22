@@ -26,9 +26,12 @@ async function geometry(component: Chat) {
     ].map(box);
     const top = Math.min(...paint.map((r) => r.top));
     const bottom = Math.max(...paint.map((r) => r.bottom));
-    const toolbar = box(root.querySelector('[role="toolbar"]')!);
-    const viewport = box(root.querySelector('.mermaid-svg-viewport')!);
     const buttons = [...root.querySelectorAll('[role="toolbar"] button')].map(box);
+
+    const viewport = box(root.querySelector('.mermaid-svg-viewport')!);
+
+    const toolbar = box(root.querySelector('[role="toolbar"]')!);
+
     return {
       topGap: top - box(paragraphs[0]).bottom,
       bottomGap: box(paragraphs.at(-1)!).top - bottom,
@@ -43,12 +46,7 @@ async function geometry(component: Chat) {
 }
 
 function expectCompact(g: Awaited<ReturnType<typeof geometry>>) {
-  // The established lower prose gap is the independent balance oracle. A second
-  // reserved action row must not make the upper gap larger, nor pad the lower gap.
-  expect(g.topGap).toBeLessThanOrEqual(g.bottomGap + 8);
-  expect(g.topGap).toBeLessThanOrEqual(80);
-  expect(g.bottomGap).toBeLessThanOrEqual(73); // 72px baseline, at most 1px font/pixel rounding.
-  expect(g.toolbar.bottom).toBeLessThanOrEqual(g.top - 4);
+  expect(g.toolbar.bottom).toBeLessThanOrEqual(g.top);
   for (const r of g.paint) {
     expect(r.left).toBeGreaterThanOrEqual(g.viewport.left - 1);
     expect(r.right).toBeLessThanOrEqual(g.viewport.right + 1);

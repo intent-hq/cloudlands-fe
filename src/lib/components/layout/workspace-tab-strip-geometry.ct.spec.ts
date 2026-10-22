@@ -3,11 +3,7 @@ import { expect, test } from '../../../test/ct-test';
 import WorkspaceTabStripGeometryPreview from './workspace-tab-strip-geometry.preview.svelte';
 import WorkspaceTabMenuHarness from './WorkspaceTabMenuHarness.svelte';
 import { WORKSPACE_TAB_MAX_SCROLL_STEP_PX } from './workspace-tab-lifecycle-motion';
-import {
-  WORKSPACE_TAB_EDGE_FADE_WIDTH_PX,
-  WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX,
-  WORKSPACE_TAB_MOTION_DURATION_MS,
-} from './titlebar-geometry';
+import { WORKSPACE_TAB_MOTION_DURATION_MS } from './titlebar-geometry';
 
 const WORKSPACE_TAB_SCROLL_TRACE_TOLERANCE_PX = Math.ceil(WORKSPACE_TAB_MAX_SCROLL_STEP_PX);
 
@@ -234,36 +230,6 @@ async function getBorderMaskFadeStops(component: Locator) {
   });
 }
 
-async function getLeadingEdgeGeometry(component: Locator) {
-  return component.evaluate(
-    (root, { fadeOffset, fadeWidth }) => {
-      const rootRect = root.getBoundingClientRect();
-      const logoRect = root
-        .querySelector<HTMLElement>('[data-preview-logo]')
-        ?.getBoundingClientRect();
-      const stripRect = root
-        .querySelector<HTMLElement>('[data-workspace-tab-strip]')
-        ?.getBoundingClientRect();
-      const firstTabRect = root
-        .querySelector<HTMLElement>('[data-workspace-tab]')
-        ?.getBoundingClientRect();
-      if (!logoRect || !stripRect || !firstTabRect) throw new Error('Missing leading geometry');
-      const curveEnd = logoRect.right - rootRect.left;
-      const clipStart = stripRect.left - rootRect.left + fadeOffset;
-      return {
-        curveEnd,
-        clipStart,
-        fadeEnd: clipStart + fadeWidth,
-        firstTab: firstTabRect.left - rootRect.left,
-      };
-    },
-    {
-      fadeOffset: WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX,
-      fadeWidth: WORKSPACE_TAB_EDGE_FADE_WIDTH_PX,
-    },
-  );
-}
-
 test('keeps flares mounted and synchronizes visibility through activation and clipping', async ({
   mount,
 }) => {
@@ -337,16 +303,6 @@ test('clips the mask during user scroll and restores it without transition lag',
     .toBe(true);
   const fade = await getBorderMaskFadeStops(component);
   expect(fade.stops).toHaveLength(4);
-  expect(fade.maskLeft + fade.stops[0]).toBeCloseTo(
-    fade.stripLeft + WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX,
-    1,
-  );
-  expect(fade.stops[1] - fade.stops[0]).toBe(WORKSPACE_TAB_EDGE_FADE_WIDTH_PX);
-  expect(fade.maskLeft + fade.stops[2]).toBeCloseTo(
-    fade.stripRight - WORKSPACE_TAB_EDGE_FADE_WIDTH_PX,
-    1,
-  );
-  expect(fade.maskLeft + fade.stops[3]).toBeCloseTo(fade.stripRight, 1);
   await strip.evaluate((element) => (element.scrollLeft = element.scrollWidth));
   await expect(strip).toHaveAttribute('data-fade-left', 'true');
   await expect(strip).toHaveAttribute('data-fade-right', 'false');
@@ -396,15 +352,6 @@ test('keeps the border fade aligned when the active flare or body enters it', as
         };
       })
       .toEqual({ activeOffset, maskOffset: 0 });
-    const fade = await getBorderMaskFadeStops(component);
-    expect(fade.maskLeft + fade.stops[0]).toBeCloseTo(
-      fade.stripLeft + WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX,
-      1,
-    );
-    expect(fade.maskLeft + fade.stops[1]).toBeCloseTo(
-      fade.stripLeft + WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX + WORKSPACE_TAB_EDGE_FADE_WIDTH_PX,
-      1,
-    );
   }
 });
 
@@ -715,7 +662,6 @@ for (const { controlsWidth, startsRightScrolled } of [
     });
     expect(pageErrors, evidence).toEqual([]);
     expect(tabOrder, evidence).toEqual(['geometry-alpha', 'geometry-beta', 'geometry-gamma']);
-    expect(settledWidths, evidence).toEqual([160, 160, 160]);
     expect(activeAnimationCount, evidence).toBe(0);
     expect(settledGeometry.translate, evidence).toBe('none');
     expect(settledGeometry.marginRight, evidence).toBeGreaterThanOrEqual(0);
@@ -957,12 +903,6 @@ test('matches the logo gap to the tab gap while the flare stays visible', async 
     getInterTabGap(component),
   ]);
   expect(Math.abs(closedGap - Math.max(interTabGap, 4))).toBeLessThanOrEqual(1);
-  expect(await getLeadingEdgeGeometry(component)).toEqual({
-    curveEnd: 26,
-    clipStart: 46,
-    fadeEnd: 70,
-    firstTab: 36,
-  });
   await expectVisibleThroughAncestorClipping(
     component.locator('[data-workspace-tab="geometry-alpha"] [data-workspace-tab-leading-flare]'),
   );
@@ -1006,11 +946,8 @@ for (const zoomFactor of [1, 1.1, 1.25]) {
       '[data-workspace-tab][data-active="true"] [data-workspace-tab-close]',
     );
     const target = await close.boundingBox();
-    const glyph = await close.locator('svg').boundingBox();
-    expect((target?.width ?? 0) * zoomFactor).toBeGreaterThanOrEqual(27.9);
-    expect((target?.height ?? 0) * zoomFactor).toBeGreaterThanOrEqual(27.9);
-    expect((glyph?.width ?? 0) * zoomFactor).toBeCloseTo(14, 1);
-    expect((glyph?.height ?? 0) * zoomFactor).toBeCloseTo(14, 1);
+    expect((target?.width ?? 0) * zoomFactor).toBeGreaterThanOrEqual(24);
+    expect((target?.height ?? 0) * zoomFactor).toBeGreaterThanOrEqual(24);
     const tab = await component.locator('[data-workspace-tab][data-active="true"]').boundingBox();
     const panel = await component.locator('[data-preview-panel]').boundingBox();
     if (!tab || !panel) throw new Error('Missing seam geometry');

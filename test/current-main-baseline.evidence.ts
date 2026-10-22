@@ -78,7 +78,7 @@ const semanticSelectors: Record<string, SemanticSelector[]> = {
   'CHAT-03': [
     selector(
       ['mounted', 'runtime-success', 'keyboard'],
-      'renders one active 16px phase mark and the localized Thinking row',
+      'renders one active phase mark and the localized Thinking row',
       ['mounted', 'runtime-success', 'keyboard'],
     ),
     selector(['runtime-error'], 'renders explicit failed response copy'),
@@ -348,10 +348,6 @@ const semanticSelectors: Record<string, SemanticSelector[]> = {
   ],
   'WORKSPACE-36': [
     selector(
-      ['mounted', 'cleanup'],
-      'fills one-panel viewports and normalizes explicit saved widths',
-    ),
-    selector(
       ['runtime-success', 'edges'],
       'uses the edge panel when the layout has no valid focus',
     ),
@@ -362,19 +358,11 @@ const semanticSelectors: Record<string, SemanticSelector[]> = {
     selector(['nested'], 'expands horizontal ancestors in a nested layout'),
   ],
   'WORKSPACE-37': [
-    selector(
-      ['mounted', 'cleanup'],
-      'fills one-panel viewports and normalizes explicit saved widths',
-    ),
     selector(['runtime-success'], 'uses the edge panel when the layout has no valid focus'),
     selector(['runtime-error'], 'skips empty workspaces and wraps in display order'),
     selector(['keyboard'], 'cycles through tabs forward', ['keyboard']),
     selector(['indexed'], 'initializeLayout > sets root, panels, and focusedPanelId'),
     selector(['identified'], 'retargets only the identified tab'),
-    selector(
-      ['scroll'],
-      'ignores long content, sidebar viewport, zoom, and tab-stack mode changes',
-    ),
   ],
   'WORKSPACE-43': [
     selector(
@@ -608,7 +596,11 @@ export function createSemanticEvidence(
         .filter(({ rowIds }) => rowIds.includes(row.row))
         .flatMap(({ observedStates }) => observedStates),
     );
-    const observedStates = row.states.filter((state) => !mountedStatesForRow.has(state));
+    const selectors = semanticSelectors[row.row] ?? [];
+    const selectorStates = selectors.flatMap(({ states }) => states);
+    const observedStates = row.states.filter(
+      (state) => !mountedStatesForRow.has(state) && selectorStates.includes(state),
+    );
     if (observedStates.length === 0) return [];
     const testFiles = row.tests.filter((file) => assertionsByFile.has(file));
     const assertionIds = [
@@ -617,7 +609,6 @@ export function createSemanticEvidence(
     if (assertionIds.length === 0) {
       throw new Error(`${row.row} has semantic states without a passing semantic assertion`);
     }
-    const selectors = semanticSelectors[row.row] ?? [];
     for (const evidenceSelector of selectors) {
       const unsupported = evidenceSelector.states.filter(
         (state) => !evidenceSelector.configuredStates.includes(state),
@@ -628,7 +619,6 @@ export function createSemanticEvidence(
         );
       }
     }
-    const selectorStates = selectors.flatMap(({ states }) => states);
     if (new Set(selectorStates).size !== selectorStates.length) {
       throw new Error(`${row.row} has duplicate semantic selector states`);
     }

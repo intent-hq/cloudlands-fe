@@ -50,7 +50,7 @@ afterEach(() => {
 });
 
 describe('StreamingStatus rendered UI', () => {
-  it('renders one active 16px phase mark and the localized Thinking row', () => {
+  it('renders one active phase mark and the localized Thinking row', () => {
     const { container } = render(StreamingStatus, {
       props: {
         isProcessing: true,
@@ -65,16 +65,8 @@ describe('StreamingStatus rendered UI', () => {
     const label = screen.getByTestId('streaming-status-thinking-label');
     const lifecycle = screen.getByTestId('streaming-status-phase');
 
-    expect(row.className).toContain('h-7');
-    expect(row.className).toContain('px-[var(--operational-row-inline-padding)]');
-    expect(row.className).toContain(
-      'grid-cols-[var(--operational-leading-slot-size)_minmax(0,1fr)_auto]',
-    );
-    expect(row.className).toContain('mt-[var(--space-3)]');
     expect(mark.getAttribute('data-variant')).toBe('pulse');
     expect(mark.getAttribute('data-playing')).toBe('true');
-    expect(mark.getAttribute('width')).toBe('16');
-    expect(mark.parentElement?.className).toContain('size-[var(--operational-leading-slot-size)]');
     expect(screen.getAllByRole('status')).toHaveLength(1);
     expect(label.textContent).toBe('Thinking');
     expect(label.className).toContain('sr-only');

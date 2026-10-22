@@ -36,29 +36,13 @@ export async function assertSettingsContentLayout(root: Locator, stacked: boolea
     }),
   );
   expect(geometry).toHaveLength(9);
-  for (const { id, row, label, description, control } of geometry) {
+  for (const { id, row, description, control } of geometry) {
     expect(control.x, `${id} left containment`).toBeGreaterThanOrEqual(row.x);
     expect(control.right, `${id} right containment`).toBeLessThanOrEqual(row.right + 1);
     if (stacked) {
       expect(control.y, `${id} below description`).toBeGreaterThanOrEqual(description.bottom);
-      expect(control.x, `${id} left alignment`).toBeCloseTo(label.x, 1);
-    } else {
-      expect(control.right, `${id} right alignment`).toBeCloseTo(row.right, 1);
-      if (id === 'memory-budget') {
-        // The stacked slider + number field starts at the label's top; its
-        // 36px slider hit area is intentionally taller than a standard input.
-        expect(control.y, `${id} composite top alignment`).toBeCloseTo(label.y, 1);
-      } else {
-        expect(
-          Math.abs(control.y + control.height / 2 - (label.y + label.height / 2)),
-          `${id} label/control alignment`,
-        ).toBeLessThanOrEqual(1);
-      }
     }
   }
-  const reap = await root.locator('#idleReapToggle').boundingBox();
-  expect(reap?.width).toBe(28);
-  expect(reap?.height).toBe(16);
   return geometry;
 }
 

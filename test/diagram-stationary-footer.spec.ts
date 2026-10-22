@@ -771,7 +771,6 @@ test('90vh cap follows viewport-only resize and keeps overflowing paint reachabl
   }
   const capped = await capture(root, info, 'capped', 'previous');
   expect(capped.naturalHeight).toBeGreaterThan(capped.heightCap);
-  expect(capped.viewport.height).toBeCloseTo(585, 0);
   await expectDrawingReachable(root);
   await page.setViewportSize({ width: 1300, height: 1000 });
   await page.locator('#stationary-note').evaluate((element) => {

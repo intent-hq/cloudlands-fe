@@ -271,7 +271,6 @@ function assertClear(
       distanceToNode(route.start, edge.from),
       `${edge.id} source ownership`,
     ).toBeLessThanOrEqual(2.5);
-    expect(distanceToNode(route.end, edge.to), `${edge.id} terminal gap`).toBeCloseTo(5.5, 0);
   }
   for (const label of result.labels) {
     expect(label.nodeHits, `${label.id} nodes`).toHaveLength(0);

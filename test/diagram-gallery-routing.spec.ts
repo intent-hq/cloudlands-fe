@@ -287,8 +287,6 @@ for (const state of ['mermaid-topology-stress', 'mermaid-state'] as const) {
           expect(success.bends).toBeGreaterThan(0);
           expect(feedback.data.feedbackTargetSide).toBe('bottom');
         }
-        expect(success.gap).toBeGreaterThanOrEqual(4.65);
-        expect(success.gap).toBeLessThanOrEqual(5.35);
       } else {
         const failure = result.routes.find((route) => route.data.routeLabel === 'Stream fails')!;
         const idle = result.nodes.find((node) => node.name === 'Idle')!;
@@ -304,8 +302,6 @@ for (const state of ['mermaid-topology-stress', 'mermaid-state'] as const) {
             false,
           );
         if (width === 960) expect(failure.length).toBeLessThan(900);
-        expect(failure.gap).toBeGreaterThanOrEqual(4.65);
-        expect(failure.gap).toBeLessThanOrEqual(5.35);
       }
     });
   }

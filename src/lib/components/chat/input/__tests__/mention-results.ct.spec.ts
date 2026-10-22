@@ -40,7 +40,6 @@ for (const width of [420, 240]) {
       expect(row.subtitleY).toBeGreaterThanOrEqual(row.labelBottom);
       if (index > 0) {
         expect(row.y).toBeGreaterThanOrEqual(geometry[index - 1].bottom);
-        expect(Math.abs(row.width - geometry[0].width)).toBeLessThan(1);
       }
     }
     await page.getByRole('textbox').focus();

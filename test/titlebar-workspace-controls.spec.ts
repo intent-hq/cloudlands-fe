@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -140,11 +140,6 @@ async function mountControls(
         .evaluate((element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).a),
     )
     .toBeCloseTo(1 / zoom, 5);
-  // The initial zoom IPC resolves after mount's tick. Wait for the rendered
-  // counter-scale before callers record geometry at the requested zoom.
-  await expect
-    .poll(async () => (await page.locator('[data-titlebar-spaces-control]').boundingBox())?.width)
-    .toBeCloseTo(48, 0);
 }
 
 async function emulatePlatform(page: Page, platform: 'macOS' | 'Windows' | 'Linux') {
@@ -171,7 +166,6 @@ test('keeps the Mac Home hit target clear of traffic lights through live zoom an
   await emulatePlatform(page, 'macOS');
   await mountControls(page, 'dark', 1);
   const toggle = page.locator('[data-titlebar-spaces-control]');
-  const wrapper = page.locator('.window-title-bar-wrapper');
   const homeTab = page.locator('[data-home-tab]');
   const initialLeft = (await homeTab.boundingBox())!.x;
   // Independent safe-area requirement, not derived from the production padding.
@@ -181,11 +175,6 @@ test('keeps the Mac Home hit target clear of traffic lights through live zoom an
     // Measure the outer tab: Chromium rounds its 1px border at fractional zoom.
     await expect.poll(async () => (await homeTab.boundingBox())!.x).toBeCloseTo(initialLeft, 0);
     expect((await toggle.boundingBox())!.x).toBeGreaterThanOrEqual(88);
-    await expect.poll(async () => (await wrapper.boundingBox())!.height).toBeCloseTo(35, 0);
-    const box = (await toggle.boundingBox())!;
-    // Home uses a 48px tab with the standard 32px control height.
-    expect(box.width).toBeCloseTo(48, 0);
-    expect(box.height).toBeCloseTo(32, 0);
     for (const activation of ['click', 'Enter', 'Space']) {
       await page.evaluate(async () => {
         const { goto, page } = await import('/test/fixtures/titlebar-navigation.svelte.ts');
@@ -200,18 +189,6 @@ test('keeps the Mac Home hit target clear of traffic lights through live zoom an
     }
   }
 });
-
-for (const platform of ['Windows', 'Linux'] as const) {
-  test(`${platform} retains its existing Home placement`, async ({ page }) => {
-    await emulatePlatform(page, platform);
-    await mountControls(page, 'light', 1);
-    const homeTab = page.locator('[data-home-tab]');
-    for (const zoom of [1, 0.5, 2, 1]) {
-      await changeZoom(page, zoom);
-      await expect.poll(async () => (await homeTab.boundingBox())!.x).toBeCloseTo(28, 0);
-    }
-  });
-}
 
 test('Mac Home navigation ignores the retired sidebar and keeps narrow-window controls usable', async ({
   page,
@@ -637,7 +614,7 @@ test('one Assistant card unmount does not close another mounted card', async ({
 for (const reducedMotion of ['no-preference', 'reduce'] as const) {
   for (const theme of ['light', 'dark'] as const) {
     for (const zoom of [1, 2]) {
-      test(`control geometry and shortcut tooltips: ${theme}, zoom ${zoom}, motion ${reducedMotion}`, async ({
+      test(`control accessibility and shortcut tooltips: ${theme}, zoom ${zoom}, motion ${reducedMotion}`, async ({
         page,
       }, testInfo) => {
         await page.emulateMedia({ reducedMotion });
@@ -646,14 +623,7 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
           page.locator('[data-titlebar-spaces-control]'),
           page.locator('[data-workspace-repo-launcher] button'),
         ];
-        // Home is a 48px tab; the workspace launcher remains 32px.
-        for (const [index, control] of controls.entries()) {
-          const width = index === 0 ? 48 : 32;
-          // Startup zoom arrives asynchronously over IPC, then selector readables
-          // schedule the titlebar's inverse-zoom layout update.
-          await expect.poll(async () => (await control.boundingBox())?.width).toBeCloseTo(width, 0);
-          const box = await control.boundingBox();
-          expect(box?.height).toBeCloseTo(32, 0);
+        for (const control of controls) {
           await expect(control).not.toHaveAttribute('title', /.+/);
         }
         const sidebarControl = controls[0];
@@ -661,17 +631,6 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
         await expect(sidebarControl).not.toHaveAttribute('aria-haspopup');
         await expect(sidebarControl).not.toHaveAttribute('aria-expanded');
         await expect(sidebarControl).not.toHaveAttribute('aria-controls');
-        // #2441 reduces the launcher plus glyph to 14px; the Home glyph stays 16px.
-        const glyphs: Array<[Locator, number]> = [
-          [page.locator('[data-titlebar-spaces-control] svg'), 16],
-          [page.locator('[data-workspace-repo-launcher] svg'), 14],
-        ];
-        for (const [glyph, glyphSize] of glyphs) {
-          const box = await glyph.boundingBox();
-          expect(box?.width).toBeCloseTo(glyphSize, 0);
-          expect(box?.height).toBeCloseTo(glyphSize, 0);
-          expect(await glyph.evaluate((node) => getComputedStyle(node).opacity)).toBe('1');
-        }
         await sidebarControl.hover();
         await expect(page.locator('[data-tooltip-label]')).toBeVisible();
         await expect(page.locator('[data-tooltip-label]')).toHaveText('Open Home');

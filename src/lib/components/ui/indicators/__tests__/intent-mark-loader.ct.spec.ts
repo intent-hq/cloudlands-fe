@@ -318,30 +318,6 @@ for (const variant of ['pulse', 'bloom', 'twist'] as const) {
   });
 }
 
-for (const theme of ['light', 'dark'] as const) {
-  for (const zoom of [1, 2] as const) {
-    test(`keeps square geometry and currentColor in ${theme} at ${zoom * 100}%`, async ({
-      mount,
-    }) => {
-      const component = await mount(IntentMarkLoaderHost, {
-        props: { theme, zoom, size: 128, playing: false },
-      });
-      const root = component.getByRole('status', { name: 'Loading' });
-      await expect(component).toHaveAttribute('data-theme', theme);
-      const box = await root.boundingBox();
-      expect(box?.width).toBe(128 * zoom);
-      expect(box?.height).toBe(128 * zoom);
-      const colors = await root.evaluate((node) => ({
-        color: getComputedStyle(node).color,
-        contain: getComputedStyle(node).contain,
-        ink: getComputedStyle(node.querySelector('[data-mark-arm]')!).stroke,
-      }));
-      expect(colors.ink).toBe(colors.color);
-      expect(colors.contain).toBe('content');
-    });
-  }
-}
-
 test('does no continuous work while the window is blurred', async ({ mount, page }) => {
   await page.evaluate(() => document.documentElement.setAttribute('data-window-blurred', ''));
   const component = await mount(IntentMarkLoaderHost, {

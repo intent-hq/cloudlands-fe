@@ -6,7 +6,7 @@ test.setTimeout(120_000);
 const expectedCompleteTags = ['P', 'H2', 'UL', 'PRE', 'P'];
 
 for (const zoom of [1, 2]) {
-  test(`keeps expanded reasoning chunks at one gap at ${zoom * 100}%`, async ({
+  test(`preserves expanded reasoning through streaming updates at ${zoom * 100}%`, async ({
     mount,
     page,
   }, testInfo) => {
@@ -29,37 +29,14 @@ for (const zoom of [1, 2]) {
         const chunkRoot =
           viewer.querySelector<HTMLElement>(':scope > :is(.ProseMirror, .markdown-content)') ??
           viewer;
-        const rootBox = chunkRoot.getBoundingClientRect();
-        const chunks = Array.from(chunkRoot.children).map((chunk) => {
-          const box = chunk.getBoundingClientRect();
-          const style = getComputedStyle(chunk);
-          return {
-            tag: chunk.tagName,
-            top: box.top,
-            bottom: box.bottom,
-            marginTop: style.marginTop,
-            marginBottom: style.marginBottom,
-          };
-        });
         return {
-          rowGap: getComputedStyle(chunkRoot).rowGap,
-          rootTop: rootBox.top,
-          rootBottom: rootBox.bottom,
-          chunks,
+          chunks: Array.from(chunkRoot.children, (chunk) => ({ tag: chunk.tagName })),
           hasInlineCode: !!chunkRoot.querySelector('p code'),
           hasFencedCode: !!chunkRoot.querySelector('pre code'),
-          softHeading: (() => {
-            const heading = chunkRoot.querySelector<HTMLElement>(
-              ':is(br + strong, p > strong:only-child)',
-            );
-            if (!heading) return null;
-            const style = getComputedStyle(heading);
-            return { display: style.display, marginTop: style.marginTop };
-          })(),
         };
       });
 
-    const assertRhythm = async (fixture: typeof staticFixture, expectedTags: string[]) => {
+    const assertContent = async (fixture: typeof staticFixture, expectedTags: string[]) => {
       await expect
         .poll(async () => (await measure(fixture))?.chunks.map((chunk) => chunk.tag), {
           // Chunk hydration loads the markdown/shiki bundles; on a saturated
@@ -68,29 +45,12 @@ for (const zoom of [1, 2]) {
         })
         .toEqual(expectedTags);
       const geometry = (await measure(fixture))!;
-      expect(geometry.rowGap).toBe('8px');
-      expect(geometry.chunks.map((chunk) => chunk.marginTop)).toEqual(
-        expectedTags.map((tag, index) => (index > 0 && /^H[1-6]$/.test(tag) ? '24px' : '0px')),
-      );
-      expect(geometry.chunks.map((chunk) => chunk.marginBottom)).toEqual(
-        expectedTags.map(() => '0px'),
-      );
-      expect(geometry.chunks[0].top - geometry.rootTop).toBeCloseTo(0, 1);
-      expect(geometry.rootBottom - geometry.chunks.at(-1)!.bottom).toBeCloseTo(0, 1);
-      for (let index = 1; index < geometry.chunks.length; index += 1) {
-        const expectedGap = /^H[1-6]$/.test(geometry.chunks[index].tag) ? 32 : 8;
-        expect(geometry.chunks[index].top - geometry.chunks[index - 1].bottom).toBeCloseTo(
-          expectedGap * zoom,
-          1,
-        );
-      }
       expect(geometry.hasInlineCode).toBe(true);
       expect(geometry.hasFencedCode).toBe(expectedTags.includes('PRE'));
-      expect(geometry.softHeading).toEqual({ display: 'block', marginTop: '24px' });
     };
 
-    await assertRhythm(staticFixture, expectedCompleteTags);
-    await assertRhythm(streamingFixture, ['P', 'H2', 'P']);
+    await assertContent(staticFixture, expectedCompleteTags);
+    await assertContent(streamingFixture, ['P', 'H2', 'P']);
     const streamingViewer = streamingFixture.locator('.markdown-viewer');
     await streamingViewer.evaluate((viewer) => {
       viewer.setAttribute('data-reconciliation-anchor', 'stable');
@@ -98,9 +58,9 @@ for (const zoom of [1, 2]) {
 
     await component.update({ props: { width: 280, zoom, streamStage: 'complete' } });
     await expect(streamingViewer).toHaveAttribute('data-reconciliation-anchor', 'stable');
-    await assertRhythm(streamingFixture, expectedCompleteTags);
+    await assertContent(streamingFixture, expectedCompleteTags);
     await expect(streamingFixture.getByText('First streamed paragraph with')).toHaveCount(1);
-    await testInfo.attach(`reasoning-spacing-${zoom * 100}.json`, {
+    await testInfo.attach(`reasoning-content-${zoom * 100}.json`, {
       body: JSON.stringify({
         zoom,
         static: await measure(staticFixture),

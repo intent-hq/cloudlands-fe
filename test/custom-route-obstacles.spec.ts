@@ -287,17 +287,7 @@ for (const width of [320, 420, 960]) {
       check(geometry.leftRunGap, 'distinct left exterior runs').toBeGreaterThanOrEqual(8);
       check(geometry.portGap, 'distinct gate attachments').toBeGreaterThanOrEqual(8);
       check(geometry.separation, 'no coincident or crossing approach').toBeGreaterThanOrEqual(8);
-      if (width === 320) {
-        // Independent pre-edit browser measurements; the original no-scrollbar control remains unchanged.
-        check(geometry.svgWidth, 'no introduced 320px SVG envelope growth').toBeLessThanOrEqual(
-          308.62,
-        );
-        check(
-          geometry.overflow,
-          'no added overflow over the existing 49px baseline',
-        ).toBeLessThanOrEqual(49);
-        check(geometry.scale, 'no scale reduction to hide added width').toBeCloseTo(12 / 13, 5);
-      } else {
+      if (width !== 320) {
         check(geometry.contained, 'all diagram paint remains in the viewport').toBe(true);
       }
       check(geometry.labelNodeGap, 'return labels clear all nodes').toBeGreaterThanOrEqual(8);

@@ -121,7 +121,6 @@ for (const config of [
     const component = await mount(FilesOpenMenuPreview, { props: config });
     await page.evaluate(() => document.fonts.ready);
     const metrics = await component.locator('p').evaluate(measureInlinePath);
-    expect(metrics.fontSize).toBeCloseTo(config.fontSize * 0.9375, 2);
     expect(metrics.triggerFont).toBe(metrics.fontSize);
     expect(metrics.triggerLine).toBe(metrics.lineHeight);
     expect(metrics.triggerFamily).toBe(metrics.family);
@@ -205,7 +204,6 @@ test('setup-card sidebar text trigger sizes to its path label instead of an icon
   await page.evaluate(() => document.fonts.ready);
   const metrics = await trigger.evaluate(measureTextTrigger);
   expect(metrics.textWidth).toBeGreaterThan(28);
-  expect(metrics.width).toBeGreaterThanOrEqual(metrics.textWidth);
   expect(metrics.labelOverflow).toBeLessThanOrEqual(1);
   expect(metrics.scrollOverflow).toBeLessThanOrEqual(1);
   await trigger.click();
@@ -227,14 +225,9 @@ for (const width of [360, 248]) {
     await page.evaluate(() => document.fonts.ready);
     const assertGeometry = async () => {
       const metrics = await trigger.evaluate(measureCollapsedFilesTrigger);
-      expect(metrics.width).toBe(28);
-      expect(metrics.height).toBe(28);
-      expect(metrics.iconWidth).toBe(16);
-      expect(metrics.iconHeight).toBe(16);
       expect(Math.abs(metrics.rightInset)).toBeLessThanOrEqual(1);
       expect(Math.abs(metrics.centerX)).toBeLessThanOrEqual(1);
       expect(Math.abs(metrics.centerY)).toBeLessThanOrEqual(1);
-      expect(metrics.padding).toEqual(['0px', '0px']);
       expect(metrics.backgrounds.every((color) => color === 'rgba(0, 0, 0, 0)')).toBe(true);
     };
     await page.mouse.move(0, 0);

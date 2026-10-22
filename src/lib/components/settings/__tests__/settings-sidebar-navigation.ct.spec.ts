@@ -120,13 +120,10 @@ test('keeps Back, grouped settings and specialists on one aligned keyboard seque
   expect(new Set(geometry.map((row) => row.weight)).size).toBe(1);
   expect(geometry.every((row) => row.weight === '400')).toBe(true);
   expect(geometry.every((row) => row.font === '15px')).toBe(true);
-  expect(geometry.every((row) => row.iconWidth === 16 && row.iconHeight === 16)).toBe(true);
-  expect(geometry.every((row) => row.gap === 8)).toBe(true);
   expect(
     Math.max(...geometry.map((row) => row.height)) - Math.min(...geometry.map((row) => row.height)),
   ).toBeLessThanOrEqual(1);
   expect(geometry.every((row) => row.overflow <= 1)).toBe(true);
-  expect(geometry.every((row) => row.height === 32)).toBe(true);
   const hint = await back.locator('kbd').evaluate((node) => {
     const style = getComputedStyle(node);
     return {
@@ -137,7 +134,6 @@ test('keeps Back, grouped settings and specialists on one aligned keyboard seque
   });
   expect(hint.background).toBe('rgba(0, 0, 0, 0)');
   expect(hint.border).toBe(0);
-  expect(hint.padding).toBe(0);
   const lastTab = (await tabs.last().boundingBox())!;
   const firstSpecialist = (await specialists.first().boundingBox())!;
   expect(firstSpecialist.y).toBeGreaterThan(lastTab.y + lastTab.height);
@@ -158,7 +154,6 @@ test('keeps narrow rows inside the sidebar and truncates long specialist labels 
   }));
   expect(truncation.overflow).toBeGreaterThan(0);
   expect(truncation.ellipsis).toBe('ellipsis');
-  expect(truncation.font).toBe('15px');
   const bounds = await component.evaluate((sidebar) => {
     const outer = sidebar.getBoundingClientRect();
     return [...sidebar.querySelectorAll('button')].map((row) => {
@@ -170,7 +165,7 @@ test('keeps narrow rows inside the sidebar and truncates long specialist labels 
       };
     });
   });
-  expect(bounds.every((row) => row.within && row.overflow <= 1 && row.height === 32)).toBe(true);
+  expect(bounds.every((row) => row.within && row.overflow <= 1)).toBe(true);
   await expectCenteredRows(component.locator(sidebarRows));
   await specialist.focus();
   await page.keyboard.press('Enter');

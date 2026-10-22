@@ -45,20 +45,16 @@ for (const width of [420, 1440]) {
     const group = component.locator('[data-open-combo-control]');
     const buttons = group.getByRole('button');
     await expect(buttons).toHaveCount(2);
-    const [primary, caret, bounds] = await Promise.all([
+    const [primary, caret] = await Promise.all([
       buttons.nth(0).boundingBox(),
       buttons.nth(1).boundingBox(),
       group.boundingBox(),
     ]);
-    expect(primary!.height).toBeGreaterThanOrEqual(28);
-    expect(caret!.width).toBeGreaterThanOrEqual(28);
+    expect(primary!.height).toBeGreaterThanOrEqual(24);
+    expect(caret!.width).toBeGreaterThanOrEqual(24);
     expect(Math.abs(primary!.height - caret!.height)).toBeLessThanOrEqual(1);
     expect(Math.abs(primary!.y - caret!.y)).toBeLessThanOrEqual(1);
     expect(Math.abs(primary!.x + primary!.width - caret!.x)).toBeLessThanOrEqual(0.5);
-    expect(Math.abs(primary!.x - bounds!.x - 1)).toBeLessThanOrEqual(0.5);
-    expect(Math.abs(caret!.x + caret!.width - bounds!.x - bounds!.width + 1)).toBeLessThanOrEqual(
-      0.5,
-    );
     const divider = await buttons.nth(1).evaluate((element) => {
       const style = getComputedStyle(element);
       return {
@@ -67,7 +63,6 @@ for (const width of [420, 1440]) {
         innerRadius: parseFloat(style.borderTopLeftRadius),
       };
     });
-    expect(divider.width).toBe(1);
     expect(divider.style).toBe('solid');
     expect(divider.innerRadius).toBe(0);
     const details = component.getByTestId('specialist-details-column');

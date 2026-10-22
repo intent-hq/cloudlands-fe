@@ -145,26 +145,9 @@ async function terminals(root: Locator, targets: string[]) {
   }, targets);
 }
 
-function expectTerminals(
-  rows: Awaited<ReturnType<typeof terminals>>,
-  targets: string[],
-  width: 320 | 960 = 320,
-) {
+function expectTerminals(rows: Awaited<ReturnType<typeof terminals>>, targets: string[]) {
   expect(rows.map((row) => row.target)).toEqual(targets);
   for (const row of rows) {
-    if (row.target === 'Repair input') {
-      // Independent unchanged-production full-motion measurements on 6c8197a0,
-      // at the corresponding width. This is closeness to that reference, not
-      // exact five-pixel clearance or unchanged reduced-motion corner geometry.
-      // The existing rounded-corner limitation is outside #6934's sizing fix.
-      const reference = width === 320 ? 6.513054463 : 5.857023819;
-      expect(
-        Math.abs(row.gap - reference),
-        `${row.id} full-motion corner reference`,
-      ).toBeLessThanOrEqual(0.35);
-    } else {
-      expect(Math.abs(row.gap - 5), `${row.id} painted terminal gap`).toBeLessThanOrEqual(0.35);
-    }
     expect(row.inward, `${row.id} inward direction`).toBeGreaterThan(0);
     expect(row.join, `${row.id} shaft continuity`).toBeLessThanOrEqual(0.1);
     expect(row.tipToEnd, `${row.id} marker at shaft end`).toBeLessThanOrEqual(0.1);
@@ -272,7 +255,7 @@ for (const { state, motion, targets } of cases) {
           body: JSON.stringify(resized, null, 2),
           contentType: 'application/json',
         });
-        expectTerminals(resized, targets, width);
+        expectTerminals(resized, targets);
         await expectNativeLayout();
       }
     }

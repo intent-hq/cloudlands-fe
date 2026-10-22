@@ -646,13 +646,28 @@ measurements of live elements, never pixel sampling or comparison of rendered im
 | Import a style constant and assert every token occurs in the rendered classes. | Dispatch an action or change a prop and assert the resulting state, content, or interaction.    |
 | Repeat an appearance assertion across every theme × width × zoom combination.  | Select named cases such as narrow keyboard access or zoomed control containment.                |
 
-Blanket coordinate/size snapshot tests and saved baselines are prohibited, including
-for registered sandbox scenes. Do not recreate them under another name or regenerate
-baselines to accept changed measurements. `pnpm run lint:geometry-snapshots`, included
-in `lint:architecture`, rejects retired baseline paths, snapshot APIs and regeneration
-hooks. Review must also reject equivalent mechanisms under new names. Manual probes
-and screenshot review remain available under [Visual verification](#visual-verification);
-automated geometry assertions must protect a named behavioral contract.
+#### DOM measurement baselines are forbidden
+
+**Never measure DOM elements and compare their size, position, or spacing with
+hard-coded or generated appearance baselines. No exceptions.** This includes a single
+width or height, inline numeric expectations, arrays or JSON of bounding boxes, saved
+coordinates, snapshots, and expected values imported or generated from CSS, tokens,
+fixtures, or a previous run. A tolerance, range, rounded value, ratio, renamed helper,
+or claim of "geometry coverage" does not make an appearance baseline acceptable.
+Remove violations; never record new measurements or adjust expected values to pass.
+
+Do not recreate these tests under another name, add exemptions, or regenerate their
+baselines. `pnpm run lint:geometry-snapshots` runs in `lint:architecture` and rejects
+known baseline paths, snapshot machinery, and fixed numeric DOM measurement equality
+assertions. Review must reject equivalent custom comparisons the static gate misses.
+
+Keep independent behavioral assertions: content stays within its live container,
+controls remain reachable, a resize responds to user input, and scrolling preserves
+the user's position. Accessibility minimum target sizes are standards-based bounds,
+not decorative baselines. Small rounding tolerances may support these relationships;
+they must not pin an ornamental dimension or spacing value. Pure layout algorithm
+input/output contracts are also valid. Manual probes and screenshots remain review
+evidence only; never turn their measurements into automated pass/fail baselines.
 
 ### Component tests (Playwright CT) — when and how
 

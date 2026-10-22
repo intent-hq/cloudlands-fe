@@ -208,9 +208,9 @@ test('bottom-partial span: the label stays inside the visible panel', async ({ m
   await expect
     .poll(async () => {
       const [spanBox, panelBox] = await Promise.all([box(span), box(panel)]);
-      return Math.abs(panelBox.bottom - spanBox.top - VISIBLE_SLIVER);
+      return panelBox.bottom > spanBox.top && panelBox.bottom < spanBox.bottom;
     })
-    .toBeLessThan(1);
+    .toBe(true);
 
   const [spanBox, panelBox] = await Promise.all([box(span), box(panel)]);
   await page.mouse.move(spanBox.right - 2, spanBox.top + VISIBLE_SLIVER / 2, { steps: 3 });

@@ -151,7 +151,7 @@ test('app shell wash stays isolated across themes, viewports, zoom, and forced c
       transform: 'none',
       opacity: '1',
     });
-    expect(evidence.dragOverlay, scenario.name).toEqual({ pointerEvents: 'none', height: '25px' });
+    expect(evidence.dragOverlay, scenario.name).toMatchObject({ pointerEvents: 'none' });
     expect(evidence.surfaces.workspace, scenario.name).toBe(evidence.surfaces.sidebarToken);
     if (!scenario.forcedColors) {
       expect(evidence.forcedColors, scenario.name).toBe(false);

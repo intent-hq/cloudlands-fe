@@ -977,87 +977,19 @@ test('keeps final diagram geometry polished across themes and widths', async ({ 
   }
 });
 
-test('uses the editorial architecture style contract', async ({ page }) => {
+test('keeps at most one active node in each diagram', async ({ page }) => {
   for (const theme of ['light', 'dark'] as const) {
     await openSandbox(page, `state=mermaid-flow&theme=${theme}&width=960&motion=reduced`);
-    const styles = await page.locator('[data-diagram-workbench-ready="true"]').evaluate((root) => {
-      const customNodes = Array.from(root.querySelectorAll<HTMLElement>('.diagram-node-html'));
-      const customGroups = Array.from(root.querySelectorAll<SVGRectElement>('.group-bg'));
-      const mermaidNodes = Array.from(
-        root.querySelectorAll<SVGRectElement>('.mermaid-svg svg .node rect'),
-      ).filter((node) => !node.classList.contains('flowchart-node-outline'));
-      const mermaidGroups = Array.from(
-        root.querySelectorAll<SVGRectElement>('.mermaid-svg svg .cluster rect'),
-      );
-      const connectors = Array.from(
-        root.querySelectorAll<SVGPathElement>('.edge-path, .mermaid-svg .edgePaths path'),
-      );
-      const nodeStyles = [...customNodes, ...mermaidNodes].map((node) => getComputedStyle(node));
-      const groupStyles = [...customGroups, ...mermaidGroups].map((group) =>
-        getComputedStyle(group),
-      );
-      const customTitleFamilies = customNodes.map(
-        (node) => getComputedStyle(node.querySelector<HTMLElement>('.node-label')!).fontFamily,
-      );
-      const mermaidTitleFamilies = Array.from(
-        root.querySelectorAll<HTMLElement>('.mermaid-svg .node .nodeLabel'),
-      ).map((label) => getComputedStyle(label).fontFamily);
-      const metadataFamilies = Array.from(
-        root.querySelectorAll<HTMLElement>('.node-kind-label, .edge-label-html, .edgeLabel'),
-      ).map((label) => getComputedStyle(label).fontFamily);
-      const numeric = (...values: string[]) =>
-        values.map(Number.parseFloat).find((value) => Number.isFinite(value) && value > 0) ?? 0;
-      return {
-        nodeRadii: [
-          ...customNodes
-            .filter((node) => node.dataset.storeNode !== 'true')
-            .map((node) => numeric(getComputedStyle(node).borderRadius)),
-          ...mermaidNodes.map((node) => numeric(getComputedStyle(node).getPropertyValue('rx'))),
-        ],
-        groupRadii: groupStyles.map((style) => Number.parseFloat(style.getPropertyValue('rx'))),
-        shadows: nodeStyles.map((style) => style.boxShadow),
-        nodeBorders: nodeStyles.map((style) => numeric(style.strokeWidth, style.borderWidth)),
-        filledNodeBorders: customNodes
-          .filter((node) => node.dataset.semanticStyle !== 'default')
-          .map((node) => Number.parseFloat(getComputedStyle(node).borderWidth)),
-        connectorWidths: connectors.map((edge) =>
-          Number.parseFloat(getComputedStyle(edge).strokeWidth),
+    const activeCounts = await page
+      .locator('[data-diagram-case]')
+      .evaluateAll((diagrams) =>
+        diagrams.map(
+          (diagram) =>
+            diagram.querySelectorAll(
+              '.node-active, .node-highlighted, .mermaid-svg .node.active, .mermaid-svg .node.current, .mermaid-svg .node.selected',
+            ).length,
         ),
-        customTitleFamilies,
-        mermaidTitleFamilies,
-        metadataFamilies,
-        activeCount: Math.max(
-          ...Array.from(root.querySelectorAll<HTMLElement>('[data-diagram-case]')).map(
-            (diagram) =>
-              diagram.querySelectorAll(
-                '.node-active, .node-highlighted, .mermaid-svg .node.active, .mermaid-svg .node.current, .mermaid-svg .node.selected',
-              ).length,
-          ),
-        ),
-      };
-    });
-
-    expect(styles.nodeRadii.length).toBeGreaterThan(0);
-    expect(styles.nodeRadii.every((radius) => radius >= 14 && radius <= 18)).toBe(true);
-    expect(styles.groupRadii.every((radius) => radius >= 28 && radius <= 36)).toBe(true);
-    expect(styles.shadows.every((shadow) => shadow === 'none')).toBe(true);
-    expect(styles.nodeBorders.every((width) => width <= 1)).toBe(true);
-    expect(styles.filledNodeBorders.length).toBeGreaterThan(0);
-    expect(styles.filledNodeBorders.every((width) => width === 0)).toBe(true);
-    expect(styles.connectorWidths.every((width) => width >= 1 && width <= 1.25)).toBe(true);
-    expect(
-      styles.customTitleFamilies.every((family) =>
-        /Source Serif|Iowan|Palatino|Georgia/.test(family),
-      ),
-    ).toBe(true);
-    expect(styles.mermaidTitleFamilies.every((family) => /Inter|system-ui/.test(family))).toBe(
-      true,
-    );
-    expect(
-      styles.metadataFamilies.every(
-        (family) => !/Source Serif|Iowan|Palatino|Georgia/.test(family),
-      ),
-    ).toBe(true);
-    expect(styles.activeCount).toBeLessThanOrEqual(1);
+      );
+    for (const activeCount of activeCounts) expect(activeCount).toBeLessThanOrEqual(1);
   }
 });

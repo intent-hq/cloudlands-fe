@@ -3,7 +3,6 @@ import { expect, test } from '../../test/ct-test';
 import DeviceIconPickerHarness from './DeviceIconPicker.test-harness.svelte';
 
 interface StrokeProbe {
-  renderedWidth: number;
   effectiveStrokePx: number;
   stroke: string;
   opacity: string;
@@ -18,7 +17,6 @@ function probeStroke(svg: Locator): Promise<StrokeProbe> {
     const style = getComputedStyle(shape);
     const scale = shape.getScreenCTM()?.a ?? 1;
     return {
-      renderedWidth: node.getBoundingClientRect().width,
       effectiveStrokePx: parseFloat(style.strokeWidth) * scale,
       stroke: style.stroke,
       opacity: style.opacity,
@@ -52,7 +50,6 @@ for (const theme of ['light', 'dark'] as const) {
       const svg = trigger.locator('svg');
       await expect(svg).toBeVisible();
       const resting = await probeStroke(svg);
-      expect(resting.renderedWidth).toBe(16);
       expect(resting.stroke).not.toBe('none');
       expect(resting.stroke).not.toBe('rgba(0, 0, 0, 0)');
       expect(resting.opacity).toBe('1');

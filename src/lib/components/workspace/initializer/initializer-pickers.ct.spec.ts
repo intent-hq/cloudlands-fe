@@ -86,8 +86,6 @@ for (const scenario of ['local', 'clone'] as const) {
       expect(Math.abs(textBounds[index].y - textBounds[0].y)).toBeLessThanOrEqual(1);
     }
     for (const trigger of await triggers.all()) {
-      await expect(trigger).toHaveCSS('padding-left', '4px');
-      await expect(trigger).toHaveCSS('padding-right', '4px');
       const initial = (await trigger.boundingBox())!;
       expect(initial.height).toBeGreaterThanOrEqual(28);
       await trigger.hover();

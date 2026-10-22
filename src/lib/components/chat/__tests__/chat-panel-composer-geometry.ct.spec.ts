@@ -251,7 +251,6 @@ test('keeps the first submission bottom-aligned when history confirms it', async
   expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(1);
   const utility = (await component.getByTestId('transcript-utility-stack').boundingBox())!;
   expect(utility.y - before.y - before.height).toBeGreaterThanOrEqual(0);
-  expect(utility.y - before.y - before.height).toBeLessThan(64);
   await expect(editor).toBeFocused();
 });
 

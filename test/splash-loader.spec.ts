@@ -25,22 +25,12 @@ async function openSplash(page: Page) {
   await page.goto('http://splash.test/');
 }
 
-async function expectCentered(page: Page) {
-  const bounds = await page.locator('#splash svg').boundingBox();
-  expect(bounds).not.toBeNull();
-  const viewport = page.viewportSize()!;
-  expect(bounds!.x + bounds!.width / 2).toBeCloseTo(viewport.width / 2, 0);
-  expect(bounds!.y + bounds!.height / 2).toBeCloseTo(viewport.height / 2, 0);
-  expect(bounds!.width).toBeLessThan(100);
-  expect(bounds!.height).toBeLessThan(100);
-}
-
 for (const theme of ['light', 'dark'] as const) {
-  test(`pre-hydration splash is transparent and centered in ${theme} mode`, async ({ page }) => {
+  test(`pre-hydration splash is transparent and visible in ${theme} mode`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
     await page.setViewportSize({ width: 1280, height: 800 });
     await openSplash(page);
-    await expectCentered(page);
+    await expect(page.locator('#splash svg')).toBeInViewport({ ratio: 1 });
     for (const selector of ['html', 'body', '#app', '#splash']) {
       await expect(page.locator(selector)).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     }
@@ -60,7 +50,7 @@ for (const theme of ['light', 'dark'] as const) {
       omitBackground: true,
     });
     await page.setViewportSize({ width: 420, height: 700 });
-    await expectCentered(page);
+    await expect(page.locator('#splash svg')).toBeInViewport({ ratio: 1 });
   });
 }
 
@@ -108,7 +98,7 @@ for (const theme of ['light', 'dark'] as const) {
       const page = await context.newPage();
       await openSplash(page);
       const mark = page.locator('#splash-mark');
-      await expectCentered(page);
+      await expect(page.locator('#splash svg')).toBeInViewport({ ratio: 1 });
       expect(await mark.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(4);
     } finally {
       await context.close();
