@@ -253,6 +253,28 @@ describe('GitHub-hosted CI runners', () => {
     expect(browser.jobs['test-playwright']['runs-on']).toBe('gh-linux-8x');
   });
 
+  it('gives no slot to Component Tests shards on a queue run that skips them', async () => {
+    // Slots are granted before the jobs start, so a skipped CT run must not hold them.
+    const skipped = await route({
+      env: { SKIP_SLOT_KEYS: 'ct', THRESHOLD: '4' },
+      runners: [slot, slot, slot, slot],
+    });
+    expect(onSlots(skipped.slots)).toEqual(['test-1', 'test-2', 'test-3', 'test-4']);
+    expect(Object.keys(skipped.slots)).not.toContain('ct-1');
+    const required = await route({
+      env: { SKIP_SLOT_KEYS: '', THRESHOLD: '4' },
+      runners: [slot, slot, slot, slot],
+    });
+    expect(onSlots(required.slots)).toEqual(['ct-1', 'ct-2', 'ct-3', 'ct-4']);
+    // The route job waits for release-fast-path and skips ct unless CT will run.
+    const workflow = read('.github/workflows/intent-pr.yml');
+    expect(workflow.jobs.route.needs).toEqual(['release-fast-path']);
+    const decide = workflow.jobs.route.steps.find((s: { id?: string }) => s.id === 'decide');
+    expect(decide.env.SKIP_SLOT_KEYS).toBe(
+      "${{ (needs.release-fast-path.outputs.ct_required != 'true' || needs.release-fast-path.outputs.fast_path == 'true') && 'ct' || '' }}",
+    );
+  });
+
   it('runs Type Check & Lint on the free standard runner, outside the slot list', () => {
     // Measured medium-sized (3.2 busy cores, 11.7 GiB peak): it fits a 4-vCPU / 16 GB
     // ubuntu-24.04 runner. It never reads the router, so it cannot land on the 1-CPU small pool.

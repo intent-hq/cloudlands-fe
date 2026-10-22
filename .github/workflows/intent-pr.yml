@@ -52,11 +52,14 @@ jobs:
   # route's fail-safe guard.
   route:
     runs-on: ubuntu-24.04
+    # Waits for release-fast-path so a merge-queue run that skips Component
+    # Tests gives their slots to the jobs that run (SKIP_SLOT_KEYS below).
+    needs: [release-fast-path]
     # Same-repo PRs only (see fork-PR hardening note above); a skip here also
     # skips the routed heavy jobs through their needs.route.result guard.
     # Runs on merge_group (see the trigger comment) — merge groups come from
     # the repo's own ruleset, so no same-repo guard applies there.
-    if: github.event_name == 'merge_group' || github.event.pull_request.head.repo.full_name == github.repository
+    if: ${{ !cancelled() && (github.event_name == 'merge_group' || github.event.pull_request.head.repo.full_name == github.repository) }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -72,6 +75,9 @@ jobs:
         env:
           THRESHOLD: ${{ env.LINUX_BURST_THRESHOLD }}
           LINUX_RUNNER_DISABLED: ${{ vars.CI_LINUX_RUNNER_DISABLED }}
+          # Listed keys this run will not start (comma-separated): test-ct
+          # runs only when release-fast-path requires it and no fast path applies.
+          SKIP_SLOT_KEYS: ${{ (needs.release-fast-path.outputs.ct_required != 'true' || needs.release-fast-path.outputs.fast_path == 'true') && 'ct' || '' }}
           # The routed heavy jobs; each reads outputs.slots[key] and only as
           # many get a slot as are free (see the slot-fitting note in the
           # script). Minutes are typical merge-queue durations; `events`
@@ -232,7 +238,8 @@ jobs:
             // job or two over its slot count; that job waits for the next slot.
             let requests = [];
             try {
-              requests = JSON.parse(process.env.SLOT_JOBS || "[]").flatMap(j => j.shards ? Array.from({ length: j.shards }, (_, n) => ({ ...j, key: `${j.key}-${n + 1}` })) : [j]);
+              const skip = (process.env.SKIP_SLOT_KEYS || "").split(",").filter(Boolean);
+              requests = JSON.parse(process.env.SLOT_JOBS || "[]").filter(j => !skip.includes(j.key)).flatMap(j => j.shards ? Array.from({ length: j.shards }, (_, n) => ({ ...j, key: `${j.key}-${n + 1}` })) : [j]);
             } catch (e) {
               core.info(`slot list unreadable (${e.message}); listed jobs use hosted labels`);
             }
