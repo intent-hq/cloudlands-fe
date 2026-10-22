@@ -16,11 +16,11 @@ import {
 } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
-import type { NoteGetOptions } from '$lib/client/app-client';
+import { viewReadOptions } from './note-view-read';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
-import { NOTE_VIEW_MAX_CONTENT_BYTES, SPEC_NOTE_ID } from '$shared/constants/notes';
+import { SPEC_NOTE_ID } from '$shared/constants/notes';
 import { isNoteContentStale } from '$shared/utils/note-content';
 import {
   commentLoadFinished,
@@ -150,13 +150,6 @@ function releaseReadSlot(coordinator: ReadCoordinator, key: string, generation: 
   } else if (admission.trailing?.generation === generation) {
     admission.trailing = undefined;
   }
-}
-
-/** View options for `note.get`: the truncated-read limit when the daemon supports it (§5.2). */
-async function viewReadOptions(): Promise<NoteGetOptions | undefined> {
-  return (await appClient.notes.supportsTruncatedRead())
-    ? { maxContentBytes: NOTE_VIEW_MAX_CONTENT_BYTES }
-    : undefined;
 }
 
 /**

@@ -337,83 +337,254 @@ describe('notesWriteSaga', () => {
     await run.task.toPromise();
   });
 
-  it('guards a save with the UTF-8 size of its multibyte base when supported (§5.2)', async () => {
-    vi.spyOn(appClient.notes, 'supportsTruncatedRead').mockResolvedValue(true);
-    const setContent = vi
-      .spyOn(appClient.notes, 'setContent')
-      .mockResolvedValue({ success: true, noteRev: 5, newContent: 'héllo 😀 more' });
-    // "héllo 😀": h(1) é(2) llo(3) space(1) 😀(4) = 11 bytes, 7 UTF-16 units + 1.
-    const run = harness(note({ content: 'héllo 😀' }));
+  describe('truncated-read write guard (§5.2)', () => {
+    /** A row the daemon served: the reducer applies it and the saga records it as a base. */
+    function served(run: ReturnType<typeof harness>, row: Note) {
+      const action = loadWorkspaceNotesSucceeded([WS], { [WS]: [row] });
+      run.dispatch(action);
+      run.channel.put(action);
+    }
+    /** The harness does not feed saga-dispatched actions back; forward the resubmitted save. */
+    async function forwardResubmit(run: ReturnType<typeof harness>) {
+      let resubmit: ReturnType<typeof updateNoteContent> | undefined;
+      await vi.waitFor(() => {
+        resubmit = run.actions.find((action) => action.type === updateNoteContent.type) as
+          ReturnType<typeof updateNoteContent> | undefined;
+        expect(resubmit).toBeDefined();
+      });
+      if (resubmit) run.channel.put(resubmit);
+    }
+    const supports = (value: boolean) =>
+      vi.spyOn(appClient.notes, 'supportsTruncatedRead').mockResolvedValue(value);
 
-    run.channel.put(updateNoteContent(WS, NOTE, 'héllo 😀 more', true));
-    await settle();
-    run.channel.put(updateNoteContent(WS, NOTE, 'héllo 😀 more!', true));
-    await settle();
+    it('sends the UTF-8 size of the daemon text at the base rev, then of the acknowledged echo', async () => {
+      supports(true);
+      const setContent = vi
+        .spyOn(appClient.notes, 'setContent')
+        .mockResolvedValue({ success: true, noteRev: 5, newContent: 'héllo 😀 more' });
+      const run = harness();
+      // "héllo 😀": h(1) é(2) llo(3) space(1) 😀(4) = 11 bytes.
+      served(run, note({ content: 'héllo 😀' }));
 
-    expect(setContent.mock.calls).toEqual([
-      [NOTE, 'héllo 😀 more', 4, WS, { baseContentBytes: 11 }],
-      // The next chain is based on the acknowledged text (16 bytes).
-      [NOTE, 'héllo 😀 more!', 5, WS, { baseContentBytes: 16 }],
-    ]);
-    run.task.cancel();
-    await run.task.toPromise();
-  });
+      run.channel.put(updateNoteContent(WS, NOTE, 'héllo 😀 more', true));
+      await vi.waitFor(() => expect(setContent).toHaveBeenCalledTimes(1));
+      run.channel.put(updateNoteContent(WS, NOTE, 'héllo 😀 more!', true));
+      await vi.waitFor(() => expect(setContent).toHaveBeenCalledTimes(2));
 
-  it("guards with the editor's baseline when it names the draft's base", async () => {
-    vi.spyOn(appClient.notes, 'supportsTruncatedRead').mockResolvedValue(true);
-    const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
-      success: true,
+      expect(setContent.mock.calls).toEqual([
+        [NOTE, 'héllo 😀 more', 4, WS, { baseContentBytes: 11 }],
+        [NOTE, 'héllo 😀 more!', 5, WS, { baseContentBytes: 16 }],
+      ]);
+      run.task.cancel();
+      await run.task.toPromise();
     });
-    const run = harness(note({ content: 'store text that moved on' }));
 
-    run.channel.put(
-      updateNoteContent(WS, NOTE, 'ab edited', { immediate: true, baseRev: 3, baseContent: 'ab' }),
-    );
-    await settle();
+    it("ignores an editor's re-serialized baseline (comment manager onContentChanged)", async () => {
+      supports(true);
+      const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+        success: true,
+      });
+      const run = harness();
+      served(run, note({ content: 'old body' }));
 
-    expect(setContent.mock.calls).toEqual([[NOTE, 'ab edited', 3, WS, { baseContentBytes: 2 }]]);
-    run.task.cancel();
-    await run.task.toPromise();
-  });
+      run.channel.put(
+        updateNoteContent(WS, NOTE, '# old body\n\nedited', {
+          immediate: true,
+          baseRev: 4,
+          baseContent: '# old body\n',
+        }),
+      );
+      await vi.waitFor(() => expect(setContent).toHaveBeenCalledTimes(1));
 
-  it('sends no baseContentBytes to a daemon without noteTruncatedRead', async () => {
-    vi.spyOn(appClient.notes, 'supportsTruncatedRead').mockResolvedValue(false);
-    const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
-      success: true,
+      expect(setContent.mock.calls).toEqual([
+        [NOTE, '# old body\n\nedited', 4, WS, { baseContentBytes: 8 }],
+      ]);
+      run.task.cancel();
+      await run.task.toPromise();
     });
-    const run = harness(note({ content: 'héllo' }));
 
-    run.channel.put(updateNoteContent(WS, NOTE, 'héllo!', true));
-    await settle();
+    it('keeps the daemon base after a failed save, so the next edit lands', async () => {
+      supports(true);
+      const setContent = vi
+        .spyOn(appClient.notes, 'setContent')
+        .mockResolvedValueOnce({ success: false, error: 'network' })
+        .mockResolvedValueOnce({ success: true, noteRev: 5, newContent: 'old body!!' });
+      vi.spyOn(appClient.notes, 'list').mockResolvedValue([
+        note({ content: '', contentPreview: 'old body', contentLength: 8 }),
+      ]);
+      const run = harness();
+      served(run, note({ content: 'old body' }));
 
-    expect(setContent.mock.calls).toEqual([[NOTE, 'héllo!', 4, WS]]);
-    run.task.cancel();
-    await run.task.toPromise();
-  });
+      run.channel.put(updateNoteContent(WS, NOTE, 'old body!', { immediate: true, baseRev: 4 }));
+      await vi.waitFor(() => expect(setContent).toHaveBeenCalledTimes(1));
+      await settle();
+      // Both editors move their baseline to the unsent text; the base stays the daemon's.
+      run.channel.put(
+        updateNoteContent(WS, NOTE, 'old body!!', {
+          immediate: true,
+          baseRev: 4,
+          baseContent: 'old body!',
+        }),
+      );
+      await vi.waitFor(() => expect(setContent).toHaveBeenCalledTimes(2));
 
-  it('reloads the note on content-base-mismatch instead of retrying or overwriting', async () => {
-    vi.spyOn(appClient.notes, 'supportsTruncatedRead').mockResolvedValue(true);
-    const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
-      success: false,
-      error: 'Content base does not match the stored note; re-read the full note and retry.',
-      contentBaseMismatch: true,
+      expect(setContent.mock.calls[1]).toEqual([
+        NOTE,
+        'old body!!',
+        4,
+        WS,
+        { baseContentBytes: 8 },
+      ]);
+      expect(run.getState().byWorkspaceId[WS]?.notes.map[NOTE]?.content).toBe('old body!!');
+      run.task.cancel();
+      await run.task.toPromise();
     });
-    const list = vi.spyOn(appClient.notes, 'list');
-    const run = harness(note({ content: 'base' }));
 
-    run.channel.put(updateNoteContent(WS, NOTE, 'base edited', true));
-    await settle();
+    it('sends no baseContentBytes to a daemon without noteTruncatedRead', async () => {
+      supports(false);
+      const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+        success: true,
+      });
+      const run = harness();
+      served(run, note({ content: 'héllo' }));
 
-    expect(setContent).toHaveBeenCalledTimes(1);
-    expect(list).not.toHaveBeenCalled();
-    expect(run.actions.filter((action) => action.type === readNoteRequested.type)).toEqual([
-      expect.objectContaining({ payload: [WS, NOTE] }),
-    ]);
-    expect(notify.warning).toHaveBeenCalledTimes(1);
-    expect(notify.error).not.toHaveBeenCalled();
-    expect(run.getState().byWorkspaceId[WS]?.pendingContentByNoteId[NOTE]).toBeFalsy();
-    run.task.cancel();
-    await run.task.toPromise();
+      run.channel.put(updateNoteContent(WS, NOTE, 'héllo!', true));
+      await vi.waitFor(() => expect(setContent).toHaveBeenCalledTimes(1));
+
+      expect(setContent.mock.calls).toEqual([[NOTE, 'héllo!', 4, WS]]);
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('rebases the draft onto the re-read note after content-base-mismatch, losing no text', async () => {
+      supports(true);
+      const setContent = vi
+        .spyOn(appClient.notes, 'setContent')
+        .mockResolvedValueOnce({ success: false, error: 'mismatch', contentBaseMismatch: true })
+        .mockResolvedValueOnce({ success: true });
+      const get = vi
+        .spyOn(appClient.notes, 'get')
+        .mockResolvedValue(note({ content: 'AGENT old body', rev: 7 }));
+      const run = harness();
+      served(run, note({ content: 'old body' }));
+
+      run.channel.put(updateNoteContent(WS, NOTE, 'old body MINE', true));
+      await forwardResubmit(run);
+      await vi.waitFor(() => expect(setContent).toHaveBeenCalledTimes(2));
+
+      expect(get.mock.calls).toEqual([[NOTE, WS, { maxContentBytes: 500_000 }]]);
+      expect(setContent.mock.calls[1]).toEqual([
+        NOTE,
+        'AGENT old body MINE',
+        7,
+        WS,
+        { baseContentBytes: 14 },
+      ]);
+      expect(notify.warning).not.toHaveBeenCalled();
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('offers the unsaved text when the re-read note is now truncated', async () => {
+      supports(true);
+      const writeText = vi.fn(async () => {});
+      vi.stubGlobal('navigator', { clipboard: { writeText } });
+      const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+        success: false,
+        error: 'mismatch',
+        contentBaseMismatch: true,
+      });
+      vi.spyOn(appClient.notes, 'get').mockResolvedValue(
+        note({ content: 'prefix\n', contentTruncated: true, contentBytes: 600_000, rev: 9 }),
+      );
+      const run = harness();
+      served(run, note({ content: 'old body' }));
+
+      run.channel.put(updateNoteContent(WS, NOTE, 'old body MINE', true));
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
+
+      expect(setContent).toHaveBeenCalledTimes(1);
+      expect(run.getState().byWorkspaceId[WS]?.notes.map[NOTE]).toMatchObject({
+        content: 'prefix\n',
+        contentTruncated: true,
+      });
+      const options = vi.mocked(notify.warning).mock.calls[0][1] as {
+        action: { onClick: () => void };
+      };
+      options.action.onClick();
+      expect(writeText).toHaveBeenCalledWith('old body MINE');
+      vi.unstubAllGlobals();
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('offers the text instead of looping on a second mismatch', async () => {
+      supports(true);
+      const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+        success: false,
+        error: 'mismatch',
+        contentBaseMismatch: true,
+      });
+      vi.spyOn(appClient.notes, 'get').mockResolvedValue(note({ content: 'fresh', rev: 7 }));
+      const run = harness();
+      served(run, note({ content: 'old body' }));
+
+      run.channel.put(updateNoteContent(WS, NOTE, 'old body MINE', true));
+      await forwardResubmit(run);
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
+      await settle();
+
+      expect(setContent).toHaveBeenCalledTimes(2);
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('sends a guarded write when the note grows past the limit during the debounce', async () => {
+      vi.useFakeTimers();
+      supports(true);
+      const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+        success: true,
+      });
+      const run = harness();
+      served(run, note({ content: 'old body' }));
+
+      run.channel.put(updateNoteContent(WS, NOTE, 'old body MINE'));
+      await settle();
+      // An agent grows the note; the event re-read comes back truncated.
+      const grown = applyNoteUpdated(
+        WS,
+        NOTE,
+        note({ content: 'old body\n', contentTruncated: true, contentBytes: 600_000, rev: 5 }),
+      );
+      run.dispatch(grown);
+      run.channel.put(grown);
+      await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS);
+      await vi.waitFor(() => expect(setContent).toHaveBeenCalledTimes(1));
+
+      expect(setContent.mock.calls).toEqual([
+        [NOTE, 'old body MINE', 4, WS, { baseContentBytes: 8 }],
+      ]);
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('never writes a draft into a truncated row, and offers it instead of sending', async () => {
+      supports(true);
+      const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+        success: true,
+      });
+      const run = harness();
+      served(run, note({ content: 'prefix\n', contentTruncated: true, contentBytes: 600_000 }));
+
+      run.channel.put(updateNoteContent(WS, NOTE, 'prefix edited\n', true));
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
+
+      expect(setContent).not.toHaveBeenCalled();
+      expect(run.getState().byWorkspaceId[WS]?.notes.map[NOTE]?.content).toBe('prefix\n');
+      expect(run.getState().byWorkspaceId[WS]?.pendingContentByNoteId[NOTE]).toBeFalsy();
+      run.task.cancel();
+      await run.task.toPromise();
+    });
   });
 
   it('keeps a truncated note render-only through a same-rev slim relist, and never saves it', async () => {
