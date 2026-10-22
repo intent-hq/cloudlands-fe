@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.227.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.227.0...v2.227.1) (2026-10-22)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.26 ([#3612](https://github.com/intent-hq/cloudlands-fe/issues/3612)) ([5d45867](https://github.com/intent-hq/cloudlands-fe/commit/5d458670cea883a56741294731303b62ee6951cc))
+* **home:** refresh Home PR badges from submodule gitRoot events ([#3609](https://github.com/intent-hq/cloudlands-fe/issues/3609)) ([919e74e](https://github.com/intent-hq/cloudlands-fe/commit/919e74e2c453837533273faab63478f8cab3f4b5))
+
 ## [2.227.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.226.4...v2.227.0) (2026-10-22)
 
 
