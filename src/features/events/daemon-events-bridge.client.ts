@@ -2217,6 +2217,27 @@ function handlePrEvent(
 }
 
 /**
+ * `gitRoot:registered` / `gitRoot:updated` (§6.5) carry `{ workspaceId,
+ * gitRoot }` with the full persisted root row, including its `pullRequests`
+ * pool. The daemon folds root pools into the workspace's merged pool on
+ * `workspace.list`, but a root's PR change (status, merge-queue entry) emits
+ * only `gitRoot:updated` — never `pr:updated` — so the Home row would keep the
+ * stale entry. URL-union the root pool into the entity (incoming wins, other
+ * entries kept), the same partial merge `pr:*` uses. `gitRoot:unregistered`
+ * carries no PRs; the next `workspace.list` reconciles removals.
+ */
+function handleGitRootPrEvent(event: WorkspaceEvent, workspaceId: string): void {
+  const data = (event as { data?: { gitRoot?: { pullRequests?: unknown } } }).data;
+  const pullRequests = data?.gitRoot?.pullRequests;
+  if (!Array.isArray(pullRequests) || pullRequests.length === 0) return;
+  appStore.dispatch(
+    bulkUpdateWorkspaceEntities([
+      updateWorkspaceEntity(workspaceId, { pullRequests: pullRequests as PullRequestInfo[] }),
+    ]),
+  );
+}
+
+/**
  * `changes:agent-locks` (§6.5) carries the self-sufficient
  * daemon-computed agent-lock snapshot `{ workspaceId, autoCommitEnabled,
  * lockedAgentIds: string[], lockedFilePaths: string[] }` — which agents' files
@@ -4170,6 +4191,10 @@ export function routeDaemonEventsNotification(
     handlePrEvent(event, workspaceId, type);
     return;
   }
+  if (type === 'gitRoot:registered' || type === 'gitRoot:updated') {
+    handleGitRootPrEvent(event, workspaceId);
+    return;
+  }
 
   // `changes:agent-locks` (§6.5) — the daemon-computed
   // agent-lock snapshot. Self-sufficient payload, folded straight into the
@@ -4461,6 +4486,10 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   'changes:agent-locks',
   'line-attribution:updated',
   'pr:*',
+  // `gitRoot:*` (§6.5) — a submodule PR's status / merge-queue change only
+  // arrives as `gitRoot:updated`; without it Home badges for root-tracked PRs
+  // stay stale until the next `workspace.list` (only `displayStatus` moved).
+  'gitRoot:*',
   'mcp.servers:status-changed',
   // `github:auth-changed` (§6.5) — device-flow terminal transitions and
   // `github.revoke`; global, so the connect UX converges without polling.
