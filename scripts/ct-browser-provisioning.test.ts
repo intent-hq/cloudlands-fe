@@ -101,8 +101,6 @@ ${command}`,
       // The caller's route `cloud` map: CT never takes a self-hosted slot, whatever linux_burst says.
       'inputs.cloud': JSON.stringify({ 'gh-linux-8x': ['warp-ubuntu-2404-x64-8x'] }),
     };
-    const value = (scalar: string) =>
-      scalar.startsWith('${{') ? evaluate(scalar, context) : scalar.replace(/^(['"])(.*)\1$/, '$2');
     expect(evaluate(ctJob.match(/^    if: (.*)$/m)![1], context)).toBe(event !== 'pull_request');
     if (event === 'pull_request') return;
     // runs-on reads the caller's slots input per shard, then its cloud map, then gh-linux-8x.
