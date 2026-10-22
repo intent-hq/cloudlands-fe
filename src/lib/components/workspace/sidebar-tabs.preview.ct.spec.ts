@@ -1,6 +1,60 @@
 import { expect, test } from '../../../test/ct-test';
 import SidebarTabsPreview from './sidebar-tabs.preview.svelte';
 
+test('overflowing icon tabs reveal restored, keyboard-selected, and resized sections', async ({
+  mount,
+  page,
+}, testInfo) => {
+  const component = await mount(SidebarTabsPreview, {
+    props: { width: 960, height: 520, sidebarWidth: 280, initialSection: 'shell' },
+  });
+  const tabs = component.locator('[data-sidebar-section-tabs="horizontal"]');
+  const viewport = tabs.locator('[data-sidebar-tab-scroll]');
+  const agents = tabs.getByRole('tab', { name: 'Agents', exact: true });
+  const shell = tabs.getByRole('tab', { name: 'Shells', exact: true });
+  const draft = component.getByRole('textbox', { name: 'Workspace draft' });
+  await draft.fill('Keep this draft while the tab row scrolls.');
+  await expect
+    .poll(() => viewport.evaluate((node) => node.scrollWidth > node.clientWidth))
+    .toBe(true);
+  const selectedIsVisible = () =>
+    viewport.evaluate((node) => {
+      const selected = node.querySelector('[role="tab"][aria-selected="true"]');
+      if (!selected) return false;
+      const tab = selected.getBoundingClientRect();
+      const frame = node.getBoundingClientRect();
+      return tab.left >= frame.left && tab.right <= frame.right;
+    });
+  await expect(shell).toHaveAttribute('aria-selected', 'true');
+  await expect.poll(selectedIsVisible).toBe(true);
+  const scrolled = await viewport.evaluate((node) => node.scrollLeft);
+  expect(scrolled).toBeGreaterThan(0);
+  await viewport.hover();
+  await page.mouse.wheel(-160, 0);
+  await expect.poll(() => viewport.evaluate((node) => node.scrollLeft)).toBeLessThan(scrolled);
+  await expect(shell).toHaveAttribute('aria-selected', 'true');
+  await shell.press('Home');
+  await expect(agents).toHaveAttribute('aria-selected', 'true');
+  await expect.poll(selectedIsVisible).toBe(true);
+  const main = component.locator('[data-sidebar-preview-main]');
+  const before = await main.boundingBox();
+  await agents.press('End');
+  await expect(shell).toHaveAttribute('aria-selected', 'true');
+  await expect.poll(selectedIsVisible).toBe(true);
+  expect(await main.boundingBox()).toEqual(before);
+  const rowWidth = await viewport.evaluate((node) => node.clientWidth);
+  await component.evaluate((node) => {
+    node.style.width = '240px';
+  });
+  await expect.poll(() => viewport.evaluate((node) => node.clientWidth)).toBeLessThan(rowWidth);
+  await expect.poll(selectedIsVisible).toBe(true);
+  await expect(draft).toHaveValue('Keep this draft while the tab row scrolls.');
+  await testInfo.attach('scrolling-icon-tabs', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+});
+
 test('section tabs preserve search, scroll, and the main draft', async ({
   mount,
   page,

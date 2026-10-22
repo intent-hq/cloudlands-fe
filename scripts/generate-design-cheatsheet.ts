@@ -197,6 +197,7 @@ with an explicit colour from the status mapping above.
 
 - **Borders:** Filled and ghost Buttons, resting Tabs, default Toggles, Toggle Groups, and Badge bodies are borderless. Use the Button \`outline\` variant or another explicit outline/input recipe when a 1px boundary is required.
 - **Segmented Tabs:** Use a 36px rail and selected pill, an 8px radius, 12px horizontal trigger padding, and a 6px icon gap.
+- **Icon Tabs:** The icon variant uses square triggers on a muted strip, a recessed selected tile, and a small top indicator. Give every icon an accessible label and tooltip; allow horizontal scrolling when the strip is constrained.
 - **Labels:** Resting control and Badge labels use regular weight; selected Tabs and Toggles use medium weight.
 - **Badge:** Badge bodies use an 8px radius. Removable badges retain a 16px circular end slot for the close control.
 - **Focus:** Preserve the shared 1px solid outline, non-zero offset, and no-shadow focus tuple on every interactive control.

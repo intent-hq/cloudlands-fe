@@ -11,6 +11,7 @@
     loading?: boolean;
     collaborator?: boolean;
     filesError?: boolean;
+    initialSection?: string;
   }
 
   export const preview = definePreview<Props>({
@@ -28,6 +29,8 @@
       loading: { props: { items: 0, loading: true } },
       collaborator: { props: { collaborator: true, collapsed: true } },
       'files-error': { props: { filesError: true } },
+      'last-section': { props: { initialSection: 'shell' } },
+      'tabs-narrow': { props: { width: 360, sidebarWidth: 280 } },
     },
   });
 </script>
@@ -81,6 +84,7 @@
     loading = false,
     collaborator = false,
     filesError = false,
+    initialSection = 'overview',
   }: Props = $props();
   const workspaceId = 'sidebar-tabs-preview';
   const timestamp = '2026-10-20T12:00:00Z';
@@ -201,7 +205,7 @@
         focusedPanelId: 'sidebar-preview-panel',
       }),
     );
-    store.dispatch(setMultiSelectSidebarSelectedTabs(workspaceId, ['overview']));
+    store.dispatch(setMultiSelectSidebarSelectedTabs(workspaceId, [initialSection]));
     store.dispatch(setCollapsed(collapsed));
     store.dispatch(
       setChangesData(

@@ -53,6 +53,9 @@
     context.variant === 'underline' &&
       'h-12 shrink-0 rounded-none border-b-2 border-transparent px-1 whitespace-nowrap hover:text-foreground',
     context.variant === 'underline' && selected && 'border-foreground',
+    context.variant === 'icon' &&
+      'size-10 shrink-0 rounded-(--radius-large) px-0 text-muted-foreground/70 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring',
+    context.variant === 'icon' && selected && 'text-foreground',
     className,
   )}
   {...restProps as any}
