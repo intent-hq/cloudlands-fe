@@ -466,9 +466,29 @@ const CAPABILITY_REREAD_ATTEMPTS = 20;
 const CAPABILITY_REREAD_DELAY_MS = 3_000;
 
 function* rereadWhenCapabilityKnown(workspaceId: string, noteId: string) {
+  // Tied to the note's lifetime: an unmounted workspace or a deleted note ends
+  // the wait, even while the capability call is pending, so no read can
+  // recreate state that cleanup removed.
+  yield* race({
+    reread: call(rereadOnceCapabilityKnown, workspaceId, noteId),
+    gone: take(
+      (action: ObservedAction) =>
+        isWorkspaceCleanup(action, workspaceId) ||
+        (action.type === applyNoteDeleted.type &&
+          Array.isArray(action.payload) &&
+          action.payload[0] === workspaceId &&
+          action.payload[1] === noteId),
+    ),
+  });
+}
+
+function* rereadOnceCapabilityKnown(workspaceId: string, noteId: string) {
   for (let attempt = 0; attempt < CAPABILITY_REREAD_ATTEMPTS; attempt++) {
     if ((yield* call(truncatedReadSupport)) !== 'unknown') {
-      yield* call(rereadNote, workspaceId, noteId);
+      // Defense in depth: never re-read a note the store no longer holds.
+      if (yield* selectNoteById.effect(workspaceId, noteId)) {
+        yield* call(rereadNote, workspaceId, noteId);
+      }
       return;
     }
     yield* delay(CAPABILITY_REREAD_DELAY_MS);

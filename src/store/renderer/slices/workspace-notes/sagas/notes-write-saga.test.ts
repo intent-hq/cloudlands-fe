@@ -26,6 +26,7 @@ import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycl
 import {
   addOptimisticNote,
   addCommentRequested,
+  applyNoteDeleted,
   applyNoteUpdated,
   createNote,
   deleteNote,
@@ -831,6 +832,41 @@ describe('notesWriteSaga', () => {
       run.task.cancel();
       await run.task.toPromise();
     });
+
+    it.each([
+      ['the workspace unmounts', () => workspaceUnmounted(WS)],
+      ['the note is deleted', () => applyNoteDeleted(WS, NOTE)],
+    ])(
+      'drops the pending re-read of a grown note when %s before the capability resolves',
+      async (_label, cleanup) => {
+        vi.useFakeTimers();
+        vi.spyOn(appClient.notes, 'supportsTruncatedRead')
+          .mockRejectedValueOnce(new NoteCapabilityUnknownError()) // at save time
+          .mockRejectedValueOnce(new NoteCapabilityUnknownError()) // first re-read attempt
+          .mockResolvedValue(true); // resolves only after cleanup
+        vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+          success: true,
+          noteRev: 5,
+          newContent: 'body MINE\n' + 'x'.repeat(600_000),
+        });
+        const run = harness();
+        served(run, note({ content: 'body\n' }));
+
+        run.channel.put(updateNoteContent(WS, NOTE, 'body MINE\n', true));
+        for (let i = 0; i < 10; i++) await settle();
+        expect(run.getState().byWorkspaceId[WS]?.notes.map[NOTE]?.contentTruncated).toBe(true);
+
+        run.channel.put(cleanup());
+        await vi.runOnlyPendingTimersAsync();
+        for (let i = 0; i < 10; i++) await settle();
+        await vi.runOnlyPendingTimersAsync();
+        for (let i = 0; i < 10; i++) await settle();
+
+        expect(run.actions.some((action) => action.type === readNoteRequested.type)).toBe(false);
+        run.task.cancel();
+        await run.task.toPromise();
+      },
+    );
 
     it('switches to the truncated view at the echo rev when the note grew during a save (probe G)', async () => {
       supports(true);
