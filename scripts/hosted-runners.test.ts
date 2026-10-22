@@ -199,9 +199,10 @@ describe('GitHub-hosted CI runners', () => {
       'test-4',
       'test-integration',
     ]);
-    // The longest job first, then shards in order; each shard has its own key.
-    expect(onSlots(r.slots)).toEqual(['checks', 'test-1']);
-    for (const key of ['test-2', 'test-3', 'test-4', 'build-web', 'test-integration'])
+    // The Unit Tests shards outrank Type Check & Lint, then go in shard order;
+    // each shard has its own key.
+    expect(onSlots(r.slots)).toEqual(['test-1', 'test-2']);
+    for (const key of ['checks', 'test-3', 'test-4', 'build-web', 'test-integration'])
       expect(r.slots[key]).toEqual(['gh-linux-8x']);
     expect(r.burst).toBe('true');
     expect(r.messages.some((m) => m.includes('free=2 (org list) granted=2'))).toBe(true);
@@ -213,7 +214,11 @@ describe('GitHub-hosted CI runners', () => {
     expect(Object.values(shards.slots).filter((l) => l[0] === 'gh-linux-8x')).toHaveLength(2);
     // One busy slot elsewhere leaves one for this run.
     const one = await route({ jobs: [running()] });
-    expect(onSlots(one.slots)).toEqual(['checks']);
+    expect(onSlots(one.slots)).toEqual(['test-1']);
+    // Four free slots: every Unit Tests shard, including shard 4, takes one.
+    const four = await route({ event: 'pull_request', env: { THRESHOLD: '4' }, runners: [slot, slot, slot, slot] });
+    expect(onSlots(four.slots)).toEqual(['test-1', 'test-2', 'test-3', 'test-4']);
+    expect(four.slots.checks).toEqual(['gh-linux-8x']);
   });
 
   it.each([
@@ -309,7 +314,7 @@ describe('GitHub-hosted CI runners', () => {
       expect(r.labels).toEqual(baseline.labels);
       expect(r.burst).toBe(baseline.burst);
     }
-    expect(onSlots(baseline.slots)).toEqual(['checks']);
+    expect(onSlots(baseline.slots)).toEqual(['test-1']);
   });
 
   it('never routes to tinybox', () => {
