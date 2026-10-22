@@ -117,12 +117,17 @@ export const INLINE_HTML_STYLES = `
     font-variant-numeric: tabular-nums;
   }
   :where(.visual-controls > .visual-field) { flex: 1 1 12rem; }
-  :where(.visual-field) {
+  :where(.visual-field, .visual-row) {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) fit-content(50%);
     align-items: baseline;
     gap: var(--space-2) var(--space-3);
     min-width: 0;
+  }
+  :where(.visual-field > *, .visual-row > *) { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+  :where(.visual-field > output, .visual-row > :last-child) {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
   }
   :where(.visual-field > input, .visual-field > select, .visual-field > textarea) {
     grid-column: 1 / -1;
@@ -132,7 +137,8 @@ export const INLINE_HTML_STYLES = `
     display: grid;
     gap: var(--space-3);
     margin: 0;
-    padding: var(--space-4);
+    /* The surrounding visual owns the content gutter. */
+    padding: 0;
     min-width: 0;
     border-radius: var(--diagram-node-radius);
     background: var(--diagram-canvas);
