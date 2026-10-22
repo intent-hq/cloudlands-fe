@@ -11,6 +11,7 @@ import {
 } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
+import { exceedsNoteViewLimit } from '$shared/utils/note-content';
 import { createLogger } from '$lib/utils/client-logger';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { withPreservedUnmetDependsOn } from '../workspace-notes-normalization';
@@ -20,6 +21,7 @@ import {
   applyNoteVersions,
   applyNoteVersionsError,
   fetchNoteVersions,
+  readNoteRequested,
   restoreNoteVersion,
   settleNoteContentRequested,
 } from '../workspace-notes-slice';
@@ -82,13 +84,22 @@ function* restoreVersion(workspaceId: string, noteId: string, versionId: string)
       // Mutation-response notes omit the transient `unmetDependsOn` projection
       // (monorepo#2001); keep the cached value so "Waits on" doesn't flicker.
       const cached = yield* selectNoteById.effect(workspaceId, noteId);
-      yield* put(
-        applyNoteUpdated(
-          workspaceId,
-          noteId,
-          withPreservedUnmetDependsOn(toRuntimeNote(result.note), cached),
-        ),
-      );
+      if (cached?.contentTruncated || exceedsNoteViewLimit(result.note.content)) {
+        // The restore echo is the full note; a large one goes through the bounded view read.
+        const read = readNoteRequested(workspaceId, noteId);
+        read.promise.catch((error: unknown) =>
+          logger.error('Failed to re-read a large note', error),
+        );
+        yield* put(read);
+      } else {
+        yield* put(
+          applyNoteUpdated(
+            workspaceId,
+            noteId,
+            withPreservedUnmetDependsOn(toRuntimeNote(result.note), cached),
+          ),
+        );
+      }
     }
     yield* call(fetchVersions, workspaceId, noteId);
   } catch (error) {

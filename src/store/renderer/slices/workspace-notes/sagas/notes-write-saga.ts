@@ -1,3 +1,4 @@
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { buffers, channel, type Channel } from 'redux-saga';
 import {
   call,
@@ -16,6 +17,7 @@ import { appClient } from '$lib/client';
 import type { MutationResult, NoteMetadataPatch } from '$lib/client';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { rebaseText } from '$lib/notes/text-rebase';
+import { exceedsNoteViewLimit, isNoteContentStale } from '$shared/utils/note-content';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import { ContentType, NoteVisibility } from '$shared/types';
@@ -51,6 +53,7 @@ import {
   deleteNotePersistRequested,
   flushNoteContentRequested,
   loadWorkspaceNotesSucceeded,
+  noteContentViewRequested,
   readNoteRequested,
   removeOptimisticNote,
   respondToCommentRequested,
@@ -214,14 +217,34 @@ function optimisticNote(
   };
 }
 
+/**
+ * Re-list a workspace on the bounded path: slim rows (§5.2 `projection: "slim"`)
+ * keep any cached body and its truncation markers at the same rev, and a body
+ * that went stale is re-read through the view read (capability-gated
+ * `maxContentBytes`) for every consumer still showing it. A full list would
+ * load large notes whole and drop their render-only markers.
+ */
+function* relistWorkspaceNotes(workspaceId: string): SagaGenerator<Note[]> {
+  const response: Awaited<ReturnType<typeof appClient.notes.list>> = yield* call(() =>
+    appClient.notes.list(workspaceId, { projection: 'slim' }),
+  );
+  const notes = response.map(toRuntimeNote);
+  yield* put(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
+  const ws = yield* selectWorkspaceNotesState.effect(workspaceId);
+  for (const view of getItems(ws.contentViews)) {
+    const note = yield* selectNoteById.effect(workspaceId, view.noteId);
+    if (note && (isNoteContentStale(note) || ws.staleContentByNoteId[view.noteId])) {
+      yield* put(
+        noteContentViewRequested(view.consumerId, view.requestId, workspaceId, view.noteId),
+      );
+    }
+  }
+  return notes;
+}
+
 function* refetchWorkspaceNotes(workspaceId: string) {
   try {
-    const response: Awaited<ReturnType<typeof appClient.notes.list>> = yield* call(
-      [appClient.notes, appClient.notes.list],
-      workspaceId,
-    );
-    const notes = response.map(toRuntimeNote);
-    yield* put(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
+    yield* call(relistWorkspaceNotes, workspaceId);
   } catch (error) {
     logger.error('Failed to refetch notes after a mutation error', error);
   }
@@ -240,9 +263,16 @@ function* reconcileConflict(
     // Mutation-response notes omit the transient `unmetDependsOn` projection
     // (monorepo#2001); keep the cached value so "Waits on" doesn't flicker.
     const cached = yield* selectNoteById.effect(workspaceId, canonicalId);
-    yield* put(
-      applyNoteUpdated(workspaceId, canonicalId, withPreservedUnmetDependsOn(note, cached)),
-    );
+    if (cached?.contentTruncated || exceedsNoteViewLimit(note.content)) {
+      // `current` is the full note; a large one goes through the bounded view read.
+      const read = readNoteRequested(workspaceId, canonicalId);
+      read.promise.catch((error: unknown) => logger.error('Failed to re-read a large note', error));
+      yield* put(read);
+    } else {
+      yield* put(
+        applyNoteUpdated(workspaceId, canonicalId, withPreservedUnmetDependsOn(note, cached)),
+      );
+    }
   } else {
     yield* call(refetchWorkspaceNotes, workspaceId);
   }
@@ -882,12 +912,7 @@ function* createNewNote(
     }
 
     try {
-      const response: Awaited<ReturnType<typeof appClient.notes.list>> = yield* call(
-        [appClient.notes, appClient.notes.list],
-        workspaceId,
-      );
-      const notes = response.map(toRuntimeNote);
-      yield* put(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
+      const notes: Note[] = yield* call(relistWorkspaceNotes, workspaceId);
       keepOptimistic = false;
       const created = notes.find((note) => !before.has(String(note.id)));
       if (!created) return undefined;

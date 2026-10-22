@@ -383,6 +383,26 @@ workspaceNotesReducer.with(
     }, state);
   },
 );
+/**
+ * Reuse a cached body on an incoming row. The truncated-read markers (§5.2
+ * "Truncated note reads") describe that body, so they travel with it: a reused
+ * prefix must stay render-only, and an incoming row's markers must not be
+ * attached to a body they do not describe.
+ */
+function withCachedBody(note: Note, existing: Note): Note {
+  const { contentTruncated: _truncated, contentBytes: _bytes, ...rest } = note;
+  return {
+    ...rest,
+    content: existing.content,
+    ...(existing.contentTruncated
+      ? {
+          contentTruncated: true,
+          ...(existing.contentBytes !== undefined ? { contentBytes: existing.contentBytes } : {}),
+        }
+      : {}),
+  };
+}
+
 workspaceNotesReducer.with(
   loadWorkspaceNotesSucceeded,
   (state, { payload: [workspaceIds, notesByWorkspace] }) => {
@@ -403,7 +423,7 @@ workspaceNotesReducer.with(
         if (note.rev === undefined || existing.rev === undefined || note.rev > existing.rev) {
           return note;
         }
-        return { ...note, content: existing.content };
+        return withCachedBody(note, existing);
       });
       return setWorkspaceState(nextState, workspaceId, {
         ...workspaceState,
@@ -499,14 +519,13 @@ workspaceNotesReducer.with(noteMetadataPushed, (state, { payload: [workspaceId, 
   const existing = getItem(ws.notes, note.id);
   if (existing?.rev !== undefined && note.rev !== undefined && note.rev < existing.rev)
     return state;
-  const next = {
-    ...note,
-    content: existing?.content ?? '',
-    ...(existing && {
-      contentLength: existing.contentLength,
-      contentPreview: existing.contentPreview,
-    }),
-  };
+  const next = existing
+    ? {
+        ...withCachedBody({ ...note, content: '' }, existing),
+        contentLength: existing.contentLength,
+        contentPreview: existing.contentPreview,
+      }
+    : { ...note, content: '' };
   return setWorkspaceState(state, workspaceId, {
     ...ws,
     notes: existing ? replaceItem(ws.notes, note.id, next) : addItem(ws.notes, next),
@@ -577,10 +596,9 @@ workspaceNotesReducer.with(applyNoteUpdated, (state, { payload: [workspaceId, no
   return setWorkspaceState(state, workspaceId, {
     ...workspaceState,
     notes: upsertItem(workspaceState.notes, {
-      ...note,
       ...(workspaceState.pendingContentByNoteId[noteId] && existingNote
-        ? { content: existingNote.content }
-        : {}),
+        ? withCachedBody(note, existingNote)
+        : note),
       id: existingNote?.id ?? (noteId as Note['id']),
     }),
     notesVersion: workspaceState.notesVersion + 1,

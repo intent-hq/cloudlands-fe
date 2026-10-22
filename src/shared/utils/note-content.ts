@@ -8,6 +8,7 @@
  * `note.content`.
  */
 
+import { NOTE_VIEW_MAX_CONTENT_BYTES } from '../constants/notes';
 import type { Note } from '../types';
 
 /**
@@ -38,4 +39,15 @@ export function isNoteContentStale(
 export function isProjectionRejected(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
   return (error as { rpcCode?: unknown }).rpcCode === -32602;
+}
+
+/**
+ * Whether `content` is over the note views' truncated-read limit (§5.2
+ * "Truncated note reads"). Mutation responses (conflict `current`, a restore's
+ * `note`) carry full content, so a body this large must be re-read through the
+ * bounded view read instead of entering the cache whole.
+ */
+export function exceedsNoteViewLimit(content: string | undefined): boolean {
+  if (!content || content.length * 3 <= NOTE_VIEW_MAX_CONTENT_BYTES) return false;
+  return new TextEncoder().encode(content).length > NOTE_VIEW_MAX_CONTENT_BYTES;
 }

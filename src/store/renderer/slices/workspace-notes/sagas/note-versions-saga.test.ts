@@ -220,8 +220,7 @@ describe('noteVersionsSaga', () => {
     const run = harness(note({ workspaceId: WorkspaceId(WS_SVC) }));
 
     run.channel.put(updateNoteContent(WS_SVC, NOTE, 'edited', { immediate: true }));
-    await settle();
-    expect(setContent).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(setContent).toHaveBeenCalledTimes(1));
     expect(run.getState().byWorkspaceId[WS_SVC]?.pendingContentByNoteId[NOTE]).toBe(true);
 
     run.channel.put(restoreNoteVersion(WS_SVC, NOTE, 'version-1'));

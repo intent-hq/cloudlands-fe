@@ -216,7 +216,7 @@ describe('notesWriteSaga', () => {
     expect(create.mock.calls).toEqual([
       [{ workspaceId: WS, title: 'Fresh', content: '', tags: ['tag'] }],
     ]);
-    expect(list.mock.calls).toEqual([[WS]]);
+    expect(list.mock.calls).toEqual([[WS, { projection: 'slim' }]]);
     expect(run.actions.slice(-2)).toEqual([
       loadWorkspaceNotesSucceeded([WS], { [WS]: [note(), created] }),
       addOptimisticNote(WS, created),
@@ -262,7 +262,7 @@ describe('notesWriteSaga', () => {
     expect(create.mock.calls).toEqual([
       [{ workspaceId: WS, title: 'New Note', content: '', tags: [] }],
     ]);
-    expect(list.mock.calls).toEqual([[WS]]);
+    expect(list.mock.calls).toEqual([[WS, { projection: 'slim' }]]);
     const orderedSuccess = run.actions.filter((action) => {
       if (action.type === addOptimisticNote.type) {
         return String((action.payload as [string, Note])[1].id) === 'note-created';
@@ -416,6 +416,91 @@ describe('notesWriteSaga', () => {
     await run.task.toPromise();
   });
 
+  it('keeps a truncated note render-only through a same-rev slim relist, and never saves it', async () => {
+    const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+      success: true,
+    });
+    const run = harness(
+      note({ content: 'prefix\n', contentTruncated: true, contentBytes: 600_000 }),
+    );
+    // The forced slim hydrate after a reconnect: same rev, no body.
+    run.dispatch(
+      loadWorkspaceNotesSucceeded([WS], {
+        [WS]: [note({ content: '', contentPreview: 'prefix', contentLength: 600_000 })],
+      }),
+    );
+    expect(run.getState().byWorkspaceId[WS]?.notes.map[NOTE]).toMatchObject({
+      content: 'prefix\n',
+      contentTruncated: true,
+    });
+
+    run.channel.put(updateNoteContent(WS, NOTE, 'prefix\n', true));
+    await settle();
+    expect(setContent).not.toHaveBeenCalled();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('relists after creating a note with the slim projection, keeping an open truncated note', async () => {
+    const big = note({
+      id: NoteId('big'),
+      content: 'prefix\n',
+      contentTruncated: true,
+      contentBytes: 600_000,
+      rev: 9,
+    });
+    vi.spyOn(appClient.notes, 'create').mockResolvedValue({ success: true });
+    const created = note({ id: NoteId('fresh'), title: 'Fresh', content: '', rev: 1 });
+    const list = vi
+      .spyOn(appClient.notes, 'list')
+      .mockResolvedValue([
+        note({
+          id: NoteId('big'),
+          content: '',
+          contentPreview: 'prefix',
+          contentLength: 600_000,
+          rev: 9,
+        }),
+        created,
+      ]);
+    const run = harness(big);
+
+    run.channel.put(createNote(WS, { title: 'Fresh', content: '', tags: [] }));
+    await vi.waitFor(() => expect(list).toHaveBeenCalled());
+    await settle();
+
+    expect(list.mock.calls).toEqual([[WS, { projection: 'slim' }]]);
+    expect(run.getState().byWorkspaceId[WS]?.notes.map.big).toMatchObject({
+      content: 'prefix\n',
+      contentTruncated: true,
+      contentBytes: 600_000,
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('re-reads instead of applying a conflict whose current note is over the view limit', async () => {
+    const large = note({ title: 'Changed', content: 'x'.repeat(600_000), rev: 9 });
+    vi.spyOn(appClient.notes, 'updateMetadata').mockResolvedValue({
+      success: false,
+      error: 'conflict',
+      conflict: { current: large },
+    });
+    const run = harness(
+      note({ content: 'prefix\n', contentTruncated: true, contentBytes: 600_000 }),
+    );
+
+    run.channel.put(updateNoteTitle(WS, NOTE, 'Mine'));
+    await vi.waitFor(() =>
+      expect(run.actions.some((action) => action.type === readNoteRequested.type)).toBe(true),
+    );
+
+    expect(run.actions.filter((action) => action.type === applyNoteUpdated.type)).toEqual([]);
+    expect(run.getState().byWorkspaceId[WS]?.notes.map[NOTE]?.content).not.toHaveLength(600_000);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('never sends a whole-content write for a truncated note read (§5.2)', async () => {
     const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
       success: true,
@@ -453,7 +538,7 @@ describe('notesWriteSaga', () => {
     await settle();
 
     expect(setContent.mock.calls).toEqual([[NOTE, 'mine', 4, WS]]);
-    expect(list.mock.calls).toEqual([[WS]]);
+    expect(list.mock.calls).toEqual([[WS, { projection: 'slim' }]]);
     expect(
       run.actions.filter((action) => action.type === loadWorkspaceNotesSucceeded.type),
     ).toEqual([loadWorkspaceNotesSucceeded([WS], { [WS]: [canonical] })]);
@@ -721,7 +806,7 @@ describe('notesWriteSaga', () => {
     expect(notify.warning).not.toHaveBeenCalled();
     expect(notify.error).toHaveBeenCalledTimes(1);
     expect(run.actions.filter((action) => action.type === applyNoteUpdated.type)).toEqual([]);
-    expect(list.mock.calls).toEqual([[WS]]);
+    expect(list.mock.calls).toEqual([[WS, { projection: 'slim' }]]);
     expect(run.getState().byWorkspaceId[WS]?.notes.map[NOTE]).toEqual(canonical);
     run.task.cancel();
     await run.task.toPromise();
