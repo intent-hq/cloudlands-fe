@@ -477,7 +477,7 @@ test('active full-size preview and its portalled menu copy the original HTTPS im
 });
 
 for (const format of ['SVG', 'PNG'] as const) {
-  test(`menu Copy image and Cmd+C preserve ${format} source pixels`, async ({ mount, page }) => {
+  test(`menu Copy image and Cmd+C copy ${format} at source dimensions`, async ({ mount, page }) => {
     await captureImageClipboard(page);
     const source =
       format === 'SVG'
@@ -607,7 +607,7 @@ test('unsupported preview sources do not intercept image copy shortcuts', async 
   await expect(dialog).toBeVisible();
 });
 
-test('chat copies original pixels only after thumbnail props are replaced by the original', async ({
+test('chat enables copying at original dimensions after thumbnail hydration', async ({
   mount,
   page,
 }) => {
