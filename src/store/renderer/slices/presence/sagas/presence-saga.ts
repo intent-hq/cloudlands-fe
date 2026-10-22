@@ -64,7 +64,7 @@ import { backendRequest, observeBackendNodeCapabilities } from '$lib/client/live
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import { watchPresenceVisibility } from './presence-visibility-watcher';
+import { watchCaptureDrawing, watchPresenceVisibility } from './presence-visibility-watcher';
 import {
   isPresenceRoster,
   isPresenceIdentity,
@@ -496,5 +496,8 @@ function* runPresence({
 }
 
 export function* presenceSaga(): SagaGenerator<void> {
+  // Session-long, not admission-scoped: a capture bracket must be known to
+  // a visibility watcher that (re)starts while the capture is in progress.
+  yield* fork(watchCaptureDrawing);
   yield* takeLatestFromSelector(selectPresenceContext, runPresence);
 }
