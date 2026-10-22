@@ -539,6 +539,33 @@ describe('notesWriteSaga', () => {
       await run.task.toPromise();
     });
 
+    it('guards a rich-editor draft with its own base rev after a concurrent agent edit', async () => {
+      vi.useFakeTimers();
+      supports(true);
+      const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+        success: true,
+      });
+      const run = harness();
+      served(run, note({ content: 'old body' }));
+
+      run.channel.put(
+        updateNoteContent(WS, NOTE, 'old body MINE', { baseRev: 4, baseContent: 'old body' }),
+      );
+      await settle();
+      const agent = applyNoteUpdated(WS, NOTE, note({ content: 'AGENT old body', rev: 5 }));
+      run.dispatch(agent);
+      run.channel.put(agent);
+      await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS);
+      await vi.waitFor(() => expect(setContent).toHaveBeenCalledTimes(1));
+
+      // The daemon merges diff(rev 4 → draft) onto rev 5; the base is rev 4's text.
+      expect(setContent.mock.calls).toEqual([
+        [NOTE, 'old body MINE', 4, WS, { baseContentBytes: 8 }],
+      ]);
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
     it('sends a guarded write when the note grows past the limit during the debounce', async () => {
       vi.useFakeTimers();
       supports(true);
