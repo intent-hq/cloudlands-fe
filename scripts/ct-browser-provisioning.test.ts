@@ -112,7 +112,6 @@ ${command}`,
     // The pnpm store is restored by the backend-selecting cache action (WarpBuild or GitHub).
     expect.soft(step('Setup Node.js')).not.toMatch(/^          cache:/m);
     expect.soft(step('Cache pnpm store')).toContain('uses: ./.github/actions/pnpm-store-cache');
-    expect.soft(step('Cache Playwright browsers')).toContain('uses: ./.github/actions/cache');
 
     const provisioning = ctJob.split('      - name: Build CT bundle')[0];
     const activeSteps = [...provisioning.matchAll(/^      - name: (.*)$/gm)]

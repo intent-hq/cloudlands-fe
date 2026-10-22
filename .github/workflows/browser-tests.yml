@@ -82,7 +82,7 @@ jobs:
           console.log(`readiness-marker=${plan.readinessMarker}`);
           ' "$RUNNER_TEMP/ct-browser-plan.json" >> "$GITHUB_OUTPUT"
       - name: Cache Playwright browsers
-        uses: ./.github/actions/cache
+        uses: actions/cache@v6
         id: playwright-cache
         with:
           path: ${{ steps.ct-browser.outputs.cache-dir }}
@@ -350,7 +350,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Cache Playwright browsers
         # Distinct key prefix from test-ct's so the versions never alias.
-        uses: ./.github/actions/cache
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-root-browsers-${{ runner.os }}-${{ steps.root-playwright.outputs.version }}

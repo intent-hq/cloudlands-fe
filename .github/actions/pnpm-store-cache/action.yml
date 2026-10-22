@@ -1,18 +1,38 @@
 name: Cache pnpm store
 description: >-
-  Restores and saves the pnpm store keyed on the lockfile, through ./.github/actions/cache
-  (WarpBuild's cache on WarpBuild Linux and macOS runners, GitHub's elsewhere).
-  Replaces setup-node's `cache: pnpm`; run it after pnpm and Node are set up and
-  before `pnpm install`.
+  Restores and saves the pnpm store keyed on the lockfile: WarpBuild's cache on
+  WarpBuild Linux and macOS runners, GitHub's cache elsewhere (including
+  WarpBuild Windows, which has no WarpBuild cache). Routed jobs land on
+  intent-cache slots, WarpBuild or GitHub per run, so the backend is chosen
+  when the step runs. Replaces setup-node's `cache: pnpm`; run it after pnpm
+  and Node are set up and before `pnpm install`.
 runs:
   using: composite
   steps:
-    # The store path goes through the job environment, not a step output: the
-    # nested cache action re-reads `path` in its post (save) step, after this
-    # composite's step outputs are gone.
-    - shell: bash
-      run: echo "PNPM_STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_ENV"
-    - uses: ./.github/actions/cache
+    # The cache actions re-read `path` in their post (save) step, when this
+    # composite's inputs and step outputs are no longer available, so the
+    # path travels in the job environment and no nested action takes inputs.
+    # WarpBuild sets WARPBUILD_RUNNER_VERIFICATION_TOKEN on every runner it
+    # starts; only its presence is checked, never its value.
+    - id: backend
+      shell: bash
+      run: |
+        echo "PNPM_STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_ENV"
+        if [[ -n "${WARPBUILD_RUNNER_VERIFICATION_TOKEN:-}" && "$RUNNER_OS" != Windows ]]; then backend=warpbuild; else backend=github; fi
+        echo "Cache backend: $backend"
+        echo "backend=$backend" >> "$GITHUB_OUTPUT"
+    - id: warpbuild
+      if: steps.backend.outputs.backend == 'warpbuild'
+      # v2.0.0
+      uses: WarpBuilds/cache@dad44e2487e9dc889ad6e6bd198e77bb2d828eee
+      with:
+        path: ${{ env.PNPM_STORE_PATH }}
+        key: pnpm-store-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+        restore-keys: |
+          pnpm-store-${{ runner.os }}-${{ runner.arch }}-
+    - id: github
+      if: steps.backend.outputs.backend == 'github'
+      uses: actions/cache@v6
       with:
         path: ${{ env.PNPM_STORE_PATH }}
         key: pnpm-store-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}

@@ -1,6 +1,6 @@
 // @verify-changed-triggers: .github/workflows/*.yml, .github/actions/*/action.yml, scripts/setup-sccache.py
 // @vitest-environment node
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
@@ -437,7 +437,6 @@ describe('GitHub-hosted CI runners', () => {
 });
 
 describe('WarpBuild cache', () => {
-  const action = read('.github/actions/cache/action.yml');
   const store = read('.github/actions/pnpm-store-cache/action.yml');
   const workflows = readdirSync('.github/workflows').filter((name) => name.endsWith('.yml'));
   type Step = {
@@ -448,18 +447,30 @@ describe('WarpBuild cache', () => {
     if?: string;
     with?: Record<string, string>;
   };
-  const steps = (id: string) => (action.runs.steps as Step[]).find((s) => s.id === id)!;
+  const steps = (id: string) => (store.runs.steps as Step[]).find((s) => s.id === id)!;
 
   // Runs the action's real backend step: WarpBuild's cache needs a WarpBuild runner and is not available on Windows.
   const backend = (env: Record<string, string>) => {
     const dir = mkdtempSync(join(tmpdir(), 'cache-backend-'));
     const output = join(dir, 'out');
+    const bin = join(dir, 'bin');
+    mkdirSync(bin);
+    writeFileSync(join(bin, 'pnpm'), '#!/bin/sh\necho /fixture/pnpm-store\n', { mode: 0o755 });
     const result = spawnSync('bash', ['-c', steps('backend').run!], {
       encoding: 'utf8',
-      env: { PATH: process.env.PATH, GITHUB_OUTPUT: output, RUNNER_OS: 'Linux', ...env },
+      env: {
+        PATH: `${bin}:${process.env.PATH}`,
+        GITHUB_OUTPUT: output,
+        GITHUB_ENV: join(dir, 'env'),
+        RUNNER_OS: 'Linux',
+        ...env,
+      },
     });
     expect(result.status, result.stderr).toBe(0);
     const value = readFileSync(output, 'utf8').trim();
+    expect(readFileSync(join(dir, 'env'), 'utf8').trim()).toBe(
+      'PNPM_STORE_PATH=/fixture/pnpm-store',
+    );
     rmSync(dir, { recursive: true, force: true });
     return value;
   };
@@ -481,36 +492,28 @@ describe('WarpBuild cache', () => {
     expect(steps('github').uses).toBe('actions/cache@v6');
     expect(steps('github').if).toBe("steps.backend.outputs.backend == 'github'");
     expect(steps('warpbuild').with).toEqual(steps('github').with);
-    expect(steps('warpbuild').with).toEqual({
-      path: '${{ inputs.path }}',
-      key: '${{ inputs.key }}',
-      'restore-keys': '${{ inputs.restore-keys }}',
-    });
-  });
-
-  it('keys the pnpm store on the platform and lockfile', () => {
-    const cache = (store.runs.steps as Step[]).find((s) => s.uses === './.github/actions/cache')!;
-    // The nested cache action re-reads `path` when it saves after the job; this
-    // composite's step outputs are gone by then, so the path travels in the job env.
-    expect(cache.with!.path).toBe('${{ env.PNPM_STORE_PATH }}');
-    expect(JSON.stringify(store.runs.steps)).not.toMatch(/steps\.[\w-]+\.outputs/);
-    expect(cache.with!.key).toBe(
+    expect(steps('warpbuild').with!.key).toBe(
       "pnpm-store-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}",
     );
-    expect(cache.with!['restore-keys'].trim()).toBe(
+    expect(steps('warpbuild').with!['restore-keys'].trim()).toBe(
       'pnpm-store-${{ runner.os }}-${{ runner.arch }}-',
     );
   });
 
-  it('routes every workflow cache through the backend-selecting action', () => {
+  it('gives the cache actions a path that still exists when they save after the job', () => {
+    // A cache action re-reads `path` in its post step. Composite inputs and step outputs are
+    // gone by then ("Input required and not supplied: path"), so the path is a job env var
+    // and no local composite sits between the job and the cache actions.
+    expect(steps('warpbuild').with!.path).toBe('${{ env.PNPM_STORE_PATH }}');
+    expect(steps('github').with!.path).toBe('${{ env.PNPM_STORE_PATH }}');
+    expect(JSON.stringify(store.runs.steps)).not.toMatch(/inputs\.|uses":"\.\//);
+  });
+
+  it('routes the pnpm store through the backend-selecting action', () => {
     for (const file of workflows) {
       const text = readFileSync(`.github/workflows/${file}`, 'utf8');
       expect(text, file).not.toMatch(/^\s+cache: '?pnpm'?\s*$/m);
       expect(text, file).not.toMatch(/uses: WarpBuilds\//);
-      // Only the retirement cursor (run state on a GitHub-hosted control job) uses actions/cache directly.
-      const direct = [...text.matchAll(/uses: actions\/cache(\/\w+)?@/g)];
-      if (file === 'retire-obsolete-merge-runs.yml') expect(direct.length).toBe(2);
-      else expect(direct, file).toEqual([]);
     }
   });
 
