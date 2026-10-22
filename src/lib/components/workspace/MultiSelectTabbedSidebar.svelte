@@ -488,7 +488,11 @@
   <div class="shrink-0 px-3 pb-1" hidden={$collapsed$} inert={$collapsed$} data-sidebar-navigation>
     <SidebarSectionTabs {workspaceId} {panelId} />
   </div>
-  <div class="min-h-0 flex-1" data-sidebar-panels data-direction={direction}>
+  <div
+    class="mx-3 mt-2 mb-3 min-h-0 flex-1 overflow-hidden rounded-(--radius-large) bg-background ring-1 ring-inset ring-border/50"
+    data-sidebar-panels
+    data-direction={direction}
+  >
     {#each TAB_DEFINITIONS.filter(({ id }) => (id !== 'people' || showPeople) && !(isCollaborator && OWNER_ONLY_TAB_IDS.has(id))) as tab (tab.id)}
       {@const tabId = tab.id}
       <section
@@ -505,7 +509,7 @@
       >
         {#if mountedTabIds.includes(tabId)}
           {#if tab && !tab.hideHeader}
-            <div class="shrink-0 px-4 pt-3 pb-2" data-sidebar-section-header>
+            <div class="shrink-0 px-3 pt-3 pb-2" data-sidebar-section-header>
               <h6 class="flex min-h-7 items-center gap-2 text-sm font-medium text-foreground">
                 <span class="min-w-0 truncate">{tab.label}</span>
                 <span class="ml-auto flex min-w-0 items-center gap-1">
@@ -576,7 +580,7 @@
           {/if}
           {#key workspaceId}
             <div
-              class="min-h-0 flex-1 px-2 pb-3 {tabId === 'files' || tabId === 'changes'
+              class="min-h-0 flex-1 px-1 pb-2 {tabId === 'files' || tabId === 'changes'
                 ? 'overflow-hidden'
                 : 'overflow-y-auto'}"
               data-sidebar-section-scroll={tabId}
