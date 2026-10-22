@@ -1,10 +1,11 @@
 import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
 import {
-  faFolderTree,
-  faGlobe,
+  faCodeBranch,
+  faFolder,
   faRobot,
   faTerminal,
   faUsers,
+  faWindowMaximize,
 } from '@fortawesome/free-solid-svg-icons';
 import { m } from '$shared/paraglide/messages.js';
 import { RESOURCE_ICON_BY_KIND } from '$lib/components/shared/resource-icon';
@@ -52,7 +53,7 @@ export const TAB_DEFINITIONS: TabDefinition[] = [
     get label() {
       return m.workspace_multiSelectSidebar_changesTab_label();
     },
-    icon: RESOURCE_ICON_BY_KIND.changes,
+    icon: faCodeBranch,
     get description() {
       return m.workspace_multiSelectSidebar_changesTab_description();
     },
@@ -62,7 +63,7 @@ export const TAB_DEFINITIONS: TabDefinition[] = [
     get label() {
       return m.workspace_multiSelectSidebar_filesTab_label();
     },
-    icon: faFolderTree,
+    icon: faFolder,
     get description() {
       return m.workspace_multiSelectSidebar_filesTab_description();
     },
@@ -72,7 +73,7 @@ export const TAB_DEFINITIONS: TabDefinition[] = [
     get label() {
       return m.workspace_multiSelectSidebar_browserTab_label();
     },
-    icon: faGlobe,
+    icon: faWindowMaximize,
     get description() {
       return m.workspace_multiSelectSidebar_browserTab_description();
     },
