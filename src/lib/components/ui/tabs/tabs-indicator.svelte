@@ -57,7 +57,7 @@
     use:springRect={selectedRect}
   >
     {#if variant === 'icon'}
-      <span class="absolute -top-3 left-1/2 h-1 w-2 -translate-x-1/2 rounded-b-full bg-foreground"
+      <span class="absolute -top-2 left-1/2 h-1 w-2 -translate-x-1/2 rounded-b-full bg-foreground"
       ></span>
     {/if}
   </div>

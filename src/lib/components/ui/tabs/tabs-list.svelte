@@ -30,7 +30,7 @@
     context.variant === 'default'
       ? 'rounded-(--radius-medium) bg-muted/40'
       : context.variant === 'icon'
-        ? 'gap-2 rounded-(--radius-large) bg-muted/60 p-2 pt-3 dark:bg-surface-4'
+        ? 'gap-2 rounded-(--radius-large) bg-muted/60 p-1 pt-2 dark:bg-surface-4'
         : 'max-w-full overflow-x-auto px-1',
     className,
   )}

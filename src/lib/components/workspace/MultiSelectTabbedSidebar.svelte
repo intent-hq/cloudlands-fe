@@ -489,7 +489,7 @@
     <SidebarSectionTabs {workspaceId} {panelId} />
   </div>
   <div
-    class="mx-3 mt-2 mb-3 min-h-0 flex-1 overflow-hidden rounded-(--radius-large) bg-background ring-1 ring-inset ring-border/50"
+    class="mx-3 mt-2 mb-3 min-h-0 flex-1 overflow-hidden rounded-(--radius-large) bg-muted/60 ring-1 ring-inset ring-border/50 dark:bg-surface-4"
     data-sidebar-panels
     data-direction={direction}
   >
