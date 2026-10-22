@@ -189,6 +189,15 @@ function workspaceMutationGeneration(workspaceId: string): number {
   return workspaceMutationGenerations.get(workspaceId) ?? 0;
 }
 
+function isNoteDeletion(action: ObservedAction, workspaceId: string, noteId: string): boolean {
+  return (
+    action.type === applyNoteDeleted.type &&
+    Array.isArray(action.payload) &&
+    action.payload[0] === workspaceId &&
+    action.payload[1] === noteId
+  );
+}
+
 function isWorkspaceCleanup(action: ObservedAction, workspaceId: string): boolean {
   return (
     action.type === workspaceUnmounted.type &&
@@ -473,11 +482,7 @@ function* rereadWhenCapabilityKnown(workspaceId: string, noteId: string) {
     reread: call(rereadOnceCapabilityKnown, workspaceId, noteId),
     gone: take(
       (action: ObservedAction) =>
-        isWorkspaceCleanup(action, workspaceId) ||
-        (action.type === applyNoteDeleted.type &&
-          Array.isArray(action.payload) &&
-          action.payload[0] === workspaceId &&
-          action.payload[1] === noteId),
+        isWorkspaceCleanup(action, workspaceId) || isNoteDeletion(action, workspaceId, noteId),
     ),
   });
 }
