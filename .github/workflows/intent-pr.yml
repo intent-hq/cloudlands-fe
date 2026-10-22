@@ -75,10 +75,10 @@ jobs:
           # many get a slot as are free (see the slot-fitting note in the
           # script). Minutes are typical merge-queue durations; `events`
           # keeps a queue-only job from holding a slot on a PR; `shards: 4`
-          # gives each Unit Tests leg its own key (test-1..test-4). Type
-          # Check & Lint ranks below the shards (it is medium-sized and
-          # already measured), so all four shards get slots when four are
-          # free; before, shard 4 ranked fifth and never left hosted runners.
+          # gives each Unit Tests leg its own key (test-1..test-4). The
+          # `checks` minutes are a ranking choice, not a measurement: keep
+          # them below the shards' so all four shards get slots when four
+          # are free (Type Check & Lint is medium-sized and already measured).
           SLOT_JOBS: >-
             [
             {"key":"checks","label":"gh-linux-8x","minutes":12},

@@ -216,7 +216,11 @@ describe('GitHub-hosted CI runners', () => {
     const one = await route({ jobs: [running()] });
     expect(onSlots(one.slots)).toEqual(['test-1']);
     // Four free slots: every Unit Tests shard, including shard 4, takes one.
-    const four = await route({ event: 'pull_request', env: { THRESHOLD: '4' }, runners: [slot, slot, slot, slot] });
+    const four = await route({
+      event: 'pull_request',
+      env: { THRESHOLD: '4' },
+      runners: [slot, slot, slot, slot],
+    });
     expect(onSlots(four.slots)).toEqual(['test-1', 'test-2', 'test-3', 'test-4']);
     expect(four.slots.checks).toEqual(['gh-linux-8x']);
   });
