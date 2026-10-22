@@ -7771,5 +7771,7 @@
   "workspace_share_sharingTailcatMissing_error": "Der Freigabedienst fehlt. Installiere Tailcat, starte die App neu und versuche es erneut.",
   "workspace_share_tailcat_description": "Erreicht dieses Gerät, ohne Ports zu öffnen.",
   "workspace_share_tailcat_label": "Tailcat-Tunnel",
-  "workspace_share_turnOnSharing_label": "Freigabe einschalten"
+  "workspace_share_turnOnSharing_label": "Freigabe einschalten",
+  "notifications_discussion_mention_title": "{name} hat dich erwähnt",
+  "notifications_discussion_open_label": "Diskussion öffnen"
 }

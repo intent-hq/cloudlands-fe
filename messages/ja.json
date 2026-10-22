@@ -7771,5 +7771,7 @@
   "workspace_share_sharingTailcatMissing_error": "共有サービスが見つかりません。Tailcatをインストールし、アプリを再起動してからもう一度お試しください。",
   "workspace_share_tailcat_description": "ポートを開放せずにこのデバイスに接続できます。",
   "workspace_share_tailcat_label": "Tailcatトンネル",
-  "workspace_share_turnOnSharing_label": "共有をオンにする"
+  "workspace_share_turnOnSharing_label": "共有をオンにする",
+  "notifications_discussion_mention_title": "{name}さんがあなたにメンションしました",
+  "notifications_discussion_open_label": "ディスカッションを開く"
 }

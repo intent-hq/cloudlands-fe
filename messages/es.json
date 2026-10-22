@@ -7771,5 +7771,7 @@
   "workspace_share_sharingTailcatMissing_error": "Falta el servicio para compartir. Instala Tailcat, reinicia la aplicación e inténtalo de nuevo.",
   "workspace_share_tailcat_description": "Permite acceder a este dispositivo sin abrir puertos.",
   "workspace_share_tailcat_label": "Túnel Tailcat",
-  "workspace_share_turnOnSharing_label": "Activar el uso compartido"
+  "workspace_share_turnOnSharing_label": "Activar el uso compartido",
+  "notifications_discussion_mention_title": "{name} te ha mencionado",
+  "notifications_discussion_open_label": "Abrir conversación"
 }

@@ -7771,5 +7771,7 @@
   "workspace_share_sharingTailcatMissing_error": "공유 서비스가 없습니다. Tailcat을 설치하고 앱을 다시 시작한 후 다시 시도하세요.",
   "workspace_share_tailcat_description": "포트를 열지 않고 이 기기에 연결합니다.",
   "workspace_share_tailcat_label": "Tailcat 터널",
-  "workspace_share_turnOnSharing_label": "공유 켜기"
+  "workspace_share_turnOnSharing_label": "공유 켜기",
+  "notifications_discussion_mention_title": "{name}님이 나를 언급했습니다",
+  "notifications_discussion_open_label": "토론 열기"
 }

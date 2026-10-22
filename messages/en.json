@@ -7771,5 +7771,7 @@
   "workspace_share_sharingTailcatMissing_error": "The sharing service is missing. Install Tailcat, restart the app, and try again.",
   "workspace_share_tailcat_description": "Reaches this machine without opening ports.",
   "workspace_share_tailcat_label": "Tailcat tunnel",
-  "workspace_share_turnOnSharing_label": "Turn on sharing"
+  "workspace_share_turnOnSharing_label": "Turn on sharing",
+  "notifications_discussion_mention_title": "{name} mentioned you",
+  "notifications_discussion_open_label": "Open discussion"
 }

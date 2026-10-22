@@ -7771,5 +7771,7 @@
   "workspace_share_sharingTailcatMissing_error": "缺少共享服務。請安裝 Tailcat，重新啟動應用程式後再試。",
   "workspace_share_tailcat_description": "無需開放連接埠即可連線至此裝置。",
   "workspace_share_tailcat_label": "Tailcat 通道",
-  "workspace_share_turnOnSharing_label": "開啟共享"
+  "workspace_share_turnOnSharing_label": "開啟共享",
+  "notifications_discussion_mention_title": "{name} 提及了你",
+  "notifications_discussion_open_label": "開啟討論"
 }
