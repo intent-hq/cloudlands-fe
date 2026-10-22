@@ -242,8 +242,11 @@ import {
   markWorkspacePendingDeletion,
   refreshWorkspaceMembershipRequested,
   removeWorkspaceEntity,
+  setWorkspaceEntity,
   updateWorkspaceEntity,
 } from '$store/renderer/slices/workspace/workspace-slice';
+import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+import { fetchWorkspaceDetail } from '$features/workspace/workspace-detail-hydration';
 import {
   closeWorkspaceTabAndNavigateAway,
   navigateAwayIfViewing,
@@ -2217,24 +2220,38 @@ function handlePrEvent(
 }
 
 /**
- * `gitRoot:registered` / `gitRoot:updated` (§6.5) carry `{ workspaceId,
- * gitRoot }` with the full persisted root row, including its `pullRequests`
- * pool. The daemon folds root pools into the workspace's merged pool on
- * `workspace.list`, but a root's PR change (status, merge-queue entry) emits
- * only `gitRoot:updated` — never `pr:updated` — so the Home row would keep the
- * stale entry. URL-union the root pool into the entity (incoming wins, other
- * entries kept), the same partial merge `pr:*` uses. `gitRoot:unregistered`
- * carries no PRs; the next `workspace.list` reconciles removals.
+ * `gitRoot:*` (§6.5) — a secondary git root's PR change (status, merge-queue
+ * entry) emits only `gitRoot:updated`, never `pr:updated`, and a root's
+ * removal only `gitRoot:unregistered`. The Home row renders the daemon's
+ * MERGED pool (workspace + git-root + monitor PRs, §5.1), whose same-URL
+ * canonicalization, lifecycle and ordering rules live only in intentd, so
+ * re-read `workspace.get` (the authoritative merged pool, linked PR fields
+ * included) instead of re-deriving the fold here. Only rows already in this
+ * window's store refresh — this never adds a workspace. Single-flighted per
+ * workspace with one trailing follow-up for events arriving mid-read
+ * (AGENTS.md "Event-driven refetches — single-flight and coalesced").
  */
-function handleGitRootPrEvent(event: WorkspaceEvent, workspaceId: string): void {
-  const data = (event as { data?: { gitRoot?: { pullRequests?: unknown } } }).data;
-  const pullRequests = data?.gitRoot?.pullRequests;
-  if (!Array.isArray(pullRequests) || pullRequests.length === 0) return;
-  appStore.dispatch(
-    bulkUpdateWorkspaceEntities([
-      updateWorkspaceEntity(workspaceId, { pullRequests: pullRequests as PullRequestInfo[] }),
-    ]),
-  );
+const gitRootPoolRefreshInFlight = new Set<string>();
+const gitRootPoolRefreshFollowUp = new Set<string>();
+
+async function refreshWorkspacePrPoolFromGitRoot(workspaceId: string): Promise<void> {
+  if (!selectWorkspaceById.select(appStore.state, workspaceId)) return;
+  if (gitRootPoolRefreshInFlight.has(workspaceId)) {
+    gitRootPoolRefreshFollowUp.add(workspaceId);
+    return;
+  }
+  gitRootPoolRefreshInFlight.add(workspaceId);
+  try {
+    const workspace = await fetchWorkspaceDetail(workspaceId);
+    if (workspace && selectWorkspaceById.select(appStore.state, workspaceId)) {
+      appStore.dispatch(setWorkspaceEntity(workspace, { detailRead: true }));
+    }
+  } finally {
+    gitRootPoolRefreshInFlight.delete(workspaceId);
+    if (gitRootPoolRefreshFollowUp.delete(workspaceId)) {
+      void refreshWorkspacePrPoolFromGitRoot(workspaceId);
+    }
+  }
 }
 
 /**
@@ -4191,8 +4208,12 @@ export function routeDaemonEventsNotification(
     handlePrEvent(event, workspaceId, type);
     return;
   }
-  if (type === 'gitRoot:registered' || type === 'gitRoot:updated') {
-    handleGitRootPrEvent(event, workspaceId);
+  if (
+    type === 'gitRoot:registered' ||
+    type === 'gitRoot:updated' ||
+    type === 'gitRoot:unregistered'
+  ) {
+    void refreshWorkspacePrPoolFromGitRoot(workspaceId);
     return;
   }
 
@@ -4673,6 +4694,8 @@ export function disposeDaemonEventsRoutingState(): void {
   activityFetchFollowUpWantedByWorkspace.clear();
   missingEntityFetchInFlightByWorkspace.clear();
   missingEntityFetchFollowUpWantedByWorkspace.clear();
+  gitRootPoolRefreshInFlight.clear();
+  gitRootPoolRefreshFollowUp.clear();
 }
 
 /** Test-only — reset stream accumulators and debounce state. */

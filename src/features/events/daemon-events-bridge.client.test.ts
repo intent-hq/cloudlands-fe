@@ -8949,6 +8949,7 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
 
   describe('gitRoot:* → merged workspace PR pool', () => {
     const ROOT_PR_URL = 'https://github.com/intent-hq/intentd/pull/2590';
+    const OWN_PR = { number: 42, url: 'https://github.com/acme/app/pull/42', status: 'Open' };
     const rootPull = (extra: Record<string, unknown> = {}) => ({
       id: '2590',
       number: 2590,
@@ -8961,29 +8962,40 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
       ...extra,
     });
 
-    async function seedMergedPool(pullRequests: unknown[]): Promise<void> {
-      const { setWorkspaceEntity } =
-        await import('$store/renderer/slices/workspace/workspace-slice');
-      const { WorkspaceStatus } = await import('$shared/types');
-      appStore.dispatch(
-        setWorkspaceEntity({
-          id: PR_WS,
-          title: 'PR ws',
-          branch: 'main',
-          status: WorkspaceStatus.Active,
-          changesets: [],
-          timeline: [],
-          conversationInfo: [],
-          createdAt: '2026-01-01T00:00:00.000Z',
-          updatedAt: '2026-01-01T00:00:00.000Z',
-          pullRequests,
-        } as never),
-      );
+    function workspaceRow(extra: Record<string, unknown>): Record<string, unknown> {
+      return {
+        id: PR_WS,
+        title: 'PR ws',
+        branch: 'main',
+        status: 'Active',
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        ...extra,
+      };
     }
 
+    async function seedListedRow(extra: Record<string, unknown>): Promise<void> {
+      const { setWorkspaceEntity } =
+        await import('$store/renderer/slices/workspace/workspace-slice');
+      appStore.dispatch(setWorkspaceEntity(workspaceRow(extra) as never));
+    }
+
+    /** The daemon's `workspace.get` serves the merged pool (§5.1). */
+    let served: Record<string, unknown>;
+    const workspaceGets = () =>
+      backendRequestSpy.mock.calls.filter(([method]) => method === 'workspace.get');
+
+    beforeEach(() => {
+      backendRequestSpy.mockImplementation((method: string) =>
+        method === 'workspace.get' ? Promise.resolve({ workspace: served }) : undefined,
+      );
+    });
+
     function emitGitRoot(
-      type: 'gitRoot:registered' | 'gitRoot:updated',
-      gitRoot: Record<string, unknown> | undefined,
+      type: 'gitRoot:registered' | 'gitRoot:updated' | 'gitRoot:unregistered',
       workspaceId = PR_WS,
     ): void {
       capturedHandlers[0]!({
@@ -8995,22 +9007,25 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
             timestamp: '2026-10-22T04:07:23Z',
             type,
             actor: { type: 'system' },
-            data: { workspaceId, ...(gitRoot ? { gitRoot } : {}) },
+            data:
+              type === 'gitRoot:unregistered'
+                ? { workspaceId, gitRootId: 'root-intentd', path: '/w/packages/intentd' }
+                : {
+                    workspaceId,
+                    gitRoot: {
+                      id: 'root-intentd',
+                      workspaceId,
+                      path: '/w/packages/intentd',
+                      pullRequests: [rootPull({ isInMergeQueue: true })],
+                    },
+                  },
           },
         },
       });
     }
 
-    function rootRow(pullRequests: unknown): Record<string, unknown> {
-      return {
-        id: 'root-intentd',
-        workspaceId: PR_WS,
-        path: '/w/intent/packages/intentd',
-        source: 'auto',
-        prNumber: 2590,
-        prStatus: 'Open',
-        pullRequests,
-      };
+    async function settle(): Promise<void> {
+      for (let i = 0; i < 4; i++) await flush();
     }
 
     it('subscribes the global feed to gitRoot events', () => {
@@ -9021,55 +9036,81 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
       // Regression: the Home badge read "Open" while the daemon's merged pool
       // (and the hover card) said queued — the root's queue change only
       // arrives as `gitRoot:updated`.
-      await seedMergedPool([rootPull()]);
+      await seedListedRow({ pullRequests: [OWN_PR, rootPull()] });
+      served = workspaceRow({ pullRequests: [OWN_PR, rootPull({ isInMergeQueue: true })] });
       await primeBridge();
-      const requestsBefore = backendRequestSpy.mock.calls.length;
 
-      emitGitRoot('gitRoot:updated', rootRow([rootPull({ isInMergeQueue: true })]));
+      emitGitRoot('gitRoot:updated');
+      await settle();
 
+      // Taken as served: the daemon's order (workspace PRs first) and
+      // canonical copies, not an FE re-derivation of the fold.
+      expect((await readWorkspace()).pullRequests).toEqual([
+        OWN_PR,
+        rootPull({ isInMergeQueue: true }),
+      ]);
+      expect(workspaceGets()).toEqual([['workspace.get', { workspaceId: PR_WS }]]);
+    });
+
+    it('gitRoot:updated refreshes the linked PR fields along with the pool', async () => {
+      await seedListedRow({
+        prNumber: 2590,
+        prStatus: 'Open',
+        activePullRequest: rootPull(),
+        pullRequests: [rootPull()],
+      });
+      served = workspaceRow({
+        prNumber: 2590,
+        prStatus: 'Open',
+        activePullRequest: rootPull({ isInMergeQueue: true }),
+        pullRequests: [rootPull({ isInMergeQueue: true })],
+      });
+      await primeBridge();
+
+      emitGitRoot('gitRoot:updated');
+      await settle();
+
+      const row = await readWorkspace();
+      expect(row.activePullRequest).toEqual(rootPull({ isInMergeQueue: true }));
+      expect(row.pullRequests).toEqual([rootPull({ isInMergeQueue: true })]);
+    });
+
+    it('gitRoot:unregistered drops the removed root PR from the Home row', async () => {
+      await seedListedRow({ pullRequests: [OWN_PR, rootPull({ isInMergeQueue: true })] });
+      served = workspaceRow({ pullRequests: [OWN_PR] });
+      await primeBridge();
+
+      emitGitRoot('gitRoot:unregistered');
+      await settle();
+
+      expect((await readWorkspace()).pullRequests).toEqual([OWN_PR]);
+    });
+
+    it('coalesces a burst into one read plus one trailing follow-up', async () => {
+      await seedListedRow({ pullRequests: [rootPull()] });
+      served = workspaceRow({ pullRequests: [rootPull({ isInMergeQueue: true })] });
+      await primeBridge();
+
+      emitGitRoot('gitRoot:registered');
+      emitGitRoot('gitRoot:updated');
+      emitGitRoot('gitRoot:updated');
+      await settle();
+
+      expect(workspaceGets()).toHaveLength(2);
       expect((await readWorkspace()).pullRequests).toEqual([rootPull({ isInMergeQueue: true })]);
-      // Self-sufficient payload: no re-read.
-      expect(backendRequestSpy.mock.calls).toHaveLength(requestsBefore);
     });
 
-    it('gitRoot:updated preserves other pool entries and replaces a differently-cased URL', async () => {
-      const own = { number: 42, url: 'https://github.com/acme/app/pull/42', status: 'Open' };
-      const monitored = { number: 9, url: 'https://github.com/other/repo/pull/9', status: 'Open' };
-      await seedMergedPool([own, rootPull({ url: ROOT_PR_URL.toUpperCase() }), monitored]);
+    it('never reads or adds a workspace this window does not hold', async () => {
+      served = workspaceRow({ id: 'ws-not-loaded', pullRequests: [rootPull()] });
       await primeBridge();
 
-      emitGitRoot('gitRoot:updated', rootRow([rootPull({ status: 'Merged' })]));
+      emitGitRoot('gitRoot:updated', 'ws-not-loaded');
+      await settle();
 
-      const pool = (await readWorkspace()).pullRequests ?? [];
-      expect(pool).toHaveLength(3);
-      expect(pool).toEqual(
-        expect.arrayContaining([own, monitored, rootPull({ status: 'Merged' })]),
-      );
-    });
-
-    it('gitRoot:registered adds a root PR the row did not carry yet', async () => {
-      const own = { number: 42, url: 'https://github.com/acme/app/pull/42', status: 'Open' };
-      await seedMergedPool([own]);
-      await primeBridge();
-
-      emitGitRoot('gitRoot:registered', rootRow([rootPull()]));
-
-      expect((await readWorkspace()).pullRequests).toEqual(
-        expect.arrayContaining([own, rootPull()]),
-      );
-    });
-
-    it('ignores root rows without PRs, malformed payloads, and unknown workspaces', async () => {
-      const own = { number: 42, url: 'https://github.com/acme/app/pull/42', status: 'Open' };
-      await seedMergedPool([own]);
-      await primeBridge();
-
-      emitGitRoot('gitRoot:updated', rootRow(null));
-      emitGitRoot('gitRoot:updated', rootRow([]));
-      emitGitRoot('gitRoot:updated', undefined);
-      emitGitRoot('gitRoot:updated', rootRow([rootPull()]), 'ws-not-loaded');
-
-      expect((await readWorkspace()).pullRequests).toEqual([own]);
+      expect(workspaceGets()).toHaveLength(0);
+      const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
+      const state = appStore.state as { workspace: { workspaces: unknown } };
+      expect(getItem(state.workspace.workspaces as never, 'ws-not-loaded')).toBeUndefined();
     });
   });
 
