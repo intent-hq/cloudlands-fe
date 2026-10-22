@@ -233,6 +233,7 @@
           )
       : undefined}
     onAgentRemove={(id) => store.dispatch(discussionAgentRemoved(workspaceId, id, conversationId))}
+    messageKeys={$discussion$.messageKeys}
     pendingMessages={$pending$.flatMap((message) =>
       message.author && message.createdAt
         ? [

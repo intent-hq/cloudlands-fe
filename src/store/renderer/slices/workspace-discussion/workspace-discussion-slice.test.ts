@@ -229,11 +229,16 @@ describe('workspace discussion reducer', () => {
     state = reduce(state, discussionSendStarted(target, pending));
     state = reduce(state, discussionMessageReceived(target, message(1)));
     expect(getItems(state.byWorkspaceId.ws.default.pending)).toHaveLength(1);
+    expect(state.byWorkspaceId.ws.default.messageKeys).toEqual({});
     state = reduce(state, discussionSendSucceeded(target, pending.id, message(1)));
     expect(getItems(state.byWorkspaceId.ws.default.pending)).toEqual([]);
     expect(getItems(state.byWorkspaceId.ws.default.messages)).toEqual([message(1)]);
+    expect(state.byWorkspaceId.ws.default.messageKeys).toEqual({ 'server-1': 'retry-key' });
     expect(state.byWorkspaceId.ws.default.draft).toBe('');
     expect(reduce(state, discussionSendFailed(target, pending.id, 'unknown'))).toBe(state);
+    expect(reduce(state, discussionSendSucceeded(target, pending.id, message(1)))).toBe(state);
+    state = reduce(state, discussionContextChanged('connection-2', 'owner-2'));
+    expect(state.byWorkspaceId).toEqual({});
   });
   it('keeps edits made after sending, even when changed back to the same body', () => {
     const setupState = setup();

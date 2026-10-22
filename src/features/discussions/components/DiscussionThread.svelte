@@ -85,6 +85,7 @@
     onReaction?: (messageId: string, emoji: string) => void;
     onCopyMessage?: (message: DiscussionMessage) => void;
     messages: readonly DiscussionMessage[];
+    messageKeys?: Readonly<Record<string, string>>;
     draft: string;
     draftVersion?: number;
     typingLabel?: string | null;
@@ -158,6 +159,7 @@
     onReaction,
     onCopyMessage,
     messages,
+    messageKeys = {},
     draft,
     draftVersion = 0,
     typingLabel = null,
@@ -338,14 +340,19 @@
   function dayKey(value: string) {
     return new Date(value).toDateString();
   }
+  const displayedMessages = $derived([...messages, ...pendingMessages]);
   function isContinuation(index: number) {
-    const previous = messages[index - 1],
-      current = messages[index];
+    const previous = displayedMessages[index - 1],
+      current = displayedMessages[index];
     return (
       !!previous &&
       current.id !== firstUnreadId &&
       !current.replyTo &&
-      !previous.agentActivity?.some((activity) => activity.state !== 'completed') &&
+      !('status' in current && current.status === 'failed') &&
+      !(
+        'agentActivity' in previous &&
+        previous.agentActivity?.some((activity) => activity.state !== 'completed')
+      ) &&
       previous.author.principalId === current.author.principalId &&
       previous.author.agentId === current.author.agentId &&
       dayKey(previous.createdAt) === dayKey(current.createdAt) &&
@@ -413,12 +420,14 @@
   let previousLastId: string | undefined;
   let previousTypingLabel: string | null | undefined;
   let previousActivityVersion = '';
+  let previousPendingVersion = '';
 
   // Preserve the visible message when history is prepended or the loading row changes.
   // Live arrivals follow the bottom only while the reader is already there.
   $effect.pre(() => {
     const firstId = messages[0]?.id;
     const lastId = pendingMessages.at(-1)?.id ?? messages.at(-1)?.id;
+    const pendingVersion = JSON.stringify(pendingMessages.map(({ id, status }) => [id, status]));
     const activityVersion = messages
       .flatMap((message) =>
         (message.agentActivity ?? []).map((activity) =>
@@ -439,6 +448,7 @@
       firstId !== previousFirstId ||
       lastId !== previousLastId ||
       activityVersion !== previousActivityVersion ||
+      pendingVersion !== previousPendingVersion ||
       typingLabel !== previousTypingLabel;
     const prepended =
       !!previousFirstId &&
@@ -454,6 +464,7 @@
     previousLastId = lastId;
     previousTypingLabel = typingLabel;
     previousActivityVersion = activityVersion;
+    previousPendingVersion = pendingVersion;
     if (messages.length > 0) firstRender = false;
     void tick().then(() => {
       if (!element.isConnected) return;
@@ -701,8 +712,10 @@
           aria-label={m.workspace_discussion_title()}
           aria-relevant="additions text"
         >
-          {#each messages as message, index (message.id)}
-            {#if index === 0 ? dayKey(message.createdAt) !== new Date().toDateString() : dayKey(messages[index - 1].createdAt) !== dayKey(message.createdAt)}
+          {#each displayedMessages as message, index (messageKeys[message.id] ?? message.id)}
+            {@const confirmed = 'sequence' in message ? message : undefined}
+            {@const pending = 'status' in message ? message : undefined}
+            {#if index === 0 ? dayKey(message.createdAt) !== new Date().toDateString() : dayKey(displayedMessages[index - 1].createdAt) !== dayKey(message.createdAt)}
               <div
                 class="flex items-center gap-2.5 type-caption text-muted-foreground"
                 data-discussion-day
@@ -726,6 +739,12 @@
               {workspaceId}
               {sourcePanelId}
               {message}
+              status={pending?.status}
+              error={pending?.error}
+              onRetry={() => {
+                onRetryMessage?.(message.id);
+                composer?.focus({ preventScroll: true });
+              }}
               continuation={isContinuation(index)}
               agentMentions={message.agentMentions}
               {mentionNames}
@@ -733,21 +752,23 @@
               onReplyNavigate={jumpToReply}
               {expandedReactions}
               reactions={reactionsByMessage[message.id]}
-              disabled={!canSend}
-              onReply={onReply
+              disabled={!canSend || (!!pending && sending)}
+              onReply={onReply && confirmed
                 ? () => {
-                    onReply?.(message);
+                    onReply?.(confirmed);
                     composer?.focus({ preventScroll: true });
                   }
                 : undefined}
-              onReaction={onReaction ? (emoji) => onReaction?.(message.id, emoji) : undefined}
-              onCopy={onCopyMessage ? () => onCopyMessage?.(message) : undefined}
+              onReaction={onReaction && confirmed
+                ? (emoji) => onReaction?.(message.id, emoji)
+                : undefined}
+              onCopy={onCopyMessage && confirmed ? () => onCopyMessage?.(confirmed) : undefined}
             >
-              {#snippet references()}{#if messageReferences}{@render messageReferences(
-                    message,
+              {#snippet references()}{#if messageReferences && confirmed}{@render messageReferences(
+                    confirmed,
                   )}{/if}{/snippet}
             </DiscussionMessageView>
-            {#each message.agentActivity ?? [] as activity (activity.agentId)}
+            {#each confirmed?.agentActivity ?? [] as activity (activity.agentId)}
               <DiscussionAgentActivity
                 messageId={message.id}
                 {activity}
@@ -767,20 +788,6 @@
                   : undefined}
               />
             {/each}
-          {/each}
-          {#each pendingMessages as message (message.id)}
-            <DiscussionMessageView
-              {workspaceId}
-              {sourcePanelId}
-              {message}
-              agentMentions={message.agentMentions}
-              {mentionNames}
-              onReplyNavigate={jumpToReply}
-              status={message.status}
-              error={message.error}
-              disabled={!canSend || sending}
-              onRetry={() => onRetryMessage?.(message.id)}
-            />
           {/each}
           {#if !pendingMessages.length}
             {#each failedMessages as message (message.id)}

@@ -31,12 +31,16 @@
 
   let {
     failSend = false,
+    deferSend = false,
+    recentHistory = false,
     messageActions = true,
     agentMessaging = false,
     agentActivity = agentMessaging,
     conversationId = 'default',
   }: {
     failSend?: boolean;
+    deferSend?: boolean;
+    recentHistory?: boolean;
     messageActions?: boolean;
     agentMessaging?: boolean;
     agentActivity?: boolean;
@@ -52,7 +56,7 @@
     (calls) => {
       requests = calls;
     },
-    { messageActions, agentMessaging, agentActivity },
+    { deferSend, recentHistory, messageActions, agentMessaging, agentActivity },
   );
   const dispose = startRootStoreLifecycle(store, { startSagas: () => [] });
   store.dispatch(setLabsMultiplayerEnabled(true));
@@ -146,6 +150,7 @@
   }}>Toggle discussion</Button
 >
 <Button onclick={() => backend.finishOlder()}>Finish history</Button>
+<Button onclick={() => backend.finishSend()}>Confirm send</Button>
 <Button onclick={liveMessage}>Receive live message</Button>
 <Button onclick={() => backend.receiveTyping()}>Receive peer typing</Button>
 <Button onclick={() => backend.receiveTyping(true)}>Renew peer typing</Button>

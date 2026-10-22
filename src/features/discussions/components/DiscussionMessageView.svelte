@@ -218,6 +218,9 @@
         </div>
       {:else}
         <span class="sr-only">{name} · {formatTime(message.createdAt)}</span>
+        {#if status === 'sending'}
+          <span class="sr-only" role="status">{m.workspace_discussion_sending_label()}</span>
+        {/if}
       {/if}
 
       <div>
@@ -345,6 +348,10 @@
 {/snippet}
 
 <style>
+  article {
+    transition: opacity var(--spring-fast) var(--spring-fast-ease);
+  }
+
   .discussion-actions-reveal {
     position: absolute;
     top: 100%;
@@ -390,6 +397,10 @@
   }
 
   @container style(--motion-reduced: 1) {
+    article {
+      transition: none;
+    }
+
     .discussion-actions {
       transition: none;
       transform: none;

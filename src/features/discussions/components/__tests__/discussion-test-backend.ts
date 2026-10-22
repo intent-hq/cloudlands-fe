@@ -29,6 +29,7 @@ export function installDiscussionTestBackend(
   onRequests: (requests: Array<{ method: string; params: unknown }>) => void,
   options: {
     deferSend?: boolean;
+    recentHistory?: boolean;
     rejectSend?: 'invalid' | 'forbidden';
     messageActions?: boolean;
     agentMessaging?: boolean;
@@ -94,8 +95,8 @@ export function installDiscussionTestBackend(
       conversationId: 'default',
       sequence,
       body,
-      author,
-      createdAt: '2026-10-14T12:00:00Z',
+      author: options.recentHistory ? self : author,
+      createdAt: options.recentHistory ? new Date().toISOString() : '2026-10-14T12:00:00Z',
       ...(options.agentMessaging ? { recipientAgentIds: [] } : {}),
       ...(options.agentActivity ? { agentMentions: [], agentActivity: [] } : {}),
       ...(options.messageActions !== false

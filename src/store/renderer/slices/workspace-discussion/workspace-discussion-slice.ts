@@ -79,6 +79,8 @@ export interface WorkspaceDiscussion {
   recipientsLocked: boolean;
   createdConversationId: string | null;
   messages: Collection<DiscussionMessage, 'id'>;
+  /** Send acknowledgements relate server IDs to local retry keys for stable row identity. */
+  messageKeys: Record<string, string>;
   pending: Collection<PendingDiscussionMessage, 'id'>;
   draft: string;
   agentMentions: DiscussionAgentMention[];
@@ -141,6 +143,7 @@ export const emptyDiscussion: WorkspaceDiscussion = {
   recipientsLocked: false,
   createdConversationId: null,
   messages: createCollection('id'),
+  messageKeys: {},
   pending: createCollection('id'),
   draft: '',
   agentMentions: [],
@@ -852,6 +855,7 @@ workspaceDiscussionReducer.with(
       (sent.replyVersion === undefined || row.replyVersion === sent.replyVersion);
     const settled = {
       ...receive(row, [message]),
+      messageKeys: { ...row.messageKeys, [message.id]: messageId },
       pending: createCollection('id', pending),
       draft: clearDraft ? '' : row.draft,
       agentMentions: clearDraft ? [] : row.agentMentions,
@@ -871,6 +875,7 @@ workspaceDiscussionReducer.with(
         {
           ...settled,
           messages: receive(destination ?? emptyDiscussion, [message]).messages,
+          messageKeys: { ...destination?.messageKeys, [message.id]: messageId },
           epoch: destination?.epoch ?? state.nextEpoch + 1,
           authorized: true,
           recipientPrincipalIds: [],

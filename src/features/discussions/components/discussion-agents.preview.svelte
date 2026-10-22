@@ -3,6 +3,7 @@
   interface Props {
     oldDaemon?: boolean;
     failSend?: boolean;
+    deferSend?: boolean;
   }
   export const preview = definePreview<Props>({
     id: 'discussion-agents',
@@ -11,6 +12,7 @@
     states: {
       ready: { props: {} },
       retry: { props: { failSend: true } },
+      sending: { props: { deferSend: true } },
       'old-daemon': { props: { oldDaemon: true } },
     },
   });
@@ -18,7 +20,7 @@
 
 <script lang="ts">
   import DiscussionHost from './__tests__/DiscussionHost.svelte';
-  let { oldDaemon = false, failSend = false }: Props = $props();
+  let { oldDaemon = false, failSend = false, deferSend = false }: Props = $props();
 </script>
 
-<DiscussionHost agentMessaging={!oldDaemon} {failSend} />
+<DiscussionHost agentMessaging={!oldDaemon} {failSend} {deferSend} />
