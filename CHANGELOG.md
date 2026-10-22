@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.230.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.230.0...v2.230.1) (2026-10-22)
+
+
+### 🐛 Bug Fixes
+
+* forward browser ports through Tailcat connections ([#3605](https://github.com/intent-hq/cloudlands-fe/issues/3605)) ([0453603](https://github.com/intent-hq/cloudlands-fe/commit/0453603e7e24c2a0357e50f325d5edb6eb27fb51))
+
 ## [2.230.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.229.1...v2.230.0) (2026-10-22)
 
 
