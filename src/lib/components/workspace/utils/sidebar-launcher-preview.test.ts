@@ -123,15 +123,24 @@ describe('sidebar launcher primary ordering', () => {
     expect(restoredState.runningAgents.map(({ id }) => id)).toEqual(['retired']);
   });
 
-  it('keeps the Spec note first without changing the remaining root-note order', () => {
+  it.each([1, 6, 26])('shows only Spec with %i other notes and no overflow', (count) => {
     const notes = [
-      { id: 'context', title: 'Context' },
+      ...Array.from({ length: count }, (_, index) => ({ id: `note-${index}`, title: 'Note' })),
       { id: 'spec', title: 'Spec' },
-      { id: 'notes', title: 'Notes' },
     ] as Note[];
 
-    expect(deriveNoteLauncherItems(notes, 6, () => true).launcherNotes.map(({ id }) => id)).toEqual(
-      ['spec', 'context', 'notes'],
-    );
+    const state = deriveNoteLauncherItems(notes, 6, () => true);
+
+    expect(state.launcherNotes.map(({ id }) => id)).toEqual(['spec']);
+    expect(state.overflowCount).toBe(0);
+    expect(state.totalNotes).toBe(count + 1);
+  });
+
+  it('keeps note shortcuts available when Spec is absent', () => {
+    const notes = [{ id: 'first' }, { id: 'second' }, { id: 'third' }] as Note[];
+    const state = deriveNoteLauncherItems(notes, 2, () => true);
+
+    expect(state.launcherNotes.map(({ id }) => id)).toEqual(['first', 'second']);
+    expect(state.overflowCount).toBe(1);
   });
 });
