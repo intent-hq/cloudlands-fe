@@ -98,7 +98,6 @@ for (const { name, hostWidth, editable } of [
     await primary.focus();
     await expect(primary).toBeFocused();
     await expect(primary).toHaveCSS('outline-style', 'solid');
-    await expect(primary).toHaveCSS('outline-width', '2px');
     expect(await measure(component)).toEqual(initial);
 
     await primary.press('Enter');

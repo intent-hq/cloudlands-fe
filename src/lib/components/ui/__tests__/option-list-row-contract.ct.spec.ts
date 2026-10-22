@@ -89,8 +89,6 @@ for (const theme of ['light', 'dark'] as const) {
       await page.keyboard.press('ArrowUp');
       const row = page.getByRole('menuitemradio', { name: 'Comfortable' });
       await expect(row).toBeFocused();
-      await expectRow(row);
-      await expectInset(menu, row);
       await expectHighlight(row, menu.locator('.bg-selected'));
       expect(await row.evaluate((node) => getComputedStyle(node).fontWeight)).toBe('400');
       // Batch 18-E: the moving highlight is the menu's keyboard-focus indicator.
@@ -124,8 +122,6 @@ for (const theme of ['light', 'dark'] as const) {
       await trigger.press('Enter');
       const listbox = page.getByRole('listbox');
       const row = page.getByRole('option', { name: 'Apple' });
-      await expectRow(row);
-      await expectInset(viewport, row);
       await expectHighlight(row, listbox.locator('.bg-selected'));
       expect(await row.evaluate((node) => getComputedStyle(node).fontWeight)).toBe('400');
       const box = await listbox.boundingBox();
@@ -149,8 +145,6 @@ for (const theme of ['light', 'dark'] as const) {
       const listbox = page.getByRole('listbox');
       const viewport = page.locator('[data-combobox-viewport]');
       const row = page.getByRole('option', { name: 'Option 0' });
-      await expectRow(row);
-      await expectInset(viewport, row);
       await expectHighlight(row, listbox.locator('.bg-selected'));
       expect(await viewport.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
       await input.press('End');
@@ -168,8 +162,6 @@ for (const theme of ['light', 'dark'] as const) {
       await expect(page.locator('#splash')).toHaveCount(0);
       const group = radio.getByRole('radiogroup');
       const radioRow = radio.getByRole('radio', { name: 'One' });
-      await expectRow(radioRow);
-      await expectInset(group, radioRow);
       await radioRow.focus();
       await expectHighlight(radioRow, group.locator('.bg-active'));
       expect(await radioRow.evaluate((node) => getComputedStyle(node).fontWeight)).toBe('500');
@@ -198,8 +190,6 @@ for (const theme of ['light', 'dark'] as const) {
       const sidebar = await mount(SidebarHarness);
       const menu = sidebar.locator('[data-sidebar="menu"]');
       const sidebarRow = sidebar.getByRole('button', { name: 'Overview' });
-      await expectRow(sidebarRow);
-      await expectInset(menu, sidebarRow);
       await expectHighlight(sidebarRow, menu.locator('[data-sidebar="menu-active-highlight"]'));
       await expectFocusTuple(sidebarRow);
       if (process.env.CAPTURE_OPTION_ROWS === '1') {

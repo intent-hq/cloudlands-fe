@@ -251,10 +251,3 @@ test('maps every state to a forced-colors system surface with a CanvasText outli
     canvasText,
   );
 });
-
-test('honors an explicit legacy numeric size', async ({ mount }) => {
-  const component = await mount(AgentAvatarWaitingHost);
-  const legacy = component.getByTestId('legacy-sized-avatar').locator('[data-agent-avatar]');
-
-  await expect(legacy).toHaveCSS('width', '18px');
-});

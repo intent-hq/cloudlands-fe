@@ -1,6 +1,21 @@
 import { expect, test } from '../../../../../test/ct-test';
 import WorkspaceTokenUsageAccessibilityHost from './WorkspaceTokenUsageAccessibilityHost.svelte';
 
+type Rgba = [number, number, number, number];
+
+function luminance([red, green, blue]: Rgba): number {
+  const channels = [red, green, blue].map((channel) => {
+    const value = channel / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+}
+
+function contrastRatio(first: Rgba, second: Rgba): number {
+  const [lighter, darker] = [luminance(first), luminance(second)].sort((a, b) => b - a);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
 test('bridges the body portal in logical keyboard order and exits non-modally', async ({
   mount,
   page,
@@ -67,6 +82,61 @@ test('bridges the body portal in logical keyboard order and exits non-modally', 
   await expect(following).toBeFocused();
   await expect(details).toHaveCount(0);
 });
+
+for (const scenario of [
+  { name: 'all-cost workspace', costOnly: 'all', costAmount: 2.5, costText: 'Cost $2.50' },
+  { name: 'reported-zero workspace', costOnly: 'all', costAmount: 0, costText: 'Cost $0.00' },
+  { name: 'mixed matrix', costOnly: 'mixed', costAmount: 2.5, costText: 'Cost $2.50' },
+] as const) {
+  test(`keeps keyboard navigation on token-bearing scopes in ${scenario.name}`, async ({
+    mount,
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
+      props: {
+        costOnly: scenario.costOnly,
+        costAmount: scenario.costAmount,
+        surroundingControls: true,
+      },
+    });
+    const disclosure = component.getByTestId('token-usage-disclosure');
+    const details = page.getByTestId('token-usage-details');
+    const cost = page.getByTestId('token-usage-total-cost');
+    const mixed = scenario.costOnly === 'mixed';
+    await expect(disclosure).toHaveAccessibleDescription(`${mixed ? 100 : 0} tokens used`);
+    await expect(cost).toHaveCount(0);
+    await disclosure.focus();
+    await page.keyboard.press('Enter');
+    await expect(details).toBeVisible();
+    if (mixed) {
+      for (const name of ['By agent', 'By model']) {
+        await page.keyboard.press('Tab');
+        const control = details.getByRole('radiogroup', { name }).getByRole('radio');
+        await expect(control).toHaveCount(1);
+        await expect(control).toBeFocused();
+        await page.keyboard.press('End');
+        await expect(control).toBeFocused();
+        await expect(control).toBeChecked();
+      }
+      await expect(cost).toHaveCount(0);
+    } else {
+      await expect(details.getByRole('radiogroup')).toHaveCount(0);
+      await expect(cost).toHaveText(scenario.costText);
+    }
+    await expect(details.locator('.token-summary .animated-number-value')).toHaveText(
+      mixed ? '100' : '0',
+    );
+    await expect(details.locator('.message-composition-label .animated-number-value')).toHaveText(
+      '0 human and 0 agent messages',
+    );
+    await expect(disclosure).toHaveAccessibleDescription(`${mixed ? 100 : 0} tokens used`);
+    await page.keyboard.press('Tab');
+    await expect(component.getByTestId('following-workspace-control')).toBeFocused();
+    await expect(cost).toHaveCount(0);
+    await expect(details).toHaveCount(0);
+  });
+}
 
 for (const localeTheme of [
   { locale: 'en', theme: 'light', initial: 'Cost $0.12', selected: 'Cost $0.34' },
@@ -434,11 +504,9 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
     const currentAgentAlpha = agentSection.locator('.breakdown-item-control').first();
     await currentAgentAlpha.focus();
     await expect(currentAgentAlpha).toBeFocused();
-    // Reduced motion still gives the focus outline a nonzero CSS transition.
-    // DOM focus alone does not guarantee that its final width has settled.
     await expect(agentSection.locator('.breakdown-stack:focus-within')).toHaveCSS(
-      'outline-width',
-      '2px',
+      'outline-color',
+      navigatorColors.neutralFocusColor,
     );
     const focus = await currentAgentAlpha.evaluate((element) => {
       const stack = element.closest<HTMLElement>('.breakdown-stack')!;
@@ -446,7 +514,6 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
         focused: document.activeElement === element,
         outlineColor: getComputedStyle(stack).outlineColor,
         outlineStyle: getComputedStyle(stack).outlineStyle,
-        outlineWidth: getComputedStyle(stack).outlineWidth,
       };
     });
     expect(focus).toEqual({

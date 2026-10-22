@@ -66,6 +66,8 @@ describe('blanket geometry snapshot ban', () => {
 
   it.each([
     'const box = await control.boundingBox(); expect(box.width).toBe(160);',
+    'await expect(control).toHaveCSS("width", "160px");',
+    'await expect(control).toHaveCSS("outline-width", "2px");',
     'const box = control.getBoundingClientRect().toJSON(); expect(box.width).toBe(160);',
     'const boxes = await controls.evaluateAll(nodes => nodes.map(n => n.getBoundingClientRect())); const widths = boxes.map(box => box.width); expect(widths).toEqual([160, 160]);',
     'const box = await control.boundingBox(); expect(box.width / box.height).toBe(2);',

@@ -376,6 +376,16 @@ function geometryBaselineViolations(file, source) {
     if (ts.isCallExpression(node)) {
       const method = memberName(node.expression);
       if (
+        method === 'toHaveCSS' &&
+        node.arguments.length >= 2 &&
+        ts.isStringLiteralLike(node.arguments[0]) &&
+        /^(?:(?:min-|max-)?(?:width|height)|(?:padding|margin|inset)(?:-.+)?|(?:row-|column-)?gap|top|right|bottom|left|(?:border(?:-[a-z]+)*|outline)-(?:width|radius|offset)|font-size|line-height)$/.test(
+          node.arguments[0].text,
+        ) &&
+        fixedNumbers(node.arguments[1])
+      )
+        report(node);
+      if (
         equalityMatchers.has(method) ||
         /^(?:toBeLessThan|toBeLessThanOrEqual)$/.test(method ?? '') ||
         /^(?:toMatchSnapshot|toMatchInlineSnapshot)$/.test(method ?? '')
@@ -415,7 +425,7 @@ function geometryBaselineViolations(file, source) {
 
 function sourceViolations(file, content) {
   if (
-    !/defineGeometrySnapshotSuite|SANDBOX_GEOMETRY_UPDATE|geometry-snapshot|getBoundingClientRect|getClientRects|boundingBox|getBBox|getComputedStyle|(?:offset|client|scroll)(?:Width|Height|Top|Left)/.test(
+    !/defineGeometrySnapshotSuite|SANDBOX_GEOMETRY_UPDATE|geometry-snapshot|toHaveCSS|getBoundingClientRect|getClientRects|boundingBox|getBBox|getComputedStyle|(?:offset|client|scroll)(?:Width|Height|Top|Left)/.test(
       content,
     )
   )

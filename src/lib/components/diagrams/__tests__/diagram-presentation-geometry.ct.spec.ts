@@ -12,5 +12,4 @@ test('keeps diagram control focus visible', async ({ mount }) => {
   await trigger.focus();
   await expect(trigger).toBeFocused();
   await expect(trigger).toHaveCSS('outline-style', 'solid');
-  await expect(trigger).toHaveCSS('outline-width', '2px');
 });

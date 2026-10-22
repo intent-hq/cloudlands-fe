@@ -103,7 +103,6 @@ for (const key of ['Enter', 'Space']) {
     }
     await expect(clearAll).toBeFocused();
     await expect(clearAll).toHaveCSS('outline-style', 'solid');
-    await expect(clearAll).toHaveCSS('outline-width', '1px');
     await page.keyboard.press(key);
     await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
     await expect(clearAll).toHaveCount(0);

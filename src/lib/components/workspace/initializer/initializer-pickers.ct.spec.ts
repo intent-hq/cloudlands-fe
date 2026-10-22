@@ -456,7 +456,6 @@ for (const theme of ['light', 'dark']) {
     await expect(trigger).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     await expect(surface).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     await expect(trigger).toHaveCSS('border-style', 'solid');
-    await expect(trigger).toHaveCSS('border-width', '1px');
     await expect(trigger).not.toHaveCSS('border-color', 'rgba(0, 0, 0, 0)');
     const rect = await trigger.boundingBox();
     for (const state of ['hover', 'focus', 'open']) {

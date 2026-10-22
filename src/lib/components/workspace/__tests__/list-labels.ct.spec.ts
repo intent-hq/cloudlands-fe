@@ -24,7 +24,6 @@ test('shell labels retain normal weight and size when opening scripts and termin
   for (const name of ['Development server', 'Run tests', 'Build shell']) {
     const label = shell.getByText(name, { exact: true });
     await expectNormal(label);
-    await expect(label).toHaveCSS('font-size', '15px');
   }
   await shell.getByRole('button', { name: 'Running Development server', exact: true }).click();
   await expect(shell).toHaveAttribute('data-open-tab', 'Development server');
