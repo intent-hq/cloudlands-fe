@@ -9121,6 +9121,58 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
       expect(row.pullRequests).toEqual([rootPull({ isInMergeQueue: true })]);
     });
 
+    it('discards a read that a newer pr:* event invalidated and re-reads', async () => {
+      await seedListedRow({
+        prNumber: 2590,
+        prStatus: 'Open',
+        activePullRequest: rootPull(),
+        pullRequests: [rootPull()],
+      });
+      // First read: a snapshot taken before the unlink below.
+      let resolveStale!: (value: unknown) => void;
+      const stale = new Promise((resolve) => (resolveStale = resolve));
+      const fresh = workspaceRow({ pullRequests: [rootPull({ isInMergeQueue: true })] });
+      let reads = 0;
+      backendRequestSpy.mockImplementation((method: string) => {
+        if (method !== 'workspace.get') return undefined;
+        reads += 1;
+        return reads === 1 ? stale : Promise.resolve({ workspace: fresh });
+      });
+      await primeBridge();
+
+      emitGitRoot('gitRoot:updated');
+      await settle();
+      capturedHandlers[0]!({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-pr-unlinked-mid-read',
+            workspaceId: PR_WS,
+            timestamp: '2026-10-22T04:07:24Z',
+            type: 'pr:unlinked',
+            actor: { type: 'system' },
+            data: { workspaceId: PR_WS },
+          },
+        },
+      });
+      resolveStale({
+        workspace: workspaceRow({
+          prNumber: 2590,
+          prStatus: 'Open',
+          activePullRequest: rootPull(),
+          pullRequests: [rootPull()],
+        }),
+      });
+      await settle();
+
+      expect(workspaceGets()).toHaveLength(2);
+      const row = await readWorkspace();
+      // The stale snapshot never restored the unlinked active PR.
+      expect(row.activePullRequest ?? undefined).toBeUndefined();
+      expect(row.prNumber).toBeUndefined();
+      expect(row.pullRequests).toEqual([rootPull({ isInMergeQueue: true })]);
+    });
+
     it('never reads or adds a workspace this window does not hold', async () => {
       served = workspaceRow({ id: 'ws-not-loaded', pullRequests: [rootPull()] });
       await primeBridge();

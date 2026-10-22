@@ -2216,6 +2216,12 @@ function handlePrEvent(
   // slice folds it through `bulkUpdateWorkspaceEntities`, which is the shared
   // path for partial merges (see workspace-slice `.with(bulkUpdateWorkspaceEntities, ...)`).
   appStore.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, changes)]));
+  // Invalidate any gitRoot re-read already in flight: its snapshot may
+  // predate this event's PR fields ({@link refreshWorkspacePrPoolFromGitRoot}).
+  prEventRevisionByWorkspace.set(
+    workspaceId,
+    (prEventRevisionByWorkspace.get(workspaceId) ?? 0) + 1,
+  );
 }
 
 /**
@@ -2232,8 +2238,12 @@ function handlePrEvent(
  * already in flight could return a pool served before this root changed.
  * Only rows already in this window's store refresh — this never adds a
  * workspace. Single-flighted per workspace with one trailing follow-up for
- * events arriving mid-read; a routing dispose drops in-flight results.
+ * events arriving mid-read; a routing dispose drops in-flight results. A
+ * `pr:*` event landing mid-read bumps the workspace's PR revision: the read
+ * may predate it, so its result is discarded and re-read instead of
+ * overwriting the newer PR fields (or restoring an unlinked active PR).
  */
+const prEventRevisionByWorkspace = new Map<string, number>();
 const gitRootPoolRefreshInFlight = new Set<string>();
 const gitRootPoolRefreshFollowUp = new Set<string>();
 let gitRootPoolRefreshGeneration = 0;
@@ -2245,6 +2255,7 @@ async function refreshWorkspacePrPoolFromGitRoot(workspaceId: string): Promise<v
     return;
   }
   const generation = gitRootPoolRefreshGeneration;
+  const prRevision = prEventRevisionByWorkspace.get(workspaceId) ?? 0;
   gitRootPoolRefreshInFlight.add(workspaceId);
   try {
     const { backendRequest } = await import('$lib/client/live/backend-transport');
@@ -2252,7 +2263,11 @@ async function refreshWorkspacePrPoolFromGitRoot(workspaceId: string): Promise<v
       { workspace?: Workspace } | undefined;
     const workspace = response?.workspace;
     if (workspace && generation === gitRootPoolRefreshGeneration) {
-      appStore.dispatch(workspacePullRequestsRefreshed(workspaceId, workspace));
+      if ((prEventRevisionByWorkspace.get(workspaceId) ?? 0) === prRevision) {
+        appStore.dispatch(workspacePullRequestsRefreshed(workspaceId, workspace));
+      } else {
+        gitRootPoolRefreshFollowUp.add(workspaceId);
+      }
     }
   } catch {
     // Deleted workspace or transport error: the next list/event converges.
@@ -4709,6 +4724,7 @@ export function disposeDaemonEventsRoutingState(): void {
   gitRootPoolRefreshInFlight.clear();
   gitRootPoolRefreshFollowUp.clear();
   gitRootPoolRefreshGeneration += 1;
+  prEventRevisionByWorkspace.clear();
 }
 
 /** Test-only — reset stream accumulators and debounce state. */
