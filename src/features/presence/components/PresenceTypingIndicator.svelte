@@ -6,7 +6,10 @@
    */
   import { writable } from 'svelte/store';
   import { selectAgentTypingPeople } from '$store/renderer/slices/presence/presence-selectors';
-  import { SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS } from '$lib/components/chat/subscription-disclosure';
+  import {
+    OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS,
+    OPERATIONAL_ROW_TONE_CLASS,
+  } from '$lib/components/chat/operational-disclosure-row';
   import PresenceAvatarStack from './PresenceAvatarStack.svelte';
   import { presenceTypingLabel } from './presence-person';
 
@@ -33,13 +36,13 @@
 
 {#if label}
   <div
-    class="{SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS} subscription-card-row-inset flex min-h-7 min-w-0 items-center gap-2 {className}"
+    class="{OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} {OPERATIONAL_ROW_TONE_CLASS} flex min-h-7 min-w-0 items-center gap-[var(--operational-leading-gap)] px-[var(--operational-row-inline-padding)] {className}"
     role="status"
     aria-live="polite"
     data-presence-typing-indicator
   >
     <span
-      class="inline-flex min-w-(--agent-avatar-standard-surface-size) shrink-0 items-center justify-center"
+      class="inline-flex min-w-[var(--operational-leading-slot-size)] shrink-0 items-center justify-center"
     >
       <PresenceAvatarStack people={$typing$} size={16} decorative />
     </span>

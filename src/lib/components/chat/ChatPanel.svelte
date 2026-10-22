@@ -7790,6 +7790,7 @@
     >
       <div
         class="composer-prompt-lane chat-content-measure mx-auto w-full min-w-0"
+        class:regular-chat-content-inset={!isChiefWorkspace}
         data-testid="chat-composer-lane"
       >
         <div
