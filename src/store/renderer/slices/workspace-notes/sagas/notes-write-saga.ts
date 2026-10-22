@@ -8,6 +8,7 @@ import {
   join,
   put,
   race,
+  spawn,
   take,
   takeEvery,
   type SagaGenerator,
@@ -365,16 +366,18 @@ function* applyContentSaveResult(
   command: ContentCommand,
   sentRev: number | undefined,
   result: MutationResult,
-  truncatedReads = false,
+  support: boolean | 'unknown' = false,
 ): SagaGenerator<AppliedNoteContent> {
   const { workspaceId, noteId, seq } = command;
   const echoed = result.newContent ?? command.content;
   const nextRev = result.noteRev ?? (sentRev !== undefined ? sentRev + 1 : undefined);
   // The note grew past the view limit while the save was pending (§5.2): it is
-  // now too large to edit in the app. Switch to the render-only view at once.
-  const cut = truncatedReads && nextRev !== undefined ? cutNoteContentForView(echoed) : null;
+  // now too large to edit in the app, whatever the capability state. Never put
+  // the echo (or a draft rebased on it) in the editor cache; switch to the
+  // render-only view at once.
+  const cut = nextRev !== undefined ? cutNoteContentForView(echoed) : null;
   if (cut && nextRev !== undefined) {
-    return yield* call(switchToTruncatedView, command, nextRev, cut);
+    return yield* call(switchToTruncatedView, command, nextRev, cut, support);
   }
   // An echo with its rev is daemon text: a later chain may be based on it.
   if (result.newContent !== undefined && result.noteRev !== undefined) {
@@ -417,6 +420,7 @@ function* switchToTruncatedView(
   command: ContentCommand,
   rev: number,
   cut: { content: string; contentBytes: number },
+  support: boolean | 'unknown',
 ): SagaGenerator<AppliedNoteContent> {
   const { workspaceId, noteId } = command;
   const key = noteKey(workspaceId, noteId);
@@ -441,12 +445,37 @@ function* switchToTruncatedView(
     noteId,
   });
   if (unsaved !== undefined && unsaved !== command.content) offerUnsavedText(unsaved, 'too-large');
+  // Re-read only once the capability is known: bounded when supported, the
+  // full note only after an acknowledged hello without it. Until then the row
+  // stays render-only.
+  if (support === 'unknown') yield* spawn(rereadWhenCapabilityKnown, workspaceId, noteId);
+  else yield* call(rereadNote, workspaceId, noteId);
+  return { content: cut.content, rev };
+}
+
+function* rereadNote(workspaceId: string, noteId: string) {
   const read = readNoteRequested(workspaceId, noteId);
   read.promise.catch((error: unknown) =>
     logger.error('Failed to re-read a note that grew past the view limit', error),
   );
   yield* put(read);
-  return { content: cut.content, rev };
+}
+
+/** Bounded wait for an acknowledged hello before re-reading a note that grew. */
+const CAPABILITY_REREAD_ATTEMPTS = 20;
+const CAPABILITY_REREAD_DELAY_MS = 3_000;
+
+function* rereadWhenCapabilityKnown(workspaceId: string, noteId: string) {
+  for (let attempt = 0; attempt < CAPABILITY_REREAD_ATTEMPTS; attempt++) {
+    if ((yield* call(truncatedReadSupport)) !== 'unknown') {
+      yield* call(rereadNote, workspaceId, noteId);
+      return;
+    }
+    yield* delay(CAPABILITY_REREAD_DELAY_MS);
+  }
+  logger.warn('Capability still unknown; the grown note stays render-only until it is reopened', {
+    noteId,
+  });
 }
 
 /** The truncated-read capability: `'unknown'` while no hello is acknowledged. */
@@ -618,7 +647,7 @@ function* saveContent(command: ContentCommand): SagaGenerator<AppliedNoteContent
       return undefined;
     }
     mismatchRebased.delete(key);
-    return yield* call(applyContentSaveResult, command, rev, result, support === true);
+    return yield* call(applyContentSaveResult, command, rev, result, support);
   } catch (error) {
     logger.error('Failed to save note content', error);
     yield* call(refetchWorkspaceNotes, workspaceId);

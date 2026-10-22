@@ -791,6 +791,47 @@ describe('notesWriteSaga', () => {
       await run.task.toPromise();
     });
 
+    it('never caches an oversized echo while the capability is unknown, and re-reads once it is known', async () => {
+      vi.useFakeTimers();
+      vi.spyOn(appClient.notes, 'supportsTruncatedRead')
+        .mockRejectedValueOnce(new NoteCapabilityUnknownError()) // at save time
+        .mockRejectedValueOnce(new NoteCapabilityUnknownError()) // first re-read attempt
+        .mockResolvedValue(true); // hello acknowledged
+      const merged = 'body MINE\n' + 'x'.repeat(600_000);
+      const setContent = vi
+        .spyOn(appClient.notes, 'setContent')
+        .mockResolvedValue({ success: true, noteRev: 5, newContent: merged });
+      const run = harness();
+      served(run, note({ content: 'body\n' }));
+
+      run.channel.put(updateNoteContent(WS, NOTE, 'body MINE\n', true));
+      for (let i = 0; i < 10; i++) await settle();
+      expect(setContent.mock.calls[0]).toEqual([
+        NOTE,
+        'body MINE\n',
+        4,
+        WS,
+        { baseContentBytes: 5 },
+      ]);
+      const row = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
+      expect(row).toMatchObject({ contentTruncated: true, rev: 5 });
+      expect(row?.content.length).toBeLessThan(500_000);
+      expect(
+        run.actions.some(
+          (action) =>
+            (action.payload as { updates?: { content?: string } } | undefined)?.updates?.content ===
+            merged,
+        ),
+      ).toBe(false);
+      expect(run.actions.some((action) => action.type === readNoteRequested.type)).toBe(false);
+
+      await vi.runOnlyPendingTimersAsync();
+      for (let i = 0; i < 10; i++) await settle();
+      expect(run.actions.some((action) => action.type === readNoteRequested.type)).toBe(true);
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
     it('switches to the truncated view at the echo rev when the note grew during a save (probe G)', async () => {
       supports(true);
       const daemon = growingDaemon('body\n');
