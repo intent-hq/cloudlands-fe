@@ -248,17 +248,6 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     apply: { kind: 'redux-action', action: 'userPreferences/setLabsRemoteAgentsEnabled' },
   },
   {
-    path: 'labs.providerProfiles',
-    label: 'Provider profiles',
-    description: 'Whether the experimental Provider profiles lab is enabled.',
-    category: 'labs',
-    type: 'boolean',
-    source: 'local-storage',
-    storageKey: 'labs:providerProfilesEnabled',
-    defaultValue: false,
-    apply: { kind: 'redux-action', action: 'userPreferences/setLabsProviderProfilesEnabled' },
-  },
-  {
     path: 'theme.activePresetId',
     label: 'Theme preset',
     description: `Active built-in color theme preset ID. Available presets: ${THEME_PRESET_OPTIONS_DESCRIPTION}.`,

@@ -15,7 +15,10 @@
  */
 
 import type { TextBlockMedia } from '$shared/types/content-block';
-import { intentFileImageUrlToWorkspaceFileUrl } from './workspace-file-image';
+import {
+  intentFileImageUrlToWorkspaceFileUrl,
+  resolveRelativeMediaPath,
+} from './workspace-file-image';
 
 export const IMAGE_SIZED_ATTR = 'data-image-sized';
 
@@ -44,6 +47,7 @@ function stripWorkspaceFileVersion(src: string): string {
 function renderedSourceIndex(
   media: TextBlockMedia,
   workspaceId?: string,
+  relativeMediaBase?: string,
 ): Map<string, { width: number; height: number }> {
   const index = new Map<string, { width: number; height: number }>();
   for (const [key, dims] of Object.entries(media)) {
@@ -55,6 +59,16 @@ function renderedSourceIndex(
     for (const candidate of [...candidates]) {
       const workspaceFile = intentFileImageUrlToWorkspaceFileUrl(candidate, workspaceId);
       if (workspaceFile) candidates.add(workspaceFile);
+      if (relativeMediaBase !== undefined) {
+        const path = resolveRelativeMediaPath(candidate, relativeMediaBase);
+        if (path) {
+          const relativeFile = intentFileImageUrlToWorkspaceFileUrl(
+            `intent://local/file/${path.split('/').map(encodeURIComponent).join('/')}`,
+            workspaceId,
+          );
+          if (relativeFile) candidates.add(relativeFile);
+        }
+      }
     }
     for (const candidate of candidates) {
       if (!index.has(candidate)) index.set(candidate, entry);
@@ -73,9 +87,10 @@ export function stampMarkdownImageDimensions(
   html: string,
   media: TextBlockMedia | undefined,
   workspaceId?: string,
+  relativeMediaBase?: string,
 ): string {
   if (!media || !html.includes('<img')) return html;
-  const index = renderedSourceIndex(media, workspaceId);
+  const index = renderedSourceIndex(media, workspaceId, relativeMediaBase);
   if (index.size === 0) return html;
 
   // Quote-aware tag scan: sanitized `alt` / `title` values may contain a

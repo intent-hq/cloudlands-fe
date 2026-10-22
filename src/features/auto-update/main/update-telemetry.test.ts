@@ -49,6 +49,10 @@ describe('buildTelemetryFeedUrl', () => {
         source,
         trigger,
         daily,
+        weekly: daily,
+        monthly: false,
+        install: false,
+        age: '31-90d',
       }),
     );
     expect(url.origin + url.pathname).toBe('https://updates.intentapp.dev/desktop/stable');
@@ -58,6 +62,10 @@ describe('buildTelemetryFeedUrl', () => {
       ['src', source],
       ['k', trigger],
       ['d', daily ? '1' : '0'],
+      ['w', daily ? '1' : '0'],
+      ['m', '0'],
+      ['i', '0'],
+      ['a', '31-90d'],
     ]);
   });
 
@@ -69,6 +77,10 @@ describe('buildTelemetryFeedUrl', () => {
       source: 'dmg',
       trigger: 'manual',
       daily: false,
+      weekly: false,
+      monthly: false,
+      install: false,
+      age: 'unknown',
     });
     // electron-updater 6.x (util.newUrlFromBase) copies the base URL's search
     // onto every file it resolves relative to the feed.
@@ -77,7 +89,7 @@ describe('buildTelemetryFeedUrl', () => {
     const channelFile = new URL('latest-mac.yml', base);
     channelFile.search = base.search;
     expect(channelFile.href).toBe(
-      'https://updates.intentapp.dev/desktop/beta/latest-mac.yml?p=darwin-arm64&v=3.0.0-beta.1&src=dmg&k=manual&d=0',
+      'https://updates.intentapp.dev/desktop/beta/latest-mac.yml?p=darwin-arm64&v=3.0.0-beta.1&src=dmg&k=manual&d=0&w=0&m=0&i=0&a=unknown',
     );
   });
 });
@@ -121,6 +133,10 @@ describe('resolveUpdateFeed', () => {
     source: 'dmg' as const,
     trigger: 'periodic' as const,
     daily: false,
+    weekly: false,
+    monthly: false,
+    install: false,
+    age: 'unknown' as const,
   };
   const base = {
     channel: 'stable' as const,

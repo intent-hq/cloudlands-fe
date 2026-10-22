@@ -31,10 +31,18 @@ registerMockIpcHandler(BACKEND.GET_STATUS, async () => {
   };
 });
 
-// The mock has no acknowledged daemon hello. Do not advertise node authority.
+// The mock daemon acknowledges a hello with no node capabilities: no node
+// authority, and no truncated note reads (note views read unbounded, §5.2).
 registerMockIpcHandler(BACKEND.NODE_CAPABILITIES, async () => ({
   ok: true,
-  result: { server: { capabilities: null } },
+  result: { server: { capabilities: {} } },
+}));
+
+// Principal admission also requires an acknowledged connection, which this mock lacks.
+registerMockIpcHandler(BACKEND.READ_PRINCIPAL, async () => ({
+  ok: false,
+  // i18n-ignore (internal diagnostic; principal hydration renders its localized state)
+  error: { code: 'UNAVAILABLE', message: 'Principal discovery unavailable' },
 }));
 
 /**

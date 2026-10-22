@@ -1088,11 +1088,9 @@
                                   ? workspace.title
                                   : m.workspace_links_untitled_label()}
                               selectable="single"
-                              bind:selectedKeys={
-                                () => (selectedWorkspace ? [selectedWorkspace.id] : []),
-                                (keys) =>
-                                  updateView({ selectedId: keys[0] ? String(keys[0]) : null })
-                              }
+                              selectedKeys={selectedWorkspace ? [selectedWorkspace.id] : []}
+                              onSelectedKeysChange={(keys) =>
+                                updateView({ selectedId: keys[0] ? String(keys[0]) : null })}
                               ariaLabel={label}
                               class={scroll
                                 ? 'min-h-0 flex-1 overflow-y-auto px-5 pb-4'

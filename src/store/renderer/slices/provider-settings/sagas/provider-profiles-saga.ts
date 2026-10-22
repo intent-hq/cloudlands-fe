@@ -25,6 +25,8 @@ import {
   providerProfileDeleteRequested,
   providerProfileMutationFailed,
   providerProfileMutationSucceeded,
+  providerProfileReorderRequested,
+  providerProfileReorderSucceeded,
   providerProfilesChanged,
   providerProfilesLoadFailed,
   providerProfilesLoaded,
@@ -37,6 +39,7 @@ import {
 import {
   selectProfileCapableProviderIds,
   selectProviderProfile,
+  selectProviderProfileMutations,
   selectProviderSettingsHasOpenSession,
   selectProviderProfilesLoadStatus,
   selectProviderProfilesRevision,
@@ -141,15 +144,49 @@ function takeEnv(envRef: number | undefined): EnvEntryWrite[] | undefined {
 type MutationAction =
   | ReturnType<typeof providerProfileCreateRequested>
   | ReturnType<typeof providerProfileUpdateRequested>
-  | ReturnType<typeof providerProfileDeleteRequested>;
+  | ReturnType<typeof providerProfileDeleteRequested>
+  | ReturnType<typeof providerProfileReorderRequested>;
+
+/**
+ * Save one base provider's order. The slice already shows it. A request the
+ * slice ignored (another reorder of that base was pending) is not sent. A
+ * rejection keeps no client snapshot: the list is re-read and the daemon's
+ * saved order wins.
+ */
+function* runReorder(action: ReturnType<typeof providerProfileReorderRequested>) {
+  const [{ requestId, baseProviderId, profileIds }] = action.payload;
+  if ((yield* selectProviderProfileMutations.effect())[requestId]?.status !== 'pending') return;
+  try {
+    const result = yield* call([appClient.providers, appClient.providers.reorderProfiles], {
+      baseProviderId,
+      profileIds,
+    });
+    yield* put(providerProfileReorderSucceeded(requestId, result.profiles, result.revision));
+  } catch (error) {
+    const failure = classifyProviderProfileError(error);
+    logger.warn('Provider profile reorder rejected', { kind: failure.kind });
+    yield* put(providerProfileMutationFailed(requestId, failure));
+    yield* put(providerProfilesRequested());
+  }
+}
 
 function* runMutation(deps: ProviderProfilesSagaDeps, action: MutationAction) {
+  if (action.type === providerProfileReorderRequested.type) {
+    yield* call(runReorder, action as ReturnType<typeof providerProfileReorderRequested>);
+    return;
+  }
   const isDelete = (a: MutationAction): a is ReturnType<typeof providerProfileDeleteRequested> =>
     a.type === providerProfileDeleteRequested.type;
-  const requestId = isDelete(action) ? action.payload[0].requestId : action.payload.requestId;
+  const requestId = isDelete(action)
+    ? action.payload[0].requestId
+    : (
+        action as
+          | ReturnType<typeof providerProfileCreateRequested>
+          | ReturnType<typeof providerProfileUpdateRequested>
+      ).payload.requestId;
   try {
     if (action.type === providerProfileCreateRequested.type) {
-      const { baseProviderId, name, envRef } = (
+      const { baseProviderId, name, envRef, backup } = (
         action as ReturnType<typeof providerProfileCreateRequested>
       ).payload;
       const env = takeEnv(envRef);
@@ -157,6 +194,7 @@ function* runMutation(deps: ProviderProfilesSagaDeps, action: MutationAction) {
         baseProviderId,
         name,
         ...(env ? { env } : {}),
+        ...(backup !== undefined ? { backup } : {}),
       });
       yield* put(
         providerProfileMutationSucceeded(requestId, {
@@ -166,7 +204,7 @@ function* runMutation(deps: ProviderProfilesSagaDeps, action: MutationAction) {
       );
       yield* fork(checkProfile, deps, result.profile, true);
     } else if (action.type === providerProfileUpdateRequested.type) {
-      const { profileId, name, envRef } = (
+      const { profileId, name, envRef, backup } = (
         action as ReturnType<typeof providerProfileUpdateRequested>
       ).payload;
       const env = takeEnv(envRef);
@@ -174,6 +212,7 @@ function* runMutation(deps: ProviderProfilesSagaDeps, action: MutationAction) {
         profileId,
         ...(name !== undefined ? { name } : {}),
         ...(env ? { env } : {}),
+        ...(backup !== undefined ? { backup } : {}),
       });
       yield* put(
         providerProfileMutationSucceeded(requestId, {
@@ -211,6 +250,7 @@ function* mutationLoop(deps: ProviderProfilesSagaDeps) {
       providerProfileCreateRequested,
       providerProfileUpdateRequested,
       providerProfileDeleteRequested,
+      providerProfileReorderRequested,
     ],
     buffers.expanding(),
   );

@@ -129,15 +129,14 @@ export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
         };
       },
     },
-    // Settings → Labs → Provider profiles off: saved profiles exist, but no
-    // profile management is offered.
-    'profiles-labs-off': {
+    // Backup profiles: reorder with drag or arrow keys on the handle; backups carry a badge.
+    'profiles-backup': {
       props: {},
       setup: () => {
         const restoreProviders = setupProviderSelector();
         const restoreProfiles = setupProviderProfilesPreview({
           appOwned: true,
-          labsEnabled: false,
+          withBackups: true,
         });
         return () => {
           restoreProfiles();

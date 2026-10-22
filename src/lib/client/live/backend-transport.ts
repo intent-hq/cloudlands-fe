@@ -84,11 +84,11 @@ export async function backendRequest<T = unknown>(
       // Read the strict boolean afresh without importing renderer selector declarations
       // into the main-process compilation graph shared by this client boundary.
       const remoteEnabled = () => store.state.userPreferences?.labsRemoteAgentsEnabled === true;
-      const generation = store.state.daemonHealth.connectionGeneration;
+      const generation = store.state.daemonHealth?.connectionGeneration;
       const checkConnection = () => {
         if (
           transport !== resolveBackendTransport() ||
-          generation !== store.state.daemonHealth.connectionGeneration
+          generation !== store.state.daemonHealth?.connectionGeneration
         )
           throw new Error(m.agent_placement_backendChanged());
       };
@@ -133,16 +133,27 @@ export async function backendRequest<T = unknown>(
   }
 }
 
+/** Read the principal and existing hello on one captured transport. */
+export async function readBackendPrincipal() {
+  const transport = resolveBackendTransport();
+  if (!transport.readPrincipal)
+    throw new BackendError({ code: 'UNAVAILABLE', message: 'Principal discovery unavailable' });
+  const result = await transport.readPrincipal();
+  if (transport !== resolveBackendTransport())
+    throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend transport changed' });
+  return result;
+}
+
 /** Observe node capabilities on one current transport without issuing client.hello. */
 export async function observeBackendNodeCapabilities(): Promise<unknown> {
   const transport = resolveBackendTransport();
   const { store } = await import('$store/renderer/store');
-  const generation = store.state.daemonHealth.connectionGeneration;
+  const generation = store.state.daemonHealth?.connectionGeneration;
   if (!transport.observeNodeCapabilities) throw new Error(m.agent_placement_unavailable());
   const result = await transport.observeNodeCapabilities();
   if (
     transport !== resolveBackendTransport() ||
-    generation !== store.state.daemonHealth.connectionGeneration
+    generation !== store.state.daemonHealth?.connectionGeneration
   )
     throw new Error(m.agent_placement_backendChanged());
   return result;

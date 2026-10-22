@@ -16,6 +16,7 @@ export const PROVIDER_PROFILES_LIST_METHOD = 'providers.profiles.list';
 export const PROVIDER_PROFILES_CREATE_METHOD = 'providers.profiles.create';
 export const PROVIDER_PROFILES_UPDATE_METHOD = 'providers.profiles.update';
 export const PROVIDER_PROFILES_DELETE_METHOD = 'providers.profiles.delete';
+export const PROVIDER_PROFILES_REORDER_METHOD = 'providers.profiles.reorder';
 export const PROVIDER_PROFILES_CHANGED_EVENT = 'providers:profiles-changed';
 
 const EnvEntryReadSchema = z.discriminatedUnion('kind', [
@@ -43,6 +44,8 @@ const ProviderProfileSchema = z
     createdAt: z.string(),
     updatedAt: z.string(),
     activation: ProfileReadActivationSchema.optional(),
+    /** Quota failover may switch to this profile. Absent reads as `false`. */
+    backup: z.boolean().optional(),
   })
   .passthrough();
 
@@ -66,6 +69,9 @@ export const ProviderProfileUpdateResponseSchema = z
 export const ProviderProfileDeleteResponseSchema = z
   .object({ profileId: z.string().min(1), revision: z.number() })
   .passthrough();
+export const ProviderProfileReorderResponseSchema = z
+  .object({ profiles: z.array(ProviderProfileSchema), revision: z.number() })
+  .passthrough();
 
 export type EnvEntryRead = z.infer<typeof EnvEntryReadSchema>;
 export type ProviderProfile = z.infer<typeof ProviderProfileSchema>;
@@ -74,6 +80,7 @@ export type ProviderProfilesListResult = z.infer<typeof ProviderProfilesListResp
 export type ProviderProfileCreateResult = z.infer<typeof ProviderProfileCreateResponseSchema>;
 export type ProviderProfileUpdateResult = z.infer<typeof ProviderProfileUpdateResponseSchema>;
 export type ProviderProfileDeleteResult = z.infer<typeof ProviderProfileDeleteResponseSchema>;
+export type ProviderProfileReorderResult = z.infer<typeof ProviderProfileReorderResponseSchema>;
 export type EnvEntryWrite =
   | { key: string; kind: 'set'; value: string }
   | { key: string; kind: 'unset' }
@@ -83,12 +90,46 @@ export interface ProviderProfileCreateParams {
   baseProviderId: string;
   name: string;
   env?: EnvEntryWrite[];
+  backup?: boolean;
 }
 
 export interface ProviderProfileUpdateParams {
   profileId: string;
   name?: string;
   env?: EnvEntryWrite[];
+  /** Omitted keeps the saved value. */
+  backup?: boolean;
+}
+
+/** `providers.profiles.reorder`: the complete new order of one base provider's profiles. */
+export interface ProviderProfileReorderParams {
+  baseProviderId: string;
+  profileIds: string[];
+}
+
+/**
+ * Apply `orderedIds` to the slots `baseProviderId`'s profiles occupy in
+ * `profiles`, leaving other base providers where they are (the daemon's
+ * saved-order rule). Returns `undefined` unless `orderedIds` names exactly
+ * that base provider's profiles, once each.
+ */
+export function permuteBaseProfiles<T extends { id: string; baseProviderId: string }>(
+  profiles: readonly T[],
+  baseProviderId: string,
+  orderedIds: readonly string[],
+  replacements: readonly T[] = [],
+): T[] | undefined {
+  const base = profiles.filter((profile) => profile.baseProviderId === baseProviderId);
+  const byId = new Map(base.map((profile) => [profile.id, profile]));
+  for (const replacement of replacements)
+    if (byId.has(replacement.id)) byId.set(replacement.id, replacement);
+  if (orderedIds.length !== base.length || new Set(orderedIds).size !== orderedIds.length)
+    return undefined;
+  if (!orderedIds.every((id) => byId.has(id))) return undefined;
+  let next = 0;
+  return profiles.map((profile) =>
+    profile.baseProviderId === baseProviderId ? byId.get(orderedIds[next++])! : profile,
+  );
 }
 
 /** One `invalid-params` failure (`data.fieldErrors[]`). */

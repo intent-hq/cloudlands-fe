@@ -156,6 +156,8 @@
   "layout_daemonStatus_version_label": ["de", "fr"],
   "layout_layoutHeader_presetWithShortcut_tooltip": ["de", "fr", "es"],
   "layout_navigation_commit_title": ["de", "fr", "es"],
+  "layout_noteTab_truncated_sizeKb_label": ["zh-CN", "zh-TW", "ja", "de", "es"],
+  "layout_noteTab_truncated_sizeMb_label": ["zh-CN", "zh-TW", "ja", "de", "es"],
   "layout_panelEmptyState_agent_label": ["de", "fr"],
   "layout_panelEmptyState_browser_label": ["de"],
   "layout_panelEmptyState_note_label": ["fr"],

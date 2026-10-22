@@ -9,6 +9,12 @@ import { tmpdir } from 'os';
 import { scrubHostNodeInjection } from './scrub-host-node-injection';
 import { scrubHostPythonInjection } from './scrub-host-python-injection';
 import { stripForkExecArgv } from '../scripts/vitest-fork-exec-argv.mjs';
+import { installShiftedTestClock } from './shifted-test-clock';
+
+// Nightly shifted-clock run (VITEST_SHIFTED_NOW, intent-hq/cloudlands-fe#3574): move the
+// real clock to an odd time of day before any test or vitest's fake timers read it.
+// A no-op when unset.
+installShiftedTestClock();
 
 // vitest.config.ts starts each fork with V8 flags (`--no-sparkplug`) that Node
 // rejects with ERR_WORKER_INVALID_EXEC_ARGV when a worker_threads.Worker is
@@ -145,6 +151,10 @@ if (typeof window !== 'undefined') {
     invoke: vi.fn(async (channel: string, data?: any) => {
       // Return mock responses based on channel
       switch (channel) {
+        // An acknowledged daemon hello with no node capabilities: no node
+        // authority and no truncated note reads (suites opt in explicitly).
+        case 'backend:node-capabilities':
+          return { ok: true, result: { server: { capabilities: {} } } };
         case 'user-rules:get-formatted':
           return {
             success: true,

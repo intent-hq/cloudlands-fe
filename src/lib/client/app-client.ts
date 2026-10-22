@@ -82,6 +82,8 @@ import type {
   ProviderProfileCreateParams,
   ProviderProfileCreateResult,
   ProviderProfileDeleteResult,
+  ProviderProfileReorderParams,
+  ProviderProfileReorderResult,
   ProviderProfilesListResult,
   ProviderProfileUpdateParams,
   ProviderProfileUpdateResult,
@@ -171,6 +173,12 @@ export interface MutationResult extends SubmissionCorrelation {
    * `current` into the domain entity (`Note` / `WorkspaceTask`) before returning.
    */
   conflict?: { current: unknown };
+  /**
+   * Whole-content write refused by the truncated-read write guard (§5.2
+   * "Truncated note reads"): `-32602` with `data.code === "content-base-mismatch"`.
+   * Nothing was written; the caller must re-read the note rather than retry.
+   */
+  contentBaseMismatch?: true;
   /**
    * Queued-message surface returned by `agents.queue` (`agent.queueMessage`,
    * §5.5). Surfaced on the uniform mutation result so the queue-on-send caller
@@ -1655,6 +1663,26 @@ export interface LineAttributionClient {
   computeNow(workspaceId: string, noteId: string): Promise<{ ok: boolean }>;
 }
 
+/** Options for `NotesClient.setContent` (`note.setContent`, §5.2). */
+export interface NoteSetContentOptions {
+  /**
+   * Truncated-read write guard: the UTF-8 size of the exact base text the
+   * draft was built from. Send only when `supportsTruncatedRead()` is true.
+   */
+  baseContentBytes?: number;
+}
+
+/** Options for `NotesClient.get` (`note.get`, §5.2). */
+export interface NoteGetOptions {
+  /**
+   * Opt in to a truncated read ("Truncated note reads", §5.2): a note larger
+   * than this many UTF-8 bytes comes back as a line-aligned prefix flagged
+   * `contentTruncated`. Callers must send it only when
+   * `NotesClient.supportsTruncatedRead()` is true (`noteTruncatedRead: 1`).
+   */
+  maxContentBytes?: number;
+}
+
 export interface NotesClient {
   /**
    * Notes of one workspace (`note.list`, §5.2). `options.projection: "slim"`
@@ -1672,7 +1700,9 @@ export interface NotesClient {
    * note), so callers that know the workspace MUST pass it rather than relying
    * on the live client's last-writer-wins resolver cache.
    */
-  get(noteId: string, workspaceId?: string): Promise<Note | null>;
+  get(noteId: string, workspaceId?: string, options?: NoteGetOptions): Promise<Note | null>;
+  /** Whether the daemon advertises truncated note reads (`noteTruncatedRead: 1`, §5.2). */
+  supportsTruncatedRead(): Promise<boolean>;
   subscribe(handler: SubscriptionHandler<Note[]>): Unsubscribe;
   /** Create a note (`note.create`); the live client attaches an idempotencyKey (§5.6). */
   create(request: CreateNoteRequest): Promise<MutationResult>;
@@ -1690,6 +1720,7 @@ export interface NotesClient {
     content: string,
     expectedVersion?: number,
     workspaceId?: string,
+    options?: NoteSetContentOptions,
   ): Promise<MutationResult>;
   /** Surgical, append-safe insert (`note.add`). `expectedVersion` (§11.4-D) and `workspaceId` are optional. */
   add(
@@ -2192,6 +2223,7 @@ export interface ProvidersClient {
   createProfile(params: ProviderProfileCreateParams): Promise<ProviderProfileCreateResult>;
   updateProfile(params: ProviderProfileUpdateParams): Promise<ProviderProfileUpdateResult>;
   deleteProfile(profileId: string): Promise<ProviderProfileDeleteResult>;
+  reorderProfiles(params: ProviderProfileReorderParams): Promise<ProviderProfileReorderResult>;
 }
 
 /** Wire `period` mode for `stats.getUsage`. */

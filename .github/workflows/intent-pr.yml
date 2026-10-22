@@ -18,7 +18,7 @@ concurrency:
 
 env:
   # Number of intent-cache Linux runner slots: the route job bursts the heavy
-  # jobs to GitHub-hosted larger runners once this many intent-cache jobs are queued or running
+  # jobs to WarpBuild (see runner-route.yml) once this many intent-cache jobs are queued or running
   # ahead of this run. Set the CI_LINUX_HEAVY_SLOTS org or repo variable when
   # slots are added; no workflow change is needed, and a malformed value sends
   # every job hosted. Jobs still blocked on
@@ -32,15 +32,18 @@ env:
 jobs:
   # Fork PRs skip every checkout/routed job. CI Gate alone still runs without
   # checkout or permissions and fails red for the guarded skips.
-  # Decides where the heavy jobs (checks / build-web / test /
-  # test-integration) run:
-  # the intent-cache runner slots normally, or GitHub-hosted larger runners when every
-  # slot is occupied, the fleet is unavailable, or the CI_LINUX_RUNNER_DISABLED
-  # repository variable is `true` (ported from intentd's ci.yml route job).
+  # Decides where the heavy jobs (build-web / test / test-integration) run.
+  # Type Check & Lint (checks) runs on ubuntu-24.04 and keeps `needs: route`
+  # only as its fork-PR guard. The heavy jobs run on
+  # the intent-cache runner slots normally, or on their burst runner (WarpBuild,
+  # or GitHub when CI_WARPBUILD_DISABLED is `true`) when every slot is
+  # occupied, the fleet is unavailable, or the CI_LINUX_RUNNER_DISABLED
+  # repository variable is `true`. The script is the shared probe, identical
+  # to runner-route.yml in intent, intentd and here (runner-policy.test.cjs).
   # Runs on a small GitHub-hosted runner so the burst decision is independent of the
   # slots' queue: probing from a slot would queue behind the very backlog it
   # measures (and deadlock entirely with the slots offline). The probe FAILS
-  # OPEN TO GITHUB-HOSTED (gh-linux-8x): on API errors, when no online
+  # OPEN TO THE BURST RUNNER: on API errors, when no online
   # intent-cache runner is visible, or when an intent-cache job has sat queued
   # past the staleness cutoff, the heavy jobs burst instead of queueing behind
   # an offline fleet — CI must not deadlock when the slots are down. If the job itself fails (runner
@@ -65,20 +68,28 @@ jobs:
       linux_labels: ${{ steps.decide.outputs.linux_labels }}
       linux_burst: ${{ steps.decide.outputs.linux_burst }}
       slots: ${{ steps.decide.outputs.slots }}
+      cloud: ${{ steps.decide.outputs.cloud }}
     steps:
       - id: decide
         uses: actions/github-script@v9
         env:
           THRESHOLD: ${{ env.LINUX_BURST_THRESHOLD }}
           LINUX_RUNNER_DISABLED: ${{ vars.CI_LINUX_RUNNER_DISABLED }}
+          # Same switches and limits as runner-route.yml, so every caller honors them.
+          XL_THRESHOLD: ${{ vars.CI_LINUX_XL_SLOTS || '0' }}
+          WINDOWS_RUNNER_DISABLED: ${{ vars.CI_WINDOWS_RUNNER_DISABLED }}
+          MACOS_RUNNER_DISABLED: ${{ vars.CI_MACOS_RUNNER_DISABLED }}
+          # `true` sends every burst to GitHub-hosted runners instead of WarpBuild.
+          WARPBUILD_DISABLED: ${{ vars.CI_WARPBUILD_DISABLED }}
           # The routed heavy jobs; each reads outputs.slots[key] and only as
           # many get a slot as are free (see the slot-fitting note in the
           # script). Minutes are typical merge-queue durations; `events`
           # keeps a queue-only job from holding a slot on a PR; `shards: 4`
-          # gives each Unit Tests leg its own key (test-1..test-4).
+          # gives each Unit Tests leg its own key (test-1..test-4). Type Check
+          # & Lint is not listed: it runs on the free standard runner (see
+          # the `checks` job).
           SLOT_JOBS: >-
             [
-            {"key":"checks","label":"gh-linux-8x","minutes":14},
             {"key":"test","label":"gh-linux-8x","minutes":13,"shards":4},
             {"key":"build-web","label":"gh-linux-8x","minutes":4,"events":["merge_group"]},
             {"key":"test-integration","label":"gh-linux-8x","minutes":2,"events":["merge_group"]}
@@ -101,156 +112,172 @@ jobs:
           # burst is the fail-open default; it just never uses the slots).
           github-token: ${{ secrets.CI_QUEUE_READ_TOKEN || github.token }}
           script: |
-            // Only the intent-cache slots carry the `intent-cache` label, so no
-            // other self-hosted Linux runner picks these jobs up.
-            const fleet = ["self-hosted", "linux", "x64", "intent-cache"];
-            const hasLabels = (labels) => fleet.every(l => labels.some(x => String(x).toLowerCase() === l));
-            // All the routed heavy jobs burst to the 8-core / 32 GB runner:
-            // build-web needs well over 8 GB of heap with sourcemaps on
-            // (documented OOM history, monorepo#1074), and 32 GB clears its
-            // 16 GB Node heap cap comfortably.
-            const burst = ["gh-linux-8x"];
-            const threshold = Number(process.env.THRESHOLD || "2");
-            // A self-hosted job queued longer than this has no runner
-            // picking it up — treat the fleet as unavailable and burst.
-            const staleMs = 15 * 60 * 1000;
-            // FAIL OPEN TO BURST: the slots are only selected when the probe
-            // positively confirms (a) an online intent-cache runner
-            // visible to this repo (org-level list, or the repo-level
-            // fallback), (b) no intent-cache job stuck queued past the
-            // staleness cutoff, and (c) a free slot (queue depth below both
-            // the threshold and the online count). Any probe error — including a token that cannot
-            // list runners — routes to burst, so CI cannot queue-deadlock
-            // when the fleet is offline or unreadable (mirrors intentd's
-            // ci.yml route job).
-            let useBurst = true;
-            let reason = "fail-open default";
-            // Free slots: online slots (capped by the threshold) minus intent-cache jobs queued or running.
-            let free = 0;
-            // CI_LINUX_RUNNER_DISABLED=true forces every heavy job to GitHub-hosted runners.
-            if (process.env.LINUX_RUNNER_DISABLED === "true") {
-              reason = "disabled for maintenance";
-            } else try {
-              if (!Number.isInteger(threshold) || threshold < 0) throw new Error("invalid queue threshold");
-              // The intent-cache fleet is registered at the ORG level (shared
-              // across the repos via a runner group), so probe the org
-              // runner list first. That call needs the org-level
-              // "Self-hosted runners" read permission on the token (see the
-              // github-token comment above); when it errors, fall back to
-              // the repo-level list, which only sees repo-registered
-              // runners (currently none — the degraded mode keeps
-              // bursting). An empty list still routes to burst by design
-              // (never deadlock on an invisible fleet).
-              // NOTE: the org list is NOT scoped to the runner groups this
-              // repo can access, so the probe assumes every online
-              // intent-cache org runner is in a
-              // group visible to this repo. Ops invariant: keep the fleet's
-              // group visible to the CI repos, and never register
-              // generically-labeled org runners outside it — a matching but
-              // inaccessible runner would route jobs onto labels nothing
-              // can serve. (Group-scoped listing via the runner-groups API
-              // was considered and rejected: it needs extra calls per group
-              // and fails on plans without runner-group support, which
-              // would silently regress the probe to always-burst.)
+            // No checkout: routing never executes code from a pull request.
+            // Org runners with these labels must be in groups shared with all three CI repos.
+            const fleets = {
+              // Heavy jobs (compile Rust or run over ~5 minutes): 8 cores / 48 GB per slot.
+              linux: ['self-hosted', 'linux', 'x64', 'intent-cache'],
+              // 16-core jobs: 16 threads per slot.
+              xl: ['self-hosted', 'linux', 'x64', 'intent-cache-xl'],
+              arm: ['self-hosted', 'Linux', 'ARM64'],
+              windows: ['self-hosted', 'Windows', 'X64'],
+              macos: ['self-hosted', 'macOS', 'ARM64'],
+              intel: ['self-hosted', 'macOS', 'X64'],
+            };
+            const disabled = {
+              linux: process.env.LINUX_RUNNER_DISABLED === 'true',
+              xl: process.env.LINUX_RUNNER_DISABLED === 'true',
+              arm: process.env.LINUX_RUNNER_DISABLED === 'true',
+              windows: process.env.WINDOWS_RUNNER_DISABLED === 'true',
+              macos: process.env.MACOS_RUNNER_DISABLED === 'true',
+              intel: process.env.MACOS_RUNNER_DISABLED === 'true',
+            };
+            // Standard GitHub-hosted runners are free for public repositories, so
+            // jobs asking for them always run there and never take a self-hosted slot.
+            const free = ['ubuntu-22.04', 'ubuntu-24.04', 'ubuntu-latest', 'ubuntu-24.04-arm', 'windows-2022', 'windows-2025'];
+            // Paid GitHub labels and the WarpBuild runner each bursts to instead
+            // (same cores; Windows stays on Server 2022, macOS 15 keeps signed builds
+            // off macOS 26). Intel Macs have no WarpBuild equivalent and stay on GitHub.
+            const warp = {
+              'gh-linux-8x': 'warp-ubuntu-2404-x64-8x',
+              'gh-linux-16x': 'warp-ubuntu-2404-x64-16x',
+              'gh-linux-arm64-8x': 'warp-ubuntu-2404-arm64-8x',
+              'gh-windows-16x': 'warp-windows-2022-x64-16x',
+              'macos-26-xlarge': 'warp-macos-26-arm64-6x',
+              'macos-15-xlarge': 'warp-macos-15-arm64-6x',
+            };
+            // WarpBuild health is tracked per OS and architecture (ubuntu-x64, ubuntu-arm64, windows-x64, macos-arm64).
+            const family = (label) => {
+              const m = /^warp-(ubuntu|windows|macos)-.*-(x64|arm64)-/.exec(String(label).toLowerCase());
+              return m ? `${m[1]}-${m[2]}` : null;
+            };
+            // A queued job older than `minutes`; `unknownIsOld` decides a job whose age is unreadable.
+            const queuedOver = (j, minutes, unknownIsOld) => j.status === 'queued' &&
+              (Number.isFinite(Date.parse(j.created_at)) ? Date.parse(j.created_at) < Date.now() - minutes * 60 * 1000 : unknownIsOld);
+            const burst = Object.fromEntries(Object.keys(fleets).map(k => [k, true]));
+            const reasons = Object.fromEntries(Object.keys(fleets).map(k => [k, 'availability not established']));
+            // Free slots per Linux pool: online slots (capped by the threshold) minus jobs queued or running on them.
+            const slotsFree = {};
+            const pr = context.payload?.pull_request;
+            const fork = context.eventName === 'pull_request' && pr?.head?.repo?.full_name !== `${context.repo.owner}/${context.repo.repo}`;
+            // Fork pull requests never spend WarpBuild minutes; the kill switch sends everything to GitHub.
+            const warpOn = !fork && process.env.WARPBUILD_DISABLED !== 'true';
+            // A WarpBuild OS/architecture whose jobs sit queued for 10 minutes is treated as down.
+            // An unreadable queue says nothing about WarpBuild, so it keeps WarpBuild.
+            const warpStuck = Object.fromEntries(Object.values(warp).map(label => [family(label), false]));
+            try {
+              if (fork) throw new Error('fork pull request requires an isolated hosted runner');
               let runners;
-              let runnerSource = "org";
               try {
-                runners = await github.paginate(
-                  github.rest.actions.listSelfHostedRunnersForOrg,
-                  { org: context.repo.owner, per_page: 100 }
-                );
-              } catch (e) {
-                core.info(`org runner list failed (${e.message}); falling back to repo-level list`);
-                runnerSource = "repo";
-                runners = await github.paginate(
-                  github.rest.actions.listSelfHostedRunnersForRepo,
-                  { owner: context.repo.owner, repo: context.repo.repo, per_page: 100 }
-                );
+                runners = await github.paginate(github.rest.actions.listSelfHostedRunnersForOrg, {org: context.repo.owner, per_page: 100});
+              } catch (error) {
+                core.info(`org runner list failed (${error.message}); trying repository-visible runners`);
+                runners = await github.paginate(github.rest.actions.listSelfHostedRunnersForRepo, {...context.repo, per_page: 100});
               }
-              const online = runners.filter(r =>
-                r.status === "online" &&
-                hasLabels((r.labels || []).map(x => x.name))
-              );
-              if (online.length === 0) {
-                reason = `no online intent-cache runner (${runnerSource} list)`;
-              } else {
-                // Count intent-cache jobs that are queued or running in
-                // queued/in-progress runs: a running job occupies a slot just
-                // as much as a queued one. GitHub-hosted jobs —
-                // including this route job and bursted heavy jobs — don't
-                // match the intent-cache label filter, so they never
-                // inflate the depth. Any unreadable or truncated queue view,
-                // in this repo or a sibling, means the depth is unknowable
-                // (the sibling's jobs may hold every slot), so it throws into
-                // the fail-open burst path and every listed job goes hosted. A queued
-                // job older than staleMs means nothing is draining the
-                // queue despite the runner looking online — burst.
-                const owner = context.repo.owner;
-                const repos = ["intentd", "cloudlands-fe", "intent"];
-                let depth = 0;
-                let staleQueued = false;
-                for (const repo of repos) {
-                  for (const status of ["queued", "in_progress"]) {
-                    const runs = await github.rest.actions.listWorkflowRunsForRepo({ owner, repo, status, per_page: 100 });
-                    if (runs.data.total_count > runs.data.workflow_runs.length) throw new Error(`${repo} ${status} runs truncated`);
-                    for (const run of runs.data.workflow_runs.filter(r => r.id !== context.runId)) {
-                      const jobs = await github.rest.actions.listJobsForWorkflowRun({ owner, repo, run_id: run.id, per_page: 100 });
-                      if (jobs.data.total_count > jobs.data.jobs.length) throw new Error(`${repo} run ${run.id} jobs truncated`);
-                      for (const j of jobs.data.jobs) {
-                        if ((j.status === "queued" || j.status === "in_progress") && hasLabels(j.labels || [])) {
-                          depth += 1;
-                          if (j.status === "queued" && Date.parse(j.created_at) < Date.now() - staleMs) staleQueued = true;
-                        }
-                      }
+              const online = Object.fromEntries(Object.entries(fleets).map(([key, labels]) => [key,
+                runners.filter(r => r.status === 'online' && labels.every(l => (r.labels || []).some(x => x.name?.toLowerCase() === l.toLowerCase()))),
+              ]));
+              const jobs = [];
+              // A missing sibling view is unknown demand, not zero demand. Fail open to burst runners.
+              if (warpOn || Object.values(online).some(rs => rs.length)) {
+                for (const repo of new Set(['intent', 'intentd', 'cloudlands-fe', context.repo.repo])) {
+                  const seen = new Set();
+                  for (const status of ['queued', 'in_progress']) {
+                    const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {owner: context.repo.owner, repo, status, per_page: 100});
+                    for (const run of runs) {
+                      if (run.id === context.runId || seen.has(run.id)) continue;
+                      seen.add(run.id);
+                      jobs.push(...await github.paginate(github.rest.actions.listJobsForWorkflowRun, {owner: context.repo.owner, repo, run_id: run.id, per_page: 100}));
                     }
                   }
                 }
-                if (staleQueued) {
-                  reason = `intent-cache job queued past staleness cutoff (fleet not draining) online=${online.length} (${runnerSource} list)`;
-                } else {
-                  const limit = Math.min(threshold, online.length);
-                  useBurst = depth >= limit;
-                  free = useBurst ? 0 : limit - depth;
-                  reason = `queue depth=${depth} threshold=${limit} online=${online.length} free=${free} (${runnerSource} list)`;
-                }
               }
-            } catch (e) {
-              useBurst = true;
-              free = 0;
-              reason = `probe failed (${e.message})`;
+              for (const j of jobs) {
+                if (!queuedOver(j, 10, false)) continue;
+                for (const label of j.labels || []) if (family(label) in warpStuck) warpStuck[family(label)] = true;
+              }
+              const thresholds = {linux: Number(process.env.THRESHOLD || '2'), xl: Number(process.env.XL_THRESHOLD || '0')};
+              if (Object.values(thresholds).some(n => !Number.isInteger(n) || n < 0)) throw new Error('invalid queue threshold');
+              for (const [key, labels] of Object.entries(fleets)) {
+                const demand = jobs.filter(j => ['queued', 'in_progress'].includes(j.status) && labels.every(l => (j.labels || []).some(x => x.toLowerCase() === l.toLowerCase())));
+                const stale = demand.some(j => queuedOver(j, 15, true));
+                const native = !(key in thresholds);
+                const capacity = native ? online[key].filter(r => r.busy === false).length : online[key].length;
+                const limit = native ? capacity - 1 : Math.min(thresholds[key], capacity);
+                const depth = native ? demand.filter(j => j.status === 'queued').length : demand.length;
+                burst[key] = disabled[key] || capacity === 0 || stale || (native ? depth > limit : depth >= limit);
+                if (!native) slotsFree[key] = burst[key] ? 0 : limit - depth;
+                reasons[key] = disabled[key] ? 'disabled for maintenance' : capacity === 0 ? 'no available compatible runner' : stale ? 'stalled or unknown-age queue' : `queue depth=${depth} threshold=${limit} online=${online[key].length}${native ? '' : ` free=${slotsFree[key]}`}`;
+              }
+            } catch (error) {
+              for (const key of Object.keys(fleets)) reasons[key] = `probe failed (${error.message})`;
+              for (const key of Object.keys(slotsFree)) slotsFree[key] = 0;
             }
-            // SLOT FITTING: free slots go to the listed jobs one at a time —
-            // Rust-compiling jobs first (they reuse the slot's local cache), then
-            // the longest, then list order (same order as intent's and intentd's
-            // runner-route.yml). Every other listed job, and every job that skips
-            // this event, gets its hosted label directly, so a run never queues its
-            // own jobs behind each other on the slots. Two runs probing at the same
-            // moment can claim the same free slot, so the pool may briefly run a
-            // job or two over its slot count; that job waits for the next slot.
+            // Where a GitHub label runs when it does not take a self-hosted slot:
+            // its WarpBuild runner while WarpBuild is on and moving, else itself.
+            const cloud = (label) => warpOn && warp[label] && !warpStuck[family(warp[label])] ? [warp[label]] : [label];
+            // Keys are the GitHub labels jobs ask for; values are the self-hosted
+            // fleet labels, or the burst runner when the fleet bursts.
+            // A label listed under several pools takes the first with a free slot.
+            const hosted = {
+              // 16-core jobs prefer xl slots and overflow to heavy slots before
+              // bursting, so with no xl slot free they route as they did
+              // before xl existed. 8-core jobs never take an xl slot.
+              xl: ['gh-linux-16x'],
+              linux: ['gh-linux-8x', 'gh-linux-16x'],
+              arm: ['gh-linux-arm64-8x'],
+              windows: ['gh-windows-16x'],
+              macos: ['macos-26-xlarge'],
+              intel: ['macos-latest-large'],
+            };
+            // Free slots go to the caller's listed jobs one at a time: Rust-compiling
+            // jobs first (they reuse the slot's local cache), then the longest, then
+            // list order. Listed jobs that do not fit, or that skip this event, get
+            // their burst runner directly; matrix legs are ranked separately.
+            // Concurrent runs read the same free count before either job is queued,
+            // so a pool may briefly run a job or two over its slot count.
             let requests = [];
             try {
-              requests = JSON.parse(process.env.SLOT_JOBS || "[]").flatMap(j => j.shards ? Array.from({ length: j.shards }, (_, n) => ({ ...j, key: `${j.key}-${n + 1}` })) : [j]);
-            } catch (e) {
-              core.info(`slot list unreadable (${e.message}); listed jobs use hosted labels`);
+              requests = JSON.parse(process.env.SLOT_JOBS || '[]').flatMap(j => (j.legs || (j.shards ? Array.from({length: j.shards}, (_, n) => n + 1) : null))?.map(leg => ({...j, key: `${j.key}-${leg}`})) ?? [j]);
+            } catch (error) {
+              core.info(`slot list unreadable (${error.message}); listed jobs use burst runners`);
             }
             const slots = {};
-            let granted = 0;
-            const ranked = requests.map((r, i) => ({ ...r, i })).sort((a, b) => (b.rust === true) - (a.rust === true) || (b.minutes || 0) - (a.minutes || 0) || a.i - b.i);
+            const granted = Object.fromEntries(Object.keys(slotsFree).map(k => [k, 0]));
+            const ranked = requests.map((r, i) => ({...r, i})).sort((a, b) => (b.rust === true) - (a.rust === true) || (b.minutes || 0) - (a.minutes || 0) || a.i - b.i);
             for (const r of ranked) {
               const runs = !Array.isArray(r.events) || r.events.includes(context.eventName);
-              if (runs && free > 0) {
-                free -= 1;
-                granted += 1;
-                slots[r.key] = fleet;
-              } else slots[r.key] = [r.label];
+              const key = runs && Object.keys(hosted).find(k => k in slotsFree && hosted[k].includes(r.label) && slotsFree[k] > 0);
+              if (key) {
+                slotsFree[key] -= 1;
+                granted[key] += 1;
+                slots[r.key] = fleets[key];
+              } else slots[r.key] = cloud(r.label);
             }
-            // Unlisted heavy jobs use the slots only while one is still free.
-            if (free <= 0) useBurst = true;
-            if (granted) reason += ` granted=${granted}`;
-            core.info(`linux routing: burst=${useBurst} (${reason})`);
-            core.setOutput("linux_labels", JSON.stringify(useBurst ? burst : fleet));
-            core.setOutput("linux_burst", String(useBurst));
-            core.setOutput("slots", JSON.stringify(slots));
+            // Unlisted jobs (single-job workflows, jobs that start after the listed
+            // ones) use a pool only while a slot is still free.
+            for (const key of Object.keys(slotsFree)) {
+              burst[key] = slotsFree[key] <= 0;
+              if (granted[key]) reasons[key] += ` granted=${granted[key]}`;
+            }
+            const mapping = Object.fromEntries(free.map(label => [label, [label]]));
+            for (const [key, labels] of Object.entries(hosted)) {
+              for (const label of labels) if (!mapping[label] || mapping[label][0] !== 'self-hosted') mapping[label] = burst[key] ? cloud(label) : fleets[key];
+            }
+            // Jobs that must not use a self-hosted runner (sudo, Docker, release signing) read `cloud`.
+            const clouds = Object.fromEntries([...free, ...Object.keys(warp), 'macos-latest-large'].map(label => [label, cloud(label)]));
+            for (const key of Object.keys(fleets)) core.info(`${key} routing: burst=${burst[key]} (${reasons[key]})`);
+            for (const key of Object.keys(warpStuck)) core.info(`warpbuild ${key}: ${!warpOn ? (fork ? 'off (fork pull request)' : 'off (CI_WARPBUILD_DISABLED)') : warpStuck[key] ? 'off (queued over 10 minutes)' : 'on'}`);
+            core.setOutput('runners', JSON.stringify(mapping));
+            core.setOutput('slots', JSON.stringify(slots));
+            core.setOutput('cloud', JSON.stringify(clouds));
+            const linuxLabels = mapping[`gh-linux-${process.env.LINUX_SIZE || '8'}x`];
+            core.setOutput('linux_labels', JSON.stringify(linuxLabels));
+            core.setOutput('linux_burst', String(linuxLabels[0] !== 'self-hosted'));
+            core.setOutput('check_labels', JSON.stringify(mapping['gh-linux-8x']));
+            core.setOutput('windows_labels', JSON.stringify(mapping['gh-windows-16x']));
+            core.setOutput('macos_labels', JSON.stringify(mapping['macos-26-xlarge']));
+            for (const key of ['windows', 'macos']) core.setOutput(`${key}_burst`, String(burst[key]));
 
   pr-title:
     name: Validate PR Title
@@ -538,6 +565,9 @@ jobs:
       - run: python3 -m pip install 'PyYAML==6.0.3'
       - name: Verify event routing and gate failures without application dependencies
         run: python3 -I -B scripts/test-ci-event-policy.py
+      # Also runs scripts/runner-policy.test.cjs (the shared route probe) under node.
+      - name: Verify runner routing policy
+        run: python3 -I -B scripts/test_runner_policy.py
 
   checks:
     name: Type Check & Lint
@@ -551,7 +581,10 @@ jobs:
     # a skip unless the fast path was taken.
     needs: [route, release-fast-path]
     if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
-    runs-on: ${{ fromJSON(needs.route.outputs.slots || '{}')['checks'] || fromJSON('["gh-linux-8x"]') }}
+    # Measured medium-sized (3.2 busy cores p90, 11.7 GiB peak with page
+    # cache), so it fits the free 4-vCPU / 16 GB standard runner (free for this
+    # public repository; the router never sends it to a self-hosted slot).
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
@@ -581,12 +614,14 @@ jobs:
           version: 10.30.3
           run_install: false
       - name: Setup Node.js
-        # Every Linux runner (GitHub-hosted or an intent-cache container) starts with
-        # an empty pnpm store, so always restore it from the Actions cache.
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: 'pnpm'
+      - name: Cache pnpm store
+        # Every runner (intent-cache container, WarpBuild or GitHub) starts with an
+        # empty pnpm store, so always restore it: WarpBuild's cache on WarpBuild
+        # Linux/macOS runners, GitHub's elsewhere.
+        uses: ./.github/actions/pnpm-store-cache
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       # Cold-checkout gate: runs the agent-facing `lint` gate BEFORE any
@@ -625,9 +660,10 @@ jobs:
         # main and on the cloudlands-fe#2533 merge tree that OOMed. At the job-wide
         # 4 GB cap V8 sits in its near-limit "reduce" mark-compact loop and aborts on
         # timing, so this step alone gets ~2x the measured need; other steps keep
-        # the job cap (intent-hq/intent#3352). Both runner classes (intent-cache,
-        # about 48 GB per slot, and the 32 GB burst runner) have ample RAM. run-svelte-check.mjs prints the peak RSS of
-        # every run so the margin stays visible before it is exhausted again.
+        # the job cap (intent-hq/intent#3352). The job runs on the 16 GB
+        # ubuntu-24.04 runner, so the ~4.3 GiB peak leaves about 11 GB.
+        # run-svelte-check.mjs prints the peak RSS of every run so the margin
+        # stays visible before it is exhausted again.
         env:
           NODE_OPTIONS: '--max-old-space-size=8192'
         run: pnpm run check
@@ -723,7 +759,9 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: 'pnpm'
+      - name: Cache pnpm store
+        # WarpBuild's cache on WarpBuild Linux/macOS runners, GitHub's elsewhere.
+        uses: ./.github/actions/pnpm-store-cache
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Build web renderer
@@ -815,7 +853,9 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: 'pnpm'
+      - name: Cache pnpm store
+        # WarpBuild's cache on WarpBuild Linux/macOS runners, GitHub's elsewhere.
+        uses: ./.github/actions/pnpm-store-cache
       - name: Read backend Keychain fixture pin
         id: backend-keychain-fixtures
         run: node scripts/backend-keychain-fixtures.mjs | tee -a "$GITHUB_OUTPUT"
@@ -855,9 +895,12 @@ jobs:
 
   test-portable-fixtures:
     name: Portable Fixtures (macOS ARM64, ${{ matrix.zone.name }})
-    needs: [release-fast-path]
+    # Straight to the burst runner (WarpBuild macOS 26, or GitHub's
+    # macos-26-xlarge when WarpBuild is off or the route job failed); never
+    # the persistent self-hosted Mac.
+    needs: [route, release-fast-path]
     if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.release-fast-path.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' && needs.release-fast-path.outputs.portable_fixtures_required != 'false' }}
-    runs-on: macos-26-xlarge
+    runs-on: ${{ fromJSON(needs.route.outputs.cloud || '{}')['macos-26-xlarge'] || fromJSON('["macos-26-xlarge"]') }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -882,7 +925,9 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: pnpm
+      - name: Cache pnpm store
+        # WarpBuild's cache on WarpBuild Linux/macOS runners, GitHub's elsewhere.
+        uses: ./.github/actions/pnpm-store-cache
       - name: Record native fixture environment
         run: |
           set -euo pipefail
@@ -960,7 +1005,9 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: 'pnpm'
+      - name: Cache pnpm store
+        # WarpBuild's cache on WarpBuild Linux/macOS runners, GitHub's elsewhere.
+        uses: ./.github/actions/pnpm-store-cache
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Generate i18n messages
@@ -983,6 +1030,7 @@ jobs:
     uses: ./.github/workflows/browser-tests.yml
     with:
       suite: ct
+      cloud: ${{ needs.route.outputs.cloud }}
 
   test-playwright:
     needs: [route, release-fast-path]
@@ -992,6 +1040,7 @@ jobs:
     uses: ./.github/workflows/browser-tests.yml
     with:
       suite: root
+      cloud: ${{ needs.route.outputs.cloud }}
 
   test-electron:
     needs: [route, release-fast-path]
@@ -1001,6 +1050,7 @@ jobs:
     uses: ./.github/workflows/browser-tests.yml
     with:
       suite: electron
+      cloud: ${{ needs.route.outputs.cloud }}
 
   # Monorepo consumer checks (intent-hq/intent#4558, #5479, #5489, #5497):
   # the monorepo's docs-check job compares the pinned submodules against

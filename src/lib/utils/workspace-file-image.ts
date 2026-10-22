@@ -78,17 +78,13 @@ export function isWorkspaceAssetVideoCandidate(value: string): boolean {
   return /\.(?:mp4|webm)$/i.test(path.trim());
 }
 
-/** Saved assets stay on note.readAsset routing, never workspace file paths. */
-export function workspaceAssetVideoSource(
-  value: string,
-  currentWorkspaceId?: string,
-): Extract<VideoSource, { kind: 'workspace' }> | null {
+function parseWorkspaceAssetId(value: string, currentWorkspaceId?: string): string | null {
   if (value !== value.trim()) return null;
   const match = /^workspace-asset:\/\/([^/?#]+)\/([^/?#]+)(\?[^#]*)?$/.exec(value);
   if (!match || !currentWorkspaceId || !isValidWorkspaceId(currentWorkspaceId)) return null;
   if (match[1] !== currentWorkspaceId) return null;
   const assetId = decodeSegment(match[2]);
-  if (!assetId || !/^[A-Za-z0-9._-]+\.(?:mp4|webm)$/i.test(assetId)) return null;
+  if (!assetId || !/^[A-Za-z0-9._-]+$/.test(assetId)) return null;
 
   // Preserve accepted routing/cache hints verbatim; reject all other query shapes.
   const search = match[3];
@@ -108,11 +104,29 @@ export function workspaceAssetVideoSource(
     }
   }
 
+  return assetId;
+}
+
+/** Saved assets stay on note.readAsset routing, never workspace file paths. */
+export function workspaceAssetVideoSource(
+  value: string,
+  currentWorkspaceId?: string,
+): Extract<VideoSource, { kind: 'workspace' }> | null {
+  const assetId = parseWorkspaceAssetId(value, currentWorkspaceId);
+  if (!assetId || !VIDEO_EXTENSION_RE.test(assetId)) return null;
   return {
     kind: 'workspace',
     url: value,
     mimeType: assetId.toLowerCase().endsWith('.webm') ? 'video/webm' : 'video/mp4',
   };
+}
+
+export function workspaceAssetImageSource(
+  value: string,
+  currentWorkspaceId?: string,
+): string | null {
+  const assetId = parseWorkspaceAssetId(value, currentWorkspaceId);
+  return assetId && IMAGE_EXTENSION_RE.test(assetId) ? value : null;
 }
 
 /**
@@ -374,6 +388,33 @@ let versionSequence = 0;
 export function createWorkspaceFileVersion(): string {
   versionSequence += 1;
   return `${Date.now().toString(36)}-${versionSequence.toString(36)}`;
+}
+
+/** Fresh local image request, preserving the original path and backend authority.
+ * External URLs may be signed, so retries must never rewrite their query string.
+ * Invalid URLs stay invalid rather than being normalized into a different file.
+ */
+export function imageRetryUrl(source: string): string | null {
+  if (/^https?:\/\//i.test(source)) return source;
+  if (source.includes('#')) return null;
+  const queryIndex = source.indexOf('?');
+  const path = queryIndex < 0 ? source : source.slice(0, queryIndex);
+  const search = queryIndex < 0 ? '' : source.slice(queryIndex + 1);
+  if (source.startsWith('workspace-file://')) {
+    if (!workspaceFileImageUrlToIntentFileUrl(source)) return null;
+  } else if (!/^workspace-asset:\/\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(path)) {
+    return null;
+  }
+  if (
+    queryIndex >= 0 &&
+    !/^(?:backend|v)=[A-Za-z0-9._-]+(?:&(?:backend|v)=[A-Za-z0-9._-]+)*$/.test(search)
+  ) {
+    return null;
+  }
+  const params = new URLSearchParams(search);
+  if (params.getAll('backend').length > 1 || params.getAll('v').length > 1) return null;
+  params.set('v', createWorkspaceFileVersion());
+  return `${path}?${params}`;
 }
 
 /**

@@ -137,6 +137,7 @@ describe('renderer app saga registry', () => {
       'workspaceInitializerSaga',
       'zoomIpcSaga',
       'menuIpcSaga',
+      'deepLinksSaga',
       'browserIpcSaga',
       'notificationIpcSaga',
       'webNotificationSaga',

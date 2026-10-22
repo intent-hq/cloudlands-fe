@@ -1117,7 +1117,7 @@ describe('embedded browser CDP workspace routing', () => {
         expect(error).toBeInstanceOf(Error);
         expect((error as Error).message).toContain('capturePage timed out');
         expect(wc.capturePage).toHaveBeenCalledWith(undefined, {
-          stayHidden: true,
+          stayHidden: false,
           stayAwake: true,
         });
       } finally {
@@ -1141,7 +1141,7 @@ describe('embedded browser CDP workspace routing', () => {
           height: 800,
         });
         expect(wc.capturePage).toHaveBeenCalledWith(undefined, {
-          stayHidden: true,
+          stayHidden: false,
           stayAwake: true,
         });
       } finally {

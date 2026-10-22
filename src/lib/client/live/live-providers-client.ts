@@ -26,14 +26,18 @@ import {
   PROVIDER_PROFILES_CREATE_METHOD,
   PROVIDER_PROFILES_DELETE_METHOD,
   PROVIDER_PROFILES_LIST_METHOD,
+  PROVIDER_PROFILES_REORDER_METHOD,
   PROVIDER_PROFILES_UPDATE_METHOD,
   ProviderProfileCreateResponseSchema,
   ProviderProfileDeleteResponseSchema,
+  ProviderProfileReorderResponseSchema,
   ProviderProfilesListResponseSchema,
   ProviderProfileUpdateResponseSchema,
   type ProviderProfileCreateParams,
   type ProviderProfileCreateResult,
   type ProviderProfileDeleteResult,
+  type ProviderProfileReorderParams,
+  type ProviderProfileReorderResult,
   type ProviderProfilesListResult,
   type ProviderProfileUpdateParams,
   type ProviderProfileUpdateResult,
@@ -61,6 +65,7 @@ export class LiveProvidersClient implements ProvidersClient {
       baseProviderId: params.baseProviderId,
       name: params.name,
       ...(params.env ? { env: params.env } : {}),
+      ...(params.backup !== undefined ? { backup: params.backup } : {}),
     });
     return ProviderProfileCreateResponseSchema.parse(result);
   }
@@ -70,6 +75,7 @@ export class LiveProvidersClient implements ProvidersClient {
       profileId: params.profileId,
       ...(params.name !== undefined ? { name: params.name } : {}),
       ...(params.env ? { env: params.env } : {}),
+      ...(params.backup !== undefined ? { backup: params.backup } : {}),
     });
     return ProviderProfileUpdateResponseSchema.parse(result);
   }
@@ -77,6 +83,16 @@ export class LiveProvidersClient implements ProvidersClient {
   async deleteProfile(profileId: string): Promise<ProviderProfileDeleteResult> {
     const result = await backendRequest<unknown>(PROVIDER_PROFILES_DELETE_METHOD, { profileId });
     return ProviderProfileDeleteResponseSchema.parse(result);
+  }
+
+  async reorderProfiles(
+    params: ProviderProfileReorderParams,
+  ): Promise<ProviderProfileReorderResult> {
+    const result = await backendRequest<unknown>(PROVIDER_PROFILES_REORDER_METHOD, {
+      baseProviderId: params.baseProviderId,
+      profileIds: params.profileIds,
+    });
+    return ProviderProfileReorderResponseSchema.parse(result);
   }
 }
 

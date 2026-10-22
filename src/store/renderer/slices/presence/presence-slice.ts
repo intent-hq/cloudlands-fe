@@ -34,6 +34,7 @@ export const initialState: PresenceState = {
   ownTypingSource: null,
   ownTyping: null,
   windowVisible: true,
+  captureDrawingActive: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -81,6 +82,11 @@ export const presenceTypingStopped = createAction('presence/typingStopped');
 
 export const presenceWindowVisibilityChanged = createAction<[visible: boolean]>(
   'presence/windowVisibilityChanged',
+);
+
+/** An agent capture started / stopped keeping this hidden window drawing. */
+export const presenceCaptureDrawingChanged = createAction<[active: boolean]>(
+  'presence/captureDrawingChanged',
 );
 
 /** `principal.me` of the window's backend (`null` when the daemon has none). */
@@ -244,6 +250,10 @@ presenceReducer.with(presenceWindowVisibilityChanged, (state, { payload: [visibl
   state.windowVisible === visible ? state : { ...state, windowVisible: visible },
 );
 
+presenceReducer.with(presenceCaptureDrawingChanged, (state, { payload: [active] }) =>
+  state.captureDrawingActive === active ? state : { ...state, captureDrawingActive: active },
+);
+
 presenceReducer.with(presenceOwnPrincipalReceived, (state, { payload: [principalId] }) => ({
   ...state,
   ownPrincipalId: principalId,
@@ -256,11 +266,13 @@ presenceReducer.with(presenceOwnTypingSourceReceived, (state, { payload: [source
 presenceReducer.with(presenceReset, (state) => ({
   ...initialState,
   windowVisible: state.windowVisible,
+  captureDrawingActive: state.captureDrawingActive,
 }));
 
 presenceReducer.with(presenceContextReceived, (state, { payload: [context, ownPrincipalId] }) => ({
   ...initialState,
   windowVisible: state.windowVisible,
+  captureDrawingActive: state.captureDrawingActive,
   context,
   ownPrincipalId,
 }));

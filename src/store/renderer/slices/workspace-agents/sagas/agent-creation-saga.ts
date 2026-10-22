@@ -328,7 +328,8 @@ function* runAgentForNote(
   // Slim note.list rows carry no content (§5.2) — the initial message embeds
   // the task body, so fetch the full note before building it. Fail-soft: on a
   // fetch failure keep the cached row (the agent can still ws.note.read it).
-  if (isNoteContentStale(note)) {
+  // A truncated view read (§5.2) holds only a prefix — re-read the whole note too.
+  if (isNoteContentStale(note) || note.contentTruncated) {
     const full = yield* call([appClient.notes, appClient.notes.get], noteId, wsId);
     if (full && String(full.workspaceId) === wsId) note = full;
   }

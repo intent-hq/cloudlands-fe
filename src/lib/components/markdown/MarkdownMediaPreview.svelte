@@ -1,7 +1,10 @@
 <script lang="ts">
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import VideoLightbox from '$lib/components/ui/VideoLightbox.svelte';
-  import { workspaceAssetVideoSource } from '$lib/utils/workspace-file-image';
+  import {
+    workspaceAssetImageSource,
+    workspaceAssetVideoSource,
+  } from '$lib/utils/workspace-file-image';
 
   interface Props {
     workspaceId?: string;
@@ -12,6 +15,7 @@
     name?: string;
     opener: HTMLElement;
     mimeType?: string;
+    assetLink?: boolean;
   }
   let { workspaceId, canUseMedia }: Props = $props();
   let image = $state<Selection | null>(null);
@@ -28,7 +32,22 @@
     imageOpen = true;
   }
 
-  export function openVideo(anchor: HTMLAnchorElement): boolean {
+  export function openAsset(anchor: HTMLAnchorElement): boolean {
+    const source = workspaceAssetImageSource(anchor.getAttribute('href') || '', workspaceId);
+    if (source && canUseMedia(source)) {
+      image = {
+        url: source,
+        name: anchor.textContent?.trim() || undefined,
+        opener: anchor,
+        assetLink: true,
+      };
+      imageOpen = true;
+      return true;
+    }
+    return openVideo(anchor);
+  }
+
+  function openVideo(anchor: HTMLAnchorElement): boolean {
     // Validate the raw href: URL normalization must not hide invalid paths/hints.
     const source = workspaceAssetVideoSource(anchor.getAttribute('href') || '', workspaceId);
     if (!source || !canUseMedia(source.url)) return false;
@@ -47,6 +66,10 @@
     if (video && !workspaceAssetVideoSource(video.url, workspaceId)) {
       videoOpen = false;
       video = null;
+    }
+    if (image?.assetLink && !workspaceAssetImageSource(image.url, workspaceId)) {
+      imageOpen = false;
+      image = null;
     }
   });
 </script>

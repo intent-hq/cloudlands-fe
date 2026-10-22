@@ -211,7 +211,18 @@ export const mockBackendTransportModule = {
       });
     return state.repositoryCapture(structuredClone(root));
   },
-  observeBackendNodeCapabilities: () => mockBackendRequest('client.hello', {}),
+  async readBackendPrincipal() {
+    // Reuse the scripted handshake facts without recording a new wire hello.
+    const handshake = state.requestHandlers.get('client.hello');
+    if (!handshake)
+      throw new BackendError({ code: 'UNAVAILABLE', message: 'Mock handshake unavailable' });
+    return { hello: await handshake({}), principal: await mockBackendRequest('principal.me', {}) };
+  },
+  // An acknowledged hello without node capabilities unless a test registers its own.
+  observeBackendNodeCapabilities: () =>
+    state.requestHandlers.has('client.hello')
+      ? mockBackendRequest('client.hello', {})
+      : Promise.resolve({ server: { capabilities: {} } }),
   backendRequest: mockBackendRequest,
   backendSubscribe: mockBackendSubscribe,
   backendUnsubscribe: mockBackendUnsubscribe,

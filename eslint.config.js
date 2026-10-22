@@ -29,6 +29,7 @@ import noColdSvelteImportInTestsRule from './eslint-rules/no-cold-svelte-import-
 import noCopiedChatPanelSelectorMocksRule from './eslint-rules/no-copied-chat-panel-selector-mocks.js';
 import noSourceLiteralAssertionsInTestsRule from './eslint-rules/no-source-literal-assertions-in-tests.js';
 import noWallClockAssertionsInTestsRule from './eslint-rules/no-wall-clock-assertions-in-tests.js';
+import noFakeClockResetBeforeAssertionRule from './eslint-rules/no-fake-clock-reset-before-assertion.js';
 import noClassNameAssertionsInTestsRule from './eslint-rules/no-class-name-assertions-in-tests.js';
 import noFlushSyncInTeardownRule from './eslint-rules/no-flushsync-in-teardown.js';
 import noDirectReducedMotionQueryRule, {
@@ -52,6 +53,7 @@ const intentPlugin = {
     'no-copied-chat-panel-selector-mocks': noCopiedChatPanelSelectorMocksRule,
     'no-source-literal-assertions-in-tests': noSourceLiteralAssertionsInTestsRule,
     'no-wall-clock-assertions-in-tests': noWallClockAssertionsInTestsRule,
+    'no-fake-clock-reset-before-assertion': noFakeClockResetBeforeAssertionRule,
     'no-class-name-assertions-in-tests': noClassNameAssertionsInTestsRule,
     'no-flushsync-in-teardown': noFlushSyncInTeardownRule,
     'no-direct-reduced-motion-query': noDirectReducedMotionQueryRule,
@@ -663,6 +665,11 @@ export default [
         'error',
         { baseline: wallClockAssertionsBaseline },
       ],
+      // A test that pins a fake clock with vi.setSystemTime and then calls
+      // vi.clearAllTimers() / vi.useRealTimers() before asserting reads the real time
+      // of day, so it passes or fails depending on when CI runs (cloudlands-fe#3574
+      // was ejected from the merge queue after 08:00 UTC). No baseline: enforced at zero.
+      'intent/no-fake-clock-reset-before-assertion': 'error',
     },
   },
   // A unit test that asserts an element's className / classList / class attribute pins

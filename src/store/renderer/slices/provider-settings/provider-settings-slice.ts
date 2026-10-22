@@ -396,25 +396,51 @@ export const providerProfilesChanged = createAction<[revision: number]>('provide
 
 export const providerProfileCreateRequested = createAction(
   'providerProfiles/createRequested',
-  (input: { requestId: string; baseProviderId: string; name: string; env?: EnvEntryWrite[] }) => ({
+  (input: {
+    requestId: string;
+    baseProviderId: string;
+    name: string;
+    env?: EnvEntryWrite[];
+    backup?: boolean;
+  }) => ({
     requestId: input.requestId,
     baseProviderId: input.baseProviderId,
     name: input.name,
     envRef: stageProfileEnv(input.env),
+    ...(input.backup !== undefined ? { backup: input.backup } : {}),
   }),
 );
 export const providerProfileUpdateRequested = createAction(
   'providerProfiles/updateRequested',
-  (input: { requestId: string; profileId: string; name?: string; env?: EnvEntryWrite[] }) => ({
+  (input: {
+    requestId: string;
+    profileId: string;
+    name?: string;
+    env?: EnvEntryWrite[];
+    backup?: boolean;
+  }) => ({
     requestId: input.requestId,
     profileId: input.profileId,
     name: input.name,
     envRef: stageProfileEnv(input.env),
+    ...(input.backup !== undefined ? { backup: input.backup } : {}),
   }),
 );
 export const providerProfileDeleteRequested = createAction<
   [payload: { requestId: string; profileId: string }]
 >('providerProfiles/deleteRequested');
+
+/**
+ * Save a new order for one base provider's profiles (`providers.profiles.reorder`).
+ * Applied optimistically; a rejection restores the previous order. Only sent
+ * when the daemon reports `backup` on profiles.
+ */
+export const providerProfileReorderRequested = createAction<
+  [payload: { requestId: string; baseProviderId: string; profileIds: string[] }]
+>('providerProfiles/reorderRequested');
+export const providerProfileReorderSucceeded = createAction<
+  [requestId: string, profiles: ProviderProfile[], revision: number]
+>('providerProfiles/reorderSucceeded');
 
 export const providerProfileMutationSucceeded = createAction<
   [requestId: string, result: ProfileMutationResult]
@@ -469,6 +495,12 @@ providerSettingsReducer.with(providerProfileUpdateRequested, (state, { payload }
 );
 providerSettingsReducer.with(providerProfileDeleteRequested, (state, { payload }) =>
   withProfiles(state, profileHandlers.delete(state.profiles, payload)),
+);
+providerSettingsReducer.with(providerProfileReorderRequested, (state, { payload }) =>
+  withProfiles(state, profileHandlers.reorder(state.profiles, payload)),
+);
+providerSettingsReducer.with(providerProfileReorderSucceeded, (state, { payload }) =>
+  withProfiles(state, profileHandlers.reorderSucceeded(state.profiles, payload)),
 );
 providerSettingsReducer.with(providerProfileMutationSucceeded, (state, { payload }) =>
   withProfiles(state, profileHandlers.succeeded(state.profiles, payload)),
