@@ -83,7 +83,8 @@ jobs:
             [
             {"key":"test","label":"gh-linux-8x","minutes":13,"shards":4},
             {"key":"build-web","label":"gh-linux-8x","minutes":4,"events":["merge_group"]},
-            {"key":"test-integration","label":"gh-linux-8x","minutes":2,"events":["merge_group"]}
+            {"key":"test-integration","label":"gh-linux-8x","minutes":2,"events":["merge_group"]},
+            {"key":"ct","label":"gh-linux-8x","minutes":36,"shards":4,"events":["merge_group"]}
             ]
         with:
           # The intent-cache slots serve several repos, so the probe
@@ -989,6 +990,8 @@ jobs:
     uses: ./.github/workflows/browser-tests.yml
     with:
       suite: ct
+      # Each shard takes its ct-N slot when the route job granted one.
+      slots: ${{ needs.route.outputs.slots }}
 
   test-playwright:
     needs: [route, release-fast-path]

@@ -97,13 +97,24 @@ ${command}`,
       ),
       'needs.release-fast-path.outputs.fast_path': 'false',
       'needs.release-fast-path.outputs.ct_required': event === 'merge_group' ? 'true' : '',
+      // A GitHub-hosted shard: no slot was granted (nightly and manual callers pass none).
+      'runner.environment': 'github-hosted',
     };
     const value = (scalar: string) =>
       scalar.startsWith('${{') ? evaluate(scalar, context) : scalar.replace(/^(['"])(.*)\1$/, '$2');
     expect(evaluate(ctJob.match(/^    if: (.*)$/m)![1], context)).toBe(event !== 'pull_request');
     if (event === 'pull_request') return;
-    const runner = value(ctJob.match(/^    runs-on: (.*)$/m)![1]);
-    expect.soft(Array.isArray(runner) ? runner : [runner]).toEqual(['gh-linux-8x']);
+    // runs-on reads the caller's slots input per shard, falling back to gh-linux-8x.
+    const runsOn = ctJob.match(/^    runs-on: (.*)$/m)![1];
+    expect(runsOn).toBe(
+      "${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON('[\"gh-linux-8x\"]') }}",
+    );
+    const shardRunner = (slots: Record<string, string[]>, shard: number) =>
+      slots[`ct-${shard}`] ?? ['gh-linux-8x'];
+    expect.soft(shardRunner({}, 1)).toEqual(['gh-linux-8x']);
+    expect
+      .soft(shardRunner({ 'ct-2': ['self-hosted', 'linux', 'x64', 'intent-cache'] }, 2))
+      .toEqual(['self-hosted', 'linux', 'x64', 'intent-cache']);
     expect.soft(value(step('Setup Node.js').match(/^          cache: (.*)$/m)![1])).toBe('pnpm');
 
     const provisioning = ctJob.split('      - name: Build CT bundle')[0];
@@ -277,6 +288,23 @@ esac`,
     const result = provision({ CT_MISSING_PACKAGE: 'libmissing' });
     expect(result.status, result.stdout + result.stderr).toBe(0);
     expect(result.calls).toEqual([browser, deps, ...queries, update, install]);
+  });
+
+  it('fails without sudo on a self-hosted slot that lacks a library', () => {
+    // Slots have no sudo; the runner image must carry every Chromium library.
+    const result = provision({
+      CT_MISSING_PACKAGE: 'libmissing',
+      RUNNER_ENVIRONMENT: 'self-hosted',
+    });
+    expect(result.status).toBe(1);
+    expect(result.calls).toEqual([browser, deps, ...queries]);
+    expect(result.stdout).toContain('infra/runners/Dockerfile');
+  });
+
+  it('skips the apt mirror hardening on self-hosted slots', () => {
+    expect(ctJob).toMatch(
+      /- name: Harden apt against mirror stalls\n(?:\s+#.*\n)*\s+if: runner\.environment != 'self-hosted'\n/,
+    );
   });
 
   it('stops when the browser installation fails', () => {

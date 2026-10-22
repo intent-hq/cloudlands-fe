@@ -9,6 +9,13 @@ on:
         description: 'Full suite to run: ct, root, or electron'
         type: string
         required: true
+      slots:
+        # The caller's route outputs.slots: a Component Tests shard takes its
+        # ct-N slot when granted. Nightly and manual callers pass none.
+        description: 'Runner labels per pooled job key (JSON object)'
+        type: string
+        required: false
+        default: '{}'
 
 permissions:
   contents: read
@@ -17,8 +24,9 @@ jobs:
   test-ct:
     name: Component Tests (shard ${{ matrix.shard }}/4)
     if: ${{ !cancelled() && inputs.suite == 'ct' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group') }}
-    runs-on: gh-linux-8x
-    # Four hosted shards, two workers each; preserve the pinned CT browser.
+    runs-on: ${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON('["gh-linux-8x"]') }}
+    # Four shards, two workers each, on a free intent-cache slot or
+    # gh-linux-8x; preserve the pinned CT browser.
     strategy:
       # Let the sibling shards finish so one flaky leg doesn't hide the
       # other legs' results.
@@ -48,7 +56,7 @@ jobs:
           # Keep concurrent runner installations isolated.
           dest: ~/setup-pnpm-${{ runner.name }}
       - name: Setup Node.js
-        # This job always uses the ephemeral hosted runner and its cache.
+        # Hosted runners and the ephemeral intent-cache slots both start clean.
         uses: actions/setup-node@v7
         with:
           node-version: '24'
@@ -80,6 +88,9 @@ jobs:
           path: ${{ steps.ct-browser.outputs.cache-dir }}
           key: playwright-browsers-${{ runner.os }}-${{ runner.arch }}-${{ steps.ct-browser.outputs.cache-key }}
       - name: Harden apt against mirror stalls
+        # Slots have no sudo and need no apt: the runner image carries the
+        # Chromium libraries (infra/runners/Dockerfile).
+        if: runner.environment != 'self-hosted'
         # The runner image prefers the azure.archive.ubuntu.com mirror, which
         # has stalled mid-transfer until the 30-min job budget expired —
         # twice, before any test ran (monorepo#2832). The image routes apt
@@ -152,6 +163,10 @@ jobs:
             exit 0
           fi
           echo "Missing Chromium OS deps:$missing"
+          if [ "${RUNNER_ENVIRONMENT:-}" = self-hosted ]; then
+            echo "::error::Self-hosted slots have no sudo; add$missing to infra/runners/Dockerfile in intent-hq/intent"
+            exit 1
+          fi
           for i in 1 2; do
             # The validated package list intentionally supplies separate apt arguments.
             # shellcheck disable=SC2086

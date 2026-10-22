@@ -794,7 +794,13 @@ describe('shared browser jobs and nightly routing', () => {
           );
         }
       }
-      expect(jobField(lines, 'runs-on')).toBe('gh-linux-8x');
+      // Component Tests read the caller's ct-N slot, falling back to gh-linux-8x;
+      // the other suites stay on gh-linux-8x.
+      expect(jobField(lines, 'runs-on')).toBe(
+        job === 'test-ct'
+          ? "${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON('[\"gh-linux-8x\"]') }}"
+          : 'gh-linux-8x',
+      );
     },
   );
 

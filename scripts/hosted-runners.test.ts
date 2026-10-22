@@ -192,6 +192,10 @@ describe('GitHub-hosted CI runners', () => {
     const r = await route({ event: 'pull_request' });
     expect(Object.keys(r.slots).sort()).toEqual([
       'build-web',
+      'ct-1',
+      'ct-2',
+      'ct-3',
+      'ct-4',
       'test-1',
       'test-2',
       'test-3',
@@ -200,7 +204,7 @@ describe('GitHub-hosted CI runners', () => {
     ]);
     // The shards go in shard order; each shard has its own key.
     expect(onSlots(r.slots)).toEqual(['test-1', 'test-2']);
-    for (const key of ['test-3', 'test-4', 'build-web', 'test-integration'])
+    for (const key of ['test-3', 'test-4', 'build-web', 'test-integration', 'ct-1', 'ct-4'])
       expect(r.slots[key]).toEqual(['gh-linux-8x']);
     expect(r.burst).toBe('true');
     expect(r.messages.some((m) => m.includes('free=2 (org list) granted=2'))).toBe(true);
@@ -211,8 +215,9 @@ describe('GitHub-hosted CI runners', () => {
     expect(onSlots(shards.slots)).toEqual(['test-1', 'test-2']);
     expect(Object.values(shards.slots).filter((l) => l[0] === 'gh-linux-8x')).toHaveLength(2);
     // One busy slot elsewhere leaves one for this run.
+    // In the merge queue the longest jobs (Component Tests shards) take free slots first.
     const one = await route({ jobs: [running()] });
-    expect(onSlots(one.slots)).toEqual(['test-1']);
+    expect(onSlots(one.slots)).toEqual(['ct-1']);
     // Four free slots: every Unit Tests shard, including shard 4, takes one.
     const four = await route({
       event: 'pull_request',
@@ -220,6 +225,32 @@ describe('GitHub-hosted CI runners', () => {
       runners: [slot, slot, slot, slot],
     });
     expect(onSlots(four.slots)).toEqual(['test-1', 'test-2', 'test-3', 'test-4']);
+  });
+
+  it('routes each Component Tests shard through its own slot in the merge queue', () => {
+    const workflow = read('.github/workflows/intent-pr.yml');
+    const listed = JSON.parse(
+      workflow.jobs.route.steps.find((s: { id?: string }) => s.id === 'decide').env.SLOT_JOBS,
+    ) as { key: string; label: string; shards?: number; events?: string[]; minutes?: number }[];
+    expect(listed.find((j) => j.key === 'ct')).toEqual({
+      key: 'ct',
+      label: 'gh-linux-8x',
+      minutes: 36,
+      shards: 4,
+      events: ['merge_group'],
+    });
+    expect(workflow.jobs['test-ct'].with.slots).toBe('${{ needs.route.outputs.slots }}');
+    const browser = read('.github/workflows/browser-tests.yml');
+    expect(browser.on.workflow_call.inputs.slots).toMatchObject({
+      type: 'string',
+      required: false,
+      default: '{}',
+    });
+    expect(browser.jobs['test-ct']['runs-on']).toBe(
+      "${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON('[\"gh-linux-8x\"]') }}",
+    );
+    // Nightly and manual callers pass no slots, so they stay on gh-linux-8x.
+    expect(browser.jobs['test-playwright']['runs-on']).toBe('gh-linux-8x');
   });
 
   it('runs Type Check & Lint on the free standard runner, outside the slot list', () => {
@@ -246,7 +277,7 @@ describe('GitHub-hosted CI runners', () => {
     ['a truncated queue view', { truncated: true }],
   ])('sends every listed heavy job hosted with %s', async (_name, fixture: Fixture) => {
     const r = await route(fixture);
-    expect(Object.keys(r.slots)).toHaveLength(6);
+    expect(Object.keys(r.slots)).toHaveLength(10);
     for (const labels of Object.values(r.slots)) expect(labels).toEqual(['gh-linux-8x']);
   });
 
@@ -258,7 +289,13 @@ describe('GitHub-hosted CI runners', () => {
     const readers = Object.entries(workflow.jobs as Record<string, { 'runs-on'?: string }>)
       .filter(([, job]) => job['runs-on']?.includes('needs.route.outputs'))
       .map(([id, job]) => [id, job['runs-on']] as const);
-    expect(readers.map(([id]) => id).sort()).toEqual(listed.map((j) => j.key).sort());
+    // Component Tests read their slots through browser-tests.yml (tested separately).
+    expect(readers.map(([id]) => id).sort()).toEqual(
+      listed
+        .map((j) => j.key)
+        .filter((key) => key !== 'ct')
+        .sort(),
+    );
     for (const [id, runner] of readers) {
       const entry = listed.find((j) => j.key === id)!;
       const key = entry.shards ? `format('${id}-{0}', matrix.shard)` : `'${id}'`;
@@ -267,7 +304,7 @@ describe('GitHub-hosted CI runners', () => {
       );
     }
     // Queue-only jobs must say so, or they would hold a slot on every PR.
-    for (const id of ['build-web', 'test-integration'])
+    for (const id of ['build-web', 'test-integration', 'ct'])
       expect(listed.find((j) => j.key === id)!.events).toEqual(['merge_group']);
   });
 
@@ -275,7 +312,7 @@ describe('GitHub-hosted CI runners', () => {
     // Raising the org or repo variable alone grows the pool: 14 slots take every listed job.
     const slots14 = Array.from({ length: 14 }, () => slot);
     const grown = await route({ runners: slots14, env: { THRESHOLD: '14' } });
-    expect(onSlots(grown.slots)).toHaveLength(6);
+    expect(onSlots(grown.slots)).toHaveLength(10);
     expect(grown.burst).toBe('false');
     expect(grown.messages.some((m) => m.includes('threshold=14 online=14 free=14'))).toBe(true);
     // The online count still caps it, and so does the variable.
@@ -328,7 +365,7 @@ describe('GitHub-hosted CI runners', () => {
       expect(r.labels).toEqual(baseline.labels);
       expect(r.burst).toBe(baseline.burst);
     }
-    expect(onSlots(baseline.slots)).toEqual(['test-1']);
+    expect(onSlots(baseline.slots)).toEqual(['ct-1']);
   });
 
   it('never routes to tinybox', () => {
