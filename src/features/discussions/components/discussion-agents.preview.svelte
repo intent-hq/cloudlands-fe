@@ -23,4 +23,4 @@
   let { oldDaemon = false, failSend = false, deferSend = false }: Props = $props();
 </script>
 
-<DiscussionHost agentMessaging={!oldDaemon} {failSend} {deferSend} />
+<DiscussionHost agentMessaging={!oldDaemon} principalMentions={!oldDaemon} {failSend} {deferSend} />

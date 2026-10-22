@@ -83,11 +83,13 @@ export const selectWorkspaceDiscussion = store.createSelector(
       discussionRow(state.workspaceDiscussion, workspaceId, conversationId) ?? emptyDiscussion;
     return conversationId !== DEFAULT_DISCUSSION_ID &&
       conversationId !== NEW_DISCUSSION_ID &&
-      !row.authorized
+      (!row.authorized ||
+        (!row.initialized && state.workspaceDiscussion.conversationsSupported !== true))
       ? {
           ...row,
           draft: '',
           agentMentions: [],
+          principalMentions: [],
           messages: emptyDiscussion.messages,
           pending: emptyDiscussion.pending,
         }
@@ -138,7 +140,8 @@ export const selectDiscussionCanCreate = store.createSelector(
     selectDiscussionReady.select(state, workspaceId),
 );
 export const selectDiscussionDirectory = store.createSelector((state, workspaceId: string) =>
-  selectDiscussionCacheVisible.select(state)
+  selectDiscussionCacheVisible.select(state) &&
+  state.workspaceDiscussion.conversationsSupported === true
     ? (state.workspaceDiscussion.directories[workspaceId] ?? emptyDirectory)
     : emptyDirectory,
 );
@@ -196,18 +199,14 @@ export const selectDiscussionUnread = store.createSelector(
     const principalId =
       selectDiscussionAuthor.select(state)?.principalId ??
       (owner ? (JSON.parse(owner) as [string, string])[1] : null);
-    const readSequence = row.readSequence;
-    const unread =
-      readSequence === null
-        ? []
-        : selectDiscussionMessages
-            .select(state, workspaceId, conversationId)
-            .filter(
-              (message) =>
-                message.sequence > readSequence &&
-                (message.author.agentId !== undefined ||
-                  message.author.principalId !== principalId),
-            );
+    const readSequence = row.readSequence ?? 0;
+    const unread = selectDiscussionMessages
+      .select(state, workspaceId, conversationId)
+      .filter(
+        (message) =>
+          message.sequence > readSequence &&
+          (message.author.agentId !== undefined || message.author.principalId !== principalId),
+      );
     return { count: unread.length, firstSequence: unread[0]?.sequence ?? null };
   },
 );
@@ -267,6 +266,11 @@ export const selectDiscussionAgentMessagingSupported = store.createSelector((sta
 export const selectDiscussionAgentActivitySupported = store.createSelector((state) =>
   state.workspaceDiscussion.context === selectDiscussionContext.select(state)
     ? state.workspaceDiscussion.agentActivitySupported
+    : null,
+);
+export const selectDiscussionPrincipalMentionsSupported = store.createSelector((state) =>
+  state.workspaceDiscussion.context === selectDiscussionContext.select(state)
+    ? state.workspaceDiscussion.principalMentionsSupported
     : null,
 );
 export const selectDiscussionCanControlAgent = store.createSelector(

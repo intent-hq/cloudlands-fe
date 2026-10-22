@@ -31,6 +31,113 @@ const message = {
   createdAt: conversation.createdAt,
 };
 beforeEach(() => wire.request.mockReset());
+describe('explicit discussion person mentions', () => {
+  const principalMentions = [{ principalId: 'other', name: 'Alex', start: 3, end: 8 }];
+  const params = {
+    workspaceId: 'ws',
+    messageId: 'retry-person',
+    body: 'Hi @Alex',
+    principalMentions,
+  };
+  const response = {
+    message: { ...message, conversationId: 'default', body: params.body, principalMentions },
+  };
+  it.each([undefined, false, true, '1', 0, 2, 1])('requires exact capability %s', async (value) => {
+    wire.request.mockResolvedValue({ discussionPrincipalMentions: value });
+    expect(await client.supportsPrincipalMentions()).toBe(value === 1);
+    expect(wire.request).toHaveBeenCalledWith('system.capabilities', {});
+  });
+  it('roundtrips explicit identity and rejects altered confirmation metadata', async () => {
+    wire.request.mockResolvedValue(response);
+    expect(await client.send(params, false, false, false, false, false, true)).toEqual(response);
+    expect(wire.request).toHaveBeenCalledWith('discussion.send', params);
+    for (const changed of [
+      undefined,
+      [],
+      [{ ...principalMentions[0], principalId: 'someone-else' }],
+    ]) {
+      wire.request.mockResolvedValue({
+        message: { ...response.message, principalMentions: changed },
+      });
+      await expect(client.send(params, false, false, false, false, false, true)).rejects.toThrow();
+    }
+  });
+  it('rejects unsupported or malformed selections before sending', async () => {
+    await expect(client.send(params)).rejects.toMatchObject({ code: 'METHOD_NOT_FOUND' });
+    for (const mention of [
+      { ...principalMentions[0], start: -1 },
+      { ...principalMentions[0], end: 9 },
+      { ...principalMentions[0], principalId: '' },
+      { ...principalMentions[0], principalId: ' ' },
+      { ...principalMentions[0], name: 'Morgan' },
+    ]) {
+      await expect(
+        client.send(
+          { ...params, principalMentions: [mention] },
+          false,
+          false,
+          false,
+          false,
+          false,
+          true,
+        ),
+      ).rejects.toThrow();
+    }
+    expect(wire.request).not.toHaveBeenCalled();
+  });
+  it('rejects overlapping agent and person identities in requests, history and live events', async () => {
+    const invalid = {
+      ...params,
+      recipientAgentIds: ['agent-a'],
+      agentMentions: [{ agentId: 'agent-a', name: 'Alex', start: 3, end: 8 }],
+    };
+    await expect(client.send(invalid, false, false, true, true, false, true)).rejects.toThrow(
+      'Invalid discussion principal mentions',
+    );
+    expect(wire.request).not.toHaveBeenCalled();
+    const incoming = { ...response.message, ...invalid };
+    wire.request.mockResolvedValue({ messages: [incoming], hasMore: false });
+    await expect(
+      client.list({ workspaceId: 'ws' }, false, false, false, false, false, true),
+    ).rejects.toThrow();
+    expect(
+      isDiscussionMessageEvent({ workspaceId: 'ws', conversationId: 'default', message: incoming }),
+    ).toBe(false);
+  });
+  it.each([{ selected: [] }, { selected: principalMentions }])(
+    'sends person metadata with agent activity support and no agent recipients: %j',
+    async ({ selected }) => {
+      const request = { ...params, agentMentions: [], principalMentions: selected };
+      const result = {
+        message: {
+          ...response.message,
+          principalMentions: selected,
+          agentMentions: [],
+          agentActivity: [],
+          recipientAgentIds: [],
+        },
+      };
+      wire.request.mockResolvedValue(result);
+      await expect(client.send(request, false, false, true, true, false, true)).resolves.toEqual(
+        result,
+      );
+      expect(wire.request).toHaveBeenCalledWith('discussion.send', request);
+      expect(wire.request.mock.calls[0][1]).not.toHaveProperty('recipientAgentIds');
+    },
+  );
+  it('requires mention metadata on supported history without inventing it for older daemons', async () => {
+    wire.request.mockResolvedValue({ messages: [response.message], hasMore: false });
+    expect(
+      (await client.list({ workspaceId: 'ws' }, false, false, false, false, false, true)).messages,
+    ).toEqual([response.message]);
+    const legacy = { ...response.message, principalMentions: undefined };
+    wire.request.mockResolvedValue({ messages: [legacy], hasMore: false });
+    await expect(
+      client.list({ workspaceId: 'ws' }, false, false, false, false, false, true),
+    ).rejects.toThrow();
+    expect((await client.list({ workspaceId: 'ws' })).messages).toEqual([legacy]);
+  });
+});
 describe('explicit discussion agent wire contract', () => {
   it.each([undefined, false, true, '1', 0, 2, 1])(
     'requires exact agent capability %s',

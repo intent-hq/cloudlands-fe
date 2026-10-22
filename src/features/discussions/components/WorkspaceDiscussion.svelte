@@ -21,6 +21,7 @@
   import {
     selectWorkspaceDiscussion,
     selectDiscussionAgentMessagingSupported,
+    selectDiscussionPrincipalMentionsSupported,
     selectDiscussionCanControlAgent,
     selectDiscussionAgentControlPending,
     selectDiscussionMessages,
@@ -42,6 +43,7 @@
   import {
     discussionReadThrough,
     discussionAgentSelected,
+    discussionPrincipalSelected,
     discussionAgentControlRequested,
     discussionAgentRemoved,
     discussionReplySelected,
@@ -84,6 +86,7 @@
   $effect(() => conversationId$.set(conversationId));
   const agents$ = selectAllWorkspaceAgents(workspaceId$);
   const agentMessaging$ = selectDiscussionAgentMessagingSupported();
+  const principalMentions$ = selectDiscussionPrincipalMentionsSupported();
   const agentActivity$ = selectDiscussionCanControlAgent(workspaceId$, conversationId$);
   const agentControlPending$ = selectDiscussionAgentControlPending(workspaceId$, conversationId$);
   const discussion$ = selectWorkspaceDiscussion(workspaceId$, conversationId$);
@@ -172,6 +175,19 @@
     messages={$messages$}
     draftVersion={$discussion$.draftVersion}
     {mentionUsers}
+    onPrincipalSelect={$principalMentions$ === true
+      ? (person, start, end) =>
+          store.dispatch(
+            discussionPrincipalSelected(
+              workspaceId,
+              person.principalId,
+              person.displayName || person.login || '',
+              start,
+              end,
+              conversationId,
+            ),
+          )
+      : undefined}
     onMentionSearch={conversationId !== 'default' || $conversationsSupported$ !== false
       ? searchMentionUsers
       : undefined}

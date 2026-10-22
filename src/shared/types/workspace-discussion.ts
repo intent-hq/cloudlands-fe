@@ -39,6 +39,48 @@ export interface DiscussionMessage {
   agentActivity?: DiscussionAgentActivity[];
   /** Immutable selected spans; offsets are UTF-16 code units, end exclusive. */
   agentMentions?: DiscussionAgentMention[];
+  principalMentions?: DiscussionPrincipalMention[];
+}
+
+export interface DiscussionPrincipalMention {
+  principalId: string;
+  name: string;
+  start: number;
+  end: number;
+}
+
+export function hasDiscussionPrincipalMentions(value: unknown): boolean {
+  if (
+    !record(value) ||
+    typeof value.body !== 'string' ||
+    !Array.isArray(value.principalMentions) ||
+    value.principalMentions.length > 100 ||
+    (value.agentMentions !== undefined && !hasDiscussionAgentMentions(value))
+  )
+    return false;
+  let end = 0;
+  for (const mention of value.principalMentions) {
+    if (
+      !record(mention) ||
+      typeof mention.principalId !== 'string' ||
+      !mention.principalId.trim() ||
+      typeof mention.name !== 'string' ||
+      !mention.name.trim() ||
+      new TextEncoder().encode(mention.name).length > 256 ||
+      !Number.isSafeInteger(mention.start) ||
+      !Number.isSafeInteger(mention.end) ||
+      (mention.start as number) < end ||
+      (mention.end as number) <= (mention.start as number) ||
+      (mention.end as number) > value.body.length ||
+      value.body.slice(mention.start as number, mention.end as number) !== `@${mention.name}` ||
+      (value.agentMentions as DiscussionAgentMention[] | undefined)?.some(
+        (agent) => agent.start < (mention.end as number) && agent.end > (mention.start as number),
+      )
+    )
+      return false;
+    end = mention.end as number;
+  }
+  return true;
 }
 
 export interface DiscussionAgentMention {
@@ -163,6 +205,7 @@ export interface DiscussionSendParams {
   recipientPrincipalIds?: string[];
   recipientAgentIds?: string[];
   agentMentions?: DiscussionAgentMention[];
+  principalMentions?: DiscussionPrincipalMention[];
   messageId: string;
   body: string;
   replyToMessageId?: string;
@@ -300,6 +343,7 @@ export function isDiscussionMessage(value: unknown): value is DiscussionMessage 
     isDiscussionMessageAuthor(value.author) &&
     (value.agentActivity === undefined || hasDiscussionAgentActivity(value)) &&
     (value.agentMentions === undefined || hasDiscussionAgentMentions(value)) &&
+    (value.principalMentions === undefined || hasDiscussionPrincipalMentions(value)) &&
     (value.recipientAgentIds === undefined
       ? value.author.agentId === undefined
       : hasDiscussionAgentMessaging(value)) &&

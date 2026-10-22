@@ -24,6 +24,8 @@ import {
 import {
   discussionReadThrough,
   discussionAgentSelected,
+  discussionPrincipalSelected,
+  discussionPrincipalMentionsCapabilityReceived,
   discussionAgentControlRequested,
   discussionAgentRemoved,
   discussionAgentCapabilityReceived,
@@ -136,6 +138,7 @@ describe('workspace discussion transport', () => {
     vi.spyOn(workspaceDiscussionClient, 'supportsReactions').mockResolvedValue(false);
     vi.spyOn(workspaceDiscussionClient, 'supportsAgentMessaging').mockResolvedValue(false);
     vi.spyOn(workspaceDiscussionClient, 'supportsAgentActivity').mockResolvedValue(false);
+    vi.spyOn(workspaceDiscussionClient, 'supportsPrincipalMentions').mockResolvedValue(false);
     wire.readSetting.mockReset().mockResolvedValue({ value: true });
     wire.request.mockReset().mockResolvedValue({ messages: [], hasMore: false });
     store.dispatch(
@@ -395,6 +398,63 @@ describe('workspace discussion transport', () => {
     expect(messages()[0].agentMentions).toEqual(selected);
     expect(row().draft).toBe('Keep my new draft');
     expect(pending()).toHaveLength(0);
+  });
+  it('sends selected people by identity and retries the original selection without consuming a newer draft', async () => {
+    await open();
+    store.dispatch(
+      discussionPrincipalMentionsCapabilityReceived(
+        selectDiscussionTarget.select(store.state, 'ws')!.context,
+        true,
+      ),
+    );
+    store.dispatch(discussionDraftChanged('ws', 'Hi '));
+    store.dispatch(discussionPrincipalSelected('ws', 'alex-id', 'Alex', 3, 3));
+    wire.request.mockRejectedValueOnce(new Error('lost acknowledgment'));
+    store.dispatch(discussionSendRequested('ws'));
+    await settle();
+    const first = wire.request.mock.calls.find(([method]) => method === 'discussion.send')![1];
+    expect(first).toEqual({
+      workspaceId: 'ws',
+      messageId: expect.any(String),
+      body: 'Hi @Alex ',
+      principalMentions: [{ principalId: 'alex-id', name: 'Alex', start: 3, end: 8 }],
+    });
+    store.dispatch(discussionDraftChanged('ws', 'Another thought '));
+    store.dispatch(discussionPrincipalSelected('ws', 'jordan-id', 'Jordan', 16, 16));
+    wire.request.mockResolvedValueOnce({
+      message: {
+        ...message(1, 'ws', 'Hi @Alex '),
+        principalMentions: [{ principalId: 'alex-id', name: 'Alex', start: 3, end: 8 }],
+      },
+    });
+    store.dispatch(discussionRetryRequested('ws', first.messageId));
+    await settle();
+    const sends = wire.request.mock.calls.filter(([method]) => method === 'discussion.send');
+    expect(sends[1]).toEqual(sends[0]);
+    expect(messages()[0].principalMentions).toEqual([
+      { principalId: 'alex-id', name: 'Alex', start: 3, end: 8 },
+    ]);
+    expect(row()).toMatchObject({
+      draft: 'Another thought @Jordan ',
+      principalMentions: [{ principalId: 'jordan-id', name: 'Jordan', start: 16, end: 23 }],
+    });
+    expect(pending()).toHaveLength(0);
+  });
+  it('does not silently drop a selected person when notification capability is lost', async () => {
+    await open();
+    const context = selectDiscussionTarget.select(store.state, 'ws')!.context;
+    store.dispatch(discussionPrincipalMentionsCapabilityReceived(context, true));
+    store.dispatch(discussionPrincipalSelected('ws', 'alex-id', 'Alex', 0, 0));
+    store.dispatch(discussionPrincipalMentionsCapabilityReceived(context, false));
+    wire.request.mockClear();
+    store.dispatch(discussionSendRequested('ws'));
+    await settle();
+    expect(wire.request).not.toHaveBeenCalled();
+    expect(pending()[0]).toMatchObject({
+      error: 'unsupported',
+      sentPrincipalMentions: [{ principalId: 'alex-id', name: 'Alex', start: 0, end: 5 }],
+    });
+    expect(row().draft).toBe('@Alex ');
   });
   it('retains exact mention retry metadata when a reconnect loses the required capability', async () => {
     vi.mocked(workspaceDiscussionClient.supportsAgentActivity).mockResolvedValue(true);
@@ -1224,6 +1284,52 @@ describe('workspace discussion transport', () => {
       'c2',
     ]);
   });
+  it('counts unopened live mentions without accepting malformed metadata or nonparticipant events', async () => {
+    multiWire();
+    await openNew();
+    const context = selectDiscussionTarget.select(store.state, 'ws', 'new')!.context;
+    store.dispatch(discussionPrincipalMentionsCapabilityReceived(context, true));
+    const incoming = {
+      ...privateMessage('unopened', 12),
+      author: author('other'),
+      body: 'Hi @Sam',
+      principalMentions: [{ principalId: 'me', name: 'Sam', start: 3, end: 7 }],
+    };
+    const emit = (participants = conversation('unopened').participants, start = 3) =>
+      routeDaemonEventsNotification(
+        'events.event',
+        {
+          subscriptionId: 'current',
+          event: {
+            id: 'live-person-mention',
+            type: 'discussion:message',
+            workspaceId: 'ws',
+            data: {
+              workspaceId: 'ws',
+              conversationId: 'unopened',
+              conversation: { ...conversation('unopened'), participants },
+              message: {
+                ...incoming,
+                principalMentions: [{ ...incoming.principalMentions[0], start }],
+              },
+            },
+          },
+        },
+        ['current'],
+      );
+    emit([author('other')]);
+    emit(undefined, 0);
+    expect(selectDiscussionTarget.select(store.state, 'ws', 'unopened')).toBeNull();
+    emit();
+    emit();
+    expect(selectDiscussionMessages.select(store.state, 'ws', 'unopened')).toEqual([incoming]);
+    expect(selectDiscussionUnread.select(store.state, 'ws', 'unopened')).toEqual({
+      count: 1,
+      firstSequence: 12,
+    });
+    store.dispatch(discussionMembershipInvalidated('ws'));
+    expect(selectDiscussionUnread.select(store.state, 'ws', 'unopened').count).toBe(0);
+  });
   it('retains selected offline recipient profiles across searches and ignores late query replies', async () => {
     multiWire();
     await openNew();
@@ -1268,6 +1374,20 @@ describe('workspace discussion transport', () => {
       sending: false,
     });
     expect(store.state.workspaceDiscussion.byWorkspaceId.ws.c1.draft).toBe('');
+  });
+  it('keeps initialized private history visible while the same owner is offline', async () => {
+    multiWire();
+    store.dispatch(discussionRequested('ws', 'c1'));
+    await settle();
+    store.dispatch(discussionDraftChanged('ws', 'private draft', 'c1'));
+    store.dispatch(connectionStatusChanged('disconnected'));
+    store.dispatch(principalContextChanged(null));
+    await settle();
+    expect(selectDiscussionMessages.select(store.state, 'ws', 'c1')).toEqual([
+      privateMessage('c1'),
+    ]);
+    expect(selectWorkspaceDiscussion.select(store.state, 'ws', 'c1').draft).toBe('private draft');
+    expect(selectDiscussionReady.select(store.state, 'ws', 'c1')).toBe(false);
   });
   it('promotes a closed composer before a fresh composer opens, so restore keeps the created thread', async () => {
     multiWire();

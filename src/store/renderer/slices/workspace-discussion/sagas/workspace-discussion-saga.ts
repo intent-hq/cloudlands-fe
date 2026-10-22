@@ -49,6 +49,7 @@ import {
   discussionReactionsCapabilityReceived,
   discussionAgentCapabilityReceived,
   discussionAgentActivityCapabilityReceived,
+  discussionPrincipalMentionsCapabilityReceived,
   discussionAgentActivityReceived,
   discussionAgentControlRequested,
   discussionAgentControlStarted,
@@ -90,6 +91,7 @@ import {
   selectDiscussionReactionsSupported,
   selectDiscussionAgentMessagingSupported,
   selectDiscussionAgentActivitySupported,
+  selectDiscussionPrincipalMentionsSupported,
   selectDiscussionCanControlAgent,
   selectDiscussionCanInteract,
   selectDiscussionCanSend,
@@ -141,6 +143,7 @@ function* loadDiscussion(action: ReadAction): SagaGenerator<void> {
     const reactionsSupported = yield* ensureReactions();
     const agentsSupported = yield* ensureAgentMessaging();
     const activitySupported = yield* ensureAgentActivity();
+    const principalMentionsSupported = yield* ensurePrincipalMentions();
     const supported =
       conversationId === DEFAULT_DISCUSSION_ID ? false : yield* ensureConversations();
     if (conversationId === NEW_DISCUSSION_ID) {
@@ -164,6 +167,7 @@ function* loadDiscussion(action: ReadAction): SagaGenerator<void> {
         agentsSupported,
         activitySupported,
         reactionsSupported,
+        principalMentionsSupported,
       );
       if (!(yield* isCurrent(target))) return;
       if (result.conversation && conversationId !== DEFAULT_DISCUSSION_ID) {
@@ -174,7 +178,13 @@ function* loadDiscussion(action: ReadAction): SagaGenerator<void> {
       }
       yield* put(discussionPageReceived(target, requestId, result, direction));
       if (direction !== 'newer' || !result.hasMore) {
-        if (direction === 'newer' && (actionsSupported || activitySupported || reactionsSupported))
+        if (
+          direction === 'newer' &&
+          (actionsSupported ||
+            activitySupported ||
+            reactionsSupported ||
+            principalMentionsSupported)
+        )
           yield* refreshMessageMetadata(
             target,
             requestId,
@@ -183,6 +193,7 @@ function* loadDiscussion(action: ReadAction): SagaGenerator<void> {
             agentsSupported,
             activitySupported,
             reactionsSupported,
+            principalMentionsSupported,
           );
         yield* put(discussionLoadFinished(target, requestId, null));
         return;
@@ -216,6 +227,7 @@ function* sendDiscussion(action: SendAction): SagaGenerator<void> {
           m.body === row.draft &&
           JSON.stringify([...(m.recipientAgentIds ?? [])].sort()) ===
             JSON.stringify(discussionAgentIds(row.agentMentions)) &&
+          JSON.stringify(m.principalMentions ?? []) === JSON.stringify(row.principalMentions) &&
           (m.replyToMessageId ?? null) === row.replyToMessageId &&
           m.status === 'failed',
       );
@@ -230,6 +242,7 @@ function* sendDiscussion(action: SendAction): SagaGenerator<void> {
   const replyId = previous ? previous.replyToMessageId : (row.replyToMessageId ?? undefined);
   const reply = replyId ? getItem(row.messages, replyId) : undefined;
   const activitySupported = yield* ensureAgentActivity();
+  const principalMentionsSupported = yield* ensurePrincipalMentions();
   if (!(yield* isCurrent(target))) return;
   const pending = {
     id: previous?.id ?? uuid(),
@@ -238,6 +251,12 @@ function* sendDiscussion(action: SendAction): SagaGenerator<void> {
       ? (previous.recipientAgentIds ?? [])
       : discussionAgentIds(row.agentMentions),
     agentMentions: previous ? (previous.agentMentions ?? []) : row.agentMentions,
+    principalMentions: previous ? (previous.principalMentions ?? []) : row.principalMentions,
+    sentPrincipalMentions: previous
+      ? previous.sentPrincipalMentions
+      : principalMentionsSupported || row.principalMentions.length
+        ? row.principalMentions
+        : undefined,
     sentAgentMentions: previous
       ? previous.sentAgentMentions
       : activitySupported
@@ -277,6 +296,9 @@ function* sendDiscussion(action: SendAction): SagaGenerator<void> {
         workspaceId,
         messageId: pending.id,
         body,
+        ...(pending.sentPrincipalMentions !== undefined
+          ? { principalMentions: pending.sentPrincipalMentions }
+          : {}),
         ...(pending.sentAgentMentions !== undefined
           ? { agentMentions: pending.sentAgentMentions }
           : {}),
@@ -295,6 +317,7 @@ function* sendDiscussion(action: SendAction): SagaGenerator<void> {
       agentsSupported,
       activitySupported,
       reactionsSupported,
+      principalMentionsSupported,
     );
     const owner = yield* select(selectDiscussionOwner.select);
     if (
@@ -336,6 +359,7 @@ function* runDiscussion({
   yield* put(discussionWorkspacesChanged(yield* select(selectDiscussionWorkspaceIds.select)));
   const tasks: Task[] = [];
   try {
+    tasks.push(yield* fork(ensurePrincipalMentions));
     tasks.push(yield* takeEveryFromSelector(selectDiscussionWorkspaceIds, workspacesChanged));
     tasks.push(
       yield* takeLeadingInContext(
@@ -592,6 +616,16 @@ function* ensureAgentMessaging(): SagaGenerator<boolean> {
   yield* put(discussionAgentCapabilityReceived(context, supported));
   return supported;
 }
+function* ensurePrincipalMentions(): SagaGenerator<boolean> {
+  const known = yield* select(selectDiscussionPrincipalMentionsSupported.select);
+  if (known !== null) return known;
+  const context = yield* select(selectDiscussionContext.select);
+  if (!context) return false;
+  const supported = yield* call(workspaceDiscussionClient.supportsPrincipalMentions);
+  if (supported) yield* ensureConversations();
+  yield* put(discussionPrincipalMentionsCapabilityReceived(context, supported));
+  return supported;
+}
 
 function* ensureReactions(): SagaGenerator<boolean> {
   const known = yield* select(selectDiscussionReactionsSupported.select);
@@ -664,6 +698,7 @@ function* refreshMessageMetadata(
   agentsSupported: boolean,
   activitySupported: boolean,
   reactionsSupported: boolean,
+  principalMentionsSupported: boolean,
 ): SagaGenerator<void> {
   const row = yield* select(
     selectWorkspaceDiscussion.select,
@@ -696,6 +731,7 @@ function* refreshMessageMetadata(
       agentsSupported,
       activitySupported,
       reactionsSupported,
+      principalMentionsSupported,
     );
     if (!(yield* isCurrent(target))) return;
     const next = result.messages[0]?.sequence;

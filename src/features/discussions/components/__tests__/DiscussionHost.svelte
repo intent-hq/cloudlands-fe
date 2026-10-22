@@ -33,6 +33,7 @@
     failSend = false,
     deferSend = false,
     recentHistory = false,
+    principalMentions = false,
     messageActions = true,
     agentMessaging = false,
     agentActivity = agentMessaging,
@@ -41,6 +42,7 @@
     failSend?: boolean;
     deferSend?: boolean;
     recentHistory?: boolean;
+    principalMentions?: boolean;
     messageActions?: boolean;
     agentMessaging?: boolean;
     agentActivity?: boolean;
@@ -56,7 +58,7 @@
     (calls) => {
       requests = calls;
     },
-    { deferSend, recentHistory, messageActions, agentMessaging, agentActivity },
+    { deferSend, recentHistory, principalMentions, messageActions, agentMessaging, agentActivity },
   );
   const dispose = startRootStoreLifecycle(store, { startSagas: () => [] });
   store.dispatch(setLabsMultiplayerEnabled(true));

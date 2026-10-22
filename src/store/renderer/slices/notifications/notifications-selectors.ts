@@ -5,14 +5,16 @@ import {
   hasDiscussionPrincipalMentions,
   type DiscussionMessage,
 } from '$shared/types/workspace-discussion';
-import type { DiscussionTarget } from '../workspace-discussion/workspace-discussion-slice';
+import {
+  discussionRow,
+  type DiscussionTarget,
+} from '../workspace-discussion/workspace-discussion-slice';
 import {
   selectDiscussionAuthor,
   selectDiscussionOwner,
   selectDiscussionPrincipalMentionsSupported,
   selectDiscussionReady,
   selectDiscussionTarget,
-  selectWorkspaceDiscussion,
 } from '../workspace-discussion/workspace-discussion-selectors';
 import { selectNotificationEnabled } from '../user-preferences/user-preferences-selectors';
 import { selectCurrentWorkspaceTabId } from '../tab-state/tab-state-selectors';
@@ -28,8 +30,8 @@ export const selectDiscussionMentionCandidate = store.createSelector(
     const current = selectDiscussionTarget.select(state, target.workspaceId, target.conversationId);
     if (!current || current.context !== target.context || current.epoch !== target.epoch)
       return null;
-    const row = selectWorkspaceDiscussion.select(state, target.workspaceId, target.conversationId);
-    return row.authorized ? (getItem(row.messages, messageId) ?? null) : null;
+    const row = discussionRow(state.workspaceDiscussion, target.workspaceId, target.conversationId);
+    return row?.authorized ? (getItem(row.messages, messageId) ?? null) : null;
   },
 );
 
@@ -41,14 +43,22 @@ export const selectDiscussionMentionAdmission = store.createSelector(
       !message ||
       !principalId ||
       !selectNotificationEnabled.select(state) ||
-      !selectDiscussionReady.select(state, target.workspaceId, target.conversationId) ||
+      !selectDiscussionReady.select(state, target.workspaceId) ||
       (!message.author.agentId && message.author.principalId === principalId) ||
       !hasDiscussionPrincipalMentions(message) ||
       !message.principalMentions?.some((mention) => mention.principalId === principalId)
     )
       return null;
     const supported = selectDiscussionPrincipalMentionsSupported.select(state);
-    return supported === null ? 'pending' : supported === true ? message : null;
+    const conversationsSupported =
+      (target.conversationId ?? DEFAULT_DISCUSSION_ID) === DEFAULT_DISCUSSION_ID
+        ? true
+        : state.workspaceDiscussion.conversationsSupported;
+    if (supported === false || conversationsSupported === false) return null;
+    if (supported === null || conversationsSupported === null) return 'pending';
+    return selectDiscussionReady.select(state, target.workspaceId, target.conversationId)
+      ? message
+      : null;
   },
 );
 

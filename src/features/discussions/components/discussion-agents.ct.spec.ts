@@ -287,6 +287,29 @@ test('mentions list agents before people and select a user without sending', asy
   expect((await sends(component))[0]).not.toHaveProperty('recipientPrincipalIds');
 });
 
+test('selecting a person preserves its identity through typing and sends it without changing conversation recipients', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(DiscussionHost, { props: { principalMentions: true } });
+  const composer = component.getByRole('textbox', { name: 'Message', exact: true });
+  await expect(composer).toBeEditable();
+  await composer.fill('Hi @Alex');
+  await expect(page.getByRole('option', { name: /Alex/ })).toBeVisible();
+  await composer.press('Tab');
+  await composer.pressSequentially('please review');
+  await expect(composer).toHaveValue('Hi @Alex please review');
+  await expect(composer).toBeFocused();
+  await composer.press('Enter');
+  await expect(composer).toHaveValue('');
+  expect((await sends(component))[0]).toMatchObject({
+    body: 'Hi @Alex please review',
+    principalMentions: [{ principalId: 'alex', name: 'Alex', start: 3, end: 8 }],
+  });
+  expect((await sends(component))[0]).not.toHaveProperty('recipientPrincipalIds');
+  expect((await sends(component))[0]).not.toHaveProperty('recipientAgentIds');
+});
+
 test('mention selection preserves surrounding text and Escape leaves the draft editable', async ({
   mount,
   page,

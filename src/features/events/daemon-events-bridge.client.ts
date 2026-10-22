@@ -10,6 +10,7 @@ import {
   isDiscussionAgentActivityEvent,
   hasDiscussionAgentActivity,
   hasDiscussionAgentMentions,
+  hasDiscussionPrincipalMentions,
   isDiscussionReactionEvent,
   hasDiscussionMessageActions,
   DEFAULT_DISCUSSION_ID,
@@ -3885,6 +3886,8 @@ export function routeDaemonEventsNotification(
     const data = (event as { data?: unknown }).data;
     if (
       isDiscussionMessageEvent(data) &&
+      (appStore.state.workspaceDiscussion.principalMentionsSupported !== true ||
+        hasDiscussionPrincipalMentions(data.message)) &&
       (appStore.state.workspaceDiscussion.agentActivitySupported !== true ||
         (hasDiscussionAgentActivity(data.message) && hasDiscussionAgentMentions(data.message))) &&
       (appStore.state.workspaceDiscussion.messageActionsSupported !== true ||
@@ -3897,7 +3900,7 @@ export function routeDaemonEventsNotification(
       if (!context) return;
       if (
         conversationId !== DEFAULT_DISCUSSION_ID &&
-        (appStore.state.workspaceDiscussion.conversationsSupported !== true ||
+        (appStore.state.workspaceDiscussion.conversationsSupported === false ||
           !data.conversation?.participants.some(
             (p) => p.principalId === appStore.state.principal.snapshot?.principal.id,
           ))

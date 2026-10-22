@@ -1,5 +1,5 @@
 import {
-  reconcileDiscussionAgentMentions,
+  reconcileDiscussionMentions,
   type DiscussionAgentMention,
 } from '$features/discussions/discussion-agent-mentions';
 import {
@@ -26,6 +26,7 @@ import {
   DISCUSSION_MAX_RECIPIENTS,
   type DiscussionConversation,
   type DiscussionAuthor,
+  type DiscussionPrincipalMention,
   type DiscussionConversationsResult,
   type DiscussionRecipientsResult,
   type DiscussionError,
@@ -44,6 +45,8 @@ export interface PendingDiscussionMessage {
   agentMentions?: DiscussionAgentMention[];
   /** Exact metadata sent on the first attempt; undefined means the old wire contract. */
   sentAgentMentions?: DiscussionAgentMention[];
+  principalMentions?: DiscussionPrincipalMention[];
+  sentPrincipalMentions?: DiscussionPrincipalMention[];
   author?: DiscussionAuthor;
   createdAt?: string;
   replyToMessageId?: string;
@@ -84,6 +87,7 @@ export interface WorkspaceDiscussion {
   pending: Collection<PendingDiscussionMessage, 'id'>;
   draft: string;
   agentMentions: DiscussionAgentMention[];
+  principalMentions: DiscussionPrincipalMention[];
   draftVersion: number;
   loading: boolean;
   loadingOlder: boolean;
@@ -116,6 +120,7 @@ export interface WorkspaceDiscussionState {
   reactionsSupported: boolean | null;
   agentMessagingSupported: boolean | null;
   agentActivitySupported: boolean | null;
+  principalMentionsSupported: boolean | null;
   directories: Record<string, DiscussionDirectory>;
   recipients: Record<string, DiscussionRecipients>;
   directoryRequestedIds: string[];
@@ -147,6 +152,7 @@ export const emptyDiscussion: WorkspaceDiscussion = {
   pending: createCollection('id'),
   draft: '',
   agentMentions: [],
+  principalMentions: [],
   draftVersion: 0,
   loading: false,
   loadingOlder: false,
@@ -175,6 +181,7 @@ export const initialState: WorkspaceDiscussionState = {
   reactionsSupported: null,
   agentMessagingSupported: null,
   agentActivitySupported: null,
+  principalMentionsSupported: null,
   directories: {},
   recipients: {},
   directoryRequestedIds: [],
@@ -202,6 +209,19 @@ export const discussionAgentSelected = createAction<
 export const discussionAgentRemoved = createAction<
   [workspaceId: string, agentId: string, conversationId?: string]
 >('workspaceDiscussion/agentRemoved');
+export const discussionPrincipalSelected = createAction<
+  [
+    workspaceId: string,
+    principalId: string,
+    name: string,
+    start: number,
+    end: number,
+    conversationId?: string,
+  ]
+>('workspaceDiscussion/principalSelected');
+export const discussionPrincipalMentionsCapabilityReceived = createAction<
+  [context: string, supported: boolean]
+>('workspaceDiscussion/principalMentionsCapabilityReceived');
 export const discussionSendRequested = createAction<[workspaceId: string, conversationId?: string]>(
   'workspaceDiscussion/sendRequested',
 );
@@ -410,7 +430,8 @@ function receive(row: WorkspaceDiscussion, messages: DiscussionMessage[]): Works
     const metadataAdded =
       (existingMessage.recipientAgentIds === undefined &&
         message.recipientAgentIds !== undefined) ||
-      (existingMessage.agentMentions === undefined && message.agentMentions !== undefined);
+      (existingMessage.agentMentions === undefined && message.agentMentions !== undefined) ||
+      (existingMessage.principalMentions === undefined && message.principalMentions !== undefined);
     const currentActivityMessage = metadataAdded
       ? {
           ...existingMessage,
@@ -419,6 +440,9 @@ function receive(row: WorkspaceDiscussion, messages: DiscussionMessage[]): Works
             : {}),
           ...(existingMessage.agentMentions === undefined
             ? { agentMentions: message.agentMentions }
+            : {}),
+          ...(existingMessage.principalMentions === undefined
+            ? { principalMentions: message.principalMentions }
             : {}),
         }
       : existingMessage;
@@ -495,6 +519,7 @@ workspaceDiscussionReducer.with(
       reactionsSupported: null,
       agentMessagingSupported: null,
       agentActivitySupported: null,
+      principalMentionsSupported: null,
       directories: {},
       recipients: {},
       byWorkspaceId: Object.fromEntries(
@@ -570,7 +595,8 @@ workspaceDiscussionReducer.with(
           {
             ...row,
             draft,
-            agentMentions: reconcileDiscussionAgentMentions(row.draft, draft, row.agentMentions),
+            agentMentions: reconcileDiscussionMentions(row.draft, draft, row.agentMentions),
+            principalMentions: reconcileDiscussionMentions(row.draft, draft, row.principalMentions),
             draftVersion: row.draftVersion + 1,
           },
         )
@@ -614,9 +640,60 @@ workspaceDiscussionReducer.with(
         draft,
         draftVersion: row.draftVersion + 1,
         agentMentions: [
-          ...reconcileDiscussionAgentMentions(row.draft, draft, row.agentMentions),
+          ...reconcileDiscussionMentions(row.draft, draft, row.agentMentions),
           {
             agentId,
+            name: label,
+            start: start + prefix.length,
+            end: start + prefix.length + token.length,
+          },
+        ].sort((a, b) => a.start - b.start),
+        principalMentions: reconcileDiscussionMentions(row.draft, draft, row.principalMentions),
+      },
+    );
+  },
+);
+workspaceDiscussionReducer.with(
+  discussionPrincipalSelected,
+  (
+    state,
+    {
+      payload: [workspaceId, principalId, name, start, end, conversationId = DEFAULT_DISCUSSION_ID],
+    },
+  ) => {
+    const row = discussionRow(state, workspaceId, conversationId);
+    if (
+      !row ||
+      !state.context ||
+      !row.authorized ||
+      state.principalMentionsSupported !== true ||
+      !state.workspaceIds.includes(workspaceId) ||
+      !principalId ||
+      !name.trim() ||
+      row.principalMentions.length >= 100 ||
+      !Number.isInteger(start) ||
+      !Number.isInteger(end) ||
+      start < 0 ||
+      end < start ||
+      end > row.draft.length
+    )
+      return state;
+    const label = name.replace(/\s+/g, ' ').trim();
+    const prefix = start > 0 && !/\s/.test(row.draft[start - 1]) ? ' ' : '';
+    const token = `@${label}`;
+    const draft = row.draft.slice(0, start) + prefix + token + ' ' + row.draft.slice(end);
+    return set(
+      state,
+      { workspaceId, conversationId },
+      {
+        ...row,
+        draft,
+        draftVersion: row.draftVersion + 1,
+        agentMentions: reconcileDiscussionMentions(row.draft, draft, row.agentMentions),
+        principalMentions: [
+          ...reconcileDiscussionMentions(row.draft, draft, row.principalMentions),
+          {
+            principalId,
             name: label,
             start: start + prefix.length,
             end: start + prefix.length + token.length,
@@ -652,6 +729,7 @@ workspaceDiscussionReducer.with(
                 }
               : selected,
           ),
+        principalMentions: reconcileDiscussionMentions(row.draft, draft, row.principalMentions),
         draftVersion: row.draftVersion + 1,
       },
     );
@@ -719,7 +797,12 @@ workspaceDiscussionReducer.with(
             ...(direction === 'initial'
               ? {
                   syncedSequence: result.messages.at(-1)?.sequence ?? 0,
-                  readSequence: row.readSequence ?? result.messages.at(-1)?.sequence ?? 0,
+                  readSequence:
+                    row.readSequence ??
+                    Math.min(
+                      result.messages.at(-1)?.sequence ?? 0,
+                      ...getItems(row.messages).map((message) => message.sequence - 1),
+                    ),
                   catchUp: false,
                 }
               : {}),
@@ -784,7 +867,8 @@ function failSend(
       row.unsupported ||
       (error === 'unsupported' &&
         !getItems(row.pending).find((m) => m.id === messageId)?.recipientAgentIds?.length &&
-        getItems(row.pending).find((m) => m.id === messageId)?.sentAgentMentions === undefined),
+        getItems(row.pending).find((m) => m.id === messageId)?.sentAgentMentions === undefined &&
+        getItems(row.pending).find((m) => m.id === messageId)?.sentPrincipalMentions === undefined),
   };
 }
 workspaceDiscussionReducer.with(
@@ -840,6 +924,13 @@ workspaceDiscussionReducer.with(
       (sent.sentAgentMentions !== undefined &&
         JSON.stringify(sent.sentAgentMentions.map((m) => [m.agentId, m.name, m.start, m.end])) !==
           JSON.stringify(message.agentMentions?.map((m) => [m.agentId, m.name, m.start, m.end]))) ||
+      (sent.sentPrincipalMentions !== undefined &&
+        JSON.stringify(
+          sent.sentPrincipalMentions.map((m) => [m.principalId, m.name, m.start, m.end]),
+        ) !==
+          JSON.stringify(
+            message.principalMentions?.map((m) => [m.principalId, m.name, m.start, m.end]),
+          )) ||
       sent.body !== message.body ||
       message.author.agentId !== undefined ||
       JSON.stringify([...(sent.recipientAgentIds ?? [])].sort()) !==
@@ -859,6 +950,7 @@ workspaceDiscussionReducer.with(
       pending: createCollection('id', pending),
       draft: clearDraft ? '' : row.draft,
       agentMentions: clearDraft ? [] : row.agentMentions,
+      principalMentions: clearDraft ? [] : row.principalMentions,
       replyToMessageId:
         row.replyVersion === sent.replyVersion &&
         row.replyToMessageId === (sent.replyToMessageId ?? null)
@@ -1174,10 +1266,24 @@ workspaceDiscussionReducer.with(
 );
 workspaceDiscussionReducer.with(
   discussionConversationReceived,
-  (state, { payload: [context, conversation] }) =>
-    admitted(state, context, conversation.workspaceId)
-      ? rememberConversation(state, conversation)
-      : state,
+  (state, { payload: [context, conversation] }) => {
+    if (!admitted(state, context, conversation.workspaceId)) return state;
+    const next = rememberConversation(state, conversation);
+    const row = discussionRow(next, conversation.workspaceId, conversation.id);
+    if (row)
+      return row.authorized
+        ? next
+        : set(
+            next,
+            { workspaceId: conversation.workspaceId, conversationId: conversation.id },
+            { ...row, authorized: true },
+          );
+    return set(
+      { ...next, nextEpoch: next.nextEpoch + 1 },
+      { workspaceId: conversation.workspaceId, conversationId: conversation.id },
+      { ...emptyDiscussion, epoch: next.nextEpoch + 1, authorized: true },
+    );
+  },
 );
 workspaceDiscussionReducer.with(
   discussionMembershipInvalidated,
@@ -1349,6 +1455,11 @@ workspaceDiscussionReducer.with(
   discussionAgentActivityCapabilityReceived,
   (state, { payload: [context, supported] }) =>
     state.context === context ? { ...state, agentActivitySupported: supported } : state,
+);
+workspaceDiscussionReducer.with(
+  discussionPrincipalMentionsCapabilityReceived,
+  (state, { payload: [context, supported] }) =>
+    state.context === context ? { ...state, principalMentionsSupported: supported } : state,
 );
 workspaceDiscussionReducer.with(
   discussionAgentActivityReceived,

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { store } from '$store/renderer/store';
+import { routeDaemonEventsNotification } from '$features/events/daemon-events-bridge.client';
 import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { replaceWorkspaceList } from '../../workspace/workspace-slice';
 import { WorkspaceId } from '$shared/types/branded-ids';
@@ -21,6 +22,8 @@ import {
   selectDiscussionContext,
   selectDiscussionOwner,
   selectDiscussionTarget,
+  selectDiscussionUnread,
+  selectDiscussionConversations,
 } from '../../workspace-discussion/workspace-discussion-selectors';
 import {
   setLabsMultiplayerEnabled,
@@ -169,6 +172,62 @@ describe('live discussion mention notifications', () => {
     expect(mocks.route).toHaveBeenCalledWith('/workspace/ws');
     expect(mocks.open).toHaveBeenCalledWith('ws', 'ws', 'default');
   });
+  it.each([true, false])(
+    'retains an unopened private event until capabilities settle to supported=%s',
+    async (supported) => {
+      const context = selectDiscussionContext.select(store.state)!;
+      store.dispatch(discussionContextChanged(null, null));
+      store.dispatch(discussionContextChanged(context, selectDiscussionOwner.select(store.state)));
+      store.dispatch(discussionWorkspacesChanged(['ws', 'other']));
+      const incoming = { ...message('first-live', 12), conversationId: 'private' };
+      const event = {
+        subscriptionId: 'current',
+        event: {
+          id: 'first-live-event',
+          type: 'discussion:message',
+          workspaceId: 'ws',
+          data: {
+            workspaceId: 'ws',
+            conversationId: 'private',
+            conversation: {
+              id: 'private',
+              workspaceId: 'ws',
+              kind: 'direct',
+              participants: [
+                incoming.author,
+                { principalId: 'principal', displayName: 'Sam', login: null, avatarUrl: null },
+              ],
+              createdAt: incoming.createdAt,
+            },
+            message: incoming,
+          },
+        },
+      };
+      routeDaemonEventsNotification('events.event', event, ['current']);
+      await settle();
+      expect(mocks.toast).not.toHaveBeenCalled();
+      expect(selectDiscussionUnread.select(store.state, 'ws', 'private').count).toBe(0);
+      expect(selectDiscussionConversations.select(store.state, 'ws')).toEqual([]);
+      store.dispatch(discussionPrincipalMentionsCapabilityReceived(context, true));
+      await settle();
+      expect(mocks.toast).not.toHaveBeenCalled();
+      store.dispatch(discussionCapabilityReceived(context, supported));
+      await settle();
+      expect(mocks.toast).toHaveBeenCalledTimes(supported ? 1 : 0);
+      expect(selectDiscussionUnread.select(store.state, 'ws', 'private').count).toBe(
+        supported ? 1 : 0,
+      );
+      routeDaemonEventsNotification('events.event', event, ['current']);
+      await settle();
+      expect(mocks.toast).toHaveBeenCalledTimes(supported ? 1 : 0);
+      expect(selectDiscussionUnread.select(store.state, 'ws', 'private').count).toBe(
+        supported ? 1 : 0,
+      );
+      expect(selectDiscussionConversations.select(store.state, 'ws').map((row) => row.id)).toEqual(
+        supported ? ['private'] : [],
+      );
+    },
+  );
   it('opens the specific private conversation, not the workspace-wide discussion', async () => {
     const context = target().context;
     store.dispatch(discussionCapabilityReceived(context, true));

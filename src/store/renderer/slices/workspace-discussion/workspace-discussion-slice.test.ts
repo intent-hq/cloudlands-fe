@@ -8,6 +8,9 @@ import {
   discussionAgentControlStarted,
   discussionAgentControlFinished,
   discussionAgentSelected,
+  discussionPrincipalSelected,
+  discussionPrincipalMentionsCapabilityReceived,
+  discussionConversationReceived,
   discussionAgentRemoved,
   discussionAgentCapabilityReceived,
   workspaceDiscussionReducer as reduce,
@@ -57,6 +60,82 @@ const pending = {
 };
 
 describe('workspace discussion reducer', () => {
+  it('keeps explicit person identities through surrounding edits and revokes edited tokens', () => {
+    const { target, state: initial } = setup();
+    let state = reduce(
+      initial,
+      discussionPrincipalMentionsCapabilityReceived(target.context, true),
+    );
+    state = reduce(state, discussionDraftChanged('ws', 'Hi '));
+    state = reduce(state, discussionPrincipalSelected('ws', 'alex-id', 'Alex', 3, 3));
+    expect(state.byWorkspaceId.ws.default).toMatchObject({
+      draft: 'Hi @Alex ',
+      principalMentions: [{ principalId: 'alex-id', name: 'Alex', start: 3, end: 8 }],
+    });
+    state = reduce(state, discussionDraftChanged('ws', '😀 Hi @Alex '));
+    expect(state.byWorkspaceId.ws.default.principalMentions).toEqual([
+      { principalId: 'alex-id', name: 'Alex', start: 6, end: 11 },
+    ]);
+    state = reduce(state, discussionDraftChanged('ws', '😀 Hi @Alexandra '));
+    expect(state.byWorkspaceId.ws.default.principalMentions).toEqual([]);
+    state = reduce(state, discussionDraftChanged('ws', 'Hi @Alex '));
+    expect(state.byWorkspaceId.ws.default.principalMentions).toEqual([]);
+  });
+  it('does not turn person picker selections into notification identities without capability', () => {
+    const { state } = setup();
+    expect(reduce(state, discussionPrincipalSelected('ws', 'alex-id', 'Alex', 0, 0))).toBe(state);
+  });
+  it('admits an unopened live conversation and preserves its unread boundary through first history', () => {
+    const { state: initial } = setup();
+    const conversation = {
+      id: 'default',
+      workspaceId: 'other',
+      kind: 'workspace' as const,
+      participants: [],
+      createdAt: '2026-10-22T00:00:00Z',
+    };
+    let state = reduce(initial, discussionConversationReceived('connection-1', conversation));
+    const target = {
+      context: 'connection-1',
+      workspaceId: 'other',
+      epoch: state.byWorkspaceId.other.default.epoch,
+    };
+    const live = { ...message(12), workspaceId: 'other' };
+    state = reduce(state, discussionMessageReceived(target, live));
+    state = reduce(
+      state,
+      discussionMessageReceived(target, { ...live, id: 'earlier', sequence: 10 }),
+    );
+    expect(state.byWorkspaceId.other.default).toMatchObject({
+      authorized: true,
+      initialized: false,
+      readSequence: null,
+    });
+    state = reduce(state, discussionLoadStarted(target, 'history', false));
+    state = reduce(
+      state,
+      discussionPageReceived(
+        target,
+        'history',
+        { messages: [{ ...live, id: 'old', sequence: 8 }, live], hasMore: false },
+        'initial',
+      ),
+    );
+    expect(state.byWorkspaceId.other.default).toMatchObject({
+      initialized: true,
+      readSequence: 9,
+      syncedSequence: 12,
+    });
+    expect(getItems(state.byWorkspaceId.other.default.messages).map((m) => m.sequence)).toEqual([
+      8, 10, 12,
+    ]);
+    expect(
+      reduce(
+        state,
+        discussionConversationReceived('stale', { ...conversation, workspaceId: 'unknown' }),
+      ),
+    ).toBe(state);
+  });
   it('keeps agent progress independent across messages, recipients and stale control lifetimes', () => {
     const { target, state: initial } = setup();
     let state = initial;
@@ -453,6 +532,18 @@ describe('discussion presentation state', () => {
     expect(state.byWorkspaceId.ws.default.readSequence).toBe(10);
     expect(reduce(state, discussionReadThrough({ ...target, context: 'stale' }, 100))).toBe(state);
     state = reduce(state, discussionReadThrough(target, 100));
+    expect(state.byWorkspaceId.ws.default.readSequence).toBe(100);
+  });
+  it('keeps an explicit read acknowledgement when older live messages and the first page arrive', () => {
+    const { state: initial, target } = setup();
+    let state = reduce(initial, discussionLoadStarted(target, 'read', false));
+    state = reduce(state, discussionMessageReceived(target, message(100)));
+    state = reduce(state, discussionReadThrough(target, 100));
+    state = reduce(state, discussionMessageReceived(target, message(90)));
+    state = reduce(
+      state,
+      discussionPageReceived(target, 'read', { messages: [message(10)], hasMore: true }, 'initial'),
+    );
     expect(state.byWorkspaceId.ws.default.readSequence).toBe(100);
   });
 });

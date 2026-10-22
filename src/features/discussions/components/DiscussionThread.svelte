@@ -44,6 +44,7 @@
   interface Props {
     mentionUsers?: readonly DiscussionAuthor[];
     onMentionSearch?: (query: string) => void;
+    onPrincipalSelect?: (person: DiscussionAuthor, start: number, end: number) => void;
     mentionUsersLoading?: boolean;
     mentionUsersError?: string | null;
     mentionUsersHasMore?: boolean;
@@ -119,6 +120,7 @@
   let {
     mentionUsers = [],
     onMentionSearch,
+    onPrincipalSelect,
     mentionUsersLoading = false,
     mentionUsersError = null,
     mentionUsersHasMore = false,
@@ -571,7 +573,8 @@
       onAgentSelect?.(option.agent, start, end);
     } else {
       pendingMentionCaret = { value, position: start + insertion.length };
-      onDraftChange(value);
+      if (onPrincipalSelect) onPrincipalSelect(option.user, start, end);
+      else onDraftChange(value);
     }
     // Accept the picker insertion in the native input before the next key event.
     // Redux selectors can publish the accepted draft after a fast follow-up key.

@@ -12,6 +12,7 @@ import {
   hasDiscussionAgentMessaging,
   hasDiscussionAgentActivity,
   hasDiscussionAgentMentions,
+  hasDiscussionPrincipalMentions,
   isDiscussionAgentActivity,
   type DiscussionAgentActivity,
   type DiscussionAgentControlParams,
@@ -47,6 +48,17 @@ function requireConversations(supported: boolean): void {
 const pageLimit = (limit?: number) =>
   Math.min(DISCUSSION_PAGE_SIZE, Math.max(1, limit ?? DISCUSSION_PAGE_SIZE));
 export const workspaceDiscussionClient = {
+  async supportsPrincipalMentions(): Promise<boolean> {
+    try {
+      const result = await backendRequest<{ discussionPrincipalMentions?: unknown }>(
+        'system.capabilities',
+        {},
+      );
+      return result?.discussionPrincipalMentions === 1;
+    } catch {
+      return false;
+    }
+  },
   async supportsAgentActivity(): Promise<boolean> {
     try {
       const result = await backendRequest<{ discussionAgentActivity?: unknown }>(
@@ -150,6 +162,7 @@ export const workspaceDiscussionClient = {
     agentsSupported = false,
     activitySupported = false,
     reactionsSupported = false,
+    principalMentionsSupported = false,
   ): Promise<DiscussionListResult> {
     const id = params.conversationId ?? DEFAULT_DISCUSSION_ID;
     if (id !== DEFAULT_DISCUSSION_ID) requireConversations(supported);
@@ -170,6 +183,7 @@ export const workspaceDiscussionClient = {
           (!actionsSupported || hasDiscussionMessageActions(message)) &&
           (!reactionsSupported || hasDiscussionReactions(message)) &&
           (!agentsSupported || hasDiscussionAgentMessaging(message)) &&
+          (!principalMentionsSupported || hasDiscussionPrincipalMentions(message)) &&
           (!activitySupported ||
             (hasDiscussionAgentActivity(message) && hasDiscussionAgentMentions(message))) &&
           message.workspaceId === params.workspaceId &&
@@ -200,7 +214,18 @@ export const workspaceDiscussionClient = {
     agentsSupported = false,
     activitySupported = false,
     reactionsSupported = false,
+    principalMentionsSupported = false,
   ): Promise<DiscussionSendResult> {
+    if (params.principalMentions !== undefined) {
+      requireConversations(principalMentionsSupported);
+      if (
+        !hasDiscussionPrincipalMentions({
+          ...params,
+          recipientAgentIds: params.recipientAgentIds ?? [],
+        })
+      )
+        throw new Error('Invalid discussion principal mentions');
+    }
     if (params.agentMentions !== undefined) {
       requireConversations(activitySupported);
       if (
@@ -233,6 +258,19 @@ export const workspaceDiscussionClient = {
       (actionsSupported && !hasDiscussionMessageActions(result?.message)) ||
       (reactionsSupported && !hasDiscussionReactions(result?.message)) ||
       (agentsSupported && !hasDiscussionAgentMessaging(result?.message)) ||
+      (principalMentionsSupported && !hasDiscussionPrincipalMentions(result?.message)) ||
+      (principalMentionsSupported &&
+        JSON.stringify(
+          (result?.message?.principalMentions ?? []).map((m) => [
+            m.principalId,
+            m.name,
+            m.start,
+            m.end,
+          ]),
+        ) !==
+          JSON.stringify(
+            (params.principalMentions ?? []).map((m) => [m.principalId, m.name, m.start, m.end]),
+          )) ||
       (activitySupported &&
         (!hasDiscussionAgentActivity(result?.message) ||
           !hasDiscussionAgentMentions(result?.message))) ||
