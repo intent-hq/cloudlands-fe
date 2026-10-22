@@ -5,7 +5,7 @@
   import { selectIsHostMember } from '$store/renderer/slices/host-execution/host-execution-selectors';
   const hostMember$ = selectIsHostMember();
   import { onDestroy, onMount, untrack } from 'svelte';
-  import { writable, derived, get } from 'svelte/store';
+  import { writable, derived } from 'svelte/store';
 
   import { useAgentSession } from '$lib/hooks/useAgentSession.svelte';
   import { selectAgentReasoningEffort } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -83,8 +83,6 @@
   } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
   import { ensureWorkspaceCatalogRequested } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
   import { selectProviderCatalogProfiles } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
-  import { selectLabsProviderProfilesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import type { ProviderProfileSummary } from '$shared/provider-catalog';
   import { selectProfileSignInStatuses } from '$store/renderer/slices/provider-settings/provider-profile-status-selectors';
   import { providerProfileSummaryStatusesEnsured } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import {
@@ -174,7 +172,7 @@
     return formatProviderRefLabel(
       isProfile ? providerId : baseId,
       baseName,
-      isProfile ? $allProviderProfiles$ : $providerProfiles$,
+      isProfile ? $providerProfiles$ : $providerProfiles$,
       baseId,
     );
   }
@@ -197,7 +195,7 @@
     return $providerProfiles$.some((profile) => profile.baseProviderId === baseId);
   }
   function profileInitial(providerRef: string): string {
-    const name = findProfileByRef($allProviderProfiles$, providerRef)?.name.trim() ?? '';
+    const name = findProfileByRef($providerProfiles$, providerRef)?.name.trim() ?? '';
     return name ? [...name][0].toLocaleUpperCase() : '?';
   }
   function parseCompoundModelId(compoundModelId: string): {
@@ -214,7 +212,7 @@
     // a deleted one needs an explicit replacement, never a substitute.
     if (isProviderProfileRef(providerId)) {
       return (
-        !!findProfileByRef($allProviderProfiles$, providerId) &&
+        !!findProfileByRef($providerProfiles$, providerId) &&
         hasResolvedProvider(providerRefBaseId(providerId))
       );
     }
@@ -392,28 +390,7 @@
   // Named profiles (§5.54) ride their base provider's availability: each
   // available base is followed by its profile references, which the picker
   // then treats as providers of their own (catalog fetch, group, tab).
-  //
-  // Profiles are a Labs feature (Settings → Labs → Provider profiles). While
-  // it is off the picker offers no profile groups, tabs, `Default` labels or
-  // sign-in probes, but a selection that already references a saved profile
-  // keeps resolving, running and showing its profile name — never a silent
-  // account switch. `allProviderProfiles$` is every saved profile (resolution
-  // and labels); `providerProfiles$` is the offered set.
-  const allProviderProfiles$ = selectProviderCatalogProfiles(workspaceIdStore);
-  const labsProviderProfilesEnabled$ = selectLabsProviderProfilesEnabled();
-  const NO_OFFERED_PROFILES: ProviderProfileSummary[] = [];
-  const providerProfiles$ = derived(
-    [allProviderProfiles$, labsProviderProfilesEnabled$],
-    ([profiles, enabled]) => (enabled ? profiles : NO_OFFERED_PROFILES),
-  );
-  // Profile references the current selection already uses; set below once
-  // the selection is known. Kept in the fetch/availability sets while off.
-  const selectionProfileRefs$ = writable<string[]>([]);
-  const runnableProviderProfiles$ = derived(
-    [allProviderProfiles$, labsProviderProfilesEnabled$, selectionProfileRefs$],
-    ([profiles, enabled, refs]) =>
-      enabled ? profiles : profiles.filter((profile) => refs.includes(profile.providerRef)),
-  );
+  const providerProfiles$ = selectProviderCatalogProfiles(workspaceIdStore);
   const baseModelFetchProviderIds$ = selectContextModelProviderIds(workspaceIdStore);
   const baseAvailableEnabledProviderIds$ = selectContextAvailableProviderIds(workspaceIdStore);
   // A signed-out profile stays selectable but is flagged (§5.54 status mapping:
@@ -429,11 +406,11 @@
     );
   });
   const modelFetchProviderIds$ = derived(
-    [baseModelFetchProviderIds$, runnableProviderProfiles$],
+    [baseModelFetchProviderIds$, providerProfiles$],
     ([ids, profiles]) => expandProviderIdsWithProfiles(ids, profiles),
   );
   const availableEnabledProviderIds$ = derived(
-    [baseAvailableEnabledProviderIds$, runnableProviderProfiles$],
+    [baseAvailableEnabledProviderIds$, providerProfiles$],
     ([ids, profiles]) => expandProviderIdsWithProfiles(ids, profiles),
   );
   const enabledProviders$ = selectContextEnabledProviders(workspaceIdStore);
@@ -1514,7 +1491,7 @@
     if (
       isProviderProfileRef(gate) &&
       $providerCatalogEntries$.length > 0 &&
-      !findProfileByRef($allProviderProfiles$, gate)
+      !findProfileByRef($providerProfiles$, gate)
     )
       return { providerRef: gate, reason: 'profile-missing' as const };
     return null;
@@ -1528,21 +1505,9 @@
       isProviderDisabledInSettings($enabledProviders$, selectedModelGateProviderId),
   );
 
-  $effect(() => {
-    const refs = [effectiveProviderId, selectedModelGateProviderId].filter(
-      (id): id is string => !!id && isProviderProfileRef(id),
-    );
-    const current = get(selectionProfileRefs$);
-    if (refs.length !== current.length || refs.some((ref, i) => ref !== current[i]))
-      selectionProfileRefs$.set(refs);
-  });
-
-  // A profile kept running while the Labs toggle is off never gets a tab.
   const providerTabIds = $derived.by(() => [
     ...new Set([
-      ...selectableProviderIds
-        .filter((id) => $labsProviderProfilesEnabled$ || !isProviderProfileRef(id))
-        .map((id) => normalizeProviderId(id)),
+      ...selectableProviderIds.map((id) => normalizeProviderId(id)),
       ...groupedModelOptions
         .filter((group) => group.key !== 'default')
         .map((group) => group.parentKey ?? group.key),
@@ -1796,7 +1761,7 @@
     return providerRefProfileName(
       providerRefLabelParts(
         isProfile ? ref : baseId,
-        isProfile ? $allProviderProfiles$ : $providerProfiles$,
+        isProfile ? $providerProfiles$ : $providerProfiles$,
         baseId,
       ),
     );

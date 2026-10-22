@@ -3,12 +3,12 @@
    * Named profiles of one installed provider (§5.54), shown inside its
    * Settings → Providers row: honest per-profile status, rename/edit, and
    * removal that is blocked while saved selections still use the profile.
+   * Adding starts from the provider row's actions menu via `openAdd()`.
    */
   import {
     faArrowsRotate,
     faCheck,
     faPen,
-    faPlus,
     faTrash,
     faTriangleExclamation,
     faXmark,
@@ -65,7 +65,7 @@
   const appOwned$ = selectIsDaemonAppOwned();
   const fastModeProviders$ = selectFastModeSupportedProviders();
   // Each profile has its own Fast mode / service tier, offered exactly when
-  // the base provider's is (this whole section is already Labs-gated).
+  // the base provider's is.
   const offersFastMode = $derived($fastModeProviders$.includes(providerId));
 
   let dialogOpen = $state(false);
@@ -100,7 +100,8 @@
     }
   });
 
-  function openAdd() {
+  /** Opens the add-profile dialog; called from the provider row's actions menu. */
+  export function openAdd() {
     editing = undefined;
     dialogOpen = true;
   }
@@ -131,156 +132,158 @@
   }
 </script>
 
-<section
-  class="mt-3 ml-9 space-y-2"
-  aria-label={m.settings_providerProfiles_section_ariaLabel({ provider: providerName })}
-  data-testid={`provider-profiles-${providerId}`}
->
-  {#if $loadStatus$ === 'failure' && $profiles$.length === 0}
-    <div class="flex items-center gap-2 type-caption text-danger">
-      <span>{m.settings_providerProfiles_loadFailed_error()}</span>
-      <Button
-        size="xs"
-        variant="ghost"
-        onclick={() => appStore.dispatch(providerProfilesRequested())}
-      >
-        {m.settings_providers_tryAgain()}
-      </Button>
-    </div>
-  {/if}
+{#if $profiles$.length > 0 || $loadStatus$ === 'failure'}
+  <section
+    class="mt-3 ml-9 space-y-2"
+    aria-label={m.settings_providerProfiles_section_ariaLabel({ provider: providerName })}
+    data-testid={`provider-profiles-${providerId}`}
+  >
+    {#if $loadStatus$ === 'failure' && $profiles$.length === 0}
+      <div class="flex items-center gap-2 type-caption text-danger">
+        <span>{m.settings_providerProfiles_loadFailed_error()}</span>
+        <Button
+          size="xs"
+          variant="ghost"
+          onclick={() => appStore.dispatch(providerProfilesRequested())}
+        >
+          {m.settings_providers_tryAgain()}
+        </Button>
+      </div>
+    {/if}
 
-  {#if $profiles$.length > 0}
-    <ul class="divide-y divide-border rounded-lg border border-border">
-      {#each $profiles$ as profile (profile.id)}
-        {@const status = $status$[profile.id] ?? 'configured'}
-        {@const activation = $activation$[profile.id]}
-        {@const inUseReason = $inUse$[profile.providerRef] ?? null}
-        {@const deleting = deletingIds.has(profile.id)}
-        <li class="px-3 py-2" data-testid="provider-profile-row" data-profile-id={profile.id}>
-          <div class="flex items-center justify-between gap-3">
-            <div class="flex min-w-0 items-center gap-2">
-              <span class="truncate type-body text-foreground" title={profile.name}
-                >{profile.name}</span
-              >
-              {#if $defaultProviderId$ === profile.providerRef}
-                <span class="rounded-full bg-muted px-2 py-0.5 type-caption text-subtle">
-                  {m.settings_providers_default()}
-                </span>
-              {/if}
-            </div>
-            <div class="flex shrink-0 items-center gap-2 type-caption">
-              <span
-                role="status"
-                class="flex items-center gap-1 {status === 'error'
-                  ? 'text-warning-ink'
-                  : 'text-subtle'}"
-                data-profile-status={status}
-              >
-                {#if status === 'checking'}
-                  <IntentMarkLoader size={12} class="text-muted-foreground" />
-                  {m.settings_providerProfiles_statusChecking_label()}
-                {:else if status === 'ready'}
-                  <Fa icon={faCheck} class="size-3 text-success" />
-                  {m.settings_providerProfiles_statusReady_label()}
-                {:else if status === 'error'}
-                  <Fa icon={faTriangleExclamation} class="size-3" />
-                  {m.settings_providerProfiles_statusError_label()}
-                {:else}
-                  {m.settings_providerProfiles_statusConfigured_label()}
-                {/if}
-              </span>
-              <Menu.Root>
-                <Menu.Trigger>
-                  {#snippet child({ props })}
-                    <Button
-                      {...props}
-                      variant="ghost-light"
-                      size="icon-xs"
-                      disabled={deleting}
-                      aria-label={m.settings_providerProfiles_actions_ariaLabel({
-                        name: profile.name,
-                      })}
-                    >
-                      <KebabIcon class="size-3.5" />
-                    </Button>
-                  {/snippet}
-                </Menu.Trigger>
-                <Menu.Content
-                  align="end"
-                  aria-label={m.settings_providerProfiles_actions_ariaLabel({ name: profile.name })}
+    {#if $profiles$.length > 0}
+      <ul class="divide-y divide-border rounded-lg border border-border">
+        {#each $profiles$ as profile (profile.id)}
+          {@const status = $status$[profile.id] ?? 'configured'}
+          {@const activation = $activation$[profile.id]}
+          {@const inUseReason = $inUse$[profile.providerRef] ?? null}
+          {@const deleting = deletingIds.has(profile.id)}
+          <li class="px-3 py-2" data-testid="provider-profile-row" data-profile-id={profile.id}>
+            <div class="flex items-center justify-between gap-3">
+              <div class="flex min-w-0 items-center gap-2">
+                <span class="truncate type-body text-foreground" title={profile.name}
+                  >{profile.name}</span
                 >
-                  <div class={offersFastMode && providerId !== 'codex' ? 'w-64' : 'w-56'}>
-                    {#if offersFastMode}
-                      <ProviderFastModeMenuItems providerRef={profile.providerRef} />
-                      <Menu.Separator />
-                    {/if}
-                    <Menu.Item
-                      class="cursor-pointer text-foreground"
-                      onSelect={() => openEdit(profile)}
-                    >
-                      <span class="flex size-4 shrink-0 items-center justify-center">
-                        <Fa icon={faPen} class="size-3.5 text-muted-foreground" />
-                      </span>
-                      {m.settings_providerProfiles_edit_label()}
-                    </Menu.Item>
-                    <Menu.Item
-                      class="cursor-pointer text-foreground"
-                      disabled={status === 'checking'}
-                      onSelect={() => appStore.dispatch(providerProfileCheckRequested(profile.id))}
-                    >
-                      <span class="flex size-4 shrink-0 items-center justify-center">
-                        <Fa icon={faArrowsRotate} class="size-3.5 text-muted-foreground" />
-                      </span>
-                      {m.settings_providers_recheck_label()}
-                    </Menu.Item>
-                    <Menu.Separator />
-                    <Menu.Item
-                      class="cursor-pointer text-foreground"
-                      title={inUseReason ?? undefined}
-                      onSelect={() => void remove(profile)}
-                    >
-                      <span class="flex size-4 shrink-0 items-center justify-center">
-                        <Fa icon={faTrash} class="size-3.5 text-muted-foreground" />
-                      </span>
-                      {m.settings_providerProfiles_remove_label()}
-                    </Menu.Item>
-                    {#if inUseReason}
-                      <p class="px-2 py-1.5 type-caption whitespace-pre-line text-muted-foreground">
-                        {m.settings_providerProfiles_removeBlocked_description({
-                          reasons: inUseReason,
+                {#if $defaultProviderId$ === profile.providerRef}
+                  <span class="rounded-full bg-muted px-2 py-0.5 type-caption text-subtle">
+                    {m.settings_providers_default()}
+                  </span>
+                {/if}
+              </div>
+              <div class="flex shrink-0 items-center gap-2 type-caption">
+                <span
+                  role="status"
+                  class="flex items-center gap-1 {status === 'error'
+                    ? 'text-warning-ink'
+                    : 'text-subtle'}"
+                  data-profile-status={status}
+                >
+                  {#if status === 'checking'}
+                    <IntentMarkLoader size={12} class="text-muted-foreground" />
+                    {m.settings_providerProfiles_statusChecking_label()}
+                  {:else if status === 'ready'}
+                    <Fa icon={faCheck} class="size-3 text-success" />
+                    {m.settings_providerProfiles_statusReady_label()}
+                  {:else if status === 'error'}
+                    <Fa icon={faTriangleExclamation} class="size-3" />
+                    {m.settings_providerProfiles_statusError_label()}
+                  {:else}
+                    {m.settings_providerProfiles_statusConfigured_label()}
+                  {/if}
+                </span>
+                <Menu.Root>
+                  <Menu.Trigger>
+                    {#snippet child({ props })}
+                      <Button
+                        {...props}
+                        variant="ghost-light"
+                        size="icon-xs"
+                        disabled={deleting}
+                        aria-label={m.settings_providerProfiles_actions_ariaLabel({
+                          name: profile.name,
                         })}
-                      </p>
-                    {/if}
-                  </div>
-                </Menu.Content>
-              </Menu.Root>
+                      >
+                        <KebabIcon class="size-3.5" />
+                      </Button>
+                    {/snippet}
+                  </Menu.Trigger>
+                  <Menu.Content
+                    align="end"
+                    aria-label={m.settings_providerProfiles_actions_ariaLabel({
+                      name: profile.name,
+                    })}
+                  >
+                    <div class={offersFastMode && providerId !== 'codex' ? 'w-64' : 'w-56'}>
+                      {#if offersFastMode}
+                        <ProviderFastModeMenuItems providerRef={profile.providerRef} />
+                        <Menu.Separator />
+                      {/if}
+                      <Menu.Item
+                        class="cursor-pointer text-foreground"
+                        onSelect={() => openEdit(profile)}
+                      >
+                        <span class="flex size-4 shrink-0 items-center justify-center">
+                          <Fa icon={faPen} class="size-3.5 text-muted-foreground" />
+                        </span>
+                        {m.settings_providerProfiles_edit_label()}
+                      </Menu.Item>
+                      <Menu.Item
+                        class="cursor-pointer text-foreground"
+                        disabled={status === 'checking'}
+                        onSelect={() =>
+                          appStore.dispatch(providerProfileCheckRequested(profile.id))}
+                      >
+                        <span class="flex size-4 shrink-0 items-center justify-center">
+                          <Fa icon={faArrowsRotate} class="size-3.5 text-muted-foreground" />
+                        </span>
+                        {m.settings_providers_recheck_label()}
+                      </Menu.Item>
+                      <Menu.Separator />
+                      <Menu.Item
+                        class="cursor-pointer text-foreground"
+                        title={inUseReason ?? undefined}
+                        onSelect={() => void remove(profile)}
+                      >
+                        <span class="flex size-4 shrink-0 items-center justify-center">
+                          <Fa icon={faTrash} class="size-3.5 text-muted-foreground" />
+                        </span>
+                        {m.settings_providerProfiles_remove_label()}
+                      </Menu.Item>
+                      {#if inUseReason}
+                        <p
+                          class="px-2 py-1.5 type-caption whitespace-pre-line text-muted-foreground"
+                        >
+                          {m.settings_providerProfiles_removeBlocked_description({
+                            reasons: inUseReason,
+                          })}
+                        </p>
+                      {/if}
+                    </div>
+                  </Menu.Content>
+                </Menu.Root>
+              </div>
             </div>
-          </div>
-          {#if activation && activation.runningProcesses > 0}
-            <div
-              class="mt-1 flex items-start justify-between gap-2 type-caption text-warning-ink"
-              data-testid="provider-profile-earlier-settings"
-            >
-              <span>{runningProcessesNotice(activation.runningProcesses, $appOwned$)}</span>
-              <Button
-                size="icon-xs"
-                variant="ghost-light"
-                aria-label={m.settings_providerProfiles_dismissNotice_ariaLabel()}
-                onclick={() => appStore.dispatch(providerProfileActivationDismissed(profile.id))}
+            {#if activation && activation.runningProcesses > 0}
+              <div
+                class="mt-1 flex items-start justify-between gap-2 type-caption text-warning-ink"
+                data-testid="provider-profile-earlier-settings"
               >
-                <Fa icon={faXmark} class="size-3" />
-              </Button>
-            </div>
-          {/if}
-        </li>
-      {/each}
-    </ul>
-  {/if}
-
-  <Button size="xs" variant="secondary" onclick={openAdd}>
-    <Fa icon={faPlus} class="mr-1 size-3" />
-    {m.settings_providerProfiles_add_label()}
-  </Button>
-</section>
+                <span>{runningProcessesNotice(activation.runningProcesses, $appOwned$)}</span>
+                <Button
+                  size="icon-xs"
+                  variant="ghost-light"
+                  aria-label={m.settings_providerProfiles_dismissNotice_ariaLabel()}
+                  onclick={() => appStore.dispatch(providerProfileActivationDismissed(profile.id))}
+                >
+                  <Fa icon={faXmark} class="size-3" />
+                </Button>
+              </div>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </section>
+{/if}
 
 <ProviderProfileDialog bind:open={dialogOpen} {providerId} {providerName} profile={editing} />

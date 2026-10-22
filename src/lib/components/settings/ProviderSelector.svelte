@@ -53,6 +53,7 @@
     faCheck,
     faDownload,
     faFolder,
+    faPlus,
     faStar,
     faTerminal,
     faTriangleExclamation,
@@ -72,7 +73,6 @@
   import ProviderProfiles from './ProviderProfiles.svelte';
   import ProviderFastModeMenuItems from './ProviderFastModeMenuItems.svelte';
   import { providerProfilesRequested } from '$store/renderer/slices/provider-settings/provider-settings-slice';
-  import { selectLabsProviderProfilesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import AgentProviderIcon from '$features/agent/components/AgentProviderIcon.svelte';
   import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
   import { store as appStore } from '$store/renderer/store';
@@ -221,18 +221,14 @@
     return selectIsProviderEnabled.select(appStore.state, providerId);
   }
 
-  // Named profiles are a Labs feature: profile management (and its read) is
-  // offered only while Settings → Labs → Provider profiles is on.
-  const labsProviderProfilesEnabled$ = selectLabsProviderProfilesEnabled();
-
   // Add profile is offered only on installed rows whose catalog entry
   // advertises named profiles (§5.54); other providers never show it.
   function supportsProfiles(providerId: string): boolean {
-    return (
-      $labsProviderProfilesEnabled$ &&
-      $catalogEntries$.find((p) => p.id === providerId)?.supportsProfiles === true
-    );
+    return $catalogEntries$.find((p) => p.id === providerId)?.supportsProfiles === true;
   }
+
+  // Each profile-capable row's profile list, which owns the add/edit dialog.
+  let profileSections = $state<Record<string, ProviderProfiles | undefined>>({});
 
   function canManageProviderEnablement(providerId: string): boolean {
     return $catalogEntries$.find((p) => p.id === providerId)?.canBeDisabled !== false;
@@ -266,14 +262,11 @@
     appStore.dispatch(providerSettingsSessionOpened(sessionId));
     appStore.dispatch(providerAvailabilityPanelOpened(sessionId));
     appStore.dispatch(providerPathsRequested());
+    appStore.dispatch(providerProfilesRequested());
     return () => {
       appStore.dispatch(providerAvailabilityPanelClosed(sessionId));
       appStore.dispatch(providerSettingsSessionClosed(sessionId));
     };
-  });
-
-  $effect(() => {
-    if ($labsProviderProfilesEnabled$) appStore.dispatch(providerProfilesRequested());
   });
 
   function handleInstallPiMcpAdapter() {
@@ -350,6 +343,8 @@
             {@const canLogIn = provider.id !== 'antigravity' && needsLogin && provider.loginDocsUrl}
             {@const canSetDefault = provider.available && !isActive && isReady}
             {@const canInstall = provider.id !== 'antigravity' && !provider.available}
+            {@const canAddProfile =
+              !provider.statusPending && provider.available && supportsProfiles(provider.id)}
             {@const hasPiAdapterWarning =
               !provider.statusPending &&
               provider.id === 'pi' &&
@@ -607,6 +602,20 @@
                             {m.settings_providerPath_setCustomPath_label()}
                           </Menu.Item>
 
+                          {#if canAddProfile}
+                            <Menu.Item
+                              class="cursor-pointer text-foreground"
+                              onSelect={() => {
+                                profileSections[provider.id]?.openAdd();
+                              }}
+                            >
+                              <span class="flex size-4 shrink-0 items-center justify-center">
+                                <Fa icon={faPlus} class="size-3.5 text-muted-foreground" />
+                              </span>
+                              {m.settings_providerProfiles_add_label()}
+                            </Menu.Item>
+                          {/if}
+
                           {#if canSetDefault}
                             <Menu.Separator />
                             <Menu.Item
@@ -721,8 +730,12 @@
                   </div>
                 </div>
               </div>
-              {#if !provider.statusPending && provider.available && supportsProfiles(provider.id)}
-                <ProviderProfiles providerId={provider.id} providerName={provider.name} />
+              {#if canAddProfile}
+                <ProviderProfiles
+                  bind:this={profileSections[provider.id]}
+                  providerId={provider.id}
+                  providerName={provider.name}
+                />
               {/if}
               {#if provider.id === 'antigravity'}
                 <AntigravityConnect bind:open={antigravityConnectOpen} />

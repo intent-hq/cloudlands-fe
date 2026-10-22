@@ -97,15 +97,6 @@ export const selectLabsRemoteAgentsEnabled = store.createSelector((state) => {
   return state.userPreferences?.labsRemoteAgentsEnabled === true;
 });
 
-/**
- * Entry-point policy for named provider profiles (Labs): profile management,
- * picker profile groups and sign-in probes. Never use it to resolve, relabel
- * or reroute a selection that already references a profile.
- */
-export const selectLabsProviderProfilesEnabled = store.createSelector((state) => {
-  return state.userPreferences?.labsProviderProfilesEnabled === true;
-});
-
 export const selectCounterScale = store.createSelector((state) => {
   return 1 / state.userPreferences.zoomFactor;
 });

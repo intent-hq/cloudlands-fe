@@ -16,17 +16,6 @@ import {
 import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
 import { selectDaemonTransport } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
 import { providerProfilesSaga } from '$store/renderer/slices/provider-settings/sagas/provider-profiles-saga';
-import { setLabsProviderProfilesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
-import { selectLabsProviderProfilesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-
-/** Set Settings → Labs → Provider profiles for a preview; returns its restore. */
-export function setProviderProfilesLabForPreview(enabled: boolean): () => void {
-  const previous = selectLabsProviderProfilesEnabled.select(appStore.state);
-  appStore.dispatch(setLabsProviderProfilesEnabled(enabled));
-  return () => {
-    appStore.dispatch(setLabsProviderProfilesEnabled(previous));
-  };
-}
 
 const RESERVED = new Set(['PATH', 'CODEX_PATH', 'CLAUDE_CODE_EXECUTABLE', 'CODEX_CONFIG', 'HOME']);
 
@@ -114,9 +103,7 @@ const PREVIEW_AUTH: Record<string, boolean | undefined> = {
 export function setupProviderProfilesPreview({
   appOwned = true,
   runningProcesses = 1,
-  labsEnabled = true,
-}: { appOwned?: boolean; runningProcesses?: number; labsEnabled?: boolean } = {}) {
-  const restoreLab = setProviderProfilesLabForPreview(labsEnabled);
+}: { appOwned?: boolean; runningProcesses?: number } = {}) {
   const providers = appClient.providers;
   const original = {
     listProfiles: providers.listProfiles,
@@ -204,7 +191,6 @@ export function setupProviderProfilesPreview({
   });
   return () => {
     stop();
-    restoreLab();
     Object.assign(providers, original);
     appStore.dispatch(providerCatalogLoaded({ providers: catalog }));
     appStore.dispatch(providerProfilesLoaded([], revision + 1));

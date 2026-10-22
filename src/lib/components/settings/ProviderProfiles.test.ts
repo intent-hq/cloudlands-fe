@@ -134,18 +134,33 @@ describe('ProviderProfiles', () => {
     expect(row.querySelector('[data-profile-status]')?.getAttribute('data-profile-status')).toBe(
       'configured',
     );
+    // Adding starts from the provider row's actions menu, not a button here.
     expect(
-      screen.getByRole('button', { name: m.settings_providerProfiles_add_label() }),
+      screen.queryByRole('button', { name: m.settings_providerProfiles_add_label() }),
+    ).toBeNull();
+  });
+
+  it('renders nothing for a provider without profiles until Add profile opens the dialog', async () => {
+    await seed({ profiles: [] });
+    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
+    const { component } = render(ProviderProfiles, {
+      providerId: 'codex',
+      providerName: 'Codex',
+    });
+    expect(screen.queryByTestId('provider-profiles-codex')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    component.openAdd();
+    const dialog = await screen.findByRole('dialog');
+    expect(
+      within(dialog).getByRole('button', { name: m.settings_providerProfiles_create_label() }),
     ).toBeTruthy();
   });
 
   it("explains that only ~ or ~/ in CODEX_HOME and CLAUDE_CONFIG_DIR means the daemon user's home folder", async () => {
     await seed({ profiles: [] });
     const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
-    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
-    await fireEvent.click(
-      screen.getByRole('button', { name: m.settings_providerProfiles_add_label() }),
-    );
+    const { component } = render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
+    component.openAdd();
     const dialog = await screen.findByRole('dialog');
     const help = within(dialog).getByText(m.settings_providerProfiles_env_description());
     expect(help.textContent).toMatch(/CODEX_HOME.*CLAUDE_CONFIG_DIR/);
@@ -159,10 +174,8 @@ describe('ProviderProfiles', () => {
     const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
     const { takeStagedProfileEnv } =
       await import('$store/renderer/slices/provider-settings/provider-profiles-state');
-    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
-    await fireEvent.click(
-      screen.getByRole('button', { name: m.settings_providerProfiles_add_label() }),
-    );
+    const { component } = render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
+    component.openAdd();
     const dialog = await screen.findByRole('dialog');
     await fireEvent.input(
       within(dialog).getByLabelText(m.settings_providerProfiles_name_label(), {
@@ -466,10 +479,8 @@ describe('ProviderProfiles dialog outcomes', () => {
   it('creates a profile from its name alone, sending no env', async () => {
     await seed({ profiles: [] });
     const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
-    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
-    await fireEvent.click(
-      screen.getByRole('button', { name: m.settings_providerProfiles_add_label() }),
-    );
+    const { component } = render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
+    component.openAdd();
     const dialog = await screen.findByRole('dialog');
     await fireEvent.input(
       within(dialog).getByLabelText(m.settings_providerProfiles_name_label(), {
