@@ -1974,8 +1974,10 @@
       {/if}
     {:else if role === 'assistant'}
       <!-- Assistant Message -->
-      <!-- Reserve toolbar height only for rendered prose, never empty or tool-only rows. -->
-      <div class="type-body has-[[data-assistant-prose]]:min-h-8 text-pretty text-foreground">
+      <!-- Reserve action space for prose and inline visual controls, never empty or tool-only rows. -->
+      <div
+        class="type-body has-[[data-assistant-prose]]:min-h-8 has-[[data-inline-html]]:pb-8 text-pretty text-foreground"
+      >
         <StreamingMessageContent
           content={combinedContent}
           {isStreaming}

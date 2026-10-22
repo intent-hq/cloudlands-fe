@@ -146,7 +146,7 @@ test('restores edited inputs and named alternatives after reopening, then export
   const data = JSON.parse(exported.content);
   expect(data.record.current.state).toEqual({ thickness: 42, opening: 60, rearClearance: 40 });
   expect(data.record.scenarios.map((entry: any) => entry.snapshot.state.opening)).toEqual([60, 80]);
-  expect(data.source).toBe(workflowClampDemo);
+  expect(data.source).toBe(`${workflowClampDemo}\n`);
   await edit(page, 'thickness', '17');
   await frame(page)
     .locator('input[type="file"]')
