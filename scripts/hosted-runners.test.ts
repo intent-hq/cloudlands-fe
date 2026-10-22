@@ -40,8 +40,8 @@ describe('GitHub-hosted CI runners', () => {
     env?: Record<string, string>;
     event?: string;
     unreadable?: string;
-    truncated?: boolean;
   };
+  // Runs the route job's actual script: the shared probe, identical to runner-route.yml.
   async function route({
     runners = [slot, slot],
     jobs = [],
@@ -49,7 +49,6 @@ describe('GitHub-hosted CI runners', () => {
     env = {},
     event = 'merge_group',
     unreadable,
-    truncated = false,
   }: Fixture) {
     const workflow = read('.github/workflows/intent-pr.yml');
     const step = workflow.jobs.route.steps.find((s: { id?: string }) => s.id === 'decide');
@@ -58,29 +57,34 @@ describe('GitHub-hosted CI runners', () => {
     const queried: string[] = [];
     const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
     const actions = {
-      listSelfHostedRunnersForOrg: () => {},
-      listSelfHostedRunnersForRepo: () => {},
-      listWorkflowRunsForRepo: async ({ repo, status }: { repo: string; status: string }) => {
-        queried.push(repo);
-        if (repo === unreadable) throw new Error('403 fixture');
+      listSelfHostedRunnersForOrg: 'org',
+      listSelfHostedRunnersForRepo: 'repo',
+      listWorkflowRunsForRepo: 'runs',
+      listJobsForWorkflowRun: 'jobs',
+    };
+    const paginate = async (method: string, params: { repo: string; status: string }) => {
+      if (error) throw new Error('fixture failure');
+      if (method === 'org' || method === 'repo')
+        return runners.map((r) => ({ ...r, labels: r.labels.map((name) => ({ name })) }));
+      if (method === 'runs') {
+        queried.push(params.repo);
+        if (params.repo === unreadable) throw new Error('403 fixture');
         // Fixture jobs belong to one queued run so each is counted once.
-        return {
-          data: {
-            workflow_runs: repo === 'cloudlands-fe' && status === 'queued' ? [{ id: 2 }] : [],
-            ...(truncated ? { total_count: 101 } : {}),
-          },
-        };
-      },
-      listJobsForWorkflowRun: async () => ({ data: { jobs } }),
+        return params.repo === 'cloudlands-fe' && params.status === 'queued' ? [{ id: 2 }] : [];
+      }
+      return jobs;
     };
     const processEnv = {
       env: {
         // Actions resolves `vars.CI_LINUX_HEAVY_SLOTS || '2'`; with the variable unset that is the default.
         THRESHOLD: heavySlotsDefault(workflow.env.LINUX_BURST_THRESHOLD),
         SLOT_JOBS: step.env.SLOT_JOBS,
+        // Most cases check the GitHub fallback; the WarpBuild cases turn WarpBuild on.
+        WARPBUILD_DISABLED: 'true',
         ...env,
       },
     };
+    const payload = { pull_request: { head: { repo: { full_name: 'intent-hq/cloudlands-fe' } } } };
     await new AsyncFunction('core', 'github', 'context', 'process', step.with.script)(
       {
         setOutput: (key: string, value: string) => {
@@ -88,20 +92,15 @@ describe('GitHub-hosted CI runners', () => {
         },
         info: (message: string) => messages.push(message),
       },
-      {
-        rest: { actions },
-        paginate: async () => {
-          if (error) throw new Error('fixture failure');
-          return runners.map((r) => ({ ...r, labels: r.labels.map((name) => ({ name })) }));
-        },
-      },
-      { repo: { owner: 'intent-hq', repo: 'cloudlands-fe' }, runId: 1, eventName: event },
+      { rest: { actions }, paginate },
+      { repo: { owner: 'intent-hq', repo: 'cloudlands-fe' }, runId: 1, eventName: event, payload },
       processEnv,
     );
     return {
       labels: JSON.parse(values.linux_labels),
       burst: values.linux_burst,
       slots: JSON.parse(values.slots) as Record<string, string[]>,
+      cloud: JSON.parse(values.cloud) as Record<string, string[]>,
       messages,
       queried,
     };
@@ -133,7 +132,7 @@ describe('GitHub-hosted CI runners', () => {
     ],
     ['one slot online and busy', { runners: [slot], jobs: [running()] }],
     ['kill switch', { env: { LINUX_RUNNER_DISABLED: 'true' } }],
-  ])('bursts to GitHub-hosted runners when %s', async (_name, fixture: Fixture) => {
+  ])('bursts to GitHub-hosted runners (WarpBuild off) when %s', async (_name, fixture: Fixture) => {
     const r = await route(fixture);
     expect(r.labels).toEqual(['gh-linux-8x']);
     expect(r.burst).toBe('true');
@@ -153,7 +152,6 @@ describe('GitHub-hosted CI runners', () => {
     );
     const killed = await route({ env: { LINUX_RUNNER_DISABLED: 'true' } });
     expect(killed.messages).toContain('linux routing: burst=true (disabled for maintenance)');
-    expect(killed.queried).toEqual([]);
   });
 
   it('counts only heavy intent-cache slots, not the fast pool that shares the generic labels', async () => {
@@ -204,7 +202,7 @@ describe('GitHub-hosted CI runners', () => {
     for (const key of ['test-2', 'test-3', 'test-4', 'build-web', 'test-integration'])
       expect(r.slots[key]).toEqual(['gh-linux-8x']);
     expect(r.burst).toBe('true');
-    expect(r.messages.some((m) => m.includes('free=2 (org list) granted=2'))).toBe(true);
+    expect(r.messages.some((m) => m.includes('free=2 granted=2'))).toBe(true);
     // The four shards alone on two free slots: exactly two self-hosted, two hosted.
     const shards = await route({
       env: { SLOT_JOBS: JSON.stringify([{ key: 'test', label: 'gh-linux-8x', shards: 4 }]) },
@@ -224,7 +222,6 @@ describe('GitHub-hosted CI runners', () => {
     // intentd's jobs may hold both slots, so unknown demand is not zero demand.
     ['an unreadable intentd queue', { unreadable: 'intentd' }],
     ['an unreadable intent queue', { unreadable: 'intent' }],
-    ['a truncated queue view', { truncated: true }],
   ])('sends every listed heavy job hosted with %s', async (_name, fixture: Fixture) => {
     const r = await route(fixture);
     expect(Object.keys(r.slots)).toHaveLength(7);
@@ -237,7 +234,7 @@ describe('GitHub-hosted CI runners', () => {
       workflow.jobs.route.steps.find((s: { id?: string }) => s.id === 'decide').env.SLOT_JOBS,
     ) as { key: string; label: string; shards?: number; events?: string[] }[];
     const readers = Object.entries(workflow.jobs as Record<string, { 'runs-on'?: string }>)
-      .filter(([, job]) => job['runs-on']?.includes('needs.route.outputs'))
+      .filter(([, job]) => job['runs-on']?.includes('needs.route.outputs.slots'))
       .map(([id, job]) => [id, job['runs-on']] as const);
     expect(readers.map(([id]) => id).sort()).toEqual(listed.map((j) => j.key).sort());
     for (const [id, runner] of readers) {
@@ -295,9 +292,7 @@ describe('GitHub-hosted CI runners', () => {
     const xlJob = running(['self-hosted', 'linux', 'x64', 'intent-cache-xl']);
     const xlOnly = await route({ runners: [xl, xl] });
     expect(xlOnly.labels).toEqual(['gh-linux-8x']);
-    expect(xlOnly.messages).toContain(
-      'linux routing: burst=true (no online intent-cache runner (org list))',
-    );
+    expect(xlOnly.messages).toContain('linux routing: burst=true (no available compatible runner)');
     // No xl runners online, or xl runners busy with xl jobs: routing is unchanged.
     const baseline = await route({ jobs: [running()] });
     for (const fixture of [
@@ -310,6 +305,44 @@ describe('GitHub-hosted CI runners', () => {
       expect(r.burst).toBe(baseline.burst);
     }
     expect(onSlots(baseline.slots)).toEqual(['checks']);
+  });
+
+  it('bursts heavy jobs to WarpBuild when no slot is free', async () => {
+    const WARP = ['warp-ubuntu-2404-x64-8x'];
+    for (const fixture of [
+      { jobs: [running(), running()] },
+      { runners: [] },
+      { error: true },
+      { env: { LINUX_RUNNER_DISABLED: 'true' } },
+    ] as Fixture[]) {
+      const r = await route({ ...fixture, env: { ...fixture.env, WARPBUILD_DISABLED: '' } });
+      expect(r.labels).toEqual(WARP);
+      expect(r.burst).toBe('true');
+      for (const labels of Object.values(r.slots)) expect(labels).toEqual(WARP);
+    }
+    // A free slot still wins over WarpBuild.
+    const one = await route({ jobs: [running()], env: { WARPBUILD_DISABLED: '' } });
+    expect(onSlots(one.slots)).toEqual(['checks']);
+    expect(one.slots['test-1']).toEqual(WARP);
+    const decide = read('.github/workflows/intent-pr.yml').jobs.route.steps.find(
+      (s: { id?: string }) => s.id === 'decide',
+    );
+    expect(decide.env.WARPBUILD_DISABLED).toBe('${{ vars.CI_WARPBUILD_DISABLED }}');
+  });
+
+  it('runs the portable fixtures straight on the burst Mac, never a self-hosted one', async () => {
+    const job = read('.github/workflows/intent-pr.yml').jobs['test-portable-fixtures'];
+    expect(job.needs).toContain('route');
+    expect(job['runs-on']).toBe(
+      `\${{ fromJSON(needs.route.outputs.cloud || '{}')['macos-26-xlarge'] || fromJSON('["macos-26-xlarge"]') }}`,
+    );
+    expect(read('.github/workflows/intent-pr.yml').jobs.route.outputs.cloud).toBe(
+      '${{ steps.decide.outputs.cloud }}',
+    );
+    const on = await route({ env: { WARPBUILD_DISABLED: '' } });
+    expect(on.cloud['macos-26-xlarge']).toEqual(['warp-macos-26-arm64-6x']);
+    const off = await route({});
+    expect(off.cloud['macos-26-xlarge']).toEqual(['macos-26-xlarge']);
   });
 
   it('never routes to tinybox', () => {

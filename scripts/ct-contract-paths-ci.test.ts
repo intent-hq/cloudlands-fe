@@ -764,9 +764,13 @@ describe('shared browser jobs and nightly routing', () => {
       const nightly = jobLines(job, nightlyWorkflow);
       expect(jobField(nightly, 'uses')).toBe('./.github/workflows/browser-tests.yml');
       expect(nightly).toContain(`      suite: ${suite}`);
-      expect(nightly.some((line) => /^    (if|needs):/.test(line))).toBe(false);
+      // Nightly suites wait only for the runner route and still run if it fails.
+      expect(jobField(nightly, 'needs')).toBe('runner-route');
+      expect(jobField(nightly, 'if')).toBe('${{ !cancelled() }}');
+      expect(nightly).toContain('      cloud: ${{ needs.runner-route.outputs.cloud }}');
       expect(jobField(jobLines(job), 'uses')).toBe(jobField(nightly, 'uses'));
       expect(jobLines(job)).toContain(`      suite: ${suite}`);
+      expect(jobLines(job)).toContain('      cloud: ${{ needs.route.outputs.cloud }}');
     }
   });
 
@@ -794,7 +798,10 @@ describe('shared browser jobs and nightly routing', () => {
           );
         }
       }
-      expect(jobField(lines, 'runs-on')).toBe('gh-linux-8x');
+      // Straight to the burst runner (WarpBuild, or GitHub), never a self-hosted slot.
+      expect(jobField(lines, 'runs-on')).toBe(
+        `\${{ fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["gh-linux-8x"]') }}`,
+      );
     },
   );
 
@@ -1057,7 +1064,9 @@ describe('root Playwright hosted shards', () => {
     ['workflow_dispatch', 'true'],
   ])('provisions hosted runners on %s with linux_burst=%s', (event, linuxBurst) => {
     const context = { ...ok, event, linuxBurst };
-    expect(jobField(testPlaywright, 'runs-on')).toBe('gh-linux-8x');
+    expect(jobField(testPlaywright, 'runs-on')).toBe(
+      `\${{ fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["gh-linux-8x"]') }}`,
+    );
     expect(field(step('Setup Node.js'), 'cache').replaceAll("'", '')).toBe('pnpm');
     for (const name of ['Cache Playwright browsers', 'Install Playwright browsers']) {
       const condition = step(name).find((line) => line.trimStart().startsWith('if:'));

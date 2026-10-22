@@ -91,6 +91,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Where paid-label jobs run: a free self-hosted slot first, else WarpBuild
+  # (GitHub when WarpBuild is off); `cloud` skips the self-hosted step.
+  # See runner-route.yml.
+  runner-route:
+    uses: ./.github/workflows/runner-route.yml
+    permissions:
+      contents: read
+      actions: read
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
+    with:
+      slot_jobs: >-
+        [{"key":"build-linux","label":"gh-linux-8x","minutes":20,"legs":["x64"]}]
+
   # Resolve before allocating native Mac runners: unselected CPUs never get a job.
   select-macos:
     if: ${{ inputs.build_macos || inputs.isolated_test }}
@@ -177,13 +191,16 @@ jobs:
   # Copied from release-alpha.yml build-macos; the signing steps are gated on
   # the `sign` input and the version-suffix step is added before packaging.
   build-macos:
-    if: ${{ inputs.build_macos || inputs.isolated_test }}
-    needs: [select-macos]
+    # A failed route job must not block this job: it runs on its fallback label.
+    if: ${{ !cancelled() && needs.select-macos.result == 'success' && (inputs.build_macos || inputs.isolated_test) }}
+    needs: [select-macos, runner-route]
     name: macOS (${{ matrix.label }})
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.select-macos.outputs.matrix) }}
-    runs-on: ${{ matrix.runner }}
+    # Signed Mac builds go straight to the burst runner (WarpBuild macOS 15,
+    # else GitHub's macos-15-xlarge), never the persistent self-hosted Mac.
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.cloud || '{}')[matrix.runner] || matrix.runner }}
     env:
       INTENTD_TARGET: ${{ matrix.intentd_target }}
     # 120 min: 90 covered the packaging job alone; a from-source intentd
@@ -584,7 +601,9 @@ jobs:
   # The Windows leg is opt-in and respects sign; release-alpha remains unsigned.
   # Native install/update acceptance and production enablement remain separate.
   build-windows:
-    if: ${{ inputs.build_windows && !inputs.isolated_test }}
+    # A failed route job must not block this job: it runs on its fallback label.
+    if: ${{ !cancelled() && inputs.build_windows && !inputs.isolated_test }}
+    needs: runner-route
     # gh-windows-16x: org hosted runner (16-core/64 GB, runner group 1, same
     # group as gh-linux-16x), fixed at the runner level to the Windows Server
     # 2022 image. Server 2022 (not 2025) still matters: the windows-2025
@@ -592,7 +611,9 @@ jobs:
     # detect (nodejs/node-gyp#3282), breaking native module builds
     # (node-pty). Move the runner to a newer image once the Node/npm/node-gyp
     # stack in use supports VS 18.
-    runs-on: gh-windows-16x
+    # Straight to the burst runner (WarpBuild Server 2022, else GitHub's
+    # gh-windows-16x), never the persistent self-hosted Windows box.
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.cloud || '{}')['gh-windows-16x'] || fromJSON('["gh-windows-16x"]') }}
     # 150 min: the hosted Windows runner is far slower than the old
     # self-hosted runner — the v2.21.0 rebuild's Vite build alone took 53 min
     # and the job was cancelled at the previous 60-min cap before
@@ -878,7 +899,9 @@ jobs:
   # Copied from release-alpha.yml build-linux. Linux packages are unsigned in
   # the release pipeline too, so the `sign` input has no effect on this leg.
   build-linux:
-    if: ${{ inputs.build_linux && !inputs.isolated_test }}
+    # A failed route job must not block this job: it runs on its fallback label.
+    if: ${{ !cancelled() && inputs.build_linux && !inputs.isolated_test }}
+    needs: runner-route
     strategy:
       # Let the other arch finish (and report) even when one fails.
       fail-fast: false
@@ -922,7 +945,9 @@ jobs:
             intentd_target: aarch64-unknown-linux-musl
             targets: AppImage:arm64 deb:arm64
             node_heap: 12288
-    runs-on: ${{ matrix.runner }}
+    # x64 takes a free intent-cache slot first, arm64 a self-hosted ARM64
+    # runner; either bursts to WarpBuild.
+    runs-on: ${{ matrix.runner == 'gh-linux-8x' && fromJSON(needs.runner-route.outputs.slots || '{}')[format('build-linux-{0}', matrix.arch)] || fromJSON(needs.runner-route.outputs.runners || '{}')[matrix.runner] || matrix.runner }}
     # 90 min: 60 covered the packaging job alone; a from-source intentd
     # sidecar build (intentd_ref set) adds a cold cargo build.
     timeout-minutes: 90

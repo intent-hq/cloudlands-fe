@@ -33,7 +33,7 @@ function evaluate(expression: string, context: Record<string, string>): unknown 
   }
   source = source.replaceAll('!=', ' NE ').replaceAll('==', '===').replaceAll(' NE ', '!==');
   const residue = source.replace(
-    /"(?:\\.|[^"\\])*"|'[^']*'|true|false|fromJSON|===|!==|&&|\|\||[()\s]/g,
+    /"(?:\\.|[^"\\])*"|'[^']*'|true|false|fromJSON|===|!==|&&|\|\||[()[\]\s]/g,
     '',
   );
   if (residue !== '') throw new Error(`unsupported workflow expression: ${residue}`);
@@ -97,13 +97,18 @@ ${command}`,
       ),
       'needs.release-fast-path.outputs.fast_path': 'false',
       'needs.release-fast-path.outputs.ct_required': event === 'merge_group' ? 'true' : '',
+      // The caller's route `cloud` map: CT never takes a self-hosted slot, whatever linux_burst says.
+      'inputs.cloud': JSON.stringify({ 'gh-linux-8x': ['warp-ubuntu-2404-x64-8x'] }),
     };
     const value = (scalar: string) =>
       scalar.startsWith('${{') ? evaluate(scalar, context) : scalar.replace(/^(['"])(.*)\1$/, '$2');
     expect(evaluate(ctJob.match(/^    if: (.*)$/m)![1], context)).toBe(event !== 'pull_request');
     if (event === 'pull_request') return;
     const runner = value(ctJob.match(/^    runs-on: (.*)$/m)![1]);
-    expect.soft(Array.isArray(runner) ? runner : [runner]).toEqual(['gh-linux-8x']);
+    expect.soft(Array.isArray(runner) ? runner : [runner]).toEqual(['warp-ubuntu-2404-x64-8x']);
+    expect(
+      evaluate(ctJob.match(/^    runs-on: (.*)$/m)![1], { ...context, 'inputs.cloud': '{}' }),
+    ).toEqual(['gh-linux-8x']);
     expect.soft(value(step('Setup Node.js').match(/^          cache: (.*)$/m)![1])).toBe('pnpm');
 
     const provisioning = ctJob.split('      - name: Build CT bundle')[0];

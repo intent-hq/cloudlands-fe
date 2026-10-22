@@ -644,7 +644,11 @@ describe('manual Mac architecture selection', () => {
     );
     expect(matrix.include.map((row) => row.arch)).toEqual(arches);
     for (const row of matrix.include) {
-      expect(render(build['runs-on']!, { 'matrix.runner': row.runner })).toBe('macos-15-xlarge');
+      // The matrix keeps the GitHub label; runs-on maps it to the burst runner (never self-hosted).
+      expect(row.runner).toBe('macos-15-xlarge');
+      expect(build['runs-on']).toBe(
+        "${{ fromJSON(needs.runner-route.outputs.cloud || '{}')[matrix.runner] || matrix.runner }}",
+      );
       expect(
         render(build.env!.INTENTD_TARGET, { 'matrix.intentd_target': row.intentd_target }),
       ).toBe('aarch64-apple-darwin');
@@ -657,6 +661,8 @@ describe('manual Mac architecture selection', () => {
             JSON.parse(
               render(jobs[name].if!, {
                 'inputs.build_macos || inputs.isolated_test': String(enabled || isolated),
+                "!cancelled() && needs.select-macos.result == 'success' && (inputs.build_macos || inputs.isolated_test)":
+                  String(enabled || isolated),
               }),
             ),
           ).toBe(enabled || isolated);
