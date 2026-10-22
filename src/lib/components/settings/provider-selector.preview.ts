@@ -144,22 +144,6 @@ export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
         };
       },
     },
-    // Settings → Labs → Provider profiles off: saved profiles exist, but no
-    // profile management is offered.
-    'profiles-labs-off': {
-      props: {},
-      setup: () => {
-        const restoreProviders = setupProviderSelector();
-        const restoreProfiles = setupProviderProfilesPreview({
-          appOwned: true,
-          labsEnabled: false,
-        });
-        return () => {
-          restoreProfiles();
-          restoreProviders();
-        };
-      },
-    },
     'profiles-remote': {
       props: {},
       setup: () => {

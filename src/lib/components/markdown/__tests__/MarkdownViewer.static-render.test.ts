@@ -19,6 +19,20 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+// jsdom does not perform image requests; deliver each failed attempt explicitly.
+async function exhaustImageRetries(image: HTMLImageElement) {
+  vi.useFakeTimers();
+  try {
+    await fireEvent.error(image);
+    await vi.advanceTimersByTimeAsync(300);
+    await fireEvent.error(image);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await fireEvent.error(image);
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
 describe('MarkdownViewer static rendering', () => {
   it('renders plain text through the simple path', () => {
     const { container } = render(MarkdownViewer, {
@@ -189,13 +203,16 @@ describe('MarkdownViewer static rendering', () => {
     );
   });
 
-  it('keeps relative images unresolved without a Markdown file directory', async () => {
+  it('resolves relative images from the workspace without a Markdown file directory', async () => {
     const { container } = render(MarkdownViewer, {
       props: { content: '![Chart](charts/chart.png)', workspaceId: 'ws-abc' },
     });
 
-    await waitFor(() => expect(container.innerHTML).toContain('Chart'));
-    expect(container.innerHTML).not.toContain('workspace-file://');
+    await waitFor(() =>
+      expect(container.querySelector('img')?.getAttribute('src')).toMatch(
+        /^workspace-file:\/\/ws-abc\/charts\/chart\.png\?v=/,
+      ),
+    );
   });
 
   it.each(['Enter', ' '])('opens workspace image lightbox with %s', async (key) => {
@@ -470,7 +487,7 @@ describe('MarkdownViewer static rendering', () => {
     await waitFor(() => expect(container.querySelector('img')).toBeTruthy());
     const image = container.querySelector<HTMLImageElement>('img')!;
 
-    await fireEvent.error(image);
+    await exhaustImageRetries(image);
 
     expect(screen.getByTestId('media-unavailable').dataset.reason).toBe('load-failed');
     await fireEvent.click(screen.getByRole('button', { name: /copy path/i }));
@@ -643,7 +660,7 @@ describe('MarkdownViewer static rendering', () => {
       const { container, image } = await renderSized();
       await waitFor(() => expect(image.parentElement?.dataset.loaded).toBe('false'));
 
-      await fireEvent.error(image);
+      await exhaustImageRetries(image);
 
       expect(screen.getByTestId('media-unavailable').dataset.reason).toBe('load-failed');
       expect(screen.queryByTestId('media-loading-placeholder')).toBeNull();

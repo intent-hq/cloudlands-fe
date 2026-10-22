@@ -37,6 +37,13 @@ registerMockIpcHandler(BACKEND.NODE_CAPABILITIES, async () => ({
   result: { server: { capabilities: null } },
 }));
 
+// Principal admission also requires an acknowledged connection, which this mock lacks.
+registerMockIpcHandler(BACKEND.READ_PRINCIPAL, async () => ({
+  ok: false,
+  // i18n-ignore (internal diagnostic; principal hydration renders its localized state)
+  error: { code: 'UNAVAILABLE', message: 'Principal discovery unavailable' },
+}));
+
 /**
  * Sidecar spawn fallback (#439). Only the Electron main process can spawn the
  * intentd sidecar (ipcMain handler in features/backend/main/backend.ipc.ts);

@@ -116,6 +116,7 @@ const lastOf = (type: string) =>
   [...mocks.dispatched].reverse().find((action) => action.type === type);
 
 warmImport(() => import('./ProviderProfiles.svelte'));
+warmImport(() => import('./ProviderProfileDialog.svelte'));
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -134,18 +135,24 @@ describe('ProviderProfiles', () => {
     expect(row.querySelector('[data-profile-status]')?.getAttribute('data-profile-status')).toBe(
       'configured',
     );
+    // Adding starts from the provider row's actions menu, not a button here.
     expect(
-      screen.getByRole('button', { name: m.settings_providerProfiles_add_label() }),
-    ).toBeTruthy();
+      screen.queryByRole('button', { name: m.settings_providerProfiles_add_label() }),
+    ).toBeNull();
+  });
+
+  it('renders nothing for a provider without profiles', async () => {
+    await seed({ profiles: [] });
+    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
+    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
+    expect(screen.queryByTestId('provider-profiles-codex')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it("explains that only ~ or ~/ in CODEX_HOME and CLAUDE_CONFIG_DIR means the daemon user's home folder", async () => {
     await seed({ profiles: [] });
-    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
-    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
-    await fireEvent.click(
-      screen.getByRole('button', { name: m.settings_providerProfiles_add_label() }),
-    );
+    const { default: ProviderProfileDialog } = await import('./ProviderProfileDialog.svelte');
+    render(ProviderProfileDialog, { open: true, providerId: 'codex', providerName: 'Codex' });
     const dialog = await screen.findByRole('dialog');
     const help = within(dialog).getByText(m.settings_providerProfiles_env_description());
     expect(help.textContent).toMatch(/CODEX_HOME.*CLAUDE_CONFIG_DIR/);
@@ -156,13 +163,10 @@ describe('ProviderProfiles', () => {
 
   it('creates a profile with masked values, literal empty strings and daemon field errors', async () => {
     await seed({ profiles: [] });
-    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
+    const { default: ProviderProfileDialog } = await import('./ProviderProfileDialog.svelte');
     const { takeStagedProfileEnv } =
       await import('$store/renderer/slices/provider-settings/provider-profiles-state');
-    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
-    await fireEvent.click(
-      screen.getByRole('button', { name: m.settings_providerProfiles_add_label() }),
-    );
+    render(ProviderProfileDialog, { open: true, providerId: 'codex', providerName: 'Codex' });
     const dialog = await screen.findByRole('dialog');
     await fireEvent.input(
       within(dialog).getByLabelText(m.settings_providerProfiles_name_label(), {
@@ -465,11 +469,8 @@ describe('ProviderProfiles Fast mode', () => {
 describe('ProviderProfiles dialog outcomes', () => {
   it('creates a profile from its name alone, sending no env', async () => {
     await seed({ profiles: [] });
-    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
-    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
-    await fireEvent.click(
-      screen.getByRole('button', { name: m.settings_providerProfiles_add_label() }),
-    );
+    const { default: ProviderProfileDialog } = await import('./ProviderProfileDialog.svelte');
+    render(ProviderProfileDialog, { open: true, providerId: 'codex', providerName: 'Codex' });
     const dialog = await screen.findByRole('dialog');
     await fireEvent.input(
       within(dialog).getByLabelText(m.settings_providerProfiles_name_label(), {
@@ -564,10 +565,8 @@ describe('ProviderProfiles backup and order (§5.54)', () => {
   }
 
   it('offers the backup switch when creating the first profile', async () => {
-    await renderProfiles([]);
-    await fireEvent.click(
-      screen.getByRole('button', { name: m.settings_providerProfiles_add_label() }),
-    );
+    await seed({ profiles: [] });
+    await openCreateDialog();
     const dialog = await screen.findByRole('dialog');
     await fireEvent.input(
       within(dialog).getByLabelText(m.settings_providerProfiles_name_label(), {
@@ -700,10 +699,7 @@ describe('ProviderProfiles backup and order (§5.54)', () => {
     });
 
     cleanup();
-    await renderProfiles([profileOf('pwork', 'Work', false)]);
-    await fireEvent.click(
-      screen.getByRole('button', { name: m.settings_providerProfiles_add_label() }),
-    );
+    await openCreateDialog();
     dialog = await screen.findByRole('dialog');
     await fireEvent.input(
       within(dialog).getByLabelText(m.settings_providerProfiles_name_label(), {
@@ -755,6 +751,12 @@ async function chooseMenuItem(label: string) {
   );
   const item = await screen.findByRole('menuitem', { name: label });
   await fireEvent.click(item);
+}
+
+// Adding starts from the provider row menu (ProviderSelector), which opens this dialog.
+async function openCreateDialog() {
+  const { default: ProviderProfileDialog } = await import('./ProviderProfileDialog.svelte');
+  render(ProviderProfileDialog, { open: true, providerId: 'codex', providerName: 'Codex' });
 }
 
 async function openEditOf(name: string) {

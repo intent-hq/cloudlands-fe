@@ -49,6 +49,10 @@ const wire = vi.hoisted(() => ({
 }));
 vi.mock('$lib/client/live/backend-transport', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$lib/client/live/backend-transport')>()),
+  readBackendPrincipal: async () => ({
+    hello: principalHello,
+    principal: await wire.request('principal.me', {}),
+  }),
   backendRequest: wire.request,
   backendSubscribe: wire.subscribe,
   backendUnsubscribe: wire.unsubscribe,
@@ -76,6 +80,16 @@ const principal = (hostRole: HostRole = 'member', id = 'self') => ({
   displayName: null,
   avatarUrl: null,
 });
+const principalHello = {
+  server: {
+    capabilities: {
+      hostMembership: 1,
+      personalPairing: 1,
+      authenticatedDevices: 1,
+      collaborationIdentity: 1,
+    },
+  },
+};
 const member = (principalId: string, hostRole: HostRole): WorkspaceMember => ({
   principalId,
   hostRole,
@@ -248,17 +262,6 @@ beforeEach(() => {
   wire.unsubscribe.mockReset().mockResolvedValue(undefined);
   wire.request.mockReset().mockImplementation(async (method: string) => {
     if (held.has(method)) return held.get(method);
-    if (method === 'client.hello')
-      return {
-        server: {
-          capabilities: {
-            hostMembership: 1,
-            collaborationIdentity: 1,
-            personalPairing: 1,
-            authenticatedDevices: 1,
-          },
-        },
-      };
     if (method === 'principal.me') return principalReply;
     if (method === 'presence.snapshot') return snapshotReply;
     if (method === 'workspace.members.list') return memberReply;

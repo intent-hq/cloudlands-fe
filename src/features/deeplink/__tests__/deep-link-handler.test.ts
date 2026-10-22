@@ -4,7 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * Routing tests for DeepLinkHandler's pair-link handling: `intent://pair`
  * links go to the main-process pair handler (never the renderer via IPC),
  * park as pending on cold start, and their bearer token never reaches a log
- * line. Non-pair links keep the existing renderer `deep-link` IPC behavior.
+ * line. Non-pair links are queued for the target window, which is nudged
+ * over `deep-link` and pulls them via `deep-link:consume-pending`.
  */
 
 const handlePairDeepLink = vi.fn();
@@ -34,15 +35,18 @@ vi.mock('../../../shared/logger', () => ({
 
 import type { BrowserWindow } from 'electron';
 import { DeepLinkHandler } from '../deep-link-handler';
+import { consumePendingDeepLinks } from '../main/pending-deep-links';
 import { scrubToken } from '../utils/scrub-token';
 import { TC_ADDRESS_WITH_PSK } from '../../../test/fixtures/tc-address.fixture';
 
 const TOKEN = 'super-secret-token-value';
 const PAIR_LINK = `intent://pair?v=1&host=192.168.1.10&port=8443&fp=AA:BB:CC&token=${TOKEN}&tc=${TC_ADDRESS_WITH_PSK}`;
 
+let nextWebContentsId = 1;
+
 function makeWindow() {
   return {
-    webContents: { send: vi.fn() },
+    webContents: { id: nextWebContentsId++, send: vi.fn(), once: vi.fn() },
     isMinimized: () => false,
     restore: vi.fn(),
     focus: vi.fn(),
@@ -85,15 +89,26 @@ describe('DeepLinkHandler pair-link routing', () => {
     expect(handlePairDeepLink).not.toHaveBeenCalled();
   });
 
-  it('still sends non-pair links to the renderer as before', async () => {
+  it('queues non-pair links for the window and nudges its renderer', async () => {
     const handler = new DeepLinkHandler();
     const win = makeWindow();
     await handler.handleDeepLink('intent://open?id=workspace_123', asBrowserWindow(win));
-    expect(win.webContents.send).toHaveBeenCalledWith('deep-link', {
-      type: 'open',
-      params: { id: 'workspace_123' },
-    });
+    expect(win.webContents.send).toHaveBeenCalledWith('deep-link', { pending: true });
+    expect(consumePendingDeepLinks(win.webContents.id).actions).toEqual([
+      { type: 'open', params: { id: 'workspace_123' } },
+    ]);
     expect(handlePairDeepLink).not.toHaveBeenCalled();
+  });
+
+  it('parses the CLI folder link and hands a parked URL to takePendingUrl once', async () => {
+    const handler = new DeepLinkHandler();
+    expect(handler.parseDeepLink('intent://open?path=%2FUsers%2Fme%2Fa%27b%20c')).toEqual({
+      type: 'open',
+      params: { path: "/Users/me/a'b c" },
+    });
+    await handler.handleDeepLink('intent://open?path=%2Ftmp', null);
+    expect(handler.takePendingUrl()).toBe('intent://open?path=%2Ftmp');
+    expect(handler.takePendingUrl()).toBeNull();
   });
 
   it('never logs pairing credentials across park, process, and parse paths', async () => {

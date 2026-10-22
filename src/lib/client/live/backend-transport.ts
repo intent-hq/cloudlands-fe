@@ -133,6 +133,17 @@ export async function backendRequest<T = unknown>(
   }
 }
 
+/** Read the principal and existing hello on one captured transport. */
+export async function readBackendPrincipal() {
+  const transport = resolveBackendTransport();
+  if (!transport.readPrincipal)
+    throw new BackendError({ code: 'UNAVAILABLE', message: 'Principal discovery unavailable' });
+  const result = await transport.readPrincipal();
+  if (transport !== resolveBackendTransport())
+    throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend transport changed' });
+  return result;
+}
+
 /** Observe node capabilities on one current transport without issuing client.hello. */
 export async function observeBackendNodeCapabilities(): Promise<unknown> {
   const transport = resolveBackendTransport();

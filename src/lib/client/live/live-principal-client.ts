@@ -1,5 +1,5 @@
 import { parsePrincipalSnapshot, type PrincipalSnapshot } from '$shared/types/principal';
-import { backendRequest } from './backend-transport';
+import { readBackendPrincipal } from './backend-transport';
 import { isDaemonErrorResponse } from './backend-transport-types';
 
 export class IncompatiblePrincipalResponse extends Error {}
@@ -14,20 +14,10 @@ export function isRetryablePrincipalError(error: unknown): boolean {
   return error instanceof Error;
 }
 
-/** No process cache: both reads must belong to the window's current connection. */
+/** Refresh only the principal; the transport supplies its existing acknowledged hello. */
 export async function readConnectedPrincipal(): Promise<PrincipalSnapshot> {
-  const [hello, principal] = await Promise.allSettled([
-    backendRequest<unknown>('client.hello', {}),
-    backendRequest<unknown>('principal.me', {}),
-  ]);
-  // A refusal on either read wins over a concurrent timeout on the other.
-  for (const result of [hello, principal]) {
-    if (result.status === 'rejected' && !isRetryablePrincipalError(result.reason))
-      throw result.reason;
-  }
-  if (hello.status === 'rejected') throw hello.reason;
-  if (principal.status === 'rejected') throw principal.reason;
-  const snapshot = parsePrincipalSnapshot(hello.value, principal.value);
+  const { hello, principal } = await readBackendPrincipal();
+  const snapshot = parsePrincipalSnapshot(hello, principal);
   if (!snapshot)
     throw new IncompatiblePrincipalResponse('Incompatible principal discovery response');
   return snapshot;
