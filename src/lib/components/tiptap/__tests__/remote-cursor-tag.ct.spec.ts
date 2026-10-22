@@ -94,7 +94,6 @@ function tagWidth(g: Geometry): number {
 function expectFullNameClearOfCaretLine(g: Geometry, label = LONG_NAME) {
   expect(g.label).toBe(label);
   expect(g.overflow).toBeLessThanOrEqual(0);
-  if (label === LONG_NAME) expect(tagWidth(g)).toBeGreaterThan(150);
   expect(g.tag.left).toBeGreaterThanOrEqual(g.editor.left - 0.5);
   expect(g.tag.right).toBeLessThanOrEqual(g.editor.right + 0.5);
   expect(g.tag.top).toBeGreaterThanOrEqual(g.host.top);

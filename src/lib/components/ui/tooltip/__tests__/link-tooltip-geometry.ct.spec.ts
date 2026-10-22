@@ -2,9 +2,6 @@ import { expect, test } from '../../../../../test/ct-test';
 import type { Page } from '@playwright/test';
 import LinkTooltipGeometryHost from './LinkTooltipGeometryHost.svelte';
 
-/** `.link-tooltip` keeps this gap from the anchor and from every viewport edge. */
-const MARGIN = 8;
-
 const tooltip = (page: Page) => page.getByRole('tooltip');
 const anchor = (page: Page) => page.getByTestId('link-anchor');
 
@@ -47,7 +44,7 @@ test('flips below the anchor when the card would overflow the top edge', async (
     })
     .toBeGreaterThanOrEqual(0);
   const { tip } = await boxes(page);
-  expect(tip.y + tip.height).toBeLessThanOrEqual(600 - MARGIN);
+  expect(tip.y + tip.height).toBeLessThanOrEqual(page.viewportSize()!.height);
 });
 
 test('clamps the wider card inside the right viewport edge', async ({ mount, page }) => {
@@ -59,11 +56,11 @@ test('clamps the wider card inside the right viewport edge', async ({ mount, pag
     .poll(async () => {
       const { tip, link } = await boxes(page);
       // The card is wider than the anchor, so centering it on the link would overflow.
-      return tip.width > link.width && tip.x + tip.width <= 800 - MARGIN + 1;
+      return tip.width > link.width && tip.x + tip.width <= page.viewportSize()!.width + 1;
     })
     .toBe(true);
   const { tip, link } = await boxes(page);
-  expect(tip.x).toBeGreaterThanOrEqual(MARGIN - 1);
+  expect(tip.x).toBeGreaterThanOrEqual(0);
   expect(link.x + link.width).toBeGreaterThan(tip.x);
 });
 
@@ -79,7 +76,7 @@ test('narrow viewport: the card shrinks to fit and stays inside both edges', asy
   await expect
     .poll(async () => {
       const { tip } = await boxes(page);
-      return tip.x >= MARGIN - 1 && tip.x + tip.width <= width - MARGIN + 1;
+      return tip.x >= 0 && tip.x + tip.width <= page.viewportSize()!.width + 1;
     })
     .toBe(true);
   await expect(tooltip(page).locator('.github-link-card')).toHaveCount(1);

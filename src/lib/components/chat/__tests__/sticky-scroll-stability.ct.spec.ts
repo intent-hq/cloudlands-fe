@@ -124,7 +124,7 @@ test('pins automated triggers without shifting the transcript and returns to eac
     expect(after.anchorDocumentTop).toBeCloseTo(before.anchorDocumentTop, 1);
     expect(after.scrollTop).toBeCloseTo(entry, 1);
     const bounds = (await pinned.boundingBox())!;
-    expect(bounds.width).toBeLessThanOrEqual(320);
+    expect(bounds.width).toBeLessThanOrEqual(page.viewportSize()!.width);
     if (index === 0) {
       await component.update({ props: { ...config, streamGrowth: 90 } });
       await settle(page);

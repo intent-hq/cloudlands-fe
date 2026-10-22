@@ -281,7 +281,7 @@ function assertClear(
       label.distances.find((r) => r.id === label.id)!.distance,
       `${label.id} own edge`,
     ).toBeLessThanOrEqual(1.5);
-    expect(label.fontSize).toBeGreaterThanOrEqual(10 - 0.01);
+
     expect(
       label.glyphs.every(
         (r) =>

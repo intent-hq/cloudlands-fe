@@ -41,7 +41,7 @@ for (const kind of [
       scroll: node.scrollWidth,
     }));
     expect(bounds.left).toBeGreaterThanOrEqual(0);
-    expect(bounds.right).toBeLessThanOrEqual(420);
+    expect(bounds.right).toBeLessThanOrEqual(page.viewportSize()!.width);
     expect(bounds.scroll).toBeLessThanOrEqual(bounds.client + 1);
     const title = await dialog.locator('[data-slot=dialog-title]').evaluate((node) => ({
       top: node.getBoundingClientRect().top,

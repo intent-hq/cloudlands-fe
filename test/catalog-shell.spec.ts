@@ -349,7 +349,6 @@ async function captureKeyboardFocusEvidence(page: Page) {
     await expect(control).toBeFocused();
     const indicator = await readFocusIndicator(control);
     expect(indicator.visible).toBe(true);
-    expect(indicator.width).toBeGreaterThanOrEqual(1);
     expect(indicator.style).toBe('solid');
     // WCAG 2.4.11/1.4.11: the indicator must be a visible change with ≥3:1 contrast
     // against the surface it sits on (the outline is offset outside the control).

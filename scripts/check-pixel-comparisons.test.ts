@@ -42,6 +42,7 @@ describe('pixel comparison ban', () => {
     ['test/helpers.ts', 'import compare from "pixelmatch"; compare(a, b);'],
     ['scripts/helpers.ts', 'const compare = require("looks-same");'],
     ['src/button.test.ts', 'import sharp from "sharp"; sharp(image).raw().toBuffer();'],
+    ['test/electron.spec.ts', 'const pixels = nativeImage.createFromBuffer(image).toBitmap();'],
     ['test/helpers.ts', 'context.getImageData(5, 5, 1, 1);'],
     ['test/helpers.ts', 'context.getImageData(0, 0, 1, 1);'],
     ['test/helpers.ts', 'context.drawImage(image, 0, 0); context.getImageData(0, 0, 1, 1);'],

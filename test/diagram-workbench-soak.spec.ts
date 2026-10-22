@@ -120,13 +120,19 @@ async function inspectGeometry(page: Page) {
       inner.top >= outer.top - tolerance &&
       inner.right <= outer.right + tolerance &&
       inner.bottom <= outer.bottom + tolerance;
-    const distanceToPath = (path: SVGGeometryElement, x: number, y: number) => {
+    const distanceToPath = (path: SVGGeometryElement, bounds: DOMRect) => {
       const length = path.getTotalLength();
       const matrix = path.getScreenCTM() ?? new DOMMatrix();
       let distance = Number.POSITIVE_INFINITY;
       for (let index = 0; index <= 600; index += 1) {
         const point = path.getPointAtLength((length * index) / 600).matrixTransform(matrix);
-        distance = Math.min(distance, Math.hypot(x - point.x, y - point.y));
+        distance = Math.min(
+          distance,
+          Math.hypot(
+            Math.max(bounds.left - point.x, 0, point.x - bounds.right),
+            Math.max(bounds.top - point.y, 0, point.y - bounds.bottom),
+          ),
+        );
       }
       return distance;
     };
@@ -216,15 +222,6 @@ async function inspectGeometry(page: Page) {
             }
           });
         });
-        for (const edge of svg.querySelectorAll<SVGGeometryElement>(
-          '.flowchart-link, .edgePaths path, .messageLine0, .messageLine1, .actor-line',
-        )) {
-          const style = getComputedStyle(edge);
-          const strokeWidth = Number.parseFloat(style.strokeWidth);
-          if (style.stroke !== 'none' && (strokeWidth < 1 || strokeWidth > 1.25)) {
-            issues.push(`${id}: connector is ${style.strokeWidth}`);
-          }
-        }
         continue;
       }
 
@@ -261,11 +258,7 @@ async function inspectGeometry(page: Page) {
         }
         if (edge) {
           const bounds = labelRects[index];
-          const distance = distanceToPath(
-            edge,
-            bounds.left + bounds.width / 2,
-            bounds.top + bounds.height / 2,
-          );
+          const distance = distanceToPath(edge, bounds);
           if (distance > 1.1) issues.push(`${id}: detached edge label ${edgeId} (${distance})`);
         }
         nodeRects.forEach((node, nodeIndex) => {
@@ -282,12 +275,6 @@ async function inspectGeometry(page: Page) {
         });
       });
 
-      paths.forEach((edge) => {
-        const strokeWidth = Number.parseFloat(getComputedStyle(edge).strokeWidth);
-        if (strokeWidth < 1 || strokeWidth > 1.25) {
-          issues.push(`${id}: custom connector is ${strokeWidth}px`);
-        }
-      });
       const segmentSets = paths.map(pathSegments);
       if (!renderer.classList.contains('compact-diagram'))
         segmentSets.forEach((segments, index) => {

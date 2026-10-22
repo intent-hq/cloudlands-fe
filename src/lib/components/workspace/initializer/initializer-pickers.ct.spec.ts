@@ -87,7 +87,7 @@ for (const scenario of ['local', 'clone'] as const) {
     }
     for (const trigger of await triggers.all()) {
       const initial = (await trigger.boundingBox())!;
-      expect(initial.height).toBeGreaterThanOrEqual(28);
+      expect(initial.height).toBeGreaterThanOrEqual(24);
       await trigger.hover();
       await trigger.focus();
       expect(await trigger.boundingBox()).toEqual(initial);

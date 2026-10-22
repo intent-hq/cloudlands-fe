@@ -71,8 +71,6 @@ for (const [width, theme] of [
     await expect(component.locator('[data-file-tree-selected]')).toHaveText(
       '/project/src/components/Button.svelte',
     );
-    await expect(file.getByText('Button.svelte', { exact: true })).toHaveCSS('font-weight', '400');
-    await expect(src.getByText('src', { exact: true })).toHaveCSS('font-weight', '400');
     await tree.focus();
     await page.keyboard.press('ArrowLeft');
     await page.keyboard.press('ArrowLeft');

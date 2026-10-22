@@ -182,8 +182,11 @@ test('clamps one automatic chat to a narrow viewport without overflow', async ({
   });
 
   await expect
-    .poll(async () => (await measureGeometry(component)).canvasOffsetWidth)
-    .toBeLessThan(700);
+    .poll(async () => {
+      const geometry = await measureGeometry(component);
+      return geometry.canvasOffsetWidth! <= geometry.insetClientWidth!;
+    })
+    .toBe(true);
   const measurements = await measureGeometry(component);
   expect(measurements.insetScrollWidth).toBeLessThanOrEqual(measurements.insetClientWidth!);
 });

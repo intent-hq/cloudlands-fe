@@ -379,7 +379,6 @@ test('collapsed and scrolling states keep the slot flush without clipping or scr
     const collapsed = await readGeometry(page);
     expectFlushGeometry(collapsed, 12 * (scenario.zoom ?? 1));
     expect(collapsed.footer).toBeNull();
-    expect(collapsed.card.height).toBeLessThan(64 * (scenario.zoom ?? 1));
   }
 
   await mountWizard(page, { width: 960, height: 560 }, { longChat: true, safeArea: 12 });

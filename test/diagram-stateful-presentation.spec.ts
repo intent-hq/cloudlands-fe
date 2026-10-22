@@ -102,7 +102,7 @@ for (const width of [960, 420]) {
     for (const label of lane.labels) {
       expect(label.width, label.text ?? '').toBeGreaterThan(0);
       expect(label.height, label.text ?? '').toBeGreaterThan(0);
-      expect(label.fontSize, label.text ?? '').toBeGreaterThanOrEqual(12);
+
       expect(label.scale, label.text ?? '').toBeLessThanOrEqual(1);
       expect(label.left, label.text ?? '').toBeGreaterThanOrEqual(lane.viewport.left);
       expect(label.right, label.text ?? '').toBeLessThanOrEqual(lane.viewport.right);

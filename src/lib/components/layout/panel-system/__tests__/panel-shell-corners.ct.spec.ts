@@ -233,7 +233,7 @@ test('keeps all four shell corners portable with an adjacent panel at 200% zoom'
     expect(new Set(panel.radii).size).toBe(1);
     expect(Number.parseFloat(panel.radii[0])).toBeGreaterThan(0);
     expect(panel.top).toBeGreaterThanOrEqual(0);
-    expect(panel.bottom).toBeLessThanOrEqual(900);
+    expect(panel.bottom).toBeLessThanOrEqual(page.viewportSize()!.height);
   }
   expect(geometry[0].right).toBeLessThanOrEqual(geometry[1].left);
 });

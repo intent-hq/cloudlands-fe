@@ -318,7 +318,6 @@ test('cleans Markdown and keeps one true ellipsis region clear of the timestamp'
       expect(value.previewRect.right).toBeLessThanOrEqual(value.timestampRect.left + 0.5);
       expect(value.rowOverflow).toBeLessThanOrEqual(0);
       expect(value.trailingStyle.flexShrink).toBe('0');
-      expect(value.timestampTextAlign).toBe('right');
       expect(value.timestampNumeric).toContain('tabular-nums');
       expect(value.peekIconCount).toBe(0);
       expect(value.peekAriaLabelCount).toBe(0);

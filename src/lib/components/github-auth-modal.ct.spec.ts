@@ -16,7 +16,7 @@ for (const state of ['ready', 'starting', 'code', 'error', 'daemon-auth']) {
     }));
     expect(bounds.overflow).toBeLessThanOrEqual(1);
     expect(bounds.top).toBeGreaterThanOrEqual(0);
-    expect(bounds.bottom).toBeLessThanOrEqual(560);
+    expect(bounds.bottom).toBeLessThanOrEqual(page.viewportSize()!.height);
     if (state === 'code') await expect(dialog).toContainText('ABCD-1234');
     if (state === 'error') await expect(dialog).toContainText('authorization code expired');
     if (state === 'daemon-auth') await expect(dialog).toContainText('auggie login');

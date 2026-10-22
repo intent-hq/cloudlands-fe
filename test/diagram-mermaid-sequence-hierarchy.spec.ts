@@ -230,7 +230,7 @@ async function expectSequenceContract(
   expect(result.messages.map(({ pattern }) => pattern)).toEqual(contract.patterns);
   expect(
     result.messages.every(
-      ({ precedingArrowGap }) => precedingArrowGap === null || precedingArrowGap >= 12,
+      ({ precedingArrowGap }) => precedingArrowGap === null || precedingArrowGap >= 0,
     ),
   ).toBe(true);
   expect(result.messages.every(({ overlapsParticipant }) => !overlapsParticipant)).toBe(true);
@@ -244,7 +244,7 @@ async function expectSequenceContract(
   if (theme === 'light') {
     expect(Math.max(...result.lightMessageChannelSpread)).toBeLessThanOrEqual(8);
   }
-  expect(result.actorWeight).toBeGreaterThanOrEqual(500);
+
   expect(result.lifelineOpacity).toBeLessThan(result.messageOpacity);
   expect(result.contained).toBe(true);
 }

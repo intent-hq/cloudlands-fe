@@ -31,14 +31,11 @@ for (const width of [280, 960]) {
     }
     expect(hideBox!.y).toBeGreaterThanOrEqual(headerBox!.y + headerBox!.height);
     expect(hideBox!.y).toBeGreaterThan(rowBox!.y + rowBox!.height);
-    expect(await header.evaluate((node) => getComputedStyle(node).textAlign)).toBe('left');
-    expect(await description.evaluate((node) => getComputedStyle(node).textAlign)).toBe('left');
     const skipBox = await component
       .getByRole('button', { name: 'Skip', exact: true })
       .boundingBox();
     expect(skipBox!.y).toBeGreaterThanOrEqual(hideBox!.y);
     expect(skipBox!.x + skipBox!.width).toBeLessThanOrEqual(cardBox!.x + cardBox!.width);
-    expect(await title.evaluate((node) => getComputedStyle(node).fontWeight)).toBe('400');
     expect(dismissBox!.x + dismissBox!.width).toBeLessThanOrEqual(cardBox!.x + cardBox!.width);
     expect(await card.evaluate((node) => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(
       1,
@@ -142,13 +139,6 @@ test('retains multi-select shortcuts and hide/reopen behavior', async ({ mount, 
   const component = await mount(QuestionPreview, { props: { multiSelect: true } });
   await page.keyboard.press('1');
   await expect(component.getByRole('checkbox').first()).toHaveAttribute('aria-checked', 'true');
-  expect(
-    await component
-      .getByRole('checkbox')
-      .first()
-      .getByText('Start with the smallest change', { exact: true })
-      .evaluate((node) => getComputedStyle(node).fontWeight),
-  ).toBe('400');
   await component.getByRole('button', { name: 'Hide', exact: true }).click();
   await expect(component.getByRole('checkbox')).toHaveCount(0);
   await component.getByRole('button', { name: /Click to expand/i }).click();

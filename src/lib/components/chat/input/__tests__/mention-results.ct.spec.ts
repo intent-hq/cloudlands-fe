@@ -145,9 +145,9 @@ test('composer popup fits limited viewport space without hiding its scroll area'
     };
   });
   expect(geometry.top).toBeGreaterThanOrEqual(0);
-  expect(geometry.bottom).toBeLessThanOrEqual(280);
+  expect(geometry.bottom).toBeLessThanOrEqual(page.viewportSize()!.height);
   expect(geometry.left).toBeGreaterThanOrEqual(0);
-  expect(geometry.right).toBeLessThanOrEqual(240);
+  expect(geometry.right).toBeLessThanOrEqual(page.viewportSize()!.width);
   expect(geometry.clientHeight).toBeGreaterThan(0);
   expect(geometry.scrollHeight).toBeGreaterThan(geometry.clientHeight);
   await page.screenshot({ path: testInfo.outputPath('limited-viewport.png') });

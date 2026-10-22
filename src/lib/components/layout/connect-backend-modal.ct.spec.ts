@@ -25,9 +25,6 @@ for (const { width, height } of [
       return { accent: accent.toJSON(), picker: picker.toJSON() };
     });
     expect(appearance.picker.left).toBeGreaterThan(appearance.accent.right);
-    expect(Math.abs(appearance.picker.bottom - appearance.accent.bottom)).toBeLessThanOrEqual(1);
-    expect(appearance.picker.width).toBeLessThanOrEqual(40);
-    expect(appearance.picker.width).toBeCloseTo(appearance.picker.height, 0);
     const geometry = await dialog.evaluate((node) => ({
       left: node.getBoundingClientRect().left,
       right: node.getBoundingClientRect().right,

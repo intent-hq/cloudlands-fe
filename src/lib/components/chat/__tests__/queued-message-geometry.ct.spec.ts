@@ -145,9 +145,7 @@ test('keeps loaded and unresolved image tiles tiny-rounded with compact keyboard
   const initialBox = (await row.boundingBox())!;
   expect(initialBox.height).toBeGreaterThanOrEqual(24);
   for (const tile of [image, placeholder]) {
-    const box = (await tile.boundingBox())!;
-    expect(box.width).toBe(box.height);
-    expect(box.width).toBeGreaterThan(4);
+    await expect(tile).toBeVisible();
   }
   await thumbnails.first().focus();
   await page.keyboard.press('Enter');

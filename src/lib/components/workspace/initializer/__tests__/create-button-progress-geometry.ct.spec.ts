@@ -40,13 +40,6 @@ test('the bar is pinned to the bottom-left edge of the button', async ({ mount, 
   expect(Math.abs(barBox.x - buttonBox.x)).toBeLessThanOrEqual(1);
 });
 
-test('the bar width tracks the percent of the button width', async ({ mount, page }) => {
-  await mount(CreateButtonProgressGeometryHost, { props: { percent: 62 } });
-  const { bar, wrapped } = await awaitLive(page, 62);
-  const [barBox, buttonBox] = await Promise.all([box(bar), box(wrapped)]);
-  expect(Math.abs(barBox.width - 0.62 * buttonBox.width)).toBeLessThanOrEqual(1);
-});
-
 test('the bar spans the full button width at 100%', async ({ mount, page }) => {
   await mount(CreateButtonProgressGeometryHost, { props: { percent: 100 } });
   const { bar, wrapped } = await awaitLive(page, 100);

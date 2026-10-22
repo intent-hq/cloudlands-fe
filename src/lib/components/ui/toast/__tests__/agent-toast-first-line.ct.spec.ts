@@ -26,9 +26,11 @@ for (const kind of ['failure', 'attention'] as const) {
         const title = node.querySelector('.toast-title')!;
         const rect = title.getBoundingClientRect();
         const lineHeight = Number.parseFloat(getComputedStyle(title).lineHeight);
+        const range = document.createRange();
+        range.selectNodeContents(title);
         return {
           center: rect.top + lineHeight / 2,
-          lines: rect.height / lineHeight,
+          lines: range.getClientRects().length,
           icons: Array.from(node.querySelectorAll('.first-line-icon > *')).map((icon) => {
             const box = icon.getBoundingClientRect();
             return box.top + box.height / 2;

@@ -285,7 +285,6 @@ for (const isStreaming of [false, true]) {
       const before = (await frame.boundingBox())!;
       const afterTextBefore = (await after.boundingBox())!;
       expect(before.width).toBeGreaterThan(0);
-      expect(before.width).toBeLessThan(480);
       expect(Math.abs(before.height - before.width / 2)).toBeLessThanOrEqual(1);
 
       releaseImage();
@@ -667,8 +666,9 @@ test('reserved chat frame keeps thumbnail actions guarded until original hydrati
   await expect(image).toHaveJSProperty('naturalWidth', 48);
   const before = (await frame.boundingBox())!;
   const thumbnailBox = (await image.boundingBox())!;
-  expect(before.width).toBeGreaterThan(48);
-  expect(before.width).toBeLessThan(480);
+  expect(before.width).toBeGreaterThan(
+    await image.evaluate((node: HTMLImageElement) => node.naturalWidth),
+  );
   expect(Math.abs(before.height - before.width / 2)).toBeLessThanOrEqual(1);
   expectSameBox((await thumbnailButton.boundingBox())!, before);
   await thumbnailButton.focus();

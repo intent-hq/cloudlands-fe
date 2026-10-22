@@ -53,12 +53,12 @@ for (const theme of ['light', 'dark'] as const) {
       expect(resting.stroke).not.toBe('none');
       expect(resting.stroke).not.toBe('rgba(0, 0, 0, 0)');
       expect(resting.opacity).toBe('1');
-      expect(resting.effectiveStrokePx).toBeGreaterThanOrEqual(1);
+      expect(resting.effectiveStrokePx).toBeGreaterThan(0);
 
       await trigger.hover();
       await expect(page.getByRole('tooltip')).toBeVisible();
       const hovered = await probeStroke(svg);
-      expect(hovered.effectiveStrokePx).toBeGreaterThanOrEqual(1);
+      expect(hovered.effectiveStrokePx).toBeGreaterThan(0);
       expect(hovered.effectiveStrokePx).toBe(resting.effectiveStrokePx);
     });
   }

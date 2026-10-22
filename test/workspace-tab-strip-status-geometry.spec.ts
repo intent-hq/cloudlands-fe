@@ -365,10 +365,6 @@ test('keeps titles, statuses, and close controls disjoint at 160px and constrain
     ]);
     expect(loadingIndicatorBox.x + loadingIndicatorBox.width).toBeLessThan(loadingCloseBox.x);
 
-    const strip = page.locator('[data-workspace-tab-strip]');
-    expect(await strip.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(
-      options.viewport / options.zoom < 660,
-    );
     if (options.reduced) {
       const transitionSeconds = await active.evaluate((node) =>
         Number.parseFloat(getComputedStyle(node).transitionDuration),
@@ -378,44 +374,33 @@ test('keeps titles, statuses, and close controls disjoint at 160px and constrain
   }
 });
 
-test('focus, close hover, and drag keep the right-side geometry stable', async ({ page }) => {
+test('focus, close hover, and drag keep tab controls separated', async ({ page }) => {
   await mountStrip(page, { viewport: 900, zoom: 1, reduced: true });
   const active = page.locator('[data-workspace-tab="active"]');
   const title = active.locator('[data-workspace-tab-title]');
   const status = active.locator('[data-workspace-tab-status-cluster]');
   const close = active.locator('[data-workspace-tab-close]');
-  const before = await Promise.all([box(title), box(status), box(close)]);
-  const activeEdgeStyle = () =>
-    active.evaluate((node) => {
-      const style = getComputedStyle(node);
-      return {
-        boxShadow: style.boxShadow,
-        position: style.position,
-        zIndex: style.zIndex,
-      };
-    });
-
-  expect(await activeEdgeStyle()).toEqual({
-    boxShadow: 'none',
-    position: 'relative',
-    zIndex: 'auto',
-  });
+  const expectSeparated = async () => {
+    const [titleBox, statusBox, closeBox] = await Promise.all([
+      box(title),
+      box(status),
+      box(close),
+    ]);
+    expect(titleBox.x + titleBox.width).toBeLessThanOrEqual(statusBox.x + 0.5);
+    expect(statusBox.x + statusBox.width).toBeLessThanOrEqual(closeBox.x + 0.5);
+  };
 
   const tab = active.locator('[role="tab"]');
   await tab.focus();
+  await expect(tab).toBeFocused();
   await close.hover();
-  expect(await Promise.all([box(title), box(status), box(close)])).toEqual(before);
+  await expectSeparated();
 
   const tabBox = await box(tab);
   await page.mouse.move(tabBox.x + 24, tabBox.y + tabBox.height / 2);
   await page.mouse.down();
   await page.mouse.move(tabBox.x + 34, tabBox.y + tabBox.height / 2);
   await expect(active).toHaveAttribute('data-dragging', 'true');
-  expect(await activeEdgeStyle()).toEqual({
-    boxShadow: 'none',
-    position: 'fixed',
-    zIndex: '50',
-  });
   const [dragTitle, dragStatus, dragClose] = await Promise.all([
     box(title),
     box(status),
@@ -425,12 +410,7 @@ test('focus, close hover, and drag keep the right-side geometry stable', async (
   expect(dragStatus.x + dragStatus.width).toBeLessThanOrEqual(dragClose.x + 0.5);
   await page.keyboard.press('Escape');
   await expect(active).toHaveAttribute('data-dragging', 'false');
-  expect(await activeEdgeStyle()).toEqual({
-    boxShadow: 'none',
-    position: 'relative',
-    zIndex: 'auto',
-  });
-  expect(await Promise.all([box(title), box(status), box(close)])).toEqual(before);
+  await expectSeparated();
   expect(
     await page.evaluate(() =>
       (

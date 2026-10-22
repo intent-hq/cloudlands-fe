@@ -658,9 +658,10 @@ Remove violations; never record new measurements or adjust expected values to pa
 
 Do not recreate these tests under another name, add exemptions, or regenerate their
 baselines. `pnpm run lint:geometry-snapshots` runs in `lint:architecture` and rejects
-known baseline paths, snapshot machinery, fixed numeric DOM measurement equality,
-and fixed CSS dimension assertions. Review must reject equivalent custom comparisons
-the static gate misses.
+known baseline paths, snapshot machinery, fixed numeric DOM measurement equality/ranges,
+and fixed CSS dimension assertions. Capturing all boxes or path coordinates during a test
+and requiring the same layout later is also a generated appearance baseline. Review must
+reject equivalent custom comparisons the static gate misses.
 
 Keep independent behavioral assertions: content stays within its live container,
 controls remain reachable, a resize responds to user input, and scrolling preserves

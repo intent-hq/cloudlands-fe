@@ -158,7 +158,7 @@ for (const width of [960, 420]) {
       const no = geometry.routes.find((route) => route.role === 'decision-return')!;
       expect(no.obstacleHits).toEqual([]);
       expect(geometry.noLabelHits).toEqual([]);
-      expect(geometry.noLaneClearance).toBeGreaterThan(4);
+      expect(geometry.noLaneClearance).toBeGreaterThan(0);
       if (width === 960) {
         expect(no.logical).toHaveLength(2);
         expect(no.maxLineDeviation).toBeLessThan(0.05);

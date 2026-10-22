@@ -39,7 +39,7 @@ function memberName(node) {
 
 function sourceViolations(file, content) {
   if (
-    !/toHaveScreenshot|toMatch(?:Image|Snapshot)|matchImageSnapshot|maxDiffPixel|pixelmatch|looks-same|resemblejs|ssim|image-snapshot|\b(?:raw|equals|getImageData|ImageDecoder)\b/.test(
+    !/toHaveScreenshot|toMatch(?:Image|Snapshot)|matchImageSnapshot|maxDiffPixel|pixelmatch|looks-same|resemblejs|ssim|image-snapshot|\b(?:raw|equals|getImageData|ImageDecoder|toBitmap)\b/.test(
       content,
     )
   )
@@ -101,6 +101,8 @@ function sourceViolations(file, content) {
       if (testing && method === 'raw' && /\bsharp\b/.test(content)) {
         report(node, 'decoding raw image pixels in tests is forbidden');
       }
+      if (testing && method === 'toBitmap')
+        report(node, 'decoding raw image pixels in tests is forbidden');
       if (testing && method === 'getImageData') {
         const colorConversion =
           /\bfillStyle\b/.test(content) &&

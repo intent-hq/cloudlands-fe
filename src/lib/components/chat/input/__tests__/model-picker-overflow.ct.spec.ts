@@ -28,7 +28,7 @@ test('compact composer Auto gauge stays centered and stable after explicit effor
   const iconBox = (await trigger.getByRole('img').boundingBox())!;
   expect(iconBox.x + iconBox.width).toBeLessThan(labelBox.x);
   expect(labelBox.x + labelBox.width).toBeLessThan(initial!.x);
-  expect(initial!.x + initial!.width).toBeLessThanOrEqual(320);
+  expect(initial!.x + initial!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
   const bounds = (await trigger.boundingBox())!;
   await expectHitTarget(trigger);
   await testInfo.attach('compact-composer-auto-gauge', {

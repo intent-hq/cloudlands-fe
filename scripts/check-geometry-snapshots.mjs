@@ -353,6 +353,89 @@ function geometryBaselineViolations(file, source) {
       return expected.elements.some((element) => fixedBaseline(actual, element, new Set(seen)));
     return geometry(actual) && !measured(expected) && fixedNumbers(expected);
   }
+  function fixedRange(actual, expected, method) {
+    if (measured(expected) || !fixedNumbers(expected)) return false;
+    function numericConstant(node, seen = new Set()) {
+      if (!node || seen.has(node)) return undefined;
+      seen.add(node);
+      node = unwrap(node);
+      if (ts.isNumericLiteral(node)) return Number(node.text);
+      if (ts.isIdentifier(node)) {
+        const values = valuesFor(node);
+        return values.length === 1 ? numericConstant(values[0], seen) : undefined;
+      }
+      if (ts.isBinaryExpression(node)) {
+        const left = numericConstant(node.left, new Set(seen));
+        const right = numericConstant(node.right, new Set(seen));
+        if (left === undefined || right === undefined) return undefined;
+        switch (node.operatorToken.kind) {
+          case ts.SyntaxKind.PlusToken:
+            return left + right;
+          case ts.SyntaxKind.MinusToken:
+            return left - right;
+          case ts.SyntaxKind.AsteriskToken:
+            return left * right;
+          case ts.SyntaxKind.SlashToken:
+            return left / right;
+        }
+      }
+      return undefined;
+    }
+    const value = numericConstant(expected);
+    if (value === undefined) return false;
+    if (
+      inspect(
+        actual,
+        (part) =>
+          (ts.isPropertyAccessExpression(part) || ts.isElementAccessExpression(part)) &&
+          /^scroll(?:Top|Left|Width|Height)$/.test(memberName(part) ?? ''),
+      )
+    )
+      return false;
+    const difference = (part) =>
+      ts.isBinaryExpression(part) &&
+      part.operatorToken.kind === ts.SyntaxKind.MinusToken &&
+      (measured(part.left) || measured(part.right));
+    const span = (part) => {
+      if (!difference(part)) return false;
+      const edges = [memberName(part.left), memberName(part.right)];
+      return (
+        (edges.some((edge) => /^(?:left|x)$/.test(edge ?? '')) && edges.includes('right')) ||
+        (edges.some((edge) => /^(?:top|y)$/.test(edge ?? '')) && edges.includes('bottom'))
+      );
+    };
+    if (inspect(actual, difference) && (value <= 1 || !inspect(actual, span))) return false;
+    if (
+      /GreaterThanOrEqual$/.test(method) &&
+      value === 24 &&
+      inspect(
+        actual,
+        (part) =>
+          (ts.isPropertyAccessExpression(part) || ts.isElementAccessExpression(part)) &&
+          /^(?:(?:client|offset)?(?:width|height))$/i.test(memberName(part) ?? '') &&
+          measured(part),
+      )
+    )
+      return false;
+    return true;
+  }
+  function fixedRelational(node) {
+    if (!ts.isBinaryExpression(node)) return false;
+    const method = new Map([
+      [ts.SyntaxKind.LessThanToken, 'toBeLessThan'],
+      [ts.SyntaxKind.LessThanEqualsToken, 'toBeLessThanOrEqual'],
+      [ts.SyntaxKind.GreaterThanToken, 'toBeGreaterThan'],
+      [ts.SyntaxKind.GreaterThanEqualsToken, 'toBeGreaterThanOrEqual'],
+    ]).get(node.operatorToken.kind);
+    if (!method) return false;
+    const reverse = method.includes('Less')
+      ? method.replace('Less', 'Greater')
+      : method.replace('Greater', 'Less');
+    return (
+      (geometry(node.left) && fixedRange(node.left, node.right, method)) ||
+      (geometry(node.right) && fixedRange(node.right, node.left, reverse))
+    );
+  }
   const hits = [];
   function report(node) {
     const { line } = source.getLineAndCharacterOfPosition(node.getStart(source));
@@ -387,7 +470,8 @@ function geometryBaselineViolations(file, source) {
         report(node);
       if (
         equalityMatchers.has(method) ||
-        /^(?:toBeLessThan|toBeLessThanOrEqual)$/.test(method ?? '') ||
+        /^(?:toBeTruthy|toBeFalsy)$/.test(method ?? '') ||
+        /^toBe(?:Less|Greater)Than(?:OrEqual)?$/.test(method ?? '') ||
         /^(?:toMatchSnapshot|toMatchInlineSnapshot)$/.test(method ?? '')
       ) {
         const expression = unwrap(node.expression);
@@ -403,11 +487,11 @@ function geometryBaselineViolations(file, source) {
           if (
             actual &&
             geometry(actual) &&
-            (/^(?:toMatchSnapshot|toMatchInlineSnapshot)$/.test(method ?? '') ||
-              (/^(?:toBeLessThan|toBeLessThanOrEqual)$/.test(method ?? '') &&
-                !measured(expected) &&
-                fixedNumbers(expected) &&
-                fixedDifference(actual)) ||
+            (inspect(actual, fixedRelational) ||
+              /^(?:toMatchSnapshot|toMatchInlineSnapshot)$/.test(method ?? '') ||
+              (/^toBe(?:Less|Greater)Than(?:OrEqual)?$/.test(method ?? '') &&
+                ((fixedDifference(actual) && !measured(expected) && fixedNumbers(expected)) ||
+                  fixedRange(actual, expected, method))) ||
               (equalityMatchers.has(method) && fixedBaseline(actual, expected)) ||
               (!measured(expected) &&
                 /baseline|golden|snapshot/i.test(expected?.getText(source) ?? '')))

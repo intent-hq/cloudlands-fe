@@ -42,14 +42,16 @@ async function expectClearLabels(diagram: Locator) {
       const path = root.querySelector<SVGGeometryElement>(
         `.diagram-edge[data-edge-id="${edgeId}"] .edge-path`,
       )!;
-      const center = { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 };
       let routeDistance = Number.POSITIVE_INFINITY;
       for (let step = 0; step <= 1000; step += 1) {
         const point = path.getPointAtLength((path.getTotalLength() * step) / 1000);
         const screenPoint = new DOMPoint(point.x, point.y).matrixTransform(path.getScreenCTM()!);
         routeDistance = Math.min(
           routeDistance,
-          Math.hypot(center.x - screenPoint.x, center.y - screenPoint.y),
+          Math.hypot(
+            Math.max(bounds.left - screenPoint.x, 0, screenPoint.x - bounds.right),
+            Math.max(bounds.top - screenPoint.y, 0, screenPoint.y - bounds.bottom),
+          ),
         );
       }
       return {

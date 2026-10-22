@@ -273,15 +273,18 @@ test('keeps named surface and art geometry clear at 200% zoom', async ({ page })
         `[data-avatar-variant-sample="${variant}"][data-avatar-optical-design="${design}"]`,
       );
       const svg = sample.locator('svg');
-      const glyphBounds = await svg.evaluate((node) => {
-        const box = (node as SVGGraphicsElement).getBBox();
-        return { x: box.x, y: box.y, width: box.width, height: box.height };
+      const contained = await svg.evaluate((node) => {
+        const svg = node as SVGSVGElement;
+        const box = svg.getBBox();
+        const frame = svg.viewBox.baseVal;
+        return (
+          box.x >= frame.x &&
+          box.y >= frame.y &&
+          box.x + box.width <= frame.x + frame.width &&
+          box.y + box.height <= frame.y + frame.height
+        );
       });
-      expect(glyphBounds.x).toBeGreaterThanOrEqual(0);
-      expect(glyphBounds.y).toBeGreaterThanOrEqual(0);
-      expect(glyphBounds.x + glyphBounds.width).toBeLessThanOrEqual(16);
-      expect(glyphBounds.y + glyphBounds.height).toBeLessThanOrEqual(16);
-      await expect(svg).toHaveAttribute('viewBox', '0 0 16 16');
+      expect(contained).toBe(true);
       await expect(svg).toHaveAttribute('data-avatar-design', design);
     }
   }
