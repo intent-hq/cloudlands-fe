@@ -533,6 +533,8 @@ type CanonicalAgentSessionUpdates = {
   isStreaming?: boolean;
   isProcessing?: boolean;
   isResponding?: boolean;
+  turnInFlight?: boolean;
+  isWaitingOnTool?: boolean;
   stopReason?: string | null;
   stopReasonTimestamp?: string | null;
   sessionCorrupted?: boolean;
@@ -832,6 +834,9 @@ function canonicalSessionUpdates(
     updates.isStreaming = fields.isStreaming ?? false;
     updates.isProcessing = fields.isProcessing ?? false;
     updates.isResponding = fields.isResponding ?? false;
+    // Snapshots can leave these busy until the next detail read; idle ends them too.
+    updates.turnInFlight = false;
+    updates.isWaitingOnTool = false;
     updates.liveTurnOpen = false;
     updates.liveTurnOpenedAt = undefined;
   }
@@ -1922,19 +1927,18 @@ agentSessionReducer.with(eventReceived, (state, { payload: [, event] }) => {
     typeof event.timestamp === 'string' ? event.timestamp : undefined,
   );
   if (Object.keys(updates).length === 0) return state;
-  // Fresh running edge (the sticky liveTurnOpen slot transitions closed →
-  // open): clear the previous turn's `lastToolUse` so it cannot render as a
-  // live tool chip during the startup window before the first
-  // `agent:stream:activity` ping of the new turn arrives. Keyed on the slot
-  // EDGE, not on every running status event — mid-turn status ticks (slot
-  // already open) must not wipe the current turn's live tool. The first
-  // tool-arm ping of the new turn repopulates the field.
+  // Idle clears running overlays but keeps persisted tool previews. A fresh
+  // running edge clears the previous turn's preview until new activity arrives.
   const existing = getSession(state, agentId);
   if (existing && event.workspaceId && existing.workspaceId !== event.workspaceId) return state;
   const opensLiveTurn = updates.liveTurnOpen === true && existing?.liveTurnOpen !== true;
+  const clearsRunningTool =
+    updates.liveTurnOpen === false && existing?.lastToolUse?.status?.toLowerCase() === 'running';
   const merged: AgentSessionUpdate = {
     ...updates,
-    ...(opensLiveTurn && existing?.lastToolUse ? { lastToolUse: undefined } : {}),
+    ...(clearsRunningTool || (opensLiveTurn && existing?.lastToolUse)
+      ? { lastToolUse: undefined }
+      : {}),
   };
   return updateSessionFields(recordSessionProjection(state, agentId, merged), agentId, merged);
 });

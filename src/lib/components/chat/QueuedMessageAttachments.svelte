@@ -4,6 +4,7 @@
   import type { QueuedMessage } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
+  import { isSupportedImageMimeType, imageAttachmentName } from './input/image-attachment-format';
 
   type ImageBlock = NonNullable<QueuedMessage['imageBlocks']>[number];
   type FileBlock = NonNullable<QueuedMessage['fileBlocks']>[number];
@@ -20,11 +21,32 @@
     handleReferenceImageError: (block: ImageBlock, src: string) => void;
     openQueuedFileAttachment: (block: FileBlock) => void;
   } = $props();
+  const unsupportedImages = $derived(
+    (message.imageBlocks ?? []).filter(
+      (block) => block.mimeType && !isSupportedImageMimeType(block.mimeType),
+    ),
+  );
+  const imageBlocks = $derived(
+    (message.imageBlocks ?? []).filter((block) => !unsupportedImages.includes(block)),
+  );
+  const fileBlocks = $derived([
+    ...(message.fileBlocks ?? []).map((block) => ({
+      ...block,
+      data: undefined as string | undefined,
+    })),
+    ...unsupportedImages.map((block) => ({
+      type: 'file' as const,
+      attachmentId: block.attachmentId,
+      data: block.data,
+      fileName: imageAttachmentName(block.mimeType, 'image'),
+      mimeType: block.mimeType,
+    })),
+  ]);
 </script>
 
-{#if message.imageBlocks && message.imageBlocks.length > 0}
+{#if imageBlocks.length > 0}
   <div class="inline-flex max-w-full flex-wrap items-center gap-1">
-    {#each message.imageBlocks as block, i (i)}
+    {#each imageBlocks as block, i (i)}
       {@const src = queuedImageSrc(block)}
       <Button
         type="button"
@@ -38,7 +60,7 @@
         }}
         aria-label={m.chat_chatMessage_viewAttachedImage_ariaLabel({
           number: formatInteger(i + 1),
-          total: formatInteger(message.imageBlocks?.length ?? 0),
+          total: formatInteger(imageBlocks.length),
         })}
       >
         {#if src}
@@ -61,17 +83,23 @@
   </div>
 {/if}
 
-{#if message.fileBlocks && message.fileBlocks.length > 0}
+{#if fileBlocks.length > 0}
   <div class="inline-flex max-w-full flex-wrap items-center gap-1">
-    {#each message.fileBlocks as block, i (i)}
+    {#each fileBlocks as block, i (i)}
       <Button
         type="button"
         variant="plain"
         class="inline-flex max-w-full min-w-0 items-center gap-1 px-1.5 py-0.5 rounded border border-border bg-muted/50 hover:bg-muted transition-colors text-[0.7rem] text-muted-foreground hover:text-foreground cursor-pointer"
         data-testid="queued-file-chip"
+        href={!block.attachmentId && block.data
+          ? `data:application/octet-stream;base64,${block.data}`
+          : undefined}
+        download={!block.attachmentId ? block.fileName : undefined}
+        disabled={!block.attachmentId && !block.data}
         onclick={(e) => {
           e.stopPropagation();
-          openQueuedFileAttachment(block);
+          if (block.attachmentId)
+            openQueuedFileAttachment({ ...block, attachmentId: block.attachmentId });
         }}
         title={m.chat_chatMessage_openAttachment_title({ name: block.fileName })}
       >

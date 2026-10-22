@@ -13,7 +13,11 @@ import {
   workspaceDeleted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import { selectScriptById, selectScriptRetainedOutput } from '../scripts-selectors';
+import {
+  selectCanReadScriptDefinition,
+  selectScriptById,
+  selectScriptRetainedOutput,
+} from '../scripts-selectors';
 import {
   removeScript,
   scriptOutputRequested,
@@ -27,7 +31,7 @@ function* readOutput(action: ReturnType<typeof scriptOutputRequested>): SagaGene
   const context = yield* beginScriptRead(workspaceId);
   const script = yield* selectScriptById.effect(workspaceId, scriptId);
   const viewer = yield* selectScriptRetainedOutput.effect(workspaceId, scriptId, viewerId);
-  if (!context.authority) {
+  if (!context.authority || !(yield* selectCanReadScriptDefinition.effect(workspaceId, script))) {
     yield* put(scriptReadFinished(workspaceId, context.requestId));
     return;
   }

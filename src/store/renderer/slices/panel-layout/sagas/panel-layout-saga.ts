@@ -1,3 +1,9 @@
+import { takeEveryFromSelector } from '@themislib/themis/saga';
+import {
+  selectAllWorkspaceScriptEntries,
+  selectCanReadScriptDefinition,
+  selectScriptById,
+} from '../../scripts/scripts-selectors';
 import { principalReceived, hostMembershipChanged } from '../../principal/principal-slice';
 import {
   call,
@@ -50,6 +56,8 @@ import {
 import { setAgents, setInitialAgentId } from '../../workspace-agents/workspace-agents-slice';
 import {
   selectIsWorkspaceCollaborator,
+  selectWorkspaceEntities,
+  selectWorkspaceSavedScriptContext,
   selectWorkspaceManagementDenied,
 } from '../../workspace/workspace-selectors';
 import { setWorkspaceEntity, setWorkspaceHasLoaded } from '../../workspace/workspace-slice';
@@ -146,6 +154,7 @@ import {
   updateTabBrowserUrl,
   updateTabFavicon,
   updateTabTitle,
+  promoteDiscussionTab,
   updateTabViewport,
 } from '../panel-layout-slice';
 import {
@@ -214,6 +223,7 @@ const PERSIST_ACTIONS = [
   reconcileStaleAgentTabs,
   seedContextLinkEmptyLayout,
   updateTabTitle,
+  promoteDiscussionTab,
   updateTabBrowserUrl,
   updateTabFavicon,
   updateTabViewport,
@@ -337,7 +347,16 @@ function* routeTabToRightmostColumn(
   // where a collaborator's owner-only open is dropped (multiplayer w3).
   if (
     OWNER_ONLY_TAB_TYPES.includes(tab.type) &&
-    (yield* selectIsWorkspaceCollaborator.effect(wsId))
+    (yield* selectIsWorkspaceCollaborator.effect(wsId)) &&
+    !(
+      tab.type === 'terminal' &&
+      tab.scriptId &&
+      (yield* selectWorkspaceSavedScriptContext.effect(wsId)) &&
+      (yield* selectCanReadScriptDefinition.effect(
+        wsId,
+        yield* selectScriptById.effect(wsId, tab.scriptId),
+      ))
+    )
   ) {
     return;
   }
@@ -753,7 +772,18 @@ const OWNER_ONLY_TAB_TYPES: readonly PanelTabType[] = ['terminal', 'browser'];
 function* stripOwnerOnlyTabsForCollaborator(wsId: string): SagaGenerator<void> {
   if (!(yield* selectWorkspaceManagementDenied.effect(wsId))) return;
   for (const tabType of OWNER_ONLY_TAB_TYPES) {
-    yield* put(destroyTabsByType(wsId, tabType));
+    yield* put(
+      destroyTabsByType(
+        wsId,
+        tabType,
+        undefined,
+        (yield* selectWorkspaceSavedScriptContext.effect(wsId))
+          ? (yield* selectAllWorkspaceScriptEntries.effect(wsId))
+              .filter((script) => script.purpose === 'saved')
+              .map((script) => script.id)
+          : [],
+      ),
+    );
   }
 }
 
@@ -1370,6 +1400,7 @@ export function* panelLayoutSaga(options?: {
     yield* takeEvery(bootstrapNewWorkspaceLayout, handleNewWorkspaceBootstrap);
     yield* takeEvery(setAgents, reconcileAgentsFromSnapshot);
     yield* takeEvery(setWorkspaceEntity, reconcileWorkspaceEntityArrived);
+    yield* takeEveryFromSelector(selectWorkspaceEntities, reconcileWorkspaceListLoaded);
     yield* takeEvery(
       [setWorkspaceHasLoaded, principalReceived, hostMembershipChanged],
       reconcileWorkspaceListLoaded,

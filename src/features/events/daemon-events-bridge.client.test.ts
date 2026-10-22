@@ -8947,6 +8947,246 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
     expect(backendRequestSpy.mock.calls).toHaveLength(requestsBefore);
   });
 
+  describe('gitRoot:* → merged workspace PR pool', () => {
+    const ROOT_PR_URL = 'https://github.com/intent-hq/intentd/pull/2590';
+    const OWN_PR = { number: 42, url: 'https://github.com/acme/app/pull/42', status: 'Open' };
+    const rootPull = (extra: Record<string, unknown> = {}) => ({
+      id: '2590',
+      number: 2590,
+      url: ROOT_PR_URL,
+      title: 'fix: log why repo-less PR reads are refused',
+      status: 'Open',
+      createdAt: '2026-10-22T02:52:41Z',
+      updatedAt: '2026-10-22T03:33:47Z',
+      isDraft: false,
+      ...extra,
+    });
+
+    function workspaceRow(extra: Record<string, unknown>): Record<string, unknown> {
+      return {
+        id: PR_WS,
+        title: 'PR ws',
+        branch: 'main',
+        status: 'Active',
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        ...extra,
+      };
+    }
+
+    async function seedListedRow(extra: Record<string, unknown>): Promise<void> {
+      const { setWorkspaceEntity } =
+        await import('$store/renderer/slices/workspace/workspace-slice');
+      appStore.dispatch(setWorkspaceEntity(workspaceRow(extra) as never));
+    }
+
+    /** The daemon's `workspace.get` serves the merged pool (§5.1). */
+    let served: Record<string, unknown>;
+    const workspaceGets = () =>
+      backendRequestSpy.mock.calls.filter(([method]) => method === 'workspace.get');
+
+    beforeEach(() => {
+      backendRequestSpy.mockImplementation((method: string) =>
+        method === 'workspace.get' ? Promise.resolve({ workspace: served }) : undefined,
+      );
+    });
+
+    function emitGitRoot(
+      type: 'gitRoot:registered' | 'gitRoot:updated' | 'gitRoot:unregistered',
+      workspaceId = PR_WS,
+    ): void {
+      capturedHandlers[0]!({
+        method: 'events.event',
+        params: {
+          event: {
+            id: `evt-${type}-${Math.random()}`,
+            workspaceId,
+            timestamp: '2026-10-22T04:07:23Z',
+            type,
+            actor: { type: 'system' },
+            data:
+              type === 'gitRoot:unregistered'
+                ? { workspaceId, gitRootId: 'root-intentd', path: '/w/packages/intentd' }
+                : {
+                    workspaceId,
+                    gitRoot: {
+                      id: 'root-intentd',
+                      workspaceId,
+                      path: '/w/packages/intentd',
+                      pullRequests: [rootPull({ isInMergeQueue: true })],
+                    },
+                  },
+          },
+        },
+      });
+    }
+
+    async function settle(): Promise<void> {
+      for (let i = 0; i < 4; i++) await flush();
+    }
+
+    it('subscribes the global feed to gitRoot events', () => {
+      expect(DAEMON_EVENTS_SUBSCRIBE_TYPES).toContain('gitRoot:*');
+    });
+
+    it('gitRoot:updated lands a submodule PR merge-queue entry on the Home row', async () => {
+      // Regression: the Home badge read "Open" while the daemon's merged pool
+      // (and the hover card) said queued — the root's queue change only
+      // arrives as `gitRoot:updated`.
+      await seedListedRow({ pullRequests: [OWN_PR, rootPull()] });
+      served = workspaceRow({ pullRequests: [OWN_PR, rootPull({ isInMergeQueue: true })] });
+      await primeBridge();
+
+      emitGitRoot('gitRoot:updated');
+      await settle();
+
+      // Taken as served: the daemon's order (workspace PRs first) and
+      // canonical copies, not an FE re-derivation of the fold.
+      expect((await readWorkspace()).pullRequests).toEqual([
+        OWN_PR,
+        rootPull({ isInMergeQueue: true }),
+      ]);
+      expect(workspaceGets()).toEqual([['workspace.get', { workspaceId: PR_WS }]]);
+    });
+
+    it('gitRoot:updated refreshes the linked PR fields along with the pool', async () => {
+      await seedListedRow({
+        prNumber: 2590,
+        prStatus: 'Open',
+        activePullRequest: rootPull(),
+        pullRequests: [rootPull()],
+      });
+      served = workspaceRow({
+        prNumber: 2590,
+        prStatus: 'Open',
+        activePullRequest: rootPull({ isInMergeQueue: true }),
+        pullRequests: [rootPull({ isInMergeQueue: true })],
+      });
+      await primeBridge();
+
+      emitGitRoot('gitRoot:updated');
+      await settle();
+
+      const row = await readWorkspace();
+      expect(row.activePullRequest).toEqual(rootPull({ isInMergeQueue: true }));
+      expect(row.pullRequests).toEqual([rootPull({ isInMergeQueue: true })]);
+    });
+
+    it('gitRoot:unregistered drops the removed root PR from the Home row', async () => {
+      await seedListedRow({ pullRequests: [OWN_PR, rootPull({ isInMergeQueue: true })] });
+      served = workspaceRow({ pullRequests: [OWN_PR] });
+      await primeBridge();
+
+      emitGitRoot('gitRoot:unregistered');
+      await settle();
+
+      expect((await readWorkspace()).pullRequests).toEqual([OWN_PR]);
+    });
+
+    it('coalesces a burst into one read plus one trailing follow-up', async () => {
+      await seedListedRow({ pullRequests: [rootPull()] });
+      served = workspaceRow({ pullRequests: [rootPull({ isInMergeQueue: true })] });
+      await primeBridge();
+
+      emitGitRoot('gitRoot:registered');
+      emitGitRoot('gitRoot:updated');
+      emitGitRoot('gitRoot:updated');
+      await settle();
+
+      expect(workspaceGets()).toHaveLength(2);
+      expect((await readWorkspace()).pullRequests).toEqual([rootPull({ isInMergeQueue: true })]);
+    });
+
+    it('applies only the PR fields, never rolling back newer row fields', async () => {
+      await seedListedRow({ title: 'Renamed after the read', pullRequests: [rootPull()] });
+      served = workspaceRow({
+        title: 'Stale title served by the read',
+        pullRequests: [rootPull({ isInMergeQueue: true })],
+      });
+      await primeBridge();
+
+      emitGitRoot('gitRoot:updated');
+      await settle();
+
+      const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
+      const state = appStore.state as { workspace: { workspaces: unknown } };
+      const row = getItem(state.workspace.workspaces as never, PR_WS) as {
+        title: string;
+        pullRequests: unknown[];
+      };
+      expect(row.title).toBe('Renamed after the read');
+      expect(row.pullRequests).toEqual([rootPull({ isInMergeQueue: true })]);
+    });
+
+    it('discards a read that a newer pr:* event invalidated and re-reads', async () => {
+      await seedListedRow({
+        prNumber: 2590,
+        prStatus: 'Open',
+        activePullRequest: rootPull(),
+        pullRequests: [rootPull()],
+      });
+      // First read: a snapshot taken before the unlink below.
+      let resolveStale!: (value: unknown) => void;
+      const stale = new Promise((resolve) => (resolveStale = resolve));
+      const fresh = workspaceRow({ pullRequests: [rootPull({ isInMergeQueue: true })] });
+      let reads = 0;
+      backendRequestSpy.mockImplementation((method: string) => {
+        if (method !== 'workspace.get') return undefined;
+        reads += 1;
+        return reads === 1 ? stale : Promise.resolve({ workspace: fresh });
+      });
+      await primeBridge();
+
+      emitGitRoot('gitRoot:updated');
+      await settle();
+      capturedHandlers[0]!({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-pr-unlinked-mid-read',
+            workspaceId: PR_WS,
+            timestamp: '2026-10-22T04:07:24Z',
+            type: 'pr:unlinked',
+            actor: { type: 'system' },
+            data: { workspaceId: PR_WS },
+          },
+        },
+      });
+      resolveStale({
+        workspace: workspaceRow({
+          prNumber: 2590,
+          prStatus: 'Open',
+          activePullRequest: rootPull(),
+          pullRequests: [rootPull()],
+        }),
+      });
+      await settle();
+
+      expect(workspaceGets()).toHaveLength(2);
+      const row = await readWorkspace();
+      // The stale snapshot never restored the unlinked active PR.
+      expect(row.activePullRequest ?? undefined).toBeUndefined();
+      expect(row.prNumber).toBeUndefined();
+      expect(row.pullRequests).toEqual([rootPull({ isInMergeQueue: true })]);
+    });
+
+    it('never reads or adds a workspace this window does not hold', async () => {
+      served = workspaceRow({ id: 'ws-not-loaded', pullRequests: [rootPull()] });
+      await primeBridge();
+
+      emitGitRoot('gitRoot:updated', 'ws-not-loaded');
+      await settle();
+
+      expect(workspaceGets()).toHaveLength(0);
+      const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
+      const state = appStore.state as { workspace: { workspaces: unknown } };
+      expect(getItem(state.workspace.workspaces as never, 'ws-not-loaded')).toBeUndefined();
+    });
+  });
+
   it('pr:unlinked clears the active-PR fields but retains the pullRequests list', async () => {
     await seedWorkspace();
     await primeBridge();

@@ -132,8 +132,26 @@ export async function runMutation(
   } catch (error) {
     const conflict = extractConflict(error);
     if (conflict) return { success: false, error: mutationErrorMessage(error), conflict };
+    if (isContentBaseMismatch(error)) {
+      return { success: false, error: mutationErrorMessage(error), contentBaseMismatch: true };
+    }
     return { success: false, error: mutationErrorMessage(error) };
   }
+}
+
+/**
+ * The truncated-read write guard refusal (§5.2 "Truncated note reads"):
+ * `-32602` with `error.data.code === "content-base-mismatch"`.
+ */
+function isContentBaseMismatch(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  if ((error as { rpcCode?: unknown }).rpcCode !== -32602) return false;
+  const data = (error as { data?: unknown }).data;
+  return (
+    !!data &&
+    typeof data === 'object' &&
+    (data as { code?: unknown }).code === 'content-base-mismatch'
+  );
 }
 
 /**

@@ -1,10 +1,11 @@
 import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
-import type {
-  EnvEntryRead,
-  EnvEntryWrite,
-  ProviderProfile,
-  ProviderProfileFieldError,
+import {
+  permuteBaseProfiles,
+  type EnvEntryRead,
+  type EnvEntryWrite,
+  type ProviderProfile,
+  type ProviderProfileFieldError,
 } from '$shared/provider-profiles';
 import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import { selectProviderCatalogEntries } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
@@ -91,6 +92,21 @@ const previewProfiles: ProviderProfile[] = [
   },
 ];
 
+/** Extra row for the backups preview: a second Claude Code account marked backup. */
+const backupPreviewProfiles: ProviderProfile[] = [
+  {
+    id: 'pspare0000001',
+    providerRef: 'claude-code@pspare0000001',
+    baseProviderId: 'claude-code',
+    name: 'Spare account',
+    env: [{ key: 'CLAUDE_CONFIG_DIR', kind: 'set', value: '********' }],
+    settingsFingerprint: 'fp-spare',
+    createdAt: '2026-10-17T10:15:00Z',
+    updatedAt: '2026-10-17T10:15:00Z',
+  },
+];
+const BACKUP_PROFILE_IDS = new Set(['ppersonal0001', 'pspare0000001']);
+
 const PREVIEW_AUTH: Record<string, boolean | undefined> = {
   'codex@pwork00000001': true,
   'codex@ppersonal0001': false,
@@ -99,26 +115,34 @@ const PREVIEW_AUTH: Record<string, boolean | undefined> = {
 /**
  * Run the production profiles saga against an isolated in-memory daemon:
  * masked reads, documented validation codes, and activation summaries.
+ * `withBackups` adds a second Claude Code account and marks backup profiles.
  */
 export function setupProviderProfilesPreview({
   appOwned = true,
   runningProcesses = 1,
-}: { appOwned?: boolean; runningProcesses?: number } = {}) {
+  withBackups = false,
+}: { appOwned?: boolean; runningProcesses?: number; withBackups?: boolean } = {}) {
   const providers = appClient.providers;
   const original = {
     listProfiles: providers.listProfiles,
     createProfile: providers.createProfile,
     updateProfile: providers.updateProfile,
     deleteProfile: providers.deleteProfile,
+    reorderProfiles: providers.reorderProfiles,
   };
   const catalog = selectProviderCatalogEntries.select(appStore.state);
   const transport = selectDaemonTransport.select(appStore.state);
-  let profiles = previewProfiles.map((profile) => ({ ...profile }));
+  let profiles: ProviderProfile[] = withBackups
+    ? [...previewProfiles, ...backupPreviewProfiles].map((profile) => ({
+        ...profile,
+        backup: BACKUP_PROFILE_IDS.has(profile.id),
+      }))
+    : previewProfiles.map((profile) => ({ ...profile, backup: false }));
   // Results older than the shown list are ignored, so continue from it.
   let revision = selectProviderProfilesRevision.select(appStore.state) + 1;
 
   providers.listProfiles = async () => ({ profiles, revision });
-  providers.createProfile = async ({ baseProviderId, name, env = [] }) => {
+  providers.createProfile = async ({ baseProviderId, name, env = [], backup }) => {
     validate(
       name,
       env,
@@ -134,11 +158,12 @@ export function setupProviderProfilesPreview({
       settingsFingerprint: `fp-${id}`,
       createdAt: '2026-10-17T11:00:00Z',
       updatedAt: '2026-10-17T11:00:00Z',
+      backup: backup === true,
     };
     profiles = [...profiles, profile];
     return { profile, revision };
   };
-  providers.updateProfile = async ({ profileId, name, env }) => {
+  providers.updateProfile = async ({ profileId, name, env, backup }) => {
     const current = profiles.find((profile) => profile.id === profileId);
     if (!current)
       throw Object.assign(new Error('not found'), { rpcCode: -32602, data: { code: 'not-found' } });
@@ -155,6 +180,7 @@ export function setupProviderProfilesPreview({
       settingsFingerprint: envChanged
         ? `${current.settingsFingerprint}+`
         : current.settingsFingerprint,
+      ...(backup !== undefined ? { backup } : {}),
     };
     profiles = profiles.map((p) => (p.id === profileId ? profile : p));
     return {
@@ -166,6 +192,22 @@ export function setupProviderProfilesPreview({
   providers.deleteProfile = async (profileId) => {
     profiles = profiles.filter((profile) => profile.id !== profileId);
     return { profileId, revision: ++revision };
+  };
+  providers.reorderProfiles = async ({ baseProviderId, profileIds }) => {
+    const next = permuteBaseProfiles(profiles, baseProviderId, profileIds);
+    if (!next)
+      throw Object.assign(new Error('invalid'), {
+        rpcCode: -32602,
+        data: {
+          code: 'invalid-params',
+          fieldErrors: [{ field: 'profileIds', code: 'profile-order-incomplete', message: 'x' }],
+        },
+      });
+    profiles = next;
+    return {
+      profiles: profiles.filter((profile) => profile.baseProviderId === baseProviderId),
+      revision: ++revision,
+    };
   };
 
   appStore.dispatch(

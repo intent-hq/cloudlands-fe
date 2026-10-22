@@ -89,6 +89,13 @@ export function toRuntimeNote(note: Note): Note {
     // detect a row whose full body has not been fetched (isNoteContentStale).
     ...(note.contentPreview !== undefined ? { contentPreview: note.contentPreview } : {}),
     ...(note.contentLength !== undefined ? { contentLength: note.contentLength } : {}),
+    // Truncated-read markers (§5.2): a truncated row renders read-only.
+    ...(note.contentTruncated === true
+      ? {
+          contentTruncated: true,
+          ...(note.contentBytes !== undefined ? { contentBytes: note.contentBytes } : {}),
+        }
+      : {}),
     createdAt: note.createdAt,
     updatedAt: note.updatedAt,
   };

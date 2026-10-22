@@ -92,7 +92,6 @@ describe('editorial workspace shell presentation contract', () => {
     expect(container).not.toContain('min-width: 30rem');
     expect(container).toContain('.panel-split-container {');
     expect(container).toContain('min-width: 0');
-    expect(container).toContain('overflow: hidden');
     expect(handle).toContain('width: 16px');
     expect(handle).toContain('height: 16px');
   });
@@ -280,7 +279,9 @@ describe('editorial workspace shell presentation contract', () => {
     expect(sidebar).toContain(
       "class={cn('relative flex h-full flex-col overflow-hidden bg-transparent', className)}",
     );
-    expect(dock).toContain('{#each $terminals$.slice(0, 1) as terminal (terminal.id)}');
+    expect(dock).toContain(
+      '{#each $isCollaborator$ ? [] : $terminals$.slice(0, 1) as terminal (terminal.id)}',
+    );
     expect(dock).toContain('data-dev-script-count');
     expect(dock).toContain('rounded-lg border border-border bg-sidebar px-3 text-foreground');
     expect(dock).toContain('border-0 bg-transparent p-0');

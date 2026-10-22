@@ -151,6 +151,10 @@ if (typeof window !== 'undefined') {
     invoke: vi.fn(async (channel: string, data?: any) => {
       // Return mock responses based on channel
       switch (channel) {
+        // An acknowledged daemon hello with no node capabilities: no node
+        // authority and no truncated note reads (suites opt in explicitly).
+        case 'backend:node-capabilities':
+          return { ok: true, result: { server: { capabilities: {} } } };
         case 'user-rules:get-formatted':
           return {
             success: true,

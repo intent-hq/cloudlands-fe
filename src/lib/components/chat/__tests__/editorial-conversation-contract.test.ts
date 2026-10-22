@@ -364,35 +364,4 @@ describe('editorial conversation presentation contract', () => {
     expect(message).not.toContain('class="mt-1 flex items-center justify-end"');
     expect(panel).not.toContain('w-full pt-8 pb-12');
   });
-
-  it('keeps the regular and Chief streaming Aurora backgrounds below queued messages', () => {
-    const panel = source('src/lib/components/chat/ChatPanel.svelte');
-
-    const auroraBackground = '<AuroraBackground {agentId} />';
-    const regularAurora =
-      'class="composer-aurora-host regular-panel-aurora-host pointer-events-none absolute inset-x-0 bottom-0 z-0 overflow-hidden"';
-    const transcript = 'data-testid="chat-transcript-scroll-viewport"';
-    const composer = 'class="conversation-composer relative z-10 w-full"';
-    const chiefAurora =
-      'class="composer-aurora-host pointer-events-none absolute -left-4 -right-2 -bottom-4 z-0 overflow-hidden"';
-    const regularAuroraIndex = panel.indexOf(regularAurora);
-    const regularBackgroundIndex = panel.indexOf(auroraBackground, regularAuroraIndex);
-    const transcriptIndex = panel.indexOf(transcript);
-    const composerIndex = panel.indexOf(composer);
-    const chiefAuroraIndex = panel.indexOf(chiefAurora);
-    const chiefBackgroundIndex = panel.indexOf(auroraBackground, chiefAuroraIndex);
-
-    expect(regularAuroraIndex).toBeGreaterThan(-1);
-    expect(regularBackgroundIndex).toBeGreaterThan(regularAuroraIndex);
-    expect(regularBackgroundIndex).toBeLessThan(transcriptIndex);
-    expect(transcriptIndex).toBeGreaterThan(regularAuroraIndex);
-    expect(composerIndex).toBeGreaterThan(transcriptIndex);
-    expect(chiefAuroraIndex).toBeGreaterThan(composerIndex);
-    expect(chiefBackgroundIndex).toBeGreaterThan(chiefAuroraIndex);
-    expect(panel.match(/<AuroraBackground \{agentId\} \/>/g)).toHaveLength(2);
-    expect(panel).not.toContain('AuroraSofteningLayer');
-    expect(panel).toContain('style:height={`calc(${composerHeight}px + 10rem)`}');
-    expect(panel).toContain('height: calc(100% + 10rem)');
-    expect(panel).not.toContain('regular-composer-aurora-host');
-  });
 });

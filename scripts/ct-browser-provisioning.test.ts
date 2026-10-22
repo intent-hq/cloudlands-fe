@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import os from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { resolveCtBrowser } from './ct-browser.mjs';
 import { nonFontPackagesFromDryRun } from './playwright-os-deps-lib.mjs';
 
 const root = resolve(__dirname, '..');
@@ -33,7 +34,7 @@ function evaluate(expression: string, context: Record<string, string>): unknown 
   }
   source = source.replaceAll('!=', ' NE ').replaceAll('==', '===').replaceAll(' NE ', '!==');
   const residue = source.replace(
-    /"(?:\\.|[^"\\])*"|'[^']*'|true|false|fromJSON|===|!==|&&|\|\||[()\s]/g,
+    /"(?:\\.|[^"\\])*"|'[^']*'|true|false|fromJSON|===|!==|&&|\|\||[()[\]\s]/g,
     '',
   );
   if (residue !== '') throw new Error(`unsupported workflow expression: ${residue}`);
@@ -97,25 +98,32 @@ ${command}`,
       ),
       'needs.release-fast-path.outputs.fast_path': 'false',
       'needs.release-fast-path.outputs.ct_required': event === 'merge_group' ? 'true' : '',
-      // A GitHub-hosted shard: no slot was granted (nightly and manual callers pass none).
-      'runner.environment': 'github-hosted',
+      // The caller's route `cloud` map: CT never takes a self-hosted slot, whatever linux_burst says.
+      'inputs.cloud': JSON.stringify({ 'gh-linux-8x': ['warp-ubuntu-2404-x64-8x'] }),
     };
     const value = (scalar: string) =>
       scalar.startsWith('${{') ? evaluate(scalar, context) : scalar.replace(/^(['"])(.*)\1$/, '$2');
     expect(evaluate(ctJob.match(/^    if: (.*)$/m)![1], context)).toBe(event !== 'pull_request');
     if (event === 'pull_request') return;
-    // runs-on reads the caller's slots input per shard, falling back to gh-linux-8x.
+    // runs-on reads the caller's slots input per shard, then its cloud map, then gh-linux-8x.
     const runsOn = ctJob.match(/^    runs-on: (.*)$/m)![1];
     expect(runsOn).toBe(
-      "${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON('[\"gh-linux-8x\"]') }}",
+      "${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('[\"gh-linux-8x\"]') }}",
     );
-    const shardRunner = (slots: Record<string, string[]>, shard: number) =>
-      slots[`ct-${shard}`] ?? ['gh-linux-8x'];
-    expect.soft(shardRunner({}, 1)).toEqual(['gh-linux-8x']);
+    const shardRunner = (
+      slots: Record<string, string[]>,
+      cloud: Record<string, string[]>,
+      shard: number,
+    ) => slots[`ct-${shard}`] ?? cloud['gh-linux-8x'] ?? ['gh-linux-8x'];
+    const warp = { 'gh-linux-8x': ['warp-ubuntu-2404-x64-8x'] };
+    expect.soft(shardRunner({}, warp, 1)).toEqual(['warp-ubuntu-2404-x64-8x']);
+    expect.soft(shardRunner({}, {}, 1)).toEqual(['gh-linux-8x']);
     expect
-      .soft(shardRunner({ 'ct-2': ['self-hosted', 'linux', 'x64', 'intent-cache'] }, 2))
+      .soft(shardRunner({ 'ct-2': ['self-hosted', 'linux', 'x64', 'intent-cache'] }, warp, 2))
       .toEqual(['self-hosted', 'linux', 'x64', 'intent-cache']);
-    expect.soft(value(step('Setup Node.js').match(/^          cache: (.*)$/m)![1])).toBe('pnpm');
+    // The pnpm store is restored by the backend-selecting cache action (WarpBuild or GitHub).
+    expect.soft(step('Setup Node.js')).not.toMatch(/^          cache:/m);
+    expect.soft(step('Cache pnpm store')).toContain('uses: ./.github/actions/pnpm-store-cache');
 
     const provisioning = ctJob.split('      - name: Build CT bundle')[0];
     const activeSteps = [...provisioning.matchAll(/^      - name: (.*)$/gm)]
@@ -176,7 +184,6 @@ describe('CT launcher provisioning', () => {
     expect(outputs['readiness-marker']).toBe(
       join(dir, 'browsers', '.with-deps-ct-1.58.2-pw-1.63.0-chromium-153.0.8010.12-r1243'),
     );
-    const plan = JSON.parse(readFileSync(join(dir, 'ct-browser-plan.json'), 'utf8'));
     const installed = execFileSync(
       process.execPath,
       ['scripts/run-ct-tests.mjs', '--install-browsers', '--dry-run', 'chromium'],
@@ -185,23 +192,31 @@ describe('CT launcher provisioning', () => {
     expect(installed).toContain('153.0.8010.12');
     expect(installed).toContain(join(dir, 'browsers', 'chromium_headless_shell-1243'));
     expect(installed).not.toContain('1208');
-    const deps = execFileSync(
-      process.execPath,
-      ['scripts/run-ct-tests.mjs', '--print-os-deps', 'chromium'],
-      { cwd: root, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
-    )
-      .trim()
-      .split(' ')
-      .filter(Boolean);
-    const supplierDeps = spawnSync(process.execPath, [plan.osDeps.cliPath, ...plan.osDeps.args], {
-      cwd: root,
-      env,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    expect(deps).toEqual(nonFontPackagesFromDryRun(supplierDeps.stdout, supplierDeps.status));
-    expect(deps.some((pkg) => /^(fonts-|xfonts-)/.test(pkg))).toBe(false);
   });
+
+  it.runIf(process.platform === 'linux' && existsSync('/usr/bin/apt-get'))(
+    'matches the pinned supplier dependency plan on apt-based hosts',
+    () => {
+      const plan = resolveCtBrowser({ requireInstalled: false });
+      const env = { ...process.env, DD_TRACE_STARTUP_LOGS: 'false' };
+      const deps = execFileSync(
+        process.execPath,
+        ['scripts/run-ct-tests.mjs', '--print-os-deps', 'chromium'],
+        { cwd: root, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+      )
+        .trim()
+        .split(' ')
+        .filter(Boolean);
+      const supplierDeps = spawnSync(process.execPath, [plan.osDeps.cliPath, ...plan.osDeps.args], {
+        cwd: root,
+        env,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      expect(deps).toEqual(nonFontPackagesFromDryRun(supplierDeps.stdout, supplierDeps.status));
+      expect(deps.some((pkg) => /^(fonts-|xfonts-)/.test(pkg))).toBe(false);
+    },
+  );
 });
 
 describe.runIf(process.platform === 'linux')('hosted CT provisioning failures', () => {
@@ -301,10 +316,45 @@ esac`,
     expect(result.stdout).toContain('infra/runners/Dockerfile');
   });
 
-  it('skips the apt mirror hardening on self-hosted slots', () => {
-    expect(ctJob).toMatch(
-      /- name: Harden apt against mirror stalls\n(?:\s+#.*\n)*\s+if: runner\.environment != 'self-hosted'\n/,
+  it('still installs a missing library on WarpBuild, which also reports self-hosted', () => {
+    const result = provision({
+      CT_MISSING_PACKAGE: 'libmissing',
+      RUNNER_ENVIRONMENT: 'self-hosted',
+      WARPBUILD_RUNNER_VERIFICATION_TOKEN: 'fixture',
+    });
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(result.calls).toEqual([browser, deps, ...queries, update, install]);
+  });
+
+  it.each([
+    ['an intent-cache slot', { RUNNER_ENVIRONMENT: 'self-hosted' }, false],
+    [
+      'WarpBuild',
+      { RUNNER_ENVIRONMENT: 'self-hosted', WARPBUILD_RUNNER_VERIFICATION_TOKEN: 'fixture' },
+      true,
+    ],
+    ['a GitHub-hosted runner', { RUNNER_ENVIRONMENT: 'github-hosted' }, true],
+  ])('hardens apt only where sudo exists: %s', (_name, env, hardens) => {
+    const dir = mkdtempSync(join(os.tmpdir(), 'ct-harden-apt-'));
+    dirs.push(dir);
+    const bin = join(dir, 'bin');
+    const calls = join(dir, 'calls');
+    mkdirSync(bin);
+    writeFileSync(
+      join(bin, 'sudo'),
+      `#!/bin/sh\nprintf 'sudo %s\\n' "$*" >> "${calls}"\ncat >/dev/null\n`,
+      {
+        mode: 0o755,
+      },
     );
+    const result = spawnSync(
+      'bash',
+      ['-euo', 'pipefail', '-c', runBlock('Harden apt against mirror stalls')],
+      { cwd: dir, env: { PATH: `${bin}:${process.env.PATH}`, ...env }, encoding: 'utf8' },
+    );
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    const sudo = existsSync(calls) ? readFileSync(calls, 'utf8') : '';
+    expect(sudo.includes('tee /etc/apt/apt.conf.d/99-bounded-acquire')).toBe(hardens);
   });
 
   it('stops when the browser installation fails', () => {

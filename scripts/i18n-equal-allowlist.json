@@ -156,6 +156,8 @@
   "layout_daemonStatus_version_label": ["de", "fr"],
   "layout_layoutHeader_presetWithShortcut_tooltip": ["de", "fr", "es"],
   "layout_navigation_commit_title": ["de", "fr", "es"],
+  "layout_noteTab_truncated_sizeKb_label": ["zh-CN", "zh-TW", "ja", "de", "es"],
+  "layout_noteTab_truncated_sizeMb_label": ["zh-CN", "zh-TW", "ja", "de", "es"],
   "layout_panelEmptyState_agent_label": ["de", "fr"],
   "layout_panelEmptyState_browser_label": ["de"],
   "layout_panelEmptyState_note_label": ["fr"],
@@ -352,5 +354,10 @@
   "workspace_terminalDock_shell_label": ["de", "es", "fr"],
   "workspace_tokenUsage_agent_label": ["de", "fr"],
   "workspace_transfer_gitBranch_label": ["de"],
-  "workspace_transfer_tableName_label": ["fr"]
+  "workspace_transfer_tableName_label": ["fr"],
+  "workspace_discussion_composer_label": ["fr"],
+  "workspace_discussion_list_label": ["fr"],
+  "workspace_share_guestCount_label": "*",
+  "workspace_share_role_collaborator_label": ["fr"],
+  "workspace_share_role_manager_label": ["de"]
 }

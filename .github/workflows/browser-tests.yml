@@ -16,6 +16,11 @@ on:
         type: string
         required: false
         default: '{}'
+      cloud:
+        description: "The caller's route `cloud` output (runner-route.yml): where gh-linux-8x jobs run."
+        type: string
+        required: false
+        default: '{}'
 
 permissions:
   contents: read
@@ -24,9 +29,11 @@ jobs:
   test-ct:
     name: Component Tests (shard ${{ matrix.shard }}/4)
     if: ${{ !cancelled() && inputs.suite == 'ct' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group') }}
-    runs-on: ${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON('["gh-linux-8x"]') }}
-    # Four shards, two workers each, on a free intent-cache slot or
-    # gh-linux-8x; preserve the pinned CT browser.
+    # A granted ct-N slot (the merge-queue caller's slots), else the caller's
+    # burst runner for gh-linux-8x (WarpBuild), else gh-linux-8x. Slots carry
+    # the Chromium libraries in their image and skip the sudo/apt steps.
+    runs-on: ${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["gh-linux-8x"]') }}
+    # Four shards, two workers each; preserve the pinned CT browser.
     strategy:
       # Let the sibling shards finish so one flaky leg doesn't hide the
       # other legs' results.
@@ -60,7 +67,9 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: pnpm
+      - name: Cache pnpm store
+        # WarpBuild's cache on WarpBuild Linux/macOS runners, GitHub's elsewhere.
+        uses: ./.github/actions/pnpm-store-cache
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Generate i18n messages
@@ -88,9 +97,6 @@ jobs:
           path: ${{ steps.ct-browser.outputs.cache-dir }}
           key: playwright-browsers-${{ runner.os }}-${{ runner.arch }}-${{ steps.ct-browser.outputs.cache-key }}
       - name: Harden apt against mirror stalls
-        # Slots have no sudo and need no apt: the runner image carries the
-        # Chromium libraries (infra/runners/Dockerfile).
-        if: runner.environment != 'self-hosted'
         # The runner image prefers the azure.archive.ubuntu.com mirror, which
         # has stalled mid-transfer until the 30-min job budget expired —
         # twice, before any test ran (monorepo#2832). The image routes apt
@@ -107,6 +113,13 @@ jobs:
         # the step timeout below.
         run: |
           set -euo pipefail
+          # intent-cache slots have no sudo and need no apt: the runner image
+          # carries the Chromium libraries (infra/runners/Dockerfile).
+          # WarpBuild also reports self-hosted, but sets its verification token.
+          if [ "${RUNNER_ENVIRONMENT:-}" = self-hosted ] && [ -z "${WARPBUILD_RUNNER_VERIFICATION_TOKEN:-}" ]; then
+            echo "intent-cache slot: skipping apt hardening"
+            exit 0
+          fi
           if [ -f /etc/apt/apt-mirrors.txt ]; then
             sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
             echo "apt-mirrors.txt now:" && cat /etc/apt/apt-mirrors.txt
@@ -163,8 +176,8 @@ jobs:
             exit 0
           fi
           echo "Missing Chromium OS deps:$missing"
-          if [ "${RUNNER_ENVIRONMENT:-}" = self-hosted ]; then
-            echo "::error::Self-hosted slots have no sudo; add$missing to infra/runners/Dockerfile in intent-hq/intent"
+          if [ "${RUNNER_ENVIRONMENT:-}" = self-hosted ] && [ -z "${WARPBUILD_RUNNER_VERIFICATION_TOKEN:-}" ]; then
+            echo "::error::intent-cache slots have no sudo; add$missing to infra/runners/Dockerfile in intent-hq/intent"
             exit 1
           fi
           for i in 1 2; do
@@ -304,7 +317,8 @@ jobs:
   test-playwright:
     name: Playwright (root ${{ matrix.shard }}/4)
     if: ${{ !cancelled() && inputs.suite == 'root' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group') }}
-    runs-on: gh-linux-8x
+    # Never a self-hosted slot: relies on the GitHub image's Chromium libraries.
+    runs-on: ${{ fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["gh-linux-8x"]') }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -329,7 +343,9 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: 'pnpm'
+      - name: Cache pnpm store
+        # WarpBuild's cache on WarpBuild Linux/macOS runners, GitHub's elsewhere.
+        uses: ./.github/actions/pnpm-store-cache
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Generate i18n messages
@@ -401,7 +417,8 @@ jobs:
   test-electron:
     name: Electron Browser Lifetime
     if: ${{ !cancelled() && inputs.suite == 'electron' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group') }}
-    runs-on: gh-linux-8x
+    # Never a self-hosted slot: installs Xvfb with sudo.
+    runs-on: ${{ fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["gh-linux-8x"]') }}
     # 8 tests × ≤120 s test timeout is the theoretical ceiling; a healthy
     # single-worker run takes ~2-3 min plus setup.
     timeout-minutes: 30
@@ -424,7 +441,9 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: pnpm
+      - name: Cache pnpm store
+        # WarpBuild's cache on WarpBuild Linux/macOS runners, GitHub's elsewhere.
+        uses: ./.github/actions/pnpm-store-cache
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Install Electron binary

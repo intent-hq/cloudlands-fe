@@ -73,6 +73,39 @@ for (const { name, viewport } of [
   });
 }
 
+test('worktree toggle keeps its pointer target in the workspace dialog', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 1100, height: 700 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mount(Harness);
+  await page.getByRole('button', { name: 'Open workspace form' }).click();
+  const parent = page.getByRole('dialog', { name: 'New Workspace', exact: true });
+  await parent.getByRole('button', { name: /^Select a branch:/ }).click();
+  const chooser = page.getByRole('dialog', { name: 'What branch should we start from?' });
+  await expect(chooser.getByRole('combobox')).toHaveAttribute('aria-busy', 'false');
+  const isolation = chooser.getByRole('switch', { name: /Isolated/ });
+  await expectReachable(isolation);
+  const origin = (await chooser.boundingBox())!;
+  const control = (await isolation.boundingBox())!;
+  const point = { x: control.x + control.width / 2, y: control.y + control.height / 2 };
+  for (const checked of [false, true]) {
+    await page.mouse.click(point.x, point.y);
+    await expect(isolation).toBeChecked({ checked });
+    await expect
+      .poll(async () => {
+        const current = (await chooser.boundingBox())!;
+        return Math.hypot(current.x - origin.x, current.y - origin.y);
+      })
+      .toBeLessThanOrEqual(1);
+    await expect(parent).toBeVisible();
+  }
+  await page.keyboard.press('Escape');
+  await expect(chooser).toHaveCount(0);
+  await expect(parent).toBeVisible();
+});
+
 test('standalone branch chooser keeps pointer selection and focus return', async ({
   mount,
   page,

@@ -720,6 +720,11 @@ export const WindowSetOpenWorkspaceTabsSchema = z.object({
   workspaceIds: z.array(z.string()),
 });
 
+/** Workspaces a window hosts in the background for agent browser ops. */
+export const BrowserBackgroundHostedWorkspacesSchema = z.object({
+  workspaceIds: z.array(z.string()),
+});
+
 export const WindowSetFullScreenSchema = z.object({
   fullScreen: z.boolean(),
 });
@@ -1117,6 +1122,17 @@ export const PresenceReportSchema = z.object({
   ),
   typing: z
     .object({ agentId: z.string().min(1, 'Agent id is required') })
+    .nullable()
+    .optional(),
+  discussionTyping: z
+    .object({
+      workspaceId: z.string().min(1, 'Workspace id is required'),
+      conversationId: z
+        .string()
+        .min(1)
+        .refine((id) => id !== 'new')
+        .optional(),
+    })
     .nullable()
     .optional(),
 });

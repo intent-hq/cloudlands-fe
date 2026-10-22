@@ -5760,6 +5760,7 @@
               type: 'image' as const,
               data: item.imageData!,
               mimeType: item.imageMimeType!,
+              ...(item.placementFileName ? { placementFileName: item.placementFileName } : {}),
             },
       );
     const fileBlocks = items
@@ -6416,11 +6417,10 @@
   ondragover={panelFileDrop.handleDragOver}
   ondrop={panelFileDrop.handleDrop}
 >
-  <!-- The regular Aurora belongs to the complete chat surface, not the inset
-       composer lane. It inherits the real Panel radius for its own bottom clip. -->
+  <!-- Let the panel clip the regular Aurora at its inner border edge. -->
   {#if isActive && $chatAuroraEnabled$ && $agentSessionIsStreaming$ && !isChiefWorkspace}
     <div
-      class="composer-aurora-host regular-panel-aurora-host pointer-events-none absolute inset-x-0 bottom-0 z-0 overflow-hidden"
+      class="composer-aurora-host pointer-events-none absolute inset-x-0 bottom-0 z-0 overflow-hidden"
       style:height={`calc(${composerHeight}px + 10rem)`}
       data-testid="composer-aurora-host"
       in:springIn={{ tier: 'moderate', y: 0, scale: 1 }}
@@ -7929,11 +7929,6 @@
     .workspace-setup-card-alignment {
       margin-left: 1.5rem;
     }
-  }
-
-  .regular-panel-aurora-host {
-    border-bottom-left-radius: var(--panel-shell-radius);
-    border-bottom-right-radius: var(--panel-shell-radius);
   }
 
   .chat-content-measure {

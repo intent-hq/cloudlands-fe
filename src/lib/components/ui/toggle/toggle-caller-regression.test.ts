@@ -106,7 +106,6 @@ describe('B2 caller metadata regression', () => {
         'src/lib/components/modals/TransferWorkspaceModal.svelte',
         'src/lib/components/patterns/settings/custom-controls.ts',
         'src/lib/components/tiptap/TaskItemNodeView.svelte',
-        'src/lib/components/workspace/initializer/BranchSelector.svelte',
         'src/lib/components/workspace/initializer/RepoAndBranchPicker.svelte',
       ],
       switch: [
@@ -117,12 +116,16 @@ describe('B2 caller metadata regression', () => {
         'src/lib/components/patterns/settings/SettingsControl.svelte',
         'src/lib/components/patterns/settings/custom-controls.ts',
         'src/lib/components/patterns/settings/types.ts',
+        'src/lib/components/workspace/initializer/BranchSelector.svelte',
         'src/lib/components/workspace/sidebar/FileChangesSection.svelte',
         'src/lib/components/workspace/sidebar/McpServersSection.svelte',
         'src/lib/components/workspace/sidebar/MergePanel.svelte',
         'src/routes/(app)/settings/+page.svelte',
       ],
-      toggle: ['src/lib/component-catalog/renderers/BasicCatalogPreview.svelte'],
+      toggle: [
+        'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
+        'src/lib/components/workspace/initializer/BranchSelector.svelte',
+      ],
       'toggle-group': [
         'src/lib/component-catalog/CatalogControls.svelte',
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',

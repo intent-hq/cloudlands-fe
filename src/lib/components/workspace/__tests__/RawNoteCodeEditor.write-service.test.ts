@@ -11,7 +11,14 @@ import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
 // service against the REAL configured store, so the draft chain (base rev,
 // echo rebase, pending replay) is exercised end to end.
 vi.mock('$lib/client', () => ({
-  appClient: { notes: { setContent: vi.fn(), list: vi.fn(async () => []) } },
+  appClient: {
+    notes: {
+      setContent: vi.fn(),
+      list: vi.fn(async () => []),
+      // Daemon without truncated reads: saves carry no baseContentBytes (§5.2).
+      supportsTruncatedRead: vi.fn(async () => false),
+    },
+  },
 }));
 vi.mock('svelte-sonner', () => ({ toast: { warning: vi.fn(), error: vi.fn() } }));
 vi.mock('$store/renderer/slices/ui-layout/ui-layout-selectors', () => ({
@@ -112,8 +119,7 @@ it('replays a draft typed before a superseded echo onto the rebased pending draf
   await vi.advanceTimersByTimeAsync(1000);
   await syncStore();
   const first = flushNoteContent(WS, NOTE);
-  await Promise.resolve();
-  expect(wire).toHaveBeenLastCalledWith(NOTE, 'body first', 4, WS);
+  await vi.waitFor(() => expect(wire).toHaveBeenLastCalledWith(NOTE, 'body first', 4, WS));
 
   await fireEvent.input(input, { target: { value: 'body first second' } });
   await vi.advanceTimersByTimeAsync(1000);
