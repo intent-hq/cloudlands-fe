@@ -36,6 +36,7 @@ import {
   updateNoteTitle,
   workspaceNotesReducer,
 } from '../workspace-notes-slice';
+import { recordDaemonNote } from './note-daemon-text';
 import { NOTE_CONTENT_SAVE_DEBOUNCE_MS, notesWriteSaga } from './notes-write-saga';
 
 const WS = 'ws-notes-write';
@@ -338,11 +339,15 @@ describe('notesWriteSaga', () => {
   });
 
   describe('truncated-read write guard (§5.2)', () => {
-    /** A row the daemon served: the reducer applies it and the saga records it as a base. */
+    /** A row the daemon served, as the read path applies and records it. */
     function served(run: ReturnType<typeof harness>, row: Note) {
-      const action = loadWorkspaceNotesSucceeded([WS], { [WS]: [row] });
-      run.dispatch(action);
-      run.channel.put(action);
+      recordDaemonNote(WS, row);
+      run.dispatch(loadWorkspaceNotesSucceeded([WS], { [WS]: [row] }));
+    }
+    /** An event re-read landing while a draft is pending. */
+    function reread(run: ReturnType<typeof harness>, row: Note) {
+      recordDaemonNote(WS, row);
+      run.dispatch(applyNoteUpdated(WS, NOTE, row));
     }
     /** The harness does not feed saga-dispatched actions back; forward the resubmitted save. */
     async function forwardResubmit(run: ReturnType<typeof harness>) {
@@ -552,9 +557,7 @@ describe('notesWriteSaga', () => {
         updateNoteContent(WS, NOTE, 'old body MINE', { baseRev: 4, baseContent: 'old body' }),
       );
       await settle();
-      const agent = applyNoteUpdated(WS, NOTE, note({ content: 'AGENT old body', rev: 5 }));
-      run.dispatch(agent);
-      run.channel.put(agent);
+      reread(run, note({ content: 'AGENT old body', rev: 5 }));
       await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS);
       await vi.waitFor(() => expect(setContent).toHaveBeenCalledTimes(1));
 
@@ -578,13 +581,10 @@ describe('notesWriteSaga', () => {
       run.channel.put(updateNoteContent(WS, NOTE, 'old body MINE'));
       await settle();
       // An agent grows the note; the event re-read comes back truncated.
-      const grown = applyNoteUpdated(
-        WS,
-        NOTE,
+      reread(
+        run,
         note({ content: 'old body\n', contentTruncated: true, contentBytes: 600_000, rev: 5 }),
       );
-      run.dispatch(grown);
-      run.channel.put(grown);
       await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS);
       await vi.waitFor(() => expect(setContent).toHaveBeenCalledTimes(1));
 

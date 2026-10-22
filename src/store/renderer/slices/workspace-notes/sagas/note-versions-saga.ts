@@ -25,6 +25,7 @@ import {
   restoreNoteVersion,
   settleNoteContentRequested,
 } from '../workspace-notes-slice';
+import { recordDaemonNote } from './note-daemon-text';
 import { toRuntimeNote, toRuntimeNoteVersion } from './note-payload-mappers';
 
 const logger = createLogger('NoteVersionsSaga');
@@ -92,6 +93,7 @@ function* restoreVersion(workspaceId: string, noteId: string, versionId: string)
         );
         yield* put(read);
       } else {
+        recordDaemonNote(workspaceId, toRuntimeNote(result.note));
         yield* put(
           applyNoteUpdated(
             workspaceId,

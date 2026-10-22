@@ -242,6 +242,7 @@ function* relistWorkspaceNotes(workspaceId: string): SagaGenerator<Note[]> {
     appClient.notes.list(workspaceId, { projection: 'slim' }),
   );
   const notes = response.map(toRuntimeNote);
+  for (const row of notes) recordDaemonNote(workspaceId, row);
   yield* put(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
   const ws = yield* selectWorkspaceNotesState.effect(workspaceId);
   for (const view of getItems(ws.contentViews)) {
@@ -282,6 +283,7 @@ function* reconcileConflict(
       read.promise.catch((error: unknown) => logger.error('Failed to re-read a large note', error));
       yield* put(read);
     } else {
+      recordDaemonNote(workspaceId, note);
       yield* put(
         applyNoteUpdated(workspaceId, canonicalId, withPreservedUnmetDependsOn(note, cached)),
       );
@@ -1074,27 +1076,6 @@ function* createRequestedNote(
   );
 }
 
-/** Record daemon-served rows as possible write bases (see `note-daemon-text.ts`). */
-function recordDaemonRows(
-  action: ReturnType<
-    typeof applyNoteUpdated | typeof applyNoteCreated | typeof loadWorkspaceNotesSucceeded
-  >,
-): void {
-  if (action.type === applyNoteUpdated.type) {
-    const [workspaceId, , note] = (action as ReturnType<typeof applyNoteUpdated>).payload;
-    recordDaemonNote(workspaceId, note);
-  } else if (action.type === applyNoteCreated.type) {
-    const [workspaceId, note] = (action as ReturnType<typeof applyNoteCreated>).payload;
-    recordDaemonNote(workspaceId, note);
-  } else {
-    const [workspaceIds, byWorkspace] = (action as ReturnType<typeof loadWorkspaceNotesSucceeded>)
-      .payload;
-    for (const workspaceId of workspaceIds) {
-      for (const note of byWorkspace[workspaceId] ?? []) recordDaemonNote(workspaceId, note);
-    }
-  }
-}
-
 function* cleanupWorkspace(action: WorkspaceCleanupAction) {
   const [workspaceId] = action.payload;
   workspaceMutationGenerations.set(workspaceId, workspaceMutationGeneration(workspaceId) + 1);
@@ -1154,10 +1135,6 @@ export function* notesWriteSaga() {
     // they observe replacement preserves their draft as the next action's
     // rebase baseline; cancelling first would drop an intermediate keystroke.
     yield* takeEvery(updateNoteContent, handleContentAction, queue);
-    yield* takeEvery(
-      [applyNoteUpdated, applyNoteCreated, loadWorkspaceNotesSucceeded],
-      recordDaemonRows,
-    );
     yield* takeEvery(updateNoteTitle, handleTitleAction, queue);
     yield* takeEvery(updateNoteTitlePersistRequested, handleTitleRequested, queue);
     yield* takeEvery(updateNote, handleMetadataAction, queue);

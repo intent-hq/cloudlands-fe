@@ -46,6 +46,7 @@ import { loadWorkspaceNotesSucceeded } from '$store/renderer/slices/workspace-no
 import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
 import { flushNoteContent } from '$features/notes/notes-write-service';
 import { startWorkspaceNotesSagaFixture } from '../../../../test/fixtures/workspace-notes-saga-fixture';
+import { recordDaemonNote } from '$store/renderer/slices/workspace-notes/sagas/note-daemon-text';
 import RawNoteCodeEditor from '../RawNoteCodeEditor.svelte';
 
 const testStore = appStore as typeof appStore & {
@@ -74,6 +75,8 @@ function seed(content: string, rev: number) {
     updatedAt: 'now',
     rev,
   };
+  // As the read path does: apply the served row and record it as a possible write base.
+  recordDaemonNote(WS, note);
   appStore.dispatch(loadWorkspaceNotesSucceeded([WS], { [WS]: [note] }));
 }
 
