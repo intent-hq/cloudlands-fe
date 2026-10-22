@@ -354,5 +354,10 @@
   "workspace_terminalDock_shell_label": ["de", "es", "fr"],
   "workspace_tokenUsage_agent_label": ["de", "fr"],
   "workspace_transfer_gitBranch_label": ["de"],
-  "workspace_transfer_tableName_label": ["fr"]
+  "workspace_transfer_tableName_label": ["fr"],
+  "workspace_discussion_composer_label": ["fr"],
+  "workspace_discussion_list_label": ["fr"],
+  "workspace_share_guestCount_label": "*",
+  "workspace_share_role_collaborator_label": ["fr"],
+  "workspace_share_role_manager_label": ["de"]
 }

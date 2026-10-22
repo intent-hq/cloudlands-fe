@@ -5,6 +5,7 @@ import {
   exerciseVisualStates,
 } from '$lib/components/__tests__/helpers/visual-state-characterization';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { derived, readable } from 'svelte/store';
 
@@ -1337,25 +1338,22 @@ describe('SimpleRichInput automatic composer geometry', () => {
     expect(composer.className).not.toContain('box-shadow,min-height');
   });
 
-  it('keeps one panel observer across resizes', async () => {
-    renderInPanel(560);
-
-    // The observer's initial callback (no synchronous clientHeight read)
-    // seeds the panel height.
-    await Promise.resolve();
-    expect(MockResizeObserver.instances).toHaveLength(1);
+  it('keeps one panel observer through resizes and disconnects it on unmount', async () => {
+    const view = renderInPanel(560);
+    await waitFor(() => expect(MockResizeObserver.instances).toHaveLength(1));
     const observer = MockResizeObserver.instances[0];
     expect(observer.observed).toHaveLength(1);
 
-    // A panel resize flows through the same observer — no teardown/recreate,
-    // no re-observe.
     observer.fire(observer.observed[0], 720);
-    await Promise.resolve();
+    await tick();
     observer.fire(observer.observed[0], 560);
-    await Promise.resolve();
+    await tick();
     expect(MockResizeObserver.instances).toHaveLength(1);
     expect(observer.observed).toHaveLength(1);
     expect(observer.disconnected).toBe(false);
+
+    view.unmount();
+    expect(observer.disconnected).toBe(true);
   });
 });
 

@@ -210,6 +210,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   })),
   selectWorkspaceActivePullRequest: mocks.selector(null),
   selectIsWorkspaceHostLocal: mocks.selector(true),
+  selectWorkspaceSavedScriptContext: mocks.selector('admitted'),
   isWorkspacePullRequestPoolTruncated: () => false,
   selectIsWorkspaceCollaborator: mocks.selector(false),
   selectCanShareWorkspace: mocks.selector(false),

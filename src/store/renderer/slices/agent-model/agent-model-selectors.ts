@@ -3,7 +3,7 @@ import { store } from '../../store';
 import { selectAgentProvider } from '../agent-session/agent-session-selectors';
 import { selectAgentModelEffortLevels } from '../model/model-selectors';
 import { selectPrincipalConnectionContext } from '../principal/principal-selectors';
-import { selectIsWorkspaceCollaborator } from '../workspace/workspace-selectors';
+import { selectHidesAgentCreationActions } from '../workspace/workspace-selectors';
 import { usesLegacyReasoningEffort } from '$features/agent/utils/reasoning-effort-protocol';
 import { buildLegacyReasoningEffortModelId } from '$features/agent/utils/legacy-reasoning-effort';
 
@@ -33,7 +33,7 @@ export const selectAgentModelWriteSnapshot = store.createSelector(
       canWrite:
         !!session &&
         session.workspaceId === workspaceId &&
-        !selectIsWorkspaceCollaborator.select(state, workspaceId),
+        !selectHidesAgentCreationActions.select(state, workspaceId),
     };
   },
 );

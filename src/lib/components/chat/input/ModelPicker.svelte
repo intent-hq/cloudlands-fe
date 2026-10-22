@@ -2,8 +2,8 @@
   import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
   /* eslint-disable max-lines */
-  import { selectIsHostMember } from '$store/renderer/slices/host-execution/host-execution-selectors';
-  const hostMember$ = selectIsHostMember();
+  import { selectCanAdministerHost } from '$store/renderer/slices/principal/principal-selectors';
+  const canAdministerHost$ = selectCanAdministerHost();
   import { onDestroy, onMount, untrack } from 'svelte';
   import { writable, derived } from 'svelte/store';
 
@@ -107,7 +107,7 @@
 
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import { modelIdForDisplay, resolveModelDisplayName } from '$shared/utils/model-display-name';
-  import { selectIsWorkspaceCollaborator } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectHidesAgentCreationActions } from '$store/renderer/slices/workspace/workspace-selectors';
   import { getAgentProvider } from '$shared/types/agent-session';
   import { formatProviderLoadError, type ProviderLoadError } from './model-picker-provider-errors';
   import { AUGGIE_LEGACY_GROUP_KEY, buildGroupedModelOptions } from './model-picker-groups';
@@ -398,7 +398,7 @@
   const profileSignInStatuses$ = selectProfileSignInStatuses();
   $effect(() => {
     const profiles = $providerProfiles$;
-    if (profiles.length === 0 || isGuestLocked) return;
+    if (profiles.length === 0 || isGuestLocked || !$canAdministerHost$) return;
     appStore.dispatch(
       providerProfileSummaryStatusesEnsured(
         profiles.map(({ id, providerRef }) => ({ id, providerRef })),
@@ -490,7 +490,7 @@
   // host: the agent-bound picker renders read-only with the host catalog
   // label and no availability warnings (intent#5378). The selector fails
   // closed while the window's identity is still the boot-time default.
-  const isWorkspaceCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
+  const isWorkspaceCollaborator$ = selectHidesAgentCreationActions(workspaceIdStore);
   $effect(() => {
     workspaceIdStore.set(workspaceId ?? '');
   });
@@ -905,10 +905,11 @@
       return;
     }
     if (updateGlobalDefault) {
+      if (!$canAdministerHost$) return;
       // Defaults have one Redux-rendered selection. Dispatch before returning
       // from the click; never stage a component draft or an agent request.
       onModelChange?.(model ?? '', pick);
-      if (pick && !effectiveLocked && !destroyed && !$hostMember$)
+      if (pick && !effectiveLocked && !destroyed && $canAdministerHost$)
         appStore.dispatch(selectModel(pick.modelId, pick.providerId));
       return;
     }
@@ -1337,7 +1338,7 @@
   let noProviderToastShown = false;
 
   function openProviderSettings() {
-    if ($hostMember$) return;
+    if (!$canAdministerHost$) return;
     dropdownOpen = false;
     void navigateToSettings({ tab: 'accounts', hash: 'providers' }).catch((error: unknown) => {
       logger.error('Failed to open provider settings from model picker', error);
@@ -1349,13 +1350,13 @@
       if (!noProviderToastShown) {
         noProviderToastShown = true;
         notify.error(
-          $hostMember$
+          !$canAdministerHost$
             ? m.hostExecution_providerSetup_description()
             : m.chat_modelPicker_noProviderAvailable_toast(),
           {
             id: 'no-provider-available',
             duration: 6000,
-            action: $hostMember$
+            action: !$canAdministerHost$
               ? undefined
               : {
                   label: m.chat_modelPicker_noProviderAvailable_openSettings_label(),
@@ -1391,8 +1392,10 @@
     };
   });
 
-  const groupedModelOptions = $derived.by(() =>
-    buildGroupedModelOptions({
+  const groupedModelOptions = $derived.by(() => {
+    void $providerCatalogEntries$;
+    return buildGroupedModelOptions({
+      workspaceId,
       showDefaultOption,
       useDefaultOption,
       effectiveProviderId,
@@ -1407,8 +1410,8 @@
       profiles: $providerProfiles$,
     }).filter(
       (group) => group.key === 'default' || canUseProviderModels(group.parentKey ?? group.key),
-    ),
-  );
+    );
+  });
   let legacyModelsExpanded = $state(false);
   let modelSearchValue = $state('');
   const onlyLegacyAuggieModels = $derived(
@@ -2585,7 +2588,7 @@
             </Button>
           {/each}
         </div>
-        {#if !hasNoAvailableProvider && !$hostMember$}
+        {#if !hasNoAvailableProvider && $canAdministerHost$}
           <Button
             variant="ghost"
             size="icon-sm"
@@ -2720,7 +2723,7 @@
         blockingLoadError={activeProviderIssue ?? blockingLoadError}
         retryInFooter={activeProviderIssue !== null || refreshingProviders.has(refreshProviderId)}
         {hasNoAvailableProvider}
-        hostManaged={$hostMember$}
+        hostManaged={!$canAdministerHost$}
         onOpenProviderSettings={openProviderSettings}
         onRetry={handleRetry}
       />

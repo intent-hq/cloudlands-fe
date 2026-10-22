@@ -14,6 +14,7 @@ import {
   presenceReducer,
   presenceRosterReceived,
   presenceTypingExpired,
+  presenceDiscussionTypingExpired,
   presenceWindowVisibilityChanged,
   presenceTypingPulse,
   initialState,
@@ -22,6 +23,7 @@ import {
   hasOtherPresence,
   selectAgentPresencePeople,
   selectAgentTypingPeople,
+  selectDiscussionTypingPeople,
   selectOwnPresenceReport,
   selectPresenceMembershipKeys,
   selectWorkspacePresencePeople,
@@ -679,5 +681,48 @@ describe('presence selectors', () => {
 
     const noTab = stateWith(reduce(presenceTypingPulse('agent-1')), { panelLayout: layout });
     expect(selectOwnPresenceReport.select(noTab)).toEqual({ focus: [], typing: null });
+  });
+});
+
+describe('discussion typing people', () => {
+  it('suppresses all self connections, deduplicates people, and gates on current sharing', () => {
+    const entry = (source: string) => ({ source, pulse: 1, since: '2000-01-01T00:00:00Z' });
+    let presence = reduce(
+      presenceOwnPrincipalReceived('me'),
+      presenceOwnTypingSourceReceived('own'),
+      presenceRosterReceived({
+        workspaceId: 'ws-1',
+        members: [
+          member('me', { discussionTyping: [entry('self-other-device')] }),
+          member('a', { discussionTyping: [entry('a-phone'), entry('a-desktop')] }),
+          member('b', { discussionTyping: [entry('b')] }),
+          member('legacy'),
+        ],
+      }),
+    );
+    expect(ids(selectDiscussionTypingPeople.select(stateWith(presence), 'ws-1'))).toEqual([
+      'a',
+      'b',
+    ]);
+    presence = presenceReducer(presence, presenceDiscussionTypingExpired('ws-1', 'a-phone', 1));
+    expect(ids(selectDiscussionTypingPeople.select(stateWith(presence), 'ws-1'))).toEqual([
+      'a',
+      'b',
+    ]);
+    presence = presenceReducer(presence, presenceDiscussionTypingExpired('ws-1', 'a-desktop', 1));
+    expect(ids(selectDiscussionTypingPeople.select(stateWith(presence), 'ws-1'))).toEqual(['b']);
+    expect(
+      selectDiscussionTypingPeople.select(
+        stateWith(presence, { workspace: workspacesWith(shared('ws-1', { memberCount: 1 })) }),
+        'ws-1',
+      ),
+    ).toEqual([]);
+    const state = stateWith(presence);
+    expect(
+      selectDiscussionTypingPeople.select(
+        { ...state, presence: { ...state.presence, context: 'old' } },
+        'ws-1',
+      ),
+    ).toEqual([]);
   });
 });

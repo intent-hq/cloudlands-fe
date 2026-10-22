@@ -15,6 +15,12 @@ export const buttonMetadata = parseUiComponentMetadata({
   category: 'primitive',
   owner: '007-B1',
   callers: [
+    'src/features/discussions/components/DiscussionMessageView.svelte',
+    'src/features/discussions/components/DiscussionMicrophone.svelte',
+    'src/features/discussions/components/DiscussionMessageBody.svelte',
+    'src/features/discussions/components/DiscussionReferencePicker.svelte',
+    'src/features/discussions/components/discussion-states.preview.svelte',
+    'src/features/discussions/components/__tests__/DiscussionPresentationHost.svelte',
     'src/features/host-membership/HostInvitationDialog.svelte',
     'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
     'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
