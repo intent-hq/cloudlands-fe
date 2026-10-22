@@ -25,7 +25,6 @@ import { openTab, openTabInRightmostColumnRequested } from '../../panel-layout/p
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   addOptimisticNote,
-  applyLocalNoteUpdate,
   addCommentRequested,
   applyNoteUpdated,
   createNote,
