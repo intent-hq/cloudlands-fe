@@ -503,6 +503,12 @@ function* rereadOnceCapabilityKnown(workspaceId: string, noteId: string) {
   });
 }
 
+/** The bounded view read of one note (capability-gated `maxContentBytes`). */
+function* readFreshNote(workspaceId: string, noteId: string): SagaGenerator<Note | null> {
+  const options = yield* call(viewReadOptions);
+  return yield* call([appClient.notes, appClient.notes.get], noteId, workspaceId, options);
+}
+
 /** The truncated-read capability: `'unknown'` while no hello is acknowledged. */
 function* truncatedReadSupport(): SagaGenerator<boolean | 'unknown'> {
   try {
@@ -572,8 +578,26 @@ function* recoverDraftOnFreshRead(
   // part of the newest draft taken below; the queue is held by this command.
   let fresh: Note | null = null;
   try {
-    const options = yield* call(viewReadOptions);
-    fresh = yield* call([appClient.notes, appClient.notes.get], noteId, workspaceId, options);
+    // Raced against the note's deletion: a late pre-deletion response must not
+    // resurrect the note, record a base or resubmit the draft.
+    const { read, gone } = yield* race({
+      read: call(readFreshNote, workspaceId, noteId),
+      gone: take(
+        (action: ObservedAction) =>
+          isWorkspaceCleanup(action, workspaceId) || isNoteDeletion(action, workspaceId, noteId),
+      ),
+    });
+    if (gone) {
+      const draft = newestDraftText(key, command.content);
+      yield* call(dropDrafts, workspaceId, noteId);
+      mismatchRebased.delete(key);
+      logger.warn('Note removed during save recovery; kept the unsaved text for the user', {
+        noteId,
+      });
+      offerUnsavedText(draft, 'not-applied');
+      return undefined;
+    }
+    fresh = read ?? null;
   } catch (error) {
     logger.error('Failed to re-read a note after a content base mismatch', error);
   }

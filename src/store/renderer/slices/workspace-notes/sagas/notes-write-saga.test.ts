@@ -40,7 +40,7 @@ import {
 } from '../workspace-notes-slice';
 import { NoteCapabilityUnknownError } from '$lib/client/live/live-notes-client';
 import { rebaseText } from '$lib/notes/text-rebase';
-import { recordDaemonNote } from './note-daemon-text';
+import { daemonTextAt, recordDaemonNote } from './note-daemon-text';
 import { NOTE_CONTENT_SAVE_DEBOUNCE_MS, notesWriteSaga } from './notes-write-saga';
 
 const WS = 'ws-notes-write';
@@ -609,6 +609,50 @@ describe('notesWriteSaga', () => {
       expect(setContent.mock.calls).toEqual([
         [NOTE, 'body MINE\nAGENT', 9, WS, { baseContentBytes: 10 }],
       ]);
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('never resurrects a note deleted while the recovery read is pending', async () => {
+      supports(true);
+      const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+        success: false,
+        error: 'mismatch',
+        contentBaseMismatch: true,
+      });
+      let finishRead!: (value: Note) => void;
+      vi.spyOn(appClient.notes, 'get').mockReturnValue(
+        new Promise<Note>((resolve) => (finishRead = resolve)),
+      );
+      const writeText = vi.fn(async () => {});
+      vi.stubGlobal('navigator', { clipboard: { writeText } });
+      const run = harness();
+      served(run, note({ content: 'old body' }));
+
+      run.channel.put(updateNoteContent(WS, NOTE, 'old body MINE', true));
+      await vi.waitFor(() => expect(appClient.notes.get).toHaveBeenCalledTimes(1));
+      // The note is deleted while the recovery read is pending…
+      const deleted = applyNoteDeleted(WS, NOTE);
+      run.dispatch(deleted);
+      run.channel.put(deleted);
+      await settle();
+      // …and its late pre-deletion response comes back truncated.
+      finishRead(
+        note({ content: 'prefix\n', contentTruncated: true, contentBytes: 600_000, rev: 9 }),
+      );
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
+      await settle();
+
+      expect(run.getState().byWorkspaceId[WS]?.notes.map[NOTE]).toBeUndefined();
+      expect(daemonTextAt(WS, NOTE, 9)).toBeUndefined();
+      expect(setContent).toHaveBeenCalledTimes(1);
+      expect(run.actions.some((action) => action.type === updateNoteContent.type)).toBe(false);
+      const options = vi.mocked(notify.warning).mock.calls[0][1] as {
+        action: { onClick: () => void };
+      };
+      options.action.onClick();
+      expect(writeText).toHaveBeenCalledWith('old body MINE');
+      vi.unstubAllGlobals();
       run.task.cancel();
       await run.task.toPromise();
     });
