@@ -46,7 +46,7 @@
 {#if ordered.length}
   <div bind:this={root} class="flex flex-wrap items-center gap-1.5" data-discussion-reactions>
     {#each ordered as reaction (reaction.emoji)}
-      <Tooltip contentClass="rounded-[5px] text-[11px] leading-4" disabled={!expandedReactions}>
+      <Tooltip contentClass="rounded-[5px] type-caption" disabled={!expandedReactions}>
         {#snippet content()}
           <span class="inline-flex flex-wrap items-center gap-1" data-discussion-reaction-people>
             <span

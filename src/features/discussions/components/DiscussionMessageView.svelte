@@ -156,7 +156,7 @@
           <span class="truncate font-medium text-foreground">{name}</span>
           {#if message.author.agentId}<Badge
               size="compact"
-              class="h-4 rounded-[5px] px-[5px] text-[10px] leading-[14px] text-muted-foreground"
+              class="h-4 rounded-[5px] px-[5px] leading-[14px] text-muted-foreground"
               data-discussion-agent-author>{m.workspace_fileChanges_agent_label()}</Badge
             >{/if}
           <span class="text-muted-foreground" aria-hidden="true">·</span>
