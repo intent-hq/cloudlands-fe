@@ -591,6 +591,8 @@ export class JsonRpcClient extends EventEmitter {
       localNodeIsolation: capabilities?.localNodeIsolation === 1 ? 1 : 0,
       agentPlatformRouting: capabilities?.agentPlatformRouting === 1 ? 1 : 0,
       workspaceMembershipEvents: capabilities?.workspaceMembershipEvents === 1 ? 1 : 0,
+      // Truncated note reads (§5.2): gates maxContentBytes / baseContentBytes.
+      noteTruncatedRead: capabilities?.noteTruncatedRead === 1 ? 1 : 0,
     });
     this.acknowledgedHelloIdentity = Object.freeze({
       clientId: result.clientId,

@@ -865,6 +865,7 @@ describe('actual main finalization fence and original pool', () => {
             localNodeIsolation: 0,
             agentPlatformRouting: 1,
             workspaceMembershipEvents: 0,
+            noteTruncatedRead: 0,
           },
         },
       },
