@@ -1,3 +1,4 @@
+// @verify-changed-exempt: node:test suite (shared with intent and intentd) that scripts/test_runner_policy.py runs; vitest excludes it
 // Offline fixtures execute the same inline script that Actions runs (no checkout in the probe).
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
