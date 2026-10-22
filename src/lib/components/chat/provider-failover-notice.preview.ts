@@ -57,6 +57,30 @@ export const preview = definePreview<ComponentProps<typeof ProviderFailoverNotic
       props: quota('claude-code@pgone00000001', 'claude-code@pwork00000001'),
       setup: setupProfiles,
     },
+    'returned-home': {
+      props: {
+        notice: {
+          kind: 'returned',
+          fromProvider: 'claude-code@pwork00000001',
+          toProvider: 'claude-code@ppersonal0001',
+          model: 'opus',
+          reason: 'quota-reset',
+        },
+      },
+      setup: setupProfiles,
+    },
+    'returned-default': {
+      props: {
+        notice: {
+          kind: 'returned',
+          fromProvider: 'claude-code@pwork00000001',
+          toProvider: 'claude-code',
+          model: 'opus',
+          reason: 'quota-reset',
+        },
+      },
+      setup: setupProfiles,
+    },
     fallback: {
       props: {
         notice: { model: null },

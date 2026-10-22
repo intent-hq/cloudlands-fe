@@ -903,6 +903,8 @@
   "chat_proposalTray_title": "Propuestas pendientes",
   "chat_providerFailoverNotice_fallback_label": "Se cambió a un proveedor de respaldo",
   "chat_providerFailoverNotice_quota_label": "{from} agotó su cuota — continuando con {to} (respaldo)",
+  "chat_providerFailoverNotice_returnedFallback_label": "De vuelta al proveedor original",
+  "chat_providerFailoverNotice_returned_label": "Cuota de {to} restablecida — de vuelta en {to}",
   "chat_providerRehomedNotice_defaultModel_label": "El modelo predeterminado",
   "chat_providerRehomedNotice_disabled_label": "{model} ({fromProvider}) ya no está disponible — {fromProvider} se desactivó en Ajustes > Agentes; este agente ahora se ejecuta en {toProvider}.",
   "chat_providerRehomedNotice_fallback_label": "Proveedor cambiado",

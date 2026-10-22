@@ -2,9 +2,10 @@
   /**
    * ProviderFailoverNotice Component
    *
-   * Centered inline divider rendered for daemon-persisted quota failover
-   * transcript rows (metadata `{ type: "provider_failover", fromProvider,
-   * toProvider, model, reason: "quota-exceeded" }`). Visually distinct from
+   * Centered inline divider rendered for daemon-persisted automatic provider
+   * switch rows: quota failover (`{ type: "provider_failover", fromProvider,
+   * toProvider, model, reason: "quota-exceeded" }`) and the return home
+   * (`{ type: "provider_returned", ..., reason: "quota-reset" }`). Visually distinct from
    * user/assistant bubbles — the row is informational, never an error, and
    * was never sent to the provider.
    */
@@ -29,11 +30,7 @@
     fallbackText?: string;
   }
 
-  let {
-    notice,
-    workspaceId,
-    fallbackText = m.chat_providerFailoverNotice_fallback_label(),
-  }: Props = $props();
+  let { notice, workspaceId, fallbackText }: Props = $props();
 
   // Profile names label the notice, so renames and removals relabel it;
   // "Removed profile" is said only once the catalog has loaded.
@@ -44,7 +41,14 @@
     void $profiles$;
     void $catalogLoaded$;
     void $catalogEntries$;
-    return formatProviderFailoverLabel(notice, fallbackText, workspaceId);
+    return formatProviderFailoverLabel(
+      notice,
+      fallbackText ??
+        (notice.kind === 'returned'
+          ? m.chat_providerFailoverNotice_returnedFallback_label()
+          : m.chat_providerFailoverNotice_fallback_label()),
+      workspaceId,
+    );
   });
 </script>
 

@@ -45,6 +45,32 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
 import ChatMessage from '../ChatMessage.svelte';
 import AgentMessageList from '../AgentMessageList.svelte';
 
+/** Global catalog without the `pwork` profile; the `ws-1` catalog still has it. */
+function workspaceCatalogState(): Record<string, unknown> {
+  return {
+    providerCatalog: {
+      loaded: true,
+      providers: createCollection('id', [{ id: 'claude-code', displayName: 'Claude Code' }]),
+      profiles: createCollection('id', []),
+      byWorkspaceId: {
+        'ws-1': {
+          catalog: {
+            providers: [{ id: 'claude-code', displayName: 'Claude Code' }],
+            profiles: [
+              {
+                id: 'pwork',
+                providerRef: 'claude-code@pwork',
+                baseProviderId: 'claude-code',
+                name: 'Work',
+              },
+            ],
+          },
+        },
+      },
+    },
+  };
+}
+
 const DAEMON_TEXT = 'claude-code ran out of quota. Switched to the backup claude-code (Work).';
 
 function failoverRow(metadata: Record<string, unknown>): AgentMessage {
@@ -90,28 +116,7 @@ describe('ChatMessage — provider_failover row', () => {
     // The global catalog no longer has the backup profile; the workspace's own
     // catalog (what the agent actually runs against) still does.
     beforeEach(() => {
-      mockStoreState = {
-        providerCatalog: {
-          loaded: true,
-          providers: createCollection('id', [{ id: 'claude-code', displayName: 'Claude Code' }]),
-          profiles: createCollection('id', []),
-          byWorkspaceId: {
-            'ws-1': {
-              catalog: {
-                providers: [{ id: 'claude-code', displayName: 'Claude Code' }],
-                profiles: [
-                  {
-                    id: 'pwork',
-                    providerRef: 'claude-code@pwork',
-                    baseProviderId: 'claude-code',
-                    name: 'Work',
-                  },
-                ],
-              },
-            },
-          },
-        },
-      };
+      mockStoreState = workspaceCatalogState();
     });
 
     const row = () =>
@@ -138,6 +143,46 @@ describe('ChatMessage — provider_failover row', () => {
       const text = screen.getByRole('status').textContent ?? '';
       expect(text).toContain('continuing on Work (backup)');
       expect(text).not.toContain('Removed profile');
+    });
+  });
+
+  describe('provider_returned row', () => {
+    beforeEach(() => {
+      mockStoreState = workspaceCatalogState();
+    });
+
+    const returnedRow = (): AgentMessage =>
+      ({
+        id: 'returned-1',
+        role: 'system',
+        contentBlocks: [{ type: 'text', text: 'Back on claude-code (Work).' }],
+        timestamp: new Date('2026-10-21T12:00:00Z'),
+        metadata: {
+          type: 'provider_returned',
+          fromProvider: 'claude-code@pother',
+          toProvider: 'claude-code@pwork',
+          model: 'opus',
+          reason: 'quota-reset',
+        },
+      }) as AgentMessage;
+
+    it('ChatMessage renders only the returned notice, labelled from the workspace catalog', () => {
+      const { container } = render(ChatMessage, {
+        props: { message: returnedRow(), workspace: { id: 'ws-1' } as never },
+      });
+      const notice = screen.getByRole('status');
+      expect(notice.textContent?.trim()).toBe('Work quota reset — back on Work');
+      expect(container.textContent?.trim()).toBe(notice.textContent?.trim());
+      expect(screen.queryByRole('button')).toBeNull();
+    });
+
+    it('AgentMessageList renders it once as a notice', () => {
+      render(AgentMessageList, {
+        props: { messages: [returnedRow()], workspaceId: 'ws-1', enableTransitions: false },
+      });
+      const notices = screen.getAllByRole('status');
+      expect(notices).toHaveLength(1);
+      expect(notices[0].textContent?.trim()).toBe('Work quota reset — back on Work');
     });
   });
 });

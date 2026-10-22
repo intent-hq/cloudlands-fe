@@ -764,6 +764,30 @@ describe('turn-boundary divider placement (rendered ChatPanel)', () => {
     ]);
   });
 
+  it('places a returned-home notice between the user row and the home reply', async () => {
+    const { container, turns } = await renderTranscript(
+      [
+        message('user-1', 'user'),
+        message('returned-1', 'system', {
+          metadata: {
+            type: 'provider_returned',
+            fromProvider: 'claude-code@pwork',
+            toProvider: 'claude-code',
+            model: 'opus',
+            reason: 'quota-reset',
+          },
+        }),
+        message('home-1', 'assistant'),
+      ],
+      null,
+    );
+
+    expect(turns).toHaveLength(1);
+    expect(renderedRowIds(container)).toEqual(['user-1', 'returned-1', 'home-1']);
+    const row = container.querySelector<HTMLElement>('[data-message-id="returned-1"]');
+    expect(row?.dataset.messageRole).toBe('system');
+  });
+
   it('defers the unread divider past a trailing failover notice to the turn boundary', async () => {
     const { container, dividers, gaps, turns } = await renderTranscript(
       [

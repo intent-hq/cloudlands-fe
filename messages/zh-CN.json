@@ -903,6 +903,8 @@
   "chat_proposalTray_title": "待处理提议",
   "chat_providerFailoverNotice_fallback_label": "已切换到备用提供商",
   "chat_providerFailoverNotice_quota_label": "{from} 的配额已用尽 — 继续使用 {to}（备用）",
+  "chat_providerFailoverNotice_returnedFallback_label": "已回到原提供商",
+  "chat_providerFailoverNotice_returned_label": "{to} 的配额已重置 — 已回到 {to}",
   "chat_providerRehomedNotice_defaultModel_label": "默认模型",
   "chat_providerRehomedNotice_disabled_label": "{model}（{fromProvider}）已不再可用 — {fromProvider} 已在设置 > 代理中被禁用；此代理现在运行于 {toProvider}。",
   "chat_providerRehomedNotice_fallback_label": "提供商已更改",

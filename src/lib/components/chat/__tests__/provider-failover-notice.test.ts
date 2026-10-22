@@ -9,6 +9,8 @@ import { createCollection } from '@themislib/themis/utils/collections/collection
 import {
   formatProviderFailoverLabel,
   getProviderFailoverNotice,
+  getProviderReturnedNotice,
+  getProviderSwitchNotice,
   type ProviderFailoverNoticeInfo,
 } from '../provider-failover-notice';
 
@@ -73,6 +75,7 @@ describe('getProviderFailoverNotice', () => {
         },
       }),
     ).toEqual({
+      kind: 'failover',
       fromProvider: 'claude-code',
       toProvider: 'claude-code@pwork',
       model: 'opus',
@@ -99,7 +102,13 @@ describe('getProviderFailoverNotice', () => {
       getProviderFailoverNotice({
         metadata: { type: 'provider_failover', fromProvider: 42, toProvider: '', model: {} },
       }),
-    ).toEqual({ fromProvider: undefined, toProvider: undefined, model: null, reason: undefined });
+    ).toEqual({
+      kind: 'failover',
+      fromProvider: undefined,
+      toProvider: undefined,
+      model: null,
+      reason: undefined,
+    });
   });
 
   it.each([
@@ -178,5 +187,141 @@ describe('formatProviderFailoverLabel', () => {
   ])('falls back to the daemon text for %s', (_label, overrides) => {
     mockStoreState = catalogState();
     expect(formatProviderFailoverLabel(notice(overrides), FALLBACK)).toBe(FALLBACK);
+  });
+});
+
+describe('getProviderReturnedNotice', () => {
+  it('parses a complete provider_returned row', () => {
+    expect(
+      getProviderReturnedNotice({
+        role: 'system',
+        metadata: {
+          type: 'provider_returned',
+          fromProvider: 'claude-code@pwork',
+          toProvider: 'claude-code@ppersonal',
+          model: 'opus',
+          reason: 'quota-reset',
+        },
+      }),
+    ).toEqual({
+      kind: 'returned',
+      fromProvider: 'claude-code@pwork',
+      toProvider: 'claude-code@ppersonal',
+      model: 'opus',
+      reason: 'quota-reset',
+    });
+  });
+
+  it('keeps a row with missing or invalid fields as a notice with those fields undefined', () => {
+    expect(
+      getProviderReturnedNotice({
+        metadata: { type: 'provider_returned', fromProvider: 7, toProvider: '', model: [] },
+      }),
+    ).toEqual({
+      kind: 'returned',
+      fromProvider: undefined,
+      toProvider: undefined,
+      model: null,
+      reason: undefined,
+    });
+  });
+
+  it.each([
+    ['no message', undefined],
+    ['no metadata', { role: 'system' }],
+    ['a failover row', { metadata: { type: 'provider_failover', toProvider: 'a' } }],
+  ])('returns null for %s', (_label, message) => {
+    expect(getProviderReturnedNotice(message as never)).toBeNull();
+  });
+
+  it('is not a failover row', () => {
+    expect(getProviderFailoverNotice({ metadata: { type: 'provider_returned' } })).toBeNull();
+  });
+});
+
+describe('getProviderSwitchNotice', () => {
+  it('recognizes both failover and returned rows and nothing else', () => {
+    expect(getProviderSwitchNotice({ metadata: { type: 'provider_failover' } })?.kind).toBe(
+      'failover',
+    );
+    expect(getProviderSwitchNotice({ metadata: { type: 'provider_returned' } })?.kind).toBe(
+      'returned',
+    );
+    expect(getProviderSwitchNotice({ metadata: { type: 'model_changed' } })).toBeNull();
+  });
+});
+
+describe('formatProviderFailoverLabel — returned home', () => {
+  const returned = (
+    overrides: Partial<ProviderFailoverNoticeInfo> = {},
+  ): ProviderFailoverNoticeInfo => ({
+    kind: 'returned',
+    fromProvider: 'claude-code@pwork',
+    toProvider: 'claude-code@ppersonal',
+    model: 'opus',
+    reason: 'quota-reset',
+    ...overrides,
+  });
+
+  it('names the home profile from the catalog', () => {
+    mockStoreState = catalogState();
+    expect(formatProviderFailoverLabel(returned(), FALLBACK)).toBe(
+      'Personal quota reset — back on Personal',
+    );
+  });
+
+  it('labels a bare home reference as the provider Default configuration', () => {
+    mockStoreState = catalogState();
+    expect(formatProviderFailoverLabel(returned({ toProvider: 'claude-code' }), FALLBACK)).toBe(
+      'Claude Code · Default quota reset — back on Claude Code · Default',
+    );
+  });
+
+  it('labels a deleted home profile as removed once the catalog has loaded', () => {
+    mockStoreState = catalogState([PROFILES[1]]);
+    expect(formatProviderFailoverLabel(returned(), FALLBACK)).toBe(
+      'Removed profile quota reset — back on Removed profile',
+    );
+  });
+
+  it('shows the provider name, not "Removed profile", before the catalog has loaded', () => {
+    mockStoreState = catalogState([], false);
+    expect(formatProviderFailoverLabel(returned(), FALLBACK)).toBe(
+      'Claude Code quota reset — back on Claude Code',
+    );
+  });
+
+  it('reads the owning workspace catalog', () => {
+    mockStoreState = {
+      providerCatalog: {
+        ...(catalogState([]).providerCatalog as object),
+        byWorkspaceId: {
+          'ws-1': {
+            catalog: {
+              providers: [{ id: 'claude-code', displayName: 'Claude Code' }],
+              profiles: [PROFILES[0]],
+            },
+          },
+        },
+      },
+    };
+    expect(formatProviderFailoverLabel(returned(), FALLBACK, 'ws-1')).toBe(
+      'Personal quota reset — back on Personal',
+    );
+  });
+
+  it.each([
+    ['an unknown reason', { reason: 'other' }],
+    ['the failover reason', { reason: 'quota-exceeded' }],
+    ['a missing reason', { reason: undefined }],
+    ['a missing toProvider', { toProvider: undefined }],
+  ])('falls back to the daemon text for %s', (_label, overrides) => {
+    mockStoreState = catalogState();
+    expect(formatProviderFailoverLabel(returned(overrides), FALLBACK)).toBe(FALLBACK);
+  });
+
+  it('does not treat a failover notice with the reset reason as a return', () => {
+    mockStoreState = catalogState();
+    expect(formatProviderFailoverLabel(notice({ reason: 'quota-reset' }), FALLBACK)).toBe(FALLBACK);
   });
 });

@@ -86,6 +86,31 @@ describe('conversation turn indexing', () => {
     expect(indexed.turnKeyByMessageId.get('b-to-c')).toBe('user');
   });
 
+  it('keeps a returned-home notice in transcript order and out of assistant output', () => {
+    const [turn] = groupIntoTurns([
+      message('user', 'user'),
+      message('returned', 'system', 'provider_returned'),
+      message('home-reply', 'assistant'),
+    ]);
+    expect(turn.bodyMessages.map(({ id }) => id)).toEqual(['returned', 'home-reply']);
+    expect(turn.assistantMessages.map(({ id }) => id)).toEqual(['home-reply']);
+    expect(turn.noticeMessages).toEqual([]);
+  });
+
+  it('orders a failed return before the failover that follows it', () => {
+    const [turn] = groupIntoTurns([
+      message('user', 'user'),
+      message('home-partial', 'assistant'),
+      message('home-to-backup', 'system', 'provider_failover'),
+      message('backup-reply', 'assistant'),
+    ]);
+    expect(turn.bodyMessages.map(({ id }) => id)).toEqual([
+      'home-partial',
+      'home-to-backup',
+      'backup-reply',
+    ]);
+  });
+
   it('keeps an orphan failover notice addressable when a history page begins with it', () => {
     const indexed = indexConversationTurns([
       { groupKey: 'older', messages: [message('failover', 'system', 'provider_failover')] },

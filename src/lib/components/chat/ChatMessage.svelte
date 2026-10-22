@@ -95,7 +95,7 @@
   import ProviderRehomedNotice from './ProviderRehomedNotice.svelte';
   import { getProviderRehomedNotice } from './rehome-notice';
   import ProviderFailoverNotice from './ProviderFailoverNotice.svelte';
-  import { getProviderFailoverNotice } from './provider-failover-notice';
+  import { getProviderSwitchNotice } from './provider-failover-notice';
   import ChatOperationalRow from './ChatOperationalRow.svelte';
   import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
 
@@ -369,7 +369,7 @@
   let providerRehomedNotice = $derived(getProviderRehomedNotice(message));
 
   // Daemon-persisted quota failover transcript row (metadata type "provider_failover")
-  let providerFailoverNotice = $derived(getProviderFailoverNotice(message));
+  let providerFailoverNotice = $derived(getProviderSwitchNotice(message));
 
   // Daemon-persisted attention-request row (meta.kind "discussion-request"/"blocker-report")
   let attentionNotice = $derived(getAttentionNotice(message));

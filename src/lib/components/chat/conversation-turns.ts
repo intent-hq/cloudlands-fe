@@ -86,11 +86,14 @@ function isTurnNotice(message: AgentMessage): boolean {
   return type === 'model_changed' || type === 'effort_changed' || type === 'provider_rehomed';
 }
 
-// A quota failover row stays in the ordered body stream: it marks the point
-// between a failed attempt (possibly with partial output) and its retry.
+// Automatic provider switch rows (quota failover, return home) stay in the
+// ordered body stream: each marks the point between an attempt (possibly with
+// partial output) and the output that follows it.
 function isInlineSystemNotice(message: AgentMessage): boolean {
+  const type = message.metadata?.type;
   return (
-    message.metadata?.type === 'provider_failover' ||
+    type === 'provider_failover' ||
+    type === 'provider_returned' ||
     (message.role === 'system' &&
       (message.contentBlocks?.[0]?.meta?.kind === 'interruption' ||
         getAttentionNotice(message) !== null))

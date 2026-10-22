@@ -903,6 +903,8 @@
   "chat_proposalTray_title": "대기 중인 제안",
   "chat_providerFailoverNotice_fallback_label": "백업 공급자로 전환했습니다",
   "chat_providerFailoverNotice_quota_label": "{from}의 할당량이 소진되었습니다 — {to}(백업)에서 계속합니다",
+  "chat_providerFailoverNotice_returnedFallback_label": "원래 공급자로 돌아왔습니다",
+  "chat_providerFailoverNotice_returned_label": "{to}의 할당량이 초기화되었습니다 — {to}(으)로 돌아왔습니다",
   "chat_providerRehomedNotice_defaultModel_label": "기본 모델",
   "chat_providerRehomedNotice_disabled_label": "{model}({fromProvider})을(를) 더 이상 사용할 수 없습니다 — {fromProvider}이(가) 설정 > 에이전트에서 비활성화되었습니다. 이 에이전트는 이제 {toProvider}에서 실행됩니다.",
   "chat_providerRehomedNotice_fallback_label": "공급자가 변경되었습니다",

@@ -903,6 +903,8 @@
   "chat_proposalTray_title": "Pending Proposals",
   "chat_providerFailoverNotice_fallback_label": "Switched to a backup provider",
   "chat_providerFailoverNotice_quota_label": "{from} ran out of quota — continuing on {to} (backup)",
+  "chat_providerFailoverNotice_returnedFallback_label": "Back on the original provider",
+  "chat_providerFailoverNotice_returned_label": "{to} quota reset — back on {to}",
   "chat_providerRehomedNotice_defaultModel_label": "The default model",
   "chat_providerRehomedNotice_disabled_label": "{model} ({fromProvider}) is no longer available — {fromProvider} was disabled in Settings > Agents; this agent now runs on {toProvider}.",
   "chat_providerRehomedNotice_fallback_label": "Provider changed",

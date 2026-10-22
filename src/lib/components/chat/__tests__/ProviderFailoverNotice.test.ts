@@ -79,4 +79,25 @@ describe('ProviderFailoverNotice', () => {
     render(ProviderFailoverNotice, { notice: { model: null } });
     expect(screen.getByRole('status').textContent).toContain('Switched to a backup provider');
   });
+
+  it('renders a returned-home notice and its own generic fallback', () => {
+    store.dispatch(
+      providerCatalogLoaded({ providers: MOCK_PROVIDER_CATALOG.providers, profiles: PROFILES }),
+    );
+    const { unmount } = render(ProviderFailoverNotice, {
+      notice: {
+        kind: 'returned',
+        fromProvider: 'claude-code@pwork',
+        toProvider: 'claude-code@ppersonal',
+        model: 'opus',
+        reason: 'quota-reset',
+      },
+    });
+    expect(screen.getByRole('status').textContent?.trim()).toBe(
+      'Personal quota reset — back on Personal',
+    );
+    unmount();
+    render(ProviderFailoverNotice, { notice: { kind: 'returned', model: null } });
+    expect(screen.getByRole('status').textContent).toContain('Back on the original provider');
+  });
 });

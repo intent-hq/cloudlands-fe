@@ -18,7 +18,7 @@
   import { getAutoUnarchivedNotice } from './auto-unarchived-notice';
   import { getProviderRehomedNotice } from './rehome-notice';
   import ProviderFailoverNotice from './ProviderFailoverNotice.svelte';
-  import { getProviderFailoverNotice } from './provider-failover-notice';
+  import { getProviderSwitchNotice } from './provider-failover-notice';
   import { crispOut, spring, springIn } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
   import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
@@ -128,7 +128,7 @@
     {@const questionsDismissedNotice = getQuestionsDismissedNotice(message)}
     {@const autoUnarchivedNotice = getAutoUnarchivedNotice(message)}
     {@const providerRehomedNotice = getProviderRehomedNotice(message)}
-    {@const providerFailoverNotice = getProviderFailoverNotice(message)}
+    {@const providerFailoverNotice = getProviderSwitchNotice(message)}
     <div
       id="message-{message.id}"
       class="message-wrapper group/message"
