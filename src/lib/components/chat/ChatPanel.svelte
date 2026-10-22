@@ -5760,6 +5760,7 @@
               type: 'image' as const,
               data: item.imageData!,
               mimeType: item.imageMimeType!,
+              ...(item.placementFileName ? { placementFileName: item.placementFileName } : {}),
             },
       );
     const fileBlocks = items

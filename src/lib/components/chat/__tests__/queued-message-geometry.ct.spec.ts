@@ -117,16 +117,20 @@ test('keeps loaded and unresolved image tiles tiny-rounded with compact keyboard
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
+  const data = await page.evaluate(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 48;
+    return canvas.toDataURL('image/png').split(',')[1];
+  });
   const component = await mount(QueuedMessageGeometryHost, {
     props: {
       width: 360,
       imageBlocks: [
         {
           type: 'image',
-          data: Buffer.from(
-            '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="48"><rect width="64" height="48"/></svg>',
-          ).toString('base64'),
-          mimeType: 'image/svg+xml',
+          data,
+          mimeType: 'image/png',
         },
         { type: 'image', attachmentId: 'synthetic-unresolved', mimeType: 'image/png' },
       ],

@@ -1,4 +1,9 @@
 <script lang="ts">
+  import {
+    canonicalImageMimeType,
+    isSupportedImageMimeType,
+    imageAttachmentName,
+  } from './input/image-attachment-format';
   import { truncatedTitle } from '$lib/actions/observe-overflow';
   /* eslint-disable max-lines */
   import {
@@ -927,6 +932,7 @@
     ).filter(
       (block: any) =>
         block.type === 'image' &&
+        !(block.mimeType && !isSupportedImageMimeType(block.mimeType)) &&
         ((block.data && block.mimeType) || block.attachmentId || block.dataTruncated === true),
     );
   });
@@ -973,7 +979,8 @@
       if (failedReferenceImages[block.attachmentId]) return null;
       return referenceImageUrls[block.attachmentId] ?? null;
     }
-    if (block.data && block.mimeType) return `data:${block.mimeType};base64,${block.data}`;
+    if (block.data && block.mimeType)
+      return `data:${canonicalImageMimeType(block.mimeType)};base64,${block.data}`;
     return null;
   }
 
@@ -1042,7 +1049,7 @@
       return;
     }
     if (!isImageBlock(imageBlock) || !imageBlock.data) return;
-    lightboxImageUrl = `data:${imageBlock.mimeType};base64,${imageBlock.data}`;
+    lightboxImageUrl = `data:${canonicalImageMimeType(imageBlock.mimeType)};base64,${imageBlock.data}`;
     lightboxImageName =
       imageBlock.fileName ||
       m.chat_chatMessage_attachedImage_fallback({ number: formatInteger(index + 1) });
@@ -1088,7 +1095,7 @@
     // Legacy slim images have no thumbnail to fall back to. Keep the tile
     // actionable for retry rather than opening an empty data URL on failure.
     if (!isImageBlock(block) || !block.data) return;
-    lightboxImageUrl = `data:${block.mimeType};base64,${block.data}`;
+    lightboxImageUrl = `data:${canonicalImageMimeType(block.mimeType)};base64,${block.data}`;
     lightboxImageName =
       block.fileName ||
       m.chat_chatMessage_attachedImage_fallback({ number: formatInteger(pending.index + 1) });
@@ -1103,7 +1110,60 @@
     if (!message?.contentBlocks || !Array.isArray(message.contentBlocks)) {
       return [];
     }
-    return message.contentBlocks.filter(isFileBlock);
+    return mergeHydratedContent(
+      message.contentBlocks,
+      message?.id ?? messageId,
+      $hydratedBlocks$,
+    ).flatMap<ContentBlock & { fileName: string }>((block) => {
+      if (isFileBlock(block)) return [block];
+      if (block.type === 'image' && block.mimeType && !isSupportedImageMimeType(block.mimeType)) {
+        return [
+          {
+            ...block,
+            type: 'file' as const,
+            fileName: block.fileName || imageAttachmentName(block.mimeType, 'image'),
+          },
+        ];
+      }
+      return [];
+    });
+  });
+
+  let pendingFileHydration = $state<string | null>(null);
+
+  function canHydrateFile(block: ContentBlock): boolean {
+    return !!(block.dataTruncated && block.id && agentId && (message?.id ?? messageId));
+  }
+
+  function hydrateFileAttachment(block: ContentBlock) {
+    const hydrationMessageId = message?.id ?? messageId;
+    if (readOnly || !agentId || !hydrationMessageId || !block.id || !canHydrateFile(block)) return;
+    pendingFileHydration = block.id;
+    appStore.dispatch(messageBlockHydrationRequested(agentId, hydrationMessageId, block.id));
+  }
+
+  $effect(() => {
+    const blockId = pendingFileHydration;
+    if (!blockId) return;
+    const hydratedFromReadable = $hydratedBlocks$;
+    // Use fresh state on the click flush; the readable can still precede the request.
+    const hydrated = agentId
+      ? selectHydratedBlocks.select(appStore.state, agentId)
+      : hydratedFromReadable;
+    const hydrationMessageId = message?.id ?? messageId;
+    if (isHydrationPending(hydrated, hydrationMessageId, [blockId])) return;
+    pendingFileHydration = null;
+    const block = mergeHydratedContent(
+      message?.contentBlocks ?? [],
+      hydrationMessageId,
+      hydrated,
+    ).find((candidate) => candidate.id === blockId);
+    // Failed hydration stays actionable for retry; never download a truncated preview.
+    if (!block?.data || block.dataTruncated || block.type !== 'image') return;
+    const link = document.createElement('a');
+    link.href = `data:application/octet-stream;base64,${block.data}`;
+    link.download = block.fileName || imageAttachmentName(block.mimeType, 'image');
+    link.click();
   });
 
   // Secondary text for a file chip: size and/or mime from the block's
@@ -1397,6 +1457,7 @@
               type: 'image' as const,
               data: item.imageData!,
               mimeType: item.imageMimeType!,
+              ...(item.placementFileName ? { placementFileName: item.placementFileName } : {}),
             },
       );
     const fileBlocks: FileBlock[] = editContextItems
@@ -1872,7 +1933,17 @@
                       variant="plain"
                       data-testid="chat-message-file-chip"
                       class="type-caption flex cursor-pointer items-center gap-1.5 rounded border border-border bg-muted/50 px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                      onclick={() => openAttachmentReference(fileBlock)}
+                      href={!fileBlock.attachmentId && fileBlock.data && !fileBlock.dataTruncated
+                        ? `data:application/octet-stream;base64,${fileBlock.data}`
+                        : undefined}
+                      download={!fileBlock.attachmentId ? fileBlock.fileName : undefined}
+                      disabled={isAttachmentHydrationLoading(fileBlock.id) ||
+                        (pendingFileHydration !== null && canHydrateFile(fileBlock)) ||
+                        (!fileBlock.attachmentId && !fileBlock.data && !canHydrateFile(fileBlock))}
+                      onclick={() => {
+                        if (fileBlock.attachmentId) openAttachmentReference(fileBlock);
+                        else if (fileBlock.dataTruncated) hydrateFileAttachment(fileBlock);
+                      }}
                       title={m.chat_chatMessage_openAttachment_title({
                         name: `${fileBlock.fileName}`,
                       })}

@@ -66,6 +66,7 @@
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import type { StackedMenuGroup } from '$lib/components/ui/menu';
   import { parseImageDataUrl } from './image-data-url';
+  import { isSupportedImageMimeType } from './image-attachment-format';
   import {
     selectSkills,
     selectSkillsError,
@@ -325,8 +326,8 @@
     contextItems.filter(
       (item) =>
         item.type === 'file' &&
-        ((item.imageData && item.imageMimeType) ||
-          (item.file && item.file.type?.startsWith('image/'))),
+        ((item.imageData && isSupportedImageMimeType(item.imageMimeType)) ||
+          (item.file && isSupportedImageMimeType(item.file.type))),
     ),
   );
   const nonImageItems = $derived(
@@ -334,8 +335,8 @@
       (item) =>
         !(
           item.type === 'file' &&
-          ((item.imageData && item.imageMimeType) ||
-            (item.file && item.file.type?.startsWith('image/')))
+          ((item.imageData && isSupportedImageMimeType(item.imageMimeType)) ||
+            (item.file && isSupportedImageMimeType(item.file.type)))
         ),
     ),
   );

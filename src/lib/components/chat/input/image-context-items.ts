@@ -11,6 +11,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import type { ContextItem } from './context-api';
 import { parseImageDataUrl } from './image-data-url';
+import { imageAttachmentName, isSupportedImageMimeType } from './image-attachment-format';
 
 const logger = createLogger('image-context-items');
 
@@ -90,7 +91,7 @@ export async function imageFilesToContextItems(
       const { mimeType, data: base64Data } = parsed;
 
       const timestamp = Date.now();
-      const fileName = file.name || `image-${timestamp}.${mimeType.split('/')[1] || 'png'}`;
+      const fileName = file.name || imageAttachmentName(mimeType, `image-${timestamp}`);
       items.push({
         id: `file-upload-${timestamp}-${++uploadSequence}-${fileName}`,
         type: 'file',
@@ -100,6 +101,7 @@ export async function imageFilesToContextItems(
         file,
         imageData: base64Data,
         imageMimeType: mimeType,
+        ...(!isSupportedImageMimeType(mimeType) ? { placementFileName: fileName } : {}),
       });
     } catch (error) {
       logger.error('Failed to add image to context', { fileName: file.name, error });
