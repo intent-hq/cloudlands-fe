@@ -11,6 +11,7 @@ import type {
   CancellationToken,
   UpdateInfo as ElectronUpdateInfo,
   ProgressInfo,
+  UpdateCheckResult,
 } from 'electron-updater';
 import electronUpdater from 'electron-updater';
 import { DEFAULTS } from '../../../shared/constants';
@@ -52,6 +53,16 @@ import { isUpdateChannel, type UpdateChannel, type UpdateState, type UpdateStatu
 const { autoUpdater } = electronUpdater;
 
 const logger = new Logger('AutoUpdateService');
+
+/** The UTC ISO week and month a check's request reported (its `w`/`m` flags). */
+interface RequestPeriods {
+  week: string;
+  month: string;
+}
+
+function requestPeriodsAt(now: Date): RequestPeriods {
+  return { week: utcIsoWeek(now), month: utcMonth(now) };
+}
 
 // Storage key for the update channel preference
 const UPDATE_CHANNEL_STORAGE_KEY = 'updateChannel';
@@ -400,15 +411,16 @@ class AutoUpdateService {
   }
 
   /**
-   * Resolve the feed for a check with `trigger`: the telemetry feed (with
-   * fresh `k`/`d` parameters), the GitHub feed, or a custom AUTO_UPDATE_URL.
+   * Resolve the feed for a check with `trigger` at `now`: the telemetry feed
+   * (with fresh `k`/`d` parameters), the GitHub feed, or a custom
+   * AUTO_UPDATE_URL.
    */
   private resolveFeed(
     channel: Exclude<UpdateChannel, 'disabled'>,
     trigger: UpdateCheckTrigger,
+    now: Date,
   ): ResolvedUpdateFeed {
     const env = process.env;
-    const now = new Date();
     return resolveUpdateFeed({
       channel,
       githubBase: DEFAULTS.AUTO_UPDATE_URL,
@@ -420,8 +432,8 @@ class AutoUpdateService {
         source: detectInstallSource(process.platform, env),
         trigger,
         daily: isFirstCheckOfUtcDay(this.lastSuccessfulCheckDay, now),
-        weekly: isFirstCheckOfPeriod(this.lastSuccessfulCheckWeek, utcIsoWeek(now)),
-        monthly: isFirstCheckOfPeriod(this.lastSuccessfulCheckMonth, utcMonth(now)),
+        weekly: isFirstCheckOfPeriod(this.lastSuccessfulCheckWeek, requestPeriodsAt(now).week),
+        monthly: isFirstCheckOfPeriod(this.lastSuccessfulCheckMonth, requestPeriodsAt(now).month),
         install: !this.firstSeenEstimated && this.lastSuccessfulCheckDay === null,
         age: installAgeBucket(this.firstSeenDay, now),
       },
@@ -434,14 +446,20 @@ class AutoUpdateService {
   /**
    * Point electron-updater at the feed for `trigger` on the current channel.
    * With `cancellable`, a telemetry feed's manifest request is abortable
-   * through the returned token (see cancellable-feed-provider).
+   * through the returned token (see cancellable-feed-provider). `periods`
+   * are the UTC week/month the feed's `w`/`m` flags were computed for.
    */
   private applyFeed(
     channel: Exclude<UpdateChannel, 'disabled'>,
     trigger: UpdateCheckTrigger,
     cancellable = false,
-  ): { feed: ResolvedUpdateFeed; feedToken: CancellationToken | null } {
-    const feed = this.resolveFeed(channel, trigger);
+  ): {
+    feed: ResolvedUpdateFeed;
+    feedToken: CancellationToken | null;
+    periods: RequestPeriods;
+  } {
+    const now = new Date();
+    const feed = this.resolveFeed(channel, trigger, now);
     let feedToken: CancellationToken | null = null;
     if (feed.kind === 'telemetry' && cancellable) {
       feedToken = new electronUpdater.CancellationToken();
@@ -454,7 +472,7 @@ class AutoUpdateService {
       autoUpdater.setFeedURL({ provider: 'generic', url: feed.url });
     }
     this.activeFeedKind = feed.kind;
-    return { feed, feedToken };
+    return { feed, feedToken, periods: requestPeriodsAt(now) };
   }
 
   /**
@@ -463,8 +481,13 @@ class AutoUpdateService {
    * (`i` is only sent while no check has ever succeeded). Failed checks are
    * never recorded, so a later tick or focus retries (on stable, at most one
    * automatic attempt per hour; see isStableAutomaticCheckDue).
+   *
+   * The day is the day the check succeeded (the cadence's clock). The week
+   * and month are `periods`, those of the request that succeeded: a request
+   * built just before a week/month rollover and answered after it reported
+   * the old period, so recording the new one would suppress its `w`/`m`.
    */
-  private markCheckSucceededToday(): void {
+  private markCheckSucceededToday(periods: RequestPeriods): void {
     const now = new Date();
     const updates: Array<[string, string]> = [];
     const today = utcDay(now);
@@ -472,12 +495,11 @@ class AutoUpdateService {
       this.lastSuccessfulCheckDay = today;
       updates.push([LAST_UPDATE_CHECK_DAY_PREF, today]);
     }
-    const week = utcIsoWeek(now);
+    const { week, month } = periods;
     if (this.lastSuccessfulCheckWeek !== week) {
       this.lastSuccessfulCheckWeek = week;
       updates.push([LAST_UPDATE_WEEK_PREF, week]);
     }
-    const month = utcMonth(now);
     if (this.lastSuccessfulCheckMonth !== month) {
       this.lastSuccessfulCheckMonth = month;
       updates.push([LAST_UPDATE_MONTH_PREF, month]);
@@ -512,10 +534,10 @@ class AutoUpdateService {
   private async runCheckWithFallback(
     channel: Exclude<UpdateChannel, 'disabled'>,
     trigger: UpdateCheckTrigger,
-  ) {
-    const { feedToken } = this.applyFeed(channel, trigger, true);
+  ): Promise<{ result: UpdateCheckResult | null; periods: RequestPeriods }> {
+    const { feedToken, periods } = this.applyFeed(channel, trigger, true);
     if (!feedToken) {
-      return autoUpdater.checkForUpdates();
+      return { result: await autoUpdater.checkForUpdates(), periods };
     }
     this.telemetryAttemptActive = true;
     // Aborting rejects the check, which also clears electron-updater's
@@ -530,7 +552,7 @@ class AutoUpdateService {
     try {
       const result = await autoUpdater.checkForUpdates();
       this.telemetryAttemptActive = false;
-      return result;
+      return { result, periods };
     } catch (error) {
       this.telemetryAttemptActive = false;
       this.activateGithubFallback((error as Error).message);
@@ -541,9 +563,10 @@ class AutoUpdateService {
         this.checkSessionActive = false;
         this.isManualCheck = false;
         this.updateStatus('idle');
-        return null;
+        return { result: null, periods };
       }
-      this.applyFeed(this.state.channel, trigger);
+      // The retry is a new request: its own periods are the ones to record.
+      const retry = this.applyFeed(this.state.channel, trigger);
       this.startCheckTimeout();
       // The retry's 'checking-for-update' re-arms the renderer watchdog via
       // a 'checking' broadcast, except while an artifact is downloaded: that
@@ -553,7 +576,7 @@ class AutoUpdateService {
       if (this.isManualCheck && this.state.status === 'downloaded') {
         broadcastToRenderers('auto-update:show-toast');
       }
-      return autoUpdater.checkForUpdates();
+      return { result: await autoUpdater.checkForUpdates(), periods: retry.periods };
     } finally {
       clearTimeout(abortTimer);
       this.telemetryAttemptActive = false;
@@ -880,8 +903,8 @@ class AutoUpdateService {
       this.checkSessionActive = true;
       this.startCheckTimeout();
       const epochAtStart = this.channelSwitchEpoch;
-      const result = await this.runCheckWithFallback(this.state.channel, trigger);
-      if (result) this.markCheckSucceededToday();
+      const { result, periods } = await this.runCheckWithFallback(this.state.channel, trigger);
+      if (result) this.markCheckSucceededToday(periods);
       // autoDownload path: when this check found an update and started
       // downloading it, the result carries the token that can cancel that
       // download. Keep it so a channel switch can cancel the in-flight

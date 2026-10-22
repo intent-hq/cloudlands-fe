@@ -93,7 +93,10 @@ type Query = Record<string, string>;
 /**
  * Start a service at `now` with `prefs` on disk. `feeds` records the query
  * of each check's telemetry feed (null when it ran on GitHub). Checks answer
- * "no update" unless `fail()` is called first.
+ * "no update" unless `fail()` is called first. `inFlight(fn)` runs `fn` once
+ * while the next request is pending (after its feed was built, before it
+ * answers), e.g. to move the clock across a period boundary; whether that
+ * request fails is fixed before `fn` runs.
  */
 async function setup(now: string, prefs: Record<string, unknown> | null = {}) {
   vi.setSystemTime(new Date(now));
@@ -105,13 +108,18 @@ async function setup(now: string, prefs: Record<string, unknown> | null = {}) {
   const feedMock = updater.setFeedURL as unknown as Mock;
   const feeds: (Query | null)[] = [];
   let failing = false;
+  let duringRequest: (() => void) | null = null;
   checkMock.mockImplementation(async () => {
     const url = (feedMock.mock.calls.at(-1)?.[0] as { url: string }).url;
     feeds.push(
       url.startsWith(TELEMETRY_PREFIX) ? Object.fromEntries(new URL(url).searchParams) : null,
     );
     updaterHandlers['checking-for-update']();
-    if (failing) {
+    const failsNow = failing;
+    const pending = duringRequest;
+    duringRequest = null;
+    pending?.();
+    if (failsNow) {
       const error = new Error('net::ERR_INTERNET_DISCONNECTED');
       updaterHandlers['error'](error);
       throw error;
@@ -137,6 +145,9 @@ async function setup(now: string, prefs: Record<string, unknown> | null = {}) {
     },
     fail: (value = true) => {
       failing = value;
+    },
+    inFlight: (fn: () => void) => {
+      duringRequest = fn;
     },
   };
 }
@@ -349,6 +360,132 @@ describe('rollover', () => {
       { d: '1', w: '0', m: '1' },
       { d: '1', w: '1', m: '0' },
     ]);
+  });
+});
+
+describe('rollover while a check is in flight', () => {
+  const settled = {
+    firstSeenDay: '2026-01-10',
+    firstSeenEstimated: false,
+  };
+
+  it('a week rolling over mid-request records the week the request reported, so the new week still sends w=1', async () => {
+    const { feeds, check, inFlight } = await setup('2026-10-25T23:59:59Z', {
+      ...settled,
+      lastUpdateCheckDay: '2026-10-25',
+      lastUpdateWeek: '2026-W43',
+      lastUpdateMonth: '2026-10',
+    });
+
+    inFlight(() => vi.setSystemTime(new Date('2026-10-26T00:00:30Z')));
+    await check();
+    expect((await readPrefs()).lastUpdateWeek).toBe('2026-W43');
+    await check();
+    await check();
+
+    expect(feeds.map((q) => q && { w: q.w, m: q.m })).toEqual([
+      { w: '0', m: '0' },
+      { w: '1', m: '0' },
+      { w: '0', m: '0' },
+    ]);
+    expect((await readPrefs()).lastUpdateWeek).toBe('2026-W44');
+  });
+
+  it('a month rolling over mid-request records the month the request reported, so the new month still sends m=1', async () => {
+    const { feeds, check, inFlight } = await setup('2026-10-31T23:59:59Z', {
+      ...settled,
+      lastUpdateCheckDay: '2026-10-31',
+      lastUpdateWeek: '2026-W44',
+      lastUpdateMonth: '2026-10',
+    });
+
+    inFlight(() => vi.setSystemTime(new Date('2026-11-01T00:00:30Z')));
+    await check();
+    expect((await readPrefs()).lastUpdateMonth).toBe('2026-10');
+    await check();
+
+    expect(feeds.map((q) => q && { w: q.w, m: q.m })).toEqual([
+      { w: '0', m: '0' },
+      { w: '0', m: '1' },
+    ]);
+    expect((await readPrefs()).lastUpdateMonth).toBe('2026-11');
+  });
+
+  it('keeps the once-a-day cadence: the day is still the day the check succeeded', async () => {
+    const { check, inFlight } = await setup('2026-10-25T23:59:59Z', {
+      ...settled,
+      lastUpdateCheckDay: '2026-10-25',
+      lastUpdateWeek: '2026-W43',
+      lastUpdateMonth: '2026-10',
+    });
+
+    inFlight(() => vi.setSystemTime(new Date('2026-10-26T00:00:30Z')));
+    await check();
+
+    expect(await readPrefs()).toMatchObject({
+      lastUpdateCheckDay: '2026-10-26',
+      lastUpdateWeek: '2026-W43',
+    });
+  });
+
+  it('a failed check spanning the rollover records nothing', async () => {
+    const { feeds, check, inFlight, fail } = await setup('2026-10-25T23:59:59Z', {
+      ...settled,
+      lastUpdateCheckDay: '2026-10-25',
+      lastUpdateWeek: '2026-W43',
+      lastUpdateMonth: '2026-10',
+    });
+
+    fail();
+    inFlight(() => vi.setSystemTime(new Date('2026-10-26T00:00:30Z')));
+    await check();
+    expect(await readPrefs()).toMatchObject({
+      lastUpdateCheckDay: '2026-10-25',
+      lastUpdateWeek: '2026-W43',
+    });
+    expect(feeds).toHaveLength(2);
+  });
+
+  it('a GitHub fallback built before the rollover and answered after it records the pre-rollover week', async () => {
+    const first = await setup('2026-10-25T23:59:59Z', {
+      ...settled,
+      lastUpdateCheckDay: '2026-10-25',
+      lastUpdateWeek: '2026-W43',
+      lastUpdateMonth: '2026-10',
+    });
+
+    first.fail();
+    first.inFlight(() => {
+      first.fail(false);
+      first.inFlight(() => vi.setSystemTime(new Date('2026-10-26T00:00:30Z')));
+    });
+    await first.check();
+
+    expect(first.feeds.map((q) => q && { w: q.w })).toEqual([{ w: '0' }, null]);
+    expect((await readPrefs()).lastUpdateWeek).toBe('2026-W43');
+
+    const second = await relaunch('2026-10-26T09:00:00Z');
+    await second.check();
+    expect(cohort(second.feeds[0])?.w).toBe('1');
+  });
+
+  it('a GitHub fallback built after the rollover records the new week', async () => {
+    const { feeds, check, inFlight, fail } = await setup('2026-10-25T23:59:59Z', {
+      ...settled,
+      lastUpdateCheckDay: '2026-10-25',
+      lastUpdateWeek: '2026-W43',
+      lastUpdateMonth: '2026-10',
+    });
+
+    fail();
+    inFlight(() => {
+      fail(false);
+      vi.setSystemTime(new Date('2026-10-26T00:00:30Z'));
+    });
+    await check();
+
+    expect(feeds.map((q) => q && { w: q.w })).toEqual([{ w: '0' }, null]);
+    expect((await readPrefs()).lastUpdateWeek).toBe('2026-W44');
   });
 });
 
