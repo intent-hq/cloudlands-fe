@@ -631,8 +631,6 @@
               })}
             </p>
           {/if}
-
-          <!-- Title -->
           {#if !isGeneratingPR}
             <div>
               <span class="type-caption font-normal text-muted-foreground mb-1 block"
@@ -650,8 +648,6 @@
               />
             </div>
           {/if}
-
-          <!-- Description -->
           <div>
             <span class="type-caption font-normal text-muted-foreground mb-1 block"
               >{m.workspace_prCreator_descriptionField_label()}</span
@@ -674,8 +670,6 @@
               />
             </div>
           </div>
-
-          <!-- Target Branch -->
           <div>
             <span class="type-caption font-normal text-muted-foreground mb-1 block"
               >{m.workspace_prSection_targetBranch_label()}</span
@@ -690,8 +684,6 @@
               }}
             />
           </div>
-
-          <!-- Buttons -->
           <div class="flex items-center gap-2 flex-wrap w-full">
             <Button
               variant="default"
