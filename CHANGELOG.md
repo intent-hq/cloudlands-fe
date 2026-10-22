@@ -4,6 +4,21 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.228.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.227.1...v2.228.0) (2026-10-22)
+
+
+### 🚀 Features
+
+* **auto-update:** send weekly/monthly/install flags and install age ([#3614](https://github.com/intent-hq/cloudlands-fe/issues/3614)) ([2c856cb](https://github.com/intent-hq/cloudlands-fe/commit/2c856cbeebccfc107337a18bd015d05528c18d5c))
+* **settings:** reorder provider profiles, backup flag and failover chat notice ([#3587](https://github.com/intent-hq/cloudlands-fe/issues/3587)) ([5a665eb](https://github.com/intent-hq/cloudlands-fe/commit/5a665ebc649b229694cb675971ca4397872556de))
+
+
+### 🐛 Bug Fixes
+
+* **browser:** agent captures work for unopened workspaces and minimized windows ([#3552](https://github.com/intent-hq/cloudlands-fe/issues/3552)) ([879db7a](https://github.com/intent-hq/cloudlands-fe/commit/879db7a775358ddd05b2fdf86821f16d89a8dd2b))
+* bump intentd sidecar to v0.11.27 ([#3616](https://github.com/intent-hq/cloudlands-fe/issues/3616)) ([ba1a960](https://github.com/intent-hq/cloudlands-fe/commit/ba1a960b24c8f1b7243fe814a70058c9a7995a2c))
+* preserve unsupported image attachments as readable files ([#3597](https://github.com/intent-hq/cloudlands-fe/issues/3597)) ([a2ec162](https://github.com/intent-hq/cloudlands-fe/commit/a2ec162f6aa0e8ba322eef4f897aef247b2f227b))
+
 ## [2.227.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.227.0...v2.227.1) (2026-10-22)
 
 
