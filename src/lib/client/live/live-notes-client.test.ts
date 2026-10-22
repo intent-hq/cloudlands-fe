@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CreateNoteRequest } from '$shared/types';
+import { m } from '$shared/paraglide/messages.js';
 
 // FAKE transport only: the backend bridge is mocked so no note mutation ever
 // reaches the user's real daemon. `resolveNoteWorkspaceId` is stubbed so
@@ -971,8 +972,31 @@ describe('LiveNotesClient.get truncated reads (§5.2 "Truncated note reads")', (
     await expect(client.supportsTruncatedRead()).resolves.toBe(false);
     mockedCapabilities.mockResolvedValue({ server: { capabilities: { noteTruncatedRead: 2 } } });
     await expect(client.supportsTruncatedRead()).resolves.toBe(false);
-    mockedCapabilities.mockRejectedValue(new Error('no transport'));
-    await expect(client.supportsTruncatedRead()).resolves.toBe(false);
+    vi.useFakeTimers();
+    try {
+      mockedCapabilities.mockRejectedValue(new Error('no transport'));
+      const failing = client.supportsTruncatedRead();
+      await vi.runAllTimersAsync();
+      await expect(failing).resolves.toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('waits for the acknowledged hello while the capability is unknown (startup, reconnect)', async () => {
+    vi.useFakeTimers();
+    try {
+      mockedCapabilities
+        .mockResolvedValueOnce({ server: { capabilities: null } })
+        .mockRejectedValueOnce(new Error(m.agent_placement_backendChanged()))
+        .mockResolvedValue({ server: { capabilities: { noteTruncatedRead: 1 } } });
+      const supported = new LiveNotesClient().supportsTruncatedRead();
+      await vi.runAllTimersAsync();
+      await expect(supported).resolves.toBe(true);
+      expect(mockedCapabilities).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('normalizes markers only for truncated rows', () => {

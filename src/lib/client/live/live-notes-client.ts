@@ -10,6 +10,7 @@
  * sole data path (intent-hq/monorepo#1697); there is no legacy `note:*`
  * events-driven refetch.
  */
+import { m } from '$shared/paraglide/messages.js';
 import { AuthorType, ContentType, NoteVisibility } from '$shared/types';
 import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
 import { isProjectionRejected } from '$shared/utils/note-content';
@@ -84,6 +85,10 @@ function normalizeNoteVersion(raw: unknown): NoteVersion | null {
     createdAt: String(r.date ?? ''),
   };
 }
+
+/** Bounded wait for an acknowledged hello while it is being renewed (~3 s). */
+const CAPABILITY_ATTEMPTS = 30;
+const CAPABILITY_RETRY_MS = 100;
 
 /** Coerce a raw daemon note object into the renderer `Note` shape. */
 export function normalizeNote(raw: Record<string, unknown>, workspaceId: string): Note {
@@ -185,17 +190,29 @@ export class LiveNotesClient implements NotesClient {
   /**
    * Whether the connected daemon advertises the truncated note read contract
    * (`server.capabilities.noteTruncatedRead === 1`, §5.2 "Truncated note reads").
-   * Read from the acknowledged hello without another RPC; any failure is "no".
+   * Read from the acknowledged hello without another RPC. While the hello is
+   * being renewed (startup, reconnect) the capability is unknown, not absent:
+   * wait briefly for the acknowledgment instead of falling back to an
+   * unbounded read. Still unknown after the wait, or any failure, is "no".
    */
   async supportsTruncatedRead(): Promise<boolean> {
-    try {
-      const hello = (await observeBackendNodeCapabilities()) as {
-        server?: { capabilities?: { noteTruncatedRead?: unknown } };
-      } | null;
-      return hello?.server?.capabilities?.noteTruncatedRead === 1;
-    } catch {
-      return false;
+    for (let attempt = 0; attempt < CAPABILITY_ATTEMPTS; attempt++) {
+      try {
+        const hello = (await observeBackendNodeCapabilities()) as {
+          server?: { capabilities?: { noteTruncatedRead?: unknown } | null };
+        } | null;
+        const capabilities = hello?.server?.capabilities;
+        if (capabilities) return capabilities.noteTruncatedRead === 1;
+      } catch (error) {
+        // Only a connection that changed under the read is worth another look;
+        // no transport, or one without the observer, is a plain "no".
+        if (!(error instanceof Error) || error.message !== m.agent_placement_backendChanged()) {
+          return false;
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, CAPABILITY_RETRY_MS));
     }
+    return false;
   }
 
   async get(
