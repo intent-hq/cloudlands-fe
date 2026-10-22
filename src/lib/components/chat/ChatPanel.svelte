@@ -7863,11 +7863,7 @@
                   <ChatDraftLoadingGate />
                 {/if}
                 {#if workspace && agentId}
-                  <PresenceTypingIndicator
-                    workspaceId={workspace.id}
-                    {agentId}
-                    class={isChiefWorkspace ? 'px-3 pb-1' : 'regular-composer-content-inset pb-1'}
-                  />
+                  <PresenceTypingIndicator workspaceId={workspace.id} {agentId} class="mb-1" />
                 {/if}
                 <SimpleRichInput
                   bind:this={inputComponent}

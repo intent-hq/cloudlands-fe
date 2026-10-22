@@ -6,6 +6,7 @@
    */
   import { writable } from 'svelte/store';
   import { selectAgentTypingPeople } from '$store/renderer/slices/presence/presence-selectors';
+  import { SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS } from '$lib/components/chat/subscription-disclosure';
   import PresenceAvatarStack from './PresenceAvatarStack.svelte';
   import { presenceTypingLabel } from './presence-person';
 
@@ -32,14 +33,18 @@
 
 {#if label}
   <div
-    class="type-caption flex min-w-0 items-center gap-1.5 text-muted-foreground {className}"
+    class="{SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS} subscription-card-row-inset flex min-h-7 min-w-0 items-center gap-2 {className}"
     role="status"
     aria-live="polite"
     data-presence-typing-indicator
   >
-    <PresenceAvatarStack people={$typing$} size={14} decorative />
+    <span
+      class="inline-flex min-w-(--agent-avatar-standard-surface-size) shrink-0 items-center justify-center"
+    >
+      <PresenceAvatarStack people={$typing$} size={16} decorative />
+    </span>
     <span class="min-w-0 truncate">{label}</span>
-    <span class="inline-flex items-center gap-0.5" aria-hidden="true">
+    <span class="inline-flex shrink-0 items-center gap-0.5" aria-hidden="true">
       <span class="typing-dot size-1 rounded-full bg-current"></span>
       <span class="typing-dot size-1 rounded-full bg-current" style="animation-delay: 0.2s"></span>
       <span class="typing-dot size-1 rounded-full bg-current" style="animation-delay: 0.4s"></span>
