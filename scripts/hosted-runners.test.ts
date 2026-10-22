@@ -188,21 +188,19 @@ describe('GitHub-hosted CI runners', () => {
   });
 
   it('2 free slots and 4 heavy jobs: exactly 2 self-hosted, 2 hosted', async () => {
-    // A PR runs Type Check & Lint plus four Unit Tests shards; the queue-only jobs hold no slot.
+    // A PR runs four Unit Tests shards on the pool; the queue-only jobs hold no slot.
     const r = await route({ event: 'pull_request' });
     expect(Object.keys(r.slots).sort()).toEqual([
       'build-web',
-      'checks',
       'test-1',
       'test-2',
       'test-3',
       'test-4',
       'test-integration',
     ]);
-    // The Unit Tests shards outrank Type Check & Lint, then go in shard order;
-    // each shard has its own key.
+    // The shards go in shard order; each shard has its own key.
     expect(onSlots(r.slots)).toEqual(['test-1', 'test-2']);
-    for (const key of ['checks', 'test-3', 'test-4', 'build-web', 'test-integration'])
+    for (const key of ['test-3', 'test-4', 'build-web', 'test-integration'])
       expect(r.slots[key]).toEqual(['gh-linux-8x']);
     expect(r.burst).toBe('true');
     expect(r.messages.some((m) => m.includes('free=2 (org list) granted=2'))).toBe(true);
@@ -222,7 +220,19 @@ describe('GitHub-hosted CI runners', () => {
       runners: [slot, slot, slot, slot],
     });
     expect(onSlots(four.slots)).toEqual(['test-1', 'test-2', 'test-3', 'test-4']);
-    expect(four.slots.checks).toEqual(['gh-linux-8x']);
+  });
+
+  it('runs Type Check & Lint on the free standard runner, outside the slot list', () => {
+    // Measured medium-sized (3.2 busy cores, 11.7 GiB peak): it fits a 4-vCPU / 16 GB
+    // ubuntu-24.04 runner. It never reads the router, so it cannot land on the 1-CPU small pool.
+    const workflow = read('.github/workflows/intent-pr.yml');
+    const checks = workflow.jobs.checks;
+    expect(checks.name).toBe('Type Check & Lint');
+    expect(checks['runs-on']).toBe('ubuntu-24.04');
+    const listed = JSON.parse(
+      workflow.jobs.route.steps.find((s: { id?: string }) => s.id === 'decide').env.SLOT_JOBS,
+    ) as { key: string }[];
+    expect(listed.map((j) => j.key)).not.toContain('checks');
   });
 
   it.each([
@@ -236,7 +246,7 @@ describe('GitHub-hosted CI runners', () => {
     ['a truncated queue view', { truncated: true }],
   ])('sends every listed heavy job hosted with %s', async (_name, fixture: Fixture) => {
     const r = await route(fixture);
-    expect(Object.keys(r.slots)).toHaveLength(7);
+    expect(Object.keys(r.slots)).toHaveLength(6);
     for (const labels of Object.values(r.slots)) expect(labels).toEqual(['gh-linux-8x']);
   });
 
@@ -265,7 +275,7 @@ describe('GitHub-hosted CI runners', () => {
     // Raising the org or repo variable alone grows the pool: 14 slots take every listed job.
     const slots14 = Array.from({ length: 14 }, () => slot);
     const grown = await route({ runners: slots14, env: { THRESHOLD: '14' } });
-    expect(onSlots(grown.slots)).toHaveLength(7);
+    expect(onSlots(grown.slots)).toHaveLength(6);
     expect(grown.burst).toBe('false');
     expect(grown.messages.some((m) => m.includes('threshold=14 online=14 free=14'))).toBe(true);
     // The online count still caps it, and so does the variable.

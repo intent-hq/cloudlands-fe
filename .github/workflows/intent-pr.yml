@@ -75,13 +75,11 @@ jobs:
           # many get a slot as are free (see the slot-fitting note in the
           # script). Minutes are typical merge-queue durations; `events`
           # keeps a queue-only job from holding a slot on a PR; `shards: 4`
-          # gives each Unit Tests leg its own key (test-1..test-4). The
-          # `checks` minutes are a ranking choice, not a measurement: keep
-          # them below the shards' so all four shards get slots when four
-          # are free (Type Check & Lint is medium-sized and already measured).
+          # gives each Unit Tests leg its own key (test-1..test-4). Type Check
+          # & Lint is not listed: it runs on the free standard runner (see
+          # the `checks` job).
           SLOT_JOBS: >-
             [
-            {"key":"checks","label":"gh-linux-8x","minutes":12},
             {"key":"test","label":"gh-linux-8x","minutes":13,"shards":4},
             {"key":"build-web","label":"gh-linux-8x","minutes":4,"events":["merge_group"]},
             {"key":"test-integration","label":"gh-linux-8x","minutes":2,"events":["merge_group"]}
@@ -554,7 +552,10 @@ jobs:
     # a skip unless the fast path was taken.
     needs: [route, release-fast-path]
     if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
-    runs-on: ${{ fromJSON(needs.route.outputs.slots || '{}')['checks'] || fromJSON('["gh-linux-8x"]') }}
+    # Measured medium-sized (3.2 busy cores p90, 11.7 GiB peak with page
+    # cache), so it fits the free 4-vCPU / 16 GB standard runner. Not routed:
+    # the router maps ubuntu-24.04 to the 1-CPU small pool.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
