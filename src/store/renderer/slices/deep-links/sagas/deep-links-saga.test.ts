@@ -37,7 +37,6 @@ import type { Workspace } from '$shared/types';
 import { setShowCreateModal } from '../../sidebar-nav/sidebar-nav-slice';
 import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
 import { setUpdateChannel } from '../../user-preferences/user-preferences-slice';
-import { setWorkspaceEntity } from '../../workspace/workspace-slice';
 import type { DeepLinkActionPayload } from '../deep-links-types';
 import { deepLinksSaga, drainPendingDeepLinks, handleDeepLinkAction } from './deep-links-saga';
 
@@ -127,40 +126,27 @@ describe('intent://open?path (the intent CLI)', () => {
     expect(mocks.create).not.toHaveBeenCalled();
   });
 
-  it('creates a no-worktree workspace on the folder when none exists, then opens it', async () => {
-    const created = workspace({ id: 'new-ws', repositoryPath: '/Users/me', skipWorktree: true });
-    mocks.create.mockResolvedValue({ ok: true, data: { workspace: created } });
-    const dispatched = await run({ type: 'open', params: { path: '/Users/me' } });
+  it('opens New Space on a folder with no workspace, with no worktree chosen, and never creates', async () => {
+    const dispatched = await run({ type: 'open', params: { path: '/Users/me/' } });
     expect(mocks.list).toHaveBeenCalledWith({ lite: true });
-    expect(mocks.create).toHaveBeenCalledWith({
-      title: 'me',
-      repositoryPath: '/Users/me',
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(dispatched).toEqual([setShowCreateModal(true)]);
+    expect(JSON.parse(sessionStorage.getItem('workspace-prefill') ?? 'null')).toEqual({
+      repoPath: '/Users/me',
       skipIsolation: true,
+      title: 'me',
     });
-    expect(dispatched).toContainEqual(setWorkspaceEntity(created));
-    expect(dispatched).toContainEqual(openWorkspaceTab('new-ws'));
-    expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/new-ws');
   });
 
-  it('creates a fresh workspace when the only match is archived', async () => {
+  it('opens New Space rather than reviving a folder whose only workspace is archived', async () => {
     mocks.list.mockResolvedValue({
       ok: true,
       data: [workspace({ id: 'old', repositoryPath: '/Users/me', archived: true })],
     });
-    mocks.create.mockResolvedValue({ ok: true, data: { workspace: workspace({ id: 'fresh' }) } });
-    await run({ type: 'open', params: { path: '/Users/me' } });
-    expect(mocks.create).toHaveBeenCalledTimes(1);
-    expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/fresh');
-  });
-
-  it('shows an error naming the folder when the daemon rejects the create', async () => {
-    mocks.create.mockResolvedValue({ ok: false, error: 'permission denied' });
     const dispatched = await run({ type: 'open', params: { path: '/Users/me' } });
-    expect(mocks.notifyError).toHaveBeenCalledTimes(1);
-    expect(mocks.notifyError.mock.calls[0][0]).toContain('/Users/me');
-    expect(mocks.notifyError.mock.calls[0][1]).toEqual({ description: 'permission denied' });
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(dispatched).toEqual([setShowCreateModal(true)]);
     expect(mocks.navigateToRoute).not.toHaveBeenCalled();
-    expect(dispatched).toEqual([]);
   });
 
   it('shows an error when the workspace list cannot be read', async () => {

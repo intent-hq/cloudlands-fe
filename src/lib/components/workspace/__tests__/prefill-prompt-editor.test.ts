@@ -264,4 +264,37 @@ describe('prefilled prompt reaches the focused prompt editor', () => {
     });
     expect(mocks.create).not.toHaveBeenCalled();
   });
+
+  describe('no-worktree folder prefill (intent CLI, folder without a workspace)', () => {
+    const createButton = () => screen.getByRole('button', { name: /create workspace/i });
+
+    it('selects the folder with no worktree, never as a new repo, and is creatable without a branch', async () => {
+      sessionStorage.setItem(
+        PREFILL_KEY,
+        JSON.stringify({ repoPath: '/Users/me', skipIsolation: true, title: 'me' }),
+      );
+      const { component } = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+      await component.applyPrefill();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('picker-repo-path').textContent).toBe('/Users/me');
+        expect(screen.getByTestId('picker-skip-isolation').textContent).toBe('true');
+      });
+      expect(screen.getByTestId('picker-is-new-repo').textContent).toBe('false');
+      expect(screen.getByTestId('picker-branch').textContent).toBe('');
+      await waitFor(() => expect((createButton() as HTMLButtonElement).disabled).toBe(false));
+    });
+
+    it('still requires a branch for a folder prefill that keeps a worktree', async () => {
+      sessionStorage.setItem(PREFILL_KEY, JSON.stringify({ repoPath: '/Users/me' }));
+      const { component } = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+      await component.applyPrefill();
+
+      await waitFor(() =>
+        expect(screen.getByTestId('picker-repo-path').textContent).toBe('/Users/me'),
+      );
+      expect(screen.getByTestId('picker-skip-isolation').textContent).toBe('false');
+      expect((createButton() as HTMLButtonElement).disabled).toBe(true);
+    });
+  });
 });

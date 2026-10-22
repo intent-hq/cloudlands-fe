@@ -424,6 +424,9 @@
           }
         }
         if (!hasCheckoutDraft && data.branch) branch = data.branch;
+        // A link for a folder with no workspace (the `intent` CLI) asks for
+        // no worktree: the workspace works in the folder itself.
+        if (!hasCheckoutDraft && data.repoPath && data.skipIsolation === true) skipIsolation = true;
 
         // Apply remote environment settings
         if (!hasCheckoutDraft && data.environmentType === 'remote' && data.sshConfig) {
@@ -1226,6 +1229,9 @@
           branch = '';
         }
         if (!hasCheckoutDraft && data.branch) branch = data.branch;
+        // A link for a folder with no workspace (the `intent` CLI) asks for
+        // no worktree: the workspace works in the folder itself.
+        if (!hasCheckoutDraft && data.repoPath && data.skipIsolation === true) skipIsolation = true;
 
         // Apply remote environment settings
         if (!hasCheckoutDraft && data.environmentType === 'remote' && data.sshConfig) {
@@ -1861,7 +1867,11 @@
         ? $checkoutCanCreate$
         : !!repoPath &&
           isValidPath &&
-          (isNewRepo || !!branch || repoType === 'remote') &&
+          // No worktree on a local folder needs no branch (it may not be a repo).
+          (isNewRepo ||
+            !!branch ||
+            repoType === 'remote' ||
+            (skipIsolation && repoType === 'local')) &&
           (repoType !== 'github' || githubAuthNeeded === 'none')) &&
       !hasBlockingAttachments(contextItems),
   );

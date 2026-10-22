@@ -9,7 +9,7 @@
  * links for the same folder cannot race into two workspaces.
  *
  * - `open?path=` (the `intent` CLI): open the workspace working in that folder,
- *   or create one directly on the folder (`skipIsolation`, no worktree).
+ *   or open New Space on the folder with no worktree (`skipIsolation`) chosen.
  * - `open?id=`: open that workspace.
  * - `create` / `clone`: open the New Space form prefilled from the link. The
  *   link never creates a workspace by itself (`autoCreate` is ignored).
@@ -39,7 +39,6 @@ import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
 import { selectUpdateChannel } from '../../user-preferences/user-preferences-selectors';
 import { setUpdateChannel } from '../../user-preferences/user-preferences-slice';
 import { workspaceClient } from '../../workspace/utils/workspace.client';
-import { setWorkspaceEntity } from '../../workspace/workspace-slice';
 import type { DeepLinkActionPayload } from '../deep-links-types';
 import {
   WORKSPACE_PREFILL_KEY,
@@ -75,14 +74,13 @@ function* openFolder(rawPath: string, alias?: string): SagaGenerator<void> {
       yield* call(showWorkspace, existing.id);
       return;
     }
-    const created = yield* call([workspaceClient, workspaceClient.create], {
-      title: folderTitle(folder),
-      repositoryPath: folder,
+    // A new folder never gets a workspace without a click: any web page can
+    // send this link. Open New Space on the folder with no worktree instead.
+    yield* call(openNewSpaceForm, {
+      repoPath: folder,
       skipIsolation: true,
+      title: folderTitle(folder),
     });
-    if (!created.ok) throw new Error(created.error);
-    yield* put(setWorkspaceEntity(created.data.workspace));
-    yield* call(showWorkspace, created.data.workspace.id);
   } catch (error) {
     logger.warn('Failed to open folder from deep link', { folder, error });
     yield* call(notify.error, m.deeplink_links_openFolderFailed_error({ folder }), {
@@ -107,8 +105,7 @@ function* openWorkspaceById(workspaceId: string): SagaGenerator<void> {
   }
 }
 
-function* openCreateForm(params: Record<string, string>): SagaGenerator<void> {
-  const prefill = buildCreatePrefill(params);
+function* openNewSpaceForm(prefill: Record<string, unknown>): SagaGenerator<void> {
   yield* call(() => sessionStorage.setItem(WORKSPACE_PREFILL_KEY, JSON.stringify(prefill)));
   // The New Space modal applies the prefill when it opens; if it is already
   // open, close it for a beat so the new link's prefill is applied instead of
@@ -118,6 +115,10 @@ function* openCreateForm(params: Record<string, string>): SagaGenerator<void> {
     yield* delay(50);
   }
   yield* put(setShowCreateModal(true));
+}
+
+function* openCreateForm(params: Record<string, string>): SagaGenerator<void> {
+  yield* call(openNewSpaceForm, buildCreatePrefill(params));
 }
 
 function* switchUpdateChannel(beta: string): SagaGenerator<void> {
