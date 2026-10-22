@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.229.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.228.1...v2.229.0) (2026-10-22)
+
+
+### 🚀 Features
+
+* show large notes truncated and read-only ([#3607](https://github.com/intent-hq/cloudlands-fe/issues/3607)) ([912447a](https://github.com/intent-hq/cloudlands-fe/commit/912447aa4f34c12353b28c0f7f9239f689aab0e2))
+
+
+### 🐛 Bug Fixes
+
+* align Aurora clipping and preserve panel shadows ([#3619](https://github.com/intent-hq/cloudlands-fe/issues/3619)) ([67de219](https://github.com/intent-hq/cloudlands-fe/commit/67de219458c7a7a6742e40296005105a7fc9fdae))
+* bump intentd sidecar to v0.11.29 ([#3621](https://github.com/intent-hq/cloudlands-fe/issues/3621)) ([721a39d](https://github.com/intent-hq/cloudlands-fe/commit/721a39db0a2afcefac942959e238f0d4e2952284))
+
 ## [2.228.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.228.0...v2.228.1) (2026-10-22)
 
 
