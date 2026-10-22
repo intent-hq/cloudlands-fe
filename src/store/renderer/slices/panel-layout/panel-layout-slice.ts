@@ -903,9 +903,10 @@ export const clearPanelLayout = createAction<[wsId: string]>('panelLayout/clearP
  */
 export const destroyTabsByType = createAction(
   'panelLayout/destroyTabsByType',
-  (wsId: string, tabType: PanelTabType, timestamp?: number) => ({
+  (wsId: string, tabType: PanelTabType, timestamp?: number, preservedScriptIds: string[] = []) => ({
     wsId,
     tabType,
+    preservedScriptIds,
     timestamp: timestamp ?? Date.now(),
   }),
 );
@@ -2838,8 +2839,10 @@ panelLayoutReducer.with(closeTabsByType, (state, { payload }) => {
 });
 // --- Destroy Tabs By Type (multiplayer w3) ---
 panelLayoutReducer.with(destroyTabsByType, (state, { payload }) => {
-  const { wsId, tabType, timestamp } = payload;
-  const isType = (tab: PanelTab) => tab.type === tabType;
+  const { wsId, tabType, timestamp, preservedScriptIds } = payload;
+  const isType = (tab: PanelTab) =>
+    tab.type === tabType &&
+    !(tab.type === 'terminal' && tab.scriptId && preservedScriptIds.includes(tab.scriptId));
   const before = getWorkspaceState(state, wsId);
   const tabsToDestroy: { tabId: string; panelId: string }[] = [];
   for (const [pId, panel] of Object.entries(before.panels)) {
@@ -4739,3 +4742,46 @@ panelLayoutReducer.with(revealHiddenTabAvoidingPanel, (state, { payload }) => {
 
 // Wire up the mutable reference for recursive dispatch
 _reducerRef = panelLayoutReducer;
+
+/** Promote the local composer in every restorable layout without changing tab identity. */
+export const promoteDiscussionTab = createAction<
+  [layoutId: string, tabId: string, conversationId: string, title: string]
+>('panelLayout/promoteDiscussionTab');
+panelLayoutReducer.with(
+  promoteDiscussionTab,
+  (state, { payload: [layoutId, tabId, conversationId, title] }) => {
+    if (!conversationId || conversationId === 'new' || conversationId === 'default') return state;
+    const ws = getWorkspaceState(state, layoutId);
+    const promote = (tab: PanelTab): PanelTab =>
+      tab.id === tabId && tab.type === 'discussion' && tab.data?.conversationId === 'new'
+        ? { ...tab, data: { ...tab.data, conversationId }, title }
+        : tab;
+    const panels = (value: Record<string, PanelState>) =>
+      Object.fromEntries(
+        Object.entries(value).map(([id, panel]) => [
+          id,
+          { ...panel, tabs: panel.tabs.map(promote) },
+        ]),
+      );
+    return setWorkspaceState(state, layoutId, {
+      ...ws,
+      panels: panels(ws.panels),
+      hiddenTabs: createCollection('id', getItems(ws.hiddenTabs).map(promote)),
+      recentlyClosed: ws.recentlyClosed.map((entry) => ({ ...entry, tab: promote(entry.tab) })),
+      recentlyClosedColumns: createCollection(
+        'historyId',
+        getItems(
+          ws.recentlyClosedColumns ??
+            createCollection<RecentlyClosedPanelColumn, 'historyId'>('historyId'),
+        ).map((entry) => ({
+          ...entry,
+          panel: { ...entry.panel, tabs: entry.panel.tabs.map(promote) },
+        })),
+      ),
+      layoutHistory: ws.layoutHistory.map((snapshot) => ({
+        ...snapshot,
+        panels: panels(snapshot.panels),
+      })),
+    });
+  },
+);

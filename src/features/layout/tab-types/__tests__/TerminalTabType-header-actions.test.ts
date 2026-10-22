@@ -3,12 +3,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { closeTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { openTerminalOverlay } from '$store/renderer/slices/terminals/terminals-slice';
 
-vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectWorkspaceActionContext: { select: () => 'admitted' },
-}));
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', async () => {
+  const { store } = await import('$store/renderer/store');
+  return {
+    selectWorkspaceActionContext: store.createSelector(() => mockState.authority),
+    selectWorkspaceParticipationContext: store.createSelector(() => mockState.authority),
+    selectWorkspaceSavedScriptContext: store.createSelector(() => mockState.authority),
+    selectCanManageWorkspace: store.createSelector(() => mockState.authority !== null),
+  };
+});
 
 const dispatch = vi.hoisted(() => vi.fn());
-const mockState = vi.hoisted(() => ({ scripts: { byWorkspaceId: {} as Record<string, any> } }));
+const mockState = vi.hoisted(() => ({
+  authority: 'admitted' as string | null,
+  scripts: { byWorkspaceId: {} as Record<string, any> },
+}));
 vi.mock('$lib/components/patterns/confirm', () => ({ confirm: vi.fn().mockResolvedValue(true) }));
 vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: vi.fn() } }));
 

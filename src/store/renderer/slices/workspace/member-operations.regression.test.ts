@@ -1,7 +1,7 @@
 import { terminalCreationSaga } from '../terminals/sagas/terminal-creation-saga';
 import { createPanelTerminalRequested } from '../terminals/terminals-slice';
 import { scriptsOperationSaga } from '../scripts/sagas/scripts-operation-saga';
-import { startScriptRequested } from '../scripts/scripts-slice';
+import { startScriptRequested, setScriptsData } from '../scripts/scripts-slice';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
@@ -26,6 +26,11 @@ import {
   selectWorkspaceManagementDenied,
   selectHidesAgentLifecycleActions,
   selectWorkspaceActionContext,
+  selectWorkspaceAgentManagementContext,
+  selectWorkspaceSavedScriptContext,
+  selectWorkspaceScriptReadContext,
+  selectWorkspaceParticipationContext,
+  selectCanShareWorkspace,
 } from './workspace-selectors';
 import {
   requestDeleteWorkspace,
@@ -84,7 +89,7 @@ let dispose: () => void, task: Task | undefined;
 const settle = async () => {
   for (let i = 0; i < 20; i++) await Promise.resolve();
 };
-function admit(role: 'owner' | 'member' | 'guest', revision = 1) {
+function admit(role: 'owner' | 'member' | 'guest', revision = 1, workspaceGuestRoles = false) {
   const p = store.state.principal;
   store.dispatch(
     principalReceived(
@@ -105,6 +110,7 @@ function admit(role: 'owner' | 'member' | 'guest', revision = 1) {
         },
         capabilities: {
           hostMembership: true,
+          workspaceGuestRoles,
           personalPairing: false,
           authenticatedDevices: false,
           collaborationIdentity: false,
@@ -220,6 +226,8 @@ describe('real store, operation saga and client authority composition', () => {
     loaded();
     expect(selectHidesAgentLifecycleActions.select(store.state, row.id)).toBe(true);
     expect(selectWorkspaceActionContext.select(store.state, row.id)).toBeNull();
+    expect(selectWorkspaceSavedScriptContext.select(store.state, row.id)).toBeNull();
+    expect(selectWorkspaceScriptReadContext.select(store.state, row.id)).not.toBeNull();
   });
   it('ordinary scoped guest can update title through the actual client', async () => {
     admit('guest');
@@ -921,5 +929,78 @@ describe('real list client and lifecycle projection completeness', () => {
     store.dispatch(replaceWorkspaceList([], { complete: true, deletionTokens: captured }));
     expect(store.state.workspace.invalidatedDeletions[row.id]).toBeUndefined();
     expect(store.state.workspace.deletionTokens[row.id]).toBe('later');
+  });
+});
+
+describe('guest Manager scoped permissions', () => {
+  it('admits saved scripts and agent setup without full management and removes them on downgrade', () => {
+    admit('guest', 1, true);
+    store.dispatch(setWorkspaceEntity({ ...row, myRole: 'manager', canManage: false }));
+    loaded();
+    expect(selectCanManageWorkspace.select(store.state, row.id)).toBe(false);
+    expect(selectCanShareWorkspace.select(store.state, row.id)).toBe(false);
+    expect(selectWorkspaceActionContext.select(store.state, row.id)).toBeNull();
+    expect(selectWorkspaceAgentManagementContext.select(store.state, row.id)).not.toBeNull();
+    expect(selectWorkspaceSavedScriptContext.select(store.state, row.id)).not.toBeNull();
+    expect(selectHidesAgentLifecycleActions.select(store.state, row.id)).toBe(true);
+    expect(selectWorkspaceAgentManagementContext.select(store.state, 'another')).toBeNull();
+    expect(selectWorkspaceSavedScriptContext.select(store.state, ROOT_WORKSPACE_ID)).toBeNull();
+    store.dispatch(
+      bulkUpdateWorkspaceEntities([updateWorkspaceEntity(row.id, { myRole: 'collaborator' })]),
+    );
+    expect(selectWorkspaceAgentManagementContext.select(store.state, row.id)).toBeNull();
+    expect(selectWorkspaceSavedScriptContext.select(store.state, row.id)).toBeNull();
+    expect(selectWorkspaceParticipationContext.select(store.state, row.id)).not.toBeNull();
+  });
+  it('withholds Manager controls on unsupported daemons and while rights are being readmitted', () => {
+    admit('guest');
+    store.dispatch(setWorkspaceEntity({ ...row, myRole: 'manager', canManage: false }));
+    loaded();
+    expect(selectWorkspaceSavedScriptContext.select(store.state, row.id)).toBeNull();
+    admit('guest', 1, true);
+    loaded();
+    expect(selectWorkspaceSavedScriptContext.select(store.state, row.id)).not.toBeNull();
+    store.dispatch(
+      hostMembershipChanged({ principalId: 'principal', action: 'updated', revision: 2 }),
+    );
+    expect(selectWorkspaceAgentManagementContext.select(store.state, row.id)).toBeNull();
+    expect(selectWorkspaceSavedScriptContext.select(store.state, row.id)).toBeNull();
+  });
+  it('sends Manager saved-script start but refuses raw terminal creation', async () => {
+    admit('guest', 1, true);
+    store.dispatch(setWorkspaceEntity({ ...row, myRole: 'manager', canManage: false }));
+    loaded();
+    store.dispatch(
+      setScriptsData(row.id, [
+        {
+          id: 'saved',
+          workspaceId: row.id,
+          name: 'Check',
+          command: 'pnpm check',
+          mode: 'command',
+          purpose: 'saved',
+          source: 'user',
+          createdAt: '2026-10-21',
+          runtime: { status: 'idle', restartCount: 0 },
+        },
+      ]),
+    );
+    mock.script.mockResolvedValue({ success: true });
+    for (const [saga, action, spy, expected] of [
+      [terminalCreationSaga, createPanelTerminalRequested(row.id), mock.terminal, 0],
+      [scriptsOperationSaga, startScriptRequested(row.id, 'saved'), mock.script, 1],
+    ] as const) {
+      const channel = stdChannel();
+      const task = runSaga(
+        { channel, dispatch: (a) => store.dispatch(a), getState: () => store.state },
+        saga,
+      );
+      channel.put(action);
+      await settle();
+      expect(spy).toHaveBeenCalledTimes(expected);
+      task.cancel();
+      await task.toPromise();
+    }
+    expect(mock.script).toHaveBeenCalledWith(row.id, 'saved');
   });
 });

@@ -13,6 +13,7 @@ export const skeletonMetadata = parseUiComponentMetadata({
   category: 'primitive',
   owner: '007-B1',
   callers: [
+    'src/features/discussions/components/DiscussionSkeleton.svelte',
     'src/features/file-tracking/components/diff/TrackedChangeDiffViewer.svelte',
     'src/features/home/HomeLoading.svelte',
     'src/features/inline-html/InlineHtmlPreview.svelte',

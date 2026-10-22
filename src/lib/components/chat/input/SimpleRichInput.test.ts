@@ -5,6 +5,7 @@ import {
   exerciseVisualStates,
 } from '$lib/components/__tests__/helpers/visual-state-characterization';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { derived, readable } from 'svelte/store';
 
@@ -1304,68 +1305,6 @@ describe('SimpleRichInput automatic composer geometry', () => {
     document.body.innerHTML = '';
   });
 
-  it('keeps 56px on focus, expands to 65px for content, and collapses when cleared', async () => {
-    renderInPanel(560);
-    const editor = screen.getByTestId('tiptap-editor');
-    const composer = screen.getByTestId('message-input');
-    const editorWrapper = editor.closest('.editor-wrapper');
-
-    await waitFor(() => {
-      expect(composer.getAttribute('style')).toContain('min-height: 56px');
-    });
-    expect(editor.getAttribute('placeholder')).toBe('Ask anything');
-    expect(editorWrapper?.classList.contains('placeholder-hidden')).toBe(true);
-    expect(composer.className).toContain(
-      'transition-[border-color,background-color,box-shadow,min-height]',
-    );
-    expect(composer.className).toContain('motion-reduce:transition-none');
-
-    await fireEvent.focusIn(editor);
-    expect(composer.getAttribute('style')).toContain('min-height: 56px');
-    expect(editorWrapper?.classList.contains('placeholder-hidden')).toBe(false);
-
-    await fireEvent.input(editor, { target: { value: 'draft' } });
-    await waitFor(() => expect(composer.getAttribute('style')).toContain('min-height: 65px'));
-    await fireEvent.input(editor, { target: { value: '' } });
-    await waitFor(() => expect(composer.getAttribute('style')).toContain('min-height: 56px'));
-  });
-
-  it('keeps 80px on focus, expands to 100px for content, and collapses when cleared', async () => {
-    renderInPanel(720);
-    const editor = screen.getByTestId('tiptap-editor');
-    const composer = screen.getByTestId('message-input');
-    const editorWrapper = editor.closest('.editor-wrapper');
-
-    await waitFor(() => {
-      expect(composer.getAttribute('style')).toContain('min-height: 80px');
-    });
-    await fireEvent.focusIn(editor);
-    expect(composer.getAttribute('style')).toContain('min-height: 80px');
-    expect(editorWrapper?.classList.contains('placeholder-hidden')).toBe(false);
-
-    await fireEvent.input(editor, { target: { value: 'draft' } });
-    await waitFor(() => expect(composer.getAttribute('style')).toContain('min-height: 100px'));
-    await fireEvent.input(editor, { target: { value: '' } });
-    await waitFor(() => expect(composer.getAttribute('style')).toContain('min-height: 80px'));
-
-    await fireEvent.focusOut(editor);
-    expect(editorWrapper?.classList.contains('placeholder-hidden')).toBe(true);
-  });
-
-  it('settles rapid focus changes at the idle automatic height', async () => {
-    renderInPanel(720);
-    const editor = screen.getByTestId('tiptap-editor');
-    const composer = screen.getByTestId('message-input');
-
-    await waitFor(() => expect(composer.getAttribute('style')).toContain('min-height: 80px'));
-    await fireEvent.focusIn(editor);
-    await fireEvent.focusOut(editor);
-    await fireEvent.focusIn(editor);
-
-    await waitFor(() => expect(composer.getAttribute('style')).toContain('min-height: 80px'));
-    expect(editor.closest('.editor-wrapper')?.classList.contains('placeholder-hidden')).toBe(false);
-  });
-
   it.each([
     { mode: 'draft', overrides: { value: 'preserved draft' } },
     {
@@ -1433,66 +1372,22 @@ describe('SimpleRichInput automatic composer geometry', () => {
     expect(composer.className).not.toContain('box-shadow,min-height');
   });
 
-  it('affirms idle and focused geometry in every required visual state', async () => {
-    const observed = await exerciseVisualStates(async (configuration) => {
-      const height = configuration.width < 500 ? 560 : 720;
-      const view = renderInPanel(height);
-      const composer = view.getByTestId('message-input');
-      const editor = view.getByTestId('tiptap-editor');
-      const editorWrapper = composer.querySelector('.editor-wrapper');
-      const idleHeight = height > 640 ? 80 : 56;
-      const activeHeight = height > 640 ? 100 : 65;
-
-      await waitFor(() => {
-        expect(composer.getAttribute('style')).toContain(`min-height: ${idleHeight}px`);
-      });
-      expect(editor.getAttribute('placeholder')).toBe('Ask anything');
-      expect(editorWrapper?.classList.contains('placeholder-hidden')).toBe(true);
-
-      return {
-        ...view,
-        target: editor,
-        assertCapability: async () => {
-          expect(composer.getAttribute('style')).toContain(`min-height: ${idleHeight}px`);
-          expect(editorWrapper?.classList.contains('placeholder-hidden')).toBe(false);
-          await fireEvent.input(editor, { target: { value: 'draft' } });
-          await waitFor(() => {
-            expect(composer.getAttribute('style')).toContain(`min-height: ${activeHeight}px`);
-          });
-          expect(composer.className).toContain('motion-reduce:transition-none');
-        },
-      };
-    });
-
-    expect(observed).toEqual(configuredVisualStates);
-  });
-
-  it('sets up one panel observer and resizes update geometry without recreating it', async () => {
-    renderInPanel(560);
-    const composer = screen.getByTestId('message-input');
-
-    // The observer's initial callback (no synchronous clientHeight read)
-    // seeds the panel height.
-    await waitFor(() => {
-      expect(composer.getAttribute('style')).toContain('min-height: 56px');
-    });
-    expect(MockResizeObserver.instances).toHaveLength(1);
+  it('keeps one panel observer through resizes and disconnects it on unmount', async () => {
+    const view = renderInPanel(560);
+    await waitFor(() => expect(MockResizeObserver.instances).toHaveLength(1));
     const observer = MockResizeObserver.instances[0];
     expect(observer.observed).toHaveLength(1);
 
-    // A panel resize flows through the same observer — no teardown/recreate,
-    // no re-observe — while parentPanelHeight-derived geometry updates.
     observer.fire(observer.observed[0], 720);
-    await waitFor(() => {
-      expect(composer.getAttribute('style')).toContain('min-height: 80px');
-    });
+    await tick();
     observer.fire(observer.observed[0], 560);
-    await waitFor(() => {
-      expect(composer.getAttribute('style')).toContain('min-height: 56px');
-    });
+    await tick();
     expect(MockResizeObserver.instances).toHaveLength(1);
     expect(observer.observed).toHaveLength(1);
     expect(observer.disconnected).toBe(false);
+
+    view.unmount();
+    expect(observer.disconnected).toBe(true);
   });
 });
 

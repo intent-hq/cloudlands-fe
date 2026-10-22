@@ -47,3 +47,28 @@ describe('presence identity boundary', () => {
     ]);
   });
 });
+
+describe('discussion typing roster compatibility', () => {
+  it('accepts omitted/empty rosters and source/pulse entries without agent targets', () => {
+    expect(isPresenceRoster(roster(row))).toBe(true);
+    expect(isPresenceRoster(roster({ ...row, discussionTyping: [] }))).toBe(true);
+    expect(
+      isPresenceRoster(
+        roster({
+          ...row,
+          discussionTyping: [{ source: 'source', since: '2099-01-01T00:00:00Z', pulse: 1 }],
+        }),
+      ),
+    ).toBe(true);
+  });
+  it.each([
+    null,
+    {},
+    [{ source: '', since: 'now', pulse: 1 }],
+    [{ source: 's', since: 'now', pulse: -1 }],
+    [{ source: 's', since: 'now', pulse: 1.5 }],
+    [{ source: 's', pulse: 1 }],
+  ])('rejects malformed discussion typing %j', (discussionTyping) => {
+    expect(isPresenceRoster(roster({ ...row, discussionTyping }))).toBe(false);
+  });
+});

@@ -9,6 +9,42 @@ import type { ScriptOperationState, ScriptListEntry } from './scripts-types';
 import { emptyOutputBuffer, emptyWorkspaceState } from './scripts-slice';
 import type { StoreState } from '$store/renderer/types';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
+import {
+  selectCanManageWorkspace,
+  selectWorkspaceParticipationContext,
+  selectWorkspaceGuestManagerContext,
+} from '../workspace/workspace-selectors';
+
+/** Remember the guest scope while identity refresh is pending; cached output must fail closed. */
+export const selectUsesGuestScriptScope = store.createSelector((state, workspaceId: string) => {
+  if (
+    selectCanManageWorkspace.select(state, workspaceId) &&
+    selectWorkspaceParticipationContext.select(state, workspaceId)
+  )
+    return false;
+  const snapshot = state.principal?.snapshot;
+  return (
+    snapshot?.capabilities.workspaceGuestRoles === true &&
+    (snapshot.capabilities.hostMembership
+      ? snapshot.principal.hostRole === 'guest'
+      : !snapshot.principal.isAdministrator)
+  );
+});
+
+export const selectCanReadScriptDefinition = store.createSelector(
+  (state, workspaceId: string, script: { purpose?: string } | null | undefined): boolean =>
+    !selectUsesGuestScriptScope.select(state, workspaceId) ||
+    (!!selectWorkspaceGuestManagerContext.select(state, workspaceId) &&
+      script?.purpose === 'saved'),
+);
+
+function visibleScript(
+  state: StoreState,
+  wsId: string | null | undefined,
+  script: ScriptListEntry | undefined,
+) {
+  return !!wsId && !!script && selectCanReadScriptDefinition.select(state, wsId, script);
+}
 
 function getWs(state: StoreState, wsId: string | null | undefined) {
   if (!wsId) return emptyWorkspaceState;
@@ -28,9 +64,13 @@ export const selectScriptEntries = store.createSelector(
   (state, wsId: string | null): ScriptListEntry[] => {
     const ws = getWs(state, wsId);
     if (ws.activeScriptIds) {
-      return ws.activeScriptIds.flatMap((id) => (ws.scripts[id] ? [ws.scripts[id]] : []));
+      return ws.activeScriptIds.flatMap((id) =>
+        visibleScript(state, wsId, ws.scripts[id]) ? [ws.scripts[id]] : [],
+      );
     }
-    return Object.values(ws.scripts).filter((script) => !script.archivedAt);
+    return Object.values(ws.scripts).filter(
+      (script) => !script.archivedAt && visibleScript(state, wsId, script),
+    );
   },
 );
 
@@ -47,15 +87,14 @@ export const selectRunningScripts = store.createSelector(
 export const selectScriptById = store.createSelector(
   (state, wsId: string | null, scriptId: string) => {
     const ws = getWs(state, wsId);
-    return ws.scripts[scriptId] ?? null;
+    return visibleScript(state, wsId, ws.scripts[scriptId]) ? ws.scripts[scriptId] : null;
   },
 );
 
 /** Get runtime state for a specific script (active workspace). */
 export const selectScriptRuntime = store.createSelector(
   (state, wsId: string | null, scriptId: string) => {
-    const ws = getWs(state, wsId);
-    return ws.scripts[scriptId]?.runtime ?? createDefaultRuntimeState();
+    return selectScriptById.select(state, wsId, scriptId)?.runtime ?? createDefaultRuntimeState();
   },
 );
 
@@ -63,7 +102,9 @@ export const selectScriptRuntime = store.createSelector(
 export const selectScriptOutput = store.createSelector(
   (state, wsId: string | null, scriptId: string) => {
     const ws = getWs(state, wsId);
-    return ws.outputBuffers[scriptId] ?? emptyOutputBuffer;
+    return selectCanReadScriptDefinition.select(state, wsId ?? '', ws.scripts[scriptId])
+      ? (ws.outputBuffers[scriptId] ?? emptyOutputBuffer)
+      : emptyOutputBuffer;
   },
 );
 
@@ -71,7 +112,10 @@ export const selectScriptOutput = store.createSelector(
 export const selectScriptRetainedOutput = store.createSelector(
   (state, wsId: string, scriptId: string, viewerId: string) => {
     const output = getWs(state, wsId).retainedOutputs?.[viewerId];
-    return output?.scriptId === scriptId ? output : undefined;
+    return output?.scriptId === scriptId &&
+      selectCanReadScriptDefinition.select(state, wsId, getWs(state, wsId).scripts[scriptId])
+      ? output
+      : undefined;
   },
 );
 
@@ -84,9 +128,13 @@ export const selectWorkspaceScriptEntries = store.createSelector(
   (state, wsId: string): ScriptListEntry[] => {
     const ws = getWs(state, wsId);
     if (ws.activeScriptIds) {
-      return ws.activeScriptIds.flatMap((id) => (ws.scripts[id] ? [ws.scripts[id]] : []));
+      return ws.activeScriptIds.flatMap((id) =>
+        visibleScript(state, wsId, ws.scripts[id]) ? [ws.scripts[id]] : [],
+      );
     }
-    return Object.values(ws.scripts).filter((script) => !script.archivedAt);
+    return Object.values(ws.scripts).filter(
+      (script) => !script.archivedAt && visibleScript(state, wsId, script),
+    );
   },
 );
 
@@ -119,14 +167,16 @@ export const selectScriptWorkflowOutcome = store.createSelector(
 /** Get runtime for a script in a specific workspace (parameterized). */
 export const selectWorkspaceScriptRuntime = store.createSelector(
   (state, wsId: string, scriptId: string) => {
-    const ws = getWs(state, wsId);
-    return ws.scripts[scriptId]?.runtime ?? createDefaultRuntimeState();
+    return selectScriptById.select(state, wsId, scriptId)?.runtime ?? createDefaultRuntimeState();
   },
 );
 
 /** Loaded script rows; output viewers retain their selected IDs separately. */
 export const selectAllWorkspaceScriptEntries = store.createSelector(
-  (state, wsId: string): ScriptListEntry[] => Object.values(getWs(state, wsId).scripts),
+  (state, wsId: string): ScriptListEntry[] =>
+    Object.values(getWs(state, wsId).scripts).filter((script) =>
+      visibleScript(state, wsId, script),
+    ),
 );
 
 /** Request-owned event journal; absence means the request was invalidated. */

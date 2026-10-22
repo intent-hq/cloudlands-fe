@@ -28,7 +28,7 @@
   } from '$store/renderer/slices/scripts/scripts-selectors';
   import { selectCodeFontFamilyCSS } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
-    selectWorkspaceActionContext,
+    selectWorkspaceScriptReadContext,
     selectHidesAgentLifecycleActions,
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
@@ -83,7 +83,7 @@
   // Canonical code-font preference: used to construct the read-only xterm
   // and to update its font option later without disposing/replaying output.
   const codeFontFamilyCSS = selectCodeFontFamilyCSS();
-  const outputAuthority = selectWorkspaceActionContext(workspaceIdStore);
+  const outputAuthority = selectWorkspaceScriptReadContext(workspaceIdStore);
   const fixAgentConsumerId = crypto.randomUUID();
   $effect(() => {
     const wsId = workspaceId;

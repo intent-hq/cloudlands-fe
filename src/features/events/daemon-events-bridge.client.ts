@@ -1,6 +1,30 @@
+import {
+  selectCanReadScriptDefinition,
+  selectUsesGuestScriptScope,
+} from '$store/renderer/slices/scripts/scripts-selectors';
 import type { Note, WorkspaceTask, WorkspaceTaskStats } from '$shared/types';
 import { workspaceTasksPushed } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import { workspaceTaskStatsPushed } from '$store/renderer/slices/workspace/workspace-slice';
+import {
+  isDiscussionMessageEvent,
+  isDiscussionAgentActivityEvent,
+  hasDiscussionAgentActivity,
+  hasDiscussionAgentMentions,
+  isDiscussionReactionEvent,
+  hasDiscussionMessageActions,
+  DEFAULT_DISCUSSION_ID,
+} from '$shared/types/workspace-discussion';
+import {
+  discussionMessageReceived,
+  discussionAgentActivityReceived,
+  discussionReactionReceived,
+  discussionConversationReceived,
+  discussionMembershipInvalidated,
+} from '$store/renderer/slices/workspace-discussion/workspace-discussion-slice';
+import {
+  selectDiscussionTarget,
+  selectDiscussionContext,
+} from '$store/renderer/slices/workspace-discussion/workspace-discussion-selectors';
 import { applyAgentMetadataPatch } from '$store/renderer/slices/agent-session/agent-metadata-patch';
 import type {
   AgentSessionUpdate,
@@ -2729,7 +2753,10 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   // Membership-changing deltas (invite redeem, member remove/leave — PROTOCOL
   // §5.1, multiplayer w4) carry the post-change `memberCount` so the roster
   // summary on the entity stays current without a refetch.
-  if (raw.members === true) appStore.dispatch(presenceMembershipChanged(workspaceId));
+  if (raw.members === true) {
+    appStore.dispatch(presenceMembershipChanged(workspaceId));
+    appStore.dispatch(discussionMembershipInvalidated(workspaceId));
+  }
   if (typeof raw.memberCount === 'number' && Number.isFinite(raw.memberCount)) {
     changes.memberCount = raw.memberCount;
   }
@@ -3230,6 +3257,7 @@ function handleSettingsChangedEvent(
  * most 3 buffered bytes, so the map stays negligible either way.
  */
 const scriptOutputDecoders = new Map<string, TextDecoder>();
+const savedScriptPurpose = { purpose: 'saved' } as const;
 
 /**
  * Decode a base64 `chunk` (PROTOCOL §6.5 `script:output` payload) into a
@@ -3816,6 +3844,77 @@ export function routeDaemonEventsNotification(
     return;
   }
 
+  if (type === 'discussion:activity') {
+    const data = (event as { data?: unknown }).data;
+    if (
+      !isDiscussionAgentActivityEvent(data) ||
+      appStore.state.workspaceDiscussion.agentActivitySupported !== true
+    )
+      return;
+    const envelopeWorkspaceId = workspaceIdOf(event);
+    if (envelopeWorkspaceId && envelopeWorkspaceId !== data.workspaceId) return;
+    const target = selectDiscussionTarget.select(
+      appStore.state,
+      data.workspaceId,
+      data.conversationId,
+    );
+    if (target)
+      appStore.dispatch(discussionAgentActivityReceived(target, data.messageId, data.activity));
+    return;
+  }
+  if (type === 'discussion:reaction') {
+    const data = (event as { data?: unknown }).data;
+    if (
+      !isDiscussionReactionEvent(data) ||
+      appStore.state.workspaceDiscussion.messageActionsSupported !== true
+    )
+      return;
+    const envelopeWorkspaceId = workspaceIdOf(event);
+    if (envelopeWorkspaceId && envelopeWorkspaceId !== data.workspaceId) return;
+    const target = selectDiscussionTarget.select(
+      appStore.state,
+      data.workspaceId,
+      data.conversationId,
+    );
+    if (target) appStore.dispatch(discussionReactionReceived(target, data));
+    return;
+  }
+
+  // Discussion history belongs to its own slice, never the activity timeline.
+  if (type === 'discussion:message') {
+    const data = (event as { data?: unknown }).data;
+    if (
+      isDiscussionMessageEvent(data) &&
+      (appStore.state.workspaceDiscussion.agentActivitySupported !== true ||
+        (hasDiscussionAgentActivity(data.message) && hasDiscussionAgentMentions(data.message))) &&
+      (appStore.state.workspaceDiscussion.messageActionsSupported !== true ||
+        hasDiscussionMessageActions(data.message))
+    ) {
+      const envelopeWorkspaceId = workspaceIdOf(event);
+      if (envelopeWorkspaceId && envelopeWorkspaceId !== data.workspaceId) return;
+      const conversationId = data.conversationId ?? DEFAULT_DISCUSSION_ID;
+      const context = selectDiscussionContext.select(appStore.state);
+      if (!context) return;
+      if (
+        conversationId !== DEFAULT_DISCUSSION_ID &&
+        (appStore.state.workspaceDiscussion.conversationsSupported !== true ||
+          !data.conversation?.participants.some(
+            (p) => p.principalId === appStore.state.principal.snapshot?.principal.id,
+          ))
+      )
+        return;
+      if (data.conversation)
+        appStore.dispatch(discussionConversationReceived(context, data.conversation));
+      const target = selectDiscussionTarget.select(
+        appStore.state,
+        data.workspaceId,
+        conversationId,
+      );
+      if (target) appStore.dispatch(discussionMessageReceived(target, data.message));
+    }
+    return;
+  }
+
   // `presence:changed` (§5.46) carries a self-sufficient `data.workspaceId`
   // and is transient by contract, so it is folded into the presence slice
   // and never recorded on the activity timeline.
@@ -4328,6 +4427,45 @@ export function routeDaemonEventsNotification(
     // fall through to the storage dispatch below so the activity timeline
     // records the attention request alongside the sticky toast.
   }
+  if (type === 'script:changed' || type === 'script:state' || type === 'script:output') {
+    const data = (event as { data?: Record<string, unknown> }).data;
+    const scriptId = typeof data?.scriptId === 'string' ? data.scriptId : '';
+    if (type === 'script:changed' && data?.action === 'guest-access-revoked') {
+      // This event withdraws only guest access; host readers keep their output
+      // and in-flight hydration across the definition's purpose change.
+      if (
+        scriptId &&
+        selectUsesGuestScriptScope.select(appStore.state, workspaceId) &&
+        selectCanReadScriptDefinition.select(appStore.state, workspaceId, savedScriptPurpose)
+      ) {
+        if (typeof event.id === 'string') {
+          if (seenScriptEventIds.has(event.id)) return;
+          seenScriptEventIds.add(event.id);
+        }
+        appStore.dispatch(removeScript(workspaceId, scriptId));
+      }
+      return;
+    }
+    const definition =
+      type === 'script:changed'
+        ? scriptChangeSnapshot(data?.script, workspaceId, scriptId)
+        : undefined;
+    const cached = appStore.state.scripts?.byWorkspaceId[workspaceId]?.scripts[scriptId];
+    // A removal may precede the initial list response; keep it in the read
+    // journal even when the retired definition is not cached yet.
+    const removedSaved =
+      type === 'script:changed' && data?.action === 'removed' && data.purpose === 'saved'
+        ? savedScriptPurpose
+        : undefined;
+    if (
+      !selectCanReadScriptDefinition.select(
+        appStore.state,
+        workspaceId,
+        removedSaved ?? definition ?? cached,
+      )
+    )
+      return;
+  }
   if ((type === 'script:changed' || type === 'script:state') && typeof event.id === 'string') {
     if (seenScriptEventIds.has(event.id)) return;
     seenScriptEventIds.add(event.id);
@@ -4571,6 +4709,9 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // presence slice. Workspace-scoped on the daemon side, so the membership
   // gate narrows it like any other row.
   'presence:changed',
+  'discussion:message',
+  'discussion:reaction',
+  'discussion:activity',
   'host:members-changed',
   'host:invites-changed',
   'host:execution-context-changed',

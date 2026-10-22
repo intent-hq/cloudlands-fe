@@ -30,6 +30,7 @@ import {
 } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 import { selectHasCheckedOnce } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
 import { selectIsHostMember } from '$store/renderer/slices/host-execution/host-execution-selectors';
+import { selectWorkspaceGuestManagerContext } from '$store/renderer/slices/workspace/workspace-selectors';
 import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
 
 import { store as appStore } from '$store/renderer/store';
@@ -427,7 +428,10 @@ export class UnifiedAgentFactory {
       };
 
       // Step 7: Validate workspace path for backend operations
-      if (!workspacePath) {
+      if (
+        !workspacePath &&
+        !selectWorkspaceGuestManagerContext.select(appStore.state, String(workspace.id))
+      ) {
         return {
           success: false,
           error: m.agent_factory_invalidWorkspacePath_error(),
@@ -450,7 +454,7 @@ export class UnifiedAgentFactory {
 
         const backendResult = await this.createInBackend(
           agent,
-          workspacePath,
+          workspacePath ?? '',
           normalized.behaviorPrompt,
           normalized.workspaceContext,
           provider,
@@ -783,10 +787,14 @@ export class UnifiedAgentFactory {
     cause?: unknown;
   }> {
     try {
+      const guestManager = !!selectWorkspaceGuestManagerContext.select(
+        appStore.state,
+        String(agent.workspaceId),
+      );
       const request = {
-        ...(placement ? { placement } : {}),
+        ...(!guestManager && placement ? { placement } : {}),
         workspaceId: String(agent.workspaceId),
-        workspacePath,
+        ...(!guestManager ? { workspacePath } : {}),
         name: agent.name,
         // Wire `nameExplicitlySet` (PROTOCOL §5.5): false marks a generated
         // placeholder name so the created agent stays self-renameable. Only
@@ -798,15 +806,19 @@ export class UnifiedAgentFactory {
         // Explicit reasoning-effort override (Option B session field, §5.5);
         // omitted so the daemon resolves the default when the caller sent none.
         reasoningEffort: agent.reasoningEffort ?? undefined,
-        agentType: agent.metadata?.agentType, // Daemon builds system prompt from this
+        ...(!guestManager ? { agentType: agent.metadata?.agentType } : {}),
         prompt: behaviorPrompt, // Maps to wire `behaviorPrompt` (AgentCreateRequest.prompt)
         // Maps to wire `specialistId` (PROTOCOL §5.5) — the daemon persists the
         // session specialist from the top-level param only; `metadata.specialist`
         // is NOT harvested, so it must be lifted onto the request here.
         specialist: agent.metadata?.specialist ?? (rememberSpecialist ? null : undefined),
-        ...(rememberSpecialist !== undefined ? { rememberSpecialist } : {}),
-        metadata: agent.metadata,
-        workspaceContext: workspaceContext as Record<string, unknown> | undefined,
+        ...(!guestManager && rememberSpecialist !== undefined ? { rememberSpecialist } : {}),
+        ...(!guestManager
+          ? {
+              metadata: agent.metadata,
+              workspaceContext: workspaceContext as Record<string, unknown> | undefined,
+            }
+          : {}),
       };
 
       logger.info('📤 Creating agent via daemon (agent.create)', {

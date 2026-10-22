@@ -345,6 +345,7 @@ describe('generated Paraglide reuse in the UI preview', () => {
     expect(canReuseGeneratedParaglide(paths)).toBe(true);
   });
 
+  // The real compiler takes over 30 seconds on dev hosts; use the existing CI budget.
   it('vite.config.mjs buildStart produces a missing outdir once and leaves a current one alone', () => {
     const { root, paths } = createParaglideFixtureRoot({ realProject: true });
     fixtures.push(root);
@@ -358,7 +359,7 @@ describe('generated Paraglide reuse in the UI preview', () => {
     const again = runParaglideBuildStart({ configDir: root, times: 2 });
     expect(again.error).toBeNull();
     expect(snapshotDir(paths.outdir)).toEqual(published);
-  });
+  }, 60_000);
 
   it('requires both the sidecar and the generated outputs', async () => {
     const { root, paths } = createParaglideFixtureRoot();
