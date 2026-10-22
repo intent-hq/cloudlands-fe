@@ -10,6 +10,33 @@ async function sends(component: import('@playwright/test').Locator) {
     .map((request) => request.params);
 }
 
+test('agent authors open with pointer, Enter and Space while preserving the draft', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(DiscussionHost, { props: { agentMessaging: true } });
+  const composer = component.getByRole('textbox', { name: 'Message', exact: true });
+  await expect(composer).toBeEditable();
+  await composer.fill('Keep this draft');
+  await component.getByRole('button', { name: 'Receive agent reply' }).click();
+  const authors = component.getByRole('button', { name: 'Open agent Reviewer', exact: true });
+  await expect(authors).toHaveCount(2);
+  const navigation = component.locator('[data-discussion-agent-navigation]');
+  const destination = ['discussion-test', { agentId: 'agent-reviewer', openInAdjacentPanel: true }];
+  await authors.first().click();
+  await expect(navigation).toHaveText(JSON.stringify([destination]));
+  await authors.first().focus();
+  await page.keyboard.press('Tab');
+  await expect(authors.last()).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(navigation).toHaveText(JSON.stringify([destination, destination]));
+  await page.keyboard.press('Shift+Tab');
+  await expect(authors.first()).toBeFocused();
+  await page.keyboard.press('Space');
+  await expect(navigation).toHaveText(JSON.stringify([destination, destination, destination]));
+  await expect(composer).toHaveValue('Keep this draft');
+});
+
 test('typing immediately after selecting an agent keeps the selected mention and caret', async ({
   mount,
   page,

@@ -39,15 +39,22 @@ describe('discussion reference navigation', () => {
       }),
     );
   });
-  it('reports a missing or retired agent without opening a phantom tab', async () => {
-    mocks.agents.mockReturnValue([{ id: 'agent-1', retiredAt: '2026-01-01' }]);
-    await openDiscussionReference(
-      { kind: 'agent', label: 'Astra', url: 'intent://local/ws/agent/agent-1' },
-      'ws',
-    );
-    expect(mocks.dispatch).not.toHaveBeenCalled();
-    expect(mocks.error).toHaveBeenCalled();
-  });
+  it.each([
+    { state: 'missing', agents: [] },
+    { state: 'retired', agents: [{ id: 'agent-1', retiredAt: '2026-01-01' }] },
+  ])(
+    'reports a $state agent without opening a phantom tab',
+    async ({ agents }) => {
+      mocks.agents.mockReturnValue(agents);
+      await openDiscussionReference(
+        { kind: 'agent', label: 'Astra', url: 'intent://local/ws/agent/agent-1' },
+        'ws',
+      );
+      expect(mocks.agents).toHaveBeenCalledWith({}, 'ws');
+      expect(mocks.dispatch).not.toHaveBeenCalled();
+      expect(mocks.error).toHaveBeenCalled();
+    },
+  );
   it.each(['intent://local/file/src/a.ts', 'https://github.com/intent-hq/intent/pull/84'])(
     'uses the existing navigation handler for %s',
     async (url) => {

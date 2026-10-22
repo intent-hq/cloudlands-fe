@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { take } from 'typed-redux-saga';
   import { Button } from '$lib/components/ui/button';
   import { store } from '$store/renderer/store';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
@@ -8,6 +9,7 @@
   import { AgentStatus, WorkspaceStatus } from '$shared/types';
   import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
   import { principalContextChanged } from '$store/renderer/slices/principal/principal-slice';
   import { installDiscussionTestBackend, startDiscussionTestSaga } from './discussion-test-backend';
@@ -43,6 +45,7 @@
   const workspaceId = 'discussion-test';
   let mounted = $state(true);
   let requests = $state<Array<{ method: string; params: unknown }>>([]);
+  let agentNavigation = $state<Array<ReturnType<typeof openAgentTabRequested>['payload']>>([]);
   const backend = installDiscussionTestBackend(
     workspaceId,
     () => failSend,
@@ -97,6 +100,14 @@
   onMount(() => {
     cancel = startDiscussionTestSaga();
   });
+  onMount(() =>
+    store.runSaga(function* recordAgentNavigation() {
+      while (true) {
+        const action = yield* take(openAgentTabRequested);
+        agentNavigation = [...agentNavigation, action.payload];
+      }
+    }),
+  );
   onDestroy(() => {
     cancel?.();
     store.dispatch(removeWorkspaceEntity(workspaceId));
@@ -186,3 +197,4 @@
   >
 {/if}
 <output data-discussion-requests>{JSON.stringify(requests)}</output>
+<output data-discussion-agent-navigation>{JSON.stringify(agentNavigation)}</output>
