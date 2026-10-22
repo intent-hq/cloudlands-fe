@@ -1037,7 +1037,8 @@
     margin-block: 1rem 0.5rem;
     font-weight: 500;
   }
-  .linear-description :global(.markdown-viewer > :first-child) {
+  .linear-description :global(.markdown-viewer > :first-child),
+  .linear-description :global(.markdown-content > :first-child) {
     margin-top: 0;
   }
   .home-integrations {

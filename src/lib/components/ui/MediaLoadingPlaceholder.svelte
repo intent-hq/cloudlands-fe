@@ -1,4 +1,4 @@
-<!-- @catalog-exempt: static loading status tile with no interactive DOM -->
+<!-- @catalog-exempt: inline loading status with no interactive DOM -->
 
 <script lang="ts">
   import { faImage } from '@fortawesome/free-solid-svg-icons';
@@ -15,12 +15,17 @@
 </script>
 
 <span
-  class="flex min-w-0 max-w-full items-center gap-2 px-2.5 py-2 text-muted-foreground"
+  class="type-caption flex min-w-0 max-w-full items-start gap-2 whitespace-normal py-1 text-muted-foreground"
   role="status"
   data-testid="media-loading-placeholder"
 >
-  <Fa icon={faImage} class="size-3.5 shrink-0" />
-  <span class="type-caption min-w-0 truncate" use:truncatedTitle={name}>
-    {name || m.ui_mediaLoadingPlaceholder_title_label()}
+  <span class="first-line-icon" aria-hidden="true">
+    <Fa icon={faImage} class="size-3.5" />
+  </span>
+  <span class="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+    <span>{m.ui_mediaLoadingPlaceholder_title_label()}</span>
+    {#if name}
+      <span class="min-w-0 max-w-full truncate" use:truncatedTitle={name}>{name}</span>
+    {/if}
   </span>
 </span>

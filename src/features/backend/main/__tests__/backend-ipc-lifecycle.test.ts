@@ -746,6 +746,101 @@ function mainHelpers(): MainHelpers {
   ) as MainHelpers;
 }
 describe('actual main finalization fence and original pool', () => {
+  it('discovers the principal without retiring an invitation lease or issuing another hello', async () => {
+    const { pool } = await load();
+    const client = pool.getLocalBackendClient();
+    await connection(client);
+    await settledTurn();
+    const { event } = await localWindow();
+    const original = client.getRepositoryConnection();
+    const inviteLease = pool.captureLocalIdentityConnection();
+    const hellos = edge.writes.filter((entry) => entry.endsWith(':client.hello')).length;
+    const expected = {
+      hello: defaultReply({ id: 0, method: 'client.hello' }),
+      principal: defaultReply({ id: 0, method: 'principal.me' }),
+    };
+    expect(await invoke(IPC_CHANNELS.BACKEND.READ_PRINCIPAL, event, undefined)).toEqual({
+      ok: true,
+      result: expected,
+    });
+    expect(await invoke(IPC_CHANNELS.BACKEND.READ_PRINCIPAL, event, undefined)).toEqual({
+      ok: true,
+      result: expected,
+    });
+    expect(client.getRepositoryConnection()).toBe(original);
+    expect(inviteLease.current()).toBe(true);
+    expect(edge.writes.filter((entry) => entry.endsWith(':client.hello'))).toHaveLength(hellos);
+  });
+
+  it.each(['rehello', 'backend-switch'] as const)(
+    'refuses principal discovery crossing %s',
+    async (transition) => {
+      const { pool } = await load();
+      const client = pool.getLocalBackendClient();
+      await connection(client);
+      await settledTurn();
+      const { event } = await localWindow();
+      const held = deferred<unknown>();
+      const reached = nextFrame('principal.me', 'local');
+      edge.respond = (_socket, frame) =>
+        frame.method === 'principal.me' ? held.promise : defaultReply(frame);
+      const discovery = invoke(IPC_CHANNELS.BACKEND.READ_PRINCIPAL, event, undefined);
+      await reached;
+      if (transition === 'rehello') await client.request('client.hello', {});
+      else {
+        const { stampWindowWithBackend } = await import('../../../../main/window-backend');
+        stampWindowWithBackend(BrowserWindow.fromWebContents(event.sender)!, 'remote-A');
+      }
+      held.resolve(defaultReply({ id: 0, method: 'principal.me' }));
+      expect(await discovery).toMatchObject({
+        ok: false,
+        error: { code: 'TRANSPORT_ERROR', message: 'Principal discovery connection changed' },
+      });
+    },
+  );
+
+  it('joins an admitted principal read through pool retirement and refuses a later read', async () => {
+    const { pool, lifecycle } = await load();
+    await connection(pool.getLocalBackendClient());
+    await settledTurn();
+    const { event } = await localWindow();
+    const held = deferred<unknown>();
+    const reached = nextFrame('principal.me', 'local');
+    edge.respond = (_socket, frame) =>
+      frame.method === 'principal.me' ? held.promise : defaultReply(frame);
+    const discovery = invoke(IPC_CHANNELS.BACKEND.READ_PRINCIPAL, event, undefined);
+    await reached;
+    let joined = false;
+    const retirement = lifecycle.retire(fence()).then((result) => {
+      joined = true;
+      return result;
+    });
+    await settledTurn();
+    expect(joined).toBe(false);
+    held.resolve(defaultReply({ id: 0, method: 'principal.me' }));
+    expect(await discovery).toMatchObject({ ok: true });
+    expect((await retirement).outcome).toBe('clean');
+    const reads = edge.writes.filter((entry) => entry.endsWith(':principal.me')).length;
+    expect(await invoke(IPC_CHANNELS.BACKEND.READ_PRINCIPAL, event, undefined)).toMatchObject({
+      ok: false,
+      error: { code: 'TRANSPORT_ERROR' },
+    });
+    expect(edge.writes.filter((entry) => entry.endsWith(':principal.me'))).toHaveLength(reads);
+  });
+
+  it('preserves a daemon refusal from passive principal discovery', async () => {
+    const { pool } = await load();
+    await connection(pool.getLocalBackendClient());
+    await settledTurn();
+    const { event } = await localWindow();
+    edge.respond = (_socket, frame) =>
+      frame.method === 'principal.me' ? Promise.reject('refused') : defaultReply(frame);
+    expect(await invoke(IPC_CHANNELS.BACKEND.READ_PRINCIPAL, event, undefined)).toMatchObject({
+      ok: false,
+      error: { rpcCode: -32000, message: 'refused' },
+    });
+  });
+
   it('observes current node capabilities through IPC without a replacement hello', async () => {
     edge.respond = (_socket, frame) =>
       frame.method === 'client.hello'

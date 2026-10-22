@@ -1694,3 +1694,93 @@ describe('browser dedicated monitor attachment contract', () => {
     }
   });
 });
+
+describe('passive principal discovery', () => {
+  it('uses one initial handshake and refreshes principal without another hello', async () => {
+    const h = createHarness();
+    const discovery = h.transport.readPrincipal();
+    const socket = h.socket();
+    socket.open();
+    const hello = {
+      ...helloResult(),
+      server: {
+        capabilities: {
+          hostMembership: 1,
+          personalPairing: 1,
+          collaborationIdentity: 1,
+          submissionCorrelation: 1,
+          gitlabCheckout: 1,
+        },
+      },
+    };
+    socket.receive({ id: socket.lastFrame().id, result: hello });
+    await flush();
+    expect(socket.lastFrame()).toMatchObject({ method: 'principal.me' });
+    socket.receive({ id: socket.lastFrame().id, result: { id: 'first' } });
+    await expect(discovery).resolves.toEqual({ hello, principal: { id: 'first' } });
+    const refresh = h.transport.readPrincipal();
+    await flush();
+    socket.receive({ id: socket.lastFrame().id, result: { id: 'updated' } });
+    await expect(refresh).resolves.toEqual({ hello, principal: { id: 'updated' } });
+    expect(socket.sent.map((frame) => JSON.parse(frame).method)).toEqual([
+      'client.hello',
+      'principal.me',
+      'principal.me',
+    ]);
+    h.transport.dispose();
+  });
+
+  it('refuses an old principal result after same-socket renegotiation', async () => {
+    const h = createHarness();
+    await (async () => {
+      const initial = h.transport.observeNodeCapabilities();
+      await connect(h.socket());
+      await initial;
+    })();
+    const discovery = h.transport.readPrincipal();
+    const rejected = expect(discovery).rejects.toMatchObject({ code: 'UNAVAILABLE' });
+    await flush();
+    const principalId = h.socket().lastFrame().id;
+    const renegotiation = h.transport.request('client.hello', {});
+    h.socket().receive({ id: h.socket().lastFrame().id, result: helloResult('new-identity') });
+    await renegotiation;
+    h.socket().receive({ id: principalId, result: { id: 'old-principal' } });
+    await rejected;
+    h.transport.dispose();
+  });
+
+  it('does not read principal after an unacknowledged handshake and preserves its refusal', async () => {
+    const h = createHarness();
+    const discovery = h.transport.readPrincipal();
+    const rejected = expect(discovery).rejects.toMatchObject({ rpcCode: -32003 });
+    h.socket().open();
+    h.socket().receive({
+      id: h.socket().lastFrame().id,
+      error: { code: -32003, message: 'Forbidden' },
+    });
+    await rejected;
+    expect(h.socket().sent.map((frame) => JSON.parse(frame).method)).toEqual(['client.hello']);
+    h.transport.dispose();
+  });
+
+  it('preserves principal refusals and rejects discovery interrupted by disconnect', async () => {
+    const h = createHarness();
+    const initial = h.transport.observeNodeCapabilities();
+    await connect(h.socket());
+    await initial;
+    const forbidden = h.transport.readPrincipal();
+    const refused = expect(forbidden).rejects.toMatchObject({ rpcCode: -32003 });
+    await flush();
+    h.socket().receive({
+      id: h.socket().lastFrame().id,
+      error: { code: -32003, message: 'Forbidden' },
+    });
+    await refused;
+    const discovery = h.transport.readPrincipal();
+    const disconnected = expect(discovery).rejects.toMatchObject({ code: 'TRANSPORT_ERROR' });
+    await flush();
+    h.socket().drop();
+    await disconnected;
+    h.transport.dispose();
+  });
+});
