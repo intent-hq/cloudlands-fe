@@ -533,6 +533,9 @@ type CanonicalAgentSessionUpdates = {
   isStreaming?: boolean;
   isProcessing?: boolean;
   isResponding?: boolean;
+  turnInFlight?: boolean;
+  isWaitingOnTool?: boolean;
+  lastToolUse?: AgentSession['lastToolUse'];
   stopReason?: string | null;
   stopReasonTimestamp?: string | null;
   sessionCorrupted?: boolean;
@@ -832,6 +835,10 @@ function canonicalSessionUpdates(
     updates.isStreaming = fields.isStreaming ?? false;
     updates.isProcessing = fields.isProcessing ?? false;
     updates.isResponding = fields.isResponding ?? false;
+    // Snapshots can leave these busy until the next detail read; idle ends them too.
+    updates.turnInFlight = false;
+    updates.isWaitingOnTool = false;
+    updates.lastToolUse = undefined;
     updates.liveTurnOpen = false;
     updates.liveTurnOpenedAt = undefined;
   }
