@@ -455,7 +455,10 @@ describe('WarpBuild cache', () => {
     const output = join(dir, 'out');
     const bin = join(dir, 'bin');
     mkdirSync(bin);
-    writeFileSync(join(bin, 'pnpm'), '#!/bin/sh\necho /fixture/pnpm-store\n', { mode: 0o755 });
+    // The fake pnpm reports the store under the configured store-dir, like pnpm 10.
+    writeFileSync(join(bin, 'pnpm'), '#!/bin/sh\necho "$npm_config_store_dir/v10"\n', {
+      mode: 0o755,
+    });
     const result = spawnSync('bash', ['-c', steps('backend').run!], {
       encoding: 'utf8',
       env: {
@@ -463,13 +466,21 @@ describe('WarpBuild cache', () => {
         GITHUB_OUTPUT: output,
         GITHUB_ENV: join(dir, 'env'),
         RUNNER_OS: 'Linux',
+        HOME: '/fixture-home',
         ...env,
       },
     });
     expect(result.status, result.stderr).toBe(0);
     const value = readFileSync(output, 'utf8').trim();
-    expect(readFileSync(join(dir, 'env'), 'utf8').trim()).toBe(
-      'PNPM_STORE_PATH=/fixture/pnpm-store',
+    // One store directory on every Linux/macOS runner, so the cache path (and version)
+    // matches across jobs; Windows keeps pnpm's default.
+    expect(readFileSync(join(dir, 'env'), 'utf8').trim().split('\n')).toEqual(
+      env.RUNNER_OS === 'Windows'
+        ? ['PNPM_STORE_PATH=/v10']
+        : [
+            'npm_config_store_dir=/fixture-home/.pnpm-store',
+            'PNPM_STORE_PATH=/fixture-home/.pnpm-store/v10',
+          ],
     );
     rmSync(dir, { recursive: true, force: true });
     return value;
