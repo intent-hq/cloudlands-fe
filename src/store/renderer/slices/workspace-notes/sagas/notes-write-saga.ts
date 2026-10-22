@@ -172,6 +172,10 @@ const draftOrigin = new Map<string, string>();
 // Notes whose draft was already rebased once after a `content-base-mismatch`;
 // a second refusal offers the text to the user instead of looping.
 const mismatchRebased = new Set<string>();
+// Notes whose save echo was over the view limit (the note grew past 500 KB
+// while a draft was pending): the echo is never put in the editor cache, and a
+// bounded view re-read runs once the drafts settle (§5.2 "Truncated note reads").
+const boundedRefreshAfterSettle = new Set<string>();
 const utf8 = new TextEncoder();
 const workspaceMutationGenerations = new Map<string, number>();
 let noteMutationQueue: Channel<MutationEnvelope> | undefined;
@@ -327,6 +331,7 @@ function* rebasePendingDrafts(
   echoed: string,
   echoedRev: number | undefined,
   storeIsNewer: boolean,
+  echoTooLarge = false,
 ) {
   const { workspaceId, noteId } = command;
   const key = noteKey(workspaceId, noteId);
@@ -342,7 +347,7 @@ function* rebasePendingDrafts(
   const newest = later[later.length - 1];
   if (!newest) return undefined;
   const stored = yield* selectNoteById.effect(workspaceId, noteId);
-  if (!storeIsNewer && stored?.content !== newest.content) {
+  if (!storeIsNewer && !echoTooLarge && stored?.content !== newest.content) {
     yield* put(applyLocalNoteUpdate(workspaceId, noteId, { content: newest.content }));
   }
   return newest.content;
@@ -376,10 +381,21 @@ function* applyContentSaveResult(
   const stored = yield* selectNoteById.effect(workspaceId, noteId);
   const superseded = latestEditSeq.get(noteKey(workspaceId, noteId)) !== seq;
   const storeIsNewer = stored?.rev !== undefined && nextRev !== undefined && stored.rev > nextRev;
+  // A merged echo over the view limit never enters the editor cache; it only
+  // settles the rev, and a bounded re-read follows once the drafts settle.
+  const echoTooLarge = exceedsNoteViewLimit(echoed);
+  if (echoTooLarge) boundedRefreshAfterSettle.add(noteKey(workspaceId, noteId));
   let rebased: string | undefined;
   if (superseded) {
-    rebased = yield* call(rebasePendingDrafts, command, echoed, nextRev, storeIsNewer);
-  } else if (!storeIsNewer && stored?.content !== echoed) {
+    rebased = yield* call(
+      rebasePendingDrafts,
+      command,
+      echoed,
+      nextRev,
+      storeIsNewer,
+      echoTooLarge,
+    );
+  } else if (!storeIsNewer && !echoTooLarge && stored?.content !== echoed) {
     yield* put(applyLocalNoteUpdate(workspaceId, noteId, { content: echoed }));
   }
   if (nextRev !== undefined) yield* call(setRevisionIfNewer, workspaceId, noteId, nextRev);
@@ -579,6 +595,15 @@ function* saveContent(command: ContentCommand): SagaGenerator<AppliedNoteContent
     }
     if ((unackedDrafts.get(key)?.length ?? 0) === 0) {
       yield* put(setNoteContentPending(workspaceId, noteId, false));
+      if (boundedRefreshAfterSettle.delete(key)) {
+        // The note grew past the limit: re-read it bounded (it comes back
+        // truncated, so the view switches to render-only).
+        const read = readNoteRequested(workspaceId, noteId);
+        read.promise.catch((error: unknown) =>
+          logger.error('Failed to re-read a note that grew past the view limit', error),
+        );
+        yield* put(read);
+      }
     }
     // After this command's cleanup, so the new chain's state is not cleared.
     if (resubmit) {
@@ -1138,6 +1163,9 @@ function* cleanupWorkspace(action: WorkspaceCleanupAction) {
   for (const key of mismatchRebased) {
     if (key.startsWith(`${workspaceId}:`)) mismatchRebased.delete(key);
   }
+  for (const key of boundedRefreshAfterSettle) {
+    if (key.startsWith(`${workspaceId}:`)) boundedRefreshAfterSettle.delete(key);
+  }
   forgetWorkspaceDaemonTexts(workspaceId);
   for (const key of unackedDrafts.keys()) {
     if (key.startsWith(`${workspaceId}:`)) unackedDrafts.delete(key);
@@ -1206,6 +1234,7 @@ export function* notesWriteSaga() {
     draftBase.clear();
     draftOrigin.clear();
     mismatchRebased.clear();
+    boundedRefreshAfterSettle.clear();
     clearDaemonTexts();
     unackedDrafts.clear();
     workspaceMutationGenerations.clear();

@@ -25,6 +25,7 @@ import { openTab, openTabInRightmostColumnRequested } from '../../panel-layout/p
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   addOptimisticNote,
+  applyLocalNoteUpdate,
   addCommentRequested,
   applyNoteUpdated,
   createNote,
@@ -686,6 +687,43 @@ describe('notesWriteSaga', () => {
       expect(setContent.mock.calls).toEqual([
         [NOTE, 'old body MINE', 4, WS, { baseContentBytes: 8 }],
       ]);
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('never caches an echo over the limit and re-reads bounded once the save settles', async () => {
+      supports(true);
+      let ack!: (result: MutationResult) => void;
+      vi.spyOn(appClient.notes, 'setContent').mockReturnValueOnce(
+        new Promise((resolve) => (ack = resolve)),
+      );
+      const run = harness();
+      served(run, note({ content: 'old body' }));
+
+      run.channel.put(updateNoteContent(WS, NOTE, 'old body MINE', true));
+      await vi.waitFor(() => expect(appClient.notes.setContent).toHaveBeenCalledTimes(1));
+      // An agent grows the note past the limit while the save is pending; the
+      // bounded event read lands first (its markers are held back by the draft).
+      reread(
+        run,
+        note({ content: 'old body\n', contentTruncated: true, contentBytes: 600_000, rev: 5 }),
+      );
+      const merged = 'old body MINE\n' + 'x'.repeat(600_000);
+      ack({ success: true, noteRev: 6, newContent: merged });
+      await vi.waitFor(() =>
+        expect(run.actions.some((action) => action.type === readNoteRequested.type)).toBe(true),
+      );
+
+      const cached = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
+      expect(cached?.content.length).toBeLessThan(500_000);
+      expect(
+        run.actions.some(
+          (action) =>
+            action.type === applyLocalNoteUpdate.type &&
+            (action.payload as { updates?: { content?: string } }).updates?.content === merged,
+        ),
+      ).toBe(false);
+      expect(run.getState().byWorkspaceId[WS]?.pendingContentByNoteId[NOTE]).toBeFalsy();
       run.task.cancel();
       await run.task.toPromise();
     });
