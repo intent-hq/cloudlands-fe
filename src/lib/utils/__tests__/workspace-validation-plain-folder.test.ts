@@ -44,4 +44,17 @@ describe('validateRepoPath with allowPlainFolder', () => {
     const result = await validateRepoPath('/Users/missing', false, true);
     expect(result.valid).toBe(false);
   });
+
+  it.each(['C:/Users/me/project', 'C:\\Users\\me\\project'])(
+    'accepts a Windows drive-absolute path (%s) and still checks the directory',
+    async (path) => {
+      expect((await validateRepoPath(path, false, true)).valid).toBe(true);
+      directoryStatus.current = { exists: false };
+      expect((await validateRepoPath(path, false, true)).valid).toBe(false);
+    },
+  );
+
+  it('still rejects a relative path', async () => {
+    expect((await validateRepoPath('Users/me/project', false, true)).valid).toBe(false);
+  });
 });

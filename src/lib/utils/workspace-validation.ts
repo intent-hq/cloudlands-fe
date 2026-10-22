@@ -150,7 +150,10 @@ async function validateLocalPath(
     !path.startsWith('/') &&
     !path.startsWith('~') &&
     !path.startsWith('.') &&
-    !path.includes(':\\')
+    !path.includes(':\\') &&
+    // Drive-absolute with forward slashes (C:/Users/me), as the `intent` CLI
+    // and normalized workspace paths send on Windows.
+    !/^[a-zA-Z]:\//.test(path)
   ) {
     return {
       valid: false,
