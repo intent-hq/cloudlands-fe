@@ -119,7 +119,7 @@
   }
 </script>
 
-<div class="flex min-w-0 flex-col gap-4 px-2" data-workspace-shell-list>
+<div class="flex min-w-0 flex-col gap-2" data-workspace-shell-list>
   <section>
     <SidebarGroupHeader
       title={m.terminal_sidebar_terminals_title()}
@@ -133,7 +133,7 @@
           {@const terminalName =
             terminal.customName || terminal.name || m.workspace_terminalDock_terminal_fallback()}
           <div
-            class="group/terminal flex h-7 min-w-0 items-center gap-1 rounded-md px-2 hover:bg-muted focus-within:bg-muted"
+            class="group/terminal flex h-8 min-w-0 items-center gap-1 rounded-md px-2 hover:bg-muted focus-within:bg-muted data-[active=true]:bg-muted"
             data-sidebar-shell-terminal={terminal.id}
             data-active={active || undefined}
           >
@@ -142,7 +142,7 @@
               class="flex h-full min-w-0 flex-1 cursor-pointer items-center justify-start gap-2 px-0 py-0 text-left"
               onclick={() => openTerminalInPanel(terminal.id, terminalName)}
             >
-              <span class="min-w-0 truncate type-body font-normal text-foreground"
+              <span class="min-w-0 truncate type-caption font-normal text-foreground"
                 >{terminalName}</span
               >
             </Button>
@@ -196,7 +196,7 @@
             </div>
           </div>
         {:else}
-          <p class="px-2 py-1.5 text-sm text-muted-foreground">
+          <p class="px-2 py-1.5 type-caption text-muted-foreground">
             {m.terminal_sidebar_noTerminals_label()}
           </p>
         {/each}
@@ -238,7 +238,7 @@
               })
             : undefined}
           <div
-            class="group/script flex h-7 min-w-0 items-center gap-1 rounded-md px-2 hover:bg-muted focus-within:bg-muted"
+            class="group/script flex h-8 min-w-0 items-center gap-1 rounded-md px-2 hover:bg-muted focus-within:bg-muted"
             data-sidebar-shell-script={script.id}
             data-live={live || undefined}
           >
@@ -259,7 +259,7 @@
                 data-script-status-indicator
               ></span>
               <span
-                class="min-w-0 flex-1 truncate type-body font-normal text-foreground"
+                class="min-w-0 flex-1 truncate type-caption font-normal text-foreground"
                 use:truncatedTitle={script.name}
               >
                 {script.name}
@@ -398,7 +398,7 @@
           {#if $scriptPage$.error}
             <div class="flex flex-col items-start gap-1 px-2 py-1.5 type-caption" role="alert">
               <p class="text-danger">{m.terminal_sidebar_scriptsLoadFailed_error()}</p>
-              <p class="break-words text-xs text-muted-foreground">{$scriptPage$.error}</p>
+              <p class="break-words type-caption text-muted-foreground">{$scriptPage$.error}</p>
               <Button
                 variant="ghost"
                 size="sm"

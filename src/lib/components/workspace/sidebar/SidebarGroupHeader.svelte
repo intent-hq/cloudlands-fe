@@ -4,6 +4,7 @@
   import Fa from 'svelte-fa';
 
   interface Props {
+    [attribute: `data-${string}`]: string | undefined;
     title: string;
     meta?: string;
     expanded: boolean;
@@ -11,13 +12,21 @@
     collapsedChevronClass?: string;
   }
 
-  let { title, meta, expanded, onclick, collapsedChevronClass = '-rotate-90' }: Props = $props();
+  let {
+    title,
+    meta,
+    expanded,
+    onclick,
+    collapsedChevronClass = '-rotate-90',
+    ...restProps
+  }: Props = $props();
 </script>
 
 <Button
+  {...restProps}
   variant="ghost"
   size="compact"
-  class="h-7 w-full justify-start gap-2 rounded-md px-2 text-ui font-semibold text-muted-foreground hover:text-foreground"
+  class="h-8 w-full justify-start gap-2 px-2 text-sm font-normal text-muted-foreground hover:text-foreground"
   aria-expanded={expanded}
   {onclick}
   data-sidebar-group-header

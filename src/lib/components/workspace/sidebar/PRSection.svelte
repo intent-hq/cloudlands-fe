@@ -790,9 +790,7 @@
         <Fa icon={faArrowDown} size="xs" class="text-ghost rotate-180" />
       </DividerButton>
     {:else if !isDiverged && !isBehind && (isOwner || !(hasUnpushedCommits && unpushedCount > 0))}
-      <span
-        class="relative z-20 text-xs text-subtle flex items-center gap-1 py-1.5 px-3 rounded-md bg-background"
-      >
+      <span class="relative flex h-8 items-center gap-1 px-2 type-caption text-muted-foreground">
         <Fa icon={faCheck} size="xs" />
         <span>{m.workspace_prSection_synced_label()}</span>
       </span>
@@ -945,7 +943,7 @@
           <div>
             <!-- PR header -->
             <div
-              class="relative flex items-center gap-2 py-0.5 group w-full rounded px-1 -mx-1"
+              class="relative flex h-8 min-w-0 items-center gap-2 group w-full rounded-md px-2 hover:bg-muted"
               title={getPRStatusTooltip(pr)}
             >
               {#if hasPRFiles}
@@ -978,10 +976,10 @@
               <Button
                 variant="ghost"
                 type="button"
-                class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
+                class="flex h-8 items-center gap-2 flex-1 min-w-0 px-0 font-normal text-left cursor-pointer"
                 onclick={onOpenFullPanel}
               >
-                <span class="text-ui text-subtle truncate flex-1">
+                <span class="type-caption text-subtle truncate flex-1">
                   {#if pr.crossRepo}<span class="text-ghost"
                       >{pr.crossRepoDisplay ?? pr.crossRepo}:</span
                     >
@@ -997,15 +995,15 @@
                     >
                   {/if}
                 </span>
-                <span class="text-ui text-subtle"
+                <span class="type-caption text-subtle"
                   >{pr.resource?.repository.provider === 'gitlab' ? '!' : '#'}{pr.number}</span
                 >
                 {#if pr.status === 'merged'}
-                  <span class="text-ui text-purple-500 font-medium"
+                  <span class="type-caption text-purple-500 font-normal"
                     >{m.workspace_prSection_merged_label()}</span
                   >
                 {:else if pr.status === 'closed'}
-                  <span class="text-ui text-red-500 font-medium"
+                  <span class="type-caption text-red-500 font-normal"
                     >{m.workspace_prSection_closed_label()}</span
                   >
                 {/if}
@@ -1054,9 +1052,8 @@
         {/snippet}
         {#snippet prSubDivider(label: string)}
           <!-- Labeled divider between PR sub-sections (monorepo#2053) -->
-          <div class="flex items-center gap-2 pt-2 pb-1">
-            <span class="text-xs text-ghost shrink-0">{label}</span>
-            <div class="h-px flex-1 bg-border dark:bg-border"></div>
+          <div class="flex h-8 items-center gap-2 px-2">
+            <span class="type-caption text-muted-foreground shrink-0">{label}</span>
           </div>
         {/snippet}
         {#if hasAnyPRs}

@@ -36,7 +36,7 @@
     onclick={() => (expanded = !expanded)}
   />
   {#if expanded}
-    <div class="flex min-w-0 flex-col gap-0.5 pl-1">
+    <div class="flex min-w-0 flex-col">
       {#each group.entries as entry (entry.tab.id)}
         {#if entry.hidden}
           <!-- Whole-row clickable like the visible rows (monorepo#3169); the same
@@ -45,7 +45,7 @@
                hover hint — the row itself is the button. -->
           <Button
             variant="plain"
-            class="group/hidden flex h-7 w-full cursor-pointer items-center justify-start gap-2 rounded-md px-2 py-0 text-left hover:bg-muted focus-visible:bg-muted"
+            class="group/hidden flex h-8 w-full cursor-pointer items-center justify-start gap-2 rounded-md px-2 py-0 text-left hover:bg-muted focus-visible:bg-muted"
             onclick={() => onRestoreTab(entry.tab.id)}
             tooltip={m.browser_panel_restoreTab_tooltip()}
             aria-label={m.browser_panel_restoreTab_ariaLabel({ title: entry.tab.title })}
@@ -56,7 +56,7 @@
             ></span>
             <span class="min-w-0 flex-1 opacity-60">
               <span
-                class="block truncate type-body font-normal text-muted-foreground"
+                class="block truncate type-caption font-normal text-muted-foreground"
                 use:truncatedTitle={entry.tab.title}>{entry.tab.title}</span
               >
             </span>
@@ -70,7 +70,7 @@
         {:else}
           <Button
             variant="plain"
-            class="flex h-7 w-full cursor-pointer items-center justify-start gap-2 rounded-md px-2 py-0 text-left hover:bg-muted focus-visible:bg-muted"
+            class="flex h-8 w-full cursor-pointer items-center justify-start gap-2 rounded-md px-2 py-0 text-left hover:bg-muted focus-visible:bg-muted data-[active=true]:bg-muted"
             onclick={() => entry.panelId && onOpenTab(entry.tab.id, entry.panelId)}
             title={entry.tab.browserUrl || undefined}
             data-sidebar-browser-tab={entry.tab.id}
@@ -84,7 +84,7 @@
             ></span>
             <span class="min-w-0 flex-1">
               <span
-                class="block truncate type-body font-normal text-foreground"
+                class="block truncate type-caption font-normal text-foreground"
                 use:truncatedTitle={entry.tab.title}>{entry.tab.title}</span
               >
             </span>

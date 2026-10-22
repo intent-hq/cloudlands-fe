@@ -432,7 +432,9 @@
       />
     </div>
   {:else}
-    <div class="px-4 py-3 text-sm text-subtle">{m.workspace_filesPanel_noFolderLinked_label()}</div>
+    <p class="px-2 py-2 text-sm text-muted-foreground">
+      {m.workspace_filesPanel_noFolderLinked_label()}
+    </p>
   {/if}
 </div>
 

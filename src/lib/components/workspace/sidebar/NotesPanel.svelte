@@ -448,7 +448,7 @@
     <Button
       variant="ghost"
       onclick={onCreateNote}
-      class="-mt-1 mb-2 text-muted-foreground hover:text-foreground p-1 cursor-pointer transition-colors flex items-center gap-1 text-xs"
+      class="h-8 mb-1 w-full justify-start px-2 text-muted-foreground hover:text-foreground cursor-pointer transition-colors gap-2 type-caption font-normal"
       title={m.workspace_notesPanel_newNote_tooltip()}
     >
       <Fa icon={faPlus} size="xs" />
@@ -458,16 +458,16 @@
 
   {#if loading}
     <!-- Skeleton loader while notes are loading -->
-    <div class="space-y-1 py-1">
+    <div class="py-1">
       {#each [65, 80, 55, 70] as width}
-        <div class="flex items-center gap-2 py-1.5">
+        <div class="flex h-8 items-center gap-2 px-2">
           <Skeleton class="h-3.5 w-3.5 rounded flex-shrink-0" />
           <Skeleton class="h-3" style="width: {width}%;" />
         </div>
       {/each}
     </div>
   {:else}
-    <ListContainer class={cn('w-full', flush && 'px-0')}>
+    <ListContainer class={cn('w-full', flush && 'p-0')}>
       {#each sortedNotes as note (note.id)}
         {@const depth = getNoteDepth(note, notes)}
         {@const childNotes = getChildNotes(note, notes)}
@@ -520,7 +520,7 @@
               <!-- Match the ListItem title and icon columns while editing. -->
               {@const leftIndent = depth * indentSize}
               <div
-                class="relative z-10 flex items-center gap-2 rounded-md px-2 py-0.5 text-foreground"
+                class="relative z-10 flex h-8 min-w-0 items-center gap-2 rounded-md px-2 text-foreground"
                 style="margin-left: {leftIndent}px; width: calc(100% - {leftIndent}px);"
               >
                 <div class="flex w-(--row-icon-box-regular) shrink-0 items-center justify-center">
@@ -572,7 +572,7 @@
                   onblur={saveEdit}
                   onkeydown={handleEditKeydown}
                   noFocusStyle
-                  class="inline-edit-input relative z-10 min-w-0 flex-1 border-none px-0 bg-transparent hover:bg-transparent type-body font-normal outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
+                  class="inline-edit-input relative z-10 h-7 min-h-0 min-w-0 flex-1 border-none px-0 bg-transparent hover:bg-transparent type-caption font-normal outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
                   onclick={(e) => e.stopPropagation()}
                 />
               </div>
@@ -581,9 +581,10 @@
               {@const activeAgents = getActiveAgentsForNote(note)}
               <div class="relative flex w-full min-w-0 flex-1 items-center gap-1">
                 <ListItem
+                  size="sm"
                   iconClass="relative w-(--row-icon-box-regular) text-ghost"
                   title={getNoteTitle(note)}
-                  titleClass="cursor-text type-body font-normal leading-(--text-body-line-height)"
+                  titleClass="cursor-text type-caption font-normal"
                   active={selectedNoteId === note.id}
                   indent={depth}
                   {indentSize}
@@ -592,7 +593,7 @@
                   onclick={(event) => onOpenNote?.(note.id, event)}
                   onkeydown={(event) =>
                     handleModifiedEnter(event, (keyEvent) => onOpenNote?.(note.id, keyEvent))}
-                  class="cursor-pointer flex-1"
+                  class="h-8 min-h-8 cursor-pointer flex-1"
                 >
                   {#snippet iconSnippet()}
                     <TaskStatusIcon
@@ -615,7 +616,7 @@
                       <Button
                         variant="ghost"
                         type="button"
-                        class="cursor-pointer hover:opacity-80 transition-opacity"
+                        class="size-6 p-0 cursor-pointer hover:opacity-80 transition-opacity"
                         onclick={onClick}
                         onkeydown={(event) => handleModifiedEnter(event, onClick)}
                         title={m.workspace_notesPanel_openAgent_tooltip()}
@@ -646,9 +647,10 @@
               {@const inProgressOffset = circumference * (1 - inProgressPctNorm)}
               <div class="relative flex w-full min-w-0 flex-1">
                 <ListItem
+                  size="sm"
                   iconClass="relative w-(--row-icon-box-regular) text-ghost"
                   title={getNoteTitle(note)}
-                  titleClass="cursor-text type-body font-normal leading-(--text-body-line-height)"
+                  titleClass="cursor-text type-caption font-normal"
                   active={selectedNoteId === note.id}
                   indent={depth}
                   {indentSize}
@@ -657,7 +659,7 @@
                   onclick={(event) => onOpenNote?.(note.id, event)}
                   onkeydown={(event) =>
                     handleModifiedEnter(event, (keyEvent) => onOpenNote?.(note.id, keyEvent))}
-                  class="cursor-pointer"
+                  class="h-8 min-h-8 cursor-pointer"
                 >
                   {#snippet iconSnippet()}
                     <div
@@ -730,9 +732,10 @@
               {@const activeAgents = getActiveAgentsForNote(note)}
               <div class="relative flex w-full min-w-0 flex-1 items-center gap-1">
                 <ListItem
+                  size="sm"
                   iconClass="relative w-(--row-icon-box-regular)"
                   title={getNoteTitle(note)}
-                  titleClass="cursor-text type-body font-normal leading-(--text-body-line-height)"
+                  titleClass="cursor-text type-caption font-normal"
                   active={selectedNoteId === note.id}
                   indent={depth}
                   {indentSize}
@@ -741,7 +744,7 @@
                   onclick={(event) => onOpenNote?.(note.id, event)}
                   onkeydown={(event) =>
                     handleModifiedEnter(event, (keyEvent) => onOpenNote?.(note.id, keyEvent))}
-                  class="cursor-pointer flex-1"
+                  class="h-8 min-h-8 cursor-pointer flex-1"
                 >
                   {#snippet iconSnippet()}
                     <ResourceIconTile kind="note" />
@@ -761,7 +764,7 @@
                       <Button
                         variant="ghost"
                         type="button"
-                        class="cursor-pointer hover:opacity-80 transition-opacity"
+                        class="size-6 p-0 cursor-pointer hover:opacity-80 transition-opacity"
                         onclick={onClick}
                         onkeydown={(event) => handleModifiedEnter(event, onClick)}
                         title={m.workspace_notesPanel_openAgent_tooltip()}
@@ -785,14 +788,14 @@
               aria-hidden="true"
               class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {editingNoteId ===
               note.id
-                ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-background'
-                : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
+                ? 'inset-0 border-ring/60 bg-background'
+                : 'inset-0 border-transparent bg-transparent'}"
             ></span>
             {#if hasChildren}
               <Button
                 variant="ghost"
                 type="button"
-                class="shrink-0 p-1 mr-1 text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer opacity-0 group-hover/note:opacity-100"
+                class="size-6 shrink-0 p-0 mr-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer opacity-0 group-hover/note:opacity-100 group-focus-within/note:opacity-100"
                 onclick={(e) => toggleCollapse(note.id as string, e)}
                 aria-label={isCollapsed
                   ? m.workspace_notesPanel_expand_ariaLabel()
@@ -829,13 +832,13 @@
     background: hsl(var(--ring) / 0.3);
   }
 
-  /* Off-screen rows skip style/layout/paint; the intrinsic size matches the 36px
+  /* Off-screen rows skip style/layout/paint; the intrinsic size matches the 32px
      ListItem row so scrollHeight stays stable before a row is first rendered. The
-     clip margin keeps the focus ring and inline-edit outline
-     (-inset-x-2) visible outside the row box under paint containment. */
+     clip margin keeps the focus ring visible outside the row box under
+     paint containment. */
   .note-row {
     content-visibility: auto;
-    contain-intrinsic-block-size: auto 36px;
+    contain-intrinsic-block-size: auto 32px;
     overflow-clip-margin: 8px;
   }
 </style>

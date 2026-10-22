@@ -508,9 +508,9 @@
        virtualization by giving the inner scroll container an unconstrained height. -->
   <div class="flex-1 min-h-0 overflow-hidden">
     {#if $feError$}
-      <div class="flex flex-col items-center gap-2 px-3 py-6 text-center">
-        <p class="text-xs text-danger">{$feError$}</p>
-        <Button variant="outline" size="xs" onclick={retryInitialization}
+      <div class="flex flex-col items-start gap-2 px-2 py-2 text-left">
+        <p class="text-sm text-danger">{$feError$}</p>
+        <Button variant="ghost" size="compact" onclick={retryInitialization}
           >{m.fileExplorer_treeView_retry_label()}</Button
         >
       </div>
@@ -538,7 +538,7 @@
           {/each}
         </div>
       {:else if searchResults.length === 0}
-        <div class="text-xs text-subtle py-4 text-center">
+        <div class="px-2 py-2 text-sm text-muted-foreground">
           {m.fileExplorer_treeView_noFiles_label()}
         </div>
       {:else}

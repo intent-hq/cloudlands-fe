@@ -72,21 +72,21 @@
   }
 </script>
 
-<div class="flex min-w-0 flex-col gap-3 px-2" data-sidebar-browser-list>
+<div class="flex min-w-0 flex-col gap-2" data-sidebar-browser-list>
   {#each groups as group (group.ownerAgentId ?? 'unclaimed')}
     <SidebarBrowserGroup {group} onOpenTab={openBrowserTab} onRestoreTab={restoreTab} />
   {/each}
   {#if browserTarget}
     <Button
       variant="plain"
-      class="flex h-7 w-full cursor-pointer items-center justify-start gap-2 rounded-md px-2 py-0 text-left hover:bg-muted focus-visible:bg-muted"
+      class="flex h-8 w-full cursor-pointer items-center justify-start gap-2 rounded-md px-2 py-0 text-left hover:bg-muted focus-visible:bg-muted"
       onclick={openRunningTarget}
       title={browserTarget.url}
       data-browser-running-url={browserTarget.url}
     >
       <span class="size-2 shrink-0 rounded-full bg-success" aria-hidden="true"></span>
       <span class="min-w-0 flex-1">
-        <span class="block truncate type-body font-normal text-foreground"
+        <span class="block truncate type-caption font-normal text-foreground"
           >{browserTarget.name}</span
         >
       </span>

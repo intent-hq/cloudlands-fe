@@ -11,7 +11,7 @@
   import { untrack } from 'svelte';
   import { slide } from '$lib/motion';
   import Button from '$lib/components/ui/button/button.svelte';
-  import Header from '$lib/components/ui/Header.svelte';
+  import SidebarGroupHeader from './sidebar/SidebarGroupHeader.svelte';
   import { formatInteger } from '$lib/i18n/format';
   import {
     buildWorkspaceAgentListRows,
@@ -512,11 +512,11 @@
       class={row.section === 'coordinator' ? 'w-full pt-1 pb-0.5' : 'w-full pt-2.5 pb-0.5'}
       data-agent-list-row="header"
     >
-      <Header size={6}>
+      <p class="flex h-8 items-center px-2 text-sm font-normal text-muted-foreground">
         {row.section === 'coordinator'
           ? m.workspace_agentsList_coordinator_label()
           : m.workspace_overviewTimeline_yourAgents_label()}
-      </Header>
+      </p>
     </div>
   {:else if row.kind === 'agent'}
     {@const agent = row.agent}
@@ -549,17 +549,15 @@
   {:else if row.kind === 'delegatedGroup'}
     {@const agent = row.parent}
     {@const isExpanded = row.expanded}
-    <!-- Align the toggle text with the parent avatar + gap; the vertical
-         padding pads the h-7 bar out to the shared row height. -->
     <div
-      class="w-full py-1.5"
+      class="w-full py-1"
       style:padding-left={indentFor(row.depth)}
       data-agent-list-row="delegatedGroup"
     >
       <Button
-        variant="ghost-light"
-        size="sm"
-        class="flex h-7 w-full cursor-pointer items-center gap-2 rounded-md bg-transparent px-2 text-sm font-normal text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground active:bg-transparent focus-visible:-outline-offset-2 focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-0"
+        variant="ghost"
+        size="compact"
+        class="flex h-8 w-full items-center gap-2 px-2 text-sm font-normal text-muted-foreground hover:text-foreground"
         style="padding-left: calc(var(--agent-avatar-emphasized-surface-size) + 0.5rem);"
         onclick={(event) => {
           event.stopPropagation();
@@ -586,7 +584,7 @@
           size="xs"
           class="ml-auto shrink-0 opacity-50 transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {isExpanded
             ? ''
-            : 'rotate-90'}"
+            : '-rotate-90'}"
         />
       </Button>
     </div>
@@ -639,7 +637,7 @@
     message={hasActiveSearch
       ? m.workspace_agentsList_noSearchResults_label()
       : m.workspace_agentsList_empty_label()}
-    class={hasActiveSearch ? 'min-h-14 py-3' : undefined}
+    class="min-h-0 px-2 py-2 text-left"
     role="status"
     aria-live="polite"
   />
@@ -671,34 +669,19 @@
        above. Orphan-only mode (`delegatedCounts.orphaned`): renders from
        `orphaned`; expanding lazy-loads the orphaned rows, listed below. -->
   <div class="container w-full min-w-0 pt-2">
-    <Button
-      variant="ghost-light"
-      size="sm"
-      class="h-9 w-full min-w-0 gap-1.5 rounded-md bg-transparent px-2 text-sm font-normal hover:bg-transparent active:bg-transparent focus-visible:-outline-offset-2 focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-0"
-      onclick={toggleDelegatedBin}
-      aria-expanded={showDelegatedAgents}
-      data-agent-delegated-toggle
-    >
-      <span class="min-w-0 flex-1 truncate text-left">
-        {#if !showDelegatedAgents && runningDelegatedCount > 0}
-          {m.workspace_agentsList_delegatedAgentsRunning_label({
+    <SidebarGroupHeader
+      title={!showDelegatedAgents && runningDelegatedCount > 0
+        ? m.workspace_agentsList_delegatedAgentsRunning_label({
             running: formatInteger(runningDelegatedCount),
             total: formatInteger(displayedDelegatedCount),
-          })}
-        {:else}
-          {m.workspace_agentsList_delegatedAgents_label({
+          })
+        : m.workspace_agentsList_delegatedAgents_label({
             count: formatInteger(displayedDelegatedCount),
           })}
-        {/if}
-      </span>
-      <Fa
-        icon={faChevronDown}
-        size="xs"
-        class="ml-auto shrink-0 transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {showDelegatedAgents
-          ? ''
-          : 'rotate-90'}"
-      />
-    </Button>
+      expanded={showDelegatedAgents}
+      onclick={toggleDelegatedBin}
+      data-agent-delegated-toggle=""
+    />
   </div>
 
   {#if showDelegatedSkeleton}
@@ -722,34 +705,19 @@
 
 {#if !loading && hasBackgroundBin}
   <div class="container w-full min-w-0 pt-2">
-    <Button
-      variant="ghost-light"
-      size="sm"
-      class="h-9 w-full min-w-0 gap-1.5 rounded-md bg-transparent px-2 text-sm font-normal hover:bg-transparent active:bg-transparent focus-visible:-outline-offset-2 focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-0"
-      onclick={toggleBackgroundBin}
-      aria-expanded={showBackgroundAgents}
-      data-agent-background-toggle
-    >
-      <span class="min-w-0 flex-1 truncate text-left">
-        {#if !showBackgroundAgents && runningBackgroundCount > 0}
-          {m.workspace_agentsList_backgroundAgentsRunning_label({
+    <SidebarGroupHeader
+      title={!showBackgroundAgents && runningBackgroundCount > 0
+        ? m.workspace_agentsList_backgroundAgentsRunning_label({
             running: formatInteger(runningBackgroundCount),
             total: formatInteger(displayedBackgroundCount),
-          })}
-        {:else}
-          {m.workspace_agentsList_backgroundAgents_label({
+          })
+        : m.workspace_agentsList_backgroundAgents_label({
             count: formatInteger(displayedBackgroundCount),
           })}
-        {/if}
-      </span>
-      <Fa
-        icon={faChevronDown}
-        size="xs"
-        class="ml-auto shrink-0 transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {showBackgroundAgents
-          ? ''
-          : 'rotate-90'}"
-      />
-    </Button>
+      expanded={showBackgroundAgents}
+      onclick={toggleBackgroundBin}
+      data-agent-background-toggle=""
+    />
   </div>
 
   {#if showBackgroundSkeleton}
@@ -778,27 +746,14 @@
 
 {#if !loading && hasRetiredBin}
   <div class="container w-full min-w-0 pt-2">
-    <Button
-      variant="ghost-light"
-      size="sm"
-      class="h-9 w-full min-w-0 gap-1.5 rounded-md bg-transparent px-2 text-sm font-normal hover:bg-transparent active:bg-transparent focus-visible:-outline-offset-2 focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-0"
+    <SidebarGroupHeader
+      title={m.workspace_agentsList_retiredAgents_label({
+        count: formatInteger(displayedRetiredCount),
+      })}
+      expanded={showRetiredAgents}
       onclick={toggleRetiredBin}
-      aria-expanded={showRetiredAgents}
-      data-agent-retired-toggle
-    >
-      <span class="min-w-0 flex-1 truncate text-left">
-        {m.workspace_agentsList_retiredAgents_label({
-          count: formatInteger(displayedRetiredCount),
-        })}
-      </span>
-      <Fa
-        icon={faChevronDown}
-        size="xs"
-        class="ml-auto shrink-0 transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {showRetiredAgents
-          ? ''
-          : 'rotate-90'}"
-      />
-    </Button>
+      data-agent-retired-toggle=""
+    />
   </div>
 
   {#if (hasActiveSearch || showRetiredAgents) && !retiredAgentsLoaded && retiredAgents.length === 0}

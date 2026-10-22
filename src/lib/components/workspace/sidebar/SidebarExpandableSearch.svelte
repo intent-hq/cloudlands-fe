@@ -75,8 +75,7 @@
         type="search"
         aria-label={placeholder}
         {placeholder}
-        class="h-7 min-w-0 bg-transparent! py-0 pl-7 pr-7 text-xs shadow-none! placeholder:text-muted-foreground!"
-        noFocusStyle
+        class="h-7 min-w-0 py-0 pl-7 pr-7 text-sm"
         onblur={() => {
           if (!query) void close(false);
         }}
@@ -96,13 +95,7 @@
       </span>
     </div>
   {:else}
-    <SidebarHeaderAction
-      bind:ref={triggerRef}
-      icon="search"
-      label={placeholder}
-      class="focus-visible:outline-solid {scope === 'files' ? 'text-muted-foreground!' : ''}"
-      onclick={expand}
-    />
+    <SidebarHeaderAction bind:ref={triggerRef} icon="search" label={placeholder} onclick={expand} />
   {/if}
 </div>
 
@@ -119,10 +112,6 @@
     transform: translateY(-50%);
     color: hsl(var(--muted-foreground));
     pointer-events: none;
-  }
-
-  [data-sidebar-search='files'] [data-sidebar-search-expanded] > :global(svg) {
-    left: calc((var(--control-height-compact) - 0.875rem) / 2);
   }
 
   :global([data-sidebar-search-input]::-webkit-search-cancel-button) {

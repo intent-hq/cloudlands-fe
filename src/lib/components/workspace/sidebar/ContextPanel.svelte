@@ -294,7 +294,7 @@
   onSelect={handlePickerSelect}
 />
 
-<div class="-mx-2 flex flex-col h-full {className ?? ''}">
+<div class="flex min-w-0 flex-col h-full {className ?? ''}">
   <!-- Add Context Section -->
   {#if showAddSection}
     <div bind:this={addContextAnchor} class="mb-1.5">
@@ -322,7 +322,7 @@
   {/if}
 
   <!-- Notes Panel with context items integrated -->
-  <div class="flex-1 min-h-0 overflow-auto">
+  <div class="flex-1 min-h-0 min-w-0 overflow-auto">
     <NotesPanel
       notes={filteredNotes}
       {workspaceId}

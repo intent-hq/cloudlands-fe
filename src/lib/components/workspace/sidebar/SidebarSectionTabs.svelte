@@ -54,14 +54,15 @@
   value={selected}
   onValueChange={activate}
   {orientation}
+  size={orientation === 'vertical' ? 'default' : 'compact'}
   class="w-full"
   data-sidebar-section-tabs={orientation}
 >
   <Tabs.List
     aria-label={m.workspace_layout_ariaLabel()}
     class={orientation === 'vertical'
-      ? 'flex! w-full flex-col gap-1! bg-transparent! p-0!'
-      : 'flex! w-full gap-0.5! bg-transparent! p-0.5!'}
+      ? 'flex! w-full flex-col gap-1 bg-transparent p-0'
+      : 'flex! w-full p-1'}
   >
     {#each tabs as tab (tab.id)}
       {@const unread = tab.id === 'agents' && $unread$}
@@ -77,7 +78,7 @@
             ? m.workspace_multiSelectSidebar_agentsTabUnread_ariaLabel({ label: tab.label })
             : tab.label}
           aria-controls={panelId ? `${panelId}-${tab.id}` : undefined}
-          class="relative h-9! w-full min-w-0! gap-0! rounded-md! px-0! text-sm!"
+          class="relative w-full min-w-0 gap-0 px-0"
           data-sidebar-section-tab={tab.id}
           onclick={() => {
             if (selected === tab.id) onActivate?.(tab.id);

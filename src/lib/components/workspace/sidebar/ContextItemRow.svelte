@@ -150,18 +150,18 @@
 </script>
 
 <div
-  class="relative w-full text-left group flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors cursor-pointer border
+  class="relative h-8 w-full min-w-0 text-left group flex items-center gap-2 px-2 rounded-md hover:bg-hover transition-colors cursor-pointer
          {isNested ? 'pl-6' : ''}
          {isSelected
-    ? 'bg-primary/10 text-primary border-transparent'
+    ? 'bg-selected text-foreground'
     : isActive
-      ? 'bg-background text-foreground border-transparent'
-      : 'bg-sidebar border-transparent'}"
+      ? 'bg-active text-foreground'
+      : 'bg-transparent'}"
 >
   <Button
     variant="plain"
     wrapContent={false}
-    class="flex min-w-0 flex-1 items-center justify-start gap-1.5 text-left"
+    class="h-8 min-w-0 flex-1 items-center justify-start gap-2 text-left type-caption font-normal"
     onclick={handleClick}
     oncontextmenu={handleContextMenu}
     onkeydown={handleContextMenu}
@@ -175,25 +175,23 @@
         <ProviderIcon
           provider={item.provider}
           size={12}
-          class={isSelected ? 'text-primary-ink' : isActive ? 'text-foreground' : 'opacity-70'}
+          class={isSelected || isActive ? 'text-foreground' : 'text-muted-foreground'}
         />
       </div>
     {/if}
 
     <!-- Content -->
-    <div class="flex-1 flex items-baseline gap-1.5 min-w-0">
-      <div class="w-full min-w-0 flex items-center gap-1.5">
-        <span class="type-body font-normal truncate {isSelected ? 'text-primary-ink' : ''}"
-          >{displayTitle()}</span
-        >
+    <div class="flex-1 flex items-baseline gap-2 min-w-0">
+      <div class="min-w-0 flex items-center gap-1.5">
+        <span class="type-caption font-normal truncate">{displayTitle()}</span>
         {#if item.type === 'note' && item.isSpec}
-          <span class="text-xs px-1 py-0.5 rounded bg-primary/10 text-primary font-medium"
+          <span class="type-caption px-1 rounded bg-muted text-muted-foreground font-normal"
             >{m.workspace_contextItem_spec_label()}</span
           >
         {/if}
       </div>
       {#if subtitle()}
-        <div class="text-xs text-subtle truncate">{subtitle()}</div>
+        <div class="type-caption text-muted-foreground truncate">{subtitle()}</div>
       {/if}
     </div>
 
@@ -204,7 +202,7 @@
 
   <!-- Action buttons -->
   <div
-    class="absolute right-0 bg-inherit px-1 flex items-center gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
+    class="absolute right-1 rounded bg-inherit px-1 flex items-center gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
   >
     {#if hasExternalLink}
       <Tooltip

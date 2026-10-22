@@ -482,10 +482,10 @@
   class={cn('flex h-full min-w-0 flex-col overflow-hidden bg-sidebar', className)}
   data-workspace-sidebar
 >
-  <div class="shrink-0 px-5 pt-4 pb-1" data-workspace-title-region>
+  <div class="shrink-0 px-4 pt-4 pb-2" data-workspace-title-region>
     <WorkspaceProgressCard {workspaceId} {active} onOpenNote={handleOpenNoteInPanel} />
   </div>
-  <div class="shrink-0 px-4 pt-1" hidden={$collapsed$} inert={$collapsed$} data-sidebar-navigation>
+  <div class="shrink-0 px-3 pb-1" hidden={$collapsed$} inert={$collapsed$} data-sidebar-navigation>
     <SidebarSectionTabs {workspaceId} {panelId} />
   </div>
   <div class="min-h-0 flex-1" data-sidebar-panels data-direction={direction}>
@@ -504,12 +504,11 @@
         data-active={tabId === activeTabId || undefined}
       >
         {#if mountedTabIds.includes(tabId)}
-          <!-- Panel header/description -->
           {#if tab && !tab.hideHeader}
-            <div class="px-5 pt-4 pb-2" data-sidebar-section-header>
+            <div class="shrink-0 px-4 pt-3 pb-2" data-sidebar-section-header>
               <h6 class="flex min-h-7 items-center gap-2 text-sm font-medium text-foreground">
-                {tab.label}
-                <span class="ml-auto flex items-center gap-1">
+                <span class="min-w-0 truncate">{tab.label}</span>
+                <span class="ml-auto flex min-w-0 items-center gap-1">
                   {#if tabId === 'people'}
                     {#if $canShare$}
                       <SidebarHeaderAction
@@ -577,18 +576,16 @@
           {/if}
           {#key workspaceId}
             <div
-              class="min-h-0 flex-1 {tabId === 'people'
-                ? 'overflow-y-auto px-1.25 pb-2'
-                : tabId === 'files'
-                  ? 'overflow-hidden pt-2 pb-0'
-                  : 'overflow-y-auto pt-2 pb-6'}"
+              class="min-h-0 flex-1 px-2 pb-3 {tabId === 'files' || tabId === 'changes'
+                ? 'overflow-hidden'
+                : 'overflow-y-auto'}"
               data-sidebar-section-scroll={tabId}
               use:scrollFade
             >
               {#if tabId === 'people'}
                 <WorkspacePeopleActivity {workspaceId} {panelLayoutId} />
               {:else if tabId === 'agents'}
-                <div class="px-4" data-testid="agent-panel">
+                <div class="min-w-0" data-testid="agent-panel">
                   <WorkspaceAgentsList
                     agents={$allWorkspaceAgents}
                     loading={$agentsLoading}
@@ -628,7 +625,7 @@
                   />
                 </div>
               {:else if tabId === 'context'}
-                <div class="px-4">
+                <div class="min-w-0">
                   <ContextPanel
                     notes={$notes}
                     {workspaceId}
@@ -644,8 +641,8 @@
                   />
                 </div>
               {:else if tabId === 'changes'}
-                <div class="flex min-h-0 flex-1 flex-col px-4" data-sidebar-changes-panel>
-                  <div class="w-full flex-1">
+                <div class="flex h-full min-h-0 flex-col" data-sidebar-changes-panel>
+                  <div class="min-h-0 w-full flex-1">
                     <SidebarChangesPanel
                       {workspaceId}
                       active={active && tabId === activeTabId}
@@ -674,9 +671,9 @@
                   </div>
                 </div>
               {:else if tabId === 'files'}
-                <div class="flex h-full min-h-0 flex-col px-4">
+                <div class="flex h-full min-h-0 flex-col">
                   <!-- File filter controls -->
-                  <div class="flex shrink-0 items-center gap-2 pb-2" data-file-tree-toolbar>
+                  <div class="flex shrink-0 items-center gap-1 px-2 pb-2" data-file-tree-toolbar>
                     <ExpandableFileSearch
                       bind:query={fileSearchQuery}
                       active={active && activeTabId === 'files'}
@@ -684,28 +681,31 @@
                     />
                     <Button
                       variant="ghost"
-                      size="icon-xs"
-                      class="shrink-0 text-subtle"
+                      size="icon-compact"
+                      class="shrink-0 text-muted-foreground"
                       tooltip={m.workspace_multiSelectSidebar_newFile_tooltip()}
                       onclick={() => filesPanelRef?.startCreatingFile()}
                     >
-                      <Fa icon={faPlus} class="w-3 h-3" />
+                      <Fa icon={faPlus} class="size-3.5" />
                     </Button>
                     <Button
                       variant="ghost"
-                      size="icon-xs"
-                      class="shrink-0 {showOnlyChangedFiles ? 'text-primary-ink' : 'text-subtle'}"
+                      size="icon-compact"
+                      class="shrink-0 {showOnlyChangedFiles
+                        ? 'bg-muted text-foreground'
+                        : 'text-muted-foreground'}"
+                      aria-pressed={showOnlyChangedFiles}
                       tooltip={showOnlyChangedFiles
                         ? m.workspace_multiSelectSidebar_showAllFiles_tooltip()
                         : m.workspace_multiSelectSidebar_showOnlyChangedFiles_tooltip()}
                       onclick={() => (showOnlyChangedFiles = !showOnlyChangedFiles)}
                     >
-                      <Fa icon={faPencil} class="w-3 h-3" />
+                      <Fa icon={faPencil} class="size-3.5" />
                     </Button>
                     <Button
                       variant="ghost"
-                      size="icon-xs"
-                      class="shrink-0 text-subtle"
+                      size="icon-compact"
+                      class="shrink-0 text-muted-foreground"
                       tooltip={hasExpandedDirectories
                         ? m.workspace_multiSelectSidebar_collapseAll_tooltip()
                         : m.workspace_multiSelectSidebar_expandAll_tooltip()}
@@ -720,7 +720,7 @@
                     >
                       <Fa
                         icon={hasExpandedDirectories ? faCompressAlt : faExpandAlt}
-                        class="w-3 h-3"
+                        class="size-3.5"
                       />
                     </Button>
                   </div>

@@ -849,17 +849,15 @@
   <div class="flex-1 flex flex-col min-h-0">
     {#if !hasLoadedForWorkspace}
       <!-- Loading skeleton with timeline (shown during initial load or workspace switch) -->
-      <div class="flex-1 overflow-y-auto pb-20 pt-3">
+      <div class="flex-1 overflow-y-auto py-2">
         <div class="relative">
-          <div class="absolute left-0 top-2 bottom-2 w-px bg-border"></div>
           {#each [0, 1, 2, 3] as i (i)}
-            <div class="relative pl-4 mb-4">
-              <div class="absolute -left-1 top-1 w-2 h-2 rounded-full bg-muted"></div>
+            <div class="relative px-2 mb-2">
               <Skeleton class="h-3 w-16 mb-2" />
               <!-- i18n-ignore (scanner false positive on the < comparison) -->
               {#if i < 2}
-                <Skeleton class="h-5 w-full rounded mb-1" />
-                <Skeleton class="h-5 w-3/4 rounded" />
+                <Skeleton class="h-8 w-full rounded mb-1" />
+                <Skeleton class="h-8 w-3/4 rounded" />
               {/if}
             </div>
           {/each}
@@ -913,7 +911,7 @@
             isOwner={canUpdateWorkspace}
           />
 
-          <div class="relative flex items-center mb-2 h-7" data-changes-summary-count>
+          <div class="relative flex items-center mb-2 h-8" data-changes-summary-count>
             {#if !onRefreshActionChange}
               {@render refreshAction()}
             {/if}
@@ -926,14 +924,14 @@
                 onclick={handleOpenAllChanges}
                 size="compact"
                 wrapContent={false}
-                class="flex flex-1 justify-start items-center gap-2 px-0 py-0 text-subtle rounded-sm transition-colors group cursor-pointer min-w-0 {isActive
-                  ? 'bg-background text-foreground border-transparent'
-                  : 'border-transparent'}
+                class="flex h-8 flex-1 justify-start items-center gap-2 px-2 py-0 type-caption font-normal text-muted-foreground rounded-md transition-colors group cursor-pointer min-w-0 {isActive
+                  ? 'bg-muted text-foreground'
+                  : 'hover:bg-muted'}
                 "
               >
                 <div class="flex items-center gap-1.5 flex-1 min-w-0">
                   <!-- <Fa icon={faFolderOpen} class="opacity-30" size="xs" /> -->
-                  <span class="text-ui truncate min-w-0 text-left flex-1">
+                  <span class="type-caption truncate min-w-0 text-left flex-1">
                     {totalFilesChanged === 1
                       ? m.workspace_sidebarChanges_filesChangedInSpace_one()
                       : m.workspace_sidebarChanges_filesChangedInSpace_many({
@@ -945,9 +943,9 @@
               </Button>
             {:else}
               <div
-                class="flex flex-1 items-center gap-2 px-0 py-0 h-7 text-subtle rounded-sm transition-colors group cursor-pointer min-w-0"
+                class="flex h-8 flex-1 items-center gap-2 px-2 type-caption text-muted-foreground min-w-0"
               >
-                <span class="text-ui truncate min-w-0 text-left flex-1"
+                <span class="type-caption truncate min-w-0 text-left flex-1"
                   >{m.workspace_sidebarChanges_noChangesYet_label()}</span
                 >
               </div>
@@ -956,10 +954,8 @@
 
           <!-- Truncation warning banner -->
           {#if changesTruncated}
-            <div
-              class="mb-2 px-3 py-2 bg-warning/10 border border-warning/30 rounded-md text-xs text-warning-ink"
-            >
-              <span class="font-medium"
+            <div class="mb-2 px-2 py-2 type-caption text-warning-ink">
+              <span class="font-normal"
                 >{m.workspace_sidebarChanges_showingChanges_label({
                   shown: formatInteger(unstagedChanges.length + stagedChanges.length),
                   total: formatInteger(totalChangesCount),
@@ -978,9 +974,6 @@
           {/if}
 
           <div class="relative flex-1 flex flex-col pb-2 w-full">
-            <!-- Vertical timeline line -->
-            <div class="absolute left-[5.5px] top-2 bottom-0 w-px bg-border dark:bg-border"></div>
-
             <FileChangesSection
               {workspaceId}
               {activeFilePath}
