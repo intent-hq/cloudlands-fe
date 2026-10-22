@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.229.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.229.0...v2.229.1) (2026-10-22)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.30 ([#3625](https://github.com/intent-hq/cloudlands-fe/issues/3625)) ([5741958](https://github.com/intent-hq/cloudlands-fe/commit/5741958d56063908d6555c2ec9cfdbf6512fda46))
+* clear cached activity when agents become idle ([#3622](https://github.com/intent-hq/cloudlands-fe/issues/3622)) ([da1341b](https://github.com/intent-hq/cloudlands-fe/commit/da1341bce3fd03b752db40ba5f73735ea43e1899))
+
 ## [2.229.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.228.1...v2.229.0) (2026-10-22)
 
 
