@@ -360,6 +360,7 @@ const ALLOWED_CHANNELS = [
   'vscode:open-git-diff',
   'jetbrains:open',
   'deep-link:handle',
+  'deep-link:consume-pending',
   'get_home_directory',
   'rules:list',
   'rules:load-workspace',

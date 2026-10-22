@@ -404,50 +404,29 @@
           // explicit data.branch (applied below) still wins.
           remoteSetup = null;
           branch = '';
-        } else if (data.githubUrl && !repoPath) {
-          // repoPath wasn't resolved at deep-link time (knownRepos may not have loaded yet).
-          // Try resolving now via IPC to the repo registry.
-          try {
-            const result = await invoke<{
-              success: boolean;
-              data?: Array<{ path: string; name: string; owner?: string }>;
-            }>('workspace:get-recent-repositories', {});
-            if (result?.success && Array.isArray(result.data)) {
-              const ghUrl = data.githubUrl.trim();
-              const patterns = [
-                /^https?:\/\/github\.com\/([^\/]+)\/([^\/]+?)(?:\.git)?(?:\/.*)?$/,
-                /^git@github\.com:([^\/]+)\/([^\/]+?)(?:\.git)?$/,
-              ];
-              let owner: string | null = null;
-              let repo: string | null = null;
-              for (const pattern of patterns) {
-                const match = ghUrl.match(pattern);
-                if (match) {
-                  owner = match[1].toLowerCase();
-                  repo = match[2].toLowerCase();
-                  break;
-                }
-              }
-              if (owner && repo) {
-                const matched = result.data.find(
-                  (r) => r.owner?.toLowerCase() === owner && r.name.toLowerCase() === repo,
-                );
-                if (matched?.path) {
-                  repoPath = matched.path;
-                  isValidPath = true;
-                  scope = '';
-                  logger.debug('Resolved githubUrl to local path via IPC', {
-                    githubUrl: data.githubUrl,
-                    repoPath,
-                  });
-                }
-              }
+        } else if (data.githubUrl) {
+          // A GitHub repo from a deep link (clone, "Fix in Intent"): select it
+          // the same way the Home GitHub prefill does — a local checkout of
+          // that repo when one is known, else the GitHub repo itself. This
+          // must override a repo restored from persisted form state, or the
+          // form would create the workspace on the previously used repo.
+          const match = data.githubUrl
+            .trim()
+            .match(
+              /^(?:https?:\/\/github\.com\/|git@github\.com:)([^/]+)\/([^/]+?)(?:\.git)?(?:\/.*)?$/i,
+            );
+          if (match) {
+            try {
+              await preselectGitHubPrefillRepo({ owner: match[1], repo: match[2] });
+            } catch (e) {
+              logger.warn('Failed to select the GitHub repo from prefill', { error: e });
             }
-          } catch (e) {
-            logger.warn('Failed to resolve githubUrl via repo registry IPC', { error: e });
           }
         }
         if (!hasCheckoutDraft && data.branch) branch = data.branch;
+        // A link for a folder with no workspace (the `intent` CLI) asks for
+        // no worktree: the workspace works in the folder itself.
+        if (!hasCheckoutDraft && data.repoPath && data.skipIsolation === true) skipIsolation = true;
 
         // Apply remote environment settings
         if (!hasCheckoutDraft && data.environmentType === 'remote' && data.sshConfig) {
@@ -457,9 +436,13 @@
           };
         }
 
-        // Apply prompt if provided
+        // Apply prompt if provided. Push it into the editor too: the editor
+        // ignores external `value` changes while focused (it protects typing),
+        // and the modal focuses it on open — so the binding alone left a
+        // prefilled prompt (deep links, integrations) invisible.
         if (data.prompt) {
           initialPrompt = data.prompt;
+          void richTextarea?.setContent(data.prompt);
         }
 
         // Apply specialist if provided (match by specialist ID)
@@ -1246,6 +1229,9 @@
           branch = '';
         }
         if (!hasCheckoutDraft && data.branch) branch = data.branch;
+        // A link for a folder with no workspace (the `intent` CLI) asks for
+        // no worktree: the workspace works in the folder itself.
+        if (!hasCheckoutDraft && data.repoPath && data.skipIsolation === true) skipIsolation = true;
 
         // Apply remote environment settings
         if (!hasCheckoutDraft && data.environmentType === 'remote' && data.sshConfig) {
@@ -1881,7 +1867,11 @@
         ? $checkoutCanCreate$
         : !!repoPath &&
           isValidPath &&
-          (isNewRepo || !!branch || repoType === 'remote') &&
+          // No worktree on a local folder needs no branch (it may not be a repo).
+          (isNewRepo ||
+            !!branch ||
+            repoType === 'remote' ||
+            (skipIsolation && repoType === 'local')) &&
           (repoType !== 'github' || githubAuthNeeded === 'none')) &&
       !hasBlockingAttachments(contextItems),
   );

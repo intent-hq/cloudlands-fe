@@ -186,7 +186,10 @@ export function* prepareCompactWorkspaceInitialization(
   isCurrent: () => boolean,
 ): SagaGenerator<PreparedWorkspaceInitialization | null> {
   const repositoryCheckout = s.repositoryCheckout;
-  if (!repositoryCheckout && !s.isNewRepo && s.repoType !== 'remote') {
+  // No worktree on a local folder works in place: a branch is optional there
+  // (a plain non-git folder has none), but one that is given is still checked.
+  const branchOptional = s.skipIsolation && s.repoType === 'local' && !s.branch;
+  if (!repositoryCheckout && !s.isNewRepo && s.repoType !== 'remote' && !branchOptional) {
     const branchValidation = validateBranchName(s.branch);
     if (!branchValidation.valid) throw new Error(branchValidation.error);
   }
@@ -199,7 +202,14 @@ export function* prepareCompactWorkspaceInitialization(
     if (!isCurrent()) return null;
     if (!repoValidation.valid) throw new Error(repoValidation.error);
   } else if (!repositoryCheckout && s.repoType !== 'remote') {
-    const repoValidation = yield* call(validateRepoPath, s.repoPath, s.isNewRepo);
+    // No worktree on a local folder works in place, so a plain (non-git)
+    // folder is fine and is never initialized as a repo.
+    const repoValidation = yield* call(
+      validateRepoPath,
+      s.repoPath,
+      s.isNewRepo,
+      Boolean(s.skipIsolation && s.repoType === 'local'),
+    );
     if (!isCurrent()) return null;
     if (!repoValidation.valid) throw new Error(repoValidation.error);
   }
@@ -344,7 +354,11 @@ export function* prepareCompactWorkspaceInitialization(
             : String(remoteSetup?.workspacePath || s.repoPath),
           githubUrl: s.repoType === 'github' && s.githubUrl ? s.githubUrl : undefined,
           branch: prBranchActive ? s.selectedPRBranch : undefined,
-          baseRef: prBranchActive ? s.selectedPRTargetBranch || undefined : String(baseBranch),
+          baseRef: prBranchActive
+            ? s.selectedPRTargetBranch || undefined
+            : s.skipIsolation && !baseBranch
+              ? undefined
+              : String(baseBranch),
           environmentConfig,
           isNewRepo: Boolean(s.isNewRepo),
           skipIsolation: s.skipIsolation || undefined,
