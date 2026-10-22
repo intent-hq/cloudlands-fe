@@ -11,6 +11,7 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 }));
 
 import { appClient } from '$lib/client';
+import type { MutationResult } from '$lib/client';
 import { notify } from '$lib/components/patterns/notify';
 import type { CommentV2 } from '$features/comments/comment-types-v2';
 import { ContentType, NoteVisibility, type Note } from '$shared/types';
@@ -486,6 +487,71 @@ describe('notesWriteSaga', () => {
         { baseContentBytes: 14 },
       ]);
       expect(notify.warning).not.toHaveBeenCalled();
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('never sends a queued pre-rebase draft after a mismatch, so the agent edit survives', async () => {
+      supports(true);
+      let refuseFirst!: (result: MutationResult) => void;
+      const setContent = vi
+        .spyOn(appClient.notes, 'setContent')
+        .mockReturnValueOnce(new Promise((resolve) => (refuseFirst = resolve)))
+        .mockResolvedValue({ success: true, noteRev: 7, newContent: 'AGENT\nbody AB' });
+      const get = vi
+        .spyOn(appClient.notes, 'get')
+        .mockResolvedValue(note({ content: 'AGENT\nbody', rev: 6 }));
+      const run = harness();
+      served(run, note({ content: 'body' }));
+
+      // [body A, rev 4, base 4 bytes] goes out; [body AB] queues behind it.
+      run.channel.put(updateNoteContent(WS, NOTE, 'body A', true));
+      await vi.waitFor(() => expect(setContent).toHaveBeenCalledTimes(1));
+      run.channel.put(updateNoteContent(WS, NOTE, 'body AB', true));
+      await settle();
+      // An agent edit lands meanwhile; the daemon refuses the first save's base.
+      refuseFirst({ success: false, error: 'mismatch', contentBaseMismatch: true });
+      await forwardResubmit(run);
+      await vi.waitFor(() => expect(setContent).toHaveBeenCalledTimes(2));
+      await settle();
+
+      expect(setContent.mock.calls).toEqual([
+        [NOTE, 'body A', 4, WS, { baseContentBytes: 4 }],
+        [NOTE, 'AGENT\nbody AB', 6, WS, { baseContentBytes: 10 }],
+      ]);
+      expect(setContent.mock.calls.some((call) => call[1] === 'body AB')).toBe(false);
+      // The queued draft is dropped outright, not recovered a second time.
+      expect(get).toHaveBeenCalledTimes(1);
+      expect(notify.warning).not.toHaveBeenCalled();
+      run.task.cancel();
+      await run.task.toPromise();
+    });
+
+    it('re-reads and rebases instead of sending an unguarded write when the base is unknown', async () => {
+      supports(true);
+      const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+        success: true,
+      });
+      const get = vi
+        .spyOn(appClient.notes, 'get')
+        .mockResolvedValue(note({ content: 'body\nAGENT', rev: 9 }));
+      // Rev 4 was never recorded (e.g. aged out of the kept revs).
+      const run = harness(note({ content: 'body' }));
+
+      run.channel.put(
+        updateNoteContent(WS, NOTE, 'body MINE', {
+          immediate: true,
+          baseRev: 4,
+          baseContent: 'body',
+        }),
+      );
+      await forwardResubmit(run);
+      await vi.waitFor(() => expect(setContent).toHaveBeenCalledTimes(1));
+
+      expect(get).toHaveBeenCalledTimes(1);
+      expect(setContent.mock.calls).toEqual([
+        [NOTE, 'body MINE\nAGENT', 9, WS, { baseContentBytes: 10 }],
+      ]);
       run.task.cancel();
       await run.task.toPromise();
     });
