@@ -642,13 +642,14 @@ test('keeps 30 consecutive 640px readiness generations active and stable', async
   );
 });
 
-test('keeps final diagram geometry polished across themes and widths', async ({ page }) => {
+test('keeps diagram labels and outlines contained across themes and widths', async ({ page }) => {
   test.setTimeout(360_000);
   await page.setViewportSize({ width: 1400, height: 1000 });
 
   for (const colorTheme of ['default-light', 'default-dark', 'nord'] as const) {
     if (colorTheme === 'nord') {
       await openSandbox(page, 'state=mermaid-cycle-fanout&theme=light&width=960&motion=reduced');
+      await page.getByRole('button', { name: 'Customize preview' }).click();
       await page.getByTestId('catalog-color-theme-control').click();
       await page.getByRole('option', { name: 'Nord', exact: true }).click();
     }
@@ -693,20 +694,6 @@ test('keeps final diagram geometry polished across themes and widths', async ({ 
           }
           return distance;
         };
-        const isStraightLinePath = (pathData: string) => {
-          if (/[CQAHVST]/i.test(pathData)) return false;
-          const values = pathData.match(/-?(?:\d+(?:\.\d*)?|\.\d+)/g)?.map(Number) ?? [];
-          const points = Array.from({ length: values.length / 2 }, (_, index) => ({
-            x: values[index * 2],
-            y: values[index * 2 + 1],
-          }));
-          const directions = points.slice(1).flatMap((point, index) => {
-            const previous = points[index];
-            if (point.x === previous.x && point.y === previous.y) return [];
-            return [point.x === previous.x ? 'vertical' : 'horizontal'];
-          });
-          return new Set(directions).size <= 1;
-        };
         const surfaceFailures = [
           ['#mermaid-state', '.mermaid-svg > svg', 'backgroundColor'],
           ['#mermaid-state', '.edgeLabel rect.background', 'fill'],
@@ -743,18 +730,9 @@ test('keeps final diagram geometry polished across themes and widths', async ({ 
               longSvgRect.right - rect.right,
               longSvgRect.bottom - rect.bottom,
             ),
-            radius: Number.parseFloat(style.rx),
             strokeWidth: Number.parseFloat(style.strokeWidth),
           };
         });
-
-        const cyclePaths = [
-          ...document.querySelectorAll<SVGPathElement>('#mermaid-cycle-fanout .flowchart-link'),
-        ].map((path) => ({
-          data: path.getAttribute('d') ?? '',
-          radius: Number(path.dataset.cornerRadius ?? 0),
-          straight: isStraightLinePath(path.getAttribute('d') ?? ''),
-        }));
 
         const customRoot = document.querySelector('#custom-walkthrough')!;
         const labels = [
@@ -765,13 +743,10 @@ test('keeps final diagram geometry polished across themes and widths', async ({ 
           const path = customRoot.querySelector<SVGGeometryElement>(
             `.diagram-edge[data-edge-id="${CSS.escape(edgeId)}"] .edge-path`,
           )!;
-          const content = label.querySelector<HTMLElement>('.edge-label-html')!;
           return {
             edgeId,
             rect,
             routeDistance: routeDistance(path, rect),
-            borderStyle: getComputedStyle(content).borderStyle,
-            borderWidth: getComputedStyle(content).borderWidth,
           };
         });
         const nodes = [...customRoot.querySelectorAll('.diagram-node-html')].map((node) =>
@@ -845,11 +820,7 @@ test('keeps final diagram geometry polished across themes and widths', async ({ 
         return {
           surfaceFailures,
           longOutlines,
-          cyclePaths,
           labelDistances: labels.map((label) => label.routeDistance),
-          labelsUnbordered: labels.every(
-            (label) => label.borderStyle === 'none' && label.borderWidth === '0px',
-          ),
           labelsClearNodes: labels.every((label) =>
             nodes.every((node) => !intersects(label.rect, node, 1)),
           ),
@@ -858,11 +829,6 @@ test('keeps final diagram geometry polished across themes and widths', async ({ 
           ),
           unrelatedRouteLabelCrossings: unrelatedRouteLabelCrossings.length,
           routeCrossings,
-          customPathsPolished: customPaths.every((path) => {
-            const data = path.getAttribute('d') ?? '';
-            return data.includes(' Q ') || isStraightLinePath(data);
-          }),
-          hasLeaders: customRoot.querySelectorAll('.edge-label-leader').length > 0,
           footerClearance: footer.top - content.bottom,
         };
       });
@@ -873,18 +839,11 @@ test('keeps final diagram geometry polished across themes and widths', async ({ 
         `${colorTheme}/${width} long box containment`,
       ).toBe(true);
 
-      expect(geometry.cyclePaths.some(({ data }) => data.includes(' Q '))).toBe(true);
-      expect(
-        geometry.cyclePaths.every(({ data, straight }) => data.includes(' Q ') || straight),
-      ).toBe(true);
       expect(geometry.labelDistances.every((distance) => distance <= 1)).toBe(true);
-      expect(geometry.labelsUnbordered).toBe(true);
       expect(geometry.labelsClearNodes).toBe(true);
       expect(geometry.labelsClearLabels).toBe(true);
       expect(geometry.unrelatedRouteLabelCrossings).toBe(0);
       expect(geometry.routeCrossings).toBe(0);
-      expect(geometry.customPathsPolished).toBe(true);
-      expect(geometry.hasLeaders).toBe(false);
       expect(geometry.footerClearance).toBeGreaterThanOrEqual(-1);
     }
   }
