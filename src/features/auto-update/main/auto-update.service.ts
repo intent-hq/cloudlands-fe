@@ -26,17 +26,27 @@ import { broadcastToRenderers } from './auto-update-broadcast';
 import { cancellableFeedOptions } from './cancellable-feed-provider';
 import { configureMacUpdateCompatibility } from './mac-update-compatibility';
 import {
+  FIRST_SEEN_DAY_PREF,
+  FIRST_SEEN_ESTIMATED_PREF,
   LAST_UPDATE_CHECK_DAY_PREF,
+  LAST_UPDATE_MONTH_PREF,
+  LAST_UPDATE_WEEK_PREF,
   SHARE_UPDATE_STATISTICS_PREF,
   detectInstallSource,
+  installAgeBucket,
   installTelemetryHeaderFilter,
   installUpdateRequestAllowlist,
+  isFirstCheckOfPeriod,
   isFirstCheckOfUtcDay,
+  resolveFirstSeen,
   resolveUpdateFeed,
   utcDay,
+  utcIsoWeek,
+  utcMonth,
   type ResolvedUpdateFeed,
   type UpdateCheckTrigger,
 } from './update-telemetry';
+import { estimateDirCreatedAtMs } from './user-data-age';
 import { isUpdateChannel, type UpdateChannel, type UpdateState, type UpdateStatus } from '../types';
 
 const { autoUpdater } = electronUpdater;
@@ -130,6 +140,15 @@ class AutoUpdateService {
   // synchronously. Drives the stable channel's once-a-day automatic checks
   // and the telemetry feed's `d=1` flag.
   private lastSuccessfulCheckDay: string | null = null;
+  // UTC ISO week / month of the last successful check (`lastUpdateWeek` /
+  // `lastUpdateMonth` prefs), driving the telemetry `w` / `m` flags.
+  private lastSuccessfulCheckWeek: string | null = null;
+  private lastSuccessfulCheckMonth: string | null = null;
+  // First-seen day (`firstSeenDay`, null when unknown) and whether it is an
+  // estimate (`firstSeenEstimated`). A recorded fresh install sends `i=1` on
+  // its first successful check; estimated or unknown installs never do.
+  private firstSeenDay: string | null = null;
+  private firstSeenEstimated = true;
   // Wall-clock time of the last automatic check attempt started on stable,
   // successful or not. Manual/channel checks and alpha/beta checks do not
   // set it.
@@ -306,18 +325,46 @@ class AutoUpdateService {
   }
 
   /**
-   * Load the "Share anonymous update statistics" toggle (default on) and the
-   * last counted check day from local prefs.
+   * Load the "Share anonymous update statistics" toggle (default on), the
+   * last counted check day/week/month, and the first-seen day from local
+   * prefs. The first-seen day is decided once per install (see
+   * resolveFirstSeen) and stored right away.
    */
   private async loadTelemetrySettings(): Promise<void> {
     try {
-      const { getLocalPref } = await import('../../../main/local-prefs');
-      const [share, lastDay] = await Promise.all([
-        getLocalPref<unknown>(SHARE_UPDATE_STATISTICS_PREF),
-        getLocalPref<unknown>(LAST_UPDATE_CHECK_DAY_PREF),
-      ]);
+      const { getLocalPref, setLocalPref } = await import('../../../main/local-prefs');
+      const [share, lastDay, lastWeek, lastMonth, storedFirstSeen, storedEstimated] =
+        await Promise.all([
+          getLocalPref<unknown>(SHARE_UPDATE_STATISTICS_PREF),
+          getLocalPref<unknown>(LAST_UPDATE_CHECK_DAY_PREF),
+          getLocalPref<unknown>(LAST_UPDATE_WEEK_PREF),
+          getLocalPref<unknown>(LAST_UPDATE_MONTH_PREF),
+          getLocalPref<unknown>(FIRST_SEEN_DAY_PREF),
+          getLocalPref<unknown>(FIRST_SEEN_ESTIMATED_PREF),
+        ]);
       this.state.shareStatistics = share !== false;
       this.lastSuccessfulCheckDay = typeof lastDay === 'string' ? lastDay : null;
+      this.lastSuccessfulCheckWeek = typeof lastWeek === 'string' ? lastWeek : null;
+      this.lastSuccessfulCheckMonth = typeof lastMonth === 'string' ? lastMonth : null;
+
+      const needsEstimate = typeof storedFirstSeen !== 'string' && storedEstimated !== true;
+      const firstSeen = resolveFirstSeen({
+        storedDay: storedFirstSeen,
+        storedEstimated,
+        hasPriorUpdateState:
+          lastDay !== undefined || lastWeek !== undefined || lastMonth !== undefined,
+        userDataCreatedAtMs: needsEstimate
+          ? await estimateDirCreatedAtMs(app.getPath('userData'))
+          : null,
+        processStartMs: Date.now() - process.uptime() * 1000,
+        now: new Date(),
+      });
+      this.firstSeenDay = firstSeen.day;
+      this.firstSeenEstimated = firstSeen.estimated;
+      if (firstSeen.persist) {
+        if (firstSeen.day !== null) await setLocalPref(FIRST_SEEN_DAY_PREF, firstSeen.day);
+        await setLocalPref(FIRST_SEEN_ESTIMATED_PREF, firstSeen.estimated);
+      }
     } catch (error) {
       logger.error('Failed to load update telemetry settings', error as Error);
     }
@@ -361,6 +408,7 @@ class AutoUpdateService {
     trigger: UpdateCheckTrigger,
   ): ResolvedUpdateFeed {
     const env = process.env;
+    const now = new Date();
     return resolveUpdateFeed({
       channel,
       githubBase: DEFAULTS.AUTO_UPDATE_URL,
@@ -371,7 +419,11 @@ class AutoUpdateService {
         version: this.state.currentVersion || app.getVersion(),
         source: detectInstallSource(process.platform, env),
         trigger,
-        daily: isFirstCheckOfUtcDay(this.lastSuccessfulCheckDay, new Date()),
+        daily: isFirstCheckOfUtcDay(this.lastSuccessfulCheckDay, now),
+        weekly: isFirstCheckOfPeriod(this.lastSuccessfulCheckWeek, utcIsoWeek(now)),
+        monthly: isFirstCheckOfPeriod(this.lastSuccessfulCheckMonth, utcMonth(now)),
+        install: !this.firstSeenEstimated && this.lastSuccessfulCheckDay === null,
+        age: installAgeBucket(this.firstSeenDay, now),
       },
       shareStatistics: this.state.shareStatistics,
       githubFallbackActive: this.githubFallbackActive,
@@ -407,18 +459,36 @@ class AutoUpdateService {
 
   /**
    * Record that an update check succeeded today (on any feed). Drives the
-   * stable once-a-day cadence and the telemetry `d` flag. Failed checks are
+   * stable once-a-day cadence and the telemetry `d`, `w`, `m` and `i` flags
+   * (`i` is only sent while no check has ever succeeded). Failed checks are
    * never recorded, so a later tick or focus retries (on stable, at most one
    * automatic attempt per hour; see isStableAutomaticCheckDue).
    */
   private markCheckSucceededToday(): void {
-    const today = utcDay(new Date());
-    if (this.lastSuccessfulCheckDay === today) return;
-    this.lastSuccessfulCheckDay = today;
+    const now = new Date();
+    const updates: Array<[string, string]> = [];
+    const today = utcDay(now);
+    if (this.lastSuccessfulCheckDay !== today) {
+      this.lastSuccessfulCheckDay = today;
+      updates.push([LAST_UPDATE_CHECK_DAY_PREF, today]);
+    }
+    const week = utcIsoWeek(now);
+    if (this.lastSuccessfulCheckWeek !== week) {
+      this.lastSuccessfulCheckWeek = week;
+      updates.push([LAST_UPDATE_WEEK_PREF, week]);
+    }
+    const month = utcMonth(now);
+    if (this.lastSuccessfulCheckMonth !== month) {
+      this.lastSuccessfulCheckMonth = month;
+      updates.push([LAST_UPDATE_MONTH_PREF, month]);
+    }
+    if (updates.length === 0) return;
     void import('../../../main/local-prefs')
-      .then(({ setLocalPref }) => setLocalPref(LAST_UPDATE_CHECK_DAY_PREF, today))
+      .then(({ setLocalPref }) =>
+        Promise.all(updates.map(([key, value]) => setLocalPref(key, value))),
+      )
       .catch((error) => {
-        logger.warn('Failed to persist last update check day', {
+        logger.warn('Failed to persist last update check period', {
           error: (error as Error).message,
         });
       });
