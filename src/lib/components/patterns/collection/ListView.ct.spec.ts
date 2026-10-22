@@ -1,5 +1,7 @@
+import type { Page } from '@playwright/test';
 import { expect, test } from '../../../../test/ct-test';
 import CollectionStateHarness from './CollectionStateHarness.svelte';
+import ControlledSelectionHarness from './ControlledSelectionHarness.svelte';
 
 test('virtual rows fill the viewport on mount and resize without scrolling', async ({
   mount,
@@ -65,4 +67,56 @@ test('selected backgrounds follow virtual rows after scrolling', async ({
     body: await list.screenshot({ path: testInfo.outputPath('scrolled-selection.png') }),
     contentType: 'image/png',
   });
+});
+
+async function expectSelectionMatchesOwner(page: Page) {
+  const owner = (await page.getByRole('status', { name: 'Owner selection' }).textContent())?.trim();
+  const options = page.getByRole('listbox', { name: 'Controlled selection' }).getByRole('option');
+  const selected: string[] = [];
+  for (const option of await options.all()) {
+    if ((await option.getAttribute('aria-selected')) === 'true')
+      selected.push((await option.textContent())?.trim().toLowerCase() ?? '');
+  }
+  expect(selected).toEqual(owner === 'none' ? [] : [owner]);
+}
+
+test('selection stays on the owner state when it deselects and reselects in one frame', async ({
+  mount,
+  page,
+}) => {
+  await mount(ControlledSelectionHarness);
+  const listbox = page.getByRole('listbox', { name: 'Controlled selection' });
+  const owner = page.getByRole('status', { name: 'Owner selection' });
+  const beta = listbox.getByRole('option', { name: 'Beta' });
+  await expect(beta).toHaveAttribute('aria-selected', 'true');
+
+  // Clicking the selected row reports [] and onActivate re-selects it before the next frame.
+  await beta.click();
+  await expect(owner).toHaveText('beta');
+  await expect(beta).toHaveAttribute('aria-selected', 'true');
+  await expectSelectionMatchesOwner(page);
+
+  const alpha = listbox.getByRole('option', { name: 'Alpha' });
+  await alpha.click();
+  await expect(owner).toHaveText('alpha');
+  await alpha.click();
+  await expect(owner).toHaveText('alpha');
+  await expect(alpha).toHaveAttribute('aria-selected', 'true');
+  await expect(beta).toHaveAttribute('aria-selected', 'false');
+  await expectSelectionMatchesOwner(page);
+});
+
+test('selection does not change without the owner accepting it', async ({ mount, page }) => {
+  await mount(ControlledSelectionHarness, { props: { reportChanges: false } });
+  const listbox = page.getByRole('listbox', { name: 'Controlled selection' });
+  const alpha = listbox.getByRole('option', { name: 'Alpha' });
+  const beta = listbox.getByRole('option', { name: 'Beta' });
+
+  await alpha.click();
+  await beta.click();
+  await alpha.press('Enter');
+  await expect(page.getByRole('status', { name: 'Owner selection' })).toHaveText('beta');
+  await expect(alpha).toHaveAttribute('aria-selected', 'false');
+  await expect(beta).toHaveAttribute('aria-selected', 'true');
+  await expectSelectionMatchesOwner(page);
 });

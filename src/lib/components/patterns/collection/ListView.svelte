@@ -17,7 +17,12 @@
     getKey?: (item: T, index: number) => ListKey;
     getText?: (item: T, index: number) => string;
     selectable?: SelectionMode;
-    selectedKeys?: ListKey[];
+    /**
+     * Controlled selection: the only source of truth for which rows are selected. ListView never
+     * keeps its own copy; user changes are reported through `onSelectedKeysChange`, and the
+     * highlight only moves once the owner passes new keys back.
+     */
+    selectedKeys?: readonly ListKey[];
     /** Use indicator when each row supplies a visible selection control. */
     selectionAppearance?: 'surface' | 'indicator';
     onSelectedKeysChange?: (keys: ListKey[]) => void;
@@ -41,7 +46,7 @@
     getKey = (_item, index) => index,
     getText = (item, index) => String(getKey(item, index)),
     selectable = false,
-    selectedKeys = $bindable([]),
+    selectedKeys = [],
     selectionAppearance = 'surface',
     onSelectedKeysChange,
     onActivate,
@@ -165,7 +170,6 @@
   };
 
   function setSelection(next: ListKey[]) {
-    selectedKeys = next;
     onSelectedKeysChange?.(next);
   }
 
