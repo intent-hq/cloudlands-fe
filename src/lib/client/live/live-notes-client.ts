@@ -20,6 +20,7 @@ import type {
   MutationResult,
   NoteAddOptions,
   NoteGetOptions,
+  NoteSetContentOptions,
   NoteMetadataPatch,
   NoteRestoreResult,
   NotesClient,
@@ -243,11 +244,17 @@ export class LiveNotesClient implements NotesClient {
     content: string,
     expectedVersion?: number,
     workspaceId?: string,
+    options?: NoteSetContentOptions,
   ): Promise<MutationResult> {
     return this.runNoteMutation(
       noteId,
       'note.setContent',
-      { content },
+      {
+        content,
+        ...(options?.baseContentBytes !== undefined
+          ? { baseContentBytes: options.baseContentBytes }
+          : {}),
+      },
       expectedVersion,
       workspaceId,
     );

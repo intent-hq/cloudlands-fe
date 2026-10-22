@@ -986,3 +986,45 @@ describe('LiveNotesClient.get truncated reads (§5.2 "Truncated note reads")', (
     expect(truncated).toMatchObject({ contentTruncated: true, contentBytes: 600_000 });
   });
 });
+
+describe('LiveNotesClient.setContent write guard (§5.2 "Truncated note reads")', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    mockedResolve.mockResolvedValue('ws-1');
+  });
+
+  it('sends baseContentBytes with expectedVersion when given', async () => {
+    mockedRequest.mockResolvedValueOnce({ ok: true, rev: 8, newContent: 'x' });
+    await new LiveNotesClient().setContent('n1', 'x', 7, 'ws-1', { baseContentBytes: 11 });
+    expect(mockedRequest).toHaveBeenCalledWith('note.setContent', {
+      workspaceId: 'ws-1',
+      noteId: 'n1',
+      content: 'x',
+      baseContentBytes: 11,
+      expectedVersion: 7,
+    });
+  });
+
+  it('maps a content-base-mismatch refusal to contentBaseMismatch', async () => {
+    mockedRequest.mockRejectedValueOnce(
+      Object.assign(new Error('Content base does not match the stored note'), {
+        rpcCode: -32602,
+        data: { code: 'content-base-mismatch', baseContentBytes: 11, resolvedBaseBytes: 40 },
+      }),
+    );
+    const result = await new LiveNotesClient().setContent('n1', 'x', 7, 'ws-1', {
+      baseContentBytes: 11,
+    });
+    expect(result).toMatchObject({ success: false, contentBaseMismatch: true });
+    expect(result.conflict).toBeUndefined();
+  });
+
+  it('does not flag other invalid-params errors', async () => {
+    mockedRequest.mockRejectedValueOnce(
+      Object.assign(new Error('bad'), { rpcCode: -32602, data: { code: 'other' } }),
+    );
+    const result = await new LiveNotesClient().setContent('n1', 'x', 7, 'ws-1');
+    expect(result.success).toBe(false);
+    expect(result.contentBaseMismatch).toBeUndefined();
+  });
+});

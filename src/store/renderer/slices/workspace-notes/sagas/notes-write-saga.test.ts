@@ -29,6 +29,7 @@ import {
   createNote,
   deleteNote,
   loadWorkspaceNotesSucceeded,
+  readNoteRequested,
   resolveCommentRequested,
   updateNote,
   updateNoteContent,
@@ -332,6 +333,85 @@ describe('notesWriteSaga', () => {
       ),
     ]);
     expect(run.actions.some((action) => action.type === openTab.type)).toBe(false);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('guards a save with the UTF-8 size of its multibyte base when supported (§5.2)', async () => {
+    vi.spyOn(appClient.notes, 'supportsTruncatedRead').mockResolvedValue(true);
+    const setContent = vi
+      .spyOn(appClient.notes, 'setContent')
+      .mockResolvedValue({ success: true, noteRev: 5, newContent: 'héllo 😀 more' });
+    // "héllo 😀": h(1) é(2) llo(3) space(1) 😀(4) = 11 bytes, 7 UTF-16 units + 1.
+    const run = harness(note({ content: 'héllo 😀' }));
+
+    run.channel.put(updateNoteContent(WS, NOTE, 'héllo 😀 more', true));
+    await settle();
+    run.channel.put(updateNoteContent(WS, NOTE, 'héllo 😀 more!', true));
+    await settle();
+
+    expect(setContent.mock.calls).toEqual([
+      [NOTE, 'héllo 😀 more', 4, WS, { baseContentBytes: 11 }],
+      // The next chain is based on the acknowledged text (16 bytes).
+      [NOTE, 'héllo 😀 more!', 5, WS, { baseContentBytes: 16 }],
+    ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it("guards with the editor's baseline when it names the draft's base", async () => {
+    vi.spyOn(appClient.notes, 'supportsTruncatedRead').mockResolvedValue(true);
+    const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+      success: true,
+    });
+    const run = harness(note({ content: 'store text that moved on' }));
+
+    run.channel.put(
+      updateNoteContent(WS, NOTE, 'ab edited', { immediate: true, baseRev: 3, baseContent: 'ab' }),
+    );
+    await settle();
+
+    expect(setContent.mock.calls).toEqual([[NOTE, 'ab edited', 3, WS, { baseContentBytes: 2 }]]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('sends no baseContentBytes to a daemon without noteTruncatedRead', async () => {
+    vi.spyOn(appClient.notes, 'supportsTruncatedRead').mockResolvedValue(false);
+    const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+      success: true,
+    });
+    const run = harness(note({ content: 'héllo' }));
+
+    run.channel.put(updateNoteContent(WS, NOTE, 'héllo!', true));
+    await settle();
+
+    expect(setContent.mock.calls).toEqual([[NOTE, 'héllo!', 4, WS]]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('reloads the note on content-base-mismatch instead of retrying or overwriting', async () => {
+    vi.spyOn(appClient.notes, 'supportsTruncatedRead').mockResolvedValue(true);
+    const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+      success: false,
+      error: 'Content base does not match the stored note; re-read the full note and retry.',
+      contentBaseMismatch: true,
+    });
+    const list = vi.spyOn(appClient.notes, 'list');
+    const run = harness(note({ content: 'base' }));
+
+    run.channel.put(updateNoteContent(WS, NOTE, 'base edited', true));
+    await settle();
+
+    expect(setContent).toHaveBeenCalledTimes(1);
+    expect(list).not.toHaveBeenCalled();
+    expect(run.actions.filter((action) => action.type === readNoteRequested.type)).toEqual([
+      expect.objectContaining({ payload: [WS, NOTE] }),
+    ]);
+    expect(notify.warning).toHaveBeenCalledTimes(1);
+    expect(notify.error).not.toHaveBeenCalled();
+    expect(run.getState().byWorkspaceId[WS]?.pendingContentByNoteId[NOTE]).toBeFalsy();
     run.task.cancel();
     await run.task.toPromise();
   });

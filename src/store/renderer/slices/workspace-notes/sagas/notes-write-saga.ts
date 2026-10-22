@@ -51,6 +51,7 @@ import {
   deleteNotePersistRequested,
   flushNoteContentRequested,
   loadWorkspaceNotesSucceeded,
+  readNoteRequested,
   removeOptimisticNote,
   respondToCommentRequested,
   resolveCommentRequested,
@@ -145,6 +146,12 @@ const unackedDrafts = new Map<string, PendingContent[]>();
 // advanced to each echo's rev as the pending drafts are rebased onto it, and
 // sent as `expectedVersion`.
 const draftBaseRev = new Map<string, number>();
+// The exact daemon text the current edit chain is based on (paired with
+// `draftBaseRev`): its UTF-8 size is the truncated-read write guard's
+// `baseContentBytes` (§5.2 "Truncated note reads"). Never a size copied from a
+// response.
+const draftBaseContent = new Map<string, string>();
+const utf8 = new TextEncoder();
 const workspaceMutationGenerations = new Map<string, number>();
 let noteMutationQueue: Channel<MutationEnvelope> | undefined;
 
@@ -277,7 +284,10 @@ function* rebasePendingDrafts(
   if (echoed !== command.content) {
     for (const draft of later) draft.content = rebaseText(command.content, echoed, draft.content);
   }
-  if (echoedRev !== undefined) draftBaseRev.set(key, echoedRev);
+  if (echoedRev !== undefined) {
+    draftBaseRev.set(key, echoedRev);
+    draftBaseContent.set(key, echoed);
+  }
   const newest = later[later.length - 1];
   if (!newest) return undefined;
   const stored = yield* selectNoteById.effect(workspaceId, noteId);
@@ -324,6 +334,32 @@ function* applyContentSaveResult(
     : { content: applied.content };
 }
 
+/**
+ * The daemon refused a whole-content write because its base no longer matches
+ * the stored note (§5.2 `content-base-mismatch`). Never retry: drop the drafts
+ * built on that base, re-read the note through the view read (which may now
+ * come back truncated, i.e. render-only), and tell the user.
+ */
+function* reloadAfterContentBaseMismatch(workspaceId: string, noteId: string) {
+  const key = noteKey(workspaceId, noteId);
+  pendingContent.delete(key);
+  unackedDrafts.delete(key);
+  latestEditSeq.delete(key);
+  draftBaseRev.delete(key);
+  draftBaseContent.delete(key);
+  yield* put(setNoteContentPending(workspaceId, noteId, false));
+  logger.warn('Note content base mismatch; reloaded the note', { noteId });
+  notify.warning(m.notes_writeService_noteChanged_label(), {
+    description: m.notes_writeService_noteChanged_description(),
+  });
+  // Not awaited: the save queue must not wait on the read path.
+  const read = readNoteRequested(workspaceId, noteId);
+  read.promise.catch((error: unknown) =>
+    logger.error('Failed to reload the note after a content base mismatch', error),
+  );
+  yield* put(read);
+}
+
 function forgetDraft(key: string, draft: PendingContent): void {
   const remaining = (unackedDrafts.get(key) ?? []).filter((d) => d !== draft);
   if (remaining.length > 0) unackedDrafts.set(key, remaining);
@@ -340,6 +376,7 @@ function* saveContent(command: ContentCommand): SagaGenerator<AppliedNoteContent
   // conflict path. `command.content` is read here, not at enqueue time: an
   // earlier save's echo may have rebased it while queued.
   const rev = draftBaseRev.get(key) ?? note?.rev;
+  const baseContent = draftBaseContent.get(key);
   try {
     // A truncated view read (§5.2 "Truncated note reads") holds only a prefix:
     // replacing the whole note with it would drop everything after the cut, so
@@ -348,13 +385,23 @@ function* saveContent(command: ContentCommand): SagaGenerator<AppliedNoteContent
       logger.error('Refusing a whole-content write built from a truncated note read', { noteId });
       return undefined;
     }
+    // A client that reads with `maxContentBytes` must guard every whole-content
+    // write with the size of its base; older daemons never see the param.
+    const guarded =
+      baseContent !== undefined &&
+      (yield* call([appClient.notes, appClient.notes.supportsTruncatedRead]));
     const result: MutationResult = yield* call(
       [appClient.notes, appClient.notes.setContent],
       noteId,
       command.content,
       rev,
       workspaceId,
+      ...(guarded ? [{ baseContentBytes: utf8.encode(baseContent).length }] : []),
     );
+    if (result.contentBaseMismatch) {
+      yield* call(reloadAfterContentBaseMismatch, workspaceId, noteId);
+      return undefined;
+    }
     if (!result.success) {
       logger.error('Failed to save note content', result.error);
       notify.error(m.notes_writeService_saveFailed_error(), {
@@ -375,6 +422,7 @@ function* saveContent(command: ContentCommand): SagaGenerator<AppliedNoteContent
     if (latestEditSeq.get(key) === command.seq) {
       latestEditSeq.delete(key);
       draftBaseRev.delete(key);
+      draftBaseContent.delete(key);
     }
     if ((unackedDrafts.get(key)?.length ?? 0) === 0) {
       yield* put(setNoteContentPending(workspaceId, noteId, false));
@@ -547,6 +595,12 @@ function* handleContentAction(
   if (!draftBaseRev.has(key)) {
     const baseRev = options.baseRev ?? (yield* selectNoteById.effect(workspaceId, noteId))?.rev;
     if (baseRev !== undefined) draftBaseRev.set(key, baseRev);
+  }
+  if (!draftBaseContent.has(key)) {
+    // The chain starts from the synced text: the editor's baseline, else the store.
+    const base =
+      options.baseContent ?? (yield* selectNoteById.effect(workspaceId, noteId))?.content;
+    if (base !== undefined) draftBaseContent.set(key, base);
   }
   const newest = (unackedDrafts.get(key) ?? []).at(-1);
   if (newest && options.baseContent !== undefined && options.baseContent !== newest.content) {
@@ -914,6 +968,9 @@ function* cleanupWorkspace(action: WorkspaceCleanupAction) {
   for (const key of draftBaseRev.keys()) {
     if (key.startsWith(`${workspaceId}:`)) draftBaseRev.delete(key);
   }
+  for (const key of draftBaseContent.keys()) {
+    if (key.startsWith(`${workspaceId}:`)) draftBaseContent.delete(key);
+  }
   for (const key of unackedDrafts.keys()) {
     if (key.startsWith(`${workspaceId}:`)) unackedDrafts.delete(key);
   }
@@ -978,6 +1035,7 @@ export function* notesWriteSaga() {
     pendingContent.clear();
     latestEditSeq.clear();
     draftBaseRev.clear();
+    draftBaseContent.clear();
     unackedDrafts.clear();
     workspaceMutationGenerations.clear();
     queue.close();
