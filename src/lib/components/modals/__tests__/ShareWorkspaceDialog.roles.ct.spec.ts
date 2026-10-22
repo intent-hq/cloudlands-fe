@@ -47,13 +47,17 @@ test('keyboard role selection preserves the confirmed value, closes only the men
   await trigger.focus();
   await page.keyboard.press('Enter');
   const participant = page.getByRole('menuitemradio', { name: /^Participant/ });
+  const manager = page.getByRole('menuitemradio', { name: /^Manager/ });
+  await expect(participant).toBeFocused();
   await expect(participant).toHaveAttribute('aria-checked', 'true');
   await page.keyboard.press('Escape');
   await expect(page.getByRole('menu')).toHaveCount(0);
   await expect(trigger).toBeFocused();
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.keyboard.press('Enter');
+  await expect(participant).toBeFocused();
   await page.keyboard.press('End');
+  await expect(manager).toBeFocused();
   await page.keyboard.press('Enter');
   await expect.poll(() => requests).toEqual([{ principalId: 'guest', role: 'manager' }]);
   await expect(trigger).toHaveText('Participant');
@@ -71,7 +75,7 @@ test('keyboard role selection preserves the confirmed value, closes only the men
   await expect(trigger).toBeEnabled();
   await trigger.click();
   await expect(participant).toHaveAttribute('aria-checked', 'true');
-  await page.getByRole('menuitemradio', { name: /^Manager/ }).click();
+  await manager.click();
   await expect.poll(() => requests.length).toBe(2);
   await component.update({
     props: {
