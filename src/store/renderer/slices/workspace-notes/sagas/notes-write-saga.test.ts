@@ -451,18 +451,16 @@ describe('notesWriteSaga', () => {
     });
     vi.spyOn(appClient.notes, 'create').mockResolvedValue({ success: true });
     const created = note({ id: NoteId('fresh'), title: 'Fresh', content: '', rev: 1 });
-    const list = vi
-      .spyOn(appClient.notes, 'list')
-      .mockResolvedValue([
-        note({
-          id: NoteId('big'),
-          content: '',
-          contentPreview: 'prefix',
-          contentLength: 600_000,
-          rev: 9,
-        }),
-        created,
-      ]);
+    const list = vi.spyOn(appClient.notes, 'list').mockResolvedValue([
+      note({
+        id: NoteId('big'),
+        content: '',
+        contentPreview: 'prefix',
+        contentLength: 600_000,
+        rev: 9,
+      }),
+      created,
+    ]);
     const run = harness(big);
 
     run.channel.put(createNote(WS, { title: 'Fresh', content: '', tags: [] }));
