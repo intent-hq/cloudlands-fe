@@ -16,6 +16,7 @@
     normalizeSelectedTabs,
   } from '../multi-select-sidebar-tabs';
   import { m } from '$shared/paraglide/messages.js';
+  import { getSidebarFlyout } from './sidebar-flyout-context';
 
   let {
     workspaceId,
@@ -30,6 +31,7 @@
   } = $props();
   type SectionTab = (typeof TAB_DEFINITIONS)[number];
   let tabViewport = $state<HTMLDivElement | null>(null);
+  const flyout = getSidebarFlyout();
 
   const workspaceId$ = writable('');
   $effect.pre(() => workspaceId$.set(workspaceId));
@@ -43,8 +45,13 @@
         (id !== 'people' || $people$.length > 0) && !($collaborator$ && OWNER_ONLY_TAB_IDS.has(id)),
     ),
   );
-  const selected = $derived(
+  const savedSelection = $derived(
     [...normalizeSelectedTabs($selected$, $collaborator$, $people$.length > 0)][0],
+  );
+  const selected = $derived(
+    orientation === 'vertical' && flyout?.open && tabs.some((tab) => tab.id === flyout?.tabId)
+      ? (flyout.tabId ?? savedSelection)
+      : savedSelection,
   );
 
   $effect(() => {
@@ -109,8 +116,22 @@
         aria-controls={panelId ? `${panelId}-${tab.id}` : undefined}
         class="relative w-full min-w-0 gap-0 px-0"
         data-sidebar-section-tab={tab.id}
-        onclick={() => {
-          if (selected === tab.id) onActivate?.(tab.id);
+        onpointerenter={(event) => {
+          if (orientation === 'vertical' && event.pointerType !== 'touch')
+            flyout?.preview(tab.id, event.currentTarget);
+        }}
+        onfocus={(event) => {
+          if (orientation === 'vertical') flyout?.preview(tab.id, event.currentTarget, true);
+        }}
+        onkeyup={(event) => {
+          if (orientation === 'vertical' && (event.key === 'Enter' || event.key === ' ')) {
+            flyout?.preview(tab.id, event.currentTarget);
+            activate(tab.id);
+          }
+        }}
+        onclick={(event) => {
+          if (orientation === 'vertical') flyout?.preview(tab.id, event.currentTarget);
+          if (selected === tab.id) activate(tab.id);
         }}
       >
         <Fa icon={tab.icon} class={orientation === 'horizontal' ? 'size-4.5' : 'size-4'} />
@@ -129,7 +150,13 @@
         class="flex! w-full flex-col gap-1 bg-transparent p-0"
       >
         {#each tabs as tab (tab.id)}
-          <Tooltip content={tab.label} side="right" delayDuration={400} class="flex size-9">
+          <Tooltip
+            content={tab.label}
+            side="right"
+            disabled={!!flyout}
+            delayDuration={400}
+            class="flex size-9"
+          >
             {@render trigger(tab)}
           </Tooltip>
         {/each}

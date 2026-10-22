@@ -79,6 +79,7 @@
   import WorkspaceAgentsList from './WorkspaceAgentsList.svelte';
   import WorkspaceShellList from './WorkspaceShellList.svelte';
   import SidebarSectionTabs from './sidebar/SidebarSectionTabs.svelte';
+  import { getSidebarFlyout } from './sidebar/sidebar-flyout-context';
   import SidebarBrowserList from './SidebarBrowserList.svelte';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
   import {
@@ -134,6 +135,8 @@
 
   let changesRefreshAction = $state<Snippet>();
   const collapsed$ = selectIsCollapsed();
+  const flyout = getSidebarFlyout();
+  const panelOnly = $derived(flyout?.collapsed ?? false);
 
   // Reactive writable store that mirrors workspaceId so Redux selectors
   // re-evaluate whenever the prop changes (called at component init time).
@@ -196,7 +199,11 @@
   const selectedTabs = $derived(normalizeSelectedTabs($selectedTabIds, isCollaborator, showPeople));
   let agentSearchQuery = $state('');
   let contextSearchQuery = $state('');
-  const activeTabId = $derived([...selectedTabs][0] ?? 'agents');
+  const activeTabId = $derived(
+    panelOnly && flyout?.open && flyout.tabId
+      ? [...normalizeSelectedTabs([flyout.tabId], isCollaborator, showPeople)][0]
+      : ([...selectedTabs][0] ?? 'agents'),
+  );
   const panelId = $props.id();
   let mountedTabIds = $state<string[]>([]);
   let direction = $state<'left' | 'right'>('right');
@@ -479,18 +486,31 @@
 
 <div
   bind:this={sidebarElement}
-  class={cn('flex h-full min-w-0 flex-col overflow-hidden bg-sidebar', className)}
+  class={cn(
+    'flex h-full min-w-0 flex-col overflow-hidden',
+    panelOnly ? 'bg-transparent' : 'bg-sidebar',
+    className,
+  )}
   data-workspace-sidebar
 >
-  <div class="shrink-0 px-4 pt-4 pb-2" data-workspace-title-region>
+  <div
+    class="shrink-0 px-4 pt-4 pb-2"
+    hidden={panelOnly}
+    inert={panelOnly}
+    data-workspace-title-region
+  >
     <WorkspaceProgressCard {workspaceId} {active} onOpenNote={handleOpenNoteInPanel} />
   </div>
   <div class="shrink-0 px-3 pb-1" hidden={$collapsed$} inert={$collapsed$} data-sidebar-navigation>
     <SidebarSectionTabs {workspaceId} {panelId} />
   </div>
   <div
-    class="mx-3 mt-2 mb-3 min-h-0 flex-1 overflow-hidden rounded-(--radius-large) bg-muted/60 ring-1 ring-inset ring-border/50 dark:bg-surface-4"
+    class={cn(
+      'relative min-h-0 flex-1 overflow-hidden rounded-(--radius-large) bg-muted/60 ring-1 ring-inset ring-border/50 dark:bg-surface-4',
+      !panelOnly && 'mx-3 mt-2 mb-3',
+    )}
     data-sidebar-panels
+    data-floating={panelOnly || undefined}
     data-direction={direction}
   >
     {#each TAB_DEFINITIONS.filter(({ id }) => (id !== 'people' || showPeople) && !(isCollaborator && OWNER_ONLY_TAB_IDS.has(id))) as tab (tab.id)}
@@ -501,9 +521,14 @@
         aria-label={tab.label}
         tabindex="0"
         class="sidebar-section h-full min-h-0 flex-col outline-none"
-        style:display={tabId === activeTabId ? 'flex' : 'none'}
-        hidden={tabId !== activeTabId}
+        style:display={panelOnly || tabId === activeTabId ? 'flex' : 'none'}
+        hidden={!panelOnly && tabId !== activeTabId}
+        aria-hidden={tabId !== activeTabId}
         inert={tabId !== activeTabId}
+        data-position={TAB_DEFINITIONS.findIndex((tab) => tab.id === tabId) <
+        TAB_DEFINITIONS.findIndex((tab) => tab.id === activeTabId)
+          ? 'before'
+          : 'after'}
         data-sidebar-section={tabId}
         data-active={tabId === activeTabId || undefined}
       >

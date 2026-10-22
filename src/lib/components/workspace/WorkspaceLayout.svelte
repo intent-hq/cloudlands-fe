@@ -11,10 +11,14 @@
    * while maintaining consistent layout behavior.
    */
 
-  import { onDestroy, type Snippet } from 'svelte';
-  import { spring } from '$lib/motion';
+  import { onDestroy, setContext, type Snippet } from 'svelte';
+  import { spring, Spring } from '$lib/motion';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import WorkspaceSidebarRail from './sidebar/WorkspaceSidebarRail.svelte';
+  import {
+    SIDEBAR_FLYOUT_CONTEXT,
+    type SidebarFlyoutContext,
+  } from './sidebar/sidebar-flyout-context';
   import { store as appStore } from '$store/renderer/store';
   import { toggleSidebar } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
@@ -82,10 +86,14 @@
   let floatingOpen = $state(false);
   let shell: HTMLDivElement | undefined = $state();
   let rail: HTMLDivElement | undefined = $state();
+  let previewTabId = $state<string>();
+  let previewAnchor = $state<HTMLElement>();
+  const floatingTop = new Spring(0, 'moderate');
   let availableWidth = $state(0);
   let expandedWidth = $state(0);
   let suppressFocusReveal = false;
   let closeTimer: ReturnType<typeof setTimeout> | undefined;
+  let railPointer: { x: number; y: number } | undefined;
   const collapsed = $derived($sidebarIsCollapsed && !startCollapsed);
   const sidebarWidthLimit = $derived(
     availableWidth > 0 ? Math.min(sidebarMaxWidth, availableWidth) : sidebarMaxWidth,
@@ -99,10 +107,38 @@
     clearTimeout(closeTimer);
   }
 
-  function reveal() {
-    if (!active || !collapsed) return;
+  setContext<SidebarFlyoutContext>(SIDEBAR_FLYOUT_CONTEXT, {
+    get collapsed() {
+      return collapsed;
+    },
+    get open() {
+      return floatingOpen && collapsed && active;
+    },
+    get tabId() {
+      return previewTabId;
+    },
+    preview: reveal,
+  });
+
+  function alignToAnchor(anchor: HTMLElement) {
+    if (!shell) return;
+    const bounds = shell.getBoundingClientRect();
+    // Preserve a usable panel when a lower tab sits near the bottom of a short window.
+    const top = Math.max(
+      0,
+      Math.min(anchor.getBoundingClientRect().top - bounds.top, bounds.height - 240),
+    );
+    void floatingTop.set(top, { instant: !floatingOpen });
+  }
+
+  function reveal(tabId: string, anchor: HTMLElement, fromFocus = false) {
+    if (!active || !collapsed || (fromFocus && suppressFocusReveal && anchor === previewAnchor))
+      return;
     cancelDismiss();
     suppressFocusReveal = false;
+    alignToAnchor(anchor);
+    previewTabId = tabId;
+    previewAnchor = anchor;
     floatingOpen = true;
   }
 
@@ -134,6 +170,9 @@
   }
 
   function handlePointerMove(event: PointerEvent) {
+    railPointer = rail?.contains(event.target as Node)
+      ? { x: event.clientX, y: event.clientY }
+      : undefined;
     if (!floatingOpen) return;
     if (isSidebarTarget(event.target) || isOverlayTarget(event.target)) cancelDismiss();
     else scheduleDismiss();
@@ -142,7 +181,6 @@
   function handleFocusIn(event: FocusEvent) {
     if (isSidebarTarget(event.target)) {
       cancelDismiss();
-      if (!suppressFocusReveal) reveal();
     } else if (!isOverlayTarget(event.target)) {
       suppressFocusReveal = false;
       dismiss();
@@ -162,10 +200,38 @@
   });
 
   $effect(() => {
+    const anchor = previewAnchor;
+    const container = shell;
+    const railElement = rail;
+    if (!active || !collapsed || !anchor || !container || !railElement) return;
+    const align = () => alignToAnchor(anchor);
+    const handleScroll = () => {
+      const tab = railPointer
+        ? document
+            .elementFromPoint(railPointer.x, railPointer.y)
+            ?.closest<HTMLElement>('[data-sidebar-section-tab]')
+        : undefined;
+      if (tab && railElement.contains(tab) && tab.dataset.sidebarSectionTab)
+        reveal(tab.dataset.sidebarSectionTab, tab);
+      else align();
+    };
+    const observer = new ResizeObserver(align);
+    observer.observe(container);
+    observer.observe(anchor);
+    railElement.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('resize', align);
+    return () => {
+      observer.disconnect();
+      railElement.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('resize', align);
+    };
+  });
+
+  $effect(() => {
     if (!active || !collapsed || floatingOpen) return;
     if (isSidebarTarget(document.activeElement) && !rail?.contains(document.activeElement)) {
       suppressFocusReveal = true;
-      rail?.querySelector<HTMLElement>('button')?.focus();
+      (previewAnchor ?? rail?.querySelector<HTMLElement>('button'))?.focus();
     }
   });
 
@@ -174,7 +240,7 @@
     return pushEscapeLayer(() => {
       suppressFocusReveal = true;
       if (isSidebarTarget(document.activeElement)) {
-        rail?.querySelector<HTMLElement>('button')?.focus();
+        (previewAnchor ?? rail?.querySelector<HTMLElement>('button'))?.focus();
       }
       dismiss();
     });
@@ -211,7 +277,8 @@
         class:sidebar-floating={floatingOpen && collapsed && active}
         class:sidebar-right={sidebarSide === 'right'}
         style:--floating-width={`${floatingWidth}px`}
-        onpointerenter={reveal}
+        style:--floating-top={`${floatingTop.current}px`}
+        onpointerenter={cancelDismiss}
         onpointerleave={scheduleDismiss}
         data-workspace-sidebar-shell
       >
@@ -226,7 +293,6 @@
             <WorkspaceSidebarRail
               {workspaceId}
               side={sidebarSide}
-              onReveal={reveal}
               onExpand={() => appStore.dispatch(toggleSidebar())}
             />
           </div>
@@ -300,7 +366,9 @@
 
   .sidebar-collapsed .sidebar-content {
     position: absolute;
-    inset-block: 0;
+    top: var(--floating-top);
+    bottom: 12px;
+    height: auto;
     left: 48px;
     width: var(--floating-width);
     pointer-events: none;

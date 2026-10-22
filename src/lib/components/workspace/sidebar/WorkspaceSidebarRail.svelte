@@ -8,12 +8,10 @@
     workspaceId,
     side = 'left',
     onExpand,
-    onReveal,
   }: {
     workspaceId?: string;
     side?: 'left' | 'right';
     onExpand: () => void;
-    onReveal?: () => void;
   } = $props();
 </script>
 
@@ -33,6 +31,6 @@
     <SidebarIcon size={16} {side} />
   </Button>
   {#if workspaceId}
-    <SidebarSectionTabs {workspaceId} orientation="vertical" onActivate={() => onReveal?.()} />
+    <SidebarSectionTabs {workspaceId} orientation="vertical" />
   {/if}
 </div>

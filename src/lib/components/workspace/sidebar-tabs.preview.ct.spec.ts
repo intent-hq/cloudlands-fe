@@ -119,10 +119,18 @@ for (const theme of ['light', 'dark'] as const) {
     await rail.getByRole('tab', { name: 'Context', exact: true }).hover();
     const flyout = component.locator('[data-workspace-sidebar-flyout]');
     await expect(flyout).toHaveAttribute('data-workspace-sidebar-flyout', 'true');
-    await expect(flyout.locator('[data-agent-row-name]').first()).toBeVisible();
+    await expect(flyout.locator('[data-sidebar-section="context"]')).toBeVisible();
+    await expect(flyout.locator('[data-workspace-title-region]')).toBeHidden();
     const after = await main.boundingBox();
     expect(after?.x).toBeCloseTo(before!.x, 0);
     expect(after?.width).toBeCloseTo(before!.width, 0);
+    await draft.hover();
+    await expect(flyout).toHaveAttribute('data-workspace-sidebar-flyout', 'false');
+    await expect(rail.getByRole('tab', { name: 'Agents', exact: true })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await rail.getByRole('tab', { name: 'Context', exact: true }).hover();
     await rail.getByRole('tab', { name: 'Context', exact: true }).click();
     await expect(flyout.locator('[data-sidebar-section="context"]')).toBeVisible();
     await flyout.locator('[data-sidebar-search="context"] button').click();
@@ -132,13 +140,15 @@ for (const theme of ['light', 'dark'] as const) {
     await page.keyboard.press('Escape');
     await page.keyboard.press('Escape');
     await expect(flyout).toHaveAttribute('data-workspace-sidebar-flyout', 'false');
-    await expect(rail.locator('[data-sidebar-rail-expand]')).toBeFocused();
+    await expect(rail.getByRole('tab', { name: 'Context', exact: true })).toBeFocused();
+    await rail.getByRole('tab', { name: 'Context', exact: true }).press('Enter');
+    await expect(flyout).toHaveAttribute('data-workspace-sidebar-flyout', 'true');
     await rail.getByRole('tab', { name: 'Agents', exact: true }).hover();
     await expect(flyout).toHaveAttribute('data-workspace-sidebar-flyout', 'true');
     await draft.click();
     await expect(flyout).toHaveAttribute('data-workspace-sidebar-flyout', 'false');
     await expect(draft).toHaveValue('Keep this draft.');
-    await rail.hover();
+    await rail.getByRole('tab', { name: 'Agents', exact: true }).hover();
     await expect(flyout).toHaveAttribute('data-workspace-sidebar-flyout', 'true');
     await testInfo.attach(`floating-${theme}`, {
       body: await page.screenshot(),
@@ -160,7 +170,7 @@ test('pinning, collapsing, and keyboard reveal retain the same sidebar', async (
   await rail.getByRole('tab', { name: 'Context', exact: true }).press('Enter');
   await sidebar.locator('[data-sidebar-search="context"] button').click();
   await sidebar.locator('[data-sidebar-search-input="context"]').fill('Interaction');
-  await sidebar.locator('[data-sidebar-collapse]').click();
+  await rail.locator('[data-sidebar-rail-expand]').click();
   await expect(component.locator('[data-workspace-sidebar-shell]')).not.toHaveClass(
     /sidebar-collapsed/,
   );
@@ -187,10 +197,15 @@ test('pinning, collapsing, and keyboard reveal retain the same sidebar', async (
 
 test('a portalled menu keeps the floating sidebar open', async ({ mount, page }, testInfo) => {
   const component = await mount(SidebarTabsPreview, { props: { collapsed: true } });
-  await component.locator('[data-workspace-sidebar-rail]').hover();
+  await component
+    .locator('[data-workspace-sidebar-rail]')
+    .getByRole('tab', { name: 'Files', exact: true })
+    .hover();
   const flyout = component.locator('[data-workspace-sidebar-flyout]');
   await expect(flyout).toHaveAttribute('data-workspace-sidebar-flyout', 'true');
-  await flyout.getByRole('button', { name: 'Workspace actions', exact: true }).click();
+  await flyout
+    .getByRole('button', { name: 'package.json', exact: true })
+    .click({ button: 'right' });
   const menu = page.getByRole('menu');
   await expect(menu).toBeVisible();
   await menu.hover();
@@ -291,7 +306,7 @@ test('a wide pinned sidebar fits a narrow window and recovers its saved width', 
     'data-workspace-sidebar-flyout',
     'true',
   );
-  await component.locator('[data-workspace-sidebar-flyout] [data-sidebar-collapse]').click();
+  await rail.locator('[data-sidebar-rail-expand]').click();
   await page.setViewportSize({ width: 1040, height: 760 });
   await component.update({ props: { width: 1040, height: 680, sidebarWidth: 600 } });
   await expect.poll(async () => Math.round((await sidebar.boundingBox())!.width)).toBe(600);
