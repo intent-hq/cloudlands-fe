@@ -16,6 +16,7 @@
   import { useDialogPortalTarget } from '$lib/components/ui/dialog';
   import { Combobox, type ComboboxGroup } from '$lib/components/ui/combobox';
   import { Tooltip } from '$lib/components/ui/tooltip';
+  import { OVERLAY_VIEWPORT_GUTTER } from '$lib/components/ui/overlay-positioning';
   import { toast } from '$lib/components/ui/toast';
   import { debugConfig } from '$lib/config/debug';
   import { createLogger } from '$lib/utils/client-logger';
@@ -171,6 +172,13 @@
   let directCheckoutFooterEl: HTMLDivElement | undefined = $state();
   let isolationControlEl: HTMLDivElement | undefined = $state();
   let isolationSwitchEl = $state<HTMLButtonElement | null>(null);
+  let modeAnchor = $state<
+    { contextElement: HTMLElement; getBoundingClientRect: () => DOMRect } | undefined
+  >();
+
+  $effect(() => {
+    if (!isOpen) modeAnchor = undefined;
+  });
 
   $effect(() => {
     if (!isOpen) return;
@@ -1099,6 +1107,28 @@
   }
 
   function handleIsolationChange(isolated: boolean) {
+    const content = isolationSwitchEl?.closest<HTMLElement>('[role="dialog"]');
+    if (!modeAnchor && content && triggerEl) {
+      const trigger = triggerEl;
+      const origin = trigger.getBoundingClientRect();
+      const popup = content.getBoundingClientRect();
+      const offsetX = popup.left - origin.left;
+      const offsetY = popup.top - origin.top;
+      modeAnchor = {
+        contextElement: trigger,
+        getBoundingClientRect: () => {
+          const current = trigger.getBoundingClientRect();
+          const lastTop = Math.max(
+            OVERLAY_VIEWPORT_GUTTER,
+            trigger.ownerDocument.documentElement.clientHeight -
+              OVERLAY_VIEWPORT_GUTTER -
+              popup.height,
+          );
+          const top = Math.min(Math.max(OVERLAY_VIEWPORT_GUTTER, current.top + offsetY), lastTop);
+          return new DOMRect(current.left + offsetX, top, 0, 0);
+        },
+      };
+    }
     try {
       onSkipIsolationChange?.(!isolated);
     } catch (e) {
@@ -1632,7 +1662,10 @@
         role="dialog"
         aria-label={m.workspace_branchSelector_whichBranch_label()}
         class="w-[400px] max-w-[calc(100vw-16px)] min-w-0 max-h-[min(600px,var(--bits-popover-content-available-height,100dvh))] overflow-y-auto flex flex-col"
-        side={dropUp ? 'top' : 'bottom'}
+        customAnchor={modeAnchor}
+        side={modeAnchor ? 'bottom' : dropUp ? 'top' : 'bottom'}
+        align={modeAnchor ? 'start' : 'center'}
+        sideOffset={modeAnchor ? 0 : undefined}
         portalProps={{ to: dialogPortalTarget() }}
         strategy={dialogPortalTarget() ? 'absolute' : 'fixed'}
         onOpenAutoFocus={(event) => {

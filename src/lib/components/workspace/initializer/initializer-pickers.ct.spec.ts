@@ -354,6 +354,66 @@ test('isolation registers the first pointer click and preserves focus while chan
   await expect(trigger).toBeFocused();
 });
 
+for (const { position, contract } of [
+  { position: 'top', contract: 'trigger width changes below the trigger' },
+  { position: 'bottom', contract: 'content height changes above the trigger' },
+] as const) {
+  test(`worktree toggle stays under the pointer through ${contract}`, async ({ mount, page }) => {
+    await page.setViewportSize({ width: 1000, height: 900 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await mount(Pickers, { props: { position } });
+    const trigger = page
+      .getByTestId('initializer-pickers-fixture')
+      .locator('button[aria-haspopup="dialog"]')
+      .nth(1);
+    await trigger.click();
+    const menu = page.getByRole('dialog');
+    await expect(menu.getByRole('combobox')).toHaveAttribute('aria-busy', 'false');
+    await expect(menu.getByRole('option', { name: 'feature/task-29', exact: true })).toBeAttached();
+    const isolation = menu.getByRole('switch', { name: /Isolated/ });
+    await isolation.hover();
+    const origin = (await menu.boundingBox())!;
+    const control = (await isolation.boundingBox())!;
+    const point = { x: control.x + control.width / 2, y: control.y + control.height / 2 };
+
+    for (const checked of [false, true, false, true]) {
+      await page.mouse.click(point.x, point.y);
+      await expect(isolation).toBeChecked({ checked });
+      await expect
+        .poll(async () => {
+          const current = (await menu.boundingBox())!;
+          return Math.hypot(current.x - origin.x, current.y - origin.y);
+        })
+        .toBeLessThanOrEqual(1);
+      await expect(isolation).toBeFocused();
+      await expectViewportBounded(menu);
+    }
+
+    if (position === 'bottom') {
+      await page.setViewportSize({ width: 1000, height: 500 });
+      await expectViewportBounded(menu);
+      await isolation.click();
+      await expect(isolation).not.toBeChecked();
+      await page.keyboard.press('Escape');
+      await trigger.click();
+      await expectViewportBounded(menu);
+      await expect
+        .poll(async () =>
+          menu.evaluate((element) => {
+            const popup = element.getBoundingClientRect();
+            const anchor = document
+              .querySelector<HTMLButtonElement>('button[aria-label^="Select a branch:"]')!
+              .getBoundingClientRect();
+            return element.getAttribute('data-side') === 'top'
+              ? popup.bottom <= anchor.top
+              : popup.top >= anchor.bottom;
+          }),
+        )
+        .toBe(true);
+    }
+  });
+}
+
 test('branch group headers and footer toggles share expansion and search state', async ({
   mount,
   page,
