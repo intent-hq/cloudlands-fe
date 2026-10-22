@@ -69,15 +69,25 @@ test('selected backgrounds follow virtual rows after scrolling', async ({
   });
 });
 
+/** Harness rows are labelled with their key capitalised (`alpha` → "Alpha"). */
 async function expectSelectionMatchesOwner(page: Page) {
-  const owner = (await page.getByRole('status', { name: 'Owner selection' }).textContent())?.trim();
+  const owner = page.getByRole('status', { name: 'Owner selection' });
   const options = page.getByRole('listbox', { name: 'Controlled selection' }).getByRole('option');
-  const selected: string[] = [];
-  for (const option of await options.all()) {
-    if ((await option.getAttribute('aria-selected')) === 'true')
-      selected.push((await option.textContent())?.trim().toLowerCase() ?? '');
-  }
-  expect(selected).toEqual(owner === 'none' ? [] : [owner]);
+  await expect
+    .poll(async () => {
+      const ownerId = (await owner.textContent())?.trim() ?? 'none';
+      const selected = await options.evaluateAll((rows) =>
+        rows
+          .filter((row) => row.getAttribute('aria-selected') === 'true')
+          .map((row) => row.textContent?.trim().toLowerCase() ?? ''),
+      );
+      const expected = ownerId === 'none' ? [] : [ownerId];
+      // Return the mismatch itself so a failure prints both sides.
+      return JSON.stringify(selected) === JSON.stringify(expected)
+        ? 'match'
+        : { expected, selected };
+    })
+    .toBe('match');
 }
 
 test('selection stays on the owner state when it deselects and reselects in one frame', async ({
