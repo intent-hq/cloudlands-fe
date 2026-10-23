@@ -300,30 +300,21 @@ describe('GitHub-hosted CI runners', () => {
     expect(decide.env.SLOT_JOBS).toBe('${{ steps.slot-jobs.outputs.list }}');
   });
 
-  it('runs Type Check & Lint on the free standard runner, outside the slot list', () => {
-    // Measured medium-sized (3.2 busy cores, 11.7 GiB peak): it fits a 4-vCPU / 16 GB
-    // ubuntu-24.04 runner. It never reads the router, so it cannot land on the 1-CPU small pool.
+  // Type Check & Lint measured medium-sized (3.2 busy cores, 11.7 GiB peak); WarpBuild measured
+  // Integration Tests at p90 19% of 8 CPUs and 3.7 GB. Both fit a free 4-vCPU / 16 GB
+  // ubuntu-24.04 runner and never read the router, so they cannot take a slot or a paid runner.
+  it.each([
+    ['checks', 'Type Check & Lint'],
+    ['test-integration', 'Integration Tests'],
+  ])('runs %s on the free standard runner, outside the slot list', (id, name) => {
     const workflow = read('.github/workflows/intent-pr.yml');
-    const checks = workflow.jobs.checks;
-    expect(checks.name).toBe('Type Check & Lint');
-    expect(checks['runs-on']).toBe('ubuntu-24.04');
+    const job = workflow.jobs[id];
+    expect(job.name).toBe(name);
+    expect(job['runs-on']).toBe('ubuntu-24.04');
     const listed = JSON.parse(
       workflow.jobs.route.steps.find((s: { id?: string }) => s.id === 'slot-jobs').env.SLOT_JOBS,
     ) as { key: string }[];
-    expect(listed.map((j) => j.key)).not.toContain('checks');
-  });
-
-  it('runs Integration Tests on the free standard runner, outside the slot list', () => {
-    // WarpBuild measured p90 19% of 8 CPUs and 3.7 GB: a paid 8-core runner or a heavy
-    // slot is wasted on it, and a 4-vCPU / 16 GB ubuntu-24.04 runner costs nothing.
-    const workflow = read('.github/workflows/intent-pr.yml');
-    const integration = workflow.jobs['test-integration'];
-    expect(integration.name).toBe('Integration Tests');
-    expect(integration['runs-on']).toBe('ubuntu-24.04');
-    const listed = JSON.parse(
-      workflow.jobs.route.steps.find((s: { id?: string }) => s.id === 'slot-jobs').env.SLOT_JOBS,
-    ) as { key: string }[];
-    expect(listed.map((j) => j.key)).not.toContain('test-integration');
+    expect(listed.map((j) => j.key)).not.toContain(id);
   });
 
   it.each([

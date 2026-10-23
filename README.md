@@ -282,8 +282,9 @@ intent and intentd; `intent-pr.yml`'s route job is an inline copy):
   ARM64 runner first, then `warp-ubuntu-2404-arm64-8x`.
 - Integration Tests and the Playwright (root) and Electron browser suites run
   on the free `ubuntu-24.04` runner: they use about 2 of 8 CPUs.
-- Jobs that need sudo or the GitHub image's browser libraries (Component Tests)
-  and every Mac and Windows build read the route's `cloud` output: straight to
+- Component Tests take a free intent-cache slot first, else the `cloud`
+  burst runner for `gh-linux-8x`.
+- Every Mac and Windows build reads the route's `cloud` output: straight to
   WarpBuild, never a self-hosted runner. Windows builds use
   `warp-windows-2022-x64-16x` (Server 2022: node-gyp fails on 2025), Apple
   Silicon jobs `warp-macos-26-arm64-12x`, and signed desktop Mac builds

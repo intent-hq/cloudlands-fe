@@ -50,7 +50,8 @@ jobs:
   # outage, timeout), the routed jobs are skipped and need a re-run — a
   # deliberate trade-off. The seconds-long jobs (pr-title / conflict-markers
   # / gate) are not routed — they pin directly to ubuntu-24.04. Required
-  # test-ct and test-playwright also have fixed hosted runners, but keep
+  # test-integration, test-playwright and test-electron also pin to
+  # ubuntu-24.04, and test-ct to its slot or burst runner, but all keep
   # route's fail-safe guard.
   route:
     runs-on: ubuntu-24.04
@@ -815,8 +816,7 @@ jobs:
     # once.
     # Known trade-off: vitest.config.ts caps CI workers per JOB (min(16,
     # cores/2), monorepo#3082), so concurrent legs on one self-hosted host
-    # can run a multiple of that fork count (plus the now-concurrent test-integration
-    # job). Per-leg wall time halves the exposure window and the 60s CI
+    # can run a multiple of that fork count. Per-leg wall time halves the exposure window and the 60s CI
     # test timeout gives slack; if #3082-class load flakes reappear, halve
     # the vitest.config.ts worker cap when --shard is in play.
     # Skipped at job level on release-fast-path PRs — see the checks job's

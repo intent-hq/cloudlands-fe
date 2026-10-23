@@ -17,7 +17,7 @@ on:
         required: false
         default: '{}'
       cloud:
-        description: "The caller's route `cloud` output (runner-route.yml): where gh-linux-8x jobs run."
+        description: "The caller's route `cloud` output (runner-route.yml): where Component Tests burst; the root and Electron suites run on ubuntu-24.04."
         type: string
         required: false
         default: '{}'
@@ -377,7 +377,7 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-root-browsers-${{ runner.os }}-${{ steps.root-playwright.outputs.version }}
       - name: Install Playwright browsers
-        # The gh-linux-8x image already ships every Chromium
+        # GitHub's ubuntu-24.04 image already ships every Chromium
         # shared library, and --with-deps only adds the fonts-*/xfonts-*
         # packages whose fetch blew test-ct's budget (intent#4723) — so
         # install the browser alone; a missing lib fails the first spec
