@@ -263,6 +263,7 @@ providerSettingsReducer.with(providerSettingsStopped, (state) => {
   return {
     ...state,
     requests,
+    accessTokens: {},
     pathsRevision: state.pathsRevision + 1,
     pathsStatus: state.pathsStatus === 'pending' ? 'idle' : state.pathsStatus,
     piAdapter: {

@@ -123,6 +123,7 @@ export function resolveProviderEnabled(
   return enabledProviders[providerId] ?? false;
 }
 
+/** Only consume the documented provider/path pairs; metadata cannot select arbitrary settings. */
 export function providerTokenCapability(entry: ProviderCatalogEntry | undefined) {
   const token = entry?.accessToken;
   if (
