@@ -10810,6 +10810,96 @@ describe('daemonEventsBridge (workspace:waiting-changed → workspace slice)', (
   });
 });
 
+describe('daemonEventsBridge (workspace:scriptsRunning-changed → workspace slice)', () => {
+  const WS_SCRIPTS = 'ws-scripts-running-1';
+
+  beforeAll(() => appStore.init());
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  async function seedWorkspace(): Promise<void> {
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+    const { WorkspaceStatus } = await import('$shared/types');
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS_SCRIPTS,
+        title: 'Scripts ws',
+        branch: 'main',
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      } as never),
+    );
+  }
+
+  async function readWorkspace(): Promise<{ scriptsRunning?: boolean }> {
+    const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
+    const state = appStore.state as { workspace: { workspaces: unknown } };
+    return (getItem(state.workspace.workspaces as never, WS_SCRIPTS) ?? {}) as never;
+  }
+
+  function notification(scriptsRunning: unknown, envelopeWorkspaceId?: string) {
+    return {
+      method: 'events.event',
+      params: {
+        event: {
+          id: `evt-scripts-${String(scriptsRunning)}-${envelopeWorkspaceId ?? 'none'}`,
+          ...(envelopeWorkspaceId ? { workspaceId: envelopeWorkspaceId } : {}),
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:scriptsRunning-changed',
+          actor: { type: 'system' },
+          data: { workspaceId: WS_SCRIPTS, scriptsRunning },
+        },
+      },
+    };
+  }
+
+  it('subscribes to workspace:scriptsRunning-changed in the bridge firehose filter', () => {
+    expect(DAEMON_EVENTS_SUBSCRIBE_TYPES).toContain('workspace:scriptsRunning-changed');
+  });
+
+  it('merges scriptsRunning transitions onto the workspace entity', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification(true, WS_SCRIPTS));
+    expect((await readWorkspace()).scriptsRunning).toBe(true);
+
+    handler(notification(false, WS_SCRIPTS));
+    expect((await readWorkspace()).scriptsRunning).toBe(false);
+  });
+
+  it('ignores a non-boolean flag', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification(true, WS_SCRIPTS));
+    handler(notification('yes', WS_SCRIPTS));
+    expect((await readWorkspace()).scriptsRunning).toBe(true);
+  });
+
+  it('applies the self-sufficient payload without an envelope workspaceId', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification(true));
+    expect((await readWorkspace()).scriptsRunning).toBe(true);
+  });
+});
+
 // A workspace:attention-changed / waiting-changed / displayStatus-changed
 // delta targeting a workspace this window has not hydrated yet used to be
 // silently dropped (the bulkUpdateWorkspaceEntities reducer is a no-op for
