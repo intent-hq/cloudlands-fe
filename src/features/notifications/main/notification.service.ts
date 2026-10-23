@@ -702,7 +702,10 @@ export class NotificationService {
                 ...(event.data.agentId ? { agentId: event.data.agentId } : {}),
               }
             : { workspaceId };
-        this.sendShowEvent(content, backendId, workspaceId, navigateTarget, focusedWindow);
+        this.sendShowEvent(content, backendId, workspaceId, navigateTarget, {
+          window: focusedWindow,
+          suppressWhenViewing: prefs.soundOnlyWhenUnfocused,
+        });
         return;
       }
 
@@ -824,28 +827,37 @@ export class NotificationService {
    * WITHOUT `navigateTarget`: a click there would navigate a window on
    * another host, which cannot show this workspace.
    *
-   * `toastWindow` (the focused on-host window, frontmost gate only) is the
+   * `toast.window` (the focused on-host window, frontmost gate only) is the
    * one window that receives `navigateTarget`, so the toast appears where the
    * user is looking — not in background windows that merely have the
    * workspace open or host it offscreen. Those still get the sound-only
-   * payload, keeping sound delivery unchanged.
+   * payload, keeping sound delivery unchanged. `suppressWhenViewing` carries
+   * main's own `soundOnlyWhenUnfocused` read (the local daemon) so the
+   * renderer's late "already viewing" check uses the same authority instead
+   * of its window's daemon, which can differ on a remote-host window.
    */
   private sendShowEvent(
     content: NotificationContent,
     scope: WindowHostScope,
     workspaceId?: string,
     navigateTarget?: NotificationNavigateTarget,
-    toastWindow?: BrowserWindow,
+    toast?: { window: BrowserWindow; suppressWhenViewing: boolean },
   ): void {
+    const toastWindow = toast?.window;
     const payload = {
       title: content.title,
       body: content.body,
       timestamp: new Date().toISOString(),
       ...(content.structured ? { structured: content.structured } : {}),
       ...(navigateTarget ? { navigateTarget } : {}),
+      ...(navigateTarget && toast ? { suppressWhenViewing: toast.suppressWhenViewing } : {}),
     };
     if (navigateTarget && toastWindow && !toastWindow.isDestroyed()) {
-      const { navigateTarget: _toastOnly, ...soundOnlyPayload } = payload;
+      const {
+        navigateTarget: _toastOnly,
+        suppressWhenViewing: _toastRule,
+        ...soundOnlyPayload
+      } = payload;
       if (!toastWindow.webContents.isDestroyed()) {
         toastWindow.webContents.send('notification:show', payload);
       }

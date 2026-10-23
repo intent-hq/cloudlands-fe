@@ -249,6 +249,13 @@ export interface AgentIdleToastPayload {
   body?: string;
   timestamp?: string;
   navigateTarget?: NotificationNavigatePayload;
+  /**
+   * Main's `soundOnlyWhenUnfocused` read (local daemon) at decision time:
+   * skip the toast if this focused window is already viewing the workspace.
+   * Authoritative over this window's own preference, which comes from the
+   * window's daemon and can differ on a remote host.
+   */
+  suppressWhenViewing?: boolean;
   structured?: {
     workspaceTitle?: string;
     specialistDisplayName: string;
@@ -271,16 +278,18 @@ export function agentIdleToastId(target: NotificationNavigatePayload): string {
 
 /**
  * True when the toast would only point at what this focused window already
- * shows: the workspace is the current tab and `soundOnlyWhenUnfocused` (the
- * "only notify when unfocused" preference, default on) is set — the same
- * rule main applies before choosing between banner and toast. Assistant
- * payloads are never redundant (the chief workspace is never a selected tab).
+ * shows: the workspace is the current tab and main's `suppressWhenViewing`
+ * ("Only when unfocused", default on) is set. The preference comes from the
+ * payload, not this window's store, so main and renderer decide with the same
+ * value; this late check only covers the user switching to the workspace
+ * after main decided. Assistant payloads are never redundant (the chief
+ * workspace is never a selected tab).
  */
-function isIdleToastRedundant(target: NotificationNavigatePayload): boolean {
-  if (!target.workspaceId || isChiefTarget(target)) return false;
+function isIdleToastRedundant(payload: AgentIdleToastPayload): boolean {
+  const target = payload.navigateTarget;
+  if (!target?.workspaceId || isChiefTarget(target)) return false;
+  if (payload.suppressWhenViewing === false) return false;
   if (typeof document === 'undefined' || !document.hasFocus()) return false;
-  const state = appStore.state as { userPreferences?: { soundOnlyWhenUnfocused?: unknown } };
-  if (state.userPreferences?.soundOnlyWhenUnfocused === false) return false;
   return isCurrentWorkspace(target.workspaceId);
 }
 
@@ -297,7 +306,7 @@ const pendingIdleToasts = new Map<string, symbol>();
 export async function showAgentIdleToast(payload: AgentIdleToastPayload): Promise<void> {
   const target = payload.navigateTarget;
   const workspaceId = target?.workspaceId;
-  if (!target || !workspaceId || isIdleToastRedundant(target)) return;
+  if (!target || !workspaceId || isIdleToastRedundant(payload)) return;
   const id = agentIdleToastId(target);
   const operation = Symbol();
   pendingIdleToasts.set(id, operation);
@@ -308,7 +317,7 @@ export async function showAgentIdleToast(payload: AgentIdleToastPayload): Promis
       getToastComponents(),
       getKeySlotResolver(),
     ]);
-    if (pendingIdleToasts.get(id) !== operation || isIdleToastRedundant(target)) return;
+    if (pendingIdleToasts.get(id) !== operation || isIdleToastRedundant(payload)) return;
     const structured = payload.structured;
     const name = structured?.agentName || structured?.specialistDisplayName;
     const agentId = structured?.agentId ?? target.agentId;

@@ -898,6 +898,9 @@ describe('NotificationService focus gate (soundOnlyWhenUnfocused)', () => {
         title: expect.any(String),
         body: expect.any(String),
         navigateTarget: { workspaceId: 'workspace-1' },
+        // Main's own preference read rides along so the renderer does not
+        // re-decide with a different daemon's value.
+        suppressWhenViewing: false,
       }),
     );
   });
@@ -914,6 +917,7 @@ describe('NotificationService focus gate (soundOnlyWhenUnfocused)', () => {
       'notification:show',
       expect.objectContaining({
         navigateTarget: { workspaceId: 'workspace-1' },
+        suppressWhenViewing: true,
       }),
     );
   });

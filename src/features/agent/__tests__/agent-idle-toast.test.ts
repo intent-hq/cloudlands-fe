@@ -155,12 +155,24 @@ describe('showAgentIdleToast', () => {
     expect(mocks.custom).toHaveBeenCalledTimes(2);
   });
 
-  it('shows on the selected workspace when "only when unfocused" is off', async () => {
+  it('shows on the selected workspace when main says "only when unfocused" is off', async () => {
+    mocks.state.value.tabState.currentTabId = 'ws-1';
+    await showAgentIdleToast({ ...structuredPayload, suppressWhenViewing: false });
+    expect(mocks.custom).toHaveBeenCalledTimes(1);
+  });
+
+  it("follows main's suppression decision when this window's daemon preference differs", async () => {
+    // Remote-host window: its daemon says only-when-unfocused, but main read
+    // the local daemon (off) and chose the toast for the viewed workspace.
     mocks.state.value = {
       tabState: { currentTabId: 'ws-1' },
-      userPreferences: { soundOnlyWhenUnfocused: false },
+      userPreferences: { soundOnlyWhenUnfocused: true },
     };
-    await showAgentIdleToast(structuredPayload);
+    await showAgentIdleToast({ ...structuredPayload, suppressWhenViewing: false });
+    expect(mocks.custom).toHaveBeenCalledTimes(1);
+
+    mocks.state.value.userPreferences.soundOnlyWhenUnfocused = false;
+    await showAgentIdleToast({ ...structuredPayload, suppressWhenViewing: true });
     expect(mocks.custom).toHaveBeenCalledTimes(1);
   });
 
