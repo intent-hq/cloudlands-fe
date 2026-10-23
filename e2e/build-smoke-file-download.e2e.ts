@@ -198,8 +198,15 @@ test.describe('Build Smoke — File tab image actions', () => {
     const viewer = await openImageTab('Icon-512.png');
     await app.evaluate(({ clipboard }) => clipboard.clear());
     await viewer.getByTitle('Copy image', { exact: true }).click();
-    await expect
-      .poll(() => app.evaluate(({ clipboard }) => clipboard.readImage().getSize()))
-      .toEqual({ width: 512, height: 512 });
+    const clipboardPngSize = () =>
+      app.evaluate(async ({ clipboard }) => {
+        for (const item of await clipboard.read()) {
+          if (!item.types.includes('image/png')) continue;
+          const png = new DataView(await ((await item.getType('image/png')) as Blob).arrayBuffer());
+          return { width: png.getUint32(16), height: png.getUint32(20) };
+        }
+        return null;
+      });
+    await expect.poll(clipboardPngSize).toEqual({ width: 512, height: 512 });
   });
 });
