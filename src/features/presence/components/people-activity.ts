@@ -6,7 +6,7 @@ import {
 } from '$features/log/utils/activity-event-visibility';
 import { m } from '$shared/paraglide/messages.js';
 import type { PresenceIdentity } from '$store/renderer/slices/presence/presence-types';
-import { getHumanMessageAuthor } from '$lib/utils/message-authorship';
+import { getHumanMessageAuthor, isUserAuthoredMetadata } from '$lib/utils/message-authorship';
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
 import type { AgentMessage } from '$shared/types';
 import { getPlainTextMessagePreview } from '$lib/components/chat/chat-message-navigation';
@@ -273,7 +273,14 @@ export function getPeopleActivity(
         })
       : null;
     if (isMessage ? !author : event.actor?.type !== 'user') {
-      if (isMessage && data.role === 'user') {
+      // Automated wakes use the user role too. Only unattributed human ingress
+      // should break a run; stamped human authors above can have a system actor.
+      if (
+        isMessage &&
+        data.role === 'user' &&
+        event.actor?.type === 'user' &&
+        isUserAuthoredMetadata(data.metadata)
+      ) {
         entries.push({ row: null, timestamp, segment });
       }
       continue;

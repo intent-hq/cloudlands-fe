@@ -64,6 +64,40 @@ describe('People activity', () => {
     expect(result.map(({ continuation }) => continuation)).toEqual([false, false]);
   });
 
+  it.each([
+    { actor: { type: 'system' as const, id: 'system' }, metadata: undefined },
+    { actor: { type: 'agent' as const, id: 'worker' }, metadata: undefined },
+    { actor: { type: 'user' as const, id: person.principalId }, metadata: { source: 'system' } },
+    { actor: { type: 'user' as const, id: person.principalId }, metadata: { type: 'hook' } },
+  ])(
+    'groups human messages across hidden automated user-role events: %j',
+    ({ actor, metadata }) => {
+      const message = (id: string, minute: number) =>
+        event({
+          id,
+          timestamp: `2026-10-14T12:0${minute}:00Z`,
+          type: 'agent:message',
+          actor: { type: 'system', id: 'system' },
+          data: { role: 'user', agentId: 'agent-1', messageId: id, author: person },
+        });
+      const result = rows([
+        message('new', 2),
+        event({
+          id: 'wake',
+          timestamp: '2026-10-14T12:01:00Z',
+          type: 'agent:message',
+          actor,
+          data: { role: 'user', agentId: 'agent-1', messageId: 'wake', metadata },
+        }),
+        message('old', 0),
+      ]);
+      expect(result.map(({ id, continuation }) => [id, continuation])).toEqual([
+        ['new', false],
+        ['old', true],
+      ]);
+    },
+  );
+
   it('groups consecutive principal aliases but never matching names from different principals', () => {
     const result = rows([
       event({ id: 'new', timestamp: '2026-10-14T12:03:00Z' }),

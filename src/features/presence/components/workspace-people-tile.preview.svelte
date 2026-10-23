@@ -193,6 +193,14 @@
     ];
     if (activityState === 'grouped') {
       activity.push(
+        ...[3, 12.5, 13.5].map((minutes) => ({
+          id: `grouped-system-wake-${minutes}`,
+          workspaceId,
+          type: 'agent:message' as const,
+          timestamp: new Date(now - minutes * 60_000).toISOString(),
+          actor: { type: 'system' as const, id: 'system' },
+          data: { role: 'user', agentId: 'planner', messageId: `wake-${minutes}` },
+        })),
         ...[
           {
             id: 'grouped-workspace',
