@@ -14,7 +14,7 @@
     alignOffset?: number;
     delayDuration?: number;
     disableHoverableContent?: boolean;
-    /** When true, clicking the trigger won't close the tooltip */
+    /** When true, activating the trigger won't close the tooltip */
     disableCloseOnTriggerClick?: boolean;
     disabled?: boolean;
     open?: boolean;
@@ -59,6 +59,7 @@
 
   // Keep the ID on the rendered node; the floating layer drops it (intent#5201).
   const contentId = $props.id();
+  const tether = TooltipPrimitive.createTether();
 
   // Variant styles
   const variantStyles = {
@@ -91,6 +92,14 @@
     onOpenChange?.(isOpen);
   }
 
+  function dismissOnActivation(event: KeyboardEvent | PointerEvent) {
+    if (disableCloseOnTriggerClick) return;
+    if (event instanceof KeyboardEvent && event.key !== 'Enter' && event.key !== ' ') return;
+    // Tabs can consume Enter/Space without emitting a click. Closing through the
+    // primitive also cancels a hover timer that has not opened the tooltip yet.
+    tether.close();
+  }
+
   $effect(() => {
     if (disabled && open) handleOpenChange(false);
   });
@@ -105,11 +114,14 @@
     {delayDuration}
     {disableHoverableContent}
     {disableCloseOnTriggerClick}
+    {tether}
   >
     <TooltipPrimitive.Trigger
       class={cn('inline-flex', className)}
       {disabled}
       {onclick}
+      onpointerdown={dismissOnActivation}
+      onkeydown={dismissOnActivation}
       data-tooltip-trigger
     >
       {#snippet child({ props })}

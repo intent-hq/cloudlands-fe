@@ -1,6 +1,69 @@
 import { expect, test } from '../../../test/ct-test';
 import SidebarTabsPreview from './sidebar-tabs.preview.svelte';
 
+for (const key of ['Enter', 'Space']) {
+  test(`activating a section tab with ${key} dismisses its tooltip and keeps focus`, async ({
+    mount,
+    page,
+  }) => {
+    const component = await mount(SidebarTabsPreview);
+    const tabs = component.locator('[data-sidebar-section-tabs="horizontal"]');
+    const agents = tabs.getByRole('tab', { name: 'Agents', exact: true });
+    const context = tabs.getByRole('tab', { name: 'Context', exact: true });
+    const draft = component.getByRole('textbox', { name: 'Workspace draft' });
+    await agents.focus();
+    await expect(page.getByRole('tooltip', { name: 'Agents', exact: true })).toBeVisible();
+    await agents.press('ArrowRight');
+    await expect(context).toBeFocused();
+    await expect(page.getByRole('tooltip', { name: 'Context', exact: true })).toBeVisible();
+    await context.press(key);
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
+    await expect(context).toBeFocused();
+    await expect(context).toHaveAttribute('aria-selected', 'true');
+    await draft.hover();
+    // Wait beyond the 400ms hover delay to catch a tooltip reopening after activation.
+    await page.waitForTimeout(500);
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
+    await context.hover();
+    await expect(page.getByRole('tooltip', { name: 'Context', exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
+    await expect(context).toBeFocused();
+    await context.press('ArrowLeft');
+    await expect(agents).toBeFocused();
+    await expect(page.getByRole('tooltip', { name: 'Agents', exact: true })).toBeVisible();
+  });
+}
+
+test('clicking a section tab cancels delayed help and allows another hover', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(SidebarTabsPreview);
+  const tabs = component.locator('[data-sidebar-section-tabs="horizontal"]');
+  const context = tabs.getByRole('tab', { name: 'Context', exact: true });
+  const draft = component.getByRole('textbox', { name: 'Workspace draft' });
+  await draft.focus();
+  await context.hover();
+  await context.click();
+  // Keep the pointer over the clicked tab beyond the pending hover delay.
+  await page.waitForTimeout(500);
+  await expect(page.getByRole('tooltip')).toHaveCount(0);
+  await expect(context).toBeFocused();
+  await expect(component.locator('[data-sidebar-section="context"]')).toBeVisible();
+  await draft.hover();
+  await context.hover();
+  const tooltip = page.getByRole('tooltip', { name: 'Context', exact: true });
+  await expect(tooltip).toBeVisible();
+  await context.click();
+  await expect(tooltip).toHaveCount(0);
+  await draft.hover();
+  await context.hover();
+  await expect(tooltip).toBeVisible();
+  await draft.hover();
+  await expect(tooltip).toHaveCount(0);
+});
+
 test('overflowing icon tabs reveal restored, keyboard-selected, and resized sections', async ({
   mount,
   page,
