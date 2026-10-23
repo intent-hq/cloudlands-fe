@@ -17,8 +17,6 @@ const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   invoke: vi.fn(),
   shellOpen: vi.fn(),
-  checkPiMcpAdapterInstalled: vi.fn(),
-  installPiMcpAdapter: vi.fn(),
   state: { current: {} as any },
 }));
 
@@ -29,11 +27,6 @@ vi.mock('$lib/electron-bridge', () => ({
 
 vi.mock('$lib/client', () => ({
   appClient: { settings: { get: vi.fn().mockResolvedValue({ value: {} }) } },
-}));
-
-vi.mock('$features/pi/pi-models.client', () => ({
-  checkPiMcpAdapterInstalled: mocks.checkPiMcpAdapterInstalled,
-  installPiMcpAdapter: mocks.installPiMcpAdapter,
 }));
 
 vi.mock('$lib/components/patterns/notify', () => ({
@@ -289,8 +282,6 @@ describe('ProviderSelector progressive rendering', () => {
   );
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.checkPiMcpAdapterInstalled.mockResolvedValue(true);
-    mocks.installPiMcpAdapter.mockResolvedValue({ success: true });
     // The aggregated GET_AVAILABILITY never settles: rows must not wait on it.
     mocks.invoke.mockImplementation(async (channel: string) => {
       if (channel === PROVIDERS_CHANNELS.GET_AVAILABILITY) return new Promise(() => {});
@@ -501,38 +492,11 @@ describe('ProviderSelector progressive rendering', () => {
       ),
     ).toBeNull();
   });
-
-  it('moves the Pi adapter warning and install action into the overflow menu', async () => {
-    mocks.checkPiMcpAdapterInstalled.mockResolvedValue(false);
-    mocks.state.current = await buildState({ pi: { available: true } });
-    mocks.state.current.providerSettings.piAdapter = { installed: false, status: 'success' };
-    const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
-    const result = render(ProviderSelector);
-    const warning = 'Pi needs the pi-mcp-adapter package to use workspace tools';
-
-    await waitFor(() => {
-      expect(result.getByRole('img', { name: warning })).toBeTruthy();
-    });
-    expect(result.queryByText(warning)).toBeNull();
-
-    await fireEvent.click(result.getByRole('button', { name: 'Provider actions for Pi' }));
-    expect(result.getByText(warning)).toBeTruthy();
-    await fireEvent.click(result.getByRole('menuitem', { name: 'Install' }));
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'providerSettings/piAdapterInstallRequested',
-        payload: [{ id: expect.any(String), sessionId: expect.any(String) }],
-      }),
-    );
-    expect(mocks.installPiMcpAdapter).not.toHaveBeenCalled();
-  });
 });
 
 describe('ProviderSelector model refresh rewire (intent-hq/intent#3966)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.checkPiMcpAdapterInstalled.mockResolvedValue(true);
-    mocks.installPiMcpAdapter.mockResolvedValue({ success: true });
   });
 
   afterEach(() => {
