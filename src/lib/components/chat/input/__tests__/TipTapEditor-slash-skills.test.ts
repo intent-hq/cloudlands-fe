@@ -5,9 +5,11 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
+import { pushEscapeLayer } from '$lib/utils/escapeLayers';
 import TipTapEditor from '../TipTapEditor.svelte';
 
 const skills: SkillInfo[] = [
@@ -238,7 +240,7 @@ describe('TipTapEditor slash skills', () => {
     expect(editor.hasAttribute('aria-activedescendant')).toBe(false);
   });
 
-  it('dismisses before the outer Escape action and reopens when the query changes', async () => {
+  it('keeps a dismissed slash token closed while typing and reopens for a new token', async () => {
     const onEscape = vi.fn();
     const { component, editor } = await mountEditor({ onEscape });
     component.insertText('/');
@@ -247,12 +249,69 @@ describe('TipTapEditor slash skills', () => {
     await fireEvent.keyDown(editor, { key: 'Escape' });
     expect(screen.queryByRole('listbox')).toBeNull();
     expect(onEscape).not.toHaveBeenCalled();
+    expect(component.getTextContent()).toBe('/');
+    expect(document.activeElement).toBe(editor);
 
     component.insertText('r');
+    await tick();
+    expect(screen.queryByTestId('slash-skill-menu')).toBeNull();
+    component.insertText('esearch');
+    await tick();
+    expect(screen.queryByTestId('slash-skill-menu')).toBeNull();
+    expect(component.getTextContent()).toBe('/research');
+    component.insertText(' /r');
     await waitFor(() => expect(screen.getByRole('listbox')).toBeTruthy());
     await fireEvent.keyDown(editor, { key: 'Escape' });
     await fireEvent.keyDown(editor, { key: 'Escape' });
     expect(onEscape).toHaveBeenCalledOnce();
+  });
+
+  it('dismisses the skill menu before a surrounding Escape layer', async () => {
+    const closeParent = vi.fn();
+    const release = pushEscapeLayer(closeParent);
+    try {
+      const { component, editor } = await mountEditor();
+      component.insertText('/');
+      await screen.findByRole('listbox');
+
+      await fireEvent.keyDown(editor, { key: 'Escape' });
+      expect(screen.queryByTestId('slash-skill-menu')).toBeNull();
+      expect(closeParent).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(editor);
+      expect(component.getTextContent()).toBe('/');
+
+      await fireEvent.keyDown(editor, { key: 'Escape' });
+      expect(closeParent).toHaveBeenCalledOnce();
+    } finally {
+      release();
+    }
+  });
+
+  it('hides unmatched queries and lets Enter submit the literal slash text', async () => {
+    const onSubmit = vi.fn();
+    const { component, editor } = await mountEditor({ onSubmit });
+    component.insertText('/');
+    await screen.findByRole('listbox');
+
+    component.insertText('tmp');
+    await waitFor(() => expect(screen.queryByTestId('slash-skill-menu')).toBeNull());
+    expect(editor.hasAttribute('aria-controls')).toBe(false);
+    expect(editor.hasAttribute('aria-activedescendant')).toBe(false);
+    await fireEvent.keyDown(editor, { key: 'Enter' });
+    expect(onSubmit).toHaveBeenCalledOnce();
+    expect(component.getTextContent()).toBe('/tmp');
+  });
+
+  it('stays closed without available skills and reacts when matching skills arrive', async () => {
+    const view = await mountEditor({ skills: [] });
+    view.component.insertText('/res');
+    await waitFor(() => expect(view.component.getTextContent()).toBe('/res'));
+    expect(screen.queryByTestId('slash-skill-menu')).toBeNull();
+
+    await view.rerender({ skills });
+    await screen.findByRole('option', { name: 'research' });
+    await view.rerender({ skills: [] });
+    expect(screen.queryByTestId('slash-skill-menu')).toBeNull();
   });
 
   it('reacts to skill prop updates and supports pointer selection', async () => {
