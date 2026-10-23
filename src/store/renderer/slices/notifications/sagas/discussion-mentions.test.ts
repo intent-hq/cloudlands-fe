@@ -16,6 +16,7 @@ import {
   discussionPrincipalMentionsCapabilityReceived,
   discussionMembershipInvalidated,
   discussionConversationReceived,
+  discussionConversationDeleted,
   discussionCapabilityReceived,
 } from '../../workspace-discussion/workspace-discussion-slice';
 import {
@@ -251,6 +252,51 @@ describe('live discussion mention notifications', () => {
     await mocks.toast.mock.calls[0][1].action.onClick();
     expect(mocks.open).toHaveBeenCalledWith('ws', 'ws', 'direct-1');
   });
+  it.each(['before-alert', 'before-click', 'pending-capability'])(
+    'keeps named discussion mentions working after default deletion (%s)',
+    async (timing) => {
+      const context = target().context;
+      if (timing !== 'pending-capability')
+        store.dispatch(discussionCapabilityReceived(context, true));
+      store.dispatch(
+        discussionConversationReceived(context, {
+          id: 'named',
+          workspaceId: 'ws',
+          kind: 'workspace',
+          name: 'Design',
+          participants: [],
+          createdAt: message().createdAt,
+        }),
+      );
+      if (timing !== 'before-click')
+        store.dispatch(discussionConversationDeleted(context, 'ws', 'default'));
+      const destination = selectDiscussionTarget.select(store.state, 'ws', 'named')!;
+      store.dispatch(
+        discussionMessageReceived(destination, { ...message(), conversationId: 'named' }),
+      );
+      await settle();
+      if (timing === 'pending-capability') {
+        expect(mocks.toast).not.toHaveBeenCalled();
+        store.dispatch(discussionCapabilityReceived(context, true));
+        await settle();
+      }
+      expect(mocks.toast).toHaveBeenCalledTimes(1);
+      if (timing === 'before-click')
+        store.dispatch(discussionConversationDeleted(context, 'ws', 'default'));
+      expect(store.state.workspaceDiscussion.deletedKeys).toContain(
+        JSON.stringify(['ws', 'default']),
+      );
+      await mocks.toast.mock.calls[0][1].action.onClick();
+      expect(mocks.open).toHaveBeenCalledWith('ws', 'ws', 'named');
+
+      mocks.open.mockClear();
+      mocks.route.mockClear();
+      store.dispatch(discussionConversationDeleted(context, 'ws', 'named'));
+      await mocks.toast.mock.calls[0][1].action.onClick();
+      expect(mocks.route).not.toHaveBeenCalled();
+      expect(mocks.open).not.toHaveBeenCalled();
+    },
+  );
   it('does not replay an alert skipped while notifications were disabled', async () => {
     store.dispatch(setNotificationEnabled(false));
     emit();

@@ -37,13 +37,14 @@ export const selectDiscussionMentionCandidate = store.createSelector(
 
 export const selectDiscussionMentionAdmission = store.createSelector(
   (state, target: DiscussionTarget, messageId: string): DiscussionMessage | 'pending' | null => {
+    // Candidate admission already checks the workspace and current identity context.
+    // Readiness below belongs to the actual conversation, never the default row.
     const message = selectDiscussionMentionCandidate.select(state, target, messageId);
     const principalId = selectDiscussionAuthor.select(state)?.principalId;
     if (
       !message ||
       !principalId ||
       !selectNotificationEnabled.select(state) ||
-      !selectDiscussionReady.select(state, target.workspaceId) ||
       (!message.author.agentId && message.author.principalId === principalId) ||
       !hasDiscussionPrincipalMentions(message) ||
       !message.principalMentions?.some((mention) => mention.principalId === principalId)
