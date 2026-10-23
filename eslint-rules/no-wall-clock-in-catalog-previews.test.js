@@ -45,6 +45,8 @@ tester.run('no-wall-clock-in-catalog-previews', rule, {
     { code: 'const elapsed = catalogStopwatch();', filename: tsFile },
     { code: "const parsed = Date.parse('2026-09-01');", filename: tsFile },
     { code: 'const now = clock.now();', filename: tsFile },
+    { code: "const fixed = new globalThis.Date('2026-09-01');", filename: tsFile },
+    { code: 'const now = catalog.Date.now;', filename: tsFile },
     svelte('  const at = catalogTime(-18_000);'),
   ],
   invalid: [
@@ -67,5 +69,16 @@ tester.run('no-wall-clock-in-catalog-previews', rule, {
     },
     { code: 'const ms = new Date().getTime();', filename: tsFile, errors: [error('new Date()')] },
     { code: 'const text = Date();', filename: tsFile, errors: [error('Date()')] },
+    {
+      code: 'const a = new globalThis.Date(); const b = new window.Date();',
+      filename: tsFile,
+      errors: [error('new globalThis.Date()'), error('new window.Date()')],
+    },
+    // Handing the clock over uncalled still reads the real time later.
+    {
+      code: 'const props = { now: Date.now, tick: performance.now };',
+      filename: tsFile,
+      errors: [error('Date.now'), error('performance.now')],
+    },
   ],
 });

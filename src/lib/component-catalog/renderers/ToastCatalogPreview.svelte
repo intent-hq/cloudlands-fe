@@ -62,8 +62,8 @@
   const staticToastIds: Array<string | number> = [];
   let stackToastIds = $state<Array<string | number>>([]);
 
-  // The attention toast's age is measured against the live clock, so anchor it on the
-  // catalog clock: fixed under tests (always "18s"), live in the running catalog.
+  // The attention toast's age is measured against the live clock, so stamp it from the
+  // same clock: "18s" live, and exactly "18s" in snapshot suites that freeze Date.
   function attentionRaisedAt() {
     return new Date(catalogNow() - 18_000).toISOString();
   }
@@ -149,7 +149,7 @@
             title: 'Builder finished',
             workspaceTitle: 'Toast catalog',
             description: 'Restore the agent-finished toast',
-            timestamp: new Date(Date.now() - 6_000).toISOString(),
+            timestamp: new Date(catalogNow() - 6_000).toISOString(),
             onSwitchTo: noOp,
             onClose: noOp,
           },

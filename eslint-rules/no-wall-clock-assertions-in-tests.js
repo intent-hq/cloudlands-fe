@@ -40,7 +40,7 @@ export function dottedName(node) {
 }
 
 // `new Date()` with no arguments reads the clock; `new Date(1000)` is a fixed timestamp.
-export function isNewDate(node) {
+function isNewDate(node) {
   return (
     node?.type === 'NewExpression' &&
     node.callee.type === 'Identifier' &&

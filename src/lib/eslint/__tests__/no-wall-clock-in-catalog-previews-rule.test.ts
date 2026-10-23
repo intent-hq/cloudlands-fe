@@ -43,6 +43,8 @@ describe('no-wall-clock-in-catalog-previews under the real eslint.config.js', ()
     ['a catalog fixture', CLOCK_READ, 'src/lib/component-catalog/subscription-rows/probe.ts', 1],
     ['a feature .preview.svelte', svelte(CLOCK_READ), 'src/features/probe/probe.preview.svelte', 2],
     ['a .preview.ts', CLOCK_READ, 'src/lib/components/layout/probe.preview.ts', 1],
+    ['a preview fixtures module', CLOCK_READ, 'src/lib/components/probe.preview-fixtures.ts', 1],
+    ['a preview fixture module', CLOCK_READ, 'src/features/probe/probe.preview-fixture.ts', 1],
   ])('reports a real-clock read in %s', async (_label, code, filePath, line) => {
     expect(await ruleHits(code, filePath)).toEqual([line]);
   });

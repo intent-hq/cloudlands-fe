@@ -2,15 +2,16 @@
  * The catalog's clock: the only place a catalog renderer, fixture or `*.preview.*` file may
  * read the time (enforced by `intent/no-wall-clock-in-catalog-previews`).
  *
- * A preview that builds its timestamps from the real clock renders differently depending on
- * when, and how slowly, it runs: the toast catalog's "18s" attention toast became "20s" on a
- * busy machine and failed its snapshot (2026-10-23). Prefer a fixed ISO date derived from
- * `CATALOG_REFERENCE_NOW` (see `catalogTime`). Use `catalogNow()` only where the product
- * component measures against its own live clock (relative ages, countdowns, uptime), so the
- * live catalog keeps showing "37s ago" rather than an ever-growing age.
+ * A preview that stamps a fixture from the real clock while the component measures that
+ * stamp against the real clock again renders differently depending on how slowly it runs:
+ * the toast catalog's "18s" attention toast became "20s" on a busy machine and failed its
+ * snapshot (2026-10-23). Snapshot suites therefore freeze `Date` at `CATALOG_REFERENCE_NOW`
+ * (`vi.setSystemTime`, Date only), so the fixture stamp and the component's own clock read
+ * the same instant. Prefer a fixed ISO date from `catalogTime()`; use `catalogNow()` only
+ * where the component measures against its live clock (relative ages, countdowns, uptime).
  */
 
-/** The instant catalog tests treat as "now"; `catalog-contract.test.ts` pins its formatters here. */
+/** The instant catalog snapshot suites freeze `Date` at (see catalog-contract.test.ts). */
 export const CATALOG_REFERENCE_NOW = '2026-09-01T12:00:00.000Z';
 
 const referenceMs = Date.parse(CATALOG_REFERENCE_NOW);
@@ -21,11 +22,12 @@ export function catalogTime(offsetMs = 0): string {
 }
 
 /**
- * "Now" for previews whose component measures against the live clock. Fixed at the reference
- * instant under Vitest, so tests never depend on the host clock; real time in the live catalog.
+ * "Now" for previews whose component measures against the live clock. Always the system
+ * clock, so the fixture and the component agree: live in the catalog, frozen in a suite
+ * that pins `Date`.
  */
 export function catalogNow(): number {
-  return import.meta.env.MODE === 'test' ? referenceMs : Date.now();
+  return Date.now();
 }
 
 /** A stopwatch for previews that time their own rendering; returns elapsed milliseconds. */
