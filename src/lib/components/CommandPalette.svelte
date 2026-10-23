@@ -113,7 +113,6 @@
   } from '$shared/utils/workspace-activity-time';
   import { store as appStore } from '$store/renderer/store';
   import { loadRetiredWorkspacesRequested } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
-  import { WorkspaceStatus } from '$shared/types';
   import {
     changesConsumerMounted,
     changesConsumerUnmounted,
@@ -538,11 +537,9 @@
     return () =>
       appStore.dispatch(paletteNoteSearchRequested(noteSearchConsumerId, crypto.randomUUID(), ''));
   });
-  onMount(() => () => appStore.dispatch(paletteNoteSearchReleased(noteSearchConsumerId)));
-  // Retired workspaces are absent from the live list (strict includeRetired
-  // opt-in, PROTOCOL §5.1); search opts in so they can be found by title.
   onMount(() => {
     appStore.dispatch(loadRetiredWorkspacesRequested({ quiet: true }));
+    return () => appStore.dispatch(paletteNoteSearchReleased(noteSearchConsumerId));
   });
   function buildResults(q: string, files: any[], messages: any[], remoteNotes: WorkspaceObject[]) {
     const wsItems = ($workspaceItems || [])
@@ -558,7 +555,7 @@
             ? w.repositoryPath.split('/').pop() || w.repositoryPath
             : undefined,
           _workspace: true as const,
-          isRetiredWorkspace: w.status === WorkspaceStatus.Retired ? true : undefined,
+          isRetiredWorkspace: w.retiredAt ? true : undefined, // retiredAt ⇔ Retired (§5.1)
           _time: activityTime > 0 ? formatRelativeTime(new Date(activityTime)) : '',
           _activityTime: activityTime,
         };
