@@ -179,6 +179,7 @@
     orderedCatalogEntries.map((provider) => {
       const status = $providerStatusMap$[provider.id];
       return {
+        catalogEntry: provider,
         id: provider.id,
         name: provider.displayName,
         displayName: provider.displayName,
