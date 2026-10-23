@@ -287,16 +287,10 @@
   let pendingMentionCaret = $state<{ value: string; position: number } | null>(null);
   const mentionsAvailable = $derived(
     !!onMentionSearch ||
-      (!!onAgentSelect &&
-        agentsSupported &&
-        conversationId === 'default' &&
-        agentMentions.length < DISCUSSION_MAX_RECIPIENTS),
+      (!!onAgentSelect && agentsSupported && agentMentions.length < DISCUSSION_MAX_RECIPIENTS),
   );
   const eligibleAgents = $derived(
-    agentsSupported &&
-      conversationId === 'default' &&
-      onAgentSelect &&
-      agentMentions.length < DISCUSSION_MAX_RECIPIENTS
+    agentsSupported && onAgentSelect && agentMentions.length < DISCUSSION_MAX_RECIPIENTS
       ? agents.filter((agent) => !agentMentions.some((mention) => mention.agentId === agent.id))
       : [],
   );

@@ -91,6 +91,7 @@
   import SidebarHeaderAction from './sidebar/SidebarHeaderAction.svelte';
   import WorkspaceProgressCard from './sidebar/WorkspaceProgressCard.svelte';
   import WorkspacePeopleTile from '$features/presence/components/WorkspacePeopleTile.svelte';
+  import { selectDiscussionCanCreate } from '$store/renderer/slices/workspace-discussion/workspace-discussion-selectors';
   import WorkspaceDiscussionRow from '$features/discussions/components/WorkspaceDiscussionRow.svelte';
   import WorkspacePeopleActivity from '$features/presence/components/WorkspacePeopleActivity.svelte';
   import { selectWorkspacePeopleTilePeople } from '$store/renderer/slices/presence/presence-selectors';
@@ -206,6 +207,7 @@
   const pendingLocateInSidebar$ = selectPendingLocateInSidebar();
 
   const workspace = selectWorkspaceById(workspaceIdStore);
+  const canCreateDiscussion$ = selectDiscussionCanCreate(workspaceIdStore);
   const activePullRequest$ = selectWorkspaceActivePullRequest(workspaceIdStore);
   const prMonitors$ = selectReviewMonitors(workspaceIdStore);
   // Every PR attributable to the workspace (branch PRs, cross-repo entries,
@@ -1036,7 +1038,7 @@
                       >
                         {tab.label}
                         <span class="ml-auto flex items-center gap-1">
-                          {#if tabId === 'people'}
+                          {#if tabId === 'people' && $canCreateDiscussion$}
                             <SidebarHeaderAction
                               icon="plus"
                               label={m.workspace_discussion_new_title()}

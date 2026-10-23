@@ -11,6 +11,9 @@ import {
   discussionPrincipalSelected,
   discussionPrincipalMentionsCapabilityReceived,
   discussionConversationReceived,
+  discussionConversationDeleted,
+  discussionDirectoryStarted,
+  discussionDirectoryReceived,
   discussionAgentRemoved,
   discussionAgentCapabilityReceived,
   workspaceDiscussionReducer as reduce,
@@ -598,5 +601,56 @@ describe('expanded reaction state', () => {
     expect(state.byWorkspaceId).toEqual({});
     expect(state.reactionsSupported).toBeNull();
     expect(reduce(state, discussionMessageReceived(target, expanded))).toBe(state);
+  });
+});
+
+describe('deleted discussion lifecycle', () => {
+  it('rejects delayed messages, pages, directory results and conversation events after deletion', () => {
+    const { state: initial, target } = setup();
+    const conversation = {
+      id: 'default',
+      workspaceId: 'ws',
+      kind: 'workspace' as const,
+      participants: [],
+      createdAt: message(1).createdAt,
+    };
+    let state = reduce(initial, discussionConversationReceived(target.context, conversation));
+    state = reduce(state, discussionMessageReceived(target, message(1)));
+    state = reduce(state, discussionLoadStarted(target, 'history', false));
+    state = reduce(state, discussionDirectoryStarted(target.context, 'ws', 'directory'));
+    state = reduce(state, discussionConversationDeleted(target.context, 'ws', 'default'));
+    expect(state.byWorkspaceId.ws.default).toBeUndefined();
+    expect(getItems(state.directories.ws.conversations)).toEqual([]);
+    for (const action of [
+      discussionMessageReceived(target, message(2)),
+      discussionPageReceived(
+        target,
+        'history',
+        { messages: [message(2)], hasMore: false, conversation },
+        'initial',
+      ),
+      discussionConversationReceived(target.context, conversation),
+      discussionRequested('ws'),
+      discussionConversationDeleted(target.context, 'ws', 'default'),
+    ])
+      expect(reduce(state, action)).toBe(state);
+    state = reduce(
+      state,
+      discussionDirectoryReceived(target.context, 'ws', 'directory', {
+        conversations: [conversation],
+        hasMore: false,
+      }),
+    );
+    expect(getItems(state.directories.ws.conversations)).toEqual([]);
+    state = reduce(state, discussionContextChanged(null, null));
+    state = reduce(state, discussionContextChanged('reconnected', 'owner-1'));
+    expect(reduce(state, discussionRequested('ws'))).toBe(state);
+  });
+  it('ignores deletion from an old connection or another workspace', () => {
+    const { state } = setup();
+    expect(reduce(state, discussionConversationDeleted('old', 'ws', 'default'))).toBe(state);
+    expect(reduce(state, discussionConversationDeleted('connection-1', 'missing', 'default'))).toBe(
+      state,
+    );
   });
 });

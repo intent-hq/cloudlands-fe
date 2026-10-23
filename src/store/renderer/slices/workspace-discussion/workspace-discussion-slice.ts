@@ -8,8 +8,9 @@ import {
   getItems,
   type Collection,
 } from '@themislib/themis/utils/collections/collection-utils';
-import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
+import type { DiscussionManagement } from './workspace-discussion-types';
 import {
   isDiscussionAgentActivity,
   discussionAgentControlKey,
@@ -107,6 +108,10 @@ export interface WorkspaceDiscussion {
   sendError: DiscussionError | null;
 }
 export interface WorkspaceDiscussionState {
+  managementSupported: boolean | null;
+  management: Record<string, DiscussionManagement>;
+  /** Daemon deletion facts survive reconnects for the same admitted identity. */
+  deletedKeys: string[];
   context: string | null;
   /** Stable across reconnects; never shared between different people/backends. */
   owner: string | null;
@@ -169,6 +174,9 @@ export const emptyDiscussion: WorkspaceDiscussion = {
   sendError: null,
 };
 export const initialState: WorkspaceDiscussionState = {
+  managementSupported: null,
+  management: {},
+  deletedKeys: [],
   context: null,
   owner: null,
   workspaceIds: [],
@@ -346,6 +354,19 @@ export function discussionRow(
 ): WorkspaceDiscussion | undefined {
   return state.byWorkspaceId[workspaceId]?.[conversationId];
 }
+function acceptsAgentTarget(
+  state: WorkspaceDiscussionState,
+  workspaceId: string,
+  conversationId: string,
+): boolean {
+  return (
+    conversationId === DEFAULT_DISCUSSION_ID ||
+    (state.managementSupported === true &&
+      (conversationId === NEW_DISCUSSION_ID ||
+        getItem((state.directories[workspaceId] ?? emptyDirectory).conversations, conversationId)
+          ?.kind === 'workspace'))
+  );
+}
 const set = (
   state: WorkspaceDiscussionState,
   target: Pick<DiscussionTarget, 'workspaceId' | 'conversationId'>,
@@ -514,6 +535,8 @@ workspaceDiscussionReducer.with(
       ...state,
       context,
       conversationsSupported: null,
+      managementSupported: null,
+      management: {},
       sharingEnabled: null,
       messageActionsSupported: null,
       reactionsSupported: null,
@@ -558,12 +581,17 @@ workspaceDiscussionReducer.with(
     recipients: Object.fromEntries(
       Object.entries(state.recipients).filter(([id]) => workspaceIds.includes(id)),
     ),
+    management: Object.fromEntries(
+      Object.entries(state.management).filter(([id]) => workspaceIds.includes(id)),
+    ),
+    deletedKeys: state.deletedKeys.filter((key) => workspaceIds.includes(JSON.parse(key)[0])),
   }),
 );
 workspaceDiscussionReducer.with(
   discussionRequested,
   (state, { payload: [workspaceId, conversationId = DEFAULT_DISCUSSION_ID] }) => {
     const key = discussionKey(workspaceId, conversationId);
+    if (state.deletedKeys.includes(key)) return state;
     if (!state.requestedIds.includes(key))
       state = { ...state, requestedIds: [...state.requestedIds, key] };
     if (
@@ -615,7 +643,7 @@ workspaceDiscussionReducer.with(
       !state.context ||
       !row.authorized ||
       state.agentMessagingSupported !== true ||
-      conversationId !== DEFAULT_DISCUSSION_ID ||
+      !acceptsAgentTarget(state, workspaceId, conversationId) ||
       !state.workspaceIds.includes(workspaceId) ||
       !agentId ||
       !name.trim() ||
@@ -909,6 +937,16 @@ workspaceDiscussionReducer.with(
   (state, { payload: [target, messageId, message, conversation] }) => {
     const row = current(state, target);
     if (!row) return state;
+    if (
+      conversation &&
+      state.deletedKeys.includes(discussionKey(target.workspaceId, conversation.id))
+    )
+      return set(state, target, {
+        ...row,
+        sending: false,
+        pending: createCollection('id'),
+        sendError: 'forbidden',
+      });
     const sent = getItem(row.pending, messageId);
     if (!sent) return state;
     if (
@@ -1069,6 +1107,8 @@ function rememberConversation(
   state: WorkspaceDiscussionState,
   conversation: DiscussionConversation,
 ): WorkspaceDiscussionState {
+  if (state.deletedKeys.includes(discussionKey(conversation.workspaceId, conversation.id)))
+    return state;
   const directory = state.directories[conversation.workspaceId] ?? emptyDirectory;
   return {
     ...state,
@@ -1267,7 +1307,11 @@ workspaceDiscussionReducer.with(
 workspaceDiscussionReducer.with(
   discussionConversationReceived,
   (state, { payload: [context, conversation] }) => {
-    if (!admitted(state, context, conversation.workspaceId)) return state;
+    if (
+      !admitted(state, context, conversation.workspaceId) ||
+      state.deletedKeys.includes(discussionKey(conversation.workspaceId, conversation.id))
+    )
+      return state;
     const next = rememberConversation(state, conversation);
     const row = discussionRow(next, conversation.workspaceId, conversation.id);
     if (row)
@@ -1292,6 +1336,7 @@ workspaceDiscussionReducer.with(
     let nextEpoch = state.nextEpoch;
     return {
       ...state,
+      management: { ...state.management, [workspaceId]: emptyManagement },
       directories: { ...state.directories, [workspaceId]: emptyDirectory },
       recipients: { ...state.recipients, [workspaceId]: emptyRecipients },
       byWorkspaceId: {
@@ -1468,7 +1513,11 @@ workspaceDiscussionReducer.with(
     if (
       !row ||
       !row.authorized ||
-      (target.conversationId ?? DEFAULT_DISCUSSION_ID) !== DEFAULT_DISCUSSION_ID ||
+      !acceptsAgentTarget(
+        state,
+        target.workspaceId,
+        target.conversationId ?? DEFAULT_DISCUSSION_ID,
+      ) ||
       state.agentActivitySupported !== true ||
       !isDiscussionAgentActivity(activity)
     )
@@ -1525,5 +1574,79 @@ workspaceDiscussionReducer.with(
         getItems(row.agentControls).filter((c) => c.key !== key),
       ),
     });
+  },
+);
+
+export const emptyManagement: DiscussionManagement = {
+  pending: null,
+  conversationId: null,
+  requestId: null,
+  error: null,
+};
+export const discussionManagementCapabilityReceived = createAction<
+  [context: string, supported: boolean]
+>('workspaceDiscussion/managementCapabilityReceived');
+export const discussionRenameRequested = createAsyncAction<
+  [workspaceId: string, conversationId: string, name: string],
+  void
+>('workspaceDiscussion/renameRequestedAsync', 'workspaceDiscussion/renameRequested');
+export const discussionDeleteRequested = createAsyncAction<
+  [workspaceId: string, conversationId: string],
+  void
+>('workspaceDiscussion/deleteRequestedAsync', 'workspaceDiscussion/deleteRequested');
+export const discussionManagementStarted = createAction<
+  [context: string, workspaceId: string, request: DiscussionManagement]
+>('workspaceDiscussion/managementStarted');
+export const discussionManagementFinished = createAction<
+  [context: string, workspaceId: string, requestId: string, error: DiscussionError | null]
+>('workspaceDiscussion/managementFinished');
+export const discussionConversationDeleted = createAction<
+  [context: string, workspaceId: string, conversationId: string]
+>('workspaceDiscussion/conversationDeleted');
+workspaceDiscussionReducer.with(
+  discussionManagementCapabilityReceived,
+  (state, { payload: [context, supported] }) =>
+    state.context === context ? { ...state, managementSupported: supported } : state,
+);
+workspaceDiscussionReducer.with(
+  discussionManagementStarted,
+  (state, { payload: [context, workspaceId, request] }) =>
+    admitted(state, context, workspaceId)
+      ? { ...state, management: { ...state.management, [workspaceId]: request } }
+      : state,
+);
+workspaceDiscussionReducer.with(
+  discussionManagementFinished,
+  (state, { payload: [context, workspaceId, requestId, error] }) => {
+    const row = state.management[workspaceId];
+    if (!admitted(state, context, workspaceId) || row?.requestId !== requestId) return state;
+    return {
+      ...state,
+      management: {
+        ...state.management,
+        [workspaceId]: {
+          ...row,
+          pending: null,
+          requestId: null,
+          error,
+        },
+      },
+    };
+  },
+);
+workspaceDiscussionReducer.with(
+  discussionConversationDeleted,
+  (state, { payload: [context, workspaceId, conversationId] }) => {
+    const key = discussionKey(workspaceId, conversationId);
+    if (!admitted(state, context, workspaceId) || state.deletedKeys.includes(key)) return state;
+    state = forgetConversation(state, workspaceId, conversationId);
+    const rows = { ...state.byWorkspaceId[workspaceId] };
+    delete rows[conversationId];
+    return {
+      ...state,
+      deletedKeys: [...state.deletedKeys, key],
+      requestedIds: state.requestedIds.filter((id) => id !== key),
+      byWorkspaceId: { ...state.byWorkspaceId, [workspaceId]: rows },
+    };
   },
 );

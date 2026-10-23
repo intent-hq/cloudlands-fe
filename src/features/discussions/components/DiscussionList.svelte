@@ -3,7 +3,6 @@
   import { faComment } from '@fortawesome/free-regular-svg-icons';
   import { ListView, ListRow } from '$lib/components/patterns/collection';
   import { Button } from '$lib/components/ui/button';
-  import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { ErrorState, LoadingState } from '$lib/components/patterns/screen';
   import DiscussionUnreadBadge from './DiscussionUnreadBadge.svelte';
@@ -43,14 +42,7 @@
     {#snippet row({ item })}
       <ListRow class="min-h-9 gap-2.5 px-2.5 py-2" data-workspace-discussion-open={item.id}>
         {#snippet leading()}
-          {#if item.id === 'default'}<Fa
-              icon={faComment}
-              class="text-muted-foreground"
-            />{:else}<PrincipalAvatar
-              label={item.title}
-              avatarUrl={item.avatarUrl}
-              size={20}
-            />{/if}
+          <Fa icon={faComment} class="text-muted-foreground" />
         {/snippet}
         {#snippet title()}{item.title}{/snippet}
         {#snippet trailing()}

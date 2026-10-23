@@ -29,27 +29,29 @@ test('unread navigation follows incoming messages and only clears after focused 
 }, testInfo) => {
   await page.setViewportSize({ width: 1100, height: 900 });
   const component = await mount(MultipleDiscussionHost);
-  const alex = '0199e991-0000-7000-8000-000000000001';
-  const jordan = '0199e991-0000-7000-8000-000000000002';
-  const alexRow = component.locator(`[data-workspace-discussion-open="${alex}"]`);
-  const unread = alexRow.locator('[data-discussion-unread-badge]');
-  await alexRow.click();
+  const planning = '0199e991-0000-7000-8000-000000000001';
+  const design = '0199e991-0000-7000-8000-000000000002';
+  const planningRow = component.locator(`[data-workspace-discussion-open="${planning}"]`);
+  const unread = planningRow.locator('[data-discussion-unread-badge]');
+  await planningRow.click();
   await expect(component.getByRole('textbox', { name: 'Message', exact: true })).toBeEditable();
   expect(await calls(component)).toContainEqual({
     method: 'discussion.list',
-    params: { workspaceId: 'people-tile-preview', conversationId: alex, limit: 50 },
+    params: { workspaceId: 'people-tile-preview', conversationId: planning, limit: 50 },
   });
-  await component.locator(`[data-workspace-discussion-open="${jordan}"]`).click();
-  await expect(component.getByTestId('pane-stack-selector-trigger')).toContainText('Jordan');
-  await component.getByRole('button', { name: 'Receive own Alex message', exact: true }).click();
+  await component.locator(`[data-workspace-discussion-open="${design}"]`).click();
+  await expect(component.getByTestId('pane-stack-selector-trigger')).toContainText('Design');
+  await component
+    .getByRole('button', { name: 'Receive own Planning message', exact: true })
+    .click();
   await expect(unread).toHaveCount(0);
-  await component.getByRole('button', { name: 'Receive Alex message', exact: true }).click();
+  await component.getByRole('button', { name: 'Receive Planning message', exact: true }).click();
   await expect(unread).toContainText('1');
   await component.getByRole('button', { name: 'Toggle pane focus' }).click();
   await component.getByTestId('pane-stack-selector-trigger').press('Enter');
   const menu = page.locator('[data-pane-stack-menu]');
-  const alexItem = menu.getByRole('menuitem', { name: /Alex.*1/ });
-  await expect(alexItem.locator('[data-discussion-unread-badge]')).toBeVisible();
+  const planningItem = menu.getByRole('menuitem', { name: /Planning.*1/ });
+  await expect(planningItem.locator('[data-discussion-unread-badge]')).toBeVisible();
   const screenshot = testInfo.outputPath('discussion-unread-navigation.png');
   const frame = await component.locator('[data-multiple-discussion-host]').boundingBox();
   await page.screenshot({ path: screenshot, clip: frame! });
@@ -57,40 +59,29 @@ test('unread navigation follows incoming messages and only clears after focused 
     path: screenshot,
     contentType: 'image/png',
   });
-  await alexItem.press('Enter');
+  await planningItem.press('Enter');
   await expect(component.getByRole('log')).toContainText('A new discussion update.');
   await expect(unread).toContainText('1');
   await component.getByRole('button', { name: 'Toggle pane focus' }).click();
   await expect(unread).toHaveCount(0);
 
-  await component.locator(`[data-workspace-discussion-open="${jordan}"]`).click();
-  await component.getByRole('button', { name: 'Receive Alex message', exact: true }).click();
+  await component.locator(`[data-workspace-discussion-open="${design}"]`).click();
+  await component.getByRole('button', { name: 'Receive Planning message', exact: true }).click();
   await expect(unread).toContainText('1');
-  const sidebarOption = alexRow.locator('..');
+  const sidebarOption = planningRow.locator('..');
   await sidebarOption.focus();
   await page.keyboard.press('Enter');
-  await expect(component.getByTestId('pane-stack-selector-trigger')).toContainText('Alex');
+  await expect(component.getByTestId('pane-stack-selector-trigger')).toContainText('Planning');
   await expect(unread).toHaveCount(0);
 });
 
-test('People plus retains a local composer, creates a group on first send, and reopens its history', async ({
+test('People plus retains a local composer, creates an everyone discussion on first send, and reopens its history', async ({
   mount,
-  page,
 }) => {
   const component = await mount(MultipleDiscussionHost);
   const plus = component.locator('[data-sidebar-card-tab="people"] [data-sidebar-action="plus"]');
   await plus.click();
-  const picker = component.getByRole('combobox', { name: 'Discussion recipients' });
-  await expect(picker).toBeEditable();
-  await picker.fill('Alex');
-  await page.getByRole('option', { name: /^Alex(?:\s|$)/ }).click();
-  await expect(picker).toHaveAttribute('aria-expanded', 'false');
-  await expect(picker).toBeFocused();
-  await picker.click();
-  await expect(page.getByRole('option', { name: /^Alex(?:\s|$)/ })).toHaveCount(0);
-  await picker.fill('Jordan');
-  await page.getByRole('option', { name: /^Jordan(?:\s|$)/ }).click();
-  await picker.press('Escape');
+  await expect(component.getByRole('combobox', { name: 'Discussion recipients' })).toHaveCount(0);
   const composer = component.getByRole('textbox', { name: 'Message', exact: true });
   await composer.fill('Let’s review the new flow together.');
   expect((await calls(component)).filter((call) => call.method === 'discussion.send')).toHaveLength(
@@ -103,8 +94,6 @@ test('People plus retains a local composer, creates a group on first send, and r
   );
   await plus.click();
   await expect(composer).toHaveValue('Let’s review the new flow together.');
-  await expect(component.getByRole('button', { name: 'Remove Alex' })).toBeVisible();
-  await expect(component.getByRole('button', { name: 'Remove Jordan' })).toBeVisible();
   await plus.click();
   expect((await panel(component)).tabs).toHaveLength(1);
   const tabId = (await panel(component)).activeTabId;
@@ -116,7 +105,6 @@ test('People plus retains a local composer, creates a group on first send, and r
   expect(after.activeTabId).toBe(tabId);
   const conversationId = after.tabs[0].data.conversationId;
   expect(conversationId).not.toBe('new');
-  expect(after.tabs[0].title).toBe('Alex, Jordan');
   const sends = (await calls(component)).filter((call) => call.method === 'discussion.send');
   expect(sends).toEqual([
     {
@@ -124,7 +112,7 @@ test('People plus retains a local composer, creates a group on first send, and r
       params: {
         workspaceId: 'people-tile-preview',
         messageId: expect.any(String),
-        recipientPrincipalIds: ['alex', 'jordan'],
+        createConversation: true,
         body: 'Let’s review the new flow together.',
       },
     },
@@ -136,86 +124,64 @@ test('People plus retains a local composer, creates a group on first send, and r
   await expect(component.locator('[data-sidebar-card-tab="people"]')).toContainText('Activity');
 });
 
-test('narrow recipient entry supports keyboard additions and restores removed people to suggestions', async ({
+test('narrow everyone composer sends with the keyboard without selecting recipients', async ({
   mount,
   page,
 }) => {
   await page.setViewportSize({ width: 320, height: 850 });
   const component = await mount(NewDiscussionPreview, { props: { narrow: true } });
-  const picker = component.getByRole('combobox', { name: 'Discussion recipients' });
-  await picker.fill('Alex');
-  await expect(page.getByRole('option', { name: 'Alex', exact: true })).toBeVisible();
-  await picker.press('Enter');
-  await expect(component.getByRole('button', { name: 'Remove Alex' })).toBeVisible();
-  await expect(picker).toHaveAttribute('aria-expanded', 'false');
-  await expect(picker).toBeFocused();
-  await picker.click();
-  await expect(page.getByRole('option', { name: 'Alex', exact: true })).toHaveCount(0);
-  await picker.fill('Jordan');
-  await picker.press('Enter');
-  await expect(component.getByRole('button', { name: 'Remove Jordan' })).toBeVisible();
-  await component.getByRole('button', { name: 'Remove Alex' }).click();
-  await picker.fill('Alex');
-  await expect(page.getByRole('option', { name: 'Alex', exact: true })).toBeVisible();
-  await picker.press('Enter');
-  await expect(component.getByRole('button', { name: 'Remove Alex' })).toHaveCount(1);
-  await expect(page.getByRole('listbox')).toHaveCount(0);
-  await component.getByRole('button', { name: 'Remove Jordan' }).click();
-  await expect(component.getByRole('button', { name: 'Remove Jordan' })).toHaveCount(0);
+  const composer = component.getByRole('textbox', { name: 'Message', exact: true });
+  await composer.fill('A message for everyone');
+  await composer.press('Enter');
+  await expect(component.getByRole('log')).toContainText('A message for everyone');
+  await expect(composer).toHaveValue('');
+  await expect(composer).toBeFocused();
 });
 
 test('switching between two saved discussions preserves independent drafts and send targets', async ({
   mount,
 }) => {
   const component = await mount(MultipleDiscussionHost);
-  const alex = '0199e991-0000-7000-8000-000000000001';
-  const jordan = '0199e991-0000-7000-8000-000000000002';
-  await component.locator(`[data-workspace-discussion-open="${alex}"]`).click();
+  const planning = '0199e991-0000-7000-8000-000000000001';
+  const design = '0199e991-0000-7000-8000-000000000002';
+  await component.locator(`[data-workspace-discussion-open="${planning}"]`).click();
   const composer = component.getByRole('textbox', { name: 'Message', exact: true });
   await expect(composer).toBeEditable();
-  await composer.fill('Alex draft');
-  await component.locator(`[data-workspace-discussion-open="${jordan}"]`).click();
+  await composer.fill('Planning draft');
+  await component.locator(`[data-workspace-discussion-open="${design}"]`).click();
   await expect(composer).toHaveValue('');
-  await composer.fill('Jordan draft');
-  await component.locator(`[data-workspace-discussion-open="${alex}"]`).click();
-  await expect(composer).toHaveValue('Alex draft');
+  await composer.fill('Design draft');
+  await component.locator(`[data-workspace-discussion-open="${planning}"]`).click();
+  await expect(composer).toHaveValue('Planning draft');
   await composer.press('Enter');
   await expect(composer).toHaveValue('');
-  await component.locator(`[data-workspace-discussion-open="${jordan}"]`).click();
-  await expect(composer).toHaveValue('Jordan draft');
-  await expect(component.getByRole('log')).not.toContainText('Alex draft');
+  await component.locator(`[data-workspace-discussion-open="${design}"]`).click();
+  await expect(composer).toHaveValue('Design draft');
+  await expect(component.getByRole('log')).not.toContainText('Planning draft');
   const sends = (await calls(component)).filter((call) => call.method === 'discussion.send');
   expect(sends).toEqual([
     {
       method: 'discussion.send',
       params: {
         workspaceId: 'people-tile-preview',
-        conversationId: alex,
+        conversationId: planning,
         messageId: expect.any(String),
-        body: 'Alex draft',
+        body: 'Planning draft',
       },
     },
   ]);
   expect((await panel(component)).tabs).toHaveLength(2);
 });
 
-test('failed first send locks recipients and retry creates the original group while retaining a newer draft', async ({
+test('failed first send retries the same everyone discussion while retaining a newer draft', async ({
   mount,
-  page,
 }) => {
   const component = await mount(MultipleDiscussionHost, { props: { failSend: true } });
   await component.locator('[data-sidebar-card-tab="people"] [data-sidebar-action="plus"]').click();
-  const picker = component.getByRole('combobox', { name: 'Discussion recipients' });
-  await expect(picker).toBeEditable();
-  await picker.fill('Morgan');
-  await page.getByRole('option', { name: /^Morgan(?:\s|$)/ }).click();
-  await picker.press('Escape');
   const composer = component.getByRole('textbox', { name: 'Message', exact: true });
   await composer.fill('First message');
   await composer.press('Enter');
   await expect(component.getByRole('alert')).toBeVisible();
-  await expect(picker).toBeDisabled();
-  await expect(page.getByRole('listbox')).toHaveCount(0);
   await composer.fill('A follow-up thought');
   await expect(component.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
   await component
@@ -228,21 +194,16 @@ test('failed first send locks recipients and retry creates the original group wh
   const sends = (await calls(component)).filter((call) => call.method === 'discussion.send');
   expect(sends).toHaveLength(2);
   expect(sends[1]).toEqual(sends[0]);
-  expect(sends[1].params.recipientPrincipalIds).toEqual(['morgan']);
+  expect(sends[1].params.createConversation).toBe(true);
+  expect(sends[1].params).not.toHaveProperty('recipientPrincipalIds');
 });
 
 test('first-send completion promotes a closed composer before a fresh discussion starts', async ({
   mount,
-  page,
 }) => {
   const component = await mount(MultipleDiscussionHost, { props: { deferSend: true } });
   const plus = component.locator('[data-sidebar-card-tab="people"] [data-sidebar-action="plus"]');
   await plus.click();
-  const picker = component.getByRole('combobox', { name: 'Discussion recipients' });
-  await expect(picker).toBeEditable();
-  await picker.fill('Alex');
-  await page.getByRole('option', { name: /^Alex(?:\s|$)/ }).click();
-  await picker.press('Escape');
   const composer = component.getByRole('textbox', { name: 'Message', exact: true });
   await composer.fill('Sent while the pane closes');
   await composer.press('Enter');
@@ -265,7 +226,9 @@ test('first-send completion promotes a closed composer before a fresh discussion
   const savedId = (await closed())[0].tab.data.conversationId;
   await plus.click();
   await expect(composer).toHaveValue('');
-  await expect(component.locator('[data-discussion-recipients]')).toBeVisible();
+  await expect(component.getByTestId('pane-stack-selector-trigger')).toContainText(
+    'New discussion',
+  );
   await component.getByRole('button', { name: 'Reopen closed discussion' }).click();
   await expect(component.locator('[data-discussion-recipients]')).toHaveCount(0);
   await expect(component.getByRole('log')).toContainText('Sent while the pane closes');
@@ -277,85 +240,52 @@ test('first-send completion promotes a closed composer before a fresh discussion
 });
 
 for (const rejection of ['invalid', 'forbidden'] as const) {
-  test(`a ${rejection} first send displays the error and allows corrected recipients`, async ({
+  test(`a ${rejection} first send preserves the draft and allows another submission`, async ({
     mount,
-    page,
   }) => {
     const component = await mount(MultipleDiscussionHost, { props: { rejectSend: rejection } });
     await component
       .locator('[data-sidebar-card-tab="people"] [data-sidebar-action="plus"]')
       .click();
-    const picker = component.getByRole('combobox', { name: 'Discussion recipients' });
-    await expect(picker).toBeEditable();
-    await picker.fill('Alex');
-    await page.getByRole('option', { name: /^Alex(?:\s|$)/ }).click();
-    await picker.press('Escape');
     const composer = component.getByRole('textbox', { name: 'Message', exact: true });
     await composer.fill('Keep my message');
     await composer.press('Enter');
-    await expect(component.getByRole('alert')).toHaveText(
-      'The discussion could not be created. Check the recipients and try again.',
-    );
+    await expect(component.getByRole('alert')).toBeVisible();
     await expect(composer).toHaveValue('Keep my message');
-    await expect(picker).toBeEditable();
-    await component.getByRole('button', { name: 'Remove Alex', exact: true }).click();
-    await picker.fill('Jordan');
-    await page.getByRole('option', { name: /^Jordan(?:\s|$)/ }).click();
-    await picker.press('Escape');
     await component.getByRole('button', { name: 'Send', exact: true }).click();
-    await expect(component.locator('[data-discussion-recipients]')).toHaveCount(0);
     await expect(composer).toHaveValue('');
     await expect(component.getByRole('log')).toContainText('Keep my message');
     const sends = (await calls(component)).filter((call) => call.method === 'discussion.send');
     expect(sends).toHaveLength(2);
-    expect(sends[1].params.recipientPrincipalIds).toEqual(['jordan']);
+    expect(sends[1].params.createConversation).toBe(true);
+    expect(sends[1].params).not.toHaveProperty('recipientPrincipalIds');
     expect(sends[1].params.messageId).not.toBe(sends[0].params.messageId);
   });
 }
-
-test('recipient search finds a login that differs from its display name', async ({
-  mount,
-  page,
-}) => {
-  const component = await mount(MultipleDiscussionHost);
-  await component.locator('[data-sidebar-card-tab="people"] [data-sidebar-action="plus"]').click();
-  const picker = component.getByRole('combobox', { name: 'Discussion recipients' });
-  await expect(picker).toBeEditable();
-  await picker.fill('river-runner');
-  const option = page.getByRole('option', { name: /^Alex(?:\s|$)/ });
-  await expect(option).toContainText('@river-runner');
-  await option.click();
-  await picker.press('Escape');
-  await expect(component.getByRole('button', { name: 'Remove Alex', exact: true })).toBeVisible();
-  const queries = (await calls(component)).filter(
-    (call) => call.method === 'discussion.recipients',
-  );
-  expect(queries.some((call) => call.params.query === 'river-runner')).toBe(true);
-});
 
 test('discussion panes use the shared switcher and keep New discussion and Refresh in panel actions', async ({
   mount,
   page,
 }) => {
   const component = await mount(MultipleDiscussionHost);
-  const alex = '0199e991-0000-7000-8000-000000000001';
-  const jordan = '0199e991-0000-7000-8000-000000000002';
-  await component.locator(`[data-workspace-discussion-open="${alex}"]`).click();
+  const planning = '0199e991-0000-7000-8000-000000000001';
+  const design = '0199e991-0000-7000-8000-000000000002';
+  await component.locator(`[data-workspace-discussion-open="${planning}"]`).click();
   const composer = component.getByRole('textbox', { name: 'Message', exact: true });
-  await composer.fill('Alex draft');
-  await component.locator(`[data-workspace-discussion-open="${jordan}"]`).click();
+  await composer.fill('Planning draft');
+  await component.locator(`[data-workspace-discussion-open="${design}"]`).click();
   const selector = component.getByTestId('pane-stack-selector-trigger');
   await selector.press('Enter');
   const menu = page.locator('[data-pane-stack-menu]');
-  await expect(menu.getByRole('menuitem', { name: 'Jordan', exact: true })).toHaveAttribute(
+  await expect(menu.getByRole('menuitem', { name: 'Design', exact: true })).toHaveAttribute(
     'aria-current',
     'page',
   );
   await expect(menu.getByRole('menuitem', { name: 'New discussion', exact: true })).toHaveCount(0);
-  await menu.getByRole('menuitem', { name: 'Alex', exact: true }).press('Enter');
+  await menu.getByRole('menuitem', { name: 'Planning', exact: true }).press('Enter');
   await expect(menu).toBeHidden();
-  await expect(selector).toContainText('Alex');
-  await expect(composer).toHaveValue('Alex draft');
+  await expect(selector).toContainText('Planning');
+  await expect(composer).toHaveValue('Planning draft');
   await selector.press('Enter');
   await menu.evaluate(async (element) => {
     await Promise.allSettled(
@@ -381,12 +311,260 @@ test('discussion panes use the shared switcher and keep New discussion and Refre
   await actions.click();
   await page.getByRole('menuitem', { name: 'New discussion', exact: true }).click();
   await expect(selector).toContainText('New discussion');
-  await expect(component.getByRole('combobox', { name: 'Discussion recipients' })).toBeVisible();
+  await expect(composer).toHaveValue('');
   await component.getByRole('button', { name: 'Close active pane' }).click();
   await expect(component.getByRole('combobox', { name: 'Discussion recipients' })).toHaveCount(0);
   await selector.click();
   await expect(menu.getByRole('menuitem', { name: 'New discussion', exact: true })).toHaveCount(0);
-  await menu.getByRole('menuitem', { name: 'Alex', exact: true }).click();
-  await expect(selector).toContainText('Alex');
-  await expect(composer).toHaveValue('Alex draft');
+  await menu.getByRole('menuitem', { name: 'Planning', exact: true }).click();
+  await expect(selector).toContainText('Planning');
+  await expect(composer).toHaveValue('Planning draft');
+});
+
+for (const role of ['owner', 'manager'] as const) {
+  test(`${role} renames a discussion through the keyboard and navigation follows the saved name`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    const component = await mount(MultipleDiscussionHost, { props: { role } });
+    const conversationId = '0199e991-0000-7000-8000-000000000001';
+    const row = component.locator(`[data-workspace-discussion-open="${conversationId}"]`);
+    await row.click();
+    const composer = component.getByRole('textbox', { name: 'Message', exact: true });
+    await composer.fill('Keep my draft while renaming');
+    const actions = component.getByTestId('panel-actions-trigger').filter({ visible: true });
+    await actions.press('Enter');
+    await expect(
+      page.getByRole('menuitem', { name: 'Delete discussion', exact: true }),
+    ).toHaveCount(role === 'owner' ? 1 : 0);
+    await page.getByRole('menuitem', { name: 'Rename discussion', exact: true }).press('Enter');
+    const dialog = page.getByRole('dialog', { name: 'Rename discussion', exact: true });
+    const name = dialog.getByRole('textbox', { name: 'Discussion name', exact: true });
+    await expect(name).toBeFocused();
+    await name.fill('');
+    await expect(dialog.getByRole('button', { name: 'Rename', exact: true })).toBeDisabled();
+    await name.fill('Release planning');
+    await name.press('Enter');
+    await expect(dialog).toBeHidden();
+    await expect(row).toContainText('Release planning');
+    await expect(component.getByTestId('pane-stack-selector-trigger')).toContainText(
+      'Release planning',
+    );
+    await expect(composer).toHaveValue('Keep my draft while renaming');
+    if (role === 'owner') {
+      const screenshot = testInfo.outputPath('renamed-workspace-discussion.png');
+      await component.locator('[data-multiple-discussion-host]').screenshot({ path: screenshot });
+      await testInfo.attach('Renamed workspace discussion', {
+        path: screenshot,
+        contentType: 'image/png',
+      });
+    }
+    expect((await calls(component)).filter((call) => call.method === 'discussion.rename')).toEqual([
+      {
+        method: 'discussion.rename',
+        params: { workspaceId: 'people-tile-preview', conversationId, name: 'Release planning' },
+      },
+    ]);
+  });
+}
+
+test('a collaborator can send but cannot rename or delete a discussion', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(MultipleDiscussionHost, { props: { role: 'collaborator' } });
+  await component
+    .locator('[data-workspace-discussion-open="0199e991-0000-7000-8000-000000000001"]')
+    .click();
+  const composer = component.getByRole('textbox', { name: 'Message', exact: true });
+  await composer.fill('A collaborator update');
+  await composer.press('Enter');
+  await expect(component.getByRole('log')).toContainText('A collaborator update');
+  await component.getByTestId('panel-actions-trigger').filter({ visible: true }).click();
+  await expect(page.getByRole('menuitem', { name: 'Refresh', exact: true })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Rename discussion', exact: true })).toHaveCount(
+    0,
+  );
+  await expect(page.getByRole('menuitem', { name: 'Delete discussion', exact: true })).toHaveCount(
+    0,
+  );
+});
+
+test('owner cancels rename and delete without requests, then deletes the selected discussion', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(MultipleDiscussionHost);
+  const conversationId = '0199e991-0000-7000-8000-000000000001';
+  const row = component.locator(`[data-workspace-discussion-open="${conversationId}"]`);
+  await component
+    .locator('[data-workspace-discussion-open="0199e991-0000-7000-8000-000000000002"]')
+    .click();
+  await row.click();
+  await expect(component.getByTestId('pane-stack-selector-trigger')).toContainText('Planning');
+  await component.getByRole('button', { name: 'Close active pane' }).click();
+  await revealPeople(component);
+  await row.click();
+  const closedBeforeDelete = JSON.parse(
+    (await component.locator('[data-discussion-closed]').textContent()) || '[]',
+  ) as Array<{ tab: { data: { conversationId: string } } }>;
+  expect(closedBeforeDelete.some((entry) => entry.tab.data.conversationId === conversationId)).toBe(
+    true,
+  );
+  const actions = component.getByTestId('panel-actions-trigger').filter({ visible: true });
+  await actions.click();
+  await page.getByRole('menuitem', { name: 'Rename discussion', exact: true }).click();
+  const rename = page.getByRole('dialog', { name: 'Rename discussion', exact: true });
+  await rename.getByRole('textbox').fill('Discard this name');
+  await rename.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(rename).toBeHidden();
+  await expect(actions).toBeFocused();
+  expect((await calls(component)).filter((call) => call.method === 'discussion.rename')).toEqual(
+    [],
+  );
+  await actions.click();
+  await page.getByRole('menuitem', { name: 'Delete discussion', exact: true }).click();
+  const deletion = page.getByRole('dialog', { name: 'Delete discussion', exact: true });
+  await deletion.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(deletion).toBeHidden();
+  await expect(row).toBeVisible();
+  expect((await calls(component)).filter((call) => call.method === 'discussion.delete')).toEqual(
+    [],
+  );
+  await actions.click();
+  await page.getByRole('menuitem', { name: 'Delete discussion', exact: true }).click();
+  await deletion.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(deletion).toBeHidden();
+  await expect(row).toHaveCount(0);
+  await expect
+    .poll(async () =>
+      (await panel(component)).tabs.some((tab) => tab.data.conversationId === conversationId),
+    )
+    .toBe(false);
+  const closed = JSON.parse(
+    (await component.locator('[data-discussion-closed]').textContent()) || '[]',
+  ) as Array<{ tab: { data: { conversationId: string } } }>;
+  expect(closed.some((entry) => entry.tab.data.conversationId === conversationId)).toBe(false);
+  expect((await calls(component)).filter((call) => call.method === 'discussion.delete')).toEqual([
+    { method: 'discussion.delete', params: { workspaceId: 'people-tile-preview', conversationId } },
+  ]);
+});
+
+for (const operation of ['rename', 'delete'] as const) {
+  test(`failed ${operation} keeps the discussion and draft available`, async ({ mount, page }) => {
+    const component = await mount(MultipleDiscussionHost, {
+      props: { failRename: operation === 'rename', failDelete: operation === 'delete' },
+    });
+    const conversationId = '0199e991-0000-7000-8000-000000000001';
+    const row = component.locator(`[data-workspace-discussion-open="${conversationId}"]`);
+    await row.click();
+    const composer = component.getByRole('textbox', { name: 'Message', exact: true });
+    await composer.fill('Still working on this');
+    await component.getByTestId('panel-actions-trigger').filter({ visible: true }).click();
+    const label = operation === 'rename' ? 'Rename' : 'Delete';
+    await page.getByRole('menuitem', { name: `${label} discussion`, exact: true }).click();
+    const dialog = page.getByRole('dialog', {
+      name: `${label} discussion`,
+      exact: true,
+    });
+    if (operation === 'rename') await dialog.getByRole('textbox').fill('Failed new name');
+    await dialog.getByRole('button', { name: label, exact: true }).click();
+    await expect
+      .poll(
+        async () =>
+          (await calls(component)).filter((call) => call.method === `discussion.${operation}`)
+            .length,
+      )
+      .toBe(1);
+    await expect(dialog.getByRole('button', { name: 'Cancel', exact: true })).toBeEnabled();
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await expect(row).toContainText('Planning');
+    await expect(component.getByTestId('pane-stack-selector-trigger')).toContainText('Planning');
+    await expect(composer).toHaveValue('Still working on this');
+    await composer.press('Enter');
+    await expect(component.getByRole('log')).toContainText('Still working on this');
+  });
+}
+
+for (const conversationId of ['default', '0199e991-0000-7000-8000-000000000001']) {
+  test(`deleting ${conversationId === 'default' ? 'the primary' : 'a named'} discussion ignores a late send acknowledgement`, async ({
+    mount,
+    page,
+  }) => {
+    const component = await mount(MultipleDiscussionHost, { props: { deferSend: true } });
+    const row = component.locator(`[data-workspace-discussion-open="${conversationId}"]`);
+    await component
+      .locator('[data-workspace-discussion-open="0199e991-0000-7000-8000-000000000002"]')
+      .click();
+    await row.click();
+    const composer = component.getByRole('textbox', { name: 'Message', exact: true });
+    await expect(component.getByTestId('pane-stack-selector-trigger')).toContainText(
+      conversationId === 'default' ? 'Workspace discussion' : 'Planning',
+    );
+    await expect(composer).toBeEditable();
+    await composer.fill('A send whose acknowledgement arrives late');
+    await expect(component.getByRole('button', { name: 'Send', exact: true })).toBeEnabled();
+    await composer.press('Enter');
+    await expect
+      .poll(
+        async () =>
+          (await calls(component)).filter((call) => call.method === 'discussion.send').length,
+      )
+      .toBe(1);
+    await component.getByTestId('panel-actions-trigger').filter({ visible: true }).click();
+    await page.getByRole('menuitem', { name: 'Delete discussion', exact: true }).click();
+    await page
+      .getByRole('dialog', { name: 'Delete discussion', exact: true })
+      .getByRole('button', { name: 'Delete', exact: true })
+      .click();
+    await expect(row).toHaveCount(0);
+    await component.getByRole('button', { name: 'Finish sending', exact: true }).click();
+    // Refresh through another saved thread after the acknowledgement has been delivered.
+    await component
+      .locator('[data-workspace-discussion-open="0199e991-0000-7000-8000-000000000002"]')
+      .click();
+    const actions = component.getByTestId('panel-actions-trigger').filter({ visible: true });
+    await actions.click();
+    const before = (await calls(component)).filter(
+      (call) => call.method === 'discussion.conversations',
+    ).length;
+    await page.getByRole('menuitem', { name: 'Refresh', exact: true }).click();
+    await expect
+      .poll(
+        async () =>
+          (await calls(component)).filter((call) => call.method === 'discussion.conversations')
+            .length,
+      )
+      .toBeGreaterThan(before);
+    await expect(row).toHaveCount(0);
+    expect(
+      (await panel(component)).tabs.some((tab) => tab.data.conversationId === conversationId),
+    ).toBe(false);
+  });
+}
+
+test('an original participant can read legacy private history without sending or managing it', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(MultipleDiscussionHost, { props: { legacyHistory: true } });
+  await component
+    .locator('[data-workspace-discussion-open="0199e991-0000-7000-8000-000000000003"]')
+    .click();
+  await expect(component.getByRole('log')).toContainText('An earlier private exchange.');
+  await expect(component.getByRole('textbox', { name: 'Message', exact: true })).not.toBeEditable();
+  await component.getByTestId('panel-actions-trigger').filter({ visible: true }).click();
+  await expect(page.getByRole('menuitem', { name: 'Refresh', exact: true })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Rename discussion', exact: true })).toHaveCount(
+    0,
+  );
+  await expect(page.getByRole('menuitem', { name: 'Delete discussion', exact: true })).toHaveCount(
+    0,
+  );
+  expect(
+    (await calls(component)).filter((call) =>
+      ['discussion.send', 'discussion.rename', 'discussion.delete'].includes(call.method),
+    ),
+  ).toEqual([]);
 });

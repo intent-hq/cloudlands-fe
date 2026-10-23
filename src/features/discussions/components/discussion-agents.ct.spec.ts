@@ -52,46 +52,72 @@ test('typing immediately after selecting an agent keeps the selected mention and
   await expect(composer).toBeFocused();
 });
 
-test('Stop and Retry control the selected agent attempt without consuming the current draft', async ({
-  mount,
-  page,
-}) => {
-  const component = await mount(DiscussionHost, { props: { agentMessaging: true } });
-  const composer = component.getByRole('textbox', { name: 'Message', exact: true });
-  await component.getByRole('button', { name: 'Mention someone', exact: true }).click();
-  await page.getByRole('option', { name: /Reviewer/ }).click();
-  await composer.pressSequentially('review this');
-  await composer.press('Enter');
-  await expect(composer).toHaveValue('');
-  const activity = component.locator('[data-discussion-agent-activity="agent-reviewer"]');
-  await expect(activity).toHaveAttribute('data-discussion-activity-state', 'queued');
-  await composer.fill('A separate draft');
-  await activity.getByRole('button', { name: 'Stop Reviewer’s reply' }).click();
-  await expect(activity).toHaveAttribute('data-discussion-activity-state', 'stopped');
-  await activity.getByRole('button', { name: 'Retry Reviewer’s reply' }).click();
-  await expect(activity).toHaveAttribute('data-discussion-activity-state', 'queued');
-  await expect(composer).toHaveValue('A separate draft');
-  const sent = await sends(component);
-  expect(sent).toHaveLength(1);
-  const requests = JSON.parse(
-    (await component.locator('[data-discussion-requests]').textContent()) || '[]',
-  );
-  const messageId = await activity.getAttribute('data-discussion-activity-message');
-  expect(
-    requests.filter((request: { method: string }) =>
-      /discussion\.(stop|retry)Agent/.test(request.method),
-    ),
-  ).toEqual([
-    {
-      method: 'discussion.stopAgent',
-      params: { workspaceId: 'discussion-test', messageId, agentId: 'agent-reviewer', attempt: 1 },
-    },
-    {
-      method: 'discussion.retryAgent',
-      params: { workspaceId: 'discussion-test', messageId, agentId: 'agent-reviewer', attempt: 1 },
-    },
-  ]);
-});
+for (const conversationId of ['default', '0199e991-0000-7000-8000-000000000001']) {
+  test(`Stop and Retry in ${conversationId === 'default' ? 'primary' : 'named'} discussions preserve the selected attempt and current draft`, async ({
+    mount,
+    page,
+  }) => {
+    const component = await mount(DiscussionHost, {
+      props: { agentMessaging: true, conversationId },
+    });
+    const composer = component.getByRole('textbox', { name: 'Message', exact: true });
+    await expect(composer).toBeEditable();
+    await component.getByRole('button', { name: 'Mention someone', exact: true }).click();
+    await page.getByRole('option', { name: /Reviewer/ }).click();
+    await composer.pressSequentially('review this');
+    await composer.press('Enter');
+    await expect(composer).toHaveValue('');
+    const activity = component.locator('[data-discussion-agent-activity="agent-reviewer"]');
+    await expect(activity).toHaveAttribute('data-discussion-activity-state', 'queued');
+    await composer.fill('A separate draft');
+    await activity.getByRole('button', { name: 'Stop Reviewer’s reply' }).click();
+    await expect(activity).toHaveAttribute('data-discussion-activity-state', 'stopped');
+    await activity.getByRole('button', { name: 'Retry Reviewer’s reply' }).click();
+    await expect(activity).toHaveAttribute('data-discussion-activity-state', 'queued');
+    await expect(composer).toHaveValue('A separate draft');
+    const sent = await sends(component);
+    expect(sent).toEqual([
+      {
+        workspaceId: 'discussion-test',
+        ...(conversationId === 'default' ? {} : { conversationId }),
+        messageId: expect.any(String),
+        body: '@Reviewer review this',
+        recipientAgentIds: ['agent-reviewer'],
+        agentMentions: [{ agentId: 'agent-reviewer', name: 'Reviewer', start: 0, end: 9 }],
+      },
+    ]);
+    const requests = JSON.parse(
+      (await component.locator('[data-discussion-requests]').textContent()) || '[]',
+    );
+    const messageId = await activity.getAttribute('data-discussion-activity-message');
+    expect(
+      requests.filter((request: { method: string }) =>
+        /discussion\.(stop|retry)Agent/.test(request.method),
+      ),
+    ).toEqual([
+      {
+        method: 'discussion.stopAgent',
+        params: {
+          workspaceId: 'discussion-test',
+          ...(conversationId === 'default' ? {} : { conversationId }),
+          messageId,
+          agentId: 'agent-reviewer',
+          attempt: 1,
+        },
+      },
+      {
+        method: 'discussion.retryAgent',
+        params: {
+          workspaceId: 'discussion-test',
+          ...(conversationId === 'default' ? {} : { conversationId }),
+          messageId,
+          agentId: 'agent-reviewer',
+          attempt: 1,
+        },
+      },
+    ]);
+  });
+}
 
 test('explicit mentions send only selected agents and show their replies in light and dark narrow panes', async ({
   mount,
@@ -228,7 +254,7 @@ test('capability loss blocks a selected message instead of silently sending text
   expect(await sends(component)).toHaveLength(0);
 });
 
-test('users remain mentionable without agent support and private discussions offer participants only', async ({
+test('users remain mentionable without agent support in primary and named workspace discussions', async ({
   mount,
   page,
 }) => {
@@ -242,7 +268,9 @@ test('users remain mentionable without agent support and private discussions off
   await component.update({ props: { conversationId: '0199e991-0000-7000-8000-000000000001' } });
   await component.getByRole('button', { name: 'Mention someone', exact: true }).click();
   await expect(page.getByRole('option', { name: /Alex/ })).toBeVisible();
-  await expect(page.getByRole('option', { name: /Jordan|Morgan|Reviewer|Builder/ })).toHaveCount(0);
+  await expect(page.getByRole('option', { name: /Jordan/ })).toBeVisible();
+  await expect(page.getByRole('option', { name: /Morgan/ })).toBeVisible();
+  await expect(page.getByRole('option', { name: /Reviewer|Builder/ })).toHaveCount(0);
   await page.getByRole('option', { name: /Alex/ }).click();
   await expect(composer).toHaveValue('@Alex ');
   await composer.press('Enter');

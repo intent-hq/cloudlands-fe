@@ -10,7 +10,6 @@ export const badgeMetadata = parseUiComponentMetadata({
   category: 'primitive',
   owner: '007-B1',
   callers: [
-    'src/features/discussions/components/DiscussionRecipients.svelte',
     'src/features/discussions/components/DiscussionUnreadBadge.svelte',
     'src/lib/components/code-review/CodeReviewPanel.svelte',
     'src/lib/components/code-review/CodeReviewTabContent.svelte',

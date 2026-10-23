@@ -473,8 +473,9 @@ describe('request-correlated discussion activity wire contract', () => {
   it('validates event scope and does not accept global agent status shapes', () => {
     const event = { workspaceId: 'ws', conversationId: 'default', messageId: 'server', activity };
     expect(isDiscussionAgentActivityEvent(event)).toBe(true);
+    expect(isDiscussionAgentActivityEvent({ ...event, conversationId: 'shared' })).toBe(true);
     for (const extra of [
-      { conversationId: 'c2' },
+      { conversationId: 'new' },
       { conversationId: undefined },
       { messageId: '' },
       { activity: { agentId: 'agent-a', status: 'running' } },
@@ -655,5 +656,86 @@ describe('expanded discussion reactions', () => {
     ).rejects.toThrow();
     wire.request.mockResolvedValue({ ...response, messageId: 'another-conversation-message' });
     await expect(client.react(params, true, true)).rejects.toThrow();
+  });
+});
+
+describe('workspace-wide discussion management contract', () => {
+  const shared: DiscussionConversation = {
+    id: 'shared-1',
+    workspaceId: 'ws',
+    kind: 'workspace',
+    participants: [],
+    createdAt: conversation.createdAt,
+  };
+  it.each([undefined, false, true, '1', 0, 2, 1])(
+    'requires exact management capability %s',
+    async (value) => {
+      wire.request.mockResolvedValue({ discussionManagement: value });
+      expect(await client.supportsManagement()).toBe(value === 1);
+      expect(wire.request).toHaveBeenCalledWith('system.capabilities', {});
+    },
+  );
+  it('creates atomically on first send without recipients and accepts an unnamed workspace conversation', async () => {
+    const params = {
+      workspaceId: 'ws',
+      messageId: 'retry-shared',
+      body: 'hello',
+      createConversation: true,
+    };
+    const response = { message: { ...message, conversationId: shared.id }, conversation: shared };
+    wire.request.mockResolvedValue(response);
+    await expect(
+      client.send(params, true, false, false, false, false, false, true),
+    ).resolves.toEqual(response);
+    expect(wire.request).toHaveBeenCalledWith('discussion.send', params);
+    wire.request.mockResolvedValue({
+      ...response,
+      conversation: { ...conversation, id: shared.id },
+    });
+    await expect(
+      client.send(params, true, false, false, false, false, false, true),
+    ).rejects.toThrow();
+  });
+  it('rejects unsupported creation and ambiguous targets before transport', async () => {
+    const params = {
+      workspaceId: 'ws',
+      messageId: 'retry-shared',
+      body: 'hello',
+      createConversation: true,
+    };
+    await expect(client.send(params, true)).rejects.toMatchObject({ code: 'METHOD_NOT_FOUND' });
+    for (const extra of [{ conversationId: 'c1' }, { recipientPrincipalIds: ['other'] }]) {
+      await expect(
+        client.send({ ...params, ...extra }, true, false, false, false, false, false, true),
+      ).rejects.toThrow();
+    }
+    expect(wire.request).not.toHaveBeenCalled();
+  });
+  it('roundtrips rename and delete with exact IDs and rejects mismatched acknowledgements', async () => {
+    const params = { workspaceId: 'ws', conversationId: shared.id, name: 'Planning' };
+    const renamed = { ...shared, name: 'Planning' };
+    wire.request.mockResolvedValue({ conversation: renamed });
+    await expect(client.rename(params, true)).resolves.toEqual({ conversation: renamed });
+    expect(wire.request).toHaveBeenCalledWith('discussion.rename', params);
+    wire.request.mockResolvedValue({ conversation: { ...renamed, workspaceId: 'elsewhere' } });
+    await expect(client.rename(params, true)).rejects.toThrow();
+    const target = { workspaceId: 'ws', conversationId: shared.id };
+    wire.request.mockResolvedValue({ deleted: true, conversationId: shared.id });
+    await expect(client.delete(target, true)).resolves.toEqual({
+      deleted: true,
+      conversationId: shared.id,
+    });
+    expect(wire.request).toHaveBeenCalledWith('discussion.delete', target);
+    wire.request.mockResolvedValue({ deleted: true, conversationId: 'another' });
+    await expect(client.delete(target, true)).rejects.toThrow();
+  });
+  it('does not issue management calls on older daemons', async () => {
+    await expect(
+      client.rename({ workspaceId: 'ws', conversationId: 'default', name: 'Planning' }),
+    ).rejects.toMatchObject({ code: 'METHOD_NOT_FOUND' });
+    await expect(
+      client.delete({ workspaceId: 'ws', conversationId: 'default' }),
+    ).rejects.toMatchObject({ code: 'METHOD_NOT_FOUND' });
+    expect(wire.request).not.toHaveBeenCalled();
   });
 });

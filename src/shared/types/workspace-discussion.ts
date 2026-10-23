@@ -180,7 +180,9 @@ export function isDiscussionAgentActivityEvent(
     record(value) &&
     typeof value.workspaceId === 'string' &&
     !!value.workspaceId &&
-    value.conversationId === DEFAULT_DISCUSSION_ID &&
+    typeof value.conversationId === 'string' &&
+    !!value.conversationId &&
+    value.conversationId !== NEW_DISCUSSION_ID &&
     typeof value.messageId === 'string' &&
     !!value.messageId &&
     isDiscussionAgentActivity(value.activity)
@@ -203,6 +205,7 @@ export interface DiscussionSendParams {
   workspaceId: string;
   conversationId?: string;
   recipientPrincipalIds?: string[];
+  createConversation?: boolean;
   recipientAgentIds?: string[];
   agentMentions?: DiscussionAgentMention[];
   principalMentions?: DiscussionPrincipalMention[];
@@ -225,8 +228,45 @@ export interface DiscussionConversation {
   id: string;
   workspaceId: string;
   kind: 'workspace' | 'direct' | 'group';
+  /** Named workspace discussions require discussionManagement:1. */
+  name?: string;
   participants: DiscussionAuthor[];
   createdAt: string;
+}
+interface DiscussionNameParams {
+  workspaceId: string;
+  name: string;
+}
+export interface DiscussionRenameParams extends DiscussionNameParams {
+  conversationId: string;
+}
+export interface DiscussionDeleteParams {
+  workspaceId: string;
+  conversationId: string;
+}
+export interface DiscussionConversationEvent extends DiscussionDeleteParams {
+  conversation: DiscussionConversation;
+}
+export function isDiscussionDeletedEvent(value: unknown): value is DiscussionDeleteParams {
+  return (
+    record(value) &&
+    typeof value.workspaceId === 'string' &&
+    !!value.workspaceId &&
+    typeof value.conversationId === 'string' &&
+    !!value.conversationId &&
+    value.conversationId !== NEW_DISCUSSION_ID
+  );
+}
+export function isDiscussionConversationEvent(
+  value: unknown,
+): value is DiscussionConversationEvent {
+  return (
+    isDiscussionDeletedEvent(value) &&
+    record(value) &&
+    isDiscussionConversation(value.conversation) &&
+    value.conversation.workspaceId === value.workspaceId &&
+    value.conversation.id === value.conversationId
+  );
 }
 export interface DiscussionConversationsParams {
   workspaceId: string;
@@ -304,6 +344,10 @@ export function isDiscussionConversation(value: unknown): value is DiscussionCon
     value.id === NEW_DISCUSSION_ID ||
     typeof value.workspaceId !== 'string' ||
     !value.workspaceId ||
+    (value.name !== undefined &&
+      (typeof value.name !== 'string' ||
+        !value.name.trim() ||
+        new TextEncoder().encode(value.name).length > 128)) ||
     !Array.isArray(value.participants) ||
     !value.participants.every(isDiscussionAuthor) ||
     new Set(value.participants.map((p) => p.principalId)).size !== value.participants.length ||
@@ -311,12 +355,13 @@ export function isDiscussionConversation(value: unknown): value is DiscussionCon
     !Number.isFinite(Date.parse(value.createdAt))
   )
     return false;
-  return value.id === DEFAULT_DISCUSSION_ID
-    ? value.kind === 'workspace' && value.participants.length === 0
-    : (value.kind === 'direct' && value.participants.length === 2) ||
-        (value.kind === 'group' &&
-          value.participants.length >= 3 &&
-          value.participants.length <= 32);
+  return value.kind === 'workspace'
+    ? value.participants.length === 0
+    : value.id !== DEFAULT_DISCUSSION_ID &&
+        ((value.kind === 'direct' && value.participants.length === 2) ||
+          (value.kind === 'group' &&
+            value.participants.length >= 3 &&
+            value.participants.length <= 32));
 }
 
 export function discussionKey(workspaceId: string, conversationId = DEFAULT_DISCUSSION_ID): string {

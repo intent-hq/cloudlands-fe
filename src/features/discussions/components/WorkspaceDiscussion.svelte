@@ -12,7 +12,7 @@
     isDiscussionReactionValue,
     type DiscussionError,
   } from '$shared/types/workspace-discussion';
-  import { EmptyState, ErrorState } from '$lib/components/patterns/screen';
+  import { EmptyState } from '$lib/components/patterns/screen';
   import { notify } from '$lib/components/patterns/notify';
   import { writeTextToClipboard } from '$lib/utils/clipboard';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
@@ -21,6 +21,8 @@
   import {
     selectWorkspaceDiscussion,
     selectDiscussionAgentMessagingSupported,
+    selectDiscussionCanTargetAgents,
+    selectDiscussionReadOnly,
     selectDiscussionPrincipalMentionsSupported,
     selectDiscussionCanControlAgent,
     selectDiscussionAgentControlPending,
@@ -35,7 +37,6 @@
     selectDiscussionCanEnableSharing,
     selectDiscussionContext,
     selectDiscussionPending,
-    selectDiscussionRecipientsForComposer,
     selectDiscussionRecipients,
     selectDiscussionCanCreate,
     selectDiscussionCapability,
@@ -54,7 +55,6 @@
     discussionDraftChanged,
     discussionSendRequested,
     discussionRetryRequested,
-    discussionRecipientsChanged,
     discussionRecipientsRequested,
   } from '$store/renderer/slices/workspace-discussion/workspace-discussion-slice';
   import {
@@ -65,7 +65,6 @@
   import { selectDiscussionTypingPeople } from '$store/renderer/slices/presence/presence-selectors';
   import { presenceTypingLabel } from '$features/presence/components/presence-person';
   import DiscussionThread from './DiscussionThread.svelte';
-  import DiscussionRecipients from './DiscussionRecipients.svelte';
 
   let {
     workspaceId,
@@ -86,6 +85,8 @@
   $effect(() => conversationId$.set(conversationId));
   const agents$ = selectAllWorkspaceAgents(workspaceId$);
   const agentMessaging$ = selectDiscussionAgentMessagingSupported();
+  const canTargetAgents$ = selectDiscussionCanTargetAgents(workspaceId$, conversationId$);
+  const readOnly$ = selectDiscussionReadOnly(workspaceId$, conversationId$);
   const principalMentions$ = selectDiscussionPrincipalMentionsSupported();
   const agentActivity$ = selectDiscussionCanControlAgent(workspaceId$, conversationId$);
   const agentControlPending$ = selectDiscussionAgentControlPending(workspaceId$, conversationId$);
@@ -94,7 +95,6 @@
   const pending$ = selectDiscussionPending(workspaceId$, conversationId$);
   const typing$ = selectDiscussionTypingPeople(workspaceId$, conversationId$);
   const recipients$ = selectDiscussionRecipients(workspaceId$);
-  const composerRecipients$ = selectDiscussionRecipientsForComposer(workspaceId$, conversationId$);
   const canCreate$ = selectDiscussionCanCreate(workspaceId$);
   const conversationsSupported$ = selectDiscussionCapability();
   const context$ = selectDiscussionContext();
@@ -107,42 +107,13 @@
   const sharingOff$ = selectDiscussionSharingOff();
   const canEnableSharing$ = selectDiscussionCanEnableSharing(workspaceId$);
   const multiplayer$ = selectLabsMultiplayerEnabled();
-  const composerNames = $derived(
-    $composerRecipients$.map(
-      (person) =>
-        person.displayName || person.login || m.workspace_discussion_unknownAuthor_label(),
-    ),
-  );
-  const composerPlaceholder = $derived(
-    composerNames.length === 1
-      ? m.workspace_discussion_composerPerson_placeholder({ name: composerNames[0] })
-      : composerNames.length === 2
-        ? m.workspace_discussion_composerPair_placeholder({
-            first: composerNames[0],
-            second: composerNames[1],
-          })
-        : undefined,
-  );
   const isNew = $derived(conversationId === 'new');
-  const recipientProfiles = $derived([
-    ...$recipients$.members,
-    ...$recipients$.selectedMembers.filter(
-      (person) => !$recipients$.members.some((member) => member.principalId === person.principalId),
-    ),
-  ]);
   let mentionQuery = $state('');
-  const mentionUsers = $derived(
-    conversationId === 'default'
-      ? $recipients$.query === mentionQuery
-        ? $recipients$.members
-        : []
-      : $composerRecipients$,
-  );
+  const mentionUsers = $derived($recipients$.query === mentionQuery ? $recipients$.members : []);
 
   function searchMentionUsers(query: string) {
     mentionQuery = query;
-    if (conversationId === 'default')
-      store.dispatch(discussionRecipientsRequested(workspaceId, query));
+    store.dispatch(discussionRecipientsRequested(workspaceId, query));
   }
 
   $effect(() => {
@@ -188,16 +159,10 @@
             ),
           )
       : undefined}
-    onMentionSearch={conversationId !== 'default' || $conversationsSupported$ !== false
-      ? searchMentionUsers
-      : undefined}
-    mentionUsersLoading={conversationId === 'default' && $recipients$.status === 'loading'}
-    mentionUsersError={conversationId === 'default' && $recipients$.error
-      ? m.workspace_discussion_members_error()
-      : null}
-    mentionUsersHasMore={conversationId === 'default' &&
-      $recipients$.query === mentionQuery &&
-      $recipients$.hasMore}
+    onMentionSearch={$conversationsSupported$ !== false ? searchMentionUsers : undefined}
+    mentionUsersLoading={$recipients$.status === 'loading'}
+    mentionUsersError={$recipients$.error ? m.workspace_discussion_members_error() : null}
+    mentionUsersHasMore={$recipients$.query === mentionQuery && $recipients$.hasMore}
     onMentionLoadMore={() =>
       store.dispatch(discussionRecipientsRequested(workspaceId, mentionQuery, true))}
     agents={$agents$
@@ -207,7 +172,7 @@
         name: agent.name || m.workspace_fileChanges_agent_label(),
         status: isAgentRunningState(agent) ? ('working' as const) : ('idle' as const),
       }))}
-    agentsSupported={$agentMessaging$ === true && conversationId === 'default'}
+    agentsSupported={$canTargetAgents$}
     agentsUnsupported={$agentMessaging$ === false}
     agentActivitySupported={$agentActivity$}
     agentControlPending={$agentControlPending$}
@@ -237,12 +202,12 @@
         ),
       )}
     onAgentPickerOpen={() => {
-      if (conversationId !== 'default' || $agentMessaging$ !== true) return;
+      if (!$canTargetAgents$) return;
       store.dispatch(fetchDelegatedAgentsRequested(workspaceId));
       store.dispatch(fetchBackgroundAgentsRequested(workspaceId));
     }}
     agentMentions={$discussion$.agentMentions}
-    onAgentSelect={conversationId === 'default'
+    onAgentSelect={$canTargetAgents$
       ? (agent, start, end) =>
           store.dispatch(
             discussionAgentSelected(workspaceId, agent.id, agent.name, start, end, conversationId),
@@ -327,17 +292,15 @@
     emptyDescription={conversationId !== 'default'
       ? m.workspace_discussion_selectedEmpty_description()
       : undefined}
-    focusComposer={!isNew}
-    composerPlaceholder={composerPlaceholder ??
-      (isNew || conversationId !== 'default'
-        ? m.workspace_discussion_selectedComposer_placeholder()
-        : undefined)}
+    focusComposer
     typingLabel={isNew ? null : presenceTypingLabel($typing$)}
     onComposerFocusChange={(focused) =>
       !isNew &&
+      !$readOnly$ &&
       store.dispatch(presenceDiscussionComposerFocused(workspaceId, focused, conversationId))}
     onTypingInput={(typing) =>
       !isNew &&
+      !$readOnly$ &&
       store.dispatch(
         typing
           ? presenceDiscussionTypingPulse(workspaceId, conversationId)
@@ -348,7 +311,7 @@
     loading={$discussion$.loading}
     loadingOlder={$discussion$.loadingOlder}
     hasMore={$discussion$.hasMore}
-    error={isNew && $recipients$.error ? null : errorText($discussion$.error)}
+    error={errorText($discussion$.error)}
     sendError={$pending$.length === 0 ? errorText($discussion$.sendError, true) : null}
     retryDraft={false}
     sending={$discussion$.sending}
@@ -361,14 +324,15 @@
       }))}
     onRetryMessage={(id) =>
       store.dispatch(discussionRetryRequested(workspaceId, id, conversationId))}
-    canCompose={$ready$ && (!isNew || $canCreate$)}
+    canCompose={$ready$ && !$readOnly$ && (!isNew || $canCreate$)}
     canSendDraft={!isNew ||
-      !$discussion$.recipientsLocked ||
+      $pending$.length === 0 ||
       $pending$.some((message) => message.body === $discussion$.draft)}
     canSend={$ready$ &&
+      !$readOnly$ &&
       !$discussion$.unsupported &&
       $discussion$.error !== 'forbidden' &&
-      (!isNew || ($canCreate$ && $discussion$.recipientPrincipalIds.length > 0))}
+      (!isNew || $canCreate$)}
     {isActive}
     {isPanelFocused}
     onDraftChange={(body) =>
@@ -383,36 +347,14 @@
       )}
   >
     {#snippet header()}
-      {#if isNew}
-        <DiscussionRecipients
-          members={recipientProfiles}
-          selectedIds={$discussion$.recipientPrincipalIds}
-          onChange={(ids) => store.dispatch(discussionRecipientsChanged(workspaceId, ids))}
-          loading={$recipients$.status === 'loading'}
-          disabled={$discussion$.recipientsLocked || !$canCreate$}
-          autofocus={isActive && isPanelFocused}
-          onSearch={(query) => store.dispatch(discussionRecipientsRequested(workspaceId, query))}
-          hasMore={$recipients$.hasMore}
-          onLoadMore={() =>
-            store.dispatch(discussionRecipientsRequested(workspaceId, $recipients$.query, true))}
-        />
-        {#if $recipients$.error}
-          <ErrorState
-            density="compact"
-            onRetry={() =>
-              store.dispatch(discussionRecipientsRequested(workspaceId, $recipients$.query))}
-            retryLabel={m.ui_errorToast_retry_label()}
-          >
-            {#snippet message()}{$recipients$.error === 'unsupported'
-                ? m.workspace_discussion_multipleUnsupported_label()
-                : $recipients$.error === 'forbidden'
-                  ? m.workspace_discussion_forbidden_label()
-                  : m.workspace_discussion_members_error()}{/snippet}
-          </ErrorState>
-        {/if}
-        {#if $discussion$.recipientsLocked}<p class="px-4 pt-2 type-caption text-muted-foreground">
-            {m.workspace_discussion_recipientsLocked_label()}
-          </p>{/if}
+      {#if $readOnly$}
+        <p class="px-4 py-3 type-caption text-muted-foreground" data-discussion-read-only>
+          {m.workspace_discussion_legacy_description()}
+        </p>
+      {:else if isNew}
+        <p class="px-4 py-3 type-caption text-muted-foreground" data-discussion-audience>
+          {m.workspace_discussion_everyone_label()}
+        </p>
       {/if}
     {/snippet}
   </DiscussionThread>
