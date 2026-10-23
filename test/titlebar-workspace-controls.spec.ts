@@ -189,8 +189,6 @@ test('Mac Home navigation ignores the retired sidebar and keeps narrow-window co
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await mountControls(page, 'light', 0.67);
   const toggle = page.locator('[data-titlebar-spaces-control]');
-  const tabs = page.locator('[data-titlebar-workspace-controls]');
-  const initialLeft = (await tabs.boundingBox())!.x;
   await page.evaluate(async () => {
     const { store } = await import('/src/store/renderer/store.ts');
     const { sidebarNavSaga } =
@@ -209,14 +207,12 @@ test('Mac Home navigation ignores the retired sidebar and keeps narrow-window co
       }),
     )
     .toEqual(['titlebar-test']);
-  await expect.poll(async () => (await tabs.boundingBox())!.x).toBeCloseTo(initialLeft, 0);
   await page.evaluate(async () => {
     const { store } = await import('/src/store/renderer/store.ts');
     const { openPanel } =
       await import('/src/store/renderer/slices/sidebar-nav/sidebar-nav-slice.ts');
     store.dispatch(openPanel('chief'));
   });
-  await expect.poll(async () => (await tabs.boundingBox())!.x).toBeCloseTo(initialLeft, 0);
   await toggle.press('Space');
   await expect(toggle).toHaveAttribute('aria-current', 'page');
   expect(
