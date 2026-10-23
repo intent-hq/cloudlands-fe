@@ -4826,7 +4826,7 @@
   "settings_gitWorkspace_autoRetireDays_description": "Nombre de jours pendant lesquels un espace de travail reste archivé avant d’être retiré.",
   "settings_gitWorkspace_autoRetireDays_invalid": "Saisissez un nombre entier de jours, 1 ou plus.",
   "settings_gitWorkspace_autoRetireDays_label": "Retirer après (jours)",
-  "settings_gitWorkspace_autoRetire_description": "Les espaces de travail archivés depuis plus longtemps que le nombre de jours ci-dessous sont retirés : leurs fichiers sur le disque sont supprimés pour libérer de l’espace, mais leurs conversations, notes et historique sont conservés. L’ouverture d’un espace de travail retiré le redémarre à partir d’un nouveau checkout.",
+  "settings_gitWorkspace_autoRetire_description": "Les espaces de travail archivés depuis plus longtemps que le nombre de jours ci-dessous sont retirés : leurs fichiers sur le disque sont supprimés pour libérer de l’espace, mais leurs conversations, notes et historique sont conservés. Restaurer un espace de travail retiré ou lui envoyer un message le redémarre à partir d’un nouveau checkout.",
   "settings_gitWorkspace_autoRetire_label": "Retirer automatiquement les espaces de travail archivés",
   "settings_gitWorkspace_branchPrefix_description_before": "Préfixe des nouvelles branches d'espace de travail (p. ex.",
   "settings_gitWorkspace_branchPrefix_invalid": "Préfixe de branche non valide",

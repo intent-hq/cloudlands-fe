@@ -4826,7 +4826,7 @@
   "settings_gitWorkspace_autoRetireDays_description": "工作区在被停用之前保持归档的天数。",
   "settings_gitWorkspace_autoRetireDays_invalid": "请输入不小于 1 的整数天数。",
   "settings_gitWorkspace_autoRetireDays_label": "停用前天数",
-  "settings_gitWorkspace_autoRetire_description": "归档时间超过下方天数的工作区将被停用：其磁盘上的文件会被删除以释放空间，但对话、笔记和历史记录会保留。打开已停用的工作区会从全新检出重新启动。",
+  "settings_gitWorkspace_autoRetire_description": "归档时间超过下方天数的工作区将被停用：其磁盘上的文件会被删除以释放空间，但对话、笔记和历史记录会保留。恢复已停用的工作区或向其发送消息，会从全新检出重新启动。",
   "settings_gitWorkspace_autoRetire_label": "自动停用已归档的工作区",
   "settings_gitWorkspace_branchPrefix_description_before": "新工作区分支的前缀（例如",
   "settings_gitWorkspace_branchPrefix_invalid": "无效的分支前缀",
