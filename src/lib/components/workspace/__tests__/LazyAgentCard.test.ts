@@ -53,7 +53,7 @@ describe('LazyAgentCard', () => {
   });
 
   it('mounts the heavy agent card only while it is near the viewport', async () => {
-    const {} = render(LazyAgentCard, {
+    render(LazyAgentCard, {
       props: { cacheKey: 'agent-1', agentId: 'agent-1', agentName: 'Worker' },
     });
 

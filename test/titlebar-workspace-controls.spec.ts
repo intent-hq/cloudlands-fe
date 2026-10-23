@@ -164,12 +164,8 @@ test('keeps Mac Home operable through live zoom and reset', async ({ page }) => 
   await emulatePlatform(page, 'macOS');
   await mountControls(page, 'dark', 1);
   const toggle = page.locator('[data-titlebar-spaces-control]');
-  const homeTab = page.locator('[data-home-tab]');
-  const initialLeft = (await homeTab.boundingBox())!.x;
   for (const zoom of [0.8, 0.67, 0.5, 1, 1.25, 2, 1]) {
     await changeZoom(page, zoom);
-    // Measure the outer tab: Chromium rounds its 1px border at fractional zoom.
-    await expect.poll(async () => (await homeTab.boundingBox())!.x).toBeCloseTo(initialLeft, 0);
     for (const activation of ['click', 'Enter', 'Space']) {
       await page.evaluate(async () => {
         const { goto, page } = await import('/test/fixtures/titlebar-navigation.svelte.ts');

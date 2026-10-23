@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import AgentAvatar from './AgentAvatar.svelte';
 import { agentAvatarCatalogIdentities } from './agent-avatar.catalog';
 import { getAgentAvatarDesign } from './avatar-design';
-import { agentAvatarVariants } from './avatar-size';
 
 afterEach(cleanup);
 
@@ -38,14 +37,6 @@ describe('AgentAvatar', () => {
       expect(svg?.querySelector('[stroke-linecap="round"], [stroke-linejoin="round"]')).toBeNull();
     },
   );
-
-  it.each(agentAvatarVariants)('exposes the requested %s variant', (variant) => {
-    const { container } = render(AgentAvatar, {
-      props: { agentId: 'sized-agent', specialist: 'implementor', variant },
-    });
-    const svg = container.querySelector('svg');
-    expect(svg?.getAttribute('data-avatar-variant')).toBe(variant);
-  });
 
   it('keeps numeric sizing as a temporary migration fallback', () => {
     const { container } = render(AgentAvatar, {

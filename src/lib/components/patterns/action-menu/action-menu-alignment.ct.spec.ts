@@ -42,33 +42,31 @@ test('changing icons preserves submenu keyboard navigation', async ({ mount, pag
   await expect(child).toBeFocused();
 });
 
-for (const iconSource of ['root', 'section', 'radio', 'submenu', 'hidden'] as const) {
-  test(`menu with ${iconSource} icons supports selection and submenus`, async ({ mount, page }) => {
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-    await page.setViewportSize({ width: 600, height: 720 });
-    await mount(Harness, { props: { iconSource } });
-    const trigger = page.getByRole('button', { name: 'Actions', exact: true });
-    await trigger.click();
-    const root = page.getByRole('menu', { name: 'Workspace menu', exact: true });
-    const rename = root.getByRole('menuitem', { name: 'Rename', exact: true });
-    await expect(rename).toBeVisible();
-    const checkbox = root.getByRole('menuitemcheckbox', { name: 'Show details' });
-    await checkbox.click();
-    await expect(checkbox).toHaveAttribute('aria-checked', 'true');
-    const compact = root.getByRole('menuitemradio', { name: 'Compact', exact: true });
-    await compact.click();
-    await expect(compact).toHaveAttribute('aria-checked', 'true');
-    const more = root.getByRole('menuitem', { name: 'More', exact: true });
-    await more.focus();
-    await page.keyboard.press('ArrowRight');
-    const child = page
-      .getByRole('menu')
-      .filter({ has: page.getByRole('menuitem', { name: 'Export', exact: true }) });
-    const exportRow = child.getByRole('menuitem', { name: 'Export', exact: true });
-    await expect(exportRow).toBeFocused();
-    await page.keyboard.press('Enter');
-    await expect(page.getByTestId('selection')).toHaveText('export');
-    await expect(page.getByRole('menu')).toHaveCount(0);
-    await expect(trigger).toBeFocused();
-  });
-}
+test('menu supports selection, submenus, and focus restoration', async ({ mount, page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 600, height: 720 });
+  await mount(Harness, { props: { iconSource: 'root' } });
+  const trigger = page.getByRole('button', { name: 'Actions', exact: true });
+  await trigger.click();
+  const root = page.getByRole('menu', { name: 'Workspace menu', exact: true });
+  const rename = root.getByRole('menuitem', { name: 'Rename', exact: true });
+  await expect(rename).toBeVisible();
+  const checkbox = root.getByRole('menuitemcheckbox', { name: 'Show details' });
+  await checkbox.click();
+  await expect(checkbox).toHaveAttribute('aria-checked', 'true');
+  const compact = root.getByRole('menuitemradio', { name: 'Compact', exact: true });
+  await compact.click();
+  await expect(compact).toHaveAttribute('aria-checked', 'true');
+  const more = root.getByRole('menuitem', { name: 'More', exact: true });
+  await more.focus();
+  await page.keyboard.press('ArrowRight');
+  const child = page
+    .getByRole('menu')
+    .filter({ has: page.getByRole('menuitem', { name: 'Export', exact: true }) });
+  const exportRow = child.getByRole('menuitem', { name: 'Export', exact: true });
+  await expect(exportRow).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('selection')).toHaveText('export');
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+});

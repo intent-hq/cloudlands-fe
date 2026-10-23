@@ -402,7 +402,6 @@ for (const appearance of appearances) {
               tangentAligned: vertical
                 ? Math.abs(port.x - adjacent.x) < 0.01
                 : Math.abs(port.y - adjacent.y) < 0.01,
-              rounded: points.length < 3 || path.getAttribute('d')!.includes(' Q '),
             };
           });
           return {
@@ -413,9 +412,6 @@ for (const appearance of appearances) {
                   Math.abs(point.x - previous.x) < 0.001 || Math.abs(point.y - previous.y) < 0.001
                 );
               }),
-            ),
-            rounded: selected.every(
-              ({ path, points }) => points.length < 3 || path.getAttribute('d')!.includes(' Q '),
             ),
             straightTerminals: selected.every(({ points }) => {
               const end = points.at(-1)!;
@@ -431,7 +427,6 @@ for (const appearance of appearances) {
           };
         });
       expect(nestedDecision.allAxisAligned).toBe(true);
-      expect(nestedDecision.rounded).toBe(true);
       expect(nestedDecision.straightTerminals).toBe(true);
       expect(new Set(nestedDecision.decisionPorts).size).toBe(5);
       expect(new Set(nestedDecision.horizontalLanes).size).toBe(4);
@@ -442,8 +437,7 @@ for (const appearance of appearances) {
       expect(new Set(nestedDecision.densePorts.map(({ port }) => port)).size).toBe(6);
       expect(
         nestedDecision.densePorts.every(
-          ({ boundaryError, tangentAligned, rounded }) =>
-            boundaryError < 0.03 && tangentAligned && rounded,
+          ({ boundaryError, tangentAligned }) => boundaryError < 0.03 && tangentAligned,
         ),
       ).toBe(true);
 

@@ -245,11 +245,6 @@ async function measure(page: Page) {
   });
 }
 
-type Measurement = Awaited<ReturnType<typeof measure>>;
-function expectReadableNotes(result: Measurement) {
-  expect(result.pairs).toHaveLength(2);
-}
-
 async function resizeNote(page: Page, width: number) {
   await page.locator('#sequence-clearance-host').evaluate((host, width) => {
     host.style.width = `${width}px`;
@@ -263,7 +258,9 @@ async function resizeNote(page: Page, width: number) {
 }
 
 for (const width of [360, 1000]) {
-  test(`exact sequence notes retain readable geometry at ${width}px`, async ({ page }, info) => {
+  test(`exact sequence preserves reply direction and source access at ${width}px`, async ({
+    page,
+  }, info) => {
     await mountNote(page, exactSource, width, info);
     const result = await measure(page);
     await writeFile(info.outputPath('geometry.json'), JSON.stringify(result, null, 2));
@@ -274,13 +271,13 @@ for (const width of [360, 1000]) {
     await page
       .locator('#sequence-clearance-host')
       .screenshot({ path: info.outputPath('note.png') });
-    expectReadableNotes(result);
+    expect(result.pairs).toHaveLength(2);
     expect(result.pairs.every((pair) => pair.direction === -1)).toBe(true);
     const samples = [result];
     for (const nextWidth of [width === 360 ? 1000 : 360, width]) {
       await resizeNote(page, nextWidth);
       const next = await measure(page);
-      expectReadableNotes(next);
+      expect(next.pairs).toHaveLength(2);
       expect(next.renderer.width).toBeLessThan(nextWidth);
 
       samples.push(next);
@@ -308,7 +305,7 @@ test('rightward reply control', async ({ page }, info) => {
   const result = await measure(page);
   await writeFile(info.outputPath('geometry.json'), JSON.stringify(result, null, 2));
   await page.locator('#sequence-clearance-host').screenshot({ path: info.outputPath('note.png') });
-  expectReadableNotes(result);
+  expect(result.pairs).toHaveLength(2);
   expect(result.pairs.every((pair) => pair.direction === 1)).toBe(true);
 });
 
@@ -358,22 +355,6 @@ test('wrapped notes and sequence constructs', async ({ page }, info) => {
     ).toBe(true);
   }
   expect(structure.workerBottom).toBeCloseTo(structure.lifelineBottom, 2);
-});
-
-test('wrapped note retains visible insets and repeat-fit sizing', async ({ page }, info) => {
-  const source = exactSource.replace('Laptop sleeps', 'Laptop sleeps<br/>Connection paused');
-  await mountNote(page, source, 360, info);
-  const before = await measure(page);
-  expectReadableNotes(before);
-
-  await resizeNote(page, 1000);
-  expectReadableNotes(await measure(page));
-  await resizeNote(page, 360);
-  const after = await measure(page);
-  expectReadableNotes(after);
-
-  await writeFile(info.outputPath('geometry.json'), JSON.stringify({ before, after }, null, 2));
-  await page.locator('#sequence-clearance-host').screenshot({ path: info.outputPath('note.png') });
 });
 
 const constructCases = [

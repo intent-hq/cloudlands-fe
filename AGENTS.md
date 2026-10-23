@@ -625,6 +625,10 @@ These rules apply to unit tests and browser tests alike:
 - **Do not build circular style oracles:** importing a production class constant and
   checking for those same classes, or copying production spacing into a fixture and
   measuring that fixture, does not independently verify the app.
+- **Delete an appearance-only test when its useful assertions are gone.** Do not keep
+  it alive with prop echoes, unconditional render checks, direct focus assignment checks,
+  or expectations derived from its own mock. Every retained test needs an independent
+  behavioral failure it can detect.
 - **Do not multiply themes, widths, or zoom levels without a named behavioral reason
   for each variation.** Use the smallest set that exercises distinct contracts.
 

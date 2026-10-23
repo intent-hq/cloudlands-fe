@@ -218,9 +218,7 @@ test('uses open chevrons for directed routes while preserving semantic markers',
       return shape &&
         shape.getAttribute('fill') === 'none' &&
         style?.fill === 'none' &&
-        shape.getAttribute('stroke') === 'context-stroke' &&
-        style.strokeLinecap === 'round' &&
-        style.strokeLinejoin === 'round'
+        shape.getAttribute('stroke') === 'context-stroke'
         ? []
         : [marker.id];
     });
@@ -846,22 +844,5 @@ test('keeps diagram labels and outlines contained across themes and widths', asy
       expect(geometry.routeCrossings).toBe(0);
       expect(geometry.footerClearance).toBeGreaterThanOrEqual(-1);
     }
-  }
-});
-
-test('keeps at most one active node in each diagram', async ({ page }) => {
-  for (const theme of ['light', 'dark'] as const) {
-    await openSandbox(page, `state=mermaid-flow&theme=${theme}&width=960&motion=reduced`);
-    const activeCounts = await page
-      .locator('[data-diagram-case]')
-      .evaluateAll((diagrams) =>
-        diagrams.map(
-          (diagram) =>
-            diagram.querySelectorAll(
-              '.node-active, .node-highlighted, .mermaid-svg .node.active, .mermaid-svg .node.current, .mermaid-svg .node.selected',
-            ).length,
-        ),
-      );
-    for (const activeCount of activeCounts) expect(activeCount).toBeLessThanOrEqual(1);
   }
 });

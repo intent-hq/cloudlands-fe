@@ -122,16 +122,6 @@ async function expectValidEditBox(control: Locator) {
   expect(result.clipped).toBe(false);
 }
 
-test('keeps the active workspace card branch label at normal weight, including hover and focus', async ({
-  mount,
-}) => {
-  const component = await mount(WorkspaceProgressCardEditGeometryHost);
-  const trigger = component.getByRole('button', { name: 'edit-geometry', exact: true });
-  await trigger.hover();
-  await trigger.focus();
-  await expect(trigger).toBeFocused();
-});
-
 test('keeps the workspace title edit decoration visible, padded, unclipped, and motion-safe', async ({
   mount,
   page,

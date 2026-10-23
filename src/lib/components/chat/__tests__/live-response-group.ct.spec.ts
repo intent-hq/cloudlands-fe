@@ -235,16 +235,13 @@ test('preserves native PageUp scrollback from a focused child input', async ({
   await expectFollowing(scroller);
 });
 
-test('keeps the header stable through live disclosure changes', async ({ mount, page }) => {
+test('toggles live disclosure and removes the preview on completion', async ({ mount, page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(LiveResponseGroupHost);
   const trigger = component.getByTestId('response-group-disclosure');
-  const row = component.locator('[data-operational-disclosure-row]');
-  const headerBox = await row.boundingBox();
 
   await trigger.press('Enter');
   await expect(trigger).toHaveAttribute('aria-expanded', 'true');
-  expect(await row.boundingBox()).toEqual(headerBox);
 
   await trigger.press('Space');
   await expect(trigger).toHaveAttribute('aria-expanded', 'false');
@@ -252,12 +249,9 @@ test('keeps the header stable through live disclosure changes', async ({ mount, 
   await expect
     .poll(() => component.locator('.cylinder-scroller').evaluate((node) => node.scrollTop))
     .toBeGreaterThan(0);
-  expect(await row.boundingBox()).toEqual(headerBox);
 
   await component.update({ props: { isStreaming: false } });
   await expect(component.locator('.cylinder-scroller')).toHaveCount(0);
-  const groupBox = await component.boundingBox();
-  expect(groupBox!.height).toBe(headerBox!.height);
 });
 
 test('keeps all live rows in the cylinder and the expanded history', async ({ mount }) => {

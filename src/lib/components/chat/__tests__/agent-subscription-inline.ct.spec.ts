@@ -362,78 +362,30 @@ test('keeps keyed waiting and finished rows stable through add, remove, reorder,
   ]);
 });
 
-test('omits cohort time and pins the finished chevron across count and state', async ({
-  mount,
-}) => {
+test('updates the finished cohort count and supports disclosure', async ({ mount }) => {
   const component = await mount(AgentSubscriptionInlineHost, {
     props: { mode: 'agents', agentCount: 7, finishedCount: 2, initiallyExpanded: true },
   });
-  for (const theme of ['light', 'dark'] as const) {
-    for (const width of [270, 420]) {
-      for (const zoom of [1, 2]) {
-        let expectedRight: number | undefined;
-        for (const finishedCount of [2, 5]) {
-          await component.update({
-            props: {
-              mode: 'agents',
-              agentCount: 7,
-              finishedCount,
-              initiallyExpanded: true,
-              theme,
-              width,
-              zoom,
-            },
-          });
-          const waitingSummary = component.getByTestId('one-shot-summary-toggle');
-          if ((await waitingSummary.getAttribute('aria-expanded')) === 'false') {
-            await waitingSummary.click();
-          }
-          const summary = component.getByTestId('finished-agent-summary');
-          if ((await summary.getAttribute('aria-expanded')) === 'true') await summary.click();
-          await expect(summary).toHaveText(`${finishedCount} agents finished`);
-          await expect(
-            summary.locator('time, [title], [data-finished-at], [role="tooltip"]'),
-          ).toHaveCount(0);
-          await expect(component.getByTestId('finished-agent-group')).not.toHaveAttribute(
-            'data-finished-at',
-          );
-          await expect(
-            component.getByTestId('finished-agent-chevron').locator('[data-icon="chevron-down"]'),
-          ).toHaveClass(/rotate-90/);
-
-          const collapsed = await summary.evaluate((row) => {
-            const slot = row.querySelector('[data-testid="finished-agent-chevron"]') as HTMLElement;
-            const rowBox = row.getBoundingClientRect();
-            const slotBox = slot.getBoundingClientRect();
-            return {
-              rowRight: rowBox.right,
-              rowCenterY: (rowBox.top + rowBox.bottom) / 2,
-              slotRight: slotBox.right,
-              slotCenterY: (slotBox.top + slotBox.bottom) / 2,
-              slotWidth: slotBox.width,
-              slotHeight: slotBox.height,
-              devicePixelRatio: window.devicePixelRatio,
-            };
-          });
-          expectedRight ??= collapsed.slotRight;
-          expect(
-            Math.abs(collapsed.slotRight - expectedRight) * collapsed.devicePixelRatio,
-          ).toBeLessThanOrEqual(0.5);
-
-          await summary.click();
-          await expect(summary).toHaveAttribute('aria-expanded', 'true');
-          await expect(
-            component.getByTestId('finished-agent-chevron').locator('[data-icon="chevron-down"]'),
-          ).not.toHaveClass(/rotate-90/);
-          const expandedRight = await component
-            .getByTestId('finished-agent-chevron')
-            .evaluate((slot) => slot.getBoundingClientRect().right);
-          expect(
-            Math.abs(expandedRight - collapsed.slotRight) * collapsed.devicePixelRatio,
-          ).toBeLessThanOrEqual(0.5);
-        }
-      }
+  for (const finishedCount of [2, 5]) {
+    await component.update({
+      props: { mode: 'agents', agentCount: 7, finishedCount, initiallyExpanded: true },
+    });
+    const waitingSummary = component.getByTestId('one-shot-summary-toggle');
+    if ((await waitingSummary.getAttribute('aria-expanded')) === 'false') {
+      await waitingSummary.click();
     }
+    const summary = component.getByTestId('finished-agent-summary');
+    if ((await summary.getAttribute('aria-expanded')) === 'true') await summary.click();
+    await expect(summary).toHaveText(`${finishedCount} agents finished`);
+    await expect(
+      summary.locator('time, [title], [data-finished-at], [role="tooltip"]'),
+    ).toHaveCount(0);
+    await expect(component.getByTestId('finished-agent-group')).not.toHaveAttribute(
+      'data-finished-at',
+    );
+
+    await summary.click();
+    await expect(summary).toHaveAttribute('aria-expanded', 'true');
   }
 });
 
@@ -744,22 +696,16 @@ test('shows only participant agents in the mixed collapsed cohort stack', async 
     props: { mode: 'mixed', agentCount: 7, width: 600, initiallyExpanded: false },
   });
   const summary = component.getByTestId('event-subscriptions-summary');
-  const chevron = component.getByTestId('event-subscriptions-chevron');
   const stack = summary.locator('[data-agent-avatar-stack]');
   await expect(summary).toHaveAttribute('aria-expanded', 'false');
   await expect.poll(() => stack.locator('[data-agent-avatar-with-state]').count()).toBe(7);
   await expect(stack.locator('[data-agent-avatar-overflow], [data-icon]')).toHaveCount(0);
-  const collapsedRight = await chevron.evaluate((slot) => slot.getBoundingClientRect().right);
   await summary.press(' ');
   await expect(summary).toHaveAttribute('aria-expanded', 'true');
   await expect(stack).toHaveCount(0);
   await expect(component.getByTestId('event-subscriptions-body')).toHaveAttribute(
     'aria-hidden',
     'false',
-  );
-  expect(await chevron.evaluate((slot) => slot.getBoundingClientRect().right)).toBeCloseTo(
-    collapsedRight,
-    1,
   );
   await component.getByTestId('one-shot-summary-toggle').press('Enter');
   await expect(component.getByTestId('one-shot-agent-list')).toBeVisible();

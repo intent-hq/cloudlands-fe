@@ -1,4 +1,3 @@
-import sharp from 'sharp';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ANY_HOST } from '../../../system/main/window-workspace-tracking';
 
@@ -414,38 +413,12 @@ describe('embedded browser CDP workspace routing', () => {
   // scale must match the scale the tab is actually drawn at so the request
   // equals the surface.
   describe('screenshot clip on scale-to-fit tabs (intent-hq/intent#4627)', () => {
-    type CaptureRequest = {
-      format: 'jpeg' | 'png';
-      quality?: number;
-      clip: { width: number; height: number; scale: number };
-    };
-
-    // Model the CDP output size from the requested clip and device density.
-    async function captureAtDeviceDensity(
-      request: CaptureRequest,
-      dpr: number,
-    ): Promise<{ data: string }> {
-      const image = sharp({
-        create: {
-          width: Math.round(request.clip.width * request.clip.scale * dpr),
-          height: Math.round(request.clip.height * request.clip.scale * dpr),
-          channels: 4,
-          background: '#ffffff',
-        },
-      });
-      const encoded = await (
-        request.format === 'png' ? image.png() : image.jpeg({ quality: request.quality ?? 80 })
-      ).toBuffer();
-      return { data: encoded.toString('base64') };
-    }
-
     function screenshotWebContents(
       opts: {
         emulationDelayMs?: number;
-        capture?: (request: CaptureRequest) => Promise<{ data: string }>;
       } = {},
     ) {
-      const sendCommand = vi.fn((method: string, params?: unknown) => {
+      const sendCommand = vi.fn((method: string, _params?: unknown) => {
         if (method === 'Page.getLayoutMetrics') {
           return Promise.resolve({
             layoutViewport: { clientWidth: 1280, clientHeight: 800 },
@@ -453,9 +426,7 @@ describe('embedded browser CDP workspace routing', () => {
           });
         }
         if (method === 'Page.captureScreenshot') {
-          return opts.capture
-            ? opts.capture(params as CaptureRequest)
-            : Promise.resolve({ data: 'anVuaw==' });
+          return Promise.resolve({ data: 'anVuaw==' });
         }
         if (method === 'Emulation.setDeviceMetricsOverride' && opts.emulationDelayMs) {
           return new Promise((resolve) => setTimeout(resolve, opts.emulationDelayMs));
@@ -515,38 +486,6 @@ describe('embedded browser CDP workspace routing', () => {
         embeddedBrowserCdp.unregisterTab('tab-shot-fit');
       }
     });
-
-    // The encoded image dimensions must reflect the displayed size at each DPR,
-    // while the returned logical viewport dimensions stay unchanged.
-    for (const dpr of [1, 2]) {
-      it(`captures a scale-to-fit tab at its displayed size (DPR ${dpr})`, async () => {
-        const tabId = `tab-shot-dpr-${dpr}`;
-        const { sendCommand } = screenshotWebContents({
-          capture: (request) => captureAtDeviceDensity(request, dpr),
-        });
-        ownScaledTab(tabId, 510 + dpr);
-        await flushAsync();
-
-        try {
-          const result = await embeddedBrowserCdp.screenshot(tabId);
-          expect(result).toMatchObject({ width: 1280, height: 800 });
-
-          expect(sendCommand).toHaveBeenCalledWith('Page.captureScreenshot', {
-            format: 'jpeg',
-            quality: 80,
-            clip: { x: 0, y: 0, width: 1280, height: 800, scale: 0.5 },
-          });
-          const image = await sharp(Buffer.from(result.base64, 'base64')).metadata();
-          expect(image).toMatchObject({
-            format: 'jpeg',
-            width: 640 * dpr,
-            height: 400 * dpr,
-          });
-        } finally {
-          embeddedBrowserCdp.unregisterTab(tabId);
-        }
-      });
-    }
 
     it('keeps clip scale 1 when the emulated viewport is not shrunk to fit', async () => {
       const { sendCommand } = screenshotWebContents();

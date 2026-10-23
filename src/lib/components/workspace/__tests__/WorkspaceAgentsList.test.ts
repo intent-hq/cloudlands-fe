@@ -1566,18 +1566,4 @@ describe('WorkspaceAgentsList single-line rows', () => {
     await fireEvent.click(restoreButton!);
     expect(onRestoreRetired).toHaveBeenCalledWith({ agentId: retired[0].id });
   });
-
-  it('renders virtualized rows without eager agent previews', async () => {
-    const agents = Array.from({ length: 21 }, (_, index) =>
-      makeAgent(`virtual-${index}`, { name: `Virtual agent ${index}` }),
-    );
-    appStore.dispatch(bulkUpsertSessions(agents));
-    const { container } = render(WorkspaceAgentsList, { props: { agents, workspaceId } });
-
-    await waitFor(() => expect(container.querySelector('[data-index]')).toBeTruthy());
-    expect(container.querySelector('[data-testid="agent-card-preview"]')).toBeNull();
-    expect(container.querySelectorAll('[data-avatar-variant="emphasized"]').length).toBeGreaterThan(
-      0,
-    );
-  });
 });

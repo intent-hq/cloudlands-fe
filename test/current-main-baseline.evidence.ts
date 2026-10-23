@@ -78,7 +78,7 @@ const semanticSelectors: Record<string, SemanticSelector[]> = {
   'CHAT-03': [
     selector(
       ['mounted', 'runtime-success', 'keyboard'],
-      'renders one active phase mark and the localized Thinking row',
+      'announces processing once without making lifecycle details a live region',
       ['mounted', 'runtime-success', 'keyboard'],
     ),
     selector(['runtime-error'], 'renders explicit failed response copy'),

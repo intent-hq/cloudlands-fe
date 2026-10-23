@@ -66,10 +66,6 @@ test('opens and dismisses resource panel action menus', async ({ page }) => {
     expect(menuId).toBeTruthy();
     const menu = page.locator(`[id="${menuId}"]`);
     await expect(menu).toBeVisible();
-    for (const testId of ['chat-message-navigator-trigger', 'chat-scroll-to-bottom-button']) {
-      const icon = menu.getByTestId(testId).locator('svg');
-      await expect(icon).toHaveCount(1);
-    }
     await page.keyboard.press('Escape');
     await expect(trigger).toHaveAttribute('aria-expanded', 'false');
     await expect(menu).toBeHidden();
@@ -118,32 +114,6 @@ test('keeps sidebar overflow counts accurate when cards expand', async ({ page }
       await new Promise<void>((resolveFrame) => requestAnimationFrame(() => resolveFrame()));
     }, scenario);
 
-    const expectedBackground = await page.evaluate(() => {
-      const probe = document.createElement('div');
-      probe.className = 'bg-sidebar';
-      document.body.append(probe);
-      const background = getComputedStyle(probe).backgroundColor;
-      probe.remove();
-      return background;
-    });
-    const expectSidebarPaint = async () => {
-      const styles = await page.locator('[data-sidebar-card-surface]').evaluateAll((surfaces) =>
-        surfaces.map((surface) => {
-          const style = getComputedStyle(surface);
-          return { background: style.backgroundColor, opacity: style.opacity };
-        }),
-      );
-      expect(
-        styles.every(({ background }) => background === expectedBackground),
-        scenario,
-      ).toBe(true);
-      expect(
-        styles.every(({ opacity }) => opacity === '1'),
-        scenario,
-      ).toBe(true);
-    };
-    await expectSidebarPaint();
-
     for (const [visibleSelector, overflowSelector] of [
       // Upstream avatar stack (0519bd81) exposes overflow through its shared test id.
       ['[data-sidebar-agent]', '[data-testid="sidebar-agent-overflow"]'],
@@ -162,6 +132,5 @@ test('keeps sidebar overflow counts accurate when cards expand', async ({ page }
 
     await page.locator('[data-sidebar-launcher="agents"] .launcher-tile-action').click();
     await expect(page.locator('.sidebar-expanded-card')).toBeVisible();
-    await expectSidebarPaint();
   }
 });

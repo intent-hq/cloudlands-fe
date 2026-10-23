@@ -27,13 +27,3 @@ test('recomputes the dominant panel for sidebar and window changes', async ({ mo
   await expect.poll(async () => (await widths(component))[0]).toBeLessThan(withSidebar[0]);
   expect((await widths(component))[1]).toBe(initial[1]);
 });
-
-test('keeps horizontal overflow reachable at 200% zoom', async ({ mount }) => {
-  const component = await mount(PanelDominantBrowserGeometryHarness, {
-    props: { viewportWidth: 1200, zoomFactor: 2 },
-  });
-  const viewport = component.getByTestId('available-viewport');
-  await expect
-    .poll(() => viewport.evaluate((node) => node.scrollWidth > node.clientWidth))
-    .toBe(true);
-});

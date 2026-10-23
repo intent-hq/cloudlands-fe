@@ -156,19 +156,6 @@ test('keeps the right inset visible at the horizontal scroll end (tab view)', as
   expect(geometry.lastPanelRight!).toBeLessThanOrEqual(geometry.insetRight!);
 });
 
-for (const zoomFactor of [1, 2]) {
-  test(`keeps the chat canvas stable across frames at ${zoomFactor * 100}%`, async ({ mount }) => {
-    for (const scenario of ['reuse-agent', 'restore-agent'] as const) {
-      const component = await mount(PanelWorkspaceColumnClipHarness, {
-        props: { scenario, canvasWidth: 700, persistedCanvasWidth: null, zoomFactor },
-      });
-
-      await expectStableCanvasWidth(component);
-      await component.unmount();
-    }
-  });
-}
-
 test('clamps one automatic chat to a narrow viewport without overflow', async ({ mount }) => {
   const component = await mount(PanelWorkspaceColumnClipHarness, {
     props: {

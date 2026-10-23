@@ -14,38 +14,6 @@ async function settle(component: Locator, page: Page) {
   });
 }
 
-test('renders queued rows only while the queue has messages', async ({ mount, page }) => {
-  const component = await mount(QueuedMessageBottomGapHost);
-  for (const theme of ['light', 'dark'] as const) {
-    for (const width of [320, 720]) {
-      for (const zoom of [1, 2]) {
-        if (
-          (theme === 'light' && (width !== 720 || zoom !== 1)) ||
-          (theme === 'dark' && (width !== 320 || zoom !== 2))
-        )
-          continue;
-        await component.update({ props: { theme, width, zoom, queueCount: 0 } });
-        await settle(component, page);
-        await expect(component.getByTestId('queued-message-utility-area')).toHaveCount(0);
-        await expect(component.getByTestId('queued-messages-container')).toHaveCount(0);
-
-        for (const queueCount of [1, 3]) {
-          await component.update({
-            props: {
-              theme,
-              width,
-              zoom,
-              queueCount,
-            },
-          });
-          await settle(component, page);
-          await expect(component.getByTestId('queued-message-row')).toHaveCount(queueCount);
-        }
-      }
-    }
-  }
-});
-
 test('preserves edit, selection, reorder, save, cancel, removal, and scroll ownership', async ({
   mount,
   page,

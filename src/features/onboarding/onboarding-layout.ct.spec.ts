@@ -222,37 +222,14 @@ test('starter suggestions preserve containment, keyboard selection, and shuffle'
   const editor = component.locator('.rich-textarea [contenteditable=true]');
   const options = component.getByRole('option');
   await expect(options).toHaveCount(4);
-  // Inter is `font-display: swap`: until the woff2 lands, the fallback-font heading above the
-  // composer wraps to a second 48px line, so a baseline measured before the swap is stale.
   await page.evaluate(() => document.fonts.ready);
-  const measureGeometry = () =>
-    options.evaluateAll((elements) =>
-      elements.map((element) => {
-        const box = element.getBoundingClientRect();
-        const list = element.closest('[role=listbox]')!.getBoundingClientRect();
-        const title = element
-          .querySelector('[data-slot="action-row-title"]')!
-          .getBoundingClientRect();
-        return {
-          top: box.top,
-          bottom: box.bottom,
-          height: box.height,
-          right: box.right,
-          listRight: list.right,
-          textTop: title.top,
-          textBottom: title.bottom,
-        };
-      }),
-    );
-  const geometry = await measureGeometry();
-  geometry
-    .slice(1)
-    .forEach((box, i) => expect(Math.abs(box.top - geometry[i]!.bottom)).toBeLessThanOrEqual(1));
+  const geometry = await options.evaluateAll((elements) =>
+    elements.map((element) => ({
+      right: element.getBoundingClientRect().right,
+      listRight: element.closest('[role=listbox]')!.getBoundingClientRect().right,
+    })),
+  );
   geometry.forEach((box) => expect(box.right).toBeLessThanOrEqual(box.listRight));
-  await options.first().hover();
-  expect(await measureGeometry()).toEqual(geometry);
-  await options.first().focus();
-  expect(await measureGeometry()).toEqual(geometry);
   const original = await options.first().innerText();
   await editor.focus();
   await page.keyboard.press('ArrowDown');

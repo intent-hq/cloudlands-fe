@@ -50,8 +50,8 @@ afterEach(() => {
 });
 
 describe('StreamingStatus rendered UI', () => {
-  it('renders one active phase mark and the localized Thinking row', () => {
-    const { container } = render(StreamingStatus, {
+  it('announces processing once without making lifecycle details a live region', () => {
+    render(StreamingStatus, {
       props: {
         isProcessing: true,
         statusEvents: [
@@ -60,20 +60,9 @@ describe('StreamingStatus rendered UI', () => {
       },
     });
 
-    const row = container.firstElementChild as HTMLElement;
-    const mark = screen.getByRole('status', { name: 'Loading' });
-    const label = screen.getByTestId('streaming-status-thinking-label');
     const lifecycle = screen.getByTestId('streaming-status-phase');
 
-    expect(mark.getAttribute('data-variant')).toBe('pulse');
-    expect(mark.getAttribute('data-playing')).toBe('true');
     expect(screen.getAllByRole('status')).toHaveLength(1);
-    expect(label.textContent).toBe('Thinking');
-    expect(label.className).toContain('sr-only');
-    expect(lifecycle.textContent).toBe('Sent prompt…');
-    expect(lifecycle.className).toContain('text-muted-foreground');
-    expect(lifecycle.className).toContain('truncate');
-    expect(row.textContent).not.toContain('·');
     expect(lifecycle.closest('[role="status"]')).toBeNull();
     expect(lifecycle.closest('[aria-live]')).toBeNull();
   });

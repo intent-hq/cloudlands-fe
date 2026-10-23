@@ -315,33 +315,18 @@ async function expectDropdownMotion(surface: Locator, reducedMotion: boolean) {
   expect(transition === 'none').toBe(reducedMotion);
 }
 
-for (const theme of ['light', 'dark'] as const) {
-  test(`renders one checklist glyph without stack disks in ${theme} mode`, async ({
-    mount,
-    page,
-  }) => {
-    await page.evaluate((selectedTheme) => {
-      document.documentElement.classList.toggle('dark', selectedTheme === 'dark');
-      document.documentElement.classList.toggle('light', selectedTheme === 'light');
-    }, theme);
-    await mount(TaskProgressControl, {
-      props: { tasks: [...tasks], presentation: 'checklist' },
-    });
-
-    const trigger = page.getByTestId('task-progress-trigger');
-    const checklist = page.getByTestId('task-progress-checklist-icon');
-    await expect(checklist.locator('svg')).toHaveCount(1);
-    await expect(page.getByTestId('task-progress-icon-stack')).toHaveCount(0);
-    await expect(page.getByTestId('task-progress-status-icon')).toHaveCount(0);
-    await expect(page.getByTestId('task-progress-overflow-indicator')).toHaveCount(0);
-
-    await trigger.focus();
-    await expect(page.getByTestId('task-progress-popover')).toBeHidden();
-    await trigger.click();
-    await expect(page.getByTestId('task-progress-popover')).toBeVisible();
-    await expect(page.getByTestId('task-progress-row')).toHaveCount(tasks.length);
+test('opens the task list from the checklist trigger', async ({ mount, page }) => {
+  await mount(TaskProgressControl, {
+    props: { tasks: [...tasks], presentation: 'checklist' },
   });
-}
+
+  const trigger = page.getByTestId('task-progress-trigger');
+  await trigger.focus();
+  await expect(page.getByTestId('task-progress-popover')).toBeHidden();
+  await trigger.click();
+  await expect(page.getByTestId('task-progress-popover')).toBeVisible();
+  await expect(page.getByTestId('task-progress-row')).toHaveCount(tasks.length);
+});
 
 test('exposes one atomic live status and keeps the full task list non-live in the accessibility tree', async ({
   mount,

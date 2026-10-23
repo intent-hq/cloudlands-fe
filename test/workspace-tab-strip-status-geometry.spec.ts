@@ -217,7 +217,6 @@ async function mountStrip(
     viewport: number;
     zoom: number;
     reduced: boolean;
-    theme?: 'light' | 'dark';
   },
 ) {
   await page.setViewportSize({ width: options.viewport, height: 360 });
@@ -228,10 +227,10 @@ async function mountStrip(
   ]);
   await page.addStyleTag({ url: `${baseUrl}src/app.css` });
   await page.addStyleTag({ content: 'body { margin: 0; overflow: hidden; }' });
-  await page.evaluate(async ({ zoom, theme }) => {
+  await page.evaluate(async ({ zoom }) => {
     Object.assign(globalThis, { process: { env: { NODE_ENV: 'test' } } });
-    document.documentElement.classList.toggle('dark', theme === 'dark');
-    document.documentElement.style.colorScheme = theme === 'dark' ? 'dark' : 'light';
+    document.documentElement.classList.remove('dark');
+    document.documentElement.style.colorScheme = 'light';
     Object.assign(globalThis, {
       __workspaceTabScenario: {
         currentId: 'active',
@@ -503,16 +502,6 @@ test('Escape-cancelled real pointer drag suppresses its browser click', async ({
     ),
   ).toEqual([{ type: 'open', payload: ['inactive'] }]);
 });
-
-for (const theme of ['light', 'dark'] as const) {
-  test(`supports keyboard focus in the ${theme} theme`, async ({ page }) => {
-    await mountStrip(page, { viewport: 900, zoom: 1, reduced: true, theme });
-    const tab = page.locator('[data-workspace-tab="active"] [role="tab"]');
-
-    await tab.focus();
-    await expect(tab).toBeFocused();
-  });
-}
 
 test('drag keeps one horizontal real tab and drops it at the invisible reserved slot', async ({
   page,

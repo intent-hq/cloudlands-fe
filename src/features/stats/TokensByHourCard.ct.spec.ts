@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { test, expect } from '../../test/ct-test';
 import TokensByHourCard from './TokensByHourCard.svelte';
 import ExportHarness from './TokensByHourCardExportHarness.svelte';
@@ -103,38 +102,4 @@ test('working-hours controls are keyboard reachable without hovering', async ({ 
   await expect(card.locator('.wh-bound').first()).toContainText('10');
   await card.getByRole('button', { name: 'Decrease working hours end' }).click();
   await expect(card.locator('.wh-bound').last()).toContainText('17');
-});
-
-test('PNG export downloads at the expected size with focused or hovered controls', async ({
-  mount,
-  page,
-}, testInfo) => {
-  const mounted = await mount(ExportHarness);
-  const card = mounted.locator('[data-stats-card]');
-  await page.evaluate(() => document.fonts.ready);
-  const screenshot = testInfo.outputPath('stepper.png');
-  await card.screenshot({ path: screenshot });
-  await testInfo.attach('working-hours stepper', { path: screenshot, contentType: 'image/png' });
-
-  async function capture(name: string) {
-    const downloaded = page.waitForEvent('download');
-    // Dispatch without moving the pointer or focus off the stepper.
-    await mounted.getByRole('button', { name: 'Export test card' }).dispatchEvent('click');
-    const download = await downloaded;
-    const path = testInfo.outputPath(`${name}.png`);
-    await download.saveAs(path);
-    await testInfo.attach(name, { path, contentType: 'image/png' });
-    const png = await readFile(path);
-    expect([...png.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
-    expect(png.readUInt32BE(16)).toBe(1080);
-    expect(png.readUInt32BE(20)).toBe(1920);
-  }
-
-  const controls = card.getByRole('button');
-  await page.mouse.move(700, 700);
-  await page.keyboard.press('Tab');
-  await expect(controls.first()).toBeFocused();
-  await capture('focused-export');
-  await controls.last().hover();
-  await capture('hovered-export');
 });

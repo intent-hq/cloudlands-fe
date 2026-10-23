@@ -222,22 +222,6 @@ describe('AgentAvatarWithState', () => {
     }
   });
 
-  it('uses named variants in owned consumers', () => {
-    const { container } = render(AgentAvatarCatalog);
-    const stateAvatars = container.querySelectorAll<HTMLElement>(
-      '.agent-avatar-catalog-states [data-agent-avatar-with-state]',
-    );
-    expect(stateAvatars.length).toBeGreaterThan(0);
-    for (const avatar of stateAvatars) {
-      expect(avatar.getAttribute('data-avatar-variant')).toBe('standard');
-      expect(avatar.style.width).toBe('');
-    }
-    const stack = container.querySelector(
-      '[data-agent-avatar-catalog-stack] [data-agent-avatar-stack]',
-    );
-    expect(stack?.getAttribute('data-avatar-variant')).toBe('emphasized');
-  });
-
   it('keeps visible product consumers off zero-clear-space canonical numeric sizes', () => {
     for (const { path, tag } of productAvatarTags()) {
       expect(tag, path).not.toMatch(/\bsize=\{(?:16|20|24|40)\}/);

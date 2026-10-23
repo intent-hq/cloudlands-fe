@@ -40,9 +40,6 @@ for (const { width, theme, atBottom } of [
       await down.focus();
       await page.keyboard.press('Enter');
       await expect(down).toBeDisabled();
-      expect((await actions.evaluate(probeHeaderIcons)).map((g) => g.target)).toEqual(
-        geometry.map((g) => g.target),
-      );
     }
     const tasks = actions.getByTestId('task-progress-trigger');
     await tasks.focus();

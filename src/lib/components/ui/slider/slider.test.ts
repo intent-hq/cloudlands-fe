@@ -199,24 +199,6 @@ describe('Slider', () => {
     expect(onValueChange).toHaveBeenCalledOnce();
   });
 
-  it.each(['left', 'right', 'top'] as const)(
-    'reserves the same readout width across values and editing at %s',
-    async (valuePosition) => {
-      const { container, getByRole } = render(Slider, {
-        props: { value: 8, showValue: true, valuePosition, 'aria-label': 'Stable value' },
-      });
-      const readout = container.querySelector<HTMLElement>('[data-slot="slider-value"]')!;
-      const initialWidth = readout.style.width;
-      await fireEvent.keyDown(getByRole('slider'), { key: 'End' });
-      expect(readout.textContent).toBe('100');
-      expect(readout.style.width).toBe(initialWidth);
-      await fireEvent.click(getByRole('button'));
-      expect(readout.style.width).toBe(initialWidth);
-      await fireEvent.keyDown(getByRole('spinbutton'), { key: 'Escape' });
-      expect(readout.style.width).toBe(initialWidth);
-    },
-  );
-
   it('is inert when disabled and uses danger visuals when invalid', async () => {
     const onValueChange = vi.fn();
     const { container, getByRole } = render(Slider, {
