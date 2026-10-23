@@ -19,7 +19,10 @@ import type {
   WorkspaceInitializationOutcome,
 } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
 import { createWorkspaceDraftDispatchAdapter } from './workspace-draft-dispatch.test-helper';
-import { createWorkspaceInitializationDispatchAdapter } from './workspace-initialization-dispatch.test-helper';
+import {
+  createWorkspaceInitializationDispatchAdapter,
+  selectTestWorkspaceInitializerRepoConfigProbe,
+} from './workspace-initialization-dispatch.test-helper';
 
 const admittedFixture = vi.hoisted(() => ({ state: {} as Record<string, unknown> }));
 beforeEach(() => {
@@ -105,6 +108,7 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
       return mocks.draftRestore$.subscribe((restore) => run({ restore }));
     },
   }),
+  selectWorkspaceInitializerRepoConfigProbe: selectTestWorkspaceInitializerRepoConfigProbe,
   selectWorkspaceInitializationOutcomeForConsumer: () => mocks.initializationOutcome$,
   selectWorkspaceInitializationResume: { select: () => undefined },
 }));

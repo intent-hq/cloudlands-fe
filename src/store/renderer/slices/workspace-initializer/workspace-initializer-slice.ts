@@ -22,6 +22,7 @@ import type {
   WorkspaceInitializerRecentRepo,
   WorkspaceInitializerRecentRepoRefresh,
   WorkspaceInitializerRemoteSetup,
+  WorkspaceInitializerRepoConfigProbeInput,
   WorkspaceInitializerPendingGitHubPrefill,
   WorkspaceInitializerRepoSelection,
   WorkspaceInitializerState,
@@ -62,6 +63,7 @@ export const initialState: WorkspaceInitializerState = {
   pendingGitHubPrefill: null,
   recentRepoRefreshes: createCollection<WorkspaceInitializerRecentRepoRefresh, 'id'>('id'),
   directoryStatusChecks: createCollection<WorkspaceInitializerDirectoryStatusCheck, 'id'>('id'),
+  repoConfigProbes: createCollection('id'),
   initializationOutcomes: createCollection<WorkspaceInitializationOutcome, 'id'>('id'),
   initializationResumes: createCollection<WorkspaceInitializationResume, 'id'>('id'),
   draftRestores: createCollection<WorkspaceInitializerDraftRestore, 'id'>('id'),
@@ -150,6 +152,21 @@ export const workspaceInitializerDirectoryStatusFinished = createAction<
 export const workspaceInitializerDirectoryStatusReleased = createAction<
   [id: string, requestId: string]
 >('workspaceInitializer/directoryStatusReleased');
+
+export const workspaceInitializerRepoConfigProbeRequested = createAction<
+  [
+    id: string,
+    requestId: string,
+    admission: string,
+    input: WorkspaceInitializerRepoConfigProbeInput,
+  ]
+>('workspaceInitializer/repoConfigProbeRequested');
+export const workspaceInitializerRepoConfigProbeFinished = createAction<
+  [id: string, requestId: string, status: 'ready' | 'failed', script: string | null]
+>('workspaceInitializer/repoConfigProbeFinished');
+export const workspaceInitializerRepoConfigProbeReleased = createAction<
+  [id: string, requestId?: string]
+>('workspaceInitializer/repoConfigProbeReleased');
 
 export const setWorkspaceInitializerRemoteSetups = createAction<
   [setups: WorkspaceInitializerRemoteSetup[]]
@@ -524,6 +541,40 @@ workspaceInitializerReducer.with(
     getItem(state.directoryStatusChecks, id)?.requestId === requestId
       ? { ...state, directoryStatusChecks: removeItem(state.directoryStatusChecks, id) }
       : state,
+);
+workspaceInitializerReducer.with(
+  workspaceInitializerRepoConfigProbeRequested,
+  (state, { payload: [id, requestId, admission, input] }) => ({
+    ...state,
+    repoConfigProbes: upsertItem(state.repoConfigProbes, {
+      id,
+      requestId,
+      admission,
+      ...input,
+      status: 'pending',
+      script: null,
+    }),
+  }),
+);
+workspaceInitializerReducer.with(
+  workspaceInitializerRepoConfigProbeFinished,
+  (state, { payload: [id, requestId, status, script] }) => {
+    const current = getItem(state.repoConfigProbes, id);
+    if (!current || current.requestId !== requestId) return state;
+    return {
+      ...state,
+      repoConfigProbes: upsertItem(state.repoConfigProbes, { ...current, status, script }),
+    };
+  },
+);
+workspaceInitializerReducer.with(
+  workspaceInitializerRepoConfigProbeReleased,
+  (state, { payload: [id, requestId] }) => {
+    const current = getItem(state.repoConfigProbes, id);
+    return current && (requestId === undefined || current.requestId === requestId)
+      ? { ...state, repoConfigProbes: removeItem(state.repoConfigProbes, id) }
+      : state;
+  },
 );
 workspaceInitializerReducer.with(
   setWorkspaceInitializerRemoteSetups,

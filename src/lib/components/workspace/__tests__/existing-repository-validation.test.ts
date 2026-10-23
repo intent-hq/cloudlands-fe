@@ -3,7 +3,10 @@ import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceInitializationOutcome } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
-import { createWorkspaceInitializationDispatchAdapter } from './workspace-initialization-dispatch.test-helper';
+import {
+  createWorkspaceInitializationDispatchAdapter,
+  selectTestWorkspaceInitializerRepoConfigProbe,
+} from './workspace-initialization-dispatch.test-helper';
 
 const admittedFixture = vi.hoisted(() => ({ state: {} as Record<string, unknown> }));
 beforeEach(() => {
@@ -114,6 +117,7 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
   selectWorkspaceInitializerDraftAuthority: () =>
     mocks.readable(() => ({ restore: undefined, clear: undefined })),
+  selectWorkspaceInitializerRepoConfigProbe: selectTestWorkspaceInitializerRepoConfigProbe,
   selectWorkspaceInitializationOutcomeForConsumer: () => mocks.initializationOutcome$,
   selectWorkspaceInitializationResume: { select: () => undefined },
 }));

@@ -8,7 +8,7 @@
    */
 
   import { fly } from '$lib/motion';
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import Fa from 'svelte-fa';
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$shared/generated/ipc-client';
@@ -18,7 +18,6 @@
     LEGACY_ONBOARDING_PROMPT_SESSION_KEY,
   } from '$lib/components/workspace/initializer/new-workspace-draft';
   import { deserializeDraftAttachments } from '$lib/components/chat/chat-draft-attachments';
-  import { registerWorkspaceInitializationPreparation } from '$lib/components/workspace/initializer/workspace-initialization-preparation';
   import {
     enhancePrompt,
     EnhancePromptUnavailableError,
@@ -89,13 +88,14 @@
   } from '$features/onboarding/utils/onboarding-test-prompt';
   import type { ProjectSelection } from '$features/onboarding/messages/ProjectPickerMessage.svelte';
   import { shouldTreatAsNewRepo } from '$features/onboarding/utils/treat-as-new-repo';
-  import { parseRuntimeMentions } from '$features/onboarding/utils/parse-context-references';
+  import { snapshotTerminalMentions } from '$features/onboarding/utils/parse-context-references';
   import { hasBlockingAttachments, type ContextItem } from '$lib/components/chat/input/context-api';
   import {
     SETUP_SCRIPT_TEMPLATES,
     getTemplateContent,
     chooseDefaultSetupScript,
-    createRepoConfigProbeScheduler,
+    probeIdentityKey,
+    repoIdentityKey,
     REPO_CONFIG_SCRIPT_NAME,
     type SetupScriptNameSource,
   } from '$features/setup-scripts';
@@ -108,9 +108,12 @@
     workspaceInitializerDraftFlushRequested,
     workspaceInitializerDraftOwnerReleased,
     workspaceInitializerDraftRestoreRequested,
+    workspaceInitializerDraftSaveCancelled,
     workspaceInitializerDraftSaveScheduled,
     workspaceInitializationResumeRequested,
     workspaceInitializationSubmitted,
+    workspaceInitializerRepoConfigProbeReleased,
+    workspaceInitializerRepoConfigProbeRequested,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import {
     DEFAULT_NEW_WORKSPACE_SPECIALIST_ID,
@@ -122,6 +125,7 @@
     selectWorkspaceInitializationOutcomeForConsumer,
     selectWorkspaceInitializationResume,
     selectWorkspaceInitializerOnboardingFormState,
+    selectWorkspaceInitializerRepoConfigProbe,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { selectModel } from '$store/renderer/slices/model/model-slice';
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
@@ -132,7 +136,6 @@
   } from '$store/renderer/slices/principal/principal-selectors';
   import type {
     OnboardingWorkspaceInitializationSubmission,
-    WorkspaceInitializationJson,
     WorkspaceInitializationOutcome,
     WorkspaceInitializationStagedItem,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
@@ -149,6 +152,10 @@
   const logger = createLogger('onboarding-page');
 
   const WORKSPACE_PREFILL_KEY = 'workspace-prefill';
+  const onboardingRepoConfigProbeId = `onboarding-repo-config:${crypto.randomUUID()}`;
+  const onboardingRepoConfigProbe$ = selectWorkspaceInitializerRepoConfigProbe(
+    onboardingRepoConfigProbeId,
+  );
 
   // ============================================================================
   // Props
@@ -261,11 +268,14 @@
     return null;
   });
 
-  // Auto-restore last used setup script when the repo changes, and re-probe
-  // the repo config when the GitHub branch changes (monorepo#835). The
-  // scheduler keys runs on repo identity + ref: repo switches restore and
-  // probe at once, branch-only changes re-probe debounced.
-  const setupScriptProbeScheduler = createRepoConfigProbeScheduler();
+  // The initializer repository saga owns repo-config transport, debounce,
+  // replacement and lifetime. This effect only captures the selected identity
+  // and applies the correlated result while the local editor remains unchanged.
+  let previousSetupScriptRepoKey: string | null = null;
+  let previousSetupScriptProbeKey: string | null | undefined = undefined;
+  let previousSetupScriptProbeAdmission: string | null | undefined = undefined;
+  let onboardingRepoConfigProbeRequestId = '';
+  let appliedOnboardingRepoConfigProbeRequestId = '';
   $effect(() => {
     const path = projectSelection?.repoPath ?? null;
     const type = projectSelection?.type;
@@ -273,23 +283,31 @@
     // track them (and re-run) while a local repo is selected.
     const identity = {
       path,
-      type,
+      type: type ?? null,
       githubUrl: type === 'github' ? projectSelection?.githubUrl : null,
       branch: type === 'github' ? projectSelection?.branch : null,
     };
 
-    setupScriptProbeScheduler.onSelectionChange({
-      identity,
-      onRepoChange: ({ preservedRestoredState }) => {
-        // Repo changed — invalidate any cached repo-config script
+    const key = probeIdentityKey(identity);
+    const identityKey = repoIdentityKey(identity);
+    const admission = $onboardingDraftAdmission$;
+    untrack(() => {
+      const probeChanged = previousSetupScriptProbeKey !== key;
+      const admissionChanged = previousSetupScriptProbeAdmission !== admission;
+      if (!probeChanged && !admissionChanged) return;
+      const repoChanged = identityKey !== previousSetupScriptRepoKey;
+      const initialRepo = previousSetupScriptRepoKey === null;
+      const preservedRestoredState = initialRepo && !!setupScript.trim();
+      previousSetupScriptRepoKey = identityKey;
+      previousSetupScriptProbeKey = key;
+      previousSetupScriptProbeAdmission = admission;
+      if (probeChanged) {
         repoConfigScript = null;
         repoConfigScriptRepo = null;
-
-        // On initial mount, don't override if there's already a setup script
-        // set (e.g., from restored form state). On repo switches, always
-        // restore.
+      }
+      if (repoChanged) {
+        showSetupScript = false;
         if (!preservedRestoredState) {
-          // Restore last used script for this repo (or clear if no saved script exists)
           if (path) {
             restoreLastUsedSetupScript(path);
           } else {
@@ -299,28 +317,49 @@
             isCustomSetupScript = false;
           }
         }
-      },
-      getCurrentIdentity: () => ({
-        path: projectSelection?.repoPath ?? null,
-        type: projectSelection?.type,
-        githubUrl: projectSelection?.githubUrl,
-        branch: projectSelection?.branch,
-      }),
-      getSetupScript: () => setupScript,
-      isSetupScriptModalOpen: () => showSetupScript,
-      isCustomSetupScript: () => isCustomSetupScript,
-      setLoading: (loading) => (isRepoConfigLoading = loading),
-      onProbeResult: (script) => {
-        repoConfigScript = script;
-        repoConfigScriptRepo = path;
-      },
-      applyScript: (script) => {
-        setupScript = script;
-        setupScriptName = REPO_CONFIG_SCRIPT_NAME;
-        setupScriptNameSource = 'repo-config';
-        isCustomSetupScript = false;
-      },
+      }
+      if (admission === null) {
+        appStore.dispatch(workspaceInitializerRepoConfigProbeReleased(onboardingRepoConfigProbeId));
+        return;
+      }
+      onboardingRepoConfigProbeRequestId = crypto.randomUUID();
+      appStore.dispatch(
+        workspaceInitializerRepoConfigProbeRequested(
+          onboardingRepoConfigProbeId,
+          onboardingRepoConfigProbeRequestId,
+          admission,
+          {
+            identity,
+            probeKey: key,
+            repoKey: path,
+            debounce: !repoChanged,
+            setupScriptAtRequest: setupScript,
+            applyAllowed: !preservedRestoredState && !showSetupScript && !isCustomSetupScript,
+          },
+        ),
+      );
     });
+  });
+  $effect(() => {
+    const probe = $onboardingRepoConfigProbe$;
+    if (!probe || probe.requestId !== onboardingRepoConfigProbeRequestId) return;
+    isRepoConfigLoading = probe.status === 'pending';
+    if (probe.status !== 'ready' || appliedOnboardingRepoConfigProbeRequestId === probe.requestId)
+      return;
+    appliedOnboardingRepoConfigProbeRequestId = probe.requestId;
+    repoConfigScript = probe.script;
+    repoConfigScriptRepo = probe.repoKey;
+    if (
+      probe.script &&
+      probe.applyAllowed &&
+      setupScript === probe.setupScriptAtRequest &&
+      !showSetupScript &&
+      !isCustomSetupScript
+    ) {
+      setupScript = probe.script;
+      setupScriptName = REPO_CONFIG_SCRIPT_NAME;
+      setupScriptNameSource = 'repo-config';
+    }
   });
 
   // Set when the initial prompt was seeded from the legacy sessionStorage key
@@ -450,6 +489,7 @@
   let onboardingDraftOwnerAdmission: string | null | undefined = undefined;
   let onboardingDraftProvenance: string | undefined;
   let onboardingDraftRestoreApplied = false;
+  let onboardingDraftEditedBeforeRestore = false;
   $effect(() => {
     const admission = $onboardingDraftAdmission$;
     const provenance = $onboardingDraftProvenance$;
@@ -460,6 +500,7 @@
     onboardingDraftOwnerAdmission = admission;
     onboardingDraftRestored = false;
     onboardingDraftRestoreApplied = false;
+    onboardingDraftEditedBeforeRestore = false;
     if (hadOwner)
       appStore.dispatch(
         workspaceInitializerDraftOwnerReleased(onboardingDraftOwnerId, priorRequestId),
@@ -505,7 +546,9 @@
       const inputUntouched =
         !onboardingInputValue ||
         (!!legacySeededPrompt && onboardingInputValue === legacySeededPrompt);
-      if (restore.text && inputUntouched) {
+      const localDraftUntouched =
+        inputUntouched && onboardingImageItems.length === 0 && onboardingStagedItems.length === 0;
+      if (restore.text && localDraftUntouched) {
         onboardingInputValue = restore.text;
         // If the prompt step is already mounted, its editor initialized from
         // the empty value — push the restored text in; otherwise the editor
@@ -514,7 +557,7 @@
       }
       // Same no-clobber guard for images: when the text restore is skipped
       // (prefill / user typing), stale draft images must not sneak in.
-      if (inputUntouched && restoredItems.length > 0) {
+      if (localDraftUntouched && restoredItems.length > 0) {
         // Image items (imageData/imageMimeType — including pre-migration
         // drafts saved from the old inline-editor format, which serialized
         // through the same context-item shape) rehydrate straight into the
@@ -541,11 +584,31 @@
    * redemption). */
   function scheduleOnboardingDraftSave() {
     if (!isOnboarding || onboardingDraftCleared) return;
-    // Pre-settle, only text the user actually typed is scheduled: it must be
-    // flushable if they navigate away, and it is newer than any daemon draft.
-    // The untouched initial value (prefill / legacy seed / empty) stays
-    // unscheduled so it cannot clobber a newer shared daemon draft.
-    if (!onboardingDraftRestored && onboardingInputValue === initialOnboardingPrompt) return;
+    // Pre-settle, only user-added text or attachments are scheduled: they must
+    // be flushable if navigation wins the restore race. The untouched initial
+    // value stays unscheduled so it cannot clobber a newer shared daemon draft.
+    if (!onboardingDraftRestored) {
+      const empty =
+        !onboardingInputValue &&
+        onboardingImageItems.length === 0 &&
+        onboardingStagedItems.length === 0;
+      const changedFromInitial =
+        onboardingInputValue !== initialOnboardingPrompt ||
+        onboardingImageItems.length > 0 ||
+        onboardingStagedItems.length > 0;
+      if (changedFromInitial) onboardingDraftEditedBeforeRestore = true;
+      if (empty && onboardingDraftEditedBeforeRestore) {
+        appStore.dispatch(
+          workspaceInitializerDraftSaveCancelled(
+            onboardingDraftOwnerId,
+            onboardingDraftRestoreRequestId,
+            selectPrincipalActionContext.select(appStore.state) ?? undefined,
+          ),
+        );
+        return;
+      }
+      if (!changedFromInitial) return;
+    }
     const payload = buildNewWorkspaceDraftPayload(onboardingInputValue, [
       ...onboardingImageItems,
       ...onboardingStagedItems,
@@ -833,8 +896,6 @@
   let selectedPRNumber = $state<number | null>(null);
   let lastFetchedPRIdentifier: string | null = null;
   let onboardingContentChangeTimer: ReturnType<typeof setTimeout> | null = null;
-  let releaseOnboardingPreparation: (() => void) | null = null;
-
   onDestroy(() => {
     onboardingMounted = false;
     onboardingInitializationGeneration++;
@@ -847,11 +908,9 @@
       ),
     );
     if (activeInitializationSeq !== null) releaseInitialization(activeInitializationSeq);
-    releaseOnboardingPreparation?.();
-    releaseOnboardingPreparation = null;
     appStore.dispatch(clearWorkspaceInitializationResume(initializationConsumerId));
     if (onboardingContentChangeTimer) clearTimeout(onboardingContentChangeTimer);
-    setupScriptProbeScheduler.dispose();
+    appStore.dispatch(workspaceInitializerRepoConfigProbeReleased(onboardingRepoConfigProbeId));
   });
 
   // ============================================================================
@@ -1327,34 +1386,16 @@
 
     let handedOff = false;
     try {
-      releaseOnboardingPreparation?.();
-      const preparationId = crypto.randomUUID();
-      const releasePreparation = registerWorkspaceInitializationPreparation(
-        preparationId,
-        async () => {
-          const runtimeReferences = await parseRuntimeMentions(fileMentionsSnapshot, logger);
-          if (!current()) return null;
-          await setupScriptProbeScheduler.settled();
-          if (!current()) return null;
-          return {
-            runtimeReferences: runtimeReferences as unknown as WorkspaceInitializationJson[],
-            setupScript,
-            setupScriptName,
-            setupScriptNameSource,
-            repoConfigScript: repoConfigScript ?? null,
-            repoConfigScriptRepo: repoConfigScriptRepo ?? null,
-          };
-        },
-      );
-      releaseOnboardingPreparation = releasePreparation;
+      const runtimeReferences = await snapshotTerminalMentions(fileMentionsSnapshot, logger);
+      if (!current()) return;
       const submission: OnboardingWorkspaceInitializationSubmission = {
         entrypoint: 'onboarding',
         admission,
-        preparationId,
         prompt,
         contextMentions: contextMentionsSnapshot,
         fileMentions: fileMentionsSnapshot,
-        runtimeReferences: [],
+        runtimeReferences:
+          runtimeReferences as unknown as OnboardingWorkspaceInitializationSubmission['runtimeReferences'],
         stagedItems: $state.snapshot([
           ...onboardingStagedItems,
           ...onboardingImageItems,
@@ -1364,6 +1405,14 @@
         setupScriptNameSource,
         repoConfigScript: repoConfigScript ?? null,
         repoConfigScriptRepo: repoConfigScriptRepo ?? null,
+        setupScriptExplicit: isCustomSetupScript,
+        repoConfigUnavailable: isRepoConfigLoading,
+        repoConfigProbe: onboardingRepoConfigProbeRequestId
+          ? {
+              id: onboardingRepoConfigProbeId,
+              requestId: onboardingRepoConfigProbeRequestId,
+            }
+          : undefined,
         branchBehind: onboardingBranchBehind,
         pullEnabled: onboardingShouldPullBeforeCreate,
         skipIsolation: onboardingSkipIsolation,
@@ -1391,22 +1440,12 @@
       handedOff = true;
       const initialization = workspaceInitializationSubmitted(submission, consumer);
       trackWorkspaceInitialization(initialization, resourceId, generation, current);
-      const releaseSettledPreparation = () => {
-        releasePreparation();
-        if (releaseOnboardingPreparation === releasePreparation)
-          releaseOnboardingPreparation = null;
-      };
-      void initialization.promise.then(releaseSettledPreparation, releaseSettledPreparation);
     } catch (err) {
       if (!current()) return;
       logger.error('Workspace initialization preparation failed', err as Error);
       onboardingCreationError =
         err instanceof Error ? err.message : m.onboarding_page_unexpected_error();
     } finally {
-      if (!handedOff) {
-        releaseOnboardingPreparation?.();
-        releaseOnboardingPreparation = null;
-      }
       if (!handedOff && onboardingMounted && generation === onboardingInitializationGeneration)
         isOnboardingCreating = false;
     }

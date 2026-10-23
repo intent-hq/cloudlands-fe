@@ -108,7 +108,18 @@ vi.mock('$lib/config/debug', () => ({
 }));
 
 vi.mock('$lib/client', () => ({
-  appClient: { git: { pull: vi.fn(async () => ({ success: true })) }, drafts: {} },
+  appClient: {
+    git: { pull: vi.fn(async () => ({ success: true })) },
+    drafts: {
+      get: vi.fn(async () => null),
+      set: vi.fn(async () => undefined),
+      clear: vi.fn(async () => undefined),
+    },
+    settings: {
+      get: vi.fn(async () => ({ value: {} })),
+      update: vi.fn(async () => undefined),
+    },
+  },
 }));
 
 vi.mock('$lib/client/live/live-prompt-enhancement', () => ({
@@ -190,8 +201,7 @@ vi.mock('svelte-fa', async () => ({
 import CompactWorkspaceInitializer from '../CompactWorkspaceInitializer.svelte';
 import '$store/renderer/seeders/host-bridge-seeder';
 import { store } from '$store/renderer/store';
-import { workspaceInitializerGitSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initializer-git-saga';
-import { workspaceInitializationSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initialization-saga';
+import { workspaceInitializerSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initializer-saga';
 import {
   principalContextChanged,
   principalReceived,
@@ -204,7 +214,6 @@ import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/w
 import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { selectWorkspaceInitializerGitAvailability } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
 let dispose: () => void;
-let stopGit: () => void;
 let stopInitialization: () => void;
 
 function admit(
@@ -279,8 +288,7 @@ describe('CompactWorkspaceInitializer git-check unknown notice', () => {
     vi.clearAllMocks();
     sessionStorage.clear();
     dispose = store.init();
-    stopGit = store.runSaga(workspaceInitializerGitSaga);
-    stopInitialization = store.runSaga(workspaceInitializationSaga);
+    stopInitialization = store.runSaga(workspaceInitializerSaga);
     admit('owner');
     mocks.request.mockImplementation(async (method: string) => {
       const result = await mocks.checkGit();
@@ -296,7 +304,6 @@ describe('CompactWorkspaceInitializer git-check unknown notice', () => {
   afterEach(() => {
     cleanup();
     stopInitialization();
-    stopGit();
     dispose();
     sessionStorage.clear();
   });

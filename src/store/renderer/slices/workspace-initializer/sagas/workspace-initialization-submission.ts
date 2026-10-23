@@ -29,8 +29,14 @@ import {
 } from '$features/setup-scripts/repo-config';
 import { createAgentTypeId } from '$shared/types/agent.types';
 import { m } from '$shared/paraglide/messages.js';
+import { scriptOutputToLines } from '$lib/utils/script-output-text';
 import { store as appStore } from '../../../store';
 import { selectActiveProviderId } from '../../provider-settings/provider-settings-selectors';
+import {
+  selectScriptById,
+  selectScriptOutput,
+  selectScriptRuntime,
+} from '../../scripts/scripts-selectors';
 import {
   selectEffectiveBehaviorPrompt,
   selectOrchestratorSpecialist,
@@ -62,6 +68,47 @@ function folderReferences(items: WorkspaceInitializationStagedItem[]): Json[] {
   return items
     .filter((item) => item.type === 'folder' && item.path)
     .map((item) => ({ type: 'file', path: item.path as string, title: item.label }));
+}
+
+function scriptReferences(
+  mentions: CompactWorkspaceInitializationSubmission['fileMentions'],
+): Json[] {
+  const state = appStore.state;
+  return mentions
+    .filter((mention) => mention.type === 'script' && mention.id)
+    .map((mention) => {
+      const scriptId = mention.id as string;
+      const workspaceId =
+        typeof mention.meta?.workspaceId === 'string' ? mention.meta.workspaceId : null;
+      const script = selectScriptById.select(state, workspaceId, scriptId);
+      const runtime = selectScriptRuntime.select(state, workspaceId, scriptId);
+      const outputLines = scriptOutputToLines(
+        selectScriptOutput.select(state, workspaceId, scriptId),
+      );
+      let content = `Script: ${script?.name || mention.label}\n`;
+      content += `Command: ${script?.command || 'unknown'}\n`;
+      content += `Status: ${runtime.status}`;
+      if (runtime.exitCode !== null && runtime.exitCode !== undefined) {
+        content += ` (exit code: ${runtime.exitCode})`;
+      }
+      content += '\n';
+      if (runtime.detectedUrl) content += `URL: ${runtime.detectedUrl}\n`;
+      content += outputLines.length
+        ? `\nOutput (last ${Math.min(outputLines.length, 100)} lines):\n${outputLines.slice(-100).join('\n')}`
+        : '\nNo output yet.'; // i18n-ignore (agent-facing context content)
+      return {
+        type: 'script',
+        content,
+        title: script?.name || mention.label,
+        metadata: {
+          scriptId,
+          command: script?.command,
+          status: runtime.status,
+          exitCode: runtime.exitCode,
+          detectedUrl: runtime.detectedUrl,
+        },
+      } as Json;
+    });
 }
 
 function compactContextContent(
@@ -276,6 +323,7 @@ export function* prepareCompactWorkspaceInitialization(
   }
   contextReferences.push(...(parseFileMentions(s.fileMentions) as unknown as Json[]));
   contextReferences.push(...s.runtimeReferences);
+  contextReferences.push(...scriptReferences(s.fileMentions));
   contextReferences.push(...folderReferences(s.stagedItems));
 
   const imageBlocks = s.stagedItems.filter(isImageItem).map((item) => ({
@@ -461,6 +509,7 @@ export function* prepareOnboardingWorkspaceInitialization(
     ...parseContextMentions(s.contextMentions),
     ...parseFileMentions(s.fileMentions),
     ...(s.runtimeReferences as unknown as ContextReference[]),
+    ...(scriptReferences(s.fileMentions) as unknown as ContextReference[]),
     ...(folderReferences(fileItems) as unknown as ContextReference[]),
   ];
   const imageBlocks = heldImageBlocks(s.stagedItems as ContextItem[]);
