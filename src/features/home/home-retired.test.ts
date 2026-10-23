@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
-import { matchesHomeFilter, type HomeFilter } from './home-model';
+import {
+  hasRetiredWorkspaces,
+  matchesHomeFilter,
+  shouldReloadRetiredWorkspaces,
+  type HomeFilter,
+} from './home-model';
 import { groupHomeWorkspacesByStatus } from './home-workspace-status-groups';
 
 // Retired workspaces (PROTOCOL §5.1) appear on Home only under the Retired
@@ -53,5 +58,19 @@ describe('Home Retired chip', () => {
       'status:retired',
     ]);
     expect(groups.at(-1)?.items.map((item) => item.id)).toEqual(['retired']);
+  });
+});
+
+describe('Retired chip reload after an ordinary list refresh', () => {
+  it('reloads only when the Retired chip is active and retired rows just disappeared', () => {
+    expect(shouldReloadRetiredWorkspaces('retired', true, false)).toBe(true);
+    expect(shouldReloadRetiredWorkspaces('retired', false, false)).toBe(false);
+    expect(shouldReloadRetiredWorkspaces('retired', true, true)).toBe(false);
+    expect(shouldReloadRetiredWorkspaces('all', true, false)).toBe(false);
+  });
+
+  it('detects whether any retired row is loaded', () => {
+    expect(hasRetiredWorkspaces([workspace('a'), retired])).toBe(true);
+    expect(hasRetiredWorkspaces([workspace('a')])).toBe(false);
   });
 });

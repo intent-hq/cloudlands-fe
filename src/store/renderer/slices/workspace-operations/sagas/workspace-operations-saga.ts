@@ -23,6 +23,7 @@ import {
 
 import { invoke } from '$lib/electron-bridge';
 import { appClient } from '$lib/client';
+import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
 import { getProposalId } from '$lib/components/chat/proposals/proposal-id';
 import { withToastCountdown } from '$lib/components/patterns/notify';
 import { getActiveWorkNames, type ActiveWorkNames } from '$lib/utils/delete-warning-utils';
@@ -474,17 +475,30 @@ function* loadRetiredWorkspaces(
   action: ReturnType<typeof loadRetiredWorkspacesRequested>,
 ): SagaGenerator<void> {
   const [options] = action.payload;
+  // Same staleness guard as the ordinary list refresh: a response that lands
+  // after the backend, principal or store changed must not leak across them.
+  const dispatch = store.dispatch;
+  const backendId = yield* selectActiveBackendId();
+  const context = yield* selectPrincipalActionContext.effect();
+  function* stale(): SagaGenerator<boolean> {
+    return (
+      store.dispatch !== dispatch ||
+      backendId !== (yield* selectActiveBackendId()) ||
+      context !== (yield* selectPrincipalActionContext.effect())
+    );
+  }
   try {
     const rows = yield* call([appClient.workspaces, appClient.workspaces.list], {
       includeArchived: true,
       includeRetired: true,
     });
+    if (yield* stale()) return;
     for (const row of rows) {
       if (row.status === WorkspaceStatusEnum.Retired) yield* put(setWorkspaceEntity(row));
     }
   } catch (error) {
     logger.warn('workspace.list { includeRetired } failed', { error });
-    if (!options?.quiet) {
+    if (!options?.quiet && !(yield* stale())) {
       const notify = yield* call(getToast);
       notify.error(m.home_retired_loadFailed_error());
     }

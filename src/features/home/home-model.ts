@@ -63,3 +63,20 @@ export function matchesHomeFilter(workspace: Workspace, filter: HomeFilter): boo
       return true;
   }
 }
+
+export function hasRetiredWorkspaces(workspaces: readonly Workspace[]): boolean {
+  return workspaces.some((workspace) => workspace.status === WorkspaceStatusEnum.Retired);
+}
+
+/**
+ * The live list never carries retired rows (strict `includeRetired` opt-in,
+ * PROTOCOL §5.1), so an ordinary list refresh drops the ones the Retired chip
+ * loaded. Reload them when that happens while the chip is selected.
+ */
+export function shouldReloadRetiredWorkspaces(
+  filter: HomeFilter,
+  hadRetired: boolean,
+  hasRetired: boolean,
+): boolean {
+  return filter === 'retired' && hadRetired && !hasRetired;
+}

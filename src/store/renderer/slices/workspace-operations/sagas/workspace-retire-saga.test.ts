@@ -1,5 +1,6 @@
 import { store } from '../../../store';
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
@@ -188,6 +189,25 @@ describe('workspace retire saga', () => {
     expect(run.row('ws-retired')?.status).toBe(WorkspaceStatusEnum.Retired);
     // Only the retired rows are folded in; the live list owns everything else.
     expect(run.row('ws-active')).toBeUndefined();
+    run.task.cancel();
+  });
+
+  it('drops a retired list response that lands after the connection changed', async () => {
+    let finish!: (rows: Workspace[]) => void;
+    mocks.list.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const run = harness([]);
+    run.send(loadRetiredWorkspacesRequested());
+    await settle();
+    run.send(connectionStatusChanged('disconnected'));
+    finish([retiredRow('ws-stale')]);
+    await settle();
+
+    expect(run.row('ws-stale')).toBeUndefined();
     run.task.cancel();
   });
 

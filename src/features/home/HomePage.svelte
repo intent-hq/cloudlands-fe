@@ -75,6 +75,8 @@
   import {
     getHomeTriageGroup,
     matchesHomeFilter,
+    hasRetiredWorkspaces,
+    shouldReloadRetiredWorkspaces,
     needsAttention,
     type HomeFilter,
     type HomeRepository,
@@ -489,6 +491,18 @@
   $effect(() => {
     if (filter !== 'retired' || preview) return;
     untrack(() => store.dispatch(loadRetiredWorkspacesRequested()));
+  });
+  // An ordinary list refresh replaces the store without retired rows; reload
+  // them if that happens while the Retired chip is selected.
+  const retiredLoaded = $derived(hasRetiredWorkspaces($workspaces$));
+  let hadRetired = untrack(() => retiredLoaded);
+  $effect(() => {
+    const now = retiredLoaded;
+    untrack(() => {
+      if (!preview && shouldReloadRetiredWorkspaces(filter, hadRetired, now))
+        store.dispatch(loadRetiredWorkspacesRequested());
+      hadRetired = now;
+    });
   });
   function chooseFilter(next: HomeFilter) {
     store.dispatch(closePanel());
