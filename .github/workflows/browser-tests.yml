@@ -32,7 +32,7 @@ jobs:
     # A granted ct-N slot (the merge-queue caller's slots), else the caller's
     # burst runner for gh-linux-8x (WarpBuild), else gh-linux-8x. Slots carry
     # the Chromium libraries in their image and skip the sudo/apt steps.
-    runs-on: ${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["gh-linux-8x"]') }}
+    runs-on: ${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["warp-ubuntu-2404-x64-8x"]') }}
     # Four shards, two workers each; preserve the pinned CT browser.
     strategy:
       # Let the sibling shards finish so one flaky leg doesn't hide the

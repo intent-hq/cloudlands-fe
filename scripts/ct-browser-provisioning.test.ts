@@ -94,7 +94,9 @@ ${command}`,
       'needs.route.result': 'success',
       'needs.route.outputs.linux_burst': burst,
       'needs.route.outputs.linux_labels': JSON.stringify(
-        burst === 'true' ? ['gh-linux-8x'] : ['self-hosted', 'linux', 'x64', 'intent-cache'],
+        burst === 'true'
+          ? ['warp-ubuntu-2404-x64-8x']
+          : ['self-hosted', 'linux', 'x64', 'intent-cache'],
       ),
       'needs.release-fast-path.outputs.fast_path': 'false',
       'needs.release-fast-path.outputs.ct_required': event === 'merge_group' ? 'true' : '',
@@ -103,19 +105,19 @@ ${command}`,
     };
     expect(evaluate(ctJob.match(/^    if: (.*)$/m)![1], context)).toBe(event !== 'pull_request');
     if (event === 'pull_request') return;
-    // runs-on reads the caller's slots input per shard, then its cloud map, then gh-linux-8x.
+    // runs-on reads the caller's slots input per shard, then its cloud map, then WarpBuild 8x.
     const runsOn = ctJob.match(/^    runs-on: (.*)$/m)![1];
     expect(runsOn).toBe(
-      "${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('[\"gh-linux-8x\"]') }}",
+      "${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('[\"warp-ubuntu-2404-x64-8x\"]') }}",
     );
     const shardRunner = (
       slots: Record<string, string[]>,
       cloud: Record<string, string[]>,
       shard: number,
-    ) => slots[`ct-${shard}`] ?? cloud['gh-linux-8x'] ?? ['gh-linux-8x'];
+    ) => slots[`ct-${shard}`] ?? cloud['gh-linux-8x'] ?? ['warp-ubuntu-2404-x64-8x'];
     const warp = { 'gh-linux-8x': ['warp-ubuntu-2404-x64-8x'] };
     expect.soft(shardRunner({}, warp, 1)).toEqual(['warp-ubuntu-2404-x64-8x']);
-    expect.soft(shardRunner({}, {}, 1)).toEqual(['gh-linux-8x']);
+    expect.soft(shardRunner({}, {}, 1)).toEqual(['warp-ubuntu-2404-x64-8x']);
     expect
       .soft(shardRunner({ 'ct-2': ['self-hosted', 'linux', 'x64', 'intent-cache'] }, warp, 2))
       .toEqual(['self-hosted', 'linux', 'x64', 'intent-cache']);

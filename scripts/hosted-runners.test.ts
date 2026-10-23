@@ -31,6 +31,13 @@ const heavySlotsDefault = (expr: string) =>
   /^\$\{\{ vars\.CI_LINUX_HEAVY_SLOTS \|\| '(\d+)' \}\}$/.exec(expr)?.[1] ?? 'unparsed';
 
 describe('GitHub-hosted CI runners', () => {
+  // Where a heavy job runs without a slot: WarpBuild (GitHub's larger runners are off).
+  const WARP_8X = ['warp-ubuntu-2404-x64-8x'];
+  // The WarpBuild label each listed size falls back to if the route job failed.
+  const BURST: Record<string, string> = {
+    'gh-linux-8x': 'warp-ubuntu-2404-x64-8x',
+    'gh-linux-16x': 'warp-ubuntu-2404-x64-16x',
+  };
   const CACHE = ['self-hosted', 'linux', 'x64', 'intent-cache'];
   // intent-cache slots register with GitHub's default labels plus `intent-cache`.
   const slot = { status: 'online', labels: ['self-hosted', 'Linux', 'X64', 'intent-cache'] };
@@ -82,8 +89,6 @@ describe('GitHub-hosted CI runners', () => {
         // Actions resolves `vars.CI_LINUX_HEAVY_SLOTS || '2'`; with the variable unset that is the default.
         THRESHOLD: heavySlotsDefault(workflow.env.LINUX_BURST_THRESHOLD),
         SLOT_JOBS: listStep.env.SLOT_JOBS,
-        // Most cases check the GitHub fallback; the WarpBuild cases turn WarpBuild on.
-        WARPBUILD_DISABLED: 'true',
         ...env,
       },
     };
@@ -135,9 +140,9 @@ describe('GitHub-hosted CI runners', () => {
     ],
     ['one slot online and busy', { runners: [slot], jobs: [running()] }],
     ['kill switch', { env: { LINUX_RUNNER_DISABLED: 'true' } }],
-  ])('bursts to GitHub-hosted runners (WarpBuild off) when %s', async (_name, fixture: Fixture) => {
+  ])('bursts to WarpBuild when %s', async (_name, fixture: Fixture) => {
     const r = await route(fixture);
-    expect(r.labels).toEqual(['gh-linux-8x']);
+    expect(r.labels).toEqual(WARP_8X);
     expect(r.burst).toBe('true');
   });
 
@@ -163,7 +168,7 @@ describe('GitHub-hosted CI runners', () => {
       labels: ['self-hosted', 'Linux', 'X64', 'intent-cache-small'],
     };
     const smallOnly = await route({ runners: Array.from({ length: 6 }, () => small) });
-    expect(smallOnly.labels).toEqual(['gh-linux-8x']);
+    expect(smallOnly.labels).toEqual(WARP_8X);
     const fastJobs = Array.from({ length: 6 }, () =>
       running(['self-hosted', 'Linux', 'X64', 'intent-cache-small']),
     );
@@ -182,7 +187,7 @@ describe('GitHub-hosted CI runners', () => {
     expect(test.strategy.matrix.shard).toEqual([1, 2, 3, 4]);
     expect(test.name).toBe('Unit Tests (shard ${{ matrix.shard }}/4)');
     expect(test['runs-on']).toBe(
-      "${{ fromJSON(needs.route.outputs.slots || '{}')[format('test-{0}', matrix.shard)] || fromJSON('[\"gh-linux-8x\"]') }}",
+      "${{ fromJSON(needs.route.outputs.slots || '{}')[format('test-{0}', matrix.shard)] || fromJSON('[\"warp-ubuntu-2404-x64-8x\"]') }}",
     );
     const run = test.steps.find((step: { name?: string }) => step.name === 'Unit tests').run;
     expect(run).toContain('pnpm run test:unit --shard=${{ matrix.shard }}/4');
@@ -205,7 +210,7 @@ describe('GitHub-hosted CI runners', () => {
     // The shards go in shard order; each shard has its own key.
     expect(onSlots(r.slots)).toEqual(['test-1', 'test-2']);
     for (const key of ['test-3', 'test-4', 'build-web', 'ct-1', 'ct-4'])
-      expect(r.slots[key]).toEqual(['gh-linux-8x']);
+      expect(r.slots[key]).toEqual(WARP_8X);
     expect(r.burst).toBe('true');
     expect(r.messages.some((m) => m.includes('free=2 granted=2'))).toBe(true);
     // The four shards alone on two free slots: exactly two self-hosted, two hosted.
@@ -213,7 +218,7 @@ describe('GitHub-hosted CI runners', () => {
       env: { SLOT_JOBS: JSON.stringify([{ key: 'test', label: 'gh-linux-8x', shards: 4 }]) },
     });
     expect(onSlots(shards.slots)).toEqual(['test-1', 'test-2']);
-    expect(Object.values(shards.slots).filter((l) => l[0] === 'gh-linux-8x')).toHaveLength(2);
+    expect(Object.values(shards.slots).filter((l) => l[0] === WARP_8X[0])).toHaveLength(2);
     // One busy slot elsewhere leaves one for this run.
     // In the merge queue the longest jobs (Component Tests shards) take free slots first.
     const one = await route({ jobs: [running()] });
@@ -248,7 +253,7 @@ describe('GitHub-hosted CI runners', () => {
       default: '{}',
     });
     expect(browser.jobs['test-ct']['runs-on']).toBe(
-      "${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('[\"gh-linux-8x\"]') }}",
+      "${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('[\"warp-ubuntu-2404-x64-8x\"]') }}",
     );
     // The other browser suites are light enough for the free standard runner.
     expect(browser.jobs['test-playwright']['runs-on']).toBe('ubuntu-24.04');
@@ -328,7 +333,7 @@ describe('GitHub-hosted CI runners', () => {
   ])('sends every listed heavy job hosted with %s', async (_name, fixture: Fixture) => {
     const r = await route(fixture);
     expect(Object.keys(r.slots)).toHaveLength(9);
-    for (const labels of Object.values(r.slots)) expect(labels).toEqual(['gh-linux-8x']);
+    for (const labels of Object.values(r.slots)) expect(labels).toEqual(WARP_8X);
   });
 
   it('lists every routed heavy job once, with its hosted fallback', () => {
@@ -350,7 +355,8 @@ describe('GitHub-hosted CI runners', () => {
       const entry = listed.find((j) => j.key === id)!;
       const key = entry.shards ? `format('${id}-{0}', matrix.shard)` : `'${id}'`;
       expect(runner).toBe(
-        `\${{ fromJSON(needs.route.outputs.slots || '{}')[${key}] || fromJSON('["${entry.label}"]') }}`,
+        // The fallback, if the route job failed, is the listed size's WarpBuild runner.
+        `\${{ fromJSON(needs.route.outputs.slots || '{}')[${key}] || fromJSON('["${BURST[entry.label] ?? entry.label}"]') }}`,
       );
     }
     // Queue-only jobs must say so, or they would hold a slot on every PR.
@@ -380,8 +386,8 @@ describe('GitHub-hosted CI runners', () => {
     async (value) => {
       const r = await route({ env: { THRESHOLD: value } });
       expect(r.burst).toBe('true');
-      expect(r.labels).toEqual(['gh-linux-8x']);
-      for (const labels of Object.values(r.slots)) expect(labels).toEqual(['gh-linux-8x']);
+      expect(r.labels).toEqual(WARP_8X);
+      for (const labels of Object.values(r.slots)) expect(labels).toEqual(WARP_8X);
       expect(r.messages).toContain(
         'linux routing: burst=true (probe failed (invalid queue threshold))',
       );
@@ -400,7 +406,7 @@ describe('GitHub-hosted CI runners', () => {
     const xl = { status: 'online', labels: ['self-hosted', 'Linux', 'X64', 'intent-cache-xl'] };
     const xlJob = running(['self-hosted', 'linux', 'x64', 'intent-cache-xl']);
     const xlOnly = await route({ runners: [xl, xl] });
-    expect(xlOnly.labels).toEqual(['gh-linux-8x']);
+    expect(xlOnly.labels).toEqual(WARP_8X);
     expect(xlOnly.messages).toContain('linux routing: burst=true (no available compatible runner)');
     // No xl runners online, or xl runners busy with xl jobs: routing is unchanged.
     const baseline = await route({ jobs: [running()] });
@@ -417,43 +423,45 @@ describe('GitHub-hosted CI runners', () => {
   });
 
   it('bursts heavy jobs to WarpBuild when no slot is free', async () => {
-    const WARP = ['warp-ubuntu-2404-x64-8x'];
+    const WARP = WARP_8X;
     for (const fixture of [
       { jobs: [running(), running()] },
       { runners: [] },
       { error: true },
       { env: { LINUX_RUNNER_DISABLED: 'true' } },
     ] as Fixture[]) {
-      const r = await route({ ...fixture, env: { ...fixture.env, WARPBUILD_DISABLED: '' } });
+      const r = await route(fixture);
       expect(r.labels).toEqual(WARP);
       expect(r.burst).toBe('true');
       for (const labels of Object.values(r.slots)) expect(labels).toEqual(WARP);
     }
     // A free slot still wins over WarpBuild; in the queue the longest job, a
     // Component Tests shard, takes it.
-    const one = await route({ jobs: [running()], env: { WARPBUILD_DISABLED: '' } });
+    const one = await route({ jobs: [running()] });
     expect(onSlots(one.slots)).toEqual(['ct-1']);
     expect(one.slots['ct-2']).toEqual(WARP);
     expect(one.slots['test-1']).toEqual(WARP);
     const decide = read('.github/workflows/intent-pr.yml').jobs.route.steps.find(
       (s: { id?: string }) => s.id === 'decide',
     );
-    expect(decide.env.WARPBUILD_DISABLED).toBe('${{ vars.CI_WARPBUILD_DISABLED }}');
+    // GitHub's larger runners are off, so there is no switch back to them.
+    expect(decide.env.WARPBUILD_DISABLED).toBeUndefined();
   });
 
   it('runs the portable fixtures straight on the burst Mac, never a self-hosted one', async () => {
     const job = read('.github/workflows/intent-pr.yml').jobs['test-portable-fixtures'];
     expect(job.needs).toContain('route');
     expect(job['runs-on']).toBe(
-      `\${{ fromJSON(needs.route.outputs.cloud || '{}')['macos-26-xlarge'] || fromJSON('["macos-26-xlarge"]') }}`,
+      `\${{ fromJSON(needs.route.outputs.cloud || '{}')['macos-26-xlarge'] || fromJSON('["warp-macos-26-arm64-12x"]') }}`,
     );
     expect(read('.github/workflows/intent-pr.yml').jobs.route.outputs.cloud).toBe(
       '${{ steps.decide.outputs.cloud }}',
     );
-    const on = await route({ env: { WARPBUILD_DISABLED: '' } });
+    const on = await route({});
     expect(on.cloud['macos-26-xlarge']).toEqual(['warp-macos-26-arm64-12x']);
-    const off = await route({});
-    expect(off.cloud['macos-26-xlarge']).toEqual(['macos-26-xlarge']);
+    // Even the retired kill switch no longer sends it to a GitHub larger runner.
+    const off = await route({ env: { WARPBUILD_DISABLED: 'true' } });
+    expect(off.cloud['macos-26-xlarge']).toEqual(['warp-macos-26-arm64-12x']);
   });
 
   it('never routes to tinybox', () => {

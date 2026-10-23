@@ -803,7 +803,7 @@ describe('shared browser jobs and nightly routing', () => {
       // free standard runner.
       expect(jobField(lines, 'runs-on')).toBe(
         job === 'test-ct'
-          ? "${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('[\"gh-linux-8x\"]') }}"
+          ? "${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('[\"warp-ubuntu-2404-x64-8x\"]') }}"
           : 'ubuntu-24.04',
       );
     },
