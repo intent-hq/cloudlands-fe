@@ -1,4 +1,5 @@
 <script module lang="ts">
+  import { catalogStopwatch } from '$lib/component-catalog/catalog-clock';
   import { definePreview } from '$lib/component-catalog/preview-definition';
 
   interface Props {
@@ -40,7 +41,7 @@
   let results = $state<string[]>([]);
   let stage: HTMLDivElement;
   let samples: AuroraFrameSample[] = [];
-  let startedAt = 0;
+  let elapsedSinceStart = () => 0;
   let initialDpr = 1;
   let initialBounds = { width: 0, height: 0 };
   let interruption = false;
@@ -61,7 +62,7 @@
     initialDpr = window.devicePixelRatio;
     const bounds = stage.getBoundingClientRect();
     initialBounds = { width: bounds.width, height: bounds.height };
-    startedAt = performance.now();
+    elapsedSinceStart = catalogStopwatch();
     running = true;
     // A bounded DOM measurement session. No per-frame UI updates or polling.
     performance.mark('aura-benchmark-start');
@@ -70,7 +71,7 @@
 
   function finish() {
     if (!running) return;
-    const elapsed = performance.now() - startedAt;
+    const elapsed = elapsedSinceStart();
     running = false;
     clearTimeout(timer);
     performance.mark('aura-benchmark-end');

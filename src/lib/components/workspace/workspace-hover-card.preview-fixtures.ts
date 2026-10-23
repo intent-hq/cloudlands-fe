@@ -11,6 +11,7 @@ import type {
 } from '$shared/types';
 import { AgentStatus, PullRequestStatus, WorkspaceStatus } from '$shared/types';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
+import { catalogNow } from '$lib/component-catalog/catalog-clock';
 import { definePreview, type PreviewDefinition } from '$lib/component-catalog/preview-definition';
 import {
   definePreviewFixture,
@@ -240,7 +241,7 @@ function agent(
 }
 
 function activityAgo(milliseconds: number) {
-  const timestamp = new Date(Date.now() - milliseconds).toISOString();
+  const timestamp = new Date(catalogNow() - milliseconds).toISOString();
   return { lastActivity: timestamp, updatedAt: timestamp };
 }
 

@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import { catalogStopwatch } from '$lib/component-catalog/catalog-clock';
   import { definePreview } from '$lib/component-catalog/preview-definition';
   import { NOTE_VIEW_MAX_CONTENT_BYTES } from '$shared/constants/notes';
 
@@ -71,7 +72,7 @@
   let { content, contentBytes }: { content: string; contentBytes?: number } = $props();
   let host: HTMLElement | null = $state(null);
   let renderMs = $state<number | null>(null);
-  const startedAt = performance.now();
+  const elapsedSinceMount = catalogStopwatch();
   const contentBytesShown = $derived(new TextEncoder().encode(content).length);
 
   // Preview-only timing: mount → rendered Markdown painted (two frames after the
@@ -81,7 +82,7 @@
       if (!host?.querySelector('.markdown-content > *')) return;
       observer.disconnect();
       requestAnimationFrame(() =>
-        requestAnimationFrame(() => (renderMs = Math.round(performance.now() - startedAt))),
+        requestAnimationFrame(() => (renderMs = Math.round(elapsedSinceMount()))),
       );
     });
     if (host) observer.observe(host, { childList: true, subtree: true });
