@@ -798,12 +798,13 @@ describe('shared browser jobs and nightly routing', () => {
           );
         }
       }
-      // Component Tests take the caller's ct-N slot first; every suite then goes
-      // to the burst runner (WarpBuild, or GitHub).
+      // Component Tests take the caller's ct-N slot first, then the burst runner
+      // (WarpBuild, or GitHub); the lighter root and Electron suites run on the
+      // free standard runner.
       expect(jobField(lines, 'runs-on')).toBe(
         job === 'test-ct'
           ? "${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('[\"gh-linux-8x\"]') }}"
-          : `\${{ fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["gh-linux-8x"]') }}`,
+          : 'ubuntu-24.04',
       );
     },
   );
@@ -1067,9 +1068,8 @@ describe('root Playwright hosted shards', () => {
     ['workflow_dispatch', 'true'],
   ])('provisions hosted runners on %s with linux_burst=%s', (event, linuxBurst) => {
     const context = { ...ok, event, linuxBurst };
-    expect(jobField(testPlaywright, 'runs-on')).toBe(
-      `\${{ fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["gh-linux-8x"]') }}`,
-    );
+    // One worker per shard fits the free standard runner (WarpBuild: p90 16-27% of 8 CPUs).
+    expect(jobField(testPlaywright, 'runs-on')).toBe('ubuntu-24.04');
     // The pnpm store is restored by the backend-selecting cache action (WarpBuild or GitHub).
     expect(field(step('Cache pnpm store'), 'uses')).toBe('./.github/actions/pnpm-store-cache');
     for (const name of ['Cache Playwright browsers', 'Install Playwright browsers']) {
