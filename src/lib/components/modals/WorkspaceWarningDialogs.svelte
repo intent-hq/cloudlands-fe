@@ -6,7 +6,6 @@
   import type { ComponentProps } from 'svelte';
   import DeleteWarningDialog from './DeleteWarningDialog.svelte';
   import RetireWorkspaceConfirmDialog from './RetireWorkspaceConfirmDialog.svelte';
-  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
@@ -44,7 +43,7 @@
     selectShowBulkArchiveConfirm,
     selectShowBulkDeleteConfirm,
     selectShowDeleteWarning,
-    selectPendingRetireWorkspaceId,
+    selectPendingRetireWorkspaceTitle,
     selectShowRetireConfirm,
   } from '$store/renderer/slices/workspace-operations/workspace-operations-selectors';
 
@@ -116,14 +115,8 @@
   const showRetireConfirm$ = untrack(() =>
     staticData ? readable(false) : selectShowRetireConfirm(),
   );
-  const pendingRetireWorkspaceId$ = untrack(() =>
-    staticData ? readable(null) : selectPendingRetireWorkspaceId(),
-  );
-  const retireTitle = $derived(
-    $pendingRetireWorkspaceId$
-      ? selectWorkspaceById.select(appStore.state, $pendingRetireWorkspaceId$)?.title ||
-          m.workspace_ops_space_fallback()
-      : '',
+  const pendingRetireWorkspaceTitle$ = untrack(() =>
+    staticData ? readable('') : selectPendingRetireWorkspaceTitle(),
   );
 </script>
 
@@ -158,7 +151,7 @@
   <!-- Redux-owned retire confirmation (PROTOCOL §5.1 Retired workspaces) -->
   <RetireWorkspaceConfirmDialog
     open={$showRetireConfirm$}
-    workspaceTitle={retireTitle}
+    workspaceTitle={$pendingRetireWorkspaceTitle$ || m.workspace_ops_space_fallback()}
     onConfirm={() => appStore.dispatch(confirmRetireWorkspace())}
     onCancel={() => appStore.dispatch(closeRetireConfirm())}
   />
