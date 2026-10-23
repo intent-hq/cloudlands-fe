@@ -39,6 +39,7 @@ describe('renderer app saga registry', () => {
       'chatSendSaga',
       'chatScrollbackSaga',
       'chatDraftsSaga',
+      'inlineVisualsSaga',
       'chatPanelUiSaga',
       'switchTimingSaga',
       'permissionResponseSaga',

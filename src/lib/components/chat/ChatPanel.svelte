@@ -1,4 +1,16 @@
 <script lang="ts">
+  import {
+    INLINE_VISUAL_DRAFT_EVENT,
+    appendInlineVisualDraft,
+    type InlineVisualDraftDetail,
+  } from '$features/inline-html/inline-visual-handoff';
+  import { isInlineVisualSnapshot } from '$features/inline-html/inline-visual-types';
+  import { selectInlineVisualDrafts } from '$store/renderer/slices/inline-visuals/inline-visuals-selectors';
+  import {
+    inlineVisualDraftRequested,
+    inlineVisualDraftConsumed,
+    inlineVisualDraftOwnerReleased,
+  } from '$store/renderer/slices/inline-visuals/inline-visuals-slice';
   import { submitChatMessage } from '$features/agent/chat-submission';
   import { requestChatMessageRetry } from '$features/agent/chat-submission-retry';
   import {
@@ -774,6 +786,7 @@
   // DEBUG: Unique instance ID to detect duplicate ChatPanel mounts
   const instanceId = Math.random().toString(36).substring(2, 8);
   const questionUiConsumer$ = selectQuestionUiConsumer(instanceId);
+  const inlineVisualDrafts$ = selectInlineVisualDrafts(instanceId);
   const userMessageIndexUi$ = selectUserMessageIndexUi(workspace?.id ?? '', instanceId);
   let wizardPersistenceRequest: {
     messageId: string;
@@ -2171,6 +2184,68 @@
     onSaveError: (err) => {
       logger.warn('[ChatPanel] Failed to save draft', { error: String(err) });
     },
+  });
+
+  // The event travels only through the originating transcript's DOM ancestors.
+  // Queue until this exact panel has completed its draft restore; never send.
+  $effect(() => {
+    const element = panelElement;
+    if (!element) return;
+    const receive = (event: Event) => {
+      event.stopPropagation();
+      const detail = (event as CustomEvent<InlineVisualDraftDetail>).detail;
+      if (
+        !detail ||
+        detail.workspaceId !== workspace?.id ||
+        detail.agentId !== agentId ||
+        !isActive ||
+        isRetiredSession ||
+        $agentSession$?.id !== agentId ||
+        !isInlineVisualSnapshot(detail.snapshot)
+      )
+        return;
+      appStore.dispatch(
+        inlineVisualDraftRequested({
+          id: crypto.randomUUID(),
+          ownerId: instanceId,
+          workspaceId: detail.workspaceId,
+          agentId: detail.agentId,
+          snapshot: detail.snapshot,
+        }),
+      );
+    };
+    element.addEventListener(INLINE_VISUAL_DRAFT_EVENT, receive);
+    return () => element.removeEventListener(INLINE_VISUAL_DRAFT_EVENT, receive);
+  });
+
+  $effect(() => {
+    const pending = $inlineVisualDrafts$;
+    if (
+      !isActive ||
+      !inputComponent ||
+      draftManager.gateActive ||
+      draftManager.restorePending ||
+      isRetiredSession ||
+      $agentSession$?.id !== agentId ||
+      !workspace?.id
+    )
+      return;
+    const targeted = pending.filter(
+      (item) => item.workspaceId === workspace.id && item.agentId === agentId,
+    );
+    if (!targeted.length) return;
+    untrack(() => {
+      let text = inputValue;
+      for (const item of targeted) {
+        text = appendInlineVisualDraft(text, item.snapshot);
+        appStore.dispatch(inlineVisualDraftConsumed(item.id));
+      }
+      // Preserve contextItems and let the existing draft manager persist them.
+      inputValue = text;
+      commitDraftWrite(text);
+      void inputComponent?.setContent?.(text);
+      void tick().then(() => inputComponent?.focus?.());
+    });
   });
 
   $effect(() => {
@@ -5469,6 +5544,7 @@
       );
       wizardPersistenceRequest = null;
     }
+    appStore.dispatch(inlineVisualDraftOwnerReleased(instanceId));
     if (workspace?.id) appStore.dispatch(chatPanelUiReleased(workspace.id, instanceId));
     transferPanelInterestLease(null);
     flushPendingDraftWrite();
