@@ -35,7 +35,6 @@ const consumerFiles = [
   'src/lib/components/tiptap/LineAttributionGutter.svelte',
   'src/lib/components/tiptap/TaskAgentStatus.svelte',
   'src/lib/components/tiptap/comments/AgentPeekCard.svelte',
-  'src/lib/components/workspace/MultiSelectTabbedSidebar.svelte',
   'src/lib/components/workspace/NoteMetadataBar.svelte',
   'src/lib/components/workspace/TaskProgressBar.svelte',
   'src/lib/components/workspace/WorkspaceHoverCard.svelte',
@@ -59,7 +58,6 @@ const canonicalStackConsumers = [
   'src/lib/components/chat/AgentSubscriptions.svelte',
   'src/lib/components/chat/DelegationGroupSection.svelte',
   'src/lib/components/chat/EventWakeupBanner.svelte',
-  'src/lib/components/workspace/MultiSelectTabbedSidebar.svelte',
 ] as const;
 
 function source(path: string): string {
@@ -78,7 +76,7 @@ function productionSvelteFiles(directory = 'src'): string[] {
 
 describe('agent avatar overlay inventory', () => {
   it('keeps every audited consumer on the icon-free canonical avatar surface', () => {
-    expect(consumerFiles).toHaveLength(42);
+    expect(consumerFiles).toHaveLength(41);
     for (const path of consumerFiles) {
       const contents = source(path);
       expect(contents, path).not.toContain('/auggie-avatar/');
@@ -131,17 +129,11 @@ describe('agent avatar overlay inventory', () => {
     }
   });
 
-  it('keeps subscription and sidebar summaries on the same adaptive stack contract', () => {
+  it('keeps subscription summaries on the adaptive stack contract', () => {
     const subscription = source('src/lib/components/chat/AgentSubscriptions.svelte');
-    const sidebar = source('src/lib/components/workspace/MultiSelectTabbedSidebar.svelte');
-    for (const contents of [subscription, sidebar]) {
-      expect(contents).toContain('<AgentAvatarStack');
-      expect(contents).toContain('adaptive');
-      expect(contents).not.toMatch(/-space-x-|margin-inline-start:\s*calc\(-1/);
-    }
-    expect(sidebar).toContain('itemContent={launcherAgentAvatar}');
-    expect(sidebar).toContain('<AgentAvatarWithState');
-    expect(sidebar).not.toContain('data-sidebar-agent-overflow');
+    expect(subscription).toContain('<AgentAvatarStack');
+    expect(subscription).toContain('adaptive');
+    expect(subscription).not.toMatch(/-space-x-|margin-inline-start:\s*calc\(-1/);
   });
 
   it('uses parent-revealing participant cutouts without stack separator colors or icons', () => {
