@@ -44,6 +44,9 @@ export const togglePinWorkspace = createAction<[id: string]>('sidebarNav/toggleP
 export const setMultiSelectSidebarSelectedTabs = createAction<
   [workspaceId: string, tabIds: string[]]
 >('sidebarNav/setMultiSelectSidebarSelectedTabs');
+export const activateSidebarSectionRequested = createAction<
+  [workspaceId: string, sectionId: string, panelLayoutId?: string]
+>('sidebarNav/activateSidebarSectionRequested');
 export const setWorkspaceNoteOrder = createAction<[workspaceId: string, noteIds: string[]]>(
   'sidebarNav/setWorkspaceNoteOrder',
 );

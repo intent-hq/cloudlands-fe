@@ -1,4 +1,4 @@
-import { cleanup, render, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentSession } from '$shared/types';
 import SidebarSectionTabs from './SidebarSectionTabs.svelte';
@@ -125,5 +125,33 @@ describe('sidebar main-agent identity', () => {
     await view.rerender({ workspaceId: 'another-workspace' });
     await waitFor(() => expect(tab().querySelector('[data-sidebar-main-agent]')).toBeNull());
     expect(tab().querySelector('[data-icon="robot"]')).not.toBeNull();
+  });
+});
+
+describe.each(['horizontal', 'vertical'] as const)('%s section activation', (orientation) => {
+  it('opens a clicked section exactly once, including an already selected tab', async () => {
+    const onActivate = vi.fn();
+    const view = render(SidebarSectionTabs, {
+      props: { workspaceId: 'workspace', orientation, onActivate },
+    });
+    const agents = view.getByRole('tab', { name: 'Agents', exact: true });
+    await fireEvent.pointerEnter(agents, { pointerType: 'mouse' });
+    expect(onActivate).not.toHaveBeenCalled();
+    await fireEvent.click(agents);
+    expect(onActivate.mock.calls).toEqual([['agents']]);
+    onActivate.mockClear();
+    await fireEvent.click(view.getByRole('tab', { name: 'Context' }));
+    expect(onActivate.mock.calls).toEqual([['context']]);
+  });
+
+  it.each(['Enter', ' '])('activates a selected section exactly once with %s', async (key) => {
+    const onActivate = vi.fn();
+    const view = render(SidebarSectionTabs, {
+      props: { workspaceId: 'workspace', orientation, onActivate },
+    });
+    const agents = view.getByRole('tab', { name: 'Agents', exact: true });
+    await fireEvent.keyDown(agents, { key });
+    await fireEvent.keyUp(agents, { key });
+    expect(onActivate.mock.calls).toEqual([['agents']]);
   });
 });

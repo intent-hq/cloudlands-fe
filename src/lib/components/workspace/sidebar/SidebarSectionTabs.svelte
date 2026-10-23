@@ -2,13 +2,17 @@
   import Fa from 'svelte-fa';
   import * as Tabs from '$lib/components/ui/tabs';
   import { Tooltip } from '$lib/components/ui/tooltip';
+  import { cn } from '$lib/utils';
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
   import { writable } from 'svelte/store';
   import { prefersReducedMotion } from '$lib/utils/reduced-motion';
   import { store } from '$store/renderer/store';
   import { selectMultiSelectSidebarSelectedTabIds } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
-  import { setMultiSelectSidebarSelectedTabs } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+  import {
+    activateSidebarSectionRequested,
+    setMultiSelectSidebarSelectedTabs,
+  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { selectIsWorkspaceCollaborator } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectWorkspacePeopleTilePeople } from '$store/renderer/slices/presence/presence-selectors';
   import {
@@ -29,11 +33,13 @@
     orientation = 'horizontal',
     onActivate,
     panelId,
+    panelLayoutId = workspaceId,
   }: {
     workspaceId: string;
     orientation?: 'horizontal' | 'vertical';
     onActivate?: (tabId: string) => void;
     panelId?: string;
+    panelLayoutId?: string;
   } = $props();
   type SectionTab = (typeof TAB_DEFINITIONS)[number];
   let tabViewport = $state<HTMLDivElement | null>(null);
@@ -100,15 +106,16 @@
 
   function activate(tabId: string) {
     store.dispatch(setMultiSelectSidebarSelectedTabs(workspaceId, [tabId]));
+    store.dispatch(activateSidebarSectionRequested(workspaceId, tabId, panelLayoutId));
     onActivate?.(tabId);
   }
 </script>
 
 <Tabs.Root
   value={selected}
-  onValueChange={activate}
+  activationMode="manual"
   {orientation}
-  variant="icon"
+  variant={orientation === 'horizontal' ? 'icon' : 'underline'}
   size="default"
   class="w-full"
   data-sidebar-section-tabs={orientation}
@@ -124,7 +131,10 @@
         aria-controls={panelId ? `${panelId}-${tab.id}` : undefined}
         class={orientation === 'horizontal'
           ? 'relative w-full min-w-0 gap-0 px-0'
-          : 'relative size-9 min-w-0 gap-0 px-0'}
+          : cn(
+              'relative size-9 min-w-0 gap-0 rounded-(--radius-medium) border-0 px-0 focus-visible:ring-2 focus-visible:ring-ring',
+              selected === tab.id && 'bg-muted/60 dark:bg-surface-4',
+            )}
         data-sidebar-section-tab={tab.id}
         onpointerenter={(event) => {
           if (orientation === 'vertical' && event.pointerType !== 'touch')
@@ -132,16 +142,17 @@
         }}
         onfocus={(event) => {
           if (orientation === 'vertical') flyout?.preview(tab.id, event.currentTarget, true);
+          else if (event.currentTarget.matches(':focus-visible')) activate(tab.id);
         }}
-        onkeyup={(event) => {
-          if (orientation === 'vertical' && (event.key === 'Enter' || event.key === ' ')) {
-            flyout?.preview(tab.id, event.currentTarget);
-            activate(tab.id);
-          }
+        onkeydown={(event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          if (orientation === 'vertical') flyout?.preview(tab.id, event.currentTarget);
+          activate(tab.id);
         }}
         onclick={(event) => {
           if (orientation === 'vertical') flyout?.preview(tab.id, event.currentTarget);
-          if (selected === tab.id) activate(tab.id);
+          activate(tab.id);
         }}
       >
         {#if tab.id === 'agents' && mainAgent}

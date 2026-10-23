@@ -5,6 +5,7 @@ import {
   selectActiveBackendId,
 } from '../../../utils/backend-storage-namespace';
 import { getLocalStorageJSON, setLocalStorageJSON } from '../../../utils/safe-local-storage-saga';
+import { sidebarSectionNavigationSaga } from './sidebar-section-navigation-saga';
 import { connectionsListReceived } from '../../connections/connections-slice';
 import { workspaceMounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
@@ -227,6 +228,7 @@ function* watchBackendSwitch(): SagaGenerator<void> {
 }
 
 export function* sidebarNavSaga(): SagaGenerator<void> {
+  yield* fork(sidebarSectionNavigationSaga);
   yield* call(hydrateSidebarNavState);
   yield* fork(watchBackendSwitch);
   yield* takeEvery(togglePinWorkspace, persistPinnedWorkspaces);

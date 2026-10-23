@@ -559,7 +559,7 @@
     <WorkspaceProgressCard {workspaceId} {active} onOpenNote={handleOpenNoteInPanel} />
   </div>
   <div class="shrink-0 px-3 pb-1" hidden={$collapsed$} inert={$collapsed$} data-sidebar-navigation>
-    <SidebarSectionTabs {workspaceId} {panelId} />
+    <SidebarSectionTabs {workspaceId} {panelId} {panelLayoutId} />
   </div>
   <div
     class={cn(

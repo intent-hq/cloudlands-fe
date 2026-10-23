@@ -14,6 +14,7 @@
     initialSection?: string;
     extraFiles?: number;
     scriptsState?: 'ready' | 'empty' | 'loading' | 'retry';
+    navigationEnabled?: boolean;
   }
 
   export const preview = definePreview<Props>({
@@ -45,6 +46,7 @@
 
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
+  import { startSidebarNavigationPreview } from './sidebar-tabs.preview-fixtures';
   import type { AgentSession, FileNode } from '$shared/types';
   import { Textarea } from '$lib/components/ui/textarea';
   import WorkspaceLayout from './WorkspaceLayout.svelte';
@@ -66,6 +68,7 @@
     clearPanelLayout,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { setMultiSelectSidebarSelectedTabs } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+  import { selectActiveTab } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { setCollapsed } from '$store/renderer/slices/ui-layout/ui-layout-slice';
   import {
     setChangesData,
@@ -99,11 +102,17 @@
     initialSection = 'overview',
     extraFiles = 0,
     scriptsState = 'ready',
+    navigationEnabled = false,
   }: Props = $props();
   const workspaceId = 'sidebar-tabs-preview';
   const timestamp = '2026-10-20T12:00:00Z';
   const root = '/preview/sidebar-tabs';
-  const dispose = startRootStoreLifecycle(store, { startSagas: () => [] });
+  let activationCount = $state(0);
+  const activeTab$ = selectActiveTab(workspaceId);
+  const dispose = startRootStoreLifecycle(store, {
+    startSagas: () =>
+      navigationEnabled ? startSidebarNavigationPreview(() => (activationCount += 1)) : [],
+  });
   const initialCollapsed = store.state.uiLayout.sidebarCollapsed;
   const restoreMocks = untrack(() => installChangesSummaryMocks(workspaceId, 'feat/sidebar-tabs'));
   let draft = $state('Keep the navigation quiet and give the work room to breathe.');
@@ -334,6 +343,9 @@
   style:height={`${height}px`}
   class="overflow-hidden bg-sidebar"
   data-sidebar-tabs-preview
+  data-sidebar-activation-count={activationCount}
+  data-sidebar-destination-type={$activeTab$?.type}
+  data-sidebar-destination-id={$activeTab$?.agentId ?? $activeTab$?.noteId ?? $activeTab$?.id}
 >
   <WorkspaceLayout
     {workspaceId}

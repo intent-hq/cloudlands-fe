@@ -392,8 +392,32 @@ test('content-sized hover panels keep long virtual lists reachable', async ({ mo
   const tree = flyout.getByRole('tree');
   await expect(tree.locator('[data-file-path]').first()).toBeVisible();
   await tree.focus();
+  const fileScrollState = () =>
+    tree.evaluate((root) => {
+      const viewport = Array.from(root.querySelectorAll<HTMLElement>('*')).find(
+        (node) =>
+          /auto|scroll/.test(getComputedStyle(node).overflowY) &&
+          node.scrollHeight > node.clientHeight,
+      );
+      const outerScrollPositions = [];
+      for (let node = root.parentElement; node; node = node.parentElement) {
+        outerScrollPositions.push([node.scrollLeft, node.scrollTop]);
+      }
+      return {
+        treeScrollTop: viewport?.scrollTop ?? 0,
+        outerScrollPositions,
+        pagePosition: [window.scrollX, window.scrollY],
+      };
+    });
+  const beforeFileScroll = await fileScrollState();
   await tree.press('End');
   await expect(tree.locator('[data-file-path$="/file-99.ts"]')).toBeVisible();
+  await expect
+    .poll(async () => (await fileScrollState()).treeScrollTop)
+    .toBeGreaterThan(beforeFileScroll.treeScrollTop);
+  const afterFileScroll = await fileScrollState();
+  expect(afterFileScroll.outerScrollPositions).toEqual(beforeFileScroll.outerScrollPositions);
+  expect(afterFileScroll.pagePosition).toEqual(beforeFileScroll.pagePosition);
   expect(await tree.locator('[data-file-path]').count()).toBeLessThan(200);
   await expect(
     flyout.locator('[data-sidebar-section=files] [data-sidebar-section-header]'),

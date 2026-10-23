@@ -261,6 +261,16 @@ export const createPanelTerminalRequested = createAction<[wsId: string, panelId?
 );
 
 /**
+ * Opens the workspace's first listed terminal as a panel tab (activating an
+ * existing tab instead of duplicating it), creating one only when the
+ * workspace has none. Unlike `createPanelTerminalRequested`, repeated
+ * requests never create a second terminal.
+ */
+export const openFirstPanelTerminalRequested = createAction<[wsId: string, panelId?: string]>(
+  'terminals/openFirstPanelTerminalRequested',
+);
+
+/**
  * Fan-out trigger dispatched by the workspaceMounted fan-out
  * (`lifecycle-ipc-read-service`) so a workspace first-opened after boot
  * hydrates its terminal list via `appClient.terminals.list` — mirroring the

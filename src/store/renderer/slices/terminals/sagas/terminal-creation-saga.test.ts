@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   create: vi.fn(),
+  list: vi.fn(),
   dispatchWindowEvent: vi.fn(),
   info: vi.fn(),
   error: vi.fn(),
@@ -14,7 +15,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('$lib/utils/window-events', () => ({ dispatchWindowEvent: mocks.dispatchWindowEvent }));
 
 vi.mock('$lib/client', () => ({
-  appClient: { terminals: { create: mocks.create } },
+  appClient: { terminals: { create: mocks.create, list: mocks.list } },
 }));
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ info: mocks.info, error: mocks.error }),
@@ -25,6 +26,9 @@ import {
   createOverlayTerminalRequested,
   createPanelTerminalRequested,
   createTerminalRequested,
+  loadWorkspaceTerminals,
+  openFirstPanelTerminalRequested,
+  openTerminalOverlay,
   terminalsReducer,
 } from '../terminals-slice';
 import { terminalCreationSaga } from './terminal-creation-saga';
@@ -40,10 +44,14 @@ const settle = async () => {
   await Promise.resolve();
 };
 
-function startSaga(myRole: 'owner' | 'collaborator' = 'owner') {
+function startSaga(
+  myRole: 'owner' | 'collaborator' = 'owner',
+  seed: Array<{ type: string; payload?: unknown }> = [],
+) {
   const channel = stdChannel();
   const dispatched: Array<{ type: string; payload?: unknown }> = [];
-  let terminals = terminalsReducer(undefined, { type: '@@INIT' });
+  let terminals = seed.reduce(terminalsReducer, terminalsReducer(undefined, { type: '@@INIT' }));
+  let workspaces = createCollection('id', [{ id: 'ws-1', myRole }]);
   const task = runSaga(
     {
       channel,
@@ -58,7 +66,7 @@ function startSaga(myRole: 'owner' | 'collaborator' = 'owner') {
           guestSessions: { ...guestSessionsInitialState, hasReceivedList: true },
           panelLayout: { byWorkspaceId: { 'ws-1': { focusedPanelId: 'panel-1' } } },
           terminals,
-          workspace: { workspaces: createCollection('id', [{ id: 'ws-1', myRole }]) },
+          workspace: { workspaces },
         }),
     },
     function* () {
@@ -75,6 +83,9 @@ function startSaga(myRole: 'owner' | 'collaborator' = 'owner') {
       channel.put(action);
     },
     getTerminalsState: () => terminals,
+    leaveWorkspace: () => {
+      workspaces = createCollection('id', []);
+    },
   };
 }
 
@@ -299,6 +310,269 @@ describe('terminalCreationSaga', () => {
     expect(dispatched).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ type: 'panelLayout/openTab' })]),
     );
+    task.cancel();
+    await task.toPromise();
+  });
+});
+
+type Deferred<T> = { promise: Promise<T>; resolve: (value: T) => void; reject: (e: Error) => void };
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  let reject!: (e: Error) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+const seeded = (...ids: string[]) =>
+  loadWorkspaceTerminals(
+    'ws-1',
+    ids.map((id, index) => ({ id, name: `Shell ${index + 1}` })),
+  );
+const types = (actions: Array<{ type: string }>) => actions.map((action) => action.type);
+const openedTabs = (actions: Array<{ type: string; payload?: unknown }>) =>
+  actions
+    .filter((action) => action.type === 'panelLayout/openTab')
+    .map((action) => {
+      const payload = action.payload as {
+        panelId?: string;
+        tab: { terminalId: string; title: string };
+      };
+      return {
+        panelId: payload.panelId,
+        terminalId: payload.tab.terminalId,
+        title: payload.tab.title,
+      };
+    });
+
+describe('openFirstPanelTerminalRequested', () => {
+  it('opens the first listed terminal in the focused panel without creating or listing', async () => {
+    const { channel, dispatched, getTerminalsState, task } = startSaga('owner', [
+      seeded('pty-a', 'pty-b'),
+    ]);
+
+    channel.put(openFirstPanelTerminalRequested('ws-1'));
+    await settle();
+
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(openedTabs(dispatched)).toEqual([
+      { panelId: 'panel-1', terminalId: 'pty-a', title: 'Shell 1' },
+    ]);
+    expect(getTerminalsState().workspaces['ws-1'].placements).toEqual({ 'pty-a': 'panel' });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('targets the requested panel and closes the overlay showing that terminal', async () => {
+    const { channel, dispatched, getTerminalsState, task } = startSaga('owner', [
+      seeded('pty-a'),
+      openTerminalOverlay('ws-1', 'pty-a'),
+    ]);
+
+    channel.put(openFirstPanelTerminalRequested('ws-1', 'panel-2'));
+    await settle();
+
+    expect(openedTabs(dispatched)).toEqual([
+      { panelId: 'panel-2', terminalId: 'pty-a', title: 'Shell 1' },
+    ]);
+    expect(types(dispatched)).toContain('terminals/close');
+    expect(getTerminalsState().workspaces['ws-1'].isOpen).toBe(false);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('keeps the overlay open when it shows a different terminal', async () => {
+    const { channel, dispatched, task } = startSaga('owner', [
+      seeded('pty-a', 'pty-b'),
+      openTerminalOverlay('ws-1', 'pty-b'),
+    ]);
+
+    channel.put(openFirstPanelTerminalRequested('ws-1'));
+    await settle();
+
+    expect(openedTabs(dispatched).map((tab) => tab.terminalId)).toEqual(['pty-a']);
+    expect(types(dispatched)).not.toContain('terminals/close');
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('hydrates an unloaded workspace and reuses a daemon terminal instead of creating', async () => {
+    mocks.list.mockResolvedValue({
+      terminals: [{ id: 'daemon-pty', name: 'Setup Script' }],
+      daemonBootId: 'boot-1',
+    });
+    const { channel, dispatched, getTerminalsState, task } = startSaga();
+
+    channel.put(openFirstPanelTerminalRequested('ws-1'));
+    await settle();
+
+    expect(mocks.list).toHaveBeenCalledExactlyOnceWith('ws-1');
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(types(dispatched).slice(0, 2)).toEqual([
+      'terminals/loadWorkspaceTerminals',
+      'panelLayout/openTab',
+    ]);
+    expect(openedTabs(dispatched)).toEqual([
+      { panelId: 'panel-1', terminalId: 'daemon-pty', title: 'Setup Script' },
+    ]);
+    expect(getTerminalsState().workspaces['ws-1'].daemonBootId).toBe('boot-1');
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('creates and opens a terminal when the workspace has none', async () => {
+    mocks.list.mockResolvedValue({ terminals: [], daemonBootId: 'boot-1' });
+    mocks.create.mockResolvedValue({ success: true, id: 'new-pty' });
+    const { channel, dispatched, getTerminalsState, task } = startSaga();
+
+    channel.put(openFirstPanelTerminalRequested('ws-1'));
+    await settle();
+
+    expect(mocks.create).toHaveBeenCalledExactlyOnceWith({
+      workspaceId: 'ws-1',
+      cols: 80,
+      rows: 24,
+    });
+    expect(openedTabs(dispatched).map((tab) => [tab.panelId, tab.terminalId])).toEqual([
+      ['panel-1', 'new-pty'],
+    ]);
+    expect(getTerminalsState().workspaces['ws-1'].placements).toEqual({ 'new-pty': 'panel' });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('coalesces rapid activations while creating, then opens the created terminal on the next', async () => {
+    mocks.list.mockResolvedValue({ terminals: [] });
+    const create = deferred<{ success: true; id: string }>();
+    mocks.create.mockReturnValue(create.promise);
+    const { channel, dispatched, task } = startSaga();
+
+    channel.put(openFirstPanelTerminalRequested('ws-1'));
+    await settle();
+    channel.put(openFirstPanelTerminalRequested('ws-1'));
+    channel.put(openFirstPanelTerminalRequested('ws-1', 'panel-2'));
+    create.resolve({ success: true, id: 'new-pty' });
+    await settle();
+    channel.put(openFirstPanelTerminalRequested('ws-1'));
+    await settle();
+
+    expect(mocks.list).toHaveBeenCalledOnce();
+    expect(mocks.create).toHaveBeenCalledOnce();
+    expect(openedTabs(dispatched).map((tab) => tab.terminalId)).toEqual(['new-pty', 'new-pty']);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it.each([
+    ['a refused create', () => mocks.create.mockResolvedValueOnce({ success: false, error: 'x' })],
+    ['a thrown create', () => mocks.create.mockRejectedValueOnce(new Error('offline'))],
+  ])('retries after %s', async (_label, failOnce) => {
+    mocks.list.mockResolvedValue({ terminals: [] });
+    failOnce();
+    mocks.create.mockResolvedValueOnce({ success: true, id: 'retry-pty' });
+    const { channel, dispatched, task } = startSaga();
+
+    channel.put(openFirstPanelTerminalRequested('ws-1'));
+    await settle();
+    expect(openedTabs(dispatched)).toEqual([]);
+
+    channel.put(openFirstPanelTerminalRequested('ws-1'));
+    await settle();
+
+    expect(mocks.create).toHaveBeenCalledTimes(2);
+    expect(openedTabs(dispatched).map((tab) => tab.terminalId)).toEqual(['retry-pty']);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('does not create when the list read fails, and retries the read next time', async () => {
+    mocks.list
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({ terminals: [{ id: 'daemon-pty', name: '' }] });
+    const { channel, dispatched, task } = startSaga();
+
+    channel.put(openFirstPanelTerminalRequested('ws-1'));
+    await settle();
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(dispatched).toEqual([]);
+
+    channel.put(openFirstPanelTerminalRequested('ws-1'));
+    await settle();
+
+    expect(mocks.list).toHaveBeenCalledTimes(2);
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(openedTabs(dispatched).map((tab) => tab.terminalId)).toEqual(['daemon-pty']);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('drops the result when the workspace context changes during the list read', async () => {
+    const list = deferred<{ terminals: unknown[] }>();
+    mocks.list.mockReturnValue(list.promise);
+    const { channel, dispatched, leaveWorkspace, task } = startSaga();
+
+    channel.put(openFirstPanelTerminalRequested('ws-1'));
+    await settle();
+    leaveWorkspace();
+    list.resolve({ terminals: [] });
+    await settle();
+
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(dispatched).toEqual([]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('drops the open when the workspace context changes during creation', async () => {
+    mocks.list.mockResolvedValue({ terminals: [] });
+    const create = deferred<{ success: true; id: string }>();
+    mocks.create.mockReturnValue(create.promise);
+    const { channel, dispatched, leaveWorkspace, task } = startSaga();
+
+    channel.put(openFirstPanelTerminalRequested('ws-1'));
+    await settle();
+    leaveWorkspace();
+    create.resolve({ success: true, id: 'late-pty' });
+    await settle();
+
+    expect(openedTabs(dispatched)).toEqual([]);
+    expect(types(dispatched)).not.toContain('terminals/setPlacement');
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('drops a collaborator request before any terminal read or create', async () => {
+    const { channel, dispatched, task } = startSaga('collaborator');
+
+    channel.put(openFirstPanelTerminalRequested('ws-1'));
+    await settle();
+
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(dispatched).toEqual([]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('leaves explicit panel creation creating a new terminal on every request', async () => {
+    mocks.create
+      .mockResolvedValueOnce({ success: true, id: 'explicit-1' })
+      .mockResolvedValueOnce({ success: true, id: 'explicit-2' });
+    const { channel, dispatched, task } = startSaga('owner', [seeded('pty-a')]);
+
+    channel.put(createPanelTerminalRequested('ws-1'));
+    channel.put(createPanelTerminalRequested('ws-1'));
+    await settle();
+
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect(mocks.create).toHaveBeenCalledTimes(2);
+    expect(openedTabs(dispatched).map((tab) => tab.terminalId)).toEqual([
+      'explicit-1',
+      'explicit-2',
+    ]);
     task.cancel();
     await task.toPromise();
   });
