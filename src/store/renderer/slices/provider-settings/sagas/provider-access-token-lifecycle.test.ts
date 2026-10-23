@@ -51,14 +51,28 @@ it('allows token reads again after the settings owner cancels a pending save and
     },
   };
   const channel = stdChannel();
+  const listeners = new Set<() => void>();
+  const context = {
+    reduxStore: {
+      getState: () => state,
+      subscribe: (listener: () => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    },
+  };
   const actions: any[] = [];
   const dispatch = (action: any) => {
     actions.push(action);
     state = { ...state, providerSettings: providerSettingsReducer(state.providerSettings, action) };
+    for (const listener of listeners) listener();
     channel.put(action);
   };
   const start = () => {
-    const task = runSaga({ channel, dispatch, getState: () => state }, providerSettingsSaga);
+    const task = runSaga(
+      { channel, dispatch, getState: () => state, context },
+      providerSettingsSaga,
+    );
     tasks.push(task);
     return task;
   };

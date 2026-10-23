@@ -57,8 +57,19 @@ it('refreshes a token after a remote reset with production listener order and re
     },
   };
   const channel = stdChannel();
+  const listeners = new Set<() => void>();
+  const context = {
+    reduxStore: {
+      getState: () => state,
+      subscribe: (listener: () => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    },
+  };
   const dispatch = (action: any) => {
     state = { ...state, providerSettings: providerSettingsReducer(state.providerSettings, action) };
+    for (const listener of listeners) listener();
     channel.put(action);
   };
   // daemonEventsSaga is registered before settingsHydrationSaga/providerSettingsSaga.
@@ -69,7 +80,7 @@ it('refreshes a token after a remote reset with production listener order and re
     };
     dispatch(settingsChangesReceived(params.event.data.changes, params.event.data.revision));
   });
-  task = runSaga({ channel, dispatch, getState: () => state }, providerAccessTokenSaga);
+  task = runSaga({ channel, dispatch, getState: () => state, context }, providerAccessTokenSaga);
   dispatch(providerSettingsSessionOpened('review'));
   dispatch(providerTokenReadRequested('codex'));
   await settle();

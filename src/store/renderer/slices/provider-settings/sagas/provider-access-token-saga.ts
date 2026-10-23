@@ -1,3 +1,4 @@
+import { takeEveryFromSelector } from '@themislib/themis/saga';
 import { providerTokenCapability } from '$shared/provider-catalog';
 import { all, call, put, race, take, takeEvery } from 'typed-redux-saga';
 import {
@@ -10,7 +11,6 @@ import {
   takeProviderToken,
 } from '$features/settings/provider-token-drafts';
 import { selectProviderCatalogEntries } from '../../provider-catalog/provider-catalog-selectors';
-import { providerCatalogLoaded } from '../../provider-catalog/provider-catalog-slice';
 import { hostExecutionConnectionChanged } from '../../host-execution/host-execution-slice';
 import { settingsChangesReceived } from '../../settings-events/settings-events-slice';
 import {
@@ -108,7 +108,10 @@ export function* providerAccessTokenSaga() {
         work: all([
           takeEvery(providerTokenReadRequested, readToken, deferredReads),
           takeEvery(providerTokenWriteRequested, writeToken, deferredReads),
-          takeEvery(providerCatalogLoaded, refreshTokens),
+          takeEveryFromSelector(selectProviderCatalogEntries, function* ({ prevPayload }) {
+            // Mount requests handle the initial catalog; later capability changes refresh tokens.
+            if (prevPayload !== null) yield* call(refreshTokens);
+          }),
           takeEvery(settingsChangesReceived, refreshChangedTokens),
           takeEvery(providerSettingsSessionClosed, clearSession),
         ]),

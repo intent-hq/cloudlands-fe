@@ -1,3 +1,4 @@
+import { providerCatalogLoaded } from '../../provider-catalog/provider-catalog-slice';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
@@ -46,12 +47,31 @@ function setup(supported = true) {
   };
   const actions: unknown[] = [];
   const channel = stdChannel();
+  const listeners = new Set<() => void>();
+  const context = {
+    reduxStore: {
+      getState: () => state,
+      subscribe: (listener: () => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    },
+  };
   const dispatch = (action: any) => {
     actions.push(action);
+    if (action.type === providerCatalogLoaded.type)
+      state = {
+        ...state,
+        providerCatalog: { providers: createCollection('id', action.payload[0].providers) },
+      };
     state = { ...state, providerSettings: providerSettingsReducer(state.providerSettings, action) };
+    for (const listener of listeners) listener();
     channel.put(action);
   };
-  const task = runSaga({ channel, dispatch, getState: () => state }, providerAccessTokenSaga);
+  const task = runSaga(
+    { channel, dispatch, getState: () => state, context },
+    providerAccessTokenSaga,
+  );
   dispatch(providerSettingsSessionOpened('session'));
   dispatch(providerTokenReadRequested('codex'));
   return {
@@ -74,6 +94,25 @@ afterEach(() => {
   clearProviderTokenDrafts();
 });
 describe('provider access tokens saga', () => {
+  it('reads tokens when a later catalog advertises support and stops observing on cancellation', async () => {
+    const h = setup(false);
+    task = h.task;
+    await settle();
+    expect(mocks.get).not.toHaveBeenCalled();
+    const catalog = {
+      providers: [{ id: 'codex', accessToken: { kind: 'codexAccessToken', settingPath: path } }],
+    };
+    h.dispatch(providerCatalogLoaded(catalog as Parameters<typeof providerCatalogLoaded>[0]));
+    await settle();
+    expect(h.token()).toMatchObject({ configured: false, status: 'ready' });
+    expect(mocks.get).toHaveBeenCalledTimes(1);
+    task.cancel();
+    h.dispatch(providerCatalogLoaded({ providers: [] }));
+    h.dispatch(providerCatalogLoaded(catalog as Parameters<typeof providerCatalogLoaded>[0]));
+    await settle();
+    expect(mocks.get).toHaveBeenCalledTimes(1);
+  });
+
   it('saves, replaces, and removes without secrets in state or actions', async () => {
     const h = setup();
     task = h.task;
