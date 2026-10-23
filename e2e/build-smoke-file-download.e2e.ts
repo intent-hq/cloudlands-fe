@@ -1,11 +1,12 @@
 /**
- * Build Smoke Test — File Tab Media Download
+ * Build Smoke Test — File Tab Image Actions
  *
  * Opens a PNG and an SVG from the Files sidebar, clicks the viewer's Download
  * button, and verifies the packaged app saves the original workspace bytes.
  * Only the native save dialog is stubbed; the IPC transfer and daemon reads run.
+ * Copy image must put the workspace PNG on the system clipboard.
  *
- * Run with: pnpm test:build-smoke -- --grep "file tab download"
+ * Run with: pnpm test:build-smoke -- --grep "file tab"
  */
 
 import { test, expect, type ElectronApplication, type Page } from '@playwright/test';
@@ -95,6 +96,16 @@ async function openFromFilesSidebar(name: string) {
   await tree.locator(`[data-file-path="${name}"], [data-file-path$="/${name}"]`).first().click();
 }
 
+/** Open an image file tab and return its viewer once the image has decoded. */
+async function openImageTab(name: string) {
+  await openFromFilesSidebar(name);
+  const image = page.locator(`.tab-content-wrapper:not(.hidden) img[alt="${name}"]`);
+  await expect
+    .poll(() => image.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth))
+    .toBeGreaterThan(0);
+  return page.locator('.tab-content-wrapper:not(.hidden)').filter({ has: image });
+}
+
 /** Replace only the native dialog; record the suggested names it receives. */
 async function stubSaveDialog(filePath: string) {
   await app.evaluate(({ dialog }, target) => {
@@ -112,7 +123,7 @@ async function stubSaveDialog(filePath: string) {
   }, filePath);
 }
 
-test.describe('Build Smoke — File tab download', () => {
+test.describe('Build Smoke — File tab image actions', () => {
   test.beforeAll(async () => {
     test.setTimeout(240_000);
     const repo = createTempRepo();
@@ -146,15 +157,7 @@ test.describe('Build Smoke — File tab download', () => {
     test(`file tab download saves the original bytes of ${name}`, async () => {
       expect(sha256(readFileSync(path.join(worktreePath, name)))).toBe(sha256(source));
 
-      await openFromFilesSidebar(name);
-      const viewer = page
-        .locator('.tab-content-wrapper:not(.hidden)')
-        .filter({ has: page.locator(`img[alt="${name}"]`) });
-      const image = viewer.locator(`img[alt="${name}"]`);
-      await expect
-        .poll(() => image.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth))
-        .toBeGreaterThan(0);
-
+      const viewer = await openImageTab(name);
       const target = path.join(saveRoot, name);
       await stubSaveDialog(target);
       const download = viewer.getByTitle('Download', { exact: true });
@@ -187,4 +190,13 @@ test.describe('Build Smoke — File tab download', () => {
       );
     });
   }
+
+  test('file tab Copy image puts the workspace PNG on the clipboard', async () => {
+    const viewer = await openImageTab('Icon-512.png');
+    await app.evaluate(({ clipboard }) => clipboard.clear());
+    await viewer.getByTitle('Copy image', { exact: true }).click();
+    await expect
+      .poll(() => app.evaluate(({ clipboard }) => clipboard.readImage().getSize()))
+      .toEqual({ width: 512, height: 512 });
+  });
 });
