@@ -675,12 +675,13 @@
   const isRetiredWorkspace = $derived(workspace?.status === WorkspaceStatus.Retired);
   // A send to a retired workspace revives it as a fresh blank checkout
   // (daemon-side, agent.sendMessage). Every submission is held until the user
-  // confirms; confirming sends the editor's current draft (or the held
-  // suggested prompt) so text and context stay consistent.
-  let heldRetiredSend = $state<{ force: boolean; prompt?: string } | null>(null);
-  function sendOrConfirmRetired(text: string, force = false, prompt?: string) {
+  // confirms; confirming sends the composer's current draft so text, context
+  // and cleanup all refer to the same draft. A suggested prompt is placed in
+  // the composer first rather than sent directly.
+  let heldRetiredSend = $state<{ force: boolean } | null>(null);
+  function sendOrConfirmRetired(text: string, force = false) {
     if (isRetiredWorkspace) {
-      heldRetiredSend = { force, prompt };
+      heldRetiredSend = { force };
       return;
     }
     if (force) handleForceSubmit(text);
@@ -690,9 +691,8 @@
     const held = heldRetiredSend;
     heldRetiredSend = null;
     if (!held) return;
-    const text = held.prompt ?? inputValue;
-    if (held.force) handleForceSubmit(text);
-    else handleSend(text);
+    if (held.force) handleForceSubmit(inputValue);
+    else handleSend(inputValue);
   }
 
   // Derive error state: combine transient chatError with persisted agent status.
@@ -6159,7 +6159,11 @@
 
   // Handle selecting a suggested prompt - sends immediately
   function handleSelectSuggestedPrompt(prompt: string) {
-    sendOrConfirmRetired(prompt, false, prompt);
+    if (isRetiredWorkspace) {
+      void handleEditSuggestedPrompt(prompt).then(() => sendOrConfirmRetired(prompt));
+      return;
+    }
+    handleSend(prompt);
   }
 
   function isSuggestedPromptShortcutVisible(index: number): boolean {

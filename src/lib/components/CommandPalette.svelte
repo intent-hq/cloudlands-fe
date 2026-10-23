@@ -112,7 +112,7 @@
     getWorkspaceActivityDisplayTime,
   } from '$shared/utils/workspace-activity-time';
   import { store as appStore } from '$store/renderer/store';
-  import { loadRetiredWorkspacesRequested } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
+  import { paletteRetiredWorkspaces } from './command-palette-retired.svelte';
   import {
     changesConsumerMounted,
     changesConsumerUnmounted,
@@ -537,10 +537,8 @@
     return () =>
       appStore.dispatch(paletteNoteSearchRequested(noteSearchConsumerId, crypto.randomUUID(), ''));
   });
-  onMount(() => {
-    appStore.dispatch(loadRetiredWorkspacesRequested({ quiet: true }));
-    return () => appStore.dispatch(paletteNoteSearchReleased(noteSearchConsumerId));
-  });
+  onMount(() => () => appStore.dispatch(paletteNoteSearchReleased(noteSearchConsumerId)));
+  paletteRetiredWorkspaces(() => isOpen, workspaceItems, admissionSelector());
   function buildResults(q: string, files: any[], messages: any[], remoteNotes: WorkspaceObject[]) {
     const wsItems = ($workspaceItems || [])
       .filter((w: any) => w.id !== workspaceId)

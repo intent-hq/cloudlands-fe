@@ -33,6 +33,7 @@ import { m } from '$shared/paraglide/messages.js';
 import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
 import {
   initialState as workspaceInitialState,
+  removeWorkspaceEntity,
   setWorkspaceEntity,
   workspaceReducer,
 } from '../../workspace/workspace-slice';
@@ -77,12 +78,14 @@ function harness(seed: Workspace[]) {
   store.init(
     withLegacyPrincipal({ workspace: workspaceState, workspaceOperations: operationsInitialState }),
   );
-  const dispatch = vi.fn((action) => store.dispatch(action));
-  const task = runSaga({ channel, dispatch, getState: () => store.state }, workspaceOperationsSaga);
-  const send = (action: Parameters<typeof workspaceOperationsReducer>[1]) => {
-    dispatch(action);
+  // Like the real middleware, every dispatched action (including the saga's
+  // own puts) also reaches the saga channel, so action journals observe them.
+  const dispatch = vi.fn((action) => {
+    store.dispatch(action);
     channel.put(action);
-  };
+  });
+  const task = runSaga({ channel, dispatch, getState: () => store.state }, workspaceOperationsSaga);
+  const send = (action: Parameters<typeof workspaceOperationsReducer>[1]) => dispatch(action);
   const row = (id: string) => getItem(store.state.workspace.workspaces, id as Workspace['id']);
   return { send, task, row, state: () => store.state };
 }
@@ -208,6 +211,48 @@ describe('workspace retire saga', () => {
     await settle();
 
     expect(run.row('ws-stale')).toBeUndefined();
+    run.task.cancel();
+  });
+
+  function deferredList() {
+    let finish!: (rows: Workspace[]) => void;
+    mocks.list.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    return (rows: Workspace[]) => finish(rows);
+  }
+
+  it('keeps a restore that lands while the retired read is in flight', async () => {
+    const finish = deferredList();
+    mocks.unarchive.mockResolvedValue({ ok: true, data: undefined });
+    const run = harness([retiredRow('ws-r')]);
+    run.send(loadRetiredWorkspacesRequested());
+    await settle();
+    run.send(requestUnarchiveWorkspace('ws-r'));
+    await settle();
+    expect(run.row('ws-r')?.status).toBe(WorkspaceStatusEnum.Active);
+
+    finish([retiredRow('ws-r')]);
+    await settle();
+    expect(run.row('ws-r')?.status).toBe(WorkspaceStatusEnum.Active);
+    run.task.cancel();
+  });
+
+  it('does not resurrect a workspace deleted while the retired read is in flight', async () => {
+    const finish = deferredList();
+    const run = harness([retiredRow('ws-r')]);
+    run.send(loadRetiredWorkspacesRequested());
+    await settle();
+    run.send(removeWorkspaceEntity('ws-r'));
+    await settle();
+
+    finish([retiredRow('ws-r'), retiredRow('ws-other')]);
+    await settle();
+    expect(run.row('ws-r')).toBeUndefined();
+    expect(run.row('ws-other')?.status).toBe(WorkspaceStatusEnum.Retired);
     run.task.cancel();
   });
 

@@ -4459,6 +4459,49 @@ describe('ChatPanel mounted lifecycle', () => {
     });
   });
 
+  it('puts a suggested prompt in the composer when retired and confirms the current draft', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentSession.set({ id: 'agent-a', messages: [] });
+    mocks.agentMessages.set([
+      {
+        id: 'assistant-with-prompts',
+        role: 'assistant',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        contentBlocks: [
+          { type: 'text', text: 'Done.\n\n<!-- suggested-prompts\nRun the tests\n-->' },
+        ],
+      },
+    ]);
+    render(ChatPanel, {
+      props: {
+        workspace: { ...workspace('workspace-a'), status: WorkspaceStatus.Retired },
+        agentId: 'agent-a',
+        isActive: true,
+      },
+    });
+    await tick();
+    const sends = () =>
+      mocks.dispatch.mock.calls.filter(([action]) => action?.type === 'chatState/sendMessage');
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Run the tests' }));
+    await tick();
+    expect(sends()).toHaveLength(0);
+    expect(screen.getByTestId('retired-send-confirm')).toBeTruthy();
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe('Run the tests');
+
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'Run the tests and fix failures' },
+    });
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.workspace_retiredSend_confirm_label() }),
+    );
+    await tick();
+    expect(sends()).toHaveLength(1);
+    expect(sends()[0][0].payload.payload).toMatchObject({
+      text: 'Run the tests and fix failures',
+    });
+  });
+
   it('reports true-bottom state to the stable header control', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentMessages.set([
