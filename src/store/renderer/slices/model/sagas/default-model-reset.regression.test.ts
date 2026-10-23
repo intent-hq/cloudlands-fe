@@ -165,7 +165,26 @@ for (const legacyEmptyKey of [true, false]) {
       cancelSagas.push(store.runSaga(modelBootSaga));
       await Promise.resolve();
       tasks.push(runSaga({ channel, dispatch, getState: () => store.state }, modelSelectionSaga));
-      tasks.push(runSaga({ channel, dispatch, getState: () => store.state }, providerSettingsSaga));
+      tasks.push(
+        runSaga(
+          {
+            channel,
+            dispatch,
+            getState: () => store.state,
+            context: {
+              reduxStore: {
+                getState: () => store.state,
+                subscribe: (listener: () => void) => {
+                  const stream = store.getStoreStateStream();
+                  stream.onValue(listener);
+                  return () => stream.offValue(listener);
+                },
+              },
+            },
+          },
+          providerSettingsSaga,
+        ),
+      );
       tasks.push(
         runSaga(
           {
