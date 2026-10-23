@@ -14,8 +14,11 @@ import { getPlainTextMessagePreview } from '$lib/components/chat/chat-message-na
 export interface PeopleActivityRow {
   id: string;
   name: string;
+  principalId: string | null;
   avatarUrl: string | null;
   label: string;
+  actionLabel: string;
+  continuation: boolean;
   timestamp: string;
   destination: Omit<PanelTab, 'id'> | null;
   messageId: string | null;
@@ -108,7 +111,7 @@ function activityLabel(event: WorkspaceEvent, name: string): string | null {
     Object.entries(data).filter(([, value]) => typeof value === 'string'),
   );
   const withActor = (action: string) =>
-    m.workspace_peopleActivity_actorAction_label({ name, action });
+    name ? m.workspace_peopleActivity_actorAction_label({ name, action }) : action;
   // The persisted catalog also carries newer wire types such as comment:resolved.
   const eventType: string = event.type;
   switch (eventType) {
@@ -159,7 +162,9 @@ function activityLabel(event: WorkspaceEvent, name: string): string | null {
           })
         : null;
     case 'comment:added':
-      return m.events_activity_authorCommented_label({ author: name });
+      return name
+        ? m.events_activity_authorCommented_label({ author: name })
+        : m.workspace_peopleActivity_commented_label();
     case 'comment:resolved':
       return data.resolved === false
         ? withActor(m.events_activity_reopenedCommentThread_label())
@@ -245,14 +250,17 @@ export function getPeopleActivity(
   }
   const seen = new Set<string>();
   const messages = new Set<string>();
-  const rows: PeopleActivityRow[] = [];
+  // Keep unattributed actions as run boundaries even though they are not displayed.
+  // Invalid times split input segments: chronology cannot establish adjacency across them.
+  const entries: { row: PeopleActivityRow | null; timestamp: number; segment: number }[] = [];
+  let segment = 0;
   for (const event of events) {
-    if (
-      event.workspaceId !== workspaceId ||
-      !text(event.id) ||
-      seen.has(event.id) ||
-      !Number.isFinite(Date.parse(event.timestamp))
-    ) {
+    if (event.workspaceId !== workspaceId || !text(event.id) || seen.has(event.id)) {
+      continue;
+    }
+    const timestamp = Date.parse(event.timestamp);
+    if (!Number.isFinite(timestamp)) {
+      segment++;
       continue;
     }
     const data = record(event.data);
@@ -264,7 +272,12 @@ export function getPeopleActivity(
           metadata: data.metadata,
         })
       : null;
-    if (isMessage ? !author : event.actor?.type !== 'user') continue;
+    if (isMessage ? !author : event.actor?.type !== 'user') {
+      if (isMessage && data.role === 'user') {
+        entries.push({ row: null, timestamp, segment });
+      }
+      continue;
+    }
     const messageId = isMessage ? text(data.messageId) : '';
     const key = isMessage ? messageKey(event) : '';
     if (key && messages.has(key)) continue;
@@ -276,7 +289,12 @@ export function getPeopleActivity(
       : humanName(event.actor.name, id) ||
         humanName(person?.displayName, id) ||
         humanName(person?.login, id);
-    if (!name) continue;
+    const actionLabel = activityLabel(event, '');
+    if (!actionLabel) continue;
+    if (!name) {
+      entries.push({ row: null, timestamp, segment });
+      continue;
+    }
     const messagePreview = isMessage ? (previews.get(key) ?? null) : null;
     const label = messagePreview
       ? m.workspace_peopleActivity_actorAction_label({ name, action: messagePreview })
@@ -284,16 +302,39 @@ export function getPeopleActivity(
     if (!label) continue;
     seen.add(event.id);
     if (key) messages.add(key);
-    rows.push({
-      id: event.id,
-      name,
-      avatarUrl: author ? author.avatarUrl : (person?.avatarUrl ?? null),
-      label,
-      timestamp: event.timestamp,
-      destination: activityDestination(event),
-      messageId: messageId || null,
-      messagePreview,
+    entries.push({
+      timestamp,
+      segment,
+      row: {
+        id: event.id,
+        name,
+        principalId: author ? text(author.principalId) || null : id || null,
+        avatarUrl: author ? author.avatarUrl : (person?.avatarUrl ?? null),
+        label,
+        actionLabel: messagePreview ?? actionLabel,
+        continuation: false,
+        timestamp: event.timestamp,
+        destination: activityDestination(event),
+        messageId: messageId || null,
+        messagePreview,
+      },
     });
   }
-  return rows.sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp));
+  entries.sort((a, b) => b.timestamp - a.timestamp);
+  const rows: PeopleActivityRow[] = [];
+  for (const [index, entry] of entries.entries()) {
+    if (!entry.row) continue;
+    const previous = entries[index - 1];
+    const gap = previous ? previous.timestamp - entry.timestamp : NaN;
+    entry.row.continuation = Boolean(
+      entry.row.principalId &&
+      previous?.row?.principalId === entry.row.principalId &&
+      previous.segment === entry.segment &&
+      Number.isFinite(gap) &&
+      gap >= 0 &&
+      gap <= 15 * 60_000,
+    );
+    rows.push(entry.row);
+  }
+  return rows;
 }

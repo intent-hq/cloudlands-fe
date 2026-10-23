@@ -8,7 +8,7 @@
     shared?: boolean;
     expanded?: boolean;
     guest?: boolean;
-    activityState?: 'ready' | 'empty' | 'loading' | 'error' | 'older';
+    activityState?: 'ready' | 'empty' | 'loading' | 'error' | 'older' | 'grouped';
   }
 
   export const preview = definePreview<Props>({
@@ -22,6 +22,7 @@
       offline: { props: { offline: true } },
       unshared: { props: { shared: false, sidebar: true } },
       expanded: { props: { sidebar: true, expanded: true } },
+      grouped: { props: { sidebar: true, expanded: true, activityState: 'grouped' } },
       guest: { props: { sidebar: true, expanded: true, guest: true } },
       empty: { props: { sidebar: true, expanded: true, activityState: 'empty' } },
       loading: { props: { sidebar: true, expanded: true, activityState: 'loading' } },
@@ -190,10 +191,57 @@
         data: { noteId: 'group-chat', title: 'Group chat plan' },
       },
     ];
+    if (activityState === 'grouped') {
+      activity.push(
+        ...[
+          {
+            id: 'grouped-workspace',
+            minutes: 1,
+            type: 'workspace:updated',
+            data: { changes: { title: 'Sharing polish' } },
+          },
+          {
+            id: 'grouped-agent',
+            minutes: 1,
+            type: 'agent:created',
+            data: { agentId: 'reviewer', agentName: 'Design reviewer' },
+          },
+          { id: 'grouped-comment', minutes: 1, type: 'comment:added', data: { noteId: 'spec' } },
+          {
+            id: 'grouped-spec',
+            minutes: 13,
+            type: 'spec:updated',
+            data: { section: 'Keyboard and screen reader access' },
+          },
+          {
+            id: 'grouped-file',
+            minutes: 14,
+            type: 'file:changed',
+            data: {
+              path: 'src/features/presence/components/WorkspacePeopleActivity.svelte',
+              action: 'modify',
+            },
+          },
+          {
+            id: 'grouped-old',
+            minutes: 30,
+            type: 'note:created',
+            data: { noteId: 'old-plan', title: 'Earlier review' },
+          },
+        ].map(({ id, minutes, type, data }) => ({
+          id,
+          workspaceId,
+          type: type as WorkspaceEvent['type'],
+          timestamp: new Date(now - minutes * 60_000).toISOString(),
+          actor: { type: 'user' as const, id: 'person-0', name: 'Sam' },
+          data,
+        })),
+      );
+    }
     store.dispatch(
       eventsLoaded(
         workspaceId,
-        activityState === 'ready' || activityState === 'older' ? activity : [],
+        ['ready', 'older', 'grouped'].includes(activityState) ? activity : [],
         activityState === 'older' ? 'older-page' : null,
       ),
     );

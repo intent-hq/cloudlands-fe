@@ -137,3 +137,37 @@ test('discussion opens once in the focused pane and leaves People activity avail
   await expect(navigation).toHaveText(opened!);
   await expect(component.locator('[data-people-activity]')).toBeVisible();
 });
+
+for (const guest of [false, true]) {
+  test(`grouped activity keeps the named accessible sentence and keyboard navigation for ${guest ? 'guests' : 'owners'}`, async ({
+    mount,
+  }) => {
+    const component = await mount(PeopleSidebarHost, { props: { guest } });
+    await component.getByRole('button', { name: 'People', exact: true }).click();
+    const panel = component.locator('[data-sidebar-card-tab="people"]');
+    const items = panel.locator('[data-people-activity] [data-slot="list-view-item"]');
+    const note = panel.locator(
+      '[data-slot="list-view-item"]:has([data-people-activity-id="people-activity-note"])',
+    );
+    // The continuation still identifies its historical author to assistive technology.
+    expect(await note.ariaSnapshot()).toMatch(/Luke.*Sidebar mockup/);
+    await items.first().focus();
+    await items.first().press('ArrowDown');
+    await expect(note).toBeFocused();
+    await note.press('Space');
+    const navigation = component.locator('[data-people-navigation]');
+    await expect
+      .poll(async () => JSON.parse((await navigation.textContent()) || '{}'))
+      .toMatchObject({
+        focusedPanel: 'current',
+        panels: {
+          current: { tabs: [{ id: 'original' }, { type: 'note', noteId: 'sidebar-mockup' }] },
+        },
+      });
+    const opened = await navigation.textContent();
+    await note.press('Enter');
+    await expect(navigation).toHaveText(opened!);
+    await expect(note).toBeFocused();
+    await expect(panel).toBeVisible();
+  });
+}
