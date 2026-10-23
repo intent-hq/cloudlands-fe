@@ -122,6 +122,10 @@ def slot_violations(text, workflows=None):
     for entry in listed:
         if entry.get('label') not in POOLED:
             errors.append(f"{entry['key']}: {entry.get('label')} is not an intent-cache pool label")
+        # `burst` only upsizes a heavy job's burst runner (paid 8x to paid 16x); it
+        # must never turn a free label paid or shrink a job.
+        if 'burst' in entry and (entry.get('label'), entry['burst']) != ('gh-linux-8x', 'gh-linux-16x'):
+            errors.append(f"{entry['key']}: burst {entry['burst']} must upsize gh-linux-8x to gh-linux-16x")
     for job, runner, body in slot_readers(text, workflows):
         read = SLOT_READ.search(runner)
         key = read and (read[1] or read[2])
@@ -218,6 +222,14 @@ class RunnerPolicy(unittest.TestCase):
         self.assertEqual(len(slot_violations(listing.format('windows-2025', ',"events":["merge_group"]') + job)), 2)
         self.assertEqual(slot_violations('jobs:\n' + job), ['a: reads an unlisted slot'])
 
+        # A burst label only upsizes a heavy job; free or downsized bursts are rejected.
+        bursts = '    with:\n      slot_jobs: >-\n        [{{"key":"a","label":"{}","burst":"{}","events":["merge_group"]}}]\njobs:\n'
+        heavy = job.replace('ubuntu-24.04', 'gh-linux-8x')
+        self.assertEqual(slot_violations(bursts.format('gh-linux-8x', 'gh-linux-16x') + heavy), [])
+        self.assertEqual(slot_violations(bursts.format('ubuntu-24.04', 'gh-linux-16x') + job),
+                         ['a: burst gh-linux-16x must upsize gh-linux-8x to gh-linux-16x'])
+        self.assertEqual(slot_violations(bursts.format('gh-linux-16x', 'gh-linux-8x') + job.replace('ubuntu-24.04', 'gh-linux-16x')),
+                         ['a: burst gh-linux-8x must upsize gh-linux-8x to gh-linux-16x'])
     def test_slot_reads_through_a_reusable_workflow(self):
         # The caller lists ct; a reusable workflow it passes `slots` to reads ct-N.
         import tempfile

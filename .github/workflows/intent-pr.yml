@@ -254,7 +254,9 @@ jobs:
             // Free slots go to the caller's listed jobs one at a time: Rust-compiling
             // jobs first (they reuse the slot's local cache), then the longest, then
             // list order. Listed jobs that do not fit, or that skip this event, get
-            // their burst runner directly; matrix legs are ranked separately.
+            // their burst runner directly, sized by `burst` when set (a CPU-bound
+            // job keeps its slot size but bursts bigger); matrix legs are ranked
+            // separately.
             // Concurrent runs read the same free count before either job is queued,
             // so a pool may briefly run a job or two over its slot count.
             let requests = [];
@@ -273,7 +275,7 @@ jobs:
                 slotsFree[key] -= 1;
                 granted[key] += 1;
                 slots[r.key] = fleets[key];
-              } else slots[r.key] = cloud(r.label);
+              } else slots[r.key] = cloud(r.burst || r.label);
             }
             // Unlisted jobs (single-job workflows, jobs that start after the listed
             // ones) use a pool only while a slot is still free.
