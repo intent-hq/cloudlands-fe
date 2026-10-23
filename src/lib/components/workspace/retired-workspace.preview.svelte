@@ -36,11 +36,11 @@
   />
 {:else}
   <div
-    class="flex h-[420px] w-full flex-col overflow-hidden rounded-lg border border-border bg-background"
+    class="flex h-[520px] w-full flex-col overflow-hidden rounded-lg border border-border bg-background"
   >
     <RetiredWorkspaceBanner
       workspaceId="preview-retired-workspace"
-      canRestore={scenario === 'banner'}
+      canRestore={scenario !== 'collaborator'}
     />
     <div class="flex min-h-0 flex-1 flex-col gap-3 p-4">
       <p class="type-caption text-muted-foreground">Coordinator · conversation kept read-only</p>
