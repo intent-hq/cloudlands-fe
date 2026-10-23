@@ -33,6 +33,11 @@ const heavySlotsDefault = (expr: string) =>
 describe('GitHub-hosted CI runners', () => {
   // Where a heavy job runs without a slot: WarpBuild (GitHub's larger runners are off).
   const WARP_8X = ['warp-ubuntu-2404-x64-8x'];
+  // The WarpBuild label each listed size falls back to if the route job failed.
+  const BURST: Record<string, string> = {
+    'gh-linux-8x': 'warp-ubuntu-2404-x64-8x',
+    'gh-linux-16x': 'warp-ubuntu-2404-x64-16x',
+  };
   const CACHE = ['self-hosted', 'linux', 'x64', 'intent-cache'];
   // intent-cache slots register with GitHub's default labels plus `intent-cache`.
   const slot = { status: 'online', labels: ['self-hosted', 'Linux', 'X64', 'intent-cache'] };
@@ -351,7 +356,7 @@ describe('GitHub-hosted CI runners', () => {
       const key = entry.shards ? `format('${id}-{0}', matrix.shard)` : `'${id}'`;
       expect(runner).toBe(
         // The fallback, if the route job failed, is the listed size's WarpBuild runner.
-        `\${{ fromJSON(needs.route.outputs.slots || '{}')[${key}] || fromJSON('["${entry.label === 'gh-linux-8x' ? WARP_8X[0] : entry.label}"]') }}`,
+        `\${{ fromJSON(needs.route.outputs.slots || '{}')[${key}] || fromJSON('["${BURST[entry.label] ?? entry.label}"]') }}`,
       );
     }
     // Queue-only jobs must say so, or they would hold a slot on every PR.

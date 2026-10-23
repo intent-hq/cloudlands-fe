@@ -636,7 +636,7 @@ jobs:
       # shadows Git Bash in PATH, and WSL bash can't execute the runner's
       # Windows-path step scripts. Prepend Git's bin dir so every later
       # `shell: bash` step resolves Git Bash instead (same workaround as
-      # intent-manual-windows-build.yml). Still required on gh-windows-16x,
+      # intent-manual-windows-build.yml). Still required on the Windows 8x runner,
       # whose Windows Server 2022 image ships the same WSL stub.
       - name: Put Git Bash first on PATH
         shell: cmd
@@ -657,7 +657,7 @@ jobs:
         # No cache: 'pnpm' — this job previously ran on a non-ephemeral
         # self-hosted runner with a persistent pnpm store, making the GH
         # Actions cache tarball round-trip redundant. On the hosted
-        # gh-windows-16x runner each job is a fresh VM with no persistent
+        # WarpBuild Windows runner each job is a fresh VM with no persistent
         # store, so this is a candidate for cache: 'pnpm' — left as-is here
         # since only the runner target was migrated by this change.
         uses: actions/setup-node@v7
@@ -793,7 +793,7 @@ jobs:
       # shell: powershell (Windows PowerShell 5.1, present on every Windows
       # host) rather than pwsh — the old self-hosted runner had no
       # PowerShell Core ("pwsh: command not found", intent-hq/monorepo#1282
-      # follow-up run). The gh-windows-16x runner's Windows Server 2022 image
+      # follow-up run). The WarpBuild Windows Server 2022 image
       # ships PowerShell 5.1 too, so this stays valid on the hosted runner.
       - name: Build and package Windows app
         id: build
@@ -915,7 +915,7 @@ jobs:
         include:
           # node_heap: per-arch --max-old-space-size (MB).
           #
-          # x64 builds on the gh-linux-8x org larger runner (GH-hosted,
+          # x64 builds on the gh-linux-8x size (WarpBuild or an intent-cache slot,
           # 8-core/32 GB X64) — the "well over 16 GB" class this leg
           # requires: the bundle outgrew the 16 GB ubuntu-latest hosted
           # runner in the v2.13.0 rebuilds (monorepo#1340) — 8192
@@ -932,8 +932,8 @@ jobs:
             intentd_target: x86_64-unknown-linux-musl
             targets: AppImage:x64 deb:x64
             node_heap: 12288
-          # arm64 builds natively on the gh-linux-arm64-8x org larger runner
-          # (GH-hosted, 8-core/32 GB ARM64). The 32 GB class is deliberate:
+          # arm64 builds natively on the gh-linux-arm64-8x size (WarpBuild
+          # 8-core/32 GB ARM64). The 32 GB class is deliberate:
           # 16 GB machines OS-OOM-killed this bundle (monorepo#1340), so a
           # standard hosted runner is not a viable fallback. INTENTD_TARGET
           # is set explicitly below, so the staged intentd matches the

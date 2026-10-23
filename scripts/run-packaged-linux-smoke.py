@@ -13,17 +13,8 @@ smoke = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(smoke)
 
 
-def fresh_vm():
-    """A fresh VM for this job alone: GitHub-hosted, or WarpBuild, which also starts one VM
-    per job and reports self-hosted with its verification token set. An intent-cache slot
-    (self-hosted, no token) is neither."""
-    environment = os.environ.get('RUNNER_ENVIRONMENT')
-    return environment == 'github-hosted' or (
-        environment == 'self-hosted' and bool(os.environ.get('WARPBUILD_RUNNER_VERIFICATION_TOKEN')))
-
-
 def require_host():
-    if (not fresh_vm() or
+    if (not smoke.fresh_vm() or
         os.environ.get('RUNNER_OS') != 'Linux' or os.environ.get('RUNNER_ARCH') != 'X64' or
         platform.system() != 'Linux' or platform.machine() != 'x86_64' or
         not os.environ.get('DISPLAY') or not os.environ.get('XAUTHORITY')):

@@ -65,7 +65,7 @@ jobs:
         # No cache: 'pnpm' — this job previously ran on a non-ephemeral
         # self-hosted runner with a persistent pnpm store, making the GH
         # Actions cache tarball round-trip redundant. On the hosted
-        # gh-windows-16x runner each job is a fresh VM with no persistent
+        # WarpBuild Windows runner each job is a fresh VM with no persistent
         # store, so this is a candidate for cache: 'pnpm' — left as-is here
         # since only the runner target was migrated by this change.
         uses: actions/setup-node@v7
@@ -99,7 +99,7 @@ jobs:
         env:
           # 12288: the bundle's peak heap outgrew the old 8192 cap even with
           # sourcemaps disabled (monorepo#1340) — run 31310837286 JS-heap-OOM'd
-          # at ~7.9 GB under 8192 on gh-windows-16x. Mirrors the release-alpha
+          # at ~7.9 GB under 8192 on the 16x runner (32 GB on 8x). Mirrors the release-alpha
           # build-windows leg; the 16x runner's 64 GB RAM gives ample headroom.
           NODE_OPTIONS: '--max-old-space-size=12288'
           # Sourcemap generation multiplies rollup's peak heap past the cap

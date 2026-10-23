@@ -49,9 +49,13 @@ def paid_label_violations(text, filename):
             errors.append(f'{job}: falls back to the paid GitHub label {found}')
         if re.search(r'\|\| matrix\.(?:runner|os) \}\}', runner) and re.search(r'(?:runner|os)(?:: |":")(?:%s)\b' % paid, body):
             errors.append(f'{job}: falls back to a paid matrix label; use matrix.warp')
-        for row, warp in re.findall(r'(?:runner: |"runner":")(%s)"?\s*(?:\n\s*#[^\n]*)*\n?\s*(?:warp: |,"warp":")([\w.-]+)' % paid, body):
+        pairs = re.findall(r'(?:runner: |"runner":")(%s)"?\s*(?:\n\s*#[^\n]*)*\n?\s*(?:warp: |,"warp":")([\w.-]+)' % paid, body)
+        for row, warp in pairs:
             if warp != WARP[row]:
                 errors.append(f'{job}: matrix row {row} names warp {warp}, not {WARP[row]}')
+        rows = re.findall(r'(?:runner: |"runner":")(%s)\b' % paid, body)
+        if 'matrix.warp' in body and len(rows) != len(pairs):
+            errors.append(f'{job}: a paid matrix row has no warp label for its fallback')
     return errors
 # Jobs whose privileged steps only run under an input; their slot read must be
 # conditioned on the same input so those runs skip the intent-cache slots.
@@ -366,6 +370,8 @@ class RunnerPolicy(unittest.TestCase):
         self.assertEqual(paid_label_violations(matrix % ('warp-ubuntu-2404-x64-8x', 'warp'), 'x.yml'), [])
         self.assertEqual(paid_label_violations(matrix % ('warp-ubuntu-2404-x64-8x', 'runner'), 'x.yml'), ['a: falls back to a paid matrix label; use matrix.warp'])
         self.assertEqual(paid_label_violations(matrix % ('warp-ubuntu-2404-x64-16x', 'warp'), 'x.yml'), ['a: matrix row gh-linux-8x names warp warp-ubuntu-2404-x64-16x, not warp-ubuntu-2404-x64-8x'])
+        no_warp = "jobs:\n  a:\n    strategy:\n      matrix:\n        include:\n          - runner: gh-linux-arm64-8x\n    runs-on: ${{ fromJSON(needs.runner-route.outputs.cloud || '{}')[matrix.runner] || matrix.warp }}\n"
+        self.assertEqual(paid_label_violations(no_warp, 'x.yml'), ['a: a paid matrix row has no warp label for its fallback'])
         json_row = '{"arch":"arm64","runner":"macos-15-xlarge","warp":"%s"}'
         self.assertEqual(paid_label_violations('jobs:\n  a:\n    steps:\n      - run: echo \'%s\'\n' % (json_row % 'warp-macos-26-arm64-12x'), 'x.yml'),
                          ['a: matrix row macos-15-xlarge names warp warp-macos-26-arm64-12x, not warp-macos-15-arm64-12x'])
