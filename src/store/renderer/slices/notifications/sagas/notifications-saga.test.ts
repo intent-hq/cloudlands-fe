@@ -26,7 +26,7 @@ vi.mock('$features/notifications/notification-sound-gate', () => ({
 vi.mock('$features/notifications/notification-navigation', () => ({
   handleNotificationNavigate: mocks.navigate,
 }));
-vi.mock('$features/notifications/agent-idle-toast-service', () => ({
+vi.mock('$features/agent/agent-attention-toast-service', () => ({
   showAgentIdleToast: mocks.idleToast,
 }));
 vi.mock('$lib/utils/client-logger', () => ({

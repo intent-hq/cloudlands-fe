@@ -6,7 +6,7 @@ import type { AgentIdleEvent } from '$features/events/types';
 import {
   showAgentIdleToast,
   type AgentIdleToastPayload,
-} from '$features/notifications/agent-idle-toast-service';
+} from '$features/agent/agent-attention-toast-service';
 import { handleNotificationNavigate } from '$features/notifications/notification-navigation';
 import { playNotificationSoundPerSettings } from '$features/notifications/notification-sound-gate';
 import { readIdleNotificationGate } from '$features/notifications/utils/idle-gate';

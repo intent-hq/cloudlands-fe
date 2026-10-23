@@ -702,7 +702,7 @@ export class NotificationService {
                 ...(event.data.agentId ? { agentId: event.data.agentId } : {}),
               }
             : { workspaceId };
-        this.sendShowEvent(content, backendId, workspaceId, navigateTarget);
+        this.sendShowEvent(content, backendId, workspaceId, navigateTarget, focusedWindow);
         return;
       }
 
@@ -823,12 +823,19 @@ export class NotificationService {
    * host at all, the sound still plays on the focused (or any) window but
    * WITHOUT `navigateTarget`: a click there would navigate a window on
    * another host, which cannot show this workspace.
+   *
+   * `toastWindow` (the focused on-host window, frontmost gate only) is the
+   * one window that receives `navigateTarget`, so the toast appears where the
+   * user is looking — not in background windows that merely have the
+   * workspace open or host it offscreen. Those still get the sound-only
+   * payload, keeping sound delivery unchanged.
    */
   private sendShowEvent(
     content: NotificationContent,
     scope: WindowHostScope,
     workspaceId?: string,
     navigateTarget?: NotificationNavigateTarget,
+    toastWindow?: BrowserWindow,
   ): void {
     const payload = {
       title: content.title,
@@ -837,6 +844,20 @@ export class NotificationService {
       ...(content.structured ? { structured: content.structured } : {}),
       ...(navigateTarget ? { navigateTarget } : {}),
     };
+    if (navigateTarget && toastWindow && !toastWindow.isDestroyed()) {
+      const { navigateTarget: _toastOnly, ...soundOnlyPayload } = payload;
+      if (!toastWindow.webContents.isDestroyed()) {
+        toastWindow.webContents.send('notification:show', payload);
+      }
+      for (const id of workspaceId ? getWindowIdsForWorkspace(workspaceId, scope) : []) {
+        if (id === toastWindow.id) continue;
+        const window = BrowserWindow.fromId(id);
+        if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
+          window.webContents.send('notification:show', soundOnlyPayload);
+        }
+      }
+      return;
+    }
     if (workspaceId && getWindowIdsForWorkspace(workspaceId, scope).length > 0) {
       sendToWorkspaceWindows(workspaceId, 'notification:show', payload, scope);
       return;

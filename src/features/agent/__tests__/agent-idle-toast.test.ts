@@ -1,31 +1,45 @@
 /**
- * Agent-idle toast service tests — the in-app replacement for the OS banner
- * the main process skips while the app is frontmost. Locks in: content from
+ * Agent-idle toast tests — the in-app replacement for the OS banner the main
+ * process skips while the app is frontmost. Locks in: content from
  * structured parts (who + where), the plain fallback, suppression only when
- * this focused window already has the workspace selected, chief exemption,
- * stable per-workspace ids, and Switch To routing.
+ * this focused window already has the workspace selected (honoring the
+ * "only when unfocused" preference), Assistant exemption, stable
+ * per-workspace ids with latest-wins ordering, and Switch To routing that
+ * leaves any pending attention toast alone.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   custom: vi.fn(),
   dismiss: vi.fn(),
+  dispatch: vi.fn(),
   keySlot: vi.fn((_workspaceId: string | undefined): number | null => null),
-  navigate: vi.fn(() => Promise.resolve()),
-  switchToAgent: vi.fn(() => Promise.resolve()),
-  state: { value: { tabState: { currentTabId: null as string | null } } },
+  navigateToRoute: vi.fn(() => Promise.resolve()),
+  notificationNavigate: vi.fn(() => Promise.resolve()),
+  state: {
+    value: {
+      tabState: { currentTabId: null as string | null },
+      userPreferences: { soundOnlyWhenUnfocused: true as boolean | undefined },
+    },
+  },
 }));
 
 vi.mock('$lib/components/patterns/notify', () => ({
-  notify: { custom: mocks.custom, dismiss: mocks.dismiss },
+  notify: { custom: mocks.custom, dismiss: mocks.dismiss, info: vi.fn() },
 }));
-vi.mock('$lib/components/ui/toast', () => ({ AgentIdleToast: 'AgentIdleToast' }));
+vi.mock('$lib/components/ui/toast', () => ({
+  AgentAttentionToast: 'AgentAttentionToast',
+  AgentIdleToast: 'AgentIdleToast',
+}));
 vi.mock('$features/hardware-console/assignment/connected-key-slot', () => ({
   resolveConnectedWorkspaceKeySlot: mocks.keySlot,
 }));
-vi.mock('./notification-navigation', () => ({ handleNotificationNavigate: mocks.navigate }));
-vi.mock('$features/agent/agent-attention-toast-service', () => ({
-  switchToAttentionAgent: mocks.switchToAgent,
+vi.mock('$lib/utils/navigation.client', () => ({
+  navigateToRoute: mocks.navigateToRoute,
+  isHudWindowRenderer: () => false,
+}));
+vi.mock('$features/notifications/notification-navigation', () => ({
+  handleNotificationNavigate: mocks.notificationNavigate,
 }));
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
@@ -33,11 +47,13 @@ vi.mock('$lib/utils/client-logger', () => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ dispatch: vi.fn(), state: () => mocks.state.value });
+  return createAppStoreMockModule({ dispatch: mocks.dispatch, state: () => mocks.state.value });
 });
 
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
-import { agentIdleToastId, showAgentIdleToast } from './agent-idle-toast-service';
+import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
+import { agentIdleToastId, showAgentIdleToast } from '../agent-attention-toast-service';
 
 const structuredPayload = {
   title: 'My Space - Implementor: Fix toast',
@@ -45,7 +61,6 @@ const structuredPayload = {
   timestamp: '2026-10-23T00:00:00Z',
   structured: {
     workspaceTitle: 'My Space',
-    specialist: 'implementor',
     specialistDisplayName: 'Implementor',
     taskTitle: 'Fix toast',
     agentId: 'agent-1',
@@ -64,7 +79,10 @@ describe('showAgentIdleToast', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.keySlot.mockReturnValue(null);
-    mocks.state.value = { tabState: { currentTabId: null } };
+    mocks.state.value = {
+      tabState: { currentTabId: null },
+      userPreferences: { soundOnlyWhenUnfocused: true },
+    };
     hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(true);
   });
   afterEach(() => hasFocus.mockRestore());
@@ -75,6 +93,7 @@ describe('showAgentIdleToast', () => {
     const { component, options } = lastToast();
     expect(component).toBe('AgentIdleToast');
     expect(options.id).toBe('agent-idle:ws-1');
+    expect(options.duration).toBeUndefined();
     expect(options.componentProps).toMatchObject({
       title: 'Builder finished',
       workspaceTitle: 'My Space',
@@ -99,7 +118,7 @@ describe('showAgentIdleToast', () => {
   });
 
   it('uses the plain title/body for Assistant payloads and never suppresses them', async () => {
-    mocks.state.value = { tabState: { currentTabId: CHIEF_WORKSPACE_ID } };
+    mocks.state.value.tabState.currentTabId = CHIEF_WORKSPACE_ID;
     await showAgentIdleToast({
       title: 'Assistant: Planning',
       body: 'Finished',
@@ -113,7 +132,6 @@ describe('showAgentIdleToast', () => {
       description: 'Finished',
       keySlot: null,
     });
-    expect(mocks.keySlot).not.toHaveBeenCalled();
   });
 
   it('does nothing without a navigate target (sound-only delivery)', async () => {
@@ -123,7 +141,7 @@ describe('showAgentIdleToast', () => {
   });
 
   it('is suppressed only when this focused window has the workspace selected', async () => {
-    mocks.state.value = { tabState: { currentTabId: 'ws-1' } };
+    mocks.state.value.tabState.currentTabId = 'ws-1';
     await showAgentIdleToast(structuredPayload);
     expect(mocks.custom).not.toHaveBeenCalled();
 
@@ -132,25 +150,51 @@ describe('showAgentIdleToast', () => {
     expect(mocks.custom).toHaveBeenCalledTimes(1);
 
     hasFocus.mockReturnValue(true);
-    mocks.state.value = { tabState: { currentTabId: 'ws-2' } };
+    mocks.state.value.tabState.currentTabId = 'ws-2';
     await showAgentIdleToast(structuredPayload);
     expect(mocks.custom).toHaveBeenCalledTimes(2);
   });
 
-  it('Switch To dismisses and opens the agent conversation in its workspace', async () => {
+  it('shows on the selected workspace when "only when unfocused" is off', async () => {
+    mocks.state.value = {
+      tabState: { currentTabId: 'ws-1' },
+      userPreferences: { soundOnlyWhenUnfocused: false },
+    };
+    await showAgentIdleToast(structuredPayload);
+    expect(mocks.custom).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets only the latest of overlapping shows for a workspace render', async () => {
+    const first = showAgentIdleToast({
+      ...structuredPayload,
+      structured: { ...structuredPayload.structured, agentName: 'Older' },
+    });
+    const second = showAgentIdleToast(structuredPayload);
+    await Promise.all([first, second]);
+    expect(mocks.custom).toHaveBeenCalledTimes(1);
+    expect(lastToast().options.componentProps.title).toBe('Builder finished');
+  });
+
+  it('Switch To opens the agent conversation without dismissing its attention toast', async () => {
     await showAgentIdleToast(structuredPayload);
     lastToast().options.componentProps.onSwitchTo();
-    await vi.waitFor(() => expect(mocks.switchToAgent).toHaveBeenCalledWith('ws-1', 'agent-1'));
-    expect(mocks.dismiss).toHaveBeenCalledWith('agent-idle:ws-1');
-    expect(mocks.navigate).not.toHaveBeenCalled();
+    await vi.waitFor(() =>
+      expect(mocks.dispatch).toHaveBeenCalledWith(
+        openAgentTabRequested('ws-1', { agentId: 'agent-1' }),
+      ),
+    );
+    expect(mocks.dispatch).toHaveBeenCalledWith(openWorkspaceTab('ws-1'));
+    expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/ws-1');
+    expect(mocks.dismiss.mock.calls).toEqual([['agent-idle:ws-1']]);
+    expect(mocks.notificationNavigate).not.toHaveBeenCalled();
   });
 
   it('Switch To routes Assistant payloads through the notification-click navigation', async () => {
     const navigateTarget = { workspaceId: CHIEF_WORKSPACE_ID, chief: true, agentId: 'chat-1' };
     await showAgentIdleToast({ title: 'Assistant', navigateTarget });
     lastToast().options.componentProps.onSwitchTo();
-    await vi.waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith(navigateTarget));
-    expect(mocks.switchToAgent).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(mocks.notificationNavigate).toHaveBeenCalledWith(navigateTarget));
+    expect(mocks.dispatch).not.toHaveBeenCalled();
   });
 
   it('close dismisses the toast', async () => {
