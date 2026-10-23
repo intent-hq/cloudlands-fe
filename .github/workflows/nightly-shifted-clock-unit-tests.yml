@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   # Where paid-label jobs run: a free self-hosted slot first, else WarpBuild
-  # (GitHub when WarpBuild is off); `cloud` skips the self-hosted step.
+  # (GitHub's larger runners are off); `cloud` skips the self-hosted step.
   # See runner-route.yml.
   runner-route:
     uses: ./.github/workflows/runner-route.yml
@@ -43,7 +43,7 @@ jobs:
     needs: runner-route
     # A failed route job must not block this job: it runs on its fallback label.
     if: ${{ !cancelled() }}
-    runs-on: ${{ fromJSON(needs.runner-route.outputs.slots || '{}')[format('test-unit-{0}', matrix.shard)] || fromJSON('["gh-linux-8x"]') }}
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.slots || '{}')[format('test-unit-{0}', matrix.shard)] || fromJSON('["warp-ubuntu-2404-x64-8x"]') }}
     strategy:
       fail-fast: false
       matrix:

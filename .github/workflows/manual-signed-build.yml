@@ -92,7 +92,7 @@ concurrency:
 
 jobs:
   # Where paid-label jobs run: a free self-hosted slot first, else WarpBuild
-  # (GitHub when WarpBuild is off); `cloud` skips the self-hosted step.
+  # (GitHub's larger runners are off); `cloud` skips the self-hosted step.
   # See runner-route.yml.
   runner-route:
     uses: ./.github/workflows/runner-route.yml
@@ -113,6 +113,7 @@ jobs:
     outputs:
       matrix: ${{ steps.macos.outputs.matrix }}
       smoke_runner: ${{ steps.macos.outputs.smoke_runner }}
+      smoke_warp: ${{ steps.macos.outputs.smoke_warp }}
       smoke_artifact: ${{ steps.macos.outputs.smoke_artifact }}
     steps:
       - name: Select manual Mac targets
@@ -122,7 +123,7 @@ jobs:
         run: |
           # Signed desktop builds stay on macos-15-xlarge: on macos-26 images electron-builder's
           # `security set-key-partition-list` fails with SecKeychainUnlock (cloudlands-fe#3500).
-          ARM='{"arch":"arm64","label":"Apple Silicon","runner":"macos-15-xlarge","intentd_target":"aarch64-apple-darwin"}'
+          ARM='{"arch":"arm64","label":"Apple Silicon","runner":"macos-15-xlarge","warp":"warp-macos-15-arm64-12x","intentd_target":"aarch64-apple-darwin"}'
           case "${MACOS_ARCH:-arm64}" in
             arm64) TARGETS="[$ARM]" ;;
             *) echo "::error::Mac builds support arm64 only"; exit 1 ;;
@@ -130,6 +131,7 @@ jobs:
           {
             echo "matrix={\"include\":$TARGETS}"
             echo "smoke_runner=$(jq -r '.[0].runner' <<< "$TARGETS")"
+            echo "smoke_warp=$(jq -r '.[0].warp' <<< "$TARGETS")"
             echo "smoke_artifact=manual-macos-dmg-$(jq -r '.[0].arch' <<< "$TARGETS")"
           } >> "$GITHUB_OUTPUT"
 
@@ -147,8 +149,10 @@ jobs:
   smoke-macos:
     # Explicit results: a failed runner-route (an ancestor through the builds) must not skip this job.
     if: ${{ !cancelled() && inputs.smoke_macos && needs.select-macos.result == 'success' && needs.build-macos.result == 'success' && needs.smoke-inputs.result == 'success' }}
-    needs: [select-macos, build-macos, smoke-inputs]
-    runs-on: ${{ needs.select-macos.outputs.smoke_runner }}
+    needs: [select-macos, build-macos, smoke-inputs, runner-route]
+    # A fresh VM per job (the smoke script refuses an intent-cache slot): the
+    # `cloud` runner, WarpBuild, or the row's WarpBuild label if routing failed.
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.cloud || '{}')[needs.select-macos.outputs.smoke_runner] || fromJSON(format('["{0}"]', needs.select-macos.outputs.smoke_warp)) }}
     timeout-minutes: 60
     env:
       CI: 'true'
@@ -200,8 +204,9 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.select-macos.outputs.matrix) }}
     # Signed Mac builds go straight to the burst runner (WarpBuild macOS 15,
-    # else GitHub's macos-15-xlarge), never the persistent self-hosted Mac.
-    runs-on: ${{ fromJSON(needs.runner-route.outputs.cloud || '{}')[matrix.runner] || matrix.runner }}
+    # or the row's WarpBuild label if routing failed), never the persistent
+    # self-hosted Mac.
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.cloud || '{}')[matrix.runner] || matrix.warp }}
     env:
       INTENTD_TARGET: ${{ matrix.intentd_target }}
     # 120 min: 90 covered the packaging job alone; a from-source intentd
@@ -605,16 +610,16 @@ jobs:
     # A failed route job must not block this job: it runs on its fallback label.
     if: ${{ !cancelled() && inputs.build_windows && !inputs.isolated_test }}
     needs: runner-route
-    # gh-windows-16x: org hosted runner (16-core/64 GB, runner group 1, same
-    # group as gh-linux-16x), fixed at the runner level to the Windows Server
-    # 2022 image. Server 2022 (not 2025) still matters: the windows-2025
+    # gh-windows-8x: WarpBuild warp-windows-2022-x64-8x (8 vCPU / 32 GB; the
+    # build used about a third of 16 CPUs and 12.4 GB at most), on the Windows
+    # Server 2022 image. Server 2022 (not 2025) still matters: the windows-2025
     # image ships Visual Studio 2026 (v18), which node-gyp < 12.1.0 cannot
     # detect (nodejs/node-gyp#3282), breaking native module builds
     # (node-pty). Move the runner to a newer image once the Node/npm/node-gyp
     # stack in use supports VS 18.
-    # Straight to the burst runner (WarpBuild Server 2022, else GitHub's
-    # gh-windows-16x), never the persistent self-hosted Windows box.
-    runs-on: ${{ fromJSON(needs.runner-route.outputs.cloud || '{}')['gh-windows-16x'] || fromJSON('["gh-windows-16x"]') }}
+    # Straight to the burst runner (WarpBuild Server 2022), never the
+    # persistent self-hosted Windows box.
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.cloud || '{}')['gh-windows-8x'] || fromJSON('["warp-windows-2022-x64-8x"]') }}
     # 150 min: the hosted Windows runner is far slower than the old
     # self-hosted runner — the v2.21.0 rebuild's Vite build alone took 53 min
     # and the job was cancelled at the previous 60-min cap before
@@ -797,8 +802,8 @@ jobs:
           # 12288: the v2.13.0 arm64 leg's peak heap outgrew the old 8192 cap
           # even with sourcemaps disabled (monorepo#1340); same bundle here.
           # This leg passed at 12288 in the v2.13.0 rebuild, run 30764745052.
-          # gh-windows-16x is 16 vCPU / 64 GB RAM, so the 12288 cap has
-          # ample headroom there.
+          # WarpBuild Windows 8x has 32 GB RAM, so the 12288 cap has ample
+          # headroom there (the build peaked at 12.4 GB).
           NODE_OPTIONS: '--max-old-space-size=12288'
           # Sourcemap generation multiplies rollup's peak heap past the cap
           # (same OOM as monorepo#1074/#1282); the #1282 fix gated the Linux
@@ -922,6 +927,8 @@ jobs:
           # runner.
           - arch: x64
             runner: gh-linux-8x
+            # The burst runner if the route job failed (GitHub larger runners are off).
+            warp: warp-ubuntu-2404-x64-8x
             intentd_target: x86_64-unknown-linux-musl
             targets: AppImage:x64 deb:x64
             node_heap: 12288
@@ -943,6 +950,7 @@ jobs:
           # the 32 GB runner has the RAM for 12288.
           - arch: arm64
             runner: gh-linux-arm64-8x
+            warp: warp-ubuntu-2404-arm64-8x
             intentd_target: aarch64-unknown-linux-musl
             targets: AppImage:arm64 deb:arm64
             node_heap: 12288
@@ -951,7 +959,7 @@ jobs:
     # self-hosted ARM64 boxes, where electron-builder's fpm failed (monorepo#1286).
     # A from-source intentd build (intentd_ref) installs musl-tools with sudo,
     # which the intent-cache containers lack, so it skips the slot as well.
-    runs-on: ${{ matrix.runner == 'gh-linux-8x' && inputs.intentd_ref == '' && fromJSON(needs.runner-route.outputs.slots || '{}')[format('build-linux-{0}', matrix.arch)] || fromJSON(needs.runner-route.outputs.cloud || '{}')[matrix.runner] || matrix.runner }}
+    runs-on: ${{ matrix.runner == 'gh-linux-8x' && inputs.intentd_ref == '' && fromJSON(needs.runner-route.outputs.slots || '{}')[format('build-linux-{0}', matrix.arch)] || fromJSON(needs.runner-route.outputs.cloud || '{}')[matrix.runner] || matrix.warp }}
     # 90 min: 60 covered the packaging job alone; a from-source intentd
     # sidecar build (intentd_ref set) adds a cold cargo build.
     timeout-minutes: 90
@@ -1221,11 +1229,12 @@ jobs:
   verify-isolated-macos:
     # Explicit results: a failed runner-route (an ancestor through the builds) must not skip this job.
     if: ${{ !cancelled() && inputs.isolated_test && inputs.build_macos && needs.select-macos.result == 'success' && needs.build-macos.result == 'success' }}
-    needs: [select-macos, build-macos]
+    needs: [select-macos, build-macos, runner-route]
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.select-macos.outputs.matrix) }}
-    runs-on: ${{ matrix.runner }}
+    # A fresh VM per job: the `cloud` runner (WarpBuild), else the row's WarpBuild label.
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.cloud || '{}')[matrix.runner] || matrix.warp }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7

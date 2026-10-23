@@ -36,6 +36,7 @@ interface Matrix {
   arch: string;
   label: string;
   runner: string;
+  warp: string;
   intentd_target: string;
 }
 interface Job {
@@ -644,10 +645,12 @@ describe('manual Mac architecture selection', () => {
     );
     expect(matrix.include.map((row) => row.arch)).toEqual(arches);
     for (const row of matrix.include) {
-      // The matrix keeps the GitHub label; runs-on maps it to the burst runner (never self-hosted).
+      // The matrix keeps the size label; runs-on maps it to the burst runner (never
+      // self-hosted), and falls back to the row's WarpBuild label if routing failed.
       expect(row.runner).toBe('macos-15-xlarge');
+      expect(row.warp).toBe('warp-macos-15-arm64-12x');
       expect(build['runs-on']).toBe(
-        "${{ fromJSON(needs.runner-route.outputs.cloud || '{}')[matrix.runner] || matrix.runner }}",
+        "${{ fromJSON(needs.runner-route.outputs.cloud || '{}')[matrix.runner] || matrix.warp }}",
       );
       expect(
         render(build.env!.INTENTD_TARGET, { 'matrix.intentd_target': row.intentd_target }),
@@ -680,14 +683,20 @@ describe('manual Mac architecture selection', () => {
         Object.entries(plan).map(([key, value]) => [`needs.select-macos.outputs.${key}`, value]),
       );
       const smoke = jobs['smoke-macos'];
-      expect(smoke.needs).toEqual(['select-macos', 'build-macos', 'smoke-inputs']);
+      expect(smoke.needs).toEqual(['select-macos', 'build-macos', 'smoke-inputs', 'runner-route']);
       expect(smoke.if).toBe(
         "${{ !cancelled() && inputs.smoke_macos && needs.select-macos.result == 'success' && needs.build-macos.result == 'success' && needs.smoke-inputs.result == 'success' }}",
       );
       const row = (JSON.parse(plan.matrix).include as Matrix[]).find((m) => m.arch === arches[0])!;
       const upload = step('manual-signed-build', 'build-macos', 'Upload macOS DMG artifact');
       const download = smoke.steps.find((s) => s.uses?.startsWith('actions/download-artifact@'))!;
-      expect(render(smoke['runs-on']!, context)).toBe(row.runner);
+      // The smoke runs on the row's burst runner (a fresh WarpBuild VM), never a slot.
+      expect(smoke['runs-on']).toBe(
+        "${{ fromJSON(needs.runner-route.outputs.cloud || '{}')[needs.select-macos.outputs.smoke_runner] || fromJSON(format('[\"{0}\"]', needs.select-macos.outputs.smoke_warp)) }}",
+      );
+      expect(plan.smoke_runner).toBe(row.runner);
+      expect(plan.smoke_warp).toBe(row.warp);
+      expect(row.warp).toBe('warp-macos-15-arm64-12x');
       expect(render(String(download.with?.name), context)).toBe(
         render(String(upload.with?.name), { 'matrix.arch': row.arch }),
       );
