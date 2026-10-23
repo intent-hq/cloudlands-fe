@@ -2503,7 +2503,11 @@ async function runHydrateMissingWorkspaceEntityFetch(workspaceId: string): Promi
     if (workspace) {
       const { setWorkspaceEntity } =
         await import('$store/renderer/slices/workspace/workspace-slice');
-      appStore.dispatch(setWorkspaceEntity(workspace));
+      // `workspace.get` is authoritative: apply it as a detail read so a
+      // presence-detected flag it omits (`scriptsRunning`, `waiting` — false
+      // on the wire, PROTOCOL §5.1) clears a value an earlier read stored
+      // instead of surviving a shallow upsert.
+      appStore.dispatch(setWorkspaceEntity(workspace, { detailRead: true }));
     }
   } catch (_error) {
     // Workspace might have been deleted or transport error; no-op is safe.

@@ -11151,6 +11151,44 @@ describe('daemonEventsBridge (dropped deltas for unhydrated workspaces → targe
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect((await readWorkspace(WS))?.attention).toBe('unread');
   });
+
+  // Regression (cloudlands-fe#3647 review): presence-detected flags
+  // (`scriptsRunning`, `waiting`) are omitted when false (PROTOCOL §5.1), so a
+  // trailing workspace.get row without them must clear the value the leading
+  // read stored — a shallow upsert would keep the stale `true` and leave Home
+  // showing Running/Waiting after the command or watch ended.
+  it('a trailing workspace.get that omits a presence-detected flag clears the leading value', async () => {
+    const WS = 'ws-unhydrated-omitted-flag';
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const leading = await makeWorkspace(WS, { scriptsRunning: true, waiting: true });
+    const trailing = await makeWorkspace(WS, {});
+
+    const pendingFetches: Array<(value: unknown) => void> = [];
+    backendRequestSpy.mockImplementation(async (method: string) => {
+      if (method !== 'workspace.get') return { subscriptionId: 'sub-1' };
+      return new Promise((resolve) => {
+        pendingFetches.push(resolve);
+      });
+    });
+
+    handler(changedNotification('workspace:scriptsRunning-changed', WS, { scriptsRunning: true }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(pendingFetches).toHaveLength(1);
+
+    handler(changedNotification('workspace:scriptsRunning-changed', WS, { scriptsRunning: false }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    pendingFetches[0]!({ workspace: leading });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect((await readWorkspace(WS))?.scriptsRunning).toBe(true);
+
+    expect(pendingFetches).toHaveLength(2);
+    pendingFetches[1]!({ workspace: trailing });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect((await readWorkspace(WS))?.scriptsRunning).toBeUndefined();
+    expect((await readWorkspace(WS))?.waiting).toBeUndefined();
+  });
 });
 
 describe('daemonEventsBridge (completion-watch refresh routing)', () => {
