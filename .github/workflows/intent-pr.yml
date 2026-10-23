@@ -900,11 +900,7 @@ jobs:
           --component cloudlands-fe --component-root .
       - name: Read suggested-prompts case pin
         id: suggested-prompts-cases
-        run: >-
-          node -e "const l = require('./tests/fixtures/suggested-prompts.lock.json');
-          if (l.sourceRepository !== 'intent-hq/intent' || !/^[0-9a-f]{40}$/.test(l.sourceCommit))
-          throw new Error('suggested-prompts lock must pin a full intent-hq/intent commit');
-          console.log('sourceCommit=' + l.sourceCommit)" | tee -a "$GITHUB_OUTPUT"
+        run: node scripts/suggested-prompts-fixtures.mjs | tee -a "$GITHUB_OUTPUT"
       - name: Checkout pinned suggested-prompts cases
         uses: actions/checkout@v7
         with:
