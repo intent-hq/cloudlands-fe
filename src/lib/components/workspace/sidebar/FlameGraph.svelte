@@ -215,7 +215,8 @@
       sideOffset={6}
       delayDuration={300}
       disableHoverableContent={false}
-      contentClass="h-auto! min-h-0! max-w-80 border-foreground/20! bg-secondary! p-0! text-secondary-foreground! shadow-(--elevation-overlay)! ring-1 ring-foreground/10 whitespace-normal"
+      variant="secondary"
+      contentClass="h-auto! min-h-0! max-w-80 border-foreground/20! p-0! shadow-(--elevation-overlay)! ring-1 ring-foreground/10 whitespace-normal"
       class="w-full {specNoteId && onTaskClick ? 'cursor-pointer' : ''}"
       onclick={() => specNoteId && onTaskClick?.(specNoteId)}
       showArrow
