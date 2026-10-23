@@ -6989,6 +6989,8 @@
   "workspace_peopleActivity_messagedAgent_label": "Nachricht an {agent} gesendet",
   "workspace_peopleActivity_recentEmpty_label": "Keine Aktivitäten von Personen in diesen letzten Ereignissen.",
   "workspace_peopleActivity_sentMessage_label": "Nachricht gesendet",
+  "workspace_peopleRoster_inactive_label": "Online · Sieht diesen Arbeitsbereich nicht an",
+  "workspace_peopleTile_inactive_tooltip": "{name} · Sieht diesen Arbeitsbereich nicht an",
   "workspace_peopleTile_title": "Personen",
   "workspace_phase_allSet_label": "Alles bereit!",
   "workspace_phase_building_description": "Nach der Genehmigung delegiert der Koordinator die Arbeit und verifiziert sie.",

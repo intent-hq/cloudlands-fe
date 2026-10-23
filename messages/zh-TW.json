@@ -6989,6 +6989,8 @@
   "workspace_peopleActivity_messagedAgent_label": "向 {agent} 傳送了訊息",
   "workspace_peopleActivity_recentEmpty_label": "這些近期事件中沒有使用者活動。",
   "workspace_peopleActivity_sentMessage_label": "傳送了訊息",
+  "workspace_peopleRoster_inactive_label": "在線 · 未查看此工作區",
+  "workspace_peopleTile_inactive_tooltip": "{name} · 未查看此工作區",
   "workspace_peopleTile_title": "人員",
   "workspace_phase_allSet_label": "全部就緒！",
   "workspace_phase_building_description": "批准後，協調者將委派工作並進行驗證。",

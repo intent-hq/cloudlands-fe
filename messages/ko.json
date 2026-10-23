@@ -6989,6 +6989,8 @@
   "workspace_peopleActivity_messagedAgent_label": "{agent}에게 메시지를 보냄",
   "workspace_peopleActivity_recentEmpty_label": "최근 이벤트에 사용자 활동이 없습니다.",
   "workspace_peopleActivity_sentMessage_label": "메시지를 보냄",
+  "workspace_peopleRoster_inactive_label": "온라인 · 이 작업 공간을 보고 있지 않음",
+  "workspace_peopleTile_inactive_tooltip": "{name} · 이 작업 공간을 보고 있지 않음",
   "workspace_peopleTile_title": "사용자",
   "workspace_phase_allSet_label": "모두 완료!",
   "workspace_phase_building_description": "승인되면 코디네이터가 작업을 위임하고 검증합니다.",

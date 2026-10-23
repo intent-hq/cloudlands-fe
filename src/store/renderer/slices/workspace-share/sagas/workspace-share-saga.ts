@@ -55,7 +55,13 @@ import {
 } from '../../principal/principal-selectors';
 import { selectWorkspaceManagementDenied } from '../../workspace/workspace-selectors';
 import { integrationReconnectSettled } from '$features/integrations-request-context';
-import { all, call, put, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
+import { all, call, delay, put, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
+import {
+  takeEveryFromSelector,
+  takeLatestFromSelector,
+  type SelectorChannelPayload,
+} from '@themislib/themis/saga';
+import { selectCanShareWorkspace } from '../../workspace/workspace-selectors';
 
 import { clearInviteLinks, vaultInviteLinks } from '$features/workspace-sharing/invite-link-vault';
 import {
@@ -72,6 +78,9 @@ import { isForbiddenErrorResponse } from '$lib/client/live/backend-transport-typ
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import {
+  selectWorkspacePeopleInviteScope,
+  selectWorkspacePeopleInviteExpiry,
+  selectWorkspaceInviteRead,
   selectShareCanSetMemberRole,
   selectShareOwnerPrincipalId,
   selectSharePendingRolePrincipalIds,
@@ -93,6 +102,11 @@ import {
   selectWorkspaceRosterTracked,
 } from '../workspace-share-selectors';
 import {
+  sharePeopleInvitesScopeChanged,
+  sharePeopleInvitesRequested,
+  sharePeopleInvitesLoaded,
+  sharePeopleInvitesWithheld,
+  shareInvitesExpired,
   sharePrerequisitesRequested,
   shareEnableRequested,
   sharePrerequisitesStarted,
@@ -158,7 +172,11 @@ function coalescedByKey<A>(
   };
 }
 
+type InviteRead = { result: Promise<WorkspaceInviteRow[]>; context: string; generation: number };
+type ReadInvites = (workspaceId: string, context: string, generation: number) => InviteRead;
+
 type ShareData = WorkspaceMembersList & {
+  inviteGeneration: number;
   invites: WorkspaceInviteRow[];
   /** `null` when `principal.list` failed for a reason other than `-32003`. */
   principals: HostPrincipal[] | null;
@@ -175,13 +193,16 @@ type ShareData = WorkspaceMembersList & {
  * guard held and no second concurrent read starts while a sibling RPC is
  * still outstanding.
  */
-function readShareData(workspaceId: string): {
+function readShareData(
+  workspaceId: string,
+  inviteRead: InviteRead,
+): {
   result: Promise<ShareData>;
   settled: Promise<void>;
 } {
   const reads = [
     workspaceSharingClient.listMembers(workspaceId),
-    workspaceSharingClient.listInvites(workspaceId),
+    inviteRead.result,
     workspaceSharingClient.listPrincipals(),
   ] as const;
   const outcomes = Promise.allSettled(reads);
@@ -199,6 +220,7 @@ function readShareData(workspaceId: string): {
         resolve({
           ...members.value,
           invites: invites.value,
+          inviteGeneration: inviteRead.generation,
           principals: principals.status === 'fulfilled' ? principals.value : null,
         });
         return;
@@ -243,23 +265,43 @@ function logFailure(what: string, workspaceId: string, failure: ShareFailure): v
   logger.warn(`${what} failed`, { workspaceId, code: failure.code, rpcCode: failure.rpcCode });
 }
 
-function* loadShareData(): SagaGenerator<void> {
+function* loadShareData(readInvites: ReadInvites): SagaGenerator<void> {
   const target = yield* manageableTarget();
-  if (!target) return;
+  if (!target?.authority) return;
   const generation = yield* selectShareMutationGeneration.effect();
-  const read = readShareData(target.workspaceId);
+  const inviteRead = yield* selectWorkspaceInviteRead.effect(target.workspaceId);
+  const read = readShareData(
+    target.workspaceId,
+    readInvites(target.workspaceId, target.authority, inviteRead.generation),
+  );
   try {
     const {
       members,
       invites: rows,
+      inviteGeneration,
       principals,
       guestCount,
       guestLimit,
     } = yield* call(() => read.result);
     if (!(yield* stillTargets(target))) return;
     const invites = yield* call(vaultInviteLinks, rows);
-    yield* put(shareDataLoaded({ target, generation, members, invites, guestCount, guestLimit }));
+    yield* put(
+      shareDataLoaded({
+        target,
+        generation,
+        inviteGeneration,
+        receivedAt: Date.now(),
+        members,
+        invites,
+        guestCount,
+        guestLimit,
+      }),
+    );
     if (principals) yield* put(sharePrincipalsLoaded({ target, principals }));
+    if (
+      inviteGeneration !== (yield* selectWorkspaceInviteRead.effect(target.workspaceId)).generation
+    )
+      yield* put(shareDataRequested());
   } catch (error) {
     if (yield* stillTargets(target)) {
       if (isForbiddenErrorResponse(error)) {
@@ -648,6 +690,8 @@ function* refreshOnMembershipChange(
   const [{ workspaceId }] = action.payload;
   const target = yield* selectShareTarget.effect();
   if (target && target.workspaceId === workspaceId) yield* put(shareDataRequested());
+  else if ((yield* selectWorkspacePeopleInviteScope.effect()).workspaceIds.includes(workspaceId))
+    yield* put(sharePeopleInvitesRequested(workspaceId));
   if (yield* selectWorkspaceRosterTracked.effect(workspaceId)) {
     yield* put(shareRosterRequested({ workspaceId }));
   }
@@ -733,7 +777,102 @@ function* setMemberRole(action: ReturnType<typeof shareMemberRoleRequested>): Sa
   }
 }
 
+function* syncPeopleInviteScope({
+  payload,
+  prevPayload,
+}: SelectorChannelPayload<
+  ReturnType<typeof selectWorkspacePeopleInviteScope.select>
+>): SagaGenerator<void> {
+  if (
+    payload.context === prevPayload?.context &&
+    payload.workspaceIds.length === prevPayload.workspaceIds.length &&
+    payload.workspaceIds.every((id, index) => id === prevPayload.workspaceIds[index])
+  )
+    return;
+  yield* put(sharePeopleInvitesScopeChanged(payload));
+  const target = yield* selectShareTarget.effect();
+  for (const workspaceId of payload.workspaceIds) {
+    if (payload.context === prevPayload?.context && prevPayload.workspaceIds.includes(workspaceId))
+      continue;
+    if (target?.workspaceId === workspaceId) yield* put(shareDataRequested());
+    else yield* put(sharePeopleInvitesRequested(workspaceId));
+  }
+}
+
+function* expirePeopleInvites({
+  payload,
+}: SelectorChannelPayload<number | null>): SagaGenerator<void> {
+  if (payload === null) return;
+  // Clamp long invite lifetimes to the browser timer range, then recheck the clock.
+  while (Date.now() < payload) yield* delay(Math.min(payload - Date.now(), 2_147_483_647));
+  yield* put(shareInvitesExpired(Date.now()));
+}
+
+function* loadPeopleInvites(readInvites: ReadInvites, workspaceId: string): SagaGenerator<void> {
+  const scope = yield* selectWorkspacePeopleInviteScope.effect();
+  const read = yield* selectWorkspaceInviteRead.effect(workspaceId);
+  if (!scope.context || !scope.workspaceIds.includes(workspaceId) || read.withheld) return;
+  const flight = readInvites(workspaceId, scope.context, read.generation);
+  try {
+    const rows = yield* call(() => flight.result);
+    const current = yield* selectWorkspaceInviteRead.effect(workspaceId);
+    if (
+      scope.context !== (yield* selectPrincipalActionContext.effect()) ||
+      !(yield* selectCanShareWorkspace.effect(workspaceId)) ||
+      !(yield* selectWorkspacePeopleInviteScope.effect()).workspaceIds.includes(workspaceId)
+    )
+      return;
+    if (flight.generation !== current.generation) {
+      yield* put(sharePeopleInvitesRequested(workspaceId));
+      return;
+    }
+    // Background reads need metadata only. URLs are never retained after dialog close.
+    const invites = rows.map(({ url: _url, ...invite }) => invite);
+    yield* put(
+      sharePeopleInvitesLoaded({
+        workspaceId,
+        context: flight.context,
+        generation: flight.generation,
+        invites,
+        receivedAt: Date.now(),
+      }),
+    );
+  } catch (error) {
+    if (scope.context !== (yield* selectPrincipalActionContext.effect())) return;
+    if (isForbiddenErrorResponse(error)) {
+      const current = yield* selectWorkspaceInviteRead.effect(workspaceId);
+      if (current.context !== scope.context || current.generation !== flight.generation) return;
+      yield* put(
+        sharePeopleInvitesWithheld({
+          workspaceId,
+          context: scope.context,
+          generation: flight.generation,
+        }),
+      );
+      const target = yield* selectShareTarget.effect();
+      if (target?.workspaceId === workspaceId) yield* put(shareAccessWithheld({ target }));
+    } else logger.warn('Loading People invitations failed', { workspaceId });
+  }
+}
+
 export function* workspaceShareSaga(): SagaGenerator<void> {
+  // Dialog and People share the same transport flight. Its generation belongs to
+  // the actual wire read, so a newer consumer cannot relabel an old snapshot.
+  const inviteFlights = new Map<string, InviteRead>();
+  const readInvites: ReadInvites = (workspaceId, context, generation) => {
+    const key = JSON.stringify([workspaceId, context]);
+    const existing = inviteFlights.get(key);
+    if (existing) return existing;
+    const read: InviteRead = {
+      context,
+      generation,
+      result: workspaceSharingClient
+        .listInvites(workspaceId)
+        .finally(() => inviteFlights.delete(key)),
+    };
+    inviteFlights.set(key, read);
+    return read;
+  };
   const roleFlights = new Set<string>();
   function* changeRole(action: ReturnType<typeof shareMemberRoleRequested>): SagaGenerator<void> {
     const target = yield* selectShareTarget.effect();
@@ -778,13 +917,27 @@ export function* workspaceShareSaga(): SagaGenerator<void> {
     takeEvery(shareMembershipChanged, refreshOnMembershipChange),
     takeEvery(
       shareDataRequested,
-      coalescedByKey(() => 'dialog', loadShareData),
+      coalescedByKey(
+        () => 'dialog',
+        function* () {
+          yield* call(loadShareData, readInvites);
+        },
+      ),
     ),
     takeEvery(
       shareRosterRequested,
       coalescedByKey(
         (action: ReturnType<typeof shareRosterRequested>) => action.payload[0].workspaceId,
         loadRoster,
+      ),
+    ),
+    takeEvery(
+      sharePeopleInvitesRequested,
+      coalescedByKey(
+        (action: ReturnType<typeof sharePeopleInvitesRequested>) => action.payload[0],
+        function* (workspaceId) {
+          yield* call(loadPeopleInvites, readInvites, workspaceId);
+        },
       ),
     ),
     takeEvery(shareRosterMemberRemoveRequested, removeRosterMember),
@@ -795,5 +948,9 @@ export function* workspaceShareSaga(): SagaGenerator<void> {
     takeEvery(shareMemberRemoveRequested, removeMember),
     takeEvery(shareMemberAddRequested, addMember),
     takeEvery(shareMemberRoleRequested, changeRole),
+    call(function* watchPeopleInvites() {
+      yield* takeEveryFromSelector(selectWorkspacePeopleInviteScope, syncPeopleInviteScope);
+      yield* takeLatestFromSelector(selectWorkspacePeopleInviteExpiry, expirePeopleInvites);
+    }),
   ]);
 }

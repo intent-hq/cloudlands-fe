@@ -6989,6 +6989,8 @@
   "workspace_peopleActivity_messagedAgent_label": "{agent}にメッセージを送信",
   "workspace_peopleActivity_recentEmpty_label": "これらの最近のイベントにはユーザーのアクティビティがありません。",
   "workspace_peopleActivity_sentMessage_label": "メッセージを送信",
+  "workspace_peopleRoster_inactive_label": "オンライン · このワークスペースを閲覧していません",
+  "workspace_peopleTile_inactive_tooltip": "{name} · このワークスペースを閲覧していません",
   "workspace_peopleTile_title": "ユーザー",
   "workspace_phase_allSet_label": "準備完了！",
   "workspace_phase_building_description": "承認されると、コーディネーターが作業を委任して検証します。",

@@ -179,3 +179,49 @@ for (const guest of [false, true]) {
     await expect(panel).toBeVisible();
   });
 }
+
+test('a named invitation exposes People before a second member joins and supports keyboard opening', async ({
+  mount,
+}) => {
+  const component = await mount(PeopleSidebarHost, { props: { roster: 'pending' } });
+  const launcher = component.getByRole('button', { name: 'People', exact: true });
+  await expect(component.locator('[data-people-invited]')).toBeVisible();
+  await launcher.focus();
+  await launcher.press('Enter');
+  const panel = component.locator('[data-sidebar-card-tab="people"]');
+  const invitation = panel.locator('[data-people-roster-id="invite:amelia-invite"]');
+  await expect(invitation).toContainText('@amelia');
+  await expect(invitation).toContainText(/invited/i);
+  await expect(invitation.getByRole('button')).toHaveCount(0);
+  await panel.locator('[data-sidebar-close]').click();
+  await expect(launcher).toBeFocused();
+  await component.getByRole('button', { name: 'Disable multiplayer', exact: true }).click();
+  await expect(component.locator('[data-sidebar-people-tile]')).toHaveCount(0);
+});
+
+test('member rows stay keyboard reachable when workspace presence disconnects', async ({
+  mount,
+}) => {
+  const component = await mount(PeopleSidebarHost, { props: { roster: 'mixed' } });
+  await component.getByRole('button', { name: 'People', exact: true }).click();
+  const roster = component.locator('[data-people-roster]');
+  const sam = roster.locator('[data-people-roster-id="member:person-0"]');
+  const luke = roster.locator('[data-people-roster-id="member:person-1"]');
+  const morgan = roster.locator('[data-people-roster-id="member:person-2"]');
+  await expect(sam).toContainText(/viewing this workspace/i);
+  await expect(luke).toContainText(/not viewing this workspace/i);
+  await expect(morgan).toContainText(/offline/i);
+  await component.getByRole('button', { name: 'Disconnect people', exact: true }).click();
+  // The local viewer stays in this workspace when remote presence disconnects.
+  await expect(sam).toContainText(/viewing this workspace/i);
+  await expect(luke).toContainText(/offline/i);
+  const rows = roster.getByRole('listitem');
+  await rows.first().focus();
+  await rows.first().press('ArrowDown');
+  await expect(rows.nth(1)).toBeFocused();
+  await rows.nth(1).press('ArrowDown');
+  await expect(rows.nth(2)).toBeFocused();
+  await expect(roster.locator('[data-people-roster-id="invite:amelia-invite"]')).toContainText(
+    /invited/i,
+  );
+});

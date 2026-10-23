@@ -42,6 +42,7 @@ import type {
 } from '$features/workspace-sharing/types';
 import type { Workspace, WorkspaceRole } from '$shared/types';
 import type { StoreState } from '../../../types';
+import { store } from '../../../store';
 import { initialState as connectionsInitialState } from '../../connections/connections-slice';
 import {
   guestSessionsListReceived,
@@ -49,6 +50,7 @@ import {
   initialState as guestSessionsInitialState,
 } from '../../guest-sessions/guest-sessions-slice';
 import {
+  sharePeopleInvitesRequested,
   sharePrerequisitesRequested,
   shareEnableRequested,
   shareIntegrationAuthRequested,
@@ -72,7 +74,10 @@ import {
   workspaceShareReducer,
   type WorkspaceShareState,
 } from '../workspace-share-slice';
-import { selectShareInvitablePrincipals } from '../workspace-share-selectors';
+import {
+  selectWorkspacePeopleInvites,
+  selectShareInvitablePrincipals,
+} from '../workspace-share-selectors';
 import { __resetSettingsReadCacheForTests } from '$lib/client/live/live-settings-client';
 import { initializeIdentity } from '../../identity/identity-slice';
 import { workspaceShareSaga } from './workspace-share-saga';
@@ -125,7 +130,7 @@ const invite: WorkspaceInviteRow = {
 };
 
 const settle = async () => {
-  for (let i = 0; i < 8; i++) await Promise.resolve();
+  for (let i = 0; i < 24; i++) await Promise.resolve();
 };
 
 /**
@@ -139,6 +144,7 @@ function rootState(share: WorkspaceShareState, roles: Record<string, WorkspaceRo
   );
   return withLegacyPrincipal({
     workspaceShare: share,
+    tabState: { openTabs: {} },
     githubAuth: { isAuthenticated: false },
     gitlabAuth: { host: 'forge.example', statusReady: false, isConfigured: false },
     workspace: { workspaces: createCollection('id', workspaces) },
@@ -157,6 +163,8 @@ function harness(
 ) {
   const channel = stdChannel();
   let state = seed;
+  const subscribers = new Set<() => void>();
+  const getState = () => project(rootState(state, roles));
   const dispatched: unknown[] = [];
   /** What the opt-in Redux action logger (`logReduxActions`) would print per dispatch. */
   const logged: { action: unknown; prevState: unknown; nextState: unknown }[] = [];
@@ -165,10 +173,27 @@ function harness(
     const prevState = state;
     state = workspaceShareReducer(state, action);
     logged.push({ action, prevState, nextState: state });
+    for (const subscriber of subscribers) subscriber();
     channel.put(action);
   });
   const task = runSaga(
-    { channel, dispatch, getState: () => project(rootState(state, roles)) },
+    {
+      channel,
+      dispatch,
+      getState,
+      context: {
+        reportRuntimeError: ({ error }: { error: unknown }) => {
+          throw error;
+        },
+        reduxStore: {
+          getState,
+          subscribe: (subscriber: () => void) => {
+            subscribers.add(subscriber);
+            return () => subscribers.delete(subscriber);
+          },
+        },
+      },
+    },
     workspaceShareSaga,
   );
   return {
@@ -178,6 +203,7 @@ function harness(
     logged,
     task,
     state: () => state,
+    root: getState,
     /** What the dialog host renders in the existing-guest dropdown. */
     invitable: () =>
       selectShareInvitablePrincipals.select(rootState(state, roles) as unknown as StoreState),
@@ -1953,6 +1979,218 @@ describe('guest role changes', () => {
       await settle();
       expect(h.state().members.ids).toEqual([]);
       expect(h.state().pendingRolePrincipalIds).toEqual([]);
+    } finally {
+      h.task.cancel();
+    }
+  });
+});
+
+describe('People invite hydration independent of the dialog', () => {
+  const pending = { ...invite, expiresAt: '2099-01-01T00:00:00Z' };
+  const tabs = (root: StoreState): StoreState => ({
+    ...root,
+    tabState: { ...root.tabState, openTabs: { 'ws-1': true } },
+  });
+  beforeEach(() => {
+    clearInviteLinks();
+    __resetSettingsReadCacheForTests();
+  });
+  afterEach(() => {
+    mocks.request.mockReset();
+    vi.useRealTimers();
+  });
+
+  it('hydrates a solo open workspace without opening Share, vaulting links, or reading members again', async () => {
+    replyByMethod({ 'workspace.invite.list': { invites: [pending] } });
+    const h = harness(initialState, { 'ws-1': 'owner' }, tabs);
+    try {
+      await settle();
+      expect(calls('workspace.invite.list')).toEqual([
+        ['workspace.invite.list', { workspaceId: 'ws-1' }],
+      ]);
+      expect(calls('workspace.members.list')).toEqual([]);
+      expect(calls('principal.list')).toEqual([]);
+      expect(selectWorkspacePeopleInvites.select(h.root(), 'ws-1').map((row) => row.id)).toEqual([
+        'inv-1',
+      ]);
+      expect(h.state().open).toBe(false);
+      expect(readInviteLink('inv-1')).toBeNull();
+      expect(JSON.stringify(h.logged)).not.toContain(SECRET_MARKER);
+    } finally {
+      h.task.cancel();
+    }
+  });
+
+  it('hydrates already-open tabs through the configured Store runtime', async () => {
+    replyByMethod({ 'workspace.invite.list': { invites: [pending] } });
+    const dispose = store.init(tabs(rootState(initialState, { 'ws-1': 'owner' })));
+    const cancel = store.runSaga(workspaceShareSaga);
+    try {
+      await settle();
+      expect(mocks.request).toHaveBeenCalledWith('workspace.invite.list', { workspaceId: 'ws-1' });
+      expect(selectWorkspacePeopleInvites.select(store.state, 'ws-1').map((row) => row.id)).toEqual(
+        ['inv-1'],
+      );
+    } finally {
+      cancel();
+      dispose();
+    }
+  });
+
+  it('never lists invites for collaborators or unknown management authority', async () => {
+    replyByMethod();
+    for (const role of ['collaborator', undefined] as const) {
+      const h = harness(initialState, { 'ws-1': role }, tabs);
+      await settle();
+      expect(calls('workspace.invite.list')).toEqual([]);
+      h.task.cancel();
+    }
+  });
+
+  it('coalesces membership bursts and rejects the older list before the trailing read lands', async () => {
+    const first = deferred<{ invites: WorkspaceInviteRow[] }>();
+    const second = deferred<{ invites: WorkspaceInviteRow[] }>();
+    let reads = 0;
+    replyByMethod({
+      'workspace.invite.list': () => (++reads === 1 ? first.promise : second.promise),
+    });
+    const h = harness(initialState, { 'ws-1': 'owner' }, tabs);
+    try {
+      for (let i = 0; i < 6; i++) h.dispatch(shareMembershipChanged({ workspaceId: 'ws-1' }));
+      expect(reads).toBe(1);
+      first.resolve({ invites: [pending] });
+      await settle();
+      expect(reads).toBe(2);
+      expect(selectWorkspacePeopleInvites.select(h.root(), 'ws-1')).toEqual([]);
+      second.resolve({ invites: [] });
+      await settle();
+      expect(reads).toBe(2);
+      expect(getItems(h.state().invites)).toEqual([]);
+    } finally {
+      h.task.cancel();
+    }
+  });
+
+  it('shares a pending wire read with Share and retains metadata after close', async () => {
+    const first = deferred<{ invites: WorkspaceInviteRow[] }>();
+    replyByMethod({ 'workspace.invite.list': first.promise });
+    const h = harness(initialState, { 'ws-1': 'owner' }, tabs);
+    try {
+      h.dispatch(openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'Space' }));
+      await settle();
+      expect(calls('workspace.invite.list')).toHaveLength(1);
+      first.resolve({ invites: [pending] });
+      await settle();
+      expect(readInviteLink('inv-1')).toBe(LISTED_URL);
+      h.dispatch(closeShareDialog());
+      expect(readInviteLink('inv-1')).toBeNull();
+      expect(selectWorkspacePeopleInvites.select(h.root(), 'ws-1').map((row) => row.id)).toEqual([
+        'inv-1',
+      ]);
+      expect(JSON.stringify(h.logged)).not.toContain(SECRET_MARKER);
+    } finally {
+      h.task.cancel();
+    }
+  });
+
+  it('a background denial withholds a dialog read still waiting for its member response', async () => {
+    const members = deferred<{ members: WorkspaceMember[] }>();
+    let reads = 0;
+    replyByMethod({
+      'workspace.members.list': members.promise,
+      'workspace.invite.list': () => {
+        if (++reads === 1) return { invites: [pending] };
+        throw forbidden();
+      },
+    });
+    const h = harness(opened(), { 'ws-1': 'owner' }, tabs);
+    try {
+      await settle();
+      h.dispatch(sharePeopleInvitesRequested('ws-1'));
+      await settle();
+      expect(h.state().withheld).toBe(true);
+      members.resolve({ members: [owner] });
+      await settle();
+      expect(getItems(h.state().invites)).toEqual([]);
+      expect(getItems(h.state().members)).toEqual([]);
+      expect(selectWorkspacePeopleInvites.select(h.root(), 'ws-1')).toEqual([]);
+      expect(readInviteLink('inv-1')).toBeNull();
+    } finally {
+      h.task.cancel();
+    }
+  });
+
+  it.each(['success', 'forbidden'] as const)(
+    'drops a delayed %s from a previous authority and hydrates the new one',
+    async (outcome) => {
+      const first = deferred<{ invites: WorkspaceInviteRow[] }>();
+      let invalidation = 0;
+      let reads = 0;
+      replyByMethod({
+        'workspace.invite.list': () =>
+          ++reads === 1 ? first.promise : { invites: [{ ...pending, id: 'new-authority' }] },
+      });
+      const h = harness(initialState, { 'ws-1': 'owner' }, (root) =>
+        tabs({ ...root, principal: { ...root.principal, invalidation } }),
+      );
+      try {
+        invalidation = 1;
+        h.dispatch(shareMembershipChanged({ workspaceId: 'ws-1' }));
+        if (outcome === 'success') first.resolve({ invites: [pending] });
+        else first.reject(forbidden());
+        await settle();
+        expect(selectWorkspacePeopleInvites.select(h.root(), 'ws-1').map((row) => row.id)).toEqual([
+          'new-authority',
+        ]);
+        expect(getRosterState(h.state(), 'ws-1').inviteWithheld).toBe(false);
+      } finally {
+        h.task.cancel();
+      }
+    },
+  );
+
+  it('drops cached rows on loss of management and prevents further owner reads', async () => {
+    let allowed = true;
+    replyByMethod({ 'workspace.invite.list': { invites: [pending] } });
+    const h = harness(initialState, { 'ws-1': 'owner' }, (root) =>
+      tabs({
+        ...root,
+        workspace: {
+          ...root.workspace,
+          workspaces: createCollection('id', [
+            { id: 'ws-1', myRole: allowed ? 'owner' : 'collaborator' } as Workspace,
+          ]),
+        },
+      }),
+    );
+    try {
+      await settle();
+      expect(selectWorkspacePeopleInvites.select(h.root(), 'ws-1')).toHaveLength(1);
+      allowed = false;
+      h.dispatch(shareMembershipChanged({ workspaceId: 'ws-1' }));
+      await settle();
+      h.dispatch(sharePeopleInvitesRequested('ws-1'));
+      await settle();
+      expect(getItems(h.state().invites)).toEqual([]);
+      expect(calls('workspace.invite.list')).toHaveLength(1);
+    } finally {
+      h.task.cancel();
+    }
+  });
+
+  it('expires a visible invite without a membership event or another render', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-23T12:00:00Z'));
+    replyByMethod({
+      'workspace.invite.list': { invites: [{ ...pending, expiresAt: '2026-10-23T12:00:01Z' }] },
+    });
+    const h = harness(initialState, { 'ws-1': 'owner' }, tabs);
+    try {
+      await settle();
+      expect(selectWorkspacePeopleInvites.select(h.root(), 'ws-1')).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(selectWorkspacePeopleInvites.select(h.root(), 'ws-1')).toEqual([]);
+      expect(calls('workspace.invite.list')).toHaveLength(1);
     } finally {
       h.task.cancel();
     }

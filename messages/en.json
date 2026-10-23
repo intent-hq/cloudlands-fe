@@ -6989,6 +6989,8 @@
   "workspace_peopleActivity_messagedAgent_label": "Sent a message to {agent}",
   "workspace_peopleActivity_recentEmpty_label": "No activity from people in these recent events.",
   "workspace_peopleActivity_sentMessage_label": "Sent a message",
+  "workspace_peopleRoster_inactive_label": "Online · Not viewing this workspace",
+  "workspace_peopleTile_inactive_tooltip": "{name} · Not viewing this workspace",
   "workspace_peopleTile_title": "People",
   "workspace_phase_allSet_label": "All set!",
   "workspace_phase_building_description": "Once approved, the Coordinator will delegate the work and verify it.",

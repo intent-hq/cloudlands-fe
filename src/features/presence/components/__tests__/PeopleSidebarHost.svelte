@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import { presenceRosterReceived } from '$store/renderer/slices/presence/presence-slice';
   import { Button } from '$lib/components/ui/button';
   import PeoplePreview from '../workspace-people-tile.preview.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
@@ -37,9 +38,15 @@
 
   let {
     guest = false,
+    roster,
     older = false,
     emptyOlder = false,
-  }: { guest?: boolean; older?: boolean; emptyOlder?: boolean } = $props();
+  }: {
+    guest?: boolean;
+    older?: boolean;
+    emptyOlder?: boolean;
+    roster?: 'mixed' | 'pending';
+  } = $props();
   const dispose = startRootStoreLifecycle(store, { startSagas: () => [] });
   const sharingOpen = selectShareDialogOpen();
   const workspaceId = 'people-tile-preview';
@@ -174,6 +181,9 @@
   <PeoplePreview
     sidebar
     {guest}
+    {roster}
+    count={roster === 'pending' ? 1 : 3}
+    shared={roster !== 'pending'}
     activityState={emptyOlder ? 'older-empty' : older ? 'older' : 'ready'}
   />
 </div>
@@ -186,3 +196,7 @@
   >{JSON.stringify({ panels: $panels$, focusedPanel: $focusedPanel$ })}</output
 >
 <output data-people-message-navigation>{JSON.stringify(messageNavigation)}</output>
+
+<Button onclick={() => store.dispatch(presenceRosterReceived({ workspaceId, members: [] }))}
+  >Disconnect people</Button
+>

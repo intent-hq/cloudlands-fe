@@ -6989,6 +6989,8 @@
   "workspace_peopleActivity_messagedAgent_label": "A envoyé un message à {agent}",
   "workspace_peopleActivity_recentEmpty_label": "Aucune activité de personnes dans ces événements récents.",
   "workspace_peopleActivity_sentMessage_label": "A envoyé un message",
+  "workspace_peopleRoster_inactive_label": "En ligne · Ne consulte pas cet espace de travail",
+  "workspace_peopleTile_inactive_tooltip": "{name} · Ne consulte pas cet espace de travail",
   "workspace_peopleTile_title": "Personnes",
   "workspace_phase_allSet_label": "Tout est prêt !",
   "workspace_phase_building_description": "Une fois approuvé, le coordinateur déléguera le travail et le vérifiera.",

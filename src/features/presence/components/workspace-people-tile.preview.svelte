@@ -4,6 +4,7 @@
   interface Props {
     count?: number;
     offline?: boolean;
+    roster?: 'mixed' | 'pending';
     sidebar?: boolean;
     shared?: boolean;
     expanded?: boolean;
@@ -17,6 +18,8 @@
     defaultState: 'sidebar',
     states: {
       sidebar: { props: { sidebar: true } },
+      mixed: { props: { sidebar: true, expanded: true, roster: 'mixed' } },
+      pending: { props: { sidebar: true, shared: false, count: 1, roster: 'pending' } },
       tile: { props: {} },
       overflow: { props: { count: 8 } },
       offline: { props: { offline: true } },
@@ -35,6 +38,12 @@
 
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
+  import {
+    sharePeopleInvitesLoaded,
+    sharePeopleInvitesScopeChanged,
+  } from '$store/renderer/slices/workspace-share/workspace-share-slice';
+  import { selectWorkspaceInviteRead } from '$store/renderer/slices/workspace-share/workspace-share-selectors';
+  import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
   import WorkspacePeopleTile from './WorkspacePeopleTile.svelte';
   import MultiSelectTabbedSidebar from '$lib/components/workspace/MultiSelectTabbedSidebar.svelte';
   import { store } from '$store/renderer/store';
@@ -68,6 +77,7 @@
   let {
     count = 3,
     offline = false,
+    roster,
     sidebar = false,
     shared = true,
     expanded = false,
@@ -122,10 +132,48 @@
         workspaceId,
         members: offline
           ? []
-          : people.map((person) => ({ ...person, focus: [{ workspaceId }], typing: [] })),
+          : people
+              .filter((_, index) => roster !== 'mixed' || index !== 2)
+              .map((person, index) => ({
+                ...person,
+                focus: [
+                  {
+                    workspaceId:
+                      roster === 'mixed' && index === 1 ? 'another-workspace' : workspaceId,
+                  },
+                ],
+                typing: [],
+              })),
       }),
     );
     const now = Date.now();
+    if (roster) {
+      store.dispatch(
+        sharePeopleInvitesScopeChanged({
+          context: selectPrincipalActionContext.select(store.state)!,
+          workspaceIds: [workspaceId],
+        }),
+      );
+      store.dispatch(
+        sharePeopleInvitesLoaded({
+          workspaceId,
+          context: selectPrincipalActionContext.select(store.state)!,
+          generation: selectWorkspaceInviteRead.select(store.state, workspaceId).generation,
+          invites: [
+            {
+              id: 'amelia-invite',
+              workspaceId,
+              createdByPrincipalId: 'person-0',
+              pinLogin: 'amelia',
+              pinIdentity: { provider: 'github', host: 'github.com', externalUserId: '1042' },
+              createdAt: new Date(now).toISOString(),
+              expiresAt: new Date(now + 86400000).toISOString(),
+            },
+          ],
+          receivedAt: now,
+        }),
+      );
+    }
     const activity: WorkspaceEvent[] = [
       {
         id: 'people-activity-luke-message',
@@ -280,6 +328,7 @@
   });
 
   onDestroy(() => {
+    store.dispatch(sharePeopleInvitesScopeChanged({ context: null, workspaceIds: [] }));
     store.dispatch(presenceReset());
     store.dispatch(setLabsMultiplayerEnabled(previousMultiplayer));
     store.dispatch(removeWorkspaceEntity(workspaceId));
