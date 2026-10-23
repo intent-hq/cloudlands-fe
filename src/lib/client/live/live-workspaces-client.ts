@@ -210,7 +210,10 @@ export class LiveWorkspacesClient implements WorkspacesClient {
     const includeArchived = options?.includeArchived === true;
     const includeRetired = options?.includeRetired === true;
     const key = `${includeArchived}:${includeRetired}`;
-    const existing = this.listRequests.get(key);
+    // Retired reads are never shared: a reader that reloads after a restore,
+    // delete or identity change must observe a request started after it, not
+    // an older in-flight snapshot whose changes it never journaled.
+    const existing = includeRetired ? undefined : this.listRequests.get(key);
     if (existing) return existing;
 
     const params = {
@@ -226,6 +229,7 @@ export class LiveWorkspacesClient implements WorkspacesClient {
         normalizeWorkspace(workspace as Record<string, unknown>),
       );
     });
+    if (includeRetired) return request;
     this.listRequests.set(key, request);
     const clearRequest = () => {
       if (this.listRequests.get(key) === request) {

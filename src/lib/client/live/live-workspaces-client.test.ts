@@ -690,6 +690,18 @@ describe('LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)', () => {
     });
   });
 
+  it('never shares an in-flight retired read between callers', async () => {
+    mockedRequest
+      .mockReturnValueOnce(new Promise(() => {}))
+      .mockReturnValueOnce(new Promise(() => {}));
+    const client = new LiveWorkspacesClient();
+
+    void client.list({ includeArchived: true, includeRetired: true });
+    void client.list({ includeArchived: true, includeRetired: true });
+
+    expect(mockedRequest).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps separate single-flight entries per archive/retire scope', async () => {
     mockedRequest
       .mockReturnValueOnce(new Promise(() => {}))
