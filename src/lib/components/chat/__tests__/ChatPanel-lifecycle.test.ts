@@ -10,6 +10,7 @@ import {
 } from '$store/renderer/slices/transient-ui/transient-ui-slice';
 import { selectComposerContextItems } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
 import { WorkspaceStatus, type Workspace } from '$shared/types';
+import { m } from '$shared/paraglide/messages.js';
 import { KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
 import { registerGlobalSearchShortcuts } from '$lib/utils/global-search-shortcuts';
 import { resolveShortcut } from '$lib/utils/shortcut-bindings';
@@ -4410,21 +4411,45 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(screen.queryByTestId('suggested-prompts-surface')).toBeNull();
   });
 
-  it('disables the composer while the workspace is retired (read-only)', async () => {
+  it('keeps the composer enabled when retired and confirms before a send revives it', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentSession.set({ id: 'agent-a', messages: [] });
-    const view = render(ChatPanel, {
-      props: { workspace: workspace('workspace-retired'), agentId: 'agent-a' },
+    const retiredWorkspace = { ...workspace('workspace-a'), status: WorkspaceStatus.Retired };
+    render(ChatPanel, {
+      props: { workspace: retiredWorkspace, agentId: 'agent-a', isActive: true },
     });
     await tick();
     expect(screen.getByTestId('mock-rich-input').getAttribute('data-disabled')).toBe('false');
+    const sends = () =>
+      mocks.dispatch.mock.calls.filter(([action]) => action?.type === 'chatState/sendMessage');
 
-    await view.rerender({
-      workspace: { ...workspace('workspace-retired'), status: WorkspaceStatus.Retired },
-      agentId: 'agent-a',
+    // Cancel drops the held send.
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'Pick this back up' },
     });
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    expect(screen.getByTestId('retired-send-confirm').textContent).toContain(
+      m.workspace_retiredSend_notice(),
+    );
+    expect(sends()).toHaveLength(0);
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.modals_bulkActionConfirm_cancel_label() }),
+    );
+    expect(screen.queryByTestId('retired-send-confirm')).toBeNull();
+    expect(sends()).toHaveLength(0);
+
+    // Confirming sends the held message; the daemon revives the workspace.
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.workspace_retiredSend_confirm_label() }),
+    );
     await tick();
-    expect(screen.getByTestId('mock-rich-input').getAttribute('data-disabled')).toBe('true');
+    expect(screen.queryByTestId('retired-send-confirm')).toBeNull();
+    expect(sends()).toHaveLength(1);
+    expect(sends()[0][0].payload.payload).toMatchObject({
+      wsId: 'workspace-a',
+      text: 'Pick this back up',
+    });
   });
 
   it('reports true-bottom state to the stable header control', async () => {

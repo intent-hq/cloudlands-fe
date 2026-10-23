@@ -1,7 +1,9 @@
 <script module lang="ts">
   import { definePreview } from '$lib/component-catalog/preview-definition';
 
-  export const preview = definePreview<{ scenario: 'banner' | 'collaborator' | 'confirm' }>({
+  export const preview = definePreview<{
+    scenario: 'banner' | 'collaborator' | 'confirm' | 'send-confirm';
+  }>({
     id: 'retired-workspace',
     title: 'Retired workspace',
     defaultState: 'banner',
@@ -9,15 +11,19 @@
       banner: { props: { scenario: 'banner' } },
       collaborator: { props: { scenario: 'collaborator' } },
       confirm: { props: { scenario: 'confirm' } },
+      'send-confirm': { props: { scenario: 'send-confirm' } },
     },
   });
 </script>
 
 <script lang="ts">
   import RetiredWorkspaceBanner from './RetiredWorkspaceBanner.svelte';
+  import RetiredSendConfirm from '$lib/components/chat/RetiredSendConfirm.svelte';
   import RetireWorkspaceConfirmDialog from '$lib/components/modals/RetireWorkspaceConfirmDialog.svelte';
 
-  let { scenario = 'banner' }: { scenario?: 'banner' | 'collaborator' | 'confirm' } = $props();
+  let {
+    scenario = 'banner',
+  }: { scenario?: 'banner' | 'collaborator' | 'confirm' | 'send-confirm' } = $props();
 </script>
 
 {#if scenario === 'confirm'}
@@ -46,5 +52,13 @@
         be retired.
       </div>
     </div>
+    {#if scenario === 'send-confirm'}
+      <RetiredSendConfirm onConfirm={() => {}} onCancel={() => {}} />
+      <div
+        class="mx-3 mb-3 rounded-lg border border-border px-3 py-2 type-body text-muted-foreground"
+      >
+        Pick this back up and port the parser to the new importer.
+      </div>
+    {/if}
   </div>
 {/if}
