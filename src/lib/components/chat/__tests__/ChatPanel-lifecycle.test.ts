@@ -4438,8 +4438,15 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(screen.queryByTestId('retired-send-confirm')).toBeNull();
     expect(sends()).toHaveLength(0);
 
-    // Confirming sends the held message; the daemon revives the workspace.
+    // Repeated submissions stay held until the user confirms.
     await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    expect(sends()).toHaveLength(0);
+
+    // Editing before confirming sends the current draft, not the first one.
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'Pick this back up, then port the parser' },
+    });
     await fireEvent.click(
       screen.getByRole('button', { name: m.workspace_retiredSend_confirm_label() }),
     );
@@ -4448,7 +4455,7 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(sends()).toHaveLength(1);
     expect(sends()[0][0].payload.payload).toMatchObject({
       wsId: 'workspace-a',
-      text: 'Pick this back up',
+      text: 'Pick this back up, then port the parser',
     });
   });
 
