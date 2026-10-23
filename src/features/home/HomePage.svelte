@@ -92,6 +92,7 @@
   import { updateHomeWorkspaceView } from './home-workspaces-slice';
   import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
   import { homeRetiredWorkspaces } from './home-retired-workspaces.svelte';
+  import { selectPrincipalActionContext as admissionSelector } from '$store/renderer/slices/principal/principal-selectors';
   import HomeIntegrations from './HomeIntegrations.svelte';
   import type { HomeIntegrationsState } from './home-integrations-types';
 
@@ -484,11 +485,7 @@
       row?.closest<HTMLElement>('[role="option"], button')?.focus();
     });
   });
-  homeRetiredWorkspaces({
-    filter: () => filter,
-    preview: () => preview,
-    workspaces: () => $workspaces$,
-  });
+  homeRetiredWorkspaces(() => ({ filter, preview }), workspaces$, admissionSelector());
   function chooseFilter(next: HomeFilter) {
     store.dispatch(closePanel());
     updateView({ filter: next, tab: 'workspaces', selectedId: null });
