@@ -15,7 +15,7 @@ export type HomeTriageInput = Pick<Workspace, 'displayStatus' | 'activity' | 'at
   Partial<Pick<Workspace, 'waiting' | 'scriptsRunning'>>;
 
 /** An agent turn or a command-mode script run is in flight. */
-export function isHomeRunning(workspace: HomeTriageInput): boolean {
+function isHomeRunning(workspace: HomeTriageInput): boolean {
   return (
     workspace.activity === 'agent_running' ||
     workspace.displayStatus === 'in_progress' ||
@@ -25,7 +25,7 @@ export function isHomeRunning(workspace: HomeTriageInput): boolean {
 
 /** Watching something external: the daemon's waiting flag (hooks, PR and
  *  script monitors, delegated agents) or a PR sitting in the merge queue. */
-export function isHomeWaiting(workspace: HomeTriageInput): boolean {
+function isHomeWaiting(workspace: HomeTriageInput): boolean {
   return workspace.waiting === true || workspace.displayStatus === 'pr_queued';
 }
 
