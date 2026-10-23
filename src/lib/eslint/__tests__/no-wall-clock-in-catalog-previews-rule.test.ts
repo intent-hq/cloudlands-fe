@@ -45,6 +45,8 @@ describe('no-wall-clock-in-catalog-previews under the real eslint.config.js', ()
     ['a .preview.ts', CLOCK_READ, 'src/lib/components/layout/probe.preview.ts', 1],
     ['a preview fixtures module', CLOCK_READ, 'src/lib/components/probe.preview-fixtures.ts', 1],
     ['a preview fixture module', CLOCK_READ, 'src/features/probe/probe.preview-fixture.ts', 1],
+    ['a component fixture module', CLOCK_READ, 'src/lib/components/shared/probe.fixture.ts', 1],
+    ['a fixtures module', CLOCK_READ, 'src/lib/components/probe/Probe.fixtures.ts', 1],
   ])('reports a real-clock read in %s', async (_label, code, filePath, line) => {
     expect(await ruleHits(code, filePath)).toEqual([line]);
   });
@@ -52,6 +54,11 @@ describe('no-wall-clock-in-catalog-previews under the real eslint.config.js', ()
   it.each([
     ['the catalog clock itself', CLOCK_READ, 'src/lib/component-catalog/catalog-clock.ts'],
     ['a catalog unit test', CLOCK_READ, 'src/lib/component-catalog/probe.test.ts'],
+    [
+      'a backend test fixture',
+      CLOCK_READ,
+      'src/features/backend/main/__fixtures__/probe.fixture.ts',
+    ],
     ['a preview component test', CLOCK_READ, 'src/features/probe/probe.ct.spec.ts'],
     ['an ordinary component', svelte(CLOCK_READ), 'src/lib/components/ui/Probe.svelte'],
     ['an ordinary module', CLOCK_READ, 'src/lib/utils/probe.ts'],

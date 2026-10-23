@@ -27,7 +27,7 @@ describe('no-wall-clock-in-catalog-previews guidance', () => {
     expect(message).toContain('({{read}})');
     expect(message).toContain('"20s" instead of "18s"');
     expect(message).toContain('$lib/component-catalog/catalog-clock');
-    expect(message).toContain('catalogTime()');
+    expect(message).toContain('snapshot suites freeze Date');
     expect(message).toContain('catalogNow()');
     expect(message).toContain('catalogStopwatch()');
   });
@@ -47,7 +47,7 @@ tester.run('no-wall-clock-in-catalog-previews', rule, {
     { code: 'const now = clock.now();', filename: tsFile },
     { code: "const fixed = new globalThis.Date('2026-09-01');", filename: tsFile },
     { code: 'const now = catalog.Date.now;', filename: tsFile },
-    svelte('  const at = catalogTime(-18_000);'),
+    svelte('  const at = new Date(catalogNow() - 18_000).toISOString();'),
   ],
   invalid: [
     // The incident: ToastCatalogPreview.svelte stamped its attention toast from the real clock.

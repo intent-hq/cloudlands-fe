@@ -18,6 +18,8 @@ const MATCHERS = new Set([
 export const CLOCK_CALLEES = new Set([
   'performance.now',
   'Date.now',
+  'globalThis.Date.now',
+  'window.Date.now',
   'globalThis.performance.now',
   'window.performance.now',
 ]);

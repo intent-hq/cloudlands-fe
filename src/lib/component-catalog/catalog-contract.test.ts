@@ -261,9 +261,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  vi.useRealTimers();
   cleanup();
   document.body.replaceChildren();
+  vi.useRealTimers();
 });
 
 async function verifyCatalogContract(testCase: ContractCase) {
@@ -332,8 +332,9 @@ describe('catalog relative-time reference', () => {
 describe('catalog toast fixture clock', () => {
   const toastCase = cases.find(({ key }) => key === 'primitive:toast:toast-state-matrix');
   const toastBudgetMs = toastCase ? budgetMs(toastCase) : defaultTestTimeoutMs();
-  // The attention toast's age re-renders on the shared one-second ticker.
-  const slowRenderMs = 2_200;
+  // The attention toast's age re-renders on the shared one-second ticker: one tick is
+  // enough to read "19s" on an unfrozen clock.
+  const slowRenderMs = 1_200;
 
   it(
     'keeps the attention toast at 18s while a slow render lets real time pass',
