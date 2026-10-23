@@ -32,9 +32,9 @@ env:
 jobs:
   # Fork PRs skip every checkout/routed job. CI Gate alone still runs without
   # checkout or permissions and fails red for the guarded skips.
-  # Decides where the heavy jobs (build-web / test / test-integration) run.
-  # Type Check & Lint (checks) runs on ubuntu-24.04 and keeps `needs: route`
-  # only as its fork-PR guard. The heavy jobs run on
+  # Decides where the heavy jobs (build-web / test) run.
+  # Type Check & Lint (checks) and Integration Tests run on ubuntu-24.04 and
+  # keep `needs: route` only as their fork-PR guard. The heavy jobs run on
   # the intent-cache runner slots normally, or on their burst runner (WarpBuild,
   # or GitHub when CI_WARPBUILD_DISABLED is `true`) when every slot is
   # occupied, the fleet is unavailable, or the CI_LINUX_RUNNER_DISABLED
@@ -94,7 +94,6 @@ jobs:
             [
             {"key":"test","label":"gh-linux-8x","minutes":13,"shards":4},
             {"key":"build-web","label":"gh-linux-8x","minutes":4,"events":["merge_group"]},
-            {"key":"test-integration","label":"gh-linux-8x","minutes":2,"events":["merge_group"]},
             {"key":"ct","label":"gh-linux-8x","minutes":36,"shards":4,"events":["merge_group"]}
             ]
         run: |
@@ -157,15 +156,16 @@ jobs:
             // jobs asking for them always run there and never take a self-hosted slot.
             const free = ['ubuntu-22.04', 'ubuntu-24.04', 'ubuntu-latest', 'ubuntu-24.04-arm', 'windows-2022', 'windows-2025'];
             // Paid GitHub labels and the WarpBuild runner each bursts to instead
-            // (same cores; Windows stays on Server 2022, macOS 15 keeps signed builds
-            // off macOS 26). Intel Macs have no WarpBuild equivalent and stay on GitHub.
+            // (same cores except Macs, which get 12 because every Mac job is CPU-bound;
+            // Windows stays on Server 2022, macOS 15 keeps signed builds off macOS 26).
+            // Intel Macs have no WarpBuild equivalent and stay on GitHub.
             const warp = {
               'gh-linux-8x': 'warp-ubuntu-2404-x64-8x',
               'gh-linux-16x': 'warp-ubuntu-2404-x64-16x',
               'gh-linux-arm64-8x': 'warp-ubuntu-2404-arm64-8x',
               'gh-windows-16x': 'warp-windows-2022-x64-16x',
-              'macos-26-xlarge': 'warp-macos-26-arm64-6x',
-              'macos-15-xlarge': 'warp-macos-15-arm64-6x',
+              'macos-26-xlarge': 'warp-macos-26-arm64-12x',
+              'macos-15-xlarge': 'warp-macos-15-arm64-12x',
             };
             // WarpBuild health is tracked per OS and architecture (ubuntu-x64, ubuntu-arm64, windows-x64, macos-arm64).
             const family = (label) => {
@@ -997,6 +997,8 @@ jobs:
     # own routed job rather than a step on a unit shard so neither leg is
     # asymmetrically longer and a unit-shard flake can't hide integration
     # results. The suite itself is short (~1 min); setup dominates.
+    # It peaks near 2 CPUs and 4 GB, so it runs on the free ubuntu-24.04
+    # runner (4 CPUs / 16 GB) and never holds a heavy slot or a paid runner.
     # MERGE-QUEUE-ONLY (see the trigger comment): skipped on pull_request
     # — the gate accepts that skip unconditionally — and run only on
     # merge_group, where the gate requires success EXCEPT on a
@@ -1007,7 +1009,7 @@ jobs:
     name: Integration Tests
     needs: [route, release-fast-path]
     if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
-    runs-on: ${{ fromJSON(needs.route.outputs.slots || '{}')['test-integration'] || fromJSON('["gh-linux-8x"]') }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read

@@ -652,7 +652,7 @@ const WARP = {
   'gh-linux-16x': ['warp-ubuntu-2404-x64-16x'],
   'gh-linux-arm64-8x': ['warp-ubuntu-2404-arm64-8x'],
   'gh-windows-16x': ['warp-windows-2022-x64-16x'],
-  'macos-26-xlarge': ['warp-macos-26-arm64-6x'],
+  'macos-26-xlarge': ['warp-macos-26-arm64-12x'],
 };
 const FORK = {
   event: 'pull_request',
@@ -751,7 +751,7 @@ test('a WarpBuild OS/architecture queued over 10 minutes bursts to GitHub; other
   const mac = await route({
     runners: [],
     env: WARP_ON,
-    jobs: [warpJob(3, 'warp-macos-15-arm64-6x', 30)],
+    jobs: [warpJob(3, 'warp-macos-15-arm64-12x', 30)],
   });
   assert.deepEqual(mac.runners['macos-26-xlarge'], ['macos-26-xlarge']);
   assert.deepEqual(JSON.parse(mac.outputs.cloud)['macos-15-xlarge'], ['macos-15-xlarge']);
@@ -779,7 +779,7 @@ test('cloud maps every paid label to WarpBuild and never to a self-hosted runner
   assert.deepEqual(cloud, {
     ...Object.fromEntries(FREE.map((label) => [label, [label]])),
     ...WARP,
-    'macos-15-xlarge': ['warp-macos-15-arm64-6x'],
+    'macos-15-xlarge': ['warp-macos-15-arm64-12x'],
     'macos-latest-large': ['macos-latest-large'],
   });
   // Idle self-hosted runners are still used by `runners`, never by `cloud`.
