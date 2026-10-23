@@ -7,7 +7,7 @@
 import { clsx, type ClassValue } from 'clsx';
 import { extendTailwindMerge } from 'tailwind-merge';
 
-const mergeClasses = extendTailwindMerge({
+const mergeClasses = extendTailwindMerge<'surface-inverse'>({
   extend: {
     classGroups: {
       'font-size': [
@@ -20,6 +20,12 @@ const mergeClasses = extendTailwindMerge({
         'text-ui-sm',
         'text-xs',
       ],
+      // Paints background and text (src/lib/styles/inverse-surface.css).
+      'surface-inverse': ['surface-inverse'],
+    },
+    conflictingClassGroups: {
+      'surface-inverse': ['bg-color', 'text-color'],
+      'bg-color': ['surface-inverse'],
     },
   },
 });

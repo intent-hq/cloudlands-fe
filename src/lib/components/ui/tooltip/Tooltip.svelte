@@ -4,7 +4,6 @@
   import type { Snippet } from 'svelte';
   import TooltipTriggerWrapper from './tooltip-trigger-wrapper.svelte';
   import './tooltip-motion.css';
-  import './tooltip-inverse.css';
 
   interface Props {
     /** Tooltip content - can be a string or a snippet */
@@ -63,7 +62,7 @@
 
   // Variant styles
   const variantStyles = {
-    default: 'tooltip-inverse bg-foreground text-background',
+    default: 'surface-inverse',
     secondary: 'bg-secondary text-secondary-foreground border border-border',
     destructive: 'bg-danger text-danger-background border border-danger',
     outline: 'bg-transparent text-foreground ring-1 ring-inset ring-border',
