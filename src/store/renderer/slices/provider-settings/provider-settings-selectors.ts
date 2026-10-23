@@ -37,7 +37,6 @@ export const selectProviderPaths = store.createSelector((state) => state.provide
 export const selectProviderPathsRevision = store.createSelector(
   (state) => state.providerSettings.pathsRevision,
 );
-export const selectPiAdapter = store.createSelector((state) => state.providerSettings.piAdapter);
 
 /**
  * Default provider id — the provider leg of the default model triple

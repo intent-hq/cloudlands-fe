@@ -24,11 +24,6 @@ vi.mock('$lib/client', () => ({
   appClient: { settings: { get: vi.fn().mockResolvedValue({ value: {} }) } },
 }));
 
-vi.mock('$features/pi/pi-models.client', () => ({
-  checkPiMcpAdapterInstalled: vi.fn().mockResolvedValue(true),
-  installPiMcpAdapter: vi.fn(),
-}));
-
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: { error: mocks.toastError, success: vi.fn() },
 }));

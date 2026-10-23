@@ -67,7 +67,6 @@ export const initialState: ProviderSettingsState = {
   paths: { configured: {}, resolved: {}, secondary: {}, npxPackages: {} },
   pathsRevision: 0,
   pathsStatus: 'idle',
-  piAdapter: { installed: null, status: 'idle' },
 };
 
 export const providerSettingsSessionOpened = createAction<[sessionId: string]>(
@@ -97,13 +96,6 @@ export const providerSettingsRequestSettled = createAction<
   [id: string, status: Exclude<ProviderSettingsRequest['status'], 'pending'>]
 >('providerSettings/requestSettled');
 export const providerSettingsStopped = createAction('providerSettings/stopped');
-export const piAdapterCheckRequested = createAction('providerSettings/piAdapterCheckRequested');
-export const piAdapterCheckSettled = createAction<[installed: boolean | null]>(
-  'providerSettings/piAdapterCheckSettled',
-);
-export const piAdapterInstallRequested = createAction<[request: ProviderSettingsRequestContext]>(
-  'providerSettings/piAdapterInstallRequested',
-);
 
 function beginWrite(
   state: ProviderSettingsState,
@@ -241,17 +233,6 @@ providerSettingsReducer.with(providerSettingsRequestSettled, (state, { payload: 
   if (!request || request.status !== 'pending') return state;
   return { ...state, requests: updateItem(state.requests, { id, status }) };
 });
-providerSettingsReducer.with(piAdapterCheckRequested, (state) => ({
-  ...state,
-  piAdapter: { ...state.piAdapter, status: 'pending' },
-}));
-providerSettingsReducer.with(piAdapterCheckSettled, (state, { payload: [installed] }) => ({
-  ...state,
-  piAdapter: { installed, status: installed === null ? 'failure' : 'success' },
-}));
-providerSettingsReducer.with(piAdapterInstallRequested, (state, { payload: [request] }) =>
-  beginWrite(state, 'pi-adapter', request),
-);
 providerSettingsReducer.with(providerSettingsStopped, (state) => {
   let requests = state.requests;
   for (const id of requests.ids) {
@@ -263,10 +244,6 @@ providerSettingsReducer.with(providerSettingsStopped, (state) => {
     requests,
     pathsRevision: state.pathsRevision + 1,
     pathsStatus: state.pathsStatus === 'pending' ? 'idle' : state.pathsStatus,
-    piAdapter: {
-      ...state.piAdapter,
-      status: state.piAdapter.status === 'pending' ? 'idle' : state.piAdapter.status,
-    },
   };
 });
 providerSettingsReducer.with(providerCatalogLoaded, (state, { payload: [catalog] }) => ({
