@@ -833,7 +833,7 @@
       <div class="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center">
         <Button
           variant="plain"
-          class="pointer-events-auto h-8 gap-1.5 rounded-full bg-foreground px-3 text-background shadow-md"
+          class="pointer-events-auto h-8 gap-1.5 rounded-full surface-inverse px-3 shadow-md"
           onclick={jumpToNewest}
           aria-label={m.workspace_discussion_jumpNew_label({ count: formatInteger(unreadCount) })}
           ><Fa icon={faArrowDown} />{m.workspace_discussion_jumpNew_label({

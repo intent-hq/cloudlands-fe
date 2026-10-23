@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import { catalogNow } from '$lib/component-catalog/catalog-clock';
   import { definePreview } from '$lib/component-catalog/preview-definition';
   import {
     AgentStatus,
@@ -206,7 +207,7 @@
       index === 8
         ? undefined
         : new Date(
-            Date.now() -
+            catalogNow() -
               [
                 37_000, 3_600_000, 86_400_000, 172_800_000, 518_400_000, 2_419_200_000,
                 5_184_000_000, 31_536_000_000,

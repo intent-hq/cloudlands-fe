@@ -62,7 +62,7 @@
 
   // Variant styles
   const variantStyles = {
-    default: 'bg-foreground text-background',
+    default: 'surface-inverse',
     secondary: 'bg-secondary text-secondary-foreground border border-border',
     destructive: 'bg-danger text-danger-background border border-danger',
     outline: 'bg-transparent text-foreground ring-1 ring-inset ring-border',
