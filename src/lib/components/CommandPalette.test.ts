@@ -227,6 +227,8 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
     createSelectorReadable(workspaceIdArg, () => collaboratorState.workspace),
   selectHidesAgentLifecycleActions: (workspaceIdArg: any) =>
     createSelectorReadable(workspaceIdArg, () => collaboratorState.workspace),
+  selectHidesAgentCreationActions: (workspaceIdArg: any) =>
+    createSelectorReadable(workspaceIdArg, () => collaboratorState.workspace),
   selectIsCollaboratorOnlyClient: () => ({
     subscribe: (fn: (value: boolean) => void) => {
       collaboratorState.subscribers.add(fn);

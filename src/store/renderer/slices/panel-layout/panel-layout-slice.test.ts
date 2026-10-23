@@ -3710,6 +3710,23 @@ describe('panelLayoutReducer', () => {
       expect(getItems(reopened.hiddenTabs)).toEqual([]);
     });
 
+    it('preserves saved-script output for Managers while purging raw terminals, then clears output on downgrade', () => {
+      const state = stateWithPanel('p1', [
+        { id: 'raw', type: 'terminal', title: 'Raw', terminalId: 'pty' },
+        { id: 'saved', type: 'terminal', title: 'Saved', scriptId: 'check' },
+        { id: 'oneOff', type: 'terminal', title: 'One-off', scriptId: 'adhoc' },
+        { id: 'note', type: 'note', title: 'Note' },
+      ]);
+      const manager = panelLayoutReducer(state, destroyTabsByType(WS, 'terminal', 1000, ['check']));
+      expect(manager.byWorkspaceId[WS].panels.p1.tabs.map((tab) => tab.id)).toEqual([
+        'saved',
+        'note',
+      ]);
+      const participant = panelLayoutReducer(manager, destroyTabsByType(WS, 'terminal', 1001));
+      expect(participant.byWorkspaceId[WS].panels.p1.tabs.map((tab) => tab.id)).toEqual(['note']);
+      expect(participant.byWorkspaceId[WS].recentlyClosed).toEqual([]);
+    });
+
     it('is a no-op when the workspace holds no tab of that type', () => {
       const state = stateWithPanel('p1', [{ id: 'note', type: 'note', title: 'A' }]);
       expect(panelLayoutReducer(state, destroyTabsByType(WS, 'terminal', 1000))).toBe(state);

@@ -127,12 +127,17 @@ export function normalizeSelectedTabs(
   tabIds: string[],
   isCollaborator = false,
   showPeople = true,
+  canOperateScripts = false,
 ): Set<TabId> {
   const normalized = tabIds.filter(
     (tabId) =>
       isValidTabId(tabId) &&
       (tabId !== 'people' || showPeople) &&
-      !(isCollaborator && OWNER_ONLY_TAB_IDS.has(tabId as TabId)),
+      !(
+        isCollaborator &&
+        OWNER_ONLY_TAB_IDS.has(tabId as TabId) &&
+        !(tabId === 'shell' && canOperateScripts)
+      ),
   );
   return new Set([(normalized[0] as TabId | undefined) ?? 'overview']);
 }

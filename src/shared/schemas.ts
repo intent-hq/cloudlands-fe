@@ -135,7 +135,7 @@ export const WorkspaceSchema = z.object({
   attention: z.enum(['none', 'unread', 'review_required']).optional(), // BE-owned dismissible attention flag (PROTOCOL §5.1 / §9.9)
   // Membership summary (PROTOCOL §5.1, multiplayer w1); all absent on older daemons.
   ownerPrincipalId: z.string().optional(),
-  myRole: z.enum(['owner', 'collaborator']).optional(),
+  myRole: z.enum(['owner', 'collaborator', 'manager']).optional(),
   memberCount: z.number().int().nonnegative().optional(),
   openInviteCount: z.number().int().nonnegative().optional(),
   createdAt: z.string().datetime(),

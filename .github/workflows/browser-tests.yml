@@ -9,6 +9,13 @@ on:
         description: 'Full suite to run: ct, root, or electron'
         type: string
         required: true
+      slots:
+        # The caller's route outputs.slots: a Component Tests shard takes its
+        # ct-N slot when granted. Nightly and manual callers pass none.
+        description: 'Runner labels per pooled job key (JSON object)'
+        type: string
+        required: false
+        default: '{}'
       cloud:
         description: "The caller's route `cloud` output (runner-route.yml): where gh-linux-8x jobs run."
         type: string
@@ -22,9 +29,11 @@ jobs:
   test-ct:
     name: Component Tests (shard ${{ matrix.shard }}/4)
     if: ${{ !cancelled() && inputs.suite == 'ct' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group') }}
-    # Never a self-hosted slot: apt (sudo) and the GitHub image's Chromium libraries.
-    runs-on: ${{ fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["gh-linux-8x"]') }}
-    # Four hosted shards, two workers each; preserve the pinned CT browser.
+    # A granted ct-N slot (the merge-queue caller's slots), else the caller's
+    # burst runner for gh-linux-8x (WarpBuild), else gh-linux-8x. Slots carry
+    # the Chromium libraries in their image and skip the sudo/apt steps.
+    runs-on: ${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["gh-linux-8x"]') }}
+    # Four shards, two workers each; preserve the pinned CT browser.
     strategy:
       # Let the sibling shards finish so one flaky leg doesn't hide the
       # other legs' results.
@@ -54,7 +63,7 @@ jobs:
           # Keep concurrent runner installations isolated.
           dest: ~/setup-pnpm-${{ runner.name }}
       - name: Setup Node.js
-        # This job always uses the ephemeral hosted runner and its cache.
+        # Hosted runners and the ephemeral intent-cache slots both start clean.
         uses: actions/setup-node@v7
         with:
           node-version: '24'
@@ -104,6 +113,13 @@ jobs:
         # the step timeout below.
         run: |
           set -euo pipefail
+          # intent-cache slots have no sudo and need no apt: the runner image
+          # carries the Chromium libraries (infra/runners/Dockerfile).
+          # WarpBuild also reports self-hosted, but sets its verification token.
+          if [ "${RUNNER_ENVIRONMENT:-}" = self-hosted ] && [ -z "${WARPBUILD_RUNNER_VERIFICATION_TOKEN:-}" ]; then
+            echo "intent-cache slot: skipping apt hardening"
+            exit 0
+          fi
           if [ -f /etc/apt/apt-mirrors.txt ]; then
             sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
             echo "apt-mirrors.txt now:" && cat /etc/apt/apt-mirrors.txt
@@ -160,6 +176,10 @@ jobs:
             exit 0
           fi
           echo "Missing Chromium OS deps:$missing"
+          if [ "${RUNNER_ENVIRONMENT:-}" = self-hosted ] && [ -z "${WARPBUILD_RUNNER_VERIFICATION_TOKEN:-}" ]; then
+            echo "::error::intent-cache slots have no sudo; add$missing to infra/runners/Dockerfile in intent-hq/intent"
+            exit 1
+          fi
           for i in 1 2; do
             # The validated package list intentionally supplies separate apt arguments.
             # shellcheck disable=SC2086

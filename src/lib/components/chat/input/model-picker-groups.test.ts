@@ -1,4 +1,14 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ProviderCatalogState } from '$store/renderer/slices/provider-catalog/provider-catalog-types';
+import { initialState } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
+import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
+
+const catalogOverride = vi.hoisted(() => ({
+  current: undefined as ProviderCatalogState | undefined,
+}));
+afterEach(() => {
+  catalogOverride.current = undefined;
+});
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
@@ -11,7 +21,9 @@ vi.mock('$store/renderer/store', async () => {
     initialState,
     providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
   );
-  return createAppStoreMockModule({ state: () => ({ providerCatalog }) });
+  return createAppStoreMockModule({
+    state: () => ({ providerCatalog: catalogOverride.current ?? providerCatalog }),
+  });
 });
 
 import { AUGGIE_LEGACY_GROUP_KEY, buildGroupedModelOptions } from './model-picker-groups';
@@ -211,5 +223,49 @@ describe('buildGroupedModelOptions named profiles (§5.54)', () => {
       profiles: [work],
     });
     expect(groups.map(({ key }) => key)).toEqual(['codex']);
+  });
+});
+
+describe('buildGroupedModelOptions workspace catalogs', () => {
+  it('groups workspace models and resolves aliases without a host catalog', () => {
+    catalogOverride.current = {
+      ...initialState,
+      byWorkspaceId: {
+        shared: {
+          catalog: {
+            providers: [
+              { ...MOCK_PROVIDER_CATALOG.providers[0]!, displayName: 'Workspace Auggie' },
+            ],
+          },
+          settings: [],
+          specialists: [],
+          readiness: {},
+        },
+      },
+    };
+    const params = {
+      ...baseParams,
+      workspaceId: 'shared',
+      effectiveProviderId: 'augment',
+      availableModelsProviderId: 'augment',
+      enabledProviderIds: ['augment'],
+      allProviderModels: { auggie: [{ value: 'fast', label: 'Fast' }] },
+    };
+    expect(buildGroupedModelOptions(params)).toEqual([
+      { key: 'auggie', label: 'Workspace Auggie', options: [{ value: 'fast', label: 'Fast' }] },
+    ]);
+    expect(buildGroupedModelOptions({ ...params, workspaceId: 'other' })).toEqual([]);
+    expect(buildGroupedModelOptions({ ...params, workspaceId: undefined })).toEqual([]);
+  });
+
+  it('does not borrow the host catalog before the workspace catalog arrives', () => {
+    expect(
+      buildGroupedModelOptions({
+        ...baseParams,
+        workspaceId: 'unhydrated',
+        enabledProviderIds: ['auggie'],
+        allProviderModels: { auggie: [{ value: 'fast', label: 'Fast' }] },
+      }),
+    ).toEqual([]);
   });
 });

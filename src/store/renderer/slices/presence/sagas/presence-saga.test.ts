@@ -1,3 +1,18 @@
+import {
+  discussionContextChanged,
+  discussionWorkspacesChanged,
+  discussionRequested,
+  discussionCapabilityReceived,
+  discussionLoadStarted,
+  discussionPageReceived,
+  discussionMembershipInvalidated,
+} from '../../workspace-discussion/workspace-discussion-slice';
+import {
+  selectDiscussionContext,
+  selectDiscussionOwner,
+  selectDiscussionTarget,
+} from '../../workspace-discussion/workspace-discussion-selectors';
+import { selectDiscussionTypingPeople } from '../presence-selectors';
 import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice';
 import { principalContextChanged, principalReceived } from '../../principal/principal-slice';
 import { selectPrincipalConnectionContext } from '../../principal/principal-selectors';
@@ -30,9 +45,16 @@ import { daemonEventsSubscribed } from '../../workspace-events/workspace-events-
 import {
   presenceRosterReceived,
   presenceTypingPulse,
+  presenceDiscussionComposerFocused,
+  presenceDiscussionTypingPulse,
+  presenceDiscussionTypingStopped,
   presenceWindowVisibilityChanged,
 } from '../presence-slice';
-import { selectAgentPresencePeople, selectWorkspacePresencePeople } from '../presence-selectors';
+import {
+  selectAgentPresencePeople,
+  selectWorkspacePresencePeople,
+  selectDiscussionTypingPeople,
+} from '../presence-selectors';
 import { presenceSaga } from './presence-saga';
 
 function member(principalId: string, focus: PresenceMember['focus'] = []): PresenceMember {
@@ -142,6 +164,183 @@ describe('presenceSaga lifecycle', () => {
     cancel = store.runSaga(presenceSaga);
     if (subscribed) admit();
   }
+
+  async function startDiscussion() {
+    start();
+    store.dispatch(
+      replaceWorkspaceList(
+        ['ws-1', 'ws-2'].map((id) => ({ id: WorkspaceId(id), memberCount: 2 }) as Workspace),
+      ),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    mocks.invoke.mockClear();
+  }
+  function typeDiscussion() {
+    store.dispatch(presenceDiscussionComposerFocused('ws-1', true));
+    store.dispatch(presenceDiscussionTypingPulse('ws-1'));
+  }
+  it('reports and expires private typing per conversation, then clears it on access invalidation', async () => {
+    await startDiscussion();
+    const context = selectDiscussionContext.select(store.state)!;
+    store.dispatch(discussionContextChanged(context, selectDiscussionOwner.select(store.state)));
+    store.dispatch(discussionWorkspacesChanged(['ws-1']));
+    store.dispatch(discussionCapabilityReceived(context, true));
+    for (const id of ['c1', 'c2']) {
+      store.dispatch(discussionRequested('ws-1', id));
+      const target = selectDiscussionTarget.select(store.state, 'ws-1', id)!;
+      store.dispatch(discussionLoadStarted(target, id, false));
+      store.dispatch(
+        discussionPageReceived(target, id, { messages: [], hasMore: false }, 'initial'),
+      );
+    }
+    store.dispatch(presenceDiscussionComposerFocused('ws-1', true, 'c1'));
+    await vi.advanceTimersByTimeAsync(250);
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    store.dispatch(presenceDiscussionTypingPulse('ws-1', 'c1'));
+    await vi.advanceTimersByTimeAsync(250);
+    expect(mocks.invoke.mock.calls.at(-1)?.[1].discussionTyping).toEqual({
+      workspaceId: 'ws-1',
+      conversationId: 'c1',
+    });
+    const pulse = (source: string, conversationId: string) => ({
+      source,
+      conversationId,
+      pulse: 1,
+      since: '2099-01-01T00:00:00Z',
+    });
+    const ownId = store.state.presence.ownPrincipalId!;
+    const member = (principalId: string, entries: ReturnType<typeof pulse>[]) => ({
+      principalId,
+      login: null,
+      displayName: null,
+      avatarUrl: null,
+      focus: [],
+      typing: [],
+      discussionTyping: entries,
+    });
+    const roster = {
+      workspaceId: 'ws-1',
+      members: [
+        member(ownId, [pulse('self', 'c1')]),
+        member('a', [pulse('a1', 'c1'), pulse('a2', 'c1')]),
+        member('b', [pulse('b', 'c2')]),
+      ],
+    };
+    store.dispatch(presenceRosterReceived(roster));
+    expect(
+      selectDiscussionTypingPeople.select(store.state, 'ws-1', 'c1').map((p) => p.principalId),
+    ).toEqual(['a']);
+    expect(
+      selectDiscussionTypingPeople.select(store.state, 'ws-1', 'c2').map((p) => p.principalId),
+    ).toEqual(['b']);
+    expect(selectDiscussionTypingPeople.select(store.state, 'ws-1')).toEqual([]);
+    store.dispatch(presenceDiscussionComposerFocused('ws-1', true, 'c2'));
+    store.dispatch(presenceDiscussionTypingPulse('ws-1', 'c2'));
+    store.dispatch(presenceDiscussionTypingStopped('ws-1', 'c1'));
+    await vi.advanceTimersByTimeAsync(250);
+    expect(mocks.invoke.mock.calls.at(-1)?.[1].discussionTyping).toEqual({
+      workspaceId: 'ws-1',
+      conversationId: 'c2',
+    });
+    store.dispatch(discussionMembershipInvalidated('ws-1'));
+    await vi.advanceTimersByTimeAsync(250);
+    expect(mocks.invoke.mock.calls.at(-1)?.[1].discussionTyping).toBeUndefined();
+    expect(selectDiscussionTypingPeople.select(store.state, 'ws-1', 'c1')).toEqual([]);
+    await vi.advanceTimersByTimeAsync(3000);
+    store.dispatch(presenceRosterReceived(roster));
+    expect(store.state.presence.liveDiscussionTyping['ws-1'].a1.expired).toBe(true);
+  });
+  it('reports only fresh discussion input, throttles pulses, and clears after idle', async () => {
+    await startDiscussion();
+    store.dispatch(presenceDiscussionComposerFocused('ws-1', true));
+    await vi.advanceTimersByTimeAsync(250);
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    for (let i = 0; i < 20; i++) {
+      store.dispatch(presenceDiscussionTypingPulse('ws-1'));
+      await vi.advanceTimersByTimeAsync(100);
+    }
+    expect(mocks.invoke).toHaveBeenCalledTimes(2);
+    for (const [method, params] of mocks.invoke.mock.calls) {
+      expect(method).toBe('presence:report');
+      expect(params).toEqual({
+        focus: [{ workspaceId: 'ws-1' }],
+        typing: null,
+        discussionTyping: { workspaceId: 'ws-1' },
+      });
+    }
+    await vi.advanceTimersByTimeAsync(2250);
+    expect(mocks.invoke).toHaveBeenCalledTimes(3);
+    expect(mocks.invoke).toHaveBeenLastCalledWith('presence:report', {
+      focus: [{ workspaceId: 'ws-1' }],
+      typing: null,
+    });
+  });
+  it.each([
+    'blur',
+    'window-blur',
+    'hidden',
+    'navigation',
+    'unshared',
+    'disconnect',
+    'identity',
+    'send/empty',
+  ] as const)(
+    'clears discussion typing on %s and never revives it without input',
+    async (change) => {
+      await startDiscussion();
+      typeDiscussion();
+      await vi.advanceTimersByTimeAsync(250);
+      expect(store.state.presence.ownDiscussionTyping).toEqual({ workspaceId: 'ws-1' });
+      if (change === 'blur') store.dispatch(presenceDiscussionComposerFocused('ws-1', false));
+      if (change === 'window-blur') window.dispatchEvent(new Event('blur'));
+      if (change === 'hidden') store.dispatch(presenceWindowVisibilityChanged(false));
+      if (change === 'navigation') store.dispatch(openWorkspaceTab('ws-2'));
+      if (change === 'unshared')
+        store.dispatch(
+          replaceWorkspaceList([{ id: WorkspaceId('ws-1'), memberCount: 1 } as Workspace]),
+        );
+      if (change === 'disconnect') store.dispatch(connectionStatusChanged('disconnected'));
+      if (change === 'identity') admit('new-person');
+      if (change === 'send/empty') store.dispatch(presenceDiscussionTypingStopped('ws-1'));
+      await vi.advanceTimersByTimeAsync(250);
+      expect(store.state.presence.ownDiscussionTyping).toBeNull();
+      expect(mocks.invoke.mock.calls.at(-1)?.[1].discussionTyping).toBeUndefined();
+      store.dispatch(presenceWindowVisibilityChanged(true));
+      store.dispatch(openWorkspaceTab('ws-1'));
+      store.dispatch(presenceDiscussionComposerFocused('ws-1', true));
+      await vi.advanceTimersByTimeAsync(250);
+      expect(mocks.invoke.mock.calls.at(-1)?.[1].discussionTyping).toBeUndefined();
+    },
+  );
+  it('expires new discussion pulses locally without reviving unchanged snapshots or affecting agent typing', async () => {
+    await startDiscussion();
+    const roster = (pulse: number): PresenceRoster => ({
+      workspaceId: 'ws-1',
+      members: [
+        {
+          ...member('other'),
+          discussionTyping: [{ source: 'remote', since: '2099-01-01T00:00:00Z', pulse }],
+          typing: [
+            { source: 'agent-source', agentId: 'agent', since: '2000-01-01T00:00:00Z', pulse: 1 },
+          ],
+        },
+      ],
+    });
+    store.dispatch(presenceRosterReceived(roster(1)));
+    await vi.advanceTimersByTimeAsync(2000);
+    store.dispatch(presenceRosterReceived(roster(1)));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(selectDiscussionTypingPeople.select(store.state, 'ws-1')).toEqual([]);
+    store.dispatch(presenceRosterReceived(roster(1)));
+    expect(selectDiscussionTypingPeople.select(store.state, 'ws-1')).toEqual([]);
+    store.dispatch(presenceRosterReceived(roster(2)));
+    expect(
+      selectDiscussionTypingPeople.select(store.state, 'ws-1').map((p) => p.principalId),
+    ).toEqual(['other']);
+    expect(store.state.presence.liveTyping['ws-1']['agent-source'].expired).toBe(true);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(selectDiscussionTypingPeople.select(store.state, 'ws-1')).toEqual([]);
+  });
 
   it('waits for the daemon-events firehose before reading identity or any roster', async () => {
     start(false);

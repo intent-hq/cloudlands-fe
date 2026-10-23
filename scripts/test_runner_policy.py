@@ -34,18 +34,25 @@ def jobs(text):
     return dict(m.groups() for m in re.finditer(r'^  ([\w-]+):\s*\n(.*?)(?=^  [\w-]+:\s*$|\Z)', body, re.M | re.S))
 
 
+# A shell test that is true only on an intent-cache slot: WarpBuild runners also
+# report RUNNER_ENVIRONMENT=self-hosted, but set their verification token.
+SLOT_GUARD = re.escape('if [ "${RUNNER_ENVIRONMENT:-}" = self-hosted ] && [ -z "${WARPBUILD_RUNNER_VERIFICATION_TOKEN:-}" ]; then')
+
+
 def privileged_steps(body):
     """Steps that call Docker, or sudo outside an `if !` / `command -v ... ||` probe.
 
     A probe only helps when the intent-cache image already has what it checks
     for; jobs whose probe would still reach sudo there belong in HOSTED_ONLY.
+    SLOT_GUARD (self-hosted without WarpBuild's token, i.e. an intent-cache
+    slot) also protects a later sudo: the step exits or fails before it.
     """
     found = []
     code = '\n'.join(line for line in body.splitlines() if not line.lstrip().startswith('#'))
     for step in re.split(r'^      - ', code, flags=re.M)[1:]:
         # Only a guard that comes before the first sudo protects it.
         first = re.search(r'\bsudo\b', step)
-        guarded = re.search(r'^\s+if ! |command -v [\w-]+ >/dev/null \|\|', step[:first.start()] if first else step, re.M)
+        guarded = re.search(r'^\s+if ! |command -v [\w-]+ >/dev/null \|\||' + SLOT_GUARD, step[:first.start()] if first else step, re.M)
         if re.search(r'\bdocker\b', step) or (re.search(r'\bsudo\b', step) and not guarded):
             found.append(step.splitlines()[0])
     return found
@@ -67,6 +74,8 @@ def violations(text, filename):
         # Matrix legs that may take a pool read their own slot first.
         # Reusable workflows receive the caller's route `cloud` map as an input.
         routed = routed or re.fullmatch(r"\$\{\{ fromJSON\(inputs\.cloud \|\| '\{\}'\)\['[\w.-]+'\] \|\| fromJSON\('\[\"[\w.-]+\"\]'\) \}\}", runner)
+        # ...or the caller's slots first (a merge-queue caller passes them), then that map.
+        routed = routed or re.fullmatch(r"\$\{\{ fromJSON\(inputs\.slots \|\| '\{\}'\)\[format\('[\w-]+-\{0\}', matrix\.\w+\)\] \|\| fromJSON\(inputs\.cloud \|\| '\{\}'\)\['[\w.-]+'\] \|\| fromJSON\('\[\"[\w.-]+\"\]'\) \}\}", runner)
         routed = routed or re.fullmatch(r"\$\{\{ [^|]+ && fromJSON\(needs\.(route|runner-route)\.outputs\.slots \|\| '\{\}'\)\[format\('[\w-]+-\{0\}', matrix\.\w+\)\] \|\| fromJSON\(needs\.(route|runner-route)\.outputs\.(?:runners|cloud) \|\| '\{\}'\)\[matrix\.(\w+)\] \|\| matrix\.\3 \}\}", runner)
         if not routed and not (runner == '${{ matrix.os }}' and 'needs.route.outputs.' in body):
             errors.append(job)
@@ -75,7 +84,7 @@ def violations(text, filename):
 
 # Free labels may still be listed; the route always gives them their GitHub label.
 POOLED = {'gh-linux-8x', 'gh-linux-16x', 'ubuntu-22.04', 'ubuntu-24.04'}
-SLOT_READ = re.compile(r"outputs\.slots \|\| '\{\}'\)\[(?:'([\w-]+)'|format\('([\w-]+)-\{0\}', matrix\.\w+\))\] \|\| (?:fromJSON\('\[\"([\w.-]+)\"\]'\)|fromJSON\(needs\.[\w-]+\.outputs\.(?:runners|cloud) \|\| '\{\}'\)\[matrix\.(\w+)\])")
+SLOT_READ = re.compile(r"(?:outputs|inputs)\.slots \|\| '\{\}'\)\[(?:'([\w-]+)'|format\('([\w-]+)-\{0\}', matrix\.\w+\))\] \|\| (?:fromJSON\(inputs\.cloud \|\| '\{\}'\)\['[\w.-]+'\] \|\| )?(?:fromJSON\('\[\"([\w.-]+)\"\]'\)|fromJSON\(needs\.[\w-]+\.outputs\.(?:runners|cloud) \|\| '\{\}'\)\[matrix\.(\w+)\])")
 
 
 def slot_list(text):
@@ -84,7 +93,26 @@ def slot_list(text):
     return json.loads(match[2]) if match else None
 
 
-def slot_violations(text):
+def slot_readers(text, workflows=None):
+    """(job, runs-on, body) for every job reading this workflow's slots.
+
+    A job calling a reusable workflow with `slots: ${{ needs.route.outputs.slots }}`
+    reads them through that workflow's jobs (their `inputs.slots`).
+    """
+    workflows = workflows or ROOT / '.github/workflows'
+    for job, body in jobs(text).items():
+        runner = re.search(r'^    runs-on: (.+)$', body, re.M)
+        if runner and 'outputs.slots' in runner[1]:
+            yield job, runner[1], body
+        called = re.search(r'^    uses: \./\.github/workflows/([\w.-]+)$', body, re.M)
+        if called and re.search(r'^      slots: \$\{\{ needs\.[\w-]+\.outputs\.slots \}\}$', body, re.M):
+            for inner, inner_body in jobs((workflows / called[1]).read_text()).items():
+                runner = re.search(r'^    runs-on: (.+)$', inner_body, re.M)
+                if runner and 'inputs.slots' in runner[1]:
+                    yield f'{job}/{inner}', runner[1], inner_body
+
+
+def slot_violations(text, workflows=None):
     """Listed jobs and the jobs reading outputs.slots must match one to one."""
     listed = slot_list(text) or []
     errors, used = [], set()
@@ -94,11 +122,8 @@ def slot_violations(text):
     for entry in listed:
         if entry.get('label') not in POOLED:
             errors.append(f"{entry['key']}: {entry.get('label')} is not an intent-cache pool label")
-    for job, body in jobs(text).items():
-        runner = re.search(r'^    runs-on: (.+)$', body, re.M)
-        if not runner or 'outputs.slots' not in runner[1]:
-            continue
-        read = SLOT_READ.search(runner[1])
+    for job, runner, body in slot_readers(text, workflows):
+        read = SLOT_READ.search(runner)
         key = read and (read[1] or read[2])
         entry = by_key.get(key)
         if not entry:
@@ -193,6 +218,20 @@ class RunnerPolicy(unittest.TestCase):
         self.assertEqual(len(slot_violations(listing.format('windows-2025', ',"events":["merge_group"]') + job)), 2)
         self.assertEqual(slot_violations('jobs:\n' + job), ['a: reads an unlisted slot'])
 
+    def test_slot_reads_through_a_reusable_workflow(self):
+        # The caller lists ct; a reusable workflow it passes `slots` to reads ct-N.
+        import tempfile
+        callee = ("jobs:\n  shard:\n    strategy:\n      matrix:\n        shard: [1, 2]\n"
+                  "    runs-on: ${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || "
+                  "fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('[\"gh-linux-8x\"]') }}\n")
+        self.assertEqual(violations(callee, 'callee.yml'), [])
+        caller = ('    env:\n      SLOT_JOBS: >-\n        [{"key":"ct","label":"gh-linux-8x","shards":2}]\njobs:\n'
+                  '  test-ct:\n    uses: ./.github/workflows/callee.yml\n    with:\n%s')
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / 'callee.yml').write_text(callee)
+            self.assertEqual(slot_violations(caller % '      slots: ${{ needs.route.outputs.slots }}\n', Path(tmp)), [])
+            self.assertEqual(slot_violations(caller % '      suite: ct\n', Path(tmp)), ['ct: listed but no job reads it'])
+
     def test_all_workloads_are_routed(self):
         for path in (ROOT / '.github/workflows').glob('*.yml'):
             with self.subTest(workflow=path.name):
@@ -205,14 +244,14 @@ class RunnerPolicy(unittest.TestCase):
             for job, body in jobs(path.read_text()).items():
                 runner = re.search(r'^    runs-on: (.+)$', body, re.M)
                 runner = runner[1] if runner else ''
-                cloud_only = ('outputs.cloud' in runner or 'inputs.cloud' in runner) and 'outputs.slots' not in runner
+                cloud_only = ('outputs.cloud' in runner or 'inputs.cloud' in runner) and not re.search(r'(outputs|inputs)\.slots', runner)
                 if (path.name, job) in EXCEPTIONS | MAINTENANCE or cloud_only:
                     continue
                 if (path.name, job) in PRIVILEGED_UNDER_INPUT:
                     with self.subTest(workflow=path.name, job=job):
                         self.assertIn(f"&& {PRIVILEGED_UNDER_INPUT[(path.name, job)]} && fromJSON(needs.runner-route.outputs.slots", runner)
                     continue
-                if not re.search(r'needs\.(route|runner-route)\.outputs\.(runners|slots)', runner):
+                if not re.search(r'needs\.(route|runner-route)\.outputs\.(runners|slots)|inputs\.slots', runner):
                     continue
                 with self.subTest(workflow=path.name, job=job):
                     self.assertEqual(privileged_steps(body), [])
@@ -232,6 +271,10 @@ class RunnerPolicy(unittest.TestCase):
         self.assertEqual(privileged_steps('      - run: |\n          if ! pkg-config --exists openssl; then\n            sudo apt-get install -y libssl-dev\n          fi\n'), [])
         self.assertEqual(len(privileged_steps('      - run: sudo apt-get install -y bison\n')), 1)
         self.assertEqual(len(privileged_steps('      - run: sudo -n docker run --rm ubuntu\n')), 1)
+        # An intent-cache slot exits first; WarpBuild and GitHub-hosted runners have sudo.
+        slot = '          if [ "${RUNNER_ENVIRONMENT:-}" = self-hosted ] && [ -z "${WARPBUILD_RUNNER_VERIFICATION_TOKEN:-}" ]; then\n            exit 0\n          fi\n'
+        self.assertEqual(privileged_steps('      - run: |\n' + slot + '          sudo apt-get update\n'), [])
+        self.assertEqual(len(privileged_steps('      - run: |\n          if [ "${RUNNER_ENVIRONMENT:-}" = self-hosted ]; then\n            exit 0\n          fi\n          sudo apt-get update\n')), 1)
 
     def test_no_tinybox_routing(self):
         # tinybox left the rotation; Linux routing targets the intent-cache slots only.

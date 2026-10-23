@@ -47,7 +47,7 @@
   } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
   import {
-    selectHidesAgentLifecycleActions,
+    selectHidesAgentCreationActions,
     selectIsCollaboratorOnlyClient,
     selectIsWorkspaceCollaborator,
     selectWorkspaceItems,
@@ -150,7 +150,7 @@
   const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
   const canCreate$ = selectWorkspaceCreationVisible();
   // Agent create is likewise refused (-32003) for a collaborator connection.
-  const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceIdStore);
+  const hidesAgentLifecycleActions$ = selectHidesAgentCreationActions(workspaceIdStore);
   const WORKSPACE_OWNER_ONLY_COMMAND_IDS: ReadonlySet<string> = new Set([
     'new-terminal',
     'open-url',

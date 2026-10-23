@@ -312,10 +312,10 @@ export function isWorkspaceAttention(value: unknown): value is WorkspaceAttentio
   );
 }
 
-/** The caller's role in a workspace (PROTOCOL §5.1 membership summary,
- *  multiplayer w1). `collaborator` connections are refused (-32003) on every
- *  owner-only method, so the desktop hides those surfaces up front. */
-export type WorkspaceRole = 'owner' | 'collaborator';
+/** Guest roles retain collaborator as the Participant wire default. Manager
+ * adds scoped agent setup and saved-script operations, never full management. */
+export type WorkspaceGuestRole = 'collaborator' | 'manager';
+export type WorkspaceRole = 'owner' | WorkspaceGuestRole;
 
 export interface Workspace {
   id: WorkspaceId;
@@ -927,6 +927,14 @@ export interface Note {
    */
   contentPreview?: string;
   contentLength?: number;
+  /**
+   * Truncated-read markers (§5.2 "Truncated note reads", `noteTruncatedRead: 1`).
+   * Present only when a `note.get` with `maxContentBytes` returned a prefix of
+   * a larger note: `content` is then that prefix and `contentBytes` the full
+   * UTF-8 size of the stored content. A truncated note is render-only in the app.
+   */
+  contentTruncated?: boolean;
+  contentBytes?: number;
   createdAt: string;
   updatedAt: string;
   is_pinned?: boolean; // Legacy compatibility

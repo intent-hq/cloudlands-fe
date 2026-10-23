@@ -43,7 +43,7 @@
     selectWorkspaceIsEmpty,
     selectIsNewWorkspaceSession,
     selectIsWorkspaceCollaborator,
-    selectHidesAgentLifecycleActions,
+    selectHidesAgentCreationActions,
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     selectWorkspaceLoadResult,
@@ -202,7 +202,7 @@
   // Agent create / delegate / delete are refused (-32003) for a collaborator
   // connection; the sidebar and panel creation affordances are withheld by
   // passing no handler, exactly as the terminal / browser ones are.
-  const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceIdStore);
+  const hidesAgentLifecycleActions$ = selectHidesAgentCreationActions(workspaceIdStore);
   // Guest window (multiplayer w4): `/workspace/new` shows the guest empty
   // state instead of the (administrator-only) workspace onboarding, and the
   // nav bar stays visible so Settings → Guest Sessions remains reachable.

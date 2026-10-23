@@ -54,11 +54,14 @@ jobs:
   # route's fail-safe guard.
   route:
     runs-on: ubuntu-24.04
+    # Waits for release-fast-path so a merge-queue run that skips Component
+    # Tests gives their slots to the jobs that run (the slot-jobs step).
+    needs: [release-fast-path]
     # Same-repo PRs only (see fork-PR hardening note above); a skip here also
     # skips the routed heavy jobs through their needs.route.result guard.
     # Runs on merge_group (see the trigger comment) — merge groups come from
     # the repo's own ruleset, so no same-repo guard applies there.
-    if: github.event_name == 'merge_group' || github.event.pull_request.head.repo.full_name == github.repository
+    if: ${{ !cancelled() && (github.event_name == 'merge_group' || github.event.pull_request.head.repo.full_name == github.repository) }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -70,17 +73,16 @@ jobs:
       slots: ${{ steps.decide.outputs.slots }}
       cloud: ${{ steps.decide.outputs.cloud }}
     steps:
-      - id: decide
-        uses: actions/github-script@v9
+      # Drops listed jobs this run will not start, so their slots go to the
+      # jobs that run: test-ct runs only when release-fast-path requires it
+      # and no fast path applies. Filtering here keeps the shared probe script
+      # below identical to runner-route.yml. If this step fails, the probe
+      # reads an empty list and the routed jobs take their hosted fallback.
+      - id: slot-jobs
+        continue-on-error: true
         env:
-          THRESHOLD: ${{ env.LINUX_BURST_THRESHOLD }}
-          LINUX_RUNNER_DISABLED: ${{ vars.CI_LINUX_RUNNER_DISABLED }}
-          # Same switches and limits as runner-route.yml, so every caller honors them.
-          XL_THRESHOLD: ${{ vars.CI_LINUX_XL_SLOTS || '0' }}
-          WINDOWS_RUNNER_DISABLED: ${{ vars.CI_WINDOWS_RUNNER_DISABLED }}
-          MACOS_RUNNER_DISABLED: ${{ vars.CI_MACOS_RUNNER_DISABLED }}
-          # `true` sends every burst to GitHub-hosted runners instead of WarpBuild.
-          WARPBUILD_DISABLED: ${{ vars.CI_WARPBUILD_DISABLED }}
+          # Comma-separated keys to drop.
+          SKIP_SLOT_KEYS: ${{ (needs.release-fast-path.outputs.ct_required != 'true' || needs.release-fast-path.outputs.fast_path == 'true') && 'ct' || '' }}
           # The routed heavy jobs; each reads outputs.slots[key] and only as
           # many get a slot as are free (see the slot-fitting note in the
           # script). Minutes are typical merge-queue durations; `events`
@@ -92,8 +94,27 @@ jobs:
             [
             {"key":"test","label":"gh-linux-8x","minutes":13,"shards":4},
             {"key":"build-web","label":"gh-linux-8x","minutes":4,"events":["merge_group"]},
-            {"key":"test-integration","label":"gh-linux-8x","minutes":2,"events":["merge_group"]}
+            {"key":"test-integration","label":"gh-linux-8x","minutes":2,"events":["merge_group"]},
+            {"key":"ct","label":"gh-linux-8x","minutes":36,"shards":4,"events":["merge_group"]}
             ]
+        run: |
+          set -euo pipefail
+          list=$(jq -ce --arg skip "$SKIP_SLOT_KEYS" '($skip | split(",") | map(select(. != ""))) as $s | map(select(.key as $k | $s | index($k) | not))' <<< "$SLOT_JOBS")
+          echo "slot jobs: $list"
+          echo "list=$list" >> "$GITHUB_OUTPUT"
+      - id: decide
+        uses: actions/github-script@v9
+        env:
+          THRESHOLD: ${{ env.LINUX_BURST_THRESHOLD }}
+          LINUX_RUNNER_DISABLED: ${{ vars.CI_LINUX_RUNNER_DISABLED }}
+          # Same switches and limits as runner-route.yml, so every caller honors them.
+          XL_THRESHOLD: ${{ vars.CI_LINUX_XL_SLOTS || '0' }}
+          WINDOWS_RUNNER_DISABLED: ${{ vars.CI_WINDOWS_RUNNER_DISABLED }}
+          MACOS_RUNNER_DISABLED: ${{ vars.CI_MACOS_RUNNER_DISABLED }}
+          # `true` sends every burst to GitHub-hosted runners instead of WarpBuild.
+          WARPBUILD_DISABLED: ${{ vars.CI_WARPBUILD_DISABLED }}
+          # The filtered list from the slot-jobs step above.
+          SLOT_JOBS: ${{ steps.slot-jobs.outputs.list }}
         with:
           # The intent-cache slots serve several repos, so the probe
           # wants to size the queue across all of them — but the default
@@ -1030,6 +1051,8 @@ jobs:
     uses: ./.github/workflows/browser-tests.yml
     with:
       suite: ct
+      # Each shard takes its ct-N slot when the route job granted one.
+      slots: ${{ needs.route.outputs.slots }}
       cloud: ${{ needs.route.outputs.cloud }}
 
   test-playwright:

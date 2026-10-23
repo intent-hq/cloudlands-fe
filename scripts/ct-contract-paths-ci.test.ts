@@ -798,9 +798,12 @@ describe('shared browser jobs and nightly routing', () => {
           );
         }
       }
-      // Straight to the burst runner (WarpBuild, or GitHub), never a self-hosted slot.
+      // Component Tests take the caller's ct-N slot first; every suite then goes
+      // to the burst runner (WarpBuild, or GitHub).
       expect(jobField(lines, 'runs-on')).toBe(
-        `\${{ fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["gh-linux-8x"]') }}`,
+        job === 'test-ct'
+          ? "${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('[\"gh-linux-8x\"]') }}"
+          : `\${{ fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["gh-linux-8x"]') }}`,
       );
     },
   );

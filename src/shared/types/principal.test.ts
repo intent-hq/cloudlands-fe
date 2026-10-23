@@ -13,6 +13,20 @@ const principal = {
 
 describe('principal discovery wire contract', () => {
   it.each([undefined, false, true, 0, 1, 2, '1', null])(
+    'admits guest role changes only for exact server capability 1 (%j)',
+    (flag) => {
+      const snapshot = parsePrincipalSnapshot(
+        {
+          capabilities: { workspaceGuestRoles: 1 },
+          server: { capabilities: { workspaceGuestRoles: flag } },
+        },
+        principal,
+      );
+      expect(snapshot?.capabilities.workspaceGuestRoles).toBe(flag === 1);
+    },
+  );
+
+  it.each([undefined, false, true, 0, 1, 2, '1', null])(
     'admits full-instance setup only for exact server gitlabCheckout 1 (%j)',
     (flag) => {
       const snapshot = parsePrincipalSnapshot(

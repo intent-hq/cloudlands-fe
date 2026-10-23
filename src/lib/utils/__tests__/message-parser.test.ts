@@ -1490,6 +1490,160 @@ Some trailing content.`;
     expect(parseSuggestedPrompts(content, { isStreaming: true }).cleanedContent).toBe(content);
     expect(parseSuggestedPrompts(content).cleanedContent).toBe(content);
   });
+
+  describe('HTML-escaped blocks (replayed-history mimicry)', () => {
+    // Verbatim tail of a reply written right after a quota failover: the
+    // recovery replay XML-escapes prior turns, and the model copied the
+    // escaped `&lt;!-- suggested-prompts` form it saw there.
+    const escapedFailoverReply =
+      'Report back when the PR is ready to merge.\n\n' +
+      '&lt;!-- suggested-prompts\n' +
+      'Run the full sizing report tomorrow and then start the job-size declarations.\n' +
+      "Raise Type Check &amp; Lint's timeout to 45 minutes.\n" +
+      "What are WarpBuild's per-minute prices for 8x and 16x?\n" +
+      '--&gt;';
+
+    it('strips an escaped block and decodes entities in its prompts', () => {
+      const result = parseSuggestedPrompts(escapedFailoverReply);
+
+      expect(result.cleanedContent).toBe('Report back when the PR is ready to merge.');
+      expect(result.prompts).toEqual([
+        'Run the full sizing report tomorrow and then start the job-size declarations.',
+        "Raise Type Check & Lint's timeout to 45 minutes.",
+        "What are WarpBuild's per-minute prices for 8x and 16x?",
+      ]);
+    });
+
+    it('decodes quote and angle-bracket entities in escaped prompts', () => {
+      const content =
+        '&lt;!-- suggested-prompts\nRename &quot;a&lt;b&gt;&quot; to &#39;c&#39;.\n--&gt;';
+
+      expect(parseSuggestedPrompts(content).prompts).toEqual([`Rename "a<b>" to 'c'.`]);
+    });
+
+    it('does not decode entities in an unescaped block', () => {
+      const content = '<!-- suggested-prompts\nExplain what &amp; means in HTML.\n-->';
+
+      expect(parseSuggestedPrompts(content).prompts).toEqual(['Explain what &amp; means in HTML.']);
+    });
+
+    it('accepts an escaped closer fused with the final prompt', () => {
+      const content = 'Done.\n\n&lt;!-- suggested-prompts\nRun the tests.\nOpen the PR. --&gt;';
+      const result = parseSuggestedPrompts(content);
+
+      expect(result.cleanedContent).toBe('Done.');
+      expect(result.prompts).toEqual(['Run the tests.', 'Open the PR.']);
+    });
+
+    it('strips an escaped block with body-shaped lines without surfacing prompts', () => {
+      const content = 'Done.\n\n&lt;!-- suggested-prompts\nA --&gt; B\n--&gt;';
+      const result = parseSuggestedPrompts(content);
+
+      expect(result.cleanedContent).toBe('Done.');
+      expect(result.prompts).toEqual([]);
+    });
+
+    it('leaves an escaped block inside a code fence untouched', () => {
+      const content = '```\n&lt;!-- suggested-prompts\nRun tests.\n--&gt;\n```';
+
+      expect(parseSuggestedPrompts(content).cleanedContent).toBe(content);
+      expect(parseSuggestedPrompts(content, { isStreaming: true }).cleanedContent).toBe(content);
+    });
+
+    it('leaves an inline escaped opener in prose untouched', () => {
+      const content = 'Write &lt;!-- suggested-prompts at the end of a line to start a block.';
+
+      expect(parseSuggestedPrompts(content).cleanedContent).toBe(content);
+    });
+
+    it('withholds every prefix of a streaming escaped block', () => {
+      const prose = 'The work is complete.\n\n';
+      const block = '&lt;!-- suggested-prompts\nRun the tests.\nOpen the PR.\n--&gt;';
+      for (let length = 1; length <= block.length; length++) {
+        const result = parseSuggestedPrompts(prose + block.slice(0, length), { isStreaming: true });
+        expect(result.cleanedContent).toBe('The work is complete.');
+        expect(result.prompts).toEqual(
+          length === block.length ? ['Run the tests.', 'Open the PR.'] : [],
+        );
+      }
+    });
+
+    it('decodes numeric character references in escaped prompts', () => {
+      const content = '&lt;!-- suggested-prompts\nRename &#34;foo&#34; in src&#x2F;lib.\n--&gt;';
+
+      expect(parseSuggestedPrompts(content).prompts).toEqual(['Rename "foo" in src/lib.']);
+    });
+
+    it('keeps surrogate and out-of-range numeric references literal', () => {
+      const content =
+        '&lt;!-- suggested-prompts\nKeep &#xD800; and &#xDFFF; and &#55296; and &#x110000; and &#0;.\nShip &#x1F680; now.\n--&gt;';
+
+      expect(parseSuggestedPrompts(content).prompts).toEqual([
+        'Keep &#xD800; and &#xDFFF; and &#55296; and &#x110000; and &#0;.',
+        'Ship 🚀 now.',
+      ]);
+    });
+
+    it('decodes a double-escaped entity only once', () => {
+      const content = '&lt;!-- suggested-prompts\nExplain &amp;lt;b&amp;gt; tags.\n--&gt;';
+
+      expect(parseSuggestedPrompts(content).prompts).toEqual(['Explain &lt;b&gt; tags.']);
+    });
+
+    it('does not close a literal block on an escaped closer', () => {
+      const content =
+        'Done.\n\n<!-- suggested-prompts\nExplain the escaped closer.\n--&gt;\nRun tests\n-->';
+      const result = parseSuggestedPrompts(content);
+
+      expect(result.cleanedContent).toBe('Done.');
+      expect(result.prompts).toEqual(['Explain the escaped closer.', '--&gt;', 'Run tests']);
+    });
+
+    it('does not close a literal block on a prompt ending in an escaped closer', () => {
+      const content = '<!-- suggested-prompts\nShow how HTML spells --&gt;\nRun tests\n-->';
+      const result = parseSuggestedPrompts(content);
+
+      expect(result.cleanedContent).toBe('');
+      expect(result.prompts).toEqual(['Show how HTML spells --&gt;', 'Run tests']);
+    });
+
+    it('does not close an escaped block on a literal closer', () => {
+      const content = 'Done.\n\n&lt;!-- suggested-prompts\nRun the tests.\n-->';
+
+      expect(parseSuggestedPrompts(content).cleanedContent).toBe(content);
+    });
+
+    it('withholds a fused escaped closer still streaming on the final line', () => {
+      const content = 'Done.\n\n&lt;!-- suggested-prompts\nRun the tests.\nOpen the PR. --&g';
+      const result = parseSuggestedPrompts(content, { isStreaming: true });
+
+      expect(result.cleanedContent).toBe('Done.');
+      expect(result.prompts).toEqual([]);
+    });
+
+    it('only briefly withholds a trailing & in streaming prose', () => {
+      expect(parseSuggestedPrompts('Talk to R&', { isStreaming: true }).cleanedContent).toBe(
+        'Talk to R',
+      );
+      expect(parseSuggestedPrompts('Talk to R&D', { isStreaming: true }).cleanedContent).toBe(
+        'Talk to R&D',
+      );
+      expect(parseSuggestedPrompts('Talk to R&').cleanedContent).toBe('Talk to R&');
+      expect(parseSuggestedPrompts('Compare a &lt; b', { isStreaming: true }).cleanedContent).toBe(
+        'Compare a &lt; b',
+      );
+    });
+
+    it('strips an escaped block split across text content blocks', () => {
+      const result = parseSuggestedPromptsFromContentBlocks([
+        { type: 'text', text: 'Done.\n\n&lt;!-- sugg' },
+        { type: 'text', text: 'ested-prompts\nRun Type Check &amp; Lint.\n--&gt;' },
+      ]);
+
+      expect(result.prompts).toEqual(['Run Type Check & Lint.']);
+      expect(result.contentBlocks.map((block) => block.text ?? '').join('')).toBe('Done.');
+    });
+  });
 });
 
 describe('parseAgentMessage - group tags', () => {

@@ -81,6 +81,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => {
     selectIsNewWorkspaceSession: () => readable(false),
     selectIsWorkspaceCollaborator: () => readable(false),
     selectHidesAgentLifecycleActions: () => readable(mocks.hidesAgentLifecycleActions),
+    selectHidesAgentCreationActions: () => readable(mocks.hidesAgentLifecycleActions),
   };
 });
 vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({

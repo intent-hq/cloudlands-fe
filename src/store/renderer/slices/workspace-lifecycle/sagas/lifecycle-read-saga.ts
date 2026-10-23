@@ -47,6 +47,7 @@ import {
   selectHostRole,
   selectPrincipalActionContext,
   selectPrincipalConnectionContext,
+  selectPrincipalSnapshot,
 } from '../../principal/principal-selectors';
 import { selectWorkspacePeopleIdentities } from '../../presence/presence-selectors';
 import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
@@ -395,7 +396,11 @@ function* refreshMembershipSummary(
   const changes: Partial<Workspace> = {};
   if (context !== null) {
     if (typeof workspace.canManage === 'boolean') changes.canManage = workspace.canManage;
-    if (workspace.myRole === 'owner' || workspace.myRole === 'collaborator') {
+    if (
+      workspace.myRole === 'owner' ||
+      workspace.myRole === 'collaborator' ||
+      workspace.myRole === 'manager'
+    ) {
       changes.myRole = workspace.myRole;
     }
   }
@@ -407,6 +412,13 @@ function* refreshMembershipSummary(
   }
   if (Object.keys(changes).length === 0) return;
   yield* put(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, changes)]));
+  if (
+    changes.myRole === 'manager' &&
+    previous?.myRole !== 'manager' &&
+    (yield* selectPrincipalSnapshot.effect())?.capabilities.workspaceGuestRoles === true
+  ) {
+    yield* put(refreshScripts(workspaceId));
+  }
 }
 
 function* refreshPrStatus(
