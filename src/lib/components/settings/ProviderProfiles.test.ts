@@ -771,3 +771,136 @@ async function openEditOf(name: string) {
 async function openEdit() {
   await chooseMenuItem(m.settings_providerProfiles_edit_label());
 }
+
+describe('Default configuration dialog (§5.54)', () => {
+  const SAVED_DEFAULT = {
+    baseProviderId: 'codex',
+    providerRef: 'codex',
+    name: 'Personal',
+    env: [{ key: 'OPENAI_API_KEY', kind: 'set' as const, value: '********' }],
+    settingsFingerprint: 'fdef',
+    activation: { runningProcesses: 0 },
+  };
+
+  async function renderDefault(defaultConfig?: typeof SAVED_DEFAULT) {
+    await seed({ profiles: [] });
+    const { default: ProviderProfileDialog } = await import('./ProviderProfileDialog.svelte');
+    render(ProviderProfileDialog, {
+      open: true,
+      providerId: 'codex',
+      providerName: 'Codex',
+      isDefault: true,
+      ...(defaultConfig ? { defaultConfig } : {}),
+    });
+    return screen.findByRole('dialog');
+  }
+
+  const nameInput = (dialog: HTMLElement) =>
+    within(dialog).getByLabelText(m.settings_providerProfiles_name_label()) as HTMLInputElement;
+
+  it('edits name and env without the backup switch, keeping masked values', async () => {
+    const dialog = await renderDefault(SAVED_DEFAULT);
+    expect(
+      within(dialog).getByText(m.settings_providerDefault_title_label({ provider: 'Codex' })),
+    ).toBeTruthy();
+    expect(within(dialog).queryByTestId('provider-profile-backup')).toBeNull();
+    expect(nameInput(dialog).value).toBe('Personal');
+    expect(nameInput(dialog).required).toBe(false);
+    expect(nameInput(dialog).placeholder).toBe(m.chat_modelPicker_defaultProfile_name());
+
+    await fireEvent.input(nameInput(dialog), { target: { value: 'Home' } });
+    await fireEvent.click(
+      within(dialog).getByRole('button', { name: m.settings_providerProfiles_save_label() }),
+    );
+    const action = lastOf('providerProfiles/defaultUpdateRequested') as {
+      payload: { requestId: string; baseProviderId: string; name?: string; envRef?: number };
+    };
+    // A rename alone sends no env.
+    expect(action.payload).toMatchObject({
+      baseProviderId: 'codex',
+      name: 'Home',
+      envRef: undefined,
+    });
+    expect(screen.queryByTestId('provider-profile-restart-warning')).toBeNull();
+  });
+
+  it('sends a blank name to restore Default and keeps unchanged masked entries', async () => {
+    const dialog = await renderDefault(SAVED_DEFAULT);
+    await fireEvent.input(nameInput(dialog), { target: { value: '' } });
+    await fireEvent.click(
+      within(dialog).getByRole('button', { name: m.settings_providerProfiles_addVariable_label() }),
+    );
+    const label = m.settings_providerProfiles_variableN_label({ n: '2' });
+    await fireEvent.input(
+      within(dialog).getByLabelText(m.settings_providerProfiles_key_ariaLabel({ name: label })),
+      { target: { value: 'OPENAI_BASE_URL' } },
+    );
+    const value = within(dialog).getByLabelText(
+      m.settings_providerProfiles_value_ariaLabel({ name: 'OPENAI_BASE_URL' }),
+    );
+    await fireEvent.input(value, { target: { value: 'https://example.test' } });
+    expect(await screen.findByTestId('provider-profile-restart-warning')).toBeTruthy();
+    await fireEvent.click(
+      within(dialog).getByRole('button', { name: m.settings_providerProfiles_save_label() }),
+    );
+    const action = lastOf('providerProfiles/defaultUpdateRequested') as {
+      payload: { name?: string; envRef: number };
+    };
+    expect(action.payload.name).toBe('');
+    const { takeStagedProfileEnv } =
+      await import('$store/renderer/slices/provider-settings/provider-profiles-state');
+    expect(takeStagedProfileEnv(action.payload.envRef)).toEqual([
+      { key: 'OPENAI_API_KEY', kind: 'keep' },
+      { key: 'OPENAI_BASE_URL', kind: 'set', value: 'https://example.test' },
+    ]);
+  });
+
+  it('opens empty on a daemon that reports no Default and reports a failed save', async () => {
+    const dialog = await renderDefault();
+    expect(nameInput(dialog).value).toBe('');
+    await fireEvent.input(nameInput(dialog), { target: { value: 'Personal' } });
+    await fireEvent.click(
+      within(dialog).getByRole('button', { name: m.settings_providerProfiles_save_label() }),
+    );
+    const action = lastOf('providerProfiles/defaultUpdateRequested') as {
+      payload: { requestId: string };
+    };
+    const slice = await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+    const { store } = await import('$store/renderer/store');
+    store.dispatch(
+      slice.providerProfileMutationFailed(action.payload.requestId, { kind: 'other' }),
+    );
+    expect(
+      await within(dialog).findByText(m.settings_providerDefault_saveFailed_error()),
+    ).toBeTruthy();
+  });
+
+  it('shows the restart warning toast after an env save commits', async () => {
+    const dialog = await renderDefault(SAVED_DEFAULT);
+    const value = within(dialog).getByLabelText(
+      m.settings_providerProfiles_value_ariaLabel({ name: 'OPENAI_API_KEY' }),
+    );
+    await fireEvent.input(value, { target: { value: 'sk-new' } });
+    await fireEvent.click(
+      within(dialog).getByRole('button', { name: m.settings_providerProfiles_save_label() }),
+    );
+    const action = lastOf('providerProfiles/defaultUpdateRequested') as {
+      payload: { requestId: string };
+    };
+    const slice = await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+    const { store } = await import('$store/renderer/store');
+    store.dispatch(
+      slice.providerDefaultUpdateSucceeded(action.payload.requestId, {
+        revision: 4,
+        defaultConfig: { ...SAVED_DEFAULT, settingsFingerprint: 'fdef2' },
+        activation: { envChanged: true, runningProcesses: 1 },
+      }),
+    );
+    await waitFor(() => expect(mocks.notify.warning).toHaveBeenCalledTimes(1));
+    expect(mocks.notify.warning.mock.calls[0][0]).toBe(
+      m.settings_providerProfiles_saved_label({
+        name: m.chat_modelPicker_profileGroup_label({ provider: 'Codex', profile: 'Personal' }),
+      }),
+    );
+  });
+});

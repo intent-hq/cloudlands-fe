@@ -21,7 +21,11 @@ import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import { store } from '../../store';
 import type { ProviderCatalogEntry } from './provider-catalog-types';
 import type { ProviderProfileSummary } from '$shared/provider-catalog';
-import { isProviderProfileRef, providerRefBaseId } from '$shared/provider-profiles';
+import {
+  isProviderProfileRef,
+  providerRefBaseId,
+  type ProviderDefaultNames,
+} from '$shared/provider-profiles';
 import { formatProviderRefLabel } from '$shared/provider-ref-label';
 
 /** True once the first `providers.catalog` hydration landed. */
@@ -52,6 +56,22 @@ export const selectProviderCatalogProfiles = store.createSelector(
       return state.providerCatalog?.byWorkspaceId?.[workspaceId]?.catalog.profiles ?? NO_PROFILES;
     const profiles = state.providerCatalog?.profiles;
     return profiles && profiles.ids.length > 0 ? getItems(profiles) : NO_PROFILES;
+  },
+);
+
+const NO_DEFAULT_NAMES: ProviderDefaultNames = {};
+
+/**
+ * Renamed Default configurations (§5.54 catalog `defaultNames`) by base
+ * provider id. Empty on older daemons, before hydration and when no Default
+ * is renamed; labels then read `Default`.
+ */
+export const selectProviderCatalogDefaultNames = store.createSelector(
+  (state, workspaceId?: string): ProviderDefaultNames => {
+    const names = workspaceId
+      ? state.providerCatalog?.byWorkspaceId?.[workspaceId]?.catalog.defaultNames
+      : state.providerCatalog?.defaultNames;
+    return names && Object.keys(names).length > 0 ? names : NO_DEFAULT_NAMES;
   },
 );
 
@@ -164,6 +184,8 @@ export const selectProviderDisplayName = store.createSelector(
         providerId,
         baseName,
         selectProviderCatalogProfiles.select(state, workspaceId),
+        baseId,
+        selectProviderCatalogDefaultNames.select(state, workspaceId),
       );
     }
     return (

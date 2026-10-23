@@ -16,6 +16,7 @@
  */
 import {
   selectProviderCatalogLoaded,
+  selectProviderCatalogDefaultNames,
   selectProviderCatalogProfiles,
   selectProviderDisplayName,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
@@ -101,6 +102,7 @@ function describeRef(providerRef: string, workspaceId?: string): string {
     providerRef,
     selectProviderCatalogProfiles.select(state, workspaceId),
     baseId,
+    selectProviderCatalogDefaultNames.select(state, workspaceId),
   );
   switch (parts.kind) {
     case 'profile':
@@ -110,7 +112,9 @@ function describeRef(providerRef: string, workspaceId?: string): string {
     default:
       return m.chat_modelPicker_profileGroup_label({
         provider: baseName,
-        profile: m.chat_modelPicker_defaultProfile_name(),
+        profile:
+          (parts.kind === 'default' ? parts.name : undefined) ??
+          m.chat_modelPicker_defaultProfile_name(),
       });
   }
 }

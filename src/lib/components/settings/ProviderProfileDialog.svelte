@@ -5,6 +5,11 @@
    * fields. Saving env edits warns that running sessions keep their current
    * settings and names who must restart (never a frontend reconnect).
    * Every profile also has a "Use as backup provider" flag (missing reads as off).
+   *
+   * With `isDefault`, the same form edits the provider's Default configuration
+   * (§5.54 "Default configuration overrides"): an optional name (blank reads
+   * "Default") and env overrides, without the backup flag. A daemon that does
+   * not report it opens empty and reports a failed save.
    */
   import { faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -13,7 +18,11 @@
   import { FormField } from '$lib/components/patterns/form';
   import { notify } from '$lib/components/patterns/notify';
   import { Input, Switch } from '$lib/components/patterns/settings/custom-controls';
-  import type { ProviderProfile, ProviderProfileFailure } from '$shared/provider-profiles';
+  import type {
+    ProviderDefaultConfig,
+    ProviderProfile,
+    ProviderProfileFailure,
+  } from '$shared/provider-profiles';
   import {
     buildEnvWrites,
     isEnvUnchanged,
@@ -26,6 +35,7 @@
   } from '$features/settings/profile-env-form';
   import { store as appStore } from '$store/renderer/store';
   import {
+    providerDefaultUpdateRequested,
     providerProfileCreateRequested,
     providerProfileMutationDismissed,
     providerProfileUpdateRequested,
@@ -40,13 +50,33 @@
     providerName: string;
     /** Present when editing; absent when adding. */
     profile?: ProviderProfile;
+    /** Edit the Default configuration instead of a named profile. */
+    isDefault?: boolean;
+    /** The saved Default configuration (absent on daemons that do not report it). */
+    defaultConfig?: ProviderDefaultConfig;
   }
 
-  let { open = $bindable(false), providerId, providerName, profile }: Props = $props();
+  let {
+    open = $bindable(false),
+    providerId,
+    providerName,
+    profile,
+    isDefault = false,
+    defaultConfig,
+  }: Props = $props();
 
+  const DEFAULT_NAME = m.chat_modelPicker_defaultProfile_name();
   const mutations$ = selectProviderProfileMutations();
   const appOwned$ = selectIsDaemonAppOwned();
   const newId = () => crypto.randomUUID();
+
+  /** The saved Default's custom name, or '' while it reads "Default". */
+  const savedDefaultName = $derived(
+    defaultConfig && defaultConfig.name.trim().toLowerCase() !== 'default'
+      ? defaultConfig.name
+      : '',
+  );
+  const savedEnv = $derived(isDefault ? (defaultConfig?.env ?? []) : profile?.env);
 
   let name = $state('');
   let rows = $state<EnvRow[]>([]);
@@ -63,21 +93,43 @@
 
   $effect(() => {
     if (open && !wasOpen) {
-      name = profile?.name ?? '';
-      backup = profile?.backup === true;
-      rows = profile ? rowsFromSaved(profile.env, newId) : [newRow(newId)];
+      if (isDefault) {
+        name = savedDefaultName;
+        backup = false;
+        rows = savedEnv && savedEnv.length > 0 ? rowsFromSaved(savedEnv, newId) : [newRow(newId)];
+      } else {
+        name = profile?.name ?? '';
+        backup = profile?.backup === true;
+        rows = profile ? rowsFromSaved(profile.env, newId) : [newRow(newId)];
+      }
       errors = {};
       activeRequestId = null;
     }
     wasOpen = open;
   });
 
-  const envChanged = $derived(!profile || !isEnvUnchanged(rows, profile.env));
+  /** Editing an existing saved configuration (a profile, or the Default). */
+  const editing = $derived(isDefault || profile !== undefined);
+  const envChanged = $derived(
+    isDefault
+      ? !isEnvUnchanged(rows, savedEnv ?? [])
+      : !profile || !isEnvUnchanged(rows, profile.env),
+  );
   const pending = $derived(
     activeRequestId !== null && $mutations$[activeRequestId]?.status === 'pending',
   );
 
+  /** How a saved configuration is named in toasts. */
+  function displayName(savedName: string): string {
+    if (!isDefault) return savedName;
+    return m.chat_modelPicker_profileGroup_label({
+      provider: providerName,
+      profile: savedName || DEFAULT_NAME,
+    });
+  }
+
   function failureMessage(failure: ProviderProfileFailure | undefined): string {
+    if (isDefault) return m.settings_providerDefault_saveFailed_error();
     return failure?.kind === 'notFound'
       ? m.settings_providerProfiles_notFound_error()
       : m.settings_providerProfiles_saveFailed_error();
@@ -92,7 +144,7 @@
       submissions = rest;
       const visible = open && id === activeRequestId;
       if (visible) activeRequestId = null;
-      const savedName = submission.name.trim();
+      const savedName = displayName(submission.name.trim());
       if (settled.status === 'success') {
         if (visible) open = false;
         if (settled.kind === 'create') {
@@ -115,9 +167,34 @@
     }
   });
 
+  function submitDefault() {
+    const built = envChanged ? buildEnvWrites(rows) : { ok: true as const, env: undefined };
+    if (!built.ok) {
+      errors = built.rowErrors;
+      return;
+    }
+    const nameChanged = name.trim() !== savedDefaultName.trim();
+    const id = crypto.randomUUID();
+    activeRequestId = id;
+    submissions = { ...submissions, [id]: { name, rows: writtenRows(rows) } };
+    appStore.dispatch(
+      providerDefaultUpdateRequested({
+        requestId: id,
+        baseProviderId: providerId,
+        ...(nameChanged ? { name } : {}),
+        // An emptied list is sent as `[]`, removing every override.
+        ...(envChanged ? { env: built.env ?? [] } : {}),
+      }),
+    );
+  }
+
   function submit() {
     if (pending) return;
     errors = {};
+    if (isDefault) {
+      submitDefault();
+      return;
+    }
     const includeEnv = profile ? envChanged : writtenRows(rows).length > 0;
     const built = includeEnv ? buildEnvWrites(rows) : { ok: true as const, env: undefined };
     if (!built.ok) {
@@ -156,11 +233,15 @@
 <FormDialog
   bind:open
   size="wide"
-  title={profile
-    ? m.settings_providerProfiles_editTitle_label({ name: profile.name })
-    : m.settings_providerProfiles_addTitle_label({ provider: providerName })}
-  description={m.settings_providerProfiles_dialog_description()}
-  submitLabel={profile
+  title={isDefault
+    ? m.settings_providerDefault_title_label({ provider: providerName })
+    : profile
+      ? m.settings_providerProfiles_editTitle_label({ name: profile.name })
+      : m.settings_providerProfiles_addTitle_label({ provider: providerName })}
+  description={isDefault
+    ? m.settings_providerDefault_dialog_description({ provider: providerName })
+    : m.settings_providerProfiles_dialog_description()}
+  submitLabel={editing
     ? m.settings_providerProfiles_save_label()
     : m.settings_providerProfiles_create_label()}
   submitBusy={pending}
@@ -170,37 +251,52 @@
   <div class="space-y-5">
     <FormField
       label={m.settings_providerProfiles_name_label()}
-      description={m.settings_providerProfiles_name_description()}
+      description={isDefault
+        ? m.settings_providerDefault_name_description()
+        : m.settings_providerProfiles_name_description()}
       error={errors.name}
-      required
+      required={!isDefault}
     >
       {#snippet control(props)}
-        <Input {...props} bind:value={name} autocomplete="off" disabled={pending} />
+        <Input
+          {...props}
+          bind:value={name}
+          autocomplete="off"
+          disabled={pending}
+          placeholder={isDefault ? DEFAULT_NAME : undefined}
+        />
       {/snippet}
     </FormField>
 
-    <div class="flex items-start justify-between gap-4" data-testid="provider-profile-backup">
-      <div class="min-w-0 space-y-1">
-        <label for="provider-profile-backup-switch" class="type-body text-foreground">
-          {m.settings_providerProfiles_backup_label()}
-        </label>
-        <p id="provider-profile-backup-description" class="type-caption text-muted-foreground">
-          {m.settings_providerProfiles_backup_description()}
-        </p>
+    {#if !isDefault}
+      <div class="flex items-start justify-between gap-4" data-testid="provider-profile-backup">
+        <div class="min-w-0 space-y-1">
+          <label for="provider-profile-backup-switch" class="type-body text-foreground">
+            {m.settings_providerProfiles_backup_label()}
+          </label>
+          <p id="provider-profile-backup-description" class="type-caption text-muted-foreground">
+            {m.settings_providerProfiles_backup_description()}
+          </p>
+        </div>
+        <Switch
+          id="provider-profile-backup-switch"
+          bind:checked={backup}
+          size="sm"
+          disabled={pending}
+          ariaLabel={m.settings_providerProfiles_backup_label()}
+          ariaDescribedby="provider-profile-backup-description"
+        />
       </div>
-      <Switch
-        id="provider-profile-backup-switch"
-        bind:checked={backup}
-        size="sm"
-        disabled={pending}
-        ariaLabel={m.settings_providerProfiles_backup_label()}
-        ariaDescribedby="provider-profile-backup-description"
-      />
-    </div>
+    {/if}
 
-    <ProviderProfileEnvEditor bind:rows {errors} disabled={pending} />
+    <ProviderProfileEnvEditor
+      bind:rows
+      {errors}
+      disabled={pending}
+      emptyLabel={isDefault ? m.settings_providerDefault_envEmpty_label() : undefined}
+    />
 
-    {#if profile && envChanged}
+    {#if editing && envChanged}
       <p
         role="status"
         class="flex items-start gap-2 type-body text-warning-ink"

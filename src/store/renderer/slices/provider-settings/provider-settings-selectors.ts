@@ -3,7 +3,11 @@ import {
   selectIsHostMember,
 } from '../host-execution/host-execution-selectors';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
-import { providerRefBaseId, type ProviderProfile } from '$shared/provider-profiles';
+import {
+  providerRefBaseId,
+  type ProviderDefaultConfig,
+  type ProviderProfile,
+} from '$shared/provider-profiles';
 import { selectProviderCatalogEntries } from '../provider-catalog/provider-catalog-selectors';
 import type {
   ProviderProfileMutation,
@@ -217,6 +221,12 @@ export const selectProviderProfilesForBase = store.createSelector(
     getItems(profilesState(state).items).filter(
       (profile) => profile.baseProviderId === baseProviderId,
     ),
+);
+
+/** The saved Default configuration of a base provider (§5.54); absent on older daemons. */
+export const selectProviderDefaultConfig = store.createSelector(
+  (state, baseProviderId: string): ProviderDefaultConfig | undefined =>
+    profilesState(state).defaults[baseProviderId],
 );
 
 export const selectProviderProfile = store.createSelector(

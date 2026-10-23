@@ -17,6 +17,7 @@ export const PROVIDER_PROFILES_CREATE_METHOD = 'providers.profiles.create';
 export const PROVIDER_PROFILES_UPDATE_METHOD = 'providers.profiles.update';
 export const PROVIDER_PROFILES_DELETE_METHOD = 'providers.profiles.delete';
 export const PROVIDER_PROFILES_REORDER_METHOD = 'providers.profiles.reorder';
+export const PROVIDER_PROFILES_UPDATE_DEFAULT_METHOD = 'providers.profiles.updateDefault';
 export const PROVIDER_PROFILES_CHANGED_EVENT = 'providers:profiles-changed';
 
 const EnvEntryReadSchema = z.discriminatedUnion('kind', [
@@ -53,8 +54,36 @@ const ProfileActivationSchema = z
   .object({ envChanged: z.boolean(), runningProcesses: z.number().int().nonnegative() })
   .passthrough();
 
+/**
+ * The Default configuration of one profile-capable base provider (§5.54
+ * "Default configuration overrides"): its display name and masked env
+ * overrides. `providerRef` is the bare base id; the name labels it only.
+ */
+const DefaultConfigSchema = z
+  .object({
+    baseProviderId: z.string().min(1),
+    providerRef: z.string().min(1),
+    name: z.string(),
+    env: z.array(EnvEntryReadSchema),
+    settingsFingerprint: z.string(),
+    activation: ProfileReadActivationSchema.optional(),
+  })
+  .passthrough();
+
 export const ProviderProfilesListResponseSchema = z
-  .object({ profiles: z.array(ProviderProfileSchema), revision: z.number() })
+  .object({
+    profiles: z.array(ProviderProfileSchema),
+    /** Absent on daemons without Default configuration overrides. */
+    defaults: z.array(DefaultConfigSchema).optional(),
+    revision: z.number(),
+  })
+  .passthrough();
+export const ProviderDefaultUpdateResponseSchema = z
+  .object({
+    defaultConfig: DefaultConfigSchema,
+    revision: z.number(),
+    activation: ProfileActivationSchema,
+  })
   .passthrough();
 export const ProviderProfileCreateResponseSchema = z
   .object({ profile: ProviderProfileSchema, revision: z.number() })
@@ -75,6 +104,8 @@ export const ProviderProfileReorderResponseSchema = z
 
 export type EnvEntryRead = z.infer<typeof EnvEntryReadSchema>;
 export type ProviderProfile = z.infer<typeof ProviderProfileSchema>;
+export type ProviderDefaultConfig = z.infer<typeof DefaultConfigSchema>;
+export type ProviderDefaultUpdateResult = z.infer<typeof ProviderDefaultUpdateResponseSchema>;
 export type ProfileActivation = z.infer<typeof ProfileActivationSchema>;
 export type ProviderProfilesListResult = z.infer<typeof ProviderProfilesListResponseSchema>;
 export type ProviderProfileCreateResult = z.infer<typeof ProviderProfileCreateResponseSchema>;
@@ -99,6 +130,13 @@ export interface ProviderProfileUpdateParams {
   env?: EnvEntryWrite[];
   /** Omitted keeps the saved value. */
   backup?: boolean;
+}
+
+/** `providers.profiles.updateDefault`: omitted fields keep the saved value; a blank name restores "Default". */
+export interface ProviderDefaultUpdateParams {
+  baseProviderId: string;
+  name?: string;
+  env?: EnvEntryWrite[];
 }
 
 /** `providers.profiles.reorder`: the complete new order of one base provider's profiles. */
@@ -279,7 +317,13 @@ export function expandProviderIdsWithProfiles(
 
 /** How a provider group/selection is labelled once profiles are considered. */
 export type ProviderRefLabelParts =
-  { kind: 'plain' } | { kind: 'default' } | { kind: 'profile'; name: string } | { kind: 'missing' };
+  | { kind: 'plain' }
+  | { kind: 'default'; name?: string }
+  | { kind: 'profile'; name: string }
+  | { kind: 'missing' };
+
+/** Renamed Default configurations by base provider id (catalog `defaultNames`). */
+export type ProviderDefaultNames = Readonly<Record<string, string>>;
 
 /**
  * Label rule (§5.54 brief): bare provider labels while the base has no
@@ -291,14 +335,17 @@ export function providerRefLabelParts(
   providerRef: string,
   profiles: readonly ProviderProfileRefInfo[],
   baseProviderId = providerRefBaseId(providerRef),
+  defaultNames?: ProviderDefaultNames,
 ): ProviderRefLabelParts {
   if (isProviderProfileRef(providerRef)) {
     const profile = findProfileByRef(profiles, providerRef);
     return profile ? { kind: 'profile', name: profile.name } : { kind: 'missing' };
   }
-  return profiles.some((profile) => profile.baseProviderId === baseProviderId)
-    ? { kind: 'default' }
-    : { kind: 'plain' };
+  if (!profiles.some((profile) => profile.baseProviderId === baseProviderId))
+    return { kind: 'plain' };
+  // A renamed Default (catalog `defaultNames`) reads its own name.
+  const name = defaultNames?.[baseProviderId];
+  return name ? { kind: 'default', name } : { kind: 'default' };
 }
 
 /**

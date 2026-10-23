@@ -297,3 +297,87 @@ describe('classifyProviderProfileError', () => {
     ).toEqual({ kind: 'other' });
   });
 });
+
+describe('LiveProvidersClient Default configuration overrides (§5.54)', () => {
+  let client: LiveProvidersClient;
+  let invoke: ReturnType<typeof vi.fn>;
+  let originalWindow: typeof globalThis.window;
+
+  const DEFAULT_CONFIG = {
+    baseProviderId: 'codex',
+    providerRef: 'codex',
+    name: 'Personal',
+    env: [{ key: 'OPENAI_API_KEY', kind: 'set' as const, value: '********' }],
+    settingsFingerprint: 'fdef',
+    activation: { runningProcesses: 0 },
+  };
+
+  beforeEach(() => {
+    originalWindow = globalThis.window;
+    client = new LiveProvidersClient();
+    invoke = vi.fn();
+    vi.stubGlobal('window', { electronAPI: { invoke, on: vi.fn(), offById: vi.fn() } });
+  });
+  afterEach(() => vi.stubGlobal('window', originalWindow));
+
+  const lastRequest = () => invoke.mock.calls.at(-1);
+
+  it('reads the defaults member, and tolerates its absence on older daemons', async () => {
+    invoke.mockResolvedValue({
+      ok: true,
+      result: { profiles: [], defaults: [DEFAULT_CONFIG], revision: 2 },
+    });
+    await expect(client.listProfiles()).resolves.toEqual({
+      profiles: [],
+      defaults: [DEFAULT_CONFIG],
+      revision: 2,
+    });
+    invoke.mockResolvedValue({ ok: true, result: { profiles: [], revision: 2 } });
+    expect((await client.listProfiles()).defaults).toBeUndefined();
+  });
+
+  it('sends only the given fields and returns the saved Default', async () => {
+    const result = {
+      defaultConfig: DEFAULT_CONFIG,
+      revision: 5,
+      activation: { envChanged: true, runningProcesses: 1 },
+    };
+    invoke.mockResolvedValue({ ok: true, result });
+    const env = [
+      { key: 'OPENAI_API_KEY', kind: 'set' as const, value: 'sk-literal' },
+      { key: 'OPENAI_BASE_URL', kind: 'unset' as const },
+    ];
+    await expect(
+      client.updateDefault({ baseProviderId: 'codex', name: 'Personal', env }),
+    ).resolves.toEqual(result);
+    expect(lastRequest()).toEqual([
+      IPC_CHANNELS.BACKEND.REQUEST,
+      {
+        method: 'providers.profiles.updateDefault',
+        params: { baseProviderId: 'codex', name: 'Personal', env },
+      },
+    ]);
+    await client.updateDefault({ baseProviderId: 'claude-code', name: '' });
+    expect(lastRequest()).toEqual([
+      IPC_CHANNELS.BACKEND.REQUEST,
+      {
+        method: 'providers.profiles.updateDefault',
+        params: { baseProviderId: 'claude-code', name: '' },
+      },
+    ]);
+  });
+
+  it('throws on a divergent result and on a daemon without the method', async () => {
+    invoke.mockResolvedValue({ ok: true, result: { revision: 1 } });
+    await expect(client.updateDefault({ baseProviderId: 'codex', name: 'x' })).rejects.toThrow();
+    invoke.mockResolvedValue({
+      ok: false,
+      error: { code: 'METHOD_NOT_FOUND', message: 'Method not found', rpcCode: -32601 },
+    });
+    const error = await client
+      .updateDefault({ baseProviderId: 'codex', name: 'x' })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect(classifyProviderProfileError(error)).toEqual({ kind: 'other' });
+  });
+});

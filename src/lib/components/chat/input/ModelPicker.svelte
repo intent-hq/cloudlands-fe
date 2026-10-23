@@ -82,7 +82,10 @@
     selectWorkspaceCatalogEpoch,
   } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
   import { ensureWorkspaceCatalogRequested } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
-  import { selectProviderCatalogProfiles } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import {
+    selectProviderCatalogDefaultNames,
+    selectProviderCatalogProfiles,
+  } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { selectProfileSignInStatuses } from '$store/renderer/slices/provider-settings/provider-profile-status-selectors';
   import { providerProfileSummaryStatusesEnsured } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import {
@@ -174,6 +177,7 @@
       baseName,
       $providerProfiles$,
       baseId,
+      $providerDefaultNames$,
     );
   }
   function baseProviderDisplayName(providerId: string): string {
@@ -391,6 +395,7 @@
   // available base is followed by its profile references, which the picker
   // then treats as providers of their own (catalog fetch, group, tab).
   const providerProfiles$ = selectProviderCatalogProfiles(workspaceIdStore);
+  const providerDefaultNames$ = selectProviderCatalogDefaultNames(workspaceIdStore);
   const baseModelFetchProviderIds$ = selectContextModelProviderIds(workspaceIdStore);
   const baseAvailableEnabledProviderIds$ = selectContextAvailableProviderIds(workspaceIdStore);
   // A signed-out profile stays selectable but is flagged (§5.54 status mapping:
@@ -1762,7 +1767,12 @@
     const baseId = normalizeProviderId(providerRefBaseId(ref));
     const isProfile = isProviderProfileRef(ref);
     return providerRefProfileName(
-      providerRefLabelParts(isProfile ? ref : baseId, $providerProfiles$, baseId),
+      providerRefLabelParts(
+        isProfile ? ref : baseId,
+        $providerProfiles$,
+        baseId,
+        $providerDefaultNames$,
+      ),
     );
   });
   const modelAccessibleLabel = $derived(
