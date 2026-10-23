@@ -54,6 +54,11 @@
     isDefault?: boolean;
     /** The saved Default configuration (absent on daemons that do not report it). */
     defaultConfig?: ProviderDefaultConfig;
+    /**
+     * Default mode: the saved list's load status. The form seeds (and can
+     * save) only once it has loaded, so a save never replaces unseen overrides.
+     */
+    defaultsLoad?: 'idle' | 'success' | 'failure';
   }
 
   let {
@@ -63,6 +68,7 @@
     profile,
     isDefault = false,
     defaultConfig,
+    defaultsLoad = 'success',
   }: Props = $props();
 
   const DEFAULT_NAME = m.chat_modelPicker_defaultProfile_name();
@@ -76,7 +82,8 @@
       ? defaultConfig.name
       : '',
   );
-  const savedEnv = $derived(isDefault ? (defaultConfig?.env ?? []) : profile?.env);
+  const savedEnv = $derived(isDefault ? (defaultConfig?.env ?? []) : (profile?.env ?? []));
+  const defaultsReady = $derived(!isDefault || defaultsLoad === 'success');
 
   let name = $state('');
   let rows = $state<EnvRow[]>([]);
@@ -88,48 +95,56 @@
    * Every save this dialog sent, kept across close/reopen so a cancelled
    * dialog still reports its outcome (restart warning or rejection).
    */
-  let submissions = $state<Record<string, { name: string; rows: EnvRow[] }>>({});
-  let wasOpen = false;
+  let submissions = $state<
+    Record<string, { name: string; rows: EnvRow[]; providerName: string; isDefault: boolean }>
+  >({});
+  let seeded = false;
 
+  // Seed once per opening; a Default form waits until its saved list loaded.
   $effect(() => {
-    if (open && !wasOpen) {
-      if (isDefault) {
-        name = savedDefaultName;
-        backup = false;
-        rows = savedEnv && savedEnv.length > 0 ? rowsFromSaved(savedEnv, newId) : [newRow(newId)];
-      } else {
-        name = profile?.name ?? '';
-        backup = profile?.backup === true;
-        rows = profile ? rowsFromSaved(profile.env, newId) : [newRow(newId)];
-      }
-      errors = {};
-      activeRequestId = null;
+    if (!open) {
+      seeded = false;
+      return;
     }
-    wasOpen = open;
+    if (seeded || !defaultsReady) return;
+    seeded = true;
+    if (isDefault) {
+      name = savedDefaultName;
+      backup = false;
+      rows = rowsFromSaved(savedEnv, newId);
+    } else {
+      name = profile?.name ?? '';
+      backup = profile?.backup === true;
+      rows = profile ? rowsFromSaved(profile.env, newId) : [newRow(newId)];
+    }
+    errors = {};
+    activeRequestId = null;
   });
 
   /** Editing an existing saved configuration (a profile, or the Default). */
   const editing = $derived(isDefault || profile !== undefined);
   const envChanged = $derived(
-    isDefault
-      ? !isEnvUnchanged(rows, savedEnv ?? [])
-      : !profile || !isEnvUnchanged(rows, profile.env),
+    isDefault ? !isEnvUnchanged(rows, savedEnv) : !profile || !isEnvUnchanged(rows, profile.env),
   );
   const pending = $derived(
     activeRequestId !== null && $mutations$[activeRequestId]?.status === 'pending',
   );
 
-  /** How a saved configuration is named in toasts. */
-  function displayName(savedName: string): string {
-    if (!isDefault) return savedName;
+  /** How a saved configuration is named in toasts (by what was submitted). */
+  function displayName(submission: { name: string; providerName: string; isDefault: boolean }) {
+    const savedName = submission.name.trim();
+    if (!submission.isDefault) return savedName;
     return m.chat_modelPicker_profileGroup_label({
-      provider: providerName,
+      provider: submission.providerName,
       profile: savedName || DEFAULT_NAME,
     });
   }
 
-  function failureMessage(failure: ProviderProfileFailure | undefined): string {
-    if (isDefault) return m.settings_providerDefault_saveFailed_error();
+  function failureMessage(
+    failure: ProviderProfileFailure | undefined,
+    forDefault: boolean,
+  ): string {
+    if (forDefault) return m.settings_providerDefault_saveFailed_error();
     return failure?.kind === 'notFound'
       ? m.settings_providerProfiles_notFound_error()
       : m.settings_providerProfiles_saveFailed_error();
@@ -144,7 +159,7 @@
       submissions = rest;
       const visible = open && id === activeRequestId;
       if (visible) activeRequestId = null;
-      const savedName = displayName(submission.name.trim());
+      const savedName = displayName(submission);
       if (settled.status === 'success') {
         if (visible) open = false;
         if (settled.kind === 'create') {
@@ -159,10 +174,10 @@
       } else if (visible) {
         errors =
           settled.failure?.kind === 'fieldErrors'
-            ? mapFieldErrors(settled.failure.fieldErrors, submission.rows, providerName)
-            : { general: failureMessage(settled.failure) };
+            ? mapFieldErrors(settled.failure.fieldErrors, submission.rows, submission.providerName)
+            : { general: failureMessage(settled.failure, submission.isDefault) };
       } else {
-        notify.error(failureMessage(settled.failure));
+        notify.error(failureMessage(settled.failure, submission.isDefault));
       }
     }
   });
@@ -174,9 +189,17 @@
       return;
     }
     const nameChanged = name.trim() !== savedDefaultName.trim();
+    // Nothing to save: close without a request (no commit, event or toast).
+    if (!nameChanged && !envChanged) {
+      open = false;
+      return;
+    }
     const id = crypto.randomUUID();
     activeRequestId = id;
-    submissions = { ...submissions, [id]: { name, rows: writtenRows(rows) } };
+    submissions = {
+      ...submissions,
+      [id]: { name, rows: writtenRows(rows), providerName, isDefault: true },
+    };
     appStore.dispatch(
       providerDefaultUpdateRequested({
         requestId: id,
@@ -189,7 +212,7 @@
   }
 
   function submit() {
-    if (pending) return;
+    if (pending || !defaultsReady) return;
     errors = {};
     if (isDefault) {
       submitDefault();
@@ -205,7 +228,10 @@
     const sendBackup = profile ? backup !== (profile.backup === true) : backup;
     const id = crypto.randomUUID();
     activeRequestId = id;
-    submissions = { ...submissions, [id]: { name, rows: writtenRows(rows) } };
+    submissions = {
+      ...submissions,
+      [id]: { name, rows: writtenRows(rows), providerName, isDefault: false },
+    };
     if (profile) {
       appStore.dispatch(
         providerProfileUpdateRequested({
@@ -245,6 +271,7 @@
     ? m.settings_providerProfiles_save_label()
     : m.settings_providerProfiles_create_label()}
   submitBusy={pending}
+  canSubmit={defaultsReady}
   dismissOnInteractOutside={false}
   onSubmit={submit}
 >
@@ -262,7 +289,7 @@
           {...props}
           bind:value={name}
           autocomplete="off"
-          disabled={pending}
+          disabled={pending || !defaultsReady}
           placeholder={isDefault ? DEFAULT_NAME : undefined}
         />
       {/snippet}
@@ -282,7 +309,7 @@
           id="provider-profile-backup-switch"
           bind:checked={backup}
           size="sm"
-          disabled={pending}
+          disabled={pending || !defaultsReady}
           ariaLabel={m.settings_providerProfiles_backup_label()}
           ariaDescribedby="provider-profile-backup-description"
         />
@@ -292,7 +319,7 @@
     <ProviderProfileEnvEditor
       bind:rows
       {errors}
-      disabled={pending}
+      disabled={pending || !defaultsReady}
       emptyLabel={isDefault ? m.settings_providerDefault_envEmpty_label() : undefined}
     />
 
@@ -304,6 +331,12 @@
       >
         <Fa icon={faTriangleExclamation} class="mt-1 size-3.5 shrink-0" />
         <span>{restartGuidance($appOwned$)}</span>
+      </p>
+    {/if}
+
+    {#if isDefault && defaultsLoad === 'failure'}
+      <p class="type-body text-danger" role="alert">
+        {m.settings_providerProfiles_loadFailed_error()}
       </p>
     {/if}
 

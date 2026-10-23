@@ -1399,6 +1399,8 @@
 
   const groupedModelOptions = $derived.by(() => {
     void $providerCatalogEntries$;
+    // Group labels read the renamed Default (catalog `defaultNames`).
+    void $providerDefaultNames$;
     return buildGroupedModelOptions({
       workspaceId,
       showDefaultOption,

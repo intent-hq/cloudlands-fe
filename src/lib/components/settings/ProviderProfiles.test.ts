@@ -782,17 +782,21 @@ describe('Default configuration dialog (§5.54)', () => {
     activation: { runningProcesses: 0 },
   };
 
-  async function renderDefault(defaultConfig?: typeof SAVED_DEFAULT) {
+  async function renderDefault(
+    defaultConfig?: typeof SAVED_DEFAULT,
+    defaultsLoad: 'idle' | 'success' | 'failure' = 'success',
+  ) {
     await seed({ profiles: [] });
     const { default: ProviderProfileDialog } = await import('./ProviderProfileDialog.svelte');
-    render(ProviderProfileDialog, {
+    const result = render(ProviderProfileDialog, {
       open: true,
       providerId: 'codex',
       providerName: 'Codex',
       isDefault: true,
+      defaultsLoad,
       ...(defaultConfig ? { defaultConfig } : {}),
     });
-    return screen.findByRole('dialog');
+    return Object.assign(await screen.findByRole('dialog'), { result });
   }
 
   const nameInput = (dialog: HTMLElement) =>
@@ -900,6 +904,61 @@ describe('Default configuration dialog (§5.54)', () => {
     expect(mocks.notify.warning.mock.calls[0][0]).toBe(
       m.settings_providerProfiles_saved_label({
         name: m.chat_modelPicker_profileGroup_label({ provider: 'Codex', profile: 'Personal' }),
+      }),
+    );
+  });
+
+  it('waits for the saved list before seeding, so a save never replaces unseen overrides', async () => {
+    const dialog = await renderDefault(undefined, 'idle');
+    const save = within(dialog).getByRole('button', {
+      name: m.settings_providerProfiles_save_label(),
+    }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    expect(nameInput(dialog).disabled).toBe(true);
+    await fireEvent.click(save);
+    expect(lastOf('providerProfiles/defaultUpdateRequested')).toBeUndefined();
+    // The list lands: the form seeds from the saved Default.
+    await dialog.result.rerender({ defaultConfig: SAVED_DEFAULT, defaultsLoad: 'success' });
+    await waitFor(() => expect(nameInput(dialog).value).toBe('Personal'));
+    expect(
+      within(dialog).getByLabelText(
+        m.settings_providerProfiles_value_ariaLabel({ name: 'OPENAI_API_KEY' }),
+      ),
+    ).toBeTruthy();
+  });
+
+  it('closes without a request when nothing changed', async () => {
+    const dialog = await renderDefault(SAVED_DEFAULT);
+    await fireEvent.click(
+      within(dialog).getByRole('button', { name: m.settings_providerProfiles_save_label() }),
+    );
+    expect(lastOf('providerProfiles/defaultUpdateRequested')).toBeUndefined();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('names the provider the save was submitted for, even after the dialog moved on', async () => {
+    const dialog = await renderDefault(SAVED_DEFAULT);
+    await fireEvent.input(nameInput(dialog), { target: { value: 'Home' } });
+    await fireEvent.click(
+      within(dialog).getByRole('button', { name: m.settings_providerProfiles_save_label() }),
+    );
+    const action = lastOf('providerProfiles/defaultUpdateRequested') as {
+      payload: { requestId: string };
+    };
+    await dialog.result.rerender({ providerId: 'claude-code', providerName: 'Claude Code' });
+    const slice = await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+    const { store } = await import('$store/renderer/store');
+    store.dispatch(
+      slice.providerDefaultUpdateSucceeded(action.payload.requestId, {
+        revision: 4,
+        defaultConfig: { ...SAVED_DEFAULT, name: 'Home' },
+        activation: { envChanged: false, runningProcesses: 0 },
+      }),
+    );
+    await waitFor(() => expect(mocks.notify.success).toHaveBeenCalledTimes(1));
+    expect(mocks.notify.success.mock.calls[0][0]).toBe(
+      m.settings_providerProfiles_saved_label({
+        name: m.chat_modelPicker_profileGroup_label({ provider: 'Codex', profile: 'Home' }),
       }),
     );
   });

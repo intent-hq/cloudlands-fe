@@ -62,10 +62,10 @@ const ProfileActivationSchema = z
 const DefaultConfigSchema = z
   .object({
     baseProviderId: z.string().min(1),
-    providerRef: z.string().min(1),
+    providerRef: z.string().optional(),
     name: z.string(),
     env: z.array(EnvEntryReadSchema),
-    settingsFingerprint: z.string(),
+    settingsFingerprint: z.string().optional(),
     activation: ProfileReadActivationSchema.optional(),
   })
   .passthrough();
@@ -73,8 +73,11 @@ const DefaultConfigSchema = z
 export const ProviderProfilesListResponseSchema = z
   .object({
     profiles: z.array(ProviderProfileSchema),
-    /** Absent on daemons without Default configuration overrides. */
-    defaults: z.array(DefaultConfigSchema).optional(),
+    /**
+     * Absent on daemons without Default configuration overrides. A divergent
+     * member reads as absent so it never hides the named profiles.
+     */
+    defaults: z.array(DefaultConfigSchema).optional().catch(undefined),
     revision: z.number(),
   })
   .passthrough();

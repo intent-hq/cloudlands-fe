@@ -102,7 +102,6 @@ function describeRef(providerRef: string, workspaceId?: string): string {
     providerRef,
     selectProviderCatalogProfiles.select(state, workspaceId),
     baseId,
-    selectProviderCatalogDefaultNames.select(state, workspaceId),
   );
   switch (parts.kind) {
     case 'profile':
@@ -110,10 +109,12 @@ function describeRef(providerRef: string, workspaceId?: string): string {
     case 'missing':
       return loaded ? m.chat_modelPicker_missingProfile_name() : baseName;
     default:
+      // The original configuration is always named here, by its renamed
+      // Default name when it has one, even while the base has no profiles.
       return m.chat_modelPicker_profileGroup_label({
         provider: baseName,
         profile:
-          (parts.kind === 'default' ? parts.name : undefined) ??
+          selectProviderCatalogDefaultNames.select(state, workspaceId)[baseId] ??
           m.chat_modelPicker_defaultProfile_name(),
       });
   }

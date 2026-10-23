@@ -184,8 +184,6 @@ export const selectProviderDisplayName = store.createSelector(
         providerId,
         baseName,
         selectProviderCatalogProfiles.select(state, workspaceId),
-        baseId,
-        selectProviderCatalogDefaultNames.select(state, workspaceId),
       );
     }
     return (

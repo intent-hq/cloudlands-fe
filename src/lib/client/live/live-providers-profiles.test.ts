@@ -336,6 +336,16 @@ describe('LiveProvidersClient Default configuration overrides (§5.54)', () => {
     expect((await client.listProfiles()).defaults).toBeUndefined();
   });
 
+  it('reads a divergent defaults member as absent instead of losing the profiles', async () => {
+    invoke.mockResolvedValue({
+      ok: true,
+      result: { profiles: [PROFILE], defaults: [{ name: 7 }], revision: 2 },
+    });
+    const listed = await client.listProfiles();
+    expect(listed.profiles).toEqual([PROFILE]);
+    expect(listed.defaults).toBeUndefined();
+  });
+
   it('sends only the given fields and returns the saved Default', async () => {
     const result = {
       defaultConfig: DEFAULT_CONFIG,

@@ -46,9 +46,9 @@
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import {
     selectIsProviderEnabled,
-    selectProviderDefaultConfig,
+    selectProviderDefaultConfigs,
+    selectProviderProfilesLoadStatus,
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
-  import type { ProviderDefaultConfig } from '$shared/provider-profiles';
   import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
   import { groupProviderEntries, orderProviderEntries } from '$lib/utils/provider-list-order';
   import {
@@ -245,21 +245,17 @@
   }
 
   // The Default configuration's name and env (§5.54), from the same menu.
-  // Read once when opened: the dialog seeds its form from the saved state.
-  let defaultTarget = $state<{
-    providerId: string;
-    providerName: string;
-    config: ProviderDefaultConfig | undefined;
-  } | null>(null);
+  // The dialog seeds its form only once the saved list has loaded, so a save
+  // can never replace overrides it has not seen.
+  const defaultConfigs$ = selectProviderDefaultConfigs();
+  const profilesLoadStatus$ = selectProviderProfilesLoadStatus();
+  let defaultTarget = $state<{ providerId: string; providerName: string } | null>(null);
   let defaultOpen = $state(false);
 
   function openDefaultEnv(providerId: string, providerName: string) {
-    defaultTarget = {
-      providerId,
-      providerName,
-      config: selectProviderDefaultConfig.select(appStore.state, providerId),
-    };
+    defaultTarget = { providerId, providerName };
     defaultOpen = true;
+    if ($profilesLoadStatus$ !== 'success') appStore.dispatch(providerProfilesRequested());
   }
 
   // Saved profiles are read once per visit, and only when some provider
@@ -811,7 +807,8 @@
     providerId={defaultTarget.providerId}
     providerName={defaultTarget.providerName}
     isDefault
-    defaultConfig={defaultTarget.config}
+    defaultConfig={$defaultConfigs$[defaultTarget.providerId]}
+    defaultsLoad={$profilesLoadStatus$}
   />
 {/if}
 

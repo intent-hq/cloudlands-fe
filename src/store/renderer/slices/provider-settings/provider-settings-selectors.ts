@@ -223,6 +223,11 @@ export const selectProviderProfilesForBase = store.createSelector(
     ),
 );
 
+/** Saved Default configurations by base provider id (§5.54); empty on older daemons. */
+export const selectProviderDefaultConfigs = store.createSelector(
+  (state): Record<string, ProviderDefaultConfig> => profilesState(state).defaults,
+);
+
 /** The saved Default configuration of a base provider (§5.54); absent on older daemons. */
 export const selectProviderDefaultConfig = store.createSelector(
   (state, baseProviderId: string): ProviderDefaultConfig | undefined =>
