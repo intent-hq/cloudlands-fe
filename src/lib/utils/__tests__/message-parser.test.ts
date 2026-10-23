@@ -1568,6 +1568,62 @@ Some trailing content.`;
       }
     });
 
+    it('decodes numeric character references in escaped prompts', () => {
+      const content = '&lt;!-- suggested-prompts\nRename &#34;foo&#34; in src&#x2F;lib.\n--&gt;';
+
+      expect(parseSuggestedPrompts(content).prompts).toEqual(['Rename "foo" in src/lib.']);
+    });
+
+    it('decodes a double-escaped entity only once', () => {
+      const content = '&lt;!-- suggested-prompts\nExplain &amp;lt;b&amp;gt; tags.\n--&gt;';
+
+      expect(parseSuggestedPrompts(content).prompts).toEqual(['Explain &lt;b&gt; tags.']);
+    });
+
+    it('does not close a literal block on an escaped closer', () => {
+      const content =
+        'Done.\n\n<!-- suggested-prompts\nExplain the escaped closer.\n--&gt;\nRun tests\n-->';
+      const result = parseSuggestedPrompts(content);
+
+      expect(result.cleanedContent).toBe('Done.');
+      expect(result.prompts).toEqual(['Explain the escaped closer.', '--&gt;', 'Run tests']);
+    });
+
+    it('does not close a literal block on a prompt ending in an escaped closer', () => {
+      const content = '<!-- suggested-prompts\nShow how HTML spells --&gt;\nRun tests\n-->';
+      const result = parseSuggestedPrompts(content);
+
+      expect(result.cleanedContent).toBe('');
+      expect(result.prompts).toEqual(['Show how HTML spells --&gt;', 'Run tests']);
+    });
+
+    it('does not close an escaped block on a literal closer', () => {
+      const content = 'Done.\n\n&lt;!-- suggested-prompts\nRun the tests.\n-->';
+
+      expect(parseSuggestedPrompts(content).cleanedContent).toBe(content);
+    });
+
+    it('withholds a fused escaped closer still streaming on the final line', () => {
+      const content = 'Done.\n\n&lt;!-- suggested-prompts\nRun the tests.\nOpen the PR. --&g';
+      const result = parseSuggestedPrompts(content, { isStreaming: true });
+
+      expect(result.cleanedContent).toBe('Done.');
+      expect(result.prompts).toEqual([]);
+    });
+
+    it('only briefly withholds a trailing & in streaming prose', () => {
+      expect(parseSuggestedPrompts('Talk to R&', { isStreaming: true }).cleanedContent).toBe(
+        'Talk to R',
+      );
+      expect(parseSuggestedPrompts('Talk to R&D', { isStreaming: true }).cleanedContent).toBe(
+        'Talk to R&D',
+      );
+      expect(parseSuggestedPrompts('Talk to R&').cleanedContent).toBe('Talk to R&');
+      expect(parseSuggestedPrompts('Compare a &lt; b', { isStreaming: true }).cleanedContent).toBe(
+        'Compare a &lt; b',
+      );
+    });
+
     it('strips an escaped block split across text content blocks', () => {
       const result = parseSuggestedPromptsFromContentBlocks([
         { type: 'text', text: 'Done.\n\n&lt;!-- sugg' },
