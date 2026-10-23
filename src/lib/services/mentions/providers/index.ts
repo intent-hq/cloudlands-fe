@@ -74,6 +74,24 @@ export class FolderProvider implements Provider {
   }
 }
 
+const NOTE_RESULT_LIMIT = 10;
+// Below any title match (1 + fuzzy score), above zero so SearchService keeps
+// body-only matches even when its own label/description rescoring finds none.
+const NOTE_BODY_MATCH_SCORE = 0.3;
+
+/**
+ * Relevance of a note for a mention query; 0 means no match. Titles match
+ * fuzzily (short, so "mtg tr" finding "Meeting Transcript" is useful). Bodies
+ * must contain the whole query: a subsequence match on a long body passes for
+ * nearly any query and buried the notes users were actually looking for.
+ */
+function scoreNoteMatch(query: string, title?: string, body?: string): number {
+  const titleMatch = title ? fuzzyMatch(query, title) : null;
+  if (titleMatch) return 1 + titleMatch.score;
+  if (body && body.toLowerCase().includes(query.toLowerCase())) return NOTE_BODY_MATCH_SCORE;
+  return 0;
+}
+
 // Note Provider
 export class NoteProvider implements Provider {
   id = 'note';
@@ -164,21 +182,28 @@ export class NoteProvider implements Provider {
       // Combine all notes
       const allNotesWithContext = [...currentWorkspaceNotes, ...siblingNotes];
 
-      // Filter and map to MentionCandidate using fuzzy matching. Slim rows
-      // carry content in `contentPreview` (first ~500 chars) — matching and
-      // previews use it in place of the full body, so a match deep inside a
-      // very long note may be missed (accepted degradation).
-      const notes = allNotesWithContext
-        .filter(({ note }) => {
-          const body = note.content || note.contentPreview;
-          return (
-            !query ||
-            (note.title && fuzzyMatch(query, note.title) !== null) ||
-            (body && fuzzyMatch(query, body) !== null)
-          );
-        })
-        .slice(0, 10)
-        .map(({ note, workspaceId, workspaceTitle }) => {
+      // Score, rank, then cap. Slim rows carry content in `contentPreview`
+      // (first ~500 chars) — matching and previews use it in place of the
+      // full body, so a match deep inside a very long note may be missed
+      // (accepted degradation). Ranking before the cap keeps a title match
+      // from being cut by notes that only matched on body text.
+      const ranked = query
+        ? allNotesWithContext
+            .map((entry) => ({
+              entry,
+              score: scoreNoteMatch(
+                query,
+                entry.note.title,
+                entry.note.content || entry.note.contentPreview,
+              ),
+            }))
+            .filter(({ score }) => score > 0)
+            .sort((a, b) => b.score - a.score)
+        : allNotesWithContext.map((entry) => ({ entry, score: undefined }));
+
+      const notes = ranked
+        .slice(0, NOTE_RESULT_LIMIT)
+        .map(({ entry: { note, workspaceId, workspaceTitle }, score }) => {
           const isCurrentWorkspace = workspaceId === context.workspaceId;
           const subtitle = isCurrentWorkspace
             ? undefined
@@ -193,6 +218,7 @@ export class NoteProvider implements Provider {
             description: `${body?.substring(0, 100)}...` || '',
             icon: '📝',
             uri: `devspace://note/${note.id}`,
+            ...(score !== undefined ? { score } : {}),
             meta: {
               preview: body?.substring(0, 200) || '',
               workspaceId,
@@ -215,12 +241,14 @@ export class NoteProvider implements Provider {
     // Return cached notes if available (real data from a previous fetch);
     // never fabricate default notes.
     if (this.cachedNotes.length > 0) {
-      return this.cachedNotes.filter(
-        (n) =>
-          !query ||
-          fuzzyMatch(query, n.label) !== null ||
-          (n.description && fuzzyMatch(query, n.description) !== null),
-      );
+      if (!query) return this.cachedNotes;
+      return this.cachedNotes
+        .map((n) => ({
+          ...n,
+          score: scoreNoteMatch(query, n.label, n.meta?.preview as string | undefined),
+        }))
+        .filter((n) => n.score > 0)
+        .sort((a, b) => b.score - a.score);
     }
 
     return [];
