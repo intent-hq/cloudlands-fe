@@ -99,11 +99,14 @@ async function openFromFilesSidebar(name: string) {
 /** Open an image file tab and return its viewer once the image has decoded. */
 async function openImageTab(name: string) {
   await openFromFilesSidebar(name);
-  const image = page.locator(`.tab-content-wrapper:not(.hidden) img[alt="${name}"]`);
+  const viewer = page
+    .locator('.tab-content-wrapper:not(.hidden)')
+    .filter({ has: page.locator(`img[alt="${name}"]`) });
+  const image = viewer.locator(`img[alt="${name}"]`);
   await expect
     .poll(() => image.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth))
     .toBeGreaterThan(0);
-  return page.locator('.tab-content-wrapper:not(.hidden)').filter({ has: image });
+  return viewer;
 }
 
 /** Replace only the native dialog; record the suggested names it receives. */
