@@ -963,6 +963,7 @@ export default [
       'intent/no-raw-controls': 'error',
       'intent/no-raw-menu-row': 'error',
       'intent/no-raw-menu-surface': 'error',
+      'intent/no-raw-inverse-surface': 'error',
       'intent/no-raw-typography': 'error',
       'intent/settings-use-schema': 'error',
     },
