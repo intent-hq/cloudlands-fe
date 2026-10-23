@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   backend: vi.fn(),
   sound: vi.fn(() => Promise.resolve()),
   navigate: vi.fn(() => Promise.resolve()),
+  idleToast: vi.fn(() => Promise.resolve()),
   on: vi.fn(),
   offById: vi.fn(),
   callbacks: {} as Record<string, (data?: any) => void>,
@@ -24,6 +25,9 @@ vi.mock('$features/notifications/notification-sound-gate', () => ({
 }));
 vi.mock('$features/notifications/notification-navigation', () => ({
   handleNotificationNavigate: mocks.navigate,
+}));
+vi.mock('$features/agent/agent-attention-toast-service', () => ({
+  showAgentIdleToast: mocks.idleToast,
 }));
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
@@ -213,6 +217,41 @@ describe('notification sagas', () => {
       ['notification:show', 'id:notification:show'],
       ['notification:navigate', 'id:notification:navigate'],
     ]);
+  });
+
+  it('shows the in-app idle toast when main skipped the OS banner (frontmost)', async () => {
+    mocks.isElectron.mockReturnValue(true);
+    const task = runSaga({ dispatch: vi.fn(), getState: state }, notificationIpcSaga);
+    const payload = {
+      title: 'My Space - Implementor',
+      body: 'Finished',
+      timestamp: '2026-10-23T00:00:00Z',
+      structured: { workspaceTitle: 'My Space', specialistDisplayName: 'Implementor' },
+      navigateTarget: { workspaceId: 'ws-1' },
+    };
+    mocks.callbacks['notification:show'](payload);
+    mocks.callbacks['notification:show']({ title: 'Sound only', body: 'Finished' });
+    await flush();
+    expect(mocks.sound).toHaveBeenCalledTimes(2);
+    expect(mocks.idleToast.mock.calls).toEqual([[payload]]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('still shows the idle toast when the notification sound fails', async () => {
+    mocks.isElectron.mockReturnValue(true);
+    mocks.sound.mockRejectedValueOnce(new Error('sound unavailable'));
+    const task = runSaga({ dispatch: vi.fn(), getState: state }, notificationIpcSaga);
+    mocks.callbacks['notification:show']({
+      title: 'Agent',
+      navigateTarget: { workspaceId: 'ws-1' },
+    });
+    await flush();
+    expect(mocks.idleToast.mock.calls).toEqual([
+      [{ title: 'Agent', navigateTarget: { workspaceId: 'ws-1' } }],
+    ]);
+    task.cancel();
+    await task.toPromise();
   });
 
   it('does not let a native sound failure block click navigation', async () => {
