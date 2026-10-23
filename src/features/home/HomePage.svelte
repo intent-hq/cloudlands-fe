@@ -484,7 +484,11 @@
       row?.closest<HTMLElement>('[role="option"], button')?.focus();
     });
   });
-  homeRetiredWorkspaces(() => ({ filter, workspaces: $workspaces$, preview }));
+  homeRetiredWorkspaces({
+    filter: () => filter,
+    preview: () => preview,
+    workspaces: () => $workspaces$,
+  });
   function chooseFilter(next: HomeFilter) {
     store.dispatch(closePanel());
     updateView({ filter: next, tab: 'workspaces', selectedId: null });

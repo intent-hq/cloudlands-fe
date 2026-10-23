@@ -10,21 +10,23 @@ import { hasRetiredWorkspaces, shouldReloadRetiredWorkspaces, type HomeFilter } 
  * list refresh replaces the store without retired rows, so reload them if that
  * happens while the chip is selected. Call during component initialisation.
  */
-export function homeRetiredWorkspaces(
-  state: () => { filter: HomeFilter; workspaces: readonly Workspace[]; preview: boolean },
-): void {
+export function homeRetiredWorkspaces(input: {
+  filter: () => HomeFilter;
+  preview: () => boolean;
+  workspaces: () => readonly Workspace[];
+}): void {
+  // Tracks only the filter and preview mode: the list itself changes on every
+  // upsert (including this load's own response), which must not re-fetch.
   $effect(() => {
-    const { filter, preview } = state();
-    if (filter !== 'retired' || preview) return;
+    if (input.filter() !== 'retired' || input.preview()) return;
     untrack(() => store.dispatch(loadRetiredWorkspacesRequested()));
   });
-  const loaded = $derived(hasRetiredWorkspaces(state().workspaces));
+  const loaded = $derived(hasRetiredWorkspaces(input.workspaces()));
   let hadRetired = untrack(() => loaded);
   $effect(() => {
     const now = loaded;
     untrack(() => {
-      const { filter, preview } = state();
-      if (!preview && shouldReloadRetiredWorkspaces(filter, hadRetired, now))
+      if (!input.preview() && shouldReloadRetiredWorkspaces(input.filter(), hadRetired, now))
         store.dispatch(loadRetiredWorkspacesRequested());
       hadRetired = now;
     });
