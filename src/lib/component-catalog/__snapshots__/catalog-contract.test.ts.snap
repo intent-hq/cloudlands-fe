@@ -16918,7 +16918,6 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                     <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                       <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                         <svg aria-hidden="true" class="shrink-0 text-blue-500/80 w-3.5" data-icon="folder" data-weight="regular" role="img">
-                                          <rect>
                                           <path>
                                         <span class="truncate">
                                           "Documents"
@@ -16983,7 +16982,6 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                         <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                           <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                             <svg aria-hidden="true" class="text-blue-500/80" data-icon="folder" data-weight="regular" role="img">
-                                              <rect>
                                               <path>
                                             <span class="flex-1 min-w-0 text-sm truncate">
                                               "Projects"
@@ -16994,7 +16992,6 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                         <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                           <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                             <svg aria-hidden="true" class="text-warning-ink" data-icon="folder" data-weight="regular" role="img">
-                                              <rect>
                                               <path>
                                             <span class="flex-1 min-w-0 text-sm truncate">
                                               "design-system"
@@ -17644,7 +17641,6 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                         <div class="first-line-icon type-caption" data-slot="list-row-leading">
                                           <span class="bg-accent flex items-center justify-center rounded size-5 text-foreground">
                                             <svg aria-hidden="true" class="size-3.5" data-icon="folder" data-weight="regular" role="img">
-                                              <rect>
                                               <path>
                                         <div class="flex-1 min-w-0">
                                           <div class="flex gap-2 items-baseline min-w-0">
@@ -19513,7 +19509,6 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-fam
                   <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                     <div class="first-line-icon type-caption" data-slot="list-row-leading">
                       <svg aria-hidden="true" class="size-4 text-muted-foreground" data-icon="folder" data-weight="regular" role="img">
-                        <rect>
                         <path>
                     <div class="flex-1 min-w-0">
                       <div class="flex gap-2 items-baseline min-w-0">
@@ -19532,8 +19527,10 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-fam
                       <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden p-1 rounded-full shrink-0 size-6 text-[12px] text-foreground transition-[background-color,color,box-shadow] whitespace-nowrap" data-color="gray" data-size="default" data-slot="badge" data-variant="solid" tokens=["--accent"]>
                         <span class="[text-box:trim-both_cap_alphabetic]">
                           <svg aria-hidden="true" class="size-3" data-icon="robot" data-weight="regular" role="img">
-                            <rect>
                             <path>
+                            <rect>
+                            <circle>
+                            <circle>
                     <div class="flex-1 min-w-0">
                       <div class="flex gap-2 items-baseline min-w-0">
                         <div class="min-w-0 text-foreground truncate type-caption" data-slot="list-row-title">
@@ -19721,8 +19718,10 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-fam
                         <button aria-current="page" class="[&>svg]:shrink-0 [&>svg]:size-4 aria-disabled:opacity-50 aria-disabled:pointer-events-none cursor-pointer data-[active=true]:text-foreground data-[proximity-active=true]:text-foreground disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:shadow-none font-normal gap-2 group-focus-within/menu-item:pr-(--row-gutter-hover) group-hover/menu-item:pr-(--row-gutter-hover) items-center justify-start min-h-(--control-height-small) motion-reduce:transition-none overflow-hidden peer/menu-button px-2 py-1 relative rounded-(--radius-row) select-none svelte-<scope> text-left transition-[padding] type-caption w-full z-10" data-active="true" data-proximity-active="false" data-sidebar-index="0" data-sidebar="menu-button" data-size="default" data-slot="sidebar-menu-button" data-status="active" tabindex="0">
                           <span class="[&>svg]:duration-spring-fast [&>svg]:size-4 [&>svg]:transition-[stroke-width] duration-spring-fast ease-spring-fast flex items-center justify-center motion-reduce:transition-none shrink-0 sidebar-menu-icon size-4 svelte-<scope> text-foreground transition-colors">
                             <svg aria-hidden="true" data-icon="robot" data-weight="regular" role="img">
-                              <rect>
                               <path>
+                              <rect>
+                              <circle>
+                              <circle>
                           <span class="flex-1 font-normal inline-grid min-w-0 text-left">
                             <span aria-hidden="true" class="col-start-1 invisible row-start-1 truncate">
                               "Active catalog implementor"
@@ -19732,8 +19731,10 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-fam
                         <button class="[&>svg]:shrink-0 [&>svg]:size-4 aria-disabled:opacity-50 aria-disabled:pointer-events-none cursor-pointer data-[active=true]:text-foreground data-[proximity-active=true]:text-foreground disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:-outline-offset-1 focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:shadow-none font-normal gap-2 group-focus-within/menu-item:pr-(--row-gutter-hover) group-hover/menu-item:pr-(--row-gutter-hover) items-center justify-start min-h-(--control-height-small) motion-reduce:transition-none overflow-hidden peer/menu-button px-2 py-1 relative rounded-(--radius-row) select-none svelte-<scope> text-left transition-[padding] type-caption w-full z-10" data-active="false" data-proximity-active="false" data-sidebar-index="1" data-sidebar="menu-button" data-size="default" data-slot="sidebar-menu-button" tabindex="-1">
                           <span class="[&>svg]:duration-spring-fast [&>svg]:size-4 [&>svg]:transition-[stroke-width] duration-spring-fast ease-spring-fast flex items-center justify-center motion-reduce:transition-none shrink-0 sidebar-menu-icon size-4 svelte-<scope> text-muted-foreground transition-colors">
                             <svg aria-hidden="true" data-icon="robot" data-weight="regular" role="img">
-                              <rect>
                               <path>
+                              <rect>
+                              <circle>
+                              <circle>
                           <span class="flex-1 font-normal inline-grid min-w-0 text-left">
                             <span aria-hidden="true" class="col-start-1 invisible row-start-1 truncate">
                               "A very long background agent name that must truncate"

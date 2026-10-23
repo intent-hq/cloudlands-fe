@@ -2,6 +2,8 @@
   import Fa from 'svelte-fa';
   import * as Tabs from '$lib/components/ui/tabs';
   import { Tooltip } from '$lib/components/ui/tooltip';
+  import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
+  import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
   import { writable } from 'svelte/store';
   import { prefersReducedMotion } from '$lib/utils/reduced-motion';
   import { store } from '$store/renderer/store';
@@ -9,7 +11,11 @@
   import { setMultiSelectSidebarSelectedTabs } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { selectIsWorkspaceCollaborator } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectWorkspacePeopleTilePeople } from '$store/renderer/slices/presence/presence-selectors';
-  import { selectWorkspaceHasUnreadForegroundAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+  import {
+    resolveExistingWorkspaceDefaultAgent,
+    selectAllWorkspaceAgents,
+    selectWorkspaceHasUnreadForegroundAgents,
+  } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import {
     TAB_DEFINITIONS,
     OWNER_ONLY_TAB_IDS,
@@ -39,6 +45,8 @@
   const collaborator$ = selectIsWorkspaceCollaborator(workspaceId$);
   const people$ = selectWorkspacePeopleTilePeople(workspaceId$);
   const unread$ = selectWorkspaceHasUnreadForegroundAgents(workspaceId$);
+  const agents$ = selectAllWorkspaceAgents(workspaceId$);
+  const mainAgent = $derived(resolveExistingWorkspaceDefaultAgent($agents$, workspaceId));
   const tabs = $derived(
     TAB_DEFINITIONS.filter(
       ({ id }) =>
@@ -100,7 +108,7 @@
   value={selected}
   onValueChange={activate}
   {orientation}
-  variant={orientation === 'horizontal' ? 'icon' : 'default'}
+  variant="icon"
   size="default"
   class="w-full"
   data-sidebar-section-tabs={orientation}
@@ -114,7 +122,9 @@
           ? m.workspace_multiSelectSidebar_agentsTabUnread_ariaLabel({ label: tab.label })
           : tab.label}
         aria-controls={panelId ? `${panelId}-${tab.id}` : undefined}
-        class="relative w-full min-w-0 gap-0 px-0"
+        class={orientation === 'horizontal'
+          ? 'relative w-full min-w-0 gap-0 px-0'
+          : 'relative size-9 min-w-0 gap-0 px-0'}
         data-sidebar-section-tab={tab.id}
         onpointerenter={(event) => {
           if (orientation === 'vertical' && event.pointerType !== 'touch')
@@ -134,7 +144,22 @@
           if (selected === tab.id) activate(tab.id);
         }}
       >
-        <Fa icon={tab.icon} class={orientation === 'horizontal' ? 'size-4.5' : 'size-4'} />
+        {#if tab.id === 'agents' && mainAgent}
+          <span
+            class="pointer-events-none inline-flex"
+            aria-hidden="true"
+            data-sidebar-main-agent={mainAgent.id}
+          >
+            <AgentAvatarWithState
+              agentId={mainAgent.id}
+              specialist={mainAgent.metadata?.specialist ?? mainAgent.agentMetadata?.specialist}
+              variant={orientation === 'horizontal' ? 'standard' : 'compact'}
+              state={getAvatarStateForSession(mainAgent, { hasUnread: false })}
+            />
+          </span>
+        {:else}
+          <Fa icon={tab.icon} class={orientation === 'horizontal' ? 'size-4' : 'size-3.5'} />
+        {/if}
         {#if unread}
           <span
             class="sidebar-tab-unread absolute top-1.5 right-1.5 size-1.5 rounded-full"

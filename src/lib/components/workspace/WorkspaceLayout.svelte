@@ -136,12 +136,24 @@
     if (!shell) return;
     const bounds = shell.getBoundingClientRect();
     const scale = bounds.height / shell.clientHeight || 1;
-    const anchorTop = (anchor.getBoundingClientRect().top - bounds.top) / scale;
-    const availableBelow = Math.max(0, shell.clientHeight - anchorTop - 12);
+    const anchorBounds = anchor.getBoundingClientRect();
+    const anchorCenter = (anchorBounds.top + anchorBounds.height / 2 - bounds.top) / scale;
+    const flyout = shell.querySelector<HTMLElement>('[data-workspace-sidebar-flyout]');
+    const heading = flyout?.querySelector<HTMLElement>(
+      '[data-sidebar-section][data-active] [data-sidebar-section-header] h6',
+    );
+    const headingBounds = heading?.getBoundingClientRect();
+    const headingCenter =
+      headingBounds && flyout
+        ? (headingBounds.top + headingBounds.height / 2 - flyout.getBoundingClientRect().top) /
+          scale
+        : anchorBounds.height / 2 / scale;
+    const alignedTop = Math.max(0, anchorCenter - headingCenter);
+    const availableBelow = Math.max(0, shell.clientHeight - alignedTop - 12);
     const maxHeight = Math.min(Math.max(0, shell.clientHeight - 12), Math.max(availableBelow, 240));
     contentMaxHeight = maxHeight;
     const height = Math.min(contentHeight, maxHeight);
-    const top = Math.max(0, Math.min(anchorTop, shell.clientHeight - height - 12));
+    const top = Math.max(0, Math.min(alignedTop, shell.clientHeight - height - 12));
     if (!instant && floatingBounds.target.top === top && floatingBounds.target.height === height)
       return;
     void floatingBounds.set({ top, height }, { instant: instant || !floatingOpen });

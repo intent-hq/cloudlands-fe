@@ -46,6 +46,7 @@ const consumerFiles = [
   'src/lib/components/workspace/sidebar/NotesPanel.svelte',
   'src/lib/components/workspace/sidebar/SecondaryRootChangesView.svelte',
   'src/lib/components/workspace/sidebar/SidebarActivityPanel.svelte',
+  'src/lib/components/workspace/sidebar/SidebarSectionTabs.svelte',
 ] as const;
 
 const overflowFiles = [
@@ -76,7 +77,7 @@ function productionSvelteFiles(directory = 'src'): string[] {
 
 describe('agent avatar overlay inventory', () => {
   it('keeps every audited consumer on the icon-free canonical avatar surface', () => {
-    expect(consumerFiles).toHaveLength(41);
+    expect(consumerFiles).toHaveLength(42);
     for (const path of consumerFiles) {
       const contents = source(path);
       expect(contents, path).not.toContain('/auggie-avatar/');
