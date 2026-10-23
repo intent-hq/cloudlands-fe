@@ -24,6 +24,8 @@
  * agent's workspace with its chat drawer open (chief-of-staff failures open
  * the sidebar Assistant panel instead), regardless of the retry RPC outcome.
  * Switch To performs the SAME navigation but never calls `agent.retry`.
+ * Toasts for the current workspace are suppressed; failures remain tracked
+ * and provider auth-status refreshes still run.
  */
 import { buffers, eventChannel, type EventChannel } from 'redux-saga';
 import { call, cancelled, fork, put, take, type SagaGenerator } from 'typed-redux-saga';
@@ -50,6 +52,7 @@ import {
 } from '../../provider-catalog/provider-catalog-selectors';
 import { providerCatalogLoaded } from '../../provider-catalog/provider-catalog-slice';
 import { openPanel, setChiefActiveAgentId } from '../../sidebar-nav/sidebar-nav-slice';
+import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
 import { selectAgentSession } from '../agent-session-selectors';
 
@@ -199,11 +202,17 @@ function* renderEntry(
 ): SagaGenerator<void> {
   const notify = yield* call(loadToastArtifacts);
   const { componentProps, authGuidance } = yield* call(buildToastProps, entry, state, emit);
-  notify.agentFailure(componentProps, {
-    id: toastId(entry.agentId),
-    duration: Number.POSITIVE_INFINITY,
-  });
-  state.visible = true;
+  const currentWorkspaceId = yield* selectCurrentWorkspaceTabId.effect();
+  if (currentWorkspaceId === entry.workspaceId) {
+    if (state.visible) notify.dismiss(toastId(entry.agentId));
+    state.visible = false;
+  } else {
+    notify.agentFailure(componentProps, {
+      id: toastId(entry.agentId),
+      duration: Number.POSITIVE_INFINITY,
+    });
+    state.visible = true;
+  }
   // Auth failure: force a provider auth-status refresh so provider cards /
   // settings flip to "Log in" without waiting for the next poll (the
   // checkSingleProviderRequested worker probes with force: true). One

@@ -29,6 +29,7 @@ import {
 } from './intentd-sidecar';
 import { __resetConnectionModeForTesting } from './connection-mode';
 import { windowsPipeName } from './intentd-pipe-name';
+import { CURRENT_PROTOCOL_VERSION } from '../../../test/current-protocol-version';
 
 const actualFs = await vi.importActual<typeof import('node:fs')>('node:fs');
 
@@ -330,7 +331,7 @@ describe('probeDaemonVersion', () => {
         running: true,
         version: '0.1.0',
         buildCommit: '0123456789abcdef',
-        protocolVersion: '1',
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
       },
     });
     const probe = await probeDaemonVersion(socketPath);
@@ -338,7 +339,7 @@ describe('probeDaemonVersion', () => {
       alive: true,
       version: '0.1.0',
       buildCommit: '0123456789abcdef',
-      protocolVersion: '1',
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
     });
   });
 

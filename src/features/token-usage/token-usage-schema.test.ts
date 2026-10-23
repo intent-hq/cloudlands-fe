@@ -36,6 +36,15 @@ describe('TokenUsageSchema', () => {
     expect(TokenUsageSchema.parse(usageWith([]))).toHaveProperty('byAgentModel', []);
   });
 
+  it('accepts optional agentNames and rejects non-string names', () => {
+    const agentNames = { 'agent-a': 'PR reviewer' };
+    expect(TokenUsageSchema.parse({ ...usageWith(), agentNames }).agentNames).toEqual(agentNames);
+    expect(TokenUsageSchema.parse(usageWith())).not.toHaveProperty('agentNames');
+    expect(
+      TokenUsageSchema.safeParse({ ...usageWith(), agentNames: { 'agent-a': 7 } }).success,
+    ).toBe(false);
+  });
+
   it('rejects malformed, duplicate, or unsorted cross-filter rows', () => {
     const row = {
       agentId: 'agent-a',

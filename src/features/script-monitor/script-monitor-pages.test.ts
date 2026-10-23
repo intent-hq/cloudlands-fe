@@ -11,6 +11,8 @@ import {
   monitorFixture as active,
   monitorSummaryFixture as summary,
 } from './script-monitor.fixture';
+import { CURRENT_PROTOCOL_VERSION } from '../../test/current-protocol-version';
+
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
   backendSubscribe: vi.fn(),
@@ -34,7 +36,7 @@ beforeEach(() => {
     if (method === 'client.hello')
       return {
         server: {
-          protocolVersion: '14.0',
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
           capabilities: { scriptMonitors: 2, scriptActiveLists: 1 },
         },
       };

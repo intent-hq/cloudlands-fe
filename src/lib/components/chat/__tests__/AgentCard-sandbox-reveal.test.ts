@@ -32,6 +32,7 @@ import { invoke } from '$lib/electron-bridge';
 import type { AgentSession, Workspace } from '$shared/types';
 import { AgentStatus, WorkspaceStatusEnum } from '$shared/types';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
+import { CURRENT_PROTOCOL_VERSION } from '../../../../test/current-protocol-version';
 
 const mockedInvoke = vi.mocked(invoke);
 // Preserve the test-setup default implementation so a full reset (which also
@@ -88,7 +89,7 @@ function seedLocality(locality: 'local' | 'remote') {
         transports: ['uds'],
         clients: 1,
         agents: 1,
-        protocolVersion: '2.4',
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
         host: { os: 'macos', arch: 'aarch64', hasDisplay: true, locality },
       },
       '2026-07-30T20:00:00.000Z',

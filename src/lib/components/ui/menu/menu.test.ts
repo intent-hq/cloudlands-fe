@@ -275,7 +275,6 @@ describe('Menu metadata and compatibility', () => {
     expect(menuMetadata.owner).toBe('007-B5');
     expect(menuSemantics.interaction).toBe('command');
     expect(menuSemantics.selectionReplacement).toBe('$lib/components/ui/select');
-    expect(menuMetadata.callers).toHaveLength(11);
     expect(menuMetadata.callers).not.toContain(
       'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
     );

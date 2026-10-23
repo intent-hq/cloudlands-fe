@@ -1,6 +1,7 @@
 <script lang="ts">
   import { truncatedTitle } from '$lib/actions/observe-overflow';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
+  import SidebarIcon from '$lib/components/icons/SidebarIcon.svelte';
   import { Input } from '$lib/components/ui/input';
   import { Textarea } from '$lib/components/ui/textarea';
   import { logger } from '$lib/utils/client-logger';
@@ -9,12 +10,7 @@
   import { Button } from '$lib/components/ui/button';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { TooltipRich } from '$lib/components/ui/tooltip';
-  import {
-    faBars,
-    faKeyboard,
-    faRightLeft,
-    faTableColumns,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faKeyboard, faRightLeft } from '@fortawesome/free-solid-svg-icons';
   import { tick } from 'svelte';
   import { writable } from 'svelte/store';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
@@ -352,7 +348,7 @@
   const sidebarToggleAction: MenuAction = {
     id: 'toggle-sidebar',
     label: m.ui_sidebar_toggle_label(),
-    icon: faBars,
+    iconSnippet: sidebarToggleIconSnippet,
     dividerBefore: true,
     shortcut: 'mod+b',
     onClick: () => {
@@ -366,7 +362,7 @@
       $sidebarSide$ === 'left'
         ? m.workspace_sidebarHeader_moveSidebarRight_label()
         : m.workspace_sidebarHeader_moveSidebarLeft_label(),
-    icon: faTableColumns,
+    iconSnippet: sidebarSideIconSnippet,
     onClick: () => {
       appStore.dispatch(toggleSidebarSide());
     },
@@ -471,6 +467,18 @@
     }
   });
 </script>
+
+{#snippet sidebarToggleIconSnippet()}
+  <SidebarIcon size={16} side={$sidebarSide$} class="text-muted-foreground" />
+{/snippet}
+
+{#snippet sidebarSideIconSnippet()}
+  <SidebarIcon
+    size={16}
+    side={$sidebarSide$ === 'left' ? 'right' : 'left'}
+    class="text-muted-foreground"
+  />
+{/snippet}
 
 <div class="group flex h-full items-start justify-between gap-2">
   <div class="flex min-w-0 flex-1 flex-col gap-1">
@@ -650,7 +658,7 @@
           {#if isDeleting}
             <IntentMarkLoader size={14} />
           {:else}
-            <KebabIcon class="size-3.5" />
+            <KebabIcon />
           {/if}
         </Button>
       {/snippet}

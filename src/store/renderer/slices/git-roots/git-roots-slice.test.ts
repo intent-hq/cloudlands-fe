@@ -2,6 +2,10 @@
  * gitRoots slice reducer + selector tests (multi git root tracking,
  * intent-hq/monorepo#2053).
  */
+import {
+  workspaceUnmounted,
+  workspaceDeleted,
+} from '../workspace-lifecycle/workspace-lifecycle-slice';
 import { describe, expect, it } from 'vitest';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import {
@@ -13,7 +17,13 @@ import {
 import type { GitRootRow } from '$features/git-roots/git-roots-service';
 import type { Workspace, WorkspaceId } from '$shared/types';
 import { PullRequestStatus, WorkspaceStatus } from '$shared/types';
-import { gitRootsReducer, gitRootsUpdated, initialState } from './git-roots-slice';
+import {
+  gitRootsConsumerMounted,
+  gitRootsConsumerUnmounted,
+  gitRootsReducer,
+  gitRootsUpdated,
+  initialState,
+} from './git-roots-slice';
 import {
   selectGitRoots,
   selectHasSecondaryGitRoots,
@@ -182,3 +192,25 @@ describe('git-roots selectors', () => {
     expect(selectHasSecondaryGitRoots.select(stateWith([makeRoot()]), 'ws-1')).toBe(true);
   });
 });
+
+it('retains root rows and independent consumers across snapshots and duplicate releases', () => {
+  let state = gitRootsReducer(initialState, gitRootsConsumerMounted('ws-1', 'sidebar'));
+  state = gitRootsReducer(state, gitRootsConsumerMounted('ws-1', 'panel'));
+  state = gitRootsReducer(state, gitRootsUpdated('ws-1', [makeRoot()]));
+  state = gitRootsReducer(state, gitRootsConsumerUnmounted('ws-1', 'sidebar'));
+  expect(state.byWorkspaceId['ws-1'].consumers).toEqual({ panel: true });
+  state = gitRootsReducer(state, gitRootsConsumerUnmounted('ws-1', 'panel'));
+  expect(getItems(state.byWorkspaceId['ws-1'].gitRoots)).toEqual([makeRoot()]);
+  expect(gitRootsReducer(state, gitRootsConsumerUnmounted('ws-1', 'panel'))).toBe(state);
+  expect(gitRootsReducer(state, gitRootsConsumerUnmounted('missing', 'panel'))).toBe(state);
+});
+
+it.each([workspaceUnmounted, workspaceDeleted])(
+  'clears Git demand on workspace teardown (%s)',
+  (cleanup) => {
+    const state = gitRootsReducer(initialState, gitRootsConsumerMounted('ws', 'panel'));
+    const cleared = gitRootsReducer(state, cleanup('ws'));
+    expect(cleared.byWorkspaceId.ws).toBeUndefined();
+    expect(gitRootsReducer(cleared, gitRootsConsumerUnmounted('ws', 'panel'))).toBe(cleared);
+  },
+);

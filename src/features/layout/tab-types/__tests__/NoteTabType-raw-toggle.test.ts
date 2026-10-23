@@ -48,6 +48,8 @@ const mockState = vi.hoisted(() => {
     noteContentView: store<unknown>(undefined),
     noteWorkspaceRoot: store<unknown>(undefined),
     notePresenceView: store<unknown>(undefined),
+    windowVisible: store(true),
+    currentWorkspace: store('ws-1'),
     principalConnectionContext: store('test-connection'),
   };
 });
@@ -104,6 +106,7 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
   selectNoteWorkspaceRoot: () => mockState.noteWorkspaceRoot,
   selectNotePresenceView: () => mockState.notePresenceView,
   selectWorkspaceNotesState: () => mockState.notesState,
+  selectNoteWindowVisible: () => mockState.windowVisible,
 }));
 vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({
   selectPrincipalConnectionContext: () => mockState.principalConnectionContext,
@@ -129,6 +132,7 @@ vi.mock('$store/renderer/slices/user-preferences/user-preferences-slice', () => 
 }));
 vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
   selectAllScrollPositions: () => mockState.scrollPositions,
+  selectCurrentWorkspaceTabId: () => mockState.currentWorkspace,
 }));
 vi.mock('$store/renderer/slices/tab-state/tab-state-slice', () => ({
   saveScrollPosition: (tabId: string, scrollTop: number) => ({
@@ -155,6 +159,8 @@ import { deleteNotePersistRequested } from '$store/renderer/slices/workspace-not
 describe('NoteTabType note view modes', () => {
   beforeEach(() => {
     mockState.dispatch.mockClear();
+    mockState.windowVisible.set(true);
+    mockState.currentWorkspace.set('ws-1');
     mockState.noteViewMode.set('editor');
     mockState.spellcheckEnabled.set(true);
     mockState.noteFontStyle.set('sans');
@@ -170,6 +176,54 @@ describe('NoteTabType note view modes', () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+  });
+
+  it('holds content demand only for mounted visible notes across tab, workspace and window changes', async () => {
+    const props = {
+      tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' },
+      isActive: false,
+    };
+    const view = render(NoteTabTypeHeaderHarness, { props });
+    const requests = () =>
+      mockState.dispatch.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action.type === 'workspaceNotes/noteContentViewRequested');
+    const releases = () =>
+      mockState.dispatch.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action.type === 'workspaceNotes/noteContentViewReleased');
+    expect(requests()).toHaveLength(0);
+    await view.rerender({ ...props, isActive: true });
+    await waitFor(() => expect(requests()).toHaveLength(1));
+    const consumer = requests()[0].payload[0];
+    mockState.windowVisible.set(false);
+    await waitFor(() => expect(releases().at(-1).payload).toEqual(['ws-1', consumer]));
+    mockState.currentWorkspace.set('other');
+    mockState.windowVisible.set(true);
+    await Promise.resolve();
+    expect(requests()).toHaveLength(1);
+    mockState.currentWorkspace.set('ws-1');
+    await waitFor(() => expect(requests()).toHaveLength(2));
+    view.unmount();
+    expect(releases()).toHaveLength(2);
+  });
+
+  it('gives two mounted consumers independent content leases even for the same tab', async () => {
+    const props = { tab: { id: 'same-tab', type: 'note', title: 'Note', noteId: 'note-1' } };
+    const first = render(NoteTabTypeHeaderHarness, { props });
+    const second = render(NoteTabTypeHeaderHarness, { props });
+    const requests = () =>
+      mockState.dispatch.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action.type === 'workspaceNotes/noteContentViewRequested');
+    await waitFor(() => expect(requests()).toHaveLength(2));
+    expect(new Set(requests().map((action) => action.payload[0])).size).toBe(2);
+    first.unmount();
+    const released = mockState.dispatch.mock.calls
+      .map(([action]) => action)
+      .filter((action) => action.type === 'workspaceNotes/noteContentViewReleased');
+    expect(released.map((action) => action.payload[1])).toEqual([requests()[0].payload[0]]);
+    second.unmount();
   });
 
   it('switches mutually exclusive note view modes from the panel action menu', async () => {

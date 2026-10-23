@@ -96,3 +96,17 @@ describe('daemon submission display', () => {
     });
   });
 });
+
+describe('processing submission author', () => {
+  it("keeps the queue entry's served author so the row matches its confirmed version", () => {
+    const author = {
+      principalId: 'principal-guest',
+      login: 'octocat',
+      displayName: 'The Octocat',
+      avatarUrl: null,
+    };
+    expect(processingSubmissionMessage({ ...row, author }).author).toEqual(author);
+    expect(processingSubmissionMessage({ ...row, author: null }).author).toBeNull();
+    expect('author' in processingSubmissionMessage(row)).toBe(false);
+  });
+});

@@ -1,4 +1,8 @@
-import { getPrincipalActionContext, getPrincipalConnectionContext } from './principal-context';
+import {
+  getPrincipalActionContext,
+  getPrincipalConnectionContext,
+  getPrincipalDraftProvenance,
+} from './principal-context';
 import { store } from '../../store';
 import type { HostRole } from '$shared/types/principal';
 import { selectLabsMultiplayerEnabled } from '../user-preferences/user-preferences-selectors';
@@ -77,6 +81,9 @@ export const selectCollaborationCapabilities = store.createSelector((state) => {
 
 /** A menu or async action belongs to one admitted principal and presentation lifetime. */
 export const selectPrincipalActionContext = store.createSelector(getPrincipalActionContext);
+
+/** Stable backend + principal provenance for retained draft presentation. */
+export const selectPrincipalDraftProvenance = store.createSelector(getPrincipalDraftProvenance);
 
 /** Owner single-user creation stays ordinary; members must enable and refresh Multiplayer. */
 export const selectWorkspaceCreationVisible = store.createSelector(

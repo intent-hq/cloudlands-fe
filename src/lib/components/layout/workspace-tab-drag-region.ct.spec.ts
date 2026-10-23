@@ -5,13 +5,13 @@ import WorkspaceTabDragRegionHarness from './WorkspaceTabDragRegionHarness.svelt
 async function dragRegionGeometry(titlebar: Locator) {
   return titlebar.evaluate(async (root) => {
     // Mounting precedes font readiness and frame-scheduled tab layout.
-    // Use the same capture boundary as geometry goldens before measuring once.
+    // Wait for fonts and layout to settle before measuring once.
     const geometryWindow = window as typeof window & {
-      __INTENT_GEOMETRY_CT__: {
+      __INTENT_PREVIEW_CT__: {
         waitForCaptureStability: typeof import('$lib/component-catalog/capture-stability').waitForCaptureStability;
       };
     };
-    await geometryWindow.__INTENT_GEOMETRY_CT__.waitForCaptureStability(root as HTMLElement);
+    await geometryWindow.__INTENT_PREVIEW_CT__.waitForCaptureStability(root as HTMLElement);
     const strip = root.querySelector<HTMLElement>('[data-workspace-tab-strip]')!;
     const bounds = strip.getBoundingClientRect();
     const descendants = Array.from(strip.querySelectorAll('*')).map((element) => {

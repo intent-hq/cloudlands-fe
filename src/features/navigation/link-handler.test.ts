@@ -5,6 +5,7 @@ import {
   createGlobalLinkClickHandler,
   createLinkClickHandler,
   createLinkTooltipHandler,
+  openLinkInApp,
 } from './link-handler';
 import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import { CHIEF_WORKSPACE_ID, type WorkspaceId } from '$shared/types/branded-ids';
@@ -54,6 +55,11 @@ const showLinkActionMenuMock = vi.hoisted(() => vi.fn());
 vi.mock('./link-action-menu-state.svelte', () => ({
   showLinkActionMenu: showLinkActionMenuMock,
   hideLinkActionMenu: vi.fn(),
+}));
+
+const loadLinkedWorkspacesMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+vi.mock('./link-action-menu-linked-workspaces', () => ({
+  loadLinkActionMenuLinkedWorkspaces: loadLinkedWorkspacesMock,
 }));
 
 const writeTextToClipboardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
@@ -152,12 +158,35 @@ describe.each(['Assistant', 'workspace preview'] as const)('Home GitHub links in
         url,
         workspaceId: options.workspaceId,
         gitHubRef: { owner: 'acme', repo: 'widgets', number: 7, kind: 'pr' },
+        // Only a workspace preview has a workspace for Open in app to enter.
+        openInWorkspace: surface === 'workspace preview',
+        assistantLayoutId: surface === 'Assistant' ? 'assistant-thread-1' : undefined,
       }),
     );
     expect(showAssistantContentMock).not.toHaveBeenCalled();
     expect(openBrowserPanelMock).not.toHaveBeenCalled();
     expect(invokeIpcMock).not.toHaveBeenCalled();
     expect(gotoMock).not.toHaveBeenCalled();
+  });
+
+  it('looks up the linked workspaces for that menu opening', async () => {
+    showLinkActionMenuMock.mockReturnValueOnce(42);
+    expect(await handleLink(url, options)).toBe(true);
+
+    await vi.waitFor(() =>
+      expect(loadLinkedWorkspacesMock).toHaveBeenCalledExactlyOnceWith(42, url),
+    );
+  });
+
+  it('keeps the menu and opens no browser when the linked-workspace lookup fails', async () => {
+    loadLinkedWorkspacesMock.mockRejectedValueOnce(new Error('chunk failed to load'));
+    expect(await handleLink(url, options)).toBe(true);
+
+    await vi.waitFor(() => expect(loadLinkedWorkspacesMock).toHaveBeenCalled());
+    await Promise.resolve();
+    expect(showLinkActionMenuMock).toHaveBeenCalledTimes(1);
+    expect(invokeIpcMock).not.toHaveBeenCalled();
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
   });
 
   it('copies the link without opening a browser or leaving Home', async () => {
@@ -1087,9 +1116,40 @@ describe('handleLink – flipped http(s) routing and link action menu', () => {
       y: 200,
       workspaceId: TEST_WORKSPACE_ID,
       anchorElement: null,
+      openInWorkspace: false,
     });
     expect(invokeIpcMock).not.toHaveBeenCalled();
     expect(openBrowserPanelMock).not.toHaveBeenCalled();
+  });
+
+  it('reads the source panel from the page when the caller passes an empty one', async () => {
+    const url = 'https://github.com/acme/widgets/issues/42';
+    const { container, anchor } = buildContainerWithLink(url);
+    container.dataset.panelId = 'panel-chat';
+    const event = new MouseEvent('click', { clientX: 5, clientY: 6 });
+    Object.defineProperty(event, 'target', { value: anchor });
+
+    await handleLink(url, { workspaceId: TEST_WORKSPACE_ID, event, sourcePanelId: '' });
+
+    expect(showLinkActionMenuMock).toHaveBeenCalledWith(
+      expect.objectContaining({ sourcePanelId: 'panel-chat' }),
+    );
+    container.remove();
+  });
+
+  it('passes the source panel to the menu for a click inside a workspace panel', async () => {
+    const url = 'https://github.com/acme/widgets/issues/42';
+    const { container, anchor } = buildContainerWithLink(url);
+    container.dataset.panelId = 'panel-chat';
+    const event = new MouseEvent('click', { clientX: 5, clientY: 6 });
+    Object.defineProperty(event, 'target', { value: anchor });
+
+    expect(await handleLink(url, { workspaceId: TEST_WORKSPACE_ID, event })).toBe(true);
+
+    expect(showLinkActionMenuMock).toHaveBeenCalledWith(
+      expect.objectContaining({ openInWorkspace: false, sourcePanelId: 'panel-chat' }),
+    );
+    container.remove();
   });
 
   it('keyboard activation (0,0 click) anchors the menu to the link element rect', async () => {
@@ -1282,5 +1342,95 @@ describe('chat and note resource hover context', () => {
       stop();
       container.remove();
     }
+  });
+});
+
+describe('openLinkInApp', () => {
+  const url = 'https://github.com/acme/widgets/pull/7';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('enters the owning workspace before opening its browser panel', async () => {
+    const order: string[] = [];
+    gotoMock.mockImplementationOnce(async () => {
+      order.push('goto');
+    });
+    openBrowserPanelMock.mockImplementationOnce(() => order.push('panel'));
+
+    expect(await openLinkInApp(url, TEST_WORKSPACE_ID, { openInWorkspace: true })).toBe(true);
+
+    expect(gotoMock).toHaveBeenCalledWith('/workspace/ws-1');
+    expect(getPanelLayoutManagerMock).toHaveBeenCalledWith(TEST_WORKSPACE_ID);
+    expect(openBrowserPanelMock).toHaveBeenCalledWith(url, undefined, undefined, undefined);
+    expect(order).toEqual(['goto', 'panel']);
+    expect(invokeIpcMock).not.toHaveBeenCalled();
+  });
+
+  it('stays in the current workspace and opens beside the source panel', async () => {
+    expect(
+      await openLinkInApp(url, TEST_WORKSPACE_ID, {
+        openInWorkspace: false,
+        sourcePanelId: 'panel-chat',
+      }),
+    ).toBe(true);
+
+    expect(gotoMock).not.toHaveBeenCalled();
+    expect(openBrowserPanelMock).toHaveBeenCalledWith(url, undefined, 'panel-chat', undefined);
+  });
+
+  it('shows the link in the Assistant side panel it came from', async () => {
+    expect(
+      await openLinkInApp(url, CHIEF_WORKSPACE_ID, {
+        openInWorkspace: false,
+        assistantLayoutId: 'assistant-thread-1',
+      }),
+    ).toBe(true);
+
+    expect(showAssistantContentMock).toHaveBeenCalledExactlyOnceWith(url, {
+      layoutId: 'assistant-thread-1',
+    });
+    expect(gotoMock).not.toHaveBeenCalled();
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
+    expect(invokeIpcMock).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the external browser when the Assistant cannot show the link', async () => {
+    showAssistantContentMock.mockResolvedValueOnce(false);
+
+    expect(await openLinkInApp(url, CHIEF_WORKSPACE_ID)).toBe(true);
+
+    expect(invokeIpcMock).toHaveBeenCalledExactlyOnceWith('shell:openExternal', { url });
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the external browser when the Assistant panel fails', async () => {
+    showAssistantContentMock.mockRejectedValueOnce(new Error('chunk failed to load'));
+
+    expect(await openLinkInApp(url, CHIEF_WORKSPACE_ID)).toBe(true);
+
+    expect(invokeIpcMock).toHaveBeenCalledExactlyOnceWith('shell:openExternal', { url });
+  });
+
+  it('ignores the Home panel once it enters the workspace', async () => {
+    expect(
+      await openLinkInApp(url, TEST_WORKSPACE_ID, {
+        openInWorkspace: true,
+        sourcePanelId: 'home-panel',
+      }),
+    ).toBe(true);
+
+    expect(gotoMock).toHaveBeenCalledWith('/workspace/ws-1');
+    expect(openBrowserPanelMock).toHaveBeenCalledWith(url, undefined, undefined, undefined);
+  });
+
+  it('opens nothing when entering the workspace fails', async () => {
+    gotoMock.mockRejectedValueOnce(new Error('route rejected'));
+
+    expect(await openLinkInApp(url, TEST_WORKSPACE_ID, { openInWorkspace: true })).toBe(false);
+
+    expect(openBrowserPanelMock).not.toHaveBeenCalled();
+    expect(invokeIpcMock).not.toHaveBeenCalled();
   });
 });

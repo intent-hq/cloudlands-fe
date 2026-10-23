@@ -7,7 +7,7 @@ for (const width of [320, 1100]) {
     await page.setViewportSize({ width, height: 900 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
     const root = await mount(MobilePairingQr, {
-      hooksConfig: { geometrySnapshot: { scene: 'mobile-pairing-qr', state: 'ready' } },
+      hooksConfig: { previewScene: { scene: 'mobile-pairing-qr', state: 'ready' } },
     });
     await page.evaluate(() => document.fonts.ready);
     await root.getByRole('button', { name: 'Show QR Code', exact: true }).click();

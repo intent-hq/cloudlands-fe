@@ -1,3 +1,5 @@
+import { workspaceTasksPushed } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
+import { workspaceTaskStatsPushed } from '$store/renderer/slices/workspace/workspace-slice';
 import { describe, expect, it } from 'vitest';
 import type { Workspace, WorkspaceId, WorkspaceTask, WorkspaceTaskStats } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
@@ -49,6 +51,39 @@ function loadedState(tasks: WorkspaceTask[], stats: WorkspaceTaskStats = ZERO_ST
 }
 
 describe('workspaceTasksReducer', () => {
+  it('replaces complete pushed task projections and removes tombstoned rows', () => {
+    const old = { ...makeTask('t1'), dependsOn: ['dependency'] as never, specLinked: false };
+    let state = loadedState([old, makeTask('deleted')]);
+    const fresh = { ...makeTask('t1', 'complete'), title: 'Renamed', specLinked: true };
+    state = workspaceTasksReducer(state, workspaceTasksPushed(WS, [fresh], ['deleted']));
+    expect(getItems(state.byWorkspaceId[WS].tasks)).toEqual([fresh]);
+    expect(state.byWorkspaceId[WS].stale).toBe(false);
+  });
+
+  it('replays row changes and removals over an older in-flight hydration', () => {
+    let state = workspaceTasksReducer(initialState, workspaceTasksReadStarted(WS));
+    const fresh = makeTask('t1', 'complete');
+    state = workspaceTasksReducer(state, workspaceTasksPushed(WS, [fresh], ['deleted']));
+    state = workspaceTasksReducer(
+      state,
+      workspaceTaskStatsPushed(WS, { total: 1, completed: 1, inProgress: 0 }),
+    );
+    state = workspaceTasksReducer(
+      state,
+      loadWorkspaceTasksSucceeded(WS, [makeTask('t1'), makeTask('deleted')], {
+        total: 2,
+        completed: 0,
+        inProgress: 0,
+      }),
+    );
+    expect(getItems(state.byWorkspaceId[WS].tasks)).toEqual([fresh]);
+    expect(state.byWorkspaceId[WS]).toMatchObject({
+      stats: { total: 1, completed: 1, inProgress: 0 },
+      stale: false,
+      loading: false,
+    });
+  });
+
   it('starts with no workspace entries', () => {
     expect(initialState.byWorkspaceId).toEqual({});
   });

@@ -89,3 +89,10 @@ export const selectWorkspaceGitRootEntries = store.createSelector(
 export const selectHasSecondaryGitRoots = store.createSelector(
   (state, workspaceId: string): boolean => selectGitRoots.select(state, workspaceId).length > 0,
 );
+
+/** Open tabs alone do not own Git-root subscriptions. */
+export const selectGitRootConsumerWorkspaceIds = store.createSelector((state): string[] =>
+  Object.entries(state.gitRoots?.byWorkspaceId ?? {})
+    .filter(([, entry]) => Object.keys(entry.consumers ?? {}).length > 0)
+    .map(([id]) => id),
+);

@@ -181,7 +181,10 @@ describe('OffscreenWebviewHost', () => {
         tabId: 'tab-blank',
         webContentsId: 91,
       });
-      expect(dispatchMock).not.toHaveBeenCalled();
+      expect(dispatchMock).toHaveBeenCalledExactlyOnceWith({
+        type: 'browserClients/consumerMounted',
+        payload: ['ws-blank', expect.any(String)],
+      });
       recoveryStore.set({ 'tab-blank': 'explicit-navigation' });
       await waitFor(() => expect(recoveryStore.get()).toEqual({}));
       expect(container.querySelector('webview')).toBe(webview);
@@ -839,6 +842,7 @@ describe('OffscreenWebviewHost', () => {
       });
       await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-hidden']));
       const webview = container.querySelector('[data-offscreen-webview-tab="tab-hidden"]')!;
+      dispatchMock.mockClear();
 
       await fireEvent(
         webview,
@@ -869,6 +873,7 @@ describe('OffscreenWebviewHost', () => {
       });
       await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-bg']));
       const webview = container.querySelector('[data-offscreen-webview-tab="tab-bg"]')!;
+      dispatchMock.mockClear();
 
       await fireEvent(
         webview,
@@ -890,6 +895,11 @@ describe('OffscreenWebviewHost', () => {
       props: { excludedWorkspaceIds: new Set() },
     });
     await waitFor(() => expect(mountedTabIds(container).sort()).toEqual(['tab-a', 'tab-b']));
+    const leases = dispatchMock.mock.calls.map(([action]) => action);
+    expect(leases).toEqual([
+      { type: 'browserClients/consumerMounted', payload: ['ws-a', expect.any(String)] },
+      { type: 'browserClients/consumerMounted', payload: ['ws-b', expect.any(String)] },
+    ]);
 
     // ws-a becomes the displayed workspace.
     await rerender({ excludedWorkspaceIds: new Set(['ws-a']) });
@@ -898,6 +908,11 @@ describe('OffscreenWebviewHost', () => {
     // ws-b is archived/deleted: its layout state is cleared.
     layoutsStore.set({ 'ws-a': layoutsStore.get()['ws-a'] });
     await waitFor(() => expect(mountedTabIds(container)).toEqual([]));
+    expect(dispatchMock.mock.calls.map(([action]) => action)).toEqual([
+      ...leases,
+      { type: 'browserClients/consumerUnmounted', payload: leases[0].payload },
+      { type: 'browserClients/consumerUnmounted', payload: leases[1].payload },
+    ]);
   });
 
   it('caps mounted webviews via LRU eviction', async () => {

@@ -48,6 +48,10 @@
   import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import { openWorkspaceAttachment } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { observeAttachmentImageUrl } from './attachment-image-url';
+  import {
+    canonicalImageMimeType,
+    isSupportedImageMimeType,
+  } from './input/image-attachment-format';
   import { store as appStore } from '$store/renderer/store';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
   import { m } from '$shared/paraglide/messages.js';
@@ -124,6 +128,7 @@
 
   const rows = $derived(displayRows ?? projectPendingSubmissions(undefined, messages).queue);
   const displayMessages = $derived(queuePresentationMessages(rows));
+  const singleMessage = $derived(displayMessages.length === 1 ? displayMessages[0] : undefined);
   const batchBlocked = $derived(queueDisplayBlocksMutation(rows));
   function mutationBlocked(id: string) {
     return queueDisplayBlocksMutation(rows, id);
@@ -606,7 +611,12 @@
         ...(message.deliveryGroups?.flatMap((group) => group.imageBlocks ?? []) ?? []),
       ]) {
         const attachmentId = block.attachmentId;
-        if (!attachmentId || referenceImageObservers.has(attachmentId)) continue;
+        if (
+          !attachmentId ||
+          (block.mimeType && !isSupportedImageMimeType(block.mimeType)) ||
+          referenceImageObservers.has(attachmentId)
+        )
+          continue;
         referenceImageObservers.set(
           attachmentId,
           observeAttachmentImageUrl(workspaceId, attachmentId, (url) => {
@@ -625,7 +635,8 @@
     if (block.attachmentId) {
       return referenceImageUrls[block.attachmentId] ?? null;
     }
-    if (block.data && block.mimeType) return `data:${block.mimeType};base64,${block.data}`;
+    if (block.data && block.mimeType)
+      return `data:${canonicalImageMimeType(block.mimeType)};base64,${block.data}`;
     return null;
   }
 
@@ -907,6 +918,70 @@
   }
 </script>
 
+{#snippet messageActions(message: QueuedMessage)}
+  <QueuedMessageActions
+    permissions={permissions(message)}
+    editDisabled={bulkAction !== null || isSending(message.id) || !canStartEdit(message)}
+    sendDisabled={bulkAction !== null ||
+      isSending(message.id) ||
+      !!message.editing ||
+      mutationBlocked(message.id) ||
+      (!canSendNow && (busy || batchBlocked || readyIds.length === 0))}
+    removeDisabled={bulkAction !== null ||
+      isSending(message.id) ||
+      mutationBlocked(message.id) ||
+      (!storeBacked && !onremove && batchBlocked)}
+    sending={sendStates[message.id] === 'sending'}
+    sendLabel={!canSendNow ? m.chat_queuedMessages_sendAll_ariaLabel() : undefined}
+    sendTooltip={!canSendNow ? m.chat_queuedMessages_sendAll_label() : undefined}
+    onedit={() => {
+      void startEdit(message);
+    }}
+    onsendnow={canSendNow
+      ? () => {
+          void handleSendNow(message.id);
+        }
+      : singleMessage && onsendall
+        ? () => {
+            void handleBulkAction('send');
+          }
+        : undefined}
+    onremove={() => {
+      if (storeBacked || onremove) handleRemove(message.id);
+      else if (singleMessage && onclearall) void handleBulkAction('clear');
+    }}
+  />
+{/snippet}
+
+{#snippet editActions(message: QueuedMessage)}
+  <Button
+    variant="ghost-light"
+    size="icon-xs"
+    iconOnly
+    class="-my-1"
+    aria-label={m.chat_queuedMessages_save_tooltip()}
+    disabled={mutationBlocked(message.id)}
+    onclick={saveEdit}
+    onpointerdown={(event) => event.preventDefault()}
+    tooltip={m.chat_queuedMessages_save_tooltip()}
+  >
+    <Fa icon={faCheck} class="w-3 h-3" />
+  </Button>
+  <Button
+    variant="ghost-light"
+    size="icon-xs"
+    iconOnly
+    class="-my-1"
+    aria-label={m.chat_queuedMessages_cancel_tooltip()}
+    disabled={mutationBlocked(message.id)}
+    onclick={cancelEdit}
+    onpointerdown={(event) => event.preventDefault()}
+    tooltip={m.chat_queuedMessages_cancel_tooltip()}
+  >
+    <ArrowUUpLeftIcon size={16} weight="regular" aria-hidden="true" />
+  </Button>
+{/snippet}
+
 {#each conflictedDrafts.filter((draft) => draft.pendingOperationId === undefined) as draft (draft.id)}
   <div
     class="border-b border-border p-3 space-y-2"
@@ -964,35 +1039,43 @@
         </span>
       </Button>
       {#if !disabled}
-        {#if onsendall && messages.some((message) => permissions(message).sendNow)}
-          <Button
-            variant="ghost-light"
-            size="icon-xs"
-            iconOnly
-            aria-label={m.chat_queuedMessages_sendAll_ariaLabel()}
-            tooltip={m.chat_queuedMessages_sendAll_label()}
-            disabled={busy || batchBlocked || readyIds.length === 0}
-            loading={bulkAction === 'send'}
-            onpointerdown={(event) => event.preventDefault()}
-            onclick={() => handleBulkAction('send')}
-          >
-            <Fa icon={faArrowUp} class="h-3 w-3" />
-          </Button>
-        {/if}
-        {#if onclearall && removableIds.length > 0}
-          <Button
-            variant="ghost-light"
-            size="icon-xs"
-            iconOnly
-            aria-label={m.chat_queuedMessages_clearAll_ariaLabel()}
-            tooltip={m.chat_queuedMessages_clearAll_label()}
-            disabled={busy || batchBlocked}
-            loading={bulkAction === 'clear'}
-            onpointerdown={(event) => event.preventDefault()}
-            onclick={() => handleBulkAction('clear')}
-          >
-            <XIcon size={13} weight="regular" aria-hidden="true" />
-          </Button>
+        {#if singleMessage}
+          {#if !editingId || !findQueuedMessageForEdit([singleMessage], editingId)}
+            <div class="flex shrink-0 items-center" data-testid="queued-message-actions">
+              {@render messageActions(singleMessage)}
+            </div>
+          {/if}
+        {:else}
+          {#if onsendall && messages.some((message) => permissions(message).sendNow)}
+            <Button
+              variant="ghost-light"
+              size="icon-xs"
+              iconOnly
+              aria-label={m.chat_queuedMessages_sendAll_ariaLabel()}
+              tooltip={m.chat_queuedMessages_sendAll_label()}
+              disabled={busy || batchBlocked || readyIds.length === 0}
+              loading={bulkAction === 'send'}
+              onpointerdown={(event) => event.preventDefault()}
+              onclick={() => handleBulkAction('send')}
+            >
+              <Fa icon={faArrowUp} class="h-3 w-3" />
+            </Button>
+          {/if}
+          {#if onclearall && removableIds.length > 0}
+            <Button
+              variant="ghost-light"
+              size="icon-xs"
+              iconOnly
+              aria-label={m.chat_queuedMessages_clearAll_ariaLabel()}
+              tooltip={m.chat_queuedMessages_clearAll_label()}
+              disabled={busy || batchBlocked}
+              loading={bulkAction === 'clear'}
+              onpointerdown={(event) => event.preventDefault()}
+              onclick={() => handleBulkAction('clear')}
+            >
+              <XIcon size={13} weight="regular" aria-hidden="true" />
+            </Button>
+          {/if}
         {/if}
       {/if}
     </div>
@@ -1072,28 +1155,7 @@
                           spellcheck="false"
                         />
                       {/if}
-                      <Button
-                        variant="ghost-light"
-                        size="icon-xs"
-                        class="-my-1"
-                        disabled={mutationBlocked(message.id)}
-                        onclick={saveEdit}
-                        onpointerdown={(event) => event.preventDefault()}
-                        tooltip={m.chat_queuedMessages_save_tooltip()}
-                      >
-                        <Fa icon={faCheck} class="w-3 h-3" />
-                      </Button>
-                      <Button
-                        variant="ghost-light"
-                        size="icon-xs"
-                        class="-my-1"
-                        disabled={mutationBlocked(message.id)}
-                        onclick={cancelEdit}
-                        onpointerdown={(event) => event.preventDefault()}
-                        tooltip={m.chat_queuedMessages_cancel_tooltip()}
-                      >
-                        <ArrowUUpLeftIcon size={16} weight="regular" aria-hidden="true" />
-                      </Button>
+                      {@render editActions(message)}
                     </div>
                     {#each rows.find((row) => row.key === message.id)?.contributions ?? [] as contribution (contribution.id)}
                       <div class="min-w-0 flex-1 whitespace-pre-wrap wrap-anywhere" role="status">
@@ -1196,34 +1258,12 @@
                           </div>
                         {/if}
                       </div>
-                      {#if !disabled}
+                      {#if !disabled && !singleMessage}
                         <div
                           class="queued-message-actions {QUEUE_ACTION_CLUSTER_CLASS}"
                           data-testid="queued-message-actions"
                         >
-                          <QueuedMessageActions
-                            permissions={permissions(message)}
-                            editDisabled={bulkAction !== null ||
-                              isSending(message.id) ||
-                              !canStartEdit(message)}
-                            sendDisabled={bulkAction !== null ||
-                              isSending(message.id) ||
-                              !!message.editing ||
-                              mutationBlocked(message.id)}
-                            removeDisabled={bulkAction !== null ||
-                              isSending(message.id) ||
-                              mutationBlocked(message.id)}
-                            {sending}
-                            onedit={() => {
-                              void startEdit(message);
-                            }}
-                            onsendnow={canSendNow
-                              ? () => {
-                                  void handleSendNow(message.id);
-                                }
-                              : undefined}
-                            onremove={() => handleRemove(message.id)}
-                          />
+                          {@render messageActions(message)}
                         </div>
                       {/if}
                     </div>
@@ -1255,7 +1295,7 @@
               aria-controls="{contentId}-viewport"
               onclick={expandPreview}
             />
-          {:else if showAll}
+          {:else if showAll && (!singleMessage || bodyHeight > 144)}
             <Button
               variant="ghost-light"
               size="compact"

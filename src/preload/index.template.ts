@@ -360,6 +360,7 @@ const ALLOWED_CHANNELS = [
   'vscode:open-git-diff',
   'jetbrains:open',
   'deep-link:handle',
+  'deep-link:consume-pending',
   'get_home_directory',
   'rules:list',
   'rules:load-workspace',
@@ -648,6 +649,8 @@ function generateListenerId(): string {
 
 // Define the API exposed to the renderer
 const electronAPI = {
+  // Decoder capability only: the renderer and main must independently opt in.
+  reviewMonitoring: 1,
   // IPC invoke (request/response)
   invoke: (channel: string, ...args: any[]) => {
     // Use generated allowed channels for security

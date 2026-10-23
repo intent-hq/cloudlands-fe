@@ -12,6 +12,8 @@ export interface ComboboxGroup {
   separatorBefore?: boolean;
   /** Retain the heading and option identities while hiding a group's rows until searched. */
   collapsed?: boolean;
+  /** Keep a group available while its options are loaded through its header. */
+  keepEmpty?: boolean;
   key: string;
   label: string;
   options: ComboboxOption[];

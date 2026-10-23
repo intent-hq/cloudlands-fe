@@ -221,6 +221,19 @@ describe('AgentTabType agent model reactivity', () => {
     document.body.innerHTML = '';
   });
 
+  it('passes the layout tab identity to the chat viewer', () => {
+    render(AgentTabTypePrimaryActionsHarness, {
+      props: {
+        tab: { id: 'right-agent-tab', type: 'agent', title: 'Agent', agentId: 'agent-1' },
+        workspaceId: 'ws-1',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+
+    expect(screen.getByTestId('chat-panel-agent-model').dataset.tabId).toBe('right-agent-tab');
+  });
+
   it('updates the ChatPanel agentModel prop when Redux session model changes', async () => {
     render(AgentTabTypePrimaryActionsHarness, {
       props: {

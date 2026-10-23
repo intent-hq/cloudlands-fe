@@ -227,6 +227,8 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
     createSelectorReadable(workspaceIdArg, () => collaboratorState.workspace),
   selectHidesAgentLifecycleActions: (workspaceIdArg: any) =>
     createSelectorReadable(workspaceIdArg, () => collaboratorState.workspace),
+  selectHidesAgentCreationActions: (workspaceIdArg: any) =>
+    createSelectorReadable(workspaceIdArg, () => collaboratorState.workspace),
   selectIsCollaboratorOnlyClient: () => ({
     subscribe: (fn: (value: boolean) => void) => {
       collaboratorState.subscribers.add(fn);
@@ -603,6 +605,14 @@ describe('CommandPalette new actions', () => {
       expect(onClose).toHaveBeenCalledOnce();
     },
   );
+
+  it('offers no command to turn provider profiles on or off', async () => {
+    render(CommandPalette, {
+      props: { isOpen: true, initialQuery: 'experimental', onClose: vi.fn() },
+    });
+    await screen.findByRole('button', { name: /Enable experimental remote agents/i });
+    expect(screen.queryByRole('button', { name: /experimental provider profiles/i })).toBeNull();
+  });
 
   it('updates the remote agents command after delayed hydration without changing the saved choice', async () => {
     render(CommandPalette, {

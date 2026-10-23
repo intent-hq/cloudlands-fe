@@ -13,6 +13,7 @@
   } from '$store/renderer/slices/terminals/terminals-selectors';
   import { openTerminalOverlay } from '$store/renderer/slices/terminals/terminals-slice';
   import { selectWorkspaceScriptEntries } from '$store/renderer/slices/scripts/scripts-selectors';
+  import { selectIsWorkspaceCollaborator } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
 
   interface Props {
@@ -26,10 +27,12 @@
   const workspaceIdStore = writable('');
   $effect(() => workspaceIdStore.set(workspaceId));
   const activeTerminalId$ = selectActiveTerminalIdForWorkspace(workspaceIdStore);
+  const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
   const terminals$ = selectTerminalsForWorkspace(workspaceIdStore);
   const scripts$ = selectWorkspaceScriptEntries(workspaceIdStore);
 
   function openTerminal(terminalId?: string) {
+    if ($isCollaborator$) return;
     appStore.dispatch(openTerminalOverlay(workspaceId, terminalId));
   }
 
@@ -42,6 +45,10 @@
   }
 
   function openScripts() {
+    if ($isCollaborator$) {
+      onExpand?.();
+      return;
+    }
     appStore.dispatch(openTerminalOverlay(workspaceId));
   }
 
@@ -71,7 +78,7 @@
     <span class="cursor-pointer truncate text-sm font-semibold flex-1" data-sidebar-launcher-label
       >{m.workspace_multiSelectSidebar_shellTab_label()}</span
     >
-    {#each $terminals$.slice(0, 1) as terminal (terminal.id)}
+    {#each $isCollaborator$ ? [] : $terminals$.slice(0, 1) as terminal (terminal.id)}
       {@const terminalName =
         terminal.customName || terminal.name || m.workspace_terminalDock_terminal_fallback()}
       <Tooltip content={terminalName} side="top" delayDuration={300}>

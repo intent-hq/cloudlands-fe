@@ -1,3 +1,4 @@
+import { workspaceDiscussionSaga } from './slices/workspace-discussion/sagas/workspace-discussion-saga';
 import { homeWorkspacesSaga } from '$features/home/home-workspaces-saga';
 import { homeIntegrationsSaga } from '$features/home/home-integrations-saga';
 import { modelNameCacheSaga } from './slices/provider-models/sagas/model-name-cache-saga';
@@ -34,6 +35,7 @@ import { agentSubscriptionReadSaga } from './slices/agent-subscription-ui/sagas/
 import { appLayoutNavigationSaga } from './slices/app-layout/sagas/app-layout-navigation-saga';
 import { browserIpcSaga } from './slices/app-layout/sagas/browser-ipc-saga';
 import { menuIpcSaga } from './slices/app-layout/sagas/menu-ipc-saga';
+import { deepLinksSaga } from './slices/deep-links/sagas/deep-links-saga';
 import { autoUpdateSaga } from './slices/auto-update/sagas/auto-update-saga';
 import { backgroundAgentSettingsSaga } from './slices/background-agent-settings/sagas/background-agent-settings-saga';
 import { backgroundHooksSaga } from './slices/background-hooks/sagas/background-hooks-saga';
@@ -58,6 +60,7 @@ import { externalEditorsPersistenceSaga } from './slices/external-editors/sagas/
 import { fileExplorerSaga } from './slices/file-explorer/sagas/file-explorer-saga';
 import { fileContentPruneSaga } from './slices/file-prune/sagas/file-content-prune-saga';
 import { pdfPreviewSaga } from './slices/pdf-preview/sagas/pdf-preview-saga';
+import { videoPreviewSaga } from './slices/video-preview/sagas/video-preview-saga';
 import { filesReadSaga } from './slices/files/sagas/files-read-saga';
 import { filesWriteSaga } from './slices/files/sagas/files-write-saga';
 import { gitEventsIpcSaga } from './slices/git-events/sagas/git-events-ipc-saga';
@@ -72,7 +75,6 @@ import { acceptChangesStatusSaga } from './slices/git/sagas/accept-changes-statu
 import { gitRootsSaga } from './slices/git-roots/sagas/git-roots-saga';
 import { githubRepoSearchSaga } from './slices/github-repo-search/sagas/github-repo-search-saga';
 import { githubUserSearchSaga } from './slices/github-user-search/sagas/github-user-search-saga';
-import { legacyImportSaga } from './slices/legacy-import/sagas/legacy-import-saga';
 import { linearAuthSaga } from './slices/linear-auth/sagas/linear-auth-saga';
 import { collaborationAuthSaga } from '$features/collaboration-auth/renderer/collaboration-auth-saga';
 import { identitySaga } from './slices/identity/sagas/identity-saga';
@@ -94,6 +96,7 @@ import { questionUiPersistenceSaga } from './slices/question-ui/sagas/question-u
 import { providerSettingsSaga } from './slices/provider-settings/sagas/provider-settings-saga';
 import { antigravitySetupSaga } from './slices/antigravity-setup/sagas/antigravity-setup-saga';
 import { scriptMonitorSaga } from './slices/script-monitor/sagas/script-monitor-saga';
+import { agentWorkersSaga } from './slices/agent-workers/sagas/agent-workers-saga';
 import { prMonitorSaga } from './slices/pr-monitor/sagas/pr-monitor-saga';
 import { releaseNotesSaga } from './slices/release-notes/sagas/release-notes-saga';
 import { sentryAuthSaga } from './slices/sentry-auth/sagas/sentry-auth-saga';
@@ -107,6 +110,7 @@ import { workspaceCatalogSaga } from './slices/provider-catalog/workspace-catalo
 import { specialistsSaga } from './slices/specialists/sagas/specialists-saga';
 import { statsReadSaga } from './slices/stats/sagas/stats-read-saga';
 import { tabStateSaga } from './slices/tab-state/sagas/tab-state-saga';
+import { proposalWorkspaceTabSaga } from './slices/tab-state/sagas/proposal-workspace-tab-saga';
 import { workspaceTabReconciliationSaga } from './slices/tab-state/sagas/workspace-tab-reconciliation-saga';
 import { workspaceTabCleanupSaga } from './slices/workspace-lifecycle/sagas/workspace-tab-cleanup-saga';
 import { workspaceLoadSaga } from './slices/workspace-lifecycle/sagas/workspace-load-saga';
@@ -152,6 +156,7 @@ export const sagas = [
   hudSaga,
   guestSessionsSaga,
   presenceSaga,
+  workspaceDiscussionSaga,
   presenceFollowSaga,
   principalSaga,
   hostExecutionSaga,
@@ -187,6 +192,7 @@ export const sagas = [
   fileExplorerSaga,
   filesReadSaga,
   pdfPreviewSaga,
+  videoPreviewSaga,
   filesWriteSaga,
   workspaceNotesSaga,
   noteReadTrackingSaga,
@@ -235,14 +241,15 @@ export const sagas = [
   collaborationAuthSaga,
   mcpSettingsSaga,
   directoryPickerSaga,
-  legacyImportSaga,
   statsReadSaga,
   prMonitorSaga,
   scriptMonitorSaga,
+  agentWorkersSaga,
   gitRootsSaga,
   uiLayoutPersistenceSaga,
   tabStateSaga,
   workspaceTabReconciliationSaga,
+  proposalWorkspaceTabSaga,
   workspaceTabCleanupSaga,
   sidebarNavSaga,
   panelLayoutSaga,
@@ -263,6 +270,7 @@ export const sagas = [
   workspaceInitializerSaga,
   zoomIpcSaga,
   menuIpcSaga,
+  deepLinksSaga,
   browserIpcSaga,
   notificationIpcSaga,
   webNotificationSaga,

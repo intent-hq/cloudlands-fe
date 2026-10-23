@@ -230,7 +230,8 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
         await settle(150);
         expect.soft(requests).toEqual(['host-a', 'host-b']);
         expect.soft(onBranchesLoaded.mock.lastCall?.[0].branches).toEqual(['host-b-main']);
-        expect(savedBranchByRepo['/tmp/repo']).toBe('host-b-main');
+        // Selecting a branch never saves it; New space saves the branch only on create.
+        expect(savedBranchByRepo['/tmp/repo']).toBeUndefined();
       },
     );
 
@@ -257,7 +258,8 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
         expect(mockGetBranches).toHaveBeenCalledTimes(change === 'changed' ? 2 : 1);
         if (change === 'changed') {
           expect(mockGetBranches).toHaveBeenLastCalledWith('/tmp/other', true);
-          expect(savedBranchByRepo['/tmp/other']).toBe('new-main');
+          expect(onchange.mock.lastCall?.[0].detail.branch).toBe('new-main');
+          expect(savedBranchByRepo['/tmp/other']).toBeUndefined();
         }
       },
     );
@@ -272,7 +274,8 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
       switchHost();
       await settle(150);
       expect(mockGetBranches).toHaveBeenCalledTimes(1);
-      expect(savedBranchByRepo['/tmp/repo']).toBe('connected-main');
+      expect(document.querySelector('button')?.textContent).toContain('connected-main');
+      expect(savedBranchByRepo['/tmp/repo']).toBeUndefined();
     });
 
     it('rejects the previous connection generation when the same host reconnects', async () => {
@@ -291,7 +294,7 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
       expect
         .soft(onchange.mock.calls.map(([event]) => event.detail.branch))
         .toEqual(['reconnected-main']);
-      expect(savedBranchByRepo['/tmp/repo']).toBe('reconnected-main');
+      expect(savedBranchByRepo['/tmp/repo']).toBeUndefined();
     });
 
     it('ignores a previous-host remote listing while the new host remote request is pending', async () => {
@@ -394,6 +397,28 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
     expect(onchange.mock.calls[0][0].detail).toEqual({ branch: 'master' });
   });
 
+  it('local repo: an explicit branch pick is reported but not saved as the repo preference', async () => {
+    debugFlags.enableFormPersistence = true;
+    mockGetBranches.mockResolvedValue({
+      branches: ['main', 'feature'],
+      remoteBranches: [],
+      defaultBranch: 'main',
+      currentBranch: 'main',
+    });
+    const onchange = vi.fn();
+    const { container } = render(BranchSelector, {
+      props: { repoPath: '/tmp/repo', repoType: 'local', value: '', onchange },
+    });
+    await waitFor(() => expect(onchange).toHaveBeenCalled());
+    await openDropdown(container);
+    await fireEvent.pointerUp(await screen.findByRole('option', { name: /^feature/ }), {
+      pointerType: 'mouse',
+    });
+    expect(onchange.mock.lastCall?.[0].detail).toEqual({ branch: 'feature' });
+    // New space saves the branch for the repo only when a workspace is created.
+    expect(savedBranchByRepo['/tmp/repo']).toBeUndefined();
+  });
+
   it('Escape dismisses the whole picker without dismissing its parent or accepting composition', async () => {
     mockGetBranches.mockResolvedValue({ branches: ['main'], currentBranch: 'main' });
     const closeParent = vi.fn();
@@ -450,7 +475,7 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
     expect(onchange.mock.calls[1][0].detail).toEqual({ branch: 'feature/task-29' });
   });
 
-  it('local repo: turning "work directly" off closes the menu and returns focus to the trigger', async () => {
+  it('local repo: enabling isolation keeps the menu open and restores branch selection', async () => {
     mockGetBranches.mockResolvedValue({
       branches: ['main'],
       remoteBranches: [],
@@ -458,7 +483,7 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
       currentBranch: 'main',
     });
     const onSkipIsolationChange = vi.fn();
-    const { container } = render(BranchSelector, {
+    const { container, rerender } = render(BranchSelector, {
       props: {
         repoPath: '/tmp/repo',
         repoType: 'local',
@@ -469,22 +494,19 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
     });
 
     await waitFor(() => expect(mockGetBranches).toHaveBeenCalledWith('/tmp/repo', true));
-    await openDropdown(container);
     const trigger = container.querySelector('button')!;
-    const toggle = await screen.findByRole('checkbox', {
-      name: m.workspace_branchSelector_workDirectlyOnBranch_label({ branch: 'main' }),
+    await fireEvent.click(trigger);
+    const toggle = await screen.findByRole('switch', {
+      name: m.workspace_branchSelector_isolation_label({ isolationLabel: 'worktree' }),
     });
     toggle.focus();
     expect(document.activeElement).toBe(toggle);
 
-    // Disabling the toggle closes the content directly (no selectBranch) â€”
-    // the unmounted toggle must not strand focus on <body> (#5197).
     await fireEvent.click(toggle);
     await waitFor(() => expect(onSkipIsolationChange).toHaveBeenCalledWith(false));
-    await waitFor(() =>
-      expect(screen.queryByPlaceholderText('Search or enter branch name...')).toBeNull(),
-    );
-    await waitFor(() => expect(document.activeElement).toBe(trigger));
+    await rerender({ skipIsolation: false });
+    await screen.findByRole('combobox');
+    expect(document.activeElement).toBe(toggle);
   });
 
   it.each([
@@ -715,7 +737,7 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached Â
       ),
     );
     expect(onchange.mock.lastCall![0].detail.branch).toBe('main');
-    expect(savedBranchByRepo[githubProps.repoPath]).toBe('main');
+    expect(savedBranchByRepo[githubProps.repoPath]).toBeUndefined();
   });
 
   it.each([
@@ -753,7 +775,7 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached Â
         ),
       );
       expect(onchange.mock.lastCall![0].detail.branch).toBe(freshDefault);
-      expect(savedBranchByRepo[githubProps.repoPath]).toBe(freshDefault);
+      expect(savedBranchByRepo[githubProps.repoPath]).toBeUndefined();
     },
   );
 
@@ -949,7 +971,8 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached Â
         ),
       );
       expect(onchange.mock.lastCall![0].detail.branch).toBe(expectedBranch);
-      expect(savedBranchByRepo[githubProps.repoPath]).toBe(expectedBranch);
+      // The saved preference is read, never rewritten by the picker.
+      expect(savedBranchByRepo[githubProps.repoPath]).toBe(savedBranch);
     },
   );
 
@@ -1021,14 +1044,14 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached Â
       ),
     );
     expect(onchange.mock.lastCall![0].detail.branch).toBe('main');
-    expect(savedBranchByRepo['octo/other']).toBe('main');
+    expect(savedBranchByRepo['octo/other']).toBeUndefined();
   });
 
   it('stale cache: the saved branch missing from the cache is re-selected once the fresh list has it', async () => {
     // The user's saved branch exists on GitHub but is absent from the stale
-    // local cache. The cached paint auto-selects the default (persisting it,
-    // which clobbers the live saved value) â€” reconciliation must still find
-    // the pre-paint saved branch and switch back to it.
+    // local cache. The cached paint auto-selects the default without touching
+    // the saved value; reconciliation must still find the saved branch and
+    // switch back to it.
     debugFlags.enableFormPersistence = true;
     savedBranchByRepo['octo/intent'] = 'feat/saved';
     mockGithubBranchesCached.mockResolvedValue({
@@ -1041,11 +1064,11 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached Â
     const onchange = vi.fn();
     const { rerender } = render(BranchSelector, { props: { ...githubProps, onchange } });
 
-    // Cached paint: saved branch not in the cached list â†’ default selected
-    // (and persisted, overwriting the saved map entry).
+    // Cached paint: saved branch not in the cached list â†’ default selected,
+    // and the saved preference is left as it was.
     await waitFor(() => expect(onchange).toHaveBeenCalled());
     expect(onchange.mock.calls[0][0].detail).toEqual({ branch: 'dev' });
-    expect(savedBranchByRepo['octo/intent']).toBe('dev');
+    expect(savedBranchByRepo['octo/intent']).toBe('feat/saved');
     await rerender({ value: onchange.mock.lastCall![0].detail.branch });
 
     fresh.resolve({ branches: ['dev', 'feat/x', 'feat/saved'], defaultBranch: 'dev' });
@@ -1277,12 +1300,12 @@ describe('BranchSelector (uncommitted-changes indicator gated on skipIsolation, 
     showUncommittedIndicator: true,
   };
 
-  /** The warning status dot (trigger + dropdown notice share the same marker). */
+  /** The trigger warning status dot. */
   function uncommittedDot(root: ParentNode) {
     return root.querySelector('.bg-warning');
   }
 
-  it('shows the indicator and dropdown notice with uncommitted changes on the current branch', async () => {
+  it('shows the trigger indicator with uncommitted changes on the current branch', async () => {
     mockBranchStatus.mockResolvedValue({ behind: 0, hasUncommittedChanges: true });
     const { container } = render(BranchSelector, {
       props: { ...localProps, skipIsolation: false },
@@ -1292,14 +1315,9 @@ describe('BranchSelector (uncommitted-changes indicator gated on skipIsolation, 
     // Trigger dot appears once the status settles (isolated checkout planned â†’
     // uncommitted working-directory changes really are left behind).
     await waitFor(() => expect(uncommittedDot(container)).toBeTruthy());
-
-    await openDropdown(container);
-    await waitFor(() =>
-      expect(screen.getByText("Uncommitted changes won't be included.")).toBeTruthy(),
-    );
   });
 
-  it('hides the indicator and dropdown notice when skipIsolation is on', async () => {
+  it('hides the trigger indicator when skipIsolation is on', async () => {
     // Identical daemon-reported status â€” only skipIsolation differs. Working
     // directly on the current branch DOES include uncommitted changes, so the
     // warning would be misleading.
@@ -1312,22 +1330,18 @@ describe('BranchSelector (uncommitted-changes indicator gated on skipIsolation, 
     // Let the settled status render before asserting absence.
     await waitFor(() => expect(screen.getByText('main')).toBeTruthy());
     expect(uncommittedDot(container)).toBeNull();
-
-    await openDropdown(container);
-    expect(screen.queryByText("Uncommitted changes won't be included.")).toBeNull();
   });
 
-  it('keeps the behind-branch notice visible when skipIsolation hides the uncommitted one', async () => {
+  it('keeps direct mode on the current branch when the remote has newer commits', async () => {
     mockBranchStatus.mockResolvedValue({ behind: 2, hasUncommittedChanges: true });
     const { container } = render(BranchSelector, {
       props: { ...localProps, skipIsolation: true },
     });
 
     await waitFor(() => expect(mockBranchStatus).toHaveBeenCalledWith('/tmp/repo', 'main'));
-    await openDropdown(container);
-    await waitFor(() =>
-      expect(screen.getByText("We'll pull the latest changes into your workspace.")).toBeTruthy(),
-    );
-    expect(screen.queryByText("Uncommitted changes won't be included.")).toBeNull();
+    await fireEvent.click(container.querySelector('button')!);
+    const menu = await screen.findByRole('dialog');
+    expect(menu.textContent).toContain('main');
+    expect(screen.queryByRole('combobox')).toBeNull();
   });
 });

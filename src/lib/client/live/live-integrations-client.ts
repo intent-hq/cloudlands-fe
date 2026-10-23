@@ -31,6 +31,7 @@ import {
   backendRequest,
 } from './backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
+import { usableMergeQueueEntry, type MergeQueueEntry } from '$lib/utils/merge-queue';
 
 const logger = createLogger('LiveIntegrationsClient');
 
@@ -64,6 +65,8 @@ interface GithubPullWire {
   draft: boolean;
   /** `true` while the PR sits in the merge queue (GraphQL `isInMergeQueue`); absent when unknown. */
   isInMergeQueue?: boolean;
+  /** The PR's queue position and time-to-merge estimate; present only while queued. */
+  mergeQueue?: MergeQueueEntry;
 }
 
 /** Daemon `GithubIssue` (§5.27 DTO schemas — subset the preview consumes). */
@@ -263,18 +266,21 @@ export class LiveIntegrationsClient implements IntegrationsClient {
     });
     const pull = result?.pull;
     if (!pull) throw new Error(`Pull request ${owner}/${repo}#${number} not found`);
+    const state = pullRequestState(pull);
+    const mergeQueue = state === 'queued' ? usableMergeQueueEntry(pull.mergeQueue) : null;
     return {
       owner,
       repo,
       number: pull.number,
       title: pull.title,
-      state: pullRequestState(pull),
+      state,
       author: pull.user.login,
       createdAt: pull.createdAt,
       updatedAt: pull.updatedAt,
       url: pull.htmlUrl,
       headRef: pull.headRef,
       baseRef: pull.baseRef,
+      ...(mergeQueue ? { mergeQueue } : {}),
     };
   }
 

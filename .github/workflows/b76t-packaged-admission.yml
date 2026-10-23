@@ -18,7 +18,7 @@ jobs:
       github.run_attempt == 1 &&
       github.event.before == 'b7997f3e2e8dd80d0fd6c36752e4ad230fcace9d' &&
       github.event.created == false && github.event.deleted == false && github.event.forced == false
-    runs-on: depot-ubuntu-24.04-8
+    runs-on: gh-linux-8x
     timeout-minutes: 8
     env:
       B76_EVENT_BEFORE_SHA: ${{ github.event.before }}

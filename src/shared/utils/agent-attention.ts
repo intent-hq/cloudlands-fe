@@ -34,6 +34,13 @@ export interface AgentAttentionRequest {
   kind: AgentAttentionKind;
   reason?: string;
   timestamp?: string;
+  /**
+   * `true` when `reason` is a shortened copy: it came from an `agent.list`
+   * row whose `metadata.attentionRequestReasonTruncated` flag is set (PROTOCOL
+   * §5.5 truncation flags). Present only when `true`; `agent.get` serves the
+   * full reason.
+   */
+  reasonTruncated?: true;
 }
 
 /** Structural subset of AgentSession/AgentLite this derivation reads. */
@@ -62,13 +69,20 @@ export function getAgentAttentionRequest(
   const metadata = session.metadata ?? {};
   const kind = session.attentionRequestKind ?? metadata.attentionRequestKind;
   if (!isAttentionKind(kind)) return null;
-  const reason = session.attentionRequestReason ?? metadata.attentionRequestReason;
+  // The flag describes the metadata copy only: a top-level reason (full
+  // session projection or a live attention event) is never shortened.
+  const fromMetadata = session.attentionRequestReason == null;
+  const reason = fromMetadata ? metadata.attentionRequestReason : session.attentionRequestReason;
   const timestamp = session.attentionRequestTimestamp ?? metadata.attentionRequestTimestamp;
-  return {
+  const request: AgentAttentionRequest = {
     kind,
     reason: typeof reason === 'string' && reason.length > 0 ? reason : undefined,
     timestamp: typeof timestamp === 'string' && timestamp.length > 0 ? timestamp : undefined,
   };
+  if (fromMetadata && request.reason && metadata.attentionRequestReasonTruncated === true) {
+    request.reasonTruncated = true;
+  }
+  return request;
 }
 
 /** Structural subset of AgentSession/AgentLite the stop-timestamp derivation reads. */

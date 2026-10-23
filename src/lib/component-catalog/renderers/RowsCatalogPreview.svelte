@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from '$app/state';
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import { faEllipsis, faFolder, faRobot, faTrash } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
@@ -9,6 +10,7 @@
     ListView,
     RowActions,
     SectionedList,
+    type ListKey,
   } from '$lib/components/patterns/collection';
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
@@ -24,6 +26,7 @@
   let focusTarget: HTMLButtonElement | null = $state(null);
   const showGrid = $derived(page.url.searchParams.get('grid') === '1');
   const baselineRows = Array.from({ length: 256 });
+  let listSelection = $state<ListKey[]>(['selected', 'long']);
   const listItems = [
     { id: 'default', title: 'Default row', description: 'Supporting text' },
     { id: 'selected', title: 'Selected row', description: 'Merged selection surface' },
@@ -99,7 +102,8 @@
         getKey={(item) => item.id}
         getText={(item) => item.title}
         selectable="multi"
-        selectedKeys={['selected', 'long']}
+        selectedKeys={listSelection}
+        onSelectedKeysChange={(keys) => (listSelection = keys)}
         ariaLabel="Collection row states"
       >
         {#snippet row({ item })}
@@ -222,7 +226,9 @@
           <Sidebar.MenuItem>
             <Sidebar.MenuButton label="Unread navigation" status="unread" />
             <Sidebar.MenuBadge>3</Sidebar.MenuBadge>
-            <Sidebar.MenuAction showOnHover aria-label="Unread row actions">⋯</Sidebar.MenuAction>
+            <Sidebar.MenuAction showOnHover aria-label="Unread row actions">
+              <KebabIcon orientation="horizontal" />
+            </Sidebar.MenuAction>
           </Sidebar.MenuItem>
           <Sidebar.MenuItem
             ><Sidebar.MenuButton label="Disabled navigation" disabled /></Sidebar.MenuItem

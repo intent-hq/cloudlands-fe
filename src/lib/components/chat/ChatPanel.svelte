@@ -88,8 +88,10 @@
   import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
   import {
     selectCanAdministerHost,
+    selectHostRole,
     selectPrincipalSnapshot,
   } from '$store/renderer/slices/principal/principal-selectors';
+  import { predictOwnSenderAttribution } from '$lib/utils/collaborator-sender-attribution';
   import { hydrateAgentQueue } from '$features/agent/agent-queue-read-service';
   import { ensureWorkspaceDetail } from '$features/workspace/workspace-detail-hydration';
   import { workspaceSetupScriptText } from '$features/workspace/utils/workspace-setup-script';
@@ -204,6 +206,7 @@
     dividerVisibleWhenScrolledToBottom,
     dividerDefersToTurnBoundary,
     dividerEntryScrollTop,
+    resolveUnreadEntryPhase,
   } from './new-messages-divider';
   import EventWakeupBanner from './EventWakeupBanner.svelte';
   import ConversationTurnGap from './ConversationTurnGap.svelte';
@@ -276,6 +279,7 @@
   import {
     animateScrollTo,
     captureScrollAnchor,
+    canRestoreScrollAnchor,
     followBottom,
     followToBottom,
     hasActiveFollowBottomMutation,
@@ -291,7 +295,7 @@
   import { crispOut, spring, springIn } from '$lib/motion';
   import { safeDisclosureTransition } from './disclosure-motion';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
-  import { seekConversationToMessage } from '$lib/utils/open-message';
+  import { seekConversationToMessage, type OpenMessageEventDetail } from '$lib/utils/open-message';
   import { openTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import ChatFileChangesSummary from './ChatFileChangesSummary.svelte';
   import { isAggregateFileChangesRedundant } from '$lib/utils/get-file-changes-from-messages';
@@ -374,6 +378,7 @@
   import { selectPermissionRequests } from '$store/renderer/slices/permission/permission-selectors';
   import {
     selectChatAuroraEnabled,
+    selectCollapseToolRuns,
     selectIsAgentMonospace,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
@@ -427,6 +432,7 @@
     createRangeForSpan,
     findChatSearchMatches,
     type ChatSearchMatch,
+    type ChatSearchOptions,
   } from './chat-search';
   import { requestSearchDisclosure } from './chat-search-disclosure';
   import { resolveHydratedInputModel } from './input-hydration';
@@ -448,12 +454,14 @@
   import { isAutomatedChatMessage } from '$lib/utils/previous-user-message';
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import { rememberWorkspaceInitializerRecentSpecialist } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
   import { matchesShortcut } from '$lib/utils/shortcut-bindings';
 
   const logger = createLogger('ChatPanel');
 
   const chatAuroraEnabled$ = selectChatAuroraEnabled();
+  const collapseToolRuns$ = selectCollapseToolRuns();
   const isAgentMonospace = selectIsAgentMonospace();
 
   // Constants
@@ -463,6 +471,8 @@
   interface Props {
     workspace: Workspace;
     agentId: string;
+    /** Layout identity used to target this viewer when an agent is open in multiple panes. */
+    tabId?: string;
     agentName?: string;
     agentModel?: string;
     /** Whether this panel is the active/visible tab. Used to prevent input when hidden. */
@@ -493,6 +503,7 @@
   let {
     workspace,
     agentId,
+    tabId,
     agentName = 'Chat',
     agentModel = undefined,
     isActive = true,
@@ -1261,6 +1272,19 @@
   const presenceOwnPrincipalId$ = selectPresenceOwnPrincipalId();
   const isHostOwner$ = selectCanAdministerHost();
   const queuePrincipalId = $derived($admittedPrincipal$?.principal.id ?? null);
+  // The sender row the daemon will give the viewer's own sends here, shown on
+  // pending conversation rows so it does not pop in when the row is confirmed.
+  const hostRole$ = selectHostRole();
+  const ownPendingSender = $derived(
+    predictOwnSenderAttribution({
+      hostRole: $hostRole$,
+      principal: $admittedPrincipal$?.principal,
+      workspace,
+    }),
+  );
+  const pendingConversationIds = $derived(
+    new Set($submissionDisplay$.conversation.map((submission) => submission.id)),
+  );
 
   // Queue visibility around the wizard: hidden while the wizard is expanded,
   // shown while Ignore-collapsed. Derivation shared with the regression suite.
@@ -1469,12 +1493,18 @@
   // turnKey ties each match back to its enclosing conversation turn so that the
   // current-match turn (and its neighbors) can be force-rendered through the
   // LazyTurn virtualization while searching.
+  // Everything search needs to prepare blocks exactly like the rendered rows.
+  const chatSearchOptions: ChatSearchOptions = $derived({
+    collapseToolRuns: $collapseToolRuns$,
+    workspaceId: workspace?.id ? String(workspace.id) : undefined,
+  });
   const allSearchMatches = $derived.by(() => {
     return findChatSearchMatches(
       $agentMessages$,
       debouncedSearchQuery,
       messageIdToTurnKey,
       workspace?.ownerPrincipalId,
+      chatSearchOptions,
     );
   });
 
@@ -3151,7 +3181,7 @@
         // A tick-only write can clamp against the old extent, land in the
         // tail, and discard the very history page navigation just opened.
         // Restore the visible row so native anchoring isn't counted twice.
-        if (anchor.element?.isConnected) restoreScrollAnchor(container, anchor);
+        if (canRestoreScrollAnchor(container, anchor)) restoreScrollAnchor(container, anchor);
         else container.scrollTop = Math.max(0, previousScrollTop + compensation);
       });
     });
@@ -3546,6 +3576,12 @@
     // positions the viewport at the target; restoring the pre-landing
     // anchor would fight it.
     if (untrack(() => seekLandingPending || $fetchingHistorySeek$)) return;
+    // Unread entry hold: every loaded row is unseen, so the prepend keeps the
+    // top of the content in view instead of a row anchor (see the hold).
+    if (untrack(() => unreadEntryHold !== null)) {
+      void tick().then(settleUnreadEntryHold);
+      return;
+    }
     const following = untrack(() => shouldFollowBottom && !showSearch);
     const anchor = following ? null : captureScrollAnchor(container);
     const navigationId = scrollNavigationId;
@@ -3583,12 +3619,33 @@
   // stop-looking boundaries (tab close / active-workspace switch — see
   // divider-session-boundary-service).
   let latchedDividerSessionAgentId: string | null = null;
+  const seenMarkerId = $derived(
+    typeof $agentSession$?.metadata?.lastSeenMessageId === 'string'
+      ? $agentSession$.metadata.lastSeenMessageId
+      : undefined,
+  );
+  function unreadEntryPhaseFor(marker: string | undefined) {
+    return resolveUnreadEntryPhase(
+      $agentMessages$.map((message) => message.id),
+      marker,
+      {
+        complete: !$initialHistoryPending$,
+        truncated: $transcriptSnapshotMeta$?.truncated === true,
+      },
+    );
+  }
   $effect(() => {
     if (!agentId || latchedDividerSessionAgentId === agentId) return;
+    // While progressive initial history is still streaming (hydration only
+    // settles at completion), latch as soon as the seen-marker row has
+    // arrived: rows arrive newest-first, so every unseen row is already
+    // loaded and the anchor is final (never from the newest row alone — a
+    // marker AT the newest row stays 'none').
+    const earlyLatch =
+      $initialHistoryPending$ && unreadEntryPhaseFor(seenMarkerId) === 'marker-loaded';
     if (
-      $transcriptHydration$ !== 'settled' ||
-      $initialHistoryPending$ ||
-      $awaitingSwitchBackSnapshot$
+      $awaitingSwitchBackSnapshot$ ||
+      (!earlyLatch && ($transcriptHydration$ !== 'settled' || $initialHistoryPending$))
     )
       return;
     latchedDividerSessionAgentId = agentId;
@@ -3597,9 +3654,7 @@
         agentId,
         resolveNewMessagesDividerAnchor(
           $agentMessages$.map((message) => message.id),
-          typeof $agentSession$?.metadata?.lastSeenMessageId === 'string'
-            ? $agentSession$.metadata.lastSeenMessageId
-            : undefined,
+          seenMarkerId,
         ),
       ),
     );
@@ -3631,6 +3686,135 @@
     hasAppliedNewMessagesEntryScroll = true;
     void scrollToNewMessagesDivider(anchor);
   });
+
+  // ── Unread entry hold while progressive initial history streams (§7.1) ──
+  // Rows arrive newest-first, so until the seen-marker row lands every loaded
+  // row is unseen and the reading point is the TOP of the loaded content.
+  // Following the bottom here and only scrolling to the divider on completion
+  // produced a late jump. Instead, entry holds the viewport at the top of the
+  // loaded rows (follow off) while older unseen rows prepend; when the marker
+  // row lands (the divider latches early, above) it settles ONCE: follow the
+  // bottom when the unseen tail fits on screen, otherwise put the divider at
+  // the top of the viewport. Completion then never re-scrolls. If the transfer
+  // completes without the marker, a truncated transcript means the marker is
+  // older than the initial window (stay at the oldest loaded unseen row); a
+  // whole loaded transcript means a dangling marker (follow the bottom).
+  // User scroll input, re-enabled follow (send, scroll-to-bottom), or search
+  // release the hold. The captured marker is used throughout so a mark-seen
+  // landing at completion cannot reclassify the entry.
+  let unreadEntryHold = $state<{ marker: string } | null>(null);
+  let unreadEntryHoldConsidered = false;
+  $effect(() => {
+    if (unreadEntryHoldConsidered || !$initialHistoryPending$ || $agentMessages$.length === 0)
+      return;
+    unreadEntryHoldConsidered = true;
+    untrack(() => {
+      const marker = seenMarkerId;
+      // A remount (cached scroll) keeps the previous instance's position or
+      // follow; a divider session already latched without an anchor (first
+      // write wins) will never render a divider to settle on.
+      const latched = $dividerSession$;
+      if (
+        !marker ||
+        hasAppliedNewMessagesEntryScroll ||
+        cachedScroll ||
+        (latched && !latched.anchorId) ||
+        showSearch
+      )
+        return;
+      const phase = unreadEntryPhaseFor(marker);
+      if (phase !== 'marker-pending' && phase !== 'marker-loaded') return;
+      unreadEntryHold = { marker };
+      shouldFollowBottom = false;
+      void tick().then(settleUnreadEntryHold);
+    });
+  });
+  // Settle points while holding: the latched divider rendering, and transfer
+  // completion.
+  $effect(() => {
+    if (!unreadEntryHold) return;
+    if (!newMessagesDividerAnchorId && !$dividerSession$ && $initialHistoryPending$) return;
+    void tick().then(settleUnreadEntryHold);
+  });
+  function releaseUnreadEntryHold() {
+    unreadEntryHold = null;
+    hasAppliedNewMessagesEntryScroll = true;
+  }
+  function settleUnreadEntryHold() {
+    const hold = unreadEntryHold;
+    const container = scrollContainer;
+    if (!hold || isComponentDestroyed || !container) return;
+    if (shouldFollowBottom || showSearch) {
+      releaseUnreadEntryHold();
+      return;
+    }
+    const phase = unreadEntryPhaseFor(hold.marker);
+    if (phase === 'marker-pending') {
+      container.scrollTop = 0;
+      return;
+    }
+    if (phase === 'marker-beyond-window') {
+      releaseUnreadEntryHold();
+      return;
+    }
+    if (phase === 'none') {
+      releaseUnreadEntryHold();
+      shouldFollowBottom = true;
+      followToBottom(container);
+      return;
+    }
+    const target =
+      container.querySelector<HTMLElement>('[data-new-messages-divider]') ??
+      (newMessagesDividerAnchorId
+        ? container.querySelector<HTMLElement>(
+            `[data-message-id="${CSS.escape(newMessagesDividerAnchorId)}"]`,
+          )
+        : null);
+    if (!target) {
+      const anchor = newMessagesDividerAnchorId;
+      const latched = $dividerSession$;
+      if (anchor) {
+        // Latched anchor whose turn is not rendered (virtualized): hand off
+        // to the force-rendering entry scroll.
+        releaseUnreadEntryHold();
+        void scrollToNewMessagesDivider(anchor);
+      } else if (latched) {
+        // Latched without a (present) anchor — e.g. the live marker advanced
+        // to the newest row mid-transfer: no divider will render, so enter
+        // like a normal open.
+        releaseUnreadEntryHold();
+        shouldFollowBottom = true;
+        followToBottom(container);
+      } else if ($initialHistoryPending$) {
+        // The early latch has not landed yet; its anchor change settles again.
+        container.scrollTop = 0;
+      } else if ($transcriptHydration$ === 'error') {
+        releaseUnreadEntryHold();
+      }
+      // Otherwise the completion latch lands once hydration settles; the
+      // divider-session change settles again.
+      return;
+    }
+    releaseUnreadEntryHold();
+    const containerRect = container.getBoundingClientRect();
+    const targetOffsetTop =
+      container.scrollTop + (target.getBoundingClientRect().top - containerRect.top);
+    if (
+      dividerVisibleWhenScrolledToBottom(
+        targetOffsetTop,
+        container.scrollHeight,
+        container.clientHeight,
+      )
+    ) {
+      shouldFollowBottom = true;
+      followToBottom(container);
+      return;
+    }
+    container.scrollTop = Math.min(
+      targetOffsetTop,
+      Math.max(0, container.scrollHeight - container.clientHeight),
+    );
+  }
   // One-shot guard: the cached scroll position is applied once on the first
   // transcript availability after remount, never again on later hydrations.
   let hasConsumedCachedScrollRestore = false;
@@ -3722,6 +3906,7 @@
     if (!isActive || !container) return;
     const cancel = () => {
       if ($initialHistoryPending$) hasAppliedNewMessagesEntryScroll = true;
+      unreadEntryHold = null;
       cancelPendingCachedScrollRestore();
     };
     const onPointerDown = (event: PointerEvent) => {
@@ -3841,7 +4026,8 @@
     const shouldScroll =
       hasNewMessages &&
       (isFirstMessage || shouldFollowBottom) &&
-      !($initialHistoryPending$ && hasAppliedNewMessagesEntryScroll);
+      !($initialHistoryPending$ && hasAppliedNewMessagesEntryScroll) &&
+      untrack(() => unreadEntryHold === null);
     if (hasNewMessages) {
       // Unread-marker entry: on the first transcript hydration with a latched
       // divider anchor, land at the "New messages" divider with follow
@@ -4207,6 +4393,8 @@
             // Restore the previous instance's reading position (no-op when
             // the hydration effect already did).
             applyCachedScrollRestore();
+          } else if (unreadEntryHold) {
+            // The unread entry hold owns the entry position.
           } else {
             shouldFollowBottom = true;
             followToBottom(scrollContainer);
@@ -4834,9 +5022,15 @@
   });
 
   async function handleOpenMessage(event: Event) {
-    const detail = (event as CustomEvent).detail as
-      { agentId: string; messageId: string; query?: string; requestId: string } | undefined;
-    if (!isActive || !detail || detail.agentId !== agentId) return;
+    const detail = (event as CustomEvent<OpenMessageEventDetail | undefined>).detail;
+    if (
+      !isActive ||
+      !detail ||
+      detail.agentId !== agentId ||
+      (detail.targetTabId !== undefined && detail.targetTabId !== tabId) ||
+      detail.signal?.aborted
+    )
+      return;
     // The helper dispatches on a retry ladder (the panel may still be
     // mounting); dedup so a successfully handled request runs exactly once.
     if (
@@ -4851,7 +5045,11 @@
     const request = ++searchHighlightRequest;
     const binding = searchBindingKey();
     const current = () =>
-      !!getContainer() && binding === searchBindingKey() && request === searchHighlightRequest;
+      !detail.signal?.aborted &&
+      (detail.targetTabId === undefined || detail.targetTabId === tabId) &&
+      !!getContainer() &&
+      binding === searchBindingKey() &&
+      request === searchHighlightRequest;
     pendingOpenMessageRequestIds.add(detail.requestId);
     try {
       // Force-render only the target's turn through LazyTurn; individual rows
@@ -4873,6 +5071,7 @@
             detail.query,
             messageIdToTurnKey,
             workspace?.ownerPrincipalId,
+            chatSearchOptions,
           )[0]
         : undefined;
       if (match) await revealSearchMatch(match, scrollContainer, current, detail.query);
@@ -5144,6 +5343,8 @@
         )
       )
         return;
+      // Keyboard scrolling is user scroll intent: release the unread entry hold.
+      unreadEntryHold = null;
       cancel();
     };
     const onPointerDown = (event: PointerEvent) => {
@@ -5559,6 +5760,7 @@
               type: 'image' as const,
               data: item.imageData!,
               mimeType: item.imageMimeType!,
+              ...(item.placementFileName ? { placementFileName: item.placementFileName } : {}),
             },
       );
     const fileBlocks = items
@@ -5733,6 +5935,8 @@
     if (!session) return;
 
     logger.info('Changing agent specialist', { agentId, specialistId });
+    // A composer pick counts as a recent use for every specialist picker's MRU order.
+    appStore.dispatch(rememberWorkspaceInitializerRecentSpecialist(specialistId));
 
     let behaviorPrompt: string | undefined;
     let newModel: string | null | undefined;
@@ -5932,7 +6136,8 @@
     const hint = scrollContainer?.querySelectorAll<HTMLElement>('[data-suggested-prompt-hint]')[
       index
     ];
-    if (!scrollContainer || !hint) return false;
+    // Hidden hints still occupy layout (reserved space), so their box is not proof.
+    if (!scrollContainer || !hint || hint.dataset.hintVisible !== 'true') return false;
     // Read the targeted hint at keypress time: scroll/resize can precede an
     // IntersectionObserver delivery, and only part of the prompt list may be visible.
     const target = hint.getBoundingClientRect();
@@ -6212,11 +6417,10 @@
   ondragover={panelFileDrop.handleDragOver}
   ondrop={panelFileDrop.handleDrop}
 >
-  <!-- The regular Aurora belongs to the complete chat surface, not the inset
-       composer lane. It inherits the real Panel radius for its own bottom clip. -->
+  <!-- Let the panel clip the regular Aurora at its inner border edge. -->
   {#if isActive && $chatAuroraEnabled$ && $agentSessionIsStreaming$ && !isChiefWorkspace}
     <div
-      class="composer-aurora-host regular-panel-aurora-host pointer-events-none absolute inset-x-0 bottom-0 z-0 overflow-hidden"
+      class="composer-aurora-host pointer-events-none absolute inset-x-0 bottom-0 z-0 overflow-hidden"
       style:height={`calc(${composerHeight}px + 10rem)`}
       data-testid="composer-aurora-host"
       in:springIn={{ tier: 'moderate', y: 0, scale: 1 }}
@@ -7378,6 +7582,7 @@
               onEdit={handleEditSuggestedPrompt}
               compact={isCompactMode}
               showShortcutHints={isChatFocused}
+              reserveShortcutHintSpace
               workspaceId={workspace?.id}
             />
           </div>
@@ -7439,7 +7644,14 @@
                   data-send-app-message-id={message.appMessageId}
                   class:invisible={pendingSendMessageIds.has(String(message.appMessageId ?? ''))}
                 >
-                  <ChatMessage {agentId} {message} {workspace} ownsMessageIdentity={false} />
+                  <ChatMessage
+                    {agentId}
+                    {message}
+                    {workspace}
+                    ownPrincipalId={$presenceOwnPrincipalId$}
+                    pendingSender={pendingConversationIds.has(message.id) ? ownPendingSender : null}
+                    ownsMessageIdentity={false}
+                  />
                 </div>
                 {#if ownsStatus}
                   <div class={isCompactMode ? 'mb-2' : 'mb-8'}>
@@ -7717,11 +7929,6 @@
     .workspace-setup-card-alignment {
       margin-left: 1.5rem;
     }
-  }
-
-  .regular-panel-aurora-host {
-    border-bottom-left-radius: var(--panel-shell-radius);
-    border-bottom-right-radius: var(--panel-shell-radius);
   }
 
   .chat-content-measure {

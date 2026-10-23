@@ -239,11 +239,21 @@ export const reopenLastClosedWorkspaceTab = createAction('tabState/reopenLastClo
  * Re-add a workspace tab to the strip WITHOUT focusing it — unlike
  * `openWorkspaceTab`, `currentTabId` is never touched. Used by the daemon
  * events bridge when a workspace transitions back to Active (unarchive) so the
- * tab reappears in the background instead of stealing focus.
+ * tab reappears in the background instead of stealing focus, and when a
+ * workspace-create proposal creates a workspace so it appears unfocused.
  */
 export const restoreWorkspaceTab = createAction<[workspaceId: string]>(
   'tabState/restoreWorkspaceTab',
 );
+/**
+ * The daemon created `workspaceId` from a workspace-create proposal emitted in
+ * `sourceWorkspaceId` (`workspace:created` `data.origin`, PROTOCOL §6.5). The
+ * proposal-workspace tab saga adds it as a background tab once it is loaded,
+ * when this window has the source workspace's tab open.
+ */
+export const proposalWorkspaceCreated = createAction<
+  [workspaceId: string, sourceWorkspaceId: string]
+>('tabState/proposalWorkspaceCreated');
 export const moveWorkspace =
   createAction<[workspaceId: string, targetWorkspaceId: string, placement: WorkspaceDropPlacement]>(
     'tabState/moveWorkspace',

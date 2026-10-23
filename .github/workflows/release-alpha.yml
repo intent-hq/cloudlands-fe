@@ -29,16 +29,30 @@ concurrency:
   queue: max
 
 jobs:
+  # Where paid-label jobs run: a free self-hosted slot first, else WarpBuild
+  # (GitHub's larger runners are off); `cloud` skips the self-hosted step.
+  # See runner-route.yml.
+  runner-route:
+    uses: ./.github/workflows/runner-route.yml
+    permissions:
+      contents: read
+      actions: read
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
+    with:
+      slot_jobs: >-
+        [{"key":"build-linux","label":"gh-linux-8x","minutes":20,"legs":["x64"]}]
+
   # Tag resolution/validation, the package.json version check, and the
   # duplicate-release guard run once here; every build job depends on it and
   # the publish job consumes its tag/version outputs.
   resolve:
-    runs-on: depot-ubuntu-24.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
       tag: ${{ steps.release.outputs.tag }}
       version: ${{ steps.release.outputs.version }}
-      dual_macos: ${{ steps.macos.outputs.dual_macos }}
+      native_macos: ${{ steps.macos.outputs.native_macos }}
       macos_matrix: ${{ steps.macos.outputs.matrix }}
 
     steps:
@@ -109,25 +123,33 @@ jobs:
           echo "Tag v${VERSION} matches package.json version"
 
       # workflow_dispatch uses the workflow from the selected ref, but builds
-      # the requested tag. Tags predating native Intel support retain their
-      # original ARM-only tools and single-feed publication path.
+      # the requested tag. Tags predating the native wrapper retain their
+      # original ARM packaging; publication tools prepare the standard Mac feed.
       - name: Select Mac release targets
         id: macos
         run: |
-          ARM='{"arch":"arm64","label":"Apple Silicon","runner":"depot-macos-latest","intentd_target":"aarch64-apple-darwin"}'
-          INTEL='{"arch":"x64","label":"Intel","runner":"macos-latest-large","intentd_target":"x86_64-apple-darwin"}'
+          # Rebuilding a retired alpha tag would embed its old updater URL even
+          # though current publication tools emit only the standard Mac feed.
+          COMPATIBILITY_SOURCE=src/features/auto-update/main/mac-update-compatibility.ts
+          if [ -f "$COMPATIBILITY_SOURCE" ] && grep -Fq 'latest-arm64' "$COMPATIBILITY_SOURCE"; then
+            echo "::error::This tag uses the retired alpha Mac feed. Publish a new build using latest-mac.yml."
+            exit 1
+          fi
+          # Signed desktop builds stay on macos-15-xlarge: on macos-26 images electron-builder's
+          # `security set-key-partition-list` fails with SecKeychainUnlock (cloudlands-fe#3500).
+          ARM='{"arch":"arm64","label":"Apple Silicon","runner":"macos-15-xlarge","warp":"warp-macos-15-arm64-12x","intentd_target":"aarch64-apple-darwin"}'
           TOOLS=(scripts/package-mac.mjs scripts/verify-macos-build.sh scripts/assemble-release-assets.mjs)
           FOUND=0
           for TOOL in "${TOOLS[@]}"; do
             if [ -f "$TOOL" ]; then FOUND=$((FOUND + 1)); fi
           done
           if [ "$FOUND" -eq 0 ]; then
-            echo "dual_macos=false" >> "$GITHUB_OUTPUT"
+            echo "native_macos=false" >> "$GITHUB_OUTPUT"
             echo "matrix={\"include\":[$ARM]}" >> "$GITHUB_OUTPUT"
-            echo "Historical ARM-only tag: retaining its packaging and update feed."
+            echo "Historical ARM-only tag: retaining its packaging."
           elif [ "$FOUND" -eq "${#TOOLS[@]}" ]; then
-            echo "dual_macos=true" >> "$GITHUB_OUTPUT"
-            echo "matrix={\"include\":[$ARM,$INTEL]}" >> "$GITHUB_OUTPUT"
+            echo "native_macos=true" >> "$GITHUB_OUTPUT"
+            echo "matrix={\"include\":[$ARM]}" >> "$GITHUB_OUTPUT"
           else
             echo "::error::Incomplete native Mac release tooling in the requested tag"
             exit 1
@@ -159,12 +181,17 @@ jobs:
   # sidecar, builds via the platform dist:* script, and uploads its
   # dist-electron release assets as a workflow artifact for the publish job.
   build-macos:
-    needs: resolve
+    needs: [resolve, runner-route]
+    # A failed route job must not block this job: it runs on its fallback label.
+    if: ${{ !cancelled() && needs.resolve.result == 'success' }}
     name: macOS (${{ matrix.label }})
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.resolve.outputs.macos_matrix) }}
-    runs-on: ${{ matrix.runner }}
+    # Signed Mac builds go straight to the burst runner (WarpBuild macOS 15,
+    # or the row's WarpBuild label if routing failed), never the persistent
+    # self-hosted Mac.
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.cloud || '{}')[matrix.runner] || matrix.warp }}
     env:
       INTENTD_TARGET: ${{ matrix.intentd_target }}
     timeout-minutes: 90
@@ -359,7 +386,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Verify packaged Mac build
-        if: needs.resolve.outputs.dual_macos == 'true'
+        if: needs.resolve.outputs.native_macos == 'true'
         run: bash scripts/verify-macos-build.sh "${{ matrix.arch }}" "true"
 
       - name: List built artifacts
@@ -408,15 +435,19 @@ jobs:
   # (integrated DigiCert signing is a tracked follow-up). Modeled on
   # intent-manual-windows-build.yml.
   build-windows:
-    needs: resolve
-    # gh-windows-16x: org hosted runner (16-core/64 GB, runner group 1, same
-    # group as gh-linux-16x), fixed at the runner level to the Windows Server
-    # 2022 image. Server 2022 (not 2025) still matters: the windows-2025
+    needs: [resolve, runner-route]
+    # A failed route job must not block this job: it runs on its fallback label.
+    if: ${{ !cancelled() && needs.resolve.result == 'success' }}
+    # gh-windows-8x: WarpBuild warp-windows-2022-x64-8x (8 vCPU / 32 GB; the
+    # build used about a third of 16 CPUs and 12.4 GB at most), on the Windows
+    # Server 2022 image. Server 2022 (not 2025) still matters: the windows-2025
     # image ships Visual Studio 2026 (v18), which node-gyp < 12.1.0 cannot
     # detect (nodejs/node-gyp#3282), breaking native module builds
     # (node-pty). Move the runner to a newer image once the Node/npm/node-gyp
     # stack in use supports VS 18.
-    runs-on: depot-windows-2022-16
+    # Straight to the burst runner (WarpBuild Server 2022), never the
+    # persistent self-hosted Windows box.
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.cloud || '{}')['gh-windows-8x'] || fromJSON('["warp-windows-2022-x64-8x"]') }}
     # 120 min: the hosted Windows runner is far slower than the old
     # self-hosted runner — the v2.21.0 rebuild's Vite build alone took 53 min
     # and the job was cancelled at the previous 60-min cap before
@@ -433,7 +464,7 @@ jobs:
       # shadows Git Bash in PATH, and WSL bash can't execute the runner's
       # Windows-path step scripts. Prepend Git's bin dir so every later
       # `shell: bash` step resolves Git Bash instead (same workaround as
-      # intent-manual-windows-build.yml). Still required on gh-windows-16x,
+      # intent-manual-windows-build.yml). Still required on the Windows 8x runner,
       # whose Windows Server 2022 image ships the same WSL stub.
       - name: Put Git Bash first on PATH
         shell: cmd
@@ -454,7 +485,7 @@ jobs:
         # No cache: 'pnpm' — this job previously ran on a non-ephemeral
         # self-hosted runner with a persistent pnpm store, making the GH
         # Actions cache tarball round-trip redundant. On the hosted
-        # gh-windows-16x runner each job is a fresh VM with no persistent
+        # WarpBuild Windows runner each job is a fresh VM with no persistent
         # store, so this is a candidate for cache: 'pnpm' — left as-is here
         # since only the runner target was migrated by this change.
         uses: actions/setup-node@v7
@@ -497,7 +528,7 @@ jobs:
       # shell: powershell (Windows PowerShell 5.1, present on every Windows
       # host) rather than pwsh — the old self-hosted runner had no
       # PowerShell Core ("pwsh: command not found", intent-hq/monorepo#1282
-      # follow-up run). The gh-windows-16x runner's Windows Server 2022 image
+      # follow-up run). The WarpBuild Windows Server 2022 image
       # ships PowerShell 5.1 too, so this stays valid on the hosted runner.
       - name: Build and package Windows app
         shell: powershell
@@ -505,8 +536,8 @@ jobs:
           # 12288: the v2.13.0 arm64 leg's peak heap outgrew the old 8192 cap
           # even with sourcemaps disabled (monorepo#1340); same bundle here.
           # This leg passed at 12288 in the v2.13.0 rebuild, run 30764745052.
-          # gh-windows-16x is 16 vCPU / 64 GB RAM, so the 12288 cap has
-          # ample headroom there.
+          # WarpBuild Windows 8x has 32 GB RAM, so the 12288 cap has ample
+          # headroom there (the build peaked at 12.4 GB).
           NODE_OPTIONS: '--max-old-space-size=12288'
           # Sourcemap generation multiplies rollup's peak heap past the cap
           # (same OOM as monorepo#1074/#1282); the #1282 fix gated the Linux
@@ -541,7 +572,9 @@ jobs:
           if-no-files-found: error
 
   build-linux:
-    needs: resolve
+    needs: [resolve, runner-route]
+    # A failed route job must not block this job: it runs on its fallback label.
+    if: ${{ !cancelled() && needs.resolve.result == 'success' }}
     strategy:
       # Let the other arch finish (and report) even when one fails; the
       # publish gate still fails the release if either arch is missing.
@@ -550,7 +583,7 @@ jobs:
         include:
           # node_heap: per-arch --max-old-space-size (MB).
           #
-          # x64 builds on the gh-linux-8x org larger runner (GH-hosted,
+          # x64 builds on the gh-linux-8x size (WarpBuild or an intent-cache slot,
           # 8-core/32 GB X64) — the "well over 16 GB" class this leg
           # requires: the bundle outgrew the 16 GB ubuntu-latest hosted
           # runner in the v2.13.0 rebuilds (monorepo#1340) — 8192
@@ -561,12 +594,14 @@ jobs:
           # cap as the arm64 leg. Never downgrade this leg to a 16 GB
           # runner.
           - arch: x64
-            runner: depot-ubuntu-24.04-8
+            runner: gh-linux-8x
+            # The burst runner if the route job failed (GitHub larger runners are off).
+            warp: warp-ubuntu-2404-x64-8x
             intentd_target: x86_64-unknown-linux-musl
             targets: AppImage:x64 deb:x64
             node_heap: 12288
-          # arm64 builds natively on the gh-linux-arm64-8x org larger runner
-          # (GH-hosted, 8-core/32 GB ARM64). The 32 GB class is deliberate:
+          # arm64 builds natively on the gh-linux-arm64-8x size (WarpBuild
+          # 8-core/32 GB ARM64). The 32 GB class is deliberate:
           # 16 GB machines OS-OOM-killed this bundle (monorepo#1340), so a
           # standard hosted runner is not a viable fallback. INTENTD_TARGET
           # is set explicitly below, so the staged intentd matches the
@@ -582,11 +617,15 @@ jobs:
           # ("Ineffective mark-compacts near heap limit", monorepo#1340) — and
           # the 32 GB runner has the RAM for 12288.
           - arch: arm64
-            runner: depot-ubuntu-24.04-arm-8
+            runner: gh-linux-arm64-8x
+            warp: warp-ubuntu-2404-arm64-8x
             intentd_target: aarch64-unknown-linux-musl
             targets: AppImage:arm64 deb:arm64
             node_heap: 12288
-    runs-on: ${{ matrix.runner }}
+    # x64 takes a free (ephemeral) intent-cache slot first, else WarpBuild.
+    # arm64 goes straight to WarpBuild: release packaging stays off persistent
+    # self-hosted ARM64 boxes, where electron-builder's fpm failed (monorepo#1286).
+    runs-on: ${{ matrix.runner == 'gh-linux-8x' && fromJSON(needs.runner-route.outputs.slots || '{}')[format('build-linux-{0}', matrix.arch)] || fromJSON(needs.runner-route.outputs.cloud || '{}')[matrix.runner] || matrix.warp }}
     timeout-minutes: 60
 
     steps:
@@ -701,11 +740,12 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-  # Single publish gate: it needs every build job, so a failed build on any
-  # platform fails the whole release and nothing is partially published.
+  # Every platform must finish building and verifying before publication.
   publish:
     needs: [resolve, build-macos, build-windows, build-linux]
-    runs-on: depot-ubuntu-24.04
+    # Explicit results: a failed runner-route (an ancestor through the builds) must not skip this job.
+    if: ${{ !cancelled() && needs.resolve.result == 'success' && needs.build-macos.result == 'success' && needs.build-windows.result == 'success' && needs.build-linux.result == 'success' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     steps:
@@ -730,6 +770,12 @@ jobs:
         with:
           ref: refs/tags/${{ needs.resolve.outputs.tag }}
 
+      - name: Checkout publication tools
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-tools
+
       # The tag commit exists on origin, so release notes can use its SHA with the
       # compare API
       - name: Capture fe SHA for release notes
@@ -742,7 +788,6 @@ jobs:
       # Feed assembly uses the updater's locked YAML and semver dependencies.
       # Ignore install hooks: publishing never rebuilds native app dependencies.
       - name: Setup pnpm
-        if: needs.resolve.outputs.dual_macos == 'true'
         uses: pnpm/action-setup@v6
         with:
           version: 10.30.3
@@ -753,7 +798,7 @@ jobs:
           node-version: '22'
 
       - name: Install feed assembly dependencies
-        if: needs.resolve.outputs.dual_macos == 'true'
+        working-directory: .release-tools
         run: pnpm install --frozen-lockfile --prod --ignore-scripts
 
       - name: Read pinned intentd version
@@ -768,7 +813,7 @@ jobs:
           echo "Pinned intentd version: ${INTENTD_VERSION}"
 
       - name: Download platform release assets
-        if: needs.resolve.outputs.dual_macos == 'true'
+        if: needs.resolve.outputs.native_macos == 'true'
         uses: actions/download-artifact@v8
         with:
           pattern: release-*
@@ -776,7 +821,7 @@ jobs:
           merge-multiple: false
 
       - name: Download legacy platform release assets
-        if: needs.resolve.outputs.dual_macos != 'true'
+        if: needs.resolve.outputs.native_macos != 'true'
         uses: actions/download-artifact@v8
         with:
           pattern: release-*
@@ -784,10 +829,15 @@ jobs:
           merge-multiple: true
 
       - name: Assemble release assets
-        if: needs.resolve.outputs.dual_macos == 'true'
+        if: needs.resolve.outputs.native_macos == 'true'
         env:
           VERSION: ${{ needs.resolve.outputs.version }}
-        run: node scripts/assemble-release-assets.mjs release-downloads dist-electron "$VERSION"
+        run: node .release-tools/scripts/assemble-release-assets.mjs release-downloads dist-electron "$VERSION"
+
+      - name: Prepare architecture-safe Mac channel feeds
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: node .release-tools/scripts/mac-channel-feeds.mjs "dist-electron" alpha "$VERSION"
 
       - name: Verify collected release assets
         run: |
@@ -983,25 +1033,27 @@ jobs:
               --prerelease
           fi
 
-          # Delete existing assets to prevent accumulation (versioned filenames don't clobber)
-          echo "Cleaning up old assets from rolling alpha release"
-          gh release view alpha --repo intent-hq/cloudlands-releases --json assets --jq '.assets[].name' | while read -r asset; do
-            echo "Deleting old asset: $asset"
-            gh release delete-asset alpha "$asset" --repo intent-hq/cloudlands-releases --yes || true
+          # Upload versioned payloads before switching the feeds. If any
+          # upload fails, the previous feeds still refer to available archives.
+          cd dist-electron
+          PAYLOADS=()
+          FEEDS=()
+          for file in *; do
+            case "$file" in
+              latest*.yml) FEEDS+=("$file") ;;
+              *) PAYLOADS+=("$file") ;;
+            esac
           done
-
-          # Upload new artifacts
-          gh release upload alpha --repo intent-hq/cloudlands-releases \
-            dist-electron/*.dmg \
-            dist-electron/*.zip \
-            dist-electron/*.exe \
-            dist-electron/*.AppImage \
-            dist-electron/*.deb \
-            dist-electron/*.blockmap \
-            dist-electron/latest-mac.yml \
-            dist-electron/latest.yml \
-            dist-electron/latest-linux.yml \
-            dist-electron/latest-linux-arm64.yml
+          gh release upload alpha --repo intent-hq/cloudlands-releases --clobber -- "${PAYLOADS[@]}"
+          gh release upload alpha --repo intent-hq/cloudlands-releases --clobber -- "${FEEDS[@]}"
+          # Remove obsolete assets, including the retired Mac feed alias, only
+          # after every new feed was uploaded successfully.
+          gh release view alpha --repo intent-hq/cloudlands-releases --json assets --jq '.assets[].name' | while read -r asset; do
+            if [ ! -f "$asset" ]; then
+              gh release delete-asset alpha "$asset" --repo intent-hq/cloudlands-releases --yes
+            fi
+          done
+          cd ..
 
           # Update alpha release body to match versioned release notes
           gh release edit alpha --repo intent-hq/cloudlands-releases \
@@ -1122,7 +1174,6 @@ jobs:
           # them (nsis installers contain "Setup"; portable exes do not)
           encode() { printf '%s' "$1" | jq -sRr @uri; }
           DMG_ARM64=$(find dist-electron -maxdepth 1 -name "*-arm64.dmg" -exec basename {} \; -quit)
-          DMG_X64=$(find dist-electron -maxdepth 1 -name "*-x64.dmg" -exec basename {} \; -quit)
           EXE_FILE=$(find dist-electron -maxdepth 1 -name "*Setup*.exe" -exec basename {} \; -quit)
           APPIMAGE_X64=$(find dist-electron -maxdepth 1 -name "*.AppImage" ! -name "*arm64*" -exec basename {} \; -quit)
           APPIMAGE_ARM64=$(find dist-electron -maxdepth 1 -name "*arm64*.AppImage" -exec basename {} \; -quit)
@@ -1136,9 +1187,6 @@ jobs:
             echo ""
             echo "### Download URLs"
             echo "- [Apple Silicon Mac (DMG)]($ALPHA_URL/$(encode "$DMG_ARM64"))"
-            if [ -n "$DMG_X64" ]; then
-              echo "- [Intel Mac (DMG)]($ALPHA_URL/$(encode "$DMG_X64"))"
-            fi
             echo "- [Windows x64 installer (EXE, unsigned)]($ALPHA_URL/$(encode "$EXE_FILE"))"
             echo "- [Linux x64 (AppImage)]($ALPHA_URL/$(encode "$APPIMAGE_X64"))"
             echo "- [Linux arm64 (AppImage)]($ALPHA_URL/$(encode "$APPIMAGE_ARM64"))"

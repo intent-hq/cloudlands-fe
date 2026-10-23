@@ -14,12 +14,17 @@ import {
   type Collection,
 } from '@themislib/themis/utils/collections/collection-utils';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
+import {
+  workspaceUnmounted,
+  workspaceDeleted,
+} from '../workspace-lifecycle/workspace-lifecycle-slice';
 import { removeWorkspaceEntity } from '../workspace/workspace-slice';
 import type { GitRootRow } from '$features/git-roots/git-roots-service';
 
 /** Per-workspace live git-root state (registered roots only; the primary
  * workspace root is synthesized by the selectors, never stored here). */
 interface GitRootsWorkspaceState {
+  consumers?: Record<string, true>;
   gitRoots: Collection<GitRootRow, 'id'>;
 }
 
@@ -36,8 +41,15 @@ export const initialState: GitRootsState = {
   byWorkspaceId: {},
 };
 
-const { setWorkspaceState, clearWorkspaceState } = createWorkspaceScopedHelpers(
+const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } = createWorkspaceScopedHelpers(
   emptyGitRootsWorkspaceState,
+);
+
+export const gitRootsConsumerMounted = createAction<[wsId: string, consumerId: string]>(
+  'gitRoots/consumerMounted',
+);
+export const gitRootsConsumerUnmounted = createAction<[wsId: string, consumerId: string]>(
+  'gitRoots/consumerUnmounted',
 );
 
 // ── Actions ──
@@ -52,10 +64,33 @@ export const gitRootsReducer = createReducer<GitRootsState>(initialState);
 
 gitRootsReducer.with(gitRootsUpdated, (state, { payload: [workspaceId, gitRoots] }) => {
   return setWorkspaceState(state, workspaceId, {
+    ...getWorkspaceState(state, workspaceId),
     gitRoots: createCollection<GitRootRow, 'id'>('id', gitRoots),
   });
 });
 
 gitRootsReducer.with(removeWorkspaceEntity, (state, { payload: [wsId] }) =>
+  clearWorkspaceState(state, wsId),
+);
+
+gitRootsReducer.with(gitRootsConsumerMounted, (state, { payload: [wsId, id] }) => {
+  const entry = getWorkspaceState(state, wsId);
+  return setWorkspaceState(state, wsId, {
+    ...entry,
+    consumers: { ...entry.consumers, [id]: true },
+  });
+});
+gitRootsReducer.with(gitRootsConsumerUnmounted, (state, { payload: [wsId, id] }) => {
+  const entry = state.byWorkspaceId[wsId];
+  if (!entry?.consumers?.[id]) return state;
+  const consumers = { ...entry.consumers };
+  delete consumers[id];
+  return setWorkspaceState(state, wsId, { ...entry, consumers });
+});
+
+gitRootsReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) =>
+  clearWorkspaceState(state, wsId),
+);
+gitRootsReducer.with(workspaceDeleted, (state, { payload: [wsId] }) =>
   clearWorkspaceState(state, wsId),
 );

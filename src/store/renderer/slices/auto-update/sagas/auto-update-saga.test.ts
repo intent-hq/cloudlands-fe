@@ -5,12 +5,14 @@ const mocks = vi.hoisted(() => ({
   callbacks: {} as Record<string, (value?: any) => void>,
   disposers: Array.from({ length: 5 }, () => vi.fn()),
   getState: vi.fn(),
+  setShareStatistics: vi.fn(),
   download: vi.fn(),
   install: vi.fn(),
 }));
 vi.mock('$features/auto-update/auto-update.client', () => ({
   autoUpdateClient: {
     getState: mocks.getState,
+    setShareStatistics: mocks.setShareStatistics,
     downloadUpdate: mocks.download,
     installUpdate: mocks.install,
     onShowToast: (callback: () => void) => {
@@ -42,7 +44,9 @@ import {
   installUpdate,
   setCheckTimedOut,
   setProgress,
+  setShareUpdateStatistics,
   setUpToDate,
+  shareUpdateStatisticsReverted,
   setUpdateError,
   setUpdateState,
   showToast,
@@ -74,6 +78,7 @@ const state = (version: string) => ({
   progress: null,
   error: null,
   channel: 'stable' as const,
+  shareStatistics: false,
   wireOnly: 'drop',
 });
 
@@ -131,6 +136,7 @@ describe('autoUpdateSaga', () => {
         progress: null,
         error: null,
         channel: 'stable',
+        shareStatistics: false,
       }),
       setProgress({ percent: 25, bytesPerSecond: 100, transferred: 25, total: 100 }),
       setUpdateError('event failed'),
@@ -141,6 +147,7 @@ describe('autoUpdateSaga', () => {
         progress: { percent: 100, bytesPerSecond: 200, transferred: 100, total: 100 },
         error: null,
         channel: 'stable',
+        shareStatistics: false,
       }),
     ]);
     task.cancel();
@@ -180,6 +187,7 @@ describe('autoUpdateSaga', () => {
         progress: null,
         error: null,
         channel: 'stable',
+        shareStatistics: false,
       }),
     );
     resolveInitial(state('initial'));
@@ -227,6 +235,32 @@ describe('autoUpdateSaga', () => {
     expect(dispatch).not.toHaveBeenCalled();
     raced.cancel();
     await raced.toPromise();
+  });
+
+  it('persists the update statistics toggle through main and reverts it when the write fails', async () => {
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga(
+      { channel, dispatch, getState: () => ({ autoUpdate: { status: 'idle' } }) },
+      autoUpdateSaga,
+    );
+
+    mocks.setShareStatistics.mockResolvedValueOnce(undefined);
+    channel.put(setShareUpdateStatistics(false));
+    await settle();
+    expect(mocks.setShareStatistics).toHaveBeenLastCalledWith(false);
+    expect(dispatch).not.toHaveBeenCalled();
+
+    mocks.setShareStatistics.mockRejectedValueOnce(new Error('ipc down'));
+    channel.put(setShareUpdateStatistics(true));
+    await settle();
+    expect(mocks.setShareStatistics).toHaveBeenLastCalledWith(true);
+    expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+      shareUpdateStatisticsReverted(false),
+    ]);
+
+    task.cancel();
+    await task.toPromise();
   });
 
   // Renderer-side watchdog (intent-hq/monorepo#1698): the main-process

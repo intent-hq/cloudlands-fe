@@ -8,6 +8,7 @@ import { createCollection } from '@themislib/themis/utils/collections/collection
 import type { HardwareConsoleManager, HardwareConsoleStatus } from '../../device/device-manager';
 import type { HardwareDeviceModel } from '../../input/types';
 import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
+import { CURRENT_PROTOCOL_VERSION } from '../../../../test/current-protocol-version';
 
 const mocks = vi.hoisted(() => ({
   state: { current: {} as unknown },
@@ -190,7 +191,7 @@ function makeState() {
     connections: { windowBackendId: 'local', hasReceivedList: true },
     sidebarNav: sidebarNavReducer(undefined, { type: 'init' }),
     homeWorkspaces: homeWorkspacesReducer(undefined, updateHomeWorkspaceView({ groupBy: 'none' })),
-    daemonHealth: { stats: { protocolVersion: '6.1' } },
+    daemonHealth: { stats: { protocolVersion: CURRENT_PROTOCOL_VERSION } },
   });
 }
 function setting() {

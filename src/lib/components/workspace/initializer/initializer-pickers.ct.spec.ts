@@ -283,21 +283,10 @@ for (const { name, width, height, position } of [
     await expectViewportBounded(menu);
     const search = menu.getByPlaceholder('Search or enter branch name...');
     await expect(search).toBeFocused();
-    const warning = menu.getByText(/Uncommitted changes/);
-    await expect(warning).toBeVisible();
-    await expectViewportBounded(menu);
-    // Read both rects in one frame: the warning mounts asynchronously and the menu
-    // repositions when it grows, so separate boundingBox() reads can straddle that move.
-    const { warningBottom, searchTop } = await warning.evaluate(
-      (element, input) => ({
-        warningBottom: element.getBoundingClientRect().bottom,
-        searchTop: input!.getBoundingClientRect().top,
-      }),
-      await search.elementHandle(),
-    );
-    expect(warningBottom).toBeLessThanOrEqual(searchTop);
-    const results = menu.getByRole('listbox');
-    expect(await results.evaluate((e) => e.scrollHeight > e.clientHeight)).toBe(true);
+    await expect(search).toHaveAttribute('aria-busy', 'false');
+    await expect(menu.getByRole('option', { name: 'feature/task-29', exact: true })).toBeAttached();
+    const results = menu.getByRole('region', { name: 'Select a branch' });
+    await expect.poll(() => results.evaluate((e) => e.scrollHeight > e.clientHeight)).toBe(true);
     await results.hover();
     await page.mouse.wheel(0, 300);
     await expect.poll(() => results.evaluate((e) => e.scrollTop)).toBeGreaterThan(0);
@@ -308,19 +297,237 @@ for (const { name, width, height, position } of [
     );
     await expect(menu).toHaveCount(0);
     await branchTrigger.click();
-    const direct = menu.getByRole('checkbox', { name: /Work directly/ });
-    await direct.scrollIntoViewIfNeeded();
-    const directBounds = (await direct.boundingBox())!;
-    expect(directBounds.y).toBeGreaterThanOrEqual(0);
-    expect(directBounds.y + directBounds.height).toBeLessThanOrEqual(height);
-    await direct.click();
+    const isolation = menu.getByRole('switch', { name: /Isolated/ });
+    await isolation.scrollIntoViewIfNeeded();
+    const isolationBounds = (await isolation.boundingBox())!;
+    expect(isolationBounds.y).toBeGreaterThanOrEqual(0);
+    expect(isolationBounds.y + isolationBounds.height).toBeLessThanOrEqual(height);
+    await isolation.click();
     await expect(page.getByTestId('initializer-selection')).toContainText('"skipIsolation":true');
-    await expect(menu).toHaveCount(0);
-    await branchTrigger.click();
-    await menu.locator('input').press('Escape');
+    await expect(menu).toBeVisible();
+    await expect(search).toHaveCount(0);
+    await isolation.click();
+    await expect(search).toBeVisible();
+    await page.keyboard.press('Escape');
     await expect(branchTrigger).toBeFocused();
   });
 }
+
+test('isolation registers the first pointer click and preserves focus while changing modes', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 720, height: 900 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mount(Pickers);
+  const fixture = page.getByTestId('initializer-pickers-fixture');
+  const trigger = fixture.locator('button[aria-haspopup="dialog"]').nth(1);
+  const selection = page.getByTestId('initializer-selection');
+  const menu = page.getByRole('dialog');
+  const isolation = menu.getByRole('switch', { name: /Isolated/ });
+  const otherBranch = menu.getByRole('option', { name: 'feature/task-3', exact: true });
+
+  await trigger.click();
+  await otherBranch.click();
+  await expect(selection).toContainText('"branch":"feature/task-3"');
+  await trigger.click();
+  await expect(isolation).toBeChecked();
+  await isolation.hover();
+  await page.mouse.down();
+  await expect(menu.getByRole('region', { name: 'Select a branch' })).toBeVisible();
+  await page.mouse.up();
+  await expect(selection).toContainText('"skipIsolation":true');
+  await expect(selection).toContainText('"branch":"main"');
+  await expect(menu).toBeVisible();
+  await expect(isolation).not.toBeChecked();
+  await expect(menu.getByRole('combobox')).toHaveCount(0);
+  await isolation.focus();
+  await isolation.press('Space');
+  await expect(selection).toContainText('"skipIsolation":false');
+  await expect(otherBranch).toBeVisible();
+  await expect(isolation).toBeFocused();
+
+  await menu.locator('label', { hasText: 'Isolated worktree' }).click();
+  await expect(selection).toContainText('"skipIsolation":true');
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+});
+
+for (const { position, contract } of [
+  { position: 'top', contract: 'trigger width changes below the trigger' },
+  { position: 'bottom', contract: 'content height changes above the trigger' },
+] as const) {
+  test(`worktree toggle stays under the pointer through ${contract}`, async ({ mount, page }) => {
+    await page.setViewportSize({ width: 1000, height: 900 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await mount(Pickers, { props: { position } });
+    const trigger = page
+      .getByTestId('initializer-pickers-fixture')
+      .locator('button[aria-haspopup="dialog"]')
+      .nth(1);
+    await trigger.click();
+    const menu = page.getByRole('dialog');
+    await expect(menu.getByRole('combobox')).toHaveAttribute('aria-busy', 'false');
+    await expect(menu.getByRole('option', { name: 'feature/task-29', exact: true })).toBeAttached();
+    const isolation = menu.getByRole('switch', { name: /Isolated/ });
+    await isolation.hover();
+    const origin = (await menu.boundingBox())!;
+    const control = (await isolation.boundingBox())!;
+    const point = { x: control.x + control.width / 2, y: control.y + control.height / 2 };
+
+    for (const checked of [false, true, false, true]) {
+      await page.mouse.click(point.x, point.y);
+      await expect(isolation).toBeChecked({ checked });
+      await expect
+        .poll(async () => {
+          const current = (await menu.boundingBox())!;
+          return Math.hypot(current.x - origin.x, current.y - origin.y);
+        })
+        .toBeLessThanOrEqual(1);
+      await expect(isolation).toBeFocused();
+      await expectViewportBounded(menu);
+    }
+
+    if (position === 'bottom') {
+      await page.setViewportSize({ width: 1000, height: 500 });
+      await expectViewportBounded(menu);
+      await isolation.click();
+      await expect(isolation).not.toBeChecked();
+      await page.keyboard.press('Escape');
+      await trigger.click();
+      await expectViewportBounded(menu);
+      await expect
+        .poll(async () =>
+          menu.evaluate((element) => {
+            const popup = element.getBoundingClientRect();
+            const anchor = document
+              .querySelector<HTMLButtonElement>('button[aria-label^="Select a branch:"]')!
+              .getBoundingClientRect();
+            return element.getAttribute('data-side') === 'top'
+              ? popup.bottom <= anchor.top
+              : popup.top >= anchor.bottom;
+          }),
+        )
+        .toBe(true);
+    }
+  });
+}
+
+for (const initialMode of ['direct', 'reopened-direct'] as const) {
+  test(`worktree toggle stays under the pointer when opened ${initialMode} at the bottom edge`, async ({
+    mount,
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1000, height: 900 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await mount(Pickers, {
+      props: {
+        position: 'bottom',
+        branchPreview: initialMode === 'direct' ? 'direct-mode' : undefined,
+      },
+    });
+    const trigger = page
+      .getByTestId('initializer-pickers-fixture')
+      .locator('button[aria-haspopup="dialog"]')
+      .nth(1);
+    const menu = page.getByRole('dialog');
+    const isolation = menu.getByRole('switch', { name: /Isolated/ });
+    if (initialMode === 'reopened-direct') {
+      await trigger.click();
+      await expect(menu.getByRole('combobox')).toHaveAttribute('aria-busy', 'false');
+      await isolation.click();
+      await expect(isolation).not.toBeChecked();
+      await page.keyboard.press('Escape');
+      await expect(menu).toHaveCount(0);
+      await trigger.click();
+    }
+    await expect(isolation).not.toBeChecked();
+    await isolation.hover();
+    const origin = (await menu.boundingBox())!;
+    const control = (await isolation.boundingBox())!;
+    const point = { x: control.x + control.width / 2, y: control.y + control.height / 2 };
+
+    for (const checked of [true, false, true, false]) {
+      await page.mouse.click(point.x, point.y);
+      await expect(isolation).toBeChecked({ checked });
+      await expect
+        .poll(async () => {
+          const current = (await menu.boundingBox())!;
+          return Math.hypot(current.x - origin.x, current.y - origin.y);
+        })
+        .toBeLessThanOrEqual(1);
+      await expect(isolation).toBeFocused();
+      await expectViewportBounded(menu);
+      if (checked) {
+        const results = menu.getByRole('region', { name: 'Select a branch' });
+        await expect(menu.getByRole('combobox')).toHaveAttribute('aria-busy', 'false');
+        await expect
+          .poll(() => results.evaluate((e) => e.scrollHeight > e.clientHeight))
+          .toBe(true);
+        await results.hover();
+        await page.mouse.wheel(0, 300);
+        await expect.poll(() => results.evaluate((e) => e.scrollTop)).toBeGreaterThan(0);
+      }
+    }
+    await page.setViewportSize({ width: 360, height: 500 });
+    await expectViewportBounded(menu);
+    await isolation.click();
+    await expect(isolation).toBeChecked();
+    await expectViewportBounded(menu);
+  });
+}
+
+test('branch group headers and footer toggles share expansion and search state', async ({
+  mount,
+  page,
+}) => {
+  await mount(Pickers, { props: { branchPreview: 'groups-closed' } });
+  const menu = page.getByRole('dialog');
+  const header = menu.getByRole('button', { name: 'Toggle Workspace branches', exact: true });
+  const footer = menu.getByRole('button', { name: 'Workspace branches', exact: true });
+  const option = menu.getByRole('option', { name: 'workspace/amber-forest', exact: true });
+
+  await expect(header).toHaveAttribute('aria-expanded', 'false');
+  await header.focus();
+  await header.press('Enter');
+  await expect(footer).toHaveAttribute('aria-pressed', 'true');
+  await expect(option).toBeVisible();
+  await footer.click();
+  await expect(header).toHaveAttribute('aria-expanded', 'false');
+  await expect(option).toHaveCount(0);
+  await menu.getByRole('combobox').fill('workspace/');
+  await expect(header).toHaveAttribute('aria-expanded', 'true');
+  await expect(footer).toHaveAttribute('aria-pressed', 'true');
+  await expect(option).toBeVisible();
+  await footer.click();
+  await expect(option).toHaveCount(0);
+  await expect(header).toHaveAttribute('aria-expanded', 'false');
+});
+
+test('opening remote branches loads once and keeps both controls synchronized', async ({
+  mount,
+  page,
+}) => {
+  await mount(Pickers, { props: { branchPreview: 'groups-closed' } });
+  const menu = page.getByRole('dialog');
+  const header = menu.getByRole('button', { name: 'Toggle Remote branches', exact: true });
+  const footer = menu.getByRole('button', { name: 'Remote branches', exact: true });
+  const selection = page.getByTestId('initializer-selection');
+  const option = menu.getByRole('option', { name: 'origin/release', exact: true });
+
+  await expect(selection).toContainText('"refreshes":1');
+  await header.click();
+  await expect(option).toBeVisible();
+  await expect(selection).toContainText('"refreshes":2');
+  await expect(footer).toHaveAttribute('aria-pressed', 'true');
+  await footer.click();
+  await expect(header).toHaveAttribute('aria-expanded', 'false');
+  await footer.click();
+  await expect(option).toBeVisible();
+  await expect(header).toHaveAttribute('aria-expanded', 'true');
+  await expect(selection).toContainText('"refreshes":2');
+});
 
 test('closed branch menu cannot refocus its input from a queued autofocus frame', async ({
   mount,
@@ -404,7 +611,6 @@ test('portalled branch menu escapes clipping and paints over panel tabs', async 
     .nth(1);
   await trigger.click();
   const menu = page.getByRole('dialog');
-  await expect(menu.getByText(/Uncommitted changes/)).toBeVisible();
   await expect(
     page.getByTestId('branch-results').getByRole('option', { name: /main/ }),
   ).toBeVisible();

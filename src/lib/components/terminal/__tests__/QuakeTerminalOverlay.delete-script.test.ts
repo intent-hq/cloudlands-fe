@@ -22,6 +22,8 @@ const asyncDefinitionActionHandlers = vi.hoisted(() => ({
 }));
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceActionContext: { select: () => authority.current },
+  selectWorkspaceParticipationContext: { select: () => authority.current },
+  selectCanManageWorkspace: { select: () => authority.current !== null },
 }));
 
 vi.mock('$store/renderer/store', async () => {

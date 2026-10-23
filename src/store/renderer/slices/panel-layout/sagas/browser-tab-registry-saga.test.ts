@@ -38,6 +38,7 @@ import {
   browserTabUpserted,
   initialState as browserClientsInitialState,
   ownClientIdReceived,
+  hydrateBrowserClientsRequested,
 } from '../../browser-clients/browser-clients-slice';
 import {
   browserTabRegistryReducer,
@@ -51,6 +52,7 @@ import { removeScript } from '../../scripts/scripts-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   bootstrapNewWorkspaceLayout,
+  browserTabRegistryReconcileRequested,
   clearPanelLayout,
   closeTab,
   emptyWorkspaceState,
@@ -308,6 +310,44 @@ describe('browserTabRegistrySaga', () => {
         await stop(h);
       },
     );
+
+    // Closing a workspace's tab keeps its layout but tears the registry
+    // down, and a still-settled layout never settles again, so an agent tab
+    // opened there while the workspace is background-hosted was never
+    // reported (live repro on the manual build: openTab "could not be
+    // confirmed"). A browser request asks for a reconcile, which reloads the
+    // rows only in that torn-down state.
+    it('reloads and reports a torn-down, still-settled workspace on a reconcile request', async () => {
+      const h = start({ layouts: { [WS]: settledLayout([]) }, applied: true });
+      await flush();
+      h.dispatch(workspaceUnmounted(WS));
+      const tab = browserTab({ browserUrl: 'http://a.test/', ownerAgentId: 'agent-1' });
+      h.dispatch(openHiddenTab(WS, tab, 'b1'));
+      await flush();
+      expect(mocks.upsertTab).not.toHaveBeenCalled();
+      const listingsBefore = mocks.listTabs.mock.calls.length;
+
+      h.dispatch(browserTabRegistryReconcileRequested(WS));
+      await flush();
+
+      expect(mocks.listTabs.mock.calls.length).toBe(listingsBefore + 1);
+      expect(mocks.upsertTab.mock.calls).toEqual([
+        [WS, expectedInput({ ownerAgentId: 'agent-1', visibility: 'hidden', displayed: false })],
+      ]);
+      await stop(h);
+    });
+
+    it('ignores a reconcile request for a workspace whose rows are already applied', async () => {
+      const h = start({ layouts: { [WS]: settledLayout([]) }, applied: true });
+      await flush();
+      const listingsBefore = mocks.listTabs.mock.calls.length;
+
+      h.dispatch(browserTabRegistryReconcileRequested(WS));
+      await flush();
+
+      expect(mocks.listTabs.mock.calls.length).toBe(listingsBefore);
+      await stop(h);
+    });
 
     it('reports a newly opened hosted tab with browser.upsertTab and records the host', async () => {
       const h = start({ layouts: { [WS]: settledLayout([]) }, health: 'down', applied: true });
@@ -1144,7 +1184,15 @@ describe('browserTabRegistrySaga', () => {
       await stop(h);
     });
 
-    it('waits for the own clientId before reporting anything', async () => {
+    it('does not request identity just for an empty Home session', async () => {
+      const h = start({ layouts: {}, ownClientId: null });
+      await flush();
+      expect(h.ofType(hydrateBrowserClientsRequested.type)).toEqual([]);
+      expect(mocks.syncTabs).not.toHaveBeenCalled();
+      await stop(h);
+    });
+
+    it('requests identity on demand and waits before reporting anything', async () => {
       const h = start({
         layouts: { [WS]: settledLayout([browserTab({ browserUrl: 'http://a.test/' })]) },
         ownClientId: null,
@@ -1153,6 +1201,7 @@ describe('browserTabRegistrySaga', () => {
       expect(mocks.syncTabs).not.toHaveBeenCalled();
       expect(mocks.upsertTab).not.toHaveBeenCalled();
 
+      expect(h.ofType(hydrateBrowserClientsRequested.type).length).toBeGreaterThan(0);
       h.dispatch(ownClientIdReceived(OWN));
       await flush();
       expect(mocks.syncTabs).toHaveBeenCalledTimes(1);

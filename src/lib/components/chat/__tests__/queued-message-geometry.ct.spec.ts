@@ -117,16 +117,20 @@ test('keeps loaded and unresolved image tiles tiny-rounded with compact keyboard
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
+  const data = await page.evaluate(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 48;
+    return canvas.toDataURL('image/png').split(',')[1];
+  });
   const component = await mount(QueuedMessageGeometryHost, {
     props: {
       width: 360,
       imageBlocks: [
         {
           type: 'image',
-          data: Buffer.from(
-            '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="48"><rect width="64" height="48"/></svg>',
-          ).toString('base64'),
-          mimeType: 'image/svg+xml',
+          data,
+          mimeType: 'image/png',
         },
         { type: 'image', attachmentId: 'synthetic-unresolved', mimeType: 'image/png' },
       ],
@@ -218,20 +222,21 @@ test('preserves the edit, remove, and send-now callbacks', async ({ mount, page 
     props: { width: 360, zoom: 1, messageCount: 1 },
   });
   const row = component.getByTestId('queued-message-row');
+  const header = component.getByTestId('queued-messages-header');
   const actions = component.getByTestId('queued-message-actions').getByRole('button');
   const lastAction = component.getByTestId('queued-message-last-action');
 
   await expect(actions).toHaveCount(3);
   await row.hover();
 
-  await row.getByRole('button', { name: 'Send immediately' }).focus();
+  await header.getByRole('button', { name: 'Send immediately' }).focus();
   await page.keyboard.press('Enter');
   await expect(lastAction).toHaveText('send:queued-geometry-0');
 
   await row.getByTestId('queued-message-content').press('ControlOrMeta+Enter');
   await expect(lastAction).toHaveText('send:queued-geometry-0');
 
-  await row.getByRole('button', { name: 'Remove', exact: true }).click();
+  await header.getByRole('button', { name: 'Remove', exact: true }).click();
   await expect(lastAction).toHaveText('remove:queued-geometry-0');
 
   await row.getByTestId('queued-message-content').dblclick();

@@ -3,8 +3,7 @@
  * Safe to import from any process (renderer, main, shared, preload).
  */
 
-export type ExecutorStatus =
-  'idle' | 'initializing' | 'running' | 'success' | 'error' | 'cancelled';
+type ExecutorStatus = 'idle' | 'initializing' | 'running' | 'success' | 'error' | 'cancelled';
 
 /**
  * Context data for different agent types

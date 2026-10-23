@@ -1,3 +1,4 @@
+import { monitorUrl, monitorChipLabel } from '$lib/utils/review-monitor-presentation';
 import { store } from '../../store';
 import {
   PullRequestStatus,
@@ -15,7 +16,7 @@ import {
 } from '../changes/changes-selectors';
 import { selectGitStatus } from '../git/git-selectors';
 import { selectIsDaemonLocal } from '../daemon-health/daemon-health-selectors';
-import { selectActivePrMonitors } from '../pr-monitor/pr-monitor-selectors';
+import { selectActiveReviewMonitors } from '../pr-monitor/pr-monitor-selectors';
 import {
   selectCanAdministerHost,
   selectCollaborationReady,
@@ -35,6 +36,9 @@ import type {
 import { m } from '$shared/paraglide/messages.js';
 import { formatInteger, formatNumber } from '$lib/i18n/format';
 import { getPrChipLabel } from '$lib/utils/pr-chip-label';
+
+/** Workspace entity changes observed by independent UI projections. */
+export const selectWorkspaceEntities = store.createSelector((state) => state.workspace.workspaces);
 
 export const selectWorkspaceLoading = store.createSelector((state) => {
   return state.workspace.loading;
@@ -213,7 +217,8 @@ export const selectCanManageWorkspace = store.createSelector<[wsId: string], boo
     }
     // A guest may retain ownership of one workspace without owning the host.
     return (
-      workspace.myRole === 'owner' || (role === 'owner' && workspace.myRole !== 'collaborator')
+      workspace.myRole === 'owner' ||
+      (role === 'owner' && workspace.myRole !== 'collaborator' && workspace.myRole !== 'manager')
     );
   },
 );
@@ -229,7 +234,7 @@ export const selectWorkspaceManagementDenied = store.createSelector<[wsId: strin
     if (selectPrincipalSnapshot.select(state)?.capabilities.hostMembership) {
       return selectWorkspaceCapabilitiesReady.select(state) && workspace?.canManage === false;
     }
-    return workspace?.myRole === 'collaborator';
+    return workspace?.myRole === 'collaborator' || workspace?.myRole === 'manager';
   },
 );
 
@@ -360,7 +365,7 @@ function activePrStatus(pr: PullRequestInfo): WorkspaceActivePrStatus {
 }
 
 /** Normalize a monitor snapshot's raw `state` string. */
-function monitorPrStatus(state: string, isDraft: boolean): WorkspaceActivePrStatus {
+function monitorPrStatus(state: string, isDraft: boolean | null): WorkspaceActivePrStatus {
   if (isDraft) return 'draft';
   const normalized = state.toLowerCase();
   if (normalized === 'open' || normalized === 'merged' || normalized === 'closed') {
@@ -378,11 +383,14 @@ function buildActivePrSummary(args: {
   chipLabel: string;
   title: string | undefined;
   status: WorkspaceActivePrStatus;
+  mergeRequest?: boolean;
 }): WorkspaceActivePrSummary {
-  const { number, url, repo, chipLabel, title, status } = args;
+  const { number, url, repo, chipLabel, title, status, mergeRequest } = args;
   const formattedNumber = formatInteger(number);
   // i18n-ignore (org/repo#number identifier and PR title, not user-facing prose)
-  const identity = repo ? `${repo}#${formattedNumber}` : `#${formattedNumber}`;
+  const identity = repo
+    ? `${repo}${mergeRequest ? '!' : '#'}${formattedNumber}`
+    : `${mergeRequest ? '!' : '#'}${formattedNumber}`;
   return {
     number,
     url,
@@ -392,7 +400,9 @@ function buildActivePrSummary(args: {
     status,
     // i18n-ignore (chip identifier + PR title, both i18n-exempt)
     actionLabel: title ? `${chipLabel}: ${title}` : chipLabel,
-    actionTooltip: m.workspace_progress_viewPrIdentity_tooltip({ identity }),
+    actionTooltip: (mergeRequest
+      ? m.workspace_progress_viewMrIdentity_tooltip
+      : m.workspace_progress_viewPrIdentity_tooltip)({ identity }),
   };
 }
 
@@ -426,14 +436,15 @@ export const selectWorkspaceActivePrSummary = store.createSelector<
     });
   }
 
-  const monitor = selectActivePrMonitors.select(state, wsId)[0];
+  const monitor = selectActiveReviewMonitors.select(state, wsId)[0];
   if (!monitor) return null;
   const snapshot = monitor.lastSnapshot;
   return buildActivePrSummary({
     number: monitor.prNumber,
-    url: monitor.url ?? `https://github.com/${monitor.repo}/pull/${monitor.prNumber}`,
+    url: monitorUrl(monitor),
+    mergeRequest: monitor.resource?.repository.provider === 'gitlab',
     repo: monitor.repo,
-    chipLabel: getPrChipLabel(monitor.repo, monitor.prNumber, workspaceRepo),
+    chipLabel: monitorChipLabel(monitor, workspaceRepo),
     title: monitor.title || undefined,
     status: snapshot ? monitorPrStatus(snapshot.state, snapshot.isDraft) : 'unknown',
   });
@@ -847,7 +858,13 @@ export const selectWorkspaceParticipationContext = store.createSelector<
   if (!selectCanAdministerHost.select(state) && !selectCollaborationReady.select(state))
     return null;
   const row = selectWorkspaceById.select(state, wsId);
-  if (!row || (row.myRole !== 'owner' && row.myRole !== 'collaborator' && row.canManage !== true))
+  if (
+    !row ||
+    (row.myRole !== 'owner' &&
+      row.myRole !== 'collaborator' &&
+      row.myRole !== 'manager' &&
+      row.canManage !== true)
+  )
     return null;
   return selectPrincipalActionContext.select(state);
 });
@@ -878,3 +895,45 @@ export const selectWorkspaceUpdateContext = store.createSelector<
     ? context
     : null;
 });
+
+/** Guest Manager adds only agent setup and saved-script operation, never host execution. */
+export const selectWorkspaceGuestManagerContext = store.createSelector<
+  [wsId: string],
+  string | null
+>((state, wsId) => {
+  if (wsId === CHIEF_WORKSPACE_ID || wsId === ROOT_WORKSPACE_ID) return null;
+  if (selectPrincipalSnapshot.select(state)?.capabilities.workspaceGuestRoles !== true) return null;
+  if (selectWorkspaceById.select(state, wsId)?.myRole !== 'manager') return null;
+  return selectWorkspaceParticipationContext.select(state, wsId);
+});
+
+export const selectWorkspaceAgentManagementContext = store.createSelector<
+  [wsId: string],
+  string | null
+>(
+  (state, wsId) =>
+    selectWorkspaceActionContext.select(state, wsId) ??
+    selectWorkspaceGuestManagerContext.select(state, wsId),
+);
+
+export const selectWorkspaceSavedScriptContext = store.createSelector<
+  [wsId: string],
+  string | null
+>(
+  (state, wsId) =>
+    selectWorkspaceActionContext.select(state, wsId) ??
+    selectWorkspaceGuestManagerContext.select(state, wsId),
+);
+
+/** Workspace owners retain script reads independently of host-execution authority. */
+export const selectWorkspaceScriptReadContext = store.createSelector<[wsId: string], string | null>(
+  (state, wsId) =>
+    selectWorkspaceSavedScriptContext.select(state, wsId) ??
+    (selectCanManageWorkspace.select(state, wsId)
+      ? selectWorkspaceParticipationContext.select(state, wsId)
+      : null),
+);
+
+export const selectHidesAgentCreationActions = store.createSelector<[wsId: string], boolean>(
+  (state, wsId) => selectWorkspaceAgentManagementContext.select(state, wsId) === null,
+);

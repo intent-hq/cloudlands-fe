@@ -2,6 +2,7 @@
 import { flushSync } from 'svelte';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import type { Editor } from '@tiptap/core';
 import TipTapEditor from '../TipTapEditor.svelte';
 import TipTapEditorDeactivateHarness from './TipTapEditorDeactivateHarness.svelte';
 import { processHTMLToMarkdown, processMarkdownToHTML } from '$lib/utils/markdown-processor';
@@ -45,6 +46,101 @@ describe('TipTapEditor programmatic content updates', () => {
     expect(processHTMLToMarkdown(view.component.getHTML(), { workspaceId: 'workspace-1' })).toBe(
       markdown,
     );
+  });
+
+  it('keeps the selection when setContent repeats the text already shown', async () => {
+    // A restored draft reaches the editor through `value`, then the draft
+    // manager's deferred hydration calls setContent with the same text. That
+    // echo must not collapse a selection made in between (intent-hq/intent#7479).
+    const view = render(TipTapEditor, { value: 'Restored draft' });
+    const prose = await waitFor(() => {
+      const element = view.container.querySelector('.ProseMirror') as
+        (HTMLElement & { editor?: Editor }) | null;
+      expect(element?.textContent).toBe('Restored draft');
+      return element!;
+    });
+    // Select the text range the way Playwright's fill() and a user drag do
+    // (a TextSelection, not ProseMirror's AllSelection).
+    const editor = prose.editor!;
+    editor
+      .chain()
+      .focus()
+      .setTextSelection({ from: 1, to: editor.state.doc.content.size - 1 })
+      .run();
+    expect(editor.state.selection.empty).toBe(false);
+
+    await view.component.setContent('Restored draft');
+    expect(view.component.insertText('Replacement')).toBe(true);
+
+    expect(view.component.getTextContent()).toBe('Replacement');
+  });
+
+  // Equal serialized text is not equal content: setContent must still replace
+  // rich-only differences (it is also the draft manager's pair-switch reset).
+  const proseEditor = async (view: ReturnType<typeof render>) =>
+    waitFor(() => {
+      const element = view.container.querySelector('.ProseMirror') as
+        (HTMLElement & { editor?: Editor }) | null;
+      expect(element?.editor).toBeTruthy();
+      return element!.editor!;
+    });
+
+  it.each([
+    {
+      label: 'an image-only composer',
+      html: () => '<img src="data:image/png;base64,eA==">',
+      target: '',
+    },
+    {
+      label: 'a video-only composer',
+      html: () =>
+        processMarkdownToHTML('![clip](intent://local/file/x.mp4)', { workspaceId: 'workspace-1' }),
+      target: '',
+    },
+    {
+      label: 'an image beside the same text',
+      html: () => '<p>Same text</p><img src="data:image/png;base64,eA==">',
+      target: 'Same text',
+    },
+  ])('removes media from $label on setContent', async ({ html, target }) => {
+    const view = render(TipTapEditor, { value: '', workspace: { id: 'workspace-1' } as any });
+    const editor = await proseEditor(view);
+    editor.commands.setContent(await html());
+    await waitFor(() =>
+      expect(view.container.querySelector('.ProseMirror img, .ProseMirror video')).toBeTruthy(),
+    );
+
+    await view.component.setContent(target);
+
+    expect(view.container.querySelector('.ProseMirror img, .ProseMirror video')).toBeNull();
+    expect(view.component.getTextContent()).toBe(target);
+  });
+
+  it('converts skill tokens to chips when equal text is set after skills load', async () => {
+    const skills = [{ name: 'review', description: 'Review a change', location: '/skills/review' }];
+    const view = render(TipTapEditor, { value: 'Run /review now', skills: [] });
+    await proseEditor(view);
+    expect(view.container.querySelector('[data-skill-name="review"]')).toBeNull();
+    await view.rerender({ value: 'Run /review now', skills });
+    expect(view.container.querySelector('[data-skill-name="review"]')).toBeNull();
+
+    await view.component.setContent('Run /review now');
+
+    expect(view.container.querySelector('[data-skill-name="review"]')?.textContent).toBe('/review');
+    expect(view.component.getTextContent()).toBe('Run /review now');
+  });
+
+  it('replaces a same-text link with plain text', async () => {
+    const view = render(TipTapEditor, { value: '' });
+    const editor = await proseEditor(view);
+    editor.commands.setContent('<p><a href="https://example.com">Docs</a></p>');
+    await waitFor(() => expect(view.container.querySelector('.ProseMirror a')).toBeTruthy());
+    expect(view.component.getTextContent()).toBe('Docs');
+
+    await view.component.setContent('Docs');
+
+    expect(view.container.querySelector('.ProseMirror a')).toBeNull();
+    expect(view.component.getTextContent()).toBe('Docs');
   });
 
   it('does not steal focus when a background chat restores its draft', async () => {

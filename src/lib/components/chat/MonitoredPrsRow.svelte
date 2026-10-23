@@ -37,16 +37,27 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { safeDisclosureTransition } from './disclosure-motion';
   import { writable } from 'svelte/store';
+  import { formatMergeQueueSummary } from '$lib/utils/merge-queue';
   import * as Menu from '$lib/components/ui/menu';
   import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
   import { formatDateTime, formatInteger, formatRelativeTime, formatTime } from '$lib/i18n/format';
   import { getPrRepoLabel } from '$lib/utils/pr-chip-label';
-  import { handleLink, openInBrowserPanel } from '$features/navigation/link-handler';
+  import { handleLink, openLinkInApp } from '$features/navigation/link-handler';
+  import { readLinkSource } from '$features/navigation/link-source';
   import type { WorkspaceId } from '$shared/types/branded-ids';
-  import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
+  import type { ReviewMonitorRow as PrMonitorRow } from '$shared/types/pr-monitor';
   import {
-    selectAgentPrMonitors,
+    isMergeRequest,
+    monitorAccessibleLabel,
+    monitorUrl,
+    monitorAvailabilitySummary,
+    hasUnknownMonitorFacts,
+    monitorNumber,
+  } from '$lib/utils/review-monitor-presentation';
+  import { faGitlab } from '@fortawesome/free-brands-svg-icons';
+  import {
+    selectAgentReviewMonitors,
     selectPrMonitorsSnapshotStatus,
   } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -122,7 +133,7 @@
     agentIdStore.set(agentId);
   });
 
-  const monitors$ = selectAgentPrMonitors(workspaceIdStore, agentIdStore);
+  const monitors$ = selectAgentReviewMonitors(workspaceIdStore, agentIdStore);
   const snapshotStatus$ = selectPrMonitorsSnapshotStatus(workspaceIdStore);
   const workspace$ = selectWorkspaceById(workspaceIdStore);
 
@@ -145,7 +156,9 @@
   function monitorTitle(monitor: PrMonitorRow): string {
     return (
       monitor.title ??
-      m.chat_monitoredPrs_hover_untitled_label({
+      (isMergeRequest(monitor)
+        ? m.chat_monitoredMrs_hover_untitled_label
+        : m.chat_monitoredPrs_hover_untitled_label)({
         repo: monitor.repo,
         number: String(monitor.prNumber),
       })
@@ -157,54 +170,100 @@
    * (`getPrRepoLabel`): `repo` same-owner, `owner/repo` cross-owner/unknown.
    */
   function monitorLabel(monitor: PrMonitorRow): string {
-    return m.chat_monitoredPrs_monitoring_label({
-      repo: getPrRepoLabel(monitor.repo, workspaceRepo),
+    return (
+      isMergeRequest(monitor)
+        ? m.chat_monitoredMrs_monitoring_label
+        : m.chat_monitoredPrs_monitoring_label
+    )({
+      repo: isMergeRequest(monitor) ? monitor.repo : getPrRepoLabel(monitor.repo, workspaceRepo),
       number: String(monitor.prNumber),
       title: monitorTitle(monitor),
     });
   }
 
-  function handleCheckAndFlush(monitor: PrMonitorRow) {
-    appStore.dispatch(flushPrMonitorRequested(monitor.workspaceId, monitor.monitorId, true));
+  // A keyed row can be replaced while its menu remains open. Capture the
+  // action destination on open, never recover it from the current row on select.
+  let menuTarget = $state<Pick<PrMonitorRow, 'workspaceId' | 'monitorId' | 'origin'> | null>(null);
+
+  function captureMenuTarget(monitor: PrMonitorRow) {
+    menuTarget = {
+      workspaceId: monitor.workspaceId,
+      monitorId: monitor.monitorId,
+      origin: monitor.origin ? { ...monitor.origin } : undefined,
+    };
   }
 
-  function handleCancel(monitor: PrMonitorRow) {
-    appStore.dispatch(cancelPrMonitorRequested(monitor.workspaceId, monitor.monitorId));
+  function handleCheckAndFlush() {
+    if (!menuTarget?.origin) return;
+    appStore.dispatch(
+      flushPrMonitorRequested(
+        menuTarget.workspaceId,
+        menuTarget.monitorId,
+        true,
+        menuTarget.origin,
+      ),
+    );
+  }
+
+  function handleCancel() {
+    if (!menuTarget?.origin) return;
+    appStore.dispatch(
+      cancelPrMonitorRequested(menuTarget.workspaceId, menuTarget.monitorId, menuTarget.origin),
+    );
   }
 
   /** PR URL, falling back to the canonical GitHub URL when `url` is absent. */
   function prUrl(monitor: PrMonitorRow): string {
-    return monitor.url ?? `https://github.com/${monitor.repo}/pull/${monitor.prNumber}`;
+    return monitorUrl(monitor);
   }
 
+  let rowElement: HTMLElement | null = $state(null);
+
   function handleOpenInApp(monitor: PrMonitorRow) {
-    // Built-in fallback to the external browser when the panel cannot open.
-    void openInBrowserPanel(prUrl(monitor), workspaceId as WorkspaceId);
+    // The menu is portaled, so the row tells where the action came from: a Home
+    // preview enters the workspace first. The panel falls back to the external
+    // browser when it cannot open.
+    const { openInWorkspace, assistantLayoutId } = readLinkSource(rowElement, workspaceId);
+    if (prUrl(monitor))
+      void openLinkInApp(prUrl(monitor), workspaceId as WorkspaceId, {
+        openInWorkspace,
+        assistantLayoutId,
+      });
   }
 
   function handleOpenExternal(monitor: PrMonitorRow) {
-    void handleLink(prUrl(monitor), {
-      workspaceId: workspaceId as WorkspaceId,
-      forceExternal: true,
-    });
+    if (prUrl(monitor))
+      void handleLink(prUrl(monitor), {
+        workspaceId: workspaceId as WorkspaceId,
+        forceExternal: true,
+      });
   }
 
   /** The rate-limit pause deadline while it is still ahead; undefined when
    * `pausedUntil` is absent, unparseable, or already elapsed. */
   function pauseDeadline(monitor: PrMonitorRow): Date | undefined {
-    if (!monitor.pausedUntil) return undefined;
-    const deadline = new Date(monitor.pausedUntil);
+    const until =
+      monitor.pausedUntil ??
+      (monitor.monitorAvailability?.state === 'backoff'
+        ? monitor.monitorAvailability.retryAt
+        : undefined);
+    if (!until) return undefined;
+    const deadline = new Date(until);
     return deadline.getTime() > now ? deadline : undefined;
   }
 
   function pausedSummary(monitor: PrMonitorRow, deadline: Date): string {
     const time = formatTime(deadline);
     return monitor.lastPolledAt
-      ? m.chat_monitoredPrs_status_paused({
+      ? (isMergeRequest(monitor)
+          ? m.chat_monitoredMrs_status_paused
+          : m.chat_monitoredPrs_status_paused)({
           time,
           lastChecked: formatRelativeTime(monitor.lastPolledAt),
         })
-      : m.chat_monitoredPrs_status_pausedUnchecked({ time });
+      : (isMergeRequest(monitor)
+          ? m.chat_monitoredMrs_status_pausedUnchecked
+          : m.chat_monitoredPrs_status_pausedUnchecked)({ time });
   }
 
   /** Marks a checklist summary as stale while paused, when its poll time is known. */
@@ -219,7 +278,16 @@
   /** Only surface checks that still need attention; completed checks are implied by readiness. */
   function checksSummary(monitor: PrMonitorRow): string | undefined {
     const checks = monitor.lastSnapshot?.checks;
-    if (!checks || checks.total === 0) return undefined;
+    if (!checks) return undefined;
+    if (
+      checks.total === null ||
+      checks.failed === null ||
+      checks.pending === null ||
+      (monitor.lastSnapshot?.availability &&
+        monitor.lastSnapshot.availability.checks !== 'available')
+    )
+      return m.chat_monitoredPrs_hover_checksUnknown_label();
+    if (checks.total === 0) return undefined;
     if (checks.failed > 0) {
       return m.chat_monitoredPrs_hover_checksFailing_label({
         failed: formatInteger(checks.failed),
@@ -238,7 +306,19 @@
   /** Compact approvals summary, e.g. "APPROVED (1/1 required)". */
   function approvalsSummary(monitor: PrMonitorRow): string | undefined {
     const approvals = monitor.lastSnapshot?.approvals;
-    if (!approvals || approvals.needed == null || approvals.have >= approvals.needed)
+    if (
+      approvals &&
+      (approvals.have === null ||
+        (monitor.lastSnapshot?.availability &&
+          monitor.lastSnapshot.availability.approvals !== 'available'))
+    )
+      return m.chat_monitoredPrs_hover_approvalsUnknown_label();
+    if (
+      !approvals ||
+      approvals.have === null ||
+      approvals.needed == null ||
+      approvals.have >= approvals.needed
+    )
       return undefined;
     if (approvals.needed > 0) {
       return m.chat_monitoredPrs_hover_approvalsRequired_label({
@@ -255,6 +335,11 @@
   function threadsSummary(monitor: PrMonitorRow): string | undefined {
     const threads = monitor.lastSnapshot?.threads;
     if (!threads) return undefined;
+    if (
+      monitor.lastSnapshot?.availability &&
+      monitor.lastSnapshot.availability.discussions !== 'available'
+    )
+      return m.chat_monitoredPrs_hover_threadsUnknown_label();
     if (typeof threads.unresolved !== 'number') {
       return threads.resolutionRequired
         ? m.chat_monitoredPrs_hover_threadsUnknown_label()
@@ -273,16 +358,20 @@
     if (!snapshot) return undefined;
     if (snapshot.hasConflicts) return m.chat_monitoredPrs_blocker_conflicts();
     if (snapshot.isBehind) return m.chat_monitoredPrs_blocker_behind();
-    if ((snapshot.checks.failingRequired ?? 0) > 0 || snapshot.checks.failed > 0) {
+    if ((snapshot.checks.failingRequired ?? 0) > 0 || (snapshot.checks.failed ?? 0) > 0) {
       return m.chat_monitoredPrs_blocker_checksFailing();
     }
     if ((snapshot.checks.pendingRequired ?? 0) > 0) {
       return m.chat_monitoredPrs_blocker_checksPending();
     }
-    if (snapshot.approvals.changesRequested > 0) {
+    if ((snapshot.approvals.changesRequested ?? 0) > 0) {
       return m.chat_monitoredPrs_blocker_changesRequested();
     }
-    if (snapshot.approvals.needed != null && snapshot.approvals.have < snapshot.approvals.needed) {
+    if (
+      snapshot.approvals.needed != null &&
+      snapshot.approvals.have !== null &&
+      snapshot.approvals.have < snapshot.approvals.needed
+    ) {
       return m.chat_monitoredPrs_blocker_approvals();
     }
     if (snapshot.threads.resolutionRequired) {
@@ -300,15 +389,21 @@
   function readinessSummary(monitor: PrMonitorRow): string {
     const deadline = pauseDeadline(monitor);
     if (deadline) return pausedSummary(monitor, deadline);
+    const availability = monitorAvailabilitySummary(monitor);
+    if (availability) return availability;
     const snapshot = monitor.lastSnapshot;
     if (snapshot?.isDraft) return m.chat_monitoredPrs_status_draft();
     if (snapshot?.state === 'open' && snapshot.isInMergeQueue) {
-      return m.chat_monitoredPrs_status_mergeQueue();
+      const detail = formatMergeQueueSummary(snapshot.mergeQueue);
+      return detail
+        ? m.chat_monitoredPrs_status_mergeQueueDetail({ detail })
+        : m.chat_monitoredPrs_status_mergeQueue();
     }
     const blocker = inferredBlocker(monitor);
     if (blocker) return m.chat_monitoredPrs_status_blocked({ reason: blocker });
     if (
       snapshot?.state === 'open' &&
+      !hasUnknownMonitorFacts(snapshot) &&
       snapshot.mergeable === true &&
       snapshot.rulesKnown &&
       snapshot.checks.requiredKnown &&
@@ -338,9 +433,14 @@
 
 {#if activeMonitors.length > 0}
   <div
+    bind:this={rowElement}
     class="w-full min-w-0 max-w-full"
     role="group"
-    aria-label={m.chat_monitoredPrs_row_ariaLabel()}
+    aria-label={activeMonitors.every(isMergeRequest)
+      ? m.chat_monitoredMrs_row_ariaLabel()
+      : activeMonitors.some(isMergeRequest)
+        ? m.chat_monitoredReviews_row_ariaLabel()
+        : m.chat_monitoredPrs_row_ariaLabel()}
     data-testid="monitored-prs-row"
     transition:safeDisclosureTransition={{ tier: 'moderate' }}
   >
@@ -352,7 +452,7 @@
         data-monitor-paused={pauseDeadline(monitor) ? 'true' : undefined}
         data-subscription-motion-row="pr-monitor"
         role="group"
-        aria-label={monitorLabel(monitor)}
+        aria-label={monitorAccessibleLabel(monitorLabel(monitor), monitor)}
         transition:safeSubscriptionRowTransition
       >
         <div
@@ -364,6 +464,10 @@
             type="button"
             class="h-auto min-h-0 w-auto min-w-0 max-w-full flex-1 shrink justify-start overflow-hidden whitespace-nowrap rounded border-0 p-0! text-left {SUBSCRIPTION_LEADING_CONTENT_CLASS} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
             data-testid="monitored-pr-summary"
+            aria-label={monitorAccessibleLabel(monitorLabel(monitor), monitor)}
+            title={isMergeRequest(monitor)
+              ? monitorAccessibleLabel(monitorLabel(monitor), monitor)
+              : undefined}
             data-subscription-row="pr-monitor"
             aria-expanded={expandedMonitorId === monitor.monitorId}
             aria-controls={detailsId}
@@ -374,7 +478,11 @@
               data-testid="monitored-pr-icon"
               aria-hidden="true"
             >
-              <Fa icon={faCodePullRequest} size={16} class={CHAT_OPERATIONAL_ICON_CLASS} />
+              <Fa
+                icon={isMergeRequest(monitor) ? faGitlab : faCodePullRequest}
+                size={16}
+                class={CHAT_OPERATIONAL_ICON_CLASS}
+              />
             </span>
             <span
               class="min-w-0 flex-1 truncate text-muted-foreground"
@@ -385,7 +493,11 @@
             class={SUBSCRIPTION_TRAILING_CONTROLS_CLASS}
             data-testid="monitored-pr-trailing-controls"
           >
-            <Menu.Root>
+            <Menu.Root
+              onOpenChange={(open) => {
+                if (open) captureMenuTarget(monitor);
+              }}
+            >
               <Menu.Trigger>
                 {#snippet child({ props })}
                   <Button
@@ -399,7 +511,9 @@
                     }}
                     class="h-6 w-6 shrink-0 border-0 {SUBSCRIPTION_ICON_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
                     data-testid="monitored-pr-chip"
-                    aria-label={m.chat_monitoredPrs_row_ariaLabel()}
+                    aria-label={isMergeRequest(monitor)
+                      ? monitorAccessibleLabel(monitorLabel(monitor), monitor)
+                      : m.chat_monitoredPrs_row_ariaLabel()}
                   >
                     <KebabIcon class="h-3 w-3" />
                   </Button>
@@ -410,7 +524,9 @@
                 align="end"
                 collisionPadding={12}
                 class="monitored-pr-menu-content p-0"
-                aria-label={m.chat_monitoredPrs_row_ariaLabel()}
+                aria-label={isMergeRequest(monitor)
+                  ? monitorAccessibleLabel(monitorLabel(monitor), monitor)
+                  : m.chat_monitoredPrs_row_ariaLabel()}
               >
                 <div
                   class="flex w-full min-w-0 flex-col p-1"
@@ -420,7 +536,7 @@
                   <Menu.Item
                     class="type-caption h-auto w-full min-w-0 items-start whitespace-normal py-1.5 text-left"
                     data-testid="monitored-pr-check-flush-item"
-                    onSelect={() => handleCheckAndFlush(monitor)}
+                    onSelect={handleCheckAndFlush}
                   >
                     {#snippet leading()}<Fa icon={faArrowsRotate} />{/snippet}
                     <span class="min-w-0 break-words">
@@ -430,6 +546,7 @@
                   <Menu.Item
                     class="type-caption h-auto w-full min-w-0 items-start whitespace-normal py-1.5 text-left"
                     data-testid="monitored-pr-open-in-app-item"
+                    disabled={!prUrl(monitor)}
                     onSelect={() => handleOpenInApp(monitor)}
                   >
                     {#snippet leading()}<Fa icon={faWindowMaximize} />{/snippet}
@@ -440,6 +557,7 @@
                   <Menu.Item
                     class="type-caption h-auto w-full min-w-0 items-start whitespace-normal py-1.5 text-left"
                     data-testid="monitored-pr-open-external-item"
+                    disabled={!prUrl(monitor)}
                     onSelect={() => handleOpenExternal(monitor)}
                   >
                     {#snippet leading()}<Fa icon={faArrowUpRightFromSquare} />{/snippet}
@@ -451,7 +569,7 @@
                   <Menu.Item
                     class="type-caption h-auto w-full min-w-0 items-start whitespace-normal py-1.5 text-left"
                     data-testid="monitored-pr-cancel-item"
-                    onSelect={() => handleCancel(monitor)}
+                    onSelect={handleCancel}
                   >
                     {#snippet leading()}<Fa icon={faXmark} />{/snippet}
                     <span class="min-w-0 break-words">
@@ -467,7 +585,7 @@
               type="button"
               class="h-6 w-6 shrink-0 border-0 {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
               data-testid="monitored-pr-disclosure"
-              aria-label={monitorLabel(monitor)}
+              aria-label={monitorAccessibleLabel(monitorLabel(monitor), monitor)}
               aria-expanded={expandedMonitorId === monitor.monitorId}
               aria-controls={detailsId}
               onclick={(event) => {
@@ -503,7 +621,9 @@
             >
             {#if !workspaceRepo || monitor.repo !== workspaceRepo}
               <!-- i18n-ignore (org/repo#number identifier, not user-facing prose) -->
-              <span class="text-muted-foreground">{monitor.repo}#{monitor.prNumber}</span>
+              <span class="text-muted-foreground"
+                >{monitor.repo}{monitorNumber(monitor, monitor.prNumber)}</span
+              >
             {/if}
             {#if checksSummary(monitor)}
               <span class="text-muted-foreground"

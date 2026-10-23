@@ -16,6 +16,10 @@ import {
   presenceRosterReceived,
   presenceSnapshotReceived,
   presenceTypingExpired,
+  presenceDiscussionComposerFocused,
+  presenceDiscussionTypingPulse,
+  presenceDiscussionTypingStopped,
+  presenceDiscussionTypingExpired,
   presenceTypingPulse,
   presenceTypingStopped,
   presenceWindowVisibilityChanged,
@@ -249,5 +253,90 @@ describe('presence slice', () => {
     state = presenceReducer(state, presenceTypingPulse('agent-1'));
     const reset = presenceReducer(state, presenceReset());
     expect(reset).toEqual({ ...emptyState, windowVisible: false });
+  });
+});
+
+describe('discussion typing state', () => {
+  it('requires composer focus and fresh input; unrelated cleanup cannot stop another workspace', () => {
+    let state = presenceReducer(initialState, presenceDiscussionTypingPulse('ws-1'));
+    expect(state.ownDiscussionTyping).toBeNull();
+    state = presenceReducer(state, presenceDiscussionComposerFocused('ws-1', true));
+    expect(state.ownDiscussionTyping).toBeNull();
+    state = presenceReducer(state, presenceDiscussionTypingPulse('ws-1'));
+    expect(state.ownDiscussionTyping).toEqual({ workspaceId: 'ws-1' });
+    expect(presenceReducer(state, presenceDiscussionTypingPulse('ws-1'))).toBe(state);
+    expect(presenceReducer(state, presenceDiscussionComposerFocused('ws-2', false))).toBe(state);
+    state = presenceReducer(state, presenceTypingPulse('agent'));
+    state = presenceReducer(state, presenceDiscussionTypingStopped('ws-1'));
+    expect(state.ownTyping).toEqual({ agentId: 'agent' });
+    expect(state.ownDiscussionTyping).toBeNull();
+    state = presenceReducer(state, presenceDiscussionTypingPulse('ws-1'));
+    state = presenceReducer(state, presenceWindowVisibilityChanged(false));
+    state = presenceReducer(state, presenceWindowVisibilityChanged(true));
+    expect(state.ownDiscussionTyping).toBeNull();
+    expect(state.discussionComposerWorkspaceId).toBeNull();
+  });
+  it('expires by source/pulse, ignores old timers, preserves stale expiry, and removes absent entries', () => {
+    const update = (pulse: number) =>
+      presenceRosterReceived(
+        roster([
+          member('other', {
+            discussionTyping: [{ source: 's', pulse, since: '2099-01-01T00:00:00Z' }],
+          }),
+        ]),
+      );
+    let state = presenceReducer(initialState, update(1));
+    state = presenceReducer(state, update(2));
+    state = presenceReducer(state, presenceDiscussionTypingExpired('ws-1', 's', 1));
+    expect(state.liveDiscussionTyping['ws-1'].s.expired).toBe(false);
+    state = presenceReducer(state, presenceDiscussionTypingExpired('ws-1', 's', 2));
+    const expired = state.liveDiscussionTyping['ws-1'].s;
+    state = presenceReducer(state, update(2));
+    expect(state.liveDiscussionTyping['ws-1'].s).toBe(expired);
+    state = presenceReducer(state, update(3));
+    expect(state.liveDiscussionTyping['ws-1'].s.expired).toBe(false);
+    state = presenceReducer(state, presenceRosterReceived(roster([member('other')])));
+    expect(state.liveDiscussionTyping['ws-1']).toEqual({});
+    state = presenceReducer(state, update(4));
+    state = presenceReducer(state, presenceWorkspaceRemoved('ws-1'));
+    expect(state.liveDiscussionTyping['ws-1']).toBeUndefined();
+    expect(presenceReducer(state, presenceReset()).liveDiscussionTyping).toEqual({});
+  });
+});
+
+describe('conversation typing isolation', () => {
+  it('switches the focused conversation and ignores old blur/stop/timer actions', () => {
+    let state = presenceReducer(
+      initialState,
+      presenceDiscussionComposerFocused('ws-1', true, 'c1'),
+    );
+    state = presenceReducer(state, presenceDiscussionTypingPulse('ws-1', 'c1'));
+    expect(state.ownDiscussionTyping).toEqual({ workspaceId: 'ws-1', conversationId: 'c1' });
+    state = presenceReducer(state, presenceDiscussionComposerFocused('ws-1', true, 'c2'));
+    expect(state.ownDiscussionTyping).toBeNull();
+    state = presenceReducer(state, presenceDiscussionTypingPulse('ws-1', 'c2'));
+    state = presenceReducer(state, presenceDiscussionTypingStopped('ws-1', 'c1'));
+    state = presenceReducer(state, presenceDiscussionComposerFocused('ws-1', false, 'c1'));
+    expect(state.ownDiscussionTyping).toEqual({ workspaceId: 'ws-1', conversationId: 'c2' });
+    const update = (conversationId: string, pulse: number) =>
+      presenceRosterReceived(
+        roster([
+          member('other', {
+            discussionTyping: [
+              { source: 's', since: '2099-01-01T00:00:00Z', pulse, conversationId },
+            ],
+          }),
+        ]),
+      );
+    state = presenceReducer(state, update('c1', 1));
+    state = presenceReducer(state, update('c2', 2));
+    state = presenceReducer(state, presenceDiscussionTypingExpired('ws-1', 's', 1, 'c1'));
+    expect(state.liveDiscussionTyping['ws-1'].s).toMatchObject({
+      conversationId: 'c2',
+      expired: false,
+    });
+    state = presenceReducer(state, presenceDiscussionTypingExpired('ws-1', 's', 2, 'c2'));
+    state = presenceReducer(state, update('c2', 2));
+    expect(state.liveDiscussionTyping['ws-1'].s.expired).toBe(true);
   });
 });

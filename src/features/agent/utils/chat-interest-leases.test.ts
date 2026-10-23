@@ -4,6 +4,8 @@ import {
   chatInterestLeaseCount,
   clearAllChatInterestLeases,
   hasChatInterestLease,
+  hasPanelChatInterestLease,
+  HYDRATION_LEASE_HOLDER_PREFIX,
   onLastChatInterestLeaseReleased,
   releaseChatInterestLease,
 } from './chat-interest-leases';
@@ -125,5 +127,18 @@ describe('chat-interest-leases', () => {
         unsubscribe();
       }
     });
+  });
+
+  it('distinguishes live panel leases from hydration leases', () => {
+    const hydrationHolder = `${HYDRATION_LEASE_HOLDER_PREFIX}1`;
+    acquireChatInterestLease('agent-a', hydrationHolder);
+    expect(hasChatInterestLease('agent-a')).toBe(true);
+    expect(hasPanelChatInterestLease('agent-a')).toBe(false);
+    acquireChatInterestLease('agent-a', 'panel-x');
+    expect(hasPanelChatInterestLease('agent-a')).toBe(true);
+    releaseChatInterestLease('agent-a', 'panel-x');
+    expect(hasPanelChatInterestLease('agent-a')).toBe(false);
+    releaseChatInterestLease('agent-a', hydrationHolder);
+    expect(hasPanelChatInterestLease('agent-a')).toBe(false);
   });
 });

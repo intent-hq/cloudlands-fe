@@ -3371,6 +3371,123 @@ test('discovers grouped fan-out semantically and keeps wide routes centered', as
   }
 });
 
+// Expected node, route and edge-label counts, taken from the fixture itself.
+function narrowReachExpectedCounts(state: keyof typeof DIAGRAM_WORKBENCH_CASES) {
+  const target = DIAGRAM_WORKBENCH_CASES[state];
+  if (target.kind !== 'custom') throw new Error(`${state} is not a custom diagram case`);
+  const { nodes, edges } = target.diagram.model;
+  return [
+    { kind: 'node', count: nodes.length },
+    { kind: 'route', count: edges.length },
+    { kind: 'label', count: edges.filter((edge) => edge.label).length },
+  ].map(({ kind, count }) => ({ kind, start: count, end: count }));
+}
+
+// Measure whether a diagram that overflows its narrow panel horizontally is
+// still fully reachable: each box must fit the viewport width, lie inside the
+// scrollable range, show its left edge at scroll start and its right edge at
+// scroll end, and never be clipped vertically.
+async function narrowDiagramReach(root: Locator) {
+  return root.evaluate(async (section) => {
+    const viewport = section.querySelector<HTMLElement>('.diagram-scroll-container')!;
+    const svgElement = section.querySelector<SVGSVGElement>('.diagram-svg-layer')!;
+    const matrix = svgElement.getScreenCTM()!;
+    const scale = Math.hypot(matrix.a, matrix.b);
+    const cssSizes = (selector: string) =>
+      [...section.querySelectorAll<HTMLElement>(selector)].map((element) =>
+        Number.parseFloat(getComputedStyle(element).fontSize),
+      );
+    const labelSizes = cssSizes('.node-label');
+    const kindSizes = cssSizes('.node-kind-label');
+    const readableScale = Math.max(
+      12 / Math.min(...labelSizes),
+      kindSizes.length ? 10 / Math.min(...kindSizes) : 0,
+    );
+    const frame = () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+    const boxes = () => [
+      ...[...section.querySelectorAll<HTMLElement>('.diagram-node-html')].map((node) => ({
+        id: `node:${node.querySelector('.node-label')?.textContent?.trim()}`,
+        bounds: node.parentElement!.getBoundingClientRect(),
+      })),
+      ...[...section.querySelectorAll<SVGPathElement>('.diagram-edge path.edge-path')].map(
+        (path) => ({
+          id: `route:${path.closest('.diagram-edge')?.getAttribute('data-edge-id')}`,
+          bounds: path.getBoundingClientRect(),
+        }),
+      ),
+      ...[...section.querySelectorAll<HTMLElement>('.edge-label-html')].map((label) => ({
+        id: `label:${label.textContent?.trim()}`,
+        bounds: label.getBoundingClientRect(),
+      })),
+    ];
+    const viewportRect = () => {
+      const outer = viewport.getBoundingClientRect();
+      const left = outer.left + viewport.clientLeft;
+      const top = outer.top + viewport.clientTop;
+      return { left, top, right: left + viewport.clientWidth, bottom: top + viewport.clientHeight };
+    };
+    const horizontalOverflow = viewport.scrollWidth - viewport.clientWidth;
+    viewport.scrollLeft = 0;
+    await frame();
+    const startViewport = viewportRect();
+    const start = boxes();
+    viewport.scrollLeft = viewport.scrollWidth;
+    await frame();
+    const endScrollLeft = viewport.scrollLeft;
+    const endViewport = viewportRect();
+    const end = boxes();
+    viewport.scrollLeft = 0;
+    await frame();
+    const unreachable = start
+      .map((box, index) => ({ box, endBounds: end[index].bounds }))
+      .filter(
+        ({ box, endBounds }) =>
+          box.bounds.width > viewport.clientWidth + 1 ||
+          box.bounds.left < startViewport.left - 1 ||
+          endBounds.right > endViewport.right + 1,
+      )
+      .map(({ box, endBounds }) => ({
+        id: box.id,
+        width: box.bounds.width,
+        startLeft: box.bounds.left - startViewport.left,
+        endRightOverflow: endBounds.right - endViewport.right,
+      }));
+    const verticallyClipped = start
+      .filter(
+        ({ bounds }) =>
+          bounds.top < startViewport.top - 1 || bounds.bottom > startViewport.bottom + 1,
+      )
+      .map(({ id, bounds }) => ({ id, top: bounds.top, bottom: bounds.bottom }));
+    const effective = (sizes: number[]) => (sizes.length ? Math.min(...sizes) * scale : Infinity);
+    return {
+      scale,
+      readableScale,
+      minimumPrimaryTextSize: effective(labelSizes),
+      minimumSecondaryTextSize: effective(kindSizes),
+      clientWidth: viewport.clientWidth,
+      scrollWidth: viewport.scrollWidth,
+      horizontalOverflow,
+      verticalOverflow: viewport.scrollHeight - viewport.clientHeight,
+      overflowX: getComputedStyle(viewport).overflowX,
+      tabindex: viewport.getAttribute('tabindex'),
+      endScrollLeft,
+      counts: (['node', 'route', 'label'] as const).map((kind) => ({
+        kind,
+        start: start.filter(({ id }) => id.startsWith(`${kind}:`)).length,
+        end: end.filter(({ id }) => id.startsWith(`${kind}:`)).length,
+      })),
+      emptyBoxes: start
+        .filter(({ bounds }) => bounds.width <= 0 && bounds.height <= 0)
+        .map(({ id }) => id),
+      unreachable,
+      verticallyClipped,
+    };
+  });
+}
+
 test('uses one continuous centered-port route for the dense primary request', async ({ page }) => {
   await openState(page, 'custom-topology-stress', 320, 'light');
   const root = page.locator('#custom-topology-stress');
@@ -3410,16 +3527,13 @@ test('uses one continuous centered-port route for the dense primary request', as
         .sort((left, right) => left.distance - right.distance)[0];
     const sourcePort = closest(start, source);
     const targetPort = closest(end, target);
-    const viewport = section.querySelector<HTMLElement>('.diagram-scroll-container')!;
     const svgElement = section.querySelector<SVGSVGElement>('.diagram-svg-layer')!;
-    const svg = svgElement.getBoundingClientRect();
     const scale = Math.hypot(svgElement.getScreenCTM()!.a, svgElement.getScreenCTM()!.b);
     const minimumPrimaryTextSize = Math.min(
       ...[...section.querySelectorAll<HTMLElement>('.node-label')].map(
         (label) => Number.parseFloat(getComputedStyle(label).fontSize) * scale,
       ),
     );
-    const viewportBounds = viewport.getBoundingClientRect();
     return {
       moveCommands: (path.getAttribute('d')?.match(/(?:^|\s)M\s/g) ?? []).length,
       sourceDistance: sourcePort.distance,
@@ -3431,8 +3545,6 @@ test('uses one continuous centered-port route for the dense primary request', as
         ? Math.abs(end.x - endTangent.x)
         : Math.abs(end.y - endTangent.y),
       minimumPrimaryTextSize,
-      noScrollbar: viewport.scrollWidth <= viewport.clientWidth + 1,
-      contained: svg.left >= viewportBounds.left - 1 && svg.right <= viewportBounds.right + 1,
     };
   });
   expect(geometry.moveCommands).toBe(1);
@@ -3441,8 +3553,29 @@ test('uses one continuous centered-port route for the dense primary request', as
   expect(geometry.sourcePerpendicular).toBeLessThanOrEqual(0.5);
   expect(geometry.targetPerpendicular).toBeLessThanOrEqual(0.5);
   expect(geometry.minimumPrimaryTextSize).toBeGreaterThanOrEqual(12);
-  expect(geometry.noScrollbar).toBe(true);
-  expect(geometry.contained).toBe(true);
+
+  // Readable narrow diagrams keep the text floor and may scroll horizontally
+  // (intent-hq/intent#4956). Overflow is allowed only when native scrolling
+  // brings every node, route and label fully into view, with no vertical clip.
+  const reach = await narrowDiagramReach(root);
+  expect(reach.scale, `scale vs readable floor ${JSON.stringify(reach)}`).toBeGreaterThanOrEqual(
+    reach.readableScale - 0.001,
+  );
+  expect(reach.minimumPrimaryTextSize).toBeGreaterThanOrEqual(12);
+  expect(reach.minimumSecondaryTextSize).toBeGreaterThanOrEqual(10);
+  // Guard against a vacuous pass: the measured geometry must be the full
+  // fixture at both scroll positions, with no zero-size boxes.
+  expect(reach.counts, `measured geometry ${JSON.stringify(reach)}`).toEqual(
+    narrowReachExpectedCounts('custom-topology-stress'),
+  );
+  expect(reach.emptyBoxes, `zero-size boxes ${JSON.stringify(reach)}`).toEqual([]);
+  expect(reach.unreachable, `unreachable boxes ${JSON.stringify(reach)}`).toEqual([]);
+  expect(reach.verticallyClipped, `vertical clipping ${JSON.stringify(reach)}`).toEqual([]);
+  expect(reach.verticalOverflow).toBeLessThanOrEqual(1);
+  if (reach.horizontalOverflow > 1) {
+    expect(['auto', 'scroll']).toContain(reach.overflowX);
+    expect(reach.endScrollLeft).toBeGreaterThanOrEqual(reach.horizontalOverflow - 1);
+  }
 });
 
 test('centers the topology stress self-loop on exact cardinal ports', async ({ page }) => {

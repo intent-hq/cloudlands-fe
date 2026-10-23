@@ -79,12 +79,6 @@ export type ScriptDefinitionUpdate = Partial<
   >
 >;
 
-export type ScriptDefinitionChanges = {
-  add: ScriptDefinitionInput[];
-  update: Array<{ id: string; updates: ScriptDefinitionUpdate }>;
-  remove: string[];
-};
-
 export type ScriptDetectionOutcome = {
   detected: number;
   added: number;
@@ -94,9 +88,14 @@ export type ScriptDetectionOutcome = {
   packageManager?: 'npm' | 'yarn' | 'pnpm';
 };
 
-export type ScriptDefinitionChangesOutcome = ScriptDetectionOutcome & {
-  /** Full pre-change inventory captured by the saga for Undo. */
-  snapshot: ScriptDefinitionSnapshot;
+export type ScriptRemovalTarget = Pick<
+  WorkspaceScript,
+  'id' | 'workspaceId' | 'source' | 'updatedAt' | 'archivedAt'
+>;
+
+export type ScriptBulkRemovalOutcome = {
+  removed: string[];
+  failed: Array<{ scriptId: string; error: string }>;
 };
 
 /** Mount-scoped identity for a serializable script UI workflow. */
@@ -110,8 +109,8 @@ export type ScriptWorkflowResult =
   | WorkspaceScript
   | ScriptListEntry
   | ScriptListEntry[]
-  | ScriptDetectionOutcome
-  | ScriptDefinitionChangesOutcome;
+  | ScriptBulkRemovalOutcome
+  | ScriptDetectionOutcome;
 
 export interface ScriptWorkflowOutcome extends ScriptWorkflowConsumer {
   id: string;
@@ -121,8 +120,6 @@ export interface ScriptWorkflowOutcome extends ScriptWorkflowConsumer {
   error?: string;
   consumed?: true;
 }
-
-export type ScriptDefinitionSnapshot = WorkspaceScript[];
 
 export type ScriptOperationState = {
   action: ScriptQuickAction;

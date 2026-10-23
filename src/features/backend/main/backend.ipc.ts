@@ -61,6 +61,7 @@ import { registerRepositoryRouteHandlers } from './repository-route-lifecycle';
 import { createRepositoryResourceFeed } from './repository-resource-feed';
 import { createRepositoryCheckoutFeed } from './repository-checkout-feed';
 import { registerRepositoryCheckoutHandlers } from './repository-checkout-lifecycle';
+import { registerPrMonitorHandlers } from './pr-monitor-lifecycle';
 import { registerRepositoryResourceHandlers } from './repository-resource-lifecycle';
 import { createRepositoryAuthorityFeed } from './repository-authority-feed';
 import { createRepositorySelectionFeed } from './repository-selection-feed';
@@ -157,7 +158,12 @@ import type {
   UpdateConnectionResult,
   UpdateBackendResult,
 } from '../../../shared/types/connections';
-import { compareProtocolMajor, protocolVersionAtLeast } from './protocol-compat';
+import { compareProtocolMajor } from './protocol-compat';
+import {
+  parseProtocolVersion,
+  protocolVersionAtLeast,
+  type ProtocolVersion,
+} from '$shared/protocol-version';
 import {
   ConnectionsAddSchema,
   ConnectionsCaptureFingerprintSchema,
@@ -201,8 +207,9 @@ const connectedDaemonVersions = new Map<string, string>();
 // Each connected daemon's `client.hello` `protocolVersion`, keyed by
 // connection id and cleared whenever that connection leaves `connected`, so
 // feature gates (e.g. the `/tunnel` CREDIT frame) read the live daemon's
-// version rather than a stale one after a reconnect or daemon upgrade.
-const connectedProtocolVersions = new Map<string, string>();
+// version rather than a stale one after a reconnect or daemon upgrade. Parsed
+// once when the hello answers; an absent or malformed version is not stored.
+const connectedProtocolVersions = new Map<string, ProtocolVersion>();
 // Whether the local client's hello has answered at least once this session:
 // until then the sidecar's startup probe may seed the local version, after
 // that the hello result is the only source (a null/absent hello stays null).
@@ -237,11 +244,11 @@ export function captureLocalIdentityConnection() {
  * ({@link getLocalDaemonProtocolVersion}) only seeds the local id BEFORE the
  * first local hello of the session, never after a hello answered without one.
  */
-export function getConnectedDaemonProtocolVersion(connectionId: string): string | null {
+export function getConnectedDaemonProtocolVersion(connectionId: string): ProtocolVersion | null {
   const captured = connectedProtocolVersions.get(connectionId);
   if (captured) return captured;
   if (connectionId === LOCAL_CONNECTION_ID && !localHelloObserved) {
-    return getLocalDaemonProtocolVersion();
+    return parseProtocolVersion(getLocalDaemonProtocolVersion());
   }
   return null;
 }
@@ -410,6 +417,7 @@ const repositoryFeeds = new WeakMap<
 const resourceFeeds = new WeakMap<JsonRpcClient, ReturnType<typeof createRepositoryResourceFeed>>();
 const checkoutFeeds = new WeakMap<JsonRpcClient, ReturnType<typeof createRepositoryCheckoutFeed>>();
 let checkoutRoutes: ReturnType<typeof registerRepositoryCheckoutHandlers> | undefined;
+let prMonitorRoutes: ReturnType<typeof registerPrMonitorHandlers> | undefined;
 let resourceRoutes: ReturnType<typeof registerRepositoryResourceHandlers> | undefined;
 const selectionFeeds = new WeakMap<
   JsonRpcClient,
@@ -815,6 +823,7 @@ function retireOriginalMember(
   try {
     repositoryRoutes?.retireBackend(member.id);
     resourceRoutes?.retireBackend(member.id);
+    prMonitorRoutes?.retireBackend(member.id);
     checkoutRoutes?.retireBackend(member.id);
     selectionRoutes?.retireBackend(member.id);
     nativeReviewRoutes?.retireBackend(member.id);
@@ -1000,6 +1009,7 @@ export function enrollBackendClientLifecycle(observer?: (event: PoolObservation)
         if (process.platform === 'darwin') poolAuxiliary('keychain-engine');
         repositoryRoutes?.dispose();
         resourceRoutes?.dispose();
+        prMonitorRoutes?.dispose();
         checkoutRoutes?.dispose();
         selectionRoutes?.dispose();
         nativeReviewRoutes?.dispose();
@@ -1630,6 +1640,7 @@ export function disconnectBackendClient(id: string): void {
   if (!instance) return;
   repositoryRoutes?.retireBackend(id);
   resourceRoutes?.retireBackend(id);
+  prMonitorRoutes?.retireBackend(id);
   checkoutRoutes?.retireBackend(id);
   selectionRoutes?.retireBackend(id);
   nativeReviewRoutes?.retireBackend(id);
@@ -1941,7 +1952,9 @@ function createAdditionalBackendClient(
           // latched per connection id and broadcast to this backend's windows only.
           const helloProtocolVersion =
             typeof obj?.protocolVersion === 'string' ? obj.protocolVersion : null;
-          if (helloProtocolVersion) connectedProtocolVersions.set(id, helloProtocolVersion);
+          const parsedHelloProtocolVersion = parseProtocolVersion(helloProtocolVersion);
+          if (parsedHelloProtocolVersion)
+            connectedProtocolVersions.set(id, parsedHelloProtocolVersion);
           else connectedProtocolVersions.delete(id);
           if (id === LOCAL_CONNECTION_ID) {
             localHelloObserved = true;
@@ -2025,6 +2038,9 @@ function createAdditionalBackendClient(
     selectionFeeds.set(instance, createRepositorySelectionFeed(instance));
     nativeReviewFeeds.set(instance, createNativeReviewFeed(instance));
   }
+  instance.on('identity-confirmed', () => {
+    if (backendClients.get(id) === instance) broadcast(BACKEND.PR_MONITOR.READY, {}, id);
+  });
   instance.on('notification', (notification: JsonRpcNotification) => {
     if (
       notification.method === 'workspace.repositoryContext.retired' ||
@@ -4291,6 +4307,10 @@ export function registerBackendHandlers(): void {
     },
     errorPayload: toErrorPayload,
   });
+  prMonitorRoutes = registerPrMonitorHandlers(ipcMain, {
+    readBackend: (id) => backendClients.get(id),
+    errorPayload: toErrorPayload,
+  });
   resourceRoutes = registerRepositoryResourceHandlers(ipcMain, {
     readBackend: (id) => backendClients.get(id),
     capture: (client, connection, workspaceId) => {
@@ -4311,7 +4331,13 @@ export function registerBackendHandlers(): void {
     BACKEND.REQUEST,
     async (
       event,
-      payload: { method?: string; params?: unknown; timeoutMs?: number; localMachine?: boolean },
+      payload: {
+        method?: string;
+        params?: unknown;
+        timeoutMs?: number;
+        localMachine?: boolean;
+        reviewMonitoring?: unknown;
+      },
     ) => {
       const method = payload?.method;
       if (typeof method !== 'string' || method.length === 0) {
@@ -4362,6 +4388,17 @@ export function registerBackendHandlers(): void {
       // bound exceeds the flat 30s default) pass a larger value so the daemon's
       // structured `{ok:false}` result wins over a transport timeout.
       const timeoutMs = typeof payload?.timeoutMs === 'number' ? payload.timeoutMs : undefined;
+      const history =
+        payload.localMachine === true
+          ? undefined
+          : prMonitorRoutes?.requestHistory(
+              event,
+              method,
+              payload.params,
+              payload.reviewMonitoring,
+              timeoutMs,
+            );
+      if (history !== undefined) return history;
       try {
         const { backendId, client } =
           payload.localMachine === true
@@ -4426,6 +4463,45 @@ export function registerBackendHandlers(): void {
       }
     },
   );
+
+  ipcMain.handle(BACKEND.READ_PRINCIPAL, async (event) => {
+    try {
+      return await poolWork('principal-discovery', undefined, async (owner) => {
+        const { backendId, client } = getBackendClientForIpcEvent(event);
+        poolClient(owner, client);
+        const connection = client.getRepositoryConnection();
+        const hello = client.getAcknowledgedHello();
+        if (!connection || !hello) throw new Error('Principal discovery unavailable');
+        const principal = await client.requestOnCapturedConnection(
+          connection,
+          'principal.me',
+          {},
+          undefined,
+          owner?.producer,
+        );
+        if (
+          event.sender.isDestroyed() ||
+          getBackendIdForWebContents(event.sender) !== backendId ||
+          backendClients.get(backendId) !== client ||
+          client.getRepositoryConnection() !== connection
+        )
+          throw new Error('Principal discovery connection changed');
+        const expected = invitedClientCredentials.get(client);
+        if (expected) {
+          const snapshot = parsePrincipalSnapshot(hello, principal);
+          if (!snapshot || snapshot.principal.id !== expected.principalId || !invitedRole(snapshot))
+            return {
+              ok: false,
+              // i18n-ignore (internal diagnostic; principal hydration renders its localized state)
+              error: { code: 'AUTH_REJECTED', message: 'Invited principal unavailable' },
+            };
+        }
+        return { ok: true, result: { hello, principal } };
+      });
+    } catch (error) {
+      return { ok: false, error: toErrorPayload(error) };
+    }
+  });
 
   ipcMain.handle(BACKEND.NODE_CAPABILITIES, (event) => {
     try {
@@ -5409,6 +5485,7 @@ async function getSelfPublishedStateOriginal(owner?: PoolOwner): Promise<SelfPub
 export function disposeAllBackendClients(): void {
   repositoryRoutes?.dispose();
   resourceRoutes?.dispose();
+  prMonitorRoutes?.dispose();
   checkoutRoutes?.dispose();
   selectionRoutes?.dispose();
   nativeReviewRoutes?.dispose();

@@ -6,7 +6,8 @@ import { CHIEF_WORKSPACE_ID, WorkspaceId } from '$shared/types/branded-ids';
 
 const wire = vi.hoisted(() => ({ request: vi.fn() }));
 vi.mock('$lib/client/live/backend-transport', () => ({
-  backendRequest: wire.request,
+  readBackendPrincipal: wire.request,
+  backendRequest: vi.fn(),
   onBackendNotification: () => () => {},
   onBackendReconnected: () => () => {},
 }));
@@ -66,9 +67,7 @@ describe('connected principal hydration', () => {
   let cancel: (() => void) | undefined;
   beforeEach(() => {
     vi.useFakeTimers();
-    wire.request
-      .mockReset()
-      .mockImplementation(async (method) => (method === 'client.hello' ? hello : principal()));
+    wire.request.mockReset().mockResolvedValue({ hello, principal: principal() });
     dispose = store.init();
   });
   afterEach(() => {
@@ -105,16 +104,13 @@ describe('connected principal hydration', () => {
     );
   }
   function defer() {
-    const requests: Array<{ method: string; resolve: (value: unknown) => void }> = [];
-    wire.request.mockImplementation(
-      (method) => new Promise((resolve) => requests.push({ method, resolve })),
-    );
+    const requests: Array<{ resolve: (value: unknown) => void }> = [];
+    wire.request.mockImplementation(() => new Promise((resolve) => requests.push({ resolve })));
     return {
       reply(index: number, role: HostRole = 'member', revision = 3) {
-        requests[index * 2].resolve(hello);
-        requests[index * 2 + 1].resolve(principal(role, revision));
+        requests[index].resolve({ hello, principal: principal(role, revision) });
       },
-      count: () => requests.length / 2,
+      count: () => requests.length,
     };
   }
 
@@ -126,46 +122,36 @@ describe('connected principal hydration', () => {
     expect(wire.request).not.toHaveBeenCalled();
     bind('remote');
     await settle();
-    expect(wire.request.mock.calls).toEqual([
-      ['client.hello', {}],
-      ['principal.me', {}],
-    ]);
+    expect(wire.request.mock.calls).toEqual([[]]);
     expect(selectHostRole.select(store.state)).toBe('member');
   });
 
-  it.each(['client.hello', 'principal.me'])(
-    'recovers after a transient %s timeout on the same connection',
-    async (failedMethod) => {
-      let failed = false;
-      wire.request.mockImplementation(async (method) => {
-        if (method === failedMethod && !failed) {
-          failed = true;
-          throw new BackendError({ code: 'TIMEOUT', message: 'Request timed out' });
-        }
-        return method === 'client.hello' ? hello : principal('owner');
-      });
-      start();
-      await settle();
-      expect(selectHostRole.select(store.state)).toBeNull();
-      await vi.advanceTimersByTimeAsync(1_000);
-      expect(selectHostRole.select(store.state)).toBe('owner');
-      expect(wire.request).toHaveBeenCalledTimes(4);
-    },
-  );
+  it('recovers after a transient discovery timeout on the same connection', async () => {
+    wire.request.mockRejectedValueOnce(
+      new BackendError({ code: 'TIMEOUT', message: 'Request timed out' }),
+    );
+    wire.request.mockResolvedValue({ hello, principal: principal('owner') });
+    start();
+    await settle();
+    expect(selectHostRole.select(store.state)).toBeNull();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(selectHostRole.select(store.state)).toBe('owner');
+    expect(wire.request).toHaveBeenCalledTimes(2);
+  });
 
   it('bounds transient retry attempts while keeping authority unresolved', async () => {
     wire.request.mockRejectedValue(new BackendError({ code: 'TIMEOUT', message: 'timed out' }));
     start();
     await settle();
-    expect(wire.request).toHaveBeenCalledTimes(2);
+    expect(wire.request).toHaveBeenCalledTimes(1);
     for (const [index, backoff] of PRINCIPAL_RETRY_DELAYS_MS.entries()) {
       await vi.advanceTimersByTimeAsync(backoff - 1);
-      expect(wire.request).toHaveBeenCalledTimes(2 * (index + 1));
+      expect(wire.request).toHaveBeenCalledTimes(index + 1);
       await vi.advanceTimersByTimeAsync(1);
-      expect(wire.request).toHaveBeenCalledTimes(2 * (index + 2));
+      expect(wire.request).toHaveBeenCalledTimes(index + 2);
     }
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(wire.request).toHaveBeenCalledTimes(8);
+    expect(wire.request).toHaveBeenCalledTimes(4);
     expect(selectHostRole.select(store.state)).toBeNull();
   });
 
@@ -176,22 +162,19 @@ describe('connected principal hydration', () => {
     { code: 'METHOD_NOT_FOUND', rpcCode: -32601 },
     { code: 'AUTH_REJECTED' },
     { code: 'FORBIDDEN' },
-  ])('does not retry a $code refusal, including when hello also times out', async (error) => {
-    wire.request.mockRejectedValueOnce(new BackendError({ code: 'TIMEOUT', message: 'timed out' }));
+  ])('does not retry a $code discovery refusal', async (error) => {
     wire.request.mockRejectedValue(new BackendError({ ...error, message: 'Request rejected' }));
     start();
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(wire.request).toHaveBeenCalledTimes(2);
+    expect(wire.request).toHaveBeenCalledTimes(1);
     expect(selectHostRole.select(store.state)).toBeNull();
   });
 
   it('does not retry an incompatible advertised principal', async () => {
-    wire.request.mockImplementation(async (method) =>
-      method === 'client.hello' ? hello : { ...principal(), hostRole: undefined },
-    );
+    wire.request.mockResolvedValue({ hello, principal: { ...principal(), hostRole: undefined } });
     start();
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(wire.request).toHaveBeenCalledTimes(2);
+    expect(wire.request).toHaveBeenCalledTimes(1);
     expect(store.state.principal.error).toBe('incompatible-response');
   });
 
@@ -202,15 +185,13 @@ describe('connected principal hydration', () => {
       start();
       await vi.advanceTimersByTimeAsync(500);
       if (transition === 'backend') {
-        wire.request.mockImplementation(async (method) =>
-          method === 'client.hello' ? hello : principal('guest'),
-        );
+        wire.request.mockResolvedValue({ hello, principal: principal('guest') });
         bind('other-backend');
       } else if (transition === 'disconnect')
         store.dispatch(connectionStatusChanged('disconnected'));
       else store.dispatch(authRejectedReceived({ id: 'local', statusCode: 401 }));
       await vi.advanceTimersByTimeAsync(60_000);
-      expect(wire.request).toHaveBeenCalledTimes(transition === 'backend' ? 4 : 2);
+      expect(wire.request).toHaveBeenCalledTimes(transition === 'backend' ? 2 : 1);
       expect(selectHostRole.select(store.state)).toBe(transition === 'backend' ? 'guest' : null);
     },
   );
@@ -237,7 +218,7 @@ describe('connected principal hydration', () => {
       }),
     );
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(wire.request).toHaveBeenCalledTimes(4);
+    expect(wire.request).toHaveBeenCalledTimes(2);
     expect(store.state.principal.status).toBe('revoked');
   });
 
@@ -299,16 +280,14 @@ describe('connected principal hydration', () => {
       bind(id);
       await settle();
       expect(selectHostRole.select(store.state)).toBe('member');
-      expect(wire.request).toHaveBeenCalledTimes(2);
+      expect(wire.request).toHaveBeenCalledTimes(1);
     },
   );
 
   it.each(['owner', 'member', 'guest'] as const)(
     'uses %s authority and keeps workspace ownership truthful',
     async (role) => {
-      wire.request.mockImplementation(async (method) =>
-        method === 'client.hello' ? hello : principal(role),
-      );
+      wire.request.mockResolvedValue({ hello, principal: principal(role) });
       start('invited-host');
       store.dispatch(
         guestSessionsListReceived({
@@ -449,18 +428,17 @@ describe('connected principal hydration', () => {
   it.each([true, false])(
     'uses valid legacy isAdministrator=%s without inventing member rights',
     async (isAdministrator) => {
-      wire.request.mockImplementation(async (method) =>
-        method === 'client.hello'
-          ? { server: {} }
-          : {
-              id: 'legacy',
-              login: null,
-              displayName: null,
-              avatarUrl: null,
-              isAdministrator,
-              hostRole: 'member',
-            },
-      );
+      wire.request.mockResolvedValue({
+        hello: { server: {} },
+        principal: {
+          id: 'legacy',
+          login: null,
+          displayName: null,
+          avatarUrl: null,
+          isAdministrator,
+          hostRole: 'member',
+        },
+      });
       start();
       await settle();
       workspace(undefined, isAdministrator ? 'owner' : 'collaborator');
@@ -477,7 +455,7 @@ describe('connected principal hydration', () => {
     { ...principal(), hostMembershipRevision: -1 },
     { ...principal(), isAdministrator: true },
   ])('fails closed on an invalid advertised principal: %j', async (reply) => {
-    wire.request.mockImplementation(async (method) => (method === 'client.hello' ? hello : reply));
+    wire.request.mockResolvedValue({ hello, principal: reply });
     start();
     await settle();
     expect(selectHostRole.select(store.state)).toBe(null);
@@ -494,22 +472,17 @@ describe('connected principal hydration', () => {
     expect(selectHostRole.select(store.state)).toBe(null);
   });
 
-  it('holds a discovery flight until both wire reads settle, even if one rejects', async () => {
-    let finishPrincipal!: (value: unknown) => void;
-    wire.request.mockImplementation((method) =>
-      method === 'client.hello'
-        ? Promise.reject(new Error('offline'))
-        : new Promise((resolve) => {
-            finishPrincipal = resolve;
-          }),
-    );
+  it('coalesces an invalidation while a discovery read is pending', async () => {
+    const pending = defer();
     start();
     store.dispatch(setLabsMultiplayerEnabled(true));
     await settle();
-    expect(wire.request).toHaveBeenCalledTimes(2);
-    finishPrincipal(principal());
+    expect(wire.request).toHaveBeenCalledTimes(1);
+    pending.reply(0);
     await settle();
-    expect(wire.request).toHaveBeenCalledTimes(4);
+    expect(wire.request).toHaveBeenCalledTimes(2);
+    pending.reply(1);
+    await settle();
   });
 
   it('ignores malformed and other-subscription invalidations', async () => {
@@ -532,15 +505,20 @@ describe('connected principal hydration', () => {
       );
     }
     expect(selectHostRole.select(store.state)).toBe('member');
-    expect(wire.request).toHaveBeenCalledTimes(2);
+    expect(wire.request).toHaveBeenCalledTimes(1);
   });
 
   it('preserves ordinary legacy owner controls with Multiplayer off or missing', async () => {
-    wire.request.mockImplementation(async (method) =>
-      method === 'client.hello'
-        ? { server: {} }
-        : { id: 'owner', login: null, displayName: null, avatarUrl: null, isAdministrator: true },
-    );
+    wire.request.mockResolvedValue({
+      hello: { server: {} },
+      principal: {
+        id: 'owner',
+        login: null,
+        displayName: null,
+        avatarUrl: null,
+        isAdministrator: true,
+      },
+    });
     start();
     workspace(undefined, 'owner');
     await settle();

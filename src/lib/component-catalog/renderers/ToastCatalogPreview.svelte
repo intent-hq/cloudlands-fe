@@ -5,6 +5,7 @@
   import {
     AgentAttentionToast,
     AgentFailureToast,
+    AgentIdleToast,
     ErrorToast,
     type ExternalToast,
     TOAST_COUNTDOWN_CLASS,
@@ -30,6 +31,7 @@
     ['app-error', 'Application error'],
     ['agent-failure', 'Agent failure'],
     ['agent-attention', 'Agent attention'],
+    ['agent-idle', 'Agent finished'],
     ['update-available', 'Update available'],
     ['update-downloading', 'Update downloading'],
     ['undoable', 'Undoable, countdown paused'],
@@ -128,6 +130,19 @@
             timestamp: new Date(Date.now() - 18_000).toISOString(),
             reason: 'Choose whether the catalog should include diagnostic details.',
             kind: 'discussion',
+            onSwitchTo: noOp,
+            onClose: noOp,
+          },
+        }),
+      ),
+      toast.custom(
+        AgentIdleToast,
+        options('agent-idle', 'toast-catalog-agent-idle', {
+          componentProps: {
+            title: 'Builder finished',
+            workspaceTitle: 'Toast catalog',
+            description: 'Restore the agent-finished toast',
+            timestamp: new Date(Date.now() - 6_000).toISOString(),
             onSwitchTo: noOp,
             onClose: noOp,
           },

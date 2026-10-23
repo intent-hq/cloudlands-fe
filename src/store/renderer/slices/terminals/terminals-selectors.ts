@@ -70,13 +70,6 @@ export const selectWorkspaceSetupTerminal = store.createSelector((state, wsId: s
   return getItems(getWsById(state, wsId).terminals).find(isSetupTerminal);
 });
 
-/** Select only user-created terminals, filtering out agent terminals (IDs starting with "agent-") */
-export const selectUserTerminals = store.createSelector((state, wsId: string | null) => {
-  return getItems(getActiveWs(state, wsId).terminals).filter(
-    (terminal) => !terminal.id.startsWith('agent-'),
-  );
-});
-
 /** Select workspace terminal state by workspace ID (parameterized) */
 export const selectWorkspaceTerminalState = store.createSelector((state, wsId: string) => {
   return state.terminals.workspaces[wsId] || emptyWorkspaceState;

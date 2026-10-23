@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import type { DraftsClient } from '$lib/client/app-client';
 import { store } from '$store/renderer/store';
 import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
 import { clearDraftCacheForTests } from '$lib/components/chat/chat-draft-cache';
@@ -107,4 +108,84 @@ it('hydrates questions and cancels pending persistence when the fixture stops', 
   store.dispatch(chatDraftRestoreRequested('composer', 'after-stop', 'workspace', 'agent'));
   await settle();
   expect(draft()?.restore).toMatchObject({ status: 'pending', requestId: 'after-stop' });
+});
+
+it('uses an injected transport for delayed restore, flushed save, and clear', async () => {
+  stops.forEach((stop) => stop());
+  let restore!: (draft: Awaited<ReturnType<DraftsClient['get']>>) => void;
+  const transport: DraftsClient = {
+    get: vi.fn(
+      () =>
+        new Promise((resolve) => {
+          restore = resolve;
+        }),
+    ),
+    set: vi.fn(async () => ({ ok: true, updatedAt: '2026-08-23T12:00:00.000Z' })),
+    clear: vi.fn(async () => ({ ok: true })),
+  };
+  stops = startChatFixtureSagas(store, transport);
+  store.dispatch(chatDraftOwnerOpened('composer'));
+  store.dispatch(chatDraftRestoreRequested('composer', 'held', 'workspace', 'agent'));
+  await settle();
+  expect(transport.get).toHaveBeenCalledExactlyOnceWith('workspace', 'agent');
+  expect(draft()?.restore).toMatchObject({ status: 'pending', requestId: 'held' });
+  restore({ text: 'restored', updatedAt: '2026-08-23T12:00:00.000Z' });
+  await settle();
+  expect(draft()?.restore).toMatchObject({ status: 'restored', draft: { text: 'restored' } });
+  store.dispatch(
+    chatDraftSaveScheduled('composer', 'save', {
+      workspaceId: 'workspace',
+      agentId: 'agent',
+      text: 'edited',
+      attachments: [],
+      rollback: null,
+    }),
+  );
+  store.dispatch(chatDraftOwnerReleased('composer'));
+  await settle();
+  expect(transport.set).toHaveBeenCalledExactlyOnceWith('workspace', 'agent', 'edited', undefined);
+  store.dispatch(chatDraftClearRequested('workspace', 'agent'));
+  await settle();
+  expect(transport.clear).toHaveBeenCalledExactlyOnceWith('workspace', 'agent');
+});
+
+it('starts question persistence alongside an injected draft owner and cancels held restores', async () => {
+  stops.forEach((stop) => stop());
+  let restore!: (draft: Awaited<ReturnType<DraftsClient['get']>>) => void;
+  const transport: DraftsClient = {
+    get: vi.fn(
+      () =>
+        new Promise((resolve) => {
+          restore = resolve;
+        }),
+    ),
+    set: vi.fn(async () => ({ ok: true, updatedAt: '2026-08-23T12:00:00.000Z' })),
+    clear: vi.fn(async () => ({ ok: true })),
+  };
+  const start = vi.spyOn(store, 'runSaga');
+  stops = startChatFixtureSagas(store, transport);
+  expect(start).toHaveBeenCalledTimes(2);
+  store.dispatch(chatDraftOwnerOpened('composer'));
+  store.dispatch(chatDraftRestoreRequested('composer', 'held', 'workspace', 'agent'));
+  const empty = { idx: 0, answers: [{ sel: [], text: '', skipped: false }] };
+  store.dispatch(
+    questionWizardConsumed(
+      'question',
+      'request',
+      'chat.questionWizardDraft/injected',
+      [{ attachmentId: 'q', header: 'Plan', question: 'Proceed?', options: [{ label: 'Yes' }] }],
+      empty,
+      false,
+    ),
+  );
+  await settle();
+  expect(transport.get).toHaveBeenCalledExactlyOnceWith('workspace', 'agent');
+  expect(question()).toMatchObject({ status: 'ready', draft: empty });
+  expect(draft()?.restore).toMatchObject({ status: 'pending', requestId: 'held' });
+  stops.forEach((stop) => stop());
+  restore({ text: 'late restore', updatedAt: '2026-08-23T12:00:00.000Z' });
+  await settle();
+  expect(draft()?.restore).toMatchObject({ status: 'pending', requestId: 'held' });
+  expect(transport.set).not.toHaveBeenCalled();
+  expect(transport.clear).not.toHaveBeenCalled();
 });

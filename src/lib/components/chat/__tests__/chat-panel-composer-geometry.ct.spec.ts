@@ -151,26 +151,40 @@ test('keeps suggestions accessible and inserts them after resizing into compact 
 test('supports attachment keyboard navigation, removal, and composer resizing', async ({
   mount,
   page,
-}) => {
+}, testInfo) => {
   const component = await mount(ChatPanelComposerGeometryHost, {
     props: { draft: 'Resizable attachment draft', width: 420 },
   });
   const input = component.getByTestId('message-input');
   const editor = component.locator('.tiptap-editor');
   const resize = input.locator('.resize-handle');
+  const png = await page.evaluate(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 48;
+    const context = canvas.getContext('2d')!;
+    context.fillStyle = '#3366cc';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/png').split(',')[1];
+  });
   await component.locator('input[type="file"]').setInputFiles({
     name: 'composer.png',
     mimeType: 'image/png',
-    buffer: Buffer.from('composer-image'),
+    buffer: Buffer.from(png, 'base64'),
   });
   const attachment = component.getByRole('img', { name: 'composer.png' });
   await expect(attachment).toBeVisible();
+  await attachment.evaluate((image: HTMLImageElement) => image.decode());
 
   await editor.focus();
   await page.keyboard.press('Tab');
   await expect(
     component.getByRole('button', { name: 'View composer.png full size' }),
   ).toBeFocused();
+  await testInfo.attach('composer-attachment-keyboard-focus.png', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
   await page.keyboard.press('Tab');
   await expect(component.getByRole('button', { name: 'Remove composer.png' })).toBeFocused();
   await page.keyboard.press('Tab');
@@ -188,6 +202,10 @@ test('supports attachment keyboard navigation, removal, and composer resizing', 
     document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientY }));
   }, handleY - 60);
   await expect.poll(async () => (await input.boundingBox())!.height).toBeGreaterThan(before);
+  await testInfo.attach('composer-after-removal-and-resize.png', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
 });
 
 for (const reducedMotion of ['reduce', 'no-preference'] as const) {
@@ -329,17 +347,18 @@ test('shows and splits a queued append while preserving keyboard focus and defer
   };
   const component = await mount(ChatPanelComposerGeometryHost, { props });
   const queue = component.getByTestId('queued-messages-container');
+  const header = queue.getByTestId('queued-messages-header');
   const editor = component.getByTestId('message-input').locator('.tiptap-editor');
   await expect(queue.getByTestId('queued-message-text')).toHaveText('Confirmed A');
   await editor.click();
   await editor.pressSequentially('Pending B');
   await editor.press('Enter');
   await expect(queue.getByTestId('queued-message-text')).toHaveText('Confirmed A\n\nPending B');
-  await expect(queue.getByRole('button', { name: 'Edit', exact: true })).toBeDisabled();
-  await expect(queue.getByRole('button', { name: 'Remove', exact: true })).toBeDisabled();
-  await expect(queue.getByRole('button', { name: 'Send immediately', exact: true })).toBeDisabled();
-  await expect(queue.getByRole('button', { name: 'Send all ready messages now' })).toBeDisabled();
-  await expect(queue.getByRole('button', { name: 'Clear all queued messages' })).toBeDisabled();
+  await expect(header.getByRole('button', { name: 'Edit', exact: true })).toBeDisabled();
+  await expect(header.getByRole('button', { name: 'Remove', exact: true })).toBeDisabled();
+  await expect(
+    header.getByRole('button', { name: 'Send immediately', exact: true }),
+  ).toBeDisabled();
   await expect(editor).toBeFocused();
   await editor.pressSequentially('Keep newer draft');
   await expect
@@ -361,6 +380,8 @@ test('shows and splits a queued append while preserving keyboard focus and defer
     'Other participant',
     'Pending B',
   ]);
+  await expect(header.getByRole('button', { name: 'Send all ready messages now' })).toBeEnabled();
+  await expect(header.getByRole('button', { name: 'Clear all queued messages' })).toBeEnabled();
   await expect(
     queue
       .getByTestId('queued-message-row')

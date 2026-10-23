@@ -1,7 +1,9 @@
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { withLegacyPrincipal } from '../../test/fixtures/principal-state';
+import { withLegacyPrincipal, withHostPrincipal } from '../../test/fixtures/principal-state';
+import { CURRENT_PROTOCOL_VERSION } from '../../test/current-protocol-version';
+
 const transport = vi.hoisted(() => ({ request: vi.fn() }));
 const notifyError = vi.hoisted(() => vi.fn());
 vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: notifyError } }));
@@ -11,6 +13,7 @@ vi.mock('$lib/client', async () => {
   return { appClient: { scripts: new LiveScriptsClient() } };
 });
 import { store } from '$store/renderer/store';
+import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
 import { principalReadStarted } from '$store/renderer/slices/principal/principal-slice';
 import {
   backendReconnected,
@@ -30,7 +33,12 @@ import {
   scriptOutputRequested,
   scriptOutputReleased,
 } from '$store/renderer/slices/scripts/scripts-slice';
-import { selectScriptEntries } from '$store/renderer/slices/scripts/scripts-selectors';
+import {
+  selectScriptEntries,
+  selectScriptById,
+  selectScriptOutput,
+  selectScriptRetainedOutput,
+} from '$store/renderer/slices/scripts/scripts-selectors';
 import {
   routeDaemonEventsNotification,
   __resetDaemonEventsBridgeForTests,
@@ -110,7 +118,7 @@ beforeEach(() => {
     if (method === 'client.hello')
       return {
         server: {
-          protocolVersion: '14.0',
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
           capabilities: { scriptLifecycle: 1, scriptActiveLists: 1 },
         },
       };
@@ -129,6 +137,145 @@ afterEach(async () => {
 });
 const listCalls = () => transport.request.mock.calls.filter(([method]) => method === 'script.list');
 describe('script lifecycle event to transport', () => {
+  it.each(['removed', 'guest-access-revoked'])(
+    'journals %s before hydration so a stale list cannot restore a private script',
+    async (action) => {
+      const run = start();
+      run.state.principal.snapshot!.principal.isAdministrator = false;
+      run.state.principal.snapshot!.capabilities.workspaceGuestRoles = true;
+      run.state.workspace.workspaces.map[WS].myRole = 'manager';
+      const pending = deferred<unknown>();
+      const originalRequest = transport.request.getMockImplementation();
+      transport.request.mockImplementation((method, ...args) =>
+        method === 'script.list' ? pending.promise : originalRequest?.(method, ...args),
+      );
+      run.dispatch(refreshScripts(WS));
+      await settle();
+      expect(listCalls()).toHaveLength(1);
+      emit('script:changed', {
+        scriptId: 'retired',
+        action,
+        ...(action === 'removed' ? { purpose: 'saved' } : {}),
+      });
+      emit('script:changed', {
+        scriptId: 'retired',
+        action: 'updated',
+        script: row({ id: 'retired', purpose: 'oneOff' }),
+      });
+      pending.resolve({ view: 'summary', scripts: [row({ id: 'retired', purpose: 'saved' })] });
+      await settle();
+      expect(run.active()).toEqual([]);
+      expect(run.scripts().scripts.retired).toBeUndefined();
+    },
+  );
+
+  it.each(['owner', 'member', 'guest-owner', 'manager'] as const)(
+    '%s handles guest revocation without crossing the output authority boundary',
+    async (role) => {
+      const run = start();
+      Object.assign(
+        run.state,
+        withHostPrincipal(run.state, role === 'manager' || role === 'guest-owner' ? 'guest' : role),
+      );
+      run.state.principal.snapshot!.capabilities.workspaceGuestRoles = true;
+      Object.assign(run.state.workspace, {
+        hasLoaded: true,
+        loadedBackendId: run.state.connections.windowBackendId,
+        capabilityContext: selectPrincipalActionContext.select(run.state),
+      });
+      Object.assign(run.state.workspace.workspaces.map[WS], {
+        myRole: role === 'manager' ? 'manager' : role === 'guest-owner' ? 'owner' : 'collaborator',
+        canManage: role !== 'manager',
+      });
+      run.dispatch(
+        setScriptsData(WS, [row({ purpose: 'saved' }), row({ id: 'private', purpose: 'oneOff' })]),
+      );
+      expect(run.active().map((script) => script.id)).toEqual(
+        role === 'manager' ? [ID] : [ID, 'private'],
+      );
+      if (role === 'guest-owner') {
+        emit('script:output', { scriptId: 'private', chunk: btoa('private owner output') });
+        expect(selectScriptOutput.select(run.state, WS, 'private').chunks[0].text).toBe(
+          'private owner output',
+        );
+      }
+      run.dispatch(appendScriptOutput(WS, ID, { text: 'live buffer', timestamp: 'now' }));
+      run.dispatch(scriptOutputRequested(WS, ID, 'existing-viewer'));
+      await settle();
+      expect(selectScriptRetainedOutput.select(run.state, WS, ID, 'existing-viewer')?.text).toBe(
+        'retained output',
+      );
+      const pending = deferred<string>();
+      const originalRequest = transport.request.getMockImplementation();
+      transport.request.mockImplementation((method, ...args) =>
+        method === 'script.output' ? pending.promise : originalRequest?.(method, ...args),
+      );
+      run.dispatch(scriptOutputRequested(WS, ID, 'pending-viewer'));
+      await settle();
+      emit('script:changed', { scriptId: ID, action: 'guest-access-revoked' });
+      emit('script:changed', {
+        scriptId: ID,
+        action: 'updated',
+        script: row({ purpose: 'oneOff' }),
+      });
+      if (role === 'manager') {
+        expect(run.scripts().scripts[ID]).toBeUndefined();
+        expect(run.scripts().outputBuffers[ID]).toBeUndefined();
+        expect(run.scripts().retainedOutputs).toEqual({});
+      } else {
+        expect(run.scripts().scripts[ID]).toBeDefined();
+        expect(run.scripts().outputBuffers[ID].chunks[0].text).toBe('live buffer');
+        expect(selectScriptRetainedOutput.select(run.state, WS, ID, 'existing-viewer')?.text).toBe(
+          'retained output',
+        );
+      }
+      pending.resolve('pending output survives only for host readers');
+      await settle();
+      expect(selectScriptRetainedOutput.select(run.state, WS, ID, 'pending-viewer')?.text).toBe(
+        role === 'manager' ? undefined : 'pending output survives only for host readers',
+      );
+    },
+  );
+
+  it('limits Manager reads, cached output and live events to saved scripts and clears access on downgrade', async () => {
+    const run = start();
+    run.state.principal.snapshot!.principal.isAdministrator = false;
+    run.state.principal.snapshot!.capabilities.workspaceGuestRoles = true;
+    run.state.workspace.workspaces.map[WS].myRole = 'manager';
+    const saved = row({ id: 'saved', purpose: 'saved' });
+    const oneOff = row();
+    run.dispatch(setScriptsData(WS, [saved, oneOff]));
+    run.dispatch(appendScriptOutput(WS, ID, { text: 'private cached bytes', timestamp: 'now' }));
+    expect(run.active().map((entry) => entry.id)).toEqual(['saved']);
+    expect(selectScriptById.select(run.state, WS, ID)).toBeNull();
+    expect(selectScriptOutput.select(run.state, WS, ID).chunks).toEqual([]);
+    emit('script:output', { scriptId: ID, chunk: btoa('forbidden live bytes') });
+    emit('script:changed', {
+      scriptId: 'new-one-off',
+      action: 'created',
+      script: row({ id: 'new-one-off' }),
+    });
+    expect(run.scripts().scripts['new-one-off']).toBeUndefined();
+    expect(run.scripts().outputBuffers[ID].chunks).toHaveLength(1);
+    emit('script:output', { scriptId: 'saved', chunk: btoa('saved bytes') });
+    expect(selectScriptOutput.select(run.state, WS, 'saved').chunks).toHaveLength(1);
+    run.dispatch(scriptOutputRequested(WS, 'saved', 'viewer'));
+    await settle();
+    expect(selectScriptRetainedOutput.select(run.state, WS, 'saved', 'viewer')?.text).toBe(
+      'retained output',
+    );
+    run.state.workspace.workspaces.map[WS].myRole = 'collaborator';
+    expect(run.active()).toEqual([]);
+    expect(selectScriptOutput.select(run.state, WS, 'saved').chunks).toEqual([]);
+    expect(selectScriptRetainedOutput.select(run.state, WS, 'saved', 'viewer')).toBeUndefined();
+    emit('script:output', { scriptId: 'saved', chunk: btoa('late bytes') });
+    expect(run.scripts().outputBuffers.saved.chunks).toHaveLength(1);
+    transport.request.mockClear();
+    run.dispatch(scriptOutputRequested(WS, 'saved', 'late-viewer'));
+    await settle();
+    expect(transport.request).not.toHaveBeenCalled();
+  });
+
   it.each(['succeeded', 'failed', 'cancelled'] as const)(
     'applies %s completion without reading lists and retains output',
     async (outcome) => {
@@ -158,7 +305,7 @@ describe('script lifecycle event to transport', () => {
       method === 'client.hello'
         ? {
             server: {
-              protocolVersion: '14.0',
+              protocolVersion: CURRENT_PROTOCOL_VERSION,
               capabilities: { scriptLifecycle: 1, scriptActiveLists: 1 },
             },
           }
@@ -404,7 +551,7 @@ describe('script list and retained output read fences', () => {
       if (method === 'client.hello')
         return {
           server: {
-            protocolVersion: '14.0',
+            protocolVersion: CURRENT_PROTOCOL_VERSION,
             capabilities: { scriptLifecycle: 1, scriptActiveLists: 1 },
           },
         };
@@ -430,7 +577,7 @@ describe('script list and retained output read fences', () => {
       if (method === 'client.hello')
         return {
           server: {
-            protocolVersion: '14.0',
+            protocolVersion: CURRENT_PROTOCOL_VERSION,
             capabilities: { scriptLifecycle: 1, scriptActiveLists: 1 },
           },
         };
@@ -498,7 +645,7 @@ describe('script list and retained output read fences', () => {
         method === 'client.hello'
           ? {
               server: {
-                protocolVersion: '14.0',
+                protocolVersion: CURRENT_PROTOCOL_VERSION,
                 capabilities: { scriptLifecycle: 1, scriptActiveLists: 1 },
               },
             }
@@ -569,7 +716,12 @@ it.each([true, false])(
     const page = deferred<{ view: string; scripts: ScriptWithState[] }>();
     transport.request.mockImplementation(async (method) => {
       if (method === 'client.hello')
-        return { server: { protocolVersion: '14.0', capabilities: { scriptActiveLists: 1 } } };
+        return {
+          server: {
+            protocolVersion: CURRENT_PROTOCOL_VERSION,
+            capabilities: { scriptActiveLists: 1 },
+          },
+        };
       if (method === 'script.list') return page.promise;
       if (method === 'script.output') return 'selected output';
       throw new Error('Unexpected method ' + method);

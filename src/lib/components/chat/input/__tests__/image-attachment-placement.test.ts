@@ -460,3 +460,30 @@ describe('toImageReferenceBlocks', () => {
     });
   });
 });
+
+describe('unsupported image source preservation', () => {
+  it.each([
+    ['image/svg+xml', 'svg'],
+    ['IMAGE/SVG+XML; charset=utf-8', 'svg'],
+    ['image/avif', 'avif'],
+    ['image/bmp', 'bmp'],
+    ['image/tiff', 'tiff'],
+    ['image/x-icon', 'ico'],
+    ['image/heic', 'heic'],
+    ['image/heif', 'heif'],
+    ['image/jxl', 'jxl'],
+    ['image/unknown', 'bin'],
+  ])('places %s with an honest extension and unchanged bytes', async (mimeType, extension) => {
+    const api = makeApi({
+      placeAttachment: vi.fn(async () => placedResult('original', mimeType)),
+    });
+    const data = btoa('<svg xmlns="http://www.w3.org/2000/svg"/>');
+    const result = await toImageReferenceBlocks('ws-1', [{ type: 'image', data, mimeType }], api);
+    expect(api.placeAttachment).toHaveBeenCalledWith(
+      'ws-1',
+      expect.stringMatching(new RegExp(`\\.${extension}$`)),
+      { data, mimeType },
+    );
+    expect(result).toEqual([{ type: 'image', attachmentId: 'original', mimeType }]);
+  });
+});

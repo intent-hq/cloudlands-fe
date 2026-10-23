@@ -1,4 +1,14 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ProviderCatalogState } from '$store/renderer/slices/provider-catalog/provider-catalog-types';
+import { initialState } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
+import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
+
+const catalogOverride = vi.hoisted(() => ({
+  current: undefined as ProviderCatalogState | undefined,
+}));
+afterEach(() => {
+  catalogOverride.current = undefined;
+});
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
@@ -11,7 +21,9 @@ vi.mock('$store/renderer/store', async () => {
     initialState,
     providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
   );
-  return createAppStoreMockModule({ state: () => ({ providerCatalog }) });
+  return createAppStoreMockModule({
+    state: () => ({ providerCatalog: catalogOverride.current ?? providerCatalog }),
+  });
 });
 
 import { AUGGIE_LEGACY_GROUP_KEY, buildGroupedModelOptions } from './model-picker-groups';
@@ -138,5 +150,122 @@ describe('buildGroupedModelOptions disabled effective provider (intent#5737)', (
     });
 
     expect(groups.map(({ key }) => key)).toEqual(['codex']);
+  });
+});
+
+describe('buildGroupedModelOptions named profiles (§5.54)', () => {
+  const work = { providerRef: 'codex@pwork00000001', baseProviderId: 'codex', name: 'Work' };
+  const personal = {
+    providerRef: 'codex@ppers00000001',
+    baseProviderId: 'codex',
+    name: 'Personal',
+  };
+  const gpt = [{ value: 'gpt-5', label: 'GPT-5', data: {} }];
+
+  it('keeps bare provider labels while no profiles exist', () => {
+    const groups = buildGroupedModelOptions({
+      ...baseParams,
+      enabledProviderIds: ['codex'],
+      allProviderModels: { codex: gpt },
+      profiles: [],
+    });
+    expect(groups.map(({ key, label }) => [key, label])).toEqual([['codex', 'OpenAI Codex']]);
+  });
+
+  it('adds one group per profile after its base, keyed by its reference', () => {
+    const groups = buildGroupedModelOptions({
+      ...baseParams,
+      enabledProviderIds: ['auggie', 'codex', work.providerRef, personal.providerRef],
+      allProviderModels: {
+        auggie: [{ value: 'sonnet', label: 'Sonnet', data: {} }],
+        codex: gpt,
+        [work.providerRef]: [{ value: 'gpt-5', label: 'GPT-5', data: {} }],
+        [personal.providerRef]: [{ value: 'gpt-5-mini', label: 'GPT-5 mini', data: {} }],
+      },
+      profiles: [work, personal],
+    });
+
+    expect(groups.map(({ key }) => key)).toEqual([
+      'auggie',
+      'codex',
+      work.providerRef,
+      personal.providerRef,
+    ]);
+    const labels = Object.fromEntries(groups.map(({ key, label }) => [key, label]));
+    // A provider without profiles keeps its bare catalog name.
+    expect(labels.auggie).not.toMatch(/Default|Work|Personal/);
+    // Once Codex has profiles its original configuration is "Default".
+    expect(labels.codex).toMatch(/OpenAI Codex.*Default/);
+    expect(labels[work.providerRef]).toMatch(/OpenAI Codex.*Work/);
+    expect(labels[personal.providerRef]).toMatch(/OpenAI Codex.*Personal/);
+    // Each profile lists its own catalog, not the base provider's.
+    expect(groups[3]?.options.map(({ value }) => value)).toEqual(['gpt-5-mini']);
+  });
+
+  it('shows a loading row for a profile whose catalog is still loading', () => {
+    const groups = buildGroupedModelOptions({
+      ...baseParams,
+      enabledProviderIds: ['codex', work.providerRef],
+      allProviderModels: { codex: gpt },
+      allProviderLoading: { [work.providerRef]: true },
+      profiles: [work],
+    });
+    const group = groups.find(({ key }) => key === work.providerRef);
+    expect(group?.label).toMatch(/OpenAI Codex.*Work/);
+    expect(group?.options[0]?.data?.providerLoading).toBe(true);
+  });
+
+  it('offers no profile group when the profile is not selectable', () => {
+    const groups = buildGroupedModelOptions({
+      ...baseParams,
+      enabledProviderIds: ['codex'],
+      allProviderModels: { codex: gpt, [work.providerRef]: gpt },
+      profiles: [work],
+    });
+    expect(groups.map(({ key }) => key)).toEqual(['codex']);
+  });
+});
+
+describe('buildGroupedModelOptions workspace catalogs', () => {
+  it('groups workspace models and resolves aliases without a host catalog', () => {
+    catalogOverride.current = {
+      ...initialState,
+      byWorkspaceId: {
+        shared: {
+          catalog: {
+            providers: [
+              { ...MOCK_PROVIDER_CATALOG.providers[0]!, displayName: 'Workspace Auggie' },
+            ],
+          },
+          settings: [],
+          specialists: [],
+          readiness: {},
+        },
+      },
+    };
+    const params = {
+      ...baseParams,
+      workspaceId: 'shared',
+      effectiveProviderId: 'augment',
+      availableModelsProviderId: 'augment',
+      enabledProviderIds: ['augment'],
+      allProviderModels: { auggie: [{ value: 'fast', label: 'Fast' }] },
+    };
+    expect(buildGroupedModelOptions(params)).toEqual([
+      { key: 'auggie', label: 'Workspace Auggie', options: [{ value: 'fast', label: 'Fast' }] },
+    ]);
+    expect(buildGroupedModelOptions({ ...params, workspaceId: 'other' })).toEqual([]);
+    expect(buildGroupedModelOptions({ ...params, workspaceId: undefined })).toEqual([]);
+  });
+
+  it('does not borrow the host catalog before the workspace catalog arrives', () => {
+    expect(
+      buildGroupedModelOptions({
+        ...baseParams,
+        workspaceId: 'unhydrated',
+        enabledProviderIds: ['auggie'],
+        allProviderModels: { auggie: [{ value: 'fast', label: 'Fast' }] },
+      }),
+    ).toEqual([]);
   });
 });

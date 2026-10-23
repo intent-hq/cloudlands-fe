@@ -54,7 +54,6 @@ import { githubReposReducer } from './slices/github-repos/github-repos-slice';
 import { githubRepoSearchReducer } from './slices/github-repo-search/github-repo-search-slice';
 import { githubUserSearchReducer } from './slices/github-user-search/github-user-search-slice';
 import { directoryPickerReducer } from './slices/directory-picker/directory-picker-slice';
-import { legacyImportReducer } from './slices/legacy-import/legacy-import-slice';
 import { linearAuthReducer } from './slices/linear-auth/linear-auth-slice';
 import { identityReducer } from './slices/identity/identity-slice';
 import { voiceSettingsReducer } from './slices/voice-settings/voice-settings-slice';
@@ -75,6 +74,7 @@ import { scriptsReducer } from './slices/scripts/scripts-slice';
 import { statsReducer } from './slices/stats/stats-slice';
 import { backgroundHooksReducer } from './slices/background-hooks/background-hooks-slice';
 import { scriptMonitorReducer } from './slices/script-monitor/script-monitor-slice';
+import { agentWorkersReducer } from './slices/agent-workers/agent-workers-slice';
 import { prMonitorReducer } from './slices/pr-monitor/pr-monitor-slice';
 import { agentFollowReducer } from './slices/agent-follow/agent-follow-slice';
 import { gitReducer } from './slices/git/git-slice';
@@ -94,6 +94,7 @@ import { chatStateReducer } from './slices/chat-state/chat-state-slice';
 import { chatChangesReducer } from './slices/chat-changes/chat-changes-slice';
 import { fileExplorerReducer } from './slices/file-explorer/file-explorer-slice';
 import { pdfPreviewReducer } from './slices/pdf-preview/pdf-preview-slice';
+import { videoPreviewReducer } from './slices/video-preview/video-preview-slice';
 import { filesReducer } from './slices/files/files-slice';
 import { agentSessionReducer } from './slices/agent-session/agent-session-slice';
 import { agentQueueReducer } from './slices/agent-queue/agent-queue-slice';
@@ -116,6 +117,7 @@ import { connectionsReducer } from './slices/connections/connections-slice';
 import { guestSessionsReducer } from './slices/guest-sessions/guest-sessions-slice';
 import { principalReducer } from './slices/principal/principal-slice';
 import { presenceFollowReducer } from './slices/presence-follow/presence-follow-slice';
+import { workspaceDiscussionReducer } from './slices/workspace-discussion/workspace-discussion-slice';
 import { presenceReducer } from './slices/presence/presence-slice';
 import { hostRequirementsReducer } from './slices/host-requirements/host-requirements-slice';
 import { hudReducer } from './slices/hud/hud-slice';
@@ -177,7 +179,6 @@ export const reducers = {
   githubRepoSearch: githubRepoSearchReducer,
   githubUserSearch: githubUserSearchReducer,
   directoryPicker: directoryPickerReducer,
-  legacyImport: legacyImportReducer,
   linearAuth: linearAuthReducer,
   identity: identityReducer,
   voiceSettings: voiceSettingsReducer,
@@ -199,6 +200,7 @@ export const reducers = {
   backgroundHooks: backgroundHooksReducer,
   prMonitor: prMonitorReducer,
   scriptMonitor: scriptMonitorReducer,
+  agentWorkers: agentWorkersReducer,
   agentFollow: agentFollowReducer,
   git: gitReducer,
   gitWrite: gitWriteReducer,
@@ -218,6 +220,7 @@ export const reducers = {
   fileExplorer: fileExplorerReducer,
   files: filesReducer,
   pdfPreview: pdfPreviewReducer,
+  videoPreview: videoPreviewReducer,
   agentSessions: agentSessionReducer,
   agentQueue: agentQueueReducer,
   pendingSubmissions: pendingSubmissionsReducer,
@@ -239,6 +242,7 @@ export const reducers = {
   connections: connectionsReducer,
   guestSessions: guestSessionsReducer,
   presence: presenceReducer,
+  workspaceDiscussion: workspaceDiscussionReducer,
   presenceFollow: presenceFollowReducer,
   principal: principalReducer,
   hostExecution: hostExecutionReducer,

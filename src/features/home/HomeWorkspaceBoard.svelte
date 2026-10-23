@@ -2,6 +2,8 @@
   import WorkspaceMicroKeySlot from '$features/hardware-console/components/WorkspaceMicroKeySlot.svelte';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import { Button } from '$lib/components/ui/button';
+  import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
+  import { faThumbtack } from '$lib/icons/phosphor-icons';
   import HomeWorkspaceStatus from './HomeWorkspaceStatus.svelte';
   import HomeWorkspacePullBadge from './HomeWorkspacePullBadge.svelte';
   import HomeActivityTime from './HomeActivityTime.svelte';
@@ -10,25 +12,32 @@
   import { WorkspaceStatusEnum } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
   import { getHomeTriageGroup } from './home-model';
-  import { openHomeWorkspaceFromEvent } from './home-workspace-opening';
+  import { openHomeWorkspaceFromEvent, type HomeDoubleClickOpener } from './home-workspace-opening';
 
   let {
     workspaces,
+    pinnedIds = [],
     selectedId,
     onselect,
     onopen,
+    doubleClick,
     oncontextmenu,
     archived = false,
     showRepository = true,
+    showRepositoryOwner = true,
     groups,
   }: {
     workspaces: Workspace[];
+    pinnedIds?: readonly string[];
     selectedId: string | null;
     onselect: (id: string) => void;
     onopen: (id: string) => void;
+    /** Home's double-click opener; card clicks arm it. */
+    doubleClick: HomeDoubleClickOpener;
     oncontextmenu?: (event: MouseEvent | KeyboardEvent, workspace: Workspace) => void;
     archived?: boolean;
     showRepository?: boolean;
+    showRepositoryOwner?: boolean;
     groups?: { id: string; label: string; items: Workspace[] }[];
   } = $props();
   function column(workspace: Workspace): string {
@@ -76,9 +85,17 @@
         </h3>
         <div class="flex flex-col gap-2 pb-2">
           {#each items as workspace (workspace.id)}
+            {@const pinned = pinnedIds.includes(workspace.id)}
             {@const displayTitle = workspace.title.trim()
               ? workspace.title
               : m.workspace_links_untitled_label()}
+            {@const repositoryLabel =
+              [
+                showRepositoryOwner ? workspace.repositoryOwner : undefined,
+                workspace.repositoryName,
+              ]
+                .filter(Boolean)
+                .join('/') || workspace.repositoryPath}
             <Button
               data-home-workspace={workspace.id}
               variant="outline"
@@ -87,6 +104,7 @@
               wrapContent={false}
               class="h-auto min-w-0 w-full shrink-0 flex-col items-stretch whitespace-normal rounded-xl border-border bg-background gap-0 p-3 text-left shadow-xs"
               onclick={(event) => {
+                doubleClick.arm(event, workspace.id);
                 if (!openHomeWorkspaceFromEvent(event, workspace.id, onopen))
                   onselect(workspace.id);
               }}
@@ -97,6 +115,7 @@
                   openHomeWorkspaceFromEvent(event, workspace.id, onopen);
               }}
               aria-label={displayTitle}
+              aria-describedby={pinned ? `home-board-pinned-${workspace.id}` : undefined}
             >
               <span class="flex items-start justify-between gap-3">
                 <WorkspaceMicroKeySlot workspaceId={workspace.id} />
@@ -112,7 +131,21 @@
                     ><Tooltip.Content>{displayTitle}</Tooltip.Content></Tooltip.Root
                   ></Tooltip.Provider
                 >
-                <HomeWorkspaceStatus {workspace} class="mt-0.5" />
+                <span class="mt-0.5 flex shrink-0 items-center gap-2">
+                  {#if pinned}
+                    <span
+                      class="inline-flex size-4 shrink-0 items-center justify-center text-muted-foreground"
+                      data-home-workspace-pin
+                      aria-hidden="true"
+                    >
+                      <Fa icon={faThumbtack} class="size-3" />
+                    </span>
+                    <span id="home-board-pinned-{workspace.id}" class="sr-only">
+                      {m.layout_activeCard_pinned_header()}
+                    </span>
+                  {/if}
+                  <HomeWorkspaceStatus {workspace} />
+                </span>
               </span>
               {#if workspace.statusMessage}
                 <span
@@ -124,13 +157,13 @@
               <span
                 class="mt-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 type-caption text-muted-foreground"
               >
-                {#if showRepository && workspace.repositoryName}
+                {#if showRepository && repositoryLabel}
                   <Tooltip.Provider
                     ><Tooltip.Root
                       ><Tooltip.Trigger
                         >{#snippet child({ props: homeTooltipProps })}<span
                             {...homeTooltipProps}
-                            class="flex min-w-0 max-w-full items-center gap-1.5"
+                            class="flex min-w-0 max-w-[min(70%,16rem)] items-center gap-1.5"
                           >
                             {#if workspace.repositoryOwner}
                               <GitHubAvatar
@@ -138,13 +171,11 @@
                                 class="shrink-0 rounded-sm"
                               />
                             {/if}
-                            <span class="truncate">{workspace.repositoryName}</span>
+                            <span class="truncate" data-home-workspace-repository
+                              >{repositoryLabel}</span
+                            >
                           </span>{/snippet}</Tooltip.Trigger
-                      ><Tooltip.Content
-                        >{[workspace.repositoryOwner, workspace.repositoryName]
-                          .filter(Boolean)
-                          .join('/')}</Tooltip.Content
-                      ></Tooltip.Root
+                      ><Tooltip.Content>{repositoryLabel}</Tooltip.Content></Tooltip.Root
                     ></Tooltip.Provider
                   >
                 {/if}

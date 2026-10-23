@@ -11,15 +11,18 @@
   import { LIST_STATE_GEOMETRY, type StateDensity } from '../state-geometry';
   import type { ListKey, ListRowContext, SelectionMode } from './types';
 
-  interface Props extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
+  interface BaseProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
     items: readonly T[];
     row: Snippet<[ListRowContext<T>]>;
     getKey?: (item: T, index: number) => ListKey;
     getText?: (item: T, index: number) => string;
-    selectable?: SelectionMode;
-    selectedKeys?: ListKey[];
     /** Use indicator when each row supplies a visible selection control. */
     selectionAppearance?: 'surface' | 'indicator';
+    /**
+     * Reports the keys a user interaction asks for. ListView does not apply them; the owner
+     * decides and passes the result back through `selectedKeys`. Toggles compute from the current
+     * `selectedKeys`, so owners should commit synchronously.
+     */
     onSelectedKeysChange?: (keys: ListKey[]) => void;
     onActivate?: (item: T, index: number) => void;
     status?: 'ready' | 'loading' | 'error';
@@ -35,13 +38,24 @@
     class?: string;
   }
 
+  /**
+   * Selection is controlled: `selectedKeys` is the only source of truth for which rows are
+   * selected, and ListView never keeps its own copy. A selectable list must therefore be given
+   * `selectedKeys`; the highlight only moves once the owner passes new keys back.
+   */
+  type SelectionProps =
+    | { selectable?: false; selectedKeys?: readonly ListKey[] }
+    | { selectable: Exclude<SelectionMode, false>; selectedKeys: readonly ListKey[] };
+
+  type Props = BaseProps & SelectionProps;
+
   let {
     items,
     row,
     getKey = (_item, index) => index,
     getText = (item, index) => String(getKey(item, index)),
     selectable = false,
-    selectedKeys = $bindable([]),
+    selectedKeys = [],
     selectionAppearance = 'surface',
     onSelectedKeysChange,
     onActivate,
@@ -123,6 +137,22 @@
     if (activeIndex >= items.length) activeIndex = Math.max(0, items.length - 1);
   });
 
+  $effect(() => {
+    if (
+      !isVirtualized ||
+      !viewport ||
+      !content ||
+      !hover ||
+      visibleRows.length === 0 ||
+      typeof IntersectionObserver === 'undefined'
+    )
+      return;
+    const instance = hover;
+    const observer = new IntersectionObserver(() => instance.measure(), { root: viewport });
+    for (const row of content.querySelectorAll('[data-list-index]')) observer.observe(row);
+    return () => observer.disconnect();
+  });
+
   const registerRow: Action<HTMLElement, { store: ProximityHover | null; index: number }> = (
     node,
     options,
@@ -148,22 +178,17 @@
     };
   };
 
-  function setSelection(next: ListKey[]) {
-    selectedKeys = next;
-    onSelectedKeysChange?.(next);
-  }
-
   function toggleSelection(index: number) {
     if (!selectable) return;
     const key = getKey(items[index], index);
     if (selectable === 'single') {
-      setSelection(selectedSet.has(key) ? [] : [key]);
+      onSelectedKeysChange?.(selectedSet.has(key) ? [] : [key]);
       return;
     }
     const next = new Set(selectedKeys);
     if (next.has(key)) next.delete(key);
     else next.add(key);
-    setSelection([...next]);
+    onSelectedKeysChange?.([...next]);
   }
 
   function focusIndex(index: number) {

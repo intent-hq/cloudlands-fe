@@ -45,6 +45,7 @@ import {
   atomicDefaultModelAccepted,
 } from '../provider-settings-slice';
 
+import { providerProfilesSaga } from './provider-profiles-saga';
 import { providerFastModeSaga } from './provider-fast-mode-saga';
 
 const logger = createLogger('ProviderSettingsSaga');
@@ -370,6 +371,7 @@ export function* providerSettingsSaga() {
     yield* all([
       call(persistProviderSettingsQueue, updates),
       call(providerFastModeSaga),
+      call(providerProfilesSaga),
       call(providerAccessTokenSaga),
       takeEvery([setAtomicDefaultModel, setSelectedModel], queueModelWorker, updates),
       takeEvery(setActiveProvider, queueActiveProviderWorker, updates),

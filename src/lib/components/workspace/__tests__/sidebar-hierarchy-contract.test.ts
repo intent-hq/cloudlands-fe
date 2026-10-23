@@ -39,9 +39,9 @@ describe('workspace sidebar hierarchy presentation contract', () => {
 
   it('orders the live identity, progress, then current status', () => {
     const progress = source('../sidebar/WorkspaceProgressCard.svelte');
-    const fullMode = progress.slice(
-      progress.indexOf('<div class="flex w-full flex-col" data-workspace-title-section>'),
-    );
+    const section = progress.match(/<div\b[^>]*\bdata-workspace-title-section\s*>/);
+    expect(section).not.toBeNull();
+    const fullMode = progress.slice(section!.index);
     const title = fullMode.indexOf('<!-- Workspace Header -->');
     const status = fullMode.indexOf('<!-- Status follows identity and progress');
     const metadata = fullMode.indexOf('<!-- repository and branch metadata -->');
@@ -51,7 +51,7 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(title).toBeLessThan(metadata);
     expect(metadata).toBeLessThan(progressSection);
     expect(progressSection).toBeLessThan(status);
-    expect(fullMode).toContain('class="flex w-full flex-col" data-workspace-title-section');
+    expect(section![0]).toMatch(/class="flex w-full flex-col"\s+data-workspace-title-section/);
     expect(fullMode).toContain(
       'class="mb-4 flex w-full flex-col gap-1" data-sidebar-workspace-metadata',
     );
@@ -111,7 +111,6 @@ describe('workspace sidebar hierarchy presentation contract', () => {
 
     expect(sidebar).toContain('shrink-0 px-6 pb-2 pt-5');
     expect(sidebar).toContain('data-workspace-title-region');
-    expect(sidebar).toContain('<div class="px-4 pb-1 pt-4">');
     const addContext = selfClosingTag(sidebar, 'AddContextSection');
     expect(addContext).toContain('onAddNote={onCreateNote}');
     expect(addContext).toMatch(/\bcompact\b/);

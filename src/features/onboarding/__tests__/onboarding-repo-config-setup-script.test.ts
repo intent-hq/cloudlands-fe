@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => {
   return {
     readable,
     dispatch: vi.fn(),
+    preparationDispatch: vi.fn(),
     goto: vi.fn(),
     fetchRepoConfig: vi.fn<(repoPath: string) => Promise<string | null>>(),
     fetchGitHubRepoConfig:
@@ -68,34 +69,28 @@ const mocks = vi.hoisted(() => {
     // Mutable workspace-initializer state for the model-pick tests
     initializerHydrated: false,
     persistedOnboardingFormState: null as Record<string, unknown> | null,
-    // Store-visible active provider for the submit-time default commit
-    // (selectActiveProviderId reads state.model.defaultProviderId).
-    activeProviderId: '',
   };
 });
 
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
-
-vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } =
-    await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({
-    state: () => ({ model: { defaultProviderId: mocks.activeProviderId } }),
-    dispatch: mocks.dispatch,
-  });
-});
 
 vi.mock('$store/renderer/slices/onboarding/onboarding-selectors', () => ({
   selectOnboardingStep: () => mocks.readable(() => 'configuring'),
   selectOnboardingState: () => mocks.readable(() => ({ step: 'configuring' })),
 }));
 
-vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
-  selectWorkspaceInitializerHydrated: () => mocks.readable(() => mocks.initializerHydrated),
-  selectWorkspaceInitializerOnboardingFormState: {
-    select: () => mocks.persistedOnboardingFormState,
-  },
-}));
+vi.mock(
+  '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors',
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors')
+    >()),
+    selectWorkspaceInitializerHydrated: () => mocks.readable(() => mocks.initializerHydrated),
+    selectWorkspaceInitializerOnboardingFormState: {
+      select: () => mocks.persistedOnboardingFormState,
+    },
+  }),
+);
 
 vi.mock('$store/renderer/slices/github-auth/github-auth-selectors', () => ({
   selectGitHubAuthIsAuthenticating: { select: vi.fn(() => false) },
@@ -141,6 +136,26 @@ vi.mock('$lib/components/patterns/notify', () => ({
 vi.mock('$features/onboarding/utils/resolve-onboarding-model', () => ({
   resolveOnboardingModel: mocks.resolveModel,
 }));
+
+vi.mock('$features/onboarding/utils/commit-onboarding-default-model', async (importOriginal) => {
+  const original =
+    await importOriginal<
+      typeof import('$features/onboarding/utils/commit-onboarding-default-model')
+    >();
+  return {
+    ...original,
+    commitOnboardingDefaultModel: (
+      input: Parameters<typeof original.commitOnboardingDefaultModel>[0],
+    ) =>
+      original.commitOnboardingDefaultModel({
+        ...input,
+        dispatch: (action) => {
+          mocks.preparationDispatch(action);
+          input.dispatch(action);
+        },
+      }),
+  };
+});
 
 // Keep the real pure mention parsers (the #4050 regression test asserts
 // mention-derived context references reach the held payload); only the
@@ -213,6 +228,17 @@ vi.mock('svelte-fa', async () => ({
 
 import OnboardingPage from '../OnboardingPage.svelte';
 import { REPO_CONFIG_SCRIPT_NAME, SETUP_SCRIPT_TEMPLATES } from '$features/setup-scripts';
+import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
+import { store as appStore } from '$store/renderer/store';
+import { workspaceInitializationSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initialization-saga';
+import {
+  workspaceInitializerDraftOwnerReleased,
+  workspaceInitializerDraftRestoreRequested,
+} from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+import { selectWorkspaceCreateProgress } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-selectors';
+import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import { hostExecutionConnectionChanged } from '$store/renderer/slices/host-execution/host-execution-slice';
+import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -269,8 +295,17 @@ function selectGitHubRepo(overrides: Record<string, unknown> = {}) {
 const textOf = (result: ReturnType<typeof renderPage>, testId: string) =>
   result.getByTestId(testId).textContent;
 
+interface ObservedAction {
+  type: string;
+  payload?: unknown[];
+  asyncActionType?: string;
+  promise?: Promise<unknown>;
+}
+
 const dispatchedActions = () =>
-  mocks.dispatch.mock.calls.map(([action]) => action as { type: string; payload?: unknown[] });
+  [...mocks.dispatch.mock.calls, ...mocks.preparationDispatch.mock.calls].map(
+    ([action]) => action as ObservedAction,
+  );
 
 /**
  * Reset every shared mock (implementation AND call history — clearAllMocks
@@ -302,35 +337,178 @@ function installDefaultMockImplementations() {
   mocks.sendHeldFirstMessage.mockResolvedValue({ sent: true });
   mocks.initializerHydrated = false;
   mocks.persistedOnboardingFormState = null;
-  mocks.activeProviderId = '';
 }
 
+const SETTLE_TIMEOUT_MS = 5000;
+
 /**
- * A submitted create keeps running after the assertion a test stopped at
- * (post-create dispatches, the 300ms setup-card beat, navigation). Wait for
- * every create this test started to settle — each `workspaceCreateProgress/begin`
- * is matched by a `clear` in the flow's finally — so its late dispatches and
- * mock calls never land in the next test's recorded calls.
+ * A successful create keeps running after the assertion a test stopped at: the
+ * page's completion waits one or two 300ms setup-card beats, then dispatches
+ * and navigates to the new workspace. Wait for every initialization this test
+ * dispatched to settle and for each successful one to reach that navigation,
+ * so its late dispatches never land in the next test's recorded calls or hit
+ * the store after afterEach disposes it. An initialization still pending at
+ * the bound is left to afterEach, which cancels its saga, so a deliberately
+ * held create cannot hang teardown.
  */
 async function settleInFlightCreates() {
-  const count = (type: string) => dispatchedActions().filter((a) => a.type === type).length;
-  const begun = count('workspaceCreateProgress/begin');
-  if (begun === 0) return;
-  await waitFor(() => expect(count('workspaceCreateProgress/clear')).toBe(begun));
+  const initializations = dispatchedActions().flatMap((action) => {
+    return action.asyncActionType === 'workspaceInitializer/initializationSubmitted' &&
+      action.promise
+      ? [action.promise]
+      : [];
+  });
+  if (initializations.length === 0) return;
+  const outcomes = await Promise.race([
+    Promise.allSettled(initializations),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), SETTLE_TIMEOUT_MS)),
+  ]);
+  if (outcomes === null) return;
+  const expectedNavigations = new Map<string, number>();
+  for (const outcome of outcomes) {
+    const workspaceId =
+      outcome.status === 'fulfilled'
+        ? (outcome.value as { workspaceId?: unknown } | null | undefined)?.workspaceId
+        : undefined;
+    if (typeof workspaceId !== 'string') continue;
+    const path = `/workspace/${workspaceId}`;
+    expectedNavigations.set(path, (expectedNavigations.get(path) ?? 0) + 1);
+  }
+  if (expectedNavigations.size === 0) return;
+  await waitFor(
+    () => {
+      for (const [path, expected] of expectedNavigations) {
+        const navigated = mocks.goto.mock.calls.filter(([target]) => target === path).length;
+        expect(navigated).toBeGreaterThanOrEqual(expected);
+      }
+    },
+    { timeout: SETTLE_TIMEOUT_MS },
+  );
+  await waitFor(
+    () => {
+      const released = dispatchedActions().filter(
+        (action) => action.type === 'workspaceInitializer/clearInitializationOutcome',
+      ).length;
+      expect(released).toBeGreaterThanOrEqual(outcomes.length);
+    },
+    { timeout: SETTLE_TIMEOUT_MS },
+  );
 }
+
+let disposeStore: () => void;
+let cancelInitializationSaga: () => void;
 
 beforeEach(() => {
   installDefaultMockImplementations();
   sessionStorage.clear();
+  disposeStore = appStore.init();
+  admitLegacyPrincipal();
+  const dispatch = appStore.dispatch.bind(appStore);
+  vi.spyOn(appStore, 'dispatch').mockImplementation((action) => {
+    mocks.dispatch(action);
+    return dispatch(action);
+  });
+  cancelInitializationSaga = appStore.runSaga(workspaceInitializationSaga);
 });
 
 afterEach(async () => {
   await settleInFlightCreates();
   cleanup();
+  cancelInitializationSaga();
   sessionStorage.clear();
+  vi.restoreAllMocks();
+  disposeStore();
 });
 
 describe('onboarding repo-config setup script detection', () => {
+  it('re-admits its draft owner after a principal presentation refresh', async () => {
+    renderPage();
+    const restores = () =>
+      dispatchedActions().filter(
+        (
+          action,
+        ): action is ObservedAction & {
+          payload: ReturnType<typeof workspaceInitializerDraftRestoreRequested>['payload'];
+        } => action.type === workspaceInitializerDraftRestoreRequested.type,
+      );
+
+    await waitFor(() => expect(restores()).toHaveLength(1));
+    const first = restores()[0];
+    appStore.dispatch(
+      setLabsMultiplayerEnabled(!appStore.state.userPreferences.labsMultiplayerEnabled),
+    );
+
+    await waitFor(() => expect(restores()).toHaveLength(2));
+    const second = restores()[1];
+    expect(dispatchedActions()).toContainEqual(
+      workspaceInitializerDraftOwnerReleased(first.payload[0], first.payload[1]),
+    );
+    expect(second.payload[0]).toBe(first.payload[0]);
+    expect(second.payload[1]).not.toBe(first.payload[1]);
+    expect(second.payload[3]).not.toBe(first.payload[3]);
+    expect(first.payload[5]).toBeTruthy();
+    expect(second.payload[5]).toBe(first.payload[5]);
+  });
+
+  it('restores the prompt when admission changes during submission preparation', async () => {
+    const resolution = Promise.withResolvers<{
+      provider: string;
+      model?: string;
+      behaviorPrompt?: string;
+      specialistId: string | null;
+      specialistName?: string;
+    }>();
+    mocks.resolveModel.mockReturnValue(resolution.promise);
+    const result = renderPage();
+    selectLocalRepo('/repo/a');
+    const prompt = (
+      window as unknown as {
+        __mockOnboardingPromptStep: {
+          onSubmit: () => void;
+          setInputValue: (value: string) => void;
+        };
+      }
+    ).__mockOnboardingPromptStep;
+    prompt.setInputValue('Build the thing');
+    prompt.onSubmit();
+    await waitFor(() => expect(mocks.resolveModel).toHaveBeenCalledOnce());
+
+    appStore.dispatch(backendReconnected());
+    resolution.resolve({
+      provider: 'auggie',
+      model: 'model',
+      specialistId: 'developer',
+      specialistName: 'Developer',
+    });
+
+    await waitFor(() => expect(result.queryByTestId('setup-script-name')).toBeTruthy());
+    expect(mocks.workspaceCreate).not.toHaveBeenCalled();
+  });
+
+  it('restores the prompt when a connection reset removes the in-flight outcome', async () => {
+    const created = Promise.withResolvers<unknown>();
+    mocks.workspaceCreate.mockReturnValue(created.promise);
+    const result = renderPage();
+    selectLocalRepo('/repo/a');
+    const prompt = (
+      window as unknown as {
+        __mockOnboardingPromptStep: {
+          onSubmit: () => void;
+          setInputValue: (value: string) => void;
+        };
+      }
+    ).__mockOnboardingPromptStep;
+    prompt.setInputValue('Build the thing');
+    prompt.onSubmit();
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalledOnce());
+
+    appStore.dispatch(hostExecutionConnectionChanged('replacement-connection'));
+    created.resolve({ ok: false, error: 'connection replaced' });
+
+    await waitFor(() => expect(result.queryByTestId('setup-script-name')).toBeTruthy());
+    expect(mocks.goto).not.toHaveBeenCalled();
+  });
+
   it('defaults to "From repo config" when the repo commits a setupScript', async () => {
     // A last-used script exists too — repo config must win the priority.
     mocks.lastUsedSelect.mockReturnValue({ name: 'My saved script', content: 'echo saved' });
@@ -597,7 +775,12 @@ describe('onboarding repo-config setup script detection', () => {
     // entry BEFORE workspace.create (so mid-flight git:clone:progress frames
     // find it), echoes it as `progressId` on the create request (PROTOCOL
     // §5.1), and drops the entry once the create settles.
-    mocks.workspaceCreate.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
+    mocks.workspaceCreate.mockImplementation(async (params) => {
+      expect(
+        selectWorkspaceCreateProgress.select(appStore.state, params.progressId as string),
+      ).toMatchObject({ phase: 'starting', percent: 0 });
+      return { ok: false, error: 'stop after payload capture' };
+    });
 
     renderPage();
     selectLocalRepo('/repo/a');
@@ -618,26 +801,13 @@ describe('onboarding repo-config setup script detection', () => {
     expect(typeof request.progressId).toBe('string');
     expect(request.progressId).not.toBe('');
 
-    const actions = mocks.dispatch.mock.calls.map(
-      ([action]) => action as { type: string; payload?: unknown[] },
+    // The create mock observed the registered entry before accepting the wire
+    // request. Once the failure settles, the reducer drops that same entry.
+    await waitFor(() =>
+      expect(
+        selectWorkspaceCreateProgress.select(appStore.state, request.progressId as string),
+      ).toBeNull(),
     );
-    const begin = actions.find((a) => a.type === 'workspaceCreateProgress/begin');
-    expect(begin?.payload).toEqual([request.progressId]);
-    // begin must be dispatched before the create request goes out.
-    const beginIndex = mocks.dispatch.mock.calls.findIndex(
-      ([action]) => (action as { type: string }).type === 'workspaceCreateProgress/begin',
-    );
-    expect(beginIndex).toBeGreaterThanOrEqual(0);
-    expect(mocks.workspaceCreate.mock.invocationCallOrder[0]).toBeGreaterThan(
-      mocks.dispatch.mock.invocationCallOrder[beginIndex],
-    );
-    // The create settled (failure here) — the entry is dropped.
-    await waitFor(() => {
-      const clear = mocks.dispatch.mock.calls
-        .map(([action]) => action as { type: string; payload?: unknown[] })
-        .find((a) => a.type === 'workspaceCreateProgress/clear');
-      expect(clear?.payload).toEqual([request.progressId]);
-    });
   });
 
   it('submits a picked-repo create with its detected non-main branch', async () => {
@@ -1129,23 +1299,6 @@ describe('onboarding model picker (initial Developer agent)', () => {
       }
     ).__mockOnboardingPromptStep;
 
-  /**
-   * Post-create actions are dispatched after `workspace.create` resolves, so
-   * wait for the action itself (not just the create call). Dispatch history
-   * is reset per test and the previous test's create is settled before this
-   * one starts, so every match belongs to this test's flow.
-   */
-  const awaitLastDispatched = async (type: string) => {
-    let match: { type: string; payload?: unknown[] } | undefined;
-    await waitFor(() => {
-      match = dispatchedActions()
-        .filter((a) => a.type === type)
-        .at(-1);
-      expect(match).toBeDefined();
-    });
-    return match;
-  };
-
   it('dispatches the global selectModel trigger when the user picks a model', async () => {
     const result = renderPage();
     selectLocalRepo('/repo/a');
@@ -1273,17 +1426,16 @@ describe('onboarding model picker (initial Developer agent)', () => {
 
     // The onboarding choice seeds the New Workspace modal's remembered agent
     // (single-agent Developer, carrying the explicit pick).
-    const lastSubmitted = await awaitLastDispatched('workspaceInitializer/setLastSubmittedAgent');
-    expect(lastSubmitted?.payload).toEqual([
-      {
+    await waitFor(() =>
+      expect(appStore.state.workspaceInitializer.lastSubmittedAgent).toEqual({
         selectedSpecialist: 'developer',
         isTeamMode: false,
         selectedModel: PICKED,
         modelWasOverridden: true,
         selectedReasoningEffort: undefined,
         selectedProvider: 'pi',
-      },
-    ]);
+      }),
+    );
   });
 
   it('resolves without an override when the user never picked a model', async () => {
@@ -1314,17 +1466,16 @@ describe('onboarding model picker (initial Developer agent)', () => {
     expect(createRequest.initialAgent.provider).toBe('auggie');
     expect(createRequest.initialAgent.specialist).toBe('developer');
 
-    const lastSubmitted = await awaitLastDispatched('workspaceInitializer/setLastSubmittedAgent');
-    expect(lastSubmitted?.payload).toEqual([
-      {
+    await waitFor(() =>
+      expect(appStore.state.workspaceInitializer.lastSubmittedAgent).toEqual({
         selectedSpecialist: 'developer',
         isTeamMode: false,
         selectedModel: undefined,
         modelWasOverridden: false,
         selectedReasoningEffort: undefined,
         selectedProvider: undefined,
-      },
-    ]);
+      }),
+    );
   });
 
   it('creates a General agent (no specialist) when the resolved config falls back from Developer', async () => {
@@ -1369,16 +1520,17 @@ describe('onboarding model picker (initial Developer agent)', () => {
     expect(createRequest.initialAgent.name).not.toBe('Developer');
 
     // The remembered modal choice is single-agent General.
-    const lastSubmitted = await awaitLastDispatched('workspaceInitializer/setLastSubmittedAgent');
-    expect(lastSubmitted?.payload).toEqual([
-      expect.objectContaining({ selectedSpecialist: null, isTeamMode: false }),
-    ]);
+    await waitFor(() =>
+      expect(appStore.state.workspaceInitializer.lastSubmittedAgent).toEqual(
+        expect.objectContaining({ selectedSpecialist: null, isTeamMode: false }),
+      ),
+    );
 
     // A General agent does not get the spec-first (coordinator) layout.
-    const bootstrap = await awaitLastDispatched('panelLayout/bootstrapNewWorkspaceLayout');
-    expect(bootstrap?.payload).toEqual(
-      expect.objectContaining({ wsId: 'ws-1', initialAgentId: 'agent-1', coordinator: false }),
-    );
+    expect(appStore.state.panelLayout.byWorkspaceId['ws-1']?.newWorkspaceLifecycle).toMatchObject({
+      initialAgentId: 'agent-1',
+      coordinator: false,
+    });
   });
 
   it('does not record a last-submitted agent when workspace.create fails', async () => {
@@ -1390,15 +1542,11 @@ describe('onboarding model picker (initial Developer agent)', () => {
     captured().onSubmit();
 
     await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalledTimes(1));
-    // The create settles (failure path) once the transient progress entry is dropped.
+    const request = mocks.workspaceCreate.mock.calls[0][0] as { progressId: string };
     await waitFor(() =>
-      expect(
-        dispatchedActions().find((a) => a.type === 'workspaceCreateProgress/clear'),
-      ).toBeDefined(),
+      expect(selectWorkspaceCreateProgress.select(appStore.state, request.progressId)).toBeNull(),
     );
-    expect(
-      dispatchedActions().find((a) => a.type === 'workspaceInitializer/setLastSubmittedAgent'),
-    ).toBeUndefined();
+    expect(appStore.state.workspaceInitializer.lastSubmittedAgent).toBeNull();
   });
 
   const okCreateResult = {
@@ -1681,6 +1829,43 @@ describe('onboarding first-message attachments (intent-hq/intent#4050)', () => {
     ]);
   });
 
+  it('retries failed attachment placement instead of blocking on the failed pill', async () => {
+    mocks.workspaceCreate.mockResolvedValue({
+      ok: true,
+      data: {
+        workspace: {
+          id: 'ws-1',
+          path: '/repo/a',
+          repositoryPath: '/repo/a',
+          worktreePath: '/wt/a',
+        },
+        initialAgent: { id: 'agent-1' },
+      },
+    });
+    const staged = { id: 'file-1', type: 'file', label: 'a.txt', sourcePath: '/tmp/a.txt' };
+    const failed = { ...staged, placementStatus: 'failed', placementError: 'gone' };
+    const placed = { ...staged, placementStatus: 'placed', attachmentId: 'attachment-1' };
+    mocks.redeemStagedAttachments
+      .mockResolvedValueOnce({ items: [failed], failedCount: 1, fileBlocks: [] })
+      .mockResolvedValueOnce({
+        items: [placed],
+        failedCount: 0,
+        fileBlocks: [{ type: 'file', attachmentId: 'attachment-1', fileName: 'a.txt' }],
+      });
+
+    renderPage();
+    selectLocalRepo('/repo/a');
+    captured().setStagedContextItems([staged]);
+    captured().setInputValue('Build the thing');
+    captured().onSubmit();
+    await waitFor(() => expect(mocks.redeemStagedAttachments).toHaveBeenCalledTimes(1));
+
+    captured().onSubmit();
+    await waitFor(() => expect(mocks.redeemStagedAttachments).toHaveBeenCalledTimes(2));
+    expect(mocks.workspaceCreate).toHaveBeenCalledOnce();
+    expect(mocks.sendHeldFirstMessage).toHaveBeenCalledOnce();
+  });
+
   it('sends the prompt on the create frame when no attachments are staged', async () => {
     mocks.workspaceCreate.mockResolvedValue({
       ok: true,
@@ -1807,5 +1992,46 @@ describe('onboarding first-message attachments (intent-hq/intent#4050)', () => {
     expect(heldParams.contextReferences).toEqual([
       { type: 'file', path: '/home/user/projects/data', title: 'data' },
     ]);
+  });
+});
+
+describe('onboarding test teardown', () => {
+  it('settles a successful create through its completion before the store is disposed', async () => {
+    // A successful create keeps running after workspace.create resolves: domain
+    // completion is immediate, while navigation waits up to two 300ms setup-card
+    // beats. If afterEach disposes the store first, late presentation work throws
+    // "Cannot access Store.dispatch before Store.init()" as an unhandled error
+    // that fails whichever shard is still running.
+    mocks.workspaceCreate.mockResolvedValue({
+      ok: true,
+      data: {
+        workspace: {
+          id: 'ws-1',
+          path: '/repo/a',
+          repositoryPath: '/repo/a',
+          worktreePath: '/wt/a',
+        },
+        initialAgent: { id: 'agent-1' },
+      },
+    });
+
+    renderPage();
+    selectLocalRepo('/repo/a');
+    const promptStep = (
+      window as unknown as {
+        __mockOnboardingPromptStep: {
+          onSubmit: () => void;
+          setInputValue: (value: string) => void;
+        };
+      }
+    ).__mockOnboardingPromptStep;
+    promptStep.setInputValue('Build the thing');
+    promptStep.onSubmit();
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalledTimes(1));
+
+    await settleInFlightCreates();
+
+    expect(appStore.state.onboarding.workspaceId).toBe('ws-1');
+    expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-1', { replaceState: true });
   });
 });

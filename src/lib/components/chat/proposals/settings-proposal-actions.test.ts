@@ -344,6 +344,13 @@ describe('settings-proposal-actions', () => {
     },
   );
 
+  it('rejects the retired provider profiles lab setting', async () => {
+    await expect(
+      applySettingsProposalWork(makeDetail(makeProposal('labs.providerProfiles', true))),
+    ).rejects.toThrow('Unknown or unsupported setting "labs.providerProfiles"');
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+  });
+
   it('falls back to the proposal value when a numeric edit is invalid', async () => {
     const proposal = makeProposal('notifications.volume', 0.75);
     const detail = makeDetail(proposal);

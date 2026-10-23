@@ -40,6 +40,7 @@ import {
 vi.mock('$lib/client/live/backend-transport', async () => ({
   BackendError: (await import('../../test/mocks/backend-transport.mock')).BackendError,
   observeBackendNodeCapabilities: vi.fn(async () => ({ server: { capabilities: null } })),
+  readBackendPrincipal: vi.fn(() => new Promise(() => {})),
   backendRequest: vi.fn(() => new Promise(() => {})),
   backendSubscribe: vi.fn(() => new Promise(() => {})),
   backendUnsubscribe: vi.fn(async () => {}),

@@ -1,7 +1,10 @@
 import type { PullRequestInfo, Workspace, WorkspaceDiffSummary } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import { shallowEqual } from 'fast-equals';
-import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  backendReconnected,
+  workspaceDeleted,
+} from '../workspace-lifecycle/workspace-lifecycle-slice';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
@@ -68,6 +71,7 @@ export type WorkspaceState = {
    * the store.
    */
   detailHydrated: Record<string, true>;
+  pushedTaskStats: Record<string, NonNullable<Workspace['taskStats']>>;
   recency: WorkspaceRecencyState;
 };
 
@@ -88,12 +92,17 @@ export const initialState: WorkspaceState = {
   pendingCreations: {},
   pendingTitleMutations: {},
   detailHydrated: {},
+  pushedTaskStats: {},
   recency: defaultWorkspaceRecencyState,
 };
 
 // ---------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------
+
+export const workspaceTaskStatsPushed = createAction<
+  [workspaceId: string, taskStats: NonNullable<Workspace['taskStats']>]
+>('workspaceTasks/statsPushed');
 
 export const setWorkspaceLoading = createAction<[loading: boolean]>(
   'workspace/setWorkspaceLoading',
@@ -161,6 +170,18 @@ export const updateWorkspaceEntity = createAction<[wsId: string, changes: Partia
 );
 
 /** Apply queued workspace entity update actions in order. */
+/**
+ * Replace ONLY the PR fields of a stored row with an authoritative
+ * `workspace.get` read (the daemon's merged pool, uncapped, plus the linked PR
+ * fields — PROTOCOL §5.1). Unlike a `detailRead` upsert, every other field
+ * keeps its newer event-applied value, so an event-triggered refresh cannot
+ * roll back a title / status change that landed while the read was in flight.
+ * No-op for unknown or pending-deletion rows.
+ */
+export const workspacePullRequestsRefreshed = createAction<[wsId: string, served: Workspace]>(
+  'workspace/pullRequestsRefreshed',
+);
+
 export const bulkUpdateWorkspaceEntities = createAction<
   [actions: ReturnType<typeof updateWorkspaceEntity>[]]
 >('workspace/bulkUpdateWorkspaceEntities');
@@ -497,6 +518,13 @@ function getWorkspaceById(
 // ---------------------------------------------------------------------------
 
 export const workspaceReducer = createReducer<WorkspaceState>(initialState);
+workspaceReducer.with(workspaceTaskStatsPushed, (state, { payload: [workspaceId, taskStats] }) => ({
+  ...state,
+  pushedTaskStats: { ...state.pushedTaskStats, [workspaceId]: taskStats },
+  workspaces: updateItem(state.workspaces, { id: workspaceId as Workspace['id'], taskStats }),
+}));
+// Reconnect hydration re-establishes authoritative summaries after missed events.
+workspaceReducer.with(backendReconnected, (state) => ({ ...state, pushedTaskStats: {} }));
 workspaceReducer.with(setWorkspaceLoading, (state, { payload: [loading] }) => {
   if (state.loading === loading) return state;
   return { ...state, loading };
@@ -536,7 +564,14 @@ workspaceReducer.with(replaceWorkspaceList, (state, { payload: [workspaces, proj
       invalidatedDeletions[id] = token;
     }
   }
-  const nextVisibleState = buildVisibleWorkspaceState(state, workspaces);
+  const nextVisibleState = buildVisibleWorkspaceState(
+    state,
+    workspaces.map((workspace) =>
+      state.pushedTaskStats[workspace.id]
+        ? { ...workspace, taskStats: state.pushedTaskStats[workspace.id] }
+        : workspace,
+    ),
+  );
   return {
     ...state,
     invalidatedDeletions,
@@ -607,6 +642,9 @@ workspaceReducer.with(setWorkspaceEntity, (state, { payload: [workspace, options
     if (!visible) return state;
     return { ...state, workspaces: removeItem(state.workspaces, workspace.id) };
   }
+  workspace = state.pushedTaskStats[workspace.id]
+    ? { ...workspace, taskStats: state.pushedTaskStats[workspace.id] }
+    : workspace;
   const existing = getWorkspaceById(state.workspaces, workspace.id);
   const detailRead = options?.detailRead === true;
   // Plain entity upserts carry per-workspace `workspace.update`-style
@@ -632,6 +670,22 @@ workspaceReducer.with(setWorkspaceEntity, (state, { payload: [workspace, options
         ? { ...state.detailHydrated, [workspace.id]: true }
         : state.detailHydrated,
   };
+});
+workspaceReducer.with(workspacePullRequestsRefreshed, (state, { payload: [wsId, served] }) => {
+  if (state.pendingDeletions[wsId]) return state;
+  const existing = getWorkspaceById(state.workspaces, wsId);
+  if (!existing) return state;
+  const updated: Workspace = {
+    ...existing,
+    pullRequests: served.pullRequests,
+    pullRequestsTotal: undefined,
+    activePullRequest: served.activePullRequest,
+    prNumber: served.prNumber,
+    prStatus: served.prStatus,
+    prUrl: served.prUrl,
+  };
+  if (shallowEqual(existing, updated)) return state;
+  return { ...state, workspaces: updateItem(state.workspaces, updated) };
 });
 workspaceReducer.with(bulkUpdateWorkspaceEntities, (state, { payload: [actions] }) => {
   let workspaces = state.workspaces;
@@ -833,5 +887,6 @@ workspaceReducer.with(resetWorkspaceState, (state) => ({
   pendingCreations: {},
   pendingTitleMutations: {},
   detailHydrated: {},
+  pushedTaskStats: {},
   recency: defaultWorkspaceRecencyState,
 }));

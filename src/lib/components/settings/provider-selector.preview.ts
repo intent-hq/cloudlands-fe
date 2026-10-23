@@ -2,6 +2,7 @@ import { setupProviderAccessTokenPreview } from '../../../test/provider-access-t
 // Success actions restore visible values; loaded/check flags and epochs may remain.
 // Newly introduced availability keys settle to unavailable because no remove action exists.
 import { setupProviderFastModePreview } from '../../../test/provider-fast-mode-preview';
+import { setupProviderProfilesPreview } from '../../../test/provider-profiles-preview';
 import type { ComponentProps } from 'svelte';
 import { definePreview } from '$lib/component-catalog/preview-definition';
 import { store as appStore } from '$store/renderer/store';
@@ -129,6 +130,19 @@ export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
         };
       },
     },
+    'access-tokens-profiles': {
+      props: {},
+      setup: () => {
+        const restoreProviders = setupProviderSelector();
+        const restoreProfiles = setupProviderProfilesPreview({ appOwned: true });
+        const restoreTokens = setupProviderAccessTokenPreview();
+        return () => {
+          restoreTokens();
+          restoreProfiles();
+          restoreProviders();
+        };
+      },
+    },
     'access-token-error': {
       props: {},
       setup: () => {
@@ -136,6 +150,61 @@ export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
         const restoreTokens = setupProviderAccessTokenPreview(true);
         return () => {
           restoreTokens();
+          restoreProviders();
+        };
+      },
+    },
+    profiles: {
+      props: {},
+      setup: () => {
+        const restoreProviders = setupProviderSelector();
+        const restoreProfiles = setupProviderProfilesPreview({ appOwned: true });
+        return () => {
+          restoreProfiles();
+          restoreProviders();
+        };
+      },
+    },
+    // Backup profiles: reorder with drag or arrow keys on the handle; backups carry a badge.
+    'profiles-backup': {
+      props: {},
+      setup: () => {
+        const restoreProviders = setupProviderSelector();
+        const restoreProfiles = setupProviderProfilesPreview({
+          appOwned: true,
+          withBackups: true,
+        });
+        return () => {
+          restoreProfiles();
+          restoreProviders();
+        };
+      },
+    },
+    'profiles-remote': {
+      props: {},
+      setup: () => {
+        const restoreProviders = setupProviderSelector();
+        const restoreProfiles = setupProviderProfilesPreview({ appOwned: false });
+        return () => {
+          restoreProfiles();
+          restoreProviders();
+        };
+      },
+    },
+    // Each named profile has its own Fast mode / service tier (off unless set).
+    'profiles-fast-mode': {
+      props: {},
+      setup: () => {
+        const restoreProviders = setupProviderSelector();
+        const restoreProfiles = setupProviderProfilesPreview({ appOwned: true });
+        const restoreFastMode = setupProviderFastModePreview(true, false, undefined, {
+          codex: true,
+          'claude-code': false,
+          'claude-code@pproxy0000001': true,
+        });
+        return () => {
+          restoreFastMode();
+          restoreProfiles();
           restoreProviders();
         };
       },

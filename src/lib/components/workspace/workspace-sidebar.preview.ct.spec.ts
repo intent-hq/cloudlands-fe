@@ -166,7 +166,7 @@ test('keeps assigned and unassigned status and title columns aligned through hov
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const selected: string[] = [];
   const component = await mount(WorkspaceSidebarPreview, {
-    hooksConfig: { geometrySnapshot: { scene: 'workspace-sidebar', state: 'key-slots' } },
+    hooksConfig: { previewScene: { scene: 'workspace-sidebar', state: 'key-slots' } },
   });
   await component.update({ props: { width: 248, onSelect: (id: string) => selected.push(id) } });
   const rows = component.locator('[data-workspace-card-row]');

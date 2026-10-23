@@ -639,6 +639,10 @@ describe('FileTabType Redux integration', () => {
         await waitFor(() =>
           expect(screen.getByTestId('markdown-viewer').textContent).toBe('# Secondary root A'),
         );
+        // Scoped roots never resolve relative media to primary-checkout workspace files.
+        expect(screen.getByTestId('markdown-viewer').getAttribute('data-relative-media-base')).toBe(
+          '(unset)',
+        );
         expect(backendRequest).toHaveBeenCalledWith('file.read', {
           workspaceId: 'ws-1',
           path: 'new.md',
@@ -905,6 +909,29 @@ describe('FileTabType Redux integration', () => {
     );
   }
 
+  it('routes the video error action through the original workspace download and disables repeats', async () => {
+    let finish!: (result: unknown) => void;
+    vi.mocked(invoke).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    renderFileTab({ ...fileTab, filePath: '/repo/recordings/clip.mp4' });
+    const button = await screen.findByRole<HTMLButtonElement>('button', {
+      name: 'Download original video',
+    });
+    await fireEvent.click(button);
+    expect(invoke).toHaveBeenCalledExactlyOnceWith('file:download-attachment', {
+      workspaceId: 'ws-1',
+      path: 'recordings/clip.mp4',
+      fileName: 'clip.mp4',
+    });
+    expect(button.disabled).toBe(true);
+    finish({ success: false, canceled: true });
+    await waitFor(() => expect(button.disabled).toBe(false));
+  });
+
   it.each([
     ['docs/Quarterly report #1.PDF', 'docs/Quarterly report #1.PDF', 'Quarterly report #1.PDF'],
     ['/repo/images/café.png', 'images/café.png', 'café.png'],
@@ -1121,6 +1148,27 @@ describe('FileTabType Redux integration', () => {
       expect.objectContaining({ type: 'files/saveFileContentRequested' }),
     );
     expect((await screen.findByTestId('header-state')).getAttribute('data-dirty')).toBe('false');
+  });
+
+  it.each([
+    ['report/report.md', 'report'],
+    ['README.md', ''],
+  ])('resolves relative preview media for %s against %j', async (filePath, expected) => {
+    mockReduxState.files[filePath] = {
+      localContent: '![Chart](charts/chart.png)',
+      kind: 'editable-text',
+      originalContent: '![Chart](charts/chart.png)',
+      loading: false,
+      saving: false,
+      error: null,
+      isBinary: false,
+      lastUpdated: 0,
+    };
+
+    renderFileTab({ ...fileTab, id: `tab-${filePath}`, title: filePath, filePath });
+
+    const preview = await screen.findByTestId('markdown-viewer');
+    expect(preview.getAttribute('data-relative-media-base')).toBe(expected);
   });
 
   it('opens markdown line targets in the source editor', async () => {

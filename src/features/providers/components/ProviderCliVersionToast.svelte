@@ -15,7 +15,11 @@
   import { selectCurrentConnectionId } from '$store/renderer/slices/connections/connections-selectors';
   import { selectDaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { selectProviderCliRequirements } from '$store/renderer/slices/host-requirements/host-requirements-selectors';
-  import { checkProviderCliRequirementsRequested } from '$store/renderer/slices/host-requirements/host-requirements-slice';
+  import {
+    checkProviderCliRequirementsRequested,
+    providerCliUpdateRequested,
+  } from '$store/renderer/slices/host-requirements/host-requirements-slice';
+  import type { ProviderCliWarning } from '$features/providers/utils/provider-cli-warnings';
 
   const owner$ = selectHostAdministrationContext();
   const host$ = selectCurrentConnectionId();
@@ -29,6 +33,14 @@
     if (context) appStore.dispatch(checkProviderCliRequirementsRequested());
   });
 
+  async function runUpdate(warning: ProviderCliWarning) {
+    try {
+      await appStore.dispatch(providerCliUpdateRequested(warning.providerId));
+    } catch (cause) {
+      notify.error(cause instanceof Error ? cause.message : m.terminal_adapter_openFailed_error());
+    }
+  }
+
   $effect(() => {
     if (!context || $result$?.context !== context) return;
     for (const warning of $result$.warnings) {
@@ -37,16 +49,35 @@
         warning.providerId,
         warning.version,
         warning.minimumVersion,
+        warning.bundledVersion ?? null,
       ]);
       if (shown.has(key)) continue;
       shown.add(key);
-      notify.warning(
-        m.providers_cliVersionWarning_message({
-          provider: warning.providerName,
-          version: warning.version,
-          minimumVersion: warning.minimumVersion,
-        }),
-      );
+      const bundledVersion = warning.bundledVersion;
+      const title = bundledVersion
+        ? m.providers_cliVersionWarning_bundled_title({ provider: warning.providerName })
+        : m.providers_cliVersionWarning_title({ provider: warning.providerName });
+      const description = bundledVersion
+        ? m.providers_cliVersionWarning_bundled_description({
+            version: warning.version,
+            minimumVersion: warning.minimumVersion,
+            bundledVersion,
+          })
+        : m.providers_cliVersionWarning_description({
+            version: warning.version,
+            minimumVersion: warning.minimumVersion,
+          });
+      notify.warning(title, {
+        description,
+        ...(warning.updateCommand
+          ? {
+              action: {
+                label: m.providers_cliVersionWarning_update_action(),
+                onClick: () => void runUpdate(warning),
+              },
+            }
+          : {}),
+      });
     }
   });
 </script>

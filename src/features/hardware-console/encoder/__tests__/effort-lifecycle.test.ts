@@ -208,7 +208,7 @@ function effortWire(protocol: EffortProtocol) {
     data: { success: true, modelId: params.modelId },
   }));
   if (protocol === 'legacy') {
-    state.daemonHealth.stats.protocolVersion = '5.1';
+    state.daemonHealth.stats.protocolVersion = '5.1'; // fixture-protocol-version: legacy compound-model effort wire (before 5.2)
     publish();
     registerMockIpcHandler(AGENT_CHANNELS.SET_MODEL, legacy);
   }

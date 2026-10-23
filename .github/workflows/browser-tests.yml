@@ -1,5 +1,5 @@
-# One suite definition for selective PR checks and complete nightly/manual runs.
-# No caller can start a browser lane for merge_group or a fork pull_request.
+# One suite definition for selective queue checks and complete nightly/manual runs.
+# No caller can start a browser lane for a pull_request, including forks.
 name: Browser Tests
 
 on:
@@ -9,6 +9,18 @@ on:
         description: 'Full suite to run: ct, root, or electron'
         type: string
         required: true
+      slots:
+        # The caller's route outputs.slots: a Component Tests shard takes its
+        # ct-N slot when granted. Nightly and manual callers pass none.
+        description: 'Runner labels per pooled job key (JSON object)'
+        type: string
+        required: false
+        default: '{}'
+      cloud:
+        description: "The caller's route `cloud` output (runner-route.yml): where Component Tests burst; the root and Electron suites run on ubuntu-24.04."
+        type: string
+        required: false
+        default: '{}'
 
 permissions:
   contents: read
@@ -16,9 +28,12 @@ permissions:
 jobs:
   test-ct:
     name: Component Tests (shard ${{ matrix.shard }}/4)
-    if: ${{ !cancelled() && inputs.suite == 'ct' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) }}
-    runs-on: depot-ubuntu-24.04-8
-    # Four hosted shards, one worker each; preserve the pinned CT browser.
+    if: ${{ !cancelled() && inputs.suite == 'ct' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group') }}
+    # A granted ct-N slot (the merge-queue caller's slots), else the caller's
+    # burst runner for gh-linux-8x (WarpBuild), else gh-linux-8x. Slots carry
+    # the Chromium libraries in their image and skip the sudo/apt steps.
+    runs-on: ${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["warp-ubuntu-2404-x64-8x"]') }}
+    # Four shards, two workers each; preserve the pinned CT browser.
     strategy:
       # Let the sibling shards finish so one flaky leg doesn't hide the
       # other legs' results.
@@ -48,11 +63,13 @@ jobs:
           # Keep concurrent runner installations isolated.
           dest: ~/setup-pnpm-${{ runner.name }}
       - name: Setup Node.js
-        # This job always uses the ephemeral hosted runner and its cache.
+        # Hosted runners and the ephemeral intent-cache slots both start clean.
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: pnpm
+      - name: Cache pnpm store
+        # WarpBuild's cache on WarpBuild Linux/macOS runners, GitHub's elsewhere.
+        uses: ./.github/actions/pnpm-store-cache
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Generate i18n messages
@@ -96,6 +113,13 @@ jobs:
         # the step timeout below.
         run: |
           set -euo pipefail
+          # intent-cache slots have no sudo and need no apt: the runner image
+          # carries the Chromium libraries (infra/runners/Dockerfile).
+          # WarpBuild also reports self-hosted, but sets its verification token.
+          if [ "${RUNNER_ENVIRONMENT:-}" = self-hosted ] && [ -z "${WARPBUILD_RUNNER_VERIFICATION_TOKEN:-}" ]; then
+            echo "intent-cache slot: skipping apt hardening"
+            exit 0
+          fi
           if [ -f /etc/apt/apt-mirrors.txt ]; then
             sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
             echo "apt-mirrors.txt now:" && cat /etc/apt/apt-mirrors.txt
@@ -152,6 +176,10 @@ jobs:
             exit 0
           fi
           echo "Missing Chromium OS deps:$missing"
+          if [ "${RUNNER_ENVIRONMENT:-}" = self-hosted ] && [ -z "${WARPBUILD_RUNNER_VERIFICATION_TOKEN:-}" ]; then
+            echo "::error::intent-cache slots have no sudo; add$missing to infra/runners/Dockerfile in intent-hq/intent"
+            exit 1
+          fi
           for i in 1 2; do
             # The validated package list intentionally supplies separate apt arguments.
             # shellcheck disable=SC2086
@@ -220,7 +248,7 @@ jobs:
           # --fail-on-flaky-tests turns a pass-on-retry into a red shard
           # instead of silent 3x runtime. A flaky required test must be fixed
           # or explicitly parked under the @quarantine tag below.
-          pnpm run test:ct --shard=${{ matrix.shard }}/4 --grep-invert '@quarantine\b' --fail-on-flaky-tests --reporter=list,html,json
+          pnpm run test:ct --workers=2 --shard=${{ matrix.shard }}/4 --grep-invert '@quarantine\b' --fail-on-flaky-tests --reporter=list,html,json
       - name: Record browser outcome
         if: always()
         env:
@@ -288,8 +316,11 @@ jobs:
   # Four hosted shards retain one worker each and the existing 45-minute budget.
   test-playwright:
     name: Playwright (root ${{ matrix.shard }}/4)
-    if: ${{ !cancelled() && inputs.suite == 'root' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) }}
-    runs-on: depot-ubuntu-24.04-8
+    if: ${{ !cancelled() && inputs.suite == 'root' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group') }}
+    # Never a self-hosted slot: relies on the GitHub image's Chromium libraries.
+    # One worker per shard peaks near 2 CPUs and 8 GB, so the free standard
+    # runner (4 CPUs / 16 GB) fits without a paid 8-core runner.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -314,7 +345,9 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: 'pnpm'
+      - name: Cache pnpm store
+        # WarpBuild's cache on WarpBuild Linux/macOS runners, GitHub's elsewhere.
+        uses: ./.github/actions/pnpm-store-cache
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Generate i18n messages
@@ -344,7 +377,7 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-root-browsers-${{ runner.os }}-${{ steps.root-playwright.outputs.version }}
       - name: Install Playwright browsers
-        # The gh-linux-8x image already ships every Chromium
+        # GitHub's ubuntu-24.04 image already ships every Chromium
         # shared library, and --with-deps only adds the fonts-*/xfonts-*
         # packages whose fetch blew test-ct's budget (intent#4723) — so
         # install the browser alone; a missing lib fails the first spec
@@ -385,8 +418,10 @@ jobs:
 
   test-electron:
     name: Electron Browser Lifetime
-    if: ${{ !cancelled() && inputs.suite == 'electron' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) }}
-    runs-on: depot-ubuntu-24.04-8
+    if: ${{ !cancelled() && inputs.suite == 'electron' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group') }}
+    # Never a self-hosted slot: installs Xvfb with sudo. A single worker fits
+    # the free standard runner.
+    runs-on: ubuntu-24.04
     # 8 tests × ≤120 s test timeout is the theoretical ceiling; a healthy
     # single-worker run takes ~2-3 min plus setup.
     timeout-minutes: 30
@@ -409,7 +444,9 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: pnpm
+      - name: Cache pnpm store
+        # WarpBuild's cache on WarpBuild Linux/macOS runners, GitHub's elsewhere.
+        uses: ./.github/actions/pnpm-store-cache
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Install Electron binary
@@ -466,6 +503,12 @@ jobs:
           pnpm run generate:build-config
           pnpm run generate:ipc-channels
           xvfb-run -a pnpm exec playwright test --config test/fixtures/repository-checkout/playwright.config.ts
+      - name: Electron monitor document tests
+        # Controlled peer proves main/preload/document routing, not provider authority.
+        run: |
+          pnpm run generate:build-config
+          pnpm run generate:ipc-channels
+          xvfb-run -a pnpm exec playwright test --config test/fixtures/pr-monitor-native/playwright.config.ts
       - name: Record browser outcome
         if: always()
         env:

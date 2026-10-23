@@ -40,7 +40,10 @@ import {
 import { getFocusedWindowBackendId } from '../../../main/window';
 import { DirectRelay } from '../../backend/main/direct-relay';
 import { TunnelManager } from '../../backend/main/tunnel-manager';
-import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
+import {
+  adoptWorkspaceForBackgroundHosting,
+  sendToWorkspaceWindows,
+} from '../../system/main/system.ipc';
 import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
 import type { BrowserTabListing } from '../../../shared/types/browser-clients';
 
@@ -116,8 +119,11 @@ async function waitForDaemonTab(
  * owner group can label the tab without an agent-store lookup
  * (monorepo#3438). `visible: false` (agent opens, monorepo#3045) creates the
  * tab hidden — no panel mount, webview kept alive offscreen.
+ * `backendId` is the host that owns `workspaceId`: only that host's windows
+ * receive the open-tab command (workspace ids are only unique per host).
  */
 function openBrowserTab(
+  backendId: string,
   url: string,
   position: 'adjacent' | 'replace' | 'same' = 'adjacent',
   workspaceId?: string,
@@ -179,6 +185,7 @@ function openBrowserTab(
       ...(emulatedSize === undefined ? {} : { emulatedSize }),
       ...(visible === undefined ? {} : { visible }),
     },
+    backendId,
   );
   if (!delivery.delivered) {
     // No window (or browser-mode client) received the message, so no tab was
@@ -432,6 +439,7 @@ export async function executeBrowserActions(
   deadline?: number,
 ): Promise<ExecutionResult> {
   const resolvedBackendContext = backendContext ?? getFocusedBrowserBackendContext();
+  ensureBrowserWorkspaceHost(actions, workspaceId, resolvedBackendContext.backendId);
   return executeActions(
     { actions, tabId },
     (
@@ -447,6 +455,7 @@ export async function executeBrowserActions(
       ownerAgentName,
     ) =>
       openBrowserTab(
+        resolvedBackendContext.backendId,
         url,
         position,
         workspaceId,
@@ -467,6 +476,50 @@ export async function executeBrowserActions(
     (tabId, requestDeadline) =>
       waitForDaemonTab(resolvedBackendContext, workspaceId, tabId, agentId, requestDeadline),
   );
+}
+
+/**
+ * Actions that never touch a tab — tunnels, and capture bookkeeping main
+ * answers from its own session state and the capture directory — so they
+ * need no window hosting the workspace.
+ */
+const TAB_FREE_ACTIONS = new Set([
+  'openTunnel',
+  'listTunnels',
+  'closeTunnel',
+  'endCapture',
+  'stopTrace',
+  'endSession',
+  'readCapture',
+  'getSummary',
+]);
+
+/**
+ * Make sure a window on the owning backend hosts the batch's workspace
+ * before any action routes to it. With no hosting window (the workspace's
+ * tab was closed, or it was not reopened since a restart) every browser op
+ * used to fail with "not open in any window"; now one window hosts it in
+ * the background — no tab, no navigation, no focus — so its saved layout
+ * hydrates and its tabs mount offscreen. The CDP service is told so its
+ * first tab-list request waits for that cold hydration. When no window is
+ * connected to the backend at all, nothing changes and the ops fail with
+ * their existing not-open / workspace-not-visible errors.
+ */
+function ensureBrowserWorkspaceHost(
+  actions: unknown[],
+  workspaceId: string | undefined,
+  backendId: string,
+): void {
+  const payload = workspaceCommandPayload(workspaceId);
+  if (!payload) return;
+  // Malformed actions fail validation without touching a tab.
+  const touchesTabs = actions.some((action) => {
+    const name = (action as { action?: unknown } | null)?.action;
+    return typeof name === 'string' && !TAB_FREE_ACTIONS.has(name);
+  });
+  if (!touchesTabs) return;
+  const { adopted } = adoptWorkspaceForBackgroundHosting(payload.workspaceId, backendId);
+  if (adopted) embeddedBrowserCdp.noteWorkspaceAdopted(payload.workspaceId);
 }
 
 /**

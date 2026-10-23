@@ -1,5 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { createServer, type ViteDevServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
@@ -7,14 +9,41 @@ import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 let server: ViteDevServer;
 let baseUrl = '';
 
+// Pre-bundle every dependency the browser imports before the first page loads.
+// Without explicit entries, Vite scans every HTML file in the package. On a cold
+// cache that scan can miss deep imports such as KebabIcon's
+// `phosphor-svelte/lib/*` icons, so Vite re-optimizes mid-test, logs
+// "optimized dependencies changed. reloading", and destroys the page's
+// execution context (cloudlands-fe#3392). The entries are the /src and /test
+// modules this spec dynamically imports in the page, read from its own source
+// so a newly added import is scanned too.
+const SPEC_PATH = fileURLToPath(import.meta.url);
+const BROWSER_ENTRIES = [
+  ...new Set(
+    [
+      ...readFileSync(SPEC_PATH, 'utf8').matchAll(
+        /import\(\s*(['"`])\/((?:src|test)\/[^'"`]+)\1\s*\)/g,
+      ),
+    ].map(([, , path]) => path),
+  ),
+];
+
 test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async () => {
+  // Guard the self-scan: an empty or stale list would silently fall back to the full scan.
+  expect(BROWSER_ENTRIES).toContain('test/fixtures/TitlebarWorkspaceControlsHarness.svelte');
+  for (const entry of BROWSER_ENTRIES) {
+    expect(existsSync(resolve(process.cwd(), entry)), entry).toBe(true);
+  }
   server = await createServer({
     configFile: false,
     root: process.cwd(),
     cacheDir: viteHarnessCacheDir('titlebar-workspace-controls'),
-    optimizeDeps: { include: ['bits-ui', 'svelte', 'flatstr', 'redux-saga', 'typed-redux-saga'] },
+    optimizeDeps: {
+      entries: BROWSER_ENTRIES,
+      include: ['bits-ui', 'svelte', 'flatstr', 'redux-saga', 'typed-redux-saga'],
+    },
     plugins: [svelte({ configFile: resolve(process.cwd(), 'svelte.config.js') })],
     resolve: {
       alias: [
@@ -103,6 +132,14 @@ async function mountControls(
     },
     { theme, zoom, withAssistant },
   );
+  // Preserve the explicit counter-scale readiness assertion before geometry.
+  await expect
+    .poll(() =>
+      page
+        .locator('.window-title-bar')
+        .evaluate((element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).a),
+    )
+    .toBeCloseTo(1 / zoom, 5);
   // The initial zoom IPC resolves after mount's tick. Wait for the rendered
   // counter-scale before callers record geometry at the requested zoom.
   await expect
@@ -266,6 +303,58 @@ test('Mac Home navigation ignores the retired sidebar and keeps narrow-window co
   });
 });
 
+test('keeps Home and workspace tabs separately clickable when the tab strip overflows', async ({
+  page,
+}, testInfo) => {
+  await emulatePlatform(page, 'macOS');
+  await page.setViewportSize({ width: 900, height: 240 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mountControls(page, 'light', 1);
+  await page.evaluate(async () => {
+    const { store } = await import('/src/store/renderer/store.ts');
+    const { loadWorkspaceTabsState } =
+      await import('/src/store/renderer/slices/tab-state/tab-state-slice.ts');
+    const ids = ['titlebar-test', ...Array.from({ length: 11 }, (_, i) => `overflow-${i}`)];
+    store.dispatch(
+      loadWorkspaceTabsState({
+        openTabs: ids,
+        currentTabId: ids[0],
+        pinnedTabs: [],
+        unsavedTabs: [],
+        optimisticTabs: [],
+        tabOrder: ids,
+      }),
+    );
+  });
+
+  const home = page.locator('[data-titlebar-spaces-control]');
+  const firstTab = page.locator('[data-workspace-tab="titlebar-test"] [role="tab"]');
+  const scroller = page.locator('[data-workspace-tab-scroller]');
+  for (const width of [900, 640]) {
+    await page.setViewportSize({ width, height: 240 });
+    await expect
+      .poll(() => scroller.evaluate((node) => node.scrollWidth > node.clientWidth))
+      .toBe(true);
+    await home.click();
+    await expect(home).toHaveAttribute('aria-current', 'page');
+    await expect
+      .poll(async () => {
+        const homeBounds = (await home.boundingBox())!;
+        const tabBounds = (await firstTab.boundingBox())!;
+        return tabBounds.x >= homeBounds.x + homeBounds.width;
+      })
+      .toBe(true);
+    await firstTab.click();
+    await expect(firstTab).toHaveAttribute('aria-selected', 'true');
+    await home.press('Enter');
+    await expect(home).toHaveAttribute('aria-current', 'page');
+    await testInfo.attach(`home-tab-overflow-${width}`, {
+      body: await page.locator('.window-title-bar-wrapper').screenshot(),
+      contentType: 'image/png',
+    });
+  }
+});
+
 for (const savedPanel of ['home', 'active', 'chief', 'settings', '{invalid-json']) {
   test(`upgrade ignores saved sidebar destination ${savedPanel}`, async ({ page }, testInfo) => {
     await mountControls(page, 'light', 1);
@@ -416,7 +505,7 @@ async function assistantBoundaryState(page: Page) {
 }
 
 for (const destination of ['current workspace', 'other workspace', 'Settings'] as const) {
-  test(`leaving Home Assistant for ${destination} ends its unread session`, async ({
+  test(`leaving Home Assistant for ${destination} ends its unread session and remembers selection`, async ({
     page,
   }, testInfo) => {
     await prepareAssistantBoundary(page);
@@ -499,6 +588,7 @@ for (const destination of ['current workspace', 'other workspace', 'Settings'] a
     const returned = await assistantBoundaryState(page);
     expect(returned.divider).toEqual({ anchorId: 'assistant-message-arrived-away' });
     expect(returned.selectedThread).toBe('assistant-route-thread');
+    expect(returned.panelItem).toBe('chief');
     await testInfo.attach('assistant-route-boundary', {
       body: JSON.stringify({ destination, before, away, returned }, null, 2),
       contentType: 'application/json',

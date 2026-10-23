@@ -102,6 +102,8 @@ export interface FileSpecialistReference {
   scope?: SpecialistFileScope;
   workspacePath?: string;
   workspaceId?: string;
+  /** Reset semantics: an already-absent file is success and refreshes the stale view. */
+  allowMissing?: boolean;
 }
 
 // ============================================================================

@@ -8,6 +8,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CURRENT_PROTOCOL_VERSION } from '../../../../test/current-protocol-version';
 
 type HelloOptions = {
   config: unknown;
@@ -92,13 +93,13 @@ const A = `principal-a:${RAW}`;
 const B = `principal-b:${RAW}`;
 const helloResult = (clientId: string) => ({
   clientId,
-  protocolVersion: '2.2',
+  protocolVersion: CURRENT_PROTOCOL_VERSION,
   server: {
     locality: 'remote',
     hasDisplay: true,
     osArch: 'linux/x86_64',
     version: '0.1.0',
-    protocolVersion: '2.2',
+    protocolVersion: CURRENT_PROTOCOL_VERSION,
     capabilities: { liveState: true },
   },
 });

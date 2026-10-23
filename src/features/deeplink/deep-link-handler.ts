@@ -5,6 +5,7 @@ import { isPairingUri } from '$shared/utils/pairing-uri';
 import type { Workspace } from '../../shared/types';
 import { Logger } from '../../shared/logger';
 import { scrubToken } from './utils/scrub-token';
+import { queueDeepLinkForWindow } from './main/pending-deep-links';
 
 const mainLogger = new Logger('DeepLinkHandler');
 
@@ -24,6 +25,7 @@ export class DeepLinkHandler {
    * Parse a deep link URL and extract the action and parameters
    * Examples:
    * - intent://open?id=workspace_123
+   * - intent://open?path=/Users/me/project   (the `intent` CLI)
    * - intent://create?title=New%20Project&repo=https://github.com/user/repo&branch=main
    * - intent://clone?repo=https://github.com/user/repo&branch=develop&title=Feature%20Work
    */
@@ -131,14 +133,22 @@ export class DeepLinkHandler {
       return;
     }
 
-    // Send the action to the renderer process
-    mainWindow.webContents.send('deep-link', action);
+    // Queue the action for this window's renderer, which pulls it once its
+    // deep-links saga is listening (see pending-deep-links.ts).
+    queueDeepLinkForWindow(mainWindow, action);
 
     // Focus the window
     if (mainWindow.isMinimized()) {
       mainWindow.restore();
     }
     mainWindow.focus();
+  }
+
+  /** Take and clear the parked URL so the caller can route it. */
+  takePendingUrl(): string | null {
+    const url = this.pendingUrl;
+    this.pendingUrl = null;
+    return url;
   }
 
   /**

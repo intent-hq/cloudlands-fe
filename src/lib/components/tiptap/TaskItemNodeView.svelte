@@ -2,7 +2,7 @@
   TaskItemNodeView - Svelte component for rendering task items in TipTap
 
   Supports two modes:
-  1. Normal mode: Regular checkbox with 3-state toggle (todo → in-progress → done)
+  1. Normal mode: Regular checkbox (todo ↔ done)
   2. Linked task mode: When content contains a intent://local/task/{noteId} link,
      displays the Task Note's title and status, with checkbox syncing to the Task Note.
 -->
@@ -159,11 +159,11 @@
 
   function handleNormalCheckboxClick(newChecked: boolean) {
     if (newChecked === checked) return;
-    if (newChecked) {
-      updateAttributes({ checked: newChecked, status: 'in-progress', delegatedAgentId });
-      return;
-    }
-    updateAttributes({ checked: newChecked, status: 'todo', delegatedAgentId });
+    updateAttributes({
+      checked: newChecked,
+      status: newChecked ? 'done' : 'todo',
+      delegatedAgentId,
+    });
   }
 
   function handleLinkedTaskCheckboxClick(event: MouseEvent) {

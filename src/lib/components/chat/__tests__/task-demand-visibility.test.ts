@@ -64,15 +64,38 @@ describe('displayed chat task consumers through the real store and mock wire', (
       }),
     );
   }
-  function event(workspaceId = WS) {
+  function event(workspaceId = WS, title = 'First task') {
+    const rpcReads = () =>
+      backend.requests.filter(({ method }) =>
+        ['task.list', 'note.get', 'workspace.get'].includes(method),
+      );
+    const readsBefore = rpcReads();
     routeDaemonEventsNotification('events.event', {
       event: {
         id: `visibility-${++eventId}`,
-        type: 'task:created',
+        type: 'task:updated',
         workspaceId,
-        data: { noteId: 'task-1' },
+        data: {
+          workspaceId,
+          tasks: [{ id: 'task-1', title, status: 'in_progress' }],
+          removedIds: [],
+        },
       },
     });
+    routeDaemonEventsNotification('events.event', {
+      event: {
+        id: `visibility-stats-${++eventId}`,
+        type: 'workspace:task-stats-changed',
+        workspaceId,
+        data: { workspaceId, taskStats: { total: 1, completed: 0, inProgress: 1 } },
+      },
+    });
+    const pushed = store.state.workspaceTasks.byWorkspaceId[workspaceId];
+    expect(
+      [{ id: 'task-1', title, status: 'in_progress' }].map((task) => pushed.tasks.map[task.id]),
+    ).toEqual([{ id: 'task-1', title, status: 'in_progress' }]);
+    expect(pushed.stats).toEqual({ total: 1, completed: 0, inProgress: 1 });
+    expect(rpcReads()).toEqual(readsBefore);
   }
   beforeEach(() => {
     vi.useFakeTimers();
@@ -97,7 +120,7 @@ describe('displayed chat task consumers through the real store and mock wire', (
     vi.useRealTimers();
   });
 
-  it('loads empty visible rows, stays quiet while hidden, and refreshes the first task on return', async () => {
+  it('loads empty visible rows and displays hidden pushes on return without another read', async () => {
     const props = { workspaceId: WS, agentId: AGENT, isActive: false };
     const view = render(AgentSubscriptions, props);
     await settle();
@@ -109,16 +132,12 @@ describe('displayed chat task consumers through the real store and mock wire', (
     expect(store.state.workspaceTasks.byWorkspaceId[WS].initialized).toBe(true);
     await view.rerender(props);
     expect(demand()).toEqual([]);
-    backend.onRequest('task.list', () => ({
-      tasks: [{ id: 'task-1', title: 'First task', status: 'in_progress' }],
-      stats: { total: 1, completed: 0, inProgress: 1 },
-    }));
     event();
     await vi.advanceTimersByTimeAsync(1100);
     expect(reads()).toHaveLength(1);
     await view.rerender({ ...props, isActive: true });
     await settle();
-    expect(reads()).toHaveLength(2);
+    expect(reads()).toHaveLength(1);
     expect(store.state.workspaceTasks.byWorkspaceId[WS].tasks.map['task-1']).toMatchObject({
       title: 'First task',
       status: 'in_progress',
@@ -126,10 +145,10 @@ describe('displayed chat task consumers through the real store and mock wire', (
     await view.rerender(props);
     await view.rerender({ ...props, isActive: true });
     await settle();
-    expect(reads()).toHaveLength(2);
+    expect(reads()).toHaveLength(1);
   });
 
-  it('updates an already displayed empty list when its first task is created and renders the reply', async () => {
+  it('updates an already displayed empty list directly from its first task payload', async () => {
     store.dispatch(
       bulkUpsertSessions([
         {
@@ -148,14 +167,10 @@ describe('displayed chat task consumers through the real store and mock wire', (
     render(AgentSubscriptions, { workspaceId: WS, agentId: AGENT, isActive: true });
     await settle();
     expect(reads()).toHaveLength(1);
-    backend.onRequest('task.list', () => ({
-      tasks: [{ id: 'task-1', title: 'First live task', status: 'in_progress' }],
-      stats: { total: 1, completed: 0, inProgress: 1 },
-    }));
-    event();
+    event(WS, 'First live task');
     await vi.advanceTimersByTimeAsync(1100);
     await settle();
-    expect(reads()).toHaveLength(2);
+    expect(reads()).toHaveLength(1);
     expect(store.state.workspaceTasks.byWorkspaceId[WS].stats).toEqual({
       total: 1,
       completed: 0,
@@ -177,12 +192,12 @@ describe('displayed chat task consumers through the real store and mock wire', (
     expect(demand()).toHaveLength(1);
     event();
     await vi.advanceTimersByTimeAsync(1100);
-    expect(reads()).toHaveLength(2);
+    expect(reads()).toHaveLength(1);
     second.unmount();
     expect(demand()).toEqual([]);
     event();
     await vi.advanceTimersByTimeAsync(1100);
-    expect(reads()).toHaveLength(2);
+    expect(reads()).toHaveLength(1);
   });
 
   it('releases old workspace demand on switch and workspace unmount', async () => {

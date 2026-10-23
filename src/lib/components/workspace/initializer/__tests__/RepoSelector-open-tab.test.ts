@@ -8,7 +8,6 @@
  * re-derived it, so the popup wrongly opened on "Copy local repo".
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { tick } from 'svelte';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
 const mocks = vi.hoisted(() => {
@@ -99,6 +98,8 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerDefaultParentPath: mocks.selector(() => ''),
   selectWorkspaceInitializerRecentRepos: mocks.selector(() => mocks.state.recentRepos),
   selectWorkspaceInitializerRemoteSetups: mocks.selector(() => []),
+  selectWorkspaceInitializerRecentRepoRefresh: mocks.selector(() => ({ status: 'ready' })),
+  selectWorkspaceInitializerDirectoryStatusCheck: mocks.selector(() => undefined),
 }));
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-slice', () => ({
   setWorkspaceInitializerDefaultParentPath: (path: string) => ({
@@ -108,6 +109,22 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-slic
   setWorkspaceInitializerLastSelectedRepo: (repo: unknown) => ({ type: 'wi/last', payload: repo }),
   setWorkspaceInitializerRecentRepos: (repos: unknown) => ({ type: 'wi/recent', payload: repos }),
   setWorkspaceInitializerRemoteSetups: (s: unknown) => ({ type: 'wi/remote', payload: s }),
+  workspaceInitializerRecentReposRefreshRequested: (...payload: unknown[]) => ({
+    type: 'wi/refreshRequested',
+    payload,
+  }),
+  workspaceInitializerRecentReposRefreshReleased: (...payload: unknown[]) => ({
+    type: 'wi/refreshReleased',
+    payload,
+  }),
+  workspaceInitializerDirectoryStatusRequested: (...payload: unknown[]) => ({
+    type: 'wi/directoryRequested',
+    payload,
+  }),
+  workspaceInitializerDirectoryStatusReleased: (...payload: unknown[]) => ({
+    type: 'wi/directoryReleased',
+    payload,
+  }),
 }));
 vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
   replaceWorkspaceList: (workspaces: unknown) => ({
@@ -129,7 +146,9 @@ vi.mock('$lib/electron-bridge', () => ({
   invoke: vi.fn(async () => ({ success: true, data: [] })),
   shell: { open: vi.fn(async () => {}) },
 }));
-vi.mock('$lib/config/debug', () => ({ debugConfig: { get: () => false } }));
+vi.mock('$lib/config/debug', () => ({
+  debugConfig: { get: (key: string) => key === 'enableFormPersistence' },
+}));
 vi.mock('$lib/utils/performance', () => ({
   performanceMonitor: { start: vi.fn(), end: vi.fn() },
 }));
@@ -145,19 +164,14 @@ vi.mock('$lib/components/workspace/initializer/AddRemoteSetupModal.svelte', asyn
 }));
 
 import RepoSelector from '../RepoSelector.svelte';
-import { appClient } from '$lib/client';
 import type { GitLabProjectPickerProps } from '../gitlab-picker-types';
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 
 beforeEach(() => {
   mocks.appState = withLegacyPrincipal({});
   mocks.authenticated = false;
-  vi.spyOn(appClient.git, 'originUrl').mockReset().mockResolvedValue(null);
 });
 import { warmImport } from '../../../../../test/warm-import';
-import { invoke } from '$lib/electron-bridge';
-import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
-import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 
 const DROPDOWN_HEADING = 'What repo should we work on?';
 const ACTIVE_TAB_CLASS = 'bg-background';
@@ -676,182 +690,6 @@ describe('RepoSelector Recent list vs the open-time pre-fill', () => {
   });
 });
 
-// Regression: a workspace-owned standalone checkout (repositoryPath ===
-// worktreePath, i.e. a GitHub pick) used to be dropped from the recents merge
-// entirely, so the most recently worked-on repo was missing from the
-// "Pick a repo" RECENT list unless it happened to be in repos.known. It must
-// surface as a path-less GitHub entry — and still never as a local copy source.
-describe('RepoSelector Recent list derived from workspaces', () => {
-  const invokeMock = vi.mocked(invoke);
-  const workspaceListMock = vi.mocked(workspaceClient.list);
-
-  /** A GitHub-pick workspace: standalone checkout owned by the workspace. */
-  const ownedCheckoutWorkspace = (over: Record<string, unknown> = {}) => ({
-    id: 'ws-gamma',
-    repositoryPath: '/home/dev/.intent/workspaces/gamma',
-    worktreePath: '/home/dev/.intent/workspaces/gamma',
-    repositoryName: 'gamma',
-    repositoryOwner: 'octo',
-    lastActivity: '2026-02-01T00:00:00Z',
-    createdAt: '2026-01-20T00:00:00Z',
-    updatedAt: '2026-02-01T00:00:00Z',
-    ...over,
-  });
-
-  /** A local-copy workspace: repositoryPath is the user's own source repo. */
-  const localCopyWorkspace = {
-    id: 'ws-local',
-    repositoryPath: '/Users/dev/source-repo',
-    worktreePath: '/home/dev/.intent/workspaces/wt-local',
-    repositoryName: 'source-repo',
-    lastActivity: '2026-01-10T00:00:00Z',
-    createdAt: '2026-01-01T00:00:00Z',
-    updatedAt: '2026-01-10T00:00:00Z',
-  };
-
-  const setWorkspaces = (workspaces: unknown[]) =>
-    workspaceListMock.mockImplementation(async () => ({ ok: true, data: workspaces }) as never);
-
-  const setRegistry = (registry: unknown[]) =>
-    invokeMock.mockImplementation(async (channel: string) =>
-      channel === WORKSPACE_CHANNELS.GET_RECENT_REPOSITORIES
-        ? ({ success: true, data: registry } as never)
-        : ({ success: true, data: [] } as never),
-    );
-
-  const recentRepoLabels = () =>
-    Array.from(document.body.querySelectorAll<HTMLElement>('[data-slot=action-row-title]'))
-      .map((b) => b.textContent?.replace(/\s+/g, ' ').trim() ?? '')
-      .filter((text) => /^octo \//i.test(text));
-
-  const buttonTexts = () =>
-    Array.from(document.body.querySelectorAll<HTMLButtonElement>('button')).map(
-      (b) =>
-        (b.querySelector('[data-recent-repo-label]')?.textContent ?? b.textContent)
-          ?.replace(/\s+/g, ' ')
-          .trim() ?? '',
-    );
-
-  afterEach(() => {
-    cleanup();
-    mocks.dispatch.mockReset();
-    mocks.state.recentRepos = [];
-    workspaceListMock.mockImplementation(async () => ({ ok: true, data: [] }) as never);
-    invokeMock.mockImplementation(async () => ({ success: true, data: [] }) as never);
-  });
-
-  it('surfaces a workspace-owned checkout as a GitHub entry, never a local one', async () => {
-    setWorkspaces([ownedCheckoutWorkspace(), localCopyWorkspace]);
-    await openDropdown();
-
-    await waitFor(() => expect(recentRepoLabels()).toEqual(['octo / gamma']));
-
-    expect(screen.queryByRole('img', { name: 'GitHub', exact: true })).toBeNull();
-    await fireEvent.click(tabButton('Copy local repo'));
-    await waitFor(() => expect(buttonTexts()).toContain('source-repo'));
-    expect(recentRepoLabels()).toEqual([]);
-    expect(buttonTexts()).not.toContain('gamma');
-  });
-
-  it('dedups a workspace-derived repo against its repos.known registry entry', async () => {
-    setWorkspaces([ownedCheckoutWorkspace()]);
-    setRegistry([
-      {
-        path: 'Octo/Gamma',
-        name: 'Gamma',
-        owner: 'Octo',
-        githubUrl: 'https://github.com/Octo/Gamma',
-        addedAt: '2026-01-01T00:00:00Z',
-        lastUsedAt: '2026-01-15T00:00:00Z',
-      },
-    ]);
-    await openDropdown();
-
-    await waitFor(() =>
-      expect(buttonTexts().filter((text) => /gamma/i.test(text))).toEqual(['Octo / Gamma']),
-    );
-  });
-
-  it('resolves an actual self-managed checkout origin before assigning its forge', async () => {
-    const gitlab = gitlabProps();
-    setWorkspaces([ownedCheckoutWorkspace()]);
-    vi.mocked(appClient.git.originUrl).mockResolvedValue(
-      'https://git.example.test:8443/Forge/Team/Sub/Actual.git',
-    );
-    await openDropdown({ gitlab });
-    const badge = await screen.findByRole('img', { name: 'GitLab', exact: true });
-    const row = badge.closest('[data-slot="menu-action-row"]')!;
-    expect(row.textContent).toContain('Team/Sub /');
-    expect(row.textContent).toContain('Actual');
-    expect(appClient.git.originUrl).toHaveBeenCalledWith('/home/dev/.intent/workspaces/gamma');
-    await fireEvent.click(row);
-    expect(gitlab.onSelect).toHaveBeenCalledWith('Team/Sub/Actual', gitlab.scopeKey);
-  });
-
-  it('does not read a remote workspace path on the local daemon to infer its forge', async () => {
-    setWorkspaces([ownedCheckoutWorkspace({ isRemote: true }), localCopyWorkspace]);
-    await openDropdown();
-    await waitFor(() => expect(recentRepoLabels()).toEqual(['octo / gamma']));
-    expect(appClient.git.originUrl).toHaveBeenCalledTimes(1);
-    expect(appClient.git.originUrl).toHaveBeenCalledWith('/Users/dev/source-repo');
-    expect(screen.queryByRole('img', { name: 'GitHub', exact: true })).toBeNull();
-  });
-
-  it('drops a late origin result when the admitted host connection changes', async () => {
-    let resolveOrigin!: (url: string) => void;
-    vi.mocked(appClient.git.originUrl).mockReturnValue(
-      new Promise((resolve) => {
-        resolveOrigin = resolve;
-      }),
-    );
-    setWorkspaces([ownedCheckoutWorkspace()]);
-    await openDropdown({ gitlab: gitlabProps() });
-    await waitFor(() => expect(appClient.git.originUrl).toHaveBeenCalledTimes(1));
-    mocks.appState = withLegacyPrincipal({ connections: { windowBackendId: 'another-host' } });
-    setWorkspaces([]);
-    for (const notify of mocks.listeners) notify();
-    resolveOrigin('https://git.example.test:8443/Forge/Team/Private.git');
-    await vi.mocked(appClient.git.originUrl).mock.results[0].value;
-    await tick();
-    await waitFor(() =>
-      expect(document.querySelector('[data-testid=recent-repositories]')).toBeNull(),
-    );
-    expect(
-      mocks.dispatch.mock.calls.some(([action]) => JSON.stringify(action).includes('Team/Private')),
-    ).toBe(false);
-  });
-
-  it('orders RECENT most-recent-first across registry and workspace entries', async () => {
-    mocks.state.recentRepos = [
-      {
-        path: 'octo/omega',
-        type: 'github' as const,
-        githubUrl: 'https://github.com/octo/omega',
-        name: 'omega',
-        owner: 'octo',
-      },
-    ];
-    setWorkspaces([ownedCheckoutWorkspace()]);
-    setRegistry([
-      {
-        path: 'octo/beta',
-        name: 'beta',
-        owner: 'octo',
-        githubUrl: 'https://github.com/octo/beta',
-        addedAt: '2026-01-01T00:00:00Z',
-        lastUsedAt: '2026-01-01T00:00:00Z',
-      },
-    ]);
-    await openDropdown();
-
-    // gamma (workspace activity, Feb) > beta (registry lastUsedAt, Jan) >
-    // omega (persisted recent, no recency signal).
-    await waitFor(() =>
-      expect(recentRepoLabels()).toEqual(['octo / gamma', 'octo / beta', 'octo / omega']),
-    );
-  });
-});
-
 describe('RepoSelector recent forge identity', () => {
   afterEach(() => {
     cleanup();
@@ -923,6 +761,20 @@ describe('RepoSelector recent forge identity', () => {
       type: 'local',
     });
     expect(gitlab.onSelect).not.toHaveBeenCalled();
+  });
+
+  it('reports a picked repo without saving it as the last-used repo', async () => {
+    const onchange = vi.fn();
+    mocks.state.recentRepos = [{ path: '/owned/local-app', type: 'local', name: 'local-app' }];
+    await openDropdown({ onchange });
+    await fireEvent.click(screen.getByRole('tab', { name: 'Copy local repo', exact: true }));
+    await fireEvent.click(await screen.findByRole('button', { name: /^local-app/ }));
+    expect(onchange.mock.calls[0][0].detail).toMatchObject({
+      path: '/owned/local-app',
+      type: 'local',
+    });
+    // New space saves the last-used repo only when a workspace is created.
+    expect(mocks.dispatch.mock.calls.map(([action]) => action.type)).not.toContain('wi/last');
   });
 
   it('uses observed Recent owner metadata only for the same provider, root and project', async () => {

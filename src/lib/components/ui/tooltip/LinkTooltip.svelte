@@ -142,7 +142,8 @@
   }
 
   :global(.github-link-card-meta),
-  :global(.github-link-card-branches) {
+  :global(.github-link-card-branches),
+  :global(.github-link-card-queue) {
     display: flex;
     align-items: center;
     gap: 4px;

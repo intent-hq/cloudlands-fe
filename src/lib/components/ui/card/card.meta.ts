@@ -39,6 +39,8 @@ export const cardMetadata = parseUiComponentMetadata({
   category: 'pattern',
   owner: '012-E',
   callers: [
+    'src/features/presence/components/WorkspacePeopleTile.svelte',
+    'src/features/workspace-sharing/components/WorkspaceSharingSetup.svelte',
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
     'src/lib/components/chat/RegularAgentWelcome.svelte',
     'src/lib/components/patterns/collection/ListRow.svelte',

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   /**
@@ -22,6 +22,7 @@
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     selectNoteById,
+    selectNoteWindowVisible,
     selectNoteContentView,
     selectNotePresenceView,
     selectNoteWorkspaceRoot,
@@ -37,7 +38,7 @@
     noteWorkspaceRootReleased,
     noteWorkspaceRootRequested,
   } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
-  import { isSpecNote } from '$shared/constants/notes';
+  import { isSpecNote, NOTE_VIEW_MAX_CONTENT_BYTES } from '$shared/constants/notes';
   import { isNoteContentStale } from '$shared/utils/note-content';
   import { createLogger } from '$lib/utils/client-logger';
   import NoteWithComments from '$lib/components/workspace/NoteWithComments.svelte';
@@ -50,8 +51,12 @@
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import NoteViewSettingsDropdown from './NoteViewSettingsDropdown.svelte';
   import RenderedNotePreview from './RenderedNotePreview.svelte';
+  import TruncatedNoteView from './TruncatedNoteView.svelte';
   import NotePresenceAvatarStack from '$features/notes/note-presence/NotePresenceAvatarStack.svelte';
-  import { selectAllScrollPositions } from '$store/renderer/slices/tab-state/tab-state-selectors';
+  import {
+    selectCurrentWorkspaceTabId,
+    selectAllScrollPositions,
+  } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { saveScrollPosition } from '$store/renderer/slices/tab-state/tab-state-slice';
 
   import Fa from 'svelte-fa';
@@ -67,6 +72,8 @@
   let { tab, workspaceId, layoutId, isActive, isPanelFocused }: TabTypeComponentProps = $props();
 
   const headerContext = getPanelHeaderContext();
+  const contentInstanceId = $props.id();
+  const contentConsumerId = `note-content:${contentInstanceId}`;
 
   // svelte-ignore state_referenced_locally
   const workspace = selectWorkspaceById(workspaceId);
@@ -88,10 +95,15 @@
   // svelte-ignore state_referenced_locally - selector targets are retargeted by the effects below
   const noteUiConsumerStore = writable(`note-tab:${tab.id}`);
   $effect(() => noteUiConsumerStore.set(`note-tab:${tab.id}`));
-  const noteContentView = selectNoteContentView(noteViewWorkspaceIdStore, noteUiConsumerStore);
+  const noteContentView = selectNoteContentView(noteViewWorkspaceIdStore, contentConsumerId);
   const noteWorkspaceRoot = selectNoteWorkspaceRoot(noteViewWorkspaceIdStore, noteUiConsumerStore);
   const notePresenceView = selectNotePresenceView(noteViewWorkspaceIdStore, noteUiConsumerStore);
   const principalConnectionContext = selectPrincipalConnectionContext();
+  const currentWorkspaceTabId = selectCurrentWorkspaceTabId();
+  const noteWindowVisible = selectNoteWindowVisible();
+  const contentVisible = $derived(
+    isActive && $noteWindowVisible && $currentWorkspaceTabId === (layoutId ?? workspaceId),
+  );
   let noteUiRequestSequence = 0;
 
   function nextNoteUiRequestId(consumerId: string, kind: string): string {
@@ -117,6 +129,11 @@
   // Slim note.list rows carry no content (§5.2); the read saga owns the request
   // and its consumer/resource/authority-correlated outcome.
   const noteContentStale = $derived(isNoteContentStale($note));
+  // A truncated read (§5.2 "Truncated note reads") is render-only: only the
+  // Markdown renderer and a banner, and none of the editor, comment, presence,
+  // attribution, version or content actions are created for it. A live update
+  // that brings the note back under the limit returns to the normal view.
+  const noteTruncated = $derived($note?.contentTruncated === true);
   const noteContentLoadFailed = $derived(
     noteContentStale &&
       $noteContentView?.workspaceId === workspaceId &&
@@ -125,22 +142,25 @@
   );
   $effect(() => {
     const noteId = tab.noteId;
-    const consumerId = `note-tab:${tab.id}`;
-    if (!isActive || !noteId || !noteContentStale || !$principalConnectionContext) return;
-    appStore.dispatch(
-      noteContentViewRequested(
-        consumerId,
-        nextNoteUiRequestId(consumerId, 'content'),
-        workspaceId,
-        noteId,
+    const consumerId = contentConsumerId;
+    if (!contentVisible || !noteId || !$principalConnectionContext) return;
+    const contentWorkspaceId = workspaceId;
+    untrack(() =>
+      appStore.dispatch(
+        noteContentViewRequested(
+          consumerId,
+          nextNoteUiRequestId(consumerId, 'content'),
+          contentWorkspaceId,
+          noteId,
+        ),
       ),
     );
-    return () => appStore.dispatch(noteContentViewReleased(workspaceId, consumerId));
+    return () => appStore.dispatch(noteContentViewReleased(contentWorkspaceId, consumerId));
   });
 
   function retryNoteContentLoad() {
     const noteId = tab.noteId;
-    const consumerId = `note-tab:${tab.id}`;
+    const consumerId = contentConsumerId;
     if (!noteId) return;
     appStore.dispatch(
       noteContentViewRequested(
@@ -222,6 +242,7 @@
     if (!$note) return $notesState.loading || !$notesState.initialized ? 'loading' : 'missing';
     if (noteContentLoadFailed) return 'error';
     if (noteContentStale) return 'loading';
+    if (noteTruncated) return 'read-only';
     if (!noteEditable) return 'read-only';
     if (showRenderedPreview) return 'read-only';
     if (!$note.content?.trim()) return 'empty';
@@ -307,7 +328,9 @@
   }
 
   // Other people's presence is only possible in a shared workspace.
-  const showPresenceStack = $derived(($workspace?.memberCount ?? 0) >= 2 && !!tab.noteId);
+  const showPresenceStack = $derived(
+    ($workspace?.memberCount ?? 0) >= 2 && !!tab.noteId && !noteTruncated,
+  );
 
   // Viewing presence belongs to the visible tab, including raw/preview mode.
   // The saga owns the lease; the lazy menu renders its serializable projection.
@@ -329,6 +352,7 @@
   // Register header actions
   $effect(() => {
     if (!headerContext || !isActive) return;
+    if (noteTruncated) return headerContext.registerActions({});
     return headerContext.registerActions({
       display: noteDisplayActions,
       actions: noteActions,
@@ -395,6 +419,17 @@
               <Skeleton class="h-4 w-full" />
             </div>
           </div>
+        {:else if noteTruncated}
+          <TruncatedNoteView
+            content={$note.content || ''}
+            contentBytes={$note.contentBytes}
+            shownBytes={NOTE_VIEW_MAX_CONTENT_BYTES}
+            {workspaceId}
+            noteId={tab.noteId}
+            scrollKey={tab.id}
+            initialScrollPosition={scrollPosition}
+            onScrollPositionSave={handlePreviewScrollPositionSave}
+          />
         {:else if showVersionHistory && $workspace}
           <NoteVersionHistory
             workspace={$workspace}

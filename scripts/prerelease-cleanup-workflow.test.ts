@@ -23,9 +23,16 @@ describe('prerelease cleanup writer coordination', () => {
     } else {
       expect(source.indexOf('concurrency:')).toBeLessThan(source.indexOf('\njobs:'));
     }
-    expect(source).not.toMatch(/^ *uses: .*\.github\/workflows\//m);
+    // The runner route is the one reusable workflow a writer may call: it holds no lock.
+    expect(
+      source.replace(/^ {4}uses: \.\/\.github\/workflows\/runner-route\.yml$/gm, ''),
+    ).not.toMatch(/^ *uses: .*\.github\/workflows\//m);
     // Dispatching downstream builds is asynchronous; never wait while holding the lock.
     expect(source).not.toMatch(/gh (run watch|workflow run[^\n]*--wait)/);
+  });
+
+  it('lets writers call the runner route only because it takes no lock', () => {
+    expect(workflow('runner-route')).not.toMatch(/concurrency:/);
   });
 
   it('covers all workflows that mutate release records or assets', () => {
@@ -62,7 +69,7 @@ describe('prerelease cleanup writer coordination', () => {
     expect(source).toMatch(/^permissions: \{\}$/m);
     expect(source).toContain('repository: intent-hq/intent');
     expect(source).toMatch(/^          ref: [a-f0-9]{40}$/m);
-    expect(source).toContain('ref: 3cd2e23e904051f8a0c047717fe7a8e843a5c4ea');
+    expect(source).toContain('ref: 6b72ba3e3186f7b97e0ee059c87cdffe9662c3b1');
     expect(source).toContain('persist-credentials: false');
     expect(source).toContain('submodules: false');
     expect(source).toContain('token: ${{ secrets.PRERELEASE_CLEANUP_TOKEN }}');

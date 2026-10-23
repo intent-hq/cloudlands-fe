@@ -3,10 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 /**
  * Routing tests for createWindowForDeepLink: `intent://pair` links go straight
  * to the main-process pair handler — no new BrowserWindow, no renderer IPC,
- * and no bearer token in any log line. Non-pair links keep the existing
- * behavior (settings → existing window IPC; open → new window). Also covers
- * createWindow's cold-start argv scan: a pair link is never embedded in the
- * renderer load URL, and the scan matches the intent:// scheme
+ * and no bearer token in any log line. Renderer-bound links are queued for
+ * their target window (pulled via `deep-link:consume-pending`): `open` links
+ * → a local-daemon window; `create newWindow=true` → a new window; everything
+ * else → the last-focused main window. Also covers createWindow's cold-start
+ * argv scan: a pair link never reaches the renderer, other links are queued
+ * for the first window only, and the scan matches the intent:// scheme
  * case-insensitively.
  */
 
@@ -16,6 +18,10 @@ const mockGetPrimaryDisplay = vi.fn(() => ({
   workArea: { x: 0, y: 0, width: 1440, height: 900 },
 }));
 
+// Windows visible to BrowserWindow.getAllWindows / fromWebContents.
+const liveWindows: Array<{ webContents: unknown }> = [];
+let nextWebContentsId = 1000;
+
 vi.mock('electron', () => ({
   app: {
     getPath: vi.fn(() => `/tmp/deep-link-routing-test-${process.pid}`),
@@ -23,14 +29,31 @@ vi.mock('electron', () => ({
     dock: undefined,
   },
   BrowserWindow: class {
-    static getAllWindows = vi.fn(() => []);
+    static getAllWindows = vi.fn(() => liveWindows);
+    static fromWebContents = vi.fn(
+      (webContents: unknown) => liveWindows.find((w) => w.webContents === webContents) ?? null,
+    );
     loadURL = mockLoadUrl;
     focus = vi.fn();
-    webContents = { on: vi.fn(), send: vi.fn(), session: { clearCache: vi.fn() } };
+    show = vi.fn();
+    restore = vi.fn();
+    isDestroyed = () => false;
+    isMinimized = () => false;
+    webContents = {
+      id: nextWebContentsId++,
+      on: vi.fn(),
+      once: vi.fn(),
+      send: vi.fn(),
+      isDestroyed: () => false,
+      getURL: () => 'http://localhost/',
+      session: { clearCache: vi.fn() },
+    };
     on = vi.fn();
     once = vi.fn();
     constructor(options: unknown) {
       mockBrowserWindowCtor(options);
+      createdWindows.push(this as unknown as { webContents: { id: number } });
+      liveWindows.push(this as unknown as { webContents: unknown });
     }
   },
   screen: { getPrimaryDisplay: () => mockGetPrimaryDisplay() },
@@ -38,6 +61,7 @@ vi.mock('electron', () => ({
   nativeImage: { createFromPath: vi.fn() },
 }));
 
+const createdWindows: Array<{ webContents: { id: number } }> = [];
 const mockGetMainWindow = vi.fn();
 vi.mock('../state', () => ({
   getMainWindow: () => mockGetMainWindow(),
@@ -80,7 +104,15 @@ vi.mock('../../shared/logger', () => ({
 }));
 
 import type { DeepLinkHandler } from '../../features/deeplink/deep-link-handler';
-import { createWindow, createWindowForDeepLink } from '../window';
+import {
+  __resetPendingDeepLinksForTesting,
+  consumePendingDeepLinks,
+} from '../../features/deeplink/main/pending-deep-links';
+import {
+  __resetColdStartDeepLinkForTesting,
+  createWindow,
+  createWindowForDeepLink,
+} from '../window';
 import { markRendererWindowsAllowed } from '../renderer-window-gate';
 import { findIntentUrl } from '../../features/deeplink/utils/find-intent-url';
 import { TC_ADDRESS_WITH_PSK } from '../../test/fixtures/tc-address.fixture';
@@ -88,15 +120,26 @@ import { TC_ADDRESS_WITH_PSK } from '../../test/fixtures/tc-address.fixture';
 const TOKEN = 'super-secret-token-value';
 const PAIR_LINK = `intent://pair?v=1&host=192.168.1.10&port=8443&fp=AA:BB:CC&token=${TOKEN}&tc=${TC_ADDRESS_WITH_PSK}`;
 
-function makeMainWindow() {
+function makeMainWindow(backendId?: string) {
+  const webContents = {
+    id: nextWebContentsId++,
+    send: vi.fn(),
+    once: vi.fn(),
+    isDestroyed: () => false,
+    getURL: () => 'http://localhost/',
+  };
   return {
+    backendId,
     isDestroyed: () => false,
     isMinimized: () => false,
     restore: vi.fn(),
+    show: vi.fn(),
     focus: vi.fn(),
-    webContents: { send: vi.fn() },
+    webContents,
   };
 }
+
+const NUDGE = { pending: true };
 
 function makeHandler(): DeepLinkHandler {
   // The real parser is exercised via the pass-through; only the two methods
@@ -117,6 +160,10 @@ beforeEach(() => {
   logLines.length = 0;
   handlePairDeepLink.mockResolvedValue(undefined);
   mockGetMainWindow.mockReturnValue(makeMainWindow());
+  liveWindows.length = 0;
+  createdWindows.length = 0;
+  __resetPendingDeepLinksForTesting();
+  __resetColdStartDeepLinkForTesting();
   markRendererWindowsAllowed();
 });
 
@@ -136,22 +183,95 @@ describe('createWindowForDeepLink pair-link routing', () => {
     expect(logLines.join('\n')).not.toContain(TC_ADDRESS_WITH_PSK);
   });
 
-  it('still sends settings links to the existing window over IPC', async () => {
+  it('queues settings links for the existing window and nudges it', async () => {
     const mainWindow = makeMainWindow();
     mockGetMainWindow.mockReturnValue(mainWindow);
     await createWindowForDeepLink('intent://settings?section=general', makeHandler());
-    expect(mainWindow.webContents.send).toHaveBeenCalledWith('deep-link', {
-      type: 'settings',
-      params: { section: 'general' },
-    });
+    expect(mainWindow.webContents.send).toHaveBeenCalledWith('deep-link', NUDGE);
+    expect(consumePendingDeepLinks(mainWindow.webContents.id).actions).toEqual([
+      { type: 'settings', params: { section: 'general' } },
+    ]);
     expect(handlePairDeepLink).not.toHaveBeenCalled();
     expect(mockBrowserWindowCtor).not.toHaveBeenCalled();
   });
+});
 
-  it('still creates a new window for open links', async () => {
+describe('createWindowForDeepLink renderer-bound routing', () => {
+  it('keeps create links on the last-focused window, even a remote-bound one', async () => {
+    const remoteWindow = makeMainWindow('remote-1');
+    liveWindows.push(remoteWindow);
+    mockGetMainWindow.mockReturnValue(remoteWindow);
+    await createWindowForDeepLink('intent://create?repo=%2Frepo&prompt=fix', makeHandler());
+    expect(consumePendingDeepLinks(remoteWindow.webContents.id).actions).toEqual([
+      { type: 'create', params: { repo: '/repo', prompt: 'fix' } },
+    ]);
+    expect(remoteWindow.focus).toHaveBeenCalled();
+    expect(mockBrowserWindowCtor).not.toHaveBeenCalled();
+  });
+
+  it('sends a folder link to the local window, not the focused remote window', async () => {
+    const remoteWindow = makeMainWindow('remote-1');
+    const localWindow = makeMainWindow();
+    liveWindows.push(remoteWindow, localWindow);
+    mockGetMainWindow.mockReturnValue(remoteWindow);
+    await createWindowForDeepLink('intent://open?path=%2FUsers%2Fme%2Fmy%20dir', makeHandler());
+    expect(consumePendingDeepLinks(localWindow.webContents.id).actions).toEqual([
+      { type: 'open', params: { path: '/Users/me/my dir' } },
+    ]);
+    expect(localWindow.webContents.send).toHaveBeenCalledWith('deep-link', NUDGE);
+    expect(localWindow.focus).toHaveBeenCalled();
+    expect(consumePendingDeepLinks(remoteWindow.webContents.id).actions).toEqual([]);
+    expect(remoteWindow.webContents.send).not.toHaveBeenCalled();
+  });
+
+  it('takes only the requested types and reports what is left queued', async () => {
+    const localWindow = makeMainWindow();
+    liveWindows.push(localWindow);
+    mockGetMainWindow.mockReturnValue(localWindow);
+    await createWindowForDeepLink('intent://open?path=%2Fp', makeHandler());
+    await createWindowForDeepLink('intent://settings?beta=true', makeHandler());
+    expect(consumePendingDeepLinks(localWindow.webContents.id, ['settings'])).toEqual({
+      actions: [{ type: 'settings', params: { beta: 'true' } }],
+      remaining: 1,
+    });
+    expect(consumePendingDeepLinks(localWindow.webContents.id)).toEqual({
+      actions: [{ type: 'open', params: { path: '/p' } }],
+      remaining: 0,
+    });
+  });
+
+  it('delivers each queued action exactly once', async () => {
+    const localWindow = makeMainWindow();
+    liveWindows.push(localWindow);
     await createWindowForDeepLink('intent://open?id=workspace_123', makeHandler());
+    expect(consumePendingDeepLinks(localWindow.webContents.id).actions).toEqual([
+      { type: 'open', params: { id: 'workspace_123' } },
+    ]);
+    expect(consumePendingDeepLinks(localWindow.webContents.id).actions).toEqual([]);
+  });
+
+  it('opens a new window for create links with newWindow=true and queues the action there', async () => {
+    const mainWindow = makeMainWindow();
+    mockGetMainWindow.mockReturnValue(mainWindow);
+    await createWindowForDeepLink('intent://create?repo=%2Frepo&newWindow=true', makeHandler());
     expect(mockBrowserWindowCtor).toHaveBeenCalledTimes(1);
-    expect(handlePairDeepLink).not.toHaveBeenCalled();
+    const loadedUrl = mockLoadUrl.mock.calls[0][0] as string;
+    expect(loadedUrl).not.toContain('deepLink=');
+    expect(consumePendingDeepLinks(createdWindows[0].webContents.id).actions).toEqual([
+      { type: 'create', params: { repo: '/repo', newWindow: 'true' } },
+    ]);
+    expect(consumePendingDeepLinks(mainWindow.webContents.id).actions).toEqual([]);
+  });
+
+  it('opens a local window for a link when every window is closed', async () => {
+    mockGetMainWindow.mockReturnValue(null);
+    const handler = makeHandler();
+    await createWindowForDeepLink('intent://settings?beta=true', handler);
+    expect(handler.handleDeepLink).not.toHaveBeenCalled();
+    expect(createdWindows).toHaveLength(1);
+    expect(consumePendingDeepLinks(createdWindows[0].webContents.id).actions).toEqual([
+      { type: 'settings', params: { beta: 'true' } },
+    ]);
   });
 });
 
@@ -180,16 +300,23 @@ describe('createWindow cold-start argv scan', () => {
     expect(logLines.join('\n')).not.toContain(TOKEN.toUpperCase());
   });
 
-  it('still embeds non-pair deep links in the load URL', async () => {
-    process.argv = ['electron', '.', 'intent://open?id=workspace_123'];
+  it('queues a non-pair link for the boot window instead of embedding it', async () => {
+    process.argv = ['electron', '.', 'intent://open?path=%2FUsers%2Fme'];
     await createWindow();
     const loadedUrl = mockLoadUrl.mock.calls[0][0] as string;
-    expect(loadedUrl).toContain('deepLink=');
-    const encoded = loadedUrl.split('deepLink=')[1];
-    expect(JSON.parse(decodeURIComponent(encoded))).toEqual({
-      type: 'open',
-      params: { id: 'workspace_123' },
-    });
+    expect(loadedUrl).not.toContain('deepLink=');
+    expect(consumePendingDeepLinks(createdWindows[0].webContents.id).actions).toEqual([
+      { type: 'open', params: { path: '/Users/me' } },
+    ]);
+  });
+
+  it('hands the argv link to the first window only', async () => {
+    process.argv = ['electron', '.', 'intent://open?path=%2FUsers%2Fme'];
+    await createWindow();
+    await createWindow();
+    expect(createdWindows).toHaveLength(2);
+    expect(consumePendingDeepLinks(createdWindows[0].webContents.id).actions).toHaveLength(1);
+    expect(consumePendingDeepLinks(createdWindows[1].webContents.id).actions).toEqual([]);
   });
 });
 

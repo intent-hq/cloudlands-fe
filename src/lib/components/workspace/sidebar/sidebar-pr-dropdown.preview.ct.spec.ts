@@ -6,7 +6,7 @@ test('keeps long-title PR identity and status on one row inside the live menu', 
   page,
 }) => {
   const component = await mount(SidebarPrDropdownPreview, {
-    hooksConfig: { geometrySnapshot: { scene: 'sidebar-pr-dropdown', state: 'live-long' } },
+    hooksConfig: { previewScene: { scene: 'sidebar-pr-dropdown', state: 'live-long' } },
   });
   await component.locator('[data-sidebar-pr-trigger]').click();
   const row = page.locator('[role="menu"] [data-sidebar-pr-link]');
@@ -37,7 +37,7 @@ test('scrolls many PRs and opens the keyboard-selected identity through the link
 }) => {
   const opened: unknown[] = [];
   const component = await mount(SidebarPrDropdownPreview, {
-    hooksConfig: { geometrySnapshot: { scene: 'sidebar-pr-dropdown', state: 'live-many' } },
+    hooksConfig: { previewScene: { scene: 'sidebar-pr-dropdown', state: 'live-many' } },
   });
   await component.update({ props: { onOpenExternal: (payload: unknown) => opened.push(payload) } });
   const trigger = component.locator('[data-sidebar-pr-trigger]');

@@ -8,24 +8,41 @@
     faClock,
   } from '@fortawesome/free-solid-svg-icons';
   import { buildWorkspacePRPresentationModel } from '$lib/components/workspace/sidebar/workspace-pr-presentation';
+  import { prRepoFromUrl } from '$lib/components/workspace/sidebar/sidebar-changes-utils';
   import { PullRequestStatus, type Workspace } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
 
   let { workspace }: { workspace: Workspace } = $props();
-  const pull = $derived(workspace.pullRequests?.[0] ?? workspace.activePullRequest);
-  const lifecycle = $derived(
-    pull
-      ? buildWorkspacePRPresentationModel({
-          workspacePRs: [
-            { ...pull, isDraft: pull.status === PullRequestStatus.Open && pull.isDraft },
-          ],
-          activePR: null,
-          monitors: [],
-          workspaceRepo: undefined,
-          buildPrUrl: (_number, url) => url ?? '',
-          getDisplayTitle: (pr) => pr.title,
-        })[0]
-      : undefined,
+  const candidates = $derived(
+    workspace.pullRequests?.length
+      ? workspace.pullRequests
+      : workspace.activePullRequest
+        ? [workspace.activePullRequest]
+        : [],
+  );
+  const lifecycle = $derived.by(() => {
+    // List rows can arrive in active-PR or merge order. Rank the whole pool
+    // before choosing the badge, retaining terminal state over stale draft bits.
+    // A URL-derived repo also keeps cross-repo identities distinct before the
+    // workspace's own repository metadata has loaded.
+    const workspaceRepo =
+      workspace.repositoryOwner && workspace.repositoryName
+        ? `${workspace.repositoryOwner}/${workspace.repositoryName}`
+        : candidates.map((pr) => prRepoFromUrl(pr.url)).find(Boolean);
+    return buildWorkspacePRPresentationModel({
+      workspacePRs: candidates.map((pr) => ({
+        ...pr,
+        isDraft: pr.status === PullRequestStatus.Open && pr.isDraft,
+      })),
+      activePR: null,
+      monitors: [],
+      workspaceRepo,
+      buildPrUrl: (_number, url) => url ?? '',
+      getDisplayTitle: (pr) => pr.title,
+    })[0];
+  });
+  const pull = $derived(
+    candidates.find((pr) => pr.number === lifecycle?.number && pr.url === lifecycle.url),
   );
   const appearance = $derived.by(() => {
     if (!pull || !lifecycle) return null;
@@ -37,6 +54,8 @@
     };
     // Enrichment is optional. Missing values retain the explicit lifecycle state.
     if (pull.status !== PullRequestStatus.Open || pull.isDraft) return base;
+    if (pull.isInMergeQueue === true)
+      return { ...base, label: m.workspace_prSection_statusQueued_label(), icon: faClock };
     if (pull.mergeConflicts === true || pull.mergeableState === 'dirty')
       return {
         ...base,
@@ -69,8 +88,6 @@
         color: 'text-muted-foreground',
         background: 'bg-muted',
       };
-    if (pull.isInMergeQueue === true)
-      return { ...base, label: m.workspace_prSection_statusQueued_label(), icon: faClock };
     if (pull.reviewDecision === 'REVIEW_REQUIRED')
       return {
         ...base,

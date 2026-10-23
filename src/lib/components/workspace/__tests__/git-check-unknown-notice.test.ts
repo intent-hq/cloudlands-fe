@@ -132,12 +132,6 @@ vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
   workspaceClient: { create: vi.fn(), update: vi.fn() },
 }));
 
-vi.mock('$lib/components/workspace/initializer/new-workspace-draft', () => ({
-  restoreNewWorkspaceDraft: vi.fn(async () => ({ status: 'none' })),
-  createNewWorkspaceDraftSaver: vi.fn(() => ({ schedule: vi.fn(), flush: vi.fn() })),
-  clearNewWorkspaceDraft: vi.fn(),
-}));
-
 // Route the git probe to a per-test mock; everything else on the bridge is a
 // benign success-with-null.
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.request }));
@@ -197,6 +191,7 @@ import CompactWorkspaceInitializer from '../CompactWorkspaceInitializer.svelte';
 import '$store/renderer/seeders/host-bridge-seeder';
 import { store } from '$store/renderer/store';
 import { workspaceInitializerGitSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initializer-git-saga';
+import { workspaceInitializationSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initialization-saga';
 import {
   principalContextChanged,
   principalReceived,
@@ -210,6 +205,7 @@ import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferenc
 import { selectWorkspaceInitializerGitAvailability } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
 let dispose: () => void;
 let stopGit: () => void;
+let stopInitialization: () => void;
 
 function admit(
   role: 'owner' | 'member' | 'guest' = 'member',
@@ -284,6 +280,7 @@ describe('CompactWorkspaceInitializer git-check unknown notice', () => {
     sessionStorage.clear();
     dispose = store.init();
     stopGit = store.runSaga(workspaceInitializerGitSaga);
+    stopInitialization = store.runSaga(workspaceInitializationSaga);
     admit('owner');
     mocks.request.mockImplementation(async (method: string) => {
       const result = await mocks.checkGit();
@@ -298,6 +295,7 @@ describe('CompactWorkspaceInitializer git-check unknown notice', () => {
 
   afterEach(() => {
     cleanup();
+    stopInitialization();
     stopGit();
     dispose();
     sessionStorage.clear();

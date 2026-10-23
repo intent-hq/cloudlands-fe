@@ -59,6 +59,25 @@ describe('pinned response trigger', () => {
     ['legacy hook', message('[Background hook "Legacy watch"] Tests passed'), 'Legacy watch'],
     ['PR', message('[PR monitor intent-hq/intent#42] Checks passed'), 'intent-hq/intent #42'],
     [
+      'MR without URL',
+      message('Pipeline passed', {
+        type: 'pr_monitor_wake',
+        monitorId: 'mr',
+        repo: 'Team/Sub/Repo',
+        prNumber: 42,
+        resource: {
+          repository: {
+            provider: 'gitlab',
+            instanceBaseUrl: 'https://forge.test/install',
+            projectPath: 'Team/Sub/Repo',
+          },
+          kind: 'merge-request',
+          number: 42,
+        },
+      }),
+      'Team/Sub/Repo !42',
+    ],
+    [
       'event',
       message('[WORKSPACE EVENTS]\nRaw dispatch payload', {
         type: 'event_notification',

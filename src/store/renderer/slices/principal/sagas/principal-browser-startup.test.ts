@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CURRENT_PROTOCOL_VERSION } from '../../../../../test/current-protocol-version';
 
 /** Mock only the daemon wire: browser bridge, connection binding and role sagas are real. */
 describe('principal discovery through browser startup', () => {
@@ -25,7 +26,7 @@ describe('principal discovery through browser startup', () => {
       frames.push(frame);
       let result: unknown = {};
       if (frame.method === 'client.hello')
-        result = { server: { capabilities: { hostMembership: 1 } } };
+        result = { clientId: 'browser-caller', server: { capabilities: { hostMembership: 1 } } };
       if (frame.method === 'principal.me')
         result = malformed
           ? { id: 'caller' }
@@ -44,7 +45,7 @@ describe('principal discovery through browser startup', () => {
           listenMode: 'wss',
           transports: ['wss'],
           port: null,
-          protocolVersion: '2.6',
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
           host: { os: 'linux', arch: 'x86_64', hasDisplay: false, locality: 'remote' },
         };
       if (frame.method === 'events.subscribe')
@@ -117,6 +118,34 @@ describe('principal discovery through browser startup', () => {
       expect(selectCanCreateWorkspace.select(store.state)).toBe(callerRole !== 'guest');
     },
   );
+
+  it('refreshes the newly bound identity without renegotiating the browser connection', async () => {
+    const store = await boot();
+    const { selectHostRole } = await import('../principal-selectors');
+    const { routeDaemonEventsNotification } =
+      await import('$features/events/daemon-events-bridge.client');
+    await vi.waitFor(() => expect(selectHostRole.select(store.state)).toBe('owner'));
+    const hellos = frames.filter((frame) => frame.method === 'client.hello').length;
+    const reads = frames.filter((frame) => frame.method === 'principal.me').length;
+    role = 'member';
+    routeDaemonEventsNotification(
+      'events.event',
+      {
+        subscriptionId: 'identity-test',
+        event: {
+          type: 'principal:identity-changed',
+          data: {
+            principalId: 'caller',
+            identity: { provider: 'github', host: 'github.com', externalUserId: '42' },
+          },
+        },
+      },
+      'identity-test',
+    );
+    await vi.waitFor(() => expect(selectHostRole.select(store.state)).toBe('member'));
+    expect(frames.filter((frame) => frame.method === 'client.hello')).toHaveLength(hellos);
+    expect(frames.filter((frame) => frame.method === 'principal.me')).toHaveLength(reads + 1);
+  });
 
   it('does not confer owner authority when the actual browser principal is malformed', async () => {
     malformed = true;
