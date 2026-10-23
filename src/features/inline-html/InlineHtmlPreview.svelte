@@ -63,10 +63,10 @@
   let runtimeError = $state('');
   let contentHeight = $state(INLINE_HTML_MIN_HEIGHT);
   let heightLimit = $state(INLINE_HTML_MAX_HEIGHT);
-  let localRecord = $state<InlineVisualRecord>(emptyInlineVisualRecord());
+  let localRecord = $state.raw<InlineVisualRecord>(emptyInlineVisualRecord());
   let currentSnapshot = $state.raw<InlineVisualSnapshot | undefined>();
   let previousSource: string | undefined;
-  let pendingRestore = $state<InlineVisualSnapshot | undefined>();
+  let pendingRestore = $state.raw<InlineVisualSnapshot | undefined>();
   let compare = $state(false);
   const saved = $derived(record ?? localRecord);
   const storageAvailable = $derived(
@@ -100,7 +100,8 @@
   }
 
   function saveScenario() {
-    if (!currentSnapshot || saved.scenarios.length >= INLINE_VISUAL_MAX_SCENARIOS) return;
+    const snapshot = currentSnapshot;
+    if (!snapshot || saved.scenarios.length >= INLINE_VISUAL_MAX_SCENARIOS) return;
     updateRecord({
       ...saved,
       scenarios: [
@@ -110,7 +111,7 @@
           name: m.inlineHtml_preview_scenarioName_label({
             number: formatNumber(saved.scenarios.length + 1),
           }),
-          snapshot: structuredClone($state.snapshot(currentSnapshot)),
+          snapshot: structuredClone(snapshot),
         },
       ],
     });
@@ -129,9 +130,10 @@
   }
 
   function restoreScenario(snapshot: InlineVisualSnapshot) {
-    currentSnapshot = structuredClone($state.snapshot(snapshot));
-    pendingRestore = currentSnapshot;
-    updateRecord({ ...saved, current: currentSnapshot });
+    const restored = structuredClone(snapshot);
+    currentSnapshot = restored;
+    pendingRestore = restored;
+    updateRecord({ ...saved, current: restored });
     reload += 1;
   }
 
@@ -220,8 +222,9 @@
       } else if (data.type === 'error' && typeof data.message === 'string') {
         runtimeError = data.message.slice(0, 300);
       } else if (data.type === 'snapshot' && runnable && isInlineVisualSnapshot(data.snapshot)) {
-        currentSnapshot = data.snapshot;
-        updateRecord({ ...saved, current: currentSnapshot });
+        const snapshot = data.snapshot;
+        currentSnapshot = snapshot;
+        updateRecord({ ...saved, current: snapshot });
       } else if (
         data.type === 'wheel' &&
         ready &&
