@@ -9537,6 +9537,39 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     expect(ws.archivedAt).toBeUndefined();
   });
 
+  it('merges the retire delta and clears retiredAt on the revive delta', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      updatedNotification({
+        archived: true,
+        status: 'Retired',
+        archivedAt: '2026-10-01T00:00:00.000Z',
+        retiredAt: '2026-10-20T00:00:00.000Z',
+      }),
+    );
+    let ws = await readWorkspace();
+    expect(ws.status).toBe('Retired');
+    expect(ws.retiredAt).toBe('2026-10-20T00:00:00.000Z');
+
+    handler(
+      updatedNotification({
+        archived: false,
+        status: 'Active',
+        archivedAt: null,
+        retiredAt: null,
+        branch: 'intent/revived',
+        revived: { reason: 'manual' },
+      }),
+    );
+    ws = await readWorkspace();
+    expect(ws.status).toBe('Active');
+    expect(ws.retiredAt).toBeUndefined();
+    expect(ws.branch).toBe('intent/revived');
+  });
+
   it('merges a statusImageAssetId delta onto the entity (agent setStatusImage parity)', async () => {
     await seedWorkspace();
     await primeBridge();

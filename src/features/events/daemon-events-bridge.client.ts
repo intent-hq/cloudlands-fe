@@ -2756,6 +2756,13 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   } else if (raw.archivedAt === null) {
     changes.archivedAt = undefined;
   }
+  // `retiredAt` (PROTOCOL §5.1 Retired workspaces) uses the same nullable
+  // merge: retire sends the timestamp, revive an explicit JSON null.
+  if (typeof raw.retiredAt === 'string') {
+    changes.retiredAt = raw.retiredAt;
+  } else if (raw.retiredAt === null) {
+    changes.retiredAt = undefined;
+  }
   // `browserClientId` (REV-2 pin, §5.17) is nullable on the wire the same way:
   // `workspace.setBrowserClient { clientId }` sends the pinned id, clearing
   // sends an explicit JSON null. Apply the saved selection immediately; a
