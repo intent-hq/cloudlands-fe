@@ -2375,6 +2375,8 @@ describe('NotificationService structured notification:show payload', () => {
       provider: 'claude-code',
       // Seeds AgentAvatar's deterministic gradient colors in the toast.
       agentId: 'agent-self',
+      // Names who finished in the in-app toast.
+      agentName: 'Self Agent',
     });
   });
 
@@ -2390,6 +2392,7 @@ describe('NotificationService structured notification:show payload', () => {
       workspaceTitle: 'Test Workspace',
       specialistDisplayName: 'Agent',
       agentId: 'agent-self',
+      agentName: 'Self Agent',
     });
   });
 

@@ -11,6 +11,7 @@ export const toastMetadata = parseUiComponentMetadata({
     'AgentAttentionToastComponent',
     'AgentFailureToast',
     'AgentFailureToastComponent',
+    'AgentIdleToast',
     'ErrorToast',
     'ErrorToastComponent',
     'ExternalToast',
@@ -44,6 +45,9 @@ export const toastMetadata = parseUiComponentMetadata({
   replacement: null,
   characterizationTest: 'src/lib/components/ui/toast/Toast.test.ts',
   removalGate: 'Retain while toast styling, countdown, actions, and catalog coverage pass.',
-  dynamicImports: ['src/features/agent/agent-attention-toast-service.ts'],
+  dynamicImports: [
+    'src/features/agent/agent-attention-toast-service.ts',
+    'src/features/notifications/agent-idle-toast-service.ts',
+  ],
   fixtures: toastFixtures,
 });

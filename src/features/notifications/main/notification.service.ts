@@ -142,6 +142,8 @@ interface NotificationStructuredContent {
   provider?: string;
   /** Idle agent's id — seeds AgentAvatar's deterministic gradient colors. */
   agentId?: string;
+  /** Idle agent's display name — names who finished in the in-app toast. */
+  agentName?: string;
 }
 
 /**
@@ -804,6 +806,7 @@ export class NotificationService {
         ...(taskTitle ? { taskTitle } : {}),
         ...(provider ? { provider } : {}),
         ...(event.data.agentId ? { agentId: event.data.agentId } : {}),
+        ...(event.data.agentName ? { agentName: event.data.agentName } : {}),
       },
     };
   }
