@@ -59,6 +59,8 @@
      * save) only once it has loaded, so a save never replaces unseen overrides.
      */
     defaultsLoad?: 'idle' | 'success' | 'failure';
+    /** Render in place instead of as a modal overlay (component previews). */
+    static?: boolean;
   }
 
   let {
@@ -69,6 +71,7 @@
     isDefault = false,
     defaultConfig,
     defaultsLoad = 'success',
+    static: staticPosition = false,
   }: Props = $props();
 
   const DEFAULT_NAME = m.chat_modelPicker_defaultProfile_name();
@@ -258,6 +261,7 @@
 
 <FormDialog
   bind:open
+  static={staticPosition}
   size="wide"
   title={isDefault
     ? m.settings_providerDefault_title_label({ provider: providerName })
