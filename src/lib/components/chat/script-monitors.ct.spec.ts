@@ -90,5 +90,5 @@ test('a partial monitor page shows a bounded count and reachable Load more', asy
   await expect(more).toBeFocused();
   const bounds = await more.boundingBox();
   expect(bounds!.x).toBeGreaterThanOrEqual(0);
-  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(420);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
 });

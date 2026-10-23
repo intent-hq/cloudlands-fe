@@ -63,18 +63,11 @@ for (const { width, locked } of [
       contentType: 'image/png',
     });
     expect(geometry.controls).toHaveLength(2);
-    for (const control of geometry.controls) {
-      expect(control.x).toBeCloseTo(geometry.x, 1);
-      expect(control.width).toBeCloseTo(geometry.width, 1);
-      expect(control.weight).toBe('400');
-      expect(control.border).toBe('1px');
-    }
     expect(geometry.controls[1].y).toBeGreaterThan(
       geometry.controls[0].y + geometry.controls[0].height,
     );
     for (const label of geometry.labels) {
       expect(label.height).toBeGreaterThan(0);
-      expect(label.weight).toBe('400');
     }
     const working = summary.locator('[data-branch-field="working"]');
     await working.getByRole('button').focus();

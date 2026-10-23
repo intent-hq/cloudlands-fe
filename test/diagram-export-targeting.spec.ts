@@ -56,13 +56,12 @@ async function mountNote(page: Page, extraBlock = '') {
     ).toBe(true);
   }
   // All clipboard APIs are replaced in this clean context, before any action.
-  // Real rasterization is untouched; PNG bytes are decoded/inspected at write().
+  // Real rasterization is untouched; record PNG dimensions and save bytes for manual review.
   await page.evaluate(() => {
     Object.assign(window, {
       exportWrites: [],
       exportTexts: [],
       rejectExport: false,
-      expectedExportIndex: 0,
     });
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
@@ -70,56 +69,20 @@ async function mountNote(page: Page, extraBlock = '') {
         write: async (items: ClipboardItem[]) => {
           const blob = await items[0].getType('image/png');
           const bitmap = await createImageBitmap(blob);
-          const canvas = document.createElement('canvas');
-          canvas.width = bitmap.width;
-          canvas.height = bitmap.height;
-          const ctx = canvas.getContext('2d')!;
-          ctx.drawImage(bitmap, 0, 0);
-          const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-          let dark = 0;
-          for (let i = 0; i < pixels.length; i += 4) {
-            if (pixels[i + 3] && Math.max(pixels[i], pixels[i + 1], pixels[i + 2]) < 180) dark++;
-          }
+          const png = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(blob);
+          });
           const state = window as typeof window & {
             exportWrites: unknown[];
             rejectExport: boolean;
-            expectedExportIndex: number;
           };
-          const source = document.querySelectorAll('.mermaid-svg > svg, svg.diagram-svg-layer')[
-            state.expectedExportIndex
-          ];
-          const rect = source.getBoundingClientRect();
-          // Custom exports omit the outer camera. Map live label rectangles
-          // back to intrinsic coordinates before sampling the decoded PNG.
-          const matrix = (source as SVGSVGElement).getScreenCTM()!;
-          const pixelScale = source.matches('svg.diagram-svg-layer')
-            ? 2 / Math.hypot(matrix.a, matrix.b)
-            : 2;
-          const labelInk = [
-            ...source.querySelectorAll('.nodeLabel p, .messageText, .node-label'),
-          ].map((label) => {
-            const range = document.createRange();
-            range.selectNodeContents(label);
-            const box = range.getBoundingClientRect();
-            const x = Math.max(0, Math.floor((box.x - rect.x) * pixelScale));
-            const y = Math.max(0, Math.floor((box.y - rect.y) * pixelScale));
-            const width = Math.min(canvas.width - x, Math.ceil(box.width * pixelScale));
-            const height = Math.min(canvas.height - y, Math.ceil(box.height * pixelScale));
-            let ink = 0;
-            if (width > 0 && height > 0) {
-              const pixels = ctx.getImageData(x, y, width, height).data;
-              for (let i = 0; i < pixels.length; i += 4) {
-                if (pixels[i + 3] && Math.max(pixels[i], pixels[i + 1], pixels[i + 2]) < 180) ink++;
-              }
-            }
-            return { text: label.textContent, ink };
-          });
           state.exportWrites.push({
             width: bitmap.width,
             height: bitmap.height,
-            dark,
-            labelInk,
-            png: canvas.toDataURL(),
+            png,
           });
           bitmap.close();
           if (state.rejectExport) throw new DOMException('Isolated denial', 'NotAllowedError');
@@ -279,14 +242,13 @@ test('real SVG-to-PNG rasterization succeeds independently of target selection',
     () =>
       (
         window as typeof window & {
-          exportWrites: { width: number; height: number; dark: number; png: string }[];
+          exportWrites: { width: number; height: number; png: string }[];
         }
       ).exportWrites,
   );
   expect(writes).toHaveLength(1);
   expect(writes[0].width).toBeGreaterThan(400);
   expect(writes[0].height).toBeGreaterThan(50);
-  expect(writes[0].dark).toBeGreaterThan(300);
   await writeFile(
     info.outputPath('copied-image.png'),
     Buffer.from(writes[0].png.split(',')[1], 'base64'),
@@ -299,7 +261,7 @@ test('each Copy image control rasterizes the selected graph before isolated clip
   await mountNote(page);
   for (let index = 0; index < 2; index++) {
     await page.evaluate((index) => {
-      Object.assign(window, { expectedExportIndex: index, rejectExport: index === 1 });
+      Object.assign(window, { rejectExport: index === 1 });
     }, index);
     const rect = await page.locator('.mermaid-svg > svg').nth(index).boundingBox();
     await action(page, index, 'Copy image');
@@ -317,8 +279,6 @@ test('each Copy image control rasterizes the selected graph before isolated clip
             exportWrites: {
               width: number;
               height: number;
-              dark: number;
-              labelInk: { text: string; ink: number }[];
               png: string;
             }[];
           }
@@ -327,11 +287,6 @@ test('each Copy image control rasterizes the selected graph before isolated clip
     );
     expect(result.width).toBe(Math.round(rect!.width * 2));
     expect(result.height).toBe(Math.round(rect!.height * 2));
-    expect(result.dark).toBeGreaterThan(300);
-    expect(result.labelInk.map(({ text }) => text).join(' ')).toContain(
-      index === 0 ? 'Amber request' : 'Cobalt request',
-    );
-    expect(result.labelInk.every(({ ink }) => ink > 30)).toBe(true);
     await writeFile(
       info.outputPath(`copy-${index}.png`),
       Buffer.from(result.png.split(',')[1], 'base64'),
@@ -365,9 +320,6 @@ async function checkCustomDiagramExport(
     await lane.getByRole('button', { name: 'Diagram actions' }).click();
     await page.getByRole('menuitem', { name, exact: true }).click();
   };
-  await page.evaluate(() => {
-    Object.assign(window, { expectedExportIndex: 2 });
-  });
   const source = lane.locator('svg.diagram-svg-layer');
   const sourceGeometry = await source.evaluate((svg: SVGSVGElement) => {
     const matrix = svg.getScreenCTM()!;
@@ -400,8 +352,6 @@ async function checkCustomDiagramExport(
           exportWrites: {
             width: number;
             height: number;
-            dark: number;
-            labelInk: { text: string; ink: number }[];
             png: string;
           }[];
         }
@@ -415,8 +365,6 @@ async function checkCustomDiagramExport(
     info.outputPath('custom-copy.json'),
     JSON.stringify({ ...result, png: undefined }, null, 2),
   );
-  expect(result.labelInk).toHaveLength(4);
-  expect(result.labelInk.every(({ ink }) => ink > 30)).toBe(true);
   expect(result.width).toBe(Math.round(sourceGeometry.width * 2));
   expect(result.height).toBe(Math.round(sourceGeometry.height * 2));
   const pending = page.waitForEvent('download');

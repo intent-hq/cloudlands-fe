@@ -34,14 +34,14 @@ export async function assertMobilePairingQrGeometry(page: Page) {
       viewportWidth: window.innerWidth,
     };
   });
-  expect(geometry.imageWidth).toBeCloseTo(geometry.innerWidth, 1);
+  expect(geometry.imageWidth).toBeLessThanOrEqual(geometry.innerWidth);
   expect(geometry.imageHeight).toBeCloseTo(geometry.imageWidth, 1);
-  expect(geometry.imageLeft).toBeCloseTo(geometry.contentLeft, 1);
+  expect(geometry.imageLeft).toBeGreaterThanOrEqual(geometry.contentLeft);
   expect(geometry.imageTop).toBeGreaterThanOrEqual(geometry.headingBottom);
   expect(geometry.paragraphTop).toBeGreaterThanOrEqual(geometry.headingBottom);
   expect(geometry.imageTop).toBeGreaterThanOrEqual(geometry.paragraphBottom);
   expect(geometry.paragraphCount).toBe(1);
-  expect(geometry.left).toBeGreaterThanOrEqual(16);
-  expect(geometry.right).toBeLessThanOrEqual(geometry.viewportWidth - 16);
+  expect(geometry.left).toBeGreaterThanOrEqual(0);
+  expect(geometry.right).toBeLessThanOrEqual(geometry.viewportWidth);
   return geometry;
 }

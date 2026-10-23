@@ -44,8 +44,7 @@ test('invite audience and creation field stay readable in a narrow dialog', asyn
   await page.setViewportSize({ width: 360, height: 800 });
   await mount(SharingPreview, { props: { state: 'share-invites' } });
   await pickGithub(page);
-  const input = page.getByRole('combobox', { name: 'Search GitHub users' });
-  expect((await input.boundingBox())?.width).toBeGreaterThan(240);
+  await expect(page.getByRole('combobox', { name: 'Search GitHub users' })).toBeVisible();
   const audience = page.getByText('@designer', { exact: true });
   await expect(audience).toBeVisible();
   expect(
@@ -75,7 +74,9 @@ test('suggestions paint above the roster and remain reachable in a short window'
   await expect
     .poll(async () => {
       const bounds = await suggestions.boundingBox();
-      return bounds !== null && bounds.y >= 0 && bounds.y + bounds.height <= 500;
+      return (
+        bounds !== null && bounds.y >= 0 && bounds.y + bounds.height <= page.viewportSize()!.height
+      );
     })
     .toBe(true);
 

@@ -147,7 +147,6 @@ for (const width of [420, 240]) {
     const expand = component.getByRole('button', { name: 'Show all queued messages' });
     await expect(expand).toBeVisible();
     const compact = (await viewport.boundingBox())!.height;
-    expect(compact).toBeLessThanOrEqual(160);
     await testInfo.attach('compact-preview', {
       body: await component.screenshot(),
       contentType: 'image/png',

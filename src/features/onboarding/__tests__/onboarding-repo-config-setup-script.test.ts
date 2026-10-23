@@ -1284,6 +1284,11 @@ describe('onboarding remote-URL probe race (cloudlands-fe#443)', () => {
 });
 
 describe('onboarding model picker (initial Developer agent)', () => {
+  const initializationResult = () =>
+    dispatchedActions().findLast(
+      (action) => action.asyncActionType === 'workspaceInitializer/initializationSubmitted',
+    )?.promise;
+
   const captured = () =>
     (
       window as unknown as {
@@ -1426,16 +1431,15 @@ describe('onboarding model picker (initial Developer agent)', () => {
 
     // The onboarding choice seeds the New Workspace modal's remembered agent
     // (single-agent Developer, carrying the explicit pick).
-    await waitFor(() =>
-      expect(appStore.state.workspaceInitializer.lastSubmittedAgent).toEqual({
-        selectedSpecialist: 'developer',
-        isTeamMode: false,
-        selectedModel: PICKED,
-        modelWasOverridden: true,
-        selectedReasoningEffort: undefined,
-        selectedProvider: 'pi',
-      }),
-    );
+    await expect(initializationResult()).resolves.toMatchObject({ workspaceId: 'ws-1' });
+    expect(appStore.state.workspaceInitializer.lastSubmittedAgent).toEqual({
+      selectedSpecialist: 'developer',
+      isTeamMode: false,
+      selectedModel: PICKED,
+      modelWasOverridden: true,
+      selectedReasoningEffort: undefined,
+      selectedProvider: 'pi',
+    });
   });
 
   it('resolves without an override when the user never picked a model', async () => {
@@ -1466,16 +1470,15 @@ describe('onboarding model picker (initial Developer agent)', () => {
     expect(createRequest.initialAgent.provider).toBe('auggie');
     expect(createRequest.initialAgent.specialist).toBe('developer');
 
-    await waitFor(() =>
-      expect(appStore.state.workspaceInitializer.lastSubmittedAgent).toEqual({
-        selectedSpecialist: 'developer',
-        isTeamMode: false,
-        selectedModel: undefined,
-        modelWasOverridden: false,
-        selectedReasoningEffort: undefined,
-        selectedProvider: undefined,
-      }),
-    );
+    await expect(initializationResult()).resolves.toMatchObject({ workspaceId: 'ws-1' });
+    expect(appStore.state.workspaceInitializer.lastSubmittedAgent).toEqual({
+      selectedSpecialist: 'developer',
+      isTeamMode: false,
+      selectedModel: undefined,
+      modelWasOverridden: false,
+      selectedReasoningEffort: undefined,
+      selectedProvider: undefined,
+    });
   });
 
   it('creates a General agent (no specialist) when the resolved config falls back from Developer', async () => {
@@ -1520,10 +1523,9 @@ describe('onboarding model picker (initial Developer agent)', () => {
     expect(createRequest.initialAgent.name).not.toBe('Developer');
 
     // The remembered modal choice is single-agent General.
-    await waitFor(() =>
-      expect(appStore.state.workspaceInitializer.lastSubmittedAgent).toEqual(
-        expect.objectContaining({ selectedSpecialist: null, isTeamMode: false }),
-      ),
+    await expect(initializationResult()).resolves.toMatchObject({ workspaceId: 'ws-1' });
+    expect(appStore.state.workspaceInitializer.lastSubmittedAgent).toEqual(
+      expect.objectContaining({ selectedSpecialist: null, isTeamMode: false }),
     );
 
     // A General agent does not get the spec-first (coordinator) layout.

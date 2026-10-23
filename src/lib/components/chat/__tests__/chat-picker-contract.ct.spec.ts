@@ -59,7 +59,7 @@ test('many browser tabs remain bounded and the last reveal, close, and bulk clos
   const bounds = await chooser.boundingBox();
   expect(bounds).not.toBeNull();
   expect(bounds!.y).toBeGreaterThanOrEqual(0);
-  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(320);
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
   expect(await chooser.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
   await chooser.getByTestId('browser-tabs-menu-item').first().press('End');
   const last = chooser.getByTestId('browser-tabs-menu-item').last();
