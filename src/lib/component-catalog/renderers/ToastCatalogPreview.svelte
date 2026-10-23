@@ -17,6 +17,7 @@
   import { notify } from '$lib/components/patterns/notify';
   import NotifyErrorToast from '$lib/components/patterns/notify/NotifyErrorToast.svelte';
   import type { AppError } from '$lib/utils/error-handler.svelte';
+  import { catalogNow } from '../catalog-clock';
 
   let { fixture }: { componentId: 'toast'; fixture: UiComponentFixture } = $props();
 
@@ -60,6 +61,12 @@
   };
   const staticToastIds: Array<string | number> = [];
   let stackToastIds = $state<Array<string | number>>([]);
+
+  // The attention toast's age is measured against the live clock, so anchor it on the
+  // catalog clock: fixed under tests (always "18s"), live in the running catalog.
+  function attentionRaisedAt() {
+    return new Date(catalogNow() - 18_000).toISOString();
+  }
 
   function options(region: string, id: string, extra: ExternalToast = {}): ExternalToast {
     return {
@@ -127,7 +134,7 @@
         options('agent-attention', 'toast-catalog-agent-attention', {
           componentProps: {
             title: 'Coordinator requests a discussion',
-            timestamp: new Date(Date.now() - 18_000).toISOString(),
+            timestamp: attentionRaisedAt(),
             reason: 'Choose whether the catalog should include diagnostic details.',
             kind: 'discussion',
             onSwitchTo: noOp,
@@ -188,7 +195,7 @@
       type: 'error',
       title: 'Workspace error',
       message: 'The live application error toast is working.',
-      timestamp: new Date(),
+      timestamp: new Date(catalogNow()),
       recoverable: true,
     };
     notify.appError({ error, onCopy: noOp, onDebug: noOp, onRetry: noOp });
@@ -270,7 +277,7 @@
           notify.custom(AgentAttentionToast, {
             componentProps: {
               title: 'Coordinator requests a discussion',
-              timestamp: new Date(Date.now() - 18_000).toISOString(),
+              timestamp: attentionRaisedAt(),
               reason: 'Live attention toast',
               kind: 'discussion',
               onSwitchTo: noOp,

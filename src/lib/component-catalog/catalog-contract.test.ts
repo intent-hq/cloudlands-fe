@@ -30,6 +30,7 @@ import '../../app.css';
 // Pin this suite's timestamp timezone and relative-time reference, keeping real timers.
 vi.mock(import('$lib/i18n/format'), async (importOriginal) => {
   const actual = await importOriginal();
+  const { CATALOG_REFERENCE_NOW } = await import('./catalog-clock');
   const { getActiveLocale } = await import('$lib/i18n/locale');
   return {
     ...actual,
@@ -39,7 +40,16 @@ vi.mock(import('$lib/i18n/format'), async (importOriginal) => {
     ) {
       return actual.formatRelativeTime(input, {
         ...options,
-        now: options?.now ?? new Date('2026-09-01T12:00:00.000Z'),
+        now: options?.now ?? new Date(CATALOG_REFERENCE_NOW),
+      });
+    },
+    formatCompactRelativeTime(
+      input: Parameters<typeof actual.formatCompactRelativeTime>[0],
+      options?: Parameters<typeof actual.formatCompactRelativeTime>[1],
+    ) {
+      return actual.formatCompactRelativeTime(input, {
+        ...options,
+        now: options?.now ?? new Date(CATALOG_REFERENCE_NOW),
       });
     },
     formatDateTime(input: Parameters<typeof actual.formatDateTime>[0]) {
@@ -313,6 +323,39 @@ describe('catalog relative-time reference', () => {
         vi.useRealTimers();
       }
     },
+  );
+});
+
+// A real-clock fixture timestamp drifted from "18s" to "20s" when rendering was slow
+// (2026-10-23 verify:changed). Fixture times must not depend on the host clock.
+describe('catalog toast fixture clock', () => {
+  const toastCase = cases.find(({ key }) => key === 'primitive:toast:toast-state-matrix');
+
+  it.each(['2026-09-01T12:00:05.000Z', '2030-03-15T12:00:00.000Z'])(
+    'renders the attention toast age as 18s when the host date is %s',
+    async (hostDate) => {
+      expect(toastCase).toBeDefined();
+      // Mock Date only: the preview's lazy imports and toasts use real timers.
+      vi.setSystemTime(new Date(hostDate));
+      try {
+        const rendered = renderCase(toastCase!);
+        const selector =
+          '#toast-catalog-region-agent-attention [data-toast-layout="agent-attention"] ' +
+          '[data-slot="tooltip-trigger"]';
+        const age = await waitFor(
+          () => {
+            const element = rendered.baseElement.querySelector(selector);
+            expect(element).not.toBeNull();
+            return element!.textContent?.trim();
+          },
+          { timeout: renderWaitMs(budgetMs(toastCase!)) },
+        );
+        expect(age).toBe('18s');
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+    budgetMs(toastCase!),
   );
 });
 
