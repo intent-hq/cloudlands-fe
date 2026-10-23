@@ -75,8 +75,6 @@
   import {
     getHomeTriageGroup,
     matchesHomeFilter,
-    hasRetiredWorkspaces,
-    shouldReloadRetiredWorkspaces,
     needsAttention,
     type HomeFilter,
     type HomeRepository,
@@ -93,7 +91,7 @@
   import { selectHomeWorkspaceView, selectHomeWorkspaceError } from './home-workspaces-selectors';
   import { updateHomeWorkspaceView } from './home-workspaces-slice';
   import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
-  import { loadRetiredWorkspacesRequested } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
+  import { homeRetiredWorkspaces } from './home-retired-workspaces.svelte';
   import HomeIntegrations from './HomeIntegrations.svelte';
   import type { HomeIntegrationsState } from './home-integrations-types';
 
@@ -486,24 +484,7 @@
       row?.closest<HTMLElement>('[role="option"], button')?.focus();
     });
   });
-  // Retired workspaces are absent from the live list (strict includeRetired
-  // opt-in, PROTOCOL §5.1); only the Retired chip fetches them.
-  $effect(() => {
-    if (filter !== 'retired' || preview) return;
-    untrack(() => store.dispatch(loadRetiredWorkspacesRequested()));
-  });
-  // An ordinary list refresh replaces the store without retired rows; reload
-  // them if that happens while the Retired chip is selected.
-  const retiredLoaded = $derived(hasRetiredWorkspaces($workspaces$));
-  let hadRetired = untrack(() => retiredLoaded);
-  $effect(() => {
-    const now = retiredLoaded;
-    untrack(() => {
-      if (!preview && shouldReloadRetiredWorkspaces(filter, hadRetired, now))
-        store.dispatch(loadRetiredWorkspacesRequested());
-      hadRetired = now;
-    });
-  });
+  homeRetiredWorkspaces(() => ({ filter, workspaces: $workspaces$, preview }));
   function chooseFilter(next: HomeFilter) {
     store.dispatch(closePanel());
     updateView({ filter: next, tab: 'workspaces', selectedId: null });
