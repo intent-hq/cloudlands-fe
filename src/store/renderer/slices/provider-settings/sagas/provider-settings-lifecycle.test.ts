@@ -98,6 +98,7 @@ function harness(backgroundAgentSettings: BackgroundAgentSettingsState = backgro
     connections: { windowBackendId: 'local' },
   };
   const channel = stdChannel();
+  const listeners = new Set<() => void>();
   const actions: { type: string; payload?: unknown }[] = [];
   const send = (action: Parameters<typeof providerSettingsReducer>[1]) => {
     actions.push(action);
@@ -110,9 +111,20 @@ function harness(backgroundAgentSettings: BackgroundAgentSettingsState = backgro
         action,
       ),
     };
+    for (const listener of listeners) listener();
     channel.put(action);
   };
-  const task = runSaga({ channel, dispatch: send, getState: () => current }, providerSettingsSaga);
+  const getState = () => current;
+  const context = {
+    reduxStore: {
+      getState,
+      subscribe: (listener: () => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    },
+  };
+  const task = runSaga({ channel, dispatch: send, getState, context }, providerSettingsSaga);
   tasks.push(task);
   send(providerSettingsSessionOpened('panel'));
   return {

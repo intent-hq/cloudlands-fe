@@ -32,21 +32,29 @@ const settle = async () => {
 function harness(piAvailable = false) {
   let state = initialState;
   const channel = stdChannel();
+  const listeners = new Set<() => void>();
   const send = (action: Parameters<typeof providerSettingsReducer>[1]) => {
     state = providerSettingsReducer(state, action);
+    for (const listener of listeners) listener();
     channel.put(action);
+  };
+  const getState = () => ({
+    providerSettings: state,
+    agentAvailability: {
+      ...availabilityState,
+      providerStatusMap: { pi: { available: piAvailable } },
+    },
+  });
+  const subscribe = (listener: () => void) => {
+    listeners.add(listener);
+    return () => listeners.delete(listener);
   };
   const task = runSaga(
     {
       channel,
       dispatch: send,
-      getState: () => ({
-        providerSettings: state,
-        agentAvailability: {
-          ...availabilityState,
-          providerStatusMap: { pi: { available: piAvailable } },
-        },
-      }),
+      getState,
+      context: { reduxStore: { getState, subscribe } },
     },
     providerSettingsSaga,
   );
