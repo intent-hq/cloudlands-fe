@@ -170,7 +170,6 @@
     theme: 'display',
     appearance: 'display',
     'chat-aurora': 'display',
-    'collapse-tool-runs': 'display',
     'translucent-window': 'display',
     'font-style': 'display',
     'color-theme': 'display',
