@@ -201,11 +201,10 @@ describe('GitHub-hosted CI runners', () => {
       'test-2',
       'test-3',
       'test-4',
-      'test-integration',
     ]);
     // The shards go in shard order; each shard has its own key.
     expect(onSlots(r.slots)).toEqual(['test-1', 'test-2']);
-    for (const key of ['test-3', 'test-4', 'build-web', 'test-integration', 'ct-1', 'ct-4'])
+    for (const key of ['test-3', 'test-4', 'build-web', 'ct-1', 'ct-4'])
       expect(r.slots[key]).toEqual(['gh-linux-8x']);
     expect(r.burst).toBe('true');
     expect(r.messages.some((m) => m.includes('free=2 granted=2'))).toBe(true);
@@ -251,10 +250,9 @@ describe('GitHub-hosted CI runners', () => {
     expect(browser.jobs['test-ct']['runs-on']).toBe(
       "${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('[\"gh-linux-8x\"]') }}",
     );
-    // The other browser suites never take a slot: straight to the burst runner.
-    expect(browser.jobs['test-playwright']['runs-on']).toBe(
-      `\${{ fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["gh-linux-8x"]') }}`,
-    );
+    // The other browser suites are light enough for the free standard runner.
+    expect(browser.jobs['test-playwright']['runs-on']).toBe('ubuntu-24.04');
+    expect(browser.jobs['test-electron']['runs-on']).toBe('ubuntu-24.04');
   });
 
   it('gives no slot to Component Tests shards on a queue run that skips them', async () => {
@@ -302,17 +300,21 @@ describe('GitHub-hosted CI runners', () => {
     expect(decide.env.SLOT_JOBS).toBe('${{ steps.slot-jobs.outputs.list }}');
   });
 
-  it('runs Type Check & Lint on the free standard runner, outside the slot list', () => {
-    // Measured medium-sized (3.2 busy cores, 11.7 GiB peak): it fits a 4-vCPU / 16 GB
-    // ubuntu-24.04 runner. It never reads the router, so it cannot land on the 1-CPU small pool.
+  // Type Check & Lint measured medium-sized (3.2 busy cores, 11.7 GiB peak); WarpBuild measured
+  // Integration Tests at p90 19% of 8 CPUs and 3.7 GB. Both fit a free 4-vCPU / 16 GB
+  // ubuntu-24.04 runner and never read the router, so they cannot take a slot or a paid runner.
+  it.each([
+    ['checks', 'Type Check & Lint'],
+    ['test-integration', 'Integration Tests'],
+  ])('runs %s on the free standard runner, outside the slot list', (id, name) => {
     const workflow = read('.github/workflows/intent-pr.yml');
-    const checks = workflow.jobs.checks;
-    expect(checks.name).toBe('Type Check & Lint');
-    expect(checks['runs-on']).toBe('ubuntu-24.04');
+    const job = workflow.jobs[id];
+    expect(job.name).toBe(name);
+    expect(job['runs-on']).toBe('ubuntu-24.04');
     const listed = JSON.parse(
       workflow.jobs.route.steps.find((s: { id?: string }) => s.id === 'slot-jobs').env.SLOT_JOBS,
     ) as { key: string }[];
-    expect(listed.map((j) => j.key)).not.toContain('checks');
+    expect(listed.map((j) => j.key)).not.toContain(id);
   });
 
   it.each([
@@ -325,7 +327,7 @@ describe('GitHub-hosted CI runners', () => {
     ['an unreadable intent queue', { unreadable: 'intent' }],
   ])('sends every listed heavy job hosted with %s', async (_name, fixture: Fixture) => {
     const r = await route(fixture);
-    expect(Object.keys(r.slots)).toHaveLength(10);
+    expect(Object.keys(r.slots)).toHaveLength(9);
     for (const labels of Object.values(r.slots)) expect(labels).toEqual(['gh-linux-8x']);
   });
 
@@ -352,7 +354,7 @@ describe('GitHub-hosted CI runners', () => {
       );
     }
     // Queue-only jobs must say so, or they would hold a slot on every PR.
-    for (const id of ['build-web', 'test-integration', 'ct'])
+    for (const id of ['build-web', 'ct'])
       expect(listed.find((j) => j.key === id)!.events).toEqual(['merge_group']);
   });
 
@@ -360,7 +362,7 @@ describe('GitHub-hosted CI runners', () => {
     // Raising the org or repo variable alone grows the pool: 14 slots take every listed job.
     const slots14 = Array.from({ length: 14 }, () => slot);
     const grown = await route({ runners: slots14, env: { THRESHOLD: '14' } });
-    expect(onSlots(grown.slots)).toHaveLength(10);
+    expect(onSlots(grown.slots)).toHaveLength(9);
     expect(grown.burst).toBe('false');
     expect(grown.messages.some((m) => m.includes('threshold=14 online=14 free=14'))).toBe(true);
     // The online count still caps it, and so does the variable.
@@ -449,7 +451,7 @@ describe('GitHub-hosted CI runners', () => {
       '${{ steps.decide.outputs.cloud }}',
     );
     const on = await route({ env: { WARPBUILD_DISABLED: '' } });
-    expect(on.cloud['macos-26-xlarge']).toEqual(['warp-macos-26-arm64-6x']);
+    expect(on.cloud['macos-26-xlarge']).toEqual(['warp-macos-26-arm64-12x']);
     const off = await route({});
     expect(off.cloud['macos-26-xlarge']).toEqual(['macos-26-xlarge']);
   });
