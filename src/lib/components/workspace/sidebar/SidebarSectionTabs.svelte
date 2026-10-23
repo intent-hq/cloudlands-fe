@@ -136,10 +136,15 @@
           : tab.label}
         aria-controls={panelId ? `${panelId}-${tab.id}` : undefined}
         class={orientation === 'horizontal'
-          ? 'relative w-full min-w-0 gap-0 px-0'
+          ? cn(
+              'relative w-full min-w-0 gap-0 px-0',
+              selected === tab.id
+                ? 'text-foreground'
+                : 'text-muted-foreground dark:text-muted-foreground/70',
+            )
           : cn(
               'relative size-9 min-w-0 gap-0 rounded-(--radius-medium) border-0 px-0 focus-visible:ring-2 focus-visible:ring-ring',
-              selected === tab.id && 'bg-muted/60 dark:bg-surface-4',
+              selected === tab.id && 'bg-selected dark:bg-surface-4',
             )}
         data-sidebar-section-tab={tab.id}
         onpointerenter={(event) => {
@@ -211,7 +216,7 @@
       >
         <Tabs.List
           aria-label={m.workspace_layout_ariaLabel()}
-          class="w-max min-w-full max-w-none justify-between gap-1 overflow-visible"
+          class="w-max min-w-full max-w-none justify-between gap-1 overflow-visible bg-selected dark:bg-surface-4"
         >
           {#each tabs as tab (tab.id)}
             <Tooltip content={tab.label} delayDuration={400} class="flex size-10 shrink-0">

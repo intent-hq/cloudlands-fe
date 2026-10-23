@@ -563,7 +563,7 @@
   </div>
   <div
     class={cn(
-      'relative min-h-0 flex-1 overflow-hidden rounded-(--radius-large) bg-muted/60 ring-1 ring-inset ring-border/50 dark:bg-surface-4',
+      'relative min-h-0 flex-1 overflow-hidden rounded-(--radius-large) bg-selected ring-1 ring-inset ring-border/50 dark:bg-surface-4',
       !panelOnly && 'mx-3 mt-2 mb-3',
     )}
     data-sidebar-panels
@@ -657,7 +657,7 @@
                       variant="ghost"
                       size="icon-compact"
                       class="shrink-0 {showOnlyChangedFiles
-                        ? 'bg-muted text-foreground'
+                        ? 'bg-selected text-foreground dark:bg-muted'
                         : 'text-muted-foreground'}"
                       aria-pressed={showOnlyChangedFiles}
                       tooltip={showOnlyChangedFiles
@@ -834,3 +834,14 @@
     {/each}
   </div>
 </div>
+
+<style>
+  .sidebar-section {
+    --selected: var(--card);
+    --color-selected: hsl(var(--selected));
+  }
+
+  :global(.dark) .sidebar-section {
+    --selected: var(--theme-selected);
+  }
+</style>
