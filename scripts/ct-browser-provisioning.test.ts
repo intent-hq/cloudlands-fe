@@ -101,15 +101,24 @@ ${command}`,
       // The caller's route `cloud` map: CT never takes a self-hosted slot, whatever linux_burst says.
       'inputs.cloud': JSON.stringify({ 'gh-linux-8x': ['warp-ubuntu-2404-x64-8x'] }),
     };
-    const value = (scalar: string) =>
-      scalar.startsWith('${{') ? evaluate(scalar, context) : scalar.replace(/^(['"])(.*)\1$/, '$2');
     expect(evaluate(ctJob.match(/^    if: (.*)$/m)![1], context)).toBe(event !== 'pull_request');
     if (event === 'pull_request') return;
-    const runner = value(ctJob.match(/^    runs-on: (.*)$/m)![1]);
-    expect.soft(Array.isArray(runner) ? runner : [runner]).toEqual(['warp-ubuntu-2404-x64-8x']);
-    expect(
-      evaluate(ctJob.match(/^    runs-on: (.*)$/m)![1], { ...context, 'inputs.cloud': '{}' }),
-    ).toEqual(['gh-linux-8x']);
+    // runs-on reads the caller's slots input per shard, then its cloud map, then gh-linux-8x.
+    const runsOn = ctJob.match(/^    runs-on: (.*)$/m)![1];
+    expect(runsOn).toBe(
+      "${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('[\"gh-linux-8x\"]') }}",
+    );
+    const shardRunner = (
+      slots: Record<string, string[]>,
+      cloud: Record<string, string[]>,
+      shard: number,
+    ) => slots[`ct-${shard}`] ?? cloud['gh-linux-8x'] ?? ['gh-linux-8x'];
+    const warp = { 'gh-linux-8x': ['warp-ubuntu-2404-x64-8x'] };
+    expect.soft(shardRunner({}, warp, 1)).toEqual(['warp-ubuntu-2404-x64-8x']);
+    expect.soft(shardRunner({}, {}, 1)).toEqual(['gh-linux-8x']);
+    expect
+      .soft(shardRunner({ 'ct-2': ['self-hosted', 'linux', 'x64', 'intent-cache'] }, warp, 2))
+      .toEqual(['self-hosted', 'linux', 'x64', 'intent-cache']);
     // The pnpm store is restored by the backend-selecting cache action (WarpBuild or GitHub).
     expect.soft(step('Setup Node.js')).not.toMatch(/^          cache:/m);
     expect.soft(step('Cache pnpm store')).toContain('uses: ./.github/actions/pnpm-store-cache');
@@ -292,6 +301,58 @@ esac`,
     const result = provision({ CT_MISSING_PACKAGE: 'libmissing' });
     expect(result.status, result.stdout + result.stderr).toBe(0);
     expect(result.calls).toEqual([browser, deps, ...queries, update, install]);
+  });
+
+  it('fails without sudo on a self-hosted slot that lacks a library', () => {
+    // Slots have no sudo; the runner image must carry every Chromium library.
+    const result = provision({
+      CT_MISSING_PACKAGE: 'libmissing',
+      RUNNER_ENVIRONMENT: 'self-hosted',
+    });
+    expect(result.status).toBe(1);
+    expect(result.calls).toEqual([browser, deps, ...queries]);
+    expect(result.stdout).toContain('infra/runners/Dockerfile');
+  });
+
+  it('still installs a missing library on WarpBuild, which also reports self-hosted', () => {
+    const result = provision({
+      CT_MISSING_PACKAGE: 'libmissing',
+      RUNNER_ENVIRONMENT: 'self-hosted',
+      WARPBUILD_RUNNER_VERIFICATION_TOKEN: 'fixture',
+    });
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(result.calls).toEqual([browser, deps, ...queries, update, install]);
+  });
+
+  it.each([
+    ['an intent-cache slot', { RUNNER_ENVIRONMENT: 'self-hosted' }, false],
+    [
+      'WarpBuild',
+      { RUNNER_ENVIRONMENT: 'self-hosted', WARPBUILD_RUNNER_VERIFICATION_TOKEN: 'fixture' },
+      true,
+    ],
+    ['a GitHub-hosted runner', { RUNNER_ENVIRONMENT: 'github-hosted' }, true],
+  ])('hardens apt only where sudo exists: %s', (_name, env, hardens) => {
+    const dir = mkdtempSync(join(os.tmpdir(), 'ct-harden-apt-'));
+    dirs.push(dir);
+    const bin = join(dir, 'bin');
+    const calls = join(dir, 'calls');
+    mkdirSync(bin);
+    writeFileSync(
+      join(bin, 'sudo'),
+      `#!/bin/sh\nprintf 'sudo %s\\n' "$*" >> "${calls}"\ncat >/dev/null\n`,
+      {
+        mode: 0o755,
+      },
+    );
+    const result = spawnSync(
+      'bash',
+      ['-euo', 'pipefail', '-c', runBlock('Harden apt against mirror stalls')],
+      { cwd: dir, env: { PATH: `${bin}:${process.env.PATH}`, ...env }, encoding: 'utf8' },
+    );
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    const sudo = existsSync(calls) ? readFileSync(calls, 'utf8') : '';
+    expect(sudo.includes('tee /etc/apt/apt.conf.d/99-bounded-acquire')).toBe(hardens);
   });
 
   it('stops when the browser installation fails', () => {

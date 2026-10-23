@@ -38,7 +38,12 @@ def schedule(workflow, event, fork=False, fast='false', relevant='true', route='
     for key in ('ct_required', 'root_playwright_required', 'electron_required', 'portable_fixtures_required'):
         values['needs.release-fast-path.outputs.' + key] = relevant
     results = {}
-    for name, job in workflow['jobs'].items():
+    # Dependency order, not file order: route waits for release-fast-path.
+    pending = dict(workflow['jobs'])
+    while pending:
+        name, job = next((n, j) for n, j in pending.items()
+                         if all(d in results for d in ([j['needs']] if isinstance(j.get('needs'), str) else j.get('needs', []))))
+        del pending[name]
         needs = job.get('needs', [])
         if isinstance(needs, str):
             needs = [needs]
