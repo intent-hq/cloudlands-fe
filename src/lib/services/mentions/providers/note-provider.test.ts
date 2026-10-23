@@ -4,6 +4,7 @@ import { store } from '$store/renderer/store';
 import { notesReadSaga } from '$store/renderer/slices/workspace-notes/sagas/notes-read-saga';
 import { MentionSystem } from '../mention-system';
 import type { MentionCandidate } from '../types';
+import { providerRegistry } from './index';
 
 const mocks = vi.hoisted(() => ({ request: vi.fn(), notes: vi.fn(), workspaces: vi.fn() }));
 vi.mock('$lib/client/live/backend-transport', () => ({
@@ -100,5 +101,48 @@ describe('note mention search', () => {
     const ids = noteIds(await system.search('', { workspaceId: 'ws-1' }));
 
     expect(ids).toEqual(scatteredNotes(10).map((n) => n.id));
+  });
+
+  it('matches body text word by word, in any order', async () => {
+    mocks.notes.mockResolvedValue([
+      { id: 'auth', title: 'Weekly', contentPreview: 'Notes on the authentication flow redesign.' },
+    ]);
+    const provider = providerRegistry.get('note')!;
+
+    const hit = await provider.search('flow auth', { workspaceId: 'ws-1' });
+    const miss = await provider.search('flow billing', { workspaceId: 'ws-1' });
+
+    expect(hit.map((r) => r.id)).toEqual(['auth']);
+    expect(miss.map((r) => r.id)).toEqual([]);
+  });
+
+  it('ignores surrounding whitespace in the query', async () => {
+    mocks.notes.mockResolvedValue([
+      { id: 'title-end', title: 'Andre meeting', contentPreview: 'Attendees: Andre.' },
+      { id: 'body-end', title: 'Weekly notes', contentPreview: 'Items from the meeting.' },
+    ]);
+
+    const results = await providerRegistry.get('note')!.search('meeting ', { workspaceId: 'ws-1' });
+
+    expect(results.map((r) => r.id)).toEqual(['title-end', 'body-end']);
+  });
+
+  it('gives a note without body text an empty description', async () => {
+    mocks.notes.mockResolvedValue([{ id: 'bare', title: 'Meeting agenda' }]);
+
+    const results = await system.search('meeting', { workspaceId: 'ws-1' });
+
+    expect(results.find((r) => r.id === 'bare')?.description).toBe('');
+  });
+
+  it('does not carry query scores into the instant cached results', async () => {
+    mocks.notes.mockResolvedValue([transcript]);
+    await system.search('meeting', { workspaceId: 'ws-1' });
+
+    const instant = system.searchSync('me', { workspaceId: 'ws-1' });
+
+    expect(instant.map((r) => r.id).indexOf('readme')).toBeLessThan(
+      instant.map((r) => r.id).indexOf('transcript'),
+    );
   });
 });
