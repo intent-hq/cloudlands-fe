@@ -263,9 +263,16 @@
   };
 
   const handleDownload = () => {
-    if (!allowDownload) return;
+    if (!allowDownload || downloading) return;
+    if (onDownload) {
+      onDownload();
+      return;
+    }
+    // In-memory sources only: a cross-origin workspace-file:// link ignores `download`
+    // and becomes a navigation the app blocks, so file tabs must pass `onDownload`.
     const link = document.createElement('a');
-    link.href = fileType === 'video' ? getVideoSrc() : getImageSrc();
+    link.href =
+      fileType === 'video' ? getVideoSrc() : fileType === 'svg' ? getSvgSrc() : getImageSrc();
     link.download = fileName;
     link.click();
   };
@@ -390,7 +397,7 @@
           variant="ghost"
           class="h-7 w-7"
           onclick={handleDownload}
-          disabled={!allowDownload}
+          disabled={!allowDownload || downloading}
           title={m.editor_fileViewer_download_tooltip()}
         >
           <Fa icon={faDownload} size="sm" />
@@ -433,7 +440,7 @@
           variant="ghost"
           class="h-7 w-7"
           onclick={handleDownload}
-          disabled={!allowDownload}
+          disabled={!allowDownload || downloading}
           title={m.editor_fileViewer_download_tooltip()}
         >
           <Fa icon={faDownload} size="sm" />
@@ -471,7 +478,7 @@
         {fileName}
         {allowDownload}
         {downloading}
-        onDownload={onDownload ?? handleDownload}
+        onDownload={handleDownload}
       />
     {/key}
   {:else if fileType === 'audio'}
@@ -507,7 +514,12 @@
         </svg>
       </div>
       <p class="text-sm text-subtle mb-4">{m.editor_fileViewer_pdfUnavailable_label()}</p>
-      <Button size="sm" variant="secondary" onclick={handleDownload} disabled={!allowDownload}>
+      <Button
+        size="sm"
+        variant="secondary"
+        onclick={handleDownload}
+        disabled={!allowDownload || downloading}
+      >
         <Fa icon={faDownload} size="sm" class="mr-2" />
         {m.editor_fileViewer_downloadPdf_label()}
       </Button>
