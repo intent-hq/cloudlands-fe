@@ -11,7 +11,7 @@
    * while maintaining consistent layout behavior.
    */
 
-  import { onDestroy, setContext, type Snippet } from 'svelte';
+  import { onDestroy, setContext, tick, type Snippet } from 'svelte';
   import { spring, Spring } from '$lib/motion';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import WorkspaceSidebarRail from './sidebar/WorkspaceSidebarRail.svelte';
@@ -96,6 +96,7 @@
   let contentMaxHeight = $state<number>();
   let expandedWidth = $state(0);
   let suppressFocusReveal = false;
+  let suppressRailToggleTooltip = $state(false);
   let closeTimer: ReturnType<typeof setTimeout> | undefined;
   let railPointer: { x: number; y: number } | undefined;
   const collapsed = $derived($sidebarIsCollapsed && !startCollapsed);
@@ -256,11 +257,23 @@
     };
   });
 
+  async function restoreRailFocus() {
+    suppressRailToggleTooltip = true;
+    try {
+      // Disable help before moving focus so the replacement control does not reopen it.
+      await tick();
+      if (active && collapsed && !floatingOpen)
+        (previewAnchor ?? rail?.querySelector<HTMLElement>('button'))?.focus();
+    } finally {
+      suppressRailToggleTooltip = false;
+    }
+  }
+
   $effect(() => {
     if (!active || !collapsed || floatingOpen) return;
     if (isSidebarTarget(document.activeElement) && !rail?.contains(document.activeElement)) {
       suppressFocusReveal = true;
-      (previewAnchor ?? rail?.querySelector<HTMLElement>('button'))?.focus();
+      void restoreRailFocus();
     }
   });
 
@@ -329,6 +342,7 @@
               {workspaceId}
               side={sidebarSide}
               onExpand={() => appStore.dispatch(toggleSidebar())}
+              tooltipDisabled={suppressRailToggleTooltip}
             />
           </div>
         {/if}

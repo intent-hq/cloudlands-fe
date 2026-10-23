@@ -638,18 +638,69 @@
                       label={m.menu_new_terminal()}
                       onclick={createTerminal}
                     />
-                  {:else if tabId === 'files' && $fileExplorerWorkspacePath}
-                    <OpenComboButton
-                      filePath={$fileExplorerWorkspacePath}
-                      {workspaceId}
-                      isDirectory
-                      side="bottom"
-                      variant="sidebar"
-                      iconOnly
+                  {:else if tabId === 'files'}
+                    <ExpandableFileSearch
+                      bind:query={fileSearchQuery}
+                      active={active && activeTabId === 'files'}
+                      onKeydown={(event) => filesPanelRef?.handleSearchKeyDown(event)}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon-compact"
+                      class="shrink-0 text-muted-foreground"
+                      tooltip={m.workspace_multiSelectSidebar_newFile_tooltip()}
+                      onclick={() => filesPanelRef?.startCreatingFile()}
                     >
-                      <Fa icon={faArrowUpRightFromSquare} class="size-4" />
-                      <span class="sr-only">{m.ui_openCombo_openInApp_tooltip()}</span>
-                    </OpenComboButton>
+                      <Fa icon={faPlus} class="size-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-compact"
+                      class="shrink-0 {showOnlyChangedFiles
+                        ? 'bg-muted text-foreground'
+                        : 'text-muted-foreground'}"
+                      aria-pressed={showOnlyChangedFiles}
+                      tooltip={showOnlyChangedFiles
+                        ? m.workspace_multiSelectSidebar_showAllFiles_tooltip()
+                        : m.workspace_multiSelectSidebar_showOnlyChangedFiles_tooltip()}
+                      onclick={() => (showOnlyChangedFiles = !showOnlyChangedFiles)}
+                    >
+                      <Fa icon={faPencil} class="size-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-compact"
+                      class="shrink-0 text-muted-foreground"
+                      tooltip={hasExpandedDirectories
+                        ? m.workspace_multiSelectSidebar_collapseAll_tooltip()
+                        : m.workspace_multiSelectSidebar_expandAll_tooltip()}
+                      onclick={async () => {
+                        if (hasExpandedDirectories) {
+                          filesPanelRef?.collapseAll();
+                        } else {
+                          await filesPanelRef?.expandAll();
+                        }
+                        filesExpandedTick++;
+                      }}
+                    >
+                      <Fa
+                        icon={hasExpandedDirectories ? faCompressAlt : faExpandAlt}
+                        class="size-3.5"
+                      />
+                    </Button>
+                    {#if $fileExplorerWorkspacePath}
+                      <OpenComboButton
+                        filePath={$fileExplorerWorkspacePath}
+                        {workspaceId}
+                        isDirectory
+                        side="bottom"
+                        variant="sidebar"
+                        iconOnly
+                      >
+                        <Fa icon={faArrowUpRightFromSquare} class="size-4" />
+                        <span class="sr-only">{m.ui_openCombo_openInApp_tooltip()}</span>
+                      </OpenComboButton>
+                    {/if}
                   {:else if tabId === 'changes'}
                     {@render changesRefreshAction?.()}
                     {#if workspacePrRows.length > 0}
@@ -662,7 +713,8 @@
           {/if}
           {#key workspaceId}
             <div
-              class="min-h-0 flex-1 px-3 pb-2 {tabId === 'files' || tabId === 'changes'
+              class="min-h-0 flex-1 pr-3 pb-2 {tabId === 'files' ? 'pl-1' : 'pl-3'} {tabId ===
+                'files' || tabId === 'changes'
                 ? 'overflow-hidden'
                 : 'overflow-y-auto'}"
               data-sidebar-section-scroll={tabId}
@@ -758,58 +810,6 @@
                 </div>
               {:else if tabId === 'files'}
                 <div class="flex h-full min-h-0 flex-col">
-                  <!-- File filter controls -->
-                  <div class="flex shrink-0 items-center gap-1 px-2 pb-2" data-file-tree-toolbar>
-                    <ExpandableFileSearch
-                      bind:query={fileSearchQuery}
-                      active={active && activeTabId === 'files'}
-                      onKeydown={(event) => filesPanelRef?.handleSearchKeyDown(event)}
-                    />
-                    <Button
-                      variant="ghost"
-                      size="icon-compact"
-                      class="shrink-0 text-muted-foreground"
-                      tooltip={m.workspace_multiSelectSidebar_newFile_tooltip()}
-                      onclick={() => filesPanelRef?.startCreatingFile()}
-                    >
-                      <Fa icon={faPlus} class="size-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-compact"
-                      class="shrink-0 {showOnlyChangedFiles
-                        ? 'bg-muted text-foreground'
-                        : 'text-muted-foreground'}"
-                      aria-pressed={showOnlyChangedFiles}
-                      tooltip={showOnlyChangedFiles
-                        ? m.workspace_multiSelectSidebar_showAllFiles_tooltip()
-                        : m.workspace_multiSelectSidebar_showOnlyChangedFiles_tooltip()}
-                      onclick={() => (showOnlyChangedFiles = !showOnlyChangedFiles)}
-                    >
-                      <Fa icon={faPencil} class="size-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-compact"
-                      class="shrink-0 text-muted-foreground"
-                      tooltip={hasExpandedDirectories
-                        ? m.workspace_multiSelectSidebar_collapseAll_tooltip()
-                        : m.workspace_multiSelectSidebar_expandAll_tooltip()}
-                      onclick={async () => {
-                        if (hasExpandedDirectories) {
-                          filesPanelRef?.collapseAll();
-                        } else {
-                          await filesPanelRef?.expandAll();
-                        }
-                        filesExpandedTick++;
-                      }}
-                    >
-                      <Fa
-                        icon={hasExpandedDirectories ? faCompressAlt : faExpandAlt}
-                        class="size-3.5"
-                      />
-                    </Button>
-                  </div>
                   <FilesPanel
                     bind:this={filesPanelRef}
                     {workspaceId}

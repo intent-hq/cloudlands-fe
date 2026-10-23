@@ -104,8 +104,14 @@
     };
   });
 
-  function activate(tabId: string) {
+  function selectSection(tabId: string) {
     store.dispatch(setMultiSelectSidebarSelectedTabs(workspaceId, [tabId]));
+  }
+
+  function activate(tabId: string) {
+    const alreadySelected = savedSelection === tabId;
+    selectSection(tabId);
+    if (orientation === 'horizontal' && !alreadySelected) return;
     store.dispatch(activateSidebarSectionRequested(workspaceId, tabId, panelLayoutId));
     onActivate?.(tabId);
   }
@@ -142,7 +148,7 @@
         }}
         onfocus={(event) => {
           if (orientation === 'vertical') flyout?.preview(tab.id, event.currentTarget, true);
-          else if (event.currentTarget.matches(':focus-visible')) activate(tab.id);
+          else if (event.currentTarget.matches(':focus-visible')) selectSection(tab.id);
         }}
         onkeydown={(event) => {
           if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -205,7 +211,7 @@
       >
         <Tabs.List
           aria-label={m.workspace_layout_ariaLabel()}
-          class="w-max min-w-full max-w-none justify-between overflow-visible"
+          class="w-max min-w-full max-w-none justify-between gap-1 overflow-visible"
         >
           {#each tabs as tab (tab.id)}
             <Tooltip content={tab.label} delayDuration={400} class="flex size-10 shrink-0">

@@ -1219,7 +1219,7 @@
                     depth * 16}px; padding-right: 0.5px; width: calc(100% - 0.5px);"
                 >
                   <span
-                    class={`shrink-0 flex items-center justify-center ${node.type === 'directory' ? `opacity-50 ${gitColor}` : `w-4 h-4 [&>svg]:w-full [&>svg]:h-full`}`}
+                    class={`w-4 h-4 shrink-0 flex items-center justify-center ${node.type === 'directory' ? `opacity-50 ${gitColor}` : `[&>svg]:w-full [&>svg]:h-full`}`}
                   >
                     {#if node.type === 'directory'}
                       <DisclosureIcon
@@ -1249,7 +1249,7 @@
                   selected={isFocused}
                   tabindex={-1}
                   aria-expanded={flatNode.isExpanded}
-                  iconClass={`-ml-1 mr-1 w-3 text-muted-foreground ${gitColor}`}
+                  iconClass={`w-4 text-muted-foreground ${gitColor}`}
                   title={displayName}
                   titleClass={`cursor-text type-caption font-normal leading-(--text-caption-line-height) ${gitColor}`}
                   onclick={(event) => handleItemClick(flatNode, absoluteIndex, event)}
@@ -1273,7 +1273,6 @@
                   actionsVisible="hover"
                 >
                   {#snippet iconSnippet()}
-                    <!-- Extend into the row inset, keeping labels and hit areas unchanged. -->
                     <DisclosureIcon
                       size={12}
                       weight="regular"

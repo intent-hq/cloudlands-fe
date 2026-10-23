@@ -19,7 +19,10 @@ import {
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { markNoteRead } from '../../note-read-tracking/note-read-tracking-slice';
 import { openFirstPanelTerminalRequested } from '../../terminals/terminals-slice';
-import { activateSidebarSectionRequested } from '../sidebar-nav-slice';
+import {
+  activateSidebarSectionRequested,
+  cancelSidebarSectionNavigation,
+} from '../sidebar-nav-slice';
 import { sidebarSectionNavigationSaga } from './sidebar-section-navigation-saga';
 import { appLayoutNavigationSaga } from '../../app-layout/sagas/app-layout-navigation-saga';
 import { fork } from 'typed-redux-saga';
@@ -235,21 +238,25 @@ describe('sidebar section destinations', () => {
     ]);
   });
 
-  it.each(['context', 'unmount'])('does not open a late file after %s', async (next) => {
-    let resolve!: (entries: unknown) => void;
-    vi.mocked(backendRequest).mockReturnValue(
-      new Promise((done) => {
-        resolve = done;
-      }),
-    );
-    const run = start();
-    run.activate('files');
-    if (next === 'unmount') run.dispatch(workspaceUnmounted(workspaceId));
-    else run.activate(next);
-    resolve([{ name: 'README.md', type: 'file' }]);
-    await new Promise((done) => setTimeout(done, 0));
-    expect(run.tabs().some((tab) => tab.type === 'file')).toBe(false);
-  });
+  it.each(['context', 'cancellation', 'unmount'])(
+    'does not open a late file after %s',
+    async (next) => {
+      let resolve!: (entries: unknown) => void;
+      vi.mocked(backendRequest).mockReturnValue(
+        new Promise((done) => {
+          resolve = done;
+        }),
+      );
+      const run = start();
+      run.activate('files');
+      if (next === 'unmount') run.dispatch(workspaceUnmounted(workspaceId));
+      else if (next === 'cancellation') run.dispatch(cancelSidebarSectionNavigation(workspaceId));
+      else run.activate(next);
+      resolve([{ name: 'README.md', type: 'file' }]);
+      await new Promise((done) => setTimeout(done, 0));
+      expect(run.tabs().some((tab) => tab.type === 'file')).toBe(false);
+    },
+  );
 
   it('stops descending through files when the admitted connection changes', async () => {
     let resolve!: (entries: unknown) => void;

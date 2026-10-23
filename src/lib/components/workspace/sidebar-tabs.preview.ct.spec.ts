@@ -1,6 +1,51 @@
 import { expect, test } from '../../../test/ct-test';
 import SidebarTabsPreview from './sidebar-tabs.preview.svelte';
 
+test('collapse does not reopen toggle help when focus moves to the rail', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(SidebarTabsPreview);
+  const collapse = component.locator('[data-sidebar-collapse]');
+  const expand = component.locator('[data-sidebar-rail-expand]');
+  const help = page.getByRole('tooltip', { name: 'Toggle sidebar', exact: true });
+  await collapse.hover();
+  await expect(help).toBeVisible();
+  await collapse.click();
+  await expect(expand).toBeFocused();
+  // Wait beyond the button's 200ms hover delay to catch help reopening after transfer.
+  await page.waitForTimeout(300);
+  await expect(help).toHaveCount(0);
+
+  await component.getByRole('textbox', { name: 'Workspace draft' }).hover();
+  await expand.hover();
+  await expect(help).toBeVisible();
+  await expand.press('Escape');
+  await expect(help).toHaveCount(0);
+  await expect(expand).toBeFocused();
+  await expand.press('Tab');
+  await page.keyboard.press('Shift+Tab');
+  await expect(expand).toBeFocused();
+  await expect(help).toBeVisible();
+  await expand.press('Enter');
+  await expect(collapse).toBeInViewport();
+  await expect(help).toHaveCount(0);
+
+  await component.getByRole('textbox', { name: 'Workspace draft' }).hover();
+  await collapse.focus();
+  await expect(help).toBeVisible();
+  await collapse.press('Enter');
+  await expect
+    .poll(() =>
+      component
+        .locator('[data-workspace-sidebar-rail]')
+        .evaluate((rail) => rail.contains(document.activeElement)),
+    )
+    .toBe(true);
+  await page.waitForTimeout(300);
+  await expect(help).toHaveCount(0);
+});
+
 for (const key of ['Enter', 'Space']) {
   test(`activating a section tab with ${key} dismisses its tooltip and keeps focus`, async ({
     mount,

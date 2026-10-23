@@ -16,6 +16,7 @@ import {
   selectWorkspaceNoteOrder,
 } from '../sidebar-nav-selectors';
 import {
+  cancelSidebarSectionNavigation,
   CHIEF_ACTIVE_AGENT_ID_KEY,
   hydrateSidebarNav,
   hydrateWorkspaceSidebarUi,
@@ -145,10 +146,11 @@ function* hydrateWorkspaceSidebarUiState(
   }
 }
 
-function* persistWorkspaceSelectedTabs(
+function* handleWorkspaceSelectedTabs(
   action: ReturnType<typeof setMultiSelectSidebarSelectedTabs>,
 ): SagaGenerator<void> {
   const [workspaceId] = action.payload;
+  yield* put(cancelSidebarSectionNavigation(workspaceId));
   try {
     yield* call(
       setLocalStorageJSON,
@@ -234,7 +236,7 @@ export function* sidebarNavSaga(): SagaGenerator<void> {
   yield* takeEvery(togglePinWorkspace, persistPinnedWorkspaces);
   yield* takeEvery(setChiefActiveAgentId, persistChiefActiveAgentId);
   yield* takeEvery(workspaceMounted, hydrateWorkspaceSidebarUiState);
-  yield* takeEvery(setMultiSelectSidebarSelectedTabs, persistWorkspaceSelectedTabs);
+  yield* takeEvery(setMultiSelectSidebarSelectedTabs, handleWorkspaceSelectedTabs);
   yield* takeEvery(setWorkspaceNoteOrder, persistWorkspaceNoteOrder);
   yield* takeEvery(toggleWorkspaceCollapsedNote, persistWorkspaceCollapsedNotes);
 }

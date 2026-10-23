@@ -945,7 +945,7 @@
         ></span>
       </div>
 
-      <div class="flex shrink-0 -mt-0.5 -mr-2 items-center gap-0.5" data-workspace-header-actions>
+      <div class="flex shrink-0 -mt-0.5 -mr-2 items-center gap-0" data-workspace-header-actions>
         <Button
           variant="ghost-light"
           size="icon-sm"
@@ -955,7 +955,7 @@
           tooltip={m.layout_titleBar_toggleSidebar_ariaLabel()}
           onclick={() => appStore.dispatch(toggleSidebar())}
         >
-          <SidebarIcon size={16} side={$sidebarSide$} />
+          <SidebarIcon size={18} side={$sidebarSide$} />
         </Button>
         <DropdownMenu bind:open={dropdownOpen}>
           {#snippet trigger({ props })}

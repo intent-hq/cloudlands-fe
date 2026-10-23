@@ -47,6 +47,9 @@ export const setMultiSelectSidebarSelectedTabs = createAction<
 export const activateSidebarSectionRequested = createAction<
   [workspaceId: string, sectionId: string, panelLayoutId?: string]
 >('sidebarNav/activateSidebarSectionRequested');
+export const cancelSidebarSectionNavigation = createAction<[workspaceId: string]>(
+  'sidebarNav/cancelSidebarSectionNavigation',
+);
 export const setWorkspaceNoteOrder = createAction<[workspaceId: string, noteIds: string[]]>(
   'sidebarNav/setWorkspaceNoteOrder',
 );

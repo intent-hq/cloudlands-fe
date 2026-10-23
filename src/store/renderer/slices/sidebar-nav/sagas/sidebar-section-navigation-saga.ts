@@ -29,7 +29,10 @@ import {
   selectIsWorkspaceCollaborator,
   selectWorkspaceParticipationContext,
 } from '../../workspace/workspace-selectors';
-import { activateSidebarSectionRequested } from '../sidebar-nav-slice';
+import {
+  activateSidebarSectionRequested,
+  cancelSidebarSectionNavigation,
+} from '../sidebar-nav-slice';
 
 const logger = createLogger('SidebarSectionNavigation');
 
@@ -66,10 +69,12 @@ function* openContent(layoutId: string, tab: Omit<PanelTab, 'id'>): SagaGenerato
 }
 
 type NavigationAction =
-  ReturnType<typeof activateSidebarSectionRequested> | ReturnType<typeof workspaceUnmounted>;
+  | ReturnType<typeof activateSidebarSectionRequested>
+  | ReturnType<typeof cancelSidebarSectionNavigation>
+  | ReturnType<typeof workspaceUnmounted>;
 
 function* activate(action: NavigationAction): SagaGenerator<void> {
-  if (action.type === workspaceUnmounted.type) return;
+  if (action.type !== activateSidebarSectionRequested.type) return;
   const [workspaceId, sectionId, layoutId = workspaceId] = action.payload;
   const context = yield* selectWorkspaceParticipationContext.effect(workspaceId);
   if (!context) return;
@@ -174,7 +179,7 @@ function* activate(action: NavigationAction): SagaGenerator<void> {
 
 export function* sidebarSectionNavigationSaga(): SagaGenerator<void> {
   yield* takeLatestInContext(
-    [activateSidebarSectionRequested, workspaceUnmounted],
+    [activateSidebarSectionRequested, cancelSidebarSectionNavigation, workspaceUnmounted],
     (action: NavigationAction) => action.payload[0],
     activate,
   );

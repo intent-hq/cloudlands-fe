@@ -8,10 +8,12 @@
     workspaceId,
     side = 'left',
     onExpand,
+    tooltipDisabled = false,
   }: {
     workspaceId?: string;
     side?: 'left' | 'right';
     onExpand: () => void;
+    tooltipDisabled?: boolean;
   } = $props();
 </script>
 
@@ -25,10 +27,11 @@
     iconOnly
     aria-label={m.layout_titleBar_toggleSidebar_ariaLabel()}
     tooltip={m.layout_titleBar_toggleSidebar_ariaLabel()}
+    {tooltipDisabled}
     data-sidebar-rail-expand
     onclick={onExpand}
   >
-    <SidebarIcon size={16} {side} />
+    <SidebarIcon size={18} {side} />
   </Button>
   {#if workspaceId}
     <SidebarSectionTabs {workspaceId} orientation="vertical" />

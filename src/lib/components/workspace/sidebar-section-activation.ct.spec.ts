@@ -1,7 +1,7 @@
 import { expect, test } from '../../../test/ct-test';
 import SidebarTabsPreview from './sidebar-tabs.preview.svelte';
 
-test('expanded keyboard focus opens default content and each activation runs once', async ({
+test('expanded selection preserves content until the selected tab is activated again', async ({
   mount,
   page,
 }) => {
@@ -11,54 +11,65 @@ test('expanded keyboard focus opens default content and each activation runs onc
   const agents = tabs.getByRole('tab', { name: 'Agents', exact: true });
   const context = tabs.getByRole('tab', { name: 'Context', exact: true });
   await agents.focus();
+  await expect(scene).toHaveAttribute('data-sidebar-destination-type', 'note');
+  await expect(scene).toHaveAttribute('data-sidebar-destination-id', 'spec');
+  await expect(scene).toHaveAttribute('data-sidebar-activation-count', '0');
+  await agents.press('Enter');
   await expect(scene).toHaveAttribute('data-sidebar-destination-type', 'agent');
   await expect(scene).toHaveAttribute('data-sidebar-destination-id', 'sidebar-preview-agent-0');
   await expect(scene).toHaveAttribute('data-sidebar-activation-count', '1');
   await agents.press('ArrowRight');
   await expect(context).toBeFocused();
+  await expect(context).toHaveAttribute('aria-selected', 'true');
+  await expect(scene).toHaveAttribute('data-sidebar-destination-type', 'agent');
+  await expect(scene).toHaveAttribute('data-sidebar-activation-count', '1');
+  await context.press('Enter');
   await expect(scene).toHaveAttribute('data-sidebar-destination-type', 'note');
   await expect(scene).toHaveAttribute('data-sidebar-destination-id', 'spec');
   await expect(scene).toHaveAttribute('data-sidebar-activation-count', '2');
-  await context.press('Enter');
-  await expect(scene).toHaveAttribute('data-sidebar-activation-count', '3');
   await context.press('Space');
-  await expect(scene).toHaveAttribute('data-sidebar-activation-count', '4');
+  await expect(scene).toHaveAttribute('data-sidebar-activation-count', '3');
   await component.getByRole('textbox', { name: 'Workspace draft' }).click();
   const changes = tabs.getByRole('tab', { name: 'Changes', exact: true });
   await changes.click();
-  await expect(scene).toHaveAttribute('data-sidebar-destination-type', 'local-changes');
-  await expect(scene).toHaveAttribute('data-sidebar-activation-count', '5');
+  await expect(changes).toHaveAttribute('aria-selected', 'true');
+  await expect(scene).toHaveAttribute('data-sidebar-destination-type', 'note');
+  await expect(scene).toHaveAttribute('data-sidebar-destination-id', 'spec');
+  await expect(scene).toHaveAttribute('data-sidebar-activation-count', '3');
   await changes.click();
-  await expect(scene).toHaveAttribute('data-sidebar-activation-count', '6');
+  await expect(scene).toHaveAttribute('data-sidebar-destination-type', 'local-changes');
+  await expect(scene).toHaveAttribute('data-sidebar-activation-count', '4');
+  await changes.click();
+  await expect(scene).toHaveAttribute('data-sidebar-activation-count', '5');
   await expect(page.getByRole('tooltip')).toHaveCount(0);
 });
 
-test('collapsed hover and arrow focus preview, while click, Enter and Space open defaults once', async ({
-  mount,
-  page,
-}) => {
+test('collapsed previews preserve content and a click opens defaults', async ({ mount, page }) => {
   const component = await mount(SidebarTabsPreview, {
     props: { collapsed: true, navigationEnabled: true },
   });
   const scene = page.locator('[data-sidebar-tabs-preview]');
   const tabs = component.locator('[data-sidebar-section-tabs="vertical"]');
+  await tabs.getByRole('tab', { name: 'Agents', exact: true }).click();
+  await expect(scene).toHaveAttribute('data-sidebar-destination-type', 'agent');
+  await expect(scene).toHaveAttribute('data-sidebar-activation-count', '1');
   const context = tabs.getByRole('tab', { name: 'Context', exact: true });
   await context.hover();
   await expect(component.locator('[data-workspace-sidebar-flyout]')).toBeVisible();
-  await expect(scene).toHaveAttribute('data-sidebar-activation-count', '0');
+  await expect(scene).toHaveAttribute('data-sidebar-activation-count', '1');
   await context.click();
   await expect(scene).toHaveAttribute('data-sidebar-destination-type', 'note');
   await expect(scene).toHaveAttribute('data-sidebar-destination-id', 'spec');
-  await expect(scene).toHaveAttribute('data-sidebar-activation-count', '1');
+  await expect(scene).toHaveAttribute('data-sidebar-activation-count', '2');
   await context.press('ArrowDown');
   const changes = tabs.getByRole('tab', { name: 'Changes', exact: true });
   await expect(changes).toBeFocused();
-  await expect(scene).toHaveAttribute('data-sidebar-activation-count', '1');
+  await expect(scene).toHaveAttribute('data-sidebar-activation-count', '2');
   await changes.press('Enter');
   await expect(scene).toHaveAttribute('data-sidebar-destination-type', 'local-changes');
-  await expect(scene).toHaveAttribute('data-sidebar-activation-count', '2');
-  await changes.press('Space');
   await expect(scene).toHaveAttribute('data-sidebar-activation-count', '3');
+  await changes.press('Space');
+  await expect(scene).toHaveAttribute('data-sidebar-activation-count', '4');
 });
 
 test('the Browsers tab focuses the first browser from the existing list', async ({
@@ -67,11 +78,14 @@ test('the Browsers tab focuses the first browser from the existing list', async 
 }) => {
   const component = await mount(SidebarTabsPreview, { props: { navigationEnabled: true } });
   await component.getByRole('textbox', { name: 'Workspace draft' }).click();
-  await component
+  const browsers = component
     .locator('[data-sidebar-section-tabs="horizontal"]')
-    .getByRole('tab', { name: 'Browsers', exact: true })
-    .click();
+    .getByRole('tab', { name: 'Browsers', exact: true });
+  await browsers.click();
   const scene = page.locator('[data-sidebar-tabs-preview]');
+  await expect(scene).toHaveAttribute('data-sidebar-destination-type', 'note');
+  await expect(scene).toHaveAttribute('data-sidebar-activation-count', '0');
+  await browsers.click();
   await expect(scene).toHaveAttribute('data-sidebar-destination-type', 'browser');
   await expect(scene).toHaveAttribute('data-sidebar-destination-id', 'sidebar-preview-browser');
   await expect(scene).toHaveAttribute('data-sidebar-activation-count', '1');

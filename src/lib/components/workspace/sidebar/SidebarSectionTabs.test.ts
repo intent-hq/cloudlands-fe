@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentSession } from '$shared/types';
+import { setMultiSelectSidebarSelectedTabs } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import SidebarSectionTabs from './SidebarSectionTabs.svelte';
 
 const live = await vi.hoisted(async () => {
@@ -11,13 +12,14 @@ const live = await vi.hoisted(async () => {
     unread: writable(false),
     collaborator: writable(false),
     people: writable([]),
+    dispatch: vi.fn(),
   };
 });
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule();
+  return createAppStoreMockModule({ dispatch: live.dispatch });
 });
 
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', async (original) => ({
@@ -58,6 +60,7 @@ beforeEach(() => {
   live.unread.set(false);
   live.collaborator.set(false);
   live.people.set([]);
+  live.dispatch.mockClear();
 });
 
 afterEach(cleanup);
@@ -129,7 +132,7 @@ describe('sidebar main-agent identity', () => {
 });
 
 describe.each(['horizontal', 'vertical'] as const)('%s section activation', (orientation) => {
-  it('opens a clicked section exactly once, including an already selected tab', async () => {
+  it('opens defaults immediately when collapsed and on repeated selection when expanded', async () => {
     const onActivate = vi.fn();
     const view = render(SidebarSectionTabs, {
       props: { workspaceId: 'workspace', orientation, onActivate },
@@ -140,7 +143,18 @@ describe.each(['horizontal', 'vertical'] as const)('%s section activation', (ori
     await fireEvent.click(agents);
     expect(onActivate.mock.calls).toEqual([['agents']]);
     onActivate.mockClear();
-    await fireEvent.click(view.getByRole('tab', { name: 'Context' }));
+    live.dispatch.mockClear();
+    const context = view.getByRole('tab', { name: 'Context' });
+    await fireEvent.click(context);
+    if (orientation === 'horizontal') {
+      expect(onActivate).not.toHaveBeenCalled();
+      expect(live.dispatch.mock.calls).toEqual([
+        [setMultiSelectSidebarSelectedTabs('workspace', ['context'])],
+      ]);
+      live.selected.set(['context']);
+      await waitFor(() => expect(context.getAttribute('aria-selected')).toBe('true'));
+      await fireEvent.click(context);
+    }
     expect(onActivate.mock.calls).toEqual([['context']]);
   });
 

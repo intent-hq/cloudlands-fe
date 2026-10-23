@@ -14,7 +14,6 @@
 <SidebarExpandableSearch
   bind:query
   scope="files"
-  placement="toolbar"
   placeholder={m.workspace_multiSelectSidebar_searchFiles_placeholder()}
   {onKeydown}
   {active}
