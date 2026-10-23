@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   # Where paid-label jobs run: a free self-hosted slot first, else WarpBuild
-  # (GitHub when WarpBuild is off); `cloud` skips the self-hosted step.
+  # (GitHub's larger runners are off); `cloud` skips the self-hosted step.
   # See runner-route.yml.
   runner-route:
     uses: ./.github/workflows/runner-route.yml
@@ -43,7 +43,7 @@ jobs:
     needs: runner-route
     # A failed route job must not block this job: it runs on its fallback label.
     if: ${{ !cancelled() }}
-    runs-on: ${{ fromJSON(needs.runner-route.outputs.slots || '{}')[format('test-unit-{0}', matrix.shard)] || fromJSON('["gh-linux-8x"]') }}
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.slots || '{}')[format('test-unit-{0}', matrix.shard)] || fromJSON('["warp-ubuntu-2404-x64-8x"]') }}
     strategy:
       fail-fast: false
       matrix:
@@ -104,6 +104,27 @@ jobs:
         run: >-
           node .cache/backend-keychain-contract/scripts/backend-keychain-contract.mjs verify
           --source-root .cache/backend-keychain-contract --source-commit "$SOURCE_COMMIT"
+          --component cloudlands-fe --component-root .
+      - name: Read suggested-prompts case pin
+        id: suggested-prompts-cases
+        run: node scripts/suggested-prompts-fixtures.mjs | tee -a "$GITHUB_OUTPUT"
+      - name: Checkout pinned suggested-prompts cases
+        uses: actions/checkout@v7
+        with:
+          repository: intent-hq/intent
+          ref: ${{ steps.suggested-prompts-cases.outputs.sourceCommit }}
+          path: .cache/suggested-prompts-contract
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/protocol/fixtures/suggested-prompts/v1/
+            /scripts/suggested-prompts-contract.mjs
+      - name: Verify suggested-prompts case provenance
+        env:
+          SOURCE_COMMIT: ${{ steps.suggested-prompts-cases.outputs.sourceCommit }}
+        run: >-
+          node .cache/suggested-prompts-contract/scripts/suggested-prompts-contract.mjs verify
+          --source-root .cache/suggested-prompts-contract --source-commit "$SOURCE_COMMIT"
           --component cloudlands-fe --component-root .
       - name: Install dependencies
         run: pnpm install --frozen-lockfile

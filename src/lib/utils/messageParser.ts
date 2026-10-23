@@ -1710,16 +1710,57 @@ export function cleanAgentMessage(content: string): string {
  * Another label|Another full prompt
  * -->
  */
-const SUGGESTED_PROMPTS_OPENER_REGEX = /<!--[ \t]*suggested-prompts[ \t]*$/;
+const SUGGESTED_PROMPTS_OPENER_REGEX = /(<|&lt;)!--[ \t]*suggested-prompts[ \t]*$/;
 
 /**
  * A block only closes on a `-->` that stands alone on its own line. An embedded
- * `-->` (Mermaid edge, prose arrow) must never terminate a block.
+ * `-->` (Mermaid edge, prose arrow) must never terminate a block. An escaped
+ * block (`&lt;!--` opener) closes only on the escaped `--&gt;` form, and a
+ * literal block only on `-->`, so neither closes early on the other spelling.
  */
 const SUGGESTED_PROMPTS_CLOSER_REGEX = /^[ \t]*-->[ \t]*$/;
+const ESCAPED_SUGGESTED_PROMPTS_CLOSER_REGEX = /^[ \t]*--&gt;[ \t]*$/;
 
 /** A final prompt line can be fused with the closer by older model output. */
 const SUGGESTED_PROMPTS_TRAILING_CLOSER_REGEX = /^(.*\S)[ \t]*-->$/;
+const ESCAPED_SUGGESTED_PROMPTS_TRAILING_CLOSER_REGEX = /^(.*\S)[ \t]*--&gt;$/;
+
+/**
+ * Openers a streaming final line may be partway through. The `&lt;!--` form
+ * is the HTML-escaped spelling: history replayed to a fresh provider session
+ * is XML-escaped, and a model that sees `&lt;!-- suggested-prompts` there can
+ * copy it verbatim into its own reply, so the escaped opener/closer count as a
+ * block too and its prompt lines are entity-decoded.
+ */
+const SUGGESTED_PROMPTS_OPENER_PREFIXES = ['<!--', '&lt;!--'] as const;
+
+const HTML_ENTITY_REGEX = /&(?:(lt|gt|quot|apos|amp)|#(\d{1,7})|#[xX]([0-9a-fA-F]{1,6}));/g;
+const NAMED_HTML_ENTITIES: Record<string, string> = {
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  amp: '&',
+};
+
+/**
+ * Decode the entities a model imitating escaped text emits: the XML named
+ * five plus decimal/hex numeric references, in a single pass (so `&amp;lt;`
+ * decodes once, to `&lt;`). Unknown, out-of-range and surrogate references
+ * stay literal.
+ */
+function decodeEscapedPromptText(text: string): string {
+  return text.replace(
+    HTML_ENTITY_REGEX,
+    (entity, name: string | undefined, decimal: string | undefined, hex: string | undefined) => {
+      if (name) return NAMED_HTML_ENTITIES[name];
+      const codePoint = Number.parseInt(decimal ?? hex ?? '', decimal ? 10 : 16);
+      const isScalarValue =
+        codePoint > 0 && codePoint <= 0x10ffff && (codePoint < 0xd800 || codePoint > 0xdfff);
+      return isScalarValue ? String.fromCodePoint(codePoint) : entity;
+    },
+  );
+}
 
 /** Opening/closing markdown fence (backtick or tilde), optionally indented. */
 const FENCE_LINE_REGEX = /^ {0,3}(`{3,}|~{3,})(.*)$/;
@@ -1815,14 +1856,17 @@ function parseSuggestedPromptLine(line: string): SuggestedPrompt | null {
 }
 
 /**
- * Salvage prompts from a well-formed block's body. When any captured line is
+ * Salvage prompts from a well-formed block's body. An `escaped` block's lines
+ * are entity-decoded first, so every check below sees the literal text. When any captured line is
  * body-text-shaped the whole block yields no chips (the model clearly wrote
  * prose, not prompts); otherwise invalid individual lines (empty after
  * label/delay stripping, over-long) are dropped and the rest surface, capped
  * at {@link MAX_SUGGESTED_PROMPTS}.
  */
-function parseSuggestedPromptLines(body: string[]): SuggestedPrompt[] {
-  const lines = body.map((line) => line.trim()).filter(Boolean);
+function parseSuggestedPromptLines(body: string[], escaped: boolean): SuggestedPrompt[] {
+  const lines = body
+    .map((line) => (escaped ? decodeEscapedPromptText(line) : line).trim())
+    .filter(Boolean);
   if (lines.some(looksLikeBodyText)) return [];
   const prompts: SuggestedPrompt[] = [];
   for (const line of lines) {
@@ -1834,24 +1878,23 @@ function parseSuggestedPromptLines(body: string[]): SuggestedPrompt[] {
 }
 
 function partialOpenerStart(line: string): number | null {
-  let index = line.lastIndexOf('<');
-  while (index >= 0) {
-    const suffix = line.slice(index);
-    if ('<!--'.startsWith(suffix)) return index;
-    if (suffix.startsWith('<!--')) {
-      const afterComment = suffix.slice(4);
-      const afterWhitespace = afterComment.replace(/^[ \t]+/, '');
-      if (afterWhitespace.length === 0 || 'suggested-prompts'.startsWith(afterWhitespace))
-        return index;
-      if (
-        afterWhitespace.startsWith('suggested-prompts') &&
-        /^[ \t]*$/.test(afterWhitespace.slice('suggested-prompts'.length))
-      ) {
-        return index;
-      }
+  // A (partial) opener contains no later `<` or `&`, so only the last one of
+  // either can start it.
+  const index = Math.max(line.lastIndexOf('<'), line.lastIndexOf('&'));
+  if (index < 0) return null;
+  const suffix = line.slice(index);
+  for (const prefix of SUGGESTED_PROMPTS_OPENER_PREFIXES) {
+    if (prefix.startsWith(suffix)) return index;
+    if (!suffix.startsWith(prefix)) continue;
+    const afterWhitespace = suffix.slice(prefix.length).replace(/^[ \t]+/, '');
+    if (afterWhitespace.length === 0 || 'suggested-prompts'.startsWith(afterWhitespace))
+      return index;
+    if (
+      afterWhitespace.startsWith('suggested-prompts') &&
+      /^[ \t]*$/.test(afterWhitespace.slice('suggested-prompts'.length))
+    ) {
+      return index;
     }
-    if (index === 0) break;
-    index = line.lastIndexOf('<', index - 1);
   }
   return null;
 }
@@ -1885,6 +1928,7 @@ function scanSuggestedPrompts(
   let fence: { char: string; length: number } | null = null;
   let openerIndex = -1;
   let openerStart = 0;
+  let openerEscaped = false;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trimEnd();
@@ -1911,23 +1955,31 @@ function scanSuggestedPrompts(
       if (openerMatch) {
         openerIndex = i;
         openerStart = offsets[i] + (openerMatch.index ?? 0);
+        openerEscaped = openerMatch[1] !== '<';
       }
       continue;
     }
 
-    if (SUGGESTED_PROMPTS_CLOSER_REGEX.test(line)) {
+    const closerRegex: RegExp = openerEscaped
+      ? ESCAPED_SUGGESTED_PROMPTS_CLOSER_REGEX
+      : SUGGESTED_PROMPTS_CLOSER_REGEX;
+    if (closerRegex.test(line)) {
       const body = lines.slice(openerIndex + 1, i);
       blocks.push({
         start: openerStart,
         end: offsets[i] + lines[i].length,
         body,
-        prompts: parseSuggestedPromptLines(body),
+        prompts: parseSuggestedPromptLines(body, openerEscaped),
       });
       openerIndex = -1;
       continue;
     }
 
-    const trailingCloserMatch = line.match(SUGGESTED_PROMPTS_TRAILING_CLOSER_REGEX);
+    const trailingCloserMatch: RegExpMatchArray | null = line.match(
+      openerEscaped
+        ? ESCAPED_SUGGESTED_PROMPTS_TRAILING_CLOSER_REGEX
+        : SUGGESTED_PROMPTS_TRAILING_CLOSER_REGEX,
+    );
     if (trailingCloserMatch && !SUGGESTED_PROMPTS_OPENER_REGEX.test(trailingCloserMatch[1])) {
       // While streaming, a fused closer on the unterminated final line is
       // ambiguous: the next chunk may extend it into an embedded arrow
@@ -1939,17 +1991,18 @@ function scanSuggestedPrompts(
         start: openerStart,
         end: offsets[i] + lines[i].length,
         body,
-        prompts: parseSuggestedPromptLines(body),
+        prompts: parseSuggestedPromptLines(body, openerEscaped),
       });
       openerIndex = -1;
       continue;
     }
 
     // A second opener means the first one was never closed.
-    const reopenMatch = line.match(SUGGESTED_PROMPTS_OPENER_REGEX);
+    const reopenMatch: RegExpMatchArray | null = line.match(SUGGESTED_PROMPTS_OPENER_REGEX);
     if (reopenMatch) {
       openerIndex = i;
       openerStart = offsets[i] + (reopenMatch.index ?? 0);
+      openerEscaped = reopenMatch[1] !== '<';
     }
   }
 

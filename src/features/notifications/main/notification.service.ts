@@ -142,6 +142,8 @@ interface NotificationStructuredContent {
   provider?: string;
   /** Idle agent's id — seeds AgentAvatar's deterministic gradient colors. */
   agentId?: string;
+  /** Idle agent's display name — names who finished in the in-app toast. */
+  agentName?: string;
 }
 
 /**
@@ -700,7 +702,10 @@ export class NotificationService {
                 ...(event.data.agentId ? { agentId: event.data.agentId } : {}),
               }
             : { workspaceId };
-        this.sendShowEvent(content, backendId, workspaceId, navigateTarget);
+        this.sendShowEvent(content, backendId, workspaceId, navigateTarget, {
+          window: focusedWindow,
+          suppressWhenViewing: prefs.soundOnlyWhenUnfocused,
+        });
         return;
       }
 
@@ -804,6 +809,7 @@ export class NotificationService {
         ...(taskTitle ? { taskTitle } : {}),
         ...(provider ? { provider } : {}),
         ...(event.data.agentId ? { agentId: event.data.agentId } : {}),
+        ...(event.data.agentName ? { agentName: event.data.agentName } : {}),
       },
     };
   }
@@ -820,20 +826,50 @@ export class NotificationService {
    * host at all, the sound still plays on the focused (or any) window but
    * WITHOUT `navigateTarget`: a click there would navigate a window on
    * another host, which cannot show this workspace.
+   *
+   * `toast.window` (the focused on-host window, frontmost gate only) is the
+   * one window that receives `navigateTarget`, so the toast appears where the
+   * user is looking — not in background windows that merely have the
+   * workspace open or host it offscreen. Those still get the sound-only
+   * payload, keeping sound delivery unchanged. `suppressWhenViewing` carries
+   * main's own `soundOnlyWhenUnfocused` read (the local daemon) so the
+   * renderer's late "already viewing" check uses the same authority instead
+   * of its window's daemon, which can differ on a remote-host window.
    */
   private sendShowEvent(
     content: NotificationContent,
     scope: WindowHostScope,
     workspaceId?: string,
     navigateTarget?: NotificationNavigateTarget,
+    toast?: { window: BrowserWindow; suppressWhenViewing: boolean },
   ): void {
+    const toastWindow = toast?.window;
     const payload = {
       title: content.title,
       body: content.body,
       timestamp: new Date().toISOString(),
       ...(content.structured ? { structured: content.structured } : {}),
       ...(navigateTarget ? { navigateTarget } : {}),
+      ...(navigateTarget && toast ? { suppressWhenViewing: toast.suppressWhenViewing } : {}),
     };
+    if (navigateTarget && toastWindow && !toastWindow.isDestroyed()) {
+      const {
+        navigateTarget: _toastOnly,
+        suppressWhenViewing: _toastRule,
+        ...soundOnlyPayload
+      } = payload;
+      if (!toastWindow.webContents.isDestroyed()) {
+        toastWindow.webContents.send('notification:show', payload);
+      }
+      for (const id of workspaceId ? getWindowIdsForWorkspace(workspaceId, scope) : []) {
+        if (id === toastWindow.id) continue;
+        const window = BrowserWindow.fromId(id);
+        if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
+          window.webContents.send('notification:show', soundOnlyPayload);
+        }
+      }
+      return;
+    }
     if (workspaceId && getWindowIdsForWorkspace(workspaceId, scope).length > 0) {
       sendToWorkspaceWindows(workspaceId, 'notification:show', payload, scope);
       return;

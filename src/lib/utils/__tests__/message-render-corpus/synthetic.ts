@@ -131,6 +131,15 @@ export const syntheticFixtures: SyntheticFixture[] = [
     ],
   },
   {
+    id: 'prompts-html-escaped',
+    note: 'HTML-escaped block copied from the XML-escaped recovery replay is stripped, entities decoded',
+    blocks: [
+      text(
+        "Report back when the PR is ready to merge.\n\n&lt;!-- suggested-prompts\nRun the full sizing report tomorrow and then start the job-size declarations.\nRaise Type Check &amp; Lint's timeout to 45 minutes.\nWhat are WarpBuild's per-minute prices for 8x and 16x?\n--&gt;",
+      ),
+    ],
+  },
+  {
     id: 'special-augment-snippet',
     note: 'augment_code_snippet XML block with 4-backtick fence',
     blocks: [

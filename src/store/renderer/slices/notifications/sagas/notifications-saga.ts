@@ -35,6 +35,10 @@ import {
 } from 'typed-redux-saga';
 
 import type { AgentIdleEvent } from '$features/events/types';
+import {
+  showAgentIdleToast,
+  type AgentIdleToastPayload,
+} from '$features/agent/agent-attention-toast-service';
 import { handleNotificationNavigate } from '$features/notifications/notification-navigation';
 import { playNotificationSoundPerSettings } from '$features/notifications/notification-sound-gate';
 import { readIdleNotificationGate } from '$features/notifications/utils/idle-gate';
@@ -64,10 +68,9 @@ const activeNotifications = new Set<Notification>();
 let pendingPermissionRequest: Promise<NotificationPermission> | null = null;
 let loggedPermissionSkip = false;
 
-type NotificationShowEvent = { title?: string; body?: string; timestamp?: string };
 type NotificationNavigateEvent = { workspaceId?: string; chief?: boolean; agentId?: string };
 type NativeNotificationEvent =
-  | { kind: 'show'; data?: NotificationShowEvent }
+  | { kind: 'show'; data?: AgentIdleToastPayload }
   | { kind: 'navigate'; data?: NotificationNavigateEvent | null };
 
 function createNativeNotificationChannel(): EventChannel<NativeNotificationEvent> {
@@ -430,11 +433,27 @@ function* watchDiscussionMentions() {
 }
 
 function* handleNativeNotificationEvent(event: NativeNotificationEvent) {
+  if (event.kind === 'navigate') {
+    try {
+      yield* call(handleNotificationNavigate, event.data);
+    } catch {
+      // Native notification effects are best-effort and independent.
+    }
+    return;
+  }
   try {
-    if (event.kind === 'show') yield* call(playNotificationSoundPerSettings);
-    else yield* call(handleNotificationNavigate, event.data);
+    yield* call(playNotificationSoundPerSettings);
   } catch {
-    // Native notification effects are best-effort and independent.
+    // A sound failure must not drop the toast below.
+  }
+  // Main skipped the OS banner because the app is frontmost (electron#51885)
+  // and attached `navigateTarget`: show the clickable in-app toast instead.
+  if (event.data?.navigateTarget) {
+    try {
+      yield* call(showAgentIdleToast, event.data);
+    } catch {
+      // Toasts are best-effort.
+    }
   }
 }
 

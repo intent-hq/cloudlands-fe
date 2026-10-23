@@ -1,4 +1,5 @@
 <script module lang="ts">
+  import { catalogNow } from '$lib/component-catalog/catalog-clock';
   import { definePreview } from '$lib/component-catalog/preview-definition';
   type State =
     | 'mentions'
@@ -50,7 +51,7 @@
   const sam = { principalId: 'sam', displayName: 'Sam Breed', login: 'sam', avatarUrl: null };
   const alex = { principalId: 'alex', displayName: 'Alex', login: 'alex', avatarUrl: null };
   const jordan = { principalId: 'jordan', displayName: 'Jordan', login: 'jordan', avatarUrl: null };
-  const today = new Date();
+  const today = new Date(catalogNow());
   today.setHours(12, 0, 0, 0);
   function at(minute: number, previous = false) {
     const date = new Date(today);

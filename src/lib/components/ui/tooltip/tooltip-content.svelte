@@ -40,7 +40,7 @@
     data-surface-level={surface}
     data-overlay-surface
     class={cn(
-      'tooltip-motion overlay-surface type-caption z-(--layer-tooltip) w-fit max-w-xs whitespace-pre-wrap text-balance bg-foreground px-2 py-1 text-background [&_kbd]:text-background/70',
+      'tooltip-motion surface-inverse overlay-surface type-caption z-(--layer-tooltip) w-fit max-w-xs whitespace-pre-wrap text-balance px-2 py-1 [&_kbd]:text-muted-foreground',
       className,
     )}
     onFocusOutside={() => {}}
@@ -59,7 +59,7 @@
       {sideOffset}
       {side}
       class={cn(
-        'tooltip-motion overlay-surface type-caption z-(--layer-tooltip) w-fit max-w-xs whitespace-pre-wrap text-balance bg-foreground px-2 py-1 text-background [&_kbd]:text-background/70',
+        'tooltip-motion surface-inverse overlay-surface type-caption z-(--layer-tooltip) w-fit max-w-xs whitespace-pre-wrap text-balance px-2 py-1 [&_kbd]:text-muted-foreground',
         className,
       )}
       onFocusOutside={() => {}}
@@ -70,7 +70,7 @@
         {#snippet child({ props })}
           <div
             class={cn(
-              'z-(--layer-tooltip) size-2.5 rotate-45 rounded-[2px] bg-foreground',
+              'surface-inverse z-(--layer-tooltip) size-2.5 rotate-45 rounded-[2px]',
               'data-[side=top]:translate-x-1/2 data-[side=top]:translate-y-[calc(-50%_+_2px)]',
               'data-[side=bottom]:-translate-x-1/2 data-[side=bottom]:-translate-y-[calc(-50%_+_1px)]',
               'data-[side=right]:translate-x-[calc(50%_+_2px)] data-[side=right]:translate-y-1/2',

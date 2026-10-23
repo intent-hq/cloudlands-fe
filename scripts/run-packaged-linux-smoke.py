@@ -14,11 +14,11 @@ spec.loader.exec_module(smoke)
 
 
 def require_host():
-    if (os.environ.get('RUNNER_ENVIRONMENT') != 'github-hosted' or
+    if (not smoke.fresh_vm() or
         os.environ.get('RUNNER_OS') != 'Linux' or os.environ.get('RUNNER_ARCH') != 'X64' or
         platform.system() != 'Linux' or platform.machine() != 'x86_64' or
         not os.environ.get('DISPLAY') or not os.environ.get('XAUTHORITY')):
-        raise RuntimeError('Requires a fresh GitHub-hosted Linux x64 job under Xvfb')
+        raise RuntimeError('Requires a fresh GitHub-hosted or WarpBuild Linux x64 job under Xvfb')
 
 
 def executable_identity(path):

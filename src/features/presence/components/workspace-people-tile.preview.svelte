@@ -1,4 +1,5 @@
 <script module lang="ts">
+  import { catalogNow } from '$lib/component-catalog/catalog-clock';
   import { definePreview } from '$lib/component-catalog/preview-definition';
 
   interface Props {
@@ -146,7 +147,7 @@
               })),
       }),
     );
-    const now = Date.now();
+    const now = catalogNow();
     if (roster) {
       store.dispatch(
         sharePeopleInvitesScopeChanged({
