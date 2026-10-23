@@ -1746,7 +1746,8 @@ const NAMED_HTML_ENTITIES: Record<string, string> = {
 /**
  * Decode the entities a model imitating escaped text emits: the XML named
  * five plus decimal/hex numeric references, in a single pass (so `&amp;lt;`
- * decodes once, to `&lt;`). Unknown or out-of-range references stay literal.
+ * decodes once, to `&lt;`). Unknown, out-of-range and surrogate references
+ * stay literal.
  */
 function decodeEscapedPromptText(text: string): string {
   return text.replace(
@@ -1754,7 +1755,9 @@ function decodeEscapedPromptText(text: string): string {
     (entity, name: string | undefined, decimal: string | undefined, hex: string | undefined) => {
       if (name) return NAMED_HTML_ENTITIES[name];
       const codePoint = Number.parseInt(decimal ?? hex ?? '', decimal ? 10 : 16);
-      return codePoint > 0 && codePoint <= 0x10ffff ? String.fromCodePoint(codePoint) : entity;
+      const isScalarValue =
+        codePoint > 0 && codePoint <= 0x10ffff && (codePoint < 0xd800 || codePoint > 0xdfff);
+      return isScalarValue ? String.fromCodePoint(codePoint) : entity;
     },
   );
 }

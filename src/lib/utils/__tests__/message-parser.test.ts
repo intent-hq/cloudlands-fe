@@ -1574,6 +1574,16 @@ Some trailing content.`;
       expect(parseSuggestedPrompts(content).prompts).toEqual(['Rename "foo" in src/lib.']);
     });
 
+    it('keeps surrogate and out-of-range numeric references literal', () => {
+      const content =
+        '&lt;!-- suggested-prompts\nKeep &#xD800; and &#xDFFF; and &#55296; and &#x110000; and &#0;.\nShip &#x1F680; now.\n--&gt;';
+
+      expect(parseSuggestedPrompts(content).prompts).toEqual([
+        'Keep &#xD800; and &#xDFFF; and &#55296; and &#x110000; and &#0;.',
+        'Ship 🚀 now.',
+      ]);
+    });
+
     it('decodes a double-escaped entity only once', () => {
       const content = '&lt;!-- suggested-prompts\nExplain &amp;lt;b&amp;gt; tags.\n--&gt;';
 
