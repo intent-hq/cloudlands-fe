@@ -11,6 +11,7 @@
       workspaceName?: string;
       repoLabel?: string;
       isArchivedWorkspace?: boolean;
+      isRetiredWorkspace?: boolean;
       _time?: string;
     };
   }
@@ -39,6 +40,14 @@
   class="flex min-w-0 items-center gap-2 whitespace-nowrap"
   title={[item.label, detail].filter(Boolean).join(' — ')}
 >
+  {#if item.isRetiredWorkspace}
+    <span
+      class="shrink-0 rounded bg-muted px-1.5 py-0.5 type-caption text-muted-foreground"
+      data-palette-retired-badge
+    >
+      {m.lib_commandPalette_retiredWorkspace_pill()}
+    </span>
+  {/if}
   {#if (item.type === 'message' || item.type === 'note') && item.isArchivedWorkspace}
     <span class="shrink-0 rounded bg-muted px-1.5 py-0.5 type-caption text-muted-foreground">
       {m.lib_commandPalette_archivedWorkspace_pill()}

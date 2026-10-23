@@ -16,6 +16,9 @@ describe('durable Home configuration', () => {
     expect(homePersistenceKey('local', 'alice')).not.toBe(homePersistenceKey('remote', 'alice'));
     expect(homePersistenceKey('a:b', 'c')).not.toBe(homePersistenceKey('a', 'b:c'));
   });
+  it('keeps the Retired chip selected across reloads', () => {
+    expect(normalizeHomeConfiguration({ filter: 'retired' }).filter).toBe('retired');
+  });
   it('round-trips automatic settings without transient or retired fields', () => {
     const config = normalizeHomeConfiguration({
       view: 'canvas',

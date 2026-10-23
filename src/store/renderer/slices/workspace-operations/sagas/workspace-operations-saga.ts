@@ -16,11 +16,13 @@ import {
   spawn,
   take,
   takeEvery,
+  takeLatest,
   takeLeading,
   type SagaGenerator,
 } from 'typed-redux-saga';
 
 import { invoke } from '$lib/electron-bridge';
+import { appClient } from '$lib/client';
 import { getProposalId } from '$lib/components/chat/proposals/proposal-id';
 import { withToastCountdown } from '$lib/components/patterns/notify';
 import { getActiveWorkNames, type ActiveWorkNames } from '$lib/utils/delete-warning-utils';
@@ -67,6 +69,9 @@ import {
   confirmBulkDelete,
   confirmDeleteWorkspace,
   confirmRemoveRepo,
+  closeRetireConfirm,
+  confirmRetireWorkspace,
+  loadRetiredWorkspacesRequested,
   openArchiveWarning,
   openBulkArchiveConfirm,
   openBulkDeleteConfirm,
@@ -83,6 +88,7 @@ import {
   selectPendingBulkWorkspaceIds,
   selectPendingDeleteWorkspaceId,
   selectPendingRemoveRepoPath,
+  selectPendingRetireWorkspaceId,
 } from '../workspace-operations-selectors';
 import { buildCreateWorkspaceRequestFromProposal } from '../utils/workspace-create-proposal';
 
@@ -409,9 +415,13 @@ function* unarchive(action: ReturnType<typeof requestUnarchiveWorkspace>): SagaG
       notify.error(m.workspace_ops_unarchiveFailed_error());
       return;
     }
+    // A retired workspace revives through the same call (PROTOCOL §5.1), so
+    // drop `retiredAt` too; the daemon delta carries the new branch.
     yield* applyWorkspaceChanges(workspaceId, {
       status: WorkspaceStatusEnum.Active,
       archived: false,
+      archivedAt: undefined,
+      retiredAt: undefined,
     });
     notify.success(
       m.workspace_ops_unarchived_toast({
@@ -421,6 +431,63 @@ function* unarchive(action: ReturnType<typeof requestUnarchiveWorkspace>): SagaG
   } catch (error) {
     logger.error('workspace.unarchive failed', { workspaceId, error });
     notify.error(m.workspace_ops_unarchiveFailed_error());
+  }
+}
+
+function* confirmRetire(): SagaGenerator<void> {
+  const workspaceId = yield* selectPendingRetireWorkspaceId.effect();
+  yield* put(closeRetireConfirm());
+  if (!workspaceId) return;
+  const notify = yield* call(getToast);
+  const workspace = yield* selectWorkspaceById.effect(workspaceId);
+  try {
+    const result = yield* call(
+      [workspaceClient, workspaceClient.retire],
+      workspaceId as WorkspaceId,
+    );
+    if (!result.ok) {
+      notify.error(
+        result.errorCode === 'retire-unsupported'
+          ? m.workspace_ops_retireUnsupported_error()
+          : m.workspace_ops_retireFailed_error(),
+      );
+      return;
+    }
+    yield* applyWorkspaceChanges(workspaceId, {
+      status: WorkspaceStatusEnum.Retired,
+      archived: true,
+      ...(result.data?.archivedAt ? { archivedAt: result.data.archivedAt } : {}),
+      ...(result.data?.retiredAt ? { retiredAt: result.data.retiredAt } : {}),
+    });
+    notify.success(
+      m.workspace_ops_retired_toast({
+        title: workspace?.title || m.workspace_ops_space_fallback(),
+      }),
+    );
+  } catch (error) {
+    logger.error('workspace.retire failed', { workspaceId, error });
+    notify.error(m.workspace_ops_retireFailed_error());
+  }
+}
+
+function* loadRetiredWorkspaces(
+  action: ReturnType<typeof loadRetiredWorkspacesRequested>,
+): SagaGenerator<void> {
+  const [options] = action.payload;
+  try {
+    const rows = yield* call([appClient.workspaces, appClient.workspaces.list], {
+      includeArchived: true,
+      includeRetired: true,
+    });
+    for (const row of rows) {
+      if (row.status === WorkspaceStatusEnum.Retired) yield* put(setWorkspaceEntity(row));
+    }
+  } catch (error) {
+    logger.warn('workspace.list { includeRetired } failed', { error });
+    if (!options?.quiet) {
+      const notify = yield* call(getToast);
+      notify.error(m.home_retired_loadFailed_error());
+    }
   }
 }
 
@@ -866,6 +933,8 @@ export function* workspaceOperationsSaga(): SagaGenerator<void> {
     takeEvery(openBulkArchiveConfirm, computeBulkArchiveActiveWork),
     takeEvery(openBulkDeleteConfirm, computeBulkDeleteActiveWork),
     takeEvery(requestUnarchiveWorkspace, unarchive),
+    takeLeading(confirmRetireWorkspace, confirmRetire),
+    takeLatest(loadRetiredWorkspacesRequested, loadRetiredWorkspaces),
     takeLeading(confirmBulkArchive, bulkArchive),
     takeLeading(confirmBulkDelete, bulkDelete),
     takeEvery(confirmRemoveRepo, removeRepoFromRegistry),

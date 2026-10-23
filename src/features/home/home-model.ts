@@ -1,7 +1,8 @@
 import type { Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 
-export type HomeFilter = 'all' | 'attention' | 'running' | 'blocked' | 'unread' | 'archived';
+export type HomeFilter =
+  'all' | 'attention' | 'running' | 'blocked' | 'unread' | 'archived' | 'retired';
 export interface HomeRepository {
   key: string;
   name: string;
@@ -41,7 +42,14 @@ export function needsAttention(workspace: HomeTriageInput): boolean {
 export function matchesHomeFilter(workspace: Workspace, filter: HomeFilter): boolean {
   if (workspace.status === WorkspaceStatusEnum.Deleted || workspace.pendingDeleteAt) return false;
   if (filter === 'archived') return workspace.status === WorkspaceStatusEnum.Archived;
-  if (workspace.status === WorkspaceStatusEnum.Archived) return false;
+  // Retired rows (PROTOCOL §5.1) show only under their own opt-in chip.
+  if (filter === 'retired') return workspace.status === WorkspaceStatusEnum.Retired;
+  if (
+    workspace.status === WorkspaceStatusEnum.Archived ||
+    workspace.status === WorkspaceStatusEnum.Retired
+  ) {
+    return false;
+  }
   switch (filter) {
     case 'attention':
       return needsAttention(workspace);

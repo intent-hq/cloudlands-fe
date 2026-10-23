@@ -141,3 +141,11 @@ export const selectRunningAgentsForArchive = store.createSelector((state) => {
     };
   });
 });
+
+export const selectShowRetireConfirm = store.createSelector((state) => {
+  return state.workspaceOperations.showRetireConfirm;
+});
+
+export const selectPendingRetireWorkspaceId = store.createSelector((state) => {
+  return state.workspaceOperations.pendingRetireWorkspaceId;
+});

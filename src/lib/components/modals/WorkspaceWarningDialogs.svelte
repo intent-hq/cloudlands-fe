@@ -5,6 +5,8 @@
   import { readable } from 'svelte/store';
   import type { ComponentProps } from 'svelte';
   import DeleteWarningDialog from './DeleteWarningDialog.svelte';
+  import RetireWorkspaceConfirmDialog from './RetireWorkspaceConfirmDialog.svelte';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
@@ -17,6 +19,8 @@
     confirmBulkDelete,
     confirmArchiveWorkspace,
     confirmDeleteWorkspace,
+    closeRetireConfirm,
+    confirmRetireWorkspace,
   } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import {
     selectActiveHookNamesForArchive,
@@ -40,6 +44,8 @@
     selectShowBulkArchiveConfirm,
     selectShowBulkDeleteConfirm,
     selectShowDeleteWarning,
+    selectPendingRetireWorkspaceId,
+    selectShowRetireConfirm,
   } from '$store/renderer/slices/workspace-operations/workspace-operations-selectors';
 
   let { staticData }: { staticData?: ComponentProps<typeof DeleteWarningDialog> } = $props();
@@ -107,6 +113,18 @@
   const guestsForArchive$ = untrack(() =>
     staticData ? readable(undefined) : selectGuestsForArchive(),
   );
+  const showRetireConfirm$ = untrack(() =>
+    staticData ? readable(false) : selectShowRetireConfirm(),
+  );
+  const pendingRetireWorkspaceId$ = untrack(() =>
+    staticData ? readable(null) : selectPendingRetireWorkspaceId(),
+  );
+  const retireTitle = $derived(
+    $pendingRetireWorkspaceId$
+      ? selectWorkspaceById.select(appStore.state, $pendingRetireWorkspaceId$)?.title ||
+          m.workspace_ops_space_fallback()
+      : '',
+  );
 </script>
 
 {#if staticData}
@@ -135,6 +153,14 @@
     guests={$guestsForArchive$}
     onDeleteAnyway={() => appStore.dispatch(confirmArchiveWorkspace())}
     onCancel={() => appStore.dispatch(closeArchiveWarning())}
+  />
+
+  <!-- Redux-owned retire confirmation (PROTOCOL §5.1 Retired workspaces) -->
+  <RetireWorkspaceConfirmDialog
+    open={$showRetireConfirm$}
+    workspaceTitle={retireTitle}
+    onConfirm={() => appStore.dispatch(confirmRetireWorkspace())}
+    onCancel={() => appStore.dispatch(closeRetireConfirm())}
   />
   <BulkActionConfirmDialog
     open={$showBulkArchiveConfirm$}

@@ -91,6 +91,7 @@
   import { selectHomeWorkspaceView, selectHomeWorkspaceError } from './home-workspaces-selectors';
   import { updateHomeWorkspaceView } from './home-workspaces-slice';
   import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
+  import { loadRetiredWorkspacesRequested } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import HomeIntegrations from './HomeIntegrations.svelte';
   import type { HomeIntegrationsState } from './home-integrations-types';
 
@@ -482,6 +483,12 @@
       );
       row?.closest<HTMLElement>('[role="option"], button')?.focus();
     });
+  });
+  // Retired workspaces are absent from the live list (strict includeRetired
+  // opt-in, PROTOCOL §5.1); only the Retired chip fetches them.
+  $effect(() => {
+    if (filter !== 'retired' || preview) return;
+    untrack(() => store.dispatch(loadRetiredWorkspacesRequested()));
   });
   function chooseFilter(next: HomeFilter) {
     store.dispatch(closePanel());
@@ -905,6 +912,7 @@
                             {doubleClick}
                             oncontextmenu={showWorkspaceMenu}
                             archived={filter === 'archived'}
+                            retired={filter === 'retired'}
                           />
                         {:else}
                           {#snippet workspaceRow({ item }: { item: Workspace })}

@@ -979,6 +979,38 @@ describe('CommandPalette workspace activity recency', () => {
     expect(old.textContent).toContain('Jan 15');
     expect(old.textContent).not.toContain('just now');
   });
+
+  it('lists retired workspaces with a Retired badge and opts in to loading them', async () => {
+    workspaceItemsState.value = [
+      {
+        id: 'live',
+        title: 'Live Space',
+        status: WorkspaceStatus.Active,
+        createdAt: '2025-06-01T00:00:00.000Z',
+        updatedAt: '2025-06-01T00:00:00.000Z',
+      },
+      {
+        id: 'retired',
+        title: 'Old Importer Space',
+        status: WorkspaceStatus.Retired,
+        archived: true,
+        retiredAt: '2025-06-02T00:00:00.000Z',
+        createdAt: '2025-06-01T00:00:00.000Z',
+        updatedAt: '2025-06-01T00:00:00.000Z',
+      },
+    ];
+
+    render(CommandPalette, { props: { isOpen: true, onClose: vi.fn() } });
+
+    const retired = await screen.findByRole('button', { name: /Old Importer Space/i });
+    const live = screen.getByRole('button', { name: /Live Space/i });
+    expect(retired.textContent).toContain('Retired');
+    expect(live.textContent).not.toContain('Retired');
+    expect(reduxDispatchMock).toHaveBeenCalledWith({
+      type: 'workspaceOperations/loadRetiredWorkspacesRequested',
+      payload: [{ quiet: true }],
+    });
+  });
 });
 
 describe('CommandPalette chat message rows', () => {

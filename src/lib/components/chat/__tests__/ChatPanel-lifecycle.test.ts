@@ -9,7 +9,7 @@ import {
   setComposerContextItems,
 } from '$store/renderer/slices/transient-ui/transient-ui-slice';
 import { selectComposerContextItems } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
-import type { Workspace } from '$shared/types';
+import { WorkspaceStatus, type Workspace } from '$shared/types';
 import { KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
 import { registerGlobalSearchShortcuts } from '$lib/utils/global-search-shortcuts';
 import { resolveShortcut } from '$lib/utils/shortcut-bindings';
@@ -4408,6 +4408,23 @@ describe('ChatPanel mounted lifecycle', () => {
     mocks.agentSession.set({ id: 'agent-a', retiredAt: '2026-01-02T00:00:00.000Z' });
     await tick();
     expect(screen.queryByTestId('suggested-prompts-surface')).toBeNull();
+  });
+
+  it('disables the composer while the workspace is retired (read-only)', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentSession.set({ id: 'agent-a', messages: [] });
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-retired'), agentId: 'agent-a' },
+    });
+    await tick();
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-disabled')).toBe('false');
+
+    await view.rerender({
+      workspace: { ...workspace('workspace-retired'), status: WorkspaceStatus.Retired },
+      agentId: 'agent-a',
+    });
+    await tick();
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-disabled')).toBe('true');
   });
 
   it('reports true-bottom state to the stable header control', async () => {

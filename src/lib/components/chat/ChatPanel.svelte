@@ -183,7 +183,12 @@
   import { selectTasksForAgent } from '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors';
   import type { TaskAgentAssociation } from '$store/renderer/slices/task-agent-associations/task-agent-associations-types';
   import type { Workspace, PendingProposalRef } from '$shared/types';
-  import { extractAllContent, type SuggestedPrompt, AgentStatus } from '$shared/types';
+  import {
+    extractAllContent,
+    type SuggestedPrompt,
+    AgentStatus,
+    WorkspaceStatus,
+  } from '$shared/types';
   import type { ContextItem } from './input/context-api';
   import {
     appendContextItemContent,
@@ -664,6 +669,9 @@
   // Retired sessions (PROTOCOL §5.5 soft retire, retiredAt set) are read-only: the transcript
   // stays viewable but the composer is replaced with a restore affordance.
   const isRetiredSession = $derived(!!$agentSession$?.retiredAt);
+  // A retired workspace (PROTOCOL §5.1) is read-only: its folder is gone and
+  // the view offers "Restore as blank workspace" instead of a live composer.
+  const isRetiredWorkspace = $derived(workspace?.status === WorkspaceStatus.Retired);
 
   // Derive error state: combine transient chatError with persisted agent status.
   // After a reload, chatError is null but agent status may be Error — use
@@ -7883,7 +7891,7 @@
                   onstop={handleStop}
                   onHistoryPrev={handleHistoryPrev}
                   onHistoryNext={handleHistoryNext}
-                  disabled={!workspace || !$agentSession$}
+                  disabled={!workspace || !$agentSession$ || isRetiredWorkspace}
                   inputLocked={draftManager.gateActive}
                   isStreaming={$agentSessionIsStreaming$}
                   isResponding={$agentIsResponding$}
