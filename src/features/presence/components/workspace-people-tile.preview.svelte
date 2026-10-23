@@ -8,7 +8,7 @@
     shared?: boolean;
     expanded?: boolean;
     guest?: boolean;
-    activityState?: 'ready' | 'empty' | 'loading' | 'error' | 'older' | 'grouped';
+    activityState?: 'ready' | 'empty' | 'loading' | 'error' | 'older' | 'older-empty' | 'grouped';
   }
 
   export const preview = definePreview<Props>({
@@ -28,6 +28,7 @@
       loading: { props: { sidebar: true, expanded: true, activityState: 'loading' } },
       error: { props: { sidebar: true, expanded: true, activityState: 'error' } },
       older: { props: { sidebar: true, expanded: true, activityState: 'older' } },
+      'older-empty': { props: { sidebar: true, expanded: true, activityState: 'older-empty' } },
     },
   });
 </script>
@@ -59,6 +60,7 @@
     eventsLoaded,
     eventsCleared,
     peopleEventsLoadStarted,
+    peopleEventsPageLoaded,
     peopleEventsLoadFinished,
   } from '$store/renderer/slices/workspace-events/workspace-events-slice';
   import type { WorkspaceEvent } from '$features/events/types';
@@ -250,11 +252,22 @@
       eventsLoaded(
         workspaceId,
         ['ready', 'older', 'grouped'].includes(activityState) ? activity : [],
-        activityState === 'older' ? 'older-page' : null,
+        null,
       ),
     );
     store.dispatch(peopleEventsLoadStarted(workspaceId, 'preview-load'));
     if (activityState !== 'loading') {
+      for (const stream of ['user', 'message'] as const) {
+        store.dispatch(
+          peopleEventsPageLoaded(
+            workspaceId,
+            'preview-load',
+            stream,
+            [],
+            ['older', 'older-empty'].includes(activityState) ? `older-${stream}-page` : null,
+          ),
+        );
+      }
       store.dispatch(
         peopleEventsLoadFinished(
           workspaceId,

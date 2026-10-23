@@ -14,8 +14,7 @@
     selectPeopleEventsLoading,
     selectPeopleEventsError,
     selectPeopleEventsInitialized,
-    selectOlderEventsNextToken,
-    selectOlderEventsEndReached,
+    selectPeopleEventsEndReached,
   } from '$store/renderer/slices/workspace-events/workspace-events-selectors';
   import { loadPeopleEventsRequested } from '$store/renderer/slices/workspace-events/workspace-events-slice';
   import {
@@ -42,14 +41,13 @@
   const people$ = selectWorkspacePeopleIdentities(workspaceIdStore);
   const workspace$ = selectWorkspaceById(workspaceIdStore);
   const loading$ = selectPeopleEventsLoading(workspaceIdStore);
-  const nextToken$ = selectOlderEventsNextToken(workspaceIdStore);
-  const endReached$ = selectOlderEventsEndReached(workspaceIdStore);
+  const endReached$ = selectPeopleEventsEndReached(workspaceIdStore);
   const error$ = selectPeopleEventsError(workspaceIdStore);
   const initialized$ = selectPeopleEventsInitialized(workspaceIdStore);
   const rows = $derived(
     getPeopleActivity(workspaceId, $events$, $people$, $workspace$?.ownerPrincipalId),
   );
-  const pendingInitial = $derived(!$initialized$ && !$endReached$ && !$nextToken$ && !$error$);
+  const pendingInitial = $derived(!$initialized$ && !$endReached$ && !$error$);
   let messageNavigation: AbortController | undefined;
 
   $effect(() => {
@@ -188,7 +186,7 @@
     </EmptyState>
   {/if}
 
-  {#if (rows.length > 0 && ($loading$ || $error$)) || ($nextToken$ && !$endReached$ && !(rows.length === 0 && $error$))}
+  {#if (rows.length > 0 && ($loading$ || $error$)) || ($initialized$ && !$endReached$ && !(rows.length === 0 && $error$))}
     <div class="flex flex-col items-start gap-1 py-2">
       {#if $error$}
         <p class="type-caption text-muted-foreground" role="status">
@@ -200,10 +198,7 @@
         size="sm"
         class="px-2.5 text-muted-foreground hover:text-foreground"
         loading={$loading$}
-        onclick={() =>
-          appStore.dispatch(
-            loadPeopleEventsRequested(workspaceId, $nextToken$ ? 'more' : 'initial', true),
-          )}
+        onclick={() => appStore.dispatch(loadPeopleEventsRequested(workspaceId, 'more', true))}
       >
         {$loading$
           ? m.workspace_activityPanel_loadingOlder_label()

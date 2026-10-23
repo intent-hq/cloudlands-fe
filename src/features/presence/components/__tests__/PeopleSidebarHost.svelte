@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import PeoplePreview from '../workspace-people-tile.preview.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
@@ -12,9 +12,20 @@
   import {
     eventReceived,
     olderEventsLoaded,
+    peopleEventsLoadStarted,
+    peopleEventsPageLoaded,
+    peopleEventsLoadFinished,
   } from '$store/renderer/slices/workspace-events/workspace-events-slice';
   import { selectShareDialogOpen } from '$store/renderer/slices/workspace-share/workspace-share-selectors';
   import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import {
+    discussionContextChanged,
+    discussionManagementCapabilityReceived,
+  } from '$store/renderer/slices/workspace-discussion/workspace-discussion-slice';
+  import {
+    selectDiscussionContext,
+    selectDiscussionOwner,
+  } from '$store/renderer/slices/workspace-discussion/workspace-discussion-selectors';
   import {
     initializeLayout,
     clearPanelLayout,
@@ -24,10 +35,19 @@
     selectFocusedPanelId,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 
-  let { guest = false, older = false }: { guest?: boolean; older?: boolean } = $props();
+  let {
+    guest = false,
+    older = false,
+    emptyOlder = false,
+  }: { guest?: boolean; older?: boolean; emptyOlder?: boolean } = $props();
   const dispose = startRootStoreLifecycle(store, { startSagas: () => [] });
   const sharingOpen = selectShareDialogOpen();
   const workspaceId = 'people-tile-preview';
+  onMount(() => {
+    const context = selectDiscussionContext.select(store.state);
+    store.dispatch(discussionContextChanged(context, selectDiscussionOwner.select(store.state)));
+    if (context) store.dispatch(discussionManagementCapabilityReceived(context, true));
+  });
   let messageNavigation = $state<Record<string, string>>({});
   function recordMessageNavigation(event: Event) {
     const detail = (event as CustomEvent).detail;
@@ -116,9 +136,14 @@
   }
 
   function receiveOlder() {
+    // The general event feed may still have pages after both People streams finish.
+    store.dispatch(olderEventsLoaded(workspaceId, [], 'raw-history-continues'));
+    store.dispatch(peopleEventsLoadStarted(workspaceId, 'older-people'));
     store.dispatch(
-      olderEventsLoaded(
+      peopleEventsPageLoaded(
         workspaceId,
+        'older-people',
+        'user',
         [
           {
             id: 'older-note',
@@ -132,9 +157,12 @@
         null,
       ),
     );
+    store.dispatch(peopleEventsPageLoaded(workspaceId, 'older-people', 'message', [], null));
+    store.dispatch(peopleEventsLoadFinished(workspaceId, 'older-people', true, null));
   }
 
   onDestroy(() => {
+    store.dispatch(discussionContextChanged(null, null));
     window.removeEventListener('chat:open-message', recordMessageNavigation);
     store.dispatch(removeSession('planner'));
     store.dispatch(clearPanelLayout(workspaceId));
@@ -143,7 +171,11 @@
 </script>
 
 <div style:width="346px">
-  <PeoplePreview sidebar {guest} activityState={older ? 'older' : 'ready'} />
+  <PeoplePreview
+    sidebar
+    {guest}
+    activityState={emptyOlder ? 'older-empty' : older ? 'older' : 'ready'}
+  />
 </div>
 <Button onclick={addActivity}>Add live activity</Button>
 <Button onclick={receiveOlder}>Receive older activity</Button>

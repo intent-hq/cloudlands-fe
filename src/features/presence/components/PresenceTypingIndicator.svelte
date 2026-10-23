@@ -6,10 +6,7 @@
    */
   import { writable } from 'svelte/store';
   import { selectAgentTypingPeople } from '$store/renderer/slices/presence/presence-selectors';
-  import {
-    OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS,
-    OPERATIONAL_ROW_TONE_CLASS,
-  } from '$lib/components/chat/operational-disclosure-row';
+  import { OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS } from '$lib/components/chat/operational-disclosure-row';
   import PresenceAvatarStack from './PresenceAvatarStack.svelte';
   import { presenceTypingLabel } from './presence-person';
 
@@ -36,7 +33,7 @@
 
 {#if label}
   <div
-    class="{OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} {OPERATIONAL_ROW_TONE_CLASS} flex min-h-7 min-w-0 items-center gap-[var(--operational-leading-gap)] px-[var(--operational-row-inline-padding)] {className}"
+    class="{OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} flex h-4 min-w-0 items-center gap-[var(--operational-leading-gap)] px-[var(--operational-row-inline-padding)] font-family-child font-normal text-muted-foreground text-[11px] leading-4 {className} /* a11y-ignore: user-requested compact typing status in the composer gap */"
     role="status"
     aria-live="polite"
     data-presence-typing-indicator
@@ -44,7 +41,7 @@
     <span
       class="inline-flex min-w-[var(--operational-leading-slot-size)] shrink-0 items-center justify-center"
     >
-      <PresenceAvatarStack people={$typing$} size={16} decorative />
+      <PresenceAvatarStack people={$typing$} size={12} decorative />
     </span>
     <span class="min-w-0 truncate">{label}</span>
     <span class="inline-flex shrink-0 items-center gap-0.5" aria-hidden="true">

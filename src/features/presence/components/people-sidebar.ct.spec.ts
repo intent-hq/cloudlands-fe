@@ -101,17 +101,25 @@ test('guests can read the feed and lose the panel when multiplayer is disabled',
   await expect(component.locator('[data-sidebar-people-tile]')).toHaveCount(0);
 });
 
-test('older human activity appears with its historical author', async ({ mount }) => {
-  const component = await mount(PeopleSidebarHost, { props: { older: true } });
-  await component.getByRole('button', { name: 'People', exact: true }).click();
-  const panel = component.locator('[data-sidebar-card-tab="people"]');
-  await expect(panel.getByRole('button', { name: /load more/i })).toBeVisible();
-  await panel.getByRole('button', { name: /load more/i }).click();
-  await component.getByRole('button', { name: 'Receive older activity', exact: true }).click();
-  await expect(panel).toContainText('Casey');
-  await expect(panel).toContainText('Earlier plan');
-  await expect(panel.getByRole('button', { name: /load more/i })).toHaveCount(0);
-});
+for (const emptyOlder of [false, true]) {
+  test(`People pagination finds older activity independently of raw event pagination (${emptyOlder ? 'empty' : 'populated'})`, async ({
+    mount,
+  }) => {
+    const component = await mount(PeopleSidebarHost, { props: { older: true, emptyOlder } });
+    await component.getByRole('button', { name: 'People', exact: true }).click();
+    const panel = component.locator('[data-sidebar-card-tab="people"]');
+    if (emptyOlder)
+      await expect(panel).toContainText('No activity from people in these recent events.');
+    // The fixture's raw event cursor is exhausted, but People still has older pages.
+    await expect(panel.getByRole('button', { name: /load more/i })).toBeVisible();
+    await panel.getByRole('button', { name: /load more/i }).click();
+    await component.getByRole('button', { name: 'Receive older activity', exact: true }).click();
+    await expect(panel).toContainText('Casey');
+    await expect(panel).toContainText('Earlier plan');
+    // Receiving the People result leaves a raw cursor; it must not keep this button visible.
+    await expect(panel.getByRole('button', { name: /load more/i })).toHaveCount(0);
+  });
+}
 
 test('discussion opens once in the focused pane and leaves People activity available', async ({
   mount,

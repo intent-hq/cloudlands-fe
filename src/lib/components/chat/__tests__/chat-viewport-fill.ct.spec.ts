@@ -349,12 +349,14 @@ test('keeps the reading row when the user scrolls up with an older page pending'
   await expect.poll(async () => (await result()).requests.length).toBe(2);
   await component.update({ props: { controlled: true, height: 500, releasedPages: 1 } });
   await page.waitForTimeout(500);
+  await expect(component.getByTestId('fill-host')).toHaveAttribute('data-following', 'true');
   await viewport.hover();
   await page.mouse.wheel(0, -60);
   await expect
     .poll(() => viewport.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop))
     .toBeGreaterThan(20);
   await page.waitForTimeout(150);
+  await expect(component.getByTestId('fill-host')).toHaveAttribute('data-following', 'false');
   const reading = await viewport.evaluate((node) => {
     const top = node.getBoundingClientRect().top;
     const row = [...node.querySelectorAll<HTMLElement>('[data-message-id]')].find(
@@ -367,9 +369,9 @@ test('keeps the reading row when the user scrolls up with an older page pending'
   await page.waitForTimeout(500);
   const after = await component.locator(`[data-message-id="${reading.id}"]`).first().boundingBox();
   expect(Math.abs(after!.y - reading.top)).toBeLessThan(5);
-  expect(
-    await viewport.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop),
-  ).toBeGreaterThan(20);
+  // Regrouped turns can change the content below this row. Follow ownership,
+  // rather than a bottom-distance threshold, proves the reader remains in control.
+  await expect(component.getByTestId('fill-host')).toHaveAttribute('data-following', 'false');
 });
 
 for (const total of [1, 19, 20, 21]) {

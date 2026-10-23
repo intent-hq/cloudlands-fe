@@ -7863,39 +7863,45 @@
                 {#if draftManager.gateVisible}
                   <ChatDraftLoadingGate />
                 {/if}
-                {#if workspace && agentId}
-                  <PresenceTypingIndicator workspaceId={workspace.id} {agentId} class="mb-1" />
-                {/if}
-                <SimpleRichInput
-                  bind:this={inputComponent}
-                  bind:contextItems={getContextItems, setContextItems}
-                  bind:value={inputValue}
-                  onvaluechange={(value) => {
-                    scheduleDraftWrite(value);
-                    reportTypingActivity(value);
-                  }}
-                  onsubmit={handleSend}
-                  onforcesubmit={handleForceSubmit}
-                  onstop={handleStop}
-                  onHistoryPrev={handleHistoryPrev}
-                  onHistoryNext={handleHistoryNext}
-                  disabled={!workspace || !$agentSession$}
-                  inputLocked={draftManager.gateActive}
-                  isStreaming={$agentSessionIsStreaming$}
-                  isResponding={$agentIsResponding$}
-                  {workspace}
-                  currentContext={currentMainPanelContext}
-                  {agentId}
-                  selectedModel={hydratedInputModel}
-                  compactMode={isCompactMode}
-                  editorClassName={`${COMPOSER_INSET_CLASS} w-full`}
-                  contentInsetClassName={`${COMPOSER_INSET_CLASS} w-full`}
-                  actionBarEndClassName={COMPOSER_INSET_CLASS}
-                  edgeDocked
-                  externalDropTarget
-                  requiresModelSwitchConfirmation={!canChangeProvider}
-                  providerId={inputProviderId}
-                />
+                <div class="relative min-w-0">
+                  {#if workspace && agentId}
+                    <PresenceTypingIndicator
+                      workspaceId={workspace.id}
+                      {agentId}
+                      class="pointer-events-none absolute inset-x-0 bottom-full mb-1"
+                    />
+                  {/if}
+                  <SimpleRichInput
+                    bind:this={inputComponent}
+                    bind:contextItems={getContextItems, setContextItems}
+                    bind:value={inputValue}
+                    onvaluechange={(value) => {
+                      scheduleDraftWrite(value);
+                      reportTypingActivity(value);
+                    }}
+                    onsubmit={handleSend}
+                    onforcesubmit={handleForceSubmit}
+                    onstop={handleStop}
+                    onHistoryPrev={handleHistoryPrev}
+                    onHistoryNext={handleHistoryNext}
+                    disabled={!workspace || !$agentSession$}
+                    inputLocked={draftManager.gateActive}
+                    isStreaming={$agentSessionIsStreaming$}
+                    isResponding={$agentIsResponding$}
+                    {workspace}
+                    currentContext={currentMainPanelContext}
+                    {agentId}
+                    selectedModel={hydratedInputModel}
+                    compactMode={isCompactMode}
+                    editorClassName={`${COMPOSER_INSET_CLASS} w-full`}
+                    contentInsetClassName={`${COMPOSER_INSET_CLASS} w-full`}
+                    actionBarEndClassName={COMPOSER_INSET_CLASS}
+                    edgeDocked
+                    externalDropTarget
+                    requiresModelSwitchConfirmation={!canChangeProvider}
+                    providerId={inputProviderId}
+                  />
+                </div>
               {/if}
             </QuestionComposer>
           {/if}
@@ -7993,8 +7999,10 @@
     animation: input-flash calc(var(--spring-slow) * 2.5) var(--spring-exit-ease);
   }
 
+  /* Reserve the status outside the scroll viewport even while nobody is typing.
+     Presence never resizes the composer or overlays scrolled transcript text. */
   .composer-prompt-lane {
-    padding-block: 0.5rem var(--chat-content-inset);
+    padding-block: 1.25rem var(--chat-content-inset);
   }
 
   .chief-chat-panel .composer-prompt-lane {
