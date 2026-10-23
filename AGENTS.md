@@ -601,10 +601,8 @@ Do not hide these checks in helpers, custom matchers, canvas redraws, or renamed
 commands, or image-diff dependencies. Remove an existing violation; never refresh
 its baseline or loosen its threshold to make it pass.
 
-`pnpm run lint:pixel-comparisons` runs in `lint:architecture` and rejects image
-snapshot APIs, stored image baselines, and known pixel comparison machinery. Do not
-add exemptions or bypass this gate. Review must reject equivalent custom comparisons
-even when the static gate cannot detect them.
+Enforce these bans during review. Do not add source-scanning scripts or fixture tests
+to enforce the pixel comparison or DOM measurement baseline policies.
 
 Manual screenshots and probes remain required for visual review where applicable.
 They are review evidence only: never compare their pixels or use them as automated
@@ -657,11 +655,9 @@ or claim of "geometry coverage" does not make an appearance baseline acceptable.
 Remove violations; never record new measurements or adjust expected values to pass.
 
 Do not recreate these tests under another name, add exemptions, or regenerate their
-baselines. `pnpm run lint:geometry-snapshots` runs in `lint:architecture` and rejects
-known baseline paths, snapshot machinery, fixed numeric DOM measurement equality/ranges,
-and fixed CSS dimension assertions. Capturing all boxes or path coordinates during a test
-and requiring the same layout later is also a generated appearance baseline. Review must
-reject equivalent custom comparisons the static gate misses.
+baselines. Capturing all boxes or path coordinates during a test and requiring the same
+layout later is also a generated appearance baseline. Review must reject equivalent
+custom comparisons.
 
 Keep independent behavioral assertions: content stays within its live container,
 controls remain reachable, a resize responds to user input, and scrolling preserves
