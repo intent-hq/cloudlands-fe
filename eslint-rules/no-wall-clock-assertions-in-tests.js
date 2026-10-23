@@ -15,7 +15,7 @@ const MATCHERS = new Set([
   'toBeGreaterThanOrEqual',
 ]);
 
-const CLOCK_CALLEES = new Set([
+export const CLOCK_CALLEES = new Set([
   'performance.now',
   'Date.now',
   'globalThis.performance.now',
@@ -30,7 +30,7 @@ const ARITHMETIC = new Set(['+', '-', '*', '/', '%']);
 const MAX_RESOLVE_DEPTH = 8;
 
 // Dotted name of an identifier / identifier-only member chain (`window.performance.now`).
-function dottedName(node) {
+export function dottedName(node) {
   if (node.type === 'Identifier') return node.name;
   if (node.type === 'MemberExpression' && !node.computed && node.property.type === 'Identifier') {
     const object = dottedName(node.object);
@@ -40,7 +40,7 @@ function dottedName(node) {
 }
 
 // `new Date()` with no arguments reads the clock; `new Date(1000)` is a fixed timestamp.
-function isNewDate(node) {
+export function isNewDate(node) {
   return (
     node?.type === 'NewExpression' &&
     node.callee.type === 'Identifier' &&
