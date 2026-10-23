@@ -33,12 +33,26 @@ permissions:
   contents: read
 
 jobs:
+  # Where the packaged suite runs: its `cloud` runner, a fresh WarpBuild VM
+  # (never an intent-cache slot). See runner-route.yml.
+  runner-route:
+    uses: ./.github/workflows/runner-route.yml
+    permissions:
+      contents: read
+      actions: read
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
+
   build-smoke:
     name: Build Smoke (linux x64)
-    # gh-linux-8x (GH-hosted, 8-core/32 GB X64): the renderer bundle OOMs
-    # 16 GB runners (monorepo#1340) — same class release-alpha's Linux x64
-    # leg uses. Never downgrade to ubuntu-latest.
-    runs-on: gh-linux-8x
+    # 8-core/32 GB X64 (WarpBuild 8x): the renderer bundle OOMs 16 GB runners
+    # (monorepo#1340), the same class release-alpha's Linux x64 leg uses.
+    # Never downgrade to ubuntu-latest. The packaged smoke needs a fresh VM per
+    # job, which WarpBuild gives (scripts/run-packaged-linux-smoke.py).
+    needs: runner-route
+    # A failed route job must not block this job: it runs on its fallback label.
+    if: ${{ !cancelled() }}
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["warp-ubuntu-2404-x64-8x"]') }}
     timeout-minutes: 60
     env:
       CI: 'true'

@@ -12,17 +12,51 @@ ROOT = Path(__file__).resolve().parents[1]
 FREE = {'ubuntu-22.04', 'ubuntu-24.04', 'ubuntu-latest', 'ubuntu-24.04-arm', 'windows-2022', 'windows-2025'}
 # The probe must work when the fleet is offline.
 EXCEPTIONS = {('runner-route.yml', 'probe')}
-# These jobs refuse to run unless RUNNER_ENVIRONMENT is `github-hosted`, which
-# neither a self-hosted slot nor WarpBuild (it reports `self-hosted`) satisfies,
-# so they stay on paid GitHub labels.
+# These one-use diagnostics refuse to run unless RUNNER_ENVIRONMENT is
+# `github-hosted`. Each is pinned to one past push (event.before), so they can
+# never run again; they keep their frozen paid GitHub labels.
 GITHUB_HOSTED_ONLY = {
     ('b76t-packaged-admission.yml', 'admission'): 'B76 diagnostic: records runner.environment for its GitHub-hosted readiness pair',
     ('b76t-packaged-readiness.yml', 'readiness'): 'B76 readiness requires a GitHub-hosted runner',
-    ('build-smoke.yml', 'build-smoke'): 'scripts/run-packaged-linux-smoke.py requires a GitHub-hosted runner',
-    ('manual-signed-build.yml', 'smoke-macos'): 'scripts/run-packaged-macos-smoke.py requires a GitHub-hosted runner',
-    ('manual-signed-build.yml', 'verify-isolated-macos'): 'scripts/verify-isolated-macos-package.mjs requires a GitHub-hosted runner',
 }
 EXCEPTIONS |= set(GITHUB_HOSTED_ONLY)
+# GitHub's larger runners are off: every paid size bursts to its WarpBuild
+# runner, read from the probe so the two never drift apart.
+WARP = dict(re.findall(r"'([\w.-]+)': '(warp-[\w.-]+)'", re.search(r"const warp = \{(.*?)\};", (ROOT / '.github/workflows/runner-route.yml').read_text(), re.S)[1]))
+
+
+def burst_label(label):
+    """Where a label runs without a self-hosted slot: a paid size on WarpBuild, a free label itself."""
+    return WARP.get(label, label)
+
+
+def paid_label_violations(text, filename):
+    """Jobs that could still land on a GitHub larger runner (they are off).
+
+    A paid size must reach a runner only through the probe's mapping; its
+    fallback, when the route job failed, is the WarpBuild label.
+    """
+    paid = '|'.join(map(re.escape, WARP))
+    errors = []
+    for job, body in jobs(text).items():
+        if (filename, job) in GITHUB_HOSTED_ONLY:
+            continue
+        runner = re.search(r'^    runs-on: (.+)$', body, re.M)
+        runner = runner[1].strip() if runner else ''
+        if re.fullmatch(paid, runner.strip('"\'')):
+            errors.append(f'{job}: runs on the paid GitHub label {runner}')
+        for found in re.findall(r"""(?:fromJSON\('|\|\| ')\[\"(%s)\"\]'""" % paid, body):
+            errors.append(f'{job}: falls back to the paid GitHub label {found}')
+        if re.search(r'\|\| matrix\.(?:runner|os) \}\}', runner) and re.search(r'(?:runner|os)(?:: |":")(?:%s)\b' % paid, body):
+            errors.append(f'{job}: falls back to a paid matrix label; use matrix.warp')
+        pairs = re.findall(r'(?:runner: |"runner":")(%s)"?\s*(?:\n\s*#[^\n]*)*\n?\s*(?:warp: |,"warp":")([\w.-]+)' % paid, body)
+        for row, warp in pairs:
+            if warp != WARP[row]:
+                errors.append(f'{job}: matrix row {row} names warp {warp}, not {WARP[row]}')
+        rows = re.findall(r'(?:runner: |"runner":")(%s)\b' % paid, body)
+        if 'matrix.warp' in body and len(rows) != len(pairs):
+            errors.append(f'{job}: a paid matrix row has no warp label for its fallback')
+    return errors
 # Jobs whose privileged steps only run under an input; their slot read must be
 # conditioned on the same input so those runs skip the intent-cache slots.
 PRIVILEGED_UNDER_INPUT = {('manual-signed-build.yml', 'build-linux'): "inputs.intentd_ref == ''"}
@@ -76,7 +110,7 @@ def violations(text, filename):
         routed = routed or re.fullmatch(r"\$\{\{ fromJSON\(inputs\.cloud \|\| '\{\}'\)\['[\w.-]+'\] \|\| fromJSON\('\[\"[\w.-]+\"\]'\) \}\}", runner)
         # ...or the caller's slots first (a merge-queue caller passes them), then that map.
         routed = routed or re.fullmatch(r"\$\{\{ fromJSON\(inputs\.slots \|\| '\{\}'\)\[format\('[\w-]+-\{0\}', matrix\.\w+\)\] \|\| fromJSON\(inputs\.cloud \|\| '\{\}'\)\['[\w.-]+'\] \|\| fromJSON\('\[\"[\w.-]+\"\]'\) \}\}", runner)
-        routed = routed or re.fullmatch(r"\$\{\{ [^|]+ && fromJSON\(needs\.(route|runner-route)\.outputs\.slots \|\| '\{\}'\)\[format\('[\w-]+-\{0\}', matrix\.\w+\)\] \|\| fromJSON\(needs\.(route|runner-route)\.outputs\.(?:runners|cloud) \|\| '\{\}'\)\[matrix\.(\w+)\] \|\| matrix\.\3 \}\}", runner)
+        routed = routed or re.fullmatch(r"\$\{\{ [^|]+ && fromJSON\(needs\.(route|runner-route)\.outputs\.slots \|\| '\{\}'\)\[format\('[\w-]+-\{0\}', matrix\.\w+\)\] \|\| fromJSON\(needs\.(route|runner-route)\.outputs\.(?:runners|cloud) \|\| '\{\}'\)\[matrix\.(\w+)\] \|\| matrix\.(?:\3|warp) \}\}", runner)
         if not routed and not (runner == '${{ matrix.os }}' and 'needs.route.outputs.' in body):
             errors.append(job)
     return errors
@@ -134,8 +168,8 @@ def slot_violations(text, workflows=None):
             errors.append(f'{job}: reads an unlisted slot')
             continue
         used.add(key)
-        if read[3] and entry['label'] != read[3]:
-            errors.append(f"{job}: fallback {read[3]} differs from listed {entry['label']}")
+        if read[3] and burst_label(entry['label']) != read[3]:
+            errors.append(f"{job}: fallback {read[3]} differs from {burst_label(entry['label'])} for listed {entry['label']}")
         if read[4] and entry['label'] not in body:
             errors.append(f"{job}: no matrix leg asks for the listed {entry['label']}")
         if bool(read[2]) != bool(entry.get('shards') or entry.get('legs')):
@@ -224,18 +258,18 @@ class RunnerPolicy(unittest.TestCase):
 
         # A burst label only upsizes a heavy job; free or downsized bursts are rejected.
         bursts = '    with:\n      slot_jobs: >-\n        [{{"key":"a","label":"{}","burst":"{}","events":["merge_group"]}}]\njobs:\n'
-        heavy = job.replace('ubuntu-24.04', 'gh-linux-8x')
+        heavy = job.replace('ubuntu-24.04', 'warp-ubuntu-2404-x64-8x')
         self.assertEqual(slot_violations(bursts.format('gh-linux-8x', 'gh-linux-16x') + heavy), [])
         self.assertEqual(slot_violations(bursts.format('ubuntu-24.04', 'gh-linux-16x') + job),
                          ['a: burst gh-linux-16x must upsize gh-linux-8x to gh-linux-16x'])
-        self.assertEqual(slot_violations(bursts.format('gh-linux-16x', 'gh-linux-8x') + job.replace('ubuntu-24.04', 'gh-linux-16x')),
+        self.assertEqual(slot_violations(bursts.format('gh-linux-16x', 'gh-linux-8x') + job.replace("'ubuntu-24.04'", "'gh-linux-16x'").replace('ubuntu-24.04', 'warp-ubuntu-2404-x64-16x')),
                          ['a: burst gh-linux-8x must upsize gh-linux-8x to gh-linux-16x'])
     def test_slot_reads_through_a_reusable_workflow(self):
         # The caller lists ct; a reusable workflow it passes `slots` to reads ct-N.
         import tempfile
         callee = ("jobs:\n  shard:\n    strategy:\n      matrix:\n        shard: [1, 2]\n"
                   "    runs-on: ${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || "
-                  "fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('[\"gh-linux-8x\"]') }}\n")
+                  "fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('[\"warp-ubuntu-2404-x64-8x\"]') }}\n")
         self.assertEqual(violations(callee, 'callee.yml'), [])
         caller = ('    env:\n      SLOT_JOBS: >-\n        [{"key":"ct","label":"gh-linux-8x","shards":2}]\njobs:\n'
                   '  test-ct:\n    uses: ./.github/workflows/callee.yml\n    with:\n%s')
@@ -312,8 +346,38 @@ class RunnerPolicy(unittest.TestCase):
                       '${{ matrix.runner }}', '${{ needs.unrelated.outputs.runner }}']:
             self.assertEqual(violations(f'jobs:\n  new-work:\n    runs-on: {label}\n', 'new.yml'), ['new-work'])
         # Free standard labels and the cloud mapping are allowed.
-        for label in sorted(FREE) + ["${{ fromJSON(needs.runner-route.outputs.cloud || '{}')['gh-linux-8x'] || fromJSON('[\"gh-linux-8x\"]') }}"]:
+        for label in sorted(FREE) + ["${{ fromJSON(needs.runner-route.outputs.cloud || '{}')['gh-linux-8x'] || fromJSON('[\"warp-ubuntu-2404-x64-8x\"]') }}"]:
             self.assertEqual(violations(f'jobs:\n  new-work:\n    runs-on: {label}\n', 'new.yml'), [])
+
+    def test_no_job_can_land_on_a_github_larger_runner(self):
+        for path in (ROOT / '.github/workflows').glob('*.yml'):
+            if path.name == 'runner-route.yml':
+                continue
+            with self.subTest(workflow=path.name):
+                self.assertEqual(paid_label_violations(path.read_text(), path.name), [])
+
+    def test_paid_label_detection(self):
+        self.assertEqual(sorted(WARP), ['gh-linux-16x', 'gh-linux-8x', 'gh-linux-arm64-8x', 'gh-windows-16x', 'gh-windows-8x', 'macos-15-xlarge', 'macos-26-xlarge'])
+        cloud = "${{ fromJSON(needs.runner-route.outputs.cloud || '{}')['gh-linux-8x'] || fromJSON('[\"%s\"]') }}"
+        job = 'jobs:\n  a:\n    runs-on: %s\n'
+        self.assertEqual(paid_label_violations(job % (cloud % 'warp-ubuntu-2404-x64-8x'), 'x.yml'), [])
+        self.assertEqual(paid_label_violations(job % (cloud % 'gh-linux-8x'), 'x.yml'), ['a: falls back to the paid GitHub label gh-linux-8x'])
+        self.assertEqual(paid_label_violations(job % 'macos-15-xlarge', 'x.yml'), ['a: runs on the paid GitHub label macos-15-xlarge'])
+        windows = "${{ fromJSON(needs.route.outputs.windows_labels || '[\"gh-windows-16x\"]') }}"
+        self.assertEqual(paid_label_violations('jobs:\n  a:\n    strategy:\n      matrix:\n        include:\n          - os: %s\n    runs-on: ${{ matrix.os }}\n' % windows, 'x.yml'),
+                         ['a: falls back to the paid GitHub label gh-windows-16x'])
+        matrix = "jobs:\n  a:\n    strategy:\n      matrix:\n        include:\n          - runner: gh-linux-8x\n            warp: %s\n    runs-on: ${{ fromJSON(needs.runner-route.outputs.cloud || '{}')[matrix.runner] || matrix.%s }}\n"
+        self.assertEqual(paid_label_violations(matrix % ('warp-ubuntu-2404-x64-8x', 'warp'), 'x.yml'), [])
+        self.assertEqual(paid_label_violations(matrix % ('warp-ubuntu-2404-x64-8x', 'runner'), 'x.yml'), ['a: falls back to a paid matrix label; use matrix.warp'])
+        self.assertEqual(paid_label_violations(matrix % ('warp-ubuntu-2404-x64-16x', 'warp'), 'x.yml'), ['a: matrix row gh-linux-8x names warp warp-ubuntu-2404-x64-16x, not warp-ubuntu-2404-x64-8x'])
+        no_warp = "jobs:\n  a:\n    strategy:\n      matrix:\n        include:\n          - runner: gh-linux-arm64-8x\n    runs-on: ${{ fromJSON(needs.runner-route.outputs.cloud || '{}')[matrix.runner] || matrix.warp }}\n"
+        self.assertEqual(paid_label_violations(no_warp, 'x.yml'), ['a: a paid matrix row has no warp label for its fallback'])
+        json_row = '{"arch":"arm64","runner":"macos-15-xlarge","warp":"%s"}'
+        self.assertEqual(paid_label_violations('jobs:\n  a:\n    steps:\n      - run: echo \'%s\'\n' % (json_row % 'warp-macos-26-arm64-12x'), 'x.yml'),
+                         ['a: matrix row macos-15-xlarge names warp warp-macos-26-arm64-12x, not warp-macos-15-arm64-12x'])
+        # The frozen one-use B76 diagnostics are the only exception.
+        self.assertEqual(paid_label_violations(job % 'gh-linux-8x', 'b76t-packaged-readiness.yml').__len__(), 1)
+        self.assertEqual(paid_label_violations('jobs:\n  readiness:\n    runs-on: gh-linux-8x\n', 'b76t-packaged-readiness.yml'), [])
 
     def test_route_knows_the_free_labels(self):
         route = (ROOT / '.github/workflows/runner-route.yml').read_text()
@@ -327,7 +391,7 @@ class RunnerPolicy(unittest.TestCase):
                 runner = re.search(r'^    runs-on: (.+)$', body, re.M)
                 if not runner or (path.name, job) in EXCEPTIONS:
                     continue
-                if re.search(r"gh-windows-16x|macos-|matrix\.runner", runner[1]) and 'gh-linux' not in runner[1]:
+                if re.search(r"gh-windows-|macos-|matrix\.runner", runner[1]) and 'gh-linux' not in runner[1]:
                     with self.subTest(workflow=path.name, job=job):
                         self.assertIn('outputs.cloud', runner[1])
 
