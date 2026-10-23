@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.231.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.231.2...v2.231.3) (2026-10-23)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.35 ([#3650](https://github.com/intent-hq/cloudlands-fe/issues/3650)) ([4c88f99](https://github.com/intent-hq/cloudlands-fe/commit/4c88f997ead40277bffeebf7f6063d9c186eadcb))
+* restore the in-app toast when an agent finishes while the app is frontmost ([#3640](https://github.com/intent-hq/cloudlands-fe/issues/3640)) ([26fa3d3](https://github.com/intent-hq/cloudlands-fe/commit/26fa3d3a0705ddec19a3e2d1e22fc135d7978c41))
+
 ## [2.231.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.231.1...v2.231.2) (2026-10-23)
 
 
