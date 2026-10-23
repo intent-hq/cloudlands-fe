@@ -27,8 +27,7 @@ function menu(connected = true, target = workspace) {
     microConnected: connected,
     onOpen: vi.fn(),
     onClose: close,
-    expandPinned: vi.fn(),
-    getHomeElement: () => null,
+    onPin: vi.fn(),
   });
 }
 beforeEach(() => {

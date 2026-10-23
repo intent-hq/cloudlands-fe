@@ -696,15 +696,21 @@ test('linked PRs deduplicate URL forms and omit unavailable or wrong-state pulls
     })
     .toBe(true);
   await expect(list).toContainText('Linked service fix');
+  // The linked card remains visible during the debounced person-filter search.
+  // Wait for that view's targeted request before changing the status filter.
   await expect
-    .poll(() =>
-      page.evaluate(() =>
-        window.__homeIntegrationBrowser!.calls.filter(
-          (call) => call.method === 'github.pulls.get' && call.params.number === 901,
-        ),
-      ),
+    .poll(
+      async () =>
+        (await page.evaluate(() => window.__homeIntegrationBrowser!.calls)).filter(
+          (call) =>
+            call.method === 'github.pulls.get' &&
+            call.params.owner === 'other' &&
+            call.params.repo === 'service' &&
+            call.params.number === 901 &&
+            call.params.workspaceId === 'home-route',
+        ).length,
     )
-    .toHaveLength(2);
+    .toBe(2);
   const status = component.getByRole('combobox', { name: 'Status', exact: true });
   await status.click();
   await page.getByRole('option', { name: 'Closed / merged', exact: true }).click();
@@ -715,6 +721,10 @@ test('linked PRs deduplicate URL forms and omit unavailable or wrong-state pulls
     contentType: 'image/png',
   });
   const calls = await page.evaluate(() => window.__homeIntegrationBrowser!.calls);
+  await testInfo.attach('linked-state-wire', {
+    body: JSON.stringify(calls, null, 2),
+    contentType: 'application/json',
+  });
   expect(
     calls.filter((c) => c.method === 'github.pulls.get' && c.params.number === 901),
   ).toHaveLength(3);
@@ -729,10 +739,6 @@ test('linked PRs deduplicate URL forms and omit unavailable or wrong-state pulls
       },
     })),
   );
-  await testInfo.attach('linked-state-wire', {
-    body: JSON.stringify(calls, null, 2),
-    contentType: 'application/json',
-  });
 });
 
 test('linked PR preview demonstrates a cross-repository workspace link', async ({

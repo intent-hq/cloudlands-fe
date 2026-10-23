@@ -5,11 +5,13 @@ import {
   type WorkspaceDisplayStatus,
 } from '$shared/types';
 import { m } from '$shared/paraglide/messages.js';
+import { workspaceReminderStatus } from '$shared/utils/workspace-attention-reminder';
 
 const statusLabels = {
   needs_attention: () => m.workspace_statusIcon_needsAttention_label(),
   not_started: () => m.workspace_statusIcon_notStarted_label(),
   in_progress: () => m.workspace_statusIcon_inProgress_label(),
+  waiting: () => m.hud_workspaceState_waiting_label(),
   pr_open: () => m.workspace_statusIcon_prOpen_label(),
   pr_ready: () => m.workspace_statusIcon_prReady_label(),
   pr_queued: () => m.workspace_statusIcon_prQueued_label(),
@@ -39,12 +41,15 @@ export function groupHomeWorkspacesByStatus(workspaces: readonly Workspace[]) {
   const buckets = new Map<StatusGroup | 'archived', Workspace[]>();
   for (const workspace of workspaces) {
     if (workspace.status === WorkspaceStatusEnum.Deleted || workspace.pendingDeleteAt) continue;
+    const reminderStatus = workspaceReminderStatus(workspace);
     const status =
       workspace.status === WorkspaceStatusEnum.Archived
         ? 'archived'
-        : isWorkspaceDisplayStatus(workspace.displayStatus)
-          ? statusGroups[workspace.displayStatus]
-          : 'not_started';
+        : reminderStatus === 'waiting'
+          ? 'waiting'
+          : isWorkspaceDisplayStatus(reminderStatus)
+            ? statusGroups[reminderStatus]
+            : 'not_started';
     const items = buckets.get(status) ?? [];
     items.push(workspace);
     buckets.set(status, items);

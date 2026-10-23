@@ -3,7 +3,7 @@ import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
 import { getHomeTriageGroup, matchesHomeFilter, needsAttention } from './home-model';
 
 // Failure cases: blocked/failed missing from needs-you; unread mistaken for action;
-// running overriding a blocker; completed work masking a review request; prose
+// PR-ready leaking into Needs you or masking attention; running overriding a blocker; completed work masking a review request; prose
 // inventing an error; stale unread filters breaking; archived/deleted leaking in.
 const workspace = (overrides: Partial<Workspace> = {}) =>
   ({ status: WorkspaceStatusEnum.Active, ...overrides }) as Workspace;
@@ -13,7 +13,7 @@ describe('Home triage grouping', () => {
     ['failed', 'blocked'],
     ['blocked', 'blocked'],
     ['needs_attention', 'needs-you'],
-    ['pr_ready', 'needs-you'],
+    ['pr_ready', 'pr-ready'],
     ['in_progress', 'running'],
     ['complete', 'done'],
     ['pr_merged', 'done'],
@@ -48,6 +48,27 @@ describe('Home triage grouping', () => {
     expect(
       getHomeTriageGroup(workspace({ displayStatus: 'complete', activity: 'agent_running' })),
     ).toBe('running');
+  });
+
+  it('keeps PR-ready separate from attention and preserves higher-priority signals', () => {
+    const ready = workspace({ displayStatus: 'pr_ready', attention: 'unread' });
+    expect(getHomeTriageGroup(ready)).toBe('pr-ready');
+    expect(needsAttention(ready)).toBe(false);
+    expect(matchesHomeFilter(ready, 'attention')).toBe(false);
+    expect(matchesHomeFilter(ready, 'pr-ready')).toBe(true);
+    expect(matchesHomeFilter(ready, 'unread')).toBe(true);
+    for (const displayStatus of ['needs_attention', 'blocked', 'failed'] as const) {
+      const actionable = workspace({ displayStatus });
+      expect(needsAttention(actionable)).toBe(true);
+      expect(matchesHomeFilter(actionable, 'pr-ready')).toBe(false);
+    }
+    const review = workspace({ displayStatus: 'pr_ready', attention: 'review_required' });
+    expect(getHomeTriageGroup(review)).toBe('needs-you');
+    expect(matchesHomeFilter(review, 'pr-ready')).toBe(false);
+    for (const status of [WorkspaceStatusEnum.Archived, WorkspaceStatusEnum.Deleted]) {
+      expect(matchesHomeFilter({ ...ready, status }, 'pr-ready')).toBe(false);
+    }
+    expect(matchesHomeFilter({ ...ready, pendingDeleteAt: '2026-10-07' }, 'pr-ready')).toBe(false);
   });
 
   it('does not invent actions or failures from unread, waiting, or prose', () => {

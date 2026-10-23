@@ -45,6 +45,14 @@ describe('durable Home configuration', () => {
     expect(envelope).not.toHaveProperty('savedViews');
     expect(envelope).not.toHaveProperty('activeSavedViewId');
   });
+  it('retains the PR-ready filter and collapsed category across reload', () => {
+    const config = normalizeHomeConfiguration({
+      filter: 'pr-ready',
+      expandedGroups: { 'pr-ready': false },
+    });
+    expect(config.filter).toBe('pr-ready');
+    expect(readHomePersistence(persistedHomeState(config)).configuration).toEqual(config);
+  });
   it('migrates scoped legacy settings and validates every field', () => {
     const migrated = readHomePersistence({
       version: 1,

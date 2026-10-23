@@ -141,3 +141,7 @@ export const selectRunningAgentsForArchive = store.createSelector((state) => {
     };
   });
 });
+
+export const selectAttentionDismissalResult = store.createSelector(
+  (state) => state.workspaceOperations.attentionDismissalResult,
+);
