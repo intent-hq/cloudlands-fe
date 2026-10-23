@@ -15,10 +15,12 @@ import {
   initialProfilesState,
   profileHandlers,
   stageProfileEnv,
+  type DefaultMutationResult,
   type ProfileMutationResult,
 } from './provider-profiles-state';
 import type {
   EnvEntryWrite,
+  ProviderDefaultConfig,
   ProviderProfile,
   ProviderProfileFailure,
 } from '$shared/provider-profiles';
@@ -389,7 +391,9 @@ providerSettingsReducer.with(fastModeWriteSettled, (state, { payload: [providerI
 /** Read (or re-read) the profile list; ignored when the catalog advertises no profile support. */
 export const providerProfilesRequested = createAction('providerProfiles/requested');
 export const providerProfilesLoaded =
-  createAction<[profiles: ProviderProfile[], revision: number]>('providerProfiles/loaded');
+  createAction<[profiles: ProviderProfile[], revision: number, defaults?: ProviderDefaultConfig[]]>(
+    'providerProfiles/loaded',
+  );
 export const providerProfilesLoadFailed = createAction('providerProfiles/loadFailed');
 /** A `providers:profiles-changed` event (§5.54) — payload carries no env keys or values. */
 export const providerProfilesChanged = createAction<[revision: number]>('providerProfiles/changed');
@@ -426,6 +430,23 @@ export const providerProfileUpdateRequested = createAction(
     ...(input.backup !== undefined ? { backup: input.backup } : {}),
   }),
 );
+/**
+ * Save the Default configuration's name and/or env (`providers.profiles.updateDefault`).
+ * A blank name restores "Default"; omitted fields keep the saved value.
+ */
+export const providerDefaultUpdateRequested = createAction(
+  'providerProfiles/defaultUpdateRequested',
+  (input: { requestId: string; baseProviderId: string; name?: string; env?: EnvEntryWrite[] }) => ({
+    requestId: input.requestId,
+    baseProviderId: input.baseProviderId,
+    name: input.name,
+    envRef: stageProfileEnv(input.env),
+  }),
+);
+export const providerDefaultUpdateSucceeded = createAction<
+  [requestId: string, result: DefaultMutationResult]
+>('providerProfiles/defaultUpdateSucceeded');
+
 export const providerProfileDeleteRequested = createAction<
   [payload: { requestId: string; profileId: string }]
 >('providerProfiles/deleteRequested');
@@ -492,6 +513,12 @@ providerSettingsReducer.with(providerProfileCreateRequested, (state, { payload }
 );
 providerSettingsReducer.with(providerProfileUpdateRequested, (state, { payload }) =>
   withProfiles(state, profileHandlers.update(state.profiles, [payload])),
+);
+providerSettingsReducer.with(providerDefaultUpdateRequested, (state, { payload }) =>
+  withProfiles(state, profileHandlers.updateDefault(state.profiles, [payload])),
+);
+providerSettingsReducer.with(providerDefaultUpdateSucceeded, (state, { payload }) =>
+  withProfiles(state, profileHandlers.defaultSucceeded(state.profiles, payload)),
 );
 providerSettingsReducer.with(providerProfileDeleteRequested, (state, { payload }) =>
   withProfiles(state, profileHandlers.delete(state.profiles, payload)),
