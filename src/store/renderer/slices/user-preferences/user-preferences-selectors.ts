@@ -63,10 +63,6 @@ export const selectChatAuroraEnabled = store.createSelector((state) => {
   return state.userPreferences?.chatAuroraEnabled ?? true;
 });
 
-export const selectCollapseToolRuns = store.createSelector((state) => {
-  return state.userPreferences?.collapseToolRuns ?? false;
-});
-
 export const selectShellTransparencyEnabled = store.createSelector((state) => {
   return state.userPreferences?.shellTransparencyEnabled ?? true;
 });

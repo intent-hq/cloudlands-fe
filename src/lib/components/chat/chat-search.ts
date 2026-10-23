@@ -20,8 +20,6 @@ import { groupMessageBlocks } from './operational-run-collapse';
 import { prepareMessageBlocks, renderedBlockText } from './prepare-message-blocks';
 
 export interface ChatSearchOptions {
-  /** Mirror the renderer's collapsed tool runs so block paths match the DOM. */
-  collapseToolRuns?: boolean;
   /** Owning workspace, so video normalization (and its dedupe) matches the renderer. */
   workspaceId?: string;
 }
@@ -71,7 +69,6 @@ function buildMessageSearchBlocks(
       isStreaming,
     }),
     isStreaming,
-    !!options.collapseToolRuns,
   );
   const toolResultClassification = classifyToolResults(grouped);
   const output: ChatSearchBlock[] = [];

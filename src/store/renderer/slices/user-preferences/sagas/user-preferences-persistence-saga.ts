@@ -19,7 +19,6 @@ import {
   selectActivityLogPresets,
   selectAgentFontStyle,
   selectChatAuroraEnabled,
-  selectCollapseToolRuns,
   selectCodeFontFamily,
   selectGroupByRepo,
   selectGithubLinkDefaultAction,
@@ -48,7 +47,6 @@ import {
   saveActivityLogPreset,
   setAgentFontStyle,
   setChatAuroraEnabled,
-  setCollapseToolRuns,
   setCodeFontFamily,
   setGroupByRepo,
   setGithubLinkDefaultAction,
@@ -70,7 +68,6 @@ import {
   toggleGroupByRepo,
   toggleHasCompletedProviderSetup,
   toggleChatAurora,
-  toggleCollapseToolRuns,
   toggleLabsSettingsVisibility,
   toggleLabsMultiplayer,
   toggleLabsGitLab,
@@ -91,7 +88,6 @@ const GROUP_BY_REPO_STORAGE_KEY = 'workspace-list:groupByRepo';
 const COMPLETED_PROVIDER_SETUP_STORAGE_KEY = 'workspace-list:completedProviderSetup';
 const SHOW_REASONING_BLOCKS_STORAGE_KEY = 'chat:showReasoningBlocks';
 const CHAT_AURORA_STORAGE_KEY = 'chat:auroraEnabled';
-const COLLAPSE_TOOL_RUNS_STORAGE_KEY = 'chat:collapseToolRuns';
 const SHELL_TRANSPARENCY_STORAGE_KEY = 'appearance:shellTransparencyEnabled';
 const REDUCE_MOTION_ON_BATTERY_STORAGE_KEY = 'appearance:reduceMotionOnBattery';
 const LABS_SETTINGS_VISIBLE_STORAGE_KEY = 'labs:settingsVisible';
@@ -192,11 +188,6 @@ export function* hydrateUserPreferencesWorker() {
   const chatAuroraEnabled = yield* getLocalStorageJSON<boolean>(CHAT_AURORA_STORAGE_KEY);
   if (typeof chatAuroraEnabled === 'boolean') {
     yield* put(setChatAuroraEnabled(chatAuroraEnabled));
-  }
-
-  const collapseToolRuns = yield* getLocalStorageJSON<boolean>(COLLAPSE_TOOL_RUNS_STORAGE_KEY);
-  if (typeof collapseToolRuns === 'boolean') {
-    yield* put(setCollapseToolRuns(collapseToolRuns));
   }
 
   const shellTransparencyEnabled = yield* getLocalStorageJSON<boolean>(
@@ -332,13 +323,6 @@ function* persistChatAuroraWorker() {
   yield* setLocalStorageJSON(CHAT_AURORA_STORAGE_KEY, yield* selectChatAuroraEnabled.effect());
 }
 
-function* persistCollapseToolRunsWorker() {
-  yield* setLocalStorageJSON(
-    COLLAPSE_TOOL_RUNS_STORAGE_KEY,
-    yield* selectCollapseToolRuns.effect(),
-  );
-}
-
 function* persistShellTransparencyWorker() {
   yield* setLocalStorageJSON(
     SHELL_TRANSPARENCY_STORAGE_KEY,
@@ -466,7 +450,6 @@ function* watchUserPreferenceWrites() {
     persistShowReasoningBlocksWorker,
   );
   yield* takeEvery([setChatAuroraEnabled, toggleChatAurora], persistChatAuroraWorker);
-  yield* takeEvery([setCollapseToolRuns, toggleCollapseToolRuns], persistCollapseToolRunsWorker);
   yield* takeEvery(
     [setShellTransparencyEnabled, toggleShellTransparency],
     persistShellTransparencyWorker,

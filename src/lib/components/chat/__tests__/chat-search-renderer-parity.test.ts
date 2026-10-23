@@ -102,35 +102,25 @@ const renderers = {
     }),
 };
 
-const cases = Object.keys(renderers).flatMap((renderer) =>
-  [false, true].map((collapseToolRuns) => ({
-    renderer: renderer as keyof typeof renderers,
-    collapseToolRuns,
-  })),
-);
+const cases = Object.keys(renderers).map((renderer) => ({
+  renderer: renderer as keyof typeof renderers,
+}));
 
 describe('chat search and renderer block path parity', () => {
-  it.each(cases)(
-    'every match path addresses its text in $renderer (collapseToolRuns: $collapseToolRuns)',
-    async ({ renderer, collapseToolRuns }) => {
-      storeState.current = {
-        theme: { name: 'light' },
-        userPreferences: { collapseToolRuns },
-      };
-      const view = await renderers[renderer]();
-      const matches = findChatSearchMatches([message], 'needle', new Map(), null, {
-        collapseToolRuns,
-        workspaceId: WORKSPACE_ID,
-      });
+  it.each(cases)('every match path addresses its text in $renderer', async ({ renderer }) => {
+    storeState.current = { theme: { name: 'light' } };
+    const view = await renderers[renderer]();
+    const matches = findChatSearchMatches([message], 'needle', new Map(), null, {
+      workspaceId: WORKSPACE_ID,
+    });
 
-      expect(matches).toHaveLength(5);
-      const located = matches.map((match) => {
-        const element = view.container.querySelector(
-          `[data-chat-search-block-path="${match.blockPath}"]`,
-        );
-        return element?.textContent?.match(/(\w+) needle/)?.[1] ?? null;
-      });
-      expect(located).toEqual(['alpha', 'bravo', 'charlie', 'delta', 'echo']);
-    },
-  );
+    expect(matches).toHaveLength(5);
+    const located = matches.map((match) => {
+      const element = view.container.querySelector(
+        `[data-chat-search-block-path="${match.blockPath}"]`,
+      );
+      return element?.textContent?.match(/(\w+) needle/)?.[1] ?? null;
+    });
+    expect(located).toEqual(['alpha', 'bravo', 'charlie', 'delta', 'echo']);
+  });
 });

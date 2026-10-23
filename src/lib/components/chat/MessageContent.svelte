@@ -16,7 +16,6 @@
   import { isHydrationPending, mergeHydratedContent } from './block-hydration';
   import { messageBlockHydrationRequested } from '$store/renderer/slices/chat-state/chat-state-slice';
   import { selectHydratedBlocks } from '$store/renderer/slices/chat-state/chat-state-selectors';
-  import { selectCollapseToolRuns } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { groupMessageBlocks } from './operational-run-collapse';
   import { prepareMessageBlocks, renderedBlockText } from './prepare-message-blocks';
   import { getProposalFromBlock } from '$shared/types/proposal-resource';
@@ -149,8 +148,7 @@
   );
 
   // Group content blocks by <group:Name> tags at the ContentBlock level.
-  const collapseToolRuns$ = selectCollapseToolRuns();
-  const groupedBlocks = $derived(groupMessageBlocks(blocks, isStreaming, $collapseToolRuns$));
+  const groupedBlocks = $derived(groupMessageBlocks(blocks, isStreaming));
 
   function isVisibleGroupChild(block: RenderContentBlock): boolean {
     return (

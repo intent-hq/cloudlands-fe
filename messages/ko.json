@@ -4646,8 +4646,6 @@
   "settings_aiBehavior_usageHint": "채팅을 시작할 때 이 전문가를 선택하면 해당 모델과 시스템 프롬프트가 사용됩니다. 둘 다 아래에서 사용자 지정할 수 있습니다.",
   "settings_appearance_chatAurora_description": "에이전트가 응답하는 동안 작성란 뒤에 표시되는 애니메이션 광채입니다.",
   "settings_appearance_chatAurora_label": "채팅 오로라",
-  "settings_appearance_collapseToolRuns_description": "채팅에서 연속된 도구 호출과 생각 단계를 펼칠 수 있는 한 줄로 묶습니다.",
-  "settings_appearance_collapseToolRuns_label": "도구 활동 접기",
   "settings_appearance_reduceMotionOnBattery_description": "기기가 배터리로 작동하는 동안 배경 애니메이션을 일시 중지합니다.",
   "settings_appearance_reduceMotionOnBattery_label": "배터리 사용 시 동작 줄이기",
   "settings_appearance_translucentWindow_description": "앱 배경을 통해 바탕 화면이 비치도록 합니다.",

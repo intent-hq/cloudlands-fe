@@ -4646,8 +4646,6 @@
   "settings_aiBehavior_usageHint": "Sélectionnez ce spécialiste au démarrage d'une discussion pour utiliser son modèle et son prompt système. Vous pouvez personnaliser les deux ci-dessous.",
   "settings_appearance_chatAurora_description": "Lueur animée derrière la zone de saisie pendant qu’un agent répond.",
   "settings_appearance_chatAurora_label": "Aurore du chat",
-  "settings_appearance_collapseToolRuns_description": "Regroupe les appels d’outils et étapes de réflexion consécutifs du chat en une seule ligne dépliable.",
-  "settings_appearance_collapseToolRuns_label": "Réduire l’activité des outils",
   "settings_appearance_reduceMotionOnBattery_description": "Met en pause les animations d’ambiance lorsque l’appareil fonctionne sur batterie.",
   "settings_appearance_reduceMotionOnBattery_label": "Réduire les animations sur batterie",
   "settings_appearance_translucentWindow_description": "Laisse le bureau apparaître à travers l’arrière-plan de l’application.",

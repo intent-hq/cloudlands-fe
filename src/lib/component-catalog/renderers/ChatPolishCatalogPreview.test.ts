@@ -89,9 +89,17 @@ describe('ChatPolishCatalogPreview', async () => {
   it('keeps long labels accessible while their visible row can truncate', async () => {
     const view = render(ChatPolishCatalogPreview, { props: { fixture } });
     await settleOperationalFrames();
-    const longLabel = view.container.querySelector(
-      '[data-tool-use-id="fixture-long-payload"] [data-testid="tool-call-disclosure"]',
-    );
+    const selector =
+      '[data-tool-use-id="fixture-long-payload"] [data-testid="tool-call-disclosure"]';
+    // The long-payload tool sits in a run of tool calls, which always collapses
+    // into one summary row; open collapsed rows until it renders.
+    for (const disclosure of view.container.querySelectorAll(
+      '[data-testid="response-group-disclosure"][aria-expanded="false"]',
+    )) {
+      if (view.container.querySelector(selector)) break;
+      await fireEvent.click(disclosure);
+    }
+    const longLabel = view.container.querySelector(selector);
     expect(longLabel?.getAttribute('aria-label')).toContain('ThisIsAnIntentionallyLong');
     expect(longLabel?.getAttribute('title')).toBeTruthy();
   });

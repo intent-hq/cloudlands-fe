@@ -378,7 +378,6 @@
   import { selectPermissionRequests } from '$store/renderer/slices/permission/permission-selectors';
   import {
     selectChatAuroraEnabled,
-    selectCollapseToolRuns,
     selectIsAgentMonospace,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
@@ -461,7 +460,6 @@
   const logger = createLogger('ChatPanel');
 
   const chatAuroraEnabled$ = selectChatAuroraEnabled();
-  const collapseToolRuns$ = selectCollapseToolRuns();
   const isAgentMonospace = selectIsAgentMonospace();
 
   // Constants
@@ -1495,7 +1493,6 @@
   // LazyTurn virtualization while searching.
   // Everything search needs to prepare blocks exactly like the rendered rows.
   const chatSearchOptions: ChatSearchOptions = $derived({
-    collapseToolRuns: $collapseToolRuns$,
     workspaceId: workspace?.id ? String(workspace.id) : undefined,
   });
   const allSearchMatches = $derived.by(() => {

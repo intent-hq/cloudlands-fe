@@ -4646,8 +4646,6 @@
   "settings_aiBehavior_usageHint": "Select this specialist when starting a chat to use its model and system prompt. You can customize both below.",
   "settings_appearance_chatAurora_description": "Animated glow behind the composer while an agent is responding.",
   "settings_appearance_chatAurora_label": "Chat aurora",
-  "settings_appearance_collapseToolRuns_description": "Group back-to-back tool calls and thinking steps in chat into one expandable row.",
-  "settings_appearance_collapseToolRuns_label": "Collapse tool activity",
   "settings_appearance_reduceMotionOnBattery_description": "Pause ambient animations while the machine runs on battery power.",
   "settings_appearance_reduceMotionOnBattery_label": "Reduce motion on battery",
   "settings_appearance_translucentWindow_description": "Let the desktop show through the app background.",

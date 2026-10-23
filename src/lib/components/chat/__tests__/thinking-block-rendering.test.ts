@@ -7,7 +7,7 @@
  * sites must read it, not only the legacy `content` field the FE's own
  * <think>-tag parser produces.
  */
-import { cleanup, screen } from '@testing-library/svelte';
+import { cleanup, screen, within } from '@testing-library/svelte';
 import { fireEvent, render } from './operational-renderer-test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentMessage, ContentBlock } from '$shared/types';
@@ -75,8 +75,9 @@ describe('thinking blocks — StreamingMessageContent', () => {
     for (const layout of ['nested', 'standalone'] as const) {
       it(`keeps explicit titles and paired tools once in order in ${rendererName} ${layout}`, async () => {
         const view = await renderer(titleToolHistory(layout, true), false);
-        if (layout === 'nested')
-          await fireEvent.click(screen.getByTestId('response-group-disclosure'));
+        // Nested reasoning sits in its authored group; standalone reasoning and
+        // tools always collapse into one run row. Either way, open the one row.
+        await fireEvent.click(screen.getByTestId('response-group-disclosure'));
         const thinkingBlocks = [
           ...view.container.querySelectorAll('[data-message-content-block="thinking"]'),
         ];
@@ -228,9 +229,15 @@ describe('thinking blocks — StreamingMessageContent', () => {
     ['MessageContent', renderStatic],
     ['StreamingMessageContent', (content: ContentBlock[]) => renderStreaming(content, false)],
   ])(
-    'renders persisted standalone headingless reasoning as collapsed disclosures in %s',
+    'renders persisted standalone headingless reasoning as collapsed disclosures inside the run in %s',
     async (_, renderPersistedMessage) => {
       await renderPersistedMessage(persistedStandaloneMessage.contentBlocks ?? []);
+
+      // The thinking/tool/thinking run always collapses into one summary row.
+      const run = screen.getByTestId('response-group-disclosure');
+      expect(run.getAttribute('aria-expanded')).toBe('false');
+      expect(screen.queryAllByRole('button', { name: 'Reasoning' })).toHaveLength(0);
+      await fireEvent.click(run);
 
       const disclosures = screen.getAllByRole('button', { name: 'Reasoning' });
       expect(disclosures).toHaveLength(2);
@@ -277,7 +284,7 @@ describe('thinking blocks — StreamingMessageContent', () => {
           matchIndexInMessage: 0,
           occurrenceInBlock: 0,
           turnKey: 'assistant-dark-mode-sanitized',
-          blockPath: 'b:4',
+          blockPath: 'b:1',
           disclosurePath: [],
         },
       ]);
@@ -628,14 +635,18 @@ describe('thinking blocks — StreamingMessageContent', () => {
       { type: 'text', id: 'msg_1:3', text: '<group:Prepping>' },
     ] as ContentBlock[];
     const view = await renderStreaming(opening, true);
+    // The leading tool call and thinking step collapse into their own run row;
+    // these assertions target the authored Prepping group that follows it.
+    const preppingGroup = () => screen.getAllByTestId('response-group').at(-1)!;
+    const inPrepping = (testId: string) => within(preppingGroup()).getByTestId(testId);
     const visibleChildTypes = () =>
       [...document.querySelectorAll('[data-response-group-child]')].map((child) =>
         child.getAttribute('data-message-content-block'),
       );
 
-    let groupDisclosure = screen.getByTestId('response-group-disclosure');
+    let groupDisclosure = inPrepping('response-group-disclosure');
     expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
-    expect(screen.getByTestId('response-group-name').textContent).toBe('Thinking...');
+    expect(inPrepping('response-group-name').textContent).toBe('Thinking...');
     expect(document.body.textContent).not.toContain('Prepping');
     expect(visibleChildTypes()).toEqual([]);
 
@@ -670,7 +681,7 @@ describe('thinking blocks — StreamingMessageContent', () => {
     await view.rerender({ content: groupContent, isStreaming: true });
 
     expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
-    expect(screen.getByTestId('response-group-name').textContent).toBe('Reasoning');
+    expect(inPrepping('response-group-name').textContent).toBe('Reasoning');
     expect(visibleChildTypes()).toEqual([
       'text',
       'thinking',
@@ -691,7 +702,7 @@ describe('thinking blocks — StreamingMessageContent', () => {
       'thinking',
       'tool_use',
     ]);
-    const responseGroup = screen.getByTestId('response-group');
+    const responseGroup = preppingGroup();
     expect(responseGroup.querySelectorAll('[data-testid="reasoning-disclosure"]')).toHaveLength(0);
     expect(responseGroup.textContent?.match(/Reasoning/g)).toHaveLength(1);
     expect(responseGroup.textContent?.match(/Then I will read the current spec/g)).toHaveLength(1);
@@ -750,9 +761,9 @@ describe('thinking blocks — StreamingMessageContent', () => {
     ] as ContentBlock[];
     await view.rerender({ content: completedContent, isStreaming: false });
 
-    groupDisclosure = screen.getByTestId('response-group-disclosure');
+    groupDisclosure = inPrepping('response-group-disclosure');
     expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
-    expect(screen.getByTestId('response-group-name').textContent).toBe('Reasoning');
+    expect(inPrepping('response-group-name').textContent).toBe('Reasoning');
     expect(document.body.textContent).toContain('Workspace inspection complete.');
     expect(document.body.textContent).not.toContain('Prepping');
     expect(document.body.textContent).not.toContain('Then I will read the current spec');

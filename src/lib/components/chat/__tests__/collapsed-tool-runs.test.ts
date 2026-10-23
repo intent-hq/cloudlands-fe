@@ -1,9 +1,10 @@
 /**
  * @vitest-environment jsdom
  *
- * With the "Collapse tool activity" preference on, both chat renderers show a
- * run of consecutive tool calls and thinking steps as one expandable summary
- * row, keep prose between runs visible, and leave single rows untouched.
+ * Both chat renderers always show a run of consecutive tool calls and thinking
+ * steps as one expandable summary row, keep prose between runs visible, and
+ * leave single rows untouched. There is no preference to turn this off, so the
+ * store state below deliberately carries no user preferences at all.
  */
 import { cleanup, screen } from '@testing-library/svelte';
 import { fireEvent, render } from './operational-renderer-test';
@@ -38,13 +39,6 @@ afterEach(() => {
 
 warmImport(() => import('../StreamingMessageContent.svelte'));
 warmImport(() => import('../MessageContent.svelte'));
-
-function setCollapse(enabled: boolean) {
-  storeState.current = {
-    theme: { name: 'light' },
-    userPreferences: { collapseToolRuns: enabled },
-  };
-}
 
 function tool(id: string, path: string): ContentBlock[] {
   return [
@@ -83,8 +77,7 @@ const proseOrder = (container: HTMLElement) =>
 
 describe('collapsed tool runs', () => {
   for (const [name, renderMessage] of Object.entries(renderers)) {
-    it(`collapses a multi-step run into one expandable row in ${name}`, async () => {
-      setCollapse(true);
+    it(`collapses a multi-step run into one expandable row by default in ${name}`, async () => {
       const view = await renderMessage(transcript);
 
       const groups = screen.getAllByTestId('response-group');
@@ -115,16 +108,6 @@ describe('collapsed tool runs', () => {
 
       await fireEvent.click(disclosure);
       expect(disclosure.getAttribute('aria-expanded')).toBe('false');
-    });
-
-    it(`renders every row as before when the preference is off in ${name}`, async () => {
-      setCollapse(false);
-      const view = await renderMessage(transcript);
-
-      expect(screen.queryAllByTestId('response-group')).toHaveLength(0);
-      expect(
-        [...toolRows(view.container)].map((row) => row.getAttribute('data-tool-use-id')),
-      ).toEqual(['read-a', 'read-b', 'read-c']);
     });
   }
 });

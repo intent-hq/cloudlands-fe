@@ -75,14 +75,13 @@ export function collapseOperationalRuns(
 
 /**
  * The message block structure every chat surface renders and indexes: authored
- * groups, normalized reasoning, then (when enabled) collapsed tool runs. Search
- * and the renderers share it so block paths always agree.
+ * groups, normalized reasoning, then collapsed tool runs. Search and the
+ * renderers share it so block paths always agree.
  */
 export function groupMessageBlocks(
   blocks: ContentBlock[],
   isStreaming: boolean,
-  collapseToolRuns: boolean,
 ): RenderContentBlock[] {
   const normalized = normalizeResponseGroups(groupContentBlocks(blocks, isStreaming), isStreaming);
-  return collapseToolRuns ? collapseOperationalRuns(normalized, { isStreaming }) : normalized;
+  return collapseOperationalRuns(normalized, { isStreaming });
 }

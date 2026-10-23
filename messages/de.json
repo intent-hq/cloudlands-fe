@@ -4646,8 +4646,6 @@
   "settings_aiBehavior_usageHint": "Wählen Sie diesen Spezialisten beim Starten eines Chats aus, um sein Modell und seinen System-Prompt zu verwenden. Beides können Sie unten anpassen.",
   "settings_appearance_chatAurora_description": "Animiertes Leuchten hinter dem Eingabefeld, während ein Agent antwortet.",
   "settings_appearance_chatAurora_label": "Chat-Aurora",
-  "settings_appearance_collapseToolRuns_description": "Fasst aufeinanderfolgende Toolaufrufe und Denkschritte im Chat in einer aufklappbaren Zeile zusammen.",
-  "settings_appearance_collapseToolRuns_label": "Tool-Aktivität zusammenfassen",
   "settings_appearance_reduceMotionOnBattery_description": "Pausiert Hintergrundanimationen, während das Gerät im Akkubetrieb läuft.",
   "settings_appearance_reduceMotionOnBattery_label": "Bewegung im Akkubetrieb reduzieren",
   "settings_appearance_translucentWindow_description": "Lässt den Desktop durch den App-Hintergrund durchscheinen.",

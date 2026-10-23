@@ -229,19 +229,13 @@ describe('chat search with collapsed tool runs', () => {
   ] as AgentMessage['contentBlocks']);
 
   it('indexes prose at the post-collapse block path the renderer uses', () => {
-    const [plain] = findChatSearchMatches([message], 'prose needle', new Map());
-    const [collapsed] = findChatSearchMatches([message], 'prose needle', new Map(), null, {
-      collapseToolRuns: true,
-    });
-    expect(plain.blockPath).toBe('b:3');
+    const [collapsed] = findChatSearchMatches([message], 'prose needle', new Map());
     expect(collapsed.blockPath).toBe('b:2');
     expect(collapsed.disclosurePath).toEqual([]);
   });
 
   it('keeps a standalone tool result outside the collapsed run, like the renderer', () => {
-    const [match] = findChatSearchMatches([message], 'orphan needle', new Map(), null, {
-      collapseToolRuns: true,
-    });
+    const [match] = findChatSearchMatches([message], 'orphan needle', new Map());
     expect(match.blockPath).toBe('b:1');
     expect(match.disclosurePath).toEqual([]);
   });
@@ -259,9 +253,7 @@ describe('chat search with collapsed tool runs', () => {
       { type: 'tool_use', id: 'tool-b', name: 'view', input: {} },
       { type: 'text', text: 'prose needle' },
     ] as AgentMessage['contentBlocks']);
-    const [match] = findChatSearchMatches([withQuestion], 'prose needle', new Map(), null, {
-      collapseToolRuns: true,
-    });
+    const [match] = findChatSearchMatches([withQuestion], 'prose needle', new Map());
     expect(match.blockPath).toBe('b:1');
   });
 });
@@ -279,7 +271,7 @@ describe('chat search block paths follow the shared renderer preparation', () =>
       { type: 'text', text: 'prose needle' },
     ] as AgentMessage['contentBlocks']);
     const [match] = findChatSearchMatches([message], 'prose needle', new Map());
-    expect(match.blockPath).toBe('b:2');
+    expect(match.blockPath).toBe('b:1');
   });
 
   it('counts a repeated video once, like the renderer', () => {

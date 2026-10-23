@@ -4646,8 +4646,6 @@
   "settings_aiBehavior_usageHint": "开始聊天时选择此专家即可使用其模型和系统提示词。你可以在下方自定义两者。",
   "settings_appearance_chatAurora_description": "智能体响应时，在输入框后方显示动态光效。",
   "settings_appearance_chatAurora_label": "聊天极光",
-  "settings_appearance_collapseToolRuns_description": "将聊天中连续的工具调用和思考步骤合并为一行，可展开查看。",
-  "settings_appearance_collapseToolRuns_label": "折叠工具活动",
   "settings_appearance_reduceMotionOnBattery_description": "设备使用电池供电时暂停环境动画。",
   "settings_appearance_reduceMotionOnBattery_label": "使用电池时减少动效",
   "settings_appearance_translucentWindow_description": "让桌面透过应用背景显示出来。",
