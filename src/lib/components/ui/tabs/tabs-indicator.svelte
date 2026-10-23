@@ -55,22 +55,13 @@
     )}
     style="border-radius: var(--radius-medium)"
     use:springRect={selectedRect}
-  >
-    {#if variant === 'icon'}
-      <span class="absolute -top-2 left-1/2 h-1 w-2 -translate-x-1/2 rounded-b-full bg-foreground"
-      ></span>
-    {/if}
-  </div>
+  ></div>
 {/if}
 
 <style>
   @media (forced-colors: active) {
     [data-tabs-indicator][data-variant='icon'] {
       outline: 1px solid CanvasText;
-    }
-
-    [data-tabs-indicator][data-variant='icon'] > span {
-      background-color: CanvasText;
     }
   }
 </style>
