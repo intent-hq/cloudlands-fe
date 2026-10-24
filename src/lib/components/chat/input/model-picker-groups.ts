@@ -2,6 +2,7 @@ import type { DropdownGroup, DropdownOption } from '$lib/components/ui/dropdown'
 import {
   selectAllCatalogProviderIds,
   selectNormalizedProviderId,
+  selectProviderCatalogDefaultNames,
   selectProviderDisplayName,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { store as appStore } from '$store/renderer/store';
@@ -104,12 +105,14 @@ export function buildGroupedModelOptions({
     selectNormalizedProviderId.select(state, availableModelsProviderId, workspaceId) ===
       normalizedEffectiveProviderId;
 
+  const defaultNames = selectProviderCatalogDefaultNames.select(state, workspaceId);
   const groupLabel = (pid: string) =>
     formatProviderRefLabel(
       pid,
       selectProviderDisplayName.select(state, providerRefBaseId(pid), workspaceId),
       profiles,
       providerRefBaseId(pid),
+      defaultNames,
     );
 
   for (const pid of expandProviderIdsWithProfiles(

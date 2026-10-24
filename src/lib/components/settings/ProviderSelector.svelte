@@ -44,7 +44,11 @@
     selectProviderCatalogEntries,
     selectProviderDisplayName,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
-  import { selectIsProviderEnabled } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import {
+    selectIsProviderEnabled,
+    selectProviderDefaultConfigs,
+    selectProviderProfilesLoadStatus,
+  } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
   import { groupProviderEntries, orderProviderEntries } from '$lib/utils/provider-list-order';
   import {
@@ -54,6 +58,7 @@
     faDownload,
     faFolder,
     faPlus,
+    faSliders,
     faStar,
     faTerminal,
     faTriangleExclamation,
@@ -237,6 +242,20 @@
   function openAddProfile(providerId: string, providerName: string) {
     addProfileTarget = { providerId, providerName };
     addProfileOpen = true;
+  }
+
+  // The Default configuration's name and env (§5.54), from the same menu.
+  // The dialog seeds its form only once the saved list has loaded, so a save
+  // can never replace overrides it has not seen.
+  const defaultConfigs$ = selectProviderDefaultConfigs();
+  const profilesLoadStatus$ = selectProviderProfilesLoadStatus();
+  let defaultTarget = $state<{ providerId: string; providerName: string } | null>(null);
+  let defaultOpen = $state(false);
+
+  function openDefaultEnv(providerId: string, providerName: string) {
+    defaultTarget = { providerId, providerName };
+    defaultOpen = true;
+    if ($profilesLoadStatus$ !== 'success') appStore.dispatch(providerProfilesRequested());
   }
 
   // Saved profiles are read once per visit, and only when some provider
@@ -509,6 +528,7 @@
                         <div
                           class={hasWarning ||
                           needsLogin ||
+                          canAddProfile ||
                           ($fastModeProviders$.includes(provider.id) && provider.id !== 'codex')
                             ? 'w-64'
                             : 'w-44'}
@@ -630,6 +650,18 @@
                                 <Fa icon={faPlus} class="size-3.5 text-muted-foreground" />
                               </span>
                               {m.settings_providerProfiles_add_label()}
+                            </Menu.Item>
+                            <Menu.Item
+                              class="cursor-pointer text-foreground"
+                              data-testid="provider-default-env-menu-item"
+                              onSelect={() => {
+                                openDefaultEnv(provider.id, provider.name);
+                              }}
+                            >
+                              <span class="flex size-4 shrink-0 items-center justify-center">
+                                <Fa icon={faSliders} class="size-3.5 text-muted-foreground" />
+                              </span>
+                              {m.settings_providerDefault_menu_label()}
                             </Menu.Item>
                           {/if}
 
@@ -766,6 +798,17 @@
     bind:open={addProfileOpen}
     providerId={addProfileTarget.providerId}
     providerName={addProfileTarget.providerName}
+  />
+{/if}
+
+{#if defaultTarget}
+  <ProviderProfileDialog
+    bind:open={defaultOpen}
+    providerId={defaultTarget.providerId}
+    providerName={defaultTarget.providerName}
+    isDefault
+    defaultConfig={$defaultConfigs$[defaultTarget.providerId]}
+    defaultsLoad={$profilesLoadStatus$}
   />
 {/if}
 

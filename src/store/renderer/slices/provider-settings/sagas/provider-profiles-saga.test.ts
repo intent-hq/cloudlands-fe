@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(),
   remove: vi.fn(),
   reorder: vi.fn(),
+  updateDefault: vi.fn(),
   catalog: vi.fn(),
 }));
 vi.mock('$lib/client', () => ({
@@ -18,6 +19,7 @@ vi.mock('$lib/client', () => ({
       updateProfile: mocks.update,
       deleteProfile: mocks.remove,
       reorderProfiles: mocks.reorder,
+      updateDefault: mocks.updateDefault,
       catalog: mocks.catalog,
     },
   },
@@ -28,6 +30,7 @@ vi.mock('$features/providers/provider-auth-status.client', () => ({
 
 import {
   initialState,
+  providerDefaultUpdateRequested,
   providerProfileCheckRequested,
   providerProfileCreateRequested,
   providerProfileDeleteRequested,
@@ -45,6 +48,7 @@ import {
   providerCatalogReducer,
 } from '../../provider-catalog/provider-catalog-slice';
 import {
+  selectProviderDefaultConfig,
   selectProviderProfileActivationMap,
   selectProviderProfileMutations,
   selectProviderProfilesForBase,
@@ -594,5 +598,125 @@ describe('picker sign-in statuses (§5.54)', () => {
     pending.resolve(false);
     await settle();
     expect(selectProfileSignInStatuses.select(h.state())).toEqual({});
+  });
+});
+
+describe('Default configuration overrides (§5.54)', () => {
+  let task: Task | undefined;
+  beforeEach(() => vi.clearAllMocks());
+  afterEach(() => task?.cancel());
+
+  const saved = (name: string, fingerprint: string) => ({
+    baseProviderId: 'codex',
+    providerRef: 'codex',
+    name,
+    env: [{ key: 'OPENAI_API_KEY', kind: 'set' as const, value: '********' }],
+    settingsFingerprint: fingerprint,
+    activation: { runningProcesses: 0 },
+  });
+
+  it('loads the Default rows with the profile list', async () => {
+    mocks.list.mockResolvedValue({
+      profiles: [],
+      defaults: [saved('Personal', 'f1')],
+      revision: 1,
+    });
+    const h = setup();
+    task = h.task;
+    h.dispatch(providerProfilesRequested());
+    await settle();
+    expect(selectProviderDefaultConfig.select(h.state(), 'codex')?.name).toBe('Personal');
+    expect(selectProviderDefaultConfig.select(h.state(), 'claude-code')).toBeUndefined();
+  });
+
+  it('saves name and env without putting values in actions or state, then re-checks the provider', async () => {
+    mocks.list.mockResolvedValue({ profiles: [], defaults: [saved('Default', '')], revision: 1 });
+    const h = setup();
+    task = h.task;
+    h.dispatch(providerProfilesRequested());
+    await settle();
+    mocks.updateDefault.mockResolvedValue({
+      defaultConfig: saved('Personal', 'f2'),
+      revision: 2,
+      activation: { envChanged: true, runningProcesses: 1 },
+    });
+    const env = [{ key: 'OPENAI_API_KEY', kind: 'set' as const, value: 'sk-default-secret' }];
+    h.dispatch(
+      providerDefaultUpdateRequested({
+        requestId: 'd1',
+        baseProviderId: 'codex',
+        name: 'Personal',
+        env,
+      }),
+    );
+    await settle();
+    expect(mocks.updateDefault).toHaveBeenCalledWith({
+      baseProviderId: 'codex',
+      name: 'Personal',
+      env,
+    });
+    expect(JSON.stringify(h.dispatched)).not.toContain('sk-default-secret');
+    expect(JSON.stringify(h.current())).not.toContain('sk-default-secret');
+    expect(selectProviderProfileMutations.select(h.state()).d1).toMatchObject({
+      status: 'success',
+      kind: 'updateDefault',
+      baseProviderId: 'codex',
+      activation: { envChanged: true, runningProcesses: 1 },
+    });
+    expect(selectProviderDefaultConfig.select(h.state(), 'codex')?.settingsFingerprint).toBe('f2');
+    expect(h.dispatched).toContainEqual(
+      expect.objectContaining({ type: 'agentAvailability/checkSingleProviderRequested' }),
+    );
+  });
+
+  it('a rename-only save sends no env and does not re-check the provider', async () => {
+    mocks.updateDefault.mockResolvedValue({
+      defaultConfig: saved('Home', 'f1'),
+      revision: 3,
+      activation: { envChanged: false, runningProcesses: 0 },
+    });
+    const h = setup();
+    task = h.task;
+    h.dispatch(
+      providerDefaultUpdateRequested({ requestId: 'd2', baseProviderId: 'codex', name: 'Home' }),
+    );
+    await settle();
+    expect(mocks.updateDefault).toHaveBeenCalledWith({ baseProviderId: 'codex', name: 'Home' });
+    expect(h.dispatched).not.toContainEqual(
+      expect.objectContaining({ type: 'agentAvailability/checkSingleProviderRequested' }),
+    );
+    expect(selectProviderDefaultConfig.select(h.state(), 'codex')?.name).toBe('Home');
+  });
+
+  it('records field errors and a failed save on an older daemon', async () => {
+    const h = setup();
+    task = h.task;
+    mocks.updateDefault.mockRejectedValueOnce({
+      rpcCode: -32602,
+      data: {
+        code: 'invalid-params',
+        fieldErrors: [{ field: 'name', code: 'name-duplicate', message: 'dup' }],
+      },
+    });
+    h.dispatch(
+      providerDefaultUpdateRequested({ requestId: 'd3', baseProviderId: 'codex', name: 'Work' }),
+    );
+    await settle();
+    expect(selectProviderProfileMutations.select(h.state()).d3).toMatchObject({
+      status: 'failure',
+      failure: { kind: 'fieldErrors' },
+    });
+    mocks.updateDefault.mockRejectedValueOnce(
+      Object.assign(new Error('Method not found'), { rpcCode: -32601 }),
+    );
+    h.dispatch(
+      providerDefaultUpdateRequested({ requestId: 'd4', baseProviderId: 'codex', name: 'x' }),
+    );
+    await settle();
+    expect(selectProviderProfileMutations.select(h.state()).d4).toMatchObject({
+      status: 'failure',
+      failure: { kind: 'other' },
+    });
+    expect(selectProviderDefaultConfig.select(h.state(), 'codex')).toBeUndefined();
   });
 });

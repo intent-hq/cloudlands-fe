@@ -61,6 +61,27 @@ describe('provider reference helpers (§5.54)', () => {
     expect(providerRefLabelParts('codex', [work])).toEqual({ kind: 'default' });
   });
 
+  it('labels a renamed Default by its catalog name once its base has profiles', () => {
+    const names = { codex: 'Personal' };
+    expect(providerRefLabelParts('codex', [work], 'codex', names)).toEqual({
+      kind: 'default',
+      name: 'Personal',
+    });
+    // Without profiles the bare provider name stands, renamed or not.
+    expect(providerRefLabelParts('codex', [], 'codex', names)).toEqual({ kind: 'plain' });
+    expect(providerRefLabelParts('claude-code', [claudeWork], 'claude-code', names)).toEqual({
+      kind: 'default',
+    });
+    expect(formatProviderRefLabel('codex', 'Codex', [work], 'codex', names)).toBe(
+      formatProviderRefLabel('codex@pwork00000001', 'Codex', [{ ...work, name: 'Personal' }]),
+    );
+    expect(formatProviderRefLabel('codex', 'Codex', [], 'codex', names)).toBe('Codex');
+    // A profile keeps its own name.
+    expect(formatProviderRefLabel(work.providerRef, 'Codex', [work], 'codex', names)).toContain(
+      'Work',
+    );
+  });
+
   it('labels a qualified reference by its current name, or as missing once removed', () => {
     expect(providerRefLabelParts('codex@pwork00000001', [work])).toEqual({
       kind: 'profile',
