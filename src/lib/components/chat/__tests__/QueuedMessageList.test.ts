@@ -1786,4 +1786,36 @@ describe('QueuedMessageList collaborator sender preamble', () => {
       screen.getAllByTestId('queued-message-text').map((node) => node.textContent?.trim()),
     ).toEqual([BODY, 'second']);
   });
+  it('shows a same-sender merged entry without any of its lines', async () => {
+    const merged = `${RAW}\n\n${PREAMBLE}\n\nsecond`;
+    const onedit = vi.fn().mockResolvedValue({ success: true });
+    renderQueue({
+      props: {
+        ownPrincipalId: MEMBER.principalId,
+        ownerPrincipalId: OWNER,
+        messages: [memberEntry({ content: merged })],
+        onedit,
+      },
+    });
+    expect(screen.getByTestId('queued-message-text').textContent?.trim()).toBe(`${BODY}\n\nsecond`);
+    await fireEvent.dblClick(screen.getByTestId('queued-message-content'));
+    await waitFor(() => expect(onedit).toHaveBeenCalledWith('q-1', merged, true));
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe(`${BODY}\n\nsecond`);
+  });
+
+  it('saves an unchanged edit with the stored content', async () => {
+    const onedit = vi.fn().mockResolvedValue({ success: true });
+    renderQueue({
+      props: {
+        ownPrincipalId: MEMBER.principalId,
+        ownerPrincipalId: OWNER,
+        messages: [memberEntry()],
+        onedit,
+      },
+    });
+    await fireEvent.dblClick(screen.getByTestId('queued-message-content'));
+    await waitFor(() => expect(onedit).toHaveBeenCalledWith('q-1', RAW, true));
+    await fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    await waitFor(() => expect(onedit).toHaveBeenLastCalledWith('q-1', RAW, false));
+  });
 });

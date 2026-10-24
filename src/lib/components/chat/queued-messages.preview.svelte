@@ -5,6 +5,7 @@
   import type { MessageAuthor, QueuedMessage } from '$shared/types';
   import type { QueuedMessageSendOutcome } from '$store/renderer/slices/chat-state/chat-state-types';
   import QueuedMessageList from './QueuedMessageList.svelte';
+  import { buildCollaboratorSenderPreamble } from '$lib/utils/collaborator-sender-attribution';
   import EventSubscriptionsCard from './EventSubscriptionsCard.svelte';
   import SimpleRichInput from './input/SimpleRichInput.svelte';
 
@@ -170,9 +171,12 @@
   };
   // The daemon's host-member sender line (PROTOCOL §5.5) for `memberSender`;
   // queued entries carry it, and the daemon re-applies it on a saved edit.
-  // i18n-ignore (byte-exact daemon host member template fixture)
-  const memberPreamble =
-    'Message from @panghy (Clement Pang), a host member (principal member; github@github.com user 526899) — not the workspace owner.';
+  const memberPreamble = buildCollaboratorSenderPreamble(
+    memberSender.login,
+    memberSender.displayName,
+    memberSender.principalId!,
+    { role: 'member', identity: memberSender.identity },
+  );
   const withMemberPreamble = (content: string) =>
     content.startsWith(`${memberPreamble}\n\n`) ? content : `${memberPreamble}\n\n${content}`;
 

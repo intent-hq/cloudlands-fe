@@ -106,4 +106,19 @@ describe('presentQueuedMessageText', () => {
     presentQueuedMessageText(queued, `${MEMBER_PREAMBLE}\n\n${BODY}`, OWNER);
     expect(JSON.stringify(queued)).toBe(snapshot);
   });
+  it('drops the repeated line inside a same-sender merged entry', () => {
+    // The daemon annotates each send before enqueueing, then merges
+    // same-principal appends as `content + "\n\n" + incoming.content`.
+    const text = `${MEMBER_PREAMBLE}\n\nfirst\n\n${MEMBER_PREAMBLE}\n\nsecond`;
+    expect(
+      presentQueuedMessageText({ author: AUTHOR, messageMetadata: metadata }, text, OWNER),
+    ).toBe('first\n\nsecond');
+  });
+
+  it('keeps an interior line when the entry does not start with it', () => {
+    const text = `first\n\n${MEMBER_PREAMBLE}\n\nsecond`;
+    expect(
+      presentQueuedMessageText({ author: AUTHOR, messageMetadata: metadata }, text, OWNER),
+    ).toBe(text);
+  });
 });

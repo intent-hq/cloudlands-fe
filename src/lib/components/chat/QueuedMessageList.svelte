@@ -839,7 +839,12 @@
     if (editingId && editContent.trim()) {
       const wasProgrammatic = editStartedProgrammatically;
       const operation = beginEditOperation(editingId, true);
-      const newContent = editContent.trim();
+      // An unchanged body saves the stored content, so the entry keeps its
+      // daemon-applied sender preamble without relying on re-annotation.
+      const newContent =
+        editContent.trim() === editPresentedContent.trim()
+          ? editOriginalContent
+          : editContent.trim();
 
       // STAB-27: Save with edited content and release hold (editing:false triggers self-drain)
       // Do this BEFORE clearing edit state so if it fails, we stay in edit mode
