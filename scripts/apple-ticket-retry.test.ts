@@ -11,7 +11,7 @@ import {
   runStaplerWithBackoff,
 } from './apple-ticket-retry.mjs';
 
-type Result = { status: number | null; output: string };
+type Result = { status: number | null; stdout: string; output: string; timedOut?: boolean };
 
 function harness(statuses: number[]) {
   const calls: string[][] = [];
@@ -20,7 +20,11 @@ function harness(statuses: number[]) {
   const run = (args: string[]): Result => {
     calls.push(args);
     const status = statuses[calls.length - 1];
-    return { status, output: `attempt ${calls.length} exit ${status}` };
+    return {
+      status,
+      stdout: `stdout ${calls.length}`,
+      output: `attempt ${calls.length} exit ${status}`,
+    };
   };
   const sleep = async (ms: number) => {
     sleeps.push(ms);
@@ -35,12 +39,12 @@ describe('runStaplerWithBackoff', () => {
     expect(RETRYABLE_STAPLER_EXIT).toBe(68);
   });
 
-  it('passes on the first try without waiting', async () => {
+  it('passes on the first try without waiting and returns the stapler stdout', async () => {
     const h = harness([0]);
     await expect(runStaplerWithBackoff('validate', '/tmp/Intent.app', h.opts)).resolves.toBe(
-      'attempt 1 exit 0',
+      'stdout 1',
     );
-    expect(h.calls).toEqual([['stapler', 'validate', '-v', '/tmp/Intent.app']]);
+    expect(h.calls).toEqual([['stapler', 'validate', '/tmp/Intent.app']]);
     expect(h.sleeps).toEqual([]);
   });
 
@@ -62,9 +66,44 @@ describe('runStaplerWithBackoff', () => {
     expect(h.sleeps).toEqual([]);
   });
 
+  it('retries a stapler call that stalls past its timeout', async () => {
+    const h = harness([]);
+    let calls = 0;
+    h.opts.run = () =>
+      ++calls === 1
+        ? { status: null, stdout: '', output: 'spawnSync xcrun ETIMEDOUT', timedOut: true }
+        : { status: 0, stdout: 'ok', output: 'ok' };
+    await expect(runStaplerWithBackoff('validate', '/tmp/Intent.app', h.opts)).resolves.toBe('ok');
+    expect(calls).toBe(2);
+    expect(h.sleeps).toEqual([1]);
+    expect(h.logs[0]).toMatch(/timed out after 120s/);
+  });
+
+  it('waits before its first call when the caller already saw a lost connection', async () => {
+    const h = harness([68, 68, 68, 68]);
+    await expect(
+      runStaplerWithBackoff('staple', '/tmp/Intent.app', { ...h.opts, afterFailure: true }),
+    ).rejects.toMatchObject({ exitCode: 68 });
+    expect(h.calls).toHaveLength(4);
+    expect(h.sleeps).toEqual([1, 2, 3, 4]);
+    expect(h.logs.at(-1)).toMatch(/after 5 attempts/);
+  });
+
+  it('never passes without a successful call, even with no retries left', async () => {
+    const h = harness([0]);
+    await expect(
+      runStaplerWithBackoff('staple', '/tmp/Intent.app', {
+        ...h.opts,
+        delaysMs: [],
+        afterFailure: true,
+      }),
+    ).rejects.toThrow(/no retry attempts left/);
+    expect(h.calls).toEqual([]);
+  });
+
   it('fails when the stapler process cannot run at all', async () => {
     const h = harness([]);
-    h.opts.run = () => ({ status: null, output: 'spawn xcrun ENOENT' });
+    h.opts.run = () => ({ status: null, stdout: '', output: 'spawn xcrun ENOENT' });
     await expect(
       runStaplerWithBackoff('validate', '/tmp/Intent.app', h.opts),
     ).rejects.toMatchObject({ exitCode: null });
@@ -74,8 +113,8 @@ describe('runStaplerWithBackoff', () => {
   it('gives up after every wait is used and reports the last output', async () => {
     const h = harness([68, 68, 68, 68, 68, 0]);
     const failure = runStaplerWithBackoff('validate', '/tmp/Intent.app', h.opts);
-    await expect(failure).rejects.toMatchObject({ exitCode: 68 });
-    await expect(failure).rejects.toThrow(/5 attempts[\s\S]*attempt 5 exit 68/);
+    await expect(failure).rejects.toMatchObject({ exitCode: 68, output: 'attempt 5 exit 68' });
+    await expect(failure).rejects.toThrow(/5 attempts/);
     expect(h.calls).toHaveLength(5);
     expect(h.sleeps).toEqual([1, 2, 3, 4]);
     expect(h.logs.at(-1)).toMatch(/^::error::/);
@@ -155,8 +194,8 @@ exit "$status"
     const result = cli([68, 0], ['validate', '/tmp/Intent.app']);
     expect(result.status, result.stderr).toBe(0);
     expect(result.calls).toEqual([
-      'stapler validate -v /tmp/Intent.app',
-      'stapler validate -v /tmp/Intent.app',
+      'stapler validate /tmp/Intent.app',
+      'stapler validate /tmp/Intent.app',
     ]);
     expect(result.stdout).toContain('stub xcrun exit 68');
   });

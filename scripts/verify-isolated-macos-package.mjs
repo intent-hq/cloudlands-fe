@@ -219,8 +219,11 @@ try {
   assert.equal(fs.existsSync(path.join(bundle, 'Contents/Resources/keychain-helper')), false);
   evidence.signing = command('codesign', ['--verify', '--deep', '--strict', '--verbose=2', bundle]);
   evidence.gatekeeper = command('spctl', ['--assess', '--type', 'execute', '--verbose=4', bundle]);
-  // Retries only Apple's ticket-service connection loss (exit 68, intent-hq/intent#7614).
-  evidence.stapling = await runStaplerWithBackoff('validate', bundle);
+  // Retries only Apple's ticket-service connection loss (exit 68, intent-hq/intent#7614),
+  // on a shorter schedule that fits this job's 20-minute timeout.
+  evidence.stapling = await runStaplerWithBackoff('validate', bundle, {
+    delaysMs: [15_000, 30_000, 60_000],
+  });
   const executable = path.join(bundle, 'Contents/MacOS', plist.CFBundleExecutable);
   assert.equal(command('lipo', ['-archs', executable]).trim(), 'arm64');
   const sidecar = path.join(bundle, 'Contents/Resources/intentd/intentd');

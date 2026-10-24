@@ -52,7 +52,9 @@ describe('notarize afterSign hook', () => {
     notarize.mockRejectedValue(lostConnection);
     runStaplerWithBackoff.mockResolvedValue('The staple and validate action worked!');
     await expect(notarizing(context)).resolves.toBeUndefined();
-    expect(runStaplerWithBackoff).toHaveBeenCalledWith('staple', '/build/mac-arm64/Intent.app');
+    expect(runStaplerWithBackoff).toHaveBeenCalledWith('staple', '/build/mac-arm64/Intent.app', {
+      afterFailure: true,
+    });
   });
 
   it('fails the build when the extended staple retry is exhausted', async () => {

@@ -521,8 +521,8 @@ if [ "$(grep -c '^xcrun' "$RUNNER_TEMP/verification")" -eq 1 ]; then echo 'NSURL
       'codesign',
       'codesign',
       'spctl',
-      'xcrun stapler validate -v dist-electron/mac-arm64/Intent.app',
-      'xcrun stapler validate -v dist-electron/mac-arm64/Intent.app',
+      'xcrun stapler validate dist-electron/mac-arm64/Intent.app',
+      'xcrun stapler validate dist-electron/mac-arm64/Intent.app',
     ]);
     expect(result.stdout).toContain('::warning::Apple ticket validate attempt 1/5');
   });

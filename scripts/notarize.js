@@ -22,9 +22,10 @@ import { notarize } from '@electron/notarize';
 import path from 'path';
 import { runStaplerWithBackoff } from './apple-ticket-retry.mjs';
 
-// @electron/notarize staples only after notarization succeeds, retrying for ~7s.
-// Apple's ticket service can drop the connection for longer (stapler exit 68,
-// intent-hq/intent#7614), so that one failure continues with a longer backoff.
+// @electron/notarize staples once, only after notarization succeeds (its promise-retry
+// wrapper never retries: stapleApp does not call the retry callback). Apple's ticket
+// service drops that connection (stapler exit 68, intent-hq/intent#7614), so that
+// one failure continues with backoff, counting the library's try as attempt 1.
 const STAPLE_CONNECTION_LOST = /^Failed to staple your application with code: 68(?!\d)/;
 
 async function notarizing(context) {
@@ -79,7 +80,7 @@ async function notarizing(context) {
     }
     console.warn('Notarized, but stapling lost its connection to Apple; retrying with backoff.');
     try {
-      await runStaplerWithBackoff('staple', appPath);
+      await runStaplerWithBackoff('staple', appPath, { afterFailure: true });
     } catch (stapleError) {
       console.error('Notarization failed:', stapleError);
       throw stapleError;

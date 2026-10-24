@@ -4,9 +4,10 @@
  *
  * Exit 68 is stapler's network/service failure (NSURLErrorDomain -1005 "network
  * connection was lost" talking to api.apple-cloudkit.com, intent-hq/intent#7614);
- * only that exit is retried. Any other exit — e.g. 65 for a missing or invalid
- * ticket — fails on the first try, and exhausting every retry still fails, so the
- * signing/notarization guards keep their meaning.
+ * only that exit — or a call stalled past the per-call timeout — is retried. Any
+ * other exit, e.g. 65 for a missing or invalid ticket, fails on the first try, and
+ * exhausting every retry still fails, so the signing/notarization guards keep
+ * their meaning.
  *
  * CLI: node scripts/apple-ticket-retry.mjs <staple|validate> <path/to/App.app>
  * APPLE_TICKET_RETRY_DELAYS_MS overrides the waits (comma-separated milliseconds).
@@ -17,7 +18,9 @@ import { fileURLToPath } from 'node:url';
 
 export const RETRYABLE_STAPLER_EXIT = 68;
 export const DEFAULT_RETRY_DELAYS_MS = [30_000, 60_000, 120_000, 240_000];
-const ACTIONS = new Set(['staple', 'validate']);
+export const STAPLER_TIMEOUT_MS = 120_000;
+// Same flags as before: @electron/notarize staples with -v; validation never used it.
+const ACTION_ARGS = { staple: ['-v'], validate: [] };
 
 export class StaplerError extends Error {
   constructor(message, exitCode, output) {
@@ -41,65 +44,67 @@ export function retryDelaysFromEnv(env = process.env) {
   });
 }
 
-// Bounds one stapler call, as the isolated package verifier's 120s command timeout did.
-const STAPLER_TIMEOUT_MS = 120_000;
-
 function runXcrun(args) {
   const result = spawnSync('xcrun', args, {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
     timeout: STAPLER_TIMEOUT_MS,
   });
-  const output = [result.stdout, result.stderr, result.error?.message].filter(Boolean).join('\n');
   process.stdout.write(result.stdout ?? '');
   process.stderr.write(result.stderr ?? '');
-  return { status: result.status, output };
+  return {
+    status: result.status,
+    stdout: result.stdout ?? '',
+    output: [result.stdout, result.stderr, result.error?.message].filter(Boolean).join('\n'),
+    timedOut: result.error?.code === 'ETIMEDOUT',
+  };
 }
 
 const defaultSleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
-/** Resolves with the successful stapler output; rejects with a StaplerError otherwise. */
+/**
+ * Resolves with the successful stapler stdout; rejects with a StaplerError otherwise.
+ * `afterFailure: true` means the caller already saw one retryable failure, so the
+ * first call waits out the first delay instead of hitting Apple immediately again.
+ */
 export async function runStaplerWithBackoff(action, appPath, options = {}) {
-  if (!ACTIONS.has(action)) throw new Error(`Unsupported stapler action: ${action}`);
+  if (!Object.hasOwn(ACTION_ARGS, action)) throw new Error(`Unsupported stapler action: ${action}`);
   const {
     run = runXcrun,
     sleep = defaultSleep,
     log = console.log,
     delaysMs = retryDelaysFromEnv(),
+    afterFailure = false,
   } = options;
   const attempts = delaysMs.length + 1;
-  const args = ['stapler', action, '-v', appPath];
-  for (let attempt = 1; ; attempt++) {
-    const { status, output } = run(args);
-    if (status === 0) return output;
-    if (status !== RETRYABLE_STAPLER_EXIT) {
+  const args = ['stapler', action, ...ACTION_ARGS[action], appPath];
+  for (let attempt = afterFailure ? 2 : 1; attempt <= attempts; attempt++) {
+    if (attempt > 1) await sleep(delaysMs[attempt - 2]);
+    const { status, stdout = '', output, timedOut = false } = run(args);
+    if (status === 0) return stdout;
+    const reason = timedOut ? `timed out after ${STAPLER_TIMEOUT_MS / 1000}s` : `exit ${status}`;
+    if (status !== RETRYABLE_STAPLER_EXIT && !timedOut)
       throw new StaplerError(
-        `xcrun stapler ${action} failed with exit ${status} (not retried)\n\n${output}`,
+        `xcrun stapler ${action} failed with ${reason} (not retried)`,
         status,
         output,
       );
-    }
     if (attempt === attempts) {
-      log(
-        `::error::Apple ticket ${action} still lost its connection to Apple after ${attempts} attempts (exit ${status}).`,
-      );
-      throw new StaplerError(
-        `xcrun stapler ${action} failed with exit ${status} after ${attempts} attempts\n\n${output}`,
-        status,
-        output,
-      );
+      const message = `Apple ticket ${action} still could not reach Apple after ${attempts} attempts (${reason}).`;
+      log(`::error::${message}`);
+      throw new StaplerError(message, status, output);
     }
-    const wait = delaysMs[attempt - 1];
     log(
-      `::warning::Apple ticket ${action} attempt ${attempt}/${attempts} lost its connection to Apple (exit ${status}); retrying in ${wait / 1000}s.`,
+      `::warning::Apple ticket ${action} attempt ${attempt}/${attempts} could not reach Apple (${reason}); retrying in ${delaysMs[attempt - 1] / 1000}s.`,
     );
-    await sleep(wait);
   }
+  // Only reachable with afterFailure and no delays: never report an unstapled app as passing.
+  throw new StaplerError(`xcrun stapler ${action} had no retry attempts left`, null, '');
 }
 
 async function main(argv) {
   const [action, appPath] = argv;
-  if (!ACTIONS.has(action) || !appPath) {
+  if (!Object.hasOwn(ACTION_ARGS, action ?? '') || !appPath) {
     console.error('Usage: apple-ticket-retry.mjs <staple|validate> <path/to/App.app>');
     return 2;
   }
@@ -107,6 +112,7 @@ async function main(argv) {
     await runStaplerWithBackoff(action, appPath);
     return 0;
   } catch (error) {
+    // The stapler output was already streamed; repeat only the summary.
     console.error(error.message);
     return Number.isInteger(error.exitCode) && error.exitCode > 0 ? error.exitCode : 1;
   }
