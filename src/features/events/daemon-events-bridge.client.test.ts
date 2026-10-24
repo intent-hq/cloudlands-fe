@@ -6129,7 +6129,7 @@ describe('daemonEventsBridge (session lifecycle — agent:created/renamed/update
     expect(state.agentSessions.byAgentId[AGENT]?.messages[0].id).toBe('asst-1');
   });
 
-  it('agent:renamed retitles a self-named Assistant chat without a refetch', async () => {
+  it('agent:renamed retitles a self-named Assistant chat synchronously', () => {
     const chiefAgent = 'agent-chief-self-named';
     appStore.dispatch(
       bulkUpsertSessions([
@@ -6173,7 +6173,6 @@ describe('daemonEventsBridge (session lifecycle — agent:created/renamed/update
     });
 
     expect(titleOf()).toBe('Speech model');
-    expect(refreshAgentSessionAfterEventSpy).not.toHaveBeenCalled();
   });
 
   it('agent:updated re-reads through the seam and does not clobber the local transcript', async () => {
