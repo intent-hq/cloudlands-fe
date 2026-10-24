@@ -57,7 +57,11 @@ vi.mock('$store/renderer/store', async () => {
   let mutationState = agentMutationUiReducer.initialState;
 
   const module = createAppStoreMockModule({
-    state: () => ({ agents: mockState.agents.get(), agentMutationUi: mutationState }),
+    state: () => ({
+      agents: mockState.agents.get(),
+      agentMutationUi: mutationState,
+      desktopControl: { generation: 0, byKey: {}, seenEvents: [] },
+    }),
     dispatch: (action) => {
       mockState.dispatch(action);
       mutationState = agentMutationUiReducer(mutationState, action);

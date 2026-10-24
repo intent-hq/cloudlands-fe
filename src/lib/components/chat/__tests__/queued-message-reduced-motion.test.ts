@@ -25,6 +25,68 @@ afterEach(() => {
 });
 
 describe('queued message reduced motion', () => {
+  it.each([true, false])(
+    'preserves an early selection when autofocus runs (focused: %s)',
+    async (focused) => {
+      vi.spyOn(window, 'matchMedia').mockReturnValue({
+        matches: true,
+        media: '(prefers-reduced-motion: reduce)',
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      });
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          observe() {}
+          unobserve() {}
+          disconnect() {}
+        },
+      );
+      const frames = new Map<number, FrameRequestCallback>();
+      let sequence = 0;
+      vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+        frames.set(++sequence, callback);
+        return sequence;
+      });
+      vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+      const onedit = vi.fn().mockResolvedValue({ success: true });
+      const message = queued('one', 0);
+      const view = render(QueuedMessageList, {
+        props: { messages: [message], ownPrincipalId: 'self', onedit },
+      });
+      await fireEvent.dblClick(screen.getByTestId('queued-message-content'));
+      const textarea = (await screen.findByRole('textbox')) as HTMLTextAreaElement;
+      if (focused) {
+        textarea.focus();
+        textarea.setSelectionRange(0, textarea.value.length);
+      }
+      const pending = [...frames.values()];
+      frames.clear();
+      for (const callback of pending) callback(performance.now());
+      expect(document.activeElement).toBe(textarea);
+      expect(textarea.selectionStart).toBe(focused ? 0 : message.content.length);
+      expect(textarea.selectionEnd).toBe(message.content.length);
+      if (focused) {
+        textarea.setRangeText(
+          'Replacement retry message',
+          textarea.selectionStart,
+          textarea.selectionEnd,
+          'end',
+        );
+        await fireEvent.input(textarea);
+        await fireEvent.keyDown(textarea, { key: 'Enter' });
+        await waitFor(() =>
+          expect(onedit).toHaveBeenLastCalledWith(message.id, 'Replacement retry message', false),
+        );
+      }
+      view.unmount();
+    },
+  );
+
   it('creates no animations through edit, cancel, save, reorder, and removal', async () => {
     vi.stubGlobal(
       'ResizeObserver',
