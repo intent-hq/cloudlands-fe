@@ -20,6 +20,12 @@
 
 import { notarize } from '@electron/notarize';
 import path from 'path';
+import { runStaplerWithBackoff } from './apple-ticket-retry.mjs';
+
+// @electron/notarize staples only after notarization succeeds, retrying for ~7s.
+// Apple's ticket service can drop the connection for longer (stapler exit 68,
+// intent-hq/intent#7614), so that one failure continues with a longer backoff.
+const STAPLE_CONNECTION_LOST = /^Failed to staple your application with code: 68(?!\d)/;
 
 async function notarizing(context) {
   const { electronPlatformName, appOutDir } = context;
@@ -66,11 +72,20 @@ async function notarizing(context) {
       appleIdPassword,
       teamId,
     });
-    console.log('Notarization complete!');
   } catch (error) {
-    console.error('Notarization failed:', error);
-    throw error;
+    if (!STAPLE_CONNECTION_LOST.test(error?.message ?? '')) {
+      console.error('Notarization failed:', error);
+      throw error;
+    }
+    console.warn('Notarized, but stapling lost its connection to Apple; retrying with backoff.');
+    try {
+      await runStaplerWithBackoff('staple', appPath);
+    } catch (stapleError) {
+      console.error('Notarization failed:', stapleError);
+      throw stapleError;
+    }
   }
+  console.log('Notarization complete!');
 }
 
 // Default export for electron-builder afterSign hook

@@ -1,4 +1,4 @@
-// @verify-changed-triggers: .github/workflows/release-alpha.yml, .github/workflows/manual-signed-build.yml, .github/workflows/promote-beta.yml, .github/workflows/release-stable.yml, scripts/assemble-release-assets.mjs, scripts/verify-macos-build.sh, scripts/mac-update-feed.mjs, scripts/run-packaged-macos-smoke.py, scripts/test_packaged_macos_smoke.py, src/features/auto-update/main/mac-update-compatibility.ts
+// @verify-changed-triggers: .github/workflows/release-alpha.yml, .github/workflows/manual-signed-build.yml, .github/workflows/promote-beta.yml, .github/workflows/release-stable.yml, scripts/assemble-release-assets.mjs, scripts/verify-macos-build.sh, scripts/apple-ticket-retry.mjs, scripts/mac-update-feed.mjs, scripts/run-packaged-macos-smoke.py, scripts/test_packaged_macos_smoke.py, src/features/auto-update/main/mac-update-compatibility.ts
 // @vitest-environment node
 
 import { spawnSync } from 'node:child_process';
@@ -73,6 +73,7 @@ function temp() {
     'mac-update-feed.mjs',
     'validate-release-asset-names.mjs',
     'verify-macos-build.sh',
+    'apple-ticket-retry.mjs',
     'macos-native.cjs',
     'fetch-sidecar-lib.mjs',
     'mac-channel-feeds.mjs',
@@ -502,6 +503,39 @@ describe('packaged Mac verification invoked by native workflows', () => {
     expect(
       shell(dir, 'bash scripts/verify-macos-build.sh arm64 true', { FAIL_TOOL: tool }).status,
     ).toBe(42);
+  });
+  it('retries Apple ticket validation after a lost connection (exit 68)', () => {
+    const dir = temp();
+    appFixture(dir, 'arm64');
+    stub(
+      dir,
+      'xcrun',
+      `printf '%s\\n' "xcrun $*" >> "$RUNNER_TEMP/verification"
+if [ "$(grep -c '^xcrun' "$RUNNER_TEMP/verification")" -eq 1 ]; then echo 'NSURLErrorDomain Code=-1005'; exit 68; fi`,
+    );
+    const result = shell(dir, 'bash scripts/verify-macos-build.sh arm64 true', {
+      APPLE_TICKET_RETRY_DELAYS_MS: '0,0,0,0',
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(join(dir, 'verification'), 'utf8').trim().split('\n')).toEqual([
+      'codesign',
+      'codesign',
+      'spctl',
+      'xcrun stapler validate -v dist-electron/mac-arm64/Intent.app',
+      'xcrun stapler validate -v dist-electron/mac-arm64/Intent.app',
+    ]);
+    expect(result.stdout).toContain('::warning::Apple ticket validate attempt 1/5');
+  });
+  it('fails Apple ticket validation once every retry loses the connection', () => {
+    const dir = temp();
+    appFixture(dir, 'arm64');
+    stub(dir, 'xcrun', `printf '%s\\n' xcrun >> "$RUNNER_TEMP/verification"\nexit 68`);
+    const result = shell(dir, 'bash scripts/verify-macos-build.sh arm64 true', {
+      APPLE_TICKET_RETRY_DELAYS_MS: '0,0',
+    });
+    expect(result.status).toBe(68);
+    const calls = readFileSync(join(dir, 'verification'), 'utf8').trim().split('\n');
+    expect(calls.filter((call) => call === 'xcrun')).toHaveLength(3);
   });
   it('verifies native payloads for unsigned manual builds without requiring signing tools', () => {
     const dir = temp();

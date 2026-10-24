@@ -7,6 +7,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { _electron as electron } from '@playwright/test';
+import { runStaplerWithBackoff } from './apple-ticket-retry.mjs';
 import { evaluatePackageMain } from './evaluate-package-main.mjs';
 
 const [dmg, output, backendSha, frontendSha] = process.argv.slice(2);
@@ -218,7 +219,8 @@ try {
   assert.equal(fs.existsSync(path.join(bundle, 'Contents/Resources/keychain-helper')), false);
   evidence.signing = command('codesign', ['--verify', '--deep', '--strict', '--verbose=2', bundle]);
   evidence.gatekeeper = command('spctl', ['--assess', '--type', 'execute', '--verbose=4', bundle]);
-  evidence.stapling = command('xcrun', ['stapler', 'validate', bundle]);
+  // Retries only Apple's ticket-service connection loss (exit 68, intent-hq/intent#7614).
+  evidence.stapling = await runStaplerWithBackoff('validate', bundle);
   const executable = path.join(bundle, 'Contents/MacOS', plist.CFBundleExecutable);
   assert.equal(command('lipo', ['-archs', executable]).trim(), 'arm64');
   const sidecar = path.join(bundle, 'Contents/Resources/intentd/intentd');
