@@ -2093,6 +2093,49 @@ describe('People invite hydration independent of the dialog', () => {
     }
   });
 
+  it.each(['close', 'retarget'] as const)(
+    'keeps a People refresh alive when Share is abandoned by %s',
+    async (abandon) => {
+      const refresh = deferred<{ invites: WorkspaceInviteRow[] }>();
+      let reads = 0;
+      replyByMethod({
+        'workspace.invite.list': ({ workspaceId }: { workspaceId: string }) => {
+          if (workspaceId !== 'ws-1') return { invites: [] };
+          return ++reads === 3 ? refresh.promise : { invites: [pending] };
+        },
+      });
+      const h = harness(initialState, { 'ws-1': 'owner', 'ws-2': 'owner' }, tabs);
+      try {
+        await settle();
+        h.dispatch(openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'Space' }));
+        await settle();
+        expect(reads).toBe(2);
+        expect(readInviteLink('inv-1')).toBe(LISTED_URL);
+        h.dispatch(shareMembershipChanged({ workspaceId: 'ws-1' }));
+        await settle();
+        expect(reads).toBe(3);
+        if (abandon === 'close') h.dispatch(closeShareDialog());
+        else h.dispatch(openShareDialog({ workspaceId: 'ws-2', workspaceTitle: 'Other' }));
+        await settle();
+        expect(readInviteLink('inv-1')).toBeNull();
+        // The remote client revoked inv-1 and left another named invitation.
+        refresh.resolve({ invites: [{ ...pending, id: 'remaining-invite' }] });
+        await settle();
+        expect(selectWorkspacePeopleInvites.select(h.root(), 'ws-1').map((row) => row.id)).toEqual([
+          'remaining-invite',
+        ]);
+        expect(reads).toBe(3);
+        expect(h.state().open).toBe(abandon === 'retarget');
+        expect(h.state().workspaceId).toBe(abandon === 'retarget' ? 'ws-2' : null);
+        expect(readInviteLink('inv-1')).toBeNull();
+        expect(readInviteLink('remaining-invite')).toBeNull();
+        expect(JSON.stringify(h.logged)).not.toContain(SECRET_MARKER);
+      } finally {
+        h.task.cancel();
+      }
+    },
+  );
+
   it('a background denial withholds a dialog read still waiting for its member response', async () => {
     const members = deferred<{ members: WorkspaceMember[] }>();
     let reads = 0;

@@ -682,7 +682,9 @@ function* removeRosterMember(
 
 /**
  * Another client changed the roster/invites of a workspace: re-read the
- * dialog when it targets that workspace, and the hover roster when tracked.
+ * dialog when it targets that workspace, People for open tabs, and the hover
+ * roster when tracked. People consumes the shared invite flight independently
+ * so closing or retargeting the dialog cannot abandon its metadata refresh.
  */
 function* refreshOnMembershipChange(
   action: ReturnType<typeof shareMembershipChanged>,
@@ -690,7 +692,7 @@ function* refreshOnMembershipChange(
   const [{ workspaceId }] = action.payload;
   const target = yield* selectShareTarget.effect();
   if (target && target.workspaceId === workspaceId) yield* put(shareDataRequested());
-  else if ((yield* selectWorkspacePeopleInviteScope.effect()).workspaceIds.includes(workspaceId))
+  if ((yield* selectWorkspacePeopleInviteScope.effect()).workspaceIds.includes(workspaceId))
     yield* put(sharePeopleInvitesRequested(workspaceId));
   if (yield* selectWorkspaceRosterTracked.effect(workspaceId)) {
     yield* put(shareRosterRequested({ workspaceId }));
