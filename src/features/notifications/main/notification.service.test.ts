@@ -807,7 +807,7 @@ describe('getNotificationService app-wide singleton', () => {
   });
 });
 
-describe('NotificationService focus gate (soundOnlyWhenUnfocused)', () => {
+describe('NotificationService viewing gate (focused window on the workspace)', () => {
   function buildIdleEvent(): AgentIdleEvent {
     return {
       type: 'agent:idle',

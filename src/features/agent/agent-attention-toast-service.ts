@@ -270,9 +270,21 @@ export function agentIdleToastId(target: NotificationNavigatePayload): string {
 }
 
 /**
+ * True when this window is on `workspaceId`'s page and it is the current tab.
+ * The tab alone is not enough: going to the home page (or another app route)
+ * keeps the last workspace tab selected while it is off screen.
+ */
+function isViewingWorkspace(workspaceId: string): boolean {
+  if (typeof window === 'undefined' || !isCurrentWorkspace(workspaceId)) return false;
+  const path = window.location.pathname;
+  const route = `/workspace/${workspaceId}`;
+  return path === route || path.startsWith(`${route}/`);
+}
+
+/**
  * True when this window's home page shows the Assistant panel open on
  * `agentId` — the chat a chief completion would switch to. Read straight off
- * `appStore.state` (dependency-light, like {@link isCurrentWorkspace}).
+ * `appStore.state` (dependency-light, like {@link isViewingWorkspace}).
  */
 function isViewingAssistantChat(agentId: string | undefined): boolean {
   if (!agentId || typeof window === 'undefined' || window.location.pathname !== '/') return false;
@@ -282,7 +294,7 @@ function isViewingAssistantChat(agentId: string | undefined): boolean {
 
 /**
  * True when the toast would only point at what this focused window already
- * shows: the workspace is the current tab, or — for an Assistant completion —
+ * shows: the workspace's page, or — for an Assistant completion —
  * that chat is open in the home page's Assistant panel. Matches the
  * attention/failure toasts: the "Only when unfocused" preference governs
  * sound only, never this skip. Main already skips a workspace it sees as
@@ -295,7 +307,7 @@ function isIdleToastRedundant(payload: AgentIdleToastPayload): boolean {
   if (typeof document === 'undefined' || !document.hasFocus()) return false;
   return isChiefTarget(target)
     ? isViewingAssistantChat(target.agentId)
-    : isCurrentWorkspace(target.workspaceId);
+    : isViewingWorkspace(target.workspaceId);
 }
 
 /** Only the latest pending show for a toast id may render after lazy loading. */

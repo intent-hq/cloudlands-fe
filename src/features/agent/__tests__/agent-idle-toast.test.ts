@@ -151,6 +151,7 @@ describe('showAgentIdleToast', () => {
 
   it('is suppressed only when this focused window has the workspace selected', async () => {
     mocks.state.value.tabState.currentTabId = 'ws-1';
+    window.history.replaceState(null, '', '/workspace/ws-1');
     await showAgentIdleToast(structuredPayload);
     expect(mocks.custom).not.toHaveBeenCalled();
 
@@ -166,9 +167,17 @@ describe('showAgentIdleToast', () => {
 
   it('is suppressed on the selected workspace even with "only when unfocused" off', async () => {
     mocks.state.value.tabState.currentTabId = 'ws-1';
+    window.history.replaceState(null, '', '/workspace/ws-1');
     mocks.state.value.userPreferences.soundOnlyWhenUnfocused = false;
     await showAgentIdleToast(structuredPayload);
     expect(mocks.custom).not.toHaveBeenCalled();
+  });
+
+  it('still shows when the window left the selected workspace for the home page', async () => {
+    // Going home keeps the workspace tab selected, but it is not on screen.
+    mocks.state.value.tabState.currentTabId = 'ws-1';
+    await showAgentIdleToast(structuredPayload);
+    expect(mocks.custom).toHaveBeenCalledTimes(1);
   });
 
   describe('Assistant chat already open', () => {
