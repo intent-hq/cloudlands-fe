@@ -23,7 +23,10 @@ import {
   presenceRosterReceived,
 } from '$store/renderer/slices/presence/presence-slice';
 import type { PresenceState } from '$store/renderer/slices/presence/presence-types';
-import { openShareDialog } from '$store/renderer/slices/workspace-share/workspace-share-slice';
+import {
+  initialState as workspaceShareInitialState,
+  openShareDialog,
+} from '$store/renderer/slices/workspace-share/workspace-share-slice';
 import { selectPresenceFollowScope } from '$store/renderer/slices/presence-follow/presence-follow-selectors';
 import {
   presenceFollowReducer,
@@ -56,6 +59,7 @@ const mocks = vi.hoisted(() => {
     workspace: { workspaces: null as unknown, pendingTitleMutations: {} },
     presence: null as unknown,
     presenceFollow: null as unknown,
+    workspaceShare: null as unknown,
     tabState: { currentTabId: 'ws-1' },
     userPreferences: undefined as { labsMultiplayerEnabled?: boolean } | undefined,
   };
@@ -204,6 +208,7 @@ async function renderPeopleTile({
   } as Record<string, PresenceFocusItem>,
   otherWorkspaces = [] as Workspace[],
 } = {}) {
+  mocks.state.workspaceShare = workspaceShareInitialState;
   const admitted = withLegacyPrincipal(mocks.state);
   Object.assign(mocks.state, admitted);
   mocks.state.presence = { ...presence, context: selectPrincipalActionContext.select(admitted) };
@@ -314,7 +319,7 @@ describe('WorkspacePeopleTile presence row', () => {
     // The group name must not announce the offline members as present.
     const group = row.querySelector('[data-presence-avatar-stack]')!;
     expect(group.getAttribute('aria-label')).not.toMatch(/here$/);
-    expect(group.getAttribute('aria-label')).toMatch(/not here|none here/i);
+    expect(group.getAttribute('aria-label')).toBe('People');
   });
 
   it.each([
@@ -348,7 +353,7 @@ describe('WorkspacePeopleTile presence row', () => {
     },
   );
 
-  it('names the group by the people present, leaving the listed offline members out of the count', async () => {
+  it('names the complete roster People and marks offline members individually', async () => {
     await renderPeopleTile({
       presence: presenceState(
         membership,
@@ -365,8 +370,9 @@ describe('WorkspacePeopleTile presence row', () => {
     const row = presenceRow()!;
     expect(row.querySelectorAll('[data-presence-avatar]')).toHaveLength(4);
     expect(row.querySelector('[data-presence-avatar-stack]')!.getAttribute('aria-label')).toBe(
-      '1 other person here',
+      'People',
     );
+    expect(row.querySelectorAll('[data-presence-offline]')).toHaveLength(2);
   });
 
   it('keeps the viewer first, then the offline owner and other members', async () => {

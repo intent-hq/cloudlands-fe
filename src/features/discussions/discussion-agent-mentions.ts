@@ -4,11 +4,11 @@ import type { DiscussionAgentMention } from '$shared/types/workspace-discussion'
 export type { DiscussionAgentMention } from '$shared/types/workspace-discussion';
 
 /** Keep only untouched selected tokens, shifting them when surrounding text changes. */
-export function reconcileDiscussionAgentMentions(
+export function reconcileDiscussionMentions<T extends { name: string; start: number; end: number }>(
   before: string,
   after: string,
-  mentions: readonly DiscussionAgentMention[],
-): DiscussionAgentMention[] {
+  mentions: readonly T[],
+): T[] {
   if (before === after) return [...mentions];
   let start = 0;
   while (start < before.length && start < after.length && before[start] === after[start]) start++;

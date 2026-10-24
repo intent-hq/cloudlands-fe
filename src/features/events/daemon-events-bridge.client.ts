@@ -6,15 +6,19 @@ import type { Note, WorkspaceTask, WorkspaceTaskStats } from '$shared/types';
 import { workspaceTasksPushed } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import { workspaceTaskStatsPushed } from '$store/renderer/slices/workspace/workspace-slice';
 import {
+  isDiscussionConversationEvent,
+  isDiscussionDeletedEvent,
   isDiscussionMessageEvent,
   isDiscussionAgentActivityEvent,
   hasDiscussionAgentActivity,
   hasDiscussionAgentMentions,
+  hasDiscussionPrincipalMentions,
   isDiscussionReactionEvent,
   hasDiscussionMessageActions,
   DEFAULT_DISCUSSION_ID,
 } from '$shared/types/workspace-discussion';
 import {
+  discussionConversationDeleted,
   discussionMessageReceived,
   discussionAgentActivityReceived,
   discussionReactionReceived,
@@ -3844,6 +3848,31 @@ export function routeDaemonEventsNotification(
     return;
   }
 
+  if (
+    type === 'discussion:created' ||
+    type === 'discussion:updated' ||
+    type === 'discussion:deleted'
+  ) {
+    const data = (event as { data?: unknown }).data;
+    const context = selectDiscussionContext.select(appStore.state);
+    if (
+      !context ||
+      appStore.state.workspaceDiscussion.managementSupported !== true ||
+      !isDiscussionDeletedEvent(data)
+    )
+      return;
+    const envelopeWorkspaceId = workspaceIdOf(event);
+    if (envelopeWorkspaceId && envelopeWorkspaceId !== data.workspaceId) return;
+    if (type === 'discussion:deleted') {
+      appStore.dispatch(
+        discussionConversationDeleted(context, data.workspaceId, data.conversationId),
+      );
+    } else if (isDiscussionConversationEvent(data) && data.conversation.kind === 'workspace') {
+      appStore.dispatch(discussionConversationReceived(context, data.conversation));
+    }
+    return;
+  }
+
   if (type === 'discussion:activity') {
     const data = (event as { data?: unknown }).data;
     if (
@@ -3885,6 +3914,8 @@ export function routeDaemonEventsNotification(
     const data = (event as { data?: unknown }).data;
     if (
       isDiscussionMessageEvent(data) &&
+      (appStore.state.workspaceDiscussion.principalMentionsSupported !== true ||
+        hasDiscussionPrincipalMentions(data.message)) &&
       (appStore.state.workspaceDiscussion.agentActivitySupported !== true ||
         (hasDiscussionAgentActivity(data.message) && hasDiscussionAgentMentions(data.message))) &&
       (appStore.state.workspaceDiscussion.messageActionsSupported !== true ||
@@ -3897,10 +3928,11 @@ export function routeDaemonEventsNotification(
       if (!context) return;
       if (
         conversationId !== DEFAULT_DISCUSSION_ID &&
-        (appStore.state.workspaceDiscussion.conversationsSupported !== true ||
-          !data.conversation?.participants.some(
-            (p) => p.principalId === appStore.state.principal.snapshot?.principal.id,
-          ))
+        (appStore.state.workspaceDiscussion.conversationsSupported === false ||
+          (data.conversation?.kind !== 'workspace' &&
+            !data.conversation?.participants.some(
+              (p) => p.principalId === appStore.state.principal.snapshot?.principal.id,
+            )))
       )
         return;
       if (data.conversation)
@@ -4712,6 +4744,9 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   'discussion:message',
   'discussion:reaction',
   'discussion:activity',
+  'discussion:created',
+  'discussion:updated',
+  'discussion:deleted',
   'host:members-changed',
   'host:invites-changed',
   'host:execution-context-changed',

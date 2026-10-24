@@ -1,6 +1,38 @@
+import { waitFor } from '@themislib/themis/saga';
+import { notify } from '$lib/components/patterns/notify';
+import { m } from '$shared/paraglide/messages.js';
+import { DEFAULT_DISCUSSION_ID } from '$shared/types/workspace-discussion';
+import {
+  discussionMessageReceived,
+  discussionPageReceived,
+  discussionMetadataProgress,
+  discussionSendSucceeded,
+} from '../../workspace-discussion/workspace-discussion-slice';
+import { selectDiscussionOwner } from '../../workspace-discussion/workspace-discussion-selectors';
+import {
+  selectDiscussionMentionAdmission,
+  selectDiscussionMentionCandidate,
+  selectDiscussionMentionVisible,
+  selectDiscussionNotificationHistory,
+  selectDiscussionNotificationLayout,
+} from '../notifications-selectors';
+import type { NotificationNavigatePayload } from '$features/notifications/notification-navigation';
+import { discussionNotificationLayoutRequested } from '../notifications-slice';
 import type { StoreState } from '../../../types';
 import { END, buffers, eventChannel, type EventChannel } from 'redux-saga';
-import { actionChannel, all, call, flush, fork, getContext, race, take } from 'typed-redux-saga';
+import {
+  actionChannel,
+  all,
+  call,
+  cancelled,
+  flush,
+  fork,
+  getContext,
+  put,
+  race,
+  take,
+  takeEvery,
+} from 'typed-redux-saga';
 
 import type { AgentIdleEvent } from '$features/events/types';
 import {
@@ -102,10 +134,22 @@ function* showBrowserNotification(
   workspaceId: string,
   agentId: string,
   context: string,
+  discussion?: NonNullable<NotificationNavigatePayload['discussion']>,
 ) {
   yield* fork(playNotificationSoundPerSettings);
   const granted: boolean = yield* call(ensurePermission);
   if (!granted || context !== (yield* selectPrincipalActionContext.effect())) return;
+  if (discussion) {
+    const admitted = yield* selectDiscussionMentionAdmission.effect(
+      discussion.target,
+      discussion.messageId,
+    );
+    if (!admitted || admitted === 'pending') return;
+    if (document.hasFocus() && document.visibilityState === 'visible') {
+      yield* call(showDiscussionToast, discussion);
+      return;
+    }
+  }
   try {
     const notification: Notification = yield* call(createBrowserNotification, title, body);
     activeNotifications.add(notification);
@@ -116,8 +160,9 @@ function* showBrowserNotification(
       } catch {
         /* Navigation still runs. */
       }
-      const payload =
-        workspaceId === CHIEF_WORKSPACE_ID
+      const payload = discussion
+        ? { workspaceId, discussion }
+        : workspaceId === CHIEF_WORKSPACE_ID
           ? { workspaceId, chief: true, agentId }
           : { workspaceId };
       void handleNotificationNavigate(payload);
@@ -249,6 +294,144 @@ function* handleWebIdle(event: AgentIdleEvent, activeWorkspaceId: string | null)
   }
 }
 
+function* showDiscussionToast(discussion: NonNullable<NotificationNavigatePayload['discussion']>) {
+  const { target, messageId } = discussion;
+  const message = yield* selectDiscussionMentionAdmission.effect(target, messageId);
+  if (!message || message === 'pending') return;
+  const visible = yield* selectDiscussionMentionVisible.effect(
+    target.workspaceId,
+    target.conversationId,
+  );
+  if (visible && window.location.pathname.startsWith('/workspace/')) return;
+  yield* call(
+    notify.info,
+    m.notifications_discussion_mention_title({
+      name:
+        message.author.displayName ||
+        message.author.login ||
+        m.workspace_discussion_unknownAuthor_label(),
+    }),
+    {
+      key: JSON.stringify([
+        'discussion-mention',
+        target.context,
+        target.workspaceId,
+        target.conversationId,
+        messageId,
+      ]),
+      description: message.body,
+      action: {
+        label: m.notifications_discussion_open_label(),
+        onClick: () => handleNotificationNavigate({ workspaceId: target.workspaceId, discussion }),
+      },
+    },
+  );
+  yield* call(playNotificationSoundPerSettings);
+}
+
+function* handleDiscussionMention(action: ReturnType<typeof discussionMessageReceived>) {
+  const [target, incoming] = action.payload;
+  try {
+    const ready = yield* waitFor(
+      selectDiscussionMentionAdmission,
+      [target, incoming.id],
+      (value) => value !== 'pending',
+      10_000,
+    );
+    if (!ready) return;
+    const message = yield* selectDiscussionMentionAdmission.effect(target, incoming.id);
+    if (!message || message === 'pending') return;
+    const discussion = { target, messageId: message.id };
+    if (document.hasFocus() && document.visibilityState === 'visible') {
+      yield* call(showDiscussionToast, discussion);
+    } else {
+      yield* call(
+        showBrowserNotification,
+        m.notifications_discussion_mention_title({
+          name:
+            message.author.displayName ||
+            message.author.login ||
+            m.workspace_discussion_unknownAuthor_label(),
+        }),
+        message.body,
+        target.workspaceId,
+        '',
+        target.context,
+        discussion,
+      );
+    }
+  } catch (error) {
+    logger.warn('Failed to show discussion mention notification', { error });
+  }
+}
+
+function* waitForDiscussionNotificationLayout(
+  action: ReturnType<typeof discussionNotificationLayoutRequested>,
+) {
+  const [target, messageId] = action.payload;
+  try {
+    const settled = yield* waitFor(
+      selectDiscussionNotificationLayout,
+      [target, messageId],
+      (status) => status !== 'pending',
+      10_000,
+    );
+    yield* put(
+      action.success(
+        settled &&
+          (yield* selectDiscussionNotificationLayout.effect(target, messageId)) === 'ready',
+      ),
+    );
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  } finally {
+    if (yield* cancelled())
+      yield* put(action.failure(new Error('Discussion notification navigation cancelled')));
+  }
+}
+
+/** Notification fan-out only: discussion ingestion and transport remain with their existing owners. */
+function* watchDiscussionMentions() {
+  if (typeof window === 'undefined' || window.location.pathname.startsWith('/hud')) return;
+  yield* takeEvery(discussionNotificationLayoutRequested, waitForDiscussionNotificationLayout);
+  const seen = new Set(yield* selectDiscussionNotificationHistory.effect());
+  const channel = yield* actionChannel(
+    [
+      discussionMessageReceived,
+      discussionPageReceived,
+      discussionMetadataProgress,
+      discussionSendSucceeded,
+    ],
+    buffers.expanding(),
+  );
+  try {
+    while (true) {
+      const action = yield* take(channel);
+      if (action.type !== discussionMessageReceived.type) {
+        for (const key of yield* selectDiscussionNotificationHistory.effect()) seen.add(key);
+        continue;
+      }
+      const received = action as ReturnType<typeof discussionMessageReceived>;
+      const [target, message] = received.payload;
+      const owner = yield* selectDiscussionOwner.effect();
+      if (!owner) continue;
+      const key = JSON.stringify([
+        owner,
+        target.workspaceId,
+        target.conversationId ?? DEFAULT_DISCUSSION_ID,
+        message.id,
+      ]);
+      if (seen.has(key)) continue;
+      // Do not let a rejected old-context event poison a later admitted copy.
+      if (!(yield* selectDiscussionMentionCandidate.effect(target, message.id))) continue;
+      seen.add(key);
+      yield* fork(handleDiscussionMention, received);
+    }
+  } finally {
+    channel.close();
+  }
+}
+
 function* handleNativeNotificationEvent(event: NativeNotificationEvent) {
   if (event.kind === 'navigate') {
     try {
@@ -276,6 +459,7 @@ function* handleNativeNotificationEvent(event: NativeNotificationEvent) {
 
 export function* notificationIpcSaga() {
   if (!isElectron()) return;
+  yield* fork(watchDiscussionMentions);
   const channel = createNativeNotificationChannel();
   try {
     while (true) {
@@ -285,11 +469,14 @@ export function* notificationIpcSaga() {
     }
   } finally {
     channel.close();
+    for (const notification of activeNotifications) notification.close();
+    activeNotifications.clear();
   }
 }
 
 export function* webNotificationSaga() {
   if (getPlatform() !== 'web') return;
+  yield* fork(watchDiscussionMentions);
   const channel = yield* actionChannel(eventReceived, buffers.expanding());
   const workspaceChanges = yield* actionChannel(
     CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS,

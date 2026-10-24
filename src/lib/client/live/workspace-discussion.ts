@@ -12,6 +12,7 @@ import {
   hasDiscussionAgentMessaging,
   hasDiscussionAgentActivity,
   hasDiscussionAgentMentions,
+  hasDiscussionPrincipalMentions,
   isDiscussionAgentActivity,
   type DiscussionAgentActivity,
   type DiscussionAgentControlParams,
@@ -27,6 +28,9 @@ import {
   type DiscussionConversationsResult,
   type DiscussionRecipientsParams,
   type DiscussionRecipientsResult,
+  type DiscussionConversation,
+  type DiscussionRenameParams,
+  type DiscussionDeleteParams,
 } from '$shared/types/workspace-discussion';
 
 /** Only bounded codes reach presentation state, never raw daemon error strings. */
@@ -47,6 +51,60 @@ function requireConversations(supported: boolean): void {
 const pageLimit = (limit?: number) =>
   Math.min(DISCUSSION_PAGE_SIZE, Math.max(1, limit ?? DISCUSSION_PAGE_SIZE));
 export const workspaceDiscussionClient = {
+  async supportsManagement(): Promise<boolean> {
+    try {
+      const result = await backendRequest<{ discussionManagement?: unknown }>(
+        'system.capabilities',
+        {},
+      );
+      return result?.discussionManagement === 1;
+    } catch {
+      return false;
+    }
+  },
+  async rename(
+    params: DiscussionRenameParams,
+    supported = false,
+  ): Promise<{ conversation: DiscussionConversation }> {
+    requireConversations(supported);
+    const result = await backendRequest<{ conversation: DiscussionConversation }>(
+      'discussion.rename',
+      params,
+    );
+    if (
+      !isDiscussionConversation(result?.conversation) ||
+      result.conversation.kind !== 'workspace' ||
+      result.conversation.workspaceId !== params.workspaceId ||
+      result.conversation.id !== params.conversationId ||
+      result.conversation.name !== params.name.trim()
+    )
+      throw new Error('Invalid discussion rename response');
+    return result;
+  },
+  async delete(
+    params: DiscussionDeleteParams,
+    supported = false,
+  ): Promise<{ deleted: true; conversationId: string }> {
+    requireConversations(supported);
+    const result = await backendRequest<{ deleted: true; conversationId: string }>(
+      'discussion.delete',
+      params,
+    );
+    if (result?.deleted !== true || result.conversationId !== params.conversationId)
+      throw new Error('Invalid discussion delete response');
+    return result;
+  },
+  async supportsPrincipalMentions(): Promise<boolean> {
+    try {
+      const result = await backendRequest<{ discussionPrincipalMentions?: unknown }>(
+        'system.capabilities',
+        {},
+      );
+      return result?.discussionPrincipalMentions === 1;
+    } catch {
+      return false;
+    }
+  },
   async supportsAgentActivity(): Promise<boolean> {
     try {
       const result = await backendRequest<{ discussionAgentActivity?: unknown }>(
@@ -62,10 +120,13 @@ export const workspaceDiscussionClient = {
     operation: 'stop' | 'retry',
     params: DiscussionAgentControlParams,
     supported = false,
+    managementSupported = false,
   ): Promise<{ activity: DiscussionAgentActivity }> {
     requireConversations(supported);
     if (
-      (params.conversationId ?? DEFAULT_DISCUSSION_ID) !== DEFAULT_DISCUSSION_ID ||
+      ((params.conversationId ?? DEFAULT_DISCUSSION_ID) !== DEFAULT_DISCUSSION_ID &&
+        !managementSupported) ||
+      params.conversationId === NEW_DISCUSSION_ID ||
       !params.messageId ||
       !params.agentId ||
       !Number.isSafeInteger(params.attempt) ||
@@ -150,6 +211,7 @@ export const workspaceDiscussionClient = {
     agentsSupported = false,
     activitySupported = false,
     reactionsSupported = false,
+    principalMentionsSupported = false,
   ): Promise<DiscussionListResult> {
     const id = params.conversationId ?? DEFAULT_DISCUSSION_ID;
     if (id !== DEFAULT_DISCUSSION_ID) requireConversations(supported);
@@ -170,6 +232,7 @@ export const workspaceDiscussionClient = {
           (!actionsSupported || hasDiscussionMessageActions(message)) &&
           (!reactionsSupported || hasDiscussionReactions(message)) &&
           (!agentsSupported || hasDiscussionAgentMessaging(message)) &&
+          (!principalMentionsSupported || hasDiscussionPrincipalMentions(message)) &&
           (!activitySupported ||
             (hasDiscussionAgentActivity(message) && hasDiscussionAgentMentions(message))) &&
           message.workspaceId === params.workspaceId &&
@@ -200,7 +263,24 @@ export const workspaceDiscussionClient = {
     agentsSupported = false,
     activitySupported = false,
     reactionsSupported = false,
+    principalMentionsSupported = false,
+    managementSupported = false,
   ): Promise<DiscussionSendResult> {
+    if (params.createConversation) {
+      requireConversations(managementSupported);
+      if (params.conversationId !== undefined || params.recipientPrincipalIds !== undefined)
+        throw new Error('Invalid discussion target');
+    }
+    if (params.principalMentions !== undefined) {
+      requireConversations(principalMentionsSupported);
+      if (
+        !hasDiscussionPrincipalMentions({
+          ...params,
+          recipientAgentIds: params.recipientAgentIds ?? [],
+        })
+      )
+        throw new Error('Invalid discussion principal mentions');
+    }
     if (params.agentMentions !== undefined) {
       requireConversations(activitySupported);
       if (
@@ -214,7 +294,8 @@ export const workspaceDiscussionClient = {
     if (params.recipientAgentIds !== undefined) {
       requireConversations(agentsSupported);
       if (
-        (params.conversationId ?? DEFAULT_DISCUSSION_ID) !== DEFAULT_DISCUSSION_ID ||
+        ((params.conversationId ?? DEFAULT_DISCUSSION_ID) !== DEFAULT_DISCUSSION_ID &&
+          !managementSupported) ||
         params.recipientPrincipalIds !== undefined ||
         !hasDiscussionAgentMessaging(params)
       )
@@ -233,6 +314,19 @@ export const workspaceDiscussionClient = {
       (actionsSupported && !hasDiscussionMessageActions(result?.message)) ||
       (reactionsSupported && !hasDiscussionReactions(result?.message)) ||
       (agentsSupported && !hasDiscussionAgentMessaging(result?.message)) ||
+      (principalMentionsSupported && !hasDiscussionPrincipalMentions(result?.message)) ||
+      (principalMentionsSupported &&
+        JSON.stringify(
+          (result?.message?.principalMentions ?? []).map((m) => [
+            m.principalId,
+            m.name,
+            m.start,
+            m.end,
+          ]),
+        ) !==
+          JSON.stringify(
+            (params.principalMentions ?? []).map((m) => [m.principalId, m.name, m.start, m.end]),
+          )) ||
       (activitySupported &&
         (!hasDiscussionAgentActivity(result?.message) ||
           !hasDiscussionAgentMentions(result?.message))) ||
@@ -249,7 +343,9 @@ export const workspaceDiscussionClient = {
       (result?.message?.replyToMessageId ?? null) !== (params.replyToMessageId ?? null) ||
       result.message.workspaceId !== params.workspaceId ||
       result.message.body !== params.body ||
-      (params.recipientPrincipalIds ? resultId === DEFAULT_DISCUSSION_ID : resultId !== id) ||
+      (params.recipientPrincipalIds || params.createConversation
+        ? resultId === DEFAULT_DISCUSSION_ID
+        : resultId !== id) ||
       (result.conversation === undefined
         ? resultId !== DEFAULT_DISCUSSION_ID
         : !isDiscussionConversation(result.conversation) ||
@@ -257,6 +353,8 @@ export const workspaceDiscussionClient = {
           result.conversation.id !== resultId)
     )
       throw new Error('Invalid discussion send response');
+    if (params.createConversation && result.conversation?.kind !== 'workspace')
+      throw new Error('Invalid discussion create response');
     if (params.recipientPrincipalIds && result.conversation) {
       const expected = new Set([
         ...params.recipientPrincipalIds,

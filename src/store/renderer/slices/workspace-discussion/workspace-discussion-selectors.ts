@@ -4,7 +4,11 @@ import {
   type DiscussionAuthor,
 } from '$shared/types/workspace-discussion';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
-import { selectCanShareWorkspace } from '../workspace/workspace-selectors';
+import {
+  selectCanShareWorkspace,
+  selectIsWorkspaceOwner,
+  selectWorkspaceById,
+} from '../workspace/workspace-selectors';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { store } from '../../store';
 import {
@@ -16,6 +20,7 @@ import {
 import { selectLabsMultiplayerEnabled } from '../user-preferences/user-preferences-selectors';
 import {
   emptyDiscussion,
+  emptyManagement,
   emptyDirectory,
   emptyRecipients,
   discussionRow,
@@ -83,11 +88,13 @@ export const selectWorkspaceDiscussion = store.createSelector(
       discussionRow(state.workspaceDiscussion, workspaceId, conversationId) ?? emptyDiscussion;
     return conversationId !== DEFAULT_DISCUSSION_ID &&
       conversationId !== NEW_DISCUSSION_ID &&
-      !row.authorized
+      (!row.authorized ||
+        (!row.initialized && state.workspaceDiscussion.conversationsSupported !== true))
       ? {
           ...row,
           draft: '',
           agentMentions: [],
+          principalMentions: [],
           messages: emptyDiscussion.messages,
           pending: emptyDiscussion.pending,
         }
@@ -114,9 +121,15 @@ export const selectDiscussionReady = store.createSelector(
     return (
       !!selectDiscussionContext.select(state) &&
       !!workspace &&
+      !state.workspaceDiscussion.deletedKeys.includes(
+        JSON.stringify([workspaceId, conversationId]),
+      ) &&
       (conversationId === DEFAULT_DISCUSSION_ID ||
-        (state.workspaceDiscussion.conversationsSupported === true &&
-          (conversationId === NEW_DISCUSSION_ID || row.authorized))) &&
+        (conversationId === NEW_DISCUSSION_ID
+          ? state.workspaceDiscussion.managementSupported === true
+          : (state.workspaceDiscussion.conversationsSupported === true ||
+              state.workspaceDiscussion.managementSupported === true) &&
+            row.authorized)) &&
       !row.unsupported &&
       row.error !== 'forbidden'
     );
@@ -132,19 +145,44 @@ export const selectDiscussionUninitializedIds = store.createSelector((state) =>
     return !discussionRow(state.workspaceDiscussion, ws, id);
   }),
 );
+const selectDiscussionManagementReady = store.createSelector(
+  (state, workspaceId: string) =>
+    selectDiscussionManagementSupported.select(state) === true &&
+    !!selectDiscussionContext.select(state) &&
+    !!selectWorkspaceById.select(state, workspaceId),
+);
 export const selectDiscussionCanCreate = store.createSelector(
   (state, workspaceId: string) =>
-    state.workspaceDiscussion.conversationsSupported === true &&
-    selectDiscussionReady.select(state, workspaceId),
+    selectDiscussionManagementReady.select(state, workspaceId) &&
+    !selectDiscussionSharingOff.select(state),
 );
 export const selectDiscussionDirectory = store.createSelector((state, workspaceId: string) =>
-  selectDiscussionCacheVisible.select(state)
+  selectDiscussionCacheVisible.select(state) &&
+  (state.workspaceDiscussion.conversationsSupported === true ||
+    state.workspaceDiscussion.managementSupported === true)
     ? (state.workspaceDiscussion.directories[workspaceId] ?? emptyDirectory)
     : emptyDirectory,
 );
 export const selectDiscussionConversations = store.createSelector((state, workspaceId: string) =>
   getItems(selectDiscussionDirectory.select(state, workspaceId).conversations),
 );
+export const selectDiscussionDefaultVisible = store.createSelector((state, workspaceId: string) => {
+  if (
+    selectDiscussionCacheVisible.select(state) &&
+    state.workspaceDiscussion.deletedKeys.includes(
+      JSON.stringify([workspaceId, DEFAULT_DISCUSSION_ID]),
+    )
+  )
+    return false;
+  if (state.workspaceDiscussion.managementSupported !== true) return true;
+  const directory = selectDiscussionDirectory.select(state, workspaceId);
+  // Pages accumulate in the directory. Absence is conclusive only after its last page.
+  return (
+    !!getItem(directory.conversations, DEFAULT_DISCUSSION_ID) ||
+    directory.status !== 'ready' ||
+    directory.hasMore
+  );
+});
 export const selectDiscussionRecipients = store.createSelector((state, workspaceId: string) => {
   const row = selectDiscussionCacheVisible.select(state)
     ? (state.workspaceDiscussion.recipients[workspaceId] ?? emptyRecipients)
@@ -196,18 +234,14 @@ export const selectDiscussionUnread = store.createSelector(
     const principalId =
       selectDiscussionAuthor.select(state)?.principalId ??
       (owner ? (JSON.parse(owner) as [string, string])[1] : null);
-    const readSequence = row.readSequence;
-    const unread =
-      readSequence === null
-        ? []
-        : selectDiscussionMessages
-            .select(state, workspaceId, conversationId)
-            .filter(
-              (message) =>
-                message.sequence > readSequence &&
-                (message.author.agentId !== undefined ||
-                  message.author.principalId !== principalId),
-            );
+    const readSequence = row.readSequence ?? 0;
+    const unread = selectDiscussionMessages
+      .select(state, workspaceId, conversationId)
+      .filter(
+        (message) =>
+          message.sequence > readSequence &&
+          (message.author.agentId !== undefined || message.author.principalId !== principalId),
+      );
     return { count: unread.length, firstSequence: unread[0]?.sequence ?? null };
   },
 );
@@ -219,8 +253,11 @@ export const selectDiscussionSharingOff = store.createSelector(
 );
 export const selectDiscussionCanSend = store.createSelector(
   (state, workspaceId: string, conversationId = DEFAULT_DISCUSSION_ID) =>
+    (conversationId !== NEW_DISCUSSION_ID ||
+      selectDiscussionCanCreate.select(state, workspaceId)) &&
     selectDiscussionReady.select(state, workspaceId, conversationId) &&
-    !selectDiscussionSharingOff.select(state),
+    !selectDiscussionSharingOff.select(state) &&
+    !selectDiscussionReadOnly.select(state, workspaceId, conversationId),
 );
 export const selectDiscussionCanEnableSharing = store.createSelector(
   (state, workspaceId: string) =>
@@ -245,19 +282,6 @@ export const selectDiscussionReply = store.createSelector(
   },
 );
 
-export const selectDiscussionRecipientsForComposer = store.createSelector(
-  (state, workspaceId: string, conversationId = DEFAULT_DISCUSSION_ID) => {
-    if (conversationId === NEW_DISCUSSION_ID)
-      return selectDiscussionRecipients.select(state, workspaceId).selectedMembers;
-    const conversation = getItem(
-      selectDiscussionDirectory.select(state, workspaceId).conversations,
-      conversationId,
-    );
-    const principalId = selectDiscussionAuthor.select(state)?.principalId;
-    return conversation?.participants.filter((person) => person.principalId !== principalId) ?? [];
-  },
-);
-
 export const selectDiscussionAgentMessagingSupported = store.createSelector((state) =>
   state.workspaceDiscussion.context === selectDiscussionContext.select(state)
     ? state.workspaceDiscussion.agentMessagingSupported
@@ -269,9 +293,15 @@ export const selectDiscussionAgentActivitySupported = store.createSelector((stat
     ? state.workspaceDiscussion.agentActivitySupported
     : null,
 );
+export const selectDiscussionPrincipalMentionsSupported = store.createSelector((state) =>
+  state.workspaceDiscussion.context === selectDiscussionContext.select(state)
+    ? state.workspaceDiscussion.principalMentionsSupported
+    : null,
+);
 export const selectDiscussionCanControlAgent = store.createSelector(
   (state, workspaceId: string, conversationId = DEFAULT_DISCUSSION_ID) =>
-    conversationId === DEFAULT_DISCUSSION_ID &&
+    conversationId !== NEW_DISCUSSION_ID &&
+    selectDiscussionCanTargetAgents.select(state, workspaceId, conversationId) &&
     selectDiscussionAgentActivitySupported.select(state) === true &&
     selectDiscussionCanSend.select(state, workspaceId, conversationId),
 );
@@ -286,4 +316,67 @@ export const selectDiscussionReactionsSupported = store.createSelector((state) =
   state.workspaceDiscussion.context === selectDiscussionContext.select(state)
     ? state.workspaceDiscussion.reactionsSupported
     : null,
+);
+
+export const selectDiscussionManagementSupported = store.createSelector((state) =>
+  state.workspaceDiscussion.context === selectDiscussionContext.select(state)
+    ? state.workspaceDiscussion.managementSupported
+    : null,
+);
+export const selectDiscussionManagement = store.createSelector((state, workspaceId: string) =>
+  selectDiscussionContext.select(state) === state.workspaceDiscussion.context
+    ? (state.workspaceDiscussion.management[workspaceId] ?? emptyManagement)
+    : emptyManagement,
+);
+export const selectDiscussionCanRename = store.createSelector(
+  (state, workspaceId: string, conversationId = DEFAULT_DISCUSSION_ID) => {
+    const workspace = selectWorkspaceById.select(state, workspaceId);
+    return (
+      selectDiscussionManagementReady.select(state, workspaceId) &&
+      (workspace?.myRole === 'owner' || workspace?.myRole === 'manager') &&
+      !state.workspaceDiscussion.deletedKeys.includes(
+        JSON.stringify([workspaceId, conversationId]),
+      ) &&
+      getItem(selectDiscussionDirectory.select(state, workspaceId).conversations, conversationId)
+        ?.kind === 'workspace'
+    );
+  },
+);
+export const selectDiscussionCanDelete = store.createSelector(
+  (state, workspaceId: string, conversationId = DEFAULT_DISCUSSION_ID) =>
+    selectDiscussionCanRename.select(state, workspaceId, conversationId) &&
+    selectIsWorkspaceOwner.select(state, workspaceId),
+);
+
+export const selectDiscussionManagementPending = store.createSelector(
+  (state, workspaceId: string, conversationId?: string) => {
+    const request = selectDiscussionManagement.select(state, workspaceId);
+    return (
+      request.pending !== null &&
+      (conversationId === undefined || request.conversationId === conversationId)
+    );
+  },
+);
+
+export const selectDiscussionReadOnly = store.createSelector(
+  (state, workspaceId: string, conversationId = DEFAULT_DISCUSSION_ID) => {
+    const conversation = getItem(
+      selectDiscussionDirectory.select(state, workspaceId).conversations,
+      conversationId,
+    );
+    return !!conversation && conversation.kind !== 'workspace';
+  },
+);
+
+export const selectDiscussionCanTargetAgents = store.createSelector(
+  (state, workspaceId: string, conversationId = DEFAULT_DISCUSSION_ID) =>
+    selectDiscussionAgentMessagingSupported.select(state) === true &&
+    selectDiscussionCanSend.select(state, workspaceId, conversationId) &&
+    (conversationId === DEFAULT_DISCUSSION_ID ||
+      (selectDiscussionManagementSupported.select(state) === true &&
+        (conversationId === NEW_DISCUSSION_ID ||
+          getItem(
+            selectDiscussionDirectory.select(state, workspaceId).conversations,
+            conversationId,
+          )?.kind === 'workspace'))),
 );

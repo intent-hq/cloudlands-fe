@@ -5,11 +5,12 @@
   interface Props {
     count?: number;
     offline?: boolean;
+    roster?: 'mixed' | 'pending';
     sidebar?: boolean;
     shared?: boolean;
     expanded?: boolean;
     guest?: boolean;
-    activityState?: 'ready' | 'empty' | 'loading' | 'error' | 'older';
+    activityState?: 'ready' | 'empty' | 'loading' | 'error' | 'older' | 'older-empty' | 'grouped';
   }
 
   export const preview = definePreview<Props>({
@@ -18,22 +19,32 @@
     defaultState: 'sidebar',
     states: {
       sidebar: { props: { sidebar: true } },
+      mixed: { props: { sidebar: true, expanded: true, roster: 'mixed' } },
+      pending: { props: { sidebar: true, shared: false, count: 1, roster: 'pending' } },
       tile: { props: {} },
       overflow: { props: { count: 8 } },
       offline: { props: { offline: true } },
       unshared: { props: { shared: false, sidebar: true } },
       expanded: { props: { sidebar: true, expanded: true } },
+      grouped: { props: { sidebar: true, expanded: true, activityState: 'grouped' } },
       guest: { props: { sidebar: true, expanded: true, guest: true } },
       empty: { props: { sidebar: true, expanded: true, activityState: 'empty' } },
       loading: { props: { sidebar: true, expanded: true, activityState: 'loading' } },
       error: { props: { sidebar: true, expanded: true, activityState: 'error' } },
       older: { props: { sidebar: true, expanded: true, activityState: 'older' } },
+      'older-empty': { props: { sidebar: true, expanded: true, activityState: 'older-empty' } },
     },
   });
 </script>
 
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
+  import {
+    sharePeopleInvitesLoaded,
+    sharePeopleInvitesScopeChanged,
+  } from '$store/renderer/slices/workspace-share/workspace-share-slice';
+  import { selectWorkspaceInviteRead } from '$store/renderer/slices/workspace-share/workspace-share-selectors';
+  import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
   import WorkspacePeopleTile from './WorkspacePeopleTile.svelte';
   import MultiSelectTabbedSidebar from '$lib/components/workspace/MultiSelectTabbedSidebar.svelte';
   import { store } from '$store/renderer/store';
@@ -59,6 +70,7 @@
     eventsLoaded,
     eventsCleared,
     peopleEventsLoadStarted,
+    peopleEventsPageLoaded,
     peopleEventsLoadFinished,
   } from '$store/renderer/slices/workspace-events/workspace-events-slice';
   import type { WorkspaceEvent } from '$features/events/types';
@@ -66,6 +78,7 @@
   let {
     count = 3,
     offline = false,
+    roster,
     sidebar = false,
     shared = true,
     expanded = false,
@@ -120,10 +133,48 @@
         workspaceId,
         members: offline
           ? []
-          : people.map((person) => ({ ...person, focus: [{ workspaceId }], typing: [] })),
+          : people
+              .filter((_, index) => roster !== 'mixed' || index !== 2)
+              .map((person, index) => ({
+                ...person,
+                focus: [
+                  {
+                    workspaceId:
+                      roster === 'mixed' && index === 1 ? 'another-workspace' : workspaceId,
+                  },
+                ],
+                typing: [],
+              })),
       }),
     );
     const now = catalogNow();
+    if (roster) {
+      store.dispatch(
+        sharePeopleInvitesScopeChanged({
+          context: selectPrincipalActionContext.select(store.state)!,
+          workspaceIds: [workspaceId],
+        }),
+      );
+      store.dispatch(
+        sharePeopleInvitesLoaded({
+          workspaceId,
+          context: selectPrincipalActionContext.select(store.state)!,
+          generation: selectWorkspaceInviteRead.select(store.state, workspaceId).generation,
+          invites: [
+            {
+              id: 'amelia-invite',
+              workspaceId,
+              createdByPrincipalId: 'person-0',
+              pinLogin: 'amelia',
+              pinIdentity: { provider: 'github', host: 'github.com', externalUserId: '1042' },
+              createdAt: new Date(now).toISOString(),
+              expiresAt: new Date(now + 86400000).toISOString(),
+            },
+          ],
+          receivedAt: now,
+        }),
+      );
+    }
     const activity: WorkspaceEvent[] = [
       {
         id: 'people-activity-luke-message',
@@ -191,15 +242,81 @@
         data: { noteId: 'group-chat', title: 'Group chat plan' },
       },
     ];
+    if (activityState === 'grouped') {
+      activity.push(
+        ...[3, 12.5, 13.5].map((minutes) => ({
+          id: `grouped-system-wake-${minutes}`,
+          workspaceId,
+          type: 'agent:message' as const,
+          timestamp: new Date(now - minutes * 60_000).toISOString(),
+          actor: { type: 'system' as const, id: 'system' },
+          data: { role: 'user', agentId: 'planner', messageId: `wake-${minutes}` },
+        })),
+        ...[
+          {
+            id: 'grouped-workspace',
+            minutes: 1,
+            type: 'workspace:updated',
+            data: { changes: { title: 'Sharing polish' } },
+          },
+          {
+            id: 'grouped-agent',
+            minutes: 1,
+            type: 'agent:created',
+            data: { agentId: 'reviewer', agentName: 'Design reviewer' },
+          },
+          { id: 'grouped-comment', minutes: 1, type: 'comment:added', data: { noteId: 'spec' } },
+          {
+            id: 'grouped-spec',
+            minutes: 13,
+            type: 'spec:updated',
+            data: { section: 'Keyboard and screen reader access' },
+          },
+          {
+            id: 'grouped-file',
+            minutes: 14,
+            type: 'file:changed',
+            data: {
+              path: 'src/features/presence/components/WorkspacePeopleActivity.svelte',
+              action: 'modify',
+            },
+          },
+          {
+            id: 'grouped-old',
+            minutes: 30,
+            type: 'note:created',
+            data: { noteId: 'old-plan', title: 'Earlier review' },
+          },
+        ].map(({ id, minutes, type, data }) => ({
+          id,
+          workspaceId,
+          type: type as WorkspaceEvent['type'],
+          timestamp: new Date(now - minutes * 60_000).toISOString(),
+          actor: { type: 'user' as const, id: 'person-0', name: 'Sam' },
+          data,
+        })),
+      );
+    }
     store.dispatch(
       eventsLoaded(
         workspaceId,
-        activityState === 'ready' || activityState === 'older' ? activity : [],
-        activityState === 'older' ? 'older-page' : null,
+        ['ready', 'older', 'grouped'].includes(activityState) ? activity : [],
+        null,
       ),
     );
     store.dispatch(peopleEventsLoadStarted(workspaceId, 'preview-load'));
     if (activityState !== 'loading') {
+      for (const stream of ['user', 'message'] as const) {
+        store.dispatch(
+          peopleEventsPageLoaded(
+            workspaceId,
+            'preview-load',
+            stream,
+            [],
+            ['older', 'older-empty'].includes(activityState) ? `older-${stream}-page` : null,
+          ),
+        );
+      }
       store.dispatch(
         peopleEventsLoadFinished(
           workspaceId,
@@ -212,6 +329,7 @@
   });
 
   onDestroy(() => {
+    store.dispatch(sharePeopleInvitesScopeChanged({ context: null, workspaceIds: [] }));
     store.dispatch(presenceReset());
     store.dispatch(setLabsMultiplayerEnabled(previousMultiplayer));
     store.dispatch(removeWorkspaceEntity(workspaceId));

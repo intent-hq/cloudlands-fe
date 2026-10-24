@@ -3,6 +3,7 @@ import { store } from '$store/renderer/store';
 import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import { WorkspaceId } from '$shared/types/branded-ids';
+import { AgentStatus } from '$shared/types';
 import { notify } from '$lib/components/patterns/notify';
 import { m } from '$shared/paraglide/messages.js';
 import { parseDiscussionReference, type DiscussionReference } from './discussion-references';
@@ -18,7 +19,10 @@ export async function openDiscussionReference(
   if (target.kind === 'agent') {
     const agent = selectAllWorkspaceAgents
       .select(store.state, workspaceId)
-      .find((item) => item.id === target.agentId && !item.retiredAt);
+      .find(
+        (item) =>
+          item.id === target.agentId && !item.retiredAt && item.status !== AgentStatus.Deleted,
+      );
     if (!agent) {
       notify.error(m.workspace_discussion_reference_missing());
       return;

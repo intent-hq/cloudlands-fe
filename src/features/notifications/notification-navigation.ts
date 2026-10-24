@@ -13,6 +13,10 @@
  * app store and triggers SvelteKit navigation — it is a feature client module
  * shared by the two listeners above.
  */
+import { discussionNotificationLayoutRequested } from '$store/renderer/slices/notifications/notifications-slice';
+import { openWorkspaceDiscussion } from '$features/discussions/discussion-navigation';
+import { selectDiscussionMentionAdmission } from '$store/renderer/slices/notifications/notifications-selectors';
+import type { DiscussionTarget } from '$store/renderer/slices/workspace-discussion/workspace-discussion-slice';
 import { navigateToRoute } from '$lib/utils/navigation.client';
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
@@ -31,6 +35,7 @@ export interface NotificationNavigatePayload {
   chief?: boolean;
   /** Chief chat thread (agent) to select in the Assistant panel. */
   agentId?: string;
+  discussion?: { target: DiscussionTarget; messageId: string };
 }
 
 /**
@@ -54,6 +59,27 @@ export async function handleNotificationNavigate(
     logger.debug('Ignoring notification navigate in HUD window', {
       workspaceId: data.workspaceId,
     });
+    return;
+  }
+
+  if (data.discussion) {
+    const { target, messageId } = data.discussion;
+    const admitted = () => {
+      const result = selectDiscussionMentionAdmission.select(appStore.state, target, messageId);
+      return result !== null && result !== 'pending';
+    };
+    if (target.workspaceId !== data.workspaceId || !admitted()) return;
+    try {
+      await navigateToRoute(`/workspace/${encodeURIComponent(target.workspaceId)}`);
+      if (!admitted()) return;
+      const ready = await appStore.dispatch(
+        discussionNotificationLayoutRequested(target, messageId),
+      );
+      if (!ready || !admitted()) return;
+      openWorkspaceDiscussion(target.workspaceId, target.workspaceId, target.conversationId);
+    } catch (error) {
+      logger.warn('Failed to open discussion from notification click', { error });
+    }
     return;
   }
 

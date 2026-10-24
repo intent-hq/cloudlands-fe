@@ -17,6 +17,7 @@ vi.mock('$shared/paraglide/messages.js', () => ({
   m: new Proxy({}, { get: (_, key) => () => String(key) }),
 }));
 import { openDiscussionReference } from './discussion-reference-navigation';
+import { AgentStatus } from '$shared/types';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -39,12 +40,17 @@ describe('discussion reference navigation', () => {
       }),
     );
   });
-  it('reports a missing or retired agent without opening a phantom tab', async () => {
-    mocks.agents.mockReturnValue([{ id: 'agent-1', retiredAt: '2026-01-01' }]);
+  it.each([
+    { state: 'missing', agents: [] },
+    { state: 'retired', agents: [{ id: 'agent-1', retiredAt: '2026-01-01' }] },
+    { state: 'deleted', agents: [{ id: 'agent-1', status: AgentStatus.Deleted }] },
+  ])('reports a $state agent without opening a phantom tab', async ({ agents }) => {
+    mocks.agents.mockReturnValue(agents);
     await openDiscussionReference(
       { kind: 'agent', label: 'Astra', url: 'intent://local/ws/agent/agent-1' },
       'ws',
     );
+    expect(mocks.agents).toHaveBeenCalledWith({}, 'ws');
     expect(mocks.dispatch).not.toHaveBeenCalled();
     expect(mocks.error).toHaveBeenCalled();
   });

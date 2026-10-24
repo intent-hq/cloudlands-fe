@@ -7,6 +7,11 @@ import type {
   WorkspaceMember,
 } from '$features/workspace-sharing/types';
 import {
+  sharePeopleInvitesScopeChanged,
+  sharePeopleInvitesLoaded,
+  sharePeopleInvitesWithheld,
+  shareMembershipChanged,
+  shareInvitesExpired,
   sharePrerequisitesStarted,
   sharePrerequisitesSettled,
   closeShareDialog,
@@ -173,7 +178,7 @@ describe('workspaceShareReducer', () => {
     });
   });
 
-  it('openShareDialog retargets an already-open dialog and drops the previous rows', () => {
+  it('retargets dialog controls while retaining canonical workspace invites', () => {
     const loaded = reduce(
       opened(),
       shareDataLoaded({
@@ -198,6 +203,8 @@ describe('workspaceShareReducer', () => {
     );
     expect(retargeted).toEqual({
       ...initialState,
+      invites: loaded.invites,
+      byWorkspaceId: loaded.byWorkspaceId,
       open: true,
       workspaceId: 'ws-2',
       workspaceTitle: 'B',
@@ -205,7 +212,7 @@ describe('workspaceShareReducer', () => {
     });
   });
 
-  it('closeShareDialog resets everything but keeps the session counter monotonic', () => {
+  it('closeShareDialog clears controls but retains invites and the monotonic session', () => {
     const loaded = reduce(
       opened(),
       shareDataLoaded({
@@ -218,7 +225,12 @@ describe('workspaceShareReducer', () => {
       }),
     );
     const closed = workspaceShareReducer(loaded, closeShareDialog());
-    expect(closed).toEqual({ ...initialState, session: 1 });
+    expect(closed).toEqual({
+      ...initialState,
+      session: 1,
+      invites: loaded.invites,
+      byWorkspaceId: loaded.byWorkspaceId,
+    });
     expect(
       workspaceShareReducer(closed, openShareDialog({ workspaceId: 'ws-1', workspaceTitle: '' }))
         .session,
@@ -962,5 +974,70 @@ describe('confirmed guest roles', () => {
         shareMemberRoleRequested({ principalId: 'fixed', role: 'manager' }),
       ),
     ).toBe(state);
+  });
+});
+
+describe('workspace invite read fences', () => {
+  const context = 'admitted-host-principal';
+  const scope = sharePeopleInvitesScopeChanged({ context, workspaceIds: ['ws-1', 'ws-2'] });
+  const read = { workspaceId: 'ws-1', context, generation: 1, invites: [invite], receivedAt: 1 };
+  it('retains distinct workspace rows and rejects reads from a former authority or generation', () => {
+    let state = reduce(
+      initialState,
+      scope,
+      sharePeopleInvitesLoaded(read),
+      sharePeopleInvitesLoaded({
+        ...read,
+        workspaceId: 'ws-2',
+        invites: [{ ...invite, id: 'other', workspaceId: 'ws-2' }],
+      }),
+    );
+    state = reduce(state, shareMembershipChanged({ workspaceId: 'ws-1' }));
+    expect(reduce(state, sharePeopleInvitesLoaded({ ...read, invites: [] }))).toBe(state);
+    expect(reduce(state, sharePeopleInvitesWithheld(read))).toBe(state);
+    expect(getItems(state.invites).map((row) => row.id)).toEqual(['inv-1', 'other']);
+    state = reduce(
+      state,
+      sharePeopleInvitesScopeChanged({ context: 'new-principal', workspaceIds: ['ws-1', 'ws-2'] }),
+    );
+    expect(getItems(state.invites)).toEqual([]);
+    expect(reduce(state, sharePeopleInvitesLoaded(read))).toBe(state);
+    expect(reduce(state, sharePeopleInvitesWithheld(read))).toBe(state);
+    expect(structuredClone(state)).toEqual(state);
+  });
+
+  it('never allows a stale list to restore a locally revoked invite', () => {
+    let state = reduce(
+      initialState,
+      scope,
+      sharePeopleInvitesLoaded(read),
+      openShareDialog({ workspaceId: 'ws-1', workspaceTitle: '' }),
+    );
+    state = reduce(
+      state,
+      shareInviteRevokeRequested(invite.id),
+      shareActionSettled({ target: target(state), error: null, revokedInviteId: invite.id }),
+    );
+    expect(getItems(state.invites)).toEqual([]);
+    expect(reduce(state, sharePeopleInvitesLoaded(read))).toBe(state);
+  });
+
+  it('withholds only the matching workspace and keeps expiry no-ops referentially stable', () => {
+    let state = reduce(
+      initialState,
+      scope,
+      sharePeopleInvitesLoaded(read),
+      sharePeopleInvitesLoaded({
+        ...read,
+        workspaceId: 'ws-2',
+        invites: [{ ...invite, id: 'other', workspaceId: 'ws-2' }],
+      }),
+    );
+    expect(reduce(state, shareInvitesExpired(1))).toBe(state);
+    state = reduce(state, sharePeopleInvitesWithheld(read));
+    expect(getItems(state.invites).map((row) => row.id)).toEqual(['other']);
+    expect(reduce(state, sharePeopleInvitesLoaded(read))).toBe(state);
+    state = reduce(state, shareInvitesExpired(Date.parse(invite.expiresAt)));
+    expect(getItems(state.invites)).toEqual([]);
   });
 });

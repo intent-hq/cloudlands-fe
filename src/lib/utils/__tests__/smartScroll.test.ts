@@ -200,6 +200,39 @@ describe('captureScrollAnchor / restoreScrollAnchor', () => {
     expect(container.scrollTop).toBe(550);
   });
 
+  it('preserves a reader near the bottom after upward input releases follow', () => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const container = makeScrollContainer({
+      scrollTop: 550,
+      scrollHeight: 1000,
+      clientHeight: 400,
+    });
+    const row = addMessage(container, 'reading', 20);
+    const action = followBottom(container, { follow: true });
+    try {
+      expect(canRestoreScrollAnchor(container, captureScrollAnchor(container))).toBe(false);
+      container.dispatchEvent(new WheelEvent('wheel', { deltaY: -50 }));
+      container.scrollTop = 550;
+      expect(isFollowingBottom(container)).toBe(false);
+      const anchor = captureScrollAnchor(container);
+      expect(anchor.isNearBottom).toBe(true);
+      expect(canRestoreScrollAnchor(container, anchor)).toBe(true);
+      row.getBoundingClientRect = () =>
+        ({ top: 320, bottom: 360, left: 0, right: 0, width: 0, height: 40 }) as DOMRect;
+      restoreScrollAnchor(container, anchor);
+      expect(container.scrollTop).toBe(850);
+    } finally {
+      action.destroy();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('anchors the first visible element and compensates scrollTop by its movement', () => {
     // distance from bottom = 2000 - 500 - 400 = 1100 > 100 threshold
     const container = makeScrollContainer({
