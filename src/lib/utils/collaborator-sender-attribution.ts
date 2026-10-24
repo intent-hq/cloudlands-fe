@@ -225,3 +225,35 @@ export function predictOwnSenderAttribution(input: {
   );
   return { author, preamble, role };
 }
+
+/**
+ * Presentation copy of a queued entry's `text` (its `content` or one
+ * delivery group's) without the collaborator sender preamble. The daemon
+ * prepends the preamble before enqueueing, so queue snapshots carry it; the
+ * entry qualifies under exactly the transcript-row rules of
+ * `getCollaboratorSenderAttribution`, with the queue's `messageMetadata` and
+ * serve-time `author`. The daemon merges a same-principal append as
+ * `content + "\n\n" + incoming`, each already annotated, so once the leading
+ * preamble qualifies the entry, the same exact `\n\n{preamble}\n\n`
+ * segment boundaries are dropped too. The queued entry is never modified.
+ */
+export function presentQueuedMessageText(
+  queued: { messageMetadata?: unknown; author?: unknown } | null | undefined,
+  text: string,
+  ownerPrincipalId: string | null | undefined,
+): string {
+  if (!queued) return text;
+  const attribution = getCollaboratorSenderAttribution(
+    {
+      role: 'user',
+      author: queued.author,
+      metadata: queued.messageMetadata,
+      contentBlocks: [{ type: 'text', text }],
+    },
+    ownerPrincipalId,
+  );
+  if (!attribution) return text;
+  const body = stripCollaboratorSenderPreamble(text, attribution);
+  if (body === text) return text;
+  return body.replaceAll(`\n\n${attribution.preamble}\n\n`, '\n\n');
+}
