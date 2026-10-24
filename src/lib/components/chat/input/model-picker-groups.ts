@@ -6,6 +6,12 @@ import {
 } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
+import {
+  expandProviderIdsWithProfiles,
+  providerRefBaseId,
+  type ProviderProfileRefInfo,
+} from '$shared/provider-profiles';
+import { formatProviderRefLabel } from '$shared/provider-ref-label';
 
 import { formatProviderLoadError, type ProviderLoadError } from './model-picker-provider-errors';
 import { filterDefaultPseudoOptions, toDropdownOptions } from './model-picker-utils';
@@ -15,6 +21,7 @@ type ModelPickerOptions = Parameters<typeof toDropdownOptions>[0];
 export const AUGGIE_LEGACY_GROUP_KEY = 'auggie:legacy-models';
 
 interface BuildGroupedModelOptionsParams {
+  workspaceId?: string;
   showDefaultOption: boolean;
   useDefaultOption: DropdownOption;
   effectiveProviderId: string;
@@ -41,9 +48,16 @@ interface BuildGroupedModelOptionsParams {
   allProviderLoading: Record<string, boolean>;
   allProviderErrors: Record<string, ProviderLoadError>;
   allProviderWarnings: Record<string, string>;
+  /**
+   * Named profile summaries (§5.54). Each profile becomes its own group right
+   * after its base provider, keyed by its `providerRef`; once a base has
+   * profiles its original configuration is labelled `<Provider> · Default`.
+   */
+  profiles?: readonly ProviderProfileRefInfo[];
 }
 
 export function buildGroupedModelOptions({
+  workspaceId,
   showDefaultOption,
   useDefaultOption,
   effectiveProviderId,
@@ -55,6 +69,7 @@ export function buildGroupedModelOptions({
   allProviderLoading,
   allProviderErrors,
   allProviderWarnings,
+  profiles = [],
 }: BuildGroupedModelOptionsParams): DropdownGroup[] {
   const groups: DropdownGroup[] = [];
 
@@ -68,7 +83,7 @@ export function buildGroupedModelOptions({
 
   const state = appStore.state;
   const normalizedEnabledProviderIds = new Set(
-    enabledProviderIds.map((pid) => selectNormalizedProviderId.select(state, pid)),
+    enabledProviderIds.map((pid) => selectNormalizedProviderId.select(state, pid, workspaceId)),
   );
   // Keep the agent's current provider group visible while that provider is
   // merely unavailable (or a guest window cannot see the host's settings), so
@@ -77,6 +92,7 @@ export function buildGroupedModelOptions({
   const normalizedEffectiveProviderId = selectNormalizedProviderId.select(
     state,
     effectiveProviderId,
+    workspaceId,
   );
   // Settings win: `enabledProviderIds` also carries the active provider, which
   // can still name the disabled one until the daemon re-derives the default.
@@ -85,10 +101,21 @@ export function buildGroupedModelOptions({
   // loaded for the effective provider (see availableModelsProviderId doc).
   const fallbackModelsMatchEffectiveProvider =
     availableModelsProviderId !== '' &&
-    selectNormalizedProviderId.select(state, availableModelsProviderId) ===
+    selectNormalizedProviderId.select(state, availableModelsProviderId, workspaceId) ===
       normalizedEffectiveProviderId;
 
-  for (const pid of selectAllCatalogProviderIds.select(state)) {
+  const groupLabel = (pid: string) =>
+    formatProviderRefLabel(
+      pid,
+      selectProviderDisplayName.select(state, providerRefBaseId(pid), workspaceId),
+      profiles,
+      providerRefBaseId(pid),
+    );
+
+  for (const pid of expandProviderIdsWithProfiles(
+    selectAllCatalogProviderIds.select(state, workspaceId),
+    profiles,
+  )) {
     const isDisabledEffectiveProvider =
       !effectiveProviderDisabled &&
       pid === normalizedEffectiveProviderId &&
@@ -104,7 +131,7 @@ export function buildGroupedModelOptions({
     // never empty (D1).
     const models = rawModels && filterDefaultPseudoOptions(rawModels);
     if (models && models.length > 0) {
-      const displayName = selectProviderDisplayName.select(state, pid);
+      const displayName = groupLabel(pid);
       if (pid === 'auggie') {
         const currentModels = models.filter((model) => model.data?.isLegacyModel !== true);
         const legacyModels = models.filter((model) => model.data?.isLegacyModel === true);
@@ -124,7 +151,7 @@ export function buildGroupedModelOptions({
         groups.push({ key: pid, label: displayName, options: models });
       }
     } else if (allProviderLoading[pid]) {
-      const displayName = selectProviderDisplayName.select(state, pid);
+      const displayName = groupLabel(pid);
       groups.push({
         key: pid,
         label: displayName,
@@ -144,7 +171,7 @@ export function buildGroupedModelOptions({
       const error = allProviderErrors[pid];
       groups.push({
         key: pid,
-        label: error.providerName,
+        label: groupLabel(pid),
         options: [
           {
             value: `provider-error:${pid}`,
@@ -163,7 +190,7 @@ export function buildGroupedModelOptions({
       const warning = formatProviderLoadError(pid, allProviderWarnings[pid]);
       groups.push({
         key: pid,
-        label: warning.providerName,
+        label: groupLabel(pid),
         options: [
           {
             value: `provider-warning:${pid}`,

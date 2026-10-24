@@ -7,13 +7,16 @@ import { join } from 'node:path';
 import { afterEach, expect, it } from 'vitest';
 import { selectedProtocol, resolveSelectedProtocol } from './isolated-package-protocol.mjs';
 
-it.each(['14.0', '14.1'])('reads the supported source protocol %s', (version) => {
+it.each(['14.0', '14.1', '15.1'])('reads the supported source protocol %s', (version) => {
   expect(selectedProtocol(`pub const PROTOCOL_VERSION: &str = "${version}";`)).toBe(version);
 });
 
-it.each(['13.3', '14.2', '15.0', ''])('rejects unsupported source protocol %s', (version) => {
-  expect(() => selectedProtocol(`pub const PROTOCOL_VERSION: &str = "${version}";`)).toThrow();
-});
+it.each(['13.3', '14.2', '15.0', '15.2', '16.0', ''])(
+  'rejects unsupported source protocol %s',
+  (version) => {
+    expect(() => selectedProtocol(`pub const PROTOCOL_VERSION: &str = "${version}";`)).toThrow();
+  },
+);
 
 it.each([
   '',
@@ -53,7 +56,7 @@ function repository(version: string, sourcePresent = true) {
   );
   return { directory, source, sha: git('rev-parse', 'HEAD') };
 }
-it.each(['14.0', '14.1'])('binds %s to the selected clean commit', (version) => {
+it.each(['14.0', '14.1', '15.1'])('binds %s to the selected clean commit', (version) => {
   const r = repository(version);
   expect(resolveSelectedProtocol(r.directory, r.sha)).toBe(version);
 });

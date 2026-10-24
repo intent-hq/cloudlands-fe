@@ -662,6 +662,9 @@ test('linked PRs deduplicate URL forms and omit unavailable or wrong-state pulls
   await expect(list.getByRole('option')).toHaveCount(2);
   await expect(component.getByRole('alert')).toHaveCount(0);
   const filter = component.getByRole('combobox', { name: 'Home views', exact: true });
+  const previousGeneration = await page.evaluate(
+    () => window.__homeIntegrationBrowser!.readSearchState().generation,
+  );
   await filter.click();
   await page.getByRole('option', { name: 'Created by me', exact: true }).click();
   // The old linked row can remain visible during the debounced refresh. Observe
@@ -688,6 +691,34 @@ test('linked PRs deduplicate URL forms and omit unavailable or wrong-state pulls
       ),
     )
     .toBe(2);
+  // The old linked row remains visible during debounce. Wait for this generation,
+  // including its linked result, before the next filter can supersede it.
+  await expect
+    .poll(() => page.evaluate(() => window.__homeIntegrationBrowser!.calls))
+    .toContainEqual({
+      method: 'github.pulls.search',
+      params: {
+        workspaceId: 'home-route',
+        limit: 30,
+        owner: 'acme',
+        repo: 'studio',
+        repos: [{ owner: 'acme', repo: 'platform' }],
+        filter: 'created',
+        state: 'open',
+      },
+    });
+  await expect
+    .poll(async () => {
+      const state = await page.evaluate(() => window.__homeIntegrationBrowser!.readSearchState());
+      return (
+        state.generation > previousGeneration &&
+        state.status === 'ready' &&
+        state.filter === 'created' &&
+        !state.closed &&
+        state.linkedIds.includes('other/service#901')
+      );
+    })
+    .toBe(true);
   await expect(list).toContainText('Linked service fix');
   await expect
     .poll(() =>
@@ -711,6 +742,17 @@ test('linked PRs deduplicate URL forms and omit unavailable or wrong-state pulls
   expect(
     calls.filter((c) => c.method === 'github.pulls.get' && c.params.number === 901),
   ).toHaveLength(3);
+  expect(calls.filter((c) => c.method === 'github.pulls.get' && c.params.number === 901)).toEqual(
+    Array.from({ length: 3 }, () => ({
+      method: 'github.pulls.get',
+      params: {
+        owner: 'other',
+        repo: 'service',
+        number: 901,
+        workspaceId: 'home-route',
+      },
+    })),
+  );
   await testInfo.attach('linked-state-wire', {
     body: JSON.stringify(calls, null, 2),
     contentType: 'application/json',
@@ -731,3 +773,124 @@ test('linked PR preview demonstrates a cross-repository workspace link', async (
     contentType: 'image/png',
   });
 });
+
+const linkedPullWorkspace = () =>
+  createMockWorkspace({
+    repositoryOwner: 'acme',
+    repositoryName: 'studio',
+    pullRequests: [
+      {
+        id: '142',
+        number: 142,
+        title: 'Reconnect recovery',
+        status: 'open',
+        url: 'https://github.com/acme/studio/pull/142/',
+        createdAt: '2026-09-28T00:00:00Z',
+        updatedAt: '2026-09-28T00:00:00Z',
+      },
+    ],
+  });
+
+test('double-clicking a PR with a linked workspace opens that workspace', async ({
+  mount,
+  page,
+}) => {
+  const workspace = linkedPullWorkspace();
+  const component = await mount(Harness, { props: { workspaces: [workspace] } });
+  const option = component
+    .getByRole('listbox', { name: 'Pull requests' })
+    .getByRole('option')
+    .filter({ hasText: '#142' });
+  await expect(option.getByRole('button', { name: 'Open workspace' })).toBeVisible();
+  await option.getByText('#142', { exact: true }).dblclick();
+  await expect
+    .poll(() => page.evaluate(() => window.__homeIntegrationBrowser!.navigation().currentTabId))
+    .toBe(workspace.id);
+  const tabs = await page.evaluate(() => window.__homeIntegrationBrowser!.navigation().tabOrder);
+  expect(tabs.filter((id) => id === workspace.id)).toHaveLength(1);
+  await expect(option).toHaveAttribute('aria-selected', 'true');
+});
+
+test('double-clicking an already selected linked PR keeps it selected', async ({ mount, page }) => {
+  const workspace = linkedPullWorkspace();
+  const component = await mount(Harness, { props: { workspaces: [workspace] } });
+  const option = component
+    .getByRole('listbox', { name: 'Pull requests' })
+    .getByRole('option')
+    .filter({ hasText: '#142' });
+  await option.getByText('#142', { exact: true }).click();
+  await expect(option).toHaveAttribute('aria-selected', 'true');
+  await option.getByText('#142', { exact: true }).dblclick();
+  await expect
+    .poll(() => page.evaluate(() => window.__homeIntegrationBrowser!.navigation().currentTabId))
+    .toBe(workspace.id);
+  await expect(option).toHaveAttribute('aria-selected', 'true');
+});
+
+test('double-clicking a PR without a linked workspace only selects it', async ({ mount, page }) => {
+  const component = await mount(Harness);
+  const option = component
+    .getByRole('listbox', { name: 'Pull requests' })
+    .getByRole('option')
+    .filter({ hasText: '#142' });
+  await expect(option).toBeVisible();
+  const before = await page.evaluate(() => window.__homeIntegrationBrowser!.navigation());
+  await option.getByText('#142', { exact: true }).dblclick();
+  await expect(option).toHaveAttribute('aria-selected', 'true');
+  expect(await page.evaluate(() => window.__homeIntegrationBrowser!.navigation())).toEqual(before);
+});
+
+test('double-clicking the linked workspace chip keeps the chip behavior', async ({
+  mount,
+  page,
+}) => {
+  const workspace = linkedPullWorkspace();
+  const component = await mount(Harness, { props: { workspaces: [workspace] } });
+  const option = component
+    .getByRole('listbox', { name: 'Pull requests' })
+    .getByRole('option')
+    .filter({ hasText: '#142' });
+  const before = await page.evaluate(() => window.__homeIntegrationBrowser!.navigation());
+  await option.getByRole('button', { name: 'Open workspace' }).dblclick();
+  await expect(component.locator('[data-home-detail]')).toBeVisible();
+  expect(await page.evaluate(() => window.__homeIntegrationBrowser!.navigation())).toEqual(before);
+});
+
+test('double-clicking a linked PR opens its workspace in a narrow window where the preview replaces the list', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 900, height: 900 });
+  const workspace = linkedPullWorkspace();
+  const component = await mount(Harness, { props: { workspaces: [workspace] } });
+  const option = component
+    .getByRole('listbox', { name: 'Pull requests' })
+    .getByRole('option')
+    .filter({ hasText: '#142' });
+  await humanDoubleClick(page, option.getByText('#142', { exact: true }), () =>
+    expect(option).toBeHidden(),
+  );
+  await expect
+    .poll(() => page.evaluate(() => window.__homeIntegrationBrowser!.navigation().currentTabId))
+    .toBe(workspace.id);
+  await expect(option).toBeHidden();
+  await expect(component.locator('[data-integration-close]')).toBeVisible();
+});
+
+/** A person's double-click: the second press lands after the first click re-rendered Home. */
+async function humanDoubleClick(
+  page: import('@playwright/test').Page,
+  target: import('@playwright/test').Locator,
+  afterFirstClick: () => Promise<void>,
+) {
+  const box = await target.boundingBox();
+  if (!box) throw new Error('double-click target is not visible');
+  const x = box.x + Math.min(24, box.width / 2);
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down({ clickCount: 1 });
+  await page.mouse.up({ clickCount: 1 });
+  await afterFirstClick();
+  await page.mouse.down({ clickCount: 2 });
+  await page.mouse.up({ clickCount: 2 });
+}

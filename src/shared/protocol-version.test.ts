@@ -1,0 +1,126 @@
+// protocol-version-ok-file: version-gate boundary fixtures under test.
+import { describe, expect, it } from 'vitest';
+import {
+  parseProtocolVersion,
+  protocolMajor,
+  protocolVersionAtLeast,
+  protocolVersionBelow,
+  type ProtocolVersion,
+} from './protocol-version';
+import { supportsReasoningEffortProtocol } from '$features/agent/utils/reasoning-effort-protocol';
+import {
+  supportsIdentitySeamProtocol,
+  supportsSourceControlAuthProtocol,
+} from '$store/renderer/slices/daemon-health/daemon-health-selectors';
+import { supportsIdempotentPlacementProtocol } from '$lib/components/chat/input/attachment-placement';
+import { assertScopedFileReadSupport } from './root-file-read-support';
+
+describe('parseProtocolVersion', () => {
+  it('accepts major.minor with an optional patch, trimmed', () => {
+    expect(parseProtocolVersion('15.0') as unknown).toBe('15.0');
+    expect(parseProtocolVersion(' 10.12.3 ') as unknown).toBe('10.12.3');
+  });
+
+  it('is a plain string at runtime, so it crosses IPC and the store unchanged', () => {
+    const parsed = parseProtocolVersion('15.0');
+    expect(structuredClone(parsed)).toEqual(parsed);
+    expect(JSON.parse(JSON.stringify({ parsed }))).toEqual({ parsed });
+  });
+  it.each([undefined, null, 15, '', '15', '15.', '15.0.', 'v15.0', '15.0-rc1', '15.x', 'dev'])(
+    'rejects %j',
+    (value) => expect(parseProtocolVersion(value)).toBeNull(),
+  );
+});
+
+/** Arrival-point parse, as every caller does before gating. */
+const at = (raw: unknown, major: number, minor?: number) =>
+  protocolVersionAtLeast(parseProtocolVersion(raw), major, minor);
+
+describe('protocolVersionAtLeast', () => {
+  it('compares numerically and defaults the minor to 0', () => {
+    expect(at('10.10', 10, 4)).toBe(true);
+    expect(at('10.3', 10, 4)).toBe(false);
+    expect(at('9.99', 10)).toBe(false);
+    expect(at('10.0', 10)).toBe(true);
+  });
+});
+
+describe('protocol gates have no upper bound (intent-hq/intent#7206)', () => {
+  const future = ['15.0', '15.3', '16.0', '16.2.1', '99.3'];
+  it.each(future)('every frontend protocol gate accepts %s', (raw) => {
+    const version = parseProtocolVersion(raw);
+    expect(supportsReasoningEffortProtocol(version)).toBe(true);
+    expect(supportsIdempotentPlacementProtocol(version)).toBe(true);
+    expect(supportsSourceControlAuthProtocol(version)).toBe(true);
+    expect(supportsIdentitySeamProtocol(version)).toBe(true);
+    expect(() =>
+      assertScopedFileReadSupport('file.read', { gitRootId: 'root-a' }, version),
+    ).not.toThrow();
+  });
+});
+
+describe('protocolMajor (warn-only mismatch notice)', () => {
+  it('extracts the leading integer segment', () => {
+    expect(protocolMajor('1')).toBe(1);
+    expect(protocolMajor('2.2')).toBe(2);
+    expect(protocolMajor('10.4.1')).toBe(10);
+    expect(protocolMajor(' 3.0 ')).toBe(3);
+  });
+
+  it('returns null for absent or non-numeric majors', () => {
+    expect(protocolMajor(null)).toBeNull();
+    expect(protocolMajor(undefined)).toBeNull();
+    expect(protocolMajor('')).toBeNull();
+    expect(protocolMajor('v2')).toBeNull();
+    expect(protocolMajor('beta')).toBeNull();
+  });
+});
+
+describe('protocolVersionAtLeast boundaries', () => {
+  it('compares major.minor numerically, not lexically', () => {
+    expect(at('10.4', 10, 4)).toBe(true);
+    expect(at('10.10', 10, 4)).toBe(true);
+    expect(at('10.4.1', 10, 4)).toBe(true);
+    expect(at(' 10.5 ', 10, 4)).toBe(true);
+    expect(at('10.3', 10, 4)).toBe(false);
+    expect(at('10', 10, 4)).toBe(false);
+    expect(at('10.0', 10, 0)).toBe(true);
+  });
+
+  it('passes any greater major regardless of minor', () => {
+    expect(at('11.0', 10, 4)).toBe(true);
+    // A bare major is malformed: daemons always report major.minor.
+    expect(at('11', 10, 4)).toBe(false);
+    expect(at('9.99', 10, 4)).toBe(false);
+  });
+
+  it('is false for absent or unparsable versions', () => {
+    expect(at(null, 10, 4)).toBe(false);
+    expect(at(undefined, 10, 4)).toBe(false);
+    expect(at('', 10, 4)).toBe(false);
+    expect(at('v10.4', 10, 4)).toBe(false); // protocol-version-ok: malformed-input fixture
+    expect(at('10.x', 10, 4)).toBe(false);
+  });
+});
+
+describe('a value forced past the parser still fails closed', () => {
+  it.each(['dev', '14', 'v15.0', ''])('rejects %j cast to ProtocolVersion', (raw) => {
+    const forced = raw as unknown as ProtocolVersion;
+    expect(protocolVersionAtLeast(forced, 0)).toBe(false);
+    // Nor is it mistaken for a proven-old daemon.
+    expect(protocolVersionBelow(forced, 99)).toBe(false);
+  });
+});
+
+describe('protocolVersionBelow (proven-old daemons only)', () => {
+  const below = (raw: unknown) => protocolVersionBelow(parseProtocolVersion(raw), 10, 4);
+  it('is true only for a well-formed version under the minimum', () => {
+    expect(below('10.3')).toBe(true);
+    expect(below('9.99')).toBe(true);
+    expect(below('10.4')).toBe(false);
+    expect(below('16.0')).toBe(false);
+  });
+  it.each([undefined, null, '', '10', '10.x'])('is false for unknown %j', (raw) => {
+    expect(below(raw)).toBe(false);
+  });
+});

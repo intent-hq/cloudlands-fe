@@ -34,7 +34,7 @@ import { isBulkOperationProposal, isWorkspaceCreateProposal } from '$shared/type
 import { navigateAwayIfViewing } from '$features/workspace/navigate-away-if-viewing';
 import { navigateToRoute } from '$lib/utils/navigation.client';
 import { removeRepo } from '../../known-repos/known-repos-slice';
-import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
+import { openWorkspaceTab, restoreWorkspaceTab } from '../../tab-state/tab-state-slice';
 import {
   proposalApplyStarted,
   proposalApplySucceeded,
@@ -42,6 +42,7 @@ import {
 } from '../../proposal-lifecycle/proposal-lifecycle-slice';
 import { selectProposalLifecycleEntry } from '../../proposal-lifecycle/proposal-lifecycle-selectors';
 import { selectSpecialists } from '../../specialists/specialists-selectors';
+import { rememberWorkspaceInitializerRecentSpecialist } from '../../workspace-initializer/workspace-initializer-slice';
 import {
   bulkUpdateWorkspaceEntities,
   markWorkspacePendingDeletion,
@@ -722,19 +723,24 @@ function* applyCreateProposal(payload: WorkspaceProposalApplyPayload): SagaGener
     // Mirror CompactWorkspaceInitializer: the specialist's display name, or
     // the generic "Agent" label when the specialist is General or unknown.
     const specialists = yield* selectSpecialists.effect();
-    const result = yield* call(
-      [workspaceClient, workspaceClient.create],
-      buildCreateWorkspaceRequestFromProposal(proposal, editedFields, {
-        resolveAgentName: (specialistId) =>
-          (specialistId ? specialists.find((s) => s.id === specialistId)?.name : undefined) ??
-          m.workspace_fileChanges_agent_label(),
-      }),
-    );
+    const request = buildCreateWorkspaceRequestFromProposal(proposal, editedFields, {
+      resolveAgentName: (specialistId) =>
+        (specialistId ? specialists.find((s) => s.id === specialistId)?.name : undefined) ??
+        m.workspace_fileChanges_agent_label(),
+    });
+    const result = yield* call([workspaceClient, workspaceClient.create], request);
     if (!result.ok) {
       yield* failProposal(proposalId, result.error, result.errorCode);
       return;
     }
+    // The submitted specialist counts as a recent use for every specialist picker.
+    yield* put(
+      rememberWorkspaceInitializerRecentSpecialist(request.initialAgent?.specialist ?? null),
+    );
     yield* put(setWorkspaceEntity(result.data.workspace));
+    // Show the new workspace in the tab strip without focusing it: the user
+    // stays in the conversation that proposed it.
+    yield* put(restoreWorkspaceTab(result.data.workspace.id));
     yield* put(
       proposalApplySucceeded({
         proposalId,

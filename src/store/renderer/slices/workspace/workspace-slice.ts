@@ -170,6 +170,18 @@ export const updateWorkspaceEntity = createAction<[wsId: string, changes: Partia
 );
 
 /** Apply queued workspace entity update actions in order. */
+/**
+ * Replace ONLY the PR fields of a stored row with an authoritative
+ * `workspace.get` read (the daemon's merged pool, uncapped, plus the linked PR
+ * fields — PROTOCOL §5.1). Unlike a `detailRead` upsert, every other field
+ * keeps its newer event-applied value, so an event-triggered refresh cannot
+ * roll back a title / status change that landed while the read was in flight.
+ * No-op for unknown or pending-deletion rows.
+ */
+export const workspacePullRequestsRefreshed = createAction<[wsId: string, served: Workspace]>(
+  'workspace/pullRequestsRefreshed',
+);
+
 export const bulkUpdateWorkspaceEntities = createAction<
   [actions: ReturnType<typeof updateWorkspaceEntity>[]]
 >('workspace/bulkUpdateWorkspaceEntities');
@@ -658,6 +670,22 @@ workspaceReducer.with(setWorkspaceEntity, (state, { payload: [workspace, options
         ? { ...state.detailHydrated, [workspace.id]: true }
         : state.detailHydrated,
   };
+});
+workspaceReducer.with(workspacePullRequestsRefreshed, (state, { payload: [wsId, served] }) => {
+  if (state.pendingDeletions[wsId]) return state;
+  const existing = getWorkspaceById(state.workspaces, wsId);
+  if (!existing) return state;
+  const updated: Workspace = {
+    ...existing,
+    pullRequests: served.pullRequests,
+    pullRequestsTotal: undefined,
+    activePullRequest: served.activePullRequest,
+    prNumber: served.prNumber,
+    prStatus: served.prStatus,
+    prUrl: served.prUrl,
+  };
+  if (shallowEqual(existing, updated)) return state;
+  return { ...state, workspaces: updateItem(state.workspaces, updated) };
 });
 workspaceReducer.with(bulkUpdateWorkspaceEntities, (state, { payload: [actions] }) => {
   let workspaces = state.workspaces;

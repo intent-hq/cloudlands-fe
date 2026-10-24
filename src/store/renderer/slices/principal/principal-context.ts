@@ -42,3 +42,14 @@ export function getPrincipalActionContext(
     principal.presentationVersion,
   ]);
 }
+
+/** Stable draft ownership across reconnect and presentation lifetimes. */
+export function getPrincipalDraftProvenance(
+  state: Pick<StoreState, 'connections' | 'daemonHealth' | 'workspaceEvents' | 'principal'>,
+): string | null {
+  const connection = getPrincipalConnectionContext(state);
+  const principal = state.principal;
+  if (principal?.status !== 'ready' || !connection || principal.context !== connection) return null;
+  const principalId = principal.snapshot?.principal.id;
+  return principalId ? JSON.stringify([state.connections.windowBackendId, principalId]) : null;
+}

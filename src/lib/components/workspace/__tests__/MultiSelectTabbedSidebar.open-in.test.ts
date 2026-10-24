@@ -210,12 +210,13 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   })),
   selectWorkspaceActivePullRequest: mocks.selector(null),
   selectIsWorkspaceHostLocal: mocks.selector(true),
+  selectWorkspaceSavedScriptContext: mocks.selector('admitted'),
   isWorkspacePullRequestPoolTruncated: () => false,
   selectIsWorkspaceCollaborator: mocks.selector(false),
   selectCanShareWorkspace: mocks.selector(false),
 }));
 vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', () => ({
-  selectPrMonitors: mocks.selector([]),
+  selectReviewMonitors: mocks.selector([]),
 }));
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectAllNotes: mocks.selectorFrom(() => mocks.notes),

@@ -13,6 +13,20 @@ const principal = {
 
 describe('principal discovery wire contract', () => {
   it.each([undefined, false, true, 0, 1, 2, '1', null])(
+    'admits guest role changes only for exact server capability 1 (%j)',
+    (flag) => {
+      const snapshot = parsePrincipalSnapshot(
+        {
+          capabilities: { workspaceGuestRoles: 1 },
+          server: { capabilities: { workspaceGuestRoles: flag } },
+        },
+        principal,
+      );
+      expect(snapshot?.capabilities.workspaceGuestRoles).toBe(flag === 1);
+    },
+  );
+
+  it.each([undefined, false, true, 0, 1, 2, '1', null])(
     'admits full-instance setup only for exact server gitlabCheckout 1 (%j)',
     (flag) => {
       const snapshot = parsePrincipalSnapshot(
@@ -57,6 +71,19 @@ describe('principal discovery wire contract', () => {
         principal,
       );
       expect(snapshot?.capabilities.submissionCorrelation).toBe(flag === 1 ? 1 : undefined);
+    },
+  );
+  it.each([undefined, false, true, 0, 2, '1', null, {}, 1])(
+    'reads the PR workspace lookup server capability only as exact integer 1 (%j)',
+    (flag) => {
+      const snapshot = parsePrincipalSnapshot(
+        {
+          capabilities: { prWorkspaceLookup: 1 },
+          server: { capabilities: { prWorkspaceLookup: flag } },
+        },
+        principal,
+      );
+      expect(snapshot?.capabilities.prWorkspaceLookup).toBe(flag === 1 ? 1 : undefined);
     },
   );
   it.each([undefined, 'owner', -1, 0.5, Number.MAX_SAFE_INTEGER + 1])(

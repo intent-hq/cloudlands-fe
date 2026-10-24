@@ -82,7 +82,7 @@ protocols:
       - intent
 
 mac:
-  # The entry point selects one native architecture per runner; no cross-builds.
+  # Mac packaging requires native Apple Silicon; hooks reject Intel and cross-builds.
   artifactName: '${productName}-${version}-${arch}-mac.${ext}'
   files:
     # node-pty is rebuilt for this Electron/CPU. Never ship foreign fallback prebuilds.
@@ -140,8 +140,10 @@ mac:
   # intentd sidecar is signed via afterPack hook (scripts/sign-sidecar.js)
   # before the main app seal is created, preventing "nested code modified" errors
   target:
-    - dmg
-    - zip
+    - target: dmg
+      arch: [arm64]
+    - target: zip
+      arch: [arm64]
 
 # Notarization configuration (requires Apple Developer account)
 # To enable notarization:

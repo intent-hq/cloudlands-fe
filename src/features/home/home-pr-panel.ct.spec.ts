@@ -12,6 +12,37 @@ async function capture(page: Page, testInfo: TestInfo, name: string) {
   });
 }
 
+// Resolves once the element's geometry and scroll extent are unchanged across two
+// animation frames, so input dispatched afterwards hits the settled layout.
+async function waitForStableLayout(target: Locator) {
+  await expect
+    .poll(
+      () =>
+        target.evaluate(
+          (node) =>
+            new Promise<boolean>((resolve) => {
+              const sample = () => {
+                const rect = node.getBoundingClientRect();
+                return [
+                  rect.x,
+                  rect.y,
+                  rect.width,
+                  rect.height,
+                  node.scrollWidth,
+                  node.clientWidth,
+                ].join(',');
+              };
+              const before = sample();
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => resolve(sample() === before)),
+              );
+            }),
+        ),
+      { timeout: 10_000 },
+    )
+    .toBe(true);
+}
+
 async function expandCheckGroups(checks: Locator) {
   const groups = checks.locator('[data-home-pr-check-group]');
   for (let index = 0; index < (await groups.count()); index++) {
@@ -134,14 +165,25 @@ for (const theme of ['light', 'dark'] as const) {
       contentWidth: node.scrollWidth,
     }));
     expect(horizontal.contentWidth).toBeGreaterThan(horizontal.width);
-    const box = await codeSurface.boundingBox();
-    expect(box).not.toBeNull();
-    await page.mouse.move(box!.x + 100, Math.min(box!.y + 70, 650));
-    await page.mouse.wheel(450, 0);
-    await expect.poll(() => codeSurface.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
+    // A wheel sent before the expanded diff's scroller is laid out and committed is
+    // routed to the vertical-only pane and dropped on slow runners (intent-hq/intent#7255).
+    await waitForStableLayout(codeSurface);
+    await expect(async () => {
+      const box = await codeSurface.boundingBox();
+      expect(box).not.toBeNull();
+      await page.mouse.move(box!.x + 100, Math.min(box!.y + 70, 650));
+      await page.mouse.wheel(450, 0);
+      await expect
+        .poll(() => codeSurface.evaluate((node) => node.scrollLeft), { timeout: 2_000 })
+        .toBeGreaterThan(0);
+    }).toPass({ timeout: 15_000 });
     const beforeScroll = await body.evaluate((node) => node.scrollTop);
-    await page.mouse.wheel(0, 450);
-    await expect.poll(() => body.evaluate((node) => node.scrollTop)).toBeGreaterThan(beforeScroll);
+    await expect(async () => {
+      await page.mouse.wheel(0, 450);
+      await expect
+        .poll(() => body.evaluate((node) => node.scrollTop), { timeout: 2_000 })
+        .toBeGreaterThan(beforeScroll);
+    }).toPass({ timeout: 15_000 });
     expect(await diff.evaluate((node) => node.scrollTop)).toBe(0);
     await testInfo.attach(`diff-scroll-${theme}`, {
       body: JSON.stringify(

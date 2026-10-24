@@ -364,6 +364,17 @@ describe('provider Fast mode state', () => {
       initialState,
     );
   });
+  it('accepts profile references of Fast mode providers only', () => {
+    const supported = providerSettingsReducer(initialState, fastModeSupportReceived(true));
+    const state = providerSettingsReducer(
+      supported,
+      setProviderFastMode('claude-code@pwork', true),
+    );
+    expect(state.fastMode.pending['claude-code@pwork']?.enabled).toBe(true);
+    for (const ref of ['auggie@pwork', 'codex@', 'codex@Bad Id', 'claude-code@a@b']) {
+      expect(providerSettingsReducer(supported, setProviderFastMode(ref, true))).toBe(supported);
+    }
+  });
   it('keeps newer pending intent across hydration and settlement of an older edit', () => {
     let state = providerSettingsReducer(initialState, fastModeSupportReceived(true));
     state = providerSettingsReducer(state, setProviderFastMode('codex', true));

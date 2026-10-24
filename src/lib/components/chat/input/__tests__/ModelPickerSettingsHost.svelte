@@ -7,6 +7,7 @@
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
   import { MOCK_PROVIDER_CATALOG } from '../../../../../test/fixtures/provider-catalog.fixture';
+  import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
   import { setProviderEnabled } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import {
     checkSingleProviderSuccess,
@@ -42,6 +43,7 @@
     ],
   });
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
+  admitLegacyPrincipal();
   store.dispatch(providerCatalogLoaded(MOCK_PROVIDER_CATALOG));
   store.dispatch(hydrateDefaultProvider(consumer === 'specialist' ? 'claude-code' : 'codex'));
   for (const providerId of ['codex', 'claude-code']) {

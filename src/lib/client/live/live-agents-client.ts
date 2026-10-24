@@ -108,6 +108,12 @@ export function normalizeAgent(raw: Record<string, unknown>): AgentSession {
   if (typeof raw.parentAgentId === 'string' && raw.parentAgentId.length > 0) {
     session.parentAgentId = AgentId(raw.parentAgentId);
   }
+  // §5.54 profile state is presence-detected and must clear when omitted, so
+  // write both fields explicitly: a merge of this row then drops stale flags.
+  session.usingEarlierProfileSettings = raw.usingEarlierProfileSettings === true ? true : undefined;
+  session.providerReplacementRequired = readProviderReplacementRequired(
+    raw.providerReplacementRequired,
+  );
   // Canonical booleans override stale metadata, including a persisted false.
   if (typeof raw.isBackground === 'boolean') {
     session.metadata = { ...session.metadata, isBackground: raw.isBackground };
@@ -120,6 +126,17 @@ export function normalizeAgent(raw: Record<string, unknown>): AgentSession {
   // convergence after agent.markSeen — recomputes it through one seam.
   session.hasUnread = deriveAgentHasUnread(session);
   return session;
+}
+
+/** Only the documented §5.54 shape is accepted; anything else reads as absent. */
+function readProviderReplacementRequired(
+  value: unknown,
+): AgentSession['providerReplacementRequired'] {
+  if (!value || typeof value !== 'object') return undefined;
+  const { providerRef, reason } = value as Record<string, unknown>;
+  if (typeof providerRef !== 'string' || providerRef.length === 0) return undefined;
+  if (reason !== 'profile-missing' && reason !== 'provider-disabled') return undefined;
+  return { providerRef, reason };
 }
 
 /**

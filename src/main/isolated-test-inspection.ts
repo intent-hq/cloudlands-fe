@@ -24,8 +24,8 @@ export async function inspectIsolatedTestPackage(
   matchesBuild(BUILD_CONFIG.GIT_COMMIT_HASH, expected.frontendSha);
   assert.equal(profile.backendSha, expected.backendSha);
   assert.equal(BUILD_CONFIG.ISOLATED_TEST_BACKEND_SHA, expected.backendSha);
-  const protocolVersion = expected.protocolVersion ?? '14.0'; // protocol-version-ok: historical isolated packages
-  assert.ok(['14.0', '14.1'].includes(protocolVersion), 'Unsupported inspection protocol'); // protocol-version-ok: reviewed isolated contracts
+  const protocolVersion = expected.protocolVersion ?? '14.0'; // protocol-version-ok: historical isolated packages // protocol-version-parse-ok: exact immutable package expectation, not runtime compatibility
+  assert.ok(['14.0', '14.1', '15.1'].includes(protocolVersion), 'Unsupported inspection protocol'); // protocol-version-ok: reviewed isolated contracts // protocol-version-parse-ok: package proof explicitly selects an audited immutable daemon contract
   const client = getBackendClient();
   assert.equal(client.getStatus(), 'connected');
   const config = client.getConfig();

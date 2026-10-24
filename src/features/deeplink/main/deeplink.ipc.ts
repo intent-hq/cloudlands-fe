@@ -1,7 +1,7 @@
 /**
  * Deep Link IPC Handlers
  *
- * Handles deep link validation and processing
+ * Handles deep link delivery to the renderer
  */
 
 import { ipcMain } from 'electron';
@@ -9,15 +9,15 @@ import { createSafeValidatedHandler } from '../../../main/ipc-validation-middlew
 import { z } from 'zod';
 import { Logger } from '$lib/utils/logger';
 import { m } from '$shared/paraglide/messages.js';
+import { DEEP_LINK_CHANNELS } from '$shared/ipc/channels';
+import { consumePendingDeepLinks } from './pending-deep-links';
 
 const logger = new Logger({ category: 'DeepLink-IPC' });
 
 // Validation schemas
-const ValidateWorkspaceSchema = z.object({
-  workspaceId: z.string(),
-  deepLinkUrl: z.string().optional(),
-});
-
+const ConsumePendingSchema = z
+  .object({ types: z.array(z.enum(['open', 'create', 'clone', 'settings'])).optional() })
+  .strict();
 const WriteFileSchema = z.object({
   filePath: z.string(),
   content: z.string(),
@@ -29,7 +29,7 @@ const WriteFileSchema = z.object({
  */
 export function registerDeepLinkHandlers(): void {
   // Remove any existing handlers before registering to prevent duplicates
-  const handlers = ['deep-link:validate-workspace', 'deep-link:open-file'];
+  const handlers = [DEEP_LINK_CHANNELS.CONSUME_PENDING, 'write_file'];
 
   // Remove existing handlers
   for (const channel of handlers) {
@@ -40,36 +40,15 @@ export function registerDeepLinkHandlers(): void {
     }
   }
 
-  // Validate workspace from deep link
+  // Hand the caller's window the deep-link actions main queued for it
+  // (pending-deep-links.ts). Scoped to the sender, so a window can only drain
+  // its own queue.
   ipcMain.handle(
-    'deep-link:validate-workspace',
+    DEEP_LINK_CHANNELS.CONSUME_PENDING,
     createSafeValidatedHandler(
-      ValidateWorkspaceSchema,
-      async (_event, { workspaceId, deepLinkUrl }) => {
-        try {
-          logger.info('Validating workspace from deep link', { workspaceId, deepLinkUrl });
-
-          // In production, this would validate the workspace exists and is accessible
-          // For now, return mock validation
-          const isValid = workspaceId && workspaceId.length > 0;
-
-          return {
-            success: isValid,
-            workspaceId,
-            valid: isValid,
-            message: isValid
-              ? m.deeplink_ipc_workspaceValidated_message()
-              : m.deeplink_ipc_invalidWorkspaceId_error(),
-          };
-        } catch (error) {
-          logger.error('Failed to validate workspace', error as Error);
-          return {
-            success: false,
-            error: error instanceof Error ? error.message : m.deeplink_ipc_unknown_error(),
-          };
-        }
-      },
-      'deep-link:validate-workspace',
+      ConsumePendingSchema,
+      async (event, { types }) => consumePendingDeepLinks(event.sender.id, types),
+      DEEP_LINK_CHANNELS.CONSUME_PENDING,
     ),
   );
 

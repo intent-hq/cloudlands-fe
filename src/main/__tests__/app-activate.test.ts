@@ -28,10 +28,12 @@ function makeHarness(options: { restored?: boolean; backendId?: string } = {}) {
   const gate = createBootWindowsGate();
   const windows: FakeWindow[] = [];
   let mainWindow: FakeWindow | null = null;
+  let claimedWindow: FakeWindow | undefined;
   const deps: ActivateDeps<FakeWindow> = {
     whenBootWindowsReady: () => gate.ready,
     getAllWindows: () => windows,
     getMainWindow: () => mainWindow,
+    getClaimedWindow: () => claimedWindow,
     focusWindow: vi.fn(),
     getActiveId: vi.fn(async () => options.backendId ?? 'local'),
     restoreSessions: vi.fn(async () => options.restored ?? false),
@@ -45,6 +47,9 @@ function makeHarness(options: { restored?: boolean; backendId?: string } = {}) {
     windows,
     setMainWindow(window: FakeWindow | null) {
       mainWindow = window;
+    },
+    setClaimedWindow(window: FakeWindow | undefined) {
+      claimedWindow = window;
     },
   };
 }
@@ -106,6 +111,32 @@ describe('handleActivate', () => {
 
     await expect(handleActivate(h.deps)).resolves.toBe('focused');
     expect(h.deps.focusWindow).toHaveBeenCalledWith(live);
+  });
+
+  it('focuses a claimed window (notification click target) over the main window', async () => {
+    const h = makeHarness();
+    h.gate.release();
+    const main = fakeWindow('main');
+    const claimed = fakeWindow('notification-target');
+    h.windows.push(main, claimed);
+    h.setMainWindow(main);
+    h.setClaimedWindow(claimed);
+
+    await expect(handleActivate(h.deps)).resolves.toBe('focused');
+    expect(h.deps.focusWindow).toHaveBeenCalledTimes(1);
+    expect(h.deps.focusWindow).toHaveBeenCalledWith(claimed);
+  });
+
+  it('falls back to the main window when the claimed window was destroyed', async () => {
+    const h = makeHarness();
+    h.gate.release();
+    const main = fakeWindow('main');
+    h.windows.push(main);
+    h.setMainWindow(main);
+    h.setClaimedWindow(fakeWindow('closed-target', true));
+
+    await expect(handleActivate(h.deps)).resolves.toBe('focused');
+    expect(h.deps.focusWindow).toHaveBeenCalledWith(main);
   });
 
   it('is released when the boot flow fails before creating windows', async () => {

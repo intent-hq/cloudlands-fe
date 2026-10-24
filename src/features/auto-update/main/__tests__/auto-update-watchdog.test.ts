@@ -60,6 +60,13 @@ vi.mock('electron-updater', () => ({
         updaterHandlers[event] = handler;
       }),
     },
+    // electron-updater's real export; telemetry checks take one per attempt.
+    CancellationToken: class {
+      cancelled = false;
+      cancel() {
+        this.cancelled = true;
+      }
+    },
   },
 }));
 

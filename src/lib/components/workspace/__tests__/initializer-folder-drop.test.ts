@@ -12,6 +12,12 @@ import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
  */
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type {
+  WorkspaceInitializationOutcome,
+  WorkspaceInitializationResume,
+} from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
+import { createWorkspaceDraftDispatchAdapter } from './workspace-draft-dispatch.test-helper';
+import { createWorkspaceInitializationDispatchAdapter } from './workspace-initialization-dispatch.test-helper';
 
 const mocks = vi.hoisted(() => {
   const readable = <T>(getter: () => T) => ({
@@ -47,6 +53,10 @@ const mocks = vi.hoisted(() => {
     placeAttachment: vi.fn(),
     backendRequest: vi.fn(),
     draftClear: vi.fn(),
+    initializationOutcome$: writable<Partial<WorkspaceInitializationOutcome> | undefined>(
+      undefined,
+    ),
+    initializationResume: undefined as WorkspaceInitializationResume | undefined,
     hydrated$: writable(false),
     compactFormState$: writable<Record<string, unknown> | null>(null),
     isRemote: false,
@@ -65,6 +75,7 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
+  selectWorkspaceInitializerAgentForRepo: { select: () => null },
   selectWorkspaceInitializerGitAvailability: () => ({
     subscribe(run: (value: boolean) => void) {
       run(true);
@@ -78,6 +89,10 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
   selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
   selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
+  selectWorkspaceInitializerDraftAuthority: () =>
+    mocks.readable(() => ({ restore: undefined, clear: undefined })),
+  selectWorkspaceInitializationOutcomeForConsumer: () => mocks.initializationOutcome$,
+  selectWorkspaceInitializationResume: { select: () => mocks.initializationResume },
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
@@ -298,6 +313,17 @@ describe('CompactWorkspaceInitializer folder drop (path references, local daemon
   beforeEach(() => {
     mocks.principalState = withLegacyPrincipal({});
     vi.clearAllMocks();
+    mocks.initializationOutcome$.set(undefined);
+    mocks.initializationResume = undefined;
+    const initialize = createWorkspaceInitializationDispatchAdapter({
+      create: mocks.create,
+      pull: mocks.pull,
+      setOutcome: (outcome) => mocks.initializationOutcome$.set(outcome),
+      getResume: () => mocks.initializationResume,
+      setResume: (resume) => (mocks.initializationResume = resume),
+    });
+    const drafts = createWorkspaceDraftDispatchAdapter({ clear: mocks.draftClear });
+    mocks.dispatch.mockImplementation((action) => (drafts(action) ? action : initialize(action)));
     sessionStorage.clear();
     mocks.hydrated$.set(false);
     mocks.compactFormState$.set(null);

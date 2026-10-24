@@ -17,6 +17,10 @@ export const selectCurrentWorkspaceTabId = store.createSelector((state) => {
   return state.tabState.currentTabId;
 });
 
+export const selectIsWorkspaceTabOpen = store.createSelector<[workspaceId: string], boolean>(
+  (state, workspaceId) => state.tabState.openTabs[workspaceId] === true,
+);
+
 /** Actual panel webview mounts, including retained inactive tabs. */
 export const selectMountedBrowserTabLeases = store.createSelector((state) => {
   return state.tabState.mountedBrowserTabLeases;

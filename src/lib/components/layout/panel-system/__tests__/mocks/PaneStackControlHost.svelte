@@ -44,6 +44,7 @@
     settings: 'Settings',
     overview: 'Overview',
     workspace: 'Workspace',
+    discussion: 'Workspace discussion',
     browser: 'Preview browser',
     'hook-script': 'Hook script',
     activity: 'Activity',

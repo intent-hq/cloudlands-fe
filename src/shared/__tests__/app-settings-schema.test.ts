@@ -19,6 +19,10 @@ describe('app settings schema', () => {
     });
   });
 
+  it('has no provider profiles Labs preference: profiles are always on', () => {
+    expect(findAppSettingDefinition('labs.providerProfiles')).toBeUndefined();
+  });
+
   it('exposes remote agents as a local, default-off Labs preference', () => {
     expect(findAppSettingDefinition('labs.remoteAgents')).toMatchObject({
       category: 'labs',

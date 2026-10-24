@@ -1,4 +1,9 @@
 <script lang="ts">
+  import {
+    canonicalImageMimeType,
+    isSupportedImageMimeType,
+    imageAttachmentName,
+  } from './input/image-attachment-format';
   import { truncatedTitle } from '$lib/actions/observe-overflow';
   /* eslint-disable max-lines */
   import {
@@ -67,11 +72,15 @@
   import type { ContentBlock } from '$shared/types/content-block';
   import AgentMessageAttributionHeader from './AgentMessageAttributionHeader.svelte';
   import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
-  import { getCollaboratorSenderAttribution } from '$lib/utils/collaborator-sender-attribution';
+  import {
+    getCollaboratorSenderAttribution,
+    type CollaboratorSenderAttribution,
+  } from '$lib/utils/collaborator-sender-attribution';
   import {
     getHumanMessageAuthor,
     getMessageAuthorLabel,
     getMessageAuthorTooltip,
+    isUserAuthoredMetadata,
   } from '$lib/utils/message-authorship';
   import { getQueueInfo } from '$lib/utils/queue-info';
   import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
@@ -90,6 +99,8 @@
   import { getAutoUnarchivedNotice } from './auto-unarchived-notice';
   import ProviderRehomedNotice from './ProviderRehomedNotice.svelte';
   import { getProviderRehomedNotice } from './rehome-notice';
+  import ProviderFailoverNotice from './ProviderFailoverNotice.svelte';
+  import { getProviderSwitchNotice } from './provider-failover-notice';
   import ChatOperationalRow from './ChatOperationalRow.svelte';
   import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
 
@@ -108,6 +119,10 @@
   const routeWorkspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
 
   const logger = createLogger('ChatMessage');
+  // Status rows separate themselves from reply content above them; directly
+  // after an empty reply there is nothing to separate from, so the turn seam
+  // alone spaces them and they sit centered between the surrounding cards.
+  const TRAILING_STATUS_ROW_CLASS = 'mt-5 [[data-operational-stack-empty]+&]:mt-0';
 
   function getOwningWorkspaceId(): string | undefined {
     return workspace?.id ? String(workspace.id) : routeWorkspaceId;
@@ -221,6 +236,13 @@
      */
     ownPrincipalId?: string | null;
     /**
+     * Predicted sender attribution for the viewer's own display-only pending
+     * row (`predictOwnSenderAttribution`), so its author row matches the
+     * confirmed row instead of popping in. Used only when the row itself
+     * resolves no collaborator sender; never pass it for confirmed rows.
+     */
+    pendingSender?: CollaboratorSenderAttribution | null;
+    /**
      * Called when user wants to edit and resend the message. `blocks`
      * carries the attachment content blocks restored/edited in the edit
      * strip (PROTOCOL §5.5) so edit/regenerate never drops attachments.
@@ -274,6 +296,7 @@
     sessionMetadata,
     workspace = null,
     ownPrincipalId = null,
+    pendingSender = null,
     onEditSubmit,
     editModel,
     onRegenerate,
@@ -349,6 +372,9 @@
 
   // Daemon-persisted provider re-home transcript row (metadata type "provider_rehomed")
   let providerRehomedNotice = $derived(getProviderRehomedNotice(message));
+
+  // Daemon-persisted quota failover transcript row (metadata type "provider_failover")
+  let providerFailoverNotice = $derived(getProviderSwitchNotice(message));
 
   // Daemon-persisted attention-request row (meta.kind "discussion-request"/"blocker-report")
   let attentionNotice = $derived(getAttentionNotice(message));
@@ -447,7 +473,8 @@
   // preamble for collaborators only), so an owner-typed lookalike line stays.
   let collaboratorSender = $derived(
     role === 'user' && !agentAttribution && !automatedWakePresentation
-      ? getCollaboratorSenderAttribution(message, workspace?.ownerPrincipalId)
+      ? (getCollaboratorSenderAttribution(message, workspace?.ownerPrincipalId) ??
+          (pendingSender && isUserAuthoredMetadata(message?.metadata) ? pendingSender : null))
       : null,
   );
   const projectedHumanAuthor = $derived(getHumanMessageAuthor(message, ownPrincipalId));
@@ -905,6 +932,7 @@
     ).filter(
       (block: any) =>
         block.type === 'image' &&
+        !(block.mimeType && !isSupportedImageMimeType(block.mimeType)) &&
         ((block.data && block.mimeType) || block.attachmentId || block.dataTruncated === true),
     );
   });
@@ -951,7 +979,8 @@
       if (failedReferenceImages[block.attachmentId]) return null;
       return referenceImageUrls[block.attachmentId] ?? null;
     }
-    if (block.data && block.mimeType) return `data:${block.mimeType};base64,${block.data}`;
+    if (block.data && block.mimeType)
+      return `data:${canonicalImageMimeType(block.mimeType)};base64,${block.data}`;
     return null;
   }
 
@@ -1020,7 +1049,7 @@
       return;
     }
     if (!isImageBlock(imageBlock) || !imageBlock.data) return;
-    lightboxImageUrl = `data:${imageBlock.mimeType};base64,${imageBlock.data}`;
+    lightboxImageUrl = `data:${canonicalImageMimeType(imageBlock.mimeType)};base64,${imageBlock.data}`;
     lightboxImageName =
       imageBlock.fileName ||
       m.chat_chatMessage_attachedImage_fallback({ number: formatInteger(index + 1) });
@@ -1066,7 +1095,7 @@
     // Legacy slim images have no thumbnail to fall back to. Keep the tile
     // actionable for retry rather than opening an empty data URL on failure.
     if (!isImageBlock(block) || !block.data) return;
-    lightboxImageUrl = `data:${block.mimeType};base64,${block.data}`;
+    lightboxImageUrl = `data:${canonicalImageMimeType(block.mimeType)};base64,${block.data}`;
     lightboxImageName =
       block.fileName ||
       m.chat_chatMessage_attachedImage_fallback({ number: formatInteger(pending.index + 1) });
@@ -1081,7 +1110,60 @@
     if (!message?.contentBlocks || !Array.isArray(message.contentBlocks)) {
       return [];
     }
-    return message.contentBlocks.filter(isFileBlock);
+    return mergeHydratedContent(
+      message.contentBlocks,
+      message?.id ?? messageId,
+      $hydratedBlocks$,
+    ).flatMap<ContentBlock & { fileName: string }>((block) => {
+      if (isFileBlock(block)) return [block];
+      if (block.type === 'image' && block.mimeType && !isSupportedImageMimeType(block.mimeType)) {
+        return [
+          {
+            ...block,
+            type: 'file' as const,
+            fileName: block.fileName || imageAttachmentName(block.mimeType, 'image'),
+          },
+        ];
+      }
+      return [];
+    });
+  });
+
+  let pendingFileHydration = $state<string | null>(null);
+
+  function canHydrateFile(block: ContentBlock): boolean {
+    return !!(block.dataTruncated && block.id && agentId && (message?.id ?? messageId));
+  }
+
+  function hydrateFileAttachment(block: ContentBlock) {
+    const hydrationMessageId = message?.id ?? messageId;
+    if (readOnly || !agentId || !hydrationMessageId || !block.id || !canHydrateFile(block)) return;
+    pendingFileHydration = block.id;
+    appStore.dispatch(messageBlockHydrationRequested(agentId, hydrationMessageId, block.id));
+  }
+
+  $effect(() => {
+    const blockId = pendingFileHydration;
+    if (!blockId) return;
+    const hydratedFromReadable = $hydratedBlocks$;
+    // Use fresh state on the click flush; the readable can still precede the request.
+    const hydrated = agentId
+      ? selectHydratedBlocks.select(appStore.state, agentId)
+      : hydratedFromReadable;
+    const hydrationMessageId = message?.id ?? messageId;
+    if (isHydrationPending(hydrated, hydrationMessageId, [blockId])) return;
+    pendingFileHydration = null;
+    const block = mergeHydratedContent(
+      message?.contentBlocks ?? [],
+      hydrationMessageId,
+      hydrated,
+    ).find((candidate) => candidate.id === blockId);
+    // Failed hydration stays actionable for retry; never download a truncated preview.
+    if (!block?.data || block.dataTruncated || block.type !== 'image') return;
+    const link = document.createElement('a');
+    link.href = `data:application/octet-stream;base64,${block.data}`;
+    link.download = block.fileName || imageAttachmentName(block.mimeType, 'image');
+    link.click();
   });
 
   // Secondary text for a file chip: size and/or mime from the block's
@@ -1375,6 +1457,7 @@
               type: 'image' as const,
               data: item.imageData!,
               mimeType: item.imageMimeType!,
+              ...(item.placementFileName ? { placementFileName: item.placementFileName } : {}),
             },
       );
     const fileBlocks: FileBlock[] = editContextItems
@@ -1455,6 +1538,7 @@
 {:else if modelChangeNotice}
   <!-- Daemon-persisted model-change notice row - centered inline divider -->
   <ModelChangeNotice
+    workspaceId={getOwningWorkspaceId()}
     notice={modelChangeNotice}
     fallbackText={extractAllContent(message) || undefined}
   />
@@ -1471,7 +1555,15 @@
 {:else if providerRehomedNotice}
   <!-- Daemon-persisted provider re-home notice row - centered inline divider -->
   <ProviderRehomedNotice
+    workspaceId={getOwningWorkspaceId()}
     notice={providerRehomedNotice}
+    fallbackText={extractAllContent(message) || undefined}
+  />
+{:else if providerFailoverNotice}
+  <!-- Daemon-persisted quota failover notice row - centered inline divider -->
+  <ProviderFailoverNotice
+    workspaceId={getOwningWorkspaceId()}
+    notice={providerFailoverNotice}
     fallbackText={extractAllContent(message) || undefined}
   />
 {:else if questionOnlyTurn && !shouldShowStoppedIndicator && !finishReasonNoticeLabel}
@@ -1841,7 +1933,17 @@
                       variant="plain"
                       data-testid="chat-message-file-chip"
                       class="type-caption flex cursor-pointer items-center gap-1.5 rounded border border-border bg-muted/50 px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                      onclick={() => openAttachmentReference(fileBlock)}
+                      href={!fileBlock.attachmentId && fileBlock.data && !fileBlock.dataTruncated
+                        ? `data:application/octet-stream;base64,${fileBlock.data}`
+                        : undefined}
+                      download={!fileBlock.attachmentId ? fileBlock.fileName : undefined}
+                      disabled={isAttachmentHydrationLoading(fileBlock.id) ||
+                        (pendingFileHydration !== null && canHydrateFile(fileBlock)) ||
+                        (!fileBlock.attachmentId && !fileBlock.data && !canHydrateFile(fileBlock))}
+                      onclick={() => {
+                        if (fileBlock.attachmentId) openAttachmentReference(fileBlock);
+                        else if (fileBlock.dataTruncated) hydrateFileAttachment(fileBlock);
+                      }}
                       title={m.chat_chatMessage_openAttachment_title({
                         name: `${fileBlock.fileName}`,
                       })}
@@ -1905,7 +2007,7 @@
           <ChatOperationalRow
             leading={stoppedIndicatorLeading}
             summary={stoppedIndicatorSummary}
-            class="mt-5"
+            class={TRAILING_STATUS_ROW_CLASS}
             testId="stopped-indicator"
           />
         {/if}
@@ -1915,7 +2017,7 @@
           <ChatOperationalRow
             leading={finishReasonLeading}
             summary={finishReasonSummary}
-            class="mt-5"
+            class={TRAILING_STATUS_ROW_CLASS}
             testId="finish-reason-notice"
           />
         {/if}

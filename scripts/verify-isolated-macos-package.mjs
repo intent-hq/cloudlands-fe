@@ -13,11 +13,18 @@ import { createPackageDiagnostics } from './isolated-package-diagnostics.mjs';
 import { createIsolatedCliFixture } from './isolated-cli-fixture.mjs';
 
 const [dmg, output, backendSha, frontendSha, protocolVersion = '14.0'] = process.argv.slice(2);
-assert.ok(['14.0', '14.1'].includes(protocolVersion), 'Unsupported inspection protocol');
+assert.ok(['14.0', '14.1', '15.1'].includes(protocolVersion), 'Unsupported inspection protocol');
 assert.equal(process.platform, 'darwin');
 assert.equal(process.arch, 'arm64');
 assert.equal(process.env.GITHUB_ACTIONS, 'true');
-assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted');
+// A fresh VM for this job alone: GitHub-hosted, or WarpBuild (one VM per job; it reports
+// self-hosted with its verification token set). An intent-cache slot is neither.
+assert.ok(
+  process.env.RUNNER_ENVIRONMENT === 'github-hosted' ||
+    (process.env.RUNNER_ENVIRONMENT === 'self-hosted' &&
+      !!process.env.WARPBUILD_RUNNER_VERIFICATION_TOKEN),
+  'requires a fresh GitHub-hosted or WarpBuild VM',
+);
 assert.match(backendSha, /^[a-f0-9]{40}$/);
 assert.match(frontendSha, /^[a-f0-9]{40}$/);
 assert.ok(dmg && output && process.env.RUNNER_TEMP);

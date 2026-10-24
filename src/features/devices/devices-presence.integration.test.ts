@@ -36,6 +36,7 @@ import { MemberProvider } from '$lib/services/mentions/providers/member-provider
 import { personalDevicesSaga } from './personal-devices-saga';
 import { selectPersonalDevicesContext } from './personal-devices-selectors';
 import DevicesPresenceHarness from './__tests__/DevicesPresenceHarness.svelte';
+import { CURRENT_PROTOCOL_VERSION } from '../../test/current-protocol-version';
 
 const wire = vi.hoisted(() => ({
   request: vi.fn(),
@@ -48,6 +49,10 @@ const wire = vi.hoisted(() => ({
 }));
 vi.mock('$lib/client/live/backend-transport', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$lib/client/live/backend-transport')>()),
+  readBackendPrincipal: async () => ({
+    hello: principalHello,
+    principal: await wire.request('principal.me', {}),
+  }),
   backendRequest: wire.request,
   backendSubscribe: wire.subscribe,
   backendUnsubscribe: wire.unsubscribe,
@@ -75,6 +80,16 @@ const principal = (hostRole: HostRole = 'member', id = 'self') => ({
   displayName: null,
   avatarUrl: null,
 });
+const principalHello = {
+  server: {
+    capabilities: {
+      hostMembership: 1,
+      personalPairing: 1,
+      authenticatedDevices: 1,
+      collaborationIdentity: 1,
+    },
+  },
+};
 const member = (principalId: string, hostRole: HostRole): WorkspaceMember => ({
   principalId,
   hostRole,
@@ -191,7 +206,7 @@ async function start(enabled = true, hostRole: HostRole = 'member') {
       {
         running: true,
         listenMode: 'wss',
-        protocolVersion: '10.8', // protocol-version-ok: same identity seam as Devices D2 fixtures
+        protocolVersion: CURRENT_PROTOCOL_VERSION, // protocol-version-ok: same identity seam as Devices D2 fixtures
         host: { os: 'linux', arch: 'x64', locality: 'remote' },
       },
       '2026-09-30T00:00:00Z',
@@ -247,17 +262,6 @@ beforeEach(() => {
   wire.unsubscribe.mockReset().mockResolvedValue(undefined);
   wire.request.mockReset().mockImplementation(async (method: string) => {
     if (held.has(method)) return held.get(method);
-    if (method === 'client.hello')
-      return {
-        server: {
-          capabilities: {
-            hostMembership: 1,
-            collaborationIdentity: 1,
-            personalPairing: 1,
-            authenticatedDevices: 1,
-          },
-        },
-      };
     if (method === 'principal.me') return principalReply;
     if (method === 'presence.snapshot') return snapshotReply;
     if (method === 'workspace.members.list') return memberReply;

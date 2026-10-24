@@ -5,7 +5,7 @@ test('exposes version warnings and supports keyboard device actions', async ({ m
   await page.setViewportSize({ width: 420, height: 800 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await mount(Preview, {
-    hooksConfig: { geometrySnapshot: { scene: 'devices-settings', state: 'versions' } },
+    hooksConfig: { previewScene: { scene: 'devices-settings', state: 'versions' } },
   });
   const row = page.getByRole('article', { name: 'Studio Mac', exact: true });
   await expect(row).toBeVisible();

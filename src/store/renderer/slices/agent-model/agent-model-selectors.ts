@@ -3,8 +3,8 @@ import { store } from '../../store';
 import { selectAgentProvider } from '../agent-session/agent-session-selectors';
 import { selectAgentModelEffortLevels } from '../model/model-selectors';
 import { selectPrincipalConnectionContext } from '../principal/principal-selectors';
-import { selectIsWorkspaceCollaborator } from '../workspace/workspace-selectors';
-import { supportsReasoningEffortProtocol } from '$features/agent/utils/reasoning-effort-protocol';
+import { selectHidesAgentCreationActions } from '../workspace/workspace-selectors';
+import { usesLegacyReasoningEffort } from '$features/agent/utils/reasoning-effort-protocol';
 import { buildLegacyReasoningEffortModelId } from '$features/agent/utils/legacy-reasoning-effort';
 
 export const selectAgentModelMutations = store.createSelector((state, consumerId: string) =>
@@ -19,7 +19,7 @@ export const selectAgentModelWriteSnapshot = store.createSelector(
     const providerId = selectAgentProvider.select(state, agentId);
     const levels = selectAgentModelEffortLevels.select(state, agentId);
     const protocol = state.daemonHealth.stats?.protocolVersion;
-    const legacy = !!protocol && !supportsReasoningEffortProtocol(protocol);
+    const legacy = usesLegacyReasoningEffort(protocol);
     const model = legacy
       ? buildLegacyReasoningEffortModelId(session?.model, null, levels)
       : session?.model;
@@ -33,7 +33,7 @@ export const selectAgentModelWriteSnapshot = store.createSelector(
       canWrite:
         !!session &&
         session.workspaceId === workspaceId &&
-        !selectIsWorkspaceCollaborator.select(state, workspaceId),
+        !selectHidesAgentCreationActions.select(state, workspaceId),
     };
   },
 );

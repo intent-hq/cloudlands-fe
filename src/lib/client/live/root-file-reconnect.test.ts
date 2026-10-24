@@ -19,7 +19,8 @@ describe('production scoped readers across a daemon downgrade', () => {
   it.each(
     (['text', 'chunks'] as const).flatMap((kind) =>
       ['11.1', '12.0', '13.0', '14.0', '15.0'].flatMap((protocolVersion) =>
-        ['11.0', '16.0'].map((nextVersion) => ({ kind, protocolVersion, nextVersion })),
+        // A downgrade or a malformed hello; later majors stay supported (intent-hq/intent#7206).
+        ['11.0', '16'].map((nextVersion) => ({ kind, protocolVersion, nextVersion })),
       ),
     ),
   )(

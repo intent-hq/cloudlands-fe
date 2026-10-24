@@ -305,8 +305,11 @@ async function showDaemonBehindPinToast(
     import('$lib/components/patterns/notify'),
     import('$shared/paraglide/messages.js'),
   ]);
-  notify.warning(
-    m.layout_daemonStatus_daemonBehind_toast({
+  // Short title + full-width description: the title shares the header row
+  // with the Update and close buttons and is clamped to two lines, so the
+  // version sentence would be truncated there.
+  notify.warning(m.layout_daemonStatus_daemonBehind_title(), {
+    description: m.layout_daemonStatus_daemonBehind_description({
       // The local entry's persisted label is an English fallback — use the
       // localized label, same as DeviceRow and the daemon-status menu.
       name: conn.isLocal
@@ -316,14 +319,12 @@ async function showDaemonBehindPinToast(
       daemonVersion: daemonVersion.replace(/^v/, ''),
       pinnedVersion: pinnedVersion.replace(/^v/, ''),
     }),
-    {
-      id: `connections-daemon-behind-${conn.id}`,
-      // Sticky: never auto-dismisses — announceDaemonsBehindPin dismisses it
-      // programmatically once the backend stops qualifying.
-      duration: Number.POSITIVE_INFINITY,
-      action: { label: m.layout_daemonStatus_update_action(), onClick: onUpdate },
-    },
-  );
+    id: `connections-daemon-behind-${conn.id}`,
+    // Sticky: never auto-dismisses — announceDaemonsBehindPin dismisses it
+    // programmatically once the backend stops qualifying.
+    duration: Number.POSITIVE_INFINITY,
+    action: { label: m.layout_daemonStatus_update_action(), onClick: onUpdate },
+  });
 }
 
 /** Dismiss a behind-pin toast previously raised for `connectionId`. */

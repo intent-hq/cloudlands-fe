@@ -364,6 +364,7 @@ describe('renderer side-effect boundary guard', () => {
     const channels = [
       'backend:get-status',
       'backend:node-capabilities',
+      'backend:read-principal',
       'backend:spawn-sidecar',
       'backend:open-local-and-spawn',
       'backend:restart-orphaned-sidecar',

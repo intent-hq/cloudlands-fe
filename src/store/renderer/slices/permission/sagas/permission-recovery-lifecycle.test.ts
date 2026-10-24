@@ -3,9 +3,11 @@ import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { Workspace } from '$shared/types';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 import type { BackendNotification } from '$lib/client/live/backend-transport';
+import { CURRENT_PROTOCOL_VERSION } from '../../../../../test/current-protocol-version';
 
 const wire = vi.hoisted(() => ({
   request: vi.fn(),
+  hello: { server: { capabilities: {} as Record<string, number> } },
   subscribe: vi.fn(),
   unsubscribe: vi.fn(),
   notification: undefined as ((value: BackendNotification) => void) | undefined,
@@ -13,6 +15,10 @@ const wire = vi.hoisted(() => ({
 }));
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: wire.request,
+  readBackendPrincipal: async () => ({
+    hello: structuredClone(wire.hello),
+    principal: await wire.request('principal.me', {}),
+  }),
   backendSubscribe: wire.subscribe,
   backendUnsubscribe: wire.unsubscribe,
   onBackendNotification: (handler: typeof wire.notification) => {
@@ -116,6 +122,7 @@ describe('permission recovery subscription boundary', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    wire.hello = { server: { capabilities: {} } };
     wire.subscribe.mockResolvedValue({ subscriptionId: 'sub-old' });
     wire.unsubscribe.mockResolvedValue(undefined);
     wire.request.mockImplementation(async (method) => {
@@ -134,7 +141,7 @@ describe('permission recovery subscription boundary', () => {
           listenMode: 'uds',
           transports: ['uds'],
           port: null,
-          protocolVersion: '2.6',
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
           host: { os: 'linux', arch: 'x86_64', hasDisplay: false, locality: 'local' },
         };
       if (method === 'agent.pendingPermissions') return { requests: [] };
@@ -288,6 +295,7 @@ describe('permission recovery subscription boundary', () => {
   async function bootGuest() {
     store.dispatch(setLabsMultiplayerEnabled(true));
     wire.subscribe.mockResolvedValue({ subscriptionId: 'sub-new' });
+    wire.hello = { server: { capabilities: { hostMembership: 1 } } };
     wire.request.mockImplementation(async (method) => {
       if (method === 'client.hello') return { server: { capabilities: { hostMembership: 1 } } };
       if (method === 'principal.me')
@@ -306,7 +314,7 @@ describe('permission recovery subscription boundary', () => {
           listenMode: 'uds',
           transports: ['uds'],
           port: null,
-          protocolVersion: '2.6',
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
           host: { os: 'linux', arch: 'x86_64', hasDisplay: false, locality: 'local' },
         };
       if (method === 'agent.pendingPermissions') return { requests: [] };

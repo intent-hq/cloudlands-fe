@@ -15,7 +15,10 @@
   } from '$lib/components/ui/sidebar-context-menu/types';
   import { selectPinnedWorkspaceIds } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
-  import { openHomeWorkspaceFromEvent } from './home-workspace-opening';
+  import {
+    createHomeDoubleClickOpener,
+    openHomeWorkspaceFromEvent,
+  } from './home-workspace-opening';
   import { createHomeWorkspaceMenu } from './home-workspace-menu';
   import { faThumbtack } from '@fortawesome/free-solid-svg-icons';
   import { tick, untrack } from 'svelte';
@@ -88,7 +91,6 @@
   import { selectHomeWorkspaceView, selectHomeWorkspaceError } from './home-workspaces-selectors';
   import { updateHomeWorkspaceView } from './home-workspaces-slice';
   import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
-  import { setWorkspaceInitializerLastSelectedRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import HomeIntegrations from './HomeIntegrations.svelte';
   import type { HomeIntegrationsState } from './home-integrations-types';
 
@@ -107,7 +109,13 @@
     store.dispatch(openWorkspaceTab(id));
     void goto(`/workspace/${encodeURIComponent(id)}`);
   }
+  function openSelectedWorkspace(id: string) {
+    updateView({ selectedId: id });
+    openWorkspace(id);
+  }
+  const doubleClick = createHomeDoubleClickOpener(openSelectedWorkspace);
   function openModifiedWorkspace(event: MouseEvent | KeyboardEvent, id: string) {
+    if (event instanceof MouseEvent) doubleClick.arm(event, id);
     openHomeWorkspaceFromEvent(event, id, openWorkspace);
   }
   function showWorkspaceMenu(event: MouseEvent | KeyboardEvent, workspace: Workspace) {
@@ -490,21 +498,9 @@
     () => [listGroups, boardGroups, filteredWorkspaces, $view$.view],
     () => tab,
   );
+  // New space resolves the selected Home repository itself
+  // (`defaultToSidebarRepository`), so Home only opens it.
   function createWorkspace() {
-    const repoPath = selectedRepository?.repoPath;
-    if (selectedRepository && repoPath) {
-      store.dispatch(
-        setWorkspaceInitializerLastSelectedRepo({
-          path: repoPath,
-          type: selectedRepository.isGithub && !repoPath.startsWith('/') ? 'github' : 'local',
-          ...(selectedRepository.owner && selectedRepository.name
-            ? {
-                githubUrl: `https://github.com/${selectedRepository.owner}/${selectedRepository.name}`,
-              }
-            : {}),
-        }),
-      );
-    }
     store.dispatch(setShowCreateModal(true));
   }
 </script>
@@ -535,6 +531,7 @@
 
 <div
   bind:this={homeElement}
+  {@attach doubleClick.listen}
   class="home-layout h-full min-h-0 min-w-0 bg-sidebar text-foreground"
   class:home-assistant={destination === 'assistant' && !$collaborator$}
   data-home-page
@@ -897,6 +894,7 @@
                         {:else if $view$.view === 'board'}
                           <HomeWorkspaceBoard
                             workspaces={filteredWorkspaces}
+                            pinnedIds={$pinnedIds$}
                             groups={boardGroups}
                             showRepository={!selectedRepository}
                             showRepositoryOwner={!selectedOrg}
@@ -904,6 +902,7 @@
                             onselect={(id) =>
                               updateView({ selectedId: selectedId === id ? null : id })}
                             onopen={openWorkspace}
+                            {doubleClick}
                             oncontextmenu={showWorkspaceMenu}
                             archived={filter === 'archived'}
                           />

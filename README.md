@@ -4,6 +4,15 @@ Electron + SvelteKit + TypeScript desktop frontend for **Intent** that talks to
 the `intentd` daemon. It is consumed as the `packages/cloudlands-fe` git
 submodule of [intent-hq/intent](https://github.com/intent-hq/intent).
 
+## CI
+
+PR updates run Linux metadata, static consumer contracts, workflow policy checks,
+type/lint checks, and unit tests. The merge queue reruns type/lint and unit tests
+and adds builds, integration tests, and relevant browser/native fixture suites
+against the merged tree. Browser suites also retain complete nightly/manual runs.
+Release-only diffs keep their validated exemptions; the required CI Gate rejects
+unexpected PR or queue skips and failed jobs.
+
 ## Architecture
 
 The renderer is a SvelteKit application running inside Electron. It never talks
@@ -130,7 +139,11 @@ matching a `vX.Y.Z` / `vX.Y.Z-beta.N` tag on
 [intent-hq/intentd](https://github.com/intent-hq/intentd).
 
 - **Bumping the pin**: edit `intentd.version` in a normal reviewable PR, then run
-  `node scripts/fetch-sidecar.cjs` to confirm the release assets exist and verify.
+  `node scripts/fetch-sidecar.cjs` to confirm the release assets exist and verify, and
+  `node scripts/sync-intentd-protocol-version.mjs` to regenerate the tests' default
+  `CURRENT_PROTOCOL_VERSION` (`src/test/current-protocol-version.ts`); commit both files.
+  `auto-pin-intentd` does all three, and `lint:intentd-protocol-pin` fails a pin that
+  skipped the sync.
 - **Fetching the pinned sidecar**: `node scripts/fetch-sidecar.cjs` downloads the
   cargo-dist release asset for the current platform/arch, verifies its sha256
   against the release's `.sha256` asset, and stages the binary at
@@ -162,6 +175,21 @@ each pointing the auto-updater at the latest build for that channel:
   `beta` release.
 - **stable** — same promotion model via `.github/workflows/release-stable.yml`;
   it additionally marks the promoted version as Latest.
+
+Mac desktop builds support **Apple Silicon only**; new Intel Mac builds are no
+longer published. Each channel publishes the selected release's ARM64 metadata
+under `latest-mac.yml`, restoring automatic discovery for older native Apple
+Silicon installations. Beta and stable feeds
+advance only when that version is promoted to the respective channel.
+
+Alpha builds using the retired `latest-arm64-mac.yml` feed need a one-time Apple
+Silicon reinstall to return to the standard feed. That feed never reached beta
+or stable.
+
+Intel Macs are unsupported and cannot use the Apple Silicon installer.
+
+The pinned prerelease cleanup command protects versions referenced by the Mac
+feed in both the source and release-mirror repositories.
 
 ## Project layout
 
@@ -242,16 +270,44 @@ wired to the `intentd` daemon through the AppClient JSON-RPC boundary. It
 Licensed under the [Apache License 2.0](./LICENSE). See [NOTICE](./NOTICE) for
 attribution and lineage details.
 
-### Depot CI runners
+### CI runners
 
-Routed Linux jobs prefer free self-hosted runners and burst to Depot with 8 CPUs
-when unavailable or busy. Other checks and automation use Depot. Linux ARM64
-builds stay native, Windows builds use Depot Windows Server 2022 with 16 CPUs,
-and Apple Silicon jobs use Depot’s latest macOS. Native Intel desktop release and
-manual packaging builds deliberately retain GitHub's `macos-latest-large` runners.
+Jobs that ask for a free standard GitHub runner (`ubuntu-24.04`, `ubuntu-latest`)
+always run on GitHub: the repository is public, so those runners cost nothing.
+Jobs that ask for a paid size go through `runner-route.yml` (the same probe as
+intent and intentd; `intent-pr.yml`'s route job is an inline copy). GitHub's
+larger runners are off: a paid size runs on a self-hosted slot or WarpBuild,
+never on GitHub.
 
-From-source Rust sidecars use managed sccache without Rust cache actions.
-The setup script installs a pinned, checksum-verified binary. Depot supplies
-cache access automatically; GitHub Intel runners use the `DEPOT_TOKEN` Actions
-secret. Without credentials, compilation proceeds uncached with a notice.
+- Linux `gh-linux-8x` jobs take a free intent-cache slot first, then burst to
+  WarpBuild `warp-ubuntu-2404-x64-8x`; `gh-linux-arm64-8x` takes a self-hosted
+  ARM64 runner first, then `warp-ubuntu-2404-arm64-8x`.
+- Integration Tests and the Playwright (root) and Electron browser suites run
+  on the free `ubuntu-24.04` runner: they use about 2 of 8 CPUs.
+- Component Tests take a free intent-cache slot first, else the `cloud`
+  burst runner for `gh-linux-8x`.
+- Every Mac and Windows build reads the route's `cloud` output: straight to
+  WarpBuild, never a self-hosted runner. Windows builds use
+  `warp-windows-2022-x64-8x` (`gh-windows-8x`: they use about a third of 16
+  CPUs; Server 2022, because node-gyp fails on 2025), Apple
+  Silicon jobs `warp-macos-26-arm64-12x`, and signed desktop Mac builds
+  `warp-macos-15-arm64-12x` (electron-builder's keychain step fails on macOS 26).
+- Build smoke and the manual packaged Mac smoke and isolated-package check need
+  a fresh VM for the job: they run on WarpBuild through `cloud`, and their
+  scripts accept GitHub-hosted or WarpBuild VMs but refuse an intent-cache slot.
+  Only the one-use B76 diagnostics keep their frozen GitHub labels.
+
+A job that falls back because the route job failed uses the WarpBuild label
+(`scripts/test_runner_policy.py` rejects a paid GitHub label in any `runs-on`).
+Fork pull requests run paid sizes on the free standard runner of the same OS
+instead of WarpBuild. A WarpBuild platform with a job queued over 10 minutes is
+reported as a warning; bursts still go to WarpBuild.
+Mac desktop release and manual packaging builds target ARM64 only.
+
+From-source Rust sidecars use the self-hosted sccache without Rust cache actions.
+The setup script installs a pinned, checksum-verified binary. When the
+`INTENT_SCCACHE_ENDPOINT` Actions variable is set, it uses the self-hosted
+cache with the `INTENT_SCCACHE_TOKEN` secret (read-write unless
+`INTENT_SCCACHE_MODE` says otherwise). Without the variable or a token (for
+example fork pull requests), compilation proceeds uncached with a notice.
 pnpm dependency caching remains unchanged.

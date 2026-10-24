@@ -12,6 +12,10 @@ export const selectAutoUpdateProgress = store.createSelector((state) => state.au
 
 export const selectAutoUpdateError = store.createSelector((state) => state.autoUpdate.error);
 
+export const selectShareUpdateStatistics = store.createSelector(
+  (state) => state.autoUpdate.shareStatistics,
+);
+
 export const selectAutoUpdateToastVisible = store.createSelector(
   (state) => state.autoUpdate.toastVisible,
 );

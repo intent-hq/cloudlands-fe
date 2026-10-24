@@ -152,6 +152,40 @@ describe('SuggestedPrompts', () => {
     expect(onSelect).toHaveBeenCalledTimes(2);
   });
 
+  it('reserves hidden hint slots so a focus change only toggles visibility', async () => {
+    const { container, rerender } = render(SuggestedPrompts, {
+      props: {
+        prompts: ['First prompt', 'Second prompt', 'Third prompt', 'Fourth prompt'],
+        onSelect: vi.fn(),
+        showShortcutHints: false,
+        reserveShortcutHintSpace: true,
+      },
+    });
+
+    const hints = () =>
+      Array.from(container.querySelectorAll<HTMLElement>('[data-suggested-prompt-hint]'));
+    expect(hints()).toHaveLength(3);
+    for (const hint of hints()) {
+      expect(hint.getAttribute('aria-hidden')).toBe('true');
+      expect(hint.getAttribute('data-hint-visible')).toBe('false');
+    }
+
+    await rerender({ showShortcutHints: true });
+    expect(hints()).toHaveLength(3);
+    for (const hint of hints()) {
+      expect(hint.getAttribute('aria-hidden')).toBeNull();
+      expect(hint.getAttribute('data-hint-visible')).toBe('true');
+    }
+    expect(screen.getByText(/(?:⌃|Alt\+)1/)).toBeTruthy();
+  });
+
+  it('renders no hint slots when hints are off and space is not reserved', () => {
+    const { container } = render(SuggestedPrompts, {
+      props: { prompts: ['First prompt'], onSelect: vi.fn() },
+    });
+    expect(container.querySelector('[data-suggested-prompt-hint]')).toBeNull();
+  });
+
   it('preserves keyboard selection and the separate edit affordance', async () => {
     const onSelect = vi.fn();
     const onEdit = vi.fn();

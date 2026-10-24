@@ -9,7 +9,7 @@ export function selectedProtocol(source) {
   ];
   assert.equal(declarations.length, 1, 'Expected one protocol declaration');
   const version = declarations[0][1];
-  assert.ok(['14.0', '14.1'].includes(version), 'Unsupported inspection protocol');
+  assert.ok(['14.0', '14.1', '15.1'].includes(version), 'Unsupported inspection protocol');
   return version;
 }
 

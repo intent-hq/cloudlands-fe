@@ -25,27 +25,21 @@
     selectScriptRuntime,
     selectScriptOutput,
     selectScriptRetainedOutput,
-    selectScriptWorkflowOutcome,
   } from '$store/renderer/slices/scripts/scripts-selectors';
   import { selectCodeFontFamilyCSS } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
-    selectWorkspaceActionContext,
+    selectWorkspaceScriptReadContext,
     selectHidesAgentLifecycleActions,
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     startScriptRequested,
     scriptOutputRequested,
     scriptOutputReleased,
-    getScriptDefinitionRequested,
-    scriptWorkflowConsumed,
+    createScriptFixAgentRequested,
     scriptWorkflowReleased,
   } from '$store/renderer/slices/scripts/scripts-slice';
-  import type { ScriptWorkflowConsumer } from '$store/renderer/slices/scripts/scripts-types';
-  import { scriptOutputTailText } from '$lib/utils/script-output-text';
   import { TerminalThemeManager } from '$features/terminal/terminal-theme-manager';
   import { disposeXtermAfterViewportSync } from '$features/terminal/utils/xterm-lifecycle';
-  import { WorkspaceId } from '$shared/types/branded-ids';
-  import { createAgentFromConfigRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -89,100 +83,14 @@
   // Canonical code-font preference: used to construct the read-only xterm
   // and to update its font option later without disposing/replaying output.
   const codeFontFamilyCSS = selectCodeFontFamilyCSS();
-  const outputAuthority = selectWorkspaceActionContext(workspaceIdStore);
-  const askAgentConsumerId = crypto.randomUUID();
-  const askAgentResourceIdStore = writable('');
-  const askAgentOutcome$ = selectScriptWorkflowOutcome(
-    askAgentConsumerId,
-    workspaceIdStore,
-    askAgentResourceIdStore,
-  );
-  let pendingAskAgent = $state<{
-    requestId: string;
-    workspaceId: string;
-    scriptId: string;
-    authority: string | null | undefined;
-  } | null>(null);
-  let workflowWorkspaceId = '';
-
-  function workflowConsumer(requestId: string, resourceId: string): ScriptWorkflowConsumer {
-    return { consumerId: askAgentConsumerId, requestId, resourceId };
-  }
-
+  const outputAuthority = selectWorkspaceScriptReadContext(workspaceIdStore);
+  const fixAgentConsumerId = crypto.randomUUID();
   $effect(() => {
-    const nextWorkspaceId = workspaceId;
-    if (workflowWorkspaceId && workflowWorkspaceId !== nextWorkspaceId) {
-      appStore.dispatch(scriptWorkflowReleased(workflowWorkspaceId, askAgentConsumerId));
-      pendingAskAgent = null;
-    }
-    workflowWorkspaceId = nextWorkspaceId;
+    const wsId = workspaceId;
+    void scriptId;
     return () => {
-      if (nextWorkspaceId)
-        appStore.dispatch(scriptWorkflowReleased(nextWorkspaceId, askAgentConsumerId));
+      if (wsId) appStore.dispatch(scriptWorkflowReleased(wsId, fixAgentConsumerId));
     };
-  });
-
-  $effect(() => {
-    const outcome = $askAgentOutcome$;
-    const pending = pendingAskAgent;
-    if (
-      !outcome ||
-      !pending ||
-      outcome.consumed ||
-      outcome.status === 'pending' ||
-      outcome.requestId !== pending.requestId ||
-      outcome.workspaceId !== pending.workspaceId
-    )
-      return;
-    pendingAskAgent = null;
-    appStore.dispatch(
-      scriptWorkflowConsumed(outcome.workspaceId, askAgentConsumerId, outcome.requestId),
-    );
-    if (outcome.status !== 'success' || !outcome.result || Array.isArray(outcome.result)) {
-      if (
-        workspaceId === pending.workspaceId &&
-        scriptId === pending.scriptId &&
-        $outputAuthority === pending.authority
-      )
-        notify.error(m.scripts_client_notFound_error({ scriptId: pending.scriptId }));
-      return;
-    }
-    if (
-      workspaceId !== pending.workspaceId ||
-      scriptId !== pending.scriptId ||
-      $outputAuthority !== pending.authority
-    )
-      return;
-    const script = outcome.result as { command: string };
-    const buffer = selectScriptOutput.select(appStore.state, workspaceId, scriptId);
-    const lastLines =
-      buffer.chunks.length > 0
-        ? scriptOutputTailText(buffer, 100)
-        : ($retainedOutput$?.text ?? '').split('\n').slice(-100).join('\n');
-    const exitCode = $runtime$.exitCode;
-    const failedText =
-      exitCode !== null && exitCode !== 0 ? ` failed with exit code ${exitCode}` : '';
-    // i18n-ignore (agent-facing prompt, kept in English)
-    const prompt = `The script '${$script$?.name}'${failedText}.\n\nCommand: \`${script.command}\`\n\nOutput (last 100 lines):\n\`\`\`\n${lastLines}\n\`\`\`\n\nPlease analyze the error and suggest how to fix this script. If you can identify the issue, update the script command using the \`create_script\` MCP tool with scriptId="${scriptId}".`;
-    try {
-      appStore.dispatch(
-        createAgentFromConfigRequested(
-          workspaceId,
-          {
-            name: m.terminal_scriptOutput_fixAgentName_label({
-              name: $script$?.name ?? m.terminal_scriptOutput_script_fallback(),
-            }),
-            nameExplicitlySet: false,
-            workspaceId: WorkspaceId(workspaceId),
-            initialMessage: prompt,
-            source: 'error-notification',
-          },
-          { openAgent: true },
-        ),
-      );
-    } catch {
-      notify.error(m.workspace_modals_createAgentFailed_error());
-    }
   });
   // The request follows admitted connection, runtime and viewer lifetimes. It
   // never starts/restores the script, and cleanup fences late snapshots.
@@ -376,22 +284,12 @@
       return;
     }
 
-    const requestWorkspaceId = workspaceId;
-    const requestScriptId = scriptId;
-    const authority = $outputAuthority;
-    const requestId = crypto.randomUUID();
-    askAgentResourceIdStore.set(requestScriptId);
-    pendingAskAgent = {
-      requestId,
-      workspaceId: requestWorkspaceId,
-      scriptId: requestScriptId,
-      authority,
-    };
     appStore.dispatch(
-      getScriptDefinitionRequested(
-        requestWorkspaceId,
-        requestScriptId,
-        workflowConsumer(requestId, requestScriptId),
+      createScriptFixAgentRequested(
+        workspaceId,
+        scriptId,
+        $retainedOutput$?.text,
+        fixAgentConsumerId,
       ),
     );
   }

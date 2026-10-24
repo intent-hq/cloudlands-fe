@@ -29,6 +29,8 @@ import noColdSvelteImportInTestsRule from './eslint-rules/no-cold-svelte-import-
 import noCopiedChatPanelSelectorMocksRule from './eslint-rules/no-copied-chat-panel-selector-mocks.js';
 import noSourceLiteralAssertionsInTestsRule from './eslint-rules/no-source-literal-assertions-in-tests.js';
 import noWallClockAssertionsInTestsRule from './eslint-rules/no-wall-clock-assertions-in-tests.js';
+import noFakeClockResetBeforeAssertionRule from './eslint-rules/no-fake-clock-reset-before-assertion.js';
+import noClassNameAssertionsInTestsRule from './eslint-rules/no-class-name-assertions-in-tests.js';
 import noFlushSyncInTeardownRule from './eslint-rules/no-flushsync-in-teardown.js';
 import noDirectReducedMotionQueryRule, {
   SOURCE_OF_TRUTH_FILES as reducedMotionSourceOfTruthFiles,
@@ -39,6 +41,8 @@ const sourceLiteralAssertionsBaseline =
   baselineCounts(lintBaseline['no-source-literal-assertions-in-tests']) ?? {};
 const wallClockAssertionsBaseline =
   baselineCounts(lintBaseline['no-wall-clock-assertions-in-tests']) ?? {};
+const classNameAssertionsBaseline =
+  baselineCounts(lintBaseline['no-class-name-assertions-in-tests']) ?? {};
 
 const intentPlugin = {
   rules: {
@@ -49,6 +53,8 @@ const intentPlugin = {
     'no-copied-chat-panel-selector-mocks': noCopiedChatPanelSelectorMocksRule,
     'no-source-literal-assertions-in-tests': noSourceLiteralAssertionsInTestsRule,
     'no-wall-clock-assertions-in-tests': noWallClockAssertionsInTestsRule,
+    'no-fake-clock-reset-before-assertion': noFakeClockResetBeforeAssertionRule,
+    'no-class-name-assertions-in-tests': noClassNameAssertionsInTestsRule,
     'no-flushsync-in-teardown': noFlushSyncInTeardownRule,
     'no-direct-reduced-motion-query': noDirectReducedMotionQueryRule,
   },
@@ -658,6 +664,27 @@ export default [
       'intent/no-wall-clock-assertions-in-tests': [
         'error',
         { baseline: wallClockAssertionsBaseline },
+      ],
+      // A test that pins a fake clock with vi.setSystemTime and then calls
+      // vi.clearAllTimers() / vi.useRealTimers() before asserting reads the real time
+      // of day, so it passes or fails depending on when CI runs (cloudlands-fe#3574
+      // was ejected from the merge queue after 08:00 UTC). No baseline: enforced at zero.
+      'intent/no-fake-clock-reset-before-assertion': 'error',
+    },
+  },
+  // A unit test that asserts an element's className / classList / class attribute pins
+  // how a style is spelled, not what the user sees (cloudlands-fe#3463; AGENTS.md "Do
+  // not write decorative appearance tests"). Same ratchet as above: the baseline maps
+  // today's offenders to their assertion counts and may only shrink.
+  {
+    files: ['src/**/*.test.ts'],
+    plugins: {
+      intent: intentPlugin,
+    },
+    rules: {
+      'intent/no-class-name-assertions-in-tests': [
+        'error',
+        { baseline: classNameAssertionsBaseline },
       ],
     },
   },

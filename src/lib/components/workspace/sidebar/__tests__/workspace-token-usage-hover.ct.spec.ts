@@ -1,5 +1,39 @@
 import { expect, test } from '../../../../../test/ct-test';
 import WorkspaceTokenUsageAccessibilityHost from './WorkspaceTokenUsageAccessibilityHost.svelte';
+import type { Locator } from '@playwright/experimental-ct-svelte';
+
+/**
+ * Reads the segment boxes once the overlay layout has settled. Right after opening,
+ * the first frame can still lay sections out with the narrow container-query padding
+ * (the portal is inserted before its width is set), shifting segments by 8px; hover
+ * samples aimed at that stale geometry land on padding. Radios are re-queried on every
+ * read (a re-render cannot leave detached, zero-size boxes looking stable), and three
+ * consecutive reads separated by rendering updates must agree before the boxes are used.
+ */
+async function settledSegmentBoxes(group: Locator) {
+  return group.evaluate(async (groupElement) => {
+    const read = () =>
+      Array.from(groupElement.querySelectorAll('[role="radio"]'), (element) => {
+        const box = element.getBoundingClientRect();
+        return { left: box.left, right: box.right, y: box.top + box.height / 2 };
+      });
+    const afterRenderingUpdate = () =>
+      new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const requiredStableReads = 2;
+    let previous = read();
+    let stableReads = 0;
+    for (let attempt = 0; attempt < 30; attempt++) {
+      await afterRenderingUpdate();
+      const current = read();
+      const laidOut = current.length > 0 && current.every((box) => box.right > box.left);
+      stableReads =
+        laidOut && JSON.stringify(current) === JSON.stringify(previous) ? stableReads + 1 : 0;
+      if (stableReads >= requiredStableReads) return current;
+      previous = current;
+    }
+    throw new Error('token usage segment geometry did not settle within 30 rendering updates');
+  });
+}
 
 for (const scenario of [
   { name: 'fractional segment boundaries', width: 1100 },
@@ -20,33 +54,7 @@ for (const scenario of [
       const group = details.getByRole('radiogroup', { name });
       const controls = group.getByRole('radio');
       await expect(controls).toHaveCount(4);
-      let boxes: { left: number; right: number; y: number }[] = [];
-      // Container-query padding can settle after the overlay is positioned.
-      // Observe stable segment bounds without changing the pointer or hover state.
-      await expect
-        .poll(async () => {
-          const measurement = await controls.evaluateAll(async (elements) => {
-            const measure = () =>
-              elements.map((element) => {
-                const box = element.getBoundingClientRect();
-                return { left: box.left, right: box.right, y: box.top + box.height / 2 };
-              });
-            const before = measure();
-            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-            const middle = measure();
-            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-            const after = measure();
-            return {
-              stable:
-                JSON.stringify(before) === JSON.stringify(middle) &&
-                JSON.stringify(middle) === JSON.stringify(after),
-              boxes: after,
-            };
-          });
-          boxes = measurement.boxes;
-          return measurement.stable;
-        })
-        .toBe(true);
+      const boxes = await settledSegmentBoxes(group);
       const samples = boxes.flatMap((box, index) => {
         const center = (box.left + box.right) / 2;
         if (index === 0) return [center];

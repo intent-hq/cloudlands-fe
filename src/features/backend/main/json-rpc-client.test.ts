@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConnectionLimitError, TUNNEL_RACE_HOST } from './backend-connection';
 import { JsonRpcError, mapErrorCode } from './json-rpc-errors';
 import { JsonRpcClient, ReverseRpcHandlerError } from './json-rpc-client';
+import { CURRENT_PROTOCOL_VERSION } from '../../../test/current-protocol-version';
 
 /**
  * In-memory fake socket: captures outbound writes and lets tests inject inbound
@@ -856,13 +857,13 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
   /** PROTOCOL §5.17-shaped hello result (server block confirmed on the wire). */
   const helloResult = (clientId: string) => ({
     clientId,
-    protocolVersion: '2.2',
+    protocolVersion: CURRENT_PROTOCOL_VERSION,
     server: {
       locality: 'local',
       hasDisplay: true,
       osArch: 'darwin/arm64',
       version: '0.1.0',
-      protocolVersion: '2.2',
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
       capabilities: { liveState: true },
     },
   });
@@ -1076,7 +1077,9 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
       ['13.0.1', true],
       ['14.0', true],
       ['15.0', true],
-      ['16.0', false],
+      // No upper bound: clients never cap the protocol version (intent-hq/intent#7206).
+      ['16.0', true],
+      ['99.3', true],
       ['12', false],
       ['12.0-preview', false],
       [undefined, false],
@@ -1174,7 +1177,8 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
         nextVersion === '12.0' ||
         nextVersion === '13.0' ||
         nextVersion === '14.0' ||
-        nextVersion === '15.0'
+        nextVersion === '15.0' ||
+        nextVersion === '16.0'
       ) {
         expect(result).toEqual(response);
         expect(sockets[1].writes.map((frame) => JSON.parse(frame).method)).toEqual([
@@ -1472,6 +1476,7 @@ describe('captured repository socket dispatch', () => {
           localNodeIsolation: 1,
           agentPlatformRouting: 1,
           workspaceMembershipEvents: 1,
+          noteTruncatedRead: 1,
         },
       },
     });
@@ -1481,6 +1486,7 @@ describe('captured repository socket dispatch', () => {
       localNodeIsolation: 1,
       agentPlatformRouting: 1,
       workspaceMembershipEvents: 1,
+      noteTruncatedRead: 1,
     });
     expect(client.getRepositoryConnection()).toBe(connection);
     expect(sockets[0].writes).toHaveLength(1);
@@ -1488,7 +1494,7 @@ describe('captured repository socket dispatch', () => {
     expect(client.getNodeCapabilities()).toBeNull();
     await vi.waitFor(() => expect(sockets[0].writes).toHaveLength(2));
     sockets[0].receive(
-      '{"id":2,"result":{"clientId":"confirmed-client","server":{"capabilities":{"agentNodes":"1","localNodeIsolation":true,"workspaceMembershipEvents":"1"}}}}\n',
+      '{"id":2,"result":{"clientId":"confirmed-client","server":{"capabilities":{"agentNodes":"1","localNodeIsolation":true,"workspaceMembershipEvents":"1","noteTruncatedRead":"1"}}}}\n',
     );
     await hello;
     expect(client.getNodeCapabilities()).toEqual({
@@ -1496,6 +1502,7 @@ describe('captured repository socket dispatch', () => {
       localNodeIsolation: 0,
       agentPlatformRouting: 0,
       workspaceMembershipEvents: 0,
+      noteTruncatedRead: 0,
     });
     client.dispose();
     expect(client.getNodeCapabilities()).toBeNull();
@@ -1896,8 +1903,17 @@ describe('private repository connection evidence', () => {
 
   it('stamps notifications with the physical source and retires identity before re-hello', async () => {
     const { client, sockets, events } = await start();
+    const confirmed = vi.fn(() => ({
+      status: client.getStatus(),
+      connection: client.getRepositoryConnection(),
+    }));
+    client.on('identity-confirmed', confirmed);
     const original = client.getRepositoryConnection()!;
     expect(original.repositoryContext).toBe(true);
+    expect(client.getAcknowledgedHelloIdentity(original)).toEqual({
+      clientId: 'desktop',
+      connectionRole: undefined,
+    });
     const notification = {
       method: 'workspace.repositoryContext.retired',
       params: {
@@ -1916,6 +1932,7 @@ describe('private repository connection evidence', () => {
     const hello = client.request('client.hello');
     expect(events).toContainEqual({ type: 'identity-retired', connection: original });
     expect(client.getRepositoryConnection()).toBeNull();
+    expect(client.getAcknowledgedHelloIdentity(original)).toBeNull();
     await vi.waitFor(() => expect(sockets[0].writes).toHaveLength(2));
     sockets[0].receive(
       '{"id":2,"result":{"clientId":"desktop","server":{"capabilities":{"repositoryContext":1}}}}\n',
@@ -1923,6 +1940,11 @@ describe('private repository connection evidence', () => {
     await hello;
     expect(client.getRepositoryConnection()?.incarnation).toBe(original.incarnation);
     expect(client.getRepositoryConnection()).not.toBe(original);
+    expect(confirmed).toHaveBeenCalledOnce();
+    expect(confirmed.mock.results[0].value).toEqual({
+      status: 'connected',
+      connection: client.getRepositoryConnection(),
+    });
     expect(events.filter((event) => (event as { type: string }).type === 'opened')).toHaveLength(1);
   });
 
@@ -1974,6 +1996,10 @@ describe('private repository connection evidence', () => {
     );
     await first;
     expect(client.getRepositoryConnection()).toBe(current);
+    expect(client.getAcknowledgedHelloIdentity(current!)).toEqual({
+      clientId: 'current',
+      connectionRole: undefined,
+    });
     expect(onHelloResult).toHaveBeenCalledTimes(2);
     expect(onHelloResult).toHaveBeenLastCalledWith({
       clientId: 'current',

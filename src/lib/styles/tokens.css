@@ -583,6 +583,7 @@
   --ease-emphasized-out: var(--spring-slow-ease);
   --layer-chrome: 20;
   --layer-connection-overlay: 30;
+  --layer-toast: 35;
   --layer-popover: 40;
   --layer-modal: 50;
   --layer-tooltip: 70;

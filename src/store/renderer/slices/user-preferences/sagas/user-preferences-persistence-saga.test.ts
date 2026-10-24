@@ -41,6 +41,7 @@ import {
   saveActivityLogPreset,
   setAgentFontStyle,
   setChatAuroraEnabled,
+  setCollapseToolRuns,
   setCodeFontFamily,
   setGroupByRepo,
   setGithubLinkDefaultAction,
@@ -64,6 +65,7 @@ import {
   toggleGroupByRepo,
   toggleHasCompletedProviderSetup,
   toggleChatAurora,
+  toggleCollapseToolRuns,
   toggleLabsMultiplayer,
   toggleLabsSettingsVisibility,
   toggleReduceMotionOnBattery,
@@ -207,6 +209,7 @@ describe('userPreferencesPersistenceSaga', () => {
       'workspace-list:completedProviderSetup': true,
       'chat:showReasoningBlocks': true,
       'chat:auroraEnabled': false,
+      'chat:collapseToolRuns': true,
       'appearance:shellTransparencyEnabled': false,
       'appearance:reduceMotionOnBattery': false,
       'labs:settingsVisible': true,
@@ -236,6 +239,7 @@ describe('userPreferencesPersistenceSaga', () => {
       [providerSetupHydrated('local', true)],
       [setShowReasoningBlocks(true)],
       [setChatAuroraEnabled(false)],
+      [setCollapseToolRuns(true)],
       [setShellTransparencyEnabled(false)],
       [setReduceMotionOnBattery(false)],
       [setLabsSettingsVisible(true)],
@@ -402,6 +406,24 @@ describe('userPreferencesPersistenceSaga', () => {
       await restarted.stop();
     },
   );
+
+  it('ignores a leftover Provider profiles lab value and never writes it', async () => {
+    mocks.getJSON.mockImplementation((key: string) =>
+      key === 'labs:providerProfilesEnabled' ? false : undefined,
+    );
+    const run = startPreferenceStore();
+    await settle();
+    expect(mocks.getJSON.mock.calls.map(([key]) => key)).not.toContain(
+      'labs:providerProfilesEnabled',
+    );
+    expect(run.getUserPreferences()).not.toHaveProperty('labsProviderProfilesEnabled');
+    run.dispatch(resetOnboarding());
+    await settle();
+    expect(
+      mocks.setJSON.mock.calls.filter(([key]) => key === 'labs:providerProfilesEnabled'),
+    ).toEqual([]);
+    await run.stop();
+  });
 
   it('keeps RemoteAgents off until delayed preference hydration finishes without resetting it on rerun', async () => {
     let finish!: (enabled: boolean) => void;
@@ -600,6 +622,7 @@ describe('userPreferencesPersistenceSaga', () => {
         hasCompletedProviderSetup: true,
         showReasoningBlocks: true,
         chatAuroraEnabled: false,
+        collapseToolRuns: true,
         shellTransparencyEnabled: false,
         reduceMotionOnBattery: false,
         labsMultiplayerEnabled: true,
@@ -633,6 +656,8 @@ describe('userPreferencesPersistenceSaga', () => {
       toggleShowReasoningBlocks(),
       setChatAuroraEnabled(false),
       toggleChatAurora(),
+      setCollapseToolRuns(true),
+      toggleCollapseToolRuns(),
       setShellTransparencyEnabled(false),
       toggleShellTransparency(),
       setReduceMotionOnBattery(false),
@@ -666,6 +691,8 @@ describe('userPreferencesPersistenceSaga', () => {
       ['chat:showReasoningBlocks', true],
       ['chat:auroraEnabled', false],
       ['chat:auroraEnabled', false],
+      ['chat:collapseToolRuns', true],
+      ['chat:collapseToolRuns', true],
       ['appearance:shellTransparencyEnabled', false],
       ['appearance:shellTransparencyEnabled', false],
       ['appearance:reduceMotionOnBattery', false],

@@ -36,6 +36,8 @@ declare global {
     };
     isStorybook?: boolean;
     electronAPI: {
+      /** Preload decoding support; never the renderer's or daemon's receipt. */
+      reviewMonitoring?: number;
       invoke: (channel: string, ...args: any[]) => Promise<any>;
       send: (channel: string, ...args: any[]) => void;
       // Returns a unique listener ID for use with offById()

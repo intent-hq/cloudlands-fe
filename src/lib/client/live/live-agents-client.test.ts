@@ -1,3 +1,4 @@
+import { CURRENT_PROTOCOL_VERSION } from '../../../test/current-protocol-version';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentCreateRequest } from '../app-client';
 
@@ -555,7 +556,9 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     { queued: true },
     { queued: true, quarantined: true },
   ])('sends one snapshot batch and preserves its outcome: %j', async (outcome) => {
-    backend.onRequest('client.hello', () => ({ server: { protocolVersion: '13.1' } }));
+    backend.onRequest('client.hello', () => ({
+      server: { protocolVersion: CURRENT_PROTOCOL_VERSION },
+    }));
     const response = { success: true, messageIds: ['first', 'second'], ...outcome };
     backend.onRequest('agent.sendQueuedMessagesNow', () => response);
     const result = await new LiveAgentsClient().sendQueuedMessagesNow({
@@ -574,7 +577,9 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
   });
 
   it('preserves batch rejection without falling back to individual sends', async () => {
-    backend.onRequest('client.hello', () => ({ server: { protocolVersion: '13.1' } }));
+    backend.onRequest('client.hello', () => ({
+      server: { protocolVersion: CURRENT_PROTOCOL_VERSION },
+    }));
     backend.onRequest('agent.sendQueuedMessagesNow', () => {
       throw new BackendError(
         buildErrorPayload('INVALID_PARAMS', 'message is held', { rpcCode: -32602 }),

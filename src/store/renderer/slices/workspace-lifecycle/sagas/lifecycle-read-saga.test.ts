@@ -13,6 +13,7 @@ import {
   selectPeopleEventsLoading,
   selectPeopleEventsError,
 } from '../../workspace-events/workspace-events-selectors';
+import { CURRENT_PROTOCOL_VERSION } from '../../../../../test/current-protocol-version';
 
 const mocks = vi.hoisted(() => ({
   backendRequest: vi.fn(),
@@ -426,6 +427,27 @@ describe('lifecycleReadSaga', () => {
   });
 
   describe('membership summary refresh (workspace:updated roster / invite deltas)', () => {
+    it.each(['manager', 'collaborator'])(
+      'refreshes current role %s without granting full management',
+      async (myRole) => {
+        mocks.workspaces.get.mockResolvedValue({ id: WS, myRole, canManage: false });
+        const current = state();
+        current.principal.snapshot!.capabilities.workspaceGuestRoles = true;
+        const run = start(current);
+        run.channel.put(refreshWorkspaceMembershipRequested(WS));
+        await settle();
+        expect(run.actions).toContainEqual(
+          expect.objectContaining({
+            type: 'workspace/bulkUpdateWorkspaceEntities',
+            payload: [[expect.objectContaining({ payload: [WS, { myRole, canManage: false }] })]],
+          }),
+        );
+        expect(run.actions.some((action) => action.type === refreshScripts.type)).toBe(
+          myRole === 'manager',
+        );
+        await stop(run.task);
+      },
+    );
     it('re-reads workspace.get for the one workspace and merges only the membership counts', async () => {
       mocks.workspaces.get.mockResolvedValue({
         id: WS,
@@ -4965,7 +4987,10 @@ describe('script lifecycle capability coherence', () => {
         helloCount++;
         if (helloCount === 1) return pending as never;
         return {
-          server: { protocolVersion: '14.0', capabilities: { scriptActiveLists: 1 } },
+          server: {
+            protocolVersion: CURRENT_PROTOCOL_VERSION,
+            capabilities: { scriptActiveLists: 1 },
+          },
         } as never;
       }
       const archived = (params as { archive?: string }).archive === 'archived';
@@ -4989,7 +5014,12 @@ describe('script lifecycle capability coherence', () => {
       dispatch(refreshScripts(WS));
       await vi.waitFor(() => expect(helloCount).toBe(1));
       current.connections.windowBackendId = 'replacement';
-      resolveHello({ server: { protocolVersion: '14.0', capabilities: { scriptActiveLists: 1 } } });
+      resolveHello({
+        server: {
+          protocolVersion: CURRENT_PROTOCOL_VERSION,
+          capabilities: { scriptActiveLists: 1 },
+        },
+      });
       for (let i = 0; i < 10; i++) await settle();
       expect(current.scripts.byWorkspaceId[WS].activeScriptIds).toBeUndefined();
       expect(current.scripts.byWorkspaceId[WS].scripts.history).toBeUndefined();
@@ -5038,7 +5068,10 @@ describe('script lifecycle capability coherence', () => {
             return { server: { capabilities: {} } } as never;
           }
           return {
-            server: { protocolVersion: '14.0', capabilities: { scriptActiveLists: 1 } },
+            server: {
+              protocolVersion: CURRENT_PROTOCOL_VERSION,
+              capabilities: { scriptActiveLists: 1 },
+            },
           } as never;
         }
         if (method === 'script.list') {

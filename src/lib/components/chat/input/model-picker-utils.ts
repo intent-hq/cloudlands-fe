@@ -1,6 +1,7 @@
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { DropdownOption } from '$lib/components/ui/dropdown';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
+import { providerRefBaseId } from '$shared/provider-profiles';
 import {
   selectEffectiveDefaultProviderId,
   selectNormalizedProviderId,
@@ -242,7 +243,8 @@ export function isProviderEnabled(
 }
 
 /**
- * Return true when `providerId` was explicitly disabled in Settings > Agents:
+ * Return true when `providerId` (or a profile reference's base provider) was
+ * explicitly disabled in Settings > Agents:
  * `providers.enabled[id] === false` for a provider whose catalog row allows
  * disabling (the daemon's `ensure_provider_enabled` gate). Unlike the
  * available+enabled set this reads settings alone — an absent entry (map not
@@ -255,7 +257,13 @@ export function isProviderDisabledInSettings(
   workspaceId?: string,
 ): boolean {
   if (!providerId) return false;
-  const normalizedId = selectNormalizedProviderId.select(appStore.state, providerId, workspaceId);
+  // Enablement stays keyed by the base provider (§5.54): a profile is disabled
+  // exactly when its base provider is.
+  const normalizedId = selectNormalizedProviderId.select(
+    appStore.state,
+    providerRefBaseId(providerId),
+    workspaceId,
+  );
   const entry = selectProviderCatalogEntry.select(appStore.state, normalizedId, workspaceId);
   if (entry?.canBeDisabled === false) return false;
   return enabledProviders[normalizedId] === false;

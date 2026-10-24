@@ -11,6 +11,7 @@
     faCheck,
   } from '@fortawesome/free-solid-svg-icons';
   import CodeEditor from './CodeEditor.svelte';
+  import FileVideoPreview from './FileVideoPreview.svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { formatNumber } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
@@ -24,6 +25,8 @@
     language?: string;
     isBinary?: boolean;
     allowDownload?: boolean;
+    onDownload?: () => void;
+    downloading?: boolean;
   }
 
   let {
@@ -33,6 +36,8 @@
     language,
     isBinary,
     allowDownload = true,
+    onDownload,
+    downloading = false,
   }: Props = $props();
 
   // Determine file type from extension
@@ -260,7 +265,7 @@
   const handleDownload = () => {
     if (!allowDownload) return;
     const link = document.createElement('a');
-    link.href = getImageSrc();
+    link.href = fileType === 'video' ? getVideoSrc() : getImageSrc();
     link.download = fileName;
     link.click();
   };
@@ -459,20 +464,16 @@
       </div>
     </div>
   {:else if fileType === 'video'}
-    <!-- Video Player -->
-    <div class="flex-1 flex items-center justify-center bg-black">
-      <!-- svelte-ignore a11y_media_has_caption -->
-      <video
-        src={getVideoSrc()}
-        controls
-        preload="metadata"
-        playsinline
-        class="max-w-full max-h-full"
-        data-testid="file-video"
-      >
-        {m.editor_fileViewer_videoUnsupported_label()}
-      </video>
-    </div>
+    {@const videoSource = getVideoSrc()}
+    {#key filePath + videoSource}
+      <FileVideoPreview
+        sourceUrl={videoSource}
+        {fileName}
+        {allowDownload}
+        {downloading}
+        onDownload={onDownload ?? handleDownload}
+      />
+    {/key}
   {:else if fileType === 'audio'}
     <!-- Audio Player -->
     <div class="flex-1 flex flex-col items-center justify-center p-8">

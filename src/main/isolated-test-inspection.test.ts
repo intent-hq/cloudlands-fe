@@ -1,3 +1,4 @@
+// fixture-protocol-version-file: explicit selected package and mismatch contracts, not a generic fake daemon.
 // protocol-version-ok-file: packaged inspection is bound to the selected daemon contract.
 import { afterEach, expect, it, vi } from 'vitest';
 
@@ -100,16 +101,23 @@ it('inspects the selected daemon contract through the original connected client'
   expect(f.request.mock.calls).toEqual([['client.hello'], ['system.status']]);
 });
 
-it.each(['14.0', '14.1'])('accepts exactly selected protocol %s', async (protocolVersion) => {
-  const f = await fixture();
-  f.hello.server.protocolVersion = protocolVersion;
-  expect((await f.inspect(protocolVersion)).hello.server.protocolVersion).toBe(protocolVersion);
-  expect(f.request.mock.calls).toEqual([['client.hello'], ['system.status']]);
-});
+it.each(['14.0', '14.1', '15.1'])(
+  'accepts exactly selected protocol %s',
+  async (protocolVersion) => {
+    const f = await fixture();
+    f.hello.server.protocolVersion = protocolVersion;
+    expect((await f.inspect(protocolVersion)).hello.server.protocolVersion).toBe(protocolVersion);
+    expect(f.request.mock.calls).toEqual([['client.hello'], ['system.status']]);
+  },
+);
 
 it.each([
-  ['14.0', '14.1'],
+  ['14.0', '14.1', '15.1'],
   ['14.1', '14.0'],
+  ['15.1', '14.0'],
+  ['14.0', '15.1'],
+  ['15.1', '14.1'],
+  ['14.1', '15.1'],
 ])('rejects protocol %s when selected source requires %s', async (actual, expected) => {
   const f = await fixture();
   f.hello.server.protocolVersion = actual;
@@ -117,14 +125,17 @@ it.each([
   expect(f.request.mock.calls).toEqual([['client.hello']]);
 });
 
-it.each(['13.3', '14.2', '15.0', ''])('rejects unsupported expectation %s', async (version) => {
-  const f = await fixture();
-  f.hello.server.protocolVersion = version;
-  await expect(f.inspect(version)).rejects.toThrow('Unsupported inspection protocol');
-  expect(f.request).not.toHaveBeenCalled();
-});
+it.each(['13.3', '14.2', '15.0', '15.2', '16.0', ''])(
+  'rejects unsupported expectation %s',
+  async (version) => {
+    const f = await fixture();
+    f.hello.server.protocolVersion = version;
+    await expect(f.inspect(version)).rejects.toThrow('Unsupported inspection protocol');
+    expect(f.request).not.toHaveBeenCalled();
+  },
+);
 
-it.each(['13.3', '14.1', '14.2', '15.0', ''])(
+it.each(['13.3', '14.1', '14.2', '15.0', '15.1', '15.2', '16.0', ''])(
   'rejects an unexpected protocol %s',
   async (version) => {
     const f = await fixture();

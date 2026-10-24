@@ -135,7 +135,7 @@ export const WorkspaceSchema = z.object({
   attention: z.enum(['none', 'unread', 'review_required']).optional(), // BE-owned dismissible attention flag (PROTOCOL §5.1 / §9.9)
   // Membership summary (PROTOCOL §5.1, multiplayer w1); all absent on older daemons.
   ownerPrincipalId: z.string().optional(),
-  myRole: z.enum(['owner', 'collaborator']).optional(),
+  myRole: z.enum(['owner', 'collaborator', 'manager']).optional(),
   memberCount: z.number().int().nonnegative().optional(),
   openInviteCount: z.number().int().nonnegative().optional(),
   createdAt: z.string().datetime(),
@@ -435,7 +435,9 @@ export const AgentSessionSchema = z.object({
   fileChanges: z.array(z.any()).optional(),
   currentUserMessage: z.string().optional(),
   lastUserMessage: z.string().optional(),
+  lastUserMessageTruncated: z.boolean().optional(),
   lastAgentResponse: z.string().optional(),
+  lastAgentResponseTruncated: z.boolean().optional(),
   lastMessageRole: z.enum(['user', 'assistant']).optional(),
   isResponding: z.boolean().optional(),
   isWaitingOnTool: z.boolean().optional(),
@@ -467,6 +469,7 @@ export const AgentSessionSchema = z.object({
     .optional(),
   // Task delegation
   digest: z.string().optional(), // Short summary for display in task status
+  digestTruncated: z.boolean().optional(), // list-row cap shortened `digest`
   // Pending attention request (requestDiscussion / reportBlocker); cleared by
   // the daemon only on a user-origin delivery (sendMessage,
   // sendQueuedMessageNow, editAndRegenerate, drained user-origin queue entry)

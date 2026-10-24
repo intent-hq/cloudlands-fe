@@ -36,7 +36,8 @@ export function setCachedDraft(workspaceId: string, agentId: string, draft: Cach
   cache.set(cacheKey(workspaceId, agentId), draft);
 }
 
-/** Test-only: reset the process-lifetime cache between test cases. */
-export function clearDraftCacheForTests(): void {
-  cache.clear();
+/** Test-only: reset one fixture's cache entry, or all entries between test cases. */
+export function clearDraftCacheForTests(scope?: { workspaceId: string; agentId: string }): void {
+  if (scope) cache.delete(cacheKey(scope.workspaceId, scope.agentId));
+  else cache.clear();
 }

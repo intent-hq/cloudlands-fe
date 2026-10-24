@@ -12,10 +12,14 @@ import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
  */
 import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createWorkspaceInitializationDispatchAdapter } from './workspace-initialization-dispatch.test-helper';
 
 const admittedFixture = vi.hoisted(() => ({ state: {} as Record<string, unknown> }));
 beforeEach(() => {
   admittedFixture.state = withLegacyPrincipal({});
+  mocks.dispatch.mockImplementation(
+    createWorkspaceInitializationDispatchAdapter({ create: mocks.create }),
+  );
 });
 
 const mocks = vi.hoisted(() => {
@@ -54,6 +58,7 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
+  selectWorkspaceInitializerAgentForRepo: { select: () => null },
   selectWorkspaceInitializerGitAvailability: () => ({
     subscribe(run: (value: boolean) => void) {
       run(true);
@@ -67,6 +72,10 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
   selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
   selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
+  selectWorkspaceInitializerDraftAuthority: () =>
+    mocks.readable(() => ({ restore: undefined, clear: undefined })),
+  selectWorkspaceInitializationOutcomeForConsumer: () => mocks.readable(() => undefined),
+  selectWorkspaceInitializationResume: { select: () => undefined },
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
@@ -149,12 +158,6 @@ vi.mock('$shared/generated/ipc-client', () => ({
 
 vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
   workspaceClient: { create: mocks.create, update: vi.fn() },
-}));
-
-vi.mock('$lib/components/workspace/initializer/new-workspace-draft', () => ({
-  restoreNewWorkspaceDraft: vi.fn(async () => ({ status: 'none' })),
-  createNewWorkspaceDraftSaver: vi.fn(() => ({ schedule: vi.fn(), flush: vi.fn() })),
-  clearNewWorkspaceDraft: vi.fn(),
 }));
 
 vi.mock('$lib/electron-bridge', () => ({
@@ -541,5 +544,35 @@ describe('CompactWorkspaceInitializer setupScript on workspace.create (monorepo#
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
     const request = mocks.create.mock.calls[0][0] as Record<string, unknown>;
     expect(request.setupScript).toBeUndefined();
+  });
+
+  it('cancels deferred preparation when the selected repository changes', async () => {
+    const firstProbe = deferred<string | null>();
+    mocks.fetchRepoConfig.mockReturnValueOnce(firstProbe.promise).mockResolvedValueOnce(null);
+
+    seedAutoCreatePrefill();
+    const { component } = renderInitializer();
+    await component.applyPrefill();
+    await waitFor(() => expect(mocks.fetchRepoConfig).toHaveBeenCalledWith('/repo/a'));
+    await waitFor(() =>
+      expect(
+        mocks.dispatch.mock.calls.some(
+          ([action]) =>
+            (action as { asyncActionType?: string }).asyncActionType ===
+            'workspaceInitializer/initializationSubmitted',
+        ),
+      ).toBe(true),
+    );
+
+    pickerCallbacks().onRepoChange({
+      detail: { path: '/repo/b', type: 'local', isValidPath: true },
+    });
+    pickerCallbacks().onBranchChange({ detail: { branch: 'main' } });
+    await waitFor(() => expect(mocks.fetchRepoConfig).toHaveBeenCalledWith('/repo/b'));
+    firstProbe.resolve('echo stale-repo-config');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mocks.create).not.toHaveBeenCalled();
   });
 });

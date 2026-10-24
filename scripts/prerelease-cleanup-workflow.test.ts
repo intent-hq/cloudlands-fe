@@ -23,9 +23,16 @@ describe('prerelease cleanup writer coordination', () => {
     } else {
       expect(source.indexOf('concurrency:')).toBeLessThan(source.indexOf('\njobs:'));
     }
-    expect(source).not.toMatch(/^ *uses: .*\.github\/workflows\//m);
+    // The runner route is the one reusable workflow a writer may call: it holds no lock.
+    expect(
+      source.replace(/^ {4}uses: \.\/\.github\/workflows\/runner-route\.yml$/gm, ''),
+    ).not.toMatch(/^ *uses: .*\.github\/workflows\//m);
     // Dispatching downstream builds is asynchronous; never wait while holding the lock.
     expect(source).not.toMatch(/gh (run watch|workflow run[^\n]*--wait)/);
+  });
+
+  it('lets writers call the runner route only because it takes no lock', () => {
+    expect(workflow('runner-route')).not.toMatch(/concurrency:/);
   });
 
   it('covers all workflows that mutate release records or assets', () => {

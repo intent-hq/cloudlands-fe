@@ -98,7 +98,7 @@ test.describe('TaskItemNodeView - Playwright Component Tests', () => {
   });
 
   test.describe('Checkbox Toggling', () => {
-    test('should move from todo to in-progress on check', async ({ mount }) => {
+    test('should move from todo to done on check', async ({ mount }) => {
       let currentAttrs: Record<string, unknown> = { checked: false, status: 'todo' };
 
       const component = await mount(TaskItemNodeView, {
@@ -118,11 +118,11 @@ test.describe('TaskItemNodeView - Playwright Component Tests', () => {
       await checkbox.click();
 
       // Verify updateAttributes was called with correct values
-      await expect.poll(() => currentAttrs.status).toBe('in-progress');
+      await expect.poll(() => currentAttrs.status).toBe('done');
       expect(currentAttrs.checked).toBe(true);
     });
 
-    test('should move from in-progress to in-progress checked on check', async ({ mount }) => {
+    test('should move from in-progress to done on check', async ({ mount }) => {
       let currentAttrs: Record<string, unknown> = { checked: false, status: 'in-progress' };
 
       const component = await mount(TaskItemNodeView, {
@@ -139,7 +139,7 @@ test.describe('TaskItemNodeView - Playwright Component Tests', () => {
       await checkbox.click();
 
       await expect.poll(() => currentAttrs.checked).toBe(true);
-      expect(currentAttrs.status).toBe('in-progress');
+      expect(currentAttrs.status).toBe('done');
     });
 
     test('should move from done back to todo on uncheck', async ({ mount }) => {

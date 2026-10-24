@@ -152,8 +152,28 @@ class CallerTests(unittest.TestCase):
         self.assertIn('/graphql', [call[1] for call in self.api.calls])
         self.assertEqual(self.api.mutations, [])
 
+    def built_null_head_page(self, more=False, cursor=None):
+        page = self.api.queue_body([None], more, cursor)
+        page['data']['repository']['mergeQueue']['entries']['nodes'][0]['state'] = 'AWAITING_CHECKS'
+        return page
+
+    def test_unbuilt_queued_entry_passes_probe_and_sweep(self):
+        # GitHub builds only maximumEntriesToBuild entries; later QUEUED entries report headCommit null.
+        self.api.heads = [T.H, None]
+        self.api.compares[(T.B, T.B)] = T.comparison(T.B, T.B, 'identical')
+        result = C.probe(self.api, 10)
+        self.assertTrue(result['complete'], result)
+        evidence = result['checks']['activity']['evidence']
+        self.assertEqual((evidence['unbuilt_entries'], evidence['unknown_heads']), (1, 0))
+        self.assertTrue(evidence['activity_known'])
+        self.assertEqual(result['eligibility'], 'not-assessed')
+        self.api.runs = {}
+        runtime = self.sweep(apply=True)
+        self.assertTrue(runtime['complete'], runtime)
+        self.assertEqual(self.api.mutations, [])
+
     def test_diagnostic_drains_later_queue_pages_after_unknown_head(self):
-        self.api.queue_pages = [self.api.queue_body([None], True, '1'), self.api.queue_body([T.H])]
+        self.api.queue_pages = [self.built_null_head_page(True, '1'), self.api.queue_body([T.H])]
         self.api.queue_pages[1]['data']['repository']['mergeQueue']['entries']['nodes'][0]['id'] = 'MQE_later'
         self.api.compares[(T.B, T.B)] = T.comparison(T.B, T.B, 'identical')
         result = C.probe(self.api, 10)
@@ -171,7 +191,7 @@ class CallerTests(unittest.TestCase):
         for variant in ('partial', 'api-error', 'missing-cursor', 'repeated-cursor', 'foreign-repo', 'invalid-head'):
             with self.subTest(variant=variant):
                 self.api = T.FakeGitHub(REPO)
-                first = self.api.queue_body([None], True, '1')
+                first = self.built_null_head_page(True, '1')
                 second = self.api.queue_body([T.H])
                 entries = second['data']['repository']['mergeQueue']['entries']
                 entries['nodes'][0]['id'] = 'MQE_later'

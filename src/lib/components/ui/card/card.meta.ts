@@ -41,6 +41,7 @@ export const cardMetadata = parseUiComponentMetadata({
   callers: [
     'src/features/layout/tab-types/AgentTabType.svelte',
     'src/features/presence/components/WorkspacePeopleTile.svelte',
+    'src/features/workspace-sharing/components/WorkspaceSharingSetup.svelte',
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
     'src/lib/components/chat/RegularAgentWelcome.svelte',
     'src/lib/components/patterns/collection/ListRow.svelte',

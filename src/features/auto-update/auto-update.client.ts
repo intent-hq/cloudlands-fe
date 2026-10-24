@@ -88,6 +88,21 @@ export const autoUpdateClient = {
   },
 
   /**
+   * Turn "Share anonymous update statistics" on or off (persisted in main).
+   */
+  async setShareStatistics(enabled: boolean): Promise<void> {
+    const response = await invokeIpc<AutoUpdateResponse>(
+      AUTO_UPDATE_CHANNELS.SET_SHARE_STATISTICS,
+      { enabled },
+    );
+    if (!response.success) {
+      throw new Error(
+        response.error?.message || m.autoUpdate_client_setShareStatisticsFailed_error(),
+      );
+    }
+  },
+
+  /**
    * Subscribe to update status changes
    * @returns Unsubscribe function
    */

@@ -1,3 +1,5 @@
+import type { WorkspaceId } from '$shared/types/branded-ids';
+import type { MergeQueueEntry } from '$lib/utils/merge-queue';
 import type { SubmissionCorrelation } from '$shared/types/agent-message';
 import type { AgentPlacement } from '$shared/types/agent-node';
 import type {
@@ -76,6 +78,16 @@ import type { ScriptMode, ScriptPurpose } from '$features/scripts/types';
 import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { ProviderCatalogResult } from '$shared/provider-catalog';
+import type {
+  ProviderProfileCreateParams,
+  ProviderProfileCreateResult,
+  ProviderProfileDeleteResult,
+  ProviderProfileReorderParams,
+  ProviderProfileReorderResult,
+  ProviderProfilesListResult,
+  ProviderProfileUpdateParams,
+  ProviderProfileUpdateResult,
+} from '$shared/provider-profiles';
 import type { RecentUrl } from '$store/renderer/slices/browser/browser-types';
 import type {
   BrowserActionEnvelope,
@@ -161,6 +173,12 @@ export interface MutationResult extends SubmissionCorrelation {
    * `current` into the domain entity (`Note` / `WorkspaceTask`) before returning.
    */
   conflict?: { current: unknown };
+  /**
+   * Whole-content write refused by the truncated-read write guard (§5.2
+   * "Truncated note reads"): `-32602` with `data.code === "content-base-mismatch"`.
+   * Nothing was written; the caller must re-read the note rather than retry.
+   */
+  contentBaseMismatch?: true;
   /**
    * Queued-message surface returned by `agents.queue` (`agent.queueMessage`,
    * §5.5). Surfaced on the uniform mutation result so the queue-on-send caller
@@ -409,6 +427,15 @@ export type RepositoryContextUpdate =
   | { type: 'received'; response: RepositoryContextResponse }
   | { type: 'unavailable' | 'retired'; request: RepositoryContextRequest };
 
+/** One `workspace.findByPullRequest` row (PROTOCOL §5.1 "Pull request workspace lookup"). */
+export interface PullRequestWorkspace {
+  id: WorkspaceId;
+  title: string;
+  archived: boolean;
+  /** RFC 3339 time the daemon first linked this workspace to the PR. */
+  linkedAt: string;
+}
+
 export interface WorkspacesClient {
   beginNativeReview(
     owner: NativeReviewOwner,
@@ -425,6 +452,13 @@ export interface WorkspacesClient {
     handler: (update: RepositoryContextUpdate) => void,
   ): Promise<Unsubscribe>;
   list(options?: { includeArchived?: boolean }): Promise<Workspace[]>;
+  /**
+   * Workspaces linked to a pull-request URL (`workspace.findByPullRequest`,
+   * §5.1), most recently linked first, archived included. Callers must gate on
+   * the `prWorkspaceLookup: 1` server capability. Rejects on transport errors
+   * and on a malformed result.
+   */
+  findByPullRequest(url: string): Promise<PullRequestWorkspace[]>;
   get(id: string): Promise<Workspace | null>;
   /**
    * Open a workspace by id (route loader entry point). Returns the matching
@@ -1629,6 +1663,26 @@ export interface LineAttributionClient {
   computeNow(workspaceId: string, noteId: string): Promise<{ ok: boolean }>;
 }
 
+/** Options for `NotesClient.setContent` (`note.setContent`, §5.2). */
+export interface NoteSetContentOptions {
+  /**
+   * Truncated-read write guard: the UTF-8 size of the exact base text the
+   * draft was built from. Send only when `supportsTruncatedRead()` is true.
+   */
+  baseContentBytes?: number;
+}
+
+/** Options for `NotesClient.get` (`note.get`, §5.2). */
+export interface NoteGetOptions {
+  /**
+   * Opt in to a truncated read ("Truncated note reads", §5.2): a note larger
+   * than this many UTF-8 bytes comes back as a line-aligned prefix flagged
+   * `contentTruncated`. Callers must send it only when
+   * `NotesClient.supportsTruncatedRead()` is true (`noteTruncatedRead: 1`).
+   */
+  maxContentBytes?: number;
+}
+
 export interface NotesClient {
   /**
    * Notes of one workspace (`note.list`, §5.2). `options.projection: "slim"`
@@ -1646,7 +1700,9 @@ export interface NotesClient {
    * note), so callers that know the workspace MUST pass it rather than relying
    * on the live client's last-writer-wins resolver cache.
    */
-  get(noteId: string, workspaceId?: string): Promise<Note | null>;
+  get(noteId: string, workspaceId?: string, options?: NoteGetOptions): Promise<Note | null>;
+  /** Whether the daemon advertises truncated note reads (`noteTruncatedRead: 1`, §5.2). */
+  supportsTruncatedRead(): Promise<boolean>;
   subscribe(handler: SubscriptionHandler<Note[]>): Unsubscribe;
   /** Create a note (`note.create`); the live client attaches an idempotencyKey (§5.6). */
   create(request: CreateNoteRequest): Promise<MutationResult>;
@@ -1664,6 +1720,7 @@ export interface NotesClient {
     content: string,
     expectedVersion?: number,
     workspaceId?: string,
+    options?: NoteSetContentOptions,
   ): Promise<MutationResult>;
   /** Surgical, append-safe insert (`note.add`). `expectedVersion` (§11.4-D) and `workspaceId` are optional. */
   add(
@@ -2161,6 +2218,12 @@ export interface ModelsClient {
  */
 export interface ProvidersClient {
   catalog(workspaceId?: string): Promise<ProviderCatalogResult>;
+  /** `providers.profiles.*` (§5.54), administrator-only; call only when the catalog advertises `supportsProfiles`. */
+  listProfiles(baseProviderId?: string): Promise<ProviderProfilesListResult>;
+  createProfile(params: ProviderProfileCreateParams): Promise<ProviderProfileCreateResult>;
+  updateProfile(params: ProviderProfileUpdateParams): Promise<ProviderProfileUpdateResult>;
+  deleteProfile(profileId: string): Promise<ProviderProfileDeleteResult>;
+  reorderProfiles(params: ProviderProfileReorderParams): Promise<ProviderProfileReorderResult>;
 }
 
 /** Wire `period` mode for `stats.getUsage`. */
@@ -2393,6 +2456,8 @@ export interface GitHubPullRequestDetails {
   url: string;
   headRef: string;
   baseRef: string;
+  /** Queue position and time-to-merge estimate; only on a `'queued'` PR whose daemon reports it. */
+  mergeQueue?: MergeQueueEntry;
 }
 
 /** One issue (`github.issues.get`, §5.27) normalized for link previews. */

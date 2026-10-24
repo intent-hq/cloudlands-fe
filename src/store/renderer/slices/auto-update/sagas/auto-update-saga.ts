@@ -12,7 +12,9 @@ import {
   installUpdate,
   setCheckTimedOut,
   setProgress,
+  setShareUpdateStatistics,
   setUpToDate,
+  shareUpdateStatisticsReverted,
   setUpdateError,
   setUpdateState,
   showToast,
@@ -62,6 +64,7 @@ function mapUpdateState(state: UpdateState): UpdateState {
       : null,
     error: state.error,
     channel: state.channel,
+    shareStatistics: state.shareStatistics,
   };
 }
 
@@ -193,7 +196,18 @@ function* handleInstall() {
   }
 }
 
+function* handleShareStatisticsWrite(action: ReturnType<typeof setShareUpdateStatistics>) {
+  const [enabled] = action.payload;
+  try {
+    yield* call([autoUpdateClient, autoUpdateClient.setShareStatistics], enabled);
+  } catch (error) {
+    logger.warn('Failed to save update statistics preference', { enabled, error });
+    yield* put(shareUpdateStatisticsReverted(!enabled));
+  }
+}
+
 export function* autoUpdateSaga() {
+  yield* takeEvery(setShareUpdateStatistics, handleShareStatisticsWrite);
   yield* takeEvery(downloadUpdate, handleDownload);
   yield* takeEvery(installUpdate, handleInstall);
   yield* take(initAutoUpdate);

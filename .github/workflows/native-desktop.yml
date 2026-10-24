@@ -10,16 +10,28 @@ on:
 permissions:
   contents: read
 jobs:
+  runner-route:
+    uses: ./.github/workflows/runner-route.yml
+    permissions:
+      contents: read
+      actions: read
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
+
   compile:
+    needs: [runner-route]
+    if: ${{ !cancelled() }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-15
+          - runner: macos-15-xlarge
+            warp: warp-macos-15-arm64-12x
             platform: darwin
-          - runner: windows-latest
+          - runner: windows-2025
+            warp: windows-2025
             platform: win32
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.cloud || '{}')[matrix.runner] || matrix.warp }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v7

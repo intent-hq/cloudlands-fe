@@ -19,6 +19,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   acquireVerificationLock,
+  checkEnvironment,
   collectChangedFiles,
   createVerificationPlan,
   expandInputPaths,
@@ -32,7 +33,7 @@ import {
   verificationLockKey,
   vitestExcludePatterns,
 } from './verify-changed.mjs';
-import { lockOwner } from './verification-lock.mjs';
+import { HELD_LOCK_ENV, lockOwner } from './verification-lock.mjs';
 import { createCtGateFixture } from './test-fixtures/ct-gate.mjs';
 import { loadTransferSelectionFixtures } from './transfer-selection-fixtures.mjs';
 
@@ -173,8 +174,21 @@ describe('verify-changed arguments and paths', () => {
       dryRun: true,
       help: false,
       paths: ['src/a.ts'],
+      resume: false,
     });
     expect(() => parseArgs(['--wat'])).toThrow('unknown option');
+  });
+
+  it('parses --resume, allows a resolved-plan preview and rejects it with --dry-run', () => {
+    expect(parseArgs(['--resume', 'src/a.ts'])).toMatchObject({
+      resume: true,
+      paths: ['src/a.ts'],
+    });
+    expect(parseArgs(['--resolved-plan', '--resume'])).toMatchObject({
+      resolvedPlan: true,
+      resume: true,
+    });
+    expect(() => parseArgs(['--dry-run', '--resume'])).toThrow(/--resolved-plan --resume/);
   });
 
   it('parses --base in both spellings and requires a value', () => {
@@ -431,10 +445,14 @@ describe('verification planning', () => {
     });
 
     it.each([
-      ['src/lib/Widget.ct.spec.ts', 'ct-related', ['run', 'test:ct', '--']],
-      ['src/.dev/Widget.ct.spec.ts', 'ct-related', ['run', 'test:ct', '--']],
-      ['test/browser.spec.ts', 'playwright-direct', ['exec', 'playwright', 'test']],
-      ['test/.dev/browser.spec.ts', 'playwright-direct', ['exec', 'playwright', 'test']],
+      ['src/lib/Widget.ct.spec.ts', 'ct-related', ['run', 'test:ct', '--', '--retries=2']],
+      ['src/.dev/Widget.ct.spec.ts', 'ct-related', ['run', 'test:ct', '--', '--retries=2']],
+      ['test/browser.spec.ts', 'playwright-direct', ['exec', 'playwright', 'test', '--retries=2']],
+      [
+        'test/.dev/browser.spec.ts',
+        'playwright-direct',
+        ['exec', 'playwright', 'test', '--retries=2'],
+      ],
       [
         'tests/integration/example.test.ts',
         'vitest-integration',
@@ -1302,6 +1320,23 @@ describe('verification planning', () => {
     expect(otherScript.checks.map((check) => check.id)).not.toContain('architecture');
   });
 
+  it('runs the architecture gates (actionlint) when a workflow or its lint config changes', () => {
+    const changed = [
+      '.github/workflows/promote-beta.yml',
+      '.github/workflows/example.yaml',
+      '.github/actionlint.yaml',
+      '.github/actionlint.yml',
+    ];
+    const root = fixtureRoot(Object.fromEntries(changed.map((file) => [file, ''])));
+    for (const file of changed) {
+      const plan = createVerificationPlan([file], { root, ctTests: [] });
+      expect(
+        plan.checks.map((check) => check.id),
+        file,
+      ).toContain('architecture');
+    }
+  });
+
   it('lints changed scripts/ files but not e2e/ or test/ files', () => {
     const root = fixtureRoot({
       'scripts/verify-changed.mjs': '',
@@ -1467,7 +1502,6 @@ describe('verification planning', () => {
       'playwright-ct.config.ts',
       'playwright/index.ts',
       'src/lib/component-catalog/capture-stability.ts',
-      'src/lib/component-catalog/geometry-probe.ts',
       'src/lib/component-catalog/preview-definition.ts',
       'package.json',
       'pnpm-lock.yaml',
@@ -1479,6 +1513,7 @@ describe('verification planning', () => {
       'src/foo.test.ts',
       'src/lib/example.ts',
       'src/lib/component-catalog/catalog.ts',
+      'src/lib/component-catalog/geometry-probe.ts',
       'scripts/verify-changed.mjs',
     ]) {
       expect(ids([file]), file).not.toContain('ct-full');
@@ -1486,19 +1521,16 @@ describe('verification planning', () => {
     }
   });
 
-  it('keeps CT specs and geometry goldens on the related lane, not the full suite', () => {
-    const geometryTest = 'src/lib/components/ui/button/button.geometry.ct.spec.ts';
-    const golden = 'src/lib/components/ui/button/__geometry__/button.geometry.json';
+  it('keeps CT specs and their imported previews on the related lane, not the full suite', () => {
+    const spec = 'src/lib/components/ui/button/button.keyboard.ct.spec.ts';
+    const preview = 'src/lib/components/ui/button/button.preview.svelte';
     const root = fixtureRoot({
-      [geometryTest]: "import Preview from './button.preview.svelte';",
-      'src/lib/components/ui/button/button.preview.svelte': '<button />',
-      [golden]: '{}',
+      [spec]: "import Preview from './button.preview.svelte';",
+      [preview]: '<button />',
     });
     const ids = (files: string[]) =>
-      createVerificationPlan(files, { root, ctTests: [geometryTest] }).checks.map(
-        (check) => check.id,
-      );
-    for (const file of [geometryTest, golden]) {
+      createVerificationPlan(files, { root, ctTests: [spec] }).checks.map((check) => check.id);
+    for (const file of [spec, preview]) {
       expect(ids([file]), file).toContain('ct-related');
       expect(ids([file]), file).not.toContain('ct-full');
     }
@@ -1716,7 +1748,7 @@ describe('verification planning', () => {
       expect(findRelatedCtTests(files, options)).toEqual([spec]);
       const plan = createVerificationPlan(files, options);
       expect(plan.checks.filter((check) => check.id.startsWith('ct-'))).toMatchObject([
-        { id: 'ct-related', args: ['run', 'test:ct', '--', spec] },
+        { id: 'ct-related', args: ['run', 'test:ct', '--', '--retries=2', spec] },
       ]);
       expect(findRelatedCtTests([unrelatedHost], options)).toEqual([]);
       expect(
@@ -1743,29 +1775,31 @@ describe('verification planning', () => {
     expect(findRelatedCtTests(['src/lib/Button.svelte'], options)).toEqual([]);
   });
 
-  it('selects scene geometry for previews, fixtures, snapshots, and imported components', () => {
-    const geometryTest = 'src/lib/components/workspace/workspace-hover-card.geometry.ct.spec.ts';
+  it('selects preview-based behavior tests through imports without inferring sibling files', () => {
+    const spec = 'src/lib/components/workspace/workspace-hover-card.keyboard.ct.spec.ts';
     const root = fixtureRoot({
-      [geometryTest]:
-        "import Preview, { preview } from './workspace-hover-card.preview.svelte';\ndefineGeometrySnapshotSuite({ scene: 'workspace-hover-card', component: Preview, definition: preview });",
+      [spec]: "import Preview from './workspace-hover-card.preview.svelte';",
       'src/lib/components/workspace/workspace-hover-card.preview.svelte':
         "import HoverCard from '$lib/components/ui/HoverCard.svelte';\nimport WorkspaceHoverCard from './WorkspaceHoverCard.svelte';",
       'src/lib/components/workspace/workspace-hover-card.preview-fixtures.ts': '',
       'src/lib/components/ui/HoverCard.svelte': '<aside />',
       'src/lib/components/workspace/WorkspaceHoverCard.svelte': '<article />',
-      'src/lib/components/workspace/__geometry__/workspace-hover-card.geometry.json': '{}',
     });
-    const options = { root, ctTests: [geometryTest] };
+    const options = { root, ctTests: [spec] };
 
     for (const file of [
       'src/lib/components/workspace/workspace-hover-card.preview.svelte',
-      'src/lib/components/workspace/workspace-hover-card.preview-fixtures.ts',
       'src/lib/components/ui/HoverCard.svelte',
       'src/lib/components/workspace/WorkspaceHoverCard.svelte',
-      'src/lib/components/workspace/__geometry__/workspace-hover-card.geometry.json',
     ]) {
-      expect(findRelatedCtTests([file], options), file).toEqual([geometryTest]);
+      expect(findRelatedCtTests([file], options), file).toEqual([spec]);
     }
+    expect(
+      findRelatedCtTests(
+        ['src/lib/components/workspace/workspace-hover-card.preview-fixtures.ts'],
+        options,
+      ),
+    ).toEqual([]);
   });
 
   it('keeps main and preload type checks scoped to their boundaries', () => {
@@ -1903,8 +1937,49 @@ describe('verification planning', () => {
       'exec',
       'playwright',
       'test',
+      '--retries=2',
       'test/splash-loader.spec.ts',
     ]);
+  });
+
+  // A failing local run once sat ~2 h on "Serving HTML report ... Press Ctrl+C
+  // to quit" (cloudlands-fe#3392): every Playwright stage must be
+  // non-interactive and retry like CI.
+  it.each([
+    ['playwright-direct', ['test/splash-loader.spec.ts']],
+    ['playwright-full', ['playwright.config.ts']],
+    ['ct-related', ['src/lib/Widget.ct.spec.ts']],
+    ['ct-full', ['playwright-ct.config.ts']],
+  ])('runs %s non-interactively with CI-style retries', (checkId, files) => {
+    const root = fixtureRoot(Object.fromEntries(files.map((file) => [file, ''])));
+    const plan = createVerificationPlan(files, { root, ctTests: [] });
+    const check = plan.checks.find((candidate) => candidate.id === checkId);
+    expect(check, plan.checks.map((candidate) => candidate.id).join(', ')).toBeDefined();
+    expect(check?.env).toEqual({ PLAYWRIGHT_HTML_OPEN: 'never' });
+    expect(check?.args).toContain('--retries=2');
+  });
+
+  it('gives the spawned check its own env over the caller environment', () => {
+    const check = { env: { PLAYWRIGHT_HTML_OPEN: 'never' } };
+    expect(
+      checkEnvironment(check, { heldLock: 'ct-3100', baseEnv: { PLAYWRIGHT_HTML_OPEN: 'always' } }),
+    ).toEqual({
+      PLAYWRIGHT_HTML_OPEN: 'never',
+      GIT_TERMINAL_PROMPT: '0',
+      [HELD_LOCK_ENV]: 'ct-3100',
+    });
+    expect(checkEnvironment({}, { baseEnv: { KEEP: '1' } })).toEqual({
+      KEEP: '1',
+      GIT_TERMINAL_PROMPT: '0',
+    });
+  });
+
+  it('never serves the root Playwright HTML report', async () => {
+    const { default: config } = await import('../playwright.config');
+    const reporters = Array.isArray(config.reporter) ? config.reporter : [[config.reporter]];
+    const html = reporters.find(([name]) => name === 'html');
+    expect(html, 'the html report is still written for CI artifacts').toBeDefined();
+    expect(html?.[1]).toMatchObject({ open: 'never' });
   });
 
   it('does not hand a browser-owned CT-shaped spec to the component test runner', () => {
@@ -2089,6 +2164,7 @@ describe('verification planning', () => {
       'exec',
       'playwright',
       'test',
+      '--retries=2',
       'test/splash-loader.spec.ts',
     ]);
     expect(byId['vitest-direct']?.args).toEqual([
@@ -2104,10 +2180,14 @@ describe('verification planning', () => {
 
     const lines: string[] = [];
     printPlan(plan, true, (line: string) => lines.push(line));
-    const commandLines = lines.filter((line) => line.startsWith('  - ') && line.includes(': pnpm'));
+    const commandLines = lines.filter(
+      (line) => line.startsWith('  - ') && /: (?:[A-Z_]+=\S+ )*pnpm /.test(line),
+    );
     expect(
       commandLines.some(
-        (line) => line.includes('playwright test') && line.includes('test/splash-loader.spec.ts'),
+        (line) =>
+          line.includes(': PLAYWRIGHT_HTML_OPEN=never pnpm exec playwright test --retries=2') &&
+          line.includes('test/splash-loader.spec.ts'),
       ),
     ).toBe(true);
     for (const line of commandLines) {
@@ -2307,6 +2387,22 @@ describe('dependency freshness gate', () => {
     ]);
   });
 
+  it('always records the attempt and passes --resume through to the plan runner', async () => {
+    const root = fixtureRoot({ 'src/lib/example.ts': 'export const value = 1;' });
+    const received: Array<Record<string, unknown>> = [];
+    const { options } = cliOptions(PASSING);
+    const runPlan = async (_plan: unknown, _root: string, planOptions: Record<string, unknown>) => {
+      received.push(planOptions);
+    };
+    await runCli(['src/lib/example.ts'], root, { ...options, runPlan });
+    await runCli(['--resume', 'src/lib/example.ts'], root, { ...options, runPlan });
+    expect(received.map(({ record, resume }) => ({ record, resume }))).toEqual([
+      { record: true, resume: false },
+      { record: true, resume: true },
+    ]);
+    expect(received[1].argv).toEqual(['--resume', 'src/lib/example.ts']);
+  });
+
   it('refuses before touching node_modules when the running Node is unsupported', async () => {
     const root = fixtureRoot({ 'src/lib/example.ts': 'export const value = 1;' });
     const reason = 'Unsupported Node v20.19.0 — cloudlands-fe requires Node >=22';
@@ -2369,7 +2465,9 @@ describe('expensive-check coordination', () => {
     const check = plan.checks.find((check) => check.id === id);
     expect(check).toMatchObject({ executable: 'pnpm', lockKind: 'ct' });
     expect(check?.args).toEqual(
-      id === 'ct-full' ? ['run', 'test:ct'] : ['run', 'test:ct', '--', fixture.spec],
+      id === 'ct-full'
+        ? ['run', 'test:ct', '--', '--retries=2']
+        : ['run', 'test:ct', '--', '--retries=2', fixture.spec],
     );
     // Execute only the selected CT gate: the fixture package routes the real
     // test:ct script to a tiny aligned-runner control, not the application suite.
@@ -2377,6 +2475,10 @@ describe('expensive-check coordination', () => {
       /failed with exit code 1/,
     );
     expect(fixture.report().stats).toMatchObject({ flaky: 1, unexpected: 0 });
+    // The retry count reaches Playwright as an option, not a file filter after `--`.
+    const argv = fixture.argv();
+    expect(argv).toContain('--retries=2');
+    expect(argv).not.toContain('--');
   });
 
   it('releases only its own acquired lock', async () => {

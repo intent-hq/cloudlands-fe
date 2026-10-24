@@ -18,6 +18,9 @@ import {
   workspaceUnmounted,
 } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
+  browserClientsConsumerMounted,
+  browserClientsConsumerUnmounted,
+  browserClientReadsReleased,
   browserClientsReducer,
   browserConnectionInvalidated,
   workspaceBrowserClientPinReceived,
@@ -422,4 +425,28 @@ describe('identity drift selectors', () => {
       expect(selectBrowserTabHost.select(asState(state), nested.clientId).connected).toBe(true);
     },
   );
+});
+
+it('tracks browser consumers independently and invalidates released routing without losing identity', () => {
+  let state = browserClientsReducer(initialState, ownClientIdReceived('desktop'));
+  state = browserClientsReducer(state, browserClientsConsumerMounted('ws', 'panel'));
+  state = browserClientsReducer(state, browserClientsConsumerMounted('ws', 'offscreen'));
+  state = browserClientsReducer(state, liveClientsReceived([desk], 'ws'));
+  state = browserClientsReducer(
+    state,
+    workspaceBrowserClientReceived('ws', { source: 'default', resolved: desk }),
+  );
+  state = browserClientsReducer(state, browserClientsConsumerUnmounted('ws', 'panel'));
+  expect(state.byWorkspaceId.ws.consumers).toEqual({ offscreen: true });
+  expect(browserClientsReducer(state, browserClientsConsumerUnmounted('ws', 'unknown'))).toBe(
+    state,
+  );
+  state = browserClientsReducer(state, browserClientsConsumerUnmounted('ws', 'offscreen'));
+  state = browserClientsReducer(state, browserClientReadsReleased('ws'));
+  expect(state.byWorkspaceId.ws.liveClientsLoaded).toBe(false);
+  expect(state.byWorkspaceId.ws.browserClient).toBeNull();
+  expect(state.ownClientId).toBe('desktop');
+  state = browserClientsReducer(state, workspaceUnmounted('ws'));
+  expect(browserClientsReducer(state, browserClientsConsumerUnmounted('ws', 'panel'))).toBe(state);
+  expect(browserClientsReducer(state, browserClientReadsReleased('ws'))).toBe(state);
 });

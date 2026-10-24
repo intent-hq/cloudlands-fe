@@ -5,12 +5,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } 
 import { fileURLToPath } from 'node:url';
 import { escape as escapeGlob, globSync } from 'glob';
 import ts from 'typescript';
-import {
-  CT_TEST_DIR,
-  ctGeometryScene,
-  hasCtSpecSuffix,
-  isCtSpec,
-} from '../playwright/ct-spec-pattern.mjs';
+import { CT_TEST_DIR, hasCtSpecSuffix, isCtSpec } from '../playwright/ct-spec-pattern.mjs';
 import { isIgnoredRootSpec, isRootSpec, ROOT_TEST_DIR } from '../playwright/root-spec-pattern.mjs';
 import { checkDepsFresh, checkNodeSupport, ensureI18nFresh } from './check-deps-fresh.mjs';
 import { isCtContractPath } from './ct-contract-paths.mjs';
@@ -34,6 +29,27 @@ import {
   selectDeclaredSuites,
   TRIGGER_MARKER,
 } from './verify-changed-triggers.mjs';
+import {
+  buildCoverage,
+  laneConfig,
+  obligationsFor,
+  reconcile,
+  remainingLaneFiles,
+  UNIT_LANES,
+} from './verify-changed-coverage.mjs';
+import {
+  commandIdentity,
+  CONFIG_ENV,
+  configurationIdentity,
+  createAttempt,
+  INVOCATION_ENV,
+  LANE_ENV,
+  loadAttempts,
+  loadTree,
+  readResults,
+  RESULTS_ENV,
+  sourceIdentity,
+} from './verify-changed-receipts.mjs';
 
 export { acquireVerificationLock, defaultLockPath, lockTimeout };
 
@@ -134,12 +150,13 @@ function assertCanonicalPathInsideRoot(path, root, displayPath) {
 }
 
 export function parseArgs(argv) {
-  const result = { base: null, dryRun: false, help: false, paths: [] };
+  const result = { base: null, dryRun: false, help: false, paths: [], resume: false };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--') continue;
     if (arg === '--dry-run') result.dryRun = true;
     else if (arg === '--resolved-plan') result.resolvedPlan = true;
+    else if (arg === '--resume') result.resume = true;
     else if (arg === '--max-unit-files' || arg.startsWith('--max-unit-files=')) {
       const value =
         arg === '--max-unit-files' ? argv[(index += 1)] : arg.slice('--max-unit-files='.length);
@@ -156,6 +173,8 @@ export function parseArgs(argv) {
   }
   if (result.dryRun && (result.resolvedPlan || result.maxUnitFiles !== undefined))
     throw new Error('Use --resolved-plan instead of --dry-run to resolve or bound unit files');
+  if (result.dryRun && result.resume)
+    throw new Error('Use --resolved-plan --resume instead of --dry-run to preview a continuation');
   return result;
 }
 
@@ -278,32 +297,9 @@ function importTargets(source, testPath, root) {
   return targets;
 }
 
-function geometrySnapshotTargets(testPath, root, readText) {
-  const geometry = ctGeometryScene(testPath);
-  if (!geometry) return new Set();
-  const { directory, scene } = geometry;
-  const targets = new Set([
-    `${directory}__geometry__/${scene}.geometry.json`,
-    ...['svelte', 'ts', 'tsx', 'js', 'mjs'].map(
-      (extension) => `${directory}${scene}.preview.${extension}`,
-    ),
-    ...['svelte', 'ts', 'tsx', 'js', 'mjs'].map(
-      (extension) => `${directory}${scene}.preview-fixtures.${extension}`,
-    ),
-  ]);
-
-  for (const previewPath of [...targets].filter((path) => /\.preview\.[^.]+$/.test(path))) {
-    if (!existsSync(resolve(root, previewPath))) continue;
-    for (const imported of importTargets(readText(previewPath), previewPath, root)) {
-      if (imported.endsWith('.svelte')) targets.add(imported);
-    }
-  }
-  return targets;
-}
-
 // A CT spec usually mounts a host/harness `.svelte` that composes the component
 // under test, so follow one hop through each directly imported `.svelte` file
-// and add the `.svelte` files it imports (mirrors `geometrySnapshotTargets`).
+// and add the `.svelte` files it imports.
 function hostComponentTargets(targets, root, readText) {
   const hosted = new Set();
   for (const host of [...targets].filter((target) => target.endsWith('.svelte'))) {
@@ -329,9 +325,7 @@ export function findRelatedCtTests(files, options = {}) {
     if (selected.has(test)) continue;
     const targets = importTargets(readText(test), test, root);
     for (const hosted of hostComponentTargets(targets, root, readText)) targets.add(hosted);
-    const geometryTargets = geometrySnapshotTargets(test, root, readText);
-    if (files.some((file) => geometryTargets.has(file))) selected.add(test);
-    else if (sourceFiles.some((file) => targets.has(file))) selected.add(test);
+    if (sourceFiles.some((file) => targets.has(file))) selected.add(test);
   }
   return [...selected].sort();
 }
@@ -572,11 +566,17 @@ function isKnownNonCode(file) {
   );
 }
 
+// `lint:workflows` (actionlint) inputs: the workflows and their lint config.
+function isWorkflowLintInput(file) {
+  return /^\.github\/(?:workflows\/[^/]+|actionlint)\.ya?ml$/.test(file);
+}
+
 function isArchitectureSource(file) {
   return (
     (file.startsWith('src/') && CODE_EXTENSIONS.has(extname(file))) ||
     /^scripts\/check-[^/]+\.mjs$/.test(file) ||
     file === 'scripts/type-check.ts' ||
+    isWorkflowLintInput(file) ||
     basename(file) === 'AGENTS.md'
   );
 }
@@ -612,6 +612,22 @@ function command(id, label, args, lockKind = null) {
     args,
     lockKind,
   };
+}
+
+// Playwright's html reporter defaults to `open: 'on-failure'`, which serves the
+// report and waits for Ctrl+C: a local run with one failure sat ~2 h on
+// "Serving HTML report" and never exited (cloudlands-fe#3392). Every browser
+// stage therefore runs non-interactively and retries like CI (retries: 2 in
+// both Playwright configs under CI), without CI=1's other effects
+// (forbidOnly, one worker).
+// CT stages pass it after `--`: npm drops unknown flags before the separator,
+// pnpm forwards the separator literally, and the CT launcher strips it only as
+// its first argument (a later `--` would turn `--retries=2` into a file filter).
+export const PLAYWRIGHT_RETRIES_ARG = '--retries=2';
+export const PLAYWRIGHT_CHECK_ENV = Object.freeze({ PLAYWRIGHT_HTML_OPEN: 'never' });
+
+function playwrightCommand(id, label, args, lockKind = null) {
+  return { ...command(id, label, args, lockKind), env: { ...PLAYWRIGHT_CHECK_ENV } };
 }
 
 export function createVerificationPlan(files, options = {}) {
@@ -838,31 +854,38 @@ export function createVerificationPlan(files, options = {}) {
       });
   if (fullCt)
     checks.push(
-      command('ct-full', 'Playwright component suite (safe fallback)', ['run', 'test:ct'], 'ct'),
+      playwrightCommand(
+        'ct-full',
+        'Playwright component suite (safe fallback)',
+        ['run', 'test:ct', '--', PLAYWRIGHT_RETRIES_ARG],
+        'ct',
+      ),
     );
   else if (relatedCt.length) {
     checks.push(
-      command(
+      playwrightCommand(
         'ct-related',
         'Playwright component tests (colocated imports)',
-        ['run', 'test:ct', '--', ...relatedCt],
+        ['run', 'test:ct', '--', PLAYWRIGHT_RETRIES_ARG, ...relatedCt],
         'ct',
       ),
     );
   }
   if (fullPlaywright)
     checks.push(
-      command('playwright-full', 'Playwright browser suite (config changed)', [
+      playwrightCommand('playwright-full', 'Playwright browser suite (config changed)', [
         'run',
         'test:playwright',
+        PLAYWRIGHT_RETRIES_ARG,
       ]),
     );
   else if (directPlaywright.length) {
     checks.push(
-      command('playwright-direct', 'Playwright browser tests (changed specs)', [
+      playwrightCommand('playwright-direct', 'Playwright browser tests (changed specs)', [
         'exec',
         'playwright',
         'test',
+        PLAYWRIGHT_RETRIES_ARG,
         ...directPlaywright,
       ]),
     );
@@ -987,11 +1010,28 @@ export function printPlan(plan, dryRun, log = console.log) {
     const dependencies = check.dependsOn?.length
       ? ` [requires: ${check.dependsOn.join(', ')}]`
       : '';
+    const env = Object.entries(check.env ?? {}).map(([key, value]) => `${key}=${value}`);
     log(
-      `  - ${check.label}${dependencies}: ${[check.executable, ...check.args].map(shellQuote).join(' ')}`,
+      `  - ${check.label}${dependencies}: ${[...env, check.executable, ...check.args].map(shellQuote).join(' ')}`,
     );
   }
   if (dryRun) log('verify:changed: dry-run; no commands were run');
+}
+
+const activeChildren = new Set();
+// Set once a termination signal arrives; no further check starts afterwards.
+let terminating = false;
+
+/**
+ * The environment a check's child process runs with: the caller's env, no git
+ * prompts, the check's own pinned variables (which win, so an inherited
+ * `PLAYWRIGHT_HTML_OPEN=always` cannot reintroduce the hang), and the
+ * held-lock marker when the parent already owns the lock.
+ */
+export function checkEnvironment(check, { heldLock = null, baseEnv = process.env } = {}) {
+  const env = { ...baseEnv, GIT_TERMINAL_PROMPT: '0', ...(check.env ?? {}) };
+  if (heldLock) env[HELD_LOCK_ENV] = heldLock;
+  return env;
 }
 
 async function runCheck(check, root, { heldLock = null } = {}) {
@@ -1003,8 +1043,7 @@ async function runCheck(check, root, { heldLock = null } = {}) {
   // A locked check spawns the CT launcher, which takes the same `ct-<port>`
   // lock for direct runs; tell it the lock is already held so it does not
   // wait on its own parent.
-  const env = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
-  if (heldLock) env[HELD_LOCK_ENV] = heldLock;
+  const env = checkEnvironment(check, { heldLock });
   await new Promise((resolveRun, reject) => {
     const child = spawn(launcher.executable, launcher.args, {
       cwd: root,
@@ -1012,17 +1051,193 @@ async function runCheck(check, root, { heldLock = null } = {}) {
       shell: launcher.shell,
       env,
     });
-    child.on('error', reject);
+    activeChildren.add(child);
+    child.on('error', (error) => {
+      activeChildren.delete(child);
+      reject(error);
+    });
     child.on('exit', (code, signal) => {
+      activeChildren.delete(child);
       if (code === 0) resolveRun();
       else
         reject(
-          new Error(
-            `${check.label} failed${signal ? ` with ${signal}` : ` with exit code ${code ?? 1}`}`,
+          Object.assign(
+            new Error(
+              `${check.label} failed${signal ? ` with ${signal}` : ` with exit code ${code ?? 1}`}`,
+            ),
+            { exitCode: code, signal },
           ),
         );
     });
   });
+}
+
+const REPORTER_PATH = resolve(REPO_ROOT, 'scripts/verify-changed-receipt-reporter.mjs');
+const RUN_FILES_PATH = resolve(REPO_ROOT, 'scripts/verify-changed-run-files.mjs');
+// Generated modules that tests import, keyed by the tracked inputs that regenerate
+// them; `vitest related` cannot see through the generator otherwise.
+const GENERATED_MODULES = [
+  {
+    input: (file) => /^messages\/[^/]+\.json$/.test(file) || file.startsWith('project.inlang/'),
+    modules: ['src/shared/paraglide/messages.js', 'src/shared/paraglide/runtime.js'],
+  },
+  { input: (file) => file === 'src/preload/index.template.ts', modules: ['src/preload/index.ts'] },
+];
+
+/**
+ * Unit test files whose earlier results the changes in `changed` can affect,
+ * using the planner's own selection rules (direct edits, the Vitest import
+ * graph, declared triggers, UI invariants and full-risk fallbacks). Anything
+ * the rules cannot attribute returns `{ all: true }`.
+ */
+export async function invalidatedUnitFiles(changed, root = REPO_ROOT, options = {}) {
+  const resolveSelections = options.resolveUnitSelections ?? resolveUnitSelections;
+  // A deleted module or asset (.json, .css, ?raw import) can break an unchanged
+  // importer that the current graph no longer shows. Only tests and docs are exempt.
+  const deleted = changed.find(
+    (file) => !isExisting(file, root) && testRunner(file) === null && extname(file) !== '.md',
+  );
+  if (deleted) return { all: true, reason: `deleted module ${deleted}` };
+  const plan = createVerificationPlan(changed, { root, ctTests: [] });
+  if (plan.checks.some((check) => check.id === 'vitest-full'))
+    return { all: true, reason: `full unit fallback (${plan.fallbackReasons.join(', ')})` };
+  const checks = plan.checks.filter((check) =>
+    ['vitest-direct', 'vitest-declared', 'vitest-ui-invariants'].includes(check.id),
+  );
+  const generated = GENERATED_MODULES.filter((entry) => changed.some(entry.input))
+    .flatMap((entry) => entry.modules)
+    .filter((file) => isExisting(file, root));
+  const related = [
+    ...changed.filter((file) => isExisting(file, root) && testRunner(file) === null),
+    ...generated,
+  ];
+  if (related.length)
+    checks.push(
+      command('vitest-related', 'Invalidation (related)', [
+        'exec',
+        'vitest',
+        'related',
+        '--run',
+        '--config',
+        'vitest.config.ts',
+        ...related,
+      ]),
+    );
+  // Undeclared disk-reading suites cannot be attributed to any change.
+  const files = new Set(plan.triggerViolations ?? []);
+  for (const file of changed) if (testRunner(file) === 'vitest') files.add(file);
+  if (checks.length) {
+    try {
+      const selections = await resolveSelections({ ...plan, checks }, root, { allowEmpty: true });
+      for (const selection of selections) for (const file of selection.files) files.add(file);
+    } catch (error) {
+      return { all: true, reason: `invalidation discovery failed: ${error.message}` };
+    }
+  }
+  return { all: false, files };
+}
+
+/** Source, configuration, command and resolved-selection identities of a plan. */
+export function planIdentities(plan, selections, root) {
+  return {
+    source: sourceIdentity(root),
+    configuration: configurationIdentity(root),
+    commands: plan.checks.map((check) => ({
+      id: check.id,
+      digest: commandIdentity(check),
+      executable: check.executable,
+      args: check.args,
+    })),
+    selections: selections.map((selection) => ({
+      id: selection.id,
+      config: laneConfig(plan.checks.find((check) => check.id === selection.id) ?? { args: [] }),
+      files: selection.files,
+    })),
+  };
+}
+
+// Options of a planner-owned unit command, or null when its shape is unknown
+// and the lane must run unchanged.
+function plannedVitestOptions(check) {
+  if (check.id === 'vitest-ui-invariants') return ['--config', 'vitest.config.ts'];
+  if (check.args[0] !== 'exec' || check.args[1] !== 'vitest') return null;
+  const args = check.args.slice(2);
+  if (args[0] !== 'run' && args[0] !== 'related') return null;
+  const options = [];
+  for (let index = 1; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--run') continue;
+    if (arg === '--config') options.push(arg, args[(index += 1)]);
+    else if (/^--maxWorkers=\S+$/.test(arg)) options.push(arg);
+    else if (arg.startsWith('-')) return null;
+  }
+  return options;
+}
+
+function executionFor(check, selections, credits, attempt, invocation) {
+  if (credits?.checks.has(check.id)) {
+    const source = credits.checks.get(check.id);
+    return {
+      skip: source ? `passed in ${source}` : 'every selected file passed in compatible attempts',
+    };
+  }
+  if (!UNIT_LANES.has(check.id) || !attempt) return { check };
+  let next = check;
+  const laneFiles = selections.find((selection) => selection.id === check.id)?.files ?? [];
+  const remaining = remainingLaneFiles(check.id, selections, credits) ?? laneFiles;
+  const options = plannedVitestOptions(check);
+  if (remaining.length < laneFiles.length && options) {
+    const list = attempt.writeFile(`remaining-${check.id}.json`, JSON.stringify(remaining));
+    next = {
+      ...check,
+      label: `${check.label} [resume: ${remaining.length} of ${laneFiles.length} file(s)]`,
+      executable: process.execPath,
+      args: [RUN_FILES_PATH, list, ...options],
+    };
+  }
+  return {
+    check: {
+      ...next,
+      args: [...next.args, '--reporter=default', `--reporter=${REPORTER_PATH}`],
+      env: {
+        ...(next.env ?? {}),
+        [RESULTS_ENV]: attempt.resultsPath,
+        [LANE_ENV]: check.id,
+        [INVOCATION_ENV]: invocation,
+        [CONFIG_ENV]: laneConfig(check),
+      },
+    },
+  };
+}
+
+function printResume(plan, selections, credits, log) {
+  const remaining = new Set();
+  const lines = [];
+  for (const check of plan.checks) {
+    if (credits.checks.has(check.id)) {
+      lines.push(`  - ${check.id}: satisfied by compatible receipts`);
+      continue;
+    }
+    const files = remainingLaneFiles(check.id, selections, credits);
+    if (!UNIT_LANES.has(check.id) || !files) {
+      lines.push(`  - ${check.id}: to run`);
+      continue;
+    }
+    const total = selections.find((selection) => selection.id === check.id).files.length;
+    for (const file of files) remaining.add(file);
+    lines.push(`  - ${check.id}: ${files.length} of ${total} file(s) to run`);
+  }
+  const checks = credits.obligations.checks.length;
+  log(
+    `verify:changed: resume: ${credits.checks.size} of ${checks} check(s) and ${credits.files.size} of ${credits.obligations.files.length} unit file obligation(s) satisfied by compatible receipts; ${remaining.size} unique unit file(s) to run`,
+  );
+  for (const line of lines) log(line);
+}
+
+function describeCoverage(coverage) {
+  const part = (counts) =>
+    `${counts['executed-passed']} executed, ${counts['resumed-passed']} resumed, ${counts.failed} failed, ${counts.unfinished} unfinished`;
+  return `checks ${part(coverage.counts.checks)}; unit files ${part(coverage.counts.unitFiles)}`;
 }
 
 export async function runVerificationPlan(plan, root, options = {}) {
@@ -1071,30 +1286,129 @@ export async function runVerificationPlan(plan, root, options = {}) {
       `${unitFiles.length} unit files exceed --max-unit-files ${options.maxUnitFiles}. No selected checks ran; no coverage was truncated.\nReview --resolved-plan, then rerun the same command with --max-unit-files ${unitFiles.length} (or omit the limit). Explicit full unit run: pnpm run test:unit --maxWorkers=1`,
     );
   }
+
+  // Receipts are recorded whenever requested; resuming requires them. Without
+  // identities nothing can be proven compatible, so everything runs.
+  let identities = null;
+  if (options.resume || (options.record && !options.resolvedPlan)) {
+    try {
+      identities = (options.identities ?? planIdentities)(plan, selections, root);
+    } catch (error) {
+      log(
+        `verify:changed: warning: receipts unavailable (${error.message}); every selected check runs and nothing is recorded`,
+      );
+    }
+  }
+  let credits = null;
+  if (options.resume && identities) {
+    credits = await reconcile({
+      plan,
+      selections,
+      configuration: identities.configuration,
+      source: identities.source,
+      attempts: loadAttempts(root),
+      loadTree: (treeDigest) => loadTree(root, treeDigest),
+      invalidatedFiles: (changed) =>
+        invalidatedUnitFiles(changed, root, {
+          resolveUnitSelections: options.resolveUnitSelections,
+        }),
+    });
+    printResume(plan, selections, credits, log);
+  }
   if (options.resolvedPlan) {
     log('verify:changed: resolved-plan; prerequisites and discovery only, no selected checks ran');
     return;
   }
 
-  for (const check of plan.checks) {
-    const lockKey = verificationLockKey(check, env);
-    if (!lockKey) {
-      await run(check, root);
-      continue;
-    }
-
-    const timeoutMs = lockTimeout(lockKey, env.VERIFY_CHANGED_LOCK_TIMEOUT_MS);
-    log(`\n[verify:changed] waiting up to ${timeoutMs}ms for ${lockKey} lock`);
-    const releaseLock = await acquireLock({
-      lockPath: lockPath(lockKey),
-      timeoutMs,
-      cwd: root,
+  const attempt = identities
+    ? createAttempt(root, { argv: options.argv ?? [], resume: !!options.resume, identities })
+    : null;
+  let coverage = null;
+  const finish = () => {
+    if (!attempt || coverage) return coverage;
+    coverage = buildCoverage({
+      attemptId: attempt.id,
+      obligations: credits?.obligations ?? obligationsFor(plan, selections),
+      credits,
+      results: readResults(attempt.resultsPath) ?? [],
     });
-    try {
-      await run(check, root, { heldLock: lockKey });
-    } finally {
-      releaseLock();
+    attempt.writeFile('coverage.json', `${JSON.stringify(coverage, null, 2)}\n`);
+    log(
+      `verify:changed: coverage ${coverage.complete ? 'complete' : 'incomplete'}: ${describeCoverage(coverage)}`,
+    );
+    log(`verify:changed: record: ${attempt.path}`);
+    return coverage;
+  };
+  options.onAttempt?.({ attempt, finish });
+  if (attempt) log(`verify:changed: record: ${attempt.path}`);
+
+  try {
+    for (const check of plan.checks) {
+      if (terminating) throw new Error('verification interrupted');
+      const invocation = attempt?.nextInvocation(check.id) ?? null;
+      const execution = executionFor(check, selections, credits, attempt, invocation);
+      if (execution.skip) {
+        log(`\n[verify:changed] ${check.label}: resumed (${execution.skip})`);
+        continue;
+      }
+      const command = commandIdentity(check);
+      attempt?.append({
+        type: 'check-start',
+        id: check.id,
+        invocation,
+        command,
+        executed: { executable: execution.check.executable, args: execution.check.args },
+      });
+      try {
+        const lockKey = verificationLockKey(check, env);
+        if (!lockKey) await run(execution.check, root);
+        else {
+          const timeoutMs = lockTimeout(lockKey, env.VERIFY_CHANGED_LOCK_TIMEOUT_MS);
+          log(`\n[verify:changed] waiting up to ${timeoutMs}ms for ${lockKey} lock`);
+          const releaseLock = await acquireLock({
+            lockPath: lockPath(lockKey),
+            timeoutMs,
+            cwd: root,
+          });
+          try {
+            await run(execution.check, root, { heldLock: lockKey });
+          } finally {
+            releaseLock();
+          }
+        }
+      } catch (error) {
+        attempt?.append({
+          type: 'check-end',
+          id: check.id,
+          invocation,
+          command,
+          // A check stopped by a termination signal is unfinished, not failed.
+          status: terminating ? 'interrupted' : 'failed',
+          exitCode: error?.exitCode ?? null,
+          signal: error?.signal ?? null,
+        });
+        throw error;
+      }
+      attempt?.append({
+        type: 'check-end',
+        id: check.id,
+        invocation,
+        command,
+        status: 'passed',
+        exitCode: 0,
+      });
     }
+  } finally {
+    finish();
+  }
+  if (coverage && !coverage.complete) {
+    const missing = [...coverage.checks, ...coverage.unitFiles].filter(
+      (entry) => entry.status !== 'executed-passed' && entry.status !== 'resumed-passed',
+    );
+    const first = missing[0];
+    throw new Error(
+      `coverage incomplete: ${missing.length} obligation(s) not satisfied (first: ${first.file ? `${first.lane} ${first.file}` : first.id}, ${first.status}). See ${attempt.path}/coverage.json`,
+    );
   }
 }
 
@@ -1107,7 +1421,10 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
   const args = parseArgs(argv);
   if (args.help) {
     log(
-      'Usage: pnpm run verify:changed -- [--dry-run | --resolved-plan] [--max-unit-files N] [--base <ref>] [paths...]',
+      'Usage: pnpm run verify:changed -- [--dry-run | --resolved-plan] [--resume] [--max-unit-files N] [--base <ref>] [paths...]',
+    );
+    log(
+      '  --resume: reuse compatible passing receipts from earlier attempts and run only what remains; completes only when every current check and unit file is covered.',
     );
     log(
       `  With no paths: verifies the working-tree changes; when the worktree is clean and HEAD is ahead of ${DEFAULT_BASE}, defaults to --base ${DEFAULT_BASE}.`,
@@ -1143,15 +1460,52 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
   await runPlan(plan, root, {
     resolvedPlan: args.resolvedPlan,
     maxUnitFiles: args.maxUnitFiles,
+    resume: args.resume,
+    record: true,
+    argv,
+    onAttempt: options.onAttempt,
     log,
   });
   return 0;
 }
 
+/**
+ * On SIGINT/SIGTERM, forwards the signal to running checks and writes the
+ * current attempt's coverage so a later --resume can continue from it.
+ */
+export function installTerminationHandlers({ graceMs = 10_000 } = {}) {
+  let current = null;
+  const stop = async (signal, code) => {
+    terminating = true;
+    // A terminal Ctrl+C already reached the whole process group; forwarding it
+    // again can force Vitest into a hard exit that drops in-flight records.
+    if (signal !== 'SIGINT') for (const child of activeChildren) child.kill(signal);
+    // Let checks settle so their final records land before coverage is written.
+    const deadline = Date.now() + graceMs;
+    while (activeChildren.size && Date.now() < deadline)
+      await new Promise((done) => setTimeout(done, 50));
+    for (const child of activeChildren) child.kill('SIGKILL');
+    try {
+      current?.finish();
+    } catch (error) {
+      console.error(`[verify:changed] could not write coverage: ${error.message}`);
+    }
+    process.exit(code);
+  };
+  process.once('SIGINT', () => stop('SIGINT', 130));
+  process.once('SIGTERM', () => stop('SIGTERM', 143));
+  return {
+    onAttempt: (attempt) => {
+      current = attempt;
+    },
+  };
+}
+
 const isDirectRun =
   process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
 if (isDirectRun) {
-  runCli()
+  const { onAttempt } = installTerminationHandlers();
+  runCli(process.argv.slice(2), REPO_ROOT, { onAttempt })
     .then((code) => {
       process.exitCode = code;
     })

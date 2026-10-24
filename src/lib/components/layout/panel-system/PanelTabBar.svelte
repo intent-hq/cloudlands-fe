@@ -1162,6 +1162,15 @@
     if (tab.type === 'note' && tab.noteId && isSpecNote(tab.noteId)) {
       return false;
     }
+    // A truncated note read (§5.2) is render-only, title included
+    if (
+      tab.type === 'note' &&
+      tab.noteId &&
+      selectNoteById.select(appStore.state, tab.workspaceId ?? workspaceId, tab.noteId)
+        ?.contentTruncated
+    ) {
+      return false;
+    }
     // Notes, agents, and files can be renamed
     return tab.type === 'note' || tab.type === 'agent' || tab.type === 'file';
   }

@@ -37,7 +37,7 @@ import {
   openBackendWindow,
 } from '../../backend/main/backend.ipc';
 import { AuthRejectedError, PinMismatchError } from '../../backend/main/backend-connection';
-import { protocolVersionAtLeast } from '../../backend/main/protocol-compat';
+import { protocolVersionAtLeast } from '$shared/protocol-version';
 import {
   InviteRpcError,
   InviteTransportError,
@@ -454,6 +454,8 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
       attempt,
     );
   } finally {
+    // Cancellation can happen after Join without entering the proof/failure handoff.
+    prompts?.current()?.dismiss('cancelled');
     connecting?.dismiss();
     connection?.close();
     attempt.release();

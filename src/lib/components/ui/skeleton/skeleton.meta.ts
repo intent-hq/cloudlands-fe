@@ -13,6 +13,7 @@ export const skeletonMetadata = parseUiComponentMetadata({
   category: 'primitive',
   owner: '007-B1',
   callers: [
+    'src/features/discussions/components/DiscussionSkeleton.svelte',
     'src/features/file-tracking/components/diff/TrackedChangeDiffViewer.svelte',
     'src/features/home/HomeLoading.svelte',
     'src/features/layout/tab-types/FileTabType.svelte',
@@ -28,7 +29,6 @@ export const skeletonMetadata = parseUiComponentMetadata({
     'src/lib/components/notes/primitives/ReferenceBlock.svelte',
     'src/lib/components/patterns/screen/LoadingState.svelte',
     'src/lib/components/patterns/settings/custom-controls.ts',
-    'src/lib/components/terminal/TerminalSidebar.svelte',
     'src/lib/components/ui/sidebar/sidebar-menu-skeleton.svelte',
     'src/lib/components/ui/tooltip/GitHubLinkCard.svelte',
     'src/lib/components/workspace/CheckoutModePill.svelte',

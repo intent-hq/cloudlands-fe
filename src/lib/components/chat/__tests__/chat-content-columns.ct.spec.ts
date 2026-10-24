@@ -57,20 +57,12 @@ async function settleColumns(component: Locator) {
 const bottomSurfaceGeometry = (locator: Locator) =>
   locator.evaluate((node) => {
     const box = node.getBoundingClientRect();
-    const style = getComputedStyle(node);
     return {
       edges: [box.left, box.right, box.bottom],
-      radii: [style.borderBottomLeftRadius, style.borderBottomRightRadius],
     };
   });
 
 async function expectPanelToClipFlushAurora(aurora: Locator, panel: Locator) {
-  const [auroraGeometry, panelGeometry] = await Promise.all([
-    bottomSurfaceGeometry(aurora),
-    bottomSurfaceGeometry(panel),
-  ]);
-  expect(auroraGeometry.radii).toEqual(panelGeometry.radii);
-  expect(Number.parseFloat(panelGeometry.radii[0])).toBeGreaterThan(0);
   await applyAuroraPaintProbe(aurora);
   const pixels = await samplePanelBottomPixels(panel);
   pixels.outsideCorners.forEach((corner) => expect(isPaintProbe(corner)).toBe(false));

@@ -9,9 +9,8 @@
  * `verify:changed` consumes the list locally; the PR workflow must consume the
  * same module so `test-ct` runs on `pull_request` when the diff touches a
  * CT-contract path (cloudlands-fe#2441 was ejected from the merge queue with 40
- * CT failures after green PR CI) or a CT spec / geometry golden
- * (cloudlands-fe#2533 changed 22 specs and 1 golden with CT skipped on the PR and
- * was ejected three times), or a direct fixture dependency of a discovered spec.
+ * CT failures after green PR CI), a CT spec, or a direct fixture dependency
+ * of a discovered spec.
  * The step script and the gate script are
  * extracted from the workflow and executed under bash across a scenario table,
  * and the `test-ct` `if:` expression is evaluated the same way, so the
@@ -248,11 +247,9 @@ describe(`${WORKFLOW_PATH} consumes ${MODULE_PATH}`, () => {
 
     it.each([
       ['a CT-contract path', 'src/lib/styles/tokens.css'],
-      ['a CT spec', 'src/lib/components/ui/button/button.geometry.ct.spec.ts'],
-      [
-        'a geometry golden',
-        'src/lib/components/workspace/__geometry__/workspace-hover-card.geometry.json',
-      ],
+      ['a CT spec', 'src/lib/components/ui/button/button.keyboard.ct.spec.ts'],
+      ['the dependency manifest', 'package.json'],
+      ['the dependency lockfile', 'pnpm-lock.yaml'],
     ])('writes ct_required=true when the diff touches %s', (_name, file) => {
       const { root, base } = checkoutWith(file);
       const result = runStep(root, base);
@@ -361,7 +358,7 @@ describe(`${WORKFLOW_PATH} computes root Playwright relevance in release-fast-pa
 
     it.each([
       ['a .svelte component only', 'src/features/agent/view.svelte'],
-      ['a CT spec under src/', 'src/lib/components/ui/button/button.geometry.ct.spec.ts'],
+      ['a CT spec under src/', 'src/lib/components/ui/button/button.keyboard.ct.spec.ts'],
       ['a src/ path containing test/', 'src/test/helpers.ts'],
       ['a test-prefixed sibling directory', 'test-results/last-run.json'],
       ['the CT Playwright config', 'playwright-ct.config.ts'],
@@ -435,7 +432,7 @@ function evaluateCondition(expression: string, context: Context): boolean {
   return Boolean(new Function(`return (${source});`)());
 }
 
-describe('test-ct runs on pull_request when ct_required is true', () => {
+describe('test-ct runs on merge_group when ct_required is true', () => {
   const condition = jobField(testCt, 'if');
 
   it('depends on release-fast-path and route', () => {
@@ -445,46 +442,42 @@ describe('test-ct runs on pull_request when ct_required is true', () => {
   });
 
   const ok: Context = {
-    event: 'pull_request',
+    event: 'merge_group',
     ctRequired: 'true',
     rootPlaywrightRequired: 'false',
     fastPath: 'false',
     route: 'success',
   };
   it.each<[string, Partial<Context>, boolean]>([
-    ['CT-relevant PR (contract path, spec, or golden)', {}, true],
-    ['ordinary PR', { ctRequired: 'false' }, false],
-    ['release-shaped PR touching package.json', { fastPath: 'true' }, false],
-    ['PR whose relevance output is empty (fork / failed job)', { ctRequired: '' }, false],
-    ['PR whose route failed', { route: 'failure' }, false],
-    ['cancelled PR', { cancelled: true }, false],
+    ['CT-relevant queue (contract path, spec, or direct import)', {}, true],
+    ['ordinary queue', { ctRequired: 'false' }, false],
+    ['release-shaped queue touching package.json', { fastPath: 'true' }, false],
+    ['queue whose relevance output is empty (fork / failed job)', { ctRequired: '' }, false],
+    ['queue whose route failed', { route: 'failure' }, false],
+    ['cancelled queue', { cancelled: true }, false],
+    ['PR with empty outputs', { event: 'pull_request', ctRequired: '', fastPath: '' }, false],
     [
-      'merge_group with empty outputs',
-      { event: 'merge_group', ctRequired: '', fastPath: '' },
+      'pull_request whose route failed',
+      { event: 'pull_request', ctRequired: '', fastPath: '', route: 'failure' },
       false,
     ],
     [
-      'merge_group whose route failed',
-      { event: 'merge_group', ctRequired: '', fastPath: '', route: 'failure' },
+      'release-shaped pull_request entry',
+      { event: 'pull_request', ctRequired: 'true', fastPath: 'true' },
       false,
     ],
     [
-      'release-shaped merge_group entry',
-      { event: 'merge_group', ctRequired: 'true', fastPath: 'true' },
+      'non-release pull_request entry with computed outputs',
+      { event: 'pull_request', ctRequired: 'false', fastPath: 'false' },
       false,
     ],
-    [
-      'non-release merge_group entry with computed outputs',
-      { event: 'merge_group', ctRequired: 'false', fastPath: 'false' },
-      false,
-    ],
-    ['CT-relevant merge_group', { event: 'merge_group', ctRequired: 'true' }, false],
+    ['CT-relevant pull_request', { event: 'pull_request', ctRequired: 'true' }, false],
   ])('%s → runs=%s', (_name, overrides, expected) => {
     expect(evaluateCondition(condition, { ...ok, ...overrides })).toBe(expected);
   });
 });
 
-describe('test-playwright runs on pull_request when root_playwright_required is true', () => {
+describe('test-playwright runs on merge_group when root_playwright_required is true', () => {
   const condition = jobField(testPlaywright, 'if');
 
   it('depends on release-fast-path and route', () => {
@@ -499,50 +492,54 @@ describe('test-playwright runs on pull_request when root_playwright_required is 
   });
 
   const ok: Context = {
-    event: 'pull_request',
+    event: 'merge_group',
     ctRequired: 'false',
     rootPlaywrightRequired: 'true',
     fastPath: 'false',
     route: 'success',
   };
   it.each<[string, Partial<Context>, boolean]>([
-    ['root-relevant PR (test/** or playwright.config.ts)', {}, true],
-    ['ordinary PR', { rootPlaywrightRequired: 'false' }, false],
+    ['root-relevant queue (test/** or playwright.config.ts)', {}, true],
+    ['ordinary queue', { rootPlaywrightRequired: 'false' }, false],
     [
-      'CT-relevant PR that touches no root path',
+      'CT-relevant queue that touches no root path',
       { ctRequired: 'true', rootPlaywrightRequired: 'false' },
       false,
     ],
-    ['release-shaped PR touching package.json', { fastPath: 'true' }, false],
+    ['release-shaped queue touching package.json', { fastPath: 'true' }, false],
     [
-      'PR whose relevance output is empty (fork / failed job)',
+      'queue whose relevance output is empty (fork / failed job)',
       { rootPlaywrightRequired: '' },
       false,
     ],
-    ['PR whose route failed', { route: 'failure' }, false],
-    ['fork PR whose route is skipped', { route: 'skipped' }, false],
-    ['cancelled PR', { cancelled: true }, false],
+    ['queue whose route failed', { route: 'failure' }, false],
+    ['fork queue whose route is skipped', { route: 'skipped' }, false],
+    ['cancelled queue', { cancelled: true }, false],
     [
-      'merge_group with empty outputs',
-      { event: 'merge_group', rootPlaywrightRequired: '', fastPath: '' },
+      'PR with empty outputs',
+      { event: 'pull_request', rootPlaywrightRequired: '', fastPath: '' },
       false,
     ],
     [
-      'merge_group whose route failed',
-      { event: 'merge_group', rootPlaywrightRequired: '', fastPath: '', route: 'failure' },
+      'pull_request whose route failed',
+      { event: 'pull_request', rootPlaywrightRequired: '', fastPath: '', route: 'failure' },
       false,
     ],
     [
-      'release-shaped merge_group entry',
-      { event: 'merge_group', rootPlaywrightRequired: 'true', fastPath: 'true' },
+      'release-shaped pull_request entry',
+      { event: 'pull_request', rootPlaywrightRequired: 'true', fastPath: 'true' },
       false,
     ],
     [
-      'non-release merge_group entry with computed outputs',
-      { event: 'merge_group', rootPlaywrightRequired: 'false', fastPath: 'false' },
+      'non-release pull_request entry with computed outputs',
+      { event: 'pull_request', rootPlaywrightRequired: 'false', fastPath: 'false' },
       false,
     ],
-    ['root-relevant merge_group', { event: 'merge_group', rootPlaywrightRequired: 'true' }, false],
+    [
+      'root-relevant pull_request',
+      { event: 'pull_request', rootPlaywrightRequired: 'true' },
+      false,
+    ],
   ])('%s → runs=%s', (_name, overrides, expected) => {
     expect(evaluateCondition(condition, { ...ok, ...overrides })).toBe(expected);
   });
@@ -578,7 +575,6 @@ describe('portable fixture relevance', () => {
 describe('authored browser tests require their complete PR suites', () => {
   it.each([
     ['Evaluate CT relevance', 'ct_required', 'src/components/example.ct.spec.ts'],
-    ['Evaluate CT relevance', 'ct_required', 'src/components/__geometry__/example.geometry.json'],
     ['Evaluate root Playwright relevance', 'root_playwright_required', 'test/example.spec.ts'],
     [
       'Evaluate root Playwright relevance',
@@ -650,6 +646,16 @@ describe('authored browser tests require their complete PR suites', () => {
     ['src/features/backend/main/repository-checkout-feed.ts', true],
     ['src/lib/client/live/repository-checkout-transport.ts', true],
     ['src/shared/types/repository-checkout.ts', true],
+    ['test/fixtures/pr-monitor-native/main.ts', true],
+    ['test/fixtures/pr-monitor-native/monitor.electron.ts', true],
+    ['test/fixtures/pr-monitor-native/playwright.config.ts', true],
+    ['src/features/backend/main/pr-monitor-lifecycle.ts', true],
+    ['src/features/backend/main/backend.ipc.ts', true],
+    ['src/features/backend/main/json-rpc-client.ts', true],
+    ['src/lib/client/live/pr-monitor-transport.ts', true],
+    ['src/lib/client/live/electron-ipc-transport.ts', true],
+    ['src/shared/types/pr-monitor.ts', true],
+    ['src/preload/index.template.ts', true],
     ['.github/workflows/browser-tests.yml', true],
     ['.github/workflows/intent-pr.yml', true],
     ['package.json', true],
@@ -660,6 +666,7 @@ describe('authored browser tests require their complete PR suites', () => {
     ['playwright-ct.config.ts', false],
     ['test/fixtures/browser-lifetime-other/main.cjs', false],
     ['test/fixtures/repository-checkout-other/main.ts', false],
+    ['test/fixtures/pr-monitor-native-other/main.ts', false],
   ])('classifies Electron setup path %s as required=%s', (file, required) => {
     const { root, base } = checkoutWith(file);
     const output = join(root, 'github-output');
@@ -702,9 +709,9 @@ describe('authored browser tests require their complete PR suites', () => {
   });
 });
 
-describe('selective Electron PR routing', () => {
+describe('selective Electron queue routing', () => {
   const ok: Context = {
-    event: 'pull_request',
+    event: 'merge_group',
     ctRequired: 'false',
     rootPlaywrightRequired: 'false',
     electronRequired: 'true',
@@ -713,13 +720,13 @@ describe('selective Electron PR routing', () => {
   };
   it.each<[string, Partial<Context>, boolean]>([
     ['lifetime tests changed', {}, true],
-    ['ordinary PR', { electronRequired: 'false' }, false],
+    ['ordinary queue', { electronRequired: 'false' }, false],
     ['missing relevance output', { electronRequired: '' }, false],
-    ['release-shaped PR', { fastPath: 'true' }, false],
+    ['release-shaped queue', { fastPath: 'true' }, false],
     ['route failed', { route: 'failure' }, false],
-    ['cancelled PR', { cancelled: true }, false],
-    ['queue with relevant changes', { event: 'merge_group' }, false],
-    ['queue with empty outputs', { event: 'merge_group', electronRequired: '' }, false],
+    ['cancelled queue', { cancelled: true }, false],
+    ['queue with relevant changes', { event: 'pull_request' }, false],
+    ['queue with empty outputs', { event: 'pull_request', electronRequired: '' }, false],
   ])('%s → runs=%s', (_name, context, expected) => {
     expect(evaluateCondition(jobField(testElectron, 'if'), { ...ok, ...context })).toBe(expected);
   });
@@ -757,9 +764,13 @@ describe('shared browser jobs and nightly routing', () => {
       const nightly = jobLines(job, nightlyWorkflow);
       expect(jobField(nightly, 'uses')).toBe('./.github/workflows/browser-tests.yml');
       expect(nightly).toContain(`      suite: ${suite}`);
-      expect(nightly.some((line) => /^    (if|needs):/.test(line))).toBe(false);
+      // Nightly suites wait only for the runner route and still run if it fails.
+      expect(jobField(nightly, 'needs')).toBe('runner-route');
+      expect(jobField(nightly, 'if')).toBe('${{ !cancelled() }}');
+      expect(nightly).toContain('      cloud: ${{ needs.runner-route.outputs.cloud }}');
       expect(jobField(jobLines(job), 'uses')).toBe(jobField(nightly, 'uses'));
       expect(jobLines(job)).toContain(`      suite: ${suite}`);
+      expect(jobLines(job)).toContain('      cloud: ${{ needs.route.outputs.cloud }}');
     }
   });
 
@@ -777,8 +788,7 @@ describe('shared browser jobs and nightly routing', () => {
         for (const fork of [false, true]) {
           const value = { ...context, suite, event, fork };
           expect(evaluateCondition(jobField(lines, 'if'), value)).toBe(
-            ['schedule', 'workflow_dispatch'].includes(event) ||
-              (event === 'pull_request' && !fork),
+            ['schedule', 'workflow_dispatch'].includes(event) || event === 'merge_group',
           );
           expect(evaluateCondition(jobField(lines, 'if'), { ...value, cancelled: true })).toBe(
             false,
@@ -788,7 +798,14 @@ describe('shared browser jobs and nightly routing', () => {
           );
         }
       }
-      expect(jobField(lines, 'runs-on')).toBe('depot-ubuntu-24.04-8');
+      // Component Tests take the caller's ct-N slot first, then the burst runner
+      // (WarpBuild, or GitHub); the lighter root and Electron suites run on the
+      // free standard runner.
+      expect(jobField(lines, 'runs-on')).toBe(
+        job === 'test-ct'
+          ? "${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('[\"warp-ubuntu-2404-x64-8x\"]') }}"
+          : 'ubuntu-24.04',
+      );
     },
   );
 
@@ -1051,8 +1068,10 @@ describe('root Playwright hosted shards', () => {
     ['workflow_dispatch', 'true'],
   ])('provisions hosted runners on %s with linux_burst=%s', (event, linuxBurst) => {
     const context = { ...ok, event, linuxBurst };
-    expect(jobField(testPlaywright, 'runs-on')).toBe('depot-ubuntu-24.04-8');
-    expect(field(step('Setup Node.js'), 'cache').replaceAll("'", '')).toBe('pnpm');
+    // One worker per shard fits the free standard runner (WarpBuild: p90 16-27% of 8 CPUs).
+    expect(jobField(testPlaywright, 'runs-on')).toBe('ubuntu-24.04');
+    // The pnpm store is restored by the backend-selecting cache action (WarpBuild or GitHub).
+    expect(field(step('Cache pnpm store'), 'uses')).toBe('./.github/actions/pnpm-store-cache');
     for (const name of ['Cache Playwright browsers', 'Install Playwright browsers']) {
       const condition = step(name).find((line) => line.trimStart().startsWith('if:'));
       expect(evaluateCondition(condition?.trim().slice(3).trim() ?? 'true', context)).toBe(true);
@@ -1152,9 +1171,10 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
   // test-playwright (the root Playwright suite) mirrors test-ct's gating
   // shape, so the CT scenarios drive both jobs with the same result and
   // relevance output; the root-specific rows below vary them independently.
-  const results = (ct: string, event = 'pull_request') => ({
+  const results = (ct: string, event = 'merge_group') => ({
     EVENT_NAME: event,
     RESULT_route: 'success',
+    RESULT_pr_static: event === 'pull_request' ? 'success' : 'skipped',
     RESULT_release_fast_path: 'success',
     RESULT_test_electron: 'skipped',
     RESULT_pr_title: event === 'merge_group' ? 'skipped' : 'success',
@@ -1264,7 +1284,7 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
       }
       const ctRequired = line.split('=')[1];
       const context: Context = {
-        event: 'pull_request',
+        event: 'merge_group',
         ctRequired,
         rootPlaywrightRequired: 'false',
         fastPath: 'false',
@@ -1283,9 +1303,8 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
           outcome === 'success' || (!required && outcome === 'skipped') ? 0 : 1,
         );
       }
-      // Relevance is still computed for queue entries and release-shaped PRs,
-      // but neither is allowed to run browser jobs or reject their intended skip.
-      for (const override of [{ event: 'merge_group' }, { fastPath: 'true' }]) {
+      // PRs and release-only entries skip browser execution explicitly.
+      for (const override of [{ event: 'pull_request' }, { fastPath: 'true' }]) {
         const routed = { ...context, ...override };
         expect(evaluateCondition(jobField(testCt, 'if'), routed)).toBe(false);
         const result = runGate({
@@ -1310,7 +1329,9 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
           PORTABLE_FIXTURES_REQUIRED: 'true',
           RESULT_test_portable_fixtures: outcome,
         });
-        expect(result.status, result.stdout + result.stderr).toBe(outcome === 'success' ? 0 : 1);
+        expect(result.status, result.stdout + result.stderr).toBe(
+          outcome === 'success' || (event === 'pull_request' && outcome === 'skipped') ? 0 : 1,
+        );
       }
     },
   );
@@ -1342,7 +1363,7 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
         ['success', 0],
         ['failure', 1],
         ['cancelled', 1],
-        ['skipped', event === 'merge_group' ? 0 : 1],
+        ['skipped', event === 'pull_request' ? 0 : 1],
         ['', 1],
       ] as const) {
         const result = runGate({
@@ -1422,12 +1443,12 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
     [
       'merge_group, CT passed',
       { ...results('success', 'merge_group'), FAST_PATH: '', CT_REQUIRED: '' },
-      0,
+      1,
     ],
     [
       'merge_group, CT skipped',
       { ...results('skipped', 'merge_group'), FAST_PATH: '', CT_REQUIRED: '' },
-      0,
+      1,
     ],
     [
       'merge_group, CT failed',

@@ -454,3 +454,42 @@ describe('buildWorkspacePRPresentationModel', () => {
     expect(row.details).toContain('Changes requested');
   });
 });
+
+describe('qualified monitor presentation', () => {
+  function qualified(host: string): PrMonitorRow {
+    return makeMonitor({
+      monitorId: host,
+      url: undefined,
+      resource: {
+        repository: { provider: 'gitlab', instanceBaseUrl: host, projectPath: workspaceRepo },
+        kind: 'merge-request',
+        number: 1,
+      },
+      monitorAvailability: { state: 'available' },
+    });
+  }
+  it('keeps same-project same-number GitHub and distinct GitLab instances separate', () => {
+    const rows = build([makePR()], null, [
+      qualified('https://gitlab.com'),
+      qualified('https://forge.example/gitlab'),
+    ]);
+    expect(rows).toHaveLength(3);
+    expect(new Set(rows.map((row) => row.identity)).size).toBe(3);
+    expect(rows.filter((row) => row.monitorOnly).map((row) => row.url)).toEqual(['', '']);
+    expect(rows.find((row) => !row.monitorOnly)?.monitorAgentId).toBeUndefined();
+  });
+  it('preserves a nested project canonical URL on a self-managed instance', () => {
+    const monitor = qualified('https://forge.example/gitlab');
+    const repo = 'group/subgroup/project';
+    monitor.repo = repo;
+    monitor.resource!.repository.projectPath = repo;
+    monitor.url = `https://forge.example/gitlab/${repo}/-/merge_requests/1`;
+    const [row] = build([], null, [monitor]);
+    expect(row.url).toBe(monitor.url);
+    expect(row.numberLabel).toBe('!1');
+    expect(row.resource).toEqual(monitor.resource);
+  });
+  it('does not invent a URL for a qualified monitor with no canonical URL', () => {
+    expect(build([], null, [qualified('https://forge.example/gitlab')])[0].url).toBe('');
+  });
+});

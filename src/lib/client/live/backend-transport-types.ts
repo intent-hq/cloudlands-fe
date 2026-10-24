@@ -1,3 +1,4 @@
+import type { PrincipalDiscovery } from '$shared/types/principal';
 import type { RepositoryResourceSession } from '$shared/types/repository-resource-read';
 import type { NativeReviewInput, NativeReviewSession } from '$shared/types/native-review-operation';
 import type { RepositorySelectionSession } from '$shared/types/repository-selection';
@@ -124,6 +125,12 @@ export interface BoundRepositoryRoute {
  * the underlying bridge is unavailable.
  */
 export interface BackendTransport {
+  onMonitorReconnected?(handler: () => void): () => void;
+  capturePrMonitorSession?(
+    workspaceId: string,
+  ): Promise<import('$shared/types/pr-monitor').PrMonitorSession>;
+  /** Discover the caller without renegotiating the acknowledged connection. */
+  readPrincipal?(): Promise<PrincipalDiscovery>;
   /** Read the current acknowledged hello; never initiate a replacement handshake. */
   observeNodeCapabilities?(): Promise<unknown>;
   captureRepositoryCheckout?(

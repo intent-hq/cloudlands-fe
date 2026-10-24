@@ -27,6 +27,7 @@ import { routeDaemonEventsNotification } from '$features/events/daemon-events-br
 import MobileSettings from '$features/settings/MobileSettings.svelte';
 import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
 import { websocketApiSaga } from '$store/renderer/slices/websocket-api/sagas/websocket-api-saga';
+import { CURRENT_PROTOCOL_VERSION } from '../../test/current-protocol-version';
 
 const qr = vi.hoisted(() => vi.fn(async () => 'data:image/png;base64,c3ludGhldGlj'));
 vi.mock('qrcode', () => ({ default: { toDataURL: qr } }));
@@ -39,6 +40,16 @@ const principal = (role: HostRole = 'member', id = 'person-b') => ({
   hostRole: role,
   hostMembershipRevision: 1,
 });
+const principalHello = {
+  server: {
+    capabilities: {
+      hostMembership: 1,
+      personalPairing: 1,
+      authenticatedDevices: 1,
+      collaborationIdentity: 1,
+    },
+  },
+};
 const uri = 'intent://pair?v=1&host=192.0.2.8&port=5181&fp=AB&token=synthetic-person-b';
 const pairing = (role: HostRole = 'member', id = 'person-b') => ({
   version: 1,
@@ -171,6 +182,11 @@ beforeEach(() => {
       channel: string,
       params: { method: string; params?: unknown; localMachine?: boolean },
     ) => {
+      if (channel === 'backend:read-principal')
+        return {
+          ok: true,
+          result: { hello: principalHello, principal: await rpc('principal.me') },
+        };
       if (channel !== 'backend:request') throw new Error(`Unexpected IPC ${channel}`);
       return { ok: true, result: await rpc(params.method) };
     },
@@ -485,17 +501,6 @@ describe('Devices current-person UI through the actual store and IPC transport',
         ...(change === 'rekey' ? { identity: triple } : {}),
       };
       rpc.mockImplementation(async (method) => {
-        if (method === 'client.hello')
-          return {
-            server: {
-              capabilities: {
-                hostMembership: 1,
-                personalPairing: 1,
-                authenticatedDevices: 1,
-                collaborationIdentity: 1,
-              },
-            },
-          };
         if (method === 'principal.me')
           return changing
             ? revalidation.promise
@@ -511,7 +516,7 @@ describe('Devices current-person UI through the actual store and IPC transport',
           {
             running: true,
             listenMode: 'wss',
-            protocolVersion: '10.8',
+            protocolVersion: CURRENT_PROTOCOL_VERSION,
             host: { os: 'linux', arch: 'x64', locality: 'remote' },
           }, // protocol-version-ok: identity seam fixture
           '2026-09-30T12:00:00Z',
@@ -573,17 +578,6 @@ describe('Devices current-person UI through the actual store and IPC transport',
   it('unrelated, malformed and foreign-subscription identity events cannot change admitted Devices authority', async () => {
     admit('owner');
     rpc.mockImplementation(async (method) => {
-      if (method === 'client.hello')
-        return {
-          server: {
-            capabilities: {
-              hostMembership: 1,
-              personalPairing: 1,
-              authenticatedDevices: 1,
-              collaborationIdentity: 1,
-            },
-          },
-        };
       if (method === 'principal.me') return principal('owner');
       return method === 'client.list' ? { clients: [] } : pairing('owner');
     });

@@ -9,4 +9,8 @@ export default defineConfig({
     '**/electron-browser-lifetime.spec.ts',
   ],
   testIgnore: [],
+  // Manual review runs are interactive: keep serving the report on failure
+  // rather than inheriting the gate's `open: 'never'` (cloudlands-fe#3392).
+  // verify:changed never selects these specs.
+  reporter: [['list'], ['html', { open: 'on-failure' }]],
 });

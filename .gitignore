@@ -149,3 +149,7 @@ static/generated/
 # Core dumps must stay out of the CT build source scan
 /core
 /core.[0-9]*
+
+# Python bytecode from the CI policy scripts
+__pycache__/
+*.pyc

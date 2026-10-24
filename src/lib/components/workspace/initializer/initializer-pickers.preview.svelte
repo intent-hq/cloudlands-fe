@@ -7,7 +7,7 @@
 
   type Locale = (typeof locales)[number];
 
-  function setupPickerFixture(onRefresh: () => void, locale: Locale) {
+  function setupPickerFixture(onRefresh: () => void, locale: Locale, showBranchDesign = false) {
     const restoreRepos = setupRecentRepositoriesPreview();
     const originalGetLocale = getLocale;
     overwriteGetLocale(() => locale);
@@ -27,11 +27,31 @@
         on: () => () => {},
       },
     });
+    let branchReads = 0;
     appClient.git.getBranches = async () => {
+      branchReads += 1;
       onRefresh();
       return {
-        branches: ['main', ...Array.from({ length: 30 }, (_, index) => `feature/task-${index}`)],
-        remoteBranches: ['origin/release'],
+        branches: showBranchDesign
+          ? [
+              'main',
+              'add-ci-and-linting',
+              'add-opengraph-tags',
+              'add-platform-page',
+              'address-pr-feedback',
+              'careers-role-page-template',
+              'workspace/amber-forest',
+              'workspace/quiet-heron',
+              'workspace/bright-otter',
+              'dependabot/npm_and_yarn/vite',
+              'dependabot/npm_and_yarn/svelte',
+            ]
+          : ['main', ...Array.from({ length: 30 }, (_, index) => `feature/task-${index}`)],
+        remoteBranches: showBranchDesign
+          ? branchReads > 1
+            ? ['origin/release', 'origin/hotfix-login']
+            : []
+          : ['origin/release'],
         defaultBranch: 'main',
         currentBranch: 'main',
       };
@@ -41,7 +61,7 @@
       isCurrentBranch: branchName === 'main',
       ahead: 0,
       behind: 0,
-      hasUncommittedChanges: true,
+      hasUncommittedChanges: !showBranchDesign,
       currentBranch: 'main',
     });
     appClient.integrations.githubBranches = async () => ({
@@ -65,11 +85,13 @@
     position?: 'top' | 'bottom' | 'stacked';
     scenario?: 'local' | 'clone' | 'long' | 'remote';
     locale?: Locale;
+    branchPreview?: 'groups-closed' | 'workspace-open' | 'remote-open' | 'direct-mode';
   }
   export const preview = definePreview<Props>({
     id: 'initializer-pickers',
     title: 'Initializer repository and branch pickers',
     defaultState: 'top',
+    captureReadiness: { selector: '[data-picker-ready=true]' },
     states: {
       top: { props: { position: 'top' } },
       bottom: { props: { position: 'bottom' } },
@@ -78,16 +100,20 @@
       long: { props: { scenario: 'long' } },
       remote: { props: { scenario: 'remote' } },
       'remote-de': { props: { scenario: 'remote', locale: 'de' } },
+      'groups-closed': { props: { branchPreview: 'groups-closed' } },
+      'workspace-open': { props: { branchPreview: 'workspace-open' } },
+      'remote-open': { props: { branchPreview: 'remote-open' } },
+      'direct-mode': { props: { branchPreview: 'direct-mode' } },
     },
   });
 </script>
 
 <script lang="ts">
-  import { onDestroy, untrack } from 'svelte';
+  import { onDestroy, tick, untrack } from 'svelte';
   import RepoAndBranchPicker from './RepoAndBranchPicker.svelte';
   import * as Tabs from '$lib/components/ui/tabs';
 
-  let { position = 'top', scenario = 'local', locale = 'en' }: Props = $props();
+  let { position = 'top', scenario = 'local', locale = 'en', branchPreview }: Props = $props();
   const initialScenario = untrack(() => scenario);
   let branch = $state(initialScenario === 'long' ? 'feature/a-long-selected-branch-name' : 'main');
   let repoPath = $state(
@@ -101,20 +127,56 @@
     initialScenario === 'clone' ? 'github' : initialScenario === 'remote' ? 'remote' : 'local',
   );
   let githubUrl = $state(initialScenario === 'clone' ? 'https://github.com/fixture-owner/app' : '');
-  let skipIsolation = $state(false);
+  let skipIsolation = $state(untrack(() => branchPreview === 'direct-mode'));
   let refreshes = $state(0);
+  let branchesReady = $state(false);
+  let previewReady = $state(false);
+  let openedPreview = false;
+  let expandedPreview = false;
+  let fixtureEl: HTMLElement | undefined = $state();
   onDestroy(
     setupPickerFixture(
       () => (refreshes += 1),
       untrack(() => locale),
+      untrack(() => Boolean(branchPreview)),
     ),
   );
+
+  $effect(() => {
+    if (!branchPreview || !fixtureEl || openedPreview) return;
+    openedPreview = true;
+    void tick().then(() => {
+      fixtureEl?.querySelectorAll<HTMLButtonElement>('button[aria-haspopup="dialog"]')[1]?.click();
+    });
+  });
+
+  $effect(() => {
+    if (!branchPreview || !branchesReady || expandedPreview) return;
+    expandedPreview = true;
+    const group =
+      branchPreview === 'workspace-open'
+        ? 'workspace'
+        : branchPreview === 'remote-open'
+          ? 'remote'
+          : null;
+    void tick().then(async () => {
+      if (group)
+        fixtureEl?.ownerDocument
+          .querySelector<HTMLButtonElement>(`[data-branch-group="${group}"]`)
+          ?.click();
+      await tick();
+      previewReady = true;
+    });
+  });
 </script>
 
 <section
+  bind:this={fixtureEl}
   class="relative isolate overflow-hidden w-full min-w-0 p-4 bg-sidebar"
   class:bottom={position !== 'top'}
+  class:min-h-168={Boolean(branchPreview)}
   data-testid="initializer-pickers-fixture"
+  data-picker-ready={!branchPreview || previewReady}
 >
   <RepoAndBranchPicker
     {repoPath}
@@ -140,6 +202,7 @@
     }}
     onBranchChange={(event) => (branch = event.detail.branch)}
     onSkipIsolationChange={(value) => (skipIsolation = value)}
+    onBranchesLoaded={() => (branchesReady = true)}
   />
   <output class="sr-only" data-testid="initializer-selection">
     {JSON.stringify({ repoPath, branch, skipIsolation, refreshes })}

@@ -10,7 +10,10 @@ import { z } from 'zod';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { Logger } from '../../../shared/logger';
 import { AUTO_UPDATE_CHANNELS } from '../types';
-import { SetChannelRequestSchema } from '../auto-update-validation';
+import {
+  SetChannelRequestSchema,
+  SetShareStatisticsRequestSchema,
+} from '../auto-update-validation';
 import { autoUpdateService } from './auto-update.service';
 
 const logger = new Logger('AutoUpdateIPC');
@@ -147,6 +150,19 @@ export function setupAutoUpdateIPC(): void {
         return { success: true };
       },
       AUTO_UPDATE_CHANNELS.SET_CHANNEL,
+    ),
+  );
+
+  // Settings → "Share anonymous update statistics"
+  ipcMain.handle(
+    AUTO_UPDATE_CHANNELS.SET_SHARE_STATISTICS,
+    createSafeValidatedHandler(
+      SetShareStatisticsRequestSchema,
+      async (_event, validated) => {
+        await autoUpdateService.setShareStatistics(validated.enabled);
+        return { success: true };
+      },
+      AUTO_UPDATE_CHANNELS.SET_SHARE_STATISTICS,
     ),
   );
 

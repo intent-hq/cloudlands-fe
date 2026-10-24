@@ -8,8 +8,15 @@
   import { faChevronDown, faTrash } from '$lib/icons/phosphor-icons';
   import { writable } from 'svelte/store';
   import { onDestroy } from 'svelte';
+  import {
+    selectWorkspaceActionContext,
+    selectWorkspaceSavedScriptContext,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
   import { confirmScriptDeletion } from '$features/scripts/confirm-script-deletion';
-  import { selectCanDeleteScript } from '$store/renderer/slices/scripts/scripts-selectors';
+  import {
+    selectCanDeleteScript,
+    selectScriptById,
+  } from '$store/renderer/slices/scripts/scripts-selectors';
   import * as Menu from '$lib/components/ui/menu';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import Terminal from '$lib/components/terminal/Terminal.svelte';
@@ -33,6 +40,9 @@
   const scriptIdStore = writable('');
   $effect(() => workspaceIdStore.set(workspaceId));
   $effect(() => scriptIdStore.set(scriptId ?? ''));
+  const fullContext$ = selectWorkspaceActionContext(workspaceIdStore);
+  const scriptContext$ = selectWorkspaceSavedScriptContext(workspaceIdStore);
+  const script$ = selectScriptById(workspaceIdStore, scriptIdStore);
   const canDeleteScript$ = selectCanDeleteScript(workspaceIdStore, scriptIdStore);
   let mounted = true;
   onDestroy(() => {
@@ -57,6 +67,7 @@
   }
 
   function moveToBottomBar() {
+    if (!$fullContext$) return;
     if (scriptId) appStore.dispatch(selectScript(workspaceId, scriptId));
     appStore.dispatch(openTerminalOverlay(workspaceId, terminalId));
     appStore.dispatch(closeTab(layoutId ?? workspaceId, tab.id));
@@ -69,28 +80,30 @@
 </script>
 
 {#snippet surfaceAction()}
-  <Menu.CommandItem
-    icon={faChevronDown}
-    label={m.workspace_shell_showInBottomBar_tooltip()}
-    onclick={moveToBottomBar}
-    data-move-to-bottom-bar
-  />
-  {#if scriptId}
+  {#if $fullContext$}
     <Menu.CommandItem
-      icon={faTrash}
-      label={m.scripts_delete_label()}
-      destructive
-      disabledReason={$canDeleteScript$ ? undefined : m.scripts_delete_disabled_description()}
-      onclick={deleteScript}
+      icon={faChevronDown}
+      label={m.workspace_shell_showInBottomBar_tooltip()}
+      onclick={moveToBottomBar}
+      data-move-to-bottom-bar
     />
+    {#if scriptId}
+      <Menu.CommandItem
+        icon={faTrash}
+        label={m.scripts_delete_label()}
+        destructive
+        disabledReason={$canDeleteScript$ ? undefined : m.scripts_delete_disabled_description()}
+        onclick={deleteScript}
+      />
+    {/if}
   {/if}
 {/snippet}
 
-{#if scriptId && isActive}
+{#if scriptId && isActive && $scriptContext$ && ($fullContext$ || $script$)}
   {#key scriptId}
     <ScriptOutputViewer {scriptId} {workspaceId} class="h-full" />
   {/key}
-{:else if terminalId && isActive}
+{:else if terminalId && isActive && $fullContext$}
   {#key terminalId}
     <Terminal {terminalId} {workspaceId} class="h-full" />
   {/key}

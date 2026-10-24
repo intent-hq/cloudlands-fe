@@ -901,6 +901,11 @@ export interface ScrollAnchor {
   scrollTop: number;
   /** Whether we're near the bottom (skip anchoring if true) */
   isNearBottom: boolean;
+  /**
+   * First visible message row, the fallback when `element` is replaced
+   * (e.g. a prepended row regroups the anchored turn).
+   */
+  message?: { id: string; offsetFromViewport: number };
 }
 
 /**
@@ -926,35 +931,78 @@ export function captureScrollAnchor(
   let anchorElement: Element | null = null;
   let offsetFromViewport = 0;
 
+  let message: ScrollAnchor['message'];
+
   for (const el of elements) {
     const rect = el.getBoundingClientRect();
+    // Rows are in document order: nothing past the viewport bottom can anchor.
+    if (rect.top >= containerRect.bottom) break;
     // Element is at least partially visible in the container
-    if (rect.top >= containerRect.top && rect.top < containerRect.bottom) {
-      anchorElement = el;
-      offsetFromViewport = rect.top - containerRect.top;
-      break;
+    if (rect.top >= containerRect.top) {
+      if (!anchorElement) {
+        anchorElement = el;
+        offsetFromViewport = rect.top - containerRect.top;
+      }
+      // Also record the first visible message row: a prepended row can
+      // regroup it into a new turn (re-creating the row and its wrapper) or
+      // shift index-keyed turn wrappers onto different content, while the
+      // message id keeps identifying the reader's row.
+      const messageId = el.getAttribute('data-message-id');
+      if (messageId) {
+        message = { id: messageId, offsetFromViewport: rect.top - containerRect.top };
+        break;
+      }
     }
   }
 
-  return { element: anchorElement, offsetFromViewport, scrollTop, isNearBottom };
+  return {
+    element: anchorElement,
+    offsetFromViewport,
+    scrollTop,
+    isNearBottom,
+    ...(message ? { message } : {}),
+  };
 }
 
 /**
  * Restore scroll position based on anchor after DOM changes.
  * Should be called after DOM settles (e.g., in requestAnimationFrame).
  */
+function resolveScrollAnchorTarget(
+  container: HTMLElement,
+  anchor: ScrollAnchor,
+): { element: Element; offsetFromViewport: number } | null {
+  if (anchor.message) {
+    const row = container.querySelector(`[data-message-id="${CSS.escape(anchor.message.id)}"]`);
+    if (row) return { element: row, offsetFromViewport: anchor.message.offsetFromViewport };
+  }
+  if (anchor.element?.isConnected) {
+    return { element: anchor.element, offsetFromViewport: anchor.offsetFromViewport };
+  }
+  return null;
+}
+
+/** True when {@link restoreScrollAnchor} has a rendered element to restore against. */
+export function canRestoreScrollAnchor(container: HTMLElement, anchor: ScrollAnchor): boolean {
+  return !anchor.isNearBottom && resolveScrollAnchorTarget(container, anchor) !== null;
+}
+
 export function restoreScrollAnchor(container: HTMLElement, anchor: ScrollAnchor): void {
   // Skip if we were near bottom - let auto-scroll handle it
   if (anchor.isNearBottom) {
     return;
   }
 
-  // If we have an anchor element, restore position relative to it
-  if (anchor.element && anchor.element.isConnected) {
+  // Restore relative to the recorded message row when it is rendered (it
+  // survives turn regrouping and index-keyed wrapper reuse), otherwise to the
+  // anchor element (e.g. the row is now a LazyTurn placeholder).
+  const target = resolveScrollAnchorTarget(container, anchor);
+  if (target) {
+    const { element, offsetFromViewport: targetOffset } = target;
     const containerRect = container.getBoundingClientRect();
-    const elementRect = anchor.element.getBoundingClientRect();
+    const elementRect = element.getBoundingClientRect();
     const currentOffset = elementRect.top - containerRect.top;
-    const offsetDifference = currentOffset - anchor.offsetFromViewport;
+    const offsetDifference = currentOffset - targetOffset;
 
     if (Math.abs(offsetDifference) > 5) {
       // Threshold to avoid jitter

@@ -162,7 +162,7 @@ describe('actual isolated package consumers', () => {
     let hello = {
       clientId: 'private-package-client',
       server: {
-        protocolVersion: '14.0', // protocol-version-ok: selected daemon package contract
+        protocolVersion: '14.0', // fixture-protocol-version: historical selected daemon package contract
         buildCommit: 'aaaaaaa',
         locality: 'local',
         capabilities,
@@ -207,8 +207,8 @@ describe('actual isolated package consumers', () => {
     ).rejects.toThrow();
     const originalHello = structuredClone(hello);
     for (const server of [
-      { ...originalHello.server, protocolVersion: '13.1' }, // protocol-version-ok: rejected foreign protocol
-      { ...originalHello.server, protocolVersion: '13.2' }, // protocol-version-ok: reserved Home version does not qualify GitLab
+      { ...originalHello.server, protocolVersion: '13.1' }, // fixture-protocol-version: rejected foreign protocol
+      { ...originalHello.server, protocolVersion: '13.2' }, // fixture-protocol-version: reserved Home version does not qualify GitLab
       { ...originalHello.server, buildCommit: 'ccccccc' },
       { ...originalHello.server, locality: 'remote' },
       ...Object.keys(capabilities).map((capability) => ({

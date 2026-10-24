@@ -13,6 +13,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import VirtualizedFileTree from '../VirtualizedFileTree.svelte';
 import { invoke } from '$lib/electron-bridge';
 import { notify } from '$lib/components/patterns/notify';
+import { CURRENT_PROTOCOL_VERSION } from '../../../../test/current-protocol-version';
+
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: { error: vi.fn(), success: vi.fn() },
 }));
@@ -51,7 +53,7 @@ function seedLocality(locality: 'local' | 'remote') {
         transports: ['uds'],
         clients: 1,
         agents: 1,
-        protocolVersion: '2.4',
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
         host: { os: 'macos', arch: 'aarch64', hasDisplay: true, locality },
       },
       '2026-07-30T20:00:00.000Z',

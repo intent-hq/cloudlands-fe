@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { createRequire } from 'node:module';
 import { describe, expect, it, vi } from 'vitest';
-import { configureMacUpdateCompatibility, macUpdateChannel } from './mac-update-compatibility';
+import { configureMacUpdateCompatibility } from './mac-update-compatibility';
 const updaterRequire = createRequire(createRequire(import.meta.url).resolve('electron-updater'));
 const { MacUpdater } = updaterRequire('./MacUpdater');
 const { GenericProvider } = updaterRequire('./providers/GenericProvider');
@@ -47,46 +47,41 @@ describe('Mac updater architecture safety', () => {
     configureMacUpdateCompatibility(value, 'darwin', 'arm64');
     expect((await value.doCheckForUpdates()).isUpdateAvailable).toBe(false);
   });
-  it.each(['alpha', 'beta', 'stable'])(
-    'uses native ARM and legacy Intel feed URLs on %s',
-    async (channel) => {
-      for (const arch of ['x64', 'arm64'] as const) {
-        const value = updater({ version: '0.0.0', files: [] }, arch);
-        const provider = new GenericProvider(
-          {
-            provider: 'generic',
-            url: `https://github.com/intent-hq/cloudlands-releases/releases/download/${channel}`,
-            ...macUpdateChannel('darwin', arch),
-          },
-          value,
-          { platform: 'darwin', executor: {} },
-        );
-        const urls: string[] = [];
-        provider.httpRequest = async (url: URL) => {
-          urls.push(url.href);
-          return 'version: 0.0.0\nfiles: []\n';
-        };
-        value.getUpdateInfoAndProvider = async () => ({
-          info: await provider.getLatestVersion(),
-          provider,
-        });
-        const available = vi.fn(),
-          error = vi.fn();
-        value.on('update-available', available);
-        value.on('error', error);
-        expect((await value.doCheckForUpdates()).isUpdateAvailable).toBe(false);
-        expect(urls[0].split('?')[0]).toBe(
-          `https://github.com/intent-hq/cloudlands-releases/releases/download/${channel}/${arch === 'arm64' ? 'latest-arm64-mac.yml' : 'latest-mac.yml'}`,
-        );
-        expect(value.allowDowngrade).toBe(false);
-        expect(available).not.toHaveBeenCalled();
-        expect(error).not.toHaveBeenCalled();
-        expect(value.downloadUpdate).not.toHaveBeenCalled();
-      }
-    },
-  );
+  it.each(['alpha', 'beta', 'stable'])('uses the standard Mac feed URL on %s', async (channel) => {
+    for (const arch of ['x64', 'arm64'] as const) {
+      const value = updater({ version: '0.0.0', files: [] }, arch);
+      const provider = new GenericProvider(
+        {
+          provider: 'generic',
+          url: `https://github.com/intent-hq/cloudlands-releases/releases/download/${channel}`,
+        },
+        value,
+        { platform: 'darwin', executor: {} },
+      );
+      const urls: string[] = [];
+      provider.httpRequest = async (url: URL) => {
+        urls.push(url.href);
+        return 'version: 0.0.0\nfiles: []\n';
+      };
+      value.getUpdateInfoAndProvider = async () => ({
+        info: await provider.getLatestVersion(),
+        provider,
+      });
+      const available = vi.fn(),
+        error = vi.fn();
+      value.on('update-available', available);
+      value.on('error', error);
+      expect((await value.doCheckForUpdates()).isUpdateAvailable).toBe(false);
+      expect(urls[0].split('?')[0]).toBe(
+        `https://github.com/intent-hq/cloudlands-releases/releases/download/${channel}/latest-mac.yml`,
+      );
+      expect(value.allowDowngrade).toBe(false);
+      expect(available).not.toHaveBeenCalled();
+      expect(error).not.toHaveBeenCalled();
+      expect(value.downloadUpdate).not.toHaveBeenCalled();
+    }
+  });
   it('leaves non-Mac updater configuration unchanged', () => {
-    expect(macUpdateChannel('linux', 'arm64')).toEqual({});
     const supported = vi.fn(() => true);
     const value = { isUpdateSupported: supported };
     configureMacUpdateCompatibility(value, 'win32', 'x64');

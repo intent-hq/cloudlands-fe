@@ -1,16 +1,15 @@
 // @vitest-environment node
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { devNull, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   CT_CONTRACT_PATHS,
   changedFiles,
   ctRequired,
   isCtContractPath,
-  isCtTestArtifact,
   main,
 } from './ct-contract-paths.mjs';
 
@@ -38,6 +37,8 @@ function gitRepository() {
   const root = mkdtempSync(join(tmpdir(), 'ct-contract-paths-'));
   temporaryPaths.push(root);
   git(root, 'init', '-q');
+  // Detached maintenance can remove a lock during rmSync and leave the fixture behind.
+  git(root, 'config', 'maintenance.auto', 'false');
   git(root, 'symbolic-ref', 'HEAD', 'refs/heads/main');
   git(root, 'config', 'user.name', 'ct-contract-paths test');
   git(root, 'config', 'user.email', 'ct-contract-paths@example.invalid');
@@ -63,6 +64,31 @@ afterEach(() => {
   for (const path of temporaryPaths.splice(0)) rmSync(path, { recursive: true, force: true });
 });
 
+describe('disposable Git fixture ownership', () => {
+  it('does not launch automatic maintenance', () => {
+    const traceRoot = mkdtempSync(join(tmpdir(), 'ct-fixture-trace-'));
+    temporaryPaths.push(traceRoot);
+    const trace = join(traceRoot, 'events.json');
+    vi.stubEnv('GIT_CONFIG_GLOBAL', devNull);
+    vi.stubEnv('GIT_CONFIG_NOSYSTEM', '1');
+    vi.stubEnv('GIT_TRACE2_EVENT', trace);
+    try {
+      gitRepository();
+      const children = readFileSync(trace, 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as { event: string; argv?: string[] })
+        .filter((event) => event.event === 'child_start')
+        .map((event) => event.argv ?? []);
+      expect(
+        children.filter((argv) => argv.includes('maintenance') || argv.includes('gc')),
+      ).toEqual([]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
 describe('isCtContractPath', () => {
   it.each([
     'src/app.css',
@@ -77,7 +103,6 @@ describe('isCtContractPath', () => {
     'patches/playwright-core@1.58.2.patch',
     'src/test/ct-test.ts',
     'src/lib/component-catalog/capture-stability.ts',
-    'src/lib/component-catalog/geometry-probe.ts',
     'src/lib/component-catalog/preview-definition.ts',
     'package.json',
     'pnpm-lock.yaml',
@@ -92,6 +117,7 @@ describe('isCtContractPath', () => {
     'src/lib/styles-legacy/tokens.css',
     'src/app.css.map',
     'src/lib/component-catalog/catalog.ts',
+    'src/lib/component-catalog/geometry-probe.ts',
     'src/lib/component-catalog/geometry-probe.test.ts',
     'src/lib/component-catalog/nested/preview-definition.ts',
     'src/test/ct-console-errors.ts',
@@ -101,8 +127,7 @@ describe('isCtContractPath', () => {
     'packages/cloudlands-fe/package.json',
     'e2e/playwright/index.ts',
     '.github/workflows/intent-pr.yml',
-    'src/lib/components/ui/button/button.geometry.ct.spec.ts',
-    'src/lib/components/workspace/__geometry__/workspace-hover-card.geometry.json',
+    'src/lib/components/ui/button/button.keyboard.ct.spec.ts',
   ])('does not match %s', (file) => {
     expect(isCtContractPath(file)).toBe(false);
   });
@@ -119,50 +144,10 @@ describe('isCtContractPath', () => {
       'scripts/run-ct-tests.mjs',
       'src/app.css',
       'src/lib/component-catalog/capture-stability.ts',
-      'src/lib/component-catalog/geometry-probe.ts',
       'src/lib/component-catalog/preview-definition.ts',
       'src/lib/styles/**',
       'src/test/ct-test.ts',
     ]);
-  });
-});
-
-describe('isCtTestArtifact', () => {
-  it.each([
-    'src/lib/components/ui/button/button.geometry.ct.spec.ts',
-    'src/features/agent/components/agent-avatar/__tests__/agent-avatar-waiting.ct.spec.ts',
-    'src/top-level.ct.spec.ts',
-    // Playwright's testMatch matcher is nocase + dot: these are discovered too.
-    'src/.fixtures/button.ct.spec.ts',
-    'src/.hidden.ct.spec.ts',
-    'src/button.CT.spec.ts',
-    'src/lib/components/workspace/__geometry__/workspace-hover-card.geometry.json',
-    './src/lib/components/workspace/__geometry__/workspace-hover-card.geometry.json',
-    'src/.fixtures/__geometry__/button.geometry.json',
-    'src/x/__geometry__/.button.geometry.json',
-  ])('matches %s', (file) => {
-    expect(isCtTestArtifact(file)).toBe(true);
-  });
-
-  it.each([
-    'test/added.ct.spec.ts',
-    'e2e/button.ct.spec.ts',
-    'src/lib/button.test.ts',
-    'src/lib/button.spec.ts',
-    'src/lib/button.visual.spec.ts',
-    'src/lib/button.ct.test.ts',
-    'src/lib/button.ct.spec.js',
-    'src/lib/button.ct.spec.tsx',
-    'src/lib/button.ct.spec.mts',
-    'src/lib/button.ct.spec.ts.snap',
-    'src/lib/components/ui/button/button.svelte',
-    'src/lib/components/workspace/workspace-hover-card.geometry.json',
-    'src/lib/components/workspace/__geometry__/nested/workspace-hover-card.geometry.json',
-    'src/lib/components/workspace/__geometry__/workspace-hover-card.json',
-    'playwright/__geometry__/scene.geometry.json',
-    'src/app.css',
-  ])('does not match %s', (file) => {
-    expect(isCtTestArtifact(file)).toBe(false);
   });
 });
 
@@ -173,11 +158,8 @@ describe('ctRequired and main', () => {
     expect(ctRequired([])).toBe(false);
   });
 
-  it('requires CT when any changed file is a CT spec or geometry golden', () => {
-    expect(ctRequired(['src/lib/components/ui/button/button.geometry.ct.spec.ts'])).toBe(true);
-    expect(
-      ctRequired(['src/lib/components/workspace/__geometry__/workspace-hover-card.geometry.json']),
-    ).toBe(true);
+  it('requires CT when any changed file is a discovered CT spec', () => {
+    expect(ctRequired(['src/lib/components/ui/button/button.keyboard.ct.spec.ts'])).toBe(true);
     expect(ctRequired(['test/added.ct.spec.ts'])).toBe(false);
     expect(ctRequired(['src/lib/components/ui/button/button.ct.test.ts'])).toBe(false);
     expect(ctRequired(['src/lib/components/ui/button/button.ct.spec.js'])).toBe(false);
@@ -262,22 +244,34 @@ describe('--diff against a git repository', () => {
     expect(runCli(root, '--diff', 'main', 'deleted').stdout).toBe('ct_required=true\n');
   });
 
-  it('prints ct_required=true for a spec-only, a golden-only, and a deleted-golden diff', () => {
+  it('requires CT for a dist:all script edit without dependency changes', () => {
     const root = gitRepository();
-    const golden = 'src/lib/components/workspace/__geometry__/workspace-hover-card.geometry.json';
-    commitFile(root, golden, '{}');
-    branch(root, 'spec-only', 'src/lib/components/ui/button/button.geometry.ct.spec.ts');
+    const manifest = {
+      scripts: { 'dist:all': 'electron-builder -mw' },
+      devDependencies: { '@playwright/test': '1.58.2' },
+    };
+    commitFile(root, 'package.json', JSON.stringify(manifest));
+    branch(root, 'manifest-edit');
+    commitFile(
+      root,
+      'package.json',
+      JSON.stringify({ ...manifest, scripts: { 'dist:all': 'electron-builder -mwl' } }),
+    );
+    expect(runCli(root, '--diff', 'main', 'manifest-edit')).toEqual({
+      status: 0,
+      stdout: 'ct_required=true\n',
+      stderr: '',
+    });
+  });
+
+  it('requires CT for a discovered spec, but not an unrelated component or undiscovered spec', () => {
+    const root = gitRepository();
+    branch(root, 'spec-only', 'src/lib/components/ui/button/button.keyboard.ct.spec.ts');
     expect(runCli(root, '--diff', 'main', 'spec-only')).toEqual({
       status: 0,
       stdout: 'ct_required=true\n',
       stderr: '',
     });
-    branch(root, 'golden-only', golden);
-    expect(runCli(root, '--diff', 'main', 'golden-only').stdout).toBe('ct_required=true\n');
-    branch(root, 'golden-deleted');
-    git(root, 'rm', '-q', golden);
-    git(root, 'commit', '-q', '-m', 'remove golden');
-    expect(runCli(root, '--diff', 'main', 'golden-deleted').stdout).toBe('ct_required=true\n');
     branch(root, 'svelte-only', 'src/lib/components/ui/button/button.svelte');
     expect(runCli(root, '--diff', 'main', 'svelte-only').stdout).toBe('ct_required=false\n');
     branch(root, 'spec-outside-src', 'test/added.ct.spec.ts');
