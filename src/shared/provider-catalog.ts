@@ -78,6 +78,8 @@ export const ProviderCatalogResponseSchema = z
     providers: z.array(ProviderCatalogEntrySchema),
     // Named profiles (§5.54): absent on older daemons and hosts without profiles.
     profiles: z.array(ProviderProfileSummarySchema).optional(),
+    // Renamed Default configurations by base provider id (§5.54); omitted when none is.
+    defaultNames: z.record(z.string(), z.string()).optional(),
   })
   .passthrough();
 
