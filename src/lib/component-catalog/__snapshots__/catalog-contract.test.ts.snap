@@ -5118,8 +5118,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 1"
                 <div>
-                  <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-2.5 px-5 row-start-1 sm:pb-3" data-animated-height-target="">
+                  <div class="grid grid-cols-1">
+                    <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-2.5 px-5 row-start-1 sm:pb-3" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
                         <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-order-title">
                           "Choose the first step"
@@ -5235,8 +5235,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 2"
                 <div>
-                  <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-1 px-5 row-start-1" data-animated-height-target="">
+                  <div class="grid grid-cols-1">
+                    <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-1 px-5 row-start-1" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
                         <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-priority-title">
                           "What should we prioritize?"
@@ -5364,8 +5364,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 1"
                 <div>
-                  <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-1 px-5 row-start-1" data-animated-height-target="">
+                  <div class="grid grid-cols-1">
+                    <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-1 px-5 row-start-1" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
                         <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-context-title">
                           "What context should we know?"
@@ -5454,8 +5454,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 1"
                 <div>
-                  <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-1 px-5 row-start-1" data-animated-height-target="">
+                  <div class="grid grid-cols-1">
+                    <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-1 px-5 row-start-1" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
                         <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-name-title">
                           "Name this project"
@@ -5544,8 +5544,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 1"
                 <div>
-                  <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-1 px-5 row-start-1" data-animated-height-target="">
+                  <div class="grid grid-cols-1">
+                    <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-1 px-5 row-start-1" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
                         <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-features-title">
                           "Which features matter?"
@@ -5664,8 +5664,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 2"
                 <div>
-                  <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-1 px-5 row-start-1" data-animated-height-target="">
+                  <div class="grid grid-cols-1">
+                    <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-1 px-5 row-start-1" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
                         <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-priority-title">
                           "What should we prioritize?"
@@ -5792,8 +5792,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 1"
                 <div>
-                  <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-2.5 px-5 row-start-1 sm:pb-3" data-animated-height-target="">
+                  <div class="grid grid-cols-1">
+                    <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-2.5 px-5 row-start-1 sm:pb-3" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
                         <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-priority-title">
                           "What should we prioritize?"
@@ -5907,8 +5907,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 2"
                 <div>
-                  <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-1 px-5 row-start-1" data-animated-height-target="">
+                  <div class="grid grid-cols-1">
+                    <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-1 px-5 row-start-1" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
                         <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-priority-title">
                           "What should we prioritize?"
@@ -6035,8 +6035,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 1"
                 <div>
-                  <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-2.5 px-5 row-start-1 sm:pb-3" data-animated-height-target="">
+                  <div class="grid grid-cols-1">
+                    <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-2.5 px-5 row-start-1 sm:pb-3" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
                         <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-approach-title">
                           "Choose an approach"
@@ -6147,8 +6147,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 1"
                 <div>
-                  <div class="grid">
-                    <div class="col-start-1 flex flex-col gap-2 pb-2.5 px-5 row-start-1 sm:pb-3" data-animated-height-target="">
+                  <div class="grid grid-cols-1">
+                    <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-2.5 px-5 row-start-1 sm:pb-3" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
                         <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-direction-title">
                           "Choose a direction"

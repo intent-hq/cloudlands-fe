@@ -580,12 +580,13 @@
       {/if}
 
       <div use:animatedHeight={true}>
-        <div class="grid">
+        <!-- A shrinkable column keeps unbreakable tokens from widening the step past the card. -->
+        <div class="grid grid-cols-1">
           {#key questionId}
             <div
               data-animated-height-target
               class={cn(
-                'col-start-1 row-start-1 flex flex-col gap-2 px-5',
+                'col-start-1 row-start-1 flex min-w-0 flex-col gap-2 px-5',
                 !showCounter && (compact ? 'pt-2.5' : 'pt-3.5'),
                 showFooter ? 'pb-1' : compact ? 'pb-2 sm:pb-2.5' : 'pb-2.5 sm:pb-3',
               )}

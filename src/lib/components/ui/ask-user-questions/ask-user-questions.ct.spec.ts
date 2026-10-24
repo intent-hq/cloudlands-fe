@@ -66,3 +66,43 @@ for (const size of ['default', 'compact'] as const) {
     expect(geometry.right).toBeGreaterThanOrEqual(0);
   });
 }
+
+// An unbreakable token (no spaces or hyphens) must not widen the step past the
+// card: the card clips overflow, so every line of the question would be cut off.
+test('long unbreakable tokens wrap inside a narrow card', async ({ mount, page }) => {
+  await page.setViewportSize({ width: 340, height: 900 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const token = 'background_start_stop_exits_cleanly_after_owned_daemon_pid_file_read';
+  const component = await mount(AskUserQuestions, {
+    props: {
+      size: 'compact',
+      questions: [
+        {
+          id: 'flake',
+          title: `The stress loop hit ${token} once. Fix it in this PR too?`,
+          description: `Also covers ${token}.`,
+          options: [
+            { id: 'include', title: 'Include it', description: `Same fix for ${token}.` },
+            { id: 'separate', title: 'Separate follow-up' },
+          ],
+        },
+      ],
+    },
+  });
+  const card = page.locator('[data-slot="ask-user-questions"]');
+  await expect(card).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  const overflow = await card.evaluate((node) => {
+    const cardBox = node.getBoundingClientRect();
+    const texts = [...node.querySelectorAll('h3, p, [role="radio"]')].map((element) => {
+      const box = element.getBoundingClientRect();
+      return { text: element.textContent?.trim().slice(0, 40), right: box.right - cardBox.right };
+    });
+    return { scroll: node.scrollWidth - node.clientWidth, cardRight: cardBox.right, texts };
+  });
+  expect(overflow.cardRight).toBeLessThanOrEqual(340);
+  expect(overflow.scroll).toBeLessThanOrEqual(1);
+  for (const text of overflow.texts) expect.soft(text.right, text.text).toBeLessThanOrEqual(1);
+  await component.getByRole('radio').first().click();
+  await expect(component.getByRole('radio').first()).toHaveAttribute('aria-checked', 'true');
+});
