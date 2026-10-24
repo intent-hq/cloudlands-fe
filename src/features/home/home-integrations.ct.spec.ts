@@ -569,6 +569,12 @@ test('organization enumeration refuses incomplete scope instead of sidebar fallb
   expect(calls.filter((call) => call.method === 'github.repos.search')).toHaveLength(2);
 });
 
+// Store updates reach Svelte on animation-frame ticks, and a linked-workspace change takes
+// two of them (workspace list, then the pruned PR list). A loaded merge-queue runner stopped
+// producing frames for over 5 s after such an update, so the stale row outlived the default
+// expect timeout before the list settled correctly (cloudlands-fe run 39970011113).
+const LINKED_ROWS_SETTLE_MS = 15_000;
+
 // Explicit links must survive person filters, use bounded reads, and never broaden repo search.
 test('cross-repository linked PRs follow workspace scope and retain live selection and pages', async ({
   mount,
@@ -611,10 +617,13 @@ test('cross-repository linked PRs follow workspace scope and retain live selecti
       ],
     },
   });
-  await expect(list.getByRole('option')).toHaveCount(4);
+  await expect(list.getByRole('option')).toHaveCount(4, { timeout: LINKED_ROWS_SETTLE_MS });
   await expect(component.getByRole('heading', { name: 'Reconnect recovery' })).toBeVisible();
   await expect(list).toContainText('Second page pull request');
   await component.update({ props: { workspaces: [workspace, unrelated] } });
+  await expect(list.getByRole('option').filter({ hasText: '#902' })).toHaveCount(0, {
+    timeout: LINKED_ROWS_SETTLE_MS,
+  });
   await expect(list.getByRole('option')).toHaveCount(3);
   await component.getByRole('searchbox').fill('no-linked-match');
   await expect(list).not.toContainText('Linked service fix');
