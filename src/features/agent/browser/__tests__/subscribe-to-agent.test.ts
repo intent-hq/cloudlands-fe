@@ -222,12 +222,17 @@ describe('subscribeToAgent (Redux-reactive)', () => {
   });
 
   it('does not re-fire when the same session reference is seen twice', () => {
-    store.dispatch(bulkUpsertSessions([makeAgent()], { preserveExplicitRuntimeFlags: false }));
+    store.dispatch(
+      bulkUpsertSessions([makeAgent({ nameExplicitlySet: true })], {
+        preserveExplicitRuntimeFlags: false,
+      }),
+    );
     const cb = vi.fn();
     const unsubscribe = subscribeToAgent('agent-1', cb);
     cb.mockClear();
 
-    // Rename to the same name → reducer short-circuits and returns state unchanged.
+    // Rename an already-explicit name to itself → reducer short-circuits and
+    // returns state unchanged.
     store.dispatch(renameSession('agent-1', 'Initial Name'));
 
     expect(cb).not.toHaveBeenCalled();
