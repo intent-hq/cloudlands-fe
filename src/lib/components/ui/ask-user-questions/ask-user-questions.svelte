@@ -554,7 +554,7 @@
     bind:this={rootElement}
     data-slot="ask-user-questions"
     class={cn(
-      'relative w-full max-w-[520px] overflow-hidden rounded-(--radius-large) border border-border',
+      'relative w-full max-w-[520px] overflow-hidden rounded-(--radius-large) border border-border wrap-anywhere',
       surfaceClasses(clampSurface(surface + 1)),
       className,
     )}
@@ -580,7 +580,8 @@
       {/if}
 
       <div use:animatedHeight={true}>
-        <!-- A shrinkable column keeps unbreakable tokens from widening the step past the card. -->
+        <!-- With the root's wrap-anywhere, a shrinkable column keeps unbreakable tokens
+             (e.g. snake_case names) from widening the step past the clipped card. -->
         <div class="grid grid-cols-1">
           {#key questionId}
             <div
@@ -603,7 +604,7 @@
                 {#if question.header}
                   <p
                     class={cn(
-                      'min-w-0 break-words type-caption text-muted-foreground',
+                      'min-w-0 type-caption text-muted-foreground',
                       centered ? 'w-full' : 'grow basis-48',
                     )}
                   >
@@ -613,7 +614,7 @@
                   <h3
                     id={titleId}
                     class={cn(
-                      'min-w-0 break-words text-[16px] font-semibold leading-snug text-foreground',
+                      'min-w-0 text-[16px] font-semibold leading-snug text-foreground',
                       centered ? 'w-full' : 'grow basis-48',
                     )}
                   >
@@ -635,7 +636,7 @@
                 <h3
                   id={titleId}
                   class={cn(
-                    'break-words text-[16px] font-semibold leading-snug text-foreground',
+                    'text-[16px] font-semibold leading-snug text-foreground',
                     centered && 'text-center',
                   )}
                 >
@@ -645,7 +646,7 @@
               {#if question.description}
                 <p
                   class={cn(
-                    'break-words text-xs leading-snug text-muted-foreground',
+                    'text-xs leading-snug text-muted-foreground',
                     centered && 'text-center',
                   )}
                 >
@@ -812,7 +813,7 @@
                       {#if chipPosition === 'left'}{@render chip()}{/if}
                       <span
                         class={cn(
-                          'min-w-0 flex-1 break-words leading-snug',
+                          'min-w-0 flex-1 leading-snug',
                           compact ? 'text-xs' : 'type-caption',
                           question.layout === 'stacked'
                             ? 'flex flex-col gap-0.5'

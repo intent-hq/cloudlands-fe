@@ -5113,7 +5113,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "Chip on left"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="chip-on-left" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="left-chip trailing-action" data-catalog-renderer-fixture="chip-on-left">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full wrap-anywhere" data-slot="ask-user-questions">
                 <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 1"
@@ -5121,7 +5121,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                   <div class="grid grid-cols-1">
                     <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-2.5 px-5 row-start-1 sm:pb-3" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
-                        <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-order-title">
+                        <h3 class="basis-48 font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-order-title">
                           "Choose the first step"
                       <div aria-labelledby="c<id>-order-title" class="-mx-3 flex flex-col gap-0.5 relative" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
@@ -5129,7 +5129,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                           <span class="inline-flex items-center justify-center relative shrink-0 size-7">
                             <span aria-hidden="true" class="absolute duration-spring-fast ease-spring-fast inline-flex items-center justify-center motion-reduce:transition-none size-5 text-muted-foreground text-xs transition-[opacity,font-weight]">
                               "1"
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Speed"
                             <span aria-hidden="true">
@@ -5143,7 +5143,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                           <span class="inline-flex items-center justify-center relative shrink-0 size-7">
                             <span aria-hidden="true" class="absolute duration-spring-fast ease-spring-fast inline-flex items-center justify-center motion-reduce:transition-none size-5 text-muted-foreground text-xs transition-[opacity,font-weight]">
                               "2"
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Quality"
                             <span aria-hidden="true">
@@ -5157,7 +5157,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                           <span class="inline-flex items-center justify-center relative shrink-0 size-7">
                             <span aria-hidden="true" class="absolute duration-spring-fast ease-spring-fast inline-flex items-center justify-center motion-reduce:transition-none size-5 text-muted-foreground text-xs transition-[opacity,font-weight]">
                               "3"
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Balance"
                             <span aria-hidden="true">
@@ -5230,7 +5230,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "Controlled"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="controlled" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="controlled-index controlled-answers" data-catalog-renderer-fixture="controlled">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full wrap-anywhere" data-slot="ask-user-questions">
                 <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 2"
@@ -5238,12 +5238,12 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                   <div class="grid grid-cols-1">
                     <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-1 px-5 row-start-1" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
-                        <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-priority-title">
+                        <h3 class="basis-48 font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-priority-title">
                           "What should we prioritize?"
                       <div aria-labelledby="c<id>-priority-title" class="-mx-3 flex flex-col gap-0.5 relative" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="0" data-state="unchecked" role="radio" tabindex="0">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Speed"
                             <span aria-hidden="true">
@@ -5256,7 +5256,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                               <svg aria-hidden="true" class="size-3.5">
                                 <path>
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="1" data-state="unchecked" role="radio" tabindex="-1">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Quality"
                             <span aria-hidden="true">
@@ -5269,7 +5269,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                               <svg aria-hidden="true" class="size-3.5">
                                 <path>
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="2" data-state="unchecked" role="radio" tabindex="-1">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Balance"
                             <span aria-hidden="true">
@@ -5359,7 +5359,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "Free text"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="free-text" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="multiline command-enter auto-focus" data-catalog-renderer-fixture="free-text">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full wrap-anywhere" data-slot="ask-user-questions">
                 <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 1"
@@ -5367,7 +5367,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                   <div class="grid grid-cols-1">
                     <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-1 px-5 row-start-1" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
-                        <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-context-title">
+                        <h3 class="basis-48 font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-context-title">
                           "What context should we know?"
                       <div aria-labelledby="c<id>-context-title" class="-mx-3 cursor-text duration-spring-fast ease-spring-fast focus-within:bg-card! focus-within:ring-1 focus-within:ring-border focus-within:ring-inset hover:bg-hover min-h-[76px] motion-reduce:transition-none mt-1 px-3 py-2.5 relative rounded-(--radius-small) transition-colors" role="group" tokens=["--surface-2"]>
                         <textarea aria-labelledby="c<id>-context-title" class="aria-invalid:border-danger bg-transparent block border-0 border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) focus-visible:outline-none focus-visible:shadow-none hover:bg-transparent min-h-0! min-h-20 motion-reduce:transition-none overflow-hidden p-0 placeholder:text-muted-foreground read-only:text-muted-foreground resize-none rounded-none shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="textarea">
@@ -5449,7 +5449,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "Free text validation"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="free-text-validation" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="invalid error valid" data-catalog-renderer-fixture="free-text-validation">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full wrap-anywhere" data-slot="ask-user-questions">
                 <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 1"
@@ -5457,7 +5457,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                   <div class="grid grid-cols-1">
                     <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-1 px-5 row-start-1" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
-                        <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-name-title">
+                        <h3 class="basis-48 font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-name-title">
                           "Name this project"
                       <div aria-labelledby="c<id>-name-title" class="-mx-3 cursor-text duration-spring-fast ease-spring-fast focus-within:bg-card! focus-within:ring-1 focus-within:ring-border focus-within:ring-inset hover:bg-hover min-h-10 motion-reduce:transition-none mt-1 px-3 py-2.5 relative rounded-(--radius-small) transition-colors" role="group" tokens=["--surface-2"]>
                         <textarea aria-labelledby="c<id>-name-title" class="aria-invalid:border-danger bg-transparent block border-0 border-border data-[state=hover]:bg-hover disabled:bg-transparent disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:opacity-60 duration-(--spring-fast) focus-visible:outline-none focus-visible:shadow-none hover:bg-transparent min-h-0! min-h-20 motion-reduce:transition-none overflow-hidden p-0 placeholder:text-muted-foreground read-only:text-muted-foreground resize-none rounded-none shadow-none text-foreground transition-[background-color,border-color,box-shadow,color] type-caption w-full" data-size="default" data-slot="textarea">
@@ -5539,7 +5539,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "Multi-select"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="multi-select" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="multiple-selection continue finish" data-catalog-renderer-fixture="multi-select">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full wrap-anywhere" data-slot="ask-user-questions">
                 <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 1"
@@ -5547,12 +5547,12 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                   <div class="grid grid-cols-1">
                     <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-1 px-5 row-start-1" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
-                        <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-features-title">
+                        <h3 class="basis-48 font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-features-title">
                           "Which features matter?"
                       <div aria-labelledby="c<id>-features-title" class="-mx-3 flex flex-col gap-0.5 relative" role="group">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="0" data-state="unchecked" role="checkbox" tabindex="0">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Speed"
                             <span aria-hidden="true">
@@ -5562,7 +5562,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                             <span aria-hidden="true" class="absolute border border-border duration-spring-fast ease-spring-fast inline-flex items-center justify-center motion-reduce:transition-none rounded-(--radius-small) size-5 text-muted-foreground text-xs transition-[opacity,font-weight]">
                               "1"
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="1" data-state="unchecked" role="checkbox" tabindex="-1">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Quality"
                             <span aria-hidden="true">
@@ -5572,7 +5572,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                             <span aria-hidden="true" class="absolute border border-border duration-spring-fast ease-spring-fast inline-flex items-center justify-center motion-reduce:transition-none rounded-(--radius-small) size-5 text-muted-foreground text-xs transition-[opacity,font-weight]">
                               "2"
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="2" data-state="unchecked" role="checkbox" tabindex="-1">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Balance"
                             <span aria-hidden="true">
@@ -5659,7 +5659,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "Multiple questions"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="multiple-questions" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="progress advance finish" data-catalog-renderer-fixture="multiple-questions">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full wrap-anywhere" data-slot="ask-user-questions">
                 <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 2"
@@ -5667,12 +5667,12 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                   <div class="grid grid-cols-1">
                     <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-1 px-5 row-start-1" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
-                        <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-priority-title">
+                        <h3 class="basis-48 font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-priority-title">
                           "What should we prioritize?"
                       <div aria-labelledby="c<id>-priority-title" class="-mx-3 flex flex-col gap-0.5 relative" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="0" data-state="unchecked" role="radio" tabindex="0">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Speed"
                             <span aria-hidden="true">
@@ -5685,7 +5685,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                               <svg aria-hidden="true" class="size-3.5">
                                 <path>
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="1" data-state="unchecked" role="radio" tabindex="-1">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Quality"
                             <span aria-hidden="true">
@@ -5698,7 +5698,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                               <svg aria-hidden="true" class="size-3.5">
                                 <path>
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="2" data-state="unchecked" role="radio" tabindex="-1">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Balance"
                             <span aria-hidden="true">
@@ -5787,7 +5787,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "Playground"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="playground" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="single-select digit-shortcuts" data-catalog-renderer-fixture="playground">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full wrap-anywhere" data-slot="ask-user-questions">
                 <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 1"
@@ -5795,12 +5795,12 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                   <div class="grid grid-cols-1">
                     <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-2.5 px-5 row-start-1 sm:pb-3" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
-                        <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-priority-title">
+                        <h3 class="basis-48 font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-priority-title">
                           "What should we prioritize?"
                       <div aria-labelledby="c<id>-priority-title" class="-mx-3 flex flex-col gap-0.5 relative" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="0" data-state="unchecked" role="radio" tabindex="0">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Speed"
                             <span aria-hidden="true">
@@ -5813,7 +5813,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                               <svg aria-hidden="true" class="size-3.5">
                                 <path>
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="1" data-state="unchecked" role="radio" tabindex="-1">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Quality"
                             <span aria-hidden="true">
@@ -5826,7 +5826,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                               <svg aria-hidden="true" class="size-3.5">
                                 <path>
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="2" data-state="unchecked" role="radio" tabindex="-1">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Balance"
                             <span aria-hidden="true">
@@ -5902,7 +5902,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "Skippable"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="skippable" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="skip callback advance" data-catalog-renderer-fixture="skippable">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full wrap-anywhere" data-slot="ask-user-questions">
                 <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 2"
@@ -5910,12 +5910,12 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                   <div class="grid grid-cols-1">
                     <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-1 px-5 row-start-1" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
-                        <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-priority-title">
+                        <h3 class="basis-48 font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-priority-title">
                           "What should we prioritize?"
                       <div aria-labelledby="c<id>-priority-title" class="-mx-3 flex flex-col gap-0.5 relative" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="0" data-state="unchecked" role="radio" tabindex="0">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Speed"
                             <span aria-hidden="true">
@@ -5928,7 +5928,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                               <svg aria-hidden="true" class="size-3.5">
                                 <path>
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="1" data-state="unchecked" role="radio" tabindex="-1">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Quality"
                             <span aria-hidden="true">
@@ -5941,7 +5941,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                               <svg aria-hidden="true" class="size-3.5">
                                 <path>
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="2" data-state="unchecked" role="radio" tabindex="-1">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Balance"
                             <span aria-hidden="true">
@@ -6030,7 +6030,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "Stacked layout"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="stacked-layout" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="stacked long-description" data-catalog-renderer-fixture="stacked-layout">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full wrap-anywhere" data-slot="ask-user-questions">
                 <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 1"
@@ -6038,12 +6038,12 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                   <div class="grid grid-cols-1">
                     <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-2.5 px-5 row-start-1 sm:pb-3" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
-                        <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-approach-title">
+                        <h3 class="basis-48 font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-approach-title">
                           "Choose an approach"
                       <div aria-labelledby="c<id>-approach-title" class="-mx-3 flex flex-col gap-0.5 relative" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-start min-h-14 px-3 py-2 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="stacked" data-proximity-index="0" data-state="unchecked" role="radio" tabindex="0">
-                          <span class="break-words flex flex-1 flex-col gap-0.5 min-w-0 type-caption">
+                          <span class="flex flex-1 flex-col gap-0.5 min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Speed"
                             <span class="text-muted-foreground text-xs">
@@ -6055,7 +6055,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                               <svg aria-hidden="true" class="size-3.5">
                                 <path>
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-start min-h-14 px-3 py-2 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="stacked" data-proximity-index="1" data-state="unchecked" role="radio" tabindex="-1">
-                          <span class="break-words flex flex-1 flex-col gap-0.5 min-w-0 type-caption">
+                          <span class="flex flex-1 flex-col gap-0.5 min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Quality"
                             <span class="text-muted-foreground text-xs">
@@ -6067,7 +6067,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                               <svg aria-hidden="true" class="size-3.5">
                                 <path>
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-start min-h-14 px-3 py-2 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="stacked" data-proximity-index="2" data-state="unchecked" role="radio" tabindex="-1">
-                          <span class="break-words flex flex-1 flex-col gap-0.5 min-w-0 type-caption">
+                          <span class="flex flex-1 flex-col gap-0.5 min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Balance"
                             <span class="text-muted-foreground text-xs">
@@ -6142,7 +6142,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
               "With other"
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="with-other" data-catalog-preview="ask-user-questions">
             <div class="flex justify-center w-full" data-catalog-rendered-state="other enter shift-enter" data-catalog-renderer-fixture="with-other">
-              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full" data-slot="ask-user-questions">
+              <div class="bg-surface-2 border border-border max-w-[520px] overflow-hidden relative rounded-(--radius-large) shadow-surface-2 w-full wrap-anywhere" data-slot="ask-user-questions">
                 <div class="flex items-center pb-2 pt-3.5 px-5 sm:pt-4 text-muted-foreground type-caption" data-slot="ask-user-questions-metadata">
                   <span class="shrink-0 tabular-nums">
                     "Question 1 of 1"
@@ -6150,12 +6150,12 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                   <div class="grid grid-cols-1">
                     <div class="col-start-1 flex flex-col gap-2 min-w-0 pb-2.5 px-5 row-start-1 sm:pb-3" data-animated-height-target="">
                       <div class="flex flex-wrap gap-x-2 gap-y-1 items-start min-w-0" data-slot="ask-user-questions-header">
-                        <h3 class="basis-48 break-words font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-direction-title">
+                        <h3 class="basis-48 font-semibold grow leading-snug min-w-0 text-[16px] text-foreground" id="c<id>-direction-title">
                           "Choose a direction"
                       <div aria-labelledby="c<id>-direction-title" class="-mx-3 flex flex-col gap-0.5 relative" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="0" data-state="unchecked" role="radio" tabindex="0">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Speed"
                             <span aria-hidden="true">
@@ -6168,7 +6168,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:ask-user-q
                               <svg aria-hidden="true" class="size-3.5">
                                 <path>
                         <div aria-checked="false" class="cursor-pointer flex gap-3 group/question-row items-center min-h-10 px-3 py-1.5 relative rounded-(--radius-small) select-none z-10" data-chip-position="right" data-layout="inline" data-proximity-index="1" data-state="unchecked" role="radio" tabindex="-1">
-                          <span class="break-words flex-1 inline-flex items-center min-w-0 type-caption">
+                          <span class="flex-1 inline-flex items-center min-w-0 type-caption">
                             <span class="font-normal text-foreground">
                               "Quality"
                             <span aria-hidden="true">

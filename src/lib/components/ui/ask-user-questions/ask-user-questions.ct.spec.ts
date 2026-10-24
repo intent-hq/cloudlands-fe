@@ -67,42 +67,63 @@ for (const size of ['default', 'compact'] as const) {
   });
 }
 
-// An unbreakable token (no spaces or hyphens) must not widen the step past the
-// card: the card clips overflow, so every line of the question would be cut off.
-test('long unbreakable tokens wrap inside a narrow card', async ({ mount, page }) => {
-  await page.setViewportSize({ width: 340, height: 900 });
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  const token = 'background_start_stop_exits_cleanly_after_owned_daemon_pid_file_read';
-  const component = await mount(AskUserQuestions, {
-    props: {
-      size: 'compact',
-      questions: [
-        {
-          id: 'flake',
-          title: `The stress loop hit ${token} once. Fix it in this PR too?`,
-          description: `Also covers ${token}.`,
-          options: [
-            { id: 'include', title: 'Include it', description: `Same fix for ${token}.` },
-            { id: 'separate', title: 'Separate follow-up' },
-          ],
-        },
-      ],
-    },
-  });
-  const card = page.locator('[data-slot="ask-user-questions"]');
-  await expect(card).toBeVisible();
-  await page.evaluate(() => document.fonts.ready);
-  const overflow = await card.evaluate((node) => {
-    const cardBox = node.getBoundingClientRect();
-    const texts = [...node.querySelectorAll('h3, p, [role="radio"]')].map((element) => {
-      const box = element.getBoundingClientRect();
-      return { text: element.textContent?.trim().slice(0, 40), right: box.right - cardBox.right };
+// An unbreakable token (no spaces or hyphens) must still wrap: the card clips
+// overflow, so any text laid out past its edge is cut off and unreadable. The
+// inline and stacked option layouts lay out option text differently.
+for (const layout of ['inline', 'stacked'] as const) {
+  test(`long unbreakable tokens wrap inside a narrow card (${layout} options)`, async ({
+    mount,
+    page,
+  }) => {
+    await page.setViewportSize({ width: 340, height: 900 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const token = 'background_start_stop_exits_cleanly_after_owned_daemon_pid_file_read';
+    const component = await mount(AskUserQuestions, {
+      props: {
+        size: 'compact',
+        questions: [
+          {
+            id: 'flake',
+            header: `Flake ${token}`,
+            title: `The stress loop hit ${token} once. Fix it in this PR too?`,
+            description: `Also covers ${token}.`,
+            layout,
+            options: [
+              { id: 'include', title: `Include ${token}`, description: `Same fix for ${token}.` },
+              { id: 'separate', title: 'Separate follow-up' },
+            ],
+          },
+        ],
+      },
     });
-    return { scroll: node.scrollWidth - node.clientWidth, cardRight: cardBox.right, texts };
+    const card = page.locator('[data-slot="ask-user-questions"]');
+    await expect(card).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    // Measure the rendered glyph boxes of every text run, not element boxes:
+    // text can overflow an element whose own box still fits inside the card.
+    const clipped = await card.evaluate((node) => {
+      const cardBox = node.getBoundingClientRect();
+      const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+      const range = document.createRange();
+      const runs: { text: string; left: number; right: number }[] = [];
+      for (let text = walker.nextNode(); text; text = walker.nextNode()) {
+        if (!text.textContent?.trim()) continue;
+        range.selectNodeContents(text);
+        for (const rect of range.getClientRects()) {
+          if (rect.width === 0) continue;
+          runs.push({
+            text: text.textContent.trim().slice(0, 40),
+            left: cardBox.left - rect.left,
+            right: rect.right - cardBox.right,
+          });
+        }
+      }
+      return { count: runs.length, outside: runs.filter((r) => r.left > 1 || r.right > 1) };
+    });
+    expect(clipped.count).toBeGreaterThan(0);
+    expect(clipped.outside).toEqual([]);
+    const option = component.getByRole('radio').first();
+    await option.click();
+    await expect(option).toHaveAttribute('aria-checked', 'true');
   });
-  expect(overflow.cardRight).toBeLessThanOrEqual(340);
-  expect(overflow.scroll).toBeLessThanOrEqual(1);
-  for (const text of overflow.texts) expect.soft(text.right, text.text).toBeLessThanOrEqual(1);
-  await component.getByRole('radio').first().click();
-  await expect(component.getByRole('radio').first()).toHaveAttribute('aria-checked', 'true');
-});
+}
