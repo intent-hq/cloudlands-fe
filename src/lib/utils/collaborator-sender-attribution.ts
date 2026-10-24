@@ -232,10 +232,10 @@ export function predictOwnSenderAttribution(input: {
  * prepends the preamble before enqueueing, so queue snapshots carry it; the
  * entry qualifies under exactly the transcript-row rules of
  * `getCollaboratorSenderAttribution`, with the queue's `messageMetadata` and
- * serve-time `author`. The daemon merges a same-principal append as
- * `content + "\n\n" + incoming`, each already annotated, so once the leading
- * preamble qualifies the entry, the same exact `\n\n{preamble}\n\n`
- * segment boundaries are dropped too. The queued entry is never modified.
+ * serve-time `author`. Only the leading preamble is removed: a same-principal
+ * merge (`content + "\n\n" + incoming`) repeats it between segments, but the
+ * wire does not mark those boundaries, so an interior copy may be the author's
+ * own quoted text and is always kept. The queued entry is never modified.
  */
 export function presentQueuedMessageText(
   queued: { messageMetadata?: unknown; author?: unknown } | null | undefined,
@@ -252,8 +252,5 @@ export function presentQueuedMessageText(
     },
     ownerPrincipalId,
   );
-  if (!attribution) return text;
-  const body = stripCollaboratorSenderPreamble(text, attribution);
-  if (body === text) return text;
-  return body.replaceAll(`\n\n${attribution.preamble}\n\n`, '\n\n');
+  return stripCollaboratorSenderPreamble(text, attribution);
 }

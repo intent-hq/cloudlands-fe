@@ -1786,21 +1786,27 @@ describe('QueuedMessageList collaborator sender preamble', () => {
       screen.getAllByTestId('queued-message-text').map((node) => node.textContent?.trim()),
     ).toEqual([BODY, 'second']);
   });
-  it('shows a same-sender merged entry without any of its lines', async () => {
-    const merged = `${RAW}\n\n${PREAMBLE}\n\nsecond`;
+  it('keeps a quoted line through display and a changed save', async () => {
+    const quoted = `Please investigate this line:\n\n${PREAMBLE}\n\nIt appeared in my queue.`;
+    const raw = `${PREAMBLE}\n\n${quoted}`;
     const onedit = vi.fn().mockResolvedValue({ success: true });
     renderQueue({
       props: {
         ownPrincipalId: MEMBER.principalId,
         ownerPrincipalId: OWNER,
-        messages: [memberEntry({ content: merged })],
+        messages: [memberEntry({ content: raw })],
         onedit,
       },
     });
-    expect(screen.getByTestId('queued-message-text').textContent?.trim()).toBe(`${BODY}\n\nsecond`);
+    expect(screen.getByTestId('queued-message-text').textContent?.trim()).toBe(quoted);
     await fireEvent.dblClick(screen.getByTestId('queued-message-content'));
-    await waitFor(() => expect(onedit).toHaveBeenCalledWith('q-1', merged, true));
-    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe(`${BODY}\n\nsecond`);
+    await waitFor(() => expect(onedit).toHaveBeenCalledWith('q-1', raw, true));
+    const editor = screen.getByRole('textbox') as HTMLTextAreaElement;
+    expect(editor.value).toBe(quoted);
+    const edited = quoted.replace('It appeared', 'It still appears');
+    await fireEvent.input(editor, { target: { value: edited } });
+    await fireEvent.keyDown(editor, { key: 'Enter' });
+    await waitFor(() => expect(onedit).toHaveBeenLastCalledWith('q-1', edited, false));
   });
 
   it('saves an unchanged edit with the stored content', async () => {

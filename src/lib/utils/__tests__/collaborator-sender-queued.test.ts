@@ -106,13 +106,35 @@ describe('presentQueuedMessageText', () => {
     presentQueuedMessageText(queued, `${MEMBER_PREAMBLE}\n\n${BODY}`, OWNER);
     expect(JSON.stringify(queued)).toBe(snapshot);
   });
-  it('drops the repeated line inside a same-sender merged entry', () => {
-    // The daemon annotates each send before enqueueing, then merges
-    // same-principal appends as `content + "\n\n" + incoming.content`.
+  it('keeps a quoted copy of the line inside a single send', () => {
+    const body = `Please investigate this line:\n\n${MEMBER_PREAMBLE}\n\nIt appeared in my queue.`;
+    expect(
+      presentQueuedMessageText(
+        { author: AUTHOR, messageMetadata: metadata },
+        `${MEMBER_PREAMBLE}\n\n${body}`,
+        OWNER,
+      ),
+    ).toBe(body);
+  });
+
+  it('keeps a fenced copy of the line inside a single send', () => {
+    const body = `Seen in the queue:\n\n\`\`\`\n\n${MEMBER_PREAMBLE}\n\n\`\`\``;
+    expect(
+      presentQueuedMessageText(
+        { author: AUTHOR, messageMetadata: metadata },
+        `${MEMBER_PREAMBLE}\n\n${body}`,
+        OWNER,
+      ),
+    ).toBe(body);
+  });
+
+  it('removes only the leading line of a merged entry, without boundary evidence', () => {
+    // Merge boundaries are not on the wire, so an interior line could be the
+    // author's own quoted text and is kept.
     const text = `${MEMBER_PREAMBLE}\n\nfirst\n\n${MEMBER_PREAMBLE}\n\nsecond`;
     expect(
       presentQueuedMessageText({ author: AUTHOR, messageMetadata: metadata }, text, OWNER),
-    ).toBe('first\n\nsecond');
+    ).toBe(`first\n\n${MEMBER_PREAMBLE}\n\nsecond`);
   });
 
   it('keeps an interior line when the entry does not start with it', () => {
