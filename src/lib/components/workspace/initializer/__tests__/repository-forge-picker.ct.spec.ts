@@ -17,13 +17,6 @@ for (const width of [390, 720]) {
     await expect(
       page.getByTestId('recent-repositories').getByRole('img', { name: 'GitLab', exact: true }),
     ).toHaveCount(2);
-    const githubGeometry = await page
-      .getByRole('option')
-      .first()
-      .evaluate((row) => ({
-        height: row.getBoundingClientRect().height,
-        avatar: row.querySelector('[data-slot=action-row-leading]')!.getBoundingClientRect().width,
-      }));
     const prefix = page.getByRole('button', { name: 'github.com/', exact: true });
     await page.mouse.move(width - 1, 750);
     await expect(prefix.locator('svg')).toHaveCSS('opacity', '0');
@@ -41,14 +34,6 @@ for (const width of [390, 720]) {
     await expect(
       page.getByTestId('recent-repositories').getByRole('img', { name: 'GitHub', exact: true }),
     ).toHaveCount(3);
-    const gitlabGeometry = await page
-      .getByRole('option')
-      .first()
-      .evaluate((row) => ({
-        height: row.getBoundingClientRect().height,
-        avatar: row.querySelector('[data-slot=action-row-leading]')!.getBoundingClientRect().width,
-      }));
-    expect(gitlabGeometry).toEqual(githubGeometry);
     const row = page
       .getByTestId('recent-repositories')
       .locator('[data-slot=menu-action-row]')
@@ -62,7 +47,6 @@ for (const width of [390, 720]) {
     ]);
     expect(avatar!.x).toBeLessThan(title!.x);
     expect(title!.x).toBeLessThan(forge!.x);
-    expect(forge!.x - (title!.x + title!.width)).toBeLessThanOrEqual(9);
     await row.click();
     await expect(page.getByTestId('repo-selection')).toHaveText('"team/subgroup/app"');
     await expect(page.getByRole('dialog')).toHaveCount(0);

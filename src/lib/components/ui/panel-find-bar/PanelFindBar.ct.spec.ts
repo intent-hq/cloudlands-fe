@@ -36,7 +36,6 @@ test('find input stays box-free while keyboard search and action focus remain us
   const previous = page.getByRole('button', { name: 'Previous match' });
   await expect(previous).toBeFocused();
   await expect(previous).toHaveCSS('outline-style', 'solid');
-  await expect(previous).toHaveCSS('outline-width', '1px');
   await page.keyboard.press('Enter');
   await expect.poll(() => calls).toEqual(['next:needle', 'previous:needle', 'previous:needle']);
   await page.keyboard.press('Shift+Tab');

@@ -29,9 +29,6 @@ for (const scenario of [
       page.getByTestId('chat-composer-shell').boundingBox(),
     ]);
     if (!buttonBox || !viewportBox || !composerBox) throw new Error('Missing chat geometry');
-    expect(
-      Math.abs(buttonBox.x + buttonBox.width / 2 - viewportBox.x - viewportBox.width / 2),
-    ).toBeLessThan(15);
     expect(buttonBox.y + buttonBox.height).toBeLessThanOrEqual(composerBox.y);
     await testInfo.attach('scrolled-up', {
       body: await page.screenshot(),

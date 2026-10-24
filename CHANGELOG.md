@@ -4,6 +4,50 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.231.8](https://github.com/intent-hq/cloudlands-fe/compare/v2.231.7...v2.231.8) (2026-10-24)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.39 ([#3666](https://github.com/intent-hq/cloudlands-fe/issues/3666)) ([b789d6f](https://github.com/intent-hq/cloudlands-fe/commit/b789d6f05ba5e84a83fd80bde14c1d74941dc000))
+
+## [2.231.7](https://github.com/intent-hq/cloudlands-fe/compare/v2.231.6...v2.231.7) (2026-10-23)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.38 ([#3661](https://github.com/intent-hq/cloudlands-fe/issues/3661)) ([7569a61](https://github.com/intent-hq/cloudlands-fe/commit/7569a6146e8f7845fb4adedf3031815de81cf6e4))
+
+## [2.231.6](https://github.com/intent-hq/cloudlands-fe/compare/v2.231.5...v2.231.6) (2026-10-23)
+
+
+### 🐛 Bug Fixes
+
+* save images and SVGs from the file viewer Download button ([#3655](https://github.com/intent-hq/cloudlands-fe/issues/3655)) ([1acd34a](https://github.com/intent-hq/cloudlands-fe/commit/1acd34a8bcea2d45bd76c48c2e856df425532ea2))
+
+## [2.231.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.231.4...v2.231.5) (2026-10-23)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.37 ([#3658](https://github.com/intent-hq/cloudlands-fe/issues/3658)) ([4afa314](https://github.com/intent-hq/cloudlands-fe/commit/4afa314b92ad8dcc5cda7a06141e8c2e69e33249))
+* make tooltip and other inverted-surface text readable ([#3652](https://github.com/intent-hq/cloudlands-fe/issues/3652)) ([b02e8f5](https://github.com/intent-hq/cloudlands-fe/commit/b02e8f51030a11725d0e17258772d399e3e6824a))
+
+## [2.231.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.231.3...v2.231.4) (2026-10-23)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.36 ([#3653](https://github.com/intent-hq/cloudlands-fe/issues/3653)) ([817b476](https://github.com/intent-hq/cloudlands-fe/commit/817b4761d449445a590b19541e2be35560a14fb4))
+
+## [2.231.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.231.2...v2.231.3) (2026-10-23)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.35 ([#3650](https://github.com/intent-hq/cloudlands-fe/issues/3650)) ([4c88f99](https://github.com/intent-hq/cloudlands-fe/commit/4c88f997ead40277bffeebf7f6063d9c186eadcb))
+* restore the in-app toast when an agent finishes while the app is frontmost ([#3640](https://github.com/intent-hq/cloudlands-fe/issues/3640)) ([26fa3d3](https://github.com/intent-hq/cloudlands-fe/commit/26fa3d3a0705ddec19a3e2d1e22fc135d7978c41))
+
 ## [2.231.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.231.1...v2.231.2) (2026-10-23)
 
 

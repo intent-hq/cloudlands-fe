@@ -38,7 +38,7 @@ for (const state of [
     const bounds = await panel.boundingBox();
     expect(bounds).not.toBeNull();
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
-    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(360);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
     expect(await panel.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
       true,
     );

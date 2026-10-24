@@ -304,7 +304,7 @@
             role="option"
             aria-selected={isCommitted}
             class={cn(menuItem(), 'h-auto items-center gap-3 px-3 py-2.5 cursor-pointer', {
-              'bg-foreground text-background pl-2.5': isCommitted,
+              'surface-inverse pl-2.5': isCommitted,
               'bg-muted/40': isFocused && !isCommitted,
               'hover:bg-muted/30': !isFocused && !isCommitted,
             })}
@@ -324,39 +324,23 @@
                 />
               {:else}
                 <div class="w-6 h-6 flex items-center justify-center shrink-0">
-                  <Fa
-                    icon={faFolder}
-                    class={isCommitted ? 'text-background' : 'text-muted-foreground'}
-                    size={18}
-                  />
+                  <Fa icon={faFolder} class="text-muted-foreground" size={18} />
                 </div>
               {/if}
             </div>
             <div class="min-w-0 shrink truncate">
-              <span
-                class={cn(
-                  'text-sm font-medium',
-                  isCommitted ? 'text-background' : 'text-foreground',
-                )}
-              >
+              <span class="text-sm font-medium text-foreground">
                 {#if repo.owner}
-                  <span class={cn('mr-1', isCommitted ? 'text-background/60' : 'text-subtle')}
-                    >{repo.owner} /</span
-                  >
+                  <span class="mr-1 text-subtle">{repo.owner} /</span>
                 {/if}
                 {repo.name}
               </span>
             </div>
-            <div
-              class={cn(
-                'text-xs min-w-0 shrink-2 truncate ml-auto text-right',
-                isCommitted ? 'text-background/50' : 'text-muted-foreground',
-              )}
-            >
+            <div class="text-xs min-w-0 shrink-2 truncate ml-auto text-right text-muted-foreground">
               {repo.path.replace(/^\/Users\/[^/]+/, '~')}
             </div>
             <svg
-              class={cn('w-4 h-4 shrink-0', isCommitted ? 'text-background/40' : 'text-ghost')}
+              class="w-4 h-4 shrink-0 text-ghost"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"

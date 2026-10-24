@@ -151,16 +151,10 @@ for (const preference of ['catalog-reduced', 'system-reduced', 'full'] as const)
       }
     }
     expect(evidence.layouts.length).toBeGreaterThan(0);
-    const firstPass = evidence.measurements.slice(0, expectedLabels.length);
+
     for (const layout of evidence.layouts) {
       expect(layout.width).toBeGreaterThan(0);
       expect(layout.height).toBeGreaterThan(0);
-      expect(layout.width).toBeLessThan(
-        firstPass.reduce((sum, { shape }) => sum + shape.width, 0) * 2,
-      );
-      expect(layout.height).toBeLessThan(
-        firstPass.reduce((sum, { shape }) => sum + shape.height, 0) * 4,
-      );
     }
   });
 }

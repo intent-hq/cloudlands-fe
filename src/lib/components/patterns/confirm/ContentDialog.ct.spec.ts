@@ -36,7 +36,7 @@ test('long content scrolls without hiding actions at a narrow, short viewport', 
   });
   expect(geometry.horizontalOverflow).toBeLessThanOrEqual(1);
   expect(geometry.top).toBeGreaterThanOrEqual(0);
-  expect(geometry.bottom).toBeLessThanOrEqual(480);
+  expect(geometry.bottom).toBeLessThanOrEqual(page.viewportSize()!.height);
   expect(geometry.bodyScrollable).toBe(true);
   for (const label of await dialog
     .locator('[data-slot="dialog-footer"] [data-slot="button-label"]')

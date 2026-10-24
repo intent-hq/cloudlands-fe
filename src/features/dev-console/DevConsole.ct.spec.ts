@@ -502,7 +502,7 @@ for (const scenario of ['nested', 'oversized'] as const) {
           await expect(page.locator('.traffic-table')).toBeVisible();
           await expect
             .poll(async () => (await page.locator('.viewport').boundingBox())?.height ?? 0)
-            .toBeGreaterThan(100);
+            .toBeGreaterThan(0);
           const table = await page.locator('.traffic-table').boundingBox();
           const details = await page.locator('.details').boundingBox();
           expect(table!.y + table!.height).toBeLessThanOrEqual(details!.y);

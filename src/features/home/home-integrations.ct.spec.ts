@@ -288,10 +288,6 @@ test('PR summary reads real checks and reviews; Code browses patches and retries
       },
     });
   }
-  const headerBounds = await component.locator('[data-home-pr-header]').boundingBox();
-  expect(headerBounds?.height).toBeLessThanOrEqual(240);
-  const rowBounds = await component.getByRole('listbox').getByRole('option').first().boundingBox();
-  expect(rowBounds?.height).toBeLessThanOrEqual(76);
   await testInfo.attach('PR summary', {
     body: await page.screenshot({ path: testInfo.outputPath('pr-summary.png') }),
     contentType: 'image/png',

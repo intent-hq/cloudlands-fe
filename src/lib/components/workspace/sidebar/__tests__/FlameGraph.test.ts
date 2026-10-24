@@ -49,8 +49,7 @@ describe('FlameGraph task progress', () => {
     expect(summary.className).toContain('cursor-pointer');
     expect(summary.className).toContain('font-normal');
     expect(row.className).not.toContain('hover:bg-');
-    expect(tooltipContent.dataset.contentClass).toContain('bg-secondary!');
-    expect(tooltipContent.dataset.contentClass).toContain('text-secondary-foreground!');
+    expect(tooltipContent.dataset.variant).toBe('secondary');
     expect(tooltipContent.dataset.contentClass).toContain('border-foreground/20!');
     expect(tooltipContent.dataset.contentClass).toContain('shadow-(--elevation-overlay)!');
     expect(tooltipContent.dataset.contentClass).toContain('ring-foreground/10');

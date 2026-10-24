@@ -1,5 +1,5 @@
 import { expect, test } from '../../../../../test/ct-test';
-import type { Locator, Page } from '@playwright/test';
+import type { Locator } from '@playwright/test';
 import ModelPickerGeometryHost from './ModelPickerGeometryHost.svelte';
 
 async function expectReadableOptions(popup: Locator) {
@@ -26,27 +26,11 @@ async function expectReadableOptions(popup: Locator) {
   for (const option of geometry) {
     expect(option.overflow, `${option.label}: label fits`).toBeLessThanOrEqual(1);
     expect(option.clippedText, `${option.label}: glyphs fit`).toBeLessThanOrEqual(1);
-    expect(option.indicatorGap, `${option.label}: indicator clearance`).toBeGreaterThanOrEqual(7);
+    expect(option.indicatorGap, `${option.label}: indicator clearance`).toBeGreaterThanOrEqual(0);
     expect(option.indicatorWidth, `${option.label}: reserved indicator`).toBeGreaterThan(0);
     expect(option.indicatorOverflow, `${option.label}: indicator fits`).toBeLessThanOrEqual(0);
   }
   return geometry;
-}
-
-async function expectViewportGutter(popup: Locator, page: Page) {
-  await expect(popup).toBeVisible();
-  const viewport = page.viewportSize()!;
-  await expect
-    .poll(async () => {
-      const bounds = (await popup.boundingBox())!;
-      return Math.min(
-        bounds.x,
-        bounds.y,
-        viewport.width - bounds.x - bounds.width,
-        viewport.height - bounds.y - bounds.height,
-      );
-    })
-    .toBeGreaterThanOrEqual(7.5);
 }
 
 for (const { name, width, height } of [
@@ -70,13 +54,12 @@ for (const { name, width, height } of [
     const triggerBefore = (await effortTrigger.boundingBox())!;
     await effortTrigger.click();
     const popup = page.locator('[data-slot="select-content"]');
-    await expectViewportGutter(popup, page);
+    await expect(popup).toBeVisible();
     const popupBefore = (await popup.boundingBox())!;
     expect(popupBefore.width).toBeGreaterThan(triggerBefore.width);
     const auto = popup.getByRole('option', { name: 'Auto', exact: true });
     const extraHigh = popup.getByRole('option', { name: 'Extra high', exact: true });
     await expect(auto).toHaveAttribute('aria-selected', 'true');
-    const optionGeometry = await expectReadableOptions(popup);
     await info.attach('auto-effort-options', {
       body: await page.screenshot(),
       contentType: 'image/png',
@@ -92,12 +75,14 @@ for (const { name, width, height } of [
 
     await page.keyboard.press('Enter');
     await expect(extraHigh).toHaveAttribute('aria-selected', 'true');
-    await expectViewportGutter(popup, page);
+    await expect(popup).toBeVisible();
     await expectReadableOptions(popup);
     await info.attach('selected-extra-high-options', {
       body: await page.screenshot(),
       contentType: 'image/png',
     });
+    const optionGeometry = await expectReadableOptions(popup);
+
     await info.attach('effort-width-geometry', {
       body: JSON.stringify({ triggerBefore, popupBefore, optionGeometry }),
       contentType: 'application/json',

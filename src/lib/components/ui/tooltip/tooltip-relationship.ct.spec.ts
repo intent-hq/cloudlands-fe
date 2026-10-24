@@ -117,8 +117,8 @@ for (const target of [
     expect(box.height).toBeGreaterThan(0);
     expect(box.x).toBeGreaterThanOrEqual(0);
     expect(box.y).toBeGreaterThanOrEqual(0);
-    expect(box.x + box.width).toBeLessThanOrEqual(1280);
-    expect(box.y + box.height).toBeLessThanOrEqual(800);
+    expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+    expect(box.y + box.height).toBeLessThanOrEqual(page.viewportSize()!.height);
     expect(
       box.y + box.height <= triggerBox.y ||
         box.y >= triggerBox.y + triggerBox.height ||

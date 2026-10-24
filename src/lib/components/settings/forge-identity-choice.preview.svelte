@@ -1,4 +1,5 @@
 <script module lang="ts">
+  import { catalogNow } from '$lib/component-catalog/catalog-clock';
   /**
    * ForgeIdentityChoice states: the row reads the daemon's own identity
    * (`principal.me`) and the connected forges from the store, so each state
@@ -41,7 +42,7 @@
           protocolVersion: '10.8',
           host: { os: 'linux', arch: 'x86_64', locality: 'local' },
         },
-        new Date().toISOString(),
+        new Date(catalogNow()).toISOString(),
         before.daemonHealth.connectionGeneration,
       ),
     );

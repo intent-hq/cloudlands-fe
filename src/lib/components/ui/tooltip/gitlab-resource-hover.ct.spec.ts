@@ -32,8 +32,8 @@ for (const outcome of ['Resolve old MR', 'Reject old MR']) {
       const box = await card.boundingBox();
       expect(box).not.toBeNull();
       expect(box!.x).toBeGreaterThanOrEqual(0);
-      expect(box!.x + box!.width).toBeLessThanOrEqual(800);
-      expect(box!.y + box!.height).toBeLessThanOrEqual(600);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+      expect(box!.y + box!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
     },
   );
 }

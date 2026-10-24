@@ -1,4 +1,5 @@
 <script module lang="ts">
+  import { catalogNow } from '$lib/component-catalog/catalog-clock';
   import { definePreview } from '$lib/component-catalog/preview-definition';
 
   interface Props {
@@ -122,7 +123,7 @@
           : people.map((person) => ({ ...person, focus: [{ workspaceId }], typing: [] })),
       }),
     );
-    const now = Date.now();
+    const now = catalogNow();
     const activity: WorkspaceEvent[] = [
       {
         id: 'people-activity-luke-message',

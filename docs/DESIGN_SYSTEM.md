@@ -258,6 +258,7 @@ same `ContentDialog` API as product flows:
 - Never use arbitrary or Tailwind-scale duration/easing utilities (`duration-300`, `ease-out`), or arbitrary background/text-color utilities; use semantic tokens.
 - Never mount `Dialog.Root` directly in a feature; use `FormDialog`, `ContentDialog`, or the Confirm service.
 - Never hand-compose settings row layout from primitives; use `SettingsFieldRow` for bespoke controls, or define a schema and render `SettingsForm` for a settings section.
+- Never hand-build an inverted surface with `bg-foreground text-background`, mix hints with `text-background/N`, or repaint a default tooltip through `contentClass`. Use `surface-inverse` with the normal neutral roles, a Tooltip `variant`, or `TooltipRich`. `intent/no-raw-inverse-surface` enforces this.
 
 ## Default surface choices
 
@@ -267,11 +268,15 @@ Use exactly three default choices when composing a page:
 | ----------------- | ------------------------------------------------------------------------------------ | ------------------- |
 | Canvas            | The page background and ordinary content; group related controls with spacing first. | `bg-background`     |
 | Contained section | A distinct group that needs one enclosing boundary, such as a panel or card.         | `bg-card`           |
-| Floating overlay  | Temporary content above the page, such as a menu, popover or tooltip.                | `bg-popover`        |
+| Floating overlay  | Temporary content above the page, such as a menu or popover.                         | `bg-popover`        |
 
 Use one enclosing boundary per group. Do not wrap an already contained section in another
 bordered or shadowed surface just to group it. Internal surface levels 1–8 and their helpers
 remain available for compatibility; they are not additional default composition choices.
+
+Default tooltips, slider value bubbles and floating pills are short labels on the inverse surface
+(`surface-inverse`), which paints the foreground color. Components own that surface; pages do not
+compose with it.
 
 ## Choose a semantic role
 
@@ -279,7 +284,8 @@ remain available for compatibility; they are not additional default composition 
 | ---------------------- | ---------------------------------------------------------- | ------------------------ | ------------------------------ |
 | Canvas                 | `--background`, `bg-background`, `text-foreground`         | Main content             | `bg-white`, `dark:bg-gray-900` |
 | Contained section      | `--card`, `bg-card`, `text-card-foreground`                | Panel or card            | Raw neutral palette            |
-| Floating overlay       | `--popover`, `bg-popover`, `text-popover-foreground`       | Menu or tooltip          | Adapter variables              |
+| Floating overlay       | `--popover`, `bg-popover`, `text-popover-foreground`       | Menu or popover          | Adapter variables              |
+| Inverse surface        | `surface-inverse`                                          | Tooltip or value bubble  | `bg-foreground` text pairs     |
 | Primary action         | `--primary`, `bg-primary`, `text-primary-foreground`       | Default button           | Brand or source-theme colors   |
 | Secondary action       | `--secondary`, `bg-secondary`, `text-secondary-foreground` | Secondary button         | Raw neutral palette            |
 | Hover preview          | `--hover`, `bg-hover`                                      | Hovered or nearest row   | Hard-coded alpha colors        |
@@ -301,6 +307,12 @@ remain available for compatibility; they are not additional default composition 
 Use a role's `*-foreground` partner when text is rendered on a solid semantic background. Alpha
 variants such as `bg-success/20` may use `text-success` when the surrounding theme surface remains
 the effective background.
+
+Inside `surface-inverse`, keep the normal neutral roles: `text-foreground`, `text-muted-foreground`,
+`ShortcutChip`, `border-border` and `bg-muted`. The surface retunes them for the inverted pair, so
+the same content stays readable in both themes. Status colors are not retuned; put status, rich or
+interactive content in `TooltipRich`. `cn()` treats `surface-inverse` as a background and text paint,
+so a later `bg-*` class turns the element back into a normal surface.
 
 ## Non-color scales
 
@@ -552,6 +564,7 @@ compares the tree with the PR base revision to reject baseline additions while a
 | `intent/no-raw-controls`                 | `Button`, `Input`, `Select`, or `Textarea`           |
 | `intent/no-raw-menu-surface`             | `Menu.Content` / the internal `menuOverlay()` recipe |
 | `intent/no-raw-menu-row`                 | Semantic Menu rows / the shared `menuItem()` recipe  |
+| `intent/no-raw-inverse-surface`          | `surface-inverse` or a Tooltip `variant`             |
 | `intent/no-direct-toast`                 | `notify` from the Notify pattern                     |
 | `intent/no-native-dialogs`               | `confirm()` from the Confirm pattern                 |
 | `intent/no-adhoc-transitions`            | shared motion tiers from `$lib/motion`               |

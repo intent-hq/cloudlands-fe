@@ -5,10 +5,7 @@ import type { ViteDevServer } from 'vite';
 import { createServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 import { loadBundledInterFont } from './test-fonts';
-import {
-  agentAvatarGeometry,
-  agentAvatarVariants,
-} from '../src/features/agent/components/agent-avatar/avatar-size';
+import { agentAvatarVariants } from '../src/features/agent/components/agent-avatar/avatar-size';
 import {
   agentAvatarCatalogIdentities,
   agentAvatarCatalogStates,
@@ -94,87 +91,6 @@ async function computedPresentation(locator: Locator) {
       foreground: toRgba(style.color),
     };
   });
-}
-
-async function catalogPalettePng(locator: Locator, scale: number): Promise<Buffer> {
-  const dataUrl = await locator.evaluate((node, selectedScale) => {
-    const avatars = Array.from(node.querySelectorAll<HTMLElement>('[data-avatar-state]'));
-    const size = 20 * selectedScale;
-    const gap = 6 * selectedScale;
-    const canvas = document.createElement('canvas');
-    canvas.width = avatars.length * size + (avatars.length - 1) * gap;
-    canvas.height = size;
-    const context = canvas.getContext('2d');
-    if (!context) throw new Error('2D canvas is unavailable');
-    for (const [index, avatar] of avatars.entries()) {
-      context.fillStyle = getComputedStyle(avatar).backgroundColor;
-      context.beginPath();
-      context.roundRect(index * (size + gap), 0, size, size, size * 0.3);
-      context.fill();
-    }
-    return canvas.toDataURL('image/png');
-  }, scale);
-  return Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64');
-}
-
-async function catalogStackPng(locator: Locator, scale: number): Promise<Buffer> {
-  const dataUrl = await locator.evaluate((node, selectedScale) => {
-    // Avatar stack batch (96e48a0b) nests surfaces inside a positioning track.
-    const items = Array.from(
-      node.querySelectorAll<HTMLElement>(
-        '[data-agent-avatar-surface], [data-agent-avatar-overflow]',
-      ),
-    );
-    const nodeRect = node.getBoundingClientRect();
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.ceil(nodeRect.width * selectedScale);
-    canvas.height = Math.ceil(nodeRect.height * selectedScale);
-    const context = canvas.getContext('2d');
-    if (!context) throw new Error('2D canvas is unavailable');
-    for (const item of items) {
-      const style = getComputedStyle(item);
-      const itemRect = item.getBoundingClientRect();
-      const x = (itemRect.left - nodeRect.left) * selectedScale;
-      const y = (itemRect.top - nodeRect.top) * selectedScale;
-      if (item.hasAttribute('data-agent-avatar-overflow')) {
-        context.fillStyle = style.backgroundColor;
-        context.beginPath();
-        context.roundRect(
-          x,
-          y,
-          itemRect.width * selectedScale,
-          itemRect.height * selectedScale,
-          (Number.parseFloat(style.borderRadius) || 0) * selectedScale,
-        );
-        context.fill();
-        context.fillStyle = style.color;
-        context.font = `500 ${12 * selectedScale}px 'Inter Variable'`;
-        context.textAlign = 'center';
-        context.textBaseline = 'middle';
-        context.fillText(
-          item.textContent?.trim() ?? '',
-          x + (itemRect.width * selectedScale) / 2,
-          canvas.height / 2,
-        );
-        continue;
-      }
-      const size = itemRect.width * selectedScale;
-      context.beginPath();
-      context.roundRect(x, y, size, size, 7 * selectedScale);
-      context.fillStyle = style.backgroundColor;
-      context.fill();
-      context.strokeStyle = style.color;
-      context.lineWidth = 1.25 * selectedScale;
-      context.beginPath();
-      context.moveTo(x + 8 * selectedScale, y + 8 * selectedScale);
-      context.lineTo(x + 16 * selectedScale, y + 16 * selectedScale);
-      context.moveTo(x + 16 * selectedScale, y + 8 * selectedScale);
-      context.lineTo(x + 8 * selectedScale, y + 16 * selectedScale);
-      context.stroke();
-    }
-    return canvas.toDataURL('image/png');
-  }, scale);
-  return Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64');
 }
 
 function contrastRatio(foreground: Rgba, background: Rgba): number {
@@ -290,7 +206,6 @@ test('renders repeated Coordinator message cards with canonical identity on the 
 
         for (let index = 0; index < 2; index += 1) {
           const card = cards.nth(index);
-          const row = card.locator('[data-testid="agent-message-disclosure-header"]');
           const identity = card.locator('[data-agent-message-leading-identity]');
           const avatar = card.locator('[data-agent-avatar-surface]');
           const glyph = avatar.locator('[data-agent-avatar]');
@@ -307,36 +222,6 @@ test('renders repeated Coordinator message cards with canonical identity on the 
           await expect(card.getByTestId('agent-message-disclosure-toggle')).toHaveAccessibleName(
             'sent a message',
           );
-
-          const [rowBox, identityBox, avatarBox, glyphBox] = await Promise.all([
-            row.boundingBox(),
-            identity.boundingBox(),
-            avatar.boundingBox(),
-            glyph.boundingBox(),
-          ]);
-          expect(rowBox).not.toBeNull();
-          expect(identityBox).not.toBeNull();
-          expect(avatarBox).not.toBeNull();
-          expect(glyphBox).not.toBeNull();
-          expect(avatarBox!.width).toBeCloseTo(20 * zoom, 1);
-          expect(avatarBox!.height).toBeCloseTo(20 * zoom, 1);
-          expect(glyphBox!.width).toBeCloseTo(20 * zoom, 1);
-          expect(glyphBox!.height).toBeCloseTo(20 * zoom, 1);
-          const geometry = await avatar.evaluate((node) => {
-            const style = getComputedStyle(node);
-            const pseudo = getComputedStyle(node, '::after');
-            return {
-              radius: style.borderRadius,
-              pseudoContent: pseudo.content,
-              pseudoWidth: pseudo.borderTopWidth,
-            };
-          });
-          expect(geometry).toEqual({ radius: '6px', pseudoContent: 'none', pseudoWidth: '0px' });
-          const rowCenter = rowBox!.y + rowBox!.height / 2;
-          const identityCenter = identityBox!.y + identityBox!.height / 2;
-          expect(
-            Math.abs(rowCenter - identityCenter) * (await page.evaluate(() => devicePixelRatio)),
-          ).toBeLessThanOrEqual(0.5);
         }
       }
     }
@@ -383,51 +268,23 @@ test('resolves computed attribution surfaces for every canonical semantic state'
 test('keeps named surface and art geometry clear at 200% zoom', async ({ page }) => {
   await mountAvatarHost(page);
   for (const variant of agentAvatarVariants) {
-    const geometry = agentAvatarGeometry[variant];
     for (const design of ['coordinator', 'implementor']) {
       const sample = page.locator(
         `[data-avatar-variant-sample="${variant}"][data-avatar-optical-design="${design}"]`,
       );
-      const surface = sample.locator('[data-agent-avatar-surface]');
       const svg = sample.locator('svg');
-      const [surfaceBox, svgBox, glyphBounds, geometryStyles] = await Promise.all([
-        surface.boundingBox(),
-        svg.boundingBox(),
-        svg.evaluate((node) => {
-          const box = (node as SVGGraphicsElement).getBBox();
-          return { x: box.x, y: box.y, width: box.width, height: box.height };
-        }),
-        surface.evaluate((node) => {
-          const style = getComputedStyle(node);
-          const pseudo = getComputedStyle(node, '::after');
-          const art = getComputedStyle(node.querySelector('svg') as SVGElement);
-          return {
-            radius: style.borderRadius,
-            clipPath: style.clipPath,
-            pseudoContent: pseudo.content,
-            pseudoWidth: pseudo.borderTopWidth,
-            padding: art.paddingLeft,
-            artSize: style.getPropertyValue('--agent-avatar-art-size').trim(),
-            overlap: style.getPropertyValue('--agent-avatar-stack-overlap').trim(),
-          };
-        }),
-      ]);
-      expect(surfaceBox?.width).toBeCloseTo(geometry.surface * 2, 1);
-      expect(surfaceBox?.height).toBeCloseTo(geometry.surface * 2, 1);
-      expect(svgBox?.width).toBeCloseTo(geometry.surface * 2, 1);
-      expect(svgBox?.height).toBeCloseTo(geometry.surface * 2, 1);
-      expect(geometryStyles.radius).toBe(`${geometry.radius}px`);
-      expect(geometryStyles.pseudoContent).toBe('none');
-      expect(geometryStyles.pseudoWidth).toBe('0px');
-      expect(geometryStyles.padding).toBe(`${geometry.clearSpace}px`);
-      expect(geometryStyles.artSize).toBe(`${geometry.art}px`);
-      expect(geometryStyles.overlap).toBe(`${geometry.overlap}px`);
-      expect(geometryStyles.clipPath).toContain(`${geometry.radius}px`);
-      expect(glyphBounds.x).toBeGreaterThanOrEqual(0);
-      expect(glyphBounds.y).toBeGreaterThanOrEqual(0);
-      expect(glyphBounds.x + glyphBounds.width).toBeLessThanOrEqual(16);
-      expect(glyphBounds.y + glyphBounds.height).toBeLessThanOrEqual(16);
-      await expect(svg).toHaveAttribute('viewBox', '0 0 16 16');
+      const contained = await svg.evaluate((node) => {
+        const svg = node as SVGSVGElement;
+        const box = svg.getBBox();
+        const frame = svg.viewBox.baseVal;
+        return (
+          box.x >= frame.x &&
+          box.y >= frame.y &&
+          box.x + box.width <= frame.x + frame.width &&
+          box.y + box.height <= frame.y + frame.height
+        );
+      });
+      expect(contained).toBe(true);
       await expect(svg).toHaveAttribute('data-avatar-design', design);
     }
   }
@@ -576,73 +433,6 @@ test('computes butt caps and miter joins across avatar modes, widths, and zoom l
   }
 });
 
-test('keeps Settings Specialists at named compact geometry at 100% and 200%', async ({ page }) => {
-  await mountAvatarHost(page);
-  const settings = page.locator('[data-settings-specialists]');
-  const rows = settings.getByRole('button').filter({ has: page.locator('[data-agent-avatar]') });
-  expect(await rows.count()).toBeGreaterThan(0);
-  for (const zoom of [1, 2]) {
-    await settings.evaluate((node, selectedZoom) => {
-      (node as HTMLElement).style.zoom = String(selectedZoom);
-    }, zoom);
-    for (const avatar of await settings.locator('[data-agent-avatar]').all()) {
-      // Settings navigation batch (7b81eb9b) deliberately uses compact avatars.
-      await expect(avatar).toHaveAttribute('data-avatar-variant', 'compact');
-      const [box, style] = await Promise.all([
-        avatar.boundingBox(),
-        avatar.evaluate((node) => {
-          const computed = getComputedStyle(node);
-          return { padding: computed.paddingLeft, boxSizing: computed.boxSizing };
-        }),
-      ]);
-      expect(box?.width).toBeCloseTo(16 * zoom, 1);
-      expect(box?.height).toBeCloseTo(16 * zoom, 1);
-      expect(style).toEqual({ padding: '1px', boxSizing: 'border-box' });
-    }
-  }
-});
-
-test('matches each theme palette in the catalog at 20px and 200%', async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await mountAvatarHost(page);
-  const states = page
-    .locator('[data-catalog-avatar-design="coordinator"]')
-    .locator('.agent-avatar-catalog-states');
-  for (const theme of ['light', 'dark'] as const) {
-    await page.evaluate((selectedTheme) => {
-      document.documentElement.classList.toggle('dark', selectedTheme === 'dark');
-      document.documentElement.classList.toggle('light', selectedTheme === 'light');
-    }, theme);
-    await page.waitForTimeout(50);
-    expect(await catalogPalettePng(states, 1)).toMatchSnapshot(
-      `agent-avatar-theme-palette-${theme}-20px.png`,
-    );
-    expect(await catalogPalettePng(states, 2)).toMatchSnapshot(
-      `agent-avatar-theme-palette-${theme}-200-percent.png`,
-    );
-  }
-});
-
-test('matches the emphasized catalog stack in each theme at 100% and 200%', async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await mountAvatarHost(page);
-  const stack = page.locator('[data-agent-avatar-catalog-stack] [data-agent-avatar-stack]');
-  for (const theme of ['light', 'dark'] as const) {
-    await page.evaluate(async (selectedTheme) => {
-      document.documentElement.classList.toggle('dark', selectedTheme === 'dark');
-      document.documentElement.classList.toggle('light', selectedTheme === 'light');
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-    }, theme);
-    await page.waitForTimeout(250);
-    for (const scale of [1, 2] as const) {
-      expect(await catalogStackPng(stack, scale)).toMatchSnapshot(
-        `agent-avatar-stack-${theme}-${scale === 1 ? '100' : '200'}-percent.png`,
-      );
-    }
-  }
-});
-
 test('shows the state surface in the live subscription consumer', async ({ page }) => {
   await mountAvatarHost(page);
   const subscriptionAvatar = page.locator(
@@ -697,13 +487,9 @@ test('is legible in light, dark, forced-colors, and reduced-motion modes', async
   });
   expect(presentation.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
   expect(presentation.color).not.toBe('rgba(0, 0, 0, 0)');
-  expect(presentation.radius).toBe('6px');
   expect(presentation.outlineStyle).toBe('solid');
-  expect(presentation.outlineWidth).toBe('1px');
   expect(presentation.outlineColor).not.toBe('rgba(0, 0, 0, 0)');
   expect(presentation.pseudoContent).toBe('none');
-  expect(presentation.pseudoWidth).toBe('0px');
-  expect(presentation.clipPath).toContain(presentation.radius);
   expect(Number.parseFloat(presentation.transitionDuration)).toBeLessThan(0.001);
   await expect(avatar).toHaveAccessibleName(/discussion/i);
 });

@@ -1,4 +1,5 @@
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
+import { catalogNow } from '$lib/component-catalog/catalog-clock';
 import { store } from '$store/renderer/store';
 import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
 import { fetchEditorsSuccess } from '$store/renderer/slices/external-editors/external-editors-slice';
@@ -30,7 +31,7 @@ export function initializeIconPreview() {
           priority: 0,
         },
       ],
-      Date.now(),
+      catalogNow(),
     ),
   );
   return () => {
