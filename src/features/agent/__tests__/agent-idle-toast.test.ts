@@ -2,10 +2,10 @@
  * Agent-idle toast tests — the in-app replacement for the OS banner the main
  * process skips while the app is frontmost. Locks in: content from
  * structured parts (who + where), the plain fallback, suppression only when
- * this focused window already has the workspace selected (honoring the
- * "only when unfocused" preference), Assistant exemption, stable
- * per-workspace ids with latest-wins ordering, and Switch To routing that
- * leaves any pending attention toast alone.
+ * this focused window already shows the target (the selected workspace, or
+ * the open Assistant chat on the home page) whatever the sound preference
+ * says, stable per-workspace ids with latest-wins ordering, and Switch To
+ * routing that leaves any pending attention toast alone.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -20,6 +20,10 @@ const mocks = vi.hoisted(() => ({
     value: {
       tabState: { currentTabId: null as string | null },
       userPreferences: { soundOnlyWhenUnfocused: true as boolean | undefined },
+      sidebarNav: {
+        panelItem: null as 'chief' | null,
+        chiefActiveAgentId: null as string | null,
+      },
     },
   },
 }));
@@ -82,10 +86,15 @@ describe('showAgentIdleToast', () => {
     mocks.state.value = {
       tabState: { currentTabId: null },
       userPreferences: { soundOnlyWhenUnfocused: true },
+      sidebarNav: { panelItem: null, chiefActiveAgentId: null },
     };
     hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    window.history.replaceState(null, '', '/');
   });
-  afterEach(() => hasFocus.mockRestore());
+  afterEach(() => {
+    hasFocus.mockRestore();
+    window.history.replaceState(null, '', '/');
+  });
 
   it('names who finished and where, with a stable per-workspace id', async () => {
     mocks.keySlot.mockReturnValue(2);
@@ -117,7 +126,7 @@ describe('showAgentIdleToast', () => {
     });
   });
 
-  it('uses the plain title/body for Assistant payloads and never suppresses them', async () => {
+  it('uses the plain title/body for Assistant payloads', async () => {
     mocks.state.value.tabState.currentTabId = CHIEF_WORKSPACE_ID;
     await showAgentIdleToast({
       title: 'Assistant: Planning',
@@ -155,25 +164,50 @@ describe('showAgentIdleToast', () => {
     expect(mocks.custom).toHaveBeenCalledTimes(2);
   });
 
-  it('shows on the selected workspace when main says "only when unfocused" is off', async () => {
+  it('is suppressed on the selected workspace even with "only when unfocused" off', async () => {
     mocks.state.value.tabState.currentTabId = 'ws-1';
-    await showAgentIdleToast({ ...structuredPayload, suppressWhenViewing: false });
-    expect(mocks.custom).toHaveBeenCalledTimes(1);
+    mocks.state.value.userPreferences.soundOnlyWhenUnfocused = false;
+    await showAgentIdleToast(structuredPayload);
+    expect(mocks.custom).not.toHaveBeenCalled();
   });
 
-  it("follows main's suppression decision when this window's daemon preference differs", async () => {
-    // Remote-host window: its daemon says only-when-unfocused, but main read
-    // the local daemon (off) and chose the toast for the viewed workspace.
-    mocks.state.value = {
-      tabState: { currentTabId: 'ws-1' },
-      userPreferences: { soundOnlyWhenUnfocused: true },
-    };
-    await showAgentIdleToast({ ...structuredPayload, suppressWhenViewing: false });
-    expect(mocks.custom).toHaveBeenCalledTimes(1);
+  describe('Assistant chat already open', () => {
+    const chiefPayload = (agentId: string) => ({
+      title: 'Assistant: Planning',
+      body: 'Finished',
+      navigateTarget: { workspaceId: CHIEF_WORKSPACE_ID, chief: true, agentId },
+    });
+    beforeEach(() => {
+      mocks.state.value.sidebarNav = { panelItem: 'chief', chiefActiveAgentId: 'chat-1' };
+    });
 
-    mocks.state.value.userPreferences.soundOnlyWhenUnfocused = false;
-    await showAgentIdleToast({ ...structuredPayload, suppressWhenViewing: true });
-    expect(mocks.custom).toHaveBeenCalledTimes(1);
+    it('is suppressed when this focused window shows that chat on the home page', async () => {
+      await showAgentIdleToast(chiefPayload('chat-1'));
+      expect(mocks.custom).not.toHaveBeenCalled();
+    });
+
+    it('still shows for a different Assistant chat', async () => {
+      await showAgentIdleToast(chiefPayload('chat-2'));
+      expect(mocks.custom).toHaveBeenCalledTimes(1);
+    });
+
+    it('still shows when the Assistant panel is closed', async () => {
+      mocks.state.value.sidebarNav.panelItem = null;
+      await showAgentIdleToast(chiefPayload('chat-1'));
+      expect(mocks.custom).toHaveBeenCalledTimes(1);
+    });
+
+    it('still shows when this window is not focused', async () => {
+      hasFocus.mockReturnValue(false);
+      await showAgentIdleToast(chiefPayload('chat-1'));
+      expect(mocks.custom).toHaveBeenCalledTimes(1);
+    });
+
+    it('still shows when this window is not on the home page', async () => {
+      window.history.replaceState(null, '', '/workspace/ws-1');
+      await showAgentIdleToast(chiefPayload('chat-1'));
+      expect(mocks.custom).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('lets only the latest of overlapping shows for a workspace render', async () => {

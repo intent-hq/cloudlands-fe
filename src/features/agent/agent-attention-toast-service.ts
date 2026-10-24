@@ -249,13 +249,6 @@ export interface AgentIdleToastPayload {
   body?: string;
   timestamp?: string;
   navigateTarget?: NotificationNavigatePayload;
-  /**
-   * Main's `soundOnlyWhenUnfocused` read (local daemon) at decision time:
-   * skip the toast if this focused window is already viewing the workspace.
-   * Authoritative over this window's own preference, which comes from the
-   * window's daemon and can differ on a remote host.
-   */
-  suppressWhenViewing?: boolean;
   structured?: {
     workspaceTitle?: string;
     specialistDisplayName: string;
@@ -277,20 +270,32 @@ export function agentIdleToastId(target: NotificationNavigatePayload): string {
 }
 
 /**
+ * True when this window's home page shows the Assistant panel open on
+ * `agentId` — the chat a chief completion would switch to. Read straight off
+ * `appStore.state` (dependency-light, like {@link isCurrentWorkspace}).
+ */
+function isViewingAssistantChat(agentId: string | undefined): boolean {
+  if (!agentId || typeof window === 'undefined' || window.location.pathname !== '/') return false;
+  const nav = appStore.state.sidebarNav;
+  return nav?.panelItem === 'chief' && nav.chiefActiveAgentId === agentId;
+}
+
+/**
  * True when the toast would only point at what this focused window already
- * shows: the workspace is the current tab and main's `suppressWhenViewing`
- * ("Only when unfocused", default on) is set. The preference comes from the
- * payload, not this window's store, so main and renderer decide with the same
- * value; this late check only covers the user switching to the workspace
- * after main decided. Assistant payloads are never redundant (the chief
- * workspace is never a selected tab).
+ * shows: the workspace is the current tab, or — for an Assistant completion —
+ * that chat is open in the home page's Assistant panel. Matches the
+ * attention/failure toasts: the "Only when unfocused" preference governs
+ * sound only, never this skip. Main already skips a workspace it sees as
+ * viewed; this late check covers the Assistant (which main cannot see) and
+ * the user switching to the workspace after main decided.
  */
 function isIdleToastRedundant(payload: AgentIdleToastPayload): boolean {
   const target = payload.navigateTarget;
-  if (!target?.workspaceId || isChiefTarget(target)) return false;
-  if (payload.suppressWhenViewing === false) return false;
+  if (!target?.workspaceId) return false;
   if (typeof document === 'undefined' || !document.hasFocus()) return false;
-  return isCurrentWorkspace(target.workspaceId);
+  return isChiefTarget(target)
+    ? isViewingAssistantChat(target.agentId)
+    : isCurrentWorkspace(target.workspaceId);
 }
 
 /** Only the latest pending show for a toast id may render after lazy loading. */
