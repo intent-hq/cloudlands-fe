@@ -8,6 +8,11 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  TC_ADDRESS,
+  TC_ADDRESS_KEY_ONLY,
+  TC_ADDRESS_WITH_PSK,
+} from '../../../test/fixtures/tc-address.fixture';
+import {
   classifyLoopbackHost,
   loopbackContextFromTransport,
   rewriteLoopbackUrl,
@@ -145,6 +150,29 @@ describe('rewriteLoopbackUrl — no-op paths', () => {
   });
 });
 
+describe('rewriteLoopbackUrl — Tailcat daemon', () => {
+  it.each(['daemon.localhost', '127.0.0.1', 'localhost', '[::1]'])(
+    'keeps %s safe while requiring a daemon tunnel',
+    (host) => {
+      const requestedUrl = `https://${host}:8443/a/b?q=1&r=2#frag`;
+      const result = rewriteLoopbackUrl(requestedUrl, {
+        daemonIsRemote: true,
+        daemonHost: TC_ADDRESS_WITH_PSK,
+      });
+      expect(result).toMatchObject({
+        url: 'https://daemon.localhost:8443/a/b?q=1&r=2#frag',
+        requestedUrl,
+        rewritten: true,
+        remoteHost: true,
+        requiresTunnel: true,
+      });
+      expect(JSON.stringify(result).toLowerCase()).not.toContain(TC_ADDRESS_WITH_PSK.toLowerCase());
+      if (host === 'daemon.localhost') expect(result.warning).toBeUndefined();
+      else expect(result.warning).toContain('client.localhost');
+    },
+  );
+});
+
 describe('loopbackContextFromTransport', () => {
   it('resolves local when the backend is same-host or UDS', () => {
     expect(loopbackContextFromTransport(true)).toEqual({ daemonIsRemote: false });
@@ -171,6 +199,33 @@ describe('loopbackContextFromTransport', () => {
     expect(
       loopbackContextFromTransport(false, { transport: 'ws', wsUrl: 'ws://10.0.0.5:5181/ws' }),
     ).toEqual({ daemonIsRemote: true, daemonHost: '10.0.0.5' });
+  });
+
+  it.each([TC_ADDRESS_KEY_ONLY, TC_ADDRESS, TC_ADDRESS_WITH_PSK])(
+    'requires a tunnel without retaining an opaque Tailcat address',
+    (host) => {
+      const context = loopbackContextFromTransport(false, { transport: 'wss', host }, true);
+      expect(context).toEqual({ daemonIsRemote: true, daemonLinksRequireTunnel: true });
+      const result = rewriteLoopbackUrl('http://daemon.localhost:3000/app?q=1#top', context);
+      expect(result).toMatchObject({
+        url: 'http://daemon.localhost:3000/app?q=1#top',
+        remoteHost: true,
+        requiresTunnel: true,
+      });
+      expect(JSON.stringify(result).toLowerCase()).not.toContain(host.toLowerCase());
+    },
+  );
+
+  it('requires a tunnel when only a Tailcat fallback address is configured', () => {
+    expect(
+      loopbackContextFromTransport(false, {
+        transport: 'wss',
+        tcAddress: TC_ADDRESS_WITH_PSK,
+      }),
+    ).toEqual({ daemonIsRemote: true, daemonLinksRequireTunnel: true });
+    expect(
+      loopbackContextFromTransport(false, { transport: 'wss', tcAddress: 'not-a-tc-address' }),
+    ).toEqual({ daemonIsRemote: true });
   });
 
   it('treats loopback ws/tcp targets as local (dev loopback WS)', () => {

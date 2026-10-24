@@ -23,11 +23,13 @@ const APPROVED_BRIDGE_REGISTRATIONS = new Map([
   ['src/store/renderer/seeders/agent-ipc-bridge-seeder.ts', { registerMockIpcHandler: 2 }],
   ['src/store/renderer/seeders/antigravity-setup-bridge-seeder.ts', { registerMockIpcHandler: 2 }],
   ['src/store/renderer/seeders/auto-update-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
-  ['src/store/renderer/seeders/backend-status-bridge-seeder.ts', { registerMockIpcHandler: 6 }],
+  ['src/store/renderer/seeders/backend-status-bridge-seeder.ts', { registerMockIpcHandler: 7 }],
   ['src/store/renderer/seeders/browser-ipc-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/connections-bridge-seeder.ts', { registerMockIpcHandler: 12 }],
   // Custom views are Electron-owned; the reviewed adapter only forwards the generated invoke boundary.
   ['src/store/renderer/seeders/custom-views-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
+  // intent:// link delivery: drains the actions main queued for this window.
+  ['src/store/renderer/seeders/deep-link-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/file-bridge-seeder.ts', { registerMockIpcHandler: 12 }],
   ['src/store/renderer/seeders/git-bridge-seeder.ts', { registerMockIpcHandler: 9 }],
   ['src/store/renderer/seeders/guest-sessions-bridge-seeder.ts', { registerMockIpcHandler: 3 }],

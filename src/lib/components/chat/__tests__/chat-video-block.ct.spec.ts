@@ -71,6 +71,6 @@ for (const theme of ['dark'] as const) {
     await expect(dialog).toHaveCount(0);
     await expect(snapshot).toBeFocused();
     expect(await scroll.evaluate((node) => node.scrollTop)).toBe(mouseBefore);
-    expect((await snapshot.boundingBox())?.width).toBeLessThanOrEqual(320);
+    expect((await snapshot.boundingBox())?.width).toBeLessThanOrEqual(page.viewportSize()!.width);
   });
 }

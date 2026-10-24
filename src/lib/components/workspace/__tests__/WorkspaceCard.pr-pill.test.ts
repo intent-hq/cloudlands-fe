@@ -67,7 +67,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 }));
 
 vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', () => ({
-  selectPrMonitors: mocks.selector(() => mocks.monitors),
+  selectReviewMonitors: mocks.selector(() => mocks.monitors),
 }));
 
 vi.mock('$features/navigation/link-handler', () => ({

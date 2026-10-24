@@ -8,6 +8,8 @@ export interface ProviderCliDiscovery {
   /** Adapter-declared lower bound, absent for legacy/manual provider gates. */
   cliMinimumVersion?: string;
   cliVersionOk?: boolean;
+  /** Bundled CLI version the daemon launches instead of the outdated installed one. */
+  cliBundledVersion?: string;
 }
 
 export interface ProviderCliWarning {
@@ -15,7 +17,19 @@ export interface ProviderCliWarning {
   providerName: string;
   version: string;
   minimumVersion: string;
+  /** Self-update command run in a host terminal; absent when none is known. */
+  updateCommand?: string;
+  /** Present when the daemon runs its bundled CLI until the installed one is updated. */
+  bundledVersion?: string;
 }
+
+/**
+ * Provider CLIs with a self-update command that needs no package-manager
+ * knowledge (`codex update` detects npm, Homebrew, or standalone installs).
+ */
+export const PROVIDER_CLI_UPDATE_COMMANDS: Readonly<Record<string, string>> = {
+  codex: 'codex update',
+};
 
 /**
  * Trust the daemon's verdict and requirement, never duplicate its minimum table.
@@ -35,6 +49,21 @@ export function providerCliWarnings(providers: ProviderCliDiscovery[]): Provider
       !minimumVersion
     )
       return [];
-    return [{ providerId: row.id, providerName: row.displayName, version, minimumVersion }];
+    const updateCommand = Object.hasOwn(PROVIDER_CLI_UPDATE_COMMANDS, row.id)
+      ? PROVIDER_CLI_UPDATE_COMMANDS[row.id]
+      : undefined;
+    // Only the daemon knows whether launches use its bundled CLI; older
+    // daemons omit the field and keep the plain out-of-date warning.
+    const bundledVersion = row.cliBundledVersion?.trim();
+    return [
+      {
+        providerId: row.id,
+        providerName: row.displayName,
+        version,
+        minimumVersion,
+        ...(updateCommand ? { updateCommand } : {}),
+        ...(bundledVersion ? { bundledVersion } : {}),
+      },
+    ];
   });
 }

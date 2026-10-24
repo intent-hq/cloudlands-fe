@@ -281,9 +281,9 @@ describe('CatalogFixtureList real previews', () => {
     window.ResizeObserver = originalResizeObserver;
   });
 
-  it('renders all thirteen Toast catalog states', async () => {
+  it('renders all fourteen Toast catalog states', async () => {
     const { container } = await renderEntry('toast');
-    expect(container.querySelectorAll('[data-toast-preview]')).toHaveLength(13);
+    expect(container.querySelectorAll('[data-toast-preview]')).toHaveLength(14);
   });
 
   it('operates the canonical Menu, Sheet, and Accordion previews', async () => {

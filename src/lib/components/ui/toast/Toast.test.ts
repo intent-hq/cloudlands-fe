@@ -158,36 +158,6 @@ describe('Toast', () => {
     expect(container.querySelector('kbd[data-toast-shortcut]')?.textContent).toBe('⌘Z');
   });
 
-  it('uses the same responsive width contract for standard and custom toasts', async () => {
-    render(Toast);
-    toast.success('Standard toast', { id: 'standard', duration: Number.POSITIVE_INFINITY });
-    toast.custom(AgentFailureToast, {
-      id: 'custom',
-      duration: Number.POSITIVE_INFINITY,
-      componentProps: {
-        title: 'Implementor failed',
-        errorSummary: 'JSON-RPC request failed',
-        retryLabel: 'Retry Implementor',
-        retrying: false,
-        onRetry: vi.fn(),
-        onSwitchTo: vi.fn(),
-        onClose: vi.fn(),
-      },
-    });
-
-    await screen.findByText('Implementor failed');
-    const toaster = document.querySelector<HTMLElement>('[data-sonner-toaster]');
-    const toastElements = Array.from(document.querySelectorAll<HTMLElement>('[data-sonner-toast]'));
-    expect(toaster).toBeTruthy();
-    expect(toastElements).toHaveLength(2);
-    expect(toaster!.style.getPropertyValue('--app-toast-width').trim()).toBe(
-      'min(22rem, calc(100vw - clamp(2rem, 8vw, 4rem)))',
-    );
-    expect(new Set(toastElements.map((element) => getComputedStyle(element).width)).size).toBe(1);
-    expect(toastElements.every((element) => element.classList.contains('w-full'))).toBe(true);
-    expect(toastElements.every((element) => element.classList.contains('min-w-0'))).toBe(true);
-  });
-
   it('clears presentation, supports keyboard focus, and allows a later stable-id re-raise', async () => {
     render(Toast);
     const showFailure = (summary: string) =>

@@ -2,8 +2,8 @@
 """Repository-local bounded sweeps and a read-only workflow-credential probe.
 
 retire-obsolete-merge-runs.py is an exact copy from intent-hq/intentd commit
-62a2a110b7e217151280736acb7fd19a1daf3c71. Its regression scenarios are retained
-with pre-import isolation and in-process CLI parsing for portable offline tests.
+df970a6df21589bcd8a73bb09b5d153ebccc3d95 (intentd#2562). Its regression scenarios are
+retained with pre-import isolation and in-process CLI parsing for portable offline tests.
 No runtime dependency on that repository exists. This caller pins cloudlands-fe.
 A cursor only orders work; every cancellation still requires the full policy.
 Missing state starts a new sweep; malformed state stops without requests.
@@ -131,7 +131,7 @@ def activity_access(client, ctx):
                   'invalid/duplicate queue reference')
         names.add(name)
     owner, name = REPOSITORY.split('/')
-    cursor, cursors, nodes, unknown = None, set(), set(), 0
+    cursor, cursors, nodes, unknown, unbuilt = None, set(), set(), 0, 0
     for index in range(client.max_pages):
         response = client.request('POST', '/graphql', {'query': P.QUEUE_QUERY,
             'variables': {'owner': owner, 'name': name, 'cursor': cursor}})
@@ -146,7 +146,9 @@ def activity_access(client, ctx):
                       and node['state'] in P.QUEUE_STATES and node['pullRequest']['baseRefName'] == 'main',
                       'unknown/duplicate queue entry')
             nodes.add(node['id'])
-            if node['headCommit'] is None:
+            if node['headCommit'] is None and node['state'] == 'QUEUED':
+                unbuilt += 1  # mirrors the policy: no merge-group commit yet, nothing to protect
+            elif node['headCommit'] is None:
                 unknown += 1
             else:
                 P.require(P.sha(node['headCommit']['oid']), 'invalid queue head')
@@ -154,7 +156,7 @@ def activity_access(client, ctx):
         P.require(type(page['hasNextPage']) is bool, 'invalid queue pagination')
         if not page['hasNextPage']:
             return {'ref_pages': len(pages), 'refs': len(refs), 'queue_pages': index + 1,
-                    'queue_entries': len(nodes), 'unknown_heads': unknown,
+                    'queue_entries': len(nodes), 'unbuilt_entries': unbuilt, 'unknown_heads': unknown,
                     'pagination_complete': True, 'activity_known': unknown == 0}
         cursor = page['endCursor']
         P.require(isinstance(cursor, str) and cursor and cursor not in cursors, 'lost/repeated queue cursor')

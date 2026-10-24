@@ -213,8 +213,14 @@ export const DEFAULTS = {
   /** Default remote */
   GIT_REMOTE: 'origin',
 
-  /** Auto-update base URL (GitHub Releases) */
+  /** Auto-update base URL (GitHub Releases); the direct feed and the fallback */
   AUTO_UPDATE_URL: 'https://github.com/intent-hq/cloudlands-releases/releases/download',
+
+  /**
+   * Auto-update telemetry base URL: counts the check, then redirects to the
+   * GitHub feed above. Used unless the user opts out (see update-telemetry.ts).
+   */
+  AUTO_UPDATE_TELEMETRY_URL: 'https://updates.intentapp.dev/desktop',
 } as const;
 
 // ============================================================================

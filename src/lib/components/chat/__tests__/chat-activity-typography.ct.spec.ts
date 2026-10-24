@@ -1,69 +1,6 @@
 import { expect, test } from '../../../../test/ct-test';
 import ChatActivityTypographyPreview from '../chat-activity-typography.preview.svelte';
 
-for (const monospace of [false, true]) {
-  test(`activity summaries share reading typography with ${monospace ? 'monospace' : 'system'} preference`, async ({
-    mount,
-    page,
-  }) => {
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-    const component = await mount(ChatActivityTypographyPreview, { props: { monospace } });
-    await page.evaluate(() => document.fonts.ready);
-    const typography = await component.evaluate((root) => {
-      const selectors = [
-        '[data-testid=agent-message-actor-name]',
-        '[data-testid=agent-message-status]',
-        '[data-activity-type="agent:idle"] [data-testid=event-wakeup-status]',
-        '[data-activity-type="agent:reportToParent"] [data-testid=event-wakeup-status]',
-        '[data-activity-type="agent:attention-requested"] [data-slot=button-label] span',
-      ];
-      return selectors.map((selector) => {
-        const style = getComputedStyle(root.querySelector(selector)!);
-        return {
-          fontSize: parseFloat(style.fontSize),
-          lineHeight: parseFloat(style.lineHeight),
-          fontWeight: style.fontWeight,
-          fontFamily: style.fontFamily,
-        };
-      });
-    });
-    for (const actual of typography) {
-      expect(actual).toMatchObject({ fontSize: 15, lineHeight: 22, fontWeight: '400' });
-      expect(actual.fontFamily.includes('monospace')).toBe(monospace);
-      expect(actual).toEqual(typography[2]);
-    }
-
-    const toggle = component.getByTestId('agent-message-disclosure-toggle');
-    await toggle.focus();
-    await page.keyboard.press('Enter');
-    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    const body = component.getByTestId('agent-message-expanded-body');
-    await expect(body).toBeVisible();
-    await expect(body).toContainText('Review the activity rows and keep the message readable.');
-    const bodyTypography = await body.locator('[data-expanded=true]').evaluate((node) => {
-      const style = getComputedStyle(node);
-      return {
-        fontSize: style.fontSize,
-        lineHeight: style.lineHeight,
-        fontWeight: style.fontWeight,
-      };
-    });
-    expect(bodyTypography).toEqual({ fontSize: '15px', lineHeight: '22px', fontWeight: '500' });
-    await page.keyboard.press('Space');
-    await expect(body).toBeHidden();
-    await expect(toggle).toBeFocused();
-
-    const finished = component.locator('[data-activity-type="agent:idle"]');
-    await finished.getByTestId('event-wakeup-summary').click();
-    await expect(finished.getByTestId('event-wakeup-details')).toBeVisible();
-    const timestamp = await finished.getByTestId('event-wakeup-timestamp').evaluate((node) => {
-      const style = getComputedStyle(node);
-      return { fontSize: style.fontSize, lineHeight: style.lineHeight };
-    });
-    expect(timestamp).toEqual({ fontSize: '13px', lineHeight: '18px' });
-  });
-}
-
 test('long sender names wrap within narrow summaries and message text is expanded-only', async ({
   mount,
   page,

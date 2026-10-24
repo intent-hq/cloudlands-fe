@@ -1,6 +1,30 @@
+import {
+  selectCanReadScriptDefinition,
+  selectUsesGuestScriptScope,
+} from '$store/renderer/slices/scripts/scripts-selectors';
 import type { Note, WorkspaceTask, WorkspaceTaskStats } from '$shared/types';
 import { workspaceTasksPushed } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import { workspaceTaskStatsPushed } from '$store/renderer/slices/workspace/workspace-slice';
+import {
+  isDiscussionMessageEvent,
+  isDiscussionAgentActivityEvent,
+  hasDiscussionAgentActivity,
+  hasDiscussionAgentMentions,
+  isDiscussionReactionEvent,
+  hasDiscussionMessageActions,
+  DEFAULT_DISCUSSION_ID,
+} from '$shared/types/workspace-discussion';
+import {
+  discussionMessageReceived,
+  discussionAgentActivityReceived,
+  discussionReactionReceived,
+  discussionConversationReceived,
+  discussionMembershipInvalidated,
+} from '$store/renderer/slices/workspace-discussion/workspace-discussion-slice';
+import {
+  selectDiscussionTarget,
+  selectDiscussionContext,
+} from '$store/renderer/slices/workspace-discussion/workspace-discussion-selectors';
 import { applyAgentMetadataPatch } from '$store/renderer/slices/agent-session/agent-metadata-patch';
 import type {
   AgentSessionUpdate,
@@ -243,7 +267,9 @@ import {
   refreshWorkspaceMembershipRequested,
   removeWorkspaceEntity,
   updateWorkspaceEntity,
+  workspacePullRequestsRefreshed,
 } from '$store/renderer/slices/workspace/workspace-slice';
+import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import {
   closeWorkspaceTabAndNavigateAway,
   navigateAwayIfViewing,
@@ -2214,6 +2240,69 @@ function handlePrEvent(
   // slice folds it through `bulkUpdateWorkspaceEntities`, which is the shared
   // path for partial merges (see workspace-slice `.with(bulkUpdateWorkspaceEntities, ...)`).
   appStore.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, changes)]));
+  // Invalidate any gitRoot re-read already in flight: its snapshot may
+  // predate this event's PR fields ({@link refreshWorkspacePrPoolFromGitRoot}).
+  prEventRevisionByWorkspace.set(
+    workspaceId,
+    (prEventRevisionByWorkspace.get(workspaceId) ?? 0) + 1,
+  );
+}
+
+/**
+ * `gitRoot:*` (§6.5) — a secondary git root's PR change (status, merge-queue
+ * entry) emits only `gitRoot:updated`, never `pr:updated`, and a root's
+ * removal only `gitRoot:unregistered`. The Home row renders the daemon's
+ * MERGED pool (workspace + git-root + monitor PRs, §5.1), whose same-URL
+ * canonicalization, lifecycle and ordering rules live only in intentd, so
+ * re-read `workspace.get` (the authoritative merged pool, linked PR fields
+ * included) instead of re-deriving the fold here, and apply ONLY its PR
+ * fields ({@link workspacePullRequestsRefreshed}) so newer event-applied
+ * fields are never rolled back. The read is issued directly rather than
+ * through the shared `fetchWorkspaceDetail` single-flight: joining a read
+ * already in flight could return a pool served before this root changed.
+ * Only rows already in this window's store refresh — this never adds a
+ * workspace. Single-flighted per workspace with one trailing follow-up for
+ * events arriving mid-read; a routing dispose drops in-flight results. A
+ * `pr:*` event landing mid-read bumps the workspace's PR revision: the read
+ * may predate it, so its result is discarded and re-read instead of
+ * overwriting the newer PR fields (or restoring an unlinked active PR).
+ */
+const prEventRevisionByWorkspace = new Map<string, number>();
+const gitRootPoolRefreshInFlight = new Set<string>();
+const gitRootPoolRefreshFollowUp = new Set<string>();
+let gitRootPoolRefreshGeneration = 0;
+
+async function refreshWorkspacePrPoolFromGitRoot(workspaceId: string): Promise<void> {
+  if (!selectWorkspaceById.select(appStore.state, workspaceId)) return;
+  if (gitRootPoolRefreshInFlight.has(workspaceId)) {
+    gitRootPoolRefreshFollowUp.add(workspaceId);
+    return;
+  }
+  const generation = gitRootPoolRefreshGeneration;
+  const prRevision = prEventRevisionByWorkspace.get(workspaceId) ?? 0;
+  gitRootPoolRefreshInFlight.add(workspaceId);
+  try {
+    const { backendRequest } = await import('$lib/client/live/backend-transport');
+    const response = (await backendRequest('workspace.get', { workspaceId })) as
+      { workspace?: Workspace } | undefined;
+    const workspace = response?.workspace;
+    if (workspace && generation === gitRootPoolRefreshGeneration) {
+      if ((prEventRevisionByWorkspace.get(workspaceId) ?? 0) === prRevision) {
+        appStore.dispatch(workspacePullRequestsRefreshed(workspaceId, workspace));
+      } else {
+        gitRootPoolRefreshFollowUp.add(workspaceId);
+      }
+    }
+  } catch {
+    // Deleted workspace or transport error: the next list/event converges.
+  } finally {
+    if (generation === gitRootPoolRefreshGeneration) {
+      gitRootPoolRefreshInFlight.delete(workspaceId);
+      if (gitRootPoolRefreshFollowUp.delete(workspaceId)) {
+        void refreshWorkspacePrPoolFromGitRoot(workspaceId);
+      }
+    }
+  }
 }
 
 /**
@@ -2664,7 +2753,10 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   // Membership-changing deltas (invite redeem, member remove/leave — PROTOCOL
   // §5.1, multiplayer w4) carry the post-change `memberCount` so the roster
   // summary on the entity stays current without a refetch.
-  if (raw.members === true) appStore.dispatch(presenceMembershipChanged(workspaceId));
+  if (raw.members === true) {
+    appStore.dispatch(presenceMembershipChanged(workspaceId));
+    appStore.dispatch(discussionMembershipInvalidated(workspaceId));
+  }
   if (typeof raw.memberCount === 'number' && Number.isFinite(raw.memberCount)) {
     changes.memberCount = raw.memberCount;
   }
@@ -3165,6 +3257,7 @@ function handleSettingsChangedEvent(
  * most 3 buffered bytes, so the map stays negligible either way.
  */
 const scriptOutputDecoders = new Map<string, TextDecoder>();
+const savedScriptPurpose = { purpose: 'saved' } as const;
 
 /**
  * Decode a base64 `chunk` (PROTOCOL §6.5 `script:output` payload) into a
@@ -3751,6 +3844,77 @@ export function routeDaemonEventsNotification(
     return;
   }
 
+  if (type === 'discussion:activity') {
+    const data = (event as { data?: unknown }).data;
+    if (
+      !isDiscussionAgentActivityEvent(data) ||
+      appStore.state.workspaceDiscussion.agentActivitySupported !== true
+    )
+      return;
+    const envelopeWorkspaceId = workspaceIdOf(event);
+    if (envelopeWorkspaceId && envelopeWorkspaceId !== data.workspaceId) return;
+    const target = selectDiscussionTarget.select(
+      appStore.state,
+      data.workspaceId,
+      data.conversationId,
+    );
+    if (target)
+      appStore.dispatch(discussionAgentActivityReceived(target, data.messageId, data.activity));
+    return;
+  }
+  if (type === 'discussion:reaction') {
+    const data = (event as { data?: unknown }).data;
+    if (
+      !isDiscussionReactionEvent(data) ||
+      appStore.state.workspaceDiscussion.messageActionsSupported !== true
+    )
+      return;
+    const envelopeWorkspaceId = workspaceIdOf(event);
+    if (envelopeWorkspaceId && envelopeWorkspaceId !== data.workspaceId) return;
+    const target = selectDiscussionTarget.select(
+      appStore.state,
+      data.workspaceId,
+      data.conversationId,
+    );
+    if (target) appStore.dispatch(discussionReactionReceived(target, data));
+    return;
+  }
+
+  // Discussion history belongs to its own slice, never the activity timeline.
+  if (type === 'discussion:message') {
+    const data = (event as { data?: unknown }).data;
+    if (
+      isDiscussionMessageEvent(data) &&
+      (appStore.state.workspaceDiscussion.agentActivitySupported !== true ||
+        (hasDiscussionAgentActivity(data.message) && hasDiscussionAgentMentions(data.message))) &&
+      (appStore.state.workspaceDiscussion.messageActionsSupported !== true ||
+        hasDiscussionMessageActions(data.message))
+    ) {
+      const envelopeWorkspaceId = workspaceIdOf(event);
+      if (envelopeWorkspaceId && envelopeWorkspaceId !== data.workspaceId) return;
+      const conversationId = data.conversationId ?? DEFAULT_DISCUSSION_ID;
+      const context = selectDiscussionContext.select(appStore.state);
+      if (!context) return;
+      if (
+        conversationId !== DEFAULT_DISCUSSION_ID &&
+        (appStore.state.workspaceDiscussion.conversationsSupported !== true ||
+          !data.conversation?.participants.some(
+            (p) => p.principalId === appStore.state.principal.snapshot?.principal.id,
+          ))
+      )
+        return;
+      if (data.conversation)
+        appStore.dispatch(discussionConversationReceived(context, data.conversation));
+      const target = selectDiscussionTarget.select(
+        appStore.state,
+        data.workspaceId,
+        conversationId,
+      );
+      if (target) appStore.dispatch(discussionMessageReceived(target, data.message));
+    }
+    return;
+  }
+
   // `presence:changed` (§5.46) carries a self-sufficient `data.workspaceId`
   // and is transient by contract, so it is folded into the presence slice
   // and never recorded on the activity timeline.
@@ -4170,6 +4334,14 @@ export function routeDaemonEventsNotification(
     handlePrEvent(event, workspaceId, type);
     return;
   }
+  if (
+    type === 'gitRoot:registered' ||
+    type === 'gitRoot:updated' ||
+    type === 'gitRoot:unregistered'
+  ) {
+    void refreshWorkspacePrPoolFromGitRoot(workspaceId);
+    return;
+  }
 
   // `changes:agent-locks` (§6.5) — the daemon-computed
   // agent-lock snapshot. Self-sufficient payload, folded straight into the
@@ -4254,6 +4426,45 @@ export function routeDaemonEventsNotification(
     handleAttentionRequestedEvent(event, workspaceId);
     // fall through to the storage dispatch below so the activity timeline
     // records the attention request alongside the sticky toast.
+  }
+  if (type === 'script:changed' || type === 'script:state' || type === 'script:output') {
+    const data = (event as { data?: Record<string, unknown> }).data;
+    const scriptId = typeof data?.scriptId === 'string' ? data.scriptId : '';
+    if (type === 'script:changed' && data?.action === 'guest-access-revoked') {
+      // This event withdraws only guest access; host readers keep their output
+      // and in-flight hydration across the definition's purpose change.
+      if (
+        scriptId &&
+        selectUsesGuestScriptScope.select(appStore.state, workspaceId) &&
+        selectCanReadScriptDefinition.select(appStore.state, workspaceId, savedScriptPurpose)
+      ) {
+        if (typeof event.id === 'string') {
+          if (seenScriptEventIds.has(event.id)) return;
+          seenScriptEventIds.add(event.id);
+        }
+        appStore.dispatch(removeScript(workspaceId, scriptId));
+      }
+      return;
+    }
+    const definition =
+      type === 'script:changed'
+        ? scriptChangeSnapshot(data?.script, workspaceId, scriptId)
+        : undefined;
+    const cached = appStore.state.scripts?.byWorkspaceId[workspaceId]?.scripts[scriptId];
+    // A removal may precede the initial list response; keep it in the read
+    // journal even when the retired definition is not cached yet.
+    const removedSaved =
+      type === 'script:changed' && data?.action === 'removed' && data.purpose === 'saved'
+        ? savedScriptPurpose
+        : undefined;
+    if (
+      !selectCanReadScriptDefinition.select(
+        appStore.state,
+        workspaceId,
+        removedSaved ?? definition ?? cached,
+      )
+    )
+      return;
   }
   if ((type === 'script:changed' || type === 'script:state') && typeof event.id === 'string') {
     if (seenScriptEventIds.has(event.id)) return;
@@ -4461,6 +4672,10 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   'changes:agent-locks',
   'line-attribution:updated',
   'pr:*',
+  // `gitRoot:*` (§6.5) — a submodule PR's status / merge-queue change only
+  // arrives as `gitRoot:updated`; without it Home badges for root-tracked PRs
+  // stay stale until the next `workspace.list` (only `displayStatus` moved).
+  'gitRoot:*',
   'mcp.servers:status-changed',
   // `github:auth-changed` (§6.5) — device-flow terminal transitions and
   // `github.revoke`; global, so the connect UX converges without polling.
@@ -4494,6 +4709,9 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // presence slice. Workspace-scoped on the daemon side, so the membership
   // gate narrows it like any other row.
   'presence:changed',
+  'discussion:message',
+  'discussion:reaction',
+  'discussion:activity',
   'host:members-changed',
   'host:invites-changed',
   'host:execution-context-changed',
@@ -4644,6 +4862,10 @@ export function disposeDaemonEventsRoutingState(): void {
   activityFetchFollowUpWantedByWorkspace.clear();
   missingEntityFetchInFlightByWorkspace.clear();
   missingEntityFetchFollowUpWantedByWorkspace.clear();
+  gitRootPoolRefreshInFlight.clear();
+  gitRootPoolRefreshFollowUp.clear();
+  gitRootPoolRefreshGeneration += 1;
+  prEventRevisionByWorkspace.clear();
 }
 
 /** Test-only — reset stream accumulators and debounce state. */

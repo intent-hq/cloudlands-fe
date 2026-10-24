@@ -91,6 +91,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Where paid-label jobs run: a free self-hosted slot first, else WarpBuild
+  # (GitHub's larger runners are off); `cloud` skips the self-hosted step.
+  # See runner-route.yml.
+  runner-route:
+    uses: ./.github/workflows/runner-route.yml
+    permissions:
+      contents: read
+      actions: read
+    secrets:
+      CI_QUEUE_READ_TOKEN: ${{ secrets.CI_QUEUE_READ_TOKEN }}
+    with:
+      slot_jobs: >-
+        [{"key":"build-linux","label":"gh-linux-8x","minutes":20,"legs":["x64"]}]
+
   # Resolve before allocating native Mac runners: unselected CPUs never get a job.
   select-macos:
     if: ${{ inputs.build_macos || inputs.isolated_test }}
@@ -99,6 +113,7 @@ jobs:
     outputs:
       matrix: ${{ steps.macos.outputs.matrix }}
       smoke_runner: ${{ steps.macos.outputs.smoke_runner }}
+      smoke_warp: ${{ steps.macos.outputs.smoke_warp }}
       smoke_artifact: ${{ steps.macos.outputs.smoke_artifact }}
     steps:
       - name: Select manual Mac targets
@@ -108,7 +123,7 @@ jobs:
         run: |
           # Signed desktop builds stay on macos-15-xlarge: on macos-26 images electron-builder's
           # `security set-key-partition-list` fails with SecKeychainUnlock (cloudlands-fe#3500).
-          ARM='{"arch":"arm64","label":"Apple Silicon","runner":"macos-15-xlarge","intentd_target":"aarch64-apple-darwin"}'
+          ARM='{"arch":"arm64","label":"Apple Silicon","runner":"macos-15-xlarge","warp":"warp-macos-15-arm64-12x","intentd_target":"aarch64-apple-darwin"}'
           case "${MACOS_ARCH:-arm64}" in
             arm64) TARGETS="[$ARM]" ;;
             *) echo "::error::Mac builds support arm64 only"; exit 1 ;;
@@ -116,6 +131,7 @@ jobs:
           {
             echo "matrix={\"include\":$TARGETS}"
             echo "smoke_runner=$(jq -r '.[0].runner' <<< "$TARGETS")"
+            echo "smoke_warp=$(jq -r '.[0].warp' <<< "$TARGETS")"
             echo "smoke_artifact=manual-macos-dmg-$(jq -r '.[0].arch' <<< "$TARGETS")"
           } >> "$GITHUB_OUTPUT"
 
@@ -131,9 +147,12 @@ jobs:
         run: test "$BUILD_MACOS" = true && test "$SIGN" = true
 
   smoke-macos:
-    if: ${{ inputs.smoke_macos }}
-    needs: [select-macos, build-macos, smoke-inputs]
-    runs-on: ${{ needs.select-macos.outputs.smoke_runner }}
+    # Explicit results: a failed runner-route (an ancestor through the builds) must not skip this job.
+    if: ${{ !cancelled() && inputs.smoke_macos && needs.select-macos.result == 'success' && needs.build-macos.result == 'success' && needs.smoke-inputs.result == 'success' }}
+    needs: [select-macos, build-macos, smoke-inputs, runner-route]
+    # A fresh VM per job (the smoke script refuses an intent-cache slot): the
+    # `cloud` runner, WarpBuild, or the row's WarpBuild label if routing failed.
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.cloud || '{}')[needs.select-macos.outputs.smoke_runner] || fromJSON(format('["{0}"]', needs.select-macos.outputs.smoke_warp)) }}
     timeout-minutes: 60
     env:
       CI: 'true'
@@ -177,13 +196,17 @@ jobs:
   # Copied from release-alpha.yml build-macos; the signing steps are gated on
   # the `sign` input and the version-suffix step is added before packaging.
   build-macos:
-    if: ${{ inputs.build_macos || inputs.isolated_test }}
-    needs: [select-macos]
+    # A failed route job must not block this job: it runs on its fallback label.
+    if: ${{ !cancelled() && needs.select-macos.result == 'success' && (inputs.build_macos || inputs.isolated_test) }}
+    needs: [select-macos, runner-route]
     name: macOS (${{ matrix.label }})
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.select-macos.outputs.matrix) }}
-    runs-on: ${{ matrix.runner }}
+    # Signed Mac builds go straight to the burst runner (WarpBuild macOS 15,
+    # or the row's WarpBuild label if routing failed), never the persistent
+    # self-hosted Mac.
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.cloud || '{}')[matrix.runner] || matrix.warp }}
     env:
       INTENTD_TARGET: ${{ matrix.intentd_target }}
     # 120 min: 90 covered the packaging job alone; a from-source intentd
@@ -584,15 +607,19 @@ jobs:
   # The Windows leg is opt-in and respects sign; release-alpha remains unsigned.
   # Native install/update acceptance and production enablement remain separate.
   build-windows:
-    if: ${{ inputs.build_windows && !inputs.isolated_test }}
-    # gh-windows-16x: org hosted runner (16-core/64 GB, runner group 1, same
-    # group as gh-linux-16x), fixed at the runner level to the Windows Server
-    # 2022 image. Server 2022 (not 2025) still matters: the windows-2025
+    # A failed route job must not block this job: it runs on its fallback label.
+    if: ${{ !cancelled() && inputs.build_windows && !inputs.isolated_test }}
+    needs: runner-route
+    # gh-windows-8x: WarpBuild warp-windows-2022-x64-8x (8 vCPU / 32 GB; the
+    # build used about a third of 16 CPUs and 12.4 GB at most), on the Windows
+    # Server 2022 image. Server 2022 (not 2025) still matters: the windows-2025
     # image ships Visual Studio 2026 (v18), which node-gyp < 12.1.0 cannot
     # detect (nodejs/node-gyp#3282), breaking native module builds
     # (node-pty). Move the runner to a newer image once the Node/npm/node-gyp
     # stack in use supports VS 18.
-    runs-on: gh-windows-16x
+    # Straight to the burst runner (WarpBuild Server 2022), never the
+    # persistent self-hosted Windows box.
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.cloud || '{}')['gh-windows-8x'] || fromJSON('["warp-windows-2022-x64-8x"]') }}
     # 150 min: the hosted Windows runner is far slower than the old
     # self-hosted runner — the v2.21.0 rebuild's Vite build alone took 53 min
     # and the job was cancelled at the previous 60-min cap before
@@ -609,7 +636,7 @@ jobs:
       # shadows Git Bash in PATH, and WSL bash can't execute the runner's
       # Windows-path step scripts. Prepend Git's bin dir so every later
       # `shell: bash` step resolves Git Bash instead (same workaround as
-      # intent-manual-windows-build.yml). Still required on gh-windows-16x,
+      # intent-manual-windows-build.yml). Still required on the Windows 8x runner,
       # whose Windows Server 2022 image ships the same WSL stub.
       - name: Put Git Bash first on PATH
         shell: cmd
@@ -630,7 +657,7 @@ jobs:
         # No cache: 'pnpm' — this job previously ran on a non-ephemeral
         # self-hosted runner with a persistent pnpm store, making the GH
         # Actions cache tarball round-trip redundant. On the hosted
-        # gh-windows-16x runner each job is a fresh VM with no persistent
+        # WarpBuild Windows runner each job is a fresh VM with no persistent
         # store, so this is a candidate for cache: 'pnpm' — left as-is here
         # since only the runner target was migrated by this change.
         uses: actions/setup-node@v7
@@ -766,7 +793,7 @@ jobs:
       # shell: powershell (Windows PowerShell 5.1, present on every Windows
       # host) rather than pwsh — the old self-hosted runner had no
       # PowerShell Core ("pwsh: command not found", intent-hq/monorepo#1282
-      # follow-up run). The gh-windows-16x runner's Windows Server 2022 image
+      # follow-up run). The WarpBuild Windows Server 2022 image
       # ships PowerShell 5.1 too, so this stays valid on the hosted runner.
       - name: Build and package Windows app
         id: build
@@ -775,8 +802,8 @@ jobs:
           # 12288: the v2.13.0 arm64 leg's peak heap outgrew the old 8192 cap
           # even with sourcemaps disabled (monorepo#1340); same bundle here.
           # This leg passed at 12288 in the v2.13.0 rebuild, run 30764745052.
-          # gh-windows-16x is 16 vCPU / 64 GB RAM, so the 12288 cap has
-          # ample headroom there.
+          # WarpBuild Windows 8x has 32 GB RAM, so the 12288 cap has ample
+          # headroom there (the build peaked at 12.4 GB).
           NODE_OPTIONS: '--max-old-space-size=12288'
           # Sourcemap generation multiplies rollup's peak heap past the cap
           # (same OOM as monorepo#1074/#1282); the #1282 fix gated the Linux
@@ -878,7 +905,9 @@ jobs:
   # Copied from release-alpha.yml build-linux. Linux packages are unsigned in
   # the release pipeline too, so the `sign` input has no effect on this leg.
   build-linux:
-    if: ${{ inputs.build_linux && !inputs.isolated_test }}
+    # A failed route job must not block this job: it runs on its fallback label.
+    if: ${{ !cancelled() && inputs.build_linux && !inputs.isolated_test }}
+    needs: runner-route
     strategy:
       # Let the other arch finish (and report) even when one fails.
       fail-fast: false
@@ -886,7 +915,7 @@ jobs:
         include:
           # node_heap: per-arch --max-old-space-size (MB).
           #
-          # x64 builds on the gh-linux-8x org larger runner (GH-hosted,
+          # x64 builds on the gh-linux-8x size (WarpBuild or an intent-cache slot,
           # 8-core/32 GB X64) — the "well over 16 GB" class this leg
           # requires: the bundle outgrew the 16 GB ubuntu-latest hosted
           # runner in the v2.13.0 rebuilds (monorepo#1340) — 8192
@@ -898,11 +927,13 @@ jobs:
           # runner.
           - arch: x64
             runner: gh-linux-8x
+            # The burst runner if the route job failed (GitHub larger runners are off).
+            warp: warp-ubuntu-2404-x64-8x
             intentd_target: x86_64-unknown-linux-musl
             targets: AppImage:x64 deb:x64
             node_heap: 12288
-          # arm64 builds natively on the gh-linux-arm64-8x org larger runner
-          # (GH-hosted, 8-core/32 GB ARM64). The 32 GB class is deliberate:
+          # arm64 builds natively on the gh-linux-arm64-8x size (WarpBuild
+          # 8-core/32 GB ARM64). The 32 GB class is deliberate:
           # 16 GB machines OS-OOM-killed this bundle (monorepo#1340), so a
           # standard hosted runner is not a viable fallback. INTENTD_TARGET
           # is set explicitly below, so the staged intentd matches the
@@ -919,10 +950,16 @@ jobs:
           # the 32 GB runner has the RAM for 12288.
           - arch: arm64
             runner: gh-linux-arm64-8x
+            warp: warp-ubuntu-2404-arm64-8x
             intentd_target: aarch64-unknown-linux-musl
             targets: AppImage:arm64 deb:arm64
             node_heap: 12288
-    runs-on: ${{ matrix.runner }}
+    # x64 takes a free (ephemeral) intent-cache slot first, else WarpBuild.
+    # arm64 goes straight to WarpBuild: release packaging stays off persistent
+    # self-hosted ARM64 boxes, where electron-builder's fpm failed (monorepo#1286).
+    # A from-source intentd build (intentd_ref) installs musl-tools with sudo,
+    # which the intent-cache containers lack, so it skips the slot as well.
+    runs-on: ${{ matrix.runner == 'gh-linux-8x' && inputs.intentd_ref == '' && fromJSON(needs.runner-route.outputs.slots || '{}')[format('build-linux-{0}', matrix.arch)] || fromJSON(needs.runner-route.outputs.cloud || '{}')[matrix.runner] || matrix.warp }}
     # 90 min: 60 covered the packaging job alone; a from-source intentd
     # sidecar build (intentd_ref set) adds a cold cargo build.
     timeout-minutes: 90
@@ -1190,12 +1227,14 @@ jobs:
           INTENTD_SHA: ${{ steps.intentd_sha.outputs.sha }}
 
   verify-isolated-macos:
-    if: ${{ inputs.isolated_test && inputs.build_macos }}
-    needs: [select-macos, build-macos]
+    # Explicit results: a failed runner-route (an ancestor through the builds) must not skip this job.
+    if: ${{ !cancelled() && inputs.isolated_test && inputs.build_macos && needs.select-macos.result == 'success' && needs.build-macos.result == 'success' }}
+    needs: [select-macos, build-macos, runner-route]
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.select-macos.outputs.matrix) }}
-    runs-on: ${{ matrix.runner }}
+    # A fresh VM per job: the `cloud` runner (WarpBuild), else the row's WarpBuild label.
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.cloud || '{}')[matrix.runner] || matrix.warp }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7

@@ -4,7 +4,7 @@
  * link lifecycle. Field names match the daemon structs 1:1 (camelCase).
  */
 import type { HostRole } from '$shared/types/principal';
-import type { WorkspaceRole } from '$shared/types';
+import type { WorkspaceGuestRole, WorkspaceRole } from '$shared/types';
 
 /** The forges a principal identity can live on (`Principal.identity.provider`). */
 export const IDENTITY_PROVIDERS = ['github', 'gitlab'] as const;
@@ -175,3 +175,11 @@ export const INVITE_ERROR_CODES = [
 ] as const;
 
 export type InviteErrorCode = (typeof INVITE_ERROR_CODES)[number];
+
+/** Confirmed persisted role; unchanged requests are successful and idempotent. */
+export interface WorkspaceMemberRoleResult {
+  workspaceId: string;
+  principalId: string;
+  role: WorkspaceGuestRole;
+  changed: boolean;
+}

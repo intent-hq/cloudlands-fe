@@ -5,8 +5,15 @@
  * with `vi.mock(path, async () => (await import('./mocks/chat-panel-render-scaffold')).x())`.
  * For reactive selectors, spread the factory first and override only that selector:
  * `return { ...agentSessionSelectors(), selectAgentMessages: () => messages };`.
- * `intent/no-copied-chat-panel-selector-mocks` enforces shared defaults for supported
- * selector modules in tests importing the real ChatPanel.
+ * Every other selector module starts from the real module and overrides only
+ * what the test cares about, so a selector ChatPanel starts reading later still
+ * resolves (cloudlands-fe#3525):
+ * `vi.mock(path, async (importOriginal) => (await import(scaffold)).withReal(importOriginal, { selectX: value }))`
+ * for constant values, or `withRealSelectors(importOriginal, { selectX: liveSelector })`.
+ * Real selectors read the mocked store, so a test with its own `$store/renderer/store`
+ * mock spreads `chatPanelSliceState()` into that state first; `appStore()` already does.
+ * `intent/no-copied-chat-panel-selector-mocks` enforces this in tests importing the
+ * real ChatPanel.
  * Call `resetScaffold()` in `beforeEach` to isolate tests.
  * Mutate `scaffold` before `render()` to seed the transcript, the latched
  * divider anchor, or the queued messages the panel should see.
@@ -14,8 +21,7 @@
 import { vi } from 'vitest';
 import { readable, type Readable } from 'svelte/store';
 import type { AgentMessage } from '$shared/types';
-import { initialState as chatDrafts } from '$store/renderer/slices/chat-drafts/chat-drafts-slice';
-import { initialState as questionUi } from '$store/renderer/slices/question-ui/question-ui-slice';
+import { reducers } from '$store/renderer/reducer';
 
 const queueMutationSubscribers = new Set<(value: unknown[]) => void>();
 
@@ -30,6 +36,7 @@ export const scaffold = {
 };
 
 export function resetScaffold() {
+  sliceState = undefined;
   scaffold.dispatch.mockReset();
   scaffold.authorityState = {};
   scaffold.agentMessages = [];
@@ -54,15 +61,49 @@ export function stub(values: Record<string, unknown>) {
   );
 }
 
+/**
+ * The real selector module with only `values` replaced by constant-valued
+ * selectors. Pass the `importOriginal` argument of the `vi.mock` factory.
+ */
+export async function withReal(
+  importOriginal: () => Promise<unknown>,
+  values: Record<string, unknown> = {},
+) {
+  return withRealSelectors(importOriginal, stub(values));
+}
+
+/** The real selector module with only `selectors` replaced, as given. */
+export async function withRealSelectors(
+  importOriginal: () => Promise<unknown>,
+  selectors: Record<string, unknown>,
+) {
+  return { ...((await importOriginal()) as Record<string, unknown>), ...selectors };
+}
+
+let sliceState: Record<string, unknown> | undefined;
+
+/**
+ * The real initial state of every root reducer slice, so a real selector the
+ * test does not override reads real defaults instead of throwing on a missing
+ * slice. Built once per `resetScaffold()` from a copy, so a test that mutates it
+ * in place cannot leak into the shared reducer defaults. Spread it first; test
+ * keys win.
+ */
+export function chatPanelSliceState() {
+  sliceState ??= structuredClone(
+    Object.fromEntries(
+      Object.entries(reducers).map(([slice, reducer]) => [slice, reducer.initialState]),
+    ),
+  );
+  return sliceState;
+}
+
 export async function appStore() {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => ({
-      browser: { byWorkspaceId: {} },
-      chatDrafts,
-      chatPanelUi: { byWorkspaceId: {} },
-      questionUi,
+      ...chatPanelSliceState(),
       ...scaffold.authorityState,
     }),
     dispatch: (action) => {
@@ -173,6 +214,7 @@ export function providerCatalogSelectors() {
       selectEffectiveDefaultProviderId: '',
       selectProviderCatalogLoaded: false,
       selectProviderCatalogEntries: [],
+      selectProviderCatalogProfiles: [],
     }),
     selectProviderAuthFailureGuidance: { select: () => null },
     selectProviderDisplayName: Object.assign(

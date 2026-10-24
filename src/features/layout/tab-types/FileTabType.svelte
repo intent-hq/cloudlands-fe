@@ -676,6 +676,9 @@
       <FileViewer
         filePath={resolvedWorkspaceMediaPath ?? tab.filePath}
         sourceUrl={workspaceMediaUrl}
+        onDownload={handleDownloadFile}
+        allowDownload={!isReadOnly && downloadReady}
+        {downloading}
       />
     {:else if isAllowlistedMediaPath}
       <div class="flex items-center justify-center h-full text-subtle">
@@ -738,7 +741,9 @@
           {fileContent}
           language={fileLanguage}
           isBinary={isFileBinary}
-          allowDownload={!isReadOnly}
+          onDownload={handleDownloadFile}
+          allowDownload={!isReadOnly && downloadReady}
+          {downloading}
         />
       {:else if isMarkdownFile && markdownPreview}
         <div class="h-full overflow-auto p-4">

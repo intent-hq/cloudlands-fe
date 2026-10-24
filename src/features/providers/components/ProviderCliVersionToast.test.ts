@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   request: vi.fn(),
   warning: vi.fn(),
+  error: vi.fn(),
+  invoke: vi.fn(),
 }));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
@@ -31,7 +33,10 @@ vi.mock('$store/renderer/store', async () => {
   return module;
 });
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.request }));
-vi.mock('$lib/components/patterns/notify', () => ({ notify: { warning: mocks.warning } }));
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { warning: mocks.warning, error: mocks.error },
+}));
+vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke }));
 vi.mock('$app/stores', async () => {
   const { writable } = await import('svelte/store');
   return { page: writable({ url: new URL('http://localhost/workspace/example') }) };
@@ -89,6 +94,8 @@ function startSaga() {
     };
     emit();
     channel.put(action);
+    // Mirrors the app store: async actions resolve through their saga outcome.
+    return action.promise;
   });
   task = runSaga(
     { channel, dispatch: mocks.dispatch, getState: () => mocks.state },
@@ -104,18 +111,24 @@ beforeEach(() => {
     url: new URL('http://localhost/workspace/example'),
   });
   mocks.request.mockResolvedValue({ providers: [oldCodex] });
+  mocks.invoke.mockResolvedValue({ ok: true, terminalId: 'codex-update' });
   startSaga();
 });
 afterEach(() => task.cancel());
 
 describe('provider CLI startup warnings', () => {
-  it('uses the daemon discovery contract and includes provider, detected version and requirement', async () => {
+  it('uses the daemon discovery contract with a short provider title and version detail in the description', async () => {
     render(ProviderCliVersionToast);
     await settle();
     expect(mocks.request.mock.calls).toEqual([['host.providerDiscovery', {}]]);
     expect(mocks.warning).toHaveBeenCalledTimes(1);
-    const message = mocks.warning.mock.calls[0][0];
-    for (const value of ['Codex', 'codex-cli 0.114.0', '0.159.1']) expect(message).toContain(value);
+    const [title, options] = mocks.warning.mock.calls[0];
+    // The title stays short (provider only) so the toast never truncates the version detail.
+    expect(title).toContain('Codex');
+    for (const value of ['codex-cli 0.114.0', '0.159.1']) {
+      expect(title).not.toContain(value);
+      expect(options?.description).toContain(value);
+    }
   });
 
   it.each([
@@ -307,5 +320,120 @@ describe('provider CLI startup warnings', () => {
     await settle();
     expect(mocks.warning).not.toHaveBeenCalled();
     expect(mocks.state.hostRequirements.providerCli).toBeUndefined();
+  });
+
+  describe('bundled CLI in use', () => {
+    const bundledRow = { ...oldCodex, cliBundledVersion: '0.160.1' };
+
+    it('explains that Intent runs its bundled CLI, naming installed, required and bundled versions', async () => {
+      mocks.request.mockResolvedValue({ providers: [bundledRow] });
+      render(ProviderCliVersionToast);
+      await settle();
+      expect(mocks.warning).toHaveBeenCalledTimes(1);
+      const [title, options] = mocks.warning.mock.calls[0];
+      expect(title).toContain('Codex');
+      for (const value of ['codex-cli 0.114.0', '0.159.1', '0.160.1']) {
+        expect(options?.description).toContain(value);
+      }
+    });
+
+    it('differs from the plain out-of-date warning an older daemon produces', async () => {
+      mocks.request
+        .mockResolvedValueOnce({ providers: [bundledRow] })
+        .mockResolvedValue({ providers: [oldCodex] });
+      render(ProviderCliVersionToast);
+      await settle();
+      mocks.state = withHostPrincipal({
+        ...mocks.state,
+        connections: { windowBackendId: 'remote-B' },
+      });
+      emit();
+      await settle();
+      expect(mocks.warning).toHaveBeenCalledTimes(2);
+      const [[bundledTitle, bundled], [plainTitle, plain]] = mocks.warning.mock.calls;
+      expect(bundledTitle).not.toEqual(plainTitle);
+      expect(bundled?.description).not.toEqual(plain?.description);
+      expect(plain?.description).not.toContain('0.160.1');
+    });
+
+    it('warns again on the same host once launches switch to the bundled CLI', async () => {
+      mocks.request
+        .mockResolvedValueOnce({ providers: [oldCodex] })
+        .mockResolvedValue({ providers: [bundledRow] });
+      render(ProviderCliVersionToast);
+      await settle();
+      mocks.state = withHostPrincipal({
+        ...mocks.state,
+        daemonHealth: { connectionGeneration: 2 },
+      });
+      emit();
+      await settle();
+      expect(mocks.request).toHaveBeenCalledTimes(2);
+      expect(mocks.warning).toHaveBeenCalledTimes(2);
+      expect(mocks.warning.mock.calls[1][1]?.description).toContain('0.160.1');
+    });
+  });
+
+  describe('update action', () => {
+    const toastAction = () =>
+      mocks.warning.mock.calls[0]?.[1]?.action as
+        { label: string; onClick: (event?: unknown) => void } | undefined;
+
+    it('offers an Update button that runs `codex update` in the root terminal drawer', async () => {
+      render(ProviderCliVersionToast);
+      await settle();
+      const action = toastAction();
+      expect(action?.label).toBe('Update');
+      action!.onClick();
+      await settle();
+      expect(mocks.invoke.mock.calls).toEqual([
+        [
+          'terminal:createWithCommand',
+          { workspaceId: '__root__', command: 'codex update', interactive: true },
+        ],
+      ]);
+      expect(mocks.dispatch).toHaveBeenCalledWith({
+        type: 'terminals/open',
+        payload: ['__root__', 'codex-update'],
+      });
+      expect(mocks.error).not.toHaveBeenCalled();
+    });
+
+    it('reports a terminal launch failure in an error toast', async () => {
+      mocks.invoke.mockResolvedValue({ ok: false, error: 'spawn failed' });
+      render(ProviderCliVersionToast);
+      await settle();
+      toastAction()!.onClick();
+      await vi.waitFor(() => expect(mocks.error).toHaveBeenCalledWith('spawn failed'));
+      expect(
+        mocks.dispatch.mock.calls.filter(([action]) => action.type === 'terminals/open'),
+      ).toEqual([]);
+    });
+
+    it('keeps the Update button when the daemon runs its bundled Codex', async () => {
+      mocks.request.mockResolvedValue({
+        providers: [{ ...oldCodex, cliBundledVersion: '0.159.1' }],
+      });
+      render(ProviderCliVersionToast);
+      await settle();
+      toastAction()!.onClick();
+      await settle();
+      expect(mocks.invoke.mock.calls).toEqual([
+        [
+          'terminal:createWithCommand',
+          { workspaceId: '__root__', command: 'codex update', interactive: true },
+        ],
+      ]);
+    });
+
+    it('keeps the plain warning for a provider without a known update command', async () => {
+      mocks.request.mockResolvedValue({
+        providers: [{ ...oldCodex, id: 'other-cli', displayName: 'Other' }],
+      });
+      render(ProviderCliVersionToast);
+      await settle();
+      expect(mocks.warning).toHaveBeenCalledTimes(1);
+      expect(mocks.warning.mock.calls[0][1]).not.toHaveProperty('action');
+    });
   });
 });

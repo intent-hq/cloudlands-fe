@@ -7,6 +7,7 @@ import { AUTO_UPDATE_CHANNELS } from '$features/auto-update/types';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { resetMockIpcRouter } from '$shared/ipc-mock-router';
 import type { ReduxStoreContext } from '$store/renderer/types';
+import { m } from '$shared/paraglide/messages.js';
 import { initAppStore, store as appStore } from '$store/renderer/store';
 import { registerAutoUpdateBridge } from '$store/renderer/seeders/auto-update-bridge-seeder';
 import {
@@ -15,6 +16,7 @@ import {
 } from '$store/renderer/slices/auto-update/auto-update-slice';
 import {
   selectChatAuroraEnabled,
+  selectCollapseToolRuns,
   selectUpdateChannel,
   selectNoteFontStyle,
   selectAgentFontStyle,
@@ -23,6 +25,7 @@ import {
 import {
   setAgentFontStyle,
   setChatAuroraEnabled,
+  setCollapseToolRuns,
   setNoteFontStyle,
   setShellTransparencyEnabled,
   setUpdateChannel,
@@ -135,6 +138,7 @@ beforeEach(() => {
   appStore.dispatch(setAgentFontStyle('monospace'));
   appStore.dispatch(setChatAuroraEnabled(true));
   appStore.dispatch(setShellTransparencyEnabled(true));
+  appStore.dispatch(setCollapseToolRuns(false));
   appStore.dispatch(simulateSetState({ status: 'idle' }));
   vi.clearAllMocks();
   (globalThis as typeof globalThis & { __APP_VERSION__: string }).__APP_VERSION__ = '2.0.10';
@@ -176,6 +180,24 @@ describe('Settings migration', () => {
     });
     expect(recorder.calls).toContainEqual(setChatAuroraEnabled(false));
     expect(recorder.calls).toContainEqual(setShellTransparencyEnabled(false));
+    expect(backendCalls()).toHaveLength(0);
+    recorder.restore();
+  });
+
+  it('turns on collapsed tool activity through Redux without a backend request', async () => {
+    const recorder = installDispatchRecorder();
+    renderAppearance();
+
+    const toggle = screen.getByRole('switch', {
+      name: m.settings_appearance_collapseToolRuns_label(),
+    });
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+
+    await fireEvent.click(toggle);
+
+    await waitFor(() => expect(selectCollapseToolRuns.select(appStore.state)).toBe(true));
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(recorder.calls).toContainEqual(setCollapseToolRuns(true));
     expect(backendCalls()).toHaveLength(0);
     recorder.restore();
   });

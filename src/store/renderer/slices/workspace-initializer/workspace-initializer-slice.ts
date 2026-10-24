@@ -28,12 +28,17 @@ import type {
   WorkspaceInitializerOnboardingFormState,
   WorkspaceInitializationConsumer,
   WorkspaceInitializationOutcome,
+  WorkspaceInitializationPrepared,
   WorkspaceInitializationRequest,
   WorkspaceInitializationResult,
+  WorkspaceInitializationResume,
+  WorkspaceInitializationResumeInput,
+  WorkspaceInitializationSubmission,
 } from './workspace-initializer-types';
 
 import { recentRepoKey } from './utils/recent-repo-key';
 import { mergeAgentByRepo, rememberAgentForRepo } from './utils/agent-by-repo';
+import { mergeRecentSpecialists, rememberRecentSpecialist } from './utils/recent-specialists';
 
 export const DEFAULT_WORKSPACE_INITIALIZER_PARENT_PATH = '~/Developer';
 const MAX_RECENT_REPOS = 9;
@@ -53,10 +58,12 @@ export const initialState: WorkspaceInitializerState = {
   remoteSetups: createCollection<WorkspaceInitializerRemoteSetup, 'id'>('id'),
   lastSubmittedAgent: null,
   agentByRepo: {},
+  recentSpecialistIds: [],
   pendingGitHubPrefill: null,
   recentRepoRefreshes: createCollection<WorkspaceInitializerRecentRepoRefresh, 'id'>('id'),
   directoryStatusChecks: createCollection<WorkspaceInitializerDirectoryStatusCheck, 'id'>('id'),
   initializationOutcomes: createCollection<WorkspaceInitializationOutcome, 'id'>('id'),
+  initializationResumes: createCollection<WorkspaceInitializationResume, 'id'>('id'),
   draftRestores: createCollection<WorkspaceInitializerDraftRestore, 'id'>('id'),
   draftClears: createCollection<WorkspaceInitializerDraftClear, 'id'>('id'),
 };
@@ -160,6 +167,11 @@ export const setWorkspaceInitializerLastSubmittedAgent = createAction<
   [settings: WorkspaceInitializerAgentSettings | null]
 >('workspaceInitializer/setLastSubmittedAgent');
 
+/** Record a specialist picked outside New workspace (e.g. the agent composer) as recently used. */
+export const rememberWorkspaceInitializerRecentSpecialist = createAction<
+  [specialistId: string | null]
+>('workspaceInitializer/rememberRecentSpecialist');
+
 export const setWorkspaceInitializerPendingGitHubPrefill = createAction<
   [prefill: WorkspaceInitializerPendingGitHubPrefill]
 >('workspaceInitializer/setPendingGitHubPrefill');
@@ -169,7 +181,14 @@ export const clearWorkspaceInitializerPendingGitHubPrefill = createAction(
 );
 
 export const workspaceInitializerDraftRestoreRequested = createAction<
-  [id: string, requestId: string, legacyKey: string]
+  [
+    id: string,
+    requestId: string,
+    legacyKey: string,
+    admission?: string,
+    discardRetained?: boolean,
+    provenance?: string,
+  ]
 >('workspaceInitializer/draftRestoreRequested');
 export const workspaceInitializerDraftRestoreFinished = createAction<
   [
@@ -181,19 +200,33 @@ export const workspaceInitializerDraftRestoreFinished = createAction<
   ]
 >('workspaceInitializer/draftRestoreFinished');
 export const workspaceInitializerDraftSaveScheduled = createAction<
-  [id: string, payload: WorkspaceInitializerDraftPayload]
+  [
+    id: string,
+    payload: WorkspaceInitializerDraftPayload,
+    ownerRequestId?: string,
+    admission?: string,
+  ]
 >('workspaceInitializer/draftSaveScheduled');
+export const workspaceInitializerDraftLegacyMigrationRequested = createAction<
+  [
+    id: string,
+    requestId: string,
+    admission: string | undefined,
+    restoreEpoch: number,
+    payload: WorkspaceInitializerDraftPayload,
+  ]
+>('workspaceInitializer/draftLegacyMigrationRequested');
 export const workspaceInitializerDraftSaveDebounceElapsed = createAction<
   [id: string, version: number]
 >('workspaceInitializer/draftSaveDebounceElapsed');
-export const workspaceInitializerDraftFlushRequested = createAction<[id: string]>(
-  'workspaceInitializer/draftFlushRequested',
-);
-export const workspaceInitializerDraftSaveCancelled = createAction<[id: string]>(
-  'workspaceInitializer/draftSaveCancelled',
-);
+export const workspaceInitializerDraftFlushRequested = createAction<
+  [id: string, ownerRequestId?: string, admission?: string]
+>('workspaceInitializer/draftFlushRequested');
+export const workspaceInitializerDraftSaveCancelled = createAction<
+  [id: string, ownerRequestId?: string, admission?: string]
+>('workspaceInitializer/draftSaveCancelled');
 export const workspaceInitializerDraftClearRequested = createAction<
-  [id: string, requestId: string]
+  [id: string, requestId: string, ownerRequestId?: string, admission?: string]
 >('workspaceInitializer/draftClearRequested');
 export const workspaceInitializerDraftClearFinished = createAction<
   [id: string, requestId: string, status: 'success' | 'failure']
@@ -220,6 +253,43 @@ export const workspaceInitializationFinished = createAction<
 >('workspaceInitializer/initializationFinished');
 export const clearWorkspaceInitializationOutcome = createAction<[id: string, seq?: number]>(
   'workspaceInitializer/clearInitializationOutcome',
+);
+/** Prepare + build the create request in the saga from a serializable form submission. */
+export const workspaceInitializationSubmitted = createAsyncAction<
+  [submission: WorkspaceInitializationSubmission, consumer: WorkspaceInitializationConsumer],
+  {
+    submission: WorkspaceInitializationSubmission;
+    consumer: WorkspaceInitializationConsumer;
+    progressId: string;
+  },
+  WorkspaceInitializationResult
+>(
+  'workspaceInitializer/initializationSubmitted',
+  'workspaceInitializer/initializationSubmission',
+  (submission, consumer) => ({ submission, consumer, progressId: crypto.randomUUID() }),
+);
+/** Resume the consumer's retained post-create failure instead of creating again. */
+export const workspaceInitializationResumeRequested = createAsyncAction<
+  [input: WorkspaceInitializationResumeInput, consumer: WorkspaceInitializationConsumer],
+  {
+    input: WorkspaceInitializationResumeInput;
+    consumer: WorkspaceInitializationConsumer;
+    progressId: string;
+  },
+  WorkspaceInitializationResult
+>(
+  'workspaceInitializer/initializationResumeRequested',
+  'workspaceInitializer/initializationResume',
+  (input, consumer) => ({ input, consumer, progressId: crypto.randomUUID() }),
+);
+export const workspaceInitializationPrepared = createAction<
+  [id: string, seq: number, prepared: WorkspaceInitializationPrepared]
+>('workspaceInitializer/initializationPrepared');
+export const workspaceInitializationResumeStored = createAction<
+  [resume: WorkspaceInitializationResume]
+>('workspaceInitializer/initializationResumeStored');
+export const clearWorkspaceInitializationResume = createAction<[id: string]>(
+  'workspaceInitializer/clearInitializationResume',
 );
 
 function recentReposCollection(
@@ -291,6 +361,11 @@ workspaceInitializerReducer.with(hydrateWorkspaceInitializer, (state, { payload:
     lastSubmittedAgent: hydration.lastSubmittedAgent ?? state.lastSubmittedAgent,
     // A create that finished while the initial settings read was pending is newer.
     agentByRepo: mergeAgentByRepo(hydration.agentByRepo ?? {}, state.agentByRepo),
+    // Uses recorded while the initial settings read was pending are newer; a
+    // later re-hydration takes the persisted list, which already holds them.
+    recentSpecialistIds: state.hydrated
+      ? (hydration.recentSpecialistIds ?? state.recentSpecialistIds)
+      : mergeRecentSpecialists(hydration.recentSpecialistIds ?? [], state.recentSpecialistIds),
   };
 });
 workspaceInitializerReducer.with(
@@ -476,7 +551,21 @@ workspaceInitializerReducer.with(
   (state, { payload: [lastSubmittedAgent] }) => ({
     ...state,
     lastSubmittedAgent,
+    // Team mode submits the orchestrator, which the specialist dropdown never lists.
+    recentSpecialistIds:
+      lastSubmittedAgent && !lastSubmittedAgent.isTeamMode
+        ? rememberRecentSpecialist(state.recentSpecialistIds, lastSubmittedAgent.selectedSpecialist)
+        : state.recentSpecialistIds,
   }),
+);
+workspaceInitializerReducer.with(
+  rememberWorkspaceInitializerRecentSpecialist,
+  (state, { payload: [specialistId] }) => {
+    const recentSpecialistIds = rememberRecentSpecialist(state.recentSpecialistIds, specialistId);
+    return recentSpecialistIds === state.recentSpecialistIds
+      ? state
+      : { ...state, recentSpecialistIds };
+  },
 );
 workspaceInitializerReducer.with(
   setWorkspaceInitializerPendingGitHubPrefill,
@@ -521,9 +610,14 @@ workspaceInitializerReducer.with(
 );
 workspaceInitializerReducer.with(
   workspaceInitializerDraftClearRequested,
-  (state, { payload: [id, requestId] }) => ({
+  (state, { payload: [id, requestId, ownerRequestId] }) => ({
     ...state,
-    draftClears: upsertItem(state.draftClears, { id, requestId, status: 'pending' }),
+    draftClears: upsertItem(state.draftClears, {
+      id,
+      requestId,
+      ownerRequestId,
+      status: 'pending',
+    }),
   }),
 );
 workspaceInitializerReducer.with(
@@ -533,7 +627,7 @@ workspaceInitializerReducer.with(
     if (!current || current.requestId !== requestId) return state;
     return {
       ...state,
-      draftClears: upsertItem(state.draftClears, { id, requestId, status }),
+      draftClears: upsertItem(state.draftClears, { ...current, status }),
     };
   },
 );
@@ -545,7 +639,10 @@ workspaceInitializerReducer.with(
       getItem(state.draftRestores, id)?.requestId === restoreRequestId
         ? removeItem(state.draftRestores, id)
         : state.draftRestores,
-    draftClears: removeItem(state.draftClears, id),
+    draftClears:
+      getItem(state.draftClears, id)?.ownerRequestId === restoreRequestId
+        ? removeItem(state.draftClears, id)
+        : state.draftClears,
   }),
 );
 workspaceInitializerReducer.with(workspaceInitializationRequested, (state, action) => {
@@ -561,6 +658,56 @@ workspaceInitializerReducer.with(workspaceInitializationRequested, (state, actio
     }),
   };
 });
+function pendingInitializationOutcome(
+  state: WorkspaceInitializerState,
+  consumer: WorkspaceInitializationConsumer,
+  seq: number,
+  entrypoint: WorkspaceInitializationOutcome['entrypoint'],
+): WorkspaceInitializerState {
+  return {
+    ...state,
+    initializationOutcomes: upsertItem(state.initializationOutcomes, {
+      ...consumer,
+      seq,
+      entrypoint,
+      status: 'pending',
+    }),
+  };
+}
+workspaceInitializerReducer.with(workspaceInitializationSubmitted, (state, action) => {
+  const { seq } = action as ReturnType<typeof workspaceInitializationSubmitted>;
+  const { consumer, submission } = action.payload;
+  const next = pendingInitializationOutcome(state, consumer, seq, submission.entrypoint);
+  return { ...next, initializationResumes: removeItem(next.initializationResumes, consumer.id) };
+});
+workspaceInitializerReducer.with(workspaceInitializationResumeRequested, (state, action) => {
+  const { seq } = action as ReturnType<typeof workspaceInitializationResumeRequested>;
+  const { consumer, input } = action.payload;
+  return pendingInitializationOutcome(state, consumer, seq, input.entrypoint);
+});
+workspaceInitializerReducer.with(
+  workspaceInitializationPrepared,
+  (state, { payload: [id, seq, prepared] }) => {
+    const current = getItem(state.initializationOutcomes, id);
+    if (!current || current.seq !== seq || current.status !== 'pending') return state;
+    return {
+      ...state,
+      initializationOutcomes: upsertItem(state.initializationOutcomes, { ...current, prepared }),
+    };
+  },
+);
+workspaceInitializerReducer.with(
+  workspaceInitializationResumeStored,
+  (state, { payload: [resume] }) => ({
+    ...state,
+    initializationResumes: upsertItem(state.initializationResumes, resume),
+  }),
+);
+workspaceInitializerReducer.with(clearWorkspaceInitializationResume, (state, { payload: [id] }) =>
+  getItem(state.initializationResumes, id)
+    ? { ...state, initializationResumes: removeItem(state.initializationResumes, id) }
+    : state,
+);
 workspaceInitializerReducer.with(
   workspaceInitializationFinished,
   (state, { payload: [outcome] }) => {
@@ -588,4 +735,14 @@ workspaceInitializerReducer.with(
 workspaceInitializerReducer.with(hostExecutionConnectionChanged, (state) => ({
   ...initialState,
   gitCheckRequest: state.gitCheckRequest ? state.gitCheckRequest + 1 : 0,
+  initializationOutcomes: getItems(state.initializationOutcomes).reduce(
+    (outcomes, outcome) =>
+      upsertItem(
+        outcomes,
+        outcome.status === 'pending'
+          ? { ...outcome, status: 'cancelled', error: 'initialization-cancelled' }
+          : outcome,
+      ),
+    initialState.initializationOutcomes,
+  ),
 }));

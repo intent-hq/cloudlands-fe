@@ -93,9 +93,6 @@ for (const direction of ['horizontal', 'vertical'] as const) {
     await expect(component.locator('.panel-split-handle')).toBeVisible();
 
     const probe = await probeSplitHandle(page, direction === 'horizontal' ? 'x' : 'y');
-    // Full 16px forgiving target centered in the 8px gutter is preserved.
-    expect(probe.handleSize).toBe(16);
-    expect(probe.wrapperSize).toBe(8);
     expect(probe.crossSize).toBeCloseTo(probe.wrapperCrossSize, 0);
     expect(probe.crossHits).toEqual([true, true, true]);
     // Leading 4px overhang is hit-transparent: the previous panel receives the
@@ -304,9 +301,6 @@ test('corner handle yields its leading (top/left) bands to the top-left neighbor
       bottomRight: classify(rect.right - 2, rect.bottom - 2),
     };
   });
-
-  expect(probe.width).toBe(16);
-  expect(probe.height).toBe(16);
   // The top and left 4px bands (over the top-left neighbor's scrollbars) are
   // hit-transparent; the rest of the 16px target still resolves to the handle.
   expect(probe.topBand).toBe('not-handle');

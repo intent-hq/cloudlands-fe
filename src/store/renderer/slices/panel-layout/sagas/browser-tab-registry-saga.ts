@@ -142,6 +142,7 @@ import {
   PANEL_LAYOUT_HANDLED_ACTION_TYPES,
   acknowledgeBrowserTabHost,
   applyBrowserTabRegistryRow,
+  browserTabRegistryReconcileRequested,
   browserTabRegistryReportRequested,
   closeTab,
   destroyTabsByType,
@@ -719,6 +720,25 @@ function* reconcileOnSettle(action: ReturnType<typeof setRestoreStatus>): SagaGe
   yield* call(reconcileWorkspace, wsId);
 }
 
+/**
+ * A browser request reached this window for the workspace. Closing a
+ * workspace's tab tears its registry state down (`unmounted`) but keeps the
+ * layout settled, and a settled layout never settles again, so nothing
+ * would reload its rows: a tab an agent opens there while the workspace is
+ * background-hosted would never be reported. Reload only in exactly that
+ * state; a loading or applied workspace, or an unsettled layout (its settle
+ * reconciles), is left alone.
+ */
+function* onReconcileRequested(
+  action: ReturnType<typeof browserTabRegistryReconcileRequested>,
+): SagaGenerator<void> {
+  const [wsId] = action.payload;
+  const layout = (yield* selectPanelLayoutWorkspaces.effect())[wsId];
+  if (!layout || !isSettled(layout)) return;
+  if ((yield* selectBrowserTabRegistryWorkspace.effect(wsId)).phase !== 'unmounted') return;
+  yield* call(reconcileWorkspace, wsId);
+}
+
 function* reconcileWorkspace(wsId: string): SagaGenerator<void> {
   if ((yield* selectDaemonHealth.effect()) === 'down') return;
   const { generation } = yield* selectBrowserTabRegistryWorkspace.effect(wsId);
@@ -1227,6 +1247,7 @@ export function* browserTabRegistrySaga(): SagaGenerator<void> {
   yield* takeEvery(browserTabRegistryReportRequested, onReportRequested, reports);
   yield* takeSingleFlightInContext(reports, (wsId) => wsId, reportHostedTabs);
   yield* takeEvery(setRestoreStatus, reconcileOnSettle);
+  yield* takeEvery(browserTabRegistryReconcileRequested, onReconcileRequested);
   yield* takeEvery(browserTabUpserted, onRegistryRow);
   yield* takeEvery(browserTabClosed, onRegistryClose);
   yield* takeEvery(connectionStatusChanged, onConnectionStatus);

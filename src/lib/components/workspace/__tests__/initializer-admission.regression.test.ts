@@ -255,6 +255,7 @@ import {
   principalReceived,
 } from '$store/renderer/slices/principal/principal-slice';
 import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import { hostExecutionConnectionChanged } from '$store/renderer/slices/host-execution/host-execution-slice';
 import {
   setLabsGitLabEnabled,
   setLabsMultiplayerEnabled,
@@ -276,7 +277,11 @@ import {
   branchQueryChanged,
   branchSelected,
 } from '$store/renderer/slices/repository-checkout/repository-checkout-slice';
-import { hydrateWorkspaceInitializer } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+import {
+  hydrateWorkspaceInitializer,
+  workspaceInitializerDraftOwnerReleased,
+  workspaceInitializerDraftRestoreRequested,
+} from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 let dispose: () => void;
 let stopGit: () => void;
 let stopInitialization: () => void;
@@ -326,15 +331,43 @@ afterEach(() => {
   sessionStorage.clear();
   localStorage.clear();
 });
-async function submit() {
+async function submit(waitForValidation = true) {
   sessionStorage.setItem('workspace-prefill', JSON.stringify({ prompt: 'Build project' }));
   render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
   const b = document.querySelector<HTMLButtonElement>('[data-dialog-primary-action]')!;
   await waitFor(() => expect(b.disabled).toBe(false));
   await fireEvent.click(b);
-  await waitFor(() => expect(mocks.validate).toHaveBeenCalledTimes(1));
+  if (waitForValidation) await waitFor(() => expect(mocks.validate).toHaveBeenCalledTimes(1));
 }
 describe('actual initializer submission admission', () => {
+  it('re-admits its draft owner after a reconnect replaces the principal context', async () => {
+    const dispatch = vi.spyOn(store, 'dispatch');
+    render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    const restores = () =>
+      dispatch.mock.calls
+        .map(([action]) => action)
+        .filter(
+          (action): action is ReturnType<typeof workspaceInitializerDraftRestoreRequested> =>
+            action.type === workspaceInitializerDraftRestoreRequested.type,
+        );
+
+    await waitFor(() => expect(restores()).toHaveLength(1));
+    const first = restores()[0];
+    store.dispatch(backendReconnected());
+    admitLegacyPrincipal();
+
+    await waitFor(() => expect(restores()).toHaveLength(2));
+    const second = restores()[1];
+    expect(dispatch).toHaveBeenCalledWith(
+      workspaceInitializerDraftOwnerReleased(first.payload[0], first.payload[1]),
+    );
+    expect(second.payload[0]).toBe(first.payload[0]);
+    expect(second.payload[1]).not.toBe(first.payload[1]);
+    expect(second.payload[3]).not.toBe(first.payload[3]);
+    expect(first.payload[5]).toBeTruthy();
+    expect(second.payload[5]).toBe(first.payload[5]);
+  });
+
   it('keeps ordinary owner submission functional with Multiplayer off', async () => {
     await submit();
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
@@ -413,7 +446,7 @@ it('drops an original submission held by setup-probe settlement after readmissio
       release = r;
     }),
   );
-  await submit();
+  await submit(false);
   await waitFor(() => expect(mocks.settled).toHaveBeenCalledOnce());
   store.dispatch(backendReconnected());
   admitLegacyPrincipal();
@@ -463,6 +496,26 @@ it('releases an in-flight create when the initializer unmounts', async () => {
   await new Promise((resolve) => setTimeout(resolve, 20));
 
   expect(mocks.placement).not.toHaveBeenCalled();
+  expect(mocks.goto).not.toHaveBeenCalled();
+});
+
+it('releases the creation lock when a connection reset cancels the in-flight outcome', async () => {
+  const created = Promise.withResolvers<unknown>();
+  mocks.create.mockReturnValue(created.promise);
+  sessionStorage.setItem('workspace-prefill', JSON.stringify({ prompt: 'Build project' }));
+  const view = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+  const button = view.container.querySelector<HTMLButtonElement>('[data-dialog-primary-action]')!;
+  await waitFor(() => expect(button.disabled).toBe(false));
+  await fireEvent.click(button);
+  await waitFor(() => expect(mocks.create).toHaveBeenCalledOnce());
+
+  store.dispatch(hostExecutionConnectionChanged('replacement-connection'));
+  admitLegacyPrincipal();
+  created.resolve({ ok: false, error: 'connection replaced' });
+
+  await waitFor(() =>
+    expect(screen.getByTestId('mock-rich-textarea').getAttribute('data-disabled')).toBe('false'),
+  );
   expect(mocks.goto).not.toHaveBeenCalled();
 });
 

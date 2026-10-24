@@ -3,6 +3,7 @@
  */
 
 interface ElectronAPI {
+  reviewMonitoring?: number;
   invoke: (channel: string, ...args: any[]) => Promise<any>;
   send: (channel: string, ...args: any[]) => void;
   // Returns a unique listener ID for use with offById()

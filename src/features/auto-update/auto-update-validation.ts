@@ -13,3 +13,10 @@ import { UPDATE_CHANNELS } from './types';
 export const SetChannelRequestSchema = z.object({
   channel: z.enum(UPDATE_CHANNELS),
 });
+
+/**
+ * Schema for SET_SHARE_STATISTICS request
+ */
+export const SetShareStatisticsRequestSchema = z.object({
+  enabled: z.boolean(),
+});

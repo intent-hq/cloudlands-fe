@@ -427,6 +427,27 @@ describe('lifecycleReadSaga', () => {
   });
 
   describe('membership summary refresh (workspace:updated roster / invite deltas)', () => {
+    it.each(['manager', 'collaborator'])(
+      'refreshes current role %s without granting full management',
+      async (myRole) => {
+        mocks.workspaces.get.mockResolvedValue({ id: WS, myRole, canManage: false });
+        const current = state();
+        current.principal.snapshot!.capabilities.workspaceGuestRoles = true;
+        const run = start(current);
+        run.channel.put(refreshWorkspaceMembershipRequested(WS));
+        await settle();
+        expect(run.actions).toContainEqual(
+          expect.objectContaining({
+            type: 'workspace/bulkUpdateWorkspaceEntities',
+            payload: [[expect.objectContaining({ payload: [WS, { myRole, canManage: false }] })]],
+          }),
+        );
+        expect(run.actions.some((action) => action.type === refreshScripts.type)).toBe(
+          myRole === 'manager',
+        );
+        await stop(run.task);
+      },
+    );
     it('re-reads workspace.get for the one workspace and merges only the membership counts', async () => {
       mocks.workspaces.get.mockResolvedValue({
         id: WS,

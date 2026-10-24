@@ -385,6 +385,16 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
     }
   });
 
+  it('finds every monitor session invoke on the real captured preload transport', () => {
+    for (const key of ['CAPTURE', 'REQUEST', 'RELEASE'] as const) {
+      const channel = IPC_CHANNELS.BACKEND.PR_MONITOR[key];
+      expect(invoked.get(channel)).toEqual([
+        expect.stringMatching(/^lib\/client\/live\/pr-monitor-transport\.ts:\d+$/),
+      ]);
+      expect(LIVE_TRANSPORT_CHANNELS.has(channel)).toBe(true);
+    }
+  });
+
   it.each([
     'channels.MISSING',
     'IPC_CHANNELS.BACKEND.REPOSITORY_RESOURCE.MISSING',
@@ -572,6 +582,12 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   'backend:repository-checkout:capture',
   'backend:repository-checkout:request',
   'backend:repository-checkout:release',
+  // Monitor sessions capture the real preload document and original host connection.
+  // Without preload they reject; mock bridging would bypass origin/retirement checks.
+  // pr-monitor-lifecycle.test.ts exercises the real service/IPC/socket path.
+  'backend:pr-monitor:capture',
+  'backend:pr-monitor:request',
+  'backend:pr-monitor:release',
   // Console-owner status query (#1928): main-process-owned state (which
   // window is the last-focused non-HUD window) invoked directly on the real
   // preload bridge (console-owner-status.ts guards on its presence; without

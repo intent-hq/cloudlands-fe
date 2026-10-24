@@ -129,15 +129,14 @@ export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
         };
       },
     },
-    // Settings → Labs → Provider profiles off: saved profiles exist, but no
-    // profile management is offered.
-    'profiles-labs-off': {
+    // Backup profiles: reorder with drag or arrow keys on the handle; backups carry a badge.
+    'profiles-backup': {
       props: {},
       setup: () => {
         const restoreProviders = setupProviderSelector();
         const restoreProfiles = setupProviderProfilesPreview({
           appOwned: true,
-          labsEnabled: false,
+          withBackups: true,
         });
         return () => {
           restoreProfiles();
@@ -151,6 +150,24 @@ export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
         const restoreProviders = setupProviderSelector();
         const restoreProfiles = setupProviderProfilesPreview({ appOwned: false });
         return () => {
+          restoreProfiles();
+          restoreProviders();
+        };
+      },
+    },
+    // Each named profile has its own Fast mode / service tier (off unless set).
+    'profiles-fast-mode': {
+      props: {},
+      setup: () => {
+        const restoreProviders = setupProviderSelector();
+        const restoreProfiles = setupProviderProfilesPreview({ appOwned: true });
+        const restoreFastMode = setupProviderFastModePreview(true, false, undefined, {
+          codex: true,
+          'claude-code': false,
+          'claude-code@pproxy0000001': true,
+        });
+        return () => {
+          restoreFastMode();
           restoreProfiles();
           restoreProviders();
         };

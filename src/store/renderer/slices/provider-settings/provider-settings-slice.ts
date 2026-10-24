@@ -2,6 +2,7 @@ import { hostExecutionConnectionChanged } from '../host-execution/host-execution
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { resolveProviderEnabled } from '$shared/provider-catalog';
+import { isFastModeSettingKey } from '$shared/provider-profiles';
 import { providerCatalogLoaded } from '../provider-catalog/provider-catalog-slice';
 import {
   addItem,
@@ -14,10 +15,12 @@ import {
   initialProfilesState,
   profileHandlers,
   stageProfileEnv,
+  type DefaultMutationResult,
   type ProfileMutationResult,
 } from './provider-profiles-state';
 import type {
   EnvEntryWrite,
+  ProviderDefaultConfig,
   ProviderProfile,
   ProviderProfileFailure,
 } from '$shared/provider-profiles';
@@ -362,7 +365,7 @@ providerSettingsReducer.with(
 );
 providerSettingsReducer.with(setProviderFastMode, (state, { payload: [providerId, enabled] }) => {
   const fastMode = state.fastMode;
-  if (!fastMode.supported || !['claude-code', 'codex'].includes(providerId)) return state;
+  if (!fastMode.supported || !isFastModeSettingKey(providerId)) return state;
   const editId = fastMode.nextEditId + 1;
   return {
     ...state,
@@ -388,32 +391,77 @@ providerSettingsReducer.with(fastModeWriteSettled, (state, { payload: [providerI
 /** Read (or re-read) the profile list; ignored when the catalog advertises no profile support. */
 export const providerProfilesRequested = createAction('providerProfiles/requested');
 export const providerProfilesLoaded =
-  createAction<[profiles: ProviderProfile[], revision: number]>('providerProfiles/loaded');
+  createAction<[profiles: ProviderProfile[], revision: number, defaults?: ProviderDefaultConfig[]]>(
+    'providerProfiles/loaded',
+  );
 export const providerProfilesLoadFailed = createAction('providerProfiles/loadFailed');
 /** A `providers:profiles-changed` event (§5.54) — payload carries no env keys or values. */
 export const providerProfilesChanged = createAction<[revision: number]>('providerProfiles/changed');
 
 export const providerProfileCreateRequested = createAction(
   'providerProfiles/createRequested',
-  (input: { requestId: string; baseProviderId: string; name: string; env?: EnvEntryWrite[] }) => ({
+  (input: {
+    requestId: string;
+    baseProviderId: string;
+    name: string;
+    env?: EnvEntryWrite[];
+    backup?: boolean;
+  }) => ({
+    requestId: input.requestId,
+    baseProviderId: input.baseProviderId,
+    name: input.name,
+    envRef: stageProfileEnv(input.env),
+    ...(input.backup !== undefined ? { backup: input.backup } : {}),
+  }),
+);
+export const providerProfileUpdateRequested = createAction(
+  'providerProfiles/updateRequested',
+  (input: {
+    requestId: string;
+    profileId: string;
+    name?: string;
+    env?: EnvEntryWrite[];
+    backup?: boolean;
+  }) => ({
+    requestId: input.requestId,
+    profileId: input.profileId,
+    name: input.name,
+    envRef: stageProfileEnv(input.env),
+    ...(input.backup !== undefined ? { backup: input.backup } : {}),
+  }),
+);
+/**
+ * Save the Default configuration's name and/or env (`providers.profiles.updateDefault`).
+ * A blank name restores "Default"; omitted fields keep the saved value.
+ */
+export const providerDefaultUpdateRequested = createAction(
+  'providerProfiles/defaultUpdateRequested',
+  (input: { requestId: string; baseProviderId: string; name?: string; env?: EnvEntryWrite[] }) => ({
     requestId: input.requestId,
     baseProviderId: input.baseProviderId,
     name: input.name,
     envRef: stageProfileEnv(input.env),
   }),
 );
-export const providerProfileUpdateRequested = createAction(
-  'providerProfiles/updateRequested',
-  (input: { requestId: string; profileId: string; name?: string; env?: EnvEntryWrite[] }) => ({
-    requestId: input.requestId,
-    profileId: input.profileId,
-    name: input.name,
-    envRef: stageProfileEnv(input.env),
-  }),
-);
+export const providerDefaultUpdateSucceeded = createAction<
+  [requestId: string, result: DefaultMutationResult]
+>('providerProfiles/defaultUpdateSucceeded');
+
 export const providerProfileDeleteRequested = createAction<
   [payload: { requestId: string; profileId: string }]
 >('providerProfiles/deleteRequested');
+
+/**
+ * Save a new order for one base provider's profiles (`providers.profiles.reorder`).
+ * Applied optimistically; a rejection restores the previous order. Only sent
+ * when the daemon reports `backup` on profiles.
+ */
+export const providerProfileReorderRequested = createAction<
+  [payload: { requestId: string; baseProviderId: string; profileIds: string[] }]
+>('providerProfiles/reorderRequested');
+export const providerProfileReorderSucceeded = createAction<
+  [requestId: string, profiles: ProviderProfile[], revision: number]
+>('providerProfiles/reorderSucceeded');
 
 export const providerProfileMutationSucceeded = createAction<
   [requestId: string, result: ProfileMutationResult]
@@ -466,8 +514,20 @@ providerSettingsReducer.with(providerProfileCreateRequested, (state, { payload }
 providerSettingsReducer.with(providerProfileUpdateRequested, (state, { payload }) =>
   withProfiles(state, profileHandlers.update(state.profiles, [payload])),
 );
+providerSettingsReducer.with(providerDefaultUpdateRequested, (state, { payload }) =>
+  withProfiles(state, profileHandlers.updateDefault(state.profiles, [payload])),
+);
+providerSettingsReducer.with(providerDefaultUpdateSucceeded, (state, { payload }) =>
+  withProfiles(state, profileHandlers.defaultSucceeded(state.profiles, payload)),
+);
 providerSettingsReducer.with(providerProfileDeleteRequested, (state, { payload }) =>
   withProfiles(state, profileHandlers.delete(state.profiles, payload)),
+);
+providerSettingsReducer.with(providerProfileReorderRequested, (state, { payload }) =>
+  withProfiles(state, profileHandlers.reorder(state.profiles, payload)),
+);
+providerSettingsReducer.with(providerProfileReorderSucceeded, (state, { payload }) =>
+  withProfiles(state, profileHandlers.reorderSucceeded(state.profiles, payload)),
 );
 providerSettingsReducer.with(providerProfileMutationSucceeded, (state, { payload }) =>
   withProfiles(state, profileHandlers.succeeded(state.profiles, payload)),

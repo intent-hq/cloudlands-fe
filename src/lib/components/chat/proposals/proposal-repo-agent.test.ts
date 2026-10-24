@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  hasAgentSetupFields,
   proposalAgentSetup,
   proposalRepoKeys,
   resolveProposalRepoAgentDefault,
@@ -104,5 +105,15 @@ describe('proposalAgentSetup', () => {
         selectedReasoningEffort: '',
       }),
     ).toEqual({ provider: 'codex', model: 'gpt-fixture', reasoningEffort: '' });
+  });
+});
+
+describe('hasAgentSetupFields', () => {
+  it('needs a provider, a model, or a non-empty effort', () => {
+    expect(hasAgentSetupFields({ provider: 'claude-code' })).toBe(true);
+    expect(hasAgentSetupFields({ model: 'claude-opus-4-5' })).toBe(true);
+    expect(hasAgentSetupFields({ reasoningEffort: 'low' })).toBe(true);
+    expect(hasAgentSetupFields({})).toBe(false);
+    expect(hasAgentSetupFields({ reasoningEffort: '' })).toBe(false);
   });
 });

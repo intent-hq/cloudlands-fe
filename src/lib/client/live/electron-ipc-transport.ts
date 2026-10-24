@@ -1,3 +1,6 @@
+import { supportsReviewMonitoring, REVIEW_MONITOR_HISTORY_METHODS } from '$shared/types/pr-monitor';
+import { createPrMonitorTransport } from './pr-monitor-transport';
+import type { PrincipalDiscovery } from '$shared/types/principal';
 import {
   NativeReviewInputSchema,
   NativeReviewPreparedViewSchema,
@@ -175,7 +178,9 @@ function createChannelFanout<TPayload>(channel: string, label: string) {
  * every call (rather than captured at construction) so availability tracks
  * the live `window.electronAPI` state, matching the legacy module behavior.
  */
-export function createElectronIpcBackendTransport(): BackendTransport {
+export function createElectronIpcBackendTransport(
+  recipient: { reviewMonitoring?: number } = {},
+): BackendTransport {
   // Every `backend:*` broadcast channel is consumed through ONE shared
   // preload-bridge listener that fans out to its subscribers, so the IPC
   // listener count per channel is 0 or 1 no matter how many modules subscribe
@@ -190,8 +195,33 @@ export function createElectronIpcBackendTransport(): BackendTransport {
     'onNotification',
   );
 
+  const monitorReady = createChannelFanout<unknown>(
+    BACKEND.PR_MONITOR.READY,
+    'onMonitorReconnected',
+  );
   return {
+    onMonitorReconnected(handler) {
+      const api = electronAPI();
+      if (!api) return () => {};
+      const offReady = monitorReady.subscribe(api, handler);
+      const offReconnect = reconnectedFanout.subscribe(api, (status) => {
+        if (status?.status === 'connected' && status.reconnected) handler();
+      });
+      return () => {
+        offReady();
+        offReconnect();
+      };
+    },
+    capturePrMonitorSession: createPrMonitorTransport(electronAPI, recipient),
     captureRepositorySelection,
+    async readPrincipal() {
+      const api = electronAPI();
+      if (!api) throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend unavailable' });
+      const response = await api.invoke(BACKEND.READ_PRINCIPAL);
+      if (electronAPI() !== api)
+        throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend bridge changed' });
+      return unwrap<PrincipalDiscovery>(response);
+    },
     async observeNodeCapabilities() {
       const api = electronAPI();
       if (!api) throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend unavailable' });
@@ -332,12 +362,23 @@ export function createElectronIpcBackendTransport(): BackendTransport {
         params?: unknown;
         timeoutMs?: number;
         localMachine?: boolean;
+        reviewMonitoring?: number;
       } = {
         method,
         params: toPlainJson(params),
       };
       if (options?.timeoutMs !== undefined) invokePayload.timeoutMs = options.timeoutMs;
       if (options?.localMachine) invokePayload.localMachine = true;
+      if (
+        !options?.localMachine &&
+        REVIEW_MONITOR_HISTORY_METHODS.has(method) &&
+        supportsReviewMonitoring(recipient.reviewMonitoring) &&
+        supportsReviewMonitoring(api.reviewMonitoring)
+      )
+        invokePayload.reviewMonitoring = Math.min(
+          recipient.reviewMonitoring!,
+          api.reviewMonitoring!,
+        );
       const response = (await api.invoke(BACKEND.REQUEST, invokePayload)) as BackendResult<T>;
       return unwrap(response);
     },
@@ -388,10 +429,27 @@ export function createElectronIpcBackendTransport(): BackendTransport {
     onReconnected(handler: () => void): () => void {
       const api = electronAPI();
       if (!api) return () => {};
-      return reconnectedFanout.subscribe(api, (payload) => {
+      const offAttachment =
+        supportsReviewMonitoring(recipient.reviewMonitoring) &&
+        supportsReviewMonitoring(api.reviewMonitoring)
+          ? monitorReady.subscribe(api, (payload) => {
+              if (
+                payload &&
+                typeof payload === 'object' &&
+                'attachment' in payload &&
+                payload.attachment === true
+              )
+                handler();
+            })
+          : () => {};
+      const offReconnect = reconnectedFanout.subscribe(api, (payload) => {
         if (payload?.status !== 'connected' || payload.reconnected !== true) return;
         handler();
       });
+      return () => {
+        offAttachment();
+        offReconnect();
+      };
     },
   };
 }

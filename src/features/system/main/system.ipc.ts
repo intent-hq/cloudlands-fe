@@ -12,12 +12,14 @@ import {
   collectOpenWorkspaceIds,
   collectWindowIdsForWorkspace,
   entryMatchesScope,
+  pickBackgroundHostWindow,
   type ActiveWorkspaceEntry,
   type OpenWorkspaceTabsEntry,
   type WindowHostChecker,
   type WindowHostScope,
 } from './window-workspace-tracking';
 import { getBackendIdForWindow } from '../../../main/window-backend';
+import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import {
   clearWindowBrowserFocusOwner,
   hasWindowBrowserFocusOwner,
@@ -30,6 +32,7 @@ import {
   AppPathSchema,
   AppSetBadgeSchema,
   AppSetLanguagePreferenceSchema,
+  BrowserBackgroundHostedWorkspacesSchema,
   DeepLinkHandleSchema,
   DialogMessageSchema,
   DialogOpenSchema,
@@ -196,6 +199,43 @@ const windowWorkspaceIds = new Map<number, ActiveWorkspaceEntry>();
 const lastKnownWindowWorkspaceIds = new Map<number, string>();
 /** Track which workspace tabs are open per window, with the window's host. */
 const windowOpenWorkspaceTabs = new Map<number, OpenWorkspaceTabsEntry>();
+/**
+ * Workspaces each window hosts in the background for agent browser ops
+ * (see {@link adoptWorkspaceForBackgroundHosting}): no tab, never displayed,
+ * but routed to like an open workspace. `confirmed` is what the window last
+ * reported hosting; `pending` holds adoptions sent but not yet reported,
+ * each with an expiry so a request the renderer never received (it was
+ * booting, or reloading) cannot pin the workspace to a window that does not
+ * host it — the next browser op adopts again. Dropped when the window closes
+ * or its renderer reloads.
+ */
+interface BackgroundAdoptions {
+  backendId: string;
+  confirmed: Set<string>;
+  pending: Map<string, number>;
+}
+const windowBackgroundAdoptions = new Map<number, BackgroundAdoptions>();
+
+/** How long an adoption may stay unconfirmed by the window before it lapses. */
+const BACKGROUND_ADOPTION_CONFIRM_MS = 10_000;
+
+/** The background-hosted workspaces in effect per window (lapsed pending ones dropped). */
+function windowBackgroundWorkspaces(): Map<number, OpenWorkspaceTabsEntry> {
+  const now = Date.now();
+  const effective = new Map<number, OpenWorkspaceTabsEntry>();
+  for (const [windowId, adoptions] of windowBackgroundAdoptions) {
+    for (const [workspaceId, expiresAt] of adoptions.pending) {
+      if (now >= expiresAt) adoptions.pending.delete(workspaceId);
+    }
+    const workspaceIds = [...new Set([...adoptions.confirmed, ...adoptions.pending.keys()])];
+    if (workspaceIds.length === 0) {
+      windowBackgroundAdoptions.delete(windowId);
+      continue;
+    }
+    effective.set(windowId, { workspaceIds, backendId: adoptions.backendId });
+  }
+  return effective;
+}
 
 /** Liveness + current host of a tracked window, read from Electron. */
 const liveWindowHostChecker: WindowHostChecker = {
@@ -272,6 +312,7 @@ export function getAllOpenWorkspaceIds(): string[] {
     windowWorkspaceIds,
     windowOpenWorkspaceTabs,
     liveWindowHostChecker,
+    windowBackgroundWorkspaces(),
   );
 }
 
@@ -316,7 +357,84 @@ export function getWindowIdsForWorkspace(workspaceId: string, scope: WindowHostS
     windowWorkspaceIds,
     windowOpenWorkspaceTabs,
     liveWindowHostChecker,
+    windowBackgroundWorkspaces(),
   );
+}
+
+/**
+ * Make sure some window on `backendId` (the host that owns the workspace)
+ * hosts `workspaceId`, so agent browser ops can reach its layout and mount
+ * its tabs offscreen even when no window has the workspace open — its tab
+ * was closed, or it was not reopened since a restart. Nothing visible
+ * changes: the chosen window gets no workspace tab, no navigation and no
+ * focus; it only hydrates the workspace's saved layout in the background.
+ *
+ * When a window on that host already has the workspace open (or hosts it
+ * in the background) this only reports it. Otherwise the focused window is
+ * preferred, then any app window that runs the workspace shell (it reports
+ * its tab strip). The adoption is recorded as pending before the request is
+ * sent, so messages sent right after it route to that window; the window
+ * confirms it with its next background-hosting report, and an unconfirmed
+ * adoption lapses after {@link BACKGROUND_ADOPTION_CONFIRM_MS}.
+ *
+ * @returns the hosting window id (undefined when no window is connected to
+ *          `backendId`, so nothing can host the workspace) and whether this
+ *          call adopted it
+ */
+export function adoptWorkspaceForBackgroundHosting(
+  workspaceId: string,
+  backendId: string,
+): { windowId: number | undefined; adopted: boolean } {
+  const hosting = getWindowIdsForWorkspace(workspaceId, backendId);
+  if (hosting.length > 0) return { windowId: hosting[0], adopted: false };
+
+  const focusedId = BrowserWindow.getFocusedWindow()?.id;
+  const candidates = new Set<number>(
+    focusedId !== undefined && windowOpenWorkspaceTabs.has(focusedId) ? [focusedId] : [],
+  );
+  for (const windowId of windowOpenWorkspaceTabs.keys()) candidates.add(windowId);
+  const windowId = pickBackgroundHostWindow(backendId, candidates, liveWindowHostChecker);
+  if (windowId === undefined) return { windowId: undefined, adopted: false };
+  const window = BrowserWindow.fromId(windowId);
+  if (!window || window.isDestroyed() || window.webContents.isDestroyed()) {
+    return { windowId: undefined, adopted: false };
+  }
+
+  const existing = windowBackgroundAdoptions.get(windowId);
+  const adoptions =
+    existing && existing.backendId === backendId
+      ? existing
+      : { backendId, confirmed: new Set<string>(), pending: new Map<string, number>() };
+  adoptions.pending.set(workspaceId, Date.now() + BACKGROUND_ADOPTION_CONFIRM_MS);
+  windowBackgroundAdoptions.set(windowId, adoptions);
+  window.webContents.send(IPC_CHANNELS.BROWSER.HOST_WORKSPACE, { workspaceId, backendId });
+  logger.info('Background-hosting workspace for browser ops', { workspaceId, windowId });
+  app.emit('window-workspace-state-changed');
+  return { windowId, adopted: true };
+}
+
+/**
+ * Apply a window's report of the workspaces it hosts in the background:
+ * reported ones become confirmed, confirmed ones it no longer reports (the
+ * workspace was deleted) are dropped, and pending adoptions it has not
+ * reported yet keep waiting for their own confirmation or expiry (the
+ * report may predate the request).
+ */
+function applyBackgroundHostingReport(window: BrowserWindow, workspaceIds: string[]): void {
+  const backendId = getBackendIdForWindow(window);
+  const existing = windowBackgroundAdoptions.get(window.id);
+  const pending = existing && existing.backendId === backendId ? existing.pending : new Map();
+  for (const workspaceId of workspaceIds) pending.delete(workspaceId);
+  if (workspaceIds.length === 0 && pending.size === 0) {
+    if (windowBackgroundAdoptions.delete(window.id)) app.emit('window-workspace-state-changed');
+    return;
+  }
+  windowBackgroundAdoptions.set(window.id, {
+    backendId,
+    confirmed: new Set(workspaceIds),
+    pending,
+  });
+  app.emit('window-workspace-state-changed');
 }
 
 /**
@@ -426,11 +544,21 @@ app.on('browser-window-created', (_event, window) => {
     lastKnownWindowWorkspaceIds.delete(window.id);
     clearWindowBrowserFocusOwner(window.id);
     windowOpenWorkspaceTabs.delete(window.id);
+    windowBackgroundAdoptions.delete(window.id);
     // A close changes the set of open workspaces: notify listeners (menu
     // rebuild, cache trim, notification-service reconciliation) so services
     // for workspaces no longer open anywhere are torn down.
     app.emit('window-workspace-state-changed');
   });
+  // A full renderer load (reload, crash recovery) starts from empty state,
+  // so the window no longer hosts any background workspace; the next agent
+  // browser op re-adopts on demand.
+  const windowId = window.id;
+  const forgetBackgroundWorkspaces = () => {
+    if (windowBackgroundAdoptions.delete(windowId)) app.emit('window-workspace-state-changed');
+  };
+  window.webContents.on('did-navigate', forgetBackgroundWorkspaces);
+  window.webContents.on('render-process-gone', forgetBackgroundWorkspaces);
   // Keep each window's renderer in sync with its native full-screen state,
   // including OS-gesture transitions (green traffic-light, Cmd+Ctrl+F).
   window.on('enter-full-screen', () => {
@@ -976,6 +1104,21 @@ export function setupSystemIPC() {
         return { success: true };
       },
       WINDOW_CHANNELS.SET_OPEN_WORKSPACE_TABS,
+    ),
+  );
+
+  // Which workspaces this window hosts in the background for agent browser
+  // ops (confirms adoptions; drops deleted workspaces)
+  ipcMain.handle(
+    IPC_CHANNELS.BROWSER.BACKGROUND_HOSTED_WORKSPACES,
+    createSafeValidatedHandler(
+      BrowserBackgroundHostedWorkspacesSchema,
+      async (event, validated) => {
+        const window = BrowserWindow.fromWebContents(event.sender);
+        if (window) applyBackgroundHostingReport(window, validated.workspaceIds);
+        return { success: true };
+      },
+      IPC_CHANNELS.BROWSER.BACKGROUND_HOSTED_WORKSPACES,
     ),
   );
 

@@ -4,6 +4,7 @@
   import WorkspaceShellList from '../../../workspace/WorkspaceShellList.svelte';
   import QuakeTerminalOverlay from '../../QuakeTerminalOverlay.svelte';
   import { makeScriptsFixture } from '../../../../../test/fixtures/scripts';
+  import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
   import { selectWorkspaceTerminalState } from '$store/renderer/slices/terminals/terminals-selectors';
@@ -19,12 +20,15 @@
   let { retireSelected = false }: { retireSelected?: boolean } = $props();
   const workspaceId = 'synthetic-history' as WorkspaceId;
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
+  admitLegacyPrincipal();
   const scripts = makeScriptsFixture();
   const terminalState = selectWorkspaceTerminalState(workspaceId);
   store.dispatch(
     setWorkspaceEntity({
       id: workspaceId,
       title: 'Script controls',
+      myRole: 'owner',
+      canManage: true,
       path: '/tmp/synthetic-scripts',
       status: 'active',
       createdAt: scripts[0].createdAt,

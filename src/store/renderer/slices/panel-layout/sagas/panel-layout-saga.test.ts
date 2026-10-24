@@ -1,11 +1,47 @@
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
-import { runSaga, stdChannel } from 'redux-saga';
+import { runSaga as runReduxSaga, stdChannel, type Saga, type RunSagaOptions } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createCollection,
   getItem,
   getItems,
 } from '@themislib/themis/utils/collections/collection-utils';
+
+// Provide the same Redux subscription context that selector watchers receive in the app.
+// Tests publish already-reduced state through their existing action channel.
+function runSaga<Action, State extends object, S extends Saga>(
+  options: RunSagaOptions<Action, State>,
+  saga: S,
+  ...args: Parameters<S>
+) {
+  const listeners = new Set<() => void>();
+  const input = options.channel;
+  if (input) {
+    const put = input.put.bind(input);
+    input.put = (action) => {
+      put(action);
+      for (const listener of listeners) listener();
+    };
+  }
+  return runReduxSaga(
+    {
+      ...options,
+      context: {
+        ...options.context,
+        reduxStore: {
+          // Legacy harnesses replace slices in place; present a fresh Redux root.
+          getState: () => ({ ...options.getState?.() }),
+          subscribe(listener: () => void) {
+            listeners.add(listener);
+            return () => listeners.delete(listener);
+          },
+        },
+      },
+    },
+    saga,
+    ...args,
+  );
+}
 
 const mocks = vi.hoisted(() => ({
   clearAdapter: vi.fn(),
@@ -71,6 +107,7 @@ import {
 import { selectPrincipalConnectionContext } from '../../principal/principal-selectors';
 import { backendReconnected } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+import { scriptsReducer, setScriptsData } from '../../scripts/scripts-slice';
 import type { AgentSession, ContextLink, Note, Workspace } from '$shared/types';
 import type { BrowserTabListing } from '$shared/types/browser-clients';
 import { ContentType, NoteVisibility } from '$shared/types';
@@ -87,6 +124,9 @@ import { connectionsListReceived } from '../../connections/connections-slice';
 import { initialState as guestSessionsInitialState } from '../../guest-sessions/guest-sessions-slice';
 import {
   replaceWorkspaceList,
+  updateWorkspaceEntity,
+  bulkUpdateWorkspaceEntities,
+  workspaceReducer,
   setWorkspaceEntity,
   setWorkspaceHasLoaded,
 } from '../../workspace/workspace-slice';
@@ -1565,6 +1605,60 @@ describe('panelLayoutSaga', () => {
       expect(ownerOnlyTabs(reduceDispatched(dispatch).byWorkspaceId[WS_1])).toEqual([]);
       await cancelSaga(task);
     });
+
+    it.each(['single', 'bulk'] as const)(
+      'removes Manager saved output panels after a %s workspace downgrade',
+      async (kind) => {
+        const savedTab = { ...terminalTab, id: 'saved-output', scriptId: 'saved' };
+        mocks.getJSON.mockReturnValue({
+          ...mixedLayout,
+          panels: {
+            ...mixedLayout.panels,
+            'panel-1': { ...mixedLayout.panels['panel-1'], tabs: [tab, terminalTab, savedTab] },
+          },
+        });
+        const state = storeState(WS_1);
+        state.workspace = {
+          ...workspaceReducer(undefined, { type: 'init' }),
+          ...state.workspace,
+          workspaces: createCollection('id', [
+            { id: WS_1, myRole: 'manager', canManage: false } as never,
+          ]),
+        };
+        state.principal = withLegacyPrincipal(state, 'guest').principal;
+        state.principal.snapshot!.capabilities.workspaceGuestRoles = true;
+        state.userPreferences = { ...state.userPreferences, labsMultiplayerEnabled: true };
+        state.scripts = scriptsReducer(
+          undefined,
+          setScriptsData(WS_1, [
+            {
+              id: 'saved',
+              workspaceId: WS_1,
+              name: 'Check',
+              command: 'pnpm check',
+              mode: 'command',
+              purpose: 'saved',
+              source: 'user',
+              createdAt: '2026-10-21',
+              runtime: { status: 'idle', restartCount: 0 },
+            },
+          ]),
+        );
+        const { dispatch, task, channel } = startSaga(state);
+        await settle();
+        expect(ownerOnlyTabs(reduceDispatched(dispatch).byWorkspaceId[WS_1])).toEqual([
+          savedTab.id,
+        ]);
+        const change = updateWorkspaceEntity(WS_1, { myRole: 'collaborator', canManage: false });
+        const action = kind === 'bulk' ? bulkUpdateWorkspaceEntities([change]) : change;
+        // The app batches single entity intents before they reach the reducer.
+        state.workspace = workspaceReducer(state.workspace, bulkUpdateWorkspaceEntities([change]));
+        channel.put(action);
+        await settle();
+        expect(ownerOnlyTabs(reduceDispatched(dispatch).byWorkspaceId[WS_1])).toEqual([]);
+        await cancelSaga(task);
+      },
+    );
 
     it('preserves member tabs with Multiplayer off, then removes them on membership revocation', async () => {
       mocks.getJSON.mockReturnValue(mixedLayout);

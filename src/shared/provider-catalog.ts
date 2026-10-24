@@ -68,6 +68,8 @@ const ProviderProfileSummarySchema = z
     providerRef: z.string().min(1),
     baseProviderId: z.string().min(1),
     name: z.string(),
+    /** Backup failover flag; absent on daemons without backup failover. */
+    backup: z.boolean().optional(),
   })
   .passthrough();
 
@@ -76,6 +78,8 @@ export const ProviderCatalogResponseSchema = z
     providers: z.array(ProviderCatalogEntrySchema),
     // Named profiles (§5.54): absent on older daemons and hosts without profiles.
     profiles: z.array(ProviderProfileSummarySchema).optional(),
+    // Renamed Default configurations by base provider id (§5.54); omitted when none is.
+    defaultNames: z.record(z.string(), z.string()).optional(),
   })
   .passthrough();
 

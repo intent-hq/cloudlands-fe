@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createWorkspaceFileVersion,
+  imageRetryUrl,
   intentFileImageUrlToWorkspaceFileUrl,
   intentFileMediaUrlToWorkspaceFile,
   parseIntentFileTarget,
@@ -468,5 +469,41 @@ describe('Assistant cross-workspace media (#7185)', () => {
 
     expect(parseIntentFileTarget('intent://local/other/file/a.png', CHIEF)).toBeNull();
     expect(rewriteIntentFileImageSrcs(html, CHIEF)).toBe(html);
+  });
+});
+
+describe('image retry URLs', () => {
+  it.each(['workspace-file://ws-1234/plot%20one.png', 'workspace-asset://ws-1234/plot.png'])(
+    'refreshes only the version of %s and preserves backend routing',
+    (source) => {
+      const retried = imageRetryUrl(`${source}?backend=remote-1&v=old`)!;
+      expect(retried).toMatch(
+        new RegExp(`^${source.replaceAll('.', '\\.')}\\?backend=remote-1&v=[A-Za-z0-9._-]+$`),
+      );
+      expect(retried).not.toContain('v=old');
+      expect(imageRetryUrl(retried)).not.toBe(retried);
+    },
+  );
+
+  it('preserves signed HTTP URLs exactly', () => {
+    const source = 'https://images.example/plot.png?signature=a%2Fb&v=signed#preview';
+    expect(imageRetryUrl(source)).toBe(source);
+  });
+
+  it.each([
+    'workspace-file://ws-1234/../secret.png',
+    'workspace-file://ws-1234/a%2Fb.png',
+    'workspace-file://ws-1234/plot.svg',
+    'workspace-file://ws-1234/plot.png?backend=one&backend=two',
+    'workspace-file://ws-1234/plot.png?v=one&v=two',
+    'workspace-file://ws-1234/plot.png?unknown=value',
+    'workspace-file://ws-1234/plot.png?&v=old',
+    'workspace-asset://ws-1234/../plot.png',
+    'workspace-asset://ws-1234/plot.png#fragment',
+    'intent://local/other/file/plot.png',
+    '/absolute/plot.png',
+    'data:image/png;base64,broken',
+  ])('does not turn an unsupported or unsafe source into a new load: %s', (source) => {
+    expect(imageRetryUrl(source)).toBeNull();
   });
 });

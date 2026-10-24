@@ -119,6 +119,19 @@ function stageBudget(
     : { timeoutMs: capMs, deadlineBound: false };
 }
 
+/** How long a tab-list request waits for the renderer's reply. */
+const LIST_TABS_TIMEOUT_MS = 500;
+
+/**
+ * Reply window for tab-list requests right after a window was asked to host
+ * the workspace in the background: the reply waits for a cold layout
+ * hydration (localStorage restore), which can exceed the usual window.
+ */
+const ADOPTED_LIST_TABS_TIMEOUT_MS = 5_000;
+
+/** How long an adoption keeps the longer reply window without any reply. */
+const ADOPTED_MARKER_TTL_MS = 30_000;
+
 interface TabInfo {
   tabId: string;
   webContentsId: number;
@@ -223,6 +236,14 @@ class EmbeddedBrowserCdpService {
   private listTabsRequestCounter = 0;
 
   /**
+   * Workspaces a window was just asked to host in the background (see
+   * {@link noteWorkspaceAdopted}), keyed to when the marker expires. Their
+   * first tab-list request waits {@link ADOPTED_LIST_TABS_TIMEOUT_MS} for
+   * the cold layout hydration instead of the usual short reply window.
+   */
+  private adoptedWorkspaceDeadlines = new Map<string, number>();
+
+  /**
    * Persistent tab ownership registry (monorepo#2857). Key is tabId. Main is
    * the atomic claim arbiter; the renderer persists `ownerAgentId` on the
    * panel-layout tab, and {@link hydrateOwnershipFromPanelTabs} re-seeds this
@@ -243,6 +264,16 @@ class EmbeddedBrowserCdpService {
 
   /** In-flight emulation command per tab (always settles; see applyViewportEmulation). */
   private pendingViewportEmulation = new Map<string, Promise<void>>();
+
+  /**
+   * Background-throttling holds taken for in-flight screenshots, keyed by
+   * webContents id: the throttling value to restore and how many captures
+   * still need the page drawing (see {@link holdCaptureDrawing}).
+   */
+  private captureDrawingHolds = new Map<
+    number,
+    { wc: Electron.WebContents; previous: boolean; count: number }
+  >();
 
   /** WebContents whose debugger 'detach' event is already observed. */
   private debuggerDetachListeners = new Set<number>();
@@ -292,6 +323,7 @@ class EmbeddedBrowserCdpService {
             const pending = this.pendingListTabsRequests.get(data.requestId);
             if (pending) {
               this.pendingListTabsRequests.delete(data.requestId);
+              this.adoptedWorkspaceDeadlines.delete(pending.workspaceId ?? '');
               pending.reject(new Error(data.error));
             }
           }
@@ -316,6 +348,7 @@ class EmbeddedBrowserCdpService {
           const pending = this.pendingListTabsRequests.get(data.requestId);
           if (pending) {
             this.pendingListTabsRequests.delete(data.requestId);
+            this.adoptedWorkspaceDeadlines.delete(pending.workspaceId ?? '');
             this.panelBrowserTabsCache.set(pending.workspaceId ?? '', tabs);
             pending.resolve(tabs);
           }
@@ -323,6 +356,7 @@ class EmbeddedBrowserCdpService {
           // Reply without a requestId — resolve all pending requests
           for (const [requestId, pending] of this.pendingListTabsRequests) {
             this.pendingListTabsRequests.delete(requestId);
+            this.adoptedWorkspaceDeadlines.delete(pending.workspaceId ?? '');
             this.panelBrowserTabsCache.set(pending.workspaceId ?? '', tabs);
             pending.resolve(tabs);
           }
@@ -348,6 +382,7 @@ class EmbeddedBrowserCdpService {
   async requestPanelBrowserTabs(
     workspaceId?: string,
     recoverTabId?: string,
+    options: { deadline?: number } = {},
   ): Promise<{ tabs: PanelBrowserTab[]; stale: boolean }> {
     if (typeof workspaceId !== 'string' || workspaceId.length === 0) {
       // i18n-ignore (agent-facing protocol error, not user-facing)
@@ -400,6 +435,7 @@ class EmbeddedBrowserCdpService {
       return { tabs: cached, stale: true };
     }
     logger.debug('Sent LIST_TABS_REQUEST', { workspaceId, requestId });
+    const timeoutMs = this.listTabsTimeoutMs(workspaceId, options.deadline);
 
     // Create per-request timeout promise. The fallback only consults the
     // cache entry for the SAME workspace target, so a timed-out request
@@ -429,12 +465,40 @@ class EmbeddedBrowserCdpService {
               `Tab list for workspace ${workspaceId} is unavailable: the renderer did not respond and no cached tab list exists.`,
             ),
           );
-        }, 500);
+        }, timeoutMs);
       },
     );
 
     // Race between response and timeout - each request gets independent timeout
     return Promise.race([requestPromise, timeoutPromise]);
+  }
+
+  /**
+   * Record that a window was just asked to host `workspaceId` in the
+   * background (no window had it open). Its next tab-list requests allow
+   * the cold layout hydration up to {@link ADOPTED_LIST_TABS_TIMEOUT_MS}
+   * to reply, until a reply arrives or the marker expires.
+   */
+  noteWorkspaceAdopted(workspaceId: string): void {
+    this.adoptedWorkspaceDeadlines.set(workspaceId, Date.now() + ADOPTED_MARKER_TTL_MS);
+  }
+
+  /**
+   * Reply window for a tab-list request: longer right after an adoption,
+   * but never more than half the time left until the caller's `deadline`
+   * (the rest is the mount and capture budget), and never below the usual
+   * window.
+   */
+  private listTabsTimeoutMs(workspaceId: string, deadline?: number): number {
+    const expiresAt = this.adoptedWorkspaceDeadlines.get(workspaceId);
+    if (expiresAt === undefined) return LIST_TABS_TIMEOUT_MS;
+    if (Date.now() >= expiresAt) {
+      this.adoptedWorkspaceDeadlines.delete(workspaceId);
+      return LIST_TABS_TIMEOUT_MS;
+    }
+    if (deadline === undefined) return ADOPTED_LIST_TABS_TIMEOUT_MS;
+    const halfRemaining = Math.floor((deadline - Date.now()) / 2);
+    return Math.max(LIST_TABS_TIMEOUT_MS, Math.min(ADOPTED_LIST_TABS_TIMEOUT_MS, halfRemaining));
   }
 
   /**
@@ -695,6 +759,7 @@ class EmbeddedBrowserCdpService {
   async listAllTabs(
     workspaceId?: string,
     recoverTabId?: string,
+    options: { deadline?: number } = {},
   ): Promise<{
     tabs: (TabInfo & {
       mounted: boolean;
@@ -710,6 +775,7 @@ class EmbeddedBrowserCdpService {
     const { tabs: panelTabs, stale } = await this.requestPanelBrowserTabs(
       workspaceId,
       recoverTabId,
+      options,
     );
 
     // Get mounted webviews
@@ -1997,8 +2063,9 @@ class EmbeddedBrowserCdpService {
    * Bounded: on a guest whose compositor produces no frames capturePage()
    * never settles either, so it is raced against a timeout — failing fast
    * with a clear error beats eating the caller's 30s budget (#3366).
-   * stayHidden/stayAwake keep the capture from perturbing visibility state
-   * on hidden or occluded views.
+   * stayHidden: false lets a page whose window is minimized, hidden or
+   * occluded count as visible for the capture so it paints (it may see a
+   * brief visibilitychange); stayAwake keeps the system awake meanwhile.
    */
   private async capturePageFallback(
     webContentsId: number,
@@ -2012,7 +2079,9 @@ class EmbeddedBrowserCdpService {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const image = await Promise.race([
-        wc.capturePage(undefined, { stayHidden: true, stayAwake: true }),
+        // stayHidden: false — a page whose window is minimized or hidden is
+        // treated as visible while it is captured, so it paints for it.
+        wc.capturePage(undefined, { stayHidden: false, stayAwake: true }),
         new Promise<never>((_, reject) => {
           timer = setTimeout(
             () =>
@@ -2083,8 +2152,88 @@ class EmbeddedBrowserCdpService {
       );
     }
 
+    const releaseDrawing = this.holdCaptureDrawing(webContentsId);
     try {
-      return await this.screenshotViaCdp(webContentsId, tabId ?? firstTab?.tabId, options.deadline);
+      return await this.screenshotWithFallback(webContentsId, tabId ?? firstTab?.tabId, options);
+    } finally {
+      releaseDrawing();
+    }
+  }
+
+  /**
+   * Keep a guest and the window hosting it drawing frames for the duration
+   * of one capture, even while that window is minimized or covered by other
+   * apps: Chromium stops producing frames for a backgrounded window, so the
+   * capture would otherwise hang until "not-painting". Background
+   * throttling is turned off on the guest and its host webContents and
+   * restored when the last overlapping capture releases, so an idle window
+   * keeps its normal throttling. Returns the release function; never throws.
+   */
+  private holdCaptureDrawing(webContentsId: number): () => void {
+    const guest = webContents.fromId(webContentsId);
+    if (!guest || guest.isDestroyed()) return () => {};
+    // The guest and its host (the app window's own webContents). Lifting
+    // the guest alone is not enough: on a minimized macOS window both CDP
+    // and capturePage still timed out (live test, manual build 39607559335).
+    // Electron draws a window whose own webContents is unthrottled. The
+    // cost is that a hidden app UI reports itself visible for the duration
+    // of the capture (presence is told to ignore it); a visible window is
+    // unaffected.
+    const targets = [guest, guest.hostWebContents].filter(
+      (wc): wc is Electron.WebContents => !!wc && !wc.isDestroyed(),
+    );
+    const held: Electron.WebContents[] = [];
+    for (const wc of targets) {
+      try {
+        const hold = this.captureDrawingHolds.get(wc.id);
+        if (hold) {
+          hold.count++;
+        } else {
+          // Tell the app window first, so its presence ignores the
+          // visibility the lifted throttling causes; the message and the
+          // visibility change reach the renderer in this order.
+          if (wc !== guest) wc.send(IPC_CHANNELS.BROWSER.CAPTURE_DRAWING, { active: true });
+          this.captureDrawingHolds.set(wc.id, { wc, previous: wc.backgroundThrottling, count: 1 });
+          wc.backgroundThrottling = false;
+        }
+        held.push(wc);
+      } catch (error) {
+        logger.debug('Could not keep webContents drawing for capture', {
+          webContentsId: wc.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      for (const wc of held) {
+        const hold = this.captureDrawingHolds.get(wc.id);
+        if (!hold || --hold.count > 0) continue;
+        this.captureDrawingHolds.delete(wc.id);
+        try {
+          if (!hold.wc.isDestroyed()) {
+            hold.wc.backgroundThrottling = hold.previous;
+            if (hold.wc !== guest) {
+              hold.wc.send(IPC_CHANNELS.BROWSER.CAPTURE_DRAWING, { active: false });
+            }
+          }
+        } catch {
+          // A webContents torn down mid-capture has nothing left to restore.
+        }
+      }
+    };
+  }
+
+  /** CDP capture, degrading to capturePage() (see screenshot()). */
+  private async screenshotWithFallback(
+    webContentsId: number,
+    tabId: string | undefined,
+    options: CaptureOptions,
+  ): Promise<{ base64: string; width: number; height: number }> {
+    try {
+      return await this.screenshotViaCdp(webContentsId, tabId, options.deadline);
     } catch (cdpError) {
       // The Page domain can hang (or fail) on some guests while the rest of
       // the debugger session works; degrade to capturePage() instead of

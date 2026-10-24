@@ -11,6 +11,7 @@
     faCheck,
   } from '@fortawesome/free-solid-svg-icons';
   import CodeEditor from './CodeEditor.svelte';
+  import FileVideoPreview from './FileVideoPreview.svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { formatNumber } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
@@ -24,6 +25,8 @@
     language?: string;
     isBinary?: boolean;
     allowDownload?: boolean;
+    onDownload?: () => void;
+    downloading?: boolean;
   }
 
   let {
@@ -33,6 +36,8 @@
     language,
     isBinary,
     allowDownload = true,
+    onDownload,
+    downloading = false,
   }: Props = $props();
 
   // Determine file type from extension
@@ -258,9 +263,16 @@
   };
 
   const handleDownload = () => {
-    if (!allowDownload) return;
+    if (!allowDownload || downloading) return;
+    if (onDownload) {
+      onDownload();
+      return;
+    }
+    // In-memory sources only: a cross-origin workspace-file:// link ignores `download`
+    // and becomes a navigation the app blocks, so file tabs must pass `onDownload`.
     const link = document.createElement('a');
-    link.href = getImageSrc();
+    link.href =
+      fileType === 'video' ? getVideoSrc() : fileType === 'svg' ? getSvgSrc() : getImageSrc();
     link.download = fileName;
     link.click();
   };
@@ -385,7 +397,7 @@
           variant="ghost"
           class="h-7 w-7"
           onclick={handleDownload}
-          disabled={!allowDownload}
+          disabled={!allowDownload || downloading}
           title={m.editor_fileViewer_download_tooltip()}
         >
           <Fa icon={faDownload} size="sm" />
@@ -428,7 +440,7 @@
           variant="ghost"
           class="h-7 w-7"
           onclick={handleDownload}
-          disabled={!allowDownload}
+          disabled={!allowDownload || downloading}
           title={m.editor_fileViewer_download_tooltip()}
         >
           <Fa icon={faDownload} size="sm" />
@@ -459,20 +471,16 @@
       </div>
     </div>
   {:else if fileType === 'video'}
-    <!-- Video Player -->
-    <div class="flex-1 flex items-center justify-center bg-black">
-      <!-- svelte-ignore a11y_media_has_caption -->
-      <video
-        src={getVideoSrc()}
-        controls
-        preload="metadata"
-        playsinline
-        class="max-w-full max-h-full"
-        data-testid="file-video"
-      >
-        {m.editor_fileViewer_videoUnsupported_label()}
-      </video>
-    </div>
+    {@const videoSource = getVideoSrc()}
+    {#key filePath + videoSource}
+      <FileVideoPreview
+        sourceUrl={videoSource}
+        {fileName}
+        {allowDownload}
+        {downloading}
+        onDownload={handleDownload}
+      />
+    {/key}
   {:else if fileType === 'audio'}
     <!-- Audio Player -->
     <div class="flex-1 flex flex-col items-center justify-center p-8">
@@ -506,7 +514,12 @@
         </svg>
       </div>
       <p class="text-sm text-subtle mb-4">{m.editor_fileViewer_pdfUnavailable_label()}</p>
-      <Button size="sm" variant="secondary" onclick={handleDownload} disabled={!allowDownload}>
+      <Button
+        size="sm"
+        variant="secondary"
+        onclick={handleDownload}
+        disabled={!allowDownload || downloading}
+      >
         <Fa icon={faDownload} size="sm" class="mr-2" />
         {m.editor_fileViewer_downloadPdf_label()}
       </Button>

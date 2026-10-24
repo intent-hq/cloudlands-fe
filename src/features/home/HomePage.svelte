@@ -15,7 +15,10 @@
   } from '$lib/components/ui/sidebar-context-menu/types';
   import { selectPinnedWorkspaceIds } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
-  import { openHomeWorkspaceFromEvent } from './home-workspace-opening';
+  import {
+    createHomeDoubleClickOpener,
+    openHomeWorkspaceFromEvent,
+  } from './home-workspace-opening';
   import { createHomeWorkspaceMenu } from './home-workspace-menu';
   import { faThumbtack } from '@fortawesome/free-solid-svg-icons';
   import { tick, untrack, type Snippet } from 'svelte';
@@ -81,6 +84,7 @@
   import { groupHomeWorkspacesByStatus } from './home-workspace-status-groups';
   import HomeWorkspacePullBadge from './HomeWorkspacePullBadge.svelte';
   import HomeHeader from './HomeHeader.svelte';
+  import { getHomeTabChange } from './home-tab-navigation';
   import ResizablePanel from '$lib/components/layout/ResizablePanel.svelte';
   import { openHomeIntegrationUrl } from './home-integrations-slice';
   import { selectHomeWorkspaceView, selectHomeWorkspaceError } from './home-workspaces-selectors';
@@ -112,7 +116,13 @@
     store.dispatch(openWorkspaceTab(id));
     void goto(`/workspace/${encodeURIComponent(id)}`);
   }
+  function openSelectedWorkspace(id: string) {
+    updateView({ selectedId: id });
+    openWorkspace(id);
+  }
+  const doubleClick = createHomeDoubleClickOpener(openSelectedWorkspace);
   function openModifiedWorkspace(event: MouseEvent | KeyboardEvent, id: string) {
+    if (event instanceof MouseEvent) doubleClick.arm(event, id);
     openHomeWorkspaceFromEvent(event, id, openWorkspace);
   }
   function showWorkspaceMenu(event: MouseEvent | KeyboardEvent, workspace: Workspace) {
@@ -210,9 +220,7 @@
     ),
   );
   const selectedRepository = $derived(repositoryGroups.find((repo) => repo.key === repoKey));
-  function isActive(workspace: Workspace): boolean {
-    return matchesHomeFilter(workspace, 'all');
-  }
+  const isActive = (workspace: Workspace) => matchesHomeFilter(workspace, 'all');
   function countNeedsYou(items: readonly Workspace[]): number {
     return items.filter((workspace) => isActive(workspace) && needsAttention(workspace)).length;
   }
@@ -547,6 +555,7 @@
 
 <div
   bind:this={homeElement}
+  {@attach doubleClick.listen}
   class="home-layout h-full min-h-0 min-w-0 bg-sidebar text-foreground"
   class:home-assistant={destination === 'assistant' && !$collaborator$}
   data-home-page
@@ -785,23 +794,12 @@
             <Tabs.Root
               bind:value={() => renderedTab, () => undefined}
               onValueChange={(value) => {
-                if (
-                  value !== activeHomeTab &&
-                  (value === 'workspaces' ||
-                    value === 'prs' ||
-                    value === 'linear' ||
-                    (value === 'custom' && selectedCustomView))
-                ) {
-                  const order = ['workspaces', 'prs', 'linear', 'custom'];
-                  mainDirection = order.indexOf(value) > order.indexOf(activeHomeTab) ? 1 : -1;
-                  tabFocus = { value };
-                  if (value === 'custom' && selectedCustomView)
-                    chooseCustomView(selectedCustomView.id);
-                  else if (value === 'workspaces' || value === 'prs' || value === 'linear') {
-                    store.dispatch(selectCustomView(null));
-                    updateView({ tab: value });
-                  }
-                }
+                const change = getHomeTabChange(activeHomeTab, value);
+                if (!change) return;
+                mainDirection = change.direction;
+                tabFocus = { value: change.tab };
+                store.dispatch(selectCustomView(null));
+                updateView({ tab: change.tab });
               }}
               variant="underline"
               class="flex min-h-0 flex-1 flex-col"
@@ -890,6 +888,7 @@
                         {:else if $view$.view === 'board'}
                           <HomeWorkspaceBoard
                             workspaces={filteredWorkspaces}
+                            pinnedIds={$pinnedIds$}
                             groups={boardGroups}
                             showRepository={!selectedRepository}
                             showRepositoryOwner={!selectedOrg}
@@ -897,6 +896,7 @@
                             onselect={(id) =>
                               updateView({ selectedId: selectedId === id ? null : id })}
                             onopen={openWorkspace}
+                            {doubleClick}
                             oncontextmenu={showWorkspaceMenu}
                             archived={filter === 'archived'}
                           />

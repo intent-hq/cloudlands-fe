@@ -1339,6 +1339,7 @@ describe('captured repository socket dispatch', () => {
           localNodeIsolation: 1,
           agentPlatformRouting: 1,
           workspaceMembershipEvents: 1,
+          noteTruncatedRead: 1,
         },
       },
     });
@@ -1348,6 +1349,7 @@ describe('captured repository socket dispatch', () => {
       localNodeIsolation: 1,
       agentPlatformRouting: 1,
       workspaceMembershipEvents: 1,
+      noteTruncatedRead: 1,
     });
     expect(client.getRepositoryConnection()).toBe(connection);
     expect(sockets[0].writes).toHaveLength(1);
@@ -1355,7 +1357,7 @@ describe('captured repository socket dispatch', () => {
     expect(client.getNodeCapabilities()).toBeNull();
     await vi.waitFor(() => expect(sockets[0].writes).toHaveLength(2));
     sockets[0].receive(
-      '{"id":2,"result":{"clientId":"confirmed-client","server":{"capabilities":{"agentNodes":"1","localNodeIsolation":true,"workspaceMembershipEvents":"1"}}}}\n',
+      '{"id":2,"result":{"clientId":"confirmed-client","server":{"capabilities":{"agentNodes":"1","localNodeIsolation":true,"workspaceMembershipEvents":"1","noteTruncatedRead":"1"}}}}\n',
     );
     await hello;
     expect(client.getNodeCapabilities()).toEqual({
@@ -1363,6 +1365,7 @@ describe('captured repository socket dispatch', () => {
       localNodeIsolation: 0,
       agentPlatformRouting: 0,
       workspaceMembershipEvents: 0,
+      noteTruncatedRead: 0,
     });
     client.dispose();
     expect(client.getNodeCapabilities()).toBeNull();
@@ -1761,6 +1764,10 @@ describe('private repository connection evidence', () => {
     const { client, sockets, events } = await start();
     const original = client.getRepositoryConnection()!;
     expect(original.repositoryContext).toBe(true);
+    expect(client.getAcknowledgedHelloIdentity(original)).toEqual({
+      clientId: 'desktop',
+      connectionRole: undefined,
+    });
     const notification = {
       method: 'workspace.repositoryContext.retired',
       params: {
@@ -1779,6 +1786,7 @@ describe('private repository connection evidence', () => {
     const hello = client.request('client.hello');
     expect(events).toContainEqual({ type: 'identity-retired', connection: original });
     expect(client.getRepositoryConnection()).toBeNull();
+    expect(client.getAcknowledgedHelloIdentity(original)).toBeNull();
     await vi.waitFor(() => expect(sockets[0].writes).toHaveLength(2));
     sockets[0].receive(
       '{"id":2,"result":{"clientId":"desktop","server":{"capabilities":{"repositoryContext":1}}}}\n',
@@ -1837,6 +1845,10 @@ describe('private repository connection evidence', () => {
     );
     await first;
     expect(client.getRepositoryConnection()).toBe(current);
+    expect(client.getAcknowledgedHelloIdentity(current!)).toEqual({
+      clientId: 'current',
+      connectionRole: undefined,
+    });
     expect(onHelloResult).toHaveBeenCalledTimes(2);
     expect(onHelloResult).toHaveBeenLastCalledWith({
       clientId: 'current',

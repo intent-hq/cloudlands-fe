@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import { catalogNow } from '$lib/component-catalog/catalog-clock';
   import { definePreview } from '$lib/component-catalog/preview-definition';
   import {
     AgentStatus,
@@ -37,6 +38,7 @@
       | 'pr-status-list'
       | 'board-pr-status'
       | 'board'
+      | 'board-pinned'
       | 'board-long-content'
       | 'board-repositories'
       | 'repository-labels'
@@ -73,6 +75,7 @@
       'pr-status-list': { props: { scenario: 'pr-status-list', height: 1120 } },
       'board-pr-status': { props: { scenario: 'board-pr-status', height: 1120 } },
       board: { props: { scenario: 'board' } },
+      'board-pinned': { props: { scenario: 'board-pinned' } },
       'board-long-content': { props: { scenario: 'board-long-content' } },
       'board-repositories': { props: { scenario: 'board-repositories' } },
       'repository-labels': { props: { scenario: 'repository-labels' } },
@@ -211,7 +214,7 @@
       index === 8
         ? undefined
         : new Date(
-            Date.now() -
+            catalogNow() -
               [
                 37_000, 3_600_000, 86_400_000, 172_800_000, 518_400_000, 2_419_200_000,
                 5_184_000_000, 31_536_000_000,
@@ -545,7 +548,7 @@
     store.dispatch(
       hydrateSidebarNav({
         pinnedWorkspaceIds:
-          scenario === 'status-icons'
+          scenario === 'status-icons' || scenario === 'board-pinned'
             ? ['home-complete']
             : scenario === 'status-grouping'
               ? []
@@ -587,7 +590,7 @@
           ? []
           : (scenario === 'pr-status-list' || scenario === 'board-pr-status'
               ? prStatusFixtures
-              : scenario === 'status-icons'
+              : scenario === 'status-icons' || scenario === 'board-pinned'
                 ? statusFixtures
                 : scenario === 'status-grouping'
                   ? statusGroupingFixtures

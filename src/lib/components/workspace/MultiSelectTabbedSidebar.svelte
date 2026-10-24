@@ -76,7 +76,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { buildWorkspacePRPresentationModel } from './sidebar/workspace-pr-presentation';
   import { constructPrUrl, legacyWorkspacePullRequest } from './sidebar/sidebar-changes-utils';
-  import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
+  import { selectReviewMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import { spring, type ImmediateMotionConfig as TransitionConfig } from '$lib/motion';
 
   import { onDestroy, onMount, tick, type Snippet } from 'svelte';
@@ -91,9 +91,10 @@
   import SidebarHeaderAction from './sidebar/SidebarHeaderAction.svelte';
   import WorkspaceProgressCard from './sidebar/WorkspaceProgressCard.svelte';
   import WorkspacePeopleTile from '$features/presence/components/WorkspacePeopleTile.svelte';
+  import WorkspaceDiscussionRow from '$features/discussions/components/WorkspaceDiscussionRow.svelte';
   import WorkspacePeopleActivity from '$features/presence/components/WorkspacePeopleActivity.svelte';
   import { selectWorkspacePeopleTilePeople } from '$store/renderer/slices/presence/presence-selectors';
-  import { openShareDialog } from '$store/renderer/slices/workspace-share/workspace-share-slice';
+  import { openWorkspaceDiscussion } from '$features/discussions/discussion-navigation';
   import WorkspaceTokenUsage from './sidebar/WorkspaceTokenUsage.svelte';
   import SidebarLauncherHoverCard from './sidebar/SidebarLauncherHoverCard.svelte';
   import SidebarPrDropdown from './sidebar/SidebarPrDropdown.svelte';
@@ -105,8 +106,8 @@
   import SidebarBrowserList from './SidebarBrowserList.svelte';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
   import {
-    selectCanShareWorkspace,
     selectIsWorkspaceCollaborator,
+    selectWorkspaceSavedScriptContext,
     selectWorkspaceActivePullRequest,
     selectWorkspaceById,
   } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -206,7 +207,7 @@
 
   const workspace = selectWorkspaceById(workspaceIdStore);
   const activePullRequest$ = selectWorkspaceActivePullRequest(workspaceIdStore);
-  const prMonitors$ = selectPrMonitors(workspaceIdStore);
+  const prMonitors$ = selectReviewMonitors(workspaceIdStore);
   // Every PR attributable to the workspace (branch PRs, cross-repo entries,
   // agent PR monitors), deduplicated and ordered by status priority.
   const workspacePrRows = $derived.by(() => {
@@ -356,13 +357,15 @@
   // selection of those tabs are withheld up front. The selector fails closed: a
   // guest window (multiplayer w4) reads as collaborator whatever `myRole` the
   // row carries, and so does every window until its identity has settled.
+  const scriptContext$ = selectWorkspaceSavedScriptContext(workspaceIdStore);
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
   const isCollaborator = $derived($isCollaborator$);
   const presencePeople$ = selectWorkspacePeopleTilePeople(workspaceIdStore);
   const showPeople = $derived($presencePeople$.length > 0);
-  const canShare$ = selectCanShareWorkspace(workspaceIdStore);
   const selectedTabIds = selectMultiSelectSidebarSelectedTabIds(workspaceIdStore);
-  const selectedTabs = $derived(normalizeSelectedTabs($selectedTabIds, isCollaborator, showPeople));
+  const selectedTabs = $derived(
+    normalizeSelectedTabs($selectedTabIds, isCollaborator, showPeople, !!$scriptContext$),
+  );
   let agentSearchQuery = $state('');
   let contextSearchQuery = $state('');
   const expandedStripTabs = $derived(
@@ -370,7 +373,11 @@
       (definition) =>
         definition.id !== 'overview' &&
         (definition.id !== 'people' || showPeople) &&
-        !(isCollaborator && OWNER_ONLY_TAB_IDS.has(definition.id)),
+        !(
+          isCollaborator &&
+          OWNER_ONLY_TAB_IDS.has(definition.id) &&
+          !(definition.id === 'shell' && $scriptContext$)
+        ),
     ).map(({ id, label, icon }) => ({
       id,
       label,
@@ -534,11 +541,6 @@
 
   function createTerminal() {
     appStore.dispatch(openTerminalOverlay(workspaceId));
-  }
-
-  function shareWorkspace() {
-    if (!$workspace || !selectCanShareWorkspace.select(appStore.state, workspaceId)) return;
-    appStore.dispatch(openShareDialog({ workspaceId, workspaceTitle: $workspace.title }));
   }
 
   let pendingLauncherFocusTabId = $state<LauncherTabId | null>(null);
@@ -1035,13 +1037,12 @@
                         {tab.label}
                         <span class="ml-auto flex items-center gap-1">
                           {#if tabId === 'people'}
-                            {#if $canShare$}
-                              <SidebarHeaderAction
-                                icon="plus"
-                                label={m.workspace_share_menu_label()}
-                                onclick={shareWorkspace}
-                              />
-                            {/if}
+                            <SidebarHeaderAction
+                              icon="plus"
+                              label={m.workspace_discussion_new_title()}
+                              onclick={() =>
+                                openWorkspaceDiscussion(workspaceId, panelLayoutId, 'new')}
+                            />
                           {:else if tabId === 'agents'}
                             <SidebarExpandableSearch
                               bind:query={agentSearchQuery}
@@ -1068,7 +1069,7 @@
                               label={m.menu_new_browser()}
                               onclick={createBrowser}
                             />
-                          {:else if tabId === 'shell'}
+                          {:else if tabId === 'shell' && !isCollaborator}
                             <SidebarHeaderAction
                               icon="plus"
                               label={m.menu_new_terminal()}
@@ -1160,6 +1161,7 @@
                       use:scrollFade
                     >
                       {#if tabId === 'people'}
+                        <WorkspaceDiscussionRow {workspaceId} {panelLayoutId} />
                         <WorkspacePeopleActivity {workspaceId} {panelLayoutId} />
                       {:else if tabId === 'agents'}
                         <div
@@ -1545,6 +1547,8 @@
             />
           </div>
         {/if}
+      {/if}
+      {#if $scriptContext$}
         <div class="min-w-0" in:launcherGridReveal|global={isNewWorkspaceSession ? 0 : 5}>
           <WorkspaceTerminalDock
             {workspaceId}

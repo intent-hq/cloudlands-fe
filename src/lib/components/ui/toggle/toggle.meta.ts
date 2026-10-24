@@ -35,7 +35,10 @@ export const toggleMetadata = {
   exports: ['Toggle'],
   category: 'primitive',
   owner: '007-B2',
-  callers: ['src/lib/component-catalog/renderers/BasicCatalogPreview.svelte'],
+  callers: [
+    'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
+    'src/lib/components/workspace/initializer/BranchSelector.svelte',
+  ],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/toggle/toggle.test.ts',
   removalGate:

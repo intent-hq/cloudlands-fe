@@ -7,13 +7,21 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { _electron as electron } from '@playwright/test';
+import { runStaplerWithBackoff } from './apple-ticket-retry.mjs';
 import { evaluatePackageMain } from './evaluate-package-main.mjs';
 
 const [dmg, output, backendSha, frontendSha] = process.argv.slice(2);
 assert.equal(process.platform, 'darwin');
 assert.equal(process.arch, 'arm64');
 assert.equal(process.env.GITHUB_ACTIONS, 'true');
-assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted');
+// A fresh VM for this job alone: GitHub-hosted, or WarpBuild (one VM per job; it reports
+// self-hosted with its verification token set). An intent-cache slot is neither.
+assert.ok(
+  process.env.RUNNER_ENVIRONMENT === 'github-hosted' ||
+    (process.env.RUNNER_ENVIRONMENT === 'self-hosted' &&
+      !!process.env.WARPBUILD_RUNNER_VERIFICATION_TOKEN),
+  'requires a fresh GitHub-hosted or WarpBuild VM',
+);
 assert.match(backendSha, /^[a-f0-9]{40}$/);
 assert.match(frontendSha, /^[a-f0-9]{40}$/);
 assert.ok(dmg && output && process.env.RUNNER_TEMP);
@@ -211,7 +219,11 @@ try {
   assert.equal(fs.existsSync(path.join(bundle, 'Contents/Resources/keychain-helper')), false);
   evidence.signing = command('codesign', ['--verify', '--deep', '--strict', '--verbose=2', bundle]);
   evidence.gatekeeper = command('spctl', ['--assess', '--type', 'execute', '--verbose=4', bundle]);
-  evidence.stapling = command('xcrun', ['stapler', 'validate', bundle]);
+  // Retries only Apple's ticket-service connection loss (exit 68, intent-hq/intent#7614),
+  // on a shorter schedule that fits this job's 20-minute timeout.
+  evidence.stapling = await runStaplerWithBackoff('validate', bundle, {
+    delaysMs: [15_000, 30_000, 60_000],
+  });
   const executable = path.join(bundle, 'Contents/MacOS', plist.CFBundleExecutable);
   assert.equal(command('lipo', ['-archs', executable]).trim(), 'arm64');
   const sidecar = path.join(bundle, 'Contents/Resources/intentd/intentd');
