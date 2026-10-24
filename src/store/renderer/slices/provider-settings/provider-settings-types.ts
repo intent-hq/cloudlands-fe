@@ -59,7 +59,16 @@ export type ProviderProfilesState = {
   mutations: Collection<ProviderProfileMutation, 'id'>;
 };
 
+export type ProviderTokenState = {
+  status: 'loading' | 'ready' | 'error';
+  configured: boolean;
+  busy: boolean;
+  failed: boolean;
+  requestId: string;
+};
+
 export type ProviderSettingsState = {
+  accessTokens: Record<string, ProviderTokenState>;
   profiles: ProviderProfilesState;
   fastMode: ProviderFastModeState;
   enabledProviders: Record<string, boolean>;

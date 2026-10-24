@@ -40,6 +40,25 @@ function state(canBeDisabled = true) {
   };
 }
 
+// These persistence tests keep the catalog fixed; provide the root owner's
+// subscription context just as the renderer store does.
+function runSettingsSaga(
+  options: {
+    channel: ReturnType<typeof stdChannel>;
+    dispatch: ReturnType<typeof vi.fn>;
+    getState: typeof state;
+  },
+  saga: typeof providerSettingsSaga,
+) {
+  return runSaga(
+    {
+      ...options,
+      context: { reduxStore: { getState: options.getState, subscribe: () => () => {} } },
+    },
+    saga,
+  );
+}
+
 describe('providerSettingsSaga', () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -65,7 +84,7 @@ describe('providerSettingsSaga', () => {
       .mockResolvedValue([]);
     const current = state();
     const channel = stdChannel();
-    const task = runSaga(
+    const task = runSettingsSaga(
       { channel, dispatch: vi.fn(), getState: () => current },
       providerSettingsSaga,
     );
@@ -89,7 +108,7 @@ describe('providerSettingsSaga', () => {
 
   it('skips enabled persistence when the catalog says the reducer mutation is a no-op', async () => {
     const channel = stdChannel();
-    const task = runSaga(
+    const task = runSettingsSaga(
       { channel, dispatch: vi.fn(), getState: () => state(false) },
       providerSettingsSaga,
     );
@@ -112,7 +131,7 @@ describe('providerSettingsSaga', () => {
       .mockResolvedValue([]);
     const current = state();
     const channel = stdChannel();
-    const task = runSaga(
+    const task = runSettingsSaga(
       { channel, dispatch: vi.fn(), getState: () => current },
       providerSettingsSaga,
     );
@@ -137,7 +156,10 @@ describe('providerSettingsSaga', () => {
 
   it('does not echo provider hydration actions', async () => {
     const channel = stdChannel();
-    const task = runSaga({ channel, dispatch: vi.fn(), getState: state }, providerSettingsSaga);
+    const task = runSettingsSaga(
+      { channel, dispatch: vi.fn(), getState: state },
+      providerSettingsSaga,
+    );
     channel.put(hydrateDefaultProvider('codex'));
     await settle();
 
@@ -151,7 +173,7 @@ describe('providerSettingsSaga', () => {
     try {
       mocks.update.mockRejectedValueOnce(new Error('settings unavailable')).mockResolvedValue([]);
       const channel = stdChannel();
-      const task = runSaga(
+      const task = runSettingsSaga(
         { channel, dispatch: vi.fn(), getState: () => state() },
         providerSettingsSaga,
       );
@@ -187,7 +209,10 @@ describe('providerSettingsSaga', () => {
       mocks.update.mockRejectedValue(error);
       const channel = stdChannel();
       const dispatch = vi.fn();
-      const task = runSaga({ channel, dispatch, getState: () => state() }, providerSettingsSaga);
+      const task = runSettingsSaga(
+        { channel, dispatch, getState: () => state() },
+        providerSettingsSaga,
+      );
 
       channel.put(setActiveProvider('codex'));
       await settle();
@@ -210,7 +235,10 @@ describe('providerSettingsSaga', () => {
     );
     const channel = stdChannel();
     const dispatch = vi.fn();
-    const task = runSaga({ channel, dispatch, getState: () => state() }, providerSettingsSaga);
+    const task = runSettingsSaga(
+      { channel, dispatch, getState: () => state() },
+      providerSettingsSaga,
+    );
 
     channel.put(setProviderEnabled({ providerId: 'claude-code', enabled: true }));
     await settle();

@@ -83,17 +83,39 @@ function state() {
   };
 }
 
+// Direct runSaga owners need the same selector context as the renderer.
+// These model-persistence fixtures keep their catalog fixed.
+const selectorContext = (getState: () => unknown) => ({
+  reduxStore: { getState, subscribe: () => () => {} },
+});
+
 function selectionEnvironment(
   current: Omit<ReturnType<typeof state>, 'model'> & { model: typeof modelInitialState },
 ) {
   const channel = stdChannel();
+  const listeners = new Set<() => void>();
   const dispatch = vi.fn((action) => {
     current.model = modelReducer(current.model, action);
     current.providerSettings = providerSettingsReducer(current.providerSettings, action);
+    for (const listener of listeners) listener();
     channel.put(action);
     return action;
   });
-  const environment = { channel, dispatch, getState: () => current };
+  const getState = () => current;
+  const environment = {
+    channel,
+    dispatch,
+    getState,
+    context: {
+      reduxStore: {
+        getState,
+        subscribe: (listener: () => void) => {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        },
+      },
+    },
+  };
   const owner = runSaga(environment, modelSelectionSaga);
   return { environment, dispatch, owner };
 }
@@ -457,7 +479,12 @@ describe('modelSelectionSaga', () => {
     const current = state();
     const channel = stdChannel();
     const task = runSaga(
-      { channel, dispatch: vi.fn(), getState: () => current },
+      {
+        channel,
+        dispatch: vi.fn(),
+        getState: () => current,
+        context: selectorContext(() => current),
+      },
       modelSelectionSaga,
     );
     await settle();
@@ -499,7 +526,10 @@ describe('modelSelectionSaga', () => {
       current.model = modelReducer(current.model, action);
       channel.put(action);
     };
-    const task = runSaga({ channel, dispatch, getState: () => current }, modelSelectionSaga);
+    const task = runSaga(
+      { channel, dispatch, getState: () => current, context: selectorContext(() => current) },
+      modelSelectionSaga,
+    );
     await settle();
 
     // Provider A's pick starts a held-in-flight write.
@@ -555,7 +585,12 @@ describe('modelSelectionSaga', () => {
     const current = state();
     const channel = stdChannel();
     const task = runSaga(
-      { channel, dispatch: vi.fn(), getState: () => current },
+      {
+        channel,
+        dispatch: vi.fn(),
+        getState: () => current,
+        context: selectorContext(() => current),
+      },
       modelSelectionSaga,
     );
 
@@ -587,7 +622,10 @@ describe('modelSelectionSaga', () => {
       const current = state();
       const channel = stdChannel();
       const dispatch = vi.fn();
-      const task = runSaga({ channel, dispatch, getState: () => current }, modelSelectionSaga);
+      const task = runSaga(
+        { channel, dispatch, getState: () => current, context: selectorContext(() => current) },
+        modelSelectionSaga,
+      );
 
       channel.put(setSelectedModel({ providerId: 'auggie', model: 'picked' }));
       await vi.advanceTimersByTimeAsync(0);
@@ -615,7 +653,12 @@ describe('modelSelectionSaga', () => {
       const current = state();
       const channel = stdChannel();
       const task = runSaga(
-        { channel, dispatch: vi.fn(), getState: () => current },
+        {
+          channel,
+          dispatch: vi.fn(),
+          getState: () => current,
+          context: selectorContext(() => current),
+        },
         modelSelectionSaga,
       );
 
@@ -655,7 +698,12 @@ describe('modelSelectionSaga', () => {
     const current = state();
     const channel = stdChannel();
     const task = runSaga(
-      { channel, dispatch: vi.fn(), getState: () => current },
+      {
+        channel,
+        dispatch: vi.fn(),
+        getState: () => current,
+        context: selectorContext(() => current),
+      },
       modelSelectionSaga,
     );
     await settle();
@@ -679,7 +727,12 @@ describe('modelSelectionSaga', () => {
     const current = state();
     const channel = stdChannel();
     const task = runSaga(
-      { channel, dispatch: vi.fn(), getState: () => current },
+      {
+        channel,
+        dispatch: vi.fn(),
+        getState: () => current,
+        context: selectorContext(() => current),
+      },
       modelSelectionSaga,
     );
     await settle();

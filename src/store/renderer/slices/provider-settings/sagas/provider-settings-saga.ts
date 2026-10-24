@@ -1,3 +1,4 @@
+import { providerAccessTokenSaga } from './provider-access-token-saga';
 import { isQuickActionProviderSwitchBlocked } from '../../background-agent-settings/quick-action-provider-switch';
 import { settingsChangesReceived } from '../../settings-events/settings-events-slice';
 import { backgroundSettingsWriteLock } from '../../background-agent-settings/sagas/background-settings-write-lock';
@@ -371,6 +372,7 @@ export function* providerSettingsSaga() {
       call(persistProviderSettingsQueue, updates),
       call(providerFastModeSaga),
       call(providerProfilesSaga),
+      call(providerAccessTokenSaga),
       takeEvery([setAtomicDefaultModel, setSelectedModel], queueModelWorker, updates),
       takeEvery(setActiveProvider, queueActiveProviderWorker, updates),
       takeEvery(toggleProvider, queueToggleProviderWorker, updates),

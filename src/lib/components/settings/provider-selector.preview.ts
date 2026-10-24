@@ -1,3 +1,4 @@
+import { setupProviderAccessTokenPreview } from '../../../test/provider-access-token-preview';
 // Success actions restore visible values; loaded/check flags and epochs may remain.
 // Newly introduced availability keys settle to unavailable because no remove action exists.
 import { setupProviderFastModePreview } from '../../../test/provider-fast-mode-preview';
@@ -118,6 +119,41 @@ export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
   defaultState: 'mixed',
   states: {
     mixed: { props: {}, setup: setupProviderSelector },
+    'access-tokens': {
+      props: {},
+      setup: () => {
+        const restoreProviders = setupProviderSelector();
+        const restoreTokens = setupProviderAccessTokenPreview();
+        return () => {
+          restoreTokens();
+          restoreProviders();
+        };
+      },
+    },
+    'access-tokens-profiles': {
+      props: {},
+      setup: () => {
+        const restoreProviders = setupProviderSelector();
+        const restoreProfiles = setupProviderProfilesPreview({ appOwned: true });
+        const restoreTokens = setupProviderAccessTokenPreview();
+        return () => {
+          restoreTokens();
+          restoreProfiles();
+          restoreProviders();
+        };
+      },
+    },
+    'access-token-error': {
+      props: {},
+      setup: () => {
+        const restoreProviders = setupProviderSelector();
+        const restoreTokens = setupProviderAccessTokenPreview(true);
+        return () => {
+          restoreTokens();
+          restoreProviders();
+        };
+      },
+    },
     profiles: {
       props: {},
       setup: () => {

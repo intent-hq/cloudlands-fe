@@ -11,7 +11,7 @@ import type {
   ProviderProfilesState,
 } from './provider-settings-types';
 import { initialProfilesState } from './provider-profiles-state';
-import { resolveProviderEnabled } from '$shared/provider-catalog';
+import { providerTokenCapability, resolveProviderEnabled } from '$shared/provider-catalog';
 import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
 import { store } from '../../store';
 import {
@@ -249,4 +249,13 @@ export const selectProviderProfileMutations = store.createSelector(
 /** True while any Settings → Providers panel is open. */
 export const selectProviderSettingsHasOpenSession = store.createSelector(
   (state): boolean => (state.providerSettings?.sessions.length ?? 0) > 0,
+);
+
+export const selectProviderAccessToken = store.createSelector(
+  (state, providerId: string) => state.providerSettings.accessTokens?.[providerId],
+);
+
+export const selectProviderAccessTokenCapability = store.createSelector(
+  (state, providerId: string) =>
+    providerTokenCapability(selectProviderCatalogEntry.select(state, providerId)),
 );

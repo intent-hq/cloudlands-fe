@@ -70,6 +70,7 @@
   } from '$lib/components/patterns/settings/custom-controls';
   import AuggieLogo from '../AuggieLogo.svelte';
   import ProviderPathConfig from './ProviderPathConfig.svelte';
+  import ProviderAccessToken from './ProviderAccessToken.svelte';
   import ProviderProfiles from './ProviderProfiles.svelte';
   import ProviderProfileDialog from './ProviderProfileDialog.svelte';
   import ProviderFastModeMenuItems from './ProviderFastModeMenuItems.svelte';
@@ -178,6 +179,7 @@
     orderedCatalogEntries.map((provider) => {
       const status = $providerStatusMap$[provider.id];
       return {
+        catalogEntry: provider,
         id: provider.id,
         name: provider.displayName,
         displayName: provider.displayName,
@@ -747,6 +749,7 @@
                   </div>
                 </div>
               </div>
+              <ProviderAccessToken provider={provider.catalogEntry} />
               {#if canAddProfile}
                 <ProviderProfiles providerId={provider.id} providerName={provider.name} />
               {/if}

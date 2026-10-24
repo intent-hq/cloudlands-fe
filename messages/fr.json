@@ -7784,5 +7784,19 @@
   "workspace_share_sharingTailcatMissing_error": "Le service de partage est manquant. Installez Tailcat, redémarrez l’application et réessayez.",
   "workspace_share_tailcat_description": "Permet d’accéder à cet appareil sans ouvrir de ports.",
   "workspace_share_tailcat_label": "Tunnel Tailcat",
-  "workspace_share_turnOnSharing_label": "Activer le partage"
+  "workspace_share_turnOnSharing_label": "Activer le partage",
+  "settings_providerToken_label": "Jeton d’accès facultatif",
+  "settings_providerToken_saved": "Jeton enregistré · non vérifié",
+  "settings_providerToken_absent": "Aucun jeton enregistré",
+  "settings_providerToken_manual": "Sans jeton, connectez-vous sur chaque machine cible avec le compte qui exécute le nœud.",
+  "settings_providerToken_nextLaunch": "Les modifications concernent les nouveaux agents. Les agents en cours conservent leur authentification.",
+  "settings_providerToken_claude": "Créez un jeton Claude avec claude setup-token.",
+  "settings_providerToken_codex": "Utilisez un jeton d’accès Codex d’un espace ChatGPT Business ou Enterprise éligible.",
+  "settings_providerToken_save": "Enregistrer le jeton",
+  "settings_providerToken_replace": "Remplacer le jeton",
+  "settings_providerToken_remove": "Supprimer le jeton",
+  "settings_providerToken_loading": "Chargement des paramètres du jeton…",
+  "settings_providerToken_unavailable": "Les paramètres de jeton ne sont pas disponibles sur ce daemon.",
+  "settings_providerToken_error": "Impossible de modifier le jeton. Réessayez.",
+  "settings_providerToken_loadError": "Impossible de charger les paramètres du jeton. Réessayez."
 }
