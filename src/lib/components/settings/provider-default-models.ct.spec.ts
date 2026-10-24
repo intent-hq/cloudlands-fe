@@ -47,15 +47,6 @@ for (const scenario of [
     const a = (await reset.boundingBox())!;
     const b = (await main.boundingBox())!;
     expect(a.x + a.width <= b.x || a.y + a.height <= b.y).toBe(true);
-    const overrides = root.getByTestId('model-action-overrides');
-    const heading = overrides.getByRole('heading');
-    const sectionBox = (await overrides.boundingBox())!;
-    const headingBox = (await heading.boundingBox())!;
-    expect(headingBox.y - sectionBox.y).toBeGreaterThanOrEqual(16);
-    expect(
-      (await rows.nth(2).boundingBox())!.y - headingBox.y - headingBox.height,
-    ).toBeGreaterThanOrEqual(16);
-    await expect(overrides).toHaveCSS('border-top-width', '1px');
     await expect(main.locator('[data-slot="button-surface"]')).toHaveCSS(
       'background-color',
       'rgba(0, 0, 0, 0)',

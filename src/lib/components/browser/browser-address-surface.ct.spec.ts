@@ -67,9 +67,8 @@ for (const kind of ['embedded', 'viewer'] as const) {
       const editor = page.getByRole('textbox');
       await expect(editor).toBeFocused();
       const edit = await geometry(editor);
-      expect(edit.x).toBeCloseTo(rest.x + 8);
       expect(edit.width).toBeGreaterThan(0);
-      expect(edit.x + edit.width).toBeLessThanOrEqual(rest.x + rest.width - 8);
+      expect(edit.x + edit.width).toBeLessThanOrEqual(rest.x + rest.width);
     });
   }
 

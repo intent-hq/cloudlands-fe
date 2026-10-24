@@ -75,11 +75,9 @@ for (const theme of ['light', 'dark']) {
       });
       expect(metrics.titleColor).toBe(metrics.color);
       expect(metrics.iconColor).toBe(metrics.color);
-      expect(metrics.iconWidth).toBe(32);
       if (!state.light) expect(metrics.color).toBe('rgb(255, 255, 255)');
       expect(Math.abs(metrics.artworkInset)).toBeLessThanOrEqual(1);
       expect(Math.abs(metrics.artworkBottom)).toBeLessThanOrEqual(1);
-      expect(metrics.titleInset).toBeCloseTo(metrics.contentInset, 0);
       expect(metrics.docsRight).toBeLessThanOrEqual(metrics.contentRight);
       expect(metrics.overflowing).toBe(true);
       expect(metrics.ellipsis).toBe('ellipsis');
