@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 /**
  * Wire-contract tests for the NotificationService rewire (PROTOCOL.md §5.12).
  * The legacy `notificationSettings` electron-store bag is retired; the
- * `enabled` and `soundOnlyWhenUnfocused` flags now read from the daemon-owned
- * `notifications.*` settings via `settings.get`. Every legacy `settings`
+ * `enabled` flag now reads from the daemon-owned `notifications.*` settings
+ * via `settings.get` (`soundOnlyWhenUnfocused` is a renderer sound gate). Every legacy `settings`
  * store instantiation in this file is grep-proof gone.
  */
 

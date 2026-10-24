@@ -53,19 +53,14 @@ const logger = new Logger('NotificationService');
 /** Daemon setting path for the notifications-enabled toggle (§5.12). */
 const SETTING_PATH_ENABLED = 'notifications.enabled';
 
-/** Daemon setting path for the "only when unfocused" toggle (§5.12). */
-const SETTING_PATH_SOUND_ONLY_WHEN_UNFOCUSED = 'notifications.soundOnlyWhenUnfocused';
-
 /** Daemon-owned notification preferences consulted per idle event. */
 interface NotificationPrefs {
   enabled: boolean;
-  soundOnlyWhenUnfocused: boolean;
 }
 
 /** Daemon catalog defaults — also the fallback when the daemon is unreachable. */
 const DEFAULT_PREFS: NotificationPrefs = {
   enabled: true,
-  soundOnlyWhenUnfocused: true,
 };
 
 /** Last-known preferences, used as a fallback when a refresh fails. */
@@ -90,14 +85,8 @@ async function fetchBoolSetting(path: string, defaultValue: boolean): Promise<bo
  */
 async function refreshPrefs(): Promise<NotificationPrefs> {
   try {
-    const [enabled, soundOnlyWhenUnfocused] = await Promise.all([
-      fetchBoolSetting(SETTING_PATH_ENABLED, DEFAULT_PREFS.enabled),
-      fetchBoolSetting(
-        SETTING_PATH_SOUND_ONLY_WHEN_UNFOCUSED,
-        DEFAULT_PREFS.soundOnlyWhenUnfocused,
-      ),
-    ]);
-    cachedPrefs = { enabled, soundOnlyWhenUnfocused };
+    const enabled = await fetchBoolSetting(SETTING_PATH_ENABLED, DEFAULT_PREFS.enabled);
+    cachedPrefs = { enabled };
   } catch (error) {
     logger.warn('Failed to fetch notifications.* settings from daemon', {
       error: error instanceof Error ? error.message : String(error),
@@ -651,11 +640,12 @@ export class NotificationService {
         backendId,
       );
 
-      // Focus gate for the OS banner: `soundOnlyWhenUnfocused` ON suppresses
-      // the banner only while the focused window is VIEWING the event's own
-      // workspace; OFF shows it even when focused. The `notification:show`
-      // renderer event is ALWAYS sent regardless of focus so the renderer
-      // sound gate decides on its own.
+      // Viewing gate: while the focused window is VIEWING the event's own
+      // workspace, show neither an OS banner nor an in-app toast — the user is
+      // already looking at it, matching the attention/failure toasts. This
+      // holds whatever `soundOnlyWhenUnfocused` says: that preference governs
+      // only sound. The `notification:show` renderer event is ALWAYS sent so
+      // the renderer sound gate decides on its own.
       // The focused window must be on the emitting host: workspace ids are
       // only unique per host (the Assistant id is shared), so a local window
       // viewing the local Assistant is not viewing a remote one.
@@ -664,8 +654,8 @@ export class NotificationService {
         focusedWindow !== null &&
         getBackendIdForWindow(focusedWindow) === backendId &&
         getFocusedWindowWorkspaceId() === workspaceId;
-      if (focusedViewingWorkspace && prefs.soundOnlyWhenUnfocused) {
-        logger.debug('Focused window is viewing the workspace, suppressing OS banner', {
+      if (focusedViewingWorkspace) {
+        logger.debug('Focused window is viewing the workspace, sound only', {
           workspaceId,
           agentName: event.data.agentName,
         });
@@ -702,10 +692,7 @@ export class NotificationService {
                 ...(event.data.agentId ? { agentId: event.data.agentId } : {}),
               }
             : { workspaceId };
-        this.sendShowEvent(content, backendId, workspaceId, navigateTarget, {
-          window: focusedWindow,
-          suppressWhenViewing: prefs.soundOnlyWhenUnfocused,
-        });
+        this.sendShowEvent(content, backendId, workspaceId, navigateTarget, focusedWindow);
         return;
       }
 
@@ -827,37 +814,28 @@ export class NotificationService {
    * WITHOUT `navigateTarget`: a click there would navigate a window on
    * another host, which cannot show this workspace.
    *
-   * `toast.window` (the focused on-host window, frontmost gate only) is the
+   * `toastWindow` (the focused on-host window, frontmost gate only) is the
    * one window that receives `navigateTarget`, so the toast appears where the
    * user is looking — not in background windows that merely have the
    * workspace open or host it offscreen. Those still get the sound-only
-   * payload, keeping sound delivery unchanged. `suppressWhenViewing` carries
-   * main's own `soundOnlyWhenUnfocused` read (the local daemon) so the
-   * renderer's late "already viewing" check uses the same authority instead
-   * of its window's daemon, which can differ on a remote-host window.
+   * payload, keeping sound delivery unchanged.
    */
   private sendShowEvent(
     content: NotificationContent,
     scope: WindowHostScope,
     workspaceId?: string,
     navigateTarget?: NotificationNavigateTarget,
-    toast?: { window: BrowserWindow; suppressWhenViewing: boolean },
+    toastWindow?: BrowserWindow,
   ): void {
-    const toastWindow = toast?.window;
     const payload = {
       title: content.title,
       body: content.body,
       timestamp: new Date().toISOString(),
       ...(content.structured ? { structured: content.structured } : {}),
       ...(navigateTarget ? { navigateTarget } : {}),
-      ...(navigateTarget && toast ? { suppressWhenViewing: toast.suppressWhenViewing } : {}),
     };
     if (navigateTarget && toastWindow && !toastWindow.isDestroyed()) {
-      const {
-        navigateTarget: _toastOnly,
-        suppressWhenViewing: _toastRule,
-        ...soundOnlyPayload
-      } = payload;
+      const { navigateTarget: _toastOnly, ...soundOnlyPayload } = payload;
       if (!toastWindow.webContents.isDestroyed()) {
         toastWindow.webContents.send('notification:show', payload);
       }

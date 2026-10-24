@@ -864,46 +864,33 @@ describe('NotificationService focus gate (soundOnlyWhenUnfocused)', () => {
     agentListResponse.agents = [];
   });
 
-  it('suppresses the OS banner but still sends notification:show (no navigateTarget) when the focused window views the workspace and soundOnlyWhenUnfocused=true', async () => {
-    settingsValues['notifications.soundOnlyWhenUnfocused'] = true;
-    installFocusedWindow(true);
+  it.each([true, false])(
+    'sends sound-only notification:show (no OS banner, no toast) when the focused window views the workspace, soundOnlyWhenUnfocused=%s',
+    async (soundOnlyWhenUnfocused) => {
+      settingsValues['notifications.soundOnlyWhenUnfocused'] = soundOnlyWhenUnfocused;
+      const focused = installFocusedWindow(true);
 
-    const service = new NotificationService();
-    await service.handleAgentIdle(buildIdleEvent());
+      const service = new NotificationService();
+      await service.handleAgentIdle(buildIdleEvent());
 
-    // OS banner suppressed…
-    expect(mockNotificationInstances.length).toBe(0);
-    // …but the renderer sound event is still delivered — sound-only, no toast.
-    expect(sendToWorkspaceWindows).toHaveBeenCalledWith(
-      'workspace-1',
-      'notification:show',
-      expect.objectContaining({ title: expect.any(String), body: expect.any(String) }),
-      LOCAL_ID,
-    );
-    expect(vi.mocked(sendToWorkspaceWindows).mock.calls[0][2]).not.toHaveProperty('navigateTarget');
-  });
-
-  it('delivers an in-app toast (navigateTarget, no OS banner) when frontmost and viewing the workspace with soundOnlyWhenUnfocused=false (electron#51885)', async () => {
-    settingsValues['notifications.soundOnlyWhenUnfocused'] = false;
-    const focused = installFocusedWindow(true);
-
-    const service = new NotificationService();
-    await service.handleAgentIdle(buildIdleEvent());
-
-    expect(mockNotificationInstances.length).toBe(0);
-    expect(sendToWorkspaceWindows).not.toHaveBeenCalled();
-    expect(focused.webContents.send).toHaveBeenCalledWith(
-      'notification:show',
-      expect.objectContaining({
-        title: expect.any(String),
-        body: expect.any(String),
-        navigateTarget: { workspaceId: 'workspace-1' },
-        // Main's own preference read rides along so the renderer does not
-        // re-decide with a different daemon's value.
-        suppressWhenViewing: false,
-      }),
-    );
-  });
+      // No OS banner and no toast: the user is already looking at the
+      // workspace. The sound setting governs only the renderer sound gate.
+      expect(mockNotificationInstances.length).toBe(0);
+      expect(sendToWorkspaceWindows).toHaveBeenCalledWith(
+        'workspace-1',
+        'notification:show',
+        expect.objectContaining({ title: expect.any(String), body: expect.any(String) }),
+        LOCAL_ID,
+      );
+      expect(vi.mocked(sendToWorkspaceWindows).mock.calls[0][2]).not.toHaveProperty(
+        'navigateTarget',
+      );
+      const toastSends = focused.webContents.send.mock.calls.filter(
+        ([, payload]) => (payload as { navigateTarget?: unknown })?.navigateTarget,
+      );
+      expect(toastSends).toEqual([]);
+    },
+  );
 
   it('delivers an in-app toast when frontmost but NOT viewing the workspace regardless of soundOnlyWhenUnfocused (electron#51885)', async () => {
     settingsValues['notifications.soundOnlyWhenUnfocused'] = true;
@@ -917,7 +904,6 @@ describe('NotificationService focus gate (soundOnlyWhenUnfocused)', () => {
       'notification:show',
       expect.objectContaining({
         navigateTarget: { workspaceId: 'workspace-1' },
-        suppressWhenViewing: true,
       }),
     );
   });
