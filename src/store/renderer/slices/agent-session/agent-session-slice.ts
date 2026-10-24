@@ -1648,7 +1648,13 @@ export const clearProcessQueueHint = createAction<[agentId: string]>(
  */
 export const processEvicted = createAction<[agentId: string]>('agentSessions/processEvicted');
 
-/** Rename agent session */
+/**
+ * Apply a daemon `agent:renamed` event. Every daemon rename path (`agent.rename`,
+ * name-only `agent.update`) also sets `nameExplicitlySet`, so mirror that here:
+ * Assistant thread titles (`getChiefThreadTitle`) show the session name only
+ * once it is explicit, and would otherwise keep the first-message preview
+ * until a refetch.
+ */
 export const renameSession = createAction<[agentId: string, name: string]>(
   'agentSessions/renameSession',
 );
@@ -1944,8 +1950,8 @@ agentSessionReducer.with(eventReceived, (state, { payload: [, event] }) => {
 });
 agentSessionReducer.with(renameSession, (state, { payload: [agentId, name] }) => {
   const session = getSession(state, agentId);
-  if (!session || session.name === name) return state;
-  return setSession(state, agentId, { ...session, name });
+  if (!session || (session.name === name && session.nameExplicitlySet === true)) return state;
+  return setSession(state, agentId, { ...session, name, nameExplicitlySet: true });
 });
 agentSessionReducer.with(bulkUpsertSessions, (state, { payload: [sessions, options] }) => {
   let next = state;
