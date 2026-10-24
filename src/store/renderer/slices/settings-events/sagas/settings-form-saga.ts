@@ -51,6 +51,7 @@ const paths = {
     'workspace.cowIsolation',
     'workspace.branchPrefix',
     'sourceControl.github.exposeGitCredentialToChildren',
+    'workspace.autoRetireArchivedAfterDays',
   ],
 } satisfies Partial<Record<SettingsFormKind, string[]>>;
 

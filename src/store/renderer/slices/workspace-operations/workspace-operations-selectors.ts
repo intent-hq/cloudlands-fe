@@ -141,3 +141,17 @@ export const selectRunningAgentsForArchive = store.createSelector((state) => {
     };
   });
 });
+
+export const selectShowRetireConfirm = store.createSelector((state) => {
+  return state.workspaceOperations.showRetireConfirm;
+});
+
+export const selectPendingRetireWorkspaceId = store.createSelector((state) => {
+  return state.workspaceOperations.pendingRetireWorkspaceId;
+});
+
+/** Title of the workspace awaiting retire confirmation (`''` when unknown or untitled). */
+export const selectPendingRetireWorkspaceTitle = store.createSelector((state): string => {
+  const id = state.workspaceOperations.pendingRetireWorkspaceId;
+  return id ? (selectWorkspaceById.select(state, id)?.title ?? '') : '';
+});
