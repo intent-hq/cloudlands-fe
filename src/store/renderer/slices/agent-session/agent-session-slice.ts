@@ -1649,15 +1649,15 @@ export const clearProcessQueueHint = createAction<[agentId: string]>(
 export const processEvicted = createAction<[agentId: string]>('agentSessions/processEvicted');
 
 /**
- * Apply a daemon `agent:renamed` event. Every daemon rename path (`agent.rename`,
- * name-only `agent.update`) also sets `nameExplicitlySet`, so mirror that here:
- * Assistant thread titles (`getChiefThreadTitle`) show the session name only
- * once it is explicit, and would otherwise keep the first-message preview
- * until a refetch.
+ * Apply a daemon `agent:renamed` event. `nameExplicitlySet` mirrors the event's
+ * persisted flag (§6.5); it defaults to `true` for older daemons that omit it,
+ * since every rename path set the flag before it was sent. Assistant thread
+ * titles (`getChiefThreadTitle`) show the session name only once it is explicit,
+ * and keep the first-message preview otherwise.
  */
-export const renameSession = createAction<[agentId: string, name: string]>(
-  'agentSessions/renameSession',
-);
+export const renameSession = createAction<
+  [agentId: string, name: string, nameExplicitlySet?: boolean]
+>('agentSessions/renameSession');
 
 /** Rename an agent session. Kept on the legacy action type for dispatch compatibility. */
 export const renameAgent = createAction<[wsId: string, agentId: string, name: string]>(
@@ -1948,11 +1948,19 @@ agentSessionReducer.with(eventReceived, (state, { payload: [, event] }) => {
   };
   return updateSessionFields(recordSessionProjection(state, agentId, merged), agentId, merged);
 });
-agentSessionReducer.with(renameSession, (state, { payload: [agentId, name] }) => {
-  const session = getSession(state, agentId);
-  if (!session || (session.name === name && session.nameExplicitlySet === true)) return state;
-  return setSession(state, agentId, { ...session, name, nameExplicitlySet: true });
-});
+agentSessionReducer.with(
+  renameSession,
+  (state, { payload: [agentId, name, nameExplicitlySet = true] }) => {
+    const session = getSession(state, agentId);
+    if (
+      !session ||
+      (session.name === name && (session.nameExplicitlySet ?? false) === nameExplicitlySet)
+    ) {
+      return state;
+    }
+    return setSession(state, agentId, { ...session, name, nameExplicitlySet });
+  },
+);
 agentSessionReducer.with(bulkUpsertSessions, (state, { payload: [sessions, options] }) => {
   let next = state;
   const listProjection = options?.listProjection === true;

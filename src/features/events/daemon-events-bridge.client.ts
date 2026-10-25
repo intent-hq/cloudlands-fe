@@ -1481,11 +1481,12 @@ function claimRetireTransition(agentId: string, transition: 'retired' | 'restore
 }
 
 /**
- * `agent:renamed` (§5.5 / §6.5) carries `{ agentId, name }` — the daemon's
- * `agent.rename` (and a name-only `agent.update`) emits it after persisting the
- * new name with `nameExplicitlySet` set. Dispatching `renameSession` updates the
- * session's `name` and marks it explicit (so Assistant thread titles switch
- * from the first-message preview) without touching the transcript.
+ * `agent:renamed` (§5.5 / §6.5) carries `{ agentId, name, nameExplicitlySet }` —
+ * the daemon's `agent.rename` (and a name-only `agent.update`) emits it after
+ * persisting the new name. Dispatching `renameSession` updates the session's
+ * `name` and mirrors the daemon's flag (Assistant thread titles switch from the
+ * first-message preview only once it is explicit) without touching the
+ * transcript. Older daemons omit the flag; absent means `true`.
  */
 function handleAgentRenamedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -1494,7 +1495,9 @@ function handleAgentRenamedEvent(event: WorkspaceEvent): void {
   const name = data.name;
   if (typeof agentId !== 'string' || agentId.length === 0) return;
   if (typeof name !== 'string') return;
-  appStore.dispatch(renameSession(agentId, name));
+  const nameExplicitlySet =
+    typeof data.nameExplicitlySet === 'boolean' ? data.nameExplicitlySet : true;
+  appStore.dispatch(renameSession(agentId, name, nameExplicitlySet));
 }
 
 /** Apply self-sufficient metadata mutations; keep scoped reads for partial invalidations. */

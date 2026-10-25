@@ -6175,6 +6175,54 @@ describe('daemonEventsBridge (session lifecycle — agent:created/renamed/update
     expect(titleOf()).toBe('Speech model');
   });
 
+  it('agent:renamed with nameExplicitlySet: false keeps the first-message preview', () => {
+    const chiefAgent = 'agent-chief-implicit-rename';
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          id: chiefAgent,
+          backendSessionId: 'backend-chief-implicit',
+          workspaceId: CHIEF_WORKSPACE_ID,
+          name: 'Assistant',
+          nameExplicitlySet: false,
+          status: AgentStatus.Active,
+          messages: [
+            {
+              id: 'user-1',
+              role: 'user',
+              contentBlocks: [{ type: 'text', text: 'summarize the release notes' }],
+              timestamp: '2026-01-02T00:00:00.000Z',
+            },
+          ],
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        } as AgentSession,
+      ]),
+    );
+    const titleOf = () =>
+      selectChiefThreads.select(appStore.state).find((thread) => thread.agentId === chiefAgent)
+        ?.title;
+    expect(titleOf()).toBe('summarize the release notes');
+
+    capturedHandlers[0]!({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-chief-implicit-renamed',
+          workspaceId: CHIEF_WORKSPACE_ID,
+          timestamp: '2026-01-02T00:00:01.000Z',
+          type: 'agent:renamed',
+          actor: { type: 'system' },
+          data: { agentId: chiefAgent, name: 'Auto title', nameExplicitlySet: false },
+        },
+      },
+    });
+
+    const session = appStore.state.agentSessions.byAgentId[chiefAgent];
+    expect(session).toMatchObject({ name: 'Auto title', nameExplicitlySet: false });
+    expect(titleOf()).toBe('summarize the release notes');
+  });
+
   it('agent:updated re-reads through the seam and does not clobber the local transcript', async () => {
     const message: AgentMessage = {
       id: 'asst-keep',
