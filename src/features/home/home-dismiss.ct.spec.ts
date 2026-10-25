@@ -1127,7 +1127,7 @@ test('Board dismissal keeps selected details and focus when the card moves', asy
   });
   await dismiss.click();
   const moved = board
-    .getByRole('region', { name: 'Done & idle', exact: true })
+    .getByRole('region', { name: 'Waiting', exact: true })
     .getByRole('button', { name: 'Review onboarding', exact: true });
   await expect(moved.locator('[data-home-status]')).toHaveAccessibleName(/Waiting/);
   await expect(moved).toBeFocused();
@@ -1149,7 +1149,7 @@ test('Board dismissal keeps selected details and focus when the card moves', asy
     ),
     contentType: 'application/json',
   });
-  for (const label of ['Needs you', 'PR ready', 'Running', 'Done & idle']) {
+  for (const label of ['Needs you', 'PR ready', 'Running', 'Waiting', 'Done & idle']) {
     await expect(board.getByRole('heading', { name: label, exact: true })).toBeInViewport({
       ratio: 1,
     });

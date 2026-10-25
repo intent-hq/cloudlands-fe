@@ -4,6 +4,7 @@
   import { selectAgentProvider } from '$store/renderer/slices/agent-session/agent-session-selectors';
   /* eslint-disable max-lines */
   import { onDestroy, onMount, tick } from 'svelte';
+  import { composerMinHeight } from '../composer-height';
   import { writable } from 'svelte/store';
   import { notify } from '$lib/components/patterns/notify';
   import { withToastCountdown } from '$lib/components/patterns/notify';
@@ -66,6 +67,7 @@
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import type { StackedMenuGroup } from '$lib/components/ui/menu';
   import { parseImageDataUrl } from './image-data-url';
+  import { isSupportedImageMimeType } from './image-attachment-format';
   import {
     selectSkills,
     selectSkillsError,
@@ -325,8 +327,8 @@
     contextItems.filter(
       (item) =>
         item.type === 'file' &&
-        ((item.imageData && item.imageMimeType) ||
-          (item.file && item.file.type?.startsWith('image/'))),
+        ((item.imageData && isSupportedImageMimeType(item.imageMimeType)) ||
+          (item.file && isSupportedImageMimeType(item.file.type))),
     ),
   );
   const nonImageItems = $derived(
@@ -334,8 +336,8 @@
       (item) =>
         !(
           item.type === 'file' &&
-          ((item.imageData && item.imageMimeType) ||
-            (item.file && item.file.type?.startsWith('image/')))
+          ((item.imageData && isSupportedImageMimeType(item.imageMimeType)) ||
+            (item.file && isSupportedImageMimeType(item.file.type)))
         ),
     ),
   );
@@ -575,10 +577,6 @@
 
   // Height constraints for auto-expand
   const MIN_HEIGHT = 65;
-  const IDLE_MIN_HEIGHT = 56;
-  const DEFAULT_HEIGHT = 100;
-  const IDLE_DEFAULT_HEIGHT = 80;
-  const COMPACT_PANEL_THRESHOLD = 640; // Keep the composer compact in short and stacked panels
   const MAX_HEIGHT_PERCENTAGE = 0.8; // Max 80% of parent panel
   const MAX_HEIGHT_ABSOLUTE = 800; // Absolute max in pixels
   const FALLBACK_MAX_HEIGHT = 300;
@@ -589,12 +587,7 @@
   const showPlaceholder = $derived(inputLocked || (isComposerFocused && !hasComposerContent));
   // Automatic geometry expands only for real composer content. Focus reveals
   // the placeholder without changing the compact idle height.
-  let dynamicDefaultHeight = $derived.by(() => {
-    if (parentPanelHeight && parentPanelHeight > COMPACT_PANEL_THRESHOLD) {
-      return hasComposerContent ? DEFAULT_HEIGHT : IDLE_DEFAULT_HEIGHT;
-    }
-    return hasComposerContent ? MIN_HEIGHT : IDLE_MIN_HEIGHT;
-  });
+  const dynamicDefaultHeight = $derived(composerMinHeight(parentPanelHeight, hasComposerContent));
 
   // Calculate max height based on parent panel (80% of panel height, capped)
   let maxAutoHeight = $derived.by(() => {

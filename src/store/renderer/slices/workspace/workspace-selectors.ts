@@ -38,6 +38,9 @@ import { m } from '$shared/paraglide/messages.js';
 import { formatInteger, formatNumber } from '$lib/i18n/format';
 import { getPrChipLabel } from '$lib/utils/pr-chip-label';
 
+/** Workspace entity changes observed by independent UI projections. */
+export const selectWorkspaceEntities = store.createSelector((state) => state.workspace.workspaces);
+
 export const selectWorkspaceLoading = store.createSelector((state) => {
   return state.workspace.loading;
 });
@@ -221,7 +224,8 @@ export const selectCanManageWorkspace = store.createSelector<[wsId: string], boo
     }
     // A guest may retain ownership of one workspace without owning the host.
     return (
-      workspace.myRole === 'owner' || (role === 'owner' && workspace.myRole !== 'collaborator')
+      workspace.myRole === 'owner' ||
+      (role === 'owner' && workspace.myRole !== 'collaborator' && workspace.myRole !== 'manager')
     );
   },
 );
@@ -237,7 +241,7 @@ export const selectWorkspaceManagementDenied = store.createSelector<[wsId: strin
     if (selectPrincipalSnapshot.select(state)?.capabilities.hostMembership) {
       return selectWorkspaceCapabilitiesReady.select(state) && workspace?.canManage === false;
     }
-    return workspace?.myRole === 'collaborator';
+    return workspace?.myRole === 'collaborator' || workspace?.myRole === 'manager';
   },
 );
 
@@ -861,7 +865,13 @@ export const selectWorkspaceParticipationContext = store.createSelector<
   if (!selectCanAdministerHost.select(state) && !selectCollaborationReady.select(state))
     return null;
   const row = selectWorkspaceById.select(state, wsId);
-  if (!row || (row.myRole !== 'owner' && row.myRole !== 'collaborator' && row.canManage !== true))
+  if (
+    !row ||
+    (row.myRole !== 'owner' &&
+      row.myRole !== 'collaborator' &&
+      row.myRole !== 'manager' &&
+      row.canManage !== true)
+  )
     return null;
   return selectPrincipalActionContext.select(state);
 });
@@ -892,3 +902,45 @@ export const selectWorkspaceUpdateContext = store.createSelector<
     ? context
     : null;
 });
+
+/** Guest Manager adds only agent setup and saved-script operation, never host execution. */
+export const selectWorkspaceGuestManagerContext = store.createSelector<
+  [wsId: string],
+  string | null
+>((state, wsId) => {
+  if (wsId === CHIEF_WORKSPACE_ID || wsId === ROOT_WORKSPACE_ID) return null;
+  if (selectPrincipalSnapshot.select(state)?.capabilities.workspaceGuestRoles !== true) return null;
+  if (selectWorkspaceById.select(state, wsId)?.myRole !== 'manager') return null;
+  return selectWorkspaceParticipationContext.select(state, wsId);
+});
+
+export const selectWorkspaceAgentManagementContext = store.createSelector<
+  [wsId: string],
+  string | null
+>(
+  (state, wsId) =>
+    selectWorkspaceActionContext.select(state, wsId) ??
+    selectWorkspaceGuestManagerContext.select(state, wsId),
+);
+
+export const selectWorkspaceSavedScriptContext = store.createSelector<
+  [wsId: string],
+  string | null
+>(
+  (state, wsId) =>
+    selectWorkspaceActionContext.select(state, wsId) ??
+    selectWorkspaceGuestManagerContext.select(state, wsId),
+);
+
+/** Workspace owners retain script reads independently of host-execution authority. */
+export const selectWorkspaceScriptReadContext = store.createSelector<[wsId: string], string | null>(
+  (state, wsId) =>
+    selectWorkspaceSavedScriptContext.select(state, wsId) ??
+    (selectCanManageWorkspace.select(state, wsId)
+      ? selectWorkspaceParticipationContext.select(state, wsId)
+      : null),
+);
+
+export const selectHidesAgentCreationActions = store.createSelector<[wsId: string], boolean>(
+  (state, wsId) => selectWorkspaceAgentManagementContext.select(state, wsId) === null,
+);

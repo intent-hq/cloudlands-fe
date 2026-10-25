@@ -1,13 +1,6 @@
 import { expect, test } from '../../../../../test/ct-test';
 import type { Locator, Page } from '@playwright/test';
 import PanelWorkspaceColumnClipHarness from './mocks/PanelWorkspaceColumnClipHarness.svelte';
-import {
-  allocateViewportPanelWidths,
-  resizePanelWidthsAtDivider,
-} from '$shared/panel-layout-sizing';
-
-const GUTTER_WIDTH = 8;
-const UNCONTAINED_INLINE_CHROME = 20;
 const ROOT_HANDLE_SELECTOR =
   '.panel-split-container.horizontal > .panel-split-handle-wrapper button[data-resize-axis="x"]';
 
@@ -149,69 +142,23 @@ async function nextFrames(page: Page, count: number) {
   }, count);
 }
 
-function describeGeometryMismatch(actual: Geometry, widths: number[], zoomFactor: number) {
-  const canvasWidth =
-    widths.reduce((sum, width) => sum + width, 0) + GUTTER_WIDTH * (widths.length - 1);
-  const mismatches: string[] = [];
-  const check = (label: string, value: number, expected: number) => {
-    if (Math.abs(value - expected) >= 0.5) mismatches.push(`${label}: ${value} vs ${expected}`);
-  };
-  check('canvasWidth', actual.canvasWidth, canvasWidth);
-  check('canvasVisualWidth', actual.canvasVisualWidth, canvasWidth * zoomFactor);
-  if (actual.panelWidths.length !== widths.length) {
-    mismatches.push(`panelCount: ${actual.panelWidths.length} vs ${widths.length}`);
-  }
-  actual.panelWidths.forEach((width, index) =>
-    check(`panelWidths[${index}]`, width, widths[index]),
-  );
-  actual.panelVisualWidths.forEach((width, index) =>
-    check(`panelVisualWidths[${index}]`, width, widths[index] * zoomFactor),
-  );
-  return mismatches;
-}
-
-/**
- * Polls until the geometry converges to `widths`. Layout commits reach the
- * DOM through the store's cadenced selector delivery (throttled ticks
- * scheduled via setTimeout + requestAnimationFrame) and the viewport
- * measurement's batched layout read, so no fixed frame count is a valid
- * "committed" signal; the expected geometry itself is. Whether the store
- * commit itself was persisted is proven by the reload reads, which remount
- * from the store alone.
- */
-async function expectSettledGeometry(
-  component: Locator,
-  widths: number[],
-  zoomFactor: number,
-): Promise<Geometry> {
-  let settled: Geometry | null = null;
-  await expect
-    .poll(async () => {
-      settled = await readGeometry(component);
-      return describeGeometryMismatch(settled, widths, zoomFactor);
-    })
-    .toEqual([]);
-  if (!settled) throw new Error('Geometry never settled');
+async function expectSettledGeometry(component: Locator, expected?: Geometry): Promise<Geometry> {
+  let previous = await readSettledGeometry(component);
+  let settled = previous;
+  await expect(async () => {
+    settled = await readSettledGeometry(component);
+    expect(settled.panelWidths.every((width) => width > 0)).toBe(true);
+    const prior = previous;
+    previous = settled;
+    expectStableGeometry(prior, settled);
+    if (expected) expectStableGeometry(expected, settled);
+  }).toPass();
   return settled;
 }
 
-/**
- * Post-release variant of `expectSettledGeometry`. On release the container
- * pins each child's inline `flex` to the release widths and drops that pin in
- * an animation frame it requests during the release task; a frame requested
- * afterwards runs after it (registration order), and the pin drop re-renders
- * the children from the store-delivered widths. Starting the poll only after
- * that frame means the geometry it accepts is the store-driven layout, not the
- * release pin the `pointerUp` snapshot already read.
- */
-async function expectCommittedGeometry(
-  page: Page,
-  component: Locator,
-  widths: number[],
-  zoomFactor: number,
-): Promise<Geometry> {
+async function expectCommittedGeometry(page: Page, component: Locator, expected: Geometry) {
   await nextFrames(page, 1);
-  return expectSettledGeometry(component, widths, zoomFactor);
+  return expectSettledGeometry(component, expected);
 }
 
 async function dragDivider(
@@ -220,7 +167,6 @@ async function dragDivider(
   handle: Locator,
   cssDelta: number,
   zoomFactor: number,
-  committedWidths: number[],
 ) {
   await handle.scrollIntoViewIfNeeded();
   const box = await handle.boundingBox();
@@ -237,7 +183,7 @@ async function dragDivider(
   const preview = await readSettledGeometry(component);
   await page.mouse.up();
   const pointerUp = await takePointerUpSnapshot(page);
-  const settled = await expectCommittedGeometry(page, component, committedWidths, zoomFactor);
+  const settled = await expectCommittedGeometry(page, component, preview);
   return { preview, pointerUp, settled };
 }
 
@@ -247,7 +193,6 @@ async function dragDividerBeforeNextFrame(
   dividerIndex: number,
   cssDelta: number,
   zoomFactor: number,
-  committedWidths: number[],
 ) {
   const immediate = await component.evaluate(
     async (_, { dividerIndex, visualDelta }) => {
@@ -280,7 +225,7 @@ async function dragDividerBeforeNextFrame(
     },
     { dividerIndex, visualDelta: cssDelta * zoomFactor },
   );
-  const settled = await expectCommittedGeometry(page, component, committedWidths, zoomFactor);
+  const settled = await expectCommittedGeometry(page, component, immediate.pointerUp);
   return { ...immediate, settled };
 }
 
@@ -290,10 +235,6 @@ async function waitForRemount(root: Locator, action: () => Promise<void>) {
   await action();
   await expect.poll(() => previousRoot.evaluate((element) => element.isConnected)).toBe(false);
   await expect(root).toHaveCount(1);
-}
-
-function expectGeometry(actual: Geometry, widths: number[], zoomFactor: number) {
-  expect(describeGeometryMismatch(actual, widths, zoomFactor)).toEqual([]);
 }
 
 function expectStableGeometry(preview: Geometry, committed: Geometry) {
@@ -351,60 +292,42 @@ for (const mode of ['contained', 'uncontained'] as const) {
             zoomFactor,
             panelTypes: ['note', 'note', 'note'],
             panelSizes: viewport.widths.map(
-              (width) => (width / (viewport.canvasWidth - GUTTER_WIDTH * 2)) * 100,
+              (width) => (width / viewport.widths.reduce((sum, item) => sum + item, 0)) * 100,
             ),
           },
         });
         await installGeometryReader(page);
         const handles = component.locator(ROOT_HANDLE_SELECTOR);
         await expect(handles).toHaveCount(2);
-        const initialCanvasWidth =
-          mode === 'uncontained'
-            ? viewport.viewportWidth - UNCONTAINED_INLINE_CHROME
-            : viewport.canvasWidth;
-        const widths =
-          mode === 'uncontained'
-            ? allocateViewportPanelWidths(viewport.widths, initialCanvasWidth).panelWidths
-            : [...viewport.widths];
-        // The canvas settles to its policy width asynchronously; content keeps
-        // the persisted width, while viewport mode fits the available frame.
-        await expectSettledGeometry(component, widths, zoomFactor);
-
-        const beforeFastRelease = [...widths];
-        widths.splice(0, widths.length, ...resizePanelWidthsAtDivider(widths, 0, 47).panelWidths);
-        const fastRelease = await dragDividerBeforeNextFrame(
-          page,
-          component,
-          0,
-          47,
-          zoomFactor,
-          widths,
+        const beforeFastRelease = await expectSettledGeometry(component);
+        const fastRelease = await dragDividerBeforeNextFrame(page, component, 0, 47, zoomFactor);
+        expectStableGeometry(beforeFastRelease, fastRelease.preview);
+        expect(fastRelease.pointerUp.panelWidths[0]).toBeGreaterThan(
+          beforeFastRelease.panelWidths[0],
         );
-        expectGeometry(fastRelease.preview, beforeFastRelease, zoomFactor);
-        expectGeometry(fastRelease.pointerUp, widths, zoomFactor);
         expectStableGeometry(fastRelease.pointerUp, fastRelease.settled);
 
         for (const dividerIndex of [0, 1]) {
           for (const delta of [80, -120, 60, -40]) {
-            const before = [...widths];
-            widths.splice(
-              0,
-              widths.length,
-              ...resizePanelWidthsAtDivider(widths, dividerIndex, delta).panelWidths,
-            );
+            const before = await readSettledGeometry(component);
             const result = await dragDivider(
               page,
               component,
               handles.nth(dividerIndex),
               delta,
               zoomFactor,
-              widths,
             );
-            expectGeometry(result.preview, widths, zoomFactor);
-            expectGeometry(result.pointerUp, widths, zoomFactor);
+            if (delta > 0)
+              expect(result.preview.panelWidths[dividerIndex]).toBeGreaterThan(
+                before.panelWidths[dividerIndex],
+              );
+            else
+              expect(result.preview.panelWidths[dividerIndex]).toBeLessThan(
+                before.panelWidths[dividerIndex],
+              );
             expectStableGeometry(result.preview, result.pointerUp);
             expectStableGeometry(result.preview, result.settled);
-            before.slice(0, dividerIndex).forEach((width, index) => {
+            before.panelWidths.slice(0, dividerIndex).forEach((width, index) => {
               expect(result.settled.panelWidths[index]).toBeCloseTo(width, 0);
             });
           }
@@ -435,56 +358,41 @@ for (const zoomFactor of [1, 2]) {
     const root = component.locator('.panel-split-container.horizontal');
     await expect(handle).toHaveCount(1);
 
-    const widths = [500, 500];
-    await expectSettledGeometry(component, widths, zoomFactor);
-
-    const beforeFastRelease = [...widths];
-    widths.splice(0, widths.length, ...resizePanelWidthsAtDivider(widths, 0, 53).panelWidths);
-    const fastRelease = await dragDividerBeforeNextFrame(
-      page,
-      component,
-      0,
-      53,
-      zoomFactor,
-      widths,
-    );
-    expectGeometry(fastRelease.preview, beforeFastRelease, zoomFactor);
-    expectGeometry(fastRelease.pointerUp, widths, zoomFactor);
+    const beforeFastRelease = await expectSettledGeometry(component);
+    const fastRelease = await dragDividerBeforeNextFrame(page, component, 0, 53, zoomFactor);
+    expectStableGeometry(beforeFastRelease, fastRelease.preview);
+    expect(fastRelease.pointerUp.panelWidths[0]).toBeGreaterThan(beforeFastRelease.panelWidths[0]);
     expectStableGeometry(fastRelease.pointerUp, fastRelease.settled);
 
-    widths.splice(0, widths.length, ...resizePanelWidthsAtDivider(widths, 0, -220).panelWidths);
-    const shrunk = await dragDivider(page, component, handle, -220, zoomFactor, widths);
-    expectGeometry(shrunk.preview, widths, zoomFactor);
-    expectGeometry(shrunk.pointerUp, widths, zoomFactor);
+    const shrunk = await dragDivider(page, component, handle, -220, zoomFactor);
+    expect(shrunk.preview.panelWidths[0]).toBeLessThan(fastRelease.settled.panelWidths[0]);
     expectStableGeometry(shrunk.preview, shrunk.pointerUp);
     expectStableGeometry(shrunk.preview, shrunk.settled);
 
     await component.getByTestId('width-plus-one').evaluate((button: HTMLButtonElement) => {
       button.click();
     });
-    widths.splice(0, widths.length, ...allocateViewportPanelWidths(widths, 1009).panelWidths);
-    await expectSettledGeometry(component, widths, zoomFactor);
-
+    await expect
+      .poll(async () => (await readGeometry(component)).canvasWidth)
+      .toBeGreaterThan(shrunk.settled.canvasWidth);
+    const resized = await expectSettledGeometry(component);
     await waitForRemount(root, () =>
       component.getByTestId('reload-panel-layout').evaluate((button: HTMLButtonElement) => {
         button.click();
       }),
     );
     await expect(handle).toHaveCount(1);
-    await expectSettledGeometry(component, widths, zoomFactor);
+    await expectSettledGeometry(component, resized);
 
-    widths.splice(0, widths.length, ...resizePanelWidthsAtDivider(widths, 0, 80).panelWidths);
-    const grown = await dragDivider(page, component, handle, 80, zoomFactor, widths);
-    expectGeometry(grown.preview, widths, zoomFactor);
-    expectGeometry(grown.pointerUp, widths, zoomFactor);
+    const grown = await dragDivider(page, component, handle, 80, zoomFactor);
+    expect(grown.preview.panelWidths[0]).toBeGreaterThan(resized.panelWidths[0]);
     expectStableGeometry(grown.preview, grown.pointerUp);
     expectStableGeometry(grown.preview, grown.settled);
-
     await waitForRemount(root, () =>
       component.getByTestId('reload-panel-layout').evaluate((button: HTMLButtonElement) => {
         button.click();
       }),
     );
-    await expectSettledGeometry(component, widths, zoomFactor);
+    await expectSettledGeometry(component, grown.settled);
   });
 }

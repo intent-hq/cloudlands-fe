@@ -5,7 +5,11 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import { classifyProviderProfileError, type ProviderProfile } from '$shared/provider-profiles';
+import {
+  classifyProviderProfileError,
+  permuteBaseProfiles,
+  type ProviderProfile,
+} from '$shared/provider-profiles';
 import { LiveProvidersClient } from './live-providers-client';
 
 const PROFILE: ProviderProfile = {
@@ -182,6 +186,106 @@ describe('LiveProvidersClient profiles', () => {
   });
 });
 
+describe('LiveProvidersClient backup failover (§5.54)', () => {
+  let client: LiveProvidersClient;
+  let invoke: ReturnType<typeof vi.fn>;
+  let originalWindow: typeof globalThis.window;
+
+  beforeEach(() => {
+    originalWindow = globalThis.window;
+    client = new LiveProvidersClient();
+    invoke = vi.fn();
+    vi.stubGlobal('window', { electronAPI: { invoke, on: vi.fn(), offById: vi.fn() } });
+  });
+  afterEach(() => vi.stubGlobal('window', originalWindow));
+
+  const lastRequest = () => invoke.mock.calls.at(-1);
+  const BACKUP = { ...PROFILE, backup: true };
+
+  it('sends backup on create and update only when given', async () => {
+    invoke.mockResolvedValue({ ok: true, result: { profile: BACKUP, revision: 4 } });
+    await expect(
+      client.createProfile({ baseProviderId: 'codex', name: 'Work', backup: true }),
+    ).resolves.toMatchObject({ profile: { backup: true } });
+    expect(lastRequest()?.[1]).toEqual({
+      method: 'providers.profiles.create',
+      params: { baseProviderId: 'codex', name: 'Work', backup: true },
+    });
+    await client.createProfile({ baseProviderId: 'codex', name: 'Work' });
+    expect(lastRequest()?.[1].params).not.toHaveProperty('backup');
+
+    invoke.mockResolvedValue({
+      ok: true,
+      result: {
+        profile: { ...PROFILE, backup: false },
+        revision: 5,
+        activation: { envChanged: false, runningProcesses: 0 },
+      },
+    });
+    await client.updateProfile({ profileId: PROFILE.id, backup: false });
+    expect(lastRequest()?.[1]).toEqual({
+      method: 'providers.profiles.update',
+      params: { profileId: PROFILE.id, backup: false },
+    });
+  });
+
+  it('reorders one base provider and validates the result', async () => {
+    const second = { ...BACKUP, id: 'psecond', providerRef: 'codex@psecond', name: 'Second' };
+    invoke.mockResolvedValue({ ok: true, result: { profiles: [second, BACKUP], revision: 6 } });
+    await expect(
+      client.reorderProfiles({ baseProviderId: 'codex', profileIds: ['psecond', PROFILE.id] }),
+    ).resolves.toEqual({ profiles: [second, BACKUP], revision: 6 });
+    expect(lastRequest()).toEqual([
+      IPC_CHANNELS.BACKEND.REQUEST,
+      {
+        method: 'providers.profiles.reorder',
+        params: { baseProviderId: 'codex', profileIds: ['psecond', PROFILE.id] },
+      },
+    ]);
+    invoke.mockResolvedValue({ ok: true, result: { profiles: [{ ...BACKUP, backup: 'yes' }] } });
+    await expect(
+      client.reorderProfiles({ baseProviderId: 'codex', profileIds: [PROFILE.id] }),
+    ).rejects.toThrow();
+  });
+
+  it('classifies reorder field errors', () => {
+    expect(
+      classifyProviderProfileError({
+        data: {
+          code: 'invalid-params',
+          fieldErrors: [
+            { field: 'profileIds', code: 'profile-order-incomplete', message: 'missing' },
+          ],
+        },
+      }),
+    ).toEqual({
+      kind: 'fieldErrors',
+      fieldErrors: [{ field: 'profileIds', code: 'profile-order-incomplete', message: 'missing' }],
+    });
+  });
+});
+
+describe('permuteBaseProfiles', () => {
+  const p = (id: string, base: string, backup?: boolean) => ({
+    id,
+    baseProviderId: base,
+    ...(backup === undefined ? {} : { backup }),
+  });
+
+  it("permutes one base provider's slots and keeps other base providers in place", () => {
+    const all = [p('a', 'codex'), p('x', 'claude-code'), p('b', 'codex'), p('c', 'codex')];
+    expect(permuteBaseProfiles(all, 'codex', ['c', 'a', 'b'])?.map(({ id }) => id)).toEqual([
+      'c',
+      'x',
+      'a',
+      'b',
+    ]);
+    expect(permuteBaseProfiles(all, 'codex', ['c', 'a'])).toBeUndefined();
+    expect(permuteBaseProfiles(all, 'codex', ['c', 'a', 'a'])).toBeUndefined();
+    expect(permuteBaseProfiles(all, 'codex', ['c', 'a', 'x'])).toBeUndefined();
+  });
+});
+
 describe('classifyProviderProfileError', () => {
   it('recognizes not-found and treats unknown or transport failures as other', () => {
     expect(classifyProviderProfileError({ data: { code: 'not-found' } })).toEqual({
@@ -191,5 +295,99 @@ describe('classifyProviderProfileError', () => {
     expect(
       classifyProviderProfileError({ data: { code: 'invalid-params', fieldErrors: 'bad' } }),
     ).toEqual({ kind: 'other' });
+  });
+});
+
+describe('LiveProvidersClient Default configuration overrides (§5.54)', () => {
+  let client: LiveProvidersClient;
+  let invoke: ReturnType<typeof vi.fn>;
+  let originalWindow: typeof globalThis.window;
+
+  const DEFAULT_CONFIG = {
+    baseProviderId: 'codex',
+    providerRef: 'codex',
+    name: 'Personal',
+    env: [{ key: 'OPENAI_API_KEY', kind: 'set' as const, value: '********' }],
+    settingsFingerprint: 'fdef',
+    activation: { runningProcesses: 0 },
+  };
+
+  beforeEach(() => {
+    originalWindow = globalThis.window;
+    client = new LiveProvidersClient();
+    invoke = vi.fn();
+    vi.stubGlobal('window', { electronAPI: { invoke, on: vi.fn(), offById: vi.fn() } });
+  });
+  afterEach(() => vi.stubGlobal('window', originalWindow));
+
+  const lastRequest = () => invoke.mock.calls.at(-1);
+
+  it('reads the defaults member, and tolerates its absence on older daemons', async () => {
+    invoke.mockResolvedValue({
+      ok: true,
+      result: { profiles: [], defaults: [DEFAULT_CONFIG], revision: 2 },
+    });
+    await expect(client.listProfiles()).resolves.toEqual({
+      profiles: [],
+      defaults: [DEFAULT_CONFIG],
+      revision: 2,
+    });
+    invoke.mockResolvedValue({ ok: true, result: { profiles: [], revision: 2 } });
+    expect((await client.listProfiles()).defaults).toBeUndefined();
+  });
+
+  it('reads a divergent defaults member as absent instead of losing the profiles', async () => {
+    invoke.mockResolvedValue({
+      ok: true,
+      result: { profiles: [PROFILE], defaults: [{ name: 7 }], revision: 2 },
+    });
+    const listed = await client.listProfiles();
+    expect(listed.profiles).toEqual([PROFILE]);
+    expect(listed.defaults).toBeUndefined();
+  });
+
+  it('sends only the given fields and returns the saved Default', async () => {
+    const result = {
+      defaultConfig: DEFAULT_CONFIG,
+      revision: 5,
+      activation: { envChanged: true, runningProcesses: 1 },
+    };
+    invoke.mockResolvedValue({ ok: true, result });
+    const env = [
+      { key: 'OPENAI_API_KEY', kind: 'set' as const, value: 'sk-literal' },
+      { key: 'OPENAI_BASE_URL', kind: 'unset' as const },
+    ];
+    await expect(
+      client.updateDefault({ baseProviderId: 'codex', name: 'Personal', env }),
+    ).resolves.toEqual(result);
+    expect(lastRequest()).toEqual([
+      IPC_CHANNELS.BACKEND.REQUEST,
+      {
+        method: 'providers.profiles.updateDefault',
+        params: { baseProviderId: 'codex', name: 'Personal', env },
+      },
+    ]);
+    await client.updateDefault({ baseProviderId: 'claude-code', name: '' });
+    expect(lastRequest()).toEqual([
+      IPC_CHANNELS.BACKEND.REQUEST,
+      {
+        method: 'providers.profiles.updateDefault',
+        params: { baseProviderId: 'claude-code', name: '' },
+      },
+    ]);
+  });
+
+  it('throws on a divergent result and on a daemon without the method', async () => {
+    invoke.mockResolvedValue({ ok: true, result: { revision: 1 } });
+    await expect(client.updateDefault({ baseProviderId: 'codex', name: 'x' })).rejects.toThrow();
+    invoke.mockResolvedValue({
+      ok: false,
+      error: { code: 'METHOD_NOT_FOUND', message: 'Method not found', rpcCode: -32601 },
+    });
+    const error = await client
+      .updateDefault({ baseProviderId: 'codex', name: 'x' })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect(classifyProviderProfileError(error)).toEqual({ kind: 'other' });
   });
 });

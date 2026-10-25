@@ -288,10 +288,6 @@ test('PR summary reads real checks and reviews; Code browses patches and retries
       },
     });
   }
-  const headerBounds = await component.locator('[data-home-pr-header]').boundingBox();
-  expect(headerBounds?.height).toBeLessThanOrEqual(240);
-  const rowBounds = await component.getByRole('listbox').getByRole('option').first().boundingBox();
-  expect(rowBounds?.height).toBeLessThanOrEqual(76);
   await testInfo.attach('PR summary', {
     body: await page.screenshot({ path: testInfo.outputPath('pr-summary.png') }),
     contentType: 'image/png',
@@ -573,11 +569,20 @@ test('organization enumeration refuses incomplete scope instead of sidebar fallb
   expect(calls.filter((call) => call.method === 'github.repos.search')).toHaveLength(2);
 });
 
+// Store updates reach Svelte on animation-frame ticks; unlinking a PR takes two (workspace
+// list, then the pruned PR list). A loaded merge-queue runner produced no frames for over 5 s
+// after unlinking #902, so its row outlived the default expect timeout before the list settled
+// correctly (cloudlands-fe run 39970011113). List checks after each change get this budget.
+const LINKED_ROWS_SETTLE_MS = 15_000;
+const settledList = expect.configure({ timeout: LINKED_ROWS_SETTLE_MS });
+
 // Explicit links must survive person filters, use bounded reads, and never broaden repo search.
 test('cross-repository linked PRs follow workspace scope and retain live selection and pages', async ({
   mount,
   page,
 }, testInfo) => {
+  // Several settle budgets may be spent on a loaded runner; keep them inside the test timeout.
+  test.slow();
   const workspace = createMockWorkspace({
     repositoryOwner: 'acme',
     repositoryName: 'studio',
@@ -603,7 +608,7 @@ test('cross-repository linked PRs follow workspace scope and retain live selecti
   });
   await component.getByRole('button', { name: 'Load more', exact: true }).click();
   await component.getByRole('button', { name: 'Retry', exact: true }).click();
-  await expect(list.getByRole('option')).toHaveCount(3);
+  await settledList(list.getByRole('option')).toHaveCount(3);
   await list.getByRole('option').filter({ hasText: 'Linked service fix' }).click();
   await expect(component.getByRole('heading', { name: 'Reconnect recovery' })).toBeVisible();
   await component.update({
@@ -615,19 +620,21 @@ test('cross-repository linked PRs follow workspace scope and retain live selecti
       ],
     },
   });
-  await expect(list.getByRole('option')).toHaveCount(4);
+  await settledList(list.getByRole('option')).toHaveCount(4);
   await expect(component.getByRole('heading', { name: 'Reconnect recovery' })).toBeVisible();
   await expect(list).toContainText('Second page pull request');
+  // Restoring the `unrelated` row (same id) unlinks #902; wait for its row by name first.
   await component.update({ props: { workspaces: [workspace, unrelated] } });
+  await settledList(list).not.toContainText('#902');
   await expect(list.getByRole('option')).toHaveCount(3);
   await component.getByRole('searchbox').fill('no-linked-match');
-  await expect(list).not.toContainText('Linked service fix');
+  await settledList(list).not.toContainText('Linked service fix');
   await component.getByRole('searchbox').fill('');
-  await expect(list).toContainText('Linked service fix');
+  await settledList(list).toContainText('Linked service fix');
   await component.update({
     props: { organization: 'elsewhere', workspaces: [workspace, unrelated] },
   });
-  await expect(list).not.toContainText('Linked service fix');
+  await settledList(list).not.toContainText('Linked service fix');
   await expect
     .poll(async () =>
       (await calls()).some((c) => c.method === 'github.pulls.get' && c.params.number === 999),

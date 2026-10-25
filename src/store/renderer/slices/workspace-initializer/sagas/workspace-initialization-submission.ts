@@ -282,6 +282,7 @@ export function* prepareCompactWorkspaceInitialization(
     type: 'image' as const,
     data: item.imageData as string,
     mimeType: item.imageMimeType as string,
+    ...(item.placementFileName ? { placementFileName: item.placementFileName } : {}),
   }));
 
   const resolvedBehaviorPrompt = selectedSpecialist

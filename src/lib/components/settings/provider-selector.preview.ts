@@ -129,6 +129,21 @@ export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
         };
       },
     },
+    // Backup profiles: reorder with drag or arrow keys on the handle; backups carry a badge.
+    'profiles-backup': {
+      props: {},
+      setup: () => {
+        const restoreProviders = setupProviderSelector();
+        const restoreProfiles = setupProviderProfilesPreview({
+          appOwned: true,
+          withBackups: true,
+        });
+        return () => {
+          restoreProfiles();
+          restoreProviders();
+        };
+      },
+    },
     'profiles-remote': {
       props: {},
       setup: () => {

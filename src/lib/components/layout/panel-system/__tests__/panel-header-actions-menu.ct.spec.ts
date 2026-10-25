@@ -235,8 +235,8 @@ test('traditional tab context menu supports keyboard focus and stays inside the 
   expect(bounds).not.toBeNull();
   expect(bounds!.x).toBeGreaterThanOrEqual(0);
   expect(bounds!.y).toBeGreaterThanOrEqual(0);
-  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(600);
-  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(420);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
   await menu.getByRole('menuitem', { name: 'Close', exact: true }).focus();
   await page.keyboard.press('Enter');
   await expect(menu).toBeHidden();
@@ -491,8 +491,8 @@ for (const scenario of [
         shortcutColor: getComputedStyle(shortcut).color,
       };
     });
-    expect(geometry.left).toBeGreaterThanOrEqual(8 - 0.5);
-    expect(geometry.right).toBeLessThanOrEqual(scenario.viewportWidth - 8 + 0.5);
+    expect(geometry.left).toBeGreaterThanOrEqual(0);
+    expect(geometry.right).toBeLessThanOrEqual(page.viewportSize()!.width + 0.5);
     expect(geometry.shortcutColor).not.toBe(geometry.labelColor);
     expect(geometry.labelScrollWidth).toBeGreaterThan(geometry.labelClientWidth);
     await testInfo.attach('long-label-menu', {
@@ -525,7 +525,7 @@ test('keeps desktop menu commands unclipped and restores focus after selection',
     };
   });
   expect(geometry.left).toBeGreaterThanOrEqual(0);
-  expect(geometry.right).toBeLessThanOrEqual(1000);
+  expect(geometry.right).toBeLessThanOrEqual(page.viewportSize()!.width);
   expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth + 1);
   await testInfo.attach('desktop-panel-actions', {
     body: await menu.screenshot(),

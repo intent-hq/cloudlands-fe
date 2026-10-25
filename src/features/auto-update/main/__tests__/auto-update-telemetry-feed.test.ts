@@ -43,6 +43,12 @@ type BeforeRequestListener = (
   callback: (response: { cancel: boolean }) => void,
 ) => void;
 
+// userData counts as created just now, so every setup() is a fresh install
+// (deterministic regardless of the host filesystem's birthtime support).
+vi.mock('../user-data-age', () => ({
+  estimateDirCreatedAtMs: async () => Date.now(),
+}));
+
 const updaterHandlers: Record<string, (arg?: unknown) => void> = {};
 type BeforeSendHeadersListener = (
   details: { url: string; requestHeaders: Record<string, string> },
@@ -407,6 +413,10 @@ describe('telemetry feed', () => {
       src: detectInstallSource(process.platform, process.env),
       k: 'manual',
       d: '1',
+      w: '1',
+      m: '1',
+      i: '1',
+      a: '0d',
     });
   });
 

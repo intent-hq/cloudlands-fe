@@ -128,17 +128,23 @@ describe('BackgroundHooksRow', () => {
     expect(screen.queryByTestId('background-hooks-row')).toBeNull();
   });
 
-  it.each([
-    ['loading', 'status'],
-    ['failed', 'alert'],
-  ] as const)('renders its own %s state when the initial list has not settled', (status, role) => {
-    snapshotState.status = status;
+  it('renders nothing while the initial list is still loading', () => {
+    snapshotState.status = 'loading';
     hooksState.hooks = [];
     render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    const row = screen.getByRole(role);
+    expect(screen.queryByTestId('background-hooks-snapshot-status')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('renders its own failed state when the initial list could not be read', () => {
+    snapshotState.status = 'failed';
+    hooksState.hooks = [];
+    render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const row = screen.getByRole('alert');
     expect(row.getAttribute('data-testid')).toBe('background-hooks-snapshot-status');
-    expect(row.getAttribute('data-snapshot-status')).toBe(status);
+    expect(row.getAttribute('data-snapshot-status')).toBe('failed');
   });
 
   it('inline details show a "View script" link instead of a raw code preview', async () => {

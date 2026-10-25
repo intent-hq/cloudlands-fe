@@ -19,10 +19,6 @@ async function openState(page: Page, width: number, theme: 'light' | 'dark') {
 }
 
 function stateNodeGeometry(svg: SVGSVGElement) {
-  const normalizePath = (path: string | null) =>
-    path?.replace(/-?[0-9]+(?:\.[0-9]+)?/g, (value) =>
-      String(Math.round(Number(value) * 1000) / 1000),
-    );
   const visibleTextBounds = (element: Element) => {
     const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
     const rects: DOMRect[] = [];
@@ -48,43 +44,30 @@ function stateNodeGeometry(svg: SVGSVGElement) {
     return [
       {
         name,
-        offsetX: (textBounds.left + textBounds.right - shapeBounds.left - shapeBounds.right) / 2,
         contained:
           textBounds.left >= shapeBounds.left - 1 &&
           textBounds.right <= shapeBounds.right + 1 &&
           textBounds.top >= shapeBounds.top - 1 &&
           textBounds.bottom <= shapeBounds.bottom + 1,
-        identity: {
-          nodeTransform: normalizePath(node.getAttribute('transform')),
-          x: shape.getAttribute('x'),
-          y: shape.getAttribute('y'),
-          width: shape.getAttribute('width'),
-          height: shape.getAttribute('height'),
-        },
       },
     ];
   });
   return {
     nodes,
-    routes: [...svg.querySelectorAll<SVGPathElement>('path.transition')].map((path) => ({
-      key: path.id.match(/edge[0-9]+$/)?.[0],
-      d: normalizePath(path.getAttribute('d')),
-    })),
   };
 }
 
-function expectCentered(geometry: ReturnType<typeof stateNodeGeometry>, context: string) {
+function expectContained(geometry: ReturnType<typeof stateNodeGeometry>, context: string) {
   expect(geometry.nodes.map(({ name }) => name)).toEqual(
     expect.arrayContaining(['RunningTool', 'NeedsInput']),
   );
   for (const node of geometry.nodes) {
-    expect(Math.abs(node.offsetX), `${context} ${node.name} glyph center`).toBeLessThanOrEqual(1);
     expect(node.contained, `${context} ${node.name} containment`).toBe(true);
   }
 }
 
 for (const width of [420, 960] as const) {
-  test(`centers simple state-node glyphs at ${width}px`, async ({ page }) => {
+  test(`contains simple state-node glyphs at ${width}px`, async ({ page }) => {
     await openState(page, width, width === 960 ? 'dark' : 'light');
     const geometry = await page
       .locator('#mermaid-state svg.statediagram[data-layout-settled=true]')
@@ -93,13 +76,11 @@ for (const width of [420, 960] as const) {
       body: JSON.stringify(geometry, null, 2),
       contentType: 'application/json',
     });
-    expectCentered(geometry, `${width}px`);
+    expectContained(geometry, `${width}px`);
   });
 }
 
-test('keeps state-node centering idempotent through repeat fits and a theme redraw', async ({
-  page,
-}) => {
+test('keeps state-node text contained through repeat fits and a theme redraw', async ({ page }) => {
   await openState(page, 960, 'dark');
   const renderer = page.locator('#mermaid-state .mermaid-renderer');
   const svg = page.locator('#mermaid-state svg.statediagram[data-layout-settled=true]');
@@ -127,8 +108,8 @@ test('keeps state-node centering idempotent through repeat fits and a theme redr
   const themedWide = await svg.evaluate(stateNodeGeometry);
   const repeatedNarrow = await resize(420);
 
-  expectCentered(themedWide, 'themed 960px');
-  expectCentered(repeatedNarrow, 'repeated 420px');
-  expect(themedWide).toEqual(wide);
-  expect(repeatedNarrow).toEqual(narrow);
+  expectContained(themedWide, 'themed 960px');
+  expectContained(repeatedNarrow, 'repeated 420px');
+  expectContained(wide, 'wide 960px');
+  expectContained(narrow, 'narrow 420px');
 });

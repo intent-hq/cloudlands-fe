@@ -43,3 +43,9 @@ describe('multi-select sidebar tabs', () => {
     expect([...normalizeSelectedTabs(['people', 'context'], true, false)]).toEqual(['context']);
   });
 });
+
+it('keeps a Manager saved-script Shell selection while still stripping Browser', () => {
+  expect([...normalizeSelectedTabs(['shell'], true, true, true)]).toEqual(['shell']);
+  expect([...normalizeSelectedTabs(['browser'], true, true, true)]).toEqual(['overview']);
+  expect([...normalizeSelectedTabs(['shell'], true, true, false)]).toEqual(['overview']);
+});

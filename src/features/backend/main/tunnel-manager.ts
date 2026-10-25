@@ -43,7 +43,7 @@
  *
  * Lifecycle: `ensureTunnel()` lazily opens the single `/tunnel` socket,
  * reusing the active transport's URL/token (and cert pin for `wss`). A `wss`
- * config with multiple candidate hosts (#1746) races one socket per candidate
+ * config with direct hosts or a Tailcat address races one socket per candidate
  * — first pin-verified `open` wins, losers are terminated — mirroring the
  * JSON-RPC transport's multi-host connect.
  * `forwardPort(remotePort)` resolves with the ephemeral local port of a
@@ -65,6 +65,7 @@ import type { IncomingMessage } from 'node:http';
 import tls from 'node:tls';
 
 import { Logger } from '$shared/logger';
+import { isTcAddress } from '$shared/tc-address';
 import {
   AuthRejectedError,
   candidateWssHosts,
@@ -74,6 +75,7 @@ import {
   type BackendConnectionConfig,
 } from './backend-connection';
 import { protocolVersionAtLeast, type ProtocolVersion } from '$shared/protocol-version';
+import { createTailcatTunnel, resolveTailcatBinaryPath, type TailcatSpawn } from './tailcat-tunnel';
 
 const logger = new Logger('TunnelManager');
 
@@ -271,7 +273,9 @@ export interface TunnelManagerOptions {
    */
   getProtocolVersion: () => ProtocolVersion | null;
   /** Socket factory seam for tests; defaults to [[createTunnelSocket]]. */
-  socketFactory?: (config: BackendConnectionConfig) => TunnelSocketLike;
+  socketFactory?: (config: BackendConnectionConfig) => TunnelSocketLike | Promise<TunnelSocketLike>;
+  /** Tailcat process seam for network tests; production uses the bundled client. */
+  tailcatSpawn?: TailcatSpawn;
   /** Deadline for the `/tunnel` WebSocket to reach `open`. Default 10s. */
   connectTimeoutMs?: number;
   /** Deadline for `OPEN` → `OPEN_OK`/`OPEN_ERR` per stream. Default 15s. */
@@ -346,8 +350,7 @@ interface StreamState {
 
 /**
  * The daemon refused the `/tunnel` upgrade with HTTP 403 for this credential:
- * port forwarding is owner-only (multiplayer w3), so a collaborator principal
- * can never open a forward on this connection. The manager latches on the
+ * port forwarding requires host access. The manager latches on the
  * first 403 and fails every later `ensureTunnel()` / `forwardPort()` fast
  * with this error instead of re-dialing a refusal that cannot change until
  * the client reconnects under a different credential.
@@ -355,7 +358,7 @@ interface StreamState {
 export class TunnelForbiddenError extends Error {
   constructor() {
     // i18n-ignore (main-process error surfaced verbatim to agents/logs, not renderer copy)
-    super('Only the workspace owner can open forwarded ports');
+    super('Port forwarding requires access as the host owner or a host member');
     this.name = 'TunnelForbiddenError';
   }
 }
@@ -400,7 +403,36 @@ export interface TunnelDiagnostics {
  * behind the handshake-level pin. UDS/TCP transports are local — a tunnel is
  * meaningless there — and are rejected.
  */
-function createTunnelSocket(config: BackendConnectionConfig): TunnelSocketLike {
+function createTunnelSocket(
+  config: BackendConnectionConfig,
+  tailcatSpawn?: TailcatSpawn,
+): TunnelSocketLike | Promise<TunnelSocketLike> {
+  const host = config.host;
+  if (config.transport !== 'wss' || !host || !isTcAddress(host)) {
+    return createDirectTunnelSocket(config);
+  }
+  const binaryPath = resolveTailcatBinaryPath();
+  if (!binaryPath)
+    throw new Error('Tailcat is unavailable; cannot forward ports through this connection');
+  if (!config.port) throw new Error('WSS transport requires a port');
+  return createTailcatTunnel({
+    tcAddress: host.trim(),
+    remotePort: config.port,
+    binaryPath,
+    spawn: tailcatSpawn,
+  }).then((tunnel) => {
+    try {
+      const ws = createDirectTunnelSocket({ ...config, host: '127.0.0.1', port: tunnel.localPort });
+      ws.on('close', () => tunnel.close());
+      return ws;
+    } catch (error) {
+      tunnel.close();
+      throw error;
+    }
+  });
+}
+
+function createDirectTunnelSocket(config: BackendConnectionConfig): TunnelSocketLike {
   if (config.transport === 'ws') {
     if (!config.wsUrl) throw new Error('WS transport requires a wsUrl');
     const url = new URL(config.wsUrl);
@@ -475,7 +507,7 @@ export class TunnelManager {
 
   private readonly getConfig: () => BackendConnectionConfig | null;
   private readonly getProtocolVersion: () => ProtocolVersion | null;
-  private readonly socketFactory: (config: BackendConnectionConfig) => TunnelSocketLike;
+  private readonly socketFactory: NonNullable<TunnelManagerOptions['socketFactory']>;
   private readonly connectTimeoutMs: number;
   private readonly openTimeoutMs: number;
   private readonly backpressureHighWaterMark: number;
@@ -495,6 +527,7 @@ export class TunnelManager {
   private drainingAdmission = false;
   private ws: TunnelSocketLike | null = null;
   private connectPromise: Promise<void> | null = null;
+  private cancelConnect: (() => void) | null = null;
   /** Sockets still connecting, so a `dispose()` mid-connect can terminate them. */
   private readonly connectingSockets = new Set<TunnelSocketLike>();
   private readonly forwards = new Map<number, ForwardState>();
@@ -536,7 +569,8 @@ export class TunnelManager {
     this.admissionRetryMs = positive(options.admissionRetryMs ?? 100, 'admissionRetryMs');
     this.getConfig = options.getConfig;
     this.getProtocolVersion = options.getProtocolVersion;
-    this.socketFactory = options.socketFactory ?? createTunnelSocket;
+    this.socketFactory =
+      options.socketFactory ?? ((config) => createTunnelSocket(config, options.tailcatSpawn));
     this.connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
     this.openTimeoutMs = options.openTimeoutMs ?? DEFAULT_OPEN_TIMEOUT_MS;
     this.backpressureHighWaterMark =
@@ -549,7 +583,7 @@ export class TunnelManager {
   /**
    * Lazily open (or reuse) the single `/tunnel` WebSocket. Concurrent callers
    * share one connect attempt; after a tunnel drop the next call reconnects.
-   * A `wss` config with multiple candidate hosts (#1746) races one socket per
+   * A `wss` config with direct hosts or a Tailcat address races one socket per
    * candidate — first `open` wins, losers are terminated — mirroring
    * `raceDuplexSockets` on the JSON-RPC transport.
    */
@@ -570,8 +604,21 @@ export class TunnelManager {
       return Promise.reject(new Error('no active backend config for the tunnel'));
     }
     const hosts = config.transport === 'wss' ? candidateWssHosts(config) : [];
+    const tcAddress =
+      config.transport === 'wss'
+        ? config.tcAddress?.trim() ||
+          (isTcAddress(config.host ?? '') ? config.host?.trim() : undefined)
+        : undefined;
     const candidates: BackendConnectionConfig[] =
-      hosts.length > 1 ? hosts.map((host) => ({ ...config, host })) : [config];
+      config.transport === 'wss'
+        ? [
+            ...hosts.map((host) => ({ ...config, host })),
+            ...(tcAddress ? [{ ...config, host: tcAddress }] : []),
+          ]
+        : [config];
+    if (candidates.length === 0) {
+      return Promise.reject(new Error('No remote address is available for port forwarding'));
+    }
     const attempt = new Promise<void>((resolve, reject) => {
       let settled = false;
       let pendingCount = candidates.length;
@@ -603,13 +650,18 @@ export class TunnelManager {
         reject(new Error(`tunnel connect timed out after ${this.connectTimeoutMs}ms`));
       }, this.connectTimeoutMs);
       timer.unref?.();
-      for (const candidate of candidates) {
-        let ws: TunnelSocketLike;
-        try {
-          ws = this.socketFactory(candidate);
-        } catch (error) {
-          failCandidate(error instanceof Error ? error : new Error(String(error)));
-          continue;
+      this.cancelConnect = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        for (const socket of sockets) terminateQuietly(socket);
+        reject(new Error('TunnelManager disposed'));
+      };
+      const attach = (ws: TunnelSocketLike): void => {
+        if (settled || this.disposed) {
+          ws.on('error', () => {});
+          terminateQuietly(ws);
+          return;
         }
         sockets.push(ws);
         this.connectingSockets.add(ws);
@@ -661,12 +713,12 @@ export class TunnelManager {
           if (error instanceof AuthRejectedError && error.statusCode === 403) {
             // A 403 comes from the real daemon after a pin-verified upgrade,
             // so it is authoritative for every candidate: stop racing, latch
-            // owner-only, and fail fast from now on.
+            // the refusal, and fail fast from now on.
             this.forwardingForbidden = true;
             settled = true;
             clearTimeout(timer);
             for (const socket of sockets) terminateQuietly(socket);
-            logger.warn('tunnel refused: port forwarding is owner-only for this credential');
+            logger.warn('tunnel refused: this credential cannot forward ports');
             reject(new TunnelForbiddenError());
             return;
           }
@@ -686,11 +738,28 @@ export class TunnelManager {
         ws.on('pong', () => {
           if (this.ws === ws) this.handleHeartbeatPong();
         });
+      };
+      for (const candidate of candidates) {
+        try {
+          const socket = this.socketFactory(candidate);
+          if (socket instanceof Promise) {
+            void socket.then(attach, (error: unknown) => {
+              failCandidate(error instanceof Error ? error : new Error(String(error)));
+            });
+          } else {
+            attach(socket);
+          }
+        } catch (error) {
+          failCandidate(error instanceof Error ? error : new Error(String(error)));
+        }
       }
     });
     this.connectPromise = attempt;
     const clear = (): void => {
-      if (this.connectPromise === attempt) this.connectPromise = null;
+      if (this.connectPromise === attempt) {
+        this.connectPromise = null;
+        this.cancelConnect = null;
+      }
     };
     attempt.then(clear, clear);
     return attempt;
@@ -783,6 +852,8 @@ export class TunnelManager {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.cancelConnect?.();
+    this.cancelConnect = null;
     const ws = this.ws;
     this.teardownForwards();
     this.ws = null;

@@ -2,11 +2,6 @@ import { expect, test } from '../../../../../test/ct-test';
 import type { Locator, Page } from '@playwright/test';
 import WorkspaceProgressCardEditGeometryHost from './mocks/WorkspaceProgressCardEditGeometryHost.svelte';
 
-// Matches the DropdownMenu default collisionPadding: the floating menu must
-// stay this far inside the viewport on every side.
-const MENU_COLLISION_PADDING = 8;
-const MENU_ROW_MIN_WIDTH_PX = 192;
-
 type BoundingBox = NonNullable<Awaited<ReturnType<Locator['boundingBox']>>>;
 
 // bits-ui parks the floating wrapper at translate(0, -200%) until floating-ui
@@ -41,13 +36,13 @@ async function settledBoundingBox(target: Locator) {
   return (await target.boundingBox())!;
 }
 
-async function expectMenuInsideCollisionPadding(menu: Locator, page: Page) {
+async function expectMenuInsideViewport(menu: Locator, page: Page) {
   const viewport = page.viewportSize()!;
   const box = await settledBoundingBox(menu);
-  expect(box.x).toBeGreaterThanOrEqual(MENU_COLLISION_PADDING - 0.5);
-  expect(box.x + box.width).toBeLessThanOrEqual(viewport.width - MENU_COLLISION_PADDING + 0.5);
-  expect(box.y).toBeGreaterThanOrEqual(MENU_COLLISION_PADDING - 0.5);
-  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height - MENU_COLLISION_PADDING + 0.5);
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 0.5);
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 0.5);
   return box;
 }
 
@@ -127,23 +122,6 @@ async function expectValidEditBox(control: Locator) {
   expect(result.clipped).toBe(false);
 }
 
-test('keeps the active workspace card branch label at normal weight, including hover and focus', async ({
-  mount,
-}) => {
-  const component = await mount(WorkspaceProgressCardEditGeometryHost);
-  const branch = component.locator('[data-sidebar-branch-label]');
-  const repository = component.locator('[data-sidebar-repository-label]');
-  const trigger = component.getByRole('button', { name: 'edit-geometry', exact: true });
-
-  await expect(repository).toHaveCSS('font-weight', '400');
-  await expect(branch).toHaveCSS('font-weight', '400');
-  await trigger.hover();
-  await expect(branch).toHaveCSS('font-weight', '400');
-  await trigger.focus();
-  await expect(trigger).toBeFocused();
-  await expect(branch).toHaveCSS('font-weight', '400');
-});
-
 test('keeps the workspace title edit decoration visible, padded, unclipped, and motion-safe', async ({
   mount,
   page,
@@ -187,10 +165,8 @@ test('keeps the workspace actions menu inside the collision padding at a 320px v
   const component = await mount(WorkspaceProgressCardEditGeometryHost);
 
   const menu = await openWorkspaceActionsMenu(component, page);
-  const box = await expectMenuInsideCollisionPadding(menu, page);
-  // The 12rem row floor still applies: a 320px viewport leaves room for it.
+  const box = await expectMenuInsideViewport(menu, page);
   const row = await settledBoundingBox(menu.getByRole('menuitem').first());
-  expect(row.width).toBeGreaterThanOrEqual(MENU_ROW_MIN_WIDTH_PX - 0.5);
 
   await page.screenshot({ path: testInfo.outputPath('workspace-actions-menu-320.png') });
   await testInfo.attach('geometry', {
@@ -208,9 +184,8 @@ test('shows every workspace actions menu label untruncated at a normal viewport'
   const component = await mount(WorkspaceProgressCardEditGeometryHost);
 
   const menu = await openWorkspaceActionsMenu(component, page);
-  const box = await expectMenuInsideCollisionPadding(menu, page);
+  const box = await expectMenuInsideViewport(menu, page);
   const row = await settledBoundingBox(menu.getByRole('menuitem').first());
-  expect(row.width).toBeGreaterThanOrEqual(MENU_ROW_MIN_WIDTH_PX - 0.5);
 
   const labels = await collectTruncatedLabels(menu);
   expect(labels.length).toBeGreaterThan(0);

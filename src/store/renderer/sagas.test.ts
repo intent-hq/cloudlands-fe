@@ -24,6 +24,7 @@ describe('renderer app saga registry', () => {
       'hudSaga',
       'guestSessionsSaga',
       'presenceSaga',
+      'workspaceDiscussionSaga',
       'presenceFollowSaga',
       'principalSaga',
       'hostExecutionSaga',

@@ -170,7 +170,7 @@ test('Home sections start open and all support collapse, expansion and keyboard 
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const component = await mount(Preview);
-  for (const label of ['Needs you', 'PR ready', 'Running', 'Done & idle']) {
+  for (const label of ['Needs you', 'PR ready', 'Running', 'Waiting', 'Done & idle']) {
     const toggle = component
       .locator('[data-home-group]')
       .getByRole('button', { name: label, exact: true });
@@ -185,7 +185,7 @@ test('Home sections start open and all support collapse, expansion and keyboard 
     await expect(toggle).toBeFocused();
   }
   const inactive = component.getByRole('listbox', { name: 'Done & idle', exact: true });
-  await expect(inactive.getByRole('option')).toHaveCount(3);
+  await expect(inactive.getByRole('option')).toHaveCount(2);
   await inactive.getByRole('option').first().focus();
   await page.keyboard.press('ArrowDown');
   await expect(inactive.getByRole('option').nth(1)).toBeFocused();
@@ -205,7 +205,7 @@ test('Home closes list sections while board columns stay expanded', async ({ mou
   await expect(component.locator('[data-home-detail]')).toBeVisible();
   await component.getByRole('button', { name: 'List view', exact: true }).click();
   const inactive = component.getByRole('listbox', { name: 'Done & idle', exact: true });
-  await expect(inactive.getByRole('option')).toHaveCount(3);
+  await expect(inactive.getByRole('option')).toHaveCount(2);
   await component.locator('[data-home-group="inactive"]').getByRole('button').click();
   await expect(inactive).toHaveCount(0);
   await expect(component.locator('[data-home-detail]')).toHaveCount(0);
@@ -214,7 +214,7 @@ test('Home closes list sections while board columns stay expanded', async ({ mou
     .locator('[data-home-board]')
     .getByRole('region', { name: 'Done & idle', exact: true });
   await expect(section.getByRole('button', { name: 'Done & idle', exact: true })).toHaveCount(0);
-  await expect(section.locator('[data-home-workspace]')).toHaveCount(3);
+  await expect(section.locator('[data-home-workspace]')).toHaveCount(2);
 });
 
 test('Home board uses the same scope and restores keyboard focus after narrow preview', async ({
@@ -229,6 +229,8 @@ test('Home board uses the same scope and restores keyboard focus after narrow pr
   );
   const board = component.locator('[data-home-board]');
   await expect(board.locator('[data-home-workspace]')).toHaveCount(6);
+  // Status columns wrap at this width, so the board may scroll vertically
+  // but never horizontally.
   expect(await board.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   for (const workspace of await board.locator('[data-home-workspace]').all()) {
     await workspace.scrollIntoViewIfNeeded();
@@ -251,7 +253,7 @@ test('Home board uses the same scope and restores keyboard focus after narrow pr
   await component.getByRole('combobox', { name: 'Status', exact: true }).click();
   await page.getByRole('option', { name: 'Running', exact: true }).click();
   await expect(board.locator('[data-home-workspace]')).toHaveCount(1);
-  await expect(board.getByRole('region')).toHaveCount(3);
+  await expect(board.getByRole('region')).toHaveCount(4);
   expect(await board.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await testInfo.attach('home-board', { body: await page.screenshot(), contentType: 'image/png' });
 });
@@ -831,15 +833,17 @@ test('Home grouping switches between status, repository and ungrouped in both vi
   await expect(board.locator('[data-home-workspace]')).toHaveCount(1);
   await component.getByRole('searchbox').clear();
   await groupBy('Activity');
-  await expect(board.locator('section')).toHaveCount(4);
+  await expect(board.locator('section')).toHaveCount(5);
   await expect(
     board.getByRole('region', { name: 'PR ready', exact: true }).locator('[data-home-workspace]'),
   ).toHaveCount(1);
   const inactive = board.getByRole('region', { name: 'Done & idle', exact: true });
-  await expect(inactive.locator('[data-home-workspace]')).toHaveCount(3);
+  await expect(inactive.locator('[data-home-workspace]')).toHaveCount(2);
   await expect(inactive.getByRole('img', { name: /^Done\./ })).toHaveCount(1);
   await expect(inactive.getByRole('img', { name: /^Idle\./ })).toHaveCount(1);
-  await expect(inactive.getByRole('img', { name: /^PR queued\./ })).toHaveCount(1);
+  const waiting = board.getByRole('region', { name: 'Waiting', exact: true });
+  await expect(waiting.locator('[data-home-workspace]')).toHaveCount(1);
+  await expect(waiting.getByRole('img', { name: /^PR queued\./ })).toHaveCount(1);
   await expect(board.locator('[data-home-workspace]')).toHaveCount(6);
 });
 

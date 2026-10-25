@@ -1,3 +1,4 @@
+import { selectPrincipalActionContext } from '../principal/principal-selectors';
 import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 /**
  * Hover-card roster selectors: the owner gate (`workspace.myRole === 'owner'`
@@ -22,7 +23,13 @@ import {
 } from '../guest-sessions/guest-sessions-slice';
 import type { GuestSessionRecord } from '../guest-sessions/guest-sessions-types';
 import {
+  selectShareSharingEnabled,
+  selectShareSharingChecking,
+  selectShareSharingEnabling,
+  selectShareSharingError,
   selectShareCanManage,
+  selectShareCanSetMemberRole,
+  selectShareOwnerPrincipalId,
   selectShareInvitablePrincipals,
   selectWorkspaceRosterCanManage,
   selectWorkspaceRosterMembers,
@@ -32,6 +39,8 @@ import {
   selectWorkspaceRosterWithheld,
 } from './workspace-share-selectors';
 import {
+  sharePrerequisitesStarted,
+  sharePrerequisitesSettled,
   initialState,
   openShareDialog,
   shareDataLoaded,
@@ -230,4 +239,55 @@ describe('keyed roster reads', () => {
     expect(selectWorkspaceRosterTracked.select(state, 'ws-1')).toBe(true);
     expect(selectWorkspaceRosterTracked.select(state, 'ws-2')).toBe(false);
   });
+});
+
+it('hides prerequisite status as soon as host identity changes', () => {
+  const root = stateWith(
+    { 'ws-1': 'owner' },
+    openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'Space' }),
+  );
+  const target = {
+    workspaceId: 'ws-1',
+    session: root.workspaceShare.session,
+    authority: selectPrincipalActionContext.select(root),
+  };
+  root.workspaceShare = workspaceShareReducer(
+    root.workspaceShare,
+    sharePrerequisitesStarted({ target, enabling: true }),
+  );
+  expect(selectShareSharingEnabling.select(root)).toBe(true);
+  root.workspaceShare = workspaceShareReducer(
+    root.workspaceShare,
+    sharePrerequisitesSettled({ target, enabled: true, error: null }),
+  );
+  expect(selectShareSharingEnabled.select(root)).toBe(true);
+  root.principal = { ...root.principal, invalidation: root.principal.invalidation + 1 };
+  expect(selectShareSharingEnabled.select(root)).toBeNull();
+  expect(selectShareSharingChecking.select(root)).toBe(false);
+  expect(selectShareSharingEnabling.select(root)).toBe(false);
+  expect(selectShareSharingError.select(root)).toBeNull();
+});
+
+it('uses authoritative ownership for role controls even with a collaborator projection', () => {
+  const state = stateWith(
+    { 'ws-role': 'collaborator' },
+    openShareDialog({ workspaceId: 'ws-role', workspaceTitle: 'Roles' }),
+  );
+  state.principal.snapshot!.capabilities.hostMembership = true;
+  state.principal.snapshot!.capabilities.workspaceGuestRoles = true;
+  state.principal.snapshot!.principal.hostRole = 'owner';
+  state.workspace.workspaces.map['ws-role'].canManage = true;
+  state.workspace.workspaces.map['ws-role'].ownerPrincipalId =
+    state.principal.snapshot!.principal.id;
+  state.workspace.hasLoaded = true;
+  state.workspace.loadedBackendId = state.connections.windowBackendId;
+  state.workspace.capabilityContext = selectPrincipalActionContext.select(state);
+  expect(selectShareOwnerPrincipalId.select(state)).toBe(state.principal.snapshot!.principal.id);
+  expect(selectShareCanSetMemberRole.select(state)).toBe(true);
+  state.workspace.workspaces.map['ws-role'].ownerPrincipalId = 'another-owner';
+  expect(selectShareCanSetMemberRole.select(state)).toBe(true);
+  state.principal.snapshot!.principal.hostRole = 'member';
+  expect(selectShareCanSetMemberRole.select(state)).toBe(false);
+  state.principal.snapshot!.capabilities.workspaceGuestRoles = false;
+  expect(selectShareCanSetMemberRole.select(state)).toBe(false);
 });

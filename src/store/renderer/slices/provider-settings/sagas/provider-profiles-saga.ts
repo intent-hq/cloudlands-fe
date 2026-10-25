@@ -20,11 +20,15 @@ import {
   type ProviderProfile,
 } from '$shared/provider-profiles';
 import {
+  providerDefaultUpdateRequested,
+  providerDefaultUpdateSucceeded,
   providerProfileCheckRequested,
   providerProfileCreateRequested,
   providerProfileDeleteRequested,
   providerProfileMutationFailed,
   providerProfileMutationSucceeded,
+  providerProfileReorderRequested,
+  providerProfileReorderSucceeded,
   providerProfilesChanged,
   providerProfilesLoadFailed,
   providerProfilesLoaded,
@@ -37,6 +41,7 @@ import {
 import {
   selectProfileCapableProviderIds,
   selectProviderProfile,
+  selectProviderProfileMutations,
   selectProviderSettingsHasOpenSession,
   selectProviderProfilesLoadStatus,
   selectProviderProfilesRevision,
@@ -47,6 +52,7 @@ import { providerCatalogLoaded } from '../../provider-catalog/provider-catalog-s
 import { hydrateProviderCatalog } from '../../provider-catalog/sagas/provider-catalog-saga';
 import { selectProviderCatalogProfiles } from '../../provider-catalog/provider-catalog-selectors';
 import { selectProfileSignInStatuses } from '../provider-profile-status-selectors';
+import { checkSingleProviderRequested } from '../../agent-availability/agent-availability-slice';
 
 const logger = createLogger('ProviderProfilesSaga');
 
@@ -85,7 +91,7 @@ function* loadProfiles(deps: ProviderProfilesSagaDeps) {
   if ((yield* selectProfileCapableProviderIds.effect()).length === 0) return;
   try {
     const result = yield* call([appClient.providers, appClient.providers.listProfiles]);
-    yield* put(providerProfilesLoaded(result.profiles, result.revision));
+    yield* put(providerProfilesLoaded(result.profiles, result.revision, result.defaults));
     for (const profile of result.profiles) yield* fork(checkProfile, deps, profile, false);
   } catch (error) {
     logger.warn('providers.profiles.list failed', { error });
@@ -139,17 +145,84 @@ function takeEnv(envRef: number | undefined): EnvEntryWrite[] | undefined {
 }
 
 type MutationAction =
+  | ReturnType<typeof providerDefaultUpdateRequested>
   | ReturnType<typeof providerProfileCreateRequested>
   | ReturnType<typeof providerProfileUpdateRequested>
-  | ReturnType<typeof providerProfileDeleteRequested>;
+  | ReturnType<typeof providerProfileDeleteRequested>
+  | ReturnType<typeof providerProfileReorderRequested>;
+
+/**
+ * Save one base provider's order. The slice already shows it. A request the
+ * slice ignored (another reorder of that base was pending) is not sent. A
+ * rejection keeps no client snapshot: the list is re-read and the daemon's
+ * saved order wins.
+ */
+function* runReorder(action: ReturnType<typeof providerProfileReorderRequested>) {
+  const [{ requestId, baseProviderId, profileIds }] = action.payload;
+  if ((yield* selectProviderProfileMutations.effect())[requestId]?.status !== 'pending') return;
+  try {
+    const result = yield* call([appClient.providers, appClient.providers.reorderProfiles], {
+      baseProviderId,
+      profileIds,
+    });
+    yield* put(providerProfileReorderSucceeded(requestId, result.profiles, result.revision));
+  } catch (error) {
+    const failure = classifyProviderProfileError(error);
+    logger.warn('Provider profile reorder rejected', { kind: failure.kind });
+    yield* put(providerProfileMutationFailed(requestId, failure));
+    yield* put(providerProfilesRequested());
+  }
+}
+
+/**
+ * Save one Default configuration (`providers.profiles.updateDefault`). Its
+ * account status is the base provider's row, so an env change re-checks it.
+ */
+function* runDefaultUpdate(action: ReturnType<typeof providerDefaultUpdateRequested>) {
+  const { requestId, baseProviderId, name, envRef } = action.payload;
+  try {
+    const env = takeEnv(envRef);
+    const result = yield* call([appClient.providers, appClient.providers.updateDefault], {
+      baseProviderId,
+      ...(name !== undefined ? { name } : {}),
+      ...(env ? { env } : {}),
+    });
+    yield* put(
+      providerDefaultUpdateSucceeded(requestId, {
+        revision: result.revision,
+        defaultConfig: result.defaultConfig,
+        activation: result.activation,
+      }),
+    );
+    if (result.activation.envChanged) yield* put(checkSingleProviderRequested(baseProviderId));
+  } catch (error) {
+    const failure = classifyProviderProfileError(error);
+    logger.warn('Provider default configuration update rejected', { kind: failure.kind });
+    yield* put(providerProfileMutationFailed(requestId, failure));
+  }
+}
 
 function* runMutation(deps: ProviderProfilesSagaDeps, action: MutationAction) {
+  if (action.type === providerProfileReorderRequested.type) {
+    yield* call(runReorder, action as ReturnType<typeof providerProfileReorderRequested>);
+    return;
+  }
+  if (action.type === providerDefaultUpdateRequested.type) {
+    yield* call(runDefaultUpdate, action as ReturnType<typeof providerDefaultUpdateRequested>);
+    return;
+  }
   const isDelete = (a: MutationAction): a is ReturnType<typeof providerProfileDeleteRequested> =>
     a.type === providerProfileDeleteRequested.type;
-  const requestId = isDelete(action) ? action.payload[0].requestId : action.payload.requestId;
+  const requestId = isDelete(action)
+    ? action.payload[0].requestId
+    : (
+        action as
+          | ReturnType<typeof providerProfileCreateRequested>
+          | ReturnType<typeof providerProfileUpdateRequested>
+      ).payload.requestId;
   try {
     if (action.type === providerProfileCreateRequested.type) {
-      const { baseProviderId, name, envRef } = (
+      const { baseProviderId, name, envRef, backup } = (
         action as ReturnType<typeof providerProfileCreateRequested>
       ).payload;
       const env = takeEnv(envRef);
@@ -157,6 +230,7 @@ function* runMutation(deps: ProviderProfilesSagaDeps, action: MutationAction) {
         baseProviderId,
         name,
         ...(env ? { env } : {}),
+        ...(backup !== undefined ? { backup } : {}),
       });
       yield* put(
         providerProfileMutationSucceeded(requestId, {
@@ -166,7 +240,7 @@ function* runMutation(deps: ProviderProfilesSagaDeps, action: MutationAction) {
       );
       yield* fork(checkProfile, deps, result.profile, true);
     } else if (action.type === providerProfileUpdateRequested.type) {
-      const { profileId, name, envRef } = (
+      const { profileId, name, envRef, backup } = (
         action as ReturnType<typeof providerProfileUpdateRequested>
       ).payload;
       const env = takeEnv(envRef);
@@ -174,6 +248,7 @@ function* runMutation(deps: ProviderProfilesSagaDeps, action: MutationAction) {
         profileId,
         ...(name !== undefined ? { name } : {}),
         ...(env ? { env } : {}),
+        ...(backup !== undefined ? { backup } : {}),
       });
       yield* put(
         providerProfileMutationSucceeded(requestId, {
@@ -211,6 +286,8 @@ function* mutationLoop(deps: ProviderProfilesSagaDeps) {
       providerProfileCreateRequested,
       providerProfileUpdateRequested,
       providerProfileDeleteRequested,
+      providerProfileReorderRequested,
+      providerDefaultUpdateRequested,
     ],
     buffers.expanding(),
   );

@@ -65,6 +65,7 @@
     faCircleExclamation,
     faPlay,
     faCodePullRequest,
+    faHourglass,
     faPlus,
     faChevronDown,
     faChevronRight,
@@ -237,6 +238,7 @@
         { id: 'attention', label: m.home_filter_attention(), icon: faCircleExclamation },
         { id: 'pr-ready', label: m.home_filter_pr_ready(), icon: faCodePullRequest },
         { id: 'running', label: m.home_filter_running(), icon: faPlay },
+        { id: 'waiting', label: m.home_filter_waiting(), icon: faHourglass },
       ] as const satisfies readonly { id: HomeFilter; label: string; icon: unknown }[]
     ).map((item) => ({
       ...item,
@@ -275,7 +277,7 @@
           )
         : undefined),
   );
-  const triageOrder = ['needs-you', 'pr-ready', 'running', 'inactive'] as const;
+  const triageOrder = ['needs-you', 'pr-ready', 'running', 'waiting', 'inactive'] as const;
   // Hiding a group that holds the selected workspace also closes the preview;
   // otherwise the selection would keep the group open and the button inert.
   function setGroupExpanded(group: string, expanded: boolean, items: Workspace[]) {
@@ -293,6 +295,8 @@
         return m.home_filter_pr_ready();
       case 'running':
         return m.home_filter_running();
+      case 'waiting':
+        return m.home_filter_waiting();
       case 'blocked':
         return m.home_filter_blocked();
       default:

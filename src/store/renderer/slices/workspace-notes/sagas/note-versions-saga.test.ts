@@ -1,6 +1,6 @@
 import { runSaga, stdChannel } from 'redux-saga';
 import { all, call } from 'typed-redux-saga';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { appClient } from '$lib/client';
 import {
@@ -88,6 +88,11 @@ function harness(seed: Note | Note[] = note()) {
 }
 
 describe('noteVersionsSaga', () => {
+  // These suites model a daemon without truncated reads unless a test says otherwise.
+  beforeEach(() => {
+    vi.spyOn(appClient.notes, 'supportsTruncatedRead').mockResolvedValue(false);
+  });
+
   afterEach(() => vi.restoreAllMocks());
 
   it('uses the exact fetch request, preserves ordering, and drops response-only fields', async () => {
@@ -220,8 +225,7 @@ describe('noteVersionsSaga', () => {
     const run = harness(note({ workspaceId: WorkspaceId(WS_SVC) }));
 
     run.channel.put(updateNoteContent(WS_SVC, NOTE, 'edited', { immediate: true }));
-    await settle();
-    expect(setContent).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(setContent).toHaveBeenCalledTimes(1));
     expect(run.getState().byWorkspaceId[WS_SVC]?.pendingContentByNoteId[NOTE]).toBe(true);
 
     run.channel.put(restoreNoteVersion(WS_SVC, NOTE, 'version-1'));

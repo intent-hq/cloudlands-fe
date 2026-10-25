@@ -214,6 +214,7 @@ export function providerCatalogSelectors() {
       selectEffectiveDefaultProviderId: '',
       selectProviderCatalogLoaded: false,
       selectProviderCatalogEntries: [],
+      selectProviderCatalogProfiles: [],
     }),
     selectProviderAuthFailureGuidance: { select: () => null },
     selectProviderDisplayName: Object.assign(

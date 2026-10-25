@@ -1252,6 +1252,111 @@ describe('cancelActiveTranscription during an in-flight transcription', () => {
   });
 });
 
+describe('explicit discussion draft targets', () => {
+  it('inserts into the captured draft without changing focus or sending', async () => {
+    const insertText = vi.fn();
+    const focusComposer = vi.fn();
+    const sendComposer = vi.fn();
+    const transcribe = vi.fn().mockResolvedValue({ text: 'Discussion draft' });
+    await runTranscriptionFlow(
+      RECORDING,
+      {
+        autoSend: true,
+        target: {
+          workspaceId: 'discussion-workspace',
+          isActive: () => true,
+          insertText,
+          onStarted: vi.fn(),
+        },
+      },
+      { transcribe, focusComposer, sendComposer },
+    );
+    expect(transcribe).toHaveBeenCalledWith(
+      RECORDING.blob,
+      RECORDING.mimeType,
+      undefined,
+      'discussion-workspace',
+    );
+    expect(insertText).toHaveBeenCalledExactlyOnceWith('Discussion draft');
+    expect(focusComposer).not.toHaveBeenCalled();
+    expect(sendComposer).not.toHaveBeenCalled();
+  });
+  it('discards a late result after its composer unmounts', async () => {
+    let finish!: (result: { text: string }) => void;
+    let active = true;
+    const insertText = vi.fn();
+    const run = runTranscriptionFlow(
+      RECORDING,
+      {
+        target: { workspaceId: 'ws-1', isActive: () => active, insertText, onStarted: vi.fn() },
+      },
+      {
+        transcribe: () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      },
+    );
+    active = false;
+    finish({ text: 'late text' });
+    await run;
+    expect(insertText).not.toHaveBeenCalled();
+    expect(hasActiveTranscriptionSession()).toBe(false);
+  });
+  it('cancels only its own transcription and cannot cancel a later session', async () => {
+    let finishFirst!: (result: { text: string }) => void;
+    let finishSecond!: (result: { text: string }) => void;
+    let cancelFirst!: () => void;
+    const firstInsert = vi.fn();
+    const secondInsert = vi.fn();
+    const first = runTranscriptionFlow(
+      RECORDING,
+      {
+        target: {
+          workspaceId: 'ws-1',
+          isActive: () => true,
+          insertText: firstInsert,
+          onStarted: (cancel) => {
+            cancelFirst = cancel;
+          },
+        },
+      },
+      {
+        transcribe: () =>
+          new Promise((resolve) => {
+            finishFirst = resolve;
+          }),
+      },
+    );
+    cancelFirst();
+    expect(hasActiveTranscriptionSession()).toBe(false);
+    const second = runTranscriptionFlow(
+      RECORDING,
+      {
+        target: {
+          workspaceId: 'ws-1',
+          isActive: () => true,
+          insertText: secondInsert,
+          onStarted: vi.fn(),
+        },
+      },
+      {
+        transcribe: () =>
+          new Promise((resolve) => {
+            finishSecond = resolve;
+          }),
+      },
+    );
+    cancelFirst();
+    expect(hasActiveTranscriptionSession()).toBe(true);
+    finishFirst({ text: 'cancelled' });
+    finishSecond({ text: 'current' });
+    await Promise.all([first, second]);
+    expect(firstInsert).not.toHaveBeenCalled();
+    expect(secondInsert).toHaveBeenCalledExactlyOnceWith('current');
+  });
+});
+
 describe('runTranscriptionFlow', () => {
   it('without a recording and with autoSend, sends the composer content as-is', async () => {
     const transcribe = vi.fn();

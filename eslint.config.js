@@ -30,6 +30,10 @@ import noCopiedChatPanelSelectorMocksRule from './eslint-rules/no-copied-chat-pa
 import noSourceLiteralAssertionsInTestsRule from './eslint-rules/no-source-literal-assertions-in-tests.js';
 import noWallClockAssertionsInTestsRule from './eslint-rules/no-wall-clock-assertions-in-tests.js';
 import noFakeClockResetBeforeAssertionRule from './eslint-rules/no-fake-clock-reset-before-assertion.js';
+import noWallClockInCatalogPreviewsRule, {
+  CATALOG_PREVIEW_FILE_GLOBS as catalogPreviewFileGlobs,
+  CATALOG_CLOCK_EXEMPT_GLOBS as catalogClockExemptGlobs,
+} from './eslint-rules/no-wall-clock-in-catalog-previews.js';
 import noClassNameAssertionsInTestsRule from './eslint-rules/no-class-name-assertions-in-tests.js';
 import noFlushSyncInTeardownRule from './eslint-rules/no-flushsync-in-teardown.js';
 import noDirectReducedMotionQueryRule, {
@@ -54,6 +58,7 @@ const intentPlugin = {
     'no-source-literal-assertions-in-tests': noSourceLiteralAssertionsInTestsRule,
     'no-wall-clock-assertions-in-tests': noWallClockAssertionsInTestsRule,
     'no-fake-clock-reset-before-assertion': noFakeClockResetBeforeAssertionRule,
+    'no-wall-clock-in-catalog-previews': noWallClockInCatalogPreviewsRule,
     'no-class-name-assertions-in-tests': noClassNameAssertionsInTestsRule,
     'no-flushsync-in-teardown': noFlushSyncInTeardownRule,
     'no-direct-reduced-motion-query': noDirectReducedMotionQueryRule,
@@ -958,6 +963,7 @@ export default [
       'intent/no-raw-controls': 'error',
       'intent/no-raw-menu-row': 'error',
       'intent/no-raw-menu-surface': 'error',
+      'intent/no-raw-inverse-surface': 'error',
       'intent/no-raw-typography': 'error',
       'intent/settings-use-schema': 'error',
     },
@@ -1016,6 +1022,20 @@ export default [
     },
     rules: {
       'intent/no-direct-reduced-motion-query': 'error',
+    },
+  },
+  // A catalog renderer, fixture or preview that builds a timestamp from the real clock
+  // renders differently depending on when, and how slowly, it runs: the toast catalog's
+  // "18s" attention toast snapshot read "20s" on a busy machine (2026-10-23). Time comes
+  // from $lib/component-catalog/catalog-clock, the one exempt file. No baseline: zero debt.
+  {
+    files: [...catalogPreviewFileGlobs],
+    ignores: [...catalogClockExemptGlobs],
+    plugins: {
+      intent: intentPlugin,
+    },
+    rules: {
+      'intent/no-wall-clock-in-catalog-previews': 'error',
     },
   },
   ...themisFullConfig,

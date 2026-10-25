@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import { catalogNow } from '$lib/component-catalog/catalog-clock';
   import { definePreview } from '$lib/component-catalog/preview-definition';
   import {
     AgentStatus,
@@ -26,6 +27,7 @@
         setPullRequests: (id: string, pulls: PullRequestInfo[], total?: number) => void;
         setPullRequest: (id: string, pullRequest: PullRequestInfo) => void;
         setStatus: (id: string, status: WorkspaceDisplayStatus) => void;
+        setFlags: (id: string, flags: { waiting?: boolean; scriptsRunning?: boolean }) => void;
         roundTripSettings: () => void;
       };
       __homePrStatusPreview?: { setWaiting: (waiting?: boolean) => void };
@@ -268,7 +270,7 @@
       index === 8
         ? undefined
         : new Date(
-            Date.now() -
+            catalogNow() -
               [
                 37_000, 3_600_000, 86_400_000, 172_800_000, 518_400_000, 2_419_200_000,
                 5_184_000_000, 31_536_000_000,
@@ -532,6 +534,8 @@
       store.dispatch(
         bulkUpdateWorkspaceEntities([updateWorkspaceEntity(id, { displayStatus: status })]),
       ),
+    setFlags: (id, flags) =>
+      store.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(id, flags)])),
     navigation: () => ({
       currentTabId: store.state.tabState.currentTabId,
       tabOrder: store.state.tabState.workspaceStacks.flat(),

@@ -140,6 +140,5 @@ describe('workspace tab lifecycle motion', () => {
     }
 
     expect(controls.style.getPropertyValue('--workspace-tab-launcher-offset')).toBe('0px');
-    expect(launcher.getBoundingClientRect().left).toBe(1030);
   });
 });

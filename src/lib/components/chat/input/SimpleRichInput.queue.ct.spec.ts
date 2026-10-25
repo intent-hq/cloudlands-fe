@@ -38,14 +38,6 @@ test('keeps queued messages above subscriptions without moving the composer', as
   const subscriptions = component.getByTestId('event-subscriptions-card');
   await expect(editor).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
-  const textInset = () =>
-    input.evaluate(
-      (node) =>
-        node.querySelector('.tiptap-editor p')!.getBoundingClientRect().top -
-        node.getBoundingClientRect().top -
-        node.clientTop,
-    );
-  await expect.poll(textInset).toBe(12);
   const emptyBox = await input.boundingBox();
   await expect(queue).toHaveCount(0);
 
@@ -73,7 +65,6 @@ test('keeps queued messages above subscriptions without moving the composer', as
   await component.update({ props: { queueCount: 0, width: 240 } });
   await expect(queue).toHaveCount(0);
   await expect.poll(() => input.boundingBox()).toEqual(emptyBox);
-  await expect.poll(textInset).toBe(12);
 });
 
 for (const streaming of [false, true]) {

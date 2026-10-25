@@ -1,3 +1,4 @@
+// @verify-changed-triggers: src/lib/styles/tokens.css, src/lib/styles/inverse-surface.css
 import fs from 'node:fs';
 import path from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
@@ -247,6 +248,30 @@ describe('theme color contract', () => {
         `muted-foreground on ${surface}`,
       ).toBeGreaterThanOrEqual(4.5);
     }
+  });
+
+  it.each(['light', 'dark'] as const)('keeps %s hints readable on the inverse surface', (mode) => {
+    const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+    const inverse = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/lib/styles/inverse-surface.css'),
+      'utf8',
+    );
+    const values = tokenValues(css, mode);
+    // The inverse surface paints `foreground` and mixes its hints from `background`.
+    const mix = Number(
+      inverse.match(
+        /--color-muted-foreground:\s*color-mix\(\s*in srgb,\s*hsl\(var\(--background\)\)\s+([\d.]+)%,\s*hsl\(var\(--foreground\)\)\s*\)/,
+      )?.[1],
+    );
+    expect(mix, 'inverse hint mix').toBeGreaterThan(0);
+
+    expect(
+      contrastChannels(
+        blend(values.background, values.foreground, mix / 100),
+        parseHsl(values.foreground),
+      ),
+      'inverse muted-foreground on inverse surface',
+    ).toBeGreaterThanOrEqual(4.5);
   });
 
   it.each(['light', 'dark'] as const)(

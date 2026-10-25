@@ -1,4 +1,4 @@
-// @verify-changed-triggers: .github/workflows/release-alpha.yml, .github/workflows/manual-signed-build.yml, .github/workflows/promote-beta.yml, .github/workflows/release-stable.yml, scripts/assemble-release-assets.mjs, scripts/verify-macos-build.sh, scripts/mac-update-feed.mjs, scripts/run-packaged-macos-smoke.py, scripts/test_packaged_macos_smoke.py, src/features/auto-update/main/mac-update-compatibility.ts
+// @verify-changed-triggers: .github/workflows/release-alpha.yml, .github/workflows/manual-signed-build.yml, .github/workflows/promote-beta.yml, .github/workflows/release-stable.yml, scripts/assemble-release-assets.mjs, scripts/verify-macos-build.sh, scripts/apple-ticket-retry.mjs, scripts/mac-update-feed.mjs, scripts/run-packaged-macos-smoke.py, scripts/test_packaged_macos_smoke.py, src/features/auto-update/main/mac-update-compatibility.ts
 // @vitest-environment node
 
 import { spawnSync } from 'node:child_process';
@@ -36,6 +36,7 @@ interface Matrix {
   arch: string;
   label: string;
   runner: string;
+  warp: string;
   intentd_target: string;
 }
 interface Job {
@@ -72,6 +73,7 @@ function temp() {
     'mac-update-feed.mjs',
     'validate-release-asset-names.mjs',
     'verify-macos-build.sh',
+    'apple-ticket-retry.mjs',
     'macos-native.cjs',
     'fetch-sidecar-lib.mjs',
     'mac-channel-feeds.mjs',
@@ -502,6 +504,39 @@ describe('packaged Mac verification invoked by native workflows', () => {
       shell(dir, 'bash scripts/verify-macos-build.sh arm64 true', { FAIL_TOOL: tool }).status,
     ).toBe(42);
   });
+  it('retries Apple ticket validation after a lost connection (exit 68)', () => {
+    const dir = temp();
+    appFixture(dir, 'arm64');
+    stub(
+      dir,
+      'xcrun',
+      `printf '%s\\n' "xcrun $*" >> "$RUNNER_TEMP/verification"
+if [ "$(grep -c '^xcrun' "$RUNNER_TEMP/verification")" -eq 1 ]; then echo 'NSURLErrorDomain Code=-1005'; exit 68; fi`,
+    );
+    const result = shell(dir, 'bash scripts/verify-macos-build.sh arm64 true', {
+      APPLE_TICKET_RETRY_DELAYS_MS: '0,0,0,0',
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(join(dir, 'verification'), 'utf8').trim().split('\n')).toEqual([
+      'codesign',
+      'codesign',
+      'spctl',
+      'xcrun stapler validate dist-electron/mac-arm64/Intent.app',
+      'xcrun stapler validate dist-electron/mac-arm64/Intent.app',
+    ]);
+    expect(result.stdout).toContain('::warning::Apple ticket validate attempt 1/5');
+  });
+  it('fails Apple ticket validation once every retry loses the connection', () => {
+    const dir = temp();
+    appFixture(dir, 'arm64');
+    stub(dir, 'xcrun', `printf '%s\\n' xcrun >> "$RUNNER_TEMP/verification"\nexit 68`);
+    const result = shell(dir, 'bash scripts/verify-macos-build.sh arm64 true', {
+      APPLE_TICKET_RETRY_DELAYS_MS: '0,0',
+    });
+    expect(result.status).toBe(68);
+    const calls = readFileSync(join(dir, 'verification'), 'utf8').trim().split('\n');
+    expect(calls.filter((call) => call === 'xcrun')).toHaveLength(3);
+  });
   it('verifies native payloads for unsigned manual builds without requiring signing tools', () => {
     const dir = temp();
     const app = appFixture(dir, 'arm64');
@@ -644,7 +679,13 @@ describe('manual Mac architecture selection', () => {
     );
     expect(matrix.include.map((row) => row.arch)).toEqual(arches);
     for (const row of matrix.include) {
-      expect(render(build['runs-on']!, { 'matrix.runner': row.runner })).toBe('macos-15-xlarge');
+      // The matrix keeps the size label; runs-on maps it to the burst runner (never
+      // self-hosted), and falls back to the row's WarpBuild label if routing failed.
+      expect(row.runner).toBe('macos-15-xlarge');
+      expect(row.warp).toBe('warp-macos-15-arm64-12x');
+      expect(build['runs-on']).toBe(
+        "${{ fromJSON(needs.runner-route.outputs.cloud || '{}')[matrix.runner] || matrix.warp }}",
+      );
       expect(
         render(build.env!.INTENTD_TARGET, { 'matrix.intentd_target': row.intentd_target }),
       ).toBe('aarch64-apple-darwin');
@@ -657,6 +698,8 @@ describe('manual Mac architecture selection', () => {
             JSON.parse(
               render(jobs[name].if!, {
                 'inputs.build_macos || inputs.isolated_test': String(enabled || isolated),
+                "!cancelled() && needs.select-macos.result == 'success' && (inputs.build_macos || inputs.isolated_test)":
+                  String(enabled || isolated),
               }),
             ),
           ).toBe(enabled || isolated);
@@ -674,12 +717,20 @@ describe('manual Mac architecture selection', () => {
         Object.entries(plan).map(([key, value]) => [`needs.select-macos.outputs.${key}`, value]),
       );
       const smoke = jobs['smoke-macos'];
-      expect(smoke.needs).toEqual(['select-macos', 'build-macos', 'smoke-inputs']);
-      expect(smoke.if).toBe('${{ inputs.smoke_macos }}');
+      expect(smoke.needs).toEqual(['select-macos', 'build-macos', 'smoke-inputs', 'runner-route']);
+      expect(smoke.if).toBe(
+        "${{ !cancelled() && inputs.smoke_macos && needs.select-macos.result == 'success' && needs.build-macos.result == 'success' && needs.smoke-inputs.result == 'success' }}",
+      );
       const row = (JSON.parse(plan.matrix).include as Matrix[]).find((m) => m.arch === arches[0])!;
       const upload = step('manual-signed-build', 'build-macos', 'Upload macOS DMG artifact');
       const download = smoke.steps.find((s) => s.uses?.startsWith('actions/download-artifact@'))!;
-      expect(render(smoke['runs-on']!, context)).toBe(row.runner);
+      // The smoke runs on the row's burst runner (a fresh WarpBuild VM), never a slot.
+      expect(smoke['runs-on']).toBe(
+        "${{ fromJSON(needs.runner-route.outputs.cloud || '{}')[needs.select-macos.outputs.smoke_runner] || fromJSON(format('[\"{0}\"]', needs.select-macos.outputs.smoke_warp)) }}",
+      );
+      expect(plan.smoke_runner).toBe(row.runner);
+      expect(plan.smoke_warp).toBe(row.warp);
+      expect(row.warp).toBe('warp-macos-15-arm64-12x');
       expect(render(String(download.with?.name), context)).toBe(
         render(String(upload.with?.name), { 'matrix.arch': row.arch }),
       );

@@ -1,4 +1,5 @@
 <script module lang="ts">
+  import { catalogNow } from '$lib/component-catalog/catalog-clock';
   import { definePreview } from '$lib/component-catalog/preview-definition';
   import type { OnboardingStep } from '$store/renderer/slices/onboarding/onboarding-types';
   /** Seeded forge-auth slice state behind the "Connect a forge" step. */
@@ -236,7 +237,7 @@
           protocolVersion: '10.5',
           host: { os: 'linux', arch: 'x86_64', locality: 'local' },
         },
-        new Date().toISOString(),
+        new Date(catalogNow()).toISOString(),
         appStore.state.daemonHealth.connectionGeneration,
       ),
     );

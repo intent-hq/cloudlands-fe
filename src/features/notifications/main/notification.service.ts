@@ -53,19 +53,14 @@ const logger = new Logger('NotificationService');
 /** Daemon setting path for the notifications-enabled toggle (§5.12). */
 const SETTING_PATH_ENABLED = 'notifications.enabled';
 
-/** Daemon setting path for the "only when unfocused" toggle (§5.12). */
-const SETTING_PATH_SOUND_ONLY_WHEN_UNFOCUSED = 'notifications.soundOnlyWhenUnfocused';
-
 /** Daemon-owned notification preferences consulted per idle event. */
 interface NotificationPrefs {
   enabled: boolean;
-  soundOnlyWhenUnfocused: boolean;
 }
 
 /** Daemon catalog defaults — also the fallback when the daemon is unreachable. */
 const DEFAULT_PREFS: NotificationPrefs = {
   enabled: true,
-  soundOnlyWhenUnfocused: true,
 };
 
 /** Last-known preferences, used as a fallback when a refresh fails. */
@@ -90,14 +85,8 @@ async function fetchBoolSetting(path: string, defaultValue: boolean): Promise<bo
  */
 async function refreshPrefs(): Promise<NotificationPrefs> {
   try {
-    const [enabled, soundOnlyWhenUnfocused] = await Promise.all([
-      fetchBoolSetting(SETTING_PATH_ENABLED, DEFAULT_PREFS.enabled),
-      fetchBoolSetting(
-        SETTING_PATH_SOUND_ONLY_WHEN_UNFOCUSED,
-        DEFAULT_PREFS.soundOnlyWhenUnfocused,
-      ),
-    ]);
-    cachedPrefs = { enabled, soundOnlyWhenUnfocused };
+    const enabled = await fetchBoolSetting(SETTING_PATH_ENABLED, DEFAULT_PREFS.enabled);
+    cachedPrefs = { enabled };
   } catch (error) {
     logger.warn('Failed to fetch notifications.* settings from daemon', {
       error: error instanceof Error ? error.message : String(error),
@@ -142,6 +131,8 @@ interface NotificationStructuredContent {
   provider?: string;
   /** Idle agent's id — seeds AgentAvatar's deterministic gradient colors. */
   agentId?: string;
+  /** Idle agent's display name — names who finished in the in-app toast. */
+  agentName?: string;
 }
 
 /**
@@ -649,11 +640,12 @@ export class NotificationService {
         backendId,
       );
 
-      // Focus gate for the OS banner: `soundOnlyWhenUnfocused` ON suppresses
-      // the banner only while the focused window is VIEWING the event's own
-      // workspace; OFF shows it even when focused. The `notification:show`
-      // renderer event is ALWAYS sent regardless of focus so the renderer
-      // sound gate decides on its own.
+      // Viewing gate: while the focused window is VIEWING the event's own
+      // workspace, show neither an OS banner nor an in-app toast — the user is
+      // already looking at it, matching the attention/failure toasts. This
+      // holds whatever `soundOnlyWhenUnfocused` says: that preference governs
+      // only sound. The `notification:show` renderer event is ALWAYS sent so
+      // the renderer sound gate decides on its own.
       // The focused window must be on the emitting host: workspace ids are
       // only unique per host (the Assistant id is shared), so a local window
       // viewing the local Assistant is not viewing a remote one.
@@ -662,8 +654,8 @@ export class NotificationService {
         focusedWindow !== null &&
         getBackendIdForWindow(focusedWindow) === backendId &&
         getFocusedWindowWorkspaceId() === workspaceId;
-      if (focusedViewingWorkspace && prefs.soundOnlyWhenUnfocused) {
-        logger.debug('Focused window is viewing the workspace, suppressing OS banner', {
+      if (focusedViewingWorkspace) {
+        logger.debug('Focused window is viewing the workspace, sound only', {
           workspaceId,
           agentName: event.data.agentName,
         });
@@ -700,7 +692,7 @@ export class NotificationService {
                 ...(event.data.agentId ? { agentId: event.data.agentId } : {}),
               }
             : { workspaceId };
-        this.sendShowEvent(content, backendId, workspaceId, navigateTarget);
+        this.sendShowEvent(content, backendId, workspaceId, navigateTarget, focusedWindow);
         return;
       }
 
@@ -804,6 +796,7 @@ export class NotificationService {
         ...(taskTitle ? { taskTitle } : {}),
         ...(provider ? { provider } : {}),
         ...(event.data.agentId ? { agentId: event.data.agentId } : {}),
+        ...(event.data.agentName ? { agentName: event.data.agentName } : {}),
       },
     };
   }
@@ -820,12 +813,19 @@ export class NotificationService {
    * host at all, the sound still plays on the focused (or any) window but
    * WITHOUT `navigateTarget`: a click there would navigate a window on
    * another host, which cannot show this workspace.
+   *
+   * `toastWindow` (the focused on-host window, frontmost gate only) is the
+   * one window that receives `navigateTarget`, so the toast appears where the
+   * user is looking — not in background windows that merely have the
+   * workspace open or host it offscreen. Those still get the sound-only
+   * payload, keeping sound delivery unchanged.
    */
   private sendShowEvent(
     content: NotificationContent,
     scope: WindowHostScope,
     workspaceId?: string,
     navigateTarget?: NotificationNavigateTarget,
+    toastWindow?: BrowserWindow,
   ): void {
     const payload = {
       title: content.title,
@@ -834,6 +834,20 @@ export class NotificationService {
       ...(content.structured ? { structured: content.structured } : {}),
       ...(navigateTarget ? { navigateTarget } : {}),
     };
+    if (navigateTarget && toastWindow && !toastWindow.isDestroyed()) {
+      const { navigateTarget: _toastOnly, ...soundOnlyPayload } = payload;
+      if (!toastWindow.webContents.isDestroyed()) {
+        toastWindow.webContents.send('notification:show', payload);
+      }
+      for (const id of workspaceId ? getWindowIdsForWorkspace(workspaceId, scope) : []) {
+        if (id === toastWindow.id) continue;
+        const window = BrowserWindow.fromId(id);
+        if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
+          window.webContents.send('notification:show', soundOnlyPayload);
+        }
+      }
+      return;
+    }
     if (workspaceId && getWindowIdsForWorkspace(workspaceId, scope).length > 0) {
       sendToWorkspaceWindows(workspaceId, 'notification:show', payload, scope);
       return;

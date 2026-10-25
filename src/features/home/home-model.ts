@@ -7,7 +7,7 @@ import { WorkspaceStatusEnum } from '$shared/types';
 import type { RepositoryGroup } from '$lib/components/workspace/utils/workspace-grouping';
 
 export type HomeFilter =
-  'all' | 'attention' | 'pr-ready' | 'running' | 'blocked' | 'unread' | 'archived';
+  'all' | 'attention' | 'pr-ready' | 'running' | 'waiting' | 'blocked' | 'unread' | 'archived';
 export interface HomeRepository {
   key: string;
   name: string;
@@ -53,14 +53,45 @@ export function groupHomeRepositoriesForSidebar(
   return { groups, unassigned };
 }
 
-export type HomeTriageGroup = 'needs-you' | 'pr-ready' | 'running' | 'blocked' | 'done' | 'idle';
+export type HomeTriageGroup =
+  'needs-you' | 'pr-ready' | 'running' | 'waiting' | 'blocked' | 'done' | 'idle';
 export type HomeTriageInput = Pick<
   Workspace,
   'displayStatus' | 'activity' | 'attention' | 'attentionReminder'
->;
+> &
+  Partial<Pick<Workspace, 'waiting' | 'scriptsRunning'>>;
 
-/** Mutually exclusive Home groups based only on daemon-owned structured signals. */
+/** An agent turn or a command-mode script run is in flight. */
+function isHomeRunning(workspace: HomeTriageInput): boolean {
+  return (
+    workspace.activity === 'agent_running' ||
+    workspace.displayStatus === 'in_progress' ||
+    workspace.scriptsRunning === true
+  );
+}
+
+/** Watching something external: the daemon's waiting flag (hooks, PR and
+ *  script monitors, delegated agents) or a PR sitting in the merge queue. */
+function isHomeWaiting(workspace: HomeTriageInput): boolean {
+  return (
+    workspaceReminderStatus(workspace) === 'waiting' ||
+    workspace.waiting === true ||
+    workspace.displayStatus === 'pr_queued'
+  );
+}
+
+/** Mutually exclusive Home groups based only on daemon-owned structured signals.
+ *  Precedence: blocked > needs you > PR ready > running > waiting > done > idle. */
 export function getHomeTriageGroup(workspace: HomeTriageInput): HomeTriageGroup {
+  const group = getHomeBaseTriageGroup(workspace);
+  return (group === 'done' || group === 'idle') && isHomeWaiting(workspace) ? 'waiting' : group;
+}
+
+/** The triage group without the waiting overlay, for status chips that show
+ *  waiting as a supplemental marker on the underlying state. */
+export function getHomeBaseTriageGroup(
+  workspace: HomeTriageInput,
+): Exclude<HomeTriageGroup, 'waiting'> {
   const status = workspaceReminderStatus(workspace);
   if (workspace.displayStatus === 'blocked' || workspace.displayStatus === 'failed') {
     return 'blocked';
@@ -72,7 +103,7 @@ export function getHomeTriageGroup(workspace: HomeTriageInput): HomeTriageGroup 
     return 'needs-you';
   }
   if (status === 'pr_ready') return 'pr-ready';
-  if (workspace.activity === 'agent_running' || status === 'in_progress') {
+  if (isHomeRunning(workspace)) {
     return 'running';
   }
   if (status === 'complete' || status === 'pr_merged') {
@@ -97,6 +128,8 @@ export function matchesHomeFilter(workspace: Workspace, filter: HomeFilter): boo
       return getHomeTriageGroup(workspace) === 'pr-ready';
     case 'running':
       return getHomeTriageGroup(workspace) === 'running';
+    case 'waiting':
+      return getHomeTriageGroup(workspace) === 'waiting';
     case 'blocked':
       return getHomeTriageGroup(workspace) === 'blocked';
     case 'unread':

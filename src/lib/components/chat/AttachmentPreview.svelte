@@ -22,6 +22,10 @@
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { formatNumber } from '$lib/i18n/format';
+  import {
+    canonicalImageMimeType,
+    isSupportedImageMimeType,
+  } from './input/image-attachment-format';
 
   interface Props {
     id: string;
@@ -76,13 +80,19 @@
     onRetry,
   }: Props = $props();
 
+  let failedThumbnailUrl = $state<string | null>(null);
+  const previewable = $derived(isSupportedImageMimeType(imageMimeType || type || file?.type));
   let fileThumbnailUrl = $state<string | null>(null);
   const thumbnailUrl = $derived(
-    imageData && imageMimeType ? `data:${imageMimeType};base64,${imageData}` : fileThumbnailUrl,
+    previewable
+      ? imageData && imageMimeType
+        ? `data:${canonicalImageMimeType(imageMimeType)};base64,${imageData}`
+        : fileThumbnailUrl
+      : null,
   );
 
   $effect(() => {
-    if (!(imageData && imageMimeType) && file && type.startsWith('image/')) {
+    if (previewable && !(imageData && imageMimeType) && file) {
       const url = URL.createObjectURL(file);
       fileThumbnailUrl = url;
       return () => URL.revokeObjectURL(url);
@@ -95,7 +105,7 @@
     // Staged folder pills (path-only references) pass the literal 'folder'
     // marker instead of a mime type.
     if (type === 'folder') return faFolder;
-    const mimeType = type || imageMimeType || '';
+    const mimeType = canonicalImageMimeType(type || imageMimeType || file?.type);
     // 'image' (no subtype) is the neutral marker for an attachment-reference
     // image restored without a persisted mime (monorepo#3338).
     if (mimeType.startsWith('image')) return faImage;
@@ -111,7 +121,9 @@
 
   // Format file size
 
-  const isImage = $derived(type.startsWith('image/') || !!imageMimeType?.startsWith('image'));
+  const isImage = $derived(
+    canonicalImageMimeType(type || imageMimeType || file?.type).startsWith('image'),
+  );
 
   // Chip tooltip: only failed placements explain themselves on hover; the
   // daemon's failure detail (when captured) is appended after the generic copy.
@@ -152,7 +164,7 @@
   }
 </script>
 
-{#if variant === 'thumbnail' && isImage}
+{#if variant === 'thumbnail' && isImage && previewable && (!thumbnailUrl || failedThumbnailUrl !== thumbnailUrl)}
   <!-- Slack-style thumbnail for images: larger, rounded corners, X overlaid on hover -->
   <div
     class="relative group shrink-0 {className}"
@@ -173,7 +185,12 @@
       disabled={!thumbnailUrl}
     >
       {#if thumbnailUrl}
-        <img src={thumbnailUrl} alt={name} class="w-full h-full object-cover" />
+        <img
+          src={thumbnailUrl}
+          alt={name}
+          class="w-full h-full object-cover"
+          onerror={() => (failedThumbnailUrl = thumbnailUrl)}
+        />
       {:else}
         <div class="flex size-full items-center justify-center bg-muted text-subtle">
           <Fa icon={faImage} size="15" />
@@ -224,10 +241,15 @@
     {:else if placementStatus === 'failed'}
       <!-- Placement failed: error icon -->
       <Fa icon={faCircleExclamation} size="15" class="shrink-0" />
-    {:else if isImage && thumbnailUrl}
+    {:else if isImage && thumbnailUrl && failedThumbnailUrl !== thumbnailUrl}
       <!-- Image thumbnail -->
       <div class="w-4 h-4 rounded overflow-hidden shrink-0">
-        <img src={thumbnailUrl} alt={name} class="w-full h-full object-cover" />
+        <img
+          src={thumbnailUrl}
+          alt={name}
+          class="w-full h-full object-cover"
+          onerror={() => (failedThumbnailUrl = thumbnailUrl)}
+        />
       </div>
     {:else}
       <!-- File icon -->

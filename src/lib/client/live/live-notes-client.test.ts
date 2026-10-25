@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CreateNoteRequest } from '$shared/types';
+import { m } from '$shared/paraglide/messages.js';
 
 // FAKE transport only: the backend bridge is mocked so no note mutation ever
 // reaches the user's real daemon. `resolveNoteWorkspaceId` is stubbed so
@@ -14,6 +15,7 @@ let reconnectHandlers: Array<() => void> = [];
 
 vi.mock('./backend-transport', () => ({
   backendRequest: vi.fn(),
+  observeBackendNodeCapabilities: vi.fn(async () => null),
   onBackendNotification: vi.fn((handler: (n: { method: string; params?: unknown }) => void) => {
     notifyHandlers.push(handler);
     return () => {
@@ -33,12 +35,14 @@ vi.mock('./live-support', async (importActual) => {
   return { ...actual, resolveNoteWorkspaceId: vi.fn(() => Promise.resolve('ws-1')) };
 });
 
-import { backendRequest } from './backend-transport';
+import { backendRequest, observeBackendNodeCapabilities } from './backend-transport';
 import { resolveNoteWorkspaceId } from './live-support';
-import { LiveNotesClient, normalizeNote } from './live-notes-client';
+import { BackendError } from './backend-transport-types';
+import { LiveNotesClient, NoteCapabilityUnknownError, normalizeNote } from './live-notes-client';
 
 const mockedRequest = vi.mocked(backendRequest);
 const mockedResolve = vi.mocked(resolveNoteWorkspaceId);
+const mockedCapabilities = vi.mocked(observeBackendNodeCapabilities);
 
 describe('LiveNotesClient mutations (fake transport)', () => {
   afterEach(() => {
@@ -928,5 +932,167 @@ describe('LiveNotesClient.subscribe typed per-workspace note channel (PROTOCOL �
       { subscriptionId: 'chan-1', workspaceId: 'ws-1' },
       { subscriptionId: 'chan-2', workspaceId: 'ws-2' },
     ]);
+  });
+});
+
+describe('LiveNotesClient.get truncated reads (§5.2 "Truncated note reads")', () => {
+  const rawNote = { id: 'n1', workspaceId: 'ws-1', title: 'Big', content: 'prefix\n', rev: 7 };
+
+  afterEach(() => {
+    vi.clearAllMocks();
+    mockedCapabilities.mockResolvedValue(null);
+  });
+
+  it('sends maxContentBytes and normalizes the truncation markers', async () => {
+    mockedRequest.mockResolvedValueOnce({
+      note: { ...rawNote, contentTruncated: true, contentBytes: 4_700_000 },
+    });
+    const note = await new LiveNotesClient().get('n1', 'ws-1', { maxContentBytes: 500_000 });
+
+    expect(mockedRequest).toHaveBeenCalledWith('note.get', {
+      workspaceId: 'ws-1',
+      noteId: 'n1',
+      maxContentBytes: 500_000,
+    });
+    expect(note?.contentTruncated).toBe(true);
+    expect(note?.contentBytes).toBe(4_700_000);
+    expect(note?.content).toBe('prefix\n');
+  });
+
+  it('keeps the unbounded request without the option', async () => {
+    mockedRequest.mockResolvedValueOnce({ note: rawNote });
+    await new LiveNotesClient().get('n1', 'ws-1');
+    expect(mockedRequest).toHaveBeenCalledWith('note.get', { workspaceId: 'ws-1', noteId: 'n1' });
+  });
+
+  it('reports support only for the exact noteTruncatedRead: 1 capability', async () => {
+    const client = new LiveNotesClient();
+    mockedCapabilities.mockResolvedValue({ server: { capabilities: { noteTruncatedRead: 1 } } });
+    await expect(client.supportsTruncatedRead()).resolves.toBe(true);
+    mockedCapabilities.mockResolvedValue({ server: { capabilities: {} } });
+    await expect(client.supportsTruncatedRead()).resolves.toBe(false);
+    mockedCapabilities.mockResolvedValue({ server: { capabilities: { noteTruncatedRead: 2 } } });
+    await expect(client.supportsTruncatedRead()).resolves.toBe(false);
+    vi.useFakeTimers();
+    try {
+      // A transport that cannot report node capabilities at all is a plain "no".
+      mockedCapabilities.mockRejectedValue(new Error(m.agent_placement_unavailable()));
+      const failing = client.supportsTruncatedRead();
+      await vi.runAllTimersAsync();
+      await expect(failing).resolves.toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    [
+      'no acknowledged hello',
+      () => mockedCapabilities.mockResolvedValue({ server: { capabilities: null } }),
+    ],
+    [
+      'a connection that never settles',
+      () =>
+        mockedCapabilities.mockRejectedValue(
+          new BackendError({ code: 'UNAVAILABLE', message: 'Backend connection changed' }),
+        ),
+    ],
+    [
+      // The Electron bridge maps a not-connected backend client to TRANSPORT_ERROR.
+      'an Electron TRANSPORT_ERROR',
+      () =>
+        mockedCapabilities.mockRejectedValue(
+          new BackendError({ code: 'TRANSPORT_ERROR', message: 'Backend client is not connected' }),
+        ),
+    ],
+  ])('rejects as unknown, not unsupported, with %s', async (_label, arrange) => {
+    vi.useFakeTimers();
+    try {
+      arrange();
+      const supported = new LiveNotesClient().supportsTruncatedRead();
+      const settled = supported.catch((error: unknown) => error);
+      await vi.runAllTimersAsync();
+      expect(await settled).toBeInstanceOf(NoteCapabilityUnknownError);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('answers "no" at once when the IPC router has no capability channel at all', async () => {
+    const unbridged = Object.assign(new Error('No mock IPC handler registered'), {
+      name: 'UnbridgedMockIpcChannelError',
+    });
+    mockedCapabilities.mockRejectedValue(unbridged);
+    await expect(new LiveNotesClient().supportsTruncatedRead()).resolves.toBe(false);
+    expect(mockedCapabilities).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for the acknowledged hello while the capability is unknown (startup, reconnect)', async () => {
+    vi.useFakeTimers();
+    try {
+      mockedCapabilities
+        .mockResolvedValueOnce({ server: { capabilities: null } })
+        .mockRejectedValueOnce(new Error(m.agent_placement_backendChanged()))
+        .mockResolvedValue({ server: { capabilities: { noteTruncatedRead: 1 } } });
+      const supported = new LiveNotesClient().supportsTruncatedRead();
+      await vi.runAllTimersAsync();
+      await expect(supported).resolves.toBe(true);
+      expect(mockedCapabilities).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('normalizes markers only for truncated rows', () => {
+    const full = normalizeNote({ ...rawNote, contentBytes: 9 }, 'ws-1');
+    expect(full.contentTruncated).toBeUndefined();
+    expect(full.contentBytes).toBeUndefined();
+    const truncated = normalizeNote(
+      { ...rawNote, contentTruncated: true, contentBytes: 600_000 },
+      'ws-1',
+    );
+    expect(truncated).toMatchObject({ contentTruncated: true, contentBytes: 600_000 });
+  });
+});
+
+describe('LiveNotesClient.setContent write guard (§5.2 "Truncated note reads")', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    mockedResolve.mockResolvedValue('ws-1');
+  });
+
+  it('sends baseContentBytes with expectedVersion when given', async () => {
+    mockedRequest.mockResolvedValueOnce({ ok: true, rev: 8, newContent: 'x' });
+    await new LiveNotesClient().setContent('n1', 'x', 7, 'ws-1', { baseContentBytes: 11 });
+    expect(mockedRequest).toHaveBeenCalledWith('note.setContent', {
+      workspaceId: 'ws-1',
+      noteId: 'n1',
+      content: 'x',
+      baseContentBytes: 11,
+      expectedVersion: 7,
+    });
+  });
+
+  it('maps a content-base-mismatch refusal to contentBaseMismatch', async () => {
+    mockedRequest.mockRejectedValueOnce(
+      Object.assign(new Error('Content base does not match the stored note'), {
+        rpcCode: -32602,
+        data: { code: 'content-base-mismatch', baseContentBytes: 11, resolvedBaseBytes: 40 },
+      }),
+    );
+    const result = await new LiveNotesClient().setContent('n1', 'x', 7, 'ws-1', {
+      baseContentBytes: 11,
+    });
+    expect(result).toMatchObject({ success: false, contentBaseMismatch: true });
+    expect(result.conflict).toBeUndefined();
+  });
+
+  it('does not flag other invalid-params errors', async () => {
+    mockedRequest.mockRejectedValueOnce(
+      Object.assign(new Error('bad'), { rpcCode: -32602, data: { code: 'other' } }),
+    );
+    const result = await new LiveNotesClient().setContent('n1', 'x', 7, 'ws-1');
+    expect(result.success).toBe(false);
+    expect(result.contentBaseMismatch).toBeUndefined();
   });
 });

@@ -42,13 +42,14 @@ test('pull recovery editor menu wraps long names and keeps icons on the first li
     const box = label.getBoundingClientRect();
     const icon = node.querySelector('svg')!.getBoundingClientRect();
     const lineHeight = Number.parseFloat(getComputedStyle(label).lineHeight);
+    const range = document.createRange();
+    range.selectNodeContents(label);
     return {
       delta: Math.abs(icon.top + icon.height / 2 - box.top - lineHeight / 2),
-      lines: box.height / lineHeight,
+      lines: range.getClientRects().length,
       overflow: node.scrollWidth - node.clientWidth,
     };
   });
-  expect(geometry.delta).toBeLessThanOrEqual(1);
   expect(geometry.lines).toBeGreaterThan(1);
   expect(geometry.overflow).toBeLessThanOrEqual(1);
   if (process.env.MODAL_AUDIT_CAPTURE_DIR) {

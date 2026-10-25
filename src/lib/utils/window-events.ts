@@ -3,6 +3,8 @@ type KnownWindowEventName =
   | 'agent:scroll-to-activity'
   | 'agent:scroll-to-turn'
   | 'app:deep-link-create'
+  // Browser-emitted focus loss; the presence saga clears discussion typing.
+  | 'blur'
   | 'chat:attach-context'
   | 'chat:attach-files'
   | 'chat:enhance-prompt'

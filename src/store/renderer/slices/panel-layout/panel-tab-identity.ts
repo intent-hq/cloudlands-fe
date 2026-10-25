@@ -96,6 +96,13 @@ export function panelTabsAreEquivalent(
         (existing.data as { messageId?: string } | undefined)?.messageId === messageId
       );
     }
+    case 'discussion':
+      return (
+        !!requested.workspaceId &&
+        existing.workspaceId === requested.workspaceId &&
+        (existing.data?.conversationId ?? 'default') ===
+          (requested.data?.conversationId ?? 'default')
+      );
     case 'activity':
     case 'code-review':
     case 'settings':

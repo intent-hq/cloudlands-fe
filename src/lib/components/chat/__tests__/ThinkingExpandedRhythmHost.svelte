@@ -16,23 +16,6 @@
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
   onDestroy(disposeStore);
 
-  const staticContent = `# Reasoning rhythm
-
-First paragraph with \`inline code\`.
-
-## Inspect chunks
-
-- First list item
-- Second list item
-
-\`\`\`ts
-const seam = 8;
-\`\`\`
-
-Final paragraph.
-**Nested strong heading**
-Nested strong body.`;
-
   const streamingContent = $derived(
     streamStage === 'partial'
       ? `# Streaming rhythm
@@ -67,10 +50,7 @@ Nested strong body.`,
   class="bg-background p-3 text-foreground"
   data-testid="expanded-reasoning-rhythm-host"
 >
-  <div data-testid="static-reasoning-rhythm">
-    <ThinkingBlock content={staticContent} workspaceId="reasoning-rhythm" />
-  </div>
-  <div class="mt-3" data-testid="streaming-reasoning-rhythm">
+  <div data-testid="streaming-reasoning-rhythm">
     <ThinkingBlock content={streamingContent} isStreaming workspaceId="reasoning-rhythm" />
   </div>
 </section>
