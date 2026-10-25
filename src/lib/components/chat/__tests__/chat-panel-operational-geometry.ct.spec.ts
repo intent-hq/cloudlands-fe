@@ -64,20 +64,29 @@ for (const theme of ['light', 'dark'] as const) {
             await expect(streamingRow.locator('[data-operational-leading]')).toHaveAttribute(
               'data-streaming-pulse',
             );
-            // The pulse is an inline opacity style, so no animation may persist
-            // under the slot. Its IntentMarkLoader crossfades for settleMs (two
-            // Web Animations) whenever its IntersectionObserver re-admits it
-            // after the scrollIntoView above; poll past that transient instead
-            // of sampling once. A persistent animation still never reaches 0.
-            await expect
-              .poll(
-                () =>
-                  streamingRow
-                    .locator('[data-operational-leading]')
-                    .evaluate((node) => node.getAnimations({ subtree: true }).length),
-                { message: 'streaming pulse slot must settle with no running animations' },
-              )
-              .toBe(0);
+            // The pulse is an inline opacity style, so the slot must run no
+            // animation. The IntentMarkLoader inside it may be mid-way through
+            // one of its own finite layer crossfades (it reconciles on viewport,
+            // visibility, focus and motion changes); those are the loader's
+            // contract, not the pulse, so exclude only finite animations
+            // targeting loader descendants. Anything else, including any
+            // infinite animation, still counts.
+            const pulseAnimations = await streamingRow
+              .locator('[data-operational-leading]')
+              .evaluate((node) =>
+                node
+                  .getAnimations({ subtree: true })
+                  .filter((animation) => {
+                    const target =
+                      animation.effect instanceof KeyframeEffect ? animation.effect.target : null;
+                    const loaderCrossfade =
+                      target?.closest('[data-slot="intent-mark-loader"]') &&
+                      Number.isFinite(animation.effect?.getComputedTiming().iterations);
+                    return !loaderCrossfade;
+                  })
+                  .map((animation) => animation.constructor.name),
+              );
+            expect(pulseAnimations, 'streaming pulse slot must run no animation').toEqual([]);
             await expect(streamingRow.locator('[data-operational-expanded-content]')).toBeVisible();
           }
 
