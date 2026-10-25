@@ -1485,10 +1485,12 @@ function claimRetireTransition(agentId: string, transition: 'retired' | 'restore
 }
 
 /**
- * `agent:renamed` (§5.5 / §6.5) carries `{ agentId, name }` — the daemon's
- * `agent.rename` emits it after persisting the new name. Dispatching
- * `renameSession` mutates only the session's `name` field so the sidebar entry
- * updates without touching the transcript.
+ * `agent:renamed` (§5.5 / §6.5) carries `{ agentId, name, nameExplicitlySet }` —
+ * the daemon's `agent.rename` (and a name-only `agent.update`) emits it after
+ * persisting the new name. Dispatching `renameSession` updates the session's
+ * `name` and mirrors the daemon's flag (Assistant thread titles switch from the
+ * first-message preview only once it is explicit) without touching the
+ * transcript. Older daemons omit the flag; absent means `true`.
  */
 function handleAgentRenamedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -1497,7 +1499,10 @@ function handleAgentRenamedEvent(event: WorkspaceEvent): void {
   const name = data.name;
   if (typeof agentId !== 'string' || agentId.length === 0) return;
   if (typeof name !== 'string') return;
-  appStore.dispatch(renameSession(agentId, name));
+  // An absent flag defaults inside `renameSession` (older daemons).
+  const nameExplicitlySet =
+    typeof data.nameExplicitlySet === 'boolean' ? data.nameExplicitlySet : undefined;
+  appStore.dispatch(renameSession(agentId, name, nameExplicitlySet));
 }
 
 /** Apply self-sufficient metadata mutations; keep scoped reads for partial invalidations. */
@@ -2455,6 +2460,30 @@ function handleWaitingChangedEvent(
 }
 
 /**
+ * `workspace:scriptsRunning-changed` (PROTOCOL §5.1 / §6.5) carries the
+ * self-sufficient `{ workspaceId, scriptsRunning }` payload for the orthogonal
+ * command-script flag; merge it like `workspace:waiting-changed`.
+ */
+function handleScriptsRunningChangedEvent(
+  event: WorkspaceEvent,
+  envelopeWorkspaceId: string | null,
+): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const dataWorkspaceId = data.workspaceId;
+  const workspaceId =
+    typeof dataWorkspaceId === 'string' && dataWorkspaceId.length > 0
+      ? dataWorkspaceId
+      : envelopeWorkspaceId;
+  const scriptsRunning = data.scriptsRunning;
+  if (!workspaceId || typeof scriptsRunning !== 'boolean') return;
+  appStore.dispatch(
+    bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { scriptsRunning })]),
+  );
+  void hydrateWorkspaceEntityIfMissing(workspaceId);
+}
+
+/**
  * Recover a dropped partial merge when the target workspace entity is not in
  * this window's store. The `bulkUpdateWorkspaceEntities` reducer is a no-op
  * for unknown ids, so a self-sufficient transition payload
@@ -2483,7 +2512,11 @@ async function runHydrateMissingWorkspaceEntityFetch(workspaceId: string): Promi
     if (workspace) {
       const { setWorkspaceEntity } =
         await import('$store/renderer/slices/workspace/workspace-slice');
-      appStore.dispatch(setWorkspaceEntity(workspace));
+      // `workspace.get` is authoritative: apply it as a detail read so a
+      // presence-detected flag it omits (`scriptsRunning`, `waiting` — false
+      // on the wire, PROTOCOL §5.1) clears a value an earlier read stored
+      // instead of surviving a shallow upsert.
+      appStore.dispatch(setWorkspaceEntity(workspace, { detailRead: true }));
     }
   } catch (_error) {
     // Workspace might have been deleted or transport error; no-op is safe.
@@ -2786,6 +2819,13 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
     changes.archivedAt = raw.archivedAt;
   } else if (raw.archivedAt === null) {
     changes.archivedAt = undefined;
+  }
+  // `retiredAt` (PROTOCOL §5.1 Retired workspaces) uses the same nullable
+  // merge: retire sends the timestamp, revive an explicit JSON null.
+  if (typeof raw.retiredAt === 'string') {
+    changes.retiredAt = raw.retiredAt;
+  } else if (raw.retiredAt === null) {
+    changes.retiredAt = undefined;
   }
   // `browserClientId` (REV-2 pin, §5.17) is nullable on the wire the same way:
   // `workspace.setBrowserClient { clientId }` sends the pinned id, clearing
@@ -3792,6 +3832,10 @@ export function routeDaemonEventsNotification(
     handleWaitingChangedEvent(event, null);
     return;
   }
+  if (type === 'workspace:scriptsRunning-changed' && !workspaceIdOf(event)) {
+    handleScriptsRunningChangedEvent(event, null);
+    return;
+  }
 
   // `mcp.servers:status-changed` (§6.5) is global — no `workspaceId` envelope
   // — so it must also run before the workspace-id gate below.
@@ -4084,6 +4128,11 @@ export function routeDaemonEventsNotification(
   // without a refetch. Side effect, never an early return.
   if (type === 'workspace:waiting-changed') {
     handleWaitingChangedEvent(event, workspaceId);
+  }
+  // `workspace:scriptsRunning-changed` (§5.1 / §6.5) — same merge for the
+  // orthogonal command-script flag. Side effect, never an early return.
+  if (type === 'workspace:scriptsRunning-changed') {
+    handleScriptsRunningChangedEvent(event, workspaceId);
   }
   // `browser:tab-*` (REV-2) — patch the daemon tab-registry mirror for this
   // workspace from the self-sufficient `{ tab, changes? }` payload. Side
@@ -4676,6 +4725,9 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // `workspace:waiting-changed` (§5.1 / §6.5) — self-sufficient orthogonal
   // waiting flag transitions so waiting indicators update without a refetch.
   'workspace:waiting-changed',
+  // `workspace:scriptsRunning-changed` (§5.1 / §6.5) — self-sufficient
+  // command-script flag transitions so Home's Running group updates live.
+  'workspace:scriptsRunning-changed',
   'workspace:updated',
   'workspace:task-stats-changed',
   'workspace:created',

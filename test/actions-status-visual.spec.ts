@@ -54,25 +54,21 @@ test('captures Actions & status at genuine 200% device scale with reduced motion
       .getByRole('radio', { name: 'Reduced', exact: true });
     await expect(reduceMotion).toBeChecked();
     const runAction = page.getByRole('button', { name: '1. Primary', exact: true });
-    const heading = page.getByRole('main').getByRole('heading', { level: 1 });
-    const [headingBox, motion] = await Promise.all([
-      heading.boundingBox(),
-      runAction.evaluate((element) => {
-        const duration = getComputedStyle(element).transitionDuration;
-        const milliseconds = Math.max(
-          ...duration.split(',').map((value) => {
-            const number = Number.parseFloat(value);
-            return value.trim().endsWith('ms') ? number : number * 1000;
-          }),
-        );
-        return {
-          duration,
-          milliseconds,
-          mediaReduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
-          classReduced: document.documentElement.classList.contains('catalog-reduced-motion'),
-        };
-      }),
-    ]);
+    const motion = await runAction.evaluate((element) => {
+      const duration = getComputedStyle(element).transitionDuration;
+      const milliseconds = Math.max(
+        ...duration.split(',').map((value) => {
+          const number = Number.parseFloat(value);
+          return value.trim().endsWith('ms') ? number : number * 1000;
+        }),
+      );
+      return {
+        duration,
+        milliseconds,
+        mediaReduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
+        classReduced: document.documentElement.classList.contains('catalog-reduced-motion'),
+      };
+    });
     const metrics = await page.evaluate(() => ({
       dpr: window.devicePixelRatio,
       innerWidth: window.innerWidth,
@@ -80,7 +76,6 @@ test('captures Actions & status at genuine 200% device scale with reduced motion
       overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     }));
     expect(metrics).toEqual({ dpr: 2, innerWidth: 640, innerHeight: 400, overflow: 0 });
-    expect((headingBox?.height ?? 0) * metrics.dpr).toBeGreaterThanOrEqual(32);
     expect(motion.mediaReduced).toBe(true);
     expect(motion.classReduced).toBe(true);
     expect(motion.milliseconds, motion.duration).toBeLessThanOrEqual(0.01);

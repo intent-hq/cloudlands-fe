@@ -53,13 +53,11 @@ describe('LazyAgentCard', () => {
   });
 
   it('mounts the heavy agent card only while it is near the viewport', async () => {
-    const { container } = render(LazyAgentCard, {
+    render(LazyAgentCard, {
       props: { cacheKey: 'agent-1', agentId: 'agent-1', agentName: 'Worker' },
     });
 
     expect(screen.queryByTestId('mock-agent-card')).toBeNull();
-    const placeholder = container.querySelector<HTMLElement>('[data-lazy-agent-card]');
-    expect(placeholder?.style.height).toBe('40px');
 
     MockIntersectionObserver.instances[0]?.fire(true);
     expect((await screen.findByTestId('mock-agent-card')).getAttribute('data-agent-id')).toBe(

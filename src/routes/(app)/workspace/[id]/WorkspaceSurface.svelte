@@ -95,6 +95,8 @@
     createAgentWithSpecialistRequested,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import MultiSelectTabbedSidebar from '$lib/components/workspace/MultiSelectTabbedSidebar.svelte';
+  import RetiredWorkspaceBanner from '$lib/components/workspace/RetiredWorkspaceBanner.svelte';
+  import { WorkspaceStatusEnum } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
 
@@ -205,6 +207,10 @@
   // state instead of the (administrator-only) workspace onboarding, and the
   // nav bar stays visible so Settings → Guest Sessions remains reachable.
   const windowGuestSession$ = selectWindowGuestSession();
+  // Retired workspace (PROTOCOL §5.1): the folder is gone and every write is
+  // refused, so the view is read-only — no creation affordances, no terminal.
+  const isRetired = $derived($workspace?.status === WorkspaceStatusEnum.Retired);
+  const hidesCreateActions = $derived($hidesAgentLifecycleActions$ || isRetired);
 
   $effect(() => {
     const currentWorkspaceId = workspaceId;
@@ -795,12 +801,12 @@
         {active}
         workspaceId={$workspace?.id || workspaceId}
         {panelLayoutId}
-        onCreateNote={handleCreateNote}
-        onCreateFile={handleCreateFile}
+        onCreateNote={isRetired ? undefined : handleCreateNote}
+        onCreateFile={isRetired ? undefined : handleCreateFile}
         onFileRenamed={handleFileRenamed}
         isNewWorkspaceSession={$isNewWorkspaceSession$}
-        onCreateAgent={$hidesAgentLifecycleActions$ ? undefined : handleCreateAgent}
-        onCreateAgentWithSpecialist={$hidesAgentLifecycleActions$
+        onCreateAgent={hidesCreateActions ? undefined : handleCreateAgent}
+        onCreateAgentWithSpecialist={hidesCreateActions
           ? undefined
           : handleCreateAgentWithSpecialist}
       />
@@ -848,19 +854,32 @@
             ? 'animation: fadeInContent 600ms cubic-bezier(0.16, 1, 0.3, 1) 250ms forwards; opacity: 0;'
             : ''}
         >
-          <!-- Panel-based layout when using TabbedSidebar -->
-          <PanelLayout
-            workspaceId={$workspace?.id || workspaceId}
-            layoutId={panelLayoutId}
-            {active}
-            onCreateAgent={$hidesAgentLifecycleActions$
-              ? undefined
-              : (panelId) => handleCreateAgent(undefined, panelId)}
-            onCreateAgentWithSpecialist={$hidesAgentLifecycleActions$
-              ? undefined
-              : handleCreateAgentWithSpecialist}
-            onCreateNote={handleCreateNote}
-          />
+          {#snippet panels()}
+            <!-- Panel-based layout when using TabbedSidebar -->
+            <PanelLayout
+              workspaceId={$workspace?.id || workspaceId}
+              layoutId={panelLayoutId}
+              {active}
+              onCreateAgent={hidesCreateActions
+                ? undefined
+                : (panelId) => handleCreateAgent(undefined, panelId)}
+              onCreateAgentWithSpecialist={hidesCreateActions
+                ? undefined
+                : handleCreateAgentWithSpecialist}
+              onCreateNote={isRetired ? undefined : handleCreateNote}
+            />
+          {/snippet}
+          {#if isRetired}
+            <div class="flex h-full w-full flex-col">
+              <RetiredWorkspaceBanner
+                workspaceId={$workspace?.id || workspaceId}
+                canRestore={!$hidesAgentLifecycleActions$}
+              />
+              <div class="relative min-h-0 flex-1">{@render panels()}</div>
+            </div>
+          {:else}
+            {@render panels()}
+          {/if}
         </div>
       {/if}
     {/if}
@@ -869,7 +888,7 @@
 
 <!-- Terminal Overlay Snippet -->
 {#snippet terminalOverlayContent()}
-  {#if active && !$isCollaborator$}
+  {#if active && !$isCollaborator$ && !isRetired}
     <QuakeTerminalOverlay
       workspaceId={WorkspaceId($workspace?.id || workspaceId)}
       showDockWhenClosed={false}

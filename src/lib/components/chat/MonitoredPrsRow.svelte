@@ -1,6 +1,5 @@
 <script lang="ts">
   import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
-  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   /**
    * MonitoredPrsRow Component
    *
@@ -141,8 +140,11 @@
   // surface, cancelled rows are excluded server-side.
   const activeMonitors = $derived($monitors$.filter((mon) => mon.state === 'active'));
 
+  // A pending first read is not evidence of anything to show: staying hidden
+  // keeps the footer from flashing "Loading" and vanishing on every chat open.
+  // Only a failed read surfaces on its own, so the error stays discoverable.
   $effect(() => {
-    visible = activeMonitors.length > 0 || $snapshotStatus$ !== 'ready';
+    visible = activeMonitors.length > 0 || $snapshotStatus$ === 'failed';
     count = activeMonitors.length;
   });
 
@@ -415,19 +417,14 @@
   }
 </script>
 
-{#if activeMonitors.length === 0 && $snapshotStatus$ !== 'ready'}
+{#if activeMonitors.length === 0 && $snapshotStatus$ === 'failed'}
   <div
     class="flex min-h-10 items-center gap-2 px-3 py-2 text-muted-foreground {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
     data-testid="pr-monitors-snapshot-status"
     data-snapshot-status={$snapshotStatus$}
-    role={$snapshotStatus$ === 'failed' ? 'alert' : 'status'}
+    role="alert"
   >
-    {#if $snapshotStatus$ === 'loading'}
-      <span aria-hidden="true" class="shrink-0"><IntentMarkLoader size={12} /></span>
-      <span>{m.chat_chatMessage_loading_label()}</span>
-    {:else}
-      <span>{m.chat_streamingStatus_responseFailed_label()}</span>
-    {/if}
+    <span>{m.chat_streamingStatus_responseFailed_label()}</span>
   </div>
 {/if}
 

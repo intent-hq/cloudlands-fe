@@ -226,8 +226,6 @@ export const IPC_CHANNELS = {
   // Pi Integration
   PI: {
     GET_MODELS: 'pi:get-models',
-    CHECK_MCP_ADAPTER: 'pi:check-mcp-adapter',
-    INSTALL_MCP_ADAPTER: 'pi:install-mcp-adapter',
   },
 
   // Factory Droid Integration

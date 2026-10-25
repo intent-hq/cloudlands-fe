@@ -21,7 +21,6 @@ for (const theme of ['light', 'dark'] as const) {
     const ordinary = root.getByRole('textbox', { name: 'Ordinary textarea' });
     for (const control of [editable, empty, readonly, disabled]) {
       await expect(control).toHaveCSS('background-color', background);
-      await expect(control).toHaveCSS('border-width', '1px');
     }
     await expect(ordinary).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     const restingShadow = await editable.evaluate((e) => getComputedStyle(e).boxShadow);

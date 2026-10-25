@@ -18,6 +18,7 @@ import { AgentStatus, type AgentSession } from '$shared/types';
 import { lifecycleReadSaga } from '$store/renderer/slices/workspace-lifecycle/sagas/lifecycle-read-saga';
 import { workspaceUnmounted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { setSubscriptionSnapshot } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
+import { backgroundHooksUpdated } from '$store/renderer/slices/background-hooks/background-hooks-slice';
 import {
   routeDaemonEventsNotification,
   __resetDaemonEventsBridgeForTests,
@@ -244,6 +245,23 @@ describe('displayed chat task consumers through the real store and mock wire', (
 
   it('passes owning chat visibility through the real event card to delegated summaries', async () => {
     setWaitingAgentsExpanded(WS, AGENT, true);
+    // A live hook beside the watched worker makes this a mixed card with its own
+    // outer disclosure (a still-loading hook list no longer shows the footer).
+    store.dispatch(
+      backgroundHooksUpdated(WS, [
+        {
+          hookId: 'hook-1',
+          workspaceId: WS,
+          agentId: AGENT,
+          name: 'ci-watch',
+          code: 'return { dispatch: false };',
+          delayMs: 60_000,
+          state: 'scheduled',
+          createdAt: '2026-01-01T00:00:00Z',
+          runCount: 0,
+        },
+      ]),
+    );
     const props = { workspaceId: WS, agentId: AGENT, isActive: false };
     const view = render(EventSubscriptionsCard, props);
     await settle();

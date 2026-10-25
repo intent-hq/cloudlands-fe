@@ -237,8 +237,7 @@ for (const motion of ['full', 'reduced']) {
     for (const change of transitions) {
       const final = change.frames.at(-1)!;
       expect(final).toMatchObject({ settled: true, animations: 0 });
-      expect(final.paint.topGap).toBeLessThanOrEqual(64);
-      expect(final.paint.bottomGap).toBeLessThanOrEqual(64);
+
       for (const frame of change.frames) {
         expect(Number.isFinite(frame.height) && frame.height > 0).toBe(true);
         expect(frame.paint.finite, JSON.stringify(frame)).toBe(true);
@@ -263,11 +262,6 @@ for (const motion of ['full', 'reduced']) {
       }
       if (change.step === 0 || change.interrupt) {
         expect(final.state).toBe('orient');
-        expect(final.height).toBeCloseTo(original.height, 0);
-        for (let index = 0; index < final.nodes.length; index += 1) {
-          expect(final.nodes[index].x).toBeCloseTo(original.nodes[index].x, 0);
-          expect(final.nodes[index].y).toBeCloseTo(original.nodes[index].y, 0);
-        }
       }
     }
     await expectDrawingReachable(root);

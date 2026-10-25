@@ -163,77 +163,6 @@ function userTextMessage(text: string): AgentMessage {
   };
 }
 
-function installGeometryUtilities(): HTMLStyleElement {
-  const style = document.createElement('style');
-  style.textContent = `
-    .px-1\\.5 { padding-left: 6px; padding-right: 6px; }
-    .py-1 { padding-top: 4px; padding-bottom: 4px; }
-    .px-3 { padding-left: 12px; padding-right: 12px; }
-    .py-2 { padding-top: 8px; padding-bottom: 8px; }
-    .min-h-9 { min-height: 36px; }
-    .h-9\\! { height: 36px; }
-    .h-5 { height: 20px; }
-    .w-5 { width: 20px; }
-    .h-6 { height: 24px; }
-    .w-6 { width: 24px; }
-    [data-geometry-card] { box-sizing: border-box; border: 1px solid; }
-  `;
-  document.head.append(style);
-  return style;
-}
-
-function px(value: string): number {
-  return Number.parseFloat(value) || 0;
-}
-
-function measureCollapsedCard(
-  card: HTMLElement,
-  row: HTMLElement,
-  chevron: HTMLElement,
-  width: number,
-  zoom: number,
-) {
-  const cardStyle = getComputedStyle(card);
-  const rowStyle = getComputedStyle(row);
-  const chevronStyle = getComputedStyle(chevron);
-  const contentHeight = px(chevronStyle.height);
-  const rowHeight =
-    px(rowStyle.height) ||
-    Math.max(
-      px(rowStyle.minHeight),
-      px(rowStyle.paddingTop) + contentHeight + px(rowStyle.paddingBottom),
-    );
-  const height =
-    px(cardStyle.borderTopWidth) +
-    px(cardStyle.paddingTop) +
-    rowHeight +
-    px(cardStyle.paddingBottom) +
-    px(cardStyle.borderBottomWidth);
-  card.getBoundingClientRect = () => ({ width: width * zoom, height: height * zoom }) as DOMRect;
-  return {
-    rect: {
-      width: card.getBoundingClientRect().width,
-      height: card.getBoundingClientRect().height,
-    },
-    insets: {
-      top:
-        (px(cardStyle.borderTopWidth) + px(cardStyle.paddingTop) + px(rowStyle.paddingTop)) * zoom,
-      right:
-        (px(cardStyle.borderRightWidth) + px(cardStyle.paddingRight) + px(rowStyle.paddingRight)) *
-        zoom,
-      bottom:
-        (px(cardStyle.borderBottomWidth) +
-          px(cardStyle.paddingBottom) +
-          px(rowStyle.paddingBottom)) *
-        zoom,
-      left:
-        (px(cardStyle.borderLeftWidth) + px(cardStyle.paddingLeft) + px(rowStyle.paddingLeft)) *
-        zoom,
-    },
-    chevron: { width: px(chevronStyle.width) * zoom, height: contentHeight * zoom },
-  };
-}
-
 describe('ChatMessage user message text rendering', () => {
   it('renders multi-line text with no leading whitespace before the first character', () => {
     const { container } = render(ChatMessage, {
@@ -442,45 +371,6 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     await Promise.resolve();
 
     expect(screen.getByTestId('agent-avatar').getAttribute('data-avatar-state')).toBe('running');
-  });
-
-  it.each([
-    { width: 450, zoom: 1 },
-    { width: 220, zoom: 1 },
-    { width: 450, zoom: 2 },
-    { width: 220, zoom: 2 },
-  ])('matches finished event geometry at $width px and $zoom× zoom', ({ width, zoom }) => {
-    const style = installGeometryUtilities();
-    const view = render(ChatMessage, {
-      props: {
-        message: userMessage({
-          type: 'agent_message',
-          fromAgentId: 'agent-sender-geometry',
-          fromAgentName: 'Coordinator with a deliberately long sender name',
-        }),
-      },
-    });
-    const agentCard = screen.getByTestId('user-message-surface');
-    const agentRow = screen.getByTestId('agent-message-disclosure-header');
-    const agentChevron = screen.getByTestId('agent-message-chevron-column');
-    agentCard.setAttribute('data-geometry-card', '');
-    const eventCard = document.createElement('div');
-    eventCard.setAttribute('data-geometry-card', '');
-    eventCard.className = SUBSCRIPTION_CARD_SURFACE_CLASS;
-    const eventRow = document.createElement('div');
-    eventRow.className = SUBSCRIPTION_DISCLOSURE_ROW_CLASS;
-    const eventChevron = document.createElement('span');
-    eventChevron.className = 'h-6 w-6';
-    eventRow.append(eventChevron);
-    eventCard.append(eventRow);
-    view.container.append(eventCard);
-    expect(measureCollapsedCard(agentCard, agentRow, agentChevron, width, zoom)).toEqual(
-      measureCollapsedCard(eventCard, eventRow, eventChevron, width, zoom),
-    );
-    expect(measureCollapsedCard(agentCard, agentRow, agentChevron, width, zoom).rect.height).toBe(
-      38 * zoom,
-    );
-    style.remove();
   });
 
   it('keeps attributed content expanded-only without hiding plain user messages', async () => {

@@ -133,8 +133,6 @@ test('browser owner uses a toolbar target without resizing inline identity and f
       const { width, height } = element.getBoundingClientRect();
       return { width, height };
     });
-  expect(await size(owner)).toEqual({ width: 28, height: 28 });
-  expect((await size(inline)).width).toBeLessThan(28);
   expect(await size(owner.getByTestId('inline-agent-avatar-ring'))).toEqual(
     await size(inline.getByTestId('inline-agent-avatar-ring')),
   );

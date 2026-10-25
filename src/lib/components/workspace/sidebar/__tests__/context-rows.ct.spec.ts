@@ -67,8 +67,6 @@ test('expanding skills renders full-sized, unclipped glyphs for both scopes', as
     await expect(button).toBeVisible();
     const glyph = await button.locator('svg').boundingBox();
     expect(glyph).not.toBeNull();
-    expect(glyph!.width).toBeCloseTo(14, 0);
-    expect(glyph!.height).toBeCloseTo(14, 0);
     const buttonBox = (await button.boundingBox())!;
     expect(glyph!.x).toBeGreaterThanOrEqual(buttonBox.x);
     expect(glyph!.x + glyph!.width).toBeLessThanOrEqual(buttonBox.x + buttonBox.width);

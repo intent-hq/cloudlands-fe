@@ -74,6 +74,46 @@
     ),
   );
   let branchPrefixError = $state('');
+
+  // Auto-retire (PROTOCOL §5.12 `workspace.autoRetireArchivedAfterDays`): a
+  // positive integer number of days means on; absent/null means off. Shown
+  // only when the daemon reports the setting, so older daemons never get it.
+  const AUTO_RETIRE_PATH = 'workspace.autoRetireArchivedAfterDays';
+  const AUTO_RETIRE_DEFAULT_DAYS = 7;
+  const autoRetireSupported = $derived($entries$[AUTO_RETIRE_PATH] !== undefined);
+  const autoRetireDays = $derived.by(() => {
+    const drafts = $form$?.drafts ?? {};
+    const value =
+      AUTO_RETIRE_PATH in drafts ? drafts[AUTO_RETIRE_PATH] : $entries$[AUTO_RETIRE_PATH]?.value;
+    return typeof value === 'number' && value > 0 ? value : null;
+  });
+  const autoRetireOn = $derived(autoRetireDays !== null);
+  // The days field edits a local value; only a valid integer ≥ 1 becomes a
+  // form draft, so a rejected value can never ride along on another save.
+  let autoRetireDaysInput = $state<number | null>(null);
+  let autoRetireDaysError = $state('');
+
+  function setAutoRetire(on: boolean) {
+    autoRetireDaysInput = null;
+    autoRetireDaysError = '';
+    appStore.dispatch(
+      settingsFormDraftChanged(identity, AUTO_RETIRE_PATH, on ? AUTO_RETIRE_DEFAULT_DAYS : null),
+    );
+    handleSave();
+  }
+
+  function commitAutoRetireDays() {
+    if (autoRetireDaysInput === null) return;
+    const days = autoRetireDaysInput;
+    if (!Number.isInteger(days) || days < 1) {
+      autoRetireDaysError = m.settings_gitWorkspace_autoRetireDays_invalid();
+      return;
+    }
+    autoRetireDaysError = '';
+    autoRetireDaysInput = null;
+    appStore.dispatch(settingsFormDraftChanged(identity, AUTO_RETIRE_PATH, days));
+    handleSave();
+  }
   const settingsError = $derived($error$);
 
   // The git-credential toggle is only shown when the daemon reports the
@@ -190,10 +230,13 @@
       ...(entries[SETTING_PATHS.exposeGitCredential]
         ? { [SETTING_PATHS.exposeGitCredential]: true }
         : {}),
+      ...(entries[AUTO_RETIRE_PATH] ? { [AUTO_RETIRE_PATH]: null } : {}),
     };
     for (const [path, value] of Object.entries(defaults))
       appStore.dispatch(settingsFormDraftChanged(identity, path, value));
     branchPrefixError = '';
+    autoRetireDaysInput = null;
+    autoRetireDaysError = '';
     handleSave();
   }
 
@@ -292,6 +335,31 @@
               description: m.settings_gitWorkspace_cowIsolation_description(),
               experimental: true,
               when: () => Boolean(showCowToggle),
+            },
+            {
+              kind: 'switch',
+              id: 'auto-retire',
+              label: m.settings_gitWorkspace_autoRetire_label(),
+              description: m.settings_gitWorkspace_autoRetire_description(),
+              when: () => Boolean(autoRetireSupported),
+              get: () => Boolean(autoRetireOn),
+              set: (value: boolean) => setAutoRetire(value),
+            },
+            {
+              kind: 'number',
+              id: 'auto-retire-days',
+              label: m.settings_gitWorkspace_autoRetireDays_label(),
+              description: m.settings_gitWorkspace_autoRetireDays_description(),
+              min: 1,
+              step: 1,
+              when: () => Boolean(autoRetireSupported && autoRetireOn),
+              get: () => autoRetireDaysInput ?? autoRetireDays ?? AUTO_RETIRE_DEFAULT_DAYS,
+              set: (value: number) => {
+                autoRetireDaysInput = value;
+                autoRetireDaysError = '';
+              },
+              onBlur: commitAutoRetireDays,
+              error: () => autoRetireDaysError || undefined,
             },
           ],
         },

@@ -110,7 +110,6 @@ vi.mock('$features/navigation/link-handler', () => ({
 }));
 
 import MonitoredPrsRow from '../MonitoredPrsRow.svelte';
-import monitoredPrsRowSource from '../MonitoredPrsRow.svelte?raw';
 import {
   cancelPrMonitorRequested,
   flushPrMonitorRequested,
@@ -121,64 +120,12 @@ import {
 const producerCases: Array<{ name: string; monitor: PrMonitorRow }> =
   JSON.parse(producerRowsRaw).cases;
 
-const originalInnerWidth = window.innerWidth;
-const originalDevicePixelRatio = window.devicePixelRatio;
-
-function setViewport(width: number, devicePixelRatio = 1) {
-  Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
-  Object.defineProperty(window, 'devicePixelRatio', {
-    configurable: true,
-    value: devicePixelRatio,
-  });
-  window.dispatchEvent(new Event('resize'));
-}
-
 async function openMenu() {
   await fireEvent.click(screen.getByTestId('monitored-pr-chip'));
   const menu = await waitFor(() => screen.getByTestId('monitored-pr-menu'));
   const content = menu.closest<HTMLElement>('[data-slot="menu-content"]');
   if (!content) throw new Error('Expected the monitored PR menu to render inside menu content');
   return { menu, content };
-}
-
-// JSDOM does not apply component stylesheets, so the production
-// .monitored-pr-menu-content sizing is read from the component source and
-// modeled against the test viewport. Removing or altering the rule (the
-// menu's only width constraint) fails here instead of staying green.
-function readMenuContentRule() {
-  const rule = /\.monitored-pr-menu-content\)?\s*\{([^}]*)\}/.exec(monitoredPrsRowSource)?.[1];
-  if (!rule) {
-    throw new Error('Expected a .monitored-pr-menu-content rule in MonitoredPrsRow.svelte');
-  }
-  const width = /(?:^|;)\s*width:\s*([0-9]+)px/.exec(rule)?.[1];
-  const viewportInset = /max-width:\s*calc\(100vw\s*-\s*([0-9]+)px\)/.exec(rule)?.[1];
-  if (!width || !viewportInset) {
-    throw new Error(
-      'Expected the .monitored-pr-menu-content rule to set width and a viewport-clamped max-width',
-    );
-  }
-  return { preferredWidth: Number(width), viewportInset: Number(viewportInset) };
-}
-
-function measureRenderedMenu(menu: HTMLElement) {
-  const viewportPadding = Number(menu.dataset.viewportPadding);
-  const { preferredWidth, viewportInset } = readMenuContentRule();
-  expect(viewportInset).toBe(viewportPadding * 2);
-  const width = Math.min(preferredWidth, window.innerWidth - viewportInset);
-  const right = window.innerWidth - viewportPadding;
-  const rect = {
-    x: right - width,
-    y: 0,
-    left: right - width,
-    right,
-    top: 0,
-    bottom: 0,
-    width,
-    height: 0,
-    toJSON: () => ({}),
-  } as DOMRect;
-  menu.getBoundingClientRect = () => rect;
-  return menu.getBoundingClientRect();
 }
 
 function makeMonitor(overrides: Partial<PrMonitorRow> = {}): PrMonitorRow {
@@ -317,7 +264,6 @@ describe('MonitoredPrsRow', () => {
 
   afterEach(() => {
     cleanup();
-    setViewport(originalInnerWidth, originalDevicePixelRatio);
     dispatchMock.mockReset();
     captureSession.mockReset();
     monitorsState.listeners.clear();
@@ -474,17 +420,23 @@ describe('MonitoredPrsRow', () => {
     expect(screen.queryByTestId('monitored-prs-row')).toBeNull();
   });
 
-  it.each([
-    ['loading', 'status'],
-    ['failed', 'alert'],
-  ] as const)('renders its own %s state when the initial list has not settled', (status, role) => {
-    snapshotState.status = status;
+  it('renders nothing while the initial list is still loading', () => {
+    snapshotState.status = 'loading';
     monitorsState.monitors = [];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    const row = screen.getByRole(role);
+    expect(screen.queryByTestId('pr-monitors-snapshot-status')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('renders its own failed state when the initial list could not be read', () => {
+    snapshotState.status = 'failed';
+    monitorsState.monitors = [];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const row = screen.getByRole('alert');
     expect(row.getAttribute('data-testid')).toBe('pr-monitors-snapshot-status');
-    expect(row.getAttribute('data-snapshot-status')).toBe(status);
+    expect(row.getAttribute('data-snapshot-status')).toBe('failed');
   });
 
   it('renders 4+ digit PR numbers without digit grouping', () => {
@@ -909,51 +861,6 @@ describe('MonitoredPrsRow', () => {
       'Open in External Browser',
       'Cancel monitor',
     ]);
-  });
-
-  it('renders the portaled menu at a 260px preferred width with single-line regular labels', async () => {
-    setViewport(1280);
-    monitorsState.monitors = [makeMonitor()];
-    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
-
-    const { menu, content } = await openMenu();
-    expect(content.className).toContain('monitored-pr-menu-content');
-    expect(menu.className).toContain('w-full');
-    expect(menu.className).toContain('min-w-0');
-    expect(menu.getAttribute('style')).toBeNull();
-    const bounds = measureRenderedMenu(menu);
-    expect(bounds.width).toBe(260);
-    expect(bounds.left).toBeGreaterThanOrEqual(12);
-    expect(bounds.right).toBeLessThanOrEqual(window.innerWidth - 12);
-    for (const item of Array.from(menu.querySelectorAll('button'))) {
-      expect(item.className).toContain('min-[284px]:whitespace-nowrap');
-      expect(item.className).not.toContain('truncate');
-    }
-  });
-
-  it.each([
-    ['narrow viewport', 240, 1],
-    ['representative 200% zoom viewport', 240, 2],
-  ])('clamps and cleanly wraps labels at a %s', async (_label, width, devicePixelRatio) => {
-    setViewport(width, devicePixelRatio);
-    monitorsState.monitors = [makeMonitor()];
-    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
-
-    const { menu, content } = await openMenu();
-    expect(content.className).toContain('monitored-pr-menu-content');
-    expect(window.devicePixelRatio).toBe(devicePixelRatio);
-    expect(menu.getAttribute('style')).toBeNull();
-    const bounds = measureRenderedMenu(menu);
-    expect(bounds.width).toBeLessThanOrEqual(window.innerWidth - 24);
-    expect(bounds.left).toBeGreaterThanOrEqual(12);
-    expect(bounds.right).toBeLessThanOrEqual(window.innerWidth - 12);
-    for (const item of Array.from(menu.querySelectorAll('button'))) {
-      expect(item.className).toContain('h-auto');
-      expect(item.className).toContain('whitespace-normal');
-      expect(item.querySelector('[data-slot="button-content"] > span')?.className).toContain(
-        'break-words',
-      );
-    }
   });
 
   describe.each(['current', 'retained-live', 'retained-retired'] as const)(

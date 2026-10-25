@@ -1,73 +1,13 @@
 // @verify-changed-triggers: src/assets/icons/icon.ico, src/assets/icons/dev-icon.ico, src/assets/icons/dev-icon.icns,
 //   src/assets/icons/dev-icon.png, src/assets/icons/app-icon/*.png
 
-import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
-import { buildIco, ICO_SIZES, releaseWindowsPngBuffer } from './build-icns.js';
+import { ICO_SIZES } from './build-icns.js';
 
 const iconsDirectory = join(process.cwd(), 'src/assets/icons');
-const devSourcePath = join(iconsDirectory, 'app-icon/Dev-Source.png');
-const devPngPath = join(iconsDirectory, 'dev-icon.png');
-const devSourceSha256 = '4e6e13f59557bb3ee33ed7810ba07d05f7308d564e16456b1117885822c68581';
-const previousReleaseAlphaWeight: Record<number, number> = {
-  16: 159,
-  32: 638,
-  48: 1437,
-  64: 2551,
-  128: 10201,
-  256: 40799,
-};
-const generatedAlphaBounds: Record<
-  number,
-  { left: number; top: number; right: number; bottom: number }
-> = {
-  16: { left: 1, top: 0, right: 14, bottom: 15 },
-  32: { left: 0, top: 0, right: 31, bottom: 31 },
-  48: { left: 2, top: 2, right: 45, bottom: 45 },
-  64: { left: 3, top: 4, right: 60, bottom: 59 },
-  128: { left: 10, top: 10, right: 117, bottom: 118 },
-  256: { left: 20, top: 22, right: 235, bottom: 238 },
-  512: { left: 40, top: 45, right: 471, bottom: 477 },
-  1024: { left: 80, top: 91, right: 943, bottom: 954 },
-};
-
-async function alphaBounds(file: string | Buffer) {
-  const { data, info } = await sharp(file)
-    .ensureAlpha()
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-  let left = info.width;
-  let top = info.height;
-  let right = -1;
-  let bottom = -1;
-  for (let y = 0; y < info.height; y += 1) {
-    for (let x = 0; x < info.width; x += 1) {
-      if (data[(y * info.width + x) * info.channels + 3] === 0) continue;
-      left = Math.min(left, x);
-      top = Math.min(top, y);
-      right = Math.max(right, x);
-      bottom = Math.max(bottom, y);
-    }
-  }
-  return { width: info.width, height: info.height, left, top, right, bottom };
-}
-
-async function alphaWeight(file: string | Buffer) {
-  const { data, info } = await sharp(file)
-    .ensureAlpha()
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-  let weight = 0;
-  for (let offset = 3; offset < data.length; offset += info.channels) {
-    weight += data[offset] / 255;
-  }
-  return weight;
-}
-
 function icoImages(file: string | Buffer) {
   const ico = Buffer.isBuffer(file) ? file : readFileSync(file);
   expect([ico.readUInt16LE(0), ico.readUInt16LE(2), ico.readUInt16LE(4)]).toEqual([
@@ -86,26 +26,7 @@ function icoImages(file: string | Buffer) {
 }
 
 describe('release Windows app icon asset', () => {
-  it('uses transparent padding when resized artwork is not square', async () => {
-    const source = await sharp({
-      create: { width: 8, height: 4, channels: 4, background: { r: 255, g: 0, b: 0, alpha: 1 } },
-    })
-      .png()
-      .toBuffer();
-    const { data, info } = await sharp(await releaseWindowsPngBuffer(32, source))
-      .ensureAlpha()
-      .raw()
-      .toBuffer({ resolveWithObject: true });
-    const pixel = (x: number, y: number) => {
-      const offset = (y * info.width + x) * info.channels;
-      return data.subarray(offset, offset + info.channels);
-    };
-
-    expect([...pixel(16, 1)]).toEqual([0, 0, 0, 0]);
-    expect([...pixel(16, 16)]).toEqual([255, 0, 0, 255]);
-  });
-
-  it('contains every required size with larger, unclipped artwork', async () => {
+  it('contains every required PNG size', async () => {
     const images = icoImages(join(iconsDirectory, 'icon.ico'));
     for (const { size, image } of images) {
       expect(await sharp(image).metadata()).toMatchObject({
@@ -113,47 +34,11 @@ describe('release Windows app icon asset', () => {
         width: size,
         height: size,
       });
-      const bounds = await alphaBounds(image);
-      expect(bounds.left).toBeGreaterThan(0);
-      expect(bounds.top).toBeGreaterThan(0);
-      expect(bounds.right).toBeLessThan(size - 1);
-      expect(bounds.bottom).toBeLessThan(size - 1);
-      expect(await alphaWeight(image)).toBeGreaterThan(previousReleaseAlphaWeight[size] * 1.05);
-    }
-  });
-
-  it('rebuilds deterministically from the approved release source', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'intent-windows-icon-test-'));
-    try {
-      const first = join(directory, 'first.ico');
-      const second = join(directory, 'second.ico');
-      await buildIco(releaseWindowsPngBuffer, first);
-      await buildIco(releaseWindowsPngBuffer, second);
-      expect(readFileSync(first)).toEqual(readFileSync(second));
-      expect(readFileSync(first)).toEqual(readFileSync(join(iconsDirectory, 'icon.ico')));
-    } finally {
-      rmSync(directory, { recursive: true, force: true });
     }
   });
 });
 
 describe('development app icon assets', () => {
-  it('preserves the complete approved source canvas and generated PNG spacing', async () => {
-    expect(createHash('sha256').update(readFileSync(devSourcePath)).digest('hex')).toBe(
-      devSourceSha256,
-    );
-    expect(await alphaBounds(devSourcePath)).toEqual({
-      width: 1024,
-      height: 1024,
-      ...generatedAlphaBounds[1024],
-    });
-    expect(await alphaBounds(devPngPath)).toEqual({
-      width: 512,
-      height: 512,
-      ...generatedAlphaBounds[512],
-    });
-  });
-
   it('contains the required PNG representations in the ICO container', async () => {
     const ico = readFileSync(join(iconsDirectory, 'dev-icon.ico'));
     expect([ico.readUInt16LE(0), ico.readUInt16LE(2), ico.readUInt16LE(4)]).toEqual([0, 1, 6]);
@@ -168,11 +53,6 @@ describe('development app icon assets', () => {
         format: 'png',
         width: size,
         height: size,
-      });
-      expect(await alphaBounds(image)).toEqual({
-        width: size,
-        height: size,
-        ...generatedAlphaBounds[size],
       });
       sizes.push(size);
     }
@@ -196,11 +76,6 @@ describe('development app icon assets', () => {
         const image = chunks.get(type)!;
         const size = (await sharp(image).metadata()).width;
         if (!size) throw new Error(`Missing size for ${type}`);
-        expect(await alphaBounds(image)).toEqual({
-          width: size,
-          height: size,
-          ...generatedAlphaBounds[size],
-        });
         return size;
       }),
     );

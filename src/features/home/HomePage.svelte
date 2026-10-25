@@ -68,6 +68,7 @@
     faFolder,
     faCircleExclamation,
     faPlay,
+    faHourglass,
     faPlus,
     faChevronDown,
     faChevronRight,
@@ -91,6 +92,8 @@
   import { selectHomeWorkspaceView, selectHomeWorkspaceError } from './home-workspaces-selectors';
   import { updateHomeWorkspaceView } from './home-workspaces-slice';
   import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
+  import { homeRetiredWorkspaces } from './home-retired-workspaces.svelte';
+  import { selectPrincipalActionContext as admissionSelector } from '$store/renderer/slices/principal/principal-selectors';
   import HomeIntegrations from './HomeIntegrations.svelte';
   import type { HomeIntegrationsState } from './home-integrations-types';
 
@@ -274,6 +277,7 @@
         { id: 'all', label: m.home_integrations_all(), icon: faLayerGroup },
         { id: 'attention', label: m.home_filter_attention(), icon: faCircleExclamation },
         { id: 'running', label: m.home_filter_running(), icon: faPlay },
+        { id: 'waiting', label: m.home_filter_waiting(), icon: faHourglass },
       ] as const satisfies readonly { id: HomeFilter; label: string; icon: unknown }[]
     ).map((item) => ({
       ...item,
@@ -307,7 +311,7 @@
   const selectedWorkspace = $derived(
     filteredWorkspaces.find((workspace) => workspace.id === selectedId),
   );
-  const triageOrder = ['needs-you', 'running', 'inactive'] as const;
+  const triageOrder = ['needs-you', 'running', 'waiting', 'inactive'] as const;
   // Hiding a group that holds the selected workspace also closes the preview;
   // otherwise the selection would keep the group open and the button inert.
   function setGroupExpanded(group: string, expanded: boolean, items: Workspace[]) {
@@ -323,6 +327,8 @@
         return m.home_filter_attention();
       case 'running':
         return m.home_filter_running();
+      case 'waiting':
+        return m.home_filter_waiting();
       case 'blocked':
         return m.home_filter_blocked();
       default:
@@ -483,6 +489,7 @@
       row?.closest<HTMLElement>('[role="option"], button')?.focus();
     });
   });
+  homeRetiredWorkspaces(() => ({ filter, preview }), workspaces$, admissionSelector());
   function chooseFilter(next: HomeFilter) {
     store.dispatch(closePanel());
     updateView({ filter: next, tab: 'workspaces', selectedId: null });
@@ -905,6 +912,7 @@
                             {doubleClick}
                             oncontextmenu={showWorkspaceMenu}
                             archived={filter === 'archived'}
+                            retired={filter === 'retired'}
                           />
                         {:else}
                           {#snippet workspaceRow({ item }: { item: Workspace })}

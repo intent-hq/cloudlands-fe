@@ -1662,3 +1662,166 @@ describe('QueuedMessageList', () => {
     });
   });
 });
+
+describe('QueuedMessageList collaborator sender preamble', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+  });
+
+  const OWNER = 'principal-owner';
+  const MEMBER = {
+    principalId: 'principal-member',
+    login: 'panghy',
+    displayName: 'Clement Pang',
+    avatarUrl: null,
+    identity: { provider: 'github', host: 'github.com', externalUserId: '526899' },
+  };
+  // Daemon host-member template (intentd harness v2_9, PROTOCOL §5.5) for MEMBER.
+  const PREAMBLE =
+    'Message from @panghy (Clement Pang), a host member (principal principal-member; github@github.com user 526899) — not the workspace owner.';
+  const BODY = 'can you make each loop a bit tighter';
+  const RAW = `${PREAMBLE}\n\n${BODY}`;
+
+  function memberEntry(overrides: Partial<QueuedMessage> = {}): QueuedMessage {
+    return queued({
+      content: RAW,
+      author: MEMBER,
+      messageMetadata: { fromPrincipalId: MEMBER.principalId },
+      ...overrides,
+    });
+  }
+
+  it('shows only the body of a non-owner queued message and leaves the entry intact', () => {
+    const message = memberEntry();
+    renderQueue({
+      props: { ownPrincipalId: MEMBER.principalId, ownerPrincipalId: OWNER, messages: [message] },
+    });
+    expect(screen.getByTestId('queued-message-text').textContent?.trim()).toBe(BODY);
+    expect(screen.getByTestId('queued-message-content').getAttribute('aria-label')).toBe(BODY);
+    expect(message.content).toBe(RAW);
+  });
+
+  it('keeps an owner-authored line that matches the template', () => {
+    renderQueue({
+      props: {
+        ownPrincipalId: MEMBER.principalId,
+        ownerPrincipalId: MEMBER.principalId,
+        messages: [memberEntry()],
+      },
+    });
+    expect(screen.getByTestId('queued-message-text').textContent?.trim()).toBe(RAW);
+  });
+
+  it('keeps the line when the workspace owner is unknown', () => {
+    renderQueue({
+      props: {
+        ownPrincipalId: MEMBER.principalId,
+        ownerPrincipalId: null,
+        messages: [memberEntry()],
+      },
+    });
+    expect(screen.getByTestId('queued-message-text').textContent?.trim()).toBe(RAW);
+  });
+
+  it('edits the body, holds and releases with the stored content on cancel', async () => {
+    const onedit = vi.fn().mockResolvedValue({ success: true });
+    renderQueue({
+      props: {
+        ownPrincipalId: MEMBER.principalId,
+        ownerPrincipalId: OWNER,
+        messages: [memberEntry()],
+        onedit,
+      },
+    });
+    await fireEvent.dblClick(screen.getByTestId('queued-message-content'));
+    await waitFor(() => expect(onedit).toHaveBeenCalledWith('q-1', RAW, true));
+    const editor = screen.getByRole('textbox') as HTMLTextAreaElement;
+    expect(editor.value).toBe(BODY);
+    await fireEvent.keyDown(editor, { key: 'Escape' });
+    await waitFor(() => expect(onedit).toHaveBeenLastCalledWith('q-1', RAW, false));
+    await waitFor(() => expect(screen.queryByRole('textbox')).toBeNull());
+  });
+
+  it('saves the edited body without the line, which the daemon re-applies', async () => {
+    const onedit = vi.fn().mockResolvedValue({ success: true });
+    renderQueue({
+      props: {
+        ownPrincipalId: MEMBER.principalId,
+        ownerPrincipalId: OWNER,
+        messages: [memberEntry()],
+        onedit,
+      },
+    });
+    await fireEvent.dblClick(screen.getByTestId('queued-message-content'));
+    await waitFor(() => expect(onedit).toHaveBeenCalledWith('q-1', RAW, true));
+    const editor = screen.getByRole('textbox');
+    await fireEvent.input(editor, { target: { value: 'tighter loops please' } });
+    await fireEvent.keyDown(editor, { key: 'Enter' });
+    await waitFor(() =>
+      expect(onedit).toHaveBeenLastCalledWith('q-1', 'tighter loops please', false),
+    );
+  });
+
+  it('presents each delivery group without its line', () => {
+    renderQueue({
+      props: {
+        ownPrincipalId: MEMBER.principalId,
+        ownerPrincipalId: OWNER,
+        messages: [
+          memberEntry({
+            content: `${RAW}\n\n${PREAMBLE}\n\nsecond`,
+            deliveryGroups: [{ content: RAW }, { content: `${PREAMBLE}\n\nsecond` }],
+          }),
+        ],
+      },
+    });
+    expect(
+      screen.getAllByTestId('queued-message-text').map((node) => node.textContent?.trim()),
+    ).toEqual([BODY, 'second']);
+  });
+  it('keeps a quoted line through display and a changed save', async () => {
+    const quoted = `Please investigate this line:\n\n${PREAMBLE}\n\nIt appeared in my queue.`;
+    const raw = `${PREAMBLE}\n\n${quoted}`;
+    const onedit = vi.fn().mockResolvedValue({ success: true });
+    renderQueue({
+      props: {
+        ownPrincipalId: MEMBER.principalId,
+        ownerPrincipalId: OWNER,
+        messages: [memberEntry({ content: raw })],
+        onedit,
+      },
+    });
+    expect(screen.getByTestId('queued-message-text').textContent?.trim()).toBe(quoted);
+    await fireEvent.dblClick(screen.getByTestId('queued-message-content'));
+    await waitFor(() => expect(onedit).toHaveBeenCalledWith('q-1', raw, true));
+    const editor = screen.getByRole('textbox') as HTMLTextAreaElement;
+    expect(editor.value).toBe(quoted);
+    const edited = quoted.replace('It appeared', 'It still appears');
+    await fireEvent.input(editor, { target: { value: edited } });
+    await fireEvent.keyDown(editor, { key: 'Enter' });
+    await waitFor(() => expect(onedit).toHaveBeenLastCalledWith('q-1', edited, false));
+  });
+
+  it('saves an unchanged edit with the stored content', async () => {
+    const onedit = vi.fn().mockResolvedValue({ success: true });
+    renderQueue({
+      props: {
+        ownPrincipalId: MEMBER.principalId,
+        ownerPrincipalId: OWNER,
+        messages: [memberEntry()],
+        onedit,
+      },
+    });
+    await fireEvent.dblClick(screen.getByTestId('queued-message-content'));
+    await waitFor(() => expect(onedit).toHaveBeenCalledWith('q-1', RAW, true));
+    await fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    await waitFor(() => expect(onedit).toHaveBeenLastCalledWith('q-1', RAW, false));
+  });
+});

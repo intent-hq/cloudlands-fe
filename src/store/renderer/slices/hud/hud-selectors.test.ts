@@ -1290,6 +1290,14 @@ describe('selectHudAttentionItems', () => {
     expect(selectHudAttentionItems.select(state)).toEqual([]);
   });
 
+  it('drops flags for retired workspaces (read-only, no live state)', () => {
+    const state = mockState(
+      [makeWorkspace('ws-retired', { status: WorkspaceStatus.Retired })],
+      [['ws-retired', 'review_required']],
+    );
+    expect(selectHudAttentionItems.select(state)).toEqual([]);
+  });
+
   it("an 'unread' attention value raises no row (blue dot ≠ HUD attention)", () => {
     // The daemon flips `unread` on every agent turn end (§9.9); an idle
     // workspace with no pending question/blocker/discussion must not appear

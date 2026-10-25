@@ -4,6 +4,65 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.233.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.232.3...v2.233.0) (2026-10-25)
+
+
+### 🚀 Features
+
+* **home:** group script-running and waiting workspaces ([#3647](https://github.com/intent-hq/cloudlands-fe/issues/3647)) ([6060691](https://github.com/intent-hq/cloudlands-fe/commit/6060691e8900dac858580fed89e9da0b72f431db))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.44 ([#3689](https://github.com/intent-hq/cloudlands-fe/issues/3689)) ([0e4b1e3](https://github.com/intent-hq/cloudlands-fe/commit/0e4b1e3e1642c171c595b0f2243904df8bafaa5b))
+* **chat:** hide the collaborator sender line in queued messages ([#3670](https://github.com/intent-hq/cloudlands-fe/issues/3670)) ([cf039d1](https://github.com/intent-hq/cloudlands-fe/commit/cf039d1a4ba5549b0d9fa145fd774d785b7579fe))
+* **chat:** keep the subscriptions footer hidden while snapshots load ([#3684](https://github.com/intent-hq/cloudlands-fe/issues/3684)) ([cb1f5f6](https://github.com/intent-hq/cloudlands-fe/commit/cb1f5f6bc64e380ced286eeed54b9c853ffdf066))
+* **events:** read nameExplicitlySet from agent:renamed ([#3685](https://github.com/intent-hq/cloudlands-fe/issues/3685)) ([8201219](https://github.com/intent-hq/cloudlands-fe/commit/8201219b32572062cba531b032a1dc21c32890de))
+
+## [2.232.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.232.2...v2.232.3) (2026-10-25)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.43 ([#3682](https://github.com/intent-hq/cloudlands-fe/issues/3682)) ([a6fea2f](https://github.com/intent-hq/cloudlands-fe/commit/a6fea2f138b24757c842b048707ddae697b87a04))
+* wrap long question text inside the Q&A card ([#3675](https://github.com/intent-hq/cloudlands-fe/issues/3675)) ([3bdc0a8](https://github.com/intent-hq/cloudlands-fe/commit/3bdc0a81f43725f9e89f4e56eae2c8f274d8ceee))
+
+## [2.232.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.232.1...v2.232.2) (2026-10-25)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.42 ([#3680](https://github.com/intent-hq/cloudlands-fe/issues/3680)) ([7a7a77a](https://github.com/intent-hq/cloudlands-fe/commit/7a7a77ac77ce3a2dff51e388be567b9cd43d31c6))
+* **chat:** show an Assistant chat's self-chosen name immediately ([#3674](https://github.com/intent-hq/cloudlands-fe/issues/3674)) ([37daa39](https://github.com/intent-hq/cloudlands-fe/commit/37daa39c70c904ccef74c6e882b1b5de834e7285))
+* skip the agent-finished toast for the chat you're already viewing ([#3671](https://github.com/intent-hq/cloudlands-fe/issues/3671)) ([436c48c](https://github.com/intent-hq/cloudlands-fe/commit/436c48c1487ac64bf84ddf59a764abad12111f0c))
+
+## [2.232.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.232.0...v2.232.1) (2026-10-24)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.41 ([#3676](https://github.com/intent-hq/cloudlands-fe/issues/3676)) ([ebe6c8d](https://github.com/intent-hq/cloudlands-fe/commit/ebe6c8d43dcabccd03c6c1bde1b26e9653229e30))
+
+## [2.232.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.231.8...v2.232.0) (2026-10-24)
+
+
+### 🚀 Features
+
+* **settings:** name and environment variables for the Codex/Claude Code Default configuration ([#3651](https://github.com/intent-hq/cloudlands-fe/issues/3651)) ([d95cea4](https://github.com/intent-hq/cloudlands-fe/commit/d95cea4001d24d0ba40f78713dfcd9e3218f006a))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.40 ([#3673](https://github.com/intent-hq/cloudlands-fe/issues/3673)) ([d96fc24](https://github.com/intent-hq/cloudlands-fe/commit/d96fc249d6218f6789054b380a8e9441cb8ed091))
+* **release:** retry Apple ticket staple/validate with backoff ([#3668](https://github.com/intent-hq/cloudlands-fe/issues/3668)) ([b84a5e2](https://github.com/intent-hq/cloudlands-fe/commit/b84a5e2f74ad6df63cc907e80f4427f476fcfabd))
+
+## [2.231.8](https://github.com/intent-hq/cloudlands-fe/compare/v2.231.7...v2.231.8) (2026-10-24)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.39 ([#3666](https://github.com/intent-hq/cloudlands-fe/issues/3666)) ([b789d6f](https://github.com/intent-hq/cloudlands-fe/commit/b789d6f05ba5e84a83fd80bde14c1d74941dc000))
+
 ## [2.231.7](https://github.com/intent-hq/cloudlands-fe/compare/v2.231.6...v2.231.7) (2026-10-23)
 
 

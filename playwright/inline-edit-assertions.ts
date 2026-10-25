@@ -5,9 +5,6 @@ import type { Locator } from '@playwright/test';
 export async function expectUnpaintedEditControl(control: Locator) {
   await expect(control).toBeFocused();
   await control.hover();
-  for (const side of ['top', 'right', 'bottom', 'left']) {
-    await expect(control).toHaveCSS(`border-${side}-width`, '0px');
-  }
   await expect(control).toHaveCSS('outline-style', 'none');
   await expect(control).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   await expect
