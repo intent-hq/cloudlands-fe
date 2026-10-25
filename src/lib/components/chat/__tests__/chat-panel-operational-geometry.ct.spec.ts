@@ -1,4 +1,4 @@
-import { expect, test } from '../../../../test/ct-test';
+import { expect, expectNoAnimations, test } from '../../../../test/ct-test';
 import ChatPanelOperationalGeometryHost from './ChatPanelOperationalGeometryHost.svelte';
 
 test.setTimeout(120_000);
@@ -68,25 +68,12 @@ for (const theme of ['light', 'dark'] as const) {
             // animation. The IntentMarkLoader inside it may be mid-way through
             // one of its own finite layer crossfades (it reconciles on viewport,
             // visibility, focus and motion changes); those are the loader's
-            // contract, not the pulse, so exclude only finite animations
-            // targeting loader descendants. Anything else, including any
-            // infinite animation, still counts.
-            const pulseAnimations = await streamingRow
-              .locator('[data-operational-leading]')
-              .evaluate((node) =>
-                node
-                  .getAnimations({ subtree: true })
-                  .filter((animation) => {
-                    const target =
-                      animation.effect instanceof KeyframeEffect ? animation.effect.target : null;
-                    const loaderCrossfade =
-                      target?.closest('[data-slot="intent-mark-loader"]') &&
-                      Number.isFinite(animation.effect?.getComputedTiming().iterations);
-                    return !loaderCrossfade;
-                  })
-                  .map((animation) => animation.constructor.name),
-              );
-            expect(pulseAnimations, 'streaming pulse slot must run no animation').toEqual([]);
+            // contract, not the pulse, so ignore only the loader's finite fades.
+            // Anything else, including any infinite animation, still counts.
+            await expectNoAnimations(streamingRow.locator('[data-operational-leading]'), {
+              ignore: [{ within: '[data-slot="intent-mark-loader"]', maxDurationMs: 160 }],
+              message: 'streaming pulse slot must run no animation',
+            });
             await expect(streamingRow.locator('[data-operational-expanded-content]')).toBeVisible();
           }
 

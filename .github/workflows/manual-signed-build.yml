@@ -79,6 +79,11 @@ on:
         required: false
         type: boolean
         default: false
+      isolated_replay:
+        description: 'Verify the immutable Manual149 isolated ARM DMG without rebuilding (all build and smoke flags must be off).'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -107,7 +112,7 @@ jobs:
 
   # Resolve before allocating native Mac runners: unselected CPUs never get a job.
   select-macos:
-    if: ${{ inputs.build_macos || inputs.isolated_test }}
+    if: ${{ !inputs.isolated_replay && (inputs.build_macos || inputs.isolated_test) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     outputs:
@@ -136,7 +141,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   smoke-inputs:
-    if: ${{ inputs.smoke_macos }}
+    if: ${{ !inputs.isolated_replay && (inputs.smoke_macos) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
@@ -148,7 +153,7 @@ jobs:
 
   smoke-macos:
     # Explicit results: a failed runner-route (an ancestor through the builds) must not skip this job.
-    if: ${{ !cancelled() && inputs.smoke_macos && needs.select-macos.result == 'success' && needs.build-macos.result == 'success' && needs.smoke-inputs.result == 'success' }}
+    if: ${{ !inputs.isolated_replay && (!cancelled() && inputs.smoke_macos && needs.select-macos.result == 'success' && needs.build-macos.result == 'success' && needs.smoke-inputs.result == 'success') }}
     needs: [select-macos, build-macos, smoke-inputs, runner-route]
     # A fresh VM per job (the smoke script refuses an intent-cache slot): the
     # `cloud` runner, WarpBuild, or the row's WarpBuild label if routing failed.
@@ -197,9 +202,11 @@ jobs:
   # the `sign` input and the version-suffix step is added before packaging.
   build-macos:
     # A failed route job must not block this job: it runs on its fallback label.
-    if: ${{ !cancelled() && needs.select-macos.result == 'success' && (inputs.build_macos || inputs.isolated_test) }}
+    if: ${{ !inputs.isolated_replay && (!cancelled() && needs.select-macos.result == 'success' && (inputs.build_macos || inputs.isolated_test)) }}
     needs: [select-macos, runner-route]
     name: macOS (${{ matrix.label }})
+    outputs:
+      isolated_protocol: ${{ steps.isolated_protocol.outputs.version }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.select-macos.outputs.matrix) }}
@@ -315,6 +322,16 @@ jobs:
           sha=$(git -C intentd-src rev-parse HEAD)
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "Building intentd sidecar from source: $INTENTD_REF @ $sha"
+
+      - name: Resolve isolated protocol from selected daemon source
+        if: ${{ inputs.isolated_test }}
+        id: isolated_protocol
+        env:
+          BACKEND_SHA: ${{ steps.intentd_sha.outputs.sha }}
+          BACKEND_REF: ${{ inputs.intentd_ref }}
+        run: |
+          test "$BACKEND_SHA" = "$BACKEND_REF"
+          node scripts/isolated-package-protocol.mjs intentd-src "$BACKEND_SHA" >> "$GITHUB_OUTPUT"
 
       # Bare `rustup toolchain install` inside intentd-src reads the channel
       # pinned by its rust-toolchain.toml, so the toolchain always matches the
@@ -608,7 +625,7 @@ jobs:
   # Native install/update acceptance and production enablement remain separate.
   build-windows:
     # A failed route job must not block this job: it runs on its fallback label.
-    if: ${{ !cancelled() && inputs.build_windows && !inputs.isolated_test }}
+    if: ${{ !inputs.isolated_replay && (!cancelled() && inputs.build_windows && !inputs.isolated_test) }}
     needs: runner-route
     # gh-windows-8x: WarpBuild warp-windows-2022-x64-8x (8 vCPU / 32 GB; the
     # build used about a third of 16 CPUs and 12.4 GB at most), on the Windows
@@ -663,6 +680,11 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '22'
+
+      - name: Setup native desktop helper SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
 
       - name: Install frontend dependencies
         shell: bash
@@ -906,7 +928,7 @@ jobs:
   # the release pipeline too, so the `sign` input has no effect on this leg.
   build-linux:
     # A failed route job must not block this job: it runs on its fallback label.
-    if: ${{ !cancelled() && inputs.build_linux && !inputs.isolated_test }}
+    if: ${{ !inputs.isolated_replay && (!cancelled() && inputs.build_linux && !inputs.isolated_test) }}
     needs: runner-route
     strategy:
       # Let the other arch finish (and report) even when one fails.
@@ -1228,7 +1250,7 @@ jobs:
 
   verify-isolated-macos:
     # Explicit results: a failed runner-route (an ancestor through the builds) must not skip this job.
-    if: ${{ !cancelled() && inputs.isolated_test && inputs.build_macos && needs.select-macos.result == 'success' && needs.build-macos.result == 'success' }}
+    if: ${{ !inputs.isolated_replay && (!cancelled() && inputs.isolated_test && inputs.build_macos && needs.select-macos.result == 'success' && needs.build-macos.result == 'success') }}
     needs: [select-macos, build-macos, runner-route]
     strategy:
       fail-fast: false
@@ -1253,14 +1275,65 @@ jobs:
         env:
           BACKEND_SHA: ${{ inputs.intentd_ref }}
           FRONTEND_SHA: ${{ github.sha }}
+          EXPECTED_PROTOCOL: ${{ needs.build-macos.outputs.isolated_protocol }}
         run: |
           mapfile_dmg=$(find isolated-package -type f -name '*.dmg')
           test "$(printf '%s\n' "$mapfile_dmg" | wc -l | tr -d ' ')" = 1
-          node scripts/verify-isolated-macos-package.mjs "$mapfile_dmg" isolated-package-proof "$BACKEND_SHA" "$FRONTEND_SHA"
+          node scripts/verify-isolated-macos-package.mjs "$mapfile_dmg" isolated-package-proof "$BACKEND_SHA" "$FRONTEND_SHA" "$EXPECTED_PROTOCOL"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: isolated-macos-proof-${{ matrix.arch }}
           path: isolated-package-proof
+          if-no-files-found: error
+          retention-days: 7
+
+  replay-isolated-macos:
+    if: ${{ inputs.isolated_replay }}
+    needs: [runner-route]
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.cloud || '{}')['macos-15-xlarge'] || fromJSON('["warp-macos-15-arm64-12x"]') }}
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Require proof-only inputs
+        env:
+          BUILD_MACOS: ${{ inputs.build_macos }}
+          BUILD_WINDOWS: ${{ inputs.build_windows }}
+          BUILD_LINUX: ${{ inputs.build_linux }}
+          ISOLATED_TEST: ${{ inputs.isolated_test }}
+          SMOKE_MACOS: ${{ inputs.smoke_macos }}
+          INTENTD_REF: ${{ inputs.intentd_ref }}
+          SIGN: ${{ inputs.sign }}
+        run: |
+          test "$BUILD_MACOS" = false
+          test "$BUILD_WINDOWS" = false
+          test "$BUILD_LINUX" = false
+          test "$ISOLATED_TEST" = false
+          test "$SMOKE_MACOS" = false
+          test -z "$INTENTD_REF"
+          test "$SIGN" = true
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - run: pnpm install --frozen-lockfile
+      - name: Verify immutable Manual149 package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/replay-isolated-macos.mjs
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: isolated-macos-replay-proof-arm64
+          path: |
+            isolated-package-proof
+            isolated-replay-provenance
           if-no-files-found: error
           retention-days: 7

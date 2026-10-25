@@ -335,7 +335,7 @@ describe('editorial conversation presentation contract', () => {
   it('lets ChatPanel own the bottom spacing without changing the tab behavior boundary', () => {
     const tab = source('src/features/layout/tab-types/AgentTabType.svelte');
 
-    expect(tab).toContain('<div class="flex h-full min-h-0 w-full flex-1">');
+    expect(tab).toContain('<div class="flex h-full min-h-0 w-full flex-1 flex-col">');
     expect(tab).not.toContain('w-full h-full flex-1 flex pb-1.5');
   });
 

@@ -22,6 +22,10 @@ import { TC_ADDRESS } from '../../../../test/fixtures/tc-address.fixture';
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const desktopPermissions = vi.hoisted(() => vi.fn());
+vi.mock('../../../desktop/main/desktop-permissions', () => ({
+  requestDesktopPermissions: desktopPermissions,
+}));
 // Backend state is reloaded per case, but the generated translation catalog is
 // immutable for this suite. Keep its real exports shared: recompiling every
 // locale on each reset retains enough VM code to exhaust the worker heap.
@@ -90,6 +94,7 @@ vi.mock('../json-rpc-client', () => {
     dispose(): void {
       lifecycle.events.push({ type: 'dispose', seq: this.id });
     }
+    readHelloSnapshot = vi.fn(async (): Promise<unknown> => ({}));
     request = vi.fn(async (method: string, params?: unknown, options?: { timeoutMs?: number }) => {
       rpc.calls.push(method);
       rpc.payloads.push([method, params]);
@@ -4714,6 +4719,63 @@ describe('per-window backend IPC routing', () => {
       expect.objectContaining({ activeId: 'local', windowBackendId: 'remote-1' }),
     );
     expect(store.setActiveId).not.toHaveBeenCalled();
+  });
+
+  it('binds OS onboarding to the sender backend and returns failures without forwarding native operations', async () => {
+    const { mod } = await loadModule();
+    const localClient = mod.getBackendClient();
+    const remoteClient = await mod.connectBackendClient('remote-1');
+    const { localSender, remoteSender } = installBackendWindows();
+    mod.registerBackendHandlers();
+    const request = findHandler('backend:desktop-permissions')!;
+    const params = { workspaceId: 'w', agentId: 'a', requestId: 'r', decision: 'allow_once' };
+    desktopPermissions.mockResolvedValue({
+      platform: 'macos',
+      accessibility: false,
+      screenRecording: false,
+    });
+    await expect(request({ sender: localSender }, params)).resolves.toMatchObject({
+      ok: true,
+      result: { accessibility: false },
+    });
+    expect(desktopPermissions).toHaveBeenLastCalledWith(localClient, params);
+    await request({ sender: remoteSender }, params);
+    expect(desktopPermissions).toHaveBeenLastCalledWith(remoteClient, params);
+    desktopPermissions.mockRejectedValueOnce(new Error('stale permission'));
+    await expect(request({ sender: remoteSender }, params)).resolves.toMatchObject({
+      ok: false,
+      error: { message: 'stale permission' },
+    });
+  });
+
+  it('reads hello metadata from the sender backend without renegotiating either connection', async () => {
+    const { mod } = await loadModule();
+    const localClient = mod.getBackendClient();
+    const remoteClient = await mod.connectBackendClient('remote-1');
+    const { localSender, remoteSender } = installBackendWindows();
+    mod.registerBackendHandlers();
+    const local = { clientId: 'local-client', server: { capabilities: { desktopControl: 1 } } };
+    const remote = { clientId: 'remote-client', server: { capabilities: {} } };
+    vi.mocked(localClient.readHelloSnapshot).mockResolvedValue(local);
+    vi.mocked(remoteClient.readHelloSnapshot).mockResolvedValue(remote);
+    vi.mocked(localClient.request).mockClear();
+    vi.mocked(remoteClient.request).mockClear();
+    const request = findHandler('backend:request')!;
+    await expect(
+      request({ sender: localSender }, { method: 'client.hello', params: {} }),
+    ).resolves.toEqual({ ok: true, result: local });
+    await expect(
+      request({ sender: remoteSender }, { method: 'client.hello', params: {} }),
+    ).resolves.toEqual({ ok: true, result: remote });
+    await expect(
+      request({ sender: remoteSender }, { method: 'client.hello', localMachine: true }),
+    ).resolves.toEqual({ ok: true, result: local });
+    vi.mocked(remoteClient.readHelloSnapshot).mockRejectedValue(new Error('Handshake unavailable'));
+    await expect(
+      request({ sender: remoteSender }, { method: 'client.hello', params: {} }),
+    ).resolves.toMatchObject({ ok: false });
+    expect(localClient.request).not.toHaveBeenCalled();
+    expect(remoteClient.request).not.toHaveBeenCalled();
   });
 
   it('routes requests, subscriptions, unsubscriptions, and status to the sender client', async () => {

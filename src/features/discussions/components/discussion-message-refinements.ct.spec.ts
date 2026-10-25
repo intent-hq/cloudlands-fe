@@ -1,4 +1,4 @@
-import { expect, test } from '../../../test/ct-test';
+import { expect, expectNoAnimations, test } from '../../../test/ct-test';
 import Preview from './discussion-message-refinements.preview.svelte';
 
 test('message actions remain reachable with pointer and keyboard', async ({ mount, page }) => {
@@ -47,7 +47,9 @@ test('reduced-motion keyboard reveal allows reply without animations', async ({ 
   const toolbar = row.locator('[data-discussion-message-actions]');
   await row.getByRole('button', { name: 'Reply', exact: true }).focus();
   await expect(toolbar).toHaveCSS('opacity', '1');
-  expect(await row.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(0);
+  // Reduced motion shortens transitions to 0.01 ms; a finished one can linger in
+  // getAnimations() for a frame, so count only animations that are really moving.
+  await expectNoAnimations(row);
   await page.keyboard.press('Enter');
   await expect(row).toHaveAttribute('data-discussion-reply-selected', 'true');
 });

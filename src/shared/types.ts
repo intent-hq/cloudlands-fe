@@ -328,6 +328,19 @@ export interface WorkspaceAttentionReminder {
   displayStatus: WorkspaceDisplayStatus | 'waiting';
 }
 
+/** Every wire role, keyed so adding a role to `WorkspaceRole` fails to compile
+ *  until the runtime guard below accepts it too (intent-hq/intent#7736). */
+const WORKSPACE_ROLES: Record<WorkspaceRole, true> = {
+  owner: true,
+  collaborator: true,
+  manager: true,
+};
+
+/** Runtime guard for BE-sent workspace roles; an unknown value is malformed. */
+export function isWorkspaceRole(value: unknown): value is WorkspaceRole {
+  return typeof value === 'string' && Object.hasOwn(WORKSPACE_ROLES, value);
+}
+
 export interface Workspace {
   id: WorkspaceId;
   name?: string; // Added for compatibility with agent system

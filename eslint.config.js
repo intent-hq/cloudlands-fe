@@ -36,6 +36,7 @@ import noWallClockInCatalogPreviewsRule, {
 } from './eslint-rules/no-wall-clock-in-catalog-previews.js';
 import noClassNameAssertionsInTestsRule from './eslint-rules/no-class-name-assertions-in-tests.js';
 import noFlushSyncInTeardownRule from './eslint-rules/no-flushsync-in-teardown.js';
+import noOneShotAnimationCountRule from './eslint-rules/no-one-shot-animation-count.js';
 import noDirectReducedMotionQueryRule, {
   SOURCE_OF_TRUTH_FILES as reducedMotionSourceOfTruthFiles,
   TEST_FILE_GLOBS as reducedMotionTestFileGlobs,
@@ -61,6 +62,7 @@ const intentPlugin = {
     'no-wall-clock-in-catalog-previews': noWallClockInCatalogPreviewsRule,
     'no-class-name-assertions-in-tests': noClassNameAssertionsInTestsRule,
     'no-flushsync-in-teardown': noFlushSyncInTeardownRule,
+    'no-one-shot-animation-count': noOneShotAnimationCountRule,
     'no-direct-reduced-motion-query': noDirectReducedMotionQueryRule,
   },
 };
@@ -675,6 +677,20 @@ export default [
       // of day, so it passes or fails depending on when CI runs (cloudlands-fe#3574
       // was ejected from the merge queue after 08:00 UTC). No baseline: enforced at zero.
       'intent/no-fake-clock-reset-before-assertion': 'error',
+    },
+  },
+  // A component test that counts getAnimations() once and expects zero fails at random
+  // when a child component is mid-way through a short, normal fade (cloudlands-fe#3651
+  // was ejected from the merge queue by the IntentMarkLoader's 160 ms crossfade;
+  // intent-hq/intent#7749). Use expectAnimationsToSettle / expectNoAnimations from
+  // src/test/ct-test.ts. No baseline: enforced at zero.
+  {
+    files: ['src/**/*.ct.spec.ts'],
+    plugins: {
+      intent: intentPlugin,
+    },
+    rules: {
+      'intent/no-one-shot-animation-count': 'error',
     },
   },
   // A unit test that asserts an element's className / classList / class attribute pins
