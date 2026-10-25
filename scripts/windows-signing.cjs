@@ -1,8 +1,25 @@
 'use strict';
 
+// Every setting azure mode reads. The manual-build preflight checks these before a
+// Windows runner is allocated, and its test asserts the workflow wires each one.
+const WINDOWS_SIGNING_VARIABLES = Object.freeze([
+  'INTENT_WINDOWS_AZURE_ENDPOINT',
+  'INTENT_WINDOWS_AZURE_ACCOUNT_NAME',
+  'INTENT_WINDOWS_AZURE_CERTIFICATE_PROFILE_NAME',
+  'INTENT_WINDOWS_PUBLISHER_NAME',
+  'INTENT_WINDOWS_PUBLISHER_SUBJECT',
+  'AZURE_TENANT_ID',
+  'AZURE_CLIENT_ID',
+]);
+const WINDOWS_SIGNING_SECRETS = Object.freeze(['AZURE_CLIENT_SECRET']);
+
+function nonblank(value) {
+  return typeof value === 'string' && !!value.trim() && !/[\r\n\0]/.test(value);
+}
+
 function required(env, name) {
   const value = env[name];
-  if (typeof value !== 'string' || !value.trim() || /[\r\n\0]/.test(value)) {
+  if (!nonblank(value)) {
     throw new Error(`Windows signing requires a nonblank ${name}`);
   }
   return value.trim();
@@ -71,4 +88,32 @@ function manualWindowsConfig(base, signing) {
   return config;
 }
 
-module.exports = { resolveWindowsSigning, manualWindowsConfig };
+// Reports every absent setting at once (resolveWindowsSigning stops at the first),
+// then any format error. Secrets are judged by presence alone so their values never
+// need to reach the preflight job.
+function windowsSigningPreflight(env, { secretsPresent = {} } = {}) {
+  const missing = [
+    ...WINDOWS_SIGNING_VARIABLES.filter((name) => !nonblank(env[name])).map(
+      (name) => `repository variable ${name}`,
+    ),
+    ...WINDOWS_SIGNING_SECRETS.filter((name) => secretsPresent[name] !== true).map(
+      (name) => `repository secret ${name}`,
+    ),
+  ];
+  if (missing.length) return { missing, invalid: null };
+  const placeholders = Object.fromEntries(WINDOWS_SIGNING_SECRETS.map((name) => [name, 'present']));
+  try {
+    resolveWindowsSigning('azure', { ...env, ...placeholders });
+  } catch (error) {
+    return { missing, invalid: error.message };
+  }
+  return { missing, invalid: null };
+}
+
+module.exports = {
+  WINDOWS_SIGNING_VARIABLES,
+  WINDOWS_SIGNING_SECRETS,
+  resolveWindowsSigning,
+  manualWindowsConfig,
+  windowsSigningPreflight,
+};

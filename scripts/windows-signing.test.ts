@@ -1,10 +1,19 @@
 // @vitest-environment node
-// @verify-changed-triggers: electron-builder.yml, scripts/windows-builder.cjs, scripts/windows-sign.cjs, .github/workflows/intent-manual-windows-build.yml, .github/workflows/manual-signed-build.yml
+// @verify-changed-triggers: electron-builder.yml, scripts/windows-builder.cjs, scripts/windows-sign.cjs, scripts/windows-signing-preflight.cjs, .github/workflows/intent-manual-windows-build.yml, .github/workflows/manual-signed-build.yml
+import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { afterAll, describe, expect, it, vi } from 'vitest';
-import { resolveWindowsSigning, manualWindowsConfig } from './windows-signing.cjs';
+import {
+  WINDOWS_SIGNING_SECRETS,
+  WINDOWS_SIGNING_VARIABLES,
+  resolveWindowsSigning,
+  manualWindowsConfig,
+  windowsSigningPreflight,
+} from './windows-signing.cjs';
 
 const require = createRequire(import.meta.url);
 vi.stubEnv('JITI_FS_CACHE', 'false');
@@ -210,5 +219,177 @@ describe('Windows signing configuration', () => {
         logger,
       ),
     ).toBeNull();
+  });
+});
+
+type Step = { name?: string; if?: string; env?: Record<string, string>; run?: string };
+type Job = { if?: string; needs?: string | string[]; 'runs-on'?: string; steps: Step[] };
+const manualJobs = () =>
+  (
+    load(readFileSync('.github/workflows/manual-signed-build.yml', 'utf8')) as {
+      jobs: Record<string, Job>;
+    }
+  ).jobs;
+const publicEnv = Object.fromEntries(
+  Object.entries(azureEnv).filter(([name]) => !WINDOWS_SIGNING_SECRETS.includes(name)),
+);
+const preflight = (env: Record<string, string>) => {
+  const dir = mkdtempSync(join(tmpdir(), 'windows-signing-preflight-'));
+  try {
+    const summary = join(dir, 'summary.md');
+    const result = spawnSync(process.execPath, ['scripts/windows-signing-preflight.cjs'], {
+      encoding: 'utf8',
+      env: { PATH: process.env.PATH, GITHUB_STEP_SUMMARY: summary, ...env },
+    });
+    let written = '';
+    try {
+      written = readFileSync(summary, 'utf8');
+    } catch {}
+    return { status: result.status, output: result.stdout + result.stderr, summary: written };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+};
+
+describe('manual Windows signing preflight', () => {
+  it('covers every setting azure mode reads', () => {
+    expect([...WINDOWS_SIGNING_VARIABLES, ...WINDOWS_SIGNING_SECRETS].sort()).toEqual(
+      Object.keys(azureEnv).sort(),
+    );
+    for (const name of Object.keys(azureEnv)) {
+      const { [name]: _omitted, ...rest } = azureEnv;
+      expect(() => resolveWindowsSigning('azure', rest), name).toThrow(name);
+    }
+  });
+
+  it('reports every blank setting at once instead of the first', () => {
+    expect(windowsSigningPreflight({})).toEqual({
+      missing: [
+        ...WINDOWS_SIGNING_VARIABLES.map((name) => `repository variable ${name}`),
+        'repository secret AZURE_CLIENT_SECRET',
+      ],
+      invalid: null,
+    });
+    expect(
+      windowsSigningPreflight(
+        { ...publicEnv, AZURE_CLIENT_ID: ' ', INTENT_WINDOWS_PUBLISHER_NAME: 'a\nb' },
+        { secretsPresent: { AZURE_CLIENT_SECRET: true } },
+      ).missing,
+    ).toEqual([
+      'repository variable INTENT_WINDOWS_PUBLISHER_NAME',
+      'repository variable AZURE_CLIENT_ID',
+    ]);
+  });
+
+  it('accepts a complete configuration judging the secret by presence alone', () => {
+    expect(
+      windowsSigningPreflight(publicEnv, { secretsPresent: { AZURE_CLIENT_SECRET: true } }),
+    ).toEqual({ missing: [], invalid: null });
+    expect(windowsSigningPreflight(publicEnv).missing).toEqual([
+      'repository secret AZURE_CLIENT_SECRET',
+    ]);
+  });
+
+  it('catches malformed settings with the same validation packaging uses', () => {
+    const present = { secretsPresent: { AZURE_CLIENT_SECRET: true } };
+    expect(
+      windowsSigningPreflight(
+        { ...publicEnv, INTENT_WINDOWS_AZURE_ENDPOINT: 'http://example.com' },
+        present,
+      ),
+    ).toEqual({
+      missing: [],
+      invalid: 'Invalid INTENT_WINDOWS_AZURE_ENDPOINT (expected regional HTTPS endpoint)',
+    });
+    expect(
+      windowsSigningPreflight({ ...publicEnv, AZURE_TENANT_ID: 'not-a-guid' }, present).invalid,
+    ).toBe('Invalid AZURE_TENANT_ID');
+  });
+
+  it('fails with every missing name and the sign=false fallback, printing no values', () => {
+    const partial = {
+      INTENT_WINDOWS_AZURE_ENDPOINT: azureEnv.INTENT_WINDOWS_AZURE_ENDPOINT,
+      INTENT_WINDOWS_PUBLISHER_SUBJECT: azureEnv.INTENT_WINDOWS_PUBLISHER_SUBJECT,
+      AZURE_CLIENT_SECRET_PRESENT: 'false',
+      GITHUB_REPOSITORY: 'intent-hq/cloudlands-fe',
+    };
+    const { status, output, summary } = preflight(partial);
+    expect(status).toBe(1);
+    const missing = Object.keys(azureEnv).filter((name) => !(name in partial));
+    for (const name of missing) {
+      expect(output).toContain(`::error title=Windows signing not configured::Missing or blank`);
+      expect(output).toContain(name);
+      expect(summary).toContain(name);
+    }
+    expect(output).not.toContain('INTENT_WINDOWS_AZURE_ENDPOINT');
+    expect(output).toContain('sign=false');
+    expect(summary).toContain('sign=false');
+    expect(output).toContain('intent-hq/cloudlands-fe');
+    for (const value of Object.values(azureEnv)) {
+      expect(output).not.toContain(value);
+      expect(summary).not.toContain(value);
+    }
+  });
+
+  it('fails on a malformed setting and passes a complete configuration', () => {
+    const bad = preflight({
+      ...publicEnv,
+      AZURE_CLIENT_ID: 'not-a-guid',
+      AZURE_CLIENT_SECRET_PRESENT: 'true',
+    });
+    expect(bad.status).toBe(1);
+    expect(bad.output).toContain('Invalid AZURE_CLIENT_ID');
+    const good = preflight({ ...publicEnv, AZURE_CLIENT_SECRET_PRESENT: 'true' });
+    expect(good.status, good.output).toBe(0);
+    expect(good.output).not.toContain('::error');
+    for (const value of Object.values(azureEnv)) expect(good.output).not.toContain(value);
+  });
+
+  it('runs on Linux for every Windows request and checks only signed ones', () => {
+    const job = manualJobs()['windows-signing-preflight'];
+    expect(job['runs-on']).toBe('ubuntu-24.04');
+    const expression = job.if!.replace(/^\$\{\{\s*|\s*\}\}$/g, '');
+    for (const build_windows of [true, false])
+      for (const isolated_test of [true, false])
+        for (const isolated_replay of [true, false])
+          expect(
+            runInNewContext(expression, {
+              inputs: { build_windows, isolated_test, isolated_replay },
+            }),
+          ).toBe(build_windows && !isolated_test && !isolated_replay);
+    expect(job.steps.length).toBeGreaterThan(0);
+    for (const step of job.steps) expect(step.if, step.name).toBe('${{ inputs.sign }}');
+  });
+
+  it('wires every required setting into the preflight without exposing the secret value', () => {
+    const jobs = manualJobs();
+    const check = jobs['windows-signing-preflight'].steps.find(
+      (s) => s.name === 'Require Azure signing settings',
+    )!;
+    expect(check.run).toBe('node scripts/windows-signing-preflight.cjs');
+    expect(check.env).toEqual({
+      ...Object.fromEntries(WINDOWS_SIGNING_VARIABLES.map((n) => [n, `\${{ vars.${n} }}`])),
+      ...Object.fromEntries(
+        WINDOWS_SIGNING_SECRETS.map((n) => [`${n}_PRESENT`, `\${{ secrets.${n} != '' }}`]),
+      ),
+    });
+    // Any signing setting the packaging step gains must be checked up front too.
+    const build = jobs['build-windows'].steps.find(
+      (s) => s.name === 'Build and package Windows app',
+    )!;
+    const signingNames = Object.keys(build.env!).filter((n) =>
+      /^(INTENT_WINDOWS_(AZURE|PUBLISHER)_|AZURE_)/.test(n),
+    );
+    expect(signingNames.sort()).toEqual(
+      [...WINDOWS_SIGNING_VARIABLES, ...WINDOWS_SIGNING_SECRETS].sort(),
+    );
+  });
+
+  it('allocates the Windows runner only after the preflight succeeds', () => {
+    const build = manualJobs()['build-windows'];
+    expect(build.needs).toEqual(['runner-route', 'windows-signing-preflight']);
+    expect(build.if).toBe(
+      "${{ !inputs.isolated_replay && (!cancelled() && inputs.build_windows && !inputs.isolated_test && needs.windows-signing-preflight.result == 'success') }}",
+    );
   });
 });
