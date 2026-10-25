@@ -21,6 +21,7 @@ import {
   prMonitorsUnsubscribeRequested,
 } from '../pr-monitor-slice';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import { openWorkspaceTab, tabStateReducer } from '../../tab-state/tab-state-slice';
 import { workspaceMounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { cancelPrMonitorWorker, flushPrMonitorWorker, prMonitorSaga } from './pr-monitor-saga';
@@ -510,6 +511,119 @@ describe('monitor lease re-acquisition', () => {
       expect(mocks.subscribePrMonitors.mock.results[1].value.dispose).not.toHaveBeenCalled();
       h.dispatch(prMonitorsUnsubscribeRequested('other'));
       expect(mocks.subscribePrMonitors.mock.results[1].value.dispose).not.toHaveBeenCalled();
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+  });
+});
+
+describe('monitor lease re-acquisition on the same host', () => {
+  const sameHost = {
+    monitorId: 'kept',
+    workspaceId: 'ws',
+    state: 'active',
+    agentId: 'agent-1',
+    origin: { backendId: LOCAL_CONNECTION_ID, sessionId: 'released', workspaceId: 'ws' },
+  } as PrMonitorRow;
+
+  async function releaseAfterSeed(h: ReturnType<typeof createHarness>, rows: PrMonitorRow[]) {
+    h.dispatch(prMonitorsSubscribeRequested('ws'));
+    const [first] = mocks.subscribePrMonitors.mock.calls;
+    first[3]?.('supported');
+    first[1](rows);
+    await settle();
+    h.dispatch(prMonitorsUnsubscribeRequested('ws'));
+    expect(mocks.subscribePrMonitors.mock.results[0].value.dispose).toHaveBeenCalledOnce();
+  }
+
+  beforeEach(() => {
+    mocks.subscribePrMonitors.mockReset();
+    mocks.subscribePrMonitors.mockImplementation(() => ({ dispose: vi.fn() }));
+  });
+
+  it('keeps saved rows as stale until the fresh list replaces them', async () => {
+    const h = createHarness();
+    try {
+      await releaseAfterSeed(h, [sameHost]);
+      h.dispatch(prMonitorsSubscribeRequested('ws'));
+      await settle();
+      const reopened = h.getState().prMonitor.byWorkspaceId.ws;
+      expect(reopened.snapshotStatus).toBe('stale');
+      expect(reopened.monitors.ids).toEqual(['kept']);
+      expect(reopened.support).toBe('supported');
+
+      const fresh = {
+        ...sameHost,
+        monitorId: 'fresh',
+        origin: { ...sameHost.origin!, sessionId: 'current' },
+      };
+      mocks.subscribePrMonitors.mock.calls[1][1]([fresh]);
+      await settle();
+      const refreshed = h.getState().prMonitor.byWorkspaceId.ws;
+      expect(refreshed.snapshotStatus).toBe('ready');
+      expect(refreshed.monitors.ids).toEqual(['fresh']);
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+  });
+
+  it('clears saved rows that belong to a different host', async () => {
+    const h = createHarness();
+    try {
+      await releaseAfterSeed(h, [
+        { ...sameHost, origin: { ...sameHost.origin!, backendId: 'remote-host' } },
+      ]);
+      h.dispatch(prMonitorsSubscribeRequested('ws'));
+      await settle();
+      const reopened = h.getState().prMonitor.byWorkspaceId.ws;
+      expect(reopened.snapshotStatus).toBe('loading');
+      expect(reopened.monitors.ids).toEqual([]);
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+  });
+
+  it('clears stale rows without an origin', async () => {
+    const h = createHarness();
+    try {
+      await releaseAfterSeed(h, [{ ...sameHost, origin: undefined }]);
+      h.dispatch(prMonitorsSubscribeRequested('ws'));
+      await settle();
+      expect(h.getState().prMonitor.byWorkspaceId.ws.monitors.ids).toEqual([]);
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+  });
+
+  it('drops stale rows and their support when the first fresh read fails', async () => {
+    const h = createHarness();
+    try {
+      await releaseAfterSeed(h, [sameHost]);
+      h.dispatch(prMonitorsSubscribeRequested('ws'));
+      mocks.subscribePrMonitors.mock.calls[1][2]('failed');
+      await settle();
+      const failed = h.getState().prMonitor.byWorkspaceId.ws;
+      expect(failed.snapshotStatus).toBe('failed');
+      expect(failed.monitors.ids).toEqual([]);
+      expect(failed.support).toBeUndefined();
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+  });
+
+  it('drops stale rows when the reopened session retires before refreshing', async () => {
+    const h = createHarness();
+    try {
+      await releaseAfterSeed(h, [sameHost]);
+      h.dispatch(prMonitorsSubscribeRequested('ws'));
+      mocks.subscribePrMonitors.mock.calls[1][2]('reconnecting');
+      await settle();
+      expect(h.getState().prMonitor.byWorkspaceId.ws.monitors.ids).toEqual([]);
     } finally {
       h.task.cancel();
       await h.task.toPromise();

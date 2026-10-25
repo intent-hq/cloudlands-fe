@@ -4,12 +4,14 @@ import { all, call, delay, fork, put, take, takeEvery, type SagaGenerator } from
 
 import { createLogger } from '$lib/utils/client-logger';
 import { markWorkspaceSeed } from '../../../utils/switch-timing';
+import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
 import {
   cancelPrMonitorRequested,
   flushPrMonitorRequested,
   prMonitorsActiveWorkspaceChanged,
   prMonitorsSnapshotFailed,
   prMonitorsConnectionChanged,
+  prMonitorsMarkedStale,
   prMonitorsSupportUpdated,
   prMonitorsSubscribeRequested,
   prMonitorsUnsubscribeRequested,
@@ -89,8 +91,17 @@ function* acquireSubscription(
   active.set(workspaceId, entry);
   if (entry.channel) return;
   try {
-    // A released lease may belong to another host even when the workspace ID repeats.
-    yield* put(prMonitorsConnectionChanged(workspaceId));
+    // A released lease may belong to another host even when the workspace ID
+    // repeats: only rows stamped with this window's backend survive, as stale,
+    // so a warm switch-back renders them with the transcript instead of after
+    // the capture + list round-trips. The reducer drops them on a failed read.
+    const retained = yield* selectReviewMonitors.effect(workspaceId);
+    const backendId = yield* selectActiveBackendId();
+    const sameHost =
+      retained.length > 0 && retained.every((row) => row.origin?.backendId === backendId);
+    yield* put(
+      sameHost ? prMonitorsMarkedStale(workspaceId) : prMonitorsConnectionChanged(workspaceId),
+    );
     markWorkspaceSeed(workspaceId, 'prSeedStarted');
     const channel = createMonitorChannel(workspaceId);
     entry.channel = channel;

@@ -195,8 +195,12 @@
     };
   }
 
+  // Stale rows survive a lease re-acquisition for display only: their origin
+  // names a released session, so control actions wait for the fresh list.
+  const actionsUnavailable = $derived($snapshotStatus$ === 'stale');
+
   function handleCheckAndFlush() {
-    if (!menuTarget?.origin) return;
+    if (!menuTarget?.origin || actionsUnavailable) return;
     appStore.dispatch(
       flushPrMonitorRequested(
         menuTarget.workspaceId,
@@ -208,7 +212,7 @@
   }
 
   function handleCancel() {
-    if (!menuTarget?.origin) return;
+    if (!menuTarget?.origin || actionsUnavailable) return;
     appStore.dispatch(
       cancelPrMonitorRequested(menuTarget.workspaceId, menuTarget.monitorId, menuTarget.origin),
     );
@@ -533,6 +537,7 @@
                   <Menu.Item
                     class="type-caption h-auto w-full min-w-0 items-start whitespace-normal py-1.5 text-left"
                     data-testid="monitored-pr-check-flush-item"
+                    disabled={actionsUnavailable}
                     onSelect={handleCheckAndFlush}
                   >
                     {#snippet leading()}<Fa icon={faArrowsRotate} />{/snippet}
@@ -566,6 +571,7 @@
                   <Menu.Item
                     class="type-caption h-auto w-full min-w-0 items-start whitespace-normal py-1.5 text-left"
                     data-testid="monitored-pr-cancel-item"
+                    disabled={actionsUnavailable}
                     onSelect={handleCancel}
                   >
                     {#snippet leading()}<Fa icon={faXmark} />{/snippet}

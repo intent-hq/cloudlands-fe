@@ -39,7 +39,7 @@ const {
     listeners: new Set<(rows: ReviewMonitorRow[]) => void>(),
   },
   captureSession: vi.fn(),
-  snapshotState: { status: 'ready' as 'loading' | 'ready' | 'failed' },
+  snapshotState: { status: 'ready' as 'loading' | 'stale' | 'ready' | 'failed' },
   workspaceState: {
     workspace: {
       id: 'ws-1',
@@ -88,7 +88,7 @@ vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', async (importO
     },
   }),
   selectPrMonitorsSnapshotStatus: () => ({
-    subscribe: (run: (value: 'loading' | 'ready' | 'failed') => void) => {
+    subscribe: (run: (value: 'loading' | 'stale' | 'ready' | 'failed') => void) => {
       run(snapshotState.status);
       return () => {};
     },
@@ -438,6 +438,25 @@ describe('MonitoredPrsRow', () => {
     expect(row.getAttribute('data-testid')).toBe('pr-monitors-snapshot-status');
     expect(row.getAttribute('data-snapshot-status')).toBe('failed');
   });
+
+  it.each(['monitored-pr-cancel-item', 'monitored-pr-check-flush-item'])(
+    'renders retained stale rows but disables %s until the list is refreshed',
+    async (item) => {
+      snapshotState.status = 'stale';
+      monitorsState.monitors = [makeMonitor()];
+      render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+      expect(screen.getByTestId('monitored-pr-summary').textContent).toContain('#42');
+      await openMenu();
+      const action = screen.getByTestId(item);
+      expect(action.getAttribute('aria-disabled')).toBe('true');
+      await fireEvent.click(action);
+      expect(dispatchMock).not.toHaveBeenCalled();
+      expect(
+        screen.getByTestId('monitored-pr-open-external-item').getAttribute('aria-disabled'),
+      ).not.toBe('true');
+    },
+  );
 
   it('renders 4+ digit PR numbers without digit grouping', () => {
     monitorsState.monitors = [
