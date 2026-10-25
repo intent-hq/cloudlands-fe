@@ -1,4 +1,4 @@
-import { expect, test } from '../../../../test/ct-test';
+import { expect, expectNoAnimations, test } from '../../../../test/ct-test';
 import StreamingTypingOperationalGeometryHost from './StreamingTypingOperationalGeometryHost.svelte';
 
 test.setTimeout(120_000);
@@ -17,7 +17,12 @@ test('runs the mark only while active and holds neutral for reduced motion', asy
       ),
     ),
   ).toEqual([true, true, true, true, true]);
-  expect(await mark.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(0);
+  // The loop is frame-clock driven, so no Web Animation may run it. The loader may still
+  // be finishing one of its own finite 160 ms layer crossfades (it reconciles on
+  // viewport, visibility and focus changes); an infinite animation would still fail.
+  await expectNoAnimations(mark, {
+    ignore: [{ within: '[data-slot="intent-mark-loader"]', maxDurationMs: 160 }],
+  });
 
   await mark.evaluate(
     (node) => ((window as typeof window & { thinkingRoot?: Element }).thinkingRoot = node),
@@ -51,6 +56,7 @@ test('runs the mark only while active and holds neutral for reduced motion', asy
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const reducedMark = component.locator('[data-slot="intent-mark-loader"]');
   await expect(reducedMark).toHaveAttribute('data-motion-state', 'neutral');
+  // eslint-disable-next-line intent/no-one-shot-animation-count -- the loader cancels its fades before it reports neutral; reduced motion must leave none.
   expect(await reducedMark.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(
     0,
   );

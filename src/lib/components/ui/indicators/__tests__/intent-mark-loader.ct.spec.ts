@@ -325,6 +325,7 @@ test('does no continuous work while the window is blurred', async ({ mount, page
   });
   const root = component.getByRole('status', { name: 'Loading' });
   await expect(root).toHaveAttribute('data-motion-state', 'neutral');
+  // eslint-disable-next-line intent/no-one-shot-animation-count -- the loader cancels its fades before it reports neutral, so neutral means zero animations.
   expect(await root.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(0);
   const neutral = await drivenArms(root);
 
@@ -335,6 +336,7 @@ test('does no continuous work while the window is blurred', async ({ mount, page
 
   await page.evaluate(() => document.documentElement.setAttribute('data-window-blurred', ''));
   await expect(root).toHaveAttribute('data-motion-state', 'neutral');
+  // eslint-disable-next-line intent/no-one-shot-animation-count -- the loader cancels its fades before it reports neutral, so neutral means zero animations.
   expect(await root.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(0);
   expect(await poseWritesOver(root, 500)).toBe(0);
   expect(await drivenArms(root)).toEqual(neutral);
@@ -363,6 +365,7 @@ test('does no continuous work for reduced motion or a hidden document', async ({
   });
   const root = component.getByRole('status', { name: 'Loading' });
   await expect(root).toHaveAttribute('data-motion-state', 'neutral');
+  // eslint-disable-next-line intent/no-one-shot-animation-count -- the loader cancels its fades before it reports neutral, so neutral means zero animations.
   expect(await root.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(0);
 
   await page.emulateMedia({ reducedMotion: 'no-preference' });
@@ -372,5 +375,6 @@ test('does no continuous work for reduced motion or a hidden document', async ({
     document.dispatchEvent(new Event('visibilitychange'));
   });
   await expect(root).toHaveAttribute('data-motion-state', 'neutral');
+  // eslint-disable-next-line intent/no-one-shot-animation-count -- the loader cancels its fades before it reports neutral, so neutral means zero animations.
   expect(await root.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(0);
 });

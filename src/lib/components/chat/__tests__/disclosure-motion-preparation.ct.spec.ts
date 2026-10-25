@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/experimental-ct-svelte';
-import { expect, test } from '../../../../test/ct-test';
+import { expect, expectAnimationsToSettle, test } from '../../../../test/ct-test';
 import DisclosureMotionPreparationHost from './DisclosureMotionPreparationHost.svelte';
 
 interface FrameSample {
@@ -320,12 +320,13 @@ test('accepts live response updates during collapse without stale detached conte
   await expect(component.getByTestId('prepared-response-body')).toContainText(
     'Updated live activity while collapsing.',
   );
+  // Let the expansion start (a settle check cannot see motion that has not begun), then
+  // wait for it to be cleaned up rather than counting once at a fixed time.
   await page.waitForTimeout(240);
-  expect(
-    await component
-      .locator('[data-operational-expanded-content]')
-      .evaluate((node) => node.getAnimations().length),
-  ).toBe(0);
+  await expectAnimationsToSettle(component.locator('[data-operational-expanded-content]'), {
+    subtree: false,
+    includeFinished: true,
+  });
 });
 
 for (const cohort of [
