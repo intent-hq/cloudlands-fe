@@ -89,6 +89,47 @@
     };
   }
 
+  /** Search lists a retired workspace (PROTOCOL §5.1) with a Retired badge. */
+  function setupRetired() {
+    const stop = setupOwner();
+    const base = {
+      repositoryName: 'intent',
+      myRole: 'owner' as const,
+      changesets: [],
+      timeline: [],
+      conversationInfo: [],
+      ...PREVIEW_FIXTURE_TIMESTAMPS,
+    };
+    const live = WorkspaceId('preview-palette-importer-live');
+    const retired = WorkspaceId('preview-palette-importer-retired');
+    appStore.dispatch(
+      setWorkspaceEntity({
+        ...base,
+        id: live,
+        title: 'Importer rewrite',
+        branch: 'feat/importer-rewrite',
+        status: WorkspaceStatus.Active,
+      }),
+    );
+    appStore.dispatch(
+      setWorkspaceEntity({
+        ...base,
+        id: retired,
+        title: 'Prototype the old importer',
+        branch: 'feat/old-importer',
+        status: WorkspaceStatus.Retired,
+        archived: true,
+        archivedAt: '2026-09-10T00:00:00.000Z',
+        retiredAt: '2026-09-20T00:00:00.000Z',
+      }),
+    );
+    return () => {
+      stop();
+      appStore.dispatch(removeWorkspaceEntity(live));
+      appStore.dispatch(removeWorkspaceEntity(retired));
+    };
+  }
+
   function setupGitLab(enabled: boolean) {
     return () => {
       const before = appStore.state.userPreferences.labsGitLabEnabled;
@@ -108,6 +149,7 @@
     states: {
       grouped: { props: { initialQuery: '' }, setup },
       owner: { props: { initialQuery: '' }, setup: setupOwner },
+      'retired-workspaces': { props: { initialQuery: 'importer' }, setup: setupRetired },
       context: { props: { initialQuery: '#' }, setup },
       search: { props: { initialQuery: 'context' }, setup },
       empty: { props: { initialQuery: 'no-matching-context-xyz' }, setup },

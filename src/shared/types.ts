@@ -413,6 +413,8 @@ export interface Workspace {
   environmentConfig?: EnvironmentConfig;
   archived?: boolean;
   archivedAt?: string;
+  /** ISO time the workspace was retired; present only while `status` is `Retired`. */
+  retiredAt?: string;
   /** ISO deadline of an in-memory pending deletion (PROTOCOL §5.1 delete grace
    *  window). Present only while a `workspace.delete { undoDelayMs > 0 }`
    *  grace window is running; cleared by `workspace.cancelDelete` and dropped by
@@ -514,6 +516,8 @@ export enum WorkspaceStatus {
   Active = 'Active',
   Inactive = 'Inactive',
   Archived = 'Archived',
+  /** Folder deleted, database rows kept read-only (PROTOCOL §5.1 Retired workspaces). */
+  Retired = 'Retired',
   Deleted = 'Deleted',
 }
 

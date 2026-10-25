@@ -36,6 +36,7 @@
       | 'untitled'
       | 'status-icons'
       | 'status-grouping'
+      | 'retired'
       | 'pr-status-list'
       | 'board-pr-status'
       | 'board'
@@ -69,6 +70,7 @@
       untitled: { props: { scenario: 'untitled' } },
       'status-icons': { props: { scenario: 'status-icons' } },
       'status-grouping': { props: { scenario: 'status-grouping' } },
+      retired: { props: { scenario: 'retired' } },
       'pr-status-list': { props: { scenario: 'pr-status-list', height: 1120 } },
       'board-pr-status': { props: { scenario: 'board-pr-status', height: 1120 } },
       board: { props: { scenario: 'board' } },
@@ -499,6 +501,21 @@
       store.dispatch(removeSession(id));
     },
   };
+  // A retired workspace (PROTOCOL §5.1) as the Retired chip's opt-in fetch
+  // leaves it in the store; every other chip must still hide it.
+  const retiredFixture: Workspace = {
+    ...fixtures[0],
+    id: WorkspaceId('home-retired'),
+    title: 'Prototype the old importer',
+    branch: 'feat/home-retired',
+    displayStatus: 'complete',
+    attention: undefined,
+    status: WorkspaceStatus.Retired,
+    archived: true,
+    archivedAt: '2026-09-10T00:00:00Z',
+    retiredAt: '2026-09-20T00:00:00Z',
+    statusMessage: 'Retired after the importer rewrite shipped.',
+  };
   $effect.pre(() => {
     admitLegacyPrincipal(scenario === 'collaborator' ? 'guest' : 'owner');
     store.dispatch(closePanel());
@@ -552,7 +569,9 @@
                 ? statusFixtures
                 : scenario === 'status-grouping'
                   ? statusGroupingFixtures
-                  : fixtures
+                  : scenario === 'retired'
+                    ? [...fixtures, retiredFixture]
+                    : fixtures
             ).map((workspace) => ({
               ...workspace,
               myRole: scenario === 'collaborator' ? 'collaborator' : 'owner',
