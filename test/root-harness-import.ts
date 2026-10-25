@@ -1,11 +1,19 @@
 import type { Page } from '@playwright/test';
 
-/** Load the harness graph before mounting into a document that Vite may replace. */
-export async function prepareRootHarnessModules(page: Page, baseUrl: string, modules: string[]) {
+/**
+ * Load the harness graph before mounting into a document that Vite may replace.
+ * `documentPath` is resolved against `baseUrl` (which must end with `/`).
+ */
+export async function prepareRootHarnessModules(
+  page: Page,
+  baseUrl: string,
+  modules: string[],
+  { documentPath = 'src/app.html' }: { documentPath?: string } = {},
+) {
   await page.addInitScript(() => {
     Object.assign(globalThis, { process: { env: { NODE_ENV: 'test' } } });
   });
-  await page.goto(`${baseUrl}src/app.html`);
+  await page.goto(`${baseUrl}${documentPath}`);
   const originalDocument = await page.evaluate(() => performance.timeOrigin);
   const load = () =>
     page.evaluate(async (paths) => {

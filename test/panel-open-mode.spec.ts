@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { createServer, type ViteDevServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
+import { prepareRootHarnessModules } from './root-harness-import';
 
 let server: ViteDevServer;
 let baseUrl = '';
@@ -47,7 +48,9 @@ test.afterAll(async () => server?.close());
 test('walks fixed column counts from one through four and recovers removed content', async ({
   page,
 }) => {
-  await page.goto(`${baseUrl}src/app.html`);
+  await prepareRootHarnessModules(page, baseUrl, [
+    '/src/store/renderer/slices/panel-layout/panel-layout-slice.ts',
+  ]);
   const result = await page.evaluate(async () => {
     const layout = await import('/src/store/renderer/slices/panel-layout/panel-layout-slice.ts');
     let state = {
@@ -118,7 +121,9 @@ test('walks fixed column counts from one through four and recovers removed conte
 });
 
 test('opens new content in the configured rightmost column', async ({ page }) => {
-  await page.goto(`${baseUrl}src/app.html`);
+  await prepareRootHarnessModules(page, baseUrl, [
+    '/src/store/renderer/slices/panel-layout/panel-layout-slice.ts',
+  ]);
   const result = await page.evaluate(async () => {
     const layout = await import('/src/store/renderer/slices/panel-layout/panel-layout-slice.ts');
     let state = layout.panelLayoutReducer(

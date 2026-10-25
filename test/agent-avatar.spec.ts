@@ -4,6 +4,7 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 import type { ViteDevServer } from 'vite';
 import { createServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
+import { prepareRootHarnessModules } from './root-harness-import';
 import { loadBundledInterFont } from './test-fonts';
 import { agentAvatarVariants } from '../src/features/agent/components/agent-avatar/avatar-size';
 import {
@@ -17,13 +18,14 @@ test.describe.configure({ mode: 'default', timeout: 120_000 });
 let server: ViteDevServer;
 let baseUrl: string;
 
-test.beforeAll(async () => {
+test.beforeAll(async ({}, workerInfo) => {
   test.setTimeout(120_000);
   server = await createServer({
     configFile: false,
     root: process.cwd(),
     cacheDir: viteHarnessCacheDir('agent-avatar', {
       override: process.env.AGENT_AVATAR_VITE_CACHE_DIR,
+      workerIndex: workerInfo.workerIndex,
     }),
     plugins: [svelte({ configFile: resolve(process.cwd(), 'svelte.config.js') })],
     resolve: {
@@ -55,7 +57,10 @@ test.afterAll(async () => server?.close());
 // Text metrics feed the avatar stack's overflow badge width, so the harness uses the
 // repo-bundled Inter Variable (like the CT harness and /sandbox) rather than host fonts.
 async function mountAvatarHost(page: Page) {
-  await page.goto(`${baseUrl}src/app.html`);
+  await prepareRootHarnessModules(page, baseUrl, [
+    '/@id/svelte',
+    '/test/fixtures/AgentAvatarHost.svelte',
+  ]);
   await page.addStyleTag({ url: `${baseUrl}src/lib/styles/tokens.css` });
   await loadBundledInterFont(page, { baseUrl });
   await page.evaluate(async () => {

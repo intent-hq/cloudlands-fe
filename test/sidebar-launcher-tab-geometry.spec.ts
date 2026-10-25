@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { createServer, type ViteDevServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
+import { prepareRootHarnessModules } from './root-harness-import';
 
 let server: ViteDevServer;
 let baseUrl: string;
@@ -57,7 +58,10 @@ async function mountSidebar(
   },
 ) {
   await page.emulateMedia({ reducedMotion: options.reducedMotion ? 'reduce' : 'no-preference' });
-  await page.goto(`${baseUrl}src/app.html`);
+  await prepareRootHarnessModules(page, baseUrl, [
+    '/@id/svelte',
+    '/test/fixtures/SidebarLauncherHost.svelte',
+  ]);
   await page.addStyleTag({ url: `${baseUrl}src/app.css` });
   await page.addStyleTag({ content: 'body { margin: 0; }' });
   await page.evaluate(async (props) => {
@@ -86,7 +90,11 @@ async function mountStripMatrix(
   },
 ) {
   await page.emulateMedia({ reducedMotion: options.reducedMotion ? 'reduce' : 'no-preference' });
-  await page.goto(`${baseUrl}src/app.html`);
+  await prepareRootHarnessModules(page, baseUrl, [
+    '/@id/svelte',
+    '/src/lib/components/workspace/SidebarExpandedTabStrip.svelte',
+    '/src/lib/icons/phosphor-icons.ts',
+  ]);
   await page.addStyleTag({ url: `${baseUrl}src/app.css` });
   await page.addStyleTag({ content: 'body { margin: 0; }' });
   await page.evaluate(async ({ width, zoom, theme }) => {
