@@ -107,7 +107,11 @@
   // Hover-to-export PNG (1080×1920). Failure is surfaced non-fatally via a
   // toast + console — the overlay never crashes on a render error.
   async function exportCard(button: HTMLElement, card: StatsCardName) {
-    const node = button.parentElement?.querySelector<HTMLElement>('[data-stats-card]');
+    // Resolve via the stable card slot, not `parentElement`: Button wraps its
+    // element in a `display: contents` div, so the parent is never the slot.
+    const node = button
+      .closest('[data-stats-card-slot]')
+      ?.querySelector<HTMLElement>(`[data-stats-card="${card}"]`);
     if (!node) return;
     const fileName = exportFileName(card, exportPeriodKey($mode$, $periodKey$));
     try {
@@ -218,25 +222,25 @@
     <!-- Card slots (each wrapped for the hover-reveal PNG export button) -->
     {#if $data$}
       <div class="pointer-events-auto mt-[30px] flex flex-wrap justify-center gap-7">
-        <div class="group relative">
+        <div class="group relative" data-stats-card-slot="passport">
           {@render exportBtn('passport')}
           <AgentPassportCard data={$data$} label={cardLabel} />
         </div>
-        <div class="group relative">
+        <div class="group relative" data-stats-card-slot="models">
           {@render exportBtn('models')}
           <ModelsCard data={$data$} label={cardLabel} />
         </div>
-        <div class="group relative">
+        <div class="group relative" data-stats-card-slot="providers">
           {@render exportBtn('providers')}
           <ProvidersCard data={$data$} label={cardLabel} />
         </div>
-        <div class="group relative">
+        <div class="group relative" data-stats-card-slot="by-hour">
           {@render exportBtn('by-hour')}
           <TokensByHourCard data={$data$} mode={$mode$} label={cardLabel} loading={$loading$} />
         </div>
         {#if $mode$ !== '24h'}
           <!-- Tokens by Month is hidden in 24H mode (Spec D11). -->
-          <div class="group relative">
+          <div class="group relative" data-stats-card-slot="by-month">
             {@render exportBtn('by-month')}
             <TokensByMonthCard data={$data$} {yearKey} loading={$loading$} />
           </div>
