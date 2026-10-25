@@ -38,9 +38,13 @@ export function* scriptMonitorSaga(): SagaGenerator<void> {
           previous.count++;
           return;
         }
+        // Warm reopen: start from the last fresh rows so the footer renders with
+        // the transcript; the service's first page replaces them.
+        const saved = yield* select(selectScriptMonitors.select, workspaceId);
+        const retained = saved.status === 'ready' ? saved : undefined;
         let service!: Lease['service'];
         const channel = eventChannel<ScriptMonitorSnapshot>((emit) => {
-          service = subscribeScriptMonitors(workspaceId, emit, connection);
+          service = subscribeScriptMonitors(workspaceId, emit, connection, retained);
           return () => service.dispose();
         }, buffers.expanding());
         const lease: Lease = { count: 1, service, channel };

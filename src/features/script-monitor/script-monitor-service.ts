@@ -56,11 +56,17 @@ export function createScriptMonitorConnection() {
   };
 }
 
-/** Each lease reads one visible page. Event journals live only as long as their reads. */
+/**
+ * Each lease reads one visible page. Event journals live only as long as their reads.
+ * `retained` seeds the FIRST registration only (a warm lease reopen), so the
+ * footer keeps the previous rows instead of flashing empty until the fresh page
+ * replaces them; reconnects still start from an authoritative empty list.
+ */
 export function subscribeScriptMonitors(
   workspaceId: string,
   handler: (snapshot: ScriptMonitorSnapshot) => void,
   sharedConnection?: ReturnType<typeof createScriptMonitorConnection>,
+  retained?: Pick<ScriptMonitorSnapshot, 'monitors' | 'scripts' | 'nextCursor'>,
 ) {
   const connection = sharedConnection ?? createScriptMonitorConnection();
   let disposed = false;
@@ -164,7 +170,15 @@ export function subscribeScriptMonitors(
     detailReads.clear();
     if (subscriptionId) void backendUnsubscribe(subscriptionId, workspaceId);
     subscriptionId = undefined;
-    snapshot = { monitors: [], scripts: [], status: 'loading' };
+    snapshot = retained
+      ? {
+          monitors: retained.monitors,
+          scripts: retained.scripts,
+          nextCursor: retained.nextCursor,
+          status: 'loading',
+        }
+      : { monitors: [], scripts: [], status: 'loading' };
+    retained = undefined;
     emit();
     if (connection.isRejected()) {
       disable();

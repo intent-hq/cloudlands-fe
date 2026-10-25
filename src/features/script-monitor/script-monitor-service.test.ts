@@ -408,3 +408,55 @@ describe('script monitor read failures (intent-hq/intent#7206)', () => {
     expect(calls('scriptMonitor.list')).toBe(2);
   });
 });
+
+describe('retained rows on a reopened lease', () => {
+  const retainedRow = { ...summary, monitorId: 'retained-monitor' };
+  const retained = { monitors: [retainedRow], scripts: [scriptFixture], status: 'ready' as const };
+
+  function startRetained(snapshots: ScriptMonitorSnapshot[]) {
+    off = subscribeScriptMonitors(
+      ws,
+      (snapshot) => {
+        rows = snapshot;
+        snapshots.push(snapshot);
+      },
+      undefined,
+      retained,
+    );
+  }
+
+  it('starts from retained rows and never emits an empty list before the fresh page', async () => {
+    const ack = deferred<{ subscriptionId: string }>();
+    vi.mocked(backendSubscribe).mockReturnValueOnce(ack.promise);
+    const snapshots: ScriptMonitorSnapshot[] = [];
+    startRetained(snapshots);
+    expect(snapshots[0]).toMatchObject({ status: 'loading', monitors: [retainedRow] });
+    expect(snapshots[0].scripts).toEqual([scriptFixture]);
+    ack.resolve({ subscriptionId: 'sub-1' });
+    await ready();
+    expect(rows.monitors).toEqual([summary]);
+    expect(snapshots.some((snapshot) => snapshot.monitors.length === 0)).toBe(false);
+  });
+
+  it('keeps retained rows visible with a failed status when the fresh page fails', async () => {
+    const original = vi.mocked(backendRequest).getMockImplementation()!;
+    vi.mocked(backendRequest).mockImplementation((method, params) =>
+      method === 'scriptMonitor.list'
+        ? Promise.reject(new Error('list failed'))
+        : original(method, params),
+    );
+    startRetained([]);
+    await vi.waitFor(() => expect(rows.status).toBe('failed'));
+    expect(rows.monitors).toEqual([retainedRow]);
+  });
+
+  it('still resets to an authoritative empty list on reconnect', async () => {
+    const snapshots: ScriptMonitorSnapshot[] = [];
+    startRetained(snapshots);
+    await ready();
+    snapshots.length = 0;
+    reconnect();
+    expect(snapshots[0]).toMatchObject({ status: 'loading', monitors: [] });
+    await ready();
+  });
+});
