@@ -49,6 +49,7 @@ export function workspaceReminderDismissed(workspace: WorkspaceReminderInput): b
 export function dismissibleWorkspaceReasons(workspace: Workspace): AttentionReminderReason[] {
   if (
     workspace.status === WorkspaceStatusEnum.Archived ||
+    workspace.status === WorkspaceStatusEnum.Retired ||
     workspace.status === WorkspaceStatusEnum.Deleted ||
     workspace.pendingDeleteAt
   )

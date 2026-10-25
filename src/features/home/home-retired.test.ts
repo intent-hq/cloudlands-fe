@@ -7,6 +7,7 @@ import {
   type HomeFilter,
 } from './home-model';
 import { groupHomeWorkspacesByStatus } from './home-workspace-status-groups';
+import { dismissibleWorkspaceReasons } from '$shared/utils/workspace-attention-reminder';
 
 // Retired workspaces (PROTOCOL §5.1) appear on Home only under the Retired
 // chip, placed after Archived; every other chip must exclude them even when a
@@ -21,6 +22,11 @@ const retired = workspace('retired', {
   displayStatus: 'needs_attention',
   activity: 'agent_running',
   attention: 'unread',
+  attentionReminder: {
+    reasons: [{ id: 'review:before-retirement', revision: 'review-1' }],
+    dismissed: false,
+    displayStatus: 'needs_attention',
+  },
 });
 
 describe('Home Retired chip', () => {
@@ -44,6 +50,16 @@ describe('Home Retired chip', () => {
   });
 
   it('shows only retired workspaces under the Retired chip', () => {
+    expect(matchesHomeFilter(retired, 'pr-ready')).toBe(false);
+    expect(dismissibleWorkspaceReasons(retired)).toEqual([]);
+    expect(
+      dismissibleWorkspaceReasons({
+        ...retired,
+        status: WorkspaceStatusEnum.Active,
+        archived: false,
+        retiredAt: undefined,
+      }),
+    ).toEqual([{ id: 'review:before-retirement', revision: 'review-1' }]);
     expect(matchesHomeFilter(retired, 'retired')).toBe(true);
     expect(matchesHomeFilter(workspace('active'), 'retired')).toBe(false);
     expect(

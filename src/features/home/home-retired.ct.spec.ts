@@ -19,7 +19,7 @@ test('Home shows retired workspaces only under the Retired chip, after Archived'
 
   await expect(component.locator('[data-home-workspace]').first()).toBeVisible();
   await expect(retired).toHaveCount(0);
-  for (const name of ['Needs you', 'Running', 'Archived']) {
+  for (const name of ['Needs you', 'PR ready', 'Running', 'Archived']) {
     await filters.getByRole('button', { name, exact: false }).first().click();
     await expect(retired).toHaveCount(0);
   }
