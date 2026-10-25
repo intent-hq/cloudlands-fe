@@ -1346,6 +1346,21 @@
     return pushEscapeLayer(closeContextFlyout);
   });
 
+  // While enhancing, the editor is locked (non-editable), so ProseMirror skips
+  // its keydown handler and the browser usually moves focus to the body.
+  // Cancel from an Escape layer instead, scoped to this composer or to an
+  // unfocused document so another panel's Escape is left alone (#5758).
+  $effect(() => {
+    if (!isEnhancing) return;
+    return pushEscapeLayer((event) => {
+      const target = event.target;
+      if (target instanceof Node && target !== document.body && !containerRef?.contains(target)) {
+        return false;
+      }
+      handleCancelEnhance();
+    });
+  });
+
   $effect(() => {
     // The embedded body is the direct child of the owning Popover surface.
     const content = contextFlyoutRef?.parentElement;
