@@ -133,6 +133,7 @@ test('keeps one root and five driven arms through every directed handoff', async
     expect(arms).toHaveLength(5);
     expect(arms.every(({ transform }) => transform !== '')).toBe(true);
     expect(arms.every(({ willChange }) => willChange === '')).toBe(true);
+    // eslint-disable-next-line intent/no-one-shot-animation-count -- counts only infinite animations, which cannot end between reads: the loop must not be a Web Animation.
     expect(await loopAnimationCount(root)).toBe(0);
   }
 
@@ -350,6 +351,7 @@ test('changes the Bloom pose at most 30 times per second and no compositor layer
   });
   const root = component.getByRole('status', { name: 'Loading' });
   await expect(root).toHaveAttribute('data-motion-state', 'playing');
+  // eslint-disable-next-line intent/no-one-shot-animation-count -- counts only infinite animations, which cannot end between reads: the loop must not be a Web Animation.
   expect(await loopAnimationCount(root)).toBe(0);
   expect((await drivenArms(root)).every(({ willChange }) => willChange === '')).toBe(true);
 

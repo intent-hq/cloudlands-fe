@@ -52,6 +52,8 @@ interface AnimationQueryOptions {
   ignore?: readonly IgnoredAnimations[];
   /** Include descendants' animations (default true). */
   subtree?: boolean;
+  /** Count only animations whose target matches this selector (e.g. `'div'` for rows). */
+  only?: string;
   /**
    * Also count finished animations that are still attached (e.g. `fill: 'forwards'`
    * leftovers). Use with `expectAnimationsToSettle` when the test means "the motion was
@@ -79,6 +81,7 @@ interface SerializedOptions {
   ignore: { within: string; maxDurationMs: number }[];
   subtree: boolean;
   includeFinished: boolean;
+  only: string | null;
   instantMs: number;
 }
 
@@ -87,6 +90,7 @@ interface SerializedOptions {
  * animations (unless `includeFinished`), instant (≤ 1 ms) transitions and the `ignore`d
  * fades are left out.
  * Accepts locators that match several elements; shared descendants are reported once.
+ * Throws when the locator matches nothing, so a detached or mistyped target cannot pass.
  */
 export async function activeAnimations(
   locator: Locator,
@@ -99,88 +103,97 @@ export async function activeAnimations(
     })),
     subtree: options.subtree ?? true,
     includeFinished: options.includeFinished ?? false,
+    only: options.only ?? null,
     instantMs: INSTANT_ANIMATION_MS,
   };
-  return locator.evaluateAll((elements, { ignore, subtree, includeFinished, instantMs }) => {
-    const describeTarget = (target: Element | null, pseudo: string | null) => {
-      if (!target) return '(no target)';
-      let label = target.tagName.toLowerCase();
-      if (target.id) label += `#${target.id}`;
-      const attribute = ['data-slot', 'data-testid'].find((name) => target.hasAttribute(name));
-      const dataAttribute =
-        attribute ?? target.getAttributeNames().find((name) => name.startsWith('data-'));
-      if (dataAttribute) {
-        const value = target.getAttribute(dataAttribute);
-        label += value ? `[${dataAttribute}="${value}"]` : `[${dataAttribute}]`;
-      } else if (target.classList.length > 0) {
-        label += `.${Array.from(target.classList).slice(0, 2).join('.')}`;
-      }
-      return pseudo ? `${label}${pseudo}` : label;
-    };
-    const numberOrNull = (value: unknown) =>
-      typeof value === 'number' && Number.isFinite(value) ? value : null;
+  const { matched, report } = await locator.evaluateAll(
+    (elements, { ignore, subtree, includeFinished, only, instantMs }) => {
+      const describeTarget = (target: Element | null, pseudo: string | null) => {
+        if (!target) return '(no target)';
+        let label = target.tagName.toLowerCase();
+        if (target.id) label += `#${target.id}`;
+        const attribute = ['data-slot', 'data-testid'].find((name) => target.hasAttribute(name));
+        const dataAttribute =
+          attribute ?? target.getAttributeNames().find((name) => name.startsWith('data-'));
+        if (dataAttribute) {
+          const value = target.getAttribute(dataAttribute);
+          label += value ? `[${dataAttribute}="${value}"]` : `[${dataAttribute}]`;
+        } else if (target.classList.length > 0) {
+          label += `.${Array.from(target.classList).slice(0, 2).join('.')}`;
+        }
+        return pseudo ? `${label}${pseudo}` : label;
+      };
+      const numberOrNull = (value: unknown) =>
+        typeof value === 'number' && Number.isFinite(value) ? value : null;
 
-    const seen = new Set<Animation>();
-    const report = [];
-    for (const element of elements) {
-      for (const animation of element.getAnimations({ subtree })) {
-        if (seen.has(animation)) continue;
-        seen.add(animation);
-        if (animation.playState === 'idle') continue;
-        if (animation.playState === 'finished' && !includeFinished) continue;
-        const effect = animation.effect;
-        const timing = effect?.getComputedTiming();
-        const endTime = Number(timing?.endTime ?? Infinity);
-        const finite = Number.isFinite(endTime);
-        if (finite && endTime <= instantMs) continue;
-        const target = effect instanceof KeyframeEffect ? effect.target : null;
-        const ignored =
-          finite &&
-          target !== null &&
-          ignore.some(
-            ({ within, maxDurationMs }) => endTime <= maxDurationMs && target.closest(within),
-          );
-        if (ignored) continue;
-        let type = 'Animation';
-        let name = '';
-        if (typeof CSSTransition !== 'undefined' && animation instanceof CSSTransition) {
-          type = 'CSSTransition';
-          name = animation.transitionProperty;
-        } else if (typeof CSSAnimation !== 'undefined' && animation instanceof CSSAnimation) {
-          type = 'CSSAnimation';
-          name = animation.animationName;
-        } else if (effect instanceof KeyframeEffect) {
-          const properties = new Set<string>();
-          for (const frame of effect.getKeyframes()) {
-            for (const key of Object.keys(frame)) {
-              if (!['offset', 'computedOffset', 'easing', 'composite'].includes(key)) {
-                properties.add(key);
+      const seen = new Set<Animation>();
+      const report = [];
+      for (const element of elements) {
+        for (const animation of element.getAnimations({ subtree })) {
+          if (seen.has(animation)) continue;
+          seen.add(animation);
+          if (animation.playState === 'idle') continue;
+          if (animation.playState === 'finished' && !includeFinished) continue;
+          const effect = animation.effect;
+          const timing = effect?.getComputedTiming();
+          const endTime = Number(timing?.endTime ?? Infinity);
+          const finite = Number.isFinite(endTime);
+          if (finite && endTime <= instantMs) continue;
+          const target = effect instanceof KeyframeEffect ? effect.target : null;
+          if (only !== null && !target?.matches(only)) continue;
+          const ignored =
+            finite &&
+            target !== null &&
+            ignore.some(
+              ({ within, maxDurationMs }) => endTime <= maxDurationMs && target.closest(within),
+            );
+          if (ignored) continue;
+          let type = 'Animation';
+          let name = '';
+          if (typeof CSSTransition !== 'undefined' && animation instanceof CSSTransition) {
+            type = 'CSSTransition';
+            name = animation.transitionProperty;
+          } else if (typeof CSSAnimation !== 'undefined' && animation instanceof CSSAnimation) {
+            type = 'CSSAnimation';
+            name = animation.animationName;
+          } else if (effect instanceof KeyframeEffect) {
+            const properties = new Set<string>();
+            for (const frame of effect.getKeyframes()) {
+              for (const key of Object.keys(frame)) {
+                if (!['offset', 'computedOffset', 'easing', 'composite'].includes(key)) {
+                  properties.add(key);
+                }
               }
             }
+            name = animation.id || Array.from(properties).join(',');
           }
-          name = animation.id || Array.from(properties).join(',');
+          report.push({
+            target: describeTarget(
+              target,
+              effect instanceof KeyframeEffect ? effect.pseudoElement : null,
+            ),
+            type,
+            name,
+            playState: animation.playState,
+            pending: animation.pending,
+            durationMs: finite ? endTime : null,
+            iterations: numberOrNull(timing?.iterations),
+            currentTimeMs: numberOrNull(
+              typeof animation.currentTime === 'number'
+                ? animation.currentTime
+                : Number(animation.currentTime?.valueOf()),
+            ),
+          });
         }
-        report.push({
-          target: describeTarget(
-            target,
-            effect instanceof KeyframeEffect ? effect.pseudoElement : null,
-          ),
-          type,
-          name,
-          playState: animation.playState,
-          pending: animation.pending,
-          durationMs: finite ? endTime : null,
-          iterations: numberOrNull(timing?.iterations),
-          currentTimeMs: numberOrNull(
-            typeof animation.currentTime === 'number'
-              ? animation.currentTime
-              : Number(animation.currentTime?.valueOf()),
-          ),
-        });
       }
-    }
-    return report;
-  }, serialized);
+      return { matched: elements.length, report };
+    },
+    serialized,
+  );
+  // `evaluateAll` neither waits for nor requires a match; an empty locator must not pass.
+  if (matched === 0)
+    throw new Error(`${String(locator)} matched no elements to check for animations`);
+  return report;
 }
 
 /**

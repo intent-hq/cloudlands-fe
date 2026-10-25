@@ -83,6 +83,20 @@ tester.run('no-one-shot-animation-count', rule, {
       ),
       filename,
     },
+    // A property name that happens to match a variable which read animations.
+    {
+      code: inTest(
+        'const animations = await x.evaluate((n) => n.getAnimations().length);\nexpect(await el.evaluate((n) => n.dataset.animations?.length ?? 0)).toBe(0);\nexpect({ animations: 1 }.animations).toBe(1);',
+      ),
+      filename,
+    },
+    // An object matcher whose zero key did not read animations.
+    {
+      code: inTest(
+        'expect(await el.evaluate((n) => ({ height: n.style.height.length, animations: n.getAnimations().length }))).toEqual({ height: 0, animations: 2 });',
+      ),
+      filename,
+    },
     // Waiting on `finished` is a settle, not a count.
     {
       code: inTest(
@@ -173,6 +187,46 @@ tester.run('no-one-shot-animation-count', rule, {
     {
       code: inTest(
         'const animationCount = () => root.evaluate((n) => n.getAnimations({ subtree: true }).length);\nexpect(await animationCount()).toBe(0);',
+      ),
+      filename,
+      errors: [error],
+    },
+    // Through a function declaration helper (intent-mark-loader's loopAnimationCount shape).
+    {
+      code: `async function loopAnimationCount(root) {
+  return root.evaluate((n) => n.getAnimations({ subtree: true }).length);
+}
+${inTest('expect(await loopAnimationCount(root)).toBe(0);')}`,
+      filename,
+      errors: [error],
+    },
+    // .resolves and the other zero spellings.
+    {
+      code: inTest('await expect(el.evaluate((n) => n.getAnimations().length)).resolves.toBe(0);'),
+      filename,
+      errors: [error],
+    },
+    {
+      code: inTest('expect(await el.evaluate((n) => n.getAnimations().length)).toBeFalsy();'),
+      filename,
+      errors: [error],
+    },
+    {
+      code: inTest('expect(await el.evaluate((n) => n.getAnimations().length)).toBeLessThan(1);'),
+      filename,
+      errors: [error],
+    },
+    {
+      code: inTest(
+        'expect(await el.evaluate((n) => n.getAnimations().length)).toBeLessThanOrEqual(0);',
+      ),
+      filename,
+      errors: [error],
+    },
+    // An object matcher pinning the animation key to zero.
+    {
+      code: inTest(
+        "expect(await el.evaluate((n) => ({ height: n.style.height, animations: n.getAnimations().length }))).toEqual({ height: '', animations: 0 });",
       ),
       filename,
       errors: [error],

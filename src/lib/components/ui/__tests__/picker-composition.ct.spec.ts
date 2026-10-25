@@ -47,8 +47,10 @@ for (const portal of [false, true]) {
     const search = page.getByRole('searchbox');
     await search.fill('Bet');
     await expect(page.getByRole('option')).toHaveCount(1);
-    // Filtering must not animate the option rows; the highlight's own glide is its contract.
+    // Filtering must not animate the option rows (div targets). Control colour/focus
+    // transitions are out of scope, and the highlight's own glide is its contract.
     await expectNoAnimations(menu, {
+      only: 'div',
       ignore: [{ within: '[data-slot="menu-list-highlight"]' }],
     });
     await search.press('Enter');

@@ -187,6 +187,8 @@ for (const config of [
       Math.max(...repeatSamples.map((sample) => Math.abs(sample.bottomDistance))),
     ).toBeLessThanOrEqual(8);
     await expect(component.getByTestId('disclosure-bottom-state')).toContainText('locked:0');
+    // expectAnimationsCleanedUp polled the subtree to zero animations; check the inline
+    // styles the disclosure motion wrote were cleared too.
     await expectAnimationsCleanedUp(details);
     expect(
       await details.evaluate((node) => ({
@@ -194,9 +196,8 @@ for (const config of [
         overflow: (node as HTMLElement).style.overflow,
         opacity: (node as HTMLElement).style.opacity,
         transform: (node as HTMLElement).style.transform,
-        animations: node.getAnimations().length,
       })),
-    ).toEqual({ height: '', overflow: '', opacity: '', transform: '', animations: 0 });
+    ).toEqual({ height: '', overflow: '', opacity: '', transform: '' });
   });
 }
 
