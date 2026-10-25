@@ -67,6 +67,7 @@ import { backendRequest, observeBackendNodeCapabilities } from '$lib/client/live
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { isWorkspaceRole } from '$shared/types';
 import { watchCaptureDrawing, watchPresenceVisibility } from './presence-visibility-watcher';
 import {
   isPresenceRoster,
@@ -153,7 +154,7 @@ async function readMembership(workspaceId: string): Promise<WorkspaceMembersList
       result.members.every(
         (member) =>
           isPresenceIdentity(member) &&
-          (member.role === 'owner' || member.role === 'collaborator') &&
+          isWorkspaceRole(member.role) &&
           typeof member.addedAt === 'string',
       )
       ? result
