@@ -3,6 +3,7 @@
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { tick } from 'svelte';
 import { WorkspaceStatus } from '$shared/types';
 
 const {
@@ -387,6 +388,11 @@ const reduxActions = [
   { label: 'New Note', actionCreator: createNoteRequested },
   { label: 'New File', actionCreator: commandPaletteNewFileRequested },
 ] as const;
+
+const retiredLoads = () =>
+  reduxDispatchMock.mock.calls.filter(
+    ([action]) => action?.type === 'workspaceOperations/loadRetiredWorkspacesRequested',
+  ).length;
 
 describe('CommandPalette new actions', () => {
   beforeEach(() => {
@@ -980,6 +986,75 @@ describe('CommandPalette workspace activity recency', () => {
     expect(newer.compareDocumentPosition(old) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(old.textContent).toContain('Jan 15');
     expect(old.textContent).not.toContain('just now');
+  });
+
+  it('lists retired workspaces with a Retired badge and opts in to loading them', async () => {
+    workspaceItemsState.value = [
+      {
+        id: 'live',
+        title: 'Live Space',
+        status: WorkspaceStatus.Active,
+        createdAt: '2025-06-01T00:00:00.000Z',
+        updatedAt: '2025-06-01T00:00:00.000Z',
+      },
+      {
+        id: 'retired',
+        title: 'Old Importer Space',
+        status: WorkspaceStatus.Retired,
+        archived: true,
+        retiredAt: '2025-06-02T00:00:00.000Z',
+        createdAt: '2025-06-01T00:00:00.000Z',
+        updatedAt: '2025-06-01T00:00:00.000Z',
+      },
+    ];
+
+    render(CommandPalette, { props: { isOpen: true, onClose: vi.fn() } });
+
+    const retired = await screen.findByRole('button', { name: /Old Importer Space/i });
+    const live = screen.getByRole('button', { name: /Live Space/i });
+    expect(retired.textContent).toContain('Retired');
+    expect(live.textContent).not.toContain('Retired');
+    expect(retiredLoads()).toBe(1);
+  });
+
+  it('binds the retired opt-in to the palette being open and reconciles list refreshes', async () => {
+    const live = {
+      id: 'live',
+      title: 'Live Space',
+      status: WorkspaceStatus.Active,
+      createdAt: '2025-06-01T00:00:00.000Z',
+      updatedAt: '2025-06-01T00:00:00.000Z',
+    };
+    const retired = { ...live, id: 'old', title: 'Old', status: WorkspaceStatus.Retired };
+    const publish = (items: any[]) => {
+      workspaceItemsState.value = items;
+      for (const fn of workspaceItemsState.subscribers) fn(items);
+    };
+    publish([live]);
+    const view = render(CommandPalette, { props: { isOpen: false, onClose: vi.fn() } });
+    await tick();
+    expect(retiredLoads()).toBe(0);
+
+    await view.rerender({ isOpen: true, onClose: vi.fn() });
+    await tick();
+    expect(retiredLoads()).toBe(1);
+
+    // The load's own response must not trigger another load.
+    publish([live, retired]);
+    await tick();
+    expect(retiredLoads()).toBe(1);
+
+    // An ordinary refresh drops retired rows while the palette is open: reload.
+    publish([live]);
+    await tick();
+    expect(retiredLoads()).toBe(2);
+
+    // Closing and reopening searches again with a fresh opt-in read.
+    await view.rerender({ isOpen: false, onClose: vi.fn() });
+    await tick();
+    await view.rerender({ isOpen: true, onClose: vi.fn() });
+    await tick();
+    expect(retiredLoads()).toBe(3);
   });
 });
 

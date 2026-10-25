@@ -45,6 +45,7 @@
     { path: 'workspace.branchPrefix', value: '', type: 'string' },
     { path: 'git.autoCommit', value: true, type: 'boolean' },
     { path: 'workspace.cowIsolation', value: false, type: 'boolean' },
+    { path: 'workspace.autoRetireArchivedAfterDays', value: 7, type: 'number', min: 1 },
     { path: 'rtk.enabled', value: true, type: 'boolean' },
   ].map((entry) => ({
     label: entry.path,

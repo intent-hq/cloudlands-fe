@@ -425,6 +425,14 @@ export interface WorkspaceCancelDeleteResult extends MutationResult {
   cancelled?: boolean;
 }
 
+/** `workspace.retire` outcome (PROTOCOL §5.1 Retired workspaces). */
+export interface WorkspaceRetireResult extends MutationResult {
+  /** The refreshed retired row on success. */
+  workspace?: Workspace;
+  /** Daemon error discriminator, e.g. `"retire-unsupported"` or `"not-found"`. */
+  errorCode?: string;
+}
+
 export type RepositoryContextUpdate =
   | { type: 'received'; response: RepositoryContextResponse }
   | { type: 'unavailable' | 'retired'; request: RepositoryContextRequest };
@@ -453,7 +461,8 @@ export interface WorkspacesClient {
     request: RepositoryContextRequest,
     handler: (update: RepositoryContextUpdate) => void,
   ): Promise<Unsubscribe>;
-  list(options?: { includeArchived?: boolean }): Promise<Workspace[]>;
+  /** Retired rows are returned only with `includeRetired: true` (strict opt-in, §5.1). */
+  list(options?: { includeArchived?: boolean; includeRetired?: boolean }): Promise<Workspace[]>;
   /**
    * Workspaces linked to a pull-request URL (`workspace.findByPullRequest`,
    * §5.1), most recently linked first, archived included. Callers must gate on
@@ -501,6 +510,12 @@ export interface WorkspacesClient {
   archive(id: string): Promise<MutationResult>;
   /** Unarchive a workspace (`workspace.unarchive`, §5.1) — the archive-undo path. */
   unarchive(id: string): Promise<MutationResult>;
+  /**
+   * Retire a workspace (`workspace.retire`, §5.1): deletes its folder on disk
+   * while every database row stays readable. Unarchive revives it as a fresh
+   * blank workspace.
+   */
+  retire(id: string): Promise<WorkspaceRetireResult>;
   /**
    * Mark a workspace seen (`workspace.markSeen`, §5.1) — clears the unread
    * `attention` flag only (unlike `workspace.dismissAttention`, which also

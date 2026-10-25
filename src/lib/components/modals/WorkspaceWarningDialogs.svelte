@@ -5,6 +5,7 @@
   import { readable } from 'svelte/store';
   import type { ComponentProps } from 'svelte';
   import DeleteWarningDialog from './DeleteWarningDialog.svelte';
+  import RetireWorkspaceConfirmDialog from './RetireWorkspaceConfirmDialog.svelte';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
@@ -17,6 +18,8 @@
     confirmBulkDelete,
     confirmArchiveWorkspace,
     confirmDeleteWorkspace,
+    closeRetireConfirm,
+    confirmRetireWorkspace,
   } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import {
     selectActiveHookNamesForArchive,
@@ -40,6 +43,8 @@
     selectShowBulkArchiveConfirm,
     selectShowBulkDeleteConfirm,
     selectShowDeleteWarning,
+    selectPendingRetireWorkspaceTitle,
+    selectShowRetireConfirm,
   } from '$store/renderer/slices/workspace-operations/workspace-operations-selectors';
 
   let { staticData }: { staticData?: ComponentProps<typeof DeleteWarningDialog> } = $props();
@@ -107,6 +112,12 @@
   const guestsForArchive$ = untrack(() =>
     staticData ? readable(undefined) : selectGuestsForArchive(),
   );
+  const showRetireConfirm$ = untrack(() =>
+    staticData ? readable(false) : selectShowRetireConfirm(),
+  );
+  const pendingRetireWorkspaceTitle$ = untrack(() =>
+    staticData ? readable('') : selectPendingRetireWorkspaceTitle(),
+  );
 </script>
 
 {#if staticData}
@@ -135,6 +146,14 @@
     guests={$guestsForArchive$}
     onDeleteAnyway={() => appStore.dispatch(confirmArchiveWorkspace())}
     onCancel={() => appStore.dispatch(closeArchiveWarning())}
+  />
+
+  <!-- Redux-owned retire confirmation (PROTOCOL §5.1 Retired workspaces) -->
+  <RetireWorkspaceConfirmDialog
+    open={$showRetireConfirm$}
+    workspaceTitle={$pendingRetireWorkspaceTitle$ || m.workspace_ops_space_fallback()}
+    onConfirm={() => appStore.dispatch(confirmRetireWorkspace())}
+    onCancel={() => appStore.dispatch(closeRetireConfirm())}
   />
   <BulkActionConfirmDialog
     open={$showBulkArchiveConfirm$}

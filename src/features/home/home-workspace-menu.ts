@@ -10,6 +10,7 @@ import {
   requestArchiveWorkspace,
   requestUnarchiveWorkspace,
   requestDeleteWorkspace,
+  requestRetireWorkspace,
 } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
 import {
   faThumbtack,
@@ -17,6 +18,8 @@ import {
   faBoxOpen,
   faTrash,
   faArrowRight,
+  faHardDrive,
+  faRotateLeft,
 } from '@fortawesome/free-solid-svg-icons';
 
 interface HomeWorkspaceMenuOptions {
@@ -69,23 +72,41 @@ export function createHomeWorkspaceMenu(
   items.push(...createWorkspaceMicroKeyMenu(workspace.id, { connected: microConnected, onClose }));
   if (!selectHidesOwnerWorkspaceActions.select(store.state, workspace.id)) {
     const archived = workspace.status === WorkspaceStatusEnum.Archived;
+    // A retired workspace (PROTOCOL §5.1) revives through unarchive as a fresh
+    // blank checkout, so the same slot reads "Restore as blank workspace".
+    const retired = workspace.status === WorkspaceStatusEnum.Retired;
     items.push(
       { type: 'separator' },
       {
         id: 'archive',
-        label: archived
-          ? m.ui_workspaceActions_unarchiveSpace_label()
-          : m.workspace_card_archive_label(),
-        icon: archived ? faBoxOpen : faBoxArchive,
+        label: retired
+          ? m.workspace_retire_restore_label()
+          : archived
+            ? m.ui_workspaceActions_unarchiveSpace_label()
+            : m.workspace_card_archive_label(),
+        icon: retired ? faRotateLeft : archived ? faBoxOpen : faBoxArchive,
         onClick: () => {
           onClose();
           store.dispatch(
-            archived
+            archived || retired
               ? requestUnarchiveWorkspace(workspace.id)
               : requestArchiveWorkspace(workspace.id),
           );
         },
       },
+      ...(retired
+        ? []
+        : [
+            {
+              id: 'retire',
+              label: m.workspace_retire_menu_label(),
+              icon: faHardDrive,
+              onClick: () => {
+                onClose();
+                store.dispatch(requestRetireWorkspace(workspace.id));
+              },
+            },
+          ]),
       {
         id: 'delete',
         label: m.workspace_card_deleteSpace_label(),
