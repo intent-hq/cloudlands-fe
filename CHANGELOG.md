@@ -4,6 +4,41 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.234.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.234.0...v2.234.1) (2026-10-25)
+
+
+### 🐛 Bug Fixes
+
+* **notes:** open the note the daemon created, not a concurrent one ([#3693](https://github.com/intent-hq/cloudlands-fe/issues/3693)) ([4870c1c](https://github.com/intent-hq/cloudlands-fe/commit/4870c1c7b734c1143096f1b81626b618308dd18d))
+* **sidebar:** create a new terminal from the Shell card New Terminal action ([#3692](https://github.com/intent-hq/cloudlands-fe/issues/3692)) ([70944ea](https://github.com/intent-hq/cloudlands-fe/commit/70944ea5e264dcf1b6ef6ef601d79b36fef480b5))
+
+## [2.234.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.233.0...v2.234.0) (2026-10-25)
+
+
+### 🚀 Features
+
+* retired workspaces in the UI and the auto-retire setting ([#3634](https://github.com/intent-hq/cloudlands-fe/issues/3634)) ([7205d8f](https://github.com/intent-hq/cloudlands-fe/commit/7205d8f1cbae011a5f792c6392775301d62ee07e))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.45 ([#3700](https://github.com/intent-hq/cloudlands-fe/issues/3700)) ([ce4a045](https://github.com/intent-hq/cloudlands-fe/commit/ce4a0451b964acdecf1ad1843e52a244fc990ecf))
+
+## [2.233.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.232.3...v2.233.0) (2026-10-25)
+
+
+### 🚀 Features
+
+* **home:** group script-running and waiting workspaces ([#3647](https://github.com/intent-hq/cloudlands-fe/issues/3647)) ([6060691](https://github.com/intent-hq/cloudlands-fe/commit/6060691e8900dac858580fed89e9da0b72f431db))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.44 ([#3689](https://github.com/intent-hq/cloudlands-fe/issues/3689)) ([0e4b1e3](https://github.com/intent-hq/cloudlands-fe/commit/0e4b1e3e1642c171c595b0f2243904df8bafaa5b))
+* **chat:** hide the collaborator sender line in queued messages ([#3670](https://github.com/intent-hq/cloudlands-fe/issues/3670)) ([cf039d1](https://github.com/intent-hq/cloudlands-fe/commit/cf039d1a4ba5549b0d9fa145fd774d785b7579fe))
+* **chat:** keep the subscriptions footer hidden while snapshots load ([#3684](https://github.com/intent-hq/cloudlands-fe/issues/3684)) ([cb1f5f6](https://github.com/intent-hq/cloudlands-fe/commit/cb1f5f6bc64e380ced286eeed54b9c853ffdf066))
+* **events:** read nameExplicitlySet from agent:renamed ([#3685](https://github.com/intent-hq/cloudlands-fe/issues/3685)) ([8201219](https://github.com/intent-hq/cloudlands-fe/commit/8201219b32572062cba531b032a1dc21c32890de))
+
 ## [2.232.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.232.2...v2.232.3) (2026-10-25)
 
 

@@ -90,6 +90,14 @@ test('contains expanded long tool content, follows bottom, and preserves compose
   await expect
     .poll(() => viewport.evaluate((node) => node.scrollHeight - node.scrollTop - node.clientHeight))
     .toBeLessThanOrEqual(1);
+  // Following must survive a later viewport shrink, rather than only landing
+  // at the current bottom once during the native wheel scroll.
+  const priorHeight = await viewport.evaluate((node) => node.clientHeight);
+  await component.update({ props: { theme: 'dark', zoom: 2, width: 360, height: 800 } });
+  await expect.poll(() => viewport.evaluate((node) => node.clientHeight)).toBeLessThan(priorHeight);
+  await expect
+    .poll(() => viewport.evaluate((node) => node.scrollHeight - node.scrollTop - node.clientHeight))
+    .toBeLessThanOrEqual(1);
   expect(await transcript.evaluate((node) => node.scrollWidth <= node.clientWidth + 0.5)).toBe(
     true,
   );

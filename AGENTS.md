@@ -753,7 +753,15 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   Quarantined CT tests still run as an advisory step on shard 1 and must carry an
   open tracking issue and an owner. Remove the tag in the PR that fixes the flake.
 - Motion specs that sample animation progress mid-flight are the historical flake source;
-  prefer asserting start/end states and `getAnimations()` counts over timed midpoints.
+  assert start/end states, and check "no animation is running" with the
+  `src/test/ct-test.ts` helpers, never a one-time `getAnimations()` count: a child's
+  short fade caught mid-flight ejected cloudlands-fe#3651 from the merge queue.
+  `expectAnimationsToSettle(locator)` waits for motion to finish (`includeFinished` also
+  requires `fill: 'forwards'` leftovers to be removed). `expectNoAnimations(locator, opts)`
+  asserts nothing animates; `opts.ignore` names a component (`{ within: selector }`)
+  whose own short finite fades are allowed. Both list what is still running. Lint
+  (`intent/no-one-shot-animation-count`) rejects the one-time count in CT specs; disable
+  it on the line, with the reason, only when zero animations is the deliberate contract.
 - **Every CT spec imports `test` / `expect` from `src/test/ct-test.ts`** — lint-enforced
   (`no-restricted-imports`; only type imports may come from
   `@playwright/experimental-ct-svelte`). The module sets `_optionContextReuseMode: 'none'`

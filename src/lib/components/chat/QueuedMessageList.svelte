@@ -13,6 +13,7 @@
     queuedMessagePermissions,
   } from '$lib/utils/queued-message-permissions';
   import { memberMentionsToText } from '$lib/utils/member-mention-token';
+  import { presentQueuedMessageText } from '$lib/utils/collaborator-sender-attribution';
   import Fa from 'svelte-fa';
   import { faCheck, faArrowUp } from '@fortawesome/free-solid-svg-icons';
   import ArrowClockwiseIcon from 'phosphor-svelte/lib/ArrowClockwiseIcon';
@@ -242,14 +243,26 @@
     Array<{ id: string; content: string; pendingOperationId?: number }>
   >([]);
   let editContent = $state('');
+  // Raw stored content: hold release on cancel sends it back byte-identical.
   let editOriginalContent = $state('');
+  // What the editor starts from: the stored content minus the daemon's
+  // collaborator sender preamble, which the daemon re-applies on save.
+  let editPresentedContent = $state('');
   let editStartedProgrammatically = $state(false);
   let editTextarea = $state<HTMLTextAreaElement>();
   let editRichEditor = $state<TipTapEditor>();
   let editRichContainer = $state<HTMLDivElement>();
   const editHasMembers = $derived(
-    memberMentionsToText(editOriginalContent) !== editOriginalContent,
+    memberMentionsToText(editPresentedContent) !== editPresentedContent,
   );
+
+  /** Display/edit copy of queued text; the queued entry itself is never changed. */
+  function presentedQueuedText(
+    message: Pick<QueuedMessage, 'messageMetadata' | 'author'>,
+    text: string,
+  ): string {
+    return presentQueuedMessageText(message, text, ownerPrincipalId);
+  }
   type EditOperation = { messageId: string; token: number; releasing: boolean };
   let editOperationSequence = 0;
   let activeEditOperation: EditOperation | null = null;
@@ -496,6 +509,7 @@
     editingId = null;
     editContent = '';
     editOriginalContent = '';
+    editPresentedContent = '';
     editStartedProgrammatically = false;
     activeEditOperation = null;
     pendingFocusRestore = null;
@@ -688,12 +702,10 @@
 
   // Action to autofocus textarea when it appears
   function autofocusAction(node: HTMLTextAreaElement) {
-    // Use requestAnimationFrame to ensure the element is fully rendered
     const frame = requestAnimationFrame(() => {
       // Preserve selection if the user reached the editor before this frame.
       if (document.activeElement === node) return;
       node.focus({ preventScroll: true });
-      // Move cursor to end
       node.selectionStart = node.selectionEnd = node.value.length;
     });
     return { destroy: () => cancelAnimationFrame(frame) };
@@ -741,7 +753,8 @@
     await animateRowMutation(message.id, () => {
       editStartedProgrammatically = programmatic;
       editingId = message.id;
-      editContent = message.content;
+      editPresentedContent = presentedQueuedText(message, message.content);
+      editContent = editPresentedContent;
       editOriginalContent = message.content;
     });
     if (!ownsEditOperation(operation)) return;
@@ -824,7 +837,12 @@
     if (editingId && editContent.trim()) {
       const wasProgrammatic = editStartedProgrammatically;
       const operation = beginEditOperation(editingId, true);
-      const newContent = editContent.trim();
+      // An unchanged body saves the stored content, so the entry keeps its
+      // daemon-applied sender preamble without relying on re-annotation.
+      const newContent =
+        editContent.trim() === editPresentedContent.trim()
+          ? editOriginalContent
+          : editContent.trim();
 
       // STAB-27: Save with edited content and release hold (editing:false triggers self-drain)
       // Do this BEFORE clearing edit state so if it fails, we stay in edit mode
@@ -1207,6 +1225,7 @@
                       {/if}
                       <div class="queued-message-body min-w-0 flex-1">
                         {#each message.deliveryGroups?.length ? message.deliveryGroups : [message] as group, index (index)}
+                          {@const groupText = presentedQueuedText(message, group.content)}
                           <div
                             class={message.deliveryGroups?.length
                               ? 'mb-2 border-b border-border pb-2 last:mb-0 last:border-b-0 last:pb-0'
@@ -1222,7 +1241,7 @@
                               {handleReferenceImageError}
                               {openQueuedFileAttachment}
                             />
-                            {#if group.content.trim()}
+                            {#if groupText.trim()}
                               <Button
                                 variant="plain"
                                 size="compact"
@@ -1231,7 +1250,7 @@
                                 labelClass="block!"
                                 data-testid="queued-message-content"
                                 data-mode="display"
-                                aria-label={memberMentionsToText(group.content)}
+                                aria-label={memberMentionsToText(groupText)}
                                 ondblclick={() => startEdit(message)}
                                 onkeydown={(event) => handleDisplayKeydown(event, message)}
                               >
@@ -1239,7 +1258,7 @@
                                   class="block whitespace-pre-wrap wrap-anywhere {USER_MESSAGE_TEXT_CLASS}"
                                   data-testid="queued-message-text"
                                 >
-                                  {memberMentionsToText(group.content)}
+                                  {memberMentionsToText(groupText)}
                                 </span>
                               </Button>
                             {/if}

@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/experimental-ct-svelte';
-import { expect, test } from '../../../../test/ct-test';
+import { expect, expectAnimationsToSettle, test } from '../../../../test/ct-test';
 import AgentSubscriptionInlineHost from './AgentSubscriptionInlineHost.svelte';
 
 const toolKinds = ['file', 'terminal', 'tool'] as const;
@@ -422,6 +422,9 @@ test('keeps completed avatars accessible and distinct from active agents', async
           .first();
         await expect(completed).toHaveAttribute('data-avatar-state', 'completed');
         await expect(completed.locator('[data-avatar-overlay], [data-icon]')).toHaveCount(0);
+        // A completed avatar must not keep the active pulse: wait out any finite state
+        // transition (an infinite pulse never settles and fails), then read settled colors.
+        await expectAnimationsToSettle(completed, { subtree: false });
         const colors = await completed.evaluate((avatar) => {
           const parseRgb = (value: string) =>
             (value.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number) as [number, number, number];
@@ -478,11 +481,6 @@ test('keeps completed avatars accessible and distinct from active agents', async
             parentColor: parentStyle.color,
             cardBackground,
             cardOpacity: getComputedStyle(card).opacity,
-            activeAnimations: avatar.getAnimations().map((animation) => ({
-              playState: animation.playState,
-              progress: animation.effect?.getComputedTiming().progress,
-              duration: animation.effect?.getComputedTiming().duration,
-            })),
             activeBackground,
             waitingBackground,
             completedContrast: contrast(completedForeground, completedBackground),
@@ -503,7 +501,6 @@ test('keeps completed avatars accessible and distinct from active agents', async
         expect(colors.parentOpacity).toBe('1');
         expect(colors.cardOpacity).toBe('1');
         expect(colors.avatarArtColor).toBe(colors.completedForeground);
-        expect(colors.activeAnimations).toEqual([]);
         expect(colors.completedContrast, JSON.stringify(colors)).toBeGreaterThanOrEqual(4.5);
         expect(colors.iconColor).toBe(colors.titleColor);
         expect(colors.iconOpacity).toBe(colors.titleOpacity);
@@ -522,24 +519,35 @@ test('renders exactly one promoted Waiting disclosure in agent-only mode', async
   await expect(component.getByText('Waiting for 7 agents', { exact: true })).toHaveCount(1);
 });
 
-for (const snapshotStatus of ['loading', 'failed'] as const) {
-  test(`keeps the agent lane visible while its snapshot is ${snapshotStatus}`, async ({
-    mount,
-  }) => {
-    const component = await mount(AgentSubscriptionInlineHost, { props: { snapshotStatus } });
-
-    await expect(component.getByTestId('subscription-utility-area')).toBeVisible();
-    await expect(component.getByTestId('event-subscriptions-agents')).toBeVisible();
-    await expect(component.getByTestId('event-subscriptions-outer-header')).toHaveCount(0);
-    await expect(component.getByTestId('background-hooks-snapshot-status')).toHaveCount(0);
-    await expect(component.getByTestId('pr-monitors-snapshot-status')).toHaveCount(0);
-    await expect(component.getByTestId('agent-subscriptions-snapshot-status')).toBeVisible();
-    await expect(component.getByTestId('agent-subscriptions-snapshot-status')).toHaveAttribute(
-      'data-snapshot-status',
-      snapshotStatus,
-    );
+test('keeps the footer hidden while an empty agent lane is still loading', async ({ mount }) => {
+  const component = await mount(AgentSubscriptionInlineHost, {
+    props: { snapshotStatus: 'loading' },
   });
-}
+
+  await expect(component.getByTestId('subscription-utility-area')).toHaveAttribute(
+    'data-has-subscriptions',
+    'false',
+  );
+  await expect(component.getByTestId('subscription-utility-area')).toBeHidden();
+  await expect(component.getByTestId('agent-subscriptions-snapshot-status')).toHaveCount(0);
+});
+
+test('keeps the agent lane visible while its snapshot is failed', async ({ mount }) => {
+  const component = await mount(AgentSubscriptionInlineHost, {
+    props: { snapshotStatus: 'failed' },
+  });
+
+  await expect(component.getByTestId('subscription-utility-area')).toBeVisible();
+  await expect(component.getByTestId('event-subscriptions-agents')).toBeVisible();
+  await expect(component.getByTestId('event-subscriptions-outer-header')).toHaveCount(0);
+  await expect(component.getByTestId('background-hooks-snapshot-status')).toHaveCount(0);
+  await expect(component.getByTestId('pr-monitors-snapshot-status')).toHaveCount(0);
+  await expect(component.getByTestId('agent-subscriptions-snapshot-status')).toBeVisible();
+  await expect(component.getByTestId('agent-subscriptions-snapshot-status')).toHaveAttribute(
+    'data-snapshot-status',
+    'failed',
+  );
+});
 
 test('keeps the outer Subscribed header and a distinct cohort header in mixed mode', async ({
   mount,

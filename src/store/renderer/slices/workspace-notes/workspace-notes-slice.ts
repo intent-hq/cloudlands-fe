@@ -292,9 +292,10 @@ export const noteAttributionInvalidated = createAction<[workspaceId: string, not
 export const updateNoteTitle = createAction<[workspaceId: string, noteId: string, title: string]>(
   'workspaceNotes/updateNoteTitle',
 );
+/** Resolves `false` when the daemon rejected the title and it was rolled back. */
 export const updateNoteTitlePersistRequested = createAsyncAction<
   [workspaceId: string, noteId: string, title: string],
-  void
+  boolean
 >('workspaceNotes/updateNoteTitlePersistRequested', 'workspaceNotes/updateNoteTitlePersistSettled');
 
 /** Saga trigger: create a new note */

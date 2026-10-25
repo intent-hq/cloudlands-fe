@@ -1146,10 +1146,23 @@
         'note',
         oldName,
         newName,
-        () => {
-          void appStore.dispatch(updateNoteTitlePersistRequested(workspaceId, noteId, newName));
-          // Update the tab title in the layout manager
+        async () => {
+          // Optimistic tab title; the persist action resolves `false` when the
+          // daemon rejected the title (the saga already rolled the note back and
+          // showed the error toast), so revert and skip the Undo toast (#5777).
           layoutManager.updateTabTitle(tab.id, newName);
+          let saved: boolean;
+          try {
+            saved = await appStore.dispatch(
+              updateNoteTitlePersistRequested(workspaceId, noteId, newName),
+            );
+          } catch (err) {
+            layoutManager.updateTabTitle(tab.id, oldName);
+            throw err;
+          }
+          if (saved) return true;
+          layoutManager.updateTabTitle(tab.id, oldName);
+          return false;
         },
         () => {
           void appStore.dispatch(updateNoteTitlePersistRequested(workspaceId, noteId, oldName));

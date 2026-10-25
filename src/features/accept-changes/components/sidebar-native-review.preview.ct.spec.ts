@@ -88,7 +88,9 @@ test('keyboard literal target and two original confirmations preserve cancellati
   const commit = page
     .getByRole('region', { name: 'Create a merge request' })
     .getByRole('button', { name: 'Commit', exact: true });
+  await expect(commit).toBeEnabled();
   await commit.focus();
+  await expect(commit).toBeFocused();
   await commit.press('Enter');
   const dialog = page.getByRole('dialog', { name: 'Commit', exact: true });
   await expect(dialog).toContainText('Original staged commit');

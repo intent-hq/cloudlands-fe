@@ -65,6 +65,7 @@
   import { OVERLAY_VIEWPORT_GUTTER } from '$lib/components/ui/overlay-positioning';
   import { ShortcutChip } from '$lib/components/ui/kbd';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
+  import { registerEnhancingComposer } from './enhance-escape';
   import type { StackedMenuGroup } from '$lib/components/ui/menu';
   import { parseImageDataUrl } from './image-data-url';
   import { isSupportedImageMimeType } from './image-attachment-format';
@@ -1344,6 +1345,13 @@
   $effect(() => {
     if (!contextFlyoutOpen) return;
     return pushEscapeLayer(closeContextFlyout);
+  });
+
+  // While enhancing, the editor is locked, so its own Escape handler never
+  // runs; a shared layer routes Escape to this composer (#5758).
+  $effect(() => {
+    if (!isEnhancing) return;
+    return registerEnhancingComposer(() => containerRef, handleCancelEnhance);
   });
 
   $effect(() => {

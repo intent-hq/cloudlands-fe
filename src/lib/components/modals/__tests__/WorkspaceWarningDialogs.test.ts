@@ -30,6 +30,8 @@ const { dispatch, selectorState } = vi.hoisted(() => ({
     bulkOpenPrCount: 0,
     bulkGuestCount: 0,
     bulkPreflightReady: false,
+    showRetireConfirm: false,
+    pendingRetireWorkspaceTitle: '',
   },
 }));
 
@@ -67,6 +69,8 @@ vi.mock('$store/renderer/slices/workspace-operations/workspace-operations-select
     selectBulkOpenPrCount: selector('bulkOpenPrCount'),
     selectBulkGuestCount: selector('bulkGuestCount'),
     selectBulkPreflightReady: selector('bulkPreflightReady'),
+    selectShowRetireConfirm: selector('showRetireConfirm'),
+    selectPendingRetireWorkspaceTitle: selector('pendingRetireWorkspaceTitle'),
   };
 });
 

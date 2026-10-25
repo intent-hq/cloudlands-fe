@@ -23,6 +23,7 @@
     doubleClick,
     oncontextmenu,
     archived = false,
+    retired = false,
     showRepository = true,
     showRepositoryOwner = true,
     groups,
@@ -36,12 +37,15 @@
     doubleClick: HomeDoubleClickOpener;
     oncontextmenu?: (event: MouseEvent | KeyboardEvent, workspace: Workspace) => void;
     archived?: boolean;
+    /** Retired chip: one Retired column (PROTOCOL §5.1 Retired workspaces). */
+    retired?: boolean;
     showRepository?: boolean;
     showRepositoryOwner?: boolean;
     groups?: { id: string; label: string; items: Workspace[] }[];
   } = $props();
   function column(workspace: Workspace): string {
     if (workspace.status === WorkspaceStatusEnum.Archived) return 'archived';
+    if (workspace.status === WorkspaceStatusEnum.Retired) return 'retired';
     const group = getHomeTriageGroup(workspace);
     return group === 'blocked'
       ? 'needs-you'
@@ -50,13 +54,16 @@
         : group;
   }
   const columns = $derived(
-    archived
-      ? [{ id: 'archived', label: m.home_filter_archived() }]
-      : [
-          { id: 'needs-you', label: m.home_filter_attention() },
-          { id: 'running', label: m.home_filter_running() },
-          { id: 'inactive', label: m.home_board_done_idle() },
-        ],
+    retired
+      ? [{ id: 'retired', label: m.home_filter_retired() }]
+      : archived
+        ? [{ id: 'archived', label: m.home_filter_archived() }]
+        : [
+            { id: 'needs-you', label: m.home_filter_attention() },
+            { id: 'running', label: m.home_filter_running() },
+            { id: 'waiting', label: m.home_filter_waiting() },
+            { id: 'inactive', label: m.home_board_done_idle() },
+          ],
   );
   const displayColumns = $derived(
     groups ??

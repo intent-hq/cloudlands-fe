@@ -35,6 +35,17 @@ describe('Home workspace status updates', () => {
   );
 });
 
+describe('Home script-running indicator', () => {
+  it('labels a script-only workspace Running and explains the script', async () => {
+    const view = render(HomeWorkspaceStatus, { workspace: { displayStatus: 'idle' } });
+    expect(view.getByRole('img', { name: /Idle/i })).toBeTruthy();
+    await view.rerender({ workspace: { displayStatus: 'idle', scriptsRunning: true } });
+    expect(view.getByRole('img', { name: /^Running\. A command script/i })).toBeTruthy();
+    await view.rerender({ workspace: { displayStatus: 'idle', scriptsRunning: false } });
+    expect(view.getByRole('img', { name: /Idle/i })).toBeTruthy();
+  });
+});
+
 describe('Home waiting indicator', () => {
   it('updates when idle waiting starts and clears, including absent and false flags', async () => {
     const view = render(HomeWorkspaceStatus, { workspace: { displayStatus: 'idle' } });

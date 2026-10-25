@@ -819,6 +819,23 @@
     };
   }
 
+  // Publish the sticky file header's height on its card so in-diff sticky UI
+  // (the line-selection toolbar) can pin directly below it (#5700).
+  function publishStickyHeaderHeight(node: HTMLElement) {
+    const card = node.parentElement;
+    if (!card) return {};
+    const publish = () =>
+      card.style.setProperty('--change-file-header-height', `${node.offsetHeight}px`);
+    const observer = new ResizeObserver(publish);
+    observer.observe(node);
+    publish();
+    return {
+      destroy() {
+        observer.disconnect();
+      },
+    };
+  }
+
   function openCurrentDiff(filePath: string, event?: MouseEvent) {
     if (nodeOwnedPaths) return;
     // Find the change object for this file to get full context
@@ -1955,7 +1972,7 @@
     class="mb-4 bg-sidebar border border-border rounded-lg overflow-clip transition-all duration-spring-slow ease-spring-slow motion-reduce:transition-none {isViewed
       ? 'opacity-50'
       : ''}"
-    style="overflow-anchor: none;"
+    style="overflow-anchor: none; --change-file-sticky-top: {stickyTop};"
     data-change-card-key={expandKey}
   >
     <!-- File Header (sticky within scroll container) -->
@@ -1972,6 +1989,7 @@
         : 'transparent'}"
       data-change-header-key={expandKey}
       data-change-sticky-top={stickyTop}
+      use:publishStickyHeaderHeight
       data-change-search-text={displayPath}
     >
       <Button
@@ -2149,8 +2167,9 @@
 
     <!-- Inline Diff (when expanded) - lazy loaded via Intersection Observer -->
     {#if expandedFiles.has(expandKey)}
+      <!-- The panel is the scroll container: let in-diff sticky UI pin to it (#5700). -->
       <div
-        class="border-t border-border"
+        class="border-t border-border [&_.tracked-change-diff-viewer]:overflow-visible!"
         transition:safeDisclosureTransition={{ tier: 'moderate' }}
         use:observeVisibility={expandKey}
       >

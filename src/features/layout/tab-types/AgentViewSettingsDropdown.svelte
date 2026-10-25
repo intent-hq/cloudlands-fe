@@ -1,4 +1,5 @@
 <script lang="ts">
+  import DesktopPermissionMenu from '$features/desktop/renderer/DesktopPermissionMenu.svelte';
   import Fa from 'svelte-fa';
   import { faSliders } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
@@ -11,7 +12,11 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
 
-  let { embedded = false }: { embedded?: boolean } = $props();
+  let {
+    embedded = false,
+    workspaceId,
+    agentId,
+  }: { embedded?: boolean; workspaceId?: string; agentId?: string } = $props();
   const fontStyle = selectAgentFontStyle();
   let open = $state(false);
   const fontLabel = $derived(
@@ -35,6 +40,14 @@
   </Menu.RadioGroup>
 {/snippet}
 
+{#snippet desktopPermission()}
+  {#if workspaceId && agentId}
+    {#key `${workspaceId}:${agentId}`}
+      <DesktopPermissionMenu {workspaceId} {agentId} />
+    {/key}
+  {/if}
+{/snippet}
+
 {#if embedded}
   <Menu.Sub>
     <Menu.SubTrigger>
@@ -45,6 +58,7 @@
       {@render fontItems()}
     </Menu.SubContent>
   </Menu.Sub>
+  {@render desktopPermission()}
 {:else}
   <Menu.Root bind:open>
     <Menu.Trigger>
@@ -65,6 +79,7 @@
     </Menu.Trigger>
     <Menu.Content align="end" class="w-56" aria-label={m.ui_viewSettings_font_label()}>
       {@render fontItems()}
+      {@render desktopPermission()}
     </Menu.Content>
   </Menu.Root>
 {/if}

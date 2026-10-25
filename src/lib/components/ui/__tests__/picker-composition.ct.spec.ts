@@ -1,4 +1,4 @@
-import { expect, test } from '../../../../test/ct-test';
+import { expect, expectNoAnimations, test } from '../../../../test/ct-test';
 import type { Locator } from '@playwright/test';
 import ButtonHarness from '../button/ButtonHarness.svelte';
 import MenuHarness from '../menu/MenuTestHarness.svelte';
@@ -47,19 +47,12 @@ for (const portal of [false, true]) {
     const search = page.getByRole('searchbox');
     await search.fill('Bet');
     await expect(page.getByRole('option')).toHaveCount(1);
-    expect(
-      await menu.evaluate(
-        (element) =>
-          element.getAnimations({ subtree: true }).filter((animation) => {
-            const target = (animation.effect as KeyframeEffect)?.target;
-            return (
-              target instanceof HTMLElement &&
-              target.tagName === 'DIV' &&
-              !target.closest('[data-slot="menu-list-highlight"]')
-            );
-          }).length,
-      ),
-    ).toBe(0);
+    // Filtering must not animate the option rows (div targets). Control colour/focus
+    // transitions are out of scope, and the highlight's own glide is its contract.
+    await expectNoAnimations(menu, {
+      only: 'div',
+      ignore: [{ within: '[data-slot="menu-list-highlight"]' }],
+    });
     await search.press('Enter');
     await expect(page.getByTestId('supplement-result')).toHaveText(
       JSON.stringify({ value: 'beta', changes: 1, actions: 1 }),
