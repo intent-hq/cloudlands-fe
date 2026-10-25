@@ -6324,11 +6324,16 @@
     }
   }
 
-  // Listen for resend message event (Alt+Enter keyboard shortcut)
+  // Listen for resend message event (Alt+Enter keyboard shortcut). The layout
+  // broadcasts the event to every active panel, so only the focused chat
+  // regenerates when several are visible (split view, Chief alongside an agent
+  // tab). `isChatFocused` is read at event time, not tracked by this effect, so
+  // the listener's lifecycle still follows `isActive` alone.
   $effect(() => {
     if (!isActive || typeof window === 'undefined') return;
 
     const handleResendEvent = () => {
+      if (!isChatFocused) return;
       handleResendLastMessage();
     };
 
