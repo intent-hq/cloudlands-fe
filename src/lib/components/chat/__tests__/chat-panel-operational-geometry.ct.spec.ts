@@ -34,7 +34,14 @@ for (const theme of ['light', 'dark'] as const) {
           await message.getByTestId('response-group-disclosure').click();
           await message.evaluate((node) => node.scrollIntoView({ block: 'center' }));
           const rows = message.locator('[data-chat-operational-row]');
-          await expect(rows).toHaveCount(messageId === 'assistant-streaming' ? 21 : 20);
+          // The expanded group's child rows join through the operational row
+          // window: a layout read/write pass, then at most four admissions per
+          // frame. That pipeline is frame-bound, so a starved CI runner can take
+          // longer than the default 5 s to admit every row; a row that never
+          // admits still fails.
+          await expect(rows).toHaveCount(messageId === 'assistant-streaming' ? 21 : 20, {
+            timeout: 15_000,
+          });
           const groupContent = message.locator('[data-operational-expanded-content]').first();
           await groupContent.evaluate(async (element) => {
             await Promise.all(
