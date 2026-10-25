@@ -29,6 +29,7 @@ import {
   applyNoteDeleted,
   applyNoteUpdated,
   createNote,
+  createNotePersistRequested,
   deleteNote,
   loadWorkspaceNotesSucceeded,
   readNoteRequested,
@@ -232,6 +233,44 @@ describe('notesWriteSaga', () => {
       addOptimisticNote(WS, created),
     ]);
     expect(run.getState().byWorkspaceId[WS]?.notes.ids.map(String)).toEqual([NOTE, 'note-created']);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('opens the note the daemon created, not a concurrently created one (#4780)', async () => {
+    const agentNote = note({ id: NoteId('n-agent'), title: 'Agent note', content: '' });
+    const mine = note({ id: NoteId('n-mine'), title: 'New Note', content: '' });
+    vi.spyOn(appClient.notes, 'create').mockResolvedValue({ success: true, id: 'n-mine' });
+    vi.spyOn(appClient.notes, 'list').mockResolvedValue([note(), agentNote, mine]);
+    const run = harness();
+
+    run.channel.put(createNoteRequested(WS, { panelLayoutId: WS, panelId: 'working-panel' }));
+    await settle();
+
+    const marked = run.actions.filter((action) => action.type === markNoteRead.type);
+    expect(marked).toEqual([markNoteRead(WS, 'n-mine')]);
+    const opened = run.actions.filter((action) => action.type === openTab.type) as ReturnType<
+      typeof openTab
+    >[];
+    expect(opened.map((action) => action.payload.tab.noteId)).toEqual(['n-mine']);
+    expect(run.actions).toContainEqual(addOptimisticNote(WS, mine));
+    expect(run.actions).not.toContainEqual(addOptimisticNote(WS, agentNote));
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('resolves createNotePersistRequested to the daemon id even when the relist lags (#4780)', async () => {
+    const agentNote = note({ id: NoteId('n-agent'), title: 'Agent note', content: '' });
+    vi.spyOn(appClient.notes, 'create').mockResolvedValue({ success: true, id: 'n-mine' });
+    vi.spyOn(appClient.notes, 'list').mockResolvedValue([note(), agentNote]);
+    const run = harness();
+
+    const request = createNotePersistRequested(WS, { title: 'Fresh', content: '' });
+    run.channel.put(request);
+    await settle();
+
+    expect(run.actions).toContainEqual(request.success('n-mine'));
+    expect(run.actions).not.toContainEqual(addOptimisticNote(WS, agentNote));
     run.task.cancel();
     await run.task.toPromise();
   });
