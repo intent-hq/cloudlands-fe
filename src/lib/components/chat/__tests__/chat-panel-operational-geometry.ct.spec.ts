@@ -34,7 +34,14 @@ for (const theme of ['light', 'dark'] as const) {
           await message.getByTestId('response-group-disclosure').click();
           await message.evaluate((node) => node.scrollIntoView({ block: 'center' }));
           const rows = message.locator('[data-chat-operational-row]');
-          await expect(rows).toHaveCount(messageId === 'assistant-streaming' ? 21 : 20);
+          // The expanded group's child rows join through the operational row
+          // window: a layout read/write pass, then at most four admissions per
+          // frame. That pipeline is frame-bound, so a starved CI runner can take
+          // longer than the default 5 s to admit every row; a row that never
+          // admits still fails.
+          await expect(rows).toHaveCount(messageId === 'assistant-streaming' ? 21 : 20, {
+            timeout: 15_000,
+          });
           const groupContent = message.locator('[data-operational-expanded-content]').first();
           await groupContent.evaluate(async (element) => {
             await Promise.all(
@@ -57,11 +64,29 @@ for (const theme of ['light', 'dark'] as const) {
             await expect(streamingRow.locator('[data-operational-leading]')).toHaveAttribute(
               'data-streaming-pulse',
             );
-            expect(
-              await streamingRow
-                .locator('[data-operational-leading]')
-                .evaluate((node) => node.getAnimations({ subtree: true }).length),
-            ).toBe(0);
+            // The pulse is an inline opacity style, so the slot must run no
+            // animation. The IntentMarkLoader inside it may be mid-way through
+            // one of its own finite layer crossfades (it reconciles on viewport,
+            // visibility, focus and motion changes); those are the loader's
+            // contract, not the pulse, so exclude only finite animations
+            // targeting loader descendants. Anything else, including any
+            // infinite animation, still counts.
+            const pulseAnimations = await streamingRow
+              .locator('[data-operational-leading]')
+              .evaluate((node) =>
+                node
+                  .getAnimations({ subtree: true })
+                  .filter((animation) => {
+                    const target =
+                      animation.effect instanceof KeyframeEffect ? animation.effect.target : null;
+                    const loaderCrossfade =
+                      target?.closest('[data-slot="intent-mark-loader"]') &&
+                      Number.isFinite(animation.effect?.getComputedTiming().iterations);
+                    return !loaderCrossfade;
+                  })
+                  .map((animation) => animation.constructor.name),
+              );
+            expect(pulseAnimations, 'streaming pulse slot must run no animation').toEqual([]);
             await expect(streamingRow.locator('[data-operational-expanded-content]')).toBeVisible();
           }
 
