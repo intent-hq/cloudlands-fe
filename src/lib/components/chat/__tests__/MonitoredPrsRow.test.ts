@@ -420,17 +420,23 @@ describe('MonitoredPrsRow', () => {
     expect(screen.queryByTestId('monitored-prs-row')).toBeNull();
   });
 
-  it.each([
-    ['loading', 'status'],
-    ['failed', 'alert'],
-  ] as const)('renders its own %s state when the initial list has not settled', (status, role) => {
-    snapshotState.status = status;
+  it('renders nothing while the initial list is still loading', () => {
+    snapshotState.status = 'loading';
     monitorsState.monitors = [];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    const row = screen.getByRole(role);
+    expect(screen.queryByTestId('pr-monitors-snapshot-status')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('renders its own failed state when the initial list could not be read', () => {
+    snapshotState.status = 'failed';
+    monitorsState.monitors = [];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const row = screen.getByRole('alert');
     expect(row.getAttribute('data-testid')).toBe('pr-monitors-snapshot-status');
-    expect(row.getAttribute('data-snapshot-status')).toBe(status);
+    expect(row.getAttribute('data-snapshot-status')).toBe('failed');
   });
 
   it('renders 4+ digit PR numbers without digit grouping', () => {
