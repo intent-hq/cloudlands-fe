@@ -65,6 +65,7 @@
   import { OVERLAY_VIEWPORT_GUTTER } from '$lib/components/ui/overlay-positioning';
   import { ShortcutChip } from '$lib/components/ui/kbd';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
+  import { registerEnhancingComposer } from './enhance-escape';
   import type { StackedMenuGroup } from '$lib/components/ui/menu';
   import { parseImageDataUrl } from './image-data-url';
   import { isSupportedImageMimeType } from './image-attachment-format';
@@ -1346,19 +1347,11 @@
     return pushEscapeLayer(closeContextFlyout);
   });
 
-  // While enhancing, the editor is locked (non-editable), so ProseMirror skips
-  // its keydown handler and the browser usually moves focus to the body.
-  // Cancel from an Escape layer instead, scoped to this composer or to an
-  // unfocused document so another panel's Escape is left alone (#5758).
+  // While enhancing, the editor is locked, so its own Escape handler never
+  // runs; a shared layer routes Escape to this composer (#5758).
   $effect(() => {
     if (!isEnhancing) return;
-    return pushEscapeLayer((event) => {
-      const target = event.target;
-      if (target instanceof Node && target !== document.body && !containerRef?.contains(target)) {
-        return false;
-      }
-      handleCancelEnhance();
-    });
+    return registerEnhancingComposer(() => containerRef, handleCancelEnhance);
   });
 
   $effect(() => {

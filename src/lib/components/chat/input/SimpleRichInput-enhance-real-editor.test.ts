@@ -4,7 +4,7 @@
 // (intent-hq/intent#5758).
 import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import type { Editor } from '@tiptap/core';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { derived, readable } from 'svelte/store';
@@ -521,6 +521,62 @@ describe('SimpleRichInput Enhance prompt with the real editor (intent-hq/intent#
 
     request.resolve({ enhanced: 'An enhanced, clearer prompt' });
     await waitFor(() => expect(prose.textContent).toBe('An enhanced, clearer prompt'));
+  });
+
+  it('routes Escape to the composer it was pressed in when two are enhancing', async () => {
+    const first = deferred<{ enhanced: string }>();
+    const second = deferred<{ enhanced: string }>();
+    enhancePromptMock.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const a = await renderComposer();
+    const b = await renderComposer();
+
+    async function enhanceFromMenu(container: HTMLElement) {
+      await fireEvent.click(within(container).getByTestId('prompt-actions-trigger'));
+      await fireEvent.click(await screen.findByRole('menuitem', { name: /Enhance prompt/i }));
+    }
+    await enhanceFromMenu(a.view.container);
+    await waitFor(() => expect(enhancePromptMock).toHaveBeenCalledTimes(1));
+    await enhanceFromMenu(b.view.container);
+    await waitFor(() => expect(enhancePromptMock).toHaveBeenCalledTimes(2));
+    await settle();
+    expect(a.prose.getAttribute('contenteditable')).toBe('false');
+    expect(b.prose.getAttribute('contenteditable')).toBe('false');
+
+    // Escape in the EARLIER composer (beneath the later one's layer) cancels only it.
+    await fireEvent.keyDown(a.prose, { key: 'Escape' });
+    await waitFor(() => expect(a.prose.getAttribute('contenteditable')).toBe('true'));
+    expect(b.prose.getAttribute('contenteditable')).toBe('false');
+
+    first.resolve({ enhanced: 'Late result for A' });
+    second.resolve({ enhanced: 'Result for B' });
+    await waitFor(() => expect(b.prose.textContent).toBe('Result for B'));
+    await settle();
+    expect(a.prose.textContent).toBe(ORIGINAL);
+  });
+
+  it('cancels only the later composer when Escape is pressed in it', async () => {
+    const first = deferred<{ enhanced: string }>();
+    const second = deferred<{ enhanced: string }>();
+    enhancePromptMock.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const a = await renderComposer();
+    const b = await renderComposer();
+
+    for (const view of [a.view, b.view]) {
+      await fireEvent.click(within(view.container).getByTestId('prompt-actions-trigger'));
+      await fireEvent.click(await screen.findByRole('menuitem', { name: /Enhance prompt/i }));
+    }
+    await waitFor(() => expect(enhancePromptMock).toHaveBeenCalledTimes(2));
+    await settle();
+
+    await fireEvent.keyDown(b.prose, { key: 'Escape' });
+    await waitFor(() => expect(b.prose.getAttribute('contenteditable')).toBe('true'));
+    expect(a.prose.getAttribute('contenteditable')).toBe('false');
+
+    second.resolve({ enhanced: 'Late result for B' });
+    first.resolve({ enhanced: 'Result for A' });
+    await waitFor(() => expect(a.prose.textContent).toBe('Result for A'));
+    await settle();
+    expect(b.prose.textContent).toBe(ORIGINAL);
   });
 
   it('still discards a late result after Stop enhancing', async () => {
