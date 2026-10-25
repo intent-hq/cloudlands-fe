@@ -113,3 +113,101 @@ describe('scriptMonitorSaga lease reopen', () => {
     }
   });
 });
+
+async function advanceReconciliation() {
+  await vi.advanceTimersByTimeAsync(100);
+  await settle();
+}
+
+describe('scriptMonitorSaga selected-workspace preload', () => {
+  it('leases the first selected workspace immediately, before any card lease', async () => {
+    const h = createHarness('ws-A');
+    await settle();
+    try {
+      expect(subscribedWorkspaces()).toEqual(['ws-A']);
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+    expect(disposeOf(0)).toHaveBeenCalledOnce();
+  });
+
+  it('switches A to B immediately when the change lands outside the debounce window', async () => {
+    const h = createHarness('ws-A');
+    try {
+      await settle();
+      await advanceReconciliation();
+      h.dispatch(openWorkspaceTab('ws-B'));
+      await settle();
+      expect(disposeOf(0)).toHaveBeenCalledOnce();
+      expect(subscribedWorkspaces()).toEqual(['ws-A', 'ws-B']);
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+  });
+
+  it('coalesces a rapid flap into one trailing reconcile of the final workspace', async () => {
+    const h = createHarness('ws-A');
+    try {
+      await settle();
+      await vi.advanceTimersByTimeAsync(50);
+      h.dispatch(openWorkspaceTab('ws-B'));
+      await settle();
+      await vi.advanceTimersByTimeAsync(50);
+      h.dispatch(openWorkspaceTab('ws-C'));
+      await settle();
+      await vi.advanceTimersByTimeAsync(99);
+      expect(subscribedWorkspaces()).toEqual(['ws-A']);
+      await vi.advanceTimersByTimeAsync(1);
+      await settle();
+      expect(disposeOf(0)).toHaveBeenCalledOnce();
+      expect(subscribedWorkspaces()).toEqual(['ws-A', 'ws-C']);
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+  });
+
+  it('avoids churn when an A to B to A burst restores the live workspace', async () => {
+    const h = createHarness('ws-A');
+    try {
+      await settle();
+      await vi.advanceTimersByTimeAsync(50);
+      h.dispatch(openWorkspaceTab('ws-B'));
+      await settle();
+      await vi.advanceTimersByTimeAsync(50);
+      h.dispatch(openWorkspaceTab('ws-A'));
+      await settle();
+      await advanceReconciliation();
+      expect(subscribedWorkspaces()).toEqual(['ws-A']);
+      expect(disposeOf(0)).not.toHaveBeenCalled();
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+  });
+
+  it('shares tab and card leases and disposes only after the last owner leaves', async () => {
+    const h = createHarness('ws-A');
+    try {
+      await settle();
+      h.dispatch(scriptMonitorsSubscribeRequested('ws-A'));
+      await advanceReconciliation();
+      expect(subscribedWorkspaces()).toEqual(['ws-A']);
+
+      h.dispatch(openWorkspaceTab('ws-B'));
+      await settle();
+      expect(disposeOf(0)).not.toHaveBeenCalled();
+      h.dispatch(scriptMonitorsUnsubscribeRequested('ws-A'));
+      expect(disposeOf(0)).toHaveBeenCalledOnce();
+      h.dispatch(scriptMonitorsUnsubscribeRequested('ws-A'));
+      expect(disposeOf(0)).toHaveBeenCalledOnce();
+      expect(disposeOf(1)).not.toHaveBeenCalled();
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+    expect(disposeOf(1)).toHaveBeenCalledOnce();
+  });
+});
