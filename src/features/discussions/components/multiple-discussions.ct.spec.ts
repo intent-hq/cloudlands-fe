@@ -40,7 +40,7 @@ test('People plus retains a local composer, creates a group on first send, and r
   await expect(page.getByRole('option', { name: /^Alex(?:\s|$)/ })).toHaveCount(0);
   await picker.fill('Jordan');
   await page.getByRole('option', { name: /^Jordan(?:\s|$)/ }).click();
-  await picker.press('Escape');
+  await expect(picker).toHaveAttribute('aria-expanded', 'false');
   const composer = component.getByRole('textbox', { name: 'Message', exact: true });
   await composer.fill('Let’s review the new flow together.');
   expect((await calls(component)).filter((call) => call.method === 'discussion.send')).toHaveLength(
@@ -159,7 +159,7 @@ test('failed first send locks recipients and retry creates the original group wh
   await expect(picker).toBeEditable();
   await picker.fill('Morgan');
   await page.getByRole('option', { name: /^Morgan(?:\s|$)/ }).click();
-  await picker.press('Escape');
+  await expect(picker).toHaveAttribute('aria-expanded', 'false');
   const composer = component.getByRole('textbox', { name: 'Message', exact: true });
   await composer.fill('First message');
   await composer.press('Enter');
@@ -192,7 +192,7 @@ test('first-send completion promotes a closed composer before a fresh discussion
   await expect(picker).toBeEditable();
   await picker.fill('Alex');
   await page.getByRole('option', { name: /^Alex(?:\s|$)/ }).click();
-  await picker.press('Escape');
+  await expect(picker).toHaveAttribute('aria-expanded', 'false');
   const composer = component.getByRole('textbox', { name: 'Message', exact: true });
   await composer.fill('Sent while the pane closes');
   await composer.press('Enter');
@@ -239,7 +239,7 @@ for (const rejection of ['invalid', 'forbidden'] as const) {
     await expect(picker).toBeEditable();
     await picker.fill('Alex');
     await page.getByRole('option', { name: /^Alex(?:\s|$)/ }).click();
-    await picker.press('Escape');
+    await expect(picker).toHaveAttribute('aria-expanded', 'false');
     const composer = component.getByRole('textbox', { name: 'Message', exact: true });
     await composer.fill('Keep my message');
     await composer.press('Enter');
@@ -251,7 +251,7 @@ for (const rejection of ['invalid', 'forbidden'] as const) {
     await component.getByRole('button', { name: 'Remove Alex', exact: true }).click();
     await picker.fill('Jordan');
     await page.getByRole('option', { name: /^Jordan(?:\s|$)/ }).click();
-    await picker.press('Escape');
+    await expect(picker).toHaveAttribute('aria-expanded', 'false');
     await component.getByRole('button', { name: 'Send', exact: true }).click();
     await expect(component.locator('[data-discussion-recipients]')).toHaveCount(0);
     await expect(composer).toHaveValue('');
@@ -275,7 +275,7 @@ test('recipient search finds a login that differs from its display name', async 
   const option = page.getByRole('option', { name: /^Alex(?:\s|$)/ });
   await expect(option).toContainText('@river-runner');
   await option.click();
-  await picker.press('Escape');
+  await expect(picker).toHaveAttribute('aria-expanded', 'false');
   await expect(component.getByRole('button', { name: 'Remove Alex', exact: true })).toBeVisible();
   const queries = (await calls(component)).filter(
     (call) => call.method === 'discussion.recipients',
