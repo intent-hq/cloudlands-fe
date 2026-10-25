@@ -54,6 +54,7 @@ for (const preference of ['system', 'catalog'] as const) {
         })),
       );
       for (const dot of positions) {
+        // eslint-disable-next-line intent/no-one-shot-animation-count -- reduced motion must jump to the end without creating any animation.
         expect(dot.animations).toBe(0);
         expect(Math.abs(dot.remaining)).toBeLessThan(1);
       }

@@ -143,12 +143,22 @@ async function mountControls(
     },
     { theme, zoom, withAssistant },
   );
-  // Preserve the explicit counter-scale readiness assertion before geometry.
+  // The initial zoom IPC response is asynchronous; geometry requires its state
+  // and the corresponding Svelte update before a baseline can be measured.
   await expect
     .poll(() =>
-      page
-        .locator('.window-title-bar')
-        .evaluate((element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).a),
+      page.evaluate(async () => {
+        const { store } = await import('/src/store/renderer/store.ts');
+        return store.state.userPreferences.zoomFactor;
+      }),
+    )
+    .toBe(zoom);
+  await expect
+    .poll(() =>
+      page.locator('.window-title-bar').evaluate((element) => {
+        const transform = getComputedStyle(element).transform;
+        return new DOMMatrixReadOnly(transform).a;
+      }),
     )
     .toBeCloseTo(1 / zoom, 5);
 }

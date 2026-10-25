@@ -18,6 +18,7 @@
   $effect(() => {
     if (!open || !panelRef) return;
     const panel = panelRef;
+    const initialFocus = document.activeElement;
     let focusMoved = panel.contains(document.activeElement);
     const preserveFocus = () => {
       focusMoved = true;
@@ -25,7 +26,13 @@
     document.addEventListener('focusin', preserveFocus);
     const timer = setTimeout(() => {
       document.removeEventListener('focusin', preserveFocus);
-      if (focusMoved || !panel.isConnected) return;
+      if (
+        focusMoved ||
+        !panel.isConnected ||
+        document.activeElement !== initialFocus ||
+        panel.contains(document.activeElement)
+      )
+        return;
       panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       const firstInput = panel.querySelector<HTMLElement>(
         'input:not([disabled]):not([type="hidden"]), textarea:not([disabled]), select:not([disabled])',

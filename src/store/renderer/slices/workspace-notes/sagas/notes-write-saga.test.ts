@@ -37,6 +37,7 @@ import {
   updateNote,
   updateNoteContent,
   updateNoteTitle,
+  updateNoteTitlePersistRequested,
   workspaceNotesReducer,
 } from '../workspace-notes-slice';
 import { NoteCapabilityUnknownError } from '$lib/client/live/live-notes-client';
@@ -248,7 +249,11 @@ describe('notesWriteSaga', () => {
     await settle();
 
     const marked = run.actions.filter((action) => action.type === markNoteRead.type);
-    expect(marked).toEqual([markNoteRead(WS, 'n-mine')]);
+    // `markNoteRead` stamps `now` at creation time, so compare everything but the clock.
+    const expectedMark = markNoteRead(WS, 'n-mine');
+    expect(marked).toEqual([
+      { ...expectedMark, payload: { ...expectedMark.payload, now: expect.any(String) } },
+    ]);
     const opened = run.actions.filter((action) => action.type === openTab.type) as ReturnType<
       typeof openTab
     >[];
@@ -271,6 +276,37 @@ describe('notesWriteSaga', () => {
 
     expect(run.actions).toContainEqual(request.success('n-mine'));
     expect(run.actions).not.toContainEqual(addOptimisticNote(WS, agentNote));
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('resolves updateNoteTitlePersistRequested to false when the title save fails (#5777)', async () => {
+    vi.spyOn(appClient.notes, 'updateMetadata').mockResolvedValue({
+      success: false,
+      error: 'disk full',
+    });
+    const run = harness();
+
+    const request = updateNoteTitlePersistRequested(WS, NOTE, 'New');
+    run.channel.put(request);
+    await vi.waitFor(() => expect(run.actions).toContainEqual(request.success(false)));
+
+    expect(run.getState().byWorkspaceId[WS]?.notes.map[NOTE]?.title).toBe('Old');
+    expect(notify.error).toHaveBeenCalledTimes(1);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('resolves updateNoteTitlePersistRequested to true when the title save succeeds', async () => {
+    vi.spyOn(appClient.notes, 'updateMetadata').mockResolvedValue({ success: true });
+    const run = harness();
+
+    const request = updateNoteTitlePersistRequested(WS, NOTE, 'New');
+    run.channel.put(request);
+    await vi.waitFor(() => expect(run.actions).toContainEqual(request.success(true)));
+
+    expect(run.getState().byWorkspaceId[WS]?.notes.map[NOTE]?.title).toBe('New');
+    expect(notify.error).not.toHaveBeenCalled();
     run.task.cancel();
     await run.task.toPromise();
   });

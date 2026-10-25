@@ -50,6 +50,22 @@ describe('reversible-actions', () => {
       expect(notify.success).toHaveBeenCalledWith('Test action');
     });
 
+    it('returns false without any toast when the action resolves false (#5777)', async () => {
+      const onUndo = vi.fn();
+      const result = await reversibleActions.execute({
+        id: 'test-reported-failure',
+        message: 'Renamed',
+        action: async () => false,
+        onUndo,
+      });
+
+      expect(result).toBe(false);
+      expect(notify.warning).not.toHaveBeenCalled();
+      expect(notify.success).not.toHaveBeenCalled();
+      expect(notify.error).not.toHaveBeenCalled();
+      expect(onUndo).not.toHaveBeenCalled();
+    });
+
     it('should show undo option when onUndo is provided', async () => {
       const action = vi.fn();
       const onUndo = vi.fn();
