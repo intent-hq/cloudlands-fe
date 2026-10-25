@@ -1,5 +1,4 @@
 import { store } from '../../../store';
-import { appClient } from '$lib/client';
 import { applyWorkspaceReminderAcknowledgement } from '$shared/utils/workspace-attention-reminder';
 import { selectPrincipalActionContext } from '../../principal/principal-selectors';
 import {
