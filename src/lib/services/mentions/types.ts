@@ -202,8 +202,11 @@ export interface MentionSystemConfig {
   /**
    * Rank results by kind before score (see `MENTION_KIND_ORDER`); `'*'` marks
    * the slot for unlisted kinds. Empty or omitted sorts by score alone.
+   * When set, `maxResultsPerKind` replaces the global `maxResults` cap.
    */
   typeOrder?: readonly (MentionType | '*')[];
+  /** Per-kind result cap applied under `typeOrder` (default 20). */
+  maxResultsPerKind?: number;
 }
 
 // Special mention items — localized copy uses getters so it re-evaluates with

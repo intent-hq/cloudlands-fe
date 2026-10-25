@@ -76,21 +76,62 @@ describe('DebouncedSearchService kind order', () => {
     search: async () => items,
   });
 
-  it('ranks by kind before score and caps results after ordering so unscored notes survive', async () => {
+  it('ranks by kind before score and caps per kind so no kind is dropped from the tail', async () => {
     const service = new DebouncedSearchService({ typeOrder: MENTION_KIND_ORDER, maxResults: 50 });
     const results = await service.search(
       '',
       [
         providerOf('specialist', candidates('specialist', 10, 0.8)),
-        providerOf('file', candidates('file', 45, 0.5)),
+        providerOf('terminal', candidates('terminal', 10)),
+        providerOf('script', candidates('script', 10)),
+        providerOf('folder', candidates('folder', 10)),
+        providerOf('file', candidates('file', 18, 0.5)),
+        providerOf('agent', candidates('agent', 10, 0.7)),
         providerOf('note', candidates('note', 10)),
       ],
       context,
     );
 
-    expect(results).toHaveLength(50);
-    expect(results.slice(0, 10).every((r) => r.type === 'note')).toBe(true);
-    expect(results.slice(10).every((r) => r.type === 'file')).toBe(true);
+    const kinds = [...new Set(results.map((r) => r.type))];
+    expect(kinds).toEqual(['note', 'agent', 'file', 'folder', 'script', 'terminal', 'specialist']);
+    expect(results.filter((r) => r.type === 'note')).toHaveLength(10);
+    expect(results.filter((r) => r.type === 'specialist')).toHaveLength(10);
+    expect(results).toHaveLength(78);
+    service.destroy();
+  });
+
+  it('caps a large member roster so later kinds stay visible', async () => {
+    const service = new DebouncedSearchService({ typeOrder: MENTION_KIND_ORDER });
+    const results = await service.search(
+      '',
+      [
+        providerOf('member', candidates('member', 80, 0.8)),
+        providerOf('note', candidates('note', 3)),
+        providerOf('specialist', candidates('specialist', 2, 0.8)),
+      ],
+      context,
+    );
+
+    expect(results.filter((r) => r.type === 'member')).toHaveLength(20);
+    expect(results.slice(20).map((r) => r.type)).toEqual([
+      'note',
+      'note',
+      'note',
+      'specialist',
+      'specialist',
+    ]);
+    service.destroy();
+  });
+
+  it('keeps the global cap on the score-only path', async () => {
+    const service = new DebouncedSearchService({ maxResults: 5 });
+    const results = await service.search(
+      '',
+      [providerOf('file', candidates('file', 9, 0.5))],
+      context,
+    );
+
+    expect(results).toHaveLength(5);
     service.destroy();
   });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MENTION_KIND_ORDER, sortByKindThenScore } from './kind-order';
+import { capPerKind, MENTION_KIND_ORDER, sortByKindThenScore } from './kind-order';
 import type { MentionCandidate, MentionType } from './types';
 
 const candidate = (type: MentionType, id: string, score?: number): MentionCandidate => ({
@@ -71,5 +71,22 @@ describe('sortByKindThenScore', () => {
     );
 
     expect(sorted.map((c) => c.type)).toEqual(['specialist', 'note']);
+  });
+});
+
+describe('capPerKind', () => {
+  it('keeps the first N of each kind in order', () => {
+    const capped = capPerKind(
+      [
+        candidate('note', 'n1'),
+        candidate('note', 'n2'),
+        candidate('note', 'n3'),
+        candidate('file', 'f1'),
+        candidate('file', 'f2'),
+      ],
+      2,
+    );
+
+    expect(capped.map((c) => c.id)).toEqual(['n1', 'n2', 'f1', 'f2']);
   });
 });

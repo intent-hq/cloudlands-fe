@@ -137,8 +137,9 @@ export class MentionSystem {
   private readonly cachedResults: Map<string, CacheEntry> = new Map();
 
   constructor(config: MentionSystemConfig = {}) {
-    this.config = config;
-    this.searchService = new DebouncedSearchService({ typeOrder: MENTION_KIND_ORDER, ...config });
+    // Resolve the kind order once so the async and sync paths always agree.
+    this.config = { ...config, typeOrder: config.typeOrder ?? MENTION_KIND_ORDER };
+    this.searchService = new DebouncedSearchService(this.config);
     this.breadcrumbController = new BreadcrumbController();
   }
 
@@ -238,10 +239,7 @@ export class MentionSystem {
     results.push(...this.filterCandidates(COMMON_FOLDERS, queryLower, 2));
 
     // Sort by kind, then score, and return top results
-    return sortByKindThenScore(results, this.config.typeOrder ?? MENTION_KIND_ORDER).slice(
-      0,
-      MAX_SEARCH_RESULTS,
-    );
+    return sortByKindThenScore(results, this.config.typeOrder ?? []).slice(0, MAX_SEARCH_RESULTS);
   }
 
   /**

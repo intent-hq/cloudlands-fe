@@ -1,7 +1,7 @@
 import { logger } from '$lib/utils/client-logger';
 import { fuzzyMatch, pathFuzzyMatch } from './fuzzy-matcher';
 import { searchCacheKey } from './search-cache-key';
-import { sortByKindThenScore } from './kind-order';
+import { capPerKind, sortByKindThenScore } from './kind-order';
 
 /**
  * Debounced Search Service with Caching and Cancellation
@@ -32,6 +32,7 @@ export class DebouncedSearchService {
       enableLivePreview: config.enableLivePreview ?? true,
       enableCollaboration: config.enableCollaboration ?? false,
       typeOrder: config.typeOrder ?? [],
+      maxResultsPerKind: config.maxResultsPerKind ?? 20,
     };
   }
 
@@ -119,12 +120,15 @@ export class DebouncedSearchService {
           // Apply fuzzy matching to improve ranking
           const fuzzyMatched = this.applyFuzzyMatching(query, validated);
 
-          // Sort by kind (when configured), then score, before capping so a
-          // low-scored kind ranked early is never cut by the limit.
+          // Sort by kind (when configured), then score.
           const sorted = sortByKindThenScore(fuzzyMatched, this.config.typeOrder);
 
-          // Limit results
-          const limited = sorted.slice(0, this.config.maxResults);
+          // Limit results. Under kind ordering a global cap would drop whole
+          // late-ranked kinds, so cap each kind instead.
+          const limited =
+            this.config.typeOrder.length > 0
+              ? capPerKind(sorted, this.config.maxResultsPerKind)
+              : sorted.slice(0, this.config.maxResults);
 
           // Cache results
           this.cache.set(executingCacheKey, {
