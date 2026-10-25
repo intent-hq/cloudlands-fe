@@ -29,12 +29,12 @@ type CtPage = Parameters<Parameters<typeof test.beforeEach>[1]>[0]['page'];
 type Locator = ReturnType<CtPage['locator']>;
 
 /** Finite animations no longer than this (ms, including delay) are instant, not motion. */
-export const INSTANT_ANIMATION_MS = 1;
+const INSTANT_ANIMATION_MS = 1;
 
 /** Default ceiling for a "short" fade that `ignore` may skip. */
-export const DEFAULT_IGNORED_FADE_MS = 400;
+const DEFAULT_IGNORED_FADE_MS = 400;
 
-export interface IgnoredAnimations {
+interface IgnoredAnimations {
   /**
    * Selector for the component that owns the fades, e.g. `'[data-slot="intent-mark-loader"]'`.
    * Matches an animation whose target is that element or inside it.
@@ -47,7 +47,7 @@ export interface IgnoredAnimations {
   maxDurationMs?: number;
 }
 
-export interface AnimationQueryOptions {
+interface AnimationQueryOptions {
   /** Short finite fades to skip, each scoped to a named component. */
   ignore?: readonly IgnoredAnimations[];
   /** Include descendants' animations (default true). */
@@ -60,7 +60,7 @@ export interface AnimationQueryOptions {
   includeFinished?: boolean;
 }
 
-export interface ActiveAnimation {
+interface ActiveAnimation {
   /** Short selector-like description of the animated element (plus pseudo-element). */
   target: string;
   /** `CSSTransition`, `CSSAnimation` or `Animation` (Web Animations API). */

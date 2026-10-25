@@ -238,11 +238,4 @@ export const test = baseTest.extend<CtHarnessTestFixtures, CtHarnessWorkerFixtur
 
 export { expect };
 
-export {
-  activeAnimations,
-  expectAnimationsToSettle,
-  expectNoAnimations,
-  type ActiveAnimation,
-  type AnimationQueryOptions,
-  type IgnoredAnimations,
-} from './ct-animations';
+export { activeAnimations, expectAnimationsToSettle, expectNoAnimations } from './ct-animations';
