@@ -1276,7 +1276,8 @@
           variant="plain"
           bind:ref={statusImageButtonRef}
           type="button"
-          class="block w-full cursor-zoom-in bg-transparent border-none p-0
+          wrapContent={false}
+          class="flex h-auto w-full cursor-zoom-in bg-transparent border-none p-0
                  focus-visible:outline focus-visible:outline-1
                  focus-visible:outline-primary-ink/50 focus-visible:outline-offset-1"
           onclick={() => (statusImageLightboxOpen = true)}
@@ -1286,7 +1287,7 @@
           <img
             src={statusImageUrl}
             alt={m.workspace_progressCard_statusImage_alt()}
-            class="w-full max-h-48 object-contain rounded-md border border-border"
+            class="block w-full max-h-48 object-contain rounded-md border border-border"
             onerror={(e) =>
               (failedStatusImageUrl = e.currentTarget.getAttribute('src') ?? statusImageUrl)}
           />
