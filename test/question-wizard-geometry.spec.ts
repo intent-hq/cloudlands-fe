@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import type { ViteDevServer } from 'vite';
 import { createServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
+import { prepareRootHarnessModules } from './root-harness-import';
 
 // Each test mounts a fresh host; report every contract failure independently.
 test.describe.configure({ mode: 'default' });
@@ -9,10 +10,12 @@ test.describe.configure({ mode: 'default' });
 let server: ViteDevServer;
 let baseUrl: string;
 
-test.beforeAll(async () => {
+test.beforeAll(async ({}, workerInfo) => {
   test.setTimeout(120_000);
   server = await createServer({
-    cacheDir: viteHarnessCacheDir('question-wizard-geometry'),
+    cacheDir: viteHarnessCacheDir('question-wizard-geometry', {
+      workerIndex: workerInfo.workerIndex,
+    }),
     server: { host: '127.0.0.1', port: 0, strictPort: false, watch: { ignored: ['**/*'] } },
   });
   await server.listen();
@@ -41,7 +44,10 @@ async function mountWizard(
   const zoom = options.zoom ?? 1;
   await page.setViewportSize(viewport);
   await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: options.theme ?? 'light' });
-  await page.goto(`${baseUrl}src/app.html`);
+  await prepareRootHarnessModules(page, baseUrl, [
+    '/@id/svelte',
+    '/test/fixtures/QuestionWizardGeometryHost.svelte',
+  ]);
   await page.addStyleTag({ url: `${baseUrl}src/app.css` });
   await page.evaluate(
     async ({ props: hostProps, theme, zoom: scale }) => {
