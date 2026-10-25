@@ -1184,10 +1184,14 @@ function* createNewNote(
     try {
       const notes: Note[] = yield* call(relistWorkspaceNotes, workspaceId);
       keepOptimistic = false;
-      const created = notes.find((note) => !before.has(String(note.id)));
-      if (!created) return undefined;
-      yield* put(addOptimisticNote(workspaceId, created));
-      return String(created.id);
+      // Prefer the daemon-returned id: diffing the relist against the pre-create
+      // snapshot can pick a note another agent/window created concurrently
+      // (intent#4780). The diff is only a fallback for responses without an id.
+      const created = result.id
+        ? notes.find((note) => String(note.id) === result.id)
+        : notes.find((note) => !before.has(String(note.id)));
+      if (created) yield* put(addOptimisticNote(workspaceId, created));
+      return created ? String(created.id) : result.id;
     } catch (error) {
       keepOptimistic = false;
       logger.error('Failed to refetch notes after creating a note', error);
