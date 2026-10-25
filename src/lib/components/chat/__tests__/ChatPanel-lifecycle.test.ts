@@ -5227,6 +5227,23 @@ describe('ChatPanel mounted lifecycle', () => {
     mocks.agentMessages.set([
       { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
     ]);
+    mocks.agentSubscriptionUIEntries['workspace-a:agent-with-visible-subscription'] = {
+      subscriptions: [
+        {
+          id: 'watch-worker',
+          description: 'Waiting for worker',
+          agentId: 'agent-with-visible-subscription',
+          actorIds: ['worker'],
+          eventTypes: ['agent:idle'],
+          createdAt: '2026-01-01T00:00:00Z',
+        },
+      ],
+      delegationGroups: [],
+      agentStatuses: {},
+      waitingState: 'waiting',
+      wokenUpInfo: null,
+      snapshotStatus: 'ready',
+    };
     const currentWorkspace = workspace('workspace-a');
     const view = render(ChatPanel, {
       props: {

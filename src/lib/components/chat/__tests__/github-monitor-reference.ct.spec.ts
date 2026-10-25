@@ -28,7 +28,10 @@ for (const width of [360, 720]) {
       const summary = component.getByTestId('monitored-pr-summary');
       if (referenceState === 'completed') {
         await expect(summary).toHaveCount(0);
-      } else if (referenceState === 'loading' || referenceState === 'failed') {
+      } else if (referenceState === 'loading') {
+        await expect(summary).toHaveCount(0);
+        await expect(component.getByTestId('pr-monitors-snapshot-status')).toHaveCount(0);
+      } else if (referenceState === 'failed') {
         await expect(component.getByTestId('pr-monitors-snapshot-status')).toHaveAttribute(
           'data-snapshot-status',
           referenceState,
