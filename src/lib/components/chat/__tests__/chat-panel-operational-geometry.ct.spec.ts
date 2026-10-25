@@ -57,11 +57,20 @@ for (const theme of ['light', 'dark'] as const) {
             await expect(streamingRow.locator('[data-operational-leading]')).toHaveAttribute(
               'data-streaming-pulse',
             );
-            expect(
-              await streamingRow
-                .locator('[data-operational-leading]')
-                .evaluate((node) => node.getAnimations({ subtree: true }).length),
-            ).toBe(0);
+            // The pulse is an inline opacity style, so no animation may persist
+            // under the slot. Its IntentMarkLoader crossfades for settleMs (two
+            // Web Animations) whenever its IntersectionObserver re-admits it
+            // after the scrollIntoView above; poll past that transient instead
+            // of sampling once. A persistent animation still never reaches 0.
+            await expect
+              .poll(
+                () =>
+                  streamingRow
+                    .locator('[data-operational-leading]')
+                    .evaluate((node) => node.getAnimations({ subtree: true }).length),
+                { message: 'streaming pulse slot must settle with no running animations' },
+              )
+              .toBe(0);
             await expect(streamingRow.locator('[data-operational-expanded-content]')).toBeVisible();
           }
 
