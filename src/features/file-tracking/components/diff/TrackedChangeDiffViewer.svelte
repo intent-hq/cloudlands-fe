@@ -1117,6 +1117,28 @@
     flex-direction: column;
   }
 
+  /* Pin the line-selection toolbar below the nearest sticky file header while
+     its file scrolls (#5700). Hosts that render a sticky header above the diff
+     publish its offset; standalone hosts pin to the viewer's own scroll top.
+     The sticky box stays inside .diff-wrapper, so it never covers a later file. */
+  .selection-action-bar {
+    position: sticky;
+    top: calc(var(--change-file-sticky-top, 0px) + var(--change-file-header-height, 0px));
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.75rem;
+    background: var(--color-sidebar);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  /* Contain the diff's internal z-indexes so they paint below the toolbar. */
+  .diff-content {
+    position: relative;
+    z-index: 0;
+  }
+
   /* Ensure the diff viewer itself can scroll */
   .tracked-change-diff-viewer :global(.pure-diff) {
     flex: 1;
