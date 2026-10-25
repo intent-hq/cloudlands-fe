@@ -145,11 +145,34 @@ describe('Alt+Enter resend targets only the focused chat (intent-hq/intent#4618)
     expect(await resend()).toEqual([agentIds[1]]);
   });
 
-  it('regenerates only the panel-system focused chat', async () => {
+  it('does not regenerate on a retained panel selection while focus is on the body', async () => {
     mountPanel(agentIds[0], { isActive: true, isPanelFocused: false });
     mountPanel(agentIds[1], { isActive: true, isPanelFocused: true });
     await tick();
+    (document.activeElement as HTMLElement | null)?.blur();
+    expect(document.activeElement).toBe(document.body);
+    expect(await resend()).toEqual([]);
+  });
+
+  it('regenerates only the Chief card when focus moves there from a selected agent chat', async () => {
+    mountPanel(agentIds[0], { isActive: true, isPanelFocused: true });
+    const chief = mountPanel(agentIds[1], { isActive: true });
+    await tick();
+    focusInside(chief);
+    await tick();
     expect(await resend()).toEqual([agentIds[1]]);
+  });
+
+  it('does not regenerate a selected agent chat once focus moves to board controls', async () => {
+    mountPanel(agentIds[0], { isActive: true, isPanelFocused: true });
+    mountPanel(agentIds[1], { isActive: true });
+    await tick();
+    const board = document.createElement('button');
+    board.textContent = 'board control';
+    document.body.append(board);
+    board.focus();
+    await tick();
+    expect(await resend()).toEqual([]);
   });
 
   it('does not regenerate any chat when focus is outside every chat surface', async () => {
