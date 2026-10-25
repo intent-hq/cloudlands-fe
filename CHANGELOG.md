@@ -4,6 +4,26 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.234.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.234.0...v2.234.1) (2026-10-25)
+
+
+### 🐛 Bug Fixes
+
+* **notes:** open the note the daemon created, not a concurrent one ([#3693](https://github.com/intent-hq/cloudlands-fe/issues/3693)) ([4870c1c](https://github.com/intent-hq/cloudlands-fe/commit/4870c1c7b734c1143096f1b81626b618308dd18d))
+* **sidebar:** create a new terminal from the Shell card New Terminal action ([#3692](https://github.com/intent-hq/cloudlands-fe/issues/3692)) ([70944ea](https://github.com/intent-hq/cloudlands-fe/commit/70944ea5e264dcf1b6ef6ef601d79b36fef480b5))
+
+## [2.234.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.233.0...v2.234.0) (2026-10-25)
+
+
+### 🚀 Features
+
+* retired workspaces in the UI and the auto-retire setting ([#3634](https://github.com/intent-hq/cloudlands-fe/issues/3634)) ([7205d8f](https://github.com/intent-hq/cloudlands-fe/commit/7205d8f1cbae011a5f792c6392775301d62ee07e))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.45 ([#3700](https://github.com/intent-hq/cloudlands-fe/issues/3700)) ([ce4a045](https://github.com/intent-hq/cloudlands-fe/commit/ce4a0451b964acdecf1ad1843e52a244fc990ecf))
+
 ## [2.233.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.232.3...v2.233.0) (2026-10-25)
 
 

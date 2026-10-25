@@ -60,6 +60,8 @@ const mocks = vi.hoisted(() => {
     // eslint-disable-next-line themis/collection-state-shape -- test-only dynamic selector fixture
     agents: [] as AgentSession[],
     agentsLoading: false,
+    terminals: [] as Array<{ id: string; title: string }>,
+    activeTerminalId: null as string | null,
     notes: [] as Array<{ id: string; title: string; content: string }>,
     changes: [] as Array<{ id: string; file: string; relativePath: string }>,
     selectedTabs: ['overview'] as string[],
@@ -157,8 +159,8 @@ vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
   selectWorkspaceScriptEntries: mocks.selector([]),
 }));
 vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => ({
-  selectActiveTerminalIdForWorkspace: mocks.selector(null),
-  selectTerminalsForWorkspace: mocks.selector([]),
+  selectActiveTerminalIdForWorkspace: mocks.selectorFrom(() => mocks.activeTerminalId),
+  selectTerminalsForWorkspace: mocks.selectorFrom(() => mocks.terminals),
 }));
 vi.mock('$store/renderer/slices/app-layout/app-layout-selectors', () => ({
   selectPendingLocateInSidebar: mocks.selector(null),
@@ -384,6 +386,8 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     };
     mocks.agents = [];
     mocks.agentsLoading = false;
+    mocks.terminals = [];
+    mocks.activeTerminalId = null;
     mocks.notes = [];
     mocks.changes = [];
     mocks.selectedTabs = ['overview'];
@@ -1531,5 +1535,26 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     await fireEvent.click(agents.getByRole('button', { name: 'Create new agent' }));
     expect(onCreateAgent).toHaveBeenCalledOnce();
     expect(agents.queryByRole('dialog')).toBeNull();
+  });
+
+  it('creates a fresh terminal from the Shell card New Terminal action when one already exists', async () => {
+    const { createTerminalRequested, openTerminalOverlay } =
+      await import('$store/renderer/slices/terminals/terminals-slice');
+    const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
+    mocks.terminals = [{ id: 'term-existing', title: 'zsh' }];
+    mocks.activeTerminalId = 'term-existing';
+    mocks.selectedTabs = ['shell'];
+
+    const view = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+    const shellCard = view.container.querySelector<HTMLElement>('.sidebar-expanded-card')!;
+    await fireEvent.click(within(shellCard).getByRole('button', { name: m.menu_new_terminal() }));
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(createTerminalRequested('ws-1'));
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(openTerminalOverlay('ws-1'));
+    expect(
+      mocks.dispatch.mock.calls.filter(
+        ([action]) => (action as { type?: string })?.type === openTerminalOverlay.type,
+      ),
+    ).toHaveLength(0);
   });
 });

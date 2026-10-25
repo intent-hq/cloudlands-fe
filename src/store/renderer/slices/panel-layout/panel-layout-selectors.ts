@@ -248,6 +248,14 @@ export function collectBrowserTabs(layout: WorkspacePanelLayoutState): LayoutBro
   return out;
 }
 
+/** Agent activity includes hidden tabs, but never a user-only browser tab. */
+export const selectWorkspaceHasAgentBrowserTabs = store.createSelector<[wsId: string], boolean>(
+  (state, wsId) => {
+    const ws = state?.panelLayout?.byWorkspaceId[wsId] ?? emptyWorkspaceState;
+    return collectBrowserTabs(ws).some(({ tab }) => Boolean(tab.ownerAgentId));
+  },
+);
+
 /** Whether the workspace layout holds any browser tab (local or mirror, visible or hidden). */
 export const selectWorkspaceHasBrowserTabs = store.createSelector<[wsId: string], boolean>(
   (state, wsId) => {

@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/experimental-ct-svelte';
-import { expect, test } from '../../../../test/ct-test';
+import { expect, expectAnimationsToSettle, test } from '../../../../test/ct-test';
 import AgentSubscriptionInlineHost from './AgentSubscriptionInlineHost.svelte';
 
 const toolKinds = ['file', 'terminal', 'tool'] as const;
@@ -422,6 +422,9 @@ test('keeps completed avatars accessible and distinct from active agents', async
           .first();
         await expect(completed).toHaveAttribute('data-avatar-state', 'completed');
         await expect(completed.locator('[data-avatar-overlay], [data-icon]')).toHaveCount(0);
+        // A completed avatar must not keep the active pulse: wait out any finite state
+        // transition (an infinite pulse never settles and fails), then read settled colors.
+        await expectAnimationsToSettle(completed, { subtree: false });
         const colors = await completed.evaluate((avatar) => {
           const parseRgb = (value: string) =>
             (value.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number) as [number, number, number];
@@ -478,11 +481,6 @@ test('keeps completed avatars accessible and distinct from active agents', async
             parentColor: parentStyle.color,
             cardBackground,
             cardOpacity: getComputedStyle(card).opacity,
-            activeAnimations: avatar.getAnimations().map((animation) => ({
-              playState: animation.playState,
-              progress: animation.effect?.getComputedTiming().progress,
-              duration: animation.effect?.getComputedTiming().duration,
-            })),
             activeBackground,
             waitingBackground,
             completedContrast: contrast(completedForeground, completedBackground),
@@ -503,7 +501,6 @@ test('keeps completed avatars accessible and distinct from active agents', async
         expect(colors.parentOpacity).toBe('1');
         expect(colors.cardOpacity).toBe('1');
         expect(colors.avatarArtColor).toBe(colors.completedForeground);
-        expect(colors.activeAnimations).toEqual([]);
         expect(colors.completedContrast, JSON.stringify(colors)).toBeGreaterThanOrEqual(4.5);
         expect(colors.iconColor).toBe(colors.titleColor);
         expect(colors.iconOpacity).toBe(colors.titleOpacity);

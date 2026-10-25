@@ -119,7 +119,7 @@
     selectNotesLoading,
   } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { openWorkspaceDiff } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-  import { openTerminalOverlay } from '$store/renderer/slices/terminals/terminals-slice';
+  import { createTerminalRequested } from '$store/renderer/slices/terminals/terminals-slice';
   import { setMultiSelectSidebarSelectedTabs } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { selectMultiSelectSidebarSelectedTabIds } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { store as appStore } from '$store/renderer/store';
@@ -545,7 +545,7 @@
   }
 
   function createTerminal() {
-    appStore.dispatch(openTerminalOverlay(workspaceId));
+    appStore.dispatch(createTerminalRequested(workspaceId));
   }
 
   let pendingLauncherFocusTabId = $state<LauncherTabId | null>(null);

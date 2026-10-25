@@ -4,12 +4,11 @@ import { getBackendClient } from '../features/backend/main/backend.ipc';
 import { getSidecarRunLog } from '../features/backend/main/intentd-sidecar';
 import { BUILD_CONFIG } from './build-config.generated.js';
 import { getIsolatedTestProfile, isIsolatedTestBuild } from './isolated-test-profile';
-import { parseProtocolVersion, protocolVersionAtLeast } from '../shared/protocol-version';
 
 /** CI-only caller: observes original exported APIs; never starts or substitutes a daemon. */
 export async function inspectIsolatedTestPackage(
   app: Pick<App, 'getName' | 'getPath'>,
-  expected: { frontendSha: string; backendSha: string },
+  expected: { frontendSha: string; backendSha: string; protocolVersion?: string },
 ) {
   assert.ok(isIsolatedTestBuild(), 'Packaged inspection requires the isolated test build');
   const profile = getIsolatedTestProfile();
@@ -25,6 +24,8 @@ export async function inspectIsolatedTestPackage(
   matchesBuild(BUILD_CONFIG.GIT_COMMIT_HASH, expected.frontendSha);
   assert.equal(profile.backendSha, expected.backendSha);
   assert.equal(BUILD_CONFIG.ISOLATED_TEST_BACKEND_SHA, expected.backendSha);
+  const protocolVersion = expected.protocolVersion ?? '14.0'; // protocol-version-ok: historical isolated packages // protocol-version-parse-ok: exact immutable package expectation, not runtime compatibility
+  assert.ok(['14.0', '14.1', '15.1'].includes(protocolVersion), 'Unsupported inspection protocol'); // protocol-version-ok: reviewed isolated contracts // protocol-version-parse-ok: package proof explicitly selects an audited immutable daemon contract
   const client = getBackendClient();
   assert.equal(client.getStatus(), 'connected');
   const config = client.getConfig();
@@ -41,9 +42,7 @@ export async function inspectIsolatedTestPackage(
     };
   }>('client.hello');
   assert.ok(typeof hello?.clientId === 'string' && hello.clientId.length > 0);
-  // The integrated GitLab contract or newer; never an exact or maximum protocol version.
-  const protocolVersion = parseProtocolVersion(hello.server?.protocolVersion);
-  assert.ok(protocolVersionAtLeast(protocolVersion, 13, 3)); // protocol-version-ok: integrated GitLab minimum
+  assert.equal(hello.server?.protocolVersion, protocolVersion); // protocol-version-ok: selected daemon package contract
   assert.equal(hello.server?.locality, 'local');
   for (const capability of [
     'collaborationIdentity',

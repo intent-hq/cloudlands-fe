@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { store } from '$store/renderer/configured-store';
 import { selectWorkspaceDrivingClient } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
-import { selectWorkspaceHasBrowserTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+import { selectWorkspaceHasAgentBrowserTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 import { resolveDrivingClientSwitch, resolveDrivingClientView } from './driving-indicator';
 import {
   PREVIEW_OWN_CLIENT_ID,
@@ -14,7 +14,7 @@ function seededView(stateName: keyof typeof preview.states) {
   preview.states[stateName].setup?.();
   return resolveDrivingClientView({
     ...selectWorkspaceDrivingClient.select(store.state, PREVIEW_WORKSPACE_ID),
-    hasBrowserTabs: selectWorkspaceHasBrowserTabs.select(store.state, PREVIEW_WORKSPACE_ID),
+    hasBrowserTabs: selectWorkspaceHasAgentBrowserTabs.select(store.state, PREVIEW_WORKSPACE_ID),
   });
 }
 
@@ -44,8 +44,8 @@ describe('driving client indicator preview', () => {
   });
 
   it('seeds the store so each state resolves to its intended indicator', () => {
-    expect(seededView('single-client')).toBeNull();
-    expect(seededView('driving-here')).toMatchObject({ mode: 'here', canSwitchHere: false });
+    expect(seededView('single-client')).toMatchObject({ mode: 'here' });
+    expect(seededView('driving-here')).toMatchObject({ mode: 'here', canSwitchHere: true });
     expect(seededView('driving-elsewhere')).toMatchObject({
       mode: 'elsewhere',
       canSwitchHere: true,
@@ -58,9 +58,11 @@ describe('driving client indicator preview', () => {
         selectWorkspaceDrivingClient.select(store.state, PREVIEW_WORKSPACE_ID),
       ),
     ).toMatchObject({ mode: 'elsewhere', canSwitchHere: true });
-    // An offline pin is surfaced even without browser tabs.
-    expect(seededView('pinned-offline')).toMatchObject({ mode: 'offline', canSwitchHere: true });
-    expect(selectWorkspaceHasBrowserTabs.select(store.state, PREVIEW_WORKSPACE_ID)).toBe(false);
+    // An offline pin offers recovery even before an agent opens a tab.
+    expect(seededView('pinned-offline')).toMatchObject({ mode: 'offline' });
+    expect(selectWorkspaceHasAgentBrowserTabs.select(store.state, PREVIEW_WORKSPACE_ID)).toBe(
+      false,
+    );
     expect(selectWorkspaceDrivingClient.select(store.state, PREVIEW_WORKSPACE_ID).ownClientId).toBe(
       PREVIEW_OWN_CLIENT_ID,
     );

@@ -30,7 +30,10 @@ import {
   selectMcpAdvancedSaveStatus,
   selectMcpDisabledServers,
   selectMcpEnabled,
+  selectMcpErrorMessages,
   selectMcpServers,
+  selectMcpStatusMap,
+  selectMcpToolsMap,
 } from '../mcp-settings-selectors';
 import {
   addServer,
@@ -45,12 +48,14 @@ import {
   removeServer,
   removeServerFromState,
   restartServer,
+  restoreServerToState,
   saveAdvancedJson,
   setAdvancedSaveStatus,
   setDisabledServers,
   setEnabled,
   setError,
   setLoading,
+  setMutationError,
   setServerErrorMessage,
   setServers,
   setServerStatus,
@@ -61,8 +66,14 @@ import {
   toggleServerDisabled,
   toggleWorkspaceMcpServer,
   updateServer,
+  type McpRemovedServerSnapshot,
 } from '../mcp-settings-slice';
-import type { McpServerConfig, McpServerStatus } from '../mcp-settings-types';
+import type {
+  McpMutationAction,
+  McpServerConfig,
+  McpServerStatus,
+  McpTool,
+} from '../mcp-settings-types';
 
 const logger = createLogger('McpSettingsSaga');
 export const ADVANCED_SAVED_RESET_MS = 2_000;
@@ -135,10 +146,21 @@ function persistedServers(
   });
 }
 
+function mutationFailed(action: McpMutationAction, error: unknown, fallback: string) {
+  return setMutationError({ action, message: toMcpErrorMessage(error, fallback) });
+}
+
+/**
+ * Save the full list. A failure is reported as a mutation error tied to
+ * `action` — never as the load error, which would replace the whole list with
+ * the "Couldn't load MCP servers" diagnostic — and returns false so the caller
+ * can roll back its optimistic change.
+ */
 function* persist(
   servers: McpServerConfig[],
   credentialInputs: CredentialInput[],
-): SagaGenerator<void> {
+  action: McpMutationAction,
+): SagaGenerator<boolean> {
   const disabled: Record<string, true> = yield* selectMcpDisabledServers.effect();
   try {
     const current: Awaited<ReturnType<typeof appClient.settings.getMcpServers>> = yield* call([
@@ -150,14 +172,14 @@ function* persist(
       persistedServers(servers, disabled, current, credentialInputs),
     );
     if (!result.success) {
-      yield* put(
-        setError(toMcpErrorMessage(result.error, m.mcp_management_saveServersFailed_error())),
-      );
-      return;
+      yield* put(mutationFailed(action, result.error, m.mcp_management_saveServersFailed_error()));
+      return false;
     }
     yield* fork(refreshDaemonIdsAndStatuses, servers);
+    return true;
   } catch (error) {
-    yield* put(setError(toMcpErrorMessage(error, m.mcp_management_saveServersFailed_error())));
+    yield* put(mutationFailed(action, error, m.mcp_management_saveServersFailed_error()));
+    return false;
   }
 }
 
@@ -280,18 +302,20 @@ function* load(): SagaGenerator<void> {
 }
 
 function* add(configInput: McpServerConfig): SagaGenerator<void> {
-  yield* put(setError(null));
+  yield* put(setMutationError(null));
   const servers: McpServerConfig[] = yield* selectMcpServers.effect();
   try {
     validateMcpServerIdentities([...servers, configInput]);
     if (!configInput.id) validateName(configInput.name, servers);
     else if (!configInput.name.trim()) throw new Error(m.mcp_management_serverNameRequired_error());
   } catch (error) {
-    yield* put(setError(toMcpErrorMessage(error, m.mcp_management_addServerFailed_error())));
+    yield* put(mutationFailed('add', error, m.mcp_management_addServerFailed_error()));
     return;
   }
   const config = copyServerForState(configInput);
-  const next = [...servers.map(copyServerForState), config];
+  // State rows are already credential-free; keep their identities so a
+  // concurrent mutation's rollback can still find the exact entry it added.
+  const next = [...servers, config];
   yield* put(setServers(next));
   const disabled: Record<string, true> = yield* selectMcpDisabledServers.effect();
   if (config.disabled) {
@@ -301,19 +325,41 @@ function* add(configInput: McpServerConfig): SagaGenerator<void> {
   const enabled: boolean = yield* selectMcpEnabled.effect();
   if (!enabled) yield* put(setEnabled(true));
   const credentialInputs: CredentialInput[] = [[configInput]];
-  yield* call(persist, next, credentialInputs);
+  const saved: boolean = yield* call(persist, next, credentialInputs, 'add' as const);
+  if (saved) return;
+  // Roll back only the exact entry this add inserted; a later edit/remove wins.
+  const current: McpServerConfig[] = yield* selectMcpServers.effect();
+  const key = getMcpServerKey(config);
+  if (current.find((server) => getMcpServerKey(server) === key) === config) {
+    yield* put(removeServerFromState(key));
+  }
 }
 
 function* remove(name: string): SagaGenerator<void> {
   const servers: McpServerConfig[] = yield* selectMcpServers.effect();
-  if (!servers.some((server) => getMcpServerKey(server) === name)) return;
-  const next = servers.filter((server) => getMcpServerKey(server) !== name).map(copyServerForState);
+  const index = servers.findIndex((server) => getMcpServerKey(server) === name);
+  if (index === -1) return;
+  yield* put(setMutationError(null));
+  const statusMap: Record<string, McpServerStatus> = yield* selectMcpStatusMap.effect();
+  const toolsMap: Record<string, McpTool[]> = yield* selectMcpToolsMap.effect();
+  const errorMessages: Record<string, string> = yield* selectMcpErrorMessages.effect();
+  const disabledServers: Record<string, true> = yield* selectMcpDisabledServers.effect();
+  const snapshot: McpRemovedServerSnapshot = {
+    server: servers[index],
+    index,
+    status: statusMap[name],
+    tools: toolsMap[name],
+    errorMessage: errorMessages[name],
+    disabled: name in disabledServers,
+  };
+  const next = servers.filter((server) => getMcpServerKey(server) !== name);
   yield* put(removeServerFromState(name));
-  yield* call(persist, next, []);
+  const saved: boolean = yield* call(persist, next, [], 'remove' as const);
+  if (!saved) yield* put(restoreServerToState(snapshot));
 }
 
 function* update(name: string, configInput: McpServerConfig): SagaGenerator<void> {
-  yield* put(setError(null));
+  yield* put(setMutationError(null));
   const servers: McpServerConfig[] = yield* selectMcpServers.effect();
   const index = servers.findIndex((server) => getMcpServerKey(server) === name);
   if (index === -1) return;
@@ -325,7 +371,7 @@ function* update(name: string, configInput: McpServerConfig): SagaGenerator<void
         servers.filter((server) => getMcpServerKey(server) !== name),
       );
     } catch (error) {
-      yield* put(setError(toMcpErrorMessage(error, m.mcp_management_updateServerFailed_error())));
+      yield* put(mutationFailed('update', error, m.mcp_management_updateServerFailed_error()));
       return;
     }
   }
@@ -343,22 +389,20 @@ function* update(name: string, configInput: McpServerConfig): SagaGenerator<void
   } else {
     delete config.disabled;
   }
-  const next = servers.map((server, position) =>
-    position === index ? config : copyServerForState(server),
-  );
+  const next = servers.map((server, position) => (position === index ? config : server));
   yield* put(setServers(next));
   yield* put(setServerStatus(key, statusFor(wasDisabled)));
   const credentialInputs: CredentialInput[] = [[input, name]];
-  yield* call(persist, next, credentialInputs);
+  yield* call(persist, next, credentialInputs, 'update' as const);
 }
 
 function* importJson(json: string): SagaGenerator<void> {
-  yield* put(setError(null));
+  yield* put(setMutationError(null));
   let configs: McpServerConfig[];
   try {
     configs = normalizeMcpServersPayload(JSON.parse(json));
   } catch (error) {
-    yield* put(setError(toMcpErrorMessage(error, 'Failed to import servers')));
+    yield* put(mutationFailed('import', error, 'Failed to import servers'));
     return;
   }
   const existing: McpServerConfig[] = yield* selectMcpServers.effect();
@@ -376,7 +420,7 @@ function* importJson(json: string): SagaGenerator<void> {
   });
   if (added.length > 0) {
     const stateAdded = added.map(copyServerForState);
-    const next = [...existing.map(copyServerForState), ...stateAdded];
+    const next = [...existing, ...stateAdded];
     yield* put(setServers(next));
     const disabled: Record<string, true> = yield* selectMcpDisabledServers.effect();
     const nextDisabled = { ...disabled };
@@ -387,11 +431,14 @@ function* importJson(json: string): SagaGenerator<void> {
     if (stateAdded.some((config) => config.disabled)) yield* put(setDisabledServers(nextDisabled));
     const enabled: boolean = yield* selectMcpEnabled.effect();
     if (!enabled) yield* put(setEnabled(true));
-    yield* call(
+    const saved: boolean = yield* call(
       persist,
       next,
       added.map((config): [McpServerConfig] => [config]),
+      'import' as const,
     );
+    // A rejected save must not be announced as a completed import.
+    if (!saved) return;
   }
   yield* put(importFromJsonCompleted(added.length));
 }
@@ -400,10 +447,11 @@ function* toggle(name: string): SagaGenerator<void> {
   const servers: McpServerConfig[] = yield* selectMcpServers.effect();
   const server = servers.find((candidate) => getMcpServerKey(candidate) === name);
   if (!server) return;
+  yield* put(setMutationError(null));
   yield* put(toggleServerDisabled(name));
   const disabled: Record<string, true> = yield* selectMcpDisabledServers.effect();
   yield* put(setServerStatus(name, statusFor(name in disabled)));
-  yield* call(persist, servers, []);
+  yield* call(persist, servers, [], 'toggle' as const);
 }
 
 /**

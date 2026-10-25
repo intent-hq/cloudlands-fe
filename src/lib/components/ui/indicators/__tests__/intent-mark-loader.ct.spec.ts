@@ -133,6 +133,7 @@ test('keeps one root and five driven arms through every directed handoff', async
     expect(arms).toHaveLength(5);
     expect(arms.every(({ transform }) => transform !== '')).toBe(true);
     expect(arms.every(({ willChange }) => willChange === '')).toBe(true);
+    // eslint-disable-next-line intent/no-one-shot-animation-count -- counts only infinite animations, which cannot end between reads: the loop must not be a Web Animation.
     expect(await loopAnimationCount(root)).toBe(0);
   }
 
@@ -325,6 +326,7 @@ test('does no continuous work while the window is blurred', async ({ mount, page
   });
   const root = component.getByRole('status', { name: 'Loading' });
   await expect(root).toHaveAttribute('data-motion-state', 'neutral');
+  // eslint-disable-next-line intent/no-one-shot-animation-count -- the loader cancels its fades before it reports neutral, so neutral means zero animations.
   expect(await root.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(0);
   const neutral = await drivenArms(root);
 
@@ -335,6 +337,7 @@ test('does no continuous work while the window is blurred', async ({ mount, page
 
   await page.evaluate(() => document.documentElement.setAttribute('data-window-blurred', ''));
   await expect(root).toHaveAttribute('data-motion-state', 'neutral');
+  // eslint-disable-next-line intent/no-one-shot-animation-count -- the loader cancels its fades before it reports neutral, so neutral means zero animations.
   expect(await root.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(0);
   expect(await poseWritesOver(root, 500)).toBe(0);
   expect(await drivenArms(root)).toEqual(neutral);
@@ -348,6 +351,7 @@ test('changes the Bloom pose at most 30 times per second and no compositor layer
   });
   const root = component.getByRole('status', { name: 'Loading' });
   await expect(root).toHaveAttribute('data-motion-state', 'playing');
+  // eslint-disable-next-line intent/no-one-shot-animation-count -- counts only infinite animations, which cannot end between reads: the loop must not be a Web Animation.
   expect(await loopAnimationCount(root)).toBe(0);
   expect((await drivenArms(root)).every(({ willChange }) => willChange === '')).toBe(true);
 
@@ -363,6 +367,7 @@ test('does no continuous work for reduced motion or a hidden document', async ({
   });
   const root = component.getByRole('status', { name: 'Loading' });
   await expect(root).toHaveAttribute('data-motion-state', 'neutral');
+  // eslint-disable-next-line intent/no-one-shot-animation-count -- the loader cancels its fades before it reports neutral, so neutral means zero animations.
   expect(await root.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(0);
 
   await page.emulateMedia({ reducedMotion: 'no-preference' });
@@ -372,5 +377,6 @@ test('does no continuous work for reduced motion or a hidden document', async ({
     document.dispatchEvent(new Event('visibilitychange'));
   });
   await expect(root).toHaveAttribute('data-motion-state', 'neutral');
+  // eslint-disable-next-line intent/no-one-shot-animation-count -- the loader cancels its fades before it reports neutral, so neutral means zero animations.
   expect(await root.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(0);
 });
