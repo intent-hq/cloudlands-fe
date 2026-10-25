@@ -1,4 +1,4 @@
-import { expect, test } from '../../../../../test/ct-test';
+import { expect, expectAnimationsToSettle, test } from '../../../../../test/ct-test';
 import type { Locator, Page } from '@playwright/test';
 import ModelPickerGeometryHost from './ModelPickerGeometryHost.svelte';
 import SimpleRichInputQueueHost from '../SimpleRichInputQueueHost.svelte';
@@ -354,7 +354,7 @@ test('first-open, hover and reopened selected highlights fit the full row withou
   const activeId = await search.getAttribute('aria-activedescendant');
   await expect(page.locator(`[id="${activeId}"]`)).toHaveAccessibleName('Model 2');
   await aligned();
-  expect(await outer.evaluate((el) => el.getAnimations().length)).toBe(0);
+  await expectAnimationsToSettle(outer, { subtree: false, includeFinished: true });
 });
 
 async function expectHitTarget(target: Locator) {

@@ -205,9 +205,11 @@ test('reduced motion: restyling descendants starts no scrollbar-color transition
       scrollbarColor: transitionsOf('scrollbar-color'),
     };
   }, PROBE_ID);
+  // eslint-disable-next-line intent/no-one-shot-animation-count -- the baseline is read after the waitForFunction above settled the document.
   expect(result.settled).toBe(0);
   // The blanket shortens transitions rather than removing them, so the restyle is observable.
   expect(result.color).toBe(40);
+  // eslint-disable-next-line intent/no-one-shot-animation-count -- read synchronously in the restyle's task: a transition, if any, would already exist.
   expect(result.scrollbarColor).toBe(0);
 });
 

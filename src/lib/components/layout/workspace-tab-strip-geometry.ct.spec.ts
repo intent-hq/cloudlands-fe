@@ -1,5 +1,5 @@
 import type { Locator } from '@playwright/experimental-ct-svelte';
-import { expect, test } from '../../../test/ct-test';
+import { expect, expectAnimationsToSettle, test } from '../../../test/ct-test';
 import { expectDismissibleLayerArmed } from '../../../test/dismissible-layer';
 import WorkspaceTabStripGeometryPreview from './workspace-tab-strip-geometry.preview.svelte';
 import WorkspaceTabMenuHarness from './WorkspaceTabMenuHarness.svelte';
@@ -548,6 +548,11 @@ for (const { controlsWidth, startsRightScrolled } of [
     expect(interruptedWidth).toBeLessThan(naturalWidth);
     await component.locator('[data-open-tab]').click();
     await page.waitForTimeout(1_000);
+    // The sleep lets the reopen motion start; then wait for it to end instead of counting
+    // once, so a slow runner does not read a mid-flight slot.
+    await expectAnimationsToSettle(component.locator('[data-workspace-tab-motion]'), {
+      subtree: false,
+    });
 
     const tabOrder = await component
       .locator('[data-workspace-tab]')
@@ -555,14 +560,6 @@ for (const { controlsWidth, startsRightScrolled } of [
     const settledWidths = await component
       .locator('[data-workspace-tab-motion]')
       .evaluateAll((slots) => slots.map((slot) => slot.getBoundingClientRect().width));
-    const activeAnimationCount = await component
-      .locator('[data-workspace-tab-motion]')
-      .evaluateAll(
-        (slots) =>
-          slots
-            .flatMap((slot) => slot.getAnimations())
-            .filter((animation) => animation.playState !== 'finished').length,
-      );
     const settledGeometry = await component
       .locator('[data-workspace-tab-motion="geometry-gamma"]')
       .evaluate((slot) => {
@@ -589,12 +586,10 @@ for (const { controlsWidth, startsRightScrolled } of [
       pageErrors,
       tabOrder,
       settledWidths,
-      activeAnimationCount,
       settledGeometry,
     });
     expect(pageErrors, evidence).toEqual([]);
     expect(tabOrder, evidence).toEqual(['geometry-alpha', 'geometry-beta', 'geometry-gamma']);
-    expect(activeAnimationCount, evidence).toBe(0);
     expect(settledGeometry.translate, evidence).toBe('none');
     expect(settledGeometry.marginRight, evidence).toBeGreaterThanOrEqual(0);
     expect(settledGeometry.gap, evidence).toBeCloseTo(before.gap, 0);
