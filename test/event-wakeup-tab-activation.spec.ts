@@ -7,10 +7,13 @@ import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 import { prepareRootHarnessModules } from './root-harness-import';
 
 let server: ViteDevServer;
-let baseUrl = process.env.PANEL_LIVE_BASE_URL?.replace(/\/$/, '') ?? '';
+const externalBaseUrl = process.env.PANEL_LIVE_BASE_URL?.replace(/\/$/, '');
+let baseUrl = externalBaseUrl ?? '';
 
+// fullyParallel can rerun this hook in a worker after afterAll closed the
+// previous server, so only an external URL may skip starting a fresh one.
 test.beforeAll(async ({}, workerInfo) => {
-  if (baseUrl) return;
+  if (externalBaseUrl) return;
   server = await createServer({
     configFile: false,
     root: process.cwd(),
