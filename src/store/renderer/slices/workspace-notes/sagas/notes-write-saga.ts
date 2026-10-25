@@ -775,7 +775,8 @@ function* resolveComment(command: ResolveCommentCommand): SagaGenerator<boolean>
   }
 }
 
-function* saveMetadata(command: MetadataCommand) {
+/** Resolves `false` when the write failed and the local patch was rolled back. */
+function* saveMetadata(command: MetadataCommand): SagaGenerator<boolean> {
   const { workspaceId, noteId, patch, rollback, titleOnly } = command;
   const note = yield* selectNoteById.effect(workspaceId, noteId);
   const rev = note?.rev;
@@ -788,7 +789,7 @@ function* saveMetadata(command: MetadataCommand) {
       workspaceId,
     );
     if (!result.success) {
-      if (yield* call(reconcileConflict, workspaceId, noteId, result)) return;
+      if (yield* call(reconcileConflict, workspaceId, noteId, result)) return true;
       logger.error(
         titleOnly ? 'Failed to update note title' : 'Failed to update note metadata',
         result.error,
@@ -800,12 +801,14 @@ function* saveMetadata(command: MetadataCommand) {
         { description: result.error ?? m.notes_writeService_unknown_error() },
       );
       yield* put(applyLocalNoteUpdate(workspaceId, noteId, rollback));
-      return;
+      return false;
     }
     if (rev !== undefined) yield* call(advanceRevision, workspaceId, noteId, rev);
+    return true;
   } catch (error) {
     logger.error('Failed to update note metadata', error);
     yield* put(applyLocalNoteUpdate(workspaceId, noteId, rollback));
+    return false;
   }
 }
 
@@ -1083,7 +1086,7 @@ function* handleTitleAction(
   const before = yield* selectNoteById.effect(workspaceId, noteId);
   yield* put(applyLocalNoteUpdate(workspaceId, noteId, { title }));
   yield* call(flushPendingNoteContent, workspaceId, noteId);
-  yield* enqueueMutation(
+  return yield* enqueueMutation(
     queue,
     {
       kind: 'metadata',
@@ -1102,8 +1105,10 @@ function* handleTitleRequested(
   action: ReturnType<typeof updateNoteTitlePersistRequested>,
 ) {
   try {
-    yield* call(handleTitleAction, queue, updateNoteTitle(...action.payload));
-    yield* put(action.success(undefined as never));
+    const saved = yield* call(handleTitleAction, queue, updateNoteTitle(...action.payload));
+    // Only an explicit failed save is `false`; a discarded (workspace cleanup) or
+    // reconciled write keeps the previous success outcome.
+    yield* put(action.success(saved !== false));
   } catch (error) {
     yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
   }

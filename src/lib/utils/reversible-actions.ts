@@ -8,7 +8,11 @@ const logger = new Logger('ReversibleActions');
 interface ReversibleAction {
   id: string;
   message: string;
-  action: () => Promise<void> | void;
+  /**
+   * Resolving `false` means the action did not take effect and already told the
+   * user why: no undo/success toast and no extra error toast; `execute` returns `false`.
+   */
+  action: () => Promise<void | boolean> | void | boolean;
   onUndo?: () => Promise<void> | void;
   onExpire?: () => Promise<void> | void; // Called when undo duration expires without undo
   duration?: number; // Duration in seconds for undo availability
@@ -34,7 +38,7 @@ class ReversibleActionManager {
     if (immediate && !showCountdown) {
       // Execute immediately and show undo option
       try {
-        await config.action();
+        if ((await config.action()) === false) return false;
         this.completedActions.set(actionId, config);
 
         let undoExecuted = false;
@@ -372,7 +376,8 @@ export async function confirmAction(
  * @param itemType - Type of item being renamed (e.g., "note", "agent", "file")
  * @param oldName - The previous name
  * @param newName - The new name
- * @param renameAction - Action to perform the rename
+ * @param renameAction - Action to perform the rename; resolve `false` when it failed
+ *   and was already reported, to skip the toast
  * @param undoAction - Optional action to undo the rename (restore old name)
  * @param options - Additional options
  */
@@ -380,7 +385,7 @@ export async function renameWithUndo(
   itemType: string,
   oldName: string,
   newName: string,
-  renameAction: () => Promise<void> | void,
+  renameAction: () => Promise<void | boolean> | void | boolean,
   undoAction?: () => Promise<void> | void,
   options: {
     duration?: number;
