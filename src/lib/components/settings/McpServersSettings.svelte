@@ -40,6 +40,7 @@
     selectMcpServersWithStatus,
     selectMcpLoading,
     selectMcpError,
+    selectMcpMutationError,
     selectMcpEnabled,
     selectMcpLastImportedCount,
     selectMcpAdvancedSaveStatus,
@@ -56,12 +57,15 @@
     restartServer,
     authenticateServer,
     saveAdvancedJson,
+    setMutationError,
   } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
+  import type { McpMutationAction } from '$store/renderer/slices/mcp-settings/mcp-settings-types';
 
   const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
   const servers$ = selectMcpServersWithStatus();
   const loading$ = selectMcpLoading();
   const error$ = selectMcpError();
+  const mutationError$ = selectMcpMutationError();
   const enabled$ = selectMcpEnabled();
   const lastImportedCount$ = selectMcpLastImportedCount();
   const advancedSaveStatus$ = selectMcpAdvancedSaveStatus();
@@ -89,8 +93,34 @@
   const diagnosticCommand = 'auggie mcp list';
 
   onMount(() => {
+    appStore.dispatch(setMutationError(null));
     appStore.dispatch(loadServers());
   });
+
+  // Validation runs synchronously when the action is dispatched, so a form can
+  // stay open with the error instead of closing on a request that was rejected.
+  function rejectedSynchronously(action: McpMutationAction): boolean {
+    return selectMcpMutationError.select(appStore.state)?.action === action;
+  }
+
+  function clearMutationError(...actions: McpMutationAction[]) {
+    const current = selectMcpMutationError.select(appStore.state);
+    if (current && actions.includes(current.action)) appStore.dispatch(setMutationError(null));
+  }
+
+  // A failed add/update/remove/toggle/import is shown next to the action that
+  // failed — never as the load diagnostic, which replaces the server list.
+  const addPanelError = $derived(
+    showAddPanel && ($mutationError$?.action === 'add' || $mutationError$?.action === 'import')
+      ? $mutationError$.message
+      : null,
+  );
+  const editPanelError = $derived(
+    editingServer && $mutationError$?.action === 'update' ? $mutationError$.message : null,
+  );
+  const listMutationError = $derived(
+    $mutationError$ && !addPanelError && !editPanelError ? $mutationError$.message : null,
+  );
 
   // React to import completion from the saga (avoids double-parsing JSON in the component)
   $effect(() => {
@@ -162,6 +192,7 @@
     // The management service handles auth checks and connection testing.
     // Auth-required status will be reflected in the server card via the status map.
     appStore.dispatch(addServer(config));
+    if (rejectedSynchronously('add')) return;
     showAddPanel = false;
     loadSettingsFile();
   }
@@ -173,6 +204,7 @@
   function handleUpdateServer(config: McpServerConfig) {
     if (!editingServer) return;
     appStore.dispatch(updateServer(getMcpServerKey(editingServer), config));
+    if (rejectedSynchronously('update')) return;
     editingServer = null;
     loadSettingsFile();
   }
@@ -311,6 +343,7 @@
 
   async function handleImportJson(json: string) {
     appStore.dispatch(importFromJson(json));
+    if (rejectedSynchronously('import')) return;
     showAddPanel = false;
     // Success feedback is driven by the service dispatching importFromJsonCompleted,
     // observed reactively via $lastImportedCount$ below.
@@ -331,10 +364,12 @@
   function handleCancelAdd() {
     showAddPanel = false;
     addMode = 'form';
+    clearMutationError('add', 'import');
   }
 
   function handleCancelEdit() {
     editingServer = null;
+    clearMutationError('update');
   }
 
   // Get form state for editing
@@ -394,7 +429,7 @@
 
 {#snippet configuredServersControl()}
   {#if showAddPanel}
-    <Button variant="link" size="sm" onclick={() => (showAddPanel = false)}>
+    <Button variant="link" size="sm" onclick={handleCancelAdd}>
       {m.settings_mcpServers_cancel()}
     </Button>
   {:else}
@@ -470,6 +505,11 @@
                 </Button>
               </div>
 
+              {#if addPanelError}
+                <p role="alert" class="type-body text-danger mb-3" data-testid="mcp-add-error">
+                  {addPanelError}
+                </p>
+              {/if}
               {#if addMode === 'form'}
                 <McpServerForm
                   onSubmit={handleAddServer}
@@ -494,6 +534,11 @@
               <h3 class="type-body font-medium mb-4">
                 {m.settings_mcpServers_editServerTitle({ name: editingServer.name })}
               </h3>
+              {#if editPanelError}
+                <p role="alert" class="type-body text-danger mb-3" data-testid="mcp-edit-error">
+                  {editPanelError}
+                </p>
+              {/if}
               <McpServerForm
                 initialValues={editFormState}
                 editMode={true}
@@ -506,6 +551,15 @@
 
         <!-- Configured Servers List -->
         <div class="py-4">
+          {#if listMutationError && !$loading$}
+            <p
+              role="alert"
+              class="mb-4 rounded-lg border border-danger/30 bg-danger-background/5 p-3 type-body text-danger"
+              data-testid="mcp-mutation-error"
+            >
+              {listMutationError}
+            </p>
+          {/if}
           {#if $loading$}
             <!-- Skeleton loaders for configured servers -->
             <div class="space-y-3 mb-6">

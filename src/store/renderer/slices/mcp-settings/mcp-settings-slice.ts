@@ -13,7 +13,9 @@ import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-s
 import type {
   McpSettingsState,
   McpServerConfig,
+  McpMutationError,
   McpServerStatus,
+  McpTool,
   WorkspaceMcpSettingsState,
 } from './mcp-settings-types';
 
@@ -37,6 +39,7 @@ export const initialState: McpSettingsState = {
   disabledServers: {},
   loading: false,
   error: null,
+  mutationError: null,
   enabled: false,
   lastImportedCount: null,
   advancedSaveStatus: 'idle',
@@ -54,8 +57,13 @@ export const setServers = createAction<[servers: McpServerConfig[]]>('mcpSetting
 /** Set loading state */
 export const setLoading = createAction<[loading: boolean]>('mcpSettings/setLoading');
 
-/** Set global error */
+/** Set the load error (server list could not be read) */
 export const setError = createAction<[error: string | null]>('mcpSettings/setError');
+
+/** Set or clear the error of the last add/update/remove/toggle/import */
+export const setMutationError = createAction<[error: McpMutationError | null]>(
+  'mcpSettings/setMutationError',
+);
 
 /** Set feature enabled */
 export const setEnabled = createAction<[enabled: boolean]>('mcpSettings/setEnabled');
@@ -89,6 +97,21 @@ export const toggleServerDisabled = createAction<[key: string]>('mcpSettings/tog
 /** Remove a server from local state */
 export const removeServerFromState = createAction<[key: string]>(
   'mcpSettings/removeServerFromState',
+);
+
+/** A removed server and its per-key metadata, captured so a failed save can restore it. */
+export type McpRemovedServerSnapshot = {
+  server: McpServerConfig;
+  index: number;
+  status?: McpServerStatus;
+  tools?: McpTool[];
+  errorMessage?: string;
+  disabled: boolean;
+};
+
+/** Put a removed server back at its position after its removal failed to save */
+export const restoreServerToState = createAction<[snapshot: McpRemovedServerSnapshot]>(
+  'mcpSettings/restoreServerToState',
 );
 
 /** Bulk update status map (e.g. after loading servers) */
@@ -218,6 +241,10 @@ mcpSettingsReducer.with(setError, (state, { payload: [error] }) => ({
   ...state,
   error,
 }));
+mcpSettingsReducer.with(setMutationError, (state, { payload: [mutationError] }) => ({
+  ...state,
+  mutationError,
+}));
 mcpSettingsReducer.with(setEnabled, (state, { payload: [enabled] }) => ({
   ...state,
   enabled,
@@ -265,6 +292,25 @@ mcpSettingsReducer.with(removeServerFromState, (state, { payload: [name] }) => {
     toolsMap: restTools,
     errorMessages: restErrors,
     disabledServers: restDisabled,
+  };
+});
+mcpSettingsReducer.with(restoreServerToState, (state, { payload: [snapshot] }) => {
+  const key = getMcpServerKey(snapshot.server);
+  // A concurrent re-add (e.g. the delete toast's Undo) already brought it back.
+  if (state.servers.some((server) => getMcpServerKey(server) === key)) return state;
+  const servers = [...state.servers];
+  servers.splice(Math.min(snapshot.index, servers.length), 0, snapshot.server);
+  const withKey = <T>(map: Record<string, T>, value: T | undefined): Record<string, T> =>
+    value === undefined ? map : { ...map, [key]: value };
+  return {
+    ...state,
+    servers,
+    statusMap: withKey(state.statusMap, snapshot.status),
+    toolsMap: withKey(state.toolsMap, snapshot.tools),
+    errorMessages: withKey(state.errorMessages, snapshot.errorMessage),
+    disabledServers: snapshot.disabled
+      ? { ...state.disabledServers, [key]: true as const }
+      : state.disabledServers,
   };
 });
 mcpSettingsReducer.with(bulkSetServerStatus, (state, { payload: [statusMap] }) => ({
