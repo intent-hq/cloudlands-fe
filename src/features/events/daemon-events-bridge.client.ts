@@ -1495,8 +1495,9 @@ function handleAgentRenamedEvent(event: WorkspaceEvent): void {
   const name = data.name;
   if (typeof agentId !== 'string' || agentId.length === 0) return;
   if (typeof name !== 'string') return;
+  // An absent flag defaults inside `renameSession` (older daemons).
   const nameExplicitlySet =
-    typeof data.nameExplicitlySet === 'boolean' ? data.nameExplicitlySet : true;
+    typeof data.nameExplicitlySet === 'boolean' ? data.nameExplicitlySet : undefined;
   appStore.dispatch(renameSession(agentId, name, nameExplicitlySet));
 }
 
