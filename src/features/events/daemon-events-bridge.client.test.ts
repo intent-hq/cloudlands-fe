@@ -228,6 +228,8 @@ import {
   routeDaemonEventsNotification,
 } from '$features/events/daemon-events-bridge.client';
 import { selectContextItems } from '$store/renderer/slices/context/context-selectors';
+import { selectChiefThreads } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { selectLockedAgentIds } from '$store/renderer/slices/agent-lock/agent-lock-selectors';
 import {
   chatQueuedRetryRecordSet,
@@ -6125,6 +6127,52 @@ describe('daemonEventsBridge (session lifecycle — agent:created/renamed/update
     // Transcript must survive the metadata mutation.
     expect(state.agentSessions.byAgentId[AGENT]?.messages).toHaveLength(1);
     expect(state.agentSessions.byAgentId[AGENT]?.messages[0].id).toBe('asst-1');
+  });
+
+  it('agent:renamed retitles a self-named Assistant chat synchronously', () => {
+    const chiefAgent = 'agent-chief-self-named';
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          id: chiefAgent,
+          backendSessionId: 'backend-chief',
+          workspaceId: CHIEF_WORKSPACE_ID,
+          name: 'Assistant',
+          nameExplicitlySet: false,
+          status: AgentStatus.Active,
+          messages: [
+            {
+              id: 'user-1',
+              role: 'user',
+              contentBlocks: [{ type: 'text', text: 'tell me about the latest speech model' }],
+              timestamp: '2026-01-02T00:00:00.000Z',
+            },
+          ],
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        } as AgentSession,
+      ]),
+    );
+    const titleOf = () =>
+      selectChiefThreads.select(appStore.state).find((thread) => thread.agentId === chiefAgent)
+        ?.title;
+    expect(titleOf()).toBe('tell me about the latest speech model');
+
+    capturedHandlers[0]!({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-chief-renamed',
+          workspaceId: CHIEF_WORKSPACE_ID,
+          timestamp: '2026-01-02T00:00:01.000Z',
+          type: 'agent:renamed',
+          actor: { type: 'agent', id: chiefAgent },
+          data: { agentId: chiefAgent, name: 'Speech model' },
+        },
+      },
+    });
+
+    expect(titleOf()).toBe('Speech model');
   });
 
   it('agent:updated re-reads through the seam and does not clobber the local transcript', async () => {

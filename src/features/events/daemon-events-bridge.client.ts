@@ -1482,9 +1482,10 @@ function claimRetireTransition(agentId: string, transition: 'retired' | 'restore
 
 /**
  * `agent:renamed` (§5.5 / §6.5) carries `{ agentId, name }` — the daemon's
- * `agent.rename` emits it after persisting the new name. Dispatching
- * `renameSession` mutates only the session's `name` field so the sidebar entry
- * updates without touching the transcript.
+ * `agent.rename` (and a name-only `agent.update`) emits it after persisting the
+ * new name with `nameExplicitlySet` set. Dispatching `renameSession` updates the
+ * session's `name` and marks it explicit (so Assistant thread titles switch
+ * from the first-message preview) without touching the transcript.
  */
 function handleAgentRenamedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;

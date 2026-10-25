@@ -15,7 +15,6 @@
     selectEnabledProviders,
     selectProviderPaths,
     selectProviderSettingsSessionRequests,
-    selectPiAdapter,
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectProviderInUseReasons } from '$store/renderer/slices/provider-settings/provider-in-use-selectors';
   import {
@@ -24,7 +23,6 @@
     providerSettingsSessionOpened,
     providerSettingsSessionClosed,
     providerPathsRequested,
-    piAdapterInstallRequested,
   } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import {
     checkAllProvidersRequested,
@@ -91,7 +89,6 @@
   const sessionId = crypto.randomUUID();
   const requests$ = selectProviderSettingsSessionRequests(sessionId);
   const paths$ = selectProviderPaths();
-  const piAdapter$ = selectPiAdapter();
   const hiddenProviders$ = selectProviderHiddenIds();
   const discoveryError$ = selectProviderDiscoveryError();
   const activeProviderId = selectActiveProviderId();
@@ -105,12 +102,6 @@
   const npxStatus$ = selectNpxStatus();
 
   const checkError = $derived($discoveryError$);
-  const setupInProgress = $derived({
-    pi: $requests$.some(
-      (request) => request.resource === 'pi-adapter' && request.status === 'pending',
-    ),
-  });
-  const piMcpAdapterInstalled = $derived($piAdapter$.installed);
   let selectingRequest = $state<{ id: string; providerId: string } | null>(null);
   const selectingProviderId = $derived(
     $requests$.some(
@@ -305,10 +296,6 @@
     };
   });
 
-  function handleInstallPiMcpAdapter() {
-    appStore.dispatch(piAdapterInstallRequested({ id: crypto.randomUUID(), sessionId }));
-  }
-
   function openDocs(url: string) {
     shell.open(url);
   }
@@ -381,11 +368,6 @@
             {@const canInstall = provider.id !== 'antigravity' && !provider.available}
             {@const canAddProfile =
               !provider.statusPending && provider.available && supportsProfiles(provider.id)}
-            {@const hasPiAdapterWarning =
-              !provider.statusPending &&
-              provider.id === 'pi' &&
-              provider.available &&
-              piMcpAdapterInstalled === false}
             {@const hasNodeMissing =
               !provider.statusPending &&
               provider.hasNpxFallback &&
@@ -398,15 +380,12 @@
               $npxStatus$?.resolvedPath !== null &&
               $npxStatus$?.versionOk === false}
             {@const hasProviderWarning = !provider.statusPending && !!provider.warning}
-            {@const hasWarning =
-              hasPiAdapterWarning || hasNodeMissing || hasNpmOld || hasProviderWarning}
-            {@const warningLabel = hasPiAdapterWarning
-              ? m.settings_providers_piAdapterNeeded()
-              : hasNodeMissing
-                ? m.settings_providers_requiresNodejs()
-                : hasNpmOld
-                  ? m.settings_providers_npmTooOld()
-                  : provider.warning}
+            {@const hasWarning = hasNodeMissing || hasNpmOld || hasProviderWarning}
+            {@const warningLabel = hasNodeMissing
+              ? m.settings_providers_requiresNodejs()
+              : hasNpmOld
+                ? m.settings_providers_npmTooOld()
+                : provider.warning}
             <div data-slot="settings-section-body" class="px-6 py-4">
               <div class="flex items-start justify-between gap-4">
                 <div class="space-y-1">
@@ -550,31 +529,6 @@
                           {/if}
                           {#if hasWarning}
                             <div class="border-b border-border pb-1">
-                              {#if hasPiAdapterWarning}
-                                <p class="px-2 py-1.5 type-body text-warning-ink">
-                                  {m.settings_providers_piAdapterNeeded()}
-                                </p>
-                                <Menu.Item
-                                  disabled={setupInProgress.pi}
-                                  class="cursor-pointer text-foreground"
-                                  onSelect={() => void handleInstallPiMcpAdapter()}
-                                >
-                                  <span class="flex size-4 shrink-0 items-center justify-center">
-                                    {#if setupInProgress.pi}
-                                      <IntentMarkLoader size={14} class="text-muted-foreground" />
-                                    {:else}
-                                      <Fa
-                                        icon={faDownload}
-                                        class="size-3.5 text-muted-foreground"
-                                      />
-                                    {/if}
-                                  </span>
-                                  {setupInProgress.pi
-                                    ? m.settings_providers_installing()
-                                    : m.settings_providers_install()}
-                                </Menu.Item>
-                              {/if}
-
                               {#if hasNodeMissing}
                                 <p class="px-2 py-1.5 type-body text-warning-ink">
                                   {m.settings_providers_requiresNodejs()}
