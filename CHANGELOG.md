@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.234.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.234.0...v2.234.1) (2026-10-25)
+
+
+### 🐛 Bug Fixes
+
+* **notes:** open the note the daemon created, not a concurrent one ([#3693](https://github.com/intent-hq/cloudlands-fe/issues/3693)) ([4870c1c](https://github.com/intent-hq/cloudlands-fe/commit/4870c1c7b734c1143096f1b81626b618308dd18d))
+* **sidebar:** create a new terminal from the Shell card New Terminal action ([#3692](https://github.com/intent-hq/cloudlands-fe/issues/3692)) ([70944ea](https://github.com/intent-hq/cloudlands-fe/commit/70944ea5e264dcf1b6ef6ef601d79b36fef480b5))
+
 ## [2.234.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.233.0...v2.234.0) (2026-10-25)
 
 
