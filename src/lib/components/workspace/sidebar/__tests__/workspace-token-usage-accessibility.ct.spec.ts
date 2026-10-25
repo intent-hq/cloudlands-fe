@@ -1731,14 +1731,16 @@ test('dismisses, repositions, flips, and clamps the overlay without changing wor
   let details = page.getByTestId('token-usage-details');
   const beforeScroll = await details.boundingBox();
   await sidebarScroll.evaluate((element) => element.scrollTo({ top: 20 }));
-  await expect
-    .poll(async () => {
-      const [anchor, panel] = await Promise.all([disclosure.boundingBox(), details.boundingBox()]);
-      return panel!.y - (anchor!.y + anchor!.height);
-    })
-    .toBeGreaterThanOrEqual(0);
-  const afterScroll = await details.boundingBox();
-  expect(afterScroll!.y).toBeLessThan(beforeScroll!.y);
+  expect(await sidebarScroll.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  // The overlay follows the sidebar from an asynchronously dispatched scroll
+  // event, and the anchor gap already holds before it runs: wait for the
+  // panel to move with its anchor before checking that it stays attached.
+  await expect.poll(async () => (await details.boundingBox())!.y).toBeLessThan(beforeScroll!.y);
+  const [anchor, afterScroll] = await Promise.all([
+    disclosure.boundingBox(),
+    details.boundingBox(),
+  ]);
+  expect(afterScroll!.y - (anchor!.y + anchor!.height)).toBeGreaterThanOrEqual(0);
 
   const contentBox = await workspaceContent.boundingBox();
   await workspaceContent.click({
