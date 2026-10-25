@@ -23,6 +23,7 @@
         setPullRequests: (id: string, pulls: PullRequestInfo[], total?: number) => void;
         setPullRequest: (id: string, pullRequest: PullRequestInfo) => void;
         setStatus: (id: string, status: WorkspaceDisplayStatus) => void;
+        setFlags: (id: string, flags: { waiting?: boolean; scriptsRunning?: boolean }) => void;
         roundTripSettings: () => void;
       };
       __homePrStatusPreview?: { setWaiting: (waiting?: boolean) => void };
@@ -469,6 +470,8 @@
       store.dispatch(
         bulkUpdateWorkspaceEntities([updateWorkspaceEntity(id, { displayStatus: status })]),
       ),
+    setFlags: (id, flags) =>
+      store.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(id, flags)])),
     navigation: () => ({
       currentTabId: store.state.tabState.currentTabId,
       tabOrder: store.state.tabState.workspaceStacks.flat(),

@@ -10858,6 +10858,96 @@ describe('daemonEventsBridge (workspace:waiting-changed → workspace slice)', (
   });
 });
 
+describe('daemonEventsBridge (workspace:scriptsRunning-changed → workspace slice)', () => {
+  const WS_SCRIPTS = 'ws-scripts-running-1';
+
+  beforeAll(() => appStore.init());
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  async function seedWorkspace(): Promise<void> {
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+    const { WorkspaceStatus } = await import('$shared/types');
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS_SCRIPTS,
+        title: 'Scripts ws',
+        branch: 'main',
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      } as never),
+    );
+  }
+
+  async function readWorkspace(): Promise<{ scriptsRunning?: boolean }> {
+    const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
+    const state = appStore.state as { workspace: { workspaces: unknown } };
+    return (getItem(state.workspace.workspaces as never, WS_SCRIPTS) ?? {}) as never;
+  }
+
+  function notification(scriptsRunning: unknown, envelopeWorkspaceId?: string) {
+    return {
+      method: 'events.event',
+      params: {
+        event: {
+          id: `evt-scripts-${String(scriptsRunning)}-${envelopeWorkspaceId ?? 'none'}`,
+          ...(envelopeWorkspaceId ? { workspaceId: envelopeWorkspaceId } : {}),
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:scriptsRunning-changed',
+          actor: { type: 'system' },
+          data: { workspaceId: WS_SCRIPTS, scriptsRunning },
+        },
+      },
+    };
+  }
+
+  it('subscribes to workspace:scriptsRunning-changed in the bridge firehose filter', () => {
+    expect(DAEMON_EVENTS_SUBSCRIBE_TYPES).toContain('workspace:scriptsRunning-changed');
+  });
+
+  it('merges scriptsRunning transitions onto the workspace entity', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification(true, WS_SCRIPTS));
+    expect((await readWorkspace()).scriptsRunning).toBe(true);
+
+    handler(notification(false, WS_SCRIPTS));
+    expect((await readWorkspace()).scriptsRunning).toBe(false);
+  });
+
+  it('ignores a non-boolean flag', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification(true, WS_SCRIPTS));
+    handler(notification('yes', WS_SCRIPTS));
+    expect((await readWorkspace()).scriptsRunning).toBe(true);
+  });
+
+  it('applies the self-sufficient payload without an envelope workspaceId', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification(true));
+    expect((await readWorkspace()).scriptsRunning).toBe(true);
+  });
+});
+
 // A workspace:attention-changed / waiting-changed / displayStatus-changed
 // delta targeting a workspace this window has not hydrated yet used to be
 // silently dropped (the bulkUpdateWorkspaceEntities reducer is a no-op for
@@ -11108,6 +11198,44 @@ describe('daemonEventsBridge (dropped deltas for unhydrated workspaces → targe
     pendingFetches[1]!({ workspace: fresh });
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect((await readWorkspace(WS))?.attention).toBe('unread');
+  });
+
+  // Regression (cloudlands-fe#3647 review): presence-detected flags
+  // (`scriptsRunning`, `waiting`) are omitted when false (PROTOCOL §5.1), so a
+  // trailing workspace.get row without them must clear the value the leading
+  // read stored — a shallow upsert would keep the stale `true` and leave Home
+  // showing Running/Waiting after the command or watch ended.
+  it('a trailing workspace.get that omits a presence-detected flag clears the leading value', async () => {
+    const WS = 'ws-unhydrated-omitted-flag';
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const leading = await makeWorkspace(WS, { scriptsRunning: true, waiting: true });
+    const trailing = await makeWorkspace(WS, {});
+
+    const pendingFetches: Array<(value: unknown) => void> = [];
+    backendRequestSpy.mockImplementation(async (method: string) => {
+      if (method !== 'workspace.get') return { subscriptionId: 'sub-1' };
+      return new Promise((resolve) => {
+        pendingFetches.push(resolve);
+      });
+    });
+
+    handler(changedNotification('workspace:scriptsRunning-changed', WS, { scriptsRunning: true }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(pendingFetches).toHaveLength(1);
+
+    handler(changedNotification('workspace:scriptsRunning-changed', WS, { scriptsRunning: false }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    pendingFetches[0]!({ workspace: leading });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect((await readWorkspace(WS))?.scriptsRunning).toBe(true);
+
+    expect(pendingFetches).toHaveLength(2);
+    pendingFetches[1]!({ workspace: trailing });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect((await readWorkspace(WS))?.scriptsRunning).toBeUndefined();
+    expect((await readWorkspace(WS))?.waiting).toBeUndefined();
   });
 });
 

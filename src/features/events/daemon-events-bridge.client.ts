@@ -2452,6 +2452,30 @@ function handleWaitingChangedEvent(
 }
 
 /**
+ * `workspace:scriptsRunning-changed` (PROTOCOL §5.1 / §6.5) carries the
+ * self-sufficient `{ workspaceId, scriptsRunning }` payload for the orthogonal
+ * command-script flag; merge it like `workspace:waiting-changed`.
+ */
+function handleScriptsRunningChangedEvent(
+  event: WorkspaceEvent,
+  envelopeWorkspaceId: string | null,
+): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const dataWorkspaceId = data.workspaceId;
+  const workspaceId =
+    typeof dataWorkspaceId === 'string' && dataWorkspaceId.length > 0
+      ? dataWorkspaceId
+      : envelopeWorkspaceId;
+  const scriptsRunning = data.scriptsRunning;
+  if (!workspaceId || typeof scriptsRunning !== 'boolean') return;
+  appStore.dispatch(
+    bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { scriptsRunning })]),
+  );
+  void hydrateWorkspaceEntityIfMissing(workspaceId);
+}
+
+/**
  * Recover a dropped partial merge when the target workspace entity is not in
  * this window's store. The `bulkUpdateWorkspaceEntities` reducer is a no-op
  * for unknown ids, so a self-sufficient transition payload
@@ -2480,7 +2504,11 @@ async function runHydrateMissingWorkspaceEntityFetch(workspaceId: string): Promi
     if (workspace) {
       const { setWorkspaceEntity } =
         await import('$store/renderer/slices/workspace/workspace-slice');
-      appStore.dispatch(setWorkspaceEntity(workspace));
+      // `workspace.get` is authoritative: apply it as a detail read so a
+      // presence-detected flag it omits (`scriptsRunning`, `waiting` — false
+      // on the wire, PROTOCOL §5.1) clears a value an earlier read stored
+      // instead of surviving a shallow upsert.
+      appStore.dispatch(setWorkspaceEntity(workspace, { detailRead: true }));
     }
   } catch (_error) {
     // Workspace might have been deleted or transport error; no-op is safe.
@@ -3789,6 +3817,10 @@ export function routeDaemonEventsNotification(
     handleWaitingChangedEvent(event, null);
     return;
   }
+  if (type === 'workspace:scriptsRunning-changed' && !workspaceIdOf(event)) {
+    handleScriptsRunningChangedEvent(event, null);
+    return;
+  }
 
   // `mcp.servers:status-changed` (§6.5) is global — no `workspaceId` envelope
   // — so it must also run before the workspace-id gate below.
@@ -4053,6 +4085,11 @@ export function routeDaemonEventsNotification(
   // without a refetch. Side effect, never an early return.
   if (type === 'workspace:waiting-changed') {
     handleWaitingChangedEvent(event, workspaceId);
+  }
+  // `workspace:scriptsRunning-changed` (§5.1 / §6.5) — same merge for the
+  // orthogonal command-script flag. Side effect, never an early return.
+  if (type === 'workspace:scriptsRunning-changed') {
+    handleScriptsRunningChangedEvent(event, workspaceId);
   }
   // `browser:tab-*` (REV-2) — patch the daemon tab-registry mirror for this
   // workspace from the self-sufficient `{ tab, changes? }` payload. Side
@@ -4645,6 +4682,9 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // `workspace:waiting-changed` (§5.1 / §6.5) — self-sufficient orthogonal
   // waiting flag transitions so waiting indicators update without a refetch.
   'workspace:waiting-changed',
+  // `workspace:scriptsRunning-changed` (§5.1 / §6.5) — self-sufficient
+  // command-script flag transitions so Home's Running group updates live.
+  'workspace:scriptsRunning-changed',
   'workspace:updated',
   'workspace:task-stats-changed',
   'workspace:created',

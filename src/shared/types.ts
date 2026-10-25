@@ -360,6 +360,12 @@ export interface Workspace {
    *  wire — omitted when false, so older daemons (which never send it) read
    *  as not waiting. */
   waiting?: boolean;
+  /** BE-derived orthogonal script flag (PROTOCOL §5.1): true while the
+   *  workspace has a command-mode script run in flight (service scripts such
+   *  as dev servers never count). Presence-detected — omitted when false, so
+   *  older daemons read as no running scripts. Live via
+   *  `workspace:scriptsRunning-changed`. */
+  scriptsRunning?: boolean;
   /** Membership summary (PROTOCOL §5.1, intent-hq/intentd#1868). `myRole` is
    *  relative to the caller and absent for a non-member; `memberCount` counts
    *  accepted members; `openInviteCount` counts unredeemed invites. All absent
