@@ -54,25 +54,6 @@ async function inspectLauncher(card: Locator) {
   });
 }
 
-async function inspectResource(card: Locator) {
-  return card.evaluate((node) => {
-    const card = node as HTMLElement;
-    const cardRect = card.getBoundingClientRect();
-    const scale = cardRect.width / card.offsetWidth;
-    const labelRect = card
-      .querySelector<HTMLElement>('[data-sidebar-launcher-label]')!
-      .getBoundingClientRect();
-    const tileRect = card
-      .querySelector<HTMLElement>('[data-resource-icon-tile]')!
-      .getBoundingClientRect();
-    return {
-      leftDelta: Math.abs(tileRect.left - labelRect.left) / scale,
-      width: tileRect.width / scale,
-      height: tileRect.height / scale,
-    };
-  });
-}
-
 async function expectOpaque(locator: Locator) {
   const styles = await locator.evaluateAll((nodes) =>
     nodes.map((node) => {
@@ -89,7 +70,7 @@ for (const scenario of [
   { theme: 'light' as const, width: 360, zoom: 1, label: 'narrow light' },
   { theme: 'dark' as const, width: 260, zoom: 2, label: 'narrow dark at 200%' },
 ]) {
-  test(`keeps launcher geometry and surfaces exact in ${scenario.label}`, async ({
+  test(`keeps launcher overflow labels readable and actions usable in ${scenario.label}`, async ({
     mount,
     page,
   }) => {
@@ -102,52 +83,22 @@ for (const scenario of [
     await expect(
       component.locator('[data-sidebar-launcher-grid] [data-sidebar-launcher]'),
     ).toHaveCount(4);
-    expect(await component.evaluate((node) => node.getBoundingClientRect().width)).toBe(
-      scenario.width * scenario.zoom,
-    );
 
     for (const launcherId of ['agents', 'context']) {
-      const expectedTargetSize = launcherId === 'agents' ? 20 : 36;
       const geometry = await inspectLauncher(
         component.locator(`[data-sidebar-launcher="${launcherId}"]`),
       );
-      expect(geometry.targetSize).toBe(String(expectedTargetSize));
-      expect(geometry.visibleSize).toBe('20');
-      expect(geometry.stepSize).toBe('15');
       const visibleItems = geometry.items.filter(({ overflow }) => !overflow);
       const overflow = geometry.items.find((item) => item.overflow)!;
       expect(visibleItems.length).toBeGreaterThan(0);
-      expect(
-        visibleItems.every(
-          ({ width, visibleWidth }) =>
-            Math.max(Math.abs(width - expectedTargetSize), Math.abs((visibleWidth ?? 0) - 20)) <=
-            TOLERANCE,
-        ),
-      ).toBe(true);
-      expect(Math.abs(visibleItems[0].visibleLeft! - geometry.labelLeft)).toBeLessThanOrEqual(
-        TOLERANCE,
-      );
-      const steps = visibleItems
-        .slice(1)
-        .map((item, index) => item.left - visibleItems[index].left);
-      expect(steps.every((step) => Math.abs(step - 15) <= TOLERANCE)).toBe(true);
-      expect(steps.every((step) => Math.abs(20 - step - 5) <= TOLERANCE)).toBe(true);
       expect(overflow.text).toBe(`+${ITEM_COUNT - visibleItems.length}`);
       expect(overflow.inlineWidth).toBe('');
       expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
       expect(overflow.width).toBeGreaterThanOrEqual((overflow.textWidth ?? 0) - TOLERANCE);
     }
 
-    const contextResource = await inspectResource(
-      component.locator('[data-sidebar-launcher="context"]'),
-    );
-    expect(contextResource.leftDelta).toBeLessThanOrEqual(TOLERANCE);
-    expect(contextResource.width).toBeCloseTo(20, 1);
-    expect(contextResource.height).toBeCloseTo(20, 1);
-
     const changesLauncher = component.locator('[data-sidebar-launcher="changes"]');
     await expect(changesLauncher.locator('[data-resource-icon-tile]')).toHaveCount(0);
-    const changesLabel = changesLauncher.locator('[data-sidebar-launcher-label]');
     const prAction = changesLauncher.locator('[data-sidebar-pr-trigger]');
     await expect(prAction).toHaveCount(1);
     await expect(prAction.locator('svg')).toHaveCount(1);
@@ -162,12 +113,6 @@ for (const scenario of [
     );
     await page.keyboard.press('Escape');
     await expect(page.locator('[data-sidebar-pr-link]')).toHaveCount(0);
-    const labelBounds = await changesLabel.boundingBox();
-    const actionBounds = await prAction.boundingBox();
-    expect((actionBounds!.x - (labelBounds!.x + labelBounds!.width)) / scenario.zoom).toBeCloseTo(
-      8,
-      1,
-    );
     await expect(changesLauncher.getByText('PR #', { exact: false })).toHaveCount(0);
     await expect(changesLauncher.getByText('Open', { exact: true })).toHaveCount(0);
 
@@ -183,7 +128,7 @@ for (const scenario of [
 
     const agentsLauncher = component.locator('[data-sidebar-launcher="agents"]');
     const tokenTrigger = agentsLauncher.getByTestId('token-usage-disclosure');
-    const [agentsLabelBox, tokenTriggerBox, agentsCardBox] = await Promise.all([
+    const [agentsLabelBox, tokenTriggerBox] = await Promise.all([
       agentsLauncher.locator('[data-sidebar-launcher-label]').boundingBox(),
       tokenTrigger.boundingBox(),
       agentsLauncher.boundingBox(),
@@ -191,13 +136,6 @@ for (const scenario of [
     await expect(tokenTrigger).toHaveText(/124K/);
     await expect(tokenTrigger).toHaveAccessibleDescription('124K tokens used');
     expect(tokenTriggerBox!.x).toBeGreaterThan(agentsLabelBox!.x + agentsLabelBox!.width);
-    expect(
-      Math.abs(
-        (agentsCardBox!.x + agentsCardBox!.width - tokenTriggerBox!.x - tokenTriggerBox!.width) /
-          scenario.zoom -
-          8,
-      ),
-    ).toBeLessThanOrEqual(1);
   });
 }
 

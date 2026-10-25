@@ -360,6 +360,12 @@ export interface Workspace {
    *  wire — omitted when false, so older daemons (which never send it) read
    *  as not waiting. */
   waiting?: boolean;
+  /** BE-derived orthogonal script flag (PROTOCOL §5.1): true while the
+   *  workspace has a command-mode script run in flight (service scripts such
+   *  as dev servers never count). Presence-detected — omitted when false, so
+   *  older daemons read as no running scripts. Live via
+   *  `workspace:scriptsRunning-changed`. */
+  scriptsRunning?: boolean;
   /** Membership summary (PROTOCOL §5.1, intent-hq/intentd#1868). `myRole` is
    *  relative to the caller and absent for a non-member; `memberCount` counts
    *  accepted members; `openInviteCount` counts unredeemed invites. All absent
@@ -407,6 +413,8 @@ export interface Workspace {
   environmentConfig?: EnvironmentConfig;
   archived?: boolean;
   archivedAt?: string;
+  /** ISO time the workspace was retired; present only while `status` is `Retired`. */
+  retiredAt?: string;
   /** ISO deadline of an in-memory pending deletion (PROTOCOL §5.1 delete grace
    *  window). Present only while a `workspace.delete { undoDelayMs > 0 }`
    *  grace window is running; cleared by `workspace.cancelDelete` and dropped by
@@ -508,6 +516,8 @@ export enum WorkspaceStatus {
   Active = 'Active',
   Inactive = 'Inactive',
   Archived = 'Archived',
+  /** Folder deleted, database rows kept read-only (PROTOCOL §5.1 Retired workspaces). */
+  Retired = 'Retired',
   Deleted = 'Deleted',
 }
 

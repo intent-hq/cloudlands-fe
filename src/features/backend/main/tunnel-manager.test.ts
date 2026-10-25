@@ -8,6 +8,7 @@
  * network WebSocket in between.
  */
 import crypto from 'node:crypto';
+import type { ChildProcess } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -16,8 +17,13 @@ import https from 'node:https';
 import http from 'node:http';
 import { createRequire } from 'node:module';
 import net from 'node:net';
+import { PassThrough } from 'node:stream';
 import type { AddressInfo } from 'node:net';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { TC_ADDRESS_WITH_PSK } from '../../../test/fixtures/tc-address.fixture';
+import type { TailcatSpawn } from './tailcat-tunnel';
+import * as tailcat from './tailcat-tunnel';
 
 import type { BackendConnectionConfig } from './backend-connection';
 import { AuthRejectedError, PinMismatchError } from './backend-connection';
@@ -36,6 +42,7 @@ import {
   type TunnelSocketLike,
 } from './tunnel-manager';
 import { CURRENT_PROTOCOL_VERSION } from '../../../test/current-protocol-version';
+import { parseProtocolVersion } from '$shared/protocol-version';
 
 /** Scripted stand-in for the `/tunnel` `ws.WebSocket`. */
 class FakeTunnelSocket extends EventEmitter implements TunnelSocketLike {
@@ -1774,6 +1781,47 @@ describe('TunnelManager', () => {
     await expect(pending).rejects.toThrow(/candidate b refused/);
   });
 
+  it.each(['dispose', 'timeout', 'direct winner'] as const)(
+    'closes a late Tailcat socket after %s',
+    async (outcome) => {
+      let finish!: (socket: TunnelSocketLike) => void;
+      const pendingSocket = new Promise<TunnelSocketLike>((resolve) => {
+        finish = resolve;
+      });
+      const manager = new TunnelManager({
+        getConfig: () => ({
+          ...WSS_CONFIG,
+          host: outcome === 'direct winner' ? '127.0.0.1' : TC_ADDRESS_WITH_PSK,
+          tcAddress: TC_ADDRESS_WITH_PSK,
+        }),
+        getProtocolVersion: () => parseProtocolVersion(CURRENT_PROTOCOL_VERSION),
+        connectTimeoutMs: 25,
+        socketFactory: (config) => {
+          if (config.host === TC_ADDRESS_WITH_PSK) return pendingSocket;
+          const socket = new FakeTunnelSocket();
+          queueMicrotask(() => socket.open());
+          return socket;
+        },
+      });
+      onCleanup(() => manager.dispose());
+      const connected = manager.ensureTunnel();
+      if (outcome === 'dispose') {
+        manager.dispose();
+        await expect(connected).rejects.toThrow('disposed');
+      } else if (outcome === 'timeout') {
+        await expect(connected).rejects.toThrow('timed out');
+      } else {
+        await connected;
+      }
+      const late = new FakeTunnelSocket();
+      finish(late);
+      await waitFor(() => late.readyState === 3);
+      expect(manager.getDiagnostics().state).toBe(
+        outcome === 'dispose' ? 'disposed' : outcome === 'timeout' ? 'disconnected' : 'connected',
+      );
+    },
+  );
+
   it('sends the mux frames the daemon contract expects (OPEN with port, DATA, CLOSE)', async () => {
     const { server, port } = await startEchoServer();
     onCleanup(() => server.close());
@@ -1944,6 +1992,29 @@ class RejectingTunnelDaemon {
   }
 }
 
+class TailcatRelayChild extends EventEmitter {
+  stdin = new PassThrough();
+  stdout = new PassThrough();
+  stderr = new PassThrough();
+  killed = false;
+  private readonly socket: net.Socket;
+
+  constructor(port: number) {
+    super();
+    this.socket = net.connect(port, '127.0.0.1');
+    this.socket.on('error', () => {});
+    this.socket.on('close', () => this.emit('exit', 0));
+    this.stdin.pipe(this.socket);
+    this.socket.pipe(this.stdout);
+  }
+
+  kill(): boolean {
+    this.killed = true;
+    this.socket.destroy();
+    return true;
+  }
+}
+
 describe('tunnel wss wire-level pinning (handshake-enforced, monorepo#4072)', () => {
   let daemon: FakeTunnelWssDaemon;
   const TOKEN = 'c'.repeat(64);
@@ -2050,7 +2121,7 @@ describe('tunnel wss wire-level pinning (handshake-enforced, monorepo#4072)', ()
     expect((error as AuthRejectedError).statusCode).toBe(401);
   });
 
-  it('latches owner-only on a 403 upgrade rejection and stops re-dialing (multiplayer w3)', async () => {
+  it('latches a 403 upgrade rejection and stops re-dialing', async () => {
     const rejecting = new RejectingTunnelDaemon();
     rejecting.statusCode = 403;
     let upgrades = 0;
@@ -2074,5 +2145,125 @@ describe('tunnel wss wire-level pinning (handshake-enforced, monorepo#4072)', ()
     await expect(manager.forwardPort(8080)).rejects.toBeInstanceOf(TunnelForbiddenError);
     await expect(manager.ensureTunnel()).rejects.toBeInstanceOf(TunnelForbiddenError);
     expect(upgrades).toBe(1);
+  });
+
+  describe('Tailcat forwarding', () => {
+    beforeEach(() => vi.stubEnv('TAILCAT_BIN', process.execPath));
+    afterEach(() => vi.unstubAllEnvs());
+
+    function makeTailcatManager(overrides: Partial<BackendConnectionConfig> = {}) {
+      const config: BackendConnectionConfig = {
+        transport: 'wss',
+        host: TC_ADDRESS_WITH_PSK,
+        port: daemon.port,
+        token: TOKEN,
+        fingerprint: daemon.fingerprint,
+        ...overrides,
+      };
+      const children: TailcatRelayChild[] = [];
+      const spawn: TailcatSpawn = vi.fn((_command, args) => {
+        const child = new TailcatRelayChild(Number(args[1]));
+        children.push(child);
+        return child as unknown as ChildProcess;
+      });
+      const manager = new TunnelManager({
+        getConfig: () => config,
+        getProtocolVersion: () => parseProtocolVersion(CURRENT_PROTOCOL_VERSION),
+        tailcatSpawn: spawn,
+        connectTimeoutMs: 2000,
+      });
+      onCleanup(() => manager.dispose());
+      return { manager, children, spawn };
+    }
+
+    it('forwards bytes over pinned WSS through an opaque Tailcat address and reconnects', async () => {
+      const { manager, children, spawn } = makeTailcatManager();
+      const localPort = await manager.forwardPort(6028);
+      const roundTrip = async () => {
+        const client = await connectClient(localPort);
+        onCleanup(() => client.destroy());
+        const payload = Buffer.from('shared workspace preview');
+        const received = collectUntil(client, payload.length);
+        client.write(payload);
+        expect(await received).toEqual(payload);
+      };
+      await roundTrip();
+      expect(spawn).toHaveBeenCalledWith(
+        process.execPath,
+        [TC_ADDRESS_WITH_PSK, String(daemon.port)],
+        {
+          stdio: ['pipe', 'pipe', 'pipe'],
+        },
+      );
+      expect(daemon.lastAuthHeader).toBe(`Bearer ${TOKEN}`);
+      expect(daemon.lastUpgradeUrl).toBe(`/tunnel?token=${TOKEN}`);
+      children[0].kill();
+      await waitFor(() => manager.getDiagnostics().state === 'disconnected');
+      await roundTrip();
+      expect(manager.activeForwards()).toEqual([{ remotePort: 6028, localPort }]);
+      expect(children).toHaveLength(2);
+      manager.dispose();
+      await waitFor(() => children.every((child) => child.killed));
+    });
+
+    it('falls back to tcAddress when the direct host cannot connect', async () => {
+      const { manager, spawn } = makeTailcatManager({
+        host: 'unreachable.invalid',
+        tcAddress: TC_ADDRESS_WITH_PSK,
+      });
+      await manager.ensureTunnel();
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(manager.getDiagnostics().state).toBe('connected');
+    });
+
+    it('accepts a tcAddress without any direct host', async () => {
+      const { manager, spawn } = makeTailcatManager({
+        host: undefined,
+        tcAddress: TC_ADDRESS_WITH_PSK,
+      });
+      await manager.ensureTunnel();
+      expect(spawn).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps direct forwarding available when the Tailcat binary is missing', async () => {
+      const binary = vi.spyOn(tailcat, 'resolveTailcatBinaryPath').mockReturnValue(null);
+      onCleanup(() => binary.mockRestore());
+      const { manager, spawn } = makeTailcatManager({
+        host: daemon.host,
+        tcAddress: TC_ADDRESS_WITH_PSK,
+      });
+      await manager.ensureTunnel();
+      expect(spawn).not.toHaveBeenCalled();
+      expect(manager.getDiagnostics().state).toBe('connected');
+      const { manager: tunnelOnly } = makeTailcatManager();
+      const error = await tunnelOnly.ensureTunnel().catch((cause: unknown) => cause);
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toContain('Tailcat is unavailable');
+      expect((error as Error).message).not.toContain(TC_ADDRESS_WITH_PSK);
+    });
+
+    it('does not send credentials through Tailcat when the certificate pin is wrong', async () => {
+      await daemon.whenClientsClosed();
+      const before = daemon.decryptedBytes;
+      const { manager, children } = makeTailcatManager({
+        fingerprint: Array.from({ length: 32 }, () => 'FF').join(':'),
+      });
+      await expect(manager.ensureTunnel()).rejects.toBeInstanceOf(PinMismatchError);
+      await waitFor(() => children.length === 1 && children[0].killed);
+      expect(daemon.decryptedBytes).toBe(before);
+    });
+
+    it('reports guest refusal over Tailcat and does not retry the denied connection', async () => {
+      const rejecting = new RejectingTunnelDaemon();
+      rejecting.statusCode = 403;
+      await rejecting.start();
+      onCleanup(() => rejecting.stop());
+      const { manager, children, spawn } = makeTailcatManager({ port: rejecting.port });
+      await expect(manager.forwardPort(6028)).rejects.toBeInstanceOf(TunnelForbiddenError);
+      await expect(manager.forwardPort(6028)).rejects.toBeInstanceOf(TunnelForbiddenError);
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(manager.activeForwards()).toEqual([]);
+      await waitFor(() => children.length === 1 && children[0].killed);
+    });
   });
 });

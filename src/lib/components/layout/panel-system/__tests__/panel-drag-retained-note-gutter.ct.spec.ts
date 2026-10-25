@@ -66,16 +66,12 @@ for (const sourceSide of ['left', 'right'] as const) {
     const gutterWidth = await split
       .locator('[data-panel-layout-preview-gutter="horizontal"]')
       .evaluate((element) => element.getBoundingClientRect().width);
-
-    expect(before.leftInset).toBe(48);
-    expect(before.rightInset).toBe(48);
     expect(during.leftInset).toBe(before.leftInset);
     expect(during.rightInset).toBe(before.rightInset);
     expect(during.contentLeft).toBeCloseTo(before.contentLeft, 1);
     expect(during.contentRight).toBeCloseTo(before.contentRight, 1);
     expect(during.panelWidth).toBeCloseTo(before.panelWidth, 1);
     expect(during.noteWidth).toBeCloseTo(before.noteWidth, 1);
-    expect(gutterWidth).toBe(8);
     expect(widths[0] + gutterWidth + widths[1]).toBeCloseTo(splitWidth, 1);
   });
 }

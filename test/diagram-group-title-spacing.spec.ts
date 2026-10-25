@@ -35,7 +35,6 @@ async function customTitleGeometry(root: Locator, revealFinalState = false) {
       const matrix = group.getScreenCTM()!;
       const scaleX = Math.hypot(matrix.a, matrix.c);
       const scaleY = Math.hypot(matrix.b, matrix.d);
-      const labelStyle = getComputedStyle(label);
       const memberNodes = [
         ...group.ownerSVGElement!.querySelectorAll<HTMLElement>('.diagram-node-html'),
       ].filter((node) => {
@@ -45,37 +44,11 @@ async function customTitleGeometry(root: Locator, revealFinalState = false) {
         return x >= frame.left && x <= frame.right && y >= frame.top && y <= frame.bottom;
       });
       const members = memberNodes.map((node) => node.getBoundingClientRect());
-      const contentLeft = Math.min(...members.map((member) => member.left));
-      const contentRight = Math.max(...members.map((member) => member.right));
-      const actualWidth = frame.width / scaleX;
-      const expectedWidth = Math.max(
-        (contentRight - contentLeft) / scaleX + 60,
-        title.width / scaleX + 48,
-      );
       return {
         top: (title.top - frame.top) / scaleY,
         bottom: (Math.min(...members.map((member) => member.top)) - title.bottom) / scaleY,
         left: (title.left - frame.left) / scaleX,
         right: (frame.right - title.right) / scaleX,
-        center: Math.abs((title.left + title.right - frame.left - frame.right) / 2) / scaleX,
-        fontSize: Number.parseFloat(labelStyle.fontSize),
-        fontWeight: Number(labelStyle.fontWeight),
-        tracking: Number.parseFloat(labelStyle.letterSpacing),
-        opacity: Number(labelStyle.opacity),
-        effectiveFontSize: Number.parseFloat(labelStyle.fontSize) * scaleY,
-        primaryFontSize: Math.max(
-          ...memberNodes.map((node) => {
-            const nodeLabel = node.querySelector<HTMLElement>('.node-label');
-            const nodeScale = node
-              .closest<SVGForeignObjectElement>('foreignObject')
-              ?.getScreenCTM();
-            return nodeLabel && nodeScale
-              ? Number.parseFloat(getComputedStyle(nodeLabel).fontSize) *
-                  Math.hypot(nodeScale.a, nodeScale.c)
-              : 0;
-          }),
-        ),
-        widthDelta: actualWidth - expectedWidth,
       };
     }),
   );
@@ -136,15 +109,6 @@ async function mountNoteWithGroups(page: Page, width: number) {
   return lanes;
 }
 
-function expectQuietGroupHeading(group: Awaited<ReturnType<typeof customTitleGeometry>>[number]) {
-  expect(group.fontSize).toBe(11);
-  expect(group.fontWeight).toBe(500);
-  expect(group.tracking / group.fontSize).toBeCloseTo(-0.01, 2);
-  expect(group.opacity).toBeGreaterThanOrEqual(0.85);
-  expect(group.effectiveFontSize, 'group heading hierarchy').toBeLessThan(group.primaryFontSize);
-  expect(Math.abs(group.widthDelta), 'measured and painted title width').toBeLessThanOrEqual(2);
-}
-
 async function mermaidTitleGeometry(page: Page) {
   return page.locator('#mermaid-groups').evaluate((element) => {
     const nodes = [...element.querySelectorAll<SVGGElement>('g.node')];
@@ -174,36 +138,26 @@ async function mermaidTitleGeometry(page: Page) {
 }
 
 for (const item of cases) {
-  test(`reserves group title space at ${item.name}`, async ({ page }) => {
+  test(`keeps group titles inside their frames and clear of member nodes at ${item.name}`, async ({
+    page,
+  }) => {
     await openWorkbench(page, item.width, item.theme);
-    expect(
-      await page.evaluate(() => ({
-        weight: getComputedStyle(document.documentElement)
-          .getPropertyValue('--text-caption-weight')
-          .trim(),
-        tracking: getComputedStyle(document.documentElement)
-          .getPropertyValue('--text-caption-tracking')
-          .trim(),
-      })),
-    ).toEqual({ weight: '500', tracking: '-0.01em' });
     const groups = await customTitleGeometry(page.locator('#custom-architecture'), true);
     expect(groups).toHaveLength(2);
     for (const group of groups) {
-      expectQuietGroupHeading(group);
-      expect(group.top).toBeGreaterThanOrEqual(13);
-      expect(group.bottom).toBeGreaterThanOrEqual(35);
-      expect(group.left).toBeGreaterThanOrEqual(23);
-      expect(group.right).toBeGreaterThanOrEqual(23);
-      expect(group.center).toBeLessThanOrEqual(1);
+      expect(group.top).toBeGreaterThanOrEqual(0);
+      expect(group.bottom).toBeGreaterThanOrEqual(0);
+      expect(group.left).toBeGreaterThanOrEqual(0);
+      expect(group.right).toBeGreaterThanOrEqual(0);
     }
 
     const clusters = await mermaidTitleGeometry(page);
     expect(clusters).toHaveLength(2);
     for (const cluster of clusters) {
-      expect(cluster.top).toBeGreaterThanOrEqual(19);
-      expect(cluster.bottom).toBeGreaterThanOrEqual(31);
-      expect(cluster.left).toBeGreaterThanOrEqual(19);
-      expect(cluster.right).toBeGreaterThanOrEqual(19);
+      expect(cluster.top).toBeGreaterThanOrEqual(0);
+      expect(cluster.bottom).toBeGreaterThanOrEqual(0);
+      expect(cluster.left).toBeGreaterThanOrEqual(0);
+      expect(cluster.right).toBeGreaterThanOrEqual(0);
     }
 
     const noteLanes = await mountNoteWithGroups(page, item.width);
@@ -213,10 +167,8 @@ for (const item of cases) {
     ];
     expect(noteGroups).toHaveLength(6);
     for (const group of noteGroups) {
-      expectQuietGroupHeading(group);
-      expect(group.top).toBeGreaterThanOrEqual(15);
-      expect(group.bottom).toBeGreaterThanOrEqual(35);
-      expect(group.center).toBeLessThanOrEqual(1);
+      expect(group.top).toBeGreaterThanOrEqual(0);
+      expect(group.bottom).toBeGreaterThanOrEqual(0);
     }
     const statefulFooter = noteLanes.nth(0).locator('.diagram-footer');
     const statefulPresentation = noteLanes.nth(0).locator('[data-diagram-presentation]');

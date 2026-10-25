@@ -26,6 +26,14 @@ export type WorkspaceMcpSettingsState = {
   disabledServers: Record<string, true>;
 };
 
+/** The user action whose validation or save failed. */
+export type McpMutationAction = 'add' | 'update' | 'remove' | 'toggle' | 'import';
+
+export type McpMutationError = {
+  action: McpMutationAction;
+  message: string;
+};
+
 /** Redux-serializable MCP settings state */
 export type McpSettingsState = {
   /** Server configurations loaded from settings */
@@ -40,8 +48,10 @@ export type McpSettingsState = {
   disabledServers: Record<string, true>;
   /** Whether servers are currently being loaded */
   loading: boolean;
-  /** Global error message */
+  /** Load error: set only when reading the server list fails (drives the load diagnostic). */
   error: string | null;
+  /** Failure of the last add/update/remove/toggle/import, shown next to that action. */
+  mutationError: McpMutationError | null;
   /** Whether the MCP feature is enabled */
   enabled: boolean;
   /** Number of servers imported in the last JSON import (for UI feedback) */

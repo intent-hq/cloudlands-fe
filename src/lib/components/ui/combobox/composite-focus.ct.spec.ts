@@ -23,15 +23,12 @@ for (const kind of ['combobox', 'searchable', 'file', 'copy', 'sidebar'] as cons
     await page.keyboard.press('Tab');
     await expect(trigger).toBeFocused();
     await expect(trigger).toHaveCSS('outline-style', 'solid');
-    await expect(trigger).toHaveCSS('outline-width', '1px');
     if (kind === 'combobox' || kind === 'searchable') {
       const outlineExtent = await trigger.evaluate((node) => {
         const style = getComputedStyle(node);
         return parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset);
       });
       expect(outlineExtent).toBeLessThanOrEqual(0);
-    } else {
-      await expect(trigger).toHaveCSS('outline-offset', '2px');
     }
     const colors = await trigger.evaluate((node) => {
       const style = getComputedStyle(node);

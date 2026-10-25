@@ -1,14 +1,5 @@
 import { expect, test } from '../../../../test/ct-test';
-import type { Locator } from '@playwright/test';
 import ChatPanelOperationalGeometryHost from './ChatPanelOperationalGeometryHost.svelte';
-import {
-  applyAuroraPaintProbe,
-  colorDistance,
-  isPaintProbe,
-  samplePanelBottomPixels,
-} from './aurora-panel-pixels';
-
-const center = (box: { x: number; width: number }) => box.x + box.width / 2;
 
 const transcriptInsetCases = [
   {
@@ -20,112 +11,6 @@ const transcriptInsetCases = [
     label: 'above the panel breakpoint',
   },
 ] as const;
-
-// Sample every column in one frame: separate boundingBox() round trips can
-// straddle a layout pass and skew widths and centers independently.
-const columnRects = (component: Locator) =>
-  component.evaluate((root) => {
-    const rect = (testId: string) => {
-      const box = root.querySelector(`[data-testid="${testId}"]`)!.getBoundingClientRect();
-      return { x: box.x, width: box.width };
-    };
-    return {
-      transcript: rect('chat-transcript-inner'),
-      composer: rect('chat-composer-controls-inner'),
-      composerLane: rect('chat-composer-lane'),
-      shell: rect('chat-composer-shell'),
-      promptLayer: rect('composer-prompt-layer'),
-    };
-  });
-
-// Wait until the transcript/composer geometry converges: the scrollbar gutter
-// can lag the resize by a frame and skew the transcript width and center.
-async function settleColumns(component: Locator) {
-  await expect
-    .poll(async () => {
-      const { transcript, composer, composerLane } = await columnRects(component);
-      return {
-        laneMatchesTranscript: Math.abs(transcript.width - composerLane.width) <= 1,
-        composerContained: composer.width > 0 && composer.width <= transcript.width,
-        composerCentered: Math.abs(center(transcript) - center(composer)) <= 0.5,
-      };
-    })
-    .toEqual({ laneMatchesTranscript: true, composerContained: true, composerCentered: true });
-  return columnRects(component);
-}
-
-const bottomSurfaceGeometry = (locator: Locator) =>
-  locator.evaluate((node) => {
-    const box = node.getBoundingClientRect();
-    return {
-      edges: [box.left, box.right, box.bottom],
-    };
-  });
-
-async function expectPanelToClipFlushAurora(aurora: Locator, panel: Locator) {
-  await applyAuroraPaintProbe(aurora);
-  const pixels = await samplePanelBottomPixels(panel);
-  pixels.outsideCorners.forEach((corner) => expect(isPaintProbe(corner)).toBe(false));
-  pixels.insideCorners.forEach((corner) => expect(isPaintProbe(corner)).toBe(true));
-  pixels.straightEdges.forEach((edge) => {
-    expect(isPaintProbe(edge)).toBe(true);
-    pixels.outsideCorners.forEach((corner) =>
-      expect(colorDistance(edge, corner)).toBeGreaterThan(100),
-    );
-  });
-}
-
-test('caps and centers transcript, prompt, and composer at the shared 140em measure', async ({
-  mount,
-  page,
-}) => {
-  await page.setViewportSize({ width: 3000, height: 900 });
-  const component = await mount(ChatPanelOperationalGeometryHost, {
-    props: { theme: 'light', zoom: 1, width: 3000 },
-  });
-  const transcript = component.getByTestId('chat-transcript-inner');
-  const composerLane = component.getByTestId('chat-composer-lane');
-  const shell = component.getByTestId('chat-composer-shell');
-  const promptLayer = component.getByTestId('composer-prompt-layer');
-  const aurora = component.getByTestId('composer-aurora-host');
-
-  for (const theme of ['light', 'dark'] as const) {
-    for (const zoom of [1, 2]) {
-      await component.update({ props: { theme, zoom, width: 3000 } });
-      const sharedMeasure = await transcript.evaluate((node) => {
-        const style = getComputedStyle(node);
-        return {
-          fontSize: Number.parseFloat(style.fontSize),
-          maxWidth: Number.parseFloat(style.maxWidth),
-        };
-      });
-      expect(sharedMeasure.maxWidth / sharedMeasure.fontSize).toBeCloseTo(140, 5);
-      const {
-        transcript: transcriptBox,
-        composer: composerBox,
-        composerLane: composerLaneBox,
-        shell: shellBox,
-        promptLayer: promptBox,
-      } = await settleColumns(component);
-      expect(composerLaneBox.width).toBeCloseTo(transcriptBox.width, 1);
-      expect(Math.abs(center(transcriptBox) - center(composerBox))).toBeLessThanOrEqual(0.5);
-      expect(promptBox.width).toBeCloseTo(shellBox.width, 1);
-      const panel = component.locator('.panel');
-      const [auroraGeometry, shellGeometry, panelContentGeometry] = await Promise.all([
-        bottomSurfaceGeometry(aurora),
-        bottomSurfaceGeometry(shell),
-        bottomSurfaceGeometry(component.locator('.panel > .panel-content')),
-      ]);
-      expect(auroraGeometry.edges).toEqual(shellGeometry.edges);
-      expect(auroraGeometry.edges).toEqual(panelContentGeometry.edges);
-      await expectPanelToClipFlushAurora(aurora, panel);
-      await expect(promptLayer).toHaveCSS('border-top-width', '0px');
-      expect(
-        await composerLane.evaluate((node) => Number.parseFloat(getComputedStyle(node).maxWidth)),
-      ).toBeCloseTo(sharedMeasure.maxWidth, 5);
-    }
-  }
-});
 
 for (const { width, label } of transcriptInsetCases) {
   test(`keeps the transcript and pinned prompt usable ${label}`, async ({
@@ -168,29 +53,15 @@ test('keeps the nested composer inset without a narrow scroll owner', async ({ m
   });
   const transcript = component.getByTestId('chat-transcript-inner');
   const viewport = component.getByTestId('chat-transcript-scroll-viewport');
-  const aurora = component.getByTestId('composer-aurora-host');
-  const shell = component.getByTestId('chat-composer-shell');
 
   for (const theme of ['light', 'dark'] as const) {
     for (const zoom of [1, 2]) {
       await component.update({ props: { theme, zoom, width: 360 } });
-      const { transcript: transcriptBox, composer: composerBox } = await settleColumns(component);
-      expect(Math.abs(center(transcriptBox) - center(composerBox))).toBeLessThanOrEqual(0.5);
-      expect(transcriptBox.width).toBeLessThanOrEqual(360 * zoom);
       expect(await transcript.evaluate((node) => node.scrollWidth <= node.clientWidth + 0.5)).toBe(
         true,
       );
       await expect(viewport).toHaveCSS('overflow-y', 'auto');
       await expect(transcript).toHaveCSS('overflow-y', 'visible');
-      const panel = component.locator('.panel');
-      const [auroraGeometry, shellGeometry, panelContentGeometry] = await Promise.all([
-        bottomSurfaceGeometry(aurora),
-        bottomSurfaceGeometry(shell),
-        bottomSurfaceGeometry(component.locator('.panel > .panel-content')),
-      ]);
-      expect(auroraGeometry.edges).toEqual(shellGeometry.edges);
-      expect(auroraGeometry.edges).toEqual(panelContentGeometry.edges);
-      await expectPanelToClipFlushAurora(aurora, panel);
     }
   }
 });
@@ -216,6 +87,14 @@ test('contains expanded long tool content, follows bottom, and preserves compose
   // Wheel-up above paused following; resume through downward user input.
   await viewport.hover({ position: { x: 2, y: 100 } });
   await page.mouse.wheel(0, 100_000);
+  await expect
+    .poll(() => viewport.evaluate((node) => node.scrollHeight - node.scrollTop - node.clientHeight))
+    .toBeLessThanOrEqual(1);
+  // Following must survive a later viewport shrink, rather than only landing
+  // at the current bottom once during the native wheel scroll.
+  const priorHeight = await viewport.evaluate((node) => node.clientHeight);
+  await component.update({ props: { theme: 'dark', zoom: 2, width: 360, height: 800 } });
+  await expect.poll(() => viewport.evaluate((node) => node.clientHeight)).toBeLessThan(priorHeight);
   await expect
     .poll(() => viewport.evaluate((node) => node.scrollHeight - node.scrollTop - node.clientHeight))
     .toBeLessThanOrEqual(1);

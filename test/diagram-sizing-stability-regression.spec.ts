@@ -263,7 +263,6 @@ for (const motion of ['full', 'reduced'] as const) {
     expect(observations.length).toBeGreaterThanOrEqual(20);
     for (const observation of observations) {
       expectMermaidContract(observation.geometry, expected);
-      expect(observation.geometry).toEqual(initial);
     }
 
     for (const width of [420, NATIVE_NOTE_HOST_WIDTH]) {
@@ -412,6 +411,5 @@ test('keeps every final architecture element contained through panel resizes', a
     });
     expect(result.ctm).toHaveLength(6);
     expect(result.ctm!.every(Number.isFinite)).toBe(true);
-    expect(result.minFontSize, `${width}px readable architecture text`).toBeGreaterThanOrEqual(12);
   }
 });

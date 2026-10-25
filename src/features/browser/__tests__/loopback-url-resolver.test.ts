@@ -6,11 +6,18 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { Logger } from '../../../shared/logger';
+import { TC_ADDRESS_WITH_PSK } from '../../../test/fixtures/tc-address.fixture';
 import { TunnelForbiddenError } from '../../backend/main/tunnel-manager';
+import { loopbackContextFromTransport } from '../main/loopback-rewrite';
 import { resolveBrowserUrl } from '../main/loopback-url-resolver';
 
 const remoteContext = { daemonIsRemote: true, daemonHost: '10.0.0.5' };
 const localContext = { daemonIsRemote: false };
+const tailcatContext = loopbackContextFromTransport(false, {
+  transport: 'wss',
+  host: TC_ADDRESS_WITH_PSK,
+});
 
 describe('resolveBrowserUrl', () => {
   let fetchMock: ReturnType<typeof vi.fn>;
@@ -27,6 +34,7 @@ describe('resolveBrowserUrl', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.clearAllMocks();
+    vi.restoreAllMocks();
   });
 
   it('passes non-loopback URLs through without probing', async () => {
@@ -130,6 +138,125 @@ describe('resolveBrowserUrl', () => {
     expect(result.requestedUrl).toBe('http://localhost:8080/page');
   });
 
+  describe('Tailcat remote targets', () => {
+    it('forwards when only tcAddress is configured without a direct host', async () => {
+      const context = loopbackContextFromTransport(false, {
+        transport: 'wss',
+        tcAddress: TC_ADDRESS_WITH_PSK,
+      });
+      const result = await resolveBrowserUrl(
+        'http://daemon.localhost:8080/page?q=1#frag',
+        context,
+        tunnelProvider,
+      );
+      expect(result.url).toBe('http://127.0.0.1:45678/page?q=1#frag');
+      expect(result.tunneled).toBe(true);
+      expect(result.error).toBeUndefined();
+      expect(forwardPort).toHaveBeenCalledExactlyOnceWith(8080);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('still probes a normal direct host when a Tailcat fallback is configured', async () => {
+      const context = loopbackContextFromTransport(false, {
+        transport: 'wss',
+        host: 'remote.example.test',
+        tcAddress: TC_ADDRESS_WITH_PSK,
+      });
+      const result = await resolveBrowserUrl(
+        'http://daemon.localhost:8080/page',
+        context,
+        tunnelProvider,
+      );
+      expect(result.url).toBe('http://remote.example.test:8080/page');
+      expect(fetchMock).toHaveBeenCalledExactlyOnceWith('http://remote.example.test:8080', {
+        signal: expect.any(AbortSignal),
+      });
+      expect(forwardPort).not.toHaveBeenCalled();
+    });
+
+    it.each(['daemon.localhost', '127.0.0.1', 'localhost', '[::1]'])(
+      'forwards %s without exposing its Tailcat address or probing DNS',
+      async (host) => {
+        const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
+        const info = vi.spyOn(Logger.prototype, 'info').mockImplementation(() => {});
+        const requestedUrl = `http://${host}:8080/a/b?q=1&r=2#frag`;
+        const result = await resolveBrowserUrl(requestedUrl, tailcatContext, tunnelProvider);
+        expect(result).toMatchObject({
+          url: 'http://127.0.0.1:45678/a/b?q=1&r=2#frag',
+          requestedUrl,
+          rewritten: true,
+          tunneled: true,
+        });
+        expect(result.error).toBeUndefined();
+        expect(forwardPort).toHaveBeenCalledExactlyOnceWith(8080);
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(
+          JSON.stringify([result, warn.mock.calls, info.mock.calls]).toLowerCase(),
+        ).not.toContain(TC_ADDRESS_WITH_PSK.toLowerCase());
+      },
+    );
+
+    it.each([
+      ['http', 80],
+      ['https', 443],
+    ])('forwards the default %s port', async (scheme, port) => {
+      const result = await resolveBrowserUrl(
+        `${scheme}://daemon.localhost/page`,
+        tailcatContext,
+        tunnelProvider,
+      );
+      expect(result.url).toBe(`${scheme}://127.0.0.1:45678/page`);
+      expect(forwardPort).toHaveBeenCalledExactlyOnceWith(port);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('keeps client.localhost on the client without forwarding', async () => {
+      const result = await resolveBrowserUrl(
+        'http://client.localhost:8080/page',
+        tailcatContext,
+        tunnelProvider,
+      );
+      expect(result.url).toBe('http://127.0.0.1:8080/page');
+      expect(forwardPort).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('retains a safe display URL in rewrite-only mode without forwarding', async () => {
+      const result = await resolveBrowserUrl(
+        'http://localhost:8080/page?q=1#frag',
+        tailcatContext,
+        tunnelProvider,
+        { rewriteOnly: true },
+      );
+      expect(result.url).toBe('http://daemon.localhost:8080/page?q=1#frag');
+      expect(result.error).toBeUndefined();
+      expect(JSON.stringify(result)).not.toContain(TC_ADDRESS_WITH_PSK);
+      expect(forwardPort).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('passes existing local forwards through while keeping daemon aliases remote', async () => {
+      const provider = () => ({
+        forwardPort,
+        activeForwards: () => [{ remotePort: 8080, localPort: 45678 }],
+      });
+      for (const host of ['127.0.0.1', 'localhost', '[::1]']) {
+        const result = await resolveBrowserUrl(
+          `http://${host}:45678/page?q=1#frag`,
+          tailcatContext,
+          provider,
+        );
+        const expectedHost = host === '[::1]' ? '127.0.0.1' : host;
+        expect(result.url).toBe(`http://${expectedHost}:45678/page?q=1#frag`);
+        expect(result.error).toBeUndefined();
+      }
+      expect(forwardPort).not.toHaveBeenCalled();
+      await resolveBrowserUrl('http://daemon.localhost:45678/page', tailcatContext, provider);
+      expect(forwardPort).toHaveBeenCalledExactlyOnceWith(45678);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
+
   it('falls back to the daemon tunnel when the probe fails and flags tunneled', async () => {
     fetchMock.mockRejectedValue(new TypeError('fetch failed'));
     const result = await resolveBrowserUrl(
@@ -194,7 +321,7 @@ describe('resolveBrowserUrl', () => {
     expect(result.forbidden).toBeUndefined();
   });
 
-  it('classifies an owner-only tunnel refusal as forbidden (collaborator, multiplayer w3)', async () => {
+  it('classifies a workspace-guest tunnel refusal as forbidden', async () => {
     fetchMock.mockRejectedValue(new TypeError('fetch failed'));
     forwardPort.mockRejectedValue(new TunnelForbiddenError());
     const result = await resolveBrowserUrl(

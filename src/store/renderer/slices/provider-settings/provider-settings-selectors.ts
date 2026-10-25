@@ -3,7 +3,11 @@ import {
   selectIsHostMember,
 } from '../host-execution/host-execution-selectors';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
-import { providerRefBaseId, type ProviderProfile } from '$shared/provider-profiles';
+import {
+  providerRefBaseId,
+  type ProviderDefaultConfig,
+  type ProviderProfile,
+} from '$shared/provider-profiles';
 import { selectProviderCatalogEntries } from '../provider-catalog/provider-catalog-selectors';
 import type {
   ProviderProfileMutation,
@@ -37,7 +41,6 @@ export const selectProviderPaths = store.createSelector((state) => state.provide
 export const selectProviderPathsRevision = store.createSelector(
   (state) => state.providerSettings.pathsRevision,
 );
-export const selectPiAdapter = store.createSelector((state) => state.providerSettings.piAdapter);
 
 /**
  * Default provider id — the provider leg of the default model triple
@@ -217,6 +220,17 @@ export const selectProviderProfilesForBase = store.createSelector(
     getItems(profilesState(state).items).filter(
       (profile) => profile.baseProviderId === baseProviderId,
     ),
+);
+
+/** Saved Default configurations by base provider id (§5.54); empty on older daemons. */
+export const selectProviderDefaultConfigs = store.createSelector(
+  (state): Record<string, ProviderDefaultConfig> => profilesState(state).defaults,
+);
+
+/** The saved Default configuration of a base provider (§5.54); absent on older daemons. */
+export const selectProviderDefaultConfig = store.createSelector(
+  (state, baseProviderId: string): ProviderDefaultConfig | undefined =>
+    profilesState(state).defaults[baseProviderId],
 );
 
 export const selectProviderProfile = store.createSelector(

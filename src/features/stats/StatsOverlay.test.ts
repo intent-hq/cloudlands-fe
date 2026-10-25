@@ -7,6 +7,15 @@ const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   data: null as UsageStatsResult | null,
   loading: false,
+  exportCardPng: vi.fn<(node: HTMLElement, fileName: string) => Promise<void>>(),
+  notifyError: vi.fn(),
+}));
+vi.mock('./stats-export', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./stats-export')>()),
+  exportCardPng: mocks.exportCardPng,
+}));
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: mocks.notifyError },
 }));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
@@ -31,6 +40,8 @@ import { setStatsOverlayOpen } from '$store/renderer/slices/sidebar-nav/sidebar-
 
 beforeEach(() => {
   mocks.dispatch.mockClear();
+  mocks.exportCardPng.mockReset().mockResolvedValue(undefined);
+  mocks.notifyError.mockReset();
   mocks.loading = false;
   mocks.data = {
     totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
@@ -104,4 +115,38 @@ describe('usage period Select', () => {
       expect(mocks.dispatch).toHaveBeenCalledWith(setStatsOverlayOpen(false));
     },
   );
+});
+
+describe('card PNG export', () => {
+  it.each(['passport', 'models', 'providers', 'by-hour', 'by-month'] as const)(
+    'exports the %s card node with its period filename',
+    async (card) => {
+      render(StatsOverlay);
+      const button = screen.getByRole('button', {
+        name: m.stats_overlay_exportCard_ariaLabel({ card }),
+      });
+      await fireEvent.click(button);
+      await waitFor(() => expect(mocks.exportCardPng).toHaveBeenCalledTimes(1));
+      const [node, fileName] = mocks.exportCardPng.mock.calls[0];
+      expect(node.getAttribute('data-stats-card')).toBe(card);
+      expect(fileName).toBe(`intent-${card}-2026-09.png`);
+    },
+  );
+
+  it('shows the error toast when the export rejects', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mocks.exportCardPng.mockRejectedValue(new Error('render failed'));
+    render(StatsOverlay);
+    await fireEvent.click(
+      screen.getByRole('button', {
+        name: m.stats_overlay_exportCard_ariaLabel({ card: 'models' }),
+      }),
+    );
+    await waitFor(() =>
+      expect(mocks.notifyError).toHaveBeenCalledWith(m.stats_overlay_exportFailed_error(), {
+        description: 'render failed',
+      }),
+    );
+    consoleError.mockRestore();
+  });
 });

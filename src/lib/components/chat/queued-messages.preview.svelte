@@ -5,6 +5,7 @@
   import type { MessageAuthor, QueuedMessage } from '$shared/types';
   import type { QueuedMessageSendOutcome } from '$store/renderer/slices/chat-state/chat-state-types';
   import QueuedMessageList from './QueuedMessageList.svelte';
+  import { buildCollaboratorSenderPreamble } from '$lib/utils/collaborator-sender-attribution';
   import EventSubscriptionsCard from './EventSubscriptionsCard.svelte';
   import SimpleRichInput from './input/SimpleRichInput.svelte';
 
@@ -27,7 +28,8 @@
       | 'merged'
       | 'system-interleaved'
       | 'author-barrier'
-      | 'edit-conflict';
+      | 'edit-conflict'
+      | 'member-sender';
   }
 
   export const preview = definePreview<Props>({
@@ -65,6 +67,7 @@
       'system-interleaved': { props: { scenario: 'system-interleaved' } },
       'author-barrier': { props: { scenario: 'author-barrier' } },
       'edit-conflict': { props: { scenario: 'edit-conflict' } },
+      'member-sender': { props: { scenario: 'member-sender' } },
     },
   });
 </script>
@@ -159,6 +162,24 @@
     };
   }
 
+  const memberSender: MessageAuthor = {
+    principalId: 'member',
+    login: 'panghy',
+    displayName: 'Clement Pang',
+    avatarUrl: null,
+    identity: { provider: 'github', host: 'github.com', externalUserId: '526899' },
+  };
+  // The daemon's host-member sender line (PROTOCOL §5.5) for `memberSender`;
+  // queued entries carry it, and the daemon re-applies it on a saved edit.
+  const memberPreamble = buildCollaboratorSenderPreamble(
+    memberSender.login,
+    memberSender.displayName,
+    memberSender.principalId!,
+    { role: 'member', identity: memberSender.identity },
+  );
+  const withMemberPreamble = (content: string) =>
+    content.startsWith(`${memberPreamble}\n\n`) ? content : `${memberPreamble}\n\n${content}`;
+
   let messages = $state<QueuedMessage[]>([]);
   let draft = $state('');
   $effect(() => {
@@ -195,6 +216,18 @@
         messageMetadata: { fromPrincipalId: 'guest' },
       };
       next = [first, guest, { ...next[2], author: first.author }];
+      if (scenario === 'member-sender') {
+        next = [
+          {
+            ...first,
+            content: withMemberPreamble(
+              'Can you make each loop a bit tighter? You seem to be doing a lot in each round.',
+            ),
+            author: memberSender,
+            messageMetadata: { fromPrincipalId: 'member' },
+          },
+        ];
+      }
       if (scenario === 'edit-conflict') {
         next = [
           { ...first, editing: true, editingMessageId: first.id },
@@ -266,12 +299,19 @@
     messages={messages.filter(isUserQueuedMessage)}
     {disabled}
     authors={scenario ? new Map() : authors}
-    ownPrincipalId={scenario === 'participant' ? 'guest' : scenario ? 'owner' : 'preview-self'}
+    ownPrincipalId={scenario === 'participant'
+      ? 'guest'
+      : scenario === 'member-sender'
+        ? 'member'
+        : scenario
+          ? 'owner'
+          : 'preview-self'}
     ownerPrincipalId={scenario ? 'owner' : 'preview-self'}
     isHostOwner={!scenario}
     onedit={async (id, content, editing) => {
+      const stored = scenario === 'member-sender' ? withMemberPreamble(content) : content;
       messages = messages.map((message) =>
-        message.id === id ? { ...message, content, editing } : message,
+        message.id === id ? { ...message, content: stored, editing } : message,
       );
       return { success: true };
     }}

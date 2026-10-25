@@ -217,6 +217,8 @@ export class WorkspaceService {
         return WorkspaceStatus.Inactive;
       case 'archived':
         return WorkspaceStatus.Archived;
+      case 'retired':
+        return WorkspaceStatus.Retired;
       case 'deleted':
         return WorkspaceStatus.Deleted;
       default:
@@ -352,7 +354,9 @@ export class WorkspaceService {
       // archived filter mirrors the daemon's `includeArchived` so callers that
       // request only active workspaces get the same rows either way.
       const filteredWorkspaces = allWorkspaces.filter((w) => {
-        if (w.status === WorkspaceStatus.Deleted) {
+        // Retired rows need the explicit `includeRetired` opt-in (PROTOCOL §5.1
+        // Retired workspaces), which this list never sends.
+        if (w.status === WorkspaceStatus.Deleted || w.status === WorkspaceStatus.Retired) {
           return false;
         }
         if (w.status === WorkspaceStatus.Archived && !includeArchived) {

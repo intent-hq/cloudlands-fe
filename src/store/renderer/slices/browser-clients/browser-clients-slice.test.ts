@@ -236,7 +236,7 @@ describe('browserClientsReducer', () => {
     expect(selectWorkspaceDrivingClient.select(asState(state), 'ws-1').driving).toBeNull();
   });
 
-  it('gates the indicator on browser tabs and two clients, except for an offline pin', () => {
+  it('shows agent activity or offline recovery regardless of client count', () => {
     let state = browserClientsReducer(initialState, ownClientIdReceived('cli-desk'));
     state = browserClientsReducer(state, liveClientsReceived([desk, laptop], 'ws-1'));
     state = browserClientsReducer(
@@ -260,7 +260,7 @@ describe('browserClientsReducer', () => {
       canSwitchHere: true,
     });
 
-    // One client with a browser tab: hidden.
+    // One client with agent browser activity: shown.
     state = browserClientsReducer(state, liveClientsReceived([desk], 'ws-1'));
     state = browserClientsReducer(
       state,
@@ -270,9 +270,11 @@ describe('browserClientsReducer', () => {
       }),
     );
     const oneClient = selectWorkspaceDrivingClient.select(asState(state), 'ws-1');
-    expect(resolveDrivingClientView({ ...oneClient, hasBrowserTabs: true })).toBeNull();
+    expect(resolveDrivingClientView({ ...oneClient, hasBrowserTabs: true })).toMatchObject({
+      mode: 'here',
+    });
 
-    // Offline pin, one connected client, no browser tabs: still surfaced.
+    // An idle offline pin keeps recovery visible.
     state = browserClientsReducer(
       state,
       workspaceBrowserClientReceived('ws-1', {
@@ -282,10 +284,18 @@ describe('browserClientsReducer', () => {
       }),
     );
     const offlinePin = selectWorkspaceDrivingClient.select(asState(state), 'ws-1');
-    expect(resolveDrivingClientView({ ...offlinePin, hasBrowserTabs: false })).toMatchObject({
+    expect(resolveDrivingClientView({ ...offlinePin, hasBrowserTabs: false })).toEqual({
       mode: 'offline',
+      hostName: 'cli-travel',
       canSwitchHere: true,
     });
+    expect(
+      resolveDrivingClientView({
+        ...offlinePin,
+        hasBrowserTabs: false,
+        activeComputerName: 'Controlled MacBook',
+      }),
+    ).toEqual({ mode: 'elsewhere', hostName: 'Controlled MacBook', canSwitchHere: true });
   });
 
   it('advances the per-workspace tabsRevision on every browser:tab-* event', () => {

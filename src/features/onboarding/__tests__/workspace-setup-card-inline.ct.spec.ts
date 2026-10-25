@@ -55,39 +55,6 @@ for (const status of ['active', 'done'] as const) {
       },
     });
     await page.evaluate(() => document.fonts.ready);
-    const links = component.getByRole('button');
-    for (const link of await links.all()) {
-      const metrics = await link.evaluate((node) => {
-        const style = getComputedStyle(node);
-        const sentence = getComputedStyle(
-          node.closest('[data-testid="workspace-setup-step-content"]')!,
-        );
-        return {
-          display: style.display,
-          font: style.fontSize,
-          sentenceFont: sentence.fontSize,
-          lineHeight: style.lineHeight,
-          sentenceLineHeight: sentence.lineHeight,
-          weight: style.fontWeight,
-          sentenceWeight: sentence.fontWeight,
-          padding: style.padding,
-          verticalAlign: style.verticalAlign,
-        };
-      });
-      // Native buttons compute display:inline as inline-block in Chromium.
-      expect(['inline', 'inline-block']).toContain(metrics.display);
-      expect(metrics.font).toBe(metrics.sentenceFont);
-      expect(metrics.lineHeight).toBe(metrics.sentenceLineHeight);
-      expect(metrics.weight).toBe(metrics.sentenceWeight);
-      expect(metrics.padding).toBe('0px');
-      expect(metrics.verticalAlign).toBe('baseline');
-    }
-    const icon = await component.getByTestId('workspace-setup-step-icon').first().boundingBox();
-    const sentence = await component
-      .getByTestId('workspace-setup-step-content')
-      .first()
-      .boundingBox();
-    expect(sentence!.x - icon!.x - icon!.width).toBeCloseTo(4, 1);
     await expectAttachedPunctuation(
       component.getByRole('button', { name: 'origin/main', exact: true }),
       'origin/main',

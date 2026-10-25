@@ -14,6 +14,7 @@ export const badgeMetadata = parseUiComponentMetadata({
     'src/lib/components/code-review/CodeReviewPanel.svelte',
     'src/lib/components/code-review/CodeReviewTabContent.svelte',
     'src/lib/components/workspace/PullRequestCreator.svelte',
+    'src/lib/components/workspace/initializer/BranchSelector.svelte',
   ],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/badge/badge.test.ts',

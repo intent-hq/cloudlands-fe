@@ -27,9 +27,6 @@ import {
   providerConfiguredPathsLoaded,
   providerPathsLoaded,
   providerPathsFailed,
-  piAdapterCheckRequested,
-  piAdapterCheckSettled,
-  piAdapterInstallRequested,
   type ProviderSettingsState,
 } from './provider-settings-slice';
 import { providerCatalogLoaded } from '../provider-catalog/provider-catalog-slice';
@@ -119,34 +116,23 @@ describe('providerSettingsReducer', () => {
     state = providerSettingsReducer(state, providerSettingsSessionOpened('two'));
     state = providerSettingsReducer(
       state,
-      piAdapterInstallRequested({ id: 'install', sessionId: 'one' }),
+      providerPathSaveRequested('unsloth', '/first', { id: 'first', sessionId: 'one' }),
     );
     state = providerSettingsReducer(
       state,
       providerPathSaveRequested('codex', '/new', { id: 'save', sessionId: 'two' }),
     );
     state = providerSettingsReducer(state, providerSettingsSessionClosed('one'));
-    expect(getItem(state.requests, 'install')).toBeUndefined();
+    expect(getItem(state.requests, 'first')).toBeUndefined();
     expect(getItem(state.requests, 'save')?.status).toBe('pending');
-    state = providerSettingsReducer(state, piAdapterCheckRequested());
     state = providerSettingsReducer(state, providerSettingsStopped());
     expect(getItem(state.requests, 'save')?.status).toBe('cancelled');
-    expect(state.piAdapter.status).toBe('idle');
     expect(providerSettingsReducer(state, providerSettingsRequestSettled('save', 'success'))).toBe(
       state,
     );
-    expect(
-      providerSettingsReducer(state, providerSettingsRequestSettled('install', 'failure')),
-    ).toBe(state);
-  });
-
-  it('records adapter presence and failed checks without claiming installation', () => {
-    let state = providerSettingsReducer(initialState, piAdapterCheckRequested());
-    expect(state.piAdapter.status).toBe('pending');
-    state = providerSettingsReducer(state, piAdapterCheckSettled(false));
-    expect(state.piAdapter).toEqual({ installed: false, status: 'success' });
-    state = providerSettingsReducer(state, piAdapterCheckSettled(null));
-    expect(state.piAdapter).toEqual({ installed: null, status: 'failure' });
+    expect(providerSettingsReducer(state, providerSettingsRequestSettled('first', 'failure'))).toBe(
+      state,
+    );
   });
 
   it('should return initial state', () => {

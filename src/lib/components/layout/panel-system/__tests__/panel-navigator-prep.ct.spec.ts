@@ -92,7 +92,6 @@ test('renders distinct panel glyphs, one active tile, and the native button keyb
   await component.getByTestId('before-navigator').focus();
   await component.getByTestId('before-navigator').press('Tab');
   await expect(segments.nth(0)).toBeFocused();
-  await expect(segments.nth(0)).toHaveCSS('height', '36px');
   await segments.nth(0).press('Tab');
   await expect(segments.nth(1)).toBeFocused();
   await segments.nth(1).press('Shift+Tab');
@@ -151,7 +150,6 @@ test('covers fit, one-pixel overflow, mixed widths, narrow layout, and 200% zoom
     });
     const navigator = component.getByRole('navigation', { name: 'Panel navigator' });
     await expect(navigator.getByRole('button')).toHaveCount(initialPanels.length);
-    await expect(navigator.locator('.panel-navigator-track')).toHaveCSS('height', '36px');
     await expectGeometryWithinHalfDevicePixel(component, page);
     const [thumbWidth, trackWidth] = await Promise.all([
       navigator

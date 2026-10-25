@@ -82,6 +82,7 @@ export function getHomeStatusCause(workspace: HomeTriageInput) {
   if (workspace.displayStatus === 'pr_ready') return 'pr_ready';
   if (workspace.activity === 'agent_running' || workspace.displayStatus === 'in_progress')
     return 'running';
+  if (workspace.scriptsRunning === true) return 'scripts_running';
   if (workspace.displayStatus === 'pr_merged') return 'merged';
   if (workspace.displayStatus === 'complete') return 'complete';
   if (workspace.attention === 'unread') return 'unread';

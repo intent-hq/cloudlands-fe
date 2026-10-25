@@ -226,8 +226,6 @@ export const IPC_CHANNELS = {
   // Pi Integration
   PI: {
     GET_MODELS: 'pi:get-models',
-    CHECK_MCP_ADAPTER: 'pi:check-mcp-adapter',
-    INSTALL_MCP_ADAPTER: 'pi:install-mcp-adapter',
   },
 
   // Factory Droid Integration
@@ -943,6 +941,7 @@ export const IPC_CHANNELS = {
   // through these request/subscription channels and receives daemon
   // notifications on the BACKEND.NOTIFICATION event channel.
   BACKEND: {
+    DESKTOP_PERMISSIONS: 'backend:desktop-permissions',
     REQUEST: 'backend:request',
     PR_MONITOR: {
       READY: 'backend:pr-monitor:ready',

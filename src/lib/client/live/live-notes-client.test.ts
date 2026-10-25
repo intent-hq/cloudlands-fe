@@ -60,7 +60,7 @@ describe('LiveNotesClient mutations (fake transport)', () => {
       content: 'C',
     } as CreateNoteRequest);
 
-    expect(result).toEqual({ success: true });
+    expect(result).toEqual({ success: true, id: 'note-1' });
     expect(mockedRequest).toHaveBeenCalledWith(
       'note.create',
       expect.objectContaining({
@@ -70,6 +70,38 @@ describe('LiveNotesClient mutations (fake transport)', () => {
         idempotencyKey: expect.any(String),
       }),
     );
+  });
+
+  it('create surfaces the created note id from the documented { note, ... } response', async () => {
+    mockedRequest.mockResolvedValueOnce({
+      note: { id: 'note-created', title: 'T' },
+      convertedCount: 0,
+      createdTaskNoteIds: [],
+      createdTasks: [],
+      warnings: [],
+    });
+    const client = new LiveNotesClient();
+
+    const result = await client.create({
+      workspaceId: 'ws-1',
+      title: 'T',
+      content: '',
+    } as CreateNoteRequest);
+
+    expect(result).toEqual({ success: true, id: 'note-created' });
+  });
+
+  it('create omits the id when the response carries none', async () => {
+    mockedRequest.mockResolvedValueOnce({});
+    const client = new LiveNotesClient();
+
+    const result = await client.create({
+      workspaceId: 'ws-1',
+      title: 'T',
+      content: '',
+    } as CreateNoteRequest);
+
+    expect(result).toEqual({ success: true });
   });
 
   it('create generates a distinct idempotencyKey per call', async () => {

@@ -2981,10 +2981,54 @@ describe('agent-session-slice reducer', () => {
       expect(state.byAgentId['a1'].name).toBe('New Name');
     });
 
-    it('is no-op if name unchanged', () => {
+    it('marks the name explicitly set, as every daemon agent:renamed implies', () => {
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { nameExplicitlySet: false })),
+      );
+      state = agentSessionReducer(state, renameSession('a1', 'New Name'));
+      expect(state.byAgentId['a1'].nameExplicitlySet).toBe(true);
+    });
+
+    it('keeps the name implicit when the daemon reports nameExplicitlySet: false', () => {
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { nameExplicitlySet: false })),
+      );
+      state = agentSessionReducer(state, renameSession('a1', 'Auto title', false));
+      expect(state.byAgentId['a1']).toMatchObject({ name: 'Auto title', nameExplicitlySet: false });
+    });
+
+    it('clears an explicit flag when the daemon reports nameExplicitlySet: false', () => {
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { name: 'Same', nameExplicitlySet: true })),
+      );
+      state = agentSessionReducer(state, renameSession('a1', 'Same', false));
+      expect(state.byAgentId['a1']).toMatchObject({ name: 'Same', nameExplicitlySet: false });
+    });
+
+    it('is no-op if name and implicit flag are unchanged', () => {
       const state = agentSessionReducer(
         initialState,
-        upsertSession(makeSession('a1', 'ws-1', { name: 'Same' })),
+        upsertSession(makeSession('a1', 'ws-1', { name: 'Same', nameExplicitlySet: false })),
+      );
+      expect(agentSessionReducer(state, renameSession('a1', 'Same', false))).toBe(state);
+    });
+
+    it('marks an unchanged placeholder name explicitly set', () => {
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { name: 'Same', nameExplicitlySet: false })),
+      );
+      state = agentSessionReducer(state, renameSession('a1', 'Same'));
+      expect(state.byAgentId['a1']).toMatchObject({ name: 'Same', nameExplicitlySet: true });
+    });
+
+    it('is no-op if name unchanged and already explicit', () => {
+      const state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { name: 'Same', nameExplicitlySet: true })),
       );
       const next = agentSessionReducer(state, renameSession('a1', 'Same'));
       expect(next).toBe(state);

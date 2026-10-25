@@ -1,7 +1,5 @@
 <script lang="ts">
-  import { Button } from '$lib/components/ui/button';
   import TokensByHourCard from './TokensByHourCard.svelte';
-  import { exportCardPng } from './stats-export';
   import type { UsageStatsResult } from '$lib/client/app-client';
 
   const data: UsageStatsResult = {
@@ -23,12 +21,8 @@
       cacheCreationTokens: 0,
     })),
   };
-  let host: HTMLDivElement;
 </script>
 
-<div bind:this={host}>
+<div>
   <TokensByHourCard {data} mode="month" label="SEP 2026" />
 </div>
-<Button onclick={() => exportCardPng(host.querySelector('[data-stats-card]')!, 'hours.png')}>
-  Export test card
-</Button>
