@@ -21,9 +21,11 @@
     rows: EnvRow[];
     errors?: Record<string, string>;
     disabled?: boolean;
+    /** Shown when there are no rows; defaults to the profile wording. */
+    emptyLabel?: string;
   }
 
-  let { rows = $bindable(), errors = {}, disabled = false }: Props = $props();
+  let { rows = $bindable(), errors = {}, disabled = false, emptyLabel }: Props = $props();
   const KEY_PLACEHOLDER = 'KEY'; // i18n-ignore (environment variable name format)
   let revealed = $state<Record<string, boolean>>({});
 
@@ -56,7 +58,9 @@
     <p class="type-body text-danger" role="alert">{errors.env}</p>
   {/if}
   {#if rows.length === 0}
-    <p class="type-body text-subtle italic">{m.settings_providerProfiles_envEmpty_label()}</p>
+    <p class="type-body text-subtle italic">
+      {emptyLabel ?? m.settings_providerProfiles_envEmpty_label()}
+    </p>
   {:else}
     <div class="space-y-3">
       {#each rows as row, index (row.rowId)}

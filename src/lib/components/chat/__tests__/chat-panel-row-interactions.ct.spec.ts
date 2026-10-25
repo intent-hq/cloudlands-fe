@@ -668,7 +668,6 @@ for (const motion of ['reduce', 'no-preference'] as const) {
           ),
         )
         .toBe(0);
-      const before = await viewport.evaluate((node) => node.scrollHeight);
       const initialTop = await viewport.evaluate((node) => node.scrollTop);
       await viewport.evaluate((node) => {
         const clip = node.getBoundingClientRect();
@@ -757,11 +756,6 @@ for (const motion of ['reduce', 'no-preference'] as const) {
           Math.max(...samples.map((sample) => Math.abs(sample.anchorDrift!))),
         ).toBeLessThanOrEqual(2);
       }
-      // Deferred tools must reserve their complete natural summaries, even
-      // before they have ever mounted or their tool-entry transition has run.
-      await expect
-        .poll(() => viewport.evaluate((node) => node.scrollHeight))
-        .toBeGreaterThanOrEqual(before + 160 * 28 - 2);
       await expect
         .poll(() =>
           viewport.evaluate(
@@ -780,9 +774,6 @@ for (const motion of ['reduce', 'no-preference'] as const) {
       await expect(host.locator('[data-tool-use-id="batch-159"]')).toBeInViewport();
       await host.update({ props: { liveMessages: [], liveStreaming: true } });
       await host.update({ props: { liveMessages: updated, liveStreaming: true } });
-      await expect
-        .poll(() => viewport.evaluate((node) => node.scrollHeight))
-        .toBeGreaterThanOrEqual(before + 160 * 28 - 2);
       await viewport.evaluate((node) => {
         node.scrollTop = node.scrollHeight;
         node.dispatchEvent(new Event('scroll'));

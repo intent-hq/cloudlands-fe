@@ -47,7 +47,7 @@ for (const width of [420, 900]) {
     const box = (await enable.boundingBox())!;
     expect(box.x).toBeGreaterThanOrEqual(0);
     expect(box.x + box.width).toBeLessThanOrEqual(width);
-    expect(box.y + box.height).toBeLessThanOrEqual(608);
+    expect(box.y + box.height).toBeLessThanOrEqual(page.viewportSize()!.height);
     await page.screenshot({ path: testInfo.outputPath(`multiplayer-recovery-${width}.png`) });
     await cancel.press('Escape');
     await expect(recovery).toHaveCount(0);
@@ -153,8 +153,8 @@ test('confirmed GitLab recovery opens focused command search without activating 
   );
   const box = (await palette.boundingBox())!;
   expect(box.x).toBeGreaterThanOrEqual(0);
-  expect(box.x + box.width).toBeLessThanOrEqual(420);
-  expect(box.y + box.height).toBeLessThanOrEqual(608);
+  expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  expect(box.y + box.height).toBeLessThanOrEqual(page.viewportSize()!.height);
   await input.press('Escape');
   await input.press('Escape');
   await expect(palette).toHaveCount(0);

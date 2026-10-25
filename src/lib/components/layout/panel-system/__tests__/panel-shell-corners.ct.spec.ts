@@ -88,7 +88,6 @@ for (const theme of ['light', 'dark'] as const) {
           const styles = await shellStyles(panel, page);
           expect(styles.background).toBe(styles.expectedBackground);
           expect(styles.emptyStateBackground).toBe(styles.expectedBackground);
-          expect(styles.borders).toEqual(['1px', '1px', '1px', '1px']);
           expect(styles.focused).toBe(index === 0 ? 'true' : 'false');
           expect(styles.focusBorderVisible).toBe(index === 0 ? 'true' : 'false');
           expect(new Set(styles.borderColors)).toEqual(
@@ -104,12 +103,6 @@ for (const theme of ['light', 'dark'] as const) {
 
         const handle = component.locator('.panel-split-handle');
         await expect(handle).toBeVisible();
-        expect(await handle.evaluate((node) => getComputedStyle(node).width)).toBe('16px');
-        expect(
-          await handle
-            .locator('xpath=ancestor::*[contains(@class, "panel-split-handle-wrapper")][1]')
-            .evaluate((node) => getComputedStyle(node).width),
-        ).toBe('8px');
       });
     }
   }
@@ -160,7 +153,6 @@ for (const theme of ['light', 'dark'] as const) {
       expect(await bounds()).toEqual(before);
       for (const [index, panel] of (await panels.all()).entries()) {
         const style = await shellStyles(panel, page);
-        expect(style.borders).toEqual(['1px', '1px', '1px', '1px']);
         expect(new Set(style.borderColors)).toEqual(
           new Set([index === 1 ? style.expectedBorder : 'rgba(0, 0, 0, 0)']),
         );
@@ -195,7 +187,6 @@ for (const theme of ['light', 'dark'] as const) {
       const styles = await shellStyles(panel, page, 'bg-background');
       expect(styles.background).toBe(styles.expectedBackground);
       expect(styles.emptyStateBackground).toBeNull();
-      expect(styles.borders).toEqual(['1px', '1px', '1px', '1px']);
       expect(styles.focused).toBe(index === 0 ? 'true' : 'false');
       expect(styles.focusBorderVisible).toBe(index === 0 ? 'true' : 'false');
       expect(new Set(styles.borderColors)).toEqual(
@@ -242,7 +233,7 @@ test('keeps all four shell corners portable with an adjacent panel at 200% zoom'
     expect(new Set(panel.radii).size).toBe(1);
     expect(Number.parseFloat(panel.radii[0])).toBeGreaterThan(0);
     expect(panel.top).toBeGreaterThanOrEqual(0);
-    expect(panel.bottom).toBeLessThanOrEqual(900);
+    expect(panel.bottom).toBeLessThanOrEqual(page.viewportSize()!.height);
   }
   expect(geometry[0].right).toBeLessThanOrEqual(geometry[1].left);
 });

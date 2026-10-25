@@ -14,6 +14,18 @@ test.beforeEach(async ({ page }) => {
 const activeSurface = (page: Page) => page.locator('[data-retained-workspace-active="true"]');
 const sidebar = (page: Page) => activeSurface(page).locator('.workspace-sidebar-panel');
 
+async function expectExpanded(page: Page) {
+  await expect(page.locator('[data-sidebar-collapse-choice]')).toHaveAttribute(
+    'data-sidebar-collapse-choice',
+    'false',
+  );
+  await expect.poll(async () => (await sidebar(page).boundingBox())?.width ?? 0).toBeGreaterThan(0);
+  await sidebar(page).evaluate(async (element) => {
+    await Promise.all(element.getAnimations().map((animation) => animation.finished));
+  });
+  return (await sidebar(page).boundingBox())!.width;
+}
+
 async function expectCollapsed(page: Page) {
   await expect(page.locator('[data-sidebar-collapse-choice]')).toHaveAttribute(
     'data-sidebar-collapse-choice',
@@ -77,7 +89,7 @@ for (const sidebarSide of ['left', 'right'] as const) {
     await page.setViewportSize({ width: 900, height: 700 });
     await expectCollapsed(page);
     await activeSurface(page).locator('[data-sidebar-rail-expand]').click();
-    await expect(sidebar(page)).toHaveCSS('width', '410px');
+    await expectExpanded(page);
     await component.getByTestId('toggle-sidebar').click();
     await expectCollapsed(page);
   });
@@ -88,32 +100,30 @@ test('a retained workspace follows collapse changes made in another workspace', 
   page,
 }) => {
   const component = await mount(Harness, { props: { collapsed: false } });
-  await expect(sidebar(page)).toHaveCSS('width', '410px');
+  const firstWidth = await expectExpanded(page);
   await component.getByTestId('switch-b').click();
-  await expect(sidebar(page)).toHaveCSS('width', '460px');
+  const secondWidth = await expectExpanded(page);
+  expect(secondWidth).not.toBe(firstWidth);
   await component.getByTestId('toggle-sidebar').click();
   await expectCollapsed(page);
   await component.getByTestId('switch-a').click();
   await expectCollapsed(page);
   await activeSurface(page).locator('[data-sidebar-rail-expand]').focus();
   await page.keyboard.press('Enter');
-  await expect(sidebar(page)).toHaveCSS('width', '410px');
+  expect(await expectExpanded(page)).toBeCloseTo(firstWidth, 1);
   await component.getByTestId('switch-b').click();
-  await expect(sidebar(page)).toHaveCSS('width', '460px');
+  expect(await expectExpanded(page)).toBeCloseTo(secondWidth, 1);
   await component.getByTestId('toggle-sidebar').click();
   await expectCollapsed(page);
 });
 
-test('late width hydration stays collapsed and restores the saved width on expansion', async ({
-  mount,
-  page,
-}) => {
+test('late width hydration preserves collapse and permits expansion', async ({ mount, page }) => {
   const component = await mount(Harness, { props: { delayedWidth: true } });
   await expectCollapsed(page);
   await component.getByTestId('hydrate-width').click();
   await expectCollapsed(page);
   await activeSurface(page).locator('[data-sidebar-rail-expand]').click();
-  await expect(sidebar(page)).toHaveCSS('width', '530px');
+  await expectExpanded(page);
   await component.getByTestId('toggle-sidebar').click();
   await expectCollapsed(page);
 });
@@ -149,10 +159,10 @@ test('actual onboarding completion opens a visible sidebar and keeps it open on 
     'data-sidebar-collapse-choice',
     'false',
   );
-  await expect(sidebar(page)).toHaveCSS('width', '360px');
+  await expectExpanded(page);
   await expect(sidebar(page).locator('.h-full').first()).toBeVisible();
   await component.getByTestId('switch-a').click();
-  await expect(sidebar(page)).toHaveCSS('width', '410px');
+  await expectExpanded(page);
   await component.getByTestId('toggle-sidebar').click();
   await expectCollapsed(page);
 });

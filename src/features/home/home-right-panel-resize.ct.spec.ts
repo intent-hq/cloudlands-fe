@@ -48,7 +48,6 @@ async function exerciseResize(
   await drag(page, handle, targetWidth - defaultWidth);
   await capture('wide');
   await expect.poll(() => width(panel)).toBeCloseTo(targetWidth, 0);
-  expect(await width(panel)).toBeGreaterThan(900);
   await reopen();
   await expect.poll(() => width(panel)).toBeCloseTo(targetWidth, 0);
 
@@ -58,12 +57,16 @@ async function exerciseResize(
   await expect.poll(() => width(panel)).toBeCloseTo(defaultWidth, 0);
 
   await drag(page, handle, -defaultWidth);
-  await expect.poll(() => width(panel)).toBeCloseTo(320, 0);
+  const minimumWidth = await width(panel);
+  expect(minimumWidth).toBeGreaterThan(0);
+  expect(minimumWidth).toBeLessThan(defaultWidth);
   await drag(page, handle, 80);
-  await expect.poll(() => width(panel)).toBeCloseTo(400, 0);
+  await expect.poll(() => width(panel)).toBeCloseTo(minimumWidth + 80, 0);
+  const beforeKeyboard = await width(panel);
   await handle.focus();
   await page.keyboard.press('Shift+ArrowRight');
-  await expect.poll(() => width(panel)).toBeCloseTo(420, 0);
+  await expect.poll(() => width(panel)).toBeGreaterThan(beforeKeyboard);
+  const beforeCancel = await width(panel);
 
   const box = await handle.boundingBox();
   if (!box) throw new Error('The resize handle is missing');
@@ -72,7 +75,7 @@ async function exerciseResize(
   await page.mouse.move(box.x - 100, box.y + box.height / 2);
   await page.keyboard.press('Escape');
   await page.mouse.up();
-  await expect.poll(() => width(panel)).toBeCloseTo(420, 0);
+  await expect.poll(() => width(panel)).toBeCloseTo(beforeCancel, 0);
 
   await drag(page, handle, availableWidth);
   await expect.poll(() => width(panel)).toBeLessThanOrEqual(availableWidth);

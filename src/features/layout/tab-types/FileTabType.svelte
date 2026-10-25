@@ -741,7 +741,9 @@
           {fileContent}
           language={fileLanguage}
           isBinary={isFileBinary}
-          allowDownload={!isReadOnly}
+          onDownload={handleDownloadFile}
+          allowDownload={!isReadOnly && downloadReady}
+          {downloading}
         />
       {:else if isMarkdownFile && markdownPreview}
         <div class="h-full overflow-auto p-4">

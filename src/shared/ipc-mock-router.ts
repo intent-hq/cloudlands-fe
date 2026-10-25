@@ -58,9 +58,6 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   // try/catches, so identify simply never fires — the same graceful skip as a
   // logged-out/BYOK user.
   ['auggie:get-user-info', undefined],
-  // (pi:check-mcp-adapter / pi:install-mcp-adapter are bridged to the daemon
-  // host — `pi list` / `pi install npm:pi-mcp-adapter` via host.exec — in
-  // pi-mcp-bridge-seeder.ts.)
   // (auto-update:* invoke channels are bridged to window.electronAPI.invoke
   // in auto-update-bridge-seeder.ts — the Electron main process owns the
   // auto-updater; bridge-less builds get the shaped not-available failure

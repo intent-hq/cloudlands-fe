@@ -5,6 +5,7 @@
     content,
     contentClass,
     contentContainerClass,
+    variant,
     class: className,
     onclick,
     delayDuration,
@@ -47,6 +48,7 @@
   <div
     data-testid="mock-tooltip-content"
     data-content-class={contentClass}
+    data-variant={variant}
     data-content-container-class={contentContainerClass}
     data-open={open}
   >

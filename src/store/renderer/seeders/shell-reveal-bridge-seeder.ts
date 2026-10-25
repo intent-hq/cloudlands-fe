@@ -47,7 +47,7 @@ const REVEAL_TIMEOUT_MS = 10_000;
 
 /** Transport-timeout headroom over the daemon-side exec bound, so the
  * daemon's structured `timedOut` result wins over a client-side
- * `JSON-RPC request timed out` rejection (pi-mcp-bridge-seeder idiom). */
+ * `JSON-RPC request timed out` rejection. */
 const TRANSPORT_HEADROOM_MS = 5_000;
 
 /** Containing directory of a POSIX `path` (this helper is only reached from

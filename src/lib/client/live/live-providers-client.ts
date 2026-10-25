@@ -27,12 +27,16 @@ import {
   PROVIDER_PROFILES_DELETE_METHOD,
   PROVIDER_PROFILES_LIST_METHOD,
   PROVIDER_PROFILES_REORDER_METHOD,
+  PROVIDER_PROFILES_UPDATE_DEFAULT_METHOD,
   PROVIDER_PROFILES_UPDATE_METHOD,
+  ProviderDefaultUpdateResponseSchema,
   ProviderProfileCreateResponseSchema,
   ProviderProfileDeleteResponseSchema,
   ProviderProfileReorderResponseSchema,
   ProviderProfilesListResponseSchema,
   ProviderProfileUpdateResponseSchema,
+  type ProviderDefaultUpdateParams,
+  type ProviderDefaultUpdateResult,
   type ProviderProfileCreateParams,
   type ProviderProfileCreateResult,
   type ProviderProfileDeleteResult,
@@ -78,6 +82,15 @@ export class LiveProvidersClient implements ProvidersClient {
       ...(params.backup !== undefined ? { backup: params.backup } : {}),
     });
     return ProviderProfileUpdateResponseSchema.parse(result);
+  }
+
+  async updateDefault(params: ProviderDefaultUpdateParams): Promise<ProviderDefaultUpdateResult> {
+    const result = await backendRequest<unknown>(PROVIDER_PROFILES_UPDATE_DEFAULT_METHOD, {
+      baseProviderId: params.baseProviderId,
+      ...(params.name !== undefined ? { name: params.name } : {}),
+      ...(params.env ? { env: params.env } : {}),
+    });
+    return ProviderDefaultUpdateResponseSchema.parse(result);
   }
 
   async deleteProfile(profileId: string): Promise<ProviderProfileDeleteResult> {

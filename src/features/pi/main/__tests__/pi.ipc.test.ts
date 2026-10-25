@@ -13,11 +13,6 @@ const { mockBackendRequest } = vi.hoisted(() => ({
   mockBackendRequest: vi.fn(),
 }));
 
-vi.mock('../pi-resolver', () => ({
-  installPiMcpAdapter: vi.fn(),
-  isPiMcpAdapterInstalled: vi.fn(),
-}));
-
 vi.mock('../../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: mockBackendRequest }),
   getBackendClientForIpcEvent: () => ({
@@ -36,7 +31,6 @@ vi.mock('electron', () => ({
   },
 }));
 
-import { installPiMcpAdapter, isPiMcpAdapterInstalled } from '../pi-resolver';
 import { PI_CHANNELS } from '../../../../shared/ipc/channels';
 import { setupPiIPC } from '../pi.ipc';
 
@@ -97,33 +91,5 @@ describe('Pi GET_MODELS handler', () => {
     expect(response.success).toBe(false);
     expect(response.error).toBe('daemon unreachable');
     expect(response.data).toBeUndefined();
-  });
-});
-
-describe('Pi MCP adapter handlers', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    registeredHandlers.clear();
-  });
-
-  it('returns adapter installation status from CHECK_MCP_ADAPTER', async () => {
-    vi.mocked(isPiMcpAdapterInstalled).mockResolvedValue(true);
-
-    setupPiIPC();
-    const handler = registeredHandlers.get(PI_CHANNELS.CHECK_MCP_ADAPTER);
-    expect(handler).toBeDefined();
-
-    await expect(handler!({})).resolves.toBe(true);
-  });
-
-  it('returns install result from INSTALL_MCP_ADAPTER', async () => {
-    const installResult = { success: true };
-    vi.mocked(installPiMcpAdapter).mockResolvedValue(installResult);
-
-    setupPiIPC();
-    const handler = registeredHandlers.get(PI_CHANNELS.INSTALL_MCP_ADAPTER);
-    expect(handler).toBeDefined();
-
-    await expect(handler!({})).resolves.toEqual(installResult);
   });
 });

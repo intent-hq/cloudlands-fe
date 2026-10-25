@@ -90,7 +90,7 @@
     {#if !open}
       <button
         type="button"
-        class="ml-auto rounded-md bg-foreground px-3 py-1.5 text-sm text-background"
+        class="ml-auto rounded-md surface-inverse px-3 py-1.5 text-sm"
         onclick={openPicker}
       >
         {m.sandbox_directoryPicker_open_label()}

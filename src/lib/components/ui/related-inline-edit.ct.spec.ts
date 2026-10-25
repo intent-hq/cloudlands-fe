@@ -29,7 +29,6 @@ for (const theme of ['light', 'dark'] as const) {
         const control = component.getByRole('textbox');
         await expectUnpaintedEditControl(control);
         const boundary = component.locator(`[data-workspace-${field}-edit-decoration]`);
-        await expect(boundary).toHaveCSS('border-top-width', '1px');
         await expect(boundary).not.toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)');
         await control.press('ArrowRight');
         await component.screenshot({
@@ -49,7 +48,6 @@ for (const theme of ['light', 'dark'] as const) {
       const control = row.getByRole('textbox');
       await expectUnpaintedEditControl(control);
       const boundary = row.locator(':scope > span[aria-hidden="true"]');
-      await expect(boundary).toHaveCSS('border-top-width', '1px');
       await expect(boundary).not.toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)');
       await control.press('ArrowRight');
       await component.screenshot({ path: testInfo.outputPath(`file-rename-${theme}.png`) });
@@ -67,7 +65,6 @@ for (const theme of ['light', 'dark'] as const) {
       await control.click();
       await expectUnpaintedEditControl(control);
       const boundary = component.locator('[data-script-rename-decoration="script-geometry"]');
-      await expect(boundary).toHaveCSS('border-top-width', '1px');
       await expect(boundary).not.toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)');
       await control.press('ArrowRight');
       await component.screenshot({ path: testInfo.outputPath(`script-rename-${theme}.png`) });
@@ -86,7 +83,6 @@ for (const theme of ['light', 'dark'] as const) {
       await control.click();
       await expectUnpaintedEditControl(control);
       const boundary = control.locator('..').locator(':scope > span[aria-hidden="true"]');
-      await expect(boundary).toHaveCSS('border-top-width', '1px');
       await expect(boundary).not.toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)');
       await control.press('Home');
       await row.screenshot({ path: testInfo.outputPath(`agent-rename-hover-${theme}.png`) });

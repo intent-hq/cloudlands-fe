@@ -15,7 +15,6 @@
     selectEnabledProviders,
     selectProviderPaths,
     selectProviderSettingsSessionRequests,
-    selectPiAdapter,
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectProviderInUseReasons } from '$store/renderer/slices/provider-settings/provider-in-use-selectors';
   import {
@@ -24,7 +23,6 @@
     providerSettingsSessionOpened,
     providerSettingsSessionClosed,
     providerPathsRequested,
-    piAdapterInstallRequested,
   } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import {
     checkAllProvidersRequested,
@@ -44,7 +42,11 @@
     selectProviderCatalogEntries,
     selectProviderDisplayName,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
-  import { selectIsProviderEnabled } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import {
+    selectIsProviderEnabled,
+    selectProviderDefaultConfigs,
+    selectProviderProfilesLoadStatus,
+  } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
   import { groupProviderEntries, orderProviderEntries } from '$lib/utils/provider-list-order';
   import {
@@ -54,6 +56,7 @@
     faDownload,
     faFolder,
     faPlus,
+    faSliders,
     faStar,
     faTerminal,
     faTriangleExclamation,
@@ -87,7 +90,6 @@
   const sessionId = crypto.randomUUID();
   const requests$ = selectProviderSettingsSessionRequests(sessionId);
   const paths$ = selectProviderPaths();
-  const piAdapter$ = selectPiAdapter();
   const hiddenProviders$ = selectProviderHiddenIds();
   const discoveryError$ = selectProviderDiscoveryError();
   const activeProviderId = selectActiveProviderId();
@@ -101,12 +103,6 @@
   const npxStatus$ = selectNpxStatus();
 
   const checkError = $derived($discoveryError$);
-  const setupInProgress = $derived({
-    pi: $requests$.some(
-      (request) => request.resource === 'pi-adapter' && request.status === 'pending',
-    ),
-  });
-  const piMcpAdapterInstalled = $derived($piAdapter$.installed);
   let selectingRequest = $state<{ id: string; providerId: string } | null>(null);
   const selectingProviderId = $derived(
     $requests$.some(
@@ -241,6 +237,20 @@
     addProfileOpen = true;
   }
 
+  // The Default configuration's name and env (§5.54), from the same menu.
+  // The dialog seeds its form only once the saved list has loaded, so a save
+  // can never replace overrides it has not seen.
+  const defaultConfigs$ = selectProviderDefaultConfigs();
+  const profilesLoadStatus$ = selectProviderProfilesLoadStatus();
+  let defaultTarget = $state<{ providerId: string; providerName: string } | null>(null);
+  let defaultOpen = $state(false);
+
+  function openDefaultEnv(providerId: string, providerName: string) {
+    defaultTarget = { providerId, providerName };
+    defaultOpen = true;
+    if ($profilesLoadStatus$ !== 'success') appStore.dispatch(providerProfilesRequested());
+  }
+
   // Saved profiles are read once per visit, and only when some provider
   // offers profiles at all.
   let profilesRequested = false;
@@ -287,10 +297,6 @@
       appStore.dispatch(providerSettingsSessionClosed(sessionId));
     };
   });
-
-  function handleInstallPiMcpAdapter() {
-    appStore.dispatch(piAdapterInstallRequested({ id: crypto.randomUUID(), sessionId }));
-  }
 
   function openDocs(url: string) {
     shell.open(url);
@@ -364,11 +370,6 @@
             {@const canInstall = provider.id !== 'antigravity' && !provider.available}
             {@const canAddProfile =
               !provider.statusPending && provider.available && supportsProfiles(provider.id)}
-            {@const hasPiAdapterWarning =
-              !provider.statusPending &&
-              provider.id === 'pi' &&
-              provider.available &&
-              piMcpAdapterInstalled === false}
             {@const hasNodeMissing =
               !provider.statusPending &&
               provider.hasNpxFallback &&
@@ -381,15 +382,12 @@
               $npxStatus$?.resolvedPath !== null &&
               $npxStatus$?.versionOk === false}
             {@const hasProviderWarning = !provider.statusPending && !!provider.warning}
-            {@const hasWarning =
-              hasPiAdapterWarning || hasNodeMissing || hasNpmOld || hasProviderWarning}
-            {@const warningLabel = hasPiAdapterWarning
-              ? m.settings_providers_piAdapterNeeded()
-              : hasNodeMissing
-                ? m.settings_providers_requiresNodejs()
-                : hasNpmOld
-                  ? m.settings_providers_npmTooOld()
-                  : provider.warning}
+            {@const hasWarning = hasNodeMissing || hasNpmOld || hasProviderWarning}
+            {@const warningLabel = hasNodeMissing
+              ? m.settings_providers_requiresNodejs()
+              : hasNpmOld
+                ? m.settings_providers_npmTooOld()
+                : provider.warning}
             <div data-slot="settings-section-body" class="px-6 py-4">
               <div class="flex items-start justify-between gap-4">
                 <div class="space-y-1">
@@ -511,6 +509,7 @@
                         <div
                           class={hasWarning ||
                           needsLogin ||
+                          canAddProfile ||
                           ($fastModeProviders$.includes(provider.id) && provider.id !== 'codex')
                             ? 'w-64'
                             : 'w-44'}
@@ -532,31 +531,6 @@
                           {/if}
                           {#if hasWarning}
                             <div class="border-b border-border pb-1">
-                              {#if hasPiAdapterWarning}
-                                <p class="px-2 py-1.5 type-body text-warning-ink">
-                                  {m.settings_providers_piAdapterNeeded()}
-                                </p>
-                                <Menu.Item
-                                  disabled={setupInProgress.pi}
-                                  class="cursor-pointer text-foreground"
-                                  onSelect={() => void handleInstallPiMcpAdapter()}
-                                >
-                                  <span class="flex size-4 shrink-0 items-center justify-center">
-                                    {#if setupInProgress.pi}
-                                      <IntentMarkLoader size={14} class="text-muted-foreground" />
-                                    {:else}
-                                      <Fa
-                                        icon={faDownload}
-                                        class="size-3.5 text-muted-foreground"
-                                      />
-                                    {/if}
-                                  </span>
-                                  {setupInProgress.pi
-                                    ? m.settings_providers_installing()
-                                    : m.settings_providers_install()}
-                                </Menu.Item>
-                              {/if}
-
                               {#if hasNodeMissing}
                                 <p class="px-2 py-1.5 type-body text-warning-ink">
                                   {m.settings_providers_requiresNodejs()}
@@ -632,6 +606,18 @@
                                 <Fa icon={faPlus} class="size-3.5 text-muted-foreground" />
                               </span>
                               {m.settings_providerProfiles_add_label()}
+                            </Menu.Item>
+                            <Menu.Item
+                              class="cursor-pointer text-foreground"
+                              data-testid="provider-default-env-menu-item"
+                              onSelect={() => {
+                                openDefaultEnv(provider.id, provider.name);
+                              }}
+                            >
+                              <span class="flex size-4 shrink-0 items-center justify-center">
+                                <Fa icon={faSliders} class="size-3.5 text-muted-foreground" />
+                              </span>
+                              {m.settings_providerDefault_menu_label()}
                             </Menu.Item>
                           {/if}
 
@@ -769,6 +755,17 @@
     bind:open={addProfileOpen}
     providerId={addProfileTarget.providerId}
     providerName={addProfileTarget.providerName}
+  />
+{/if}
+
+{#if defaultTarget}
+  <ProviderProfileDialog
+    bind:open={defaultOpen}
+    providerId={defaultTarget.providerId}
+    providerName={defaultTarget.providerName}
+    isDefault
+    defaultConfig={$defaultConfigs$[defaultTarget.providerId]}
+    defaultsLoad={$profilesLoadStatus$}
   />
 {/if}
 
