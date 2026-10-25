@@ -4,16 +4,22 @@ import { resolve } from 'node:path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { createServer, type ViteDevServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
+import { prepareRootHarnessModules } from './root-harness-import';
 
 let server: ViteDevServer;
-let baseUrl = process.env.PANEL_LIVE_BASE_URL?.replace(/\/$/, '') ?? '';
+const externalBaseUrl = process.env.PANEL_LIVE_BASE_URL?.replace(/\/$/, '');
+let baseUrl = externalBaseUrl ?? '';
 
-test.beforeAll(async () => {
-  if (baseUrl) return;
+// fullyParallel can rerun this hook in a worker after afterAll closed the
+// previous server, so only an external URL may skip starting a fresh one.
+test.beforeAll(async ({}, workerInfo) => {
+  if (externalBaseUrl) return;
   server = await createServer({
     configFile: false,
     root: process.cwd(),
-    cacheDir: viteHarnessCacheDir('event-wakeup-tab-activation'),
+    cacheDir: viteHarnessCacheDir('event-wakeup-tab-activation', {
+      workerIndex: workerInfo.workerIndex,
+    }),
     plugins: [svelte({ configFile: resolve('svelte.config.js') })],
     optimizeDeps: {
       entries: [
@@ -52,7 +58,19 @@ test.afterAll(async () => server?.close());
 async function mountWakeupLayout(page: Page, width: number) {
   // A cold Vite graph is loaded by the imports below before geometry can be exercised.
   test.setTimeout(120_000);
-  await page.goto(`${baseUrl}/src/app.html`);
+  await prepareRootHarnessModules(page, `${baseUrl}/`, [
+    '/@id/svelte',
+    '/src/store/renderer/store.ts',
+    '/src/store/renderer/slices/app-layout/sagas/app-layout-navigation-saga.ts',
+    '/src/store/renderer/slices/panel-layout/sagas/panel-layout-saga.ts',
+    '/src/features/layout/tab-types/registry.ts',
+    '/@id/@fortawesome/free-solid-svg-icons',
+    '/src/features/layout/tab-types/AgentTabType.svelte',
+    '/src/store/renderer/slices/workspace/workspace-slice.ts',
+    '/src/store/renderer/slices/agent-session/agent-session-slice.ts',
+    '/test/fixtures/PanelSiblingTab.svelte',
+    '/test/fixtures/RootLifecyclePanelHost.svelte',
+  ]);
   await page.addStyleTag({ url: `${baseUrl}/src/app.css` });
   await page.evaluate(async (containerWidth) => {
     Object.assign(globalThis, { process: { env: { NODE_ENV: 'test' } } });
