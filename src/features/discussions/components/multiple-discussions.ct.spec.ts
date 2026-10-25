@@ -160,6 +160,7 @@ test('failed first send locks recipients and retry creates the original group wh
   await picker.fill('Morgan');
   await page.getByRole('option', { name: /^Morgan(?:\s|$)/ }).click();
   await expect(picker).toHaveAttribute('aria-expanded', 'false');
+  await expect(component.getByRole('button', { name: 'Remove Morgan', exact: true })).toBeVisible();
   const composer = component.getByRole('textbox', { name: 'Message', exact: true });
   await composer.fill('First message');
   await composer.press('Enter');
@@ -193,6 +194,7 @@ test('first-send completion promotes a closed composer before a fresh discussion
   await picker.fill('Alex');
   await page.getByRole('option', { name: /^Alex(?:\s|$)/ }).click();
   await expect(picker).toHaveAttribute('aria-expanded', 'false');
+  await expect(component.getByRole('button', { name: 'Remove Alex', exact: true })).toBeVisible();
   const composer = component.getByRole('textbox', { name: 'Message', exact: true });
   await composer.fill('Sent while the pane closes');
   await composer.press('Enter');
@@ -240,6 +242,7 @@ for (const rejection of ['invalid', 'forbidden'] as const) {
     await picker.fill('Alex');
     await page.getByRole('option', { name: /^Alex(?:\s|$)/ }).click();
     await expect(picker).toHaveAttribute('aria-expanded', 'false');
+    await expect(component.getByRole('button', { name: 'Remove Alex', exact: true })).toBeVisible();
     const composer = component.getByRole('textbox', { name: 'Message', exact: true });
     await composer.fill('Keep my message');
     await composer.press('Enter');
@@ -252,6 +255,9 @@ for (const rejection of ['invalid', 'forbidden'] as const) {
     await picker.fill('Jordan');
     await page.getByRole('option', { name: /^Jordan(?:\s|$)/ }).click();
     await expect(picker).toHaveAttribute('aria-expanded', 'false');
+    await expect(
+      component.getByRole('button', { name: 'Remove Jordan', exact: true }),
+    ).toBeVisible();
     await component.getByRole('button', { name: 'Send', exact: true }).click();
     await expect(component.locator('[data-discussion-recipients]')).toHaveCount(0);
     await expect(composer).toHaveValue('');
