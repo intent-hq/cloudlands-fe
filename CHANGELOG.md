@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.235.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.235.0...v2.235.1) (2026-10-25)
+
+
+### 🐛 Bug Fixes
+
+* **presence:** accept manager rows in workspace membership reads ([#3690](https://github.com/intent-hq/cloudlands-fe/issues/3690)) ([8a002e0](https://github.com/intent-hq/cloudlands-fe/commit/8a002e0934c3fa2e9f1cafcf8b1d5538ba726e84))
+
 ## [2.235.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.234.1...v2.235.0) (2026-10-25)
 
 
