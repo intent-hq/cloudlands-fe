@@ -28,8 +28,15 @@ async function pickerForTrigger(page: Page, trigger: Locator) {
 // deferred focus land afterwards and steal focus from the search. Wait for the
 // open-focus state the menu settles in before driving the navigator item:
 // opened by keyboard, the first item takes focus; opened by pointer, the menu itself does.
-async function waitForPanelMenuOpenFocus(page: Page, openedBy: 'keyboard' | 'pointer') {
-  const menu = page.locator('[data-slot="menu-content"]');
+async function waitForPanelMenuOpenFocus(
+  page: Page,
+  menuTrigger: Locator,
+  openedBy: 'keyboard' | 'pointer',
+) {
+  await expect(menuTrigger).toHaveAttribute('aria-expanded', 'true');
+  const menuId = await menuTrigger.getAttribute('aria-controls');
+  if (!menuId) throw new Error('Expected the panel actions trigger to name the menu it opened');
+  const menu = page.locator(`[id="${menuId}"]`);
   await expectUniqueVisible(menu);
   if (openedBy === 'keyboard') {
     await expect(menu.getByRole('menuitem').first()).toBeFocused();
@@ -140,7 +147,7 @@ test.describe('chat message navigator production path', () => {
         headerBox.x + headerBox.width + 0.5,
       );
       await panelActionsButton.click();
-      await waitForPanelMenuOpenFocus(page, 'pointer');
+      await waitForPanelMenuOpenFocus(page, panelActionsButton, 'pointer');
       await expectUniqueVisible(listButton);
       await expect(page.getByTestId('chat-scroll-to-bottom-button')).toHaveCount(0);
       await expect(downButton).toHaveCount(0);
@@ -336,7 +343,7 @@ test.describe('chat message navigator production path', () => {
         )
         .toBeLessThanOrEqual(2);
       await panelActionsButton.click();
-      await waitForPanelMenuOpenFocus(page, 'pointer');
+      await waitForPanelMenuOpenFocus(page, panelActionsButton, 'pointer');
       await expect(downButton).toHaveCount(0);
       await listButton.click();
       await pickerForTrigger(page, listButton);
@@ -362,7 +369,7 @@ test.describe('chat message navigator production path', () => {
     await page.keyboard.press('Tab');
     await expect(closeButton).toBeFocused();
     await panelActions.press('Space');
-    await waitForPanelMenuOpenFocus(page, 'keyboard');
+    await waitForPanelMenuOpenFocus(page, panelActions, 'keyboard');
     await trigger.focus();
     await trigger.press('ArrowRight');
     await pickerForTrigger(page, trigger);
@@ -376,7 +383,7 @@ test.describe('chat message navigator production path', () => {
     await expect(panelActions).toHaveAttribute('aria-expanded', 'false');
 
     await panelActions.press('Enter');
-    await waitForPanelMenuOpenFocus(page, 'keyboard');
+    await waitForPanelMenuOpenFocus(page, panelActions, 'keyboard');
     await trigger.focus();
     await trigger.press('Enter');
     await pickerForTrigger(page, trigger);
@@ -391,7 +398,7 @@ test.describe('chat message navigator production path', () => {
     await expect(panelActions).toBeFocused();
 
     await panelActions.click();
-    await waitForPanelMenuOpenFocus(page, 'pointer');
+    await waitForPanelMenuOpenFocus(page, panelActions, 'pointer');
     await trigger.hover();
     await pickerForTrigger(page, trigger);
     await expect(search).toBeFocused();
