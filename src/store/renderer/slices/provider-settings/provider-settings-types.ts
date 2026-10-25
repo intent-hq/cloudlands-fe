@@ -79,5 +79,4 @@ export type ProviderSettingsState = {
   paths: ProviderPaths;
   pathsRevision: number;
   pathsStatus: 'idle' | 'pending' | 'success' | 'failure';
-  piAdapter: { installed: boolean | null; status: 'idle' | 'pending' | 'success' | 'failure' };
 };
