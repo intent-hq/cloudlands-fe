@@ -1269,6 +1269,43 @@ describe('MCP mutation failures stay out of the load-error channel (intent#5757)
     await run.task.toPromise();
   });
 
+  it('rolls back both of two overlapping adds whose saves are rejected', async () => {
+    const rejects: Array<(value: unknown) => void> = [];
+    mocks.setMcpServers.mockImplementation(() => new Promise((resolve) => rejects.push(resolve)));
+    const run = harness({ ...initialState, servers: [keep] });
+    run.channel.put(addServer(local));
+    await settle();
+    run.channel.put(addServer({ name: 'other', type: 'stdio', command: 'other' }));
+    await settle();
+    expect(run.state().servers.map((server) => server.name)).toEqual(['keep', 'local', 'other']);
+
+    for (const reject of rejects) reject({ success: false, error: 'write rejected' });
+    await settle();
+    await settle();
+
+    expect(run.state().servers).toEqual([keep]);
+    expect(run.state().error).toBeNull();
+    expect(run.state().mutationError).toEqual({ action: 'add', message: 'write rejected' });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('reports a failed import as an import error and never as a completed import', async () => {
+    mocks.setMcpServers.mockResolvedValue({ success: false, error: 'write rejected' });
+    const run = harness();
+    run.channel.put(importFromJson(JSON.stringify({ mcpServers: { local } })));
+    await settle();
+
+    expect(run.state().mutationError).toEqual({ action: 'import', message: 'write rejected' });
+    expect(run.state().error).toBeNull();
+    expect(run.state().lastImportedCount).toBeNull();
+    expect(run.dispatched).not.toContainEqual(
+      expect.objectContaining({ type: 'mcpSettings/importFromJsonCompleted' }),
+    );
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('still reports a real load failure through the load-error channel', async () => {
     mocks.getMcpServers.mockRejectedValueOnce(new Error('load rejected'));
     const run = harness();

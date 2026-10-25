@@ -313,7 +313,9 @@ function* add(configInput: McpServerConfig): SagaGenerator<void> {
     return;
   }
   const config = copyServerForState(configInput);
-  const next = [...servers.map(copyServerForState), config];
+  // State rows are already credential-free; keep their identities so a
+  // concurrent mutation's rollback can still find the exact entry it added.
+  const next = [...servers, config];
   yield* put(setServers(next));
   const disabled: Record<string, true> = yield* selectMcpDisabledServers.effect();
   if (config.disabled) {
@@ -350,7 +352,7 @@ function* remove(name: string): SagaGenerator<void> {
     errorMessage: errorMessages[name],
     disabled: name in disabledServers,
   };
-  const next = servers.filter((server) => getMcpServerKey(server) !== name).map(copyServerForState);
+  const next = servers.filter((server) => getMcpServerKey(server) !== name);
   yield* put(removeServerFromState(name));
   const saved: boolean = yield* call(persist, next, [], 'remove' as const);
   if (!saved) yield* put(restoreServerToState(snapshot));
@@ -387,9 +389,7 @@ function* update(name: string, configInput: McpServerConfig): SagaGenerator<void
   } else {
     delete config.disabled;
   }
-  const next = servers.map((server, position) =>
-    position === index ? config : copyServerForState(server),
-  );
+  const next = servers.map((server, position) => (position === index ? config : server));
   yield* put(setServers(next));
   yield* put(setServerStatus(key, statusFor(wasDisabled)));
   const credentialInputs: CredentialInput[] = [[input, name]];
@@ -420,7 +420,7 @@ function* importJson(json: string): SagaGenerator<void> {
   });
   if (added.length > 0) {
     const stateAdded = added.map(copyServerForState);
-    const next = [...existing.map(copyServerForState), ...stateAdded];
+    const next = [...existing, ...stateAdded];
     yield* put(setServers(next));
     const disabled: Record<string, true> = yield* selectMcpDisabledServers.effect();
     const nextDisabled = { ...disabled };
@@ -431,12 +431,14 @@ function* importJson(json: string): SagaGenerator<void> {
     if (stateAdded.some((config) => config.disabled)) yield* put(setDisabledServers(nextDisabled));
     const enabled: boolean = yield* selectMcpEnabled.effect();
     if (!enabled) yield* put(setEnabled(true));
-    yield* call(
+    const saved: boolean = yield* call(
       persist,
       next,
       added.map((config): [McpServerConfig] => [config]),
       'import' as const,
     );
+    // A rejected save must not be announced as a completed import.
+    if (!saved) return;
   }
   yield* put(importFromJsonCompleted(added.length));
 }
