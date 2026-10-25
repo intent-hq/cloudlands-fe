@@ -14,6 +14,7 @@ import type {
 } from './types';
 import { DebouncedSearchService } from './search-service';
 import { searchCacheKey } from './search-cache-key';
+import { MENTION_KIND_ORDER, sortByKindThenScore } from './kind-order';
 import { providerRegistry } from './providers';
 import { BreadcrumbController } from './breadcrumb-controller.svelte';
 import { logger } from '$lib/utils/client-logger';
@@ -137,7 +138,7 @@ export class MentionSystem {
 
   constructor(config: MentionSystemConfig = {}) {
     this.config = config;
-    this.searchService = new DebouncedSearchService(config);
+    this.searchService = new DebouncedSearchService({ typeOrder: MENTION_KIND_ORDER, ...config });
     this.breadcrumbController = new BreadcrumbController();
   }
 
@@ -236,8 +237,11 @@ export class MentionSystem {
     // Add common folders
     results.push(...this.filterCandidates(COMMON_FOLDERS, queryLower, 2));
 
-    // Sort by score and return top results
-    return results.sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, MAX_SEARCH_RESULTS);
+    // Sort by kind, then score, and return top results
+    return sortByKindThenScore(results, this.config.typeOrder ?? MENTION_KIND_ORDER).slice(
+      0,
+      MAX_SEARCH_RESULTS,
+    );
   }
 
   /**

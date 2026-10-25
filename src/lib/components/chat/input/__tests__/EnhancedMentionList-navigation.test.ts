@@ -73,6 +73,38 @@ describe('editor-owned mention results', () => {
     expect(command).toHaveBeenCalledExactlyOnceWith(note);
   });
 
+  it('keeps the ranked kind order for ungrouped results in display and arrow-key order', async () => {
+    const note: MentionCandidate = { id: 'n', label: 'Spec note', type: 'note', uri: 'note:spec' };
+    const file: MentionCandidate = { ...first, group: 'Recent files' };
+    const script: MentionCandidate = { id: 's', label: 'Build', type: 'script', uri: 'script:b' };
+    const specialist: MentionCandidate = {
+      id: 'sp',
+      label: 'Developer',
+      type: 'specialist',
+      uri: 'specialist:dev',
+      group: 'Specialists',
+    };
+    const command = vi.fn();
+    const { component } = render(EnhancedMentionList, {
+      props: { items: [note, file, script, specialist], command },
+    });
+
+    expect(screen.getAllByRole('option').map((o) => o.getAttribute('aria-label'))).toEqual([
+      'Spec note',
+      'First file',
+      'Build',
+      'Developer',
+    ]);
+    for (const key of ['ArrowDown', 'ArrowDown']) {
+      component.onKeyDown({ event: new KeyboardEvent('keydown', { key, cancelable: true }) });
+      await tick();
+    }
+    component.onKeyDown({
+      event: new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }),
+    });
+    expect(command).toHaveBeenCalledExactlyOnceWith(script);
+  });
+
   it('connects the editor to mounted results and restores its original ARIA on exit', async () => {
     const editor = document.createElement('div');
     editor.setAttribute('role', 'textbox');

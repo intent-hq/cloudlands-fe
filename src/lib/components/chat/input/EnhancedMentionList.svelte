@@ -292,9 +292,12 @@
         group.push(item);
         grouped.set(item.group, group);
       } else if (!isMentionGroup(item)) {
-        const group = grouped.get('Other') || [];
+        // One bucket per kind: a shared bucket would pull every unlabeled kind
+        // up to wherever the first one ranks, breaking the search's kind order.
+        const key = `kind:${item.type}`;
+        const group = grouped.get(key) || [];
         group.push(item);
-        grouped.set('Other', group);
+        grouped.set(key, group);
       } else {
         // It's a group itself
         const group = grouped.get('Groups') || [];

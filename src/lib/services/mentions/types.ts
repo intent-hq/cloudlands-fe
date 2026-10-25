@@ -199,6 +199,11 @@ export interface MentionSystemConfig {
   enableSemantic?: boolean;
   enableLivePreview?: boolean;
   enableCollaboration?: boolean;
+  /**
+   * Rank results by kind before score (see `MENTION_KIND_ORDER`); `'*'` marks
+   * the slot for unlisted kinds. Empty or omitted sorts by score alone.
+   */
+  typeOrder?: readonly (MentionType | '*')[];
 }
 
 // Special mention items — localized copy uses getters so it re-evaluates with
