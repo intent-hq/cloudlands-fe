@@ -164,8 +164,10 @@ export const selectAgentSubscriptionLane = store.createSelector<
     );
 
   return {
+    // A pending first read stays hidden so the footer does not flash "Loading"
+    // and vanish on every chat open; a failed read stays visible for its error.
     visible:
-      entry.snapshotStatus !== 'ready' ||
+      entry.snapshotStatus === 'failed' ||
       entry.waitingState === 'completed' ||
       participantIds.length > 0 ||
       entry.wokenUpInfo !== null,

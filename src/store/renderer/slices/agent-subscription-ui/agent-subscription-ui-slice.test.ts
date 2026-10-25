@@ -543,16 +543,19 @@ describe('agentSubscriptionUI selectors', () => {
     expect(selectSubscriptionSnapshotStatus.select(stateWith(ready), WS, AGENT)).toBe('ready');
   });
 
-  it.each(['loading', 'failed'] as const)(
-    'keeps an empty agent lane visible while its snapshot is %s',
-    (snapshotStatus) => {
+  it.each([
+    ['loading', false],
+    ['failed', true],
+  ] as const)(
+    'shows an empty agent lane only for a failed snapshot (%s → visible %s)',
+    (snapshotStatus, visible) => {
       const key = makeKey(WS, AGENT);
       const slice: AgentSubscriptionUIState = {
         entries: { [key]: { ...emptyEntry, snapshotStatus } },
       };
 
       expect(selectAgentSubscriptionLane.select(stateWith(slice), WS, AGENT)).toEqual({
-        visible: true,
+        visible,
         count: 0,
         participantAgentIds: [],
       });
