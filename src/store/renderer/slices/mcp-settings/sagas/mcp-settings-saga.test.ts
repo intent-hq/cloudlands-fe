@@ -293,7 +293,8 @@ describe('mcpSettingsSaga', () => {
 
     expect(mocks.getMcpServers.mock.calls).toEqual([[]]);
     expect(mocks.getMcpServerStatuses.mock.calls).toEqual([]);
-    expect(run.state().servers).toEqual([{ name: 'local', type: 'stdio', command: 'node' }]);
+    // The optimistic row is rolled back because the save failed.
+    expect(run.state().servers).toEqual([]);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -464,7 +465,7 @@ describe('mcpSettingsSaga', () => {
     await run.task.toPromise();
   });
 
-  it('surfaces the exact persistence failure after an optimistic add', async () => {
+  it('surfaces the exact persistence failure as an add error and rolls back the optimistic add', async () => {
     mocks.setMcpServers.mockResolvedValue({ success: false, error: 'write rejected' });
     const run = harness();
     run.channel.put(
@@ -489,12 +490,15 @@ describe('mcpSettingsSaga', () => {
         ],
       ],
     ]);
-    expect(run.state().servers).toEqual([{ name: 'local', type: 'stdio', command: 'node' }]);
-    expect(run.state().error).toEqual('write rejected');
-    expect(run.dispatched.at(-1)).toEqual({
-      type: 'mcpSettings/setError',
-      payload: ['write rejected'],
-    });
+    expect(run.state().servers).toEqual([]);
+    expect(run.state().error).toBeNull();
+    expect(run.dispatched.slice(-2)).toEqual([
+      {
+        type: 'mcpSettings/setMutationError',
+        payload: [{ action: 'add', message: 'write rejected' }],
+      },
+      { type: 'mcpSettings/removeServerFromState', payload: ['local'] },
+    ]);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -602,6 +606,7 @@ describe('mcpSettingsSaga', () => {
       ],
     ]);
     expect(run.dispatched).toEqual([
+      { type: 'mcpSettings/setMutationError', payload: [null] },
       { type: 'mcpSettings/removeServerFromState', payload: ['drop'] },
     ]);
     run.task.cancel();
@@ -640,7 +645,7 @@ describe('mcpSettingsSaga', () => {
       ],
     ]);
     expect(run.dispatched).toEqual([
-      { type: 'mcpSettings/setError', payload: [null] },
+      { type: 'mcpSettings/setMutationError', payload: [null] },
       {
         type: 'mcpSettings/setServers',
         payload: [
@@ -686,6 +691,7 @@ describe('mcpSettingsSaga', () => {
       ],
     ]);
     expect(run.dispatched).toEqual([
+      { type: 'mcpSettings/setMutationError', payload: [null] },
       { type: 'mcpSettings/toggleServerDisabled', payload: ['remote'] },
       { type: 'mcpSettings/setServerStatus', payload: ['remote', 'disabled'] },
     ]);
@@ -827,9 +833,19 @@ describe('mcpSettingsSaga', () => {
     removeRun.channel.put(removeServer('remote'));
     await settle();
     expect(removeRun.dispatched).toEqual([
+      { type: 'mcpSettings/setMutationError', payload: [null] },
       { type: 'mcpSettings/removeServerFromState', payload: ['remote'] },
-      { type: 'mcpSettings/setError', payload: ['remove rejected'] },
+      {
+        type: 'mcpSettings/setMutationError',
+        payload: [{ action: 'remove', message: 'remove rejected' }],
+      },
+      {
+        type: 'mcpSettings/restoreServerToState',
+        payload: [{ server: remote, index: 0, disabled: false }],
+      },
     ]);
+    expect(removeRun.state().servers).toEqual([remote]);
+    expect(removeRun.state().error).toBeNull();
     removeRun.task.cancel();
     await removeRun.task.toPromise();
 
@@ -838,10 +854,15 @@ describe('mcpSettingsSaga', () => {
     updateRun.channel.put(updateServer('remote', { ...remote, name: 'duplicate' }));
     await settle();
     expect(updateRun.dispatched).toEqual([
-      { type: 'mcpSettings/setError', payload: [null] },
+      { type: 'mcpSettings/setMutationError', payload: [null] },
       {
-        type: 'mcpSettings/setError',
-        payload: [m.mcp_management_serverNameExists_error({ name: 'duplicate' })],
+        type: 'mcpSettings/setMutationError',
+        payload: [
+          {
+            action: 'update',
+            message: m.mcp_management_serverNameExists_error({ name: 'duplicate' }),
+          },
+        ],
       },
     ]);
     updateRun.task.cancel();
@@ -851,10 +872,15 @@ describe('mcpSettingsSaga', () => {
     importRun.channel.put(importFromJson('not-json'));
     await settle();
     expect(importRun.dispatched).toEqual([
-      { type: 'mcpSettings/setError', payload: [null] },
+      { type: 'mcpSettings/setMutationError', payload: [null] },
       {
-        type: 'mcpSettings/setError',
-        payload: ['Unexpected token \'o\', "not-json" is not valid JSON'],
+        type: 'mcpSettings/setMutationError',
+        payload: [
+          {
+            action: 'import',
+            message: 'Unexpected token \'o\', "not-json" is not valid JSON',
+          },
+        ],
       },
     ]);
     importRun.task.cancel();
@@ -866,9 +892,13 @@ describe('mcpSettingsSaga', () => {
     toggleRun.channel.put(toggleServer('remote'));
     await settle();
     expect(toggleRun.dispatched).toEqual([
+      { type: 'mcpSettings/setMutationError', payload: [null] },
       { type: 'mcpSettings/toggleServerDisabled', payload: ['remote'] },
       { type: 'mcpSettings/setServerStatus', payload: ['remote', 'disabled'] },
-      { type: 'mcpSettings/setError', payload: ['toggle rejected'] },
+      {
+        type: 'mcpSettings/setMutationError',
+        payload: [{ action: 'toggle', message: 'toggle rejected' }],
+      },
     ]);
     toggleRun.task.cancel();
     await toggleRun.task.toPromise();
@@ -1137,6 +1167,152 @@ describe('MCP identity regression contracts', () => {
     await settle();
     expect(mocks.toggleWorkspaceMcpServer).toHaveBeenCalledWith('ws-1', 'srv-b', false);
     expect(run.state().byWorkspaceId['ws-1'].disabledServers).toEqual({ 'srv-b': true });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+});
+
+describe('MCP mutation failures stay out of the load-error channel (intent#5757)', () => {
+  const keep = { id: 'srv-keep', name: 'keep', type: 'stdio' as const, command: 'keep' };
+  const drop = { id: 'srv-drop', name: 'drop', type: 'http' as const, url: 'https://drop.test' };
+  const local = { name: 'local', type: 'stdio' as const, command: 'node' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getMcpServers.mockResolvedValue([]);
+    mocks.getMcpServerStatuses.mockResolvedValue([]);
+  });
+
+  const seeded = () => ({
+    ...initialState,
+    servers: [drop, keep],
+    statusMap: { 'srv-drop': 'disabled' as const, 'srv-keep': 'connected' as const },
+    errorMessages: { 'srv-drop': 'stale' },
+    disabledServers: { 'srv-drop': true as const },
+  });
+
+  it.each([
+    [
+      'returns success: false',
+      () => mocks.setMcpServers.mockResolvedValue({ success: false, error: 'write rejected' }),
+    ],
+    ['throws', () => mocks.setMcpServers.mockRejectedValue(new Error('write rejected'))],
+  ])('rolls back an optimistic add when persist %s', async (_label, arrange) => {
+    arrange();
+    const run = harness({
+      ...initialState,
+      servers: [keep],
+      statusMap: { 'srv-keep': 'connected' },
+    });
+    run.channel.put(addServer(local));
+    await settle();
+
+    expect(run.state().servers).toEqual([keep]);
+    expect(run.state().statusMap).toEqual({ 'srv-keep': 'connected' });
+    expect(run.state().error).toBeNull();
+    expect(run.state().mutationError).toEqual({ action: 'add', message: 'write rejected' });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it.each([
+    [
+      'returns success: false',
+      () => mocks.setMcpServers.mockResolvedValue({ success: false, error: 'write rejected' }),
+    ],
+    ['throws', () => mocks.setMcpServers.mockRejectedValue(new Error('write rejected'))],
+  ])('restores the removed row in place when persist %s', async (_label, arrange) => {
+    arrange();
+    const run = harness(seeded());
+    run.channel.put(removeServer('srv-drop'));
+    await settle();
+
+    expect(run.state().servers).toEqual([drop, keep]);
+    expect(run.state().statusMap).toEqual({ 'srv-drop': 'disabled', 'srv-keep': 'connected' });
+    expect(run.state().errorMessages).toEqual({ 'srv-drop': 'stale' });
+    expect(run.state().disabledServers).toEqual({ 'srv-drop': true });
+    expect(run.state().error).toBeNull();
+    expect(run.state().mutationError).toEqual({ action: 'remove', message: 'write rejected' });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('reports a duplicate-name add as an add error without touching the list or the wire', async () => {
+    const run = harness({ ...initialState, servers: [local] });
+    run.channel.put(addServer({ name: 'local', type: 'stdio', command: 'other' }));
+    await settle();
+
+    expect(mocks.setMcpServers).not.toHaveBeenCalled();
+    expect(run.state().servers).toEqual([local]);
+    expect(run.state().error).toBeNull();
+    expect(run.state().mutationError).toEqual({
+      action: 'add',
+      // The identity check runs before the name check and rejects the duplicate first.
+      message: 'Duplicate MCP server identity: local',
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('clears a previous mutation error when the next mutation succeeds', async () => {
+    mocks.setMcpServers.mockResolvedValueOnce({ success: false, error: 'write rejected' });
+    mocks.setMcpServers.mockResolvedValueOnce({ success: true });
+    const run = harness(seeded());
+    run.channel.put(removeServer('srv-drop'));
+    await settle();
+    expect(run.state().mutationError).not.toBeNull();
+    run.channel.put(removeServer('srv-drop'));
+    await settle();
+    expect(run.state().servers).toEqual([keep]);
+    expect(run.state().mutationError).toBeNull();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('rolls back both of two overlapping adds whose saves are rejected', async () => {
+    const rejects: Array<(value: unknown) => void> = [];
+    mocks.setMcpServers.mockImplementation(() => new Promise((resolve) => rejects.push(resolve)));
+    const run = harness({ ...initialState, servers: [keep] });
+    run.channel.put(addServer(local));
+    await settle();
+    run.channel.put(addServer({ name: 'other', type: 'stdio', command: 'other' }));
+    await settle();
+    expect(run.state().servers.map((server) => server.name)).toEqual(['keep', 'local', 'other']);
+
+    for (const reject of rejects) reject({ success: false, error: 'write rejected' });
+    await settle();
+    await settle();
+
+    expect(run.state().servers).toEqual([keep]);
+    expect(run.state().error).toBeNull();
+    expect(run.state().mutationError).toEqual({ action: 'add', message: 'write rejected' });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('reports a failed import as an import error and never as a completed import', async () => {
+    mocks.setMcpServers.mockResolvedValue({ success: false, error: 'write rejected' });
+    const run = harness();
+    run.channel.put(importFromJson(JSON.stringify({ mcpServers: { local } })));
+    await settle();
+
+    expect(run.state().mutationError).toEqual({ action: 'import', message: 'write rejected' });
+    expect(run.state().error).toBeNull();
+    expect(run.state().lastImportedCount).toBeNull();
+    expect(run.dispatched).not.toContainEqual(
+      expect.objectContaining({ type: 'mcpSettings/importFromJsonCompleted' }),
+    );
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('still reports a real load failure through the load-error channel', async () => {
+    mocks.getMcpServers.mockRejectedValueOnce(new Error('load rejected'));
+    const run = harness();
+    run.channel.put(loadServers());
+    await settle();
+    expect(run.state().error).toEqual('load rejected');
+    expect(run.state().mutationError).toBeNull();
     run.task.cancel();
     await run.task.toPromise();
   });
