@@ -90,24 +90,26 @@ function manualWindowsConfig(base, signing) {
 
 // Reports every absent setting at once (resolveWindowsSigning stops at the first),
 // then any format error. Secrets are judged by presence alone so their values never
-// need to reach the preflight job.
+// need to reach the preflight job; a whitespace-only secret still fails at packaging.
 function windowsSigningPreflight(env, { secretsPresent = {} } = {}) {
+  const absent = (name) => typeof env[name] !== 'string' || !env[name].trim();
   const missing = [
-    ...WINDOWS_SIGNING_VARIABLES.filter((name) => !nonblank(env[name])).map(
-      (name) => `repository variable ${name}`,
-    ),
+    ...WINDOWS_SIGNING_VARIABLES.filter(absent).map((name) => `variable ${name}`),
     ...WINDOWS_SIGNING_SECRETS.filter((name) => secretsPresent[name] !== true).map(
-      (name) => `repository secret ${name}`,
+      (name) => `secret ${name}`,
     ),
   ];
-  if (missing.length) return { missing, invalid: null };
+  const invalid = WINDOWS_SIGNING_VARIABLES.filter(
+    (name) => !absent(name) && !nonblank(env[name]),
+  ).map((name) => `${name} contains a line break or NUL character`);
+  if (missing.length || invalid.length) return { missing, invalid };
   const placeholders = Object.fromEntries(WINDOWS_SIGNING_SECRETS.map((name) => [name, 'present']));
   try {
     resolveWindowsSigning('azure', { ...env, ...placeholders });
   } catch (error) {
-    return { missing, invalid: error.message };
+    return { missing: [], invalid: [error.message] };
   }
-  return { missing, invalid: null };
+  return { missing: [], invalid: [] };
 }
 
 module.exports = {

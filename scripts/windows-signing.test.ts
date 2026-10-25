@@ -265,29 +265,27 @@ describe('manual Windows signing preflight', () => {
   it('reports every blank setting at once instead of the first', () => {
     expect(windowsSigningPreflight({})).toEqual({
       missing: [
-        ...WINDOWS_SIGNING_VARIABLES.map((name) => `repository variable ${name}`),
-        'repository secret AZURE_CLIENT_SECRET',
+        ...WINDOWS_SIGNING_VARIABLES.map((name) => `variable ${name}`),
+        'secret AZURE_CLIENT_SECRET',
       ],
-      invalid: null,
+      invalid: [],
     });
     expect(
       windowsSigningPreflight(
         { ...publicEnv, AZURE_CLIENT_ID: ' ', INTENT_WINDOWS_PUBLISHER_NAME: 'a\nb' },
         { secretsPresent: { AZURE_CLIENT_SECRET: true } },
-      ).missing,
-    ).toEqual([
-      'repository variable INTENT_WINDOWS_PUBLISHER_NAME',
-      'repository variable AZURE_CLIENT_ID',
-    ]);
+      ),
+    ).toEqual({
+      missing: ['variable AZURE_CLIENT_ID'],
+      invalid: ['INTENT_WINDOWS_PUBLISHER_NAME contains a line break or NUL character'],
+    });
   });
 
   it('accepts a complete configuration judging the secret by presence alone', () => {
     expect(
       windowsSigningPreflight(publicEnv, { secretsPresent: { AZURE_CLIENT_SECRET: true } }),
-    ).toEqual({ missing: [], invalid: null });
-    expect(windowsSigningPreflight(publicEnv).missing).toEqual([
-      'repository secret AZURE_CLIENT_SECRET',
-    ]);
+    ).toEqual({ missing: [], invalid: [] });
+    expect(windowsSigningPreflight(publicEnv).missing).toEqual(['secret AZURE_CLIENT_SECRET']);
   });
 
   it('catches malformed settings with the same validation packaging uses', () => {
@@ -299,11 +297,11 @@ describe('manual Windows signing preflight', () => {
       ),
     ).toEqual({
       missing: [],
-      invalid: 'Invalid INTENT_WINDOWS_AZURE_ENDPOINT (expected regional HTTPS endpoint)',
+      invalid: ['Invalid INTENT_WINDOWS_AZURE_ENDPOINT (expected regional HTTPS endpoint)'],
     });
     expect(
       windowsSigningPreflight({ ...publicEnv, AZURE_TENANT_ID: 'not-a-guid' }, present).invalid,
-    ).toBe('Invalid AZURE_TENANT_ID');
+    ).toEqual(['Invalid AZURE_TENANT_ID']);
   });
 
   it('fails with every missing name and the sign=false fallback, printing no values', () => {
@@ -315,12 +313,17 @@ describe('manual Windows signing preflight', () => {
     };
     const { status, output, summary } = preflight(partial);
     expect(status).toBe(1);
+    const kind = (name: string) => (WINDOWS_SIGNING_SECRETS.includes(name) ? 'secret' : 'variable');
     const missing = Object.keys(azureEnv).filter((name) => !(name in partial));
-    for (const name of missing) {
-      expect(output).toContain(`::error title=Windows signing not configured::Missing or blank`);
-      expect(output).toContain(name);
-      expect(summary).toContain(name);
-    }
+    const annotations = output.split('\n').filter((line) => line.includes('Missing or blank'));
+    expect(annotations).toEqual(
+      missing.map(
+        (name) =>
+          `::error title=Windows signing not configured::Missing or blank ${kind(name)} ${name}`,
+      ),
+    );
+    for (const name of missing)
+      expect(summary).toContain(`- Missing or blank ${kind(name)} ${name}`);
     expect(output).not.toContain('INTENT_WINDOWS_AZURE_ENDPOINT');
     expect(output).toContain('sign=false');
     expect(summary).toContain('sign=false');

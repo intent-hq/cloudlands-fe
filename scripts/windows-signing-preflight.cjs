@@ -8,9 +8,11 @@
 const { appendFileSync } = require('node:fs');
 const { WINDOWS_SIGNING_SECRETS, windowsSigningPreflight } = require('./windows-signing.cjs');
 
+const DOCS =
+  'https://github.com/intent-hq/intent/blob/main/docs/fe/DEPLOYING.md#manual-signed-build-pr-test-builds';
 const FALLBACK =
-  'Re-run with sign=false for an unsigned Windows build, or ask a repository admin to ' +
-  'configure Azure Artifact Signing (see docs/fe/DEPLOYING.md, Manual Signed Build).';
+  'Re-run with sign=false for an unsigned Windows build, or ask a repository or ' +
+  `organization admin to configure Azure Artifact Signing (${DOCS}).`;
 
 function main(env = process.env, log = console.log) {
   const secretsPresent = Object.fromEntries(
@@ -18,15 +20,13 @@ function main(env = process.env, log = console.log) {
   );
   const { missing, invalid } = windowsSigningPreflight(env, { secretsPresent });
   const repo = env.GITHUB_REPOSITORY || 'this repository';
-  if (!missing.length && !invalid) {
+  if (!missing.length && !invalid.length) {
     log(
       `Azure signing settings are configured for ${repo}; continuing with a signed Windows build.`,
     );
     return 0;
   }
-  const problems = missing.length
-    ? missing.map((setting) => `Missing or blank ${setting}`)
-    : [`${invalid}`];
+  const problems = [...missing.map((setting) => `Missing or blank ${setting}`), ...invalid];
   for (const problem of problems) log(`::error title=Windows signing not configured::${problem}`);
   log(
     `::error title=Windows signing not configured::Signed Windows builds are unavailable for ${repo}. ${FALLBACK}`,
