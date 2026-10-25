@@ -1,5 +1,6 @@
 import type { Locator } from '@playwright/experimental-ct-svelte';
 import { expect, test } from '../../../test/ct-test';
+import { expectDismissibleLayerArmed } from '../../../test/dismissible-layer';
 import WorkspaceTabStripGeometryPreview from './workspace-tab-strip-geometry.preview.svelte';
 import WorkspaceTabMenuHarness from './WorkspaceTabMenuHarness.svelte';
 import { WORKSPACE_TAB_MAX_SCROLL_STEP_PX } from './workspace-tab-lifecycle-motion';
@@ -951,8 +952,33 @@ test('tab context menu dismisses and restores keyboard focus', async ({ mount, p
   await expect(source).toBeFocused();
   await source.click({ button: 'right' });
   await expect(menu).toBeVisible();
+  await expectDismissibleLayerArmed(menu);
   await page.mouse.click(850, 300);
   await expect(menu).toHaveCount(0);
   await expect(source).toBeFocused();
   await expect(neighbor).toHaveAttribute('data-active', 'true');
+});
+
+test('tab context menu outside click waits for a delayed dismissal setup', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 900, height: 600 });
+  const component = await mount(WorkspaceTabMenuHarness);
+  const source = component.locator('[data-workspace-tab="geometry-alpha"] [role="tab"]');
+  // Delay bits-ui's afterSleep(1) listener setup, as a busy page can. An
+  // outside click sent before setup completes is lost and the menu stays open.
+  await page.evaluate(() => {
+    const setTimeoutNative = window.setTimeout;
+    window.setTimeout = ((handler: TimerHandler, timeout?: number, ...args: unknown[]) =>
+      setTimeoutNative(handler, timeout === 1 ? 500 : timeout, ...args)) as typeof setTimeout;
+  });
+  await source.click({ button: 'right' });
+  const menu = page.getByRole('menu');
+  await expect(menu).toBeVisible();
+  await expectDismissibleLayerArmed(menu);
+  await page.mouse.click(850, 300);
+  await expect(menu).toHaveCount(0);
+  await expect(source).toBeFocused();
 });
