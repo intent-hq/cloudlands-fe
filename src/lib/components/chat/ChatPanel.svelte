@@ -1,6 +1,7 @@
 <script lang="ts">
   import { submitChatMessage } from '$features/agent/chat-submission';
   import { requestChatMessageRetry } from '$features/agent/chat-submission-retry';
+  import RetiredSendConfirm from './RetiredSendConfirm.svelte';
   import {
     selectQueueMutationBlocked,
     selectAgentSubmissionDisplay,
@@ -183,7 +184,12 @@
   import { selectTasksForAgent } from '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors';
   import type { TaskAgentAssociation } from '$store/renderer/slices/task-agent-associations/task-agent-associations-types';
   import type { Workspace, PendingProposalRef } from '$shared/types';
-  import { extractAllContent, type SuggestedPrompt, AgentStatus } from '$shared/types';
+  import {
+    extractAllContent,
+    type SuggestedPrompt,
+    AgentStatus,
+    WorkspaceStatus,
+  } from '$shared/types';
   import type { ContextItem } from './input/context-api';
   import {
     appendContextItemContent,
@@ -664,6 +670,30 @@
   // Retired sessions (PROTOCOL §5.5 soft retire, retiredAt set) are read-only: the transcript
   // stays viewable but the composer is replaced with a restore affordance.
   const isRetiredSession = $derived(!!$agentSession$?.retiredAt);
+  // A retired workspace (PROTOCOL §5.1) is read-only: its folder is gone and
+  // the view offers "Restore as blank workspace" instead of a live composer.
+  const isRetiredWorkspace = $derived(workspace?.status === WorkspaceStatus.Retired);
+  // A send to a retired workspace revives it as a fresh blank checkout
+  // (daemon-side, agent.sendMessage). Every submission is held until the user
+  // confirms; confirming sends the composer's current draft so text, context
+  // and cleanup all refer to the same draft. A suggested prompt is placed in
+  // the composer first rather than sent directly.
+  let heldRetiredSend = $state<{ force: boolean } | null>(null);
+  function sendOrConfirmRetired(text: string, force = false) {
+    if (isRetiredWorkspace) {
+      heldRetiredSend = { force };
+      return;
+    }
+    if (force) handleForceSubmit(text);
+    else handleSend(text);
+  }
+  function confirmRetiredSend() {
+    const held = heldRetiredSend;
+    heldRetiredSend = null;
+    if (!held) return;
+    if (held.force) handleForceSubmit(inputValue);
+    else handleSend(inputValue);
+  }
 
   // Derive error state: combine transient chatError with persisted agent status.
   // After a reload, chatError is null but agent status may be Error — use
@@ -6129,6 +6159,10 @@
 
   // Handle selecting a suggested prompt - sends immediately
   function handleSelectSuggestedPrompt(prompt: string) {
+    if (isRetiredWorkspace) {
+      void handleEditSuggestedPrompt(prompt).then(() => sendOrConfirmRetired(prompt));
+      return;
+    }
     handleSend(prompt);
   }
 
@@ -7862,6 +7896,12 @@
                 {#if draftManager.gateVisible}
                   <ChatDraftLoadingGate />
                 {/if}
+                {#if isRetiredWorkspace && heldRetiredSend}
+                  <RetiredSendConfirm
+                    onConfirm={confirmRetiredSend}
+                    onCancel={() => (heldRetiredSend = null)}
+                  />
+                {/if}
                 {#if workspace && agentId}
                   <PresenceTypingIndicator
                     workspaceId={workspace.id}
@@ -7877,8 +7917,8 @@
                     scheduleDraftWrite(value);
                     reportTypingActivity(value);
                   }}
-                  onsubmit={handleSend}
-                  onforcesubmit={handleForceSubmit}
+                  onsubmit={(text: string) => sendOrConfirmRetired(text)}
+                  onforcesubmit={(text: string) => sendOrConfirmRetired(text, true)}
                   onstop={handleStop}
                   onHistoryPrev={handleHistoryPrev}
                   onHistoryNext={handleHistoryNext}

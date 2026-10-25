@@ -79,7 +79,17 @@ export function normalizeHomeConfiguration(value: unknown): HomeConfiguration {
     repoKey: typeof raw.repoKey === 'string' ? raw.repoKey.slice(0, 2000) : null,
     filter: member(
       raw.filter,
-      ['all', 'attention', 'pr-ready', 'running', 'waiting', 'blocked', 'unread', 'archived'],
+      [
+        'all',
+        'attention',
+        'pr-ready',
+        'running',
+        'waiting',
+        'blocked',
+        'unread',
+        'archived',
+        'retired',
+      ],
       defaults.filter,
     ),
     tab: member(raw.tab, ['workspaces', 'prs', 'linear'], defaults.tab),

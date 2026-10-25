@@ -46,6 +46,9 @@ export type WorkspaceOperationsState = {
   bulkReservedWorkspaceIds: string[];
   showRemoveRepoConfirm: boolean;
   pendingRemoveRepoPath: string | null;
+  /** Retire confirmation (PROTOCOL §5.1 Retired workspaces): folder deleted, rows kept. */
+  showRetireConfirm: boolean;
+  pendingRetireWorkspaceId: string | null;
 };
 
 const emptyOpenPrs = () => createCollection<OpenPrWarningItem, 'number'>('number');
@@ -81,6 +84,8 @@ export const initialState: WorkspaceOperationsState = {
   bulkReservedWorkspaceIds: [],
   showRemoveRepoConfirm: false,
   pendingRemoveRepoPath: null,
+  showRetireConfirm: false,
+  pendingRetireWorkspaceId: null,
 };
 
 export const requestDeleteWorkspace = createAction<[workspaceId: string]>(
@@ -108,6 +113,24 @@ export const workspaceAttentionDismissalSettled = createAction<
 
 export const requestUnarchiveWorkspace = createAction<[workspaceId: string]>(
   'workspaceOperations/requestUnarchiveWorkspace',
+);
+
+/** Open the retire confirmation; nothing is retired until it is confirmed. */
+export const requestRetireWorkspace = createAction<[workspaceId: string]>(
+  'workspaceOperations/requestRetireWorkspace',
+);
+
+export const closeRetireConfirm = createAction('workspaceOperations/closeRetireConfirm');
+
+export const confirmRetireWorkspace = createAction('workspaceOperations/confirmRetireWorkspace');
+
+/**
+ * Fetch retired workspaces with the explicit `includeRetired` opt-in and fold
+ * them into the store. Dispatched only by surfaces that opt in to retired
+ * rows: the Home Retired chip and search (`quiet` suppresses the error toast).
+ */
+export const loadRetiredWorkspacesRequested = createAction<[options?: { quiet?: boolean }]>(
+  'workspaceOperations/loadRetiredWorkspacesRequested',
 );
 
 export const applyWorkspaceProposal = createAction<[payload: WorkspaceProposalApplyPayload]>(
@@ -357,3 +380,14 @@ workspaceOperationsReducer.with(
     attentionDismissalResult: { workspaceId, requestId },
   }),
 );
+
+workspaceOperationsReducer.with(requestRetireWorkspace, (state, { payload: [workspaceId] }) => ({
+  ...state,
+  showRetireConfirm: true,
+  pendingRetireWorkspaceId: workspaceId,
+}));
+workspaceOperationsReducer.with(closeRetireConfirm, (state) => ({
+  ...state,
+  showRetireConfirm: false,
+  pendingRetireWorkspaceId: null,
+}));

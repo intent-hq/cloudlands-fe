@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
     status: 'idle' | 'loading' | 'cached-ready' | 'optimistic' | 'ready' | 'not-found' | 'error';
     error: null | { kind: 'not_found' | 'error'; message: string };
   },
-  workspace: null as null | { id: string; title: string },
+  workspace: null as null | { id: string; title: string; status?: string },
   guestSession: null as null | { id: string; label: string },
   hidesAgentLifecycleActions: false,
   sidebarSide: 'left' as 'left' | 'right',
@@ -218,6 +218,34 @@ describe('WorkspaceSurface agent lifecycle gate (multiplayer w4)', () => {
       container.querySelector('[data-workspace-surface-part="valid-panel-layout"]'),
     ).not.toBeNull();
     expect(createAffordances(container)).toEqual([]);
+  });
+});
+
+describe('WorkspaceSurface retired workspace (PROTOCOL §5.1 Retired workspaces)', () => {
+  it('shows the read-only banner and withholds agent creation and the terminal', () => {
+    mocks.loadState = { status: 'ready', error: null };
+    mocks.workspace = { id: 'workspace-1', title: 'Old work', status: 'Retired' };
+
+    const { container } = renderHost();
+
+    expect(container.querySelector('[data-retired-workspace-banner]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-workspace-surface-part="valid-panel-layout"]'),
+    ).not.toBeNull();
+    expect(container.querySelector('[data-create-agent-affordance]')).toBeNull();
+    expect(container.querySelector('[data-workspace-surface-part="quake-terminal"]')).toBeNull();
+  });
+
+  it('shows no retired banner for an active workspace', () => {
+    mocks.loadState = { status: 'ready', error: null };
+    mocks.workspace = { id: 'workspace-1', title: 'Live', status: 'Active' };
+
+    const { container } = renderHost();
+
+    expect(container.querySelector('[data-retired-workspace-banner]')).toBeNull();
+    expect(
+      container.querySelector('[data-workspace-surface-part="quake-terminal"]'),
+    ).not.toBeNull();
   });
 });
 

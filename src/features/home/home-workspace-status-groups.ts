@@ -38,29 +38,36 @@ const statusGroups: Record<WorkspaceDisplayStatus, StatusGroup> = {
 const statusOrder = Object.keys(statusLabels) as StatusGroup[];
 
 export function groupHomeWorkspacesByStatus(workspaces: readonly Workspace[]) {
-  const buckets = new Map<StatusGroup | 'archived', Workspace[]>();
+  const buckets = new Map<StatusGroup | 'archived' | 'retired', Workspace[]>();
   for (const workspace of workspaces) {
     if (workspace.status === WorkspaceStatusEnum.Deleted || workspace.pendingDeleteAt) continue;
     const reminderStatus = workspaceReminderStatus(workspace);
     const status =
       workspace.status === WorkspaceStatusEnum.Archived
         ? 'archived'
-        : reminderStatus === 'waiting'
-          ? 'waiting'
-          : isWorkspaceDisplayStatus(reminderStatus)
-            ? statusGroups[reminderStatus]
-            : 'not_started';
+        : workspace.status === WorkspaceStatusEnum.Retired
+          ? 'retired'
+          : reminderStatus === 'waiting'
+            ? 'waiting'
+            : isWorkspaceDisplayStatus(reminderStatus)
+              ? statusGroups[reminderStatus]
+              : 'not_started';
     const items = buckets.get(status) ?? [];
     items.push(workspace);
     buckets.set(status, items);
   }
-  return [...statusOrder, 'archived' as const].flatMap((status) => {
+  return [...statusOrder, 'archived' as const, 'retired' as const].flatMap((status) => {
     const items = buckets.get(status);
     return items?.length
       ? [
           {
             id: `status:${status}`,
-            label: status === 'archived' ? m.home_filter_archived() : statusLabels[status](),
+            label:
+              status === 'archived'
+                ? m.home_filter_archived()
+                : status === 'retired'
+                  ? m.home_filter_retired()
+                  : statusLabels[status](),
             items,
           },
         ]

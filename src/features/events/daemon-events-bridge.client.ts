@@ -1486,11 +1486,12 @@ function claimRetireTransition(agentId: string, transition: 'retired' | 'restore
 }
 
 /**
- * `agent:renamed` (§5.5 / §6.5) carries `{ agentId, name }` — the daemon's
- * `agent.rename` (and a name-only `agent.update`) emits it after persisting the
- * new name with `nameExplicitlySet` set. Dispatching `renameSession` updates the
- * session's `name` and marks it explicit (so Assistant thread titles switch
- * from the first-message preview) without touching the transcript.
+ * `agent:renamed` (§5.5 / §6.5) carries `{ agentId, name, nameExplicitlySet }` —
+ * the daemon's `agent.rename` (and a name-only `agent.update`) emits it after
+ * persisting the new name. Dispatching `renameSession` updates the session's
+ * `name` and mirrors the daemon's flag (Assistant thread titles switch from the
+ * first-message preview only once it is explicit) without touching the
+ * transcript. Older daemons omit the flag; absent means `true`.
  */
 function handleAgentRenamedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -1499,7 +1500,10 @@ function handleAgentRenamedEvent(event: WorkspaceEvent): void {
   const name = data.name;
   if (typeof agentId !== 'string' || agentId.length === 0) return;
   if (typeof name !== 'string') return;
-  appStore.dispatch(renameSession(agentId, name));
+  // An absent flag defaults inside `renameSession` (older daemons).
+  const nameExplicitlySet =
+    typeof data.nameExplicitlySet === 'boolean' ? data.nameExplicitlySet : undefined;
+  appStore.dispatch(renameSession(agentId, name, nameExplicitlySet));
 }
 
 /** Apply self-sufficient metadata mutations; keep scoped reads for partial invalidations. */
@@ -2865,6 +2869,13 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
     changes.archivedAt = raw.archivedAt;
   } else if (raw.archivedAt === null) {
     changes.archivedAt = undefined;
+  }
+  // `retiredAt` (PROTOCOL §5.1 Retired workspaces) uses the same nullable
+  // merge: retire sends the timestamp, revive an explicit JSON null.
+  if (typeof raw.retiredAt === 'string') {
+    changes.retiredAt = raw.retiredAt;
+  } else if (raw.retiredAt === null) {
+    changes.retiredAt = undefined;
   }
   // `browserClientId` (REV-2 pin, §5.17) is nullable on the wire the same way:
   // `workspace.setBrowserClient { clientId }` sends the pinned id, clearing

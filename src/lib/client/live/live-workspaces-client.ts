@@ -47,6 +47,7 @@ import type {
   SubscriptionHandler,
   Unsubscribe,
   WorkspaceCancelDeleteResult,
+  WorkspaceRetireResult,
   WorkspaceCreateResult,
   WorkspaceDeleteResult,
   WorkspaceDiskUsageResult,
@@ -90,6 +91,8 @@ function toWorkspaceStatus(value: unknown): WorkspaceStatus {
       return WorkspaceStatus.Inactive;
     case 'archived':
       return WorkspaceStatus.Archived;
+    case 'retired':
+      return WorkspaceStatus.Retired;
     case 'deleted':
       return WorkspaceStatus.Deleted;
     default:
@@ -206,16 +209,29 @@ export class LiveWorkspacesClient implements WorkspacesClient {
     { read: WorkspaceReadContext; promise: Promise<Workspace | null> }
   >();
 
-  list(options?: { includeArchived?: boolean }): Promise<Workspace[]> {
+  /**
+   * `workspace.list` (§5.1). Retired rows are returned only when the caller
+   * opts in with `includeRetired: true` (strict opt-in, §5.1 Retired
+   * workspaces); `includeArchived` alone never includes them.
+   */
+  list(options?: { includeArchived?: boolean; includeRetired?: boolean }): Promise<Workspace[]> {
     const includeArchived = options?.includeArchived === true;
+    const includeRetired = options?.includeRetired === true;
     const read = captureWorkspaceReadContext();
-    const key = JSON.stringify([read.key, includeArchived]);
-    const existing = this.listRequests.get(key);
+    const key = JSON.stringify([read.key, includeArchived, includeRetired]);
+    // Retired reads are never shared: a reader that reloads after a restore,
+    // delete or identity change must observe a request started after it, not
+    // an older in-flight snapshot whose changes it never journaled.
+    const existing = includeRetired ? undefined : this.listRequests.get(key);
     if (existing?.read.isCurrent()) return existing.promise;
 
+    const params = {
+      ...(includeArchived ? { includeArchived: true } : {}),
+      ...(includeRetired ? { includeRetired: true } : {}),
+    };
     const request = backendRequest<{ workspaces?: unknown[] }>(
       'workspace.list',
-      includeArchived ? { includeArchived: true } : undefined,
+      Object.keys(params).length > 0 ? params : undefined,
     ).then(
       (result) => {
         if (!read.isCurrent() && read.isAdmitted()) return this.list(options);
@@ -230,6 +246,7 @@ export class LiveWorkspacesClient implements WorkspacesClient {
         throw error;
       },
     );
+    if (includeRetired) return request;
     const entry = { read, promise: request };
     this.listRequests.set(key, entry);
     const clearRequest = () => {
@@ -419,6 +436,29 @@ export class LiveWorkspacesClient implements WorkspacesClient {
 
   async unarchive(id: string): Promise<MutationResult> {
     return runMutation('workspace.unarchive', { workspaceId: id });
+  }
+
+  /** `workspace.retire` (§5.1): delete the folder, keep the rows read-only. */
+  async retire(id: string): Promise<WorkspaceRetireResult> {
+    try {
+      const result = await backendRequest<{ workspace?: unknown }>('workspace.retire', {
+        workspaceId: id,
+      });
+      const raw = result?.workspace;
+      return {
+        success: true,
+        ...(raw && typeof raw === 'object'
+          ? { workspace: normalizeWorkspace(raw as Record<string, unknown>) }
+          : {}),
+      };
+    } catch (error) {
+      const errorCode = extractErrorCode(error);
+      return {
+        success: false,
+        error: mutationErrorMessage(error),
+        ...(errorCode ? { errorCode } : {}),
+      };
+    }
   }
 
   // `workspace.markSeen` (§5.1) clears the unread `attention` flag only; the

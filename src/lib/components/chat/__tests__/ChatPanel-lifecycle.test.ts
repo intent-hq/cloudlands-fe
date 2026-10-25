@@ -9,7 +9,8 @@ import {
   setComposerContextItems,
 } from '$store/renderer/slices/transient-ui/transient-ui-slice';
 import { selectComposerContextItems } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
-import type { Workspace } from '$shared/types';
+import { WorkspaceStatus, type Workspace } from '$shared/types';
+import { m } from '$shared/paraglide/messages.js';
 import { KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
 import { registerGlobalSearchShortcuts } from '$lib/utils/global-search-shortcuts';
 import { resolveShortcut } from '$lib/utils/shortcut-bindings';
@@ -4408,6 +4409,97 @@ describe('ChatPanel mounted lifecycle', () => {
     mocks.agentSession.set({ id: 'agent-a', retiredAt: '2026-01-02T00:00:00.000Z' });
     await tick();
     expect(screen.queryByTestId('suggested-prompts-surface')).toBeNull();
+  });
+
+  it('keeps the composer enabled when retired and confirms before a send revives it', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentSession.set({ id: 'agent-a', messages: [] });
+    const retiredWorkspace = { ...workspace('workspace-a'), status: WorkspaceStatus.Retired };
+    render(ChatPanel, {
+      props: { workspace: retiredWorkspace, agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-disabled')).toBe('false');
+    const sends = () =>
+      mocks.dispatch.mock.calls.filter(([action]) => action?.type === 'chatState/sendMessage');
+
+    // Cancel drops the held send.
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'Pick this back up' },
+    });
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    expect(screen.getByTestId('retired-send-confirm').textContent).toContain(
+      m.workspace_retiredSend_notice(),
+    );
+    expect(sends()).toHaveLength(0);
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.modals_bulkActionConfirm_cancel_label() }),
+    );
+    expect(screen.queryByTestId('retired-send-confirm')).toBeNull();
+    expect(sends()).toHaveLength(0);
+
+    // Repeated submissions stay held until the user confirms.
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    expect(sends()).toHaveLength(0);
+
+    // Editing before confirming sends the current draft, not the first one.
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'Pick this back up, then port the parser' },
+    });
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.workspace_retiredSend_confirm_label() }),
+    );
+    await tick();
+    expect(screen.queryByTestId('retired-send-confirm')).toBeNull();
+    expect(sends()).toHaveLength(1);
+    expect(sends()[0][0].payload.payload).toMatchObject({
+      wsId: 'workspace-a',
+      text: 'Pick this back up, then port the parser',
+    });
+  });
+
+  it('puts a suggested prompt in the composer when retired and confirms the current draft', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentSession.set({ id: 'agent-a', messages: [] });
+    mocks.agentMessages.set([
+      {
+        id: 'assistant-with-prompts',
+        role: 'assistant',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        contentBlocks: [
+          { type: 'text', text: 'Done.\n\n<!-- suggested-prompts\nRun the tests\n-->' },
+        ],
+      },
+    ]);
+    render(ChatPanel, {
+      props: {
+        workspace: { ...workspace('workspace-a'), status: WorkspaceStatus.Retired },
+        agentId: 'agent-a',
+        isActive: true,
+      },
+    });
+    await tick();
+    const sends = () =>
+      mocks.dispatch.mock.calls.filter(([action]) => action?.type === 'chatState/sendMessage');
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Run the tests' }));
+    await tick();
+    expect(sends()).toHaveLength(0);
+    expect(screen.getByTestId('retired-send-confirm')).toBeTruthy();
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe('Run the tests');
+
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'Run the tests and fix failures' },
+    });
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.workspace_retiredSend_confirm_label() }),
+    );
+    await tick();
+    expect(sends()).toHaveLength(1);
+    expect(sends()[0][0].payload.payload).toMatchObject({
+      text: 'Run the tests and fix failures',
+    });
   });
 
   it('reports true-bottom state to the stable header control', async () => {

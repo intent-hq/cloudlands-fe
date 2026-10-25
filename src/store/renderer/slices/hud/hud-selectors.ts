@@ -180,6 +180,7 @@ const selectHudWorkspaces = store.createSelector((state): Workspace[] => {
     .filter(
       (workspace) =>
         workspace.status !== WorkspaceStatus.Archived &&
+        workspace.status !== WorkspaceStatus.Retired &&
         workspace.status !== WorkspaceStatus.Deleted,
     )
     .map((workspace) => {

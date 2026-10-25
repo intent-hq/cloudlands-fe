@@ -355,6 +355,7 @@ function* hydrateVisibleWorkspaceAgents(runtime: HudRuntime): SagaGenerator<void
   for (const workspace of workspaces) {
     if (
       workspace.status === WorkspaceStatus.Archived ||
+      workspace.status === WorkspaceStatus.Retired ||
       workspace.status === WorkspaceStatus.Deleted
     ) {
       continue;

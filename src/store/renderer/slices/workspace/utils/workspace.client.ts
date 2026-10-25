@@ -518,6 +518,31 @@ export class WorkspaceClient {
   }
 
   /**
+   * Retire a workspace (`workspace.retire`, PROTOCOL §5.1 Retired workspaces):
+   * the daemon deletes the folder and keeps every row. On success `data` is
+   * the refreshed retired row when the daemon returned one; on failure
+   * `errorCode` carries the daemon discriminator (e.g. `retire-unsupported`).
+   */
+  async retire(
+    id: WorkspaceId,
+  ): Promise<{ ok: true; data?: Workspace } | { ok: false; error: string; errorCode?: string }> {
+    const isCurrent = captureMutation(id);
+    if (!isCurrent()) return authorityFailure();
+    const result = await appClient.workspaces.retire(id);
+    if (!isCurrent()) return authorityFailure();
+    if (result.success) {
+      this.clearCache(id);
+      this.clearCache();
+      return { ok: true, data: result.workspace };
+    }
+    return {
+      ok: false,
+      error: result.error || m.workspace_ops_retireFailed_error(),
+      ...(result.errorCode ? { errorCode: result.errorCode } : {}),
+    };
+  }
+
+  /**
    * Invoke an IPC call bypassing the client cache and deduplication.
    * Used for on-demand summary endpoints whose freshness is event-driven
    * (e.g., refreshed by 'workspace:tasks-changed') rather than TTL-based.
