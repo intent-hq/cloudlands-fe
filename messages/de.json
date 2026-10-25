@@ -3086,6 +3086,7 @@
   "layout_daemonStatus_unknown_label": "Unbekannt",
   "layout_daemonStatus_unslothFallbackModel_label": "den verwalteten Unsloth-Server",
   "layout_daemonStatus_unslothServer_header": "Unsloth-Server",
+  "layout_daemonStatus_updateFailedGeneric_toast": "Das Backend konnte das Update nicht starten.",
   "layout_daemonStatus_updateFailed_toast": "Das Backend konnte das Update nicht starten: {message}",
   "layout_daemonStatus_updateNotConnected_toast": "Keine Verbindung zu diesem Backend — verbinde dich zuerst, bevor du ein Update anforderst.",
   "layout_daemonStatus_updateRequestError_toast": "Die Update-Anfrage konnte nicht gesendet werden. Bitte versuchen Sie es erneut.",

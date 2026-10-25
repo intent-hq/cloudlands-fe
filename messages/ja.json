@@ -3086,6 +3086,7 @@
   "layout_daemonStatus_unknown_label": "不明",
   "layout_daemonStatus_unslothFallbackModel_label": "マネージド Unsloth サーバー",
   "layout_daemonStatus_unslothServer_header": "Unsloth サーバー",
+  "layout_daemonStatus_updateFailedGeneric_toast": "バックエンドはアップデートを開始できませんでした。",
   "layout_daemonStatus_updateFailed_toast": "バックエンドはアップデートを開始できませんでした: {message}",
   "layout_daemonStatus_updateNotConnected_toast": "このバックエンドに接続していません — アップデートを要求する前に接続してください。",
   "layout_daemonStatus_updateRequestError_toast": "アップデートリクエストを送信できませんでした。もう一度お試しください。",
