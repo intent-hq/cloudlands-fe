@@ -109,6 +109,97 @@ async function runAgentCardSaveEdit(opts: {
   });
 }
 
+/**
+ * Reproduces the `handleTabRename` note branch from PanelLayout.svelte. `persist`
+ * stands in for `appStore.dispatch(updateNoteTitlePersistRequested(...))`, which
+ * resolves `false` when the daemon rejected the title (the saga has then already
+ * rolled the note back and shown its error toast).
+ */
+function runNoteRenameWithUndo(opts: {
+  tabId: string;
+  oldName: string;
+  newName: string;
+  updateTabTitle: (tabId: string, title: string) => void;
+  persist: (title: string) => Promise<boolean>;
+}) {
+  const { tabId, oldName, newName, updateTabTitle, persist } = opts;
+  return renameWithUndo(
+    'note',
+    oldName,
+    newName,
+    async () => {
+      updateTabTitle(tabId, newName);
+      let saved: boolean;
+      try {
+        saved = await persist(newName);
+      } catch (err) {
+        updateTabTitle(tabId, oldName);
+        throw err;
+      }
+      if (saved) return true;
+      updateTabTitle(tabId, oldName);
+      return false;
+    },
+    () => {
+      void persist(oldName);
+      updateTabTitle(tabId, oldName);
+    },
+  );
+}
+
+describe('PanelLayout note rename failure revert (#5777)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    reversibleActions.cancelAll();
+  });
+
+  afterEach(() => {
+    reversibleActions.cancelAll();
+  });
+
+  it('reverts the tab title and shows no Renamed/Undo or extra error toast when the save fails', async () => {
+    const updateTabTitle = vi.fn();
+    const persist = vi.fn<(title: string) => Promise<boolean>>().mockResolvedValue(false);
+
+    const result = await runNoteRenameWithUndo({
+      tabId: 'tab-note',
+      oldName: 'Old Title',
+      newName: 'New Title',
+      updateTabTitle,
+      persist,
+    });
+
+    expect(result).toBe(false);
+    expect(persist.mock.calls).toEqual([['New Title']]);
+    expect(updateTabTitle.mock.calls).toEqual([
+      ['tab-note', 'New Title'],
+      ['tab-note', 'Old Title'],
+    ]);
+    expect(notify.warning).not.toHaveBeenCalled();
+    expect(notify.success).not.toHaveBeenCalled();
+    // The saga owns the single error toast; the rename path adds none.
+    expect(notify.error).not.toHaveBeenCalled();
+  });
+
+  it('keeps the new tab title and shows the Undo toast when the save succeeds', async () => {
+    const updateTabTitle = vi.fn();
+    const persist = vi.fn<(title: string) => Promise<boolean>>().mockResolvedValue(true);
+
+    const result = await runNoteRenameWithUndo({
+      tabId: 'tab-note',
+      oldName: 'Old Title',
+      newName: 'New Title',
+      updateTabTitle,
+      persist,
+    });
+
+    expect(result).toBe(true);
+    expect(updateTabTitle.mock.calls).toEqual([['tab-note', 'New Title']]);
+    expect(notify.warning).toHaveBeenCalledTimes(1);
+    expect(notify.error).not.toHaveBeenCalled();
+  });
+});
+
 describe('PanelLayout agent rename failure revert', () => {
   beforeEach(() => {
     vi.clearAllMocks();

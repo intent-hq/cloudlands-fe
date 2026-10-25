@@ -45,7 +45,11 @@ export function settleNoteContent(workspaceId: string, noteId: string): Promise<
   return appStore.dispatch(settleNoteContentRequested(workspaceId, noteId));
 }
 
-export function updateNoteTitle(workspaceId: string, noteId: string, title: string): Promise<void> {
+export function updateNoteTitle(
+  workspaceId: string,
+  noteId: string,
+  title: string,
+): Promise<boolean> {
   return appStore.dispatch(updateNoteTitlePersistRequested(workspaceId, noteId, title));
 }
 
