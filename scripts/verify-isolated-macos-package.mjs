@@ -8,9 +8,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { _electron as electron } from '@playwright/test';
 import { runStaplerWithBackoff } from './apple-ticket-retry.mjs';
-import { evaluatePackageMain } from './evaluate-package-main.mjs';
+import { evaluatePackageMain as evaluateMain } from './evaluate-package-main.mjs';
+import { createPackageProbe } from './isolated-package-probe.mjs';
+import { createPackageDiagnostics } from './isolated-package-diagnostics.mjs';
+import { createIsolatedCliFixture } from './isolated-cli-fixture.mjs';
 
-const [dmg, output, backendSha, frontendSha] = process.argv.slice(2);
+const [dmg, output, backendSha, frontendSha, protocolVersion = '14.0'] = process.argv.slice(2);
+assert.ok(['14.0', '14.1', '15.1'].includes(protocolVersion), 'Unsupported inspection protocol');
 assert.equal(process.platform, 'darwin');
 assert.equal(process.arch, 'arm64');
 assert.equal(process.env.GITHUB_ACTIONS, 'true');
@@ -29,12 +33,30 @@ fs.mkdirSync(output, { recursive: false, mode: 0o700 });
 const work = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP, 'intent-package-'));
 const mount = path.join(work, 'mount');
 fs.mkdirSync(mount);
-const command = (file, args) => execFileSync(file, args, { encoding: 'utf8', timeout: 120_000 });
+const command = (file, args) => {
+  probe.checkpoint(`command ${file}`, 'started');
+  const result = execFileSync(file, args, { encoding: 'utf8', timeout: 120_000 });
+  probe.checkpoint(`command ${file}`, 'completed');
+  return result;
+};
 const hash = (file) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
-const evidence = { dmgSha256: hash(dmg), backendSha, frontendSha, phases: [], passed: false };
+const evidence = {
+  dmgSha256: hash(dmg),
+  backendSha,
+  frontendSha,
+  protocolVersion,
+  phases: [],
+  passed: false,
+};
+const probe = createPackageProbe(output, evidence);
+const evaluatePackageMain = (app, callback, argument) =>
+  probe.run('main-process inspection', () => evaluateMain(app, callback, argument));
 let application;
+let diagnostics;
+const diagnosticDisposers = [];
 let mounted = false;
 let normalServer;
+let cliFixture;
 let normalConnections = 0;
 const ownedPids = new Set();
 const normalData = path.join(os.homedir(), 'Library/Application Support/intentd');
@@ -81,7 +103,10 @@ async function closePackage(phase, originalStartedAt) {
     timer = setTimeout(() => reject(new Error('Original Electron child did not exit')), 15_000);
   });
   try {
-    const [, result] = await Promise.all([application.close(), exited]);
+    const [, result] = await Promise.all([
+      probe.run('Electron close', () => application.close(), 15_000),
+      exited,
+    ]);
     electronExits.push({ phase, pid: child.pid, ...result });
     application = undefined;
     assert.equal(result.code, 0);
@@ -100,7 +125,7 @@ async function eventually(read, accept, label, timeout = 60_000) {
   let last;
   while (Date.now() < deadline) {
     try {
-      last = await read();
+      last = await probe.run(label, read, Math.max(1, deadline - Date.now()));
       if (accept(last)) return last;
     } catch (error) {
       last = String(error);
@@ -120,7 +145,7 @@ async function inspect(app) {
       );
       return inspection.inspectIsolatedTestPackage(instance, expected);
     },
-    { frontendSha, backendSha },
+    { frontendSha, backendSha, protocolVersion },
   );
 }
 
@@ -215,6 +240,8 @@ try {
   assert.equal(plist.CFBundleIdentifier, 'app.cloudlands.intent.gitlab-test');
   assert.equal(plist.IntentIsolatedTestBackend, backendSha);
   assert.match(plist.IntentIsolatedTestBuild, /^manual-[1-9][0-9]*-[1-9][0-9]*$/);
+  if (process.env.ISOLATED_REPLAY_BUILD_ID)
+    assert.equal(plist.IntentIsolatedTestBuild, process.env.ISOLATED_REPLAY_BUILD_ID);
   assert.ok(!plist.CFBundleURLTypes?.length, 'test package must not register intent://');
   assert.equal(fs.existsSync(path.join(bundle, 'Contents/Resources/keychain-helper')), false);
   evidence.signing = command('codesign', ['--verify', '--deep', '--strict', '--verbose=2', bundle]);
@@ -232,6 +259,8 @@ try {
   evidence.plist = { id: plist.CFBundleIdentifier, build: plist.IntentIsolatedTestBuild };
   const expectedRoot = path.join(os.homedir(), '.intent-tests', plist.IntentIsolatedTestBuild);
   assert.equal(fs.existsSync(expectedRoot), false);
+  diagnostics = createPackageDiagnostics(output, expectedRoot);
+  cliFixture = createIsolatedCliFixture(os.homedir(), work, process.execPath);
   const launchEnv = {
     PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
     HOME: os.homedir(),
@@ -241,9 +270,18 @@ try {
     INTENTD_CONFIG: path.join(normalData, 'config.toml'),
     INTENTD_BIN: '/normal/forbidden',
     GH_TOKEN: 'disposable-sentinel-not-a-credential',
+    CLAUDE_CONFIG_DIR: '/normal/forbidden-claude-config',
+    ANTHROPIC_API_KEY: 'disposable-sentinel-not-a-credential',
   };
-  const launch = () =>
-    electron.launch({ executablePath: executable, env: launchEnv, timeout: 120_000 });
+  const launch = async () => {
+    const launched = await probe.run(
+      'Electron launch',
+      () => electron.launch({ executablePath: executable, env: launchEnv, timeout: 120_000 }),
+      125_000,
+    );
+    diagnosticDisposers.push(diagnostics.attach(launched.process()));
+    return launched;
+  };
   application = await launch();
   const initial = await eventually(() => inspect(application), Boolean, 'private startup');
   assert.equal(initial.root, expectedRoot);
@@ -261,6 +299,44 @@ try {
     Number(fs.readFileSync(path.join(initial.data, 'intentd.pid'), 'utf8').trim());
   ownedPids.add(daemonPid());
   evidence.phases.push({ phase: 'startup', ...initial });
+  const discovery = await evaluatePackageMain(
+    application,
+    async ({ app }, expected) => {
+      const { pathToFileURL } = await import('node:url');
+      const { execFileSync } = await import('node:child_process');
+      const { getBackendClient } = await import(
+        pathToFileURL(`${app.getAppPath()}/dist/features/backend/main/backend.ipc.js`).href
+      );
+      const snapshot = await getBackendClient().request('host.providerDiscovery', {});
+      const claude = snapshot.providers.find((provider) => provider.id === 'claude-code');
+      const probes = [expected.claude, expected.npx].map((file) =>
+        JSON.parse(
+          execFileSync(file, ['--intent-isolation-probe'], { encoding: 'utf8', timeout: 5000 }),
+        ),
+      );
+      return { claude, probes, npx: snapshot.npx };
+    },
+    { claude: cliFixture.claude, npx: cliFixture.npx },
+  );
+  assert.equal(discovery.claude?.installed, true);
+  assert.equal(discovery.claude.npxOnly, true);
+  assert.equal(discovery.claude.resolvedPath, cliFixture.npx);
+  assert.equal(discovery.claude.secondaryCommand, 'claude');
+  assert.equal(discovery.claude.secondaryResolved, true);
+  assert.equal(discovery.claude.secondaryResolvedPath, cliFixture.claude);
+  assert.equal(discovery.npx.resolvedPath, cliFixture.npx);
+  assert.equal(discovery.npx.version, '10.30.3');
+  assert.equal(discovery.npx.versionOk, true);
+  assert.deepEqual(
+    discovery.probes,
+    ['claude', 'npx'].map((fixture) => ({
+      fixture,
+      home: initial.home,
+      configAbsent: true,
+      credentialAbsent: true,
+    })),
+  );
+  evidence.phases.push({ phase: 'executable-discovery-fixture', ...discovery });
   const privateConfig = path.join(initial.data, 'config.toml');
   const configBeforePreferences = hash(privateConfig);
   const settings = await inspectSettings(application, true);
@@ -407,6 +483,9 @@ try {
   evidence.error = String(error?.stack ?? error);
   process.exitCode = 1;
 } finally {
+  if (evidence.error) diagnostics?.captureStacks();
+  diagnostics?.capture();
+  probe.persist();
   if (application) {
     try {
       await closePackage('failure-cleanup');
@@ -416,7 +495,19 @@ try {
       process.exitCode = 1;
     }
   }
-  if (normalServer) await new Promise((resolve) => normalServer.close(resolve));
+  if (normalServer) {
+    try {
+      await probe.run(
+        'normal sentinel close',
+        () => new Promise((resolve) => normalServer.close(resolve)),
+        5_000,
+      );
+    } catch (error) {
+      evidence.normalServerCleanupError = String(error);
+      evidence.passed = false;
+      process.exitCode = 1;
+    }
+  }
   if (mounted) {
     try {
       command('hdiutil', ['detach', mount]);
@@ -426,9 +517,22 @@ try {
       process.exitCode = 1;
     }
   }
-  fs.writeFileSync(path.join(output, 'isolation.json'), JSON.stringify(evidence, null, 2), {
-    mode: 0o600,
-  });
+  diagnostics?.capture();
+  for (const dispose of diagnosticDisposers) dispose();
+  if (cliFixture) {
+    try {
+      cliFixture.cleanup();
+    } catch (error) {
+      evidence.cliFixtureCleanupError = String(error);
+      evidence.passed = false;
+      process.exitCode = 1;
+    }
+  }
+  probe.finish();
   // Never relabel forced cleanup as a pass. This VM is retired by GitHub after the job.
   console.log(JSON.stringify({ passed: evidence.passed, output, error: evidence.error }));
 }
+
+// Failed inspection may leave an unresponsive Playwright transport open. The hosted VM
+// owns orphan cleanup; terminate only after persisting a failing result, never as proof.
+if (!evidence.passed) process.exit(1);

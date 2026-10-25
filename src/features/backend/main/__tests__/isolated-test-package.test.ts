@@ -162,7 +162,7 @@ describe('actual isolated package consumers', () => {
     let hello = {
       clientId: 'private-package-client',
       server: {
-        protocolVersion: '13.3', // fixture-protocol-version: integrated GitLab package expectation
+        protocolVersion: '14.0', // fixture-protocol-version: historical selected daemon package contract
         buildCommit: 'aaaaaaa',
         locality: 'local',
         capabilities,

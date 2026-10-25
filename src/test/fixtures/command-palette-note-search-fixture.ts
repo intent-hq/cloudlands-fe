@@ -27,10 +27,13 @@ export function setupPaletteNoteSearch(notes: Note[] = []) {
           })),
       };
     },
+    'search.messages': () => ({ matches: [] }),
+    'search.fileNames': () => ({ files: [] }),
   });
+  const fixtureBridge = window.electronAPI;
   const stopNotes = appStore.runSaga(notesReadSaga);
   return () => {
     stopNotes();
-    window.electronAPI = previousBridge;
+    if (window.electronAPI === fixtureBridge) window.electronAPI = previousBridge;
   };
 }
