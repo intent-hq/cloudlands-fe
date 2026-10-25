@@ -1,0 +1,24 @@
+/*
+ * Inverse surface: paints the foreground color (default tooltips, value bubbles, pills).
+ * Content inside keeps the normal neutral roles; this scope retunes them for the
+ * inverted pair, so text-foreground, text-muted-foreground, shortcut chips, border-border
+ * and bg-muted stay readable in both themes. `cn()` treats it as a background and text
+ * paint, so a later bg-* turns the element back into a normal surface.
+ */
+@layer components {
+  .surface-inverse {
+    --color-foreground: hsl(var(--background));
+    --color-muted-foreground: color-mix(
+      in srgb,
+      hsl(var(--background)) 70%,
+      hsl(var(--foreground))
+    );
+    --color-shortcut-foreground: var(--color-muted-foreground);
+    --color-subtle: var(--color-muted-foreground);
+    --color-ghost: var(--color-muted-foreground);
+    --color-muted: color-mix(in srgb, hsl(var(--background)) 10%, hsl(var(--foreground)));
+    --color-border: color-mix(in srgb, hsl(var(--background)) 15%, hsl(var(--foreground)));
+    background-color: hsl(var(--foreground));
+    color: var(--color-foreground);
+  }
+}

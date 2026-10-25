@@ -24,12 +24,24 @@ const retired = workspace('retired', {
 });
 
 describe('Home Retired chip', () => {
-  it.each(['all', 'attention', 'running', 'blocked', 'unread', 'archived'] as HomeFilter[])(
-    'never shows a retired workspace under %s',
-    (filter) => {
-      expect(matchesHomeFilter(retired, filter)).toBe(false);
-    },
-  );
+  it.each([
+    'all',
+    'attention',
+    'running',
+    'waiting',
+    'blocked',
+    'unread',
+    'archived',
+  ] as HomeFilter[])('never shows a retired workspace under %s', (filter) => {
+    expect(matchesHomeFilter(retired, filter)).toBe(false);
+  });
+
+  it('keeps waiting active workspaces separate from retired workspaces', () => {
+    const waiting = workspace('waiting', { waiting: true });
+    expect(matchesHomeFilter(waiting, 'waiting')).toBe(true);
+    expect(matchesHomeFilter(waiting, 'retired')).toBe(false);
+    expect(matchesHomeFilter({ ...retired, waiting: true }, 'waiting')).toBe(false);
+  });
 
   it('shows only retired workspaces under the Retired chip', () => {
     expect(matchesHomeFilter(retired, 'retired')).toBe(true);

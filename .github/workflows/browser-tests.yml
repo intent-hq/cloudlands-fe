@@ -17,7 +17,7 @@ on:
         required: false
         default: '{}'
       cloud:
-        description: "The caller's route `cloud` output (runner-route.yml): where gh-linux-8x jobs run."
+        description: "The caller's route `cloud` output (runner-route.yml): where Component Tests burst; the root and Electron suites run on ubuntu-24.04."
         type: string
         required: false
         default: '{}'
@@ -32,7 +32,7 @@ jobs:
     # A granted ct-N slot (the merge-queue caller's slots), else the caller's
     # burst runner for gh-linux-8x (WarpBuild), else gh-linux-8x. Slots carry
     # the Chromium libraries in their image and skip the sudo/apt steps.
-    runs-on: ${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["gh-linux-8x"]') }}
+    runs-on: ${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["warp-ubuntu-2404-x64-8x"]') }}
     # Four shards, two workers each; preserve the pinned CT browser.
     strategy:
       # Let the sibling shards finish so one flaky leg doesn't hide the
@@ -318,7 +318,9 @@ jobs:
     name: Playwright (root ${{ matrix.shard }}/4)
     if: ${{ !cancelled() && inputs.suite == 'root' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group') }}
     # Never a self-hosted slot: relies on the GitHub image's Chromium libraries.
-    runs-on: ${{ fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["gh-linux-8x"]') }}
+    # One worker per shard peaks near 2 CPUs and 8 GB, so the free standard
+    # runner (4 CPUs / 16 GB) fits without a paid 8-core runner.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -375,7 +377,7 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-root-browsers-${{ runner.os }}-${{ steps.root-playwright.outputs.version }}
       - name: Install Playwright browsers
-        # The gh-linux-8x image already ships every Chromium
+        # GitHub's ubuntu-24.04 image already ships every Chromium
         # shared library, and --with-deps only adds the fonts-*/xfonts-*
         # packages whose fetch blew test-ct's budget (intent#4723) — so
         # install the browser alone; a missing lib fails the first spec
@@ -417,8 +419,9 @@ jobs:
   test-electron:
     name: Electron Browser Lifetime
     if: ${{ !cancelled() && inputs.suite == 'electron' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group') }}
-    # Never a self-hosted slot: installs Xvfb with sudo.
-    runs-on: ${{ fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["gh-linux-8x"]') }}
+    # Never a self-hosted slot: installs Xvfb with sudo. A single worker fits
+    # the free standard runner.
+    runs-on: ubuntu-24.04
     # 8 tests × ≤120 s test timeout is the theoretical ceiling; a healthy
     # single-worker run takes ~2-3 min plus setup.
     timeout-minutes: 30

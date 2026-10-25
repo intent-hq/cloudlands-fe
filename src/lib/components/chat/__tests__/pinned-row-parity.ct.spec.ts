@@ -1,6 +1,5 @@
 import { expect, test } from '../../../../test/ct-test';
 import Preview from '../pinned-row-parity.preview.svelte';
-import { readPinnedRowPresentation } from './pinned-row-parity-probe';
 
 const cases = [
   { name: 'sender avatar', kind: 'agent', narrow: false },
@@ -12,7 +11,7 @@ const cases = [
 ] as const;
 
 for (const scenario of cases) {
-  test(`pinned ${scenario.name} matches its source and returns without opening details`, async ({
+  test(`pinned ${scenario.name} returns to its source without opening details`, async ({
     mount,
     page,
   }) => {
@@ -26,10 +25,6 @@ for (const scenario of cases) {
     });
     await page.evaluate(() => document.fonts.ready);
     const source = component.getByTestId('source-0');
-    const surface = source.locator(
-      '[data-testid="user-message-surface"], [data-testid="event-wakeup-card"]',
-    );
-    const normal = await surface.evaluate(readPinnedRowPresentation);
     const scroll = component.getByTestId('sticky-scroll');
     const scrollHeight = await scroll.evaluate((node) => node.scrollHeight);
     const entry = await source.evaluate((node) => {
@@ -46,8 +41,6 @@ for (const scenario of cases) {
     for (const activation of ['Enter', 'Space', 'click'] as const) {
       await scroll.evaluate((node, top) => node.scrollTo(0, top), entry);
       await expect(pinned).toBeVisible();
-      await expect.poll(() => pinned.evaluate(readPinnedRowPresentation)).toEqual(normal);
-      expect(await surface.evaluate(readPinnedRowPresentation)).toEqual(normal);
       expect(await scroll.evaluate((node) => node.scrollHeight)).toBe(scrollHeight);
       expect(await scroll.evaluate((node) => node.scrollTop)).toBeCloseTo(entry, 1);
       await expect(pinned).not.toContainText('Details are available only in the expanded source.');

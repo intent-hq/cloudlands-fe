@@ -15,10 +15,12 @@ import {
   initialProfilesState,
   profileHandlers,
   stageProfileEnv,
+  type DefaultMutationResult,
   type ProfileMutationResult,
 } from './provider-profiles-state';
 import type {
   EnvEntryWrite,
+  ProviderDefaultConfig,
   ProviderProfile,
   ProviderProfileFailure,
 } from '$shared/provider-profiles';
@@ -67,7 +69,6 @@ export const initialState: ProviderSettingsState = {
   paths: { configured: {}, resolved: {}, secondary: {}, npxPackages: {} },
   pathsRevision: 0,
   pathsStatus: 'idle',
-  piAdapter: { installed: null, status: 'idle' },
 };
 
 export const providerSettingsSessionOpened = createAction<[sessionId: string]>(
@@ -97,13 +98,6 @@ export const providerSettingsRequestSettled = createAction<
   [id: string, status: Exclude<ProviderSettingsRequest['status'], 'pending'>]
 >('providerSettings/requestSettled');
 export const providerSettingsStopped = createAction('providerSettings/stopped');
-export const piAdapterCheckRequested = createAction('providerSettings/piAdapterCheckRequested');
-export const piAdapterCheckSettled = createAction<[installed: boolean | null]>(
-  'providerSettings/piAdapterCheckSettled',
-);
-export const piAdapterInstallRequested = createAction<[request: ProviderSettingsRequestContext]>(
-  'providerSettings/piAdapterInstallRequested',
-);
 
 function beginWrite(
   state: ProviderSettingsState,
@@ -241,17 +235,6 @@ providerSettingsReducer.with(providerSettingsRequestSettled, (state, { payload: 
   if (!request || request.status !== 'pending') return state;
   return { ...state, requests: updateItem(state.requests, { id, status }) };
 });
-providerSettingsReducer.with(piAdapterCheckRequested, (state) => ({
-  ...state,
-  piAdapter: { ...state.piAdapter, status: 'pending' },
-}));
-providerSettingsReducer.with(piAdapterCheckSettled, (state, { payload: [installed] }) => ({
-  ...state,
-  piAdapter: { installed, status: installed === null ? 'failure' : 'success' },
-}));
-providerSettingsReducer.with(piAdapterInstallRequested, (state, { payload: [request] }) =>
-  beginWrite(state, 'pi-adapter', request),
-);
 providerSettingsReducer.with(providerSettingsStopped, (state) => {
   let requests = state.requests;
   for (const id of requests.ids) {
@@ -263,10 +246,6 @@ providerSettingsReducer.with(providerSettingsStopped, (state) => {
     requests,
     pathsRevision: state.pathsRevision + 1,
     pathsStatus: state.pathsStatus === 'pending' ? 'idle' : state.pathsStatus,
-    piAdapter: {
-      ...state.piAdapter,
-      status: state.piAdapter.status === 'pending' ? 'idle' : state.piAdapter.status,
-    },
   };
 });
 providerSettingsReducer.with(providerCatalogLoaded, (state, { payload: [catalog] }) => ({
@@ -389,7 +368,9 @@ providerSettingsReducer.with(fastModeWriteSettled, (state, { payload: [providerI
 /** Read (or re-read) the profile list; ignored when the catalog advertises no profile support. */
 export const providerProfilesRequested = createAction('providerProfiles/requested');
 export const providerProfilesLoaded =
-  createAction<[profiles: ProviderProfile[], revision: number]>('providerProfiles/loaded');
+  createAction<[profiles: ProviderProfile[], revision: number, defaults?: ProviderDefaultConfig[]]>(
+    'providerProfiles/loaded',
+  );
 export const providerProfilesLoadFailed = createAction('providerProfiles/loadFailed');
 /** A `providers:profiles-changed` event (§5.54) — payload carries no env keys or values. */
 export const providerProfilesChanged = createAction<[revision: number]>('providerProfiles/changed');
@@ -426,6 +407,23 @@ export const providerProfileUpdateRequested = createAction(
     ...(input.backup !== undefined ? { backup: input.backup } : {}),
   }),
 );
+/**
+ * Save the Default configuration's name and/or env (`providers.profiles.updateDefault`).
+ * A blank name restores "Default"; omitted fields keep the saved value.
+ */
+export const providerDefaultUpdateRequested = createAction(
+  'providerProfiles/defaultUpdateRequested',
+  (input: { requestId: string; baseProviderId: string; name?: string; env?: EnvEntryWrite[] }) => ({
+    requestId: input.requestId,
+    baseProviderId: input.baseProviderId,
+    name: input.name,
+    envRef: stageProfileEnv(input.env),
+  }),
+);
+export const providerDefaultUpdateSucceeded = createAction<
+  [requestId: string, result: DefaultMutationResult]
+>('providerProfiles/defaultUpdateSucceeded');
+
 export const providerProfileDeleteRequested = createAction<
   [payload: { requestId: string; profileId: string }]
 >('providerProfiles/deleteRequested');
@@ -492,6 +490,12 @@ providerSettingsReducer.with(providerProfileCreateRequested, (state, { payload }
 );
 providerSettingsReducer.with(providerProfileUpdateRequested, (state, { payload }) =>
   withProfiles(state, profileHandlers.update(state.profiles, [payload])),
+);
+providerSettingsReducer.with(providerDefaultUpdateRequested, (state, { payload }) =>
+  withProfiles(state, profileHandlers.updateDefault(state.profiles, [payload])),
+);
+providerSettingsReducer.with(providerDefaultUpdateSucceeded, (state, { payload }) =>
+  withProfiles(state, profileHandlers.defaultSucceeded(state.profiles, payload)),
 );
 providerSettingsReducer.with(providerProfileDeleteRequested, (state, { payload }) =>
   withProfiles(state, profileHandlers.delete(state.profiles, payload)),

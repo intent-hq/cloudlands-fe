@@ -19,6 +19,9 @@ describe('durable Home configuration', () => {
   it('keeps the Retired chip selected across reloads', () => {
     expect(normalizeHomeConfiguration({ filter: 'retired' }).filter).toBe('retired');
   });
+  it('keeps the Waiting chip selected across reloads', () => {
+    expect(normalizeHomeConfiguration({ filter: 'waiting' }).filter).toBe('waiting');
+  });
   it('round-trips automatic settings without transient or retired fields', () => {
     const config = normalizeHomeConfiguration({
       view: 'canvas',

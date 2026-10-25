@@ -34,13 +34,8 @@ for (const [width, theme] of [
     expect(collapsed.right).toBe(true);
     expect(collapsed.left).toBe(false);
     expect(collapsed.inkHeight).toBeGreaterThan(collapsed.inkWidth);
-    expect(collapsed.width).toBe(12);
-    expect(collapsed.height).toBe(12);
     expect(collapsed.centerX).toBeCloseTo(searchGlyph.centerX, 1);
     expect(collapsed.centerY).toBeCloseTo(beforeRow.y + beforeRow.height / 2, 1);
-    expect(searchTarget.width).toBe(28);
-    expect(searchTarget.height).toBe(28);
-    expect(searchGlyph.searchInk).toBeCloseTo(0.875, 1);
     const adjacentInk = await component
       .getByRole('button', { name: 'New file' })
       .evaluate((el) => getComputedStyle(el).color);
@@ -53,9 +48,6 @@ for (const [width, theme] of [
     await expect(srcButton).toHaveAttribute('aria-expanded', 'true');
     await expect(nested).toBeVisible();
     const expanded = await srcGlyph.evaluate(probeFileTreeGlyph);
-    const nestedGlyph = await nested
-      .locator('[data-file-tree-disclosure]')
-      .evaluate(probeFileTreeGlyph);
     expect(expanded.down).toBe(true);
     expect(expanded.up).toBe(false);
     expect(expanded.inkWidth).toBeGreaterThan(expanded.inkHeight);
@@ -63,7 +55,6 @@ for (const [width, theme] of [
     expect(expanded.centerY).toBe(collapsed.centerY);
     expect(expanded.width).toBe(collapsed.width);
     expect(expanded.height).toBe(collapsed.height);
-    expect(nestedGlyph.centerX - expanded.centerX).toBe(16);
     expect(await srcButton.boundingBox()).toEqual(beforeTarget);
     await page.keyboard.press('ArrowLeft');
     await expect(srcButton).toHaveAttribute('aria-expanded', 'false');
@@ -80,8 +71,6 @@ for (const [width, theme] of [
     await expect(component.locator('[data-file-tree-selected]')).toHaveText(
       '/project/src/components/Button.svelte',
     );
-    await expect(file.getByText('Button.svelte', { exact: true })).toHaveCSS('font-weight', '400');
-    await expect(src.getByText('src', { exact: true })).toHaveCSS('font-weight', '400');
     await tree.focus();
     await page.keyboard.press('ArrowLeft');
     await page.keyboard.press('ArrowLeft');

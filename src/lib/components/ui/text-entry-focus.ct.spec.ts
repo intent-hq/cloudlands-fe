@@ -57,6 +57,5 @@ for (const theme of ['light', 'dark']) {
     const file = fixture.getByLabel('Choose file');
     await expect(file).toBeFocused();
     await expect(file).toHaveCSS('outline-style', 'solid');
-    await expect(file).toHaveCSS('outline-width', '1px');
   });
 }

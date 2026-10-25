@@ -12,6 +12,7 @@
 import { selectModelDisplayName } from '$store/renderer/slices/model/model-selectors';
 import {
   selectProviderCatalogLoaded,
+  selectProviderCatalogDefaultNames,
   selectProviderCatalogProfiles,
   selectProviderDisplayName,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
@@ -109,6 +110,7 @@ function describeProfileSide(
         baseName,
         selectProviderCatalogProfiles.select(state, workspaceId),
         baseId,
+        selectProviderCatalogDefaultNames.select(state, workspaceId),
       )
     : baseName;
   if (!model) return m.chat_modelChangeNotice_profileDefaultModel_label({ provider });

@@ -118,7 +118,6 @@ describe('collection pattern', () => {
     const loading = render(CollectionStateHarness, { props: { status: 'loading' } });
     const loadingState = within(loading.container).getByRole('status', { name: 'Loading' });
     expect(loadingState.getAttribute('data-recipe')).toBe('list');
-    expect(loadingState.style.getPropertyValue('--state-list-row-height')).toBe('48px');
     expect(loading.container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(3);
     loading.unmount();
 

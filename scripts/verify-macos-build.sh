@@ -22,5 +22,7 @@ if [ "$signed" = true ]; then
   codesign --verify --deep --strict --verbose=2 "${apps[0]}"
   codesign --display --verbose=2 "${apps[0]}"
   spctl --assess --type execute --verbose=2 "${apps[0]}"
-  xcrun stapler validate "${apps[0]}"
+  # Apple's ticket service intermittently drops the connection (stapler exit 68,
+  # intent-hq/intent#7614); retry only that with backoff, fail anything else.
+  node scripts/apple-ticket-retry.mjs validate "${apps[0]}"
 fi

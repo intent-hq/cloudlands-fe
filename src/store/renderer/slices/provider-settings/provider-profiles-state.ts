@@ -20,6 +20,7 @@ import {
   permuteBaseProfiles,
   type EnvEntryWrite,
   type ProfileActivation,
+  type ProviderDefaultConfig,
   type ProviderProfile,
   type ProviderProfileFailure,
 } from '$shared/provider-profiles';
@@ -53,6 +54,7 @@ export const initialProfilesState: ProviderProfilesState = {
   loadStatus: 'idle',
   status: {},
   activation: {},
+  defaults: {},
   mutations: createCollection<ProviderProfileMutation, 'id'>('id'),
 };
 
@@ -86,7 +88,10 @@ function readActivation(
   return next;
 }
 
-const onLoaded: Handler<[ProviderProfile[], number]> = (state, [profiles, revision]) => {
+const onLoaded: Handler<[ProviderProfile[], number, ProviderDefaultConfig[]?]> = (
+  state,
+  [profiles, revision, defaults],
+) => {
   if (revision < state.revision) return state;
   const ids = new Set(profiles.map((profile) => profile.id));
   let activation = Object.fromEntries(
@@ -102,6 +107,30 @@ const onLoaded: Handler<[ProviderProfile[], number]> = (state, [profiles, revisi
       profiles.map((profile) => [profile.id, state.status[profile.id] ?? 'configured']),
     ),
     activation,
+    defaults: Object.fromEntries((defaults ?? []).map((d) => [d.baseProviderId, d])),
+  };
+};
+
+export type DefaultMutationResult = {
+  revision: number;
+  defaultConfig: ProviderDefaultConfig;
+  activation: ProfileActivation;
+};
+
+/** A saved Default configuration; an older result than the shown list is not applied. */
+const onDefaultSucceeded: Handler<[string, DefaultMutationResult]> = (
+  state,
+  [requestId, { revision, defaultConfig, activation }],
+) => {
+  if (!getItem(state.mutations, requestId)) return state;
+  return {
+    ...state,
+    defaults:
+      revision > state.revision
+        ? { ...state.defaults, [defaultConfig.baseProviderId]: defaultConfig }
+        : state.defaults,
+    revision: Math.max(state.revision, revision),
+    mutations: updateItem(state.mutations, { id: requestId, status: 'success', activation }),
   };
 };
 
@@ -234,6 +263,13 @@ export const profileHandlers = {
       profileId: payload.profileId,
     })) as Handler<[{ requestId: string; profileId: string }]>,
   succeeded: onSucceeded,
+  updateDefault: ((state, [payload]) =>
+    pendingMutation(state, {
+      id: payload.requestId,
+      kind: 'updateDefault',
+      baseProviderId: payload.baseProviderId,
+    })) as Handler<[{ requestId: string; baseProviderId: string }]>,
+  defaultSucceeded: onDefaultSucceeded,
   reorder: onReorder,
   reorderSucceeded: onReorderSucceeded,
   failed: ((state, [requestId, failure]) =>

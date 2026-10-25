@@ -347,7 +347,7 @@
               class={cn(
                 menuItem(),
                 'group/row gap-3 px-3 py-2.5 cursor-pointer',
-                isCommitted && 'bg-foreground text-background pl-2.5',
+                isCommitted && 'surface-inverse pl-2.5',
                 isFocused && !isCommitted && 'bg-muted/40',
                 !isFocused && !isCommitted && 'hover:bg-muted/30',
               )}
@@ -364,13 +364,8 @@
                 class="w-6 h-6 rounded-full shrink-0"
               />
               <div class="flex-1 min-w-0">
-                <div
-                  class={cn(
-                    'flex items-center text-sm font-medium truncate',
-                    isCommitted ? 'text-background' : 'text-foreground',
-                  )}
-                >
-                  <div class={cn('mr-1', isCommitted ? 'text-background/60' : 'text-subtle')}>
+                <div class="flex items-center text-sm font-medium truncate text-foreground">
+                  <div class="mr-1 text-subtle">
                     {repo.owner} /
                   </div>
                   {repo.name}
@@ -380,9 +375,7 @@
               <span
                 role="link"
                 tabindex="-1"
-                class="p-1 rounded shrink-0 transition-colors cursor-pointer {isCommitted
-                  ? 'text-background/0 group-hover/row:text-background/60 hover:!text-background /* a11y-ignore */'
-                  : 'text-muted-foreground/0 group-hover/row:text-muted-foreground hover:!text-foreground hover:bg-muted/40 /* a11y-ignore */'}"
+                class="p-1 rounded shrink-0 transition-colors cursor-pointer text-muted-foreground/0 group-hover/row:text-muted-foreground hover:!text-foreground hover:bg-muted/40 /* a11y-ignore */"
                 onclick={(e) => openInBrowser(`https://github.com/${repo.owner}/${repo.name}`, e)}
                 onkeydown={(e) => {
                   if (e.key === 'Enter')

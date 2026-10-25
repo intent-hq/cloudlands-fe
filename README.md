@@ -274,26 +274,34 @@ attribution and lineage details.
 
 Jobs that ask for a free standard GitHub runner (`ubuntu-24.04`, `ubuntu-latest`)
 always run on GitHub: the repository is public, so those runners cost nothing.
-Jobs that ask for a paid label go through `runner-route.yml` (the same probe as
-intent and intentd; `intent-pr.yml`'s route job is an inline copy):
+Jobs that ask for a paid size go through `runner-route.yml` (the same probe as
+intent and intentd; `intent-pr.yml`'s route job is an inline copy). GitHub's
+larger runners are off: a paid size runs on a self-hosted slot or WarpBuild,
+never on GitHub.
 
 - Linux `gh-linux-8x` jobs take a free intent-cache slot first, then burst to
   WarpBuild `warp-ubuntu-2404-x64-8x`; `gh-linux-arm64-8x` takes a self-hosted
   ARM64 runner first, then `warp-ubuntu-2404-arm64-8x`.
-- Jobs that need sudo or the GitHub image's browser libraries (browser suites)
-  and every Mac and Windows build read the route's `cloud` output: straight to
+- Integration Tests and the Playwright (root) and Electron browser suites run
+  on the free `ubuntu-24.04` runner: they use about 2 of 8 CPUs.
+- Component Tests take a free intent-cache slot first, else the `cloud`
+  burst runner for `gh-linux-8x`.
+- Every Mac and Windows build reads the route's `cloud` output: straight to
   WarpBuild, never a self-hosted runner. Windows builds use
-  `warp-windows-2022-x64-16x` (Server 2022: node-gyp fails on 2025), Apple
-  Silicon jobs `warp-macos-26-arm64-6x`, and signed desktop Mac builds
-  `warp-macos-15-arm64-6x` (electron-builder's keychain step fails on macOS 26).
-- Jobs that require `RUNNER_ENVIRONMENT=github-hosted` (build smoke, the B76
-  diagnostics, the manual packaged Mac smoke and isolated-package check) stay on
-  `gh-linux-8x` / `macos-15-xlarge`. `scripts/test_runner_policy.py` lists them.
+  `warp-windows-2022-x64-8x` (`gh-windows-8x`: they use about a third of 16
+  CPUs; Server 2022, because node-gyp fails on 2025), Apple
+  Silicon jobs `warp-macos-26-arm64-12x`, and signed desktop Mac builds
+  `warp-macos-15-arm64-12x` (electron-builder's keychain step fails on macOS 26).
+- Build smoke and the manual packaged Mac smoke and isolated-package check need
+  a fresh VM for the job: they run on WarpBuild through `cloud`, and their
+  scripts accept GitHub-hosted or WarpBuild VMs but refuse an intent-cache slot.
+  Only the one-use B76 diagnostics keep their frozen GitHub labels.
 
-Bursts use the GitHub label instead of WarpBuild for fork pull requests, while the
-`CI_WARPBUILD_DISABLED` Actions variable is `true`, or while that WarpBuild
-platform has a job queued over 10 minutes. The larger runners' group must allow
-public repositories.
+A job that falls back because the route job failed uses the WarpBuild label
+(`scripts/test_runner_policy.py` rejects a paid GitHub label in any `runs-on`).
+Fork pull requests run paid sizes on the free standard runner of the same OS
+instead of WarpBuild. A WarpBuild platform with a job queued over 10 minutes is
+reported as a warning; bursts still go to WarpBuild.
 Mac desktop release and manual packaging builds target ARM64 only.
 
 From-source Rust sidecars use the self-hosted sccache without Rust cache actions.

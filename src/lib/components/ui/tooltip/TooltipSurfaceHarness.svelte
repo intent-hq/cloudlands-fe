@@ -36,7 +36,7 @@
   {/if}
   <!-- Match the positioned status content in WorkspaceProgressCard. -->
   <div data-testid="underlying-status" class="relative z-10 mt-2 type-body">
-    <p class="bg-foreground text-background">Finance Team status</p>
+    <p class="surface-inverse">Finance Team status</p>
     <p>Preparing the quarterly report and reconciling outstanding invoices.</p>
     <p>Waiting for the shared workstation to reconnect.</p>
   </div>

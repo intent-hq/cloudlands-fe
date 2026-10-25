@@ -206,6 +206,14 @@ def run_tests(label, files, env):
                                        'cleanup': cleanup,
                                        'settlement': 'unknown' if child.poll() is None else 'direct child returned'})
             raise
+def fresh_vm():
+    """A fresh VM for this job alone: GitHub-hosted, or WarpBuild, which also starts one VM
+    per job and reports self-hosted with its verification token set. An intent-cache slot
+    (self-hosted, no token) is neither."""
+    environment = os.environ.get('RUNNER_ENVIRONMENT')
+    return environment == 'github-hosted' or (
+        environment == 'self-hosted' and bool(os.environ.get('WARPBUILD_RUNNER_VERIFICATION_TOKEN')))
+
 
 def main():
     global FIXTURE_ROOT
@@ -213,10 +221,10 @@ def main():
     if scope not in ('full', 'fixture-correction'):
         raise RuntimeError('Unknown packaged smoke scope')
     native_arch = {'ARM64': 'arm64', 'X64': 'x86_64'}.get(os.environ.get('RUNNER_ARCH'))
-    if (os.environ.get('RUNNER_ENVIRONMENT') != 'github-hosted' or
+    if (not fresh_vm() or
         os.environ.get('RUNNER_OS') != 'macOS' or native_arch is None or
         platform.system() != 'Darwin' or platform.machine() != native_arch):
-        raise RuntimeError('Requires a fresh GitHub-hosted macOS job with matching native ARM64 or X64 architecture')
+        raise RuntimeError('Requires a fresh GitHub-hosted or WarpBuild macOS job with matching native ARM64 or X64 architecture')
     REPORT.mkdir(parents=True, exist_ok=True)
     root = Path(tempfile.mkdtemp(prefix='smoke-', dir=os.environ['RUNNER_TEMP']))
     FIXTURE_ROOT = root

@@ -20,9 +20,12 @@ test('Home board shows live pin state and preserves pin-first ordering', async (
   await expect(card).toHaveAccessibleDescription('Pinned');
   await expect(card.getByRole('img', { name: /^Done\./ })).toBeVisible();
   await expect(board.locator('[data-home-workspace-pin]')).toHaveCount(1);
-  await expect
-    .poll(order)
-    .toEqual(['home-complete', 'home-unread', 'home-waiting', 'home-unknown-time']);
+  await expect.poll(order).toEqual(['home-complete', 'home-unread', 'home-unknown-time']);
+  await expect(
+    board
+      .getByRole('region', { name: 'Waiting', exact: true })
+      .locator('[data-home-workspace="home-waiting"]'),
+  ).toHaveCount(1);
   await testInfo.attach('home-pinned-light', {
     body: await inactive.screenshot(),
     contentType: 'image/png',
@@ -34,9 +37,7 @@ test('Home board shows live pin state and preserves pin-first ordering', async (
   await expect(marker).toHaveCount(0);
   await expect(card).not.toHaveAccessibleDescription('Pinned');
   await expect(card).toBeFocused();
-  await expect
-    .poll(order)
-    .toEqual(['home-unread', 'home-waiting', 'home-complete', 'home-unknown-time']);
+  await expect.poll(order).toEqual(['home-unread', 'home-complete', 'home-unknown-time']);
   await testInfo.attach('home-unpinned-light', {
     body: await inactive.screenshot(),
     contentType: 'image/png',
@@ -46,9 +47,7 @@ test('Home board shows live pin state and preserves pin-first ordering', async (
   await page.getByRole('menuitem', { name: 'Pin', exact: true }).click();
   await expect(marker).toBeVisible();
   await expect(card).toBeFocused();
-  await expect
-    .poll(order)
-    .toEqual(['home-complete', 'home-unread', 'home-waiting', 'home-unknown-time']);
+  await expect.poll(order).toEqual(['home-complete', 'home-unread', 'home-unknown-time']);
   await marker.click();
   await expect(card).toHaveAttribute('aria-pressed', 'true');
   await expect(component.locator('[data-home-detail]')).toBeVisible();

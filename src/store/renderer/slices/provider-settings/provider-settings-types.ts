@@ -1,6 +1,7 @@
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type {
   ProfileActivation,
+  ProviderDefaultConfig,
   ProviderProfile,
   ProviderProfileFailure,
 } from '$shared/provider-profiles';
@@ -38,9 +39,9 @@ export type ProviderProfileStatus = 'configured' | 'checking' | 'ready' | 'error
 
 export type ProviderProfileMutation = {
   id: string;
-  kind: 'create' | 'update' | 'delete' | 'reorder';
+  kind: 'create' | 'update' | 'delete' | 'reorder' | 'updateDefault';
   profileId?: string;
-  /** Reorder only: the base provider whose profiles were reordered. */
+  /** Reorder and updateDefault: the base provider concerned. */
   baseProviderId?: string;
   status: 'pending' | 'success' | 'failure';
   failure?: ProviderProfileFailure;
@@ -56,6 +57,11 @@ export type ProviderProfilesState = {
   status: Record<string, ProviderProfileStatus>;
   /** Last env activation per profile (running processes on earlier settings). */
   activation: Record<string, ProfileActivation>;
+  /**
+   * Default configuration overrides by base provider id (§5.54), masked.
+   * Empty on daemons that do not report them.
+   */
+  defaults: Record<string, ProviderDefaultConfig>;
   mutations: Collection<ProviderProfileMutation, 'id'>;
 };
 
@@ -73,5 +79,4 @@ export type ProviderSettingsState = {
   paths: ProviderPaths;
   pathsRevision: number;
   pathsStatus: 'idle' | 'pending' | 'success' | 'failure';
-  piAdapter: { installed: boolean | null; status: 'idle' | 'pending' | 'success' | 'failure' };
 };

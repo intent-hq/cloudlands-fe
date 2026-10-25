@@ -6,6 +6,7 @@
 import { m } from '$shared/paraglide/messages.js';
 import {
   providerRefLabelParts,
+  type ProviderDefaultNames,
   type ProviderProfileRefInfo,
   type ProviderRefLabelParts,
 } from '$shared/provider-profiles';
@@ -16,7 +17,7 @@ export function providerRefProfileName(parts: ProviderRefLabelParts): string | u
     case 'profile':
       return parts.name;
     case 'default':
-      return m.chat_modelPicker_defaultProfile_name();
+      return parts.name ?? m.chat_modelPicker_defaultProfile_name();
     case 'missing':
       return m.chat_modelPicker_missingProfile_name();
     default:
@@ -26,16 +27,18 @@ export function providerRefProfileName(parts: ProviderRefLabelParts): string | u
 
 /**
  * Group label: the bare provider name while it has no profiles, otherwise
- * `<Provider> · <Profile>` (the original configuration reads `Default`).
+ * `<Provider> · <Profile>` (the original configuration reads `Default`, or
+ * its catalog `defaultNames` entry once renamed).
  */
 export function formatProviderRefLabel(
   providerRef: string,
   baseDisplayName: string,
   profiles: readonly ProviderProfileRefInfo[],
   baseProviderId?: string,
+  defaultNames?: ProviderDefaultNames,
 ): string {
   const profile = providerRefProfileName(
-    providerRefLabelParts(providerRef, profiles, baseProviderId),
+    providerRefLabelParts(providerRef, profiles, baseProviderId, defaultNames),
   );
   return profile
     ? m.chat_modelPicker_profileGroup_label({ provider: baseDisplayName, profile })

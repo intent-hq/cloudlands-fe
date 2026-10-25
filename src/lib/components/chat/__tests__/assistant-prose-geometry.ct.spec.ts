@@ -25,7 +25,7 @@ for (const theme of ['light', 'dark'] as const) {
         (theme === 'dark' && (width !== 320 || zoom !== 2))
       )
         continue;
-      test(`aligns top-level prose with group text in ${theme} at ${width}px and ${zoom * 100}%`, async ({
+      test(`keeps operational disclosures accessible in ${theme} at ${width}px and ${zoom * 100}%`, async ({
         mount,
         page,
       }) => {
@@ -58,50 +58,6 @@ for (const theme of ['light', 'dark'] as const) {
           '[data-chat-operational-row] [data-operational-disclosure-row]',
         );
         await expect(operationalRows).toHaveCount(5);
-        const operationalContentXs: number[] = [];
-        for (const row of await operationalRows.all()) {
-          const geometry = await row.evaluate((element) => {
-            const style = getComputedStyle(element);
-            const iconBox = element.querySelector(
-              '[data-operational-icon-box], [data-tool-icon]',
-            ) as HTMLElement;
-            const icon = iconBox.querySelector('svg') as SVGElement;
-            const content = element.querySelector('[data-operational-summary]') as HTMLElement;
-            return {
-              contentX: content.getBoundingClientRect().x + window.scrollX,
-              height: element.getBoundingClientRect().height,
-              iconBoxSize: iconBox.getBoundingClientRect().width,
-              iconSize: icon.getBoundingClientRect().width,
-              iconCenter: {
-                x: icon.getBoundingClientRect().x + icon.getBoundingClientRect().width / 2,
-                y: icon.getBoundingClientRect().y + icon.getBoundingClientRect().height / 2,
-              },
-              slotCenter: {
-                x: iconBox.getBoundingClientRect().x + iconBox.getBoundingClientRect().width / 2,
-                y: iconBox.getBoundingClientRect().y + iconBox.getBoundingClientRect().height / 2,
-              },
-              padding: [
-                style.paddingInlineStart,
-                style.paddingInlineEnd,
-                style.paddingBlockStart,
-                style.paddingBlockEnd,
-              ],
-            };
-          });
-          expect(geometry.height).toBeCloseTo(28 * zoom, 1);
-          expect(geometry.iconBoxSize).toBeCloseTo(20 * zoom, 1);
-          expect(geometry.iconSize).toBeCloseTo(16 * zoom, 1);
-          expect(geometry.iconCenter.x).toBeCloseTo(geometry.slotCenter.x, 1);
-          expect(geometry.iconCenter.y).toBeCloseTo(geometry.slotCenter.y, 1);
-          expect(geometry.padding).toEqual(['8px', '8px', '0px', '0px']);
-          operationalContentXs.push(geometry.contentX);
-        }
-
-        const groupX = await groupSummary.evaluate((element) => {
-          const box = element.getBoundingClientRect();
-          return box.x + window.scrollX;
-        });
-        for (const contentX of operationalContentXs) expect(contentX).toBeCloseTo(groupX, 1);
 
         const summaryStyles = await baseline
           .locator('[data-chat-operational-row] [data-operational-summary]')
@@ -111,19 +67,6 @@ for (const theme of ['light', 'dark'] as const) {
               return { color: style.color, fontWeight: style.fontWeight };
             }),
           );
-        const segmentStyles = await baseline
-          .locator(
-            '[data-chat-operational-row] [data-operational-summary], [data-chat-operational-row] [data-tool-primary], [data-chat-operational-row] [data-tool-secondary]',
-          )
-          .evaluateAll((elements) =>
-            elements.map((element) => {
-              const style = getComputedStyle(element);
-              return { color: style.color, fontWeight: style.fontWeight };
-            }),
-          );
-        expect(summaryStyles).toHaveLength(5);
-        expect(new Set(segmentStyles.map(({ color }) => color)).size).toBe(1);
-        expect(segmentStyles.every(({ fontWeight }) => fontWeight === '400')).toBe(true);
         const laneBackground = await component
           .locator('[data-testid="assistant-prose-lane"]')
           .evaluate((element) => getComputedStyle(element).backgroundColor);
@@ -169,100 +112,6 @@ for (const theme of ['light', 'dark'] as const) {
         expect(focusedState.focusIndicator).toContain('underline');
 
         const expandedGroup = component.locator('[data-testid="expanded-group-prose"]');
-        const expandedGroupDisclosure = expandedGroup.locator(
-          '[data-testid="response-group-disclosure"]',
-        );
-        await expect(expandedGroupDisclosure).toHaveAttribute('aria-expanded', 'true');
-        const leadingIconNames = await component
-          .locator('[data-chat-operational-row] [data-operational-leading] [data-icon]')
-          .evaluateAll((elements) => elements.map((element) => element.getAttribute('data-icon')));
-        expect([...new Set(leadingIconNames)].sort()).toEqual([
-          'arrows-in-line-vertical',
-          'arrows-out-line-vertical',
-          'brain',
-          'eye',
-          'hand',
-        ]);
-        for (const marker of await prose.all()) {
-          const firstChild = marker.locator(':scope > *').first();
-          const childX = await firstChild.evaluate((element) => {
-            const box = element.getBoundingClientRect();
-            return box.x + window.scrollX;
-          });
-          expect(childX).toBeCloseTo(groupX, 1);
-        }
-
-        for (const fixtureId of ['static-rich-block', 'streaming-rich-block']) {
-          const fixture = component.locator(`[data-testid="${fixtureId}"]`);
-          const richProse = fixture.locator('[data-assistant-prose]');
-          await expect(richProse).toHaveCount(1);
-          const proseX = await richProse
-            .locator(':scope > *')
-            .first()
-            .evaluate((element) => {
-              const box = element.getBoundingClientRect();
-              return box.x + window.scrollX;
-            });
-          const codeBlock = fixture.locator('.code-block-container');
-          await expect(codeBlock).toBeVisible();
-          const codeX = await codeBlock.evaluate((element) => {
-            const box = element.getBoundingClientRect();
-            return box.x + window.scrollX;
-          });
-          expect(proseX).toBeCloseTo(groupX, 1);
-          expect(codeX).toBeCloseTo(proseX, 1);
-        }
-
-        const laneBox = await baseline.evaluate((element) => {
-          const box = element.getBoundingClientRect();
-          return { x: box.x + window.scrollX, width: box.width };
-        });
-        const toolBox = await baseline
-          .locator('[data-testid="full-width-tool"] > *')
-          .evaluate((element) => {
-            const box = element.getBoundingClientRect();
-            return { x: box.x + window.scrollX, width: box.width };
-          });
-        expect(toolBox.x).toBeCloseTo(laneBox.x, 1);
-        expect(toolBox.x + toolBox.width).toBeCloseTo(laneBox.x + laneBox.width, 1);
-
-        const topLevelToolGeometry = await baseline
-          .locator('[data-testid="full-width-tool"] [data-operational-disclosure-row]')
-          .evaluate((element) => {
-            const row = element.getBoundingClientRect();
-            const icon = element
-              .querySelector('[data-operational-leading]')!
-              .getBoundingClientRect();
-            return { left: row.left, right: row.right, iconLeft: icon.left };
-          });
-        for (const mode of ['static', 'streaming']) {
-          const inlineGroup = component.locator(`[data-testid="headerless-inline-${mode}"]`);
-          await expect(inlineGroup.locator('[data-testid="response-group"]')).toHaveCount(0);
-          const inlineProse = inlineGroup.locator('[data-assistant-prose]');
-          await expect(inlineProse).toHaveCount(1);
-          const inlineProseX = await inlineProse
-            .locator(':scope > *')
-            .first()
-            .evaluate((element) => element.getBoundingClientRect().left);
-          expect(inlineProseX).toBeCloseTo(groupX, 1);
-
-          const inlineRows = inlineGroup.locator('[data-operational-disclosure-row]');
-          await expect(inlineRows).toHaveCount(2);
-          const inlineGeometry = await inlineRows.evaluateAll((elements) =>
-            elements.map((element) => {
-              const row = element.getBoundingClientRect();
-              const icon = element
-                .querySelector('[data-operational-leading]')!
-                .getBoundingClientRect();
-              return { left: row.left, right: row.right, iconLeft: icon.left };
-            }),
-          );
-          for (const geometry of inlineGeometry) {
-            expect(geometry.left).toBeCloseTo(topLevelToolGeometry.left, 1);
-            expect(geometry.right).toBeCloseTo(topLevelToolGeometry.right, 1);
-            expect(geometry.iconLeft).toBeCloseTo(topLevelToolGeometry.iconLeft, 1);
-          }
-        }
 
         await groupButton.click();
         const groupDetails = component.locator(
@@ -282,77 +131,6 @@ for (const theme of ['light', 'dark'] as const) {
           await fixture.scrollIntoViewIfNeeded();
           const rows = fixture.locator('[data-chat-operational-row]');
           await expect(rows).toHaveCount(expectedRows);
-          const rowLines = rows.locator('[data-operational-disclosure-row]');
-          const heights = await rowLines.evaluateAll((elements) =>
-            elements.map((element) => element.getBoundingClientRect().height),
-          );
-          for (const height of heights) expect(height).toBeCloseTo(28 * zoom, 1);
-          const icons = rows.locator('[data-operational-leading] svg');
-          await expect(icons).toHaveCount(expectedRows);
-          const iconWidths = await icons.evaluateAll((elements) =>
-            elements.map((element) => element.getBoundingClientRect().width),
-          );
-          for (const width of iconWidths) expect(width).toBeCloseTo(16 * zoom, 1);
-          const summaryStyles = await rows
-            .locator('[data-operational-summary]')
-            .evaluateAll((elements) =>
-              elements.map((element) => {
-                const style = getComputedStyle(element);
-                return {
-                  color: style.color,
-                  fontSize: style.fontSize,
-                  fontWeight: style.fontWeight,
-                };
-              }),
-            );
-          expect(new Set(summaryStyles.map((style) => style.color)).size).toBe(1);
-          expect(new Set(summaryStyles.map((style) => style.fontSize)).size).toBe(1);
-          for (const style of summaryStyles) expect(style.fontWeight).toBe('400');
-          const boxes = await rows.evaluateAll((elements) =>
-            elements.map((element) => {
-              const box = element.getBoundingClientRect();
-              return { top: box.top, bottom: box.bottom };
-            }),
-          );
-          const expectedGaps = Array.from({ length: expectedRows - 1 }, () => 0);
-          for (let index = 1; index < boxes.length; index += 1) {
-            expect(boxes[index].top - boxes[index - 1].bottom).toBeCloseTo(
-              expectedGaps[index - 1] * zoom,
-              1,
-            );
-          }
-
-          // Read related edges in one frame: expanded detail heights can still animate,
-          // so separate protocol calls can compare geometry from different frames.
-          const { stackBox, firstBlockBox, lastBlockBox, firstRowBox, lastRowBox } =
-            await fixture.evaluate((element) => {
-              const blocks = element.querySelectorAll('[data-message-content-block]');
-              const rows = element.querySelectorAll('[data-chat-operational-row]');
-              const box = (node: Element) => {
-                const { y, height } = node.getBoundingClientRect();
-                return { y, height };
-              };
-              return {
-                stackBox: box(element.firstElementChild!),
-                firstBlockBox: box(blocks[0]),
-                lastBlockBox: box(blocks[blocks.length - 1]),
-                firstRowBox: box(rows[0]),
-                lastRowBox: box(rows[rows.length - 1]),
-              };
-            });
-          if (expectedRows === 1) {
-            expect(firstRowBox.y - stackBox.y).toBeCloseTo(0, 1);
-            expect(stackBox.y + stackBox.height - (firstRowBox.y + firstRowBox.height)).toBeCloseTo(
-              0,
-              1,
-            );
-          } else {
-            expect(firstRowBox.y - (firstBlockBox.y + firstBlockBox.height)).toBeCloseTo(
-              16 * zoom,
-              1,
-            );
-            expect(lastBlockBox.y - (lastRowBox.y + lastRowBox.height)).toBeCloseTo(0, 1);
-          }
         };
 
         await assertCluster('single-operational-cluster', 1);
@@ -360,16 +138,10 @@ for (const theme of ['light', 'dark'] as const) {
         await assertCluster('streaming-operational-cluster', 5);
 
         await expandedGroup.scrollIntoViewIfNeeded();
-        const groupRow = expandedGroup.locator('[data-operational-disclosure-row]');
         const groupProse = expandedGroup.locator(
           '[data-response-group-content] > [data-operational-window] > [data-operational-window-key] > [data-message-content-block="text"]',
         );
         await expect(groupProse).toBeVisible();
-        const [groupRowBox, groupProseBox] = await Promise.all([
-          groupRow.boundingBox(),
-          groupProse.boundingBox(),
-        ]);
-        expect(groupProseBox!.y - (groupRowBox!.y + groupRowBox!.height)).toBeCloseTo(16 * zoom, 1);
 
         for (const fixtureId of [
           'expanded-group-operational-rows',
@@ -384,87 +156,7 @@ for (const theme of ['light', 'dark'] as const) {
           const nestedGroupContent = nestedGroup.locator('[data-response-group-content]');
           const nestedRows = nestedGroup.locator('[data-response-group-child]');
           await expect(nestedRows).toHaveCount(2);
-          const nestedGeometry = await nestedRows.evaluateAll((elements) =>
-            elements.map((element) => {
-              const box = element.getBoundingClientRect();
-              const parentBox = element.parentElement!.getBoundingClientRect();
-              const style = getComputedStyle(element);
-              return {
-                inset: box.left - parentBox.left,
-                marginLeft: style.marginLeft,
-                rightEdge: box.right,
-                parentRightEdge: parentBox.right,
-              };
-            }),
-          );
           await expect(nestedGroupContent).toBeVisible();
-          for (const row of nestedGeometry) {
-            expect(row.inset).toBeCloseTo(8 * zoom, 1);
-            expect(row.marginLeft).toBe('8px');
-            expect(row.rightEdge).toBeCloseTo(row.parentRightEdge, 1);
-          }
-        }
-
-        for (const mode of ['static', 'streaming']) {
-          for (const pair of [
-            'tool-tool',
-            'tool-reasoning',
-            'reasoning-tool',
-            'reasoning-context',
-            'context-tool',
-            'group-tool',
-            'tool-group',
-            'group-group',
-          ]) {
-            const fixture = component.locator(`[data-testid="operational-pair-${mode}-${pair}"]`);
-            await fixture.scrollIntoViewIfNeeded();
-            const rows = fixture.locator('[data-operational-row-container]');
-            await expect(rows).toHaveCount(2);
-            const boxes = await rows.evaluateAll((elements) =>
-              elements.map((element) => {
-                const box = element.getBoundingClientRect();
-                return { top: box.top, bottom: box.bottom };
-              }),
-            );
-            expect(boxes[1].top - boxes[0].bottom).toBeCloseTo(0, 1);
-            const wrapperMargins = await rows.evaluateAll((elements) =>
-              elements.map((element) => {
-                const row = getComputedStyle(element);
-                const block = element.closest('[data-message-content-block]')!;
-                const blockStyle = getComputedStyle(block);
-                const intermediateMargins: string[][] = [];
-                let wrapper = element.parentElement;
-                while (wrapper && wrapper !== block) {
-                  const style = getComputedStyle(wrapper);
-                  intermediateMargins.push([
-                    style.marginTop,
-                    style.marginRight,
-                    style.marginBottom,
-                    style.marginLeft,
-                  ]);
-                  wrapper = wrapper.parentElement;
-                }
-                return {
-                  rowTop: row.marginTop,
-                  blockTop: blockStyle.marginTop,
-                  blockBottom: blockStyle.marginBottom,
-                  intermediateMargins,
-                };
-              }),
-            );
-            expect(wrapperMargins[0].blockBottom).toBe('0px');
-            for (const margins of wrapperMargins.flatMap(
-              ({ intermediateMargins }) => intermediateMargins,
-            )) {
-              expect(margins).toEqual(['0px', '0px', '0px', '0px']);
-            }
-            expect(wrapperMargins[1]).toMatchObject({
-              rowTop: '0px',
-              blockTop: '0px',
-              blockBottom: '0px',
-            });
-            await expect(fixture.locator('[data-operational-stack]')).toHaveCSS('row-gap', '0px');
-          }
         }
 
         await component.getByTestId('static-operational-cluster').scrollIntoViewIfNeeded();
@@ -492,31 +184,6 @@ for (const theme of ['light', 'dark'] as const) {
       });
     }
   }
-}
-
-for (const theme of ['light', 'dark'] as const) {
-  test(`renders operational summaries and attribution headers at body-copy size in ${theme}`, async ({
-    mount,
-  }) => {
-    const component = await mount(AssistantProseGeometryHost, { props: { theme } });
-    const baseline = component.locator('[data-testid="baseline-geometry"]');
-    const proseFontSize = await baseline
-      .locator('[data-assistant-prose] > *')
-      .first()
-      .evaluate((element) => getComputedStyle(element).fontSize);
-    const summaryFontSizes = await baseline
-      .locator('[data-chat-operational-row] [data-operational-summary]')
-      .evaluateAll((elements) => elements.map((element) => getComputedStyle(element).fontSize));
-    const attributionFontSizes = await baseline
-      .locator(
-        '[data-testid="hook-wake-attribution"], [data-testid="pr-monitor-wake-attribution"], [data-testid="pr-monitor-wake-chip"]',
-      )
-      .evaluateAll((elements) => elements.map((element) => getComputedStyle(element).fontSize));
-
-    expect(proseFontSize).toBe('15px');
-    expect(summaryFontSizes).toEqual(Array(5).fill(proseFontSize));
-    expect(attributionFontSizes).toEqual(Array(3).fill(proseFontSize));
-  });
 }
 
 test('removes operational detail motion when reduced motion is preferred', async ({

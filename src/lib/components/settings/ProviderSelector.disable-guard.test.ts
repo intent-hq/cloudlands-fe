@@ -24,11 +24,6 @@ vi.mock('$lib/client', () => ({
   appClient: { settings: { get: vi.fn().mockResolvedValue({ value: {} }) } },
 }));
 
-vi.mock('$features/pi/pi-models.client', () => ({
-  checkPiMcpAdapterInstalled: vi.fn().mockResolvedValue(true),
-  installPiMcpAdapter: vi.fn(),
-}));
-
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: { error: mocks.toastError, success: vi.fn() },
 }));
@@ -392,6 +387,29 @@ describe('ProviderSelector profiles entry point', () => {
       result.queryByRole('button', { name: m.settings_providerProfiles_add_label() }),
     ).toBeNull();
     expect(result.queryByTestId('provider-profiles-codex')).toBeNull();
+  });
+
+  it('offers Environment variables for the Default only on profile-capable providers', async () => {
+    const result = await renderWithCatalog({ codex: true, 'claude-code': false });
+    const codexMenu = await openProviderMenu(result, 'OpenAI Codex');
+    await fireEvent.click(
+      within(codexMenu).getByRole('menuitem', { name: m.settings_providerDefault_menu_label() }),
+    );
+    const dialog = await waitFor(() => result.getByRole('dialog'));
+    expect(
+      within(dialog).getByText(
+        m.settings_providerDefault_title_label({ provider: 'OpenAI Codex' }),
+      ),
+    ).toBeTruthy();
+    expect(within(dialog).queryByTestId('provider-profile-backup')).toBeNull();
+    await fireEvent.click(
+      within(dialog).getByRole('button', { name: m.modals_bulkActionConfirm_cancel_label() }),
+    );
+    await waitFor(() => expect(result.queryByRole('dialog')).toBeNull());
+    const claudeMenu = await openProviderMenu(result, 'Anthropic Claude Code');
+    expect(
+      within(claudeMenu).queryByRole('menuitem', { name: m.settings_providerDefault_menu_label() }),
+    ).toBeNull();
   });
 
   it('opens the add-profile dialog from the provider actions menu', async () => {

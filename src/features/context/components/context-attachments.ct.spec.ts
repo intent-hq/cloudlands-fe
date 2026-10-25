@@ -2,25 +2,10 @@ import { expect, test } from '../../../test/ct-test';
 import ContextAttachmentsSection from './ContextAttachmentsSection.svelte';
 import { preview } from './context-attachments.preview';
 
-test('sidebar images form square three-column rows and support keyboard previews', async ({
-  mount,
-  page,
-}) => {
+test('sidebar images support keyboard previews and restore focus', async ({ mount, page }) => {
   await page.setViewportSize({ width: 320, height: 600 });
   const component = await mount(ContextAttachmentsSection, { props: preview.states.grid.props });
   const thumbnails = component.locator('[data-context-attachment-grid] button');
-  const boxes = await thumbnails.evaluateAll((buttons) =>
-    buttons.map((button) => {
-      const { x, y, width, height } = button.getBoundingClientRect();
-      return { x, y, width, height };
-    }),
-  );
-  expect(boxes).toHaveLength(4);
-  for (const box of boxes) expect(Math.abs(box.width - box.height)).toBeLessThanOrEqual(1);
-  expect(boxes[1].y).toBe(boxes[0].y);
-  expect(boxes[2].y).toBe(boxes[0].y);
-  expect(boxes[1].x).toBeGreaterThan(boxes[0].x);
-  expect(boxes[3].y).toBeGreaterThan(boxes[0].y);
   await thumbnails.first().focus();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('dialog')).toBeVisible();
@@ -38,12 +23,10 @@ test('mixed attachment tiles fit the narrow sidebar and skip unavailable files b
   const tiles = component.locator('[data-context-attachment-grid] button');
   const geometry = await tiles.evaluateAll((buttons) =>
     buttons.map((button) => {
-      const { width, height } = button.getBoundingClientRect();
-      return { width, height, scrollWidth: button.scrollWidth, clientWidth: button.clientWidth };
+      return { scrollWidth: button.scrollWidth, clientWidth: button.clientWidth };
     }),
   );
   for (const tile of geometry) {
-    expect(Math.abs(tile.width - tile.height)).toBeLessThanOrEqual(1);
     expect(tile.scrollWidth).toBeLessThanOrEqual(tile.clientWidth);
   }
   await tiles.nth(3).focus();

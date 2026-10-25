@@ -79,6 +79,8 @@ import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { ProviderCatalogResult } from '$shared/provider-catalog';
 import type {
+  ProviderDefaultUpdateParams,
+  ProviderDefaultUpdateResult,
   ProviderProfileCreateParams,
   ProviderProfileCreateResult,
   ProviderProfileDeleteResult,
@@ -2239,6 +2241,8 @@ export interface ProvidersClient {
   updateProfile(params: ProviderProfileUpdateParams): Promise<ProviderProfileUpdateResult>;
   deleteProfile(profileId: string): Promise<ProviderProfileDeleteResult>;
   reorderProfiles(params: ProviderProfileReorderParams): Promise<ProviderProfileReorderResult>;
+  /** `providers.profiles.updateDefault` (§5.54): the Default configuration's name and env. */
+  updateDefault(params: ProviderDefaultUpdateParams): Promise<ProviderDefaultUpdateResult>;
 }
 
 /** Wire `period` mode for `stats.getUsage`. */

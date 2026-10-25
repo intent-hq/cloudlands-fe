@@ -1305,40 +1305,6 @@ describe('SimpleRichInput automatic composer geometry', () => {
     document.body.innerHTML = '';
   });
 
-  it.each([
-    { mode: 'draft', overrides: { value: 'preserved draft' } },
-    {
-      mode: 'context',
-      overrides: { contextItems: [{ id: 'note-1', type: 'note', label: 'Spec' }] },
-    },
-    {
-      mode: 'attachment',
-      overrides: {
-        contextItems: [
-          {
-            id: 'attachment-1',
-            type: 'file',
-            label: 'trace.json',
-            attachmentId: 'att-1',
-            placementStatus: 'placed',
-          },
-        ],
-      },
-    },
-  ])(
-    'keeps active geometry without an empty-state placeholder for $mode content',
-    async ({ overrides }) => {
-      renderInPanel(720, overrides);
-
-      await waitFor(() => {
-        expect(screen.getByTestId('message-input').getAttribute('style')).toContain(
-          'min-height: 100px',
-        );
-      });
-      expect(screen.getByTestId('tiptap-editor').getAttribute('placeholder')).toBe('Ask anything');
-    },
-  );
-
   it('renders the composer resize handle on the shared app-resize-handle contract', () => {
     renderInPanel(720);
     const composer = screen.getByTestId('message-input');

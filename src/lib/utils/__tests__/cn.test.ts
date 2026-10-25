@@ -30,6 +30,15 @@ describe('cn', () => {
     expect(cn('type-code text-ui-sm')).toBe('text-ui-sm');
   });
 
+  it('lets the inverse surface replace earlier paints and yield to a later background', () => {
+    expect(cn('bg-transparent text-inherit px-3', 'surface-inverse')).toBe('px-3 surface-inverse');
+    expect(cn('surface-inverse', 'bg-secondary')).toBe('bg-secondary');
+    expect(cn('surface-inverse', 'text-muted-foreground')).toBe(
+      'surface-inverse text-muted-foreground',
+    );
+    expect(cn('surface-inverse', 'hover:bg-muted/80')).toBe('surface-inverse hover:bg-muted/80');
+  });
+
   it('should handle arrays', () => {
     expect(cn(['px-4', 'py-2'])).toBe('px-4 py-2');
   });

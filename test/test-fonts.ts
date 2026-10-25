@@ -24,9 +24,8 @@ interface LoadBundledInterFontOptions {
 
 /**
  * Loads the repo-bundled Inter Variable face into `page` and asserts it is the face
- * actually in use before any pixel snapshot is taken (cloudlands-fe#2709,
- * intent-hq/intent#5033). Goldens are regenerated on Linux CI with this face; a spec
- * that snapshots under a host fallback font produces goldens that fail there.
+ * actually in use before measuring layout, so overflow checks do not depend on
+ * the host's fallback fonts.
  *
  * The assertion iterates `document.fonts` for a `FontFace` whose `family` normalises
  * to `Inter Variable` with `status === 'loaded'`. `document.fonts.check()` is not
@@ -59,7 +58,7 @@ export async function loadBundledInterFont(
       throw new Error(
         `Bundled '${INTER_FAMILY}' did not load on ${page.url()} from ${baseUrl}${INTER_STYLESHEET_PATH} ` +
           `(matching FontFace statuses: ${loaded.statuses.length ? loaded.statuses.join(', ') : 'none'}). ` +
-          'Pixel snapshots would render with a host fallback font; ' +
+          'Layout measurements would use a host fallback font; ' +
           'check the stylesheet URL is served by the harness Vite server.',
       );
     }

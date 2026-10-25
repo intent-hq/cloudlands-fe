@@ -14,6 +14,7 @@ export const toastFixtures = [
       'app-error',
       'agent-failure',
       'agent-attention',
+      'agent-idle',
       'update-available',
       'update-downloading',
       'undoable-paused',

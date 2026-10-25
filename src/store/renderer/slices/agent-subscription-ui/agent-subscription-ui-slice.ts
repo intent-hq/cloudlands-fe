@@ -169,7 +169,9 @@ agentSubscriptionUIReducer.with(
   (state, { payload: [workspaceId, agentId] }) => {
     const key = makeKey(workspaceId, agentId);
     const entry = state.entries[key];
-    if (!entry || entry.snapshotStatus === 'loading') return state;
+    // A retry after a failure keeps reporting the failure until it settles, so the
+    // footer's error row stays put instead of hiding and re-appearing per attempt.
+    if (!entry || entry.snapshotStatus !== 'ready') return state;
     return {
       ...state,
       entries: { ...state.entries, [key]: { ...entry, snapshotStatus: 'loading' } },
