@@ -5,6 +5,10 @@ test('large script inventory opens and retains output without a cleanup window',
   mount,
   page,
 }, testInfo) => {
+  // The 1003-row inventory makes mount and each page-wide role query costly: on a
+  // loaded CI runner the whole test took 23-35 s against the 30 s default
+  // (merge_group run 40225842342), so scale the budget like other heavy CT specs.
+  test.slow();
   await page.setViewportSize({ width: 1100, height: 850 });
   const component = await mount(Host);
   const sidebar = page.getByRole('region', { name: 'Workspace shell' });
