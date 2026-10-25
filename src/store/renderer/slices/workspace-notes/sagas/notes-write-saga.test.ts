@@ -248,7 +248,11 @@ describe('notesWriteSaga', () => {
     await settle();
 
     const marked = run.actions.filter((action) => action.type === markNoteRead.type);
-    expect(marked).toEqual([markNoteRead(WS, 'n-mine')]);
+    // `markNoteRead` stamps `now` at creation time, so compare everything but the clock.
+    const expectedMark = markNoteRead(WS, 'n-mine');
+    expect(marked).toEqual([
+      { ...expectedMark, payload: { ...expectedMark.payload, now: expect.any(String) } },
+    ]);
     const opened = run.actions.filter((action) => action.type === openTab.type) as ReturnType<
       typeof openTab
     >[];
