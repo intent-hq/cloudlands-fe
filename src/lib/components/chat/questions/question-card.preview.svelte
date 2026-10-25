@@ -42,7 +42,7 @@
         {
           label: 'Start with the smallest change',
           description: longContent
-            ? 'Keep the existing behavior and verify a deliberately long description wraps within a narrow panel, including an uninterrupted reference: component-layout-regression-verification.'
+            ? 'Keep the existing behavior and verify a deliberately long description wraps within a narrow panel, including an uninterrupted reference: component_layout_regression_verification_without_breaks.'
             : 'Preserve the current behavior and verify the result.',
         },
         {
