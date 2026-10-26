@@ -4,6 +4,22 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.239.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.238.2...v2.239.0) (2026-10-26)
+
+
+### 🚀 Features
+
+* **settings:** pin the Default profile atop the provider profile list ([#3748](https://github.com/intent-hq/cloudlands-fe/issues/3748)) ([1c8eaf1](https://github.com/intent-hq/cloudlands-fe/commit/1c8eaf1e1fe47f5ba00a054c2659fbb2c6a8d1f9))
+
+
+### 🐛 Bug Fixes
+
+* **backend:** reconnect whenever a client.hello reply or inbound frame is lost ([#3737](https://github.com/intent-hq/cloudlands-fe/issues/3737)) ([e4abee4](https://github.com/intent-hq/cloudlands-fe/commit/e4abee483745d49235208c4339c872feefd2cc51))
+* bump intentd sidecar to v0.11.54 ([#3750](https://github.com/intent-hq/cloudlands-fe/issues/3750)) ([3f8afa4](https://github.com/intent-hq/cloudlands-fe/commit/3f8afa4f4bd5e3b3d0b44d7c9c795240b0360cf6))
+* bump intentd sidecar to v0.11.55 ([#3753](https://github.com/intent-hq/cloudlands-fe/issues/3753)) ([bccffd0](https://github.com/intent-hq/cloudlands-fe/commit/bccffd00a931264d3eb473f5b1bbf0399789daaf))
+* **chat:** send a note as context only when it is checked ([#3739](https://github.com/intent-hq/cloudlands-fe/issues/3739)) ([b12ba0a](https://github.com/intent-hq/cloudlands-fe/commit/b12ba0ae8dd5a258a0b9232b33d8f224c3339cf5))
+* **ci:** overflow 16-core jobs only to big-memory heavy slots ([#3746](https://github.com/intent-hq/cloudlands-fe/issues/3746)) ([c2fff41](https://github.com/intent-hq/cloudlands-fe/commit/c2fff41777fb2f1625f443e837d31fb58d9274a6))
+
 ## [2.238.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.238.1...v2.238.2) (2026-10-26)
 
 
