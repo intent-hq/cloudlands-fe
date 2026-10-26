@@ -78,11 +78,11 @@ test('keyboard navigation keeps live People activity and discussion actions avai
   await expect(component.locator('[data-share-dialog-open]')).toHaveText('false');
   await expect(component.locator('[data-people-navigation]')).toContainText('New discussion');
   await people.focus();
-  await people.press('ArrowRight');
+  await people.press('ArrowLeft');
   await expect(panel).toBeHidden();
   const agents = component.getByRole('tab', { name: 'Agents', exact: true });
   await expect(agents).toBeFocused();
-  await agents.press('ArrowLeft');
+  await agents.press('ArrowRight');
   await expect(people).toBeFocused();
   await expect(panel).toBeVisible();
   await expect(panel).toContainText('Taylor');
