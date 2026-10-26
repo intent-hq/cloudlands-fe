@@ -62,11 +62,11 @@ test('fails without resending when the container has no room in that direction',
   const fixed = component.getByTestId('static');
 
   await expect(wheelUntilScrolled(fixed, { deltaY: 120, timeout: 500 })).rejects.toThrow(
-    /can scroll down before wheel\(0, 120\)/,
+    /cannot scroll down for wheel\(0, 120\): \{"scrollTop":0/,
   );
   // Already at the top: an upward wheel cannot scroll, whatever the content size.
   await expect(wheelUntilScrolled(scroller, { deltaY: -120, timeout: 500 })).rejects.toThrow(
-    /can scroll up/,
+    /cannot scroll up/,
   );
   await expect(scroller).toHaveAttribute('data-wheels-received', '0');
 });

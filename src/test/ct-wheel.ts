@@ -167,21 +167,21 @@ export async function wheelUntilScrolled(
   const direction = describeDirection(deltaX, deltaY);
   const wheel = `wheel(${deltaX}, ${deltaY})`;
 
-  await expect
-    .poll(
-      async () => {
-        const geometry = await readGeometry(scroller);
-        return { canScroll: hasRoom(geometry, deltaX, deltaY), ...geometry };
-      },
-      {
-        message:
-          `wheelUntilScrolled: the scroll container can scroll ${direction} before ${wheel} ` +
-          'is sent. A wheel that must not scroll is a raw page.mouse.wheel with ' +
-          'intent/no-raw-mouse-wheel-in-ct disabled on that line',
+  try {
+    await expect
+      .poll(async () => hasRoom(await readGeometry(scroller), deltaX, deltaY), {
         timeout: Math.min(ROOM_TIMEOUT_MS, timeout),
-      },
-    )
-    .toMatchObject({ canScroll: true });
+      })
+      .toBe(true);
+  } catch (error) {
+    const geometry = await readGeometry(scroller).catch(() => null);
+    throw new Error(
+      `wheelUntilScrolled: the scroll container cannot scroll ${direction} for ${wheel}: ` +
+        `${JSON.stringify(geometry)}. A wheel that must not scroll is a raw ` +
+        'page.mouse.wheel with intent/no-raw-mouse-wheel-in-ct disabled on that line with a reason',
+      { cause: error },
+    );
+  }
 
   const before = position(await readGeometry(scroller));
   let after = before;
