@@ -1,4 +1,4 @@
-import { expect, test } from '../../../../test/ct-test';
+import { expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
 import type { ComponentFixtures } from '@playwright/experimental-ct-svelte';
 import {
   failOnConsoleErrors,
@@ -126,11 +126,13 @@ for (const width of [280, 720]) {
 
         // Real wheel input releases follow-bottom ownership. Observe displacement
         // against both the scroll offset and a rendered message, not CSS spelling.
-        await page.mouse.move(
-          (before.viewport.left + before.viewport.right) / 2,
-          (before.viewport.top + before.viewport.bottom) / 2,
-        );
-        await page.mouse.wheel(0, -120);
+        await wheelUntilScrolled(viewport, {
+          deltaY: -120,
+          pointer: {
+            x: (before.viewport.left + before.viewport.right) / 2,
+            y: (before.viewport.top + before.viewport.bottom) / 2,
+          },
+        });
         await expect
           .poll(async () => (await measure(component)).scrollTop)
           .toBeLessThan(before.scrollTop - 30);
@@ -149,7 +151,7 @@ for (const width of [280, 720]) {
         expect(Math.abs(moved.queue!.top - before.queue!.top - displacement)).toBeLessThanOrEqual(
           1,
         );
-        await page.mouse.wheel(0, -100_000);
+        await wheelUntilScrolled(viewport, { deltaY: -100_000, pointer: 'current' });
         await expect.poll(async () => viewport.evaluate((node) => node.scrollTop)).toBeLessThan(1);
         await expect(banner).not.toBeInViewport();
         // Offscreen message bodies may dehydrate; the notice itself must still
