@@ -7,6 +7,7 @@
   import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
   import { writable } from 'svelte/store';
   import { prefersReducedMotion } from '$lib/utils/reduced-motion';
+  import { scrollFade } from '$lib/actions/scroll-fade';
   import { store } from '$store/renderer/store';
   import { selectMultiSelectSidebarSelectedTabIds } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import {
@@ -221,6 +222,7 @@
     {:else}
       <div
         bind:this={tabViewport}
+        use:scrollFade={{ axis: 'x', enabled: !flyout?.collapsed }}
         class="scrollbar-none min-w-0 overflow-x-auto overscroll-x-contain rounded-(--radius-large)"
         data-sidebar-tab-scroll
       >
