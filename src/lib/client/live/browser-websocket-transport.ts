@@ -341,6 +341,10 @@ export class BrowserWebSocketTransport implements BackendTransport {
     };
   }
 
+  prMonitorBackendId(): string {
+    return sanitizeWsUrlForDisplay(this.url);
+  }
+
   async capturePrMonitorSession(workspaceId: string): Promise<PrMonitorSession> {
     const socket = await this.ensureConnected();
     const generation = this.capabilityHelloGeneration;
@@ -404,7 +408,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
         : this.requestOnSocket<T>(method, params, undefined, socket);
     return {
       origin: {
-        backendId: sanitizeWsUrlForDisplay(this.url),
+        backendId: this.prMonitorBackendId(),
         sessionId: crypto.randomUUID(),
         workspaceId,
       },

@@ -129,6 +129,12 @@ export interface BackendTransport {
   capturePrMonitorSession?(
     workspaceId: string,
   ): Promise<import('$shared/types/pr-monitor').PrMonitorSession>;
+  /**
+   * `origin.backendId` the next monitor capture will stamp, when the transport
+   * names hosts differently from the window's connection ID (the browser
+   * transport uses its sanitized URL). Absent: the window backend ID applies.
+   */
+  prMonitorBackendId?(): string;
   /** Discover the caller without renegotiating the acknowledged connection. */
   readPrincipal?(): Promise<PrincipalDiscovery>;
   /** Read the current acknowledged hello; never initiate a replacement handshake. */
