@@ -132,10 +132,27 @@ const HELLO_METHOD = 'client.hello';
 
 // The connect-time handshake holds the connection at `connecting` (queueing
 // all scoped work behind it), so it gets a much tighter bound than ordinary
-// requests: a daemon that accepted the socket but never answers the hello
-// degrades to an anonymous connection after 5s instead of stalling every
-// queued request for the full request timeout.
+// requests: a daemon that accepted the socket but never answers the hello is
+// given up on after 5s instead of stalling every queued request for the full
+// request timeout.
 const HELLO_HANDSHAKE_TIMEOUT_MS = 5_000;
+
+// An unanswered connect-time hello (lost reply, transient stall) is retried on
+// a fresh socket: staying connected without a handshake leaves every
+// hello-gated feature dead for the socket's lifetime (intent-hq/intent#7868).
+// After this many timeouts in a row the client keeps the anonymous transport
+// rather than reconnect-looping against a daemon that cannot answer in time.
+const MAX_CONSECUTIVE_HELLO_TIMEOUTS = 3;
+
+/**
+ * A request that got no reply within its bound. `name` and `message` stay the
+ * plain-Error ones callers and IPC error payloads already see.
+ */
+class RequestTimeoutError extends Error {
+  constructor(readonly method: string) {
+    super(`JSON-RPC request timed out: ${method}`);
+  }
+}
 
 type RetirementFailure = {
   owner: object | null;
@@ -241,6 +258,8 @@ export class JsonRpcClient extends EventEmitter {
   private hasConnectionFailed = false;
   /** Consecutive reconnect attempts since the last successful connect (#1750). */
   private reconnectAttempts = 0;
+  /** Connect-time hellos in a row that got no reply; reset by a confirmed hello (#7868). */
+  private helloTimeoutStreak = 0;
   /** The last connect attempt was refused by the guest connection cap (HTTP 503). */
   private connectionLimited = false;
   /** The daemon-requested wait before the next attempt while `connectionLimited`. */
@@ -906,7 +925,7 @@ export class JsonRpcClient extends EventEmitter {
           status: 'timeout',
           payload: undefined,
         }));
-        reject(new Error(`JSON-RPC request timed out: ${method}`));
+        reject(new RequestTimeoutError(method));
       }, timeoutMs);
       this.pending.set(id, {
         method,
@@ -1110,6 +1129,7 @@ export class JsonRpcClient extends EventEmitter {
         Math.min(this.requestTimeoutMs, HELLO_HANDSHAKE_TIMEOUT_MS),
       );
       if (this.disposed || this.socket !== socket || this.helloAttempt !== attempt) return;
+      this.helloTimeoutStreak = 0;
       this.own('hello-result', () =>
         this.originalCallback(this.connectionOwner, (parent) =>
           parent === undefined
@@ -1127,9 +1147,25 @@ export class JsonRpcClient extends EventEmitter {
       // The socket died mid-handshake: onConnectionFailure already tore it
       // down and scheduled a reconnect — do not report this socket connected.
       if (this.disposed || this.socket !== socket) return;
+      // No reply at all (e.g. the reply was lost): the rest of the app gates on
+      // the handshake result and only re-registers on a reconnect, so an
+      // anonymous socket would stay degraded for its whole lifetime
+      // (intent-hq/intent#7868). Retry on a fresh socket, within a bound.
+      if (
+        error instanceof RequestTimeoutError &&
+        ++this.helloTimeoutStreak < MAX_CONSECUTIVE_HELLO_TIMEOUTS
+      ) {
+        logger.warn('client.hello handshake timed out; reconnecting', {
+          consecutiveTimeouts: this.helloTimeoutStreak,
+        });
+        this.onConnectionFailure(error);
+        return;
+      }
       // Identity degrades, transport survives: the daemon treats a failed
       // hello as an anonymous connection, so scoped features (§5.16 drafts)
-      // may not restore, but everything else keeps working.
+      // may not restore, but everything else keeps working. A daemon error
+      // reply (e.g. method missing) is definitive, and repeated timeouts give up.
+      this.helloTimeoutStreak = 0;
       logger.warn('client.hello handshake failed; continuing without confirmed identity', {
         error: error instanceof Error ? error.message : String(error),
       });
