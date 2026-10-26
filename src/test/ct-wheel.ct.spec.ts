@@ -94,7 +94,7 @@ test('still sends a wheel when the container drifts that way on its own first', 
   const component = await mount(WheelProbeHarness);
   const scroller = component.getByTestId('scroller');
   await scroller.evaluate((node) => {
-    node.scrollTop = 800;
+    node.scrollTop = 2000;
     // A live list can shift by itself between reads: every read of scrollTop moves the
     // container 10 px further up, so it has always moved up since the previous read.
     const native = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop')!;
@@ -114,6 +114,37 @@ test('still sends a wheel when the container drifts that way on its own first', 
   const result = await wheelUntilScrolled(scroller, { deltaY: -120 });
   expect(result.wheels).toBe(1);
   await expect(scroller).toHaveAttribute('data-wheels-received', '1');
+});
+
+test('counts a wheel that scrolled and was then pulled back as landed', async ({ mount }) => {
+  const component = await mount(WheelProbeHarness);
+  const scroller = component.getByTestId('scroller');
+  await scroller.evaluate((node) => {
+    // Like follow-bottom: any scroll away from the top is undone on the next frame.
+    node.addEventListener('scroll', () => {
+      if (node.scrollTop !== 0) requestAnimationFrame(() => (node.scrollTop = 0));
+    });
+  });
+
+  const result = await wheelUntilScrolled(scroller, { deltaY: 120, attemptTimeout: 1_000 });
+  expect(result.wheels).toBe(1);
+  await expect(scroller).toHaveAttribute('data-wheels-received', '1');
+});
+
+test('does not count the hover scrolling the pointer target into view', async ({ mount }) => {
+  const component = await mount(WheelProbeHarness, { props: { dropWheels: 1 } });
+  const scroller = component.getByTestId('scroller');
+
+  // Hovering the far row scrolls the container down to it; the dropped first wheel
+  // must still be resent.
+  const result = await wheelUntilScrolled(scroller, {
+    deltaY: 120,
+    pointer: component.getByTestId('far-row'),
+    attemptTimeout: 500,
+  });
+  expect(result.before.scrollTop).toBeGreaterThan(0);
+  expect(result.wheels).toBe(2);
+  await expect(scroller).toHaveAttribute('data-wheels-received', '2');
 });
 
 test('rejects a wheel without a delta', async ({ mount }) => {

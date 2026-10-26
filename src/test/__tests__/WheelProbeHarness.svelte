@@ -28,7 +28,11 @@
   data-wheels-dropped={dropped}
   style="width: 200px; height: 200px; overflow: auto;"
 >
-  <div style="width: 1000px; height: 1000px;"></div>
+  <div style="position: relative; width: 1000px; height: 3000px;">
+    <div data-testid="far-row" style="position: absolute; top: 900px; width: 100px; height: 20px;">
+      far row
+    </div>
+  </div>
 </div>
 <div data-testid="static" style="width: 200px; height: 100px; overflow: auto;">
   <div style="height: 50px;"></div>

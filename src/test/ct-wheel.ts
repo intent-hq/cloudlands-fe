@@ -21,17 +21,27 @@ import { expect, type test } from './ct-test';
  *    axis the wheel uses (for example `scrollTop > 0` for an upward wheel). A test that
  *    wheels an element that cannot scroll fails here, with the geometry in the message,
  *    instead of resending until the timeout.
- * 2. Moves the pointer (by default hovers `scroller`), sends the wheel, and waits up to
- *    `attemptTimeout` for `scrollTop` / `scrollLeft` to move in the wheel's direction
- *    from where it was before the first wheel. Movement the other way, such as
- *    follow-bottom pulling the list back down, does not count.
+ * 2. Moves the pointer (by default hovers `scroller`), takes the starting position (after
+ *    that hover, which may itself scroll the pointer target into view), sends the wheel,
+ *    and waits up to `attemptTimeout` for `scrollTop` / `scrollLeft` to reach a point
+ *    past the start in the wheel's direction. A `scroll` listener records the furthest
+ *    point reached, so a wheel that scrolled and was then undone (follow-bottom pulling
+ *    the list back, rows growing above it) still counts as landed. Movement the other
+ *    way does not count.
  * 3. Repeats step 2 until `timeout`, but never resends once the container has moved:
  *    a wheel that was slow rather than dropped is not doubled. A dropped wheel had no
- *    effect, so resending it is safe.
+ *    effect, so resending it is safe. A wheel that lands after `attemptTimeout`, once the
+ *    resend was already sent, does scroll twice; raise `attemptTimeout` where a test
+ *    checks an exact distance.
  *
  * It resolves as soon as the container starts moving. Tests that need the final
  * position (end of list, back at the bottom, an exact distance) keep their own
  * assertion after the call; `before` is returned for distance checks.
+ *
+ * Limitation: the page's own movement in the wheel's direction right after the wheel is
+ * sent (a smooth scroll still running, a list following new content down) is
+ * indistinguishable from the wheel landing. If that wheel was dropped, the test's own
+ * end-state assertion still fails, as it did before this helper.
  *
  * For a test that must show that a wheel does NOT scroll, keep the raw
  * `page.mouse.wheel(...)` and disable `intent/no-raw-mouse-wheel-in-ct` on that line
@@ -42,7 +52,7 @@ import { expect, type test } from './ct-test';
 type CtPage = Parameters<Parameters<typeof test.beforeEach>[1]>[0]['page'];
 type Locator = ReturnType<CtPage['locator']>;
 
-export interface ScrollPosition {
+interface ScrollPosition {
   scrollTop: number;
   scrollLeft: number;
 }
@@ -52,6 +62,14 @@ interface ScrollGeometry extends ScrollPosition {
   clientHeight: number;
   scrollWidth: number;
   clientWidth: number;
+}
+
+/** Furthest scroll offsets the container reached since the probe was last reset. */
+interface ScrollReach {
+  minTop: number;
+  maxTop: number;
+  minLeft: number;
+  maxLeft: number;
 }
 
 export interface WheelUntilScrolledOptions {
@@ -68,16 +86,19 @@ export interface WheelUntilScrolledOptions {
   pointer?: Locator | { x: number; y: number } | 'current';
   /** Hover position inside a locator `pointer` (or `scroller`), relative to its top left. */
   position?: { x: number; y: number };
-  /** Total time for every attempt, in ms. Default 15 000. */
+  /**
+   * Total time for the call, in ms, including the wait for room to scroll. Default 15 000.
+   * The first wheel always gets at least `attemptTimeout`.
+   */
   timeout?: number;
   /** How long one wheel may take to move the container before it is resent, in ms. Default 2 000. */
   attemptTimeout?: number;
 }
 
 export interface WheelUntilScrolledResult {
-  /** Scroll position before the first wheel. */
+  /** Scroll position just before the first wheel. */
   before: ScrollPosition;
-  /** Scroll position once it had moved in the wheel's direction. */
+  /** Scroll position when the helper saw the container had moved in the wheel's direction. */
   after: ScrollPosition;
   /** Wheels sent, including resends of dropped ones. */
   wheels: number;
@@ -87,22 +108,88 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_ATTEMPT_TIMEOUT_MS = 2_000;
 /** Longest wait for the container to have room to scroll before the first wheel. */
 const ROOM_TIMEOUT_MS = 5_000;
+/** Bound on the geometry read that builds the no-room error, so the error is reported. */
+const ERROR_READ_TIMEOUT_MS = 1_000;
 /** Scroll offsets can be fractional under zoom; smaller changes are not movement. */
 const MIN_MOVEMENT_PX = 0.5;
+/** Element property holding the page-side scroll probe while the helper runs. */
+const PROBE = '__ctWheelUntilScrolledProbe';
 
-function readGeometry(scroller: Locator): Promise<ScrollGeometry> {
-  return scroller.evaluate((node) => ({
-    scrollTop: node.scrollTop,
-    scrollLeft: node.scrollLeft,
-    scrollHeight: node.scrollHeight,
-    clientHeight: node.clientHeight,
-    scrollWidth: node.scrollWidth,
-    clientWidth: node.clientWidth,
-  }));
+function readGeometry(scroller: Locator, timeout?: number): Promise<ScrollGeometry> {
+  return scroller.evaluate(
+    (node) => ({
+      scrollTop: node.scrollTop,
+      scrollLeft: node.scrollLeft,
+      scrollHeight: node.scrollHeight,
+      clientHeight: node.clientHeight,
+      scrollWidth: node.scrollWidth,
+      clientWidth: node.clientWidth,
+    }),
+    undefined,
+    timeout === undefined ? {} : { timeout },
+  );
 }
 
-function position({ scrollTop, scrollLeft }: ScrollPosition): ScrollPosition {
-  return { scrollTop, scrollLeft };
+/** Start (or restart) recording how far the container scrolls; returns where it is now. */
+function resetReach(scroller: Locator): Promise<ScrollPosition> {
+  return scroller.evaluate((node, key) => {
+    type Probe = { reach: ScrollReach; listener: () => void };
+    const host = node as unknown as Record<string, Probe | undefined>;
+    const { scrollTop, scrollLeft } = node;
+    const reach = {
+      minTop: scrollTop,
+      maxTop: scrollTop,
+      minLeft: scrollLeft,
+      maxLeft: scrollLeft,
+    };
+    const existing = host[key];
+    if (existing) {
+      existing.reach = reach;
+    } else {
+      const probe: Probe = {
+        reach,
+        listener: () => {
+          const current = host[key]!.reach;
+          current.minTop = Math.min(current.minTop, node.scrollTop);
+          current.maxTop = Math.max(current.maxTop, node.scrollTop);
+          current.minLeft = Math.min(current.minLeft, node.scrollLeft);
+          current.maxLeft = Math.max(current.maxLeft, node.scrollLeft);
+        },
+      };
+      host[key] = probe;
+      node.addEventListener('scroll', probe.listener, { passive: true });
+    }
+    return { scrollTop, scrollLeft };
+  }, PROBE);
+}
+
+/** Current position plus the furthest point reached since the last reset. */
+function readReach(scroller: Locator): Promise<{ now: ScrollPosition; reach: ScrollReach }> {
+  return scroller.evaluate((node, key) => {
+    const host = node as unknown as Record<string, { listener: () => void; reach: ScrollReach }>;
+    host[key]?.listener();
+    const { scrollTop, scrollLeft } = node;
+    const reach = host[key]?.reach ?? {
+      minTop: scrollTop,
+      maxTop: scrollTop,
+      minLeft: scrollLeft,
+      maxLeft: scrollLeft,
+    };
+    return { now: { scrollTop, scrollLeft }, reach: { ...reach } };
+  }, PROBE);
+}
+
+function removeProbe(scroller: Locator): Promise<void> {
+  return scroller.evaluate(
+    (node, key) => {
+      const host = node as unknown as Record<string, { listener: () => void } | undefined>;
+      const probe = host[key];
+      if (probe) node.removeEventListener('scroll', probe.listener);
+      delete host[key];
+    },
+    PROBE,
+    { timeout: ERROR_READ_TIMEOUT_MS },
+  );
 }
 
 function hasRoom(geometry: ScrollGeometry, deltaX: number, deltaY: number): boolean {
@@ -116,19 +203,17 @@ function hasRoom(geometry: ScrollGeometry, deltaX: number, deltaY: number): bool
   );
 }
 
-function movedToward(
+function reachedPast(
   before: ScrollPosition,
-  now: ScrollPosition,
+  reach: ScrollReach,
   deltaX: number,
   deltaY: number,
 ): boolean {
-  const down = now.scrollTop - before.scrollTop;
-  const right = now.scrollLeft - before.scrollLeft;
   return (
-    (deltaY > 0 && down > MIN_MOVEMENT_PX) ||
-    (deltaY < 0 && down < -MIN_MOVEMENT_PX) ||
-    (deltaX > 0 && right > MIN_MOVEMENT_PX) ||
-    (deltaX < 0 && right < -MIN_MOVEMENT_PX)
+    (deltaY > 0 && reach.maxTop - before.scrollTop > MIN_MOVEMENT_PX) ||
+    (deltaY < 0 && before.scrollTop - reach.minTop > MIN_MOVEMENT_PX) ||
+    (deltaX > 0 && reach.maxLeft - before.scrollLeft > MIN_MOVEMENT_PX) ||
+    (deltaX < 0 && before.scrollLeft - reach.minLeft > MIN_MOVEMENT_PX)
   );
 }
 
@@ -163,6 +248,7 @@ export async function wheelUntilScrolled(
   if (deltaX === 0 && deltaY === 0) {
     throw new Error('wheelUntilScrolled needs a non-zero deltaX or deltaY');
   }
+  const deadline = Date.now() + timeout;
   const page = scroller.page();
   const direction = describeDirection(deltaX, deltaY);
   const wheel = `wheel(${deltaX}, ${deltaY})`;
@@ -174,7 +260,7 @@ export async function wheelUntilScrolled(
       })
       .toBe(true);
   } catch (error) {
-    const geometry = await readGeometry(scroller).catch(() => null);
+    const geometry = await readGeometry(scroller, ERROR_READ_TIMEOUT_MS).catch(() => null);
     throw new Error(
       `wheelUntilScrolled: the scroll container cannot scroll ${direction} for ${wheel}: ` +
         `${JSON.stringify(geometry)}. A wheel that must not scroll is a raw ` +
@@ -183,35 +269,41 @@ export async function wheelUntilScrolled(
     );
   }
 
-  const before = position(await readGeometry(scroller));
-  let after = before;
+  let before: ScrollPosition | undefined;
+  let after: ScrollPosition | undefined;
   let wheels = 0;
-  const read = async () => {
-    after = position(await readGeometry(scroller));
-    return movedToward(before, after, deltaX, deltaY);
+  const landed = async () => {
+    const { now, reach } = await readReach(scroller);
+    after = now;
+    return before !== undefined && reachedPast(before, reach, deltaX, deltaY);
   };
 
-  await expect(async () => {
-    // A slow wheel from the previous attempt may have landed meanwhile; do not double it.
-    // Before the first wheel, movement is the page's own (a live list shifting), not ours.
-    if (wheels > 0 && (await read())) return;
-    if (isLocator(pointer)) {
-      await pointer.hover(hoverPosition ? { position: hoverPosition } : {});
-    } else if (pointer !== 'current') {
-      await page.mouse.move(pointer.x, pointer.y);
-    }
-    await page.mouse.wheel(deltaX, deltaY);
-    wheels++;
-    await expect
-      .poll(read, {
-        message:
-          `wheelUntilScrolled: ${wheel} scrolls the container ${direction} ` +
-          `(attempt ${wheels}; Chromium can drop a wheel routed by a stale compositor ` +
-          'frame, cloudlands-fe#3733, intent-hq/intent#7255)',
-        timeout: attemptTimeout,
-      })
-      .toBe(true);
-  }).toPass({ timeout });
+  try {
+    await expect(async () => {
+      // A slow wheel from the previous attempt may have landed meanwhile; do not double it.
+      if (wheels > 0 && (await landed())) return;
+      if (isLocator(pointer)) {
+        await pointer.hover(hoverPosition ? { position: hoverPosition } : {});
+      } else if (pointer !== 'current') {
+        await page.mouse.move(pointer.x, pointer.y);
+      }
+      // Start from here, after the hover: movement before the first wheel is not ours.
+      if (wheels === 0) before = await resetReach(scroller);
+      await page.mouse.wheel(deltaX, deltaY);
+      wheels++;
+      await expect
+        .poll(landed, {
+          message:
+            `wheelUntilScrolled: ${wheel} scrolls the container ${direction} ` +
+            `(attempt ${wheels}; Chromium can drop a wheel routed by a stale compositor ` +
+            'frame, cloudlands-fe#3733, intent-hq/intent#7255)',
+          timeout: attemptTimeout,
+        })
+        .toBe(true);
+    }).toPass({ timeout: Math.max(deadline - Date.now(), attemptTimeout) });
+  } finally {
+    await removeProbe(scroller).catch(() => undefined);
+  }
 
-  return { before, after, wheels };
+  return { before: before!, after: after!, wheels };
 }
