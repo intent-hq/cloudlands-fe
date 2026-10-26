@@ -684,7 +684,11 @@
                 </div>
               </div>
               {#if canAddProfile}
-                <ProviderProfiles providerId={provider.id} providerName={provider.name} />
+                <ProviderProfiles
+                  providerId={provider.id}
+                  providerName={provider.name}
+                  onEditDefault={() => openDefaultEnv(provider.id, provider.name)}
+                />
               {/if}
               {#if provider.id === 'antigravity'}
                 <AntigravityConnect bind:open={antigravityConnectOpen} />

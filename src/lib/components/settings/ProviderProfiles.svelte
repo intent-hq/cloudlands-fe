@@ -33,6 +33,7 @@
   } from '$lib/components/patterns/settings/custom-controls';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import type { ProviderProfile } from '$shared/provider-profiles';
+  import type { ProviderProfileStatus } from '$store/renderer/slices/provider-settings/provider-settings-types';
   import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
   import { describeInUse, runningProcessesNotice } from '$features/settings/profile-env-form';
   import { onDestroy } from 'svelte';
@@ -67,9 +68,11 @@
   interface Props {
     providerId: string;
     providerName: string;
+    /** Opens the page-level Default configuration dialog for this provider. */
+    onEditDefault: () => void;
   }
 
-  let { providerId, providerName }: Props = $props();
+  let { providerId, providerName, onEditDefault }: Props = $props();
 
   // svelte-ignore state_referenced_locally
   const profiles$ = selectProviderProfilesForBase(providerId);
@@ -90,17 +93,29 @@
 
   let dialogOpen = $state(false);
   let editing = $state<ProviderProfile | undefined>(undefined);
-  let defaultDialogOpen = $state(false);
-
   const DEFAULT_NAME = m.chat_modelPicker_defaultProfile_name();
-  // A blank or absent saved name (older daemons) reads as "Default".
-  const defaultName = $derived($defaultConfig$?.name.trim() || DEFAULT_NAME);
-  const showDefaultPill = $derived(defaultName !== DEFAULT_NAME);
+  // The daemon stores the unrenamed Default as the English literal "Default"
+  // (any case); like the Default dialog, that reads as the localized name with
+  // no pill. A blank or absent saved name (older daemons) reads the same.
+  const savedDefaultName = $derived($defaultConfig$?.name.trim() ?? '');
+  const isRenamedDefault = $derived(
+    savedDefaultName !== '' && savedDefaultName.toLowerCase() !== 'default',
+  );
+  const defaultName = $derived(isRenamedDefault ? savedDefaultName : DEFAULT_NAME);
+  // Background availability sweeps keep the last status (like the provider
+  // rows); only a Recheck from this row shows Checking… until it settles.
+  // 'requested' until the check starts, then 'running' until it settles.
+  let recheck = $state<'requested' | 'running' | null>(null);
+  const providerLoading = $derived($providerLoadingMap$[providerId] === true);
+  $effect(() => {
+    if (recheck === 'requested' && providerLoading) recheck = 'running';
+    else if (recheck === 'running' && !providerLoading) recheck = null;
+  });
   // The Default configuration is the bare base provider: its status is the
   // provider's own availability check.
-  const defaultStatus = $derived.by((): 'checking' | 'ready' | 'error' | 'configured' => {
-    if ($providerLoadingMap$[providerId]) return 'checking';
+  const defaultStatus = $derived.by((): ProviderProfileStatus => {
     const status = $providerStatusMap$[providerId];
+    if (recheck !== null || (providerLoading && !status)) return 'checking';
     if (!status?.available) return 'configured';
     if (status.authenticated === false) return 'error';
     return isProviderAuthenticationReady(providerId, status.authenticated) ? 'ready' : 'configured';
@@ -193,9 +208,10 @@
     );
     const profile = $profiles$.find(({ id }) => id === profileId);
     if (profile) {
+      // Visible position: the pinned Default row is first.
       reorderAnnouncement = m.settings_providerProfiles_reorderAnnouncement({
         name: profile.name,
-        position: insertionIndex + 1,
+        position: insertionIndex + 2,
       });
     }
   }
@@ -349,7 +365,7 @@
               <span class="truncate type-body text-foreground" title={defaultName}
                 >{defaultName}</span
               >
-              {#if showDefaultPill}
+              {#if isRenamedDefault}
                 <span
                   class="shrink-0 rounded-full bg-muted px-2 py-0.5 type-caption text-subtle"
                   data-testid="provider-profile-default-badge"
@@ -384,12 +400,7 @@
                       <ProviderFastModeMenuItems providerRef={providerId} />
                       <Menu.Separator />
                     {/if}
-                    <Menu.Item
-                      class="cursor-pointer text-foreground"
-                      onSelect={() => {
-                        defaultDialogOpen = true;
-                      }}
-                    >
+                    <Menu.Item class="cursor-pointer text-foreground" onSelect={onEditDefault}>
                       <span class="flex size-4 shrink-0 items-center justify-center">
                         <Fa icon={faPen} class="size-3.5 text-muted-foreground" />
                       </span>
@@ -398,7 +409,10 @@
                     <Menu.Item
                       class="cursor-pointer text-foreground"
                       disabled={defaultStatus === 'checking'}
-                      onSelect={() => appStore.dispatch(checkSingleProviderRequested(providerId))}
+                      onSelect={() => {
+                        recheck = 'requested';
+                        appStore.dispatch(checkSingleProviderRequested(providerId));
+                      }}
                     >
                       <span class="flex size-4 shrink-0 items-center justify-center">
                         <Fa icon={faArrowsRotate} class="size-3.5 text-muted-foreground" />
@@ -569,16 +583,8 @@
 {/if}
 
 <ProviderProfileDialog bind:open={dialogOpen} {providerId} {providerName} profile={editing} />
-<ProviderProfileDialog
-  bind:open={defaultDialogOpen}
-  {providerId}
-  {providerName}
-  isDefault
-  defaultConfig={$defaultConfig$}
-  defaultsLoad={$loadStatus$}
-/>
 
-{#snippet statusLabel(status: string)}
+{#snippet statusLabel(status: ProviderProfileStatus)}
   <span
     role="status"
     class="flex items-center gap-1 {status === 'error' ? 'text-warning-ink' : 'text-subtle'}"
