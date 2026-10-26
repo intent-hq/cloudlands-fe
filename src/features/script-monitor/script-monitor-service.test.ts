@@ -389,6 +389,29 @@ describe('script monitor read failures (intent-hq/intent#7206)', () => {
     expect(rows.monitors).toHaveLength(1);
   });
 
+  it('recovers from an unavailable handshake on the next reconnect without a manual retry (intent-hq/intent#7868)', async () => {
+    const original = vi.mocked(backendRequest).getMockImplementation()!;
+    let handshake = false;
+    vi.mocked(backendRequest).mockImplementation((method, params) =>
+      method === 'client.hello' && !handshake
+        ? Promise.reject(new Error('Current backend handshake is unavailable'))
+        : original(method, params),
+    );
+    start();
+    await vi.waitFor(() => expect(rows.status).toBe('failed'));
+    expect(backendSubscribe).not.toHaveBeenCalled();
+    // The main process reconnects after the unanswered hello and confirms a
+    // fresh handshake; only the reconnect signal reaches this service.
+    handshake = true;
+    reconnect();
+    await ready();
+    expect(backendSubscribe).toHaveBeenCalledTimes(1);
+    expect(backendRequest).toHaveBeenCalledWith(
+      'scriptMonitor.list',
+      expect.objectContaining({ workspaceId: ws, view: 'summary', state: 'active' }),
+    );
+    expect(rows.monitors).toEqual([summary]);
+  });
   it('keeps loaded rows usable when only an extra page fails', async () => {
     const original = vi.mocked(backendRequest).getMockImplementation()!;
     vi.mocked(backendRequest).mockImplementation((method, params) => {
