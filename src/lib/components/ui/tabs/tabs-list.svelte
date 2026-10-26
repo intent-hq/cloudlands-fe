@@ -17,7 +17,7 @@
   let root = $state<HTMLElement | null>(null);
 
   $effect(() => {
-    if (!root) return;
+    if (!root || context.variant === 'underline') return;
     context.state.connect(root);
     return () => context.state.disconnect();
   });

@@ -13,6 +13,7 @@
 
   import { onDestroy, setContext, tick, type Snippet } from 'svelte';
   import { spring, Spring } from '$lib/motion';
+  import { scheduleLayoutRead, scheduleLayoutWrite } from '$lib/utils/layout-phases';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import WorkspaceSidebarRail from './sidebar/WorkspaceSidebarRail.svelte';
   import {
@@ -98,6 +99,9 @@
   let suppressFocusReveal = false;
   let suppressRailToggleTooltip = $state(false);
   let closeTimer: ReturnType<typeof setTimeout> | undefined;
+  let cancelAlignmentRead: (() => void) | undefined;
+  let cancelAlignmentWrite: (() => void) | undefined;
+  let snapAlignment = false;
   let railPointer: { x: number; y: number } | undefined;
   const collapsed = $derived($sidebarIsCollapsed && !startCollapsed);
   const sidebarWidthLimit = $derived(
@@ -110,6 +114,7 @@
 
   function cancelDismiss() {
     clearTimeout(closeTimer);
+    closeTimer = undefined;
   }
 
   setContext<SidebarFlyoutContext>(SIDEBAR_FLYOUT_CONTEXT, {
@@ -127,37 +132,57 @@
     },
     preview: reveal,
     resize(height) {
+      if (contentHeight === height && !snapNextSize) return;
       contentHeight = height;
-      if (previewAnchor) alignToAnchor(previewAnchor, snapNextSize);
+      scheduleAlignment(snapNextSize);
       snapNextSize = false;
     },
   });
 
-  function alignToAnchor(anchor: HTMLElement, instant = false) {
-    if (!shell) return;
-    const bounds = shell.getBoundingClientRect();
-    const scale = bounds.height / shell.clientHeight || 1;
-    const anchorBounds = anchor.getBoundingClientRect();
-    const anchorCenter = (anchorBounds.top + anchorBounds.height / 2 - bounds.top) / scale;
-    const flyout = shell.querySelector<HTMLElement>('[data-workspace-sidebar-flyout]');
-    const heading = flyout?.querySelector<HTMLElement>(
-      '[data-sidebar-section][data-active] [data-sidebar-section-header] h6',
-    );
-    const headingBounds = heading?.getBoundingClientRect();
-    const headingCenter =
-      headingBounds && flyout
-        ? (headingBounds.top + headingBounds.height / 2 - flyout.getBoundingClientRect().top) /
-          scale
+  function cancelAlignment() {
+    cancelAlignmentRead?.();
+    cancelAlignmentWrite?.();
+    cancelAlignmentRead = undefined;
+    cancelAlignmentWrite = undefined;
+    snapAlignment = false;
+  }
+
+  function scheduleAlignment(instant = false) {
+    snapAlignment ||= instant;
+    if (cancelAlignmentRead) return;
+    cancelAlignmentRead = scheduleLayoutRead(() => {
+      cancelAlignmentRead = undefined;
+      const container = shell;
+      const anchor = previewAnchor;
+      if (!container || !anchor || !active || !collapsed || !floatingOpen) return;
+      const bounds = container.getBoundingClientRect();
+      const containerHeight = container.clientHeight;
+      const scale = bounds.height / containerHeight || 1;
+      const anchorBounds = anchor.getBoundingClientRect();
+      const anchorCenter = (anchorBounds.top + anchorBounds.height / 2 - bounds.top) / scale;
+      const heading = container.querySelector<HTMLElement>(
+        '[data-sidebar-section][data-active] [data-sidebar-section-header] h6',
+      );
+      // Layout offsets exclude the section's entrance transform.
+      const headingCenter = heading
+        ? heading.offsetTop + heading.offsetHeight / 2
         : anchorBounds.height / 2 / scale;
-    const alignedTop = Math.max(0, anchorCenter - headingCenter);
-    const availableBelow = Math.max(0, shell.clientHeight - alignedTop - 12);
-    const maxHeight = Math.min(Math.max(0, shell.clientHeight - 12), Math.max(availableBelow, 240));
-    contentMaxHeight = maxHeight;
-    const height = Math.min(contentHeight, maxHeight);
-    const top = Math.max(0, Math.min(alignedTop, shell.clientHeight - height - 12));
-    if (!instant && floatingBounds.target.top === top && floatingBounds.target.height === height)
-      return;
-    void floatingBounds.set({ top, height }, { instant: instant || !floatingOpen });
+      const alignedTop = Math.max(0, anchorCenter - headingCenter);
+      const availableBelow = Math.max(0, containerHeight - alignedTop - 12);
+      const maxHeight = Math.min(Math.max(0, containerHeight - 12), Math.max(availableBelow, 240));
+      const height = Math.min(contentHeight, maxHeight);
+      const top = Math.max(0, Math.min(alignedTop, containerHeight - height - 12));
+      cancelAlignmentWrite?.();
+      cancelAlignmentWrite = scheduleLayoutWrite(() => {
+        cancelAlignmentWrite = undefined;
+        if (!floatingOpen || anchor !== previewAnchor) return;
+        contentMaxHeight = maxHeight;
+        const instant = snapAlignment;
+        snapAlignment = false;
+        if (floatingBounds.target.top !== top || floatingBounds.target.height !== height || instant)
+          void floatingBounds.set({ top, height }, { instant });
+      });
+    });
   }
 
   function reveal(tabId: string, anchor: HTMLElement, fromFocus = false) {
@@ -165,11 +190,13 @@
       return;
     cancelDismiss();
     suppressFocusReveal = false;
+    if (floatingOpen && tabId === previewTabId && anchor === previewAnchor) return;
+    const opening = !floatingOpen;
     if (!floatingOpen) snapNextSize = tabId !== previewTabId;
-    alignToAnchor(anchor);
     previewTabId = tabId;
     previewAnchor = anchor;
     floatingOpen = true;
+    scheduleAlignment(opening);
   }
 
   function isSidebarTarget(target: EventTarget | null) {
@@ -187,12 +214,14 @@
 
   function dismiss() {
     cancelDismiss();
+    cancelAlignment();
     floatingOpen = false;
   }
 
   function scheduleDismiss() {
-    cancelDismiss();
+    if (!floatingOpen || closeTimer !== undefined) return;
     closeTimer = setTimeout(() => {
+      closeTimer = undefined;
       if (isSidebarTarget(document.activeElement) || isOverlayTarget(document.activeElement))
         return;
       dismiss();
@@ -230,11 +259,10 @@
   });
 
   $effect(() => {
-    const anchor = previewAnchor;
     const container = shell;
     const railElement = rail;
-    if (!active || !collapsed || !anchor || !container || !railElement) return;
-    const align = () => alignToAnchor(anchor);
+    if (!active || !collapsed || !floatingOpen || !container || !railElement) return;
+    const align = () => scheduleAlignment();
     const handleScroll = () => {
       const tab = railPointer
         ? document
@@ -247,13 +275,27 @@
     };
     const observer = new ResizeObserver(align);
     observer.observe(container);
-    observer.observe(anchor);
+    observer.observe(railElement);
+    const tabs = railElement.querySelector('[role="tablist"]');
+    if (tabs) observer.observe(tabs);
     railElement.addEventListener('scroll', handleScroll, true);
     window.addEventListener('resize', align);
     return () => {
       observer.disconnect();
       railElement.removeEventListener('scroll', handleScroll, true);
       window.removeEventListener('resize', align);
+    };
+  });
+
+  $effect(() => {
+    if (!active || !collapsed) return;
+    document.addEventListener('pointermove', handlePointerMove, { passive: true });
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('focusin', handleFocusIn);
+    return () => {
+      document.removeEventListener('pointermove', handlePointerMove);
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('focusin', handleFocusIn);
     };
   });
 
@@ -288,14 +330,12 @@
     });
   });
 
-  onDestroy(cancelDismiss);
+  onDestroy(() => {
+    cancelDismiss();
+    cancelAlignment();
+    void floatingBounds.set(floatingBounds.current, { instant: true });
+  });
 </script>
-
-<svelte:document
-  onpointermove={handlePointerMove}
-  onpointerdown={handlePointerDown}
-  onfocusin={handleFocusIn}
-/>
 
 <ErrorBoundary logger={workspaceLogger}>
   <!-- Main Workspace Layout -->
@@ -323,9 +363,7 @@
         class:sidebar-floating={floatingOpen && collapsed && active}
         class:sidebar-right={sidebarSide === 'right'}
         style:--floating-width={`${floatingWidth}px`}
-        style:--floating-top={`${floatingBounds.current.top}px`}
-        style:--floating-height={`${floatingBounds.current.height}px`}
-        style:--floating-max-height={`${contentMaxHeight ?? Math.max(0, availableHeight - 12)}px`}
+        style:--floating-max-height={`${Math.max(0, availableHeight - 12)}px`}
         onpointerenter={cancelDismiss}
         onpointerleave={scheduleDismiss}
         data-workspace-sidebar-shell
@@ -364,6 +402,11 @@
           <div
             class="sidebar-content h-full min-h-0 overflow-hidden bg-sidebar"
             style:min-width={collapsed ? undefined : `${sidebarMinimumWidth}px`}
+            style:height={collapsed ? `${floatingBounds.current.height}px` : undefined}
+            style:max-height={collapsed
+              ? `${contentMaxHeight ?? Math.max(0, availableHeight - 12)}px`
+              : undefined}
+            style:translate={collapsed ? `0 ${floatingBounds.current.top}px` : undefined}
             inert={!active || ($sidebarIsCollapsed && (!collapsed || !floatingOpen))}
             aria-hidden={!active || ($sidebarIsCollapsed && (!collapsed || !floatingOpen))}
             data-workspace-sidebar-flyout={collapsed ? floatingOpen : undefined}
@@ -415,8 +458,7 @@
 
   .sidebar-collapsed .sidebar-content {
     position: absolute;
-    top: var(--floating-top);
-    height: var(--floating-height);
+    top: 0;
     max-height: var(--floating-max-height);
     left: 48px;
     width: var(--floating-width);

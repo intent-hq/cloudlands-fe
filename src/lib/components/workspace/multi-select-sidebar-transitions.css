@@ -20,6 +20,8 @@
   height: auto;
   max-height: var(--floating-max-height);
   opacity: 0;
+  content-visibility: hidden;
+  contain-intrinsic-size: auto 0px;
   visibility: hidden;
   pointer-events: none;
   transform: translateY(8px);
@@ -27,6 +29,7 @@
   transition:
     opacity var(--spring-moderate) var(--ease-spring-moderate),
     transform var(--spring-moderate) var(--ease-spring-moderate),
+    content-visibility var(--spring-moderate) allow-discrete,
     visibility 0s linear var(--spring-moderate);
 }
 
@@ -36,6 +39,7 @@
 
 [data-sidebar-panels][data-floating='true'] .sidebar-section[data-active='true'] {
   opacity: 1;
+  content-visibility: visible;
   visibility: visible;
   pointer-events: auto;
   transform: translateY(0);

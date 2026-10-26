@@ -138,20 +138,26 @@
   const collapsed$ = selectIsCollapsed();
   const flyout = getSidebarFlyout();
   const panelOnly = $derived(flyout?.collapsed ?? false);
+  let measureFloatingContent = $state<(() => void) | undefined>();
 
   $effect(() => {
-    if (!panelOnly || !sidebarElement || !flyout) return;
-    const section = sidebarElement.querySelector<HTMLElement>(
-      `[data-sidebar-section="${activeTabId}"]`,
-    );
-    if (!section) return;
-    const maxHeight = flyout.maxHeight;
-    const observed = new Set<HTMLElement>([section]);
+    if (!active || !panelOnly || !sidebarElement || !flyout?.open) return;
+    const sidebar = sidebarElement;
+    const observed = new Set<HTMLElement>();
+    let observedSection: HTMLElement | undefined;
     let cancelRead: (() => void) | undefined;
     let cancelWrite: (() => void) | undefined;
     const measure = () => {
-      cancelRead?.();
+      if (cancelRead) return;
       cancelRead = scheduleLayoutRead(() => {
+        cancelRead = undefined;
+        const section = sidebar.querySelector<HTMLElement>('[data-sidebar-section][data-active]');
+        if (!section) return;
+        if (observedSection !== section) {
+          mutations.disconnect();
+          mutations.observe(section, { childList: true, subtree: true });
+          observedSection = section;
+        }
         const body = section.querySelector<HTMLElement>('[data-sidebar-section-scroll]');
         const header = section.querySelector<HTMLElement>('[data-sidebar-section-header]');
         const viewports = [...section.querySelectorAll<HTMLElement>('[data-virtual-viewport]')];
@@ -174,25 +180,43 @@
         const viewportHeight = viewports.reduce((sum, viewport) => sum + viewport.offsetHeight, 0);
         const chromeHeight =
           (header?.offsetHeight ?? 0) + (body?.scrollHeight ?? 0) - viewportHeight;
-        const available = Math.max(0, maxHeight - chromeHeight) / Math.max(1, viewports.length);
+        const available =
+          Math.max(0, flyout.maxHeight - chromeHeight) / Math.max(1, viewports.length);
+        flyout.resize(height);
         cancelWrite?.();
         cancelWrite = scheduleLayoutWrite(() => {
-          section.style.setProperty('--sidebar-virtual-max-height', `${available}px`);
-          flyout.resize(height);
+          cancelWrite = undefined;
+          const value = `${available}px`;
+          if (section.style.getPropertyValue('--sidebar-virtual-max-height') !== value)
+            section.style.setProperty('--sidebar-virtual-max-height', value);
         });
       });
     };
     const observer = new ResizeObserver(measure);
-    observer.observe(section);
-    const mutations = new MutationObserver(measure);
-    mutations.observe(section, { childList: true, subtree: true });
+    const mutations = new MutationObserver((records) => {
+      // Virtual row recycling does not change the viewport's measured size.
+      if (
+        records.some(
+          ({ target }) => !(target instanceof Element && target.closest('[data-virtual-viewport]')),
+        )
+      )
+        measure();
+    });
+    measureFloatingContent = measure;
     measure();
     return () => {
       observer.disconnect();
       mutations.disconnect();
       cancelRead?.();
       cancelWrite?.();
+      measureFloatingContent = undefined;
     };
+  });
+
+  $effect(() => {
+    activeTabId;
+    flyout?.maxHeight;
+    measureFloatingContent?.();
   });
 
   // Reactive writable store that mirrors workspaceId so Redux selectors
@@ -578,6 +602,7 @@
         aria-label={tab.label}
         tabindex="0"
         class="sidebar-section h-full min-h-0 flex-col outline-none"
+        style:max-height={panelOnly ? `${flyout?.maxHeight}px` : undefined}
         style:display={panelOnly || tabId === activeTabId ? 'flex' : 'none'}
         hidden={!panelOnly && tabId !== activeTabId}
         aria-hidden={tabId !== activeTabId}
@@ -718,7 +743,9 @@
                 ? 'overflow-hidden'
                 : 'overflow-y-auto'}"
               data-sidebar-section-scroll={tabId}
-              use:scrollFade
+              use:scrollFade={{
+                enabled: active && tabId === activeTabId && (!panelOnly || !!flyout?.open),
+              }}
             >
               {#if tabId === 'people'}
                 <WorkspacePeopleActivity {workspaceId} {panelLayoutId} />
