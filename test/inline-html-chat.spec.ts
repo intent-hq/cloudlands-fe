@@ -5,6 +5,7 @@ import { copyFile, mkdir, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
+import { prepareRootHarnessModules } from './root-harness-import';
 import { inlineHtmlDemo, inlineHtmlMessage } from './fixtures/inline-html-demo';
 import { polishedClampDemo, polishedEscalatorDemo } from './fixtures/inline-html-polished-demo';
 
@@ -57,7 +58,10 @@ async function openChat(
 ) {
   await page.setViewportSize({ width, height: 840 });
   await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
-  await page.goto(`${baseUrl}/src/app.html`);
+  await prepareRootHarnessModules(page, `${baseUrl}/`, [
+    '/@id/svelte',
+    '/test/fixtures/InlineHtmlChatHost.svelte',
+  ]);
   await page.evaluate((policy) => {
     if (document.querySelector('meta[http-equiv="Content-Security-Policy"]')) return;
     const meta = document.createElement('meta');

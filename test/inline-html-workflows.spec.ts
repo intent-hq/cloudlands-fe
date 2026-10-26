@@ -5,6 +5,7 @@ import { copyFile, mkdir } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
+import { prepareRootHarnessModules } from './root-harness-import';
 import { workflowClampDemo } from './fixtures/inline-html-workflow-demo';
 
 let server: ViteDevServer | undefined;
@@ -49,7 +50,10 @@ async function open(
 ) {
   await page.setViewportSize({ width: width * viewers + (viewers - 1) * 16, height: 1100 });
   await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
-  await page.goto(`${baseUrl}/src/app.html`);
+  await prepareRootHarnessModules(page, `${baseUrl}/`, [
+    '/@id/svelte',
+    '/test/fixtures/InlineHtmlWorkflowHost.svelte',
+  ]);
   await page.evaluate((policy) => {
     if (document.querySelector('meta[http-equiv="Content-Security-Policy"]')) return;
     const meta = document.createElement('meta');
