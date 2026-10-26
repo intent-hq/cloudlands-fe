@@ -1,6 +1,10 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
 import { ctHarnessFixtures } from './ct-test';
+import {
+  CT_DISMISSIBLE_LAYER_DELAY_MARKER,
+  delayOneMillisecondTimers,
+} from '../../playwright/ct-dismissible-layer-delay';
 
 // A minimal model of Playwright's fixture protocol, independent of the module
 // under test: a fixture's dependencies are the names it destructures from its
@@ -122,9 +126,24 @@ async function runWithFixtures(
   return { error, setUpOrder };
 }
 
-function harness(mode: 'none' | 'when-possible'): FixtureTable {
+function harness(mode: 'none' | 'when-possible', delayMs?: number): FixtureTable {
   const table = ctHarnessFixtures as unknown as FixtureTable;
-  return { ...table, _optionContextReuseMode: [mode, table._optionContextReuseMode[1]] };
+  return {
+    ...table,
+    _optionContextReuseMode: [mode, table._optionContextReuseMode[1]],
+    _ctDismissibleLayerDelayMs: [
+      delayMs as unknown as FixtureFn,
+      table._ctDismissibleLayerDelayMs[1],
+    ],
+  };
+}
+
+function pageReportingDelay(browserContextId: string, marker: unknown) {
+  const { page, sessions } = fakePage(browserContextId);
+  const evaluate = vi.fn(async (fn: (name: string) => unknown, name: string) =>
+    name === CT_DISMISSIBLE_LAYER_DELAY_MARKER ? marker : fn(name),
+  );
+  return { page: { ...page, evaluate }, sessions, evaluate };
 }
 
 describe('shared CT test module fixtures', () => {
@@ -199,5 +218,69 @@ describe('shared CT test module fixtures', () => {
     expect(testInfo.annotations).toEqual([
       { type: 'cdp-lifecycle-recorder', description: 'not started: CDP unavailable' },
     ]);
+  });
+
+  it('leaves the page alone when CT_DELAY_DISMISSIBLE_LAYER is off', async () => {
+    const { page, evaluate } = pageReportingDelay('ctx-delay-off', undefined);
+    const testInfo = fakeTestInfo();
+    const { error } = await runWithFixtures(harness('none'), page, testInfo);
+
+    expect(error).toBeUndefined();
+    expect(evaluate).not.toHaveBeenCalled();
+    expect(testInfo.annotations).toEqual([]);
+  });
+
+  it('annotates a test whose page has the 1 ms timer delay installed', async () => {
+    const { page } = pageReportingDelay('ctx-delay-on', 500);
+    const testInfo = fakeTestInfo();
+    const { error, setUpOrder } = await runWithFixtures(harness('none', 500), page, testInfo);
+
+    expect(error).toBeUndefined();
+    expect(setUpOrder).toContain('_ctDismissibleLayerDelayCheck');
+    expect(testInfo.annotations).toEqual([
+      {
+        type: 'ct-delay-dismissible-layer',
+        description: 'setTimeout(…, 1) delayed to 500 ms to prove dismissible-layer waits',
+      },
+    ]);
+  });
+
+  it('fails a test whose page did not get the requested delay', async () => {
+    const { page } = pageReportingDelay('ctx-delay-missing', undefined);
+    const testInfo = fakeTestInfo();
+    const { error } = await runWithFixtures(harness('none', 500), page, testInfo);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toMatch(
+      /\(CT_DELAY_DISMISSIBLE_LAYER=1\) is on, but the CT page reports __ctDismissibleLayerDelayMs=undefined instead of 500/,
+    );
+    expect(testInfo.attach).toHaveBeenCalledTimes(1);
+  });
+
+  it('adds the delay init script to each browser context once, and only when on', async () => {
+    const [contextFixture] = (ctHarnessFixtures as unknown as FixtureTable).context;
+    if (typeof contextFixture !== 'function') throw new Error('context fixture is missing');
+    const fakeContext = () => ({ addInitScript: vi.fn(async () => undefined) });
+    const run = async (context: unknown, delayMs: number | undefined) => {
+      const used: unknown[] = [];
+      await contextFixture(
+        { context, _ctDismissibleLayerDelayMs: delayMs },
+        (async (value: unknown) => {
+          used.push(value);
+        }) as () => Promise<void>,
+        fakeTestInfo(),
+      );
+      return used;
+    };
+
+    const off = fakeContext();
+    expect(await run(off, undefined)).toEqual([off]);
+    expect(off.addInitScript).not.toHaveBeenCalled();
+
+    const reused = fakeContext();
+    expect(await run(reused, 500)).toEqual([reused]);
+    await run(reused, 500);
+    expect(reused.addInitScript).toHaveBeenCalledTimes(1);
+    expect(reused.addInitScript).toHaveBeenCalledWith(delayOneMillisecondTimers, 500);
   });
 });
