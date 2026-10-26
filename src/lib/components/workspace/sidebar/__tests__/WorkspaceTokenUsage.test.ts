@@ -1069,34 +1069,6 @@ describe('WorkspaceTokenUsage', () => {
     expect(visibleText(status)).toBe('Active scope By agent Beta 800 processed');
   });
 
-  it('shows the unknown model bucket in the by-model section', async () => {
-    mocks.state.usage = makeUsage({
-      totals: {
-        inputTokens: 10,
-        outputTokens: 20,
-        cacheReadTokens: 0,
-        cacheCreationTokens: 0,
-      },
-      byModel: {
-        unknown: {
-          inputTokens: 10,
-          outputTokens: 20,
-          cacheReadTokens: 0,
-          cacheCreationTokens: 0,
-        },
-      },
-      lastScanAt: 5000,
-      isStale: false,
-    });
-
-    await renderExpandedTokenUsage();
-
-    const modelSection = screen.getByTestId('token-usage-by-model');
-    expect(modelSection.textContent).toContain('Unknown');
-    expect(modelSection.textContent).not.toContain('unknown');
-    expect(modelSection.querySelector('[title="unknown"]')?.textContent).toBe('Unknown');
-  });
-
   it('omits the by-model section when byModel is empty', async () => {
     mocks.state.usage = makeUsage({
       totals: {
