@@ -301,6 +301,10 @@ test('discussion panes use the shared switcher and keep New discussion and Refre
   await composer.fill('Alex draft');
   await component.locator(`[data-workspace-discussion-open="${jordan}"]`).click();
   const selector = component.getByTestId('pane-stack-selector-trigger');
+  // Opening Jordan autofocuses its composer; let that land before pressing Enter on
+  // the selector, or the composer can take focus between press()'s focus and keydown.
+  await expect(selector).toContainText('Jordan');
+  await expect(composer).toBeFocused();
   await selector.press('Enter');
   const menu = page.locator('[data-pane-stack-menu]');
   await expect(menu.getByRole('menuitem', { name: 'Jordan', exact: true })).toHaveAttribute(
