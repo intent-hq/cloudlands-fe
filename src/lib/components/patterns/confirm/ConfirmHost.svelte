@@ -42,6 +42,8 @@
     } catch (error) {
       console.error('Confirm action failed:', error);
       busy = false;
+      // Rethrow so FormDialog shows its submit-failed alert and keeps Retry available.
+      throw error;
     }
   }
 </script>
