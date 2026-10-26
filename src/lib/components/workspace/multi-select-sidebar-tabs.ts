@@ -21,14 +21,6 @@ export interface TabDefinition {
 
 export const TAB_DEFINITIONS: TabDefinition[] = [
   {
-    id: 'people',
-    get label() {
-      return m.workspace_peopleTile_title();
-    },
-    icon: faUsers,
-    description: '',
-  },
-  {
     id: 'agents',
     get label() {
       return m.workspace_multiSelectSidebar_agentsTab_label();
@@ -37,6 +29,14 @@ export const TAB_DEFINITIONS: TabDefinition[] = [
     get description() {
       return m.workspace_multiSelectSidebar_agentsTab_description();
     },
+  },
+  {
+    id: 'people',
+    get label() {
+      return m.workspace_peopleTile_title();
+    },
+    icon: faUsers,
+    description: '',
   },
   {
     id: 'context',

@@ -142,17 +142,20 @@
           ? m.workspace_multiSelectSidebar_agentsTabUnread_ariaLabel({ label: tab.label })
           : tab.label}
         aria-controls={panelId ? `${panelId}-${tab.id}` : undefined}
-        class={orientation === 'horizontal'
-          ? cn(
-              'relative w-full min-w-0 gap-0 px-0',
-              selected === tab.id
-                ? 'text-foreground'
-                : 'text-muted-foreground dark:text-muted-foreground/70',
-            )
-          : cn(
-              'relative size-9 min-w-0 gap-0 rounded-(--radius-medium) border-0 px-0 focus-visible:ring-2 focus-visible:ring-ring',
-              selected === tab.id && 'bg-selected dark:bg-surface-4',
-            )}
+        class={cn(
+          'relative min-w-0 gap-0 px-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+          orientation === 'horizontal'
+            ? cn(
+                'w-full',
+                selected === tab.id
+                  ? 'text-foreground'
+                  : 'text-muted-foreground dark:text-muted-foreground/70',
+              )
+            : cn(
+                'size-9 rounded-(--radius-medium) border-0',
+                selected === tab.id && 'bg-selected dark:bg-surface-4',
+              ),
+        )}
         data-sidebar-section-tab={tab.id}
         onpointerenter={(event) => {
           if (orientation === 'vertical' && event.pointerType !== 'touch')
