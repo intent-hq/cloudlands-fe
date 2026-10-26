@@ -1608,6 +1608,86 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
       }
     });
 
+    it('makes the next connect-time hello wait longer after a re-hello timed out', async () => {
+      vi.useFakeTimers();
+      const { client, sockets } = makeTimeoutClient();
+      try {
+        client.start();
+        sockets[0].open();
+        await vi.advanceTimersByTimeAsync(1);
+        await answerHello(sockets[0], 'cli-7f3a');
+        const rehello = client.request('client.hello', {});
+        const rehelloSettled = expect(rehello).rejects.toThrow('timed out: client.hello');
+        await vi.advanceTimersByTimeAsync(30_000);
+        await rehelloSettled;
+        // The daemon just failed to answer a hello, so the base 5s bound is skipped.
+        await timeOutHello(sockets, 1, 10_000);
+      } finally {
+        client.dispose();
+      }
+    });
+
+    it('reconnects on a line that parses but is not a JSON-RPC message object', async () => {
+      vi.useFakeTimers();
+      const { client, sockets } = makeTimeoutClient();
+      try {
+        client.start();
+        sockets[0].open();
+        await vi.advanceTimersByTimeAsync(1);
+        await answerHello(sockets[0], 'cli-7f3a');
+        const inFlight = client.request('workspace.list', {});
+        const inFlightSettled = expect(inFlight).rejects.toThrow();
+        sockets[0].receive('null\n');
+        await vi.advanceTimersByTimeAsync(1);
+        await inFlightSettled;
+        expect(sockets[0].destroyed).toBe(true);
+      } finally {
+        client.dispose();
+      }
+    });
+
+    it('stops reconnecting on a burst of corrupted lines, and resumes once the burst is old', async () => {
+      vi.useFakeTimers();
+      const { client, sockets } = makeTimeoutClient();
+      const corrupt = '{"jsonrpc":"2.0","id":1,"result":{"trunc\n';
+      try {
+        client.start();
+        sockets[0].open();
+        await vi.advanceTimersByTimeAsync(1);
+        await answerHello(sockets[0], 'cli-7f3a');
+        // Three corrupted lines in a row each reconnect.
+        for (const index of [0, 1, 2]) {
+          sockets[index].receive(corrupt);
+          await vi.advanceTimersByTimeAsync(1);
+          expect(sockets[index].destroyed).toBe(true);
+          await vi.advanceTimersByTimeAsync(100);
+          sockets[index + 1].open();
+          await vi.advanceTimersByTimeAsync(1);
+          await answerHello(sockets[index + 1], 'cli-7f3a');
+          expect(client.getStatus()).toBe('connected');
+        }
+        // A fourth within the minute is skipped instead of churning the socket again.
+        sockets[3].receive(corrupt);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(sockets[3].destroyed).toBe(false);
+        expect(client.getStatus()).toBe('connected');
+        const served = client.request('workspace.list', {});
+        const frame = JSON.parse(sockets[3].writes.at(-1)!);
+        sockets[3].receive(
+          `${JSON.stringify({ jsonrpc: '2.0', id: frame.id, result: { workspaces: [] } })}\n`,
+        );
+        await expect(served).resolves.toEqual({ workspaces: [] });
+
+        // Once the burst is over a minute old, a corrupted line reconnects again.
+        await vi.advanceTimersByTimeAsync(60_000);
+        sockets[3].receive(corrupt);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(sockets[3].destroyed).toBe(true);
+      } finally {
+        client.dispose();
+      }
+    });
+
     it('keeps the socket when a listener throws while handling a well-formed message', async () => {
       vi.useFakeTimers();
       const { client, sockets } = makeTimeoutClient();
