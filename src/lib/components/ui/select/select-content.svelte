@@ -21,7 +21,7 @@
     class?: string;
     wrapperClass?: string;
     dropUp?: boolean;
-    /** Body portal when true; inline when false; inside a dialog, unset portals into it. */
+    /** Body portal when true; inline when false; unset (and not dropUp) portals into an enclosing dialog, else inline. */
     portal?: boolean;
     children?: Snippet;
   } = $props();
@@ -105,7 +105,7 @@
     child={staticContentChild}
   />
 {:else}
-  {@const dialogTarget = portal === false ? undefined : dialogPortalTarget()}
+  {@const dialogTarget = portal === undefined && !dropUp ? dialogPortalTarget() : undefined}
   <SelectPrimitive.Portal disabled={!usePortal && !dialogTarget} to={dialogTarget}>
     <SelectPrimitive.Content
       strategy={dialogTarget ? 'absolute' : 'fixed'}

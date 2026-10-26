@@ -96,3 +96,17 @@ test('portal={false} keeps a dialog Select list inline in the body', async ({ mo
   await openMode(page);
   await expect(page.locator('[data-slot="dialog-body"] [role="listbox"]')).toHaveCount(1);
 });
+
+// Regression: an explicit body portal (EffortPicker inside ModelPicker in a
+// modal) must stay on the body; re-homing it into a raw Dialog.Content clipped
+// it under the dialog overlay (model-picker-overflow modal case).
+test('portal={true} keeps a dialog Select list on the document body', async ({ mount, page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mount(Harness, { props: { portal: true } });
+
+  await openMode(page);
+  await expect(page.locator('[role="dialog"] [role="listbox"]')).toHaveCount(0);
+  await expect(
+    page.locator('body > [data-bits-floating-content-wrapper] [role="listbox"]'),
+  ).toHaveCount(1);
+});
