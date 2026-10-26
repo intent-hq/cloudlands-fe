@@ -15,7 +15,10 @@
  *
  * Flagged: any `<x>.mouse.wheel(...)` call in a `*.ct.spec.ts` file, whatever the
  * receiver (`page.mouse`, `this.page.mouse`, `host.page().mouse`, a destructured
- * `mouse`). The helper module is
+ * `mouse`), including computed keys (`mouse['wheel']`, ``mouse[`wheel`]``), the
+ * `.call` / `.apply` / `.bind` forms, and names bound earlier in the file to a mouse or
+ * its wheel (`const m = page.mouse`, `const { wheel } = page.mouse`). Aliases are tracked
+ * by name per file, without scope analysis. The helper module is
  * not a spec file, so it may send the wheel itself. A test that must show a wheel does
  * NOT scroll keeps the raw call and disables this rule on that line with a reason.
  */
@@ -30,21 +33,63 @@ const MESSAGE =
   'on the final position. If the test checks that the wheel does NOT scroll, disable this ' +
   'rule on that line with a reason.';
 
-function propertyName(node) {
-  if (node?.type !== 'MemberExpression') return null;
-  if (!node.computed && node.property.type === 'Identifier') return node.property.name;
-  if (node.computed && node.property.type === 'Literal') return node.property.value;
+function keyName(property, computed) {
+  if (!computed && property.type === 'Identifier') return property.name;
+  if (property.type === 'Literal') return property.value;
+  if (property.type === 'TemplateLiteral' && property.expressions.length === 0) {
+    return property.quasis[0].value.cooked;
+  }
   return null;
 }
 
-function isMouseWheel(callee) {
-  let current = callee;
-  if (current?.type === 'ChainExpression') current = current.expression;
-  if (propertyName(current) !== 'wheel') return false;
-  const { object } = current;
-  return (
-    propertyName(object) === 'mouse' || (object.type === 'Identifier' && object.name === 'mouse')
-  );
+function propertyName(node) {
+  if (node?.type !== 'MemberExpression') return null;
+  return keyName(node.property, node.computed);
+}
+
+function unwrapChain(node) {
+  return node?.type === 'ChainExpression' ? node.expression : node;
+}
+
+// `page.mouse`, or a name bound to one (`const m = page.mouse`, `const { mouse } = page`).
+function isMouse(node, mouseNames) {
+  const target = unwrapChain(node);
+  if (target?.type === 'Identifier') return mouseNames.has(target.name);
+  return propertyName(target) === 'mouse';
+}
+
+// `page.mouse.wheel`, or a name bound to it (`const { wheel } = page.mouse`).
+function isWheel(node, names) {
+  const target = unwrapChain(node);
+  if (target?.type === 'Identifier') return names.wheel.has(target.name);
+  return propertyName(target) === 'wheel' && isMouse(target.object, names.mouse);
+}
+
+const INDIRECT_CALLS = new Set(['call', 'apply', 'bind']);
+
+// The wheel call itself, or `wheel.call(...)` / `.apply(...)` / `.bind(...)`.
+function isMouseWheelCall(callee, names) {
+  const target = unwrapChain(callee);
+  if (isWheel(target, names)) return true;
+  return INDIRECT_CALLS.has(propertyName(target)) && isWheel(target.object, names);
+}
+
+// Record names a declaration binds to a mouse or to its wheel method.
+function recordAliases(declarator, names) {
+  const { id, init } = declarator;
+  if (!init) return;
+  if (id.type === 'Identifier') {
+    if (isMouse(init, names.mouse)) names.mouse.add(id.name);
+    else if (isWheel(init, names)) names.wheel.add(id.name);
+    return;
+  }
+  if (id.type !== 'ObjectPattern') return;
+  for (const property of id.properties) {
+    if (property.type !== 'Property' || property.value.type !== 'Identifier') continue;
+    const key = keyName(property.key, property.computed);
+    if (key === 'mouse') names.mouse.add(property.value.name);
+    else if (key === 'wheel' && isMouse(init, names.mouse)) names.wheel.add(property.value.name);
+  }
 }
 
 export default {
@@ -62,9 +107,15 @@ export default {
   create(context) {
     const filename = context.filename ?? context.getFilename();
     if (!filename.endsWith('.ct.spec.ts')) return {};
+    const names = { mouse: new Set(['mouse']), wheel: new Set() };
     return {
+      VariableDeclarator(node) {
+        recordAliases(node, names);
+      },
       CallExpression(node) {
-        if (isMouseWheel(node.callee)) context.report({ node, messageId: 'rawMouseWheel' });
+        if (isMouseWheelCall(node.callee, names)) {
+          context.report({ node, messageId: 'rawMouseWheel' });
+        }
       },
     };
   },

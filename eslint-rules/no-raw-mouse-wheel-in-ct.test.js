@@ -51,6 +51,15 @@ tester.run('no-raw-mouse-wheel-in-ct', rule, {
   await page.wheel(0, 100);`),
     },
     {
+      name: 'other methods on an aliased mouse, and an unrelated wheel name',
+      filename,
+      code: inTest(`
+  const m = page.mouse;
+  await m.move(10, 10);
+  const wheel = getWheel();
+  await wheel(0, 100);`),
+    },
+    {
       name: 'a property read is not a call',
       filename,
       code: inTest(`
@@ -107,6 +116,30 @@ tester.run('no-raw-mouse-wheel-in-ct', rule, {
   await page.mouse['wheel'](0, 100);
   await page.mouse?.wheel(0, 100);`),
       errors: [error(4), error(5)],
+    },
+    {
+      name: 'indirect calls and a template-literal key',
+      filename,
+      code: inTest(`
+  await page.mouse.wheel.call(page.mouse, 0, 100);
+  await page.mouse.wheel.apply(page.mouse, [0, 100]);
+  const later = page.mouse.wheel.bind(page.mouse);
+  await page.mouse[\`wheel\`](0, 100);`),
+      errors: [error(4), error(5), error(6), error(7)],
+    },
+    {
+      name: 'a mouse or wheel saved to another name',
+      filename,
+      code: inTest(`
+  const m = page.mouse;
+  await m.wheel(0, 100);
+  const { wheel } = page.mouse;
+  await wheel(0, 100);
+  const send = page.mouse.wheel;
+  await send(0, 100);
+  const { mouse: pointer } = page;
+  await pointer.wheel(0, 100);`),
+      errors: [error(5), error(7), error(9), error(11)],
     },
   ],
 });
