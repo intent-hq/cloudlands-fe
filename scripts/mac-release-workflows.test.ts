@@ -713,7 +713,7 @@ describe('manual Mac architecture selection', () => {
       // The matrix keeps the size label; runs-on maps it to the burst runner (never
       // self-hosted), and falls back to the row's WarpBuild label if routing failed.
       expect(row.runner).toBe('macos-15-xlarge');
-      expect(row.warp).toBe('warp-macos-15-arm64-12x');
+      expect(row.warp).toBe('warp-macos-15-arm64-6x');
       expect(build['runs-on']).toBe(
         "${{ fromJSON(needs.runner-route.outputs.cloud || '{}')[matrix.runner] || matrix.warp }}",
       );
@@ -763,13 +763,13 @@ describe('manual Mac architecture selection', () => {
       );
       expect(plan.smoke_runner).toBe(row.runner);
       expect(plan.smoke_warp).toBe(row.warp);
-      expect(row.warp).toBe('warp-macos-15-arm64-12x');
+      expect(row.warp).toBe('warp-macos-15-arm64-6x');
       expect(jobs['verify-isolated-macos']['runs-on']).toBe(
         "${{ fromJSON(needs.runner-route.outputs.cloud || '{}')[matrix.runner] || matrix.warp }}",
       );
       expect(jobs['replay-isolated-macos'].needs).toEqual(['runner-route']);
       expect(jobs['replay-isolated-macos']['runs-on']).toBe(
-        "${{ fromJSON(needs.runner-route.outputs.cloud || '{}')['macos-15-xlarge'] || fromJSON('[\"warp-macos-15-arm64-12x\"]') }}",
+        "${{ fromJSON(needs.runner-route.outputs.cloud || '{}')['macos-15-xlarge'] || fromJSON('[\"warp-macos-15-arm64-6x\"]') }}",
       );
       expect(render(String(download.with?.name), context)).toBe(
         render(String(upload.with?.name), { 'matrix.arch': row.arch }),

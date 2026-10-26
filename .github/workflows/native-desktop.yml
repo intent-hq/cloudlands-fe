@@ -26,7 +26,7 @@ jobs:
       matrix:
         include:
           - runner: macos-15-xlarge
-            warp: warp-macos-15-arm64-12x
+            warp: warp-macos-15-arm64-6x
             platform: darwin
           - runner: windows-2025
             warp: windows-2025
