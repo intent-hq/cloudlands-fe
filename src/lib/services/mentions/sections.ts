@@ -10,14 +10,14 @@ export interface MentionSection {
 }
 
 const SECTION_LABELS: Partial<Record<MentionType, () => string>> = {
-  member: m.chat_mentions_section_people,
-  note: m.chat_mentions_section_notes,
-  agent: m.chat_mentions_section_agents,
-  file: m.chat_mentions_section_files,
-  folder: m.chat_mentions_section_folders,
-  script: m.chat_mentions_section_scripts,
-  terminal: m.chat_mentions_section_terminals,
-  specialist: m.chat_mentions_section_specialists,
+  member: m.chat_mentionList_peopleSection_label,
+  note: m.chat_mentionList_notesSection_label,
+  agent: m.chat_mentionList_agentsSection_label,
+  file: m.chat_mentionList_filesSection_label,
+  folder: m.chat_mentionList_foldersSection_label,
+  script: m.chat_mentionList_scriptsSection_label,
+  terminal: m.chat_mentionList_terminalsSection_label,
+  specialist: m.chat_mentionList_specialistsSection_label,
 };
 
 const OTHER_SECTION = 'other';
@@ -29,26 +29,23 @@ function sectionKey(item: MentionCandidate | MentionGroup): string {
 
 /**
  * Split @-menu results into one section per kind, in the order each kind
- * first appears (the search already ranks by kind). Within a section, items
- * stay grouped by their provider label in first-appearance order, so files
- * keep their recent → most relevant → other sub-order under one heading.
+ * first appears (the search already ranks by kind; unlisted kinds share the
+ * same rank slot, so they form one contiguous "Other" section). Items keep
+ * their input order within a section.
  */
 export function buildMentionSections(
   items: readonly (MentionCandidate | MentionGroup)[],
 ): MentionSection[] {
-  const sections = new Map<string, Map<string, (MentionCandidate | MentionGroup)[]>>();
+  const sections = new Map<string, (MentionCandidate | MentionGroup)[]>();
   for (const item of items) {
     const key = sectionKey(item);
-    const buckets = sections.get(key) ?? new Map<string, (MentionCandidate | MentionGroup)[]>();
-    sections.set(key, buckets);
-    const bucketKey = isMentionGroup(item) ? '\u0000group' : `${item.type}:${item.group ?? ''}`;
-    const bucket = buckets.get(bucketKey) ?? [];
-    buckets.set(bucketKey, bucket);
-    bucket.push(item);
+    const section = sections.get(key) ?? [];
+    sections.set(key, section);
+    section.push(item);
   }
-  return Array.from(sections, ([key, buckets]) => ({
+  return Array.from(sections, ([key, sectionItems]) => ({
     key,
-    label: (SECTION_LABELS[key as MentionType] ?? m.chat_mentions_section_other)(),
-    items: Array.from(buckets.values()).flat(),
+    label: (SECTION_LABELS[key as MentionType] ?? m.chat_mentionList_otherSection_label)(),
+    items: sectionItems,
   }));
 }

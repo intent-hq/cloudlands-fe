@@ -170,3 +170,22 @@ test('loading and empty results remain inert and recover to selectable rows', as
   await expect(page.getByTestId('mention-selection')).toHaveText('agent:mention-preview-agent');
   await expect(input).toBeFocused();
 });
+
+test('wrapping back to the first result reveals its section heading', async ({ mount, page }) => {
+  await page.setViewportSize({ width: 420, height: 640 });
+  await mount(MentionResultsPreview);
+  const input = page.getByRole('textbox');
+  const list = page.getByRole('listbox');
+  const heading = page.locator('.mention-section-heading').first();
+  await input.focus();
+  // Wrap to the last result so the list scrolls away from the first heading.
+  await input.press('ArrowUp');
+  await expect.poll(() => list.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await input.press('ArrowDown');
+  await expect
+    .poll(async () => {
+      const [listBox, headingBox] = await Promise.all([list.boundingBox(), heading.boundingBox()]);
+      return headingBox!.y >= listBox!.y - 1;
+    })
+    .toBe(true);
+});

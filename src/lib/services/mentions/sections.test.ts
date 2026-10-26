@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MENTION_KIND_ORDER } from './kind-order';
 import { buildMentionSections } from './sections';
 import type { MentionCandidate, MentionGroup, MentionType } from './types';
 
@@ -40,23 +41,6 @@ describe('buildMentionSections', () => {
     expect(new Set(labels).size).toBe(labels.length);
   });
 
-  it('keeps one Files section with its recent, relevant and other sub-order', () => {
-    const sections = buildMentionSections([
-      candidate('file', 'recent', 'Recent Files'),
-      candidate('file', 'relevant', 'Most Relevant'),
-      candidate('file', 'other', 'Other Files'),
-      candidate('file', 'recent-2', 'Recent Files'),
-    ]);
-
-    expect(sections).toHaveLength(1);
-    expect(sections[0].items.map((i) => (i as MentionCandidate).id)).toEqual([
-      'recent',
-      'recent-2',
-      'relevant',
-      'other',
-    ]);
-  });
-
   it('keeps each kind contiguous even when the input interleaves kinds', () => {
     const sections = buildMentionSections([
       candidate('note', 'n1'),
@@ -86,5 +70,14 @@ describe('buildMentionSections', () => {
     ]);
 
     expect(new Set(sections.map((s) => s.key)).size).toBe(sections.length);
+  });
+});
+
+describe('section coverage of the kind order', () => {
+  it('gives every ranked kind its own section, so none falls into Other', () => {
+    const ranked = MENTION_KIND_ORDER.filter((kind): kind is MentionType => kind !== '*');
+    const sections = buildMentionSections(ranked.map((kind) => candidate(kind, kind)));
+
+    expect(sections.map((s) => s.key)).toEqual(ranked);
   });
 });

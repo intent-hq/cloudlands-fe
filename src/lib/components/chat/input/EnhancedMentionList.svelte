@@ -248,10 +248,13 @@
     const selectedEl = listElement.querySelector('.mention-item.selected');
     if (!selectedEl) return;
     // Reveal a section's heading along with its first result.
-    const section = selectedEl.closest('[role="group"]');
-    const heading = section?.firstElementChild;
-    if (heading && heading.nextElementSibling === selectedEl) {
-      heading.scrollIntoView?.({ block: 'nearest', behavior: 'instant' });
+    const section = showHeadings
+      ? sections.find((candidate) => candidate.items[0] === visualOrderItems[selectedIndex])
+      : undefined;
+    if (section) {
+      document
+        .getElementById(headingId(section))
+        ?.scrollIntoView?.({ block: 'nearest', behavior: 'instant' });
     }
     selectedEl.scrollIntoView?.({ block: 'nearest', behavior: 'instant' });
   }
@@ -293,6 +296,13 @@
   // Flat array in visual (sectioned) order — used for arrow key navigation
   // so that selectedIndex follows the display order, not the original array order.
   const visualOrderItems = $derived(sections.flatMap((section) => section.items));
+  // Headings are not options; pressing one must not move focus from the
+  // editor into the listbox (rows already prevent this themselves).
+  function keepEditorFocusOnHeading(event: Event) {
+    if (event.target instanceof Element && event.target.closest('.mention-section-heading')) {
+      event.preventDefault();
+    }
+  }
   function headingId(section: MentionSection) {
     return `${componentId}-section-${section.key}`;
   }
@@ -409,10 +419,16 @@
           aria-busy={loading}
           onkeydown={handleKeyDown}
           onmousemove={() => (ignoreMouseUntilMove = false)}
+          onpointerdown={keepEditorFocusOnHeading}
+          onmousedown={keepEditorFocusOnHeading}
         >
           {#each sections as section (section.key)}
-            {#if showHeadings}
-              <div class="mention-section" role="group" aria-labelledby={headingId(section)}>
+            <div
+              class="mention-section"
+              role={showHeadings ? 'group' : undefined}
+              aria-labelledby={showHeadings ? headingId(section) : undefined}
+            >
+              {#if showHeadings}
                 <div
                   class="mention-section-heading type-caption px-2 pt-2 pb-1 font-medium text-muted-foreground"
                   id={headingId(section)}
@@ -420,15 +436,11 @@
                 >
                   {section.label}
                 </div>
-                {#each section.items as item (optionId(item))}
-                  {@render mentionOption(item)}
-                {/each}
-              </div>
-            {:else}
+              {/if}
               {#each section.items as item (optionId(item))}
                 {@render mentionOption(item)}
               {/each}
-            {/if}
+            </div>
           {/each}
         </div>
       {:else}

@@ -7834,13 +7834,13 @@
   "desktop_stopReportFailed_description": "Intent가 제어를 중지했지만 에이전트에게 보낼 알림을 저장하지 못했습니다. Intent를 열어 둔 채 다시 연결하여 재시도하세요.",
   "desktop_menu_description": "대상: {computer}. 향후 시작에 적용됩니다. 현재 제어를 종료하려면 중지를 사용하세요.",
   "desktop_primary_active_description": "에이전트가 {computer}을(를) 제어하고 있습니다. 제어를 중지해도 기본 선택은 유지됩니다.",
-  "chat_mentions_section_people": "사용자",
-  "chat_mentions_section_notes": "노트",
-  "chat_mentions_section_agents": "에이전트",
-  "chat_mentions_section_files": "파일",
-  "chat_mentions_section_folders": "폴더",
-  "chat_mentions_section_scripts": "스크립트",
-  "chat_mentions_section_terminals": "터미널",
-  "chat_mentions_section_specialists": "스페셜리스트",
-  "chat_mentions_section_other": "기타"
+  "chat_mentionList_peopleSection_label": "사용자",
+  "chat_mentionList_notesSection_label": "노트",
+  "chat_mentionList_agentsSection_label": "에이전트",
+  "chat_mentionList_filesSection_label": "파일",
+  "chat_mentionList_foldersSection_label": "폴더",
+  "chat_mentionList_scriptsSection_label": "스크립트",
+  "chat_mentionList_terminalsSection_label": "터미널",
+  "chat_mentionList_specialistsSection_label": "스페셜리스트",
+  "chat_mentionList_otherSection_label": "기타"
 }

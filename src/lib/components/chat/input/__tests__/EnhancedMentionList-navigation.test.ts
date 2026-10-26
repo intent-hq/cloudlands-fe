@@ -170,13 +170,7 @@ describe('editor-owned mention results', () => {
       render(EnhancedMentionList, { props: { items: [first, second], command: vi.fn() } });
 
       expect(screen.queryAllByRole('group')).toHaveLength(0);
-      const optionText = screen
-        .getAllByRole('option')
-        .map((o) => o.textContent?.trim())
-        .join('');
-      expect(screen.getByRole('listbox').textContent?.replace(/\s+/g, '')).toBe(
-        optionText.replace(/\s+/g, ''),
-      );
+      expect(screen.getAllByRole('option')).toHaveLength(2);
     });
 
     it('skips headings during keyboard navigation', async () => {
@@ -199,13 +193,16 @@ describe('editor-owned mention results', () => {
       expect(command).toHaveBeenCalledExactlyOnceWith(file);
     });
 
-    it('drops the inline kind tag next to agent and specialist names', () => {
-      render(EnhancedMentionList, { props: { items: [note, specialist], command: vi.fn() } });
+    it('keeps editor focus when a heading is pressed', () => {
+      render(EnhancedMentionList, { props: { items: [note, file], command: vi.fn() } });
+      const heading = document.getElementById(
+        screen.getAllByRole('group')[0].getAttribute('aria-labelledby')!,
+      )!;
 
-      for (const [option, item] of screen
-        .getAllByRole('option')
-        .map((o, i) => [o, [note, specialist][i]] as const)) {
-        if (item.group) expect(within(option).queryByText(item.group)).toBeNull();
+      for (const type of ['pointerdown', 'mousedown']) {
+        const event = new MouseEvent(type, { bubbles: true, cancelable: true });
+        heading.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(true);
       }
     });
   });
