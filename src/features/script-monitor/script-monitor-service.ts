@@ -56,11 +56,20 @@ export function createScriptMonitorConnection() {
   };
 }
 
-/** Each lease reads one visible page. Event journals live only as long as their reads. */
+/**
+ * Each lease reads one visible page. Event journals live only as long as their reads.
+ * `retained` seeds the FIRST registration only (a warm lease reopen), so the
+ * footer keeps the previous rows instead of flashing empty until the fresh page
+ * replaces them. Only rows are retained: no cursor (Load more would race the
+ * first page) and no script definitions (they may have missed events). Rows the
+ * fresh page never confirmed are dropped if that read fails, and reconnects
+ * still start from an authoritative empty list.
+ */
 export function subscribeScriptMonitors(
   workspaceId: string,
   handler: (snapshot: ScriptMonitorSnapshot) => void,
   sharedConnection?: ReturnType<typeof createScriptMonitorConnection>,
+  retained?: Pick<ScriptMonitorSnapshot, 'monitors'>,
 ) {
   const connection = sharedConnection ?? createScriptMonitorConnection();
   let disposed = false;
@@ -71,6 +80,17 @@ export function subscribeScriptMonitors(
   let pageRead: { epoch: number; journal: Map<string, ScriptMonitor | null> } | undefined;
   const retired = new Set<string>();
   const detailReads = new Map<string, { script?: ScriptWithState | null }>();
+  /** Retained rows not yet confirmed by a fresh first page. */
+  let unconfirmed = false;
+  /** Details asked for on a retained row before the lease could read them. */
+  const deferredDetails = new Set<string>();
+  const failFirstRead = () => {
+    snapshot = unconfirmed
+      ? { monitors: [], scripts: [], status: 'failed' }
+      : { ...snapshot, status: 'failed', loadingMore: false };
+    unconfirmed = false;
+    deferredDetails.clear();
+  };
   const emit = () => {
     if (!disposed) handler(snapshot);
   };
@@ -92,6 +112,8 @@ export function subscribeScriptMonitors(
   };
   const disable = () => {
     supported = false;
+    unconfirmed = false;
+    deferredDetails.clear();
     detailReads.clear();
     if (subscriptionId) void backendUnsubscribe(subscriptionId, workspaceId);
     subscriptionId = undefined;
@@ -142,15 +164,20 @@ export function subscribeScriptMonitors(
         status: 'ready',
         loadingMore: false,
       };
+      unconfirmed = false;
       emit();
+      if (!append) {
+        const deferred = [...deferredDetails];
+        deferredDetails.clear();
+        for (const id of deferred) void service.details(id);
+      }
     } catch (error) {
       if (!current(read.epoch)) return;
       if (isMonitorMethodMissing(error)) connection.reject();
       else {
         // A failed extra page keeps the loaded rows usable; Load more stays the retry.
-        snapshot = append
-          ? { ...snapshot, loadingMore: false }
-          : { ...snapshot, status: 'failed', loadingMore: false };
+        if (append) snapshot = { ...snapshot, loadingMore: false };
+        else failFirstRead();
         emit();
       }
     } finally {
@@ -164,7 +191,14 @@ export function subscribeScriptMonitors(
     detailReads.clear();
     if (subscriptionId) void backendUnsubscribe(subscriptionId, workspaceId);
     subscriptionId = undefined;
-    snapshot = { monitors: [], scripts: [], status: 'loading' };
+    unconfirmed = !!retained?.monitors.length;
+    deferredDetails.clear();
+    snapshot = {
+      monitors: unconfirmed ? retained!.monitors : [],
+      scripts: [],
+      status: 'loading',
+    };
+    retained = undefined;
     emit();
     if (connection.isRejected()) {
       disable();
@@ -195,7 +229,7 @@ export function subscribeScriptMonitors(
       if (disposed || version !== epoch) return;
       if (isMonitorMethodMissing(error)) connection.reject();
       else {
-        snapshot = { ...snapshot, status: 'failed' };
+        failFirstRead();
         emit();
       }
     }
@@ -252,8 +286,7 @@ export function subscribeScriptMonitors(
   const offReconnect = connection.listen(disable, () => {
     if (!disposed) void register();
   });
-  void register();
-  return {
+  const service = {
     loadMore: () => readPage(true),
     /**
      * Recover from a failed read: re-read the first page on a healthy subscription,
@@ -265,6 +298,16 @@ export function subscribeScriptMonitors(
       else void register();
     },
     async details(monitorId: string) {
+      if (
+        !supported &&
+        !disposed &&
+        unconfirmed &&
+        snapshot.monitors.some((item) => item.monitorId === monitorId)
+      ) {
+        // A retained row expanded before the lease can read: replay after page one.
+        deferredDetails.add(monitorId);
+        return;
+      }
       if (!supported || disposed || detailReads.has(monitorId)) return;
       const row = snapshot.monitors.find((item) => item.monitorId === monitorId);
       if (!row) return;
@@ -327,10 +370,13 @@ export function subscribeScriptMonitors(
     dispose() {
       disposed = true;
       detailReads.clear();
+      deferredDetails.clear();
       offNotification();
       offReconnect();
       if (!sharedConnection) connection.dispose();
       if (subscriptionId) void backendUnsubscribe(subscriptionId, workspaceId);
     },
   };
+  void register();
+  return service;
 }

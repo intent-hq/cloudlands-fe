@@ -90,6 +90,7 @@ test('queued member editing retains focus on refresh and reorder, and saves on b
   await component.getByRole('button', { name: 'Reorder queue', exact: true }).click();
   await expect(editor).toBeFocused();
   await page.keyboard.type(' after');
+  // eslint-disable-next-line intent/no-unarmed-outside-click-in-ct -- the inline editor saves on blur; it is not a bits-ui layer
   await component.getByRole('button', { name: 'Outside editor', exact: true }).click();
   await expect(editor).toHaveCount(0);
   await expect(component.getByTestId('queued-member-stored')).toHaveText(

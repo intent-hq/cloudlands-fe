@@ -169,6 +169,43 @@ describe('chat search utilities', () => {
     ]);
   });
 
+  it('indexes collapsed standalone reasoning with its own disclosure path (#4336)', () => {
+    const message = assistant('standalone-reasoning', [
+      {
+        type: 'thinking',
+        text: 'Standalone reasoning title\n\nStandalone collapsed probe phrase, probe again.',
+      },
+      { type: 'text', text: 'Visible final probe prose.' },
+    ]);
+
+    expect(findChatSearchMatches([message], 'probe', new Map())).toEqual([
+      {
+        messageId: 'standalone-reasoning',
+        matchIndexInMessage: 0,
+        occurrenceInBlock: 0,
+        turnKey: 'standalone-reasoning',
+        blockPath: 'b:0',
+        disclosurePath: ['thinking:b:0'],
+      },
+      {
+        messageId: 'standalone-reasoning',
+        matchIndexInMessage: 1,
+        occurrenceInBlock: 1,
+        turnKey: 'standalone-reasoning',
+        blockPath: 'b:0',
+        disclosurePath: ['thinking:b:0'],
+      },
+      {
+        messageId: 'standalone-reasoning',
+        matchIndexInMessage: 2,
+        occurrenceInBlock: 0,
+        turnKey: 'standalone-reasoning',
+        blockPath: 'b:1',
+        disclosurePath: [],
+      },
+    ]);
+  });
+
   it('does not index exact delivery notes on user messages', () => {
     const note =
       '[SYSTEM NOTE] This message was queued at 2026-01-01T00:00:00Z and waited 8s before delivery.';

@@ -91,6 +91,10 @@ function buildMessageSearchBlocks(
       addText(getStandaloneToolResultPresentation(block).searchableText, path, []);
       return;
     }
+    if (block.type === 'thinking') {
+      addText(renderedBlockText(block), path, [`thinking:${path}`]);
+      return;
+    }
     if (block.type !== 'content_group') return;
     if (block.isStreaming) {
       block.children.forEach((child, childIndex) => {

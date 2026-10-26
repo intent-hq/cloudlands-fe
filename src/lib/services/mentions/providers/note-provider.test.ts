@@ -141,8 +141,10 @@ describe('note mention search', () => {
 
     const instant = system.searchSync('me', { workspaceId: 'ws-1' });
 
-    expect(instant.map((r) => r.id).indexOf('readme')).toBeLessThan(
-      instant.map((r) => r.id).indexOf('transcript'),
-    );
+    // Notes rank before files by kind now, so assert the leaked score directly
+    // rather than through its effect on note-versus-file order.
+    const cached = instant.find((r) => r.id === 'transcript');
+    expect(cached).toBeDefined();
+    expect(cached?.score).toBeUndefined();
   });
 });

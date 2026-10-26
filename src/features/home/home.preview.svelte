@@ -23,7 +23,10 @@
         setPullRequests: (id: string, pulls: PullRequestInfo[], total?: number) => void;
         setPullRequest: (id: string, pullRequest: PullRequestInfo) => void;
         setStatus: (id: string, status: WorkspaceDisplayStatus) => void;
-        setFlags: (id: string, flags: { waiting?: boolean; scriptsRunning?: boolean }) => void;
+        setFlags: (
+          id: string,
+          flags: { waiting?: boolean; scriptsRunning?: boolean; backgroundTasksRunning?: boolean },
+        ) => void;
         roundTripSettings: () => void;
       };
       __homePrStatusPreview?: { setWaiting: (waiting?: boolean) => void };

@@ -31,20 +31,19 @@
       group: 'Agents',
     },
     {
-      id: 'specialist-developer',
-      type: 'specialist',
-      label: 'Developer',
-      subtitle: 'Plans and implements development tasks with focused verification.',
-      uri: 'devspace://specialist/developer',
-      group: 'Specialists',
-      meta: { promptToken: 'specialist/developer' },
-    },
-    {
       id: 'file-developer-guide',
       type: 'file',
       label: 'DEVELOPER_GUIDE.md',
       subtitle: 'packages/application/src/features/developer/documentation/DEVELOPER_GUIDE.md',
       uri: 'file://packages/application/src/features/developer/documentation/DEVELOPER_GUIDE.md',
+      group: 'Files',
+    },
+    {
+      id: 'file-long',
+      type: 'file',
+      label: 'developer-preview-component-with-a-very-long-unbroken-filename.svelte',
+      subtitle: 'src/features/developer/components/preview',
+      uri: 'file://src/features/developer/components/preview/long.svelte',
       group: 'Files',
     },
     {
@@ -56,12 +55,13 @@
       group: 'Scripts',
     },
     {
-      id: 'file-long',
-      type: 'file',
-      label: 'developer-preview-component-with-a-very-long-unbroken-filename.svelte',
-      subtitle: 'src/features/developer/components/preview',
-      uri: 'file://src/features/developer/components/preview/long.svelte',
-      group: 'Files',
+      id: 'specialist-developer',
+      type: 'specialist',
+      label: 'Developer',
+      subtitle: 'Plans and implements development tasks with focused verification.',
+      uri: 'devspace://specialist/developer',
+      group: 'Specialists',
+      meta: { promptToken: 'specialist/developer' },
     },
   ];
 </script>
@@ -82,7 +82,7 @@
   const source = $derived(
     scenario === 'many'
       ? Array.from({ length: 24 }, (_, index) => ({
-          ...candidates[2],
+          ...candidates.find((candidate) => candidate.id === 'file-developer-guide')!,
           id: `file-${index}`,
           label: `developer-module-${index}.ts`,
         }))

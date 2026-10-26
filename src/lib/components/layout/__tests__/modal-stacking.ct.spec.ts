@@ -1,5 +1,6 @@
 // protocol-version-ok-file: intentionally mismatched fixture versions exercise advisory UI.
 import { expect, test } from '../../../../test/ct-test';
+import { expectDismissibleLayerArmed } from '../../../../test/dismissible-layer';
 import type { Locator, Page, TestInfo } from '@playwright/experimental-ct-svelte';
 import type { ConnectionProtocolMismatchEvent } from '$shared/types/connections';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -124,6 +125,9 @@ for (const updateKind of ['quit', 'release-notes'] as const) {
       await reopenTop();
       const coveredBox = await dismiss(bottom).boundingBox();
       if (!coveredBox) throw new Error('Covered action has no geometry');
+      // Until the top dialog registers its layer, the bottom dialog is the topmost
+      // layer and treats this pointer as outside itself.
+      await expectDismissibleLayerArmed(top);
       await page.mouse.click(
         coveredBox.x + coveredBox.width / 2,
         coveredBox.y + coveredBox.height / 2,
@@ -138,6 +142,7 @@ for (const updateKind of ['quit', 'release-notes'] as const) {
       // An exposed covered action may hit the top backdrop and dismiss only the top.
       // Reopen to verify a background pointer cannot act through either layer.
       await reopenTop();
+      await expectDismissibleLayerArmed(top);
       await page.mouse.click(40, 40);
       await expect(bottom).toBeVisible();
       await expect(actions).toHaveAttribute('data-background', '0');
@@ -192,8 +197,10 @@ test('standalone protocol notice supports native dismissal and open-local callba
   for (const [index, action] of ['Continue anyway', 'Close', 'backdrop'].entries()) {
     const notice = await mount(ProtocolMismatchModal, { props });
     await ownsFocus(page.getByRole('dialog'));
-    if (action === 'backdrop') await page.mouse.click(40, 40);
-    else await page.getByRole('button', { name: action, exact: true }).click();
+    if (action === 'backdrop') {
+      await expectDismissibleLayerArmed(page.getByRole('dialog'));
+      await page.mouse.click(40, 40);
+    } else await page.getByRole('button', { name: action, exact: true }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await page.keyboard.press('Escape');
     await page.mouse.click(40, 40);

@@ -89,13 +89,17 @@ async function mountControls(
   zoom: number,
   withAssistant = false,
 ) {
-  await prepareRootHarnessModules(page, baseUrl, [
-    '/@id/svelte',
-    '/test/fixtures/TitlebarWorkspaceControlsHarness.svelte',
-    '/src/store/renderer/store.ts',
-    '/src/store/renderer/slices/user-preferences/sagas/zoom-ipc-saga.ts',
-  ]);
-  await page.goto(baseUrl + 'test/fixtures/titlebar-controls.html');
+  await prepareRootHarnessModules(
+    page,
+    baseUrl,
+    [
+      '/@id/svelte',
+      '/test/fixtures/TitlebarWorkspaceControlsHarness.svelte',
+      '/src/store/renderer/store.ts',
+      '/src/store/renderer/slices/user-preferences/sagas/zoom-ipc-saga.ts',
+    ],
+    { documentPath: 'test/fixtures/titlebar-controls.html' },
+  );
   await page.addStyleTag({ url: baseUrl + 'src/app.css' });
   await page.evaluate(
     async ({ theme, zoom, withAssistant }) => {

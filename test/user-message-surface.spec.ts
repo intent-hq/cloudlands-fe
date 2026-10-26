@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import type { ViteDevServer } from 'vite';
 import { createServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
+import { prepareRootHarnessModules } from './root-harness-import';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -34,7 +35,10 @@ async function mountSurface(
   const zoom = options.zoom ?? 1;
   await page.setViewportSize(options.viewport);
   await page.emulateMedia({ colorScheme: options.theme });
-  await page.goto(`${baseUrl}src/app.html`);
+  await prepareRootHarnessModules(page, baseUrl, [
+    '/@id/svelte',
+    '/test/fixtures/UserMessageSurfaceHost.svelte',
+  ]);
   await page.addStyleTag({ url: `${baseUrl}src/app.css` });
   await page.evaluate(async ({ message, theme, transcriptWidth, zoom: scale }) => {
     Object.assign(globalThis, { process: { env: { NODE_ENV: 'test' } } });

@@ -266,9 +266,26 @@ test('Home activity groups move script-running and waiting workspaces live', asy
     row('Running', 'idle').getByRole('img', { name: /^Running\. A command script/ }),
   ).toBeVisible();
 
+  // An agent's background shell (no turn, no script) also counts as Running.
   await page.evaluate(() =>
     window.__homeWorkspacePreview!.setFlags('home-status-idle', {
       scriptsRunning: false,
+      backgroundTasksRunning: true,
+    }),
+  );
+  await expect(row('Running', 'idle')).toHaveCount(1);
+  await expect(
+    row('Running', 'idle').getByRole('img', { name: /^Running\. An agent's background task/ }),
+  ).toBeVisible();
+  await page.mouse.move(0, 0);
+  await testInfo.attach('background-task-running', {
+    body: await page.screenshot({ path: testInfo.outputPath('background-task-running.png') }),
+    contentType: 'image/png',
+  });
+
+  await page.evaluate(() =>
+    window.__homeWorkspacePreview!.setFlags('home-status-idle', {
+      backgroundTasksRunning: false,
       waiting: true,
     }),
   );

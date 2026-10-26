@@ -1,4 +1,5 @@
 import { expect, test } from '../../../test/ct-test';
+import { expectDismissibleLayerArmed } from '../../../test/dismissible-layer';
 import Harness from './InvitationDialogHarness.svelte';
 
 for (const kind of ['notice', 'consent', 'sign-in'] as const) {
@@ -26,6 +27,7 @@ for (const kind of ['notice', 'consent', 'sign-in'] as const) {
     await mount(Harness, { props: { kind } });
     await page.getByRole('button', { name: 'Open invitation' }).click();
     await expect(page.getByRole('alertdialog')).toBeVisible();
+    await expectDismissibleLayerArmed(page.getByRole('alertdialog'));
     await page.mouse.click(1, 1);
     await expect(page.getByRole('alertdialog')).toHaveCount(0);
     await expect(page.getByLabel('Responses')).toHaveText(

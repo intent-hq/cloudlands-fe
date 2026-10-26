@@ -620,13 +620,43 @@ jobs:
           rm -f "$RUNNER_TEMP/certificate.p12"
           rm -f "$RUNNER_TEMP/keychain-helper.provisionprofile"
 
+  # A signed Windows request needs every Azure Artifact Signing setting. Check them on
+  # a small Linux runner before the Windows runner is allocated: run 40143109068 spent
+  # ~11 min building the sidecar before packaging rejected the blank endpoint. The
+  # secret's value never enters this job, only whether it is set. sign=false skips the
+  # check and passes, so unsigned Windows builds proceed as before.
+  windows-signing-preflight:
+    if: ${{ !inputs.isolated_replay && (inputs.build_windows && !inputs.isolated_test) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Checkout dispatched ref
+        if: ${{ inputs.sign }}
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts
+
+      - name: Require Azure signing settings
+        if: ${{ inputs.sign }}
+        env:
+          INTENT_WINDOWS_AZURE_ENDPOINT: ${{ vars.INTENT_WINDOWS_AZURE_ENDPOINT }}
+          INTENT_WINDOWS_AZURE_ACCOUNT_NAME: ${{ vars.INTENT_WINDOWS_AZURE_ACCOUNT_NAME }}
+          INTENT_WINDOWS_AZURE_CERTIFICATE_PROFILE_NAME: ${{ vars.INTENT_WINDOWS_AZURE_CERTIFICATE_PROFILE_NAME }}
+          INTENT_WINDOWS_PUBLISHER_NAME: ${{ vars.INTENT_WINDOWS_PUBLISHER_NAME }}
+          INTENT_WINDOWS_PUBLISHER_SUBJECT: ${{ vars.INTENT_WINDOWS_PUBLISHER_SUBJECT }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET_PRESENT: ${{ secrets.AZURE_CLIENT_SECRET != '' }}
+        run: node scripts/windows-signing-preflight.cjs
+
   # Manual Windows builds use the shared Azure configuration and artifact verifier.
   # The Windows leg is opt-in and respects sign; release-alpha remains unsigned.
   # Native install/update acceptance and production enablement remain separate.
   build-windows:
     # A failed route job must not block this job: it runs on its fallback label.
-    if: ${{ !inputs.isolated_replay && (!cancelled() && inputs.build_windows && !inputs.isolated_test) }}
-    needs: runner-route
+    # A failed signing preflight must: it means the signed build cannot succeed.
+    if: ${{ !inputs.isolated_replay && (!cancelled() && inputs.build_windows && !inputs.isolated_test && needs.windows-signing-preflight.result == 'success') }}
+    needs: [runner-route, windows-signing-preflight]
     # gh-windows-8x: WarpBuild warp-windows-2022-x64-8x (8 vCPU / 32 GB; the
     # build used about a third of 16 CPUs and 12.4 GB at most), on the Windows
     # Server 2022 image. Server 2022 (not 2025) still matters: the windows-2025
