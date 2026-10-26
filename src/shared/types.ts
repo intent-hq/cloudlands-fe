@@ -392,6 +392,12 @@ export interface Workspace {
    *  older daemons read as no running scripts. Live via
    *  `workspace:scriptsRunning-changed`. */
   scriptsRunning?: boolean;
+  /** BE-derived orthogonal background-task flag (PROTOCOL §5.1): true while
+   *  an agent of the workspace has a provider background task (§5.5b, e.g. a
+   *  backgrounded shell command) still running. Presence-detected — omitted
+   *  when false, so older daemons read as none. Live via
+   *  `workspace:backgroundTasksRunning-changed`. */
+  backgroundTasksRunning?: boolean;
   /** Membership summary (PROTOCOL §5.1, intent-hq/intentd#1868). `myRole` is
    *  relative to the caller and absent for a non-member; `memberCount` counts
    *  accepted members; `openInviteCount` counts unredeemed invites. All absent

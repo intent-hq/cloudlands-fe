@@ -67,14 +67,16 @@ export type HomeTriageInput = Pick<
   Workspace,
   'displayStatus' | 'activity' | 'attention' | 'attentionReminder'
 > &
-  Partial<Pick<Workspace, 'waiting' | 'scriptsRunning'>>;
+  Partial<Pick<Workspace, 'waiting' | 'scriptsRunning' | 'backgroundTasksRunning'>>;
 
-/** An agent turn or a command-mode script run is in flight. */
+/** An agent turn, a command-mode script run, or an agent's background task
+ *  (e.g. a backgrounded shell) is in flight. */
 function isHomeRunning(workspace: HomeTriageInput): boolean {
   return (
     workspace.activity === 'agent_running' ||
     workspace.displayStatus === 'in_progress' ||
-    workspace.scriptsRunning === true
+    workspace.scriptsRunning === true ||
+    workspace.backgroundTasksRunning === true
   );
 }
 

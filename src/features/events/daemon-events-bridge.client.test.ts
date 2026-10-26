@@ -11101,6 +11101,100 @@ describe('daemonEventsBridge (workspace:scriptsRunning-changed → workspace sli
   });
 });
 
+describe('daemonEventsBridge (workspace:backgroundTasksRunning-changed → workspace slice)', () => {
+  const WS_BACKGROUND = 'ws-background-tasks-running-1';
+
+  beforeAll(() => appStore.init());
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  async function seedWorkspace(): Promise<void> {
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+    const { WorkspaceStatus } = await import('$shared/types');
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS_BACKGROUND,
+        title: 'Background ws',
+        branch: 'main',
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      } as never),
+    );
+  }
+
+  async function readWorkspace(): Promise<{
+    backgroundTasksRunning?: boolean;
+    scriptsRunning?: boolean;
+  }> {
+    const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
+    const state = appStore.state as { workspace: { workspaces: unknown } };
+    return (getItem(state.workspace.workspaces as never, WS_BACKGROUND) ?? {}) as never;
+  }
+
+  function notification(backgroundTasksRunning: unknown, envelopeWorkspaceId?: string) {
+    return {
+      method: 'events.event',
+      params: {
+        event: {
+          id: `evt-background-${String(backgroundTasksRunning)}-${envelopeWorkspaceId ?? 'none'}`,
+          ...(envelopeWorkspaceId ? { workspaceId: envelopeWorkspaceId } : {}),
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:backgroundTasksRunning-changed',
+          actor: { type: 'system' },
+          data: { workspaceId: WS_BACKGROUND, backgroundTasksRunning },
+        },
+      },
+    };
+  }
+
+  it('subscribes to workspace:backgroundTasksRunning-changed in the bridge firehose filter', () => {
+    expect(DAEMON_EVENTS_SUBSCRIBE_TYPES).toContain('workspace:backgroundTasksRunning-changed');
+  });
+
+  it('merges backgroundTasksRunning transitions without touching scriptsRunning', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification(true, WS_BACKGROUND));
+    expect((await readWorkspace()).backgroundTasksRunning).toBe(true);
+    expect((await readWorkspace()).scriptsRunning).toBeUndefined();
+
+    handler(notification(false, WS_BACKGROUND));
+    expect((await readWorkspace()).backgroundTasksRunning).toBe(false);
+  });
+
+  it('ignores a non-boolean flag', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification(true, WS_BACKGROUND));
+    handler(notification('yes', WS_BACKGROUND));
+    expect((await readWorkspace()).backgroundTasksRunning).toBe(true);
+  });
+
+  it('applies the self-sufficient payload without an envelope workspaceId', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification(true));
+    expect((await readWorkspace()).backgroundTasksRunning).toBe(true);
+  });
+});
+
 // A workspace:attention-changed / waiting-changed / displayStatus-changed
 // delta targeting a workspace this window has not hydrated yet used to be
 // silently dropped (the bulkUpdateWorkspaceEntities reducer is a no-op for

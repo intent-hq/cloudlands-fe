@@ -102,6 +102,28 @@ describe('Home triage grouping', () => {
     expect(getHomeTriageGroup(workspace({ scriptsRunning: false }))).toBe('idle');
   });
 
+  it('puts agent background tasks in Running without outranking Needs you', () => {
+    for (const displayStatus of ['idle', 'complete', 'pr_merged', 'pr_open'] as const) {
+      const background = workspace({ displayStatus, backgroundTasksRunning: true });
+      expect(getHomeTriageGroup(background)).toBe('running');
+      expect(matchesHomeFilter(background, 'running')).toBe(true);
+      expect(matchesHomeFilter(background, 'waiting')).toBe(false);
+    }
+    expect(getHomeTriageGroup(workspace({ backgroundTasksRunning: true, waiting: true }))).toBe(
+      'running',
+    );
+    expect(
+      getHomeTriageGroup(
+        workspace({ displayStatus: 'needs_attention', backgroundTasksRunning: true }),
+      ),
+    ).toBe('needs-you');
+    expect(
+      getHomeTriageGroup(workspace({ displayStatus: 'blocked', backgroundTasksRunning: true })),
+    ).toBe('blocked');
+    // Older daemons omit the flag; false and absent both read as not running.
+    expect(getHomeTriageGroup(workspace({ backgroundTasksRunning: false }))).toBe('idle');
+  });
+
   it('groups waiting workspaces below Running and above Done & idle', () => {
     for (const displayStatus of [
       'idle',

@@ -1334,6 +1334,7 @@ it('never allocates ordinary build or smoke jobs for a proof-only replay', () =>
     for (const name of [
       'select-macos',
       'build-macos',
+      'windows-signing-preflight',
       'build-windows',
       'build-linux',
       'smoke-inputs',

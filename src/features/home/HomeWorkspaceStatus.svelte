@@ -60,6 +60,8 @@
         return m.home_status_running();
       case 'scripts_running':
         return m.home_status_scripts_running();
+      case 'background_tasks_running':
+        return m.home_status_background_tasks_running();
       case 'merged':
         return m.home_status_merged();
       case 'complete':

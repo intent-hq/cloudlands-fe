@@ -287,14 +287,14 @@
     // Defensive check: ensure items is an array
     const itemList = Array.isArray(items) ? items : [];
     for (const item of itemList) {
-      if (!isMentionGroup(item) && item.group) {
-        const group = grouped.get(item.group) || [];
+      if (!isMentionGroup(item)) {
+        // Bucket by kind and label: a bucket spanning kinds (such as one shared
+        // bucket for every unlabeled kind) would pull later kinds up to the
+        // first one's position, breaking the search's kind order.
+        const key = `${item.type}:${item.group ?? ''}`;
+        const group = grouped.get(key) || [];
         group.push(item);
-        grouped.set(item.group, group);
-      } else if (!isMentionGroup(item)) {
-        const group = grouped.get('Other') || [];
-        group.push(item);
-        grouped.set('Other', group);
+        grouped.set(key, group);
       } else {
         // It's a group itself
         const group = grouped.get('Groups') || [];
