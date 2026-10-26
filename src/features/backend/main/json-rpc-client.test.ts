@@ -1423,9 +1423,9 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
         await vi.advanceTimersByTimeAsync(5_000);
         // Rejected at the handshake bound, not after the 30s request timeout.
         await queuedSettled;
-        expect(
-          sockets[0].writes.map((frame) => JSON.parse(frame).method as string),
-        ).not.toContain('workspace.list');
+        expect(sockets[0].writes.map((frame) => JSON.parse(frame).method as string)).not.toContain(
+          'workspace.list',
+        );
 
         await vi.advanceTimersByTimeAsync(100);
         sockets[1].open();
