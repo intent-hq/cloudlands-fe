@@ -459,6 +459,80 @@ describe('presenceSaga lifecycle', () => {
       ]);
     });
 
+    describe('mixed owner/collaborator/manager membership (intent-hq/intent#7736)', () => {
+      const manager: WorkspaceMember = {
+        ...away,
+        principalId: 'manager',
+        login: 'manager',
+        role: 'manager',
+      };
+      const peopleIds = () =>
+        selectWorkspacePresencePeople.select(store.state, 'ws-1').map((p) => p.principalId);
+
+      it('hydrates every accepted member, manager included, on a fresh read', async () => {
+        mocks.request.mockImplementation(async (method: string, params: unknown) => {
+          const { workspaceId } = params as { workspaceId: string };
+          if (method === 'principal.me') return { id: 'me' };
+          if (method === 'presence.snapshot') return snapshotOf(workspaceId);
+          if (method === 'workspace.members.list')
+            return { members: [owner, other, manager, away] };
+          throw new Error(`unexpected request ${method}`);
+        });
+        listWorkspaces({ id: WorkspaceId('ws-1'), memberCount: 4 });
+        start();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(getItems(store.state.presence.members['ws-1']).map((m) => m.principalId)).toEqual([
+          'me',
+          'other',
+          'manager',
+          'away',
+        ]);
+        expect(peopleIds()).toEqual(['other', 'manager', 'away']);
+      });
+
+      it('refreshes an existing cache when the new read adds a manager row', async () => {
+        const wire = deferRequests();
+        listWorkspaces({ id: WorkspaceId('ws-1'), memberCount: 2 });
+        start();
+        await vi.advanceTimersByTimeAsync(0);
+        admit();
+        await vi.advanceTimersByTimeAsync(0);
+        wire.settle('workspace.members.list:ws-1', 0, { members: [owner, other] });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(getItems(store.state.presence.members['ws-1']).map((m) => m.principalId)).toEqual([
+          'me',
+          'other',
+        ]);
+
+        listWorkspaces({ id: WorkspaceId('ws-1'), memberCount: 3 });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(wire.count('workspace.members.list:ws-1')).toBe(2);
+        wire.settle('workspace.members.list:ws-1', 1, { members: [owner, other, manager] });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(getItems(store.state.presence.members['ws-1']).map((m) => m.principalId)).toEqual([
+          'me',
+          'other',
+          'manager',
+        ]);
+      });
+
+      it('still rejects a response carrying an unknown role', async () => {
+        mocks.request.mockImplementation(async (method: string, params: unknown) => {
+          const { workspaceId } = params as { workspaceId: string };
+          if (method === 'principal.me') return { id: 'me' };
+          if (method === 'presence.snapshot') return snapshotOf(workspaceId);
+          if (method === 'workspace.members.list')
+            return { members: [owner, other, { ...manager, role: 'admin' }] };
+          throw new Error(`unexpected request ${method}`);
+        });
+        listWorkspaces({ id: WorkspaceId('ws-1'), memberCount: 3 });
+        start();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(calls('workspace.members.list')).toEqual([{ workspaceId: 'ws-1' }]);
+        expect(store.state.presence.members['ws-1']).toBeUndefined();
+      });
+    });
+
     it('keeps the newest of two overlapping membership reads and drops one overtaken by a backend switch', async () => {
       const wire = deferRequests();
       listWorkspaces({ id: WorkspaceId('ws-1'), memberCount: 2 });

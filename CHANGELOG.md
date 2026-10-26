@@ -4,6 +4,33 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.235.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.235.0...v2.235.1) (2026-10-25)
+
+
+### 🐛 Bug Fixes
+
+* **presence:** accept manager rows in workspace membership reads ([#3690](https://github.com/intent-hq/cloudlands-fe/issues/3690)) ([8a002e0](https://github.com/intent-hq/cloudlands-fe/commit/8a002e0934c3fa2e9f1cafcf8b1d5538ba726e84))
+
+## [2.235.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.234.1...v2.235.0) (2026-10-25)
+
+
+### 🚀 Features
+
+* add consented desktop control on macOS and Windows ([#3102](https://github.com/intent-hq/cloudlands-fe/issues/3102)) ([a364293](https://github.com/intent-hq/cloudlands-fe/commit/a364293df7bed63f6231726f6f8de0a8f8ddd566))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.46 ([#3707](https://github.com/intent-hq/cloudlands-fe/issues/3707)) ([314fc6f](https://github.com/intent-hq/cloudlands-fe/commit/314fc6fa4655a6f98944e466de5de66cae5782ca))
+* bump intentd sidecar to v0.11.47 ([#3712](https://github.com/intent-hq/cloudlands-fe/issues/3712)) ([6d47c2f](https://github.com/intent-hq/cloudlands-fe/commit/6d47c2f6cd10089cfd6fa9b85cc0e95c636e42f0))
+* **changes:** keep line-staging toolbar below the sticky file header ([#5700](https://github.com/intent-hq/cloudlands-fe/issues/5700)) ([#3705](https://github.com/intent-hq/cloudlands-fe/issues/3705)) ([9ae383e](https://github.com/intent-hq/cloudlands-fe/commit/9ae383eaf213a0cbd1a1b0e10c96974ec0fbc900))
+* **chat:** keep Enhance prompt results when the editor locks ([#5758](https://github.com/intent-hq/cloudlands-fe/issues/5758)) ([#3695](https://github.com/intent-hq/cloudlands-fe/issues/3695)) ([5140978](https://github.com/intent-hq/cloudlands-fe/commit/5140978ab19b728e59e7de344814f2e4d3e7c4b3))
+* **chat:** scope Alt+Enter resend to the focused chat ([#3691](https://github.com/intent-hq/cloudlands-fe/issues/3691)) ([e980cf7](https://github.com/intent-hq/cloudlands-fe/commit/e980cf76e711d2598b1517fa39d319e471f79c0b))
+* **mcp:** keep the server list visible when a change fails to save ([#3699](https://github.com/intent-hq/cloudlands-fe/issues/3699)) ([30f0523](https://github.com/intent-hq/cloudlands-fe/commit/30f052370c65dfa6cb73d2367d048273be3aeae3))
+* revert note tab title and skip Undo toast when a rename save fails ([#3710](https://github.com/intent-hq/cloudlands-fe/issues/3710)) ([50b4cca](https://github.com/intent-hq/cloudlands-fe/commit/50b4cca19b4ce9c20f1b71ecc3eeab0fccfb3644))
+* **sidebar:** size the status image button to its screenshot ([#3698](https://github.com/intent-hq/cloudlands-fe/issues/3698)) ([8b7c65f](https://github.com/intent-hq/cloudlands-fe/commit/8b7c65f03a9516eebbd7302054a740b5a9d1453d))
+* **stats:** resolve card node for PNG export via stable slot ([#5584](https://github.com/intent-hq/cloudlands-fe/issues/5584)) ([#3697](https://github.com/intent-hq/cloudlands-fe/issues/3697)) ([d4bc5ae](https://github.com/intent-hq/cloudlands-fe/commit/d4bc5ae849027cf387ca8ee88332d06d3c3b8195))
+
 ## [2.234.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.234.0...v2.234.1) (2026-10-25)
 
 
