@@ -3086,6 +3086,7 @@
   "layout_daemonStatus_unknown_label": "未知",
   "layout_daemonStatus_unslothFallbackModel_label": "託管的 Unsloth 伺服器",
   "layout_daemonStatus_unslothServer_header": "Unsloth 伺服器",
+  "layout_daemonStatus_updateFailedGeneric_toast": "後端無法啟動更新。",
   "layout_daemonStatus_updateFailed_toast": "後端無法啟動更新：{message}",
   "layout_daemonStatus_updateNotConnected_toast": "未連線到此後端 — 請先連線再要求更新。",
   "layout_daemonStatus_updateRequestError_toast": "無法傳送更新請求。請重試。",
