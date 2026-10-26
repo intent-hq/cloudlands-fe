@@ -654,17 +654,22 @@ test('pool limits come from Actions variables with the old values as defaults', 
   assert.doesNotMatch(workflow, /THRESHOLD: '\d+'/);
   // An unset variable reaches the script empty only if the expression is dropped; the script defaults match.
   const unset = await route({
-    env: { THRESHOLD: '', XL_THRESHOLD: '' },
-    runners: [...todaysFleet(), cacheSlot(), xlSlot()],
+    env: { THRESHOLD: '', XL_THRESHOLD: '', BIGMEM_THRESHOLD: '' },
+    runners: [...todaysFleet(), cacheSlot(), bigSlot(), xlSlot()],
   });
   assert.ok(
     unset.messages.some((m) =>
-      m.includes('linux routing: burst=false (queue depth=0 threshold=2 online=3 free=2)'),
+      m.includes('linux routing: burst=false (queue depth=0 threshold=2 online=4 free=2)'),
     ),
   );
   assert.ok(
     unset.messages.some((m) =>
       m.includes('xl routing: burst=true (queue depth=0 threshold=0 online=1 free=0)'),
+    ),
+  );
+  assert.ok(
+    unset.messages.some((m) =>
+      m.includes('bigmem routing: burst=true (queue depth=0 threshold=0 online=1 idle=1 free=0)'),
     ),
   );
   // Raising the variables alone grows the pools: 14 heavy and 2 xl slots.
@@ -760,14 +765,15 @@ test('a free bigmem slot takes 16-core overflow and 8-core jobs keep every heavy
   assert.ok(
     r.messages.some((m) =>
       m.includes(
-        'bigmem routing: burst=false (queue depth=0 threshold=2 online=2 free=2 granted=1)',
+        'bigmem routing: burst=false (queue depth=0 threshold=2 online=2 idle=2 free=2 granted=1)',
       ),
     ),
   );
+  // The heavy count includes the bigmem grant.
   assert.ok(
     r.messages.some((m) =>
       m.includes(
-        'linux routing: burst=false (queue depth=0 threshold=4 online=4 free=4 granted=1)',
+        'linux routing: burst=false (queue depth=0 threshold=4 online=4 free=4 granted=2)',
       ),
     ),
   );
@@ -797,7 +803,7 @@ test('a bigmem grant also takes a heavy slot, and running bigmem jobs count as h
   const busy = await route({ env: BIG_ON, runners, jobs: [xlJob(3), bigJob(4)] });
   assert.ok(
     busy.messages.some((m) =>
-      m.includes('bigmem routing: burst=false (queue depth=1 threshold=2 online=2 free=1)'),
+      m.includes('bigmem routing: burst=false (queue depth=1 threshold=2 online=2 idle=2 free=1)'),
     ),
   );
   assert.ok(
@@ -814,6 +820,72 @@ test('a bigmem grant also takes a heavy slot, and running bigmem jobs count as h
   assert.deepEqual(full.runners['gh-linux-16x'], WARP['gh-linux-16x']);
   assert.deepEqual(full.runners['gh-linux-8x'], WARP['gh-linux-8x']);
 });
+test('8-core jobs on bigmem runners leave no bigmem slot, even though they never ask for the label', async () => {
+  // Two plain heavy jobs run on both bigmem runners; four small heavy slots are idle.
+  const runners = [
+    bigSlot(true),
+    bigSlot(true),
+    cacheSlot(),
+    cacheSlot(),
+    cacheSlot(),
+    cacheSlot(),
+    xlSlot(),
+  ];
+  const env = { ...BIG_ON, THRESHOLD: '6' };
+  const r = await route({
+    env: slotEnv([COV, { key: 'unit', label: 'gh-linux-8x' }], env),
+    runners,
+    jobs: [xlJob(3), heavyJob(4), heavyJob(5)],
+  });
+  assert.deepEqual(r.slots, { coverage: WARP['gh-linux-16x'], unit: CACHE });
+  assert.ok(
+    r.messages.some((m) =>
+      m.includes('bigmem routing: burst=true (queue depth=0 threshold=2 online=2 idle=0 free=0)'),
+    ),
+  );
+  // An idle bigmem runner already claimed by a queued bigmem job is not free either.
+  const claimed = await route({
+    env: slotEnv([COV], env),
+    runners: [bigSlot(), bigSlot(true), xlSlot()],
+    jobs: [xlJob(3), bigJob(4, 'queued')],
+  });
+  assert.deepEqual(claimed.slots.coverage, WARP['gh-linux-16x']);
+  // One idle, unclaimed bigmem runner takes the grant.
+  const one = await route({
+    env: slotEnv([COV], env),
+    runners: [bigSlot(), bigSlot(true), xlSlot()],
+    jobs: [xlJob(3), heavyJob(4)],
+  });
+  assert.deepEqual(one.slots.coverage, BIG);
+});
+test('a bigmem job queued over 15 minutes stalls only the bigmem pool, not 8-core routing', async () => {
+  const old = {
+    ...bigJob(4, 'queued'),
+    created_at: new Date(Date.now() - 20 * 60_000).toISOString(),
+  };
+  const r = await route({
+    env: slotEnv([COV, { key: 'unit', label: 'gh-linux-8x' }], BIG_ON),
+    runners: [bigSlot(), bigSlot(), cacheSlot(), cacheSlot(), xlSlot()],
+    jobs: [xlJob(3), old],
+  });
+  assert.deepEqual(r.slots, { coverage: WARP['gh-linux-16x'], unit: CACHE });
+  assert.ok(
+    r.messages.some((m) => m.includes('bigmem routing: burst=true (stalled or unknown-age queue)')),
+  );
+  assert.ok(!r.messages.some((m) => m.includes('linux routing: burst=true (stalled')));
+  // A stale plain heavy job still stalls the whole heavy pool, bigmem included.
+  const heavy = await route({
+    env: slotEnv([COV], BIG_ON),
+    runners: [bigSlot(), bigSlot(), xlSlot()],
+    jobs: [xlJob(3), { ...old, labels: CACHE }],
+  });
+  assert.deepEqual(heavy.slots.coverage, WARP['gh-linux-16x']);
+  assert.ok(
+    heavy.messages.some((m) =>
+      m.includes('linux routing: burst=true (stalled or unknown-age queue)'),
+    ),
+  );
+});
 test('with CI_LINUX_BIGMEM_SLOTS unset or the Linux kill switch on, 16-core overflow bursts', async () => {
   const runners = [bigSlot(), bigSlot(), xlSlot()];
   const unset = await route({
@@ -824,7 +896,7 @@ test('with CI_LINUX_BIGMEM_SLOTS unset or the Linux kill switch on, 16-core over
   assert.deepEqual(unset.slots.coverage, WARP['gh-linux-16x']);
   assert.ok(
     unset.messages.some((m) =>
-      m.includes('bigmem routing: burst=true (queue depth=0 threshold=0 online=2 free=0)'),
+      m.includes('bigmem routing: burst=true (queue depth=0 threshold=0 online=2 idle=2 free=0)'),
     ),
   );
   // 8-core jobs still use the bigmem slots as ordinary heavy slots.
