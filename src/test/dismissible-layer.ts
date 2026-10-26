@@ -23,8 +23,9 @@ type Locator = ReturnType<CtPage['locator']>;
  * `target` may be the layer element itself or any element inside it, such as
  * `page.getByRole('listbox')` inside select content or a menu item. The wait
  * covers the innermost bits-ui layer around it (see
- * `readDismissibleLayerState`). For an open nested layer, point at an element
- * inside the inner layer. A target that no bits-ui layer contains, such as
+ * `readDismissibleLayerState`). When several layers are open (a dialog with a
+ * portalled select, a submenu), call it once per layer the click must close,
+ * each time with a target inside that layer. A target that no bits-ui layer contains, such as
  * the custom `ui/dropdown` popup, fails with a message that says so. The
  * locator must match exactly one element.
  *
@@ -39,10 +40,11 @@ export async function expectDismissibleLayerArmed(
   target: Locator,
   options: { timeout?: number } = {},
 ) {
+  const timeout = options.timeout === undefined ? {} : { timeout: options.timeout };
   await expect
-    .poll(() => target.evaluate(readDismissibleLayerState), {
+    .poll(() => target.evaluate(readDismissibleLayerState, undefined, timeout), {
       message: 'bits-ui dismissible layer registers its outside-pointer listeners',
-      ...(options.timeout === undefined ? {} : { timeout: options.timeout }),
+      ...timeout,
     })
     .toBe(DISMISSIBLE_LAYER_ARMED);
 }

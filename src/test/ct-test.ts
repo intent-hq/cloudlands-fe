@@ -117,14 +117,14 @@ async function assertDismissibleLayerDelay(
   );
   if (installed !== delayMs) {
     throw new Error(
-      `CT_DELAY_DISMISSIBLE_LAYER=1 is set, but the CT page reports ` +
+      `The dismissible-layer delay (CT_DELAY_DISMISSIBLE_LAYER=1) is on, but the CT page reports ` +
         `${CT_DISMISSIBLE_LAYER_DELAY_MARKER}=${JSON.stringify(installed)} instead of ${delayMs}: ` +
         'the 1 ms timer delay init script did not run before the page loaded (src/test/ct-test.ts)',
     );
   }
   testInfo.annotations.push({
     type: 'ct-delay-dismissible-layer',
-    description: `setTimeout(…, 1) delayed to ${delayMs} ms (CT_DELAY_DISMISSIBLE_LAYER=1)`,
+    description: `setTimeout(…, 1) delayed to ${delayMs} ms to prove dismissible-layer waits`,
   });
 }
 

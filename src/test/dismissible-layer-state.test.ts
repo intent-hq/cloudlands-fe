@@ -64,7 +64,7 @@ describe('readDismissibleLayerState', () => {
     const content = element('<div data-menu-content><button>Item</button></div>');
     openLayer(content, { armed: false });
     expect(readDismissibleLayerState(content.querySelector('button')!)).toMatch(
-      /^the bits-ui layer <div data-menu-content=""> around <button> has not registered/,
+      /^the bits-ui layer <div data-menu-content> around <button> has not registered/,
     );
   });
 
@@ -99,7 +99,7 @@ describe('readDismissibleLayerState', () => {
     openLayer(bits, { armed: true });
     const custom = element('<div role="listbox" data-dropdown-panel></div>');
     const state = readDismissibleLayerState(custom);
-    expect(state).toMatch(/^no bits-ui layer contains <div role="listbox" data-dropdown-panel="">/);
+    expect(state).toMatch(/^no bits-ui layer contains <div role="listbox" data-dropdown-panel>/);
     expect(state).toContain('ui/dropdown are not bits-ui layers');
   });
 
@@ -122,11 +122,21 @@ describe('readDismissibleLayerState', () => {
     );
   });
 
-  it('shortens a long opening tag in the message', () => {
+  it('keeps every attribute when a value contains >', () => {
     withRegistries();
-    const custom = element(`<div class="${'x'.repeat(300)}"></div>`);
+    const custom = element('<div aria-label="a > b" data-dropdown-panel></div>');
+    expect(readDismissibleLayerState(custom)).toMatch(
+      /^no bits-ui layer contains <div aria-label="a > b" data-dropdown-panel> \(/,
+    );
+  });
+
+  it('leaves out class and style and shortens a long opening tag', () => {
+    withRegistries();
+    const custom = element(
+      `<div class="wide" style="color: red" title="${'x'.repeat(300)}"></div>`,
+    );
     const state = readDismissibleLayerState(custom);
-    expect(state).toMatch(/^no bits-ui layer contains <div class="x+\.\.\. \(/);
+    expect(state).toMatch(/^no bits-ui layer contains <div title="x+\.\.\. \(/);
   });
 
   it('runs from its own source text, as Playwright evaluates it in the page', () => {

@@ -240,7 +240,7 @@ describe('shared CT test module fixtures', () => {
     expect(testInfo.annotations).toEqual([
       {
         type: 'ct-delay-dismissible-layer',
-        description: 'setTimeout(…, 1) delayed to 500 ms (CT_DELAY_DISMISSIBLE_LAYER=1)',
+        description: 'setTimeout(…, 1) delayed to 500 ms to prove dismissible-layer waits',
       },
     ]);
   });
@@ -252,7 +252,7 @@ describe('shared CT test module fixtures', () => {
 
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toMatch(
-      /CT_DELAY_DISMISSIBLE_LAYER=1 is set, but the CT page reports __ctDismissibleLayerDelayMs=undefined instead of 500/,
+      /\(CT_DELAY_DISMISSIBLE_LAYER=1\) is on, but the CT page reports __ctDismissibleLayerDelayMs=undefined instead of 500/,
     );
     expect(testInfo.attach).toHaveBeenCalledTimes(1);
   });

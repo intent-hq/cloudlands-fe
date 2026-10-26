@@ -32,8 +32,11 @@ export function readDismissibleLayerState(target: Element): string {
   const escapeLayers = scope.bitsEscapeLayers;
   const dismissableLayers = scope.bitsDismissableLayers;
   const describe = (element: Element) => {
-    const html = element.outerHTML;
-    const openTag = html.slice(0, html.indexOf('>') + 1) || `<${element.tagName.toLowerCase()}>`;
+    // class and style are long and say little about which popup this is.
+    const attributes = [...element.attributes]
+      .filter(({ name }) => name !== 'class' && name !== 'style')
+      .map(({ name, value }) => (value === '' ? name : `${name}=${JSON.stringify(value)}`));
+    const openTag = `<${[element.tagName.toLowerCase(), ...attributes].join(' ')}>`;
     return openTag.length > 160 ? `${openTag.slice(0, 157)}...` : openTag;
   };
   const notBitsLayer = (detail: string) =>

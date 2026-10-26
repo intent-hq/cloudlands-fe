@@ -20,7 +20,9 @@ for (const portal of [false, true]) {
     await trigger.press('Enter');
     const listbox = page.getByRole('listbox');
     await expect(listbox).toBeVisible();
-    await expect(page.locator('[data-select-content]')).not.toHaveAttribute('role', 'listbox');
+    const content = page.locator('[data-select-content]');
+    await expect(content.getByRole('listbox')).toHaveCount(1);
+    await expect(content).not.toHaveAttribute('role', 'listbox');
 
     await expectDismissibleLayerArmed(listbox);
     await root.getByRole('button', { name: 'Outside action' }).click();
@@ -43,7 +45,9 @@ for (const portal of [false, true]) {
     await input.click();
     const listbox = page.getByRole('listbox');
     await expect(listbox).toBeVisible();
-    await expect(page.locator('[data-combobox-content]')).not.toHaveAttribute('role', 'listbox');
+    const content = page.locator('[data-combobox-content]');
+    await expect(content.getByRole('listbox')).toHaveCount(1);
+    await expect(content).not.toHaveAttribute('role', 'listbox');
 
     await expectDismissibleLayerArmed(page.getByRole('option', { name: 'Ada Lovelace' }));
     await page.getByRole('button', { name: 'Outside action' }).click();
