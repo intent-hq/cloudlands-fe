@@ -1625,10 +1625,12 @@
     })();
   });
 
-  // Update editable state
+  // Update editable state. Pass emitUpdate=false: TipTap's default emits a
+  // doc-less `update` that reaches onUpdate as if the user had edited, which
+  // cancelled every in-flight Enhance prompt request (intent-hq/intent#5758).
   $effect(() => {
     if (editor) {
-      editor.setEditable(isEditable);
+      editor.setEditable(isEditable, false);
     }
   });
 

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { createServer, type ViteDevServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
+import { prepareRootHarnessModules } from './root-harness-import';
 
 let server: ViteDevServer;
 let baseUrl = '';
@@ -88,7 +89,17 @@ async function mountControls(
   zoom: number,
   withAssistant = false,
 ) {
-  await page.goto(baseUrl + 'test/fixtures/titlebar-controls.html');
+  await prepareRootHarnessModules(
+    page,
+    baseUrl,
+    [
+      '/@id/svelte',
+      '/test/fixtures/TitlebarWorkspaceControlsHarness.svelte',
+      '/src/store/renderer/store.ts',
+      '/src/store/renderer/slices/user-preferences/sagas/zoom-ipc-saga.ts',
+    ],
+    { documentPath: 'test/fixtures/titlebar-controls.html' },
+  );
   await page.addStyleTag({ url: baseUrl + 'src/app.css' });
   await page.evaluate(
     async ({ theme, zoom, withAssistant }) => {
@@ -132,12 +143,22 @@ async function mountControls(
     },
     { theme, zoom, withAssistant },
   );
-  // Preserve the explicit counter-scale readiness assertion before geometry.
+  // The initial zoom IPC response is asynchronous; geometry requires its state
+  // and the corresponding Svelte update before a baseline can be measured.
   await expect
     .poll(() =>
-      page
-        .locator('.window-title-bar')
-        .evaluate((element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).a),
+      page.evaluate(async () => {
+        const { store } = await import('/src/store/renderer/store.ts');
+        return store.state.userPreferences.zoomFactor;
+      }),
+    )
+    .toBe(zoom);
+  await expect
+    .poll(() =>
+      page.locator('.window-title-bar').evaluate((element) => {
+        const transform = getComputedStyle(element).transform;
+        return new DOMMatrixReadOnly(transform).a;
+      }),
     )
     .toBeCloseTo(1 / zoom, 5);
 }

@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { BUILD_CONFIG } from './build-config.generated.js';
+import { isolatedExecutableDirectories } from './isolated-test-executable-path.js';
 
 /** Compiled into a dedicated package; inherited runtime environment cannot opt in or out. */
 export function isIsolatedTestBuild(): boolean {
@@ -15,6 +16,7 @@ export interface IsolatedTestProfile {
   readonly socket: string;
   readonly config: string;
   readonly backendSha: string;
+  readonly executableDirectories: readonly string[];
   readonly environment: Readonly<NodeJS.ProcessEnv>;
 }
 
@@ -120,7 +122,18 @@ export function prepareIsolatedTestProfile(
     INTENTD_PRIVATE_TEST_PROFILE: '1',
     INTENTD_SIDECAR: '1',
   });
-  return Object.freeze({ root, home, userData, data, socket, config, backendSha, environment });
+  const executableDirectories = isolatedExecutableDirectories(originalHome);
+  return Object.freeze({
+    root,
+    home,
+    userData,
+    data,
+    socket,
+    config,
+    backendSha,
+    environment,
+    executableDirectories,
+  });
 }
 
 /** Drop ambient credentials, daemon transport/binary overrides, and injected child runtime hooks. */
@@ -132,6 +145,12 @@ export function isolatedTestEnvironment(
   for (const key of ['PATH', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TERM', 'USER', 'LOGNAME', 'SHELL']) {
     if (inherited[key] !== undefined) result[key] = inherited[key];
   }
+  result.PATH = [
+    ...new Set([
+      ...(result.PATH ?? '').split(path.delimiter).filter(Boolean),
+      ...profile.executableDirectories,
+    ]),
+  ].join(path.delimiter);
   return { ...result, ...profile.environment, NODE_ENV: 'production' };
 }
 

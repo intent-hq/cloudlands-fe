@@ -480,6 +480,24 @@ describe('GitHub-hosted CI runners', () => {
     expect(steps[setup].if).toBeUndefined();
   });
 
+  it('routes the native desktop helper jobs through runner-route', () => {
+    const jobs = read('.github/workflows/native-desktop.yml').jobs;
+    expect(jobs['runner-route'].uses).toBe('./.github/workflows/runner-route.yml');
+    expect(jobs['runner-route'].permissions).toEqual({ contents: 'read', actions: 'read' });
+    const compile = jobs.compile;
+    expect(compile.needs).toEqual(['runner-route']);
+    // A failed route must not skip the job: it still runs on the warp fallback.
+    expect(compile.if).toBe('${{ !cancelled() }}');
+    expect(compile['runs-on']).toBe(
+      "${{ fromJSON(needs.runner-route.outputs.cloud || '{}')[matrix.runner] || matrix.warp }}",
+    );
+    // A failed route falls back to the WarpBuild label, never a GitHub larger runner.
+    expect(compile.strategy.matrix.include).toEqual([
+      { runner: 'macos-15-xlarge', warp: 'warp-macos-15-arm64-12x', platform: 'darwin' },
+      { runner: 'windows-2025', warp: 'windows-2025', platform: 'win32' },
+    ]);
+  });
+
   it('uses known GitHub-hosted labels except for isolated retirement cleanup', () => {
     for (const file of readdirSync('.github/workflows').filter((name) => name.endsWith('.yml'))) {
       const jobs = read(`.github/workflows/${file}`).jobs;
@@ -488,6 +506,13 @@ describe('GitHub-hosted CI runners', () => {
         // Retirement must stay available independently of the managed runner fleet.
         if (file === 'retire-obsolete-merge-runs.yml' && id === 'cleanup') {
           expect(runner, `${file}:${id}`).toBe('ubuntu-latest');
+          continue;
+        }
+        if (file === 'manual-signed-build.yml' && id === 'replay-isolated-macos') {
+          expect(runner).toBe(
+            `\${{ fromJSON(needs.runner-route.outputs.cloud || '{}')['macos-15-xlarge'] || fromJSON('["warp-macos-15-arm64-12x"]') }}`,
+          );
+          expect((job as { needs?: string[] }).needs).toContain('runner-route');
           continue;
         }
         if (runner && !runner.includes('${{'))

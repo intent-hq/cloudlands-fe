@@ -96,9 +96,10 @@
     selectOwnClientIdConfirmed,
   } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
   import { setWorkspaceBrowserClientRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
-  import { selectWorkspaceHasBrowserTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import { selectWorkspaceHasAgentBrowserTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import DrivingClientIndicator from '$lib/components/workspace/DrivingClientIndicator.svelte';
   import SetPrimaryClientConfirmDialog from '$lib/components/workspace/SetPrimaryClientConfirmDialog.svelte';
+  import { selectWorkspaceActiveComputerName } from '$store/renderer/slices/desktop-control/desktop-control-selectors';
   import { selectCanSetWorkspacePrimaryClient } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
   import { browserClientDisplayName } from '$lib/components/workspace/driving-indicator';
@@ -471,13 +472,10 @@
       : null,
   );
 
-  // REV-2 driving browser client (spec Model 8): the daemon resolves it; the
-  // indicator renders only when the workspace has a browser tab and another
-  // eligible client could take over (or the pin is offline).
   const ownClientIdConfirmed$ = selectOwnClientIdConfirmed();
   const browserSelectionKnown$ = selectWorkspaceBrowserSelectionKnown(workspaceIdStore);
   const drivingClient$ = selectWorkspaceDrivingClient(workspaceIdStore);
-  const hasBrowserTabs$ = selectWorkspaceHasBrowserTabs(workspaceIdStore);
+  const hasBrowserTabs$ = selectWorkspaceHasAgentBrowserTabs(workspaceIdStore);
   const canSetPrimaryClient$ = selectCanSetWorkspacePrimaryClient(workspaceIdStore);
   const principalActionContext$ = selectPrincipalActionContext();
   const primaryAlreadySelected = $derived(
@@ -507,6 +505,8 @@
     clientId: string;
     context: string | null;
   } | null>(null);
+
+  const activeComputerName$ = selectWorkspaceActiveComputerName(workspaceIdStore);
 
   const setPrimaryClientAction: MenuAction = $derived({
     id: 'set-primary-client',
@@ -1119,8 +1119,12 @@
           </TooltipRich>
         {/if}
       </div>
-      <!-- driving browser client (REV-2); renders nothing with one eligible client or no browser tabs -->
-      <DrivingClientIndicator {...$drivingClient$} hasBrowserTabs={$hasBrowserTabs$} />
+      <!-- Active agent activity names its computer; an idle pin stays silent. -->
+      <DrivingClientIndicator
+        {...$drivingClient$}
+        hasBrowserTabs={$hasBrowserTabs$}
+        activeComputerName={$activeComputerName$}
+      />
     </div>
   </div>
 
@@ -1276,7 +1280,8 @@
           variant="plain"
           bind:ref={statusImageButtonRef}
           type="button"
-          class="block w-full cursor-zoom-in bg-transparent border-none p-0
+          wrapContent={false}
+          class="flex h-auto w-full cursor-zoom-in bg-transparent border-none p-0
                  focus-visible:outline focus-visible:outline-1
                  focus-visible:outline-primary-ink/50 focus-visible:outline-offset-1"
           onclick={() => (statusImageLightboxOpen = true)}
@@ -1286,7 +1291,7 @@
           <img
             src={statusImageUrl}
             alt={m.workspace_progressCard_statusImage_alt()}
-            class="w-full max-h-48 object-contain rounded-md border border-border"
+            class="block w-full max-h-48 object-contain rounded-md border border-border"
             onerror={(e) =>
               (failedStatusImageUrl = e.currentTarget.getAttribute('src') ?? statusImageUrl)}
           />

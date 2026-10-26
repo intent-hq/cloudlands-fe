@@ -41,13 +41,15 @@ describe('notes write compatibility façade', () => {
     control.dispatch.mockImplementation((action) => {
       const value = action.asyncActionType.endsWith('createNotePersistRequested')
         ? 'note-new'
-        : undefined;
+        : action.asyncActionType.endsWith('updateNoteTitlePersistRequested')
+          ? true
+          : undefined;
       return action.success(value);
     });
     await expect(createNote('ws-1', { title: 'New' })).resolves.toBe('note-new');
     await expect(flushNoteContent('ws-1', 'note-1')).resolves.toBeUndefined();
     await expect(settleNoteContent('ws-1', 'note-1')).resolves.toBeUndefined();
-    await expect(updateNoteTitle('ws-1', 'note-1', 'Title')).resolves.toBeUndefined();
+    await expect(updateNoteTitle('ws-1', 'note-1', 'Title')).resolves.toBe(true);
     await expect(deleteNote('ws-1', 'note-1')).resolves.toBeUndefined();
     expect(control.dispatch.mock.calls.map(([action]) => action.asyncActionType)).toEqual([
       'workspaceNotes/createNotePersistRequested',

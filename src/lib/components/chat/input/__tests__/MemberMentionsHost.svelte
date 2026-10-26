@@ -127,6 +127,7 @@
       'search.fileNames': response('search.fileNames', { files: [] }),
       'note.list': response('note.list', { notes: [] }),
     });
+    const fixtureBridge = window.electronAPI;
     const previousPrincipal = store.state.principal;
     const previousMultiplayer = store.state.userPreferences.labsMultiplayerEnabled;
     const fixtureDispatch = store.dispatch;
@@ -171,7 +172,7 @@
             ),
           );
       }
-      window.electronAPI = previousBridge;
+      if (window.electronAPI === fixtureBridge) window.electronAPI = previousBridge;
     };
   });
 

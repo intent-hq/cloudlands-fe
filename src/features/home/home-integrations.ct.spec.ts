@@ -674,6 +674,30 @@ test('linked PRs deduplicate URL forms and omit unavailable or wrong-state pulls
   );
   await filter.click();
   await page.getByRole('option', { name: 'Created by me', exact: true }).click();
+  // The old linked row can remain visible during the debounced refresh. Observe
+  // this filter's wire request before the next selection can supersede it.
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window
+          .__homeIntegrationBrowser!.calls.filter((call) => call.method === 'github.pulls.search')
+          .map(({ params }) => ({ filter: params.filter, state: params.state })),
+      ),
+    )
+    .toEqual([
+      { filter: 'assigned', state: 'open' },
+      { filter: 'created', state: 'open' },
+    ]);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          window.__homeIntegrationBrowser!.calls.filter(
+            (call) => call.method === 'github.pulls.get' && call.params.number === 901,
+          ).length,
+      ),
+    )
+    .toBe(2);
   // The old linked row remains visible during debounce. Wait for this generation,
   // including its linked result, before the next filter can supersede it.
   await expect

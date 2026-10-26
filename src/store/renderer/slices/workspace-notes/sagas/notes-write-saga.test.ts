@@ -29,6 +29,7 @@ import {
   applyNoteDeleted,
   applyNoteUpdated,
   createNote,
+  createNotePersistRequested,
   deleteNote,
   loadWorkspaceNotesSucceeded,
   readNoteRequested,
@@ -36,6 +37,7 @@ import {
   updateNote,
   updateNoteContent,
   updateNoteTitle,
+  updateNoteTitlePersistRequested,
   workspaceNotesReducer,
 } from '../workspace-notes-slice';
 import { NoteCapabilityUnknownError } from '$lib/client/live/live-notes-client';
@@ -232,6 +234,79 @@ describe('notesWriteSaga', () => {
       addOptimisticNote(WS, created),
     ]);
     expect(run.getState().byWorkspaceId[WS]?.notes.ids.map(String)).toEqual([NOTE, 'note-created']);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('opens the note the daemon created, not a concurrently created one (#4780)', async () => {
+    const agentNote = note({ id: NoteId('n-agent'), title: 'Agent note', content: '' });
+    const mine = note({ id: NoteId('n-mine'), title: 'New Note', content: '' });
+    vi.spyOn(appClient.notes, 'create').mockResolvedValue({ success: true, id: 'n-mine' });
+    vi.spyOn(appClient.notes, 'list').mockResolvedValue([note(), agentNote, mine]);
+    const run = harness();
+
+    run.channel.put(createNoteRequested(WS, { panelLayoutId: WS, panelId: 'working-panel' }));
+    await settle();
+
+    const marked = run.actions.filter((action) => action.type === markNoteRead.type);
+    // `markNoteRead` stamps `now` at creation time, so compare everything but the clock.
+    const expectedMark = markNoteRead(WS, 'n-mine');
+    expect(marked).toEqual([
+      { ...expectedMark, payload: { ...expectedMark.payload, now: expect.any(String) } },
+    ]);
+    const opened = run.actions.filter((action) => action.type === openTab.type) as ReturnType<
+      typeof openTab
+    >[];
+    expect(opened.map((action) => action.payload.tab.noteId)).toEqual(['n-mine']);
+    expect(run.actions).toContainEqual(addOptimisticNote(WS, mine));
+    expect(run.actions).not.toContainEqual(addOptimisticNote(WS, agentNote));
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('resolves createNotePersistRequested to the daemon id even when the relist lags (#4780)', async () => {
+    const agentNote = note({ id: NoteId('n-agent'), title: 'Agent note', content: '' });
+    vi.spyOn(appClient.notes, 'create').mockResolvedValue({ success: true, id: 'n-mine' });
+    vi.spyOn(appClient.notes, 'list').mockResolvedValue([note(), agentNote]);
+    const run = harness();
+
+    const request = createNotePersistRequested(WS, { title: 'Fresh', content: '' });
+    run.channel.put(request);
+    await settle();
+
+    expect(run.actions).toContainEqual(request.success('n-mine'));
+    expect(run.actions).not.toContainEqual(addOptimisticNote(WS, agentNote));
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('resolves updateNoteTitlePersistRequested to false when the title save fails (#5777)', async () => {
+    vi.spyOn(appClient.notes, 'updateMetadata').mockResolvedValue({
+      success: false,
+      error: 'disk full',
+    });
+    const run = harness();
+
+    const request = updateNoteTitlePersistRequested(WS, NOTE, 'New');
+    run.channel.put(request);
+    await vi.waitFor(() => expect(run.actions).toContainEqual(request.success(false)));
+
+    expect(run.getState().byWorkspaceId[WS]?.notes.map[NOTE]?.title).toBe('Old');
+    expect(notify.error).toHaveBeenCalledTimes(1);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('resolves updateNoteTitlePersistRequested to true when the title save succeeds', async () => {
+    vi.spyOn(appClient.notes, 'updateMetadata').mockResolvedValue({ success: true });
+    const run = harness();
+
+    const request = updateNoteTitlePersistRequested(WS, NOTE, 'New');
+    run.channel.put(request);
+    await vi.waitFor(() => expect(run.actions).toContainEqual(request.success(true)));
+
+    expect(run.getState().byWorkspaceId[WS]?.notes.map[NOTE]?.title).toBe('New');
+    expect(notify.error).not.toHaveBeenCalled();
     run.task.cancel();
     await run.task.toPromise();
   });

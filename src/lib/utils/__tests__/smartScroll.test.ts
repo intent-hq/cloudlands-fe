@@ -86,11 +86,31 @@ describe('animateScrollTo', () => {
     expect(rafCallbacks).toHaveLength(0);
   });
 
+  it('tracks a moving destination through preceding layout changes', () => {
+    const container = makeContainer(400);
+    let target = 700;
+    const onComplete = vi.fn();
+    animateScrollTo(
+      () => container,
+      () => target,
+      150,
+      onComplete,
+    );
+    runFrames(75);
+    expect(container.scrollTop).toBeGreaterThan(400);
+    target -= 112;
+    runFrames(150);
+    expect(container.scrollTop).toBe(588);
+    expect(onComplete).toHaveBeenCalledExactlyOnceWith(container);
+    expect(rafCallbacks).toHaveLength(0);
+  });
+
   it('does not resolve a moving destination after navigation is superseded', () => {
     let current: HTMLElement | null = makeContainer(300);
     const container = current;
     const resolveDestination = vi.fn(() => 100);
-    animateScrollTo(() => current, resolveDestination, 150);
+    const onComplete = vi.fn();
+    animateScrollTo(() => current, resolveDestination, 150, onComplete);
     runFrames(75);
     const readingPosition = container.scrollTop;
     resolveDestination.mockClear();
@@ -98,6 +118,7 @@ describe('animateScrollTo', () => {
     current = null;
     runFrames(150);
     expect(resolveDestination).not.toHaveBeenCalled();
+    expect(onComplete).not.toHaveBeenCalled();
     expect(container.scrollTop).toBe(readingPosition);
     expect(rafCallbacks).toHaveLength(0);
   });
@@ -1491,6 +1512,97 @@ describe('followBottom policy', () => {
     expect(followChanges).toEqual([true]);
     action.destroy();
   });
+
+  it('resumes following when a downward wheel scroll completes after its animation-frame check', () => {
+    const followChanges: boolean[] = [];
+    const action = followBottom(container, {
+      follow: false,
+      onFollowChange: (follow) => followChanges.push(follow),
+    });
+    scrollTop = 100;
+    container.dispatchEvent(new WheelEvent('wheel', { deltaY: 1000 }));
+    runFrame();
+    expect(isFollowingBottom(container)).toBe(false);
+
+    // Native scrolling can land after the wheel event's animation frame.
+    scrollTop = 590;
+    container.dispatchEvent(new Event('scroll'));
+    container.dispatchEvent(new Event('scrollend'));
+    expect(isFollowingBottom(container)).toBe(true);
+    expect(followChanges).toEqual([true]);
+    scrollHeight += 80;
+    fireResize();
+    runSettleTail();
+    expect(scrollTop).toBe(680);
+    action.destroy();
+  });
+
+  it.each([
+    'upward wheel',
+    'content pointer',
+    'keyboard',
+    'touch',
+    'prevented wheel',
+    'disable',
+    'completed away',
+    'expired gesture',
+    'descendant completion',
+  ])('does not carry downward wheel intent past %s', (cancel) => {
+    const action = followBottom(container, { follow: false });
+    scrollTop = 100;
+    const wheel = new WheelEvent('wheel', { deltaY: 1000, cancelable: true });
+    container.dispatchEvent(wheel);
+    if (cancel === 'upward wheel')
+      container.dispatchEvent(new WheelEvent('wheel', { deltaY: -20 }));
+    if (cancel === 'content pointer')
+      container.dispatchEvent(new MouseEvent('pointerdown', { clientX: 100 }));
+    if (cancel === 'keyboard')
+      container.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home' }));
+    if (cancel === 'touch') container.dispatchEvent(new TouchEvent('touchstart', { touches: [] }));
+    if (cancel === 'prevented wheel') wheel.preventDefault();
+    if (cancel === 'disable') {
+      action.update({ enabled: false, follow: false });
+      action.update({ enabled: true, follow: false });
+    }
+    runFrame();
+    if (cancel === 'completed away') container.dispatchEvent(new Event('scrollend'));
+    if (cancel === 'expired gesture')
+      vi.spyOn(performance, 'now').mockReturnValue(performance.now() + 1001);
+    if (cancel === 'descendant completion') {
+      const child = document.createElement('div');
+      container.append(child);
+      child.dispatchEvent(new Event('scrollend'));
+    }
+
+    // A later unrelated programmatic scroll must not resume following.
+    scrollTop = 600;
+    container.dispatchEvent(new Event('scroll'));
+    container.dispatchEvent(new Event('scrollend'));
+    expect(isFollowingBottom(container)).toBe(false);
+    scrollHeight += 80;
+    fireResize();
+    runSettleTail();
+    expect(scrollTop).toBe(600);
+    action.destroy();
+  });
+
+  it.each(['wheel', 'keyboard'])(
+    'uses the latest downward %s input when checks share a frame',
+    (input) => {
+      const action = followBottom(container, { follow: false });
+      scrollTop = 600;
+      container.dispatchEvent(new WheelEvent('wheel', { deltaY: 20 }));
+      if (input === 'wheel') container.dispatchEvent(new WheelEvent('wheel', { deltaY: 20 }));
+      else container.dispatchEvent(new KeyboardEvent('keydown', { key: 'End' }));
+      runFrame();
+      expect(isFollowingBottom(container)).toBe(true);
+      scrollHeight += 80;
+      fireResize();
+      runSettleTail();
+      expect(scrollTop).toBe(680);
+      action.destroy();
+    },
+  );
 
   it('stays unlocked after a content click, collapse clamp, and later growth', () => {
     const followChanges: boolean[] = [];
