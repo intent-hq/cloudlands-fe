@@ -379,8 +379,8 @@ class RunnerPolicy(unittest.TestCase):
         no_warp = "jobs:\n  a:\n    strategy:\n      matrix:\n        include:\n          - runner: gh-linux-arm64-8x\n    runs-on: ${{ fromJSON(needs.runner-route.outputs.cloud || '{}')[matrix.runner] || matrix.warp }}\n"
         self.assertEqual(paid_label_violations(no_warp, 'x.yml'), ['a: a paid matrix row has no warp label for its fallback'])
         json_row = '{"arch":"arm64","runner":"macos-15-xlarge","warp":"%s"}'
-        self.assertEqual(paid_label_violations('jobs:\n  a:\n    steps:\n      - run: echo \'%s\'\n' % (json_row % 'warp-macos-26-arm64-12x'), 'x.yml'),
-                         ['a: matrix row macos-15-xlarge names warp warp-macos-26-arm64-12x, not warp-macos-15-arm64-12x'])
+        self.assertEqual(paid_label_violations('jobs:\n  a:\n    steps:\n      - run: echo \'%s\'\n' % (json_row % 'warp-macos-26-arm64-6x'), 'x.yml'),
+                         ['a: matrix row macos-15-xlarge names warp warp-macos-26-arm64-6x, not warp-macos-15-arm64-6x'])
         # The frozen one-use B76 diagnostics are the only exception.
         self.assertEqual(paid_label_violations(job % 'gh-linux-8x', 'b76t-packaged-readiness.yml').__len__(), 1)
         self.assertEqual(paid_label_violations('jobs:\n  readiness:\n    runs-on: gh-linux-8x\n', 'b76t-packaged-readiness.yml'), [])

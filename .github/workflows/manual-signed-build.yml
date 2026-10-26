@@ -128,7 +128,7 @@ jobs:
         run: |
           # Signed desktop builds stay on macos-15-xlarge: on macos-26 images electron-builder's
           # `security set-key-partition-list` fails with SecKeychainUnlock (cloudlands-fe#3500).
-          ARM='{"arch":"arm64","label":"Apple Silicon","runner":"macos-15-xlarge","warp":"warp-macos-15-arm64-12x","intentd_target":"aarch64-apple-darwin"}'
+          ARM='{"arch":"arm64","label":"Apple Silicon","runner":"macos-15-xlarge","warp":"warp-macos-15-arm64-6x","intentd_target":"aarch64-apple-darwin"}'
           case "${MACOS_ARCH:-arm64}" in
             arm64) TARGETS="[$ARM]" ;;
             *) echo "::error::Mac builds support arm64 only"; exit 1 ;;
@@ -1321,7 +1321,7 @@ jobs:
   replay-isolated-macos:
     if: ${{ inputs.isolated_replay }}
     needs: [runner-route]
-    runs-on: ${{ fromJSON(needs.runner-route.outputs.cloud || '{}')['macos-15-xlarge'] || fromJSON('["warp-macos-15-arm64-12x"]') }}
+    runs-on: ${{ fromJSON(needs.runner-route.outputs.cloud || '{}')['macos-15-xlarge'] || fromJSON('["warp-macos-15-arm64-6x"]') }}
     timeout-minutes: 25
     permissions:
       contents: read
