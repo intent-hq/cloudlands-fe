@@ -45,9 +45,7 @@ for (const width of [420, 240]) {
     await page.getByRole('textbox').focus();
     await page.keyboard.press('ArrowDown');
     await page.keyboard.press('Enter');
-    await expect(page.getByTestId('mention-selection')).toHaveText(
-      'specialist:specialist-developer',
-    );
+    await expect(page.getByTestId('mention-selection')).toHaveText('file:file-developer-guide');
   });
 }
 
@@ -100,7 +98,8 @@ test('composer filtering, keyboard and mouse preserve mention insertion and focu
   const editor = page.getByRole('textbox', { name: 'Mention composer' });
   await editor.fill('@devel');
   await expect(page.locator('.mention-item')).toHaveCount(5);
-  await editor.press('ArrowDown');
+  // Specialists rank last; ArrowUp wraps from the first row to them.
+  await editor.press('ArrowUp');
   await editor.press('Enter');
   await expect(editor.locator('[data-type="specialist"]')).toHaveAttribute(
     'data-uri',

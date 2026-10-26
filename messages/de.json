@@ -7833,5 +7833,14 @@
   "desktop_consent_deny": "Ablehnen",
   "desktop_stopReportFailed_description": "Intent hat die Steuerung gestoppt, konnte die Benachrichtigung für Ihren Agenten aber nicht speichern. Lassen Sie Intent geöffnet und verbinden Sie sich erneut.",
   "desktop_menu_description": "Für {computer}. Gilt für künftige Starts; mit Stopp beenden Sie die aktuelle Steuerung.",
-  "desktop_primary_active_description": "Ein Agent steuert {computer}. Beim Stoppen bleibt die Auswahl des primären Computers erhalten."
+  "desktop_primary_active_description": "Ein Agent steuert {computer}. Beim Stoppen bleibt die Auswahl des primären Computers erhalten.",
+  "chat_mentions_section_people": "Personen",
+  "chat_mentions_section_notes": "Notizen",
+  "chat_mentions_section_agents": "Agenten",
+  "chat_mentions_section_files": "Dateien",
+  "chat_mentions_section_folders": "Ordner",
+  "chat_mentions_section_scripts": "Skripte",
+  "chat_mentions_section_terminals": "Terminals",
+  "chat_mentions_section_specialists": "Spezialisten",
+  "chat_mentions_section_other": "Sonstiges"
 }

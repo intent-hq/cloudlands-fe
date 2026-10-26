@@ -7833,5 +7833,14 @@
   "desktop_consent_deny": "拒絕",
   "desktop_stopReportFailed_description": "Intent 已停止控制，但無法儲存傳送給代理的通知。請保持 Intent 開啟並重新連線以重試。",
   "desktop_menu_description": "適用於 {computer} 的後續啟動；使用「停止」結束目前的控制。",
-  "desktop_primary_active_description": "代理程式正在控制 {computer}。停止控制會保留主要電腦選擇。"
+  "desktop_primary_active_description": "代理程式正在控制 {computer}。停止控制會保留主要電腦選擇。",
+  "chat_mentions_section_people": "人員",
+  "chat_mentions_section_notes": "筆記",
+  "chat_mentions_section_agents": "智慧體",
+  "chat_mentions_section_files": "檔案",
+  "chat_mentions_section_folders": "資料夾",
+  "chat_mentions_section_scripts": "指令碼",
+  "chat_mentions_section_terminals": "終端",
+  "chat_mentions_section_specialists": "專家",
+  "chat_mentions_section_other": "其他"
 }

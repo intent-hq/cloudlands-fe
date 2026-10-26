@@ -7833,5 +7833,14 @@
   "desktop_consent_deny": "拒否",
   "desktop_stopReportFailed_description": "Intent は操作を停止しましたが、エージェントへの通知を保存できませんでした。Intent を開いたまま再接続して、再試行してください。",
   "desktop_menu_description": "対象: {computer}。今後の開始に適用されます。現在の操作を終了するには「停止」を使ってください。",
-  "desktop_primary_active_description": "エージェントが {computer} を操作しています。操作を停止してもプライマリの選択は維持されます。"
+  "desktop_primary_active_description": "エージェントが {computer} を操作しています。操作を停止してもプライマリの選択は維持されます。",
+  "chat_mentions_section_people": "ユーザー",
+  "chat_mentions_section_notes": "ノート",
+  "chat_mentions_section_agents": "エージェント",
+  "chat_mentions_section_files": "ファイル",
+  "chat_mentions_section_folders": "フォルダー",
+  "chat_mentions_section_scripts": "スクリプト",
+  "chat_mentions_section_terminals": "ターミナル",
+  "chat_mentions_section_specialists": "スペシャリスト",
+  "chat_mentions_section_other": "その他"
 }

@@ -7833,5 +7833,14 @@
   "desktop_consent_deny": "Refuser",
   "desktop_stopReportFailed_description": "Intent a arrêté le contrôle, mais n’a pas pu enregistrer la notification pour votre agent. Gardez Intent ouvert et reconnectez-vous pour réessayer.",
   "desktop_menu_description": "Pour {computer}. S’applique aux prochains démarrages ; utilisez Arrêter pour terminer le contrôle actuel.",
-  "desktop_primary_active_description": "Un agent contrôle {computer}. Arrêter le contrôle conserve le choix de l’ordinateur principal."
+  "desktop_primary_active_description": "Un agent contrôle {computer}. Arrêter le contrôle conserve le choix de l’ordinateur principal.",
+  "chat_mentions_section_people": "Personnes",
+  "chat_mentions_section_notes": "Notes",
+  "chat_mentions_section_agents": "Agents",
+  "chat_mentions_section_files": "Fichiers",
+  "chat_mentions_section_folders": "Dossiers",
+  "chat_mentions_section_scripts": "Scripts",
+  "chat_mentions_section_terminals": "Terminaux",
+  "chat_mentions_section_specialists": "Spécialistes",
+  "chat_mentions_section_other": "Autres"
 }

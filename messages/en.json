@@ -7833,5 +7833,14 @@
   "desktop_consent_deny": "Deny",
   "desktop_stopReportFailed_description": "Intent stopped control, but could not save the notification for your agent. Keep Intent open and reconnect to retry.",
   "desktop_menu_description": "For {computer}. Applies to future starts; use Stop to end current control.",
-  "desktop_primary_active_description": "An agent is controlling {computer}. Stopping control keeps the primary selection."
+  "desktop_primary_active_description": "An agent is controlling {computer}. Stopping control keeps the primary selection.",
+  "chat_mentions_section_people": "People",
+  "chat_mentions_section_notes": "Notes",
+  "chat_mentions_section_agents": "Agents",
+  "chat_mentions_section_files": "Files",
+  "chat_mentions_section_folders": "Folders",
+  "chat_mentions_section_scripts": "Scripts",
+  "chat_mentions_section_terminals": "Terminals",
+  "chat_mentions_section_specialists": "Specialists",
+  "chat_mentions_section_other": "Other"
 }
