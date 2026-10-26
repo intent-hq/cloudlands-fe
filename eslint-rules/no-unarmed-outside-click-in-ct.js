@@ -15,21 +15,27 @@
  * is enough to eject unrelated PRs from the merge queue. `expectDismissibleLayerArmed`
  * (src/test/dismissible-layer.ts) waits until the layer is registered.
  *
- * Flagged: `<x>.mouse.click(...)`, or `<locator>.click(...)` whose locator expression
- * mentions "outside" (`outside.click()`, `getByTestId('outside-target').click()`), when
- * the `expect(...)` statements directly after it assert that something closed
- * (`toHaveCount(0)`, `toBeHidden()`, `not.toBeVisible()`, or
- * `toHaveAttribute('aria-expanded', 'false')`) and no `expectDismissibleLayerArmed(...)`
- * call precedes it without another interaction in between. Any interaction (`click`,
- * `press`, `hover`, `focus`, `fill`, `keyboard.*`, `mouse.*`, `component.update`, or an
- * awaited same-file helper such as `openMenu()`) can open a new layer, so it cancels an
- * earlier wait. An `if`/`else` one-liner counts as the statement it sits in; a click at
- * the start of a nested block keeps scanning the statements before that block.
+ * Flagged: `<x>.mouse.click(...)`, `<x>.mouse.dblclick(...)`, `<x>.touchscreen.tap(...)`,
+ * or `.click()` / `.dblclick()` / `.tap()` on a locator whose expression mentions
+ * "outside", "overlay" or "backdrop" (`outside.click()`,
+ * `page.locator('[data-slot="dialog-overlay"]').click(...)`), when a closed-state
+ * assertion follows it before any other interaction (`toHaveCount(0)`, `toBeHidden()`,
+ * `not.toBeVisible()`, `toBeVisible({ visible: false })`, `not.toBeAttached()`,
+ * `toHaveAttribute('aria-expanded', 'false')` or `toHaveAttribute('data-state', 'closed')`)
+ * and no `await expectDismissibleLayerArmed(...)` statement precedes it without another
+ * interaction in between. Any interaction (`click`, `press`, `hover`, `focus`, `fill`,
+ * `keyboard.*`, `mouse.*`, `component.update`, an awaited helper such as `reopenTop()`,
+ * or one inside a `test.step` callback) can open a new layer, so it cancels an earlier
+ * wait; awaited `expect…` assertion helpers do not. The wait must be a statement of its
+ * own: one inside an `if` branch does not count. Scans pass through `if`/`else` and `try`
+ * blocks, but never out of a loop body, since a loop can reopen the layer before the
+ * next iteration's click.
  *
- * Not flagged: clicks followed by any other assertion, Escape (its keydown listener is
- * registered synchronously), and files other than `*.ct.spec.ts`. A click that closes a
- * layer from inside it, such as choosing a menu item by coordinates, is not an outside
- * dismissal; disable the rule on that line with a reason.
+ * Not flagged: clicks without a following closed-state assertion, Escape (its keydown
+ * listener is registered synchronously), and files other than `*.ct.spec.ts`. A click
+ * that closes a layer from inside it, such as choosing a menu item by coordinates, or a
+ * click on a popup that is not a bits-ui layer, is not an outside dismissal; disable the
+ * rule on that line with a reason.
  */
 
 const MESSAGE =
@@ -104,19 +110,19 @@ function isDeviceCall(callee) {
   return DEVICE_OBJECTS.has(propertyName(callee.object));
 }
 
-// Calls in `node`, without descending into nested functions (callbacks such as
-// `expect.poll(() => ...)` or `evaluate(() => ...)` do not run as test steps here).
-function collectCalls(node, calls = []) {
+// Calls in `node` in source order. With `intoFunctions`, also inside callbacks such as
+// `test.step('reopen', async () => ...)`, whose interactions run as test steps.
+function collectCalls(node, intoFunctions, calls = []) {
   if (!node || typeof node.type !== 'string') return calls;
-  if (isFunction(node)) return calls;
+  if (!intoFunctions && isFunction(node)) return calls;
   if (node.type === 'CallExpression') calls.push(node);
   for (const key of Object.keys(node)) {
     if (key === 'parent') continue;
     const value = node[key];
     if (Array.isArray(value)) {
-      for (const child of value) collectCalls(child, calls);
+      for (const child of value) collectCalls(child, intoFunctions, calls);
     } else if (value && typeof value.type === 'string') {
-      collectCalls(value, calls);
+      collectCalls(value, intoFunctions, calls);
     }
   }
   return calls;
@@ -126,14 +132,21 @@ function isGuardCall(call) {
   return call.callee.type === 'Identifier' && call.callee.name === GUARD;
 }
 
+// Only `await expectDismissibleLayerArmed(...)` as a statement of its own counts: a wait
+// inside one branch of an `if`, or followed by an interaction in the same block, may not
+// cover the click.
+function isGuardStatement(statement) {
+  if (statement?.type !== 'ExpressionStatement') return false;
+  const expression = unwrap(statement.expression);
+  return expression?.type === 'CallExpression' && isGuardCall(expression);
+}
+
 function isInteractionCall(call) {
   const { callee } = call;
   if (callee.type === 'Identifier') {
-    // An awaited same-file helper (`await reopenTop()`) may open a layer; `expect(...)`
-    // and the guard itself do not.
-    return (
-      callee.name !== GUARD && callee.name !== 'expect' && call.parent?.type === 'AwaitExpression'
-    );
+    // An awaited helper (`await reopenTop()`) may open a layer. Assertion helpers named
+    // `expect…` (`expectAnimationsToSettle`, `expectHitTarget`) and the wait do not.
+    return !/^expect/.test(callee.name) && call.parent?.type === 'AwaitExpression';
   }
   const name = propertyName(callee);
   if (!name) return false;
@@ -141,11 +154,8 @@ function isInteractionCall(call) {
   return INTERACTION_METHODS.has(name) && rootName(callee) !== 'expect';
 }
 
-function statementGuardState(statement) {
-  const calls = collectCalls(statement);
-  if (calls.some(isGuardCall)) return 'guarded';
-  if (calls.some(isInteractionCall)) return 'interaction';
-  return 'neutral';
+function containsInteraction(statement) {
+  return collectCalls(statement, true).some(isInteractionCall);
 }
 
 function isStatementList(node) {
@@ -156,38 +166,72 @@ function statementsOf(list) {
   return list.type === 'SwitchCase' ? list.consequent : list.body;
 }
 
+function isLoop(node) {
+  return (
+    node?.type === 'ForStatement' ||
+    node?.type === 'ForOfStatement' ||
+    node?.type === 'ForInStatement' ||
+    node?.type === 'WhileStatement' ||
+    node?.type === 'DoWhileStatement'
+  );
+}
+
 // The statement that holds `node` directly inside a statement list, or null when `node`
-// sits in a nested function expression body first.
-function enclosingListedStatement(node) {
+// sits in a nested function expression body first. With `stopAtLoops`, a loop body also
+// yields null: a loop runs its body again after later interactions, so the backward
+// search for a wait may not leave it.
+function enclosingListedStatement(node, stopAtLoops = false) {
   let current = node;
   while (current.parent) {
     if (isStatementList(current.parent)) return current;
-    if (isFunction(current.parent)) return null;
+    if (isFunction(current.parent) || (stopAtLoops && isLoop(current.parent))) return null;
     current = current.parent;
   }
   return null;
 }
 
+// A block a scan may leave to continue in the enclosing statement list: an `if`/`else`
+// branch, a bare block, or a `try` block. Never a loop body, `catch`, or function body.
+function isTransparentBlock(list) {
+  if (list.type !== 'BlockStatement') return false;
+  const { parent } = list;
+  return (
+    parent?.type === 'IfStatement' ||
+    parent?.type === 'BlockStatement' ||
+    (parent?.type === 'TryStatement' && parent.block === list)
+  );
+}
+
 function isGuarded(click) {
-  let statement = enclosingListedStatement(click);
+  let statement = enclosingListedStatement(click, true);
   while (statement) {
     const list = statement.parent;
     const siblings = statementsOf(list);
     for (let index = siblings.indexOf(statement) - 1; index >= 0; index--) {
-      const state = statementGuardState(siblings[index]);
-      if (state === 'guarded') return true;
-      if (state === 'interaction') return false;
+      if (isGuardStatement(siblings[index])) return true;
+      if (containsInteraction(siblings[index])) return false;
     }
-    // Reached the start of the block: continue before the block's own statement
-    // (an `if` body, a loop body), but never out of the enclosing function.
-    if (list.type === 'Program' || isFunction(list.parent)) return false;
-    statement = enclosingListedStatement(list);
+    if (!isTransparentBlock(list)) return false;
+    statement = enclosingListedStatement(list, true);
   }
   return false;
 }
 
 function literalValue(node) {
   return node?.type === 'Literal' ? node.value : undefined;
+}
+
+// `{ <key>: false }` as the matcher's options.
+function optionIsFalse(options, key) {
+  if (options?.type !== 'ObjectExpression') return false;
+  return options.properties.some(
+    (property) =>
+      property.type === 'Property' &&
+      !property.computed &&
+      ((property.key.type === 'Identifier' && property.key.name === key) ||
+        literalValue(property.key) === key) &&
+      literalValue(property.value) === false,
+  );
 }
 
 function isClosedAssertion(call) {
@@ -201,68 +245,48 @@ function isClosedAssertion(call) {
     case 'toBeHidden':
       return !negated;
     case 'toBeVisible':
-      return negated;
+      return negated !== optionIsFalse(first, 'visible');
+    case 'toBeAttached':
+      return negated !== optionIsFalse(first, 'attached');
     case 'toHaveAttribute':
       return (
-        !negated && literalValue(first) === 'aria-expanded' && literalValue(second) === 'false'
+        !negated &&
+        ((literalValue(first) === 'aria-expanded' && literalValue(second) === 'false') ||
+          (literalValue(first) === 'data-state' && literalValue(second) === 'closed'))
       );
     default:
       return false;
   }
 }
 
-// `await expect(...)...;` or an `if` whose branches hold only such statements.
-function assertionCalls(statement) {
-  if (!statement) return null;
-  if (statement.type === 'ExpressionStatement') {
-    const expression = unwrap(statement.expression);
-    if (expression?.type !== 'CallExpression' || rootName(expression.callee) !== 'expect') {
-      return null;
-    }
-    return [expression];
-  }
-  if (statement.type === 'BlockStatement') {
-    const calls = [];
-    for (const child of statement.body) {
-      const nested = assertionCalls(child);
-      if (!nested) return null;
-      calls.push(...nested);
-    }
-    return calls;
-  }
-  if (statement.type === 'IfStatement') {
-    const consequent = assertionCalls(statement.consequent);
-    if (!consequent) return null;
-    if (!statement.alternate) return consequent;
-    const alternate = assertionCalls(statement.alternate);
-    return alternate ? [...consequent, ...alternate] : null;
-  }
-  return null;
-}
-
+// Whether a closed-state assertion follows the click before any other interaction. The
+// scan continues past the end of an `if`/`else` or `try` block that holds the click.
 function assertsDismissal(click) {
   let statement = enclosingListedStatement(click);
   while (statement) {
     const list = statement.parent;
     const siblings = statementsOf(list);
     for (let index = siblings.indexOf(statement) + 1; index < siblings.length; index++) {
-      const calls = assertionCalls(siblings[index]);
-      if (!calls) return false;
-      if (calls.some(isClosedAssertion)) return true;
+      if (containsInteraction(siblings[index])) return false;
+      if (collectCalls(siblings[index], true).some(isClosedAssertion)) return true;
     }
-    // Reached the end of an `if`/`else` block: the assertions after the `if` follow
-    // this click too. A loop body or function ends the scan.
-    if (list.type !== 'BlockStatement' || list.parent?.type !== 'IfStatement') return false;
+    if (!isTransparentBlock(list)) return false;
     statement = enclosingListedStatement(list);
   }
   return false;
 }
 
+const CLICK_METHODS = new Set(['click', 'dblclick', 'tap']);
+
 function isOutsideClick(node, sourceCode) {
   const { callee } = node;
-  if (propertyName(callee) !== 'click') return false;
-  if (propertyName(callee.object) === 'mouse') return true;
-  return /outside/i.test(sourceCode.getText(callee.object));
+  const name = propertyName(callee);
+  if (!CLICK_METHODS.has(name)) return false;
+  const device = propertyName(callee.object);
+  if (device === 'mouse') return name !== 'tap';
+  if (device === 'touchscreen') return name === 'tap';
+  if (device === 'keyboard') return false;
+  return /outside|overlay|backdrop/i.test(sourceCode.getText(callee.object));
 }
 
 export default {

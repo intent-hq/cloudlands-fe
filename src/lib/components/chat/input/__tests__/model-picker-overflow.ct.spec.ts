@@ -437,8 +437,8 @@ for (const placement of ['settings', 'composer', 'modal'] as const) {
       await expect(controlledListbox.getByRole('option')).toHaveCount(constrained ? 22 : 8);
       // The popup border emits mousedown (unlike option pointerdown, which
       // prevents it); it must not be mistaken for a click outside the parent.
-      // Until the nested select registers its layer, the parent is the topmost
-      // layer and does treat this click as outside.
+      // In the modal placement, until the nested select registers its layer the
+      // enclosing bits-ui dialog is the topmost layer and closes on this click.
       await expectDismissibleLayerArmed(inner);
       await inner.click({ position: { x: 1, y: 1 } });
       await expect(outer).toBeVisible();

@@ -133,6 +133,34 @@ tester.run('no-unarmed-outside-click-in-ct', rule, {
   await page.mouse.click(10, 10);
   await expect(menu).toHaveCount(0);`),
     },
+    {
+      name: 'an expect-named assertion helper does not cancel the wait',
+      filename,
+      code: inTest(`
+  await expectDismissibleLayerArmed(menu);
+  await expectAnimationsToSettle(menu);
+  await page.mouse.click(1, 1);
+  await expect(menu).toHaveCount(0);`),
+    },
+    {
+      name: 'guard inside the loop body covers each iteration',
+      filename,
+      code: inTest(`
+  for (const point of points) {
+    await trigger.click();
+    await expectDismissibleLayerArmed(menu);
+    await page.mouse.click(point.x, point.y);
+    await expect(menu).toHaveCount(0);
+  }`),
+    },
+    {
+      name: 'guarded overlay click',
+      filename,
+      code: inTest(`
+  await expectDismissibleLayerArmed(dialog);
+  await page.locator('[data-slot="dialog-overlay"]').click({ position: { x: 10, y: 10 } });
+  await expect(dialog).toHaveCount(0);`),
+    },
   ],
   invalid: [
     {
@@ -232,6 +260,103 @@ tester.run('no-unarmed-outside-click-in-ct', rule, {
   }
   await expect(menu).toHaveCount(0);`),
       errors: [error(7)],
+    },
+    {
+      name: 'unguarded overlay or backdrop click',
+      filename,
+      code: inTest(`
+  await page.locator('[data-slot="dialog-overlay"]').click({ position: { x: 10, y: 10 } });
+  await expect(dialog).toHaveCount(0);
+  await backdrop.click();
+  await expect(dialog).toHaveCount(0);`),
+      errors: [error(4), error(6)],
+    },
+    {
+      name: 'unguarded dblclick and touchscreen tap',
+      filename,
+      code: inTest(`
+  await page.mouse.dblclick(1, 1);
+  await expect(menu).toHaveCount(0);
+  await page.touchscreen.tap(1, 1);
+  await expect(menu).toHaveCount(0);`),
+      errors: [error(4), error(6)],
+    },
+    {
+      name: 'a wait followed by an interaction inside an earlier block does not count',
+      filename,
+      code: inTest(`
+  if (reopen) {
+    await expectDismissibleLayerArmed(menu);
+    await trigger.click();
+  }
+  await page.mouse.click(1, 1);
+  await expect(menu).toHaveCount(0);`),
+      errors: [error(8)],
+    },
+    {
+      name: 'a wait in one branch only does not count',
+      filename,
+      code: inTest(`
+  await trigger.click();
+  if (wide) await expectDismissibleLayerArmed(menu);
+  await page.mouse.click(1, 1);
+  await expect(menu).toHaveCount(0);`),
+      errors: [error(6)],
+    },
+    {
+      name: 'an interaction inside test.step cancels the wait',
+      filename,
+      code: inTest(`
+  await expectDismissibleLayerArmed(menu);
+  await test.step('reopen', async () => {
+    await trigger.click();
+  });
+  await page.mouse.click(1, 1);
+  await expect(menu).toHaveCount(0);`),
+      errors: [error(8)],
+    },
+    {
+      name: 'a wait before a loop does not cover clicks inside it',
+      filename,
+      code: inTest(`
+  await expectDismissibleLayerArmed(menu);
+  for (const point of points) {
+    await page.mouse.click(point.x, point.y);
+    await expect(menu).toHaveCount(0);
+    await trigger.click();
+  }
+  for (const point of points) await page.mouse.click(point.x, point.y);
+  await expect(menu).toHaveCount(0);`),
+      errors: [error(6), error(10)],
+    },
+    {
+      name: 'other closed-state assertions count as a dismissal',
+      filename,
+      code: inTest(`
+  await page.mouse.click(1, 1);
+  await expect(menu).toBeVisible({ visible: false });
+  await outside.click();
+  await expect(menu).not.toBeAttached();
+  await outside.click();
+  await expect(menu).toBeAttached({ attached: false });
+  await outside.click();
+  await expect(trigger).toHaveAttribute('data-state', 'closed');`),
+      errors: [error(4), error(6), error(8), error(10)],
+    },
+    {
+      name: 'a closed assertion after neutral statements or a try block',
+      filename,
+      code: inTest(`
+  await page.mouse.click(1, 1);
+  const count = await menu.count();
+  await expect(menu).toHaveCount(0);
+  try {
+    await page.mouse.click(1, 1);
+  } finally {
+    await log();
+  }
+  await expect(menu).toHaveCount(0);`),
+      errors: [error(4), error(8)],
     },
   ],
 });
