@@ -1,7 +1,6 @@
 <script lang="ts">
   import Combobox, { type ComboboxOption } from '../combobox';
   import { m } from '$shared/paraglide/messages.js';
-  import { useDialogPortalTarget } from '$lib/components/ui/dialog';
 
   interface Option extends ComboboxOption {
     icon?: unknown;
@@ -51,10 +50,6 @@
     staticPosition = false,
   }: Props = $props();
 
-  // Inline outside dialogs; inside one, leave the portal unset so Combobox
-  // renders the list in the dialog instead of clipping it in the dialog body.
-  const dialogPortalTarget = useDialogPortalTarget();
-
   function handleChange(nextValue: string | string[]) {
     if (typeof nextValue === 'string') onChange?.(nextValue);
   }
@@ -78,7 +73,7 @@
   ariaLabel={ariaLabel ?? placeholder}
   {ariaLabelledby}
   {ariaDescribedby}
-  portal={dialogPortalTarget() ? undefined : false}
+  portal="dialog"
   {staticPosition}
   onchange={handleChange}
 />

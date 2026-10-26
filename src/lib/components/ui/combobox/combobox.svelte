@@ -27,8 +27,11 @@
     invalid?: boolean;
     size?: UiSize;
     loading?: boolean;
-    /** Body portal when true; inline when false; unset portals into an enclosing dialog, else the body. */
-    portal?: boolean;
+    /**
+     * Body portal when true; inline when false. Unset portals into an enclosing
+     * dialog, else the body; 'dialog' portals into an enclosing dialog, else inline.
+     */
+    portal?: boolean | 'dialog';
     staticPosition?: boolean;
     side?: 'top' | 'bottom';
     ariaLabel: string;
@@ -121,8 +124,8 @@
 
   // Inside a dialog, a body portal sits under the modal layer and outside its
   // focus scope, and an inline list is clipped by the dialog's scroll body, so
-  // an unset portal goes into the dialog itself (see useDialogPortalTarget).
-  // An explicit portal choice is always honoured.
+  // an unset or 'dialog' portal goes into the dialog itself (see
+  // useDialogPortalTarget). An explicit boolean portal choice is always honoured.
   const dialogPortalTarget = useDialogPortalTarget();
   const surface = clampSurface(useSurface() + 2);
   setSurface(surface);
@@ -702,8 +705,12 @@
       child={staticContentChild}
     />
   {:else}
-    {@const dialogTarget = portal === undefined ? dialogPortalTarget() : undefined}
-    <ComboboxPrimitive.Portal disabled={portal === false} to={dialogTarget}>
+    {@const dialogTarget =
+      portal === undefined || portal === 'dialog' ? dialogPortalTarget() : undefined}
+    <ComboboxPrimitive.Portal
+      disabled={portal === false || (portal === 'dialog' && !dialogTarget)}
+      to={dialogTarget}
+    >
       <ComboboxPrimitive.Content
         {side}
         strategy={dialogTarget ? 'absolute' : 'fixed'}

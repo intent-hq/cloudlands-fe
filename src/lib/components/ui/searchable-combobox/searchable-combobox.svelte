@@ -5,7 +5,6 @@
   import Tooltip from '../tooltip/Tooltip.svelte';
   import { cn } from '$lib/utils';
   import { m } from '$shared/paraglide/messages.js';
-  import { useDialogPortalTarget } from '$lib/components/ui/dialog';
   import type { ItemActionContext, Option } from './types';
 
   interface Props {
@@ -75,10 +74,6 @@
     tooltipDelayDuration = 200,
     dropdownPosition = 'bottom',
   }: Props = $props();
-
-  // Inline outside dialogs; inside one, leave the portal unset so Combobox
-  // renders the list in the dialog instead of clipping it in the dialog body.
-  const dialogPortalTarget = useDialogPortalTarget();
 
   let renamingOptionValue = $state<string | null>(null);
   let renameValue = $state('');
@@ -180,7 +175,7 @@
     {emptyText}
     {errorText}
     {retryText}
-    portal={dialogPortalTarget() ? undefined : false}
+    portal="dialog"
     {header}
     optionDescription={optionDescription || itemActions ? canonicalOptionDescription : undefined}
     optionActions={itemActions ? canonicalOptionActions : undefined}

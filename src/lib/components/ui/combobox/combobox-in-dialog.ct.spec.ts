@@ -87,32 +87,34 @@ for (const variant of VARIANTS) {
   });
 }
 
-test('a dialog Combobox hides its list once the input scrolls out of the body', async ({
-  mount,
-  page,
-}) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.setViewportSize({ width: 800, height: 600 });
-  await mount(Harness, { props: { trailingRem: 60 } });
+for (const variant of VARIANTS) {
+  test(`a dialog ${variant} hides its list once the input scrolls out of the body`, async ({
+    mount,
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.setViewportSize({ width: 800, height: 600 });
+    await mount(Harness, { props: { variant, trailingRem: 60 } });
 
-  const { options } = await openPerson(page);
-  await expect(options.first()).toBeVisible();
-  await page.locator('[data-slot="dialog-body"]').evaluate((body) => {
-    body.scrollTop = body.scrollHeight;
+    const { options } = await openPerson(page);
+    await expect(options.first()).toBeVisible();
+    await page.locator('[data-slot="dialog-body"]').evaluate((body) => {
+      body.scrollTop = body.scrollHeight;
+    });
+    await expect(options.first()).toBeHidden();
+    await expect(page.getByRole('dialog')).toBeVisible();
   });
-  await expect(options.first()).toBeHidden();
-  await expect(page.getByRole('dialog')).toBeVisible();
-});
 
-test('a dialog Combobox list is portalled into the dialog', async ({ mount, page }) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await mount(Harness, {});
+  test(`a dialog ${variant} list is portalled into the dialog`, async ({ mount, page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await mount(Harness, { props: { variant } });
 
-  await openPerson(page);
-  await expect(
-    page.locator('[role="dialog"] > [data-bits-floating-content-wrapper] [role="listbox"]'),
-  ).toHaveCount(1);
-});
+    await openPerson(page);
+    await expect(
+      page.locator('[role="dialog"] > [data-bits-floating-content-wrapper] [role="listbox"]'),
+    ).toHaveCount(1);
+  });
+}
 
 test('portal={false} keeps a dialog Combobox list inline in the body', async ({ mount, page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
