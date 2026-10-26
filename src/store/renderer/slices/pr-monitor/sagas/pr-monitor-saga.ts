@@ -5,6 +5,7 @@ import { all, call, delay, fork, put, take, takeEvery, type SagaGenerator } from
 import { createLogger } from '$lib/utils/client-logger';
 import { markWorkspaceSeed } from '../../../utils/switch-timing';
 import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
+import { prMonitorBackendId } from '$lib/client/live/backend-transport';
 import {
   cancelPrMonitorRequested,
   flushPrMonitorRequested,
@@ -80,6 +81,15 @@ function* forwardMonitorUpdates(
   }
 }
 
+/** A host-label lookup failure only loses the warm reopen, never the lease. */
+function transportMonitorBackendId(): string | undefined {
+  try {
+    return prMonitorBackendId();
+  } catch {
+    return undefined;
+  }
+}
+
 function* acquireSubscription(
   active: Map<string, SubscriptionEntry>,
   action: ReturnType<typeof prMonitorsSubscribeRequested>,
@@ -96,7 +106,7 @@ function* acquireSubscription(
     // so a warm switch-back renders them with the transcript instead of after
     // the capture + list round-trips. The reducer drops them on a failed read.
     const retained = yield* selectReviewMonitors.effect(workspaceId);
-    const backendId = yield* selectActiveBackendId();
+    const backendId = transportMonitorBackendId() ?? (yield* selectActiveBackendId());
     const sameHost =
       retained.length > 0 && retained.every((row) => row.origin?.backendId === backendId);
     yield* put(

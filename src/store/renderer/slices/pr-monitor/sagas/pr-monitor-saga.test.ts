@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 
-const mocks = vi.hoisted(() => ({ subscribePrMonitors: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  subscribePrMonitors: vi.fn(),
+  prMonitorBackendId: vi.fn<() => string | undefined>(),
+}));
+vi.mock('$lib/client/live/backend-transport', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/client/live/backend-transport')>()),
+  prMonitorBackendId: mocks.prMonitorBackendId,
+}));
 vi.mock('$features/pr-monitor/pr-monitor-service', async (importOriginal) => {
   const actual = await importOriginal<typeof import('$features/pr-monitor/pr-monitor-service')>();
   return { ...actual, subscribePrMonitors: mocks.subscribePrMonitors };
@@ -564,6 +571,26 @@ describe('monitor lease re-acquisition on the same host', () => {
       expect(refreshed.snapshotStatus).toBe('ready');
       expect(refreshed.monitors.ids).toEqual(['fresh']);
     } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+  });
+
+  it('compares against the host label the monitor transport stamps when it has one', async () => {
+    const wsUrl = 'wss://daemon.example/rpc';
+    mocks.prMonitorBackendId.mockReturnValue(wsUrl);
+    const h = createHarness();
+    try {
+      await releaseAfterSeed(h, [
+        { ...sameHost, origin: { ...sameHost.origin!, backendId: wsUrl } },
+      ]);
+      h.dispatch(prMonitorsSubscribeRequested('ws'));
+      await settle();
+      const reopened = h.getState().prMonitor.byWorkspaceId.ws;
+      expect(reopened.snapshotStatus).toBe('stale');
+      expect(reopened.monitors.ids).toEqual(['kept']);
+    } finally {
+      mocks.prMonitorBackendId.mockReset();
       h.task.cancel();
       await h.task.toPromise();
     }

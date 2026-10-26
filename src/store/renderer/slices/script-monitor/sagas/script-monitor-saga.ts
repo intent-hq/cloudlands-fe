@@ -31,9 +31,11 @@ import {
 } from '../script-monitor-slice';
 import { selectScriptMonitors } from '../script-monitor-selectors';
 import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
+import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
 
 type Lease = {
   count: number;
+  backendId: string;
   service: ReturnType<typeof subscribeScriptMonitors>;
   channel: EventChannel<ScriptMonitorSnapshot>;
   snapshot?: ScriptMonitorSnapshot;
@@ -67,6 +69,9 @@ export function* scriptMonitorSaga(): SagaGenerator<void> {
   const connection = createScriptMonitorConnection();
   const leases = new Map<string, Lease>();
   let leasedWorkspaceId: string | null = null;
+  // Host each workspace's last ready rows were read from: a reopen on another
+  // backend must not show them, even under a repeated workspace ID.
+  const readyBackends = new Map<string, string>();
   try {
     function* acquire(workspaceId: string): SagaGenerator<void> {
       const previous = leases.get(workspaceId);
@@ -76,14 +81,18 @@ export function* scriptMonitorSaga(): SagaGenerator<void> {
       }
       // Warm reopen: start from the last fresh rows so the footer renders with
       // the transcript; the service's first page replaces them.
+      const backendId = yield* selectActiveBackendId();
       const saved = yield* select(selectScriptMonitors.select, workspaceId);
-      const retained = saved.status === 'ready' ? saved : undefined;
+      const retained =
+        saved.status === 'ready' && readyBackends.get(workspaceId) === backendId
+          ? { monitors: saved.monitors }
+          : undefined;
       let service!: Lease['service'];
       const channel = eventChannel<ScriptMonitorSnapshot>((emit) => {
         service = subscribeScriptMonitors(workspaceId, emit, connection, retained);
         return () => service.dispose();
       }, buffers.expanding());
-      const lease: Lease = { count: 1, service, channel };
+      const lease: Lease = { count: 1, backendId, service, channel };
       leases.set(workspaceId, lease);
       yield* fork(function* (): SagaGenerator<void> {
         try {
@@ -91,6 +100,7 @@ export function* scriptMonitorSaga(): SagaGenerator<void> {
             const snapshot = yield* take(channel);
             if (leases.get(workspaceId) !== lease) return;
             lease.snapshot = snapshot;
+            if (snapshot.status === 'ready') readyBackends.set(workspaceId, lease.backendId);
             yield* put(scriptMonitorsUpdated(workspaceId, snapshot));
           }
         } finally {

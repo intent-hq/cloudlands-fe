@@ -183,24 +183,30 @@
     });
   }
 
+  // Stale rows survive a lease re-acquisition for display only: their origin
+  // names a released session, so control actions wait for the fresh list.
+  const actionsUnavailable = $derived($snapshotStatus$ === 'stale');
+
   // A keyed row can be replaced while its menu remains open. Capture the
   // action destination on open, never recover it from the current row on select.
-  let menuTarget = $state<Pick<PrMonitorRow, 'workspaceId' | 'monitorId' | 'origin'> | null>(null);
+  // A target captured from a stale row keeps its released-session origin even
+  // after the fresh list lands, so it stays unusable until the menu reopens.
+  let menuTarget = $state<
+    (Pick<PrMonitorRow, 'workspaceId' | 'monitorId' | 'origin'> & { stale: boolean }) | null
+  >(null);
+  const menuActionsUnavailable = $derived(actionsUnavailable || menuTarget?.stale === true);
 
   function captureMenuTarget(monitor: PrMonitorRow) {
     menuTarget = {
       workspaceId: monitor.workspaceId,
       monitorId: monitor.monitorId,
       origin: monitor.origin ? { ...monitor.origin } : undefined,
+      stale: actionsUnavailable,
     };
   }
 
-  // Stale rows survive a lease re-acquisition for display only: their origin
-  // names a released session, so control actions wait for the fresh list.
-  const actionsUnavailable = $derived($snapshotStatus$ === 'stale');
-
   function handleCheckAndFlush() {
-    if (!menuTarget?.origin || actionsUnavailable) return;
+    if (!menuTarget?.origin || menuActionsUnavailable) return;
     appStore.dispatch(
       flushPrMonitorRequested(
         menuTarget.workspaceId,
@@ -212,7 +218,7 @@
   }
 
   function handleCancel() {
-    if (!menuTarget?.origin || actionsUnavailable) return;
+    if (!menuTarget?.origin || menuActionsUnavailable) return;
     appStore.dispatch(
       cancelPrMonitorRequested(menuTarget.workspaceId, menuTarget.monitorId, menuTarget.origin),
     );
@@ -537,7 +543,7 @@
                   <Menu.Item
                     class="type-caption h-auto w-full min-w-0 items-start whitespace-normal py-1.5 text-left"
                     data-testid="monitored-pr-check-flush-item"
-                    disabled={actionsUnavailable}
+                    disabled={menuActionsUnavailable}
                     onSelect={handleCheckAndFlush}
                   >
                     {#snippet leading()}<Fa icon={faArrowsRotate} />{/snippet}
@@ -571,7 +577,7 @@
                   <Menu.Item
                     class="type-caption h-auto w-full min-w-0 items-start whitespace-normal py-1.5 text-left"
                     data-testid="monitored-pr-cancel-item"
-                    disabled={actionsUnavailable}
+                    disabled={menuActionsUnavailable}
                     onSelect={handleCancel}
                   >
                     {#snippet leading()}<Fa icon={faXmark} />{/snippet}

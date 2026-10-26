@@ -32,11 +32,13 @@ function createHarness(currentTabId: string | null = null) {
   let state = {
     tabState: tabStateReducer(undefined, { type: '@@INIT' }),
     scriptMonitor: scriptMonitorReducer(undefined, { type: '@@INIT' }),
+    connections: { windowBackendId: 'local' },
   };
   const channel = stdChannel();
   const listeners = new Set<() => void>();
   const dispatch = vi.fn((action: { type: string }) => {
     state = {
+      ...state,
       tabState: tabStateReducer(state.tabState, action as never),
       scriptMonitor: scriptMonitorReducer(state.scriptMonitor, action as never),
     };
@@ -56,7 +58,10 @@ function createHarness(currentTabId: string | null = null) {
     scriptMonitorSaga,
   );
   if (currentTabId !== null) dispatch(openWorkspaceTab(currentTabId));
-  return { dispatch, getState: () => state, task };
+  const setBackend = (windowBackendId: string) => {
+    state = { ...state, connections: { windowBackendId } };
+  };
+  return { dispatch, getState: () => state, setBackend, task };
 }
 
 const subscribedWorkspaces = () => mocks.subscribeScriptMonitors.mock.calls.map((call) => call[0]);
@@ -84,10 +89,27 @@ describe('scriptMonitorSaga lease reopen', () => {
       expect(disposeOf(0)).toHaveBeenCalledOnce();
 
       h.dispatch(scriptMonitorsSubscribeRequested('ws'));
-      expect(mocks.subscribeScriptMonitors.mock.calls[1][3]).toMatchObject({
+      expect(mocks.subscribeScriptMonitors.mock.calls[1][3]).toEqual({ monitors: [summary] });
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+  });
+
+  it('does not pass rows read from a different backend', async () => {
+    const h = createHarness();
+    try {
+      h.dispatch(scriptMonitorsSubscribeRequested('ws'));
+      (mocks.subscribeScriptMonitors.mock.calls[0][1] as Emit)({
         monitors: [summary],
+        scripts: [],
         status: 'ready',
       });
+      await settle();
+      h.dispatch(scriptMonitorsUnsubscribeRequested('ws'));
+      h.setBackend('remote-host');
+      h.dispatch(scriptMonitorsSubscribeRequested('ws'));
+      expect(mocks.subscribeScriptMonitors.mock.calls[1][3]).toBeUndefined();
     } finally {
       h.task.cancel();
       await h.task.toPromise();

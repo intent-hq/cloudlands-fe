@@ -411,9 +411,8 @@ describe('script monitor read failures (intent-hq/intent#7206)', () => {
 
 describe('retained rows on a reopened lease', () => {
   const retainedRow = { ...summary, monitorId: 'retained-monitor' };
-  const retained = { monitors: [retainedRow], scripts: [scriptFixture], status: 'ready' as const };
 
-  function startRetained(snapshots: ScriptMonitorSnapshot[]) {
+  function startRetained(snapshots: ScriptMonitorSnapshot[], monitors = [retainedRow]) {
     off = subscribeScriptMonitors(
       ws,
       (snapshot) => {
@@ -421,7 +420,7 @@ describe('retained rows on a reopened lease', () => {
         snapshots.push(snapshot);
       },
       undefined,
-      retained,
+      { monitors },
     );
   }
 
@@ -430,15 +429,14 @@ describe('retained rows on a reopened lease', () => {
     vi.mocked(backendSubscribe).mockReturnValueOnce(ack.promise);
     const snapshots: ScriptMonitorSnapshot[] = [];
     startRetained(snapshots);
-    expect(snapshots[0]).toMatchObject({ status: 'loading', monitors: [retainedRow] });
-    expect(snapshots[0].scripts).toEqual([scriptFixture]);
+    expect(snapshots[0]).toEqual({ status: 'loading', monitors: [retainedRow], scripts: [] });
     ack.resolve({ subscriptionId: 'sub-1' });
     await ready();
     expect(rows.monitors).toEqual([summary]);
     expect(snapshots.some((snapshot) => snapshot.monitors.length === 0)).toBe(false);
   });
 
-  it('keeps retained rows visible with a failed status when the fresh page fails', async () => {
+  it('drops never-confirmed retained rows when the fresh page fails', async () => {
     const original = vi.mocked(backendRequest).getMockImplementation()!;
     vi.mocked(backendRequest).mockImplementation((method, params) =>
       method === 'scriptMonitor.list'
@@ -447,7 +445,37 @@ describe('retained rows on a reopened lease', () => {
     );
     startRetained([]);
     await vi.waitFor(() => expect(rows.status).toBe('failed'));
-    expect(rows.monitors).toEqual([retainedRow]);
+    expect(rows.monitors).toEqual([]);
+  });
+
+  it('drops never-confirmed retained rows when the hello fails', async () => {
+    vi.mocked(backendRequest).mockRejectedValueOnce(new Error('hello failed'));
+    startRetained([]);
+    await vi.waitFor(() => expect(rows.status).toBe('failed'));
+    expect(rows.monitors).toEqual([]);
+  });
+
+  it('replays details requested on a retained row once the fresh page lands', async () => {
+    const ack = deferred<{ subscriptionId: string }>();
+    vi.mocked(backendSubscribe).mockReturnValueOnce(ack.promise);
+    vi.mocked(backendRequest).mockImplementationOnce(() => new Promise(() => {}));
+    startRetained([], [summary]);
+    await off!.details(summary.monitorId);
+    expect(backendRequest).not.toHaveBeenCalledWith('scriptMonitor.get', expect.anything());
+    off!.dispose();
+    off = undefined;
+
+    vi.mocked(backendSubscribe).mockReturnValueOnce(ack.promise);
+    startRetained([], [summary]);
+    await off!.details(summary.monitorId);
+    ack.resolve({ subscriptionId: 'sub-1' });
+    await ready();
+    await vi.waitFor(() =>
+      expect(backendRequest).toHaveBeenCalledWith('scriptMonitor.get', {
+        workspaceId: ws,
+        monitorId: summary.monitorId,
+      }),
+    );
   });
 
   it('still resets to an authoritative empty list on reconnect', async () => {
