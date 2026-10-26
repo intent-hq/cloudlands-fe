@@ -1,5 +1,22 @@
-/** Zero-specificity defaults precede authored styles in the isolated document. */
+/**
+ * Zero-specificity defaults precede authored styles in the isolated document.
+ * Pure string: safe to import from the main process.
+ */
 export const INLINE_HTML_STYLES = `
+  /* Full CSS colors from the app's semantic hues, lightness-matched per theme. */
+  :where(:root) {
+    --chart-lightness: 0.6;
+    --chart-1: oklch(from hsl(var(--info)) var(--chart-lightness) c h);
+    --chart-2: oklch(from hsl(var(--success)) var(--chart-lightness) c h);
+    --chart-3: oklch(from hsl(var(--warning)) calc(var(--chart-lightness) + 0.08) c h);
+    --chart-4: oklch(from hsl(var(--danger)) var(--chart-lightness) max(c, 0.14) h);
+    --chart-5: oklch(
+      from color-mix(in oklch, hsl(var(--info)), hsl(var(--success)))
+      var(--chart-lightness) max(c, 0.1) h
+    );
+    --chart-6: oklch(from hsl(var(--primary)) calc(var(--chart-lightness) + 0.04) c h);
+  }
+  :where(:root.dark) { --chart-lightness: 0.74; }
   :where(html) {
     height: auto;
     overflow-x: hidden;
@@ -19,6 +36,9 @@ export const INLINE_HTML_STYLES = `
   }
   :where(*), :where(*)::before, :where(*)::after { box-sizing: border-box; }
   :where(img, svg, canvas) { max-width: 100%; }
+  /* SVG text defaults to black; follow the theme unless a fill is authored or inherited. */
+  :where(svg text:not([fill])) { fill: currentColor; }
+  :where(svg [fill] text:not([fill])) { fill: inherit; }
   :where(h1, h2, h3, h4, h5, h6) {
     margin: var(--space-4) 0 var(--space-2);
     font-size: var(--text-body-strong-size);
@@ -133,6 +153,7 @@ export const INLINE_HTML_STYLES = `
     grid-column: 1 / -1;
     width: 100%;
   }
+  /* Optional legacy drawing classes: light neutral strokes that let chart colors lead. */
   :where(.diagram-surface) {
     display: grid;
     gap: var(--space-3);
@@ -140,31 +161,29 @@ export const INLINE_HTML_STYLES = `
     /* The surrounding visual owns the content gutter. */
     padding: 0;
     min-width: 0;
-    border-radius: var(--diagram-node-radius);
-    background: var(--diagram-canvas);
-    color: var(--diagram-node-title);
+    color: hsl(var(--foreground));
   }
   :where(.diagram-surface > svg) { display: block; width: 100%; height: auto; }
   :where(.diagram-node) {
-    fill: var(--diagram-node-surface);
-    stroke: var(--diagram-node-outline);
+    fill: color-mix(in srgb, hsl(var(--foreground)) 4%, transparent);
+    stroke: color-mix(in srgb, hsl(var(--foreground)) 18%, transparent);
     stroke-width: var(--diagram-connector-width);
     vector-effect: non-scaling-stroke;
   }
   :where(.diagram-connector, .diagram-guide) {
     fill: none;
-    stroke: var(--diagram-connector);
+    stroke: color-mix(in srgb, hsl(var(--foreground)) 36%, transparent);
     stroke-width: var(--diagram-connector-width);
     stroke-linecap: round;
     stroke-linejoin: round;
     vector-effect: non-scaling-stroke;
   }
   :where(.diagram-guide) {
-    stroke: var(--diagram-connector-muted);
+    stroke: color-mix(in srgb, hsl(var(--foreground)) 16%, transparent);
     stroke-dasharray: 4 4;
   }
   :where(.diagram-label) {
-    fill: var(--diagram-node-title);
+    fill: currentColor;
     font-family: var(--font-ui);
     font-size: var(--text-body-size);
     font-weight: var(--text-body-weight);

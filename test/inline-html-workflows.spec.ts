@@ -1,7 +1,7 @@
 import { expect, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { test } from './root-browser-fixtures';
 import { createServer, type ViteDevServer } from 'vite';
-import { copyFile, mkdir } from 'node:fs/promises';
+import { copyFile, mkdir, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
@@ -11,6 +11,7 @@ import { workflowClampDemo } from './fixtures/inline-html-workflow-demo';
 let server: ViteDevServer | undefined;
 let baseUrl = process.env.UI_PREVIEW_BASE_URL ?? '';
 const artifacts = resolve('../../.intent/artifacts/inline-html/workflows');
+const seasonsArtifacts = resolve('../../.intent/artifacts/inline-html/seasons-benchmark');
 const appPolicy = readFileSync(resolve('src/app.html'), 'utf8').match(
   /http-equiv="Content-Security-Policy"\s+content="([^"]+)"/,
 )![1];
@@ -47,6 +48,7 @@ async function open(
   width = 1024,
   mode: 'persistent' | 'local-only' | 'remote-root' = 'persistent',
   viewers: 1 | 2 = 1,
+  demo: 'clamp' | 'seasons' | 'seasons-before' = 'clamp',
 ) {
   await page.setViewportSize({ width: width * viewers + (viewers - 1) * 16, height: 1100 });
   await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
@@ -75,7 +77,7 @@ async function open(
         workflowHost: mount(Host, { target: document.body, props }),
       });
     },
-    { width, height: 1080, theme, readFailure, mode, viewers },
+    { width, height: 1080, theme, readFailure, mode, viewers, demo },
   );
   await expect(page.locator('[data-inline-html]').first()).toBeVisible({ timeout: 90_000 });
   if (!readFailure)
@@ -101,11 +103,11 @@ async function savedState(page: Page) {
   const file = (await inspect(page)).files.find((file) => file.scope[1].endsWith('/state.json'));
   return file ? JSON.parse(file.content) : null;
 }
-async function capture(page: Page, info: TestInfo, name: string) {
+async function capture(page: Page, info: TestInfo, name: string, directory = artifacts) {
   const path = info.outputPath(`${name}.png`);
   await page.screenshot({ path, fullPage: true, animations: 'disabled' });
-  await mkdir(artifacts, { recursive: true });
-  await copyFile(path, resolve(artifacts, `${name}.png`));
+  await mkdir(directory, { recursive: true });
+  await copyFile(path, resolve(directory, `${name}.png`));
   await info.attach(name, { path, contentType: 'image/png' });
 }
 
@@ -504,4 +506,364 @@ test('retries failed reads, saves and exports while retaining current edits', as
         ).length,
     )
     .toBe(1);
+});
+
+// Seasons benchmark. Expectations are independent facts about Earth's seasons
+// (equinox ≈ 12 h everywhere, mirrored hemispheres, polar day and night, noon Sun
+// height = 90° − |latitude − subsolar latitude|, Lambert's cosine law), never the
+// fixture's own formulas.
+type SeasonsSnapshot = {
+  state: { day: number; latitude: number; tilt: number };
+  inputs: Record<string, string | number>;
+  results: Record<string, string | number>;
+};
+type SeasonsDate = 'mar-equinox' | 'jun-solstice' | 'sep-equinox' | 'dec-solstice';
+type SeasonsInput = { date?: SeasonsDate; latitude?: number; tilt?: number };
+const DAYLIGHT = 'Daylight (h)';
+const HEIGHT = 'Noon Sun height (°)';
+const SUNLIGHT = 'Sunlight on flat ground (% of overhead)';
+const SEASON = 'Season';
+const seasonsControl = (page: Page | Locator, name: 'day' | 'latitude' | 'tilt') =>
+  frame(page).locator(`[data-seasons-control="${name}"]`);
+async function seasonsSnapshot(page: Page): Promise<SeasonsSnapshot | undefined> {
+  for (const file of (await inspect(page)).files) {
+    if (!file.scope[1].endsWith('/state.json')) continue;
+    const current = JSON.parse(file.content).current;
+    if (current?.title === 'How seasons work') return current;
+  }
+  return undefined;
+}
+async function setSeasons(page: Page, input: SeasonsInput) {
+  if (input.tilt !== undefined) await seasonsControl(page, 'tilt').fill(String(input.tilt));
+  if (input.latitude !== undefined)
+    await seasonsControl(page, 'latitude').fill(String(input.latitude));
+  if (input.date) await frame(page).locator(`[data-seasons-date-preset="${input.date}"]`).click();
+  const date = await frame(page).locator('[data-seasons-date]').textContent();
+  await expect
+    .poll(async () => {
+      const snapshot = await seasonsSnapshot(page);
+      return snapshot && [snapshot.inputs.Date, snapshot.state.latitude, snapshot.state.tilt];
+    })
+    .toEqual([date, input.latitude ?? expect.any(Number), input.tilt ?? expect.any(Number)]);
+  return (await seasonsSnapshot(page))!;
+}
+function near(value: unknown, expected: number, tolerance: number, label: string) {
+  expect(typeof value, label).toBe('number');
+  expect(
+    Math.abs((value as number) - expected),
+    `${label}: ${value} ≈ ${expected}`,
+  ).toBeLessThanOrEqual(tolerance);
+}
+const presetDates: Record<SeasonsDate, RegExp> = {
+  'mar-equinox': /^Mar (19|20|21)$/,
+  'jun-solstice': /^Jun (20|21|22)$/,
+  'sep-equinox': /^Sep (22|23)$/,
+  'dec-solstice': /^Dec (21|22)$/,
+};
+
+test('explains seasons consistently across dates, hemispheres, the equator, poles and tilt', async ({
+  page,
+}, info) => {
+  await open(page, false, 'light', 1024, 'persistent', 1, 'seasons');
+  type Results = SeasonsSnapshot['results'];
+  const seen: Record<string, Results> = {};
+  const cases: {
+    name: string;
+    input: SeasonsInput;
+    shot?: boolean;
+    check: (r: Results) => void;
+  }[] = [
+    {
+      name: 'june-solstice-new-york',
+      input: { date: 'jun-solstice', latitude: 40.7, tilt: 23.4 },
+      shot: true,
+      check: (r) => {
+        near(r[DAYLIGHT], 14.95, 0.35, 'long northern summer day');
+        near(r[HEIGHT], 90 - 40.7 + 23.4, 1, 'high summer Sun');
+        expect(r[SEASON]).toBe('Summer');
+      },
+    },
+    {
+      name: 'june-solstice-mirrored-south',
+      input: { latitude: -40.7 },
+      check: (r) => {
+        near(
+          (r[DAYLIGHT] as number) + (seen['june-solstice-new-york'][DAYLIGHT] as number),
+          24,
+          0.05,
+          'mirrored hemispheres share 24 h',
+        );
+        near(r[HEIGHT], 90 - 40.7 - 23.4, 1, 'low southern winter Sun');
+        expect(r[SEASON]).toBe('Winter');
+      },
+    },
+    {
+      name: 'december-solstice-south',
+      input: { date: 'dec-solstice' },
+      check: (r) => {
+        near(r[DAYLIGHT], seen['june-solstice-new-york'][DAYLIGHT] as number, 0.1, 'south summer');
+        expect(r[SEASON]).toBe('Summer');
+      },
+    },
+    {
+      name: 'december-solstice-new-york',
+      input: { latitude: 40.7 },
+      check: (r) => {
+        near(r[DAYLIGHT], 9.1, 0.35, 'short northern winter day');
+        near(r[HEIGHT], 90 - 40.7 - 23.4, 1, 'low winter Sun');
+        expect(r[SEASON]).toBe('Winter');
+      },
+    },
+    {
+      name: 'march-equinox-new-york',
+      input: { date: 'mar-equinox' },
+      check: (r) => {
+        near(r[DAYLIGHT], 12, 0.15, 'equinox day');
+        near(r[HEIGHT], 90 - 40.7, 1, 'equinox noon Sun');
+      },
+    },
+    {
+      name: 'september-equinox-sydney',
+      input: { date: 'sep-equinox', latitude: -33.9 },
+      check: (r) => near(r[DAYLIGHT], 12, 0.15, 'equinox day in the south'),
+    },
+    {
+      name: 'equator-june',
+      input: { date: 'jun-solstice', latitude: 0 },
+      check: (r) => {
+        near(r[DAYLIGHT], 12, 0.02, 'equator day');
+        near(r[HEIGHT], 90 - 23.4, 1, 'equator noon Sun north of overhead');
+      },
+    },
+    {
+      name: 'equator-december',
+      input: { date: 'dec-solstice' },
+      check: (r) => near(r[DAYLIGHT], 12, 0.02, 'equator day'),
+    },
+    {
+      name: 'polar-night-tromso',
+      input: { latitude: 69.6 },
+      shot: true,
+      check: (r) => {
+        expect(r[DAYLIGHT]).toBe(0);
+        expect(r[HEIGHT] as number).toBeLessThan(0);
+        expect(r[SUNLIGHT]).toBe(0);
+      },
+    },
+    {
+      name: 'polar-day-tromso',
+      input: { date: 'jun-solstice' },
+      check: (r) => expect(r[DAYLIGHT]).toBe(24),
+    },
+    {
+      name: 'zero-tilt-new-york',
+      input: { latitude: 40.7, tilt: 0 },
+      shot: true,
+      check: (r) => {
+        near(r[DAYLIGHT], 12, 0.02, 'no tilt, no long days');
+        near(r[HEIGHT], 90 - 40.7, 0.2, 'no tilt, same noon Sun all year');
+        expect(r[SEASON]).toBe('No seasons');
+      },
+    },
+    {
+      name: 'zero-tilt-north-pole',
+      input: { latitude: 90 },
+      check: (r) => {
+        expect(Number.isFinite(r[DAYLIGHT])).toBe(true);
+        near(r[HEIGHT], 0, 0.2, 'Sun on the horizon at the pole');
+      },
+    },
+    {
+      name: 'extreme-tilt-moves-arctic-circle',
+      input: { latitude: 50, tilt: 45 },
+      check: (r) => expect(r[DAYLIGHT]).toBe(24),
+    },
+  ];
+  const report: { name: string; inputs: unknown; results: Results }[] = [];
+  for (const entry of cases) {
+    const snapshot = await setSeasons(page, entry.input);
+    const r = snapshot.results;
+    seen[entry.name] = r;
+    if (entry.input.date)
+      expect(snapshot.inputs.Date, entry.name).toMatch(presetDates[entry.input.date]);
+    entry.check(r);
+    const height = r[HEIGHT] as number;
+    near(r[SUNLIGHT], Math.max(0, 100 * Math.sin((height * Math.PI) / 180)), 1, 'cosine law');
+    const text = (await frame(page).locator('body').innerText()) ?? '';
+    expect(text, entry.name).not.toMatch(/NaN|Infinity|undefined/);
+    const north = frame(page).locator('[data-seasons-hemisphere="north"]');
+    const south = frame(page).locator('[data-seasons-hemisphere="south"]');
+    const month = String(snapshot.inputs.Date).slice(0, 3);
+    if (snapshot.state.tilt > 0 && (month === 'Jun' || month === 'Dec')) {
+      await expect(north).toContainText(month === 'Jun' ? /summer/i : /winter/i);
+      await expect(south).toContainText(month === 'Jun' ? /winter/i : /summer/i);
+    }
+    report.push({ name: entry.name, inputs: snapshot.inputs, results: r });
+    if (entry.shot) await capture(page, info, `seasons-${entry.name}`, seasonsArtifacts);
+  }
+  const body = JSON.stringify(report, null, 2);
+  await mkdir(seasonsArtifacts, { recursive: true });
+  await writeFile(resolve(seasonsArtifacts, 'seasons-physics.json'), `${body}\n`);
+  await info.attach('seasons-physics', { body, contentType: 'application/json' });
+});
+
+test('keeps seasons edits through keyboard, presets, theme, resize, reopening and draft handoff', async ({
+  page,
+}, info) => {
+  await open(page, false, 'light', 1024, 'persistent', 1, 'seasons');
+  const view = page.locator('[data-workflow-viewer="primary"]');
+  const earth = frame(page).locator('[data-seasons-orbit-earth]');
+  const date = frame(page).locator('[data-seasons-date]');
+  await earth.focus();
+  await earth.press('Home');
+  await expect(date).toHaveText('Jan 1');
+  await earth.press('ArrowRight');
+  await expect(date).toHaveText('Jan 2');
+  await expect(earth).toHaveAttribute('aria-valuetext', 'Jan 2');
+  await earth.press('End');
+  await expect(date).toHaveText('Dec 31');
+  await earth.press('PageDown');
+  await expect(date).not.toHaveText('Dec 31');
+  await expect(seasonsControl(page, 'day')).toHaveValue(
+    (await earth.getAttribute('aria-valuenow'))!,
+  );
+  await expect
+    .poll(async () => (await seasonsSnapshot(page))?.inputs.Date)
+    .toBe(await date.textContent());
+
+  const place = frame(page).locator('[data-seasons-place]');
+  await place.selectOption({ label: 'Sydney' });
+  await expect(seasonsControl(page, 'latitude')).toHaveValue('-33.9');
+  await place.selectOption({ label: 'Tromsø' });
+  await expect(seasonsControl(page, 'latitude')).toHaveValue('69.6');
+  await seasonsControl(page, 'latitude').fill('12.3');
+  await expect(place).toHaveValue('custom');
+  await place.selectOption({ label: 'London' });
+  await setSeasons(page, { date: 'dec-solstice', latitude: 51.5, tilt: 23.4 });
+
+  const paint = () =>
+    frame(page)
+      .locator('body')
+      .evaluate(() => ({
+        sun: getComputedStyle(document.querySelector('[data-seasons-sun]')!).fill,
+        earth: getComputedStyle(document.querySelector('[data-seasons-earth]')!).fill,
+        surface: getComputedStyle(document.body).backgroundColor,
+      }));
+  const light = await paint();
+  await capture(page, info, 'seasons-light', seasonsArtifacts);
+  const stateBefore = (await seasonsSnapshot(page))!.state;
+  await seasonsControl(page, 'latitude').focus();
+  await page.evaluate(() => (window as any).workflowHost.update({ theme: 'dark', width: 640 }));
+  await expect.poll(async () => (await paint()).surface).not.toBe(light.surface);
+  const dark = await paint();
+  expect({ sun: dark.sun, earth: dark.earth }).toEqual({ sun: light.sun, earth: light.earth });
+  expect((await seasonsSnapshot(page))!.state).toEqual(stateBefore);
+  await expect(seasonsControl(page, 'latitude')).toHaveValue('51.5');
+  await expect(seasonsControl(page, 'latitude')).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await expect(seasonsControl(page, 'latitude')).toHaveValue('51.6');
+  await expect(place).toHaveValue('custom');
+  await expect.poll(async () => (await seasonsSnapshot(page))?.state.latitude).toBe(51.6);
+  await capture(page, info, 'seasons-dark-resized', seasonsArtifacts);
+
+  const saved = (await seasonsSnapshot(page))!;
+  await open(page, false, 'light', 1024, 'persistent', 1, 'seasons');
+  await expect(seasonsControl(page, 'day')).toHaveValue(String(saved.state.day));
+  await expect(seasonsControl(page, 'latitude')).toHaveValue(String(saved.state.latitude));
+  await expect(seasonsControl(page, 'tilt')).toHaveValue(String(saved.state.tilt));
+  await expect(frame(page).locator('[data-seasons-date]')).toHaveText(String(saved.inputs.Date));
+
+  const editor = view.getByTestId('message-input').locator('.tiptap-editor');
+  await editor.press('ControlOrMeta+a');
+  await page.keyboard.insertText('Why does London get dark so early in December?');
+  await view.getByRole('button', { name: 'Use this configuration', exact: true }).click();
+  await expect(editor).toContainText('Why does London get dark so early in December?');
+  await expect
+    .poll(() => draftConfiguration(view))
+    .toEqual({ inputs: saved.inputs, results: saved.results });
+  const messages = JSON.parse((await page.getByTestId('stored-messages').textContent()) ?? '[]');
+  expect(messages).toHaveLength(1);
+  expect(messages[0].role).toBe('assistant');
+  await capture(page, info, 'seasons-draft-handoff', seasonsArtifacts);
+});
+
+test('fits tall seasons content at narrow width and keeps the last control usable in a short viewport', async ({
+  page,
+}, info) => {
+  await open(page, false, 'light', 360, 'persistent', 1, 'seasons');
+  await page.setViewportSize({ width: 360, height: 2400 });
+  await page.evaluate(() => (window as any).workflowHost.update({ width: 360, height: 2380 }));
+  const layout = () =>
+    frame(page)
+      .locator('body')
+      .evaluate(() => {
+        const root = document.documentElement;
+        const outside = (
+          box: DOMRect,
+          bounds: { left: number; right: number; top: number; bottom: number },
+        ) =>
+          box.left < bounds.left - 1 ||
+          box.right > bounds.right + 1 ||
+          box.top < bounds.top - 1 ||
+          box.bottom > bounds.bottom + 1;
+        const clippedLabels = [...document.querySelectorAll('svg text')]
+          .filter((text) =>
+            outside(text.getBoundingClientRect(), text.closest('svg')!.getBoundingClientRect()),
+          )
+          .map((text) => text.textContent);
+        const bounds = { left: 0, right: root.clientWidth, top: 0, bottom: root.scrollHeight };
+        const clippedControls = [
+          ...document.querySelectorAll('input, select, button, output, label'),
+        ]
+          .filter((control) => outside(control.getBoundingClientRect(), bounds))
+          .map((control) => control.textContent || control.getAttribute('aria-label'));
+        return {
+          content: root.scrollHeight,
+          hiddenContent: root.scrollHeight - root.clientHeight,
+          horizontalOverflow: root.scrollWidth - root.clientWidth,
+          clippedLabels,
+          clippedControls,
+        };
+      });
+  for (const theme of ['light', 'dark'] as const) {
+    await page.evaluate((next) => (window as any).workflowHost.update({ theme: next }), theme);
+    await expect.poll(async () => (await layout()).hiddenContent).toBeLessThanOrEqual(1);
+    const measured = await layout();
+    expect(measured.content).toBeGreaterThan(720);
+    expect(measured.horizontalOverflow).toBeLessThanOrEqual(1);
+    expect(measured.clippedLabels).toEqual([]);
+    expect(measured.clippedControls).toEqual([]);
+    await capture(page, info, `seasons-narrow-${theme}`, seasonsArtifacts);
+  }
+  await page.setViewportSize({ width: 360, height: 520 });
+  await page.evaluate(() => (window as any).workflowHost.update({ height: 500, theme: 'light' }));
+  const tilt = seasonsControl(page, 'tilt');
+  await tilt.scrollIntoViewIfNeeded();
+  await tilt.fill('0');
+  await expect.poll(async () => (await seasonsSnapshot(page))?.results[SEASON]).toBe('No seasons');
+  await tilt.focus();
+  await tilt.press('ArrowRight');
+  await expect(tilt).toHaveValue('0.1');
+  await capture(page, info, 'seasons-short-viewport', seasonsArtifacts);
+});
+
+// Review evidence, not an A/B of renderers or prompts: both captures use the
+// current renderer. "Before" is the original generated seasons source; "after"
+// is the richer hand-authored benchmark.
+test('captures the earlier generated seasons visual beside the benchmark for review', async ({
+  page,
+}, info) => {
+  for (const theme of ['light', 'dark'] as const)
+    for (const demo of ['seasons-before', 'seasons'] as const) {
+      await open(page, false, theme, 1024, 'persistent', 1, demo);
+      await page.setViewportSize({ width: 1024, height: 1700 });
+      await page.evaluate(() => (window as any).workflowHost.update({ height: 1680 }));
+      await expect(frame(page).locator('svg').first()).toBeVisible();
+      await capture(
+        page,
+        info,
+        `${demo === 'seasons' ? 'seasons-after' : 'seasons-before'}-${theme}`,
+        seasonsArtifacts,
+      );
+    }
 });

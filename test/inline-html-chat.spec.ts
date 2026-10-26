@@ -245,7 +245,7 @@ test('hands wheel scrolling from nested and tall content back to chat at either 
   expect(gestureEnd).toBe(gestureStart);
 
   await updateHost(page, {
-    message: inlineHtmlMessage('<div style="height:3000px"><p>Tall content</p></div>'),
+    message: inlineHtmlMessage('<div style="height:24000px"><p>Tall content</p></div>'),
   });
   await expect(preview(page)).toHaveAttribute('data-inline-html-status', 'ready');
   await chat.evaluate((element) => {
@@ -661,12 +661,48 @@ test('fits a narrow chat and resizes as interactive content grows and shrinks', 
   await expect(frame(page).getByText('Tall visual')).toBeVisible();
   await expect
     .poll(async () => (await preview(page).locator('iframe').boundingBox())!.height)
-    .toBeLessThanOrEqual(1600);
-  await capture(page, testInfo, 'tall-bounded');
+    .toBeGreaterThanOrEqual(5000);
+  await updateHost(page, {
+    message: inlineHtmlMessage('<div style="height:24000px">Very tall visual</div>'),
+  });
+  await expect
+    .poll(async () => (await preview(page).locator('iframe').boundingBox())!.height)
+    .toBe(20000);
+  await capture(page, testInfo, 'tall-fit-and-bound');
   await testInfo.attach('sizing.json', {
     body: JSON.stringify({ viewport: 360, overflow, collapsed, expanded }),
     contentType: 'application/json',
   });
+});
+
+test('holds a stable frame when authored viewport sizing follows the frame height', async ({
+  page,
+}) => {
+  await openChat(page);
+  await updateHost(page, {
+    message: inlineHtmlMessage(
+      '<div style="height:100vh">Viewport height</div><p>More content</p>',
+    ),
+  });
+  await expect(preview(page)).toHaveAttribute('data-inline-html-layout', 'viewport-locked');
+  await expect
+    .poll(async () => (await preview(page).locator('iframe').boundingBox())!.height)
+    .toBe(480);
+  const height = (await preview(page).locator('iframe').boundingBox())!.height;
+  expect(height).toBeLessThan(2000);
+  await frame(page)
+    .locator('body')
+    .evaluate(() => {
+      document.body.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  await expect
+    .poll(async () => (await preview(page).locator('iframe').boundingBox())!.height)
+    .toBe(height);
+  await updateHost(page, { message: inlineHtmlMessage('<p>Content height again</p>') });
+  await expect(preview(page)).not.toHaveAttribute('data-inline-html-layout', 'viewport-locked');
+  await expect
+    .poll(async () => (await preview(page).locator('iframe').boundingBox())!.height)
+    .toBeLessThan(200);
 });
 
 test('contains runtime failures and retains readable source', async ({ page }, testInfo) => {

@@ -10,6 +10,7 @@
   import { admitLegacyPrincipal } from '../../src/test/fixtures/principal-state';
   import { createInlineVisualFiles } from './inline-visual-files';
   import { workflowClampDemo, workflowClampMessage } from './inline-html-workflow-demo';
+  import { generatedSeasonsBeforeMessage, seasonsMessage } from './inline-html-seasons-demo';
   import type { AgentMessage } from '$shared/types';
 
   let {
@@ -19,6 +20,7 @@
     readFailure = false,
     mode = 'persistent',
     viewers = 1,
+    demo = 'clamp',
   }: {
     width?: number;
     height?: number;
@@ -26,7 +28,13 @@
     readFailure?: boolean;
     mode?: 'persistent' | 'local-only' | 'remote-root';
     viewers?: 1 | 2;
+    demo?: 'clamp' | 'seasons' | 'seasons-before';
   } = $props();
+  const demoMessages = {
+    clamp: workflowClampMessage,
+    seasons: seasonsMessage,
+    'seasons-before': () => generatedSeasonsBeforeMessage,
+  };
   const files = createInlineVisualFiles();
   files.fault(
     untrack(() => readFailure),
@@ -46,7 +54,9 @@
       id: 'persistent-clamp-demo',
       role: 'assistant',
       timestamp: '2026-10-22T21:00:00.000Z',
-      contentBlocks: [{ id: 'visual-text', type: 'text', text: workflowClampMessage() }],
+      contentBlocks: [
+        { id: 'visual-text', type: 'text', text: demoMessages[untrack(() => demo)]() },
+      ],
     },
   ];
   onMount(() => {

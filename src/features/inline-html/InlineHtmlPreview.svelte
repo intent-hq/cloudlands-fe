@@ -22,6 +22,8 @@
     readInlineHtmlTheme,
   } from './inline-html-document';
 
+  const SOURCE_MAX_HEIGHT = 720;
+
   let {
     source,
     isStreaming = false,
@@ -62,7 +64,8 @@
   let ready = $state(false);
   let runtimeError = $state('');
   let contentHeight = $state(INLINE_HTML_MIN_HEIGHT);
-  let heightLimit = $state(INLINE_HTML_MAX_HEIGHT);
+  let sourceHeightLimit = $state(SOURCE_MAX_HEIGHT);
+  let layoutWarning = $state('');
   let localRecord = $state.raw<InlineVisualRecord>(emptyInlineVisualRecord());
   let currentSnapshot = $state.raw<InlineVisualSnapshot | undefined>();
   let previousSource: string | undefined;
@@ -75,7 +78,9 @@
   const runnable = $derived(
     !isStreaming && isComplete && Boolean(source.trim()) && storageAvailable,
   );
-  const height = $derived(Math.min(heightLimit, Math.max(INLINE_HTML_MIN_HEIGHT, contentHeight)));
+  const height = $derived(
+    Math.min(INLINE_HTML_MAX_HEIGHT, Math.max(INLINE_HTML_MIN_HEIGHT, contentHeight)),
+  );
   const status = $derived(
     isStreaming || storageStatus === 'loading'
       ? 'loading'
@@ -188,6 +193,7 @@
       }
       ready = false;
       runtimeError = '';
+      layoutWarning = '';
       contentHeight = INLINE_HTML_MIN_HEIGHT;
       channel = crypto.randomUUID();
       documentHtml = canRun
@@ -221,6 +227,8 @@
         sendTheme();
       } else if (data.type === 'error' && typeof data.message === 'string') {
         runtimeError = data.message.slice(0, 300);
+      } else if (data.type === 'layout' && typeof data.message === 'string') {
+        layoutWarning = data.message.slice(0, 300);
       } else if (data.type === 'snapshot' && runnable && isInlineVisualSnapshot(data.snapshot)) {
         const snapshot = data.snapshot;
         currentSnapshot = snapshot;
@@ -240,8 +248,8 @@
       }
     };
     const resize = () => {
-      heightLimit = Math.min(
-        INLINE_HTML_MAX_HEIGHT,
+      sourceHeightLimit = Math.min(
+        SOURCE_MAX_HEIGHT,
         Math.max(160, Math.floor(window.innerHeight * 0.8)),
       );
     };
@@ -268,6 +276,7 @@
   bind:this={root}
   data-inline-html
   data-inline-html-status={status}
+  data-inline-html-layout={layoutWarning ? 'viewport-locked' : undefined}
   aria-busy={loading}
   class="my-3 min-w-0 overflow-hidden rounded-lg bg-background text-foreground"
 >
@@ -338,7 +347,7 @@
       ></iframe>
     {/if}
     {#if showSource}
-      <CodeBlock code={source} language="html" noBorder noMargin maxHeight={heightLimit} />
+      <CodeBlock code={source} language="html" noBorder noMargin maxHeight={sourceHeightLimit} />
     {:else if loading}
       <div class="space-y-4 p-4" aria-hidden="true">
         <div class="space-y-2">

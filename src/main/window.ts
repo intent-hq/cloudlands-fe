@@ -34,6 +34,7 @@ const logger = new Logger('Main');
 // Backend stamping lives in the dependency-light window-backend.ts (so
 // hud-window.ts and other small modules can read stamps without this
 // module's graph); re-exported here for the existing import sites.
+import { getAppWindows } from './offscreen-window';
 import {
   findExistingHudWindow,
   HUD_ROUTE_PREFIX,
@@ -299,7 +300,7 @@ function readSessionsMap(): WindowSessionsMap {
 
 // In-memory snapshot of the most recent non-empty sessions list. Used as a
 // fallback when saveWindowSessions() is invoked after all windows are already
-// gone (e.g., non-macOS window-all-closed, where BrowserWindow.getAllWindows()
+// gone (e.g., non-macOS window-all-closed, where getAppWindows()
 // returns empty and there is nothing live left to serialize).
 let lastKnownSessions: WindowSessionsMap = {};
 
@@ -391,7 +392,7 @@ export function setOnLastWindowClosedForBackend(
 }
 
 function buildSessionsFromOpenWindows(backendId: string): WindowSession[] {
-  return BrowserWindow.getAllWindows()
+  return getAppWindows()
     .filter((w: BrowserWindowType) => {
       if (w.isDestroyed()) return false;
       if (getBackendIdForWindow(w) !== backendId) return false;
@@ -432,7 +433,7 @@ function buildSessionsFromOpenWindows(backendId: string): WindowSession[] {
  * Synchronously capture a snapshot of current window sessions into an
  * in-memory cache. Intended to be wired to each window's `close` event so the
  * cache holds the final layout right before the window is destroyed — the
- * non-macOS window-all-closed path fires after BrowserWindow.getAllWindows()
+ * non-macOS window-all-closed path fires after getAppWindows()
  * has already emptied, at which point saveWindowSessions() would otherwise
  * have nothing to write. Electron invokes EventEmitter listeners with the
  * closing BrowserWindow as `this`, which also lets us distinguish one closed
@@ -440,7 +441,7 @@ function buildSessionsFromOpenWindows(backendId: string): WindowSession[] {
  */
 export function captureWindowSessionsSnapshot(this: BrowserWindowType | void): void {
   try {
-    const liveWindows = BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed());
+    const liveWindows = getAppWindows().filter((window) => !window.isDestroyed());
     const backendIds = new Set(liveWindows.map(getBackendIdForWindow));
     for (const backendId of backendIds) {
       const sessions = buildSessionsFromOpenWindows(backendId);
@@ -527,7 +528,7 @@ export async function saveAllWindowSessions(): Promise<void> {
     const backendIds = new Set([
       ...Object.keys(lastKnownSessions),
       ...closedBackendSessions,
-      ...BrowserWindow.getAllWindows()
+      ...getAppWindows()
         .filter((window) => !window.isDestroyed())
         .map(getBackendIdForWindow),
     ]);
@@ -805,7 +806,7 @@ export async function restoreAllBackendWindowSessions(
 /** Focus the first app window for a backend, restoring saved/fresh windows if needed. */
 /** First live, non-HUD app window bound to `backendId`, if any. */
 function findAppWindowForBackend(backendId: string): BrowserWindowType | undefined {
-  return BrowserWindow.getAllWindows().find(
+  return getAppWindows().find(
     (window) =>
       !window.isDestroyed() &&
       getBackendIdForWebContents(window.webContents) === backendId &&
@@ -831,7 +832,7 @@ export async function openOrFocusWindowsForBackend(backendId: string): Promise<v
 
 /** Ensure closing one backend cannot destroy the app's final live window. */
 export async function ensureLocalWindowBeforeClosingBackend(backendId: string): Promise<void> {
-  const liveWindows = BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed());
+  const liveWindows = getAppWindows().filter((window) => !window.isDestroyed());
   const closesAnyWindow = liveWindows.some((window) => getBackendIdForWindow(window) === backendId);
   const hasSurvivingWindow = liveWindows.some(
     (window) => getBackendIdForWindow(window) !== backendId,
@@ -843,7 +844,7 @@ export async function ensureLocalWindowBeforeClosingBackend(backendId: string): 
 
 /** Destroy only windows bound to one backend, preserving every other backend. */
 export function closeWindowsForBackend(backendId: string): void {
-  const windows = BrowserWindow.getAllWindows();
+  const windows = getAppWindows();
   for (const window of windows) {
     if (!window.isDestroyed() && getBackendIdForWindow(window) === backendId) window.destroy();
   }

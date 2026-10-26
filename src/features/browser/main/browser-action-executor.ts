@@ -103,6 +103,13 @@ const ScreenshotActionSchema = z.object({
   tabId: z.string().optional(),
 });
 
+const PreviewHtmlActionSchema = z.object({
+  action: z.literal('previewHtml'),
+  html: z.string().min(1).max(512_000),
+  width: z.number().int().min(320).max(1600).optional(),
+  appearance: z.enum(['light', 'dark']).optional(),
+});
+
 const EvaluateActionSchema = z.object({
   action: z.literal('evaluate'),
   expression: z.string(),
@@ -302,6 +309,7 @@ const BrowserActionSchema = z.discriminatedUnion('action', [
   ShowTabActionSchema,
   GetAccessibilityTreeActionSchema,
   ScreenshotActionSchema,
+  PreviewHtmlActionSchema,
   EvaluateActionSchema,
   SnapshotActionSchema,
   StartSessionActionSchema,
@@ -1038,6 +1046,16 @@ async function executeAction(
           success: true,
           result,
           ...(mount.warning ? { warning: mount.warning } : {}),
+        };
+      }
+
+      case 'previewHtml': {
+        requireWorkspaceId(workspaceId, action.action);
+        const { previewInlineHtml } = await import('./inline-html-preview-service');
+        return {
+          action: 'previewHtml',
+          success: true,
+          result: await previewInlineHtml(action, deadline),
         };
       }
 
