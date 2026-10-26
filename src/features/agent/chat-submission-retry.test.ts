@@ -1,3 +1,4 @@
+import { CURRENT_PROTOCOL_VERSION } from '../../test/current-protocol-version';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import { buildAnswerMessageMetadata } from '$lib/components/chat/questions/answer-message';
 import { deriveWizardPendingQuestions } from '$lib/components/chat/questions/wizard-gate';
@@ -96,6 +97,7 @@ const shell = () => ({
   updatedAt: '2026-10-03T00:00:00Z',
 });
 const baseReply = async (method: string, params: any) => {
+  if (method === 'client.hello') return { server: { protocolVersion: CURRENT_PROTOCOL_VERSION } };
   if (method === 'agent.get') return { agent: shell() };
   if (method === 'agent.getConversation')
     return { messages: [previous], totalMessages: 1, truncated: false };

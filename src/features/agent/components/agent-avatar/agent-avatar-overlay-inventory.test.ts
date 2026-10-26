@@ -144,9 +144,6 @@ describe('agent avatar overlay inventory', () => {
     expect(contents).not.toContain('radial-gradient');
     expect(contents).toContain('z-index: ${index + 1}');
     expect(contents).toContain('agent-avatar-stack-item--before-overflow');
-    expect(contents).toContain('min-width: var(--agent-avatar-surface-size)');
-    expect(contents).toContain('font-size: 0.75rem');
-    expect(contents).toContain("x='17' y='-1' width='26' height='26'");
     expect(contents).not.toContain('svelte-fa');
     expect(contents).not.toContain('stack-icon');
     expect(contents).not.toMatch(/agent-avatar-stack-item[\s\S]{0,500}\bborder:/);

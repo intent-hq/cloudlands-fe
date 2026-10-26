@@ -38,7 +38,6 @@
   import {
     selectLabsGitLabEnabled,
     selectLabsRemoteAgentsEnabled,
-    selectLabsProviderProfilesEnabled,
     selectLabsMultiplayerEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
@@ -48,7 +47,7 @@
   } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
   import {
-    selectHidesAgentLifecycleActions,
+    selectHidesAgentCreationActions,
     selectIsCollaboratorOnlyClient,
     selectIsWorkspaceCollaborator,
     selectWorkspaceItems,
@@ -100,7 +99,6 @@
   import CommandPaletteItemTitle from './CommandPaletteItemTitle.svelte';
   import CommandPaletteFilters from './CommandPaletteFilters.svelte';
   import { COMMAND_PALETTE_COMMANDS } from './command-palette-commands';
-  import { isProfilesLabCommandHidden, runProfilesLabCommand } from './command-palette-labs';
   import IntentNavigationIcon from '$lib/icons/IntentNavigationIcon.svelte';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
@@ -114,6 +112,7 @@
     getWorkspaceActivityDisplayTime,
   } from '$shared/utils/workspace-activity-time';
   import { store as appStore } from '$store/renderer/store';
+  import { paletteRetiredWorkspaces } from './command-palette-retired.svelte';
   import {
     changesConsumerMounted,
     changesConsumerUnmounted,
@@ -145,14 +144,13 @@
   const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
   const labsGitLabEnabled$ = selectLabsGitLabEnabled();
   const labsRemoteAgentsEnabled$ = selectLabsRemoteAgentsEnabled();
-  const labsProviderProfilesEnabled$ = selectLabsProviderProfilesEnabled();
   // Collaborators (multiplayer w3) are refused on terminal + browser methods and
   // cannot create workspaces, so those commands and result groups are withheld.
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
   const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
   const canCreate$ = selectWorkspaceCreationVisible();
   // Agent create is likewise refused (-32003) for a collaborator connection.
-  const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceIdStore);
+  const hidesAgentLifecycleActions$ = selectHidesAgentCreationActions(workspaceIdStore);
   const WORKSPACE_OWNER_ONLY_COMMAND_IDS: ReadonlySet<string> = new Set([
     'new-terminal',
     'open-url',
@@ -174,8 +172,7 @@
         !($labsGitLabEnabled$ && command.id === 'enable-experimental-gitlab') &&
         !(!$labsGitLabEnabled$ && command.id === 'disable-experimental-gitlab') &&
         !($labsRemoteAgentsEnabled$ && command.id === 'enable-experimental-remote-agents') &&
-        !(!$labsRemoteAgentsEnabled$ && command.id === 'disable-experimental-remote-agents') &&
-        !isProfilesLabCommandHidden(command.id, $labsProviderProfilesEnabled$),
+        !(!$labsRemoteAgentsEnabled$ && command.id === 'disable-experimental-remote-agents'),
     ),
   );
   const currentChanges$ = selectCurrentChanges(workspaceIdStore);
@@ -541,6 +538,7 @@
       appStore.dispatch(paletteNoteSearchRequested(noteSearchConsumerId, crypto.randomUUID(), ''));
   });
   onMount(() => () => appStore.dispatch(paletteNoteSearchReleased(noteSearchConsumerId)));
+  paletteRetiredWorkspaces(() => isOpen, workspaceItems, admissionSelector());
   function buildResults(q: string, files: any[], messages: any[], remoteNotes: WorkspaceObject[]) {
     const wsItems = ($workspaceItems || [])
       .filter((w: any) => w.id !== workspaceId)
@@ -555,6 +553,7 @@
             ? w.repositoryPath.split('/').pop() || w.repositoryPath
             : undefined,
           _workspace: true as const,
+          isRetiredWorkspace: w.retiredAt ? true : undefined, // retiredAt ⇔ Retired (§5.1)
           _time: activityTime > 0 ? formatRelativeTime(new Date(activityTime)) : '',
           _activityTime: activityTime,
         };
@@ -851,7 +850,6 @@
       navigateToSettings({ tab: settingsCommand.settingsTab });
       return true;
     }
-    if (runProfilesLabCommand(commandId)) return true;
     switch (commandId) {
       case 'new-workspace':
         if (selectWorkspaceCreationVisible.select(appStore.state)) {

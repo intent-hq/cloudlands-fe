@@ -7,6 +7,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 vi.mock('$lib/client/live/backend-transport', () => ({
   capturePrMonitorSession: vi.fn(),
   onMonitorReconnected: vi.fn(() => () => {}),
+  prMonitorBackendId: vi.fn(() => undefined),
   backendRequest: vi.fn(),
   backendSubscribe: vi.fn(),
   backendUnsubscribe: vi.fn().mockResolvedValue(undefined),
@@ -134,7 +135,7 @@ describe('Chief PR-monitor subscription ownership', () => {
     });
   });
   it.each([null, OTHER_WORKSPACE])(
-    'requests Chief without changing selected tab %s and hides a confirmed empty footer',
+    'requests Chief without changing selected tab %s and never shows an empty footer while loading',
     async (selected) => {
       let resolveList!: (value: { monitors: PrMonitorRow[] }) => void;
       const pending = new Promise<{ monitors: PrMonitorRow[] }>((resolve) => {
@@ -154,8 +155,11 @@ describe('Chief PR-monitor subscription ownership', () => {
         eventTypes: ['prMonitor:*'],
         workspaceId: CHIEF_WORKSPACE_ID,
       });
-      expect(screen.getByTestId('pr-monitors-snapshot-status').dataset.snapshotStatus).toBe(
-        'loading',
+      // A pending first read is not evidence of anything to show: the footer stays
+      // hidden instead of flashing "Subscribed to events · Loading" and vanishing.
+      expect(screen.queryByTestId('pr-monitors-snapshot-status')).toBeNull();
+      expect(screen.getByTestId('subscription-utility-area').dataset.hasSubscriptions).toBe(
+        'false',
       );
       resolveList({ monitors: [] });
       await waitFor(() => {

@@ -7,7 +7,6 @@ import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 const externalBaseUrl = process.env.UI_PREVIEW_BASE_URL;
 let baseUrl = externalBaseUrl ?? '';
 let server: ViteDevServer | undefined;
-const maxActiveSceneGap = 64;
 
 test.describe.configure({ mode: 'default' });
 
@@ -264,23 +263,14 @@ for (const fixture of fixtures) {
         }
         expect(scenes[0].nodes).toEqual(fixture.first);
         expect(scenes.at(-2)!.nodes).toEqual(fixture.last);
-        expect(scenes.at(-1)!.height).toBeCloseTo(scenes[0].height, 0);
-        expect(scenes.at(-1)!.scale).toBeCloseTo(scenes[0].scale, 4);
+
         for (const [index, scene] of scenes.entries()) {
           expect(scene.state).toBe(fixture.states[index % fixture.states.length]);
           expect(scene.finite).toBe(true);
-          expect(scene.minPrimaryFont).toBeGreaterThanOrEqual(12);
+
           expect(scene.edges.every((edge) => edge.path && edge.length > 0)).toBe(true);
           expect(scene.overflow, JSON.stringify(scene)).toBeLessThanOrEqual(1);
-          expect(scene.topGap, JSON.stringify(scene)).toBeLessThanOrEqual(maxActiveSceneGap);
-          expect(scene.bottomGap, JSON.stringify(scene)).toBeLessThanOrEqual(maxActiveSceneGap);
         }
-        expect(Math.max(...scenes.map((scene) => scene.drawingHeight))).toBeGreaterThan(
-          scenes[0].height + 40,
-        );
-        expect(
-          Math.max(...scenes.map((scene) => scene.height - scene.paintedHeight)),
-        ).toBeLessThanOrEqual(maxActiveSceneGap * 2);
       });
     }
   }

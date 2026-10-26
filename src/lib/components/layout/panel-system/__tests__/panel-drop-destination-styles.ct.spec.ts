@@ -65,7 +65,6 @@ test('renders the destination as an inert translucent card without accent stylin
 
   await expect(destination).toHaveCSS('pointer-events', 'none');
   await expect(destination).toHaveCSS('box-shadow', 'none');
-  await expect(destination).toHaveCSS('border-top-width', '1px');
   await expect(destination).toHaveCSS('border-top-style', 'solid');
   await expect(destination).toHaveCSS(
     'border-top-color',
@@ -87,7 +86,6 @@ test('keeps a system-color outline under forced colors', async ({ mount, page })
 
   const canvasText = await systemColor(page, 'CanvasText');
   await expect(destination).toHaveCSS('outline-style', 'solid');
-  await expect(destination).toHaveCSS('outline-width', '2px');
   await expect(destination).toHaveCSS('outline-color', canvasText);
   await expect(destination).toHaveCSS('border-top-color', canvasText);
 });

@@ -1,3 +1,4 @@
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { buffers, channel, type Channel } from 'redux-saga';
 import {
   call,
@@ -7,6 +8,7 @@ import {
   join,
   put,
   race,
+  spawn,
   take,
   takeEvery,
   type SagaGenerator,
@@ -15,7 +17,13 @@ import {
 import { appClient } from '$lib/client';
 import type { MutationResult, NoteMetadataPatch } from '$lib/client';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { NoteCapabilityUnknownError } from '$lib/client/live/live-notes-client';
 import { rebaseText } from '$lib/notes/text-rebase';
+import {
+  cutNoteContentForView,
+  exceedsNoteViewLimit,
+  isNoteContentStale,
+} from '$shared/utils/note-content';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import { ContentType, NoteVisibility } from '$shared/types';
@@ -51,6 +59,8 @@ import {
   deleteNotePersistRequested,
   flushNoteContentRequested,
   loadWorkspaceNotesSucceeded,
+  noteContentViewRequested,
+  readNoteRequested,
   removeOptimisticNote,
   respondToCommentRequested,
   resolveCommentRequested,
@@ -63,7 +73,16 @@ import {
   type AppliedNoteContent,
   NOTE_CONTENT_SAVE_DEBOUNCE_MS,
 } from '../workspace-notes-slice';
+import {
+  clearDaemonTexts,
+  daemonTextAt,
+  forgetWorkspaceDaemonTexts,
+  recordDaemonNote,
+  recordDaemonText,
+  type DaemonText,
+} from './note-daemon-text';
 import { toRuntimeNote } from './note-payload-mappers';
+import { viewReadOptions } from './note-view-read';
 
 const logger = createLogger('NotesWriteSaga');
 export { NOTE_CONTENT_SAVE_DEBOUNCE_MS };
@@ -145,6 +164,20 @@ const unackedDrafts = new Map<string, PendingContent[]>();
 // advanced to each echo's rev as the pending drafts are rebased onto it, and
 // sent as `expectedVersion`.
 const draftBaseRev = new Map<string, number>();
+// The daemon text at `draftBaseRev` (see `note-daemon-text.ts`), or `null` when
+// it is unknown. Its UTF-8 size is the truncated-read write guard's
+// `baseContentBytes` (§5.2 "Truncated note reads"); never an editor baseline,
+// a re-serialization, an unsent draft or a size copied from a response. An
+// unknown base sends an unguarded write, as before the guard existed.
+const draftBase = new Map<string, DaemonText | null>();
+// The text the chain's drafts were typed on (the editor baseline, else the
+// synced store text): the origin for rebasing them onto a re-read note when the
+// guard base is unknown or refused. Never sent as a size.
+const draftOrigin = new Map<string, string>();
+// Notes whose draft was already rebased once after a `content-base-mismatch`;
+// a second refusal offers the text to the user instead of looping.
+const mismatchRebased = new Set<string>();
+const utf8 = new TextEncoder();
 const workspaceMutationGenerations = new Map<string, number>();
 let noteMutationQueue: Channel<MutationEnvelope> | undefined;
 
@@ -154,6 +187,15 @@ function noteKey(workspaceId: string, noteId: string): string {
 
 function workspaceMutationGeneration(workspaceId: string): number {
   return workspaceMutationGenerations.get(workspaceId) ?? 0;
+}
+
+function isNoteDeletion(action: ObservedAction, workspaceId: string, noteId: string): boolean {
+  return (
+    action.type === applyNoteDeleted.type &&
+    Array.isArray(action.payload) &&
+    action.payload[0] === workspaceId &&
+    action.payload[1] === noteId
+  );
 }
 
 function isWorkspaceCleanup(action: ObservedAction, workspaceId: string): boolean {
@@ -207,14 +249,35 @@ function optimisticNote(
   };
 }
 
+/**
+ * Re-list a workspace on the bounded path: slim rows (§5.2 `projection: "slim"`)
+ * keep any cached body and its truncation markers at the same rev, and a body
+ * that went stale is re-read through the view read (capability-gated
+ * `maxContentBytes`) for every consumer still showing it. A full list would
+ * load large notes whole and drop their render-only markers.
+ */
+function* relistWorkspaceNotes(workspaceId: string): SagaGenerator<Note[]> {
+  const response: Awaited<ReturnType<typeof appClient.notes.list>> = yield* call(() =>
+    appClient.notes.list(workspaceId, { projection: 'slim' }),
+  );
+  const notes = response.map(toRuntimeNote);
+  for (const row of notes) recordDaemonNote(workspaceId, row);
+  yield* put(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
+  const ws = yield* selectWorkspaceNotesState.effect(workspaceId);
+  for (const view of getItems(ws.contentViews)) {
+    const note = yield* selectNoteById.effect(workspaceId, view.noteId);
+    if (note && (isNoteContentStale(note) || ws.staleContentByNoteId[view.noteId])) {
+      yield* put(
+        noteContentViewRequested(view.consumerId, view.requestId, workspaceId, view.noteId),
+      );
+    }
+  }
+  return notes;
+}
+
 function* refetchWorkspaceNotes(workspaceId: string) {
   try {
-    const response: Awaited<ReturnType<typeof appClient.notes.list>> = yield* call(
-      [appClient.notes, appClient.notes.list],
-      workspaceId,
-    );
-    const notes = response.map(toRuntimeNote);
-    yield* put(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
+    yield* call(relistWorkspaceNotes, workspaceId);
   } catch (error) {
     logger.error('Failed to refetch notes after a mutation error', error);
   }
@@ -233,9 +296,17 @@ function* reconcileConflict(
     // Mutation-response notes omit the transient `unmetDependsOn` projection
     // (monorepo#2001); keep the cached value so "Waits on" doesn't flicker.
     const cached = yield* selectNoteById.effect(workspaceId, canonicalId);
-    yield* put(
-      applyNoteUpdated(workspaceId, canonicalId, withPreservedUnmetDependsOn(note, cached)),
-    );
+    if (cached?.contentTruncated || exceedsNoteViewLimit(note.content)) {
+      // `current` is the full note; a large one goes through the bounded view read.
+      const read = readNoteRequested(workspaceId, canonicalId);
+      read.promise.catch((error: unknown) => logger.error('Failed to re-read a large note', error));
+      yield* put(read);
+    } else {
+      recordDaemonNote(workspaceId, note);
+      yield* put(
+        applyNoteUpdated(workspaceId, canonicalId, withPreservedUnmetDependsOn(note, cached)),
+      );
+    }
   } else {
     yield* call(refetchWorkspaceNotes, workspaceId);
   }
@@ -277,7 +348,11 @@ function* rebasePendingDrafts(
   if (echoed !== command.content) {
     for (const draft of later) draft.content = rebaseText(command.content, echoed, draft.content);
   }
-  if (echoedRev !== undefined) draftBaseRev.set(key, echoedRev);
+  if (echoedRev !== undefined) {
+    draftBaseRev.set(key, echoedRev);
+    draftBase.set(key, { rev: echoedRev, content: echoed, truncated: false });
+    draftOrigin.set(key, echoed);
+  }
   const newest = later[later.length - 1];
   if (!newest) return undefined;
   const stored = yield* selectNoteById.effect(workspaceId, noteId);
@@ -300,10 +375,27 @@ function* applyContentSaveResult(
   command: ContentCommand,
   sentRev: number | undefined,
   result: MutationResult,
+  support: boolean | 'unknown' = false,
 ): SagaGenerator<AppliedNoteContent> {
   const { workspaceId, noteId, seq } = command;
   const echoed = result.newContent ?? command.content;
   const nextRev = result.noteRev ?? (sentRev !== undefined ? sentRev + 1 : undefined);
+  // The note grew past the view limit while the save was pending (§5.2): it is
+  // now too large to edit in the app, whatever the capability state. Never put
+  // the echo (or a draft rebased on it) in the editor cache; switch to the
+  // render-only view at once.
+  const cut = nextRev !== undefined ? cutNoteContentForView(echoed) : null;
+  if (cut && nextRev !== undefined) {
+    return yield* call(switchToTruncatedView, command, nextRev, cut, support);
+  }
+  // An echo with its rev is daemon text: a later chain may be based on it.
+  if (result.newContent !== undefined && result.noteRev !== undefined) {
+    recordDaemonText(workspaceId, noteId, {
+      rev: result.noteRev,
+      content: result.newContent,
+      truncated: false,
+    });
+  }
   const stored = yield* selectNoteById.effect(workspaceId, noteId);
   const superseded = latestEditSeq.get(noteKey(workspaceId, noteId)) !== seq;
   const storeIsNewer = stored?.rev !== undefined && nextRev !== undefined && stored.rev > nextRev;
@@ -324,6 +416,215 @@ function* applyContentSaveResult(
     : { content: applied.content };
 }
 
+/**
+ * A save echo over the view limit: the note grew past 500 KB while the draft
+ * was pending. An editor must never claim a rev whose exact text it does not
+ * hold, so the row becomes, at the echo's rev, the daemon's truncated prefix
+ * (same cut rule) with its markers — render-only — and the prefix is recorded
+ * as a truncated base, so no later whole-content write can be built on it.
+ * Every pending and queued save for the note is retired; text typed after the
+ * acknowledged save is offered for copying. A bounded re-read follows.
+ */
+function* switchToTruncatedView(
+  command: ContentCommand,
+  rev: number,
+  cut: { content: string; contentBytes: number },
+  support: boolean | 'unknown',
+): SagaGenerator<AppliedNoteContent> {
+  const { workspaceId, noteId } = command;
+  const key = noteKey(workspaceId, noteId);
+  const later = (unackedDrafts.get(key) ?? []).filter((draft) => draft.seq > command.seq);
+  const unsaved = later.at(-1)?.content;
+  yield* call(dropDrafts, workspaceId, noteId);
+  recordDaemonText(workspaceId, noteId, { rev, content: cut.content, truncated: true });
+  const stored = yield* selectNoteById.effect(workspaceId, noteId);
+  if (stored) {
+    const { contentPreview: _preview, contentLength: _length, ...row } = stored;
+    yield* put(
+      applyNoteUpdated(workspaceId, noteId, {
+        ...row,
+        content: cut.content,
+        contentTruncated: true,
+        contentBytes: cut.contentBytes,
+        rev,
+      }),
+    );
+  }
+  logger.warn('Note grew past the view limit during a save; switched to the truncated view', {
+    noteId,
+  });
+  if (unsaved !== undefined && unsaved !== command.content) offerUnsavedText(unsaved, 'too-large');
+  // Re-read only once the capability is known: bounded when supported, the
+  // full note only after an acknowledged hello without it. Until then the row
+  // stays render-only.
+  if (support === 'unknown') yield* spawn(rereadWhenCapabilityKnown, workspaceId, noteId);
+  else yield* call(rereadNote, workspaceId, noteId);
+  return { content: cut.content, rev };
+}
+
+function* rereadNote(workspaceId: string, noteId: string) {
+  const read = readNoteRequested(workspaceId, noteId);
+  read.promise.catch((error: unknown) =>
+    logger.error('Failed to re-read a note that grew past the view limit', error),
+  );
+  yield* put(read);
+}
+
+/** Bounded wait for an acknowledged hello before re-reading a note that grew. */
+const CAPABILITY_REREAD_ATTEMPTS = 20;
+const CAPABILITY_REREAD_DELAY_MS = 3_000;
+
+function* rereadWhenCapabilityKnown(workspaceId: string, noteId: string) {
+  // Tied to the note's lifetime: an unmounted workspace or a deleted note ends
+  // the wait, even while the capability call is pending, so no read can
+  // recreate state that cleanup removed.
+  yield* race({
+    reread: call(rereadOnceCapabilityKnown, workspaceId, noteId),
+    gone: take(
+      (action: ObservedAction) =>
+        isWorkspaceCleanup(action, workspaceId) || isNoteDeletion(action, workspaceId, noteId),
+    ),
+  });
+}
+
+function* rereadOnceCapabilityKnown(workspaceId: string, noteId: string) {
+  for (let attempt = 0; attempt < CAPABILITY_REREAD_ATTEMPTS; attempt++) {
+    if ((yield* call(truncatedReadSupport)) !== 'unknown') {
+      // Defense in depth: never re-read a note the store no longer holds.
+      if (yield* selectNoteById.effect(workspaceId, noteId)) {
+        yield* call(rereadNote, workspaceId, noteId);
+      }
+      return;
+    }
+    yield* delay(CAPABILITY_REREAD_DELAY_MS);
+  }
+  logger.warn('Capability still unknown; the grown note stays render-only until it is reopened', {
+    noteId,
+  });
+}
+
+/** The bounded view read of one note (capability-gated `maxContentBytes`). */
+function* readFreshNote(workspaceId: string, noteId: string): SagaGenerator<Note | null> {
+  const options = yield* call(viewReadOptions);
+  return yield* call([appClient.notes, appClient.notes.get], noteId, workspaceId, options);
+}
+
+/** The truncated-read capability: `'unknown'` while no hello is acknowledged. */
+function* truncatedReadSupport(): SagaGenerator<boolean | 'unknown'> {
+  try {
+    return yield* call([appClient.notes, appClient.notes.supportsTruncatedRead]);
+  } catch (error) {
+    if (error instanceof NoteCapabilityUnknownError) return 'unknown';
+    throw error;
+  }
+}
+
+/** The newest text the user typed for a note, saved or not. */
+function newestDraftText(key: string, fallback: string): string {
+  return (unackedDrafts.get(key) ?? []).at(-1)?.content ?? fallback;
+}
+
+/** Drop every draft and the chain state for a note; the caller keeps the text. */
+function* dropDrafts(workspaceId: string, noteId: string) {
+  const key = noteKey(workspaceId, noteId);
+  pendingContent.delete(key);
+  unackedDrafts.delete(key);
+  latestEditSeq.delete(key);
+  draftBaseRev.delete(key);
+  draftBase.delete(key);
+  draftOrigin.delete(key);
+  yield* put(setNoteContentPending(workspaceId, noteId, false));
+}
+
+/**
+ * Text that cannot be saved is never dropped silently: a persistent warning
+ * offers to copy it.
+ */
+function offerUnsavedText(text: string, reason: 'too-large' | 'not-applied'): void {
+  notify.warning(m.notes_writeService_unsavedEdits_label(), {
+    description:
+      reason === 'too-large'
+        ? m.notes_writeService_unsavedEditsTooLarge_description()
+        : m.notes_writeService_unsavedEditsNotApplied_description(),
+    duration: Number.POSITIVE_INFINITY,
+    action: {
+      label: m.notes_writeService_copyUnsavedText_label(),
+      onClick: () => {
+        void navigator.clipboard
+          ?.writeText(text)
+          .catch((error: unknown) => logger.error('Failed to copy unsaved note text', error));
+      },
+    },
+  });
+}
+
+/**
+ * A whole-content write cannot go out guarded as built: the daemon refused its
+ * base (§5.2 `content-base-mismatch`), or the base's daemon text is unknown so
+ * its size cannot be sent. Every draft on that base is dropped — queued saves
+ * included (see `saveContent`) — and the note is re-read through the view read.
+ * Still editable: rebase the newest draft from `origin` onto the fresh text and
+ * return it for one resubmission on the fresh rev, whose daemon text is now
+ * known. Now truncated (or a second attempt, or no fresh read): keep the text
+ * for the user to copy.
+ */
+function* recoverDraftOnFreshRead(
+  command: ContentCommand,
+  origin: string,
+): SagaGenerator<{ content: string; rev: number } | undefined> {
+  const { workspaceId, noteId } = command;
+  const key = noteKey(workspaceId, noteId);
+  // The chain stays open during the read: edits typed meanwhile join it and are
+  // part of the newest draft taken below; the queue is held by this command.
+  let fresh: Note | null = null;
+  try {
+    // Raced against the note's deletion: a late pre-deletion response must not
+    // resurrect the note, record a base or resubmit the draft.
+    const { read, gone } = yield* race({
+      read: call(readFreshNote, workspaceId, noteId),
+      gone: take(
+        (action: ObservedAction) =>
+          isWorkspaceCleanup(action, workspaceId) || isNoteDeletion(action, workspaceId, noteId),
+      ),
+    });
+    if (gone) {
+      const draft = newestDraftText(key, command.content);
+      yield* call(dropDrafts, workspaceId, noteId);
+      mismatchRebased.delete(key);
+      logger.warn('Note removed during save recovery; kept the unsaved text for the user', {
+        noteId,
+      });
+      offerUnsavedText(draft, 'not-applied');
+      return undefined;
+    }
+    fresh = read ?? null;
+  } catch (error) {
+    logger.error('Failed to re-read a note after a content base mismatch', error);
+  }
+  if (fresh && (String(fresh.workspaceId) !== workspaceId || String(fresh.id) !== noteId)) {
+    fresh = null;
+  }
+  // The newest text, including edits typed during the read. Dropping the drafts
+  // also retires every queued save built on the old base (see `saveContent`).
+  const draft = newestDraftText(key, command.content);
+  yield* call(dropDrafts, workspaceId, noteId);
+  if (fresh) {
+    const note = toRuntimeNote(fresh);
+    recordDaemonNote(workspaceId, note);
+    yield* put(applyNoteUpdated(workspaceId, noteId, note));
+  }
+  const alreadyRebased = mismatchRebased.has(key);
+  if (!fresh || fresh.contentTruncated || fresh.rev === undefined || alreadyRebased) {
+    mismatchRebased.delete(key);
+    logger.warn('Note save base unverifiable; kept the unsaved text for the user', { noteId });
+    offerUnsavedText(draft, fresh?.contentTruncated ? 'too-large' : 'not-applied');
+    return undefined;
+  }
+  mismatchRebased.add(key);
+  logger.warn('Note save base unverifiable; rebased the draft onto the latest text', { noteId });
+  return { content: rebaseText(origin, fresh.content, draft), rev: fresh.rev };
+}
+
 function forgetDraft(key: string, draft: PendingContent): void {
   const remaining = (unackedDrafts.get(key) ?? []).filter((d) => d !== draft);
   if (remaining.length > 0) unackedDrafts.set(key, remaining);
@@ -339,15 +640,53 @@ function* saveContent(command: ContentCommand): SagaGenerator<AppliedNoteContent
   // conflicts, so a failure here is a generic failure — no reload+toast
   // conflict path. `command.content` is read here, not at enqueue time: an
   // earlier save's echo may have rebased it while queued.
+  // A queued save whose draft was dropped (a recovery rebased its text into a
+  // resubmission) must not reach the wire: written at the fresh rev it would
+  // replace the note and delete the concurrent change.
+  if (!(unackedDrafts.get(key) ?? []).includes(command)) return undefined;
   const rev = draftBaseRev.get(key) ?? note?.rev;
+  const base = draftBase.get(key) ?? null;
+  const origin = draftOrigin.get(key) ?? base?.content ?? note?.content ?? '';
+  let resubmit: { content: string; rev: number } | undefined;
   try {
+    // A draft built on a truncated read (§5.2 "Truncated note reads") holds only
+    // a prefix: replacing the whole note with it would drop everything after
+    // the cut. Decided by the draft's base, not the current row — a draft based
+    // on the full text stays safe to send, guarded, after the note grows.
+    // An unknown base on a truncated row cannot be verified either.
+    if (base?.truncated || (base === null && note?.contentTruncated)) {
+      const draft = newestDraftText(key, command.content);
+      yield* call(dropDrafts, workspaceId, noteId);
+      logger.warn('Kept a draft built on a truncated note read for the user', { noteId });
+      offerUnsavedText(draft, 'too-large');
+      return undefined;
+    }
+    // A client that reads with `maxContentBytes` must guard every whole-content
+    // write with the size of its base; older daemons never see the param.
+    const support = yield* call(truncatedReadSupport);
+    // Every whole-content write is guarded: with no known base size, re-read and
+    // rebase rather than send an unguarded write.
+    if (support === true && (base === null || base.rev !== rev)) {
+      resubmit = yield* call(recoverDraftOnFreshRead, command, origin);
+      return undefined;
+    }
+    // Capability unknown (no acknowledged hello yet): a known base is still sent
+    // guarded — a daemon without the capability may ignore the param (§5.2) —
+    // and with no base the save fails like a dropped connection; the text stays.
+    if (support === 'unknown' && base === null) throw new NoteCapabilityUnknownError();
+    const guarded = support !== false && base !== null;
     const result: MutationResult = yield* call(
       [appClient.notes, appClient.notes.setContent],
       noteId,
       command.content,
       rev,
       workspaceId,
+      ...(guarded && base ? [{ baseContentBytes: utf8.encode(base.content).length }] : []),
     );
+    if (result.contentBaseMismatch) {
+      resubmit = yield* call(recoverDraftOnFreshRead, command, origin);
+      return undefined;
+    }
     if (!result.success) {
       logger.error('Failed to save note content', result.error);
       notify.error(m.notes_writeService_saveFailed_error(), {
@@ -356,7 +695,8 @@ function* saveContent(command: ContentCommand): SagaGenerator<AppliedNoteContent
       yield* call(refetchWorkspaceNotes, workspaceId);
       return undefined;
     }
-    return yield* call(applyContentSaveResult, command, rev, result);
+    mismatchRebased.delete(key);
+    return yield* call(applyContentSaveResult, command, rev, result, support);
   } catch (error) {
     logger.error('Failed to save note content', error);
     yield* call(refetchWorkspaceNotes, workspaceId);
@@ -368,9 +708,20 @@ function* saveContent(command: ContentCommand): SagaGenerator<AppliedNoteContent
     if (latestEditSeq.get(key) === command.seq) {
       latestEditSeq.delete(key);
       draftBaseRev.delete(key);
+      draftBase.delete(key);
+      draftOrigin.delete(key);
     }
     if ((unackedDrafts.get(key)?.length ?? 0) === 0) {
       yield* put(setNoteContentPending(workspaceId, noteId, false));
+    }
+    // After this command's cleanup, so the new chain's state is not cleared.
+    if (resubmit) {
+      yield* put(
+        updateNoteContent(workspaceId, noteId, resubmit.content, {
+          immediate: true,
+          baseRev: resubmit.rev,
+        }),
+      );
     }
   }
 }
@@ -424,7 +775,8 @@ function* resolveComment(command: ResolveCommentCommand): SagaGenerator<boolean>
   }
 }
 
-function* saveMetadata(command: MetadataCommand) {
+/** Resolves `false` when the write failed and the local patch was rolled back. */
+function* saveMetadata(command: MetadataCommand): SagaGenerator<boolean> {
   const { workspaceId, noteId, patch, rollback, titleOnly } = command;
   const note = yield* selectNoteById.effect(workspaceId, noteId);
   const rev = note?.rev;
@@ -437,7 +789,7 @@ function* saveMetadata(command: MetadataCommand) {
       workspaceId,
     );
     if (!result.success) {
-      if (yield* call(reconcileConflict, workspaceId, noteId, result)) return;
+      if (yield* call(reconcileConflict, workspaceId, noteId, result)) return true;
       logger.error(
         titleOnly ? 'Failed to update note title' : 'Failed to update note metadata',
         result.error,
@@ -449,12 +801,14 @@ function* saveMetadata(command: MetadataCommand) {
         { description: result.error ?? m.notes_writeService_unknown_error() },
       );
       yield* put(applyLocalNoteUpdate(workspaceId, noteId, rollback));
-      return;
+      return false;
     }
     if (rev !== undefined) yield* call(advanceRevision, workspaceId, noteId, rev);
+    return true;
   } catch (error) {
     logger.error('Failed to update note metadata', error);
     yield* put(applyLocalNoteUpdate(workspaceId, noteId, rollback));
+    return false;
   }
 }
 
@@ -541,11 +895,21 @@ function* handleContentAction(
     const baseRev = options.baseRev ?? (yield* selectNoteById.effect(workspaceId, noteId))?.rev;
     if (baseRev !== undefined) draftBaseRev.set(key, baseRev);
   }
+  if (!draftBase.has(key)) {
+    // The guard base is the daemon's own text at the chain's base rev.
+    draftBase.set(key, daemonTextAt(workspaceId, noteId, draftBaseRev.get(key)) ?? null);
+    const origin =
+      options.baseContent ?? (yield* selectNoteById.effect(workspaceId, noteId))?.content;
+    if (origin !== undefined) draftOrigin.set(key, origin);
+  }
   const newest = (unackedDrafts.get(key) ?? []).at(-1);
   if (newest && options.baseContent !== undefined && options.baseContent !== newest.content) {
     content = rebaseText(options.baseContent, newest.content, content);
   }
-  yield* put(applyLocalNoteUpdate(workspaceId, noteId, { content }));
+  // A truncated row is render-only: never show a draft as if it were the prefix.
+  if (!(yield* selectNoteById.effect(workspaceId, noteId))?.contentTruncated) {
+    yield* put(applyLocalNoteUpdate(workspaceId, noteId, { content }));
+  }
   const seq = (latestEditSeq.get(key) ?? 0) + 1;
   latestEditSeq.set(key, seq);
   const pending: PendingContent = { kind: 'content', workspaceId, noteId, content, seq };
@@ -722,7 +1086,7 @@ function* handleTitleAction(
   const before = yield* selectNoteById.effect(workspaceId, noteId);
   yield* put(applyLocalNoteUpdate(workspaceId, noteId, { title }));
   yield* call(flushPendingNoteContent, workspaceId, noteId);
-  yield* enqueueMutation(
+  return yield* enqueueMutation(
     queue,
     {
       kind: 'metadata',
@@ -741,8 +1105,10 @@ function* handleTitleRequested(
   action: ReturnType<typeof updateNoteTitlePersistRequested>,
 ) {
   try {
-    yield* call(handleTitleAction, queue, updateNoteTitle(...action.payload));
-    yield* put(action.success(undefined as never));
+    const saved = yield* call(handleTitleAction, queue, updateNoteTitle(...action.payload));
+    // Only an explicit failed save is `false`; a discarded (workspace cleanup) or
+    // reconciled write keeps the previous success outcome.
+    yield* put(action.success(saved !== false));
   } catch (error) {
     yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
   }
@@ -821,17 +1187,16 @@ function* createNewNote(
     }
 
     try {
-      const response: Awaited<ReturnType<typeof appClient.notes.list>> = yield* call(
-        [appClient.notes, appClient.notes.list],
-        workspaceId,
-      );
-      const notes = response.map(toRuntimeNote);
-      yield* put(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
+      const notes: Note[] = yield* call(relistWorkspaceNotes, workspaceId);
       keepOptimistic = false;
-      const created = notes.find((note) => !before.has(String(note.id)));
-      if (!created) return undefined;
-      yield* put(addOptimisticNote(workspaceId, created));
-      return String(created.id);
+      // Prefer the daemon-returned id: diffing the relist against the pre-create
+      // snapshot can pick a note another agent/window created concurrently
+      // (intent#4780). The diff is only a fallback for responses without an id.
+      const created = result.id
+        ? notes.find((note) => String(note.id) === result.id)
+        : notes.find((note) => !before.has(String(note.id)));
+      if (created) yield* put(addOptimisticNote(workspaceId, created));
+      return created ? String(created.id) : result.id;
     } catch (error) {
       keepOptimistic = false;
       logger.error('Failed to refetch notes after creating a note', error);
@@ -907,6 +1272,16 @@ function* cleanupWorkspace(action: WorkspaceCleanupAction) {
   for (const key of draftBaseRev.keys()) {
     if (key.startsWith(`${workspaceId}:`)) draftBaseRev.delete(key);
   }
+  for (const key of draftBase.keys()) {
+    if (key.startsWith(`${workspaceId}:`)) draftBase.delete(key);
+  }
+  for (const key of draftOrigin.keys()) {
+    if (key.startsWith(`${workspaceId}:`)) draftOrigin.delete(key);
+  }
+  for (const key of mismatchRebased) {
+    if (key.startsWith(`${workspaceId}:`)) mismatchRebased.delete(key);
+  }
+  forgetWorkspaceDaemonTexts(workspaceId);
   for (const key of unackedDrafts.keys()) {
     if (key.startsWith(`${workspaceId}:`)) unackedDrafts.delete(key);
   }
@@ -971,6 +1346,10 @@ export function* notesWriteSaga() {
     pendingContent.clear();
     latestEditSeq.clear();
     draftBaseRev.clear();
+    draftBase.clear();
+    draftOrigin.clear();
+    mismatchRebased.clear();
+    clearDaemonTexts();
     unackedDrafts.clear();
     workspaceMutationGenerations.clear();
     queue.close();

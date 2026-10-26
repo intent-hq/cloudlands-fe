@@ -1,6 +1,5 @@
 <script lang="ts">
   import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
-  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   /**
    * MonitoredPrsRow Component
    *
@@ -141,8 +140,11 @@
   // surface, cancelled rows are excluded server-side.
   const activeMonitors = $derived($monitors$.filter((mon) => mon.state === 'active'));
 
+  // A pending first read is not evidence of anything to show: staying hidden
+  // keeps the footer from flashing "Loading" and vanishing on every chat open.
+  // Only a failed read surfaces on its own, so the error stays discoverable.
   $effect(() => {
-    visible = activeMonitors.length > 0 || $snapshotStatus$ !== 'ready';
+    visible = activeMonitors.length > 0 || $snapshotStatus$ === 'failed';
     count = activeMonitors.length;
   });
 
@@ -181,20 +183,30 @@
     });
   }
 
+  // Stale rows survive a lease re-acquisition for display only: their origin
+  // names a released session, so control actions wait for the fresh list.
+  const actionsUnavailable = $derived($snapshotStatus$ === 'stale');
+
   // A keyed row can be replaced while its menu remains open. Capture the
   // action destination on open, never recover it from the current row on select.
-  let menuTarget = $state<Pick<PrMonitorRow, 'workspaceId' | 'monitorId' | 'origin'> | null>(null);
+  // A target captured from a stale row keeps its released-session origin even
+  // after the fresh list lands, so it stays unusable until the menu reopens.
+  let menuTarget = $state<
+    (Pick<PrMonitorRow, 'workspaceId' | 'monitorId' | 'origin'> & { stale: boolean }) | null
+  >(null);
+  const menuActionsUnavailable = $derived(actionsUnavailable || menuTarget?.stale === true);
 
   function captureMenuTarget(monitor: PrMonitorRow) {
     menuTarget = {
       workspaceId: monitor.workspaceId,
       monitorId: monitor.monitorId,
       origin: monitor.origin ? { ...monitor.origin } : undefined,
+      stale: actionsUnavailable,
     };
   }
 
   function handleCheckAndFlush() {
-    if (!menuTarget?.origin) return;
+    if (!menuTarget?.origin || menuActionsUnavailable) return;
     appStore.dispatch(
       flushPrMonitorRequested(
         menuTarget.workspaceId,
@@ -206,7 +218,7 @@
   }
 
   function handleCancel() {
-    if (!menuTarget?.origin) return;
+    if (!menuTarget?.origin || menuActionsUnavailable) return;
     appStore.dispatch(
       cancelPrMonitorRequested(menuTarget.workspaceId, menuTarget.monitorId, menuTarget.origin),
     );
@@ -415,19 +427,14 @@
   }
 </script>
 
-{#if activeMonitors.length === 0 && $snapshotStatus$ !== 'ready'}
+{#if activeMonitors.length === 0 && $snapshotStatus$ === 'failed'}
   <div
     class="flex min-h-10 items-center gap-2 px-3 py-2 text-muted-foreground {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
     data-testid="pr-monitors-snapshot-status"
     data-snapshot-status={$snapshotStatus$}
-    role={$snapshotStatus$ === 'failed' ? 'alert' : 'status'}
+    role="alert"
   >
-    {#if $snapshotStatus$ === 'loading'}
-      <span aria-hidden="true" class="shrink-0"><IntentMarkLoader size={12} /></span>
-      <span>{m.chat_chatMessage_loading_label()}</span>
-    {:else}
-      <span>{m.chat_streamingStatus_responseFailed_label()}</span>
-    {/if}
+    <span>{m.chat_monitoredPrs_loadFailed_error()}</span>
   </div>
 {/if}
 
@@ -536,6 +543,7 @@
                   <Menu.Item
                     class="type-caption h-auto w-full min-w-0 items-start whitespace-normal py-1.5 text-left"
                     data-testid="monitored-pr-check-flush-item"
+                    disabled={menuActionsUnavailable}
                     onSelect={handleCheckAndFlush}
                   >
                     {#snippet leading()}<Fa icon={faArrowsRotate} />{/snippet}
@@ -569,6 +577,7 @@
                   <Menu.Item
                     class="type-caption h-auto w-full min-w-0 items-start whitespace-normal py-1.5 text-left"
                     data-testid="monitored-pr-cancel-item"
+                    disabled={menuActionsUnavailable}
                     onSelect={handleCancel}
                   >
                     {#snippet leading()}<Fa icon={faXmark} />{/snippet}

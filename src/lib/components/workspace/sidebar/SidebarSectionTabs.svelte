@@ -13,7 +13,10 @@
     activateSidebarSectionRequested,
     setMultiSelectSidebarSelectedTabs,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-  import { selectIsWorkspaceCollaborator } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    selectIsWorkspaceCollaborator,
+    selectWorkspaceSavedScriptContext,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectWorkspacePeopleTilePeople } from '$store/renderer/slices/presence/presence-selectors';
   import {
     resolveExistingWorkspaceDefaultAgent,
@@ -49,6 +52,7 @@
   $effect.pre(() => workspaceId$.set(workspaceId));
   const selected$ = selectMultiSelectSidebarSelectedTabIds(workspaceId$);
   const collaborator$ = selectIsWorkspaceCollaborator(workspaceId$);
+  const scriptContext$ = selectWorkspaceSavedScriptContext(workspaceId$);
   const people$ = selectWorkspacePeopleTilePeople(workspaceId$);
   const unread$ = selectWorkspaceHasUnreadForegroundAgents(workspaceId$);
   const agents$ = selectAllWorkspaceAgents(workspaceId$);
@@ -56,11 +60,14 @@
   const tabs = $derived(
     TAB_DEFINITIONS.filter(
       ({ id }) =>
-        (id !== 'people' || $people$.length > 0) && !($collaborator$ && OWNER_ONLY_TAB_IDS.has(id)),
+        (id !== 'people' || $people$.length > 0) &&
+        !($collaborator$ && OWNER_ONLY_TAB_IDS.has(id) && !(id === 'shell' && $scriptContext$)),
     ),
   );
   const savedSelection = $derived(
-    [...normalizeSelectedTabs($selected$, $collaborator$, $people$.length > 0)][0],
+    [
+      ...normalizeSelectedTabs($selected$, $collaborator$, $people$.length > 0, !!$scriptContext$),
+    ][0],
   );
   const selected = $derived(
     orientation === 'vertical' && flyout?.open && tabs.some((tab) => tab.id === flyout?.tabId)

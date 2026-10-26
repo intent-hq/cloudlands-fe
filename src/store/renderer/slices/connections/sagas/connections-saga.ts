@@ -270,7 +270,14 @@ async function showUpdateBackendToast(result: UpdateBackendResult): Promise<void
   } else if (result.reason === 'not-connected') {
     notify.error(m.layout_daemonStatus_updateNotConnected_toast());
   } else {
-    notify.error(m.layout_daemonStatus_updateFailed_toast({ message: result.message ?? '' }));
+    // A 'failed' result may omit the daemon's reason (or send a blank one);
+    // fall back to generic copy rather than a toast ending in ": " (#5756).
+    const message = result.message;
+    notify.error(
+      message?.trim()
+        ? m.layout_daemonStatus_updateFailed_toast({ message })
+        : m.layout_daemonStatus_updateFailedGeneric_toast(),
+    );
   }
 }
 

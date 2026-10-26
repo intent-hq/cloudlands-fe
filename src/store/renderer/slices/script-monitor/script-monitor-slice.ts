@@ -31,6 +31,10 @@ export const scriptMonitorsSubscribeRequested =
 export const scriptMonitorsUnsubscribeRequested = createAction<[workspaceId: string]>(
   'scriptMonitor/unsubscribe',
 );
+/** Selected workspace tab changed: swap the preload lease (shared with card leases). */
+export const scriptMonitorsActiveWorkspaceChanged = createAction<[workspaceId: string | null]>(
+  'scriptMonitor/activeWorkspaceChanged',
+);
 export const scriptMonitorsUpdated =
   createAction<[workspaceId: string, snapshot: ScriptMonitorSnapshot]>('scriptMonitor/updated');
 export const scriptMonitorActionRequested =

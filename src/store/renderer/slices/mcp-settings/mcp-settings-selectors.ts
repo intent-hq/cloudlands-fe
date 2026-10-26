@@ -4,7 +4,12 @@ import { getMcpServerKey } from '$lib/components/settings/mcp/types';
  */
 
 import { store } from '../../store';
-import type { McpServerStatus, McpServerConfig, McpTool } from './mcp-settings-types';
+import type {
+  McpMutationError,
+  McpServerStatus,
+  McpServerConfig,
+  McpTool,
+} from './mcp-settings-types';
 import type { McpServerWithStatus } from '$lib/components/settings/mcp/types';
 
 const EMPTY_DISABLED_SERVERS: Record<string, true> = {};
@@ -32,9 +37,14 @@ export const selectMcpLoading = store.createSelector(
   (state) => state.mcpSettings.loading as boolean,
 );
 
-/** Select global error */
+/** Select the load error (server list could not be read) */
 export const selectMcpError = store.createSelector(
   (state) => state.mcpSettings.error as string | null,
+);
+
+/** Select the error of the last failed add/update/remove/toggle/import */
+export const selectMcpMutationError = store.createSelector(
+  (state) => (state.mcpSettings.mutationError ?? null) as McpMutationError | null,
 );
 
 /** Select feature enabled */
@@ -48,12 +58,12 @@ export const selectMcpDisabledServers = store.createSelector(
 );
 
 /** Select status map */
-const selectMcpStatusMap = store.createSelector(
+export const selectMcpStatusMap = store.createSelector(
   (state) => state.mcpSettings.statusMap as Record<string, McpServerStatus>,
 );
 
 /** Select tools map */
-const selectMcpToolsMap = store.createSelector(
+export const selectMcpToolsMap = store.createSelector(
   (state) => state.mcpSettings.toolsMap as Record<string, McpTool[]>,
 );
 

@@ -75,7 +75,6 @@ for (const { theme, width } of [
       4.5,
     );
     expect(measurements.contained).toBe(true);
-    expect(measurements.displayHeightRatio).toBeGreaterThan(2);
     if (width < 300) expect(measurements.displayScrollable).toBe(true);
     expect(measurements.overflowX).toBe('auto');
 

@@ -3,6 +3,7 @@
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { tick } from 'svelte';
 import { WorkspaceStatus } from '$shared/types';
 
 const {
@@ -24,7 +25,6 @@ const {
   multiplayerState,
   gitlabState,
   remoteAgentsState,
-  providerProfilesLabState,
   storeEvents,
 } = vi.hoisted(() => {
   const createSelectorReadable = <TArg, TValue>(arg: TArg, resolver: (value: any) => TValue) => ({
@@ -149,7 +149,6 @@ const {
     multiplayerState: { enabled: false },
     gitlabState: { enabled: undefined as boolean | undefined },
     remoteAgentsState: { enabled: undefined as boolean | undefined },
-    providerProfilesLabState: { enabled: undefined as boolean | undefined },
     storeEvents: { emit: () => {} },
   };
 });
@@ -229,6 +228,8 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
     createSelectorReadable(workspaceIdArg, () => collaboratorState.workspace),
   selectHidesAgentLifecycleActions: (workspaceIdArg: any) =>
     createSelectorReadable(workspaceIdArg, () => collaboratorState.workspace),
+  selectHidesAgentCreationActions: (workspaceIdArg: any) =>
+    createSelectorReadable(workspaceIdArg, () => collaboratorState.workspace),
   selectIsCollaboratorOnlyClient: () => ({
     subscribe: (fn: (value: boolean) => void) => {
       collaboratorState.subscribers.add(fn);
@@ -263,7 +264,6 @@ vi.mock('$store/renderer/store', async () => {
         labsMultiplayerEnabled: multiplayerState.enabled,
         labsGitLabEnabled: gitlabState.enabled,
         labsRemoteAgentsEnabled: remoteAgentsState.enabled,
-        labsProviderProfilesEnabled: providerProfilesLabState.enabled,
       },
     }),
     dispatch: reduxDispatchMock,
@@ -389,6 +389,11 @@ const reduxActions = [
   { label: 'New File', actionCreator: commandPaletteNewFileRequested },
 ] as const;
 
+const retiredLoads = () =>
+  reduxDispatchMock.mock.calls.filter(
+    ([action]) => action?.type === 'workspaceOperations/loadRetiredWorkspacesRequested',
+  ).length;
+
 describe('CommandPalette new actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -402,7 +407,6 @@ describe('CommandPalette new actions', () => {
     multiplayerState.enabled = false;
     gitlabState.enabled = undefined;
     remoteAgentsState.enabled = undefined;
-    providerProfilesLabState.enabled = undefined;
   });
 
   it.each([
@@ -608,39 +612,13 @@ describe('CommandPalette new actions', () => {
     },
   );
 
-  it.each([undefined, false, true])(
-    'changes experimental provider profiles from saved=%s without a workspace',
-    async (enabled) => {
-      providerProfilesLabState.enabled = enabled;
-      const onClose = vi.fn();
-      render(CommandPalette, {
-        props: { isOpen: true, initialQuery: 'provider profiles', onClose },
-      });
-      const command = await screen.findByRole('button', {
-        name: enabled
-          ? /Disable experimental provider profiles/i
-          : /Enable experimental provider profiles/i,
-      });
-      expect(
-        screen.queryByRole('button', {
-          name: enabled
-            ? /Enable experimental provider profiles/i
-            : /Disable experimental provider profiles/i,
-        }),
-      ).toBeNull();
-
-      reduxDispatchMock.mockClear();
-      await fireEvent.click(command);
-
-      expect(reduxDispatchMock).toHaveBeenCalledExactlyOnceWith({
-        type: 'userPreferences/setLabsProviderProfilesEnabled',
-        payload: [!enabled],
-      });
-      expect(invokeMock).not.toHaveBeenCalled();
-      expect(backendRequestMock).not.toHaveBeenCalled();
-      expect(onClose).toHaveBeenCalledOnce();
-    },
-  );
+  it('offers no command to turn provider profiles on or off', async () => {
+    render(CommandPalette, {
+      props: { isOpen: true, initialQuery: 'experimental', onClose: vi.fn() },
+    });
+    await screen.findByRole('button', { name: /Enable experimental remote agents/i });
+    expect(screen.queryByRole('button', { name: /experimental provider profiles/i })).toBeNull();
+  });
 
   it('updates the remote agents command after delayed hydration without changing the saved choice', async () => {
     render(CommandPalette, {
@@ -1008,6 +986,75 @@ describe('CommandPalette workspace activity recency', () => {
     expect(newer.compareDocumentPosition(old) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(old.textContent).toContain('Jan 15');
     expect(old.textContent).not.toContain('just now');
+  });
+
+  it('lists retired workspaces with a Retired badge and opts in to loading them', async () => {
+    workspaceItemsState.value = [
+      {
+        id: 'live',
+        title: 'Live Space',
+        status: WorkspaceStatus.Active,
+        createdAt: '2025-06-01T00:00:00.000Z',
+        updatedAt: '2025-06-01T00:00:00.000Z',
+      },
+      {
+        id: 'retired',
+        title: 'Old Importer Space',
+        status: WorkspaceStatus.Retired,
+        archived: true,
+        retiredAt: '2025-06-02T00:00:00.000Z',
+        createdAt: '2025-06-01T00:00:00.000Z',
+        updatedAt: '2025-06-01T00:00:00.000Z',
+      },
+    ];
+
+    render(CommandPalette, { props: { isOpen: true, onClose: vi.fn() } });
+
+    const retired = await screen.findByRole('button', { name: /Old Importer Space/i });
+    const live = screen.getByRole('button', { name: /Live Space/i });
+    expect(retired.textContent).toContain('Retired');
+    expect(live.textContent).not.toContain('Retired');
+    expect(retiredLoads()).toBe(1);
+  });
+
+  it('binds the retired opt-in to the palette being open and reconciles list refreshes', async () => {
+    const live = {
+      id: 'live',
+      title: 'Live Space',
+      status: WorkspaceStatus.Active,
+      createdAt: '2025-06-01T00:00:00.000Z',
+      updatedAt: '2025-06-01T00:00:00.000Z',
+    };
+    const retired = { ...live, id: 'old', title: 'Old', status: WorkspaceStatus.Retired };
+    const publish = (items: any[]) => {
+      workspaceItemsState.value = items;
+      for (const fn of workspaceItemsState.subscribers) fn(items);
+    };
+    publish([live]);
+    const view = render(CommandPalette, { props: { isOpen: false, onClose: vi.fn() } });
+    await tick();
+    expect(retiredLoads()).toBe(0);
+
+    await view.rerender({ isOpen: true, onClose: vi.fn() });
+    await tick();
+    expect(retiredLoads()).toBe(1);
+
+    // The load's own response must not trigger another load.
+    publish([live, retired]);
+    await tick();
+    expect(retiredLoads()).toBe(1);
+
+    // An ordinary refresh drops retired rows while the palette is open: reload.
+    publish([live]);
+    await tick();
+    expect(retiredLoads()).toBe(2);
+
+    // Closing and reopening searches again with a fresh opt-in read.
+    await view.rerender({ isOpen: false, onClose: vi.fn() });
+    await tick();
+    await view.rerender({ isOpen: true, onClose: vi.fn() });
+    await tick();
+    expect(retiredLoads()).toBe(3);
   });
 });
 

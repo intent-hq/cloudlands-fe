@@ -41,6 +41,10 @@ vi.mock('../main/embedded-browser-cdp-service', () => ({
     ensureAttached: vi.fn(),
     evaluate: vi.fn(),
     getFirstTab: vi.fn(() => undefined),
+    // The capture target is mounted and settled, so the executor's
+    // mount-on-demand / settle steps pass straight through.
+    isTabMounted: vi.fn(() => true),
+    waitForTabLoad: vi.fn().mockResolvedValue({ loading: false, url: '' }),
     // The capture flows under test run as the tab's owner (#2857).
     resolveTabOwner: vi.fn().mockResolvedValue('agent-1'),
     setTabOwner: vi.fn(),

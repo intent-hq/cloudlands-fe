@@ -1,4 +1,5 @@
 import { expect, test } from '../../../../test/ct-test';
+import { expectDismissibleLayerArmed } from '../../../../test/dismissible-layer';
 import { PROVIDERS_CHANNELS } from '../../../../shared/ipc/channels';
 import { PROVIDER_AVAILABILITY_KEY_TO_ID } from '../../../../shared/types/provider-availability';
 import ProviderPathMenuHost from './mocks/ProviderPathMenuHost.svelte';
@@ -148,6 +149,7 @@ test('reopened provider path form dismisses on outside pointer without stealing 
   expect(outsideBounds).not.toBeNull();
   // Establish real outside-pointer geometry, not jsdom's synthetic focusout.
   expect(outsideBounds!.x).toBeGreaterThan(formBounds!.x + formBounds!.width);
+  await expectDismissibleLayerArmed(form);
   await outside.click();
   await expect(form).toHaveCount(0);
   await expect(page.getByTestId('outside-clicks')).toHaveText('1');

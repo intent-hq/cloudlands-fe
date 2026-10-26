@@ -14,17 +14,13 @@
     selectActiveProviderId,
     selectEnabledProviders,
     selectProviderPaths,
-    selectProviderSettingsSessionRequests,
-    selectPiAdapter,
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectProviderInUseReasons } from '$store/renderer/slices/provider-settings/provider-in-use-selectors';
   import {
-    setActiveProvider,
     setProviderEnabled,
     providerSettingsSessionOpened,
     providerSettingsSessionClosed,
     providerPathsRequested,
-    piAdapterInstallRequested,
   } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import {
     checkAllProvidersRequested,
@@ -44,7 +40,11 @@
     selectProviderCatalogEntries,
     selectProviderDisplayName,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
-  import { selectIsProviderEnabled } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import {
+    selectIsProviderEnabled,
+    selectProviderDefaultConfigs,
+    selectProviderProfilesLoadStatus,
+  } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
   import { groupProviderEntries, orderProviderEntries } from '$lib/utils/provider-list-order';
   import {
@@ -53,7 +53,8 @@
     faCheck,
     faDownload,
     faFolder,
-    faStar,
+    faPlus,
+    faSliders,
     faTerminal,
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
@@ -70,9 +71,9 @@
   import AuggieLogo from '../AuggieLogo.svelte';
   import ProviderPathConfig from './ProviderPathConfig.svelte';
   import ProviderProfiles from './ProviderProfiles.svelte';
+  import ProviderProfileDialog from './ProviderProfileDialog.svelte';
   import ProviderFastModeMenuItems from './ProviderFastModeMenuItems.svelte';
   import { providerProfilesRequested } from '$store/renderer/slices/provider-settings/provider-settings-slice';
-  import { selectLabsProviderProfilesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import AgentProviderIcon from '$features/agent/components/AgentProviderIcon.svelte';
   import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
   import { store as appStore } from '$store/renderer/store';
@@ -83,9 +84,7 @@
 
   const fastModeProviders$ = selectFastModeSupportedProviders();
   const sessionId = crypto.randomUUID();
-  const requests$ = selectProviderSettingsSessionRequests(sessionId);
   const paths$ = selectProviderPaths();
-  const piAdapter$ = selectPiAdapter();
   const hiddenProviders$ = selectProviderHiddenIds();
   const discoveryError$ = selectProviderDiscoveryError();
   const activeProviderId = selectActiveProviderId();
@@ -99,20 +98,6 @@
   const npxStatus$ = selectNpxStatus();
 
   const checkError = $derived($discoveryError$);
-  const setupInProgress = $derived({
-    pi: $requests$.some(
-      (request) => request.resource === 'pi-adapter' && request.status === 'pending',
-    ),
-  });
-  const piMcpAdapterInstalled = $derived($piAdapter$.installed);
-  let selectingRequest = $state<{ id: string; providerId: string } | null>(null);
-  const selectingProviderId = $derived(
-    $requests$.some(
-      (request) => request.id === selectingRequest?.id && request.status === 'pending',
-    )
-      ? selectingRequest?.providerId
-      : null,
-  );
   const providerPaths = $derived($paths$.configured);
   const resolvedPaths = $derived($paths$.resolved);
   const secondaryResolvedPaths = $derived($paths$.secondary);
@@ -221,18 +206,45 @@
     return selectIsProviderEnabled.select(appStore.state, providerId);
   }
 
-  // Named profiles are a Labs feature: profile management (and its read) is
-  // offered only while Settings → Labs → Provider profiles is on.
-  const labsProviderProfilesEnabled$ = selectLabsProviderProfilesEnabled();
-
   // Add profile is offered only on installed rows whose catalog entry
   // advertises named profiles (§5.54); other providers never show it.
   function supportsProfiles(providerId: string): boolean {
-    return (
-      $labsProviderProfilesEnabled$ &&
-      $catalogEntries$.find((p) => p.id === providerId)?.supportsProfiles === true
-    );
+    return $catalogEntries$.find((p) => p.id === providerId)?.supportsProfiles === true;
   }
+
+  // One add-profile dialog for the page, opened from a row's actions menu.
+  // It stays mounted after closing so a pending save still reports its outcome,
+  // and a row re-rendering (status refresh) never discards a half-filled form.
+  let addProfileTarget = $state<{ providerId: string; providerName: string } | null>(null);
+  let addProfileOpen = $state(false);
+
+  function openAddProfile(providerId: string, providerName: string) {
+    addProfileTarget = { providerId, providerName };
+    addProfileOpen = true;
+  }
+
+  // The Default configuration's name and env (§5.54), from the same menu.
+  // The dialog seeds its form only once the saved list has loaded, so a save
+  // can never replace overrides it has not seen.
+  const defaultConfigs$ = selectProviderDefaultConfigs();
+  const profilesLoadStatus$ = selectProviderProfilesLoadStatus();
+  let defaultTarget = $state<{ providerId: string; providerName: string } | null>(null);
+  let defaultOpen = $state(false);
+
+  function openDefaultEnv(providerId: string, providerName: string) {
+    defaultTarget = { providerId, providerName };
+    defaultOpen = true;
+    if ($profilesLoadStatus$ !== 'success') appStore.dispatch(providerProfilesRequested());
+  }
+
+  // Saved profiles are read once per visit, and only when some provider
+  // offers profiles at all.
+  let profilesRequested = false;
+  $effect(() => {
+    if (profilesRequested || !$catalogEntries$.some((p) => p.supportsProfiles === true)) return;
+    profilesRequested = true;
+    appStore.dispatch(providerProfilesRequested());
+  });
 
   function canManageProviderEnablement(providerId: string): boolean {
     return $catalogEntries$.find((p) => p.id === providerId)?.canBeDisabled !== false;
@@ -272,25 +284,11 @@
     };
   });
 
-  $effect(() => {
-    if ($labsProviderProfilesEnabled$) appStore.dispatch(providerProfilesRequested());
-  });
-
-  function handleInstallPiMcpAdapter() {
-    appStore.dispatch(piAdapterInstallRequested({ id: crypto.randomUUID(), sessionId }));
-  }
-
   function openDocs(url: string) {
     shell.open(url);
   }
 
   let pathAnchors = $state<Record<string, HTMLButtonElement | HTMLAnchorElement | null>>({});
-
-  function handleSelectProvider(providerId: string) {
-    const id = crypto.randomUUID();
-    selectingRequest = { id, providerId };
-    appStore.dispatch(setActiveProvider(providerId, { id, sessionId }));
-  }
 </script>
 
 <div class="flex flex-col gap-6">
@@ -348,13 +346,9 @@
               (provider.id !== 'antigravity' || $antigravitySetupPolicy$.canEnable)}
             {@const needsLogin = provider.available && provider.authenticated === false}
             {@const canLogIn = provider.id !== 'antigravity' && needsLogin && provider.loginDocsUrl}
-            {@const canSetDefault = provider.available && !isActive && isReady}
             {@const canInstall = provider.id !== 'antigravity' && !provider.available}
-            {@const hasPiAdapterWarning =
-              !provider.statusPending &&
-              provider.id === 'pi' &&
-              provider.available &&
-              piMcpAdapterInstalled === false}
+            {@const canAddProfile =
+              !provider.statusPending && provider.available && supportsProfiles(provider.id)}
             {@const hasNodeMissing =
               !provider.statusPending &&
               provider.hasNpxFallback &&
@@ -367,15 +361,12 @@
               $npxStatus$?.resolvedPath !== null &&
               $npxStatus$?.versionOk === false}
             {@const hasProviderWarning = !provider.statusPending && !!provider.warning}
-            {@const hasWarning =
-              hasPiAdapterWarning || hasNodeMissing || hasNpmOld || hasProviderWarning}
-            {@const warningLabel = hasPiAdapterWarning
-              ? m.settings_providers_piAdapterNeeded()
-              : hasNodeMissing
-                ? m.settings_providers_requiresNodejs()
-                : hasNpmOld
-                  ? m.settings_providers_npmTooOld()
-                  : provider.warning}
+            {@const hasWarning = hasNodeMissing || hasNpmOld || hasProviderWarning}
+            {@const warningLabel = hasNodeMissing
+              ? m.settings_providers_requiresNodejs()
+              : hasNpmOld
+                ? m.settings_providers_npmTooOld()
+                : provider.warning}
             <div data-slot="settings-section-body" class="px-6 py-4">
               <div class="flex items-start justify-between gap-4">
                 <div class="space-y-1">
@@ -399,19 +390,6 @@
                       class="h-4 w-20 bg-muted/50 rounded animate-pulse"
                       aria-label={m.settings_providers_loading()}
                     ></div>
-                  {:else}
-                    {#if isActive}
-                      {#if provider.available}
-                        <span class="rounded-full bg-muted px-2 py-0.5 type-caption text-subtle">
-                          {m.settings_providers_default()}
-                        </span>
-                      {:else}
-                        <span class="type-caption text-warning-ink flex items-center gap-1">
-                          <Fa icon={faTriangleExclamation} class="w-2.5 h-2.5" />
-                          {m.settings_providers_defaultUnavailable_label()}
-                        </span>
-                      {/if}
-                    {/if}
                   {/if}
 
                   {#if canEnable && !provider.statusPending}
@@ -497,6 +475,7 @@
                         <div
                           class={hasWarning ||
                           needsLogin ||
+                          canAddProfile ||
                           ($fastModeProviders$.includes(provider.id) && provider.id !== 'codex')
                             ? 'w-64'
                             : 'w-44'}
@@ -518,31 +497,6 @@
                           {/if}
                           {#if hasWarning}
                             <div class="border-b border-border pb-1">
-                              {#if hasPiAdapterWarning}
-                                <p class="px-2 py-1.5 type-body text-warning-ink">
-                                  {m.settings_providers_piAdapterNeeded()}
-                                </p>
-                                <Menu.Item
-                                  disabled={setupInProgress.pi}
-                                  class="cursor-pointer text-foreground"
-                                  onSelect={() => void handleInstallPiMcpAdapter()}
-                                >
-                                  <span class="flex size-4 shrink-0 items-center justify-center">
-                                    {#if setupInProgress.pi}
-                                      <IntentMarkLoader size={14} class="text-muted-foreground" />
-                                    {:else}
-                                      <Fa
-                                        icon={faDownload}
-                                        class="size-3.5 text-muted-foreground"
-                                      />
-                                    {/if}
-                                  </span>
-                                  {setupInProgress.pi
-                                    ? m.settings_providers_installing()
-                                    : m.settings_providers_install()}
-                                </Menu.Item>
-                              {/if}
-
                               {#if hasNodeMissing}
                                 <p class="px-2 py-1.5 type-body text-warning-ink">
                                   {m.settings_providers_requiresNodejs()}
@@ -607,26 +561,34 @@
                             {m.settings_providerPath_setCustomPath_label()}
                           </Menu.Item>
 
-                          {#if canSetDefault}
-                            <Menu.Separator />
+                          {#if canAddProfile}
                             <Menu.Item
                               class="cursor-pointer text-foreground"
-                              disabled={selectingProviderId !== null}
                               onSelect={() => {
-                                void handleSelectProvider(provider.id);
+                                openAddProfile(provider.id, provider.name);
                               }}
                             >
                               <span class="flex size-4 shrink-0 items-center justify-center">
-                                <Fa icon={faStar} class="size-3.5 text-muted-foreground" />
+                                <Fa icon={faPlus} class="size-3.5 text-muted-foreground" />
                               </span>
-                              {selectingProviderId === provider.id
-                                ? m.settings_providers_switching()
-                                : m.settings_providers_setAsDefault()}
+                              {m.settings_providerProfiles_add_label()}
+                            </Menu.Item>
+                            <Menu.Item
+                              class="cursor-pointer text-foreground"
+                              data-testid="provider-default-env-menu-item"
+                              onSelect={() => {
+                                openDefaultEnv(provider.id, provider.name);
+                              }}
+                            >
+                              <span class="flex size-4 shrink-0 items-center justify-center">
+                                <Fa icon={faSliders} class="size-3.5 text-muted-foreground" />
+                              </span>
+                              {m.settings_providerDefault_menu_label()}
                             </Menu.Item>
                           {/if}
 
                           {#if canDisable}
-                            {#if !canSetDefault}<Menu.Separator />{/if}
+                            <Menu.Separator />
                             <Menu.Item
                               class="cursor-pointer text-foreground"
                               disabled={!!inUseReason}
@@ -721,8 +683,12 @@
                   </div>
                 </div>
               </div>
-              {#if !provider.statusPending && provider.available && supportsProfiles(provider.id)}
-                <ProviderProfiles providerId={provider.id} providerName={provider.name} />
+              {#if canAddProfile}
+                <ProviderProfiles
+                  providerId={provider.id}
+                  providerName={provider.name}
+                  onEditDefault={() => openDefaultEnv(provider.id, provider.name)}
+                />
               {/if}
               {#if provider.id === 'antigravity'}
                 <AntigravityConnect bind:open={antigravityConnectOpen} />
@@ -734,6 +700,25 @@
     {/if}
   {/each}
 </div>
+
+{#if addProfileTarget}
+  <ProviderProfileDialog
+    bind:open={addProfileOpen}
+    providerId={addProfileTarget.providerId}
+    providerName={addProfileTarget.providerName}
+  />
+{/if}
+
+{#if defaultTarget}
+  <ProviderProfileDialog
+    bind:open={defaultOpen}
+    providerId={defaultTarget.providerId}
+    providerName={defaultTarget.providerName}
+    isDefault
+    defaultConfig={$defaultConfigs$[defaultTarget.providerId]}
+    defaultsLoad={$profilesLoadStatus$}
+  />
+{/if}
 
 {#snippet providerIcon(providerId: string)}
   <span class="w-7 text-subtle">

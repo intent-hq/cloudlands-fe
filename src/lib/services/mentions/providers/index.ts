@@ -74,6 +74,32 @@ export class FolderProvider implements Provider {
   }
 }
 
+const NOTE_RESULT_LIMIT = 10;
+// Below any title match (1 + fuzzy score), above zero so SearchService keeps
+// body-only matches even when its own label/description rescoring finds none.
+const NOTE_BODY_MATCH_SCORE = 0.3;
+
+/**
+ * Builds a scorer for one (trimmed, non-empty) mention query. The scorer
+ * returns a note's relevance; 0 means no match. Titles match
+ * fuzzily (short, so "mtg tr" finding "Meeting Transcript" is useful). Bodies
+ * must contain every word of the query, in any order: a subsequence match on a
+ * long body passes for nearly any query and buried the notes users were
+ * actually looking for.
+ */
+function noteMatcher(query: string): (title?: string, body?: string) => number {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  return (title, body) => {
+    const titleMatch = title ? fuzzyMatch(query, title) : null;
+    if (titleMatch) return 1 + titleMatch.score;
+    if (body) {
+      const bodyLower = body.toLowerCase();
+      if (words.every((word) => bodyLower.includes(word))) return NOTE_BODY_MATCH_SCORE;
+    }
+    return 0;
+  };
+}
+
 // Note Provider
 export class NoteProvider implements Provider {
   id = 'note';
@@ -143,11 +169,15 @@ export class NoteProvider implements Provider {
     return [];
   }
 
-  async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
+  async search(rawQuery: string, context: SearchContext): Promise<MentionCandidate[]> {
     // Guard: return empty if workspaceId is undefined
     if (!context.workspaceId) {
       return [];
     }
+    // MentionSystem.search trims, but searchSync's background cache update
+    // does not; a trailing space would otherwise defeat title/body matching.
+    const query = rawQuery.trim();
+    const scoreNote = query ? noteMatcher(query) : null;
 
     try {
       // Fetch notes from current workspace
@@ -164,49 +194,57 @@ export class NoteProvider implements Provider {
       // Combine all notes
       const allNotesWithContext = [...currentWorkspaceNotes, ...siblingNotes];
 
-      // Filter and map to MentionCandidate using fuzzy matching. Slim rows
-      // carry content in `contentPreview` (first ~500 chars) — matching and
-      // previews use it in place of the full body, so a match deep inside a
-      // very long note may be missed (accepted degradation).
-      const notes = allNotesWithContext
-        .filter(({ note }) => {
-          const body = note.content || note.contentPreview;
-          return (
-            !query ||
-            (note.title && fuzzyMatch(query, note.title) !== null) ||
-            (body && fuzzyMatch(query, body) !== null)
-          );
-        })
-        .slice(0, 10)
-        .map(({ note, workspaceId, workspaceTitle }) => {
+      // Score, rank, then cap. Slim rows carry content in `contentPreview`
+      // (first ~500 chars) — matching and previews use it in place of the
+      // full body, so a match deep inside a very long note may be missed
+      // (accepted degradation). Ranking before the cap keeps a title match
+      // from being cut by notes that only matched on body text.
+      const ranked = scoreNote
+        ? allNotesWithContext
+            .map((entry) => ({
+              entry,
+              score: scoreNote(entry.note.title, entry.note.content || entry.note.contentPreview),
+            }))
+            .filter(({ score }) => score > 0)
+            .sort((a, b) => b.score - a.score)
+        : allNotesWithContext.map((entry) => ({ entry, score: undefined }));
+
+      const candidates = ranked
+        .slice(0, NOTE_RESULT_LIMIT)
+        .map(({ entry: { note, workspaceId, workspaceTitle }, score }) => {
           const isCurrentWorkspace = workspaceId === context.workspaceId;
           const subtitle = isCurrentWorkspace
             ? undefined
             : m.chat_mentions_fromWorkspace_subtitle({ workspace: workspaceTitle || workspaceId });
           const body = note.content || note.contentPreview;
 
-          return {
+          const candidate = {
             id: note.id || `note-${note.id}`,
             type: 'note' as MentionType,
             label: note.title || note.id || m.chat_mentions_untitledNote_label(),
             subtitle,
-            description: `${body?.substring(0, 100)}...` || '',
+            description: body ? `${body.substring(0, 100)}...` : '',
             icon: '📝',
             uri: `devspace://note/${note.id}`,
             meta: {
               preview: body?.substring(0, 200) || '',
               workspaceId,
             },
-          };
+          } satisfies MentionCandidate;
+          return { candidate, score };
         });
 
-      // Update cache
-      this.cachedNotes = notes;
+      // Cache unscored candidates: MentionSystem.searchSync ranks cached notes
+      // against its common-file defaults, and a previous query's scores must
+      // not leak into that ordering.
+      this.cachedNotes = candidates.map(({ candidate }) => candidate);
       this.lastCacheUpdate = Date.now();
 
       // If we got notes, return them; otherwise fall through to fallback
-      if (notes.length > 0) {
-        return notes;
+      if (candidates.length > 0) {
+        return candidates.map(({ candidate, score }) =>
+          score !== undefined ? { ...candidate, score } : candidate,
+        );
       }
     } catch (error) {
       logger.debug('[NoteProvider] Failed to fetch notes:', error);
@@ -215,12 +253,14 @@ export class NoteProvider implements Provider {
     // Return cached notes if available (real data from a previous fetch);
     // never fabricate default notes.
     if (this.cachedNotes.length > 0) {
-      return this.cachedNotes.filter(
-        (n) =>
-          !query ||
-          fuzzyMatch(query, n.label) !== null ||
-          (n.description && fuzzyMatch(query, n.description) !== null),
-      );
+      if (!scoreNote) return this.cachedNotes;
+      return this.cachedNotes
+        .map((n) => ({
+          ...n,
+          score: scoreNote(n.label, n.meta?.preview as string | undefined),
+        }))
+        .filter((n) => n.score > 0)
+        .sort((a, b) => b.score - a.score);
     }
 
     return [];

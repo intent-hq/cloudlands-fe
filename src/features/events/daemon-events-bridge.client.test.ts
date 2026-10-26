@@ -1,5 +1,7 @@
 import { presenceMembershipChanged } from '$store/renderer/slices/presence/presence-slice';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
+import { request as desktopPermissionRequest } from '$features/desktop/renderer/desktop-test-fixtures';
+import { desktopKey } from '$store/renderer/slices/desktop-control/desktop-control-types';
 import { workspaceCatalogReceived } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentStatus } from '$shared/types/agent.types';
@@ -228,6 +230,8 @@ import {
   routeDaemonEventsNotification,
 } from '$features/events/daemon-events-bridge.client';
 import { selectContextItems } from '$store/renderer/slices/context/context-selectors';
+import { selectChiefThreads } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { selectLockedAgentIds } from '$store/renderer/slices/agent-lock/agent-lock-selectors';
 import {
   chatQueuedRetryRecordSet,
@@ -470,6 +474,39 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
   });
 
   afterEach(() => vi.clearAllMocks());
+
+  it('keeps desktop consent pending after a real agent:idle notification', async () => {
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+    await primeBridge();
+    const data = { ...desktopPermissionRequest, workspaceId: WS, agentId: AGENT };
+    capturedHandlers[0]!({
+      method: 'events.event',
+      params: {
+        subscriptionId: 'sub-1',
+        event: {
+          id: 'desktop-pending-turn',
+          type: 'desktop:permission-requested',
+          workspaceId: WS,
+          data,
+        },
+      },
+    });
+    capturedHandlers[0]!({
+      method: 'events.event',
+      params: {
+        subscriptionId: 'sub-1',
+        event: {
+          id: 'desktop-turn-ended',
+          type: 'agent:idle',
+          workspaceId: WS,
+          timestamp: new Date().toISOString(),
+          data: { agentId: AGENT },
+        },
+      },
+    });
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+    expect(appStore.state.desktopControl.byKey[desktopKey(WS, AGENT)]?.pending).toEqual(data);
+  });
 
   it('agent:idle notification flips selectAgentIsResponding from true → false', async () => {
     // Optimistic chatSendStarted-style flag: the FE reducer marks isStreaming
@@ -6127,6 +6164,100 @@ describe('daemonEventsBridge (session lifecycle — agent:created/renamed/update
     expect(state.agentSessions.byAgentId[AGENT]?.messages[0].id).toBe('asst-1');
   });
 
+  it('agent:renamed retitles a self-named Assistant chat synchronously', () => {
+    const chiefAgent = 'agent-chief-self-named';
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          id: chiefAgent,
+          backendSessionId: 'backend-chief',
+          workspaceId: CHIEF_WORKSPACE_ID,
+          name: 'Assistant',
+          nameExplicitlySet: false,
+          status: AgentStatus.Active,
+          messages: [
+            {
+              id: 'user-1',
+              role: 'user',
+              contentBlocks: [{ type: 'text', text: 'tell me about the latest speech model' }],
+              timestamp: '2026-01-02T00:00:00.000Z',
+            },
+          ],
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        } as AgentSession,
+      ]),
+    );
+    const titleOf = () =>
+      selectChiefThreads.select(appStore.state).find((thread) => thread.agentId === chiefAgent)
+        ?.title;
+    expect(titleOf()).toBe('tell me about the latest speech model');
+
+    capturedHandlers[0]!({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-chief-renamed',
+          workspaceId: CHIEF_WORKSPACE_ID,
+          timestamp: '2026-01-02T00:00:01.000Z',
+          type: 'agent:renamed',
+          actor: { type: 'agent', id: chiefAgent },
+          data: { agentId: chiefAgent, name: 'Speech model' },
+        },
+      },
+    });
+
+    expect(titleOf()).toBe('Speech model');
+  });
+
+  it('agent:renamed with nameExplicitlySet: false keeps the first-message preview', () => {
+    const chiefAgent = 'agent-chief-implicit-rename';
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          id: chiefAgent,
+          backendSessionId: 'backend-chief-implicit',
+          workspaceId: CHIEF_WORKSPACE_ID,
+          name: 'Assistant',
+          nameExplicitlySet: false,
+          status: AgentStatus.Active,
+          messages: [
+            {
+              id: 'user-1',
+              role: 'user',
+              contentBlocks: [{ type: 'text', text: 'summarize the release notes' }],
+              timestamp: '2026-01-02T00:00:00.000Z',
+            },
+          ],
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        } as AgentSession,
+      ]),
+    );
+    const titleOf = () =>
+      selectChiefThreads.select(appStore.state).find((thread) => thread.agentId === chiefAgent)
+        ?.title;
+    expect(titleOf()).toBe('summarize the release notes');
+
+    capturedHandlers[0]!({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-chief-implicit-renamed',
+          workspaceId: CHIEF_WORKSPACE_ID,
+          timestamp: '2026-01-02T00:00:01.000Z',
+          type: 'agent:renamed',
+          actor: { type: 'system' },
+          data: { agentId: chiefAgent, name: 'Auto title', nameExplicitlySet: false },
+        },
+      },
+    });
+
+    const session = appStore.state.agentSessions.byAgentId[chiefAgent];
+    expect(session).toMatchObject({ name: 'Auto title', nameExplicitlySet: false });
+    expect(titleOf()).toBe('summarize the release notes');
+  });
+
   it('agent:updated re-reads through the seam and does not clobber the local transcript', async () => {
     const message: AgentMessage = {
       id: 'asst-keep',
@@ -8947,6 +9078,246 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
     expect(backendRequestSpy.mock.calls).toHaveLength(requestsBefore);
   });
 
+  describe('gitRoot:* → merged workspace PR pool', () => {
+    const ROOT_PR_URL = 'https://github.com/intent-hq/intentd/pull/2590';
+    const OWN_PR = { number: 42, url: 'https://github.com/acme/app/pull/42', status: 'Open' };
+    const rootPull = (extra: Record<string, unknown> = {}) => ({
+      id: '2590',
+      number: 2590,
+      url: ROOT_PR_URL,
+      title: 'fix: log why repo-less PR reads are refused',
+      status: 'Open',
+      createdAt: '2026-10-22T02:52:41Z',
+      updatedAt: '2026-10-22T03:33:47Z',
+      isDraft: false,
+      ...extra,
+    });
+
+    function workspaceRow(extra: Record<string, unknown>): Record<string, unknown> {
+      return {
+        id: PR_WS,
+        title: 'PR ws',
+        branch: 'main',
+        status: 'Active',
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        ...extra,
+      };
+    }
+
+    async function seedListedRow(extra: Record<string, unknown>): Promise<void> {
+      const { setWorkspaceEntity } =
+        await import('$store/renderer/slices/workspace/workspace-slice');
+      appStore.dispatch(setWorkspaceEntity(workspaceRow(extra) as never));
+    }
+
+    /** The daemon's `workspace.get` serves the merged pool (§5.1). */
+    let served: Record<string, unknown>;
+    const workspaceGets = () =>
+      backendRequestSpy.mock.calls.filter(([method]) => method === 'workspace.get');
+
+    beforeEach(() => {
+      backendRequestSpy.mockImplementation((method: string) =>
+        method === 'workspace.get' ? Promise.resolve({ workspace: served }) : undefined,
+      );
+    });
+
+    function emitGitRoot(
+      type: 'gitRoot:registered' | 'gitRoot:updated' | 'gitRoot:unregistered',
+      workspaceId = PR_WS,
+    ): void {
+      capturedHandlers[0]!({
+        method: 'events.event',
+        params: {
+          event: {
+            id: `evt-${type}-${Math.random()}`,
+            workspaceId,
+            timestamp: '2026-10-22T04:07:23Z',
+            type,
+            actor: { type: 'system' },
+            data:
+              type === 'gitRoot:unregistered'
+                ? { workspaceId, gitRootId: 'root-intentd', path: '/w/packages/intentd' }
+                : {
+                    workspaceId,
+                    gitRoot: {
+                      id: 'root-intentd',
+                      workspaceId,
+                      path: '/w/packages/intentd',
+                      pullRequests: [rootPull({ isInMergeQueue: true })],
+                    },
+                  },
+          },
+        },
+      });
+    }
+
+    async function settle(): Promise<void> {
+      for (let i = 0; i < 4; i++) await flush();
+    }
+
+    it('subscribes the global feed to gitRoot events', () => {
+      expect(DAEMON_EVENTS_SUBSCRIBE_TYPES).toContain('gitRoot:*');
+    });
+
+    it('gitRoot:updated lands a submodule PR merge-queue entry on the Home row', async () => {
+      // Regression: the Home badge read "Open" while the daemon's merged pool
+      // (and the hover card) said queued — the root's queue change only
+      // arrives as `gitRoot:updated`.
+      await seedListedRow({ pullRequests: [OWN_PR, rootPull()] });
+      served = workspaceRow({ pullRequests: [OWN_PR, rootPull({ isInMergeQueue: true })] });
+      await primeBridge();
+
+      emitGitRoot('gitRoot:updated');
+      await settle();
+
+      // Taken as served: the daemon's order (workspace PRs first) and
+      // canonical copies, not an FE re-derivation of the fold.
+      expect((await readWorkspace()).pullRequests).toEqual([
+        OWN_PR,
+        rootPull({ isInMergeQueue: true }),
+      ]);
+      expect(workspaceGets()).toEqual([['workspace.get', { workspaceId: PR_WS }]]);
+    });
+
+    it('gitRoot:updated refreshes the linked PR fields along with the pool', async () => {
+      await seedListedRow({
+        prNumber: 2590,
+        prStatus: 'Open',
+        activePullRequest: rootPull(),
+        pullRequests: [rootPull()],
+      });
+      served = workspaceRow({
+        prNumber: 2590,
+        prStatus: 'Open',
+        activePullRequest: rootPull({ isInMergeQueue: true }),
+        pullRequests: [rootPull({ isInMergeQueue: true })],
+      });
+      await primeBridge();
+
+      emitGitRoot('gitRoot:updated');
+      await settle();
+
+      const row = await readWorkspace();
+      expect(row.activePullRequest).toEqual(rootPull({ isInMergeQueue: true }));
+      expect(row.pullRequests).toEqual([rootPull({ isInMergeQueue: true })]);
+    });
+
+    it('gitRoot:unregistered drops the removed root PR from the Home row', async () => {
+      await seedListedRow({ pullRequests: [OWN_PR, rootPull({ isInMergeQueue: true })] });
+      served = workspaceRow({ pullRequests: [OWN_PR] });
+      await primeBridge();
+
+      emitGitRoot('gitRoot:unregistered');
+      await settle();
+
+      expect((await readWorkspace()).pullRequests).toEqual([OWN_PR]);
+    });
+
+    it('coalesces a burst into one read plus one trailing follow-up', async () => {
+      await seedListedRow({ pullRequests: [rootPull()] });
+      served = workspaceRow({ pullRequests: [rootPull({ isInMergeQueue: true })] });
+      await primeBridge();
+
+      emitGitRoot('gitRoot:registered');
+      emitGitRoot('gitRoot:updated');
+      emitGitRoot('gitRoot:updated');
+      await settle();
+
+      expect(workspaceGets()).toHaveLength(2);
+      expect((await readWorkspace()).pullRequests).toEqual([rootPull({ isInMergeQueue: true })]);
+    });
+
+    it('applies only the PR fields, never rolling back newer row fields', async () => {
+      await seedListedRow({ title: 'Renamed after the read', pullRequests: [rootPull()] });
+      served = workspaceRow({
+        title: 'Stale title served by the read',
+        pullRequests: [rootPull({ isInMergeQueue: true })],
+      });
+      await primeBridge();
+
+      emitGitRoot('gitRoot:updated');
+      await settle();
+
+      const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
+      const state = appStore.state as { workspace: { workspaces: unknown } };
+      const row = getItem(state.workspace.workspaces as never, PR_WS) as {
+        title: string;
+        pullRequests: unknown[];
+      };
+      expect(row.title).toBe('Renamed after the read');
+      expect(row.pullRequests).toEqual([rootPull({ isInMergeQueue: true })]);
+    });
+
+    it('discards a read that a newer pr:* event invalidated and re-reads', async () => {
+      await seedListedRow({
+        prNumber: 2590,
+        prStatus: 'Open',
+        activePullRequest: rootPull(),
+        pullRequests: [rootPull()],
+      });
+      // First read: a snapshot taken before the unlink below.
+      let resolveStale!: (value: unknown) => void;
+      const stale = new Promise((resolve) => (resolveStale = resolve));
+      const fresh = workspaceRow({ pullRequests: [rootPull({ isInMergeQueue: true })] });
+      let reads = 0;
+      backendRequestSpy.mockImplementation((method: string) => {
+        if (method !== 'workspace.get') return undefined;
+        reads += 1;
+        return reads === 1 ? stale : Promise.resolve({ workspace: fresh });
+      });
+      await primeBridge();
+
+      emitGitRoot('gitRoot:updated');
+      await settle();
+      capturedHandlers[0]!({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-pr-unlinked-mid-read',
+            workspaceId: PR_WS,
+            timestamp: '2026-10-22T04:07:24Z',
+            type: 'pr:unlinked',
+            actor: { type: 'system' },
+            data: { workspaceId: PR_WS },
+          },
+        },
+      });
+      resolveStale({
+        workspace: workspaceRow({
+          prNumber: 2590,
+          prStatus: 'Open',
+          activePullRequest: rootPull(),
+          pullRequests: [rootPull()],
+        }),
+      });
+      await settle();
+
+      expect(workspaceGets()).toHaveLength(2);
+      const row = await readWorkspace();
+      // The stale snapshot never restored the unlinked active PR.
+      expect(row.activePullRequest ?? undefined).toBeUndefined();
+      expect(row.prNumber).toBeUndefined();
+      expect(row.pullRequests).toEqual([rootPull({ isInMergeQueue: true })]);
+    });
+
+    it('never reads or adds a workspace this window does not hold', async () => {
+      served = workspaceRow({ id: 'ws-not-loaded', pullRequests: [rootPull()] });
+      await primeBridge();
+
+      emitGitRoot('gitRoot:updated', 'ws-not-loaded');
+      await settle();
+
+      expect(workspaceGets()).toHaveLength(0);
+      const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
+      const state = appStore.state as { workspace: { workspaces: unknown } };
+      expect(getItem(state.workspace.workspaces as never, 'ws-not-loaded')).toBeUndefined();
+    });
+  });
+
   it('pr:unlinked clears the active-PR fields but retains the pullRequests list', async () => {
     await seedWorkspace();
     await primeBridge();
@@ -9295,6 +9666,39 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     expect(ws.status).toBe('Active');
     // The wire null must drop the stale timestamp rather than retain it.
     expect(ws.archivedAt).toBeUndefined();
+  });
+
+  it('merges the retire delta and clears retiredAt on the revive delta', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      updatedNotification({
+        archived: true,
+        status: 'Retired',
+        archivedAt: '2026-10-01T00:00:00.000Z',
+        retiredAt: '2026-10-20T00:00:00.000Z',
+      }),
+    );
+    let ws = await readWorkspace();
+    expect(ws.status).toBe('Retired');
+    expect(ws.retiredAt).toBe('2026-10-20T00:00:00.000Z');
+
+    handler(
+      updatedNotification({
+        archived: false,
+        status: 'Active',
+        archivedAt: null,
+        retiredAt: null,
+        branch: 'intent/revived',
+        revived: { reason: 'manual' },
+      }),
+    );
+    ws = await readWorkspace();
+    expect(ws.status).toBe('Active');
+    expect(ws.retiredAt).toBeUndefined();
+    expect(ws.branch).toBe('intent/revived');
   });
 
   it('merges a statusImageAssetId delta onto the entity (agent setStatusImage parity)', async () => {
@@ -10570,6 +10974,190 @@ describe('daemonEventsBridge (workspace:waiting-changed → workspace slice)', (
   });
 });
 
+describe('daemonEventsBridge (workspace:scriptsRunning-changed → workspace slice)', () => {
+  const WS_SCRIPTS = 'ws-scripts-running-1';
+
+  beforeAll(() => appStore.init());
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  async function seedWorkspace(): Promise<void> {
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+    const { WorkspaceStatus } = await import('$shared/types');
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS_SCRIPTS,
+        title: 'Scripts ws',
+        branch: 'main',
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      } as never),
+    );
+  }
+
+  async function readWorkspace(): Promise<{ scriptsRunning?: boolean }> {
+    const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
+    const state = appStore.state as { workspace: { workspaces: unknown } };
+    return (getItem(state.workspace.workspaces as never, WS_SCRIPTS) ?? {}) as never;
+  }
+
+  function notification(scriptsRunning: unknown, envelopeWorkspaceId?: string) {
+    return {
+      method: 'events.event',
+      params: {
+        event: {
+          id: `evt-scripts-${String(scriptsRunning)}-${envelopeWorkspaceId ?? 'none'}`,
+          ...(envelopeWorkspaceId ? { workspaceId: envelopeWorkspaceId } : {}),
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:scriptsRunning-changed',
+          actor: { type: 'system' },
+          data: { workspaceId: WS_SCRIPTS, scriptsRunning },
+        },
+      },
+    };
+  }
+
+  it('subscribes to workspace:scriptsRunning-changed in the bridge firehose filter', () => {
+    expect(DAEMON_EVENTS_SUBSCRIBE_TYPES).toContain('workspace:scriptsRunning-changed');
+  });
+
+  it('merges scriptsRunning transitions onto the workspace entity', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification(true, WS_SCRIPTS));
+    expect((await readWorkspace()).scriptsRunning).toBe(true);
+
+    handler(notification(false, WS_SCRIPTS));
+    expect((await readWorkspace()).scriptsRunning).toBe(false);
+  });
+
+  it('ignores a non-boolean flag', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification(true, WS_SCRIPTS));
+    handler(notification('yes', WS_SCRIPTS));
+    expect((await readWorkspace()).scriptsRunning).toBe(true);
+  });
+
+  it('applies the self-sufficient payload without an envelope workspaceId', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification(true));
+    expect((await readWorkspace()).scriptsRunning).toBe(true);
+  });
+});
+
+describe('daemonEventsBridge (workspace:backgroundTasksRunning-changed → workspace slice)', () => {
+  const WS_BACKGROUND = 'ws-background-tasks-running-1';
+
+  beforeAll(() => appStore.init());
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  async function seedWorkspace(): Promise<void> {
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+    const { WorkspaceStatus } = await import('$shared/types');
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS_BACKGROUND,
+        title: 'Background ws',
+        branch: 'main',
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      } as never),
+    );
+  }
+
+  async function readWorkspace(): Promise<{
+    backgroundTasksRunning?: boolean;
+    scriptsRunning?: boolean;
+  }> {
+    const { getItem } = await import('@themislib/themis/utils/collections/collection-utils');
+    const state = appStore.state as { workspace: { workspaces: unknown } };
+    return (getItem(state.workspace.workspaces as never, WS_BACKGROUND) ?? {}) as never;
+  }
+
+  function notification(backgroundTasksRunning: unknown, envelopeWorkspaceId?: string) {
+    return {
+      method: 'events.event',
+      params: {
+        event: {
+          id: `evt-background-${String(backgroundTasksRunning)}-${envelopeWorkspaceId ?? 'none'}`,
+          ...(envelopeWorkspaceId ? { workspaceId: envelopeWorkspaceId } : {}),
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:backgroundTasksRunning-changed',
+          actor: { type: 'system' },
+          data: { workspaceId: WS_BACKGROUND, backgroundTasksRunning },
+        },
+      },
+    };
+  }
+
+  it('subscribes to workspace:backgroundTasksRunning-changed in the bridge firehose filter', () => {
+    expect(DAEMON_EVENTS_SUBSCRIBE_TYPES).toContain('workspace:backgroundTasksRunning-changed');
+  });
+
+  it('merges backgroundTasksRunning transitions without touching scriptsRunning', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification(true, WS_BACKGROUND));
+    expect((await readWorkspace()).backgroundTasksRunning).toBe(true);
+    expect((await readWorkspace()).scriptsRunning).toBeUndefined();
+
+    handler(notification(false, WS_BACKGROUND));
+    expect((await readWorkspace()).backgroundTasksRunning).toBe(false);
+  });
+
+  it('ignores a non-boolean flag', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification(true, WS_BACKGROUND));
+    handler(notification('yes', WS_BACKGROUND));
+    expect((await readWorkspace()).backgroundTasksRunning).toBe(true);
+  });
+
+  it('applies the self-sufficient payload without an envelope workspaceId', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification(true));
+    expect((await readWorkspace()).backgroundTasksRunning).toBe(true);
+  });
+});
+
 // A workspace:attention-changed / waiting-changed / displayStatus-changed
 // delta targeting a workspace this window has not hydrated yet used to be
 // silently dropped (the bulkUpdateWorkspaceEntities reducer is a no-op for
@@ -10820,6 +11408,44 @@ describe('daemonEventsBridge (dropped deltas for unhydrated workspaces → targe
     pendingFetches[1]!({ workspace: fresh });
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect((await readWorkspace(WS))?.attention).toBe('unread');
+  });
+
+  // Regression (cloudlands-fe#3647 review): presence-detected flags
+  // (`scriptsRunning`, `waiting`) are omitted when false (PROTOCOL §5.1), so a
+  // trailing workspace.get row without them must clear the value the leading
+  // read stored — a shallow upsert would keep the stale `true` and leave Home
+  // showing Running/Waiting after the command or watch ended.
+  it('a trailing workspace.get that omits a presence-detected flag clears the leading value', async () => {
+    const WS = 'ws-unhydrated-omitted-flag';
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const leading = await makeWorkspace(WS, { scriptsRunning: true, waiting: true });
+    const trailing = await makeWorkspace(WS, {});
+
+    const pendingFetches: Array<(value: unknown) => void> = [];
+    backendRequestSpy.mockImplementation(async (method: string) => {
+      if (method !== 'workspace.get') return { subscriptionId: 'sub-1' };
+      return new Promise((resolve) => {
+        pendingFetches.push(resolve);
+      });
+    });
+
+    handler(changedNotification('workspace:scriptsRunning-changed', WS, { scriptsRunning: true }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(pendingFetches).toHaveLength(1);
+
+    handler(changedNotification('workspace:scriptsRunning-changed', WS, { scriptsRunning: false }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    pendingFetches[0]!({ workspace: leading });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect((await readWorkspace(WS))?.scriptsRunning).toBe(true);
+
+    expect(pendingFetches).toHaveLength(2);
+    pendingFetches[1]!({ workspace: trailing });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect((await readWorkspace(WS))?.scriptsRunning).toBeUndefined();
+    expect((await readWorkspace(WS))?.waiting).toBeUndefined();
   });
 });
 

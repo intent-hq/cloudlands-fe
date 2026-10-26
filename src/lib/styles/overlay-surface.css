@@ -9,5 +9,5 @@
 
 .dark .overlay-surface {
   --overlay-surface-border-width: 1px;
-  --overlay-surface-border-color: hsl(var(--border));
+  --overlay-surface-border-color: var(--color-border);
 }

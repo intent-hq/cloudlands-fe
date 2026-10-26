@@ -33,6 +33,10 @@
   "chat_longRunningDebug_notAvailable_fallback": ["ja", "fr"],
   "chat_mentions_agents_group": ["fr"],
   "chat_mentions_terminalIndex_subtitle": ["de", "fr", "es"],
+  "chat_mentionList_agentsSection_label": ["fr"],
+  "chat_mentionList_notesSection_label": ["fr"],
+  "chat_mentionList_scriptsSection_label": ["es", "fr"],
+  "chat_mentionList_terminalsSection_label": ["de"],
   "chat_messageEditor_kbdEsc_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "es"],
   "chat_modelChangeNotice_model_label": ["ko", "de", "fr", "es"],
   "chat_modelChangeNotice_profileModel_label": ["ko", "de", "fr", "es"],
@@ -156,6 +160,8 @@
   "layout_daemonStatus_version_label": ["de", "fr"],
   "layout_layoutHeader_presetWithShortcut_tooltip": ["de", "fr", "es"],
   "layout_navigation_commit_title": ["de", "fr", "es"],
+  "layout_noteTab_truncated_sizeKb_label": ["zh-CN", "zh-TW", "ja", "de", "es"],
+  "layout_noteTab_truncated_sizeMb_label": ["zh-CN", "zh-TW", "ja", "de", "es"],
   "layout_panelEmptyState_agent_label": ["de", "fr"],
   "layout_panelEmptyState_browser_label": ["de"],
   "layout_panelEmptyState_note_label": ["fr"],
@@ -352,5 +358,10 @@
   "workspace_terminalDock_shell_label": ["de", "es", "fr"],
   "workspace_tokenUsage_agent_label": ["de", "fr"],
   "workspace_transfer_gitBranch_label": ["de"],
-  "workspace_transfer_tableName_label": ["fr"]
+  "workspace_transfer_tableName_label": ["fr"],
+  "workspace_discussion_composer_label": ["fr"],
+  "workspace_discussion_list_label": ["fr"],
+  "workspace_share_guestCount_label": "*",
+  "workspace_share_role_collaborator_label": ["fr"],
+  "workspace_share_role_manager_label": ["de"]
 }

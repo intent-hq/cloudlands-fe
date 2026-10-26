@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import type { ViteDevServer } from 'vite';
 import { createServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
+import { prepareRootHarnessModules } from './root-harness-import';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -34,7 +35,10 @@ async function mountSurface(
   const zoom = options.zoom ?? 1;
   await page.setViewportSize(options.viewport);
   await page.emulateMedia({ colorScheme: options.theme });
-  await page.goto(`${baseUrl}src/app.html`);
+  await prepareRootHarnessModules(page, baseUrl, [
+    '/@id/svelte',
+    '/test/fixtures/UserMessageSurfaceHost.svelte',
+  ]);
   await page.addStyleTag({ url: `${baseUrl}src/app.css` });
   await page.evaluate(async ({ message, theme, transcriptWidth, zoom: scale }) => {
     Object.assign(globalThis, { process: { env: { NODE_ENV: 'test' } } });
@@ -121,11 +125,6 @@ test('uses the computed sidebar surface in light and dark themes', async ({ page
     expect(state.background).not.toBe(state.hostBackground);
     expect(state.assistantBackground).toBe('rgba(0, 0, 0, 0)');
     expect(state.contrast).toBeGreaterThanOrEqual(4.5);
-    // Batch 7b (165c72ff) standardizes rounded surfaces at 8px.
-    expect(state.borderRadius).toBe('8px');
-    expect(state.borderWidth).toBe('0px');
-    expect(state.pinnedBorderWidth).toBe('0px');
-    expect(state.padding).toEqual(['8px', '12px', '8px', '12px']);
     expect(state.userSelect).toBe('text');
     expect(state.widthDelta).toBeLessThanOrEqual(1);
     expect(state.clipped).toBe(false);

@@ -69,7 +69,8 @@ Pattern-first routing for product UI. Open the catalog URL in \`pnpm run dev:ui\
 
 - **Canvas:** use \`bg-background\` for the page and ordinary content; group controls with spacing first.
 - **Contained section:** use \`bg-card\` when a distinct group needs one enclosing boundary, such as a panel or card.
-- **Floating overlay:** use \`bg-popover\` for temporary content above the page, such as a menu, popover or tooltip.
+- **Floating overlay:** use \`bg-popover\` for temporary content above the page, such as a menu or popover.
+- **Inverse surface:** default tooltips, value bubbles, and pills use \`surface-inverse\`; inside it, keep \`text-foreground\`, \`text-muted-foreground\`, \`ShortcutChip\`, \`border-border\`, and \`bg-muted\` — the surface retunes them. \`intent/no-raw-inverse-surface\` rejects hand-built \`bg-foreground text-background\` pairs and repainted default tooltips.
 - Use one enclosing boundary per group; avoid wrapping an already contained section in another border or shadow.
 - **Compatibility helpers:** \`SurfaceProvider\`, \`surfaceClasses\`, and \`surfaceHoverClasses\` from \`$lib/components/ui\`.
 - **Internal levels (compatibility, not additional composition choices):** \`bg-surface-1\` through \`bg-surface-8\` pair with \`shadow-surface-1\` through \`shadow-surface-8\`.

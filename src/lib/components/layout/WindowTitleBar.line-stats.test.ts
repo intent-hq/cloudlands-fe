@@ -34,13 +34,17 @@ vi.mock('$lib/components/ui/button', () => ({ Button: () => null }));
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectActiveTab: () => readable(null),
 }));
-vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectWorkspaceItems: () =>
-    readable([
-      { id: 'ws-1', title: 'One' },
-      { id: 'ws-2', title: 'Two', attention: 'unread' },
-    ]),
-}));
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', async () => {
+  const { derived } = await import('svelte/store');
+  const workspaces = [
+    { id: 'ws-1', title: 'One' },
+    { id: 'ws-2', title: 'Two', attention: 'unread' },
+  ];
+  return {
+    selectWorkspaceById: (id$: import('svelte/store').Readable<string>) =>
+      derived(id$, (id) => workspaces.find((workspace) => workspace.id === id)),
+  };
+});
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
   selectZoomFactor: () => readable(1),
   selectCounterScale: () => readable(1),

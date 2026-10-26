@@ -41,12 +41,14 @@
     selectScript,
     setTerminalPlacement,
   } from '$store/renderer/slices/terminals/terminals-slice';
+  import { selectIsWorkspaceCollaborator } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
 
   let { workspaceId }: { workspaceId: string } = $props();
   const workspaceIdStore = writable('');
   $effect(() => workspaceIdStore.set(workspaceId));
+  const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
   const terminals$ = selectTerminalsForWorkspace(workspaceIdStore);
   const activeTerminalId$ = selectActiveTerminalIdForWorkspace(workspaceIdStore);
   const scripts$ = selectWorkspaceScriptEntries(workspaceIdStore);
@@ -71,6 +73,7 @@
   }
 
   function showScriptInOverlay(scriptId: string) {
+    if ($isCollaborator$) return;
     appStore.dispatch(selectScript(workspaceId, scriptId));
     appStore.dispatch(openTerminalOverlay(workspaceId));
   }
@@ -120,91 +123,93 @@
 </script>
 
 <div class="flex min-w-0 flex-col gap-2 type-caption font-normal" data-workspace-shell-list>
-  <section>
-    <SidebarGroupHeader
-      title={m.terminal_sidebar_terminals_title()}
-      expanded={terminalsExpanded}
-      onclick={() => (terminalsExpanded = !terminalsExpanded)}
-    />
-    {#if terminalsExpanded}
-      <div class="flex flex-col gap-0">
-        {#each $terminals$ as terminal (terminal.id)}
-          {@const active = terminal.id === $activeTerminalId$}
-          {@const terminalName =
-            terminal.customName || terminal.name || m.workspace_terminalDock_terminal_fallback()}
-          <div
-            class="group/terminal flex h-8 min-w-0 items-center gap-1 rounded-md px-2 hover:bg-muted focus-within:bg-muted data-[active=true]:bg-muted"
-            data-sidebar-shell-terminal={terminal.id}
-            data-active={active || undefined}
-          >
-            <Button
-              variant="plain"
-              class="flex h-full min-w-0 flex-1 cursor-pointer items-center justify-start gap-2 px-0 py-0 text-left"
-              onclick={() => openTerminalInPanel(terminal.id, terminalName)}
+  {#if !$isCollaborator$}
+    <section>
+      <SidebarGroupHeader
+        title={m.terminal_sidebar_terminals_title()}
+        expanded={terminalsExpanded}
+        onclick={() => (terminalsExpanded = !terminalsExpanded)}
+      />
+      {#if terminalsExpanded}
+        <div class="flex flex-col gap-0">
+          {#each $terminals$ as terminal (terminal.id)}
+            {@const active = terminal.id === $activeTerminalId$}
+            {@const terminalName =
+              terminal.customName || terminal.name || m.workspace_terminalDock_terminal_fallback()}
+            <div
+              class="group/terminal flex h-8 min-w-0 items-center gap-1 rounded-md px-2 hover:bg-muted focus-within:bg-muted data-[active=true]:bg-muted"
+              data-sidebar-shell-terminal={terminal.id}
+              data-active={active || undefined}
             >
-              <span class="min-w-0 truncate type-caption font-normal text-foreground"
-                >{terminalName}</span
+              <Button
+                variant="plain"
+                class="flex h-full min-w-0 flex-1 cursor-pointer items-center justify-start gap-2 px-0 py-0 text-left"
+                onclick={() => openTerminalInPanel(terminal.id, terminalName)}
               >
-            </Button>
-            <div class="flex shrink-0 items-center gap-0" data-surface-actions>
-              <Menu.Root>
-                <Menu.Trigger>
-                  {#snippet child({ props })}
-                    <Button
-                      {...props}
-                      variant="ghost"
-                      size="icon-compact"
-                      iconOnly
-                      class="size-(--row-action-target-compact)"
-                      tooltip={m.ui_openCombo_openInApp_tooltip()}
-                      aria-label={m.ui_openCombo_openInApp_tooltip()}
-                      tooltipSide="left"
-                    >
-                      <Fa icon={faArrowUpRightFromSquare} class="size-3" />
-                    </Button>
-                  {/snippet}
-                </Menu.Trigger>
-                <Menu.Content
-                  align="end"
-                  side="bottom"
-                  preventScroll={false}
-                  aria-label={terminalName}
+                <span class="min-w-0 truncate type-caption font-normal text-foreground"
+                  >{terminalName}</span
                 >
-                  <Menu.Item
-                    onclick={(event) => {
-                      event.stopPropagation();
-                      openTerminalInPanel(terminal.id, terminalName);
-                    }}
+              </Button>
+              <div class="flex shrink-0 items-center gap-0" data-surface-actions>
+                <Menu.Root>
+                  <Menu.Trigger>
+                    {#snippet child({ props })}
+                      <Button
+                        {...props}
+                        variant="ghost"
+                        size="icon-compact"
+                        iconOnly
+                        class="size-(--row-action-target-compact)"
+                        tooltip={m.ui_openCombo_openInApp_tooltip()}
+                        aria-label={m.ui_openCombo_openInApp_tooltip()}
+                        tooltipSide="left"
+                      >
+                        <Fa icon={faArrowUpRightFromSquare} class="size-3" />
+                      </Button>
+                    {/snippet}
+                  </Menu.Trigger>
+                  <Menu.Content
+                    align="end"
+                    side="bottom"
+                    preventScroll={false}
+                    aria-label={terminalName}
                   >
-                    {#snippet leading()}<Fa icon={faTableColumns} class="size-3" />{/snippet}
-                    {m.workspace_shell_showInPanel_tooltip()}
-                  </Menu.Item>
-                  <Menu.Item
-                    onclick={(event) => {
-                      event.stopPropagation();
-                      showTerminalInOverlay(terminal.id);
-                    }}
-                  >
-                    {#snippet leading()}<Fa
-                        icon={faWindowMaximize}
-                        class="size-3 rotate-180"
-                      />{/snippet}
-                    {m.workspace_shell_showInBottomBar_tooltip()}
-                  </Menu.Item>
-                </Menu.Content>
-              </Menu.Root>
+                    <Menu.Item
+                      onclick={(event) => {
+                        event.stopPropagation();
+                        openTerminalInPanel(terminal.id, terminalName);
+                      }}
+                    >
+                      {#snippet leading()}<Fa icon={faTableColumns} class="size-3" />{/snippet}
+                      {m.workspace_shell_showInPanel_tooltip()}
+                    </Menu.Item>
+                    <Menu.Item
+                      onclick={(event) => {
+                        event.stopPropagation();
+                        showTerminalInOverlay(terminal.id);
+                      }}
+                    >
+                      {#snippet leading()}<Fa
+                          icon={faWindowMaximize}
+                          class="size-3 rotate-180"
+                        />{/snippet}
+                      {m.workspace_shell_showInBottomBar_tooltip()}
+                    </Menu.Item>
+                  </Menu.Content>
+                </Menu.Root>
+              </div>
             </div>
-          </div>
-        {:else}
-          <p
-            class="px-2 py-1.5 type-caption font-normal text-muted-foreground/80 dark:text-muted-foreground/70"
-          >
-            {m.terminal_sidebar_noTerminals_label()}
-          </p>
-        {/each}
-      </div>
-    {/if}
-  </section>
+          {:else}
+            <p
+              class="px-2 py-1.5 type-caption font-normal text-muted-foreground/80 dark:text-muted-foreground/70"
+            >
+              {m.terminal_sidebar_noTerminals_label()}
+            </p>
+          {/each}
+        </div>
+      {/if}
+    </section>
+  {/if}
   <section>
     <div class="flex items-center gap-1 pr-2">
       <div class="min-w-0 flex-1">
@@ -311,18 +316,20 @@
                       {#snippet leading()}<Fa icon={faTableColumns} class="size-3" />{/snippet}
                       {m.workspace_shell_showInPanel_tooltip()}
                     </Menu.Item>
-                    <Menu.Item
-                      onclick={(event) => {
-                        event.stopPropagation();
-                        showScriptInOverlay(script.id);
-                      }}
-                    >
-                      {#snippet leading()}<Fa
-                          icon={faWindowMaximize}
-                          class="size-3 rotate-180"
-                        />{/snippet}
-                      {m.workspace_shell_showInBottomBar_tooltip()}
-                    </Menu.Item>
+                    {#if !$isCollaborator$}
+                      <Menu.Item
+                        onclick={(event) => {
+                          event.stopPropagation();
+                          showScriptInOverlay(script.id);
+                        }}
+                      >
+                        {#snippet leading()}<Fa
+                            icon={faWindowMaximize}
+                            class="size-3 rotate-180"
+                          />{/snippet}
+                        {m.workspace_shell_showInBottomBar_tooltip()}
+                      </Menu.Item>
+                    {/if}
                   </Menu.Content>
                 </Menu.Root>
               </div>

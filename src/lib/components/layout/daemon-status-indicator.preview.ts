@@ -18,6 +18,7 @@ import type {
   SystemStatusWirePayload,
 } from '$store/renderer/slices/daemon-health/daemon-health-types';
 import DaemonStatusIndicator from './DaemonStatusIndicator.svelte';
+import { catalogNow } from '$lib/component-catalog/catalog-clock';
 
 // Every scene connects to its own daemon: a distinct `target` makes the
 // reducer treat the connect as a genuine daemon switch, which drops the
@@ -126,7 +127,7 @@ const generation = () => selectDaemonConnectionGeneration.select(store.state);
 // Live uptime is base uptime plus time elapsed since the last successful
 // check, so anchor that check near "now" rather than at a fixed past date.
 const LAST_SUCCESS_AGE_MS = 90_000;
-const lastSuccessAt = () => new Date(Date.now() - LAST_SUCCESS_AGE_MS).toISOString();
+const lastSuccessAt = () => new Date(catalogNow() - LAST_SUCCESS_AGE_MS).toISOString();
 
 interface Scenario {
   stats?: boolean;

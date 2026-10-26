@@ -10,6 +10,7 @@
   let {
     value = $bindable(''),
     inputLocked = false,
+    disabled = false,
     isStreaming = false,
     isResponding = false,
     contextItems = $bindable([]),
@@ -20,6 +21,7 @@
   }: {
     value?: string;
     inputLocked?: boolean;
+    disabled?: boolean;
     isStreaming?: boolean;
     isResponding?: boolean;
     contextItems?: ContextItem[];
@@ -59,6 +61,7 @@
   data-testid="mock-rich-input"
   data-value={value}
   data-input-locked={inputLocked}
+  data-disabled={disabled}
   data-context-count={contextItems.length}
 >
   <input

@@ -18,9 +18,17 @@ class LinuxAdmission(unittest.TestCase):
         with patch.dict(os.environ, env, clear=True), patch.object(linux.platform, 'system', return_value='Linux'), \
              patch.object(linux.platform, 'machine', return_value='x86_64'):
             linux.require_host()
+            # WarpBuild also gives each job a fresh VM: self-hosted plus its verification token.
+            with patch.dict(os.environ, {'RUNNER_ENVIRONMENT': 'self-hosted', 'WARPBUILD_RUNNER_VERIFICATION_TOKEN': 'fixture'}):
+                linux.require_host()
+            # An intent-cache slot is self-hosted without the token.
             for key, value in [('RUNNER_ENVIRONMENT', 'self-hosted'), ('RUNNER_ARCH', 'ARM64'), ('DISPLAY', '')]:
                 with patch.dict(os.environ, {key: value}):
                     with self.assertRaises(RuntimeError): linux.require_host()
+            with patch.dict(os.environ, {'RUNNER_ENVIRONMENT': 'github-hosted', 'WARPBUILD_RUNNER_VERIFICATION_TOKEN': ''}):
+                linux.require_host()
+            with patch.dict(os.environ, {'RUNNER_ENVIRONMENT': 'self-hosted', 'WARPBUILD_RUNNER_VERIFICATION_TOKEN': ''}):
+                with self.assertRaises(RuntimeError): linux.require_host()
 
     def test_elf_identity_and_rejected_architecture_or_link(self):
         with tempfile.TemporaryDirectory() as temp:

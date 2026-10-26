@@ -454,11 +454,9 @@ for (const total of [1, 19, 20, 21]) {
       // position. Scroll to make the complete turn readable in the evidence.
       await viewport.hover();
       await page.mouse.wheel(0, -120);
-      await expect
-        .poll(
-          async () => (await component.getByText('Message 11.', { exact: true }).boundingBox())!.y,
-        )
-        .toBeGreaterThan(100);
+      await expect(component.getByText('Message 11.', { exact: true })).toBeInViewport({
+        ratio: 1,
+      });
       await page.screenshot({
         path: '../../.intent/artifacts/chat-progressive-readable.png',
         fullPage: true,

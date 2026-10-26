@@ -52,7 +52,7 @@ const {
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectWorkspaceActionContext: () => authorityReadableRef.value,
+  selectWorkspaceScriptReadContext: () => authorityReadableRef.value,
   selectHidesAgentLifecycleActions: () => ({
     subscribe: (fn: (v: boolean) => void) => {
       fn(lifecycleGate.hidesAgentLifecycleActions);

@@ -321,7 +321,11 @@ and embedded tabs — is a target) and attach CDP locally. See
 builds any branch/ref — e.g. a PR branch — into platform-specific installers for testing:
 `gh workflow run manual-signed-build.yml --ref <pr-branch> -f build_macos=true` (also
 `build_windows` / `build_linux`; `sign` defaults to true — macOS Developer ID +
-notarization, Windows DigiCert). Add `-f intentd_ref=<hash>` (any intent-hq/intentd git
+notarization, Windows Azure Artifact Signing). A signed Windows request first runs the
+`windows-signing-preflight` job, which fails in seconds — naming every missing
+`INTENT_WINDOWS_AZURE_*` / `INTENT_WINDOWS_PUBLISHER_*` / `AZURE_*` setting — when the
+repository's Azure signing is not configured; re-run with `-f sign=false` for an unsigned
+Windows build. Add `-f intentd_ref=<hash>` (any intent-hq/intentd git
 ref — full 40-char commit SHA, branch, or tag; `actions/checkout` cannot resolve an
 abbreviated SHA from `git log --oneline`) to build the intentd sidecar from source at
 that ref instead of fetching the pinned release (all legs: macOS, Windows, and both
@@ -590,6 +594,24 @@ drop wire rows carrying the additive `pendingDeleteAt` field.
 - For copy-only changes, do not update unit tests. Run `pnpm run generate:i18n`,
   `pnpm run lint:i18n-completeness`, and `pnpm run lint:i18n-strings` instead.
 
+#### Pixel comparison tests are forbidden
+
+**Never add, restore, run, or regenerate pixel comparison tests. There are no
+exceptions for a component, feature, platform, theme, zoom level, or CI runner.**
+This ban covers screenshot/image snapshots, golden images, rendered pixel or alpha
+sampling, image similarity scores, and byte/hash comparisons of rendered images.
+Do not hide these checks in helpers, custom matchers, canvas redraws, or renamed
+"visual" tests. Do not add reference images, comparison tolerances, baseline update
+commands, or image-diff dependencies. Remove an existing violation; never refresh
+its baseline or loosen its threshold to make it pass.
+
+Enforce these bans during review. Do not add source-scanning scripts or fixture tests
+to enforce the pixel comparison or DOM measurement baseline policies.
+
+Manual screenshots and probes remain required for visual review where applicable.
+They are review evidence only: never compare their pixels or use them as automated
+pass/fail baselines. Test observable behavior with independent assertions instead.
+
 #### Do not write decorative appearance tests
 
 These rules apply to unit tests and browser tests alike:
@@ -607,14 +629,18 @@ These rules apply to unit tests and browser tests alike:
 - **Do not build circular style oracles:** importing a production class constant and
   checking for those same classes, or copying production spacing into a fixture and
   measuring that fixture, does not independently verify the app.
+- **Delete an appearance-only test when its useful assertions are gone.** Do not keep
+  it alive with prop echoes, unconditional render checks, direct focus assignment checks,
+  or expectations derived from its own mock. Every retained test needs an independent
+  behavioral failure it can detect.
 - **Do not multiply themes, widths, or zoom levels without a named behavioral reason
   for each variation.** Use the smallest set that exercises distinct contracts.
 
 Keep real-browser checks for clipping or overlap that hides content or controls, scroll
 ownership/anchoring, focus and keyboard access, usable hit areas, accessibility contrast,
 and reduced-motion behavior. Name the user-visible failure the assertion prevents.
-Geometry and computed styles are valid evidence for those contracts; do not remove a
-behavioral assertion solely because it measures pixels or lives in a geometry-named file.
+DOM geometry and computed styles are valid evidence for those contracts. This permits
+measurements of live elements, never pixel sampling or comparison of rendered images.
 
 | Do not write                                                                   | Write or retain instead                                                                         |
 | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
@@ -626,13 +652,28 @@ behavioral assertion solely because it measures pixels or lives in a geometry-na
 | Import a style constant and assert every token occurs in the rendered classes. | Dispatch an action or change a prop and assert the resulting state, content, or interaction.    |
 | Repeat an appearance assertion across every theme × width × zoom combination.  | Select named cases such as narrow keyboard access or zoomed control containment.                |
 
-Blanket coordinate/size snapshot tests and saved baselines are prohibited, including
-for registered sandbox scenes. Do not recreate them under another name or regenerate
-baselines to accept changed measurements. `pnpm run lint:geometry-snapshots`, included
-in `lint:architecture`, rejects retired baseline paths, snapshot APIs and regeneration
-hooks. Review must also reject equivalent mechanisms under new names. Manual probes
-and screenshot review remain available under [Visual verification](#visual-verification);
-automated geometry assertions must protect a named behavioral contract.
+#### DOM measurement baselines are forbidden
+
+**Never measure DOM elements and compare their size, position, or spacing with
+hard-coded or generated appearance baselines. No exceptions.** This includes a single
+width or height, inline numeric expectations, arrays or JSON of bounding boxes, saved
+coordinates, snapshots, and expected values imported or generated from CSS, tokens,
+fixtures, or a previous run. A tolerance, range, rounded value, ratio, renamed helper,
+or claim of "geometry coverage" does not make an appearance baseline acceptable.
+Remove violations; never record new measurements or adjust expected values to pass.
+
+Do not recreate these tests under another name, add exemptions, or regenerate their
+baselines. Capturing all boxes or path coordinates during a test and requiring the same
+layout later is also a generated appearance baseline. Review must reject equivalent
+custom comparisons.
+
+Keep independent behavioral assertions: content stays within its live container,
+controls remain reachable, a resize responds to user input, and scrolling preserves
+the user's position. Accessibility minimum target sizes are standards-based bounds,
+not decorative baselines. Small rounding tolerances may support these relationships;
+they must not pin an ornamental dimension or spacing value. Pure layout algorithm
+input/output contracts are also valid. Manual probes and screenshots remain review
+evidence only; never turn their measurements into automated pass/fail baselines.
 
 ### Component tests (Playwright CT) — when and how
 
@@ -716,7 +757,24 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   Quarantined CT tests still run as an advisory step on shard 1 and must carry an
   open tracking issue and an owner. Remove the tag in the PR that fixes the flake.
 - Motion specs that sample animation progress mid-flight are the historical flake source;
-  prefer asserting start/end states and `getAnimations()` counts over timed midpoints.
+  assert start/end states, and check "no animation is running" with the
+  `src/test/ct-test.ts` helpers, never a one-time `getAnimations()` count: a child's
+  short fade caught mid-flight ejected cloudlands-fe#3651 from the merge queue.
+  `expectAnimationsToSettle(locator)` waits for motion to finish (`includeFinished` also
+  requires `fill: 'forwards'` leftovers to be removed). `expectNoAnimations(locator, opts)`
+  asserts nothing animates; `opts.ignore` names a component (`{ within: selector }`)
+  whose own short finite fades are allowed. Both list what is still running. Lint
+  (`intent/no-one-shot-animation-count`) rejects the one-time count in CT specs; disable
+  it on the line, with the reason, only when zero animations is the deliberate contract.
+- Before an outside click that should dismiss a bits-ui menu, popover, select, combobox or
+  dialog, call `expectDismissibleLayerArmed(layer)` (`src/test/dismissible-layer.ts`):
+  bits-ui listens for outside pointers only after an `afterSleep(1)` timer, so an early
+  click is ignored (cloudlands-fe#3696 failed 3 of 20 runs). Any element inside the layer
+  works as `layer`. Lint
+  (`intent/no-unarmed-outside-click-in-ct`) flags an unguarded dismissing click; disable it
+  on the line, with the reason, for a click inside the layer or on a non-bits-ui popup.
+  Prove a wait with `CT_DELAY_DISMISSIBLE_LAYER=1` (1 ms timers become 500 ms, no rebuild):
+  the spec must pass, then fail with the wait removed (cloudlands-fe#3718 patched the fixture).
 - **Every CT spec imports `test` / `expect` from `src/test/ct-test.ts`** — lint-enforced
   (`no-restricted-imports`; only type imports may come from
   `@playwright/experimental-ct-svelte`). The module sets `_optionContextReuseMode: 'none'`

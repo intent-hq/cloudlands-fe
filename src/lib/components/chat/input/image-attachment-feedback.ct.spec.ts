@@ -67,3 +67,74 @@ for (const method of ['paste', 'drop'] as const) {
     await expect(editor).toHaveText('Keep this draft');
   });
 }
+
+for (const method of ['paste', 'drop'] as const) {
+  test(`${method} keeps unsupported images as removable file chips and preserves the draft`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await mount(Host);
+    const editor = page.locator('.tiptap-editor');
+    await editor.fill('Keep the original diagram');
+    await editor.evaluate((node, method) => {
+      const data = new DataTransfer();
+      data.items.add(
+        new File(
+          [
+            '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="blue"/></svg>',
+          ],
+          'diagram.svg',
+          { type: 'image/svg+xml' },
+        ),
+      );
+      data.items.add(new File(['unsupported image bytes'], 'scan.tiff', { type: 'image/tiff' }));
+      node.dispatchEvent(
+        method === 'paste'
+          ? new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true })
+          : new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true }),
+      );
+    }, method);
+    await expect(page.getByText('diagram.svg', { exact: true })).toBeVisible();
+    await expect(page.getByText('scan.tiff', { exact: true })).toBeVisible();
+    await expect(page.getByRole('img', { name: 'diagram.svg', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('img', { name: 'scan.tiff', exact: true })).toHaveCount(0);
+    await expect(editor).toHaveText('Keep the original diagram');
+    await testInfo.attach(`unsupported-${method}.png`, {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
+    await page
+      .getByText('diagram.svg', { exact: true })
+      .locator('..')
+      .getByRole('button', { name: /remove/i })
+      .click();
+    await expect(page.getByText('diagram.svg', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('scan.tiff', { exact: true })).toBeVisible();
+    await expect(editor).toHaveText('Keep the original diagram');
+  });
+}
+
+test('a corrupt supported image falls back to a named removable chip', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await mount(Host);
+  const editor = page.locator('.tiptap-editor');
+  await editor.fill('Keep this draft');
+  await editor.evaluate((node) => {
+    const data = new DataTransfer();
+    data.items.add(new File(['broken PNG'], 'broken.png', { type: 'image/png' }));
+    node.dispatchEvent(
+      new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }),
+    );
+  });
+  await expect(page.getByText('broken.png', { exact: true })).toBeVisible();
+  await expect(page.getByRole('img', { name: 'broken.png', exact: true })).toHaveCount(0);
+  await testInfo.attach('broken-image-fallback.png', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await page.getByRole('button', { name: /remove attachment/i }).click();
+  await expect(page.getByText('broken.png', { exact: true })).toHaveCount(0);
+  await expect(editor).toHaveText('Keep this draft');
+});

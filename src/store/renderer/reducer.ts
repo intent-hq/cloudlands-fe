@@ -1,3 +1,4 @@
+import { desktopControlReducer } from './slices/desktop-control/desktop-control-slice';
 import { homeWorkspacesReducer } from '$features/home/home-workspaces-slice';
 import { homeIntegrationsReducer } from '$features/home/home-integrations-slice';
 import { pendingSubmissionsReducer } from './slices/pending-submissions/pending-submissions-slice';
@@ -117,6 +118,7 @@ import { connectionsReducer } from './slices/connections/connections-slice';
 import { guestSessionsReducer } from './slices/guest-sessions/guest-sessions-slice';
 import { principalReducer } from './slices/principal/principal-slice';
 import { presenceFollowReducer } from './slices/presence-follow/presence-follow-slice';
+import { workspaceDiscussionReducer } from './slices/workspace-discussion/workspace-discussion-slice';
 import { presenceReducer } from './slices/presence/presence-slice';
 import { hostRequirementsReducer } from './slices/host-requirements/host-requirements-slice';
 import { hudReducer } from './slices/hud/hud-slice';
@@ -126,6 +128,7 @@ import { workspaceImportReducer } from './slices/workspace-import/workspace-impo
 import { workspaceShareReducer } from './slices/workspace-share/workspace-share-slice';
 
 export const reducers = {
+  desktopControl: desktopControlReducer,
   homeIntegrations: homeIntegrationsReducer,
   homeWorkspaces: homeWorkspacesReducer,
   repositoryContext: repositoryContextReducer,
@@ -241,6 +244,7 @@ export const reducers = {
   connections: connectionsReducer,
   guestSessions: guestSessionsReducer,
   presence: presenceReducer,
+  workspaceDiscussion: workspaceDiscussionReducer,
   presenceFollow: presenceFollowReducer,
   principal: principalReducer,
   hostExecution: hostExecutionReducer,

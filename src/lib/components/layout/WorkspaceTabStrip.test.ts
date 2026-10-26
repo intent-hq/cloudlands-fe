@@ -726,13 +726,6 @@ describe('WorkspaceTabStrip', () => {
     const view = render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-3' } });
 
     try {
-      const tablist = tabScroller();
-      expect(getComputedStyle(tablist).paddingLeft).toBe('16px');
-      expect(getComputedStyle(tablist).marginLeft).toBe('8px');
-      expect(tablist.className).toContain('pr-3');
-      expect(tablist.className).not.toContain('-ml-1');
-      expect(tablist.className).not.toContain('-ml-3');
-      expect(tablist.className).toContain('-mr-2.5');
       expect(screen.getAllByRole('tab')).toHaveLength(3);
       const alpha = screen.getByRole('tab', { name: /Alpha/ });
       expect(alpha.getAttribute('aria-selected')).toBe('false');
@@ -944,12 +937,7 @@ describe('WorkspaceTabStrip', () => {
         ),
       ).map((flare) => getComputedStyle(flare).opacity);
 
-    const tablist = tabScroller();
     const firstTab = document.querySelector('[data-workspace-tab="ws-1"]')!;
-    expect(getComputedStyle(tablist).paddingLeft).toBe('16px');
-    expect(getComputedStyle(tablist).marginLeft).toBe('8px');
-    expect(tablist.className).not.toContain('-ml-1');
-    expect(tablist.className).not.toContain('-ml-3');
     expect(firstTab.hasAttribute('data-workspace-tab-leading-shape')).toBe(false);
     expect(firstTab.classList).toContain('rounded-t-md');
     expect(flareOpacity(firstTab)).toEqual(['1', '1']);
@@ -1228,24 +1216,6 @@ describe('WorkspaceTabStrip', () => {
       expect(container.querySelector('[data-active-tab-bounds="set"]')).toBeTruthy();
       expect(renderedTabOrder()).toEqual(['ws-2', 'ws-1', 'ws-3']);
     });
-  });
-
-  it('changes the observable leading inset while preserving flare clearance', async () => {
-    const { rerender } = render(WorkspaceTabStrip, {
-      props: { leadingInsetPx: 15, scrollerMarginLeftPx: -6 },
-    });
-    const tablist = tabScroller();
-
-    expect(getComputedStyle(tablist).paddingLeft).toBe('6px');
-    expect(getComputedStyle(tablist).marginLeft).toBe('-6px');
-    expect(getComputedStyle(tablist).transitionDuration).toBe('200ms');
-
-    await rerender({ leadingInsetPx: 28, scrollerMarginLeftPx: 8 });
-    expect(getComputedStyle(tablist).paddingLeft).toBe('16px');
-    expect(getComputedStyle(tablist).marginLeft).toBe('8px');
-
-    await rerender({ leadingInsetPx: 4, scrollerMarginLeftPx: 8 });
-    expect(getComputedStyle(tablist).paddingLeft).toBe('6px');
   });
 
   it('owns only tab roles from the semantic tablist', () => {

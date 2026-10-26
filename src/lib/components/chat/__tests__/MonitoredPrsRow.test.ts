@@ -9,6 +9,7 @@
  */
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { tick } from 'svelte';
 import {
   listPrMonitors,
   subscribePrMonitors,
@@ -39,7 +40,10 @@ const {
     listeners: new Set<(rows: ReviewMonitorRow[]) => void>(),
   },
   captureSession: vi.fn(),
-  snapshotState: { status: 'ready' as 'loading' | 'ready' | 'failed' },
+  snapshotState: {
+    status: 'ready' as 'loading' | 'stale' | 'ready' | 'failed',
+    listeners: new Set<(value: 'loading' | 'stale' | 'ready' | 'failed') => void>(),
+  },
   workspaceState: {
     workspace: {
       id: 'ws-1',
@@ -74,6 +78,7 @@ vi.mock('$store/renderer/store', async () => {
 vi.mock('$lib/client/live/backend-transport', () => ({
   capturePrMonitorSession: captureSession,
   onMonitorReconnected: () => () => {},
+  prMonitorBackendId: () => undefined,
 }));
 
 vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', async (importOriginal) => ({
@@ -88,9 +93,10 @@ vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', async (importO
     },
   }),
   selectPrMonitorsSnapshotStatus: () => ({
-    subscribe: (run: (value: 'loading' | 'ready' | 'failed') => void) => {
+    subscribe: (run: (value: 'loading' | 'stale' | 'ready' | 'failed') => void) => {
       run(snapshotState.status);
-      return () => {};
+      snapshotState.listeners.add(run);
+      return () => snapshotState.listeners.delete(run);
     },
   }),
 }));
@@ -110,7 +116,6 @@ vi.mock('$features/navigation/link-handler', () => ({
 }));
 
 import MonitoredPrsRow from '../MonitoredPrsRow.svelte';
-import monitoredPrsRowSource from '../MonitoredPrsRow.svelte?raw';
 import {
   cancelPrMonitorRequested,
   flushPrMonitorRequested,
@@ -121,64 +126,12 @@ import {
 const producerCases: Array<{ name: string; monitor: PrMonitorRow }> =
   JSON.parse(producerRowsRaw).cases;
 
-const originalInnerWidth = window.innerWidth;
-const originalDevicePixelRatio = window.devicePixelRatio;
-
-function setViewport(width: number, devicePixelRatio = 1) {
-  Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
-  Object.defineProperty(window, 'devicePixelRatio', {
-    configurable: true,
-    value: devicePixelRatio,
-  });
-  window.dispatchEvent(new Event('resize'));
-}
-
 async function openMenu() {
   await fireEvent.click(screen.getByTestId('monitored-pr-chip'));
   const menu = await waitFor(() => screen.getByTestId('monitored-pr-menu'));
   const content = menu.closest<HTMLElement>('[data-slot="menu-content"]');
   if (!content) throw new Error('Expected the monitored PR menu to render inside menu content');
   return { menu, content };
-}
-
-// JSDOM does not apply component stylesheets, so the production
-// .monitored-pr-menu-content sizing is read from the component source and
-// modeled against the test viewport. Removing or altering the rule (the
-// menu's only width constraint) fails here instead of staying green.
-function readMenuContentRule() {
-  const rule = /\.monitored-pr-menu-content\)?\s*\{([^}]*)\}/.exec(monitoredPrsRowSource)?.[1];
-  if (!rule) {
-    throw new Error('Expected a .monitored-pr-menu-content rule in MonitoredPrsRow.svelte');
-  }
-  const width = /(?:^|;)\s*width:\s*([0-9]+)px/.exec(rule)?.[1];
-  const viewportInset = /max-width:\s*calc\(100vw\s*-\s*([0-9]+)px\)/.exec(rule)?.[1];
-  if (!width || !viewportInset) {
-    throw new Error(
-      'Expected the .monitored-pr-menu-content rule to set width and a viewport-clamped max-width',
-    );
-  }
-  return { preferredWidth: Number(width), viewportInset: Number(viewportInset) };
-}
-
-function measureRenderedMenu(menu: HTMLElement) {
-  const viewportPadding = Number(menu.dataset.viewportPadding);
-  const { preferredWidth, viewportInset } = readMenuContentRule();
-  expect(viewportInset).toBe(viewportPadding * 2);
-  const width = Math.min(preferredWidth, window.innerWidth - viewportInset);
-  const right = window.innerWidth - viewportPadding;
-  const rect = {
-    x: right - width,
-    y: 0,
-    left: right - width,
-    right,
-    top: 0,
-    bottom: 0,
-    width,
-    height: 0,
-    toJSON: () => ({}),
-  } as DOMRect;
-  menu.getBoundingClientRect = () => rect;
-  return menu.getBoundingClientRect();
 }
 
 function makeMonitor(overrides: Partial<PrMonitorRow> = {}): PrMonitorRow {
@@ -317,7 +270,6 @@ describe('MonitoredPrsRow', () => {
 
   afterEach(() => {
     cleanup();
-    setViewport(originalInnerWidth, originalDevicePixelRatio);
     dispatchMock.mockReset();
     captureSession.mockReset();
     monitorsState.listeners.clear();
@@ -326,6 +278,7 @@ describe('MonitoredPrsRow', () => {
     resetAgentSubscriptionsViewStateForTests();
     workspaceState.workspace = defaultWorkspace;
     snapshotState.status = 'ready';
+    snapshotState.listeners.clear();
     monitorsState.monitors = [];
   });
 
@@ -474,18 +427,66 @@ describe('MonitoredPrsRow', () => {
     expect(screen.queryByTestId('monitored-prs-row')).toBeNull();
   });
 
-  it.each([
-    ['loading', 'status'],
-    ['failed', 'alert'],
-  ] as const)('renders its own %s state when the initial list has not settled', (status, role) => {
-    snapshotState.status = status;
+  it('renders nothing while the initial list is still loading', () => {
+    snapshotState.status = 'loading';
     monitorsState.monitors = [];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    const row = screen.getByRole(role);
-    expect(row.getAttribute('data-testid')).toBe('pr-monitors-snapshot-status');
-    expect(row.getAttribute('data-snapshot-status')).toBe(status);
+    expect(screen.queryByTestId('pr-monitors-snapshot-status')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
   });
+
+  it('renders its own failed state when the initial list could not be read', () => {
+    snapshotState.status = 'failed';
+    monitorsState.monitors = [];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const row = screen.getByRole('alert');
+    expect(row.getAttribute('data-testid')).toBe('pr-monitors-snapshot-status');
+    expect(row.getAttribute('data-snapshot-status')).toBe('failed');
+  });
+
+  it.each(['monitored-pr-cancel-item', 'monitored-pr-check-flush-item'])(
+    'renders retained stale rows but disables %s until the list is refreshed',
+    async (item) => {
+      snapshotState.status = 'stale';
+      monitorsState.monitors = [makeMonitor()];
+      render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+      expect(screen.getByTestId('monitored-pr-summary').textContent).toContain('#42');
+      await openMenu();
+      const action = screen.getByTestId(item);
+      expect(action.getAttribute('aria-disabled')).toBe('true');
+      await fireEvent.click(action);
+      expect(dispatchMock).not.toHaveBeenCalled();
+      expect(
+        screen.getByTestId('monitored-pr-open-external-item').getAttribute('aria-disabled'),
+      ).not.toBe('true');
+    },
+  );
+
+  it.each(['monitored-pr-cancel-item', 'monitored-pr-check-flush-item'])(
+    'keeps %s disabled for a menu opened on a stale row after the fresh list lands',
+    async (item) => {
+      snapshotState.status = 'stale';
+      monitorsState.monitors = [makeMonitor()];
+      render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+      await openMenu();
+
+      const fresh = makeMonitor({
+        origin: { backendId: 'A', sessionId: 'reacquired', workspaceId: 'ws-1' },
+      });
+      snapshotState.status = 'ready';
+      for (const listener of snapshotState.listeners) listener('ready');
+      for (const listener of monitorsState.listeners) listener([fresh]);
+      await tick();
+
+      const action = screen.getByTestId(item);
+      expect(action.getAttribute('aria-disabled')).toBe('true');
+      await fireEvent.click(action);
+      expect(dispatchMock).not.toHaveBeenCalled();
+    },
+  );
 
   it('renders 4+ digit PR numbers without digit grouping', () => {
     monitorsState.monitors = [
@@ -909,51 +910,6 @@ describe('MonitoredPrsRow', () => {
       'Open in External Browser',
       'Cancel monitor',
     ]);
-  });
-
-  it('renders the portaled menu at a 260px preferred width with single-line regular labels', async () => {
-    setViewport(1280);
-    monitorsState.monitors = [makeMonitor()];
-    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
-
-    const { menu, content } = await openMenu();
-    expect(content.className).toContain('monitored-pr-menu-content');
-    expect(menu.className).toContain('w-full');
-    expect(menu.className).toContain('min-w-0');
-    expect(menu.getAttribute('style')).toBeNull();
-    const bounds = measureRenderedMenu(menu);
-    expect(bounds.width).toBe(260);
-    expect(bounds.left).toBeGreaterThanOrEqual(12);
-    expect(bounds.right).toBeLessThanOrEqual(window.innerWidth - 12);
-    for (const item of Array.from(menu.querySelectorAll('button'))) {
-      expect(item.className).toContain('min-[284px]:whitespace-nowrap');
-      expect(item.className).not.toContain('truncate');
-    }
-  });
-
-  it.each([
-    ['narrow viewport', 240, 1],
-    ['representative 200% zoom viewport', 240, 2],
-  ])('clamps and cleanly wraps labels at a %s', async (_label, width, devicePixelRatio) => {
-    setViewport(width, devicePixelRatio);
-    monitorsState.monitors = [makeMonitor()];
-    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
-
-    const { menu, content } = await openMenu();
-    expect(content.className).toContain('monitored-pr-menu-content');
-    expect(window.devicePixelRatio).toBe(devicePixelRatio);
-    expect(menu.getAttribute('style')).toBeNull();
-    const bounds = measureRenderedMenu(menu);
-    expect(bounds.width).toBeLessThanOrEqual(window.innerWidth - 24);
-    expect(bounds.left).toBeGreaterThanOrEqual(12);
-    expect(bounds.right).toBeLessThanOrEqual(window.innerWidth - 12);
-    for (const item of Array.from(menu.querySelectorAll('button'))) {
-      expect(item.className).toContain('h-auto');
-      expect(item.className).toContain('whitespace-normal');
-      expect(item.querySelector('[data-slot="button-content"] > span')?.className).toContain(
-        'break-words',
-      );
-    }
   });
 
   describe.each(['current', 'retained-live', 'retained-retired'] as const)(

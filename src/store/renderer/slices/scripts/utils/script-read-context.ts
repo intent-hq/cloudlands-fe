@@ -1,20 +1,20 @@
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
-import { put, type SagaGenerator } from 'typed-redux-saga';
+import { put, select, type SagaGenerator } from 'typed-redux-saga';
 import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
 import { store } from '../../../store';
-import { selectWorkspaceActionContext } from '../../workspace/workspace-selectors';
+import { selectWorkspaceScriptReadContext } from '../../workspace/workspace-selectors';
 import { selectPrincipalConnectionContext } from '../../principal/principal-selectors';
 import { scriptReadStarted } from '../scripts-slice';
 import { replayScriptRead } from '$features/scripts/utils/script-change';
 import type { ScriptListEntry } from '../scripts-types';
-import { selectScriptReadJournal } from '../scripts-selectors';
+import { selectCanReadScriptDefinition, selectScriptReadJournal } from '../scripts-selectors';
 
 export function* beginScriptRead(workspaceId: string): SagaGenerator<ScriptReadContext> {
   const context = {
     workspaceId,
     requestId: crypto.randomUUID(),
     dispatch: store.dispatch,
-    authority: yield* selectWorkspaceActionContext.effect(workspaceId),
+    authority: yield* selectWorkspaceScriptReadContext.effect(workspaceId),
     connection: yield* selectPrincipalConnectionContext.effect(),
     backendId: yield* selectActiveBackendId(),
   };
@@ -38,7 +38,7 @@ export function* isScriptReadCurrent(context: ScriptReadContext): SagaGenerator<
     !!pending &&
     dispatch === store.dispatch &&
     backendId === (yield* selectActiveBackendId()) &&
-    authority === (yield* selectWorkspaceActionContext.effect(workspaceId)) &&
+    authority === (yield* selectWorkspaceScriptReadContext.effect(workspaceId)) &&
     connection === (yield* selectPrincipalConnectionContext.effect())
   );
 }
@@ -51,8 +51,11 @@ export function* reconcileScriptRead(
   const journal = yield* selectScriptReadJournal.effect(context.workspaceId, context.requestId);
   if (!journal) return;
   const changes = getItems(journal);
+  const state = yield* select((state: typeof store.state) => state);
   return {
-    scripts: replayScriptRead(entries, changes),
+    scripts: replayScriptRead(entries, changes).filter((script) =>
+      selectCanReadScriptDefinition.select(state, context.workspaceId, script),
+    ),
     definitionChanges: new Set(
       changes.flatMap((change) =>
         change.kind === 'snapshot' || change.kind === 'read'

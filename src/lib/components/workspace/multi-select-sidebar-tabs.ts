@@ -95,23 +95,24 @@ function isValidTabId(value: string): value is TabId {
   return TAB_DEFINITIONS.some((tab) => tab.id === value);
 }
 
-/**
- * Strip tabs collaborators (multiplayer w3) never see: their terminal + browser
- * methods are refused by the daemon, so a persisted or restored selection of
- * these tabs must not reopen for them.
- */
+// Managers can use Shells for saved scripts; raw terminals and browsers stay owner-only.
 export const OWNER_ONLY_TAB_IDS: ReadonlySet<TabId> = new Set<TabId>(['browser', 'shell']);
 
 export function normalizeSelectedTabs(
   tabIds: string[],
   isCollaborator = false,
   showPeople = true,
+  canOperateScripts = false,
 ): Set<TabId> {
   const normalized = tabIds.filter(
     (tabId) =>
       isValidTabId(tabId) &&
       (tabId !== 'people' || showPeople) &&
-      !(isCollaborator && OWNER_ONLY_TAB_IDS.has(tabId as TabId)),
+      !(
+        isCollaborator &&
+        OWNER_ONLY_TAB_IDS.has(tabId as TabId) &&
+        !(tabId === 'shell' && canOperateScripts)
+      ),
   );
   return new Set([(normalized[0] as TabId | undefined) ?? 'agents']);
 }

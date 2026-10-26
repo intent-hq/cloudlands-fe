@@ -18,7 +18,10 @@ import {
 import { openTab, openTabInRightmostColumnRequested } from '../../panel-layout/panel-layout-slice';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
 import { selectWorkspaceScriptEntries } from '../../scripts/scripts-selectors';
-import { openFirstPanelTerminalRequested } from '../../terminals/terminals-slice';
+import {
+  openFirstPanelTerminalRequested,
+  setTerminalPlacement,
+} from '../../terminals/terminals-slice';
 import {
   resolveExistingWorkspaceDefaultAgent,
   selectAllWorkspaceAgents,
@@ -28,6 +31,7 @@ import { selectSpec } from '../../workspace-notes/workspace-notes-selectors';
 import {
   selectIsWorkspaceCollaborator,
   selectWorkspaceParticipationContext,
+  selectWorkspaceSavedScriptContext,
 } from '../../workspace/workspace-selectors';
 import {
   activateSidebarSectionRequested,
@@ -78,9 +82,12 @@ function* activate(action: NavigationAction): SagaGenerator<void> {
   const [workspaceId, sectionId, layoutId = workspaceId] = action.payload;
   const context = yield* selectWorkspaceParticipationContext.effect(workspaceId);
   if (!context) return;
+  const collaborator = yield* selectIsWorkspaceCollaborator.effect(workspaceId);
+  if (collaborator && sectionId === 'browser') return;
   if (
-    (sectionId === 'browser' || sectionId === 'shell') &&
-    (yield* selectIsWorkspaceCollaborator.effect(workspaceId))
+    collaborator &&
+    sectionId === 'shell' &&
+    !(yield* selectWorkspaceSavedScriptContext.effect(workspaceId))
   )
     return;
 
@@ -163,14 +170,29 @@ function* activate(action: NavigationAction): SagaGenerator<void> {
         }
         break;
       }
-      case 'shell':
-        yield* put(
-          openFirstPanelTerminalRequested(
-            workspaceId,
-            (yield* selectFocusedPanelId.effect(layoutId)) ?? undefined,
-          ),
-        );
+      case 'shell': {
+        if (collaborator) {
+          const script = (yield* selectWorkspaceScriptEntries.effect(workspaceId))[0];
+          if (script) {
+            yield* openContent(layoutId, {
+              type: 'terminal',
+              scriptId: script.id,
+              title: script.name,
+              workspaceId,
+              closable: true,
+            });
+            yield* put(setTerminalPlacement(workspaceId, script.id, 'panel'));
+          }
+        } else {
+          yield* put(
+            openFirstPanelTerminalRequested(
+              workspaceId,
+              (yield* selectFocusedPanelId.effect(layoutId)) ?? undefined,
+            ),
+          );
+        }
         break;
+      }
     }
   } catch (error) {
     logger.error('Failed to open sidebar section', error);

@@ -1,4 +1,5 @@
 import { test, expect } from '../../../../test/ct-test';
+import { expectDismissibleLayerArmed } from '../../../../test/dismissible-layer';
 import Harness from './combobox.test-harness.svelte';
 
 for (const multiple of [false, true]) {
@@ -56,6 +57,7 @@ for (const multiple of [false, true]) {
 
     await input.click();
     await expect(listbox).toBeVisible();
+    await expectDismissibleLayerArmed(page.locator('[data-combobox-content]'));
     await outside.click();
     await expect(outside).toBeFocused();
     await expect(listbox).toBeHidden();
@@ -64,6 +66,7 @@ for (const multiple of [false, true]) {
     await expect(input).toBeDisabled();
     const box = await input.boundingBox();
     expect(box).not.toBeNull();
+    // eslint-disable-next-line intent/no-unarmed-outside-click-in-ct -- clicks the disabled input with no layer open; checks it does not open
     await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
     await expect(input).toHaveAttribute('aria-expanded', 'false');
     await expect(listbox).toBeHidden();

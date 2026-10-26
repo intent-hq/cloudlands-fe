@@ -118,6 +118,66 @@ describe('UnifiedAgentFactory', () => {
   });
 
   describe('createAgent', () => {
+    it('sends only canonical safe fields for a guest Manager through the real wire client', async () => {
+      const { createCollection } =
+        await import('@themislib/themis/utils/collections/collection-utils');
+      const { LiveAgentsClient } = await import('$lib/client/live/live-agents-client');
+      const state = withLegacyPrincipal(
+        {
+          workspaceAgents: { byWorkspaceId: {} },
+          workspace: {
+            workspaces: createCollection('id', [
+              { ...mockWorkspace, myRole: 'manager', canManage: false },
+            ]),
+          },
+        },
+        'guest',
+      );
+      state.principal.snapshot!.capabilities.workspaceGuestRoles = true;
+      mockStoreState.current = state as unknown as Record<string, unknown>;
+      const client = new LiveAgentsClient();
+      agentsApi.create.mockImplementationOnce((request) => client.create(request));
+      backendRequestMock.mockResolvedValueOnce({
+        agent: {
+          id: 'agent-manager-created',
+          workspaceId: mockWorkspace.id,
+          name: 'Manager agent',
+          status: 'idle',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      });
+      const result = await factory.createAgent(mockWorkspace, {
+        workspaceId: mockWorkspace.id,
+        name: 'Manager agent',
+        initialMessage: 'Review the workspace',
+        provider: 'codex',
+        model: 'review-model',
+        metadata: { specialist: 'reviewer', source: 'button', parentAgentId: 'unsafe-parent' },
+        workspaceContext: { openPanels: [], linkedReferences: [] },
+        rememberSpecialist: true,
+      });
+      expect(result.success).toBe(true);
+      expect(backendRequestMock).toHaveBeenCalledWith('agent.create', {
+        workspaceId: mockWorkspace.id,
+        idempotencyKey: expect.any(String),
+        name: 'Manager agent',
+        provider: 'codex',
+        model: 'review-model',
+        specialistId: 'reviewer',
+      });
+      await vi.waitFor(() =>
+        expect(backendRequestMock).toHaveBeenCalledWith(
+          'agent.sendMessage',
+          expect.objectContaining({
+            agentId: 'agent-manager-created',
+            workspaceId: mockWorkspace.id,
+            content: 'Review the workspace',
+          }),
+        ),
+      );
+    });
+
     it('preserves explicit isolated placement through config normalization', async () => {
       const placement = { target: 'local', checkout: 'isolated' } as const;
       const result = await factory.createAgent(mockWorkspace, {

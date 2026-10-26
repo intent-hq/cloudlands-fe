@@ -5,7 +5,7 @@
   import { cn } from '$lib/utils';
   import { getHomeStatusCause } from './home-attention';
   import { m } from '$shared/paraglide/messages.js';
-  import { getHomeTriageGroup, type HomeTriageInput } from './home-model';
+  import { getHomeBaseTriageGroup, type HomeTriageInput } from './home-model';
   import type { Workspace } from '$shared/types';
   import { getWorkspaceStatusPresentation } from '$lib/components/workspace/utils/workspace-status-presentation';
 
@@ -18,7 +18,9 @@
     class?: string;
     showLabel?: boolean;
   } = $props();
-  const group = $derived(getHomeTriageGroup(workspace));
+  // Waiting shows as a marker on the underlying state, so the chip keys off
+  // the group without the waiting overlay.
+  const group = $derived(getHomeBaseTriageGroup(workspace));
   const cause = $derived(getHomeStatusCause(workspace));
   const prPresentation = $derived(
     cause === 'pr_open' || cause === 'pr_ready' || cause === 'pr_queued'
@@ -45,6 +47,10 @@
         return m.home_status_question();
       case 'running':
         return m.home_status_running();
+      case 'scripts_running':
+        return m.home_status_scripts_running();
+      case 'background_tasks_running':
+        return m.home_status_background_tasks_running();
       case 'merged':
         return m.home_status_merged();
       case 'complete':

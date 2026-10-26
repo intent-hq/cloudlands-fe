@@ -293,6 +293,59 @@ describe('script monitor wire and connection lifecycle', () => {
   });
 });
 
+describe('active monitor receipt races', () => {
+  it.each([false, true])('retires from an identity receipt (cancelRun=%s)', async (cancelRun) => {
+    start();
+    await ready();
+    const receipt = {
+      ok: true,
+      monitorId: active.monitorId,
+      ...(cancelRun ? { runStopped: true } : {}),
+    };
+    vi.mocked(backendRequest).mockResolvedValueOnce(receipt);
+    expect(await off!.mutate(active.monitorId, cancelRun)).toEqual(receipt);
+    expect(rows.monitors).toEqual([]);
+    expect(backendRequest).toHaveBeenLastCalledWith(
+      cancelRun ? 'scriptMonitor.cancelRun' : 'scriptMonitor.cancel',
+      { workspaceId: ws, monitorId: active.monitorId },
+    );
+    event(active, 'scriptMonitor:registered');
+    expect(rows.monitors).toEqual([]);
+    expect(backendRequest).not.toHaveBeenCalledWith('script.stop', expect.anything());
+  });
+  it('ignores an old connection receipt after reconnect', async () => {
+    start();
+    await ready();
+    const pending = deferred<unknown>();
+    vi.mocked(backendRequest).mockReturnValueOnce(pending.promise);
+    const mutation = off!.mutate(active.monitorId, false);
+    reconnect();
+    await ready();
+    pending.resolve({ ok: true, monitorId: active.monitorId });
+    expect(await mutation).toBeUndefined();
+    expect(rows.monitors).toEqual([summary]);
+  });
+  it('does not revive a cancelled monitor from a delayed page or registration', async () => {
+    const original = vi.mocked(backendRequest).getMockImplementation()!;
+    vi.mocked(backendRequest).mockImplementation((method, params) =>
+      method === 'scriptMonitor.list'
+        ? Promise.resolve({ view: 'summary', monitors: [summary], nextCursor: 'next' })
+        : original(method, params),
+    );
+    start();
+    await ready();
+    const page = deferred<unknown>();
+    vi.mocked(backendRequest).mockReturnValueOnce(page.promise);
+    const pendingPage = off!.loadMore();
+    vi.mocked(backendRequest).mockResolvedValueOnce({ ok: true, monitorId: active.monitorId });
+    await off!.mutate(active.monitorId, false);
+    event(active, 'scriptMonitor:registered');
+    page.resolve({ view: 'summary', monitors: [summary] });
+    await pendingPage;
+    expect(rows.monitors).toEqual([]);
+  });
+});
+
 describe('script monitor read failures (intent-hq/intent#7206)', () => {
   const calls = (method: string) =>
     vi.mocked(backendRequest).mock.calls.filter(([name]) => name === method).length;
@@ -336,6 +389,29 @@ describe('script monitor read failures (intent-hq/intent#7206)', () => {
     expect(rows.monitors).toHaveLength(1);
   });
 
+  it('recovers from an unavailable handshake on the next reconnect without a manual retry (intent-hq/intent#7868)', async () => {
+    const original = vi.mocked(backendRequest).getMockImplementation()!;
+    let handshake = false;
+    vi.mocked(backendRequest).mockImplementation((method, params) =>
+      method === 'client.hello' && !handshake
+        ? Promise.reject(new Error('Current backend handshake is unavailable'))
+        : original(method, params),
+    );
+    start();
+    await vi.waitFor(() => expect(rows.status).toBe('failed'));
+    expect(backendSubscribe).not.toHaveBeenCalled();
+    // The main process reconnects after the unanswered hello and confirms a
+    // fresh handshake; only the reconnect signal reaches this service.
+    handshake = true;
+    reconnect();
+    await ready();
+    expect(backendSubscribe).toHaveBeenCalledTimes(1);
+    expect(backendRequest).toHaveBeenCalledWith(
+      'scriptMonitor.list',
+      expect.objectContaining({ workspaceId: ws, view: 'summary', state: 'active' }),
+    );
+    expect(rows.monitors).toEqual([summary]);
+  });
   it('keeps loaded rows usable when only an extra page fails', async () => {
     const original = vi.mocked(backendRequest).getMockImplementation()!;
     vi.mocked(backendRequest).mockImplementation((method, params) => {
@@ -353,5 +429,85 @@ describe('script monitor read failures (intent-hq/intent#7206)', () => {
     expect(rows.monitors).toHaveLength(1);
     service.retry();
     expect(calls('scriptMonitor.list')).toBe(2);
+  });
+});
+
+describe('retained rows on a reopened lease', () => {
+  const retainedRow = { ...summary, monitorId: 'retained-monitor' };
+
+  function startRetained(snapshots: ScriptMonitorSnapshot[], monitors = [retainedRow]) {
+    off = subscribeScriptMonitors(
+      ws,
+      (snapshot) => {
+        rows = snapshot;
+        snapshots.push(snapshot);
+      },
+      undefined,
+      { monitors },
+    );
+  }
+
+  it('starts from retained rows and never emits an empty list before the fresh page', async () => {
+    const ack = deferred<{ subscriptionId: string }>();
+    vi.mocked(backendSubscribe).mockReturnValueOnce(ack.promise);
+    const snapshots: ScriptMonitorSnapshot[] = [];
+    startRetained(snapshots);
+    expect(snapshots[0]).toEqual({ status: 'loading', monitors: [retainedRow], scripts: [] });
+    ack.resolve({ subscriptionId: 'sub-1' });
+    await ready();
+    expect(rows.monitors).toEqual([summary]);
+    expect(snapshots.some((snapshot) => snapshot.monitors.length === 0)).toBe(false);
+  });
+
+  it('drops never-confirmed retained rows when the fresh page fails', async () => {
+    const original = vi.mocked(backendRequest).getMockImplementation()!;
+    vi.mocked(backendRequest).mockImplementation((method, params) =>
+      method === 'scriptMonitor.list'
+        ? Promise.reject(new Error('list failed'))
+        : original(method, params),
+    );
+    startRetained([]);
+    await vi.waitFor(() => expect(rows.status).toBe('failed'));
+    expect(rows.monitors).toEqual([]);
+  });
+
+  it('drops never-confirmed retained rows when the hello fails', async () => {
+    vi.mocked(backendRequest).mockRejectedValueOnce(new Error('hello failed'));
+    startRetained([]);
+    await vi.waitFor(() => expect(rows.status).toBe('failed'));
+    expect(rows.monitors).toEqual([]);
+  });
+
+  it('replays details requested on a retained row once the fresh page lands', async () => {
+    const ack = deferred<{ subscriptionId: string }>();
+    vi.mocked(backendSubscribe).mockReturnValueOnce(ack.promise);
+    vi.mocked(backendRequest).mockImplementationOnce(() => new Promise(() => {}));
+    startRetained([], [summary]);
+    await off!.details(summary.monitorId);
+    expect(backendRequest).not.toHaveBeenCalledWith('scriptMonitor.get', expect.anything());
+    off!.dispose();
+    off = undefined;
+
+    vi.mocked(backendSubscribe).mockReturnValueOnce(ack.promise);
+    startRetained([], [summary]);
+    await off!.details(summary.monitorId);
+    ack.resolve({ subscriptionId: 'sub-1' });
+    await ready();
+    await vi.waitFor(() =>
+      expect(backendRequest).toHaveBeenCalledWith('scriptMonitor.get', {
+        workspaceId: ws,
+        monitorId: summary.monitorId,
+      }),
+    );
+  });
+
+  it('still resets to an authoritative empty list on reconnect', async () => {
+    const snapshots: ScriptMonitorSnapshot[] = [];
+    startRetained(snapshots);
+    await ready();
+    snapshots.length = 0;
+    reconnect();
+    expect(snapshots[0]).toMatchObject({ status: 'loading', monitors: [] });
+    await ready();
   });
 });

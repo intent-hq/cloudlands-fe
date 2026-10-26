@@ -121,6 +121,69 @@ test('Home departure revokes ownership and reentry restores the same pane', asyn
   }
 });
 
+test('a delayed initial intro cannot reclaim Home after outer departure', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const component = await mount(LifecycleHarness);
+  await component.getByRole('button', { name: 'Toggle Home', exact: true }).click();
+  await expect(component.locator('[data-home-view]')).toHaveCount(0);
+  await page.evaluate(() => {
+    const original = Element.prototype.animate;
+    let intro: Animation | undefined;
+    const held: Animation[] = [];
+    Element.prototype.animate = function (frames, options) {
+      const animation = original.call(this, frames, options);
+      if (this.matches('[data-home-view="workspaces"]')) {
+        animation.pause();
+        held.push(animation);
+        const duration = typeof options === 'number' ? options : options?.duration;
+        if (!intro && duration === 0 && Array.isArray(frames) && frames.length > 0) {
+          intro = animation;
+        } else if (duration === 0) {
+          animation.play();
+        }
+      }
+      return animation;
+    };
+    Object.assign(window, {
+      homeOuterIntroReady: () => Boolean(intro?.onfinish),
+      releaseHomeOuterIntro: () => {
+        intro!.onfinish!.call(intro!, new AnimationPlaybackEvent('finish'));
+      },
+      restoreHomeOuterIntro: () => {
+        Element.prototype.animate = original;
+        for (const animation of held) animation.cancel();
+      },
+    });
+  });
+  try {
+    await component.getByRole('button', { name: 'Toggle Home', exact: true }).click();
+    await expect
+      .poll(() => page.evaluate(() => Reflect.get(window, 'homeOuterIntroReady')()))
+      .toBe(true);
+    await component.getByRole('button', { name: 'Toggle Home', exact: true }).click();
+    const pane = component.locator('[data-home-view="workspaces"]');
+    await expect(pane).toHaveAttribute('aria-hidden', 'true');
+    await page.evaluate(() => Reflect.get(window, 'releaseHomeOuterIntro')());
+    const state = await pane.evaluate((node: HTMLElement) => {
+      const tab = node.querySelector<HTMLElement>('[role="tab"]')!;
+      tab.focus();
+      return {
+        connected: node.isConnected,
+        inert: node.inert,
+        hidden: node.getAttribute('aria-hidden'),
+        focused: document.activeElement === tab,
+      };
+    });
+    expect(state).toEqual({ connected: true, inert: true, hidden: 'true', focused: false });
+    await expect(component.locator('.home-tabs').getByRole('tab')).toHaveCount(0);
+  } finally {
+    await page.evaluate(() => Reflect.get(window, 'restoreHomeOuterIntro')());
+  }
+});
+
 for (const { reducedMotion, holdOutgoing, label } of [
   { reducedMotion: 'no-preference', holdOutgoing: true, label: 'held motion' },
   { reducedMotion: 'no-preference', holdOutgoing: false, label: 'ordinary motion' },

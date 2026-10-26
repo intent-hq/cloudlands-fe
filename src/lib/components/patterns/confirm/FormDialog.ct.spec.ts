@@ -1,4 +1,5 @@
 import { expect, test } from '../../../../test/ct-test';
+import { expectDismissibleLayerArmed } from '../../../../test/dismissible-layer';
 import FormDialog from './FormDialog.svelte';
 import FormDialogAsyncHarness from './FormDialogAsyncHarness.svelte';
 import DestructiveConfirm from './DestructiveConfirm.svelte';
@@ -166,6 +167,7 @@ test('pending submission blocks dismissal and permits retry after rejection', as
       { once: true, capture: true },
     );
   });
+  await expectDismissibleLayerArmed(dialog);
   await page.mouse.click(1, 1);
   await expect
     .poll(() =>

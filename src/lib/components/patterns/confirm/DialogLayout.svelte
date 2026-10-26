@@ -68,6 +68,18 @@
     container-type: inline-size;
   }
 
+  /* A dialog-owned popup (useDialogPortalTarget, e.g. every Select in a dialog)
+     is portalled into the dialog root. While one is open, let it extend past
+     the root's clip; this layout keeps scrolling on its body, so nothing else
+     can overflow the root. */
+  :global(
+    [data-slot='dialog-content']:has(> .dialog-layout, > form .dialog-layout):has(
+        > [data-bits-floating-content-wrapper]
+      )
+  ) {
+    overflow: visible;
+  }
+
   @container (max-width: 24rem) {
     .dialog-layout :global([data-slot='form-actions']) {
       flex-wrap: wrap;

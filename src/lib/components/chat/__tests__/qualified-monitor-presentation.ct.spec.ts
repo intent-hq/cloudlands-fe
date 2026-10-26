@@ -27,7 +27,10 @@ for (const width of [360, 720]) {
         await page.setViewportSize({ width, height: 520 });
         const component = await mount(Host, { props: { width, provider, referenceState } });
         await page.evaluate(() => document.fonts.ready);
-        if (referenceState === 'loading' || referenceState === 'failed') {
+        if (referenceState === 'loading') {
+          await expect(component.getByTestId('monitored-pr-summary')).toHaveCount(0);
+          await expect(component.getByTestId('pr-monitors-snapshot-status')).toHaveCount(0);
+        } else if (referenceState === 'failed') {
           await expect(component.getByTestId('pr-monitors-snapshot-status')).toHaveAttribute(
             'data-snapshot-status',
             referenceState,

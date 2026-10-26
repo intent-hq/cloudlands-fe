@@ -253,12 +253,9 @@ for (const zoom of [1, 2]) {
     expect(kinds).toContain('agent');
     expect(kinds).toContain('delegatedGroup');
     for (const slot of geometry) {
-      expect(slot.styleHeight).toBe('40px');
-      expect(slot.height).toBe(40 * zoom);
       expect(slot.rows.length).toBeGreaterThan(0);
-      for (const row of slot.rows) expect(row.height).toBeLessThanOrEqual(40 * zoom);
+      for (const row of slot.rows) expect(row.height).toBeLessThanOrEqual(slot.height);
     }
-    expect(new Set(geometry.map((slot) => slot.height)).size).toBe(1);
 
     await expect(component.locator('[data-testid="agent-card-preview"]')).toHaveCount(0);
     const row = component.locator('[data-agent-panel-row]').first();

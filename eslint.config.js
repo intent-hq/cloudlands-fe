@@ -29,8 +29,15 @@ import noColdSvelteImportInTestsRule from './eslint-rules/no-cold-svelte-import-
 import noCopiedChatPanelSelectorMocksRule from './eslint-rules/no-copied-chat-panel-selector-mocks.js';
 import noSourceLiteralAssertionsInTestsRule from './eslint-rules/no-source-literal-assertions-in-tests.js';
 import noWallClockAssertionsInTestsRule from './eslint-rules/no-wall-clock-assertions-in-tests.js';
+import noFakeClockResetBeforeAssertionRule from './eslint-rules/no-fake-clock-reset-before-assertion.js';
+import noWallClockInCatalogPreviewsRule, {
+  CATALOG_PREVIEW_FILE_GLOBS as catalogPreviewFileGlobs,
+  CATALOG_CLOCK_EXEMPT_GLOBS as catalogClockExemptGlobs,
+} from './eslint-rules/no-wall-clock-in-catalog-previews.js';
 import noClassNameAssertionsInTestsRule from './eslint-rules/no-class-name-assertions-in-tests.js';
 import noFlushSyncInTeardownRule from './eslint-rules/no-flushsync-in-teardown.js';
+import noOneShotAnimationCountRule from './eslint-rules/no-one-shot-animation-count.js';
+import noUnarmedOutsideClickInCtRule from './eslint-rules/no-unarmed-outside-click-in-ct.js';
 import noDirectReducedMotionQueryRule, {
   SOURCE_OF_TRUTH_FILES as reducedMotionSourceOfTruthFiles,
   TEST_FILE_GLOBS as reducedMotionTestFileGlobs,
@@ -52,8 +59,12 @@ const intentPlugin = {
     'no-copied-chat-panel-selector-mocks': noCopiedChatPanelSelectorMocksRule,
     'no-source-literal-assertions-in-tests': noSourceLiteralAssertionsInTestsRule,
     'no-wall-clock-assertions-in-tests': noWallClockAssertionsInTestsRule,
+    'no-fake-clock-reset-before-assertion': noFakeClockResetBeforeAssertionRule,
+    'no-wall-clock-in-catalog-previews': noWallClockInCatalogPreviewsRule,
     'no-class-name-assertions-in-tests': noClassNameAssertionsInTestsRule,
     'no-flushsync-in-teardown': noFlushSyncInTeardownRule,
+    'no-one-shot-animation-count': noOneShotAnimationCountRule,
+    'no-unarmed-outside-click-in-ct': noUnarmedOutsideClickInCtRule,
     'no-direct-reduced-motion-query': noDirectReducedMotionQueryRule,
   },
 };
@@ -663,6 +674,31 @@ export default [
         'error',
         { baseline: wallClockAssertionsBaseline },
       ],
+      // A test that pins a fake clock with vi.setSystemTime and then calls
+      // vi.clearAllTimers() / vi.useRealTimers() before asserting reads the real time
+      // of day, so it passes or fails depending on when CI runs (cloudlands-fe#3574
+      // was ejected from the merge queue after 08:00 UTC). No baseline: enforced at zero.
+      'intent/no-fake-clock-reset-before-assertion': 'error',
+    },
+  },
+  // A component test that counts getAnimations() once and expects zero fails at random
+  // when a child component is mid-way through a short, normal fade (cloudlands-fe#3651
+  // was ejected from the merge queue by the IntentMarkLoader's 160 ms crossfade;
+  // intent-hq/intent#7749). Use expectAnimationsToSettle / expectNoAnimations from
+  // src/test/ct-test.ts. No baseline: enforced at zero.
+  //
+  // An outside click sent as soon as a bits-ui menu, popover, select or dialog is visible
+  // can arrive before bits-ui's afterSleep(1) registers its outside-pointer listeners, so
+  // the layer stays open at random (cloudlands-fe#3696 failed 3 of 20 runs). Wait with
+  // expectDismissibleLayerArmed from src/test/dismissible-layer.ts. No baseline.
+  {
+    files: ['src/**/*.ct.spec.ts'],
+    plugins: {
+      intent: intentPlugin,
+    },
+    rules: {
+      'intent/no-one-shot-animation-count': 'error',
+      'intent/no-unarmed-outside-click-in-ct': 'error',
     },
   },
   // A unit test that asserts an element's className / classList / class attribute pins
@@ -951,6 +987,7 @@ export default [
       'intent/no-raw-controls': 'error',
       'intent/no-raw-menu-row': 'error',
       'intent/no-raw-menu-surface': 'error',
+      'intent/no-raw-inverse-surface': 'error',
       'intent/no-raw-typography': 'error',
       'intent/settings-use-schema': 'error',
     },
@@ -1009,6 +1046,20 @@ export default [
     },
     rules: {
       'intent/no-direct-reduced-motion-query': 'error',
+    },
+  },
+  // A catalog renderer, fixture or preview that builds a timestamp from the real clock
+  // renders differently depending on when, and how slowly, it runs: the toast catalog's
+  // "18s" attention toast snapshot read "20s" on a busy machine (2026-10-23). Time comes
+  // from $lib/component-catalog/catalog-clock, the one exempt file. No baseline: zero debt.
+  {
+    files: [...catalogPreviewFileGlobs],
+    ignores: [...catalogClockExemptGlobs],
+    plugins: {
+      intent: intentPlugin,
+    },
+    rules: {
+      'intent/no-wall-clock-in-catalog-previews': 'error',
     },
   },
   ...themisFullConfig,

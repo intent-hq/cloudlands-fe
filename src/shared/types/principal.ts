@@ -26,6 +26,7 @@ interface HostCapabilities {
   /** `workspace.findByPullRequest` support (PROTOCOL §5.1). */
   prWorkspaceLookup?: 1;
   invitationAccountSearch?: boolean;
+  workspaceGuestRoles?: boolean;
   hostMembership: boolean;
   collaborationIdentity: boolean;
   personalPairing: boolean;
@@ -70,6 +71,7 @@ export function parsePrincipalSnapshot(hello: unknown, value: unknown): Principa
     ...(bag.submissionCorrelation === 1 ? { submissionCorrelation: 1 as const } : {}),
     ...(bag.prWorkspaceLookup === 1 ? { prWorkspaceLookup: 1 as const } : {}),
     invitationAccountSearch: bag.invitationAccountSearch === 1,
+    workspaceGuestRoles: bag.workspaceGuestRoles === 1,
     hostMembership: bag.hostMembership === 1,
     collaborationIdentity: bag.collaborationIdentity === 1,
     personalPairing: bag.personalPairing === 1,

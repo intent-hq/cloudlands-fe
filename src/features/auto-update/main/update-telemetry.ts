@@ -10,7 +10,9 @@
  * blockmaps), so downloads are counted too.
  *
  * No identifier is stored or sent: the query only carries platform/arch, app
- * version, install source, check trigger and a once-per-UTC-day flag.
+ * version, install source, check trigger, once-per-UTC-day/ISO-week/month
+ * flags, a once-ever new-install flag and a coarse install-age bucket. Only
+ * dates are stored locally.
  */
 
 import type { UpdateChannel } from '../types';
@@ -23,6 +25,18 @@ export const SHARE_UPDATE_STATISTICS_PREF = 'shareUpdateStatistics';
  * telemetry `d` flag.
  */
 export const LAST_UPDATE_CHECK_DAY_PREF = 'lastUpdateCheckDay';
+/** FE-local pref: UTC ISO week (YYYY-Www) of the last successful check (`w`). */
+export const LAST_UPDATE_WEEK_PREF = 'lastUpdateWeek';
+/** FE-local pref: UTC month (YYYY-MM) of the last successful check (`m`). */
+export const LAST_UPDATE_MONTH_PREF = 'lastUpdateMonth';
+/** FE-local pref: UTC day (YYYY-MM-DD) this install was first seen (`a`). */
+export const FIRST_SEEN_DAY_PREF = 'firstSeenDay';
+/**
+ * FE-local pref: whether `firstSeenDay` is an estimate (an install that
+ * predates the cohort telemetry) rather than a recorded fresh install.
+ * Estimated installs never send `i=1`. `true` with no day means unknown.
+ */
+export const FIRST_SEEN_ESTIMATED_PREF = 'firstSeenEstimated';
 
 /**
  * Why a check ran (`k`). `daily` is the stable channel's hourly tick after the
@@ -30,6 +44,7 @@ export const LAST_UPDATE_CHECK_DAY_PREF = 'lastUpdateCheckDay';
  */
 export type UpdateCheckTrigger = 'startup' | 'daily' | 'periodic' | 'focus' | 'manual' | 'channel';
 export type InstallSource = 'dmg' | 'nsis' | 'appimage' | 'deb' | 'unknown';
+export type InstallAgeBucket = '0d' | '1-7d' | '8-30d' | '31-90d' | '91-365d' | '365d+' | 'unknown';
 type UpdateFeedKind = 'telemetry' | 'github' | 'custom';
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -41,6 +56,14 @@ export interface TelemetryParams {
   source: InstallSource;
   trigger: UpdateCheckTrigger;
   daily: boolean;
+  /** First successful check of the UTC ISO week (`w`). */
+  weekly: boolean;
+  /** First successful check of the UTC calendar month (`m`). */
+  monthly: boolean;
+  /** First successful check ever on a genuinely fresh install (`i`). */
+  install: boolean;
+  /** Install-age bucket (`a`). */
+  age: InstallAgeBucket;
 }
 
 /** How this copy of the app was installed, from the platform's updater target. */
@@ -69,6 +92,106 @@ export function isFirstCheckOfUtcDay(lastCheckDay: unknown, now: Date): boolean 
   return lastCheckDay !== utcDay(now);
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** UTC ISO-8601 week (weeks start Monday) as YYYY-Www, in the ISO week-numbering year. */
+export function utcIsoWeek(now: Date): string {
+  const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const isoWeekday = date.getUTCDay() || 7;
+  // The Thursday of this week decides its ISO year.
+  date.setUTCDate(date.getUTCDate() + 4 - isoWeekday);
+  const year = date.getUTCFullYear();
+  const week = Math.ceil(((date.getTime() - Date.UTC(year, 0, 1)) / DAY_MS + 1) / 7);
+  return `${year}-W${String(week).padStart(2, '0')}`;
+}
+
+/** UTC calendar month as YYYY-MM. */
+export function utcMonth(now: Date): string {
+  return now.toISOString().slice(0, 7);
+}
+
+/** True when no update check has succeeded yet in the `current` week/month key. */
+export function isFirstCheckOfPeriod(lastPeriod: unknown, current: string): boolean {
+  return lastPeriod !== current;
+}
+
+const UTC_DAY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** Midnight UTC of a valid YYYY-MM-DD day, otherwise null. */
+function parseUtcDay(value: unknown): number | null {
+  if (typeof value !== 'string') return null;
+  const match = UTC_DAY_RE.exec(value);
+  if (!match) return null;
+  const ms = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return utcDay(new Date(ms)) === value ? ms : null;
+}
+
+/**
+ * Install-age bucket from the first-seen day, in whole UTC days. A missing or
+ * malformed day, or one after today (clock moved back), is `unknown`.
+ */
+export function installAgeBucket(firstSeenDay: unknown, now: Date): InstallAgeBucket {
+  const first = parseUtcDay(firstSeenDay);
+  if (first === null) return 'unknown';
+  const today = parseUtcDay(utcDay(now)) as number;
+  const days = Math.round((today - first) / DAY_MS);
+  if (days < 0) return 'unknown';
+  if (days === 0) return '0d';
+  if (days <= 7) return '1-7d';
+  if (days <= 30) return '8-30d';
+  if (days <= 90) return '31-90d';
+  if (days <= 365) return '91-365d';
+  return '365d+';
+}
+
+export interface ResolveFirstSeenInput {
+  storedDay: unknown;
+  storedEstimated: unknown;
+  /** Any earlier successful-check pref (day/week/month) exists. */
+  hasPriorUpdateState: boolean;
+  /** userData creation estimate (see user-data-age), or null when unavailable. */
+  userDataCreatedAtMs: number | null;
+  processStartMs: number;
+  now: Date;
+}
+
+export interface FirstSeen {
+  /** YYYY-MM-DD, or null when unknown. */
+  day: string | null;
+  estimated: boolean;
+  /** True when this is a new decision that should be stored. */
+  persist: boolean;
+}
+
+/** Slack for userData being created just before the main process clock started. */
+const FRESH_USER_DATA_SLACK_MS = 60_000;
+
+/**
+ * Decide the first-seen day once per install. A stored decision is kept
+ * (a stored unknown estimate stays unknown). Otherwise a userData folder
+ * created during this process run, with no earlier successful-check prefs,
+ * is a genuine new install recorded as today; anything else is an estimate
+ * from userData's age, or unknown when that is unavailable.
+ */
+export function resolveFirstSeen(input: ResolveFirstSeenInput): FirstSeen {
+  if (parseUtcDay(input.storedDay) !== null) {
+    return {
+      day: input.storedDay as string,
+      estimated: input.storedEstimated !== false,
+      persist: false,
+    };
+  }
+  if (input.storedEstimated === true) return { day: null, estimated: true, persist: false };
+  const createdAt = input.userDataCreatedAtMs;
+  if (createdAt === null || !Number.isFinite(createdAt) || createdAt <= 0) {
+    return { day: null, estimated: true, persist: true };
+  }
+  const fresh =
+    !input.hasPriorUpdateState && createdAt >= input.processStartMs - FRESH_USER_DATA_SLACK_MS;
+  if (fresh) return { day: utcDay(input.now), estimated: false, persist: true };
+  return { day: utcDay(new Date(createdAt)), estimated: true, persist: true };
+}
+
 export function isDoNotTrack(env: Env): boolean {
   const value = env.DO_NOT_TRACK?.trim().toLowerCase();
   return value === '1' || value === 'true';
@@ -85,6 +208,10 @@ export function buildTelemetryFeedUrl(
     src: params.source,
     k: params.trigger,
     d: params.daily ? '1' : '0',
+    w: params.weekly ? '1' : '0',
+    m: params.monthly ? '1' : '0',
+    i: params.install ? '1' : '0',
+    a: params.age,
   });
   return `${base}/${channel}?${query.toString()}`;
 }

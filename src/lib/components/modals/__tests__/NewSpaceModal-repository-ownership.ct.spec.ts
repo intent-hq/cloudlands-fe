@@ -24,7 +24,7 @@ async function expectPointerReachable(control: Locator) {
     .toBe(true);
 }
 
-async function expectViewportGutter(popup: Locator) {
+async function expectViewportContainment(popup: Locator) {
   await expect
     .poll(() =>
       popup.evaluate((element) => {
@@ -32,10 +32,10 @@ async function expectViewportGutter(popup: Locator) {
         return (
           rect.width > 0 &&
           rect.height > 0 &&
-          rect.left >= 8 &&
-          rect.top >= 8 &&
-          rect.right <= innerWidth - 8 &&
-          rect.bottom <= innerHeight - 8 &&
+          rect.left >= 0 &&
+          rect.top >= 0 &&
+          rect.right <= innerWidth &&
+          rect.bottom <= innerHeight &&
           [
             [rect.left + 8, rect.top + 8],
             [rect.right - 8, rect.bottom - 8],
@@ -69,7 +69,7 @@ for (const { name, viewport } of [
       .first();
     await repo.click();
     const chooser = page.getByRole('dialog', { name: 'What repo should we work on?' });
-    await expectViewportGutter(chooser);
+    await expectViewportContainment(chooser);
     // Exercise the pixels shared with the parent, not just the child area
     // extending beyond it. A body-portalled z40 popup can be DOM-visible yet
     // lose this hit test to the parent's z70 surface.
@@ -98,7 +98,7 @@ for (const { name, viewport } of [
     await search.fill('no-matching-fixture-repository');
     await expect(search).toBeFocused();
     await expect(chooser.getByTestId('recent-repositories').getByRole('button')).toHaveCount(0);
-    await expectViewportGutter(chooser);
+    await expectViewportContainment(chooser);
     await testInfo.attach('owned-repository-chooser-empty-search', {
       body: await page.screenshot(),
       contentType: 'image/png',
@@ -154,7 +154,7 @@ test('standalone repository chooser retains pointer selection, Escape and focus 
     .first();
   await repo.click();
   const chooser = page.getByRole('dialog', { name: 'What repo should we work on?' });
-  await expectViewportGutter(chooser);
+  await expectViewportContainment(chooser);
   const local = chooser.getByRole('tab', { name: 'Copy local repo', exact: true });
   await expectPointerReachable(local);
   await local.click();

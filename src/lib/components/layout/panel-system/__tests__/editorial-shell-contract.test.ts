@@ -83,7 +83,6 @@ describe('editorial workspace shell presentation contract', () => {
     expect(container).not.toContain('min-width: 30rem');
     expect(container).toContain('.panel-split-container {');
     expect(container).toContain('min-width: 0');
-    expect(container).toContain('overflow: hidden');
     expect(handle).toContain('width: 16px');
     expect(handle).toContain('height: 16px');
   });

@@ -40,7 +40,7 @@ for (const placement of ['settings', 'modal'] as const) {
     });
     expect(geometry.overflow).toBeLessThanOrEqual(1);
     expect(geometry.top).toBeGreaterThanOrEqual(0);
-    expect(geometry.bottom).toBeLessThanOrEqual(480);
+    expect(geometry.bottom).toBeLessThanOrEqual(page.viewportSize()!.height);
     expect(geometry.scrolls).toBe(true);
     await testInfo.attach('provider-details', {
       body: await page.screenshot(),

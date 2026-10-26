@@ -16,6 +16,8 @@ export const PROVIDER_PROFILES_LIST_METHOD = 'providers.profiles.list';
 export const PROVIDER_PROFILES_CREATE_METHOD = 'providers.profiles.create';
 export const PROVIDER_PROFILES_UPDATE_METHOD = 'providers.profiles.update';
 export const PROVIDER_PROFILES_DELETE_METHOD = 'providers.profiles.delete';
+export const PROVIDER_PROFILES_REORDER_METHOD = 'providers.profiles.reorder';
+export const PROVIDER_PROFILES_UPDATE_DEFAULT_METHOD = 'providers.profiles.updateDefault';
 export const PROVIDER_PROFILES_CHANGED_EVENT = 'providers:profiles-changed';
 
 const EnvEntryReadSchema = z.discriminatedUnion('kind', [
@@ -43,6 +45,8 @@ const ProviderProfileSchema = z
     createdAt: z.string(),
     updatedAt: z.string(),
     activation: ProfileReadActivationSchema.optional(),
+    /** Quota failover may switch to this profile. Absent reads as `false`. */
+    backup: z.boolean().optional(),
   })
   .passthrough();
 
@@ -50,8 +54,39 @@ const ProfileActivationSchema = z
   .object({ envChanged: z.boolean(), runningProcesses: z.number().int().nonnegative() })
   .passthrough();
 
+/**
+ * The Default configuration of one profile-capable base provider (§5.54
+ * "Default configuration overrides"): its display name and masked env
+ * overrides. `providerRef` is the bare base id; the name labels it only.
+ */
+const DefaultConfigSchema = z
+  .object({
+    baseProviderId: z.string().min(1),
+    providerRef: z.string().optional(),
+    name: z.string(),
+    env: z.array(EnvEntryReadSchema),
+    settingsFingerprint: z.string().optional(),
+    activation: ProfileReadActivationSchema.optional(),
+  })
+  .passthrough();
+
 export const ProviderProfilesListResponseSchema = z
-  .object({ profiles: z.array(ProviderProfileSchema), revision: z.number() })
+  .object({
+    profiles: z.array(ProviderProfileSchema),
+    /**
+     * Absent on daemons without Default configuration overrides. A divergent
+     * member reads as absent so it never hides the named profiles.
+     */
+    defaults: z.array(DefaultConfigSchema).optional().catch(undefined),
+    revision: z.number(),
+  })
+  .passthrough();
+export const ProviderDefaultUpdateResponseSchema = z
+  .object({
+    defaultConfig: DefaultConfigSchema,
+    revision: z.number(),
+    activation: ProfileActivationSchema,
+  })
   .passthrough();
 export const ProviderProfileCreateResponseSchema = z
   .object({ profile: ProviderProfileSchema, revision: z.number() })
@@ -66,14 +101,20 @@ export const ProviderProfileUpdateResponseSchema = z
 export const ProviderProfileDeleteResponseSchema = z
   .object({ profileId: z.string().min(1), revision: z.number() })
   .passthrough();
+export const ProviderProfileReorderResponseSchema = z
+  .object({ profiles: z.array(ProviderProfileSchema), revision: z.number() })
+  .passthrough();
 
 export type EnvEntryRead = z.infer<typeof EnvEntryReadSchema>;
 export type ProviderProfile = z.infer<typeof ProviderProfileSchema>;
+export type ProviderDefaultConfig = z.infer<typeof DefaultConfigSchema>;
+export type ProviderDefaultUpdateResult = z.infer<typeof ProviderDefaultUpdateResponseSchema>;
 export type ProfileActivation = z.infer<typeof ProfileActivationSchema>;
 export type ProviderProfilesListResult = z.infer<typeof ProviderProfilesListResponseSchema>;
 export type ProviderProfileCreateResult = z.infer<typeof ProviderProfileCreateResponseSchema>;
 export type ProviderProfileUpdateResult = z.infer<typeof ProviderProfileUpdateResponseSchema>;
 export type ProviderProfileDeleteResult = z.infer<typeof ProviderProfileDeleteResponseSchema>;
+export type ProviderProfileReorderResult = z.infer<typeof ProviderProfileReorderResponseSchema>;
 export type EnvEntryWrite =
   | { key: string; kind: 'set'; value: string }
   | { key: string; kind: 'unset' }
@@ -83,12 +124,53 @@ export interface ProviderProfileCreateParams {
   baseProviderId: string;
   name: string;
   env?: EnvEntryWrite[];
+  backup?: boolean;
 }
 
 export interface ProviderProfileUpdateParams {
   profileId: string;
   name?: string;
   env?: EnvEntryWrite[];
+  /** Omitted keeps the saved value. */
+  backup?: boolean;
+}
+
+/** `providers.profiles.updateDefault`: omitted fields keep the saved value; a blank name restores "Default". */
+export interface ProviderDefaultUpdateParams {
+  baseProviderId: string;
+  name?: string;
+  env?: EnvEntryWrite[];
+}
+
+/** `providers.profiles.reorder`: the complete new order of one base provider's profiles. */
+export interface ProviderProfileReorderParams {
+  baseProviderId: string;
+  profileIds: string[];
+}
+
+/**
+ * Apply `orderedIds` to the slots `baseProviderId`'s profiles occupy in
+ * `profiles`, leaving other base providers where they are (the daemon's
+ * saved-order rule). Returns `undefined` unless `orderedIds` names exactly
+ * that base provider's profiles, once each.
+ */
+export function permuteBaseProfiles<T extends { id: string; baseProviderId: string }>(
+  profiles: readonly T[],
+  baseProviderId: string,
+  orderedIds: readonly string[],
+  replacements: readonly T[] = [],
+): T[] | undefined {
+  const base = profiles.filter((profile) => profile.baseProviderId === baseProviderId);
+  const byId = new Map(base.map((profile) => [profile.id, profile]));
+  for (const replacement of replacements)
+    if (byId.has(replacement.id)) byId.set(replacement.id, replacement);
+  if (orderedIds.length !== base.length || new Set(orderedIds).size !== orderedIds.length)
+    return undefined;
+  if (!orderedIds.every((id) => byId.has(id))) return undefined;
+  let next = 0;
+  return profiles.map((profile) =>
+    profile.baseProviderId === baseProviderId ? byId.get(orderedIds[next++])! : profile,
+  );
 }
 
 /** One `invalid-params` failure (`data.fieldErrors[]`). */
@@ -238,7 +320,13 @@ export function expandProviderIdsWithProfiles(
 
 /** How a provider group/selection is labelled once profiles are considered. */
 export type ProviderRefLabelParts =
-  { kind: 'plain' } | { kind: 'default' } | { kind: 'profile'; name: string } | { kind: 'missing' };
+  | { kind: 'plain' }
+  | { kind: 'default'; name?: string }
+  | { kind: 'profile'; name: string }
+  | { kind: 'missing' };
+
+/** Renamed Default configurations by base provider id (catalog `defaultNames`). */
+export type ProviderDefaultNames = Readonly<Record<string, string>>;
 
 /**
  * Label rule (§5.54 brief): bare provider labels while the base has no
@@ -250,14 +338,17 @@ export function providerRefLabelParts(
   providerRef: string,
   profiles: readonly ProviderProfileRefInfo[],
   baseProviderId = providerRefBaseId(providerRef),
+  defaultNames?: ProviderDefaultNames,
 ): ProviderRefLabelParts {
   if (isProviderProfileRef(providerRef)) {
     const profile = findProfileByRef(profiles, providerRef);
     return profile ? { kind: 'profile', name: profile.name } : { kind: 'missing' };
   }
-  return profiles.some((profile) => profile.baseProviderId === baseProviderId)
-    ? { kind: 'default' }
-    : { kind: 'plain' };
+  if (!profiles.some((profile) => profile.baseProviderId === baseProviderId))
+    return { kind: 'plain' };
+  // A renamed Default (catalog `defaultNames`) reads its own name.
+  const name = defaultNames?.[baseProviderId];
+  return name ? { kind: 'default', name } : { kind: 'default' };
 }
 
 /**

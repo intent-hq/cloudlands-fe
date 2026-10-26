@@ -16,6 +16,8 @@ import {
 } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
+import { recordDaemonNote } from './note-daemon-text';
+import { viewReadOptions } from './note-view-read';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
@@ -151,6 +153,15 @@ function releaseReadSlot(coordinator: ReadCoordinator, key: string, generation: 
   }
 }
 
+/**
+ * A note view read. The capability check and the read are separate effects so a
+ * read cancelled by cleanup while the check is pending never reaches the wire.
+ */
+function* readViewNote(noteId: string, workspaceId: string): SagaGenerator<Note | null> {
+  const options = yield* call(viewReadOptions);
+  return yield* call([appClient.notes, appClient.notes.get], noteId, workspaceId, options);
+}
+
 function* fetchNoteSlot(
   coordinator: ReadCoordinator,
   key: string,
@@ -173,7 +184,7 @@ function* fetchNoteSlot(
     const contentGeneration =
       (yield* selectWorkspaceNotesState.effect(workspaceId)).staleContentByNoteId[noteId] ?? 0;
     const { found, cleanup } = yield* race({
-      found: call([appClient.notes, appClient.notes.get], noteId, workspaceId),
+      found: call(readViewNote, noteId, workspaceId),
       cleanup: take((action: ObservedAction) => isNoteReadCleanup(action, workspaceId, noteId)),
     });
     if (cleanup || !found) return { note: null };
@@ -258,12 +269,16 @@ function* hydrateWorkspaceNotes(workspaceId: string, force = false) {
     const fetchSlimListAndSpec = (id: string) =>
       Promise.all([
         appClient.notes.list(id, { projection: 'slim' }),
-        appClient.notes.get(SPEC_NOTE_ID, id).catch(() => null),
+        viewReadOptions()
+          .then((options) => appClient.notes.get(SPEC_NOTE_ID, id, options))
+          .catch(() => null),
       ]);
     const [response, specNote]: Awaited<ReturnType<typeof fetchSlimListAndSpec>> = yield* call(
       fetchSlimListAndSpec,
       workspaceId,
     );
+    for (const row of response) recordDaemonNote(workspaceId, toRuntimeNote(row));
+    if (specNote) recordDaemonNote(workspaceId, toRuntimeNote(specNote));
     let notes = response.map((note) =>
       specNote && String(note.id) === SPEC_NOTE_ID ? toRuntimeNote(specNote) : toRuntimeNote(note),
     );
@@ -337,6 +352,8 @@ function* readNoteWorker(
       slot.authority === (yield* selectPrincipalConnectionContext.effect());
     if (note && authorityStillMatches && slot.leaderSeq === action.seq) {
       const existing = yield* selectNoteById.effect(workspaceId, noteId);
+      // A possible base for a later whole-content write (truncated-read guard, §5.2).
+      recordDaemonNote(workspaceId, note);
       if (eventType === 'note:created' && !existing) {
         yield* put(applyNoteCreated(workspaceId, note));
       } else {

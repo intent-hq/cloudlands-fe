@@ -294,6 +294,70 @@ describe('AgentMessageList - System Messages', () => {
     expect(screen.getByText('pong')).toBeTruthy();
   });
 
+  it('renders a provider_failover row once as an informational notice, never as a bubble', () => {
+    const daemonText =
+      'claude-code (Personal) ran out of quota. Switched to the backup claude-code (Work).';
+    const messages: AgentMessage[] = [
+      {
+        id: 'msg-1',
+        role: 'user',
+        contentBlocks: [{ type: 'text', text: 'ping' }],
+        timestamp: new Date().toISOString(),
+      },
+      {
+        id: 'msg-2',
+        role: 'system',
+        contentBlocks: [{ type: 'text', text: daemonText }],
+        timestamp: new Date().toISOString(),
+        metadata: {
+          type: 'provider_failover',
+          fromProvider: 'claude-code',
+          toProvider: 'claude-code@pwork',
+          model: 'opus',
+          reason: 'quota-exceeded',
+        },
+      },
+      {
+        id: 'msg-3',
+        role: 'assistant',
+        contentBlocks: [{ type: 'text', text: 'pong' }],
+        timestamp: new Date().toISOString(),
+      },
+    ];
+
+    const { container } = render(AgentMessageList, { props: { messages } });
+
+    const notices = screen.getAllByRole('status');
+    expect(notices).toHaveLength(1);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(notices[0].textContent).toMatch(/ran out of quota/);
+    expect(notices[0].textContent).toMatch(/\(backup\)/);
+    expect(notices[0].textContent).not.toContain('@pwork');
+    const row = container.querySelector('#message-msg-2')!;
+    expect(row.querySelector('.provider-failover-notice')).not.toBeNull();
+    expect(row.textContent).not.toContain(daemonText);
+    expect(screen.getByText('pong')).toBeTruthy();
+  });
+
+  it('falls back to the daemon text when a provider_failover row is incomplete', () => {
+    const daemonText = 'Switched to the backup Work.';
+    render(AgentMessageList, {
+      props: {
+        messages: [
+          {
+            id: 'msg-1',
+            role: 'system',
+            contentBlocks: [{ type: 'text', text: daemonText }],
+            timestamp: new Date().toISOString(),
+            metadata: { type: 'provider_failover', toProvider: 'claude-code@pwork' },
+          },
+        ],
+      },
+    });
+
+    expect(screen.getByRole('status').textContent).toContain(daemonText);
+  });
+
   it('falls back to the daemon text when a provider_rehomed row carries an unknown reason', () => {
     const daemonText = 'The agent was moved to another provider.';
     const messages: AgentMessage[] = [

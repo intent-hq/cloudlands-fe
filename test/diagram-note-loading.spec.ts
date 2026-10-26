@@ -5,6 +5,7 @@ import {
   MERMAID_WORKBENCH_CASES,
 } from '../src/lib/components/diagrams/diagram-workbench.preview-fixtures';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
+import { prepareRootHarnessModules } from './root-harness-import';
 
 const externalBaseUrl = process.env.UI_PREVIEW_BASE_URL?.replace(/\/$/, '');
 let baseUrl = externalBaseUrl ?? '';
@@ -75,9 +76,18 @@ async function mountNote(
   blocks: string[],
   { holdFont = false, hidden = false, shouldFocus = false, newlyCreated = false } = {},
 ) {
-  await page.goto(`${baseUrl}/sandbox/button?state=default&motion=full`, {
-    waitUntil: 'domcontentloaded',
-  });
+  await prepareRootHarnessModules(
+    page,
+    `${baseUrl}/`,
+    [
+      '/@id/svelte',
+      '/@id/svelte/store',
+      '/src/lib/components/workspace/NoteWithComments.svelte',
+      '/src/store/renderer/store.ts',
+      '/src/store/renderer/slices/workspace-notes/workspace-notes-slice.ts',
+    ],
+    { documentPath: 'sandbox/button?state=default&motion=full' },
+  );
   await expect(page.locator('[data-preview-ready=true]')).toBeVisible({ timeout: 60_000 });
   await page.evaluate(
     async ({ width, blocks, holdFont, hidden, shouldFocus, newlyCreated }) => {

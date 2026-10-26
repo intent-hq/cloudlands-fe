@@ -1,6 +1,7 @@
 import type { BackgroundHook } from '$features/hooks/background-hooks-service';
 import type { PrMonitorRow, PrMonitorSnapshot } from '$features/pr-monitor/pr-monitor-service';
 import type { DelegationGroupStatus } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-types';
+import { catalogNow } from '../catalog-clock';
 
 type FixtureState = 'collapsed' | 'expanded';
 
@@ -42,7 +43,7 @@ export interface LiveCardFixture {
   woken?: boolean;
 }
 
-const fixtureNow = Date.now();
+const fixtureNow = catalogNow();
 const relativeFixtureTime = (offsetMs: number) => new Date(fixtureNow + offsetMs).toISOString();
 
 const hook = (id: string, overrides: Partial<BackgroundHook> = {}): BackgroundHook => ({

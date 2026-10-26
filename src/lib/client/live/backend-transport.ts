@@ -84,11 +84,11 @@ export async function backendRequest<T = unknown>(
       // Read the strict boolean afresh without importing renderer selector declarations
       // into the main-process compilation graph shared by this client boundary.
       const remoteEnabled = () => store.state.userPreferences?.labsRemoteAgentsEnabled === true;
-      const generation = store.state.daemonHealth.connectionGeneration;
+      const generation = store.state.daemonHealth?.connectionGeneration;
       const checkConnection = () => {
         if (
           transport !== resolveBackendTransport() ||
-          generation !== store.state.daemonHealth.connectionGeneration
+          generation !== store.state.daemonHealth?.connectionGeneration
         )
           throw new Error(m.agent_placement_backendChanged());
       };
@@ -148,12 +148,12 @@ export async function readBackendPrincipal() {
 export async function observeBackendNodeCapabilities(): Promise<unknown> {
   const transport = resolveBackendTransport();
   const { store } = await import('$store/renderer/store');
-  const generation = store.state.daemonHealth.connectionGeneration;
+  const generation = store.state.daemonHealth?.connectionGeneration;
   if (!transport.observeNodeCapabilities) throw new Error(m.agent_placement_unavailable());
   const result = await transport.observeNodeCapabilities();
   if (
     transport !== resolveBackendTransport() ||
-    generation !== store.state.daemonHealth.connectionGeneration
+    generation !== store.state.daemonHealth?.connectionGeneration
   )
     throw new Error(m.agent_placement_backendChanged());
   return result;
@@ -267,6 +267,11 @@ export function capturePrMonitorSession(workspaceId: string) {
       }),
     );
   return transport.capturePrMonitorSession(workspaceId);
+}
+
+/** Host label the next monitor capture stamps, if the transport names hosts itself. */
+export function prMonitorBackendId(): string | undefined {
+  return resolveBackendTransport().prMonitorBackendId?.();
 }
 
 /** Monitor sessions also retire on acknowledged identity renegotiation. */

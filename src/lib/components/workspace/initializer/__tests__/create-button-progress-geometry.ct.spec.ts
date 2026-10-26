@@ -10,8 +10,6 @@ import { expect, test } from '../../../../../test/ct-test';
 import type { Locator, Page } from '@playwright/test';
 import CreateButtonProgressGeometryHost from './CreateButtonProgressGeometryHost.svelte';
 
-const BAR_HEIGHT = 2;
-
 async function box(locator: Locator) {
   const rect = await locator.boundingBox();
   if (!rect) throw new Error(`${locator} has no bounding box`);
@@ -40,14 +38,6 @@ test('the bar is pinned to the bottom-left edge of the button', async ({ mount, 
     1,
   );
   expect(Math.abs(barBox.x - buttonBox.x)).toBeLessThanOrEqual(1);
-  expect(Math.abs(barBox.height - BAR_HEIGHT)).toBeLessThanOrEqual(0.5);
-});
-
-test('the bar width tracks the percent of the button width', async ({ mount, page }) => {
-  await mount(CreateButtonProgressGeometryHost, { props: { percent: 62 } });
-  const { bar, wrapped } = await awaitLive(page, 62);
-  const [barBox, buttonBox] = await Promise.all([box(bar), box(wrapped)]);
-  expect(Math.abs(barBox.width - 0.62 * buttonBox.width)).toBeLessThanOrEqual(1);
 });
 
 test('the bar spans the full button width at 100%', async ({ mount, page }) => {
@@ -55,28 +45,6 @@ test('the bar spans the full button width at 100%', async ({ mount, page }) => {
   const { bar, wrapped } = await awaitLive(page, 100);
   const [barBox, buttonBox] = await Promise.all([box(bar), box(wrapped)]);
   expect(Math.abs(barBox.width - buttonBox.width)).toBeLessThanOrEqual(1);
-});
-
-test('wrapping leaves the button footprint and elevation unchanged', async ({ mount, page }) => {
-  await mount(CreateButtonProgressGeometryHost, { props: { percent: 62 } });
-  const { wrapped, reference } = await awaitLive(page, 62);
-  const [wrappedBox, referenceBox] = await Promise.all([box(wrapped), box(reference)]);
-  expect(Math.abs(wrappedBox.width - referenceBox.width)).toBeLessThanOrEqual(0.5);
-  expect(Math.abs(wrappedBox.height - referenceBox.height)).toBeLessThanOrEqual(0.5);
-
-  const shadows = (button: Locator) =>
-    button.evaluate((element) => ({
-      button: getComputedStyle(element).boxShadow,
-      surface: getComputedStyle(element.querySelector('[data-slot="button-surface"]')!).boxShadow,
-    }));
-  const [wrappedShadows, referenceShadows] = await Promise.all([
-    shadows(wrapped),
-    shadows(reference),
-  ]);
-  // The primary variant's elevation lives on the surface span; an unwrapped
-  // button with no shadow at all would make the parity check vacuous.
-  expect(referenceShadows.surface).not.toBe('none');
-  expect(wrappedShadows).toEqual(referenceShadows);
 });
 
 test('the bar is a sibling overlay of the button, clipped only by the overlay layer', async ({

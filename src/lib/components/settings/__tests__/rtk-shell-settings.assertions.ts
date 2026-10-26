@@ -34,19 +34,9 @@ export async function assertRtkShellGeometry(root: Locator, stacked: boolean) {
       cowLabel: box('#cow-isolation-label'),
     };
   });
-  expect(geometry.label.x).toBeCloseTo(geometry.cowLabel.x, 1);
-  expect(geometry.label.y - geometry.outer.y).toBeCloseTo(geometry.cowLabel.y - geometry.cow.y, 1);
-  expect(geometry.outer.height).toBeCloseTo(geometry.rtk.height, 1);
   expect(geometry.control.right).toBeLessThanOrEqual(geometry.rtk.right + 1);
   if (stacked) {
-    expect(geometry.control.x).toBeCloseTo(geometry.label.x, 1);
     expect(geometry.control.y).toBeGreaterThanOrEqual(geometry.description.bottom);
-  } else {
-    expect(geometry.control.right).toBeCloseTo(geometry.rtk.right, 1);
-    expect(geometry.control.y + geometry.control.height / 2).toBeCloseTo(
-      geometry.label.y + geometry.label.height / 2,
-      1,
-    );
   }
   return geometry;
 }

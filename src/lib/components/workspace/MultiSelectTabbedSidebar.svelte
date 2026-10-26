@@ -72,8 +72,10 @@
   import SidebarHeaderAction from './sidebar/SidebarHeaderAction.svelte';
   import WorkspaceProgressCard from './sidebar/WorkspaceProgressCard.svelte';
   import WorkspacePeopleActivity from '$features/presence/components/WorkspacePeopleActivity.svelte';
+  import WorkspacePeopleTile from '$features/presence/components/WorkspacePeopleTile.svelte';
+  import WorkspaceDiscussionRow from '$features/discussions/components/WorkspaceDiscussionRow.svelte';
   import { selectWorkspacePeopleTilePeople } from '$store/renderer/slices/presence/presence-selectors';
-  import { openShareDialog } from '$store/renderer/slices/workspace-share/workspace-share-slice';
+  import { openWorkspaceDiscussion } from '$features/discussions/discussion-navigation';
   import WorkspaceTokenUsage from './sidebar/WorkspaceTokenUsage.svelte';
   import SidebarPrDropdown from './sidebar/SidebarPrDropdown.svelte';
   import WorkspaceAgentsList from './WorkspaceAgentsList.svelte';
@@ -84,8 +86,8 @@
   import SidebarBrowserList from './SidebarBrowserList.svelte';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
   import {
-    selectCanShareWorkspace,
     selectIsWorkspaceCollaborator,
+    selectWorkspaceSavedScriptContext,
     selectWorkspaceActivePullRequest,
     selectWorkspaceById,
   } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -94,7 +96,7 @@
     selectNotesLoading,
   } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { openWorkspaceDiff } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-  import { openTerminalOverlay } from '$store/renderer/slices/terminals/terminals-slice';
+  import { createTerminalRequested } from '$store/renderer/slices/terminals/terminals-slice';
   import { setMultiSelectSidebarSelectedTabs } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { selectMultiSelectSidebarSelectedTabIds } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { store as appStore } from '$store/renderer/store';
@@ -271,18 +273,20 @@
   const loadingOrphanedDelegated$ = selectIsLoadingOrphanedDelegatedAgents(workspaceIdStore);
   const backgroundAgentsLoaded$ = selectBackgroundAgentsLoaded(workspaceIdStore);
   const loadingBackground$ = selectIsLoadingBackgroundAgents(workspaceIdStore);
+  const scriptContext$ = selectWorkspaceSavedScriptContext(workspaceIdStore);
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
   const isCollaborator = $derived($isCollaborator$);
   const presencePeople$ = selectWorkspacePeopleTilePeople(workspaceIdStore);
   const showPeople = $derived($presencePeople$.length > 0);
-  const canShare$ = selectCanShareWorkspace(workspaceIdStore);
   const selectedTabIds = selectMultiSelectSidebarSelectedTabIds(workspaceIdStore);
-  const selectedTabs = $derived(normalizeSelectedTabs($selectedTabIds, isCollaborator, showPeople));
+  const selectedTabs = $derived(
+    normalizeSelectedTabs($selectedTabIds, isCollaborator, showPeople, !!$scriptContext$),
+  );
   let agentSearchQuery = $state('');
   let contextSearchQuery = $state('');
   const activeTabId = $derived(
     panelOnly && flyout?.open && flyout.tabId
-      ? [...normalizeSelectedTabs([flyout.tabId], isCollaborator, showPeople)][0]
+      ? [...normalizeSelectedTabs([flyout.tabId], isCollaborator, showPeople, !!$scriptContext$)][0]
       : ([...selectedTabs][0] ?? 'agents'),
   );
   const panelId = $props.id();
@@ -315,12 +319,7 @@
   }
 
   function createTerminal() {
-    appStore.dispatch(openTerminalOverlay(workspaceId));
-  }
-
-  function shareWorkspace() {
-    if (!$workspace || !selectCanShareWorkspace.select(appStore.state, workspaceId)) return;
-    appStore.dispatch(openShareDialog({ workspaceId, workspaceTitle: $workspace.title }));
+    appStore.dispatch(createTerminalRequested(workspaceId));
   }
 
   const stagedChanges$ = selectStagedWorkingChanges(workspaceIdStore);
@@ -594,7 +593,7 @@
     data-floating={panelOnly || undefined}
     data-direction={direction}
   >
-    {#each TAB_DEFINITIONS.filter(({ id }) => (id !== 'people' || showPeople) && !(isCollaborator && OWNER_ONLY_TAB_IDS.has(id))) as tab (tab.id)}
+    {#each TAB_DEFINITIONS.filter(({ id }) => (id !== 'people' || showPeople) && !(isCollaborator && OWNER_ONLY_TAB_IDS.has(id) && !(id === 'shell' && $scriptContext$))) as tab (tab.id)}
       {@const tabId = tab.id}
       <section
         id={`${panelId}-${tabId}`}
@@ -621,13 +620,11 @@
                 <span class="min-w-0 truncate">{tab.label}</span>
                 <span class="ml-auto flex min-w-0 items-center gap-1">
                   {#if tabId === 'people'}
-                    {#if $canShare$}
-                      <SidebarHeaderAction
-                        icon="plus"
-                        label={m.workspace_share_menu_label()}
-                        onclick={shareWorkspace}
-                      />
-                    {/if}
+                    <SidebarHeaderAction
+                      icon="plus"
+                      label={m.workspace_discussion_new_title()}
+                      onclick={() => openWorkspaceDiscussion(workspaceId, panelLayoutId, 'new')}
+                    />
                   {:else if tabId === 'agents'}
                     <WorkspaceTokenUsage {workspaceId} />
                     <SidebarExpandableSearch
@@ -657,7 +654,7 @@
                       label={m.menu_new_browser()}
                       onclick={createBrowser}
                     />
-                  {:else if tabId === 'shell'}
+                  {:else if tabId === 'shell' && !isCollaborator}
                     <SidebarHeaderAction
                       icon="plus"
                       label={m.menu_new_terminal()}
@@ -748,6 +745,8 @@
               }}
             >
               {#if tabId === 'people'}
+                <WorkspacePeopleTile {workspaceId} compact />
+                <WorkspaceDiscussionRow {workspaceId} {panelLayoutId} />
                 <WorkspacePeopleActivity {workspaceId} {panelLayoutId} />
               {:else if tabId === 'agents'}
                 <div class="min-w-0" data-testid="agent-panel">

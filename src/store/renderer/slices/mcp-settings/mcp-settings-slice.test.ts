@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   initialState,
   removeServerFromState,
+  restoreServerToState,
   mcpSettingsReducer,
   setAdvancedSaveStatus,
   setServerErrorMessage,
@@ -111,4 +112,35 @@ it('removes only the selected same-name ID and its metadata', () => {
   expect(state.statusMap).toEqual({ b: 'connected' });
   expect(state.disabledServers).toEqual({ b: true });
   expect(state.errorMessages).toEqual({ b: 'second' });
+});
+
+describe('restoreServerToState', () => {
+  it('puts a removed server back at its position with its metadata', () => {
+    let state = mcpSettingsReducer(initialState, setServers(servers));
+    state = mcpSettingsReducer(state, removeServerFromState('filesystem'));
+    state = mcpSettingsReducer(
+      state,
+      restoreServerToState({
+        server: servers[0],
+        index: 0,
+        status: 'disabled',
+        errorMessage: 'old',
+        disabled: true,
+      }),
+    );
+    expect(state.servers).toEqual(servers);
+    expect(state.statusMap).toEqual({ filesystem: 'disabled' });
+    expect(state.errorMessages).toEqual({ filesystem: 'old' });
+    expect(state.disabledServers).toEqual({ filesystem: true });
+  });
+
+  it('leaves state alone when the server was already re-added', () => {
+    const state = mcpSettingsReducer(initialState, setServers(servers));
+    expect(
+      mcpSettingsReducer(
+        state,
+        restoreServerToState({ server: servers[0], index: 1, disabled: false }),
+      ),
+    ).toBe(state);
+  });
 });

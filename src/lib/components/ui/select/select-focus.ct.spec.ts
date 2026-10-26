@@ -1,4 +1,5 @@
 import { expect, test } from '../../../../test/ct-test';
+import { expectDismissibleLayerArmed } from '../../../../test/dismissible-layer';
 import Preview from './select-focus.preview.svelte';
 
 for (const { mode, ...props } of [
@@ -27,6 +28,7 @@ for (const { mode, ...props } of [
     await trigger.press('Enter');
     await search.fill('fixture');
     const outside = root.getByRole('button', { name: 'Outside action' });
+    await expectDismissibleLayerArmed(page.locator('[data-slot="select-content"]'));
     await outside.click();
     await expect(page.getByRole('listbox')).toHaveCount(0);
     await expect(outside).toBeFocused();

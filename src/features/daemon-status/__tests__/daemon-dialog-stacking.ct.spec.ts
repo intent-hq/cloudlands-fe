@@ -156,8 +156,8 @@ for (const notesStatus of ['loading', 'unavailable'] as const) {
     await expect.poll(() => hitTest(dismiss)).toBe(true);
     const bounds = await dismiss.boundingBox();
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
-    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(360);
-    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(600);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
     await capture(page, testInfo, 'overlap');
     await page.keyboard.press('Escape');
     await expect(notes).toHaveCount(0);

@@ -5,6 +5,11 @@ import {
   resolveCtContextReuseMode,
   type CtContextReuseMode,
 } from '../../playwright/ct-context-reuse';
+import {
+  CT_DISMISSIBLE_LAYER_DELAY_MARKER,
+  delayOneMillisecondTimers,
+  resolveCtDismissibleLayerDelay,
+} from '../../playwright/ct-dismissible-layer-delay';
 
 /**
  * The shared Playwright CT `test` / `expect` for every `*.ct.spec.ts`.
@@ -32,6 +37,14 @@ import {
  * before CT navigation/imports, then applied and verified again before hooks/mount.
  * Undefined and null preserve the runner default and system opt-out respectively.
  *
+ * `CT_DELAY_DISMISSIBLE_LAYER=1` (proof runs only, never CI) adds an init
+ * script to the browser context, before ct-core's `page` fixture navigates to
+ * the CT host, that turns every `setTimeout(…, 1)` into 500 ms. That is the
+ * `afterSleep(1)` bits-ui uses to arm a layer for outside clicks, so a spec
+ * whose `expectDismissibleLayerArmed` wait is missing fails every time instead
+ * of only on a busy machine (src/test/dismissible-layer.ts,
+ * playwright/ct-dismissible-layer-delay.ts). No bundle rebuild is needed.
+ *
  * Additional auto fixtures ride along:
  * - the isolation guard: when the resolved mode is `'none'`, every test's CDP
  *   `browserContextId` must be new to the worker. A page-side marker cannot
@@ -40,6 +53,10 @@ import {
  *   Playwright upgrade that renamed or dropped the private option, or
  *   `PW_TEST_REUSE_CONTEXT` set in the environment — instead of letting the
  *   flake return silently.
+ * - the dismissible-layer delay check: with `CT_DELAY_DISMISSIBLE_LAYER=1`,
+ *   every test checks in the page that the delay is installed (and fails if
+ *   not, so a proof run cannot pass without it) and carries a
+ *   `ct-delay-dismissible-layer` annotation.
  * - the CDP lifecycle recorder: a second CDP session records execution-context
  *   and navigation events from the moment the `page` fixture is ready (so the
  *   `mount()` call is covered) and attaches them as `cdp-lifecycle.json` when
@@ -65,12 +82,50 @@ type CDPSession = Awaited<ReturnType<ReturnType<Page['context']>['newCDPSession'
 
 interface CtHarnessWorkerFixtures {
   _optionContextReuseMode: CtContextReuseMode;
+  _ctDismissibleLayerDelayMs: number | undefined;
 }
 
 interface CtHarnessTestFixtures {
   _ctMotionPreference: void;
   _ctIsolatedContextGuard: void;
+  _ctDismissibleLayerDelayCheck: void;
   _ctCdpLifecycleRecorder: void;
+}
+
+type BrowserContext = ReturnType<Page['context']>;
+
+// With context reuse, one context serves several tests; install the script once.
+const delayedContexts = new WeakSet<BrowserContext>();
+
+async function installDismissibleLayerDelay(
+  context: BrowserContext,
+  delayMs: number,
+): Promise<void> {
+  if (delayedContexts.has(context)) return;
+  delayedContexts.add(context);
+  await context.addInitScript(delayOneMillisecondTimers, delayMs);
+}
+
+async function assertDismissibleLayerDelay(
+  page: Page,
+  delayMs: number,
+  testInfo: TestInfo,
+): Promise<void> {
+  const installed = await page.evaluate(
+    (marker) => (globalThis as Record<string, unknown>)[marker],
+    CT_DISMISSIBLE_LAYER_DELAY_MARKER,
+  );
+  if (installed !== delayMs) {
+    throw new Error(
+      `The dismissible-layer delay (CT_DELAY_DISMISSIBLE_LAYER=1) is on, but the CT page reports ` +
+        `${CT_DISMISSIBLE_LAYER_DELAY_MARKER}=${JSON.stringify(installed)} instead of ${delayMs}: ` +
+        'the 1 ms timer delay init script did not run before the page loaded (src/test/ct-test.ts)',
+    );
+  }
+  testInfo.annotations.push({
+    type: 'ct-delay-dismissible-layer',
+    description: `setTimeout(…, 1) delayed to ${delayMs} ms to prove dismissible-layer waits`,
+  });
 }
 
 const browserContextIdsSeenInWorker = new Set<string>();
@@ -194,6 +249,21 @@ export const ctHarnessFixtures: CtHarnessFixtures = {
     { scope: 'worker', option: true, box: true },
   ],
 
+  _ctDismissibleLayerDelayMs: [
+    resolveCtDismissibleLayerDelay({ env: process.env }),
+    { scope: 'worker', option: true, box: true },
+  ],
+
+  context: [
+    async ({ context, _ctDismissibleLayerDelayMs }, use) => {
+      if (_ctDismissibleLayerDelayMs !== undefined) {
+        await installDismissibleLayerDelay(context, _ctDismissibleLayerDelayMs);
+      }
+      await use(context);
+    },
+    { scope: 'test', box: true },
+  ],
+
   _ctMotionPreference: [
     async ({ page, contextOptions, _ctCdpLifecycleRecorder: _recorderFirst }, use) => {
       await applyAndVerifyMotion(page, contextOptions.reducedMotion);
@@ -205,6 +275,20 @@ export const ctHarnessFixtures: CtHarnessFixtures = {
   _ctIsolatedContextGuard: [
     async ({ page, _optionContextReuseMode, _ctCdpLifecycleRecorder: _recorderFirst }, use) => {
       if (_optionContextReuseMode === 'none') await assertFreshBrowserContext(page);
+      await use();
+    },
+    { auto: true, box: true },
+  ],
+
+  _ctDismissibleLayerDelayCheck: [
+    async (
+      { page, _ctDismissibleLayerDelayMs, _ctCdpLifecycleRecorder: _recorderFirst },
+      use,
+      testInfo,
+    ) => {
+      if (_ctDismissibleLayerDelayMs !== undefined) {
+        await assertDismissibleLayerDelay(page, _ctDismissibleLayerDelayMs, testInfo);
+      }
       await use();
     },
     { auto: true, box: true },
@@ -237,3 +321,5 @@ export const test = baseTest.extend<CtHarnessTestFixtures, CtHarnessWorkerFixtur
 );
 
 export { expect };
+
+export { activeAnimations, expectAnimationsToSettle, expectNoAnimations } from './ct-animations';

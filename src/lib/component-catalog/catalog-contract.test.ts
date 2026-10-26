@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { cleanup, render, waitFor } from '@testing-library/svelte';
 import axe from 'axe-core';
 import { tick } from 'svelte';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { formatRelativeTime } from '$lib/i18n/format';
 import { canonicalPatternManifest } from '$lib/components/patterns/manifest';
 import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
@@ -18,6 +18,7 @@ import PatternCatalogPreview from './renderers/PatternCatalogPreview.svelte';
 import { getCatalogEntry } from './catalog';
 import type { CatalogRendererId } from './catalog-renderers';
 import { waitForCaptureStability } from './capture-stability';
+import { CATALOG_REFERENCE_NOW } from './catalog-clock';
 import {
   catalogContractBudgetMs,
   renderWaitMs,
@@ -30,6 +31,7 @@ import '../../app.css';
 // Pin this suite's timestamp timezone and relative-time reference, keeping real timers.
 vi.mock(import('$lib/i18n/format'), async (importOriginal) => {
   const actual = await importOriginal();
+  const { CATALOG_REFERENCE_NOW } = await import('./catalog-clock');
   const { getActiveLocale } = await import('$lib/i18n/locale');
   return {
     ...actual,
@@ -39,7 +41,7 @@ vi.mock(import('$lib/i18n/format'), async (importOriginal) => {
     ) {
       return actual.formatRelativeTime(input, {
         ...options,
-        now: options?.now ?? new Date('2026-09-01T12:00:00.000Z'),
+        now: options?.now ?? new Date(CATALOG_REFERENCE_NOW),
       });
     },
     formatDateTime(input: Parameters<typeof actual.formatDateTime>[0]) {
@@ -250,9 +252,18 @@ afterAll(() => {
   globalThis.ResizeObserver = originalResizeObserver;
 });
 
+// Freeze Date (only Date: imports, capture stability and cleanup keep real timers) so a
+// fixture stamped from the catalog clock and the component measuring it read the same
+// instant however slowly the case renders. Unfrozen, the toast catalog's "18s" attention
+// toast read "20s" on a busy machine (2026-10-23 verify:changed).
+beforeEach(() => {
+  vi.setSystemTime(new Date(CATALOG_REFERENCE_NOW));
+});
+
 afterEach(() => {
   cleanup();
   document.body.replaceChildren();
+  vi.useRealTimers();
 });
 
 async function verifyCatalogContract(testCase: ContractCase) {
@@ -313,6 +324,36 @@ describe('catalog relative-time reference', () => {
         vi.useRealTimers();
       }
     },
+  );
+});
+
+// Regression for the "18s" → "20s" drift: time passing between seeding the toast fixture
+// and capturing it must not change what the snapshot sees.
+describe('catalog toast fixture clock', () => {
+  const toastCase = cases.find(({ key }) => key === 'primitive:toast:toast-state-matrix');
+  const toastBudgetMs = toastCase ? budgetMs(toastCase) : defaultTestTimeoutMs();
+  // The attention toast's age re-renders on the shared one-second ticker: one tick is
+  // enough to read "19s" on an unfrozen clock.
+  const slowRenderMs = 1_200;
+
+  it(
+    'keeps the attention toast at 18s while a slow render lets real time pass',
+    async () => {
+      expect(toastCase, 'toast-state-matrix must stay in the contract cases').toBeDefined();
+      const rendered = renderCase(toastCase!);
+      const selector =
+        '#toast-catalog-region-agent-attention [data-toast-layout="agent-attention"] ' +
+        '[data-slot="tooltip-trigger"]';
+      const age = () => rendered.baseElement.querySelector(selector)?.textContent?.trim();
+      await waitFor(() => expect(age()).toBeDefined(), {
+        timeout: renderWaitMs(toastBudgetMs),
+      });
+      expect(age()).toBe('18s');
+      await new Promise((resolve) => setTimeout(resolve, slowRenderMs));
+      await tick();
+      expect(age()).toBe('18s');
+    },
+    toastBudgetMs + slowRenderMs,
   );
 });
 

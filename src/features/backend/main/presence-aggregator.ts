@@ -36,6 +36,8 @@ interface WindowReport {
   typing: { agentId: string } | null;
   /** Monotonic order of the window's last non-null typing report. */
   typingSeq: number;
+  discussionTyping: { workspaceId: string; conversationId?: string } | null;
+  discussionTypingSeq: number;
 }
 
 interface BackendState {
@@ -77,6 +79,10 @@ export class PresenceAggregator {
       focus: params.focus,
       typing,
       typingSeq: typing ? ++this.typingSeq : (previous?.typingSeq ?? 0),
+      discussionTyping: params.discussionTyping ?? null,
+      discussionTypingSeq: params.discussionTyping
+        ? ++this.typingSeq
+        : (previous?.discussionTypingSeq ?? 0),
     });
     await this.flush(backendId);
     return backend.unsupported ? null : backend.typingSource;
@@ -103,6 +109,8 @@ export class PresenceAggregator {
     backend.typingSource = null;
     backend.generation += 1;
     backend.lastSuccessfulFocus = null;
+    // Reconnecting is not fresh input: never replay an old discussion episode.
+    for (const report of backend.windows.values()) report.discussionTyping = null;
     void this.flush(backendId);
   }
 
@@ -112,14 +120,24 @@ export class PresenceAggregator {
     const focus = new Map<string, PresenceFocusItem>();
     let typing: { agentId: string } | null = null;
     let typingSeq = -1;
+    let discussionTyping: { workspaceId: string; conversationId?: string } | null = null;
+    let discussionTypingSeq = -1;
     for (const window of backend?.windows.values() ?? []) {
       for (const item of window.focus) focus.set(focusKey(item), item);
+      if (window.discussionTyping && window.discussionTypingSeq > discussionTypingSeq) {
+        discussionTyping = window.discussionTyping;
+        discussionTypingSeq = window.discussionTypingSeq;
+      }
       if (window.typing && window.typingSeq > typingSeq) {
         typing = window.typing;
         typingSeq = window.typingSeq;
       }
     }
-    return { focus: [...focus.values()], typing };
+    return {
+      focus: [...focus.values()],
+      typing,
+      ...(discussionTyping ? { discussionTyping } : {}),
+    };
   }
 
   private backendState(backendId: string): BackendState {
@@ -167,7 +185,7 @@ export class PresenceAggregator {
     // A non-null typing target is an intentional pulse, even when unchanged.
     // Focus is a set: window arrival order and duplicate items do not matter.
     const focus = JSON.stringify(params.focus.map(focusKey).sort());
-    if (!params.typing && backend.lastSuccessfulFocus === focus) return;
+    if (!params.typing && !params.discussionTyping && backend.lastSuccessfulFocus === focus) return;
     const generation = backend.generation;
     // A failed write may have landed daemon-side; never reuse the old success.
     backend.lastSuccessfulFocus = null;
@@ -176,7 +194,7 @@ export class PresenceAggregator {
       const result = await this.request(backendId, params);
       if (generation !== backend.generation) return;
       backend.typingSource = result.typingSource;
-      backend.lastSuccessfulFocus = params.typing ? null : focus;
+      backend.lastSuccessfulFocus = params.typing || params.discussionTyping ? null : focus;
     } catch (error) {
       if (generation !== backend.generation) return;
       if (error instanceof JsonRpcError && error.rpcCode === PRESENCE_UNSUPPORTED_RPC_CODE) {
