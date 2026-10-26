@@ -14,11 +14,9 @@
     selectActiveProviderId,
     selectEnabledProviders,
     selectProviderPaths,
-    selectProviderSettingsSessionRequests,
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectProviderInUseReasons } from '$store/renderer/slices/provider-settings/provider-in-use-selectors';
   import {
-    setActiveProvider,
     setProviderEnabled,
     providerSettingsSessionOpened,
     providerSettingsSessionClosed,
@@ -57,7 +55,6 @@
     faFolder,
     faPlus,
     faSliders,
-    faStar,
     faTerminal,
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
@@ -87,7 +84,6 @@
 
   const fastModeProviders$ = selectFastModeSupportedProviders();
   const sessionId = crypto.randomUUID();
-  const requests$ = selectProviderSettingsSessionRequests(sessionId);
   const paths$ = selectProviderPaths();
   const hiddenProviders$ = selectProviderHiddenIds();
   const discoveryError$ = selectProviderDiscoveryError();
@@ -102,14 +98,6 @@
   const npxStatus$ = selectNpxStatus();
 
   const checkError = $derived($discoveryError$);
-  let selectingRequest = $state<{ id: string; providerId: string } | null>(null);
-  const selectingProviderId = $derived(
-    $requests$.some(
-      (request) => request.id === selectingRequest?.id && request.status === 'pending',
-    )
-      ? selectingRequest?.providerId
-      : null,
-  );
   const providerPaths = $derived($paths$.configured);
   const resolvedPaths = $derived($paths$.resolved);
   const secondaryResolvedPaths = $derived($paths$.secondary);
@@ -301,12 +289,6 @@
   }
 
   let pathAnchors = $state<Record<string, HTMLButtonElement | HTMLAnchorElement | null>>({});
-
-  function handleSelectProvider(providerId: string) {
-    const id = crypto.randomUUID();
-    selectingRequest = { id, providerId };
-    appStore.dispatch(setActiveProvider(providerId, { id, sessionId }));
-  }
 </script>
 
 <div class="flex flex-col gap-6">
@@ -364,7 +346,6 @@
               (provider.id !== 'antigravity' || $antigravitySetupPolicy$.canEnable)}
             {@const needsLogin = provider.available && provider.authenticated === false}
             {@const canLogIn = provider.id !== 'antigravity' && needsLogin && provider.loginDocsUrl}
-            {@const canSetDefault = provider.available && !isActive && isReady}
             {@const canInstall = provider.id !== 'antigravity' && !provider.available}
             {@const canAddProfile =
               !provider.statusPending && provider.available && supportsProfiles(provider.id)}
@@ -409,19 +390,6 @@
                       class="h-4 w-20 bg-muted/50 rounded animate-pulse"
                       aria-label={m.settings_providers_loading()}
                     ></div>
-                  {:else}
-                    {#if isActive}
-                      {#if provider.available}
-                        <span class="rounded-full bg-muted px-2 py-0.5 type-caption text-subtle">
-                          {m.settings_providers_default()}
-                        </span>
-                      {:else}
-                        <span class="type-caption text-warning-ink flex items-center gap-1">
-                          <Fa icon={faTriangleExclamation} class="w-2.5 h-2.5" />
-                          {m.settings_providers_defaultUnavailable_label()}
-                        </span>
-                      {/if}
-                    {/if}
                   {/if}
 
                   {#if canEnable && !provider.statusPending}
@@ -619,26 +587,8 @@
                             </Menu.Item>
                           {/if}
 
-                          {#if canSetDefault}
-                            <Menu.Separator />
-                            <Menu.Item
-                              class="cursor-pointer text-foreground"
-                              disabled={selectingProviderId !== null}
-                              onSelect={() => {
-                                void handleSelectProvider(provider.id);
-                              }}
-                            >
-                              <span class="flex size-4 shrink-0 items-center justify-center">
-                                <Fa icon={faStar} class="size-3.5 text-muted-foreground" />
-                              </span>
-                              {selectingProviderId === provider.id
-                                ? m.settings_providers_switching()
-                                : m.settings_providers_setAsDefault()}
-                            </Menu.Item>
-                          {/if}
-
                           {#if canDisable}
-                            {#if !canSetDefault}<Menu.Separator />{/if}
+                            <Menu.Separator />
                             <Menu.Item
                               class="cursor-pointer text-foreground"
                               disabled={!!inUseReason}

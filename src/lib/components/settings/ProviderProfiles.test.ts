@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { m } from '$shared/paraglide/messages.js';
-import type { ProviderProfile } from '$shared/provider-profiles';
+import type { ProviderDefaultConfig, ProviderProfile } from '$shared/provider-profiles';
 import { warmImport } from '../../../test/warm-import';
 
 const mocks = vi.hoisted(() => ({
@@ -61,11 +61,17 @@ async function seed({
   defaultProviderId = 'codex',
   transportMode = 'sidecar-uds',
   fastMode,
+  defaults,
+  providerStatus,
+  providerLoading,
 }: {
   profiles?: ProviderProfile[];
   defaultProviderId?: string;
   transportMode?: string;
   fastMode?: Record<string, boolean>;
+  defaults?: ProviderDefaultConfig[];
+  providerStatus?: Record<string, { available: boolean; authenticated?: boolean }>;
+  providerLoading?: Record<string, boolean>;
 } = {}) {
   const { reducers } = await import('$store/renderer/reducer');
   mocks.reducers = reducers as never;
@@ -97,7 +103,7 @@ async function seed({
       ]
     : [];
   for (const action of [
-    providerProfilesLoaded(profiles, 3),
+    providerProfilesLoaded(profiles, 3, defaults),
     hydrateDefaultProvider(defaultProviderId),
     ...fastModeActions,
   ]) {
@@ -109,6 +115,11 @@ async function seed({
     );
   }
   state.daemonHealth = { ...state.daemonHealth, transport: { mode: transportMode } };
+  state.agentAvailability = {
+    ...state.agentAvailability,
+    providerStatusMap: { ...state.agentAvailability.providerStatusMap, ...providerStatus },
+    providerLoadingMap: { ...state.agentAvailability.providerLoadingMap, ...providerLoading },
+  };
   mocks.state.current = state;
 }
 
@@ -758,6 +769,158 @@ async function openCreateDialog() {
   const { default: ProviderProfileDialog } = await import('./ProviderProfileDialog.svelte');
   render(ProviderProfileDialog, { open: true, providerId: 'codex', providerName: 'Codex' });
 }
+
+describe('ProviderProfiles pinned Default row', () => {
+  const defaultNamed = (name: string): ProviderDefaultConfig => ({
+    baseProviderId: 'codex',
+    providerRef: 'codex',
+    name,
+    env: [],
+  });
+  const profileOf = (id: string, name: string, backup?: boolean): ProviderProfile => ({
+    ...WORK,
+    id,
+    providerRef: `codex@${id}`,
+    name,
+    ...(backup === undefined ? {} : { backup }),
+  });
+  const A = profileOf('pa', 'Alpha', true);
+  const B = profileOf('pb', 'Beta', true);
+
+  async function renderProfiles(options: Parameters<typeof seed>[0] = {}) {
+    await seed(options);
+    const { default: ProviderProfiles } = await import('./ProviderProfiles.svelte');
+    render(ProviderProfiles, { providerId: 'codex', providerName: 'Codex' });
+    return screen.getByTestId('provider-profiles-codex');
+  }
+  const defaultRow = () => screen.getByTestId('provider-default-row');
+
+  it('pins the Default configuration as the first row above the named profiles', async () => {
+    const section = await renderProfiles({ profiles: [A, B], defaults: [defaultNamed('Default')] });
+    const rows = section.querySelectorAll('li');
+    expect(rows[0].getAttribute('data-testid')).toBe('provider-default-row');
+    expect([...rows].slice(1).map((row) => row.getAttribute('data-profile-id'))).toEqual([
+      'pa',
+      'pb',
+    ]);
+  });
+
+  it('shows only the name Default, with no pill, when the Default is named Default', async () => {
+    await renderProfiles({ defaults: [defaultNamed('Default')] });
+    expect(defaultRow().textContent).toContain('Default');
+    expect(within(defaultRow()).getAllByText('Default')).toHaveLength(1);
+    expect(within(defaultRow()).queryByTestId('provider-profile-default-badge')).toBeNull();
+  });
+
+  it('shows the renamed Default with a Default pill where Backup would be', async () => {
+    await renderProfiles({ defaults: [defaultNamed('Personal')] });
+    expect(within(defaultRow()).getByText('Personal')).toBeTruthy();
+    expect(within(defaultRow()).getByTestId('provider-profile-default-badge').textContent).toBe(
+      'Default',
+    );
+    expect(
+      within(defaultRow()).queryByText(m.settings_providerProfiles_backupBadge_label()),
+    ).toBeNull();
+  });
+
+  it('falls back to the name Default on a daemon that reports no Default configuration', async () => {
+    await renderProfiles();
+    expect(within(defaultRow()).getByText('Default')).toBeTruthy();
+    expect(within(defaultRow()).queryByTestId('provider-profile-default-badge')).toBeNull();
+  });
+
+  it('does not mark a named profile that is the app default provider', async () => {
+    await renderProfiles({
+      defaultProviderId: 'codex@pwork',
+      defaults: [defaultNamed('Personal')],
+    });
+    const row = screen.getByTestId('provider-profile-row');
+    expect(within(row).queryByText('Default')).toBeNull();
+    expect(within(row).getByText('Work')).toBeTruthy();
+  });
+
+  it('cannot be moved, and nothing can be moved above it', async () => {
+    await renderProfiles({ profiles: [A, B] });
+    expect(within(defaultRow()).queryByRole('button', { name: /reorder|move/i })).toBeNull();
+    expect(defaultRow().querySelector('[draggable]')).toBeNull();
+    await fireEvent.keyDown(
+      screen.getByRole('button', {
+        name: m.settings_providerProfiles_reorder_ariaLabel({ name: 'Alpha' }),
+      }),
+      { key: 'ArrowUp' },
+    );
+    expect(lastOf('providerProfiles/reorderRequested')).toBeUndefined();
+    // A drop onto the pinned row is not accepted.
+    await fireEvent.dragStart(
+      screen.getByRole('button', {
+        name: m.settings_providerProfiles_reorder_ariaLabel({ name: 'Beta' }),
+      }),
+    );
+    const dragOver = new Event('dragover', { bubbles: true, cancelable: true });
+    defaultRow().dispatchEvent(dragOver);
+    expect(dragOver.defaultPrevented).toBe(false);
+    await fireEvent.drop(defaultRow());
+    expect(lastOf('providerProfiles/reorderRequested')).toBeUndefined();
+  });
+
+  it.each([
+    [{ available: true, authenticated: true }, false, 'ready'],
+    [{ available: true, authenticated: false }, false, 'error'],
+    [{ available: false }, false, 'configured'],
+    [{ available: true, authenticated: true }, true, 'checking'],
+  ] as const)(
+    'shows the base provider check as its status (%o, loading %s)',
+    async (status, loading, expected) => {
+      await renderProfiles({
+        providerStatus: { codex: status },
+        providerLoading: { codex: loading },
+      });
+      expect(
+        defaultRow().querySelector('[data-profile-status]')?.getAttribute('data-profile-status'),
+      ).toBe(expected);
+    },
+  );
+
+  async function openDefaultMenu(name = 'Default') {
+    await fireEvent.click(
+      within(defaultRow()).getByRole('button', {
+        name: m.settings_providerProfiles_actions_ariaLabel({ name }),
+      }),
+    );
+    return screen.findByRole('menu');
+  }
+
+  it('offers Edit and Recheck but no Remove', async () => {
+    await renderProfiles({ providerStatus: { codex: { available: true, authenticated: true } } });
+    const menu = await openDefaultMenu();
+    expect(
+      within(menu).getByRole('menuitem', { name: m.settings_providerProfiles_edit_label() }),
+    ).toBeTruthy();
+    expect(
+      within(menu).queryByRole('menuitem', { name: m.settings_providerProfiles_remove_label() }),
+    ).toBeNull();
+    await fireEvent.click(
+      within(menu).getByRole('menuitem', { name: m.settings_providers_recheck_label() }),
+    );
+    expect(lastOf('agentAvailability/checkSingleProviderRequested')?.payload).toEqual(['codex']);
+  });
+
+  it('opens the Default configuration dialog from Edit', async () => {
+    await renderProfiles({ defaults: [defaultNamed('Personal')] });
+    const menu = await openDefaultMenu('Personal');
+    await fireEvent.click(
+      within(menu).getByRole('menuitem', { name: m.settings_providerProfiles_edit_label() }),
+    );
+    const dialog = await screen.findByRole('dialog');
+    expect(
+      within(dialog).getByText(m.settings_providerDefault_title_label({ provider: 'Codex' })),
+    ).toBeTruthy();
+    expect(
+      (within(dialog).getByLabelText(m.settings_providerProfiles_name_label()) as HTMLInputElement)
+        .value,
+    ).toBe('Personal');
+  });
+});
 
 async function openEditOf(name: string) {
   await fireEvent.click(

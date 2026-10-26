@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/svelte';
+import { cleanup, waitFor } from '@testing-library/svelte';
 const { update, notifySuccess, notifyError } = vi.hoisted(() => ({
   update: vi.fn(async () => []),
   notifySuccess: vi.fn(),
@@ -13,11 +13,14 @@ vi.mock('$lib/components/patterns/notify', () => ({
 }));
 import { store } from '$store/renderer/store';
 import { setupPreviewProviders } from '$lib/components/settings/provider-selector.preview';
-import ProviderSelector from '$lib/components/settings/ProviderSelector.svelte';
 import { applySettingsChanges } from '$features/settings/settings-hydration-service';
 import { providerSettingsSaga } from '$store/renderer/slices/provider-settings/sagas/provider-settings-saga';
 import { backgroundAgentSettingsSaga } from '$store/renderer/slices/background-agent-settings/sagas/background-agent-settings-saga';
 import { selectProviderSettingsSessionRequests } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+import {
+  providerSettingsSessionOpened,
+  setActiveProvider,
+} from '$store/renderer/slices/provider-settings/provider-settings-slice';
 const disposers: Array<() => void> = [];
 afterEach(() => {
   cleanup();
@@ -44,10 +47,9 @@ it('does not announce a successful provider switch when the legacy snapshot reje
   ]);
   const before = store.state.backgroundAgentSettings;
   const dispatch = vi.spyOn(store, 'dispatch');
-  render(ProviderSelector);
-  const button = await screen.findByRole('button', { name: /Actions for Claude Code/i });
-  await fireEvent.click(button);
-  await fireEvent.click(await screen.findByRole('menuitem', { name: /Set as default/i }));
+  const sessionId = crypto.randomUUID();
+  store.dispatch(providerSettingsSessionOpened(sessionId));
+  store.dispatch(setActiveProvider('claude-code', { id: crypto.randomUUID(), sessionId }));
   await waitFor(() => expect(notifyError).toHaveBeenCalled());
   expect(store.state.model.defaultProviderId).toBe('codex');
   expect(store.state.backgroundAgentSettings).toBe(before);

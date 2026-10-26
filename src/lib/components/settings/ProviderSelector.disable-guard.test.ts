@@ -227,12 +227,12 @@ describe('ProviderSelector disable guard', () => {
   });
 });
 
-describe('ProviderSelector default-unavailable honesty', () => {
+describe('ProviderSelector does not label the app default provider', () => {
   afterEach(() => {
     cleanup();
   });
 
-  it('marks a generic unavailable active provider as the unavailable default', async () => {
+  it('shows no Default label on an unavailable default provider', async () => {
     const base = await buildState([]);
     mocks.state.current = {
       ...base,
@@ -273,11 +273,12 @@ describe('ProviderSelector default-unavailable honesty', () => {
     const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
     const result = render(ProviderSelector);
     await waitFor(() => {
-      expect(result.getByText(m.settings_providers_defaultUnavailable_label())).toBeTruthy();
+      expect(result.getAllByRole('button', { name: /^Provider actions for / })).not.toHaveLength(0);
     });
+    expect(result.queryByText(/^Default/)).toBeNull();
   });
 
-  it('marks unavailable Auggie as the unavailable default', async () => {
+  it('shows no Default label on unavailable Auggie as the default provider', async () => {
     const base = await buildState([]);
     mocks.state.current = {
       ...base,
@@ -312,8 +313,9 @@ describe('ProviderSelector default-unavailable honesty', () => {
     const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
     const result = render(ProviderSelector);
     await waitFor(() => {
-      expect(result.getByText(m.settings_providers_defaultUnavailable_label())).toBeTruthy();
+      expect(result.getAllByRole('button', { name: /^Provider actions for / })).not.toHaveLength(0);
     });
+    expect(result.queryByText(/^Default/)).toBeNull();
   });
 });
 
