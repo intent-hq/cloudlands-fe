@@ -32,7 +32,4 @@
   >
     {m.desktop_menu_label()}
   </Menu.CheckboxItem>
-  <p class="px-2 py-1 text-xs text-muted-foreground break-words">
-    {m.desktop_menu_description({ computer: $entry.permission.computerName })}
-  </p>
 {/if}
