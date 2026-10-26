@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.240.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.239.1...v2.240.0) (2026-10-26)
+
+
+### 🚀 Features
+
+* **onboarding:** add arrows to page through provider cards ([#3754](https://github.com/intent-hq/cloudlands-fe/issues/3754)) ([f17f287](https://github.com/intent-hq/cloudlands-fe/commit/f17f287ca2dbe1c566b97151726f60a23585469a))
+
 ## [2.239.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.239.0...v2.239.1) (2026-10-26)
 
 
