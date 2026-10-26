@@ -157,6 +157,7 @@ export async function previewInlineHtml(
           html,
           channel,
           theme,
+          // i18n-ignore (internal offscreen frame title, never shown in the app UI)
           'Author preview',
           null,
           fontData,
