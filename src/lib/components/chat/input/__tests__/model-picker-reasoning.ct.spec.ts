@@ -54,6 +54,7 @@ for (const placement of ['settings', 'composer', 'modal'] as const) {
     await trigger.click();
     await search.click();
     if (placement === 'modal') await page.getByRole('heading', { name: 'Model settings' }).click();
+    // eslint-disable-next-line intent/no-unarmed-outside-click-in-ct -- the model popup is the custom ui/dropdown, which handles outside clicks itself; not a bits-ui layer
     else await page.mouse.click(700, 400);
     await expect(trigger).toHaveAttribute('aria-expanded', 'false');
     if (placement === 'modal') await expect(page.getByRole('dialog')).toBeVisible();

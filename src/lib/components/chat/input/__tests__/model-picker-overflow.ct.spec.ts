@@ -1,4 +1,5 @@
 import { expect, expectAnimationsToSettle, test } from '../../../../../test/ct-test';
+import { expectDismissibleLayerArmed } from '../../../../../test/dismissible-layer';
 import type { Locator, Page } from '@playwright/test';
 import ModelPickerGeometryHost from './ModelPickerGeometryHost.svelte';
 import SimpleRichInputQueueHost from '../SimpleRichInputQueueHost.svelte';
@@ -436,6 +437,9 @@ for (const placement of ['settings', 'composer', 'modal'] as const) {
       await expect(controlledListbox.getByRole('option')).toHaveCount(constrained ? 22 : 8);
       // The popup border emits mousedown (unlike option pointerdown, which
       // prevents it); it must not be mistaken for a click outside the parent.
+      // Until the nested select registers its layer, the parent is the topmost
+      // layer and does treat this click as outside.
+      await expectDismissibleLayerArmed(inner);
       await inner.click({ position: { x: 1, y: 1 } });
       await expect(outer).toBeVisible();
       await expect(inner).toBeVisible();
@@ -514,6 +518,9 @@ for (const placement of ['settings', 'composer', 'modal'] as const) {
 
       await trigger.click();
       await effortTrigger.click();
+      // The model popup is the custom ui/dropdown, which handles outside clicks
+      // itself; only the nested effort select is a bits-ui layer.
+      await expectDismissibleLayerArmed(inner);
       if (placement === 'modal') {
         await page
           .getByRole('heading', { name: 'Model settings' })
@@ -572,6 +579,7 @@ for (const input of ['keyboard', 'pointer'] as const) {
         await page.keyboard.press('Enter');
       } else {
         const box = (await target.boundingBox())!;
+        // eslint-disable-next-line intent/no-unarmed-outside-click-in-ct -- selects an option inside the select; not an outside dismissal
         await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
       }
       await expect(inner).toHaveCount(0);
