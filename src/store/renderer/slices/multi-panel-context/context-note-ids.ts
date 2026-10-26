@@ -9,11 +9,11 @@ import type { PanelContextItem } from './multi-panel-context-slice';
  * rather than inlining its content, so an unchecked note must not be sent.
  */
 export function contextNoteIds(panels: readonly PanelContextItem[]): string[] | undefined {
-  const ids: string[] = [];
+  const ids = new Set<string>();
   for (const panel of panels) {
     if (!panel.checked || !panel.noteId) continue;
     if (panel.type !== 'note' && panel.type !== 'spec') continue;
-    if (!ids.includes(panel.noteId)) ids.push(panel.noteId);
+    ids.add(panel.noteId);
   }
-  return ids.length > 0 ? ids : undefined;
+  return ids.size > 0 ? [...ids] : undefined;
 }

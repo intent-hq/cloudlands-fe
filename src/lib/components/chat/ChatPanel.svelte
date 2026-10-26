@@ -121,8 +121,8 @@
     selectCheckedPanels,
     selectPanels,
     selectCheckedSelections,
+    selectCheckedNoteIds,
   } from '$store/renderer/slices/multi-panel-context/multi-panel-context-selectors';
-  import { contextNoteIds } from '$store/renderer/slices/multi-panel-context/context-note-ids';
 
   import { selectWorkspaceSetupTerminal } from '$store/renderer/slices/terminals/terminals-selectors';
 
@@ -5625,11 +5625,12 @@
         // i18n-ignore (agent-directed context marker, not user-facing UI)
         parts.push(`[Currently viewing diff for: ${panel.filePath}]`);
       } else if (panel.type === 'note' && panel.noteId) {
-        // The daemon adds the by-reference notice (read instructions and image
-        // links) for every checked note sent in `noteIds`; this marker only
-        // names the note and drives the sent-message context chip.
-        // i18n-ignore (agent-directed context marker, not user-facing UI)
-        parts.push(`[Currently viewing note: "${panel.label}" (ID: ${panel.noteId})]`);
+        // Keeps its own read instruction so the note stays reachable against a
+        // daemon that predates by-reference `noteIds` notices.
+        parts.push(
+          // i18n-ignore (agent-directed context marker, not user-facing UI)
+          `[Currently viewing note: "${panel.label}" (ID: ${panel.noteId}). Read it with ws.note.read("${panel.noteId}").]`,
+        );
       } else if (panel.type === 'spec') {
         // i18n-ignore (agent-directed context marker, not user-facing UI)
         parts.push('[Currently viewing: Spec]');
@@ -5825,7 +5826,7 @@
 
     const allContextItems = [...getContextItems(), ...inlineImageItems, ...mentionContextItems];
     const workspaceContextStr = buildWorkspaceContextString(allContextItems);
-    const noteIds = contextNoteIds(selectCheckedPanels.select(appStore.state));
+    const noteIds = selectCheckedNoteIds.select(appStore.state);
 
     const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
     const userAppMessageId = createAppMessageId();
@@ -6060,7 +6061,7 @@
 
     const allContextItems = [...getContextItems(), ...inlineImageItems, ...mentionContextItems];
     const workspaceContextStr = buildWorkspaceContextString(allContextItems);
-    const noteIds = contextNoteIds(selectCheckedPanels.select(appStore.state));
+    const noteIds = selectCheckedNoteIds.select(appStore.state);
 
     const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
     const userAppMessageId = createAppMessageId();
