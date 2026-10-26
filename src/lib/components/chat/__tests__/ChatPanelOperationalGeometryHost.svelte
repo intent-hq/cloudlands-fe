@@ -511,6 +511,21 @@
         text: '</group:Prepping>Visible titled final prose.',
       },
     ]),
+    message('user-standalone-search', 'user', [
+      { type: 'text', text: 'Check standalone reasoning search' },
+    ]),
+    message('assistant-standalone-search', 'assistant', [
+      {
+        type: 'thinking',
+        id: 'standalone-search-reasoning',
+        text: 'Standalone reasoning title\n\nStandalone collapsed probe phrase.',
+      },
+      {
+        type: 'text',
+        id: 'standalone-search-final',
+        text: 'Visible final prose repeats the standalone collapsed probe phrase.',
+      },
+    ]),
   ];
   const groupedOrphanSearchMessages = [
     message('user-grouped-orphan-search', 'user', [

@@ -321,7 +321,11 @@ and embedded tabs — is a target) and attach CDP locally. See
 builds any branch/ref — e.g. a PR branch — into platform-specific installers for testing:
 `gh workflow run manual-signed-build.yml --ref <pr-branch> -f build_macos=true` (also
 `build_windows` / `build_linux`; `sign` defaults to true — macOS Developer ID +
-notarization, Windows DigiCert). Add `-f intentd_ref=<hash>` (any intent-hq/intentd git
+notarization, Windows Azure Artifact Signing). A signed Windows request first runs the
+`windows-signing-preflight` job, which fails in seconds — naming every missing
+`INTENT_WINDOWS_AZURE_*` / `INTENT_WINDOWS_PUBLISHER_*` / `AZURE_*` setting — when the
+repository's Azure signing is not configured; re-run with `-f sign=false` for an unsigned
+Windows build. Add `-f intentd_ref=<hash>` (any intent-hq/intentd git
 ref — full 40-char commit SHA, branch, or tag; `actions/checkout` cannot resolve an
 abbreviated SHA from `git log --oneline`) to build the intentd sidecar from source at
 that ref instead of fetching the pinned release (all legs: macOS, Windows, and both
