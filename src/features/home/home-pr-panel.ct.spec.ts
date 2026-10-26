@@ -170,9 +170,10 @@ for (const theme of ['light', 'dark'] as const) {
     await waitForStableLayout(codeSurface);
     const box = await codeSurface.boundingBox();
     expect(box).not.toBeNull();
+    // Hovering the locator re-reads its box on every resend, in case the diff moved.
     await wheelUntilScrolled(codeSurface, {
       deltaX: 450,
-      pointer: { x: box!.x + 100, y: Math.min(box!.y + 70, 650) },
+      position: { x: 100, y: Math.min(70, 650 - box!.y) },
     });
     // A vertical wheel over the code surface chains to the pane body.
     await wheelUntilScrolled(body, { deltaY: 450, pointer: 'current' });

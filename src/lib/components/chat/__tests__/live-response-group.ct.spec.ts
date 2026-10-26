@@ -93,9 +93,7 @@ test('follows reflow, preserves manual scrollback, and resumes at the bottom', a
   await page.setViewportSize({ width: 320, height: 480 });
   await expectFollowing(scroller);
 
-  const followedTop = (await readDrum(scroller)).scrollTop;
   await wheelUntilScrolled(scroller, { deltaY: -80 });
-  await expect.poll(async () => (await readDrum(scroller)).scrollTop).toBeLessThan(followedTop);
   const scrollbackTop = (await readDrum(scroller)).scrollTop;
   await component.update({ props: { lineCount: 14 } });
   await expect(component.getByTestId('live-stream-line')).toHaveCount(14);

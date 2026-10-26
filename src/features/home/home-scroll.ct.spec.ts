@@ -168,11 +168,7 @@ for (const { name, width, height, scenario } of cases) {
     expect(before.transcript.bottom).toBeLessThanOrEqual(before.composer.top + 1);
     if (scenario === 'assistant-many') {
       expect(before.sidebarRange).toBeGreaterThan(0);
-      await wheelUntilScrolled(host.locator('.home-sidebar [data-slot="list-view"]'), {
-        deltaY: 1600,
-        pointer: sidebar.getByRole('listbox'),
-      });
-      await expect.poll(async () => (await measure(host)).sidebarScroll).toBeGreaterThan(0);
+      await wheelUntilScrolled(sidebar.getByRole('listbox'), { deltaY: 1600 });
       const sidebarScrolled = await measure(host);
       expect(sidebarScrolled.header).toEqual(before.header);
       expect(sidebarScrolled.composer).toEqual(before.composer);
@@ -181,9 +177,7 @@ for (const { name, width, height, scenario } of cases) {
 
     if (scenario === 'assistant-long') {
       await expect.poll(async () => (await measure(host)).transcriptScroll).toBeGreaterThan(0);
-      const position = (await measure(host)).transcriptScroll;
       await wheelUntilScrolled(transcript, { deltaY: -600 });
-      await expect.poll(async () => (await measure(host)).transcriptScroll).toBeLessThan(position);
       const chatScrolled = await measure(host);
       expect(chatScrolled.header).toEqual(before.header);
       expect(chatScrolled.composer).toEqual(before.composer);

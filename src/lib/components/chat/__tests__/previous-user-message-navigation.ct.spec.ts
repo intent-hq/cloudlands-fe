@@ -926,7 +926,8 @@ for (const motion of ['reduce', 'no-preference'] as const) {
       });
     const landed = await measure();
     expect(landed.offset).not.toBeNull();
-    await wheelUntilScrolled(viewport, { deltaY: 350, pointer: 'current' });
+    // A resend would double the distance this test checks; give one wheel longer.
+    await wheelUntilScrolled(viewport, { deltaY: 350, pointer: 'current', attemptTimeout: 5_000 });
     // Native wheel scrolling is asynchronous even while JavaScript time is paused.
     await expect.poll(async () => (await measure()).offset).toBeCloseTo(landed.offset! - 350, 0);
     const before = await measure();
