@@ -1,4 +1,5 @@
 import { expect, test } from '../../test/ct-test';
+import { expectAnimationsToSettle } from '../../test/ct-animations';
 import Preview from './home.preview.svelte';
 
 for (const [id, condition] of [
@@ -44,6 +45,8 @@ for (const [id, condition] of [
     const card = component.locator(`[data-home-board] [data-home-workspace="${id}"]`);
     await expect(card).toHaveAccessibleName('Untitled');
     await expect(card).toContainText('Untitled');
+    // The view switch moves the card; hover only after its own motion finishes.
+    await expectAnimationsToSettle(card, { subtree: false });
     await card.getByText('Untitled', { exact: true }).hover();
     await expect(page.getByRole('tooltip')).toHaveText('Untitled');
 
@@ -60,6 +63,7 @@ for (const [id, condition] of [
     await component.getByRole('button', { name: 'List view', exact: true }).click();
     await expect(option).toHaveAccessibleName(/Plan the next release/);
     await expect(row.locator('.home-row-title')).toHaveText('Plan the next release');
+    await expectAnimationsToSettle(row, { subtree: false });
     await row.locator('.home-row-title').hover();
     await expect(page.getByRole('tooltip')).toHaveText('Plan the next release');
     await open.focus();
