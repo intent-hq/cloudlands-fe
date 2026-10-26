@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.237.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.237.0...v2.237.1) (2026-10-26)
+
+
+### 🐛 Bug Fixes
+
+* **chat:** make collapsed standalone reasoning searchable with local Find ([#3722](https://github.com/intent-hq/cloudlands-fe/issues/3722)) ([49b72c0](https://github.com/intent-hq/cloudlands-fe/commit/49b72c0c48be1392d1c461e705dd50fa060178ed))
+
 ## [2.237.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.236.0...v2.237.0) (2026-10-26)
 
 
