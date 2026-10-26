@@ -90,9 +90,7 @@ describe('readDismissibleLayerState', () => {
     scope.bitsEscapeLayers!.set(layer(null), 'close');
     scope.bitsDismissableLayers!.set(layer(null), 'close');
     openLayer(content, { armed: true });
-    expect(readDismissibleLayerState(content.querySelector('span')!)).toBe(
-      DISMISSIBLE_LAYER_ARMED,
-    );
+    expect(readDismissibleLayerState(content.querySelector('span')!)).toBe(DISMISSIBLE_LAYER_ARMED);
   });
 
   it('says no bits-ui layer contains a custom popup', () => {

@@ -769,9 +769,14 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
 - Before an outside click that should dismiss a bits-ui menu, popover, select, combobox or
   dialog, call `expectDismissibleLayerArmed(layer)` (`src/test/dismissible-layer.ts`):
   bits-ui listens for outside pointers only after an `afterSleep(1)` timer, so an early
-  click is ignored (cloudlands-fe#3696 failed 3 of 20 runs). Lint
+  click is ignored (cloudlands-fe#3696 failed 3 of 20 runs). `layer` may be any element
+  inside the layer (a listbox, an option); it fails with "no bits-ui layer contains" for a
+  custom popup such as `ui/dropdown`. Lint
   (`intent/no-unarmed-outside-click-in-ct`) flags an unguarded dismissing click; disable it
   on the line, with the reason, for a click inside the layer or on a non-bits-ui popup.
+  To prove a wait matters, run the spec with `CT_DELAY_DISMISSIBLE_LAYER=1`: it turns every
+  1 ms page timer (bits-ui's `afterSleep(1)`) into 500 ms with no rebuild, so the test passes
+  with the wait and fails without it. Proof runs only; it slows unrelated 1 ms timers too.
 - **Every CT spec imports `test` / `expect` from `src/test/ct-test.ts`** — lint-enforced
   (`no-restricted-imports`; only type imports may come from
   `@playwright/experimental-ct-svelte`). The module sets `_optionContextReuseMode: 'none'`
