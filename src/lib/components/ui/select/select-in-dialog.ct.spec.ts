@@ -1,5 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from '../../../../test/ct-test';
+import { expectDismissibleLayerArmed } from '../../../../test/dismissible-layer';
 import Harness from './SelectInDialogHarness.svelte';
 
 /** True when the option's centre is painted by the option itself, not clipped or covered. */
@@ -45,21 +46,53 @@ for (const { name, fillerRem } of [
   });
 }
 
-test('Escape and outside clicks close a dialog Select without closing the dialog', async ({
+for (const portal of [undefined, false]) {
+  test(`Escape and outside clicks close a dialog Select without closing the dialog (portal=${portal})`, async ({
+    mount,
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await mount(Harness, { props: { portal } });
+
+    const { trigger } = await openMode(page);
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('listbox')).toHaveCount(0);
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await expect(trigger).toBeFocused();
+
+    await openMode(page);
+    await expectDismissibleLayerArmed(page.locator('[data-slot="select-content"]'));
+    await page.getByRole('heading', { name: 'Edit profile' }).click();
+    await expect(page.getByRole('listbox')).toHaveCount(0);
+    await expect(page.getByRole('dialog')).toBeVisible();
+
+    await trigger.focus();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+}
+
+test('a dialog Select hides its list once the trigger scrolls out of the body', async ({
   mount,
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await mount(Harness, { props: {} });
+  await page.setViewportSize({ width: 800, height: 600 });
+  await mount(Harness, { props: { trailingRem: 60 } });
 
-  const { trigger } = await openMode(page);
-  await page.keyboard.press('Escape');
-  await expect(page.getByRole('listbox')).toHaveCount(0);
+  const { options } = await openMode(page);
+  await expect(options.first()).toBeVisible();
+  await page.locator('[data-slot="dialog-body"]').evaluate((body) => {
+    body.scrollTop = body.scrollHeight;
+  });
+  await expect(options.first()).toBeHidden();
   await expect(page.getByRole('dialog')).toBeVisible();
-  await expect(trigger).toBeFocused();
+});
+
+test('portal={false} keeps a dialog Select list inline in the body', async ({ mount, page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mount(Harness, { props: { portal: false } });
 
   await openMode(page);
-  await page.getByRole('heading', { name: 'Edit profile' }).click();
-  await expect(page.getByRole('listbox')).toHaveCount(0);
-  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.locator('[data-slot="dialog-body"] [role="listbox"]')).toHaveCount(1);
 });

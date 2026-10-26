@@ -94,10 +94,6 @@
     }
   });
 
-  function hasOpenOwnedPopup() {
-    return contentRef?.querySelector(':scope > [data-bits-floating-content-wrapper]') != null;
-  }
-
   function cancel() {
     if (isBusy || cancellationHandled) return;
     cancellationHandled = true;
@@ -144,9 +140,9 @@
     {onCloseAutoFocus}
     {onfocusin}
     onkeydown={(event) => {
-      // A dialog-owned popup (e.g. an open Select) owns Escape through its own
-      // layer; closing the dialog here would also discard the form.
-      if (event.key === 'Escape' && hasOpenOwnedPopup()) return;
+      // An open popup (e.g. a Select) owns Escape through its own layer;
+      // closing the dialog here would also discard the form.
+      if (event.key === 'Escape' && Dialog.escapeBelongsToOpenPopup(contentRef, event)) return;
       if (event.key === 'Escape' && escapeKeydownBehavior === 'close') {
         event.preventDefault();
         event.stopPropagation();

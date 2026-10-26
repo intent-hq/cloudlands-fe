@@ -14,13 +14,14 @@
     class: className = '',
     wrapperClass = '',
     dropUp = false,
-    portal = false,
+    portal,
     children,
   }: {
     wrapperId?: string;
     class?: string;
     wrapperClass?: string;
     dropUp?: boolean;
+    /** Body portal when true; inline when false; inside a dialog, unset portals into it. */
     portal?: boolean;
     children?: Snippet;
   } = $props();
@@ -30,7 +31,7 @@
     wrapperProps: Record<string, unknown>;
   };
 
-  const usePortal = $derived(dropUp || portal);
+  const usePortal = $derived(dropUp || portal === true);
   // Inside a dialog, an inline list is clipped by the dialog's scroll body and
   // a body portal sits under the modal layer and outside its focus scope, so
   // portal into the dialog itself (see useDialogPortalTarget).
@@ -104,10 +105,11 @@
     child={staticContentChild}
   />
 {:else}
-  {@const dialogTarget = dialogPortalTarget()}
+  {@const dialogTarget = portal === false ? undefined : dialogPortalTarget()}
   <SelectPrimitive.Portal disabled={!usePortal && !dialogTarget} to={dialogTarget}>
     <SelectPrimitive.Content
       strategy={dialogTarget ? 'absolute' : 'fixed'}
+      hideWhenDetached={dialogTarget !== undefined}
       onEscapeKeydown={restoreTriggerFocusOnEscape}
       data-slot="select-content"
       data-surface-level={surface}
