@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.238.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.238.1...v2.238.2) (2026-10-26)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.53 ([#3745](https://github.com/intent-hq/cloudlands-fe/issues/3745)) ([ba6a505](https://github.com/intent-hq/cloudlands-fe/commit/ba6a5051f2ae918431e06f74db80b2d2dc07a67e))
+* keep dialog dropdowns from being clipped ([#3736](https://github.com/intent-hq/cloudlands-fe/issues/3736)) ([c1f8489](https://github.com/intent-hq/cloudlands-fe/commit/c1f8489d326f0eee32e6b509bf075160c90fffd9))
+
 ## [2.238.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.238.0...v2.238.1) (2026-10-26)
 
 
