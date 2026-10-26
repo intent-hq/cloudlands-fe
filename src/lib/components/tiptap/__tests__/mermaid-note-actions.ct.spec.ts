@@ -183,6 +183,7 @@ for (const activation of ['keyboard', 'mouse'] as const) {
       await expect(source).toHaveAttribute('aria-pressed', 'false');
       await expect(surface).toHaveAttribute('data-diagram-presentation-settled', 'false');
       if (activation === 'keyboard') await page.keyboard.press('Enter');
+      // eslint-disable-next-line intent/no-unarmed-outside-click-in-ct -- activates the fullscreen button; no layer is open
       else await page.mouse.click(button.x + button.width / 2, button.y + button.height / 2);
       await expect(page.getByRole('dialog', { name: 'Fullscreen diagram view' })).toHaveCount(0);
     } finally {

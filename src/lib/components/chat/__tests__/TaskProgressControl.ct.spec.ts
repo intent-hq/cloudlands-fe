@@ -1,4 +1,5 @@
 import { expect, test } from '../../../../test/ct-test';
+import { expectDismissibleLayerArmed } from '../../../../test/dismissible-layer';
 import TaskProgressControl from '../TaskProgressControl.svelte';
 import TaskProgressControlHost from './TaskProgressControlHost.svelte';
 
@@ -282,6 +283,7 @@ for (const presentation of ['status-stack', 'checklist'] as const) {
     await region.hover();
     await page.mouse.wheel(0, 300);
     await expect.poll(() => region.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+    await expectDismissibleLayerArmed(popover);
     await outside.click();
     await expect(popover).toBeHidden();
     await expect(outside).toBeFocused();
@@ -497,6 +499,7 @@ test('clears tooltip suppression after pointer cancellation and task-trigger rem
 
   await trigger.click();
   await expect(popover).toBeVisible();
+  await expectDismissibleLayerArmed(popover);
   await outside.click();
   await expect(popover).toBeHidden();
   await component.update({ props: { tasks: [] } });

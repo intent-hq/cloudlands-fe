@@ -128,6 +128,7 @@ test('offline viewer does not hover or edit and keeps navigation disabled', asyn
   await expect(trigger).toBeDisabled();
   const rest = await trigger.evaluate((node) => getComputedStyle(node).backgroundColor);
   const box = await trigger.boundingBox();
+  // eslint-disable-next-line intent/no-unarmed-outside-click-in-ct -- clicks the disabled address; checks no editor opens
   await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
   await expect(trigger).toHaveCSS('background-color', rest);
   await expect(page.getByRole('textbox')).toHaveCount(0);
