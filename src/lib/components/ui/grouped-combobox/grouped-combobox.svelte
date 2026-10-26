@@ -158,7 +158,7 @@
     {emptyText}
     {errorText}
     {retryText}
-    portal={!staticPosition}
+    portal={staticPosition ? false : undefined}
     {staticPosition}
     {header}
     {headerAction}

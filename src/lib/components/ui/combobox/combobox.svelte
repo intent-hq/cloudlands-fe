@@ -13,6 +13,7 @@
   import { useSize, type UiSize } from '$lib/components/ui/size-context';
   import { textEntryControlClasses, textEntryHeight } from '../text-entry';
   import { OVERLAY_VIEWPORT_GUTTER } from '$lib/components/ui/overlay-positioning';
+  import { useDialogPortalTarget } from '$lib/components/ui/dialog';
 
   const uid = $props.id();
 
@@ -26,6 +27,7 @@
     invalid?: boolean;
     size?: UiSize;
     loading?: boolean;
+    /** Body portal when true; inline when false; unset portals into an enclosing dialog, else the body. */
     portal?: boolean;
     staticPosition?: boolean;
     side?: 'top' | 'bottom';
@@ -81,7 +83,7 @@
     invalid = false,
     size,
     loading = false,
-    portal = true,
+    portal,
     staticPosition = false,
     side = 'bottom',
     ariaLabel,
@@ -117,6 +119,11 @@
     oninteractoutside,
   }: Props = $props();
 
+  // Inside a dialog, a body portal sits under the modal layer and outside its
+  // focus scope, and an inline list is clipped by the dialog's scroll body, so
+  // an unset portal goes into the dialog itself (see useDialogPortalTarget).
+  // An explicit portal choice is always honoured.
+  const dialogPortalTarget = useDialogPortalTarget();
   const surface = clampSurface(useSurface() + 2);
   setSurface(surface);
   const contextSize = useSize();
@@ -695,9 +702,12 @@
       child={staticContentChild}
     />
   {:else}
-    <ComboboxPrimitive.Portal disabled={!portal}>
+    {@const dialogTarget = portal === undefined ? dialogPortalTarget() : undefined}
+    <ComboboxPrimitive.Portal disabled={portal === false} to={dialogTarget}>
       <ComboboxPrimitive.Content
         {side}
+        strategy={dialogTarget ? 'absolute' : 'fixed'}
+        hideWhenDetached={dialogTarget !== undefined}
         onInteractOutside={oninteractoutside}
         sideOffset={4}
         collisionPadding={OVERLAY_VIEWPORT_GUTTER}
