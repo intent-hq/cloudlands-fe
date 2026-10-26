@@ -193,7 +193,8 @@ export async function wheelUntilScrolled(
 
   await expect(async () => {
     // A slow wheel from the previous attempt may have landed meanwhile; do not double it.
-    if (await read()) return;
+    // Before the first wheel, movement is the page's own (a live list shifting), not ours.
+    if (wheels > 0 && (await read())) return;
     if (isLocator(pointer)) {
       await pointer.hover(hoverPosition ? { position: hoverPosition } : {});
     } else if (pointer !== 'current') {

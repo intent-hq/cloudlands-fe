@@ -88,6 +88,34 @@ test('does not count movement against the wheel direction', async ({ mount }) =>
   expect(await scroller.evaluate((node) => node.scrollTop)).toBeGreaterThan(400);
 });
 
+test('still sends a wheel when the container drifts that way on its own first', async ({
+  mount,
+}) => {
+  const component = await mount(WheelProbeHarness);
+  const scroller = component.getByTestId('scroller');
+  await scroller.evaluate((node) => {
+    node.scrollTop = 800;
+    // A live list can shift by itself between reads: every read of scrollTop moves the
+    // container 10 px further up, so it has always moved up since the previous read.
+    const native = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop')!;
+    Object.defineProperty(node, 'scrollTop', {
+      configurable: true,
+      get() {
+        const value = native.get!.call(this) as number;
+        native.set!.call(this, value - 10);
+        return value;
+      },
+      set(value: number) {
+        native.set!.call(this, value);
+      },
+    });
+  });
+
+  const result = await wheelUntilScrolled(scroller, { deltaY: -120 });
+  expect(result.wheels).toBe(1);
+  await expect(scroller).toHaveAttribute('data-wheels-received', '1');
+});
+
 test('rejects a wheel without a delta', async ({ mount }) => {
   const component = await mount(WheelProbeHarness);
   await expect(wheelUntilScrolled(component.getByTestId('scroller'))).rejects.toThrow(
