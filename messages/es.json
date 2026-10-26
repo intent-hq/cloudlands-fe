@@ -7833,5 +7833,14 @@
   "desktop_consent_deny": "Denegar",
   "desktop_stopReportFailed_description": "Intent detuvo el control, pero no pudo guardar la notificación para tu agente. Mantén Intent abierto y vuelve a conectarte para reintentar.",
   "desktop_menu_description": "Para {computer}. Se aplica a futuros inicios; usa Detener para finalizar el control actual.",
-  "desktop_primary_active_description": "Un agente controla {computer}. Detener el control mantiene la selección principal."
+  "desktop_primary_active_description": "Un agente controla {computer}. Detener el control mantiene la selección principal.",
+  "chat_mentionList_peopleSection_label": "Personas",
+  "chat_mentionList_notesSection_label": "Notas",
+  "chat_mentionList_agentsSection_label": "Agentes",
+  "chat_mentionList_filesSection_label": "Archivos",
+  "chat_mentionList_foldersSection_label": "Carpetas",
+  "chat_mentionList_scriptsSection_label": "Scripts",
+  "chat_mentionList_terminalsSection_label": "Terminales",
+  "chat_mentionList_specialistsSection_label": "Especialistas",
+  "chat_mentionList_otherSection_label": "Otros"
 }

@@ -7833,5 +7833,14 @@
   "desktop_consent_deny": "拒绝",
   "desktop_stopReportFailed_description": "Intent 已停止控制，但无法保存发送给智能体的通知。请保持 Intent 打开并重新连接以重试。",
   "desktop_menu_description": "适用于 {computer} 的后续启动；使用“停止”结束当前控制。",
-  "desktop_primary_active_description": "代理正在控制 {computer}。停止控制会保留主电脑选择。"
+  "desktop_primary_active_description": "代理正在控制 {computer}。停止控制会保留主电脑选择。",
+  "chat_mentionList_peopleSection_label": "人员",
+  "chat_mentionList_notesSection_label": "笔记",
+  "chat_mentionList_agentsSection_label": "智能体",
+  "chat_mentionList_filesSection_label": "文件",
+  "chat_mentionList_foldersSection_label": "文件夹",
+  "chat_mentionList_scriptsSection_label": "脚本",
+  "chat_mentionList_terminalsSection_label": "终端",
+  "chat_mentionList_specialistsSection_label": "专家",
+  "chat_mentionList_otherSection_label": "其他"
 }
