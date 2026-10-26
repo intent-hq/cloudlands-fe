@@ -11,6 +11,7 @@ const live = await vi.hoisted(async () => {
     selected: writable(['agents']),
     unread: writable(false),
     collaborator: writable(false),
+    scriptContext: writable<string | null>('owner-context'),
     people: writable([]),
     dispatch: vi.fn(),
   };
@@ -36,6 +37,7 @@ vi.mock('$store/renderer/slices/sidebar-nav/sidebar-nav-selectors', () => ({
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectIsWorkspaceCollaborator: () => live.collaborator,
+  selectWorkspaceSavedScriptContext: () => live.scriptContext,
 }));
 
 vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
@@ -59,6 +61,7 @@ beforeEach(() => {
   live.selected.set(['agents']);
   live.unread.set(false);
   live.collaborator.set(false);
+  live.scriptContext.set('owner-context');
   live.people.set([]);
   live.dispatch.mockClear();
 });
