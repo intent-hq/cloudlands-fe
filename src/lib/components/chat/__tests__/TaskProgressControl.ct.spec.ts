@@ -285,7 +285,8 @@ for (const presentation of ['status-stack', 'checklist'] as const) {
       .toBeGreaterThan(0);
     // Chromium routes a wheel by the compositor's last committed frame. On a loaded
     // host that frame can predate the new popover, so the wheel is dropped even
-    // though the region is scrollable and under the pointer; a resent wheel scrolls.
+    // though the region is scrollable and under the pointer; a resent wheel scrolls
+    // (same Chromium behavior as intent-hq/intent#7255).
     await expect(async () => {
       await region.hover();
       await page.mouse.wheel(0, 300);
