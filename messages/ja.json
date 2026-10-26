@@ -2696,6 +2696,7 @@
   "home_status_question": "エージェントに未対応の質問または相談リクエストがあります。",
   "home_status_review": "レビューを待っている作業があります。閲覧しても承認にはなりません。",
   "home_status_running": "エージェントが作業中です。",
+  "home_status_background_tasks_running": "エージェントのバックグラウンドタスク（シェルコマンドなど）を実行中です。",
   "home_status_scripts_running": "ビルドやテストなどのコマンドスクリプトを実行中です。",
   "home_status_unread": "未読のエージェントメッセージがありますが、現在、対応は求められていません。",
   "home_status_waiting_description": "外部イベントまたは委任した作業を待機しています。",

@@ -2696,6 +2696,7 @@
   "home_status_question": "Un agente tiene una pregunta o solicitud de conversación pendiente.",
   "home_status_review": "Hay trabajo pendiente de tu revisión. Leerlo no implica aprobarlo.",
   "home_status_running": "Un agente está trabajando.",
+  "home_status_background_tasks_running": "Se está ejecutando una tarea en segundo plano de un agente, como un comando de shell.",
   "home_status_scripts_running": "Se está ejecutando un script de comando, como una compilación o una prueba.",
   "home_status_unread": "Hay mensajes de agentes sin leer, pero no se requiere ninguna acción por ahora.",
   "home_status_waiting_description": "Esperando eventos externos o trabajo delegado.",

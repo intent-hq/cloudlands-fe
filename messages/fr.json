@@ -2696,6 +2696,7 @@
   "home_status_question": "Un agent a une question ou une demande de discussion en attente.",
   "home_status_review": "Un travail attend votre examen. Le lire ne vaut pas approbation.",
   "home_status_running": "Un agent travaille actuellement.",
+  "home_status_background_tasks_running": "Une tâche en arrière-plan d’un agent, comme une commande shell, est en cours d’exécution.",
   "home_status_scripts_running": "Un script de commande, comme une compilation ou un test, est en cours d’exécution.",
   "home_status_unread": "Des messages d’agents sont non lus, mais aucune action n’est actuellement demandée.",
   "home_status_waiting_description": "En attente d’événements externes ou de tâches déléguées.",

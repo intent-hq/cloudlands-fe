@@ -2696,6 +2696,7 @@
   "home_status_question": "智能体有待处理的问题或讨论请求。",
   "home_status_review": "有工作等待你审查。阅读不代表批准。",
   "home_status_running": "有智能体正在工作。",
+  "home_status_background_tasks_running": "智能体的后台任务（例如 Shell 命令）正在运行。",
   "home_status_scripts_running": "正在运行命令脚本，例如构建或测试。",
   "home_status_unread": "有未读的智能体消息，但目前未要求你采取行动。",
   "home_status_waiting_description": "正在等待外部事件或委派的工作。",

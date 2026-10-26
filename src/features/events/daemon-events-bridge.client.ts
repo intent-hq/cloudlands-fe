@@ -2458,11 +2458,23 @@ function handleWaitingChangedEvent(
 }
 
 /**
- * `workspace:scriptsRunning-changed` (PROTOCOL §5.1 / §6.5) carries the
- * self-sufficient `{ workspaceId, scriptsRunning }` payload for the orthogonal
- * command-script flag; merge it like `workspace:waiting-changed`.
+ * `workspace:scriptsRunning-changed` and
+ * `workspace:backgroundTasksRunning-changed` (PROTOCOL §5.1 / §6.5) carry the
+ * self-sufficient `{ workspaceId, <flag> }` payload for an orthogonal running
+ * flag (command scripts / agent background tasks); merge it like
+ * `workspace:waiting-changed`.
  */
-function handleScriptsRunningChangedEvent(
+const RUNNING_FLAG_EVENTS = {
+  'workspace:scriptsRunning-changed': 'scriptsRunning',
+  'workspace:backgroundTasksRunning-changed': 'backgroundTasksRunning',
+} as const satisfies Record<string, keyof Workspace>;
+
+function isRunningFlagEventType(type: string): type is keyof typeof RUNNING_FLAG_EVENTS {
+  return Object.hasOwn(RUNNING_FLAG_EVENTS, type);
+}
+
+function handleRunningFlagChangedEvent(
+  type: keyof typeof RUNNING_FLAG_EVENTS,
   event: WorkspaceEvent,
   envelopeWorkspaceId: string | null,
 ): void {
@@ -2473,10 +2485,11 @@ function handleScriptsRunningChangedEvent(
     typeof dataWorkspaceId === 'string' && dataWorkspaceId.length > 0
       ? dataWorkspaceId
       : envelopeWorkspaceId;
-  const scriptsRunning = data.scriptsRunning;
-  if (!workspaceId || typeof scriptsRunning !== 'boolean') return;
+  const flag = RUNNING_FLAG_EVENTS[type];
+  const value = data[flag];
+  if (!workspaceId || typeof value !== 'boolean') return;
   appStore.dispatch(
-    bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { scriptsRunning })]),
+    bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { [flag]: value })]),
   );
   void hydrateWorkspaceEntityIfMissing(workspaceId);
 }
@@ -3835,8 +3848,8 @@ export function routeDaemonEventsNotification(
     handleWaitingChangedEvent(event, null);
     return;
   }
-  if (type === 'workspace:scriptsRunning-changed' && !workspaceIdOf(event)) {
-    handleScriptsRunningChangedEvent(event, null);
+  if (isRunningFlagEventType(type) && !workspaceIdOf(event)) {
+    handleRunningFlagChangedEvent(type, event, null);
     return;
   }
 
@@ -4104,10 +4117,11 @@ export function routeDaemonEventsNotification(
   if (type === 'workspace:waiting-changed') {
     handleWaitingChangedEvent(event, workspaceId);
   }
-  // `workspace:scriptsRunning-changed` (§5.1 / §6.5) — same merge for the
-  // orthogonal command-script flag. Side effect, never an early return.
-  if (type === 'workspace:scriptsRunning-changed') {
-    handleScriptsRunningChangedEvent(event, workspaceId);
+  // `workspace:scriptsRunning-changed` / `workspace:backgroundTasksRunning-changed`
+  // (§5.1 / §6.5) — same merge for the orthogonal running flags. Side effect,
+  // never an early return.
+  if (isRunningFlagEventType(type)) {
+    handleRunningFlagChangedEvent(type, event, workspaceId);
   }
   // `browser:tab-*` (REV-2) — patch the daemon tab-registry mirror for this
   // workspace from the self-sufficient `{ tab, changes? }` payload. Side
@@ -4704,6 +4718,9 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // `workspace:scriptsRunning-changed` (§5.1 / §6.5) — self-sufficient
   // command-script flag transitions so Home's Running group updates live.
   'workspace:scriptsRunning-changed',
+  // `workspace:backgroundTasksRunning-changed` (§5.1 / §6.5) — self-sufficient
+  // agent background-task flag transitions, same Home Running group.
+  'workspace:backgroundTasksRunning-changed',
   'workspace:updated',
   'workspace:task-stats-changed',
   'workspace:created',
