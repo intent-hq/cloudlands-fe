@@ -5854,7 +5854,6 @@
   "tiptap_attributionGutter_minutesAgo_many": "hace {count} minutos",
   "tiptap_attributionGutter_minutesAgo_one": "hace 1 minuto",
   "tiptap_attributionGutter_turn_tooltip": "(Turno {number})",
-  "tiptap_attributionGutter_user_label": "Usuario",
   "tiptap_bubbleMenu_addComment_label": "Agregar comentario",
   "tiptap_bubbleMenu_addLink_label": "Agregar enlace",
   "tiptap_bubbleMenu_agentName": "Agente de gestión de selección",

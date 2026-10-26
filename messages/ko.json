@@ -5854,7 +5854,6 @@
   "tiptap_attributionGutter_minutesAgo_many": "{count}분 전",
   "tiptap_attributionGutter_minutesAgo_one": "1분 전",
   "tiptap_attributionGutter_turn_tooltip": "(턴 {number})",
-  "tiptap_attributionGutter_user_label": "사용자",
   "tiptap_bubbleMenu_addComment_label": "댓글 추가",
   "tiptap_bubbleMenu_addLink_label": "링크 추가",
   "tiptap_bubbleMenu_agentName": "선택 영역 처리 에이전트",

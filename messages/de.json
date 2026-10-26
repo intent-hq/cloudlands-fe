@@ -5854,7 +5854,6 @@
   "tiptap_attributionGutter_minutesAgo_many": "vor {count} Minuten",
   "tiptap_attributionGutter_minutesAgo_one": "vor 1 Minute",
   "tiptap_attributionGutter_turn_tooltip": "(Runde {number})",
-  "tiptap_attributionGutter_user_label": "Benutzer",
   "tiptap_bubbleMenu_addComment_label": "Kommentar hinzufügen",
   "tiptap_bubbleMenu_addLink_label": "Link hinzufügen",
   "tiptap_bubbleMenu_agentName": "Auswahl-Agent",

@@ -5854,7 +5854,6 @@
   "tiptap_attributionGutter_minutesAgo_many": "{count} 分钟前",
   "tiptap_attributionGutter_minutesAgo_one": "1 分钟前",
   "tiptap_attributionGutter_turn_tooltip": "（第 {number} 轮）",
-  "tiptap_attributionGutter_user_label": "用户",
   "tiptap_bubbleMenu_addComment_label": "添加评论",
   "tiptap_bubbleMenu_addLink_label": "添加链接",
   "tiptap_bubbleMenu_agentName": "选中内容处理智能体",

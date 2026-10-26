@@ -5854,7 +5854,6 @@
   "tiptap_attributionGutter_minutesAgo_many": "{count} 分前",
   "tiptap_attributionGutter_minutesAgo_one": "1 分前",
   "tiptap_attributionGutter_turn_tooltip": "（ターン {number}）",
-  "tiptap_attributionGutter_user_label": "ユーザー",
   "tiptap_bubbleMenu_addComment_label": "コメントを追加",
   "tiptap_bubbleMenu_addLink_label": "リンクを追加",
   "tiptap_bubbleMenu_agentName": "選択範囲処理エージェント",

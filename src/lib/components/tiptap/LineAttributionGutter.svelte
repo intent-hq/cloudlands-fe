@@ -1,8 +1,8 @@
 <!--
-  Line Attribution Gutter - PoC
+  Line Attribution Gutter
 
-  Displays vertical indicators on the left side of blocks that were recently edited.
-  Uses fake data for testing the visual concept.
+  Draws a thin bar beside blocks that were recently edited; brighter bars are
+  newer edits. Bars for agent edits open that agent's chat on click.
 
   Architecture:
   - Receives editor instance as prop
@@ -29,7 +29,6 @@
     type IndicatorEntry,
   } from './attribution-span-coalescer';
   import type { WorkspaceId, NoteId } from '$shared/types';
-  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
 
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { store as appStore } from '$store/renderer/store';
@@ -71,10 +70,8 @@
 
   interface SpanIndicator extends CoalescedSpan {
     opacity: number;
-    tooltip: string;
-    ariaLabel: string;
-    isFirstOfLatestVersion: boolean;
-    labelTop: number; // Clamped position for label/avatar
+    /** Accessible name; set only for agent spans, which are buttons. */
+    ariaLabel?: string;
   }
 
   let spans: SpanIndicator[] = $state([]);
@@ -82,72 +79,11 @@
   let timestampUpdateInterval: number | null = null;
 
   /**
-   * Pointer-driven label placement for the hovered span (intent-hq/intent#5575).
-   * `top` is relative to the span; `shiftX` pushes the right-anchored label
-   * back inside the clipping `#editor-content` panel when the space left of
-   * the gutter is narrower than the label. The panel is the span's own
-   * ancestor — several note panels can be mounted at once. Reset on pointer
-   * leave.
-   */
-  let hoverLabel: { key: string; top: number; shiftX: number } | null = $state(null);
-
-  function spanKey(span: SpanIndicator): string {
-    return span.positions.join(',');
-  }
-
-  function trackPointer(event: PointerEvent, span: SpanIndicator) {
-    const spanEl = event.currentTarget as HTMLElement;
-    const labelEl = spanEl.querySelector<HTMLElement>(':scope > [data-attribution-label]');
-    if (!labelEl) return;
-
-    const spanRect = spanEl.getBoundingClientRect();
-    const labelRect = labelEl.getBoundingClientRect();
-    const clipRect = spanEl.closest('#editor-content')?.getBoundingClientRect();
-
-    // Vertical: center the label on the pointer, clamped to the span and to
-    // the visible panel. When the two disagree (the span is taller than the
-    // panel or only partly visible) the panel wins so the label stays visible.
-    let minTop = 0;
-    let maxTop = span.height - labelRect.height;
-    if (clipRect) {
-      const panelMin = clipRect.top - spanRect.top;
-      const panelMax = clipRect.bottom - labelRect.height - spanRect.top;
-      minTop = Math.max(minTop, panelMin);
-      maxTop = Math.min(maxTop, panelMax);
-      if (maxTop < minTop) {
-        minTop = panelMin;
-        maxTop = Math.max(panelMax, panelMin);
-      }
-    }
-    const centered = event.clientY - spanRect.top - labelRect.height / 2;
-    const top = maxTop < minTop ? minTop : Math.min(Math.max(centered, minTop), maxTop);
-
-    // Horizontal: the label hangs off the span's right edge; when that would
-    // start it left of the panel edge, shift it right just enough to be visible.
-    let shiftX = 0;
-    if (clipRect) {
-      const unshiftedLeft = spanRect.right - labelRect.width;
-      shiftX = Math.max(0, clipRect.left - unshiftedLeft);
-    }
-
-    hoverLabel = { key: spanKey(span), top, shiftX };
-  }
-
-  function resetPointer(span: SpanIndicator) {
-    if (hoverLabel?.key === spanKey(span)) {
-      hoverLabel = null;
-    }
-  }
-
-  /**
    * Tunable parameter for absolute recency window (in minutes)
    * Edits within this window get a brightness boost
    */
   const ABSOLUTE_RECENCY_WINDOW_MINUTES = 10;
 
-  /**
-   * Format timestamp for tooltip
-   */
   function formatTimestamp(timestamp: number): string {
     const ageMs = Date.now() - timestamp;
     const ageMinutes = Math.floor(ageMs / (1000 * 60));
@@ -164,6 +100,15 @@
         ? m.tiptap_attributionGutter_hoursAgo_one()
         : m.tiptap_attributionGutter_hoursAgo_many({ count: formatInteger(ageHours) });
     }
+  }
+
+  function agentSpanAriaLabel(span: CoalescedSpan): string | undefined {
+    if (span.author?.type !== 'agent') return undefined;
+    let label = `${m.tiptap_attributionGutter_edited_tooltip({ time: formatTimestamp(span.timestamp) })} ${m.tiptap_attributionGutter_byAuthor_tooltip({ author: m.tiptap_attributionGutter_agent_label(), name: span.author.name })}`;
+    if (span.author.turnNumber !== undefined) {
+      label += ` ${m.tiptap_attributionGutter_turn_tooltip({ number: formatInteger(span.author.turnNumber) })}`;
+    }
+    return `${label}. ${m.tiptap_attributionGutter_clickToView_ariaLabel()}`;
   }
 
   /**
@@ -307,71 +252,18 @@
     // Coalesce entries into spans
     const coalescedSpans = coalesceAttributionSpans(entries, newestTimestamp);
 
-    // Get viewport info for clamping
-    // Calculate viewport top relative to the editor DOM (not #editor-content)
-    const editorContent = document.getElementById('editor-content');
-    const editorElement = editor?.view?.dom;
-    let viewportTop = 0;
-    if (editorContent && editorElement) {
-      const editorContentRect = editorContent.getBoundingClientRect();
-      const editorDomRect = editorElement.getBoundingClientRect();
-      // Viewport top relative to editor DOM = where editor-content viewport starts within editor DOM coordinates
-      viewportTop = editorContentRect.top - editorDomRect.top;
-    }
-
-    // Track if the next span could be the first of the latest version
-    let couldBeFirstOfLatestVersion = true;
-
-    // Build final span indicators with rendering info
-    const newSpans: SpanIndicator[] = coalescedSpans.map((span) => {
-      // Build tooltip with author info if available
-      let tooltip: string = m.tiptap_attributionGutter_edited_tooltip({
-        time: formatTimestamp(span.timestamp),
-      });
-      if (span.author) {
-        const authorLabel =
-          span.author.type === 'agent'
-            ? m.tiptap_attributionGutter_agent_label()
-            : m.tiptap_attributionGutter_user_label();
-        tooltip += ` ${m.tiptap_attributionGutter_byAuthor_tooltip({ author: authorLabel, name: span.author.name })}`;
-
-        // Add turn number for agent edits
-        if (span.author.type === 'agent' && span.author.turnNumber !== undefined) {
-          tooltip += ` ${m.tiptap_attributionGutter_turn_tooltip({ number: formatInteger(span.author.turnNumber) })}`;
-        }
-      }
-
-      // Build aria-label for accessibility
-      let ariaLabel: string = tooltip;
-      if (span.author?.type === 'agent') {
-        ariaLabel += `. ${m.tiptap_attributionGutter_clickToView_ariaLabel()}`;
-      }
-
+    // Fully faded bars are invisible; skip them so they leave no hover or click target.
+    const newSpans: SpanIndicator[] = [];
+    for (const span of coalescedSpans) {
       const opacity = getAttributionOpacity(
         span.timestamp,
         oldestTimestamp,
         newestTimestamp,
         ABSOLUTE_RECENCY_WINDOW_MINUTES,
       );
-
-      const isFirstOfLatestVersion = span.isFromLatestVersion && couldBeFirstOfLatestVersion;
-      if (isFirstOfLatestVersion) {
-        couldBeFirstOfLatestVersion = false;
-      }
-
-      // Clamp label position to viewport
-      // Label anchors to span top, but clamps to viewport top edge
-      const labelTop = Math.max(span.top, viewportTop);
-
-      return {
-        ...span,
-        opacity,
-        tooltip,
-        ariaLabel,
-        isFirstOfLatestVersion,
-        labelTop,
-      };
-    });
+      if (opacity <= 0) continue;
+      newSpans.push({ ...span, opacity, ariaLabel: agentSpanAriaLabel(span) });
+    }
 
     spans = newSpans;
   }
@@ -433,7 +325,7 @@
   });
 
   $effect(() => {
-    // Update timestamps every minute to keep them fresh
+    // Recompute every minute so bar brightness and accessible names follow edit age
     timestampUpdateInterval = window.setInterval(() => {
       logger.debug('[LineAttributionGutter] Updating timestamps...');
       updateIndicators();
@@ -512,22 +404,16 @@
 <div class="absolute left-0 top-0 w-6 h-full pointer-events-none z-10">
   {#each spans as span (span.positions.join(','))}
     {@const isClickable = span.author?.type === 'agent'}
-    {@const hover = hoverLabel?.key === spanKey(span) ? hoverLabel : null}
     <div
-      class="absolute left-0 pointer-events-auto group/span"
+      class="absolute left-0 group/span"
+      class:pointer-events-auto={isClickable}
       class:cursor-pointer={isClickable}
-      class:isLatest={span.isFromLatestVersion}
-      class:isFirstOfLatestVersion={span.isFirstOfLatestVersion}
       style:top="{span.top}px"
       style:height="{span.height}px"
-      title={span.tooltip}
       aria-label={span.ariaLabel}
       data-attribution-span
       onclick={isClickable ? (e) => handleSpanClick(e, span) : undefined}
       onkeydown={isClickable ? (e) => handleSpanKeydown(e, span) : undefined}
-      onpointerenter={(e) => trackPointer(e, span)}
-      onpointermove={(e) => trackPointer(e, span)}
-      onpointerleave={() => resetPointer(span)}
       role={isClickable ? 'button' : undefined}
       tabindex={isClickable ? 0 : undefined}
     >
@@ -535,21 +421,6 @@
         class="absolute w-1 right-0 h-full rounded-sm bg-muted transition-[width] duration-spring-moderate ease-spring-moderate motion-reduce:transition-none group-hover/span:w-1.5"
         style:opacity={span.opacity}
       ></div>
-      <!-- Avatar and label for spans (shown on hover) -->
-      <div
-        class="flex flex-row items-center gap-1 leading-none absolute right-0 pr-4 pl-0.5 rounded-md text-xs whitespace-nowrap text-muted-foreground opacity-0 group-hover/span:opacity-100 transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
-        style:top="{hover ? hover.top : span.labelTop - span.top}px"
-        style:transform={hover && hover.shiftX > 0 ? `translateX(${hover.shiftX}px)` : undefined}
-        data-attribution-label
-      >
-        {#if span.author?.type === 'agent'}
-          <AgentAvatar variant="standard" agentId={span.author.id} />
-        {/if}
-        <div class="flex flex-col gap-0.5 text-right">
-          <div>{formatTimestamp(span.timestamp)}</div>
-          <div>{span.author?.name}</div>
-        </div>
-      </div>
     </div>
   {/each}
 </div>
