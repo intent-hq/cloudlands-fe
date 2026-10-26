@@ -1,4 +1,4 @@
-import { expect, test } from '../../../../test/ct-test';
+import { expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
 import type { Locator } from '@playwright/experimental-ct-svelte';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -113,7 +113,7 @@ for (const chief of [false, true]) {
     });
     await scroll.hover();
     const baseline = await settledScrollBaseline(component);
-    await page.mouse.wheel(0, -180);
+    await wheelUntilScrolled(scroll, { deltaY: -180, pointer: 'current' });
     await expect
       .poll(() => scroll.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop))
       .toBeGreaterThan(150);
@@ -166,8 +166,7 @@ for (const { platform, modifier, chief } of [
     const hints = prompts.locator('[data-suggested-prompt-hint]');
     await expect(hints).toHaveCount(2);
 
-    await scroll.hover();
-    await page.mouse.wheel(0, -250);
+    await wheelUntilScrolled(scroll, { deltaY: -250 });
     await expect(prompts).not.toBeInViewport();
     await page.keyboard.press(`${modifier}+1`);
     await expect(editor).toHaveText(draft);

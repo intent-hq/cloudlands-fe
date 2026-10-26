@@ -1,5 +1,5 @@
 import type { ComponentFixtures } from '@playwright/experimental-ct-svelte';
-import { expect, test } from '../../test/ct-test';
+import { expect, test, wheelUntilScrolled } from '../../test/ct-test';
 import { failOnConsoleErrors } from '../../test/ct-console-errors';
 import Preview from './home.preview.svelte';
 
@@ -168,8 +168,10 @@ for (const { name, width, height, scenario } of cases) {
     expect(before.transcript.bottom).toBeLessThanOrEqual(before.composer.top + 1);
     if (scenario === 'assistant-many') {
       expect(before.sidebarRange).toBeGreaterThan(0);
-      await sidebar.getByRole('listbox').hover();
-      await page.mouse.wheel(0, 1600);
+      await wheelUntilScrolled(host.locator('.home-sidebar [data-slot="list-view"]'), {
+        deltaY: 1600,
+        pointer: sidebar.getByRole('listbox'),
+      });
       await expect.poll(async () => (await measure(host)).sidebarScroll).toBeGreaterThan(0);
       const sidebarScrolled = await measure(host);
       expect(sidebarScrolled.header).toEqual(before.header);
@@ -180,8 +182,7 @@ for (const { name, width, height, scenario } of cases) {
     if (scenario === 'assistant-long') {
       await expect.poll(async () => (await measure(host)).transcriptScroll).toBeGreaterThan(0);
       const position = (await measure(host)).transcriptScroll;
-      await transcript.hover();
-      await page.mouse.wheel(0, -600);
+      await wheelUntilScrolled(transcript, { deltaY: -600 });
       await expect.poll(async () => (await measure(host)).transcriptScroll).toBeLessThan(position);
       const chatScrolled = await measure(host);
       expect(chatScrolled.header).toEqual(before.header);

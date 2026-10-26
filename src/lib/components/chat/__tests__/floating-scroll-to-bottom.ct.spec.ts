@@ -1,4 +1,4 @@
-import { expect, test } from '../../../../test/ct-test';
+import { expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
 import ChatMessageNavigatorIntegrationHost from './ChatMessageNavigatorIntegrationHost.svelte';
 
 for (const scenario of [
@@ -20,8 +20,7 @@ for (const scenario of [
     const gap = () => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
     await expect.poll(gap).toBeLessThanOrEqual(2);
     await expect(button).toHaveCount(0);
-    await viewport.hover();
-    await page.mouse.wheel(0, -1400);
+    await wheelUntilScrolled(viewport, { deltaY: -1400 });
     await expect(button).toBeVisible();
     const [buttonBox, viewportBox, composerBox] = await Promise.all([
       button.boundingBox(),

@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/experimental-ct-svelte';
-import { expect, test } from '../../../../test/ct-test';
+import { expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
 import StickyScrollStabilityHost from './StickyScrollStabilityHost.svelte';
 import type { AgentMessage } from '$shared/types';
 
@@ -249,7 +249,7 @@ test('composes sticky crossings with slow wheel, fast wheel, and keyboard scroll
   await scroll.evaluate((node, top) => node.scrollTo(0, top as number), entry - 3);
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   const slowBefore = await scroll.evaluate((node) => node.scrollTop);
-  await page.mouse.wheel(0, 6);
+  await wheelUntilScrolled(scroll, { deltaY: 6, pointer: 'current' });
   await settle(page);
   const slowAfter = await scroll.evaluate((node) => node.scrollTop);
   expect(slowAfter - slowBefore).toBeGreaterThan(0);
@@ -258,7 +258,7 @@ test('composes sticky crossings with slow wheel, fast wheel, and keyboard scroll
 
   await scroll.evaluate((node, top) => node.scrollTo(0, top as number), entry - 120);
   const fastBefore = await scroll.evaluate((node) => node.scrollTop);
-  await page.mouse.wheel(0, 180);
+  await wheelUntilScrolled(scroll, { deltaY: 180, pointer: 'current' });
   await settle(page);
   const fastAfter = await scroll.evaluate((node) => node.scrollTop);
   expect(fastAfter - fastBefore).toBeGreaterThan(100);

@@ -1,5 +1,5 @@
 import type { Locator } from '@playwright/experimental-ct-svelte';
-import { expect, test } from '../../../../test/ct-test';
+import { expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
 import ChatViewportFillHost from './ChatViewportFillHost.svelte';
 
 test.setTimeout(120_000);
@@ -349,8 +349,7 @@ test('keeps the reading row when the user scrolls up with an older page pending'
   await expect.poll(async () => (await result()).requests.length).toBe(2);
   await component.update({ props: { controlled: true, height: 500, releasedPages: 1 } });
   await page.waitForTimeout(500);
-  await viewport.hover();
-  await page.mouse.wheel(0, -60);
+  await wheelUntilScrolled(viewport, { deltaY: -60 });
   await expect
     .poll(() => viewport.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop))
     .toBeGreaterThan(20);
@@ -452,8 +451,7 @@ for (const total of [1, 19, 20, 21]) {
       });
       // The pinned user prompt can cover the top assistant line at the bottom
       // position. Scroll to make the complete turn readable in the evidence.
-      await viewport.hover();
-      await page.mouse.wheel(0, -120);
+      await wheelUntilScrolled(viewport, { deltaY: -120 });
       await expect(component.getByText('Message 11.', { exact: true })).toBeInViewport({
         ratio: 1,
       });
@@ -487,8 +485,7 @@ test('progressive prepends preserve a reader who scrolls away before completion'
   });
   const viewport = component.getByTestId('chat-transcript-scroll-viewport');
   await expect(component.locator('[data-message-id="m-20"]').first()).toBeVisible();
-  await viewport.hover();
-  await page.mouse.wheel(0, -160);
+  await wheelUntilScrolled(viewport, { deltaY: -160 });
   await expect
     .poll(() => viewport.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop))
     .toBeGreaterThan(80);
@@ -650,8 +647,7 @@ test('user scroll during the unread entry hold keeps the reader position through
   await expect(component.locator('[data-message-id="m-9"]').first()).toHaveCount(1);
   await expect.poll(() => distanceFromBottom(viewport)).toBeGreaterThan(200);
   // Stay clearly away from the bottom so the read position is row-anchored.
-  await viewport.hover();
-  await page.mouse.wheel(0, 60);
+  await wheelUntilScrolled(viewport, { deltaY: 60 });
   await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBeGreaterThan(20);
   const reading = await viewport.evaluate((node) => {
     const top = node.getBoundingClientRect().top;
