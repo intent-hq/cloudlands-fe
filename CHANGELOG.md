@@ -4,6 +4,23 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.238.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.237.1...v2.238.0) (2026-10-26)
+
+
+### 🚀 Features
+
+* **chat:** show section headers in the @ menu ([#3725](https://github.com/intent-hq/cloudlands-fe/issues/3725)) ([cd9a1db](https://github.com/intent-hq/cloudlands-fe/commit/cd9a1dbd75be89dac3504bb7e2f9544673ddfdf8))
+
+
+### 🐛 Bug Fixes
+
+* **browser:** tell background-hosted mount timeouts apart from no host window ([#3734](https://github.com/intent-hq/cloudlands-fe/issues/3734)) ([0260a2c](https://github.com/intent-hq/cloudlands-fe/commit/0260a2c28a2203b8a723fae796aab47e95398119))
+* bump intentd sidecar to v0.11.50 ([#3729](https://github.com/intent-hq/cloudlands-fe/issues/3729)) ([0f57f0a](https://github.com/intent-hq/cloudlands-fe/commit/0f57f0a444db7e8cacd82a13d2fd530fc62ad82e))
+* bump intentd sidecar to v0.11.51 ([#3738](https://github.com/intent-hq/cloudlands-fe/issues/3738)) ([3324002](https://github.com/intent-hq/cloudlands-fe/commit/33240024474f43a818d1178500a068202bb37cee))
+* **desktop:** simplify desktop control menu item ([#3735](https://github.com/intent-hq/cloudlands-fe/issues/3735)) ([159c6e6](https://github.com/intent-hq/cloudlands-fe/commit/159c6e669be1d144638fd904b755ff9184a8950a))
+* keep PR and script footer rows on screen across chat switches ([#3716](https://github.com/intent-hq/cloudlands-fe/issues/3716)) ([cbc1fa2](https://github.com/intent-hq/cloudlands-fe/commit/cbc1fa2e0d89aafa975ccae546471554cd29c4d7))
+* keep the disconnect overlay and window title current while animation frames are suspended ([#4622](https://github.com/intent-hq/cloudlands-fe/issues/4622)) ([#3730](https://github.com/intent-hq/cloudlands-fe/issues/3730)) ([61fb9d1](https://github.com/intent-hq/cloudlands-fe/commit/61fb9d18ecc929e85318dd8bb57614e927403381))
+
 ## [2.237.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.237.0...v2.237.1) (2026-10-26)
 
 
