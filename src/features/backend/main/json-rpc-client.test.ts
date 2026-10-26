@@ -1356,13 +1356,24 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
       return { client, sockets, onHelloResult };
     }
 
-    /** Open socket `index`, then let its hello go unanswered past the 5s bound. */
-    async function timeOutHello(sockets: FakeSocket[], index: number): Promise<void> {
+    /**
+     * Open socket `index` and prove its hello is bounded at exactly `boundMs`:
+     * still waiting 1ms before, torn down at the bound.
+     */
+    async function timeOutHello(
+      sockets: FakeSocket[],
+      index: number,
+      boundMs = 5_000,
+    ): Promise<void> {
       await vi.advanceTimersByTimeAsync(100);
       sockets[index].open();
       await vi.advanceTimersByTimeAsync(1);
       expect(JSON.parse(sockets[index].writes[0]).method).toBe('client.hello');
-      await vi.advanceTimersByTimeAsync(5_000);
+      // The hello went out at open; 1ms has passed, so stop 1ms short of the bound.
+      await vi.advanceTimersByTimeAsync(boundMs - 2);
+      expect(sockets[index].destroyed).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(sockets[index].destroyed).toBe(true);
     }
 
     async function answerHello(socket: FakeSocket, clientId: string): Promise<void> {
@@ -1443,32 +1454,39 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
       }
     });
 
-    it('falls back to an anonymous connection after three consecutive hello timeouts', async () => {
+    it('keeps reconnecting with a longer hello bound each time and never settles for an anonymous socket', async () => {
       vi.useFakeTimers();
       const { client, sockets, onHelloResult } = makeTimeoutClient();
       try {
         client.start();
         sockets[0].open();
         await vi.advanceTimersByTimeAsync(1);
-        await vi.advanceTimersByTimeAsync(5_000);
+        await vi.advanceTimersByTimeAsync(4_998);
+        expect(sockets[0].destroyed).toBe(false);
+        await vi.advanceTimersByTimeAsync(1);
         expect(sockets[0].destroyed).toBe(true);
-        await timeOutHello(sockets, 1);
-        expect(sockets[1].destroyed).toBe(true);
-        await timeOutHello(sockets, 2);
-
-        // Third timeout in a row: keep the transport instead of looping forever.
-        expect(sockets[2].destroyed).toBe(false);
-        expect(client.getStatus()).toBe('connected');
+        // 5s → 10s → 20s → 30s (the request timeout caps the bound) → 30s.
+        await timeOutHello(sockets, 1, 10_000);
+        await timeOutHello(sockets, 2, 20_000);
+        await timeOutHello(sockets, 3, 30_000);
+        await timeOutHello(sockets, 4, 30_000);
+        expect(client.getStatus()).not.toBe('connected');
         expect(client.getRepositoryConnection()).toBeNull();
         expect(onHelloResult).not.toHaveBeenCalled();
-        await vi.advanceTimersByTimeAsync(10_000);
-        expect(sockets).toHaveLength(3);
+
+        // A daemon that finally answers restores identity on the next socket.
+        await vi.advanceTimersByTimeAsync(100);
+        sockets[5].open();
+        await vi.advanceTimersByTimeAsync(1);
+        await answerHello(sockets[5], 'cli-7f3a');
+        expect(client.getStatus()).toBe('connected');
+        expect(client.getRepositoryConnection()).not.toBeNull();
       } finally {
         client.dispose();
       }
     });
 
-    it('starts counting again after the socket drops mid-handshake (e.g. a daemon restart)', async () => {
+    it('drops back to the 5s bound after the socket drops mid-handshake (e.g. a daemon restart)', async () => {
       vi.useFakeTimers();
       const { client, sockets } = makeTimeoutClient();
       try {
@@ -1476,8 +1494,7 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
         sockets[0].open();
         await vi.advanceTimersByTimeAsync(1);
         await vi.advanceTimersByTimeAsync(5_000);
-        await timeOutHello(sockets, 1);
-        expect(sockets[1].destroyed).toBe(true);
+        await timeOutHello(sockets, 1, 10_000);
 
         // Two timeouts so far; the daemon then restarts while the next hello waits.
         await vi.advanceTimersByTimeAsync(100);
@@ -1485,16 +1502,14 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
         await vi.advanceTimersByTimeAsync(1);
         sockets[2].emit('close');
 
-        // The restarted daemon's first slow hello must not trip the fallback.
-        await timeOutHello(sockets, 3);
-        expect(sockets[3].destroyed).toBe(true);
-        expect(client.getStatus()).not.toBe('connected');
+        // The restarted daemon's first hello gets the base bound again.
+        await timeOutHello(sockets, 3, 5_000);
       } finally {
         client.dispose();
       }
     });
 
-    it('starts counting again after a successful hello', async () => {
+    it('drops back to the 5s bound after a successful hello', async () => {
       vi.useFakeTimers();
       const { client, sockets } = makeTimeoutClient();
       try {
@@ -1502,19 +1517,115 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
         sockets[0].open();
         await vi.advanceTimersByTimeAsync(1);
         await vi.advanceTimersByTimeAsync(5_000);
-        await timeOutHello(sockets, 1);
+        await timeOutHello(sockets, 1, 10_000);
         await vi.advanceTimersByTimeAsync(100);
         sockets[2].open();
         await vi.advanceTimersByTimeAsync(1);
         await answerHello(sockets[2], 'cli-7f3a');
         expect(client.getStatus()).toBe('connected');
 
-        // A later drop plus one unanswered hello reconnects again rather than
-        // inheriting the two earlier timeouts.
         sockets[2].emit('close');
-        await timeOutHello(sockets, 3);
-        expect(sockets[3].destroyed).toBe(true);
+        await timeOutHello(sockets, 3, 5_000);
         expect(client.getRepositoryConnection()).toBeNull();
+      } finally {
+        client.dispose();
+      }
+    });
+
+    it('reconnects when a re-hello on a live socket gets no reply, instead of staying without a handshake', async () => {
+      vi.useFakeTimers();
+      const { client, sockets } = makeTimeoutClient();
+      const reconnected = vi.fn();
+      client.on('reconnected', reconnected);
+      try {
+        client.start();
+        sockets[0].open();
+        await vi.advanceTimersByTimeAsync(1);
+        await answerHello(sockets[0], 'cli-7f3a');
+        expect(client.getRepositoryConnection()).not.toBeNull();
+
+        // A caller-issued hello (e.g. the local device-kind identity refresh).
+        const rehello = client.request('client.hello', {});
+        const rehelloSettled = expect(rehello).rejects.toThrow('timed out: client.hello');
+        expect(JSON.parse(sockets[0].writes.at(-1)!).method).toBe('client.hello');
+        await vi.advanceTimersByTimeAsync(30_000);
+        await rehelloSettled;
+        expect(sockets[0].destroyed).toBe(true);
+        expect(client.getStatus()).not.toBe('connected');
+
+        await vi.advanceTimersByTimeAsync(100);
+        expect(sockets).toHaveLength(2);
+        sockets[1].open();
+        await vi.advanceTimersByTimeAsync(1);
+        await answerHello(sockets[1], 'cli-7f3a');
+        expect(client.getStatus()).toBe('connected');
+        expect(client.getRepositoryConnection()).not.toBeNull();
+        expect(await client.readHelloSnapshot()).toEqual(helloResult('cli-7f3a'));
+        expect(reconnected).toHaveBeenCalledTimes(1);
+      } finally {
+        client.dispose();
+      }
+    });
+
+    it('reconnects on a corrupted inbound line and fails in-flight requests at once', async () => {
+      vi.useFakeTimers();
+      const { client, sockets } = makeTimeoutClient();
+      const reconnected = vi.fn();
+      client.on('reconnected', reconnected);
+      try {
+        client.start();
+        sockets[0].open();
+        await vi.advanceTimersByTimeAsync(1);
+        await answerHello(sockets[0], 'cli-7f3a');
+        const inFlight = client.request('workspace.list', {});
+        const inFlightSettled = expect(inFlight).rejects.toThrow();
+        const listId = JSON.parse(sockets[0].writes.at(-1)!).id as number;
+
+        // A reply cut off mid-string with the next frame spliced in (the shape
+        // seen in the field: "Expected ',' or '}' after property value").
+        sockets[0].receive(
+          `{"jsonrpc":"2.0","id":${listId},"result":{"workspaces":[{"name":"trunc{"jsonrpc":"2.0","id":99,"result":{}}\n`,
+        );
+        await vi.advanceTimersByTimeAsync(1);
+        // Rejected now, not after the 30s request timeout.
+        await inFlightSettled;
+        expect(sockets[0].destroyed).toBe(true);
+
+        await vi.advanceTimersByTimeAsync(100);
+        sockets[1].open();
+        await vi.advanceTimersByTimeAsync(1);
+        await answerHello(sockets[1], 'cli-7f3a');
+        expect(client.getStatus()).toBe('connected');
+        expect(reconnected).toHaveBeenCalledTimes(1);
+        const after = client.request('workspace.list', {});
+        const frame = JSON.parse(sockets[1].writes.at(-1)!);
+        sockets[1].receive(
+          `${JSON.stringify({ jsonrpc: '2.0', id: frame.id, result: { workspaces: [] } })}\n`,
+        );
+        await expect(after).resolves.toEqual({ workspaces: [] });
+      } finally {
+        client.dispose();
+      }
+    });
+
+    it('keeps the socket when a listener throws while handling a well-formed message', async () => {
+      vi.useFakeTimers();
+      const { client, sockets } = makeTimeoutClient();
+      const errors: Error[] = [];
+      client.on('error', (error: Error) => errors.push(error));
+      client.on('notification', () => {
+        throw new Error('listener bug');
+      });
+      try {
+        client.start();
+        sockets[0].open();
+        await vi.advanceTimersByTimeAsync(1);
+        await answerHello(sockets[0], 'cli-7f3a');
+        sockets[0].receive(`{"jsonrpc":"2.0","method":"events.event","params":{}}\n`);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(errors.map((error) => error.message)).toContain('listener bug');
+        expect(sockets[0].destroyed).toBe(false);
+        expect(client.getStatus()).toBe('connected');
       } finally {
         client.dispose();
       }
