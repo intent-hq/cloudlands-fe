@@ -7,6 +7,7 @@
   import { clampSurface, setSurface, useSurface } from '$lib/components/ui/surface-context';
   import { OPTION_LIST_CONTAINER_CLASS } from '$lib/styles/option-list-row';
   import { OVERLAY_VIEWPORT_GUTTER } from '$lib/components/ui/overlay-positioning';
+  import { useDialogPortalTarget } from '$lib/components/ui/dialog';
 
   let {
     wrapperId,
@@ -30,6 +31,10 @@
   };
 
   const usePortal = $derived(dropUp || portal);
+  // Inside a dialog, an inline list is clipped by the dialog's scroll body and
+  // a body portal sits under the modal layer and outside its focus scope, so
+  // portal into the dialog itself (see useDialogPortalTarget).
+  const dialogPortalTarget = useDialogPortalTarget();
   const surface = clampSurface(useSurface() + 2);
   setSurface(surface);
   const select = getContext<{
@@ -99,8 +104,10 @@
     child={staticContentChild}
   />
 {:else}
-  <SelectPrimitive.Portal disabled={!usePortal}>
+  {@const dialogTarget = dialogPortalTarget()}
+  <SelectPrimitive.Portal disabled={!usePortal && !dialogTarget} to={dialogTarget}>
     <SelectPrimitive.Content
+      strategy={dialogTarget ? 'absolute' : 'fixed'}
       onEscapeKeydown={restoreTriggerFocusOnEscape}
       data-slot="select-content"
       data-surface-level={surface}
