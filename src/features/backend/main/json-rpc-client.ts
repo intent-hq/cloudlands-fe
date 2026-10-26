@@ -154,6 +154,10 @@ class RequestTimeoutError extends Error {
   }
 }
 
+function isHelloTimeout(error: unknown): error is RequestTimeoutError {
+  return error instanceof RequestTimeoutError && error.method === HELLO_METHOD;
+}
+
 type RetirementFailure = {
   owner: object | null;
   kind: 'original' | 'transport' | 'forced' | 'late' | 'unknown' | 'close';
@@ -1139,20 +1143,15 @@ export class JsonRpcClient extends EventEmitter {
       );
       this.confirmHello(attempt, result);
     } catch (error) {
-      this.lifecycle?.failures.push({
-        owner: this.connectionOwner ?? null,
-        kind: 'original',
-        error,
-      });
-      // The socket died mid-handshake: onConnectionFailure already tore it
-      // down and scheduled a reconnect — do not report this socket connected.
-      if (this.disposed || this.socket !== socket) return;
       // No reply at all (e.g. the reply was lost): the rest of the app gates on
       // the handshake result and only re-registers on a reconnect, so an
       // anonymous socket would stay degraded for its whole lifetime
       // (intent-hq/intent#7868). Retry on a fresh socket, within a bound.
+      // onConnectionFailure records this failure (as `transport`) itself.
       if (
-        error instanceof RequestTimeoutError &&
+        !this.disposed &&
+        this.socket === socket &&
+        isHelloTimeout(error) &&
         ++this.helloTimeoutStreak < MAX_CONSECUTIVE_HELLO_TIMEOUTS
       ) {
         logger.warn('client.hello handshake timed out; reconnecting', {
@@ -1161,6 +1160,14 @@ export class JsonRpcClient extends EventEmitter {
         this.onConnectionFailure(error);
         return;
       }
+      this.lifecycle?.failures.push({
+        owner: this.connectionOwner ?? null,
+        kind: 'original',
+        error,
+      });
+      // The socket died mid-handshake: onConnectionFailure already tore it
+      // down and scheduled a reconnect — do not report this socket connected.
+      if (this.disposed || this.socket !== socket) return;
       // Identity degrades, transport survives: the daemon treats a failed
       // hello as an anonymous connection, so scoped features (§5.16 drafts)
       // may not restore, but everything else keeps working. A daemon error
@@ -1209,6 +1216,9 @@ export class JsonRpcClient extends EventEmitter {
     });
     this.retireRepositorySocket();
     this.hasConnectionFailed = true;
+    // Only back-to-back unanswered hellos count toward the anonymous fallback;
+    // any other drop (daemon restart, dial failure) starts the count over.
+    if (!isHelloTimeout(error)) this.helloTimeoutStreak = 0;
     this.observeFrame(() => ({ type: 'disconnected' }));
     this.emitError(error);
     this.stopHeartbeat();

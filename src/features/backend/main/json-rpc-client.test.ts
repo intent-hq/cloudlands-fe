@@ -1468,6 +1468,32 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
       }
     });
 
+    it('starts counting again after the socket drops mid-handshake (e.g. a daemon restart)', async () => {
+      vi.useFakeTimers();
+      const { client, sockets } = makeTimeoutClient();
+      try {
+        client.start();
+        sockets[0].open();
+        await vi.advanceTimersByTimeAsync(1);
+        await vi.advanceTimersByTimeAsync(5_000);
+        await timeOutHello(sockets, 1);
+        expect(sockets[1].destroyed).toBe(true);
+
+        // Two timeouts so far; the daemon then restarts while the next hello waits.
+        await vi.advanceTimersByTimeAsync(100);
+        sockets[2].open();
+        await vi.advanceTimersByTimeAsync(1);
+        sockets[2].emit('close');
+
+        // The restarted daemon's first slow hello must not trip the fallback.
+        await timeOutHello(sockets, 3);
+        expect(sockets[3].destroyed).toBe(true);
+        expect(client.getStatus()).not.toBe('connected');
+      } finally {
+        client.dispose();
+      }
+    });
+
     it('starts counting again after a successful hello', async () => {
       vi.useFakeTimers();
       const { client, sockets } = makeTimeoutClient();
