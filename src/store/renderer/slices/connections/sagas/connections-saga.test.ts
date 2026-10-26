@@ -1091,6 +1091,56 @@ describe('connectionsSaga', () => {
     await run.task.toPromise();
   });
 
+  it.each([
+    { label: 'missing', message: undefined },
+    { label: 'empty', message: '' },
+    { label: 'whitespace-only', message: '   \n\t ' },
+  ])(
+    'toasts the generic failure copy when a failed update has a $label message (#5756)',
+    async ({ message }) => {
+      const result = { ok: false, reason: 'failed', ...(message === undefined ? {} : { message }) };
+      invoke.mockImplementation(async (channel: string) => {
+        if (channel === CONNECTION_CHANNELS.LIST)
+          return { connections: [LOCAL, REMOTE], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+        if (channel === CONNECTION_CHANNELS.UPDATE_BACKEND) return result;
+        return {};
+      });
+      const run = start();
+      await settle();
+
+      const action = updateBackendRequested('remote-1');
+      run.channel.put(action);
+      await expect(action.promise).resolves.toEqual(result);
+      expect(notify.error).toHaveBeenCalledTimes(1);
+      expect(notify.error).toHaveBeenCalledWith('The backend could not start the update.');
+
+      run.task.cancel();
+      await run.task.toPromise();
+    },
+  );
+
+  it('embeds a present failure message in the toast exactly as before', async () => {
+    const result = { ok: false, reason: 'failed', message: 'daemon is not sitter-supervised' };
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL, REMOTE], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.UPDATE_BACKEND) return result;
+      return {};
+    });
+    const run = start();
+    await settle();
+
+    const action = updateBackendRequested('remote-1');
+    run.channel.put(action);
+    await expect(action.promise).resolves.toEqual(result);
+    expect(notify.error).toHaveBeenCalledWith(
+      'The backend could not start the update: daemon is not sitter-supervised',
+    );
+
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('rejects the update action and toasts on an IPC-level failure', async () => {
     invoke.mockImplementation(async (channel: string) => {
       if (channel === CONNECTION_CHANNELS.LIST)

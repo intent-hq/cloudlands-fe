@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { createServer, type ViteDevServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
+import { prepareRootHarnessModules } from './root-harness-import';
 import { readDiagramPaint } from './diagram-painted-bounds';
 
 const externalBaseUrl = process.env.UI_PREVIEW_BASE_URL;
@@ -14,10 +15,10 @@ let server: ViteDevServer | undefined;
 const WORKBENCH_READY_TIMEOUT_MS = 60_000;
 test.describe.configure({ mode: 'default', timeout: 90_000 });
 
-test.beforeAll(async () => {
+test.beforeAll(async ({}, workerInfo) => {
   if (externalBaseUrl) return;
   const ownedServer = await createServer({
-    cacheDir: viteHarnessCacheDir('diagram-state-motion'),
+    cacheDir: viteHarnessCacheDir('diagram-state-motion', { workerIndex: workerInfo.workerIndex }),
     server: { host: '127.0.0.1', port: 0, strictPort: false, watch: { ignored: ['**/*'] } },
   });
   server = ownedServer;

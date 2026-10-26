@@ -1,5 +1,6 @@
 import type { Locator, Page } from '@playwright/experimental-ct-svelte';
 import { expect, expectAnimationsToSettle, test } from '../../../../test/ct-test';
+import { expectDismissibleLayerArmed } from '../../../../test/dismissible-layer';
 import AgentSubscriptionInlineHost from './AgentSubscriptionInlineHost.svelte';
 
 const toolKinds = ['file', 'terminal', 'tool'] as const;
@@ -183,6 +184,7 @@ test('isolates outside-dismissed task help between delegated row controls', asyn
   await expect(firstTooltip).toBeVisible();
   await triggers.first().click();
   await expect(page.getByRole('dialog', { name: 'Agent tasks' })).toBeVisible();
+  await expectDismissibleLayerArmed(page.getByRole('dialog', { name: 'Agent tasks' }));
   await component.getByTestId('outside-target').click();
   await expect(page.getByRole('dialog', { name: 'Agent tasks' })).not.toBeVisible();
 

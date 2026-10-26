@@ -7,6 +7,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 vi.mock('$lib/client/live/backend-transport', () => ({
   capturePrMonitorSession: vi.fn(),
   onMonitorReconnected: vi.fn(() => () => {}),
+  prMonitorBackendId: vi.fn(() => undefined),
   backendRequest: vi.fn(),
   backendSubscribe: vi.fn(),
   backendUnsubscribe: vi.fn().mockResolvedValue(undefined),

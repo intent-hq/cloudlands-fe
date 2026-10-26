@@ -149,6 +149,23 @@ describe('Home actionable attention', () => {
     expect(getHomeStatusCause({ displayStatus: 'pr_ready', scriptsRunning: true })).toBe(
       'pr_ready',
     );
+    expect(getHomeStatusCause({ displayStatus: 'complete', backgroundTasksRunning: true })).toBe(
+      'background_tasks_running',
+    );
+    expect(
+      getHomeStatusCause({
+        displayStatus: 'idle',
+        scriptsRunning: true,
+        backgroundTasksRunning: true,
+      }),
+    ).toBe('scripts_running');
+    expect(
+      getHomeStatusCause({
+        displayStatus: 'idle',
+        activity: 'agent_running',
+        backgroundTasksRunning: true,
+      }),
+    ).toBe('running');
   });
 });
 

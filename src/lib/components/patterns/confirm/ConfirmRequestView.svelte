@@ -21,7 +21,7 @@
     value?: string;
     busy?: boolean;
     static?: boolean;
-    onAccept: (value: string) => void;
+    onAccept: (value: string) => void | Promise<void>;
     onCancel: () => void;
   } = $props();
   let inputRef = $state<HTMLInputElement | null>(null);

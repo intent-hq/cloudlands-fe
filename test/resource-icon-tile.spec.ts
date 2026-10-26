@@ -4,16 +4,17 @@ import { resolve } from 'node:path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { createServer, type ViteDevServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
+import { prepareRootHarnessModules } from './root-harness-import';
 
 let server: ViteDevServer;
 let baseUrl: string;
 
-test.beforeAll(async () => {
+test.beforeAll(async ({}, workerInfo) => {
   test.setTimeout(120_000);
   server = await createServer({
     configFile: false,
     root: process.cwd(),
-    cacheDir: viteHarnessCacheDir('resource-icon-tile'),
+    cacheDir: viteHarnessCacheDir('resource-icon-tile', { workerIndex: workerInfo.workerIndex }),
     plugins: [svelte({ configFile: resolve(process.cwd(), 'svelte.config.js') })],
     resolve: {
       alias: [
@@ -42,7 +43,10 @@ test.afterAll(async () => server?.close());
 
 test('opens and dismisses resource panel action menus', async ({ page }) => {
   test.setTimeout(120_000);
-  await page.goto(`${baseUrl}src/app.html`);
+  await prepareRootHarnessModules(page, baseUrl, [
+    '/@id/svelte',
+    '/test/fixtures/ResourceIconGeometryHost.svelte',
+  ]);
   await page.addStyleTag({ url: `${baseUrl}src/app.css` });
   await page.evaluate(async () => {
     Object.assign(globalThis, { process: { env: { NODE_ENV: 'test' } } });
@@ -89,7 +93,10 @@ test('keeps sidebar overflow counts accurate when cards expand', async ({ page }
   ] as const;
 
   for (const scenario of scenarios) {
-    await page.goto(`${baseUrl}src/app.html`);
+    await prepareRootHarnessModules(page, baseUrl, [
+      '/@id/svelte',
+      '/test/fixtures/SidebarLauncherHost.svelte',
+    ]);
     await page.addStyleTag({ url: `${baseUrl}src/app.css` });
     await page.addStyleTag({ content: 'body { margin: 0; }' });
     await page.evaluate(async (props) => {

@@ -1,4 +1,5 @@
 import { expect, test } from '../../../../../test/ct-test';
+import { expectDismissibleLayerArmed } from '../../../../../test/dismissible-layer';
 import type { Locator, Page } from '@playwright/test';
 import type { PanelTabType } from '$store/renderer/slices/panel-layout/panel-layout-types';
 import PanelHeaderActionsHost from './mocks/PanelHeaderActionsHost.svelte';
@@ -87,6 +88,7 @@ test('panel menu commands remain clickable where they overlap the titlebar', asy
     body: await page.screenshot(),
     contentType: 'image/png',
   });
+  // eslint-disable-next-line intent/no-unarmed-outside-click-in-ct -- runs a menu command inside the menu; not an outside dismissal
   await page.mouse.click(overlap.x, overlap.y);
   await expect(component.getByTestId('panel-actions-host')).toHaveAttribute(
     'data-display-count',
@@ -436,6 +438,8 @@ for (const [index, panelType] of panelTypes.entries()) {
     await page.keyboard.press('Escape');
 
     await trigger.click();
+    await expect(menu).toBeVisible();
+    await expectDismissibleLayerArmed(menu);
     await page.mouse.click(1100, 700);
     await expect(menu).toBeHidden();
     await expect(trigger).toHaveAttribute('aria-expanded', 'false');
@@ -542,6 +546,7 @@ test('keeps desktop menu commands unclipped and restores focus after selection',
     .locator('svg')
     .boundingBox();
   if (!leftArrow) throw new Error('Missing visible left arrow');
+  // eslint-disable-next-line intent/no-unarmed-outside-click-in-ct -- runs a menu command inside the menu; not an outside dismissal
   await page.mouse.click(leftArrow.x + leftArrow.width / 2, leftArrow.y + leftArrow.height / 2);
   await expect(component).toHaveAttribute('data-move-left-count', '1');
   await expect(menu).toBeHidden();

@@ -321,7 +321,11 @@ and embedded tabs — is a target) and attach CDP locally. See
 builds any branch/ref — e.g. a PR branch — into platform-specific installers for testing:
 `gh workflow run manual-signed-build.yml --ref <pr-branch> -f build_macos=true` (also
 `build_windows` / `build_linux`; `sign` defaults to true — macOS Developer ID +
-notarization, Windows DigiCert). Add `-f intentd_ref=<hash>` (any intent-hq/intentd git
+notarization, Windows Azure Artifact Signing). A signed Windows request first runs the
+`windows-signing-preflight` job, which fails in seconds — naming every missing
+`INTENT_WINDOWS_AZURE_*` / `INTENT_WINDOWS_PUBLISHER_*` / `AZURE_*` setting — when the
+repository's Azure signing is not configured; re-run with `-f sign=false` for an unsigned
+Windows build. Add `-f intentd_ref=<hash>` (any intent-hq/intentd git
 ref — full 40-char commit SHA, branch, or tag; `actions/checkout` cannot resolve an
 abbreviated SHA from `git log --oneline`) to build the intentd sidecar from source at
 that ref instead of fetching the pinned release (all legs: macOS, Windows, and both
@@ -762,6 +766,12 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   whose own short finite fades are allowed. Both list what is still running. Lint
   (`intent/no-one-shot-animation-count`) rejects the one-time count in CT specs; disable
   it on the line, with the reason, only when zero animations is the deliberate contract.
+- Before an outside click that should dismiss a bits-ui menu, popover, select, combobox or
+  dialog, call `expectDismissibleLayerArmed(layer)` (`src/test/dismissible-layer.ts`):
+  bits-ui listens for outside pointers only after an `afterSleep(1)` timer, so an early
+  click is ignored (cloudlands-fe#3696 failed 3 of 20 runs). Lint
+  (`intent/no-unarmed-outside-click-in-ct`) flags an unguarded dismissing click; disable it
+  on the line, with the reason, for a click inside the layer or on a non-bits-ui popup.
 - **Every CT spec imports `test` / `expect` from `src/test/ct-test.ts`** — lint-enforced
   (`no-restricted-imports`; only type imports may come from
   `@playwright/experimental-ct-svelte`). The module sets `_optionContextReuseMode: 'none'`

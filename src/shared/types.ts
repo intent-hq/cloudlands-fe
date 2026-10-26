@@ -317,6 +317,19 @@ export function isWorkspaceAttention(value: unknown): value is WorkspaceAttentio
 export type WorkspaceGuestRole = 'collaborator' | 'manager';
 export type WorkspaceRole = 'owner' | WorkspaceGuestRole;
 
+/** Every wire role, keyed so adding a role to `WorkspaceRole` fails to compile
+ *  until the runtime guard below accepts it too (intent-hq/intent#7736). */
+const WORKSPACE_ROLES: Record<WorkspaceRole, true> = {
+  owner: true,
+  collaborator: true,
+  manager: true,
+};
+
+/** Runtime guard for BE-sent workspace roles; an unknown value is malformed. */
+export function isWorkspaceRole(value: unknown): value is WorkspaceRole {
+  return typeof value === 'string' && Object.hasOwn(WORKSPACE_ROLES, value);
+}
+
 export interface Workspace {
   id: WorkspaceId;
   name?: string; // Added for compatibility with agent system
@@ -366,6 +379,12 @@ export interface Workspace {
    *  older daemons read as no running scripts. Live via
    *  `workspace:scriptsRunning-changed`. */
   scriptsRunning?: boolean;
+  /** BE-derived orthogonal background-task flag (PROTOCOL §5.1): true while
+   *  an agent of the workspace has a provider background task (§5.5b, e.g. a
+   *  backgrounded shell command) still running. Presence-detected — omitted
+   *  when false, so older daemons read as none. Live via
+   *  `workspace:backgroundTasksRunning-changed`. */
+  backgroundTasksRunning?: boolean;
   /** Membership summary (PROTOCOL §5.1, intent-hq/intentd#1868). `myRole` is
    *  relative to the caller and absent for a non-member; `memberCount` counts
    *  accepted members; `openInviteCount` counts unredeemed invites. All absent
