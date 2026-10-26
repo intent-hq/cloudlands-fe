@@ -43,6 +43,9 @@ const mocks = vi.hoisted(() => {
     workspaceCreate: vi.fn<(params: Record<string, unknown>) => Promise<unknown>>(),
     toastError: vi.fn(),
     gitPull: vi.fn<() => Promise<{ success: boolean; error?: string }>>(),
+    draftGet: vi.fn(),
+    draftSet: vi.fn(),
+    draftClear: vi.fn(),
     // Default implementations are (re)installed per test by the top-level
     // beforeEach (installDefaultMockImplementations) after every shared mock
     // is reset, so a per-test override never leaks under shuffled ordering.
@@ -81,15 +84,29 @@ vi.mock('$store/renderer/slices/onboarding/onboarding-selectors', () => ({
 
 vi.mock(
   '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors',
-  async (importOriginal) => ({
-    ...(await importOriginal<
-      typeof import('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors')
-    >()),
-    selectWorkspaceInitializerHydrated: () => mocks.readable(() => mocks.initializerHydrated),
-    selectWorkspaceInitializerOnboardingFormState: {
-      select: () => mocks.persistedOnboardingFormState,
-    },
-  }),
+  async (importOriginal) => {
+    const original =
+      await importOriginal<
+        typeof import('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors')
+      >();
+    return {
+      ...original,
+      selectWorkspaceInitializerHydrated: Object.assign(
+        () => mocks.readable(() => mocks.initializerHydrated),
+        {
+          effect: original.selectWorkspaceInitializerHydrated.effect,
+          select: () => mocks.initializerHydrated,
+        },
+      ),
+      selectWorkspaceInitializerOnboardingFormState: Object.assign(
+        () => mocks.readable(() => mocks.persistedOnboardingFormState),
+        {
+          effect: original.selectWorkspaceInitializerOnboardingFormState.effect,
+          select: () => mocks.persistedOnboardingFormState,
+        },
+      ),
+    };
+  },
 );
 
 vi.mock('$store/renderer/slices/github-auth/github-auth-selectors', () => ({
@@ -121,7 +138,18 @@ vi.mock('$shared/generated/ipc-client', () => ({
 }));
 
 vi.mock('$lib/client', () => ({
-  appClient: { git: { pull: mocks.gitPull } },
+  appClient: {
+    git: { pull: mocks.gitPull },
+    drafts: {
+      get: mocks.draftGet,
+      set: mocks.draftSet,
+      clear: mocks.draftClear,
+    },
+    settings: {
+      get: vi.fn(async () => ({ value: {} })),
+      update: vi.fn(async () => undefined),
+    },
+  },
 }));
 
 vi.mock('$lib/client/live/live-prompt-enhancement', () => ({
@@ -230,10 +258,12 @@ import OnboardingPage from '../OnboardingPage.svelte';
 import { REPO_CONFIG_SCRIPT_NAME, SETUP_SCRIPT_TEMPLATES } from '$features/setup-scripts';
 import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 import { store as appStore } from '$store/renderer/store';
-import { workspaceInitializationSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initialization-saga';
+import { workspaceInitializerSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initializer-saga';
 import {
   workspaceInitializerDraftOwnerReleased,
   workspaceInitializerDraftRestoreRequested,
+  workspaceInitializerDraftSaveCancelled,
+  workspaceInitializerDraftSaveScheduled,
 } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 import { selectWorkspaceCreateProgress } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-selectors';
 import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
@@ -322,6 +352,9 @@ function installDefaultMockImplementations() {
   mocks.fetchGitHubRepoConfig.mockResolvedValue(null);
   mocks.getRemoteUrl.mockResolvedValue({ success: false });
   mocks.gitPull.mockResolvedValue({ success: true });
+  mocks.draftGet.mockResolvedValue(null);
+  mocks.draftSet.mockResolvedValue(undefined);
+  mocks.draftClear.mockResolvedValue(undefined);
   mocks.resolveModel.mockResolvedValue({
     provider: 'auggie',
     model: 'model',
@@ -408,7 +441,7 @@ beforeEach(() => {
     mocks.dispatch(action);
     return dispatch(action);
   });
-  cancelInitializationSaga = appStore.runSaga(workspaceInitializationSaga);
+  cancelInitializationSaga = appStore.runSaga(workspaceInitializerSaga);
 });
 
 afterEach(async () => {
@@ -448,6 +481,36 @@ describe('onboarding repo-config setup script detection', () => {
     expect(second.payload[3]).not.toBe(first.payload[3]);
     expect(first.payload[5]).toBeTruthy();
     expect(second.payload[5]).toBe(first.payload[5]);
+  });
+
+  it('cancels a queued pre-restore save when the user clears the edited draft', async () => {
+    const pendingRestore = Promise.withResolvers<null>();
+    mocks.draftGet.mockReturnValueOnce(pendingRestore.promise);
+    renderPage();
+    await waitFor(() => expect(mocks.draftGet).toHaveBeenCalledOnce());
+    const prompt = (
+      window as unknown as {
+        __mockOnboardingPromptStep: { setInputValue: (value: string) => void };
+      }
+    ).__mockOnboardingPromptStep;
+
+    prompt.setInputValue('typed before restore');
+    await waitFor(() =>
+      expect(dispatchedActions()).toContainEqual(
+        expect.objectContaining({ type: workspaceInitializerDraftSaveScheduled.type }),
+      ),
+    );
+    prompt.setInputValue('');
+    await waitFor(() =>
+      expect(dispatchedActions()).toContainEqual(
+        expect.objectContaining({ type: workspaceInitializerDraftSaveCancelled.type }),
+      ),
+    );
+    window.dispatchEvent(new Event('beforeunload'));
+    await new Promise((resolve) => setTimeout(resolve, 350));
+
+    expect(mocks.draftSet).not.toHaveBeenCalled();
+    pendingRestore.resolve(null);
   });
 
   it('restores the prompt when admission changes during submission preparation', async () => {
@@ -1162,6 +1225,11 @@ describe('onboarding repo-config setup script detection', () => {
     mocks.fetchGitHubRepoConfig.mockImplementation(async (owner: string) =>
       owner === 'owner-a' ? probeA.promise : probeB.promise,
     );
+    mocks.lastUsedSelect.mockImplementation((_path: string, githubUrl?: string) =>
+      githubUrl?.includes('owner-b')
+        ? { name: 'B saved script', content: 'echo b-saved' }
+        : { name: 'A saved script', content: 'echo a-saved' },
+    );
 
     const result = renderPage();
     // Both selections use the same clone destination path.
@@ -1169,11 +1237,17 @@ describe('onboarding repo-config setup script detection', () => {
     await waitFor(() =>
       expect(mocks.fetchGitHubRepoConfig).toHaveBeenCalledWith('owner-a', 'repo', undefined),
     );
+    await waitFor(() => expect(textOf(result, 'setup-script-name')).toBe('A saved script'));
 
     // Switching repo identity (same path, different URL) must trigger a new probe.
     selectGitHubRepo({ githubUrl: 'https://github.com/owner-b/repo', branch: '' });
     await waitFor(() =>
       expect(mocks.fetchGitHubRepoConfig).toHaveBeenCalledWith('owner-b', 'repo', undefined),
+    );
+    await waitFor(() => expect(textOf(result, 'setup-script-name')).toBe('B saved script'));
+    expect(mocks.lastUsedSelect).toHaveBeenLastCalledWith(
+      'owner/repo',
+      'https://github.com/owner-b/repo',
     );
 
     // A's late result must be dropped even though the path still matches.

@@ -46,6 +46,10 @@ export const selectWorkspaceInitializerDirectoryStatusCheck = store.createSelect
   (state, id: string) => getItem(state.workspaceInitializer.directoryStatusChecks, id),
 );
 
+export const selectWorkspaceInitializerRepoConfigProbe = store.createSelector((state, id: string) =>
+  getItem(state.workspaceInitializer.repoConfigProbes, id),
+);
+
 export const selectWorkspaceInitializerDismissedRecentRepoKeys = store.createSelector(
   (state) => state.workspaceInitializer.dismissedRecentRepoKeys,
 );

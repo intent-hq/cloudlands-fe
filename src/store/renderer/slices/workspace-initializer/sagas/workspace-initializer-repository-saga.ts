@@ -19,6 +19,12 @@ import { createLogger } from '$lib/utils/client-logger';
 import { handleError } from '$lib/utils/error-handling';
 import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { parseGitHubUrl } from '$lib/utils/workspace-validation';
+import {
+  fetchGitHubRepoConfigSetupScript,
+  fetchRepoConfigSetupScript,
+  toRepoConfigSubset,
+} from '$features/setup-scripts/repo-config';
 import type { KnownRepo } from '$shared/types/known-repo';
 import type { RepositoryTarget } from '$shared/types/repository-context';
 import {
@@ -26,6 +32,7 @@ import {
   selectWorkspaceInitializerHydrated,
   selectWorkspaceInitializerRecentRepoRefresh,
   selectWorkspaceInitializerRecentRepos,
+  selectWorkspaceInitializerRepoConfigProbe,
 } from '../workspace-initializer-selectors';
 import {
   setWorkspaceInitializerRecentRepos,
@@ -33,7 +40,10 @@ import {
   workspaceInitializerDirectoryStatusRequested,
   workspaceInitializerRecentReposRefreshFinished,
   workspaceInitializerRecentReposRefreshRequested,
+  workspaceInitializerRepoConfigProbeFinished,
+  workspaceInitializerRepoConfigProbeRequested,
 } from '../workspace-initializer-slice';
+import { checkoutRepoConfigRequested } from '../../repository-checkout/repository-checkout-slice';
 import type { WorkspaceInitializerDirectoryStatus } from '../workspace-initializer-types';
 import {
   aggregateRecentRepositories,
@@ -226,6 +236,52 @@ function* checkDirectoryStatusWorker(
   }
 }
 
+function* repoConfigProbeCurrent(id: string, requestId: string, admission: string) {
+  const current = yield* selectWorkspaceInitializerRepoConfigProbe.effect(id);
+  return (
+    current?.requestId === requestId &&
+    current.admission === admission &&
+    (yield* selectPrincipalActionContext.effect()) === admission
+  );
+}
+
+function* probeRepoConfigWorker(
+  action: ReturnType<typeof workspaceInitializerRepoConfigProbeRequested>,
+) {
+  const [id, requestId, admission, input] = action.payload;
+  if (input.debounce) yield* delay(300);
+  if (!(yield* call(repoConfigProbeCurrent, id, requestId, admission))) return;
+  const { identity, checkout } = input;
+  try {
+    let script: string | null = null;
+    if (checkout) {
+      const read = checkoutRepoConfigRequested(checkout.formId, checkout.scopeKey, checkout.query);
+      yield* put(read);
+      const result = yield* call(() => read.promise);
+      if (result.status !== 'ready') throw new Error('REPOSITORY_CONFIG_UNAVAILABLE');
+      script = toRepoConfigSubset(result.value.config).setupScript;
+    } else if (identity.type === 'local' && identity.path?.startsWith('/')) {
+      script = yield* call(fetchRepoConfigSetupScript, identity.path);
+    } else if (identity.type === 'github' && identity.path) {
+      const github = parseGitHubUrl(identity.githubUrl || identity.path);
+      if (github) {
+        script = yield* call(
+          fetchGitHubRepoConfigSetupScript,
+          github.owner,
+          github.repo,
+          identity.branch || undefined,
+        );
+      }
+    }
+    if (!(yield* call(repoConfigProbeCurrent, id, requestId, admission))) return;
+    yield* put(workspaceInitializerRepoConfigProbeFinished(id, requestId, 'ready', script));
+  } catch {
+    if (yield* call(repoConfigProbeCurrent, id, requestId, admission)) {
+      yield* put(workspaceInitializerRepoConfigProbeFinished(id, requestId, 'failed', null));
+    }
+  }
+}
+
 export function* workspaceInitializerRepositorySaga(client: RecentRepositoriesClient = appClient) {
   yield* all([
     takeLatestInContext(
@@ -238,6 +294,11 @@ export function* workspaceInitializerRepositorySaga(client: RecentRepositoriesCl
       workspaceInitializerDirectoryStatusRequested,
       (action) => action.payload[0],
       checkDirectoryStatusWorker,
+    ),
+    takeLatestInContext(
+      workspaceInitializerRepoConfigProbeRequested,
+      (action) => action.payload[0],
+      probeRepoConfigWorker,
     ),
   ]);
 }

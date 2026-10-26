@@ -10,6 +10,10 @@ import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
  */
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  createWorkspaceInitializationDispatchAdapter,
+  selectTestWorkspaceInitializerRepoConfigProbe,
+} from './workspace-initialization-dispatch.test-helper';
 
 const admittedFixture = vi.hoisted(() => ({ state: {} as Record<string, unknown> }));
 beforeEach(() => {
@@ -115,6 +119,7 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
   selectWorkspaceInitializerDraftAuthority: () =>
     mocks.readable(() => ({ restore: undefined, clear: undefined })),
+  selectWorkspaceInitializerRepoConfigProbe: selectTestWorkspaceInitializerRepoConfigProbe,
   selectWorkspaceInitializationOutcomeForConsumer: () => mocks.initializationOutcome$,
   selectWorkspaceInitializationResume: { select: () => undefined },
 }));
@@ -255,7 +260,6 @@ vi.mock('svelte-fa', async () => ({
 
 import CompactWorkspaceInitializer from '../CompactWorkspaceInitializer.svelte';
 import { warmImport } from '../../../../test/warm-import';
-import { createWorkspaceInitializationDispatchAdapter } from './workspace-initialization-dispatch.test-helper';
 
 const PREFILL_KEY = 'workspace-prefill';
 

@@ -4,7 +4,7 @@ import type { RepositoryCheckoutDraft } from '../repository-checkout/repository-
 import type { RepositoryTarget } from '$shared/types/repository-context';
 import type { CreateWorkspaceRequest, Workspace } from '$shared/types';
 import type { KnownRepo } from '$shared/types/known-repo';
-import type { CheckoutSelection } from '$shared/types/repository-checkout';
+import type { CheckoutRepoConfigQuery, CheckoutSelection } from '$shared/types/repository-checkout';
 import type { SetupScriptNameSource } from '$features/setup-scripts/repo-config';
 
 type WorkspaceInitializerRepoType = 'local' | 'github' | 'remote';
@@ -74,6 +74,33 @@ export interface WorkspaceInitializerDirectoryStatusCheck {
   path: string;
   status: 'pending' | 'ready' | 'failed' | 'unsupported';
   result: WorkspaceInitializerDirectoryStatus | null;
+}
+
+export interface WorkspaceInitializerRepoConfigProbeInput {
+  identity: {
+    path: string | null;
+    type: string | null;
+    githubUrl?: string | null;
+    branch?: string | null;
+  };
+  probeKey: string | null;
+  repoKey: string | null;
+  debounce: boolean;
+  setupScriptAtRequest: string;
+  applyAllowed: boolean;
+  checkout?: {
+    formId: string;
+    scopeKey: string;
+    query: CheckoutRepoConfigQuery;
+  };
+}
+
+interface WorkspaceInitializerRepoConfigProbe extends WorkspaceInitializerRepoConfigProbeInput {
+  id: string;
+  requestId: string;
+  admission: string;
+  status: 'pending' | 'ready' | 'failed';
+  script: string | null;
 }
 
 export interface WorkspaceInitializerAgentSettings {
@@ -191,7 +218,7 @@ export interface WorkspaceInitializerDraftClear {
   status: 'pending' | 'success' | 'failure';
 }
 
-export type WorkspaceInitializationJson =
+type WorkspaceInitializationJson =
   | null
   | boolean
   | number
@@ -300,24 +327,12 @@ interface WorkspaceInitializationFileMention {
   meta?: Record<string, WorkspaceInitializationJson>;
 }
 
-export interface WorkspaceInitializationPreparationSnapshot {
-  runtimeReferences: WorkspaceInitializationJson[];
-  setupScript: string;
-  setupScriptName: string;
-  setupScriptNameSource: SetupScriptNameSource;
-  repoConfigScript: string | null;
-  repoConfigScriptRepo: string | null;
-  repoConfigUnavailable?: boolean;
-}
-
 interface WorkspaceInitializationSubmissionBase {
   admission: string;
-  /** One-shot component-local preparation registered outside serializable Redux state. */
-  preparationId?: string;
   prompt: string;
   contextMentions: WorkspaceInitializationContextMention[];
   fileMentions: WorkspaceInitializationFileMention[];
-  /** Terminal/script references resolved from widget snapshots at submit. */
+  /** Terminal references snapshotted at the widget edge before submit. */
   runtimeReferences: WorkspaceInitializationJson[];
   stagedItems: WorkspaceInitializationStagedItem[];
   setupScript: string;
@@ -325,6 +340,10 @@ interface WorkspaceInitializationSubmissionBase {
   setupScriptNameSource: SetupScriptNameSource;
   repoConfigScript: string | null;
   repoConfigScriptRepo: string | null;
+  setupScriptExplicit: boolean;
+  /** The component probe was still running at submit; the saga settles it. */
+  repoConfigUnavailable: boolean;
+  repoConfigProbe?: { id: string; requestId: string };
   branchBehind: number;
   pullEnabled: boolean;
   skipIsolation: boolean;
@@ -344,6 +363,7 @@ export interface CompactWorkspaceInitializationSubmission extends WorkspaceIniti
   prefillTitle: string;
   remoteSetup: WorkspaceInitializerRemoteSetup | null;
   checkoutFormId: string;
+  checkoutScopeKey: string;
   repositoryCheckout: CheckoutSelection | null;
   repositoryCheckoutDraft?: RepositoryCheckoutDraft;
   checkoutContextUrl: string | null;
@@ -352,10 +372,7 @@ export interface CompactWorkspaceInitializationSubmission extends WorkspaceIniti
   selectedPRTargetBranch: string;
   agent: WorkspaceInitializerAgentSettings;
   rememberAgentRepoKey?: string;
-  setupScriptExplicit: boolean;
   repoConfigError: boolean;
-  /** The repo-config probe was still loading once settled. */
-  repoConfigUnavailable: boolean;
   setupScriptProbeKey: string | null;
   setupScriptRepoKey: string | null;
   formPersistence: boolean;
@@ -449,6 +466,7 @@ export interface WorkspaceInitializerState {
   pendingGitHubPrefill: WorkspaceInitializerPendingGitHubPrefill | null;
   recentRepoRefreshes: Collection<WorkspaceInitializerRecentRepoRefresh, 'id'>;
   directoryStatusChecks: Collection<WorkspaceInitializerDirectoryStatusCheck, 'id'>;
+  repoConfigProbes: Collection<WorkspaceInitializerRepoConfigProbe, 'id'>;
   initializationOutcomes: Collection<WorkspaceInitializationOutcome, 'id'>;
   initializationResumes: Collection<WorkspaceInitializationResume, 'id'>;
   draftRestores: Collection<WorkspaceInitializerDraftRestore, 'id'>;

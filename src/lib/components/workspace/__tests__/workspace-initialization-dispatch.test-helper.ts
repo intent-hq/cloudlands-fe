@@ -5,10 +5,6 @@ import {
   retainImagePlacementIdentity,
   sendHeldFirstMessage,
 } from '$lib/components/workspace/initializer/staged-attachments';
-import {
-  releaseWorkspaceInitializationPreparation,
-  resolveWorkspaceInitializationPreparation,
-} from '$lib/components/workspace/initializer/workspace-initialization-preparation';
 import { store as appStore } from '$store/renderer/store';
 import {
   buildWorkspaceInitializationResume,
@@ -16,6 +12,12 @@ import {
   prepareCompactWorkspaceInitialization,
   prepareOnboardingWorkspaceInitialization,
 } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initialization-submission';
+import {
+  fetchGitHubRepoConfigSetupScript,
+  fetchRepoConfigSetupScript,
+  REPO_CONFIG_SCRIPT_NAME,
+} from '$features/setup-scripts/repo-config';
+import { parseGitHubUrl } from '$lib/utils/workspace-validation';
 import {
   clearWorkspaceInitializationResume,
   setCompactWorkspaceInitializerFormState,
@@ -33,9 +35,43 @@ import type {
   WorkspaceInitializationResumeInput,
   WorkspaceInitializationResult,
   WorkspaceInitializationSubmission,
+  WorkspaceInitializerRepoConfigProbeInput,
 } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
 
+interface TestRepoConfigProbe extends WorkspaceInitializerRepoConfigProbeInput {
+  id: string;
+  requestId: string;
+  admission: string;
+  status: 'pending' | 'ready' | 'failed';
+  script: string | null;
+}
+
+const repoConfigProbes = new Map<string, TestRepoConfigProbe>();
+const repoConfigProbeSubscribers = new Map<string, Set<(probe?: TestRepoConfigProbe) => void>>();
+
+function publishRepoConfigProbe(id: string, probe?: TestRepoConfigProbe) {
+  if (probe) repoConfigProbes.set(id, probe);
+  else repoConfigProbes.delete(id);
+  for (const subscriber of repoConfigProbeSubscribers.get(id) ?? []) subscriber(probe);
+}
+
+export function selectTestWorkspaceInitializerRepoConfigProbe(id: string) {
+  return {
+    subscribe(run: (probe?: TestRepoConfigProbe) => void) {
+      const subscribers = repoConfigProbeSubscribers.get(id) ?? new Set();
+      subscribers.add(run);
+      repoConfigProbeSubscribers.set(id, subscribers);
+      run(repoConfigProbes.get(id));
+      return () => {
+        subscribers.delete(run);
+        if (subscribers.size === 0) repoConfigProbeSubscribers.delete(id);
+      };
+    },
+  };
+}
+
 interface AsyncInitializationAction {
+  type?: string;
   asyncActionType?: string;
   seq: number;
   success: (result: WorkspaceInitializationResult) => unknown;
@@ -66,6 +102,23 @@ interface ResumeAction extends AsyncInitializationAction {
   };
 }
 
+interface RepoConfigProbeRequestedAction {
+  type: 'workspaceInitializer/repoConfigProbeRequested';
+  asyncActionType?: string;
+  payload: [
+    id: string,
+    requestId: string,
+    admission: string,
+    input: WorkspaceInitializerRepoConfigProbeInput,
+  ];
+}
+
+interface RepoConfigProbeReleasedAction {
+  type: 'workspaceInitializer/repoConfigProbeReleased';
+  asyncActionType?: string;
+  payload: [id: string, requestId?: string];
+}
+
 interface CreateSuccess {
   ok: true;
   data: {
@@ -94,15 +147,107 @@ interface AdapterOptions {
 }
 
 export function createWorkspaceInitializationDispatchAdapter(options: AdapterOptions) {
-  return (action: InitializationAction | SubmissionAction | ResumeAction) => {
+  return (
+    action:
+      | InitializationAction
+      | SubmissionAction
+      | ResumeAction
+      | RepoConfigProbeRequestedAction
+      | RepoConfigProbeReleasedAction,
+  ) => {
     if (action.asyncActionType === 'workspaceInitializer/initializationSubmitted') {
       void settleSubmittedInitialization(action as SubmissionAction, options);
     } else if (action.asyncActionType === 'workspaceInitializer/initializationResumeRequested') {
       void settleResumedInitialization(action as ResumeAction, options);
     } else if (action.asyncActionType === 'workspaceInitializer/initializationRequested') {
       void settleInitialization(action as InitializationAction, options);
+    } else if (action.type === 'workspaceInitializer/repoConfigProbeRequested') {
+      void settleRepoConfigProbe(action as RepoConfigProbeRequestedAction);
+    } else if (action.type === 'workspaceInitializer/repoConfigProbeReleased') {
+      const [id, requestId] = (action as RepoConfigProbeReleasedAction).payload;
+      const current = repoConfigProbes.get(id);
+      if (current && (requestId === undefined || current.requestId === requestId)) {
+        publishRepoConfigProbe(id);
+      }
     }
     return action;
+  };
+}
+
+async function settleRepoConfigProbe(action: RepoConfigProbeRequestedAction) {
+  const [id, requestId, admission, input] = action.payload;
+  const pending = { ...input, id, requestId, admission, status: 'pending' as const, script: null };
+  publishRepoConfigProbe(id, pending);
+  if (input.debounce) await new Promise((resolve) => setTimeout(resolve, 300));
+  if (repoConfigProbes.get(id)?.requestId !== requestId) return;
+  try {
+    let script: string | null = null;
+    if (input.identity.type === 'local' && input.identity.path?.startsWith('/')) {
+      script = await fetchRepoConfigSetupScript(input.identity.path);
+    } else if (input.identity.type === 'github' && input.identity.path) {
+      const github = parseGitHubUrl(input.identity.githubUrl || input.identity.path);
+      if (github) {
+        script = await fetchGitHubRepoConfigSetupScript(
+          github.owner,
+          github.repo,
+          input.identity.branch || undefined,
+        );
+      }
+    }
+    if (repoConfigProbes.get(id)?.requestId === requestId) {
+      publishRepoConfigProbe(id, { ...pending, status: 'ready', script });
+    }
+  } catch {
+    if (repoConfigProbes.get(id)?.requestId === requestId) {
+      publishRepoConfigProbe(id, { ...pending, status: 'failed', script: null });
+    }
+  }
+}
+
+async function settleSubmissionProbeForTest(
+  submission: WorkspaceInitializationSubmission,
+): Promise<WorkspaceInitializationSubmission> {
+  const reference = submission.repoConfigProbe;
+  if (!reference) return submission;
+  let probe = repoConfigProbes.get(reference.id);
+  if (probe?.requestId === reference.requestId && probe.status === 'pending') {
+    probe = await new Promise<TestRepoConfigProbe | undefined>((resolve) => {
+      const unsubscribe = selectTestWorkspaceInitializerRepoConfigProbe(reference.id).subscribe(
+        (next) => {
+          if (!next || next.requestId !== reference.requestId || next.status !== 'pending') {
+            unsubscribe();
+            resolve(next);
+          }
+        },
+      );
+    });
+  }
+  if (!probe || probe.requestId !== reference.requestId || probe.status === 'pending') {
+    return submission.entrypoint === 'compact'
+      ? { ...submission, repoConfigUnavailable: true }
+      : submission;
+  }
+  if (probe.status === 'failed') {
+    return submission.entrypoint === 'compact'
+      ? { ...submission, repoConfigUnavailable: false, repoConfigError: true }
+      : submission;
+  }
+  const canApply =
+    probe.applyAllowed &&
+    !submission.setupScriptExplicit &&
+    submission.setupScript === probe.setupScriptAtRequest;
+  return {
+    ...submission,
+    repoConfigUnavailable: false,
+    repoConfigScript: probe.script,
+    repoConfigScriptRepo: submission.entrypoint === 'compact' ? probe.probeKey : probe.repoKey,
+    ...(canApply && probe.script
+      ? {
+          setupScript: probe.script,
+          setupScriptName: REPO_CONFIG_SCRIPT_NAME,
+          setupScriptNameSource: 'repo-config' as const,
+        }
+      : {}),
   };
 }
 
@@ -127,13 +272,9 @@ async function settleResumedInitialization(action: ResumeAction, options: Adapte
 }
 
 async function settleSubmittedInitialization(action: SubmissionAction, options: AdapterOptions) {
-  const { submission, consumer, progressId } = action.payload;
+  const { submission: submitted, consumer, progressId } = action.payload;
   try {
-    const preparation = submission.preparationId
-      ? await resolveWorkspaceInitializationPreparation(submission.preparationId)
-      : undefined;
-    if (submission.preparationId && !preparation) throw new Error('initialization-cancelled');
-    const preparedSubmission = preparation ? { ...submission, ...preparation } : submission;
+    const submission = await settleSubmissionProbeForTest(submitted);
     const prepare =
       submission.entrypoint === 'compact'
         ? prepareCompactWorkspaceInitialization
@@ -141,7 +282,7 @@ async function settleSubmittedInitialization(action: SubmissionAction, options: 
     const prepared = await runSaga(
       { onError: () => {} },
       prepare,
-      preparedSubmission as never,
+      submission as never,
       () => true,
     ).toPromise();
     if (!prepared) throw new Error('initialization-cancelled');
@@ -157,15 +298,12 @@ async function settleSubmittedInitialization(action: SubmissionAction, options: 
     options.setOutcome?.({
       ...consumer,
       seq: action.seq,
-      entrypoint: submission.entrypoint,
+      entrypoint: submitted.entrypoint,
       status: 'failure',
       stage: 'prepare',
       error: failure.message,
     });
     action.failure(failure);
-  } finally {
-    if (submission.preparationId)
-      releaseWorkspaceInitializationPreparation(submission.preparationId);
   }
 }
 

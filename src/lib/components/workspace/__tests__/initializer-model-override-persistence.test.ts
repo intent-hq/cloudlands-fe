@@ -15,7 +15,10 @@ import type {
   CompactWorkspaceInitializationSubmission,
   CompactWorkspaceInitializerFormState,
 } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
-import { createWorkspaceInitializationDispatchAdapter } from './workspace-initialization-dispatch.test-helper';
+import {
+  createWorkspaceInitializationDispatchAdapter,
+  selectTestWorkspaceInitializerRepoConfigProbe,
+} from './workspace-initialization-dispatch.test-helper';
 
 const mocks = vi.hoisted(() => {
   function writable<T>(initial: T) {
@@ -125,6 +128,7 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(''),
   selectWorkspaceInitializerDraftAuthority: () =>
     mocks.readable({ restore: undefined, clear: undefined }),
+  selectWorkspaceInitializerRepoConfigProbe: selectTestWorkspaceInitializerRepoConfigProbe,
   selectWorkspaceInitializationOutcomeForConsumer: () => mocks.initializationOutcome$,
   selectWorkspaceInitializationResume: { select: () => undefined },
 }));

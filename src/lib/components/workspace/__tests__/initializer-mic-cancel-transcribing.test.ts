@@ -59,6 +59,7 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
   selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
   selectWorkspaceInitializerDraftAuthority: () =>
     mocks.readable(() => ({ restore: undefined, clear: undefined })),
+  selectWorkspaceInitializerRepoConfigProbe: () => mocks.readable(() => undefined),
   selectWorkspaceInitializationOutcomeForConsumer: () => mocks.readable(() => undefined),
   selectWorkspaceInitializationResume: { select: () => undefined },
 }));

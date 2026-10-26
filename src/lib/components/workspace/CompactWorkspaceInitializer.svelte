@@ -23,16 +23,14 @@
   } from './initializer/initial-repo-utils';
   import { goto } from '$app/navigation';
   import { v4 as uuidv4 } from 'uuid';
-  import { registerWorkspaceInitializationPreparation } from './initializer/workspace-initialization-preparation';
+  import { snapshotTerminalMentions } from '$features/onboarding/utils/parse-context-references';
   import SetupScriptTrigger from './initializer/SetupScriptTrigger.svelte';
   import {
     SETUP_SCRIPT_TEMPLATES,
     getTemplateContent,
     chooseDefaultSetupScript,
-    createRepoConfigProbeScheduler,
     probeIdentityKey,
     repoIdentityKey,
-    toRepoConfigSubset,
     type RepoIdentity,
     setupScriptDisplayName,
     REPO_CONFIG_SCRIPT_NAME,
@@ -48,10 +46,13 @@
     workspaceInitializerDraftFlushRequested,
     workspaceInitializerDraftOwnerReleased,
     workspaceInitializerDraftRestoreRequested,
+    workspaceInitializerDraftSaveCancelled,
     workspaceInitializerDraftSaveScheduled,
     clearWorkspaceInitializationResume,
     workspaceInitializationResumeRequested,
     workspaceInitializationSubmitted,
+    workspaceInitializerRepoConfigProbeRequested,
+    workspaceInitializerRepoConfigProbeReleased,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import {
     selectWorkspaceInitializerGitAvailability,
@@ -66,11 +67,11 @@
     selectWorkspaceInitializerDraftAuthority,
     selectWorkspaceInitializationOutcomeForConsumer,
     selectWorkspaceInitializationResume,
+    selectWorkspaceInitializerRepoConfigProbe,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import type {
     CompactWorkspaceInitializerFormState,
     CompactWorkspaceInitializationSubmission,
-    WorkspaceInitializationJson,
     WorkspaceInitializationOutcome,
     WorkspaceInitializerAgentSettings,
     WorkspaceInitializationStagedItem,
@@ -145,7 +146,6 @@
   import type { RepositoryCheckoutDraft } from '$store/renderer/slices/repository-checkout/repository-checkout-types';
   import {
     opened as checkoutOpened,
-    checkoutRepoConfigRequested,
     closed as checkoutClosed,
     invalidDraftOpened,
     projectQueryChanged,
@@ -533,6 +533,8 @@
   let isNewRepo = $state(savedState?.isNewRepo ?? false);
   let isValidPath = $state(savedState?.isValidPath ?? false);
   const checkoutFormId = uuidv4();
+  const repoConfigProbeId = `compact-repo-config:${uuidv4()}`;
+  const repoConfigProbe$ = selectWorkspaceInitializerRepoConfigProbe(repoConfigProbeId);
   const labsGitLab$ = selectLabsGitLabEnabled();
   const gitlabInstance$ = selectGitLabAuthInstanceBaseUrl();
   const gitlabConfigured$ = selectGitLabAuthIsConfigured();
@@ -1027,6 +1029,7 @@
   let draftRestoreRequestId = $state(crypto.randomUUID());
   let draftOwnerAdmission: string | null | undefined = undefined;
   let draftProvenance: string | undefined;
+  let draftEditedBeforeRestore = false;
   // The initialization saga clears the daemon draft on a successful create.
   // Prevent the emptied local form and teardown from scheduling a second write.
   let draftCleared = false;
@@ -1039,6 +1042,7 @@
     draftOwnerAdmission = admission;
     draftRestored = false;
     draftRestoreApplied = false;
+    draftEditedBeforeRestore = false;
     if (hadOwner)
       appStore.dispatch(workspaceInitializerDraftOwnerReleased(draftOwnerId, priorRequestId));
     if (admission === null) return;
@@ -1075,8 +1079,9 @@
     draftRestoreApplied = true;
     if (restore.status === 'restored') {
       const restoredItems = deserializeDraftAttachments(restore.attachments);
-      if (restoredItems.length > 0 && contextItems.length === 0) contextItems = restoredItems;
-      if (restore.text && !initialPrompt) {
+      const localDraftUntouched = !initialPrompt && contextItems.length === 0;
+      if (localDraftUntouched && restoredItems.length > 0) contextItems = restoredItems;
+      if (localDraftUntouched && restore.text) {
         initialPrompt = restore.text;
         setTimeout(() => {
           if (!draftRestoreCancelled && draftRestoreRequestId === restoreRequestId)
@@ -1089,12 +1094,26 @@
 
   // Save the draft to the daemon (debounced) so it survives app restarts.
   // Empty text with no attachments is the documented clear (PROTOCOL §5.16).
-  // Only the cheap dependency reads run per keystroke. `contextItems` is only
-  // ever reassigned wholesale, so the reference read is sufficient for
-  // reactivity. If the restore failed, the saver skips an empty save so it
-  // can't clear a daemon draft we never got to read.
+  // Non-empty local text or attachments may be saved before restore settles:
+  // user input is newer and must survive an unload. An untouched empty form is
+  // still skipped so it cannot clear a daemon draft we never got to read.
   $effect(() => {
-    if (!draftRestored || draftCleared) return;
+    if (draftCleared) return;
+    const empty = !initialPrompt && contextItems.length === 0;
+    if (!draftRestored) {
+      if (!empty) draftEditedBeforeRestore = true;
+      if (empty) {
+        if (draftEditedBeforeRestore)
+          appStore.dispatch(
+            workspaceInitializerDraftSaveCancelled(
+              draftOwnerId,
+              draftRestoreRequestId,
+              selectPrincipalActionContext.select(appStore.state) ?? undefined,
+            ),
+          );
+        return;
+      }
+    }
     const payload = buildNewWorkspaceDraftPayload(initialPrompt, contextItems);
     if (payload)
       appStore.dispatch(
@@ -1770,25 +1789,34 @@
       repoCacheWarmer.warm({ repoType: type, githubUrl: type === 'github' ? githubUrl : '' });
   });
 
-  // Auto-restore last used setup script when the repo changes, and re-probe
-  // the repo config when the GitHub branch changes (monorepo#835). This
-  // ensures the setup script name/content are correct in the button bar
-  // without requiring the user to open the setup script modal. The scheduler
-  // keys runs on repo identity + ref: repo switches restore and probe at
-  // once, branch-only changes re-probe debounced.
-  const setupScriptProbeScheduler = createRepoConfigProbeScheduler();
-  let previousSetupScriptProbeKey: string | null = null;
-  onDestroy(() => setupScriptProbeScheduler.dispose());
+  // The initializer saga owns probe debounce, transport, replacement, and
+  // cancellation. This component only applies its correlated result while the
+  // local editor still matches the snapshot that started the probe.
+  let previousSetupScriptRepoKey: string | null = null;
+  let previousSetupScriptProbeKey: string | null | undefined = undefined;
+  let previousSetupScriptProbeAdmission: string | null | undefined = undefined;
+  let repoConfigProbeRequestId = '';
+  let appliedRepoConfigProbeRequestId = '';
   $effect(() => {
     const identity = setupScriptIdentity;
     const path = setupScriptRepoKey;
+    const identityKey = repoIdentityKey(identity);
     const key = setupScriptProbeKey;
     const scope = checkoutScope;
     const selected = repoType === 'gitlab' ? $checkoutSelection$ : null;
+    const admission = $draftAdmission$;
     untrack(() => {
-      if (previousSetupScriptProbeKey !== key) {
+      const probeChanged = previousSetupScriptProbeKey !== key;
+      const admissionChanged = previousSetupScriptProbeAdmission !== admission;
+      if (!probeChanged && !admissionChanged) return;
+      const repoChanged = identityKey !== previousSetupScriptRepoKey;
+      const initialRepo = previousSetupScriptRepoKey === null;
+      const preservedRestoredState = initialRepo && !!setupScript.trim();
+      previousSetupScriptRepoKey = identityKey;
+      previousSetupScriptProbeKey = key;
+      previousSetupScriptProbeAdmission = admission;
+      if (probeChanged) {
         showSetupScript = false;
-        previousSetupScriptProbeKey = key;
         repoConfigScript = null;
         repoConfigScriptRepo = null;
         repoConfigError = false;
@@ -1797,22 +1825,12 @@
           restoreLastUsedSetupScript(path ?? '');
         }
       }
-    });
-
-    setupScriptProbeScheduler.onSelectionChange({
-      identity,
-      onRepoChange: ({ preservedRestoredState }) => {
-        // Repo changed — invalidate any cached repo-config script
+      if (repoChanged) {
         repoConfigScript = null;
         repoConfigScriptRepo = null;
         setupScriptExplicit = false;
         showSetupScript = false;
-
-        // On initial mount, don't override if there's already a setup script
-        // set (e.g., from restored form state). On repo switches, always
-        // restore.
         if (!preservedRestoredState) {
-          // Restore last used script for this repo (or clear if no saved script exists)
           if (path) {
             restoreLastUsedSetupScript(path);
           } else {
@@ -1822,37 +1840,70 @@
             isCustomSetupScript = false;
           }
         }
-      },
-      getCurrentIdentity: () => setupScriptIdentity,
-      readScript: selected
-        ? async () => {
+      }
+      if (admission === null) {
+        appStore.dispatch(workspaceInitializerRepoConfigProbeReleased(repoConfigProbeId));
+        return;
+      }
+      repoConfigProbeRequestId = crypto.randomUUID();
+      const checkout = selected
+        ? (() => {
             const { mode: _mode, ...query } = selected;
-            const action = checkoutRepoConfigRequested(checkoutFormId, scope, query);
-            appStore.dispatch(action);
-            const result = await action.promise;
-            if (result.status !== 'ready') throw new Error('REPOSITORY_CONFIG_UNAVAILABLE');
-            return toRepoConfigSubset(result.value.config).setupScript;
-          }
-        : undefined,
-      onProbeError: () => {
-        repoConfigError = true;
-      },
-      getSetupScript: () => setupScript,
-      isSetupScriptModalOpen: () => showSetupScript,
-      isCustomSetupScript: () => isCustomSetupScript || setupScriptExplicit,
-      setLoading: (loading) => (isRepoConfigLoading = loading),
-      onProbeResult: (script) => {
-        repoConfigScript = script;
-        repoConfigScriptRepo = key;
-        repoConfigError = false;
-      },
-      applyScript: (script) => {
-        setupScript = script;
-        setupScriptName = REPO_CONFIG_SCRIPT_NAME;
-        setupScriptNameSource = 'repo-config';
-        isCustomSetupScript = false;
-      },
+            return { formId: checkoutFormId, scopeKey: scope, query };
+          })()
+        : undefined;
+      appStore.dispatch(
+        workspaceInitializerRepoConfigProbeRequested(
+          repoConfigProbeId,
+          repoConfigProbeRequestId,
+          admission,
+          {
+            identity: {
+              path: identity.path,
+              type: identity.type ?? null,
+              githubUrl: identity.githubUrl,
+              branch: identity.branch,
+            },
+            probeKey: key,
+            repoKey: path,
+            debounce: !repoChanged,
+            setupScriptAtRequest: setupScript,
+            applyAllowed:
+              !preservedRestoredState &&
+              !showSetupScript &&
+              !isCustomSetupScript &&
+              !setupScriptExplicit,
+            checkout,
+          },
+        ),
+      );
     });
+  });
+  $effect(() => {
+    const probe = $repoConfigProbe$;
+    if (!probe || probe.requestId !== repoConfigProbeRequestId) return;
+    isRepoConfigLoading = probe.status === 'pending';
+    if (probe.status === 'failed') {
+      repoConfigError = true;
+      return;
+    }
+    if (probe.status !== 'ready' || appliedRepoConfigProbeRequestId === probe.requestId) return;
+    appliedRepoConfigProbeRequestId = probe.requestId;
+    repoConfigScript = probe.script;
+    repoConfigScriptRepo = probe.probeKey;
+    repoConfigError = false;
+    if (
+      probe.script &&
+      probe.applyAllowed &&
+      setupScript === probe.setupScriptAtRequest &&
+      !showSetupScript &&
+      !isCustomSetupScript &&
+      !setupScriptExplicit
+    ) {
+      setupScript = probe.script;
+      setupScriptName = REPO_CONFIG_SCRIPT_NAME;
+      setupScriptNameSource = 'repo-config';
+    }
   });
 
   // Derived validation
@@ -2040,13 +2091,11 @@
 
   let submissionGeneration = 0;
   let mounted = true;
-  let releaseCompactPreparation: (() => void) | null = null;
   onDestroy(() => {
     mounted = false;
     submissionGeneration++;
     if (activeInitializationSeq !== null) releaseInitialization(activeInitializationSeq);
-    releaseCompactPreparation?.();
-    releaseCompactPreparation = null;
+    appStore.dispatch(workspaceInitializerRepoConfigProbeReleased(repoConfigProbeId));
   });
 
   let pullContinuation: (() => boolean) | null = null;
@@ -2138,107 +2187,8 @@
         })),
       });
 
-      releaseCompactPreparation?.();
-      const preparationId = crypto.randomUUID();
-      const releasePreparation = registerWorkspaceInitializationPreparation(
-        preparationId,
-        async () => {
-          const runtimeReferences: WorkspaceInitializationJson[] = [];
-          // Resolve terminal and script widget state while the component still owns the widgets.
-          for (const mention of fileMentions) {
-            if (mention.type === 'terminal') {
-              try {
-                const { terminalManager } =
-                  await import('$features/terminal/terminal-manager.svelte');
-                if (!preparationCurrent()) return null;
-                const wsId = (mention.meta?.workspaceId as string) || '';
-                const bufferContent = await terminalManager.getBufferContent(mention.id, wsId);
-                if (!preparationCurrent()) return null;
-                if (bufferContent) {
-                  const contextRef = {
-                    type: 'terminal',
-                    content: bufferContent, // For stdinContext builder compatibility
-                    terminalContent: bufferContent,
-                    title: mention.label,
-                    metadata: { terminalName: mention.label, terminalId: mention.id },
-                  };
-                  runtimeReferences.push(contextRef as WorkspaceInitializationJson);
-                }
-              } catch (error) {
-                logger.warn('[CompactWorkspaceInitializer] Failed to read terminal buffer:', error);
-              }
-            }
-
-            if (mention.type === 'script') {
-              try {
-                const { selectScriptOutput, selectScriptById, selectScriptRuntime } =
-                  await import('$store/renderer/slices/scripts/scripts-selectors');
-                if (!preparationCurrent()) return null;
-                const { scriptOutputToLines } = await import('$lib/utils/script-output-text');
-                if (!current()) return null;
-                const scriptId = mention.id;
-                const wsId = (mention.meta?.workspaceId as string) || null;
-                const state = appStore.state;
-                const outputLines = scriptOutputToLines(
-                  selectScriptOutput.select(state, wsId, scriptId),
-                );
-                const script = selectScriptById.select(state, wsId, scriptId);
-                const runtime = selectScriptRuntime.select(state, wsId, scriptId);
-
-                let content = `Script: ${script?.name || mention.label}\n`;
-                content += `Command: ${script?.command || 'unknown'}\n`;
-                content += `Status: ${runtime.status}`;
-                if (runtime.exitCode !== null && runtime.exitCode !== undefined) {
-                  content += ` (exit code: ${runtime.exitCode})`;
-                }
-                content += '\n';
-                if (runtime.detectedUrl) {
-                  content += `URL: ${runtime.detectedUrl}\n`;
-                }
-                if (outputLines.length > 0) {
-                  const lastLines = outputLines.slice(-100).join('\n');
-                  content += `\nOutput (last ${Math.min(outputLines.length, 100)} lines):\n${lastLines}`;
-                } else {
-                  content += '\nNo output yet.'; // i18n-ignore (agent-facing context content)
-                }
-
-                const contextRef = {
-                  type: 'script',
-                  content,
-                  title: script?.name || mention.label,
-                  metadata: {
-                    scriptId,
-                    command: script?.command,
-                    status: runtime.status,
-                    exitCode: runtime.exitCode,
-                    detectedUrl: runtime.detectedUrl,
-                  },
-                };
-                runtimeReferences.push(contextRef as WorkspaceInitializationJson);
-              } catch (error) {
-                logger.warn('[ScriptMention] Failed to resolve script context:', error);
-              }
-            }
-          }
-
-          if (!preparationCurrent()) return null;
-          // Await any in-flight repo-config probe (bounded, sub-second) so the
-          // setup-script decision below sees the committed `.intent/config.json`
-          // instead of racing the probe (monorepo#1862).
-          await setupScriptProbeScheduler.settled();
-          if (!preparationCurrent()) return null;
-          return {
-            runtimeReferences,
-            setupScript,
-            setupScriptName,
-            setupScriptNameSource,
-            repoConfigScript: repoConfigScript ?? null,
-            repoConfigScriptRepo: repoConfigScriptRepo ?? null,
-            repoConfigUnavailable: isRepoConfigLoading,
-          };
-        },
-      );
-      releaseCompactPreparation = releasePreparation;
+      const runtimeReferences = await snapshotTerminalMentions(fileMentions, logger);
+      if (!preparationCurrent()) return;
       const checkoutInstanceBaseUrl = selectCheckoutForm.select(appStore.state, checkoutFormId)
         ?.capture?.instanceBaseUrl;
       const repositoryCheckoutDraft =
@@ -2250,7 +2200,6 @@
       const submission: CompactWorkspaceInitializationSubmission = {
         entrypoint: 'compact',
         admission,
-        preparationId,
         prompt: initialPrompt,
         contextMentions: $state.snapshot(
           contextMentions,
@@ -2258,7 +2207,8 @@
         fileMentions: $state.snapshot(
           fileMentions,
         ) as CompactWorkspaceInitializationSubmission['fileMentions'],
-        runtimeReferences: [],
+        runtimeReferences:
+          runtimeReferences as unknown as CompactWorkspaceInitializationSubmission['runtimeReferences'],
         stagedItems: $state.snapshot(contextItems) as WorkspaceInitializationStagedItem[],
         setupScript,
         setupScriptName,
@@ -2302,6 +2252,10 @@
         setupScriptExplicit,
         repoConfigError,
         repoConfigUnavailable: isRepoConfigLoading,
+        repoConfigProbe: repoConfigProbeRequestId
+          ? { id: repoConfigProbeId, requestId: repoConfigProbeRequestId }
+          : undefined,
+        checkoutScopeKey: checkoutScope,
         setupScriptProbeKey: setupScriptProbeKey ?? null,
         setupScriptRepoKey: setupScriptRepoKey ?? null,
         formPersistence: debugConfig.get('enableFormPersistence'),
@@ -2324,11 +2278,6 @@
       void initialization.promise.catch(() => {
         // Correlated selector outcomes own UI settlement, including reset removal.
       });
-      const releaseSettledPreparation = () => {
-        releasePreparation();
-        if (releaseCompactPreparation === releasePreparation) releaseCompactPreparation = null;
-      };
-      void initialization.promise.then(releaseSettledPreparation, releaseSettledPreparation);
     } catch (err) {
       if (!current()) return;
       const failureMessage = err instanceof Error ? err.message : '';
@@ -2342,10 +2291,6 @@
           : m.workspace_compactInitializer_createFailed_error();
       }
     } finally {
-      if (!handedOff) {
-        releaseCompactPreparation?.();
-        releaseCompactPreparation = null;
-      }
       if (!handedOff && mounted && generation === submissionGeneration) {
         isCreating = false;
         activeCreateProgressId = null;
