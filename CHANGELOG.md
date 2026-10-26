@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.236.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.235.1...v2.236.0) (2026-10-26)
+
+
+### 🚀 Features
+
+* **chat:** order @-mention results by kind ([#3701](https://github.com/intent-hq/cloudlands-fe/issues/3701)) ([622350f](https://github.com/intent-hq/cloudlands-fe/commit/622350fb577cfa7c79a1b676da841dd9a68e429b))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.48 ([#3723](https://github.com/intent-hq/cloudlands-fe/issues/3723)) ([8fb156c](https://github.com/intent-hq/cloudlands-fe/commit/8fb156c5f5198e6a604ff2c016027502f770092c))
+* **confirm:** surface rejected confirm actions in the dialog ([#3719](https://github.com/intent-hq/cloudlands-fe/issues/3719)) ([2199169](https://github.com/intent-hq/cloudlands-fe/commit/21991693b9f39d539be7b0b1a428001185b27b16))
+* fall back to generic copy when a backend update fails without a reason ([#3715](https://github.com/intent-hq/cloudlands-fe/issues/3715)) ([a905b64](https://github.com/intent-hq/cloudlands-fe/commit/a905b64a68b8c134b1e17b8793c175db19b9b96d))
+
 ## [2.235.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.235.0...v2.235.1) (2026-10-25)
 
 
