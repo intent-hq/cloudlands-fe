@@ -7,7 +7,20 @@ import type {
   DesktopScreenshotResult,
 } from '../../../shared/types/desktop';
 import { ReverseRpcHandlerError } from '../../backend/main/json-rpc-client';
-import { desktopFailure, parseDesktopRequest, type DesktopRequest } from './desktop-validation';
+import {
+  desktopFailure,
+  parseDesktopRequest,
+  targetMismatch,
+  type DesktopRequest,
+} from './desktop-validation';
+import {
+  DesktopWindowIds,
+  describeWindows,
+  focusedKey,
+  targetReason,
+  windowKey,
+  type NativeWindowState,
+} from './desktop-windows';
 
 export interface DesktopLocalSession {
   backendId: string;
@@ -28,6 +41,8 @@ export interface DesktopOverlay {
   pulse(sessionId: string): void;
   excludedWindows(): string[];
 }
+/** Throws `desktop-target-mismatch` when a targeted window is not ready. */
+export type DesktopTargetCheck = (point?: { x: number; y: number }) => Promise<void>;
 export interface DesktopNative {
   identity(): Promise<{ computerId: string; computerName: string; platform: 'macos' | 'windows' }>;
   acquire(signal: AbortSignal): Promise<void>;
@@ -41,12 +56,19 @@ export interface DesktopNative {
     display: DesktopDisplay,
     layout: DesktopDisplay[],
   ): Promise<(DesktopDisplay & { data: string })[]>;
+  windows(
+    excludedWindows: string[],
+    display?: DesktopDisplay,
+    layout?: DesktopDisplay[],
+  ): Promise<NativeWindowState>;
+  focusWindow(window: { handle: string; pid: number }, excludedWindows: string[]): Promise<void>;
   input(
     action: DesktopAction,
     display: DesktopDisplay | undefined,
     check: (executed?: boolean) => void,
     signal: AbortSignal,
     layout?: DesktopDisplay[],
+    target?: DesktopTargetCheck,
   ): Promise<void>;
 }
 export interface DesktopCredential {
@@ -95,6 +117,7 @@ interface Session {
   ticket?: Ticket;
   executing: boolean;
   layout?: { id: string; displays: DesktopDisplay[] };
+  windowIds: DesktopWindowIds;
 }
 const bindingKeys = ['workspaceId', 'agentId', 'principalId', 'connectionEpoch'] as const;
 
@@ -388,6 +411,13 @@ export class DesktopExecutor {
           layout.displays,
         );
         guard();
+        // Sampled in the same step as the capture; a failure fails the screenshot.
+        const windowState = await this.native.windows(
+          this.overlay.excludedWindows(),
+          selected,
+          layout.displays,
+        );
+        guard();
         await checkLayout();
         if (
           captures.length !== 1 ||
@@ -417,11 +447,50 @@ export class DesktopExecutor {
           capturedAt: new Date().toISOString(),
           layoutId: layout.layoutId,
           displays: [{ ...display, assetId: asset.assetId, url: asset.url, mimeType: 'image/png' }],
+          ...describeWindows(windowState, s.windowIds, selected),
         };
         guard();
         this.overlay.pulse(p.sessionId);
+      } else if (action.kind === 'focusWindow') {
+        const key = s.windowIds.keyFor(action.windowId);
+        const before = await this.native.windows(this.overlay.excludedWindows());
+        guard();
+        const target = key ? before.windows.find((w) => windowKey(w) === key) : undefined;
+        if (!target) throw targetMismatch('window_unavailable', 'not_started');
+        started = true;
+        await this.native.focusWindow(
+          { handle: target.handle, pid: target.pid },
+          this.overlay.excludedWindows(),
+        );
+        guard();
+        // Verify the window, not just the process.
+        const after = await this.native.windows(this.overlay.excludedWindows());
+        guard();
+        if (after.frontmost?.pid !== target.pid) throw targetMismatch('not_frontmost', 'partial');
+        if (focusedKey(after) !== key) throw targetMismatch('not_focused', 'partial');
+        result = { ok: true };
       } else {
         guard();
+        const windowId = 'windowId' in action ? action.windowId : undefined;
+        const target =
+          windowId === undefined
+            ? undefined
+            : async (point?: { x: number; y: number }) => {
+                const key = s.windowIds.keyFor(windowId);
+                const reason = key
+                  ? targetReason(
+                      await this.native.windows(
+                        this.overlay.excludedWindows(),
+                        point ? ticket.display : undefined,
+                        point ? ticket.layout?.displays : undefined,
+                      ),
+                      key,
+                      point,
+                    )
+                  : 'window_unavailable';
+                guard();
+                if (reason) throw targetMismatch(reason, started ? 'partial' : 'not_started');
+              };
         await this.native.input(
           action,
           ticket.display,
@@ -431,6 +500,7 @@ export class DesktopExecutor {
           },
           s.abort.signal,
           ticket.layout?.displays,
+          target,
         );
         guard();
         await checkLayout();
@@ -442,9 +512,11 @@ export class DesktopExecutor {
         error instanceof ReverseRpcHandlerError
           ? (error.data as { code?: string })?.code
           : undefined;
+      // A target mismatch is an ordinary, recoverable refusal (the agent focuses
+      // and retries); held input was already released, so keep the session.
       if (
-        started ||
-        !(error instanceof ReverseRpcHandlerError) ||
+        (code !== 'desktop-target-mismatch' &&
+          (started || !(error instanceof ReverseRpcHandlerError))) ||
         code === 'desktop-os-permission-required' ||
         code === 'desktop-unsupported-operation' ||
         code === 'desktop-not-active'
@@ -484,6 +556,7 @@ export class DesktopExecutor {
       commandIds: new Set(),
       expiredTickets: new Map(),
       executing: false,
+      windowIds: new DesktopWindowIds(),
     };
     this.session = s;
     this.inFlight.add(s);
