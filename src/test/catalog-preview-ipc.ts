@@ -5,9 +5,17 @@ import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
 import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
 import type { ProviderModelInfo } from '$shared/models/wire-model-info';
 
-export function setupModelPickerPreviewHandler(providerId: string, rows: ProviderModelInfo[]) {
+export function setupModelPickerPreviewHandler(
+  providerId: string,
+  rows: ProviderModelInfo[],
+  warning?: string,
+) {
   const channel = `${providerId}:get-models`;
-  return overrideMockIpcHandler(channel, () => ({ success: true, data: rows }));
+  return overrideMockIpcHandler(channel, () => ({
+    success: true,
+    data: rows,
+    ...(warning ? { warning } : {}),
+  }));
 }
 
 export function setupProviderSelectorPreviewHandlers(availability: ProviderAvailabilityResult) {

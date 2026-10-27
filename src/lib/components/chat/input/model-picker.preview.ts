@@ -53,7 +53,15 @@ const models = [
 const selectLoadingStates = appStore.createSelector((state) => state.model.loadingState);
 let activeCleanup: (() => void) | undefined;
 
-function setupModels(populated: boolean, degraded = false, diagnostic?: string) {
+// `fallbackWarning` serves Codex's built-in list *with* a warning — what the
+// daemon returns when the Codex CLI is missing — so the open picker shows the
+// "Showing default model list" notice in its footer instead of an error screen.
+function setupModels(
+  populated: boolean,
+  degraded = false,
+  diagnostic?: string,
+  fallbackWarning?: string,
+) {
   return () => {
     activeCleanup?.();
     const previousLoading = selectLoadingStates.select(appStore.state);
@@ -63,6 +71,21 @@ function setupModels(populated: boolean, degraded = false, diagnostic?: string) 
     const previousDefault = selectEffectiveDefaultProviderId.select(appStore.state);
     const previousCollapsed = selectModelPickerCollapsedGroups.select(appStore.state);
     const restoreProviders = setupPreviewProviders();
+    if (fallbackWarning) {
+      // The daemon's Codex catalog entry carries this docs link; the notice
+      // shows it as "Setup docs". restoreProviders() puts the old rows back.
+      appStore.dispatch(
+        providerCatalogLoaded({
+          providers: selectProviderCatalogEntries
+            .select(appStore.state)
+            .map((row) =>
+              row.id === 'codex'
+                ? { ...row, loginDocsUrl: 'https://developers.openai.com/codex/cli#cli-setup' }
+                : row,
+            ),
+        }),
+      );
+    }
     const bridge = typeof window === 'undefined' ? undefined : window.electronAPI;
     const originalInvoke = bridge?.invoke;
     if (bridge && originalInvoke) {
@@ -81,7 +104,8 @@ function setupModels(populated: boolean, degraded = false, diagnostic?: string) 
       const rows = populated
         ? models.map((model) => ({ ...model, value: `${providerId}-${model.value}` }))
         : [];
-      restoreModelHandlers.push(setupModelPickerPreviewHandler(providerId, rows));
+      const warning = providerId === 'codex' ? fallbackWarning : undefined;
+      restoreModelHandlers.push(setupModelPickerPreviewHandler(providerId, rows, warning));
       appStore.dispatch(
         providerModelsLoaded(
           providerId,
@@ -90,10 +114,14 @@ function setupModels(populated: boolean, degraded = false, diagnostic?: string) 
                 models: [],
                 warning: diagnostic ?? 'Temporary model catalog failure',
               }
-            : { models: rows },
+            : { models: rows, ...(warning ? { warning } : {}) },
           epoch,
         ),
       );
+      // Like the provider-models saga, record the warning on the loading state
+      // too: the picker's install notice reads it from there.
+      if (warning)
+        appStore.dispatch(setLoadingStateForProvider({ providerId, status: 'success', warning }));
       if (providerId === 'codex')
         appStore.dispatch(setAvailableModels(degraded ? [] : rows, providerId));
     }
@@ -294,6 +322,28 @@ export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>(
           'npm error enoent This is related to npm not being able to find a file.',
           'npm error A complete log of this run can be found in: /Users/clement/.npm/_logs/2026-10-04T23_21_43_314Z-debug-0.log',
         ].join('\n'),
+      ),
+    },
+    // Codex CLI missing: the built-in list loads with a fallback warning, and
+    // the open menu's footer shows the install notice above Retry.
+    'codex-fallback': {
+      props: {
+        initialOpen: true,
+        captureMenu: true,
+        portal: false,
+        collisionBoundary: 'body',
+        providerId: 'codex',
+        selectedModel: 'codex-preview-balanced',
+        showDefaultOption: false,
+        updateGlobalStore: false,
+        updateGlobalDefault: false,
+        showManageLink: false,
+      },
+      setup: setupModels(
+        true,
+        false,
+        undefined,
+        'codex: Codex CLI not found; using the built-in model list',
       ),
     },
     'profiles-open': {
