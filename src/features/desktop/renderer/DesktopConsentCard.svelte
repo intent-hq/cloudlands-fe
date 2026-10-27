@@ -75,7 +75,7 @@
             {#if item.state === 'done'}
               <CheckCircleIcon class="size-4 shrink-0 text-success" aria-hidden="true" />
             {:else if item.state === 'failed'}
-              <WarningCircleIcon class="size-4 shrink-0 text-destructive" aria-hidden="true" />
+              <WarningCircleIcon class="size-4 shrink-0 text-danger" aria-hidden="true" />
             {:else}
               <CircleIcon class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
             {/if}
