@@ -35,9 +35,10 @@ export interface WorkspacePRPresentationRow extends ReviewMonitorExtension {
   repo: string | undefined;
   repoContext: string | undefined;
   status: PRInfo['status'];
-  /** Open PR reported by its monitor snapshot as sitting in the merge queue.
-   * The `status` stays `open` (ordering and `data-pr-status` are unchanged);
-   * only `accessibleStateLabel` / `details` say "Queued". */
+  /** Open PR sitting in the merge queue, per its monitor snapshot or, without
+   * one, the daemon pool entry's `isInMergeQueue`. The `status` stays `open`
+   * (`data-pr-status` is unchanged); the row sorts ahead of every other PR
+   * and `accessibleStateLabel` / `details` say "Queued". */
   queued: boolean;
   statusIcon: IconDefinition;
   foregroundClass: string;
@@ -49,19 +50,21 @@ export interface WorkspacePRPresentationRow extends ReviewMonitorExtension {
 }
 
 /**
- * PR lifecycle order: rows sort earliest-in-flow first, so the first row is
- * the least-progressed PR (a draft ahead of an open PR ahead of a merged one).
- * The workspace card renders only that first row, so the same-status
- * tie-breaker is user-visible: among PRs in the same state the most recently
- * updated one wins (`updatedAt` desc, missing timestamps last), then the
- * higher PR number, then the repo-qualified identity. Merge readiness from a
- * monitor snapshot does not take part in the ranking.
+ * PR ranking: a merge-queued PR comes first — it is the one about to land,
+ * so the workspace card's single pill names it. The rest sort earliest-in-flow
+ * first, so the next row is the least-progressed PR (a draft ahead of an open
+ * PR ahead of a merged one). The workspace card renders only the first row,
+ * so the same-rank tie-breaker is user-visible: the most recently updated PR
+ * wins (`updatedAt` desc, missing timestamps last), then the higher PR number,
+ * then the repo-qualified identity. Other merge-readiness signals from a
+ * monitor snapshot do not take part in the ranking.
  */
-const PR_STATUS_ORDER: Record<PRInfo['status'], number> = {
-  draft: 0,
-  open: 1,
-  merged: 2,
-  closed: 3,
+const QUEUED_RANK = 0;
+const PR_STATUS_RANK: Record<PRInfo['status'], number> = {
+  draft: 1,
+  open: 2,
+  merged: 3,
+  closed: 4,
 };
 
 function prIdentity(repo: string | undefined, number: number): string {
@@ -124,7 +127,7 @@ function getPRStatusPresentation(
  * Build presentation rows for every PR attributable to a workspace. The pool
  * keeps the existing branch/active fallback and monitor wire semantics, then
  * deduplicates by case-insensitive, repo-qualified GitHub identity. Rows are
- * sorted earliest-in-flow first (see `PR_STATUS_ORDER`).
+ * sorted merge-queued first, then earliest-in-flow (see `PR_STATUS_RANK`).
  */
 export function buildWorkspacePRPresentationModel({
   workspacePRs,
@@ -168,17 +171,19 @@ export function buildWorkspacePRPresentationModel({
     existing.monitorSnapshot = pr.monitorSnapshot ?? existing.monitorSnapshot;
   }
 
-  const statusOf = (pr: PRInfo): PRInfo['status'] => {
-    const repo = pr.crossRepo ?? workspaceRepo;
-    return !pr.resource && sourceByIdentity.get(normalizedPrIdentity(repo, pr.number))?.isDraft
-      ? 'draft'
-      : pr.status;
-  };
+  const sourceOf = (pr: PRInfo): PullRequestInfo | undefined =>
+    pr.resource
+      ? undefined
+      : sourceByIdentity.get(normalizedPrIdentity(pr.crossRepo ?? workspaceRepo, pr.number));
+  const statusOf = (pr: PRInfo): PRInfo['status'] => (sourceOf(pr)?.isDraft ? 'draft' : pr.status);
+  const queuedOf = (pr: PRInfo): boolean => isPRQueued({ ...pr, status: statusOf(pr) });
+  const rankOf = (pr: PRInfo): number =>
+    queuedOf(pr) ? QUEUED_RANK : PR_STATUS_RANK[statusOf(pr)];
 
   return [...deduplicated.values()]
     .sort(
       (a, b) =>
-        PR_STATUS_ORDER[statusOf(a)] - PR_STATUS_ORDER[statusOf(b)] ||
+        rankOf(a) - rankOf(b) ||
         compareMissingLast(a.updatedAt, b.updatedAt) ||
         b.number - a.number ||
         normalizedPrIdentity(a.crossRepo ?? workspaceRepo, a.number).localeCompare(
@@ -187,11 +192,9 @@ export function buildWorkspacePRPresentationModel({
     )
     .map((pr) => {
       const repo = pr.crossRepo ?? workspaceRepo;
-      const source = pr.resource
-        ? undefined
-        : sourceByIdentity.get(normalizedPrIdentity(repo, pr.number));
+      const source = sourceOf(pr);
       const status = statusOf(pr);
-      const queued = isPRQueued({ status, monitorSnapshot: pr.monitorSnapshot });
+      const queued = queuedOf(pr);
       const sourceDetails = pr.monitorSnapshot ? '' : getPRTooltipContent(source);
       return {
         identity: pr.monitorIdentity ?? prIdentity(repo, pr.number),
