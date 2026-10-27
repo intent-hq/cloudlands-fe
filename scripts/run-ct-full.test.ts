@@ -631,4 +631,103 @@ describe('runFull', () => {
     expect(log).toMatch(/output stayed open; killing leftover processes/);
     expect(log).not.toContain('late output');
   });
+
+  /**
+   * A real launcher -> grandchild chain. The grandchild ignores SIGINT/SIGTERM
+   * and inherits the launcher's stdout (like a Playwright worker or the CT
+   * server). `mode=stubborn`: the launcher also ignores signals, so only a
+   * group kill stops it. `mode=leak`: the launcher exits at once, leaving the
+   * silent grandchild holding the pipes.
+   */
+  function writeTreeLauncher(dir: string, mode: 'stubborn' | 'leak') {
+    const file = path.join(dir, `tree-launcher-${mode}.mjs`);
+    writeFileSync(
+      file,
+      `import { spawn } from 'node:child_process';
+const grandchild = spawn(process.execPath, ['-e', "process.on('SIGINT',()=>{});process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], { stdio: ['ignore', 'inherit', 'inherit'] });
+console.log('GRANDCHILD ' + grandchild.pid);
+${
+  mode === 'stubborn'
+    ? "process.on('SIGINT', () => {}); process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);"
+    : 'process.exit(0);'
+}
+`,
+    );
+    return file;
+  }
+
+  async function waitFor<T>(read: () => T | null, timeoutMs = 10_000): Promise<T> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const value = read();
+      if (value !== null) return value;
+      if (Date.now() > deadline) throw new Error('timed out waiting');
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+
+  function alive(pid: number) {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function grandchildPid(logFile: string) {
+    if (!existsSync(logFile)) return null;
+    const match = /GRANDCHILD (\d+)/.exec(readFileSync(logFile, 'utf8'));
+    return match ? Number(match[1]) : null;
+  }
+
+  it.skipIf(process.platform === 'win32')(
+    'a second signal kills a real launcher and the grandchild it started',
+    async () => {
+      const dir = tempDir();
+      const proc = new EventEmitter();
+      let clock = 0;
+      const logFile = path.join(dir, 'run', 'shard-1', 'output.log');
+      const run = runFull({
+        argv: ['--out-dir', path.join(dir, 'run'), '--heartbeat=0', '--shards=2'],
+        cwd: dir,
+        launcher: writeTreeLauncher(dir, 'stubborn'),
+        now: () => clock,
+        acquireLock: async () => () => {},
+        stdout: new Sink(),
+        stderr: new Sink(),
+        proc,
+      });
+      const pid = await waitFor(() => grandchildPid(logFile));
+      proc.emit('SIGTERM', 'SIGTERM');
+      clock += 5_000;
+      proc.emit('SIGTERM', 'SIGTERM');
+      expect(await run).toBe(143);
+      await waitFor(() => (alive(pid) ? null : true));
+    },
+    20_000,
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'kills a silent grandchild that keeps the pipes open after the launcher exits',
+    async () => {
+      const dir = tempDir();
+      const logFile = path.join(dir, 'run', 'shard-1', 'output.log');
+      const code = await runFull({
+        argv: ['--out-dir', path.join(dir, 'run'), '--heartbeat=0', '--shards=1'],
+        cwd: dir,
+        launcher: writeTreeLauncher(dir, 'leak'),
+        drainMs: 200,
+        acquireLock: async () => () => {},
+        stdout: new Sink(),
+        stderr: new Sink(),
+        proc: new EventEmitter(),
+      });
+      expect(code).toBe(0);
+      const pid = grandchildPid(logFile);
+      expect(pid).not.toBeNull();
+      await waitFor(() => (alive(pid!) ? null : true));
+    },
+    20_000,
+  );
 });
