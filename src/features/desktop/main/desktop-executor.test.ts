@@ -10,6 +10,7 @@ import { DesktopNativeAdapter } from './desktop-native';
 import { desktopFailure, parseDesktopRequest } from './desktop-validation';
 import type { DesktopAction } from '../../../shared/types/desktop';
 import type { NativeWindowState } from './desktop-windows';
+import type { DesktopForegroundTracker } from './desktop-foreground';
 
 const binding = {
   workspaceId: 'ws',
@@ -59,6 +60,7 @@ function setup() {
     capture: vi.fn(async () => [{ ...display, data: 'png' }]),
     windows: vi.fn(async (): Promise<NativeWindowState> => ({ windows: [] })),
     focusWindow: vi.fn(async () => {}),
+    frontmostPid: vi.fn(async () => undefined),
     input: vi.fn(async (_a, _d, check) => {
       check(true);
     }),
@@ -1319,5 +1321,106 @@ describe('desktop focus hand-back ordering', () => {
     vi.mocked(t.native.release).mockRejectedValueOnce(new Error('helper gone'));
     await expect(t.executor.invalidate('agent_end', false)).rejects.toThrow();
     expect(t.overlay.restoreFocus).not.toHaveBeenCalled();
+  });
+});
+
+describe('user app switch tracking', () => {
+  function tracked() {
+    const calls: string[] = [];
+    const foreground = {
+      begin: vi.fn(async (id: string) => void calls.push(`begin:${id}`)),
+      beforeAgentAction: vi.fn(async () => void calls.push('before')),
+      afterAgentAction: vi.fn(async () => void calls.push('after')),
+      userSwitched: vi.fn(async () => undefined),
+    };
+    return { foreground, calls };
+  }
+  async function withTracker() {
+    const base = setup();
+    const { foreground, calls } = tracked();
+    const executor = new DesktopExecutor(
+      base.native,
+      base.overlay,
+      base.reports,
+      () => 100,
+      foreground as unknown as DesktopForegroundTracker,
+    );
+    const handle = (p: unknown) => executor.handle(base.connection, p);
+    await handle({ operation: 'prepare', ...binding });
+    await handle(start);
+    let sequence = 0;
+    const run = async (action: DesktopAction) => {
+      const seq = ++sequence;
+      const r = (await handle({
+        operation: 'prepareCommand',
+        ...session,
+        commandId: `c${seq}`,
+        sequence: seq,
+        action,
+      })) as { deadlineId: string };
+      return handle({
+        operation: 'execute',
+        ...session,
+        commandId: `c${seq}`,
+        sequence: seq,
+        deadlineId: r.deadlineId,
+      });
+    };
+    return { ...base, executor, run, foreground, calls };
+  }
+  it('takes a baseline at start and samples around every input action', async () => {
+    const t = await withTracker();
+    expect(t.calls).toEqual(['begin:session']);
+    vi.mocked(t.native.input).mockImplementationOnce(async (_a, _d, check) => {
+      t.calls.push('input');
+      check(true);
+    });
+    await t.run({ kind: 'type', text: 'hi' });
+    expect(t.calls).toEqual(['begin:session', 'before', 'input', 'after']);
+    await t.run({ kind: 'screenshot' });
+    expect(t.calls).toHaveLength(4);
+    await t.executor.invalidate('agent_end');
+  });
+  it('samples after failed input too', async () => {
+    const t = await withTracker();
+    vi.mocked(t.native.input).mockRejectedValueOnce(new Error('boom'));
+    await expect(t.run({ kind: 'keypress', key: 'a' })).rejects.toThrow();
+    expect(t.calls.slice(1)).toEqual(['before', 'after']);
+  });
+  it('treats focusWindow as agent-caused for both blur and frontmost tracking', async () => {
+    const t = await withTracker();
+    const state: NativeWindowState = {
+      frontmost: { appName: 'Safari', pid: 411, focusedHandle: '1' },
+      windows: [{ handle: '1', pid: 411, appName: 'Safari', x: 0, y: 0, width: 10, height: 10 }],
+    };
+    vi.mocked(t.native.windows).mockResolvedValue(state);
+    const shot = (await t.run({ kind: 'screenshot' })) as {
+      result: { windows: { windowId: string }[] };
+    };
+    vi.mocked(t.native.focusWindow).mockImplementationOnce(async () => {
+      expect(t.overlay.agentInput).toHaveBeenLastCalledWith('session', true);
+      t.calls.push('focus');
+    });
+    await t.run({ kind: 'focusWindow', windowId: shot.result.windows[0].windowId });
+    expect(t.calls.slice(1)).toEqual(['before', 'focus', 'after']);
+    expect(vi.mocked(t.overlay.agentInput).mock.calls).toEqual([
+      ['session', true],
+      ['session', false],
+    ]);
+    await t.executor.invalidate('agent_end');
+  });
+});
+
+describe('native frontmost pid', () => {
+  it('parses a pid, no frontmost app, and rejects extra fields', async () => {
+    const reply = vi.fn<(op: string) => Promise<unknown>>();
+    const adapter = new DesktopNativeAdapter(reply);
+    reply.mockResolvedValueOnce({ pid: 411 });
+    await expect(adapter.frontmostPid()).resolves.toBe(411);
+    reply.mockResolvedValueOnce({});
+    await expect(adapter.frontmostPid()).resolves.toBeUndefined();
+    reply.mockResolvedValueOnce({ pid: 411, title: 'Secret' });
+    await expect(adapter.frontmostPid()).rejects.toThrow();
+    expect(reply).toHaveBeenCalledWith('frontmost');
   });
 });

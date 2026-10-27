@@ -276,6 +276,12 @@ actor Desktop {
             }
             return ["accessibility": accessibility, "screenRecording": screenRecording, "screenCapture": permissionReadiness.status(for: requestId)]
         }
+        // Lock-free and pid-only (no titles): read at session end, after release,
+        // to tell whether the user switched apps during the session.
+        if op == "frontmost" {
+            guard let pid = await frontmostPid() else { return [String: Any]() }
+            return ["pid": Int(pid)]
+        }
         if op == "release" { release(); return ["ok": true] }
         if op == "releaseInput" { releaseInput(); return ["ok": true] }
         if op == "acquire" {

@@ -10,6 +10,8 @@ import {
 } from './desktop-overlay-navigation';
 
 import type { DesktopLocalSession, DesktopOverlay } from './desktop-executor';
+import { DesktopForegroundTracker } from './desktop-foreground';
+import { getDesktopNativeAdapter } from './desktop-native';
 import type { DesktopEndReason } from '../../../shared/types/desktop';
 
 interface OverlayWindow {
@@ -291,10 +293,9 @@ export class DesktopControlOverlay implements DesktopOverlay {
    * Called by the executor only after native release confirms queued input and
    * held keys/buttons have drained, so no agent input can land in Intent.
    *
-   * Known gap: Electron only sees Intent's own focus changes, so a switch
-   * between two non-Intent apps after the agent left Intent is not detected
-   * yet. `userSwitchedForeground` is where a native frontmost-app signal plugs
-   * in; without it (or when it cannot tell) the blur tracking above decides.
+   * Electron only sees Intent's own focus changes, so a switch between two
+   * non-Intent apps comes from `userSwitchedForeground`, the native
+   * frontmost-app tracker; when it cannot tell, the blur tracking above decides.
    */
   async restoreFocus(sessionId: string): Promise<void> {
     const entry = this.ended;
@@ -364,9 +365,20 @@ function intentFocused(): boolean {
   return !!window && !window.isDestroyed();
 }
 
+let foreground: DesktopForegroundTracker | undefined;
+/** Shared by the executor (records agent actions) and the overlay (reads at end). */
+export function getDesktopForegroundTracker(): DesktopForegroundTracker {
+  return (foreground ??= new DesktopForegroundTracker(
+    () => getDesktopNativeAdapter().frontmostPid(),
+    DESKTOP_AGENT_SWITCH_GRACE_MS,
+  ));
+}
+
 let singleton: DesktopOverlay | undefined;
 export function getDesktopOverlay(): DesktopOverlay {
   return (singleton ??= new DesktopControlOverlay({
+    userSwitchedForeground: (session) =>
+      getDesktopForegroundTracker().userSwitched(session.sessionId),
     url:
       process.env.NODE_ENV === 'development'
         ? `http://127.0.0.1:${process.env.DEV_PORT || '5190'}${DESKTOP_OVERLAY_ROUTE}`
