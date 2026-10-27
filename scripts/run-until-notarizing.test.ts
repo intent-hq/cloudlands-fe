@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { spawn } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -15,6 +16,8 @@ import {
 const SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'run-until-notarizing.mjs');
 const dirs: string[] = [];
 const readyFiles: string[] = [];
+const leaderFiles: string[] = [];
+const wrappers: number[] = [];
 
 function scratch() {
   const dir = mkdtempSync(path.join(tmpdir(), 'run-until-notarizing-test-'));
@@ -42,9 +45,12 @@ async function waitFor(check: () => boolean) {
 
 /**
  * A fake packaging command, driven by files rather than timers so no test depends
- * on scheduling. At start it optionally writes the notarization marker and spawns a
- * long-lived grandchild, which writes `ready` with its own pid. It exits with
- * `code` once `release` exists, or never when no release file is given.
+ * on scheduling. At start it records its pid in `leader`, optionally writes the
+ * notarization marker, and spawns a long-lived grandchild, which writes `ready` with
+ * its own pid. It exits with `code` once `release` exists, or never when no release
+ * file is given. `termExitCode` makes it exit with that code on SIGTERM, as pnpm
+ * does; `grandchildCleansUp` makes the grandchild take a moment on SIGTERM and write
+ * `cleaned` before exiting, like electron-builder removing its keychain.
  */
 function fakeBuild(
   dir: string,
@@ -53,23 +59,35 @@ function fakeBuild(
     code?: number;
     release?: boolean;
     ignoreTerm?: boolean;
+    termExitCode?: number;
     grandchildIgnoresTerm?: boolean;
+    grandchildCleansUp?: boolean;
   },
 ) {
   readyFiles.push(path.join(dir, 'ready'));
+  leaderFiles.push(path.join(dir, 'leader'));
   const files = {
     ready: path.join(dir, 'ready'),
+    leader: path.join(dir, 'leader'),
+    cleaned: path.join(dir, 'cleaned'),
     release: opts.release ? path.join(dir, 'release') : null,
   };
   const source = `
     const fs = require('node:fs');
     const { spawn } = require('node:child_process');
     const o = ${JSON.stringify({ ...opts, ...files })};
+    fs.writeFileSync(o.leader, String(process.pid));
     if (o.ignoreTerm) process.on('SIGTERM', () => {});
+    if (o.termExitCode !== undefined) process.on('SIGTERM', () => process.exit(o.termExitCode));
     if (o.mark) fs.writeFileSync(process.env.${MARKER_ENV}, 'marked\\n');
     // The grandchild reports ready itself, after installing any signal handler.
     const body =
       (o.grandchildIgnoresTerm ? "process.on('SIGTERM', () => {});" : '') +
+      (o.grandchildCleansUp
+        ? "process.on('SIGTERM', () => setTimeout(() => { require('node:fs').writeFileSync(" +
+          JSON.stringify(o.cleaned) +
+          ", ''); process.exit(0); }, 150));"
+        : '') +
       'require("node:fs").writeFileSync(' + JSON.stringify(o.ready) + ', String(process.pid));' +
       'setInterval(() => {}, 1000)';
     spawn(process.execPath, ['-e', body], { stdio: 'ignore' });
@@ -120,16 +138,20 @@ function start(
 const pidOf = (ready: string) => Number(readFileSync(ready, 'utf8'));
 const hasPid = (ready: string) => existsSync(ready) && readFileSync(ready, 'utf8') !== '';
 
-afterEach(() => {
-  // Builds that exit normally leave their grandchild running; reap it.
-  for (const ready of readyFiles.splice(0)) {
-    if (!hasPid(ready)) continue;
-    try {
-      process.kill(pidOf(ready), 'SIGKILL');
-    } catch {
-      // Already gone.
-    }
+function kill(pid: number) {
+  try {
+    process.kill(pid, 'SIGKILL');
+  } catch {
+    // Already gone.
   }
+}
+
+afterEach(() => {
+  // Builds that exit normally (or a test that fails partway) can leave processes
+  // behind; the fake leader is a group leader, so kill its whole group.
+  for (const pid of wrappers.splice(0)) kill(pid);
+  for (const leader of leaderFiles.splice(0)) if (hasPid(leader)) kill(-pidOf(leader));
+  for (const ready of readyFiles.splice(0)) if (hasPid(ready)) kill(pidOf(ready));
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
@@ -200,11 +222,45 @@ describe('runUntilNotarizing', () => {
 
   it('kills a straggler that ignores SIGTERM after the main process has exited', async () => {
     const build = fakeBuild(scratch(), { grandchildIgnoresTerm: true });
-    // A grace period far longer than the wait below: only the exit sweep can kill it.
+    const { result, deadline } = start(build);
+    await waitFor(() => hasPid(build.ready));
+    deadline.fire();
+    await expect(result).resolves.toBe(STALL_EXIT_CODE);
+    await waitFor(() => !alive(pidOf(build.ready)));
+  });
+
+  it('gives the rest of the build its grace period to clean up after the leader exits', async () => {
+    const build = fakeBuild(scratch(), { grandchildCleansUp: true });
     const { result, deadline } = start(build, manualDeadline(), { graceMs: 10 * 60_000 });
     await waitFor(() => hasPid(build.ready));
     deadline.fire();
     await expect(result).resolves.toBe(STALL_EXIT_CODE);
+    expect(existsSync(build.cleaned)).toBe(true);
+    expect(alive(pidOf(build.ready))).toBe(false);
+  });
+
+  it('on cancellation stops the whole build even when the leader exits with a code', async () => {
+    const build = fakeBuild(scratch(), { termExitCode: 1, grandchildIgnoresTerm: true });
+    const signals = new EventEmitter();
+    const { result, lines, deadline } = start(build, manualDeadline(), { signalSource: signals });
+    await waitFor(() => hasPid(build.ready));
+    signals.emit('SIGTERM');
+    // A deadline that fires while the cancellation is in progress is not a stall.
+    deadline.fire();
+    await expect(result).resolves.toBe(1);
+    expect(lines.join('\n')).not.toContain('::error');
+    expect(alive(pidOf(build.ready))).toBe(false);
+    expect(signals.listenerCount('SIGTERM')).toBe(0);
+  });
+
+  it('reports a leader killed by a signal as 128 + the signal number', async () => {
+    const build = fakeBuild(scratch(), {});
+    const { result, lines } = start(build);
+    await waitFor(() => hasPid(build.ready) && hasPid(build.leader));
+    process.kill(pidOf(build.leader), 'SIGKILL');
+    await expect(result).resolves.toBe(128 + 9);
+    expect(lines.join('\n')).toMatch(/killed by SIGKILL/);
+    expect(lines.join('\n')).not.toContain('::error');
     await waitFor(() => !alive(pidOf(build.ready)));
   });
 
@@ -259,6 +315,7 @@ describe('command line', () => {
       [SCRIPT, '--minutes', '30', '--', build.command, ...build.args],
       { stdio: 'ignore' },
     );
+    wrappers.push(wrapper.pid!);
     await waitFor(() => hasPid(build.ready));
     const exited = new Promise<number | null>((resolve) =>
       wrapper.on('exit', (code) => resolve(code)),

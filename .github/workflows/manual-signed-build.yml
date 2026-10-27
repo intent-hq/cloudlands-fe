@@ -483,6 +483,8 @@ jobs:
       # electron-builder at minute 8 and sat silent until the 90-min job timeout.
       # Notarization itself is not bounded here: Apple's queue took 64 min for
       # v2.210.5 (run 37527610667). See scripts/run-until-notarizing.mjs.
+      # `exec` makes the wrapper the step's process, so a cancelled job signals it
+      # directly and it can stop the whole build.
       # A manual build stalled the same way (run 40143109068).
       - name: Build and package macOS app
         id: build
@@ -495,9 +497,9 @@ jobs:
           if [ "${{ inputs.isolated_test }}" = true ]; then
             export INTENT_ISOLATED_TEST_BUILD_ID="manual-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
             export INTENT_ISOLATED_TEST_BACKEND_SHA="${{ steps.intentd_sha.outputs.sha }}"
-            node scripts/run-until-notarizing.mjs --minutes 30 -- pnpm run dist:mac --${{ matrix.arch }} --isolated-test --publish never
+            exec node scripts/run-until-notarizing.mjs --minutes 30 -- pnpm run dist:mac --${{ matrix.arch }} --isolated-test --publish never
           else
-            node scripts/run-until-notarizing.mjs --minutes 30 -- pnpm run dist:mac --${{ matrix.arch }} --publish never
+            exec node scripts/run-until-notarizing.mjs --minutes 30 -- pnpm run dist:mac --${{ matrix.arch }} --publish never
           fi
         env:
           # 12288: the v2.13.0 arm64 leg's peak heap outgrew the old 8192 cap

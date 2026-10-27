@@ -16,12 +16,19 @@
  * "detected workspace root" and sat silent for 81 min until the 90-min job timeout.
  * The phase before notarization takes 9-13 min on WarpBuild Apple Silicon runners.
  *
- * Otherwise the command's exit code is passed through. SIGTERM/SIGINT/SIGHUP sent to
- * this wrapper (a cancelled job) are forwarded to the group.
+ * Otherwise the command's exit code is passed through (128 + signal number when it
+ * was killed by a signal). SIGTERM/SIGINT/SIGHUP sent to this wrapper (a cancelled
+ * job; workflows `exec` it so the runner signals it directly) are forwarded to the
+ * group. Whenever the group has been signalled, the wrapper waits for every member
+ * to exit, up to the grace period, then SIGKILLs any survivors.
+ *
+ * The marker relies on notarization happening in the afterSign hook. electron-builder's
+ * own notarization (enabled by APPLE_ID / APPLE_API_KEY / APPLE_KEYCHAIN_PROFILE env
+ * vars) would run before afterSign, so CI sets only the CLOUDLANDS_APPLE_* names.
  */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { constants, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -50,6 +57,15 @@ function signalGroup(child, signal) {
   }
 }
 
+function groupAlive(child) {
+  try {
+    process.kill(-child.pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * @returns {Promise<number>} the exit code this wrapper should exit with.
  */
@@ -61,7 +77,8 @@ export function runUntilNotarizing({
   env = process.env,
   stdio = 'inherit',
   log = (line) => console.log(line),
-  forwardSignals = false,
+  // Where cancellation signals come from (the CLI passes `process`).
+  signalSource = null,
   // Test seam: schedules the stall check; returns a cancel function.
   armDeadline = (callback, ms) => {
     const timer = setTimeout(callback, ms);
@@ -75,7 +92,10 @@ export function runUntilNotarizing({
   return new Promise((resolve) => {
     let stalled = false;
     let finished = false;
+    // Set once this wrapper has signalled the group (stall or cancellation).
+    let terminating = false;
     let killTimer;
+    let killDeadline = 0;
     let child;
     const cleanups = [];
 
@@ -85,6 +105,28 @@ export function runUntilNotarizing({
       for (const cleanup of cleanups) cleanup();
       rmSync(markerDir, { recursive: true, force: true });
       resolve(code);
+    };
+
+    // SIGTERM the group now; SIGKILL whatever is left after the grace period, which
+    // gives electron-builder time to remove its temporary keychain and detach DMGs.
+    const terminate = (signal) => {
+      terminating = true;
+      signalGroup(child, signal);
+      if (killTimer) return;
+      killDeadline = Date.now() + graceMs;
+      killTimer = setTimeout(() => signalGroup(child, 'SIGKILL'), graceMs);
+    };
+
+    // After the leader exits, wait for the rest of the group (bounded by the grace
+    // period plus a margin for the SIGKILL to land) so nothing outlives the wrapper.
+    const reapThenFinish = (code) => {
+      const poll = setInterval(() => {
+        if (groupAlive(child) && Date.now() < killDeadline + 2_000) return;
+        clearInterval(poll);
+        signalGroup(child, 'SIGKILL');
+        finish(code);
+      }, 50);
+      cleanups.push(() => clearInterval(poll));
     };
 
     try {
@@ -106,7 +148,7 @@ export function runUntilNotarizing({
     // One check at the deadline is enough: the marker only ever appears, so a build
     // that reached notarization in time still has it then.
     const cancelDeadline = armDeadline(() => {
-      if (finished) return;
+      if (finished || terminating) return;
       const at = markerTime();
       if (at) {
         log(`Notarization started in time (${at}); stall deadline disarmed.`);
@@ -114,25 +156,21 @@ export function runUntilNotarizing({
       }
       stalled = true;
       log(
-        `::error title=macOS packaging stalled::No progress to notarization after ` +
-          `${budgetMinutes} min: the build froze before notarization started ` +
-          `(it normally starts after 9-13 min). Stopping it; re-run the job.`,
+        `::error title=macOS packaging stalled::Notarization had not started after ` +
+          `${budgetMinutes} min, so the build is assumed frozen and is being stopped; ` +
+          `re-run the job. Signed builds normally reach notarization after 9-13 min ` +
+          `(unsigned builds never notarize, so for them this bounds the whole build).`,
       );
-      signalGroup(child, 'SIGTERM');
-      killTimer = setTimeout(() => signalGroup(child, 'SIGKILL'), graceMs);
+      terminate('SIGTERM');
     }, budgetMs);
     cleanups.push(cancelDeadline);
     cleanups.push(() => clearTimeout(killTimer));
 
-    if (forwardSignals) {
+    if (signalSource) {
       for (const signal of FORWARDED_SIGNALS) {
-        const handler = () => {
-          signalGroup(child, signal);
-          clearTimeout(killTimer);
-          killTimer = setTimeout(() => signalGroup(child, 'SIGKILL'), graceMs);
-        };
-        process.on(signal, handler);
-        cleanups.push(() => process.off(signal, handler));
+        const handler = () => terminate(signal);
+        signalSource.on(signal, handler);
+        cleanups.push(() => signalSource.off(signal, handler));
       }
     }
 
@@ -142,24 +180,24 @@ export function runUntilNotarizing({
     });
 
     child.on('exit', (code, signal) => {
-      if (stalled) {
-        // Clear anything that outlived the group leader.
-        signalGroup(child, 'SIGKILL');
-        finish(STALL_EXIT_CODE);
-        return;
-      }
-      if (signal) {
-        // Leader died from a signal: make sure no stragglers keep the job alive.
-        signalGroup(child, 'SIGKILL');
-        finish(1);
-        return;
-      }
       const at = markerTime();
+      const result = stalled
+        ? STALL_EXIT_CODE
+        : signal
+          ? 128 + (constants.signals[signal] ?? 0)
+          : (code ?? 1);
       log(
-        `Packaging exited with code ${code}; notarization ` +
+        `Packaging ${signal ? `was killed by ${signal}` : `exited with code ${code}`}; ` +
+          `notarization ` +
           (at ? `started at ${at}.` : 'never started (unsigned build or failure before it).'),
       );
-      finish(code ?? 1);
+      if (!terminating && !signal) {
+        finish(result);
+        return;
+      }
+      // Signalled or killed: make sure no part of the build outlives the wrapper.
+      terminate('SIGTERM');
+      reapThenFinish(result);
     });
   });
 }
@@ -172,11 +210,12 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     console.error(error.message);
     process.exit(2);
   }
-  const code = await runUntilNotarizing({
+  // exitCode rather than process.exit(): let buffered output (the ::error
+  // annotation) drain to the runner's pipe before the process ends.
+  process.exitCode = await runUntilNotarizing({
     command: parsed.command,
     args: parsed.args,
     budgetMs: parsed.minutes * 60_000,
-    forwardSignals: true,
+    signalSource: process,
   });
-  process.exit(code);
 }

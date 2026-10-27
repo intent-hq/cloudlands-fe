@@ -303,9 +303,14 @@ describe.each(['release-alpha', 'manual-signed-build'])('%s native Mac jobs', (n
   it('runs packaging under the 30-minute pre-notarization deadline and fails the step when packaging fails', () => {
     const run = step(name, 'build-macos', 'Build and package macOS app').run!;
     // The budget is the stall contract: 2.3x the slowest pre-notarization phase seen.
-    expect(run).toMatch(
-      /node scripts\/run-until-notarizing\.mjs --minutes 30 -- pnpm run dist:mac/,
-    );
+    // `exec`: on cancel the runner signals the step's process, so the wrapper must be
+    // that process to stop the whole build.
+    const invocations = run.match(/^.*run-until-notarizing\.mjs.*$/gm) ?? [];
+    expect(invocations.length).toBeGreaterThan(0);
+    for (const line of invocations)
+      expect(line.trim()).toMatch(
+        /^exec node scripts\/run-until-notarizing\.mjs --minutes 30 -- pnpm run dist:mac /,
+      );
     const dir = temp();
     stub(dir, 'pnpm', 'exit 5');
     const result = shell(
