@@ -46,20 +46,6 @@ export const COMMAND_PALETTE_COMMANDS = [
     icon: faCommentDots,
   },
   {
-    id: 'enable-experimental-multiplayer',
-    get label() {
-      return m.lib_commandPalette_enableExperimentalMultiplayer_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'disable-experimental-multiplayer',
-    get label() {
-      return m.lib_commandPalette_disableExperimentalMultiplayer_label();
-    },
-    icon: faFlask,
-  },
-  {
     id: 'enable-experimental-gitlab',
     get label() {
       return m.lib_commandPalette_enableExperimentalGitlab_label();
