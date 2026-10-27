@@ -1537,7 +1537,8 @@ function skippedOnLegacyTag(condition: string | undefined) {
 // Deliberately strict: only these shapes count, and anything else is reported.
 // - inside the file-present branch of a bare `if [ -f X ]` / `if [ ! -f X ]`
 //   (the whole condition, nothing chained onto it);
-// - after such a block whose file-missing branch itself runs `exec` or `exit`;
+// - after such a block whose file-missing branch itself runs `exec` or `exit`,
+//   within the same enclosing branch (an outer `if` may skip the guard);
 // - as an element of an array only probed by `for V in "${A[@]}" ... -f "$V"`,
 //   which tests the files rather than calling them.
 function unguardedRefs(run: string) {
@@ -1546,7 +1547,12 @@ function unguardedRefs(run: string) {
     .filter((line) => !/^\s*#/.test(line))
     .join('\n');
   for (const [, variable, array] of text.matchAll(/\bfor (\w+) in "\$\{(\w+)\[@\]\}"/g)) {
-    if (!new RegExp(`-[fe]\\s+"?\\$\\{?${variable}\\b`).test(text)) continue;
+    // Probe-only: the array feeds just this loop, and the loop variable appears
+    // only as the operand of a `-f`/`-e` test, so no element is ever executed.
+    const arrayUses = text.match(new RegExp(`\\$\\{${array}\\b`, 'g'))?.length ?? 0;
+    const variableUses = text.match(new RegExp(`\\$\\{?${variable}\\b`, 'g'))?.length ?? 0;
+    const tests = text.match(new RegExp(`-[fe]\\s+"\\$\\{?${variable}\\}?"`, 'g'))?.length ?? 0;
+    if (arrayUses !== 1 || tests === 0 || variableUses !== tests) continue;
     text = text.replace(new RegExp(`\\b${array}=\\([^)]*\\)`), `${array}=()`);
   }
   // One statement per line, so one-line `if ...; then ...; fi` scans like the block form.
@@ -1560,9 +1566,12 @@ function unguardedRefs(run: string) {
     target?: string;
     present: boolean;
     missingTerminates: boolean;
+    // Files proven present by a closed terminating guard within this branch only.
+    facts: Set<string>;
   }
   const frames: Frame[] = [];
-  const guardedAfter = new Set<string>();
+  const rootFacts = new Set<string>();
+  const facts = () => (frames.length ? frames[frames.length - 1].facts : rootFacts);
   const refs: string[] = [];
   for (const line of lines) {
     const opened = presence.exec(line);
@@ -1571,26 +1580,29 @@ function unguardedRefs(run: string) {
         target: normalizeRef(opened[2]),
         present: !opened[1],
         missingTerminates: false,
+        facts: new Set(),
       });
       continue;
     }
     const top = frames[frames.length - 1];
     if (/^\s*if\b/.test(line)) {
-      frames.push({ present: false, missingTerminates: false });
+      frames.push({ present: false, missingTerminates: false, facts: new Set() });
     } else if (/^\s*(?:else|elif)\b/.test(line) && top) {
       // elif makes the file-missing path conditional, so it never terminates for sure.
       if (/^\s*elif\b/.test(line)) top.target = undefined;
       top.present = !top.present;
+      top.facts.clear();
     } else if (/^\s*fi\b/.test(line)) {
       const frame = frames.pop();
-      if (frame?.target && frame.missingTerminates) guardedAfter.add(frame.target);
+      if (frame?.target && frame.missingTerminates) facts().add(frame.target);
       continue;
     }
     if (top && !top.present && /^\s*(?:exec|exit)\b/.test(line)) top.missingTerminates = true;
     for (const [ref] of line.matchAll(SCRIPT_REF)) {
       const target = normalizeRef(ref);
       const guarded =
-        guardedAfter.has(target) ||
+        rootFacts.has(target) ||
+        frames.some((frame) => frame.facts.has(target)) ||
         frames.some((frame) => frame.present && frame.target === target);
       if (!guarded) refs.push(target);
     }
@@ -1705,6 +1717,14 @@ describe('release tag checkout compatibility with the oldest rebuildable tag', (
         { name: 'Dot', 'working-directory': './', run: 'node scripts/new.mjs' } as Step,
         { name: 'Inline', run: '[ -f scripts/new.mjs ] && echo ok; node scripts/new.mjs' },
         {
+          name: 'Nested',
+          run: 'if [ "$C" = y ]; then\n  if [ ! -f scripts/new.mjs ]; then\n    exit 1\n  fi\nfi\nnode scripts/new.mjs',
+        },
+        {
+          name: 'ProbeRuns',
+          run: 'T=(scripts/new.mjs)\nfor X in "${T[@]}"; do\n  if [ -f "$X" ]; then\n    echo ok\n  fi\n  node "$X"\ndone',
+        },
+        {
           name: 'Chained',
           run: 'if [ -f scripts/new.mjs ] || true; then node scripts/new.mjs; fi',
         },
@@ -1726,6 +1746,8 @@ describe('release tag checkout compatibility with the oldest rebuildable tag', (
       'Falls:scripts/new.mjs',
       'Dot:scripts/new.mjs',
       'Inline:scripts/new.mjs',
+      'Nested:scripts/new.mjs',
+      'ProbeRuns:scripts/new.mjs',
       'Chained:scripts/new.mjs',
       'Branches:scripts/new.mjs',
       'Either:scripts/native.sh',
