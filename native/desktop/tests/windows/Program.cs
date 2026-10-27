@@ -49,12 +49,15 @@ static class Program {
         throw new Exception("No native evidence for " + description);
     }
     static string Handle(Form f) => f.Handle.ToInt64().ToString();
+    // Helper handles are "<hwnd>.<generation>"; compare the HWND part.
+    static string Hwnd(JsonElement w,string property="handle") => w.GetProperty(property).GetString()!.Split('.')[0];
+    static string Listed(JsonElement state,Form f) => state.GetProperty("windows").EnumerateArray().Single(w=>Hwnd(w)==Handle(f)).GetProperty("handle").GetString()!;
     static async Task WindowTargets(Peer peer,Form target,Form overlay,Screen screen,JsonElement display,JsonElement layout,string[] excluded) {
         target.Activate(); await Task.Delay(250);
         var state=await peer.Call("windows",new {excludedWindows=excluded,display,layout});
         var listed=state.GetProperty("windows").EnumerateArray().ToList();
-        Require(!listed.Any(w=>w.GetProperty("handle").GetString()==Handle(overlay)),"Overlay window leaked into window metadata");
-        var mine=listed.SingleOrDefault(w=>w.GetProperty("handle").GetString()==Handle(target));
+        Require(!listed.Any(w=>Hwnd(w)==Handle(overlay)),"Overlay window leaked into window metadata");
+        var mine=listed.SingleOrDefault(w=>Hwnd(w)==Handle(target));
         Require(mine.ValueKind==JsonValueKind.Object,"Target window missing from window metadata");
         Require(mine.GetProperty("pid").GetInt32()==Environment.ProcessId,"Window owner pid mismatch");
         Require(!string.IsNullOrEmpty(mine.GetProperty("appName").GetString()),"Missing application name");
@@ -65,23 +68,31 @@ static class Program {
         Require(wx<=center.X && center.X<wx+ww && wy<=center.Y && center.Y<wy+wh,"Window frame is not in display-image pixels");
         Require(Math.Abs(ww-target.Width)<=24 && Math.Abs(wh-target.Height)<=24,"Window frame size mismatch");
         var front=state.GetProperty("frontmost");
-        Require(front.GetProperty("pid").GetInt32()==Environment.ProcessId && front.GetProperty("focusedHandle").GetString()==Handle(target),"Frontmost focused window mismatch");
+        Require(front.GetProperty("pid").GetInt32()==Environment.ProcessId && Hwnd(front,"focusedHandle")==Handle(target),"Frontmost focused window mismatch");
 
         using var other=new Form { Text="Intent focusWindow test", StartPosition=FormStartPosition.Manual, Location=new Point(160,160), ClientSize=new Size(320,240) };
         other.Show(); other.Activate(); await Task.Delay(250);
         Require(GetForegroundWindow()==other.Handle,"Second test window did not activate");
         var behind=await peer.Call("windows",new {excludedWindows=excluded});
-        var order=behind.GetProperty("windows").EnumerateArray().Select(w=>w.GetProperty("handle").GetString()).ToList();
+        var order=behind.GetProperty("windows").EnumerateArray().Select(w=>Hwnd(w)).ToList();
         Require(order.IndexOf(Handle(other))>=0 && order.IndexOf(Handle(other))<order.IndexOf(Handle(target)),"Windows are not listed front-to-back");
-        await peer.Call("focusWindow",new {handle=Handle(target),pid=Environment.ProcessId,excludedWindows=excluded});
+        var otherHandle=Listed(behind,other);
+        await peer.Call("focusWindow",new {handle=Listed(behind,target),pid=Environment.ProcessId,excludedWindows=excluded});
         await Observe(()=>GetForegroundWindow()==target.Handle,"focusWindow raises and activates the target");
         other.WindowState=FormWindowState.Minimized; await Task.Delay(250);
         var after=await peer.Call("windows",new {excludedWindows=excluded});
-        Require(!after.GetProperty("windows").EnumerateArray().Any(w=>w.GetProperty("handle").GetString()==Handle(other)),"Minimized window listed as eligible");
-        var minimized=await peer.Call("focusWindow",new {handle=Handle(other),pid=Environment.ProcessId,excludedWindows=excluded},"desktop-target-mismatch");
+        Require(!after.GetProperty("windows").EnumerateArray().Any(w=>Hwnd(w)==Handle(other)),"Minimized window listed as eligible");
+        var minimized=await peer.Call("focusWindow",new {handle=otherHandle,pid=Environment.ProcessId,excludedWindows=excluded},"desktop-target-mismatch");
         Require(minimized.GetProperty("error").GetProperty("reason").GetString()=="window_unavailable","Wrong focusWindow refusal reason");
         Require(other.WindowState==FormWindowState.Minimized,"focusWindow restored a minimized window");
         await peer.Call("focusWindow",new {handle="0",pid=Environment.ProcessId,excludedWindows=excluded},"desktop-target-mismatch");
+        // A destroyed window's handle (with its generation) never resolves again.
+        var closing=new Form { Text="Intent closed window test", StartPosition=FormStartPosition.Manual, Location=new Point(200,200), ClientSize=new Size(200,150) };
+        closing.Show(); await Task.Delay(250);
+        var closingHandle=Listed(await peer.Call("windows",new {excludedWindows=excluded}),closing);
+        closing.Close(); closing.Dispose(); await Task.Delay(250);
+        var gone=await peer.Call("focusWindow",new {handle=closingHandle,pid=Environment.ProcessId,excludedWindows=excluded},"desktop-target-mismatch");
+        Require(gone.GetProperty("error").GetProperty("reason").GetString()=="window_unavailable","Closed window handle resolved");
         target.Activate(); await Task.Delay(250);
     }
     static async Task Run(Form target) {

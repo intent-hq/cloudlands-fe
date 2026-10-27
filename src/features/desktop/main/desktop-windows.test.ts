@@ -98,6 +98,24 @@ describe('session window ids', () => {
   });
 });
 
+describe('recycled native handles', () => {
+  // Helpers report handles with a lifetime generation ("<hwnd>.<gen>" on
+  // Windows, where HWNDs can be recycled), so a replacement window that reuses
+  // a destroyed window's handle in the same process is a different identity.
+  it('never resolves an old id to a replacement window with a recycled handle', () => {
+    const ids = new DesktopWindowIds();
+    const closed = frame('5.0', 411, 200, 100, 800, 600);
+    const oldId = ids.idFor(closed);
+    const replacement = frame('5.1', 411, 200, 100, 800, 600);
+    const state: NativeWindowState = {
+      frontmost: { appName: 'Safari', pid: 411 },
+      windows: [replacement],
+    };
+    expect(targetReason(state, ids.keyFor(oldId), { x: 300, y: 200 })).toBe('window_unavailable');
+    expect(ids.idFor(replacement)).not.toBe(oldId);
+  });
+});
+
 describe('screenshot window metadata', () => {
   const display = { width: 2880, height: 1800 };
   it('lists intersecting windows front-to-back with one focused entry and unclipped frames', () => {

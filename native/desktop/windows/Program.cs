@@ -49,6 +49,26 @@ static class Program {
     [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h);
     [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h,int attribute,out int value,int size);
     [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h,int attribute,out Rect value,int size);
+    delegate void WinEventProc(IntPtr hook,uint ev,IntPtr hwnd,int idObject,int idChild,uint thread,uint time);
+    [StructLayout(LayoutKind.Sequential)] struct Msg { public IntPtr hwnd; public uint message; public UIntPtr wParam; public IntPtr lParam; public uint time; public Point pt; public uint privateData; }
+    [DllImport("user32.dll")] static extern IntPtr SetWinEventHook(uint min,uint max,IntPtr module,WinEventProc proc,uint pid,uint thread,uint flags);
+    [DllImport("user32.dll")] static extern int GetMessage(out Msg msg,IntPtr h,uint min,uint max);
+    // HWNDs can be recycled, even within one process. A destroy hook bumps a
+    // per-handle generation so a replacement window reports a new handle
+    // ("<hwnd>.<generation>") and an old window id can never reach it.
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<long,long> generations=new();
+    static WinEventProc? destroyed;
+    static readonly Lazy<bool> lifetimeTracking=new(() => {
+        var started=new ManualResetEventSlim(); bool ok=false;
+        var thread=new Thread(() => {
+            destroyed=(_,_,h,obj,child,_,_) => { if(obj==0 && child==0 && h!=IntPtr.Zero) generations.AddOrUpdate(h.ToInt64(),1,(_,g)=>g+1); };
+            ok=SetWinEventHook(0x8001,0x8001,IntPtr.Zero,destroyed,0,0,0)!=IntPtr.Zero; // EVENT_OBJECT_DESTROY, out of context
+            started.Set();
+            if(ok) while(GetMessage(out _,IntPtr.Zero,0,0)>0) { }
+        }) { IsBackground=true, Name="window-lifetime" };
+        thread.Start(); started.Wait(); return ok;
+    });
+    static string WindowHandle(IntPtr h) => h.ToInt64()+"."+generations.GetValueOrDefault(h.ToInt64());
     const string TargetDetail="The target window is not ready for input. Call ws.desktop.focusWindow({ windowId }) if needed, take a new screenshot to confirm the target, then retry.";
     static Mutex? desktopLock;
     static bool owned;
@@ -184,6 +204,7 @@ static class Program {
         return cache[pid]=string.IsNullOrWhiteSpace(name)?"Unknown application":name;
     }
     static object WindowState(JsonElement p) {
+        if(!lifetimeTracking.Value) throw Unsupported("Window lifetime tracking is unavailable");
         var excluded=Exclusions(p);
         int ox=0,oy=0;
         if(p.TryGetProperty("display",out var selected)) {
@@ -199,7 +220,7 @@ static class Program {
             GetWindowThreadProcessId(h,out uint pid);
             if(pid==0) continue;
             // PerMonitorV2: DWM frame bounds are physical virtual-desktop pixels.
-            var entry=new Dictionary<string,object>{["handle"]=h.ToInt64().ToString(),["pid"]=(int)pid,["appName"]=AppName(pid,names),
+            var entry=new Dictionary<string,object>{["handle"]=WindowHandle(h),["pid"]=(int)pid,["appName"]=AppName(pid,names),
                 ["x"]=r.left-ox,["y"]=r.top-oy,["width"]=r.right-r.left,["height"]=r.bottom-r.top};
             int length=GetWindowTextLength(h);
             if(length>0) { var text=new StringBuilder(length+1); GetWindowText(h,text,text.Capacity); if(text.Length>0) entry["title"]=text.ToString(); }
@@ -209,17 +230,18 @@ static class Program {
         var foreground=GetForegroundWindow();
         if(foreground!=IntPtr.Zero) {
             GetWindowThreadProcessId(foreground,out uint pid);
-            if(pid!=0) result["frontmost"]=new Dictionary<string,object>{["appName"]=AppName(pid,names),["pid"]=(int)pid,["focusedHandle"]=foreground.ToInt64().ToString()};
+            if(pid!=0) result["frontmost"]=new Dictionary<string,object>{["appName"]=AppName(pid,names),["pid"]=(int)pid,["focusedHandle"]=WindowHandle(foreground)};
         }
         return result;
     }
     // Activation only: never synthesizes input (no Alt-key foreground-lock trick).
     // Windows may decline; the executor verifies the outcome with a new snapshot.
     static void FocusWindow(JsonElement p) {
-        var h=new IntPtr(long.TryParse(p.GetProperty("handle").GetString(),out var v)?v:0);
+        var handle=p.GetProperty("handle").GetString() ?? "";
+        var h=new IntPtr(long.TryParse(handle.Split('.')[0],out var v)?v:0);
         uint pid=(uint)p.GetProperty("pid").GetInt32(), owner=0;
         if(h!=IntPtr.Zero && IsWindow(h)) GetWindowThreadProcessId(h,out owner);
-        if(owner==0 || owner!=pid || !Eligible(h,Exclusions(p),out _)) throw new Refusal("desktop-target-mismatch",TargetDetail,"not_started","window_unavailable");
+        if(!lifetimeTracking.Value || owner==0 || owner!=pid || WindowHandle(h)!=handle || !Eligible(h,Exclusions(p),out _)) throw new Refusal("desktop-target-mismatch",TargetDetail,"not_started","window_unavailable");
         SetForegroundWindow(h); BringWindowToTop(h);
         for(int i=0;i<20 && GetForegroundWindow()!=h;i++) Thread.Sleep(50);
     }
