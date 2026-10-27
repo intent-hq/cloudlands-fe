@@ -5,7 +5,9 @@ import {
   formatCompactDuration,
   formatCompactNumber,
   formatCurrency,
+  formatDaySeparator,
   formatNumber,
+  formatShortDate,
 } from '$lib/i18n/format';
 import type { TraceUsage } from '../trace-types';
 
@@ -176,6 +178,16 @@ export function formatTraceDuration(durationMs: number): string {
     });
   }
   return formatCompactDuration(ms);
+}
+
+/** `Today`, `Yesterday`, a weekday within the last week, then a short date (`Sep 2`). */
+export function formatTraceDay(ms: number, now: number): string {
+  const nowDate = new Date(now);
+  const weekAgo = new Date(now);
+  weekAgo.setDate(weekAgo.getDate() - 7);
+  return ms > weekAgo.getTime()
+    ? formatDaySeparator(ms, { now: nowDate })
+    : formatShortDate(ms, { now: nowDate });
 }
 
 /** Axis tick label: `0s`, `15s`, `1m`, `1m 30s`. */

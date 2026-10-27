@@ -15,7 +15,6 @@
   import { Button } from '$lib/components/ui/button';
   import * as Popover from '$lib/components/ui/popover';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
-  import { formatDaySeparator } from '$lib/i18n/format';
   import { fly } from '$lib/motion';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -23,6 +22,7 @@
   import { spanLabel } from '../utils/trace-labels';
   import {
     formatTraceCost,
+    formatTraceDay,
     formatTraceDuration,
     formatTraceTick,
     traceTimeMap,
@@ -63,7 +63,7 @@
   const ROW_INSET = 12;
   const MIN_BAR_PX = 4;
   const TICK_SPACING_PX = 76;
-  /** Rough caption glyph width, to keep tick labels off the day names. */
+  /** Rough caption glyph width, to keep axis labels apart. */
   const LABEL_CHAR_PX = 7;
 
   interface Row {
@@ -98,36 +98,47 @@
     return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
   }
 
-  /** Day names where each day's first burst starts, when the view spans days. */
+  /** Room an axis label takes, its leading offset included (px). */
+  function labelWidth(text: string): number {
+    return 8 + text.length * LABEL_CHAR_PX;
+  }
+
+  /**
+   * Day names where each day's first burst starts, when the view spans days.
+   * Names stay inside the axis, and where they would overlap, later days win.
+   */
   const dayMarks = $derived.by(() => {
     const shown = windows.filter((window) => window.end > viewFrom && window.start < viewTo);
     if (shown.length === 0 || dayOf(shown[0].start) === dayOf(shown[shown.length - 1].start)) {
       return [];
     }
-    const marks: { position: number; label: string }[] = [];
+    const marks: { left: number; width: number; label: string }[] = [];
     let previous: number | null = null;
     for (const window of shown) {
-      const day = dayOf(Math.max(window.start, viewFrom));
+      const start = Math.max(window.start, viewFrom);
+      const day = dayOf(start);
       if (day !== previous) {
-        marks.push({
-          position: Math.max(0, timeMap.at(Math.max(window.start, viewFrom))),
-          label: formatDaySeparator(day, { now: new Date(now) }),
-        });
+        const label = formatTraceDay(day, now);
+        const width = labelWidth(label);
+        const at = (Math.max(0, timeMap.at(start)) / 100) * timelineWidth;
+        marks.push({ left: Math.max(0, Math.min(at, timelineWidth - width)), width, label });
       }
       previous = day;
     }
-    return marks;
+    const kept: typeof marks = [];
+    for (const mark of marks.reverse()) {
+      const next = kept[kept.length - 1];
+      if (!next || mark.left + mark.width <= next.left) kept.push(mark);
+    }
+    return kept.reverse();
   });
 
   /** Tick labels that keep clear of the day names, which win. */
   const tickLabels = $derived(
     timeMap.ticks.filter((tick) => {
       const start = (tick.position / 100) * timelineWidth;
-      const end = start + 8 + formatTraceTick(tick.offsetMs).length * LABEL_CHAR_PX;
-      return dayMarks.every((mark) => {
-        const markStart = (mark.position / 100) * timelineWidth;
-        return end < markStart || start > markStart + 8 + mark.label.length * LABEL_CHAR_PX;
-      });
+      const end = start + labelWidth(formatTraceTick(tick.offsetMs));
+      return dayMarks.every((mark) => end <= mark.left || start >= mark.left + mark.width);
     }),
   );
   const nowVisible = $derived(trace.live && nowPosition >= 0 && nowPosition <= 100);
@@ -412,10 +423,10 @@
           {formatTraceTick(tick.offsetMs)}
         </span>
       {/each}
-      {#each dayMarks as mark (mark.position)}
+      {#each dayMarks as mark (mark.left)}
         <span
           class="trace-tick absolute bottom-1 type-caption font-medium text-foreground whitespace-nowrap"
-          style="left: {mark.position}%"
+          style="left: {mark.left}px"
           data-trace-day
         >
           {mark.label}

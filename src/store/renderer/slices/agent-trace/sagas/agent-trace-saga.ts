@@ -6,8 +6,9 @@
  *
  * 1. Holds a workspace-scoped `events.subscribe` lease for the trace event
  *    types (§6) and forwards its events in batches.
- * 2. Pages `event.query` history (§5.10): turn rows and failures on open; tool
- *    calls and usage snapshots back to the window the view requests.
+ * 2. Pages `event.query` history (§5.10): on open, the newest turn rows at any
+ *    age and the failures back to the oldest of them; tool calls and usage
+ *    snapshots back to the window the view requests.
  * 3. On reconnect, subscribes again and reloads the history it had.
  *
  * A failed history page or subscription marks the load failed; the records
@@ -49,8 +50,7 @@ const TURN_PAGE_LIMIT = 200;
 /** Small pages keep rows under the §5.10 response budget (no trimming). */
 const TOOL_PAGE_LIMIT = 100;
 const USAGE_PAGE_LIMIT = 25;
-/** Turn rows are small and never swept; read a week of them. */
-const TURN_LOOKBACK_MINUTES = 7 * 24 * 60;
+/** Turn rows are small and never swept: the newest pages at any age, so an idle workspace still shows its last work. */
 const TURN_PAGE_CAP = 10;
 const FAILURE_PAGE_CAP = 2;
 /** Tool calls live 6 h, usage snapshots 72 h (PROTOCOL §5.10). */
@@ -126,13 +126,13 @@ function toRecords(events: readonly WorkspaceEvent[]): TraceRecord[] {
 function queryPage(
   workspaceId: string,
   eventType: string,
-  minutesAgo: number,
+  minutesAgo: number | undefined,
   limit: number,
   nextToken: string | null,
 ): Promise<EventQueryPage> {
   return appClient.events.queryPage(workspaceId, {
     eventType,
-    minutesAgo,
+    ...(minutesAgo === undefined ? {} : { minutesAgo }),
     limit,
     ...(nextToken ? { nextToken } : {}),
   });
@@ -198,6 +198,52 @@ function isCurrent(
   return active.get(workspaceId) === entry && entry.generation === generation;
 }
 
+interface TurnPages {
+  ok: boolean;
+  /** Oldest event time read (epoch ms); `Infinity` when nothing was read. */
+  oldest: number;
+}
+
+/** Pages one turn-history event type, newest first; `null` once superseded. */
+function* pageTurnHistory(
+  active: Map<string, ActiveTrace>,
+  workspaceId: string,
+  entry: ActiveTrace,
+  generation: number,
+  eventType: string,
+  cap: number,
+  minutesAgo?: number,
+): SagaGenerator<TurnPages | null> {
+  let nextToken: string | null = null;
+  let oldest = Infinity;
+  for (let page = 0; page < cap; page += 1) {
+    try {
+      const result: EventQueryPage = yield* call(
+        queryPage,
+        workspaceId,
+        eventType,
+        minutesAgo,
+        TURN_PAGE_LIMIT,
+        nextToken,
+      );
+      if (!isCurrent(active, workspaceId, entry, generation)) return null;
+      const items = result.items ?? [];
+      for (const item of items) {
+        const ts = Date.parse(item.timestamp);
+        if (Number.isFinite(ts) && ts < oldest) oldest = ts;
+      }
+      const records = toRecords(items);
+      if (records.length > 0) yield* put(agentTraceRecordsReceived(workspaceId, records));
+      nextToken = result.nextToken ?? null;
+      if (!nextToken) break;
+    } catch (error) {
+      logger.warn('event.query (trace turns) failed', { workspaceId, eventType, error });
+      return { ok: false, oldest };
+    }
+  }
+  return { ok: true, oldest };
+}
+
 /** `subscribed`: without a lease the timeline cannot stay current, so the load fails. */
 function* loadTurns(
   active: Map<string, ActiveTrace>,
@@ -207,33 +253,32 @@ function* loadTurns(
 ): SagaGenerator<void> {
   const generation = entry.generation;
   yield* put(agentTraceLoadStarted(workspaceId));
-  let ok = subscribed;
-  for (const [eventType, cap] of [
-    ['agent:last-message', TURN_PAGE_CAP],
-    ['agent:failed', FAILURE_PAGE_CAP],
-  ] as const) {
-    let nextToken: string | null = null;
-    for (let page = 0; page < cap; page += 1) {
-      try {
-        const result: EventQueryPage = yield* call(
-          queryPage,
-          workspaceId,
-          eventType,
-          TURN_LOOKBACK_MINUTES,
-          TURN_PAGE_LIMIT,
-          nextToken,
-        );
-        if (!isCurrent(active, workspaceId, entry, generation)) return;
-        const records = toRecords(result.items ?? []);
-        if (records.length > 0) yield* put(agentTraceRecordsReceived(workspaceId, records));
-        nextToken = result.nextToken ?? null;
-        if (!nextToken) break;
-      } catch (error) {
-        logger.warn('event.query (trace turns) failed', { workspaceId, eventType, error });
-        ok = false;
-        break;
-      }
-    }
+  const turns = yield* call(
+    pageTurnHistory,
+    active,
+    workspaceId,
+    entry,
+    generation,
+    'agent:last-message',
+    TURN_PAGE_CAP,
+  );
+  if (!turns) return;
+  let ok = subscribed && turns.ok;
+  // Failures only back to the oldest turn row read (plus a minute or two), so
+  // none lands before the loaded turns as a failure of its own.
+  if (Number.isFinite(turns.oldest)) {
+    const failures = yield* call(
+      pageTurnHistory,
+      active,
+      workspaceId,
+      entry,
+      generation,
+      'agent:failed',
+      FAILURE_PAGE_CAP,
+      Math.floor((Date.now() - turns.oldest) / 60_000) + 2,
+    );
+    if (!failures) return;
+    ok = ok && failures.ok;
   }
   if (isCurrent(active, workspaceId, entry, generation)) {
     yield* put(agentTraceLoadFinished(workspaceId, ok));

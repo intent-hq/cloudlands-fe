@@ -153,53 +153,54 @@ describe('agentTraceSaga', () => {
     mocks.unsubscribe.mockResolvedValue(undefined);
   });
 
-  it('subscribes to the trace events and pages turn history on open', async () => {
-    serve({
-      'agent:last-message': [
-        { items: [userRow('u2', 1_000)], nextToken: 'older' },
-        { items: [userRow('u1', 60_000)], nextToken: null },
-      ],
-      'agent:failed': [{ items: [], nextToken: null }],
-    });
-    const harness = createHarness();
-    harness.dispatch(agentTraceOpened(WS));
+  it('subscribes and pages the newest turns at any age, then failures back to them', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
+    try {
+      const threeWeeks = 21 * 24 * 60 * 60_000;
+      serve({
+        'agent:last-message': [
+          { items: [userRow('u2', threeWeeks - 1_000)], nextToken: 'older' },
+          { items: [userRow('u1', threeWeeks)], nextToken: null },
+        ],
+        'agent:failed': [{ items: [], nextToken: null }],
+      });
+      const harness = createHarness();
+      harness.dispatch(agentTraceOpened(WS));
 
-    await vi.waitFor(() => expect(harness.trace()?.status).toBe('ready'));
-    expect(mocks.subscribe).toHaveBeenCalledWith({
-      eventTypes: [
-        'agent:last-message',
-        'agent:tool:call',
-        'agent:failed',
-        'workspace:tokenUsage-changed',
-      ],
-      workspaceId: WS,
-    });
-    expect(queries()).toEqual([
-      {
+      await vi.waitFor(() => expect(harness.trace()?.status).toBe('ready'));
+      expect(mocks.subscribe).toHaveBeenCalledWith({
+        eventTypes: [
+          'agent:last-message',
+          'agent:tool:call',
+          'agent:failed',
+          'workspace:tokenUsage-changed',
+        ],
         workspaceId: WS,
-        eventType: 'agent:last-message',
-        minutesAgo: 10_080,
-        limit: 200,
-        paginate: true,
-      },
-      {
-        workspaceId: WS,
-        eventType: 'agent:last-message',
-        minutesAgo: 10_080,
-        limit: 200,
-        nextToken: 'older',
-        paginate: true,
-      },
-      {
-        workspaceId: WS,
-        eventType: 'agent:failed',
-        minutesAgo: 10_080,
-        limit: 200,
-        paginate: true,
-      },
-    ]);
-    expect(recordsOf(harness.trace()).map((record) => record.id)).toEqual(['u1', 'u2']);
-    await stop(harness.task);
+      });
+      expect(queries()).toEqual([
+        { workspaceId: WS, eventType: 'agent:last-message', limit: 200, paginate: true },
+        {
+          workspaceId: WS,
+          eventType: 'agent:last-message',
+          limit: 200,
+          nextToken: 'older',
+          paginate: true,
+        },
+        // Back to the oldest turn row read, and no further.
+        {
+          workspaceId: WS,
+          eventType: 'agent:failed',
+          minutesAgo: 21 * 24 * 60 + 2,
+          limit: 200,
+          paginate: true,
+        },
+      ]);
+      expect(recordsOf(harness.trace()).map((record) => record.id)).toEqual(['u1', 'u2']);
+      await stop(harness.task);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('reads tool and usage history back to the requested window, resuming on widen', async () => {
