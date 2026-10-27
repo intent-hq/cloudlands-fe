@@ -270,6 +270,17 @@ test('earlier days share the timeline, each named where it starts', async ({ pag
   await page.screenshot({ path: path.join(artifactDir, 'earlier-days.png') });
 });
 
+test('a partial load keeps the timeline and offers a retry', async ({ page }) => {
+  test.setTimeout(150_000);
+  await openScene(page, 'partial-error');
+  await expect(row(page, 'agent:agent-lead')).toBeVisible();
+  const notice = page.locator('[data-trace-load-error]');
+  await expect(notice).toBeVisible();
+  await notice.getByRole('button').click();
+  await expect(page.locator('[data-preview-retries]')).toHaveAttribute('data-preview-retries', '1');
+  await page.screenshot({ path: path.join(artifactDir, 'partial-error.png') });
+});
+
 test('a narrow panel keeps every name clear of the timeline', async ({ page }) => {
   test.setTimeout(150_000);
   const scene = await openScene(page, 'live', { width: 380 });

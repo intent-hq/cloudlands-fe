@@ -46,6 +46,7 @@
       'expired-tools': { props: { scenario: 'expired-tools', expanded: ['agent:agent-writer'] } },
       minimal: { props: { scenario: 'minimal' } },
       'day-with-gaps': { props: { scenario: 'day' } },
+      'partial-error': { props: { scenario: 'done', status: 'error' } },
       empty: { props: { scenario: 'none', status: 'ready' } },
       loading: { props: { scenario: 'none', status: 'loading' } },
       error: { props: { scenario: 'none', status: 'error' } },
@@ -108,6 +109,8 @@
 
   /** The last chat jump a row asked for, for tests: agent, message and tool call. */
   let chatRequest = $state('');
+  /** Retry presses, for tests. */
+  let retries = $state(0);
   function chatTarget(span: TraceSpan): string {
     return [span.agentId, span.messageId ?? '', span.toolCallId ?? ''].join(' ');
   }
@@ -117,6 +120,7 @@
   class="h-[640px] overflow-auto bg-background"
   data-preview-agent-trace={scenario}
   data-preview-chat-request={chatRequest}
+  data-preview-retries={retries}
 >
   {#key `${scenario}:${status}`}
     <AgentTraceView
@@ -129,7 +133,7 @@
       initialCollapsed={collapsed}
       initialSelectedId={selectedId}
       onOpenChat={(span) => (chatRequest = chatTarget(span))}
-      onRetry={() => {}}
+      onRetry={() => (retries += 1)}
     />
   {/key}
 </div>

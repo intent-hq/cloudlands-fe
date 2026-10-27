@@ -346,6 +346,18 @@
             {pluralLabel(trace.stats.errors, 'errors')}
           </Button>
         {/if}
+        {#if status === 'error'}
+          <span class="inline-flex items-center gap-1.5 text-danger" data-trace-load-error>
+            {m.agentTrace_incomplete_label()}
+            <Button
+              variant="plain"
+              class="h-auto px-0 text-danger underline-offset-2 hover:underline"
+              onclick={onRetry}
+            >
+              {m.ui_errorToast_retry_label()}
+            </Button>
+          </span>
+        {/if}
       </p>
     </header>
 

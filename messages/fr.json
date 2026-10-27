@@ -27,6 +27,7 @@
   "agentTrace_empty_description": "Les exécutions apparaissent ici dès qu'un agent commence à travailler.",
   "agentTrace_empty_title": "Aucune exécution d'agent pour le moment",
   "agentTrace_error_label": "Impossible de charger l'activité des agents.",
+  "agentTrace_incomplete_label": "L’activité est peut-être incomplète.",
   "agentTrace_kind_agent_label": "Agent",
   "agentTrace_kind_subAgent_label": "Sous-agent",
   "agentTrace_kind_tool_label": "Appel d'outil",

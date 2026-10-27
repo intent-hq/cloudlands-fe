@@ -10,6 +10,9 @@
  *    calls and usage snapshots back to the window the view requests.
  * 3. On reconnect, subscribes again and reloads the history it had.
  *
+ * A failed history page or subscription marks the load failed; the records
+ * already read stay, and a retry starts over.
+ *
  * Paging walks newest → oldest and resumes from its `nextToken`, so widening
  * the window never downloads the newer pages twice.
  */
@@ -147,7 +150,8 @@ async function releaseSubscription(workspaceId: string, subscriptionId: string):
   }
 }
 
-async function subscribeWorkspace(workspaceId: string, lease: SubscriptionLease): Promise<void> {
+/** Takes the lease's daemon subscription; `false` when none could be taken. */
+async function subscribeWorkspace(workspaceId: string, lease: SubscriptionLease): Promise<boolean> {
   let subscriptionId: string | undefined;
   try {
     const result = await backendSubscribe<{ subscriptionId?: string }>({
@@ -160,13 +164,18 @@ async function subscribeWorkspace(workspaceId: string, lease: SubscriptionLease)
         : undefined;
   } catch (error) {
     if (!lease.cancelled) logger.warn('events.subscribe (trace) failed', { workspaceId, error });
-    return;
+    return false;
   }
   if (lease.cancelled) {
     if (subscriptionId) await releaseSubscription(workspaceId, subscriptionId);
-    return;
+    return true;
+  }
+  if (!subscriptionId) {
+    logger.warn('events.subscribe (trace) returned no subscription id', { workspaceId });
+    return false;
   }
   lease.subscriptionId = subscriptionId;
+  return true;
 }
 
 async function unsubscribeWorkspace(workspaceId: string, lease: SubscriptionLease): Promise<void> {
@@ -189,14 +198,16 @@ function isCurrent(
   return active.get(workspaceId) === entry && entry.generation === generation;
 }
 
+/** `subscribed`: without a lease the timeline cannot stay current, so the load fails. */
 function* loadTurns(
   active: Map<string, ActiveTrace>,
   workspaceId: string,
   entry: ActiveTrace,
+  subscribed: boolean,
 ): SagaGenerator<void> {
   const generation = entry.generation;
   yield* put(agentTraceLoadStarted(workspaceId));
-  let ok = true;
+  let ok = subscribed;
   for (const [eventType, cap] of [
     ['agent:last-message', TURN_PAGE_CAP],
     ['agent:failed', FAILURE_PAGE_CAP],
@@ -342,9 +353,9 @@ function* startWorkspace(
   entry.pendingDetail = false;
   entry.detailRun = undefined;
   // Subscribe first so no event falls between the history read and the lease.
-  yield* call(subscribeWorkspace, workspaceId, lease);
+  const subscribed = yield* call(subscribeWorkspace, workspaceId, lease);
   if (active.get(workspaceId) !== entry || entry.lease !== lease) return;
-  yield* fork(loadTurns, active, workspaceId, entry);
+  yield* fork(loadTurns, active, workspaceId, entry, subscribed);
   if (entry.requestedFrom !== null) yield* fork(loadDetail, active, workspaceId, entry);
 }
 
