@@ -94,6 +94,7 @@ describe('renderer app saga registry', () => {
       'providerAdapterPreparationSaga',
       'setupPromptSaga',
       'backgroundHooksSaga',
+      'agentTraceSaga',
       'hostOwnerServicesSaga',
       'dockConversationSaga',
       'themeSaga',

@@ -11,7 +11,6 @@ export const sliderMetadata = parseUiComponentMetadata({
   owner: '008-B',
   callers: [
     'src/features/hud/components/HudHeader.svelte',
-    'src/lib/components/agent-overview/TimeScrubber.svelte',
     'src/lib/component-catalog/ChatPolishGeometryControls.svelte',
     'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
     'src/lib/component-catalog/renderers/SettingsCatalogPreview.svelte',
