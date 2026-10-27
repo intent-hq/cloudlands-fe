@@ -25,6 +25,8 @@ export interface DesktopError {
   code: string;
   detail: string;
   execution?: 'not_started' | 'partial' | 'unknown';
+  /** Present only on `desktop-target-mismatch`. */
+  reason?: DesktopTargetMismatchReason;
 }
 export type DesktopEndReason =
   | 'agent_end'
@@ -70,16 +72,47 @@ interface DesktopPoint {
 interface DesktopPosition extends DesktopPoint {
   displayId?: string;
   layoutId: string;
+  windowId?: string;
 }
 export type DesktopAction =
   | { kind: 'listDisplay' }
   | { kind: 'screenshot'; displayId?: string; layoutId?: string }
   | ({ kind: 'move' } & DesktopPosition)
   | ({ kind: 'click'; button?: 'left' | 'right'; clickCount?: 1 | 2 } & DesktopPosition)
-  | { kind: 'type'; text: string }
-  | { kind: 'keypress'; key: string; modifiers?: DesktopModifier[] }
+  | { kind: 'type'; text: string; windowId?: string }
+  | { kind: 'keypress'; key: string; modifiers?: DesktopModifier[]; windowId?: string }
   | ({ kind: 'scroll'; deltaX: number; deltaY: number } & DesktopPosition)
-  | { kind: 'drag'; displayId?: string; layoutId: string; from: DesktopPoint; to: DesktopPoint };
+  | {
+      kind: 'drag';
+      displayId?: string;
+      layoutId: string;
+      from: DesktopPoint;
+      to: DesktopPoint;
+      windowId?: string;
+    }
+  | { kind: 'focusWindow'; windowId: string };
+/** Application receiving keyboard input when a screenshot was taken. */
+export interface DesktopFrontmostApp {
+  appName: string;
+  bundleId?: string;
+  pid: number;
+  windowId?: string;
+}
+/** One eligible window, framed in the captured display's image pixels. */
+export interface DesktopWindowMetadata {
+  windowId: string;
+  appName: string;
+  bundleId?: string;
+  pid: number;
+  title?: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  focused: boolean;
+}
+export type DesktopTargetMismatchReason =
+  'window_unavailable' | 'not_frontmost' | 'outside_window' | 'obscured' | 'not_focused';
 export interface DesktopDisplay {
   displayId: string;
   width: number;
@@ -96,4 +129,6 @@ export interface DesktopScreenshotResult {
   capturedAt: string;
   layoutId: string;
   displays: (DesktopDisplay & { assetId: string; url: string; mimeType: 'image/png' })[];
+  frontmost?: DesktopFrontmostApp;
+  windows: DesktopWindowMetadata[];
 }

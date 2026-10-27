@@ -104,6 +104,11 @@ describe('desktop reverse RPC wire and private diagnostics', () => {
     const helperDisplay = JSON.parse(
       '{"scaleFactor":2,"originY":0,"height":2160,"displayId":"1","originX":-3840,"width":3840}',
     );
+    // Shape emitted by the helpers' window enumeration (frames in image pixels).
+    const helperWindows = JSON.parse(
+      '{"frontmost":{"appName":"Safari","bundleId":"com.apple.Safari","pid":411,"focusedHandle":"77"},' +
+        '"windows":[{"handle":"77","pid":411,"appName":"Safari","bundleId":"com.apple.Safari","title":"Start Page","x":-20,"y":40,"width":1600,"height":1000}]}',
+    );
     const native = new DesktopNativeAdapter(async (operation) => {
       const result =
         operation === 'identity'
@@ -112,7 +117,9 @@ describe('desktop reverse RPC wire and private diagnostics', () => {
             ? [helperDisplay]
             : operation === 'capture'
               ? [{ ...helperDisplay, data: 'cG5n' }]
-              : { ok: true };
+              : operation === 'windows'
+                ? helperWindows
+                : { ok: true };
       // The helper's private line envelope is unwrapped by DesktopHelperTransport.
       return JSON.parse(JSON.stringify({ id: 1, result })).result;
     });
@@ -231,8 +238,32 @@ describe('desktop reverse RPC wire and private diagnostics', () => {
               mimeType: 'image/png',
             },
           ],
+          frontmost: {
+            appName: 'Safari',
+            bundleId: 'com.apple.Safari',
+            pid: 411,
+            windowId: expect.stringMatching(/^win-/),
+          },
+          windows: [
+            {
+              windowId: expect.stringMatching(/^win-/),
+              appName: 'Safari',
+              bundleId: 'com.apple.Safari',
+              pid: 411,
+              title: 'Start Page',
+              x: -20,
+              y: 40,
+              width: 1600,
+              height: 1000,
+              focused: true,
+            },
+          ],
         },
       });
+      const shot = (await captured).result;
+      // The opaque id never exposes the native window number.
+      expect(shot.windows[0].windowId).toBe(shot.frontmost.windowId);
+      expect(shot.windows[0].windowId).not.toContain('77');
     } finally {
       dispose();
       client.dispose();

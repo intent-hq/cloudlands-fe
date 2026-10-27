@@ -281,6 +281,8 @@ describe('desktop executor and overlay startup failures', () => {
       validateExclusion: vi.fn(async () => {}),
       layout: vi.fn(async () => []),
       capture: vi.fn(async () => []),
+      windows: vi.fn(async () => ({ windows: [] })),
+      focusWindow: vi.fn(async () => {}),
       input: vi.fn(async () => {}),
     };
     const reports = { retain: vi.fn(async () => {}), queue: vi.fn(async () => {}) };
@@ -333,12 +335,15 @@ describe('desktop executor and overlay startup failures', () => {
           ? [display]
           : operation === 'capture'
             ? [{ ...display, data: 'cG5n' }]
-            : { ok: true },
+            : operation === 'windows'
+              ? { windows: [] }
+              : { ok: true },
       );
       const adapter = new DesktopNativeAdapter(request);
       t.native.validateExclusion = adapter.validateExclusion.bind(adapter);
       t.native.layout = adapter.layout.bind(adapter);
       t.native.capture = adapter.capture.bind(adapter);
+      t.native.windows = adapter.windows.bind(adapter);
       t.connection.saveAsset.mockResolvedValue({
         assetId: 'asset',
         url: 'workspace-asset://ws-a/asset',
@@ -371,6 +376,12 @@ describe('desktop executor and overlay startup failures', () => {
         deadlineId: ticket.deadlineId,
       });
       expect(request).toHaveBeenCalledWith('capture', {
+        excludedWindows: ['1', '2', '3', '4'],
+        display,
+        layout: [display],
+      });
+      // Window metadata never lists the glow or control panels either.
+      expect(request).toHaveBeenCalledWith('windows', {
         excludedWindows: ['1', '2', '3', '4'],
         display,
         layout: [display],
