@@ -3,6 +3,8 @@
   interface Props {
     failFirst?: boolean;
     deliveryDelayMs?: number;
+    screenshotDelayMs?: number;
+    failFirstScreenshotReport?: boolean;
   }
   export const preview = definePreview<Props>({
     id: 'annotation-feedback',
@@ -20,10 +22,17 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { Button } from '$lib/components/ui/button';
+  import { selectAnnotationDraft } from '$store/renderer/slices/annotation/annotation-selectors';
   import AnnotationToolbar from './AnnotationToolbar.svelte';
   import AnnotationOverlay from './AnnotationOverlay.svelte';
   import { installFeedbackPreview } from './annotation-feedback.preview-fixtures';
-  let { failFirst = true, deliveryDelayMs = 0 }: Props = $props();
+  let {
+    failFirst = true,
+    deliveryDelayMs = 0,
+    screenshotDelayMs = 60,
+    failFirstScreenshotReport = false,
+  }: Props = $props();
+  const draft$ = selectAnnotationDraft();
   let ready = $state(false);
   let transcript = $state('[]');
   let evidenceImages = $state('[]');
@@ -33,6 +42,8 @@
     fixture = installFeedbackPreview({
       failFirst,
       deliveryDelayMs,
+      screenshotDelayMs,
+      failFirstScreenshotReport,
       onDelivery: (attempts) => {
         evidenceImages = JSON.stringify(
           attempts.at(-1)?.frames.map((frame) => frame.imageDataUrl) ?? [],
@@ -57,6 +68,7 @@
   data-feedback-preview
   data-delivery-transcript={transcript}
   data-delivery-images={evidenceImages}
+  data-capture-count={$draft$.frames.length}
   style="min-height: 720px"
 >
   <section class="preview-live-ui" data-testid="annotation-live-ui">

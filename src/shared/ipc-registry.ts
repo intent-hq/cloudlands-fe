@@ -424,6 +424,8 @@ export const IPC_CHANNELS = {
     SET_TOOLBAR_LAYOUT: 'annotation:set-toolbar-layout',
     SET_DESTINATION: 'annotation:set-destination',
     REQUEST_SEND: 'annotation:request-send',
+    REQUEST_SCREENSHOT: 'annotation:request-screenshot',
+    REPORT_SCREENSHOT: 'annotation:report-screenshot',
     REPORT_DELIVERY: 'annotation:report-delivery',
     ADD_TRANSCRIPT: 'annotation:add-transcript',
     REVIEW: 'annotation:review',

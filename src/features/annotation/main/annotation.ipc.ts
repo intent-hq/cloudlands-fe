@@ -15,6 +15,8 @@ import {
   setAnnotationDestination,
   requestAnnotationSend,
   reportAnnotationDelivery,
+  requestAnnotationScreenshot,
+  reportAnnotationScreenshot,
   setAnnotationToolbarLayout,
   reviewAnnotation,
   setAnnotationTool,
@@ -34,6 +36,10 @@ const EmptySchema = z.object({}).passthrough();
 const SessionIdentitySchema = z.object({ startedAt: z.number().finite().nonnegative() });
 const SendRequestSchema = SessionIdentitySchema.extend({
   retryRequestId: z.string().uuid().optional(),
+});
+const ScreenshotReportSchema = SessionIdentitySchema.extend({
+  requestId: z.string().uuid(),
+  saved: z.boolean(),
 });
 const ToolbarLayoutSchema = SessionIdentitySchema.extend({
   expanded: z.boolean(),
@@ -111,6 +117,34 @@ async function showStartFailure(result: Extract<AnnotationStartResult, { success
 }
 
 export function setupAnnotationIPC(): void {
+  ipcMain.handle(
+    ANNOTATION_CHANNELS.REQUEST_SCREENSHOT,
+    createSafeValidatedHandler(
+      SessionIdentitySchema,
+      async (event, request) => {
+        const window = BrowserWindow.fromWebContents(event.sender);
+        return {
+          success:
+            isAnnotationWindow(window) &&
+            !isAnnotationOverlayWindow(window) &&
+            (await requestAnnotationScreenshot(request)),
+        };
+      },
+      ANNOTATION_CHANNELS.REQUEST_SCREENSHOT,
+    ),
+  );
+  ipcMain.handle(
+    ANNOTATION_CHANNELS.REPORT_SCREENSHOT,
+    createSafeValidatedHandler(
+      ScreenshotReportSchema,
+      async (event, request) => ({
+        success:
+          isAnnotationOverlayWindow(BrowserWindow.fromWebContents(event.sender)) &&
+          reportAnnotationScreenshot(request),
+      }),
+      ANNOTATION_CHANNELS.REPORT_SCREENSHOT,
+    ),
+  );
   ipcMain.handle(
     ANNOTATION_CHANNELS.SET_TOOLBAR_LAYOUT,
     createSafeValidatedHandler(

@@ -35,7 +35,7 @@ for (const theme of ['light', 'dark'] as const) {
         const panel = component.getByRole('navigation', { name: 'Annotation tools' });
         const status = component.locator('.voice-status');
         await expect(status).toHaveText(labels[voiceStatus]);
-        for (const name of ['Workspace', 'Send to agent', 'Cancel']) {
+        for (const name of ['Workspace', 'Take screenshot', 'Send to agent', 'Cancel']) {
           await expect(component.getByRole('button', { name, exact: true })).toBeInViewport({
             ratio: 1,
           });

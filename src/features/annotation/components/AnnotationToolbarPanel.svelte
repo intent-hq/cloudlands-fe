@@ -18,6 +18,8 @@
     faStop,
     faThumbtack,
     faTriangleExclamation,
+    faCamera,
+    faCheck,
     type IconDefinition,
   } from '$lib/icons/phosphor-icons';
   import { m } from '$shared/paraglide/messages.js';
@@ -39,16 +41,22 @@
     voiceStatus,
     elapsedMs = 0,
     pending = false,
+    screenshotPending = false,
+    screenshotSaved = false,
+    screenshotSaving = false,
+    screenshotDisabled = false,
     deliveryLocked = false,
     uncertain = false,
     sent = false,
     sendDisabled = false,
     errorMessage = '',
+    sendFailed,
     onExpanded,
     onWorkspace,
     onRecipient,
     onRefresh,
     onTool,
+    onScreenshot,
     onVoice,
     onSend,
     onCancel,
@@ -65,26 +73,32 @@
     voiceStatus: AnnotationVoiceStatus;
     elapsedMs?: number;
     pending?: boolean;
+    screenshotPending?: boolean;
+    screenshotSaved?: boolean;
+    screenshotSaving?: boolean;
+    screenshotDisabled?: boolean;
     deliveryLocked?: boolean;
     uncertain?: boolean;
     sent?: boolean;
     sendDisabled?: boolean;
     errorMessage?: string;
+    sendFailed?: boolean;
     onExpanded?: (open: boolean) => void;
     onWorkspace?: (id: string) => void;
     onRecipient?: (id: string) => void;
     onRefresh?: () => void;
     onTool: (tool: AnnotationTool) => void;
+    onScreenshot?: () => void;
     onVoice: () => void;
     onSend: () => void;
     onCancel: () => void;
   } = $props();
   const noticeId = $props.id();
-  const locked = $derived(pending || uncertain || sent);
+  const locked = $derived(pending || screenshotPending || uncertain || sent);
   const idleSendLabel = $derived(
     uncertain
       ? m.agent_chatSend_resend_label()
-      : errorMessage
+      : (sendFailed ?? Boolean(errorMessage))
         ? m.annotation_retrySend_label()
         : m.annotation_send_label(),
   );
@@ -279,7 +293,7 @@
         title={`${voiceAction} (M)`}
         aria-keyshortcuts="M"
         aria-pressed={recording}
-        disabled={voiceBusy || locked}
+        disabled={voiceBusy || pending || uncertain || sent}
         onclick={onVoice}
       >
         {#if voiceBusy}<IntentMarkLoader size={16} />{:else}<Fa
@@ -425,8 +439,44 @@
       variant="ghost"
       size="icon"
       iconOnly
+      class={screenshotSaved ? 'screenshot-action screenshot-saved' : 'screenshot-action'}
+      disabled={pending ||
+        uncertain ||
+        sent ||
+        (screenshotPending && !screenshotSaving) ||
+        screenshotDisabled ||
+        !onScreenshot}
+      aria-busy={screenshotPending && !screenshotSaving}
+      aria-label={screenshotSaving
+        ? m.annotation_screenshotRetry_label()
+        : m.annotation_screenshot_label()}
+      title={screenshotSaving
+        ? m.annotation_screenshotRetry_label()
+        : screenshotSaved
+          ? m.annotation_screenshotSaved_status()
+          : m.annotation_screenshot_label()}
+      onclick={onScreenshot}
+    >
+      {#if screenshotPending && !screenshotSaving}<IntentMarkLoader size={16} />{:else}<Fa
+          icon={screenshotSaving ? faArrowRotateRight : screenshotSaved ? faCheck : faCamera}
+          size={18}
+        />{/if}
+    </Button>
+    <span class="sr-only" role="status" aria-live="polite"
+      >{screenshotSaving
+        ? m.annotation_screenshotSaving_status()
+        : screenshotPending
+          ? m.annotation_screenshotCapturing_status()
+          : screenshotSaved
+            ? m.annotation_screenshotSaved_status()
+            : ''}</span
+    >
+    <Button
+      variant="ghost"
+      size="icon"
+      iconOnly
       class="send-action"
-      disabled={pending || sent || sendDisabled}
+      disabled={pending || screenshotPending || sent || sendDisabled}
       aria-busy={pending}
       aria-label={sendLabel}
       title={sendLabel}
@@ -482,7 +532,7 @@
   }
   .delivery-cluster {
     flex: 1 1 340px;
-    min-width: 150px;
+    min-width: 189px;
   }
   .tools-row {
     --tool-size: 36px;
@@ -615,6 +665,15 @@
     min-width: 36px;
     padding: 0;
   }
+  .annotation-toolbar-panel :global(.screenshot-action) {
+    width: 36px;
+    min-width: 36px;
+    height: 40px;
+    flex-shrink: 0;
+  }
+  .annotation-toolbar-panel :global(.screenshot-saved) {
+    color: var(--annotation-ink);
+  }
   .annotation-toolbar-panel :global(.send-action[aria-busy='true']) {
     opacity: 1;
   }
@@ -727,8 +786,8 @@
       flex: 1 1 160px;
     }
     .delivery-cluster {
-      flex: 0 1 180px;
-      min-width: 128px;
+      flex: 0 1 219px;
+      min-width: 167px;
     }
     .annotation-toolbar-panel :global(.destination-chip) {
       flex: 1 1 110px;
@@ -737,6 +796,25 @@
     }
     .divider {
       display: none;
+    }
+  }
+  @media (max-width: 340px) {
+    .delivery-cluster {
+      min-width: 141px;
+      flex-basis: 180px;
+    }
+    .annotation-toolbar-panel :global(.destination-chip) {
+      min-width: 36px;
+      padding-inline: 2px;
+    }
+    .annotation-toolbar-panel :global(.screenshot-action),
+    .annotation-toolbar-panel :global(.send-action),
+    .annotation-toolbar-panel :global(.voice-action) {
+      width: 32px;
+      min-width: 32px;
+    }
+    .annotation-toolbar-panel :global(.dismiss-action) {
+      width: 24px;
     }
   }
 </style>

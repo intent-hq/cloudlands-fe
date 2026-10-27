@@ -15,6 +15,8 @@ import type {
   SetAnnotationDestinationRequest,
   SetAnnotationToolbarLayoutRequest,
   RequestAnnotationSendRequest,
+  RequestAnnotationScreenshot,
+  ReportAnnotationScreenshot,
   ReportAnnotationDeliveryRequest,
   AnnotationStateResult,
   AnnotationTool,
@@ -115,6 +117,14 @@ export const reportAnnotationDeliveryRequested = createAsyncAction<
   [request: ReportAnnotationDeliveryRequest],
   void
 >('annotation/reportDelivery', 'annotation/reportDeliveryRequested');
+export const requestAnnotationScreenshotRequested = createAsyncAction<
+  [request: RequestAnnotationScreenshot],
+  void
+>('annotation/requestScreenshot', 'annotation/requestScreenshotRequested');
+export const reportAnnotationScreenshotRequested = createAsyncAction<
+  [request: ReportAnnotationScreenshot],
+  void
+>('annotation/reportScreenshot', 'annotation/reportScreenshotRequested');
 export const resolveAnnotationRecipientRequested = createAsyncAction<
   [destination: AnnotationDestination, requestId?: string],
   AnnotationRecipient

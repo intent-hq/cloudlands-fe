@@ -41,6 +41,27 @@ export interface ReportAnnotationDeliveryRequest {
   error?: string;
 }
 
+export interface RequestAnnotationScreenshot {
+  startedAt: number;
+}
+
+export interface ReportAnnotationScreenshot extends RequestAnnotationScreenshot {
+  requestId: string;
+  saved: boolean;
+}
+
+type AnnotationScreenshotCapture =
+  | { status: 'capturing' | 'saved'; requestId: string }
+  | { status: 'failed'; requestId: string; error: 'capture' | 'limit' }
+  | {
+      status: 'ready';
+      requestId: string;
+      screenshotDataUrl: string;
+      width: number;
+      height: number;
+      elapsedMs: number;
+    };
+
 export const ANNOTATION_TOOLBAR_SIZE = { width: 720, height: 72, expandedHeight: 320 } as const;
 
 export interface SetAnnotationToolbarLayoutRequest {
@@ -62,6 +83,7 @@ export interface AnnotationSessionState {
   destination?: AnnotationDestination;
   sendRequest?: AnnotationSendRequest;
   delivery?: AnnotationDeliveryState;
+  screenshotCapture?: AnnotationScreenshotCapture;
 }
 
 export interface StartAnnotationRequest {

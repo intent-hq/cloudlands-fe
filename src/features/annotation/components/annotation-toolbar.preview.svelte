@@ -70,6 +70,7 @@
     elapsedMs={42000}
     onTool={(value) => (tool = value)}
     onVoice={() => (action = 'voice')}
+    onScreenshot={() => (action = 'screenshot')}
     onSend={() => (action = 'send')}
     onCancel={() => (action = 'cancel')}
   />

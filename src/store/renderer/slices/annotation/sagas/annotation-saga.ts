@@ -32,6 +32,8 @@ import {
   setAnnotationDestinationRequested,
   setAnnotationToolbarLayoutRequested,
   requestAnnotationSendRequested,
+  requestAnnotationScreenshotRequested,
+  reportAnnotationScreenshotRequested,
   reportAnnotationDeliveryRequested,
   resolveAnnotationRecipientRequested,
 } from '../annotation-slice';
@@ -45,6 +47,8 @@ type VoidRequestAction =
   | ReturnType<typeof setAnnotationToolbarLayoutRequested>
   | ReturnType<typeof setAnnotationDestinationRequested>
   | ReturnType<typeof requestAnnotationSendRequested>
+  | ReturnType<typeof requestAnnotationScreenshotRequested>
+  | ReturnType<typeof reportAnnotationScreenshotRequested>
   | ReturnType<typeof reportAnnotationDeliveryRequested>;
 
 function toError(error: unknown): Error {
@@ -129,6 +133,14 @@ function* requestSendWorker(action: ReturnType<typeof requestAnnotationSendReque
 
 function* reportDeliveryWorker(action: ReturnType<typeof reportAnnotationDeliveryRequested>) {
   yield* runVoidRequest(action, ANNOTATION_CHANNELS.REPORT_DELIVERY, action.payload[0]);
+}
+
+function* requestScreenshotWorker(action: ReturnType<typeof requestAnnotationScreenshotRequested>) {
+  yield* runVoidRequest(action, ANNOTATION_CHANNELS.REQUEST_SCREENSHOT, action.payload[0]);
+}
+
+function* reportScreenshotWorker(action: ReturnType<typeof reportAnnotationScreenshotRequested>) {
+  yield* runVoidRequest(action, ANNOTATION_CHANNELS.REPORT_SCREENSHOT, action.payload[0]);
 }
 
 function* resolveRecipientWorker(action: ReturnType<typeof resolveAnnotationRecipientRequested>) {
@@ -236,6 +248,8 @@ export function* annotationSaga(): SagaGenerator<void> {
     takeEvery(setAnnotationDestinationRequested, setDestinationWorker),
     takeEvery(setAnnotationToolbarLayoutRequested, setToolbarLayoutWorker),
     takeEvery(requestAnnotationSendRequested, requestSendWorker),
+    takeEvery(requestAnnotationScreenshotRequested, requestScreenshotWorker),
+    takeEvery(reportAnnotationScreenshotRequested, reportScreenshotWorker),
     takeEvery(reportAnnotationDeliveryRequested, reportDeliveryWorker),
     takeEvery(resolveAnnotationRecipientRequested, resolveRecipientWorker),
     takeEvery(getAnnotationStateRequested, getAnnotationStateWorker),

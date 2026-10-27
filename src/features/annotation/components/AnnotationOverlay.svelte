@@ -25,6 +25,7 @@
     submitAnnotationRequested,
     resolveAnnotationRecipientRequested,
     reportAnnotationDeliveryRequested,
+    reportAnnotationScreenshotRequested,
     setAnnotationDestinationRequested,
     setAnnotationToolRequested,
     closeAnnotationRequested,
@@ -53,16 +54,20 @@
   const feedback$ = selectAnnotationDraft();
   let currentFrameElapsed = 0;
   let handledRequestId: string | null = null;
+  let reportingScreenshotId: string | null = null;
   let sending = false;
   let draftEdited = false;
   let editInvalidation: Promise<unknown> | null = null;
   let sendError = $state<string | null>(null);
+  let screenshotSaveError = $state<string | null>(null);
   let surface = $state<HTMLElement>();
   const deliveryLocked = $derived(
     Boolean(
       session?.delivery &&
       ['preparing', 'sending', 'uncertain', 'sent'].includes(session.delivery.status),
-    ),
+    ) ||
+      session?.screenshotCapture?.status === 'capturing' ||
+      session?.screenshotCapture?.status === 'ready',
   );
 
   let retryButton = $state<HTMLButtonElement | null>(null);
@@ -231,6 +236,8 @@
       draft = null;
       draftEdited = false;
       handledRequestId = null;
+      reportingScreenshotId = null;
+      screenshotSaveError = null;
     } else if (next.screenshotRevision !== session?.screenshotRevision) {
       if (actions.length > 0) saveCurrentFrame();
       actions = [];
@@ -240,10 +247,70 @@
     }
     if (session && next.tool !== session.tool) draft = null;
     session = next;
+    if (
+      next.screenshotCapture?.status === 'capturing' ||
+      next.screenshotCapture?.status === 'saved'
+    )
+      screenshotSaveError = null;
+    if (next.screenshotCapture?.status === 'capturing') draft = null;
     // Native state retains the whole narration; Redux appends only unseen segments.
     appStore.dispatch(annotationTranscriptsReceived(next.transcripts));
     if (next.delivery?.status === 'preparing') handledRequestId = null;
+    saveRequestedScreenshot(next);
     startRequestedDelivery(next);
+  }
+
+  function saveRequestedScreenshot(next: AnnotationSessionState): void {
+    const capture = next.screenshotCapture;
+    if (capture?.status !== 'ready' || capture.requestId === reportingScreenshotId) return;
+    reportingScreenshotId = capture.requestId;
+    screenshotSaveError = null;
+    let frames = selectAnnotationDraft.select(appStore.state).frames;
+    if (next.tool === 'mouse' && actions.length > 0) {
+      const retained = frames.some(
+        (frame) =>
+          frame.screenshotDataUrl === next.screenshotDataUrl &&
+          JSON.stringify(frame.actions) === JSON.stringify($state.snapshot(actions)),
+      );
+      if (!retained) saveCurrentFrame();
+      frames = selectAnnotationDraft.select(appStore.state).frames;
+    }
+    const id = `${next.startedAt}:screenshot:${capture.requestId}`;
+    const alreadySaved = frames.some((frame) => frame.id === id);
+    const saved = alreadySaved || frames.length < MAX_ANNOTATION_CAPTURES;
+    if (saved && !alreadySaved) {
+      appStore.dispatch(
+        annotationFrameSaved({
+          id,
+          screenshotDataUrl: capture.screenshotDataUrl,
+          actions: next.tool === 'mouse' ? [] : structuredClone($state.snapshot(actions)),
+          palette: { ...ANNOTATION_PALETTE },
+          width: capture.width,
+          height: capture.height,
+          elapsedMs: capture.elapsedMs,
+        }),
+      );
+      markDraftEdited();
+    }
+    const report = reportAnnotationScreenshotRequested({
+      startedAt: next.startedAt,
+      requestId: capture.requestId,
+      saved,
+    });
+    appStore.dispatch(report);
+    void report.promise
+      .catch(() => {
+        if (
+          mounted &&
+          session?.startedAt === next.startedAt &&
+          session.screenshotCapture?.status === 'ready' &&
+          session.screenshotCapture.requestId === capture.requestId
+        )
+          screenshotSaveError = m.annotation_screenshotSaveFailed_error();
+      })
+      .finally(() => {
+        if (reportingScreenshotId === capture.requestId) reportingScreenshotId = null;
+      });
   }
 
   function startRequestedDelivery(next: AnnotationSessionState): void {
@@ -514,6 +581,9 @@
       {/if}
       {#if sendError && !deliveryLocked}
         <p class="capture-limit type-caption" role="alert">{sendError}</p>
+      {/if}
+      {#if screenshotSaveError}
+        <p class="capture-limit type-caption" role="alert">{screenshotSaveError}</p>
       {/if}
     </div>
   </main>

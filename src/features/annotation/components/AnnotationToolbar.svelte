@@ -17,6 +17,7 @@
     loadAnnotationRecipientsRequested,
     setAnnotationDestinationRequested,
     requestAnnotationSendRequested,
+    requestAnnotationScreenshotRequested,
     setAnnotationToolbarLayoutRequested,
   } from '$store/renderer/slices/annotation/annotation-slice';
   import {
@@ -42,7 +43,9 @@
   let destinationError = $state('');
   let voiceStatus = $state<AnnotationVoiceStatus>('idle');
   let sendPending = $state(false);
+  let screenshotRequested = $state(false);
   let localError = $state('');
+  let sendFailure = $state(false);
   let voiceController: AnnotationVoiceController | null = null;
   let recordingStartedAt: number | null = null;
   let elapsedMs = $state(0);
@@ -71,6 +74,16 @@
   const sent = $derived(session?.delivery?.status === 'sent');
   const pending = $derived(sendPending || deliveryLocked);
   const locked = $derived(pending || uncertain || sent);
+  const screenshotPending = $derived(
+    screenshotRequested ||
+      session?.screenshotCapture?.status === 'capturing' ||
+      session?.screenshotCapture?.status === 'ready',
+  );
+  const screenshotSaved = $derived(session?.screenshotCapture?.status === 'saved');
+  const screenshotSaving = $derived(session?.screenshotCapture?.status === 'ready');
+  const screenshotDisabled = $derived(
+    session?.screenshotCapture?.status === 'failed' && session.screenshotCapture.error === 'limit',
+  );
   const sendDisabled = $derived(
     selectionPending ||
       workspacesLoading ||
@@ -80,6 +93,11 @@
   );
   const errorMessage = $derived(
     localError ||
+      (session?.screenshotCapture?.status === 'failed'
+        ? session.screenshotCapture.error === 'limit'
+          ? m.annotation_captureLimit_hint()
+          : m.annotation_captureFailed_error()
+        : '') ||
       (session?.delivery?.status === 'failed' || uncertain
         ? session?.delivery?.error || m.annotation_sendFailed_error()
         : ''),
@@ -271,12 +289,37 @@
   }
 
   async function chooseTool(tool: AnnotationTool): Promise<void> {
-    if (locked || closing) return;
+    if (locked || closing || screenshotPending) return;
     localError = '';
+    sendFailure = false;
     try {
       await setAnnotationTool(tool);
     } catch {
       localError = m.annotation_captureFailed_error();
+    }
+  }
+
+  async function takeScreenshot(): Promise<void> {
+    if (
+      !session ||
+      locked ||
+      closing ||
+      screenshotRequested ||
+      session.screenshotCapture?.status === 'capturing' ||
+      screenshotDisabled
+    )
+      return;
+    screenshotRequested = true;
+    localError = '';
+    sendFailure = false;
+    try {
+      const action = requestAnnotationScreenshotRequested({ startedAt: session.startedAt });
+      appStore.dispatch(action);
+      await action.promise;
+    } catch {
+      if (alive && !closing) localError = m.annotation_captureFailed_error();
+    } finally {
+      if (alive) screenshotRequested = false;
     }
   }
 
@@ -311,10 +354,11 @@
   }
 
   async function send(): Promise<void> {
-    if (!session || pending || sent || closing || sendDisabled) return;
+    if (!session || pending || sent || closing || sendDisabled || screenshotPending) return;
     const startedAt = session.startedAt;
     sendPending = true;
     localError = '';
+    sendFailure = false;
     try {
       if (
         voiceController &&
@@ -347,7 +391,10 @@
       )
         session = result.state;
     } catch {
-      if (alive && !closing) localError = m.annotation_sendFailed_error();
+      if (alive && !closing) {
+        localError = m.annotation_sendFailed_error();
+        sendFailure = true;
+      }
     } finally {
       if (alive) sendPending = false;
     }
@@ -460,16 +507,22 @@
       {voiceStatus}
       {elapsedMs}
       {pending}
+      {screenshotPending}
+      {screenshotSaved}
+      {screenshotSaving}
+      {screenshotDisabled}
       {deliveryLocked}
       {uncertain}
       {sent}
       {sendDisabled}
       {errorMessage}
+      sendFailed={sendFailure || session.delivery?.status === 'failed'}
       onExpanded={(open) => (toolbarExpanded = open)}
       onWorkspace={chooseWorkspace}
       onRecipient={chooseRecipient}
       onRefresh={refreshDestinations}
       onTool={chooseTool}
+      onScreenshot={takeScreenshot}
       onVoice={toggleVoice}
       onSend={send}
       onCancel={discard}

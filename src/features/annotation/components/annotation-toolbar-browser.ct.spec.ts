@@ -7,6 +7,7 @@ type Evidence = {
   voiceRequests: number;
   voiceReplies: number;
   reviewRequests: number;
+  screenshotRequests: { startedAt: number }[];
   sendRequests: {
     request: RequestAnnotationSendRequest;
     destination: AnnotationDestination;
@@ -42,6 +43,14 @@ for (const scenario of ['stop-and-send', 'cancel-pending-send'] as const) {
     await expect(page.locator('.elapsed')).toHaveText('0:00');
     await page.clock.runFor(5250);
     await expect(page.locator('.elapsed')).toHaveText('0:05');
+    await page.getByRole('button', { name: 'Take screenshot', exact: true }).click();
+    await expect.poll(async () => (await evidence()).screenshotRequests.length).toBe(1);
+    expect((await evidence()).screenshotRequests).toEqual([
+      { startedAt: (await evidence()).sessionStartedAt },
+    ]);
+    await expect(panel).toHaveAttribute('data-voice-state', 'recording');
+    expect((await evidence()).voiceRequests).toBe(0);
+    expect((await evidence()).sendRequests).toEqual([]);
     const recording = testInfo.outputPath('actual-toolbar-recording.png');
     await page.screenshot({ path: recording, animations: 'disabled' });
     await testInfo.attach('Actual toolbar recording at native size', {

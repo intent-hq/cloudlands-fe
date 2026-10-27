@@ -24,6 +24,7 @@
   let voiceRequests = $state(0);
   let voiceReplies = $state(0);
   let reviewRequests = $state(0);
+  let screenshotRequests = $state<{ startedAt: number }[]>([]);
   let sendRequests = $state<
     {
       request: RequestAnnotationSendRequest;
@@ -103,6 +104,13 @@
       }),
       // eslint-disable-next-line intent/no-component-async-data-fetch -- browser fixture accepts native toolbar geometry
       overrideMockIpcHandler(IPC_CHANNELS.ANNOTATION.SET_TOOLBAR_LAYOUT, () => ({ success: true })),
+      // eslint-disable-next-line intent/no-component-async-data-fetch -- browser fixture records the real screenshot request at the native boundary
+      overrideMockIpcHandler(IPC_CHANNELS.ANNOTATION.REQUEST_SCREENSHOT, (payload) => {
+        screenshotRequests = [...screenshotRequests, payload as { startedAt: number }];
+        session.screenshotCapture = { status: 'saved', requestId: crypto.randomUUID() };
+        store.dispatch(annotationStateReceived({ ...session }));
+        return { success: true };
+      }),
       // eslint-disable-next-line intent/no-component-async-data-fetch -- browser fixture persists the actual destination request
       overrideMockIpcHandler(IPC_CHANNELS.ANNOTATION.SET_DESTINATION, (payload) => {
         session.destination = { ...(payload as SetAnnotationDestinationRequest).destination };
@@ -200,6 +208,7 @@
     voiceRequests,
     voiceReplies,
     reviewRequests,
+    screenshotRequests,
     sendRequests,
     sessionStartedAt,
     closeRequests,

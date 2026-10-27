@@ -21,6 +21,8 @@ import type {
   SetAnnotationDestinationRequest,
   RequestAnnotationSendRequest,
   ReportAnnotationDeliveryRequest,
+  RequestAnnotationScreenshot,
+  ReportAnnotationScreenshot,
   SetAnnotationToolbarLayoutRequest,
   StartAnnotationRequest,
 } from '../../../shared/annotation';
@@ -45,6 +47,7 @@ interface AnnotationLifecycle {
   state: AnnotationSessionState | null;
   disposed: boolean;
   dockHidden: boolean;
+  captureSurfacesHidden: boolean;
   transitionRevision: number;
   toolbarExpanded: boolean;
   toolbarInteractiveRects: DockPointerRect[];
@@ -150,7 +153,12 @@ function attachLifecycleListeners(lifecycle: AnnotationLifecycle): void {
       fail(`${name}-render-process-gone`),
     );
     const show = (): void => {
-      if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+      if (
+        isActive(lifecycle) &&
+        !lifecycle.captureSurfacesHidden &&
+        !window.isDestroyed() &&
+        !window.webContents.isDestroyed()
+      ) {
         window.showInactive();
       }
     };
@@ -219,6 +227,7 @@ function createLifecycle(displayId: number): AnnotationLifecycle {
     state: null,
     disposed: false,
     dockHidden: false,
+    captureSurfacesHidden: false,
     transitionRevision: 0,
     toolbarExpanded: false,
     toolbarInteractiveRects: [],
@@ -325,6 +334,7 @@ function hideCaptureWindows(lifecycle: AnnotationLifecycle): boolean {
     disposeLifecycle(lifecycle);
     return false;
   }
+  lifecycle.captureSurfacesHidden = true;
   lifecycle.overlayWindow.setIgnoreMouseEvents(true);
   lifecycle.overlayWindow.setOpacity(0);
   lifecycle.toolbarWindow.hide();
@@ -340,7 +350,9 @@ function showCaptureWindows(lifecycle: AnnotationLifecycle, mouse: boolean): boo
   // its previous annotated moment is retained separately for evidence export.
   lifecycle.overlayWindow.setOpacity(mouse ? 0 : 1);
   lifecycle.overlayWindow.setIgnoreMouseEvents(mouse);
+  lifecycle.overlayWindow.showInactive();
   lifecycle.toolbarWindow.showInactive();
+  lifecycle.captureSurfacesHidden = false;
   return true;
 }
 
@@ -520,6 +532,7 @@ export function closeAnnotationMode(): void {
 export function focusAnnotationMode(): boolean {
   const lifecycle = currentLifecycle();
   if (!lifecycle) return false;
+  if (lifecycle.captureSurfacesHidden) return true;
   const target =
     lifecycle.state?.phase === 'review' ? lifecycle.overlayWindow : lifecycle.toolbarWindow;
   if (windowIsUsable(target)) {
@@ -623,6 +636,12 @@ function deliveryLocksCapture(state: AnnotationSessionState): boolean {
   );
 }
 
+function screenshotLocksCapture(state: AnnotationSessionState): boolean {
+  return (
+    state.screenshotCapture?.status === 'capturing' || state.screenshotCapture?.status === 'ready'
+  );
+}
+
 function invalidateFailedDelivery(state: AnnotationSessionState): AnnotationSessionState {
   return state.delivery?.status === 'failed'
     ? { ...state, delivery: { status: 'idle' }, sendRequest: undefined }
@@ -635,6 +654,7 @@ function restoreCaptureSurface(lifecycle: AnnotationLifecycle): void {
   if (!state || !windows) return;
   const [overlay, toolbar] = windows;
   if (state.phase === 'review') {
+    lifecycle.captureSurfacesHidden = false;
     overlay.setOpacity(1);
     overlay.setIgnoreMouseEvents(false);
     toolbar.hide();
@@ -648,7 +668,7 @@ export async function setAnnotationTool(tool: AnnotationTool): Promise<boolean> 
   const lifecycle = currentLifecycle();
   const state = lifecycle?.state;
   if (!lifecycle || !state || !sessionWindows(lifecycle)) return false;
-  if (deliveryLocksCapture(state)) return false;
+  if (deliveryLocksCapture(state) || screenshotLocksCapture(state)) return false;
   // Archive the visible UI when leaving drawing, and refresh the baseline when
   // drawing resumes. Evidence capture never replaces the visible live desktop.
   const transitionRevision = ++lifecycle.transitionRevision;
@@ -686,6 +706,92 @@ export async function setAnnotationTool(tool: AnnotationTool): Promise<boolean> 
   }
 }
 
+/** Capture separate evidence without rebinding the current ink until its save is acknowledged. */
+export async function requestAnnotationScreenshot(
+  request: RequestAnnotationScreenshot,
+): Promise<boolean> {
+  const lifecycle = currentLifecycle();
+  const state = lifecycle?.state;
+  if (
+    !lifecycle ||
+    !state ||
+    state.startedAt !== request.startedAt ||
+    state.phase !== 'capturing' ||
+    deliveryLocksCapture(state) ||
+    lifecycle.captureSurfacesHidden ||
+    !sessionWindows(lifecycle)
+  )
+    return false;
+  // Re-publish the same image so a failed renderer acknowledgement can be retried.
+  if (state.screenshotCapture?.status === 'ready') return publishState(lifecycle);
+  if (screenshotLocksCapture(state)) return false;
+  const requestId = randomUUID();
+  const transitionRevision = ++lifecycle.transitionRevision;
+  lifecycle.state = { ...state, screenshotCapture: { status: 'capturing', requestId } };
+  if (!publishState(lifecycle)) return false;
+  try {
+    if (!hideCaptureWindows(lifecycle)) return false;
+    await waitForCaptureSurface(lifecycle);
+    if (!captureOperationIsCurrent(lifecycle, transitionRevision)) return false;
+    const capture = await captureDisplay(lifecycle.displayId);
+    if (!captureOperationIsCurrent(lifecycle, transitionRevision) || !lifecycle.state) return false;
+    applyCapturedDisplay(lifecycle, capture.display);
+    lifecycle.state = {
+      ...lifecycle.state,
+      screenshotCapture: {
+        status: 'ready',
+        requestId,
+        screenshotDataUrl: capture.dataUrl,
+        width: capture.display.bounds.width,
+        height: capture.display.bounds.height,
+        elapsedMs: Math.max(0, Date.now() - state.startedAt),
+      },
+    };
+    if (!showCaptureWindows(lifecycle, state.tool === 'mouse')) return false;
+    return publishState(lifecycle);
+  } catch (error) {
+    logger.warn('Failed to capture explicit annotation screenshot', { error });
+    if (captureOperationIsCurrent(lifecycle, transitionRevision) && lifecycle.state) {
+      lifecycle.state = {
+        ...lifecycle.state,
+        screenshotCapture: { status: 'failed', requestId, error: 'capture' },
+      };
+      restoreCaptureSurface(lifecycle);
+      publishState(lifecycle);
+    }
+    return false;
+  }
+}
+
+export function reportAnnotationScreenshot(request: ReportAnnotationScreenshot): boolean {
+  const lifecycle = currentLifecycle();
+  const state = lifecycle?.state;
+  const capture = state?.screenshotCapture;
+  if (
+    !lifecycle ||
+    !state ||
+    state.startedAt !== request.startedAt ||
+    !capture ||
+    capture.requestId !== request.requestId
+  )
+    return false;
+  if (capture.status === 'saved') return request.saved;
+  if (capture.status !== 'ready') return false;
+  lifecycle.state = request.saved
+    ? {
+        ...invalidateFailedDelivery(state),
+        // Mouse captures are unmarked evidence; hidden ink still belongs to its held baseline.
+        screenshotDataUrl:
+          state.tool === 'mouse' ? state.screenshotDataUrl : capture.screenshotDataUrl,
+        screenshotCapture: { status: 'saved', requestId: request.requestId },
+      }
+    : {
+        ...state,
+        screenshotCapture: { status: 'failed', requestId: request.requestId, error: 'limit' },
+      };
+  return publishState(lifecycle);
+}
+
 export function appendAnnotationTranscript(text: string, startedAt?: number): boolean {
   const lifecycle = currentLifecycle();
   const state = lifecycle?.state;
@@ -710,7 +816,7 @@ export async function reviewAnnotation(): Promise<boolean> {
   const state = lifecycle?.state;
   const windows = lifecycle ? sessionWindows(lifecycle) : null;
   if (!lifecycle || !state || !windows) return false;
-  if (deliveryLocksCapture(state)) return false;
+  if (deliveryLocksCapture(state) || screenshotLocksCapture(state)) return false;
   if (state.phase === 'review') return true;
   const transitionRevision = ++lifecycle.transitionRevision;
   {
@@ -744,6 +850,7 @@ export async function reviewAnnotation(): Promise<boolean> {
   )
     return false;
   lifecycle.state = { ...lifecycle.state, phase: 'review' };
+  lifecycle.captureSurfacesHidden = false;
   const [overlay, toolbar] = windows;
   overlay.setIgnoreMouseEvents(false);
   overlay.setOpacity(1);
@@ -775,6 +882,7 @@ export async function requestAnnotationSend(
   const state = lifecycle?.state;
   if (!lifecycle || !state || state.startedAt !== request.startedAt || !sessionWindows(lifecycle))
     return false;
+  if (screenshotLocksCapture(state)) return false;
   if (state.delivery && ['preparing', 'sending', 'sent'].includes(state.delivery.status))
     return false;
   const retryUncertain = state.delivery?.status === 'uncertain';

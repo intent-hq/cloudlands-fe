@@ -16,6 +16,8 @@ import {
   setAnnotationDestinationRequested,
   setAnnotationToolbarLayoutRequested,
   requestAnnotationSendRequested,
+  requestAnnotationScreenshotRequested,
+  reportAnnotationScreenshotRequested,
   reportAnnotationDeliveryRequested,
   annotationSubmissionRemembered,
   setAnnotationToolRequested,
@@ -27,6 +29,8 @@ import { AnnotationDeliveryError, type AnnotationSubmission } from '../annotatio
 export function installFeedbackPreview(options: {
   failFirst: boolean;
   deliveryDelayMs?: number;
+  screenshotDelayMs?: number;
+  failFirstScreenshotReport?: boolean;
   onDelivery: (attempts: AnnotationSubmission[]) => void;
 }) {
   const startedAt = Date.now() - 24_000;
@@ -88,9 +92,58 @@ export function installFeedbackPreview(options: {
     }),
   );
   const attempts: AnnotationSubmission[] = [];
+  let screenshotCount = 0;
+  let screenshotReports = 0;
   function* fixtureSaga() {
     yield* all([
       takeEvery(setAnnotationToolbarLayoutRequested, function* (action) {
+        yield* put(action.success(undefined));
+      }),
+      takeEvery(requestAnnotationScreenshotRequested, function* (action) {
+        if (session.screenshotCapture?.status === 'ready') {
+          yield* put(annotationStateReceived(session));
+          yield* put(action.success(undefined));
+          return;
+        }
+        const requestId = crypto.randomUUID();
+        session = { ...session, screenshotCapture: { status: 'capturing', requestId } };
+        yield* put(annotationStateReceived(session));
+        yield* delay(options.screenshotDelayMs ?? 60);
+        session = {
+          ...session,
+          screenshotCapture: {
+            status: 'ready',
+            requestId,
+            screenshotDataUrl: capture(`Screenshot ${++screenshotCount}`),
+            width,
+            height,
+            elapsedMs: Date.now() - startedAt,
+          },
+        };
+        yield* put(annotationStateReceived(session));
+        yield* put(action.success(undefined));
+      }),
+      takeEvery(reportAnnotationScreenshotRequested, function* (action) {
+        if (options.failFirstScreenshotReport && screenshotReports++ === 0) {
+          yield* put(action.failure(new Error('Controlled screenshot acknowledgement failure')));
+          return;
+        }
+        const screenshot = session.screenshotCapture;
+        const report = action.payload[0];
+        if (screenshot?.status !== 'ready' || screenshot.requestId !== report.requestId) {
+          yield* put(action.failure(new Error('Screenshot request is no longer current')));
+          return;
+        }
+        session = {
+          ...session,
+          ...(report.saved && session.tool !== 'mouse'
+            ? { screenshotDataUrl: screenshot.screenshotDataUrl }
+            : {}),
+          screenshotCapture: report.saved
+            ? { status: 'saved', requestId: report.requestId }
+            : { status: 'failed', requestId: report.requestId, error: 'limit' },
+        };
+        yield* put(annotationStateReceived(session));
         yield* put(action.success(undefined));
       }),
       takeEvery(getAnnotationStateRequested, function* (action) {

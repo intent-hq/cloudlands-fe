@@ -95,6 +95,9 @@ test('live UI remains visible and interactive beneath ink while evidence exports
   const ink = surface.locator('.marks > path').first();
   await expect(ink).toBeVisible();
   const drawn = await ink.getAttribute('d');
+  await page.getByRole('button', { name: 'Take screenshot', exact: true }).click();
+  await expect(page.getByText('Screenshot added to feedback.', { exact: true })).toBeAttached();
+  await expect(ink).toHaveAttribute('d', drawn!);
   // Simulate content updating in the underlying application, with no frame swap.
   await page.evaluate(() => {
     const update = document.createElement('p');
@@ -146,4 +149,104 @@ test('live UI remains visible and interactive beneath ink while evidence exports
     [1, 3, 5].map((offset) => parseInt(ANNOTATION_PALETTE.ink.slice(offset, offset + 2), 16)),
   );
   expect(inkPixels).toBeGreaterThan(100);
+});
+
+test('single screenshots save distinct moments without sending or leaving the live UI', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const component = await mount(FeedbackPreview, {
+    props: { failFirst: false, screenshotDelayMs: 500 },
+  });
+  const screenshot = page.getByRole('button', { name: 'Take screenshot', exact: true });
+  const send = page.getByRole('button', { name: 'Send to agent', exact: true });
+  const surface = page.locator('main[data-tool]');
+  await screenshot.click();
+  await expect(screenshot).toBeDisabled();
+  await expect(screenshot).toHaveAttribute('aria-busy', 'true');
+  await expect(send).toBeDisabled();
+  await expect(component).toHaveAttribute('data-capture-count', '3');
+  await expect(screenshot).toBeEnabled();
+  await expect(component).toHaveAttribute('data-delivery-transcript', '[]');
+  await expect(surface).toHaveAttribute('data-tool', 'draw');
+  await expect(surface.locator('img')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Mouse', exact: true }).click();
+  await component.getByRole('button', { name: 'Update live content', exact: true }).click();
+  await screenshot.click();
+  await expect(component).toHaveAttribute('data-capture-count', '4');
+  await expect(screenshot).toBeEnabled();
+  await expect(surface).toHaveAttribute('data-tool', 'mouse');
+  await expect(page.getByTestId('live-update-count')).toHaveText('Live updates: 1');
+  await page.screenshot({ path: testInfo.outputPath('single-screenshot-saved.png') });
+  await send.click();
+  await expect
+    .poll(
+      async () =>
+        JSON.parse((await component.getAttribute('data-delivery-transcript')) ?? '[]').length,
+    )
+    .toBe(1);
+  const attempts = JSON.parse((await component.getAttribute('data-delivery-transcript'))!);
+  const screenshots = attempts[0].frames.filter((frame: { id: string }) =>
+    frame.id.includes(':screenshot:'),
+  );
+  expect(screenshots).toHaveLength(2);
+  expect(new Set(screenshots.map((frame: { id: string }) => frame.id)).size).toBe(2);
+  expect(screenshots.every((frame: { pins: unknown[] }) => frame.pins.length === 0)).toBe(true);
+  const images = JSON.parse((await component.getAttribute('data-delivery-images'))!);
+  expect(images[2]).not.toBe(images[3]);
+});
+
+test('a full draft reports the screenshot limit without replacing saved evidence', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const component = await mount(FeedbackPreview, { props: { failFirst: false } });
+  const screenshot = page.getByRole('button', { name: 'Take screenshot', exact: true });
+  for (let count = 3; count <= 6; count++) {
+    await screenshot.click();
+    await expect(component).toHaveAttribute('data-capture-count', String(count));
+    await expect(screenshot).toBeEnabled();
+  }
+  await screenshot.click();
+  await expect(screenshot).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Send to agent', exact: true })).toBeEnabled();
+  await expect(component).toHaveAttribute('data-capture-count', '6');
+  await expect(component).toHaveAttribute('data-delivery-transcript', '[]');
+  await expect(page.locator('main[data-tool]')).toHaveAttribute('data-tool', 'draw');
+});
+
+test('screenshot save acknowledgement can be retried without taking another image', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const component = await mount(FeedbackPreview, {
+    props: { failFirst: false, failFirstScreenshotReport: true },
+  });
+  await page.getByRole('button', { name: 'Take screenshot', exact: true }).click();
+  const retry = page.getByRole('button', { name: 'Retry saving screenshot', exact: true });
+  await expect(retry).toBeEnabled();
+  await expect(page.locator('.capture-notices').getByRole('alert')).toHaveText(
+    'Could not save the screenshot. Retry saving it.',
+  );
+  await expect(component).toHaveAttribute('data-capture-count', '3');
+  await expect(page.getByRole('button', { name: 'Send to agent', exact: true })).toBeDisabled();
+  await retry.click();
+  await expect(page.getByRole('button', { name: 'Take screenshot', exact: true })).toBeEnabled();
+  await expect(page.getByText('Screenshot added to feedback.', { exact: true })).toBeAttached();
+  await expect(page.locator('.capture-notices').getByRole('alert')).toHaveCount(0);
+  await expect(component).toHaveAttribute('data-capture-count', '3');
+  await page.getByRole('button', { name: 'Send to agent', exact: true }).click();
+  await expect
+    .poll(
+      async () =>
+        JSON.parse((await component.getAttribute('data-delivery-transcript')) ?? '[]').length,
+    )
+    .toBe(1);
+  const attempts = JSON.parse((await component.getAttribute('data-delivery-transcript'))!);
+  expect(
+    attempts[0].frames.filter((frame: { id: string }) => frame.id.includes(':screenshot:')),
+  ).toHaveLength(1);
 });
