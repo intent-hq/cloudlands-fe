@@ -135,7 +135,7 @@ export function desktopFailure(
   });
 }
 /** Exact model guidance required by the window-targeting contract. */
-export const TARGET_MISMATCH_DETAIL =
+const TARGET_MISMATCH_DETAIL =
   'The target window is not ready for input. Call ws.desktop.focusWindow({ windowId }) if needed, take a new screenshot to confirm the target, then retry.';
 export function targetMismatch(
   reason: DesktopTargetMismatchReason,

@@ -8,7 +8,7 @@ import type {
 
 /** One eligible window as reported by the native helper. `handle` is the OS
  * window number/HWND; frames are in the requested display's image pixels. */
-export const nativeWindowSchema = z
+const nativeWindowSchema = z
   .object({
     handle: z.string().min(1),
     pid: z.number().int().positive(),
