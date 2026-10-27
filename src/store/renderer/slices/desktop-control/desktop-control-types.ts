@@ -1,4 +1,5 @@
 import type {
+  DesktopOsChecklist,
   DesktopState,
   DesktopPermissionDecision,
   DesktopPermissionState,
@@ -32,6 +33,7 @@ export interface DesktopEntry {
   loading: boolean;
   submitting: boolean;
   settingUp?: boolean;
+  osChecklist?: DesktopOsChecklist;
   saving: boolean;
   error?: string;
   resolvedRequests: string[];

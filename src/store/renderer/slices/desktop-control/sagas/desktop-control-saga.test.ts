@@ -242,7 +242,7 @@ describe('desktop consent wire lifecycle', () => {
       expect.objectContaining({ decision: 'deny' }),
     );
   });
-  it('keeps sequential OS setup pending and observes grants without another Allow click', async () => {
+  it('keeps OS setup pending and observes grants without another Allow click', async () => {
     vi.useFakeTimers();
     try {
       mocks.permissions.mockResolvedValue({
@@ -260,7 +260,12 @@ describe('desktop consent wire lifecycle', () => {
       await settle();
       h.dispatch(desktopDecisionRequested('workspace', 'agent', request.requestId, 'allow_once'));
       await settle();
-      expect(h.entry()?.error).toContain('Accessibility');
+      expect(h.entry()?.osChecklist).toEqual({
+        accessibility: false,
+        screenRecording: false,
+        screenCapture: 'unavailable',
+      });
+      expect(h.entry()?.error).toContain('Control has not started');
       expect(h.entry()?.submitting).toBe(true);
       mocks.permissions.mockResolvedValue({
         ok: true,
@@ -272,8 +277,7 @@ describe('desktop consent wire lifecycle', () => {
         },
       });
       await vi.advanceTimersByTimeAsync(1000);
-      expect(h.entry()?.error).not.toContain('Accessibility access is missing');
-      expect(h.entry()?.error).toContain('Screen Recording access is missing');
+      expect(h.entry()?.osChecklist).toMatchObject({ accessibility: true, screenRecording: false });
       expect(mocks.request).not.toHaveBeenCalled();
       mocks.permissions.mockResolvedValue({
         ok: true,
@@ -291,6 +295,7 @@ describe('desktop consent wire lifecycle', () => {
         decision: 'allow_once',
       });
       expect(h.entry()?.error).toBeUndefined();
+      expect(h.entry()?.osChecklist).toBeUndefined();
       expect(mocks.start).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
@@ -314,8 +319,11 @@ describe('desktop consent wire lifecycle', () => {
       h.dispatch(desktopDecisionRequested('workspace', 'agent', request.requestId, 'allow_once'));
       await settle();
       const guidance = h.entry()?.error;
-      expect(guidance).toContain('Accessibility');
-      expect(guidance).toContain('Screen Recording');
+      expect(guidance).toContain('Control has not started');
+      expect(h.entry()?.osChecklist).toMatchObject({
+        accessibility: false,
+        screenRecording: false,
+      });
       const localExpiry = desktopRequestExpired('workspace', 'agent', request.requestId);
       const daemonExpiry = desktopEventReceived({
         id: 'daemon-expired',
