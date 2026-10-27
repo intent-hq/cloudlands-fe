@@ -28,6 +28,7 @@
     selection?: 'single';
   } = $props();
   let expandedId: string | null = $state(null);
+  const uid = $props.id();
   function activate(action: MenuAction) {
     if (action.disabled) return;
     action.onClick();
@@ -88,7 +89,10 @@
         >
           {@render label(action)}
         </Menu.SubTrigger>
-        <Menu.SubContent class="w-60">
+        <Menu.SubContent
+          class="w-60"
+          aria-describedby={action.note ? `${uid}-${action.id}-note` : undefined}
+        >
           {#if action.selection === 'single'}
             <Menu.RadioGroup
               value={action.submenu.find((item) => item.checked)?.id ?? ''}
@@ -110,6 +114,16 @@
             />
           {:else}
             <WorkspaceActionItems actions={action.submenu} {menu} {iconWeight} {onClose} />
+          {/if}
+          {#if action.note}
+            <Menu.Separator />
+            <p
+              id={`${uid}-${action.id}-note`}
+              class="type-caption px-2 py-1 text-muted-foreground"
+              data-menu-action-note
+            >
+              {action.note}
+            </p>
           {/if}
         </Menu.SubContent>
       </Menu.Sub>
@@ -177,6 +191,11 @@
     {#if action.submenu && expandedId === action.id}
       <div class="pl-4">
         <WorkspaceActionItems actions={action.submenu} {menu} {iconWeight} {onClose} />
+        {#if action.note}
+          <p class="type-caption px-2 py-1 text-muted-foreground" data-menu-action-note>
+            {action.note}
+          </p>
+        {/if}
       </div>
     {/if}
   {/if}

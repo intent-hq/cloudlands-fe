@@ -532,6 +532,9 @@
           ? primaryClient.hostName
           : undefined,
     detailTone: primaryClientOffline ? 'danger' : undefined,
+    note: primaryClientOffline
+      ? m.workspace_drivingClient_offline_description()
+      : m.workspace_drivingClient_menu_description(),
     selection: 'single',
     onClick: () => {},
     submenu: [

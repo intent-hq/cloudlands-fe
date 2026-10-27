@@ -25,6 +25,8 @@
     disabled?: boolean;
     /** Child menu items; `onClick` is ignored when set. */
     submenu?: MenuAction[];
+    /** Passive explanation shown below the submenu's choices. */
+    note?: string;
     /** Checked submenu children are one exclusive radio selection; commands stay separate. */
     selection?: 'single';
   }
