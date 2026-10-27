@@ -57,13 +57,6 @@ export function noteLink(text: string, noteId: string, workspaceId?: string): st
 }
 
 /**
- * Generate an intent:// URL that opens a workspace
- */
-export function workspaceUrl(workspaceId: string): string {
-  return `${INTENT_BASE_URL}/workspace/${workspaceId}`;
-}
-
-/**
  * Generate an intent:// URL for one message in an agent conversation.
  */
 export function conversationMessageUrl(

@@ -23,8 +23,8 @@ import {
   openWorkspaceNote,
 } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
-import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { parseFilePathLineSuffix } from '$shared/utils/link-helpers';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 
 // URL-pattern examples shown in parse errors; passed as message params because
 // literal `{`/`}` inside a Paraglide message would parse as a parameter.
@@ -111,15 +111,24 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
     let line: number | undefined;
 
     if (
-      rawSegments.length === 2 &&
       rawSegments[0] === 'workspace' &&
-      isValidRawIdSegment(rawSegments[1]) &&
-      pathSegments.length === 2
+      (rawSegments.length === 2 || (rawSegments.length === 3 && rawSegments[2] === ''))
     ) {
-      // Workspace format: workspace/{workspace-id}
-      workspaceId = pathSegments[1];
+      // Workspace format: workspace/{workspace-id}, optional trailing slash
+      // (the Assistant panel accepts the same shape).
+      const id = decodeWorkspaceIdSegment(rawSegments[1]);
+      if (!id) {
+        return {
+          type: 'unknown',
+          orgId,
+          resourceId: '',
+          valid: false,
+          error: invalidFormatError(),
+        };
+      }
+      workspaceId = id;
       resourceType = 'workspace';
-      resourceId = pathSegments[1];
+      resourceId = id;
     } else if (rawSegments[0] === 'file') {
       // Short format: file/{workspace-relative-path} (remaining segments form the path)
       resourceType = 'file';
@@ -284,6 +293,18 @@ function isSafeWorkspaceRelativePath(path: string): boolean {
  * percent-encoded) or contain path separators. Validate before using the URL
  * parser's normalized path segments.
  */
+/** Workspace IDs that name app surfaces, not openable workspaces. */
+const RESERVED_WORKSPACE_LINK_IDS = new Set<string>([CHIEF_WORKSPACE_ID, 'new']);
+
+/**
+ * Decode the ID segment of a workspace link; null for an unsafe or reserved ID.
+ */
+function decodeWorkspaceIdSegment(segment: string | undefined): string | null {
+  if (segment === undefined || !isValidRawIdSegment(segment)) return null;
+  const id = decodeURIComponent(segment);
+  return RESERVED_WORKSPACE_LINK_IDS.has(id) ? null : id;
+}
+
 function isValidRawIdSegment(segment: string): boolean {
   let decoded: string;
   try {
@@ -395,13 +416,16 @@ export function createIntentLinkClickHandler() {
 }
 
 /**
- * Private: Open a workspace, the same way link-handler's workspace activation does
+ * Private: Open a workspace. The workspace route opens its tab on arrival, as
+ * for cross-workspace note links.
  */
 async function navigateToWorkspace(workspaceId: string): Promise<void> {
+  const { appClient } = await import('$lib/client');
+  const workspace = await appClient.workspaces.get(workspaceId).catch(() => null);
+  if (!workspace) throw new NotFoundError(m.workspace_loader_notFound_title());
   const { navigateToRoute } = await import('./navigation.client');
   // (navigateToRoute no-ops in the HUD pop-out window — never leaves /hud)
   await navigateToRoute(`/workspace/${encodeURIComponent(workspaceId)}`);
-  appStore.dispatch(openWorkspaceTab(workspaceId));
 }
 
 /**

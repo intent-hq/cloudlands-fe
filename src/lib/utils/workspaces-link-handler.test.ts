@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseIntentLink, generateNoteLink } from './workspaces-link-handler';
-import { conversationMessageUrl, workspaceUrl } from '$shared/constants/intent-links';
+import { conversationMessageUrl } from '$shared/constants/intent-links';
 
 describe('parseIntentLink', () => {
   describe('valid note links', () => {
@@ -159,11 +159,21 @@ describe('parseIntentLink', () => {
       });
     });
 
-    it('round-trips with workspaceUrl', () => {
-      const parsed = parseIntentLink(workspaceUrl('cold-heron'));
-      expect(workspaceUrl('cold-heron')).toBe('intent://local/workspace/cold-heron');
-      expect(parsed.type).toBe('workspace');
-      expect(parsed.workspaceId).toBe('cold-heron');
+    it('accepts a trailing slash like the Assistant panel does', () => {
+      expect(parseIntentLink('intent://local/workspace/cold-heron/')).toMatchObject({
+        type: 'workspace',
+        workspaceId: 'cold-heron',
+        valid: true,
+      });
+    });
+
+    it('decodes a percent-encoded workspace id once', () => {
+      expect(parseIntentLink('intent://local/workspace/a%20b')).toMatchObject({
+        type: 'workspace',
+        workspaceId: 'a b',
+        resourceId: 'a b',
+        valid: true,
+      });
     });
 
     it('keeps a workspace literally named "workspace" usable for notes', () => {
@@ -181,6 +191,9 @@ describe('parseIntentLink', () => {
       'intent://local/workspace/cold-heron/extra',
       'intent://local/workspace/%2e%2e',
       'intent://local/workspace/a%2Fb',
+      'intent://local/workspace/__chief__',
+      'intent://local/workspace/new',
+      'intent://local/workspace/cold-heron//',
     ])('rejects malformed workspace link %s', (link) => {
       expect(parseIntentLink(link).valid).toBe(false);
     });
