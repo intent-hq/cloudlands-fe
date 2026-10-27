@@ -1,4 +1,4 @@
-import { expect, test } from '../../../../test/ct-test';
+import { expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
 import LiveResponseGroupHost from './LiveResponseGroupHost.svelte';
 import StreamingResponseGroupLifecycleHost from './StreamingResponseGroupLifecycleHost.svelte';
 
@@ -93,10 +93,7 @@ test('follows reflow, preserves manual scrollback, and resumes at the bottom', a
   await page.setViewportSize({ width: 320, height: 480 });
   await expectFollowing(scroller);
 
-  const followedTop = (await readDrum(scroller)).scrollTop;
-  await scroller.hover();
-  await page.mouse.wheel(0, -80);
-  await expect.poll(async () => (await readDrum(scroller)).scrollTop).toBeLessThan(followedTop);
+  await wheelUntilScrolled(scroller, { deltaY: -80 });
   const scrollbackTop = (await readDrum(scroller)).scrollTop;
   await component.update({ props: { lineCount: 14 } });
   await expect(component.getByTestId('live-stream-line')).toHaveCount(14);
@@ -106,7 +103,7 @@ test('follows reflow, preserves manual scrollback, and resumes at the bottom', a
   expect((await readDrum(scroller)).scrollTop).toBeCloseTo(scrollbackTop, 0);
   expect((await readDrum(scroller)).lastLineVisible).toBe(false);
 
-  await page.mouse.wheel(0, 10000);
+  await wheelUntilScrolled(scroller, { deltaY: 10_000, pointer: 'current' });
   await expectFollowing(scroller);
   await component.update({ props: { lineCount: 15 } });
   await expectFollowing(scroller);

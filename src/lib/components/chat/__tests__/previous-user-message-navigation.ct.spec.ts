@@ -1,6 +1,6 @@
 import type { Locator } from '@playwright/experimental-ct-svelte';
 import type { AgentMessage } from '$shared/types';
-import { expect, test } from '../../../../test/ct-test';
+import { expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
 import ChatMessageNavigatorIntegrationHost from './ChatMessageNavigatorIntegrationHost.svelte';
 
 // Chromium hides native scrollbars in headless mode unless this default is removed.
@@ -299,8 +299,7 @@ test('previous-message navigation follows its target while earlier content hydra
   const source = component.locator('[data-message-id="user-24"]');
   // Bring the earlier placeholder into the real preload band without letting
   // follow-bottom undo the reader's scroll before observer delivery.
-  await scroll.hover();
-  await page.mouse.wheel(0, -400);
+  await wheelUntilScrolled(scroll, { deltaY: -400 });
   await expect
     .poll(() => page.evaluate(() => Reflect.get(window, 'hasDeferredNavigationHydration')()))
     .toBe(true);
@@ -927,7 +926,8 @@ for (const motion of ['reduce', 'no-preference'] as const) {
       });
     const landed = await measure();
     expect(landed.offset).not.toBeNull();
-    await page.mouse.wheel(0, 350);
+    // A resend would double the distance this test checks; give one wheel longer.
+    await wheelUntilScrolled(viewport, { deltaY: 350, pointer: 'current', attemptTimeout: 5_000 });
     // Native wheel scrolling is asynchronous even while JavaScript time is paused.
     await expect.poll(async () => (await measure()).offset).toBeCloseTo(landed.offset! - 350, 0);
     const before = await measure();
