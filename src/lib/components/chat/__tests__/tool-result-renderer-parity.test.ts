@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
-import { cleanup } from '@testing-library/svelte';
+import { cleanup, waitFor } from '@testing-library/svelte';
 import { fireEvent, render } from './operational-renderer-test';
-import type { AgentMessage } from '$shared/types';
+import type { AgentMessage, ContentBlock } from '$shared/types';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import AgentMessageList from '../AgentMessageList.svelte';
 import MessageContent from '../MessageContent.svelte';
@@ -72,6 +72,36 @@ function resultRows(container: HTMLElement) {
 }
 
 describe('tool-result production renderer parity', () => {
+  it.each(surfaces)(
+    'stops pulsing terminal calls without output while another call runs in $name chat',
+    async (surface) => {
+      const content = ['completed', 'error', 'started'].flatMap<ContentBlock>((status, index) => [
+        { type: 'text', text: `Tool ${index + 1}` },
+        {
+          type: 'tool_use',
+          id: `status:${index}`,
+          toolCallId: `status-call-${index}`,
+          name: 'launch-process',
+          input: { command: `echo ${status}` },
+          metadata: { toolKind: 'execute', status },
+        },
+      ]);
+      const message = reconcileToolResultMessage(content);
+      const view = surface.render(message.contentBlocks ?? [], true);
+
+      await waitFor(() => {
+        const completed = view.container.querySelector('[data-tool-use-id="status:0"]');
+        const failed = view.container.querySelector('[data-tool-use-id="status:1"]');
+        const running = view.container.querySelector('[data-tool-use-id="status:2"]');
+        expect(completed?.querySelector('[data-tool-icon]')).toBeTruthy();
+        expect(completed?.querySelector('[data-streaming-pulse]')).toBeNull();
+        expect(failed?.querySelector('[data-tool-status="error"]')).toBeTruthy();
+        expect(failed?.querySelector('[data-streaming-pulse]')).toBeNull();
+        expect(running?.querySelector('[data-tool-icon][data-streaming-pulse]')).toBeTruthy();
+      });
+    },
+  );
+
   it.each(surfaces)(
     'renders top-level object-envelope orphan text at its search path in $name chat',
     (surface) => {
