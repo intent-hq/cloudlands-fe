@@ -73,7 +73,10 @@ describe('production route graph', () => {
       '+error.svelte',
       '+layout.svelte',
       '+layout.ts',
+      'annotation-toolbar/+page.svelte',
+      'annotation/+page.svelte',
       'dev-console/+page.svelte',
+      'dock/+page.svelte',
       'hud/+layout.svelte',
       'hud/+page.svelte',
     ]);

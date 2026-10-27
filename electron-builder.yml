@@ -27,6 +27,7 @@ files:
   - '!resources/tailcat/**'
   # Speech helper ships via mac.extraResources (speech-helper/), not asar.
   - '!resources/speech-helper/**'
+  - '!resources/dock-helper/**'
   # Keychain helper ships via mac.extraResources (keychain-helper/), not asar.
   - '!resources/keychain-helper/**'
 
@@ -110,6 +111,8 @@ mac:
     # Runtime Dock icon. Finder and Applications continue to use Assets.car/icon.icns.
     - from: src/assets/icons/app-icon/Icon-1024.png
       to: app-icon.png
+    - from: resources/dock-helper
+      to: dock-helper
     - from: resources/speech-helper
       to: speech-helper
     # Bundle the iCloud-keychain sync helper (built by

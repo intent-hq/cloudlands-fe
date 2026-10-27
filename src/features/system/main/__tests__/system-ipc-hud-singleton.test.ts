@@ -42,11 +42,14 @@ const electronMocks = vi.hoisted(() => {
       return loadURL(url);
     });
     isDestroyed = () => this.destroyed;
+    destroy = vi.fn(() => this._close());
     isMinimized = () => this.minimized;
     webContents = {
       isDestroyed: () => false,
       getURL: () => this.loadedUrl ?? '',
       on: vi.fn(),
+      once: vi.fn(),
+      executeJavaScript: vi.fn(async () => true),
       send: vi.fn(),
     };
 
@@ -106,6 +109,7 @@ vi.mock('../../../../main/window', () => ({
 import { WINDOW_CHANNELS } from '../../../../shared/ipc/channels';
 import { _resetHudWindowRefForTests } from '../../../../main/hud-window';
 import { setupSystemIPC } from '../system.ipc';
+import { WindowOpenNewSchema } from '../../../../main/ipc-schemas';
 
 function handlerFor(channel: string): Handler {
   const call = electronMocks.handle.mock.calls.find(([registered]) => registered === channel);
@@ -114,6 +118,21 @@ function handlerFor(channel: string): Handler {
 }
 
 describe('HUD window singleton via WINDOW.OPEN_NEW', () => {
+  it('bounds exact workspace item targets and rejects arbitrary target shapes', () => {
+    expect(
+      WindowOpenNewSchema.safeParse({
+        workspaceTarget: { type: 'file', filePath: 'src/app.ts', line: 42 },
+      }).success,
+    ).toBe(true);
+    for (const workspaceTarget of [
+      { type: 'file', filePath: '' },
+      { type: 'file', filePath: 'src/app.ts', line: -1 },
+      { type: 'file', filePath: 'src/app.ts', workspaceId: 'other' },
+      { type: 'note', noteId: 'n'.repeat(257) },
+      { type: 'unknown', payload: {} },
+    ])
+      expect(WindowOpenNewSchema.safeParse({ workspaceTarget }).success).toBe(false);
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     electronMocks.loadURL.mockResolvedValue(undefined);
@@ -174,6 +193,100 @@ describe('HUD window singleton via WINDOW.OPEN_NEW', () => {
     await openNew({ sender: {} }, { route: '/workspace/ws-1' });
     await openNew({ sender: {} }, { route: '/workspace/ws-2' });
     expect(electronMocks.constructed).toHaveLength(2);
+  });
+
+  it('keeps the latest exact agent while a dock workspace launch is hydrating', async () => {
+    const openNew = handlerFor(WINDOW_CHANNELS.OPEN_NEW);
+    await openNew(
+      { sender: {} },
+      { route: '/workspace/ws-1', reuseExistingWorkspace: true, agentId: 'agent-first' },
+    );
+    const window = electronMocks.constructed[0];
+    const surface = deferred<boolean>();
+    window.webContents.executeJavaScript.mockReturnValueOnce(surface.promise);
+    const loaded = window.webContents.once.mock.calls.find(
+      ([event]: [string]) => event === 'did-finish-load',
+    );
+    expect(loaded).toBeDefined();
+    loaded![1]();
+    await openNew(
+      { sender: {} },
+      { route: '/workspace/ws-1', reuseExistingWorkspace: true, agentId: 'agent-latest' },
+    );
+    surface.resolve(true);
+    await vi.waitFor(() =>
+      expect(window.webContents.send).toHaveBeenCalledWith('notification:navigate', {
+        workspaceId: 'ws-1',
+        agentId: 'agent-latest',
+      }),
+    );
+    expect(electronMocks.constructed).toHaveLength(1);
+    expect(window.webContents.send).not.toHaveBeenCalledWith(
+      'notification:navigate',
+      expect.objectContaining({ agentId: 'agent-first' }),
+    );
+  });
+
+  it('keeps the latest exact workspace item while the normal window is hydrating', async () => {
+    const openNew = handlerFor(WINDOW_CHANNELS.OPEN_NEW);
+    await openNew(
+      { sender: {} },
+      {
+        route: '/workspace/ws-1',
+        reuseExistingWorkspace: true,
+        workspaceTarget: { type: 'file', filePath: 'src/old.ts', line: 12 },
+      },
+    );
+    const window = electronMocks.constructed[0];
+    const surface = deferred<boolean>();
+    window.webContents.executeJavaScript.mockReturnValueOnce(surface.promise);
+    const loaded = window.webContents.once.mock.calls.find(
+      ([event]: [string]) => event === 'did-finish-load',
+    );
+    loaded![1]();
+    await openNew(
+      { sender: {} },
+      {
+        route: '/workspace/ws-1',
+        reuseExistingWorkspace: true,
+        workspaceTarget: { type: 'note', noteId: 'note-latest' },
+      },
+    );
+    surface.resolve(true);
+    await vi.waitFor(() =>
+      expect(window.webContents.send).toHaveBeenCalledWith('notification:navigate', {
+        workspaceId: 'ws-1',
+        workspaceTarget: { type: 'note', noteId: 'note-latest' },
+      }),
+    );
+    expect(electronMocks.constructed).toHaveLength(1);
+    expect(window.webContents.send).not.toHaveBeenCalledWith(
+      'notification:navigate',
+      expect.objectContaining({
+        workspaceTarget: expect.objectContaining({ filePath: 'src/old.ts' }),
+      }),
+    );
+  });
+
+  it('hands an exact Assistant thread to a newly loaded normal window', async () => {
+    const openNew = handlerFor(WINDOW_CHANNELS.OPEN_NEW);
+    await openNew(
+      { sender: {} },
+      { route: '/', reuseExistingWorkspace: true, agentId: 'chief-thread' },
+    );
+    const window = electronMocks.constructed[0];
+    const loaded = window.webContents.once.mock.calls.find(
+      ([event]: [string]) => event === 'did-finish-load',
+    );
+    expect(loaded).toBeDefined();
+    loaded![1]();
+    await vi.waitFor(() =>
+      expect(window.webContents.send).toHaveBeenCalledWith('notification:navigate', {
+        workspaceId: '__chief__',
+        agentId: 'chief-thread',
+        chief: true,
+      }),
+    );
   });
 
   it('registers the page-title listener on HUD and workspace windows', async () => {

@@ -1,3 +1,5 @@
+import { dockConversationReducer } from './slices/dock-conversation/dock-conversation-slice';
+import { annotationReducer } from './slices/annotation/annotation-slice';
 import { homeWorkspacesReducer } from '$features/home/home-workspaces-slice';
 import { homeIntegrationsReducer } from '$features/home/home-integrations-slice';
 import { pendingSubmissionsReducer } from './slices/pending-submissions/pending-submissions-slice';
@@ -149,6 +151,8 @@ export const reducers = {
   model: modelReducer,
   agentModel: agentModelReducer,
   pip: pipReducer,
+  annotation: annotationReducer,
+  dockConversation: dockConversationReducer,
   power: powerReducer,
   specialists: specialistsReducer,
   systemStatus: systemStatusReducer,

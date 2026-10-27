@@ -1,36 +1,46 @@
 import { expect, test } from '../../test/ct-test';
 import Preview from './home.preview.svelte';
 
+const nativePlatform =
+  process.platform === 'darwin'
+    ? 'MacIntel'
+    : process.platform === 'win32'
+      ? 'Win32'
+      : 'Linux x86_64';
+const nativeModifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+
+test(`Home opens a row with the native primary modifier (${nativeModifier}) while normal clicks keep the preview`, async ({
+  mount,
+  page,
+}, testInfo) => {
+  // Match native mouse semantics: a platform override cannot turn macOS
+  // Control-click into a Linux primary-modifier click.
+  await page.addInitScript((value) => {
+    Object.defineProperty(navigator, 'platform', { get: () => value });
+  }, nativePlatform);
+  await page.reload();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const component = await mount(Preview);
+  const row = component.locator('[data-home-workspace="home-review"]');
+  const before = await page.evaluate(() => window.__homeWorkspacePreview?.navigation());
+  await row.click();
+  await expect(component.locator('[data-home-detail]')).toBeVisible();
+  expect(await page.evaluate(() => window.__homeWorkspacePreview?.navigation())).toEqual(before);
+  await row.click({ modifiers: [nativeModifier] });
+  await expect
+    .poll(() => page.evaluate(() => window.__homeWorkspacePreview?.navigation().currentTabId))
+    .toBe('home-review');
+  await expect(row.locator('..')).toHaveAttribute('aria-selected', 'true');
+  const tabs = await page.evaluate(() => window.__homeWorkspacePreview?.navigation().tabOrder);
+  expect(tabs?.filter((id) => id === 'home-review')).toHaveLength(1);
+  await testInfo.attach(`home-open-${nativeModifier}`, {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+});
+
 for (const platform of ['MacIntel', 'Linux x86_64']) {
   const modifier = platform === 'MacIntel' ? 'Meta' : 'Control';
-
-  test(`Home opens a row with ${modifier} while normal clicks keep the preview`, async ({
-    mount,
-    page,
-  }, testInfo) => {
-    await page.addInitScript((value) => {
-      Object.defineProperty(navigator, 'platform', { get: () => value });
-    }, platform);
-    await page.reload();
-    await page.setViewportSize({ width: 1440, height: 900 });
-    const component = await mount(Preview);
-    const row = component.locator('[data-home-workspace="home-review"]');
-    const before = await page.evaluate(() => window.__homeWorkspacePreview?.navigation());
-    await row.click();
-    await expect(component.locator('[data-home-detail]')).toBeVisible();
-    expect(await page.evaluate(() => window.__homeWorkspacePreview?.navigation())).toEqual(before);
-    await row.click({ modifiers: [modifier] });
-    await expect
-      .poll(() => page.evaluate(() => window.__homeWorkspacePreview?.navigation().currentTabId))
-      .toBe('home-review');
-    await expect(row.locator('..')).toHaveAttribute('aria-selected', 'true');
-    const tabs = await page.evaluate(() => window.__homeWorkspacePreview?.navigation().tabOrder);
-    expect(tabs?.filter((id) => id === 'home-review')).toHaveLength(1);
-    await testInfo.attach(`home-open-${modifier}`, {
-      body: await page.screenshot(),
-      contentType: 'image/png',
-    });
-  });
 
   test(`Home supports ${modifier}-Enter without selecting the preview`, async ({ mount, page }) => {
     await page.addInitScript((value) => {

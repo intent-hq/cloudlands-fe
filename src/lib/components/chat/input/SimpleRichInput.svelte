@@ -156,6 +156,8 @@
     panelFocused?: boolean;
     /** Whether to use compact mode (shorter height for short panels) */
     compactMode?: boolean;
+    /** Optional detached-host ceiling; preserves room for the transcript. */
+    maxComposerHeight?: number;
     /** Render as the inset ChatPanel composer surface. */
     edgeDocked?: boolean;
     /** Padding/spacing class applied to the rich text editor content. */
@@ -234,6 +236,7 @@
     panelFocused = true,
 
     compactMode: _compactMode = false, // Reserved for future use
+    maxComposerHeight,
     edgeDocked = false,
     editorClassName = 'px-2!',
     contentInsetClassName = undefined,
@@ -260,7 +263,11 @@
   const defaultProviderId$ = selectEffectiveDefaultProviderId(workspaceIdStore);
   const providerCatalogEntries$ = selectProviderCatalogEntries(workspaceIdStore);
 
+  let disposed = false;
+  const lifetimeAborter = new AbortController();
+
   function updateValue(nextValue: string) {
+    if (disposed) return;
     value = nextValue;
     onvaluechange?.(nextValue);
   }
@@ -598,6 +605,7 @@
 
   // Calculate max height based on parent panel (80% of panel height, capped)
   let maxAutoHeight = $derived.by(() => {
+    if (maxComposerHeight !== undefined) return Math.max(MIN_HEIGHT, maxComposerHeight);
     if (parentPanelHeight && parentPanelHeight > 0) {
       const percentageHeight = Math.floor(parentPanelHeight * MAX_HEIGHT_PERCENTAGE);
       return Math.min(percentageHeight, MAX_HEIGHT_ABSOLUTE);
@@ -619,9 +627,9 @@
   const edgeShadow = 'none';
   const composerStyle = $derived(
     `${
-      isAutoExpand
+      containerHeight === null
         ? `min-height: ${dynamicDefaultHeight}px; max-height: ${maxAutoHeight}px;`
-        : `height: ${containerHeight}px;`
+        : `height: ${Math.min(containerHeight, maxComposerHeight ?? MAX_HEIGHT_ABSOLUTE)}px;`
     }${edgeShadow ? ` box-shadow: ${edgeShadow};` : ''}`,
   );
 
@@ -765,7 +773,19 @@
     modelSwitchDialog = null;
   }
 
-  onDestroy(() => settleModelSwitchDialog(false));
+  onDestroy(() => {
+    disposed = true;
+    lifetimeAborter.abort();
+    for (const aborter of placementAborters.values()) aborter.abort();
+    placementAborters.clear();
+    settleModelSwitchDialog(false);
+    // Keyed composers can reopen the same agent before an old request settles.
+    // Retire both pending results and any surviving toast's Undo closure.
+    enhanceRequestId += 1;
+    isEnhancing = false;
+    enhancementUndoValue = null;
+    enhancedPromptValue = null;
+  });
 
   /**
    * In-flight placement cancellers keyed by context-item id. Removing an
@@ -803,6 +823,7 @@
   }
 
   async function handleEnhancePrompt() {
+    if (disposed) return;
     if (!admitted || !enhanceAvailable || disabled) return;
     if (!value.trim() || isEnhancing) return;
 
@@ -1039,6 +1060,7 @@
    * flow), non-image files are placed into the workspace via the daemon.
    */
   async function processImageFiles(files: File[]) {
+    if (disposed) return;
     // Images travel as attachment-reference blocks (monorepo#3338), so the
     // composer cap matches the daemon's 30 MiB reference-image limit. The
     // chief virtual workspace has no attachment registry — its images stay
@@ -1048,6 +1070,7 @@
 
     const imageFiles: File[] = [];
     for (const file of files) {
+      if (disposed) return;
       // Non-image files of ANY size are placed into the workspace via the
       // daemon (file.placeAttachment, PROTOCOL §5.9) and referenced by an
       // attachment block — never inlined, never dropped.
@@ -1058,7 +1081,14 @@
       imageFiles.push(file);
     }
 
-    for (const item of await imageFilesToContextItems(imageFiles, { maxBytes })) {
+    if (disposed) return;
+    const items = await imageFilesToContextItems(imageFiles, {
+      maxBytes,
+      signal: lifetimeAborter.signal,
+    });
+    if (disposed) return;
+    for (const item of items) {
+      if (disposed) return;
       contextItems = [...contextItems, item];
       oncontextAdd?.(item);
     }
@@ -1079,6 +1109,7 @@
    * replays the committed attachment instead of placing a duplicate.
    */
   async function placeNonImageFile(file: File) {
+    if (disposed) return;
     const fileName =
       file.name === 'image.png' || file.name === 'image.jpg' || !file.name
         ? `pasted-file-${Date.now()}.${file.type.split('/')[1] || 'bin'}`
@@ -1119,10 +1150,12 @@
    * metadata) or `failed` (pill shows retry; send stays blocked).
    */
   async function runPlacement(itemId: string) {
+    if (disposed) return;
     const item = contextItems.find((i) => i.id === itemId);
     if (!item) return;
 
     const patchItem = (patch: Partial<ContextItem>) => {
+      if (disposed) return;
       contextItems = contextItems.map((i) => (i.id === itemId ? { ...i, ...patch } : i));
     };
 
@@ -1163,6 +1196,7 @@
         aborter.signal,
       );
 
+      if (disposed || aborter.signal.aborted) return;
       patchItem({
         placementStatus: 'placed',
         placementProgress: undefined,
@@ -1174,6 +1208,7 @@
       });
       const placed = contextItems.find((i) => i.id === itemId);
       if (placed) oncontextAdd?.(placed);
+      if (disposed) return;
       logger.debug('Placed attachment in workspace', {
         fileName: result.fileName,
         attachmentId: result.attachmentId,
@@ -1181,6 +1216,7 @@
       });
       notify.success(m.chat_richInput_addedFile_toast({ name: result.fileName }));
     } catch (error) {
+      if (disposed) return;
       if (isPlacementCancellation(error, aborter.signal)) {
         // User removed the attachment mid-upload — the item is already gone
         // and the daemon session was aborted; no failure UI.
@@ -1303,7 +1339,10 @@
     // In edit mode, handle is at bottom so dragging down increases height
     // Otherwise, handle is at top so dragging up increases height
     const deltaY = editMode ? e.clientY - initialY : initialY - e.clientY;
-    const newHeight = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT_ABSOLUTE, initialHeight + deltaY));
+    const newHeight = Math.max(
+      MIN_HEIGHT,
+      Math.min(maxComposerHeight ?? MAX_HEIGHT_ABSOLUTE, initialHeight + deltaY),
+    );
     containerHeight = newHeight;
   }
 
@@ -1513,152 +1552,154 @@
     tabindex={-1}
   ></Button>
 
-  <!-- Non-image context items and selections - shown above editor when present -->
-  {#if nonImageItems.length > 0}
-    <div
-      class="flex min-w-0 items-center gap-1 overflow-x-auto pt-1 scrollbar-none {contentInsetClasses}"
-      style="-ms-overflow-style: none; scrollbar-width: none;"
-    >
-      {#each nonImageItems as item (item.id)}
-        {#if item.type === 'selection' && item.content}
-          <TooltipRich side="top" align="start" maxWidth="24rem" delayDuration={300}>
-            {#snippet children()}
-              <ContextChip
-                type="selection"
-                label={item.label}
-                maxLabelWidth="120px"
-                removable
-                onRemove={() => removeContextItem(item.id)}
-              />
-            {/snippet}
-            {#snippet content()}
-              <Header size={6}>{m.chat_richInput_selectedText_label()}</Header>
-              <div class="mt-1 text-xs whitespace-pre-wrap max-w-80 overflow-auto line-clamp-6">
-                {item.content}
-              </div>
-            {/snippet}
-          </TooltipRich>
-        {:else if item.type === 'file' && (item.file || item.imageData || item.attachmentId || item.placementStatus)}
-          <!-- Non-image file with chip preview (placed attachments render
+  <!-- A bounded composer scrolls draft and attachments together, keeping actions visible. -->
+  <div class={maxComposerHeight !== undefined ? 'min-h-6 flex-1 overflow-y-auto' : 'contents'}>
+    <!-- Non-image context items and selections - shown above editor when present -->
+    {#if nonImageItems.length > 0}
+      <div
+        class="flex min-w-0 items-center gap-1 overflow-x-auto pt-1 scrollbar-none {contentInsetClasses}"
+        style="-ms-overflow-style: none; scrollbar-width: none;"
+      >
+        {#each nonImageItems as item (item.id)}
+          {#if item.type === 'selection' && item.content}
+            <TooltipRich side="top" align="start" maxWidth="24rem" delayDuration={300}>
+              {#snippet children()}
+                <ContextChip
+                  type="selection"
+                  label={item.label}
+                  maxLabelWidth="120px"
+                  removable
+                  onRemove={() => removeContextItem(item.id)}
+                />
+              {/snippet}
+              {#snippet content()}
+                <Header size={6}>{m.chat_richInput_selectedText_label()}</Header>
+                <div class="mt-1 text-xs whitespace-pre-wrap max-w-80 overflow-auto line-clamp-6">
+                  {item.content}
+                </div>
+              {/snippet}
+            </TooltipRich>
+          {:else if item.type === 'file' && (item.file || item.imageData || item.attachmentId || item.placementStatus)}
+            <!-- Non-image file with chip preview (placed attachments render
                from their registry metadata — no File handle, no bytes).
                Staged/placing/failed items render their placement state. -->
+            <AttachmentPreview
+              id={item.id}
+              name={item.label}
+              type={item.file?.type || item.imageMimeType || item.attachmentMimeType || ''}
+              size={item.file?.size ?? item.attachmentSize}
+              file={item.file}
+              imageData={item.imageData}
+              imageMimeType={item.imageMimeType}
+              onRemove={removeContextItem}
+              placementStatus={item.placementStatus}
+              placementProgress={item.placementProgress}
+              placementError={item.placementError}
+              onRetry={(id) => void runPlacement(id)}
+              variant="chip"
+            />
+          {:else}
+            <!-- Other context items (notes, folders, etc.) -->
+            <ContextChip
+              type={item.type}
+              label={item.label}
+              maxLabelWidth="120px"
+              removable
+              onRemove={() => removeContextItem(item.id)}
+            />
+          {/if}
+        {/each}
+      </div>
+    {/if}
+
+    <!-- TipTap Editor replacing textarea so mentions render as pills -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      class="editor-wrapper relative min-h-6 cursor-text {isAutoExpand
+        ? 'flex-1 overflow-y-auto'
+        : 'flex-1 overflow-hidden'} {editMode ? 'pr-5' : ''}"
+      class:placeholder-hidden={!showPlaceholder}
+      onclick={() => tiptap?.focus()}
+    >
+      <TipTapEditor
+        bind:this={tiptap}
+        class={isAutoExpand ? '' : 'h-full overflow-y-auto'}
+        editorClassName={cn('text-sm! leading-5!', editorClassName)}
+        minHeight={20}
+        maxHeight={isAutoExpand ? 9999 : 9999}
+        {autoFocus}
+        {value}
+        {placeholder}
+        disabled={disabled || isEnhancing}
+        editableWhileDisabled={editableWhileDisabled && !isEnhancing}
+        {inputLocked}
+        workspace={workspace ?? undefined}
+        skills={$skills$}
+        skillsLoading={$skillsLoading$}
+        skillsError={$skillsError$}
+        onSkillsRetry={() => {
+          if (workspace?.id) appStore.dispatch(loadSkillsRequested(workspace.id));
+        }}
+        onUpdate={(text) => {
+          handleCancelEnhance();
+          if (
+            enhancementUndoValue !== null &&
+            enhancedPromptValue !== null &&
+            text !== enhancedPromptValue
+          ) {
+            enhancementUndoValue = null;
+            enhancedPromptValue = null;
+          }
+          updateValue(text);
+          // Update inline images state for send button reactivity
+          hasInlineImages = (tiptap?.getInlineImages?.() ?? []).length > 0;
+        }}
+        onSubmit={handleSubmit}
+        onForceSubmit={handleForceSubmit}
+        onEscape={isEnhancing ? handleCancelEnhance : editMode ? oncancel : undefined}
+        {onHistoryPrev}
+        {onHistoryNext}
+        onSelectionChange={(selectedText) => (editorSelection = selectedText)}
+        onMentionSelect={(item) => {
+          // Mentions are already rendered as chips in the editor
+          // Don't add them to the context header - that's only for:
+          // - Currently open file/note in main panel
+          // - Selected text
+          // Just log for debugging
+          logger.debug('Mention selected:', item);
+        }}
+      />
+
+      {#if isEnhancing}
+        <div class="shimmer-overlay-wrapper">
+          <div class="shimmer-overlay"></div>
+        </div>
+      {/if}
+    </div>
+
+    <!-- Image attachments - shown below editor in Slack-style thumbnail row -->
+    {#if imageAttachments.length > 0}
+      <div
+        class="flex min-w-0 items-center gap-2 overflow-x-auto py-1 scrollbar-none {contentInsetClasses}"
+        style="-ms-overflow-style: none; scrollbar-width: none;"
+      >
+        {#each imageAttachments as item (item.id)}
           <AttachmentPreview
             id={item.id}
             name={item.label}
-            type={item.file?.type || item.imageMimeType || item.attachmentMimeType || ''}
-            size={item.file?.size ?? item.attachmentSize}
+            type={item.file?.type || item.imageMimeType || ''}
+            size={item.file?.size}
             file={item.file}
             imageData={item.imageData}
             imageMimeType={item.imageMimeType}
             onRemove={removeContextItem}
-            placementStatus={item.placementStatus}
-            placementProgress={item.placementProgress}
-            placementError={item.placementError}
-            onRetry={(id) => void runPlacement(id)}
-            variant="chip"
+            variant="thumbnail"
           />
-        {:else}
-          <!-- Other context items (notes, folders, etc.) -->
-          <ContextChip
-            type={item.type}
-            label={item.label}
-            maxLabelWidth="120px"
-            removable
-            onRemove={() => removeContextItem(item.id)}
-          />
-        {/if}
-      {/each}
-    </div>
-  {/if}
-
-  <!-- TipTap Editor replacing textarea so mentions render as pills -->
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div
-    class="editor-wrapper relative min-h-6 cursor-text {isAutoExpand
-      ? 'flex-1 overflow-y-auto'
-      : 'flex-1 overflow-hidden'} {editMode ? 'pr-5' : ''}"
-    class:placeholder-hidden={!showPlaceholder}
-    onclick={() => tiptap?.focus()}
-  >
-    <TipTapEditor
-      bind:this={tiptap}
-      class={isAutoExpand ? '' : 'h-full overflow-y-auto'}
-      editorClassName={cn('text-sm! leading-5!', editorClassName)}
-      minHeight={20}
-      maxHeight={isAutoExpand ? 9999 : 9999}
-      {autoFocus}
-      {value}
-      {placeholder}
-      disabled={disabled || isEnhancing}
-      editableWhileDisabled={editableWhileDisabled && !isEnhancing}
-      {inputLocked}
-      workspace={workspace ?? undefined}
-      skills={$skills$}
-      skillsLoading={$skillsLoading$}
-      skillsError={$skillsError$}
-      onSkillsRetry={() => {
-        if (workspace?.id) appStore.dispatch(loadSkillsRequested(workspace.id));
-      }}
-      onUpdate={(text) => {
-        handleCancelEnhance();
-        if (
-          enhancementUndoValue !== null &&
-          enhancedPromptValue !== null &&
-          text !== enhancedPromptValue
-        ) {
-          enhancementUndoValue = null;
-          enhancedPromptValue = null;
-        }
-        updateValue(text);
-        // Update inline images state for send button reactivity
-        hasInlineImages = (tiptap?.getInlineImages?.() ?? []).length > 0;
-      }}
-      onSubmit={handleSubmit}
-      onForceSubmit={handleForceSubmit}
-      onEscape={isEnhancing ? handleCancelEnhance : editMode ? oncancel : undefined}
-      {onHistoryPrev}
-      {onHistoryNext}
-      onSelectionChange={(selectedText) => (editorSelection = selectedText)}
-      onMentionSelect={(item) => {
-        // Mentions are already rendered as chips in the editor
-        // Don't add them to the context header - that's only for:
-        // - Currently open file/note in main panel
-        // - Selected text
-        // Just log for debugging
-        logger.debug('Mention selected:', item);
-      }}
-    />
-
-    {#if isEnhancing}
-      <div class="shimmer-overlay-wrapper">
-        <div class="shimmer-overlay"></div>
+        {/each}
       </div>
     {/if}
   </div>
-
-  <!-- Image attachments - shown below editor in Slack-style thumbnail row -->
-  {#if imageAttachments.length > 0}
-    <div
-      class="flex min-w-0 items-center gap-2 overflow-x-auto py-1 scrollbar-none {contentInsetClasses}"
-      style="-ms-overflow-style: none; scrollbar-width: none;"
-    >
-      {#each imageAttachments as item (item.id)}
-        <AttachmentPreview
-          id={item.id}
-          name={item.label}
-          type={item.file?.type || item.imageMimeType || ''}
-          size={item.file?.size}
-          file={item.file}
-          imageData={item.imageData}
-          imageMimeType={item.imageMimeType}
-          onRemove={removeContextItem}
-          variant="thumbnail"
-        />
-      {/each}
-    </div>
-  {/if}
-
   <!-- Hidden file input - accepts any file type -->
   <Input bind:ref={fileInput} type="file" multiple class="hidden" onchange={handleFileChange} />
   <!-- Action Bar -->

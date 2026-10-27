@@ -543,6 +543,31 @@ async function signSidecar(context) {
       await verifySignature(tailcatPath);
     }
 
+    const dockHelperPath = path.join(
+      appPath,
+      'Contents',
+      'Resources',
+      'dock-helper',
+      'intent-dock-helper',
+    );
+    if (fs.existsSync(dockHelperPath)) {
+      await signBinary(dockHelperPath, identity);
+      await verifySignature(dockHelperPath);
+    }
+
+    // Replace the development ad-hoc signature before the outer app seal is created.
+    const dockCursorPath = path.join(
+      appPath,
+      'Contents',
+      'Resources',
+      'dock-helper',
+      'intent-dock-cursor.node',
+    );
+    if (fs.existsSync(dockCursorPath)) {
+      await signBinary(dockCursorPath, identity);
+      await verifySignature(dockCursorPath);
+    }
+
     // Sign the speech helper when bundled (same seal-ordering constraint)
     if (fs.existsSync(speechHelperPath)) {
       await signBinary(speechHelperPath, identity);

@@ -42,6 +42,7 @@ const WINDOW_STATE_INVOKE_CHANNELS = [
   IPC_CHANNELS.WINDOW.SET_THEME,
   IPC_CHANNELS.WINDOW.SET_TITLE,
   IPC_CHANNELS.WINDOW.SET_BROWSER_FOCUSED,
+  IPC_CHANNELS.WINDOW.SET_DOCK_POINTER_REGION,
 ] as const;
 
 /** Forward the selected app theme to Electron's registered main-process handler. */
@@ -64,6 +65,9 @@ export function registerWindowStateBridge(): void {
       const bridge = typeof window !== 'undefined' ? window.electronAPI : undefined;
       if (bridge && typeof bridge.invoke === 'function') {
         return bridge.invoke(channel, payload);
+      }
+      if (channel === IPC_CHANNELS.WINDOW.SET_DOCK_POINTER_REGION) {
+        return { success: false, supported: false };
       }
       return undefined;
     });

@@ -94,6 +94,11 @@ import {
   registerWindowTitleListener,
 } from '../../../main/utils/resolve-app-title';
 import { isHudWindow, isTrackedHudWindow } from '../../../main/hud-window';
+import { isDockWindow } from '../../../main/dock-window';
+import { registerDockPlacementHandlers } from '../../../main/dock-placement-ipc';
+import { isAnnotationWindow } from '../../annotation/main/annotation-window';
+import { isWebviewPopupWindow } from '../../../main/webview-security';
+import { isDevConsoleRoute } from '../../../shared/dev-console-route';
 import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
 
@@ -108,7 +113,8 @@ let nativeThemeBackgroundSyncInstalled = false;
 const WINDOW_OPEN_REQUEST_RETENTION_MS = 5 * 60 * 1000;
 const MAX_TRACKED_WINDOW_OPEN_REQUESTS = 256;
 
-type WindowOpenResult = { success: true; windowId: number } | { success: false; error: string };
+type WindowOpenResult =
+  { success: true; windowId: number; reused?: boolean } | { success: false; error: string };
 type WindowOpenRequestEntry = {
   result: Promise<WindowOpenResult>;
   settledAt?: number;
@@ -117,6 +123,7 @@ type WindowOpenRequestEntry = {
 function refreshNativeWindowBackgrounds(): void {
   const backgroundColor = getWindowBackgroundColor(nativeTheme.shouldUseDarkColors);
   for (const window of BrowserWindow.getAllWindows()) {
+    if (isDockWindow(window) || isAnnotationWindow(window)) continue;
     window.setBackgroundColor(backgroundColor);
   }
 }
@@ -662,6 +669,48 @@ export function setupSystemIPC() {
   installNativeThemeBackgroundSync();
   const handledWindowOpenRequests = new Map<string, WindowOpenRequestEntry>();
 
+  type DockNavigationTarget = {
+    workspaceId: string;
+    agentId?: string;
+    workspaceTarget?: import('$shared/workspace-window-target').WorkspaceWindowTarget;
+  };
+  const pendingDockCreations = new Map<
+    string,
+    { result: Promise<BrowserWindow>; target: DockNavigationTarget }
+  >();
+  const pendingDockLaunches = new Map<
+    string,
+    { window: BrowserWindow; target: DockNavigationTarget }
+  >();
+
+  async function waitForWorkspaceSurface(
+    targetWindow: BrowserWindow,
+    workspaceId: string,
+  ): Promise<void> {
+    const serializedWorkspaceId = JSON.stringify(workspaceId);
+    await targetWindow.webContents.executeJavaScript(`
+      new Promise((resolve) => {
+        const workspaceId = ${serializedWorkspaceId};
+        const findSurface = () => workspaceId === ${JSON.stringify(CHIEF_WORKSPACE_ID)}
+          ? document.querySelector('[data-home-page]')
+          : Array.from(document.querySelectorAll('[data-workspace-surface]'))
+            .find((node) => node.getAttribute('data-workspace-surface') === workspaceId);
+        if (findSurface()) return resolve(true);
+        const observer = new MutationObserver(() => {
+          if (!findSurface()) return;
+          observer.disconnect();
+          clearTimeout(timer);
+          resolve(true);
+        });
+        observer.observe(document.documentElement, { childList: true, subtree: true });
+        const timer = setTimeout(() => {
+          observer.disconnect();
+          resolve(false);
+        }, 30000);
+      })
+    `);
+  }
+
   // App info
   ipcMain.handle(
     APP_CHANNELS.VERSION,
@@ -872,7 +921,9 @@ export function setupSystemIPC() {
           if (window) {
             nativeTheme.themeSource = validated.theme;
             const isDark = nativeTheme.shouldUseDarkColors;
-            window.setBackgroundColor(getWindowBackgroundColor(isDark));
+            if (!isDockWindow(window) && !isAnnotationWindow(window)) {
+              window.setBackgroundColor(getWindowBackgroundColor(isDark));
+            }
 
             logger.info('Window theme updated', { theme: validated.theme, isDark });
           }
@@ -1012,6 +1063,7 @@ export function setupSystemIPC() {
   async function createAppWindow(
     route: string | undefined,
     openerBackendId: string,
+    suppressStartupSplash = false,
   ): Promise<BrowserWindow> {
     const { BrowserWindow } = await import('electron');
     const path = await import('path');
@@ -1021,7 +1073,8 @@ export function setupSystemIPC() {
       await import('../../../main/hud-window');
 
     const isHudRoute = typeof route === 'string' && route.startsWith(HUD_ROUTE_PREFIX);
-    const isChiefRoute = route === `/workspace/${CHIEF_WORKSPACE_ID}`;
+    const isChiefRoute =
+      route === `/workspace/${CHIEF_WORKSPACE_ID}` || (suppressStartupSplash && route === '/');
     if (isHudRoute) {
       const existing = findExistingHudWindow(openerBackendId);
       if (existing) {
@@ -1071,9 +1124,69 @@ export function setupSystemIPC() {
       registerHudWindow(newWindow);
     }
 
-    newWindow.once('ready-to-show', () => {
-      newWindow.show();
-    });
+    if (!suppressStartupSplash) {
+      newWindow.once('ready-to-show', () => {
+        newWindow.show();
+      });
+    }
+
+    const directWorkspaceMatch = route?.match(/^\/workspace\/([^/]+)$/);
+    const directWorkspaceId = suppressStartupSplash
+      ? route === '/'
+        ? CHIEF_WORKSPACE_ID
+        : directWorkspaceMatch && decodeURIComponent(directWorkspaceMatch[1])
+      : undefined;
+    if (directWorkspaceId) {
+      pendingDockLaunches.set(openerBackendId, {
+        window: newWindow,
+        target: pendingDockCreations.get(openerBackendId)?.target ?? {
+          workspaceId: directWorkspaceId,
+        },
+      });
+      newWindow.on('closed', () => {
+        if (pendingDockLaunches.get(openerBackendId)?.window === newWindow) {
+          pendingDockLaunches.delete(openerBackendId);
+        }
+      });
+      newWindow.webContents.once('did-finish-load', () => {
+        void (async () => {
+          let renderedWorkspaceId = directWorkspaceId;
+          try {
+            await waitForWorkspaceSurface(newWindow, renderedWorkspaceId);
+            let pending = pendingDockLaunches.get(openerBackendId);
+            while (pending?.window === newWindow && !newWindow.isDestroyed()) {
+              const target = pending.target;
+              if (target.workspaceId !== renderedWorkspaceId) {
+                renderedWorkspaceId = target.workspaceId;
+                newWindow.webContents.send('notification:navigate', {
+                  workspaceId: renderedWorkspaceId,
+                });
+                await waitForWorkspaceSurface(newWindow, renderedWorkspaceId);
+              }
+              pending = pendingDockLaunches.get(openerBackendId);
+              // A newer agent in the same workspace also supersedes the old target.
+              if (pending?.window !== newWindow) break;
+              if (pending.target !== target) continue;
+              newWindow.webContents.send('notification:navigate', {
+                ...target,
+                ...(target.workspaceId === CHIEF_WORKSPACE_ID ? { chief: true } : {}),
+              });
+              break;
+            }
+          } catch (error) {
+            logger.warn('Dock workspace launch did not finish rendering', { error });
+          } finally {
+            if (!newWindow.isDestroyed()) {
+              newWindow.show();
+              newWindow.focus();
+            }
+            if (pendingDockLaunches.get(openerBackendId)?.window === newWindow) {
+              pendingDockLaunches.delete(openerBackendId);
+            }
+          }
+        })();
+      });
+    }
 
     // Load the app with the specified route
     const isDev = process.env.NODE_ENV === 'development';
@@ -1081,17 +1194,83 @@ export function setupSystemIPC() {
     if (isDev) {
       const devPort = process.env.DEV_PORT || '5190';
       const baseUrl = `http://127.0.0.1:${devPort}`;
-      const url = route ? `${baseUrl}${route}` : baseUrl;
-      await newWindow.loadURL(url);
+      const url = new URL(route ? `${baseUrl}${route}` : baseUrl);
+      if (suppressStartupSplash) url.searchParams.set('dockLaunch', '1');
+      await newWindow.loadURL(url.toString()).catch((error: unknown) => {
+        newWindow.destroy();
+        throw error;
+      });
     } else {
       // In production, use the custom app:// protocol (same as main window)
       // The protocol handler in main/index.ts serves files from dist/renderer
       // and handles client-side routing for SvelteKit
-      const url = route ? `app://workspaces${route}` : 'app://workspaces/';
-      await newWindow.loadURL(url);
+      const url = new URL(route ? `app://workspaces${route}` : 'app://workspaces/');
+      if (suppressStartupSplash) url.searchParams.set('dockLaunch', '1');
+      await newWindow.loadURL(url.toString()).catch((error: unknown) => {
+        newWindow.destroy();
+        throw error;
+      });
     }
 
     return newWindow;
+  }
+
+  function isNormalWindowForBackend(existing: BrowserWindow, backendId: string): boolean {
+    return (
+      !existing.isDestroyed() &&
+      !existing.webContents.isDestroyed() &&
+      !isDockWindow(existing) &&
+      !isAnnotationWindow(existing) &&
+      !isWebviewPopupWindow(existing) &&
+      !isDevConsoleRoute(new URL(existing.webContents.getURL() || 'about:blank').pathname) &&
+      !isHudWindow(existing) &&
+      !isTrackedHudWindow(existing) &&
+      getBackendIdForWindow(existing) === backendId
+    );
+  }
+
+  function isReadyNormalWindowForBackend(existing: BrowserWindow, backendId: string): boolean {
+    return (
+      isNormalWindowForBackend(existing, backendId) &&
+      existing.webContents.getURL() !== '' &&
+      !existing.webContents.isLoadingMainFrame()
+    );
+  }
+
+  function focusExistingWorkspaceWindow(
+    workspaceId: string,
+    backendId: string,
+    agentId?: string,
+    workspaceTarget?: DockNavigationTarget['workspaceTarget'],
+  ): BrowserWindow | null {
+    let existing: BrowserWindow | null = null;
+    for (const windowId of getWindowIdsForWorkspace(workspaceId, backendId)) {
+      const candidate = BrowserWindow.fromId(windowId);
+      if (candidate && isNormalWindowForBackend(candidate, backendId)) {
+        existing = candidate;
+        break;
+      }
+    }
+
+    if (!existing) {
+      const focused = BrowserWindow.getFocusedWindow();
+      const candidates = focused
+        ? [focused, ...BrowserWindow.getAllWindows().filter((window) => window !== focused)]
+        : BrowserWindow.getAllWindows();
+      existing =
+        candidates.find((candidate) => isReadyNormalWindowForBackend(candidate, backendId)) ?? null;
+    }
+
+    if (!existing) return null;
+    if (existing.isMinimized()) existing.restore();
+    existing.show();
+    existing.focus();
+    existing.webContents.send('notification:navigate', {
+      workspaceId,
+      ...(agentId ? { agentId } : {}),
+      ...(workspaceTarget ? { workspaceTarget } : {}),
+    });
+    return existing;
   }
 
   // Create new window
@@ -1127,10 +1306,57 @@ export function setupSystemIPC() {
       async (event, validated) => {
         const openWindow = async (): Promise<WindowOpenResult> => {
           try {
-            const newWindow = await createAppWindow(
-              validated.route,
-              getBackendIdForIpcSender(event.sender),
-            );
+            const openerBackendId =
+              validated.route === `/workspace/${CHIEF_WORKSPACE_ID}` ||
+              (validated.reuseExistingWorkspace && validated.route === '/')
+                ? LOCAL_CONNECTION_ID
+                : getBackendIdForIpcSender(event.sender);
+            const workspaceMatch = validated.route?.match(/^\/workspace\/([^/]+)$/);
+            if (validated.reuseExistingWorkspace && (workspaceMatch || validated.route === '/')) {
+              const workspaceId =
+                validated.route === '/'
+                  ? CHIEF_WORKSPACE_ID
+                  : decodeURIComponent(workspaceMatch![1]);
+              const target = {
+                workspaceId,
+                ...(validated.agentId ? { agentId: validated.agentId } : {}),
+                ...(validated.workspaceTarget
+                  ? { workspaceTarget: validated.workspaceTarget }
+                  : {}),
+              };
+              const pending = pendingDockLaunches.get(openerBackendId);
+              if (pending && !pending.window.isDestroyed()) {
+                pending.target = target;
+                return { success: true, windowId: pending.window.id, reused: true };
+              }
+              pendingDockLaunches.delete(openerBackendId);
+              const creating = pendingDockCreations.get(openerBackendId);
+              if (creating) {
+                creating.target = target;
+                const window = await creating.result;
+                return { success: true, windowId: window.id, reused: true };
+              }
+              const existing = focusExistingWorkspaceWindow(
+                workspaceId,
+                openerBackendId,
+                validated.agentId,
+                validated.workspaceTarget,
+              );
+              if (existing) return { success: true, windowId: existing.id, reused: true };
+              const creation = {
+                result: createAppWindow(validated.route, openerBackendId, true),
+                target,
+              };
+              pendingDockCreations.set(openerBackendId, creation);
+              try {
+                const window = await creation.result;
+                return { success: true, windowId: window.id };
+              } finally {
+                if (pendingDockCreations.get(openerBackendId) === creation)
+                  pendingDockCreations.delete(openerBackendId);
+              }
+            }
+            const newWindow = await createAppWindow(validated.route, openerBackendId);
             return { success: true, windowId: newWindow.id };
           } catch (error) {
             logger.error('Failed to open new window', error as Error);
@@ -1219,6 +1445,8 @@ export function setupSystemIPC() {
     ),
   );
 
+  registerDockPlacementHandlers();
+
   // Focus the next open app window in list order, wrapping around. Destroyed,
   // hidden, and HUD pop-out windows (URL-detected or tracked pre-navigation)
   // are excluded from the cycle. Minimized windows are included — macOS
@@ -1236,6 +1464,8 @@ export function setupSystemIPC() {
           (w) =>
             !w.isDestroyed() &&
             (w.isVisible() || w.isMinimized()) &&
+            !isDockWindow(w) &&
+            !isAnnotationWindow(w) &&
             !isHudWindow(w) &&
             !isTrackedHudWindow(w),
         );

@@ -116,7 +116,6 @@
   } from '$store/renderer/slices/multi-panel-context/multi-panel-context-slice';
   import {
     selectCheckedPanels,
-    selectPanels,
     selectCheckedSelections,
   } from '$store/renderer/slices/multi-panel-context/multi-panel-context-selectors';
 
@@ -183,8 +182,8 @@
   import type { Workspace, PendingProposalRef } from '$shared/types';
   import { extractAllContent, type SuggestedPrompt, AgentStatus } from '$shared/types';
   import type { ContextItem } from './input/context-api';
+  import { extractAttachmentBlocks, buildWorkspaceContextString } from './composer-submission';
   import {
-    appendContextItemContent,
     browserCaptureTargetsAgent,
     browserCaptureToContextItems,
   } from './browser-capture-context';
@@ -5546,54 +5545,6 @@
   }
 
   // Build workspace context string for agent messages
-  function buildWorkspaceContextString(items: ContextItem[] = []): string {
-    const parts: string[] = [];
-
-    // Add context from checked panels in the multi-panel context store
-    const storeState = appStore.state;
-    const checkedPanels = selectCheckedPanels.select(storeState);
-    const allPanels = selectPanels.select(storeState);
-    logger.info('ChatPanel: Building workspace context', {
-      agentId,
-      checkedPanelsCount: checkedPanels.length,
-      allPanelsCount: allPanels.length,
-      checkedPanelIds: checkedPanels.map((p) => p.id),
-      allPanelIds: allPanels.map((p) => ({ id: p.id, checked: p.checked, type: p.type })),
-    });
-    for (const panel of checkedPanels) {
-      if (panel.type === 'file' && panel.filePath) {
-        // i18n-ignore (agent-directed context marker, not user-facing UI)
-        parts.push(`[Currently viewing file: ${panel.filePath}]`);
-      } else if (panel.type === 'diff' && panel.filePath) {
-        // i18n-ignore (agent-directed context marker, not user-facing UI)
-        parts.push(`[Currently viewing diff for: ${panel.filePath}]`);
-      } else if (panel.type === 'note' && panel.noteId) {
-        parts.push(
-          // i18n-ignore (agent-directed context marker, not user-facing UI)
-          `[Currently viewing note: "${panel.label}" (ID: ${panel.noteId}). Use read_note_space-mcp(noteId="${panel.noteId}") to read its content.]`,
-        );
-      } else if (panel.type === 'spec') {
-        // i18n-ignore (agent-directed context marker, not user-facing UI)
-        parts.push('[Currently viewing: Spec]');
-      } else if (panel.type === 'browser' && panel.browserUrl) {
-        // i18n-ignore (agent-directed context marker, not user-facing UI)
-        parts.push(`[Currently viewing browser: ${panel.browserUrl}]`);
-      }
-    }
-
-    // Add checked selections from multi-panel context store
-    const checkedSelections = selectCheckedSelections.select(storeState);
-    for (const selection of checkedSelections) {
-      const selectedText = selection.text.trim();
-      const displayText =
-        selectedText.length > 500 ? selectedText.substring(0, 500) + '...' : selectedText;
-      const source = selection.sourceLabel ? ` from ${selection.sourceLabel}` : '';
-      // i18n-ignore (agent-directed context marker, not user-facing UI)
-      parts.push(`[Selected text${source}:\n\`\`\`\n${displayText}\n\`\`\`]`);
-    }
-
-    return appendContextItemContent(parts.join('\n'), items);
-  }
 
   // Input history navigation callbacks (terminal-like up/down arrow)
   function handleHistoryPrev(): string | null {
@@ -5717,36 +5668,6 @@
   // remaining placed-attachment items (file.placeAttachment — UUID +
   // metadata, no bytes). Inline image blocks are placed and swapped to
   // references by the send saga before the wire call.
-  function extractAttachmentBlocks(items: ContextItem[]) {
-    const imageBlocks = items
-      .filter((item) => (item.imageData || item.attachmentId) && item.imageMimeType)
-      .map((item) =>
-        item.attachmentId
-          ? {
-              type: 'image' as const,
-              attachmentId: item.attachmentId,
-              // The neutral 'image' marker (reference restored without a
-              // persisted mime) stays off the wire — mimeType is optional
-              // on the reference arm.
-              ...(item.imageMimeType!.includes('/') ? { mimeType: item.imageMimeType! } : {}),
-            }
-          : {
-              type: 'image' as const,
-              data: item.imageData!,
-              mimeType: item.imageMimeType!,
-            },
-      );
-    const fileBlocks = items
-      .filter((item) => item.attachmentId && !item.imageMimeType)
-      .map((item) => ({
-        type: 'file' as const,
-        attachmentId: item.attachmentId!,
-        fileName: item.label,
-        ...(item.attachmentMimeType ? { mimeType: item.attachmentMimeType } : {}),
-        ...(item.attachmentSize !== undefined ? { size: item.attachmentSize } : {}),
-      }));
-    return { imageBlocks, fileBlocks };
-  }
 
   // Handle sending messages
   function handleSend(text: string) {
@@ -5765,7 +5686,11 @@
     flushPendingDraftWrite();
 
     const allContextItems = [...getContextItems(), ...inlineImageItems, ...mentionContextItems];
-    const workspaceContextStr = buildWorkspaceContextString(allContextItems);
+    const workspaceContextStr = buildWorkspaceContextString(
+      allContextItems,
+      selectCheckedPanels.select(appStore.state),
+      selectCheckedSelections.select(appStore.state),
+    );
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
     const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
@@ -5998,7 +5923,11 @@
     logger.info('Force submit triggered', { agentId });
 
     const allContextItems = [...getContextItems(), ...inlineImageItems, ...mentionContextItems];
-    const workspaceContextStr = buildWorkspaceContextString(allContextItems);
+    const workspaceContextStr = buildWorkspaceContextString(
+      allContextItems,
+      selectCheckedPanels.select(appStore.state),
+      selectCheckedSelections.select(appStore.state),
+    );
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
     const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);

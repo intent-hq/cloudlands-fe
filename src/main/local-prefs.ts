@@ -134,3 +134,27 @@ export async function __drainLocalPrefsWriteChainForTesting(): Promise<void> {
   await writeChain;
   writeChain = Promise.resolve();
 }
+
+/** The companion is visible by default; Window menu changes persist locally. */
+export async function getDockEnabledLocalPref(): Promise<boolean> {
+  return (await getLocalPref('dockEnabled')) !== false;
+}
+
+export async function setDockEnabledLocalPref(enabled: boolean): Promise<void> {
+  await setLocalPref('dockEnabled', enabled);
+}
+
+/** Placement writes report failure to the caller while keeping the shared queue usable. */
+export async function setDockPlacementLocalPref(
+  placement: import('../shared/dock-placement').DockPlacement,
+): Promise<void> {
+  const write = writeChain.then(async () => {
+    const all = await readAll();
+    all.dockPlacement = { version: 1, placement };
+    await writeAll(all);
+  });
+  writeChain = write.catch((error) =>
+    logger.error('Failed to persist dock placement', error as Error),
+  );
+  return write;
+}

@@ -643,9 +643,12 @@ describe('authored browser tests require their complete PR suites', () => {
     ['test/fixtures/browser-lifetime/main.cjs', true],
     ['test/fixtures/repository-checkout/playwright.config.ts', true],
     ['test/fixtures/repository-checkout/main.ts', true],
+    ['test/fixtures/dock-placement-native/placement.electron.ts', true],
     ['src/features/backend/main/repository-checkout-feed.ts', true],
     ['src/lib/client/live/repository-checkout-transport.ts', true],
     ['src/shared/types/repository-checkout.ts', true],
+    ['src/shared/dock-placement.ts', true],
+    ['src/main/ipc-schemas.ts', true],
     ['.github/workflows/browser-tests.yml', true],
     ['.github/workflows/intent-pr.yml', true],
     ['package.json', true],
@@ -656,6 +659,7 @@ describe('authored browser tests require their complete PR suites', () => {
     ['playwright-ct.config.ts', false],
     ['test/fixtures/browser-lifetime-other/main.cjs', false],
     ['test/fixtures/repository-checkout-other/main.ts', false],
+    ['test/fixtures/dock-placement-native-other/placement.electron.ts', false],
   ])('classifies Electron setup path %s as required=%s', (file, required) => {
     const { root, base } = checkoutWith(file);
     const output = join(root, 'github-output');

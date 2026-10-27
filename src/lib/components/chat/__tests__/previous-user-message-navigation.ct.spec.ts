@@ -1088,6 +1088,20 @@ for (const input of ['PageUp', 'PageDown', 'Home', 'End', 'scrollbar'] as const)
       },
     });
     const scroll = component.getByTestId('chat-transcript-scroll-viewport');
+    if (input === 'scrollbar') {
+      // Exercise a real reserved scrollbar lane, including on hosts using overlay scrollbars.
+      await page.addStyleTag({
+        content: `
+          [data-testid="message-navigator-integration-host"] [data-testid="chat-transcript-scroll-viewport"] {
+            scrollbar-width: auto;
+            scrollbar-color: auto;
+          }
+          [data-testid="message-navigator-integration-host"] [data-testid="chat-transcript-scroll-viewport"]::-webkit-scrollbar {
+            width: 16px;
+          }
+        `,
+      });
+    }
     const source = component.locator('[data-message-id="reply-tail"]');
     const arrow = source.getByRole('button', { name: 'Previous user message' });
     const state = component.getByTestId('navigation-state');

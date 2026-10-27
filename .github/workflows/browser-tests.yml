@@ -466,6 +466,11 @@ jobs:
           pnpm run generate:build-config
           pnpm run generate:ipc-channels
           xvfb-run -a pnpm exec playwright test --config test/fixtures/repository-checkout/playwright.config.ts
+      - name: Companion placement geometry and request schemas
+        # These portable cases exercise production geometry and validation without
+        # launching Electron or synthesizing OS pointer input. Physical placement
+        # and drag cases in the same fixture still require a native desktop.
+        run: pnpm exec playwright test --config test/fixtures/dock-placement-native/playwright.config.ts --grep 'conversation handoff wire:|side conversation geometry:|floating geometry:|floating drop geometry:|conversation resize geometry:'
       - name: Record browser outcome
         if: always()
         env:

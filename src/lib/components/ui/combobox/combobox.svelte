@@ -1,7 +1,12 @@
 <script lang="ts">
+  import {
+    getOwnedPopupContext,
+    createOwnedPopupRegistration,
+  } from '$lib/components/ui/owned-popup-context';
   import { flushSync, onDestroy, untrack, type Snippet } from 'svelte';
   import { Combobox as ComboboxPrimitive } from 'bits-ui';
   import { Button } from '$lib/components/ui/button';
+  import { useDialogPortalTarget } from '$lib/components/ui/dialog';
   import { Indicator } from '$lib/components/ui/menu';
   import { cn } from '$lib/utils';
   import type { ComboboxGroup, ComboboxOption } from './types';
@@ -15,6 +20,12 @@
   import { OVERLAY_VIEWPORT_GUTTER } from '$lib/components/ui/overlay-positioning';
 
   const uid = $props.id();
+  const dialogPortalTarget = useDialogPortalTarget();
+  const popupOwner = getOwnedPopupContext();
+  const registerOwnedPopup = createOwnedPopupRegistration(() => {
+    open = false;
+    handleOpenChange(false);
+  });
 
   interface Props {
     value?: string | string[];
@@ -643,7 +654,7 @@
   <!-- i18n-ignore (snippet parameter type annotation, not UI text) -->
   {#snippet staticContentChild({ props }: StaticContentChildProps)}
     {@const contentProps = withoutListboxSemantics(props)}
-    <div {...contentProps}>
+    <div {...contentProps} use:registerOwnedPopup>
       {@render contentBody()}
     </div>
   {/snippet}
@@ -652,7 +663,7 @@
   {#snippet contentChild({ props, wrapperProps }: ContentChildProps)}
     {@const contentProps = withoutListboxSemantics(props)}
     <div {...wrapperProps}>
-      <div {...contentProps}>
+      <div {...contentProps} use:registerOwnedPopup>
         {@render contentBody()}
       </div>
     </div>
@@ -668,8 +679,9 @@
       child={staticContentChild}
     />
   {:else}
-    <ComboboxPrimitive.Portal disabled={!portal}>
+    <ComboboxPrimitive.Portal disabled={!portal} to={dialogPortalTarget() ?? popupOwner?.target()}>
       <ComboboxPrimitive.Content
+        strategy={portal && dialogPortalTarget() ? 'absolute' : 'fixed'}
         {side}
         sideOffset={4}
         collisionPadding={OVERLAY_VIEWPORT_GUTTER}

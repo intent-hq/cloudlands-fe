@@ -90,6 +90,8 @@ describe('renderer app saga registry', () => {
       'setupPromptSaga',
       'backgroundHooksSaga',
       'hostOwnerServicesSaga',
+      'annotationSaga',
+      'dockConversationSaga',
       'themeSaga',
       'powerSaga',
       'autoUpdateSaga',

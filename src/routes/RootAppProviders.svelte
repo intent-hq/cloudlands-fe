@@ -41,7 +41,7 @@
     // it never sets the attribute: its takeover choreography must play unfocused,
     // and any attribute already present on <html> is cleared on mount.
     // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous route check, no data fetch
-    const pausesMotionOnBlur = !isHudWindowRenderer();
+    const pausesMotionOnBlur = !isHudWindowRenderer() && window.location.pathname !== '/dock';
     const electronApi = window.electronAPI;
     const usesNativeWindowFocus = isElectronPlatform();
     let windowFocusListenerId: string | undefined;

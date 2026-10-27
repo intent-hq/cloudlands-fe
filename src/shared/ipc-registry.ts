@@ -406,10 +406,29 @@ export const IPC_CHANNELS = {
     SET_BROWSER_FOCUSED: 'window:set-browser-focused',
     SET_FULL_SCREEN: 'window:set-full-screen',
     GET_FULL_SCREEN: 'window:get-full-screen',
+    SET_DOCK_POINTER_REGION: 'window:set-dock-pointer-region',
+    FOCUS_DOCK: 'window:focus-dock',
+    GET_DOCK_PLACEMENT: 'window:get-dock-placement',
+    UPDATE_DOCK_PLACEMENT: 'window:update-dock-placement',
+    DOCK_PLACEMENT_CHANGED: 'window:dock-placement-changed',
     // Renderer → main invoke: focus the next open app window (wraps; skips
     // destroyed, hidden, and HUD pop-out windows; minimized windows are
     // restored) → { cycled: boolean, windowCount: number }
     CYCLE_FOCUS: 'window:cycle-focus',
+  },
+
+  ANNOTATION: {
+    START: 'annotation:start',
+    GET_STATE: 'annotation:get-state',
+    SET_TOOL: 'annotation:set-tool',
+    SET_TOOLBAR_LAYOUT: 'annotation:set-toolbar-layout',
+    SET_DESTINATION: 'annotation:set-destination',
+    REQUEST_SEND: 'annotation:request-send',
+    REPORT_DELIVERY: 'annotation:report-delivery',
+    ADD_TRANSCRIPT: 'annotation:add-transcript',
+    REVIEW: 'annotation:review',
+    CLOSE: 'annotation:close',
+    STATE_CHANGED: 'annotation:state-changed',
   },
 
   // Power (Electron powerMonitor → renderer)
@@ -1105,6 +1124,9 @@ export const EVENT_CHANNELS = [
   'event:agent:scroll-to-turn',
   'exchange:update',
   'exchange:autonomous',
+  'annotation:state-changed',
+  'window:focus-dock',
+  'window:dock-placement-changed',
   'workspace:created',
   'workspace:updated',
   'workspace:deleted',

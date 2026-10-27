@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getOwnedPopupContext } from '$lib/components/ui/owned-popup-context';
   /* eslint-disable max-lines */
   import { onMount, onDestroy, mount, unmount, untrack } from 'svelte';
   import { Popover } from 'bits-ui';
@@ -197,6 +198,12 @@
 
   // `inputLocked` is an editability-only lock — it never routes through the
   // `disabled` styling, so the placeholder keeps rendering while it is on.
+  const popupOwner = getOwnedPopupContext();
+  let slashContent = $state<HTMLDivElement | null>(null);
+  $effect(() => {
+    if (!slashContent || !popupOwner) return;
+    return popupOwner.register(slashContent, () => dismissSlashMenu());
+  });
   const isEditable = $derived((!disabled || editableWhileDisabled) && !inputLocked);
   // Placeholder is configured with `showOnlyWhenEditable: false` for the lock,
   // which would otherwise also surface it in the plain-disabled state. The
@@ -207,6 +214,15 @@
   let editor: Editor | null = $state(null);
   let hoverPreview: any = null;
   let hoverPreviewContainer: HTMLDivElement | null = null;
+  let unregisterHoverPreview: (() => void) | undefined;
+  function closeOwnedHoverPreview(): void {
+    unregisterHoverPreview?.();
+    unregisterHoverPreview = undefined;
+    if (hoverPreview) unmount(hoverPreview);
+    hoverPreviewContainer?.remove();
+    hoverPreview = null;
+    hoverPreviewContainer = null;
+  }
   let isClearing = false;
   $effect(() => {
     if (editor) editor.view.dom.setAttribute('aria-label', ariaLabel);
@@ -702,7 +718,7 @@
 
     render: () => {
       // Use the new renderer that handles updates more efficiently
-      return createMentionSuggestionRenderer();
+      return createMentionSuggestionRenderer(popupOwner);
     },
 
     command: ({ editor, range, props }: any) => {
@@ -893,6 +909,8 @@
           // so its preview cannot survive a clear or describe a replacement chip.
           if (transaction.docChanged && hoverPreview && hoverPreviewContainer) {
             unmount(hoverPreview);
+            unregisterHoverPreview?.();
+            unregisterHoverPreview = undefined;
             hoverPreviewContainer.remove();
             hoverPreview = null;
             hoverPreviewContainer = null;
@@ -1005,6 +1023,9 @@
             return isFileDragEvent(event);
           },
           handleKeyDown: (view, event) => {
+            // IME confirmation belongs to text composition, not app shortcuts.
+            // Safari may report the final composing key only through keyCode 229.
+            if (view.composing || event.isComposing || event.keyCode === 229) return false;
             if (handleSlashMenuKeyDown(event)) {
               return true;
             }
@@ -1310,7 +1331,7 @@
       // Show hover preview
       if (!hoverPreviewContainer) {
         hoverPreviewContainer = document.createElement('div');
-        document.body.appendChild(hoverPreviewContainer);
+        (popupOwner?.target() ?? document.body).appendChild(hoverPreviewContainer);
 
         const type = (target.getAttribute('data-type') as any) || 'file';
         const label = target.getAttribute('data-label') || target.textContent || '';
@@ -1345,6 +1366,8 @@
             onClose: () => {
               if (hoverPreview && hoverPreviewContainer) {
                 unmount(hoverPreview);
+                unregisterHoverPreview?.();
+                unregisterHoverPreview = undefined;
                 hoverPreviewContainer.remove();
                 hoverPreview = null;
                 hoverPreviewContainer = null;
@@ -1352,6 +1375,10 @@
             },
           },
         });
+
+        const previewElement = hoverPreviewContainer.firstElementChild;
+        if (previewElement instanceof HTMLElement)
+          unregisterHoverPreview = popupOwner?.register(previewElement, closeOwnedHoverPreview);
 
         // Add mouseout listener to preview container for immediate dismiss
         hoverPreviewContainer.addEventListener('mouseout', handlePreviewMouseOut);
@@ -1372,6 +1399,8 @@
       // Hide hover preview immediately
       if (hoverPreview && hoverPreviewContainer) {
         unmount(hoverPreview);
+        unregisterHoverPreview?.();
+        unregisterHoverPreview = undefined;
         hoverPreviewContainer.remove();
         hoverPreview = null;
         hoverPreviewContainer = null;
@@ -1390,6 +1419,8 @@
     // Hide preview immediately when mouse leaves
     if (hoverPreview && hoverPreviewContainer) {
       unmount(hoverPreview);
+      unregisterHoverPreview?.();
+      unregisterHoverPreview = undefined;
       hoverPreviewContainer.remove();
       hoverPreview = null;
       hoverPreviewContainer = null;
@@ -1540,6 +1571,8 @@
     }
     if (hoverPreview && hoverPreviewContainer) {
       unmount(hoverPreview);
+      unregisterHoverPreview?.();
+      unregisterHoverPreview = undefined;
       hoverPreviewContainer.remove();
     }
   });
@@ -1606,7 +1639,8 @@
   // Update editable state
   $effect(() => {
     if (editor) {
-      editor.setEditable(isEditable);
+      // Locking the editor is not a draft edit (an update would cancel enhancement).
+      editor.setEditable(isEditable, false);
     }
   });
 
@@ -1632,8 +1666,9 @@
 
 <div class="tiptap-root">
   <Popover.Root bind:open={() => slashMenuOpen, (open) => !open && dismissSlashMenu()}>
-    <Popover.Portal>
+    <Popover.Portal to={popupOwner?.target()}>
       <Popover.Content
+        bind:ref={slashContent}
         customAnchor={element ?? null}
         side="top"
         align="start"

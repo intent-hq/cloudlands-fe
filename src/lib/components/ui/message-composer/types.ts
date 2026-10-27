@@ -22,6 +22,8 @@ export interface MessageComposerProps extends Omit<HTMLAttributes<HTMLDivElement
   leftSlot?: Snippet<[MessageComposerSlotContext]>;
   rightSlot?: Snippet<[MessageComposerSlotContext]>;
   disabled?: boolean;
+  /** Block submission while retaining draft editing, for pending or gated sends. */
+  sendDisabled?: boolean;
   minRows?: number;
   maxRows?: number;
   clickToFocus?: boolean;

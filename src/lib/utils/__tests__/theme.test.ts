@@ -345,3 +345,58 @@ describe('ThemeManager custom theme support', () => {
     expect(manager.isDark()).toBe(false);
   });
 });
+
+describe.each(['dock', 'annotation-toolbar'])('%s window appearance', (windowKind) => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    const ls = getLocalStorageMock();
+    ls.getItem.mockImplementation((key: string) => (key === 'theme' ? 'light' : null));
+    ls.setItem.mockImplementation(() => undefined);
+    ls.removeItem.mockImplementation(() => undefined);
+    document.documentElement.dataset.auxiliaryWindow = windowKind;
+    ThemeManager.resetInstance();
+  });
+
+  afterEach(() => {
+    ThemeManager.resetInstance();
+    delete document.documentElement.dataset.auxiliaryWindow;
+    document.documentElement.removeAttribute('style');
+  });
+
+  it('renders dark without changing the saved main-app preference', () => {
+    const manager = ThemeManager.getInstance();
+    expect(manager.getTheme()).toBe('light');
+    expect(manager.isDark()).toBe(true);
+    manager.setTheme('system', { persist: false });
+    expect(manager.isDark()).toBe(true);
+    manager.setTheme('light', { persist: false });
+    expect(manager.isDark()).toBe(true);
+    expect(getLocalStorageMock().setItem).not.toHaveBeenCalled();
+
+    delete document.documentElement.dataset.auxiliaryWindow;
+    const appManager = getManager();
+    expect(appManager.getTheme()).toBe('light');
+    expect(appManager.isDark()).toBe(false);
+  });
+
+  it('uses a preset dark variant even when the app preference is light', () => {
+    const manager = ThemeManager.getInstance();
+    manager.setPresetTheme('paired', CATPPUCCIN_DARK, SOLARIZED_LIGHT);
+    expect(manager.getCustomThemeName()).toBe(CATPPUCCIN_DARK.name);
+    expect(manager.isDark()).toBe(true);
+  });
+
+  it('keeps light-only imports saved for the app and uses base dark in the dock', () => {
+    const manager = ThemeManager.getInstance();
+    manager.setCustomTheme(CATPPUCCIN_DARK);
+    manager.setCustomTheme(SOLARIZED_LIGHT);
+    expect(manager.isDark()).toBe(true);
+    expect(manager.getCustomThemeName()).toBeNull();
+    expect(manager.hasCustomTheme()).toBe(false);
+    expect(document.documentElement.style.getPropertyValue('--background')).toBe('');
+    expect(getLocalStorageMock().setItem).toHaveBeenCalledWith(
+      'custom-vscode-theme',
+      JSON.stringify(SOLARIZED_LIGHT),
+    );
+  });
+});

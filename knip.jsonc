@@ -52,6 +52,7 @@
     "test/fixtures/repository-selection-native/main.ts",
     "test/fixtures/native-review-native/main.ts",
     "test/fixtures/native-review-native/ui-renderer.svelte",
+    "test/fixtures/dock-placement-native/renderer.ts",
     // Substituted for production components through Vite alias/resolveId plugins inside
     // the specs' createServer() config (electron-browser-lifetime.spec.ts);
     // alias resolution is not followed by knip
@@ -178,6 +179,8 @@
       "test/fixtures/repository-context-native/playwright.config.ts",
       "test/fixtures/repository-selection-native/playwright.config.ts",
       "test/fixtures/native-review-native/playwright.config.ts",
+      "test/fixtures/dock-placement-native/playwright.config.ts",
+      "test/fixtures/dock-placement-native/placement.electron.ts",
       "src/lib/components/ui/card/operate-patterns.playwright.config.ts",
       // playwright.config.ts: testDir ./test, testMatch **/*.spec.ts
       "test/**/*.spec.ts",

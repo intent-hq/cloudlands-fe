@@ -143,3 +143,6 @@ static/generated/
 # Core dumps must stay out of the CT build source scan
 /core
 /core.[0-9]*
+
+/resources/dock-helper/intent-dock-helper
+/resources/dock-helper/intent-dock-cursor.node

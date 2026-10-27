@@ -314,6 +314,22 @@ import { setupProviderAvailabilityIPC } from '../features/providers/main/provide
 import { setupConfigIPC, getConfigManager } from '../features/config/main/config.ipc';
 
 import { setupEventsIPC } from '../features/events/main/events.ipc';
+import { setupAnnotationIPC } from '../features/annotation/main/annotation.ipc';
+import {
+  closeAnnotationMode,
+  focusAnnotationMode,
+  isAnnotationModeActive,
+  isAnnotationWindow,
+} from '../features/annotation/main/annotation-window';
+import {
+  closeDockWindow,
+  createDockWindow,
+  focusDockWindow,
+  getDockWindow,
+  isDockWindow,
+} from './dock-window';
+import { createDockMenuController } from './dock-menu-controller';
+import { getDockEnabledLocalPref, setDockEnabledLocalPref } from './local-prefs';
 import { registerExternalEditorsHandlers } from '../features/external-editors/main/external-editors.ipc';
 import { setupFileIPC } from '../features/file/main/file.ipc';
 import { registerIDEHandlers } from '../features/ide/main/ide.ipc';
@@ -499,6 +515,7 @@ async function gracefulShutdown() {
 
 async function performGracefulShutdown() {
   try {
+    closeAnnotationMode();
     // Stop memory sampling first: it is pure instrumentation, and clearing its
     // interval here means no timer survives any of the quit paths (before-quit,
     // SIGTERM, SIGINT) that funnel through this function.
@@ -971,6 +988,22 @@ const bootFlow = app.whenReady().then(async () => {
     );
   };
 
+  const dockMenuController = createDockMenuController({
+    createWindow: createDockWindow,
+    getWindow: getDockWindow,
+    closeWindow: () => {
+      closeAnnotationMode();
+      closeDockWindow();
+    },
+    focusWindow: () => {
+      if (!focusAnnotationMode()) focusDockWindow();
+    },
+    readEnabledPreference: getDockEnabledLocalPref,
+    writeEnabledPreference: (enabled) =>
+      isShuttingDown ? Promise.resolve() : setDockEnabledLocalPref(enabled),
+    onStateChange: () => app.emit('dock-window-state-changed'),
+  });
+
   // Function to rebuild and set the application menu. Callers fire-and-forget
   // (`void rebuildMenu()`): the only await, in buildFileMenu, catches internally.
   const rebuildMenu = async () => {
@@ -982,6 +1015,19 @@ const bootFlow = app.whenReady().then(async () => {
     const windowMenuItems: Electron.MenuItemConstructorOptions[] = [
       { role: 'minimize', label: m.menu_minimize(), accelerator: 'CmdOrCtrl+M' },
       { role: 'zoom', label: m.menu_window_fill() },
+      { type: 'separator' },
+      {
+        label: m.menu_show_intent_dock(),
+        type: 'checkbox',
+        checked: dockMenuController.isEnabled(),
+        click: (menuItem) => void dockMenuController.setEnabled(menuItem.checked),
+      },
+      {
+        label: m.menu_focus_intent_dock(),
+        accelerator: 'CmdOrCtrl+Shift+D',
+        enabled: dockMenuController.isEnabled(),
+        click: () => dockMenuController.focus(),
+      },
       { type: 'separator' },
       {
         label: m.menu_select_previous_tab(),
@@ -1020,7 +1066,8 @@ const bootFlow = app.whenReady().then(async () => {
     // Add the app's open windows to the Window menu, labeled by kind + backend.
     // External webview popups (OAuth/auth flows) are not app windows — skip them.
     const liveWindows = (BrowserWindow.getAllWindows() as BrowserWindowType[]).filter(
-      (w) => !w.isDestroyed() && !isWebviewPopupWindow(w),
+      (w) =>
+        !w.isDestroyed() && !isWebviewPopupWindow(w) && !isDockWindow(w) && !isAnnotationWindow(w),
     );
     if (liveWindows.length > 0) {
       let connections: Awaited<ReturnType<typeof listConnections>> = [];
@@ -1417,7 +1464,12 @@ const bootFlow = app.whenReady().then(async () => {
   // Rebuild menu when the active backend changes (backend switch or boot
   // restore of a remote) — the Help ▸ Sample intentd Process item is gated on
   // win32 + local sidecar (#1889)
+  app.on('dock-window-state-changed', () => {
+    void rebuildMenu();
+  });
+
   app.on('backend-connection-changed', () => {
+    closeAnnotationMode();
     void rebuildMenu();
   });
 
@@ -1514,6 +1566,7 @@ const bootFlow = app.whenReady().then(async () => {
   setupWorkspaceSummaryIPC();
   setupFileIPC();
   setupSystemIPC();
+  setupAnnotationIPC();
   setupDevConsoleIPC();
   setupPowerStateIPC();
   await setupConfigIPC();
@@ -1572,6 +1625,8 @@ const bootFlow = app.whenReady().then(async () => {
   // Every critical handler a renderer invokes on boot now exists: let the
   // window creators in ./window.ts proceed (they all await this gate).
   markRendererWindowsAllowed();
+  await dockMenuController.restore();
+  void rebuildMenu();
 
   // Hydrate the main-process provider catalog cache (non-blocking): the
   // JSON-RPC client queues the request until the daemon socket connects.
@@ -2110,7 +2165,14 @@ app.on('activate', async () => {
   // IPC-readiness wait lives inside the creators (see ./app-activate.ts).
   await handleActivate<BrowserWindowType>({
     whenBootWindowsReady: () => bootWindowsGate.ready,
-    getAllWindows: () => BrowserWindow.getAllWindows(),
+    shouldIgnoreActivation: () => {
+      const focused = BrowserWindow.getFocusedWindow();
+      return isAnnotationModeActive() || isDockWindow(focused) || isAnnotationWindow(focused);
+    },
+    getAllWindows: () =>
+      BrowserWindow.getAllWindows().filter(
+        (window: BrowserWindowType) => !isDockWindow(window) && !isAnnotationWindow(window),
+      ),
     getMainWindow,
     focusWindow: (targetWindow) => {
       if (targetWindow.isMinimized()) targetWindow.restore();

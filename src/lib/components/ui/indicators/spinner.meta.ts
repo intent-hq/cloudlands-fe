@@ -18,6 +18,8 @@ export const spinnerMetadata = parseUiComponentMetadata({
   category: 'pattern',
   owner: '007-B1',
   callers: [
+    'src/features/annotation/components/AnnotationOverlay.svelte',
+    'src/features/annotation/components/AnnotationToolbarPanel.svelte',
     'src/features/collaboration-auth/renderer/CollaborationSignInModal.svelte',
     'src/features/file-tracking/components/diff/PatchBlockContent.svelte',
     'src/features/onboarding/messages/GitHubRepoTab.svelte',

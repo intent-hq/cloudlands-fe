@@ -285,6 +285,7 @@ describe('native Mac packaging entry point', () => {
       ['scripts/copy-sidecar.cjs'],
       ['scripts/fetch-tailcat.cjs', `--targets=darwin-${arch}`],
       ['scripts/build-speech-helper.cjs'],
+      ['scripts/build-dock-helper.cjs'],
       ['scripts/build-keychain-helper.cjs'],
       ['scripts/validate-macos-native.cjs', arch],
       ['--mac', `--${arch}`, '--publish', 'never'],

@@ -18,6 +18,11 @@ const isBrowser = typeof window !== 'undefined';
 export class ThemeManager {
   private static instance: ThemeManager | null = null;
   private currentTheme: Theme = 'system';
+  // The dock and capture toolbar have a window-local dark appearance. Keep the saved app
+  // preference intact; root-level tokens also cover body-portaled shared menus.
+  private readonly fixedDarkAppearance =
+    isBrowser &&
+    ['dock', 'annotation-toolbar'].includes(document.documentElement.dataset.auxiliaryWindow ?? '');
   private mediaQuery: MediaQueryList | null = null;
   /** Single custom theme from user-imported file (not a preset set) */
   private customTheme: ParsedVSCodeTheme | null = null;
@@ -191,7 +196,7 @@ export class ThemeManager {
    * Returns true if any custom/preset theme is currently active.
    */
   hasCustomTheme(): boolean {
-    return this.customTheme !== null || this.presetDarkTheme !== null;
+    return this.getActiveTheme() !== null;
   }
 
   /**
@@ -214,6 +219,7 @@ export class ThemeManager {
    * base theme preference (light/dark/system) — ignoring custom theme type.
    */
   private resolveIsDark(): boolean {
+    if (this.fixedDarkAppearance) return true;
     const systemIsDark = this.mediaQuery?.matches ?? false;
     if (this.currentTheme === 'system') return systemIsDark;
     return this.currentTheme === 'dark';
@@ -228,6 +234,9 @@ export class ThemeManager {
     if (this.presetDarkTheme && this.presetLightTheme) {
       return this.resolveIsDark() ? this.presetDarkTheme : this.presetLightTheme;
     }
+    // A light-only import stays saved for the main app. The dock falls back to
+    // the shared base dark palette when no dark variant exists.
+    if (this.fixedDarkAppearance && this.customTheme?.type === 'light') return null;
     return this.customTheme;
   }
 
@@ -239,14 +248,7 @@ export class ThemeManager {
     const systemIsDark = this.mediaQuery?.matches ?? false;
     const activeTheme = this.getActiveTheme();
 
-    let isDark: boolean;
-    if (this.customTheme) {
-      // User-imported single theme determines dark/light
-      isDark = this.customTheme.type === 'dark';
-    } else {
-      // Preset sets or no custom theme: follow user's base preference
-      isDark = this.resolveIsDark();
-    }
+    const isDark = this.isDark();
 
     // Remove both classes first to ensure clean state
     root.classList.remove('dark', 'light');
@@ -261,7 +263,7 @@ export class ThemeManager {
     }
 
     // Set data attribute when user wants dark theme but system is light
-    const darkOnLightSystem = this.currentTheme === 'dark' && !systemIsDark && !activeTheme;
+    const darkOnLightSystem = isDark && !systemIsDark && !activeTheme;
     if (darkOnLightSystem) {
       root.setAttribute('data-theme-override', 'true');
     } else {
@@ -328,6 +330,7 @@ export class ThemeManager {
   }
 
   isDark(): boolean {
+    if (this.fixedDarkAppearance) return true;
     if (this.customTheme) {
       // User-imported single theme: its type determines dark/light
       return this.customTheme.type === 'dark';

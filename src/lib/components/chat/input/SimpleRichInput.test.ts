@@ -7,6 +7,7 @@ import {
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { derived, readable } from 'svelte/store';
+import { tick } from 'svelte';
 
 vi.mock('$lib/components/shared/icons/FaWrapper.svelte', async () => {
   const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
@@ -484,6 +485,43 @@ describe('SimpleRichInput image paste', () => {
   afterEach(() => {
     cleanup();
     document.body.innerHTML = '';
+  });
+
+  it('discards an image read that finishes after its composer unmounts', async () => {
+    const { notify } = await import('$lib/components/patterns/notify');
+    vi.mocked(notify.success).mockClear();
+    vi.mocked(notify.error).mockClear();
+    const oncontextAdd = vi.fn();
+    let finishRead: () => void = () => undefined;
+    const read = vi.spyOn(FileReader.prototype, 'readAsDataURL').mockImplementation(function (
+      this: FileReader,
+    ) {
+      finishRead = () => {
+        Object.defineProperty(this, 'result', { value: 'data:image/png;base64,aGVsbG8=' });
+        this.dispatchEvent(new ProgressEvent('load'));
+      };
+    });
+    try {
+      const view = render(SimpleRichInput, {
+        props: { value: '', contextItems: [], oncontextAdd },
+      });
+      const file = new File(['image-bytes'], 'late.png', { type: 'image/png' });
+      await fireEvent.paste(screen.getByTestId('message-input'), {
+        clipboardData: { items: [{ kind: 'file', type: file.type, getAsFile: () => file }] },
+      });
+      expect(read).toHaveBeenCalledOnce();
+      await view.unmount();
+      render(SimpleRichInput, { props: { value: 'new draft', contextItems: [], oncontextAdd } });
+      finishRead();
+      await tick();
+      await tick();
+      expect(oncontextAdd).not.toHaveBeenCalled();
+      expect(screen.queryByRole('img', { name: 'late.png' })).toBeNull();
+      expect(notify.success).not.toHaveBeenCalled();
+      expect(notify.error).not.toHaveBeenCalled();
+    } finally {
+      read.mockRestore();
+    }
   });
 
   it('adds a pasted image thumbnail without entering a reactive update loop', async () => {
@@ -1541,6 +1579,48 @@ describe('SimpleRichInput prompt enhancement menu (§5.31)', () => {
     document.body.innerHTML = '';
   });
 
+  it('ignores enhancement completion after unmount and reopening the same agent', async () => {
+    mockReduxState.providerSettings.activeProviderId = 'auggie';
+    let finishEnhance: (value: unknown) => void = () => undefined;
+    const pending = new Promise((resolve) => {
+      finishEnhance = resolve;
+    });
+    enhancePromptMock.mockReturnValueOnce(pending);
+    const onvaluechange = vi.fn();
+    const view = render(SimpleRichInput, { props: { ...baseProps(), onvaluechange } });
+    startEnhancement();
+    await waitFor(() => expect(enhancePromptMock).toHaveBeenCalledOnce());
+    await view.unmount();
+    render(SimpleRichInput, { props: { ...baseProps(), value: 'new draft', onvaluechange } });
+    onvaluechange.mockClear();
+    finishEnhance({ enhanced: 'stale enhanced prompt' });
+    await pending;
+    await tick();
+    expect(onvaluechange).not.toHaveBeenCalled();
+    expect((screen.getByTestId('tiptap-editor') as HTMLTextAreaElement).value).toBe('new draft');
+    const { notify } = await import('$lib/components/patterns/notify');
+    expect(notify.success).not.toHaveBeenCalled();
+  });
+
+  it('retires a completed enhancement toast Undo when its composer unmounts', async () => {
+    mockReduxState.providerSettings.activeProviderId = 'auggie';
+    const onvaluechange = vi.fn();
+    const view = render(SimpleRichInput, { props: { ...baseProps(), onvaluechange } });
+    startEnhancement();
+    const { notify } = await import('$lib/components/patterns/notify');
+    await waitFor(() => expect(notify.success).toHaveBeenCalledOnce());
+    const undo = vi.mocked(notify.success).mock.calls[0]?.[1]?.action;
+    if (!undo || typeof undo !== 'object' || !('onClick' in undo))
+      throw new Error('Missing Undo action');
+    await view.unmount();
+    render(SimpleRichInput, { props: { ...baseProps(), value: 'new draft', onvaluechange } });
+    onvaluechange.mockClear();
+    (undo.onClick as () => void)();
+    await tick();
+    expect(onvaluechange).not.toHaveBeenCalled();
+    expect((screen.getByTestId('tiptap-editor') as HTMLTextAreaElement).value).toBe('new draft');
+  });
+
   it('shows Enhance prompt in the kebab menu for auggie', async () => {
     mockReduxState.providerSettings.activeProviderId = 'auggie';
     render(SimpleRichInput, { props: baseProps() });
@@ -2182,6 +2262,42 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
     removeMockSession('ws-1', 'agent-1');
     delete (window as any).__tiptapInsertMentionCalls;
     document.body.innerHTML = '';
+  });
+
+  it('aborts placement on unmount and ignores late progress and success', async () => {
+    (window as any).electronAPI.getPathForFile = vi.fn(() => '/tmp/late.bin');
+    let finishPlacement: (value: unknown) => void = () => undefined;
+    const pending = new Promise((resolve) => {
+      finishPlacement = resolve;
+    });
+    placeAttachmentMock.mockReturnValueOnce(pending);
+    const oncontextAdd = vi.fn();
+    const view = render(SimpleRichInput, { props: { ...baseProps(), oncontextAdd } });
+    await dropFiles([makeFile('late.bin', 'application/octet-stream', 1024)]);
+    await waitFor(() => expect(placeAttachmentMock).toHaveBeenCalledOnce());
+    const call = placeAttachmentMock.mock.calls[0];
+    if (!call) throw new Error('Missing placement call');
+    const reportProgress = call[3] as (fraction: number) => void;
+    const signal = call[4] as AbortSignal;
+    expect(signal.aborted).toBe(false);
+    await view.unmount();
+    expect(signal.aborted).toBe(true);
+    render(SimpleRichInput, { props: { ...baseProps(), oncontextAdd } });
+    reportProgress(0.9);
+    finishPlacement({
+      fileName: 'late.bin',
+      path: '.intent/attachments/late.bin',
+      attachmentId: 'late',
+      size: 1024,
+    });
+    await pending;
+    await tick();
+    await tick();
+    expect(oncontextAdd).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-placement-status]')).toBeNull();
+    const { notify } = await import('$lib/components/patterns/notify');
+    expect(notify.success).not.toHaveBeenCalled();
+    expect(notify.error).not.toHaveBeenCalled();
   });
 
   it('places a non-image file via the sourcePath — attachmentId context item, no mention, no bytes on the wire', async () => {

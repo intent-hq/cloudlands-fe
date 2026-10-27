@@ -10,6 +10,7 @@ export const comboboxMetadata = parseUiComponentMetadata({
   category: 'pattern',
   owner: '007-B6',
   callers: [
+    'src/features/annotation/components/AnnotationToolbarPanel.svelte',
     'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
     'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
   ],

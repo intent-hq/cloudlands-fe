@@ -419,6 +419,7 @@ jobs:
           # git failure requires the suite, never skips it.
           # Keep NUL-delimited paths in a file, never a Bash scalar: otherwise
           # Git quoting or embedded newlines can hide a relevant filename.
+          # Node matches whole path records consistently on BSD and GNU hosts.
           changed_paths=$(mktemp)
           trap 'rm -f "$changed_paths"' EXIT
           if ! git diff --name-only -z --no-renames --diff-filter=ACMD "$BASE_SHA" HEAD > "$changed_paths"; then
@@ -426,7 +427,7 @@ jobs:
             echo "root_playwright_required=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if grep -z -E '^(test/|playwright\.config\.ts$|playwright/(app-stubs/|(root|ct)-spec-pattern\.mjs$)|svelte\.config\.js$|package\.json$|pnpm-lock\.yaml$)' "$changed_paths" >/dev/null; then
+          if node -e 'const fs = require("node:fs"); const paths = fs.readFileSync(process.argv[1], "utf8").split("\0"); const pattern = new RegExp(process.argv[2]); process.exit(paths.some(path => pattern.test(path)) ? 0 : 1);' "$changed_paths" '^(test/|playwright\.config\.ts$|playwright/(app-stubs/|(root|ct)-spec-pattern\.mjs$)|svelte\.config\.js$|package\.json$|pnpm-lock\.yaml$)'; then
             echo "root_playwright_required=true" | tee -a "$GITHUB_OUTPUT"
           else
             echo "root_playwright_required=false" | tee -a "$GITHUB_OUTPUT"
@@ -438,9 +439,10 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         run: |
           set -euo pipefail
-          # Include lifetime and checkout fixtures, the checkout transport,
+          # Include lifetime, checkout and companion geometry fixtures, the checkout transport,
           # shared harness/config and dependency inputs. --no-renames exposes
           # both sides of a moved test or fixture.
+          # Match NUL-separated records without grep's platform-specific anchors.
           changed_paths=$(mktemp)
           trap 'rm -f "$changed_paths"' EXIT
           if ! git diff --name-only -z --no-renames --diff-filter=ACMD "$BASE_SHA" HEAD > "$changed_paths"; then
@@ -448,7 +450,7 @@ jobs:
             echo "electron_required=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if grep -z -E '^(test/(electron-browser-lifetime[^/]*|fixtures/(browser-lifetime|repository-checkout)/|vite-harness-cache\.)|src/(features/backend/main/repository-checkout[^/]*\.ts$|lib/client/live/repository-checkout-transport\.ts$|shared/types/repository-checkout\.ts$)|\.github/workflows/(intent-pr|browser-tests)\.yml$|playwright(\.manual)?\.config\.ts$|playwright/(app-stubs/|(root|ct)-spec-pattern\.mjs$)|svelte\.config\.js$|package\.json$|pnpm-lock\.yaml$)' "$changed_paths" >/dev/null; then
+          if node -e 'const fs = require("node:fs"); const paths = fs.readFileSync(process.argv[1], "utf8").split("\0"); const pattern = new RegExp(process.argv[2]); process.exit(paths.some(path => pattern.test(path)) ? 0 : 1);' "$changed_paths" '^(test/(electron-browser-lifetime[^/]*|fixtures/(browser-lifetime|repository-checkout|dock-placement-native)/|vite-harness-cache\.)|src/(features/backend/main/repository-checkout[^/]*\.ts$|lib/client/live/repository-checkout-transport\.ts$|shared/types/repository-checkout\.ts$|shared/dock-placement\.ts$|main/ipc-schemas\.ts$)|\.github/workflows/(intent-pr|browser-tests)\.yml$|playwright(\.manual)?\.config\.ts$|playwright/(app-stubs/|(root|ct)-spec-pattern\.mjs$)|svelte\.config\.js$|package\.json$|pnpm-lock\.yaml$)'; then
             echo "electron_required=true" | tee -a "$GITHUB_OUTPUT"
           else
             echo "electron_required=false" | tee -a "$GITHUB_OUTPUT"

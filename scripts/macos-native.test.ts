@@ -101,6 +101,12 @@ describe('Mac native binary validation', () => {
       const root = temporaryDirectory();
       for (const file of staged) put(root, file.replace('ARCH', arch), binary(arch));
       expect(() => native.validateStagedMacBinaries(root, arch)).not.toThrow();
+      // An optional cursor addon must be checked before it enters the app bundle.
+      const cursor = 'resources/dock-helper/intent-dock-cursor.node';
+      put(root, cursor, binary(arch));
+      expect(() => native.validateStagedMacBinaries(root, arch)).not.toThrow();
+      put(root, cursor, binary(arch === 'x64' ? 'arm64' : 'x64'));
+      expect(() => native.validateStagedMacBinaries(root, arch)).toThrow(/Wrong architecture/);
     });
     it.each(staged)(`rejects a stale foreign binary in a ${arch} staging tree: %s`, (wrongFile) => {
       const root = temporaryDirectory();

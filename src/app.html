@@ -11,6 +11,22 @@
     <title>Intent</title>
     <!-- Runtime web configuration is a same-origin deployment asset, never a Vite-bundled secret. -->
     <script src="/runtime-config.js"></script>
+    <script>
+      const launchUrl = new URL(window.location.href);
+      if (['/dock', '/annotation', '/annotation-toolbar'].includes(launchUrl.pathname)) {
+        document.documentElement.dataset.auxiliaryWindow = launchUrl.pathname.slice(1);
+        document.documentElement.dataset.startupSplash = 'suppressed';
+      }
+      if (launchUrl.searchParams.get('dockLaunch') === '1') {
+        document.documentElement.dataset.startupSplash = 'suppressed';
+        launchUrl.searchParams.delete('dockLaunch');
+        window.history.replaceState(
+          window.history.state,
+          '',
+          `${launchUrl.pathname}${launchUrl.search}${launchUrl.hash}`,
+        );
+      }
+    </script>
     <style>
       html,
       body,
@@ -106,11 +122,32 @@
         -webkit-app-region: drag;
         z-index: 9998;
       }
+      #dock-bootstrap-bar {
+        display: none;
+      }
+      html[data-auxiliary-window],
+      html[data-auxiliary-window] body,
+      html[data-auxiliary-window] #app {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: clip;
+        background: transparent !important;
+      }
+      html[data-startup-splash='suppressed'] #splash,
+      html[data-auxiliary-window] #app-drag-region {
+        display: none;
+      }
+      /* Dock waits for native geometry; a right-edge placeholder is wrong for notch/float. */
     </style>
     <script>
       // Apply theme immediately to prevent FOUC
       (function () {
-        const theme = localStorage.getItem('theme') || 'system';
+        const theme = ['dock', 'annotation-toolbar'].includes(
+          document.documentElement.dataset.auxiliaryWindow,
+        )
+          ? 'dark'
+          : localStorage.getItem('theme') || 'system';
         const root = document.documentElement;
 
         if (theme === 'light') {
@@ -137,6 +174,7 @@
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">
+    <div id="dock-bootstrap-bar" aria-hidden="true"></div>
     <div id="app-drag-region"></div>
     <div id="splash">
       <svg

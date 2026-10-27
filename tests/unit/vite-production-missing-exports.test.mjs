@@ -1,6 +1,6 @@
 // @vitest-environment node
 // @verify-changed-triggers: vite.config.mjs
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
@@ -19,7 +19,7 @@ afterEach(() => {
 function createFixture(target, source) {
   vi.stubEnv('INTENT_BUILD_TARGET', target);
   const config = configure({ command: 'build', mode: 'production' });
-  const root = mkdtempSync(join(tmpdir(), 'production-missing-exports-'));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'production-missing-exports-')));
   fixtures.push(root);
   const entry = join(root, 'consumer.mjs');
   const exporter = join(root, 'messages.mjs');

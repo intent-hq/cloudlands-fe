@@ -91,6 +91,10 @@ function validateStagedMacBinaries(root, arch) {
     path.join(root, 'node_modules/node-pty/build/Release/spawn-helper'),
   ];
   for (const file of required) assertBinaryArchitecture(file, arch);
+  const dockHelper = path.join(resources, 'dock-helper/intent-dock-helper');
+  if (fs.existsSync(dockHelper)) assertBinaryArchitecture(dockHelper, arch);
+  const dockCursor = path.join(resources, 'dock-helper/intent-dock-cursor.node');
+  if (fs.existsSync(dockCursor)) assertBinaryArchitecture(dockCursor, arch);
 }
 
 function validatePackagedMacBinaries(appPath, arch) {
@@ -103,6 +107,8 @@ function validatePackagedMacBinaries(appPath, arch) {
     path.join(resources, 'app.asar.unpacked/node_modules/node-pty/build/Release/spawn-helper'),
   ];
   for (const file of required) assertBinaryArchitecture(file, arch);
+  const dockHelper = path.join(resources, 'dock-helper/intent-dock-helper');
+  if (fs.existsSync(dockHelper)) assertBinaryArchitecture(dockHelper, arch);
   // Check Electron, frameworks, third-party helpers and all unpacked native addons too.
   // Follow framework symlinks once; leave scripts and non-native resources alone.
   const seen = new Set();

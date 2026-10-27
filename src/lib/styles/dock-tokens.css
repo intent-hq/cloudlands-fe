@@ -1,0 +1,30 @@
+/* Collapsed hardware chrome and annotation controls share the camera palette.
+   Expanded dock content uses the renderer's shared dark theme. */
+[data-dock-surface='notch'],
+[data-annotation-surface] {
+  --dock-surface: 0 0% 0%;
+  --dock-foreground: 0 0% 96%;
+  --dock-muted-foreground: 0 0% 64%;
+  --dock-border: 0 0% 18%;
+  --dock-hover: 0 0% 12%;
+  --dock-active: 0 0% 16%;
+  --dock-shoulder: 8px;
+}
+
+[data-dock-surface='notch'][data-expanded='false'],
+[data-annotation-surface] {
+  --foreground: var(--dock-foreground);
+  --muted-foreground: var(--dock-muted-foreground);
+  --popover: var(--dock-surface);
+  --border: var(--dock-border);
+  --hover: var(--dock-hover);
+  --active: var(--dock-active);
+  /* Tailwind aliases otherwise inherit values resolved at the app theme root. */
+  --color-foreground: hsl(var(--dock-foreground));
+  --color-muted-foreground: hsl(var(--dock-muted-foreground));
+  --color-popover: hsl(var(--dock-surface));
+  --color-popover-foreground: hsl(var(--dock-foreground));
+  --color-border: hsl(var(--dock-border));
+  --color-hover: hsl(var(--dock-hover));
+  --color-active: hsl(var(--dock-active));
+}

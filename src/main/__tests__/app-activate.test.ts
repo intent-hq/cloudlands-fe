@@ -74,6 +74,54 @@ describe('handleActivate', () => {
     expect(h.windows).toHaveLength(1);
   });
 
+  it('retains auxiliary origin even when capture ends before boot releases', async () => {
+    const h = makeHarness();
+    let captureActive = true;
+    h.deps.shouldIgnoreActivation = () => captureActive;
+    const activation = handleActivate(h.deps);
+    captureActive = false;
+    h.gate.release();
+    await expect(activation).resolves.toBe('ignored');
+    expect(h.deps.focusWindow).not.toHaveBeenCalled();
+    expect(h.deps.restoreSessions).not.toHaveBeenCalled();
+    expect(h.deps.createWindow).not.toHaveBeenCalled();
+  });
+
+  it('does not reveal main if capture starts while activation waits for boot', async () => {
+    const h = makeHarness();
+    let captureActive = false;
+    h.deps.shouldIgnoreActivation = () => captureActive;
+    const activation = handleActivate(h.deps);
+    captureActive = true;
+    h.gate.release();
+    await expect(activation).resolves.toBe('ignored');
+    expect(h.deps.focusWindow).not.toHaveBeenCalled();
+    expect(h.deps.restoreSessions).not.toHaveBeenCalled();
+    expect(h.deps.createWindow).not.toHaveBeenCalled();
+  });
+
+  for (const hasMainWindow of [false, true]) {
+    it(`does not reveal or create the main app during auxiliary activation (main=${hasMainWindow})`, async () => {
+      const h = makeHarness();
+      let captureActive = true;
+      h.deps.shouldIgnoreActivation = () => captureActive;
+      if (hasMainWindow) {
+        const main = fakeWindow('main');
+        h.windows.push(main);
+        h.setMainWindow(main);
+      }
+      const activation = handleActivate(h.deps);
+      h.gate.release();
+      await expect(activation).resolves.toBe('ignored');
+      expect(h.deps.focusWindow).not.toHaveBeenCalled();
+      expect(h.deps.getActiveId).not.toHaveBeenCalled();
+      expect(h.deps.restoreSessions).not.toHaveBeenCalled();
+      expect(h.deps.createWindow).not.toHaveBeenCalled();
+      captureActive = false;
+      await expect(handleActivate(h.deps)).resolves.toBe(hasMainWindow ? 'focused' : 'created');
+    });
+  }
+
   it('after boot with zero live windows, restores saved sessions instead of creating a window', async () => {
     const h = makeHarness({ restored: true, backendId: 'remote-1' });
     h.gate.release();
