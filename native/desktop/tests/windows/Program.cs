@@ -9,6 +9,7 @@ static class Program {
     [DllImport("user32.dll")] static extern short GetAsyncKeyState(int key);
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern IntPtr GetProp(IntPtr h,string name);
+    [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern IntPtr RemoveProp(IntPtr h,string name);
     static long Identity(Form f) => GetProp(f.Handle,"IntentDesktopWindowIdentity").ToInt64();
     static string helper = "";
     static int result = 1;
@@ -97,6 +98,17 @@ static class Program {
         closing.Close(); closing.Dispose(); await Task.Delay(250);
         var gone=await peer.Call("focusWindow",new {handle=closingHandle,pid=Environment.ProcessId,excludedWindows=excluded},"desktop-target-mismatch");
         Require(gone.GetProperty("error").GetProperty("reason").GetString()=="window_unavailable","Closed window handle resolved");
+        // Deterministic recycled-HWND regression: a window that reuses a destroyed
+        // window's HWND is, to the helper, that HWND without the old identity tag.
+        // Simulate it on a live window: the old handle must stop resolving for
+        // focus, and enumeration must report a new identity for the same HWND.
+        var original=Listed(await peer.Call("windows",new {excludedWindows=excluded}),target);
+        RemoveProp(target.Handle,"IntentDesktopWindowIdentity");
+        var stale=await peer.Call("focusWindow",new {handle=original,pid=Environment.ProcessId,excludedWindows=excluded},"desktop-target-mismatch");
+        Require(stale.GetProperty("error").GetProperty("reason").GetString()=="window_unavailable","A recycled HWND resolved to the old window identity");
+        var replacement=Listed(await peer.Call("windows",new {excludedWindows=excluded}),target);
+        Require(replacement!=original && replacement.Split('.')[0]==original.Split('.')[0],"A recycled HWND did not get a new identity");
+        await peer.Call("focusWindow",new {handle=replacement,pid=Environment.ProcessId,excludedWindows=excluded});
         target.Activate(); await Task.Delay(250);
     }
     static async Task Run(Form target) {
