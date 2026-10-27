@@ -401,10 +401,11 @@ for (const { notice, width, height, theme } of desktopNoticeLayouts) {
       props: { transcript: true, desktopNotice: notice, width, height, theme },
     });
     const tab = component.locator('.panel-content-renderer');
-    const guidance = component.getByRole('status').filter({ hasText: 'Accessibility' });
+    const guidance = component.getByRole('status').filter({ hasText: 'quit and reopen Intent' });
     const composer = component.getByTestId('chat-composer-shell');
     const transcript = component.getByTestId('chat-transcript-scroll-viewport');
     await expect(guidance).toBeVisible();
+    await expect(component.getByRole('list', { name: 'macOS permissions' })).toBeVisible();
     await expect(composer.locator('.tiptap-editor')).toBeEditable();
     await page.evaluate(() => document.fonts.ready);
     await page.screenshot({
@@ -436,7 +437,7 @@ test('keeps the latest message and prompt box in view as a desktop notice comes 
   const composer = component.getByTestId('chat-composer-shell');
   const transcript = component.getByTestId('chat-transcript-scroll-viewport');
   const latest = component.locator('[data-message-id="attention-assistant-11"]');
-  const guidance = component.getByRole('status').filter({ hasText: 'Accessibility' });
+  const guidance = component.getByRole('status').filter({ hasText: 'quit and reopen Intent' });
   const inView = async () => {
     const [tabBox, composerBox, transcriptBox, latestBox] = await Promise.all(
       [tab, composer, transcript, latest].map(async (locator) => (await locator.boundingBox())!),
