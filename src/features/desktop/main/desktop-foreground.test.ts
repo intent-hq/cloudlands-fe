@@ -185,3 +185,31 @@ describe('review regressions', () => {
     await expect(tracker.userSwitched('s')).resolves.toBe(false);
   });
 });
+
+describe('owed settle sample that cannot complete', () => {
+  it('reports unknown instead of a user switch when the settle sample times out', async () => {
+    let front = INTENT;
+    const sample = vi.fn(async () => front);
+    const tracker = new DesktopForegroundTracker(sample, GRACE, () => Date.now());
+    await tracker.begin('s');
+    await tracker.beforeAgentAction('s');
+    await tracker.afterAgentAction('s'); // Dock click
+    await vi.advanceTimersByTimeAsync(1_500);
+    front = SAFARI; // delayed activation
+    sample.mockImplementationOnce(() => new Promise(() => {})); // settle sample stalls
+    await vi.advanceTimersByTimeAsync(GRACE - 1_500 + 1);
+    const verdict = tracker.userSwitched('s');
+    await vi.advanceTimersByTimeAsync(2 * 250);
+    await expect(verdict).resolves.toBeUndefined();
+  });
+  it('reports unknown when the settle sample fails', async () => {
+    const t = setup();
+    await t.tracker.begin('s');
+    await t.act();
+    await vi.advanceTimersByTimeAsync(1_500);
+    t.setFront(SAFARI);
+    t.sample.mockRejectedValueOnce(new Error('helper gone'));
+    await vi.advanceTimersByTimeAsync(GRACE);
+    await expect(t.tracker.userSwitched('s')).resolves.toBeUndefined();
+  });
+});

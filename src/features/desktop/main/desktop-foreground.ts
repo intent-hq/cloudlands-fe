@@ -79,8 +79,13 @@ export class DesktopForegroundTracker {
       if (this.track !== t || t.generation !== generation) return;
       t.settleOwed = false;
       t.settling = undefined;
-      if (late !== undefined && this.now() - t.lastAgentAction <= this.graceMs + SETTLE_SLACK_MS)
-        t.expected = late;
+      // A settle sample that failed, timed out or ran too late cannot attribute
+      // a delayed activation to the agent, so the attribution becomes unknown
+      // rather than a stale pid that would read that activation as the user's.
+      t.expected =
+        late !== undefined && this.now() - t.lastAgentAction <= this.graceMs + SETTLE_SLACK_MS
+          ? late
+          : undefined;
     }));
   }
   private supersedeSettle(t: Track): void {
