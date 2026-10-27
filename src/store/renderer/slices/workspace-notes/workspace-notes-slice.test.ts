@@ -13,9 +13,6 @@ import {
   initialState,
   loadWorkspaceNotesFailed,
   loadWorkspaceNotesSucceeded,
-  noteAttributionViewFinished,
-  noteAttributionViewReleased,
-  noteAttributionViewRequested,
   noteMetadataPushed,
   noteContentViewFinished,
   noteContentViewReleased,
@@ -125,7 +122,7 @@ describe('workspaceNotesReducer', () => {
     expect(workspaceNotesReducer(undefined, { type: '@@INIT' })).toEqual(initialState);
   });
 
-  it('correlates and releases note content, root, presence, and attribution views', () => {
+  it('correlates and releases note content, root, and presence views', () => {
     const authority = 'authority-1';
     const viewer = {
       principalId: 'principal-1',
@@ -134,12 +131,6 @@ describe('workspaceNotesReducer', () => {
       avatarUrl: null,
       cursor: null,
       cursorSeenAt: null,
-    };
-    const attribution = {
-      workspaceId: WS_1,
-      noteId: 'note-1',
-      computedAt: '2026-10-09T00:00:00.000Z',
-      attributions: { '1': { timestamp: 1 } },
     };
     let state = workspaceNotesReducer(
       initialState,
@@ -162,23 +153,15 @@ describe('workspaceNotesReducer', () => {
       state,
       notePresenceViewRequested('consumer', 'presence-1', WS_1, 'note-1'),
     );
-    state = workspaceNotesReducer(
-      state,
-      notePresenceViewersReceived(WS_1, 'consumer', 'presence-1', authority, [viewer]),
-    );
-    state = workspaceNotesReducer(
-      state,
-      noteAttributionViewRequested('consumer', 'attribution-1', WS_1, 'note-1'),
-    );
     const beforeStale = state;
     state = workspaceNotesReducer(
       state,
-      noteAttributionViewFinished('consumer', 'stale', WS_1, authority, attribution),
+      notePresenceViewersReceived(WS_1, 'consumer', 'stale', authority, [viewer]),
     );
     expect(state).toBe(beforeStale);
     state = workspaceNotesReducer(
       state,
-      noteAttributionViewFinished('consumer', 'attribution-1', WS_1, authority, attribution),
+      notePresenceViewersReceived(WS_1, 'consumer', 'presence-1', authority, [viewer]),
     );
 
     const workspace = state.byWorkspaceId[WS_1];
@@ -193,17 +176,14 @@ describe('workspaceNotesReducer', () => {
     });
     const presenceView = getItem(workspace.presenceViews, 'consumer');
     expect(presenceView && getItems(presenceView.viewers)).toEqual([viewer]);
-    expect(getItem(workspace.attributionViews, 'consumer')?.data).toEqual(attribution);
 
     state = workspaceNotesReducer(state, noteContentViewReleased(WS_1, 'consumer'));
     state = workspaceNotesReducer(state, noteWorkspaceRootReleased(WS_1, 'consumer'));
     state = workspaceNotesReducer(state, notePresenceViewReleased(WS_1, 'consumer'));
-    state = workspaceNotesReducer(state, noteAttributionViewReleased(WS_1, 'consumer'));
     expect(state.byWorkspaceId[WS_1]).toMatchObject({
       contentViews: { ids: [] },
       workspaceRoots: { ids: [] },
       presenceViews: { ids: [] },
-      attributionViews: { ids: [] },
     });
   });
 

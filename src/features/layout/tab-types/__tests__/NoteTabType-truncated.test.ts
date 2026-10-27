@@ -1,7 +1,7 @@
 /**
  * Truncated note reads (§5.2 "Truncated note reads", intent-hq/intent#7515):
  * a note served with `contentTruncated` renders only the Markdown renderer and
- * a banner — no editor, comments, presence, attribution or content actions —
+ * a banner — no editor, comments, presence or content actions —
  * and returns to the normal view when a live update brings it under the limit.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -130,10 +130,7 @@ vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', () => ({
   selectNoteViewMode: () => mockState.noteViewMode,
 }));
 import NoteTabTypeHeaderHarness from './mocks/NoteTabTypeHeaderHarness.svelte';
-import {
-  noteAttributionViewRequested,
-  notePresenceViewRequested,
-} from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+import { notePresenceViewRequested } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import { formatTruncatedNoteSize } from '../TruncatedNoteView.svelte';
 
 const tab = { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' };
@@ -184,14 +181,13 @@ describe('NoteTabType truncated note view', () => {
     expect(screen.queryByTestId('note-with-comments')).toBeNull();
   });
 
-  it('requests no presence, attribution or comments, and registers no content actions', async () => {
+  it('requests no presence or comments, and registers no content actions', async () => {
     mockState.note.set(truncatedNote());
     render(NoteTabTypeHeaderHarness, { props: { tab } });
     await screen.findByTestId('truncated-note-view');
 
     const types = dispatchedTypes();
     expect(types).not.toContain(notePresenceViewRequested.type);
-    expect(types).not.toContain(noteAttributionViewRequested.type);
     expect(types.filter((type) => /comment/i.test(type))).toEqual([]);
 
     // Header menu: no view settings, copy, open-in-editor or delete actions.
