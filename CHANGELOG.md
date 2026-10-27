@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.242.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.241.0...v2.242.0) (2026-10-27)
+
+
+### 🚀 Features
+
+* **desktop:** ask for all macOS permissions on one Allow click ([#3762](https://github.com/intent-hq/cloudlands-fe/issues/3762)) ([b30e0d5](https://github.com/intent-hq/cloudlands-fe/commit/b30e0d5c885216ab6447fd16594f3e798a8232a0))
+* **desktop:** window metadata in screenshots and window-targeted input ([#3765](https://github.com/intent-hq/cloudlands-fe/issues/3765)) ([ef7831e](https://github.com/intent-hq/cloudlands-fe/commit/ef7831e164a8f2f08fb4d259fb7eab0d25c961ea))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.60 ([#3774](https://github.com/intent-hq/cloudlands-fe/issues/3774)) ([30215fd](https://github.com/intent-hq/cloudlands-fe/commit/30215fd4f16cb70d036f5fc1b40e0aa2549f77a6))
+
 ## [2.241.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.240.2...v2.241.0) (2026-10-27)
 
 
