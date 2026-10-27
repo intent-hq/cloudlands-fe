@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-const mocks = vi.hoisted(() => ({ windows: [] as any[], create: vi.fn() }));
+const mocks = vi.hoisted(() => ({ windows: [] as any[], create: vi.fn(), focus: vi.fn() }));
 vi.mock('electron', () => ({
+  app: { focus: mocks.focus },
   BrowserWindow: { getAllWindows: () => mocks.windows },
   screen: { getPrimaryDisplay: () => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }) },
 }));
@@ -11,7 +12,10 @@ vi.mock('../../../main/hud-window', () => ({
   isHudWindow: (window: any) => window.url.includes('/hud'),
 }));
 vi.mock('../../../main/window', () => ({ createWindowForSession: mocks.create }));
-import { openDesktopControllingAgent } from './desktop-overlay-navigation';
+import {
+  focusDesktopOwningWindow,
+  openDesktopControllingAgent,
+} from './desktop-overlay-navigation';
 
 function window(backend: string, path: string) {
   return {
@@ -33,6 +37,7 @@ const identity = { backendId: 'remote-a', workspaceId: 'space/#a', agentId: 'age
 beforeEach(() => {
   mocks.windows.length = 0;
   mocks.create.mockReset();
+  mocks.focus.mockReset();
 });
 it('targets the owning backend/workspace and excludes overlay and diagnostic windows', async () => {
   const wrongBackend = window('remote-b', '/workspace/space%2F%23a');
@@ -79,4 +84,33 @@ it('does not lose navigation to an uninitialized or loading renderer', async () 
   expect(blank.webContents.send).not.toHaveBeenCalled();
   expect(loading.webContents.send).not.toHaveBeenCalled();
   expect(mocks.create).toHaveBeenCalledOnce();
+});
+
+it('refocuses the owning workspace window without navigating, stealing focus on macOS', () => {
+  const other = window('remote-a', '/workspace/other');
+  const target = window('remote-a', '/workspace/space%2F%23a');
+  mocks.windows.push(window('remote-b', '/workspace/space%2F%23a'), other, target);
+  expect(focusDesktopOwningWindow(identity, 'darwin')).toBe(true);
+  expect(target.restore).toHaveBeenCalledOnce();
+  expect(mocks.focus).toHaveBeenCalledWith({ steal: true });
+  expect(target.show).toHaveBeenCalledOnce();
+  expect(target.focus).toHaveBeenCalledOnce();
+  expect(target.webContents.send).not.toHaveBeenCalled();
+  expect(other.focus).not.toHaveBeenCalled();
+});
+it('refocuses without app-level focus stealing on Windows', () => {
+  const target = window('remote-a', '/workspace/space%2F%23a');
+  mocks.windows.push(target);
+  expect(focusDesktopOwningWindow(identity, 'win32')).toBe(true);
+  expect(mocks.focus).not.toHaveBeenCalled();
+  expect(target.focus).toHaveBeenCalledOnce();
+});
+it('never opens a window to refocus when the owning backend has none', () => {
+  mocks.windows.push(
+    window('remote-b', '/workspace/space%2F%23a'),
+    window('remote-a', '/desktop-overlay?kind=glow'),
+  );
+  expect(focusDesktopOwningWindow(identity, 'darwin')).toBe(false);
+  expect(mocks.create).not.toHaveBeenCalled();
+  expect(mocks.focus).not.toHaveBeenCalled();
 });
