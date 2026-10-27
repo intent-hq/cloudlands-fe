@@ -39,6 +39,10 @@ export interface DesktopOverlay {
   ): Promise<void>;
   deactivate(sessionId: string): Promise<void>;
   pulse(sessionId: string): void;
+  /** Brackets agent input so app switches it causes are not taken for the user's. */
+  agentInput(sessionId: string, active: boolean): void;
+  /** Hand focus back after native cleanup confirmed no agent input remains queued. */
+  restoreFocus(sessionId: string): Promise<void>;
   excludedWindows(): string[];
 }
 /** Throws `desktop-target-mismatch` when a targeted window is not ready. */
@@ -458,10 +462,16 @@ export class DesktopExecutor {
         const target = key ? before.windows.find((w) => windowKey(w) === key) : undefined;
         if (!target) throw targetMismatch('window_unavailable', 'not_started');
         started = true;
-        await this.native.focusWindow(
-          { handle: target.handle, pid: target.pid },
-          this.overlay.excludedWindows(),
-        );
+        // Activating another app is an agent-caused switch, not the user's.
+        this.overlay.agentInput(p.sessionId, true);
+        try {
+          await this.native.focusWindow(
+            { handle: target.handle, pid: target.pid },
+            this.overlay.excludedWindows(),
+          );
+        } finally {
+          this.overlay.agentInput(p.sessionId, false);
+        }
         guard();
         // Verify the window, not just the process.
         const after = await this.native.windows(this.overlay.excludedWindows());
@@ -491,17 +501,22 @@ export class DesktopExecutor {
                 guard();
                 if (reason) throw targetMismatch(reason, started ? 'partial' : 'not_started');
               };
-        await this.native.input(
-          action,
-          ticket.display,
-          (executed = false) => {
-            if (executed) started = true;
-            guard();
-          },
-          s.abort.signal,
-          ticket.layout?.displays,
-          target,
-        );
+        this.overlay.agentInput(p.sessionId, true);
+        try {
+          await this.native.input(
+            action,
+            ticket.display,
+            (executed = false) => {
+              if (executed) started = true;
+              guard();
+            },
+            s.abort.signal,
+            ticket.layout?.displays,
+            target,
+          );
+        } finally {
+          this.overlay.agentInput(p.sessionId, false);
+        }
         guard();
         await checkLayout();
         result = { ok: true };
@@ -633,6 +648,10 @@ export class DesktopExecutor {
         this.overlay.deactivate(s.request.sessionId),
       ]);
       const cleanupFailed = results.some((r) => r.status === 'rejected');
+      // Only once release has drained queued input: refocusing earlier could
+      // redirect an already-written key or text step into Intent.
+      if (results[0].status === 'fulfilled')
+        void this.overlay.restoreFocus(s.request.sessionId).catch(() => {});
       if (
         (report === true || (report === 'cleanup_failure' && cleanupFailed)) &&
         reason !== 'disconnected'

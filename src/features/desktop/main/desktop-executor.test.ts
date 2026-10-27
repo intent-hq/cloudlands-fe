@@ -67,6 +67,8 @@ function setup() {
     activate: vi.fn(async () => {}),
     deactivate: vi.fn(async () => {}),
     pulse: vi.fn(),
+    agentInput: vi.fn(),
+    restoreFocus: vi.fn(async () => {}),
     excludedWindows: () => ['123'],
   };
   const reports: DesktopStopReports = {
@@ -1151,6 +1153,21 @@ describe('window-targeted actions', () => {
       expect(t.ops).toEqual([]);
       await t.executor.invalidate('agent_end');
     });
+    it('marks the activation as agent-driven so the switch is not taken for the user', async () => {
+      const t = await targeted();
+      vi.mocked(t.native.windows)
+        .mockResolvedValueOnce(safariFront)
+        .mockResolvedValueOnce(slackFront);
+      vi.mocked(t.native.focusWindow).mockImplementationOnce(async () => {
+        expect(t.overlay.agentInput).toHaveBeenLastCalledWith('session', true);
+      });
+      await t.handle(await t.prepare({ kind: 'focusWindow', windowId: t.slackId }));
+      expect(vi.mocked(t.overlay.agentInput).mock.calls).toEqual([
+        ['session', true],
+        ['session', false],
+      ]);
+      await t.executor.invalidate('agent_end');
+    });
     it('refuses an unknown window before acting', async () => {
       const t = await targeted();
       await expect(
@@ -1235,5 +1252,72 @@ describe('window target validation', () => {
           action,
         }),
       ).toMatchObject({ action });
+  });
+});
+
+describe('desktop agent input bracketing', () => {
+  it('marks native input as agent-driven for its whole duration', async () => {
+    const t = setup();
+    await t.activate();
+    vi.mocked(t.native.input).mockImplementationOnce(async (_a, _d, check) => {
+      expect(t.overlay.agentInput).toHaveBeenLastCalledWith('session', true);
+      check(true);
+    });
+    const listed = (await t.handle(await t.prepare({ kind: 'listDisplay' }))) as {
+      result: { layoutId: string };
+    };
+    await t.handle(
+      await t.prepare({ kind: 'click', x: 1, y: 2, layoutId: listed.result.layoutId }),
+    );
+    expect(vi.mocked(t.overlay.agentInput).mock.calls).toEqual([
+      ['session', true],
+      ['session', false],
+    ]);
+    await t.executor.invalidate('agent_end');
+  });
+  it('closes the bracket when native input fails', async () => {
+    const t = setup();
+    await t.activate();
+    vi.mocked(t.native.input).mockRejectedValueOnce(new Error('boom'));
+    await expect(t.handle(await t.prepare({ kind: 'keypress', key: 'a' }))).rejects.toThrow();
+    expect(vi.mocked(t.overlay.agentInput).mock.calls).toEqual([
+      ['session', true],
+      ['session', false],
+    ]);
+  });
+  it('does not bracket screenshots or display listing', async () => {
+    const t = setup();
+    await t.activate();
+    await t.handle(await t.prepare({ kind: 'listDisplay' }));
+    await t.handle(await t.prepare({ kind: 'screenshot' }));
+    expect(t.overlay.agentInput).not.toHaveBeenCalled();
+    await t.executor.invalidate('agent_end');
+  });
+});
+
+describe('desktop focus hand-back ordering', () => {
+  it.each([
+    ['agent end', (t: ReturnType<typeof setup>) => t.executor.invalidate('agent_end', false)],
+    ['user Stop', (t: ReturnType<typeof setup>) => t.executor.stop('session')],
+    ['lease expiry', (t: ReturnType<typeof setup>) => t.executor.invalidate('lease_expired')],
+  ])('restores focus only after native release drains input on %s', async (_name, end) => {
+    const t = setup();
+    await t.activate();
+    const release = deferred<void>();
+    vi.mocked(t.native.release).mockReturnValueOnce(release.promise);
+    const ending = end(t);
+    await Promise.resolve();
+    expect(t.overlay.deactivate).toHaveBeenCalledWith('session');
+    expect(t.overlay.restoreFocus).not.toHaveBeenCalled();
+    release.resolve();
+    await ending;
+    expect(t.overlay.restoreFocus).toHaveBeenCalledExactlyOnceWith('session');
+  });
+  it('skips the refocus when native cleanup cannot be confirmed', async () => {
+    const t = setup();
+    await t.activate();
+    vi.mocked(t.native.release).mockRejectedValueOnce(new Error('helper gone'));
+    await expect(t.executor.invalidate('agent_end', false)).rejects.toThrow();
+    expect(t.overlay.restoreFocus).not.toHaveBeenCalled();
   });
 });

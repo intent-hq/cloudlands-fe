@@ -4,6 +4,7 @@ import type { BrowserWindowConstructorOptions } from 'electron';
 const mocks = vi.hoisted(() => ({
   windows: [] as any[],
   failLoad: false,
+  focused: null as { isDestroyed: () => boolean } | null,
   displays: [
     {
       id: 1,
@@ -22,6 +23,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('electron', async () => {
   const { EventEmitter } = await import('node:events');
   class Window extends EventEmitter {
+    static getFocusedWindow = () => mocks.focused;
     id = mocks.windows.length + 1;
     dead = false;
     visible = false;
@@ -58,16 +60,20 @@ vi.mock('electron', async () => {
     }
   }
   return {
+    app: new EventEmitter(),
     BrowserWindow: Window,
     ipcMain: new EventEmitter(),
     screen: Object.assign(new EventEmitter(), { getAllDisplays: () => mocks.displays }),
     powerMonitor: new EventEmitter(),
   };
 });
-vi.mock('./desktop-overlay-navigation', () => ({ openDesktopControllingAgent: vi.fn() }));
+vi.mock('./desktop-overlay-navigation', () => ({
+  openDesktopControllingAgent: vi.fn(),
+  focusDesktopOwningWindow: vi.fn(),
+}));
 vi.mock('../../../main/window-backend', () => ({ stampWindowWithBackend: vi.fn() }));
-import { ipcMain, powerMonitor, screen } from 'electron';
-import { DesktopControlOverlay } from './desktop-overlay';
+import { app, ipcMain, powerMonitor, screen } from 'electron';
+import { DESKTOP_AGENT_SWITCH_GRACE_MS, DesktopControlOverlay } from './desktop-overlay';
 import { DesktopNativeAdapter } from './desktop-native';
 import { DesktopExecutor, type DesktopNative } from './desktop-executor';
 
@@ -84,6 +90,7 @@ let overlay: DesktopControlOverlay;
 let stop: ReturnType<typeof vi.fn>;
 let invalidate: ReturnType<typeof vi.fn>;
 let navigate: ReturnType<typeof vi.fn>;
+let refocus: ReturnType<typeof vi.fn>;
 function send(window: any, action: string, ...args: unknown[]) {
   ipcMain.emit(
     `desktop-overlay:${action}`,
@@ -107,14 +114,17 @@ beforeEach(() => {
   vi.useFakeTimers();
   mocks.windows.length = 0;
   mocks.failLoad = false;
+  mocks.focused = null;
   stop = vi.fn();
   invalidate = vi.fn();
   navigate = vi.fn().mockResolvedValue(undefined);
+  refocus = vi.fn().mockReturnValue(true);
   overlay = new DesktopControlOverlay({
     url: 'app://workspaces/desktop-overlay',
     preload: '/preload.js',
     platform: 'darwin',
     navigate,
+    refocus,
   });
 });
 afterEach(async () => {
@@ -436,6 +446,237 @@ describe('desktop executor and overlay startup failures', () => {
       reason: 'executor_failed',
     });
     expect(t.reports.queue).not.toHaveBeenCalled();
+    expect(mocks.windows.every((w) => w.dead)).toBe(true);
+  });
+});
+
+describe('desktop overlay hands focus back to Intent', () => {
+  const intentWindow = { isDestroyed: () => false };
+  const owner = expect.objectContaining({ backendId: 'backend-a', workspaceId: 'ws-a' });
+  /** The agent clicks another app; the OS reports Intent's blur shortly after. */
+  function agentSwitchesApp(blurAfterMs = 50) {
+    overlay.agentInput(session.sessionId, true);
+    overlay.agentInput(session.sessionId, false);
+    vi.advanceTimersByTime(blurAfterMs);
+    mocks.focused = null;
+    app.emit('browser-window-blur');
+    vi.advanceTimersByTime(200);
+  }
+  /** The executor restores focus only after native release has drained input. */
+  async function endSession() {
+    await overlay.deactivate(session.sessionId);
+    await overlay.restoreFocus(session.sessionId);
+  }
+  function userSwitchesApp() {
+    mocks.focused = null;
+    app.emit('browser-window-blur');
+    vi.advanceTimersByTime(200);
+  }
+
+  it('refocuses the owning window when the agent ends after moving to another app', async () => {
+    mocks.focused = intentWindow;
+    await activate();
+    agentSwitchesApp();
+    await endSession();
+    expect(refocus).toHaveBeenCalledOnce();
+    expect(refocus).toHaveBeenCalledWith(owner, 'darwin');
+  });
+
+  it.each([
+    [
+      'user Stop',
+      () =>
+        send(
+          mocks.windows.find((w) => w.url.endsWith('controls')),
+          'stop',
+        ),
+    ],
+    ['lock / expiry style invalidation', () => powerMonitor.emit('lock-screen')],
+  ])('refocuses after %s', async (_name, end) => {
+    mocks.focused = intentWindow;
+    await activate();
+    agentSwitchesApp();
+    end();
+    expect(refocus).not.toHaveBeenCalled();
+    await overlay.restoreFocus(session.sessionId);
+    expect(stop.mock.calls.length + invalidate.mock.calls.length).toBe(1);
+    expect(refocus).toHaveBeenCalledOnce();
+  });
+
+  it('attributes a slow app activation inside the grace window to the agent', async () => {
+    mocks.focused = intentWindow;
+    await activate();
+    // A Dock click that launches Safari activates it seconds later.
+    agentSwitchesApp(DESKTOP_AGENT_SWITCH_GRACE_MS - 1_000);
+    await endSession();
+    expect(refocus).toHaveBeenCalledOnce();
+  });
+
+  it('attributes a blur while an agent input is still running to the agent', async () => {
+    mocks.focused = intentWindow;
+    await activate();
+    overlay.agentInput(session.sessionId, true);
+    vi.advanceTimersByTime(DESKTOP_AGENT_SWITCH_GRACE_MS * 2);
+    userSwitchesApp();
+    overlay.agentInput(session.sessionId, false);
+    await endSession();
+    expect(refocus).toHaveBeenCalledOnce();
+  });
+
+  it('leaves the user where they are when they switched apps themselves', async () => {
+    mocks.focused = intentWindow;
+    await activate();
+    userSwitchesApp();
+    await endSession();
+    expect(refocus).not.toHaveBeenCalled();
+  });
+
+  it('honours a user switch that the session ends before confirming', async () => {
+    mocks.focused = intentWindow;
+    await activate();
+    mocks.focused = null;
+    app.emit('browser-window-blur');
+    await endSession();
+    expect(refocus).not.toHaveBeenCalled();
+  });
+
+  it('ignores a pending blur between Intent windows when the session ends', async () => {
+    mocks.focused = intentWindow;
+    await activate();
+    agentSwitchesApp();
+    vi.advanceTimersByTime(DESKTOP_AGENT_SWITCH_GRACE_MS);
+    mocks.focused = intentWindow;
+    app.emit('browser-window-blur');
+    await endSession();
+    expect(refocus).not.toHaveBeenCalled();
+  });
+
+  it('waits for the executor before refocusing, then refocuses once', async () => {
+    mocks.focused = intentWindow;
+    await activate();
+    agentSwitchesApp();
+    await overlay.deactivate(session.sessionId);
+    expect(refocus).not.toHaveBeenCalled();
+    await overlay.restoreFocus('other-session');
+    expect(refocus).not.toHaveBeenCalled();
+    await overlay.restoreFocus(session.sessionId);
+    await overlay.restoreFocus(session.sessionId);
+    expect(refocus).toHaveBeenCalledOnce();
+  });
+
+  it('treats an app switch after the grace window as the user', async () => {
+    mocks.focused = intentWindow;
+    await activate();
+    overlay.agentInput(session.sessionId, true);
+    overlay.agentInput(session.sessionId, false);
+    vi.advanceTimersByTime(DESKTOP_AGENT_SWITCH_GRACE_MS + 1);
+    userSwitchesApp();
+    await endSession();
+    expect(refocus).not.toHaveBeenCalled();
+  });
+
+  it('ignores focus moving between Intent windows', async () => {
+    mocks.focused = intentWindow;
+    await activate();
+    app.emit('browser-window-blur');
+    vi.advanceTimersByTime(200);
+    agentSwitchesApp();
+    await endSession();
+    expect(refocus).toHaveBeenCalledOnce();
+  });
+
+  it('ignores input reports for another session', async () => {
+    mocks.focused = intentWindow;
+    await activate();
+    overlay.agentInput('other-session', true);
+    userSwitchesApp();
+    await endSession();
+    expect(refocus).not.toHaveBeenCalled();
+  });
+
+  it('does not refocus when Intent was not focused at start', async () => {
+    await activate();
+    agentSwitchesApp();
+    await endSession();
+    expect(refocus).not.toHaveBeenCalled();
+  });
+
+  it('does not refocus when an Intent window is already focused at the end', async () => {
+    mocks.focused = intentWindow;
+    await activate();
+    await endSession();
+    expect(refocus).not.toHaveBeenCalled();
+  });
+
+  it('stops tracking focus after the session ends', async () => {
+    mocks.focused = intentWindow;
+    await activate();
+    await endSession();
+    expect(app.listenerCount('browser-window-blur')).toBe(0);
+  });
+
+  it('leaves the user where they are when the native check sees their switch', async () => {
+    const userSwitchedForeground = vi.fn().mockResolvedValue(true);
+    overlay = new DesktopControlOverlay({
+      url: 'app://workspaces/desktop-overlay',
+      preload: '/preload.js',
+      platform: 'darwin',
+      refocus,
+      userSwitchedForeground,
+    });
+    mocks.focused = intentWindow;
+    await activate();
+    agentSwitchesApp();
+    await endSession();
+    expect(userSwitchedForeground).toHaveBeenCalledWith(owner);
+    expect(refocus).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['cannot tell', () => Promise.resolve(undefined)],
+    ['reports no user switch', () => Promise.resolve(false)],
+    ['fails', () => Promise.reject(new Error('helper gone'))],
+  ])('falls back to blur tracking when the native check %s', async (_name, check) => {
+    overlay = new DesktopControlOverlay({
+      url: 'app://workspaces/desktop-overlay',
+      preload: '/preload.js',
+      platform: 'darwin',
+      refocus,
+      userSwitchedForeground: check,
+    });
+    mocks.focused = intentWindow;
+    await activate();
+    agentSwitchesApp();
+    await endSession();
+    expect(refocus).toHaveBeenCalledOnce();
+  });
+
+  it('skips the native check when blur tracking already saw the user switch', async () => {
+    const userSwitchedForeground = vi.fn().mockResolvedValue(false);
+    overlay = new DesktopControlOverlay({
+      url: 'app://workspaces/desktop-overlay',
+      preload: '/preload.js',
+      platform: 'darwin',
+      refocus,
+      userSwitchedForeground,
+    });
+    mocks.focused = intentWindow;
+    await activate();
+    userSwitchesApp();
+    await endSession();
+    expect(userSwitchedForeground).not.toHaveBeenCalled();
+    expect(refocus).not.toHaveBeenCalled();
+  });
+
+  it('never fails teardown when refocusing throws', async () => {
+    mocks.focused = intentWindow;
+    refocus.mockImplementation(() => {
+      throw new Error('window gone');
+    });
+    await activate();
+    agentSwitchesApp();
+    await overlay.deactivate(session.sessionId);
+    await expect(overlay.restoreFocus(session.sessionId)).resolves.toBeUndefined();
     expect(mocks.windows.every((w) => w.dead)).toBe(true);
   });
 });

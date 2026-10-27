@@ -1,10 +1,13 @@
-import { BrowserWindow, ipcMain, screen, powerMonitor, type IpcMainEvent } from 'electron';
+import { app, BrowserWindow, ipcMain, screen, powerMonitor, type IpcMainEvent } from 'electron';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { DESKTOP_OVERLAY_ROUTE } from '../../../shared/desktop-overlay';
 import { stampWindowWithBackend } from '../../../main/window-backend';
 import { registerDesktopOverlayWindow } from '../../../shared/main/desktop-overlay-window';
-import { openDesktopControllingAgent } from './desktop-overlay-navigation';
+import {
+  focusDesktopOwningWindow,
+  openDesktopControllingAgent,
+} from './desktop-overlay-navigation';
 
 import type { DesktopLocalSession, DesktopOverlay } from './desktop-executor';
 import type { DesktopEndReason } from '../../../shared/types/desktop';
@@ -15,8 +18,28 @@ interface OverlayWindow {
   url: string;
 }
 
+/**
+ * Intent losing app focus this long after an agent input is attributed to that
+ * input: activating another app (a Dock click that launches it, say) can take
+ * a few seconds to land.
+ */
+export const DESKTOP_AGENT_SWITCH_GRACE_MS = 5_000;
+
+/** Whether control should hand the desktop back to Intent when it ends. */
+interface FocusTrack {
+  /** An Intent window was focused when control started. */
+  startedFocused: boolean;
+  /** Intent lost app focus while no agent input could have caused it. */
+  userSwitched: boolean;
+  /** A non-agent blur is waiting to be confirmed as an app switch. */
+  blurPending: boolean;
+  agentInputs: number;
+  lastAgentInput: number;
+}
+
 interface ActiveOverlay {
   identity: DesktopLocalSession;
+  focus: FocusTrack;
   stop: () => void;
   invalidate: (reason: DesktopEndReason) => void;
   windows: OverlayWindow[];
@@ -26,6 +49,8 @@ interface ActiveOverlay {
 /** The caller must await readiness before admitting input and use excludedWindows for capture. */
 export class DesktopControlOverlay implements DesktopOverlay {
   private active?: ActiveOverlay;
+  /** The last torn-down session, kept until the executor confirms native cleanup. */
+  private ended?: ActiveOverlay;
 
   constructor(
     private readonly options: {
@@ -33,6 +58,12 @@ export class DesktopControlOverlay implements DesktopOverlay {
       preload: string;
       platform?: NodeJS.Platform;
       navigate?: typeof openDesktopControllingAgent;
+      refocus?: typeof focusDesktopOwningWindow;
+      /**
+       * Optional native check: did the user, not the agent, change the
+       * frontmost app during the session? `undefined` means it cannot tell.
+       */
+      userSwitchedForeground?: (session: DesktopLocalSession) => Promise<boolean | undefined>;
     },
   ) {}
 
@@ -47,6 +78,13 @@ export class DesktopControlOverlay implements DesktopOverlay {
       throw new Error('Desktop overlay is unsupported on this platform');
     const entry: ActiveOverlay = {
       identity: { ...identity },
+      focus: {
+        startedFocused: intentFocused(),
+        userSwitched: false,
+        blurPending: false,
+        agentInputs: 0,
+        lastAgentInput: -Infinity,
+      },
       stop,
       invalidate,
       windows: [],
@@ -62,6 +100,23 @@ export class DesktopControlOverlay implements DesktopOverlay {
     screen.on('display-metrics-changed', displayChanged);
     powerMonitor.on('lock-screen', screenLocked);
     powerMonitor.on('suspend', screenLocked);
+    let blurCheck: ReturnType<typeof setTimeout> | undefined;
+    const windowBlurred = () => {
+      if (this.agentActing(entry)) return;
+      // Blur also fires when focus moves between Intent windows; only a blur
+      // that leaves no Intent window focused is an app switch.
+      clearTimeout(blurCheck);
+      entry.focus.blurPending = true;
+      blurCheck = setTimeout(() => {
+        entry.focus.blurPending = false;
+        if (this.active === entry && !intentFocused()) entry.focus.userSwitched = true;
+      }, 100);
+    };
+    app.on('browser-window-blur', windowBlurred);
+    entry.cleanup.push(() => {
+      clearTimeout(blurCheck);
+      app.removeListener('browser-window-blur', windowBlurred);
+    });
     entry.cleanup.push(() => {
       screen.removeListener('display-added', displayChanged);
       screen.removeListener('display-removed', displayChanged);
@@ -228,6 +283,55 @@ export class DesktopControlOverlay implements DesktopOverlay {
   private destroy(entry: ActiveOverlay): void {
     for (const cleanup of entry.cleanup) cleanup();
     for (const { window } of entry.windows) if (!window.isDestroyed()) window.destroy();
+    this.ended = entry;
+  }
+
+  /**
+   * Bring the owning window back unless the user had moved elsewhere themselves.
+   * Called by the executor only after native release confirms queued input and
+   * held keys/buttons have drained, so no agent input can land in Intent.
+   *
+   * Known gap: Electron only sees Intent's own focus changes, so a switch
+   * between two non-Intent apps after the agent left Intent is not detected
+   * yet. `userSwitchedForeground` is where a native frontmost-app signal plugs
+   * in; without it (or when it cannot tell) the blur tracking above decides.
+   */
+  async restoreFocus(sessionId: string): Promise<void> {
+    const entry = this.ended;
+    if (!entry || entry.identity.sessionId !== sessionId) return;
+    this.ended = undefined;
+    const { startedFocused, userSwitched, blurPending } = entry.focus;
+    // Teardown cancelled any pending blur check; with no Intent window focused
+    // now, that blur was the user's own app switch.
+    if (!startedFocused || userSwitched || blurPending || intentFocused()) return;
+    const check = this.options.userSwitchedForeground;
+    if (check) {
+      const switched = await check(entry.identity).catch(() => undefined);
+      if (switched === true || intentFocused()) return;
+    }
+    try {
+      (this.options.refocus ?? focusDesktopOwningWindow)(
+        entry.identity,
+        this.options.platform ?? process.platform,
+      );
+    } catch {
+      // Refocus is a courtesy; it must never turn a clean end into a failure.
+    }
+  }
+
+  private agentActing(entry: ActiveOverlay): boolean {
+    const { agentInputs, lastAgentInput } = entry.focus;
+    return agentInputs > 0 || Date.now() - lastAgentInput < DESKTOP_AGENT_SWITCH_GRACE_MS;
+  }
+
+  agentInput(sessionId: string, active: boolean): void {
+    const entry = this.active;
+    if (!entry || entry.identity.sessionId !== sessionId) return;
+    if (active) entry.focus.agentInputs += 1;
+    else {
+      entry.focus.agentInputs = Math.max(0, entry.focus.agentInputs - 1);
+      entry.focus.lastAgentInput = Date.now();
+    }
   }
 
   async deactivate(sessionId: string): Promise<void> {
@@ -253,6 +357,11 @@ export class DesktopControlOverlay implements DesktopOverlay {
       return match[1];
     });
   }
+}
+
+function intentFocused(): boolean {
+  const window = BrowserWindow.getFocusedWindow();
+  return !!window && !window.isDestroyed();
 }
 
 let singleton: DesktopOverlay | undefined;
