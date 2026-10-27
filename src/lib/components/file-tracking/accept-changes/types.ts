@@ -127,6 +127,9 @@ export interface PRInfo extends ReviewMonitorExtension {
   crossRepoDisplay?: string;
   /** Monitor's last merge-requirements snapshot (PROTOCOL §6.9) for hover status. */
   monitorSnapshot?: ReviewMonitorRow['lastSnapshot'];
+  /** The workspace PR pool entry's merge-queue flag (`PullRequestInfo.isInMergeQueue`);
+   * consulted only when the row has no monitor snapshot. */
+  isInMergeQueue?: boolean;
   /** Row exists only as a monitor (no matching workspace PR) — local
    * commit/file data does not apply to it. */
   monitorOnly?: boolean;

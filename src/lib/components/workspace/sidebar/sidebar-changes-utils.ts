@@ -340,6 +340,8 @@ export function mapWorkspacePRs(
         status: toPRDisplayStatus(pr.status),
         createdAt: pr.createdAt,
         updatedAt: pr.updatedAt,
+        // A draft cannot sit in the merge queue; drop a stale flag.
+        isInMergeQueue: pr.isDraft ? undefined : pr.isInMergeQueue,
         crossRepo,
         crossRepoDisplay: crossRepo ? shortRepoDisplay(crossRepo, workspaceOwner) : undefined,
       };
@@ -355,6 +357,7 @@ export function mapWorkspacePRs(
         status: toPRDisplayStatus(activePR.status),
         createdAt: activePR.createdAt,
         updatedAt: activePR.updatedAt,
+        isInMergeQueue: activePR.isDraft ? undefined : activePR.isInMergeQueue,
       },
     ];
   }
@@ -708,9 +711,16 @@ function compareMissingLast(
  * Whether an open PR row sits in its host's merge queue. Only an open row can
  * be queued — a stale `isInMergeQueue` on a draft/merged/closed snapshot is
  * ignored — and the additive flag is presence-detected (absent = not queued).
+ * The monitor snapshot is the live signal when the row has one; otherwise the
+ * workspace PR pool entry's flag decides (the Home card passes no monitors).
  */
-export function isPRQueued(pr: Pick<PRInfo, 'status' | 'monitorSnapshot'>): boolean {
-  return pr.status === 'open' && pr.monitorSnapshot?.isInMergeQueue === true;
+export function isPRQueued(
+  pr: Pick<PRInfo, 'status' | 'monitorSnapshot' | 'isInMergeQueue'>,
+): boolean {
+  if (pr.status !== 'open') return false;
+  return pr.monitorSnapshot
+    ? pr.monitorSnapshot.isInMergeQueue === true
+    : pr.isInMergeQueue === true;
 }
 
 /**
