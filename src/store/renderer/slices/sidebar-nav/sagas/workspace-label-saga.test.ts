@@ -28,7 +28,11 @@ import {
   workspaceLabelsState,
 } from '../../../../../test/fixtures/workspace-labels-state';
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
-import { setWorkspaceHasLoaded } from '../../workspace/workspace-slice';
+import {
+  bulkUpdateWorkspaceEntities,
+  setWorkspaceHasLoaded,
+  updateWorkspaceEntity,
+} from '../../workspace/workspace-slice';
 import { selectPinnedWorkspaceIds, selectWorkspaceLabelsInUse } from '../sidebar-nav-selectors';
 import {
   PINNED_WORKSPACES_KEY,
@@ -181,6 +185,32 @@ describe('setWorkspaceLabel', () => {
     second.resolve({ ok: false, error: 'nope' });
     await settle();
     expect(run.label('ws-1')).toBe('A');
+    await run.stop();
+  });
+
+  it('rolls back to a remote label that arrived between two failed local writes', async () => {
+    const run = start(
+      workspaceLabelsState({ workspaces: [labelWorkspace('ws-1', { label: 'Old' })] }),
+    );
+    await settle();
+    const first = deferred<unknown>();
+    const second = deferred<unknown>();
+    mocks.update.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+
+    run.put(setWorkspaceLabel('ws-1', 'A'));
+    await settle();
+    // Another client's authoritative workspace:updated delta lands.
+    run.put(bulkUpdateWorkspaceEntities([updateWorkspaceEntity('ws-1', { label: 'Remote B' })]));
+    run.put(setWorkspaceLabel('ws-1', 'C'));
+    await settle();
+
+    first.resolve({ ok: false, error: 'nope' });
+    await settle();
+    expect(run.label('ws-1')).toBe('C');
+
+    second.resolve({ ok: false, error: 'nope' });
+    await settle();
+    expect(run.label('ws-1')).toBe('Remote B');
     await run.stop();
   });
 

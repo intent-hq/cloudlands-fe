@@ -55,8 +55,14 @@ function applyLabel(workspaceId: string, label: string | null) {
   ]);
 }
 
-/** In-flight label writes per workspace: the latest token and the value to roll back to. */
-const pendingLabelWrites = new Map<string, { token: number; previous: string | null }>();
+/**
+ * In-flight label writes per workspace: the latest token, the value it applied
+ * optimistically, and the value to roll back to if it fails.
+ */
+const pendingLabelWrites = new Map<
+  string,
+  { token: number; optimistic: string | null; previous: string | null }
+>();
 let nextLabelWriteToken = 0;
 
 /** Test-only reset of the module-level pending-write bookkeeping. */
@@ -89,7 +95,11 @@ function* writeWorkspaceLabel(
   if (!pending && current === label) return true;
 
   const token = ++nextLabelWriteToken;
-  pendingLabelWrites.set(workspaceId, { token, previous: pending ? pending.previous : current });
+  // Inherit the earlier write's rollback value only while the row still shows
+  // that write's optimistic value; an authoritative update in between (e.g.
+  // another client's workspace:updated) becomes the new rollback target.
+  const previous = pending && current === pending.optimistic ? pending.previous : current;
+  pendingLabelWrites.set(workspaceId, { token, optimistic: label, previous });
   yield* put(applyLabel(workspaceId, label));
 
   let error: string | undefined;
