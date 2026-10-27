@@ -98,6 +98,7 @@ jobs:
           sparse-checkout: |
             /docs/protocol/fixtures/backend-keychain/v1/
             /scripts/backend-keychain-contract.mjs
+            /scripts/lib/fixture-copy.mjs
       - name: Verify backend Keychain fixture provenance
         env:
           SOURCE_COMMIT: ${{ steps.backend-keychain-fixtures.outputs.sourceCommit }}
@@ -119,6 +120,7 @@ jobs:
           sparse-checkout: |
             /docs/protocol/fixtures/suggested-prompts/v1/
             /scripts/suggested-prompts-contract.mjs
+            /scripts/lib/fixture-copy.mjs
       - name: Verify suggested-prompts case provenance
         env:
           SOURCE_COMMIT: ${{ steps.suggested-prompts-cases.outputs.sourceCommit }}
