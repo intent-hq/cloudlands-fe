@@ -1,6 +1,5 @@
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type { Note, NoteVersion } from '$shared/types';
-import type { LineAttributionData } from '$lib/client';
 
 export type NoteUiRequestState = {
   consumerId: string;
@@ -29,10 +28,6 @@ export type NotePresenceViewer = {
 
 type NotePresenceViewState = NoteUiRequestState & {
   viewers: Collection<NotePresenceViewer, 'principalId'>;
-};
-
-export type NoteAttributionViewState = NoteUiRequestState & {
-  data: LineAttributionData | null;
 };
 
 export type NoteVersionsState = {
@@ -67,7 +62,6 @@ export type WorkspaceNotesWorkspaceState = {
   contentViews: Collection<NoteContentViewState, 'consumerId'>;
   workspaceRoots: Collection<NoteWorkspaceRootState, 'consumerId'>;
   presenceViews: Collection<NotePresenceViewState, 'consumerId'>;
-  attributionViews: Collection<NoteAttributionViewState, 'consumerId'>;
 };
 
 export type WorkspaceNotesState = {

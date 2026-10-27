@@ -966,9 +966,6 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
     ];
   }
 
-  // Line attribution is now handled by LineAttributionGutter.svelte component
-  // extensions = [...extensions, LineAttributionExtensionV2];
-
   return {
     element,
     extensions,

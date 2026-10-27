@@ -3403,10 +3403,6 @@ function handleTerminalExitEvent(event: WorkspaceEvent, workspaceId: string): vo
  * - `task:ready-tasks-changed` → WorkspaceProgressCard reads
  *   `payload.workspaceId` + `payload.data.readyTaskIds`; the daemon event
  *   envelope (§5.4 TS-parity payload) already has exactly that shape.
- * - `line-attribution:updated` (§5.2.1 / §6.5) → forwarded as
- *   `{ workspaceId, noteId, attributions }` so the tiptap
- *   the workspace-notes read saga's `takeEveryFromListenSync` listener
- *   reload path fires without touching the daemon transport directly.
  * - `workspace:updated` → forwarded as `{ workspaceId, changes: data }`.
  *
  * `pr:linked`/`pr:updated`/`pr:unlinked` (§7.6) are no longer relayed here —
@@ -3421,13 +3417,6 @@ function relayLegacyIpcEvent(type: string, event: WorkspaceEvent, workspaceId: s
   switch (type) {
     case 'task:ready-tasks-changed':
       emitMockIpcEvent('task:ready-tasks-changed', event);
-      return;
-    case 'line-attribution:updated':
-      emitMockIpcEvent('line-attribution:updated', {
-        workspaceId,
-        noteId: data.noteId,
-        attributions: data.attributions,
-      });
       return;
     case 'workspace:updated':
       emitMockIpcEvent('workspace:updated', { workspaceId, changes: data });
@@ -4747,7 +4736,6 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // agent-lock snapshot folded into the agent-lock slice; without the
   // subscribe filter the gating in FileChangesSection never engages live.
   'changes:agent-locks',
-  'line-attribution:updated',
   'pr:*',
   // `gitRoot:*` (§6.5) — a submodule PR's status / merge-queue change only
   // arrives as `gitRoot:updated`; without it Home badges for root-tracked PRs

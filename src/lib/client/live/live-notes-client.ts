@@ -16,8 +16,6 @@ import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
 import { isProjectionRejected } from '$shared/utils/note-content';
 import type { Author, CreateNoteRequest, Note, NoteVersion } from '$shared/types';
 import type {
-  LineAttributionClient,
-  LineAttributionData,
   MutationResult,
   NoteAddOptions,
   NoteGetOptions,
@@ -153,36 +151,7 @@ export function normalizeNote(raw: Record<string, unknown>, workspaceId: string)
   } as Note;
 }
 
-/**
- * `note.lineAttribution.*` seam (PROTOCOL §5.2.1). `load` returns the bare
- * `LineAttributionData | null` the router serializes (`router.rs` §5.2.1) —
- * no envelope unwrap needed. `computeNow` bypasses the 5 s debounce and
- * returns `{ ok: true }` on success. Neither method resolves the note's
- * workspace via `resolveNoteWorkspaceId`: the tiptap gutter already carries
- * `workspaceId` as a prop, so callers pass it in directly.
- */
-class LiveLineAttributionClient implements LineAttributionClient {
-  async load(workspaceId: string, noteId: string): Promise<LineAttributionData | null> {
-    const result = await backendRequest<LineAttributionData | null>('note.lineAttribution.load', {
-      workspaceId,
-      noteId,
-    });
-    if (!result || typeof result !== 'object') return null;
-    return result;
-  }
-
-  async computeNow(workspaceId: string, noteId: string): Promise<{ ok: boolean }> {
-    const result = await backendRequest<{ ok?: boolean }>('note.lineAttribution.computeNow', {
-      workspaceId,
-      noteId,
-    });
-    return { ok: Boolean(result?.ok) };
-  }
-}
-
 export class LiveNotesClient implements NotesClient {
-  readonly lineAttribution: LineAttributionClient = new LiveLineAttributionClient();
-
   async list(workspaceId: string, options?: { projection?: 'full' | 'slim' }): Promise<Note[]> {
     // §5.2 `projection`: only ride the wire when "slim" is requested so older
     // daemons see an unchanged request. If a daemon rejects the unknown param

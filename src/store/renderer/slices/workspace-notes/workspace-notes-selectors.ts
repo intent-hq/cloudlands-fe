@@ -86,15 +86,6 @@ export const selectNotePresenceView = store.createSelector(
   },
 );
 
-export const selectNoteAttributionView = store.createSelector(
-  (state, workspaceId: string, consumerId: string) =>
-    getItem(
-      state.workspaceNotes.byWorkspaceId[workspaceId]?.attributionViews ??
-        emptyWorkspaceNotesState.attributionViews,
-      consumerId,
-    ),
-);
-
 // ============================================================================
 // Note item selectors
 // ============================================================================

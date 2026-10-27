@@ -4904,29 +4904,6 @@ describe('daemonEventsBridge (legacy mock-IPC relay — daemon events → listen
     expect(gitSeen).toEqual([]);
   });
 
-  it('re-emits line-attribution:updated with { workspaceId, noteId, attributions } for the gutter', async () => {
-    // PROTOCOL §5.2.1 / §6.5 — daemon emits the self-sufficient payload; the
-    // bridge forwards it so LineAttributionGutter's listenSync path fires.
-    await primeBridge();
-    const seen = listenOn('line-attribution:updated');
-
-    const attributions = {
-      '1': {
-        timestamp: 1720193696000,
-        author: { id: 'system', name: 'intentd', type: 'system' as const },
-      },
-    };
-    capturedHandlers[0]!(
-      notification('line-attribution:updated', {
-        workspaceId: WS,
-        noteId: 'note-abc',
-        attributions,
-      }),
-    );
-
-    expect(seen).toEqual([{ workspaceId: WS, noteId: 'note-abc', attributions }]);
-  });
-
   it('re-emits workspace:updated with the event data as changes', async () => {
     await primeBridge();
     const seen = listenOn('workspace:updated');

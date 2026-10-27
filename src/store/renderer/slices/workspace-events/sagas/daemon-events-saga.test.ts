@@ -365,7 +365,6 @@ describe('daemonEventsSaga', () => {
       'changes:git-status',
       'changes:tracked',
       'changes:agent-locks',
-      'line-attribution:updated',
       'pr:*',
       'gitRoot:*',
       'mcp.servers:status-changed',

@@ -298,7 +298,6 @@ export function setupAssistantPanelsFixture(
       return { ok: true, noteId, newContent: content, rev };
     },
     'comment.list': () => ({ threads: [] }),
-    'note.lineAttribution.load': () => null,
     'principal.me': () => ({ id: 'assistant-preview-owner' }),
     'note.presence.subscribe': () => ({ subscriptionId: 'assistant-preview-presence' }),
     'note.presence.unsubscribe': () => ({ ok: true }),

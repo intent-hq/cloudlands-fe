@@ -295,7 +295,6 @@ const componentAsyncDataFetchBaselineFiles = [
   'src/lib/components/tiptap/BubbleMenu.svelte',
   'src/lib/components/tiptap/CommentsSidebar.svelte',
   'src/lib/components/tiptap/ContextMentionNodeView.svelte',
-  'src/lib/components/tiptap/LineAttributionGutter.svelte',
   'src/lib/components/tiptap/TaskAgentStatus.svelte',
   'src/lib/components/tiptap/TaskItemNodeView.svelte',
   'src/lib/components/tiptap/TaskMenu.svelte',

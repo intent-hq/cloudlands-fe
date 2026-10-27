@@ -268,13 +268,6 @@ vi.mock('$lib/components/tiptap/CommentsSidebar.svelte', async () => {
   return { default: MockSimple };
 });
 
-vi.mock('$lib/components/tiptap/LineAttributionGutter.svelte', async () => {
-  const MockSimple = (
-    await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')
-  ).default;
-  return { default: MockSimple };
-});
-
 vi.mock('$lib/components/tiptap/SuggestionTooltip.svelte', async () => {
   const MockSimple = (
     await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')

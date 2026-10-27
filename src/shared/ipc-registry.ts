@@ -728,11 +728,6 @@ export const IPC_CHANNELS = {
     GET_UNREAD_NOTE_IDS: 'user-activity:get-unread-note-ids',
   },
 
-  // Line Attribution
-  LINE_ATTRIBUTION: {
-    UPDATED: 'line-attribution:updated',
-  },
-
   // Git Tracking
   GIT_TRACKING: {
     GET_STATE: 'git-tracking:get-state',
@@ -1216,7 +1211,6 @@ export const EVENT_CHANNELS = [
   'git:status-changed',
   'file-tracking:changes-updated',
   'file-tracking:agent-file-changed',
-  'line-attribution:updated',
   'setup-scripts:stream-chunk',
   'setup-scripts:stream-complete',
   'setup-scripts:stream-error',
