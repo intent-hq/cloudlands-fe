@@ -136,7 +136,7 @@ describe('workspace retire saga', () => {
       retiredAt: '2026-10-20T00:00:00Z',
     });
     expect(mocks.notify.success).toHaveBeenCalledWith(
-      m.workspace_ops_retired_toast({ title: 'Title ws-1' }),
+      m.workspace_ops_purged_toast({ title: 'Title ws-1' }),
     );
     run.task.cancel();
   });
@@ -152,7 +152,7 @@ describe('workspace retire saga', () => {
     run.send(confirmRetireWorkspace());
     await settle();
 
-    expect(mocks.notify.error).toHaveBeenCalledWith(m.workspace_ops_retireUnsupported_error());
+    expect(mocks.notify.error).toHaveBeenCalledWith(m.workspace_ops_purgeUnsupported_error());
     expect(run.row('ws-1')?.status).toBe(WorkspaceStatusEnum.Active);
     run.task.cancel();
   });
@@ -163,7 +163,7 @@ describe('workspace retire saga', () => {
     run.send(requestRetireWorkspace('ws-1'));
     run.send(confirmRetireWorkspace());
     await settle();
-    expect(mocks.notify.error).toHaveBeenCalledWith(m.workspace_ops_retireFailed_error());
+    expect(mocks.notify.error).toHaveBeenCalledWith(m.workspace_ops_purgeFailed_error());
     run.task.cancel();
   });
 
@@ -261,7 +261,7 @@ describe('workspace retire saga', () => {
     const run = harness([]);
     run.send(loadRetiredWorkspacesRequested());
     await settle();
-    expect(mocks.notify.error).toHaveBeenCalledWith(m.home_retired_loadFailed_error());
+    expect(mocks.notify.error).toHaveBeenCalledWith(m.home_archived_loadFailed_error());
     run.task.cancel();
   });
 });

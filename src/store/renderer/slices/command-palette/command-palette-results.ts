@@ -28,7 +28,8 @@ interface WorkspaceItem {
   icon: any;
   description?: string;
   _workspace: true;
-  /** Retired workspace (PROTOCOL §5.1): search opts in and shows a Retired badge. */
+  /** Archived workspace whose folder was purged (`Retired`, PROTOCOL §5.1):
+   *  search opts in and shows the Archived badge. */
   isRetiredWorkspace?: boolean;
   _time?: string;
   /** Raw last-activity timestamp (ms) used as a search-ranking tiebreak. */
