@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.243.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.242.0...v2.243.0) (2026-10-27)
+
+
+### 🚀 Features
+
+* **desktop:** bring Intent back to the front when desktop control ends ([#3763](https://github.com/intent-hq/cloudlands-fe/issues/3763)) ([24eea8f](https://github.com/intent-hq/cloudlands-fe/commit/24eea8f0d1ae7a19bd01f731e877218e388c44c0))
+
 ## [2.242.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.241.0...v2.242.0) (2026-10-27)
 
 
