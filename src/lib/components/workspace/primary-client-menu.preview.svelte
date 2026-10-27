@@ -15,14 +15,13 @@
     ownClientIdReceived,
     workspaceBrowserClientReceived,
   } from '$store/renderer/slices/browser-clients/browser-clients-slice';
-  import { initializeLayout } from '$store/renderer/slices/panel-layout/panel-layout-slice';
-  import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+  import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 
-  /** Live sidebar over a seeded client registry and agent-owned browser layout. */
-  export interface DrivingClientIndicatorPreviewProps {
+  /** Live sidebar card over a seeded client registry, with its menu open or closed. */
+  export interface PrimaryClientMenuPreviewProps {
     width: number;
-    /** Open the card's ellipsis menu once mounted (captures the switch action). */
+    /** Open the card's menu and its primary-client submenu once mounted. */
     menuOpen?: boolean;
   }
 
@@ -47,6 +46,12 @@
     prettyHostname: 'Office Linux',
     deviceKind: 'desktop',
   });
+  const longNameClient = liveClientFixture({
+    clientId: 'client-preview-long',
+    hostname: 'design-studio',
+    prettyHostname: 'Amelia Wattenberger’s Design Studio MacBook Pro',
+    deviceKind: 'laptop',
+  });
   const OFFLINE_CLIENT_ID = 'client-preview-offline';
 
   const workspace = definePreviewFixture<Workspace>({
@@ -67,34 +72,11 @@
     ...PREVIEW_FIXTURE_TIMESTAMPS,
   })();
 
-  const browserTab: PanelTab = {
-    id: 'preview-browser-tab',
-    ownerAgentId: 'preview-agent',
-    type: 'browser',
-    title: 'Preview',
-    closable: true,
-    browserUrl: 'http://127.0.0.1:5173/',
-  };
-
-  /**
-   * Seed the real store the way the sagas would after `client.list` +
-   * `workspace.getBrowserClient` and a layout restore with (or without) a
-   * browser tab in the panel.
-   */
-  function seed(
-    clients: LiveClient[],
-    browserClient: WorkspaceBrowserClient,
-    tabs: PanelTab[] = [browserTab],
-  ) {
+  /** Seed the real store the way the sagas would after `client.list` + `workspace.getBrowserClient`. */
+  function seed(clients: LiveClient[], browserClient: WorkspaceBrowserClient) {
     return () => {
+      admitLegacyPrincipal();
       store.dispatch(setWorkspaceEntity(workspace));
-      store.dispatch(
-        initializeLayout(PREVIEW_WORKSPACE_ID, {
-          root: { type: 'panel', panelId: 'main' },
-          panels: { main: { id: 'main', tabs, activeTabId: tabs[0]?.id ?? null } },
-          focusedPanelId: 'main',
-        }),
-      );
       store.dispatch(ownClientIdReceived(PREVIEW_OWN_CLIENT_ID));
       store.dispatch(liveClientsReceived(clients, PREVIEW_WORKSPACE_ID));
       store.dispatch(workspaceBrowserClientReceived(PREVIEW_WORKSPACE_ID, browserClient));
@@ -102,49 +84,50 @@
   }
 
   const resolved = (client: LiveClient) => ({ clientId: client.clientId, name: client.name });
+  const offlinePin: WorkspaceBrowserClient = {
+    source: 'workspace',
+    clientId: OFFLINE_CLIENT_ID,
+    resolved: null,
+  };
 
-  export const preview = definePreview<DrivingClientIndicatorPreviewProps>({
-    id: 'driving-client-indicator',
-    title: 'Driving client indicator',
-    defaultState: 'driving-elsewhere',
+  export const preview = definePreview<PrimaryClientMenuPreviewProps>({
+    id: 'primary-client-menu',
+    title: 'Primary client menu',
+    defaultState: 'elsewhere',
     states: {
-      'single-client': {
-        props: { width: 360 },
-        setup: seed([ownClient], { source: 'default', resolved: resolved(ownClient) }),
-      },
-      'driving-here': {
-        props: { width: 360 },
-        setup: seed([ownClient, otherClient], { source: 'default', resolved: resolved(ownClient) }),
-      },
-      'driving-elsewhere': {
-        props: { width: 360 },
+      elsewhere: {
+        props: { width: 300, menuOpen: true },
         setup: seed([ownClient, otherClient], {
           source: 'default',
           resolved: resolved(otherClient),
         }),
       },
-      'driving-elsewhere-menu-open': {
-        props: { width: 360, menuOpen: true },
+      here: {
+        props: { width: 300, menuOpen: true },
         setup: seed([ownClient, otherClient], {
-          source: 'default',
-          resolved: resolved(otherClient),
+          source: 'workspace',
+          clientId: PREVIEW_OWN_CLIENT_ID,
+          resolved: resolved(ownClient),
         }),
       },
-      'no-browser-tabs': {
-        props: { width: 360 },
-        setup: seed(
-          [ownClient, otherClient],
-          { source: 'default', resolved: resolved(otherClient) },
-          [],
-        ),
+      offline: {
+        props: { width: 300, menuOpen: true },
+        setup: seed([ownClient], offlinePin),
       },
-      'pinned-offline': {
-        props: { width: 360 },
-        setup: seed(
-          [ownClient],
-          { source: 'workspace', clientId: OFFLINE_CLIENT_ID, resolved: null },
-          [],
-        ),
+      'offline-closed': {
+        props: { width: 300 },
+        setup: seed([ownClient], offlinePin),
+      },
+      'long-name': {
+        props: { width: 300, menuOpen: true },
+        setup: seed([ownClient, longNameClient], {
+          source: 'default',
+          resolved: resolved(longNameClient),
+        }),
+      },
+      unresolved: {
+        props: { width: 300, menuOpen: true },
+        setup: seed([ownClient], { source: 'default', resolved: null }),
       },
     },
   });
@@ -154,30 +137,37 @@
   import { tick } from 'svelte';
   import WorkspaceProgressCard from './sidebar/WorkspaceProgressCard.svelte';
 
-  let { width, menuOpen = false }: DrivingClientIndicatorPreviewProps = $props();
+  let { width, menuOpen = false }: PrimaryClientMenuPreviewProps = $props();
 
   let cardElement: HTMLElement | null = $state(null);
 
-  // The menu is a live dropdown; the scene opens it the way a user would so
-  // the "Set primary client" item is visible in the capture.
+  // The menus are live dropdowns; open them the way a user would for the capture.
   $effect(() => {
     if (!menuOpen || !cardElement) return;
     const element = cardElement;
-    void tick().then(() => {
+    void tick().then(async () => {
       const trigger = element.querySelector<HTMLElement>('[data-workspace-actions-trigger]');
       trigger?.dispatchEvent(
         new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerType: 'mouse' }),
       );
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        const submenu = document.querySelector<HTMLElement>('[data-action-id="primary-client"]');
+        if (submenu) {
+          submenu.click();
+          return;
+        }
+      }
     });
   });
 </script>
 
-<section
-  class="flex min-h-[200px] flex-col overflow-hidden rounded-lg border border-border bg-sidebar px-3 py-3 text-sidebar-foreground"
-  style:width={`${width}px`}
-  data-driving-client-indicator-preview
-  data-preview-width={width}
-  bind:this={cardElement}
->
-  <WorkspaceProgressCard workspaceId={PREVIEW_WORKSPACE_ID} />
-</section>
+<div class="flex min-h-[340px] w-full" data-primary-client-menu-preview>
+  <section
+    class="flex shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar px-3 py-3 text-sidebar-foreground"
+    style:width={`${width}px`}
+    bind:this={cardElement}
+  >
+    <WorkspaceProgressCard workspaceId={PREVIEW_WORKSPACE_ID} />
+  </section>
+</div>

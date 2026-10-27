@@ -96,13 +96,10 @@
     selectOwnClientIdConfirmed,
   } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
   import { setWorkspaceBrowserClientRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
-  import { selectWorkspaceHasAgentBrowserTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import DrivingClientIndicator from '$lib/components/workspace/DrivingClientIndicator.svelte';
   import SetPrimaryClientConfirmDialog from '$lib/components/workspace/SetPrimaryClientConfirmDialog.svelte';
-  import { selectWorkspaceActiveComputerName } from '$store/renderer/slices/desktop-control/desktop-control-selectors';
   import { selectCanSetWorkspacePrimaryClient } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
-  import { browserClientDisplayName } from '$lib/components/workspace/driving-indicator';
+  import { resolveDrivingClientSwitch } from '$lib/components/workspace/driving-indicator';
 
   const readyLogger = createLogger('ReadyTasks');
 
@@ -475,7 +472,6 @@
   const ownClientIdConfirmed$ = selectOwnClientIdConfirmed();
   const browserSelectionKnown$ = selectWorkspaceBrowserSelectionKnown(workspaceIdStore);
   const drivingClient$ = selectWorkspaceDrivingClient(workspaceIdStore);
-  const hasBrowserTabs$ = selectWorkspaceHasAgentBrowserTabs(workspaceIdStore);
   const canSetPrimaryClient$ = selectCanSetWorkspacePrimaryClient(workspaceIdStore);
   const principalActionContext$ = selectPrincipalActionContext();
   const primaryAlreadySelected = $derived(
@@ -506,23 +502,57 @@
     context: string | null;
   } | null>(null);
 
-  const activeComputerName$ = selectWorkspaceActiveComputerName(workspaceIdStore);
+  const primaryClient = $derived(resolveDrivingClientSwitch($drivingClient$));
+  // A saved self pin stays selected while its browser is offline.
+  const primaryClientHere = $derived(
+    primaryAlreadySelected || (primaryClient.mode === 'here' && $drivingClient$.driving !== null),
+  );
+  const primaryClientOffline = $derived(primaryClient.mode === 'offline');
 
-  const setPrimaryClientAction: MenuAction = $derived({
-    id: 'set-primary-client',
-    label: m.workspace_drivingClient_setPrimary_label(),
+  function requestSetPrimaryClient() {
+    if (!workspaceId || !canSetPrimaryClient) return;
+    pendingPrimaryClient = {
+      workspaceId,
+      clientId: $drivingClient$.ownClientId,
+      context: $principalActionContext$,
+    };
+  }
+
+  // The menu names the current primary; choosing this app still asks for confirmation.
+  const primaryClientAction: MenuAction = $derived({
+    id: 'primary-client',
+    label: m.workspace_drivingClient_menu_label(),
     icon: faGlobe,
     dividerBefore: true,
-    checked: primaryAlreadySelected,
-    disabled: !canSetPrimaryClient,
-    onClick: () => {
-      if (!workspaceId || !canSetPrimaryClient) return;
-      pendingPrimaryClient = {
-        workspaceId,
-        clientId: $drivingClient$.ownClientId,
-        context: $principalActionContext$,
-      };
-    },
+    detail: primaryClientOffline
+      ? m.workspace_drivingClient_offline_label()
+      : primaryClientHere
+        ? m.workspace_drivingClient_thisApp_label()
+        : primaryClient.mode === 'elsewhere'
+          ? primaryClient.hostName
+          : undefined,
+    detailTone: primaryClientOffline ? 'danger' : undefined,
+    selection: 'single',
+    onClick: () => {},
+    submenu: [
+      {
+        id: 'primary-client-this-app',
+        label: m.workspace_drivingClient_thisApp_label(),
+        checked: primaryClientHere,
+        disabled: !canSetPrimaryClient,
+        onClick: requestSetPrimaryClient,
+      },
+      ...(primaryClient.mode === 'elsewhere' && !primaryClientHere
+        ? [
+            {
+              id: 'primary-client-current',
+              label: primaryClient.hostName,
+              checked: true,
+              onClick: () => {},
+            },
+          ]
+        : []),
+    ],
   });
 
   function handleConfirmSetPrimaryClient() {
@@ -544,7 +574,7 @@
   const additionalActions: MenuAction[] = $derived([
     sidebarToggleAction,
     sidebarSideAction,
-    setPrimaryClientAction,
+    primaryClientAction,
     ...(shareAction ? [shareAction] : []),
     ...(transferAction ? [transferAction] : []),
   ]);
@@ -945,7 +975,10 @@
         ></span>
       </div>
 
-      <div class="flex shrink-0 -mt-0.5 -mr-2 items-center gap-0.5" data-workspace-header-actions>
+      <div
+        class="relative flex shrink-0 -mt-0.5 -mr-2 items-center gap-0.5"
+        data-workspace-header-actions
+      >
         <DropdownMenu bind:open={dropdownOpen}>
           {#snippet trigger({ props })}
             <Button
@@ -994,6 +1027,13 @@
             </div>
           {/snippet}
         </DropdownMenu>
+        {#if primaryClientOffline}
+          <span
+            aria-hidden="true"
+            data-workspace-primary-client-offline
+            class="pointer-events-none absolute top-1 right-1 size-1.5 rounded-full bg-danger"
+          ></span>
+        {/if}
       </div>
     </div>
     <!-- repository and branch metadata -->
@@ -1119,12 +1159,6 @@
           </TooltipRich>
         {/if}
       </div>
-      <!-- Active agent activity names its computer; an idle pin stays silent. -->
-      <DrivingClientIndicator
-        {...$drivingClient$}
-        hasBrowserTabs={$hasBrowserTabs$}
-        activeComputerName={$activeComputerName$}
-      />
     </div>
   </div>
 
@@ -1366,9 +1400,7 @@
 {#if pendingPrimaryClient}
   <SetPrimaryClientConfirmDialog
     open
-    currentHost={$drivingClient$.driving
-      ? browserClientDisplayName($drivingClient$.driving)
-      : undefined}
+    currentHost={primaryClient.mode === 'here' ? undefined : primaryClient.hostName}
     onConfirm={handleConfirmSetPrimaryClient}
     onCancel={() => (pendingPrimaryClient = null)}
   />

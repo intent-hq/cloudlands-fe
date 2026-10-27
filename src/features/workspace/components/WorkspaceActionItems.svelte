@@ -55,9 +55,17 @@
 {/snippet}
 
 {#snippet label(action: MenuAction)}
-  <span class="min-w-0 flex-1 truncate text-left" use:truncatedTitle={action.label}
-    >{action.label}</span
+  <span
+    class="min-w-0 truncate text-left {action.detail ? 'flex-[1_0_auto]' : 'flex-1'}"
+    use:truncatedTitle={action.label}>{action.label}</span
   >
+  {#if action.detail}<span
+      class="ml-4 min-w-0 truncate {action.detailTone === 'danger'
+        ? 'text-danger'
+        : 'text-muted-foreground'}"
+      data-menu-action-detail
+      use:truncatedTitle={action.detail}>{action.detail}</span
+    >{/if}
   {#if action.shortcut}<span
       class={menu ? 'ml-4 flex h-lh shrink-0 items-center' : 'ml-4'}
       aria-hidden="true"><ShortcutChip>{formatShortcut(action.shortcut)}</ShortcutChip></span
@@ -73,7 +81,11 @@
   {#if menu}
     {#if action.submenu}
       <Menu.Sub>
-        <Menu.SubTrigger leading={hasIcon ? leading : undefined} disabled={action.disabled}>
+        <Menu.SubTrigger
+          leading={hasIcon ? leading : undefined}
+          disabled={action.disabled}
+          data-action-id={action.id}
+        >
           {@render label(action)}
         </Menu.SubTrigger>
         <Menu.SubContent class="w-60">

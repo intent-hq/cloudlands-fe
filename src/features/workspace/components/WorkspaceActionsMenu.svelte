@@ -17,6 +17,9 @@
     dividerBefore?: boolean;
     variant?: 'default' | 'destructive';
     shortcut?: string;
+    /** Current value shown after the label, such as a submenu's selection. */
+    detail?: string;
+    detailTone?: 'danger';
     /** Marks the item as active/selected (renders a check indicator). */
     checked?: boolean;
     disabled?: boolean;
