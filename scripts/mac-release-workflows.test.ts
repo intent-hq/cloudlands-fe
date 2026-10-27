@@ -1,4 +1,4 @@
-// @verify-changed-triggers: .github/workflows/release-alpha.yml, .github/workflows/manual-signed-build.yml, scripts/run-until-notarizing.mjs, .github/workflows/promote-beta.yml, .github/workflows/release-stable.yml, scripts/assemble-release-assets.mjs, scripts/verify-macos-build.sh, scripts/apple-ticket-retry.mjs, scripts/mac-update-feed.mjs, scripts/run-packaged-macos-smoke.py, scripts/test_packaged_macos_smoke.py, src/features/auto-update/main/mac-update-compatibility.ts
+// @verify-changed-triggers: .github/workflows/release-alpha.yml, scripts/test-fixtures/release-oldest-tag.json, .github/workflows/manual-signed-build.yml, scripts/run-until-notarizing.mjs, .github/workflows/promote-beta.yml, .github/workflows/release-stable.yml, scripts/assemble-release-assets.mjs, scripts/verify-macos-build.sh, scripts/apple-ticket-retry.mjs, scripts/mac-update-feed.mjs, scripts/run-packaged-macos-smoke.py, scripts/test_packaged_macos_smoke.py, src/features/auto-update/main/mac-update-compatibility.ts
 // @vitest-environment node
 
 import { spawnSync } from 'node:child_process';
@@ -332,7 +332,8 @@ describe.each(['release-alpha', 'manual-signed-build'])('%s native Mac jobs', (n
       // before the wrapper existed has no wrapper, and its notarize.js never writes
       // the marker, so the workflow-ref wrapper must not be substituted either.
       const dir = temp();
-      rmSync(join(dir, 'scripts', 'run-until-notarizing.mjs'));
+      legacyCheckout(dir);
+      expect(existsSync(join(dir, 'scripts', 'run-until-notarizing.mjs'))).toBe(false);
       stub(
         dir,
         'pnpm',
@@ -945,13 +946,27 @@ it('rebuilds a historical ARM-only tag while using current publication dependenc
   ).toBe(true);
 });
 
+// What the oldest tag release-alpha still rebuilds actually contains, so legacy
+// fixtures and the call check below follow the tag rather than today's scripts.
+interface TagSnapshot {
+  tag: string;
+  commit: string;
+  files: string[];
+  packageScripts: string[];
+}
+const oldestTag: TagSnapshot = JSON.parse(
+  readFileSync('scripts/test-fixtures/release-oldest-tag.json', 'utf8'),
+);
 const nativeReleaseTools = [
-  'package-mac.mjs',
-  'verify-macos-build.sh',
-  'assemble-release-assets.mjs',
+  'scripts/package-mac.mjs',
+  'scripts/verify-macos-build.sh',
+  'scripts/assemble-release-assets.mjs',
 ];
+// Turn a temp() checkout into the oldest tag's: drop every copied script that tag lacks.
 function legacyCheckout(dir: string) {
-  for (const file of nativeReleaseTools) rmSync(join(dir, 'scripts', file));
+  for (const file of readdirSync(join(dir, 'scripts'))) {
+    if (!oldestTag.files.includes(`scripts/${file}`)) rmSync(join(dir, 'scripts', file));
+  }
 }
 function releasePlan(dir: string) {
   const output = join(dir, 'release-plan');
@@ -1084,7 +1099,7 @@ describe('release tag capability routing', () => {
   );
   it.each(nativeReleaseTools)('fails closed when modern tag is missing %s', (missing) => {
     const dir = temp();
-    rmSync(join(dir, 'scripts', missing));
+    rmSync(join(dir, missing));
     expect(() => releasePlan(dir)).toThrow('Incomplete native Mac release tooling');
   });
 });
@@ -1493,4 +1508,168 @@ it('rejects a resolved daemon identity different from the selected immutable ref
     }).status,
   ).not.toBe(0);
   expect(existsSync(join(dir, 'extracted'))).toBe(false);
+});
+
+// release-alpha rebuilds old tags with the workflow from the dispatch ref but the
+// scripts from the tag. A step that calls a script newer than the tag passes the
+// current-tree fixtures and fails only on a real rebuild (cloudlands-fe#3780).
+const PNPM_BUILTINS = new Set(['install', 'i', 'add', 'exec', 'dlx', 'store', 'rebuild']);
+interface TagCall {
+  job: string;
+  step: string;
+  target: string;
+  kind: 'file' | 'package-script';
+}
+// Paths a run tests with `-f`/`-e`, literally or through `for V in "${ARR[@]}"`.
+function presenceTested(run: string) {
+  const tested = new Set<string>();
+  const arrays = new Map<string, string[]>();
+  for (const [, name, body] of run.matchAll(/\b(\w+)=\(([^)]*)\)/g)) {
+    arrays.set(name, body.split(/\s+/).filter(Boolean));
+  }
+  const loops = new Map<string, string>();
+  for (const [, variable, array] of run.matchAll(/\bfor (\w+) in "\$\{(\w+)\[@\]\}"/g)) {
+    loops.set(variable, array);
+  }
+  for (const [, operand] of run.matchAll(/(?:\[|\btest)\s+(?:!\s+)?-[fe]\s+("?[^\s\]"]+"?)/g)) {
+    const value = operand.replace(/"/g, '').replace(/^\.\//, '');
+    const variable = /^\$\{?(\w+)\}?$/.exec(value)?.[1];
+    if (!variable) tested.add(value);
+    else for (const item of arrays.get(loops.get(variable) ?? '') ?? []) tested.add(item);
+  }
+  return tested;
+}
+// Calls into the tag checkout that the oldest tag cannot satisfy and nothing guards.
+function unguardedTagCalls(wf: Workflow, snapshot: TagSnapshot): TagCall[] {
+  const calls: TagCall[] = [];
+  for (const [job, { steps = [] }] of Object.entries(wf.jobs)) {
+    const checkout = steps.findIndex(
+      (s) =>
+        s.uses?.startsWith('actions/checkout@') &&
+        String(s.with?.ref ?? '').startsWith('refs/tags/') &&
+        !s.with?.path,
+    );
+    if (checkout < 0) continue;
+    for (const s of steps.slice(checkout + 1)) {
+      if (!s.run) continue;
+      const cwd = (s as Step & { 'working-directory'?: string })['working-directory'];
+      if (cwd && cwd !== '.') continue;
+      // The oldest tag routes as native_macos=false, so native-only steps skip.
+      if (/native_macos\s*==\s*'true'/.test(s.if ?? '')) continue;
+      const run = s.run
+        .split('\n')
+        .filter((line) => !/^\s*#/.test(line))
+        .join('\n');
+      const guarded = presenceTested(run);
+      for (const [path] of run.matchAll(/(?<![\w./-])(?:\.\/)?scripts\/[\w./-]*[\w-]/g)) {
+        const target = path.replace(/^\.\//, '');
+        if (snapshot.files.includes(target) || guarded.has(target)) continue;
+        calls.push({ job, step: s.name, target, kind: 'file' });
+      }
+      for (const [, name] of run.matchAll(/\bpnpm\s+(?:run\s+)?([\w:-]+)/g)) {
+        if (PNPM_BUILTINS.has(name) || snapshot.packageScripts.includes(name)) continue;
+        calls.push({ job, step: s.name, target: name, kind: 'package-script' });
+      }
+    }
+  }
+  const seen = new Set<string>();
+  return calls.filter((c) => {
+    const key = `${c.job}/${c.step}/${c.kind}/${c.target}`;
+    return !seen.has(key) && seen.add(key);
+  });
+}
+
+describe('release tag checkout compatibility with the oldest rebuildable tag', () => {
+  it('routes the oldest tag down the legacy (non-native) Mac path', () => {
+    for (const tool of nativeReleaseTools) expect(oldestTag.files).not.toContain(tool);
+    const dir = temp();
+    legacyCheckout(dir);
+    expect(releasePlan(dir).native_macos).toBe('false');
+  });
+
+  it(`calls only scripts ${oldestTag.tag} has, or guards them with a presence check`, () => {
+    const calls = unguardedTagCalls(workflow('release-alpha'), oldestTag);
+    expect(
+      calls,
+      `These release-alpha steps run in the tag checkout but call scripts that ${oldestTag.tag} ` +
+        'lacks. Guard each with `if [ -f scripts/<file> ]` (and keep the old behaviour in the ' +
+        'fallback), or run it from .release-tools.',
+    ).toEqual([]);
+  });
+
+  it('flags an unguarded new script and accepts the guarded or legacy-skipped forms', () => {
+    const wf = (steps: Step[]): Workflow =>
+      ({
+        jobs: {
+          build: {
+            steps: [
+              { name: 'Checkout', uses: 'actions/checkout@v7', with: { ref: 'refs/tags/v1' } },
+              ...steps,
+            ],
+          },
+        },
+      }) as unknown as Workflow;
+    const snapshot: TagSnapshot = {
+      tag: 'v1',
+      commit: '',
+      files: ['scripts/old.mjs'],
+      packageScripts: ['build'],
+    };
+    expect(
+      unguardedTagCalls(
+        wf([
+          {
+            name: 'New',
+            run: 'node scripts/new.mjs\n# node scripts/commented.mjs\npnpm run fresh',
+          },
+          { name: 'Old', run: 'node ./scripts/old.mjs && pnpm run build && pnpm install' },
+        ]),
+        snapshot,
+      ),
+    ).toEqual([
+      { job: 'build', step: 'New', target: 'scripts/new.mjs', kind: 'file' },
+      { job: 'build', step: 'New', target: 'fresh', kind: 'package-script' },
+    ]);
+    expect(
+      unguardedTagCalls(
+        wf([
+          {
+            name: 'Guarded',
+            run: 'if [ ! -f scripts/new.mjs ]; then exec pnpm run build; fi\nexec node scripts/new.mjs',
+          },
+          {
+            name: 'Probe',
+            run: 'T=(scripts/a.mjs scripts/b.sh)\nfor X in "${T[@]}"; do [ -f "$X" ] && n=1; done',
+          },
+          {
+            name: 'Native',
+            if: "needs.resolve.outputs.native_macos == 'true'",
+            run: 'bash scripts/native.sh',
+          },
+          {
+            name: 'Tools',
+            'working-directory': '.release-tools',
+            run: 'node scripts/x.mjs',
+          } as Step,
+        ]),
+        snapshot,
+      ),
+    ).toEqual([]);
+  });
+
+  // Keeps the committed snapshot honest wherever the tag is fetchable (full clones).
+  const tagCommit = spawnSync('git', ['rev-parse', '-q', '--verify', `${oldestTag.tag}^{commit}`], {
+    encoding: 'utf8',
+  });
+  it.runIf(tagCommit.status === 0)(`snapshot matches the ${oldestTag.tag} tree`, () => {
+    expect(tagCommit.stdout.trim()).toBe(oldestTag.commit);
+    const git = (...args: string[]) =>
+      spawnSync('git', args, { encoding: 'utf8', maxBuffer: 1 << 26 }).stdout;
+    expect(oldestTag.files).toEqual(
+      git('ls-tree', '-r', '--name-only', oldestTag.commit, 'scripts/').trim().split('\n').sort(),
+    );
+    expect(oldestTag.packageScripts).toEqual(
+      Object.keys(JSON.parse(git('show', `${oldestTag.commit}:package.json`)).scripts).sort(),
+    );
+  });
 });
