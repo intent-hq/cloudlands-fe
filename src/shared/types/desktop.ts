@@ -10,6 +10,12 @@ export interface DesktopPermissionState {
   allowed: boolean;
 }
 export type DesktopPermissionDecision = 'allow_once' | 'allow_future' | 'deny';
+/** Observed macOS setup for one Allow gesture. Observation only, never a grant. */
+export interface DesktopOsChecklist {
+  accessibility: boolean;
+  screenRecording: boolean;
+  screenCapture: 'pending' | 'ready' | 'unavailable';
+}
 export interface DesktopPermissionRequest {
   requestId: string;
   workspaceId: string;

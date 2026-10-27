@@ -675,13 +675,12 @@
           data: { ...desktopRequest, workspaceId, agentId, computerName: 'MacBook' },
         }),
       );
-    const guidance = [
-      m.desktop_os_accessibility_description(),
-      m.desktop_os_setup_description(),
-    ].join(' ');
     store.dispatch(
       desktopEntryPatched(workspaceId, agentId, store.state.desktopControl.generation, {
-        error: notice ? guidance : undefined,
+        error: notice ? m.desktop_os_setup_description() : undefined,
+        osChecklist: notice
+          ? { accessibility: false, screenRecording: false, screenCapture: 'unavailable' }
+          : undefined,
       }),
     );
   });

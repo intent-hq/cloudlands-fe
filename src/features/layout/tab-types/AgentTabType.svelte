@@ -10,6 +10,7 @@
    */
 
   import DesktopConsentToast from '$features/desktop/renderer/DesktopConsentToast.svelte';
+  import DesktopOsChecklist from '$features/desktop/renderer/DesktopOsChecklist.svelte';
   import { Card } from '$lib/components/ui/card';
   import { selectDesktopEntry } from '$store/renderer/slices/desktop-control/desktop-control-selectors';
   import { desktopReadRequested } from '$store/renderer/slices/desktop-control/desktop-control-slice';
@@ -452,7 +453,10 @@
       <div class="flex h-full min-h-0 w-full flex-1 flex-col">
         <!-- Capped notices leave the chat, and its prompt box, the remaining height. -->
         {#if $desktop?.error && !$desktop.pending}
-          <Card class="m-3 max-h-[40%] shrink-0 p-3">
+          <Card class="m-3 max-h-[40%] shrink-0 gap-2 p-3">
+            {#if $desktop.osChecklist}
+              <DesktopOsChecklist checklist={$desktop.osChecklist} />
+            {/if}
             <p role="status" class="min-h-0 overflow-y-auto text-sm">{$desktop.error}</p>
           </Card>
         {/if}
