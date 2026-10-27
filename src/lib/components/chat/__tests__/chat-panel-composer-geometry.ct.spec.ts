@@ -383,3 +383,78 @@ test('shows authoritative restored queue work alongside its already persisted hi
   await expect(component.getByText('Persisted A', { exact: true })).toBeVisible();
   await expect(component.getByTestId('queued-message-retry-status')).toBeVisible();
 });
+
+const desktopNoticeLayouts = [
+  { notice: 'guidance', width: 720, height: 640, theme: 'light' },
+  { notice: 'request', width: 720, height: 640, theme: 'light' },
+  { notice: 'guidance', width: 360, height: 480, theme: 'dark' },
+  { notice: 'request', width: 360, height: 480, theme: 'dark' },
+] as const;
+
+for (const { notice, width, height, theme } of desktopNoticeLayouts) {
+  test(`keeps the prompt box in view below a desktop ${notice} notice at ${width}x${height}`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const component = await mount(ChatPanelComposerGeometryHost, {
+      props: { transcript: true, desktopNotice: notice, width, height, theme },
+    });
+    const tab = component.locator('.panel-content-renderer');
+    const guidance = component.getByRole('status').filter({ hasText: 'Accessibility' });
+    const composer = component.getByTestId('chat-composer-shell');
+    const transcript = component.getByTestId('chat-transcript-scroll-viewport');
+    await expect(guidance).toBeVisible();
+    await expect(composer.locator('.tiptap-editor')).toBeEditable();
+    await page.evaluate(() => document.fonts.ready);
+    await page.screenshot({
+      path: testInfo.outputPath(`desktop-${notice}-${width}x${height}-${theme}.png`),
+    });
+
+    const [tabBox, composerBox, transcriptBox] = await Promise.all(
+      [tab, composer, transcript].map(async (locator) => (await locator.boundingBox())!),
+    );
+    expect(composerBox.y + composerBox.height).toBeLessThanOrEqual(tabBox.y + tabBox.height + 0.5);
+    expect(transcriptBox.height).toBeGreaterThanOrEqual(64);
+    if (notice === 'request')
+      for (const name of ['Allow once', 'Allow future sessions for this agent', 'Deny']) {
+        const button = (await component.getByRole('button', { name }).boundingBox())!;
+        expect(button.y).toBeGreaterThanOrEqual(tabBox.y);
+        expect(button.y + button.height).toBeLessThanOrEqual(transcriptBox.y + 0.5);
+      }
+  });
+}
+
+test('keeps the latest message and prompt box in view as a desktop notice comes and goes', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const props = { transcript: true, width: 720, height: 640 };
+  const component = await mount(ChatPanelComposerGeometryHost, { props });
+  const tab = component.locator('.panel-content-renderer');
+  const composer = component.getByTestId('chat-composer-shell');
+  const transcript = component.getByTestId('chat-transcript-scroll-viewport');
+  const latest = component.locator('[data-message-id="attention-assistant-11"]');
+  const guidance = component.getByRole('status').filter({ hasText: 'Accessibility' });
+  const inView = async () => {
+    const [tabBox, composerBox, transcriptBox, latestBox] = await Promise.all(
+      [tab, composer, transcript, latest].map(async (locator) => (await locator.boundingBox())!),
+    );
+    return (
+      composerBox.y + composerBox.height <= tabBox.y + tabBox.height + 0.5 &&
+      latestBox.y + latestBox.height <= transcriptBox.y + transcriptBox.height + 0.5
+    );
+  };
+  await expect(composer.locator('.tiptap-editor')).toBeEditable();
+  await expect.poll(inView).toBe(true);
+
+  await component.update({ props: { ...props, desktopNotice: 'guidance' } });
+  await expect(guidance).toBeVisible();
+  await expect.poll(inView).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('desktop-notice-arrived.png') });
+
+  await component.update({ props: { ...props, desktopNotice: undefined } });
+  await expect(guidance).toHaveCount(0);
+  await expect.poll(inView).toBe(true);
+});
