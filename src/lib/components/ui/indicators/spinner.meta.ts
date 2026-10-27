@@ -18,6 +18,7 @@ export const spinnerMetadata = parseUiComponentMetadata({
   category: 'pattern',
   owner: '007-B1',
   callers: [
+    'src/features/agent-trace/components/TraceWaterfall.svelte',
     'src/features/collaboration-auth/renderer/CollaborationSignInModal.svelte',
     'src/features/discussions/components/DiscussionMicrophone.svelte',
     'src/features/file-tracking/components/diff/PatchBlockContent.svelte',
@@ -33,8 +34,6 @@ export const spinnerMetadata = parseUiComponentMetadata({
     'src/lib/components/GitHubAuthBanner.svelte',
     'src/lib/components/GitHubAuthModal.svelte',
     'src/lib/components/GitLabConnectForm.svelte',
-    'src/lib/components/agent-overview/AgentHierarchyCard.svelte',
-    'src/lib/components/agent-overview/AgentHierarchyGraph.svelte',
     'src/lib/components/browser/EmbeddedBrowser.svelte',
     'src/lib/components/chat/AttachmentPreview.svelte',
     'src/lib/components/chat/AutoCommitStatus.svelte',
