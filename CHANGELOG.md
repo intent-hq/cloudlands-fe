@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.243.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.243.1...v2.243.2) (2026-10-27)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.62 ([#3785](https://github.com/intent-hq/cloudlands-fe/issues/3785)) ([cfe916b](https://github.com/intent-hq/cloudlands-fe/commit/cfe916b0cdf919316164ad6be5965f15afa9ba5a))
+* **desktop:** detect user switches between external apps before refocusing ([#3767](https://github.com/intent-hq/cloudlands-fe/issues/3767)) ([661bc5d](https://github.com/intent-hq/cloudlands-fe/commit/661bc5d00114576b2361a0ae55448701ecddfc52))
+
 ## [2.243.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.243.0...v2.243.1) (2026-10-27)
 
 
