@@ -10,12 +10,12 @@
   import AnimatedNumber from '$lib/components/ui/AnimatedNumber.svelte';
   import { EmptyState, ErrorState } from '$lib/components/patterns/screen';
   import { Skeleton } from '$lib/components/ui/skeleton';
-  import { formatDaySeparator } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import type { Trace, TraceSpan } from '../trace-types';
   import {
     formatCostAmount,
     formatTraceCost,
+    formatTraceDay,
     formatTraceDuration,
     formatTraceTokens,
     totalTokens,
@@ -161,16 +161,11 @@
     return () => clearInterval(timer);
   });
 
-  /** `Today`, `Yesterday`, a weekday, then a date. */
-  function dayLabel(ms: number): string {
-    return formatDaySeparator(ms, { now: new Date(now) });
-  }
-
-  /** The days the timeline covers: `Today`, or `Friday – Today`. */
+  /** The days the timeline covers: `Today`, `Friday – Today`, or `Sep 2 – Oct 1`. */
   const title = $derived.by(() => {
     if (!trace) return '';
-    const first = dayLabel(trace.start);
-    const last = dayLabel(trace.windows[trace.windows.length - 1]?.start ?? trace.start);
+    const first = formatTraceDay(trace.start, now);
+    const last = formatTraceDay(trace.windows[trace.windows.length - 1]?.start ?? trace.start, now);
     return first === last ? first : m.agentTrace_range_label({ from: first, to: last });
   });
 
