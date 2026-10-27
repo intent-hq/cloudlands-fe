@@ -11,22 +11,28 @@ describe('RetiredWorkspaceBanner', () => {
     store.init();
   });
 
-  it('explains the workspace is retired and read-only', () => {
+  it('presents a purged workspace as archived', () => {
     render(RetiredWorkspaceBanner, { workspaceId: 'ws-retired', canRestore: true });
     const banner = screen.getByRole('status');
-    expect(banner.textContent).toContain(m.workspace_retiredBanner_title());
-    expect(banner.textContent).toContain(m.workspace_retiredBanner_description());
+    expect(banner.textContent).toContain(m.workspace_archivedBanner_title());
+    expect(banner.textContent).toContain(m.workspace_archivedBanner_description());
+    expect(banner.textContent?.toLowerCase()).not.toContain('retire');
+    expect(banner.textContent?.toLowerCase()).not.toContain('purge');
   });
 
-  it('restores as a blank workspace through unarchive', async () => {
+  it('unarchives through workspace.unarchive', async () => {
     const dispatch = vi.spyOn(store, 'dispatch');
     render(RetiredWorkspaceBanner, { workspaceId: 'ws-retired', canRestore: true });
-    await fireEvent.click(screen.getByRole('button', { name: m.workspace_retire_restore_label() }));
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.ui_workspaceActions_unarchiveSpace_label() }),
+    );
     expect(dispatch).toHaveBeenCalledWith(requestUnarchiveWorkspace('ws-retired'));
   });
 
-  it('hides the restore action from viewers who cannot manage the workspace', () => {
+  it('hides Unarchive from viewers who cannot manage the workspace', () => {
     render(RetiredWorkspaceBanner, { workspaceId: 'ws-retired', canRestore: false });
-    expect(screen.queryByRole('button', { name: m.workspace_retire_restore_label() })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: m.ui_workspaceActions_unarchiveSpace_label() }),
+    ).toBeNull();
   });
 });

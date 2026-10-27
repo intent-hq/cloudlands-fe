@@ -77,9 +77,10 @@ export function normalizeHomeConfiguration(value: unknown): HomeConfiguration {
       linear: integrationView(object(raw.integrationViews).linear, 'linear'),
     },
     repoKey: typeof raw.repoKey === 'string' ? raw.repoKey.slice(0, 2000) : null,
+    // The former Retired chip merged into Archived (PROTOCOL §5.1).
     filter: member(
-      raw.filter,
-      ['all', 'attention', 'running', 'waiting', 'blocked', 'unread', 'archived', 'retired'],
+      raw.filter === 'retired' ? 'archived' : raw.filter,
+      ['all', 'attention', 'running', 'waiting', 'blocked', 'unread', 'archived'],
       defaults.filter,
     ),
     tab: member(raw.tab, ['workspaces', 'prs', 'linear'], defaults.tab),
