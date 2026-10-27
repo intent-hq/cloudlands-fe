@@ -261,9 +261,14 @@ describe('desktop reverse RPC wire and private diagnostics', () => {
         },
       });
       const shot = (await captured).result;
-      // The opaque id never exposes the native window number.
+      // The opaque id never exposes the native window number: it is exactly
+      // `win-` plus a random UUID, with nothing derived from the handle. (A
+      // substring check for the handle is flaky: a random UUID contains '77'
+      // about 11% of the time.)
       expect(shot.windows[0].windowId).toBe(shot.frontmost.windowId);
-      expect(shot.windows[0].windowId).not.toContain('77');
+      expect(shot.windows[0].windowId).toMatch(
+        /^win-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+      );
     } finally {
       dispose();
       client.dispose();
