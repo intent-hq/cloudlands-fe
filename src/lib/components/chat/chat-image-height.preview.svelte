@@ -30,7 +30,13 @@
   const height = $derived(landscape ? 600 : 1200);
   const source = $derived(
     `data:image/svg+xml,${encodeURIComponent(
-      IMAGE_SHARING_SVG.replace('width="960" height="600"', `width="${width}" height="${height}"`),
+      IMAGE_SHARING_SVG.replace(
+        'width="960" height="600"',
+        `width="${width}" height="${height}"`,
+      ).replace(
+        'viewBox="0 0 960 600"',
+        `viewBox="${landscape ? '0 0 960 600' : '450 0 300 600'}"`,
+      ),
     )}`,
   );
 </script>
