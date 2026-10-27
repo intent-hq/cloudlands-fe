@@ -361,6 +361,10 @@ export function createDockWindow(): BrowserWindow {
     // Our geometry resolver bounds detached surfaces; the notch must reach display y=0.
     enableLargerThanScreen: process.platform === 'darwin',
     transparent: true,
+    // Feedback begins with a dock click, before annotation owns the lifecycle.
+    // Avoid activating the app (and raising its workspace windows) at that point.
+    ...(process.platform === 'darwin' ? { type: 'panel' as const } : {}),
+    acceptFirstMouse: true,
     backgroundColor: '#00000000',
     alwaysOnTop: true,
     skipTaskbar: true,
