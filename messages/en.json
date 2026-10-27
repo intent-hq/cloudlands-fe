@@ -7722,5 +7722,10 @@
   "dock_conversation_reply_placeholder": "Reply to {name}…",
   "dock_conversation_running_label": "Working",
   "dock_conversation_shortcuts_description": "Enter to send · Shift+Enter for a new line",
-  "dock_conversation_messages_ariaLabel": "Messages"
+  "dock_conversation_messages_ariaLabel": "Messages",
+  "dock_machines_label": "Machines",
+  "dock_machineSwitch_label": "Switch machine",
+  "dock_machineConnecting_label": "Connecting to {machine}…",
+  "dock_machineSwitchFailed_error": "Could not connect. Select a machine to retry.",
+  "dock_machineMenu_hint": "Switch machine · Drag to move"
 }

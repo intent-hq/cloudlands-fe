@@ -1,5 +1,12 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import {
+    selectConnections,
+    selectCurrentConnectionId,
+  } from '$store/renderer/slices/connections/connections-selectors';
+  import { DOCK_BACKEND_SWITCH_FAILED_QUERY } from '$shared/dock-connection';
+  import { formatConnectionLabel } from '$lib/utils/connection-label';
+  import { m } from '$shared/paraglide/messages.js';
   import { Screen } from '$lib/components/patterns/screen';
   import '$store/renderer/seeders';
   import DockRail from '$features/hud/components/DockRail.svelte';
@@ -13,6 +20,7 @@
   import { startAppStoreLifecycle } from '$store/renderer/app-store-lifecycle';
   import {
     selectDockWorkspaces,
+    selectDockMachineSwitch,
     selectDockPlacement,
     selectDockFocusRequest,
     selectDockPlacementError,
@@ -21,6 +29,8 @@
   } from '$store/renderer/slices/hud/hud-selectors';
   import {
     dockActivated,
+    dockMachineSwitchRequested,
+    dockMachineSwitchRestored,
     hudDeactivated,
     dockPlacementCommandRequested,
   } from '$store/renderer/slices/hud/hud-slice';
@@ -32,6 +42,17 @@
     appStore.dispatch(closeDockConversationRequested());
     disposeAppStore();
   });
+  const connections$ = selectConnections();
+  const currentConnectionId$ = selectCurrentConnectionId();
+  const machineSwitch$ = selectDockMachineSwitch();
+  const machines = $derived(
+    $connections$.map((connection) => ({
+      id: connection.id,
+      label: connection.isLocal
+        ? m.layout_daemonStatus_localConnection_label()
+        : formatConnectionLabel(connection),
+    })),
+  );
   const dockWorkspaces$ = selectDockWorkspaces();
   const placement$ = selectDockPlacement();
   const focusRequest$ = selectDockFocusRequest();
@@ -47,6 +68,12 @@
     document.getElementById('app-drag-region')?.remove();
     appStore.dispatch(loadWorkspacesRequested());
     appStore.dispatch(dockActivated());
+    const url = new URL(window.location.href);
+    if (url.searchParams.has(DOCK_BACKEND_SWITCH_FAILED_QUERY)) {
+      appStore.dispatch(dockMachineSwitchRestored());
+      url.searchParams.delete(DOCK_BACKEND_SWITCH_FAILED_QUERY);
+      window.history.replaceState(window.history.state, '', url);
+    }
     return () => {
       document.documentElement.classList.remove('dock-route-active');
       appStore.dispatch(hudDeactivated());
@@ -62,6 +89,11 @@
   {#if $placement$}
     <DockRail
       workspaces={$dockWorkspaces$}
+      {machines}
+      machineId={$currentConnectionId$}
+      machineSwitching={$machineSwitch$.pending}
+      machineError={$machineSwitch$.error}
+      onMachine={(id) => appStore.dispatch(dockMachineSwitchRequested(id))}
       placement={$placement$}
       focusRequest={$focusRequest$}
       placementError={$placementError$}

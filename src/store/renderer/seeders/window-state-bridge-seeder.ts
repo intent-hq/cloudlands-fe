@@ -30,8 +30,8 @@
  *
  * Same pattern as auto-update-bridge-seeder: forward verbatim when the
  * preload bridge exists; resolve undefined when it does not (browser dev /
- * bridge-less build) — every caller is fire-and-forget or try/catch-guarded,
- * matching the former allowlist disposition.
+ * bridge-less build). The dock machine selector treats that absent response
+ * as a failed switch; the remaining callers are fire-and-forget or guarded.
  */
 import { emitMockIpcEvent, registerMockIpcHandler } from '$shared/ipc-mock-router';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
@@ -43,6 +43,7 @@ const WINDOW_STATE_INVOKE_CHANNELS = [
   IPC_CHANNELS.WINDOW.SET_TITLE,
   IPC_CHANNELS.WINDOW.SET_BROWSER_FOCUSED,
   IPC_CHANNELS.WINDOW.SET_DOCK_POINTER_REGION,
+  IPC_CHANNELS.WINDOW.SWITCH_DOCK_BACKEND,
 ] as const;
 
 /** Forward the selected app theme to Electron's registered main-process handler. */

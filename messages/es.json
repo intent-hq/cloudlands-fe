@@ -7722,5 +7722,10 @@
   "dock_conversation_reply_placeholder": "Responder a {name}…",
   "dock_conversation_running_label": "Trabajando",
   "dock_conversation_shortcuts_description": "Enter para enviar · Mayús+Enter para una nueva línea",
-  "dock_conversation_messages_ariaLabel": "Mensajes"
+  "dock_conversation_messages_ariaLabel": "Mensajes",
+  "dock_machines_label": "Equipos",
+  "dock_machineSwitch_label": "Cambiar de equipo",
+  "dock_machineConnecting_label": "Conectando con {machine}…",
+  "dock_machineSwitchFailed_error": "No se pudo conectar. Selecciona un equipo para reintentar.",
+  "dock_machineMenu_hint": "Cambiar de equipo · Arrastra para mover"
 }

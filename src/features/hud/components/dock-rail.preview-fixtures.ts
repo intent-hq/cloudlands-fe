@@ -28,6 +28,8 @@ export interface DockRailPreviewProps {
   controlledPlacement?: boolean;
   manualResizeAcknowledgements?: boolean;
   conversationFixture?: boolean;
+  machineFixture?: boolean;
+  failMachineOnce?: boolean;
   resizeAcknowledgement?: 'accept' | 'reject' | 'defer';
 }
 

@@ -7722,5 +7722,10 @@
   "dock_conversation_reply_placeholder": "回复 {name}…",
   "dock_conversation_running_label": "工作中",
   "dock_conversation_shortcuts_description": "Enter 发送 · Shift+Enter 换行",
-  "dock_conversation_messages_ariaLabel": "消息"
+  "dock_conversation_messages_ariaLabel": "消息",
+  "dock_machines_label": "机器",
+  "dock_machineSwitch_label": "切换机器",
+  "dock_machineConnecting_label": "正在连接 {machine}…",
+  "dock_machineSwitchFailed_error": "无法连接。请选择一台机器重试。",
+  "dock_machineMenu_hint": "切换机器 · 拖动以移动"
 }

@@ -410,6 +410,8 @@ export const IPC_CHANNELS = {
     FOCUS_DOCK: 'window:focus-dock',
     GET_DOCK_PLACEMENT: 'window:get-dock-placement',
     UPDATE_DOCK_PLACEMENT: 'window:update-dock-placement',
+    SWITCH_DOCK_BACKEND: 'window:switch-dock-backend',
+    DOCK_BACKEND_SWITCH_FAILED: 'window:dock-backend-switch-failed',
     DOCK_PLACEMENT_CHANGED: 'window:dock-placement-changed',
     // Renderer → main invoke: focus the next open app window (wraps; skips
     // destroyed, hidden, and HUD pop-out windows; minimized windows are
@@ -1129,6 +1131,7 @@ export const EVENT_CHANNELS = [
   'annotation:state-changed',
   'window:focus-dock',
   'window:dock-placement-changed',
+  'window:dock-backend-switch-failed',
   'workspace:created',
   'workspace:updated',
   'workspace:deleted',

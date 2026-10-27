@@ -7722,5 +7722,10 @@
   "dock_conversation_reply_placeholder": "{name}에게 답장…",
   "dock_conversation_running_label": "작업 중",
   "dock_conversation_shortcuts_description": "Enter로 전송 · Shift+Enter로 줄 바꿈",
-  "dock_conversation_messages_ariaLabel": "메시지"
+  "dock_conversation_messages_ariaLabel": "메시지",
+  "dock_machines_label": "컴퓨터",
+  "dock_machineSwitch_label": "컴퓨터 전환",
+  "dock_machineConnecting_label": "{machine}에 연결 중…",
+  "dock_machineSwitchFailed_error": "연결할 수 없습니다. 컴퓨터를 선택해 다시 시도하세요.",
+  "dock_machineMenu_hint": "컴퓨터 전환 · 드래그하여 이동"
 }

@@ -4,17 +4,29 @@ import type { Rectangle } from 'electron';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { Logger } from '../shared/logger';
-import { getActiveId } from '../features/backend/main/connections-store';
+import { getActiveId, list as listConnections } from '../features/backend/main/connections-store';
 import {
   DOCK_WINDOW_WIDTH,
   isPointInDockPointerRegions,
   type DockPointerRect,
 } from '../shared/dock-layout';
 import { WINDOW_CHANNELS } from '../shared/ipc/channels';
-import { stampWindowWithBackend } from './window-backend';
+import {
+  getBackendIdForWindow,
+  getStrictBackendBindingForWebContents,
+  stampWindowWithBackend,
+} from './window-backend';
 import { DockPlacementController } from './dock-placement-controller';
 import { attachDockCursor } from './dock-cursor';
 import type { DockPlacementCommand, DockPlacementSnapshot } from '../shared/dock-placement';
+import type {
+  DockBackendSwitchFailed,
+  SwitchDockBackendRequest,
+  SwitchDockBackendResult,
+} from '../shared/dock-connection';
+import { DOCK_BACKEND_SWITCH_FAILED_QUERY } from '../shared/dock-connection';
+import { getLocalPref, setLocalPref, deleteLocalPref } from './local-prefs';
+import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -31,8 +43,20 @@ let pointerState: { active: boolean; regions: DockPointerRect[]; revision?: numb
 };
 let sessionPaused = false;
 const captureHiddenWindows = new WeakSet<BrowserWindow>();
+const closingDockWindows = new WeakSet<BrowserWindow>();
 let removeLifecycleListeners: (() => void) | null = null;
 let backendRefreshSequence: Promise<void> = Promise.resolve();
+let selectedDockBackendId: string | null = null;
+let dockBackendPreferenceLoaded = false;
+const DOCK_BACKEND_PREFERENCE = 'dockBackendId';
+interface DockBackendSwitch {
+  window: BrowserWindow;
+  cancelled: boolean;
+  phase: 'probe' | 'handoff';
+  expectedNavigation: string | null;
+}
+let pendingBackendSwitch: DockBackendSwitch | null = null;
+const DOCK_BACKEND_PROBE_TIMEOUT_MS = 15_000;
 let dockCursor: ReturnType<typeof attachDockCursor>;
 const appliedPointerRouting = new WeakMap<BrowserWindow, { ignore: boolean; forward: boolean }>();
 
@@ -150,6 +174,10 @@ function buildDockUrl(): string {
 
 function clearTrackedWindow(window: BrowserWindow): void {
   if (dockWindowRef !== window) return;
+  if (pendingBackendSwitch?.window === window) {
+    pendingBackendSwitch.cancelled = true;
+    pendingBackendSwitch = null;
+  }
   if (!window.isDestroyed()) resetDockPointerRouting(window);
   appliedPointerRouting.delete(window);
   dockCursor?.dispose();
@@ -198,22 +226,201 @@ export async function updateDockPlacement(
   return placementController?.command(command) ?? null;
 }
 
+async function resolveDockBackendId(): Promise<string> {
+  const saved = await listConnections();
+  if (!dockBackendPreferenceLoaded) {
+    const preference = await getLocalPref(DOCK_BACKEND_PREFERENCE);
+    dockBackendPreferenceLoaded = true;
+    if (typeof preference === 'string' && saved.some((connection) => connection.id === preference))
+      selectedDockBackendId = preference;
+    else if (preference !== undefined) await deleteLocalPref(DOCK_BACKEND_PREFERENCE);
+  }
+  if (selectedDockBackendId) {
+    if (saved.some((connection) => connection.id === selectedDockBackendId))
+      return selectedDockBackendId;
+    selectedDockBackendId = null;
+    await deleteLocalPref(DOCK_BACKEND_PREFERENCE);
+  }
+  const defaultId = await getActiveId();
+  return saved.some((connection) => connection.id === defaultId) ? defaultId : LOCAL_CONNECTION_ID;
+}
+
 function refreshDockBackend(window: BrowserWindow, closeOnFailure: boolean): void {
+  if (pendingBackendSwitch || captureHiddenWindows.has(window)) return;
   backendRefreshSequence = backendRefreshSequence
     .then(async () => {
-      const backendId = await getActiveId();
-      if (window.isDestroyed() || dockWindowRef !== window) return;
+      const backendId = await resolveDockBackendId();
+      if (
+        window.isDestroyed() ||
+        dockWindowRef !== window ||
+        pendingBackendSwitch ||
+        captureHiddenWindows.has(window)
+      )
+        return;
       placementController?.cancelInteraction();
       resetDockPointerRouting(window);
+      // Retire an existing renderer before changing even legacy window-level routing.
+      if (window.webContents.getURL() && getBackendIdForWindow(window) !== backendId) {
+        await window.loadURL('about:blank');
+        if (window.isDestroyed() || dockWindowRef !== window || pendingBackendSwitch) return;
+      }
       stampWindowWithBackend(window, backendId);
       await window.loadURL(buildDockUrl());
     })
     .catch((error: unknown) => {
       logger.warn('Failed to load dock for active backend', { error });
-      if (!closeOnFailure || window.isDestroyed()) return;
+      if (!closeOnFailure || window.isDestroyed() || dockWindowRef !== window) return;
       clearTrackedWindow(window);
       window.destroy();
     });
+}
+
+/** Probe without changing any global connection preference or workspace window. */
+export async function switchDockBackend(
+  window: BrowserWindow,
+  request: SwitchDockBackendRequest,
+  senderFrame: Electron.WebFrameMain,
+): Promise<SwitchDockBackendResult> {
+  if (window !== getDockWindow() || window.isDestroyed() || window.webContents.isDestroyed())
+    throw new Error('Only the live dock can select its machine');
+  const binding = getStrictBackendBindingForWebContents(window.webContents);
+  const available = (): boolean =>
+    window === getDockWindow() &&
+    !window.isDestroyed() &&
+    !window.webContents.isDestroyed() &&
+    !closingDockWindows.has(window) &&
+    !captureHiddenWindows.has(window) &&
+    !sessionPaused;
+  if (
+    !available() ||
+    pendingBackendSwitch ||
+    !binding ||
+    binding.frame !== senderFrame ||
+    !isDockRoute(new URL(window.webContents.getURL()).pathname)
+  )
+    throw new Error('The dock document is unavailable for machine selection');
+  const operation: DockBackendSwitch = {
+    window,
+    cancelled: false,
+    phase: 'probe',
+    expectedNavigation: null,
+  };
+  pendingBackendSwitch = operation;
+  const current = (): boolean =>
+    pendingBackendSwitch === operation &&
+    !operation.cancelled &&
+    available() &&
+    getStrictBackendBindingForWebContents(window.webContents) === binding;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let connectionStillCurrent = (): boolean => false;
+  try {
+    const probe = async (): Promise<void> => {
+      const saved = await listConnections();
+      if (!current()) throw new Error('Dock machine selection was cancelled');
+      if (!saved.some((connection) => connection.id === request.backendId))
+        throw new Error('Unknown saved machine');
+      const pool = await import('../features/backend/main/backend.ipc');
+      const client = await pool.connectBackendClient(request.backendId);
+      connectionStillCurrent = () =>
+        pool.getBackendClientForConnection(request.backendId) === client &&
+        client.getStatus() === 'connected';
+      if (!current()) throw new Error('Dock machine selection was cancelled');
+      // The client queues this authenticated request until connected; construction alone is not readiness.
+      await client.request('host.status', undefined, { timeoutMs: DOCK_BACKEND_PROBE_TIMEOUT_MS });
+      if (!current() || !connectionStillCurrent())
+        throw new Error('Dock machine connection was replaced');
+      if (!(await listConnections()).some((connection) => connection.id === request.backendId))
+        throw new Error('Selected machine was removed');
+    };
+    await Promise.race([
+      probe(),
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error('Dock machine connection timed out')),
+          DOCK_BACKEND_PROBE_TIMEOUT_MS,
+        );
+      }),
+    ]);
+    if (!current()) throw new Error('Dock machine selection was cancelled');
+    const previousBackendId = binding.backendId;
+    const previousOverride = selectedDockBackendId;
+    // The invoke must return to the old document before native navigation retires it.
+    setImmediate(() => {
+      if (!current() || !connectionStillCurrent()) {
+        const notifyOriginalDocument =
+          pendingBackendSwitch === operation &&
+          window === getDockWindow() &&
+          !window.isDestroyed() &&
+          !closingDockWindows.has(window) &&
+          !window.webContents.isDestroyed() &&
+          getStrictBackendBindingForWebContents(window.webContents) === binding;
+        if (pendingBackendSwitch === operation) pendingBackendSwitch = null;
+        if (notifyOriginalDocument) {
+          try {
+            window.webContents.send(WINDOW_CHANNELS.DOCK_BACKEND_SWITCH_FAILED, {
+              backendId: request.backendId,
+            } satisfies DockBackendSwitchFailed);
+          } catch (error) {
+            logger.warn('Failed to notify dock of cancelled machine selection', { error });
+          }
+        }
+        return;
+      }
+      operation.phase = 'handoff';
+      const owned = (): boolean =>
+        pendingBackendSwitch === operation &&
+        window === getDockWindow() &&
+        !window.isDestroyed() &&
+        !window.webContents.isDestroyed();
+      const navigate = async (url: string): Promise<void> => {
+        operation.expectedNavigation = url;
+        await window.loadURL(url);
+      };
+      void (async () => {
+        try {
+          placementController?.cancelInteraction();
+          resetDockPointerRouting(window);
+          await navigate('about:blank');
+          if (!owned()) return;
+          if (operation.cancelled || !available() || !connectionStillCurrent())
+            throw new Error('Dock machine handoff cancelled');
+          stampWindowWithBackend(window, request.backendId);
+          await navigate(buildDockUrl());
+          if (!owned()) return;
+          if (operation.cancelled || !available())
+            throw new Error('Dock machine handoff cancelled');
+          selectedDockBackendId = request.backendId;
+          await setLocalPref(DOCK_BACKEND_PREFERENCE, request.backendId);
+        } catch (error) {
+          logger.warn('Failed to switch dock machine; restoring prior binding', { error });
+          if (!owned()) return;
+          try {
+            // Never rebind a possibly loaded target document to the previous machine.
+            await navigate('about:blank');
+            if (!owned()) return;
+            stampWindowWithBackend(window, previousBackendId);
+            selectedDockBackendId = previousOverride;
+            await navigate(`${buildDockUrl()}?${DOCK_BACKEND_SWITCH_FAILED_QUERY}=1`);
+          } catch (restoreError) {
+            logger.warn('Failed to restore dock machine', { error: restoreError });
+            if (owned()) {
+              clearTrackedWindow(window);
+              window.destroy();
+            }
+          }
+        } finally {
+          if (pendingBackendSwitch === operation) pendingBackendSwitch = null;
+        }
+      })();
+    });
+    return { success: true };
+  } catch (error) {
+    operation.cancelled = true;
+    if (pendingBackendSwitch === operation) pendingBackendSwitch = null;
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function attachLifecycleListeners(window: BrowserWindow): void {
@@ -230,6 +437,7 @@ function attachLifecycleListeners(window: BrowserWindow): void {
   let suspended = false;
   let locked = false;
   const pause = (): void => {
+    if (pendingBackendSwitch?.window === window) pendingBackendSwitch.cancelled = true;
     sessionPaused = suspended || locked;
     placementController?.cancelInteraction();
     if (!window.isDestroyed()) window.hide();
@@ -317,6 +525,13 @@ function attachLifecycleListeners(window: BrowserWindow): void {
     placementController?.cancelInteraction();
     resetDockPointerRouting(window);
   });
+  window.webContents.on('did-start-navigation', (_event, url, inPlace, mainFrame) => {
+    const operation = pendingBackendSwitch;
+    if (!operation || operation.window !== window || inPlace || !mainFrame) return;
+    if (operation.phase === 'handoff' && operation.expectedNavigation === url) {
+      operation.expectedNavigation = null;
+    } else operation.cancelled = true;
+  });
   window.on('closed', () => clearTrackedWindow(window));
   window.on('blur', () => {
     if (dockWindowRef !== window) return;
@@ -326,7 +541,11 @@ function attachLifecycleListeners(window: BrowserWindow): void {
     // The cursor poll still forwards input outside the accepted regions.
   });
   window.on('hide', resetPointerRouting);
-  window.on('close', resetPointerRouting);
+  window.on('close', () => {
+    closingDockWindows.add(window);
+    if (pendingBackendSwitch?.window === window) pendingBackendSwitch.cancelled = true;
+    resetPointerRouting();
+  });
   window.webContents.on('render-process-gone', (_event, details) => {
     logger.warn('Dock renderer exited; closing dock window', { reason: details.reason });
     clearTrackedWindow(window);
@@ -414,6 +633,7 @@ export function setDockHiddenForCapture(hidden: boolean): void {
   const window = getDockWindow();
   if (!window) return;
   if (hidden) {
+    if (pendingBackendSwitch?.window === window) pendingBackendSwitch.cancelled = true;
     captureHiddenWindows.add(window);
     placementController?.setCaptureHidden(true);
     window.hide();

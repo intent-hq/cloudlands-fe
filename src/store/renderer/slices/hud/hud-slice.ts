@@ -193,6 +193,8 @@ export interface HudState {
   dockDragStartResult: { id: number; token: string | null } | null;
   dockResizeStartResult: { id: number; token: string | null } | null;
   dockFocusRequest: number;
+  dockMachineSwitching: string | null;
+  dockMachineSwitchError: boolean;
 }
 
 export const HUD_FEED_LIMIT = 50;
@@ -219,6 +221,8 @@ export const initialState: HudState = {
   dockDragStartResult: null,
   dockResizeStartResult: null,
   dockFocusRequest: 0,
+  dockMachineSwitching: null,
+  dockMachineSwitchError: false,
 };
 
 export const dockPlacementCommandRequested = createAction<[command: DockPlacementCommand]>(
@@ -234,6 +238,14 @@ export const dockDragStartResolved = createAction<[token: string | null]>(
 export const dockResizeStartResolved = createAction<[token: string | null]>(
   'hud/dockResizeStartResolved',
 );
+export const dockMachineSwitchRequested = createAction<[backendId: string]>(
+  'hud/dockMachineSwitchRequested',
+);
+export const dockMachineSwitchRestored = createAction('hud/dockMachineSwitchRestored');
+export const dockMachineSwitchFinished = createAction<[backendId: string, failed: boolean]>(
+  'hud/dockMachineSwitchFinished',
+);
+
 export const dockFocusRequested = createAction('hud/dockFocusRequested');
 
 // ── Actions ──
@@ -351,6 +363,21 @@ export const hudReducer = createReducer<HudState>(initialState);
 hudReducer.with(hudActivated, () => ({ ...initialState, active: true }));
 hudReducer.with(hudDeactivated, () => initialState);
 hudReducer.with(dockActivated, () => ({ ...initialState, active: true }));
+hudReducer.with(dockMachineSwitchRestored, (state) => ({
+  ...state,
+  dockMachineSwitching: null,
+  dockMachineSwitchError: true,
+}));
+hudReducer.with(dockMachineSwitchRequested, (state, { payload: [backendId] }) =>
+  state.dockMachineSwitching
+    ? state
+    : { ...state, dockMachineSwitching: backendId, dockMachineSwitchError: false },
+);
+hudReducer.with(dockMachineSwitchFinished, (state, { payload: [backendId, failed] }) =>
+  state.dockMachineSwitching !== backendId
+    ? state
+    : { ...state, dockMachineSwitching: null, dockMachineSwitchError: failed },
+);
 hudReducer.with(dockConversationsLoaded, (state, { payload: [latestByWorkspaceId, now] }) => ({
   ...state,
   dockConversationAtByWorkspaceId: latestByWorkspaceId,

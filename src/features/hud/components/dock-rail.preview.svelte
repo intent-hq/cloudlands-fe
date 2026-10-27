@@ -4,6 +4,7 @@
 </script>
 
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import type { DockPointerRect } from '$shared/dock-layout';
   import {
     dockWindowEnvelope,
@@ -36,8 +37,34 @@
     controlledPlacement = false,
     manualResizeAcknowledgements = false,
     conversationFixture = false,
+    machineFixture = false,
+    failMachineOnce = false,
     resizeAcknowledgement = 'accept',
   }: DockRailPreviewProps = $props();
+  onDestroy(() => clearTimeout(machineTimer));
+  const machineOptions = [
+    { id: 'local', label: 'This Mac' },
+    { id: 'remote-build', label: 'Build server' },
+    { id: 'remote-long', label: 'Design workstation with a deliberately long machine name' },
+  ];
+  let machineId = $state('local');
+  let machineSwitching = $state<string | null>(null);
+  let machineError = $state(false);
+  let machineFailed = false;
+  let machineTimer: ReturnType<typeof setTimeout> | undefined;
+  function switchMachine(id: string): void {
+    if (machineSwitching) return;
+    machineSwitching = id;
+    machineError = false;
+    recordAction(`machine:${id}`);
+    machineTimer = setTimeout(() => {
+      machineSwitching = null;
+      if (failMachineOnce && !machineFailed) {
+        machineFailed = true;
+        machineError = true;
+      } else machineId = id;
+    }, 500);
+  }
   let dragStartResult = $state<{ id: number; token: string | null } | null>(null);
   let resizeStartResult = $state<{ id: number; token: string | null } | null>(null);
   let pendingResizeAcknowledgement: (() => void) | null = null;
@@ -252,6 +279,27 @@
         return;
       if (command.expansionDirection !== undefined)
         requestedExpansionDirection = command.expansionDirection;
+      if (floatingDisplay && placement.placement.kind === 'notch') {
+        const surface = resolveDockSurface(placement.placement, floatingDisplay, command);
+        const windowBounds = dockWindowEnvelope(surface, floatingDisplay);
+        const local = dockLocalRect(surface, windowBounds);
+        if (
+          JSON.stringify({ surface: local, windowBounds }) ===
+          JSON.stringify({ surface: placement.surface, windowBounds: placement.windowBounds })
+        )
+          return;
+        placement = {
+          ...placement,
+          revision: placement.revision + 1,
+          surface: local,
+          windowBounds,
+          cutout: floatingDisplay.cutout
+            ? dockLocalRect(floatingDisplay.cutout, windowBounds)
+            : null,
+          workArea: dockLocalRect(floatingDisplay.workArea, windowBounds),
+        };
+        return;
+      }
       if (floatingDisplay && placement.placement.kind === 'edge') {
         if (command.sidePanelSize !== undefined) requestedSidePanel = command.sidePanelSize;
         const rail = resolveDockSurface(placement.placement, floatingDisplay, command);
@@ -436,6 +484,11 @@
     data-preview-commands={JSON.stringify(commands)}
   >
     <DockRail
+      machines={machineFixture ? machineOptions : undefined}
+      {machineId}
+      {machineSwitching}
+      {machineError}
+      onMachine={machineFixture ? switchMachine : undefined}
       {workspaces}
       conversation={conversationFixture ? conversationContent : undefined}
       {conversationWorkspaceId}

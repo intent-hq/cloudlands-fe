@@ -1535,3 +1535,8 @@ export const selectDockDragStartResult = store.createSelector(
 export const selectDockResizeStartResult = store.createSelector(
   (state) => state.hud.dockResizeStartResult,
 );
+
+export const selectDockMachineSwitch = store.createSelector((state) => ({
+  pending: state.hud.dockMachineSwitching,
+  error: state.hud.dockMachineSwitchError,
+}));

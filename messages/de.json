@@ -7722,5 +7722,10 @@
   "dock_conversation_reply_placeholder": "Antwort an {name}…",
   "dock_conversation_running_label": "In Arbeit",
   "dock_conversation_shortcuts_description": "Enter zum Senden · Umschalt+Enter für eine neue Zeile",
-  "dock_conversation_messages_ariaLabel": "Nachrichten"
+  "dock_conversation_messages_ariaLabel": "Nachrichten",
+  "dock_machines_label": "Computer",
+  "dock_machineSwitch_label": "Computer wechseln",
+  "dock_machineConnecting_label": "Verbindung mit {machine} wird hergestellt…",
+  "dock_machineSwitchFailed_error": "Verbindung fehlgeschlagen. Zum Wiederholen einen Computer auswählen.",
+  "dock_machineMenu_hint": "Computer wechseln · Zum Verschieben ziehen"
 }

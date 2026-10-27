@@ -7722,5 +7722,10 @@
   "dock_conversation_reply_placeholder": "{name}に返信…",
   "dock_conversation_running_label": "作業中",
   "dock_conversation_shortcuts_description": "Enterで送信 · Shift+Enterで改行",
-  "dock_conversation_messages_ariaLabel": "メッセージ"
+  "dock_conversation_messages_ariaLabel": "メッセージ",
+  "dock_machines_label": "マシン",
+  "dock_machineSwitch_label": "マシンを切り替え",
+  "dock_machineConnecting_label": "{machine} に接続中…",
+  "dock_machineSwitchFailed_error": "接続できませんでした。マシンを選択して再試行してください。",
+  "dock_machineMenu_hint": "マシンを切り替え · ドラッグして移動"
 }

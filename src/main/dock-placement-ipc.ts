@@ -4,17 +4,32 @@ import {
   EmptySchema,
   WindowSetDockPointerRegionSchema,
   WindowUpdateDockPlacementSchema,
+  WindowSwitchDockBackendSchema,
 } from './ipc-schemas';
-import { createSafeValidatedHandler } from './ipc-validation-middleware';
+import { createSafeValidatedHandler, createValidatedHandler } from './ipc-validation-middleware';
 import {
   getDockWindow,
   getDockPlacementSnapshot,
   updateDockPlacement,
   setDockPointerRegions,
+  switchDockBackend,
 } from './dock-window';
 
 /** Shared production registration used by the system feature and native E2E harness. */
 export function registerDockPlacementHandlers(): void {
+  ipcMain.handle(
+    WINDOW_CHANNELS.SWITCH_DOCK_BACKEND,
+    createValidatedHandler(
+      WindowSwitchDockBackendSchema,
+      async (event, request) => {
+        const window = BrowserWindow.fromWebContents(event.sender);
+        if (!window || window !== getDockWindow() || !event.senderFrame)
+          throw new Error('Only the current dock document can select its machine');
+        return switchDockBackend(window, request, event.senderFrame);
+      },
+      WINDOW_CHANNELS.SWITCH_DOCK_BACKEND,
+    ),
+  );
   ipcMain.handle(
     WINDOW_CHANNELS.SET_DOCK_POINTER_REGION,
     createSafeValidatedHandler(

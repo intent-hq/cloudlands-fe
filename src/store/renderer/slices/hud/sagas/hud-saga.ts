@@ -22,6 +22,7 @@ import {
 } from 'typed-redux-saga';
 
 import { dockPlacementSaga } from './dock-placement-saga';
+import { dockMachineSaga } from './dock-machine-saga';
 import { dockRecencySaga } from './dock-recency-saga';
 import { takeSingleFlightInContext } from '../../../utils/context-saga-effects';
 import { getLocalStorageJSON, setLocalStorageJSON } from '../../../utils/safe-local-storage-saga';
@@ -672,12 +673,14 @@ function* hudRouteLifetime(): SagaGenerator<void> {
 
 function* dockRouteLifetime(): SagaGenerator<void> {
   const placement = yield* fork(dockPlacementSaga);
+  const machine = yield* fork(dockMachineSaga);
   const recency = yield* fork(dockRecencySaga);
   try {
     yield* call(hudRouteLifetime);
   } finally {
     yield* cancel(recency);
     yield* cancel(placement);
+    yield* cancel(machine);
   }
 }
 

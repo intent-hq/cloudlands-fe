@@ -7722,5 +7722,10 @@
   "dock_conversation_reply_placeholder": "Répondre à {name}…",
   "dock_conversation_running_label": "En cours",
   "dock_conversation_shortcuts_description": "Entrée pour envoyer · Maj+Entrée pour un saut de ligne",
-  "dock_conversation_messages_ariaLabel": "Messages"
+  "dock_conversation_messages_ariaLabel": "Messages",
+  "dock_machines_label": "Machines",
+  "dock_machineSwitch_label": "Changer de machine",
+  "dock_machineConnecting_label": "Connexion à {machine}…",
+  "dock_machineSwitchFailed_error": "Connexion impossible. Sélectionnez une machine pour réessayer.",
+  "dock_machineMenu_hint": "Changer de machine · Faire glisser pour déplacer"
 }

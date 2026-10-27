@@ -1,5 +1,6 @@
 <script lang="ts">
   import AdaptiveDockShell from './AdaptiveDockShell.svelte';
+  import type { DockMachineOption } from './dock-machine-types';
   import type { DockPlacementSnapshot, DockPlacementCommand } from '$shared/dock-placement';
   import { onDestroy, onMount, tick, type Snippet } from 'svelte';
   import Logo from '$lib/components/Logo.svelte';
@@ -53,6 +54,11 @@
     onOpenConversation?: (workspaceId: string) => void;
     onCloseConversation?: () => void;
     workspaces: DockWorkspaceView[];
+    machines?: DockMachineOption[];
+    machineId?: string;
+    machineSwitching?: string | null;
+    machineError?: boolean;
+    onMachine?: (id: string) => void;
     placement?: DockPlacementSnapshot;
     onPlacementCommand?: (command: DockPlacementCommand) => void;
     focusRequest?: number;
@@ -70,6 +76,11 @@
 
   let {
     workspaces,
+    machines,
+    machineId,
+    machineSwitching,
+    machineError,
+    onMachine,
     placement,
     onPlacementCommand,
     focusRequest,
@@ -587,6 +598,11 @@
 
 {#if placement && onPlacementCommand}
   <AdaptiveDockShell
+    {machines}
+    {machineId}
+    {machineSwitching}
+    {machineError}
+    {onMachine}
     {conversation}
     {conversationWorkspaceId}
     {onOpenConversation}

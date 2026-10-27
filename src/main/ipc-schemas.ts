@@ -1386,3 +1386,9 @@ export const InviteNoticeAckSchema = z.object({
 export const InviteNoticeResponseSchema = z.object({
   requestId: z.string().min(1, 'Request ID is required'),
 });
+
+export const WindowSwitchDockBackendSchema = z
+  .object({
+    backendId: z.string().trim().min(1).max(256),
+  })
+  .strict();

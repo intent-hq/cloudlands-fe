@@ -25,9 +25,16 @@
   import DockSideEntries from './DockSideEntries.svelte';
   import DockActionFeedback from './DockActionFeedback.svelte';
   import DockShellSilhouette from './DockShellSilhouette.svelte';
+  import DockMachineMenu from './DockMachineMenu.svelte';
+  import type { DockMachineOption } from './dock-machine-types';
 
   let {
     workspaces,
+    machines,
+    machineId = '',
+    machineSwitching = null,
+    machineError = false,
+    onMachine,
     placement,
     onPlacementCommand,
     focusRequest = 0,
@@ -45,6 +52,11 @@
     onCloseConversation,
   }: {
     workspaces: DockWorkspaceView[];
+    machines?: DockMachineOption[];
+    machineId?: string;
+    machineSwitching?: string | null;
+    machineError?: boolean;
+    onMachine?: (id: string) => void;
     conversation?: Snippet;
     conversationWorkspaceId?: string | null;
     onOpenConversation?: (workspaceId: string) => void;
@@ -78,6 +90,8 @@
 
   let conversationRegions: DockPointerRect[] = [];
   let conversationPopupOpen = false;
+  let machineMenuOpen = $state(false);
+  let machineRegions: DockPointerRect[] = [];
   let popupEscapeEvent: KeyboardEvent | null = null;
   const dragging = $derived(placement.phase === 'dragging');
   const side = $derived(placement.placement.kind === 'edge' ? placement.placement.side : null);
@@ -137,7 +151,10 @@
   let sideCloseRequest = $state(0);
   let sideRegions: DockPointerRect[] = [];
   const expanded = $derived(
-    !edge && !dragging && (pinned ? conversationVisible : expandedByUser || (!floating && pending)),
+    !edge &&
+      !dragging &&
+      (machineMenuOpen ||
+        (pinned ? conversationVisible : expandedByUser || (!floating && pending))),
   );
   // This is a count of admitted workspaces with updates, not unread messages or agents.
   const updateCount = $derived(
@@ -162,7 +179,9 @@
       conversationSize: conversationResize.size,
       reveal,
       rowLimit,
-      workspaceCount: workspaces.length,
+      workspaceCount: machineMenuOpen
+        ? Math.max(workspaces.length, Math.min(machines?.length ?? 0, 5))
+        : workspaces.length,
       compactWingWidth,
       hasFeedback: actionFeedback !== null,
     }),
@@ -271,10 +290,20 @@
         ...sideRegions,
         ...(conversationVisible && !dragging ? conversationRegions : []),
         ...feedbackRegions,
+        ...machineRegions,
       ],
       placement.revision,
     );
   }
+  $effect(() => {
+    if (placement.captureHidden || dragging) machineMenuOpen = false;
+  });
+  $effect(() => {
+    if (machineError)
+      untrack(() => {
+        if (machines && !placement.captureHidden && !dragging) machineMenuOpen = true;
+      });
+  });
   function measure(): void {
     if (measureFrame !== undefined) cancelAnimationFrame(measureFrame);
     measureFrame = requestAnimationFrame(() => {
@@ -517,6 +546,7 @@
 
   function pointerDown(event: PointerEvent): void {
     if (
+      machineSwitching !== null ||
       event.button !== 0 ||
       !event.isPrimary ||
       gesture ||
@@ -635,6 +665,12 @@
       return;
     }
     if (event === popupEscapeEvent) return;
+    if (machineMenuOpen) {
+      machineMenuOpen = false;
+      event.preventDefault();
+      gripElement?.focus({ preventScroll: true });
+      return;
+    }
     event.preventDefault();
     if (pinned) {
       onCloseConversation?.();
@@ -672,10 +708,28 @@
   });
 </script>
 
+{#if machineMenuOpen && machines && onMachine && gripElement && (edge || contentVisible)}
+  <DockMachineMenu
+    bind:open={machineMenuOpen}
+    anchor={gripElement}
+    {machines}
+    currentId={machineId}
+    pending={machineSwitching}
+    error={machineError}
+    onSwitch={onMachine}
+    side={edge ? (side === 'left' ? 'right' : 'left') : floatingUp ? 'top' : 'bottom'}
+    onRegionsChange={(regions) => {
+      machineRegions = regions;
+      measure();
+    }}
+  />
+{/if}
+
 <svelte:window
   onkeydowncapture={(event) => {
     if (gesture || awaitingDragStart !== null || dragging) keydown(event);
-    else if (event.key === 'Escape' && conversationPopupOpen) popupEscapeEvent = event;
+    else if (event.key === 'Escape' && (conversationPopupOpen || machineMenuOpen))
+      popupEscapeEvent = event;
   }}
   onkeydown={keydown}
   onblur={() => {
@@ -745,7 +799,11 @@
       data-testid="dock-surface"
     >
       <DockShellSilhouette {placement} {shown} />
-      <div class="companion-content" style:clip-path={contentClip}>
+      <div
+        class="companion-content"
+        style:clip-path={contentClip}
+        inert={machineSwitching !== null}
+      >
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <header
           class="companion-header"
@@ -768,8 +826,10 @@
             variant="ghost"
             size="icon-sm"
             class="dock-grip"
-            aria-label={m.dock_drag_label()}
-            title={m.dock_drag_label()}
+            aria-label={machines ? m.dock_machineSwitch_label() : m.dock_drag_label()}
+            aria-haspopup={machines ? 'menu' : undefined}
+            aria-expanded={machines ? machineMenuOpen : undefined}
+            title={machines ? m.dock_machineMenu_hint() : m.dock_drag_label()}
             data-testid="dock-drag-handle"
             wrapContent={false}
             onpointerdown={pointerDown}
@@ -783,6 +843,10 @@
               if (suppressClick) {
                 event.preventDefault();
                 suppressClick = false;
+                return;
+              }
+              if (machines && onMachine) {
+                machineMenuOpen = !machineMenuOpen;
                 return;
               }
               if (!edge) expandedByUser = floating ? true : !expandedByUser;

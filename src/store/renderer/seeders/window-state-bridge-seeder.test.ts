@@ -61,6 +61,28 @@ describe('window-state-bridge-seeder', () => {
     resetMockIpcRouter();
   });
 
+  it('forwards a dock machine selection unchanged and cannot report success without Electron', async () => {
+    const invoke = vi.fn().mockResolvedValue({ success: true });
+    window.electronAPI = { ...originalElectronAPI, invoke };
+    registerWindowStateBridge();
+    const request = { backendId: 'remote-build' };
+    await expect(mockInvoke(IPC_CHANNELS.WINDOW.SWITCH_DOCK_BACKEND, request)).resolves.toEqual({
+      success: true,
+    });
+    expect(invoke).toHaveBeenCalledExactlyOnceWith(
+      IPC_CHANNELS.WINDOW.SWITCH_DOCK_BACKEND,
+      request,
+    );
+    Object.defineProperty(window, 'electronAPI', {
+      configurable: true,
+      writable: true,
+      value: undefined,
+    });
+    await expect(
+      mockInvoke(IPC_CHANNELS.WINDOW.SWITCH_DOCK_BACKEND, request),
+    ).resolves.toBeUndefined();
+  });
+
   it('forwards all window-state invoke channels to window.electronAPI.invoke when bridged', async () => {
     const invokeSpy = vi.fn(async (channel: string) => ({ success: true, forwarded: channel }));
     (window as any).electronAPI = { ...(originalElectronAPI || {}), invoke: invokeSpy };
