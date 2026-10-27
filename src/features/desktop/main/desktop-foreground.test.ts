@@ -115,3 +115,73 @@ describe('user app switch detection', () => {
     await expect(t.tracker.userSwitched('s2')).resolves.toBe(false);
   });
 });
+
+describe('review regressions', () => {
+  it('waits for a pending settle sample when the session ends just after the window', async () => {
+    let front = INTENT;
+    let release: (() => void) | undefined;
+    const sample = vi.fn(async () => front);
+    const tracker = new DesktopForegroundTracker(sample, GRACE, () => Date.now());
+    await tracker.begin('s');
+    await tracker.beforeAgentAction('s');
+    await tracker.afterAgentAction('s'); // Dock click; Intent still in front
+    await vi.advanceTimersByTimeAsync(1_500);
+    front = SAFARI; // delayed activation
+    // The settle sample at 5 s stays pending until released.
+    sample.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve(front);
+        }),
+    );
+    await vi.advanceTimersByTimeAsync(GRACE - 1_500);
+    expect(release).toBeDefined();
+    await vi.advanceTimersByTimeAsync(1);
+    const verdict = tracker.userSwitched('s');
+    release?.();
+    await expect(verdict).resolves.toBe(false);
+  });
+  it('settles inline at session end when the settle timer has not fired yet', async () => {
+    const t = setup();
+    await t.tracker.begin('s');
+    const actedAt = Date.now();
+    await t.act();
+    await vi.advanceTimersByTimeAsync(1_500);
+    t.setFront(SAFARI);
+    vi.setSystemTime(actedAt + GRACE + 1); // clock just past the window, timer not run
+    await expect(t.tracker.userSwitched('s')).resolves.toBe(false);
+  });
+  it('bounds stalled native samples so agent actions are never delayed', async () => {
+    const stalled = vi.fn(() => new Promise<number | undefined>(() => {}));
+    const tracker = new DesktopForegroundTracker(stalled, GRACE, () => Date.now());
+    const started = Date.now();
+    const steps = (async () => {
+      await tracker.begin('s');
+      await tracker.beforeAgentAction('s');
+      await tracker.afterAgentAction('s');
+    })();
+    await vi.advanceTimersByTimeAsync(3 * 250);
+    await expect(steps).resolves.toBeUndefined();
+    expect(Date.now() - started).toBeLessThanOrEqual(3 * 250);
+    const verdict = tracker.userSwitched('s');
+    await vi.advanceTimersByTimeAsync(2 * 250);
+    await expect(verdict).resolves.toBeUndefined();
+  });
+  it('ignores a late sample result after its bound expired', async () => {
+    let resolveLate: ((pid: number) => void) | undefined;
+    const sample = vi
+      .fn<() => Promise<number | undefined>>()
+      .mockResolvedValueOnce(INTENT)
+      .mockImplementationOnce(() => new Promise((r) => (resolveLate = r)))
+      .mockResolvedValue(INTENT);
+    const tracker = new DesktopForegroundTracker(sample, GRACE, () => Date.now());
+    await tracker.begin('s');
+    const before = tracker.beforeAgentAction('s');
+    await vi.advanceTimersByTimeAsync(250);
+    await before;
+    await vi.advanceTimersByTimeAsync(GRACE * 2);
+    resolveLate?.(SLACK); // arrives long after; must not count as a switch
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(tracker.userSwitched('s')).resolves.toBe(false);
+  });
+});

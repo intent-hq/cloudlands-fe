@@ -1,13 +1,23 @@
 /** Reads the frontmost application's pid; `undefined` when the OS reports none. */
 export type FrontmostSampler = () => Promise<number | undefined>;
 
+/** Tracking is optional telemetry: a sample never delays an agent action longer. */
+const FOREGROUND_SAMPLE_TIMEOUT_MS = 250;
+/** How late after the attribution window a settle sample may still be adopted. */
+const SETTLE_SLACK_MS = 1_000;
+
 interface Track {
   sessionId: string;
   /** Frontmost pid attributed to the agent (or the session start). */
   expected?: number;
   lastAgentAction: number;
   userSwitched: boolean;
-  settle?: ReturnType<typeof setTimeout>;
+  /** Bumped by every agent action; a settle sample from an older one is ignored. */
+  generation: number;
+  settleTimer?: ReturnType<typeof setTimeout>;
+  /** The post-action settle sample is still owed (timer pending or sample running). */
+  settleOwed: boolean;
+  settling?: Promise<void>;
 }
 
 /**
@@ -19,8 +29,8 @@ interface Track {
  * activates the app a second or two after the click returns), so any change
  * within `graceMs` of the last agent action is attributed to the agent: the
  * pid is re-sampled before each later action and once more when the window
- * expires. A change outside that window is the user's, and stays so for the
- * rest of the session.
+ * expires (or at session end, if that settle sample is still owed). A change
+ * outside that window is the user's, and stays so for the rest of the session.
  */
 export class DesktopForegroundTracker {
   private track?: Track;
@@ -28,14 +38,25 @@ export class DesktopForegroundTracker {
     private readonly sample: FrontmostSampler,
     private readonly graceMs: number,
     private readonly now: () => number = () => Date.now(),
+    private readonly sampleTimeoutMs = FOREGROUND_SAMPLE_TIMEOUT_MS,
   ) {}
 
-  private async read(): Promise<number | undefined> {
-    try {
-      return await this.sample();
-    } catch {
-      return undefined;
-    }
+  /** Bounded read; a failure, timeout or late result is simply "unknown". */
+  private read(): Promise<number | undefined> {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(undefined), this.sampleTimeoutMs);
+      timer.unref?.();
+      this.sample().then(
+        (pid) => {
+          clearTimeout(timer);
+          resolve(pid);
+        },
+        () => {
+          clearTimeout(timer);
+          resolve(undefined);
+        },
+      );
+    });
   }
   private current(sessionId: string): Track | undefined {
     return this.track?.sessionId === sessionId ? this.track : undefined;
@@ -49,10 +70,35 @@ export class DesktopForegroundTracker {
     if (t.expected !== undefined && pid !== t.expected && this.settled(t)) t.userSwitched = true;
     t.expected = pid;
   }
+  /** Runs (or joins) the owed settle sample for the latest agent action. */
+  private settle(t: Track): Promise<void> {
+    clearTimeout(t.settleTimer);
+    if (!t.settleOwed) return Promise.resolve();
+    const generation = t.generation;
+    return (t.settling ??= this.read().then((late) => {
+      if (this.track !== t || t.generation !== generation) return;
+      t.settleOwed = false;
+      t.settling = undefined;
+      if (late !== undefined && this.now() - t.lastAgentAction <= this.graceMs + SETTLE_SLACK_MS)
+        t.expected = late;
+    }));
+  }
+  private supersedeSettle(t: Track): void {
+    clearTimeout(t.settleTimer);
+    t.generation += 1;
+    t.settleOwed = false;
+    t.settling = undefined;
+  }
 
   async begin(sessionId: string): Promise<void> {
-    clearTimeout(this.track?.settle);
-    const t: Track = { sessionId, lastAgentAction: -Infinity, userSwitched: false };
+    if (this.track) this.supersedeSettle(this.track);
+    const t: Track = {
+      sessionId,
+      lastAgentAction: -Infinity,
+      userSwitched: false,
+      generation: 0,
+      settleOwed: false,
+    };
     this.track = t;
     const pid = await this.read();
     if (this.track === t) t.expected = pid;
@@ -60,36 +106,33 @@ export class DesktopForegroundTracker {
   async beforeAgentAction(sessionId: string): Promise<void> {
     const t = this.current(sessionId);
     if (!t) return;
+    // This reading covers anything the owed settle sample would have seen.
+    this.supersedeSettle(t);
     const pid = await this.read();
     if (this.track === t) this.observe(t, pid);
   }
   async afterAgentAction(sessionId: string): Promise<void> {
     const t = this.current(sessionId);
     if (!t) return;
+    this.supersedeSettle(t);
     t.lastAgentAction = this.now();
+    const generation = t.generation;
     const pid = await this.read();
-    if (this.track !== t) return;
+    if (this.track !== t || t.generation !== generation) return;
     if (pid !== undefined) t.expected = pid;
-    clearTimeout(t.settle);
     // Catch an activation that lands after the action with no later action.
-    t.settle = setTimeout(() => {
-      void this.read().then((late) => {
-        if (
-          this.track === t &&
-          late !== undefined &&
-          this.now() - t.lastAgentAction <= this.graceMs + 1_000
-        )
-          t.expected = late;
-      });
-    }, this.graceMs);
-    t.settle.unref?.();
+    t.settleOwed = true;
+    t.settleTimer = setTimeout(() => void this.settle(t), this.graceMs);
+    t.settleTimer.unref?.();
   }
   /** `true` when the user switched apps, `undefined` when it cannot tell. */
   async userSwitched(sessionId: string): Promise<boolean | undefined> {
     const t = this.current(sessionId);
     if (!t) return undefined;
     if (t.userSwitched) return true;
+    if (t.settleOwed && this.settled(t)) await this.settle(t);
     const pid = await this.read();
+    if (this.track !== t) return undefined;
     if (pid === undefined || t.expected === undefined) return undefined;
     if (pid === t.expected || !this.settled(t)) return false;
     return true;
