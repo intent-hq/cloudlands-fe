@@ -186,6 +186,47 @@ export function extractSearchableContent(
     .join('');
 }
 
+/**
+ * Where a tool call renders in its message: its row's block path and the
+ * group to open first, if any. `null` when the message has no such call.
+ */
+export function locateToolCall(
+  message: AgentMessage,
+  toolCallId: string,
+  options: ChatSearchOptions = {},
+): Pick<ChatSearchMatch, 'blockPath' | 'disclosurePath'> | null {
+  const contentBlocks = message.contentBlocks;
+  if (message.role === 'user' || !contentBlocks?.length) return null;
+  const isStreaming = !!message.isStreaming;
+  const grouped = groupMessageBlocks(
+    prepareMessageBlocks(contentBlocks, {
+      role: message.role,
+      workspaceId: options.workspaceId,
+      isStreaming,
+    }),
+    isStreaming,
+    !!options.collapseToolRuns,
+  );
+  for (const [blockIndex, block] of grouped.entries()) {
+    if (block.type === 'tool_use' && block.toolCallId === toolCallId) {
+      return { blockPath: chatSearchBlockPath(blockIndex), disclosurePath: [] };
+    }
+    if (block.type !== 'content_group') continue;
+    const childIndex = block.children.findIndex(
+      (child) => child.type === 'tool_use' && child.toolCallId === toolCallId,
+    );
+    if (childIndex < 0) continue;
+    // Inline groups render their rows directly, with no disclosure to open.
+    return {
+      blockPath: chatSearchBlockPath(blockIndex, childIndex),
+      disclosurePath: shouldRenderResponseGroupInline(block)
+        ? []
+        : [`group:${chatSearchBlockPath(blockIndex)}`],
+    };
+  }
+  return null;
+}
+
 export function findChatSearchMatches(
   messages: AgentMessage[],
   query: string,
