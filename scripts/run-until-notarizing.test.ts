@@ -253,6 +253,16 @@ describe('runUntilNotarizing', () => {
     expect(signals.listenerCount('SIGTERM')).toBe(0);
   });
 
+  it('never reports success for a cancelled build, even when the leader exits 0', async () => {
+    const build = fakeBuild(scratch(), { termExitCode: 0, grandchildIgnoresTerm: true });
+    const signals = new EventEmitter();
+    const { result } = start(build, manualDeadline(), { signalSource: signals });
+    await waitFor(() => hasPid(build.ready));
+    signals.emit('SIGTERM');
+    await expect(result).resolves.toBe(128 + 15);
+    expect(alive(pidOf(build.ready))).toBe(false);
+  });
+
   it('reports a leader killed by a signal as 128 + the signal number', async () => {
     const build = fakeBuild(scratch(), {});
     const { result, lines } = start(build);

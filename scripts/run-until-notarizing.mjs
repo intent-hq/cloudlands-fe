@@ -94,6 +94,8 @@ export function runUntilNotarizing({
     let finished = false;
     // Set once this wrapper has signalled the group (stall or cancellation).
     let terminating = false;
+    // The cancellation signal forwarded to the group, if any.
+    let cancelledBy = null;
     let killTimer;
     let killDeadline = 0;
     let child;
@@ -168,7 +170,10 @@ export function runUntilNotarizing({
 
     if (signalSource) {
       for (const signal of FORWARDED_SIGNALS) {
-        const handler = () => terminate(signal);
+        const handler = () => {
+          cancelledBy ??= signal;
+          terminate(signal);
+        };
         signalSource.on(signal, handler);
         cleanups.push(() => signalSource.off(signal, handler));
       }
@@ -181,11 +186,14 @@ export function runUntilNotarizing({
 
     child.on('exit', (code, signal) => {
       const at = markerTime();
-      const result = stalled
+      let result = stalled
         ? STALL_EXIT_CODE
         : signal
           ? 128 + (constants.signals[signal] ?? 0)
           : (code ?? 1);
+      // A cancelled build never reports success, even if the leader exits 0 from its
+      // own signal handler.
+      if (cancelledBy && result === 0) result = 128 + constants.signals[cancelledBy];
       log(
         `Packaging ${signal ? `was killed by ${signal}` : `exited with code ${code}`}; ` +
           `notarization ` +

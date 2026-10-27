@@ -305,7 +305,7 @@ describe.each(['release-alpha', 'manual-signed-build'])('%s native Mac jobs', (n
     // The budget is the stall contract: 2.3x the slowest pre-notarization phase seen.
     // `exec`: on cancel the runner signals the step's process, so the wrapper must be
     // that process to stop the whole build.
-    const invocations = run.match(/^.*run-until-notarizing\.mjs.*$/gm) ?? [];
+    const invocations = run.match(/^.*node scripts\/run-until-notarizing\.mjs.*$/gm) ?? [];
     expect(invocations.length).toBeGreaterThan(0);
     for (const line of invocations)
       expect(line.trim()).toMatch(
@@ -324,6 +324,40 @@ describe.each(['release-alpha', 'manual-signed-build'])('%s native Mac jobs', (n
     );
     expect(result.status).toBe(5);
   });
+  // Only release-alpha checks out a different ref (the release tag) from its workflow.
+  it.runIf(name === 'release-alpha')(
+    'packages a checkout that predates the stall deadline without it',
+    () => {
+      // release-alpha rebuilds historical tags from the tag's own scripts. A tag cut
+      // before the wrapper existed has no wrapper, and its notarize.js never writes
+      // the marker, so the workflow-ref wrapper must not be substituted either.
+      const dir = temp();
+      rmSync(join(dir, 'scripts', 'run-until-notarizing.mjs'));
+      stub(
+        dir,
+        'pnpm',
+        'printf "%s\\n" "$@" > "$RUNNER_TEMP/args"\nprintf "%s" "${INTENT_NOTARIZE_STARTED_FILE-unset}" > "$RUNNER_TEMP/marker"\nexit 6',
+      );
+      const result = shell(
+        dir,
+        render(step(name, 'build-macos', 'Build and package macOS app').run!, {
+          'matrix.arch': 'arm64',
+          'inputs.sign': 'true',
+          'inputs.isolated_test': 'false',
+          'steps.intentd_sha.outputs.sha': 'a'.repeat(40),
+        }),
+      );
+      expect(result.status).toBe(6);
+      expect(readFileSync(join(dir, 'args'), 'utf8').trim().split('\n')).toEqual([
+        'run',
+        'dist:mac',
+        '--arm64',
+        '--publish',
+        'never',
+      ]);
+      expect(readFileSync(join(dir, 'marker'), 'utf8')).toBe('unset');
+    },
+  );
   it('always removes signing material and restores the original keychain list', () => {
     const dir = temp();
     for (const file of [
