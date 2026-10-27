@@ -11,7 +11,7 @@ import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-lay
 import { openWorkspaceNote } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import type { WorkspaceLoadState } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-types';
 
-export const WORKSPACE_DEEP_LINK_PARAMS = ['note', 'agent'] as const;
+const WORKSPACE_DEEP_LINK_PARAMS = ['note', 'agent'] as const;
 
 export type WorkspaceDeepLink =
   { kind: 'note'; noteId: string } | { kind: 'agent'; agentId: string };
@@ -32,14 +32,14 @@ export function parseWorkspaceDeepLinks(params: URLSearchParams): WorkspaceDeepL
   return links;
 }
 
-export function hasWorkspaceDeepLinkParams(params: URLSearchParams): boolean {
+function hasWorkspaceDeepLinkParams(params: URLSearchParams): boolean {
   return WORKSPACE_DEEP_LINK_PARAMS.some((name) => params.has(name));
 }
 
 export type WorkspaceDeepLinkAction =
   ReturnType<typeof openWorkspaceNote> | ReturnType<typeof openAgentTabRequested>;
 
-export function workspaceDeepLinkAction(
+function workspaceDeepLinkAction(
   workspaceId: string,
   link: WorkspaceDeepLink,
 ): WorkspaceDeepLinkAction {
@@ -55,7 +55,7 @@ export function stripWorkspaceDeepLinkParams(url: URL): string {
   return next.pathname + next.search + next.hash;
 }
 
-export function isWorkspaceReadyForDeepLinks(status: WorkspaceLoadState['status']): boolean {
+function isWorkspaceReadyForDeepLinks(status: WorkspaceLoadState['status']): boolean {
   return status === 'ready' || status === 'cached-ready';
 }
 
