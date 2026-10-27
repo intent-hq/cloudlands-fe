@@ -104,9 +104,10 @@
         ? 'overflow-hidden rounded-lg border border-border bg-muted/30'
         : sized
           ? 'max-w-full'
-          : 'size-40'}"
+          : 'size-[min(10rem,50vh)]'}"
       style:aspect-ratio={sized ? `${width} / ${height}` : undefined}
       style:width={sized ? `min(${width}px, 100%)` : undefined}
+      style:max-width={sized ? `min(100%, calc(50vh * ${width} / ${height}))` : undefined}
       data-image-sized={sized || undefined}
       data-loaded={sized ? String(hasLoaded) : undefined}
     >
@@ -119,7 +120,7 @@
         type="button"
         class="block {fileCard
           ? 'h-auto w-full rounded-none border-0 bg-transparent'
-          : `${sized ? 'absolute inset-0 size-full' : 'size-40'} rounded-lg border border-border bg-muted/30 shadow-(--elevation-raised)`} cursor-zoom-in overflow-hidden p-0 transition-opacity hover:opacity-90 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {showPlaceholder
+          : `${sized ? 'absolute inset-0' : ''} size-full rounded-lg border border-border bg-muted/30 shadow-(--elevation-raised)`} cursor-zoom-in overflow-hidden p-0 transition-opacity hover:opacity-90 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {showPlaceholder
           ? 'border-dashed'
           : ''} {hydrationLoading ? 'animate-pulse' : ''}"
         onclick={handleClick}
@@ -140,7 +141,7 @@
           loading="lazy"
           decoding="async"
           class="block {fileCard
-            ? 'h-auto max-h-80 w-full object-contain'
+            ? 'h-auto max-h-[min(20rem,50vh)] w-full object-contain'
             : `size-full ${sized ? 'object-contain' : 'object-cover'}`} {showPlaceholder
             ? 'opacity-0'
             : ''}"
