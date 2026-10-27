@@ -4,7 +4,8 @@
   import { store } from '$store/renderer/store';
   import HomeNewLabelDialog from './HomeNewLabelDialog.svelte';
   import { homeNewLabel } from './home-new-label.svelte';
-  import { focusHomeWorkspaceRow, homeLabelGroupKey } from './home-workspace-menu';
+  import { focusHomeWorkspaceRow } from './home-workspace-menu';
+  import { homeLabelGroupKey } from './home-workspace-labels';
 
   const labelsInUse$ = selectWorkspaceLabelsInUse();
 

@@ -1,6 +1,7 @@
 import { createWorkspaceMicroKeyMenu } from '$features/hardware-console/assignment/workspace-key-menu';
 import { tick } from 'svelte';
 import { homeNewLabel } from './home-new-label.svelte';
+import { homeLabelGroupKey } from './home-workspace-labels';
 import type {
   SidebarMenuEntry,
   SidebarMenuItem,
@@ -45,11 +46,6 @@ interface HomeWorkspaceMenuOptions {
   /** Expand a Home list group (`pinned` or `label:<name>`). */
   expandGroup: (key: string) => void;
   getHomeElement: () => HTMLElement | null;
-}
-
-/** Home list expansion key for a custom label group. */
-export function homeLabelGroupKey(label: string): string {
-  return `label:${label}`;
 }
 
 /** Return focus to a workspace's Home row once it has re-rendered (possibly in a new group). */
