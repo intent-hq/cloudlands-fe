@@ -1,6 +1,6 @@
 {
   "name": "intent",
-  "version": "2.244.1",
+  "version": "2.245.0",
   "description": "Intent",
   "type": "module",
   "main": "dist/main/index.js",

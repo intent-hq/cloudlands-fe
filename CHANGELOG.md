@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.245.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.244.1...v2.245.0) (2026-10-27)
+
+
+### 🚀 Features
+
+* archive-only workspace lifecycle with auto-archive settings ([#3786](https://github.com/intent-hq/cloudlands-fe/issues/3786)) ([e6687d5](https://github.com/intent-hq/cloudlands-fe/commit/e6687d537ef22592beadaa5997043def10ccf42f))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.64 ([#3793](https://github.com/intent-hq/cloudlands-fe/issues/3793)) ([cdbb6b5](https://github.com/intent-hq/cloudlands-fe/commit/cdbb6b578d52ed87b448f443d23e4b4a4b6dc654))
+* **chat:** Cap inline images at half the viewport height ([#3790](https://github.com/intent-hq/cloudlands-fe/issues/3790)) ([2bdb266](https://github.com/intent-hq/cloudlands-fe/commit/2bdb266b6d61398a8c810934e9be4680a07791ea))
+
 ## [2.244.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.244.0...v2.244.1) (2026-10-27)
 
 
