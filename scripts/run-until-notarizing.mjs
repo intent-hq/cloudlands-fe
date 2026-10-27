@@ -99,13 +99,17 @@ export function runUntilNotarizing({
       return;
     }
 
+    const markerTime = () =>
+      existsSync(marker) ? readFileSync(marker, 'utf8').trim() || 'marker present' : null;
+
+    log(`Stall deadline: notarization must start within ${budgetMinutes} min.`);
     // One check at the deadline is enough: the marker only ever appears, so a build
     // that reached notarization in time still has it then.
     const cancelDeadline = armDeadline(() => {
       if (finished) return;
-      if (existsSync(marker)) {
-        const at = readFileSync(marker, 'utf8').trim();
-        log(`Notarization started in time (${at || 'marker present'}); stall deadline disarmed.`);
+      const at = markerTime();
+      if (at) {
+        log(`Notarization started in time (${at}); stall deadline disarmed.`);
         return;
       }
       stalled = true;
@@ -150,6 +154,11 @@ export function runUntilNotarizing({
         finish(1);
         return;
       }
+      const at = markerTime();
+      log(
+        `Packaging exited with code ${code}; notarization ` +
+          (at ? `started at ${at}.` : 'never started (unsigned build or failure before it).'),
+      );
       finish(code ?? 1);
     });
   });

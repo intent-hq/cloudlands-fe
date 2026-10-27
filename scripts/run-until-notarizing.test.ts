@@ -141,7 +141,10 @@ describe('runUntilNotarizing', () => {
     await waitFor(() => hasPid(build.ready));
     writeFileSync(build.release!, '');
     await expect(result).resolves.toBe(3);
-    expect(lines.join('\n')).not.toContain('::error');
+    const out = lines.join('\n');
+    expect(out).not.toContain('::error');
+    expect(out).toMatch(/within 30 min/);
+    expect(out).toMatch(/notarization never started/i);
   });
 
   it('never stops a command that started notarization before the deadline', async () => {
@@ -154,6 +157,15 @@ describe('runUntilNotarizing', () => {
     await expect(result).resolves.toBe(0);
     expect(lines.join('\n')).toMatch(/notarization started in time \(marked\)/i);
     expect(lines.join('\n')).not.toContain('::error');
+  });
+
+  it('reports when notarization started for a build that finishes before the deadline', async () => {
+    const build = fakeBuild(scratch(), { mark: true, release: true, code: 0 });
+    const { result, lines } = start(build);
+    await waitFor(() => hasPid(build.ready));
+    writeFileSync(build.release!, '');
+    await expect(result).resolves.toBe(0);
+    expect(lines.join('\n')).toMatch(/notarization started at marked\./i);
   });
 
   it('passes a later failure through after notarization started', async () => {
