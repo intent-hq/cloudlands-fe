@@ -28,7 +28,7 @@ function menuFor(overrides: Partial<Workspace>) {
     microConnected: false,
     onOpen: vi.fn(),
     onClose: vi.fn(),
-    expandPinned: vi.fn(),
+    expandGroup: vi.fn(),
     getHomeElement: () => null,
   });
 }

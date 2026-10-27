@@ -61,6 +61,44 @@ it('groups root exclusive choices without converting the clear command', () => {
   });
 });
 
+it('keeps unchecked commands of a single-selection submenu out of its radio group', () => {
+  const [submenu] = toSidebarActions([
+    {
+      id: 'label',
+      label: 'Label',
+      selection: 'single',
+      onClick() {},
+      submenu: [
+        { id: 'a', label: 'A', checked: false, onClick() {} },
+        { id: 'b', label: 'B', checked: true, onClick() {} },
+        { id: 'new', label: 'New', onClick() {} },
+      ],
+    },
+  ]);
+  expect(submenu).toMatchObject({
+    kind: 'submenu',
+    children: [
+      {
+        kind: 'radio-group',
+        id: 'label-selection',
+        value: 'b',
+        children: [{ id: 'a' }, { id: 'b' }],
+      },
+      { kind: 'action', id: 'new' },
+    ],
+  });
+  const [commandsOnly] = toSidebarActions([
+    {
+      id: 'label',
+      label: 'Label',
+      selection: 'single',
+      onClick() {},
+      submenu: [{ id: 'new', label: 'New', onClick() {} }],
+    },
+  ]);
+  expect(commandsOnly).toMatchObject({ children: [{ kind: 'action', id: 'new' }] });
+});
+
 describe('context focus ownership', () => {
   const sources: HTMLElement[] = [];
   afterEach(() => sources.splice(0).forEach((source) => source.remove()));

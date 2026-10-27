@@ -138,8 +138,8 @@
       pinned: $pinnedIds$.includes(workspace.id),
       onOpen: openWorkspace,
       onClose: () => (contextMenu = null),
-      expandPinned: () =>
-        updateView({ expandedGroups: { ...$view$.expandedGroups, pinned: true } }),
+      expandGroup: (key) =>
+        updateView({ expandedGroups: { ...$view$.expandedGroups, [key]: true } }),
       getHomeElement: () => homeElement,
     });
   }
