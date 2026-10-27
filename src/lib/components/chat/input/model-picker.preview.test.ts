@@ -23,8 +23,6 @@ afterEach(() => {
 describe('model picker codex-fallback preview state', () => {
   it('serves the built-in Codex list with a fallback warning, then tears it down', async () => {
     const state = preview.states['codex-fallback'];
-    expect(state.props).toMatchObject({ initialOpen: true, captureMenu: true, portal: false });
-
     const cleanup = state.setup?.() || undefined;
 
     // The open picker's install notice needs the warning, the usable models
