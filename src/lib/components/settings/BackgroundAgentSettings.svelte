@@ -200,8 +200,6 @@
       defaultOptionLabel={m.chat_modelPicker_providerDefault_label()}
       defaultOptionDescription={m.settings_backgroundAgent_providerDefault_description()}
       variant="outline"
-      showProviderWarningNotice
-      noticeClass="mt-2"
     />
     {@render effortNotice($defaultModel)}
   </div>
@@ -229,8 +227,6 @@
       defaultOptionLabel={m.settings_backgroundAgent_useDefaultOption()}
       defaultOptionDescription={m.settings_backgroundAgent_useDefault_description()}
       variant="outline"
-      showProviderWarningNotice
-      noticeClass="mt-2"
     />
     {@render effortNotice($typeOverrides$.commit || $defaultModel)}
   </div>
@@ -258,8 +254,6 @@
       defaultOptionLabel={m.settings_backgroundAgent_useDefaultOption()}
       defaultOptionDescription={m.settings_backgroundAgent_useDefault_description()}
       variant="outline"
-      showProviderWarningNotice
-      noticeClass="mt-2"
     />
     {@render effortNotice($typeOverrides$.pr || $defaultModel)}
   </div>
@@ -287,8 +281,6 @@
       defaultOptionLabel={m.settings_backgroundAgent_useDefaultOption()}
       defaultOptionDescription={m.settings_backgroundAgent_useDefault_description()}
       variant="outline"
-      showProviderWarningNotice
-      noticeClass="mt-2"
     />
     {@render effortNotice($typeOverrides$.fast || $defaultModel)}
   </div>
