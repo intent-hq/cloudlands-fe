@@ -1547,9 +1547,10 @@ function unguardedRefs(run: string) {
     .filter((line) => !/^\s*#/.test(line))
     .join('\n');
   for (const [, variable, array] of text.matchAll(/\bfor (\w+) in "\$\{(\w+)\[@\]\}"/g)) {
-    // Probe-only: the array feeds just this loop, and the loop variable appears
+    // Probe-only: the array feeds just this loop (no other `$A`/`${A...}` read;
+    // `${#A[@]}` counts are harmless), and the loop variable appears
     // only as the operand of a `-f`/`-e` test, so no element is ever executed.
-    const arrayUses = text.match(new RegExp(`\\$\\{${array}\\b`, 'g'))?.length ?? 0;
+    const arrayUses = text.match(new RegExp(`\\$\\{?${array}\\b`, 'g'))?.length ?? 0;
     const variableUses = text.match(new RegExp(`\\$\\{?${variable}\\b`, 'g'))?.length ?? 0;
     const tests = text.match(new RegExp(`-[fe]\\s+"\\$\\{?${variable}\\}?"`, 'g'))?.length ?? 0;
     if (arrayUses !== 1 || tests === 0 || variableUses !== tests) continue;
@@ -1725,6 +1726,10 @@ describe('release tag checkout compatibility with the oldest rebuildable tag', (
           run: 'T=(scripts/new.mjs)\nfor X in "${T[@]}"; do\n  if [ -f "$X" ]; then\n    echo ok\n  fi\n  node "$X"\ndone',
         },
         {
+          name: 'ArrayRuns',
+          run: 'T=(scripts/new.mjs)\nfor X in "${T[@]}"; do\n  [ -f "$X" ] && n=1\ndone\nnode "$T"',
+        },
+        {
           name: 'Chained',
           run: 'if [ -f scripts/new.mjs ] || true; then node scripts/new.mjs; fi',
         },
@@ -1748,6 +1753,7 @@ describe('release tag checkout compatibility with the oldest rebuildable tag', (
       'Inline:scripts/new.mjs',
       'Nested:scripts/new.mjs',
       'ProbeRuns:scripts/new.mjs',
+      'ArrayRuns:scripts/new.mjs',
       'Chained:scripts/new.mjs',
       'Branches:scripts/new.mjs',
       'Either:scripts/native.sh',
