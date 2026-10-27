@@ -601,8 +601,8 @@ describe('userPreferencesReducer', () => {
   });
 
   describe('labs preference actions', () => {
-    it('defaults the Multiplayer lab to disabled', () => {
-      expect(initialState.labsMultiplayerEnabled).toBe(false);
+    it('defaults Multiplayer to on: it is no longer an opt-in lab', () => {
+      expect(initialState.labsMultiplayerEnabled).toBe(true);
     });
 
     it('sets and toggles labsMultiplayerEnabled', () => {
@@ -725,14 +725,11 @@ describe('userPreferencesReducer', () => {
       expect(selectReduceMotionOnBattery.select({} as any)).toBe(false);
     });
 
-    it('selects labsMultiplayerEnabled (default false, missing slice safe)', () => {
-      expect(selectLabsMultiplayerEnabled.select(state)).toBe(false);
-      expect(
-        selectLabsMultiplayerEnabled.select({
-          userPreferences: { ...initialState, labsMultiplayerEnabled: true },
-        } as any),
-      ).toBe(true);
-      expect(selectLabsMultiplayerEnabled.select({} as any)).toBe(false);
+    it('selects labsMultiplayerEnabled (default true, missing slice safe)', () => {
+      expect(selectLabsMultiplayerEnabled.select({ userPreferences: initialState } as any)).toBe(
+        true,
+      );
+      expect(selectLabsMultiplayerEnabled.select({} as any)).toBe(true);
     });
     it('selects labsGitLabEnabled (default false, missing slice safe)', () => {
       expect(selectLabsGitLabEnabled.select(state)).toBe(false);
@@ -776,7 +773,7 @@ describe('userPreferencesReducer', () => {
       expect(selectLabsRemoteAgentsEnabled.select({ userPreferences: disabled } as any)).toBe(
         false,
       );
-      expect(disabled.labsMultiplayerEnabled).toBe(false);
+      expect(disabled.labsMultiplayerEnabled).toBe(true);
       expect(disabled.labsGitLabEnabled).toBe(false);
     });
 

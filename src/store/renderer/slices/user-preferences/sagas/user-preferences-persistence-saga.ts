@@ -25,7 +25,6 @@ import {
   selectGithubLinkDefaultAction,
   selectHasCompletedProviderSetup,
   selectLabsSettingsVisible,
-  selectLabsMultiplayerEnabled,
   selectLabsGitLabEnabled,
   selectLabsRemoteAgentsEnabled,
   selectLanguagePreference,
@@ -43,6 +42,7 @@ import {
   FONT_STYLES,
   hydrateActivityLogPresets,
   hydrateShortcutOverrides,
+  userPreferencesHydrated,
   resetAllShortcutOverrides,
   resetShortcutOverride,
   saveActivityLogPreset,
@@ -55,7 +55,6 @@ import {
   setHasCompletedProviderSetup,
   providerSetupHydrated,
   setLabsSettingsVisible,
-  setLabsMultiplayerEnabled,
   setLabsGitLabEnabled,
   setLabsRemoteAgentsEnabled,
   setLanguagePreference,
@@ -72,7 +71,6 @@ import {
   toggleChatAurora,
   toggleCollapseToolRuns,
   toggleLabsSettingsVisibility,
-  toggleLabsMultiplayer,
   toggleLabsGitLab,
   toggleLabsRemoteAgents,
   toggleReduceMotionOnBattery,
@@ -95,7 +93,6 @@ const COLLAPSE_TOOL_RUNS_STORAGE_KEY = 'chat:collapseToolRuns';
 const SHELL_TRANSPARENCY_STORAGE_KEY = 'appearance:shellTransparencyEnabled';
 const REDUCE_MOTION_ON_BATTERY_STORAGE_KEY = 'appearance:reduceMotionOnBattery';
 const LABS_SETTINGS_VISIBLE_STORAGE_KEY = 'labs:settingsVisible';
-const LABS_MULTIPLAYER_STORAGE_KEY = 'labs:multiplayerEnabled';
 const LABS_GITLAB_STORAGE_KEY = 'labs:gitlabEnabled';
 const LABS_REMOTE_AGENTS_STORAGE_KEY = 'labs:remoteAgentsEnabled';
 const AGENT_STORAGE_KEY = 'agent-font-settings';
@@ -220,10 +217,8 @@ export function* hydrateUserPreferencesWorker() {
     yield* put(setLabsSettingsVisible(labsSettingsVisible));
   }
 
-  const labsMultiplayerEnabled = yield* getLocalStorageJSON<boolean>(LABS_MULTIPLAYER_STORAGE_KEY);
-  if (typeof labsMultiplayerEnabled === 'boolean') {
-    yield* put(setLabsMultiplayerEnabled(labsMultiplayerEnabled));
-  }
+  // Multiplayer is always on: a saved `labs:multiplayerEnabled` is neither read nor written.
+  // It is left in place so an older build sharing this storage keeps its own choice.
 
   const labsGitLabEnabled = yield* getLocalStorageJSON<boolean>(LABS_GITLAB_STORAGE_KEY);
   if (typeof labsGitLabEnabled === 'boolean') {
@@ -276,6 +271,7 @@ export function* hydrateUserPreferencesWorker() {
 
   const shortcutOverrides = yield* getLocalStorageJSON<unknown>(SHORTCUT_OVERRIDES_STORAGE_KEY);
   if (shortcutOverrides !== undefined) yield* put(hydrateShortcutOverrides(shortcutOverrides));
+  yield* put(userPreferencesHydrated());
 }
 
 function* persistSpellcheckWorker() {
@@ -357,13 +353,6 @@ function* persistLabsSettingsVisibilityWorker() {
   yield* setLocalStorageJSON(
     LABS_SETTINGS_VISIBLE_STORAGE_KEY,
     yield* selectLabsSettingsVisible.effect(),
-  );
-}
-
-function* persistLabsMultiplayerWorker() {
-  yield* setLocalStorageJSON(
-    LABS_MULTIPLAYER_STORAGE_KEY,
-    yield* selectLabsMultiplayerEnabled.effect(),
   );
 }
 
@@ -478,10 +467,6 @@ function* watchUserPreferenceWrites() {
   yield* takeEvery(
     [setLabsSettingsVisible, toggleLabsSettingsVisibility],
     persistLabsSettingsVisibilityWorker,
-  );
-  yield* takeEvery(
-    [setLabsMultiplayerEnabled, toggleLabsMultiplayer],
-    persistLabsMultiplayerWorker,
   );
   yield* takeEvery([setLabsGitLabEnabled, toggleLabsGitLab], persistLabsGitLabWorker);
   yield* takeEvery(
