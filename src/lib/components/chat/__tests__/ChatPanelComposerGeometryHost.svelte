@@ -50,6 +50,12 @@
   } from '$store/renderer/slices/pending-submissions/pending-submissions-slice';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { setAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import {
+    desktopEntryPatched,
+    desktopEventReceived,
+  } from '$store/renderer/slices/desktop-control/desktop-control-slice';
+  import { request as desktopRequest } from '$features/desktop/renderer/desktop-test-fixtures';
+  import { m } from '$shared/paraglide/messages.js';
 
   let {
     theme = 'light',
@@ -80,6 +86,7 @@
     historyNotice,
     messages,
     ownerPrincipalId,
+    desktopNotice,
   }: {
     theme?: 'light' | 'dark';
     zoom?: number;
@@ -109,6 +116,8 @@
     historyNotice?: 'blocker-report' | 'discussion-request' | 'turn-failure' | 'interruption';
     messages?: AgentMessage[];
     ownerPrincipalId?: string;
+    /** `guidance`: macOS setup notice left after a request expired; `request`: consent card. */
+    desktopNotice?: 'guidance' | 'request';
   } = $props();
 
   $effect(() => {
@@ -653,6 +662,29 @@
     }),
   );
   store.dispatch(setRestoreStatus(workspaceId, 'restored'));
+  let appliedDesktopNotice: typeof desktopNotice;
+  $effect(() => {
+    const notice = desktopNotice;
+    if (notice === appliedDesktopNotice) return;
+    appliedDesktopNotice = notice;
+    if (notice === 'request')
+      store.dispatch(
+        desktopEventReceived({
+          id: 'composer-desktop-request',
+          type: 'desktop:permission-requested',
+          data: { ...desktopRequest, workspaceId, agentId, computerName: 'MacBook' },
+        }),
+      );
+    const guidance = [
+      m.desktop_os_accessibility_description(),
+      m.desktop_os_setup_description(),
+    ].join(' ');
+    store.dispatch(
+      desktopEntryPatched(workspaceId, agentId, store.state.desktopControl.generation, {
+        error: notice ? guidance : undefined,
+      }),
+    );
+  });
   onDestroy(() => {
     stopChatSagas.forEach((stop) => stop());
     disposeStore();

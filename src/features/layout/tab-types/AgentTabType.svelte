@@ -450,13 +450,14 @@
   {#if $workspace}
     {#key tab.agentId}
       <div class="flex h-full min-h-0 w-full flex-1 flex-col">
+        <!-- Capped notices leave the chat, and its prompt box, the remaining height. -->
         {#if $desktop?.error && !$desktop.pending}
-          <Card class="m-3 shrink-0 p-3">
-            <p role="status" class="text-sm">{$desktop.error}</p>
+          <Card class="m-3 max-h-[40%] shrink-0 p-3">
+            <p role="status" class="min-h-0 overflow-y-auto text-sm">{$desktop.error}</p>
           </Card>
         {/if}
         {#if $desktop?.pending}
-          <Card class="m-3 shrink-0 p-3">
+          <Card class="m-3 max-h-[40%] shrink-0 p-3">
             <DesktopConsentToast
               {workspaceId}
               agentId={tab.agentId}
@@ -464,18 +465,20 @@
             />
           </Card>
         {/if}
-        <ChatPanel
-          bind:this={chatPanelRef}
-          workspace={$workspace}
-          agentId={tab.agentId}
-          tabId={tab.id}
-          {agentModel}
-          {isActive}
-          {isPanelFocused}
-          {isInitialWorkspaceAgent}
-          onNavigationStateChange={(state) => (chatNavigationState = state)}
-          onTaskProgressChange={(tasks) => (taskProgressItems = tasks)}
-        />
+        <div class="min-h-0 flex-1">
+          <ChatPanel
+            bind:this={chatPanelRef}
+            workspace={$workspace}
+            agentId={tab.agentId}
+            tabId={tab.id}
+            {agentModel}
+            {isActive}
+            {isPanelFocused}
+            {isInitialWorkspaceAgent}
+            onNavigationStateChange={(state) => (chatNavigationState = state)}
+            onTaskProgressChange={(tasks) => (taskProgressItems = tasks)}
+          />
+        </div>
       </div>
     {/key}
   {:else}
