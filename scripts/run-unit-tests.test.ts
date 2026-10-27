@@ -7,6 +7,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -33,7 +34,7 @@ afterEach(() => {
 });
 
 function fixture(realVitest = false, monorepo = false) {
-  const temporary = mkdtempSync(join(tmpdir(), 'test-unit-args-'));
+  const temporary = realpathSync(mkdtempSync(join(tmpdir(), 'test-unit-args-')));
   roots.push(temporary);
   const root = monorepo ? join(temporary, 'packages/cloudlands-fe') : temporary;
   const write = (file: string, content: string, mode?: number) => {

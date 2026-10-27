@@ -9,6 +9,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -42,8 +43,8 @@ type Coverage = {
 // disk-reading suite and a UI-invariant suite. Every test body appends its
 // file name to an ignored journal, which is the execution oracle.
 function fixture() {
-  const root = mkdtempSync(join(tmpdir(), 'verify-resume-'));
-  const outside = mkdtempSync(join(tmpdir(), 'verify-resume-flags-'));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'verify-resume-')));
+  const outside = realpathSync(mkdtempSync(join(tmpdir(), 'verify-resume-flags-')));
   roots.push(root, outside);
   const write = (file: string, content: string) => {
     mkdirSync(dirname(join(root, file)), { recursive: true });
@@ -407,7 +408,8 @@ const { onAttempt } = installTerminationHandlers();
 // Like the CLI, a failed run sets the exit code; the signal handler owns the exit.
 try {
   await runVerificationPlan(${JSON.stringify(plan(root, changed))}, process.cwd(), { record: true, onAttempt, log() {} });
-} catch {
+} catch (cause) {
+  console.error(cause);
   process.exitCode = 1;
 }`,
     );
@@ -416,33 +418,61 @@ try {
     mkdirSync(scratch);
     const child = spawn(process.execPath, [driver], {
       cwd: root,
-      stdio: 'ignore',
-      env: { ...process.env, TMPDIR: scratch, TMP: scratch, TEMP: scratch },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      // Own the worker process group so an interrupted runner cannot leak children.
+      detached: process.platform !== 'win32',
+      env: {
+        ...process.env,
+        TMPDIR: scratch,
+        TMP: scratch,
+        TEMP: scratch,
+        // One held test must not prevent another file from finishing. Vitest's
+        // inherited environment override takes precedence over fixture config.
+        VITEST_MAX_WORKERS: '2',
+      },
     });
-    const exited = new Promise<number | null>((done) => child.on('exit', (code) => done(code)));
+    let childOutput = '';
+    const captureOutput = (chunk: Buffer) => {
+      childOutput = (childOutput + chunk.toString()).slice(-32_768);
+    };
+    child.stdout.on('data', captureOutput);
+    child.stderr.on('data', captureOutput);
+    const exited = new Promise<number | null>((done) => {
+      child.once('exit', (code) => done(code));
+      child.once('error', () => done(null));
+    });
     const resultsFile = () => {
       const [attempt] = attempts(root);
       return attempt ? join(root, '.dev/verify-changed/attempts', attempt, 'results.jsonl') : '';
     };
-    const deadline = Date.now() + 90_000;
-    while (!(
-      resultsFile() &&
-      existsSync(resultsFile()) &&
-      readFileSync(resultsFile(), 'utf8').includes('"file":"src/b.test.ts"')
-    )) {
-      if (Date.now() > deadline) throw new Error('fixture lane never reported a finished file');
-      await new Promise((done) => setTimeout(done, 100));
+    try {
+      const deadline = Date.now() + 90_000;
+      while (!(
+        resultsFile() &&
+        existsSync(resultsFile()) &&
+        readFileSync(resultsFile(), 'utf8').includes('"file":"src/b.test.ts"')
+      )) {
+        if (Date.now() > deadline)
+          throw new Error(`fixture lane never reported a finished file\n${childOutput}`);
+        await new Promise((done) => setTimeout(done, 100));
+      }
+      child.kill('SIGTERM');
+      expect(await exited, childOutput).toBe(143);
+    } finally {
+      rmSync(hold, { force: true });
+      try {
+        if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, 'SIGKILL');
+        else if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+      }
+      await exited;
     }
-    child.kill('SIGTERM');
-    expect(await exited).toBe(143);
-    rmSync(hold);
     const [interrupted] = attempts(root);
     const partial = coverageOf(root, interrupted);
     expect(partial.complete).toBe(false);
     expect(statuses(partial)['vitest-related src/b.test.ts']).toBe('executed-passed');
     expect(statuses(partial)['vitest-related src/slow.test.ts']).toBe('unfinished');
-    // Allow an orphaned worker that observed the released hold to settle.
-    await new Promise((done) => setTimeout(done, 500));
     bodies();
 
     const resumed = await verify(root, changed, { resume: true });
