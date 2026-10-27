@@ -4,6 +4,21 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.241.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.240.2...v2.241.0) (2026-10-27)
+
+
+### 🚀 Features
+
+* **discussions:** Make discussions workspace-wide with role controls ([#3635](https://github.com/intent-hq/cloudlands-fe/issues/3635)) ([07d4ecb](https://github.com/intent-hq/cloudlands-fe/commit/07d4ecbdaf9f6b54818b6c5b0ecbe12d07b59568))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.59 ([#3771](https://github.com/intent-hq/cloudlands-fe/issues/3771)) ([4f61779](https://github.com/intent-hq/cloudlands-fe/commit/4f617795eefc7c28f1547e2902acf4af3be5b0e5))
+* **chat:** keep the prompt box visible below desktop notices ([#3768](https://github.com/intent-hq/cloudlands-fe/issues/3768)) ([a0ed3b1](https://github.com/intent-hq/cloudlands-fe/commit/a0ed3b192431dcb3278c110c43cc21a82ffdca96))
+* **notes:** remove the edit gutter from notes ([#3766](https://github.com/intent-hq/cloudlands-fe/issues/3766)) ([9f65651](https://github.com/intent-hq/cloudlands-fe/commit/9f6565120f086f561522b46f77fb522625ec0b3c))
+* **ui:** portal Combobox lists into their enclosing dialog ([#3752](https://github.com/intent-hq/cloudlands-fe/issues/3752)) ([294a711](https://github.com/intent-hq/cloudlands-fe/commit/294a7111ccedc89d59870cfa72c006411696dc5d))
+
 ## [2.240.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.240.1...v2.240.2) (2026-10-26)
 
 
