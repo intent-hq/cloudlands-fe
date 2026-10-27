@@ -49,26 +49,33 @@ static class Program {
     [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h);
     [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h,int attribute,out int value,int size);
     [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h,int attribute,out Rect value,int size);
-    delegate void WinEventProc(IntPtr hook,uint ev,IntPtr hwnd,int idObject,int idChild,uint thread,uint time);
-    [StructLayout(LayoutKind.Sequential)] struct Msg { public IntPtr hwnd; public uint message; public UIntPtr wParam; public IntPtr lParam; public uint time; public Point pt; public uint privateData; }
-    [DllImport("user32.dll")] static extern IntPtr SetWinEventHook(uint min,uint max,IntPtr module,WinEventProc proc,uint pid,uint thread,uint flags);
-    [DllImport("user32.dll")] static extern int GetMessage(out Msg msg,IntPtr h,uint min,uint max);
-    // HWNDs can be recycled, even within one process. A destroy hook bumps a
-    // per-handle generation so a replacement window reports a new handle
-    // ("<hwnd>.<generation>") and an old window id can never reach it.
-    static readonly System.Collections.Concurrent.ConcurrentDictionary<long,long> generations=new();
-    static WinEventProc? destroyed;
-    static readonly Lazy<bool> lifetimeTracking=new(() => {
-        var started=new ManualResetEventSlim(); bool ok=false;
-        var thread=new Thread(() => {
-            destroyed=(_,_,h,obj,child,_,_) => { if(obj==0 && child==0 && h!=IntPtr.Zero) generations.AddOrUpdate(h.ToInt64(),1,(_,g)=>g+1); };
-            ok=SetWinEventHook(0x8001,0x8001,IntPtr.Zero,destroyed,0,0,0)!=IntPtr.Zero; // EVENT_OBJECT_DESTROY, out of context
-            started.Set();
-            if(ok) while(GetMessage(out _,IntPtr.Zero,0,0)>0) { }
-        }) { IsBackground=true, Name="window-lifetime" };
-        thread.Start(); started.Wait(); return ok;
-    });
-    static string WindowHandle(IntPtr h) => h.ToInt64()+"."+generations.GetValueOrDefault(h.ToInt64());
+    [DllImport("user32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool SetProp(IntPtr h,string name,IntPtr data);
+    [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern IntPtr GetProp(IntPtr h,string name);
+    [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern IntPtr RemoveProp(IntPtr h,string name);
+    // HWNDs can be recycled, even within one process. Each window is tagged once
+    // with a unique identity property; the system deletes a window's properties
+    // when it is destroyed, so a replacement reusing the HWND has no tag (or gets
+    // a new one) and can never match an old "<hwnd>.<identity>" handle. Unlike a
+    // destroy hook, this does not depend on asynchronous event delivery.
+    const string IdentityProperty="IntentDesktopWindowIdentity";
+    static readonly long identityNonce=(long)RandomNumberGenerator.GetInt32(1,int.MaxValue)<<31;
+    static long identityCounter;
+    static readonly HashSet<IntPtr> tagged=new();
+    /// Null when the identity cannot be established (UIPI blocks tagging a
+    /// higher-integrity window); such windows are listed but never targetable.
+    static string? WindowIdentity(IntPtr h,bool assign) {
+        var value=GetProp(h,IdentityProperty).ToInt64();
+        if(value==0 && assign) {
+            var token=identityNonce|(++identityCounter & 0x7FFFFFFF);
+            if(SetProp(h,IdentityProperty,new IntPtr(token))) { tagged.Add(h); value=token; }
+        }
+        return value==0 ? null : h.ToInt64()+"."+value.ToString("x");
+    }
+    static string WindowHandle(IntPtr h) => WindowIdentity(h,true) ?? h.ToInt64()+".unverified";
+    static void Untag() {
+        foreach(var h in tagged) if(IsWindow(h)) RemoveProp(h,IdentityProperty);
+        tagged.Clear();
+    }
     const string TargetDetail="The target window is not ready for input. Call ws.desktop.focusWindow({ windowId }) if needed, take a new screenshot to confirm the target, then retry.";
     static Mutex? desktopLock;
     static bool owned;
@@ -204,7 +211,6 @@ static class Program {
         return cache[pid]=string.IsNullOrWhiteSpace(name)?"Unknown application":name;
     }
     static object WindowState(JsonElement p) {
-        if(!lifetimeTracking.Value) throw Unsupported("Window lifetime tracking is unavailable");
         var excluded=Exclusions(p);
         int ox=0,oy=0;
         if(p.TryGetProperty("display",out var selected)) {
@@ -241,7 +247,7 @@ static class Program {
         var h=new IntPtr(long.TryParse(handle.Split('.')[0],out var v)?v:0);
         uint pid=(uint)p.GetProperty("pid").GetInt32(), owner=0;
         if(h!=IntPtr.Zero && IsWindow(h)) GetWindowThreadProcessId(h,out owner);
-        if(!lifetimeTracking.Value || owner==0 || owner!=pid || WindowHandle(h)!=handle || !Eligible(h,Exclusions(p),out _)) throw new Refusal("desktop-target-mismatch",TargetDetail,"not_started","window_unavailable");
+        if(owner==0 || owner!=pid || WindowIdentity(h,false)!=handle || !Eligible(h,Exclusions(p),out _)) throw new Refusal("desktop-target-mismatch",TargetDetail,"not_started","window_unavailable");
         SetForegroundWindow(h); BringWindowToTop(h);
         for(int i=0;i<20 && GetForegroundWindow()!=h;i++) Thread.Sleep(50);
     }
@@ -250,7 +256,7 @@ static class Program {
         foreach(var button in heldButtons.ToArray()) MouseEvent(button=="right"?0x10u:4u,0,true);
         heldButtons.Clear();
     }
-    static void Release() { ReleaseInput(); if(owned) { owned=false; desktopLock?.ReleaseMutex(); } desktopLock?.Dispose(); desktopLock=null; }
+    static void Release() { ReleaseInput(); Untag(); if(owned) { owned=false; desktopLock?.ReleaseMutex(); } desktopLock?.Dispose(); desktopLock=null; }
     static object Run(JsonElement p) {
         var op=p.GetProperty("operation").GetString();
         if(op=="identity") {

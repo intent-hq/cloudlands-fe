@@ -114,6 +114,15 @@ describe('recycled native handles', () => {
     expect(targetReason(state, ids.keyFor(oldId), { x: 300, y: 200 })).toBe('window_unavailable');
     expect(ids.idFor(replacement)).not.toBe(oldId);
   });
+  it('never targets a window whose identity the helper could not tag', () => {
+    const ids = new DesktopWindowIds();
+    const elevated = frame('9.unverified', 411, 0, 0, 800, 600);
+    const state: NativeWindowState = {
+      frontmost: { appName: 'Admin', pid: 411 },
+      windows: [elevated],
+    };
+    expect(targetReason(state, ids.keyFor(ids.idFor(elevated)))).toBe('window_unavailable');
+  });
 });
 
 describe('screenshot window metadata', () => {

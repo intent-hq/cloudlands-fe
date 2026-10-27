@@ -8,6 +8,8 @@ static class Program {
     [DllImport("user32.dll")] static extern bool SetWindowDisplayAffinity(IntPtr hwnd, uint affinity);
     [DllImport("user32.dll")] static extern short GetAsyncKeyState(int key);
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern IntPtr GetProp(IntPtr h,string name);
+    static long Identity(Form f) => GetProp(f.Handle,"IntentDesktopWindowIdentity").ToInt64();
     static string helper = "";
     static int result = 1;
     [STAThread] static int Main(string[] args) {
@@ -62,6 +64,8 @@ static class Program {
         Require(mine.GetProperty("pid").GetInt32()==Environment.ProcessId,"Window owner pid mismatch");
         Require(!string.IsNullOrEmpty(mine.GetProperty("appName").GetString()),"Missing application name");
         Require(mine.GetProperty("title").GetString()==target.Text,"Window title mismatch");
+        // Identity tag survives only as long as this window instance.
+        Require(Identity(target)!=0 && mine.GetProperty("handle").GetString()==Handle(target)+"."+Identity(target).ToString("x"),"Window identity tag missing or mismatched");
         int wx=mine.GetProperty("x").GetInt32()+screen.Bounds.X, wy=mine.GetProperty("y").GetInt32()+screen.Bounds.Y;
         int ww=mine.GetProperty("width").GetInt32(), wh=mine.GetProperty("height").GetInt32();
         var center=target.PointToScreen(new Point(target.ClientSize.Width/2,target.ClientSize.Height/2));
@@ -172,6 +176,9 @@ static class Program {
         await Observe(()=>dragged>0,"drag continuation");
         await peer.Call("releaseInput");
         await Observe(()=>(GetAsyncKeyState(1)&0x8000)==0,"cancelled button release");
+        await peer.Call("release");
+        Require(Identity(target)==0,"Release must remove window identity tags");
+        await peer.Call("acquire");
         await peer.Call("key",new {key="Shift",down=true});
         await Observe(()=>(GetAsyncKeyState(0x10)&0x8000)!=0,"held Shift");
         await peer.End();

@@ -67,6 +67,7 @@ export class DesktopWindowIds {
   }
 }
 
+const UNVERIFIED = '.unverified';
 const contains = (w: NativeWindow, p: Point) =>
   w.x <= p.x && p.x < w.x + w.width && w.y <= p.y && p.y < w.y + w.height;
 
@@ -78,7 +79,9 @@ export function targetReason(
   point?: Point,
 ): Exclude<DesktopTargetMismatchReason, 'not_focused'> | undefined {
   const target = key ? state.windows.find((w) => windowKey(w) === key) : undefined;
-  if (!target) return 'window_unavailable';
+  // The Windows helper marks windows whose identity it cannot tag (UIPI) as
+  // unverified: their HWND could be a recycled one, so they are never targets.
+  if (!target || target.handle.endsWith(UNVERIFIED)) return 'window_unavailable';
   if (state.frontmost?.pid !== target.pid) return 'not_frontmost';
   if (point) {
     if (!contains(target, point)) return 'outside_window';
