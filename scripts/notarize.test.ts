@@ -1,4 +1,7 @@
 // @vitest-environment node
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { notarize, runStaplerWithBackoff } = vi.hoisted(() => ({
@@ -88,5 +91,50 @@ describe('notarize afterSign hook', () => {
       notarizing({ ...context, electronPlatformName: 'linux' }),
     ).resolves.toBeUndefined();
     expect(notarize).not.toHaveBeenCalled();
+  });
+  describe('notarization-started marker for the CI stall deadline', () => {
+    let dir: string;
+    beforeEach(() => {
+      dir = mkdtempSync(path.join(tmpdir(), 'notarize-marker-test-'));
+    });
+    afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+    it('writes the marker before submitting to Apple', async () => {
+      const marker = path.join(dir, 'started');
+      vi.stubEnv('INTENT_NOTARIZE_STARTED_FILE', marker);
+      let markerAtSubmit = false;
+      notarize.mockImplementation(async () => {
+        markerAtSubmit = existsSync(marker);
+      });
+      await expect(notarizing(context)).resolves.toBeUndefined();
+      expect(markerAtSubmit).toBe(true);
+    });
+
+    it('does not write a marker when credentials are missing', async () => {
+      const marker = path.join(dir, 'started');
+      vi.stubEnv('INTENT_NOTARIZE_STARTED_FILE', marker);
+      vi.stubEnv('CLOUDLANDS_APPLE_ID', '');
+      vi.stubEnv('APPLE_ID', '');
+      await notarizing(context);
+      expect(existsSync(marker)).toBe(false);
+    });
+
+    it('still notarizes when the marker cannot be written', async () => {
+      vi.stubEnv('INTENT_NOTARIZE_STARTED_FILE', path.join(dir, 'missing-dir', 'started'));
+      notarize.mockResolvedValue(undefined);
+      await expect(notarizing(context)).resolves.toBeUndefined();
+      expect(notarize).toHaveBeenCalledTimes(1);
+      expect(console.warn).toHaveBeenCalledWith(
+        expect.stringMatching(/could not write the notarization-started marker/i),
+        expect.anything(),
+      );
+    });
+
+    it('writes nothing when the variable is unset (local builds)', async () => {
+      vi.stubEnv('INTENT_NOTARIZE_STARTED_FILE', '');
+      notarize.mockResolvedValue(undefined);
+      await expect(notarizing(context)).resolves.toBeUndefined();
+      expect(console.warn).not.toHaveBeenCalled();
+    });
   });
 });
