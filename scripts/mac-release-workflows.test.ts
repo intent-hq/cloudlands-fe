@@ -1533,10 +1533,13 @@ function skippedOnLegacyTag(condition: string | undefined) {
   if (!condition) return false;
   return condition.replace(/^\$\{\{\s*|\s*\}\}$/g, '').trim() === LEGACY_SKIPPED_CONDITION;
 }
-// Script paths a run calls without a presence guard that protects that call:
-// inside the then-branch of `if [ -f X ]`, after an `if [ ! -f X ]` block whose
-// body exits/execs, after `[ -f X ] &&` on the same line, or as an element of an
-// array only probed by `for V in "${A[@]}"; ... [ -f "$V" ]` (not a call at all).
+// Script paths a run calls without a presence guard that protects that call.
+// Deliberately strict: only these shapes count, and anything else is reported.
+// - inside the file-present branch of a bare `if [ -f X ]` / `if [ ! -f X ]`
+//   (the whole condition, nothing chained onto it);
+// - after such a block whose file-missing branch itself runs `exec` or `exit`;
+// - as an element of an array only probed by `for V in "${A[@]}" ... -f "$V"`,
+//   which tests the files rather than calling them.
 function unguardedRefs(run: string) {
   let text = run
     .split('\n')
@@ -1552,36 +1555,43 @@ function unguardedRefs(run: string) {
     .replace(/\b(then|else|do)\s+(?=\S)/g, '$1\n')
     .replace(/^(\s*(?:fi|done))\s*(?:;|&&|\|\|)\s*/gm, '$1\n')
     .split('\n');
-  const test = /^\s*(?:if|elif)\s+(?:\[\s+|test\s+)(!\s+)?-[fe]\s+("?[^\s\]"]+"?)/;
-  const frames: { target?: string; positive: boolean; terminates: boolean }[] = [];
+  const presence = /^\s*if\s+\[\s+(!\s+)?-[fe]\s+("?[\w./-]+"?)\s+\]\s*$/;
+  interface Frame {
+    target?: string;
+    present: boolean;
+    missingTerminates: boolean;
+  }
+  const frames: Frame[] = [];
   const guardedAfter = new Set<string>();
   const refs: string[] = [];
   for (const line of lines) {
-    const opened = test.exec(line);
+    const opened = presence.exec(line);
     if (opened) {
-      frames.push({ target: normalizeRef(opened[2]), positive: !opened[1], terminates: false });
+      frames.push({
+        target: normalizeRef(opened[2]),
+        present: !opened[1],
+        missingTerminates: false,
+      });
       continue;
     }
+    const top = frames[frames.length - 1];
     if (/^\s*if\b/.test(line)) {
-      frames.push({ positive: false, terminates: false });
-    } else if (/^\s*else\b/.test(line) && frames.length) {
-      frames[frames.length - 1].positive = !frames[frames.length - 1].positive;
+      frames.push({ present: false, missingTerminates: false });
+    } else if (/^\s*(?:else|elif)\b/.test(line) && top) {
+      // elif makes the file-missing path conditional, so it never terminates for sure.
+      if (/^\s*elif\b/.test(line)) top.target = undefined;
+      top.present = !top.present;
     } else if (/^\s*fi\b/.test(line)) {
       const frame = frames.pop();
-      if (frame?.target && !frame.positive && frame.terminates) guardedAfter.add(frame.target);
+      if (frame?.target && frame.missingTerminates) guardedAfter.add(frame.target);
       continue;
     }
-    if (/^\s*(?:exec|exit)\b/.test(line) && frames.length)
-      frames[frames.length - 1].terminates = true;
-    const inline = [...line.matchAll(/\[\s+-[fe]\s+("?[^\s\]"]+"?)\s+\]\s*&&/g)].map((m) =>
-      normalizeRef(m[1]),
-    );
+    if (top && !top.present && /^\s*(?:exec|exit)\b/.test(line)) top.missingTerminates = true;
     for (const [ref] of line.matchAll(SCRIPT_REF)) {
       const target = normalizeRef(ref);
       const guarded =
         guardedAfter.has(target) ||
-        inline.includes(target) ||
-        frames.some((frame) => frame.positive && frame.target === target);
+        frames.some((frame) => frame.present && frame.target === target);
       if (!guarded) refs.push(target);
     }
   }
@@ -1693,6 +1703,15 @@ describe('release tag checkout compatibility with the oldest rebuildable tag', (
           run: 'if [ ! -f scripts/new.mjs ]; then echo no; fi\nnode scripts/new.mjs',
         },
         { name: 'Dot', 'working-directory': './', run: 'node scripts/new.mjs' } as Step,
+        { name: 'Inline', run: '[ -f scripts/new.mjs ] && echo ok; node scripts/new.mjs' },
+        {
+          name: 'Chained',
+          run: 'if [ -f scripts/new.mjs ] || true; then node scripts/new.mjs; fi',
+        },
+        {
+          name: 'Branches',
+          run: 'if [ -f scripts/new.mjs ]; then\n  exec node scripts/new.mjs\nelse\n  echo missing\nfi\nnode scripts/new.mjs',
+        },
         {
           name: 'Either',
           if: "needs.resolve.outputs.native_macos == 'true' || needs.resolve.outputs.native_macos == 'false'",
@@ -1706,6 +1725,9 @@ describe('release tag checkout compatibility with the oldest rebuildable tag', (
       'Else:scripts/new.mjs',
       'Falls:scripts/new.mjs',
       'Dot:scripts/new.mjs',
+      'Inline:scripts/new.mjs',
+      'Chained:scripts/new.mjs',
+      'Branches:scripts/new.mjs',
       'Either:scripts/native.sh',
     ]);
     expect(flagged([{ name: 'Sub', run: 'node scripts/old.mjs' }], 'src')).toEqual([
@@ -1718,7 +1740,10 @@ describe('release tag checkout compatibility with the oldest rebuildable tag', (
           run: 'if [ ! -f scripts/new.mjs ]; then exec pnpm run build; fi\nexec node scripts/new.mjs',
         },
         { name: 'Then', run: 'if [ -f scripts/new.mjs ]; then\n  node scripts/new.mjs\nfi' },
-        { name: 'Inline', run: '[ -f scripts/new.mjs ] && node scripts/new.mjs' },
+        {
+          name: 'ElseExits',
+          run: 'if [ -f scripts/new.mjs ]; then\n  echo ok\nelse\n  exit 1\nfi\nnode scripts/new.mjs',
+        },
         {
           name: 'Probe',
           run: 'T=(scripts/a.mjs scripts/b.sh)\nfor X in "${T[@]}"; do [ -f "$X" ] && n=1; done',
