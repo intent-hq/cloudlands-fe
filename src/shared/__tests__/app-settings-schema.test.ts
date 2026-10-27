@@ -102,15 +102,8 @@ describe('app settings schema', () => {
     });
   });
 
-  it('defines the Multiplayer lab preference as an opt-in local-storage boolean', () => {
-    expect(findAppSettingDefinition('labs.multiplayer')).toMatchObject({
-      category: 'labs',
-      type: 'boolean',
-      source: 'local-storage',
-      storageKey: 'labs:multiplayerEnabled',
-      defaultValue: false,
-      apply: { kind: 'redux-action', action: 'userPreferences/setLabsMultiplayerEnabled' },
-    });
+  it('does not expose the retired Multiplayer toggle: Multiplayer is always on', () => {
+    expect(findAppSettingDefinition('labs.multiplayer')).toBeUndefined();
   });
 
   it('exposes theme preset IDs as enum values', () => {

@@ -222,7 +222,6 @@ describe('catalog ownership across the real selection, provider, boot and reload
         },
       ],
     ]);
-    expect(store.state.userPreferences.labsMultiplayerEnabled).toBe(false);
   });
 
   it.each([

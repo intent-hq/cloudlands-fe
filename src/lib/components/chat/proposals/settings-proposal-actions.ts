@@ -43,7 +43,6 @@ import {
   selectGroupByRepo,
   selectGithubLinkDefaultAction,
   selectHasCompletedProviderSetup,
-  selectLabsMultiplayerEnabled,
   selectLabsGitLabEnabled,
   selectLabsRemoteAgentsEnabled,
   selectLanguagePreference,
@@ -100,7 +99,6 @@ import {
   setGroupByRepo,
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
-  setLabsMultiplayerEnabled,
   setLabsGitLabEnabled,
   setLabsRemoteAgentsEnabled,
   setLanguagePreference,
@@ -298,8 +296,6 @@ async function readCurrentSettingValue(definition: AppSettingDefinition): Promis
       return selectChatAuroraEnabled.select(state);
     case 'appearance.shellTransparency':
       return selectShellTransparencyEnabled.select(state);
-    case 'labs.multiplayer':
-      return selectLabsMultiplayerEnabled.select(state);
     case 'labs.gitlab':
       return selectLabsGitLabEnabled.select(state);
     case 'labs.remoteAgents':
@@ -409,9 +405,6 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
       return true;
     case 'appearance.shellTransparency':
       appStore.dispatch(setShellTransparencyEnabled(Boolean(value)));
-      return true;
-    case 'labs.multiplayer':
-      appStore.dispatch(setLabsMultiplayerEnabled(Boolean(value)));
       return true;
     case 'labs.gitlab':
       appStore.dispatch(setLabsGitLabEnabled(Boolean(value)));
