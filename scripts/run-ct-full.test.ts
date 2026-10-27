@@ -1,4 +1,4 @@
-// @verify-changed-exempt: drives run-ct-full.mjs against a fake launcher in its own temp directories
+// @verify-changed-triggers: .github/workflows/browser-tests.yml
 // @vitest-environment node
 import { EventEmitter } from 'node:events';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -92,8 +92,11 @@ process.exit(Number(process.env['FAKE_EXIT_' + shard] ?? (failed ? 1 : 0)));
   return file;
 }
 
-async function runFake(argv: string[], env: Record<string, string> = {}) {
-  const dir = tempDir();
+async function runFake(
+  argv: string[],
+  env: Record<string, string> = {},
+  { dir = tempDir() }: { dir?: string } = {},
+) {
   const stdout = new Sink();
   const stderr = new Sink();
   const lockCalls: unknown[] = [];
@@ -181,6 +184,19 @@ describe('per-shard command', () => {
       '--list',
     ]);
     expect(QUARANTINE_FILTER[1]).toBe('@quarantine\\b');
+  });
+
+  it("uses the same quarantine filter as CI's required CT lane", () => {
+    const workflow = readFileSync(
+      path.join(import.meta.dirname, '..', '.github', 'workflows', 'browser-tests.yml'),
+      'utf8',
+    );
+    const requiredLane = workflow
+      .split('\n')
+      .filter((line) => line.includes('pnpm run test:ct') && line.includes('--shard='));
+    expect(requiredLane).toHaveLength(1);
+    const [flag, pattern] = QUARANTINE_FILTER;
+    expect(requiredLane[0]).toContain(`${flag} '${pattern}'`);
   });
 
   it.each([[['--grep-invert', 'slow']], [['--grep-invert=slow']]])(
@@ -342,6 +358,14 @@ describe('summaries', () => {
     expect(progress.total).toBe(40);
     expect(progress.done).toBe(12);
   });
+
+  it('tracks progress through colored list-reporter output (FORCE_COLOR)', () => {
+    const progress = createProgressTracker();
+    progress.push('\x1b[2mRunning \x1b[22m575\x1b[2m tests using 2 workers\x1b[22m\n');
+    progress.push('  \x1b[32m✓\x1b[39m  \x1b[2m 7 \x1b[22m[chromium] › a:1:1 › x (1s)\n');
+    expect(progress.total).toBe(575);
+    expect(progress.done).toBe(7);
+  });
 });
 
 describe('runFull', () => {
@@ -397,6 +421,14 @@ describe('runFull', () => {
     expect(run.stdout).toContain('[shard 2] f.ct.spec.ts:2:3 › shard 2 breaks');
     expect(run.stdout).toMatch(/total: FAIL — 2\/4 shards passed \| counts unavailable/);
     expect(run.log(4)).toContain('"--shard=4/4"');
+  });
+
+  it('prints a run folder outside the package as an absolute path', async () => {
+    const outside = tempDir();
+    const run = await runFake(['--shards=1', '--out-dir', outside]);
+    expect(run.code).toBe(0);
+    expect(run.stdout).toContain(`log ${path.join(outside, 'shard-1', 'output.log')}`);
+    expect(run.stdout).not.toContain('../');
   });
 
   it('echoes shard output with --stream', async () => {
@@ -455,5 +487,148 @@ describe('runFull', () => {
     expect(stdout.text).toContain('[ct-full] shard 1/4 STOP exit 130');
     expect(stdout.text).toContain('[ct-full] shard 4/4 SKIP not run');
     expect(proc.listenerCount('SIGINT')).toBe(0);
+  });
+
+  it('does not reuse a stale report when --out-dir is reused', async () => {
+    const dir = tempDir();
+    const first = await runFake(['--shards=1'], {}, { dir });
+    expect(first.code).toBe(0);
+    const second = await runFake(
+      ['--shards=1'],
+      { FAKE_NO_REPORT: '1', FAKE_EXIT_1: '1' },
+      { dir },
+    );
+    expect(second.code).toBe(1);
+    expect(second.summary.shards[0]).toMatchObject({ status: 'fail', counts: null });
+    expect(second.summary.shards[0].note).toMatch(/no JSON report/);
+  });
+
+  it('says when a custom --grep-invert replaces the quarantine filter', async () => {
+    const run = await runFake(['--shards=1', '--grep-invert', '@slow']);
+    expect(run.code).toBe(0);
+    expect(run.stderr).toMatch(/--grep-invert.*@quarantine/);
+    expect(run.log(1)).not.toContain('@quarantine');
+  });
+
+  function fakeChild(pid = 4242) {
+    const pipe = () =>
+      Object.assign(new EventEmitter(), {
+        destroyed: false,
+        destroy() {
+          this.destroyed = true;
+        },
+      });
+    return Object.assign(new EventEmitter(), {
+      pid,
+      stdout: pipe(),
+      stderr: pipe(),
+      killed: [] as string[],
+      kill(signal: string) {
+        this.killed.push(signal);
+        return true;
+      },
+    });
+  }
+
+  it('starts each shard in its own process group so one Ctrl-C is forwarded once', async () => {
+    const dir = tempDir();
+    const proc = new EventEmitter();
+    const options: Array<{ detached?: boolean }> = [];
+    const groupKills: Array<[number, string]> = [];
+    let child: ReturnType<typeof fakeChild> | undefined;
+    const spawnImpl = (_cmd: string, _args: string[], opts: { detached?: boolean }) => {
+      options.push(opts);
+      const current = fakeChild();
+      child = current;
+      setImmediate(() => {
+        // The same Ctrl-C arrives twice (TTY group + pnpm forwarding).
+        proc.emit('SIGINT', 'SIGINT');
+        proc.emit('SIGINT', 'SIGINT');
+        setImmediate(() => current.emit('close', null, 'SIGINT'));
+      });
+      return current;
+    };
+    const code = await runFull({
+      argv: ['--out-dir', path.join(dir, 'run'), '--heartbeat=0'],
+      cwd: dir,
+      spawnImpl,
+      killProcessGroup: (pid: number, signal: string) => groupKills.push([pid, signal]),
+      acquireLock: async () => () => {},
+      stdout: new Sink(),
+      stderr: new Sink(),
+      proc,
+    });
+    expect(code).toBe(130);
+    expect(options[0]?.detached).toBe(process.platform !== 'win32');
+    expect(child?.killed).toEqual(['SIGINT']);
+    expect(groupKills).toEqual([]);
+  });
+
+  it('kills the whole shard process group on a later second signal', async () => {
+    const dir = tempDir();
+    const proc = new EventEmitter();
+    const groupKills: Array<[number, string]> = [];
+    let clock = 0;
+    const spawnImpl = () => {
+      const current = fakeChild(5151);
+      setImmediate(() => {
+        proc.emit('SIGINT', 'SIGINT');
+        clock += 5_000;
+        proc.emit('SIGINT', 'SIGINT');
+        setImmediate(() => current.emit('close', null, 'SIGKILL'));
+      });
+      return current;
+    };
+    const code = await runFull({
+      argv: ['--out-dir', path.join(dir, 'run'), '--heartbeat=0'],
+      cwd: dir,
+      spawnImpl,
+      now: () => clock,
+      killProcessGroup: (pid: number, signal: string) => groupKills.push([pid, signal]),
+      acquireLock: async () => () => {},
+      stdout: new Sink(),
+      stderr: new Sink(),
+      proc,
+    });
+    expect(code).toBe(130);
+    expect(groupKills).toEqual([[5151, 'SIGKILL']]);
+  });
+
+  it('closes a shard whose leaked processes hold its pipes, without crashing on late output', async () => {
+    const dir = tempDir();
+    const groupKills: Array<[number, string]> = [];
+    let child: ReturnType<typeof fakeChild> | undefined;
+    const spawnImpl = () => {
+      const current = fakeChild(6262);
+      child = current;
+      setImmediate(() => {
+        current.stdout.emit('data', 'before exit\n');
+        current.emit('exit', 0, null);
+      });
+      return current;
+    };
+    const run = runFull({
+      argv: ['--out-dir', path.join(dir, 'run'), '--heartbeat=0', '--shards=1'],
+      cwd: dir,
+      spawnImpl,
+      drainMs: 20,
+      killProcessGroup: (pid: number, signal: string) => groupKills.push([pid, signal]),
+      acquireLock: async () => () => {},
+      stdout: new Sink(),
+      stderr: new Sink(),
+      proc: new EventEmitter(),
+    });
+    const code = await run;
+    // A leaked grandchild writes after the shard was closed.
+    child?.stderr.emit('data', 'late output\n');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(code).toBe(0);
+    expect(groupKills).toEqual([[6262, 'SIGKILL']]);
+    expect(child?.stdout.destroyed).toBe(true);
+    expect(child?.stderr.destroyed).toBe(true);
+    const log = readFileSync(path.join(dir, 'run', 'shard-1', 'output.log'), 'utf8');
+    expect(log).toContain('before exit');
+    expect(log).toMatch(/output stayed open; killing leftover processes/);
+    expect(log).not.toContain('late output');
   });
 });

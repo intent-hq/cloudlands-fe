@@ -24,14 +24,27 @@
  *     shard, the failed/flaky cases, a total line and `summary.json`;
  *   - exit 0 only when every shard passed, 1 otherwise, 128+signal when
  *     interrupted (the current shard is stopped, the rest are skipped).
+ *
+ * Each shard's launcher runs in its own process group (POSIX), so a terminal
+ * Ctrl-C reaches only this runner, which forwards it to the launcher exactly
+ * once; the launcher treats a second signal as "kill Playwright now". The same
+ * Ctrl-C arriving twice (terminal and pnpm) is ignored; a later second signal,
+ * or a launcher that leaves processes holding its pipes, kills the whole group
+ * so nothing outlives the shard while the port lock is released.
  */
 import { spawn } from 'node:child_process';
-import { createWriteStream, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import os from 'node:os';
+import {
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { casesFromJsonReport, casesFromListLog } from './ct-run-failures-lib.mjs';
-import { acquireCtPortLock } from './run-ct-tests.mjs';
+import { casesFromJsonReport, casesFromListLog, cleanLogLines } from './ct-run-failures-lib.mjs';
+import { acquireCtPortLock, exitCodeFromChild } from './run-ct-tests.mjs';
 import { HELD_LOCK_ENV, ctLockKey, ctPort } from './verification-lock.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -40,12 +53,36 @@ const DEFAULT_LAUNCHER = path.join(repoRoot, 'scripts', 'run-ct-tests.mjs');
 export const DEFAULT_SHARDS = 4;
 export const DEFAULT_OUT_ROOT = 'ct-full-runs';
 export const DEFAULT_HEARTBEAT_MINUTES = 5;
+/** Must match the required lane in .github/workflows/browser-tests.yml (asserted by the test). */
 export const QUARANTINE_FILTER = ['--grep-invert', '@quarantine\\b'];
 /** Exit code of a launcher whose Playwright child died of SIGABRT (V8 heap exhaustion). */
 const HEAP_EXHAUSTION_EXIT = 134;
 const PREFIX = '[ct-full]';
 /** How long output may keep arriving after the launcher exits before the shard is closed. */
 const STDIO_DRAIN_MS = 5_000;
+/** A repeat of the first signal within this window is the same Ctrl-C delivered twice. */
+const DUPLICATE_SIGNAL_MS = 1_000;
+const SHUTDOWN_GRACE_MS = 15_000;
+const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+/** POSIX only: Windows has no process groups to signal. */
+const DETACH_SHARDS = process.platform !== 'win32';
+
+function defaultKillProcessGroup(pid, signal) {
+  process.kill(-pid, signal);
+}
+
+/** SIGKILL everything in a detached shard's process group, or the launcher alone. */
+function killShardTree(child, killProcessGroup) {
+  if (DETACH_SHARDS && child?.pid) {
+    try {
+      killProcessGroup(child.pid, 'SIGKILL');
+      return;
+    } catch {
+      // ESRCH: the group is already gone.
+    }
+  }
+  child?.kill('SIGKILL');
+}
 
 /** Playwright options this runner owns per shard; a caller value would break the per-shard layout. */
 const OWNED_OPTIONS = [
@@ -317,7 +354,7 @@ export function createProgressTracker() {
       pending += chunk;
       const lines = pending.split(/\r?\n/);
       pending = lines.pop() ?? '';
-      for (const line of lines) {
+      for (const line of cleanLogLines(lines.join('\n'))) {
         const running = /Running (\d+) tests? using/.exec(line);
         if (running) total = Number(running[1]);
         const result = /^\s+\S+\s+(\d+) \[[^\]]*\] › /.exec(line);
@@ -325,7 +362,7 @@ export function createProgressTracker() {
       }
     },
     get done() {
-      return done;
+      return total === null ? done : Math.min(done, total);
     },
     get total() {
       return total;
@@ -352,27 +389,41 @@ export function runShard({
   stdout = process.stdout,
   stderr = process.stderr,
   onChild = () => {},
+  drainMs = STDIO_DRAIN_MS,
+  killProcessGroup = defaultKillProcessGroup,
 }) {
   return new Promise((resolve) => {
     const started = now();
     const log = createWriteStream(logPath);
+    let logError = null;
+    log.on('error', (error) => {
+      if (logError) return;
+      logError = error;
+      stderr.write(`${PREFIX} ${label}: writing ${logPath} failed: ${error.message}\n`);
+    });
+    let settled = false;
+    const writeLog = (text) => {
+      if (!settled && !logError) log.write(text);
+    };
     const progress = createProgressTracker();
     const child = spawnImpl(process.execPath, [launcher, ...args], {
       cwd,
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
+      detached: DETACH_SHARDS,
     });
     onChild(child);
-    const pipe = (source, echo) => {
+    const pipe = (source, echo, { track }) => {
       source?.setEncoding?.('utf8');
       source?.on('data', (chunk) => {
-        log.write(chunk);
-        progress.push(chunk);
+        writeLog(chunk);
+        if (track) progress.push(chunk);
         if (stream) echo.write(chunk);
       });
     };
-    pipe(child.stdout, stdout);
-    pipe(child.stderr, stderr);
+    // The list reporter writes to stdout; a shared line buffer would splice stderr into it.
+    pipe(child.stdout, stdout, { track: true });
+    pipe(child.stderr, stderr, { track: false });
     const timer =
       heartbeatMs > 0
         ? setInterval(() => {
@@ -384,28 +435,34 @@ export function runShard({
           }, heartbeatMs)
         : null;
     timer?.unref?.();
-    let settled = false;
     const finish = (exitCode) => {
       if (settled) return;
       settled = true;
       if (timer) clearInterval(timer);
       const durationMs = now() - started;
-      log.end(() => resolve({ exitCode, durationMs }));
+      const done = () => resolve({ exitCode, durationMs });
+      if (logError || log.destroyed) done();
+      else log.end(done);
     };
     child.on('error', (error) => {
-      log.write(`${PREFIX} failed to spawn the launcher: ${error.message}\n`);
+      writeLog(`${PREFIX} failed to spawn the launcher: ${error.message}\n`);
       finish(1);
     });
-    const exitCode = (code, signal) => {
-      if (code !== null || !signal) return code ?? 1;
-      const number = os.constants.signals[signal];
-      return number ? 128 + number : 1;
-    };
-    child.on('close', (code, signal) => finish(exitCode(code, signal)));
-    // `close` waits for stdio to drain; a leaked grandchild holding the pipes
-    // open must not hang the run after the launcher itself has exited.
+    child.on('close', (code, signal) => finish(exitCodeFromChild(code, signal)));
+    // `close` waits for stdio to drain. When the launcher has exited but
+    // something it started still holds the pipes, kill that leftover group and
+    // drop the pipes: it must neither hang the run nor outlive the port lock.
     child.on('exit', (code, signal) => {
-      setTimeout(() => finish(exitCode(code, signal)), STDIO_DRAIN_MS).unref?.();
+      setTimeout(() => {
+        if (settled) return;
+        writeLog(
+          `${PREFIX} launcher exited but its output stayed open; killing leftover processes\n`,
+        );
+        killShardTree(child, killProcessGroup);
+        child.stdout?.destroy?.();
+        child.stderr?.destroy?.();
+        finish(exitCodeFromChild(code, signal));
+      }, drainMs).unref?.();
     });
   });
 }
@@ -442,6 +499,8 @@ export async function runFull({
   stdout = process.stdout,
   stderr = process.stderr,
   proc = process,
+  drainMs = STDIO_DRAIN_MS,
+  killProcessGroup = defaultKillProcessGroup,
 }) {
   let options;
   try {
@@ -460,8 +519,17 @@ export async function runFull({
   mkdirSync(runDir, { recursive: true });
   const listOnly = isListOnly(options.forwarded);
   const say = (line) => stderr.write(`${line}\n`);
-  // Print paths relative to the package so per-shard lines stay readable.
-  const shown = (file) => path.relative(cwd, file) || '.';
+  if (hasGrepInvert(options.forwarded))
+    say(
+      `${PREFIX} custom --grep-invert given: CI's "${QUARANTINE_FILTER.join(' ')}" is not added, ` +
+        'so @quarantine tests run unless your pattern excludes them',
+    );
+  // Print paths inside the package relative to it so per-shard lines stay readable.
+  const shown = (file) => {
+    const relative = path.relative(cwd, file);
+    if (!relative) return '.';
+    return relative.startsWith('..') || path.isAbsolute(relative) ? file : relative;
+  };
 
   const lockKey = ctLockKey(env);
   let releaseLock;
@@ -476,21 +544,25 @@ export async function runFull({
   }
 
   let interrupted = null;
+  let interruptedAt = 0;
   let current = null;
   let killTimer = null;
   const onSignal = (signal) => {
     if (interrupted) {
-      current?.kill('SIGKILL');
+      if (signal === interrupted && now() - interruptedAt < DUPLICATE_SIGNAL_MS) return;
+      say(`${PREFIX} ${signal} again: killing the current shard's processes`);
+      killShardTree(current, killProcessGroup);
       return;
     }
     interrupted = signal;
+    interruptedAt = now();
     say(`${PREFIX} ${signal}: stopping the current shard; remaining shards will not run`);
+    // The launcher forwards it to Playwright and escalates on its own grace timer.
     current?.kill(signal);
-    killTimer = setTimeout(() => current?.kill('SIGKILL'), 15_000);
+    killTimer = setTimeout(() => killShardTree(current, killProcessGroup), SHUTDOWN_GRACE_MS);
     killTimer.unref?.();
   };
-  proc.on('SIGINT', onSignal);
-  proc.on('SIGTERM', onSignal);
+  for (const signal of SIGNALS) proc.on(signal, onSignal);
 
   const wallStarted = now();
   const results = [];
@@ -502,6 +574,8 @@ export async function runFull({
         continue;
       }
       const shardDir = path.join(runDir, `shard-${shard}`);
+      // A reused --out-dir must not leave an earlier run's report for this shard.
+      rmSync(shardDir, { recursive: true, force: true });
       mkdirSync(shardDir, { recursive: true });
       const logPath = path.join(shardDir, 'output.log');
       const label = `shard ${shard}/${options.shards}`;
@@ -522,15 +596,19 @@ export async function runFull({
         onChild: (child) => {
           current = child;
         },
+        drainMs,
+        killProcessGroup,
       });
       current = null;
+      const report = readJson(path.join(shardDir, 'results.json'));
       const result = summarizeShard({
         shard,
         shards: options.shards,
         exitCode,
         durationMs,
-        report: readJson(path.join(shardDir, 'results.json')),
-        logText: readText(logPath),
+        report,
+        // The multi-MB log is only parsed when there is no JSON report.
+        logText: report ? '' : readText(logPath),
         logPath: shown(logPath),
         interrupted: Boolean(interrupted),
         listOnly,
@@ -540,8 +618,7 @@ export async function runFull({
     }
   } finally {
     if (killTimer) clearTimeout(killTimer);
-    proc.off('SIGINT', onSignal);
-    proc.off('SIGTERM', onSignal);
+    for (const signal of SIGNALS) proc.off(signal, onSignal);
     releaseLock();
   }
 
@@ -553,10 +630,7 @@ export async function runFull({
   );
   stdout.write(`${formatSummary(results, { runDir: shown(runDir), wallMs, listOnly })}\n`);
   stdout.write(`${PREFIX} summary.json: ${shown(path.join(runDir, 'summary.json'))}\n`);
-  if (interrupted) {
-    const number = os.constants.signals[interrupted];
-    return number ? 128 + number : 1;
-  }
+  if (interrupted) return exitCodeFromChild(null, interrupted);
   return total.ok ? 0 : 1;
 }
 
