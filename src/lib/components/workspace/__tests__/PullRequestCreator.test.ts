@@ -11,6 +11,7 @@ import { guestSessionsListReceived } from '$store/renderer/slices/guest-sessions
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 import { setPRContent } from '$store/renderer/slices/changes/changes-slice';
 import { selectAcceptChangesState } from '$store/renderer/slices/changes/changes-selectors';
+import { selectLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { PullRequestStatus, type Workspace } from '$shared/types';
 import { warmImport } from '../../../../test/warm-import';
@@ -110,6 +111,12 @@ describe('PullRequestCreator', () => {
     stop();
     dispose();
     vi.restoreAllMocks();
+  });
+
+  it('keeps the classic PR form while Multiplayer is on (native review stays a separate gate)', async () => {
+    expect(selectLabsMultiplayerEnabled.select(store.state)).toBe(true);
+    const { container } = await renderCreator();
+    expect(findButton(container, 'Auto-fill & Create')).toBeTruthy();
   });
 
   it('auto-fills and creates through the workflow, then calls back with the authoritative workspace PR', async () => {

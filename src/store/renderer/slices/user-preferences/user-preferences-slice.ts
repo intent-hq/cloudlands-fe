@@ -71,6 +71,11 @@ export type UserPreferencesState = {
   labsGitLabEnabled: boolean;
   /** Offers new remote setup/placement only; never restricts existing sessions or local execution. */
   labsRemoteAgentsEnabled: boolean;
+  /**
+   * Internal gate for the native review pull-request flow. Off for everyone, so PR creation
+   * keeps the classic flow; not persisted and has no UI. Tests and previews turn it on.
+   */
+  nativeReviewEnabled: boolean;
   agentFontStyle: AgentFontStyle;
   noteFontStyle: NoteFontStyle;
   codeFontFamily: string;
@@ -145,6 +150,7 @@ export const initialState: UserPreferencesStoreState = {
   labsMultiplayerEnabled: true,
   labsGitLabEnabled: false,
   labsRemoteAgentsEnabled: false,
+  nativeReviewEnabled: false,
   ...fontSettingsInitialState,
   ...notificationSettingsInitialState,
   notificationVolumeEditId: 0,
@@ -418,6 +424,15 @@ export const setLabsRemoteAgentsEnabled = labsRemoteAgentsPreference.setAction;
 
 export const toggleLabsRemoteAgents = labsRemoteAgentsPreference.toggleAction;
 
+const nativeReviewPreference = createBooleanPreference<UserPreferencesStoreState>({
+  sliceName: 'userPreferences',
+  field: 'nativeReviewEnabled',
+  setActionName: 'setNativeReviewEnabled',
+  toggleActionName: 'toggleNativeReview',
+});
+
+export const setNativeReviewEnabled = nativeReviewPreference.setAction;
+
 export const userPreferencesReducer = createReducer<UserPreferencesStoreState>(initialState);
 userPreferencesReducer.with(agentRulesEditorOpened, (state) => ({
   ...state,
@@ -532,6 +547,7 @@ labsSettingsVisibilityPreference.register(userPreferencesReducer);
 labsMultiplayerPreference.register(userPreferencesReducer);
 labsGitLabPreference.register(userPreferencesReducer);
 labsRemoteAgentsPreference.register(userPreferencesReducer);
+nativeReviewPreference.register(userPreferencesReducer);
 userPreferencesReducer.with(setUpdateChannel, (state, { payload: [channel] }) => ({
   ...state,
   updateChannel: channel,
