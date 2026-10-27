@@ -2784,6 +2784,10 @@ describe('ModelPicker multi-provider mode', () => {
     expect(screen.getByRole('link', { name: /Setup docs/ }).getAttribute('href')).toBe(
       'https://developers.openai.com/codex/cli#cli-setup',
     );
+    // The notice replaces the generic warning row for the same fallback, so
+    // the warning is not stated twice; Retry stays available.
+    expect(screen.queryByText(/Codex not installed; using static model list/)).toBeNull();
+    expect(screen.getByRole('button', { name: /Retry/ })).toBeTruthy();
   });
 
   it('hides the Codex default-list notice while another provider tab is browsed', async () => {

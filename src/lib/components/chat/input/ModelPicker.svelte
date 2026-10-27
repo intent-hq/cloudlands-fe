@@ -1515,12 +1515,24 @@
         (agentProviderModels?.length ?? 0) > 0)
     );
   }
+  // Same browsed provider as `activeProviderIssue` (falls back to the
+  // preferred tab before the first browse), limited to enabled providers.
   const codexFallbackWarning = $derived.by<ProviderWarningNotice | null>(() => {
-    const providerId = normalizeProviderId(activeBrowseProviderId);
+    const providerId = normalizeProviderId(activeBrowseProviderId || preferredBrowseProviderId);
     if (!providerId || providerRefBaseId(providerId) !== 'codex') return null;
+    if (!$availableEnabledProviderIds$.some((id) => normalizeProviderId(id) === providerId))
+      return null;
     if ($allProviderStaleFlags$[providerId] && hasCatalogModels(providerId)) return null;
     return createProviderWarningNotice(providerId, $allProviderWarnings$[providerId]);
   });
+  // The notice restates the catalog's fallback warning, so drop the generic
+  // row for it; a request error on the same provider still gets its own row.
+  const footerProviderWarnings = $derived(
+    codexFallbackWarning &&
+      !$providerRequests$[activeBrowseProviderId || preferredBrowseProviderId]?.error
+      ? []
+      : nonBlockingProviderWarnings,
+  );
 
   // Display groups — every picker browses one provider at a time.
   const displayGroups = $derived.by(() => {
@@ -2387,9 +2399,9 @@
         <span>{m.chat_modelPicker_loadingMore_label()}</span>
       </div>
     {/if}
-    {#if nonBlockingProviderWarnings.length > 0}
+    {#if footerProviderWarnings.length > 0}
       <div class="px-3 py-2 space-y-1.5 text-xs">
-        {#each nonBlockingProviderWarnings as warning (warning.providerId)}
+        {#each footerProviderWarnings as warning (warning.providerId)}
           <div class="flex items-start gap-2 text-muted-foreground" role="status">
             <ModelProviderErrorItem
               providerId={warning.providerId}
