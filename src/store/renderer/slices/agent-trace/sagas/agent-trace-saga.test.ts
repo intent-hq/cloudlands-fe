@@ -392,6 +392,54 @@ describe('agentTraceSaga', () => {
     await stop(harness.task);
   });
 
+  it('keeps loaded turns and reports the failure when a later page fails', async () => {
+    mocks.request.mockImplementation(
+      (method: string, params: { eventType: string; nextToken?: string }) => {
+        if (method !== 'event.query') return Promise.resolve({});
+        if (params.eventType !== 'agent:last-message') {
+          return Promise.resolve({ items: [], nextToken: null });
+        }
+        return params.nextToken
+          ? Promise.reject(new Error('daemon busy'))
+          : Promise.resolve({ items: [userRow('u2', 1_000)], nextToken: 'older' });
+      },
+    );
+    const harness = createHarness();
+    harness.dispatch(agentTraceOpened(WS));
+    await vi.waitFor(() => expect(harness.trace()?.status).toBe('error'));
+    expect(recordsOf(harness.trace()).map((record) => record.id)).toEqual(['u2']);
+    await stop(harness.task);
+  });
+
+  it('reports a failed subscription after history loads, and a retry subscribes again', async () => {
+    serve({ 'agent:last-message': [{ items: [userRow('u1', 1_000)], nextToken: null }] });
+    mocks.subscribe
+      .mockRejectedValueOnce(new Error('daemon busy'))
+      .mockResolvedValueOnce({ subscriptionId: 'sub-retry' });
+    const harness = createHarness();
+    harness.dispatch(agentTraceOpened(WS));
+    await vi.waitFor(() => expect(harness.trace()?.status).toBe('error'));
+    expect(recordsOf(harness.trace()).map((record) => record.id)).toEqual(['u1']);
+
+    harness.dispatch(agentTraceRetryRequested(WS));
+    await vi.waitFor(() => expect(harness.trace()?.status).toBe('ready'));
+    expect(mocks.subscribe).toHaveBeenCalledTimes(2);
+    emit('sub-retry', toolRow('live-1', 0, 'started'));
+    await vi.waitFor(() =>
+      expect(recordsOf(harness.trace()).map((record) => record.id)).toContain('live-1'),
+    );
+    await stop(harness.task);
+  });
+
+  it('treats a subscription without an id as failed', async () => {
+    serve({});
+    mocks.subscribe.mockResolvedValueOnce({});
+    const harness = createHarness();
+    harness.dispatch(agentTraceOpened(WS));
+    await vi.waitFor(() => expect(harness.trace()?.status).toBe('error'));
+    await stop(harness.task);
+  });
+
   it('marks the turn history failed when the daemon read fails', async () => {
     mocks.request.mockRejectedValue(new Error('daemon offline'));
     const harness = createHarness();

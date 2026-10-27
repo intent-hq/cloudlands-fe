@@ -27,6 +27,7 @@
   "agentTrace_empty_description": "Läufe erscheinen hier, sobald ein Agent zu arbeiten beginnt.",
   "agentTrace_empty_title": "Noch keine Agentenläufe",
   "agentTrace_error_label": "Agentenaktivität konnte nicht geladen werden.",
+  "agentTrace_incomplete_label": "Die Aktivität ist möglicherweise unvollständig.",
   "agentTrace_kind_agent_label": "Agent",
   "agentTrace_kind_subAgent_label": "Unteragent",
   "agentTrace_kind_tool_label": "Tool-Aufruf",
