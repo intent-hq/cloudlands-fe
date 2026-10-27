@@ -1,5 +1,6 @@
 import type { Locator, Page } from '@playwright/experimental-ct-svelte';
 import { expect, test } from '../../../../test/ct-test';
+import { expectDismissibleLayerArmed } from '../../../../test/dismissible-layer';
 import type { CDPSession } from '@playwright/test';
 import ChatMessageNavigatorIntegrationHost from './ChatMessageNavigatorIntegrationHost.svelte';
 
@@ -404,6 +405,8 @@ test.describe('chat message navigator production path', () => {
     await expect(search).toBeFocused();
     await picker.getByRole('option').first().focus();
     await expect(picker).toBeVisible();
+    // bits-ui adds focus-outside and pointer-outside handling in the same deferred step.
+    await expectDismissibleLayerArmed(picker);
     await closeButton.focus();
     await expect(picker).toHaveCount(0);
     await expect(closeButton).toBeFocused();
@@ -413,6 +416,7 @@ test.describe('chat message navigator production path', () => {
     await trigger.click();
     await pickerForTrigger(page, trigger);
     await expect(search).toBeFocused();
+    await expectDismissibleLayerArmed(picker);
     await page.mouse.click(0, 0);
     await expect(picker).toHaveCount(0);
     await expect(panelActions).toHaveAttribute('aria-expanded', 'false');

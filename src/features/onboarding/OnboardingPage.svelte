@@ -7,10 +7,10 @@
    * for the workspace creation flow (/workspace/new).
    */
 
-  import { fly } from '$lib/motion';
+  import { fade, fly } from '$lib/motion';
   import { onDestroy, onMount } from 'svelte';
   import Fa from 'svelte-fa';
-  import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
+  import { faArrowLeft, faChevronLeft, faChevronRight } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$shared/generated/ipc-client';
   import { selectHostRole } from '$store/renderer/slices/principal/principal-selectors';
   import {
@@ -138,6 +138,7 @@
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
   import { createLogger } from '$lib/utils/client-logger';
   import { cn } from '$lib/utils';
+  import { createHorizontalPager } from '$lib/interaction';
 
   import { getRandomSuggestions } from '$features/onboarding/utils/prompt-suggestions';
   import {
@@ -755,6 +756,7 @@
 
   let hasConnectedProvider = $state(false);
   let agentGridRef: AgentGrid | null = $state(null);
+  const providerPager = createHorizontalPager({ itemSelector: '[data-provider-id]' });
   let onboardingSkipIsolation = $state(false);
 
   let onboardingTestPromptRunning = $state(false);
@@ -1581,8 +1583,13 @@
                           {/if}
                         </div>
                       {:else if isWelcomeStep}
-                        <div class="py-6 overflow-x-auto scrollbar-none -mx-6">
-                          <div class="pl-[max(1.5rem,calc((100%-64rem)/2))] pr-32">
+                        <!-- Cards start and end on the content column; past it they bleed to the edges. -->
+                        <div
+                          id="onboarding-provider-strip"
+                          class="relative -mx-6 overflow-x-auto scrollbar-none py-6 scroll-px-[max(1.5rem,calc((100%-64rem)/2))]"
+                          {@attach providerPager.attach}
+                        >
+                          <div class="w-fit min-w-full px-[max(1.5rem,calc((100%-64rem)/2))]">
                             <AgentGrid
                               bind:this={agentGridRef}
                               onAvailabilityChange={(hasAny) => {
@@ -1602,23 +1609,53 @@
                           </div>
                         </div>
                         <div class="max-w-5xl mx-auto flex flex-col items-start gap-2 mt-9">
-                          <Button
-                            class="group/button"
-                            size="xl"
-                            variant={!hasConnectedProvider ? 'outline' : 'primary'}
-                            disabled={!hasConnectedProvider}
-                            loading={onboardingTestPromptRunning}
-                            onclick={advanceFromWelcomeStep}
-                          >
-                            {#if onboardingTestPromptRunning}
-                              {m.onboarding_testPrompt_running_label()}
-                            {:else}
-                              {m.onboarding_page_letsGo_label()}
-                              {#if hasConnectedProvider}
-                                <span class="ml-1 opacity-50">⌘↵</span>
+                          <div class="flex w-full items-center justify-between gap-4">
+                            <Button
+                              class="group/button"
+                              size="xl"
+                              variant={!hasConnectedProvider ? 'outline' : 'primary'}
+                              disabled={!hasConnectedProvider}
+                              loading={onboardingTestPromptRunning}
+                              onclick={advanceFromWelcomeStep}
+                            >
+                              {#if onboardingTestPromptRunning}
+                                {m.onboarding_testPrompt_running_label()}
+                              {:else}
+                                {m.onboarding_page_letsGo_label()}
+                                {#if hasConnectedProvider}
+                                  <span class="ml-1 opacity-50">⌘↵</span>
+                                {/if}
                               {/if}
+                            </Button>
+                            {#if providerPager.overflowing}
+                              <!-- aria-disabled (not disabled) keeps keyboard focus on an exhausted arrow. -->
+                              <div
+                                class="flex items-center gap-2"
+                                transition:fade={{ tier: 'fast' }}
+                              >
+                                <Button
+                                  size="icon-lg"
+                                  iconOnly
+                                  aria-label={m.onboarding_page_previousProviders_ariaLabel()}
+                                  aria-controls="onboarding-provider-strip"
+                                  aria-disabled={!providerPager.canScrollBack}
+                                  onclick={() => providerPager.page(-1)}
+                                >
+                                  <Fa icon={faChevronLeft} />
+                                </Button>
+                                <Button
+                                  size="icon-lg"
+                                  iconOnly
+                                  aria-label={m.onboarding_page_nextProviders_ariaLabel()}
+                                  aria-controls="onboarding-provider-strip"
+                                  aria-disabled={!providerPager.canScrollForward}
+                                  onclick={() => providerPager.page(1)}
+                                >
+                                  <Fa icon={faChevronRight} />
+                                </Button>
+                              </div>
                             {/if}
-                          </Button>
+                          </div>
                           {#if !hasConnectedProvider}
                             <p class="text-xs text-muted-foreground">
                               {m.onboarding_page_connectAgent_description()}

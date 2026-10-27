@@ -4,6 +4,7 @@ import {
   permuteBaseProfiles,
   type EnvEntryRead,
   type EnvEntryWrite,
+  type ProviderDefaultConfig,
   type ProviderProfile,
   type ProviderProfileFieldError,
 } from '$shared/provider-profiles';
@@ -115,13 +116,20 @@ const PREVIEW_AUTH: Record<string, boolean | undefined> = {
 /**
  * Run the production profiles saga against an isolated in-memory daemon:
  * masked reads, documented validation codes, and activation summaries.
- * `withBackups` adds a second Claude Code account and marks backup profiles.
+ * `withBackups` adds a second Claude Code account and marks backup profiles;
+ * `defaultNames` renames base providers' Default configurations.
  */
 export function setupProviderProfilesPreview({
   appOwned = true,
   runningProcesses = 1,
   withBackups = false,
-}: { appOwned?: boolean; runningProcesses?: number; withBackups?: boolean } = {}) {
+  defaultNames = {},
+}: {
+  appOwned?: boolean;
+  runningProcesses?: number;
+  withBackups?: boolean;
+  defaultNames?: Record<string, string>;
+} = {}) {
   const providers = appClient.providers;
   const original = {
     listProfiles: providers.listProfiles,
@@ -129,6 +137,7 @@ export function setupProviderProfilesPreview({
     updateProfile: providers.updateProfile,
     deleteProfile: providers.deleteProfile,
     reorderProfiles: providers.reorderProfiles,
+    updateDefault: providers.updateDefault,
   };
   const catalog = selectProviderCatalogEntries.select(appStore.state);
   const transport = selectDaemonTransport.select(appStore.state);
@@ -141,7 +150,28 @@ export function setupProviderProfilesPreview({
   // Results older than the shown list are ignored, so continue from it.
   let revision = selectProviderProfilesRevision.select(appStore.state) + 1;
 
-  providers.listProfiles = async () => ({ profiles, revision });
+  let defaults: ProviderDefaultConfig[] = ['codex', 'claude-code'].map((baseProviderId) => ({
+    baseProviderId,
+    providerRef: baseProviderId,
+    name: defaultNames[baseProviderId] ?? 'Default',
+    env: [],
+  }));
+
+  providers.listProfiles = async () => ({ profiles, revision, defaults });
+  providers.updateDefault = async ({ baseProviderId, name, env }) => {
+    const current = defaults.find((d) => d.baseProviderId === baseProviderId)!;
+    const defaultConfig: ProviderDefaultConfig = {
+      ...current,
+      name: name === undefined ? current.name : name.trim() || 'Default',
+      env: env ? maskEnv(env, current.env) : current.env,
+    };
+    defaults = defaults.map((d) => (d.baseProviderId === baseProviderId ? defaultConfig : d));
+    return {
+      defaultConfig,
+      revision: ++revision,
+      activation: { envChanged: false, runningProcesses: 0 },
+    };
+  };
   providers.createProfile = async ({ baseProviderId, name, env = [], backup }) => {
     validate(
       name,
@@ -225,7 +255,7 @@ export function setupProviderProfilesPreview({
     }),
   );
   appStore.dispatch(providerSettingsSessionOpened('profiles-preview'));
-  appStore.dispatch(providerProfilesLoaded(profiles, revision));
+  appStore.dispatch(providerProfilesLoaded(profiles, revision, defaults));
   const stop = appStore.runSaga(function* previewProfilesSaga() {
     yield* providerProfilesSaga({
       authStatus: async (providerRef: string) => PREVIEW_AUTH[providerRef],

@@ -37,6 +37,7 @@ import noWallClockInCatalogPreviewsRule, {
 import noClassNameAssertionsInTestsRule from './eslint-rules/no-class-name-assertions-in-tests.js';
 import noFlushSyncInTeardownRule from './eslint-rules/no-flushsync-in-teardown.js';
 import noOneShotAnimationCountRule from './eslint-rules/no-one-shot-animation-count.js';
+import noUnarmedOutsideClickInCtRule from './eslint-rules/no-unarmed-outside-click-in-ct.js';
 import noDirectReducedMotionQueryRule, {
   SOURCE_OF_TRUTH_FILES as reducedMotionSourceOfTruthFiles,
   TEST_FILE_GLOBS as reducedMotionTestFileGlobs,
@@ -63,6 +64,7 @@ const intentPlugin = {
     'no-class-name-assertions-in-tests': noClassNameAssertionsInTestsRule,
     'no-flushsync-in-teardown': noFlushSyncInTeardownRule,
     'no-one-shot-animation-count': noOneShotAnimationCountRule,
+    'no-unarmed-outside-click-in-ct': noUnarmedOutsideClickInCtRule,
     'no-direct-reduced-motion-query': noDirectReducedMotionQueryRule,
   },
 };
@@ -684,6 +686,11 @@ export default [
   // was ejected from the merge queue by the IntentMarkLoader's 160 ms crossfade;
   // intent-hq/intent#7749). Use expectAnimationsToSettle / expectNoAnimations from
   // src/test/ct-test.ts. No baseline: enforced at zero.
+  //
+  // An outside click sent as soon as a bits-ui menu, popover, select or dialog is visible
+  // can arrive before bits-ui's afterSleep(1) registers its outside-pointer listeners, so
+  // the layer stays open at random (cloudlands-fe#3696 failed 3 of 20 runs). Wait with
+  // expectDismissibleLayerArmed from src/test/dismissible-layer.ts. No baseline.
   {
     files: ['src/**/*.ct.spec.ts'],
     plugins: {
@@ -691,6 +698,7 @@ export default [
     },
     rules: {
       'intent/no-one-shot-animation-count': 'error',
+      'intent/no-unarmed-outside-click-in-ct': 'error',
     },
   },
   // A unit test that asserts an element's className / classList / class attribute pins

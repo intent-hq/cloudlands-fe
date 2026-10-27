@@ -27,6 +27,7 @@
   import { onDestroy } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import { store as appStore } from '$store/renderer/store';
+  import { directSelectorReadable } from '$store/renderer/utils/direct-selector';
   import {
     selectDaemonHealth,
     selectDaemonTransport,
@@ -81,8 +82,11 @@
   import { formatInteger } from '$lib/i18n/format';
   import { formatGuestSessionLabel } from '$lib/utils/connection-label';
 
-  const health$ = selectDaemonHealth();
-  const updateDisconnectedAt$ = selectDaemonUpdateDisconnectedAt();
+  // Visibility follows Redux per dispatch, not on the animation-frame cadence:
+  // a renderer with suspended frames must still drop the blocking overlay once
+  // the daemon reconnects (intent-hq/intent#4622).
+  const health$ = directSelectorReadable(selectDaemonHealth);
+  const updateDisconnectedAt$ = directSelectorReadable(selectDaemonUpdateDisconnectedAt);
   const transport$ = selectDaemonTransport();
   const reconnectAttempts$ = selectReconnectAttempts();
   const connectionLimited$ = selectConnectionLimited();

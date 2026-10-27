@@ -22,7 +22,12 @@ import type {
   ReviewMonitoringSupport,
 } from '$shared/types/pr-monitor';
 
-export type PrMonitorSnapshotStatus = 'loading' | 'ready' | 'failed';
+/**
+ * `stale`: rows retained from a released lease on the same host, shown while
+ * the re-acquired lease's fresh read is in flight. Their `origin` names a
+ * retired session, so row actions stay disabled until `ready`.
+ */
+export type PrMonitorSnapshotStatus = 'loading' | 'stale' | 'ready' | 'failed';
 
 /** Per-workspace live monitor state (active + completed; selectors filter). */
 interface PrMonitorWorkspaceState {
@@ -84,6 +89,8 @@ export const cancelPrMonitorRequested = createAction<
 export const prMonitorsConnectionChanged = createAction<[workspaceId: string]>(
   'prMonitor/connectionChanged',
 );
+/** Lease re-acquired on the same host: keep the rows until the fresh read lands. */
+export const prMonitorsMarkedStale = createAction<[workspaceId: string]>('prMonitor/markedStale');
 export const prMonitorsSupportUpdated = createAction<
   [workspaceId: string, support: ReviewMonitoringSupport]
 >('prMonitor/supportUpdated');
@@ -102,6 +109,13 @@ prMonitorReducer.with(prMonitorsUpdated, (state, { payload: [workspaceId, monito
 
 prMonitorReducer.with(prMonitorsSnapshotFailed, (state, { payload: [workspaceId] }) => {
   const entry = state.byWorkspaceId[workspaceId] ?? emptyPrMonitorWorkspaceState;
+  // Stale rows were never confirmed by the current session: a failed refresh
+  // must not leave them (or their session's support) behind.
+  if (entry.snapshotStatus === 'stale')
+    return setWorkspaceState(state, workspaceId, {
+      ...emptyPrMonitorWorkspaceState,
+      snapshotStatus: 'failed',
+    });
   return setWorkspaceState(state, workspaceId, { ...entry, snapshotStatus: 'failed' });
 });
 
@@ -112,6 +126,11 @@ prMonitorReducer.with(removeWorkspaceEntity, (state, { payload: [wsId] }) =>
 prMonitorReducer.with(prMonitorsConnectionChanged, (state, { payload: [workspaceId] }) =>
   setWorkspaceState(state, workspaceId, emptyPrMonitorWorkspaceState),
 );
+prMonitorReducer.with(prMonitorsMarkedStale, (state, { payload: [workspaceId] }) => {
+  const entry = state.byWorkspaceId[workspaceId];
+  if (!entry) return state;
+  return setWorkspaceState(state, workspaceId, { ...entry, snapshotStatus: 'stale' });
+});
 prMonitorReducer.with(prMonitorsSupportUpdated, (state, { payload: [workspaceId, support] }) =>
   setWorkspaceState(state, workspaceId, {
     ...(state.byWorkspaceId[workspaceId] ?? emptyPrMonitorWorkspaceState),

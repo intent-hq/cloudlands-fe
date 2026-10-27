@@ -121,6 +121,7 @@
     selectCheckedPanels,
     selectPanels,
     selectCheckedSelections,
+    selectCheckedNoteIds,
   } from '$store/renderer/slices/multi-panel-context/multi-panel-context-selectors';
 
   import { selectWorkspaceSetupTerminal } from '$store/renderer/slices/terminals/terminals-selectors';
@@ -5624,9 +5625,11 @@
         // i18n-ignore (agent-directed context marker, not user-facing UI)
         parts.push(`[Currently viewing diff for: ${panel.filePath}]`);
       } else if (panel.type === 'note' && panel.noteId) {
+        // Keeps its own read instruction so the note stays reachable against a
+        // daemon that predates by-reference `noteIds` notices.
         parts.push(
           // i18n-ignore (agent-directed context marker, not user-facing UI)
-          `[Currently viewing note: "${panel.label}" (ID: ${panel.noteId}). Use read_note_space-mcp(noteId="${panel.noteId}") to read its content.]`,
+          `[Currently viewing note: "${panel.label}" (ID: ${panel.noteId}). Read it with ws.note.read("${panel.noteId}").]`,
         );
       } else if (panel.type === 'spec') {
         // i18n-ignore (agent-directed context marker, not user-facing UI)
@@ -5823,7 +5826,7 @@
 
     const allContextItems = [...getContextItems(), ...inlineImageItems, ...mentionContextItems];
     const workspaceContextStr = buildWorkspaceContextString(allContextItems);
-    const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
+    const noteIds = selectCheckedNoteIds.select(appStore.state);
 
     const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
     const userAppMessageId = createAppMessageId();
@@ -6058,7 +6061,7 @@
 
     const allContextItems = [...getContextItems(), ...inlineImageItems, ...mentionContextItems];
     const workspaceContextStr = buildWorkspaceContextString(allContextItems);
-    const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
+    const noteIds = selectCheckedNoteIds.select(appStore.state);
 
     const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
     const userAppMessageId = createAppMessageId();

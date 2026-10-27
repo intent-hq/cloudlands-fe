@@ -1,4 +1,5 @@
 import { expect, test } from '../../../../test/ct-test';
+import { expectDismissibleLayerArmed } from '../../../../test/dismissible-layer';
 import TaskProgressControl from '../TaskProgressControl.svelte';
 import TaskProgressControlHost from './TaskProgressControlHost.svelte';
 
@@ -279,9 +280,21 @@ for (const presentation of ['status-stack', 'checklist'] as const) {
     await expect(region).toBeFocused();
     await page.getByTestId('task-progress-row').first().click();
     await expect(popover).toBeVisible();
-    await region.hover();
-    await page.mouse.wheel(0, 300);
-    await expect.poll(() => region.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+    await expect
+      .poll(() => region.evaluate((node) => node.scrollHeight - node.clientHeight))
+      .toBeGreaterThan(0);
+    // Chromium routes a wheel by the compositor's last committed frame. On a loaded
+    // host that frame can predate the new popover, so the wheel is dropped even
+    // though the region is scrollable and under the pointer; a resent wheel scrolls
+    // (same Chromium behavior as intent-hq/intent#7255).
+    await expect(async () => {
+      await region.hover();
+      await page.mouse.wheel(0, 300);
+      await expect
+        .poll(() => region.evaluate((node) => node.scrollTop), { timeout: 2_000 })
+        .toBeGreaterThan(0);
+    }).toPass({ timeout: 15_000 });
+    await expectDismissibleLayerArmed(popover);
     await outside.click();
     await expect(popover).toBeHidden();
     await expect(outside).toBeFocused();
@@ -497,6 +510,7 @@ test('clears tooltip suppression after pointer cancellation and task-trigger rem
 
   await trigger.click();
   await expect(popover).toBeVisible();
+  await expectDismissibleLayerArmed(popover);
   await outside.click();
   await expect(popover).toBeHidden();
   await component.update({ props: { tasks: [] } });

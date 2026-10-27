@@ -9,3 +9,4 @@ export type {
 } from './proximity-hover.svelte';
 export { createMergeSplit } from './merge-split.svelte';
 export type { MergeSplit, SelectedIndexes, SelectionGroup } from './merge-split.svelte';
+export { createHorizontalPager } from './horizontal-pager.svelte';

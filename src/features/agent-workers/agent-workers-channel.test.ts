@@ -151,6 +151,33 @@ describe('agent workers channel', () => {
     expect(last().status).toBe('failed');
   });
 
+  it('recovers from an unavailable handshake on the next reconnect without a manual retry (intent-hq/intent#7868)', async () => {
+    let handshake = false;
+    const original = vi.mocked(backendRequest).getMockImplementation()!;
+    vi.mocked(backendRequest).mockImplementation(async (method, params) => {
+      if (method === 'client.hello' && !handshake)
+        throw new Error('Current backend handshake is unavailable');
+      return original(method, params);
+    });
+    await open();
+    expect(last()).toEqual({ status: 'failed' });
+    expect(backendRequest).not.toHaveBeenCalledWith('agent.workers.subscribe', expect.anything());
+    // Main reconnects after the unanswered hello and confirms a fresh one.
+    handshake = true;
+    reconnect();
+    await settle();
+    expect(backendRequest).toHaveBeenCalledWith('agent.workers.subscribe', {
+      workspaceId: ws,
+      agentId: agent,
+    });
+    push('sub-1', 0);
+    expect(last()).toEqual({
+      status: 'ready',
+      snapshot: workerSnapshotFixture,
+      receivedAt: expect.any(Number),
+    });
+  });
+
   it('clears cached rows when a later subscribe fails (permission or ownership loss)', async () => {
     await open();
     push('sub-1', 0);

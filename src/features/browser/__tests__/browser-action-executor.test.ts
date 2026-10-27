@@ -1731,8 +1731,56 @@ describe('browser-action-executor', () => {
 
       expect(result.success).toBe(false);
       expect(result.results[0]?.errorCode).toBe('workspace-not-visible');
-      expect(result.results[0]?.error).toContain('did not mount within the wait budget');
+      expect(result.results[0]?.error).toContain('did not register within the wait budget');
       expect(embeddedBrowserCdp.screenshot).not.toHaveBeenCalled();
+    });
+
+    // intent#7855: a background-hosted workspace (a window hosts it but does
+    // not display it) whose guest never registers must not read as "not
+    // visible and the offscreen mount did not complete" — that is the same
+    // text as no window hosting it at all.
+    it('names the background host and the page-load state when a hosted guest never registers', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.isTabMounted).mockReturnValue(false);
+      vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValue(hiddenTabList as any);
+      vi.mocked(embeddedBrowserCdp.waitForTabRegistration).mockResolvedValue(false);
+      mockGetWindowIdForWorkspace.mockReturnValue(undefined);
+      mockGetWindowIdsForWorkspace.mockReturnValue([7]);
+
+      const result = await executeActions(
+        { actions: [{ action: 'evaluate', tabId: 'tab-hidden', expression: '1' }] },
+        undefined,
+        undefined,
+        'workspace-a',
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.results[0]?.errorCode).toBe('workspace-not-visible');
+      const error = result.results[0]?.error ?? '';
+      expect(error).toContain('hosted in the background by app window 7');
+      expect(error).toContain('first page load has not reached dom-ready');
+      expect(error).toContain('http://127.0.0.1:5199/');
+      expect(error).not.toContain('offscreen mount did not complete');
+    });
+
+    it('says no app window hosts the workspace when none does and the guest never registers', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.isTabMounted).mockReturnValue(false);
+      vi.mocked(embeddedBrowserCdp.listAllTabs).mockResolvedValue(hiddenTabList as any);
+      vi.mocked(embeddedBrowserCdp.waitForTabRegistration).mockResolvedValue(false);
+      mockGetWindowIdForWorkspace.mockReturnValue(undefined);
+      mockGetWindowIdsForWorkspace.mockReturnValue([]);
+
+      const result = await executeActions(
+        { actions: [{ action: 'evaluate', tabId: 'tab-hidden', expression: '1' }] },
+        undefined,
+        undefined,
+        'workspace-a',
+      );
+
+      expect(result.results[0]?.errorCode).toBe('workspace-not-visible');
+      expect(result.results[0]?.error).toContain('no app window hosts workspace workspace-a');
+      expect(result.results[0]?.error).not.toContain('hosted in the background');
     });
 
     it('reports tab-not-found (no errorCode) when a fresh tab list lacks the tab', async () => {

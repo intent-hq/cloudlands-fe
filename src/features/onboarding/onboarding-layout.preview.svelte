@@ -18,6 +18,8 @@
     gitlabSetupSupported?: boolean;
     gitlabInstanceBaseUrl?: string;
     settings?: boolean;
+    /** Seed the full provider catalog so the welcome strip overflows. */
+    allProviders?: boolean;
     verificationUri?: string;
     onOpenExternal?: (payload: unknown) => void;
   }
@@ -27,6 +29,7 @@
     defaultState: 'prompt',
     states: {
       welcome: { props: { step: 'welcome' } },
+      'welcome-all-providers': { props: { step: 'welcome', allProviders: true } },
       forge: { props: { step: 'forge' } },
       'forge-gitlab-enabled': { props: { step: 'forge', gitlabEnabled: true } },
       'forge-gitlab-update-required': {
@@ -99,6 +102,7 @@
   } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
   import type { GitLabAuthState } from '$store/renderer/slices/gitlab-auth/gitlab-auth-types';
   import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
+  import { MOCK_PROVIDER_CATALOG } from '../../test/fixtures/provider-catalog.fixture';
   import {
     principalContextChanged,
     principalReceived,
@@ -112,6 +116,7 @@
     gitlabSetupSupported = true,
     gitlabInstanceBaseUrl = 'https://gitlab.example.com',
     settings = false,
+    allProviders = false,
     verificationUri,
     onOpenExternal,
   }: Props = $props();
@@ -258,13 +263,15 @@
     appStore.dispatch(setLabsGitLabEnabled(untrack(() => gitlabEnabled)));
     seedForge(untrack(() => forge));
   }
-  appStore.dispatch(providerCatalogLoaded({ providers: previewProviders }));
-  for (const provider of previewProviders) {
+  const fullCatalog = untrack(() => allProviders);
+  const seededProviders = fullCatalog ? MOCK_PROVIDER_CATALOG.providers : previewProviders;
+  appStore.dispatch(providerCatalogLoaded({ providers: seededProviders }));
+  for (const provider of seededProviders) {
+    const connected = fullCatalog
+      ? provider.id === 'codex' || provider.id === 'claude-code'
+      : provider.id !== 'opencode';
     appStore.dispatch(
-      checkSingleProviderSuccess(provider.id, {
-        available: provider.id !== 'opencode',
-        authenticated: provider.id !== 'opencode',
-      }),
+      checkSingleProviderSuccess(provider.id, { available: connected, authenticated: connected }),
     );
   }
   appStore.dispatch(checkAllProvidersComplete());
@@ -273,7 +280,7 @@
     restoreOpen?.();
     appStore.dispatch(goToStep(previousStep));
     appStore.dispatch(providerCatalogLoaded({ providers: previousProviders }));
-    for (const provider of previewProviders) {
+    for (const provider of seededProviders) {
       appStore.dispatch(
         checkSingleProviderSuccess(
           provider.id,

@@ -925,6 +925,7 @@ test('tab context menu stays actionable over the neighboring active tab', async 
     ),
     'Close must receive pointer input in the overlapping region',
   ).toBe(true);
+  // eslint-disable-next-line intent/no-unarmed-outside-click-in-ct -- activates the menu's Close item; not an outside dismissal
   await page.mouse.click(point.x, point.y);
   await expect(source).toHaveCount(0);
   await expect(neighbor).toHaveAttribute('data-active', 'true');
