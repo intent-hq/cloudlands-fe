@@ -66,8 +66,10 @@ export interface WorkspaceDeepLinkConsumerDeps {
 
 /**
  * Returns a function to call whenever the route URL or load state changes.
- * It opens the linked note / agent once per URL after the workspace is ready,
- * then strips the parameters so reloads and back/forward do not reopen them.
+ * It opens the linked note / agent once per link occurrence after the workspace
+ * is ready, then strips the parameters so reloads and back/forward do not
+ * reopen them. Load-state changes while the link is still in the URL do not
+ * reopen it; a later navigation to the same link does.
  */
 export function createWorkspaceDeepLinkConsumer(deps: WorkspaceDeepLinkConsumerDeps) {
   let consumedHref: string | null = null;
@@ -76,7 +78,11 @@ export function createWorkspaceDeepLinkConsumer(deps: WorkspaceDeepLinkConsumerD
     url: URL | undefined,
     status: WorkspaceLoadState['status'],
   ): boolean => {
-    if (!workspaceId || !url || !hasWorkspaceDeepLinkParams(url.searchParams)) return false;
+    if (!workspaceId || !url || !hasWorkspaceDeepLinkParams(url.searchParams)) {
+      // The route left the consumed link, so following it again opens it again.
+      consumedHref = null;
+      return false;
+    }
     if (!isWorkspaceReadyForDeepLinks(status)) return false;
     if (consumedHref === url.href) return false;
     consumedHref = url.href;

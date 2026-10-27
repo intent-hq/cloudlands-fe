@@ -77,6 +77,16 @@ describe('createWorkspaceDeepLinkConsumer', () => {
     expect(dispatch).toHaveBeenCalledTimes(2);
   });
 
+  it('opens the same link again after the route has left it', () => {
+    const { dispatch, consume } = setup();
+    const link = url('/workspace/ws-a?note=spec');
+    consume('ws-a', link, 'ready');
+    consume('ws-a', url('/workspace/ws-a'), 'ready');
+    consume('ws-b', url('/workspace/ws-b'), 'ready');
+    consume('ws-a', link, 'ready');
+    expect(dispatch).toHaveBeenCalledTimes(2);
+  });
+
   it('ignores URLs without deep-link parameters and failed loads', () => {
     const { dispatch, replaceUrl, consume } = setup();
     expect(consume('ws-1', url('/workspace/ws-1'), 'ready')).toBe(false);
