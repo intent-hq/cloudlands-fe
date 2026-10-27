@@ -34,6 +34,22 @@ static class Program {
     [DllImport("advapi32.dll",SetLastError=true)] static extern bool GetTokenInformation(IntPtr t,int c,IntPtr data,int size,out int needed);
     [DllImport("advapi32.dll")] static extern IntPtr GetSidSubAuthorityCount(IntPtr sid);
     [DllImport("advapi32.dll")] static extern IntPtr GetSidSubAuthority(IntPtr sid,uint index);
+    [StructLayout(LayoutKind.Sequential)] struct Rect { public int left,top,right,bottom; }
+    delegate bool EnumProc(IntPtr h,IntPtr data);
+    [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc callback,IntPtr data);
+    [DllImport("user32.dll")] static extern bool IsWindow(IntPtr h);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
+    [DllImport("user32.dll",EntryPoint="GetWindowLongPtrW")] static extern IntPtr GetWindowLongPtr(IntPtr h,int index);
+    [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr h,StringBuilder name,int max);
+    [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetWindowTextLength(IntPtr h);
+    [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr h,StringBuilder text,int max);
+    [DllImport("user32.dll")] static extern bool GetLayeredWindowAttributes(IntPtr h,out uint key,out byte alpha,out uint flags);
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h);
+    [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h,int attribute,out int value,int size);
+    [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h,int attribute,out Rect value,int size);
+    const string TargetDetail="The target window is not ready for input. Call ws.desktop.focusWindow({ windowId }) if needed, take a new screenshot to confirm the target, then retry.";
     static Mutex? desktopLock;
     static bool owned;
     static bool cleanupFailed;
@@ -41,7 +57,7 @@ static class Program {
     static readonly HashSet<ushort> heldKeys = new();
     static readonly HashSet<string> heldButtons = new();
     static readonly object gate = new();
-    sealed class Refusal(string code,string detail,string execution="not_started") : Exception(detail) { public string Code=code; public string Execution=execution; }
+    sealed class Refusal(string code,string detail,string execution="not_started",string? reason=null) : Exception(detail) { public string Code=code; public string Execution=execution; public string? Reason=reason; }
     static Refusal Unsupported(string detail) => new("desktop-unsupported-operation",detail);
     static void Main() {
         // Only this thread owns/releases the Mutex. Read on a worker so an open
@@ -66,7 +82,9 @@ static class Program {
                 } catch(Exception ex) {
                     var e=ex as Refusal ?? new Refusal("desktop-execution-failed","The native Windows operation failed","unknown");
                     lock(gate) { ReleaseInput(); }
-                    Console.WriteLine(JsonSerializer.Serialize(new { id,error=new {code=e.Code,detail=e.Message,execution=e.Execution} }));
+                    var error=new Dictionary<string,object>{["code"]=e.Code,["detail"]=e.Message,["execution"]=e.Execution};
+                    if(e.Reason is not null) error["reason"]=e.Reason;
+                    Console.WriteLine(JsonSerializer.Serialize(new { id,error }));
                 }
             }
         } finally { lock(gate) { Release(); } }
@@ -132,6 +150,79 @@ static class Program {
             System.Text.Json.Nodes.JsonNode.Parse(expected.GetRawText())))
             throw new Refusal("desktop-stale-layout","Display topology changed");
     }
+    static readonly HashSet<string> shellClasses=new(StringComparer.Ordinal){"Progman","WorkerW","Shell_TrayWnd","Shell_SecondaryTrayWnd"};
+    static HashSet<long> Exclusions(JsonElement p) =>
+        p.TryGetProperty("excludedWindows",out var e) ? e.EnumerateArray().Select(x=>long.TryParse(x.GetString(),out var v)?v:0).ToHashSet() : new();
+    // Eligible: visible top-level app windows on this virtual desktop. Excludes
+    // minimized, cloaked (other virtual desktop or hidden UWP), tool/no-activate
+    // popups, shell surfaces, fully transparent layered windows and Intent's overlay.
+    static bool Eligible(IntPtr h,HashSet<long> excluded,out Rect frame) {
+        frame=default;
+        if(excluded.Contains(h.ToInt64()) || !IsWindowVisible(h) || IsIconic(h)) return false;
+        if(DwmGetWindowAttribute(h,14,out int cloaked,4)==0 && cloaked!=0) return false;
+        long ex=GetWindowLongPtr(h,-20).ToInt64();
+        if((ex&0x80)!=0 || (ex&0x08000000)!=0) return false;
+        var name=new StringBuilder(256); GetClassName(h,name,name.Capacity);
+        if(shellClasses.Contains(name.ToString())) return false;
+        if((ex&0x80000)!=0 && GetLayeredWindowAttributes(h,out _,out byte alpha,out uint flags) && (flags&2)!=0 && alpha==0) return false;
+        if(DwmGetWindowAttribute(h,9,out frame,Marshal.SizeOf<Rect>())!=0) return false;
+        return frame.right>frame.left && frame.bottom>frame.top;
+    }
+    static List<IntPtr> TopLevelWindows() {
+        var list=new List<IntPtr>();
+        if(!EnumWindows((h,_)=>{ list.Add(h); return true; },IntPtr.Zero)) throw new Refusal("desktop-execution-failed","Window enumeration failed");
+        return list; // Z-order, topmost first.
+    }
+    static string AppName(uint pid,Dictionary<uint,string> cache) {
+        if(cache.TryGetValue(pid,out var cached)) return cached;
+        var name="Unknown application";
+        try {
+            using var process=System.Diagnostics.Process.GetProcessById((int)pid);
+            try { var description=process.MainModule?.FileVersionInfo.FileDescription; name=string.IsNullOrWhiteSpace(description)?process.ProcessName:description; }
+            catch { name=process.ProcessName; } // elevated or protected process
+        } catch { }
+        return cache[pid]=string.IsNullOrWhiteSpace(name)?"Unknown application":name;
+    }
+    static object WindowState(JsonElement p) {
+        var excluded=Exclusions(p);
+        int ox=0,oy=0;
+        if(p.TryGetProperty("display",out var selected)) {
+            var current=Layout().Select(d=>JsonSerializer.SerializeToElement(d)).SingleOrDefault(d=>d.GetProperty("displayId").GetString()==selected.GetProperty("displayId").GetString());
+            if(current.ValueKind==JsonValueKind.Undefined || !System.Text.Json.Nodes.JsonNode.DeepEquals(System.Text.Json.Nodes.JsonNode.Parse(current.GetRawText()),System.Text.Json.Nodes.JsonNode.Parse(selected.GetRawText())))
+                throw new Refusal("desktop-stale-layout","Display geometry changed");
+            ox=current.GetProperty("originX").GetInt32(); oy=current.GetProperty("originY").GetInt32();
+        }
+        var names=new Dictionary<uint,string>();
+        var windows=new List<Dictionary<string,object>>();
+        foreach(var h in TopLevelWindows()) {
+            if(!Eligible(h,excluded,out var r)) continue;
+            GetWindowThreadProcessId(h,out uint pid);
+            if(pid==0) continue;
+            // PerMonitorV2: DWM frame bounds are physical virtual-desktop pixels.
+            var entry=new Dictionary<string,object>{["handle"]=h.ToInt64().ToString(),["pid"]=(int)pid,["appName"]=AppName(pid,names),
+                ["x"]=r.left-ox,["y"]=r.top-oy,["width"]=r.right-r.left,["height"]=r.bottom-r.top};
+            int length=GetWindowTextLength(h);
+            if(length>0) { var text=new StringBuilder(length+1); GetWindowText(h,text,text.Capacity); if(text.Length>0) entry["title"]=text.ToString(); }
+            windows.Add(entry);
+        }
+        var result=new Dictionary<string,object>{["windows"]=windows};
+        var foreground=GetForegroundWindow();
+        if(foreground!=IntPtr.Zero) {
+            GetWindowThreadProcessId(foreground,out uint pid);
+            if(pid!=0) result["frontmost"]=new Dictionary<string,object>{["appName"]=AppName(pid,names),["pid"]=(int)pid,["focusedHandle"]=foreground.ToInt64().ToString()};
+        }
+        return result;
+    }
+    // Activation only: never synthesizes input (no Alt-key foreground-lock trick).
+    // Windows may decline; the executor verifies the outcome with a new snapshot.
+    static void FocusWindow(JsonElement p) {
+        var h=new IntPtr(long.TryParse(p.GetProperty("handle").GetString(),out var v)?v:0);
+        uint pid=(uint)p.GetProperty("pid").GetInt32(), owner=0;
+        if(h!=IntPtr.Zero && IsWindow(h)) GetWindowThreadProcessId(h,out owner);
+        if(owner==0 || owner!=pid || !Eligible(h,Exclusions(p),out _)) throw new Refusal("desktop-target-mismatch",TargetDetail,"not_started","window_unavailable");
+        SetForegroundWindow(h); BringWindowToTop(h);
+        for(int i=0;i<20 && GetForegroundWindow()!=h;i++) Thread.Sleep(50);
+    }
     static void ReleaseInput() {
         foreach(var key in heldKeys.ToArray()) Key(key,false,true);
         foreach(var button in heldButtons.ToArray()) MouseEvent(button=="right"?0x10u:4u,0,true);
@@ -162,6 +253,8 @@ static class Program {
         CheckLayout(p);
         if(op=="check") return new {ok=true};
         if(op=="layout") return Layout();
+        if(op=="windows") return WindowState(p);
+        if(op=="focusWindow") { FocusWindow(p); return new {ok=true}; }
         if(op=="capture" || op=="validateExclusion") {
             if(!OperatingSystem.IsWindowsVersionAtLeast(10,0,19041)) throw Unsupported("Capture exclusion requires Windows 10 version 2004 or newer");
             var excluded=p.GetProperty("excludedWindows").EnumerateArray().Select(e=>new IntPtr(long.Parse(e.GetString()!))).ToArray();

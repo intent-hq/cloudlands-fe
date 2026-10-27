@@ -7,6 +7,7 @@ using System.Text.Json;
 static class Program {
     [DllImport("user32.dll")] static extern bool SetWindowDisplayAffinity(IntPtr hwnd, uint affinity);
     [DllImport("user32.dll")] static extern short GetAsyncKeyState(int key);
+    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     static string helper = "";
     static int result = 1;
     [STAThread] static int Main(string[] args) {
@@ -15,7 +16,7 @@ static class Program {
         Application.EnableVisualStyles();
         using var target = new Form { Text="Intent native desktop functional test", StartPosition=FormStartPosition.Manual, Location=new Point(100,100), ClientSize=new Size(640,480), BackColor=Color.CornflowerBlue };
         target.Shown += async (_,_) => {
-            try { await Run(target); result=0; Console.WriteLine("PASS: native Windows input, capture, exclusion, exclusivity and EOF cleanup"); }
+            try { await Run(target); result=0; Console.WriteLine("PASS: native Windows input, capture, exclusion, window metadata, focusWindow, exclusivity and EOF cleanup"); }
             catch(Exception e) { Console.Error.WriteLine(e); }
             finally { target.Close(); }
         };
@@ -46,6 +47,42 @@ static class Program {
     static async Task Observe(Func<bool> condition,string description) {
         for(int i=0;i<60;i++) { if(condition()) return; await Task.Delay(50); }
         throw new Exception("No native evidence for " + description);
+    }
+    static string Handle(Form f) => f.Handle.ToInt64().ToString();
+    static async Task WindowTargets(Peer peer,Form target,Form overlay,Screen screen,JsonElement display,JsonElement layout,string[] excluded) {
+        target.Activate(); await Task.Delay(250);
+        var state=await peer.Call("windows",new {excludedWindows=excluded,display,layout});
+        var listed=state.GetProperty("windows").EnumerateArray().ToList();
+        Require(!listed.Any(w=>w.GetProperty("handle").GetString()==Handle(overlay)),"Overlay window leaked into window metadata");
+        var mine=listed.SingleOrDefault(w=>w.GetProperty("handle").GetString()==Handle(target));
+        Require(mine.ValueKind==JsonValueKind.Object,"Target window missing from window metadata");
+        Require(mine.GetProperty("pid").GetInt32()==Environment.ProcessId,"Window owner pid mismatch");
+        Require(!string.IsNullOrEmpty(mine.GetProperty("appName").GetString()),"Missing application name");
+        Require(mine.GetProperty("title").GetString()==target.Text,"Window title mismatch");
+        int wx=mine.GetProperty("x").GetInt32()+screen.Bounds.X, wy=mine.GetProperty("y").GetInt32()+screen.Bounds.Y;
+        int ww=mine.GetProperty("width").GetInt32(), wh=mine.GetProperty("height").GetInt32();
+        var center=target.PointToScreen(new Point(target.ClientSize.Width/2,target.ClientSize.Height/2));
+        Require(wx<=center.X && center.X<wx+ww && wy<=center.Y && center.Y<wy+wh,"Window frame is not in display-image pixels");
+        Require(Math.Abs(ww-target.Width)<=24 && Math.Abs(wh-target.Height)<=24,"Window frame size mismatch");
+        var front=state.GetProperty("frontmost");
+        Require(front.GetProperty("pid").GetInt32()==Environment.ProcessId && front.GetProperty("focusedHandle").GetString()==Handle(target),"Frontmost focused window mismatch");
+
+        using var other=new Form { Text="Intent focusWindow test", StartPosition=FormStartPosition.Manual, Location=new Point(160,160), ClientSize=new Size(320,240) };
+        other.Show(); other.Activate(); await Task.Delay(250);
+        Require(GetForegroundWindow()==other.Handle,"Second test window did not activate");
+        var behind=await peer.Call("windows",new {excludedWindows=excluded});
+        var order=behind.GetProperty("windows").EnumerateArray().Select(w=>w.GetProperty("handle").GetString()).ToList();
+        Require(order.IndexOf(Handle(other))>=0 && order.IndexOf(Handle(other))<order.IndexOf(Handle(target)),"Windows are not listed front-to-back");
+        await peer.Call("focusWindow",new {handle=Handle(target),pid=Environment.ProcessId,excludedWindows=excluded});
+        await Observe(()=>GetForegroundWindow()==target.Handle,"focusWindow raises and activates the target");
+        other.WindowState=FormWindowState.Minimized; await Task.Delay(250);
+        var after=await peer.Call("windows",new {excludedWindows=excluded});
+        Require(!after.GetProperty("windows").EnumerateArray().Any(w=>w.GetProperty("handle").GetString()==Handle(other)),"Minimized window listed as eligible");
+        var minimized=await peer.Call("focusWindow",new {handle=Handle(other),pid=Environment.ProcessId,excludedWindows=excluded},"desktop-target-mismatch");
+        Require(minimized.GetProperty("error").GetProperty("reason").GetString()=="window_unavailable","Wrong focusWindow refusal reason");
+        Require(other.WindowState==FormWindowState.Minimized,"focusWindow restored a minimized window");
+        await peer.Call("focusWindow",new {handle="0",pid=Environment.ProcessId,excludedWindows=excluded},"desktop-target-mismatch");
+        target.Activate(); await Task.Delay(250);
     }
     static async Task Run(Form target) {
         using var input=new TextBox { Location=new Point(20,20),Width=300 };
@@ -98,6 +135,7 @@ static class Program {
             Directory.CreateDirectory("native/desktop/tests/windows/artifacts");
             bitmap.Save("native/desktop/tests/windows/artifacts/capture.png");
         }
+        await WindowTargets(peer,target,overlay,screen,display,layout,exclusions.excludedWindows);
         async Task Move(Point p) => await peer.Call("move",new {display,layout,x=p.X-screen.Bounds.X,y=p.Y-screen.Bounds.Y});
         async Task Button(string button,bool down) => await peer.Call("button",new {button,down,clickCount=1});
         var point=target.PointToScreen(new Point(200,150));
