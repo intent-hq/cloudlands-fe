@@ -41,7 +41,7 @@
       | 'status-icons'
       | 'status-grouping'
       | 'labels'
-      | 'retired'
+      | 'purged'
       | 'pr-status-list'
       | 'board-pr-status'
       | 'board'
@@ -76,7 +76,7 @@
       'status-icons': { props: { scenario: 'status-icons' } },
       'status-grouping': { props: { scenario: 'status-grouping' } },
       labels: { props: { scenario: 'labels' } },
-      retired: { props: { scenario: 'retired' } },
+      purged: { props: { scenario: 'purged' } },
       'pr-status-list': { props: { scenario: 'pr-status-list', height: 1120 } },
       'board-pr-status': { props: { scenario: 'board-pr-status', height: 1120 } },
       board: { props: { scenario: 'board' } },
@@ -518,8 +518,9 @@
       store.dispatch(removeSession(id));
     },
   };
-  // A retired workspace (PROTOCOL §5.1) as the Retired chip's opt-in fetch
-  // leaves it in the store; every other chip must still hide it.
+  // An archived workspace whose folder was purged (`Retired`, PROTOCOL §5.1)
+  // as the Archived chip's opt-in fetch leaves it in the store; it shows only
+  // under Archived, like any other archived workspace.
   const retiredFixture: Workspace = {
     ...fixtures[0],
     id: WorkspaceId('home-retired'),
@@ -531,7 +532,7 @@
     archived: true,
     archivedAt: '2026-09-10T00:00:00Z',
     retiredAt: '2026-09-20T00:00:00Z',
-    statusMessage: 'Retired after the importer rewrite shipped.',
+    statusMessage: 'Workspace folder purged to free disk space.',
   };
   $effect.pre(() => {
     admitLegacyPrincipal(
@@ -589,7 +590,7 @@
                 ? statusFixtures
                 : scenario === 'status-grouping'
                   ? statusGroupingFixtures
-                  : scenario === 'retired'
+                  : scenario === 'purged'
                     ? [...fixtures, retiredFixture]
                     : fixtures
             ).map((workspace) => ({

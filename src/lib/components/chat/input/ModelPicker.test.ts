@@ -2750,7 +2750,7 @@ describe('ModelPicker multi-provider mode', () => {
     expect(screen.getAllByText(/OpenCode: opencode binary not found/).length).toBeGreaterThan(0);
   });
 
-  it('shows an actionable Codex stale-list notice when the provider returns a fallback warning', async () => {
+  it('shows the Codex default-list notice only inside the open picker on the Codex tab', async () => {
     vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
       if (providerId === 'codex') {
         return {
@@ -2771,11 +2771,64 @@ describe('ModelPicker multi-provider mode', () => {
       },
     });
 
+    await waitFor(() => {
+      expect(get(providerWarnings$)).toHaveProperty('codex');
+    });
+    // Closed picker: no notice under the trigger.
+    expect(screen.queryByText('Showing default model list.')).toBeNull();
+
+    await fireEvent.click(screen.getByRole('button'));
+
     expect(await screen.findByText('Showing default model list.')).toBeTruthy();
     expect(screen.getByText(/Install Codex CLI to see all your available models/)).toBeTruthy();
     expect(screen.getByRole('link', { name: /Setup docs/ }).getAttribute('href')).toBe(
       'https://developers.openai.com/codex/cli#cli-setup',
     );
+    // The notice replaces the generic warning row for the same fallback, so
+    // the warning is not stated twice; Retry stays available.
+    expect(screen.queryByText(/Codex not installed; using static model list/)).toBeNull();
+    expect(screen.getByRole('button', { name: /Retry/ })).toBeTruthy();
+  });
+
+  it('hides the Codex default-list notice while another provider tab is browsed', async () => {
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
+      if (providerId === 'codex') {
+        return {
+          models: [{ value: 'codex:gpt-5-codex', label: 'GPT-5 Codex', description: 'Smart' }],
+          warning: 'Codex not installed; using static model list',
+        };
+      }
+
+      return {
+        models: [{ value: 'sonnet4.6', label: 'Sonnet 4.6', description: 'Smart model' }],
+      };
+    });
+    enabledProviderIds$.set(['auggie', 'codex']);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'sonnet4.6',
+        variant: 'default',
+        portal: false,
+      },
+    });
+
+    await waitFor(() => {
+      expect(get(providerWarnings$)).toHaveProperty('codex');
+    });
+    expect(screen.queryByText('Showing default model list.')).toBeNull();
+
+    await fireEvent.click(screen.getByRole('button'));
+    expect(await screen.findByRole('option', { name: /Sonnet 4\.6/ })).toBeTruthy();
+    expect(screen.queryByText('Showing default model list.')).toBeNull();
+
+    await fireEvent.click(screen.getByRole('tab', { name: /Codex/ }));
+    expect(await screen.findByText('Showing default model list.')).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('tab', { name: /Auggie/ }));
+    await waitFor(() => {
+      expect(screen.queryByText('Showing default model list.')).toBeNull();
+    });
   });
 
   it('suppresses the Codex install notice when a stale warning accompanies real models', async () => {
@@ -2806,11 +2859,13 @@ describe('ModelPicker multi-provider mode', () => {
     await waitFor(() => {
       expect(get(providerStaleFlags$)).toEqual({ codex: true });
     });
+    await fireEvent.click(screen.getByRole('button'));
+    expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
     expect(screen.queryByText('Showing default model list.')).toBeNull();
     expect(screen.queryByText(/Install Codex CLI to see all your available models/)).toBeNull();
   });
 
-  it('keeps the Codex install notice when the warning arrives with no codex models', async () => {
+  it('keeps the Codex install notice in the open picker when the warning arrives with no codex models', async () => {
     vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
       if (providerId === 'codex') {
         return { models: [], warning: 'codex: CLI not found' };
@@ -2828,6 +2883,12 @@ describe('ModelPicker multi-provider mode', () => {
       },
     });
 
+    await waitFor(() => {
+      expect(get(providerWarnings$)).toHaveProperty('codex');
+    });
+    expect(screen.queryByText('Showing default model list.')).toBeNull();
+
+    await fireEvent.click(screen.getByRole('button'));
     expect(await screen.findByText('Showing default model list.')).toBeTruthy();
     expect(screen.getByText(/Install Codex CLI to see all your available models/)).toBeTruthy();
   });
@@ -2849,6 +2910,8 @@ describe('ModelPicker multi-provider mode', () => {
     await waitFor(() => {
       expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex');
     });
+    await fireEvent.click(screen.getByRole('button'));
+    expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
     expect(screen.queryByText('Showing default model list.')).toBeNull();
   });
 
@@ -5955,7 +6018,7 @@ describe('ModelPicker named provider profiles (§5.54)', () => {
     );
   });
 
-  it('shows the Codex default-list notice for a profile catalog, and not for a stale one', async () => {
+  it('shows the Codex default-list notice in the open picker for a profile catalog, and not for a stale one', async () => {
     mockCatalogProfiles.current = [WORK];
     let stale = false;
     vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) =>
@@ -5976,6 +6039,10 @@ describe('ModelPicker named provider profiles (§5.54)', () => {
         portal: false,
       },
     });
+    await waitFor(() => expect(get(providerWarnings$)).toHaveProperty(WORK.providerRef));
+    expect(screen.queryByText('Showing default model list.')).toBeNull();
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('tab', { name: /Work/ }));
     expect(await screen.findByText('Showing default model list.')).toBeTruthy();
     view.unmount();
 
@@ -5992,6 +6059,9 @@ describe('ModelPicker named provider profiles (§5.54)', () => {
       },
     });
     await waitFor(() => expect(get(providerStaleFlags$)[WORK.providerRef]).toBe(true));
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('tab', { name: /Work/ }));
+    expect(await screen.findByRole('option', { name: /GPT-5 Work row/ })).toBeTruthy();
     expect(screen.queryByText('Showing default model list.')).toBeNull();
   });
 

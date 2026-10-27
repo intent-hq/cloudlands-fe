@@ -4,6 +4,47 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.245.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.245.0...v2.245.1) (2026-10-27)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.65 ([#3795](https://github.com/intent-hq/cloudlands-fe/issues/3795)) ([34ce649](https://github.com/intent-hq/cloudlands-fe/commit/34ce64990260f266f59793d66359492a6fd91697))
+
+## [2.245.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.244.1...v2.245.0) (2026-10-27)
+
+
+### 🚀 Features
+
+* archive-only workspace lifecycle with auto-archive settings ([#3786](https://github.com/intent-hq/cloudlands-fe/issues/3786)) ([e6687d5](https://github.com/intent-hq/cloudlands-fe/commit/e6687d537ef22592beadaa5997043def10ccf42f))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.64 ([#3793](https://github.com/intent-hq/cloudlands-fe/issues/3793)) ([cdbb6b5](https://github.com/intent-hq/cloudlands-fe/commit/cdbb6b578d52ed87b448f443d23e4b4a4b6dc654))
+* **chat:** Cap inline images at half the viewport height ([#3790](https://github.com/intent-hq/cloudlands-fe/issues/3790)) ([2bdb266](https://github.com/intent-hq/cloudlands-fe/commit/2bdb266b6d61398a8c810934e9be4680a07791ea))
+
+## [2.244.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.244.0...v2.244.1) (2026-10-27)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.63 ([#3791](https://github.com/intent-hq/cloudlands-fe/issues/3791)) ([17fd11e](https://github.com/intent-hq/cloudlands-fe/commit/17fd11ecac7554f32ad85ca883e6500de24c5fc0))
+* **model-picker:** show Codex default-list notice only inside the open picker ([#3783](https://github.com/intent-hq/cloudlands-fe/issues/3783)) ([ad8b84c](https://github.com/intent-hq/cloudlands-fe/commit/ad8b84c2ad4bd07633a61e7062db6161939d2da9))
+* open intent://local/workspace links from workspace chats and notes ([#3781](https://github.com/intent-hq/cloudlands-fe/issues/3781)) ([dde804b](https://github.com/intent-hq/cloudlands-fe/commit/dde804be4435e3747f6c167287b77f1077204984))
+
+## [2.244.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.243.2...v2.244.0) (2026-10-27)
+
+
+### 🚀 Features
+
+* **test:** add test:ct:full to run all four CT shards locally ([#3779](https://github.com/intent-hq/cloudlands-fe/issues/3779)) ([c1c86f3](https://github.com/intent-hq/cloudlands-fe/commit/c1c86f3569d272e0e66f694a114bc8bc7e023fa8))
+
+
+### 🐛 Bug Fixes
+
+* **home:** rank merge-queued PRs first on the workspace card ([#3773](https://github.com/intent-hq/cloudlands-fe/issues/3773)) ([af25abc](https://github.com/intent-hq/cloudlands-fe/commit/af25abcf771b3353a0a132a8bdd6b4c23fb07fad))
+
 ## [2.243.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.243.1...v2.243.2) (2026-10-27)
 
 

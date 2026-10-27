@@ -38,27 +38,34 @@ beforeEach(() => {
   admitLegacyPrincipal();
 });
 
-describe('Home workspace menu retire actions', () => {
-  it.each([
-    ['active', { status: WorkspaceStatus.Active }],
-    ['archived', { status: WorkspaceStatus.Archived, archived: true }],
-  ] as const)('offers Retire on an %s workspace and opens the confirmation', (_, overrides) => {
-    const retire = item(menuFor(overrides), 'retire');
-    expect(retire?.label).toBe(m.workspace_retire_menu_label());
-    retire!.onClick();
+describe('Home workspace menu archive and purge actions', () => {
+  it('offers only Archive (no purge) on an active workspace', () => {
+    const entries = menuFor({ status: WorkspaceStatus.Active });
+    expect(item(entries, 'archive')?.label).toBe(m.workspace_card_archive_label());
+    expect(item(entries, 'purge')).toBeUndefined();
+    expect(item(entries, 'retire')).toBeUndefined();
+  });
+
+  it('offers Unarchive and Purge workspace folder on an archived workspace', () => {
+    const entries = menuFor({ status: WorkspaceStatus.Archived, archived: true });
+    expect(item(entries, 'archive')?.label).toBe(m.ui_workspaceActions_unarchiveSpace_label());
+    const purge = item(entries, 'purge');
+    expect(purge?.label).toBe(m.workspace_purge_menu_label());
+    purge!.onClick();
     expect(store.state.workspaceOperations.showRetireConfirm).toBe(true);
     expect(store.state.workspaceOperations.pendingRetireWorkspaceId).toBe('home-retire');
   });
 
-  it('offers Restore as blank workspace (no Retire, no Archive) on a retired workspace', () => {
+  it('presents a purged workspace as archived: Unarchive, no purge', () => {
     const entries = menuFor({
       status: WorkspaceStatus.Retired,
       archived: true,
       retiredAt: '2026-10-20T00:00:00Z',
     });
-    expect(item(entries, 'retire')).toBeUndefined();
-    const restore = item(entries, 'archive');
-    expect(restore?.label).toBe(m.workspace_retire_restore_label());
+    expect(item(entries, 'purge')).toBeUndefined();
+    const unarchive = item(entries, 'archive');
+    expect(unarchive?.label).toBe(m.ui_workspaceActions_unarchiveSpace_label());
+    unarchive!.onClick();
     expect(item(entries, 'delete')).toBeDefined();
   });
 });

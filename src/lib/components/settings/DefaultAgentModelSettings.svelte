@@ -148,8 +148,6 @@
       onModelChange={handleModelChange}
       showDefaultOption={false}
       variant="outline"
-      showProviderWarningNotice
-      noticeClass="mt-2"
       size="sm"
       updateGlobalDefault
       showReasoning

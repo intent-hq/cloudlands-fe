@@ -3,12 +3,14 @@ import {
   openWorkspaceFile,
   openWorkspaceNote,
 } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+import { notify } from '$lib/components/patterns/notify';
 
 const mocks = vi.hoisted(() => ({
   backendRequest: vi.fn(),
   dispatch: vi.fn(),
   navigateToRoute: vi.fn(),
   openMessage: vi.fn(),
+  getWorkspace: vi.fn(),
 }));
 
 vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: vi.fn() } }));
@@ -23,6 +25,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.backendRequest }));
 vi.mock('./navigation.client', () => ({ navigateToRoute: mocks.navigateToRoute }));
 vi.mock('./open-message', () => ({ openMessage: mocks.openMessage }));
+vi.mock('$lib/client', () => ({ appClient: { workspaces: { get: mocks.getWorkspace } } }));
 
 import { handleIntentLink } from './workspaces-link-handler';
 
@@ -197,4 +200,40 @@ describe('handleIntentLink panel navigation', () => {
     expect(mocks.navigateToRoute).not.toHaveBeenCalled();
     expect(mocks.dispatch).not.toHaveBeenCalled();
   });
+
+  it('opens the linked workspace from a workspace chat', async () => {
+    mocks.getWorkspace.mockResolvedValue({ id: 'cold-heron', title: 'Fix login' });
+    await handleIntentLink('intent://local/workspace/cold-heron', {
+      workspaceId: 'owning-workspace',
+      sourcePanelId: 'panel-chat',
+    });
+
+    expect(notify.error).not.toHaveBeenCalled();
+    expect(mocks.getWorkspace).toHaveBeenCalledWith('cold-heron');
+    expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/cold-heron');
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('encodes a decoded workspace id exactly once in the route', async () => {
+    mocks.getWorkspace.mockResolvedValue({ id: 'a b', title: 'Spaced' });
+    await handleIntentLink('intent://local/workspace/a%20b');
+
+    expect(mocks.getWorkspace).toHaveBeenCalledWith('a b');
+    expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/a%20b');
+  });
+
+  it.each([null, 'reject'])(
+    'reports a missing workspace instead of navigating (%s)',
+    async (outcome) => {
+      if (outcome === 'reject') mocks.getWorkspace.mockRejectedValue(new Error('gone'));
+      else mocks.getWorkspace.mockResolvedValue(null);
+      await handleIntentLink('intent://local/workspace/deleted-ws', {
+        workspaceId: 'owning-workspace',
+      });
+
+      expect(notify.error).toHaveBeenCalledTimes(1);
+      expect(mocks.navigateToRoute).not.toHaveBeenCalled();
+      expect(mocks.dispatch).not.toHaveBeenCalled();
+    },
+  );
 });

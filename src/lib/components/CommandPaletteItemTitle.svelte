@@ -45,7 +45,7 @@
       class="shrink-0 rounded bg-muted px-1.5 py-0.5 type-caption text-muted-foreground"
       data-palette-retired-badge
     >
-      {m.lib_commandPalette_retiredWorkspace_pill()}
+      {m.lib_commandPalette_archivedWorkspace_pill()}
     </span>
   {/if}
   {#if (item.type === 'message' || item.type === 'note') && item.isArchivedWorkspace}

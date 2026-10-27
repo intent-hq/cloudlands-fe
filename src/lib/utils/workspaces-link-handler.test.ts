@@ -148,6 +148,57 @@ describe('parseIntentLink', () => {
     );
   });
 
+  describe('workspace links', () => {
+    it('parses a workspace link to the workspace id', () => {
+      expect(parseIntentLink('intent://local/workspace/cold-heron')).toEqual({
+        type: 'workspace',
+        orgId: 'local',
+        workspaceId: 'cold-heron',
+        resourceId: 'cold-heron',
+        valid: true,
+      });
+    });
+
+    it('accepts a trailing slash like the Assistant panel does', () => {
+      expect(parseIntentLink('intent://local/workspace/cold-heron/')).toMatchObject({
+        type: 'workspace',
+        workspaceId: 'cold-heron',
+        valid: true,
+      });
+    });
+
+    it('decodes a percent-encoded workspace id once', () => {
+      expect(parseIntentLink('intent://local/workspace/a%20b')).toMatchObject({
+        type: 'workspace',
+        workspaceId: 'a b',
+        resourceId: 'a b',
+        valid: true,
+      });
+    });
+
+    it('keeps a workspace literally named "workspace" usable for notes', () => {
+      const parsed = parseIntentLink('intent://local/workspace/note/spec');
+      expect(parsed).toMatchObject({
+        type: 'note',
+        workspaceId: 'workspace',
+        resourceId: 'spec',
+        valid: true,
+      });
+    });
+
+    it.each([
+      'intent://local/workspace/',
+      'intent://local/workspace/cold-heron/extra',
+      'intent://local/workspace/%2e%2e',
+      'intent://local/workspace/a%2Fb',
+      'intent://local/workspace/__chief__',
+      'intent://local/workspace/new',
+      'intent://local/workspace/cold-heron//',
+    ])('rejects malformed workspace link %s', (link) => {
+      expect(parseIntentLink(link).valid).toBe(false);
+    });
+  });
+
   describe('invalid links', () => {
     it('should reject malformed URL with missing parts', () => {
       const result = parseIntentLink('intent://local');

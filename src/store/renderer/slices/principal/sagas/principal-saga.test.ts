@@ -508,7 +508,9 @@ describe('connected principal hydration', () => {
     expect(wire.request).toHaveBeenCalledTimes(1);
   });
 
-  it('preserves ordinary legacy owner controls with Multiplayer off or missing', async () => {
+  it('preserves ordinary legacy owner controls with the internal Multiplayer gate off or preferences missing', async () => {
+    // Multiplayer is always on for users; the gate remains an internal seam until its branches are removed.
+    store.dispatch(setLabsMultiplayerEnabled(false));
     wire.request.mockResolvedValue({
       hello: { server: {} },
       principal: {
@@ -537,6 +539,7 @@ describe('connected principal hydration', () => {
     // Main has no GitLab lab yet; an additive preference cannot bypass Multiplayer.
     dispose();
     dispose = store.init({ userPreferences: { labsGitLabEnabled: gitlab } } as never);
+    store.dispatch(setLabsMultiplayerEnabled(false));
     const pending = defer();
     start();
     workspace(true);

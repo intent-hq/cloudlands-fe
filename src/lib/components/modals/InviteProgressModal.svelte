@@ -5,11 +5,13 @@
    * `opening` the joined workspace) and a single Cancel button. Cancel /
    * Escape / backdrop / × all cancel exactly once per open. Main moves the
    * dialog between phases with an update (no remount) and closes it with a
-   * dismiss once the phase ends.
+   * dismiss once the phase ends. The `admission` phase (the window confirming it
+   * is ready to join) looks like `connecting`; only if that automatic step fails
+   * does it show an error with Try again.
    */
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
-  import { faXmark, faUsers } from '@fortawesome/free-solid-svg-icons';
+  import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import Portal from '$lib/components/ui/Portal.svelte';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { FocusTrap } from '$lib/utils/accessibility';
@@ -21,7 +23,8 @@
     payload?: InviteProgressShowPayload | null;
     /** Called exactly once per open when the user cancels the join. */
     onCancel?: () => void;
-    onEnable?: () => void;
+    /** Retry the automatic readiness step after it failed (admission phase only). */
+    onRetry?: () => void;
     busy?: boolean;
     failed?: boolean;
   }
@@ -30,7 +33,7 @@
     open = $bindable(false),
     payload = null,
     onCancel,
-    onEnable,
+    onRetry,
     busy = false,
     failed = false,
   }: Props = $props();
@@ -41,17 +44,12 @@
   let dialogEl = $state<HTMLDivElement | null>(null);
 
   const opening = $derived(payload?.phase === 'opening');
-  const admission = $derived(payload?.phase === 'admission');
+  const retryable = $derived(payload?.phase === 'admission' && failed);
   const visible = $derived(open);
   const title = $derived(
-    admission
-      ? m.inviteProgress_admission_title()
-      : opening
-        ? m.inviteProgress_modal_opening_title()
-        : m.inviteProgress_modal_connecting_title(),
+    opening ? m.inviteProgress_modal_opening_title() : m.inviteProgress_modal_connecting_title(),
   );
   const message = $derived.by(() => {
-    if (admission) return m.inviteProgress_admission_message();
     if (opening) {
       return payload?.workspaceTitle
         ? m.inviteProgress_modal_opening_message({ workspaceTitle: payload.workspaceTitle })
@@ -103,7 +101,7 @@
         onclick={(e) => e.stopPropagation()}
         role="alertdialog"
         aria-modal="true"
-        aria-busy={!admission || busy}
+        aria-busy={!retryable || busy}
         aria-labelledby={dialogTitleId}
         aria-describedby={dialogDescriptionId}
         tabindex="-1"
@@ -114,10 +112,7 @@
             <div
               class="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-full bg-muted/40 text-foreground ring-1 ring-border"
             >
-              {#if admission}<Fa icon={faUsers} />{:else}<IntentMarkLoader
-                  size={20}
-                  class="shrink-0"
-                />{/if}
+              <IntentMarkLoader size={20} class="shrink-0" />
             </div>
             <div>
               <h2 id={dialogTitleId} class="text-lg font-semibold leading-6">{title}</h2>
@@ -135,9 +130,9 @@
           </Button>
         </div>
 
-        {#if admission && failed}
+        {#if retryable}
           <p role="alert" class="px-6 pt-4 text-sm text-danger">
-            {m.inviteProgress_admission_enable_error()}
+            {m.inviteProgress_admission_retry_error()}
           </p>
         {/if}
 
@@ -147,9 +142,9 @@
           <Button variant="outline" class="sm:min-w-[6rem]" onclick={cancel}>
             {m.inviteProgress_modal_cancelButton_label()}
           </Button>
-          {#if admission}
-            <Button disabled={busy} onclick={onEnable}
-              >{m.inviteProgress_admission_enableButton()}</Button
+          {#if retryable}
+            <Button disabled={busy} onclick={onRetry}
+              >{m.inviteProgress_admission_retryButton()}</Button
             >
           {/if}
         </div>
