@@ -51,7 +51,14 @@ export interface InviteProgressHandlers {
 
 let activeRequestId: string | null = null;
 let retryable = false;
-let recovery: { requestId: string; busy: boolean; attempted: boolean } | null = null;
+let recovery: { requestId: string; busy: boolean; attempted: boolean; failed: boolean } | null =
+  null;
+/**
+ * Main answers `retry` with success even when it ignores it (stale request, policy changed).
+ * An admission still showing this long after an accepted retry is treated as failed so the
+ * user gets Try again instead of an indefinite spinner.
+ */
+export const ADMISSION_STALL_MS = 3_000;
 let handlers: InviteProgressHandlers | null = null;
 
 function isProgressPayload(payload: unknown): payload is InviteProgressShowPayload {
@@ -88,7 +95,7 @@ export function installInviteProgressService(newHandlers: InviteProgressHandlers
       return;
     }
     if (activeRequestId !== payload.requestId) {
-      recovery = { requestId: payload.requestId, busy: false, attempted: false };
+      recovery = { requestId: payload.requestId, busy: false, attempted: false, failed: false };
       handlers?.onRecoveryState?.({ busy: false, failed: false });
     }
     activeRequestId = payload.requestId;
@@ -183,7 +190,8 @@ async function continueInvite(): Promise<void> {
   request.busy = true;
   request.attempted = true;
   const current = () => recovery === request && activeRequestId === request.requestId && retryable;
-  handlers?.onRecoveryState?.({ busy: true, failed: false });
+  // Keep a previous failure visible while Try again runs, so its (disabled) button stays mounted.
+  handlers?.onRecoveryState?.({ busy: true, failed: request.failed });
   let failed = false;
   try {
     // Let the main show call finish installing its handle before policy can replay it.
@@ -195,10 +203,16 @@ async function continueInvite(): Promise<void> {
       requestId: request.requestId,
       action: 'retry',
     });
+    setTimeout(() => {
+      if (!current() || request.busy || request.failed) return;
+      request.failed = true;
+      handlers?.onRecoveryState?.({ busy: false, failed: true });
+    }, ADMISSION_STALL_MS);
   } catch {
     failed = true;
   } finally {
     request.busy = false;
+    request.failed = failed;
     if (current()) handlers?.onRecoveryState?.({ busy: false, failed });
   }
 }

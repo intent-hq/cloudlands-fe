@@ -49,6 +49,7 @@ import {
   setHasCompletedProviderSetup,
   providerSetupHydrated,
   setLabsMultiplayerEnabled,
+  userPreferencesHydrated,
   setLabsGitLabEnabled,
   setLabsRemoteAgentsEnabled,
   toggleLabsGitLab,
@@ -251,6 +252,7 @@ describe('userPreferencesPersistenceSaga', () => {
       [hydrateActivityLogPresets([preset])],
       [setLanguagePreference('de')],
       [setGithubLinkDefaultAction('copy-link')],
+      [userPreferencesHydrated()],
     ]);
     expect(mocks.applyLanguagePreference.mock.calls).toEqual([]);
   });
@@ -267,6 +269,7 @@ describe('userPreferencesPersistenceSaga', () => {
       expect(dispatch.mock.calls).toEqual([
         [providerSetupHydrated('local', false)],
         [setReduceMotionOnBattery(stored)],
+        [userPreferencesHydrated()],
       ]);
       const hydrated = dispatch.mock.calls.reduce(
         (state, [action]) => userPreferencesReducer(state, action),
@@ -277,7 +280,7 @@ describe('userPreferencesPersistenceSaga', () => {
   );
 
   it.each([true, false])(
-    'ignores and removes a retired labs:multiplayerEnabled = %s: Multiplayer is always on',
+    'ignores (and keeps for older builds) a retired labs:multiplayerEnabled = %s: Multiplayer is always on',
     async (stored) => {
       mocks.getJSON.mockImplementation((key: string) =>
         key === 'labs:multiplayerEnabled' ? stored : undefined,
@@ -286,8 +289,11 @@ describe('userPreferencesPersistenceSaga', () => {
       await runSaga({ dispatch, getState: () => ({}) }, hydrateUserPreferencesWorker).toPromise();
 
       expect(mocks.getJSON.mock.calls.map(([key]) => key)).not.toContain('labs:multiplayerEnabled');
-      expect(mocks.removeItem).toHaveBeenCalledWith('labs:multiplayerEnabled');
-      expect(dispatch.mock.calls).toEqual([[providerSetupHydrated('local', false)]]);
+      expect(mocks.removeItem).not.toHaveBeenCalled();
+      expect(dispatch.mock.calls).toEqual([
+        [providerSetupHydrated('local', false)],
+        [userPreferencesHydrated()],
+      ]);
       const hydrated = dispatch.mock.calls.reduce(
         (state, [action]) => userPreferencesReducer(state, action),
         initialState,
@@ -575,7 +581,10 @@ describe('userPreferencesPersistenceSaga', () => {
     const dispatch = vi.fn();
     await runSaga({ dispatch, getState: () => ({}) }, hydrateUserPreferencesWorker).toPromise();
 
-    expect(dispatch.mock.calls).toEqual([[providerSetupHydrated('local', false)]]);
+    expect(dispatch.mock.calls).toEqual([
+      [providerSetupHydrated('local', false)],
+      [userPreferencesHydrated()],
+    ]);
   });
 
   it('hydrates and persists shortcut overrides through the preference storage', async () => {

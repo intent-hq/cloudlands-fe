@@ -31,6 +31,7 @@ vi.mock('$shared/logger', () => ({
 }));
 
 import {
+  ADMISSION_STALL_MS,
   cancelInviteProgress,
   retryInviteProgress,
   installInviteProgressService,
@@ -166,6 +167,56 @@ describe('invite-progress-service', () => {
     expect(onRecoveryState).toHaveBeenLastCalledWith({ busy: false, failed: false });
     expect(preference.dispatch).not.toHaveBeenCalled();
   });
+
+  it('keeps the failure (and so Try again) visible while Try again is running', async () => {
+    const onRecoveryState = vi.fn();
+    reinstall(onRecoveryState);
+    invoke.mockImplementation(async (channel: string) =>
+      channel === COLLABORATION_AUTH.POLICY ? { ok: false } : { ok: true },
+    );
+    emit(INVITE_PROGRESS_CHANNELS.SHOW, { ...SHOW_PAYLOAD, phase: 'admission' });
+    await vi.waitFor(() =>
+      expect(onRecoveryState).toHaveBeenLastCalledWith({ busy: false, failed: true }),
+    );
+    const pending = Promise.withResolvers<{ ok: boolean }>();
+    invoke.mockImplementation((channel: string) =>
+      channel === COLLABORATION_AUTH.POLICY ? pending.promise : Promise.resolve({ ok: true }),
+    );
+    const retrying = retryInviteProgress();
+    expect(onRecoveryState).toHaveBeenLastCalledWith({ busy: true, failed: true });
+    pending.resolve({ ok: true });
+    await retrying;
+    expect(onRecoveryState).toHaveBeenLastCalledWith({ busy: false, failed: false });
+  });
+
+  it.each([
+    ['still shows the admission', false],
+    ['moved on to connecting', true],
+  ] as const)(
+    'after an accepted automatic retry, offers Try again only if main %s',
+    async (_label, movedOn) => {
+      vi.useFakeTimers();
+      try {
+        const onRecoveryState = vi.fn();
+        reinstall(onRecoveryState);
+        emit(INVITE_PROGRESS_CHANNELS.SHOW, { ...SHOW_PAYLOAD, phase: 'admission' });
+        await vi.waitFor(() =>
+          expect(invoke).toHaveBeenCalledWith(INVITE_PROGRESS_CHANNELS.RESPONSE, {
+            requestId: SHOW_PAYLOAD.requestId,
+            action: 'retry',
+          }),
+        );
+        await vi.waitFor(() =>
+          expect(onRecoveryState).toHaveBeenLastCalledWith({ busy: false, failed: false }),
+        );
+        if (movedOn) emit(INVITE_PROGRESS_CHANNELS.UPDATE, SHOW_PAYLOAD);
+        await vi.advanceTimersByTimeAsync(ADMISSION_STALL_MS);
+        expect(onRecoveryState).toHaveBeenLastCalledWith({ busy: false, failed: !movedOn });
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it.each(['cancel', 'replacement', 'policy-failure'] as const)(
     'does not continue after %s while policy publication is pending',

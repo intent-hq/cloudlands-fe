@@ -83,6 +83,10 @@ export const selectLabsMultiplayerEnabled = store.createSelector((state) => {
   return state.userPreferences?.labsMultiplayerEnabled ?? true;
 });
 
+export const selectUserPreferencesHydrated = store.createSelector((state) => {
+  return state.userPreferences?.preferencesHydrated === true;
+});
+
 /** Native review PR flow; independent of Multiplayer and off unless a test or preview enables it. */
 export const selectNativeReviewEnabled = store.createSelector((state) => {
   return state.userPreferences?.nativeReviewEnabled === true;

@@ -76,6 +76,8 @@ export type UserPreferencesState = {
    * keeps the classic flow; not persisted and has no UI. Tests and previews turn it on.
    */
   nativeReviewEnabled: boolean;
+  /** Saved preferences have been read from local storage at least once this session. */
+  preferencesHydrated: boolean;
   agentFontStyle: AgentFontStyle;
   noteFontStyle: NoteFontStyle;
   codeFontFamily: string;
@@ -151,6 +153,7 @@ export const initialState: UserPreferencesStoreState = {
   labsGitLabEnabled: false,
   labsRemoteAgentsEnabled: false,
   nativeReviewEnabled: false,
+  preferencesHydrated: false,
   ...fontSettingsInitialState,
   ...notificationSettingsInitialState,
   notificationVolumeEditId: 0,
@@ -316,6 +319,8 @@ const hasCompletedProviderSetupPreference = createBooleanPreference<UserPreferen
   setActionName: 'setHasCompletedProviderSetup',
   toggleActionName: 'toggleHasCompletedProviderSetup',
 });
+
+export const userPreferencesHydrated = createAction('userPreferences/hydrated');
 
 export const providerSetupHydrated = createAction<[backendId: string, completed: boolean]>(
   'userPreferences/providerSetupHydrated',
@@ -530,6 +535,10 @@ spellcheckPreference.register(userPreferencesReducer);
 showArchivedPreference.register(userPreferencesReducer);
 groupByRepoPreference.register(userPreferencesReducer);
 hasCompletedProviderSetupPreference.register(userPreferencesReducer);
+userPreferencesReducer.with(userPreferencesHydrated, (state) => ({
+  ...state,
+  preferencesHydrated: true,
+}));
 userPreferencesReducer.with(
   providerSetupHydrated,
   (state, { payload: [backendId, completed] }) => ({

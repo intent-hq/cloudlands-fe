@@ -250,6 +250,7 @@ export const mockUserPreferences: UserPreferencesState = {
   labsGitLabEnabled: false,
   labsRemoteAgentsEnabled: false,
   nativeReviewEnabled: false,
+  preferencesHydrated: true,
   labsSettingsVisible: false,
   agentFontStyle: 'sans',
   noteFontStyle: 'sans',
