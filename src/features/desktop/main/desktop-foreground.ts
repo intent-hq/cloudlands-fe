@@ -111,7 +111,12 @@ export class DesktopForegroundTracker {
   async beforeAgentAction(sessionId: string): Promise<void> {
     const t = this.current(sessionId);
     if (!t) return;
-    // This reading covers anything the owed settle sample would have seen.
+    // Past the window, the previous action's owed (bounded) settle sample must
+    // land first; otherwise its delayed activation would be compared against
+    // the stale pid and read as the user's. Within the window this reading is
+    // attributed to the agent anyway, so it supersedes the settle sample.
+    if (t.settleOwed && this.settled(t)) await this.settle(t);
+    if (this.track !== t) return;
     this.supersedeSettle(t);
     const pid = await this.read();
     if (this.track === t) this.observe(t, pid);

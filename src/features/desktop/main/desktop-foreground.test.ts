@@ -213,3 +213,54 @@ describe('owed settle sample that cannot complete', () => {
     await expect(t.tracker.userSwitched('s')).resolves.toBeUndefined();
   });
 });
+
+describe('next agent action while the previous settlement is owed', () => {
+  it('settles a pending sample before classifying the next pre-action reading', async () => {
+    let front = INTENT;
+    let release: (() => void) | undefined;
+    const sample = vi.fn(async () => front);
+    const tracker = new DesktopForegroundTracker(sample, GRACE, () => Date.now());
+    await tracker.begin('s');
+    await tracker.beforeAgentAction('s');
+    await tracker.afterAgentAction('s'); // Dock click; Intent still in front
+    await vi.advanceTimersByTimeAsync(1_500);
+    front = SAFARI; // delayed activation
+    sample.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve(front);
+        }),
+    );
+    await vi.advanceTimersByTimeAsync(GRACE - 1_500); // settle sample now pending
+    expect(release).toBeDefined();
+    await vi.advanceTimersByTimeAsync(1);
+    const next = tracker.beforeAgentAction('s');
+    release?.();
+    await next;
+    await tracker.afterAgentAction('s');
+    await vi.advanceTimersByTimeAsync(60_000);
+    await expect(tracker.userSwitched('s')).resolves.toBe(false);
+  });
+  it('settles inline when the next action starts before the settle timer fired', async () => {
+    const t = setup();
+    await t.tracker.begin('s');
+    const actedAt = Date.now();
+    await t.act();
+    await vi.advanceTimersByTimeAsync(1_500);
+    t.setFront(SAFARI);
+    vi.setSystemTime(actedAt + GRACE + 1); // past the window, timer not run
+    await t.act(); // next action types into Safari
+    await vi.advanceTimersByTimeAsync(60_000);
+    await expect(t.tracker.userSwitched('s')).resolves.toBe(false);
+  });
+  it('still detects a real user switch before the next action', async () => {
+    const t = setup();
+    await t.tracker.begin('s');
+    await t.act(SAFARI);
+    await vi.advanceTimersByTimeAsync(GRACE + 1_000); // settled on Safari
+    t.setFront(SLACK); // user
+    await t.act();
+    await vi.advanceTimersByTimeAsync(60_000);
+    await expect(t.tracker.userSwitched('s')).resolves.toBe(true);
+  });
+});
