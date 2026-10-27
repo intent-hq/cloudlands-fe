@@ -19,7 +19,7 @@ import {
 import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, posix, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 const updaterRequire = createRequire(createRequire(import.meta.url).resolve('electron-updater'));
@@ -1514,61 +1514,120 @@ it('rejects a resolved daemon identity different from the selected immutable ref
 // scripts from the tag. A step that calls a script newer than the tag passes the
 // current-tree fixtures and fails only on a real rebuild (cloudlands-fe#3780).
 const PNPM_BUILTINS = new Set(['install', 'i', 'add', 'exec', 'dlx', 'store', 'rebuild']);
+const LEGACY_SKIPPED_CONDITION = "needs.resolve.outputs.native_macos == 'true'";
 interface TagCall {
   job: string;
   step: string;
   target: string;
   kind: 'file' | 'package-script';
 }
-// Paths a run tests with `-f`/`-e`, literally or through `for V in "${ARR[@]}"`.
-function presenceTested(run: string) {
-  const tested = new Set<string>();
-  const arrays = new Map<string, string[]>();
-  for (const [, name, body] of run.matchAll(/\b(\w+)=\(([^)]*)\)/g)) {
-    arrays.set(name, body.split(/\s+/).filter(Boolean));
+interface RunDefaults {
+  defaults?: { run?: { 'working-directory'?: string } };
+}
+type TagStep = Step & { 'working-directory'?: string };
+const SCRIPT_REF = /(?<![\w./-])(?:\.\/)?scripts\/[\w./-]*[\w-]/g;
+const normalizeRef = (ref: string) => posix.normalize(ref.replace(/"/g, ''));
+// True only for the exact native-only condition the oldest (legacy) tag skips;
+// any other condition may run on that tag, so its calls are still checked.
+function skippedOnLegacyTag(condition: string | undefined) {
+  if (!condition) return false;
+  return condition.replace(/^\$\{\{\s*|\s*\}\}$/g, '').trim() === LEGACY_SKIPPED_CONDITION;
+}
+// Script paths a run calls without a presence guard that protects that call:
+// inside the then-branch of `if [ -f X ]`, after an `if [ ! -f X ]` block whose
+// body exits/execs, after `[ -f X ] &&` on the same line, or as an element of an
+// array only probed by `for V in "${A[@]}"; ... [ -f "$V" ]` (not a call at all).
+function unguardedRefs(run: string) {
+  let text = run
+    .split('\n')
+    .filter((line) => !/^\s*#/.test(line))
+    .join('\n');
+  for (const [, variable, array] of text.matchAll(/\bfor (\w+) in "\$\{(\w+)\[@\]\}"/g)) {
+    if (!new RegExp(`-[fe]\\s+"?\\$\\{?${variable}\\b`).test(text)) continue;
+    text = text.replace(new RegExp(`\\b${array}=\\([^)]*\\)`), `${array}=()`);
   }
-  const loops = new Map<string, string>();
-  for (const [, variable, array] of run.matchAll(/\bfor (\w+) in "\$\{(\w+)\[@\]\}"/g)) {
-    loops.set(variable, array);
+  // One statement per line, so one-line `if ...; then ...; fi` scans like the block form.
+  const lines = text
+    .replace(/;\s*(then|else|elif|fi|do|done)\b/g, '\n$1')
+    .replace(/\b(then|else|do)\s+(?=\S)/g, '$1\n')
+    .replace(/^(\s*(?:fi|done))\s*(?:;|&&|\|\|)\s*/gm, '$1\n')
+    .split('\n');
+  const test = /^\s*(?:if|elif)\s+(?:\[\s+|test\s+)(!\s+)?-[fe]\s+("?[^\s\]"]+"?)/;
+  const frames: { target?: string; positive: boolean; terminates: boolean }[] = [];
+  const guardedAfter = new Set<string>();
+  const refs: string[] = [];
+  for (const line of lines) {
+    const opened = test.exec(line);
+    if (opened) {
+      frames.push({ target: normalizeRef(opened[2]), positive: !opened[1], terminates: false });
+      continue;
+    }
+    if (/^\s*if\b/.test(line)) {
+      frames.push({ positive: false, terminates: false });
+    } else if (/^\s*else\b/.test(line) && frames.length) {
+      frames[frames.length - 1].positive = !frames[frames.length - 1].positive;
+    } else if (/^\s*fi\b/.test(line)) {
+      const frame = frames.pop();
+      if (frame?.target && !frame.positive && frame.terminates) guardedAfter.add(frame.target);
+      continue;
+    }
+    if (/^\s*(?:exec|exit)\b/.test(line) && frames.length)
+      frames[frames.length - 1].terminates = true;
+    const inline = [...line.matchAll(/\[\s+-[fe]\s+("?[^\s\]"]+"?)\s+\]\s*&&/g)].map((m) =>
+      normalizeRef(m[1]),
+    );
+    for (const [ref] of line.matchAll(SCRIPT_REF)) {
+      const target = normalizeRef(ref);
+      const guarded =
+        guardedAfter.has(target) ||
+        inline.includes(target) ||
+        frames.some((frame) => frame.positive && frame.target === target);
+      if (!guarded) refs.push(target);
+    }
   }
-  for (const [, operand] of run.matchAll(/(?:\[|\btest)\s+(?:!\s+)?-[fe]\s+("?[^\s\]"]+"?)/g)) {
-    const value = operand.replace(/"/g, '').replace(/^\.\//, '');
-    const variable = /^\$\{?(\w+)\}?$/.exec(value)?.[1];
-    if (!variable) tested.add(value);
-    else for (const item of arrays.get(loops.get(variable) ?? '') ?? []) tested.add(item);
-  }
-  return tested;
+  return refs;
 }
 // Calls into the tag checkout that the oldest tag cannot satisfy and nothing guards.
-function unguardedTagCalls(wf: Workflow, snapshot: TagSnapshot): TagCall[] {
+function unguardedTagCalls(wf: Workflow & RunDefaults, snapshot: TagSnapshot): TagCall[] {
   const calls: TagCall[] = [];
-  for (const [job, { steps = [] }] of Object.entries(wf.jobs)) {
+  for (const [job, definition] of Object.entries(wf.jobs)) {
+    const { steps = [] } = definition;
+    if (skippedOnLegacyTag(definition.if)) continue;
+    const isCheckout = (s: Step) => s.uses?.startsWith('actions/checkout@') === true;
     const checkout = steps.findIndex(
       (s) =>
-        s.uses?.startsWith('actions/checkout@') &&
+        isCheckout(s) &&
         String(s.with?.ref ?? '').startsWith('refs/tags/') &&
-        !s.with?.path,
+        posix.normalize(String(s.with?.path ?? '.')) === '.',
     );
     if (checkout < 0) continue;
-    for (const s of steps.slice(checkout + 1)) {
-      if (!s.run) continue;
-      const cwd = (s as Step & { 'working-directory'?: string })['working-directory'];
-      if (cwd && cwd !== '.') continue;
-      // The oldest tag routes as native_macos=false, so native-only steps skip.
-      if (/native_macos\s*==\s*'true'/.test(s.if ?? '')) continue;
+    // Other checkouts (e.g. .release-tools) hold current tooling, not the tag.
+    const otherRoots = steps
+      .filter((s) => isCheckout(s) && s.with?.path)
+      .map((s) => posix.normalize(String(s.with!.path)))
+      .filter((root) => root !== '.');
+    const jobCwd = (definition as Job & RunDefaults).defaults?.run?.['working-directory'];
+    for (const s of steps.slice(checkout + 1) as TagStep[]) {
+      if (!s.run || skippedOnLegacyTag(s.if)) continue;
+      const cwd = posix.normalize(
+        s['working-directory'] ?? jobCwd ?? wf.defaults?.run?.['working-directory'] ?? '.',
+      );
+      if (otherRoots.some((root) => cwd === root || cwd.startsWith(`${root}/`))) continue;
+      for (const ref of unguardedRefs(s.run)) {
+        const target = posix.join(cwd, ref);
+        if (!snapshot.files.includes(target))
+          calls.push({ job, step: s.name, target, kind: 'file' });
+      }
       const run = s.run
         .split('\n')
         .filter((line) => !/^\s*#/.test(line))
         .join('\n');
-      const guarded = presenceTested(run);
-      for (const [path] of run.matchAll(/(?<![\w./-])(?:\.\/)?scripts\/[\w./-]*[\w-]/g)) {
-        const target = path.replace(/^\.\//, '');
-        if (snapshot.files.includes(target) || guarded.has(target)) continue;
-        calls.push({ job, step: s.name, target, kind: 'file' });
-      }
       for (const [, name] of run.matchAll(/\bpnpm\s+(?:run\s+)?([\w:-]+)/g)) {
-        if (PNPM_BUILTINS.has(name) || snapshot.packageScripts.includes(name)) continue;
-        calls.push({ job, step: s.name, target: name, kind: 'package-script' });
+        if (PNPM_BUILTINS.has(name)) continue;
+        // A non-root cwd reads another package.json the snapshot does not cover.
+        if (cwd === '.' && snapshot.packageScripts.includes(name)) continue;
+        const target = cwd === '.' ? name : `${cwd}:${name}`;
+        calls.push({ job, step: s.name, target, kind: 'package-script' });
       }
     }
   }
@@ -1597,13 +1656,15 @@ describe('release tag checkout compatibility with the oldest rebuildable tag', (
     ).toEqual([]);
   });
 
-  it('flags an unguarded new script and accepts the guarded or legacy-skipped forms', () => {
-    const wf = (steps: Step[]): Workflow =>
+  it('flags unguarded or wrongly guarded calls and accepts protected or skipped ones', () => {
+    const wf = (steps: Step[], defaults?: string): Workflow =>
       ({
         jobs: {
           build: {
+            ...(defaults ? { defaults: { run: { 'working-directory': defaults } } } : {}),
             steps: [
               { name: 'Checkout', uses: 'actions/checkout@v7', with: { ref: 'refs/tags/v1' } },
+              { name: 'Tools', uses: 'actions/checkout@v7', with: { path: './.release-tools' } },
               ...steps,
             ],
           },
@@ -1615,45 +1676,64 @@ describe('release tag checkout compatibility with the oldest rebuildable tag', (
       files: ['scripts/old.mjs'],
       packageScripts: ['build'],
     };
+    const flagged = (steps: Step[], defaults?: string) =>
+      unguardedTagCalls(wf(steps, defaults), snapshot).map((c) => `${c.step}:${c.target}`);
     expect(
-      unguardedTagCalls(
-        wf([
-          {
-            name: 'New',
-            run: 'node scripts/new.mjs\n# node scripts/commented.mjs\npnpm run fresh',
-          },
-          { name: 'Old', run: 'node ./scripts/old.mjs && pnpm run build && pnpm install' },
-        ]),
-        snapshot,
-      ),
+      flagged([
+        { name: 'New', run: 'node scripts/new.mjs\n# node scripts/commented.mjs\npnpm run fresh' },
+        { name: 'Old', run: 'node ./scripts/old.mjs && pnpm run build && pnpm install' },
+        // A presence test only guards the call it protects.
+        {
+          name: 'Unrelated',
+          run: 'if [ -f scripts/new.mjs ]; then echo ok; fi; node scripts/new.mjs',
+        },
+        { name: 'Else', run: 'if [ -f scripts/new.mjs ]; then :; else node scripts/new.mjs; fi' },
+        {
+          name: 'Falls',
+          run: 'if [ ! -f scripts/new.mjs ]; then echo no; fi\nnode scripts/new.mjs',
+        },
+        { name: 'Dot', 'working-directory': './', run: 'node scripts/new.mjs' } as Step,
+        {
+          name: 'Either',
+          if: "needs.resolve.outputs.native_macos == 'true' || needs.resolve.outputs.native_macos == 'false'",
+          run: 'bash scripts/native.sh',
+        },
+      ]),
     ).toEqual([
-      { job: 'build', step: 'New', target: 'scripts/new.mjs', kind: 'file' },
-      { job: 'build', step: 'New', target: 'fresh', kind: 'package-script' },
+      'New:scripts/new.mjs',
+      'New:fresh',
+      'Unrelated:scripts/new.mjs',
+      'Else:scripts/new.mjs',
+      'Falls:scripts/new.mjs',
+      'Dot:scripts/new.mjs',
+      'Either:scripts/native.sh',
+    ]);
+    expect(flagged([{ name: 'Sub', run: 'node scripts/old.mjs' }], 'src')).toEqual([
+      'Sub:src/scripts/old.mjs',
     ]);
     expect(
-      unguardedTagCalls(
-        wf([
-          {
-            name: 'Guarded',
-            run: 'if [ ! -f scripts/new.mjs ]; then exec pnpm run build; fi\nexec node scripts/new.mjs',
-          },
-          {
-            name: 'Probe',
-            run: 'T=(scripts/a.mjs scripts/b.sh)\nfor X in "${T[@]}"; do [ -f "$X" ] && n=1; done',
-          },
-          {
-            name: 'Native',
-            if: "needs.resolve.outputs.native_macos == 'true'",
-            run: 'bash scripts/native.sh',
-          },
-          {
-            name: 'Tools',
-            'working-directory': '.release-tools',
-            run: 'node scripts/x.mjs',
-          } as Step,
-        ]),
-        snapshot,
-      ),
+      flagged([
+        {
+          name: 'Fallback',
+          run: 'if [ ! -f scripts/new.mjs ]; then exec pnpm run build; fi\nexec node scripts/new.mjs',
+        },
+        { name: 'Then', run: 'if [ -f scripts/new.mjs ]; then\n  node scripts/new.mjs\nfi' },
+        { name: 'Inline', run: '[ -f scripts/new.mjs ] && node scripts/new.mjs' },
+        {
+          name: 'Probe',
+          run: 'T=(scripts/a.mjs scripts/b.sh)\nfor X in "${T[@]}"; do [ -f "$X" ] && n=1; done',
+        },
+        {
+          name: 'Native',
+          if: "${{ needs.resolve.outputs.native_macos == 'true' }}",
+          run: 'bash scripts/native.sh',
+        },
+        {
+          name: 'Tools',
+          'working-directory': '.release-tools/',
+          run: 'node scripts/x.mjs',
+        } as Step,
+      ]),
     ).toEqual([]);
   });
 
