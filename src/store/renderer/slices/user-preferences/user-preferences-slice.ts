@@ -62,7 +62,10 @@ export type UserPreferencesState = {
   reduceMotionOnBattery: boolean;
   /** Whether the experimental Labs tab is visible in Settings. */
   labsSettingsVisible: boolean;
-  /** Whether the Multiplayer lab (experimental) is enabled. */
+  /**
+   * Multiplayer is always on; this is no longer a user preference. The field and its
+   * actions remain only as an internal seam until the disabled-mode branches are removed.
+   */
   labsMultiplayerEnabled: boolean;
   /** Whether new GitLab setup is offered in Labs. Existing connections are preserved. */
   labsGitLabEnabled: boolean;
@@ -139,7 +142,7 @@ export const initialState: UserPreferencesStoreState = {
   shellTransparencyEnabled: true,
   reduceMotionOnBattery: false,
   labsSettingsVisible: false,
-  labsMultiplayerEnabled: false,
+  labsMultiplayerEnabled: true,
   labsGitLabEnabled: false,
   labsRemoteAgentsEnabled: false,
   ...fontSettingsInitialState,

@@ -246,7 +246,7 @@ export const mockUserPreferences: UserPreferencesState = {
   collapseToolRuns: false,
   shellTransparencyEnabled: true,
   reduceMotionOnBattery: false,
-  labsMultiplayerEnabled: false,
+  labsMultiplayerEnabled: true,
   labsGitLabEnabled: false,
   labsRemoteAgentsEnabled: false,
   labsSettingsVisible: false,

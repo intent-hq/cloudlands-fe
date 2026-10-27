@@ -11,7 +11,6 @@ import {
   setAgentFontStyle,
   setChatAuroraEnabled,
   setGithubLinkDefaultAction,
-  setLabsMultiplayerEnabled,
   setLabsGitLabEnabled,
   setLabsRemoteAgentsEnabled,
   setShellTransparencyEnabled,
@@ -274,24 +273,11 @@ describe('settings-proposal-actions', () => {
     ]);
   });
 
-  it('applies and reverses the Multiplayer lab preference', async () => {
-    const result = await applySettingsProposalWork(
-      makeDetail(makeProposal('labs.multiplayer', true)),
-    );
-
-    expect(mocks.dispatch).toHaveBeenCalledWith(setLabsMultiplayerEnabled(true));
-    expect(result.reverseChanges).toEqual([
-      {
-        path: 'labs.multiplayer',
-        value: false,
-        apply: { kind: 'redux-action', action: 'userPreferences/setLabsMultiplayerEnabled' },
-      },
-    ]);
-
-    mocks.dispatch.mockClear();
-    await undoSettingsProposalWork(result.reverseChanges);
-
-    expect(mocks.dispatch).toHaveBeenCalledWith(setLabsMultiplayerEnabled(false));
+  it('rejects the retired Multiplayer lab setting: Multiplayer is always on', async () => {
+    await expect(
+      applySettingsProposalWork(makeDetail(makeProposal('labs.multiplayer', false))),
+    ).rejects.toThrow('Unknown or unsupported setting "labs.multiplayer"');
+    expect(mocks.dispatch).not.toHaveBeenCalled();
   });
 
   it('applies and reverses the GitLab lab preference', async () => {

@@ -80,7 +80,7 @@ export const selectLabsSettingsVisible = store.createSelector((state) => {
 });
 
 export const selectLabsMultiplayerEnabled = store.createSelector((state) => {
-  return state.userPreferences?.labsMultiplayerEnabled ?? false;
+  return state.userPreferences?.labsMultiplayerEnabled ?? true;
 });
 
 export const selectLabsGitLabEnabled = store.createSelector((state) => {

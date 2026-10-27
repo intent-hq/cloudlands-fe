@@ -692,32 +692,23 @@ describe('CommandPalette new actions', () => {
   });
 
   it.each([false, true])(
-    'changes experimental multiplayer from enabled=%s through command search without a workspace',
+    'offers no command to turn multiplayer on or off (saved state=%s): it is always on',
     async (enabled) => {
       multiplayerState.enabled = enabled;
-      const onClose = vi.fn();
-      render(CommandPalette, { props: { isOpen: true, onClose } });
+      render(CommandPalette, { props: { isOpen: true, onClose: vi.fn() } });
       const input = screen.getByRole('textbox');
 
+      await fireEvent.input(input, { target: { value: 'experimental' } });
+      await screen.findByRole('button', { name: /Enable experimental remote agents/i });
+      expect(screen.queryByRole('button', { name: /experimental multiplayer/i })).toBeNull();
+
       await fireEvent.input(input, { target: { value: 'multiplayer' } });
-      const command = await screen.findByRole('button', {
-        name: enabled ? /Disable experimental multiplayer/i : /Enable experimental multiplayer/i,
-      });
-      expect(
-        screen.queryByRole('button', {
-          name: enabled ? /Enable experimental multiplayer/i : /Disable experimental multiplayer/i,
-        }),
-      ).toBeNull();
-
-      reduxDispatchMock.mockClear();
-      if (enabled) await fireEvent.click(command);
-      else await fireEvent.keyDown(input, { key: 'Enter' });
-
-      expect(reduxDispatchMock).toHaveBeenCalledWith({
-        type: 'userPreferences/setLabsMultiplayerEnabled',
-        payload: [!enabled],
-      });
-      expect(onClose).toHaveBeenCalledOnce();
+      await waitFor(() =>
+        expect(
+          screen.queryByRole('button', { name: /Enable experimental remote agents/i }),
+        ).toBeNull(),
+      );
+      expect(screen.queryByRole('button', { name: /experimental multiplayer/i })).toBeNull();
     },
   );
 

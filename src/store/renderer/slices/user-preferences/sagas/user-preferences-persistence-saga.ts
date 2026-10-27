@@ -12,6 +12,7 @@ import {
 } from '$store/renderer/utils/backend-storage-namespace';
 import {
   getLocalStorageJSON,
+  removeLocalStorageItem,
   setLocalStorageJSON,
 } from '$store/renderer/utils/safe-local-storage-saga';
 import { connectionsListReceived } from '../../connections/connections-slice';
@@ -25,7 +26,6 @@ import {
   selectGithubLinkDefaultAction,
   selectHasCompletedProviderSetup,
   selectLabsSettingsVisible,
-  selectLabsMultiplayerEnabled,
   selectLabsGitLabEnabled,
   selectLabsRemoteAgentsEnabled,
   selectLanguagePreference,
@@ -55,7 +55,6 @@ import {
   setHasCompletedProviderSetup,
   providerSetupHydrated,
   setLabsSettingsVisible,
-  setLabsMultiplayerEnabled,
   setLabsGitLabEnabled,
   setLabsRemoteAgentsEnabled,
   setLanguagePreference,
@@ -72,7 +71,6 @@ import {
   toggleChatAurora,
   toggleCollapseToolRuns,
   toggleLabsSettingsVisibility,
-  toggleLabsMultiplayer,
   toggleLabsGitLab,
   toggleLabsRemoteAgents,
   toggleReduceMotionOnBattery,
@@ -95,7 +93,8 @@ const COLLAPSE_TOOL_RUNS_STORAGE_KEY = 'chat:collapseToolRuns';
 const SHELL_TRANSPARENCY_STORAGE_KEY = 'appearance:shellTransparencyEnabled';
 const REDUCE_MOTION_ON_BATTERY_STORAGE_KEY = 'appearance:reduceMotionOnBattery';
 const LABS_SETTINGS_VISIBLE_STORAGE_KEY = 'labs:settingsVisible';
-const LABS_MULTIPLAYER_STORAGE_KEY = 'labs:multiplayerEnabled';
+/** Retired toggle: Multiplayer is always on, so a saved value is discarded unread. */
+const RETIRED_LABS_MULTIPLAYER_STORAGE_KEY = 'labs:multiplayerEnabled';
 const LABS_GITLAB_STORAGE_KEY = 'labs:gitlabEnabled';
 const LABS_REMOTE_AGENTS_STORAGE_KEY = 'labs:remoteAgentsEnabled';
 const AGENT_STORAGE_KEY = 'agent-font-settings';
@@ -220,10 +219,7 @@ export function* hydrateUserPreferencesWorker() {
     yield* put(setLabsSettingsVisible(labsSettingsVisible));
   }
 
-  const labsMultiplayerEnabled = yield* getLocalStorageJSON<boolean>(LABS_MULTIPLAYER_STORAGE_KEY);
-  if (typeof labsMultiplayerEnabled === 'boolean') {
-    yield* put(setLabsMultiplayerEnabled(labsMultiplayerEnabled));
-  }
+  yield* removeLocalStorageItem(RETIRED_LABS_MULTIPLAYER_STORAGE_KEY);
 
   const labsGitLabEnabled = yield* getLocalStorageJSON<boolean>(LABS_GITLAB_STORAGE_KEY);
   if (typeof labsGitLabEnabled === 'boolean') {
@@ -360,13 +356,6 @@ function* persistLabsSettingsVisibilityWorker() {
   );
 }
 
-function* persistLabsMultiplayerWorker() {
-  yield* setLocalStorageJSON(
-    LABS_MULTIPLAYER_STORAGE_KEY,
-    yield* selectLabsMultiplayerEnabled.effect(),
-  );
-}
-
 function* persistLabsGitLabWorker() {
   yield* setLocalStorageJSON(LABS_GITLAB_STORAGE_KEY, yield* selectLabsGitLabEnabled.effect());
 }
@@ -478,10 +467,6 @@ function* watchUserPreferenceWrites() {
   yield* takeEvery(
     [setLabsSettingsVisible, toggleLabsSettingsVisibility],
     persistLabsSettingsVisibilityWorker,
-  );
-  yield* takeEvery(
-    [setLabsMultiplayerEnabled, toggleLabsMultiplayer],
-    persistLabsMultiplayerWorker,
   );
   yield* takeEvery([setLabsGitLabEnabled, toggleLabsGitLab], persistLabsGitLabWorker);
   yield* takeEvery(
