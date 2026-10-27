@@ -210,7 +210,7 @@
     data-snapshot-status={$snapshotStatus$}
     role="alert"
   >
-    <span>{m.chat_streamingStatus_responseFailed_label()}</span>
+    <span>{m.chat_backgroundHooks_loadFailed_error()}</span>
   </div>
 {/if}
 

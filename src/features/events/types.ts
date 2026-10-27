@@ -739,7 +739,6 @@ export type DomainEvent =
   | 'note:created'
   | 'note:updated'
   | 'note:deleted'
-  | 'line-attribution:updated'
   // Comment events
   | 'comment:added'
   | 'comment:updated'
@@ -820,17 +819,6 @@ export interface DomainEventPayloads {
     sessionId?: string;
   };
   'note:deleted': { workspaceId: WorkspaceId; noteId: string; actor?: any };
-  'line-attribution:updated': {
-    workspaceId: WorkspaceId;
-    noteId: string;
-    attributions: Record<
-      number,
-      {
-        timestamp: number;
-        author?: { id: string; name: string; type: 'user' | 'agent' | 'system' };
-      }
-    >;
-  };
 
   'comment:added': { workspaceId: WorkspaceId; noteId: string; comment: any };
   'comment:updated': { workspaceId: WorkspaceId; noteId: string; commentId: string; changes: any };

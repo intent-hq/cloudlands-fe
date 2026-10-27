@@ -17,12 +17,7 @@ import {
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import type { WorkspaceNotesWorkspaceState, WorkspaceNotesState } from './workspace-notes-types';
-import type {
-  NoteAttributionViewState,
-  NotePresenceViewer,
-  NoteUiRequestState,
-} from './workspace-notes-types';
-import type { LineAttributionData } from '$lib/client';
+import type { NotePresenceViewer, NoteUiRequestState } from './workspace-notes-types';
 import { normalizeNoteUpdatePatch } from './workspace-notes-normalization';
 
 export type { WorkspaceNotesWorkspaceState, WorkspaceNotesState };
@@ -48,7 +43,6 @@ export const emptyWorkspaceNotesState: WorkspaceNotesWorkspaceState = {
   contentViews: createCollection('consumerId'),
   workspaceRoots: createCollection('consumerId'),
   presenceViews: createCollection('consumerId'),
-  attributionViews: createCollection('consumerId'),
 };
 
 export const initialState: WorkspaceNotesState = {
@@ -267,25 +261,6 @@ export const notePresenceViewersReceived = createAction<
 >('workspaceNotes/notePresenceViewersReceived');
 export const notePresenceViewReleased = createAction<[workspaceId: string, consumerId: string]>(
   'workspaceNotes/notePresenceViewReleased',
-);
-export const noteAttributionViewRequested = createAction<
-  [consumerId: string, requestId: string, workspaceId: string, noteId: string]
->('workspaceNotes/noteAttributionViewRequested');
-export const noteAttributionViewFinished = createAction<
-  [
-    consumerId: string,
-    requestId: string,
-    workspaceId: string,
-    authority: string | null,
-    data: LineAttributionData | null,
-    error?: string,
-  ]
->('workspaceNotes/noteAttributionViewFinished');
-export const noteAttributionViewReleased = createAction<[workspaceId: string, consumerId: string]>(
-  'workspaceNotes/noteAttributionViewReleased',
-);
-export const noteAttributionInvalidated = createAction<[workspaceId: string, noteId: string]>(
-  'workspaceNotes/noteAttributionInvalidated',
 );
 
 /** Saga trigger: update note title */
@@ -828,55 +803,6 @@ workspaceNotesReducer.with(
     return setWorkspaceState(state, workspaceId, {
       ...ws,
       presenceViews: removeItem(ws.presenceViews, consumerId),
-    });
-  },
-);
-workspaceNotesReducer.with(
-  noteAttributionViewRequested,
-  (state, { payload: [consumerId, requestId, workspaceId, noteId] }) => {
-    const ws = getWorkspaceState(state, workspaceId);
-    return setWorkspaceState(state, workspaceId, {
-      ...ws,
-      attributionViews: upsertItem(ws.attributionViews, {
-        consumerId,
-        requestId,
-        workspaceId,
-        noteId,
-        authority: null,
-        status: 'loading',
-        data: null,
-      }),
-    });
-  },
-);
-workspaceNotesReducer.with(
-  noteAttributionViewFinished,
-  (state, { payload: [consumerId, requestId, workspaceId, authority, data, error] }) => {
-    const ws = state.byWorkspaceId[workspaceId];
-    const current = ws ? getItem(ws.attributionViews, consumerId) : undefined;
-    if (!ws || !current || current.requestId !== requestId) return state;
-    const next: NoteAttributionViewState = {
-      ...current,
-      authority,
-      data,
-      status: error ? 'error' : 'ready',
-    };
-    if (error) next.error = error;
-    else delete next.error;
-    return setWorkspaceState(state, workspaceId, {
-      ...ws,
-      attributionViews: replaceItem(ws.attributionViews, consumerId, next),
-    });
-  },
-);
-workspaceNotesReducer.with(
-  noteAttributionViewReleased,
-  (state, { payload: [workspaceId, consumerId] }) => {
-    const ws = state.byWorkspaceId[workspaceId];
-    if (!ws || !getItem(ws.attributionViews, consumerId)) return state;
-    return setWorkspaceState(state, workspaceId, {
-      ...ws,
-      attributionViews: removeItem(ws.attributionViews, consumerId),
     });
   },
 );

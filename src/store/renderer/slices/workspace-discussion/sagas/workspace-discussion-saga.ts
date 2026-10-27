@@ -9,7 +9,7 @@ import {
 } from '../../workspace-share/workspace-share-slice';
 import { selectPanelLayoutWorkspaces } from '../../panel-layout/panel-layout-selectors';
 import { discussionTitle } from '$features/discussions/discussion-title';
-import { promoteDiscussionTab } from '../../panel-layout/panel-layout-slice';
+import { promoteDiscussionTab, syncDiscussionTabs } from '../../panel-layout/panel-layout-slice';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
 import { v4 as uuid } from 'uuid';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
@@ -20,6 +20,7 @@ import {
 } from '@themislib/themis/saga';
 import {
   all,
+  cancelled,
   call,
   cancel,
   join,
@@ -45,10 +46,18 @@ import {
 } from '$shared/types/workspace-discussion';
 import { takeLeadingInContext, takeLatestInContext } from '../../../utils/context-saga-effects';
 import {
+  discussionRenameRequested,
+  discussionDeleteRequested,
+  discussionManagementStarted,
+  discussionManagementFinished,
+  discussionManagementCapabilityReceived,
+  discussionConversationReceived,
+  discussionConversationDeleted,
   discussionMessageActionsReceived,
   discussionReactionsCapabilityReceived,
   discussionAgentCapabilityReceived,
   discussionAgentActivityCapabilityReceived,
+  discussionPrincipalMentionsCapabilityReceived,
   discussionAgentActivityReceived,
   discussionAgentControlRequested,
   discussionAgentControlStarted,
@@ -86,10 +95,15 @@ import {
   discussionMembershipInvalidated,
 } from '../workspace-discussion-slice';
 import {
+  selectDiscussionManagementSupported,
+  selectDiscussionManagement,
+  selectDiscussionCanRename,
+  selectDiscussionCanDelete,
   selectDiscussionMessageActionsSupported,
   selectDiscussionReactionsSupported,
   selectDiscussionAgentMessagingSupported,
   selectDiscussionAgentActivitySupported,
+  selectDiscussionPrincipalMentionsSupported,
   selectDiscussionCanControlAgent,
   selectDiscussionCanInteract,
   selectDiscussionCanSend,
@@ -141,11 +155,14 @@ function* loadDiscussion(action: ReadAction): SagaGenerator<void> {
     const reactionsSupported = yield* ensureReactions();
     const agentsSupported = yield* ensureAgentMessaging();
     const activitySupported = yield* ensureAgentActivity();
+    const principalMentionsSupported = yield* ensurePrincipalMentions();
     const supported =
       conversationId === DEFAULT_DISCUSSION_ID ? false : yield* ensureConversations();
     if (conversationId === NEW_DISCUSSION_ID) {
-      yield* put(discussionLoadFinished(target, requestId, supported ? null : 'unsupported'));
-      if (supported) yield* put(discussionRecipientsRequested(workspaceId));
+      const managementSupported = yield* ensureManagement();
+      yield* put(
+        discussionLoadFinished(target, requestId, managementSupported ? null : 'unsupported'),
+      );
       return;
     }
     for (let page = 0; page < MAX_CATCH_UP_PAGES; page++) {
@@ -164,9 +181,10 @@ function* loadDiscussion(action: ReadAction): SagaGenerator<void> {
         agentsSupported,
         activitySupported,
         reactionsSupported,
+        principalMentionsSupported,
       );
       if (!(yield* isCurrent(target))) return;
-      if (result.conversation && conversationId !== DEFAULT_DISCUSSION_ID) {
+      if (result.conversation && result.conversation.kind !== 'workspace') {
         const owner = yield* select(selectDiscussionOwner.select);
         const principalId: string | undefined = owner ? JSON.parse(owner)[1] : undefined;
         if (!result.conversation.participants.some((p) => p.principalId === principalId))
@@ -174,7 +192,13 @@ function* loadDiscussion(action: ReadAction): SagaGenerator<void> {
       }
       yield* put(discussionPageReceived(target, requestId, result, direction));
       if (direction !== 'newer' || !result.hasMore) {
-        if (direction === 'newer' && (actionsSupported || activitySupported || reactionsSupported))
+        if (
+          direction === 'newer' &&
+          (actionsSupported ||
+            activitySupported ||
+            reactionsSupported ||
+            principalMentionsSupported)
+        )
           yield* refreshMessageMetadata(
             target,
             requestId,
@@ -183,6 +207,7 @@ function* loadDiscussion(action: ReadAction): SagaGenerator<void> {
             agentsSupported,
             activitySupported,
             reactionsSupported,
+            principalMentionsSupported,
           );
         yield* put(discussionLoadFinished(target, requestId, null));
         return;
@@ -216,13 +241,17 @@ function* sendDiscussion(action: SendAction): SagaGenerator<void> {
           m.body === row.draft &&
           JSON.stringify([...(m.recipientAgentIds ?? [])].sort()) ===
             JSON.stringify(discussionAgentIds(row.agentMentions)) &&
+          JSON.stringify(m.principalMentions ?? []) === JSON.stringify(row.principalMentions) &&
           (m.replyToMessageId ?? null) === row.replyToMessageId &&
           m.status === 'failed',
       );
   if (retryId && !previous) return;
+  if (conversationId === NEW_DISCUSSION_ID && previous?.recipientPrincipalIds?.length) {
+    yield* put(discussionSendFailed(target, previous.id, 'forbidden'));
+    return;
+  }
   // An uncertain create must retry its original key/body/recipients before any new send.
   if (conversationId === NEW_DISCUSSION_ID && getItems(row.pending).length && !previous) return;
-  if (conversationId === NEW_DISCUSSION_ID && !row.recipientPrincipalIds.length) return;
   const body = previous?.body ?? row.draft;
   if (!body.trim()) return;
   const author = yield* select(selectDiscussionAuthor.select);
@@ -230,6 +259,7 @@ function* sendDiscussion(action: SendAction): SagaGenerator<void> {
   const replyId = previous ? previous.replyToMessageId : (row.replyToMessageId ?? undefined);
   const reply = replyId ? getItem(row.messages, replyId) : undefined;
   const activitySupported = yield* ensureAgentActivity();
+  const principalMentionsSupported = yield* ensurePrincipalMentions();
   if (!(yield* isCurrent(target))) return;
   const pending = {
     id: previous?.id ?? uuid(),
@@ -238,6 +268,12 @@ function* sendDiscussion(action: SendAction): SagaGenerator<void> {
       ? (previous.recipientAgentIds ?? [])
       : discussionAgentIds(row.agentMentions),
     agentMentions: previous ? (previous.agentMentions ?? []) : row.agentMentions,
+    principalMentions: previous ? (previous.principalMentions ?? []) : row.principalMentions,
+    sentPrincipalMentions: previous
+      ? previous.sentPrincipalMentions
+      : principalMentionsSupported || row.principalMentions.length
+        ? row.principalMentions
+        : undefined,
     sentAgentMentions: previous
       ? previous.sentAgentMentions
       : activitySupported
@@ -257,9 +293,6 @@ function* sendDiscussion(action: SendAction): SagaGenerator<void> {
     draftVersion: previous?.draftVersion ?? row.draftVersion,
     status: 'sending' as const,
     error: null,
-    ...(conversationId === NEW_DISCUSSION_ID
-      ? { recipientPrincipalIds: previous?.recipientPrincipalIds ?? row.recipientPrincipalIds }
-      : {}),
   };
   yield* put(discussionSendStarted(target, pending));
   if (new TextEncoder().encode(body).length > DISCUSSION_MAX_BODY_BYTES) {
@@ -277,6 +310,9 @@ function* sendDiscussion(action: SendAction): SagaGenerator<void> {
         workspaceId,
         messageId: pending.id,
         body,
+        ...(pending.sentPrincipalMentions !== undefined
+          ? { principalMentions: pending.sentPrincipalMentions }
+          : {}),
         ...(pending.sentAgentMentions !== undefined
           ? { agentMentions: pending.sentAgentMentions }
           : {}),
@@ -285,7 +321,7 @@ function* sendDiscussion(action: SendAction): SagaGenerator<void> {
           : {}),
         ...(pending.replyToMessageId ? { replyToMessageId: pending.replyToMessageId } : {}),
         ...(conversationId === NEW_DISCUSSION_ID
-          ? { recipientPrincipalIds: pending.recipientPrincipalIds }
+          ? { createConversation: true }
           : conversationId !== DEFAULT_DISCUSSION_ID
             ? { conversationId }
             : {}),
@@ -295,6 +331,8 @@ function* sendDiscussion(action: SendAction): SagaGenerator<void> {
       agentsSupported,
       activitySupported,
       reactionsSupported,
+      principalMentionsSupported,
+      (yield* selectDiscussionManagementSupported.effect()) === true,
     );
     const owner = yield* select(selectDiscussionOwner.select);
     if (
@@ -305,7 +343,11 @@ function* sendDiscussion(action: SendAction): SagaGenerator<void> {
       throw new Error('Invalid discussion author');
     if (yield* isCurrent(target)) {
       yield* put(discussionSendSucceeded(target, pending.id, message, conversation));
-      if (conversationId === NEW_DISCUSSION_ID && conversation)
+      if (
+        conversationId === NEW_DISCUSSION_ID &&
+        conversation &&
+        (yield* selectDiscussionTarget.effect(workspaceId, conversation.id))
+      )
         yield* promoteCreatedConversation(workspaceId, conversation, message.author.principalId);
     }
   } catch (error) {
@@ -336,6 +378,14 @@ function* runDiscussion({
   yield* put(discussionWorkspacesChanged(yield* select(selectDiscussionWorkspaceIds.select)));
   const tasks: Task[] = [];
   try {
+    tasks.push(yield* fork(ensurePrincipalMentions));
+    tasks.push(yield* fork(ensureManagement));
+    tasks.push(
+      yield* takeEvery(
+        [discussionRenameRequested, discussionDeleteRequested],
+        manageWhileWorkspaceExists,
+      ),
+    );
     tasks.push(yield* takeEveryFromSelector(selectDiscussionWorkspaceIds, workspacesChanged));
     tasks.push(
       yield* takeLeadingInContext(
@@ -385,6 +435,8 @@ function* runDiscussion({
         controlWhileWorkspaceExists,
       ),
     );
+    tasks.push(yield* takeEvery(discussionConversationReceived, syncConversationTabs));
+    tasks.push(yield* takeEvery(discussionConversationDeleted, deleteConversationTabs));
     tasks.push(yield* takeEvery(discussionMembershipInvalidated, refreshMembership));
     tasks.push(yield* takeLatest(discussionSharingRefreshRequested, refreshSharing));
     tasks.push(
@@ -452,6 +504,7 @@ function* loadDirectory({
   yield* put(discussionDirectoryStarted(context, workspaceId, requestId));
   try {
     const supported = yield* ensureConversations();
+    yield* ensureManagement();
     const result = yield* call(
       workspaceDiscussionClient.conversations,
       { workspaceId, ...(older ? { beforeId: row?.beforeId } : {}), limit: DISCUSSION_PAGE_SIZE },
@@ -461,9 +514,7 @@ function* loadDirectory({
     const principalId: string | undefined = owner ? JSON.parse(owner)[1] : undefined;
     if (
       result.conversations.some(
-        (c) =>
-          c.id !== DEFAULT_DISCUSSION_ID &&
-          !c.participants.some((p) => p.principalId === principalId),
+        (c) => c.kind !== 'workspace' && !c.participants.some((p) => p.principalId === principalId),
       )
     )
       throw new Error('Invalid discussion participants');
@@ -592,6 +643,16 @@ function* ensureAgentMessaging(): SagaGenerator<boolean> {
   yield* put(discussionAgentCapabilityReceived(context, supported));
   return supported;
 }
+function* ensurePrincipalMentions(): SagaGenerator<boolean> {
+  const known = yield* select(selectDiscussionPrincipalMentionsSupported.select);
+  if (known !== null) return known;
+  const context = yield* select(selectDiscussionContext.select);
+  if (!context) return false;
+  const supported = yield* call(workspaceDiscussionClient.supportsPrincipalMentions);
+  if (supported) yield* ensureConversations();
+  yield* put(discussionPrincipalMentionsCapabilityReceived(context, supported));
+  return supported;
+}
 
 function* ensureReactions(): SagaGenerator<boolean> {
   const known = yield* select(selectDiscussionReactionsSupported.select);
@@ -664,6 +725,7 @@ function* refreshMessageMetadata(
   agentsSupported: boolean,
   activitySupported: boolean,
   reactionsSupported: boolean,
+  principalMentionsSupported: boolean,
 ): SagaGenerator<void> {
   const row = yield* select(
     selectWorkspaceDiscussion.select,
@@ -696,6 +758,7 @@ function* refreshMessageMetadata(
       agentsSupported,
       activitySupported,
       reactionsSupported,
+      principalMentionsSupported,
     );
     if (!(yield* isCurrent(target))) return;
     const next = result.messages[0]?.sequence;
@@ -763,8 +826,15 @@ function* controlAgent({
     const result = yield* call(
       workspaceDiscussionClient.controlAgent,
       operation,
-      { workspaceId, messageId, agentId, attempt },
+      {
+        workspaceId,
+        messageId,
+        agentId,
+        attempt,
+        ...(conversationId !== DEFAULT_DISCUSSION_ID ? { conversationId } : {}),
+      },
       true,
+      (yield* selectDiscussionManagementSupported.effect()) === true,
     );
     if (!(yield* isCurrent(target))) return;
     yield* put(discussionAgentActivityReceived(target, messageId, result.activity));
@@ -781,4 +851,111 @@ function* controlWhileWorkspaceExists(
     done: call(controlAgent, action),
     removed: take(workspaceRemoved(action.payload[0])),
   });
+}
+
+type ManagementAction =
+  ReturnType<typeof discussionRenameRequested> | ReturnType<typeof discussionDeleteRequested>;
+function* ensureManagement(): SagaGenerator<boolean> {
+  const known = yield* selectDiscussionManagementSupported.effect();
+  if (known !== null) return known;
+  const context = yield* selectDiscussionContext.effect();
+  if (!context) return false;
+  const supported = yield* call(workspaceDiscussionClient.supportsManagement);
+  yield* put(discussionManagementCapabilityReceived(context, supported));
+  return supported;
+}
+function* manageDiscussion(action: ManagementAction): SagaGenerator<void> {
+  const [workspaceId, conversationId] = action.payload;
+  const context = yield* selectDiscussionContext.effect();
+  const operation = action.type === discussionRenameRequested.type ? 'rename' : 'delete';
+  const requestId = uuid();
+  let started = false;
+  try {
+    if (!context || !(yield* selectDiscussionWorkspaceIds.effect()).includes(workspaceId))
+      throw new Error('Discussion unavailable');
+    if ((yield* selectDiscussionManagement.effect(workspaceId)).pending)
+      throw new Error('Discussion operation already pending');
+    yield* put(
+      discussionManagementStarted(context, workspaceId, {
+        pending: operation,
+        conversationId,
+        requestId,
+        error: null,
+      }),
+    );
+    started = true;
+    const supported = yield* ensureManagement();
+    const allowed =
+      operation === 'rename'
+        ? yield* selectDiscussionCanRename.effect(workspaceId, conversationId)
+        : yield* selectDiscussionCanDelete.effect(workspaceId, conversationId);
+    if (!supported || !allowed)
+      throw Object.assign(new Error('Discussion operation unavailable'), {
+        rpcCode: supported ? -32003 : -32601,
+      });
+    if (action.type === discussionDeleteRequested.type) {
+      yield* call(workspaceDiscussionClient.delete, { workspaceId, conversationId }, true);
+      if ((yield* selectDiscussionManagement.effect(workspaceId)).requestId !== requestId)
+        throw new Error('Discussion context changed');
+      yield* put(discussionConversationDeleted(context, workspaceId, conversationId));
+    } else {
+      const [, , name] = (action as ReturnType<typeof discussionRenameRequested>).payload;
+      const result = yield* call(
+        workspaceDiscussionClient.rename,
+        { workspaceId, conversationId, name },
+        true,
+      );
+      if ((yield* selectDiscussionManagement.effect(workspaceId)).requestId !== requestId)
+        throw new Error('Discussion context changed');
+      yield* put(discussionConversationReceived(context, result.conversation));
+    }
+    yield* put(discussionManagementFinished(context, workspaceId, requestId, null));
+    yield* put(action.success(undefined));
+  } catch (error) {
+    if (context && started)
+      yield* put(
+        discussionManagementFinished(context, workspaceId, requestId, discussionError(error)),
+      );
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  } finally {
+    if (yield* cancelled()) {
+      if (context && started)
+        yield* put(discussionManagementFinished(context, workspaceId, requestId, 'unknown'));
+      yield* put(action.failure(new Error('Discussion operation cancelled')));
+    }
+  }
+}
+function* manageWhileWorkspaceExists(action: ManagementAction): SagaGenerator<void> {
+  yield* race({
+    done: call(manageDiscussion, action),
+    removed: take(workspaceRemoved(action.payload[0])),
+  });
+}
+
+function* syncConversationTabs({
+  payload: [context, conversation],
+}: ReturnType<typeof discussionConversationReceived>): SagaGenerator<void> {
+  if (
+    context !== (yield* selectDiscussionContext.effect()) ||
+    !(yield* selectDiscussionWorkspaceIds.effect()).includes(conversation.workspaceId)
+  )
+    return;
+  const author = yield* selectDiscussionAuthor.effect();
+  yield* put(
+    syncDiscussionTabs(
+      conversation.workspaceId,
+      conversation.id,
+      discussionTitle(conversation, author?.principalId),
+    ),
+  );
+}
+function* deleteConversationTabs({
+  payload: [context, workspaceId, conversationId],
+}: ReturnType<typeof discussionConversationDeleted>): SagaGenerator<void> {
+  if (
+    context !== (yield* selectDiscussionContext.effect()) ||
+    !(yield* selectDiscussionWorkspaceIds.effect()).includes(workspaceId)
+  )
+    return;
+  yield* put(syncDiscussionTabs(workspaceId, conversationId, null));
 }

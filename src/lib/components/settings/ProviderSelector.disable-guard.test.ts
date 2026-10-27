@@ -227,12 +227,12 @@ describe('ProviderSelector disable guard', () => {
   });
 });
 
-describe('ProviderSelector default-unavailable honesty', () => {
+describe('ProviderSelector does not label the app default provider', () => {
   afterEach(() => {
     cleanup();
   });
 
-  it('marks a generic unavailable active provider as the unavailable default', async () => {
+  it('shows no Default label on an unavailable default provider', async () => {
     const base = await buildState([]);
     mocks.state.current = {
       ...base,
@@ -273,11 +273,12 @@ describe('ProviderSelector default-unavailable honesty', () => {
     const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
     const result = render(ProviderSelector);
     await waitFor(() => {
-      expect(result.getByText(m.settings_providers_defaultUnavailable_label())).toBeTruthy();
+      expect(result.getAllByRole('button', { name: /^Provider actions for / })).not.toHaveLength(0);
     });
+    expect(result.queryByText(/^Default/)).toBeNull();
   });
 
-  it('marks unavailable Auggie as the unavailable default', async () => {
+  it('shows no Default label on unavailable Auggie as the default provider', async () => {
     const base = await buildState([]);
     mocks.state.current = {
       ...base,
@@ -312,8 +313,9 @@ describe('ProviderSelector default-unavailable honesty', () => {
     const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
     const result = render(ProviderSelector);
     await waitFor(() => {
-      expect(result.getByText(m.settings_providers_defaultUnavailable_label())).toBeTruthy();
+      expect(result.getAllByRole('button', { name: /^Provider actions for / })).not.toHaveLength(0);
     });
+    expect(result.queryByText(/^Default/)).toBeNull();
   });
 });
 
@@ -330,8 +332,39 @@ describe('ProviderSelector profiles entry point', () => {
   });
   afterEach(() => cleanup());
 
-  async function renderWithCatalog(supportsProfiles: Record<string, boolean>) {
+  async function renderWithCatalog(
+    supportsProfiles: Record<string, boolean>,
+    profiles?: { loadStatus: 'success' | 'failure' },
+  ) {
     const state = await buildState([]);
+    if (profiles) {
+      const { providerProfilesLoaded } =
+        await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+      const { reducers } = await import('$store/renderer/reducer');
+      const loaded = reducers.providerSettings(
+        state.providerSettings,
+        providerProfilesLoaded(
+          [
+            {
+              id: 'pwork',
+              providerRef: 'codex@pwork',
+              baseProviderId: 'codex',
+              name: 'Work',
+              env: [],
+              settingsFingerprint: 'fp',
+              createdAt: '2026-10-17T10:00:00Z',
+              updatedAt: '2026-10-17T10:00:00Z',
+            },
+          ],
+          3,
+          [{ baseProviderId: 'codex', providerRef: 'codex', name: 'Main account', env: [] }],
+        ),
+      );
+      state.providerSettings = {
+        ...loaded,
+        profiles: { ...loaded.profiles, loadStatus: profiles.loadStatus },
+      };
+    }
     const { MOCK_PROVIDER_CATALOG } =
       await import('../../../test/fixtures/provider-catalog.fixture');
     const { providerCatalogLoaded, providerCatalogReducer, initialState } =
@@ -410,6 +443,32 @@ describe('ProviderSelector profiles entry point', () => {
     expect(
       within(claudeMenu).queryByRole('menuitem', { name: m.settings_providerDefault_menu_label() }),
     ).toBeNull();
+  });
+
+  it("opens the page's Default configuration dialog from the pinned Default row", async () => {
+    const result = await renderWithCatalog({ codex: true }, { loadStatus: 'failure' });
+    const row = await waitFor(() => result.getByTestId('provider-default-row'));
+    await fireEvent.click(
+      within(row).getByRole('button', {
+        name: m.settings_providerProfiles_actions_ariaLabel({ name: 'Main account' }),
+      }),
+    );
+    mocks.dispatch.mockClear();
+    await fireEvent.click(
+      await waitFor(() =>
+        result.getByRole('menuitem', { name: m.settings_providerProfiles_edit_label() }),
+      ),
+    );
+    const dialog = await waitFor(() => result.getByRole('dialog'));
+    expect(
+      within(dialog).getByText(
+        m.settings_providerDefault_title_label({ provider: 'OpenAI Codex' }),
+      ),
+    ).toBeTruthy();
+    // A failed read is retried so the dialog can seed and save.
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'providerProfiles/requested' }),
+    );
   });
 
   it('opens the add-profile dialog from the provider actions menu', async () => {

@@ -27,6 +27,23 @@ const personButton = (principalId: string) =>
   document.querySelector<HTMLButtonElement>(`[data-presence-person-button="${principalId}"]`)!;
 
 describe('PresenceAvatarStack person buttons', () => {
+  it('keeps an available follow action usable when a tile member stops viewing this workspace', async () => {
+    const onSelect = vi.fn();
+    const action = (): PresenceCircleAction => ({ label: 'Follow Ada', onSelect });
+    const { rerender } = render(PresenceAvatarStack, {
+      props: { variant: 'tile', people: [{ ...person('ada', true), viewing: true }], action },
+    });
+    await rerender({
+      variant: 'tile',
+      people: [{ ...person('ada', true), viewing: false }],
+      action,
+    });
+    const button = screen.getByRole('button', { name: 'Follow Ada' });
+    expect(button.getAttribute('aria-disabled')).not.toBe('true');
+    await fireEvent.click(button);
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps an inert avatar solid: the opacity override survives the real button class merge', async () => {
     // The base variant is what dims an aria-disabled button; without it the
     // override below would have nothing to beat and this test would prove nothing.

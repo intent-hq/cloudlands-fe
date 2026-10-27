@@ -148,6 +148,21 @@ describe('local OS onboarding authorization', () => {
     );
     expect(h.client.listenerCount('status')).toBe(0);
   });
+  it('returns the whole observed checklist from one native request per Allow gesture', async () => {
+    const h = setup();
+    h.native.requestPermissions.mockResolvedValueOnce({
+      accessibility: true,
+      screenRecording: false,
+      screenCapture: 'pending',
+    });
+    expect(await h.run()).toEqual({
+      platform: 'macos',
+      accessibility: true,
+      screenRecording: false,
+      screenCapture: 'pending',
+    });
+    expect(h.native.requestPermissions).toHaveBeenCalledTimes(1);
+  });
   it('does not request macOS permissions on Windows or claim Windows readiness', async () => {
     const h = setup();
     h.native.identity.mockResolvedValue({

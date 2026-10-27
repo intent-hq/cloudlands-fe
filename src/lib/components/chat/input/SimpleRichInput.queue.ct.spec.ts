@@ -1,4 +1,4 @@
-import { expect, test } from '../../../../test/ct-test';
+import { expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
 import SimpleRichInputQueueHost from './SimpleRichInputQueueHost.svelte';
 
 for (const submit of ['button', 'Enter'] as const) {
@@ -70,7 +70,6 @@ test('keeps queued messages above subscriptions without moving the composer', as
 for (const streaming of [false, true]) {
   test(`keeps the editor and ${streaming ? 'stop' : 'send'} reachable with twelve queued messages`, async ({
     mount,
-    page,
   }, testInfo) => {
     const component = await mount(SimpleRichInputQueueHost, { props: { streaming } });
     const input = component.getByTestId('message-input');
@@ -91,9 +90,7 @@ for (const streaming of [false, true]) {
         ),
       )
       .toBe(true);
-    await queueViewport.hover();
-    await page.mouse.wheel(0, 600);
-    await expect.poll(() => queueViewport.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+    await wheelUntilScrolled(queueViewport, { deltaY: 600 });
     await expect.poll(() => input.boundingBox()).toEqual(composerBox);
     await expect(action).toBeInViewport();
     await editor.click();

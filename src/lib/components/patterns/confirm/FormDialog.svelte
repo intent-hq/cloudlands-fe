@@ -140,6 +140,9 @@
     {onCloseAutoFocus}
     {onfocusin}
     onkeydown={(event) => {
+      // An open popup (e.g. a Select) owns Escape through its own layer;
+      // closing the dialog here would also discard the form.
+      if (event.key === 'Escape' && Dialog.escapeBelongsToOpenPopup(contentRef, event)) return;
       if (event.key === 'Escape' && escapeKeydownBehavior === 'close') {
         event.preventDefault();
         event.stopPropagation();

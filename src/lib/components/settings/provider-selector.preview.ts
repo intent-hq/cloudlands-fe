@@ -144,6 +144,22 @@ export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
         };
       },
     },
+    // The Default configuration renamed: its pinned first row shows the name plus a Default pill.
+    'profiles-renamed-default': {
+      props: {},
+      setup: () => {
+        const restoreProviders = setupProviderSelector();
+        const restoreProfiles = setupProviderProfilesPreview({
+          appOwned: true,
+          withBackups: true,
+          defaultNames: { codex: 'Main account' },
+        });
+        return () => {
+          restoreProfiles();
+          restoreProviders();
+        };
+      },
+    },
     'profiles-remote': {
       props: {},
       setup: () => {

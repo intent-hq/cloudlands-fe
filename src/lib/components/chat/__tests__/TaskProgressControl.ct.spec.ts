@@ -1,4 +1,4 @@
-import { expect, test } from '../../../../test/ct-test';
+import { expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
 import { expectDismissibleLayerArmed } from '../../../../test/dismissible-layer';
 import TaskProgressControl from '../TaskProgressControl.svelte';
 import TaskProgressControlHost from './TaskProgressControlHost.svelte';
@@ -280,9 +280,7 @@ for (const presentation of ['status-stack', 'checklist'] as const) {
     await expect(region).toBeFocused();
     await page.getByTestId('task-progress-row').first().click();
     await expect(popover).toBeVisible();
-    await region.hover();
-    await page.mouse.wheel(0, 300);
-    await expect.poll(() => region.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+    await wheelUntilScrolled(region, { deltaY: 300 });
     await expectDismissibleLayerArmed(popover);
     await outside.click();
     await expect(popover).toBeHidden();

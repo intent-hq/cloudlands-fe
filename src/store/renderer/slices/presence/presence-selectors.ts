@@ -120,36 +120,42 @@ export const hasOtherPresence = (people: readonly PresencePerson[]): boolean =>
 const presenceRowRank = (person: PresencePerson): number =>
   person.owner ? 0 : person.online ? 1 : 2;
 
+/** Accepted members persist independently of their live connection or workspace focus. */
+const selectWorkspaceMemberPeople = store.createSelector<[workspaceId: string], PresencePerson[]>(
+  (state, workspaceId) => {
+    const ownPrincipalId = state.presence.ownPrincipalId;
+    if (ownPrincipalId === null || !sharedWorkspace(state, workspaceId)) return NO_PEOPLE;
+    const members = state.presence.members[workspaceId];
+    if (!members) return NO_PEOPLE;
+    const roster = state.presence.rosters[workspaceId];
+    const people = getItems(members)
+      .filter((member) => member.principalId !== ownPrincipalId)
+      .map((member) => {
+        const online = roster ? getItem(roster, member.principalId) : undefined;
+        const identity = online ? { ...member, ...online } : member;
+        return toPerson(identity, {
+          owner: identity.hostRole ? identity.hostRole === 'owner' : member.role === 'owner',
+          online: online !== undefined,
+          viewing: online?.focus.some((item) => item.workspaceId === workspaceId) ?? false,
+          self: false,
+        });
+      })
+      .sort((a, b) => presenceRowRank(a) - presenceRowRank(b));
+    return people.length > 0 ? people : NO_PEOPLE;
+  },
+);
+
 /** Online host users plus workspace guests (including offline guests), excluding self.
  * Older daemons retain their legacy membership presentation without inventing host roles. */
 export const selectWorkspacePresencePeople = store.createSelector<
   [workspaceId: string],
   PresencePerson[]
 >((state, workspaceId) => {
-  const ownPrincipalId = state.presence.ownPrincipalId;
-  if (ownPrincipalId === null || !sharedWorkspace(state, workspaceId)) return NO_PEOPLE;
-  const members = state.presence.members[workspaceId];
-  if (!members) return NO_PEOPLE;
-  const roster = state.presence.rosters[workspaceId];
-  const people = getItems(members)
-    .filter((member) => member.principalId !== ownPrincipalId)
-    .map((member) => {
-      const online = roster ? getItem(roster, member.principalId) : undefined;
-      const identity = online ? { ...member, ...online } : member;
-      return toPerson(identity, {
-        owner: identity.hostRole ? identity.hostRole === 'owner' : member.role === 'owner',
-        online: online !== undefined,
-        viewing: (online?.focus.length ?? 0) > 0,
-        self: false,
-      });
-    })
-    .filter((person) => {
-      const modern = selectPrincipalSnapshot.select(state)?.capabilities.hostMembership;
-      if (modern && !person.hostRole) return false;
-      return !person.hostRole || person.hostRole === 'guest' || person.online;
-    })
-    .sort((a, b) => presenceRowRank(a) - presenceRowRank(b));
-  return people.length > 0 ? people : NO_PEOPLE;
+  const modern = selectPrincipalSnapshot.select(state)?.capabilities.hostMembership;
+  return selectWorkspaceMemberPeople.select(state, workspaceId).filter((person) => {
+    if (modern && !person.hostRole) return false;
+    return !person.hostRole || person.hostRole === 'guest' || person.online;
+  });
 });
 
 /** Activity needs identities even when their avatars are hidden from live presence. */
@@ -174,12 +180,12 @@ export const selectWorkspacePeopleIdentities = store.createSelector<
   return [...identities.values()];
 });
 
-/** The People tile starts with the viewer, followed by the existing presence order. */
+/** The People roster starts with the viewer and retains every accepted member, even offline. */
 export const selectWorkspacePeopleTilePeople = store.createSelector<
   [workspaceId: string],
   PresencePerson[]
 >((state, workspaceId) => {
-  const others = selectWorkspacePresencePeople.select(state, workspaceId);
+  const others = selectWorkspaceMemberPeople.select(state, workspaceId);
   const ownId = state.presence.ownPrincipalId;
   const own = selectWorkspacePeopleIdentities
     .select(state, workspaceId)

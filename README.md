@@ -290,8 +290,8 @@ never on GitHub.
   WarpBuild, never a self-hosted runner. Windows builds use
   `warp-windows-2022-x64-8x` (`gh-windows-8x`: they use about a third of 16
   CPUs; Server 2022, because node-gyp fails on 2025), Apple
-  Silicon jobs `warp-macos-26-arm64-12x`, and signed desktop Mac builds
-  `warp-macos-15-arm64-12x` (electron-builder's keychain step fails on macOS 26).
+  Silicon jobs `warp-macos-26-arm64-6x`, and signed desktop Mac builds
+  `warp-macos-15-arm64-6x` (electron-builder's keychain step fails on macOS 26).
 - Build smoke and the manual packaged Mac smoke and isolated-package check need
   a fresh VM for the job: they run on WarpBuild through `cloud`, and their
   scripts accept GitHub-hosted or WarpBuild VMs but refuse an intent-cache slot.

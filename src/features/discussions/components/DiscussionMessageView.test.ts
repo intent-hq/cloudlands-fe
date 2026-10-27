@@ -31,6 +31,48 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 describe('discussion message presentation', () => {
+  it('opens the immutable author identity from both its avatar and name', async () => {
+    render(DiscussionMessageView, {
+      workspaceId: 'ws',
+      sourcePanelId: 'pane',
+      message: {
+        ...message,
+        author: { ...author, principalId: null, agentId: 'agent-1' },
+      },
+    });
+    const controls = screen.getAllByRole('button', { name: 'Open agent Alex' });
+    expect(controls).toHaveLength(2);
+    for (const control of controls) {
+      navigation.mockClear();
+      await fireEvent.click(control);
+      expect(navigation).toHaveBeenCalledExactlyOnceWith(
+        { kind: 'agent', label: 'Alex', url: 'intent://local/ws/agent/agent-1' },
+        'ws',
+        'pane',
+        expect.any(MouseEvent),
+      );
+    }
+  });
+
+  it('does not navigate an author without a workspace destination', async () => {
+    render(DiscussionMessageView, {
+      message: {
+        ...message,
+        author: { ...author, principalId: null, agentId: 'agent-1' },
+      },
+    });
+    for (const control of screen.getAllByRole('button', { name: 'Open agent Alex' })) {
+      expect(control.hasAttribute('disabled')).toBe(true);
+      await fireEvent.click(control);
+    }
+    expect(navigation).not.toHaveBeenCalled();
+  });
+
+  it('keeps human authors noninteractive', () => {
+    render(DiscussionMessageView, { message, workspaceId: 'ws' });
+    expect(screen.queryByRole('button', { name: 'Open agent Alex' })).toBeNull();
+  });
+
   it('keeps cached expanded reactions read-only after reconnecting to a legacy daemon', async () => {
     const onReaction = vi.fn();
     render(DiscussionMessageView, {

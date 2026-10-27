@@ -131,16 +131,19 @@ actor Desktop {
                   session[kCGSessionOnConsoleKey as String] as? Bool == true else { throw refused("The Mac session is locked or not on console") }
             guard let requestId = p["requestId"] as? String, !requestId.isEmpty else { throw refused("Missing permission request identity") }
             let accessibility = AXIsProcessTrusted(), screenRecording = CGPreflightScreenCaptureAccess()
-            if let prompt = permissionPrompts.next(accessibility: accessibility, screenRecording: screenRecording) {
-                // Keep the command pipe/watchdog responsive while macOS shows a
-                // dialog. Return observed permissions, never the act of prompting.
+            let prompts = permissionPrompts.due(accessibility: accessibility, screenRecording: screenRecording)
+            if !prompts.isEmpty {
+                // Keep the command pipe/watchdog responsive while macOS shows its
+                // dialogs. Return observed permissions, never the act of prompting.
                 // This signed child remains attached to its responsible Intent app.
                 DispatchQueue.main.async {
-                    switch prompt {
-                    case .accessibility:
-                        _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
-                    case .screenRecording:
-                        _ = CGRequestScreenCaptureAccess()
+                    for prompt in prompts {
+                        switch prompt {
+                        case .accessibility:
+                            _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
+                        case .screenRecording:
+                            _ = CGRequestScreenCaptureAccess()
+                        }
                     }
                 }
             }

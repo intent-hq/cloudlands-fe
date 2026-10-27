@@ -782,9 +782,8 @@ describe('IPC event-channel reconciliation (renderer listener surface vs emitter
     // Accept-changes refreshes now ride the daemon event bridge instead of a
     // duplicate renderer `git:status-changed` listener.
     expect(listened.has('git:status-changed')).toBe(false);
-    // Remaining literal listener sites continue to exercise both direct and
-    // multiline generic `listenSync` calls.
-    expect(listened.has('line-attribution:updated')).toBe(true);
+    // Literal listener sites exercise direct `listenSync` calls; the multiline
+    // generic call is the CliBlock template family asserted below.
     expect(listened.has('terminal:created')).toBe(true);
     // Agent lifecycle consumers use admitted Redux events, not legacy relays.
     expect(listened.has('agent:status-changed')).toBe(false);
@@ -908,10 +907,11 @@ describe('IPC event-channel reconciliation (renderer listener surface vs emitter
 //
 // The file-tracking service, line-attribution service, and file-attribution
 // helpers were removed alongside their handlers, seeder bridges, and preload
-// allowlist entries. Only three channels survive: two live event relays
-// (`file-tracking:changes-updated`, `line-attribution:updated`) delivered by
-// the daemon-events bridge, and one agent-driven event
-// (`file-tracking:agent-file-changed`) emitted by workspace-file-tools. Any
+// allowlist entries; the `line-attribution:updated` relay followed when the
+// note edit gutter was removed. Only two channels survive: the live event
+// relay `file-tracking:changes-updated` delivered by the daemon-events bridge,
+// and one agent-driven event (`file-tracking:agent-file-changed`) emitted by
+// workspace-file-tools. Any
 // invoke, listener, or mock-bridge that resurrects a retired name would
 // silently reintroduce the class we just drained — pin the ban here so a
 // regression fails loud in this suite instead of at runtime.
@@ -935,9 +935,10 @@ const RETIRED_IPC_CHANNELS: ReadonlySet<string> = new Set([
   'file-tracking:load-transitions',
   // Retired FILE_TRACKING event channel (listener-ready handshake).
   'file-tracking:listener-ready',
-  // Retired LINE_ATTRIBUTION request channels (kept: `line-attribution:updated`).
+  // Retired LINE_ATTRIBUTION channels (the note edit gutter was removed).
   'line-attribution:load',
   'line-attribution:compute-now',
+  'line-attribution:updated',
   // Retired FILE_ATTRIBUTION namespace (agent-write attribution moved off IPC).
   'file-attribution:record-agent-write',
   'file-attribution:read-file-and-record',

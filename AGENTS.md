@@ -769,9 +769,19 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
 - Before an outside click that should dismiss a bits-ui menu, popover, select, combobox or
   dialog, call `expectDismissibleLayerArmed(layer)` (`src/test/dismissible-layer.ts`):
   bits-ui listens for outside pointers only after an `afterSleep(1)` timer, so an early
-  click is ignored (cloudlands-fe#3696 failed 3 of 20 runs). Lint
+  click is ignored (cloudlands-fe#3696 failed 3 of 20 runs). Any element inside the layer
+  works as `layer`. Lint
   (`intent/no-unarmed-outside-click-in-ct`) flags an unguarded dismissing click; disable it
   on the line, with the reason, for a click inside the layer or on a non-bits-ui popup.
+  Prove a wait with `CT_DELAY_DISMISSIBLE_LAYER=1` (1 ms timers become 500 ms, no rebuild):
+  the spec must pass, then fail with the wait removed (cloudlands-fe#3718 patched the fixture).
+- Scroll with `wheelUntilScrolled(scroller, { deltaY })` (`src/test/ct-test.ts`), never a
+  single `page.mouse.wheel`: Chromium can drop a wheel routed by a stale compositor frame,
+  so the element never scrolls (cloudlands-fe#3733 failed 4 of 320 runs). The helper checks
+  the element has room to scroll, hovers it (or `pointer`), and resends until it moves in
+  the wheel's direction; keep your own end-position assertion after it. Lint
+  (`intent/no-raw-mouse-wheel-in-ct`) rejects the raw call; disable it on the line, with
+  the reason, only when the test checks that a wheel does NOT scroll.
 - **Every CT spec imports `test` / `expect` from `src/test/ct-test.ts`** — lint-enforced
   (`no-restricted-imports`; only type imports may come from
   `@playwright/experimental-ct-svelte`). The module sets `_optionContextReuseMode: 'none'`

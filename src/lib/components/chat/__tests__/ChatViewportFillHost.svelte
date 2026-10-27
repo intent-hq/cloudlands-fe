@@ -3,6 +3,7 @@
   import ChatPanel from '../ChatPanel.svelte';
   import { seekConversationToMessage } from '$lib/utils/open-message';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
+  import { isFollowingBottom } from '$lib/utils/smartScroll';
   import type { AgentMessage, AgentSession, Workspace } from '$shared/types';
   import { WorkspaceStatus } from '$shared/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
@@ -114,6 +115,7 @@
     }[]
   >([]);
   const pendingPages: (() => void)[] = [];
+  let following = $state<boolean | null>(null);
   $effect(() => {
     for (let i = 0; i < releasedPages; i++) pendingPages[i]?.();
   });
@@ -402,7 +404,20 @@
 {#if fixture === 'seek'}
   <button data-testid="seek-middle" onclick={seekMiddle}>Open message 500</button>
 {/if}
-<div style:height="{height}px" style:width="640px" data-testid="fill-host">
+<div
+  style:height="{height}px"
+  style:width="640px"
+  data-testid="fill-host"
+  data-following={following}
+  onscrollcapture={(event) => {
+    const target = event.target;
+    if (
+      target instanceof HTMLElement &&
+      target.matches('[data-testid="chat-transcript-scroll-viewport"]')
+    )
+      following = isFollowingBottom(target);
+  }}
+>
   <ChatPanel {workspace} agentId={agent} isActive={active} />
 </div>
 <output data-testid="requests">{JSON.stringify({ requests, maxInFlight })}</output>

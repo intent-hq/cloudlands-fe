@@ -502,6 +502,7 @@ async function ensureCaptureTabMounted(
   if (!mounted) {
     const notVisible = getWindowIdForWorkspace(workspaceId, ANY_HOST) === undefined;
     const deadlineBound = mountBudgetMs < CAPTURE_MOUNT_TIMEOUT_MS;
+    const registryUrl = listed.tabs.find((t) => t.tabId === tabId)?.url;
     return {
       failure: {
         action: actionName,
@@ -514,7 +515,7 @@ async function ensureCaptureTabMounted(
         error: deadlineBound
           ? `Cannot run '${actionName}' on tab ${tabId}: the tab's webview did not mount within the ${mountBudgetMs}ms left of the request deadline. Retry the capture, or use { action: "listTabs" } to verify the tab still exists.` // i18n-ignore (agent-facing protocol error, not user-facing)
           : notVisible
-            ? `Cannot run '${actionName}' on tab ${tabId}: the tab's webview did not mount within the wait budget (workspace ${workspaceId} is not visible in the app and the offscreen mount did not complete). Retry shortly, or use { action: "listTabs" } to verify the tab still exists.` // i18n-ignore (agent-facing protocol error, not user-facing)
+            ? notVisibleMountTimeoutError(actionName, tabId, workspaceId, registryUrl)
             : `Cannot run '${actionName}' on tab ${tabId}: the tab's webview did not mount within the wait budget. Use { action: "focusTab", tabId: "${tabId}" } to mount it, or { action: "listTabs" } to verify the tab still exists.`, // i18n-ignore (agent-facing protocol error, not user-facing)
       },
     };
@@ -528,6 +529,30 @@ async function ensureCaptureTabMounted(
     ...workspaceNotVisibleWarning(workspaceId),
     ...(registryUrl ? { registryUrl } : {}),
   };
+}
+
+/**
+ * The mount-timeout error for a workspace no window displays (intent#7855).
+ * "Not displayed" covers two different situations: no window hosts the
+ * workspace at all, or a window hosts it in the background (an adoption,
+ * not a view) and its guest has not registered. A guest registers for
+ * automation only once its first page load reaches dom-ready, so in the
+ * hosted case the page is usually still loading or unreachable.
+ */
+function notVisibleMountTimeoutError(
+  actionName: string,
+  tabId: string,
+  workspaceId: string,
+  registryUrl: string | undefined,
+): string {
+  const [hostWindowId] = getWindowIdsForWorkspace(workspaceId, ANY_HOST);
+  if (hostWindowId === undefined) {
+    // i18n-ignore (agent-facing protocol error, not user-facing)
+    return `Cannot run '${actionName}' on tab ${tabId}: the tab's webview did not mount within the wait budget because no app window hosts workspace ${workspaceId} (it is not displayed in any window and none hosts it in the background). Open an Intent window and retry, or use { action: "listTabs" } to verify the tab still exists.`;
+  }
+  const page = registryUrl ? ` (${registryUrl})` : '';
+  // i18n-ignore (agent-facing protocol error, not user-facing)
+  return `Cannot run '${actionName}' on tab ${tabId}: workspace ${workspaceId} is not displayed but is hosted in the background by app window ${hostWindowId}, and the tab's webview did not register within the wait budget — either its offscreen mount has not started or its first page load has not reached dom-ready. The page${page} may be slow or unreachable from the app; retry shortly, or use { action: "listTabs" } to verify the tab still exists.`;
 }
 
 /** Actions that capture the workspace's default tab when given no `tabId`. */

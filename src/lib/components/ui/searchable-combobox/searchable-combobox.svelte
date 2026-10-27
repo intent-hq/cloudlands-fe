@@ -175,7 +175,7 @@
     {emptyText}
     {errorText}
     {retryText}
-    portal={false}
+    portal="dialog"
     {header}
     optionDescription={optionDescription || itemActions ? canonicalOptionDescription : undefined}
     optionActions={itemActions ? canonicalOptionActions : undefined}
