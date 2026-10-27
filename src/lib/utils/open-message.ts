@@ -56,6 +56,8 @@ export interface OpenMessageOptions {
   workspaceId: string;
   agentId: string;
   messageId: string;
+  /** A tool call inside the message to land on instead, when it is rendered. */
+  toolCallId?: string;
   /** Search query whose matched terms get highlighted inside the message. */
   query?: string;
   /** The caller already opened a conversation viewer in another layout. */
@@ -70,6 +72,7 @@ export interface OpenMessageOptions {
 export interface OpenMessageEventDetail {
   agentId: string;
   messageId: string;
+  toolCallId?: string;
   query?: string;
   targetTabId?: string;
   signal?: AbortSignal;
@@ -224,7 +227,7 @@ export async function openMessage(options: OpenMessageOptions): Promise<void> {
   const signal = options.signal
     ? AbortSignal.any([pendingOpenMessage.signal, options.signal])
     : pendingOpenMessage.signal;
-  const { workspaceId, agentId, messageId, query, targetTabId } = options;
+  const { workspaceId, agentId, messageId, toolCallId, query, targetTabId } = options;
   logger.info('[openMessage] Deep-opening conversation at message', {
     workspaceId,
     agentId,
@@ -278,6 +281,7 @@ export async function openMessage(options: OpenMessageOptions): Promise<void> {
   const detail: OpenMessageEventDetail = {
     agentId,
     messageId,
+    toolCallId,
     query,
     targetTabId,
     requestId,
