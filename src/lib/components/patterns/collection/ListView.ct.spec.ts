@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, test } from '../../../../test/ct-test';
+import { expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
 import CollectionStateHarness from './CollectionStateHarness.svelte';
 import ControlledSelectionHarness from './ControlledSelectionHarness.svelte';
 
@@ -34,9 +34,7 @@ test('selected backgrounds follow virtual rows after scrolling', async ({
     props: { count: 300, selectable: 'single' },
   });
   const list = page.getByRole('listbox');
-  await list.hover();
-  await page.mouse.wheel(0, 600);
-  await expect.poll(() => list.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await wheelUntilScrolled(list, { deltaY: 600 });
   const index = await list.getByRole('option').last().getAttribute('data-list-index');
   const row = list.locator(`[data-list-index="${index}"]`);
   await row.click();

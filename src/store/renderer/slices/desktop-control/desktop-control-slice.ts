@@ -112,6 +112,10 @@ desktopControlReducer.with(
               (snapshot.pending && snapshot.pending.requestId !== entry.pending?.requestId)
                 ? undefined
                 : entry.error,
+            osChecklist:
+              snapshot.pending?.requestId === entry.pending?.requestId
+                ? entry.osChecklist
+                : undefined,
           },
     );
   },
@@ -149,6 +153,7 @@ desktopControlReducer.with(desktopEventReceived, (state, { payload: [event] }) =
           submitting: false,
           settingUp: false,
           error: undefined,
+          osChecklist: undefined,
           state: {
             status: 'pending_permission',
             requestId: event.data.requestId,

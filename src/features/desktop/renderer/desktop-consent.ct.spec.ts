@@ -38,8 +38,13 @@ test('missing macOS permissions stay readable and Allow remains a fresh explicit
 }, testInfo) => {
   await mount(Harness, { props: { missingPermissions: true } });
   const card = page.getByRole('group', { name: 'Desktop control permission' });
-  await expect(card.getByRole('status')).toContainText('Accessibility access is missing');
-  await expect(card.getByRole('status')).toContainText('Screen Recording access is missing');
+  const checklist = card.getByRole('list', { name: 'macOS permissions' });
+  await expect(checklist.getByRole('listitem')).toHaveText([
+    /Accessibility\s*Not allowed yet/,
+    /Screen Recording\s*Not allowed yet/,
+    /Screen capture check\s*Waits for the items above/,
+  ]);
+  await expect(card.getByRole('status')).toContainText('quit and reopen Intent once');
   await expect(page.getByRole('status', { name: 'Decision' })).toHaveText('');
   const before = await card.boundingBox();
   expect(before).not.toBeNull();

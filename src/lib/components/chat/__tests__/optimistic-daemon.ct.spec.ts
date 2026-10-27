@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { expect, test } from '../../../../test/ct-test';
+import { expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
 import OptimisticDaemonHost from './OptimisticDaemonHost.svelte';
 import { connect, createRelay, rpcClient, type DaemonFixture } from './optimistic-daemon-relay';
 
@@ -66,8 +66,7 @@ test('optimistic real-daemon foreign split before ACK preserves new draft and au
       .toBeGreaterThan(100);
     // The user-message card has its own scrollable body; target the outer
     // transcript gutter so the wheel gesture reaches the viewport under test.
-    await viewport.hover({ position: { x: 4, y: 4 } });
-    await page.mouse.wheel(0, -10000);
+    await wheelUntilScrolled(viewport, { deltaY: -10_000, position: { x: 4, y: 4 } });
     await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBeLessThan(2);
     await expect(component.getByRole('button', { name: 'Edit', exact: true })).toBeDisabled();
     await page.screenshot({ path: info.outputPath('optimistic-daemon-pending.png') });

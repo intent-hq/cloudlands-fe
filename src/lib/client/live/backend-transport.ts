@@ -269,6 +269,11 @@ export function capturePrMonitorSession(workspaceId: string) {
   return transport.capturePrMonitorSession(workspaceId);
 }
 
+/** Host label the next monitor capture stamps, if the transport names hosts itself. */
+export function prMonitorBackendId(): string | undefined {
+  return resolveBackendTransport().prMonitorBackendId?.();
+}
+
 /** Monitor sessions also retire on acknowledged identity renegotiation. */
 export function onMonitorReconnected(handler: () => void): () => void {
   const transport = resolveBackendTransport();

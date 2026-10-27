@@ -727,6 +727,31 @@ describe('mapWorkspacePRs', () => {
     expect(mapWorkspacePRs([], null, buildUrl, getTitle)).toEqual([]);
   });
 
+  it('carries the pool merge-queue flag so an open row reads Queued without a monitor', () => {
+    const [queued, plain] = mapWorkspacePRs(
+      [
+        makePR({ number: 1, status: PullRequestStatus.Open, isInMergeQueue: true }),
+        makePR({ number: 2, status: PullRequestStatus.Open }),
+      ],
+      null,
+      buildUrl,
+      getTitle,
+    );
+    expect(getPRStatusTooltip(queued).split('\n')[0]).toBe('Queued');
+    expect(getPRStatusTooltip(plain).split('\n')[0]).toBe('Open');
+  });
+
+  it('drops a stale merge-queue flag from a draft pool entry', () => {
+    const [draft] = mapWorkspacePRs(
+      [makePR({ status: PullRequestStatus.Open, isDraft: true, isInMergeQueue: true })],
+      null,
+      buildUrl,
+      getTitle,
+    );
+    expect(draft.isInMergeQueue).toBeUndefined();
+    expect(getPRStatusTooltip(draft).split('\n')[0]).not.toBe('Queued');
+  });
+
   it('maps workspace PRs when available', () => {
     const prs = [makePR({ number: 42, title: 'My PR', status: 'open' })];
     const result = mapWorkspacePRs(prs, null, buildUrl, getTitle);

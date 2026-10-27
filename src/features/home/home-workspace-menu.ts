@@ -17,7 +17,6 @@ import {
   faTrash,
   faArrowRight,
   faHardDrive,
-  faRotateLeft,
 } from '@fortawesome/free-solid-svg-icons';
 
 interface HomeWorkspaceMenuOptions {
@@ -52,42 +51,43 @@ export function createHomeWorkspaceMenu(
   ];
   items.push(...createWorkspaceMicroKeyMenu(workspace.id, { connected: microConnected, onClose }));
   if (!selectHidesOwnerWorkspaceActions.select(store.state, workspace.id)) {
-    const archived = workspace.status === WorkspaceStatusEnum.Archived;
-    // A retired workspace (PROTOCOL §5.1) revives through unarchive as a fresh
-    // blank checkout, so the same slot reads "Restore as blank workspace".
+    // Archive is the only lifecycle action users see. A Retired workspace
+    // (PROTOCOL §5.1; its folder was purged) is presented as archived, and
+    // unarchiving revives it as a fresh checkout. Purging the folder
+    // (`workspace.retire`) is offered only on an archived workspace that
+    // still has its folder.
     const retired = workspace.status === WorkspaceStatusEnum.Retired;
+    const archived = retired || workspace.status === WorkspaceStatusEnum.Archived;
     items.push(
       { type: 'separator' },
       {
         id: 'archive',
-        label: retired
-          ? m.workspace_retire_restore_label()
-          : archived
-            ? m.ui_workspaceActions_unarchiveSpace_label()
-            : m.workspace_card_archive_label(),
-        icon: retired ? faRotateLeft : archived ? faBoxOpen : faBoxArchive,
+        label: archived
+          ? m.ui_workspaceActions_unarchiveSpace_label()
+          : m.workspace_card_archive_label(),
+        icon: archived ? faBoxOpen : faBoxArchive,
         onClick: () => {
           onClose();
           store.dispatch(
-            archived || retired
+            archived
               ? requestUnarchiveWorkspace(workspace.id)
               : requestArchiveWorkspace(workspace.id),
           );
         },
       },
-      ...(retired
-        ? []
-        : [
+      ...(archived && !retired
+        ? [
             {
-              id: 'retire',
-              label: m.workspace_retire_menu_label(),
+              id: 'purge',
+              label: m.workspace_purge_menu_label(),
               icon: faHardDrive,
               onClick: () => {
                 onClose();
                 store.dispatch(requestRetireWorkspace(workspace.id));
               },
             },
-          ]),
+          ]
+        : []),
       {
         id: 'delete',
         label: m.workspace_card_deleteSpace_label(),

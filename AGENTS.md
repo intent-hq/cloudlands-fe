@@ -80,6 +80,7 @@ in a monorepo checkout, where this repo mounts at `packages/cloudlands-fe/`.
 | debugging                                                               | ../../docs/fe/TROUBLESHOOTING_GUIDE.md, ../../docs/fe/IPC_DEBUG_GUIDE.md                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | prod stack traces                                                       | `pnpm resolve-stack <tag> < stack.txt` — rebuilds the tag with sourcemaps, maps frames                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | CT run failures (PR or nightly triage)                                  | `pnpm ct:failures <run-id \| run-url>` — every failed/flaky CT case of an `Intent PR Checks` or `Nightly Browser Tests` run, per shard, from the shard's JSON report artifact (list-log summary fallback); `--attempt N`, `--json`                                                                                                                                                                                                                                                                           |
+| full local CT run (all shards)                                          | `pnpm run test:ct:full` — the four CT shards in sequence via `test:ct` (CI's `@quarantine` filter, one `ct-<CT_PORT>` lock); per-shard log, JSON, HTML and traces in `ct-full-runs/<stamp>/shard-<i>/`, then one line per shard, failed/flaky cases, a total and `summary.json`; every shard runs, exit 0 only if all pass. About 2h15m (shards 25-40 min): give a monitor a 3h+ TTL. `-- --list` checks wiring                                                                                              |
 | error handling                                                          | ../../docs/fe/ERROR_HANDLING_SYSTEM.md                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | TypeScript/types                                                        | ../../docs/fe/TYPE_SYSTEM_GUIDE.md                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | events/IPC                                                              | ../../docs/fe/EVENT_SYSTEM.md                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
@@ -715,7 +716,8 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   share ordered state.
 - **A pass-on-retry fails the required CT lane** (`--fail-on-flaky-tests`). Fix the flake
   or, if it needs more time, tag the individual test
-  `{ tag: '@quarantine' }` — never a whole file. The full four-shard CT suite
+  `{ tag: '@quarantine' }` — never a whole file. Run the same four shards locally with
+  `pnpm run test:ct:full` (about 2h15m; see [Where to look](#where-to-look)). The full four-shard CT suite
   runs nightly at 02:17 UTC and on manual dispatch (`nightly-browser-tests.yml`).
   Merge-queue entries that touch CT-contract paths, specs or their direct local imports
   also require it (classified by `scripts/ct-contract-paths.mjs`, shared with
@@ -766,6 +768,22 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   whose own short finite fades are allowed. Both list what is still running. Lint
   (`intent/no-one-shot-animation-count`) rejects the one-time count in CT specs; disable
   it on the line, with the reason, only when zero animations is the deliberate contract.
+- Before an outside click that should dismiss a bits-ui menu, popover, select, combobox or
+  dialog, call `expectDismissibleLayerArmed(layer)` (`src/test/dismissible-layer.ts`):
+  bits-ui listens for outside pointers only after an `afterSleep(1)` timer, so an early
+  click is ignored (cloudlands-fe#3696 failed 3 of 20 runs). Any element inside the layer
+  works as `layer`. Lint
+  (`intent/no-unarmed-outside-click-in-ct`) flags an unguarded dismissing click; disable it
+  on the line, with the reason, for a click inside the layer or on a non-bits-ui popup.
+  Prove a wait with `CT_DELAY_DISMISSIBLE_LAYER=1` (1 ms timers become 500 ms, no rebuild):
+  the spec must pass, then fail with the wait removed (cloudlands-fe#3718 patched the fixture).
+- Scroll with `wheelUntilScrolled(scroller, { deltaY })` (`src/test/ct-test.ts`), never a
+  single `page.mouse.wheel`: Chromium can drop a wheel routed by a stale compositor frame,
+  so the element never scrolls (cloudlands-fe#3733 failed 4 of 320 runs). The helper checks
+  the element has room to scroll, hovers it (or `pointer`), and resends until it moves in
+  the wheel's direction; keep your own end-position assertion after it. Lint
+  (`intent/no-raw-mouse-wheel-in-ct`) rejects the raw call; disable it on the line, with
+  the reason, only when the test checks that a wheel does NOT scroll.
 - **Every CT spec imports `test` / `expect` from `src/test/ct-test.ts`** — lint-enforced
   (`no-restricted-imports`; only type imports may come from
   `@playwright/experimental-ct-svelte`). The module sets `_optionContextReuseMode: 'none'`

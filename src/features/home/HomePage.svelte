@@ -896,7 +896,6 @@
                             {doubleClick}
                             oncontextmenu={workspaceActions.showMenu}
                             archived={filter === 'archived'}
-                            retired={filter === 'retired'}
                           />
                         {:else}
                           {#snippet workspaceRow({ item }: { item: Workspace })}

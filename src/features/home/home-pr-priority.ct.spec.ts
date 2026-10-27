@@ -68,9 +68,34 @@ for (const scenario of ['populated', 'board'] as const) {
     await expect(badge).toContainText('Draft');
     await expect(badge).toContainText('#3261');
 
+    // A merge-queued PR outranks drafts and more recently updated open PRs.
+    const withQueued = [
+      ...withDraft,
+      {
+        ...pulls[1]!,
+        id: 'queued',
+        number: 2733,
+        url: 'https://github.com/intent-hq/intentd/pull/2733',
+        title: 'Route browser.exec to the newest connection',
+        updatedAt: '2026-09-30T00:00:00Z',
+        isInMergeQueue: true,
+      },
+    ];
     await page.evaluate(
       (value) => window.__homeWorkspacePreview!.setPullRequests('home-review', value, 12),
-      withDraft.map((pr) => ({ ...pr, status: PullRequestStatus.Merged, isDraft: false })),
+      withQueued,
+    );
+    await expect(badge).toContainText('Queued');
+    await expect(badge).toContainText('#2733');
+
+    await page.evaluate(
+      (value) => window.__homeWorkspacePreview!.setPullRequests('home-review', value, 12),
+      withQueued.map((pr) => ({
+        ...pr,
+        status: PullRequestStatus.Merged,
+        isDraft: false,
+        isInMergeQueue: false,
+      })),
     );
     await expect(badge).toContainText('Merged');
     await expect(badge).toContainText('#6693');

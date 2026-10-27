@@ -9,7 +9,6 @@ import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { paletteNoteSearchRequested, paletteReducer } from '../../palette/palette-slice';
 import { selectPaletteNoteSearch } from '../../palette/palette-selectors';
-import { selectNoteAttributionView } from '../workspace-notes-selectors';
 import {
   applyNoteCreated,
   applyNoteDeleted,
@@ -25,8 +24,6 @@ import {
   noteContentInvalidated,
   noteContentReadApplied,
   noteMetadataPushed,
-  noteAttributionInvalidated,
-  noteAttributionViewRequested,
   readNoteRequested,
   refreshNoteFromEventRequested,
   searchNotesRequested,
@@ -857,34 +854,6 @@ describe('notesReadSaga', () => {
       includeArchived: false,
       preferWorkspaceId: WS,
     });
-    run.task.cancel();
-    await run.task.toPromise();
-  });
-
-  it('coalesces an attribution update received while the current load is pending', async () => {
-    const first = deferred<any>();
-    const initial = {
-      workspaceId: WS,
-      noteId: 'note-1',
-      computedAt: 'initial',
-      attributions: {},
-    };
-    const refreshed = { ...initial, computedAt: 'refreshed' };
-    const load = vi
-      .spyOn(appClient.notes.lineAttribution, 'load')
-      .mockReturnValueOnce(first.promise)
-      .mockResolvedValueOnce(refreshed);
-    const run = harness();
-
-    run.dispatch(noteAttributionViewRequested('gutter', 'request-1', WS, 'note-1'));
-    await settle();
-    run.channel.put(noteAttributionInvalidated(WS, 'note-1'));
-    first.resolve(initial);
-
-    await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(2));
-    expect(selectNoteAttributionView.select(run.state() as never, WS, 'gutter')?.data).toEqual(
-      refreshed,
-    );
     run.task.cancel();
     await run.task.toPromise();
   });

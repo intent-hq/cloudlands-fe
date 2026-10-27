@@ -898,7 +898,6 @@
           defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
           fallbackToCatalogDefault
           fallbackProviderId={selectedProvider}
-          noticeClass="basis-full w-full max-w-full mt-1.5"
           silentFallback
           portal={false}
           modalAware={true}
@@ -974,7 +973,6 @@
             defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
             fallbackToCatalogDefault
             fallbackProviderId={selectedProvider}
-            noticeClass="basis-full w-full max-w-full mt-1.5"
             silentFallback
             portal={false}
             modalAware={true}

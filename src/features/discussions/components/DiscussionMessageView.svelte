@@ -3,6 +3,7 @@
   import { Badge } from '$lib/components/ui/badge';
   import type { DiscussionAgentMention } from '../discussion-agent-mentions';
   import { discussionReplyFirstLine } from '../discussion-message-content';
+  import { openDiscussionReference } from '../discussion-reference-navigation';
   import DiscussionCollapsibleBody from './DiscussionCollapsibleBody.svelte';
   import type { Snippet } from 'svelte';
   import Fa from 'svelte-fa';
@@ -66,6 +67,19 @@
   );
   const reply = $derived('replyTo' in message ? message.replyTo : undefined);
   const isAgent = $derived(!!message.author.agentId);
+  function openAuthor(event: MouseEvent) {
+    if (!workspaceId || !message.author.agentId) return;
+    void openDiscussionReference(
+      {
+        kind: 'agent',
+        label: name,
+        url: `intent://local/${workspaceId}/agent/${message.author.agentId}`,
+      },
+      workspaceId,
+      sourcePanelId,
+      event,
+    );
+  }
   const hasActions = $derived(!status && !!(onReply || onReaction || onCopy));
   let reactionMenuOpen = $state(false);
   let moreMenuOpen = $state(false);
@@ -137,23 +151,39 @@
     {#if continuation}
       <div class={isAgent ? 'w-8 shrink-0' : 'w-[30px] shrink-0'} aria-hidden="true"></div>
     {:else if isAgent}
-      <div
-        class="flex size-8 shrink-0 items-center justify-center rounded-[10px] border border-border bg-muted"
+      <Button
+        variant="ghost"
+        size="icon"
+        class="size-8 rounded-[10px] border border-border bg-muted"
         data-discussion-agent-avatar
+        disabled={!workspaceId}
+        aria-label={m.chat_msgAttribution_openAgent_title({ name })}
+        onclick={openAuthor}
       >
         <AgentAvatar
           agentId={message.author.agentId}
           variant="emphasized"
           ariaLabel={m.workspace_fileChanges_agent_label()}
         />
-      </div>
+      </Button>
     {:else}
       <PrincipalAvatar label={name} avatarUrl={message.author.avatarUrl} size={30} />
     {/if}
     <div class="relative flex min-w-0 flex-1 flex-col gap-1.5" data-discussion-message-content>
       {#if !continuation}
         <div class="flex min-w-0 flex-wrap items-center gap-1 type-caption">
-          <span class="truncate font-medium text-foreground">{name}</span>
+          {#if isAgent}
+            <Button
+              variant="plain"
+              size="compact"
+              class="h-auto min-w-0 shrink font-medium text-foreground hover:underline"
+              disabled={!workspaceId}
+              aria-label={m.chat_msgAttribution_openAgent_title({ name })}
+              onclick={openAuthor}>{name}</Button
+            >
+          {:else}
+            <span class="truncate font-medium text-foreground">{name}</span>
+          {/if}
           {#if message.author.agentId}<Badge
               size="compact"
               class="h-4 rounded-[5px] px-[5px] leading-[14px] text-muted-foreground"
@@ -188,6 +218,9 @@
         </div>
       {:else}
         <span class="sr-only">{name} · {formatTime(message.createdAt)}</span>
+        {#if status === 'sending'}
+          <span class="sr-only" role="status">{m.workspace_discussion_sending_label()}</span>
+        {/if}
       {/if}
 
       <div>
@@ -315,6 +348,10 @@
 {/snippet}
 
 <style>
+  article {
+    transition: opacity var(--spring-fast) var(--spring-fast-ease);
+  }
+
   .discussion-actions-reveal {
     position: absolute;
     top: 100%;
@@ -360,6 +397,10 @@
   }
 
   @container style(--motion-reduced: 1) {
+    article {
+      transition: none;
+    }
+
     .discussion-actions {
       transition: none;
       transform: none;

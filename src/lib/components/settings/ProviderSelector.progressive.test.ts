@@ -540,7 +540,7 @@ describe('ProviderSelector model refresh rewire (intent-hq/intent#3966)', () => 
     });
   });
 
-  it('correlates a default-provider save without prematurely refreshing models', async () => {
+  it('offers no Set as default in the provider actions menu', async () => {
     mocks.invoke.mockImplementation(async (channel: string) => {
       if (channel === PROVIDERS_CHANNELS.GET_AVAILABILITY) return new Promise(() => {});
       if (channel === PROVIDERS_CHANNELS.GET_PATHS) {
@@ -557,18 +557,7 @@ describe('ProviderSelector model refresh rewire (intent-hq/intent#3966)', () => 
     await fireEvent.click(
       result.getByRole('button', { name: 'Provider actions for OpenAI Codex' }),
     );
-    await fireEvent.click(result.getByRole('menuitem', { name: 'Set as default' }));
-
-    await waitFor(() => {
-      expect(mocks.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: 'providerSettings/setActiveProvider',
-          payload: ['codex', { id: expect.any(String), sessionId: expect.any(String) }],
-        }),
-      );
-    });
-    expect(mocks.dispatch).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'model/reloadModelsForProvider' }),
-    );
+    expect(await result.findAllByRole('menuitem')).not.toHaveLength(0);
+    expect(result.queryByRole('menuitem', { name: /default/i })).toBeNull();
   });
 });

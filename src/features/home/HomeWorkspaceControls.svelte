@@ -64,13 +64,6 @@
     aria-pressed={filter === 'archived'}
     onclick={() => onfilter('archived')}>{m.home_filter_archived()}</Button
   >
-  <Button
-    variant="ghost"
-    size="sm"
-    active={filter === 'retired'}
-    aria-pressed={filter === 'retired'}
-    onclick={() => onfilter('retired')}>{m.home_filter_retired()}</Button
-  >
 </div>
 <div data-home-status-filter class="home-workspace-filters-compact ml-auto min-w-0">
   <HomeFilterSelect
@@ -79,7 +72,6 @@
     options={[
       ...filters.map((item) => ({ value: item.id, label: item.label })),
       { value: 'archived', label: m.home_filter_archived() },
-      { value: 'retired', label: m.home_filter_retired() },
     ]}
     onchange={(value) => onfilter(value as HomeFilter)}
   />

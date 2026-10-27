@@ -1,4 +1,10 @@
-import { expect, expectAnimationsToSettle, test } from '../../../../../test/ct-test';
+import {
+  expect,
+  expectAnimationsToSettle,
+  test,
+  wheelUntilScrolled,
+} from '../../../../../test/ct-test';
+import { expectDismissibleLayerArmed } from '../../../../../test/dismissible-layer';
 import type { Locator, Page } from '@playwright/test';
 import ModelPickerGeometryHost from './ModelPickerGeometryHost.svelte';
 import SimpleRichInputQueueHost from '../SimpleRichInputQueueHost.svelte';
@@ -160,9 +166,7 @@ test('provider rail, immediately visible search and bottom-footer effort remain 
   const controlBox = (await effort.boundingBox())!;
   expect(labelBox.x + labelBox.width).toBeLessThan(controlBox.x);
 
-  await list.hover();
-  await page.mouse.wheel(0, 2000);
-  await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  await wheelUntilScrolled(list, { deltaY: 2000 });
   expect(await section.boundingBox()).toEqual(sectionBox);
   await expectHitTarget(effort);
   await page.keyboard.type('Model 20');
@@ -436,6 +440,9 @@ for (const placement of ['settings', 'composer', 'modal'] as const) {
       await expect(controlledListbox.getByRole('option')).toHaveCount(constrained ? 22 : 8);
       // The popup border emits mousedown (unlike option pointerdown, which
       // prevents it); it must not be mistaken for a click outside the parent.
+      // In the modal placement, until the nested select registers its layer the
+      // enclosing bits-ui dialog is the topmost layer and closes on this click.
+      await expectDismissibleLayerArmed(inner);
       await inner.click({ position: { x: 1, y: 1 } });
       await expect(outer).toBeVisible();
       await expect(inner).toBeVisible();
@@ -444,8 +451,7 @@ for (const placement of ['settings', 'composer', 'modal'] as const) {
       const last = inner.getByRole('option').last();
       if (constrained) {
         expect(await viewport.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
-        await viewport.hover();
-        await page.mouse.wheel(0, 2000);
+        await wheelUntilScrolled(viewport, { deltaY: 2000 });
       }
       await expectHitTarget(last);
       // Nested scrolling must not move the footer by scrolling or resizing
@@ -514,6 +520,9 @@ for (const placement of ['settings', 'composer', 'modal'] as const) {
 
       await trigger.click();
       await effortTrigger.click();
+      // The model popup is the custom ui/dropdown, which handles outside clicks
+      // itself; only the nested effort select is a bits-ui layer.
+      await expectDismissibleLayerArmed(inner);
       if (placement === 'modal') {
         await page
           .getByRole('heading', { name: 'Model settings' })
@@ -528,8 +537,7 @@ for (const placement of ['settings', 'composer', 'modal'] as const) {
       // The model list still scrolls and selects independently of effort.
       await trigger.click();
       const modelViewport = outer.locator('[data-scroll-container]');
-      await modelViewport.hover();
-      await page.mouse.wheel(0, 2000);
+      await wheelUntilScrolled(modelViewport, { deltaY: 2000 });
       const lastModel = outer.getByRole('option', { name: 'Model 20', exact: true });
       await expectHitTarget(lastModel);
       await lastModel.click();
@@ -572,6 +580,7 @@ for (const input of ['keyboard', 'pointer'] as const) {
         await page.keyboard.press('Enter');
       } else {
         const box = (await target.boundingBox())!;
+        // eslint-disable-next-line intent/no-unarmed-outside-click-in-ct -- selects an option inside the select; not an outside dismissal
         await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
       }
       await expect(inner).toHaveCount(0);

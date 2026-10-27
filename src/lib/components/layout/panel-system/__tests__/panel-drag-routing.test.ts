@@ -41,6 +41,12 @@ vi.mock('$store/renderer/store', () => ({
 vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
   selectIsDragging: () => readable(true),
 }));
+vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
+  selectLabsMultiplayerEnabled: () => readable(false),
+}));
+vi.mock('$store/renderer/slices/workspace-discussion/workspace-discussion-selectors', () => ({
+  selectDiscussionUnread: () => readable({ count: 0, firstSequence: null }),
+}));
 vi.mock('$store/renderer/slices/tab-state/tab-state-slice', () => ({
   startDrag: () => ({ type: 'tabState/startDrag' }),
   endDrag: () => ({ type: 'tabState/endDrag' }),

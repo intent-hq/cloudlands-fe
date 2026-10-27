@@ -77,6 +77,7 @@ function* decide(action: ReturnType<typeof desktopDecisionRequested>): SagaGener
       submitting: true,
       settingUp: decision !== 'deny',
       error: undefined,
+      osChecklist: undefined,
     }),
   );
   let observing = decision !== 'deny';
@@ -94,13 +95,7 @@ function* decide(action: ReturnType<typeof desktopDecisionRequested>): SagaGener
           yield* put(desktopRequestExpired(ws, agent, requestId));
           return;
         }
-        const guidance = yield* call(
-          desktopClient.requestPermissions,
-          ws,
-          agent,
-          requestId,
-          decision,
-        );
+        const setup = yield* call(desktopClient.requestPermissions, ws, agent, requestId, decision);
         const current = yield* selectDesktopEntry.effect(ws, agent);
         if (
           generation !== (yield* selectDesktopControl.effect()).generation ||
@@ -110,11 +105,22 @@ function* decide(action: ReturnType<typeof desktopDecisionRequested>): SagaGener
           return;
         if (Date.parse(current.pending.expiresAt) <= Date.now()) {
           yield* put(desktopRequestExpired(ws, agent, requestId));
-          if (guidance) yield* put(desktopEntryPatched(ws, agent, generation, { error: guidance }));
+          if (setup)
+            yield* put(
+              desktopEntryPatched(ws, agent, generation, {
+                error: setup.guidance,
+                osChecklist: setup.checklist,
+              }),
+            );
           return;
         }
-        yield* put(desktopEntryPatched(ws, agent, generation, { error: guidance }));
-        if (!guidance) break;
+        yield* put(
+          desktopEntryPatched(ws, agent, generation, {
+            error: setup?.guidance,
+            osChecklist: setup?.checklist,
+          }),
+        );
+        if (!setup) break;
         // Read observed OS state only. The original gesture, request and expiry
         // remain binding; this never retries a daemon decision or opens a session.
         yield* delay(1000);

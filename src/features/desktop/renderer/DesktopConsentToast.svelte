@@ -21,6 +21,7 @@
     pending={$entry.submitting}
     settingUp={$entry.settingUp}
     guidance={$entry.error}
+    checklist={$entry.osChecklist}
     onDecision={(decision) =>
       store.dispatch(desktopDecisionRequested(workspaceId, agentId, requestId, decision))}
   />

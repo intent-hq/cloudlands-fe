@@ -2,6 +2,8 @@ import { m } from '$shared/paraglide/messages.js';
 
 export function discussionTitle(
   conversation: {
+    id?: string;
+    name?: string | null;
     kind: string;
     participants: readonly {
       principalId: string;
@@ -11,7 +13,11 @@ export function discussionTitle(
   },
   selfId?: string,
 ) {
-  if (conversation.kind === 'workspace') return m.workspace_discussion_title();
+  if (conversation.name?.trim()) return conversation.name.trim();
+  if (conversation.kind === 'workspace')
+    return conversation.id && conversation.id !== 'default'
+      ? m.workspace_discussion_conversation_title()
+      : m.workspace_discussion_title();
   const names = conversation.participants
     .filter((person) => person.principalId !== selfId)
     .map(

@@ -1,5 +1,5 @@
 import type { AgentMessage, ContentBlock } from '$shared/types';
-import { expect, test } from '../../../../test/ct-test';
+import { expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
 import ChatPanelOperationalGeometryHost from './ChatPanelOperationalGeometryHost.svelte';
 import { frames, instrument, snapshot, timeline } from './operational-row-scale-probe';
 
@@ -181,8 +181,7 @@ test('two-message forced history remains anchored after 200-message prepend', as
     .toBeLessThanOrEqual(2);
   await frames(page);
   // Enter real user history mode before prepending; record a canonical visible row.
-  await viewport.hover();
-  await page.mouse.wheel(0, -400);
+  await wheelUntilScrolled(viewport, { deltaY: -400 });
   await frames(page);
   const anchor = await viewport.evaluate((node) => {
     const box = node.getBoundingClientRect();

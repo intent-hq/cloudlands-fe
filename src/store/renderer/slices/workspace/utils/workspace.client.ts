@@ -537,7 +537,7 @@ export class WorkspaceClient {
     }
     return {
       ok: false,
-      error: result.error || m.workspace_ops_retireFailed_error(),
+      error: result.error || m.workspace_ops_purgeFailed_error(),
       ...(result.errorCode ? { errorCode: result.errorCode } : {}),
     };
   }

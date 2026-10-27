@@ -2,6 +2,8 @@
   import { onDestroy, tick } from 'svelte';
   import type { MentionCandidate, MentionGroup } from '$lib/services/mentions/types';
   import { isMentionGroup } from '$lib/services/mentions/types';
+  import { buildMentionSections } from '$lib/services/mentions/sections';
+  import type { MentionSection } from '$lib/services/mentions/sections';
   import { BreadcrumbController } from '$lib/services/mentions/breadcrumb-controller.svelte';
   import { getIconForType } from '$lib/services/mentions/icon-map';
   import { faNote } from '$lib/icons/faNote';
@@ -244,9 +246,17 @@
     await tick();
     if (!listElement) return;
     const selectedEl = listElement.querySelector('.mention-item.selected');
-    if (selectedEl) {
-      selectedEl.scrollIntoView?.({ block: 'nearest', behavior: 'instant' });
+    if (!selectedEl) return;
+    // Reveal a section's heading along with its first result.
+    const section = showHeadings
+      ? sections.find((candidate) => candidate.items[0] === visualOrderItems[selectedIndex])
+      : undefined;
+    if (section) {
+      document
+        .getElementById(headingId(section))
+        ?.scrollIntoView?.({ block: 'nearest', behavior: 'instant' });
     }
+    selectedEl.scrollIntoView?.({ block: 'nearest', behavior: 'instant' });
   }
 
   function selectItem(index: number) {
@@ -278,45 +288,80 @@
   // Expose onKeyDown for parent
   export { onKeyDown };
 
-  // Group items by their group property
-  function groupItems(
-    items: (MentionCandidate | MentionGroup)[],
-  ): Map<string, (MentionCandidate | MentionGroup)[]> {
-    const grouped = new Map<string, (MentionCandidate | MentionGroup)[]>();
+  // One section per kind, in the search's order; headings only help when
+  // more than one kind is listed.
+  const sections = $derived(buildMentionSections(Array.isArray(currentItems) ? currentItems : []));
+  const showHeadings = $derived(sections.length > 1);
 
-    // Defensive check: ensure items is an array
-    const itemList = Array.isArray(items) ? items : [];
-    for (const item of itemList) {
-      if (!isMentionGroup(item)) {
-        // Bucket by kind and label: a bucket spanning kinds (such as one shared
-        // bucket for every unlabeled kind) would pull later kinds up to the
-        // first one's position, breaking the search's kind order.
-        const key = `${item.type}:${item.group ?? ''}`;
-        const group = grouped.get(key) || [];
-        group.push(item);
-        grouped.set(key, group);
-      } else {
-        // It's a group itself
-        const group = grouped.get('Groups') || [];
-        group.push(item);
-        grouped.set('Groups', group);
-      }
-    }
-
-    return grouped;
-  }
-
-  const groupedItems = $derived(groupItems(currentItems));
-
-  // Flat array in visual (grouped) order — used for arrow key navigation
+  // Flat array in visual (sectioned) order — used for arrow key navigation
   // so that selectedIndex follows the display order, not the original array order.
-  const visualOrderItems = $derived(Array.from(groupedItems.values()).flat());
+  const visualOrderItems = $derived(sections.flatMap((section) => section.items));
+  // Headings are not options; pressing one must not move focus from the
+  // editor into the listbox (rows already prevent this themselves).
+  function keepEditorFocusOnHeading(event: Event) {
+    if (event.target instanceof Element && event.target.closest('.mention-section-heading')) {
+      event.preventDefault();
+    }
+  }
+  function headingId(section: MentionSection) {
+    return `${componentId}-section-${section.key}`;
+  }
   function optionId(item: MentionCandidate | MentionGroup) {
     return `${componentId}-option-${encodeURIComponent(`${isMentionGroup(item) ? 'group' : item.type}:${item.id}`)}`;
   }
   const activeOptionId = $derived(selectedItem ? optionId(selectedItem) : undefined);
   $effect(() => onActiveOptionChange?.(activeOptionId));
 </script>
+
+{#snippet mentionOption(item: MentionCandidate | MentionGroup)}
+  {@const visualIndex = visualOrderItems.indexOf(item)}
+  {@const icon = getIcon(item)}
+  {@const isSelected = visualIndex === selectedIndex}
+  {@const isAgent = !isMentionGroup(item) && item.type === 'agent'}
+  {@const isMember = !isMentionGroup(item) && item.type === 'member'}
+  {@const label = isMember ? memberMentionLabel(item.label) : item.label}
+  <Button
+    variant="plain"
+    wrapContent={false}
+    class="{menuItem()} mention-item {isSelected ? 'selected' : ''}"
+    id={optionId(item)}
+    role="option"
+    aria-selected={isSelected}
+    aria-label={isMember && item.subtitle ? `${label} · ${item.subtitle}` : label}
+    tabindex={-1}
+    onpointerdown={(event) => event.preventDefault()}
+    onmousedown={(event) => event.preventDefault()}
+    onclick={() => selectItem(visualIndex)}
+    onmouseenter={() => {
+      if (!ignoreMouseUntilMove) selectedIndex = visualIndex;
+    }}
+  >
+    {#if isMember}
+      <PrincipalAvatar avatarUrl={item.meta?.avatarUrl} label={item.label} size={18} />
+    {:else if isAgent}
+      <span class="mention-agent-avatar">
+        <MentionAgentAvatar agentId={item.id} />
+      </span>
+    {:else}
+      <span class="mention-icon" class:selected={isSelected}>
+        <Fa {icon} />
+      </span>
+    {/if}
+
+    <div class="mention-content">
+      <div class="mention-label-line">
+        <span class="mention-label">{label}</span>
+      </div>
+      {#if !isMentionGroup(item) && item.subtitle}
+        <span class="mention-subtitle">{item.subtitle}</span>
+      {/if}
+    </div>
+
+    {#if isMentionGroup(item)}
+      <span class="group-arrow"><Fa icon={faChevronRight} size="xs" /></span>
+    {/if}
+  </Button>
+{/snippet}
 
 <div class="enhanced-mention-list" bind:this={listElement}>
   <!-- Main container with list -->
@@ -374,60 +419,28 @@
           aria-busy={loading}
           onkeydown={handleKeyDown}
           onmousemove={() => (ignoreMouseUntilMove = false)}
+          onpointerdown={keepEditorFocusOnHeading}
+          onmousedown={keepEditorFocusOnHeading}
         >
-          {#each Array.from(groupedItems.entries()) as [groupName, groupItems] (groupName)}
-            {#each groupItems as item (optionId(item))}
-              {@const visualIndex = visualOrderItems.indexOf(item)}
-              {@const icon = getIcon(item)}
-              {@const isSelected = visualIndex === selectedIndex}
-              {@const isAgent = !isMentionGroup(item) && item.type === 'agent'}
-              {@const isMember = !isMentionGroup(item) && item.type === 'member'}
-              {@const label = isMember ? memberMentionLabel(item.label) : item.label}
-              <Button
-                variant="plain"
-                wrapContent={false}
-                class="{menuItem()} mention-item {isSelected ? 'selected' : ''}"
-                id={optionId(item)}
-                role="option"
-                aria-selected={isSelected}
-                aria-label={isMember && item.subtitle ? `${label} · ${item.subtitle}` : label}
-                tabindex={-1}
-                onpointerdown={(event) => event.preventDefault()}
-                onmousedown={(event) => event.preventDefault()}
-                onclick={() => selectItem(visualIndex)}
-                onmouseenter={() => {
-                  if (!ignoreMouseUntilMove) selectedIndex = visualIndex;
-                }}
-              >
-                {#if isMember}
-                  <PrincipalAvatar avatarUrl={item.meta?.avatarUrl} label={item.label} size={18} />
-                {:else if isAgent}
-                  <span class="mention-agent-avatar">
-                    <MentionAgentAvatar agentId={item.id} />
-                  </span>
-                {:else}
-                  <span class="mention-icon" class:selected={isSelected}>
-                    <Fa {icon} />
-                  </span>
-                {/if}
-
-                <div class="mention-content">
-                  <div class="mention-label-line">
-                    <span class="mention-label">{label}</span>
-                    {#if !isMentionGroup(item) && (item.type === 'agent' || item.type === 'specialist') && item.group}
-                      <span class="mention-kind">{item.group}</span>
-                    {/if}
-                  </div>
-                  {#if !isMentionGroup(item) && item.subtitle}
-                    <span class="mention-subtitle">{item.subtitle}</span>
-                  {/if}
+          {#each sections as section (section.key)}
+            <div
+              class="mention-section"
+              role={showHeadings ? 'group' : undefined}
+              aria-labelledby={showHeadings ? headingId(section) : undefined}
+            >
+              {#if showHeadings}
+                <div
+                  class="mention-section-heading type-caption px-2 pt-2 pb-1 font-medium text-muted-foreground"
+                  id={headingId(section)}
+                  role="presentation"
+                >
+                  {section.label}
                 </div>
-
-                {#if isMentionGroup(item)}
-                  <span class="group-arrow"><Fa icon={faChevronRight} size="xs" /></span>
-                {/if}
-              </Button>
-            {/each}
+              {/if}
+              {#each section.items as item (optionId(item))}
+                {@render mentionOption(item)}
+              {/each}
+            </div>
           {/each}
         </div>
       {:else}
@@ -630,13 +643,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .mention-kind {
-    flex-shrink: 0;
-    font-size: 11px;
-    font-weight: 400;
-    color: hsl(var(--muted-foreground));
   }
 
   .mention-subtitle {

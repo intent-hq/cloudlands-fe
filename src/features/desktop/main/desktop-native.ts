@@ -4,9 +4,14 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { app } from 'electron';
 import { z } from 'zod';
-import type { DesktopAction, DesktopDisplay } from '../../../shared/types/desktop';
-import type { DesktopNative } from './desktop-executor';
+import type {
+  DesktopAction,
+  DesktopDisplay,
+  DesktopTargetMismatchReason,
+} from '../../../shared/types/desktop';
+import type { DesktopNative, DesktopTargetCheck } from './desktop-executor';
 import { desktopFailure } from './desktop-validation';
+import { nativeWindowStateSchema, type NativeWindowState } from './desktop-windows';
 import { ReverseRpcHandlerError } from '../../backend/main/json-rpc-client';
 
 const displaySchema = z
@@ -104,6 +109,7 @@ class DesktopHelperTransport {
             code: string;
             detail: string;
             execution?: 'not_started' | 'partial' | 'unknown';
+            reason?: DesktopTargetMismatchReason;
           };
         };
         const pending = this.pending.get(reply.id);
@@ -112,7 +118,12 @@ class DesktopHelperTransport {
         clearTimeout(pending.timer);
         if (reply.error)
           pending.reject(
-            desktopFailure(reply.error.code, reply.error.detail, reply.error.execution),
+            desktopFailure(
+              reply.error.code,
+              reply.error.detail,
+              reply.error.execution,
+              reply.error.reason,
+            ),
           );
         else pending.resolve(reply.result);
       } catch {
@@ -192,6 +203,37 @@ export class DesktopNativeAdapter implements DesktopNative {
   async layout(): Promise<DesktopDisplay[]> {
     return z.array(displaySchema).parse(await this.request('layout'));
   }
+  /** Eligible windows front-to-back plus the frontmost app. With a display,
+   * frames are in that display's image pixels; without one only identity,
+   * ownership and z-order are meaningful. */
+  async windows(
+    excludedWindows: string[],
+    display?: DesktopDisplay,
+    layout?: DesktopDisplay[],
+  ): Promise<NativeWindowState> {
+    return nativeWindowStateSchema.parse(
+      await this.request('windows', {
+        excludedWindows,
+        ...(display ? { display } : {}),
+        ...(layout ? { layout } : {}),
+      }),
+    );
+  }
+  /** Frontmost app pid. Lock-free, so it also works after the session ended. */
+  async frontmostPid(): Promise<number | undefined> {
+    return z
+      .object({ pid: z.number().int().positive().optional() })
+      .strict()
+      .parse(await this.request('frontmost')).pid;
+  }
+  /** Activates the owning app and raises the window. Never synthesizes input;
+   * the caller verifies the outcome with a fresh `windows` snapshot. */
+  async focusWindow(
+    window: { handle: string; pid: number },
+    excludedWindows: string[],
+  ): Promise<void> {
+    await this.request('focusWindow', { ...window, excludedWindows });
+  }
   async capture(
     excludedWindows: string[],
     signal: AbortSignal,
@@ -212,8 +254,18 @@ export class DesktopNativeAdapter implements DesktopNative {
     check: (executed?: boolean) => void,
     signal: AbortSignal,
     layout?: DesktopDisplay[],
+    target?: DesktopTargetCheck,
   ): Promise<void> {
     let completedInput = false;
+    // Window-target check (contract: before the first native input, before each
+    // later typed scalar, before the keypress key-down and the drag press).
+    const aim = async (point?: { x: number; y: number }) => {
+      if (!target) return;
+      signal.throwIfAborted();
+      check(completedInput);
+      await target(point);
+      check(completedInput);
+    };
     const step = async (operation: string, params: Record<string, unknown> = {}) => {
       signal.throwIfAborted();
       check();
@@ -228,9 +280,11 @@ export class DesktopNativeAdapter implements DesktopNative {
     try {
       switch (action.kind) {
         case 'move':
+          await aim(action);
           await move(action.x, action.y);
           break;
         case 'click':
+          await aim(action);
           await move(action.x, action.y);
           for (let i = 1; i <= (action.clickCount ?? 1); i++) {
             await step('button', { button: action.button ?? 'left', down: true, clickCount: i });
@@ -238,7 +292,9 @@ export class DesktopNativeAdapter implements DesktopNative {
           }
           break;
         case 'drag':
+          await aim(action.from);
           await move(action.from.x, action.from.y);
+          await aim(action.from);
           await step('button', { button: 'left', down: true });
           for (let i = 1; i <= 20; i++)
             await move(
@@ -248,16 +304,22 @@ export class DesktopNativeAdapter implements DesktopNative {
           await step('button', { button: 'left', down: false });
           break;
         case 'scroll':
+          await aim(action);
           await move(action.x, action.y);
           await step('scroll', { deltaX: action.deltaX, deltaY: action.deltaY });
           break;
         case 'type':
-          for (const scalar of action.text) await step('text', { text: scalar });
+          for (const scalar of action.text) {
+            await aim();
+            await step('text', { text: scalar });
+          }
           break;
         case 'keypress':
           // Validate mapping before holding any modifiers.
           await step('validateKey', { key: action.key });
+          await aim();
           for (const key of action.modifiers ?? []) await step('key', { key, down: true });
+          if (action.modifiers?.length) await aim();
           await step('key', { key: action.key, down: true });
           await step('key', { key: action.key, down: false });
           for (const key of [...(action.modifiers ?? [])].reverse())
@@ -265,13 +327,19 @@ export class DesktopNativeAdapter implements DesktopNative {
           break;
         case 'listDisplay':
         case 'screenshot':
+        case 'focusWindow':
           throw desktopFailure('invalid-params', 'Capture is not an input step', 'not_started');
       }
     } catch (error) {
       if (completedInput && error instanceof ReverseRpcHandlerError) {
-        const data = error.data as { code: string; detail: string; execution?: string };
+        const data = error.data as {
+          code: string;
+          detail: string;
+          execution?: string;
+          reason?: DesktopTargetMismatchReason;
+        };
         if (data?.execution === 'not_started')
-          throw desktopFailure(data.code, data.detail, 'partial');
+          throw desktopFailure(data.code, data.detail, 'partial', data.reason);
       }
       throw error;
     } finally {

@@ -7,15 +7,7 @@ import { WorkspaceStatusEnum } from '$shared/types';
 import type { RepositoryGroup } from '$lib/components/workspace/utils/workspace-grouping';
 
 export type HomeFilter =
-  | 'all'
-  | 'attention'
-  | 'pr-ready'
-  | 'running'
-  | 'waiting'
-  | 'blocked'
-  | 'unread'
-  | 'archived'
-  | 'retired';
+  'all' | 'attention' | 'pr-ready' | 'running' | 'waiting' | 'blocked' | 'unread' | 'archived';
 export interface HomeRepository {
   key: string;
   name: string;
@@ -129,9 +121,9 @@ export function needsAttention(workspace: HomeTriageInput): boolean {
 
 export function matchesHomeFilter(workspace: Workspace, filter: HomeFilter): boolean {
   if (workspace.status === WorkspaceStatusEnum.Deleted || workspace.pendingDeleteAt) return false;
-  if (filter === 'archived') return workspace.status === WorkspaceStatusEnum.Archived;
-  // Retired rows (PROTOCOL §5.1) show only under their own opt-in chip.
-  if (filter === 'retired') return workspace.status === WorkspaceStatusEnum.Retired;
+  // Retired rows (PROTOCOL §5.1; the folder was purged) are presented as
+  // archived: the Archived filter opts in to them.
+  if (filter === 'archived') return isArchivedOrPurged(workspace);
   if (
     workspace.status === WorkspaceStatusEnum.Archived ||
     workspace.status === WorkspaceStatusEnum.Retired
@@ -156,19 +148,27 @@ export function matchesHomeFilter(workspace: Workspace, filter: HomeFilter): boo
   }
 }
 
+/** Archived, or archived with its folder purged (`Retired`, PROTOCOL §5.1). */
+export function isArchivedOrPurged(workspace: Pick<Workspace, 'status'>): boolean {
+  return (
+    workspace.status === WorkspaceStatusEnum.Archived ||
+    workspace.status === WorkspaceStatusEnum.Retired
+  );
+}
+
 export function hasRetiredWorkspaces(workspaces: readonly Workspace[]): boolean {
   return workspaces.some((workspace) => workspace.status === WorkspaceStatusEnum.Retired);
 }
 
 /**
  * The live list never carries retired rows (strict `includeRetired` opt-in,
- * PROTOCOL §5.1), so an ordinary list refresh drops the ones the Retired chip
- * loaded. Reload them when that happens while the chip is selected.
+ * PROTOCOL §5.1), so an ordinary list refresh drops the ones the Archived
+ * chip loaded. Reload them when that happens while the chip is selected.
  */
 export function shouldReloadRetiredWorkspaces(
   filter: HomeFilter,
   hadRetired: boolean,
   hasRetired: boolean,
 ): boolean {
-  return filter === 'retired' && hadRetired && !hasRetired;
+  return filter === 'archived' && hadRetired && !hasRetired;
 }

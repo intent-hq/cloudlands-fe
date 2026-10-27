@@ -1,24 +1,31 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
-  import type { DesktopPermissionRequest, DesktopPermissionDecision } from '$shared/types/desktop';
+  import DesktopOsChecklist from './DesktopOsChecklist.svelte';
+  import type {
+    DesktopOsChecklist as Checklist,
+    DesktopPermissionRequest,
+    DesktopPermissionDecision,
+  } from '$shared/types/desktop';
   let {
     request,
     pending = false,
     settingUp = false,
     guidance,
+    checklist,
     onDecision,
   }: {
     request: DesktopPermissionRequest;
     pending?: boolean;
     settingUp?: boolean;
     guidance?: string;
+    checklist?: Checklist;
     onDecision: (decision: DesktopPermissionDecision) => void;
   } = $props();
 </script>
 
 <div
-  class="flex max-h-[min(calc(100dvh-8rem),calc(var(--toast-max-height,100dvh)-2rem))] min-w-0 flex-col gap-3"
+  class="flex max-h-[min(calc(100dvh-8rem),calc(var(--toast-max-height,100dvh)-2rem))] min-h-0 min-w-0 flex-col gap-3"
   role="group"
   aria-label={m.desktop_consent_title()}
 >
@@ -36,6 +43,9 @@
       <p class="text-sm text-muted-foreground">
         {m.desktop_consent_claimPrimary({ computer: request.computerName })}
       </p>
+    {/if}
+    {#if checklist}
+      <DesktopOsChecklist {checklist} />
     {/if}
     {#if guidance}
       <p role="status" class="text-sm">{guidance}</p>

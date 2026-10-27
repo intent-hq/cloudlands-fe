@@ -91,7 +91,10 @@
   import SidebarHeaderAction from './sidebar/SidebarHeaderAction.svelte';
   import WorkspaceProgressCard from './sidebar/WorkspaceProgressCard.svelte';
   import WorkspacePeopleTile from '$features/presence/components/WorkspacePeopleTile.svelte';
+  import { selectDiscussionCanCreate } from '$store/renderer/slices/workspace-discussion/workspace-discussion-selectors';
   import WorkspaceDiscussionRow from '$features/discussions/components/WorkspaceDiscussionRow.svelte';
+  import WorkspacePeopleRoster from '$features/presence/components/WorkspacePeopleRoster.svelte';
+  import { selectWorkspacePeopleInvites } from '$store/renderer/slices/workspace-share/workspace-share-selectors';
   import WorkspacePeopleActivity from '$features/presence/components/WorkspacePeopleActivity.svelte';
   import { selectWorkspacePeopleTilePeople } from '$store/renderer/slices/presence/presence-selectors';
   import { openWorkspaceDiscussion } from '$features/discussions/discussion-navigation';
@@ -206,6 +209,7 @@
   const pendingLocateInSidebar$ = selectPendingLocateInSidebar();
 
   const workspace = selectWorkspaceById(workspaceIdStore);
+  const canCreateDiscussion$ = selectDiscussionCanCreate(workspaceIdStore);
   const activePullRequest$ = selectWorkspaceActivePullRequest(workspaceIdStore);
   const prMonitors$ = selectReviewMonitors(workspaceIdStore);
   // Every PR attributable to the workspace (branch PRs, cross-repo entries,
@@ -361,7 +365,8 @@
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
   const isCollaborator = $derived($isCollaborator$);
   const presencePeople$ = selectWorkspacePeopleTilePeople(workspaceIdStore);
-  const showPeople = $derived($presencePeople$.length > 0);
+  const peopleInvites$ = selectWorkspacePeopleInvites(workspaceIdStore);
+  const showPeople = $derived($presencePeople$.length > 0 || $peopleInvites$.length > 0);
   const selectedTabIds = selectMultiSelectSidebarSelectedTabIds(workspaceIdStore);
   const selectedTabs = $derived(
     normalizeSelectedTabs($selectedTabIds, isCollaborator, showPeople, !!$scriptContext$),
@@ -1036,7 +1041,7 @@
                       >
                         {tab.label}
                         <span class="ml-auto flex items-center gap-1">
-                          {#if tabId === 'people'}
+                          {#if tabId === 'people' && $canCreateDiscussion$}
                             <SidebarHeaderAction
                               icon="plus"
                               label={m.workspace_discussion_new_title()}
@@ -1161,6 +1166,10 @@
                       use:scrollFade
                     >
                       {#if tabId === 'people'}
+                        <WorkspacePeopleRoster
+                          people={$presencePeople$}
+                          invites={$peopleInvites$}
+                        />
                         <WorkspaceDiscussionRow {workspaceId} {panelLayoutId} />
                         <WorkspacePeopleActivity {workspaceId} {panelLayoutId} />
                       {:else if tabId === 'agents'}

@@ -61,6 +61,7 @@ const SKIP_DIRS = new Set([
   '.playwright-cli',
   '.svelte-kit',
   'build',
+  'ct-full-runs',
   'dist',
   'node_modules',
   'playwright-report',

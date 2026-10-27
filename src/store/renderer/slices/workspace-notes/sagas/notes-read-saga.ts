@@ -61,10 +61,6 @@ import {
   noteMetadataPushed,
   noteContentInvalidated,
   noteContentReadApplied,
-  noteAttributionInvalidated,
-  noteAttributionViewFinished,
-  noteAttributionViewReleased,
-  noteAttributionViewRequested,
   noteContentViewFinished,
   noteContentViewReleased,
   noteContentViewRequested,
@@ -89,14 +85,12 @@ import {
 } from '$features/notes/note-presence/note-presence-service';
 import type { Note } from '$shared/types';
 import type { NotePresenceViewer } from '../workspace-notes-types';
-import { takeEveryFromListenSync } from '../../../utils/ipc-channel';
 import { toRuntimeNote } from './note-payload-mappers';
 import { adaptNoteSearchResponse } from '$lib/utils/palette-note-search';
 
 const logger = createLogger('NotesReadSaga');
 
 type ObservedAction = { type: string; payload?: unknown };
-type AttributionInvalidationAction = { type: string; payload?: [string, string] };
 type ReadAction = ReturnType<typeof readNoteRequested>;
 type ReadResult =
   { note: ReturnType<typeof toRuntimeNote> | null; contentGeneration?: number } | { error: Error };
@@ -495,74 +489,6 @@ function* notePresenceViewWorker(
   }
 }
 
-function* noteAttributionViewWorker(
-  action: ReturnType<typeof noteAttributionViewRequested | typeof noteAttributionViewReleased>,
-) {
-  if (action.type === noteAttributionViewReleased.type) return;
-  const [consumerId, requestId, workspaceId, noteId] = action.payload as ReturnType<
-    typeof noteAttributionViewRequested
-  >['payload'];
-  const authority = yield* selectPrincipalConnectionContext.effect();
-  const invalidations = yield* actionChannel(
-    (next: AttributionInvalidationAction) =>
-      next.type === noteAttributionInvalidated.type &&
-      next.payload?.[0] === workspaceId &&
-      next.payload?.[1] === noteId,
-    buffers.sliding(1),
-  );
-  try {
-    while (true) {
-      try {
-        const data = yield* call(
-          [appClient.notes.lineAttribution, appClient.notes.lineAttribution.load],
-          workspaceId,
-          noteId,
-        );
-        if (authority !== (yield* selectPrincipalConnectionContext.effect())) return;
-        const valid =
-          data === null ||
-          (String(data.workspaceId) === workspaceId && String(data.noteId) === noteId);
-        yield* put(
-          noteAttributionViewFinished(
-            consumerId,
-            requestId,
-            workspaceId,
-            authority,
-            valid ? data : null,
-            valid ? undefined : 'Attribution response did not match the requested note',
-          ),
-        );
-      } catch (error) {
-        if (authority !== (yield* selectPrincipalConnectionContext.effect())) return;
-        yield* put(
-          noteAttributionViewFinished(
-            consumerId,
-            requestId,
-            workspaceId,
-            authority,
-            null,
-            error instanceof Error ? error.message : String(error),
-          ),
-        );
-      }
-      // The channel is registered before each load so update events received while
-      // it is pending produce exactly one trailing refresh rather than being lost.
-      if ((yield* flush(invalidations)).length > 0) continue;
-      yield* take(invalidations);
-    }
-  } finally {
-    invalidations.close();
-  }
-}
-
-type LineAttributionUpdatedPayload = { workspaceId?: unknown; noteId?: unknown };
-
-function* routeLineAttributionUpdated(payload: LineAttributionUpdatedPayload) {
-  const workspaceId = typeof payload.workspaceId === 'string' ? payload.workspaceId : '';
-  const noteId = typeof payload.noteId === 'string' ? payload.noteId : '';
-  if (workspaceId && noteId) yield* put(noteAttributionInvalidated(workspaceId, noteId));
-}
-
 function* ensureNoteContentWorker(action: ReturnType<typeof ensureNoteContentLoadedRequested>) {
   const [workspaceId, noteId] = action.payload;
   try {
@@ -825,16 +751,6 @@ export function* notesReadSaga() {
     (action) =>
       action.type === notePresenceViewReleased.type ? action.payload[1] : action.payload[0],
     notePresenceViewWorker,
-  );
-  yield* takeLatestInContext(
-    [noteAttributionViewRequested, noteAttributionViewReleased],
-    (action) =>
-      action.type === noteAttributionViewReleased.type ? action.payload[1] : action.payload[0],
-    noteAttributionViewWorker,
-  );
-  yield* takeEveryFromListenSync<LineAttributionUpdatedPayload>(
-    'line-attribution:updated',
-    routeLineAttributionUpdated,
   );
   yield* takeLatestByContext(
     workspaceNotesHydrationRequested,

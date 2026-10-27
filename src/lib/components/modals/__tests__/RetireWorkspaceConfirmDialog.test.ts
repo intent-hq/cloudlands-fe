@@ -21,15 +21,15 @@ describe('RetireWorkspaceConfirmDialog', () => {
     mount();
     const dialog = await screen.findByRole('dialog');
     expect(dialog.textContent).toContain(
-      m.workspace_retire_confirm_title({ title: 'Old experiment' }),
+      m.workspace_purge_confirm_title({ title: 'Old experiment' }),
     );
-    expect(dialog.textContent).toContain(m.workspace_retire_confirm_description());
+    expect(dialog.textContent).toContain(m.workspace_purge_confirm_description());
   });
 
   it('confirms through the retire action', async () => {
     const { onConfirm, onCancel } = mount();
     await fireEvent.click(
-      await screen.findByRole('button', { name: m.workspace_retire_confirm_action() }),
+      await screen.findByRole('button', { name: m.workspace_purge_confirm_action() }),
     );
     await waitFor(() => expect(onConfirm).toHaveBeenCalledOnce());
     expect(onCancel).not.toHaveBeenCalled();

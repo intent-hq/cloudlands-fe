@@ -1,6 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
+import { m } from '$shared/paraglide/messages.js';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tick } from 'svelte';
@@ -988,7 +989,7 @@ describe('CommandPalette workspace activity recency', () => {
     expect(old.textContent).not.toContain('just now');
   });
 
-  it('lists retired workspaces with a Retired badge and opts in to loading them', async () => {
+  it('lists purged (retired) workspaces with the Archived badge and opts in to loading them', async () => {
     workspaceItemsState.value = [
       {
         id: 'live',
@@ -1012,8 +1013,9 @@ describe('CommandPalette workspace activity recency', () => {
 
     const retired = await screen.findByRole('button', { name: /Old Importer Space/i });
     const live = screen.getByRole('button', { name: /Live Space/i });
-    expect(retired.textContent).toContain('Retired');
-    expect(live.textContent).not.toContain('Retired');
+    expect(retired.textContent).toContain(m.lib_commandPalette_archivedWorkspace_pill());
+    expect(retired.textContent).not.toContain('Retired');
+    expect(live.textContent).not.toContain(m.lib_commandPalette_archivedWorkspace_pill());
     expect(retiredLoads()).toBe(1);
   });
 

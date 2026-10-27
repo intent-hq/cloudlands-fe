@@ -17,6 +17,8 @@
 import {
   createCollection,
   getItem,
+  getItems,
+  removeItem,
   upsertItem,
   type Collection,
 } from '@themislib/themis/utils/collections/collection-utils';
@@ -60,7 +62,7 @@ export interface WorkspaceShareCreatedLink {
   pinIdentity?: PrincipalIdentity;
 }
 
-/** Hover-card roster of one workspace (see `WorkspaceShareState.byWorkspaceId`). */
+/** Hover-card roster and invite read lifetime of one workspace. */
 export interface WorkspaceRosterState {
   /** Roster in daemon order (owner first). */
   members: Collection<WorkspaceMember, 'principalId'>;
@@ -72,6 +74,11 @@ export interface WorkspaceRosterState {
   withheld: boolean;
   removingPrincipalId: string | null;
   removeError: string | null;
+  /** Invite metadata shares the canonical collection on workspaceShare. */
+  inviteContext: string | null;
+  inviteGeneration: number;
+  inviteWithheld: boolean;
+  inviteReceivedAt: number;
 }
 
 export const initialRosterState: WorkspaceRosterState = {
@@ -80,6 +87,10 @@ export const initialRosterState: WorkspaceRosterState = {
   withheld: false,
   removingPrincipalId: null,
   removeError: null,
+  inviteContext: null,
+  inviteGeneration: 0,
+  inviteWithheld: false,
+  inviteReceivedAt: 0,
 };
 
 export interface WorkspaceShareState {
@@ -90,7 +101,7 @@ export interface WorkspaceShareState {
   sharingChecking: boolean;
   sharingEnabling: boolean;
   sharingError: string | null;
-  /** Hover-card rosters by workspace id; absent until a card asks for one. */
+  /** Workspace read lifetimes, tracked by hover cards and open People tabs. */
   byWorkspaceId: Record<string, WorkspaceRosterState>;
   open: boolean;
   workspaceId: string | null;
@@ -99,7 +110,7 @@ export interface WorkspaceShareState {
   session: number;
   /** Roster in daemon order (owner first). */
   members: Collection<WorkspaceMember, 'principalId'>;
-  /** Open invites in daemon order. */
+  /** Canonical open invites across workspaces; dialog and People share these rows. */
   invites: Collection<WorkspaceInvite, 'id'>;
   /**
    * Guests already authed on this host (`principal.list`, in daemon order),
@@ -197,7 +208,7 @@ export const sharePrerequisitesSettled = createAction<
   [payload: { target: WorkspaceShareTarget; enabled: boolean | null; error: string | null }]
 >('workspaceShare/prerequisitesSettled');
 
-/** Close the Share dialog and drop every loaded row. */
+/** Close the dialog, retaining workspace invite metadata for People. */
 export const closeShareDialog = createAction('workspaceShare/closeDialog');
 
 /** Saga: re-read the roster + open invites for the dialog's workspace. */
@@ -221,6 +232,8 @@ export const shareDataLoaded = createAction<
     payload: {
       target: WorkspaceShareTarget;
       generation: number;
+      inviteGeneration?: number;
+      receivedAt?: number;
       members: WorkspaceMember[];
       invites: WorkspaceInvite[];
       guestCount: number | null;
@@ -333,7 +346,10 @@ function withoutRows(state: WorkspaceShareState): WorkspaceShareState {
   return {
     ...state,
     members: initialState.members,
-    invites: initialState.invites,
+    invites: createCollection(
+      'id',
+      getItems(state.invites).filter((row) => row.workspaceId !== state.workspaceId),
+    ),
     principals: initialState.principals,
     guestCount: null,
     guestLimit: null,
@@ -369,6 +385,7 @@ workspaceShareReducer.with(
   (state, { payload: [{ workspaceId, workspaceTitle }] }) => ({
     ...initialState,
     byWorkspaceId: state.byWorkspaceId,
+    invites: state.invites,
     open: true,
     workspaceId,
     workspaceTitle,
@@ -378,6 +395,7 @@ workspaceShareReducer.with(
 workspaceShareReducer.with(closeShareDialog, (state) => ({
   ...initialState,
   byWorkspaceId: state.byWorkspaceId,
+  invites: state.invites,
   session: state.session,
 }));
 workspaceShareReducer.with(
@@ -468,17 +486,49 @@ workspaceShareReducer.with(shareDataRequested, (state) => {
 });
 workspaceShareReducer.with(
   shareDataLoaded,
-  (state, { payload: [{ target, generation, members, invites, guestCount, guestLimit }] }) => {
+  (
+    state,
+    {
+      payload: [
+        {
+          target,
+          generation,
+          inviteGeneration,
+          receivedAt,
+          members,
+          invites,
+          guestCount,
+          guestLimit,
+        },
+      ],
+    },
+  ) => {
     if (!targets(state, target) || state.withheld || state.mutationGeneration !== generation) {
       return state;
     }
-    const invitesById = createCollection('id', invites);
+    const roster = getRosterState(state, target.workspaceId);
+    const currentInvites =
+      !roster.inviteWithheld &&
+      (inviteGeneration === undefined || inviteGeneration === roster.inviteGeneration);
+    const invitesById = currentInvites
+      ? createCollection('id', [
+          ...getItems(state.invites).filter((row) => row.workspaceId !== target.workspaceId),
+          ...invites,
+        ])
+      : state.invites;
+    const next = currentInvites
+      ? setRosterState(state, target.workspaceId, {
+          ...roster,
+          inviteContext: target.authority ?? roster.inviteContext,
+          inviteReceivedAt: receivedAt ?? roster.inviteReceivedAt,
+        })
+      : state;
     const createdLink =
       state.createdLink && getItem(invitesById, state.createdLink.inviteId)
         ? state.createdLink
         : null;
     return {
-      ...state,
+      ...next,
       members: createCollection('principalId', members),
       invites: invitesById,
       guestCount,
@@ -503,7 +553,10 @@ workspaceShareReducer.with(shareDataFailed, (state, { payload: [{ target, error 
 workspaceShareReducer.with(shareAccessWithheld, (state, { payload: [{ target }] }) => {
   if (!targets(state, target)) return state;
   return {
-    ...withoutRows(state),
+    ...setRosterState(withoutRows(state), target.workspaceId, {
+      ...getRosterState(state, target.workspaceId),
+      inviteWithheld: true,
+    }),
     sharingEnabled: null,
     sharingChecking: false,
     sharingEnabling: false,
@@ -526,8 +579,13 @@ workspaceShareReducer.with(
   shareInviteCreated,
   (state, { payload: [{ target, request, link, invite }] }) => {
     if (!targets(state, target) || state.createRequest !== request || state.withheld) return state;
+    const roster = getRosterState(state, target.workspaceId);
     return {
-      ...state,
+      ...setRosterState(state, target.workspaceId, {
+        ...roster,
+        inviteContext: target.authority ?? roster.inviteContext,
+        inviteGeneration: roster.inviteGeneration + 1,
+      }),
       creating: false,
       createError: null,
       createdLink: link,
@@ -568,7 +626,15 @@ workspaceShareReducer.with(
     // One mutation at a time (`mutating`): an in-flight add is the one settling.
     const advances = error === null && state.addingPrincipalId === null;
     return {
-      ...state,
+      ...setRosterState(state, target.workspaceId, {
+        ...getRosterState(state, target.workspaceId),
+        inviteGeneration:
+          getRosterState(state, target.workspaceId).inviteGeneration + (advances ? 1 : 0),
+      }),
+      invites:
+        error === null && revokedInviteId
+          ? removeItem(state.invites, revokedInviteId)
+          : state.invites,
       createdLink,
       mutationGeneration: advances ? state.mutationGeneration + 1 : state.mutationGeneration,
       revokingInviteId: null,
@@ -652,3 +718,113 @@ workspaceShareReducer.with(
     };
   },
 );
+
+/** Open-tab lifetime and authority admission; the saga owns hydration. */
+export const sharePeopleInvitesScopeChanged = createAction<
+  [payload: { context: string | null; workspaceIds: string[] }]
+>('workspaceShare/peopleInvitesScopeChanged');
+export const sharePeopleInvitesRequested = createAction<[workspaceId: string]>(
+  'workspaceShare/peopleInvitesRequested',
+);
+export const sharePeopleInvitesLoaded = createAction<
+  [
+    payload: {
+      workspaceId: string;
+      context: string;
+      generation: number;
+      invites: WorkspaceInvite[];
+      receivedAt: number;
+    },
+  ]
+>('workspaceShare/peopleInvitesLoaded');
+export const sharePeopleInvitesWithheld = createAction<
+  [read: { workspaceId: string; context: string; generation: number }]
+>('workspaceShare/peopleInvitesWithheld');
+export const shareInvitesExpired = createAction<[now: number]>('workspaceShare/invitesExpired');
+
+workspaceShareReducer.with(
+  sharePeopleInvitesScopeChanged,
+  (state, { payload: [{ context, workspaceIds }] }) => {
+    let next = state;
+    for (const workspaceId of new Set([...Object.keys(state.byWorkspaceId), ...workspaceIds])) {
+      const roster = getRosterState(next, workspaceId);
+      const admitted = context !== null && workspaceIds.includes(workspaceId);
+      const nextContext = admitted ? context : null;
+      if (roster.inviteContext === nextContext) continue;
+      next = setRosterState(next, workspaceId, {
+        ...roster,
+        inviteContext: nextContext,
+        inviteGeneration: roster.inviteGeneration + 1,
+        inviteWithheld: false,
+        inviteReceivedAt: 0,
+      });
+      next = {
+        ...next,
+        createdLink: next.workspaceId === workspaceId ? null : next.createdLink,
+        invites: createCollection(
+          'id',
+          getItems(next.invites).filter((row) => row.workspaceId !== workspaceId),
+        ),
+      };
+    }
+    return next;
+  },
+);
+workspaceShareReducer.with(sharePeopleInvitesLoaded, (state, { payload: [read] }) => {
+  const roster = getRosterState(state, read.workspaceId);
+  if (
+    roster.inviteWithheld ||
+    roster.inviteGeneration !== read.generation ||
+    roster.inviteContext !== read.context
+  )
+    return state;
+  return {
+    ...setRosterState(state, read.workspaceId, {
+      ...roster,
+      inviteContext: read.context,
+      inviteReceivedAt: read.receivedAt,
+    }),
+    createdLink:
+      state.workspaceId === read.workspaceId &&
+      state.createdLink &&
+      !read.invites.some((invite) => invite.id === state.createdLink?.inviteId)
+        ? null
+        : state.createdLink,
+    invites: createCollection('id', [
+      ...getItems(state.invites).filter((row) => row.workspaceId !== read.workspaceId),
+      ...read.invites,
+    ]),
+  };
+});
+workspaceShareReducer.with(sharePeopleInvitesWithheld, (state, { payload: [read] }) => {
+  const roster = getRosterState(state, read.workspaceId);
+  if (roster.inviteContext !== read.context || roster.inviteGeneration !== read.generation)
+    return state;
+  return {
+    ...setRosterState(state, read.workspaceId, { ...roster, inviteWithheld: true }),
+    createdLink: state.workspaceId === read.workspaceId ? null : state.createdLink,
+    invites: createCollection(
+      'id',
+      getItems(state.invites).filter((row) => row.workspaceId !== read.workspaceId),
+    ),
+  };
+});
+workspaceShareReducer.with(shareMembershipChanged, (state, { payload: [{ workspaceId }] }) => {
+  if (!(workspaceId in state.byWorkspaceId)) return state;
+  const roster = getRosterState(state, workspaceId);
+  return setRosterState(state, workspaceId, {
+    ...roster,
+    inviteGeneration: roster.inviteGeneration + 1,
+  });
+});
+workspaceShareReducer.with(shareInvitesExpired, (state, { payload: [now] }) => {
+  const remaining = getItems(state.invites).filter((row) => Date.parse(row.expiresAt) > now);
+  if (remaining.length === state.invites.ids.length) return state;
+  const invites = createCollection('id', remaining);
+  return {
+    ...state,
+    invites,
+    createdLink:
+      state.createdLink && getItem(invites, state.createdLink.inviteId) ? state.createdLink : null,
+  };
+});

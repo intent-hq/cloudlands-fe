@@ -1,11 +1,12 @@
 import { z } from 'zod';
 import { ReverseRpcHandlerError } from '../../backend/main/json-rpc-client';
-import type { DesktopError } from '../../../shared/types/desktop';
+import type { DesktopError, DesktopTargetMismatchReason } from '../../../shared/types/desktop';
 
 const id = z.string().min(1).max(512);
 const finite = z.number().finite();
 const point = z.object({ x: finite.nonnegative(), y: finite.nonnegative() }).strict();
-const position = { displayId: id.optional(), layoutId: id, ...point.shape };
+const windowId = id.optional();
+const position = { displayId: id.optional(), layoutId: id, ...point.shape, windowId };
 const namedKeys = new Set([
   'Enter',
   'Tab',
@@ -41,6 +42,7 @@ const desktopActionSchema = z.discriminatedUnion('kind', [
   z
     .object({
       kind: z.literal('type'),
+      windowId,
       text: z
         .string()
         .refine(
@@ -53,6 +55,7 @@ const desktopActionSchema = z.discriminatedUnion('kind', [
   z
     .object({
       kind: z.literal('keypress'),
+      windowId,
       key: z
         .string()
         .refine((k) => namedKeys.has(k) || ([...k].length === 1 && !/[\p{C}\p{Z}]/u.test(k))),
@@ -71,8 +74,10 @@ const desktopActionSchema = z.discriminatedUnion('kind', [
       layoutId: id,
       from: point,
       to: point,
+      windowId,
     })
     .strict(),
+  z.object({ kind: z.literal('focusWindow'), windowId: id }).strict(),
 ]);
 const binding = { workspaceId: id, agentId: id, principalId: id, connectionEpoch: id };
 const session = { ...binding, computerId: id, sessionId: id };
@@ -104,6 +109,7 @@ export function desktopFailure(
   code: string,
   detail: string,
   execution?: DesktopError['execution'],
+  reason?: DesktopTargetMismatchReason,
 ): ReverseRpcHandlerError {
   const numeric =
     code === 'forbidden'
@@ -117,6 +123,7 @@ export function desktopFailure(
             'desktop-display-selection-required',
             'desktop-display-unavailable',
             'desktop-command-expired',
+            'desktop-target-mismatch',
           ].includes(code)
         ? -32602
         : -32603;
@@ -124,7 +131,17 @@ export function desktopFailure(
     code,
     detail,
     ...(execution ? { execution } : {}),
+    ...(reason ? { reason } : {}),
   });
+}
+/** Exact model guidance required by the window-targeting contract. */
+const TARGET_MISMATCH_DETAIL =
+  'The target window is not ready for input. Call ws.desktop.focusWindow({ windowId }) if needed, take a new screenshot to confirm the target, then retry.';
+export function targetMismatch(
+  reason: DesktopTargetMismatchReason,
+  execution: 'not_started' | 'partial',
+): ReverseRpcHandlerError {
+  return desktopFailure('desktop-target-mismatch', TARGET_MISMATCH_DETAIL, execution, reason);
 }
 export function parseDesktopRequest(raw: unknown): DesktopRequest {
   const result = desktopRequestSchema.safeParse(raw);

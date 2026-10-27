@@ -455,8 +455,8 @@ function* confirmRetire(): SagaGenerator<void> {
     if (!result.ok) {
       notify.error(
         result.errorCode === 'retire-unsupported'
-          ? m.workspace_ops_retireUnsupported_error()
-          : m.workspace_ops_retireFailed_error(),
+          ? m.workspace_ops_purgeUnsupported_error()
+          : m.workspace_ops_purgeFailed_error(),
       );
       return;
     }
@@ -467,13 +467,13 @@ function* confirmRetire(): SagaGenerator<void> {
       ...(result.data?.retiredAt ? { retiredAt: result.data.retiredAt } : {}),
     });
     notify.success(
-      m.workspace_ops_retired_toast({
+      m.workspace_ops_purged_toast({
         title: workspace?.title || m.workspace_ops_space_fallback(),
       }),
     );
   } catch (error) {
     logger.error('workspace.retire failed', { workspaceId, error });
-    notify.error(m.workspace_ops_retireFailed_error());
+    notify.error(m.workspace_ops_purgeFailed_error());
   }
 }
 
@@ -545,7 +545,7 @@ function* loadRetiredWorkspaces(
     logger.warn('workspace.list { includeRetired } failed', { error });
     if (options?.quiet || (yield* stale())) return;
     const notify = yield* call(getToast);
-    if (!(yield* stale())) notify.error(m.home_retired_loadFailed_error());
+    if (!(yield* stale())) notify.error(m.home_archived_loadFailed_error());
   } finally {
     changes.close();
   }

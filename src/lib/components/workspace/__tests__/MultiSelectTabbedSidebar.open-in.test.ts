@@ -11,6 +11,7 @@ import { spring } from '$lib/motion';
 import { initialState as presenceInitialState } from '$store/renderer/slices/presence/presence-slice';
 import { initialState as userPreferencesInitialState } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { initialState as workspaceInitialState } from '$store/renderer/slices/workspace/workspace-slice';
+import { initialState as workspaceShareInitialState } from '$store/renderer/slices/workspace-share/workspace-share-slice';
 
 import type { InstalledEditor } from '$store/renderer/slices/external-editors/external-editors-slice';
 import {
@@ -370,6 +371,7 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     );
     mockStoreState = {
       workspace: workspaceInitialState,
+      workspaceShare: workspaceShareInitialState,
       presence: presenceInitialState,
       userPreferences: userPreferencesInitialState,
       daemonHealth: localHealth,

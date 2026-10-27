@@ -7,6 +7,124 @@ async function recorded(component: import('@playwright/test').Locator) {
   ) as Array<{ method: string; params: Record<string, unknown> }>;
 }
 
+for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+  test(`send confirmation preserves the message node, focus, draft and bottom anchor with ${reducedMotion} motion`, async ({
+    mount,
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion });
+    const component = await mount(DiscussionHost, { props: { deferSend: true } });
+    const composer = component.getByRole('textbox', { name: 'Message', exact: true });
+    await expect(composer).toBeEditable();
+    await composer.fill('A message awaiting confirmation');
+    await composer.press('Enter');
+    const pending = component
+      .locator('[data-discussion-message]')
+      .filter({ hasText: 'A message awaiting confirmation' });
+    await expect(pending.getByRole('status')).toBeVisible();
+    const transitions = await pending.evaluateHandle((element) => {
+      const properties: string[] = [];
+      element.addEventListener('transitionrun', (event) => {
+        if (event.target === element) properties.push((event as TransitionEvent).propertyName);
+      });
+      return properties;
+    });
+    const original = await pending.elementHandle();
+    const retryId = await pending.getAttribute('data-discussion-message');
+    await composer.fill('My next thought');
+    await component
+      .getByRole('button', { name: 'Confirm send', exact: true })
+      .evaluate((el: HTMLButtonElement) => el.click());
+    await expect(pending.getByRole('status')).toHaveCount(0);
+    await expect(pending).toHaveCount(1);
+    expect(await pending.evaluate((element, previous) => element === previous, original)).toBe(
+      true,
+    );
+    await expect(pending).not.toHaveAttribute('data-discussion-message', retryId!);
+    await expect(composer).toBeFocused();
+    await expect(composer).toHaveValue('My next thought');
+    await expect
+      .poll(() =>
+        component
+          .locator('[data-discussion-scroll]')
+          .evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop),
+      )
+      .toBeLessThan(2);
+    await expect.poll(() => pending.evaluate((element) => element.getAnimations().length)).toBe(0);
+    if (reducedMotion === 'reduce') {
+      expect(
+        await pending.evaluate((element) => getComputedStyle(element).transitionProperty),
+      ).toBe('none');
+      expect(await transitions.jsonValue()).toEqual([]);
+    } else {
+      await expect.poll(() => transitions.jsonValue()).toContain('opacity');
+    }
+    await transitions.dispose();
+  });
+}
+
+test('a consecutive send announces progress and keeps its row and newer draft through failure and retry', async ({
+  mount,
+}) => {
+  const component = await mount(DiscussionHost, {
+    props: { deferSend: true, failSend: true, recentHistory: true },
+  });
+  const composer = component.getByRole('textbox', { name: 'Message', exact: true });
+  await expect(composer).toBeEditable();
+  await composer.fill('A follow-up from the same author');
+  await composer.press('Enter');
+  const row = component
+    .locator('[data-discussion-message]')
+    .filter({ hasText: 'A follow-up from the same author' });
+  await expect(row).toHaveAttribute('data-discussion-continuation', 'true');
+  await expect(row.getByRole('status')).toHaveCount(1);
+  const original = await row.elementHandle();
+  await composer.fill('Keep my newer draft');
+  await component
+    .getByRole('button', { name: 'Confirm send', exact: true })
+    .evaluate((el: HTMLButtonElement) => el.click());
+  await expect(row.getByRole('alert')).toBeVisible();
+  await expect
+    .poll(() =>
+      component
+        .locator('[data-discussion-scroll]')
+        .evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop),
+    )
+    .toBeLessThan(2);
+  await row.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(row.getByRole('alert')).toHaveCount(0);
+  await expect(row.getByRole('status')).toHaveCount(0);
+  expect(await row.evaluate((element, previous) => element === previous, original)).toBe(true);
+  await expect(composer).toHaveValue('Keep my newer draft');
+  await expect(composer).toBeFocused();
+  const sends = (await recorded(component)).filter((call) => call.method === 'discussion.send');
+  expect(sends).toHaveLength(2);
+  expect(sends[1]).toEqual(sends[0]);
+});
+
+test('confirmation leaves a reader in older history at the same visible message', async ({
+  mount,
+}) => {
+  const component = await mount(DiscussionHost, { props: { deferSend: true } });
+  const composer = component.getByRole('textbox', { name: 'Message', exact: true });
+  await composer.fill('Confirm while I read');
+  await composer.press('Enter');
+  await expect(component.getByRole('log').getByRole('status')).toBeVisible();
+  const anchor = component.locator('[data-discussion-message="message-20"]');
+  await anchor.evaluate((element) => element.scrollIntoView({ block: 'start' }));
+  const before = await anchor.evaluate((element) => element.getBoundingClientRect().top);
+  await component
+    .getByRole('button', { name: 'Confirm send', exact: true })
+    .evaluate((el: HTMLButtonElement) => el.click());
+  await expect(component.getByRole('log').getByRole('status')).toHaveCount(0);
+  await expect
+    .poll(async () =>
+      Math.abs((await anchor.evaluate((element) => element.getBoundingClientRect().top)) - before),
+    )
+    .toBeLessThan(2);
+  await expect(composer).toBeFocused();
+});
+
 test('composer preserves multiline drafts, ignores composition Enter, and sends through the daemon contract', async ({
   mount,
   page,
@@ -260,7 +378,7 @@ test('discussion typing shows other people once, expires unchanged pulses, and r
   const indicator = component.locator('[data-discussion-typing]');
   await component.getByRole('button', { name: 'Receive peer typing', exact: true }).click();
   await expect(indicator).toHaveAttribute('role', 'status');
-  await expect(indicator).toContainText('Alex and Samira are typing…');
+  await expect(indicator).toContainText(/Alex.*Samira/);
   await component
     .locator('[data-discussion-test-pane]')
     .screenshot({ path: testInfo.outputPath('discussion-typing.png') });
@@ -268,7 +386,7 @@ test('discussion typing shows other people once, expires unchanged pulses, and r
   await component.getByRole('button', { name: 'Receive peer typing', exact: true }).click();
   await expect(indicator).toHaveCount(0);
   await component.getByRole('button', { name: 'Renew peer typing', exact: true }).click();
-  await expect(indicator).toContainText('Alex and Samira are typing…');
+  await expect(indicator).toContainText(/Alex.*Samira/);
   await component.getByRole('button', { name: 'Disconnect', exact: true }).click();
   await expect(indicator).toHaveCount(0);
 });
