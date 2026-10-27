@@ -264,6 +264,13 @@ static class Program {
             var sid=System.Security.Principal.WindowsIdentity.GetCurrent().User?.Value ?? throw Unsupported("User identity unavailable");
             return new {computerId=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(guid+":"+sid))).ToLowerInvariant(),computerName=Environment.MachineName,platform="windows"};
         }
+        // Lock-free and pid-only (no titles): read at session end, after release,
+        // to tell whether the user switched apps during the session.
+        if(op=="frontmost") {
+            var foreground=GetForegroundWindow(); uint pid=0;
+            if(foreground!=IntPtr.Zero) GetWindowThreadProcessId(foreground,out pid);
+            return pid==0 ? new Dictionary<string,object>() : new Dictionary<string,object>{["pid"]=(int)pid};
+        }
         if(op=="release" || op=="releaseInput") {
             cleanupFailed=false;
             if(op=="release") Release(); else ReleaseInput();

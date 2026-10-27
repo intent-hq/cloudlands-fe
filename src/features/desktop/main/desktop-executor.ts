@@ -13,6 +13,7 @@ import {
   targetMismatch,
   type DesktopRequest,
 } from './desktop-validation';
+import type { DesktopForegroundTracker } from './desktop-foreground';
 import {
   DesktopWindowIds,
   describeWindows,
@@ -66,6 +67,8 @@ export interface DesktopNative {
     layout?: DesktopDisplay[],
   ): Promise<NativeWindowState>;
   focusWindow(window: { handle: string; pid: number }, excludedWindows: string[]): Promise<void>;
+  /** Lock-free frontmost-app pid, for user app-switch detection. */
+  frontmostPid(): Promise<number | undefined>;
   input(
     action: DesktopAction,
     display: DesktopDisplay | undefined,
@@ -144,6 +147,7 @@ export class DesktopExecutor {
     private readonly overlay: DesktopOverlay,
     private readonly reports: DesktopStopReports,
     private readonly now = () => performance.now(),
+    private readonly foreground?: DesktopForegroundTracker,
   ) {}
 
   private clock(): number {
@@ -461,6 +465,8 @@ export class DesktopExecutor {
         guard();
         const target = key ? before.windows.find((w) => windowKey(w) === key) : undefined;
         if (!target) throw targetMismatch('window_unavailable', 'not_started');
+        await this.foreground?.beforeAgentAction(p.sessionId);
+        guard();
         started = true;
         // Activating another app is an agent-caused switch, not the user's.
         this.overlay.agentInput(p.sessionId, true);
@@ -471,6 +477,7 @@ export class DesktopExecutor {
           );
         } finally {
           this.overlay.agentInput(p.sessionId, false);
+          await this.foreground?.afterAgentAction(p.sessionId);
         }
         guard();
         // Verify the window, not just the process.
@@ -501,6 +508,8 @@ export class DesktopExecutor {
                 guard();
                 if (reason) throw targetMismatch(reason, started ? 'partial' : 'not_started');
               };
+        await this.foreground?.beforeAgentAction(p.sessionId);
+        guard();
         this.overlay.agentInput(p.sessionId, true);
         try {
           await this.native.input(
@@ -516,6 +525,7 @@ export class DesktopExecutor {
           );
         } finally {
           this.overlay.agentInput(p.sessionId, false);
+          await this.foreground?.afterAgentAction(p.sessionId);
         }
         guard();
         await checkLayout();
@@ -619,6 +629,9 @@ export class DesktopExecutor {
       await this.native.validateExclusion(this.overlay.excludedWindows());
       this.check(s);
       s.phase = 'active';
+      // Baseline for telling user app switches from the agent's own.
+      await this.foreground?.begin(p.sessionId);
+      this.check(s);
       return { ready: true, sessionId: p.sessionId, computerId: p.computerId };
     } catch (error) {
       await this.invalidate('executor_failed', false).catch(() => {});

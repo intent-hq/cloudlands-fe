@@ -196,6 +196,10 @@ static class Program {
         await peer.End();
         await Observe(()=>(GetAsyncKeyState(0x10)&0x8000)==0,"EOF releases held Shift");
         using var successor=new Peer(); await successor.Call("acquire"); await successor.Call("release");
+        // Lock-free: still answers after release (session-end app-switch check).
+        target.Activate(); await Task.Delay(250);
+        var front=await successor.Call("frontmost");
+        Require(front.GetProperty("pid").GetInt32()==Environment.ProcessId && front.EnumerateObject().Count()==1,"frontmost must report only the foreground pid");
         await successor.Call("check",expectedError:"desktop-not-active");
     }
 }

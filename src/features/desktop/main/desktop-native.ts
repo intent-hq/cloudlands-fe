@@ -219,6 +219,13 @@ export class DesktopNativeAdapter implements DesktopNative {
       }),
     );
   }
+  /** Frontmost app pid. Lock-free, so it also works after the session ended. */
+  async frontmostPid(): Promise<number | undefined> {
+    return z
+      .object({ pid: z.number().int().positive().optional() })
+      .strict()
+      .parse(await this.request('frontmost')).pid;
+  }
   /** Activates the owning app and raises the window. Never synthesizes input;
    * the caller verifies the outcome with a fresh `windows` snapshot. */
   async focusWindow(

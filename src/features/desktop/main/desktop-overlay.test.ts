@@ -293,6 +293,7 @@ describe('desktop executor and overlay startup failures', () => {
       capture: vi.fn(async () => []),
       windows: vi.fn(async () => ({ windows: [] })),
       focusWindow: vi.fn(async () => {}),
+      frontmostPid: vi.fn(async () => undefined),
       input: vi.fn(async () => {}),
     };
     const reports = { retain: vi.fn(async () => {}), queue: vi.fn(async () => {}) };
