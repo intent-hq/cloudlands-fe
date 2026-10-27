@@ -263,23 +263,23 @@ function* loadTurns(
     TURN_PAGE_CAP,
   );
   if (!turns) return;
-  let ok = subscribed && turns.ok;
   // Failures only back to the oldest turn row read (plus a minute or two), so
-  // none lands before the loaded turns as a failure of its own.
-  if (Number.isFinite(turns.oldest)) {
-    const failures = yield* call(
-      pageTurnHistory,
-      active,
-      workspaceId,
-      entry,
-      generation,
-      'agent:failed',
-      FAILURE_PAGE_CAP,
-      Math.floor((Date.now() - turns.oldest) / 60_000) + 2,
-    );
-    if (!failures) return;
-    ok = ok && failures.ok;
-  }
+  // none lands before the loaded turns as a failure of its own. Without turn
+  // rows, the newest ones: a turn can fail before its first message is saved.
+  const failures = yield* call(
+    pageTurnHistory,
+    active,
+    workspaceId,
+    entry,
+    generation,
+    'agent:failed',
+    FAILURE_PAGE_CAP,
+    Number.isFinite(turns.oldest)
+      ? Math.floor((Date.now() - turns.oldest) / 60_000) + 2
+      : undefined,
+  );
+  if (!failures) return;
+  const ok = subscribed && turns.ok && failures.ok;
   if (isCurrent(active, workspaceId, entry, generation)) {
     yield* put(agentTraceLoadFinished(workspaceId, ok));
   }

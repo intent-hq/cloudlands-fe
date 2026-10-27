@@ -203,6 +203,35 @@ describe('agentTraceSaga', () => {
     }
   });
 
+  it('reads the newest failures when there are no turn rows, also after reopening', async () => {
+    const failureRow = eventRow('f1', 'agent:failed', 5 * 24 * 60 * 60_000, {
+      agentId: 'agent-a',
+      error: 'Could not save the first message',
+    });
+    mocks.request.mockImplementation((method: string, params: { eventType: string }) => {
+      if (method !== 'event.query') return Promise.resolve({});
+      return Promise.resolve(
+        params.eventType === 'agent:failed'
+          ? { items: [failureRow], nextToken: null }
+          : { items: [], nextToken: null },
+      );
+    });
+    const harness = createHarness();
+    for (let open = 0; open < 2; open += 1) {
+      harness.dispatch(agentTraceOpened(WS));
+      await vi.waitFor(() => expect(harness.trace()?.status).toBe('ready'));
+      expect(recordsOf(harness.trace()).map((record) => record.id)).toEqual(['f1']);
+      harness.dispatch(agentTraceClosed(WS));
+      await vi.waitFor(() => expect(harness.trace()).toBeUndefined());
+    }
+    const failureQuery = { workspaceId: WS, eventType: 'agent:failed', limit: 200, paginate: true };
+    expect(queries().filter((query) => query.eventType === 'agent:failed')).toEqual([
+      failureQuery,
+      failureQuery,
+    ]);
+    await stop(harness.task);
+  });
+
   it('reads tool and usage history back to the requested window, resuming on widen', async () => {
     serve({
       'agent:last-message': [{ items: [], nextToken: null }],
