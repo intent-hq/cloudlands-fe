@@ -478,9 +478,8 @@
 
     loadData();
 
-    // Direct workspace routes open their tab without mirroring route identity into Redux.
+    // The workspace surface opens direct-route tabs after backend tab hydration.
     if (workspaceId) {
-      appStore.dispatch(openWorkspaceTab(workspaceId, $page.state?.presenceFollowRequestId));
       appStore.dispatch(recordWorkspaceView(workspaceId, Date.now()));
     }
     // Register global palette shortcuts (config-driven later)
