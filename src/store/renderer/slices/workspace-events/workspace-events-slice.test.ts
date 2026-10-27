@@ -18,6 +18,7 @@ import {
   loadPeopleEventsRequested,
   peopleEventsLoadStarted,
   peopleEventsLoadFinished,
+  peopleEventsPageLoaded,
   setEventsLoading,
   workspaceEventsReducer,
 } from './workspace-events-slice';
@@ -92,10 +93,65 @@ describe('workspaceEventsReducer', () => {
 
   it('reopens automatic People filling after a shared history refresh replaces the cache', () => {
     let state = workspaceEventsReducer(initialState, peopleEventsLoadStarted(WS_1, 'request'));
+    state = workspaceEventsReducer(
+      state,
+      peopleEventsPageLoaded(WS_1, 'request', 'user', [mockEvent('older')], 'users-2'),
+    );
     state = workspaceEventsReducer(state, peopleEventsLoadFinished(WS_1, 'request', true, null));
     expect(state.byWorkspaceId[WS_1].peopleInitialized).toBe(true);
     state = workspaceEventsReducer(state, eventsLoaded(WS_1, [mockEvent('fresh')], 'cursor'));
     expect(state.byWorkspaceId[WS_1].peopleInitialized).toBe(false);
+    expect(state.byWorkspaceId[WS_1].peopleStreams.user).toMatchObject({
+      initialized: false,
+      nextToken: null,
+    });
+  });
+
+  it('merges filtered pages once without advancing raw history, and rejects stale or invalid cursors', () => {
+    let state = workspaceEventsReducer(
+      initialState,
+      eventsLoaded(WS_1, [mockEvent('raw')], 'raw-2'),
+    );
+    state = workspaceEventsReducer(state, peopleEventsLoadStarted(WS_1, 'request'));
+    state = workspaceEventsReducer(
+      state,
+      peopleEventsPageLoaded(WS_1, 'request', 'user', [mockEvent('overlap')], 'users-2'),
+    );
+    state = workspaceEventsReducer(
+      state,
+      peopleEventsPageLoaded(WS_1, 'request', 'message', [mockEvent('overlap')], null),
+    );
+    expect(state.byWorkspaceId[WS_1].events.map((event) => event.id)).toEqual(['raw', 'overlap']);
+    expect(state.byWorkspaceId[WS_1]).toMatchObject({
+      nextToken: 'raw-2',
+      endReached: false,
+      peopleStreams: {
+        user: { initialized: true, nextToken: 'users-2' },
+        message: { initialized: true, nextToken: null },
+      },
+    });
+    expect(
+      workspaceEventsReducer(
+        state,
+        peopleEventsPageLoaded(WS_1, 'old', 'user', [mockEvent('stale')], null),
+      ),
+    ).toBe(state);
+    state = workspaceEventsReducer(
+      state,
+      peopleEventsPageLoaded(WS_1, 'request', 'user', [{ ...mockEvent('invalid'), id: '' }], null),
+    );
+    expect(state.byWorkspaceId[WS_1].peopleStreams.user.nextToken).toBe('users-2');
+    state = workspaceEventsReducer(state, workspaceUnmounted(WS_1));
+    expect(state.byWorkspaceId[WS_1].peopleStreams.user).toMatchObject({
+      initialized: false,
+      nextToken: null,
+    });
+    expect(
+      workspaceEventsReducer(
+        state,
+        peopleEventsPageLoaded(WS_1, 'request', 'user', [mockEvent('late')], null),
+      ),
+    ).toBe(state);
   });
 
   it('counts each firehose (re)subscription without touching the workspace buffers', () => {

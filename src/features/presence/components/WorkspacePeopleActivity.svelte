@@ -14,8 +14,7 @@
     selectPeopleEventsLoading,
     selectPeopleEventsError,
     selectPeopleEventsInitialized,
-    selectOlderEventsNextToken,
-    selectOlderEventsEndReached,
+    selectPeopleEventsEndReached,
   } from '$store/renderer/slices/workspace-events/workspace-events-selectors';
   import { loadPeopleEventsRequested } from '$store/renderer/slices/workspace-events/workspace-events-slice';
   import {
@@ -42,14 +41,13 @@
   const people$ = selectWorkspacePeopleIdentities(workspaceIdStore);
   const workspace$ = selectWorkspaceById(workspaceIdStore);
   const loading$ = selectPeopleEventsLoading(workspaceIdStore);
-  const nextToken$ = selectOlderEventsNextToken(workspaceIdStore);
-  const endReached$ = selectOlderEventsEndReached(workspaceIdStore);
+  const endReached$ = selectPeopleEventsEndReached(workspaceIdStore);
   const error$ = selectPeopleEventsError(workspaceIdStore);
   const initialized$ = selectPeopleEventsInitialized(workspaceIdStore);
   const rows = $derived(
     getPeopleActivity(workspaceId, $events$, $people$, $workspace$?.ownerPrincipalId),
   );
-  const pendingInitial = $derived(!$initialized$ && !$endReached$ && !$nextToken$ && !$error$);
+  const pendingInitial = $derived(!$initialized$ && !$endReached$ && !$error$);
   let messageNavigation: AbortController | undefined;
 
   $effect(() => {
@@ -125,29 +123,43 @@
       virtualize={false}
       class="overflow-visible"
     >
-      {#snippet row({ item })}
+      {#snippet row({ item, index })}
         <ListRow
           data-people-activity-id={item.id}
+          data-people-activity-continuation={item.continuation || undefined}
           data-message-preview={item.messagePreview ? true : undefined}
-          class="min-h-[42px] items-center gap-2.5 px-2.5 py-1.5 [&_[data-slot=list-row-title]]:whitespace-normal [&_[data-slot=list-row-title]]:break-words [&_[data-slot=list-row-title]]:[overflow-wrap:anywhere] [&_[data-slot=list-row-title]]:text-[11px] [&_[data-slot=list-row-title]]:leading-4 [&_[data-slot=list-row-leading]]:h-auto [&_[data-slot=list-row-leading]]:self-center [&_[data-slot=list-row-trailing]]:h-auto [&_[data-slot=list-row-trailing]]:self-center [&_[data-slot=list-row-trailing]]:text-[11px] [&_[data-slot=list-row-trailing]]:leading-4 /* a11y-ignore: Figma People activity uses 11px compact text */"
+          class="{item.continuation
+            ? 'min-h-[26px] py-0.5'
+            : 'min-h-[42px] py-1.5'} items-center gap-2.5 px-2.5 [&_[data-slot=list-row-title]]:whitespace-normal [&_[data-slot=list-row-title]]:break-words [&_[data-slot=list-row-title]]:[overflow-wrap:anywhere] [&_[data-slot=list-row-title]]:text-[11px] [&_[data-slot=list-row-title]]:leading-4 [&_[data-slot=list-row-leading]]:h-auto [&_[data-slot=list-row-leading]]:self-center [&_[data-slot=list-row-trailing]]:h-auto [&_[data-slot=list-row-trailing]]:self-center [&_[data-slot=list-row-trailing]]:text-[11px] [&_[data-slot=list-row-trailing]]:leading-4 /* a11y-ignore: Figma People activity uses 11px compact text */"
         >
           {#snippet leading()}
-            <PrincipalAvatar
-              label={item.name}
-              avatarUrl={item.avatarUrl}
-              size={30}
-              class="border border-border"
-            />
+            <span class="block w-[30px] shrink-0" aria-hidden="true">
+              {#if !item.continuation}
+                <PrincipalAvatar
+                  label={item.name}
+                  avatarUrl={item.avatarUrl}
+                  size={30}
+                  class="border border-border"
+                />
+              {/if}
+            </span>
           {/snippet}
           {#snippet title()}
-            <span class={item.messagePreview ? 'block truncate' : undefined}>{item.label}</span>
+            <span class="sr-only">{item.label}</span>
+            <span aria-hidden="true" class={item.messagePreview ? 'block truncate' : undefined}>
+              {item.continuation ? item.actionLabel : item.label}
+            </span>
           {/snippet}
           {#snippet trailing()}
-            <RelativeTime
-              date={item.timestamp}
-              compact
-              class="whitespace-nowrap text-[11px] leading-4 text-muted-foreground /* a11y-ignore: Figma People activity uses 11px compact text */"
-            />
+            <span
+              class:sr-only={item.continuation && rows[index - 1]?.timestamp === item.timestamp}
+            >
+              <RelativeTime
+                date={item.timestamp}
+                compact
+                class="whitespace-nowrap text-[11px] leading-4 text-muted-foreground /* a11y-ignore: Figma People activity uses 11px compact text */"
+              />
+            </span>
           {/snippet}
         </ListRow>
       {/snippet}
@@ -174,7 +186,7 @@
     </EmptyState>
   {/if}
 
-  {#if (rows.length > 0 && ($loading$ || $error$)) || ($nextToken$ && !$endReached$ && !(rows.length === 0 && $error$))}
+  {#if (rows.length > 0 && ($loading$ || $error$)) || ($initialized$ && !$endReached$ && !(rows.length === 0 && $error$))}
     <div class="flex flex-col items-start gap-1 py-2">
       {#if $error$}
         <p class="type-caption text-muted-foreground" role="status">
@@ -186,10 +198,7 @@
         size="sm"
         class="px-2.5 text-muted-foreground hover:text-foreground"
         loading={$loading$}
-        onclick={() =>
-          appStore.dispatch(
-            loadPeopleEventsRequested(workspaceId, $nextToken$ ? 'more' : 'initial', true),
-          )}
+        onclick={() => appStore.dispatch(loadPeopleEventsRequested(workspaceId, 'more', true))}
       >
         {$loading$
           ? m.workspace_activityPanel_loadingOlder_label()

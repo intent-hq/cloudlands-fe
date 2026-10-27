@@ -1,36 +1,26 @@
 <script module lang="ts">
   import { definePreview } from '$lib/component-catalog/preview-definition';
   interface Props {
-    selected?: boolean;
     narrow?: boolean;
   }
   export const preview = definePreview<Props>({
     id: 'new-discussion',
     title: 'New discussion',
-    defaultState: 'selected',
+    defaultState: 'empty',
     states: {
       empty: { props: {} },
-      selected: { props: { selected: true } },
-      narrow: { props: { selected: true, narrow: true } },
+      narrow: { props: { narrow: true } },
     },
   });
 </script>
 
 <script lang="ts">
-  import { untrack } from 'svelte';
   import { faComment } from '@fortawesome/free-regular-svg-icons';
   import { ContentHeader } from '$features/layout/components/content-header';
   import { m } from '$shared/paraglide/messages.js';
   import type { DiscussionMessage } from '$shared/types/workspace-discussion';
-  import DiscussionRecipients from './DiscussionRecipients.svelte';
   import DiscussionThread from './DiscussionThread.svelte';
-  let { selected = false, narrow = false }: Props = $props();
-  const members = [
-    { principalId: 'alex', displayName: 'Alex', login: 'alex', avatarUrl: null },
-    { principalId: 'jordan', displayName: 'Jordan', login: 'jordan', avatarUrl: null },
-    { principalId: 'morgan', displayName: 'Morgan', login: 'morgan', avatarUrl: null },
-  ];
-  let selectedIds = $state<string[]>(untrack(() => (selected ? ['alex', 'jordan'] : [])));
+  let { narrow = false }: Props = $props();
   let draft = $state('');
   let messages = $state<DiscussionMessage[]>([]);
   let sent = $state(false);
@@ -56,11 +46,7 @@
   data-new-discussion-preview
 >
   <ContentHeader
-    title={sent
-      ? selectedIds
-          .map((id) => members.find((member) => member.principalId === id)?.displayName)
-          .join(', ')
-      : m.workspace_discussion_new_title()}
+    title={sent ? m.workspace_discussion_conversation_title() : m.workspace_discussion_new_title()}
     icon={faComment}
   />
   <div class="min-h-0 flex-1">
@@ -70,19 +56,18 @@
       focusComposer={false}
       showEmptyState={false}
       canCompose
-      canSend={selectedIds.length > 0}
-      composerPlaceholder={m.workspace_discussion_selectedComposer_placeholder()}
+      canSend
       onDraftChange={(value) => (draft = value)}
       onSend={send}
       onRetry={() => {}}
       onLoadOlder={() => {}}
     >
       {#snippet header()}
-        {#if !sent}<DiscussionRecipients
-            {members}
-            {selectedIds}
-            onChange={(ids) => (selectedIds = ids)}
-          />{/if}
+        {#if !sent}
+          <p class="px-4 py-3 type-caption text-muted-foreground" data-discussion-audience>
+            {m.workspace_discussion_everyone_label()}
+          </p>
+        {/if}
       {/snippet}
     </DiscussionThread>
   </div>

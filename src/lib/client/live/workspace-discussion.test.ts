@@ -31,6 +31,113 @@ const message = {
   createdAt: conversation.createdAt,
 };
 beforeEach(() => wire.request.mockReset());
+describe('explicit discussion person mentions', () => {
+  const principalMentions = [{ principalId: 'other', name: 'Alex', start: 3, end: 8 }];
+  const params = {
+    workspaceId: 'ws',
+    messageId: 'retry-person',
+    body: 'Hi @Alex',
+    principalMentions,
+  };
+  const response = {
+    message: { ...message, conversationId: 'default', body: params.body, principalMentions },
+  };
+  it.each([undefined, false, true, '1', 0, 2, 1])('requires exact capability %s', async (value) => {
+    wire.request.mockResolvedValue({ discussionPrincipalMentions: value });
+    expect(await client.supportsPrincipalMentions()).toBe(value === 1);
+    expect(wire.request).toHaveBeenCalledWith('system.capabilities', {});
+  });
+  it('roundtrips explicit identity and rejects altered confirmation metadata', async () => {
+    wire.request.mockResolvedValue(response);
+    expect(await client.send(params, false, false, false, false, false, true)).toEqual(response);
+    expect(wire.request).toHaveBeenCalledWith('discussion.send', params);
+    for (const changed of [
+      undefined,
+      [],
+      [{ ...principalMentions[0], principalId: 'someone-else' }],
+    ]) {
+      wire.request.mockResolvedValue({
+        message: { ...response.message, principalMentions: changed },
+      });
+      await expect(client.send(params, false, false, false, false, false, true)).rejects.toThrow();
+    }
+  });
+  it('rejects unsupported or malformed selections before sending', async () => {
+    await expect(client.send(params)).rejects.toMatchObject({ code: 'METHOD_NOT_FOUND' });
+    for (const mention of [
+      { ...principalMentions[0], start: -1 },
+      { ...principalMentions[0], end: 9 },
+      { ...principalMentions[0], principalId: '' },
+      { ...principalMentions[0], principalId: ' ' },
+      { ...principalMentions[0], name: 'Morgan' },
+    ]) {
+      await expect(
+        client.send(
+          { ...params, principalMentions: [mention] },
+          false,
+          false,
+          false,
+          false,
+          false,
+          true,
+        ),
+      ).rejects.toThrow();
+    }
+    expect(wire.request).not.toHaveBeenCalled();
+  });
+  it('rejects overlapping agent and person identities in requests, history and live events', async () => {
+    const invalid = {
+      ...params,
+      recipientAgentIds: ['agent-a'],
+      agentMentions: [{ agentId: 'agent-a', name: 'Alex', start: 3, end: 8 }],
+    };
+    await expect(client.send(invalid, false, false, true, true, false, true)).rejects.toThrow(
+      'Invalid discussion principal mentions',
+    );
+    expect(wire.request).not.toHaveBeenCalled();
+    const incoming = { ...response.message, ...invalid };
+    wire.request.mockResolvedValue({ messages: [incoming], hasMore: false });
+    await expect(
+      client.list({ workspaceId: 'ws' }, false, false, false, false, false, true),
+    ).rejects.toThrow();
+    expect(
+      isDiscussionMessageEvent({ workspaceId: 'ws', conversationId: 'default', message: incoming }),
+    ).toBe(false);
+  });
+  it.each([{ selected: [] }, { selected: principalMentions }])(
+    'sends person metadata with agent activity support and no agent recipients: %j',
+    async ({ selected }) => {
+      const request = { ...params, agentMentions: [], principalMentions: selected };
+      const result = {
+        message: {
+          ...response.message,
+          principalMentions: selected,
+          agentMentions: [],
+          agentActivity: [],
+          recipientAgentIds: [],
+        },
+      };
+      wire.request.mockResolvedValue(result);
+      await expect(client.send(request, false, false, true, true, false, true)).resolves.toEqual(
+        result,
+      );
+      expect(wire.request).toHaveBeenCalledWith('discussion.send', request);
+      expect(wire.request.mock.calls[0][1]).not.toHaveProperty('recipientAgentIds');
+    },
+  );
+  it('requires mention metadata on supported history without inventing it for older daemons', async () => {
+    wire.request.mockResolvedValue({ messages: [response.message], hasMore: false });
+    expect(
+      (await client.list({ workspaceId: 'ws' }, false, false, false, false, false, true)).messages,
+    ).toEqual([response.message]);
+    const legacy = { ...response.message, principalMentions: undefined };
+    wire.request.mockResolvedValue({ messages: [legacy], hasMore: false });
+    await expect(
+      client.list({ workspaceId: 'ws' }, false, false, false, false, false, true),
+    ).rejects.toThrow();
+    expect((await client.list({ workspaceId: 'ws' })).messages).toEqual([legacy]);
+  });
+});
 describe('explicit discussion agent wire contract', () => {
   it.each([undefined, false, true, '1', 0, 2, 1])(
     'requires exact agent capability %s',
@@ -366,8 +473,9 @@ describe('request-correlated discussion activity wire contract', () => {
   it('validates event scope and does not accept global agent status shapes', () => {
     const event = { workspaceId: 'ws', conversationId: 'default', messageId: 'server', activity };
     expect(isDiscussionAgentActivityEvent(event)).toBe(true);
+    expect(isDiscussionAgentActivityEvent({ ...event, conversationId: 'shared' })).toBe(true);
     for (const extra of [
-      { conversationId: 'c2' },
+      { conversationId: 'new' },
       { conversationId: undefined },
       { messageId: '' },
       { activity: { agentId: 'agent-a', status: 'running' } },
@@ -548,5 +656,86 @@ describe('expanded discussion reactions', () => {
     ).rejects.toThrow();
     wire.request.mockResolvedValue({ ...response, messageId: 'another-conversation-message' });
     await expect(client.react(params, true, true)).rejects.toThrow();
+  });
+});
+
+describe('workspace-wide discussion management contract', () => {
+  const shared: DiscussionConversation = {
+    id: 'shared-1',
+    workspaceId: 'ws',
+    kind: 'workspace',
+    participants: [],
+    createdAt: conversation.createdAt,
+  };
+  it.each([undefined, false, true, '1', 0, 2, 1])(
+    'requires exact management capability %s',
+    async (value) => {
+      wire.request.mockResolvedValue({ discussionManagement: value });
+      expect(await client.supportsManagement()).toBe(value === 1);
+      expect(wire.request).toHaveBeenCalledWith('system.capabilities', {});
+    },
+  );
+  it('creates atomically on first send without recipients and accepts an unnamed workspace conversation', async () => {
+    const params = {
+      workspaceId: 'ws',
+      messageId: 'retry-shared',
+      body: 'hello',
+      createConversation: true,
+    };
+    const response = { message: { ...message, conversationId: shared.id }, conversation: shared };
+    wire.request.mockResolvedValue(response);
+    await expect(
+      client.send(params, true, false, false, false, false, false, true),
+    ).resolves.toEqual(response);
+    expect(wire.request).toHaveBeenCalledWith('discussion.send', params);
+    wire.request.mockResolvedValue({
+      ...response,
+      conversation: { ...conversation, id: shared.id },
+    });
+    await expect(
+      client.send(params, true, false, false, false, false, false, true),
+    ).rejects.toThrow();
+  });
+  it('rejects unsupported creation and ambiguous targets before transport', async () => {
+    const params = {
+      workspaceId: 'ws',
+      messageId: 'retry-shared',
+      body: 'hello',
+      createConversation: true,
+    };
+    await expect(client.send(params, true)).rejects.toMatchObject({ code: 'METHOD_NOT_FOUND' });
+    for (const extra of [{ conversationId: 'c1' }, { recipientPrincipalIds: ['other'] }]) {
+      await expect(
+        client.send({ ...params, ...extra }, true, false, false, false, false, false, true),
+      ).rejects.toThrow();
+    }
+    expect(wire.request).not.toHaveBeenCalled();
+  });
+  it('roundtrips rename and delete with exact IDs and rejects mismatched acknowledgements', async () => {
+    const params = { workspaceId: 'ws', conversationId: shared.id, name: 'Planning' };
+    const renamed = { ...shared, name: 'Planning' };
+    wire.request.mockResolvedValue({ conversation: renamed });
+    await expect(client.rename(params, true)).resolves.toEqual({ conversation: renamed });
+    expect(wire.request).toHaveBeenCalledWith('discussion.rename', params);
+    wire.request.mockResolvedValue({ conversation: { ...renamed, workspaceId: 'elsewhere' } });
+    await expect(client.rename(params, true)).rejects.toThrow();
+    const target = { workspaceId: 'ws', conversationId: shared.id };
+    wire.request.mockResolvedValue({ deleted: true, conversationId: shared.id });
+    await expect(client.delete(target, true)).resolves.toEqual({
+      deleted: true,
+      conversationId: shared.id,
+    });
+    expect(wire.request).toHaveBeenCalledWith('discussion.delete', target);
+    wire.request.mockResolvedValue({ deleted: true, conversationId: 'another' });
+    await expect(client.delete(target, true)).rejects.toThrow();
+  });
+  it('does not issue management calls on older daemons', async () => {
+    await expect(
+      client.rename({ workspaceId: 'ws', conversationId: 'default', name: 'Planning' }),
+    ).rejects.toMatchObject({ code: 'METHOD_NOT_FOUND' });
+    await expect(
+      client.delete({ workspaceId: 'ws', conversationId: 'default' }),
+    ).rejects.toMatchObject({ code: 'METHOD_NOT_FOUND' });
+    expect(wire.request).not.toHaveBeenCalled();
   });
 });
