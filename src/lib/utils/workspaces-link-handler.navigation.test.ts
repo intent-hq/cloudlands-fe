@@ -3,6 +3,8 @@ import {
   openWorkspaceFile,
   openWorkspaceNote,
 } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
+import { notify } from '$lib/components/patterns/notify';
 
 const mocks = vi.hoisted(() => ({
   backendRequest: vi.fn(),
@@ -196,5 +198,23 @@ describe('handleIntentLink panel navigation', () => {
     expect(mocks.openMessage).not.toHaveBeenCalled();
     expect(mocks.navigateToRoute).not.toHaveBeenCalled();
     expect(mocks.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('opens the linked workspace from a workspace chat', async () => {
+    await handleIntentLink('intent://local/workspace/cold-heron', {
+      workspaceId: 'owning-workspace',
+      sourcePanelId: 'panel-chat',
+    });
+
+    expect(notify.error).not.toHaveBeenCalled();
+    expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/cold-heron');
+    expect(mocks.dispatch).toHaveBeenCalledWith(openWorkspaceTab('cold-heron'));
+  });
+
+  it('opens a workspace link with no current workspace', async () => {
+    await handleIntentLink('intent://local/workspace/cold-heron');
+
+    expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/cold-heron');
+    expect(mocks.dispatch).toHaveBeenCalledWith(openWorkspaceTab('cold-heron'));
   });
 });

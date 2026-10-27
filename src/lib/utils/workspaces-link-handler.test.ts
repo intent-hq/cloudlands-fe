@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseIntentLink, generateNoteLink } from './workspaces-link-handler';
-import { conversationMessageUrl } from '$shared/constants/intent-links';
+import { conversationMessageUrl, workspaceUrl } from '$shared/constants/intent-links';
 
 describe('parseIntentLink', () => {
   describe('valid note links', () => {
@@ -146,6 +146,44 @@ describe('parseIntentLink', () => {
         expect(parseIntentLink(link).valid).toBe(false);
       },
     );
+  });
+
+  describe('workspace links', () => {
+    it('parses a workspace link to the workspace id', () => {
+      expect(parseIntentLink('intent://local/workspace/cold-heron')).toEqual({
+        type: 'workspace',
+        orgId: 'local',
+        workspaceId: 'cold-heron',
+        resourceId: 'cold-heron',
+        valid: true,
+      });
+    });
+
+    it('round-trips with workspaceUrl', () => {
+      const parsed = parseIntentLink(workspaceUrl('cold-heron'));
+      expect(workspaceUrl('cold-heron')).toBe('intent://local/workspace/cold-heron');
+      expect(parsed.type).toBe('workspace');
+      expect(parsed.workspaceId).toBe('cold-heron');
+    });
+
+    it('keeps a workspace literally named "workspace" usable for notes', () => {
+      const parsed = parseIntentLink('intent://local/workspace/note/spec');
+      expect(parsed).toMatchObject({
+        type: 'note',
+        workspaceId: 'workspace',
+        resourceId: 'spec',
+        valid: true,
+      });
+    });
+
+    it.each([
+      'intent://local/workspace/',
+      'intent://local/workspace/cold-heron/extra',
+      'intent://local/workspace/%2e%2e',
+      'intent://local/workspace/a%2Fb',
+    ])('rejects malformed workspace link %s', (link) => {
+      expect(parseIntentLink(link).valid).toBe(false);
+    });
   });
 
   describe('invalid links', () => {

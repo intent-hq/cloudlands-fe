@@ -8,6 +8,7 @@
  * - intent://local/file/{path} - Workspace-relative file in current workspace
  * - intent://local/{workspace-id}/file/{path} - File in specific workspace (cross-workspace)
  * - intent://local/{workspace-id}/agent/{agent-id}/message/{message-id} - Exact message
+ * - intent://local/workspace/{workspace-id} - Workspace
  *
  * Currently org-id is a placeholder "local" since we don't have org concept yet.
  * This reserves the URL slot for future use.
@@ -22,6 +23,7 @@ import {
   openWorkspaceNote,
 } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
+import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { parseFilePathLineSuffix } from '$shared/utils/link-helpers';
 
 // URL-pattern examples shown in parse errors; passed as message params because
@@ -39,10 +41,10 @@ function invalidFormatError(): string {
 }
 
 export interface WorkspacesLinkInfo {
-  type: 'note' | 'task' | 'file' | 'message' | 'unknown';
+  type: 'note' | 'task' | 'file' | 'message' | 'workspace' | 'unknown';
   orgId: string; // Reserved for future, currently "local"
   workspaceId?: string; // Target workspace ID (undefined = current workspace)
-  resourceId: string; // noteId, messageId, or decoded workspace-relative file path
+  resourceId: string; // noteId, messageId, workspaceId, or decoded workspace-relative file path
   line?: number; // Starting line for file links
   agentId?: string; // Conversation owner for message links
   valid: boolean;
@@ -64,6 +66,7 @@ export class NotFoundError extends Error {
  * - intent://local/file/{path} - Workspace-relative file in current workspace
  * - intent://local/{workspace-id}/file/{path} - File in specific workspace
  * - intent://local/{workspace-id}/agent/{agent-id}/message/{message-id} - Exact message
+ * - intent://local/workspace/{workspace-id} - Workspace
  */
 export function parseIntentLink(url: string): WorkspacesLinkInfo {
   try {
@@ -107,7 +110,17 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
     let agentId: string | undefined;
     let line: number | undefined;
 
-    if (rawSegments[0] === 'file') {
+    if (
+      rawSegments.length === 2 &&
+      rawSegments[0] === 'workspace' &&
+      isValidRawIdSegment(rawSegments[1]) &&
+      pathSegments.length === 2
+    ) {
+      // Workspace format: workspace/{workspace-id}
+      workspaceId = pathSegments[1];
+      resourceType = 'workspace';
+      resourceId = pathSegments[1];
+    } else if (rawSegments[0] === 'file') {
       // Short format: file/{workspace-relative-path} (remaining segments form the path)
       resourceType = 'file';
       resourceId = decodeFilePathSegments(rawSegments.slice(1));
@@ -207,6 +220,10 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
         ...(line !== undefined ? { line } : {}),
         valid: true,
       };
+    }
+
+    if (resourceType === 'workspace' && workspaceId) {
+      return { type: 'workspace', orgId, workspaceId, resourceId, valid: true };
     }
 
     if (resourceType === 'message' && workspaceId && agentId) {
@@ -315,6 +332,9 @@ export async function handleIntentLink(
       case 'file':
         await navigateToFile(info, options);
         break;
+      case 'workspace':
+        await navigateToWorkspace(info.resourceId);
+        break;
       case 'message': {
         const { openMessage } = await import('./open-message');
         await openMessage({
@@ -372,6 +392,16 @@ export function createIntentLinkClickHandler() {
 
     return false;
   };
+}
+
+/**
+ * Private: Open a workspace, the same way link-handler's workspace activation does
+ */
+async function navigateToWorkspace(workspaceId: string): Promise<void> {
+  const { navigateToRoute } = await import('./navigation.client');
+  // (navigateToRoute no-ops in the HUD pop-out window — never leaves /hud)
+  await navigateToRoute(`/workspace/${encodeURIComponent(workspaceId)}`);
+  appStore.dispatch(openWorkspaceTab(workspaceId));
 }
 
 /**
