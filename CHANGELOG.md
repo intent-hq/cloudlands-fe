@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.244.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.243.2...v2.244.0) (2026-10-27)
+
+
+### 🚀 Features
+
+* **test:** add test:ct:full to run all four CT shards locally ([#3779](https://github.com/intent-hq/cloudlands-fe/issues/3779)) ([c1c86f3](https://github.com/intent-hq/cloudlands-fe/commit/c1c86f3569d272e0e66f694a114bc8bc7e023fa8))
+
+
+### 🐛 Bug Fixes
+
+* **home:** rank merge-queued PRs first on the workspace card ([#3773](https://github.com/intent-hq/cloudlands-fe/issues/3773)) ([af25abc](https://github.com/intent-hq/cloudlands-fe/commit/af25abcf771b3353a0a132a8bdd6b4c23fb07fad))
+
 ## [2.243.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.243.1...v2.243.2) (2026-10-27)
 
 
