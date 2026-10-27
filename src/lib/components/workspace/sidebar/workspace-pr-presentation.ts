@@ -59,8 +59,8 @@ export interface WorkspacePRPresentationRow extends ReviewMonitorExtension {
  * then the repo-qualified identity. Other merge-readiness signals from a
  * monitor snapshot do not take part in the ranking.
  */
-const QUEUED_RANK = 0;
-const PR_STATUS_RANK: Record<PRInfo['status'], number> = {
+const PR_RANK: Record<PRInfo['status'] | 'queued', number> = {
+  queued: 0,
   draft: 1,
   open: 2,
   merged: 3,
@@ -127,7 +127,7 @@ function getPRStatusPresentation(
  * Build presentation rows for every PR attributable to a workspace. The pool
  * keeps the existing branch/active fallback and monitor wire semantics, then
  * deduplicates by case-insensitive, repo-qualified GitHub identity. Rows are
- * sorted merge-queued first, then earliest-in-flow (see `PR_STATUS_RANK`).
+ * sorted merge-queued first, then earliest-in-flow (see `PR_RANK`).
  */
 export function buildWorkspacePRPresentationModel({
   workspacePRs,
@@ -169,32 +169,37 @@ export function buildWorkspacePRPresentationModel({
     }
     existing.monitorAgentId = pr.monitorAgentId ?? existing.monitorAgentId;
     existing.monitorSnapshot = pr.monitorSnapshot ?? existing.monitorSnapshot;
+    existing.isInMergeQueue = existing.isInMergeQueue || pr.isInMergeQueue;
   }
 
-  const sourceOf = (pr: PRInfo): PullRequestInfo | undefined =>
-    pr.resource
-      ? undefined
-      : sourceByIdentity.get(normalizedPrIdentity(pr.crossRepo ?? workspaceRepo, pr.number));
-  const statusOf = (pr: PRInfo): PRInfo['status'] => (sourceOf(pr)?.isDraft ? 'draft' : pr.status);
-  const queuedOf = (pr: PRInfo): boolean => isPRQueued({ ...pr, status: statusOf(pr) });
-  const rankOf = (pr: PRInfo): number =>
-    queuedOf(pr) ? QUEUED_RANK : PR_STATUS_RANK[statusOf(pr)];
+  // Resolve each row's source, display status and queue state once, then
+  // sort and present from those values.
+  const decorated = [...deduplicated.values()].map((pr) => {
+    const repo = pr.crossRepo ?? workspaceRepo;
+    const identity = normalizedPrIdentity(repo, pr.number);
+    const source = pr.resource ? undefined : sourceByIdentity.get(identity);
+    const status: PRInfo['status'] = source?.isDraft ? 'draft' : pr.status;
+    const queued = isPRQueued({ ...pr, status });
+    return {
+      pr,
+      repo,
+      identity,
+      source,
+      status,
+      queued,
+      rank: PR_RANK[queued ? 'queued' : status],
+    };
+  });
 
-  return [...deduplicated.values()]
+  return decorated
     .sort(
       (a, b) =>
-        rankOf(a) - rankOf(b) ||
-        compareMissingLast(a.updatedAt, b.updatedAt) ||
-        b.number - a.number ||
-        normalizedPrIdentity(a.crossRepo ?? workspaceRepo, a.number).localeCompare(
-          normalizedPrIdentity(b.crossRepo ?? workspaceRepo, b.number),
-        ),
+        a.rank - b.rank ||
+        compareMissingLast(a.pr.updatedAt, b.pr.updatedAt) ||
+        b.pr.number - a.pr.number ||
+        a.identity.localeCompare(b.identity),
     )
-    .map((pr) => {
-      const repo = pr.crossRepo ?? workspaceRepo;
-      const source = sourceOf(pr);
-      const status = statusOf(pr);
-      const queued = queuedOf(pr);
+    .map(({ pr, repo, source, status, queued }) => {
       const sourceDetails = pr.monitorSnapshot ? '' : getPRTooltipContent(source);
       return {
         identity: pr.monitorIdentity ?? prIdentity(repo, pr.number),

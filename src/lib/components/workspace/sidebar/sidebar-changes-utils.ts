@@ -340,7 +340,8 @@ export function mapWorkspacePRs(
         status: toPRDisplayStatus(pr.status),
         createdAt: pr.createdAt,
         updatedAt: pr.updatedAt,
-        isInMergeQueue: pr.isInMergeQueue,
+        // A draft cannot sit in the merge queue; drop a stale flag.
+        isInMergeQueue: pr.isDraft ? undefined : pr.isInMergeQueue,
         crossRepo,
         crossRepoDisplay: crossRepo ? shortRepoDisplay(crossRepo, workspaceOwner) : undefined,
       };
@@ -356,7 +357,7 @@ export function mapWorkspacePRs(
         status: toPRDisplayStatus(activePR.status),
         createdAt: activePR.createdAt,
         updatedAt: activePR.updatedAt,
-        isInMergeQueue: activePR.isInMergeQueue,
+        isInMergeQueue: activePR.isDraft ? undefined : activePR.isInMergeQueue,
       },
     ];
   }

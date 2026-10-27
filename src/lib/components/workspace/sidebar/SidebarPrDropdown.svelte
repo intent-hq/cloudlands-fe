@@ -41,8 +41,8 @@
     }
   });
 
-  // Rows arrive sorted earliest-in-flow first (draft → open → merged → closed);
-  // the lead row drives the trigger glyph.
+  // Rows arrive merge-queued first, then earliest-in-flow (draft → open →
+  // merged → closed); the lead row drives the trigger glyph.
   const leadRow = $derived(rows[0]);
   const triggerLabel = $derived(
     (rows.every((row) => row.resource?.repository.provider === 'gitlab')
