@@ -864,6 +864,7 @@ export class WorkspaceService {
       // for these, so coerce nulls back to `undefined` before returning.
       if ((merged.prUrl as unknown) === null) merged.prUrl = undefined;
       if ((merged.prNumber as unknown) === null) merged.prNumber = undefined;
+      if ((merged.label as unknown) === null) merged.label = undefined;
 
       if (requestedPrStatus !== undefined) {
         if (requestedPrStatus === null) {
