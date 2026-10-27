@@ -155,9 +155,14 @@ async function openAssistantContent(
   url: string,
   options: AssistantContentOptions,
 ): Promise<boolean> {
-  const workspaceMatch = /^(?:\/workspace\/|intent:\/\/local\/workspace\/)([^/?#]+)\/?$/.exec(url);
   const agentMatch = /^intent:\/\/local\/([^/?#]+)\/agent\/([^/?#]+)$/.exec(url);
   const info = url.startsWith('intent://') ? parseIntentLink(url) : null;
+  // intent:// workspace links share parseIntentLink's rules (reserved IDs,
+  // trailing slash, decoding); /workspace/{id} routes keep their own match.
+  const workspaceMatch =
+    info?.valid && info.type === 'workspace'
+      ? [url, info.resourceId]
+      : /^\/workspace\/([^/?#]+)\/?$/.exec(url);
   const browserLink = /^https?:\/\//.test(url) && !isAuthUrl(url);
   if (
     !workspaceMatch &&
