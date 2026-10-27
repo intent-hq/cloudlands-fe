@@ -1,4 +1,4 @@
-// @verify-changed-triggers: .github/workflows/release-alpha.yml, .github/workflows/manual-signed-build.yml, .github/workflows/promote-beta.yml, .github/workflows/release-stable.yml, scripts/assemble-release-assets.mjs, scripts/verify-macos-build.sh, scripts/apple-ticket-retry.mjs, scripts/mac-update-feed.mjs, scripts/run-packaged-macos-smoke.py, scripts/test_packaged_macos_smoke.py, src/features/auto-update/main/mac-update-compatibility.ts
+// @verify-changed-triggers: .github/workflows/release-alpha.yml, .github/workflows/manual-signed-build.yml, scripts/run-until-notarizing.mjs, .github/workflows/promote-beta.yml, .github/workflows/release-stable.yml, scripts/assemble-release-assets.mjs, scripts/verify-macos-build.sh, scripts/apple-ticket-retry.mjs, scripts/mac-update-feed.mjs, scripts/run-packaged-macos-smoke.py, scripts/test_packaged_macos_smoke.py, src/features/auto-update/main/mac-update-compatibility.ts
 // @vitest-environment node
 
 import { spawnSync } from 'node:child_process';
@@ -78,6 +78,7 @@ function temp() {
     'macos-native.cjs',
     'fetch-sidecar-lib.mjs',
     'mac-channel-feeds.mjs',
+    'run-until-notarizing.mjs',
   ]) {
     copyFileSync(resolve('scripts', file), join(dir, 'scripts', file));
     copyFileSync(resolve('scripts', file), join(dir, '.release-tools/scripts', file));
@@ -267,7 +268,7 @@ describe.each(['release-alpha', 'manual-signed-build'])('%s native Mac jobs', (n
       stub(
         dir,
         'pnpm',
-        'printf "%s\\n" "$@" > "$RUNNER_TEMP/args"\nprintf "%s" "${CSC_LINK-unset}" > "$RUNNER_TEMP/cert"',
+        'printf "%s\\n" "$@" > "$RUNNER_TEMP/args"\nprintf "%s" "${CSC_LINK-unset}" > "$RUNNER_TEMP/cert"\nprintf "%s" "${INTENT_NOTARIZE_STARTED_FILE-unset}" > "$RUNNER_TEMP/marker"',
       );
       const run = step(name, 'build-macos', 'Build and package macOS app');
       const result = shell(
@@ -289,10 +290,34 @@ describe.each(['release-alpha', 'manual-signed-build'])('%s native Mac jobs', (n
         'never',
       ]);
       expect(readFileSync(join(dir, 'cert'), 'utf8')).toBe('test-certificate');
+      // Packaging runs under the pre-notarization stall deadline, which hands
+      // notarize.js a fresh marker path.
+      expect(readFileSync(join(dir, 'marker'), 'utf8')).toMatch(
+        /intent-notarize-started-.*started$/,
+      );
       expect(run.env?.REQUIRE_SHARED_KEYCHAIN_GROUP).toBe(
         name === 'release-alpha' ? '1' : "${{ inputs.sign && !inputs.isolated_test && '1' || '' }}",
       );
     }
+  });
+  it('runs packaging under the 30-minute pre-notarization deadline and fails the step when packaging fails', () => {
+    const run = step(name, 'build-macos', 'Build and package macOS app').run!;
+    // The budget is the stall contract: 2.3x the slowest pre-notarization phase seen.
+    expect(run).toMatch(
+      /node scripts\/run-until-notarizing\.mjs --minutes 30 -- pnpm run dist:mac/,
+    );
+    const dir = temp();
+    stub(dir, 'pnpm', 'exit 5');
+    const result = shell(
+      dir,
+      render(run, {
+        'matrix.arch': 'arm64',
+        'inputs.sign': 'true',
+        'inputs.isolated_test': 'false',
+        'steps.intentd_sha.outputs.sha': 'a'.repeat(40),
+      }),
+    );
+    expect(result.status).toBe(5);
   });
   it('always removes signing material and restores the original keychain list', () => {
     const dir = temp();
