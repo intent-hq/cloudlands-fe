@@ -10,7 +10,7 @@
     findToolResult,
     getStandaloneToolResultPresentation,
     getToolResultPayload,
-    getToolResultText,
+    resolveToolState,
     isStandaloneToolResult,
   } from './tool-result-pairing';
   import { isHydrationPending, mergeHydratedContent } from './block-hydration';
@@ -244,28 +244,8 @@
     for (const block of blocks) {
       if (block.type === 'tool_use') {
         const toolBlock = block as ToolUseBlock;
-        // If there's a result for this tool, mark as completed/error
-        // If streaming is done but no result, mark as completed (result may have been lost)
-        // Otherwise mark as running. Look up by both the addressable block id
-        // and the provider toolCallId (when present) to align with PROTOCOL.md
-        // tool-call pairing.
         const result = findToolResult(toolResultsMap, toolBlock);
-        if (result) {
-          const isError = result.is_error || result.isError;
-          // Also detect errors from the result payload text (§7.1 `output`,
-          // legacy `content` fallback; e.g., "Error:" prefix or "Tool Error:")
-          // Note: We no longer check for ❌ emoji as it may be used as a visual indicator in content
-          const contentText = getToolResultText(result);
-          const hasErrorInContent =
-            // i18n-ignore (wire-content sniffing of tool result payloads, not rendered)
-            contentText.startsWith('Error:') || contentText.includes('Tool Error:');
-          newToolStates.set(toolBlock.id, isError || hasErrorInContent ? 'error' : 'completed');
-        } else if (!isStreaming) {
-          // Streaming finished but no result - mark as completed anyway
-          newToolStates.set(toolBlock.id, 'completed');
-        } else {
-          newToolStates.set(toolBlock.id, 'running');
-        }
+        newToolStates.set(toolBlock.id, resolveToolState(toolBlock, result, isStreaming));
       }
     }
 
