@@ -5364,6 +5364,7 @@
   "agent_creation_workspaceUnavailable_error": "Arbeitsbereich ist für die Agenten-Erstellung nicht verfügbar",
   "agent_creation_launchFailed_error": "Agent konnte nicht gestartet werden",
   "agent_chatSend_workspaceNotFound_error": "Arbeitsbereich nicht gefunden: {id}",
+  "agent_chatSend_historyFailed_error": "Die Unterhaltung konnte nicht geladen werden. Deine Nachricht wurde nicht gesendet. Versuche es erneut.",
   "agent_chatSend_queueRejected_error": "queueMessage abgelehnt",
   "agent_chatSend_queueFailed_error": "Nachricht konnte nicht in die Warteschlange eingereiht werden: {error}",
   "agent_chatSend_sendNowRejected_error": "sendQueuedMessageNow abgelehnt",

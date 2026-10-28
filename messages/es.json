@@ -5364,6 +5364,7 @@
   "agent_creation_workspaceUnavailable_error": "El espacio de trabajo no está disponible para crear agentes",
   "agent_creation_launchFailed_error": "Error al iniciar el agente",
   "agent_chatSend_workspaceNotFound_error": "Espacio de trabajo no encontrado: {id}",
+  "agent_chatSend_historyFailed_error": "No se pudo cargar la conversación. Tu mensaje no se envió. Inténtalo de nuevo.",
   "agent_chatSend_queueRejected_error": "queueMessage rechazado",
   "agent_chatSend_queueFailed_error": "Error al poner el mensaje en cola: {error}",
   "agent_chatSend_sendNowRejected_error": "sendQueuedMessageNow rechazado",

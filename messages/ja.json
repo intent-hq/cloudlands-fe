@@ -5364,6 +5364,7 @@
   "agent_creation_workspaceUnavailable_error": "エージェント作成にワークスペースが利用できません",
   "agent_creation_launchFailed_error": "エージェントを起動できませんでした",
   "agent_chatSend_workspaceNotFound_error": "ワークスペースが見つかりません: {id}",
+  "agent_chatSend_historyFailed_error": "会話を読み込めませんでした。メッセージは送信されていません。もう一度お試しください。",
   "agent_chatSend_queueRejected_error": "queueMessage が拒否されました",
   "agent_chatSend_queueFailed_error": "メッセージをキューに追加できませんでした: {error}",
   "agent_chatSend_sendNowRejected_error": "sendQueuedMessageNow が拒否されました",

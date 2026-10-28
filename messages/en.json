@@ -5364,6 +5364,7 @@
   "agent_creation_workspaceUnavailable_error": "Workspace is not available for agent creation",
   "agent_creation_launchFailed_error": "Failed to launch agent",
   "agent_chatSend_workspaceNotFound_error": "Workspace not found: {id}",
+  "agent_chatSend_historyFailed_error": "Could not load the conversation. Your message wasn’t sent. Try again.",
   "agent_chatSend_queueRejected_error": "queueMessage rejected",
   "agent_chatSend_queueFailed_error": "Failed to queue message: {error}",
   "agent_chatSend_sendNowRejected_error": "sendQueuedMessageNow rejected",

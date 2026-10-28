@@ -5364,6 +5364,7 @@
   "agent_creation_workspaceUnavailable_error": "工作區不可用，無法建立智慧體",
   "agent_creation_launchFailed_error": "啟動智慧體失敗",
   "agent_chatSend_workspaceNotFound_error": "未找到工作區：{id}",
+  "agent_chatSend_historyFailed_error": "無法載入對話。訊息未傳送，請重試。",
   "agent_chatSend_queueRejected_error": "queueMessage 被拒絕",
   "agent_chatSend_queueFailed_error": "訊息加入佇列失敗：{error}",
   "agent_chatSend_sendNowRejected_error": "sendQueuedMessageNow 被拒絕",
