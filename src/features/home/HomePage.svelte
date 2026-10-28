@@ -109,13 +109,20 @@
   } = $props();
   const microConnected$ = microConnectedReadable();
   const pinnedIds$ = selectPinnedWorkspaceIds();
-  import { selectAttentionDismissalResult } from '$store/renderer/slices/workspace-operations/workspace-operations-selectors';
-  import {
-    selectLabelsSupported,
-    selectPinnedWorkspaceIds,
-    selectWorkspaceLabelsInUse,
-  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
-  import { buildHomeListGroups } from './home-workspace-labels';
+  const dismissalResult$ = selectAttentionDismissalResult();
+  const dismissalConsumerId = $props.id();
+  const workspaceActions = createHomeWorkspaceActions({
+    root: () => homeElement,
+    selectedId: () => selectedId,
+    pinnedIds: () => $pinnedIds$,
+    microConnected: () => $microConnected$,
+    expandGroup: (key) => updateView({ expandedGroups: { ...$view$.expandedGroups, [key]: true } }),
+    consumerId: dismissalConsumerId,
+    dismissalRequestId: () => $dismissalResult$?.requestId,
+    onOpen: openWorkspace,
+  });
+  const labelsInUse$ = selectWorkspaceLabelsInUse();
+  const labelsSupported$ = selectLabelsSupported();
   function openWorkspace(id: string) {
     workspaceActions.contextMenu = null;
     store.dispatch(openWorkspaceTab(id));
