@@ -95,6 +95,56 @@ test('dragging the logo does not open the machine picker', async ({ mount, page 
   await expect(page.getByRole('menu', { name: 'Machines' })).toHaveCount(0);
 });
 
+test('clicking the Intent logo toggles the machine picker closed and open again', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(DockRailPreview, {
+    props: {
+      ...dockRailPreview.states.notch.props,
+      machineFixture: true,
+      controlledPlacement: true,
+    },
+  });
+  const logo = component.getByRole('button', { name: 'Switch machine', exact: true });
+  const menu = page.getByRole('menu', { name: 'Machines' });
+  await logo.click();
+  await expect(menu).toBeVisible();
+  await logo.click();
+  await expect(menu).toHaveCount(0);
+  await expect(logo).toHaveAttribute('aria-expanded', 'false');
+  await logo.click();
+  await expect(menu).toBeVisible();
+  expect(JSON.parse((await component.getAttribute('data-preview-actions'))!)).toEqual([]);
+});
+
+test('Escape closes the machine picker when focus has returned to the logo', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(DockRailPreview, {
+    props: {
+      ...dockRailPreview.states.notch.props,
+      machineFixture: true,
+      controlledPlacement: true,
+    },
+  });
+  const logo = component.getByRole('button', { name: 'Switch machine', exact: true });
+  const menu = page.getByRole('menu', { name: 'Machines' });
+  await logo.click();
+  await expect(menu).toBeVisible();
+  await logo.focus();
+  await expect(logo).toBeFocused();
+  await expect(menu).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await expect(logo).toBeFocused();
+  await expect(component.getByTestId('dock-shell')).toBeVisible();
+  expect(JSON.parse((await component.getAttribute('data-preview-actions'))!)).not.toContain(
+    'placement:dismiss',
+  );
+});
+
 test('machine list remains operable inside an empty notch native envelope', async ({
   mount,
   page,

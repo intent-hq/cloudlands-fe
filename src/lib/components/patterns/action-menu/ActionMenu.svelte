@@ -17,6 +17,7 @@
     trigger,
     contextMenu,
     onOpenChange,
+    onInteractOutside,
     ariaLabel,
     open = $bindable(false),
     align = 'start',
@@ -28,6 +29,7 @@
     trigger?: Snippet<[{ props: Record<string, unknown>; open: boolean }]>;
     contextMenu?: { x: number; y: number; returnFocus?: HTMLElement | null };
     onOpenChange?: (open: boolean) => void;
+    onInteractOutside?: (event: PointerEvent) => void;
     ariaLabel: string;
     open?: boolean;
     align?: 'start' | 'center' | 'end';
@@ -304,6 +306,7 @@
     aria-label={ariaLabel}
     data-action-menu-owner={uid}
     onCloseAutoFocus={restoreContextFocus}
+    {onInteractOutside}
     onkeydown={handleContextKeydown}
     class={className}
   >

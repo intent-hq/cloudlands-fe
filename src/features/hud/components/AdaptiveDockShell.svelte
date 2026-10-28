@@ -728,8 +728,18 @@
 <svelte:window
   onkeydowncapture={(event) => {
     if (gesture || awaitingDragStart !== null || dragging) keydown(event);
-    else if (event.key === 'Escape' && (conversationPopupOpen || machineMenuOpen))
-      popupEscapeEvent = event;
+    else if (
+      machineMenuOpen &&
+      event.key === 'Escape' &&
+      !event.isComposing &&
+      !placement.captureHidden &&
+      !event.defaultPrevented
+    ) {
+      machineMenuOpen = false;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      gripElement?.focus({ preventScroll: true });
+    } else if (event.key === 'Escape' && conversationPopupOpen) popupEscapeEvent = event;
   }}
   onkeydown={keydown}
   onblur={() => {

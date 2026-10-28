@@ -33,8 +33,8 @@ export function isHudWindowRenderer(): boolean {
  * For workspace-specific navigation (agents, notes, files), prefer the helpers in
  * workspace-navigation.ts which add workspace context.
  *
- * No-ops in the HUD pop-out window so stray toast actions / IPC events can
- * never navigate it away from the /hud route.
+ * No-ops in the HUD and dock so stray toast actions / IPC events cannot
+ * replace these auxiliary surfaces with a full app page.
  *
  * @param route - The route to navigate to (e.g., '/settings', '/workspace/ws-123')
  * @returns Promise that resolves when navigation completes
@@ -43,8 +43,11 @@ export async function navigateToRoute(
   route: string,
   options: { assistantContent?: boolean; assistantAgentId?: string } = {},
 ): Promise<void> {
-  if (isHudWindowRenderer()) {
-    logger.debug('Ignoring navigation in HUD window', { route });
+  if (
+    isHudWindowRenderer() ||
+    (typeof window !== 'undefined' && /^\/dock(?:\/|$)/.test(window.location.pathname))
+  ) {
+    logger.debug('Ignoring navigation in auxiliary window', { route });
     return;
   }
   if (options.assistantContent || route.startsWith('intent://') || /^https?:\/\//.test(route)) {

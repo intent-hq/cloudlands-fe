@@ -391,6 +391,7 @@ import { sendWorkspaceCommand as sendWorkspaceMenuCommand } from './menu-workspa
 import { openNewWindowFromMenu } from './menu-new-window';
 import { toggleWindowDevTools } from './menu-devtools-toggle';
 import { handleMenuZoom } from './menu-zoom';
+import { createSettingsMenuItem } from './menu-settings';
 
 import { registerMissingAgentHandlers } from '../features/agent/main/agent-missing.ipc';
 import { registerVoiceLocalHandlers } from '../features/voice/main/voice-local.ipc';
@@ -916,16 +917,7 @@ const bootFlow = app.whenReady().then(async () => {
 
     // Add Settings on Windows (before Close Window)
     if (!isMacOS) {
-      fileMenuItems.push({
-        label: m.menu_settings(),
-        accelerator: 'CmdOrCtrl+,',
-        click: () => {
-          const focusedWindow = BrowserWindow.getFocusedWindow();
-          if (focusedWindow && !focusedWindow.isDestroyed()) {
-            focusedWindow.webContents.send('navigate', '/settings');
-          }
-        },
-      });
+      fileMenuItems.push(createSettingsMenuItem(m.menu_settings()));
       fileMenuItems.push({ type: 'separator' });
     }
 
@@ -1352,16 +1344,7 @@ const bootFlow = app.whenReady().then(async () => {
             },
           },
           { type: 'separator' },
-          {
-            label: m.menu_settings(),
-            accelerator: 'CmdOrCtrl+,',
-            click: () => {
-              const focusedWindow = BrowserWindow.getFocusedWindow();
-              if (focusedWindow && !focusedWindow.isDestroyed()) {
-                focusedWindow.webContents.send('navigate', '/settings');
-              }
-            },
-          },
+          createSettingsMenuItem(m.menu_settings()),
           {
             label: m.menu_install_cli(),
             click: async () => {

@@ -108,6 +108,11 @@
     align="start"
     ariaLabel={m.dock_machines_label()}
     class="dock-machine-menu-content min-w-56 max-w-80 shadow-none animate-none! transition-none!"
+    onInteractOutside={(event) => {
+      // The visible logo owns the toggle. Let its click close the menu once,
+      // rather than closing on pointer-up and reopening on the following click.
+      if (event.target instanceof Node && anchor.contains(event.target)) event.preventDefault();
+    }}
     onAction={(id) => {
       if (!pending && id !== currentId) onSwitch(id);
     }}
