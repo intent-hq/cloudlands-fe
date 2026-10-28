@@ -8,18 +8,23 @@ import {
   selectProviderModelsRequests,
 } from '$store/renderer/slices/provider-models/provider-models-selectors';
 import { providerModelsRequested } from '$store/renderer/slices/provider-models/provider-models-slice';
+import { setLoadingStateForProvider } from '$store/renderer/slices/model/model-slice';
 import { getModelsForProviderForLoadingState } from '$store/renderer/slices/model/model-utils';
 import { preview } from './model-picker.preview';
 
 vi.mock('./ModelPickerPreview.svelte', () => ({ default: vi.fn() }));
 
 let storeContext: ReduxStoreContext | undefined;
+let activeCleanup: (() => void) | undefined;
 
 beforeEach(() => {
   storeContext = initAppStore(store);
 });
 
 afterEach(() => {
+  // Tear down even when an assertion failed, so mock IPC overrides never leak.
+  activeCleanup?.();
+  activeCleanup = undefined;
   storeContext?.dispose();
   storeContext = undefined;
 });
@@ -27,7 +32,9 @@ afterEach(() => {
 type StateName = keyof typeof preview.states;
 
 function setup(name: StateName) {
-  return preview.states[name].setup?.() || undefined;
+  const cleanup = preview.states[name].setup?.() || undefined;
+  activeCleanup = cleanup;
+  return cleanup;
 }
 
 // Only the provider-models saga records request status, so a settled request
@@ -121,5 +128,17 @@ describe('model picker profile preview states', () => {
     cleanup?.();
     for (const ref of refs)
       expect(selectProviderModelsCacheMap.select(store.state)[ref]).toBeUndefined();
+  });
+
+  it('resets loading states the saga recorded for profiles on teardown', async () => {
+    const ref = 'codex@pwork00000001';
+    const cleanup = setup('profiles-open');
+    await settled('codex', 'claude-code', ref);
+    store.dispatch(
+      setLoadingStateForProvider({ providerId: ref, status: 'success', warning: 'leftover' }),
+    );
+    cleanup?.();
+    expect(selectAllProviderWarnings.select(store.state)[ref]).toBeUndefined();
+    expect(Object.keys(selectProviderModelsRequests.select(store.state))).toEqual([]);
   });
 });

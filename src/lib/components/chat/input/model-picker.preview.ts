@@ -141,7 +141,10 @@ function setupModels(
         appStore.dispatch(setModelPickerGroupCollapsed(group, true));
       restoreProviders();
       appStore.dispatch(hydrateDefaultProvider(previousDefault));
-      for (const providerId of ['codex', 'claude-code']) {
+      // The saga records a loading state for every provider and profile it
+      // loaded; put back the previous ones and reset any it added.
+      const loaded = Object.keys(selectLoadingStates.select(appStore.state));
+      for (const providerId of new Set(['codex', 'claude-code', ...loaded])) {
         appStore.dispatch(
           setLoadingStateForProvider({
             providerId,
