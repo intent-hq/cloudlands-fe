@@ -5,17 +5,25 @@ import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
 import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
 import type { ProviderModelInfo } from '$shared/models/wire-model-info';
 
+type ModelCatalogResponse = { data: ProviderModelInfo[]; warning?: string };
+
+/**
+ * Serves `<provider>:get-models`. `first`, when given, answers only the first
+ * call — e.g. a degraded catalog that Retry then replaces with `rows`.
+ */
 export function setupModelPickerPreviewHandler(
   providerId: string,
   rows: ProviderModelInfo[],
   warning?: string,
+  first?: ModelCatalogResponse,
 ) {
   const channel = `${providerId}:get-models`;
-  return overrideMockIpcHandler(channel, () => ({
-    success: true,
-    data: rows,
-    ...(warning ? { warning } : {}),
-  }));
+  let pending = first;
+  return overrideMockIpcHandler(channel, () => {
+    const { data, warning: served } = pending ?? { data: rows, warning };
+    pending = undefined;
+    return { success: true, data, ...(served ? { warning: served } : {}) };
+  });
 }
 
 export function setupProviderSelectorPreviewHandlers(availability: ProviderAvailabilityResult) {
