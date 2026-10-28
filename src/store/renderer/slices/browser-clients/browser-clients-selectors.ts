@@ -59,7 +59,7 @@ export const selectWorkspaceBrowserSelectionKnown = store.createSelector(
 );
 
 /**
- * Display name for the sidebar indicator: the hello host triple when the
+ * Display name for the primary-client menu: the hello host triple when the
  * client sent one, else its hello `name`; the view model falls back to a
  * shortened id when both are absent.
  */
@@ -69,7 +69,7 @@ function liveClientSummary(client: LiveClient): BrowserClientSummary {
 }
 
 /**
- * Inputs for the workspace "driving client" indicator (REV-2): the connected
+ * Inputs for the workspace primary-client menu (REV-2): the connected
  * clients advertising `capabilities.browserExec`, this connection's own id,
  * and the daemon-resolved driving client. `driving` mirrors the daemon's
  * answer — the `resolved` client when one resolves, the pin marked offline
@@ -103,6 +103,17 @@ export const selectWorkspaceDrivingClient = store.createSelector(
             ? browserClient.clientId
             : null,
     };
+  },
+);
+
+/** This app is listed for the workspace but cannot host agent browser tabs. */
+export const selectOwnClientLacksBrowserExec = store.createSelector(
+  (state, wsId: string): boolean => {
+    const slice = state?.browserClients ?? initialState;
+    if (!slice.ownClientId || !slice.ownClientIdConfirmed) return false;
+    const clients = slice.byWorkspaceId[wsId]?.liveClients ?? createLiveClientCollection();
+    const own = getItem(clients, slice.ownClientId);
+    return own !== undefined && own.capabilities.browserExec !== true;
   },
 );
 

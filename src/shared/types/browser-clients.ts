@@ -13,7 +13,7 @@ type ClientCapabilities = Record<string, unknown> & { browserExec?: boolean };
 /**
  * One connected logical client (`client.list` row). `hostname` /
  * `prettyHostname` / `deviceKind` are the hello host triple, present only
- * when the client sent them; the sidebar indicator displays
+ * when the client sent them; the primary-client menu displays
  * `prettyHostname ?? hostname ?? name`.
  */
 export interface LiveClient {

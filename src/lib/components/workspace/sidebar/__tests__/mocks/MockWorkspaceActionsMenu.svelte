@@ -8,6 +8,10 @@
     onClick: () => void;
     disabled?: boolean;
     checked?: boolean;
+    detail?: string;
+    detailTone?: 'danger';
+    disabledReason?: string;
+    submenu?: Action[];
   }
 
   let {
@@ -28,14 +32,14 @@
   } = $props();
 </script>
 
-{#each additionalActions as action (action.label)}
-  {#if action.dividerBefore}
-    <div data-testid="menu-divider"></div>
-  {/if}
+{#snippet item(action: Action)}
   <button
     type="button"
-    disabled={action.disabled}
+    disabled={action.disabled || action.disabledReason !== undefined}
     data-checked={action.checked}
+    data-disabled-reason={action.disabledReason}
+    data-detail={action.detail}
+    data-detail-tone={action.detailTone}
     data-icon-name={action.icon?.iconName ?? ''}
     onclick={() => {
       action.onClick();
@@ -44,6 +48,20 @@
   >
     {action.label}
   </button>
+{/snippet}
+
+{#each additionalActions as action (action.label)}
+  {#if action.dividerBefore}
+    <div data-testid="menu-divider"></div>
+  {/if}
+  {@render item(action)}
+  {#if action.submenu}
+    <div role="group" aria-label={action.label}>
+      {#each action.submenu as child (child.label)}
+        {@render item(child)}
+      {/each}
+    </div>
+  {/if}
 {/each}
 
 {#if showArchiveOption}

@@ -172,10 +172,23 @@ async function mount() {
   await waitFor(() =>
     expect(store.state.browserClients.byWorkspaceId['ws-1']?.browserClient).toEqual(resolution),
   );
-  await fireEvent.click(view.container.querySelector('[data-workspace-actions-trigger]')!);
+  await openPrimaryMenu(view.container);
   return view;
 }
-const primary = () => screen.getByText('Set primary client');
+/** Open the card menu and its primary-client submenu. */
+async function openPrimaryMenu(container: HTMLElement) {
+  await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+  await fireEvent.click(
+    await waitFor(() => document.querySelector<HTMLElement>('[data-action-id="primary-client"]')!),
+  );
+  await waitFor(() => primary());
+}
+// jsdom has no layout, so the positioned submenu reads as hidden to role queries.
+const primary = () => {
+  const item = document.querySelector<HTMLElement>('[data-action-id="primary-client-this-app"]');
+  if (!item) throw new Error('The primary-client submenu is not open');
+  return item;
+};
 const writes = () =>
   wire.request.mock.calls.filter(([method]) => method === 'workspace.setBrowserClient');
 async function reconnect(reverse = false) {
@@ -277,7 +290,7 @@ describe('actual browser lifecycle to primary menu', () => {
       await fireEvent.click(primary());
       await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
       expect(writes()).toEqual([]);
-      await fireEvent.click(view.container.querySelector('[data-workspace-actions-trigger]')!);
+      await openPrimaryMenu(view.container);
       await fireEvent.click(primary());
       await fireEvent.click(screen.getByRole('button', { name: 'Set as Primary' }));
       await waitFor(() =>
@@ -349,7 +362,7 @@ describe('actual browser lifecycle to primary menu', () => {
     write.resolve({
       browserClient: { source: 'workspace', clientId: own, resolved: { clientId: own } },
     });
-    await fireEvent.click(view.container.querySelector('[data-workspace-actions-trigger]')!);
+    await openPrimaryMenu(view.container);
     await waitFor(() => {
       expect(primary().closest('[role^="menuitem"]')?.getAttribute('aria-checked')).toBe('false');
       expect(primary().closest('[role^="menuitem"]')?.hasAttribute('data-disabled')).toBe(false);
@@ -397,7 +410,7 @@ describe('actual browser lifecycle to primary menu', () => {
     release({ clientId: own, server: { capabilities: { hostMembership: 1 } } });
     subscribe({ subscriptionId: 'first-subscription' });
     await capabilities();
-    await fireEvent.click(view.container.querySelector('[data-workspace-actions-trigger]')!);
+    await openPrimaryMenu(view.container);
     await waitFor(() =>
       expect(primary().closest('[role^="menuitem"]')?.hasAttribute('data-disabled')).toBe(false),
     );
@@ -436,7 +449,7 @@ describe('actual browser lifecycle to primary menu', () => {
     const remounted = render(WorkspaceProgressCard, { workspaceId: workspace.id });
     await waitFor(() => expect(store.state.principal.status).toBe('ready'), principalRetryWait);
     await capabilities();
-    await fireEvent.click(remounted.container.querySelector('[data-workspace-actions-trigger]')!);
+    await openPrimaryMenu(remounted.container);
     await waitFor(() =>
       expect(primary().closest('[role^="menuitem"]')?.hasAttribute('data-disabled')).toBe(false),
     );
@@ -463,7 +476,7 @@ describe('actual browser lifecycle to primary menu', () => {
       await fireEvent.click(primary());
       await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
       expect(writes()).toEqual([]);
-      await fireEvent.click(view.container.querySelector('[data-workspace-actions-trigger]')!);
+      await openPrimaryMenu(view.container);
       await fireEvent.click(primary());
       await fireEvent.click(screen.getByRole('button', { name: 'Set as Primary' }));
       await waitFor(() =>
