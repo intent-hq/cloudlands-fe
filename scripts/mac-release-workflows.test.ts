@@ -1,4 +1,4 @@
-// @verify-changed-triggers: .github/workflows/release-alpha.yml, .github/workflows/manual-signed-build.yml, scripts/run-until-notarizing.mjs, .github/workflows/promote-beta.yml, .github/workflows/release-stable.yml, scripts/assemble-release-assets.mjs, scripts/verify-macos-build.sh, scripts/apple-ticket-retry.mjs, scripts/mac-update-feed.mjs, scripts/run-packaged-macos-smoke.py, scripts/test_packaged_macos_smoke.py, src/features/auto-update/main/mac-update-compatibility.ts
+// @verify-changed-triggers: .github/workflows/release-alpha.yml, scripts/test-fixtures/release-oldest-tag.json, .github/workflows/manual-signed-build.yml, scripts/run-until-notarizing.mjs, .github/workflows/promote-beta.yml, .github/workflows/release-stable.yml, scripts/assemble-release-assets.mjs, scripts/verify-macos-build.sh, scripts/apple-ticket-retry.mjs, scripts/mac-update-feed.mjs, scripts/run-packaged-macos-smoke.py, scripts/test_packaged_macos_smoke.py, src/features/auto-update/main/mac-update-compatibility.ts
 // @vitest-environment node
 
 import { spawnSync } from 'node:child_process';
@@ -19,7 +19,7 @@ import {
 import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, posix, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 const updaterRequire = createRequire(createRequire(import.meta.url).resolve('electron-updater'));
@@ -332,7 +332,8 @@ describe.each(['release-alpha', 'manual-signed-build'])('%s native Mac jobs', (n
       // before the wrapper existed has no wrapper, and its notarize.js never writes
       // the marker, so the workflow-ref wrapper must not be substituted either.
       const dir = temp();
-      rmSync(join(dir, 'scripts', 'run-until-notarizing.mjs'));
+      legacyCheckout(dir);
+      expect(existsSync(join(dir, 'scripts', 'run-until-notarizing.mjs'))).toBe(false);
       stub(
         dir,
         'pnpm',
@@ -945,13 +946,27 @@ it('rebuilds a historical ARM-only tag while using current publication dependenc
   ).toBe(true);
 });
 
+// What the oldest tag release-alpha still rebuilds actually contains, so legacy
+// fixtures and the call check below follow the tag rather than today's scripts.
+interface TagSnapshot {
+  tag: string;
+  commit: string;
+  files: string[];
+  packageScripts: string[];
+}
+const oldestTag: TagSnapshot = JSON.parse(
+  readFileSync('scripts/test-fixtures/release-oldest-tag.json', 'utf8'),
+);
 const nativeReleaseTools = [
-  'package-mac.mjs',
-  'verify-macos-build.sh',
-  'assemble-release-assets.mjs',
+  'scripts/package-mac.mjs',
+  'scripts/verify-macos-build.sh',
+  'scripts/assemble-release-assets.mjs',
 ];
+// Turn a temp() checkout into the oldest tag's: drop every copied script that tag lacks.
 function legacyCheckout(dir: string) {
-  for (const file of nativeReleaseTools) rmSync(join(dir, 'scripts', file));
+  for (const file of readdirSync(join(dir, 'scripts'))) {
+    if (!oldestTag.files.includes(`scripts/${file}`)) rmSync(join(dir, 'scripts', file));
+  }
 }
 function releasePlan(dir: string) {
   const output = join(dir, 'release-plan');
@@ -1084,7 +1099,7 @@ describe('release tag capability routing', () => {
   );
   it.each(nativeReleaseTools)('fails closed when modern tag is missing %s', (missing) => {
     const dir = temp();
-    rmSync(join(dir, 'scripts', missing));
+    rmSync(join(dir, missing));
     expect(() => releasePlan(dir)).toThrow('Incomplete native Mac release tooling');
   });
 });
@@ -1493,4 +1508,301 @@ it('rejects a resolved daemon identity different from the selected immutable ref
     }).status,
   ).not.toBe(0);
   expect(existsSync(join(dir, 'extracted'))).toBe(false);
+});
+
+// release-alpha rebuilds old tags with the workflow from the dispatch ref but the
+// scripts from the tag. A step that calls a script newer than the tag passes the
+// current-tree fixtures and fails only on a real rebuild (cloudlands-fe#3780).
+const PNPM_BUILTINS = new Set(['install', 'i', 'add', 'exec', 'dlx', 'store', 'rebuild']);
+const LEGACY_SKIPPED_CONDITION = "needs.resolve.outputs.native_macos == 'true'";
+interface TagCall {
+  job: string;
+  step: string;
+  target: string;
+  kind: 'file' | 'package-script';
+}
+interface RunDefaults {
+  defaults?: { run?: { 'working-directory'?: string } };
+}
+type TagStep = Step & { 'working-directory'?: string };
+const SCRIPT_REF = /(?<![\w./-])(?:\.\/)?scripts\/[\w./-]*[\w-]/g;
+const normalizeRef = (ref: string) => posix.normalize(ref.replace(/"/g, ''));
+// True only for the exact native-only condition the oldest (legacy) tag skips;
+// any other condition may run on that tag, so its calls are still checked.
+function skippedOnLegacyTag(condition: string | undefined) {
+  if (!condition) return false;
+  return condition.replace(/^\$\{\{\s*|\s*\}\}$/g, '').trim() === LEGACY_SKIPPED_CONDITION;
+}
+// Script paths a run calls without a presence guard that protects that call.
+// Deliberately strict: only these shapes count, and anything else is reported.
+// - inside the file-present branch of a bare `if [ -f X ]` / `if [ ! -f X ]`
+//   (the whole condition, nothing chained onto it);
+// - after such a block whose file-missing branch itself runs `exec` or `exit`,
+//   within the same enclosing branch (an outer `if` may skip the guard);
+// - as an element of an array only probed by `for V in "${A[@]}" ... -f "$V"`,
+//   which tests the files rather than calling them.
+function unguardedRefs(run: string) {
+  let text = run
+    .split('\n')
+    .filter((line) => !/^\s*#/.test(line))
+    .join('\n');
+  for (const [, variable, array] of text.matchAll(/\bfor (\w+) in "\$\{(\w+)\[@\]\}"/g)) {
+    // Probe-only: the array feeds just this loop (no other `$A`/`${A...}` read;
+    // `${#A[@]}` counts are harmless), and the loop variable appears
+    // only as the operand of a `-f`/`-e` test, so no element is ever executed.
+    const arrayUses = text.match(new RegExp(`\\$\\{?${array}\\b`, 'g'))?.length ?? 0;
+    const variableUses = text.match(new RegExp(`\\$\\{?${variable}\\b`, 'g'))?.length ?? 0;
+    const tests = text.match(new RegExp(`-[fe]\\s+"\\$\\{?${variable}\\}?"`, 'g'))?.length ?? 0;
+    if (arrayUses !== 1 || tests === 0 || variableUses !== tests) continue;
+    text = text.replace(new RegExp(`\\b${array}=\\([^)]*\\)`), `${array}=()`);
+  }
+  // One statement per line, so one-line `if ...; then ...; fi` scans like the block form.
+  const lines = text
+    .replace(/;\s*(then|else|elif|fi|do|done)\b/g, '\n$1')
+    .replace(/\b(then|else|do)\s+(?=\S)/g, '$1\n')
+    .replace(/^(\s*(?:fi|done))\s*(?:;|&&|\|\|)\s*/gm, '$1\n')
+    .split('\n');
+  const presence = /^\s*if\s+\[\s+(!\s+)?-[fe]\s+("?[\w./-]+"?)\s+\]\s*$/;
+  interface Frame {
+    target?: string;
+    present: boolean;
+    missingTerminates: boolean;
+    // Files proven present by a closed terminating guard within this branch only.
+    facts: Set<string>;
+  }
+  const frames: Frame[] = [];
+  const rootFacts = new Set<string>();
+  const facts = () => (frames.length ? frames[frames.length - 1].facts : rootFacts);
+  const refs: string[] = [];
+  for (const line of lines) {
+    const opened = presence.exec(line);
+    if (opened) {
+      frames.push({
+        target: normalizeRef(opened[2]),
+        present: !opened[1],
+        missingTerminates: false,
+        facts: new Set(),
+      });
+      continue;
+    }
+    const top = frames[frames.length - 1];
+    if (/^\s*if\b/.test(line)) {
+      frames.push({ present: false, missingTerminates: false, facts: new Set() });
+    } else if (/^\s*(?:else|elif)\b/.test(line) && top) {
+      // elif makes the file-missing path conditional, so it never terminates for sure.
+      if (/^\s*elif\b/.test(line)) top.target = undefined;
+      top.present = !top.present;
+      top.facts.clear();
+    } else if (/^\s*fi\b/.test(line)) {
+      const frame = frames.pop();
+      if (frame?.target && frame.missingTerminates) facts().add(frame.target);
+      continue;
+    }
+    if (top && !top.present && /^\s*(?:exec|exit)\b/.test(line)) top.missingTerminates = true;
+    for (const [ref] of line.matchAll(SCRIPT_REF)) {
+      const target = normalizeRef(ref);
+      const guarded =
+        rootFacts.has(target) ||
+        frames.some((frame) => frame.facts.has(target)) ||
+        frames.some((frame) => frame.present && frame.target === target);
+      if (!guarded) refs.push(target);
+    }
+  }
+  return refs;
+}
+// Calls into the tag checkout that the oldest tag cannot satisfy and nothing guards.
+function unguardedTagCalls(wf: Workflow & RunDefaults, snapshot: TagSnapshot): TagCall[] {
+  const calls: TagCall[] = [];
+  for (const [job, definition] of Object.entries(wf.jobs)) {
+    const { steps = [] } = definition;
+    if (skippedOnLegacyTag(definition.if)) continue;
+    const isCheckout = (s: Step) => s.uses?.startsWith('actions/checkout@') === true;
+    const checkout = steps.findIndex(
+      (s) =>
+        isCheckout(s) &&
+        String(s.with?.ref ?? '').startsWith('refs/tags/') &&
+        posix.normalize(String(s.with?.path ?? '.')) === '.',
+    );
+    if (checkout < 0) continue;
+    // Other checkouts (e.g. .release-tools) hold current tooling, not the tag.
+    const otherRoots = steps
+      .filter((s) => isCheckout(s) && s.with?.path)
+      .map((s) => posix.normalize(String(s.with!.path)))
+      .filter((root) => root !== '.');
+    const jobCwd = (definition as Job & RunDefaults).defaults?.run?.['working-directory'];
+    for (const s of steps.slice(checkout + 1) as TagStep[]) {
+      if (!s.run || skippedOnLegacyTag(s.if)) continue;
+      const cwd = posix.normalize(
+        s['working-directory'] ?? jobCwd ?? wf.defaults?.run?.['working-directory'] ?? '.',
+      );
+      if (otherRoots.some((root) => cwd === root || cwd.startsWith(`${root}/`))) continue;
+      for (const ref of unguardedRefs(s.run)) {
+        const target = posix.join(cwd, ref);
+        if (!snapshot.files.includes(target))
+          calls.push({ job, step: s.name, target, kind: 'file' });
+      }
+      const run = s.run
+        .split('\n')
+        .filter((line) => !/^\s*#/.test(line))
+        .join('\n');
+      for (const [, name] of run.matchAll(/\bpnpm\s+(?:run\s+)?([\w:-]+)/g)) {
+        if (PNPM_BUILTINS.has(name)) continue;
+        // A non-root cwd reads another package.json the snapshot does not cover.
+        if (cwd === '.' && snapshot.packageScripts.includes(name)) continue;
+        const target = cwd === '.' ? name : `${cwd}:${name}`;
+        calls.push({ job, step: s.name, target, kind: 'package-script' });
+      }
+    }
+  }
+  const seen = new Set<string>();
+  return calls.filter((c) => {
+    const key = `${c.job}/${c.step}/${c.kind}/${c.target}`;
+    return !seen.has(key) && seen.add(key);
+  });
+}
+
+describe('release tag checkout compatibility with the oldest rebuildable tag', () => {
+  it('routes the oldest tag down the legacy (non-native) Mac path', () => {
+    for (const tool of nativeReleaseTools) expect(oldestTag.files).not.toContain(tool);
+    const dir = temp();
+    legacyCheckout(dir);
+    expect(releasePlan(dir).native_macos).toBe('false');
+  });
+
+  it(`calls only scripts ${oldestTag.tag} has, or guards them with a presence check`, () => {
+    const calls = unguardedTagCalls(workflow('release-alpha'), oldestTag);
+    expect(
+      calls,
+      `These release-alpha steps run in the tag checkout but call scripts that ${oldestTag.tag} ` +
+        'lacks. Guard each with `if [ -f scripts/<file> ]` (and keep the old behaviour in the ' +
+        'fallback), or run it from .release-tools.',
+    ).toEqual([]);
+  });
+
+  it('flags unguarded or wrongly guarded calls and accepts protected or skipped ones', () => {
+    const wf = (steps: Step[], defaults?: string): Workflow =>
+      ({
+        jobs: {
+          build: {
+            ...(defaults ? { defaults: { run: { 'working-directory': defaults } } } : {}),
+            steps: [
+              { name: 'Checkout', uses: 'actions/checkout@v7', with: { ref: 'refs/tags/v1' } },
+              { name: 'Tools', uses: 'actions/checkout@v7', with: { path: './.release-tools' } },
+              ...steps,
+            ],
+          },
+        },
+      }) as unknown as Workflow;
+    const snapshot: TagSnapshot = {
+      tag: 'v1',
+      commit: '',
+      files: ['scripts/old.mjs'],
+      packageScripts: ['build'],
+    };
+    const flagged = (steps: Step[], defaults?: string) =>
+      unguardedTagCalls(wf(steps, defaults), snapshot).map((c) => `${c.step}:${c.target}`);
+    expect(
+      flagged([
+        { name: 'New', run: 'node scripts/new.mjs\n# node scripts/commented.mjs\npnpm run fresh' },
+        { name: 'Old', run: 'node ./scripts/old.mjs && pnpm run build && pnpm install' },
+        // A presence test only guards the call it protects.
+        {
+          name: 'Unrelated',
+          run: 'if [ -f scripts/new.mjs ]; then echo ok; fi; node scripts/new.mjs',
+        },
+        { name: 'Else', run: 'if [ -f scripts/new.mjs ]; then :; else node scripts/new.mjs; fi' },
+        {
+          name: 'Falls',
+          run: 'if [ ! -f scripts/new.mjs ]; then echo no; fi\nnode scripts/new.mjs',
+        },
+        { name: 'Dot', 'working-directory': './', run: 'node scripts/new.mjs' } as Step,
+        { name: 'Inline', run: '[ -f scripts/new.mjs ] && echo ok; node scripts/new.mjs' },
+        {
+          name: 'Nested',
+          run: 'if [ "$C" = y ]; then\n  if [ ! -f scripts/new.mjs ]; then\n    exit 1\n  fi\nfi\nnode scripts/new.mjs',
+        },
+        {
+          name: 'ProbeRuns',
+          run: 'T=(scripts/new.mjs)\nfor X in "${T[@]}"; do\n  if [ -f "$X" ]; then\n    echo ok\n  fi\n  node "$X"\ndone',
+        },
+        {
+          name: 'ArrayRuns',
+          run: 'T=(scripts/new.mjs)\nfor X in "${T[@]}"; do\n  [ -f "$X" ] && n=1\ndone\nnode "$T"',
+        },
+        {
+          name: 'Chained',
+          run: 'if [ -f scripts/new.mjs ] || true; then node scripts/new.mjs; fi',
+        },
+        {
+          name: 'Branches',
+          run: 'if [ -f scripts/new.mjs ]; then\n  exec node scripts/new.mjs\nelse\n  echo missing\nfi\nnode scripts/new.mjs',
+        },
+        {
+          name: 'Either',
+          if: "needs.resolve.outputs.native_macos == 'true' || needs.resolve.outputs.native_macos == 'false'",
+          run: 'bash scripts/native.sh',
+        },
+      ]),
+    ).toEqual([
+      'New:scripts/new.mjs',
+      'New:fresh',
+      'Unrelated:scripts/new.mjs',
+      'Else:scripts/new.mjs',
+      'Falls:scripts/new.mjs',
+      'Dot:scripts/new.mjs',
+      'Inline:scripts/new.mjs',
+      'Nested:scripts/new.mjs',
+      'ProbeRuns:scripts/new.mjs',
+      'ArrayRuns:scripts/new.mjs',
+      'Chained:scripts/new.mjs',
+      'Branches:scripts/new.mjs',
+      'Either:scripts/native.sh',
+    ]);
+    expect(flagged([{ name: 'Sub', run: 'node scripts/old.mjs' }], 'src')).toEqual([
+      'Sub:src/scripts/old.mjs',
+    ]);
+    expect(
+      flagged([
+        {
+          name: 'Fallback',
+          run: 'if [ ! -f scripts/new.mjs ]; then exec pnpm run build; fi\nexec node scripts/new.mjs',
+        },
+        { name: 'Then', run: 'if [ -f scripts/new.mjs ]; then\n  node scripts/new.mjs\nfi' },
+        {
+          name: 'ElseExits',
+          run: 'if [ -f scripts/new.mjs ]; then\n  echo ok\nelse\n  exit 1\nfi\nnode scripts/new.mjs',
+        },
+        {
+          name: 'Probe',
+          run: 'T=(scripts/a.mjs scripts/b.sh)\nfor X in "${T[@]}"; do [ -f "$X" ] && n=1; done',
+        },
+        {
+          name: 'Native',
+          if: "${{ needs.resolve.outputs.native_macos == 'true' }}",
+          run: 'bash scripts/native.sh',
+        },
+        {
+          name: 'Tools',
+          'working-directory': '.release-tools/',
+          run: 'node scripts/x.mjs',
+        } as Step,
+      ]),
+    ).toEqual([]);
+  });
+
+  // Keeps the committed snapshot honest wherever the tag is fetchable (full clones).
+  const tagCommit = spawnSync('git', ['rev-parse', '-q', '--verify', `${oldestTag.tag}^{commit}`], {
+    encoding: 'utf8',
+  });
+  it.runIf(tagCommit.status === 0)(`snapshot matches the ${oldestTag.tag} tree`, () => {
+    expect(tagCommit.stdout.trim()).toBe(oldestTag.commit);
+    const git = (...args: string[]) =>
+      spawnSync('git', args, { encoding: 'utf8', maxBuffer: 1 << 26 }).stdout;
+    expect(oldestTag.files).toEqual(
+      git('ls-tree', '-r', '--name-only', oldestTag.commit, 'scripts/').trim().split('\n').sort(),
+    );
+    expect(oldestTag.packageScripts).toEqual(
+      Object.keys(JSON.parse(git('show', `${oldestTag.commit}:package.json`)).scripts).sort(),
+    );
+  });
 });
