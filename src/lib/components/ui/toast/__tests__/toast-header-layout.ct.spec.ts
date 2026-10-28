@@ -64,7 +64,7 @@ for (const { status, width } of contracts) {
     }
     if (status === 'downloaded' || status === 'available' || status === 'standard') {
       const action = toast.getByRole('button', {
-        name: status === 'downloaded' ? 'Install' : status === 'available' ? 'Download' : 'Review',
+        name: status === 'downloaded' ? 'Restart' : status === 'available' ? 'Download' : 'Review',
         exact: true,
       });
       await action.focus();

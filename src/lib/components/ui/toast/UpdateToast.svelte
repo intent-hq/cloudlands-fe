@@ -5,13 +5,12 @@
    * Shows different states:
    * - Checking: Spinner with "Checking for updates..."
    * - Downloading: Progress bar with download percentage
-   * - Downloaded: Install button with version info
+   * - Downloaded: Restart button that installs the update
    * - Up to date: Success message (brief)
    */
 
   import { untrack } from 'svelte';
   import { crispOut, springIn } from '$lib/motion';
-  import ArrowsClockwiseIcon from 'phosphor-svelte/lib/ArrowsClockwiseIcon';
   import { readable } from 'svelte/store';
 
   import {
@@ -198,8 +197,7 @@
       </div>
       <div class="title" data-toast-title>{m.ui_updateToast_updateReady_label()}</div>
       <Button variant="primary" size="compact" class="toast-action" onclick={handleInstall}>
-        <ArrowsClockwiseIcon size={16} weight="regular" aria-hidden="true" />
-        {m.ui_updateToast_install_label()}
+        {m.ui_updateToast_restart_label()}
       </Button>
       <ToastCloseButton
         inline
@@ -208,7 +206,7 @@
       />
     </div>
     <div class="description" data-toast-description>
-      {m.ui_updateToast_readyToInstall_description({ version: updateInfo?.version ?? '' })}
+      {m.ui_updateToast_installOnRestart_description({ version: updateInfo?.version ?? '' })}
     </div>
   {:else if status === 'not-available'}
     <div class="toast-row">

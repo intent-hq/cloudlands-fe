@@ -546,7 +546,7 @@
           class="type-body cursor-pointer border-none bg-transparent p-0 font-medium text-primary-ink underline hover:text-primary-ink/80"
           onclick={() => appStore.dispatch(installUpdate())}
         >
-          {m.settings_footer_updateAvailable()}
+          {m.settings_footer_restartToUpdate_label()}
         </Button>
       {:else if $autoUpdateStatus$ === 'not-available' || $autoUpdateStatus$ === 'idle'}
         <span>{m.settings_footer_upToDate()}</span>

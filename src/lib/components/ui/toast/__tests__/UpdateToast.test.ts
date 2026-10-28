@@ -28,7 +28,7 @@ describe('UpdateToast actions', () => {
   });
 
   it.each([
-    ['downloaded', 'Install', 'autoUpdate/installUpdate'],
+    ['downloaded', 'Restart', 'autoUpdate/installUpdate'],
     ['available', 'Download', 'autoUpdate/downloadUpdate'],
   ])('dispatches the production %s action', async (status, label, type) => {
     mocks.status = status;
@@ -46,7 +46,7 @@ describe('UpdateToast actions', () => {
       });
       await fireEvent.click(
         screen.getByRole('button', {
-          name: status === 'downloaded' ? 'Install' : 'Download',
+          name: status === 'downloaded' ? 'Restart' : 'Download',
           exact: true,
         }),
       );
@@ -61,7 +61,7 @@ describe('UpdateToast actions', () => {
       render(UpdateToast, { props: { previewState: { status } } });
       await fireEvent.click(
         screen.getByRole('button', {
-          name: status === 'downloaded' ? 'Install' : 'Download',
+          name: status === 'downloaded' ? 'Restart' : 'Download',
           exact: true,
         }),
       );
