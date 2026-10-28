@@ -9,6 +9,7 @@ import { setupModelPickerPreviewHandler } from '../../../../test/catalog-preview
 import {
   providerModelsLoaded,
   providerModelsCacheCleared,
+  providerModelsRequested,
 } from '$store/renderer/slices/provider-models/provider-models-slice';
 import {
   selectProviderModelsCacheMap,
@@ -98,34 +99,29 @@ function setupModels(
     appStore.dispatch(hydrateDefaultProvider('codex'));
     for (const group of previousCollapsed)
       appStore.dispatch(setModelPickerGroupCollapsed(group, false));
-    const epoch = selectProviderModelsClearEpoch.select(appStore.state);
+    // Catalogs arrive only through the mocked `<provider>:get-models` channel
+    // and the app's provider-models saga, so the cache, loading state and
+    // warnings land exactly where the app puts them.
     const restoreModelHandlers: Array<() => void> = [];
     for (const providerId of ['codex', 'claude-code']) {
       const rows = populated
         ? models.map((model) => ({ ...model, value: `${providerId}-${model.value}` }))
         : [];
       const warning = providerId === 'codex' ? fallbackWarning : undefined;
-      restoreModelHandlers.push(setupModelPickerPreviewHandler(providerId, rows, warning));
-      appStore.dispatch(
-        providerModelsLoaded(
-          providerId,
-          degraded || (diagnostic && providerId === 'codex')
-            ? {
-                models: [],
-                warning: diagnostic ?? 'Temporary model catalog failure',
-              }
-            : { models: rows, ...(warning ? { warning } : {}) },
-          epoch,
-        ),
-      );
-      // Like the provider-models saga, record the warning on the loading state
-      // too: the picker's install notice reads it from there.
-      if (warning)
-        appStore.dispatch(setLoadingStateForProvider({ providerId, status: 'success', warning }));
+      // A degraded first answer (empty list + warning, as the daemon reports
+      // a failed probe); Retry then gets the real rows.
+      const failed =
+        degraded || (diagnostic && providerId === 'codex')
+          ? { data: [], warning: diagnostic ?? 'Temporary model catalog failure' }
+          : undefined;
+      restoreModelHandlers.push(setupModelPickerPreviewHandler(providerId, rows, warning, failed));
       if (providerId === 'codex')
         appStore.dispatch(setAvailableModels(degraded ? [] : rows, providerId));
     }
+    appStore.dispatch(providerModelsCacheCleared());
     const cancelCatalog = appStore.runSaga(modelReloadSaga);
+    for (const providerId of ['codex', 'claude-code'])
+      appStore.dispatch(providerModelsRequested(providerId, 'refresh'));
     let disposed = false;
     const cleanup = () => {
       if (disposed) return;
@@ -195,7 +191,6 @@ function setupProfiles(agent?: Record<string, unknown>, signedOut: string[] = []
         profiles: previewProfiles,
       }),
     );
-    const epoch = selectProviderModelsClearEpoch.select(appStore.state);
     const rowsFor = (providerId: string) => {
       const prefix = previewProfiles.find((p) => p.providerRef === providerId)?.id ?? providerId;
       return models.map((model) => ({ ...model, value: `${prefix}-${model.value}` }));
@@ -207,11 +202,8 @@ function setupProfiles(agent?: Record<string, unknown>, signedOut: string[] = []
         data: rowsFor((data as { providerRef?: string } | undefined)?.providerRef ?? base),
       })),
     );
-    for (const profile of previewProfiles) {
-      appStore.dispatch(
-        providerModelsLoaded(profile.providerRef, { models: rowsFor(profile.providerRef) }, epoch),
-      );
-    }
+    for (const profile of previewProfiles)
+      appStore.dispatch(providerModelsRequested(profile.providerRef, 'refresh'));
     for (const profileId of signedOut)
       appStore.dispatch(providerProfileSummaryStatusChanged(profileId, 'error'));
     if (agent) {
