@@ -221,8 +221,6 @@ describe('model catalog admission through the real store and models client', () 
     expect(screen.getByRole('button', { name: /Catalog-only model/ })).toBeTruthy();
     expect(store.state.model.defaultReasoningEffort).toBe('high');
     expect(request.mock.calls.every(([method]) => method === 'models.list')).toBe(true);
-    // Ordinary single-user owner operation remains available with Multiplayer off.
-    expect(store.state.userPreferences.labsMultiplayerEnabled).toBe(false);
   });
 
   it('waits for the admitted member host execution projection and never reads owner settings', async () => {

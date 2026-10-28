@@ -37,7 +37,7 @@ import {
   selectAcceptChangesState,
   selectStagedWorkingChanges,
 } from '$store/renderer/slices/changes/changes-selectors';
-import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { setNativeReviewEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { selectWorkspaceActionContext } from '$store/renderer/slices/workspace/workspace-selectors';
 import type { ComponentProps } from 'svelte';
 import PRSection from '$lib/components/workspace/sidebar/PRSection.svelte';
@@ -719,7 +719,7 @@ describe('original target and child completion boundaries', () => {
 // These controls wait for the real status worker before looking for the native entry.
 async function mountWithoutOrigin(options: SidebarFixtureOptions = {}, labs = true) {
   fixture = installSidebarNativeFixture({ ...options, withoutOrigin: true, baseRef: 'trunk' });
-  if (!labs) store.dispatch(setLabsMultiplayerEnabled(false));
+  if (!labs) store.dispatch(setNativeReviewEnabled(false));
   render((await import('$lib/components/patterns/confirm/ConfirmHost.svelte')).default);
   const mounted = render(
     (await import('$lib/components/workspace/sidebar/SidebarChangesPanel.svelte')).default,
@@ -864,7 +864,7 @@ describe('native entry after delivered false origin status', () => {
       if (change === 'admission') fixture.grant('guest-owner');
       if (change === 'workspace')
         await mounted.rerender({ workspaceId: 'another-original-workspace' });
-      if (change === 'mode') store.dispatch(setLabsMultiplayerEnabled(false));
+      if (change === 'mode') store.dispatch(setNativeReviewEnabled(false));
       await waitFor(() => expect(fixture.base.releases).toContain(original));
       await waitFor(() => expect(fixture.releases).toContain(fixture.captures[0].id));
       expect(selectNativeReviewForOwner.select(store.state, owner)).toBeNull();
@@ -1128,7 +1128,7 @@ describe('passive refusal admission and default isolation', () => {
       store.dispatch(
         setWorkspaceHasLoaded(true, store.state.connections.windowBackendId, 'old-admission'),
       );
-    if (state === 'labs-off') store.dispatch(setLabsMultiplayerEnabled(false));
+    if (state === 'labs-off') store.dispatch(setNativeReviewEnabled(false));
     await renderGuestSection({
       listOnly: state === 'list-only',
       nativeReview: state !== 'not-opted-in',

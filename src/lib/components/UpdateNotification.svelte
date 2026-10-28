@@ -6,7 +6,7 @@
    * - User manually checks for updates (via toastVisible)
    * - An update is available/downloading/downloaded
    *
-   * The toast shows progress during download and an install button when ready.
+   * The toast shows progress during download and a restart button when ready.
    */
 
   import { onMount } from 'svelte';

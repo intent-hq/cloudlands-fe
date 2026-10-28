@@ -43,7 +43,6 @@
   import {
     setLabsGitLabEnabled,
     setLabsRemoteAgentsEnabled,
-    setLabsMultiplayerEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
   import {
@@ -167,8 +166,6 @@
         !($isCollaborator$ && WORKSPACE_OWNER_ONLY_COMMAND_IDS.has(command.id)) &&
         !($hidesAgentLifecycleActions$ && command.id === 'new-agent') &&
         !(!$canCreate$ && command.id === 'new-workspace') &&
-        !($labsMultiplayerEnabled$ && command.id === 'enable-experimental-multiplayer') &&
-        !(!$labsMultiplayerEnabled$ && command.id === 'disable-experimental-multiplayer') &&
         !($labsGitLabEnabled$ && command.id === 'enable-experimental-gitlab') &&
         !(!$labsGitLabEnabled$ && command.id === 'disable-experimental-gitlab') &&
         !($labsRemoteAgentsEnabled$ && command.id === 'enable-experimental-remote-agents') &&
@@ -859,12 +856,6 @@
       case 'settings':
         appStore.dispatch(setShowCreateModal(false));
         navigateToSettings();
-        return true;
-      case 'enable-experimental-multiplayer':
-        appStore.dispatch(setLabsMultiplayerEnabled(true));
-        return true;
-      case 'disable-experimental-multiplayer':
-        appStore.dispatch(setLabsMultiplayerEnabled(false));
         return true;
       case 'enable-experimental-gitlab':
         appStore.dispatch(setLabsGitLabEnabled(true));

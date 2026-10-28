@@ -19,7 +19,7 @@ interface HomeWorkspaceActionsOptions {
   selectedId: () => string | null;
   pinnedIds: () => readonly string[];
   microConnected: () => boolean;
-  expandPinned: () => void;
+  expandGroup: (key: string) => void;
   consumerId: string;
   dismissalRequestId: () => string | undefined;
   onOpen: (id: string) => void;
@@ -60,7 +60,7 @@ export function createHomeWorkspaceActions(options: HomeWorkspaceActionsOptions)
     const source = options
       .root()
       ?.querySelector<HTMLElement>(`[data-home-workspace="${CSS.escape(workspaceId)}"]`);
-    const pinned = !store.state.sidebarNav.pinnedWorkspaceIds.includes(workspaceId);
+    const pinned = !options.pinnedIds().includes(workspaceId);
     pendingPin = {
       workspaceId,
       pinned,
@@ -68,7 +68,7 @@ export function createHomeWorkspaceActions(options: HomeWorkspaceActionsOptions)
       sourceMenu: document.activeElement?.closest<HTMLElement>('[role="menu"]') ?? null,
     };
     store.dispatch(togglePinWorkspace(workspaceId));
-    if (pinned) options.expandPinned();
+    if (pinned) options.expandGroup('pinned');
   }
   $effect(() => {
     const pending = pendingPin;
@@ -169,6 +169,8 @@ export function createHomeWorkspaceActions(options: HomeWorkspaceActionsOptions)
       microConnected: options.microConnected(),
       onOpen: options.onOpen,
       onClose: () => (contextMenu = null),
+      expandGroup: options.expandGroup,
+      getHomeElement: options.root,
       onPin: () => pinWorkspace(workspace.id),
     });
     if (snapshot.reasons.length && snapshot.principalContext)

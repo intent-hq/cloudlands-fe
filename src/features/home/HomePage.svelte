@@ -9,8 +9,13 @@
   import { goto } from '$app/navigation';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import SidebarOverflowMenu from '$lib/components/ui/sidebar-context-menu/SidebarOverflowMenu.svelte';
-  import { selectPinnedWorkspaceIds } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { selectAttentionDismissalResult } from '$store/renderer/slices/workspace-operations/workspace-operations-selectors';
+  import {
+    selectLabelsSupported,
+    selectPinnedWorkspaceIds,
+    selectWorkspaceLabelsInUse,
+  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
+  import { buildHomeListGroups } from './home-workspace-labels';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import {
     createHomeDoubleClickOpener,
@@ -104,18 +109,13 @@
   } = $props();
   const microConnected$ = microConnectedReadable();
   const pinnedIds$ = selectPinnedWorkspaceIds();
-  const dismissalResult$ = selectAttentionDismissalResult();
-  const dismissalConsumerId = $props.id();
-  const workspaceActions = createHomeWorkspaceActions({
-    root: () => homeElement,
-    selectedId: () => selectedId,
-    pinnedIds: () => $pinnedIds$,
-    microConnected: () => $microConnected$,
-    expandPinned: () => updateView({ expandedGroups: { ...$view$.expandedGroups, pinned: true } }),
-    consumerId: dismissalConsumerId,
-    dismissalRequestId: () => $dismissalResult$?.requestId,
-    onOpen: openWorkspace,
-  });
+  import { selectAttentionDismissalResult } from '$store/renderer/slices/workspace-operations/workspace-operations-selectors';
+  import {
+    selectLabelsSupported,
+    selectPinnedWorkspaceIds,
+    selectWorkspaceLabelsInUse,
+  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
+  import { buildHomeListGroups } from './home-workspace-labels';
   function openWorkspace(id: string) {
     workspaceActions.contextMenu = null;
     store.dispatch(openWorkspaceTab(id));
@@ -357,43 +357,25 @@
       collapsible: true,
     })),
   );
-  const listGroups: {
-    id: string;
-    label: string;
-    items: Workspace[];
-    expanded: boolean;
-    collapsible: boolean;
-  }[] = $derived.by(() => {
-    if ($view$.groupBy === 'none') return [];
-    const groups = (
-      $view$.groupBy === 'repository'
-        ? repositorySections
-        : $view$.groupBy === 'workspace-status'
-          ? statusGroups
-          : triageGroups
-    )
-      .map((group) => ({
-        ...group,
-        items: group.items.filter((workspace) => !$pinnedIds$.includes(workspace.id)),
-      }))
-      .filter((group) => group.items.length);
-    if ($view$.groupBy === 'status' && filter !== 'all') return [];
-    const items = filteredWorkspaces.filter((workspace) => $pinnedIds$.includes(workspace.id));
-    return items.length
-      ? [
-          {
-            id: 'pinned',
-            label: m.layout_activeCard_pinned_header(),
-            items,
-            expanded:
-              $view$.expandedGroups.pinned !== false ||
-              items.some((workspace) => workspace.id === selectedId),
-            collapsible: true,
-          },
-          ...groups,
-        ]
-      : groups;
-  });
+  const listGroups = $derived(
+    buildHomeListGroups({
+      groupBy: $view$.groupBy,
+      filter,
+      baseGroups:
+        $view$.groupBy === 'repository'
+          ? repositorySections
+          : $view$.groupBy === 'workspace-status'
+            ? statusGroups
+            : triageGroups,
+      workspaces: filteredWorkspaces,
+      pinnedIds: $pinnedIds$,
+      labels: $labelsInUse$,
+      labelsSupported: $labelsSupported$,
+      pinnedLabel: m.layout_activeCard_pinned_header(),
+      expandedGroups: $view$.expandedGroups,
+      selectedId,
+    }),
+  );
   const boardGroups = $derived(
     $view$.groupBy === 'repository'
       ? repositorySections

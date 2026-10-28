@@ -21,6 +21,13 @@ import {
   selectAgentEventSubscriptions,
   selectAgentSubscriptions,
 } from '../agent-subscription-ui/agent-subscription-ui-selectors';
+import { selectPrincipalSnapshot } from '../principal/principal-selectors';
+import {
+  selectWorkspaceById,
+  selectWorkspaceItems,
+  selectWorkspaceUpdateContext,
+} from '../workspace/workspace-selectors';
+import { collectCustomWorkspaceLabels, isPinnedWorkspaceLabel } from './workspace-labels';
 
 function getMessageTimestamp(message: AgentMessage | undefined): number {
   const value = message?.timestamp;
@@ -92,9 +99,56 @@ export const selectShowCreateModal = store.createSelector(
   (state) => state.sidebarNav.showCreateModal,
 );
 
-export const selectPinnedWorkspaceIds = store.createSelector(
+/**
+ * Whether the connected daemon supports workspace labels (exact-integer
+ * `workspaceLabels: 1` capability, PROTOCOL §5.1). Older daemons keep the
+ * local-only pins and the UI hides the Label submenu.
+ */
+export const selectLabelsSupported = store.createSelector(
+  (state): boolean => selectPrincipalSnapshot.select(state)?.capabilities.workspaceLabels === 1,
+);
+
+/** The label of one workspace, or `null` when it has none. */
+export const selectWorkspaceLabel = store.createSelector<[workspaceId: string], string | null>(
+  (state, workspaceId) => selectWorkspaceById.select(state, workspaceId)?.label ?? null,
+);
+
+/**
+ * Distinct custom labels held by any workspace in the store (archived
+ * included), A–Z. Derived from the workspaces themselves, so a label
+ * disappears once no workspace holds it. Pinned is not included.
+ */
+export const selectWorkspaceLabelsInUse = store.createSelector((state): string[] =>
+  collectCustomWorkspaceLabels(
+    selectWorkspaceItems.select(state).map((workspace) => workspace.label),
+  ),
+);
+
+const LABEL_UPDATE_FIELDS = ['id', 'label'];
+
+/** Whether this client may set or clear the workspace's label (owner-only write). */
+export const selectCanSetWorkspaceLabel = store.createSelector<[workspaceId: string], boolean>(
+  (state, workspaceId) =>
+    selectLabelsSupported.select(state) &&
+    selectWorkspaceUpdateContext.select(state, workspaceId, LABEL_UPDATE_FIELDS) !== null,
+);
+
+/** Local pin list (`intent:pinned-workspaces`), the source of pins on older daemons. */
+export const selectLocalPinnedWorkspaceIds = store.createSelector(
   (state) => state.sidebarNav.pinnedWorkspaceIds,
 );
+
+/**
+ * Pinned workspace ids: workspaces labelled `"pinned"` when the daemon
+ * supports labels, otherwise the local pin list.
+ */
+export const selectPinnedWorkspaceIds = store.createSelector((state): string[] => {
+  if (!selectLabelsSupported.select(state)) return state.sidebarNav.pinnedWorkspaceIds;
+  return selectWorkspaceItems
+    .select(state)
+    .filter((workspace) => isPinnedWorkspaceLabel(workspace.label))
+    .map((workspace) => workspace.id as string);
+});
 
 export const selectMultiSelectSidebarSelectedTabIds = store.createSelector(
   (state, workspaceId: string): string[] =>

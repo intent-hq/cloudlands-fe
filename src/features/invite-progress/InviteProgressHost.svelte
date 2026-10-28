@@ -49,8 +49,8 @@
   onCancel={cancel}
   busy={recoveryState.busy}
   failed={recoveryState.failed}
-  onEnable={() => {
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- explicit enable for an ephemeral main-process invitation; no domain data is fetched here
+  onRetry={() => {
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- explicit retry for an ephemeral main-process invitation; no domain data is fetched here
     void retryInviteProgress().catch(() => {});
   }}
 />

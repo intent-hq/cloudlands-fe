@@ -291,6 +291,11 @@ A first tunneled open of a fresh, pre-warmed app takes roughly one to three minu
 hydrate depending on host load. If the splash remains after health is ok, keep waiting
 rather than restarting; later loads are fast.
 
+To land on a chosen chat or note, open `/workspace/<workspaceId>?agent=<agentId>` or
+`?note=<noteId>` (both may be combined). Do not use `/agent/<id>`: on a cold load it shows
+an empty placeholder, not the workspace chat panel. Recipe:
+[`Open a chat or note in the app sandbox`](../../docs/fe/DEVELOPER_GUIDE.md#open-a-chat-or-note-in-the-app-sandbox).
+
 The bridged daemon API is unauthenticated. Keep Vite on loopback and reach it only through
 the Intent client's authenticated tunnel.
 

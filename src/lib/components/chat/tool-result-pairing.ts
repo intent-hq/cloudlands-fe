@@ -109,6 +109,24 @@ export function findToolResult(
   );
 }
 
+/** Terminal tool metadata is authoritative even when the call produced no output (§7.1). */
+export function resolveToolState(
+  toolUse: Pick<ContentBlock, 'metadata'>,
+  result: ContentBlock | undefined,
+  isStreaming: boolean,
+): 'running' | 'completed' | 'error' {
+  const status = toolUse.metadata?.status;
+  const contentText = getToolResultText(result);
+  const hasErrorInContent =
+    // i18n-ignore (wire-content sniffing of tool result payloads, not rendered)
+    contentText.startsWith('Error:') || contentText.includes('Tool Error:');
+  if (status === 'error' || result?.is_error || result?.isError || hasErrorInContent) {
+    return 'error';
+  }
+  if (status === 'completed' || result || !isStreaming) return 'completed';
+  return 'running';
+}
+
 /**
  * Extract the result payload from a tool_result block. The daemon persists it
  * as `output` (PROTOCOL.md §7.1); legacy blocks may carry `content` instead.

@@ -9730,6 +9730,28 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     expect(ws.branch).toBe('main');
   });
 
+  it('applies, replaces and clears a workspace label delta (PROTOCOL §5.1 labels)', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(updatedNotification({ label: 'pinned' }));
+    expect((await readWorkspace()).label).toBe('pinned');
+
+    handler(updatedNotification({ label: 'For Later' }));
+    expect((await readWorkspace()).label).toBe('For Later');
+
+    // A delta without the key leaves the label untouched.
+    handler(updatedNotification({ title: 'Renamed' }));
+    expect((await readWorkspace()).label).toBe('For Later');
+
+    // The explicit wire null clears it.
+    handler(updatedNotification({ label: null }));
+    const ws = await readWorkspace();
+    expect(ws.label).toBeUndefined();
+    expect(ws.branch).toBe('main');
+  });
+
   it('clears statusImageAssetId on an explicit null in the delta', async () => {
     await seedWorkspace();
     await primeBridge();

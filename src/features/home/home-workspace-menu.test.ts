@@ -28,6 +28,8 @@ function menu(connected = true, target = workspace) {
     onOpen: vi.fn(),
     onClose: close,
     onPin: vi.fn(),
+    expandGroup: vi.fn(),
+    getHomeElement: () => null,
   });
 }
 beforeEach(() => {

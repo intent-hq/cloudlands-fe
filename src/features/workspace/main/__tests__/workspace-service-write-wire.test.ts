@@ -29,7 +29,13 @@ const requestMock = vi.hoisted(() =>
       const existing = daemonWorkspaces.get(id);
       if (!existing) throw new Error('Workspace not found');
       const { workspaceId: _wid, ...updates } = (params ?? {}) as Record<string, unknown>;
-      const next = { ...existing, ...updates, updatedAt: '2024-06-01T00:00:00.000Z' };
+      const next: Record<string, unknown> = {
+        ...existing,
+        ...updates,
+        updatedAt: '2024-06-01T00:00:00.000Z',
+      };
+      // The daemon omits `label` from Workspace payloads when it is unset.
+      if (next.label === null) delete next.label;
       daemonWorkspaces.set(id, next);
       return { workspace: next };
     }
@@ -221,6 +227,47 @@ describe('workspace.service ↔ daemon workspace.* write path (PROTOCOL.md §5.1
     if (result.ok) {
       expect(result.data.prUrl).toBeUndefined();
     }
+  });
+
+  it('updateWorkspace sets a label and returns it from the daemon workspace', async () => {
+    const ws = seed();
+    daemonWorkspaces.set(ws.id, { ...ws });
+
+    const result = await service.updateWorkspace({ id: ws.id, label: 'Later' });
+
+    const updateCall = requestMock.mock.calls.find(([m]) => m === 'workspace.update');
+    expect((updateCall![1] as Record<string, unknown>).label).toBe('Later');
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.label).toBe('Later');
+  });
+
+  it('updateWorkspace treats a label omitted from the daemon workspace as cleared', async () => {
+    const ws = seed({ label: 'Later' });
+    daemonWorkspaces.set(ws.id, { ...ws });
+
+    const result = await service.updateWorkspace({ id: ws.id, label: null });
+
+    const updateCall = requestMock.mock.calls.find(([m]) => m === 'workspace.update');
+    expect((updateCall![1] as Record<string, unknown>).label).toBeNull();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.label).toBeUndefined();
+      expect('label' in result.data).toBe(false);
+    }
+  });
+
+  it('updateWorkspace keeps no stale label when an unrelated field changes and the daemon omits label', async () => {
+    const ws = seed({ label: 'Later' });
+    daemonWorkspaces.set(ws.id, { ...ws });
+    // Another client cleared the label on the daemon after this client cached it.
+    await service.getWorkspace(ws.id);
+    const { label: _l, ...cleared } = daemonWorkspaces.get(ws.id)!;
+    daemonWorkspaces.set(ws.id, cleared);
+
+    const result = await service.updateWorkspace({ id: ws.id, title: 'Renamed' });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.label).toBeUndefined();
   });
 
   it('deleteWorkspace sends workspace.delete with { workspaceId }', async () => {

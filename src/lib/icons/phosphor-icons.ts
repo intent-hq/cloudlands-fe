@@ -160,6 +160,7 @@ import StackIcon from 'phosphor-svelte/lib/StackIcon';
 import StarIcon from 'phosphor-svelte/lib/StarIcon';
 import StopIcon from 'phosphor-svelte/lib/StopIcon';
 import StudentIcon from 'phosphor-svelte/lib/StudentIcon';
+import TagIcon from 'phosphor-svelte/lib/TagIcon';
 import TerminalIcon from 'phosphor-svelte/lib/TerminalIcon';
 import TestTubeIcon from 'phosphor-svelte/lib/TestTubeIcon';
 import TextAaIcon from 'phosphor-svelte/lib/TextAaIcon';
@@ -386,6 +387,7 @@ const iconComponents: Record<string, Component<any>> = {
   strikethrough: TextStrikethroughIcon,
   sync: ArrowsClockwiseIcon,
   'table-columns': ColumnsIcon,
+  tag: TagIcon,
   terminal: TerminalIcon,
   'thumbs-down': ThumbsDownIcon,
   'thumbs-up': ThumbsUpIcon,
@@ -612,6 +614,7 @@ export const faStop = icon('stop');
 export const faStrikethrough = icon('strikethrough');
 export const faSync = icon('sync');
 export const faTableColumns = icon('table-columns');
+export const faTag = icon('tag');
 export const faTerminal = icon('terminal');
 export const faThumbsDown = icon('thumbs-down');
 export const faThumbsUp = icon('thumbs-up');

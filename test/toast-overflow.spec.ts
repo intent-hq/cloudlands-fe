@@ -252,7 +252,7 @@ test('keeps Undo, long actions, custom callbacks, copy, details and close usable
     ['failure', 'Retry the agent with a very long display name', 'retry'],
     ['discussion', 'Switch To', 'switch'],
     ['update-available', 'Download', 'download'],
-    ['update-downloaded', 'Install', 'install'],
+    ['update-downloaded', 'Restart', 'install'],
   ]) {
     await open(page, scenario);
     const action = cards(page).getByRole('button', { name: button, exact: true });
@@ -308,7 +308,7 @@ test('keyboard expansion unlocks rear actions and resizing keeps the visible sta
   await page.keyboard.press('Alt+t');
   await expect(rear).toHaveAttribute('data-expanded', 'true');
   await expect(rear).not.toHaveAttribute('inert', '');
-  const install = rear.getByRole('button', { name: 'Install', exact: true });
+  const install = rear.getByRole('button', { name: 'Restart', exact: true });
   await install.focus();
   await expect(install).toBeFocused();
   await page.keyboard.press('Enter');
