@@ -73,9 +73,13 @@
   })();
 
   /** Seed the real store the way the sagas would after `client.list` + `workspace.getBrowserClient`. */
-  function seed(clients: LiveClient[], browserClient: WorkspaceBrowserClient) {
+  function seed(
+    clients: LiveClient[],
+    browserClient: WorkspaceBrowserClient,
+    role: 'owner' | 'guest' = 'owner',
+  ) {
     return () => {
-      admitLegacyPrincipal();
+      admitLegacyPrincipal(role);
       store.dispatch(setWorkspaceEntity(workspace));
       store.dispatch(ownClientIdReceived(PREVIEW_OWN_CLIENT_ID));
       store.dispatch(liveClientsReceived(clients, PREVIEW_WORKSPACE_ID));
@@ -124,6 +128,21 @@
           source: 'default',
           resolved: resolved(longNameClient),
         }),
+      },
+      'no-browser': {
+        props: { width: 300, menuOpen: true },
+        setup: seed([liveClientFixture({ capabilities: {} }), otherClient], {
+          source: 'default',
+          resolved: resolved(otherClient),
+        }),
+      },
+      guest: {
+        props: { width: 300, menuOpen: true },
+        setup: seed(
+          [ownClient, otherClient],
+          { source: 'default', resolved: resolved(otherClient) },
+          'guest',
+        ),
       },
       unresolved: {
         props: { width: 300, menuOpen: true },

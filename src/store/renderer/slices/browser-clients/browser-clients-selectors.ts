@@ -106,6 +106,17 @@ export const selectWorkspaceDrivingClient = store.createSelector(
   },
 );
 
+/** This app is listed for the workspace but cannot host agent browser tabs. */
+export const selectOwnClientLacksBrowserExec = store.createSelector(
+  (state, wsId: string): boolean => {
+    const slice = state?.browserClients ?? initialState;
+    if (!slice.ownClientId || !slice.ownClientIdConfirmed) return false;
+    const clients = slice.byWorkspaceId[wsId]?.liveClients ?? createLiveClientCollection();
+    const own = getItem(clients, slice.ownClientId);
+    return own !== undefined && own.capabilities.browserExec !== true;
+  },
+);
+
 /**
  * The host of a browser tab mirrored here (REV-2 Model 3): its display name
  * and whether it is connected. Presence comes from `client.list`; until that

@@ -120,6 +120,7 @@ const mocks = vi.hoisted(() => {
 
 vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({
   selectPrincipalActionContext: mocks.selector(() => mocks.role.context),
+  selectHostRole: mocks.selector(() => (mocks.role.hidesOwnerActions ? 'guest' : 'owner')),
 }));
 
 vi.mock('$lib/components/patterns/notify', () => ({
@@ -1303,6 +1304,10 @@ describe('WorkspaceProgressCard primary browser client', () => {
       await openPrimaryClientMenu(container);
       const action = screen.getByRole('button', THIS_APP);
       expect((action as HTMLButtonElement).disabled).toBe(true);
+      // Only lasting blocks explain themselves; an unlisted identity stays quiet.
+      expect(Boolean(action.dataset.disabledReason)).toBe(
+        reason === 'incapable' || reason === 'denied',
+      );
       await fireEvent.click(action);
       expect(mocks.dispatch).not.toHaveBeenCalledWith(
         expect.objectContaining({ type: 'browserClients/setWorkspaceBrowserClientRequested' }),

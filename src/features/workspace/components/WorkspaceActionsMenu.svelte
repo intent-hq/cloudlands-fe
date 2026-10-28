@@ -23,6 +23,8 @@
     /** Marks the item as active/selected (renders a check indicator). */
     checked?: boolean;
     disabled?: boolean;
+    /** Why the item is unavailable; disables it and shows below the label. */
+    disabledReason?: string;
     /** Child menu items; `onClick` is ignored when set. */
     submenu?: MenuAction[];
     /** Passive explanation shown below the submenu's choices. */

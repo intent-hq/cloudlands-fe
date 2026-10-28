@@ -34,6 +34,8 @@ describe('primary client menu preview', () => {
       'offline',
       'offline-closed',
       'long-name',
+      'no-browser',
+      'guest',
       'unresolved',
     ]);
     expect(preview.states['offline-closed'].props.menuOpen).toBeUndefined();

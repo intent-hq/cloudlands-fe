@@ -94,11 +94,15 @@
     selectWorkspaceDrivingClient,
     selectWorkspaceBrowserSelectionKnown,
     selectOwnClientIdConfirmed,
+    selectOwnClientLacksBrowserExec,
   } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
   import { setWorkspaceBrowserClientRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
   import SetPrimaryClientConfirmDialog from '$lib/components/workspace/SetPrimaryClientConfirmDialog.svelte';
   import { selectCanSetWorkspacePrimaryClient } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
+  import {
+    selectHostRole,
+    selectPrincipalActionContext,
+  } from '$store/renderer/slices/principal/principal-selectors';
   import { resolveDrivingClientSwitch } from '$lib/components/workspace/driving-indicator';
 
   const readyLogger = createLogger('ReadyTasks');
@@ -508,6 +512,18 @@
     primaryAlreadySelected || (primaryClient.mode === 'here' && $drivingClient$.driving !== null),
   );
   const primaryClientOffline = $derived(primaryClient.mode === 'offline');
+  const hostRole$ = selectHostRole();
+  const ownClientLacksBrowserExec$ = selectOwnClientLacksBrowserExec(workspaceIdStore);
+  // Explain only stable blocks; loading and reconnecting stay quietly unavailable.
+  const thisAppUnavailableReason = $derived(
+    canSetPrimaryClient || primaryClientHere
+      ? undefined
+      : $hostRole$ === 'guest'
+        ? m.workspace_drivingClient_guestReason_description()
+        : $ownClientLacksBrowserExec$
+          ? m.workspace_drivingClient_noBrowserReason_description()
+          : undefined,
+  );
 
   function requestSetPrimaryClient() {
     if (!workspaceId || !canSetPrimaryClient) return;
@@ -543,6 +559,7 @@
         label: m.workspace_drivingClient_thisApp_label(),
         checked: primaryClientHere,
         disabled: !canSetPrimaryClient,
+        disabledReason: thisAppUnavailableReason,
         onClick: requestSetPrimaryClient,
       },
       ...(primaryClient.mode === 'elsewhere' && !primaryClientHere

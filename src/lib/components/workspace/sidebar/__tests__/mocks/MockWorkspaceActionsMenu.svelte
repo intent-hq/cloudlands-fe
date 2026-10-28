@@ -10,6 +10,7 @@
     checked?: boolean;
     detail?: string;
     detailTone?: 'danger';
+    disabledReason?: string;
     submenu?: Action[];
   }
 
@@ -34,8 +35,9 @@
 {#snippet item(action: Action)}
   <button
     type="button"
-    disabled={action.disabled}
+    disabled={action.disabled || action.disabledReason !== undefined}
     data-checked={action.checked}
+    data-disabled-reason={action.disabledReason}
     data-detail={action.detail}
     data-detail-tone={action.detailTone}
     data-icon-name={action.icon?.iconName ?? ''}

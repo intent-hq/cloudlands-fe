@@ -30,7 +30,7 @@
   let expandedId: string | null = $state(null);
   const uid = $props.id();
   function activate(action: MenuAction) {
-    if (action.disabled) return;
+    if (action.disabled || action.disabledReason !== undefined) return;
     action.onClick();
     onClose?.();
   }
@@ -56,10 +56,19 @@
 {/snippet}
 
 {#snippet label(action: MenuAction)}
-  <span
-    class="min-w-0 truncate text-left {action.detail ? 'flex-[1_0_auto]' : 'flex-1'}"
-    use:truncatedTitle={action.label}>{action.label}</span
-  >
+  {#if action.disabledReason}
+    <span class="min-w-0 flex-1 text-left">
+      <span class="block truncate" use:truncatedTitle={action.label}>{action.label}</span>
+      <span class="block text-muted-foreground" aria-hidden="true" data-menu-action-reason
+        >{action.disabledReason}</span
+      >
+    </span>
+  {:else}
+    <span
+      class="min-w-0 truncate text-left {action.detail ? 'flex-[1_0_auto]' : 'flex-1'}"
+      use:truncatedTitle={action.label}>{action.label}</span
+    >
+  {/if}
   {#if action.detail}<span
       class="ml-4 min-w-0 truncate {action.detailTone === 'danger'
         ? 'text-danger'
@@ -75,6 +84,8 @@
 
 {#each actions as action (action.id)}
   {@const hasIcon = !!(action.editor || action.iconSnippet || action.icon)}
+  {@const unavailable = action.disabled || action.disabledReason !== undefined}
+  {@const reasonId = action.disabledReason ? `${uid}-${action.id}-reason` : undefined}
   {#snippet leading()}{@render actionIcon(action)}{/snippet}
   {#if action.dividerBefore}
     {#if menu}<Menu.Separator />{:else}<div class="my-1 h-px bg-border" role="separator"></div>{/if}
@@ -84,7 +95,8 @@
       <Menu.Sub>
         <Menu.SubTrigger
           leading={hasIcon ? leading : undefined}
-          disabled={action.disabled}
+          disabled={unavailable}
+          aria-describedby={reasonId}
           data-action-id={action.id}
         >
           {@render label(action)}
@@ -131,7 +143,8 @@
       <Menu.RadioItem
         leading={hasIcon ? leading : undefined}
         value={action.id}
-        disabled={action.disabled}
+        disabled={unavailable}
+        aria-describedby={reasonId}
         closeOnSelect
         onSelect={() => activate(action)}
         data-action-id={action.id}
@@ -142,7 +155,8 @@
       <Menu.CheckboxItem
         leading={hasIcon ? leading : undefined}
         checked={action.checked}
-        disabled={action.disabled}
+        disabled={unavailable}
+        aria-describedby={reasonId}
         closeOnSelect
         onSelect={() => activate(action)}
         data-action-id={action.id}
@@ -153,7 +167,8 @@
       <Menu.Item
         leading={hasIcon ? leading : undefined}
         destructive={action.variant === 'destructive'}
-        disabled={action.disabled}
+        disabled={unavailable}
+        aria-describedby={reasonId}
         onSelect={() => activate(action)}
         data-action-id={action.id}
       >
@@ -169,7 +184,8 @@
       class="w-full justify-start gap-2 {action.variant === 'destructive'
         ? 'text-danger hover:text-danger'
         : ''}"
-      disabled={action.disabled}
+      disabled={unavailable}
+      aria-describedby={reasonId}
       aria-expanded={action.submenu ? expandedId === action.id : undefined}
       onclick={() =>
         action.submenu
@@ -198,5 +214,8 @@
         {/if}
       </div>
     {/if}
+  {/if}
+  {#if action.disabledReason}
+    <span id={reasonId} class="sr-only">{action.disabledReason}</span>
   {/if}
 {/each}
