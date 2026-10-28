@@ -170,14 +170,16 @@ export async function submitAnnotation(submission: AnnotationSubmission): Promis
       const behaviorPrompt = buildChiefBehaviorPrompt(
         selectEffectiveBehaviorPrompt.select(state, CHIEF_SPECIALIST_ID),
       );
+      // A fresh annotation window can have a cold workspace catalog. Omit
+      // empty choices so the daemon resolves its specialist and host defaults.
       const created = await agentFactory.createAgent(
         createChiefVirtualWorkspace(),
         {
           workspaceId: CHIEF_WORKSPACE_ID,
           name: m.annotation_feedback_heading(),
           nameExplicitlySet: false,
-          provider: selectEffectiveDefaultProviderId.select(state, CHIEF_WORKSPACE_ID),
-          model: selectContextSelectedModel.select(state, CHIEF_WORKSPACE_ID),
+          provider: selectEffectiveDefaultProviderId.select(state, CHIEF_WORKSPACE_ID) || undefined,
+          model: selectContextSelectedModel.select(state, CHIEF_WORKSPACE_ID) || undefined,
           agentType: createAgentTypeId('workspace'),
           source: 'annotation',
           behaviorPrompt,
