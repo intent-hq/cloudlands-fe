@@ -282,6 +282,42 @@
         {/each}
       </div>
     </div>
+    <Button
+      variant="ghost"
+      size="icon"
+      iconOnly
+      class={screenshotSaved ? 'screenshot-action screenshot-saved' : 'screenshot-action'}
+      disabled={pending ||
+        uncertain ||
+        sent ||
+        (screenshotPending && !screenshotSaving) ||
+        screenshotDisabled ||
+        !onScreenshot}
+      aria-busy={screenshotPending && !screenshotSaving}
+      aria-label={screenshotSaving
+        ? m.annotation_screenshotRetry_label()
+        : m.annotation_screenshot_label()}
+      title={screenshotSaving
+        ? m.annotation_screenshotRetry_label()
+        : screenshotSaved
+          ? m.annotation_screenshotSaved_status()
+          : m.annotation_screenshot_label()}
+      onclick={onScreenshot}
+    >
+      {#if screenshotPending && !screenshotSaving}<IntentMarkLoader size={16} />{:else}<Fa
+          icon={screenshotSaving ? faArrowRotateRight : screenshotSaved ? faCheck : faCamera}
+          size={18}
+        />{/if}
+    </Button>
+    <span class="sr-only" role="status" aria-live="polite"
+      >{screenshotSaving
+        ? m.annotation_screenshotSaving_status()
+        : screenshotPending
+          ? m.annotation_screenshotCapturing_status()
+          : screenshotSaved
+            ? m.annotation_screenshotSaved_status()
+            : ''}</span
+    >
     <span class="divider" aria-hidden="true"></span>
     <div class="voice-section" class:recording class:voice-error={voiceStatus === 'error'}>
       <Button
@@ -439,42 +475,6 @@
       variant="ghost"
       size="icon"
       iconOnly
-      class={screenshotSaved ? 'screenshot-action screenshot-saved' : 'screenshot-action'}
-      disabled={pending ||
-        uncertain ||
-        sent ||
-        (screenshotPending && !screenshotSaving) ||
-        screenshotDisabled ||
-        !onScreenshot}
-      aria-busy={screenshotPending && !screenshotSaving}
-      aria-label={screenshotSaving
-        ? m.annotation_screenshotRetry_label()
-        : m.annotation_screenshot_label()}
-      title={screenshotSaving
-        ? m.annotation_screenshotRetry_label()
-        : screenshotSaved
-          ? m.annotation_screenshotSaved_status()
-          : m.annotation_screenshot_label()}
-      onclick={onScreenshot}
-    >
-      {#if screenshotPending && !screenshotSaving}<IntentMarkLoader size={16} />{:else}<Fa
-          icon={screenshotSaving ? faArrowRotateRight : screenshotSaved ? faCheck : faCamera}
-          size={18}
-        />{/if}
-    </Button>
-    <span class="sr-only" role="status" aria-live="polite"
-      >{screenshotSaving
-        ? m.annotation_screenshotSaving_status()
-        : screenshotPending
-          ? m.annotation_screenshotCapturing_status()
-          : screenshotSaved
-            ? m.annotation_screenshotSaved_status()
-            : ''}</span
-    >
-    <Button
-      variant="ghost"
-      size="icon"
-      iconOnly
       class="send-action"
       disabled={pending || screenshotPending || sent || sendDisabled}
       aria-busy={pending}
@@ -528,11 +528,11 @@
   }
   .drawing-cluster {
     flex: 0 1 auto;
-    min-width: 88px;
+    min-width: 130px;
   }
   .delivery-cluster {
-    flex: 1 1 340px;
-    min-width: 189px;
+    flex: 1 1 298px;
+    min-width: 147px;
   }
   .tools-row {
     --tool-size: 36px;
@@ -757,10 +757,10 @@
       gap: 8px;
     }
     .drawing-cluster {
-      flex: 1 1 250px;
+      flex: 1 1 292px;
     }
     .delivery-cluster {
-      flex: 1 1 270px;
+      flex: 1 1 228px;
     }
     .annotation-toolbar-panel :global(.destination-chip) {
       flex-basis: 110px;
@@ -783,11 +783,11 @@
       padding: 6px 4px;
     }
     .drawing-cluster {
-      flex: 1 1 160px;
+      flex: 1 1 199px;
     }
     .delivery-cluster {
-      flex: 0 1 219px;
-      min-width: 167px;
+      flex: 0 1 180px;
+      min-width: 128px;
     }
     .annotation-toolbar-panel :global(.destination-chip) {
       flex: 1 1 110px;
@@ -800,8 +800,8 @@
   }
   @media (max-width: 340px) {
     .delivery-cluster {
-      min-width: 141px;
-      flex-basis: 180px;
+      min-width: 106px;
+      flex-basis: 145px;
     }
     .annotation-toolbar-panel :global(.destination-chip) {
       min-width: 36px;
