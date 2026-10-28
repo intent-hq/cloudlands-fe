@@ -6,7 +6,7 @@
  * remounting a single surface keyed by the route.
  */
 import { cleanup, render, waitFor } from '@testing-library/svelte';
-import { readable } from 'svelte/store';
+import { readable, writable } from 'svelte/store';
 import { createSubscriber } from 'svelte/reactivity';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -19,6 +19,10 @@ const mocks = vi.hoisted(() => ({
     { id: 'workspace-a', title: 'A' },
     { id: 'workspace-b', title: 'B' },
   ],
+  search: '',
+  loadStatus: undefined as unknown as import('svelte/store').Writable<{ status: string }>,
+  dispatch: vi.fn(),
+  replaceState: vi.fn(),
 }));
 
 vi.mock('$app/state', () => {
@@ -34,12 +38,22 @@ vi.mock('$app/state', () => {
         subscribe();
         return { id: mocks.routeId };
       },
+      get url() {
+        subscribe();
+        return new URL(`/workspace/${mocks.routeId}${mocks.search}`, 'http://daemon.localhost');
+      },
+      state: {},
     },
   };
 });
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: () => readable(null),
   selectWorkspaceItems: () => readable(mocks.workspaceItems),
+}));
+vi.mock('$app/navigation', () => ({ replaceState: mocks.replaceState }));
+vi.mock('$store/renderer/store', () => ({ store: { dispatch: mocks.dispatch } }));
+vi.mock('$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-selectors', () => ({
+  selectWorkspaceLoadState: () => mocks.loadStatus,
 }));
 vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
   selectActiveWorkspaceIds: () => readable(mocks.openWorkspaceIds),
@@ -58,6 +72,8 @@ vi.mock('./WorkspaceSurface.svelte', async () => {
 });
 
 import WorkspacePage from './+page.svelte';
+import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+import { openWorkspaceNote } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 
 function navigateTo(workspaceId: string) {
   mocks.routeId = workspaceId;
@@ -80,6 +96,10 @@ describe('workspace route page', () => {
     mocks.routeId = 'workspace-a';
     mocks.openWorkspaceIds = ['workspace-a', 'workspace-b'];
     mocks.browserWorkspaceIds = [];
+    mocks.search = '';
+    mocks.loadStatus = writable({ status: 'ready' });
+    mocks.dispatch.mockClear();
+    mocks.replaceState.mockClear();
     mocks.workspaceItems = [
       { id: 'workspace-a', title: 'A' },
       { id: 'workspace-b', title: 'B' },
@@ -143,5 +163,20 @@ describe('workspace route page', () => {
       ]),
     );
     expect(container.querySelectorAll('[data-retained-workspace-surface]')[0]).toBe(firstSurface);
+  });
+
+  it('opens the note and agent named in the URL once the workspace is ready', async () => {
+    mocks.search = '?note=spec&agent=agent-7';
+    mocks.loadStatus = writable({ status: 'loading' });
+    render(WorkspacePage);
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+
+    mocks.loadStatus.set({ status: 'ready' });
+    await waitFor(() => expect(mocks.dispatch).toHaveBeenCalledTimes(2));
+    expect(mocks.dispatch.mock.calls.map(([action]) => action)).toEqual([
+      openWorkspaceNote('workspace-a', 'spec'),
+      openAgentTabRequested('workspace-a', { agentId: 'agent-7' }),
+    ]);
+    expect(mocks.replaceState).toHaveBeenCalledExactlyOnceWith('/workspace/workspace-a', {});
   });
 });
