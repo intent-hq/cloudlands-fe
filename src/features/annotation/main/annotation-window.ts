@@ -413,6 +413,9 @@ function createOverlay(
     ...display.bounds,
     show: false,
     frame: false,
+    // Match the full-display capture instead of being constrained below the
+    // macOS menu bar, which shifts exported marks above their screen targets.
+    enableLargerThanScreen: process.platform === 'darwin',
     transparent: true,
     // A nonactivating macOS panel accepts annotation input without switching apps.
     ...(process.platform === 'darwin' ? { type: 'panel' as const } : {}),

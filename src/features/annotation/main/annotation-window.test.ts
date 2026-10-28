@@ -136,6 +136,25 @@ describe('live annotation surface and background evidence', () => {
     vi.useRealTimers();
   });
 
+  it('aligns the drawing surface with the full captured display, including the menu-bar strip', () => {
+    const overlay = mock.windows.get(0)!;
+    const toolbar = mock.windows.get(1)!;
+    expect(overlay.options).toMatchObject({
+      ...mock.display.bounds,
+      frame: false,
+      enableLargerThanScreen: process.platform === 'darwin',
+    });
+    expect(toolbar.options.y).toBeGreaterThanOrEqual(mock.display.workArea.y);
+    expect(mock.capture).toHaveBeenCalledWith({
+      types: ['screen'],
+      fetchWindowIcons: false,
+      thumbnailSize: {
+        width: mock.display.bounds.width * mock.display.scaleFactor,
+        height: mock.display.bounds.height * mock.display.scaleFactor,
+      },
+    });
+  });
+
   it('reveals the live app in Mouse mode while retaining its annotated evidence', async () => {
     const overlay = mock.windows.get(0)!;
     const toolbar = mock.windows.get(1)!;
