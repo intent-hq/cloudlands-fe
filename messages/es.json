@@ -4674,6 +4674,8 @@
   "settings_appearance_chatAurora_label": "Aurora del chat",
   "settings_appearance_collapseToolRuns_description": "Agrupa en una fila desplegable las llamadas a herramientas y los pasos de razonamiento consecutivos del chat.",
   "settings_appearance_collapseToolRuns_label": "Contraer actividad de herramientas",
+  "settings_appearance_pauseAnimationsWhenUnfocused_description": "Pausa las animaciones en bucle mientras otra ventana está en primer plano.",
+  "settings_appearance_pauseAnimationsWhenUnfocused_label": "Pausar animaciones sin foco",
   "settings_appearance_reduceMotionOnBattery_description": "Pausa las animaciones ambientales mientras el equipo funciona con batería.",
   "settings_appearance_reduceMotionOnBattery_label": "Reducir movimiento con batería",
   "settings_appearance_translucentWindow_description": "Permite que el escritorio se vea a través del fondo de la aplicación.",

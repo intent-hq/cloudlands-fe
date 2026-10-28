@@ -4674,6 +4674,8 @@
   "settings_appearance_chatAurora_label": "채팅 오로라",
   "settings_appearance_collapseToolRuns_description": "채팅에서 연속된 도구 호출과 생각 단계를 펼칠 수 있는 한 줄로 묶습니다.",
   "settings_appearance_collapseToolRuns_label": "도구 활동 접기",
+  "settings_appearance_pauseAnimationsWhenUnfocused_description": "다른 창이 앞에 있는 동안 반복 애니메이션을 일시 중지합니다.",
+  "settings_appearance_pauseAnimationsWhenUnfocused_label": "포커스가 없을 때 애니메이션 일시 중지",
   "settings_appearance_reduceMotionOnBattery_description": "기기가 배터리로 작동하는 동안 배경 애니메이션을 일시 중지합니다.",
   "settings_appearance_reduceMotionOnBattery_label": "배터리 사용 시 동작 줄이기",
   "settings_appearance_translucentWindow_description": "앱 배경을 통해 바탕 화면이 비치도록 합니다.",

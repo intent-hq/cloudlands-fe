@@ -4674,6 +4674,8 @@
   "settings_appearance_chatAurora_label": "Aurore du chat",
   "settings_appearance_collapseToolRuns_description": "Regroupe les appels d’outils et étapes de réflexion consécutifs du chat en une seule ligne dépliable.",
   "settings_appearance_collapseToolRuns_label": "Réduire l’activité des outils",
+  "settings_appearance_pauseAnimationsWhenUnfocused_description": "Met en pause les animations en boucle lorsqu’une autre fenêtre est au premier plan.",
+  "settings_appearance_pauseAnimationsWhenUnfocused_label": "Mettre en pause les animations hors focus",
   "settings_appearance_reduceMotionOnBattery_description": "Met en pause les animations d’ambiance lorsque l’appareil fonctionne sur batterie.",
   "settings_appearance_reduceMotionOnBattery_label": "Réduire les animations sur batterie",
   "settings_appearance_translucentWindow_description": "Laisse le bureau apparaître à travers l’arrière-plan de l’application.",

@@ -3,7 +3,10 @@
   import { wireSplashGate } from '$features/backend/splash-gate';
   import { store as appStore } from '$store/renderer/store';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
-  import { selectResolvedLocale } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import {
+    selectPauseAnimationsWhenUnfocused,
+    selectResolvedLocale,
+  } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import {
     attachMouseHistoryNavigation,
@@ -26,34 +29,45 @@
   // modals, and HUD surfaces — so every mounted m.*() string re-renders when
   // the language preference changes (no reload needed).
   const resolvedLocale$ = selectResolvedLocale();
+  const pauseAnimationsWhenUnfocused$ = selectPauseAnimationsWhenUnfocused();
 
   onMount(() => {
-    const setWindowBlurred = (blurred: boolean) => {
-      document.documentElement.toggleAttribute('data-window-blurred', blurred);
-    };
-    const handleWindowBlur = () => setWindowBlurred(true);
-    const handleWindowFocus = () => setWindowBlurred(false);
-
     // `data-window-blurred` pauses ambient motion (looping app.css keyframes via
     // pauseWindowAnimations below, the shared frame clock, aurora, mark motion);
-    // one-shot entrances and flashes keep running. The HUD pop-out is a monitoring
-    // surface watched on a second display while another window holds focus, so
-    // it never sets the attribute: its takeover choreography must play unfocused,
-    // and any attribute already present on <html> is cleared on mount.
+    // one-shot entrances and flashes keep running. It is set only while the window
+    // is unfocused and the user opted in to pausing animations. The HUD pop-out is
+    // a monitoring surface watched on a second display while another window holds
+    // focus, so it never sets the attribute: its takeover choreography must play
+    // unfocused, and any attribute already present on <html> is cleared on mount.
     // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous route check, no data fetch
     const pausesMotionOnBlur = !isHudWindowRenderer();
+    let windowFocused = document.hasFocus();
+    let pauseWhenUnfocused = false;
+    const applyWindowBlurred = () => {
+      document.documentElement.toggleAttribute(
+        'data-window-blurred',
+        pausesMotionOnBlur && pauseWhenUnfocused && !windowFocused,
+      );
+    };
+    const setWindowFocused = (focused: boolean) => {
+      windowFocused = focused;
+      applyWindowBlurred();
+    };
+    const handleWindowBlur = () => setWindowFocused(false);
+    const handleWindowFocus = () => setWindowFocused(true);
+    const stopPausePreference = pauseAnimationsWhenUnfocused$.subscribe((enabled) => {
+      pauseWhenUnfocused = enabled;
+      applyWindowBlurred();
+    });
+
     const electronApi = window.electronAPI;
     const usesNativeWindowFocus = isElectronPlatform();
     let windowFocusListenerId: string | undefined;
-    if (!pausesMotionOnBlur) {
-      setWindowBlurred(false);
-    } else {
-      setWindowBlurred(!document.hasFocus());
+    applyWindowBlurred();
+    if (pausesMotionOnBlur) {
       if (usesNativeWindowFocus) {
         // eslint-disable-next-line intent/no-component-async-data-fetch -- root native window lifecycle bridge
-        windowFocusListenerId = electronApi?.on?.('window:focus', (focused: boolean) => {
-          setWindowBlurred(!focused);
-        });
+        windowFocusListenerId = electronApi?.on?.('window:focus', setWindowFocused);
       } else {
         window.addEventListener('blur', handleWindowBlur);
         window.addEventListener('focus', handleWindowFocus);
@@ -75,6 +89,7 @@
     );
 
     return () => {
+      stopPausePreference();
       windowAnimations.destroy();
       if (windowFocusListenerId) {
         // eslint-disable-next-line intent/no-component-async-data-fetch -- paired native window listener cleanup
