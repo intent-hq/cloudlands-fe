@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.246.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.245.1...v2.246.0) (2026-10-28)
+
+
+### 🚀 Features
+
+* make Multiplayer always on and drop its enable prompts ([#3784](https://github.com/intent-hq/cloudlands-fe/issues/3784)) ([7a374ad](https://github.com/intent-hq/cloudlands-fe/commit/7a374ada9bdc5b192326d872c56520b011c9d9bc))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.66 ([#3802](https://github.com/intent-hq/cloudlands-fe/issues/3802)) ([a75c735](https://github.com/intent-hq/cloudlands-fe/commit/a75c73592407614468f991d1eef1b7e34fc6125e))
+* **chat:** stop pulsing completed tools without output ([#3770](https://github.com/intent-hq/cloudlands-fe/issues/3770)) ([5a9a77e](https://github.com/intent-hq/cloudlands-fe/commit/5a9a77e5ed2dce6f1ba5e12162bf756d4be3e1f7))
+
 ## [2.245.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.245.0...v2.245.1) (2026-10-27)
 
 
