@@ -49,10 +49,15 @@ import { isPinnedWorkspaceLabel, PINNED_WORKSPACE_LABEL } from '../workspace-lab
 
 const logger = createLogger('WorkspaceLabelSaga');
 
+/** Label updates this saga dispatched itself (optimistic, rollback, served value). */
+const ownLabelUpdates = new WeakSet<object>();
+
 function applyLabel(workspaceId: string, label: string | null) {
-  return bulkUpdateWorkspaceEntities([
+  const action = bulkUpdateWorkspaceEntities([
     updateWorkspaceEntity(workspaceId, { label: label ?? undefined }),
   ]);
+  ownLabelUpdates.add(action);
+  return action;
 }
 
 /**
@@ -69,6 +74,24 @@ let nextLabelWriteToken = 0;
 export function resetWorkspaceLabelWritesForTest(): void {
   pendingLabelWrites.clear();
   nextLabelWriteToken = 0;
+}
+
+/**
+ * Rebase pending rollbacks on label updates this saga did not dispatch (e.g.
+ * another client's `workspace:updated`): the daemon now holds that value, so a
+ * failed local write must fall back to it, even when it equals the optimistic
+ * value the row already shows.
+ */
+export function* watchAuthoritativeWorkspaceLabels(): SagaGenerator<void> {
+  while (true) {
+    const action = yield* take(bulkUpdateWorkspaceEntities);
+    if (ownLabelUpdates.has(action)) continue;
+    for (const update of action.payload[0]) {
+      const [workspaceId, changes] = update.payload;
+      const pending = pendingLabelWrites.get(workspaceId);
+      if (pending && 'label' in changes) pending.previous = normalizeLabel(changes.label ?? null);
+    }
+  }
 }
 
 function normalizeLabel(label: string | null): string | null {

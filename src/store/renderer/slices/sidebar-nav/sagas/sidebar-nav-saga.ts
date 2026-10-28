@@ -33,6 +33,7 @@ import {
 import {
   setWorkspaceLabelWorker,
   togglePinWithLabel,
+  watchAuthoritativeWorkspaceLabels,
   watchPinLabelMigration,
 } from './workspace-label-saga';
 
@@ -247,6 +248,7 @@ export function* sidebarNavSaga(): SagaGenerator<void> {
   yield* call(hydrateSidebarNavState);
   yield* fork(watchBackendSwitch);
   yield* fork(watchPinLabelMigration);
+  yield* fork(watchAuthoritativeWorkspaceLabels);
   yield* takeEvery(togglePinWorkspace, handleTogglePinWorkspace);
   yield* takeEvery(setWorkspaceLabel, setWorkspaceLabelWorker);
   yield* takeEvery(setChiefActiveAgentId, persistChiefActiveAgentId);

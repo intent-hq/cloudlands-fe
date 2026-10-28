@@ -214,6 +214,34 @@ describe('setWorkspaceLabel', () => {
     await run.stop();
   });
 
+  it.each([
+    ['pinned', PINNED_WORKSPACE_LABEL, PINNED_WORKSPACE_LABEL],
+    ['cleared', null, undefined],
+  ] as const)(
+    'keeps a remote label equal to a failed pending write (%s)',
+    async (_name, requested, expected) => {
+      const run = start(
+        workspaceLabelsState({ workspaces: [labelWorkspace('ws-1', { label: 'Old' })] }),
+      );
+      await settle();
+      const pending = deferred<unknown>();
+      mocks.update.mockReturnValueOnce(pending.promise);
+
+      run.put(setWorkspaceLabel('ws-1', requested));
+      await settle();
+      // Another client's accepted write lands with the same value.
+      run.put(
+        bulkUpdateWorkspaceEntities([
+          updateWorkspaceEntity('ws-1', { label: requested ?? undefined }),
+        ]),
+      );
+      pending.resolve({ ok: false, error: 'nope' });
+      await settle();
+      expect(run.label('ws-1')).toBe(expected);
+      await run.stop();
+    },
+  );
+
   it('removes a custom label from the list once its last workspace leaves it', async () => {
     const run = start(
       workspaceLabelsState({
