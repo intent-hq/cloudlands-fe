@@ -40,6 +40,7 @@ export function installChangesSummaryMocks(
         prUrl: updated.prUrl ?? undefined,
         prNumber: updated.prNumber ?? undefined,
         prStatus: updated.prStatus ?? undefined,
+        label: updated.label ?? undefined,
       },
     };
   };

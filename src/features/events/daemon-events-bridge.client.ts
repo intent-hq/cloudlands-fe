@@ -2769,6 +2769,13 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   } else if (raw.statusImageAssetId === null) {
     changes.statusImageAssetId = undefined;
   }
+  // `label` is clearable the same way (PROTOCOL §5.1 "Workspace labels"):
+  // a string sets it, an explicit JSON null clears it, missing is untouched.
+  if (typeof raw.label === 'string') {
+    changes.label = raw.label;
+  } else if (raw.label === null) {
+    changes.label = undefined;
+  }
   if (typeof raw.branch === 'string') changes.branch = raw.branch;
   if (typeof raw.baseRef === 'string') changes.baseRef = raw.baseRef;
   if (typeof raw.baseCommitSha === 'string') changes.baseCommitSha = raw.baseCommitSha;

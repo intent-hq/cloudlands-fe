@@ -133,6 +133,8 @@
   "home_integrations_priority_normal": ["es"],
   "home_integrations_team": ["de"],
   "home_repository": ["de"],
+  "home_workspaceLabel_dialog_name_label": ["de"],
+  "home_workspaceLabel_menu_label": ["de"],
   "hud_attention_sourceWorkspace_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
   "hud_card_attnBlocker_label": ["de"],
   "hud_card_attnFailed_label": ["ja", "ko", "de", "es"],

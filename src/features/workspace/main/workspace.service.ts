@@ -864,6 +864,11 @@ export class WorkspaceService {
       // for these, so coerce nulls back to `undefined` before returning.
       if ((merged.prUrl as unknown) === null) merged.prUrl = undefined;
       if ((merged.prNumber as unknown) === null) merged.prNumber = undefined;
+      // The daemon omits `label` from Workspace payloads when it is unset, so
+      // its absence is authoritative: never fall back to a cached label.
+      const daemonLabel = (daemonWorkspace as { label?: unknown }).label;
+      if (typeof daemonLabel === 'string') merged.label = daemonLabel;
+      else delete merged.label;
 
       if (requestedPrStatus !== undefined) {
         if (requestedPrStatus === null) {
