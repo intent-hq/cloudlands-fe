@@ -35,6 +35,10 @@ companion releases; this checkpoint does not require simultaneous cross-repo mer
 - Use public `$lib/components/patterns/*` or `$lib/components/ui/*` subpaths; do not deep-import implementations.
 - Follow the [Never list](docs/DESIGN_SYSTEM.md#never), enforced by `eslint-rules/design-system/`.
 - Never hand-write motion durations or physical colors; use `$lib/motion` and semantic tokens.
+- Never pause, stop, or disable animations app-wide on your own (window blur, battery, visibility,
+  performance). Gate it behind an existing setting — OS reduced motion and "Reduce motion on
+  battery" via `prefersReducedMotion()` / `data-reduce-motion`, or "Pause animations when not in
+  focus" via `data-window-blurred` — or add a new Appearance setting that defaults to off.
 - Never add a raw control, direct toast/native dialog, bespoke settings row, or feature-owned dialog root.
 - Ratchets only shrink: do not raise `scripts/ui-component-guardrails.ts` ceilings or expand lint baselines.
 - Run `pnpm run lint:design-cheatsheet` (part of `pnpm run lint`) with the focused lint/tests; regenerate the cheatsheet with `pnpm exec tsx scripts/generate-design-cheatsheet.ts`.
