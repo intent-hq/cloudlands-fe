@@ -410,11 +410,10 @@
 
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
-  import ModelChangeNotice from './ModelChangeNotice.svelte';
-  import EffortChangeNotice from './EffortChangeNotice.svelte';
+  import ChatContentLane from './ChatContentLane.svelte';
+  import ChatTurnNotice from './ChatTurnNotice.svelte';
   import { getModelChangeNotice } from './model-change-notice';
   import { getEffortChangeNotice } from './effort-change-notice';
-  import ProviderRehomedNotice from './ProviderRehomedNotice.svelte';
   import { getProviderRehomedNotice } from './rehome-notice';
   import {
     hasOperationalAssistantMessageBoundary,
@@ -6378,10 +6377,10 @@
            would otherwise paint stale message content above the skeleton. -->
       {#if pinnedPrompt && !deferTranscriptReveal}
         <!-- Share the transcript inset so the pinned bubble aligns with its source. -->
-        <div
-          class="chat-content-measure mx-auto w-full min-w-0"
-          class:regular-chat-content-inset={!isChiefWorkspace}
+        <ChatContentLane
+          operational
           data-testid="pinned-prompt-overlay-lane"
+          chief={isChiefWorkspace}
         >
           <PinnedTurnPrompt
             message={pinnedPrompt.message}
@@ -6389,7 +6388,7 @@
             {workspace}
             onActivate={handlePinnedPromptClick}
           />
-        </div>
+        </ChatContentLane>
       {/if}
     </div>
     <!-- followBottom, native anchoring, and the LazyTurn ledger own scroll compensation. -->
@@ -6437,13 +6436,51 @@
       data-testid="chat-transcript-scroll-viewport"
       data-message-controls-root
     >
-      <div
-        class="conversation-column chat-content-measure mx-auto flex min-h-full w-full min-w-0 flex-col {isChiefWorkspace
+      <!-- Indeterminate transcript skeleton rows — shared by the first-hydration
+             branch and the switch-back reveal deferral so both windows paint the
+             exact same visual. -->
+      {#snippet transcriptSkeletonRows()}
+        <div class="flex flex-col gap-4 p-4 w-full" data-testid="chat-transcript-skeleton">
+          <!-- User message skeleton -->
+          <div class="flex justify-end">
+            <div class="flex flex-col gap-1.5 max-w-[70%]">
+              <Skeleton class="h-4 w-48 ml-auto" />
+              <Skeleton class="h-4 w-32 ml-auto" />
+            </div>
+          </div>
+          <!-- Assistant message skeleton -->
+          <div class="flex gap-2">
+            <Skeleton class="h-6 w-6 rounded-full shrink-0" />
+            <div class="flex flex-col gap-1.5 flex-1">
+              <Skeleton class="h-4 w-full max-w-[300px]" />
+              <Skeleton class="h-4 w-full max-w-[250px]" />
+              <Skeleton class="h-4 w-full max-w-[280px]" />
+            </div>
+          </div>
+          <!-- Another user message skeleton -->
+          <div class="flex justify-end">
+            <div class="flex flex-col gap-1.5 max-w-[70%]">
+              <Skeleton class="h-4 w-36 ml-auto" />
+            </div>
+          </div>
+          <!-- Another assistant message skeleton -->
+          <div class="flex gap-2">
+            <Skeleton class="h-6 w-6 rounded-full shrink-0" />
+            <div class="flex flex-col gap-1.5 flex-1">
+              <Skeleton class="h-4 w-full max-w-[320px]" />
+              <Skeleton class="h-4 w-full max-w-[200px]" />
+            </div>
+          </div>
+        </div>
+      {/snippet}
+      <ChatContentLane
+        class="conversation-column flex min-h-full flex-col {isChiefWorkspace
           ? ''
           : 'pt-8'} {transcriptBottomInsetClass}"
-        class:regular-chat-content-inset={!isChiefWorkspace}
+        operational
         data-testid="chat-transcript-inner"
         data-structural-recompute-count={transcriptStructure.recomputeCount}
+        chief={isChiefWorkspace}
       >
         <!-- Task Assignment Pill -->
         {#if $agentTasks$.length > 0}
@@ -6459,44 +6496,6 @@
             </span>
           </a>
         {/if}
-
-        <!-- Indeterminate transcript skeleton rows — shared by the first-hydration
-             branch and the switch-back reveal deferral so both windows paint the
-             exact same visual. -->
-        {#snippet transcriptSkeletonRows()}
-          <div class="flex flex-col gap-4 p-4 w-full" data-testid="chat-transcript-skeleton">
-            <!-- User message skeleton -->
-            <div class="flex justify-end">
-              <div class="flex flex-col gap-1.5 max-w-[70%]">
-                <Skeleton class="h-4 w-48 ml-auto" />
-                <Skeleton class="h-4 w-32 ml-auto" />
-              </div>
-            </div>
-            <!-- Assistant message skeleton -->
-            <div class="flex gap-2">
-              <Skeleton class="h-6 w-6 rounded-full shrink-0" />
-              <div class="flex flex-col gap-1.5 flex-1">
-                <Skeleton class="h-4 w-full max-w-[300px]" />
-                <Skeleton class="h-4 w-full max-w-[250px]" />
-                <Skeleton class="h-4 w-full max-w-[280px]" />
-              </div>
-            </div>
-            <!-- Another user message skeleton -->
-            <div class="flex justify-end">
-              <div class="flex flex-col gap-1.5 max-w-[70%]">
-                <Skeleton class="h-4 w-36 ml-auto" />
-              </div>
-            </div>
-            <!-- Another assistant message skeleton -->
-            <div class="flex gap-2">
-              <Skeleton class="h-6 w-6 rounded-full shrink-0" />
-              <div class="flex flex-col gap-1.5 flex-1">
-                <Skeleton class="h-4 w-full max-w-[320px]" />
-                <Skeleton class="h-4 w-full max-w-[200px]" />
-              </div>
-            </div>
-          </div>
-        {/snippet}
 
         {#if transcriptHydrationFailed && $agentMessages$.length === 0 && pendingConversationMessages.length === 0}
           <div class="flex min-h-48 flex-col items-start justify-center gap-3 p-6 text-left">
@@ -7184,34 +7183,8 @@
 
                     <!-- Model, effort, and provider re-home notices (daemon-persisted, after the user row, before assistant output) -->
                     {#each turn.noticeMessages as noticeMessage (noticeMessage.id)}
-                      {@const notice = getModelChangeNotice(noticeMessage)}
-                      {@const effortNotice = getEffortChangeNotice(noticeMessage)}
-                      {@const rehomeNotice = getProviderRehomedNotice(noticeMessage)}
-                      {#if notice}
-                        <div data-message-id={noticeMessage.id} class="px-2">
-                          <ModelChangeNotice
-                            workspaceId={workspace?.id}
-                            {notice}
-                            fallbackText={extractAllContent(noticeMessage) || undefined}
-                          />
-                        </div>
-                        {@render newMessagesDividerAfter(noticeMessage.id, dividerAtTurnBoundary)}
-                      {:else if effortNotice}
-                        <div data-message-id={noticeMessage.id} class="px-2">
-                          <EffortChangeNotice
-                            notice={effortNotice}
-                            fallbackText={extractAllContent(noticeMessage) || undefined}
-                          />
-                        </div>
-                        {@render newMessagesDividerAfter(noticeMessage.id, dividerAtTurnBoundary)}
-                      {:else if rehomeNotice}
-                        <div data-message-id={noticeMessage.id} class="px-2">
-                          <ProviderRehomedNotice
-                            workspaceId={workspace?.id}
-                            notice={rehomeNotice}
-                            fallbackText={extractAllContent(noticeMessage) || undefined}
-                          />
-                        </div>
+                      <ChatTurnNotice message={noticeMessage} workspaceId={workspace?.id} />
+                      {#if isRenderedTurnNotice(noticeMessage)}
                         {@render newMessagesDividerAfter(noticeMessage.id, dividerAtTurnBoundary)}
                       {/if}
                     {/each}
@@ -7636,7 +7609,7 @@
 
         <!-- Zero-size semantic end marker; followBottom owns exact bottom anchoring. -->
         <div class={CHAT_SCROLL_END_MARKER_CLASS} data-testid="chat-scroll-end-marker"></div>
-      </div>
+      </ChatContentLane>
     </div>
     {#if isActive && showScrollToBottom && !deferTranscriptReveal}
       <div
@@ -7682,10 +7655,7 @@
       data-testid="composer-prompt-layer"
       data-has-transcript-utility={hasVisibleTranscriptUtility}
     >
-      <div
-        class="composer-prompt-lane chat-content-measure mx-auto w-full min-w-0"
-        data-testid="chat-composer-lane"
-      >
+      <ChatContentLane data-testid="chat-composer-lane" chief={isChiefWorkspace} composer>
         <div
           class="w-full min-w-0"
           data-testid="chat-composer-controls-inner"
@@ -7797,7 +7767,7 @@
             </QuestionComposer>
           {/if}
         </div>
-      </div>
+      </ChatContentLane>
     </div>
   </div>
 </div>
@@ -7815,11 +7785,6 @@
   }
 
   @container chat-panel (max-width: 639.98px) {
-    .regular-chat-content-inset {
-      --chat-operational-row-inline-padding: 0.125rem;
-      --chat-operational-leading-gap: 0.625rem;
-    }
-
     .workspace-setup-card-alignment {
       margin-left: 1.5rem;
     }
@@ -7828,16 +7793,6 @@
   .regular-panel-aurora-host {
     border-bottom-left-radius: var(--panel-shell-radius);
     border-bottom-right-radius: var(--panel-shell-radius);
-  }
-
-  .chat-content-measure {
-    --chat-content-inset: 1rem;
-    max-width: 140em;
-    padding-inline: var(--chat-content-inset);
-  }
-
-  .chief-chat-panel .chat-content-measure {
-    --chat-content-inset: 0px;
   }
 
   /* Keep style invalidation local without paint-containing sticky descendants. */
@@ -7893,24 +7848,6 @@
   /* Subtle flash animation for input when draft prompt is applied */
   .input-flash :global(.rich-input-container) {
     animation: input-flash calc(var(--spring-slow) * 2.5) var(--spring-exit-ease);
-  }
-
-  .composer-prompt-lane {
-    padding-block: 0.5rem var(--chat-content-inset);
-  }
-
-  .chief-chat-panel .composer-prompt-lane {
-    padding-bottom: 0.25rem;
-  }
-
-  @container chat-panel (min-width: 640px) {
-    .chat-content-measure {
-      --chat-content-inset: 1.5rem;
-    }
-
-    .chief-chat-panel .composer-prompt-lane {
-      padding-bottom: 0.5rem;
-    }
   }
 
   @keyframes input-flash {

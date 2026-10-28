@@ -5,7 +5,10 @@ import { selectContextDefaultProvider } from '../provider-catalog/workspace-cata
 import { getAgentProvider } from '$shared/types/agent-session';
 import { resolveHydratedInputModel } from '$lib/components/chat/input-hydration';
 import { canChangeAgentProvider } from '$lib/components/chat/provider-lock';
-import { selectAgentSessionIsStreaming } from '../agent-session/agent-session-selectors';
+import {
+  selectAgentSessionIsStreaming,
+  selectAgentSessionStreamingContent,
+} from '../agent-session/agent-session-selectors';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { store } from '../../store';
 import { selectWorkspaceParticipationContext } from '../workspace/workspace-selectors';
@@ -17,6 +20,7 @@ import {
 } from '../agent-session/agent-session-selectors';
 import {
   selectChatError,
+  selectChatAgentState,
   selectChatLastAttemptedMessage,
   selectTranscriptHydratedOnce,
   selectTranscriptHydration,
@@ -138,6 +142,19 @@ export const selectDockConversationView = store.createSelector((state) => {
         ? (selectWorkspaceById.select(state, workspaceId) ?? null)
         : null,
     loading,
+    streamingStatus:
+      contextCurrent && available && agentId
+        ? {
+            isStreaming: selectAgentSessionIsStreaming.select(state, agentId),
+            lastChunkTime: selectChatAgentState.select(state, agentId).lastChunkTime,
+            receivedFirstChunk: selectChatAgentState.select(state, agentId).receivedFirstChunk,
+            streamingContentLength:
+              selectAgentSessionStreamingContent.select(state, agentId)?.length ?? 0,
+            streamingStartTime: selectChatAgentState.select(state, agentId).streamingStartTime,
+            statusEvents: selectChatAgentState.select(state, agentId).statusEvents,
+            processQueueHint: session?.processQueueHint,
+          }
+        : {},
     running:
       contextCurrent && available && !!agentId && selectAgentIsResponding.select(state, agentId),
     error: !contextCurrent

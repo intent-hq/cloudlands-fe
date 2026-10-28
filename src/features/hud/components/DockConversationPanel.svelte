@@ -1,5 +1,6 @@
 <script lang="ts" module>
-  import type { Snippet } from 'svelte';
+  import type { Snippet, ComponentProps } from 'svelte';
+  import type StreamingStatusComponent from '$lib/components/chat/StreamingStatus.svelte';
   import type { Workspace, QueuedMessage } from '$shared/types';
   import type { PendingQueueDisplayRow } from '$store/renderer/slices/pending-submissions/pending-submissions-projection';
   import type {
@@ -22,6 +23,7 @@
     draft: string;
     loading?: boolean;
     running?: boolean;
+    streamingStatus?: ComponentProps<typeof StreamingStatusComponent>;
     error?: string | null;
     sending?: boolean;
     sendError?: string | null;
@@ -40,7 +42,7 @@
 </script>
 
 <script lang="ts">
-  import { tick, untrack, type ComponentProps } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import Fa from 'svelte-fa';
   import {
     faArrowLeft,
@@ -54,6 +56,26 @@
   import { ScreenHeader, EmptyState, LoadingState } from '$lib/components/patterns/screen';
   import ScrollToBottomButton from '$lib/components/chat/ScrollToBottomButton.svelte';
   import ChatMessage from '$lib/components/chat/ChatMessage.svelte';
+  import ChatContentLane from '$lib/components/chat/ChatContentLane.svelte';
+  import ChatTurnNotice from '$lib/components/chat/ChatTurnNotice.svelte';
+  import ConversationTurnGap from '$lib/components/chat/ConversationTurnGap.svelte';
+  import StreamingStatus from '$lib/components/chat/StreamingStatus.svelte';
+  import {
+    groupIntoTurns,
+    hasOperationalAssistantTurnBoundary,
+  } from '$lib/components/chat/conversation-turns';
+  import {
+    getSubscriptionCardSeam,
+    hasVisibleTurnBody,
+    isChatCardMessage,
+  } from '$lib/components/chat/subscription-card-spacing';
+  import {
+    isAttentionQuestionAnswerSeam,
+    eventCardAssistantMarginClass,
+  } from '$lib/components/chat/attention-flow-spacing';
+  import { isBatchedDeliverySeam } from '$lib/utils/queue-info';
+  import { isAutomatedChatMessage } from '$lib/utils/previous-user-message';
+  import { CHAT_TRANSCRIPT_OVERFLOW_CLASS } from '$lib/components/chat/chat-queue-edge-layout';
   import EventWakeupBanner from '$lib/components/chat/EventWakeupBanner.svelte';
   import { isEventWakeMessage } from '$lib/components/chat/event-wake-summary';
   import QueuedMessageList from '$lib/components/chat/QueuedMessageList.svelte';
@@ -77,6 +99,7 @@
     draft,
     loading = false,
     running = false,
+    streamingStatus = {},
     error = null,
     sending = false,
     sendError = null,
@@ -108,6 +131,7 @@
       queuedMessages.length === 0 &&
       !queueRows?.length,
   );
+  const turns = $derived(groupIntoTurns(messages, { preserveSystemRows: true }));
   const choices = $derived(agents.map((item) => ({ value: item.id, label: item.name })));
   const canSend = $derived(
     !blocked && !sending && !loading && !!agentId && draft.trim().length > 0,
@@ -252,14 +276,19 @@
   <div class="conversation-body">
     <div
       bind:this={scrollArea}
-      class="transcript-scroll"
+      class={`transcript-scroll ${CHAT_TRANSCRIPT_OVERFLOW_CLASS}`}
+      data-message-controls-root
       onscroll={trackScroll}
       role="region"
       aria-label={m.dock_conversation_messages_ariaLabel()}
       aria-busy={loading}
       tabindex="0"
     >
-      <div bind:this={transcript} class="transcript">
+      <ChatContentLane
+        bind:element={transcript}
+        class="transcript flex min-h-full flex-col pt-4 pb-3"
+        operational
+      >
         {#if loading && transcriptEmpty}
           <LoadingState
             density="compact"
@@ -273,29 +302,101 @@
             {#snippet description()}{m.dock_conversation_empty_description()}{/snippet}
           </EmptyState>
         {/if}
-        {#each messages as message, index (message.id)}
-          <div class="canonical-message">
-            {#if message.role === 'user' && isEventWakeMessage(message)}
-              <EventWakeupBanner
-                metadata={message.metadata as ComponentProps<typeof EventWakeupBanner>['metadata']}
-                messageText={extractAllContent(message)}
-                asDivider
-                compact
-                suppressTopGap
-                {workspace}
-              />
-            {:else}
-              <ChatMessage
-                {message}
-                agentId={agentId ?? undefined}
-                {workspace}
-                {ownPrincipalId}
-                isStreaming={message.isStreaming ?? false}
-                isLastConversationMessage={index === messages.length - 1}
-              />
+        {#each turns as turn, index (turn.userMessage?.id ?? turn.bodyMessages[0]?.id ?? turn.noticeMessages[0]?.id)}
+          {@const next = turns[index + 1]}
+          {@const isLastTurn = index === turns.length - 1}
+          {@const wake = turn.userMessage && isEventWakeMessage(turn.userMessage)}
+          {@const hasBody = hasVisibleTurnBody({
+            assistantMessages: turn.assistantMessages,
+            hasVisibleNotice:
+              turn.noticeMessages.length > 0 ||
+              turn.bodyMessages.some((message) => message.role === 'system'),
+            hasPendingStatus: isLastTurn && running,
+            suppressCoordinationStoppedIndicator:
+              !!turn.userMessage && isAutomatedChatMessage(turn.userMessage),
+          })}
+          {@const batched =
+            !isAttentionQuestionAnswerSeam(turn, next) && isBatchedDeliverySeam(turn, next)}
+          <div class="conversation-turn" data-conversation-turn>
+            {#if turn.userMessage}
+              {@const message = turn.userMessage}
+              <div
+                data-dock-message-id={message.id}
+                data-dock-message-role={message.role}
+                class={`canonical-message ${wake ? eventCardAssistantMarginClass(message, hasBody) : hasBody && !batched ? 'mb-6' : ''}`}
+              >
+                {#if wake}
+                  <EventWakeupBanner
+                    metadata={message.metadata as ComponentProps<
+                      typeof EventWakeupBanner
+                    >['metadata']}
+                    messageText={extractAllContent(message)}
+                    asDivider
+                    compact
+                    suppressTopGap
+                    {workspace}
+                  />
+                {:else}
+                  <ChatMessage
+                    {message}
+                    agentId={agentId ?? undefined}
+                    {workspace}
+                    {ownPrincipalId}
+                    suppressAutomatedWakeTopSpacing
+                  />
+                {/if}
+              </div>
             {/if}
+            {#each turn.noticeMessages as message (message.id)}
+              <ChatTurnNotice {message} workspaceId={workspace?.id} />
+            {/each}
+            {#each turn.bodyMessages as message (message.id)}
+              {@const lastAssistant =
+                isLastTurn && message.id === turn.assistantMessages.at(-1)?.id}
+              <div
+                class="canonical-message"
+                data-dock-message-id={message.id}
+                data-dock-message-role={message.role}
+              >
+                <ChatTurnNotice {message} workspaceId={workspace?.id}>
+                  {#snippet fallback()}
+                    <ChatMessage
+                      {message}
+                      agentId={agentId ?? undefined}
+                      {workspace}
+                      {ownPrincipalId}
+                      isStreaming={lastAssistant &&
+                        (message.isStreaming ?? streamingStatus.isStreaming ?? false)}
+                      isLastConversationMessage={lastAssistant}
+                      suppressCoordinationStoppedIndicator={!!turn.userMessage &&
+                        isAutomatedChatMessage(turn.userMessage)}
+                    />
+                  {/snippet}
+                </ChatTurnNotice>
+              </div>
+            {/each}
           </div>
+          {#if next}
+            <ConversationTurnGap
+              currentIsEventNotification={!!wake}
+              currentHasAssistantMessages={turn.assistantMessages.length > 0}
+              nextIsEventNotification={!!next.userMessage && isEventWakeMessage(next.userMessage)}
+              nextHasUserMessage={!!next.userMessage}
+              zeroToolSeam={hasOperationalAssistantTurnBoundary(turn, next)}
+              batchedDeliverySeam={batched}
+              attentionQuestionAnswerSeam={isAttentionQuestionAnswerSeam(turn, next)}
+              subscriptionCardSeam={getSubscriptionCardSeam(
+                isChatCardMessage(turn.userMessage) && !hasBody,
+                isChatCardMessage(next.userMessage),
+              )}
+            />
+          {/if}
         {/each}
+        {#if running}
+          <div class="pt-1 mb-2">
+            <StreamingStatus {...streamingStatus} isProcessing={running} />
+          </div>
+        {/if}
         {#each pendingMessages as message (message.id)}
           <div class="canonical-message">
             <ChatMessage
@@ -330,7 +431,7 @@
             {/snippet}
           </EmptyState>
         {/if}
-      </div>
+      </ChatContentLane>
     </div>
     {#if newActivity}
       <div class="new-activity">
@@ -340,60 +441,59 @@
   </div>
 
   <footer class="conversation-footer">
-    {#if running || sending}<div class="conversation-status" role="status" aria-live="polite">
-        {#if running}<span class="running-dot" aria-hidden="true"
-          ></span>{m.dock_conversation_running_label()}{:else if sending}{m.chat_queuedMessages_sending_label()}{/if}
-      </div>{/if}
-    {#if sendError}
-      <div class="send-recovery">
-        <InputMessage
-          id={`${uid}-send-error`}
-          tone="error"
-          class="m-0 max-h-18 overflow-auto min-w-0 flex-1 break-words">{sendError}</InputMessage
-        >
-        {#if canRetry}
-          <Button variant="outline" size="sm" onclick={onRetrySend} disabled={sending || loading}>
-            {m.chat_shared_retry_label()}
-          </Button>
-        {/if}
-      </div>
-    {/if}
-    {#if attention}<div class="attention">
-        <InputMessage id={`${uid}-attention`}>{attention}</InputMessage>
-        <Button variant="outline" size="sm" onclick={onOpenWorkspace}
-          >{m.dock_conversation_openFull_ariaLabel()}</Button
-        >
-      </div>{/if}
-    {#if composer}
-      {@render composer()}
-    {:else}
-      <MessageComposer
-        value={draft}
-        onValueChange={onDraftChange}
-        onSend={submit}
-        disabled={draftDisabled || loading || !agentId}
-        sendDisabled={!canSend}
-        placeholder={m.dock_conversation_reply_placeholder({ name: agentName })}
-        {sendLabel}
-        minRows={1}
-        maxRows={5}
-        textareaProps={{
-          'data-dock-conversation-composer': '',
-          'aria-label': m.chat_richInput_editor_ariaLabel(),
-          'aria-describedby': sendError
-            ? `${uid}-send-error`
-            : attention
-              ? `${uid}-attention`
-              : undefined,
-        }}
-      />
-    {/if}
+    <ChatContentLane composer>
+      {#if sendError}
+        <div class="send-recovery">
+          <InputMessage
+            id={`${uid}-send-error`}
+            tone="error"
+            class="m-0 max-h-18 overflow-auto min-w-0 flex-1 break-words">{sendError}</InputMessage
+          >
+          {#if canRetry}
+            <Button variant="outline" size="sm" onclick={onRetrySend} disabled={sending || loading}>
+              {m.chat_shared_retry_label()}
+            </Button>
+          {/if}
+        </div>
+      {/if}
+      {#if attention}<div class="attention">
+          <InputMessage id={`${uid}-attention`}>{attention}</InputMessage>
+          <Button variant="outline" size="sm" onclick={onOpenWorkspace}
+            >{m.dock_conversation_openFull_ariaLabel()}</Button
+          >
+        </div>{/if}
+      {#if composer}
+        {@render composer()}
+      {:else}
+        <MessageComposer
+          value={draft}
+          onValueChange={onDraftChange}
+          onSend={submit}
+          disabled={draftDisabled || loading || !agentId}
+          sendDisabled={!canSend}
+          placeholder={m.dock_conversation_reply_placeholder({ name: agentName })}
+          {sendLabel}
+          minRows={1}
+          maxRows={5}
+          textareaProps={{
+            'data-dock-conversation-composer': '',
+            'aria-label': m.chat_richInput_editor_ariaLabel(),
+            'aria-describedby': sendError
+              ? `${uid}-send-error`
+              : attention
+                ? `${uid}-attention`
+                : undefined,
+          }}
+        />
+      {/if}
+    </ChatContentLane>
   </footer>
 </section>
 
 <style>
   .dock-conversation {
     isolation: isolate;
+    container: chat-panel / inline-size;
     display: flex;
     flex-direction: column;
     width: 100%;
@@ -412,16 +512,9 @@
   }
   .transcript-scroll {
     height: 100%;
-    overflow: auto;
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
     overflow-anchor: none;
-  }
-  .transcript {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
-    padding: var(--space-4);
   }
   .canonical-message {
     min-width: 0;
@@ -446,21 +539,6 @@
   }
   .conversation-footer {
     flex: none;
-    padding: 0 var(--space-3) var(--space-3);
-  }
-  .conversation-status {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    min-height: 28px;
-    color: hsl(var(--muted-foreground));
-    font-size: var(--text-caption-size);
-  }
-  .running-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: currentColor;
   }
   .attention {
     max-height: 72px;

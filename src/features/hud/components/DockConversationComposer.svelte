@@ -292,7 +292,7 @@
   }
   .composer-aurora-host {
     position: absolute;
-    inset-inline: calc(-1 * var(--space-3));
+    inset-inline: 0;
     bottom: calc(-1 * var(--space-3));
     height: calc(100% + 10rem);
     overflow: hidden;

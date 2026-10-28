@@ -1569,6 +1569,150 @@ for (const scene of [
   });
 }
 
+test('conversation preserves an auto-unarchived notice-only transcript', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 420, height: 600 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(ConversationPreview, {
+    props: {
+      width: 320,
+      height: 460,
+      theme: 'dark',
+      messages: [
+        {
+          id: 'notice-only-unarchived',
+          role: 'system',
+          timestamp: '2026-10-28T00:00:00Z',
+          metadata: { type: 'auto_unarchived', reason: 'agent_activity' },
+          contentBlocks: [{ type: 'text', text: 'This workspace resumed after a new message.' }],
+        },
+      ],
+    },
+  });
+  const row = component.locator('[data-dock-message-id="notice-only-unarchived"]');
+  await expect(row).toHaveAttribute('data-dock-message-role', 'system');
+  await expect(row.getByRole('status')).toContainText('Workspace was automatically unarchived');
+  await expect(row.getByRole('status')).toBeVisible();
+  await component.screenshot({ path: testInfo.outputPath('conversation-notice-only.png') });
+});
+
+test('conversation preserves mixed system rows and block-metadata notices in transcript order', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 480, height: 900 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(ConversationPreview, {
+    props: {
+      width: 420,
+      height: 820,
+      theme: 'dark',
+      messages: [
+        {
+          id: 'mixed-user',
+          role: 'user',
+          timestamp: '2026-10-28T00:00:00Z',
+          contentBlocks: [{ type: 'text', text: 'Resume the review.' }],
+        },
+        {
+          id: 'mixed-unarchived',
+          role: 'system',
+          timestamp: '2026-10-28T00:00:01Z',
+          metadata: { type: 'auto_unarchived', reason: 'agent_activity' },
+          contentBlocks: [{ type: 'text', text: 'Workspace resumed.' }],
+        },
+        {
+          id: 'mixed-assistant',
+          role: 'assistant',
+          timestamp: '2026-10-28T00:00:02Z',
+          contentBlocks: [{ type: 'text', text: 'The review has resumed.' }],
+        },
+        {
+          id: 'mixed-dismissed',
+          role: 'system',
+          timestamp: '2026-10-28T00:00:03Z',
+          metadata: { type: 'questions_dismissed', dismissedQuestionsMessageId: 'questions-one' },
+          contentBlocks: [{ type: 'text', text: 'First questions dismissed.' }],
+        },
+        {
+          id: 'mixed-model',
+          role: 'system',
+          timestamp: '2026-10-28T00:00:04Z',
+          metadata: { type: 'model_changed', from: 'before-model', to: 'after-model' },
+          contentBlocks: [{ type: 'text', text: 'Model changed.' }],
+        },
+        {
+          id: 'mixed-block-dismissed',
+          role: 'system',
+          timestamp: '2026-10-28T00:00:05Z',
+          contentBlocks: [
+            {
+              type: 'text',
+              text: 'Second questions dismissed.',
+              messageMetadata: {
+                type: 'questions_dismissed',
+                dismissedQuestionsMessageId: 'questions-two',
+              },
+            },
+          ],
+        },
+        {
+          id: 'mixed-plain-system',
+          role: 'system',
+          timestamp: '2026-10-28T00:00:06Z',
+          contentBlocks: [{ type: 'text', text: 'A plain system update remains visible.' }],
+        },
+        {
+          id: 'mixed-user-followup',
+          role: 'user',
+          timestamp: '2026-10-28T00:00:07Z',
+          contentBlocks: [{ type: 'text', text: 'Continue from here.' }],
+        },
+      ],
+    },
+  });
+  await expect(component.getByText('Resume the review.', { exact: true })).toBeVisible();
+  await expect(component.getByText('The review has resumed.', { exact: true })).toBeVisible();
+  await expect(
+    component.locator('[data-dock-message-id="mixed-unarchived"]').getByRole('status'),
+  ).toBeVisible();
+  for (const id of ['mixed-dismissed', 'mixed-block-dismissed']) {
+    await expect(
+      component.locator(`[data-dock-message-id="${id}"]`).getByRole('status'),
+    ).toHaveText('Questions dismissed');
+  }
+  await expect(component.locator('[data-dock-message-id="mixed-model"]')).toContainText(
+    'after-model',
+  );
+  await expect(
+    component.getByText('A plain system update remains visible.', { exact: true }),
+  ).toBeVisible();
+  await expect(component.getByText('Continue from here.', { exact: true })).toBeVisible();
+  const rows = await component.locator('[data-dock-message-id]').evaluateAll((elements) =>
+    elements.map((element) => ({
+      id: element.getAttribute('data-dock-message-id'),
+      role: element.getAttribute('data-dock-message-role'),
+    })),
+  );
+  expect(rows).toEqual([
+    { id: 'mixed-user', role: 'user' },
+    { id: 'mixed-unarchived', role: 'system' },
+    { id: 'mixed-assistant', role: 'assistant' },
+    { id: 'mixed-dismissed', role: 'system' },
+    { id: 'mixed-model', role: 'system' },
+    { id: 'mixed-block-dismissed', role: 'system' },
+    { id: 'mixed-plain-system', role: 'system' },
+    { id: 'mixed-user-followup', role: 'user' },
+  ]);
+  await writeFile(
+    testInfo.outputPath('conversation-system-row-order.json'),
+    JSON.stringify(rows, null, 2),
+  );
+  await component.screenshot({ path: testInfo.outputPath('conversation-system-row-order.png') });
+});
+
 test('conversation canonical transcript keeps wake details collapsed and queue separate', async ({
   mount,
   page,
@@ -1584,6 +1728,40 @@ test('conversation canonical transcript keeps wake details collapsed and queue s
       theme: 'dark',
       messages: [
         ...(props.messages ?? []),
+        {
+          id: 'canonical-model-notice',
+          role: 'system',
+          timestamp: '2026-10-22T00:00:30Z',
+          metadata: {
+            type: 'model_changed',
+            from: 'before-model',
+            to: 'after-model',
+            fromProvider: 'codex',
+            toProvider: 'codex',
+          },
+          contentBlocks: [{ type: 'text', text: 'Model changed.' }],
+        },
+        {
+          id: 'canonical-effort-notice',
+          role: 'system',
+          timestamp: '2026-10-22T00:00:31Z',
+          metadata: { type: 'effort_changed', from: 'low', to: 'high' },
+          contentBlocks: [{ type: 'text', text: 'Effort changed.' }],
+        },
+        {
+          id: 'canonical-provider-notice',
+          role: 'system',
+          timestamp: '2026-10-22T00:00:32Z',
+          metadata: {
+            type: 'provider_rehomed',
+            reason: 'provider_disabled',
+            from: 'old-model',
+            to: 'new-model',
+            fromProvider: 'codex',
+            toProvider: 'claude-code',
+          },
+          contentBlocks: [{ type: 'text', text: 'Provider changed.' }],
+        },
         {
           id: 'canonical-image',
           role: 'user',
@@ -1619,6 +1797,17 @@ test('conversation canonical transcript keeps wake details collapsed and queue s
   await answer.scrollIntoViewIfNeeded();
   await expect(answer.locator('strong')).toHaveText('workspace and focus');
   await expect(answer.locator('[data-tool-primary]').first()).toBeVisible();
+  const modelNotice = component.locator('[data-message-id="canonical-model-notice"]');
+  await modelNotice.scrollIntoViewIfNeeded();
+  await expect(modelNotice).toContainText('before-model');
+  await expect(modelNotice).toContainText('after-model');
+  await expect(component.locator('[data-message-id="canonical-effort-notice"]')).toContainText(
+    /Low.*High/,
+  );
+  await expect(component.locator('[data-message-id="canonical-provider-notice"]')).toContainText(
+    'old-model',
+  );
+  await component.screenshot({ path: testInfo.outputPath('conversation-shared-notices.png') });
   const image = component.locator('[data-message-id="canonical-image"] img');
   await image.scrollIntoViewIfNeeded();
   await expect(image).toHaveAttribute('src', `data:image/png;base64,${clipboardPng}`);

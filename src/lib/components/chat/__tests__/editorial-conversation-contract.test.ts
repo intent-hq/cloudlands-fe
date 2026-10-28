@@ -1,4 +1,4 @@
-// @verify-changed-triggers: ../ChatPanel.svelte, ../ChatMessage.svelte, ../LazyTurn.svelte,
+// @verify-changed-triggers: ../ChatPanel.svelte, ../ChatContentLane.svelte, ../ChatMessage.svelte, ../LazyTurn.svelte,
 //   ../PinnedUserPrompt.svelte, ../pinned-prompt.ts, ../user-message-surface.ts,
 //   ../ConversationTurnGap.svelte, ../MessageContent.svelte, ../StreamingMessageContent.svelte,
 //   ../ResponseGroup.svelte, ../operational-disclosure-row.ts, ../ChatOperationalRow.svelte,
@@ -62,19 +62,22 @@ describe('editorial conversation presentation contract', () => {
 
   it('caps transcript, questions, and composer content at the approved 140em measure', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
+    const lane = source('src/lib/components/chat/ChatContentLane.svelte');
     const questionComposer = source('src/lib/components/chat/questions/QuestionComposer.svelte');
 
+    expect(panel).toContain("import ChatContentLane from './ChatContentLane.svelte';");
+    expect(panel).toMatch(/<ChatContentLane\s+class="conversation-column flex min-h-full flex-col/);
+    expect(lane).toContain("cn('chat-content-measure mx-auto w-full min-w-0', className)");
+    expect(lane).toMatch(/\.chat-content-measure\s*\{[^}]*max-width: 140em;/);
+    expect(lane).toContain('class:composer-prompt-lane={composer}');
     expect(panel).toContain(
-      'conversation-column chat-content-measure mx-auto flex min-h-full w-full min-w-0 flex-col',
+      '<ChatContentLane data-testid="chat-composer-lane" chief={isChiefWorkspace} composer>',
     );
     expect(panel).not.toContain('max-w-[var(--content-measure-wide)]');
     expect(panel).toContain('<QuestionComposer');
     expect(questionComposer).toContain('data-testid="question-wizard-slot"');
     expect(questionComposer).toContain("'w-full min-w-0'");
     expect(panel).toContain('conversation-composer relative z-10 w-full');
-    expect(panel).toContain(
-      'class="composer-prompt-lane chat-content-measure mx-auto w-full min-w-0"',
-    );
     expect(panel).toContain('data-testid="chat-composer-controls-inner"');
     expect(panel).toContain('edgeDocked');
     expect(panel).not.toContain("'px-[5%]'");
