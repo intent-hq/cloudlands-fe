@@ -4674,6 +4674,8 @@
   "settings_appearance_chatAurora_label": "Chat-Aurora",
   "settings_appearance_collapseToolRuns_description": "Fasst aufeinanderfolgende Toolaufrufe und Denkschritte im Chat in einer aufklappbaren Zeile zusammen.",
   "settings_appearance_collapseToolRuns_label": "Tool-Aktivität zusammenfassen",
+  "settings_appearance_pauseAnimationsWhenUnfocused_description": "Pausiert wiederholte Animationen, solange ein anderes Fenster im Vordergrund ist.",
+  "settings_appearance_pauseAnimationsWhenUnfocused_label": "Animationen ohne Fokus pausieren",
   "settings_appearance_reduceMotionOnBattery_description": "Pausiert Hintergrundanimationen, während das Gerät im Akkubetrieb läuft.",
   "settings_appearance_reduceMotionOnBattery_label": "Bewegung im Akkubetrieb reduzieren",
   "settings_appearance_translucentWindow_description": "Lässt den Desktop durch den App-Hintergrund durchscheinen.",

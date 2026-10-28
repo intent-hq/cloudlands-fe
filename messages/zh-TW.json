@@ -4674,6 +4674,8 @@
   "settings_appearance_chatAurora_label": "聊天極光",
   "settings_appearance_collapseToolRuns_description": "將聊天中連續的工具呼叫和思考步驟合併為一列，可展開查看。",
   "settings_appearance_collapseToolRuns_label": "摺疊工具活動",
+  "settings_appearance_pauseAnimationsWhenUnfocused_description": "當其他視窗位於前景時，暫停循環動畫。",
+  "settings_appearance_pauseAnimationsWhenUnfocused_label": "失去焦點時暫停動畫",
   "settings_appearance_reduceMotionOnBattery_description": "裝置使用電池供電時暫停環境動畫。",
   "settings_appearance_reduceMotionOnBattery_label": "使用電池時減少動效",
   "settings_appearance_translucentWindow_description": "讓桌面透過應用程式背景顯示出來。",

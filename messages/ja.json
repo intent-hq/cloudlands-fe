@@ -4674,6 +4674,8 @@
   "settings_appearance_chatAurora_label": "チャットオーロラ",
   "settings_appearance_collapseToolRuns_description": "チャット内で連続するツール呼び出しと思考ステップを、展開できる 1 行にまとめます。",
   "settings_appearance_collapseToolRuns_label": "ツールの動作を折りたたむ",
+  "settings_appearance_pauseAnimationsWhenUnfocused_description": "別のウィンドウが前面にある間、ループするアニメーションを一時停止します。",
+  "settings_appearance_pauseAnimationsWhenUnfocused_label": "フォーカスがないときにアニメーションを一時停止",
   "settings_appearance_reduceMotionOnBattery_description": "バッテリー駆動中は環境アニメーションを一時停止します。",
   "settings_appearance_reduceMotionOnBattery_label": "バッテリー駆動時にアニメーションを減らす",
   "settings_appearance_translucentWindow_description": "アプリの背景越しにデスクトップを表示します。",

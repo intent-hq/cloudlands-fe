@@ -75,6 +75,10 @@ export const selectReduceMotionOnBattery = store.createSelector((state) => {
   return state.userPreferences?.reduceMotionOnBattery ?? false;
 });
 
+export const selectPauseAnimationsWhenUnfocused = store.createSelector((state) => {
+  return state.userPreferences?.pauseAnimationsWhenUnfocused ?? false;
+});
+
 export const selectLabsSettingsVisible = store.createSelector((state) => {
   return state.userPreferences?.labsSettingsVisible ?? false;
 });

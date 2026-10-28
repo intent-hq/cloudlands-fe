@@ -29,6 +29,7 @@ import {
   selectLabsRemoteAgentsEnabled,
   selectLanguagePreference,
   selectNoteFontStyle,
+  selectPauseAnimationsWhenUnfocused,
   selectReduceMotionOnBattery,
   selectShowArchived,
   selectShowReasoningBlocks,
@@ -59,6 +60,7 @@ import {
   setLabsRemoteAgentsEnabled,
   setLanguagePreference,
   setNoteFontStyle,
+  setPauseAnimationsWhenUnfocused,
   setReduceMotionOnBattery,
   setShowArchived,
   setShowReasoningBlocks,
@@ -73,6 +75,7 @@ import {
   toggleLabsSettingsVisibility,
   toggleLabsGitLab,
   toggleLabsRemoteAgents,
+  togglePauseAnimationsWhenUnfocused,
   toggleReduceMotionOnBattery,
   toggleShowArchived,
   toggleShowReasoningBlocks,
@@ -92,6 +95,7 @@ const CHAT_AURORA_STORAGE_KEY = 'chat:auroraEnabled';
 const COLLAPSE_TOOL_RUNS_STORAGE_KEY = 'chat:collapseToolRuns';
 const SHELL_TRANSPARENCY_STORAGE_KEY = 'appearance:shellTransparencyEnabled';
 const REDUCE_MOTION_ON_BATTERY_STORAGE_KEY = 'appearance:reduceMotionOnBattery';
+const PAUSE_ANIMATIONS_WHEN_UNFOCUSED_STORAGE_KEY = 'appearance:pauseAnimationsWhenUnfocused';
 const LABS_SETTINGS_VISIBLE_STORAGE_KEY = 'labs:settingsVisible';
 const LABS_GITLAB_STORAGE_KEY = 'labs:gitlabEnabled';
 const LABS_REMOTE_AGENTS_STORAGE_KEY = 'labs:remoteAgentsEnabled';
@@ -208,6 +212,13 @@ export function* hydrateUserPreferencesWorker() {
   );
   if (typeof reduceMotionOnBattery === 'boolean') {
     yield* put(setReduceMotionOnBattery(reduceMotionOnBattery));
+  }
+
+  const pauseAnimationsWhenUnfocused = yield* getLocalStorageJSON<boolean>(
+    PAUSE_ANIMATIONS_WHEN_UNFOCUSED_STORAGE_KEY,
+  );
+  if (typeof pauseAnimationsWhenUnfocused === 'boolean') {
+    yield* put(setPauseAnimationsWhenUnfocused(pauseAnimationsWhenUnfocused));
   }
 
   const labsSettingsVisible = yield* getLocalStorageJSON<boolean>(
@@ -349,6 +360,13 @@ function* persistReduceMotionOnBatteryWorker() {
   );
 }
 
+function* persistPauseAnimationsWhenUnfocusedWorker() {
+  yield* setLocalStorageJSON(
+    PAUSE_ANIMATIONS_WHEN_UNFOCUSED_STORAGE_KEY,
+    yield* selectPauseAnimationsWhenUnfocused.effect(),
+  );
+}
+
 function* persistLabsSettingsVisibilityWorker() {
   yield* setLocalStorageJSON(
     LABS_SETTINGS_VISIBLE_STORAGE_KEY,
@@ -463,6 +481,10 @@ function* watchUserPreferenceWrites() {
   yield* takeEvery(
     [setReduceMotionOnBattery, toggleReduceMotionOnBattery],
     persistReduceMotionOnBatteryWorker,
+  );
+  yield* takeEvery(
+    [setPauseAnimationsWhenUnfocused, togglePauseAnimationsWhenUnfocused],
+    persistPauseAnimationsWhenUnfocusedWorker,
   );
   yield* takeEvery(
     [setLabsSettingsVisible, toggleLabsSettingsVisibility],
