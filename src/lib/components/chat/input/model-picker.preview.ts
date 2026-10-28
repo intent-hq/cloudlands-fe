@@ -288,6 +288,8 @@ export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>(
       },
       setup: setupModels(true, true),
     },
+    // Codex adapter crash: the daemon answers with an empty list plus the
+    // diagnostic as a warning, so the app shows the fallback notice here too.
     'adapter-error': {
       props: {
         initialOpen: true,
