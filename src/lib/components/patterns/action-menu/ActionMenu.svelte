@@ -288,7 +288,7 @@
           aria-label={ariaLabel}
           aria-hidden="true"
           tabindex={-1}
-          class="pointer-events-none fixed size-px opacity-0"
+          class="pointer-events-none fixed size-px p-0 opacity-0"
           style={`left: ${contextMenu.x}px; top: ${contextMenu.y}px;`}
         ></Button>
       {:else}

@@ -2,6 +2,36 @@ import { expect, test } from '../../../test/ct-test';
 import DockRailPreview from './dock-rail.preview.svelte';
 import { dockRailPreview } from './dock-rail.preview-fixtures';
 
+for (const side of ['left', 'right'] as const) {
+  test(`machine picker switches from the ${side} dock rail and restores logo focus`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    const component = await mount(DockRailPreview, {
+      props: {
+        ...dockRailPreview.states[`side-${side}`].props,
+        machineFixture: true,
+        controlledPlacement: true,
+      },
+    });
+    const logo = component.getByRole('button', { name: 'Switch machine', exact: true });
+    await logo.click();
+    const menu = page.getByRole('menu', { name: 'Machines' });
+    await expect(menu).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`machine-picker-${side}.png`) });
+    await menu.getByRole('menuitemradio', { name: 'Build server', exact: true }).click();
+    await expect(
+      menu.getByRole('menuitemradio', { name: 'Build server', exact: true }),
+    ).toHaveAttribute('aria-checked', 'true');
+    expect(JSON.parse((await component.getAttribute('data-preview-actions'))!)).toEqual([
+      'machine:remote-build',
+    ]);
+    await page.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
+    await expect(logo).toBeFocused();
+  });
+}
+
 test('logo machine picker preserves current selection on failure and retries without opening a workspace', async ({
   mount,
   page,

@@ -36,7 +36,9 @@
   function followAnchor(): void {
     if (disposed) return;
     const rect = anchor.getBoundingClientRect();
-    const x = side === 'right' ? rect.right : rect.left;
+    const surface = anchor.closest('[data-dock-surface]')?.getBoundingClientRect() ?? rect;
+    // Side menus sit beside the visible rail rather than the inset logo.
+    const x = side === 'right' ? surface.right + 6 : side === 'left' ? surface.left - 6 : rect.left;
     const y = side === 'bottom' ? rect.bottom : rect.top;
     if (anchorPosition.x !== x || anchorPosition.y !== y) anchorPosition = { x, y };
     anchorFrame = requestAnimationFrame(followAnchor);
