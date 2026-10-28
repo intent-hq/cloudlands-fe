@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.249.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.248.1...v2.249.0) (2026-10-28)
+
+
+### 🚀 Features
+
+* **workspace:** move the primary client into the workspace menu ([#3812](https://github.com/intent-hq/cloudlands-fe/issues/3812)) ([e4d924a](https://github.com/intent-hq/cloudlands-fe/commit/e4d924ad0670156926dee7569dbb56f7ec091f26))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.71 ([#3816](https://github.com/intent-hq/cloudlands-fe/issues/3816)) ([54c0cfb](https://github.com/intent-hq/cloudlands-fe/commit/54c0cfb828779d4049073d97d454ae96bd7e675b))
+
 ## [2.248.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.248.0...v2.248.1) (2026-10-28)
 
 
