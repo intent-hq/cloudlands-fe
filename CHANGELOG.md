@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.248.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.247.2...v2.248.0) (2026-10-28)
+
+
+### 🚀 Features
+
+* **home:** workspace labels in Home ([#3788](https://github.com/intent-hq/cloudlands-fe/issues/3788)) ([735fadb](https://github.com/intent-hq/cloudlands-fe/commit/735fadbf0e78907fc2e697e144a7a3791c67b24d))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.69 ([#3811](https://github.com/intent-hq/cloudlands-fe/issues/3811)) ([e38d9d3](https://github.com/intent-hq/cloudlands-fe/commit/e38d9d3982ff25223f3e36af38526aebdffcf84a))
+
 ## [2.247.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.247.1...v2.247.2) (2026-10-28)
 
 
