@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.250.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.249.0...v2.250.0) (2026-10-28)
+
+
+### 🚀 Features
+
+* **settings:** make pausing animations when unfocused opt-in ([#3817](https://github.com/intent-hq/cloudlands-fe/issues/3817)) ([84ac68e](https://github.com/intent-hq/cloudlands-fe/commit/84ac68eb76c4aa177d6ab5e70521870f6197ab85))
+
 ## [2.249.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.248.1...v2.249.0) (2026-10-28)
 
 
