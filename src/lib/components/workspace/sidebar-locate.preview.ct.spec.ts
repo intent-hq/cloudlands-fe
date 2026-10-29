@@ -47,9 +47,14 @@ test('reveal opens the collapsed flyout on the target and keeps it open', async 
   await expect(flyout).toHaveAttribute('data-workspace-sidebar-flyout', 'true');
 });
 
-for (const [name, target, selector] of [
-  ['terminal', terminal, `[data-sidebar-shell-terminal="${terminal.terminalId}"]`],
-  ['saved script', script, `[data-sidebar-shell-script="${script.scriptId}"]`],
+for (const [name, target, selector, groupName] of [
+  ['terminal', terminal, `[data-sidebar-shell-terminal="${terminal.terminalId}"]`, 'Terminals'],
+  [
+    'saved script',
+    script,
+    `[data-sidebar-shell-script="${script.scriptId}"]`,
+    'Development scripts',
+  ],
 ] as const) {
   for (const collapsed of [false, true]) {
     test(`reveal finds a ${name} in Shells (${collapsed ? 'collapsed' : 'pinned'})`, async ({
@@ -59,10 +64,20 @@ for (const [name, target, selector] of [
       const component = await mount(SidebarTabsPreview, {
         props: { collapsed, terminals: 1, locate: target },
       });
+      const shells = component.getByRole('tab', { name: 'Shells', exact: true });
+      if (collapsed) await shells.hover();
+      else await shells.click();
+      const group = component
+        .locator('[data-workspace-shell-list]')
+        .getByRole('button', { name: groupName, exact: true });
+      await group.click();
+      await expect(group).toHaveAttribute('aria-expanded', 'false');
+      await expect(component.locator(selector)).toHaveCount(0);
       await component.locator('[data-sidebar-preview-locate]').click();
       const row = component.locator(selector);
       await expect(row).toBeInViewport();
       await expect(row).toHaveClass(/sidebar-locate-highlight/);
+      await expect(group).toHaveAttribute('aria-expanded', 'true');
       await expect(component.locator('[data-sidebar-section="shell"]')).toBeVisible();
       await testInfo.attach(`${name}-${collapsed ? 'collapsed' : 'pinned'}`, {
         body: await page.screenshot(),

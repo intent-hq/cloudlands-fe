@@ -60,7 +60,7 @@
   import { buildWorkspacePRPresentationModel } from './sidebar/workspace-pr-presentation';
   import { constructPrUrl, legacyWorkspacePullRequest } from './sidebar/sidebar-changes-utils';
   import { selectReviewMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
-  import { onMount, untrack, type Snippet } from 'svelte';
+  import { onMount, tick, untrack, type Snippet } from 'svelte';
   import { prefersReducedMotion } from '$lib/utils/reduced-motion';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
@@ -454,6 +454,7 @@
   let fileSearchQuery = $state('');
   let filesPanelRef: FilesPanel | null = $state(null);
   let agentsListRef: WorkspaceAgentsList | null = $state(null);
+  let shellsListRef: WorkspaceShellList | null = $state(null);
   let filesExpandedTick = $state(0);
 
   const hasExpandedDirectories = $derived.by(() => {
@@ -544,7 +545,7 @@
       let cancelled = false;
       let cancelFileReveal: (() => void) | undefined;
       let cancelAgentReveal: (() => void) | undefined;
-      const timeoutId = setTimeout(() => {
+      const timeoutId = setTimeout(async () => {
         // The context menu may have returned focus to the panel tab and dismissed the flyout.
         revealFlyout();
         let selector: string | null = null;
@@ -565,6 +566,12 @@
             else if (terminalId)
               selector = `[data-sidebar-shell-terminal="${CSS.escape(terminalId)}"]`;
             break;
+        }
+
+        // A folded Shells group must render its target before we look up the row.
+        if (type === 'terminal' && shellsListRef?.revealTarget({ terminalId, scriptId })) {
+          await tick();
+          if (cancelled) return;
         }
 
         const highlight = (element: HTMLElement, scroll: boolean) => {
@@ -961,7 +968,7 @@
               {:else if tabId === 'browser'}
                 <SidebarBrowserList {workspaceId} {panelLayoutId} />
               {:else if tabId === 'shell'}
-                <WorkspaceShellList {workspaceId} />
+                <WorkspaceShellList bind:this={shellsListRef} {workspaceId} />
               {/if}
             </div>
           {/key}

@@ -66,6 +66,28 @@
   let terminalsExpanded = $state(true);
   let scriptsExpanded = $state(true);
 
+  export function revealTarget({
+    terminalId,
+    scriptId,
+  }: {
+    terminalId?: string;
+    scriptId?: string;
+  }): boolean {
+    if (scriptId) {
+      if (!orderedScripts.some((script) => script.id === scriptId)) return false;
+      scriptsExpanded = true;
+      return true;
+    }
+    if (
+      $isCollaborator$ ||
+      !terminalId ||
+      !$terminals$.some((terminal) => terminal.id === terminalId)
+    )
+      return false;
+    terminalsExpanded = true;
+    return true;
+  }
+
   // Explicit surface actions override the remembered placement (the
   // `openTerminalOverlay` reducer records 'overlay' for the shown target).
   function showTerminalInOverlay(terminalId: string) {
