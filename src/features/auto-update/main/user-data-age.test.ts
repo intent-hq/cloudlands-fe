@@ -4,7 +4,7 @@
  * mtime (birthtime is 0 or missing on some Linux filesystems).
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
@@ -77,7 +77,10 @@ describe('estimateDirCreatedAtMs', () => {
       const result = await estimateDirCreatedAtMs(dir);
       expect(result).not.toBeNull();
       // Either the real birthtime (now) or, where birthtime is 0, the oldest mtime.
-      expect(result === old.getTime() || Math.abs((result as number) - Date.now()) < 60_000).toBe(
+      // Filesystem timestamps come from the real clock, so compare against it rather
+      // than `Date.now()`, which the nightly shifted-clock run moves (VITEST_SHIFTED_NOW).
+      const realNow = vi.getRealSystemTime();
+      expect(result === old.getTime() || Math.abs((result as number) - realNow) < 60_000).toBe(
         true,
       );
     });
