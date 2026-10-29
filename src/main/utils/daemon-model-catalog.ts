@@ -7,8 +7,9 @@
  * version-key change, or `forceRefresh`), and stale/fallback labeling for
  * every provider — the FE no
  * longer keeps its own model caches or probe implementations. This helper is
- * the single wire seam the per-provider `GET_MODELS` IPC handlers and the
- * main-side model-override validator (`model-pool.ts`) call into.
+ * the single wire seam the per-provider `GET_MODELS` IPC handlers call into;
+ * the reply is built by the shared `toGetModelsEnvelope` (also used by the
+ * daemon/web bridge seeder).
  *
  * Backend policy: per-sender. Each call resolves the invoking window's
  * backend via `getBackendClientForIpcEvent(event)` and issues `models.list`
@@ -23,43 +24,9 @@ import {
   type WireModelsListResult,
 } from '../../shared/models/wire-model-info';
 import { getBackendClientForIpcEvent } from '../../features/backend/main/backend.ipc';
-import type { JsonRpcClient } from '../../features/backend/main/json-rpc-client';
 import { modelsListProviderId } from '../../shared/provider-profiles';
 
 const logger = new Logger('DaemonModelCatalog');
-
-/**
- * Fetch the daemon-resolved model catalog for one provider as the shared
- * `GET_MODELS` envelope (`toGetModelsEnvelope`, also used by the daemon/web
- * bridge seeder). Rejects with the RPC error on wire/transport failure so
- * callers can surface an honest error state; probe/CLI failures never
- * reject — the daemon degrades them to last-good + `stale: true` or a static
- * fallback with a `warning` (§6.7).
- */
-async function listProviderModels(
-  client: JsonRpcClient,
-  providerId: string,
-  options: { forceRefresh?: boolean; workspaceId?: string } = {},
-): Promise<GetModelsEnvelope> {
-  const params: { providerId: string; forceRefresh?: boolean; workspaceId?: string } = {
-    providerId,
-  };
-  if (options.workspaceId) params.workspaceId = options.workspaceId;
-  if (options.forceRefresh === true) {
-    params.forceRefresh = true;
-  }
-
-  try {
-    const result = await client.request<WireModelsListResult>('models.list', params);
-    return toGetModelsEnvelope(result);
-  } catch (error) {
-    logger.debug('models.list request failed', {
-      providerId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    throw error;
-  }
-}
 
 /**
  * Uniform `GET_MODELS` handler body: thin call to the daemon catalog on the
@@ -78,14 +45,16 @@ export async function getProviderModelsEnvelope(
     const { client } = getBackendClientForIpcEvent(event);
     // A named profile's catalog (§5.54) is listed under its own reference.
     const catalogProviderId = modelsListProviderId(providerId, params?.providerRef);
-    return await listProviderModels(client, catalogProviderId, {
-      forceRefresh: params?.forceRefresh === true,
-      workspaceId: params?.workspaceId,
-    });
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
+    const request: { providerId: string; forceRefresh?: boolean; workspaceId?: string } = {
+      providerId: catalogProviderId,
     };
+    if (params?.workspaceId) request.workspaceId = params.workspaceId;
+    if (params?.forceRefresh === true) request.forceRefresh = true;
+    const result = await client.request<WireModelsListResult>('models.list', request);
+    return toGetModelsEnvelope(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.debug('models.list request failed', { providerId, error: message });
+    return { success: false, error: message };
   }
 }

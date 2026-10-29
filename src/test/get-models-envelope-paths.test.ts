@@ -17,11 +17,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.backendRequest }));
-vi.mock('../../features/backend/main/backend.ipc', () => ({
+vi.mock('../features/backend/main/backend.ipc', () => ({
   getBackendClientForIpcEvent: () => ({ client: { request: mocks.clientRequest } }),
 }));
-vi.mock('./wire-model-info', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./wire-model-info')>();
+vi.mock('$shared/models/wire-model-info', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$shared/models/wire-model-info')>();
   return {
     ...actual,
     toGetModelsEnvelope: (result: Parameters<typeof actual.toGetModelsEnvelope>[0]) => ({
@@ -32,8 +32,8 @@ vi.mock('./wire-model-info', async (importOriginal) => {
 });
 
 import { mockInvoke } from '$shared/ipc-mock-router';
-import { getProviderModelsEnvelope } from '../../main/utils/daemon-model-catalog';
-import type { WireModelsListResult } from './wire-model-info';
+import { getProviderModelsEnvelope } from '../main/utils/daemon-model-catalog';
+import type { WireModelsListResult } from '$shared/models/wire-model-info';
 
 const WIRE_RESULT: WireModelsListResult & { nextField: string } = {
   providerId: 'codex',

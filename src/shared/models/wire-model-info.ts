@@ -117,7 +117,7 @@ export function toGetModelsEnvelope(
 ): GetModelsEnvelope {
   const envelope: GetModelsEnvelope = {
     success: true,
-    data: result ? wireModelsToProviderModels(result) : [],
+    data: wireModelsToProviderModels(result),
   };
   if (typeof result?.warning === 'string' && result.warning) envelope.warning = result.warning;
   if (result?.stale === true) envelope.stale = true;
@@ -145,7 +145,9 @@ function wireModelToProviderModel(wire: WireModelInfo): ProviderModelInfo | null
 }
 
 /** Map a `models.list` result's rows, dropping malformed entries. */
-export function wireModelsToProviderModels(result: WireModelsListResult): ProviderModelInfo[] {
+export function wireModelsToProviderModels(
+  result: WireModelsListResult | null | undefined,
+): ProviderModelInfo[] {
   if (!Array.isArray(result?.models)) return [];
   return result.models.flatMap((row) => wireModelToProviderModel(row) ?? []);
 }
