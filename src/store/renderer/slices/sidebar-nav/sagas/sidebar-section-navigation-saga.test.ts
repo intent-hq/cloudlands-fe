@@ -1,7 +1,16 @@
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { backendRequest } from '$lib/client/live/backend-transport';
-import { initialState as scripts } from '../../scripts/scripts-slice';
+import {
+  initialState as scripts,
+  scriptsReducer,
+  setScriptsData,
+} from '../../scripts/scripts-slice';
+import type { ScriptListEntry } from '../../scripts/scripts-types';
+import {
+  resolveBrowserLinkForOpen,
+  type ResolvedBrowserLinkTarget,
+} from '$lib/utils/browser-link-open';
 import { initialState as guestSessions } from '../../guest-sessions/guest-sessions-slice';
 import type { AgentSession } from '$shared/types';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
@@ -33,6 +42,7 @@ vi.mock('$lib/client/live/backend-transport', async (original) => ({
   ...(await original<typeof import('$lib/client/live/backend-transport')>()),
   backendRequest: vi.fn(),
 }));
+vi.mock('$lib/utils/browser-link-open', () => ({ resolveBrowserLinkForOpen: vi.fn() }));
 vi.mock('$lib/client', async () => {
   const { LiveFilesClient } = await import('$lib/client/live/live-files-client');
   return { appClient: { files: new LiveFilesClient() } };
@@ -50,6 +60,25 @@ const conversation: PanelTab = {
   closable: true,
 };
 const tasks: Task[] = [];
+const requestedScriptUrl = 'http://daemon.localhost:5173/app';
+const resolvedScriptUrl = 'http://127.0.0.1:52345/app';
+function runningScript(): ScriptListEntry {
+  return {
+    id: 'dev-script',
+    workspaceId,
+    name: 'Dev server',
+    command: 'pnpm dev',
+    mode: 'service',
+    source: 'package.json',
+    createdAt: '2026-10-29T00:00:00Z',
+    runtime: {
+      status: 'running',
+      restartCount: 0,
+      startedAt: '2026-10-29T00:00:00Z',
+      detectedUrl: requestedScriptUrl,
+    },
+  };
+}
 
 function agent(id: string, overrides: Partial<AgentSession> = {}): AgentSession {
   return { id, workspaceId, status: 'idle', name: id, messages: [], ...overrides } as AgentSession;
@@ -61,16 +90,18 @@ function start({
   hidden = [],
   collaborator = false,
   conversationFocused = false,
+  scriptEntries = [],
 }: {
   agents?: AgentSession[];
   tabs?: PanelTab[];
   hidden?: PanelTab[];
   collaborator?: boolean;
   conversationFocused?: boolean;
+  scriptEntries?: ScriptListEntry[];
 } = {}) {
   let state = withLegacyPrincipal(
     {
-      scripts,
+      scripts: scriptsReducer(scripts, setScriptsData(workspaceId, scriptEntries)),
       guestSessions: { ...guestSessions, hasReceivedList: true },
       workspace: workspaceReducer(
         undefined,
@@ -325,6 +356,47 @@ describe('sidebar section destinations', () => {
     expect(run.tabs().map((tab) => tab.id)).toContain('hidden');
     expect(run.active()?.id).toBe('hidden');
   });
+
+  it('resolves a remote running-script alias before opening the first browser', async () => {
+    vi.mocked(resolveBrowserLinkForOpen).mockResolvedValue({
+      url: resolvedScriptUrl,
+      requestedUrl: requestedScriptUrl,
+    });
+    const run = start({ scriptEntries: [runningScript()] });
+    run.activate('browser');
+    await vi.waitFor(() =>
+      expect(run.active()).toMatchObject({
+        type: 'browser',
+        title: 'Dev server',
+        workspaceId,
+        browserUrl: resolvedScriptUrl,
+        browserRequestedUrl: requestedScriptUrl,
+      }),
+    );
+    expect(resolveBrowserLinkForOpen).toHaveBeenCalledExactlyOnceWith(requestedScriptUrl);
+  });
+
+  it.each(['context', 'cancellation', 'unmount', 'connection'])(
+    'does not open a late script browser after %s',
+    async (next) => {
+      let resolve!: (target: ResolvedBrowserLinkTarget) => void;
+      const pending = new Promise<ResolvedBrowserLinkTarget>((done) => {
+        resolve = done;
+      });
+      vi.mocked(resolveBrowserLinkForOpen).mockReturnValue(pending);
+      const run = start({ scriptEntries: [runningScript()] });
+      run.activate('browser');
+      expect(resolveBrowserLinkForOpen).toHaveBeenCalledExactlyOnceWith(requestedScriptUrl);
+      expect(run.tabs()).toHaveLength(0);
+      if (next === 'unmount') run.dispatch(workspaceUnmounted(workspaceId));
+      else if (next === 'cancellation') run.dispatch(cancelSidebarSectionNavigation(workspaceId));
+      else if (next === 'connection') run.dispatch(principalContextChanged(null));
+      else run.activate(next);
+      resolve({ url: resolvedScriptUrl, requestedUrl: requestedScriptUrl });
+      await pending;
+      expect(run.tabs().some((tab) => tab.type === 'browser')).toBe(false);
+    },
+  );
 
   it('delegates Shells to the terminal owner with the focused panel', () => {
     const run = start();

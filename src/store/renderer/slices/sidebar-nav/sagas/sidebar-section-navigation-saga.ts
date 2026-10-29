@@ -3,6 +3,7 @@ import { appClient } from '$lib/client';
 import { groupBrowserTabsByOwner } from '$lib/components/workspace/sidebar-browser-groups';
 import { getRunningScriptBrowserTarget } from '$features/scripts/utils/running-script-browser-target';
 import { createLogger } from '$lib/utils/client-logger';
+import { resolveBrowserLinkForOpen } from '$lib/utils/browser-link-open';
 import { SPEC_NOTE_ID } from '$shared/constants/notes';
 import { m } from '$shared/paraglide/messages.js';
 import type { FileNode } from '$shared/types';
@@ -159,14 +160,18 @@ function* activate(action: NavigationAction): SagaGenerator<void> {
           const target = getRunningScriptBrowserTarget(
             yield* selectWorkspaceScriptEntries.effect(workspaceId),
           );
-          if (target)
+          if (target) {
+            const resolved = yield* call(resolveBrowserLinkForOpen, target.url);
+            if (context !== (yield* selectWorkspaceParticipationContext.effect(workspaceId))) break;
             yield* openContent(layoutId, {
               type: 'browser',
-              browserUrl: target.url,
+              browserUrl: resolved.url,
+              browserRequestedUrl: resolved.requestedUrl,
               title: target.name,
               workspaceId,
               closable: true,
             });
+          }
         }
         break;
       }
