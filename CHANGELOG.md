@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.251.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.250.2...v2.251.0) (2026-10-29)
+
+
+### 🚀 Features
+
+* **browser:** log why background agent browser tabs never register ([#3826](https://github.com/intent-hq/cloudlands-fe/issues/3826)) ([7a197ce](https://github.com/intent-hq/cloudlands-fe/commit/7a197cef6ab3d6658a6d0d8d02df4816b3840811))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.73 ([#3829](https://github.com/intent-hq/cloudlands-fe/issues/3829)) ([16a1efa](https://github.com/intent-hq/cloudlands-fe/commit/16a1efac609b5220870f6638b471f1e88552c3a5))
+
 ## [2.250.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.250.1...v2.250.2) (2026-10-29)
 
 
