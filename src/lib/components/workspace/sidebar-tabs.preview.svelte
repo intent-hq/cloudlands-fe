@@ -110,7 +110,7 @@
   import { locateItemInSidebarRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { principalReceived } from '$store/renderer/slices/principal/principal-slice';
   import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
-  import { setUserPreference } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { ChangeStage } from '$features/file-tracking/types';
   import { installChangesSummaryMocks } from './sidebar/changes-summary.preview-fixtures';
   import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
@@ -160,7 +160,7 @@
   untrack(() => {
     admitLegacyPrincipal(collaborator || manager ? 'guest' : 'owner');
     if (manager) {
-      store.dispatch(setUserPreference('labsMultiplayerEnabled', true));
+      store.dispatch(setLabsMultiplayerEnabled(true));
       const { context, snapshot, invalidation, presentationVersion } = store.state.principal;
       if (!context || !snapshot) throw new Error('Preview principal was not admitted');
       store.dispatch(
