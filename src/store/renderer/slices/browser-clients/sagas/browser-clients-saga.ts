@@ -12,6 +12,10 @@ import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import { call, put, race, take, takeEvery, fork, type SagaGenerator } from 'typed-redux-saga';
+import {
+  browserClientRouteTarget,
+  type WorkspaceBrowserClient,
+} from '$shared/types/browser-clients';
 
 import {
   takeLatestByWorkspace,
@@ -26,11 +30,14 @@ import {
   selectBrowserClientConsumerWorkspaceIds,
   selectLiveClientsLoaded,
   selectOwnClientIdConfirmed,
+  selectWorkspaceBrowserClient,
 } from '../browser-clients-selectors';
 import {
   browserClientsConsumerMounted,
   browserClientsConsumerUnmounted,
   browserClientReadsReleased,
+  browserRouteInputChanged,
+  type BrowserRouteInput,
   closeBrowserTabRequested,
   fetchWorkspaceBrowserClientRequested,
   hydrateBrowserClientsRequested,
@@ -43,6 +50,28 @@ import {
   workspaceBrowserClientReceived,
   workspaceBrowserClientPinReceived,
 } from '../browser-clients-slice';
+
+/**
+ * Resolution reads running per workspace. While one is in flight the stored
+ * answer may predate an earlier route input, so inputs cannot be filtered
+ * against it; they queue the lane's trailing read instead.
+ */
+const readsInFlight: Record<string, number> = {};
+
+/** Whether `input` can change the route `current` reports (see `BrowserRouteInput`). */
+function routeMayMove(current: WorkspaceBrowserClient, input: BrowserRouteInput): boolean {
+  if (current.source === 'workspace') return false;
+  if (input.kind === 'desktop-session') return true;
+  const target = browserClientRouteTarget(current);
+  if (target?.via === 'desktop') return false;
+  if (input.change === 'rehomed') return true;
+  if (target?.via === 'tabs') {
+    // A newer claimed tab never displaces the oldest; only the host's own close can.
+    return input.change === 'closed' && input.tab.hostClientId === target.clientId;
+  }
+  // No routed client yet: a newly opened claimed tab can create one.
+  return input.change === 'opened';
+}
 
 const logger = createLogger('BrowserClientsSaga');
 const LIVE_CLIENTS_CONTEXT = 'live-clients';
@@ -191,6 +220,7 @@ function* readWorkspaceBrowserClient(
 ): SagaGenerator<void> {
   if (action.type !== fetchWorkspaceBrowserClientRequested.type) return;
   const [wsId] = action.payload;
+  readsInFlight[wsId] = (readsInFlight[wsId] ?? 0) + 1;
   try {
     const epoch = epochs[wsId] ?? 0;
     // The lane owns workspace teardown; racing it here would release a queued
@@ -214,6 +244,9 @@ function* readWorkspaceBrowserClient(
       wsId,
       error: error instanceof Error ? error.message : error,
     });
+  } finally {
+    readsInFlight[wsId] = (readsInFlight[wsId] ?? 1) - 1;
+    if (readsInFlight[wsId] <= 0) delete readsInFlight[wsId];
   }
 }
 
@@ -344,6 +377,16 @@ export function* browserClientsSaga(): SagaGenerator<void> {
     const [wsId] = action.payload;
     pinWriteEpochs[wsId] = (pinWriteEpochs[wsId] ?? 0) + 1;
     if (connection.mounted.has(wsId)) yield* put(fetchWorkspaceBrowserClientRequested(wsId));
+  });
+  // Unpinned, a desktop session (ahead of tabs) or the oldest claimed tab's
+  // host drives the workspace; re-read only when an input can move that route.
+  yield* takeEvery(browserRouteInputChanged, function* ({ payload: [wsId, input] }) {
+    if (!connection.mounted.has(wsId)) return;
+    const current = yield* selectWorkspaceBrowserClient.effect(wsId);
+    // No answer yet, or a read in flight that may predate this event: queue
+    // the trailing re-read rather than judge the input against a stale route.
+    if (current && !readsInFlight[wsId] && !routeMayMove(current, input)) return;
+    yield* put(fetchWorkspaceBrowserClientRequested(wsId));
   });
   yield* takeEvery(browserClientsConsumerMounted, function* ({ payload: [wsId] }) {
     if (connection.mounted.has(wsId)) return;

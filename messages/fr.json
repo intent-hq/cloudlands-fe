@@ -6656,6 +6656,7 @@
   "workspace_drivingClient_menu_label": "Client principal",
   "workspace_drivingClient_noBrowserReason_description": "Ne peut pas exécuter les onglets de navigateur des agents.",
   "workspace_drivingClient_offline_description": "Les onglets de navigateur et les tunnels des agents échouent jusqu’à ce que le client principal se reconnecte.",
+  "workspace_drivingClient_offlineTabHost_description": "Les onglets de navigateur des agents sont sur un client qui n’est pas connecté. Choisissez Cette application pour les déplacer ici.",
   "workspace_drivingClient_offline_label": "Hors ligne",
   "workspace_drivingClient_setPrimaryDialog_cancel_label": "Annuler",
   "workspace_drivingClient_setPrimaryDialog_close_ariaLabel": "Fermer",

@@ -6656,6 +6656,7 @@
   "workspace_drivingClient_menu_label": "主客户端",
   "workspace_drivingClient_noBrowserReason_description": "无法运行智能体浏览器标签页。",
   "workspace_drivingClient_offline_description": "在主客户端重新连接之前，智能体浏览器标签页和隧道将无法使用。",
+  "workspace_drivingClient_offlineTabHost_description": "智能体浏览器标签页位于未连接的客户端上。选择“本应用”可将其移到这里。",
   "workspace_drivingClient_offline_label": "离线",
   "workspace_drivingClient_setPrimaryDialog_cancel_label": "取消",
   "workspace_drivingClient_setPrimaryDialog_close_ariaLabel": "关闭",

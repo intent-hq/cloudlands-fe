@@ -361,6 +361,7 @@ import { identityChanged } from '$store/renderer/slices/identity/identity-slice'
 import type { PrincipalIdentity } from '$features/workspace-sharing/types';
 import { shareMembershipChanged } from '$store/renderer/slices/workspace-share/workspace-share-slice';
 import {
+  browserRouteInputChanged,
   browserTabClosed,
   browserTabUpserted,
   workspaceBrowserClientPinReceived,
@@ -3565,11 +3566,24 @@ function handleBrowserTabEvent(
     logger.warn(`${type} with malformed payload`, { workspaceId, data });
     return;
   }
-  if (type === 'browser:tab-closed') {
-    appStore.dispatch(browserTabClosed(workspaceId, tab.tabId));
-    return;
-  }
-  appStore.dispatch(browserTabUpserted(workspaceId, tab));
+  if (type === 'browser:tab-closed') appStore.dispatch(browserTabClosed(workspaceId, tab.tabId));
+  else appStore.dispatch(browserTabUpserted(workspaceId, tab));
+  // Only claim, release, re-home, and claimed-tab open/close can move the routed client.
+  const changes = (data as { changes?: unknown }).changes;
+  const rehomed =
+    type === 'browser:tab-updated' &&
+    typeof changes === 'object' &&
+    changes !== null &&
+    ('hostClientId' in changes || 'ownerAgentId' in changes);
+  const change = rehomed
+    ? 'rehomed'
+    : type !== 'browser:tab-updated' && tab.ownerAgentId
+      ? type === 'browser:tab-opened'
+        ? 'opened'
+        : 'closed'
+      : null;
+  if (change)
+    appStore.dispatch(browserRouteInputChanged(workspaceId, { kind: 'tab', tab, change }));
 }
 
 function handleMcpServerStatusChangedEvent(event: WorkspaceEvent): void {
@@ -3777,6 +3791,10 @@ export function routeDaemonEventsNotification(
   if (type.startsWith('desktop:')) {
     const desktop = parseDesktopEvent(event);
     if (desktop) appStore.dispatch(desktopEventReceived(desktop));
+    if (desktop?.type === 'desktop:session-changed')
+      appStore.dispatch(
+        browserRouteInputChanged(desktop.data.workspaceId, { kind: 'desktop-session' }),
+      );
     return;
   }
 

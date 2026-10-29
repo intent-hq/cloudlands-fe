@@ -6656,6 +6656,7 @@
   "workspace_drivingClient_menu_label": "Cliente principal",
   "workspace_drivingClient_noBrowserReason_description": "No puede ejecutar pestañas de navegador de agentes.",
   "workspace_drivingClient_offline_description": "Las pestañas de navegador y los túneles de los agentes fallan hasta que el cliente principal se vuelva a conectar.",
+  "workspace_drivingClient_offlineTabHost_description": "Las pestañas de navegador de los agentes están en un cliente que no está conectado. Elige Esta aplicación para traerlas aquí.",
   "workspace_drivingClient_offline_label": "Sin conexión",
   "workspace_drivingClient_setPrimaryDialog_cancel_label": "Cancelar",
   "workspace_drivingClient_setPrimaryDialog_close_ariaLabel": "Cerrar",

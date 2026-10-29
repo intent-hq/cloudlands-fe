@@ -16,6 +16,7 @@ import {
   initialState as browserClientsInitialState,
 } from '$store/renderer/slices/browser-clients/browser-clients-types';
 import { warmImport } from '../../../../../test/warm-import';
+import { m } from '$shared/paraglide/messages.js';
 
 const mocks = vi.hoisted(() => {
   const storeState = {
@@ -1116,6 +1117,38 @@ describe('WorkspaceProgressCard primary browser client', () => {
     );
   });
 
+  it('flags an unpinned route to a disconnected tab host as offline and explains the fix', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop')], {
+      source: 'default',
+      resolved: null,
+      target: { clientId: OTHER, via: 'tabs' },
+    });
+    seedPanelTabs([{ ...browserTab, ownerAgentId: 'agent-1', hostClientId: OTHER }]);
+    const { container } = await renderDrivingCard();
+
+    expect(offlineDot(container)).not.toBeNull();
+    const row = await openPrimaryClientMenu(container);
+    expect(row.dataset.detail).toBe('Offline');
+    expect(row.dataset.detailTone).toBe('danger');
+    expect(row.dataset.note).toBe(m.workspace_drivingClient_offlineTabHost_description());
+    const thisApp = screen.getByRole('button', THIS_APP) as HTMLButtonElement;
+    expect(thisApp.getAttribute('data-checked')).toBe('false');
+    expect(thisApp.disabled).toBe(false);
+  });
+
+  it('keeps the generic offline note when this app cannot take over the tab host', async () => {
+    mocks.role.hidesOwnerActions = true;
+    seedBrowserClients([liveClient(OWN, 'laptop')], {
+      source: 'default',
+      resolved: null,
+      target: { clientId: OTHER, via: 'tabs' },
+    });
+    const { container } = await renderDrivingCard();
+    const row = await openPrimaryClientMenu(container);
+    expect(row.dataset.detail).toBe('Offline');
+    expect(row.dataset.note).toBe(m.workspace_drivingClient_offline_description());
+  });
+
   it('names the other primary client, even without browser tabs, and asks before switching', async () => {
     seedBrowserClients([liveClient(OWN, 'laptop'), liveClient(OTHER, 'desktop')], {
       source: 'default',
@@ -1192,6 +1225,7 @@ describe('WorkspaceProgressCard primary browser client', () => {
     const row = await openPrimaryClientMenu(container);
     expect(row.dataset.detail).toBe('Offline');
     expect(row.dataset.detailTone).toBe('danger');
+    expect(row.dataset.note).toBe(m.workspace_drivingClient_offline_description());
     expect((screen.getByRole('button', THIS_APP) as HTMLButtonElement).disabled).toBe(false);
   });
 

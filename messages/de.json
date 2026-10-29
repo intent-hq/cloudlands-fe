@@ -6656,6 +6656,7 @@
   "workspace_drivingClient_menu_label": "Primärer Client",
   "workspace_drivingClient_noBrowserReason_description": "Kann keine Agent-Browser-Tabs ausführen.",
   "workspace_drivingClient_offline_description": "Agent-Browser-Tabs und Tunnel schlagen fehl, bis der primäre Client wieder verbunden ist.",
+  "workspace_drivingClient_offlineTabHost_description": "Agent-Browser-Tabs liegen auf einem Client, der nicht verbunden ist. Wähle „Diese App“, um sie hierher zu verschieben.",
   "workspace_drivingClient_offline_label": "Nicht verbunden",
   "workspace_drivingClient_setPrimaryDialog_cancel_label": "Abbrechen",
   "workspace_drivingClient_setPrimaryDialog_close_ariaLabel": "Schließen",
