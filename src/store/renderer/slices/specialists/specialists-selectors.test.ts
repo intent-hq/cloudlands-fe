@@ -184,14 +184,15 @@ describe('specialists selectors', () => {
   });
 
   describe('selectOrchestratorSpecialist', () => {
-    it('finds the shipped spec-writer orchestrator in the fallback catalog', () => {
+    it('finds the shipped spec-writer lead in the fallback catalog', () => {
       const orchestrator = selectOrchestratorSpecialist.select(mockState());
 
       expect(orchestrator?.id).toBe('spec-writer');
+      expect(orchestrator?.role).toBe('lead');
       expect(orchestrator?.teamAgents).toEqual(['implementor', 'verifier']);
     });
 
-    it('finds a custom orchestrator with a different id', () => {
+    it.each(['lead', 'orchestrator'] as const)('finds a custom %s with a different id', (role) => {
       const state = mockState({
         fileSpecialists: createCollection('id', [
           {
@@ -202,7 +203,7 @@ describe('specialists selectors', () => {
             behaviorPrompt: 'prompt',
             filePath: '/Users/test/.intent/specialists/my-lead.md',
             source: 'user' as const,
-            role: 'orchestrator' as const,
+            role,
             teamAgents: ['helper'],
           },
         ]),
@@ -305,11 +306,12 @@ describe('specialists selectors', () => {
       });
     });
 
-    it('returns null when no orchestrator exists (team card hidden)', () => {
+    it.each([undefined, 'internal'] as const)('hides the team card for role %s', (role) => {
       const state = mockState({
         bundledSpecialists: [
           {
             id: 'plain-one',
+            role,
             name: 'Plain One',
             description: 'no role',
             defaultBehaviorPrompt: 'prompt',

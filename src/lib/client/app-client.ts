@@ -2063,11 +2063,11 @@ export interface SpecialistDef {
    */
   reasoningEffort?: string;
   /**
-   * Orchestration role (additive, PROTOCOL §5.11): 'orchestrator' powers the
+   * Orchestration role (additive, PROTOCOL §5.11): 'lead' and legacy 'orchestrator' power the
    * New Workspace modal's team card; 'internal' is excluded from the modal's
    * single-agent dropdown only. Omitted for standard specialists.
    */
-  role?: 'orchestrator' | 'internal';
+  role?: 'lead' | 'orchestrator' | 'internal';
   /**
    * Specialist ids the orchestrator delegates to (additive, PROTOCOL §5.11).
    * Advisory/render-only; omitted when not declared.

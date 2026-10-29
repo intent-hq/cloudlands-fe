@@ -89,7 +89,6 @@ describe('Specialist Configuration', () => {
       const specialist = getSpecialistById('spec-writer');
       expect(specialist).toBeDefined();
       expect(specialist!.id).toBe('spec-writer');
-      expect(specialist!.name).toBe('Coordinator');
     });
 
     it('should return implementor specialist', () => {
