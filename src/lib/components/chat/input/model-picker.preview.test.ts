@@ -46,6 +46,21 @@ async function settled(...providerIds: string[]) {
   });
 }
 
+describe('model picker open preview states', () => {
+  // A portalled menu renders outside the catalog frame, so `sandbox:shot`
+  // captures only the trigger (a 76px strip). Open states must keep the menu
+  // inline and give the frame room for it.
+  const openStates = Object.entries(preview.states).filter(([, state]) => state.props?.initialOpen);
+
+  it('has open states to check', () => {
+    expect(openStates.length).toBeGreaterThan(0);
+  });
+
+  it.each(openStates)('%s draws its menu inside the screenshot frame', (_name, state) => {
+    expect(state.props).toMatchObject({ captureMenu: true, portal: false });
+  });
+});
+
 describe('model picker codex-fallback preview state', () => {
   it('serves the built-in Codex list with a fallback warning, then tears it down', async () => {
     const cleanup = setup('codex-fallback');
