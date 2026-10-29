@@ -17,7 +17,11 @@ import {
   setModelPickerGroupCollapsed,
   setSelectedModel,
 } from './model-slice';
-import { selectAllProviderStaleFlags, selectAllProviderWarnings } from './model-selectors';
+import {
+  selectAllProviderStaleFlags,
+  selectAllProviderWarningKinds,
+  selectAllProviderWarnings,
+} from './model-selectors';
 
 const mockModels: AuggieModel[] = [
   { value: 'gpt5.4', label: 'GPT 5.4', description: 'Smart model' },
@@ -138,6 +142,47 @@ describe('modelReducer', () => {
       codex: 'probe timed out; serving last known model list',
     });
     expect(freshState.loadingState.codex.stale).toBeUndefined();
+  });
+
+  it('tracks the warning kind with its warning and clears it on a fresh or failed load', () => {
+    const missing = modelReducer(
+      initialState,
+      setLoadingStateForProvider({
+        providerId: 'codex',
+        status: 'success',
+        warning: 'Install codex on the execution host',
+        warningKind: 'cli-missing',
+      }),
+    );
+    expect(selectAllProviderWarningKinds.select({ model: missing })).toEqual({
+      codex: 'cli-missing',
+    });
+    // A loading update keeps the last answer's kind, like its warning.
+    const loading = modelReducer(
+      missing,
+      setLoadingStateForProvider({ providerId: 'codex', status: 'loading' }),
+    );
+    expect(loading.loadingState.codex.warningKind).toBe('cli-missing');
+    const fresh = modelReducer(
+      loading,
+      setLoadingStateForProvider({ providerId: 'codex', status: 'success' }),
+    );
+    expect(fresh.loadingState.codex.warningKind).toBeUndefined();
+    const failed = modelReducer(
+      missing,
+      setLoadingStateForProvider({ providerId: 'codex', status: 'error', error: 'boom' }),
+    );
+    expect(failed.loadingState.codex.warningKind).toBeUndefined();
+    // A kind never outlives (or arrives without) its warning.
+    const kindOnly = modelReducer(
+      initialState,
+      setLoadingStateForProvider({
+        providerId: 'codex',
+        status: 'success',
+        warningKind: 'cli-missing',
+      }),
+    );
+    expect(selectAllProviderWarningKinds.select({ model: kindOnly })).toEqual({});
   });
 
   it('tracks model-picker groups and fallback information independently of settings receipts', () => {

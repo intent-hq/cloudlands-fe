@@ -75,6 +75,7 @@
     selectContextSelectedModel,
     selectContextProviderWarnings,
     selectContextProviderStaleFlags,
+    selectContextProviderWarningKinds,
     selectContextProviderEntries,
     selectContextModelProviderIds,
     selectContextAvailableProviderIds,
@@ -413,6 +414,7 @@
   const hasCheckedOnce$ = selectContextReadinessLoaded(workspaceIdStore);
   const allProviderWarnings$ = selectContextProviderWarnings(workspaceIdStore);
   const allProviderStaleFlags$ = selectContextProviderStaleFlags(workspaceIdStore);
+  const allProviderWarningKinds$ = selectContextProviderWarningKinds(workspaceIdStore);
   const workspaceCatalogEpoch$ = selectWorkspaceCatalogEpoch();
   $effect(() => {
     // An open picker can outlive its workspace lifecycle subscription. Refresh
@@ -1506,7 +1508,10 @@
   // A stale warning (PROTOCOL §5.30 `stale: true`) accompanies the daemon's
   // last-known-good list after a transient probe failure: the models on screen
   // are real and usable, so the notice would be wrong there.
-  // The notice stays for the degraded case (warning with no codex models).
+  // The notice shows only when the daemon labels the warning `warningKind:
+  // "cli-missing"` (§5.30); every other degraded warning — an adapter crash,
+  // a timeout, missing Node.js — keeps the generic failure row with Details
+  // and Retry, never an install prompt keyed on the warning text.
   // Named Codex profiles (§5.54) have their own catalogs and get the same rule.
   function hasCatalogModels(providerId: string): boolean {
     return (
@@ -1523,6 +1528,7 @@
     if (!$availableEnabledProviderIds$.some((id) => normalizeProviderId(id) === providerId))
       return null;
     if ($allProviderStaleFlags$[providerId] && hasCatalogModels(providerId)) return null;
+    if ($allProviderWarningKinds$[providerId] !== 'cli-missing') return null;
     return createProviderWarningNotice(providerId, $allProviderWarnings$[providerId]);
   });
   // The notice restates the catalog's fallback warning, so drop the generic

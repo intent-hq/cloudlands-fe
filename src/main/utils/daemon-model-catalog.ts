@@ -18,7 +18,9 @@
  */
 import { Logger } from '../../shared/logger';
 import {
+  readWarningKind,
   wireModelsToProviderModels,
+  type ModelWarningKind,
   type ProviderModelInfo,
   type WireModelsListResult,
 } from '../../shared/models/wire-model-info';
@@ -36,6 +38,8 @@ interface ProviderModelCatalog {
   stale?: boolean;
   /** Human-readable reason for fallback/stale/empty data. */
   warning?: string;
+  /** Machine-readable cause of `warning` (§5.30). */
+  warningKind?: ModelWarningKind;
 }
 
 /**
@@ -65,6 +69,8 @@ async function listProviderModels(
     if (typeof result?.source === 'string') catalog.source = result.source;
     if (result?.stale === true) catalog.stale = true;
     if (typeof result?.warning === 'string' && result.warning) catalog.warning = result.warning;
+    const warningKind = readWarningKind(result);
+    if (warningKind) catalog.warningKind = warningKind;
     return catalog;
   } catch (error) {
     logger.debug('models.list request failed', {
@@ -85,6 +91,7 @@ export interface GetModelsEnvelope {
   data?: ProviderModelInfo[];
   warning?: string;
   stale?: boolean;
+  warningKind?: ModelWarningKind;
   error?: string;
 }
 
@@ -112,6 +119,7 @@ export async function getProviderModelsEnvelope(
     const envelope: GetModelsEnvelope = { success: true, data: catalog.models };
     if (catalog.warning) envelope.warning = catalog.warning;
     if (catalog.stale) envelope.stale = true;
+    if (catalog.warningKind) envelope.warningKind = catalog.warningKind;
     return envelope;
   } catch (error) {
     return {

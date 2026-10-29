@@ -55,6 +55,32 @@ export interface WireModelsListResult {
   source?: string;
   stale?: boolean;
   warning?: string;
+  /** Machine-readable cause of `warning` (PROTOCOL §5.30 "Warning kind"). */
+  warningKind?: string;
+}
+
+/**
+ * Known `models.list` `warningKind` values (PROTOCOL §5.30): `cli-missing` —
+ * the provider CLI is not installed on the execution host;
+ * `prerequisite-missing` — Node.js with `npx` is missing for the adapter.
+ */
+export type ModelWarningKind = 'cli-missing' | 'prerequisite-missing';
+
+const MODEL_WARNING_KINDS: readonly string[] = ['cli-missing', 'prerequisite-missing'];
+
+/**
+ * The response's `warningKind` when it is a known value that qualifies a
+ * `warning`; `undefined` otherwise, so an unknown or orphan kind reads as a
+ * generic load failure.
+ */
+export function readWarningKind(
+  result: WireModelsListResult | null | undefined,
+): ModelWarningKind | undefined {
+  const kind = result?.warningKind;
+  if (typeof result?.warning !== 'string' || !result.warning) return undefined;
+  return typeof kind === 'string' && MODEL_WARNING_KINDS.includes(kind)
+    ? (kind as ModelWarningKind)
+    : undefined;
 }
 
 /** Map a wire row to the FE model shape; `null` when key fields are missing. */

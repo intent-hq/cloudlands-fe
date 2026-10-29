@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReduxStoreContext } from '$store/renderer/types';
 import { initAppStore, store } from '$store/renderer/store';
-import { selectAllProviderWarnings } from '$store/renderer/slices/model/model-selectors';
+import {
+  selectAllProviderWarningKinds,
+  selectAllProviderWarnings,
+} from '$store/renderer/slices/model/model-selectors';
 import { selectResolvedProviderCatalogEntry } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import {
   selectProviderModelsCacheMap,
@@ -55,6 +58,9 @@ describe('model picker codex-fallback preview state', () => {
     // and the Codex docs link together (not the blocking "Failed to load" path).
     const warning = selectAllProviderWarnings.select(store.state).codex;
     expect(warning).toBeTruthy();
+    // The daemon's real missing-CLI answer: the notice keys on warningKind.
+    expect(warning).toMatch(/make it available on PATH/);
+    expect(selectAllProviderWarningKinds.select(store.state).codex).toBe('cli-missing');
     const cache = selectProviderModelsCacheMap.select(store.state);
     expect(cache.codex?.warning).toBe(warning);
     expect(cache.codex?.models.length).toBeGreaterThan(0);
@@ -98,6 +104,8 @@ describe('model picker degraded preview states', () => {
       expect(selectAllProviderWarnings.select(store.state)[providerId]).toBe(
         cache[providerId]?.warning,
       );
+      // A probe failure (adapter crash, timeout) is not a missing CLI.
+      expect(selectAllProviderWarningKinds.select(store.state)[providerId]).toBeUndefined();
     }
 
     store.dispatch(providerModelsRequested('codex', 'retry'));

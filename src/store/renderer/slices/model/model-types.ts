@@ -1,4 +1,5 @@
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
+import type { ModelWarningKind } from '$shared/models/wire-model-info';
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 
 export type ModelLoadingStatus = 'success' | 'loading' | 'error';
@@ -15,6 +16,12 @@ export type ModelLoadingState = {
    * from a genuinely missing CLI.
    */
   stale?: boolean;
+  /**
+   * Machine-readable cause of `warning` (PROTOCOL §5.30 "Warning kind"); only
+   * `cli-missing` warrants the "install the CLI" notice. Absent for every
+   * other failure, so it is never inferred from the warning text.
+   */
+  warningKind?: ModelWarningKind;
 };
 
 export type ModelFallbackInfo = {

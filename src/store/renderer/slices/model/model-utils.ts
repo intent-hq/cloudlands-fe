@@ -6,6 +6,7 @@
  * models for a provider different from the global active provider.
  */
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
+import type { ModelWarningKind } from '$shared/models/wire-model-info';
 import {
   getProviderModels,
   type ProviderModelEntry,
@@ -22,6 +23,7 @@ type ProviderModelsWithWarning = {
   models: ProviderModel[];
   warning?: string;
   stale?: boolean;
+  warningKind?: ModelWarningKind;
 };
 
 /**
@@ -53,6 +55,7 @@ export async function getModelsForProviderForLoadingState(
   models: AuggieModel[];
   warning?: string;
   stale?: boolean;
+  warningKind?: ModelWarningKind;
 }> {
   const normalizedId = options.workspaceId
     ? providerId
@@ -65,6 +68,7 @@ export async function getModelsForProviderForLoadingState(
     models: result.models as AuggieModel[],
     warning: result.warning,
     stale: result.stale,
+    ...(result.warningKind ? { warningKind: result.warningKind } : {}),
   };
 }
 

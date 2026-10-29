@@ -38,6 +38,7 @@ import {
 import { normalizeAgent } from '$lib/client/live/live-agents-client';
 import { providerProfileSummaryStatusChanged } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 import ModelPickerPreview from './ModelPickerPreview.svelte';
+import type { ModelWarningKind } from '$shared/models/wire-model-info';
 
 const models = [
   {
@@ -62,6 +63,7 @@ function setupModels(
   degraded = false,
   diagnostic?: string,
   fallbackWarning?: string,
+  fallbackWarningKind?: ModelWarningKind,
 ) {
   return () => {
     activeCleanup?.();
@@ -114,7 +116,15 @@ function setupModels(
         degraded || (diagnostic && providerId === 'codex')
           ? { data: [], warning: diagnostic ?? 'Temporary model catalog failure' }
           : undefined;
-      restoreModelHandlers.push(setupModelPickerPreviewHandler(providerId, rows, warning, failed));
+      restoreModelHandlers.push(
+        setupModelPickerPreviewHandler(
+          providerId,
+          rows,
+          warning,
+          failed,
+          warning ? fallbackWarningKind : undefined,
+        ),
+      );
       if (providerId === 'codex')
         appStore.dispatch(setAvailableModels(degraded ? [] : rows, providerId));
     }
@@ -321,8 +331,9 @@ export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>(
         ].join('\n'),
       ),
     },
-    // Codex CLI missing: the built-in list loads with a fallback warning, and
-    // the open menu's footer shows the install notice above Retry.
+    // Codex CLI missing: the daemon's real missing-CLI warning, labeled
+    // `warningKind: "cli-missing"` (§5.30), and the open menu's footer shows
+    // the install notice above Retry.
     'codex-fallback': {
       props: {
         initialOpen: true,
@@ -340,7 +351,8 @@ export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>(
         true,
         false,
         undefined,
-        'codex: Codex CLI not found; using the built-in model list',
+        'codex: Install codex on the execution host and make it available on PATH, then retry. Intent requires the installed CLI; no bundled runtime replaces a missing one.',
+        'cli-missing',
       ),
     },
     'profiles-open': {
