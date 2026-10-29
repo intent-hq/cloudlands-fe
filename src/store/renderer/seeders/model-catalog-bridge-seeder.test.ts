@@ -16,17 +16,9 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { mockInvoke } from '$shared/ipc-mock-router';
+import type { GetModelsEnvelope as Envelope } from '$shared/models/wire-model-info';
 
 const mockedRequest = vi.mocked(backendRequest);
-
-type Envelope = {
-  success: boolean;
-  data?: Array<{ value: string; label: string; isDefault?: boolean; isLegacyModel?: boolean }>;
-  warning?: string;
-  stale?: boolean;
-  warningKind?: string;
-  error?: string;
-};
 
 const ALL_CHANNELS: Array<[string, string]> = [
   ['antigravity', 'antigravity:get-models'],

@@ -3,12 +3,10 @@
 import { overrideMockIpcHandler } from '$shared/ipc-mock-router';
 import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
 import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
-import type { ModelWarningKind, ProviderModelInfo } from '$shared/models/wire-model-info';
+import type { GetModelsEnvelope, ProviderModelInfo } from '$shared/models/wire-model-info';
 
-type ModelCatalogResponse = {
+type ModelCatalogResponse = Pick<GetModelsEnvelope, 'warning' | 'warningKind'> & {
   data: ProviderModelInfo[];
-  warning?: string;
-  warningKind?: ModelWarningKind;
 };
 
 /**
@@ -23,7 +21,7 @@ export function setupModelPickerPreviewHandler(
 ) {
   const channel = `${providerId}:get-models`;
   let pending = first;
-  return overrideMockIpcHandler(channel, () => {
+  return overrideMockIpcHandler(channel, (): GetModelsEnvelope => {
     const served: ModelCatalogResponse = pending ?? { data: rows, warning };
     pending = undefined;
     return {

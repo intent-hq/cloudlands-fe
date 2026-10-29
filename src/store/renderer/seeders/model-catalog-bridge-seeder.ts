@@ -10,8 +10,9 @@
  * thin call — the exact daemon-build counterpart of the Electron main-process
  * handlers (which call the same RPC via `daemon-model-catalog.ts`).
  *
- * Envelope semantics: `success: true` with `data` rows plus optional
- * `warning` / `stale` fields straight from the daemon; only a wire/transport
+ * Envelope semantics: the shared `toGetModelsEnvelope` builder (also used by
+ * the Electron main-process handlers) — `success: true` with `data` rows plus
+ * optional `warning` / `stale` / `warningKind` from the daemon; only a wire/transport
  * failure produces `success: false`. Probe/CLI failures never error — the
  * daemon degrades them to last-good + `stale: true` or a static/default
  * fallback with a `warning`.
@@ -32,23 +33,12 @@ import {
   UNSLOTH_CHANNELS,
 } from '$shared/ipc/channels';
 import {
-  readWarningKind,
-  wireModelsToProviderModels,
-  type ModelWarningKind,
-  type ProviderModelInfo,
+  toGetModelsEnvelope,
+  type GetModelsEnvelope,
   type WireModelsListResult,
 } from '$shared/models/wire-model-info';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { modelsListProviderId } from '$shared/provider-profiles';
-
-type GetModelsEnvelope = {
-  success: boolean;
-  data?: ProviderModelInfo[];
-  warning?: string;
-  stale?: boolean;
-  warningKind?: ModelWarningKind;
-  error?: string;
-};
 
 const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
@@ -77,17 +67,7 @@ for (const [providerId, channel] of PROVIDER_MODEL_CHANNELS) {
         ...(workspaceId ? { workspaceId } : {}),
         ...(forceRefresh ? { forceRefresh: true } : {}),
       });
-      const envelope: GetModelsEnvelope = {
-        success: true,
-        data: wireModelsToProviderModels(result),
-      };
-      if (typeof result?.warning === 'string' && result.warning) {
-        envelope.warning = result.warning;
-      }
-      if (result?.stale === true) envelope.stale = true;
-      const warningKind = readWarningKind(result);
-      if (warningKind) envelope.warningKind = warningKind;
-      return envelope;
+      return toGetModelsEnvelope(result);
     } catch (error) {
       return { success: false, error: errorMessage(error) };
     }
