@@ -331,6 +331,7 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
 const hasCheckedOnce$ = writable(true);
 const workspaceCatalogEpoch$ = writable(0);
 const providerEntriesOverride$ = writable<ProviderCatalogEntry[] | null>(null);
+const listedProviderIdsOverride$ = writable<string[] | null>(null);
 vi.mock('$store/renderer/slices/agent-availability/agent-availability-selectors', () => ({
   selectHasCheckedOnce: () => hasCheckedOnce$,
 }));
@@ -478,6 +479,7 @@ afterEach(() => {
   agentModelEffortLevels$.set(undefined);
   workspaceCatalogEpoch$.set(0);
   providerEntriesOverride$.set(null);
+  listedProviderIdsOverride$.set(null);
   mockCatalogProfiles.current = [];
   mockDaemonAppOwned.current = true;
   mockProviderSettingsState.current = undefined;
@@ -3556,6 +3558,17 @@ describe('ModelPicker availability gating', () => {
     activeProviderId$.set('auggie');
   });
 
+  it('hides cached Auggie models when Auggie is neither installed nor enabled', async () => {
+    listedProviderIdsOverride$.set(['codex']);
+    availableProviderOverride$.set(['codex']);
+    mockModelState.availableModels = [{ value: 'sonnet4.6', label: 'Sonnet 4.6' }];
+    mockModelState.availableModelsProviderId = 'auggie';
+    render(ModelPicker, { props: { portal: false } });
+    await fireEvent.click(screen.getByRole('button'));
+    expect(screen.queryByRole('option', { name: /Sonnet 4\.6/ })).toBeNull();
+    expect(screen.queryByRole('tab', { name: /Auggie/ })).toBeNull();
+  });
+
   it('still renders the disabled effective provider group when the catalog was loaded for it', async () => {
     // Positive control for the provenance gate: when the global catalog DOES
     // belong to the (unavailable) effective provider, the fallback group must
@@ -5850,6 +5863,11 @@ vi.mock(
       selectContextSelectedModel: () => readable(mockModelState.selectedModel),
       selectContextEnabledProviders: () => enabledProvidersMap$,
       selectContextAvailableProviderIds: () => availableEnabledProviderIds$,
+      selectContextListedProviderIds: () =>
+        derived(
+          [selectProviderCatalogEntries(), listedProviderIdsOverride$],
+          ([entries, override]) => override ?? entries.map((entry) => entry.id),
+        ),
       selectContextModelProviderIds: () =>
         derived(
           [hasCheckedOnce$, enabledProviderIds$, availableEnabledProviderIds$],

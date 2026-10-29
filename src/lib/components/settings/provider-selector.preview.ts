@@ -116,6 +116,7 @@ function setupProviderSelector() {
 
 export function setupProviderDisablePreview(
   status: 'signed-out' | 'pending' | 'unavailable' = 'signed-out',
+  auggieEnabled = true,
 ) {
   const restoreProviders = setupProviderSelector();
   const specialists = getItems(appStore.state.specialists.fileSpecialists);
@@ -131,7 +132,7 @@ export function setupProviderDisablePreview(
   };
   appStore.dispatch(providerCatalogLoaded({ providers: [...previewProviders, auggie] }));
   appStore.dispatch(
-    loadEnabledProvidersFromStorage({ codex: true, 'claude-code': true, auggie: true }),
+    loadEnabledProvidersFromStorage({ codex: true, 'claude-code': true, auggie: auggieEnabled }),
   );
   if (status !== 'pending')
     appStore.dispatch(
@@ -166,6 +167,10 @@ export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
   defaultState: 'mixed',
   states: {
     'disable-in-use': { props: {}, setup: () => setupProviderDisablePreview() },
+    'auggie-not-installed': {
+      props: {},
+      setup: () => setupProviderDisablePreview('unavailable', false),
+    },
     mixed: { props: {}, setup: setupProviderSelector },
     profiles: {
       props: {},

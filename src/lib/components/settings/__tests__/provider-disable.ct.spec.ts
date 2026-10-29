@@ -21,6 +21,11 @@ for (const status of ['signed-out', 'pending', 'unavailable'] as const) {
     await expect(page.getByRole('region', { name: 'Enabled', exact: true })).not.toContainText(
       'Augment Auggie',
     );
+    if (status !== 'signed-out') {
+      await expect(
+        page.getByRole('button', { name: 'Provider actions for Augment Auggie', exact: true }),
+      ).toHaveCount(0);
+    }
     await page.screenshot({ path: testInfo.outputPath('provider-disabled.png') });
   });
 }
@@ -51,4 +56,26 @@ test('disables the default and allows it to be enabled again', async ({
   await expect
     .poll(async () => JSON.parse(await page.getByTestId('enabled').innerText()).codex)
     .toBe(true);
+});
+
+for (const onboarding of [false, true]) {
+  for (const status of ['pending', 'unavailable', 'signed-out'] as const) {
+    test(`Auggie visibility in ${onboarding ? 'onboarding' : 'settings'} while ${status}`, async ({
+      mount,
+      page,
+    }, testInfo) => {
+      await page.setViewportSize({ width: 900, height: 640 });
+      await mount(ProviderDisableHost, { props: { status, onboarding, auggieEnabled: false } });
+      const name = page.getByText('Augment Auggie', { exact: true });
+      if (status === 'signed-out') await expect(name).toBeVisible();
+      else await expect(name).toHaveCount(0);
+      await expect(page.getByText('OpenCode', { exact: true })).toBeVisible();
+      await page.screenshot({ path: testInfo.outputPath('auggie-visibility.png') });
+    });
+  }
+}
+
+test('onboarding keeps an enabled but missing Auggie visible', async ({ mount, page }) => {
+  await mount(ProviderDisableHost, { props: { status: 'unavailable', onboarding: true } });
+  await expect(page.getByText('Augment Auggie', { exact: true })).toBeVisible();
 });

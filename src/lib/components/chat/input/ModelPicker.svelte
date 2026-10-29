@@ -79,6 +79,7 @@
     selectContextProviderEntries,
     selectContextModelProviderIds,
     selectContextAvailableProviderIds,
+    selectContextListedProviderIds,
     selectContextEnabledProviders,
     selectWorkspaceCatalogEpoch,
   } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
@@ -412,6 +413,7 @@
   const enabledProviders$ = selectContextEnabledProviders(workspaceIdStore);
   const selectedModel$ = selectContextSelectedModel(workspaceIdStore);
   const hasCheckedOnce$ = selectContextReadinessLoaded(workspaceIdStore);
+  const listedProviderIds$ = selectContextListedProviderIds(workspaceIdStore);
   const allProviderWarnings$ = selectContextProviderWarnings(workspaceIdStore);
   const allProviderStaleFlags$ = selectContextProviderStaleFlags(workspaceIdStore);
   const allProviderWarningKinds$ = selectContextProviderWarningKinds(workspaceIdStore);
@@ -1363,7 +1365,10 @@
       allProviderWarnings: $allProviderWarnings$,
       profiles: $providerProfiles$,
     }).filter(
-      (group) => group.key === 'default' || canUseProviderModels(group.parentKey ?? group.key),
+      (group) =>
+        group.key === 'default' ||
+        ($listedProviderIds$.includes(providerRefBaseId(group.parentKey ?? group.key)) &&
+          canUseProviderModels(group.parentKey ?? group.key)),
     );
   });
   let legacyModelsExpanded = $state(false);
