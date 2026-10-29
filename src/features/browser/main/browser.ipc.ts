@@ -532,7 +532,10 @@ function ensureBrowserWorkspaceHost(
   const { windowId, adopted } = adoptWorkspaceForBackgroundHosting(payload.workspaceId, backendId);
   if (adopted) embeddedBrowserCdp.noteWorkspaceAdopted(payload.workspaceId);
   if (windowId === undefined) {
-    hostingLogger.info('no window can host workspace', { workspaceId: payload.workspaceId, backendId });
+    hostingLogger.info('no window can host workspace', {
+      workspaceId: payload.workspaceId,
+      backendId,
+    });
   } else if (adopted) {
     hostingLogger.info('workspace adopted for background hosting', {
       workspaceId: payload.workspaceId,

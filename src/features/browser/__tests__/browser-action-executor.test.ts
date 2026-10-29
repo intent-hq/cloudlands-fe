@@ -99,9 +99,12 @@ const mockGetWindowIdForWorkspace = vi.fn<(workspaceId: string) => number | unde
 // Workspace-open-anywhere probe for the capture mount fail-fast
 // (monorepo#4103). Defaults to one hosting window.
 const mockGetWindowIdsForWorkspace = vi.fn<(workspaceId: string) => number[]>(() => [1]);
+// Registration-timeout diagnosis requests (intent-hq/intent#7855).
+const mockSendToWorkspaceWindows = vi.fn();
 vi.mock('../../system/main/system.ipc', () => ({
   getWindowIdForWorkspace: (workspaceId: string) => mockGetWindowIdForWorkspace(workspaceId),
   getWindowIdsForWorkspace: (workspaceId: string) => mockGetWindowIdsForWorkspace(workspaceId),
+  sendToWorkspaceWindows: (...args: unknown[]) => mockSendToWorkspaceWindows(...args),
 }));
 
 import { executeActions } from '../main/browser-action-executor';
@@ -1276,6 +1279,30 @@ describe('browser-action-executor', () => {
       expect(result.results[0]?.action).toBe('openTab');
       expect(result.results[0]?.error).toContain('did not mount in time');
       expect(result.results[0]?.error).toContain('tab-slow');
+      // The hosting windows are asked to log their view of the stuck tab.
+      expect(mockSendToWorkspaceWindows).toHaveBeenCalledWith(
+        'ws-1',
+        'browser:diagnose-tab',
+        { workspaceId: 'ws-1', tabId: 'tab-slow', stage: 'open' },
+        expect.anything(),
+      );
+    });
+
+    it('asks for no diagnosis when the webview registers', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.waitForTabRegistration).mockResolvedValueOnce(true);
+      const openTabWithId = vi
+        .fn()
+        .mockReturnValue({ success: true, message: 'opened', tabId: 'tab-fast' });
+
+      await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://example.com' }] },
+        openTabWithId,
+        undefined,
+        'ws-1',
+      );
+
+      expect(mockSendToWorkspaceWindows).not.toHaveBeenCalled();
     });
 
     it('does not wait when openTabFn reports failure or returns no tabId', async () => {
@@ -1733,6 +1760,12 @@ describe('browser-action-executor', () => {
       expect(result.results[0]?.errorCode).toBe('workspace-not-visible');
       expect(result.results[0]?.error).toContain('did not register within the wait budget');
       expect(embeddedBrowserCdp.screenshot).not.toHaveBeenCalled();
+      expect(mockSendToWorkspaceWindows).toHaveBeenCalledWith(
+        'workspace-a',
+        'browser:diagnose-tab',
+        { workspaceId: 'workspace-a', tabId: 'tab-hidden', stage: 'mount' },
+        expect.anything(),
+      );
     });
 
     // intent#7855: a background-hosted workspace (a window hosts it but does

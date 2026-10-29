@@ -43,7 +43,7 @@
     collectOffscreenTabDecisions,
     diffOffscreenDecisions,
     type OffscreenDecisionLabel,
-  } from './offscreen-webview-eligibility';
+  } from '$store/renderer/slices/panel-layout/offscreen-webview-eligibility';
   import { createLogger } from '$lib/utils/client-logger';
   import {
     areOffscreenWebviewCachesEqual,

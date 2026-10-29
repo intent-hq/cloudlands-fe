@@ -1,13 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { addItem } from '@themislib/themis/utils/collections/collection-utils';
-import { emptyWorkspaceState } from '$store/renderer/slices/panel-layout/panel-layout-slice';
-import type {
-  PanelTab,
-  WorkspacePanelLayoutState,
-} from '$store/renderer/slices/panel-layout/panel-layout-types';
+import { emptyWorkspaceState } from './panel-layout-slice';
+import type { PanelTab, WorkspacePanelLayoutState } from './panel-layout-types';
 import {
   classifyOffscreenTab,
   collectOffscreenTabDecisions,
+  diagnoseOffscreenTab,
   diffOffscreenDecisions,
   type OffscreenEligibilityContext,
 } from './offscreen-webview-eligibility';
@@ -142,9 +140,21 @@ describe('collectOffscreenTabDecisions', () => {
         mounts: url !== undefined,
       })),
     ).toEqual([
-      { tabId: 'shown-panel', placement: 'panel', reason: 'workspace-displayed', pinned: false, mounts: false },
+      {
+        tabId: 'shown-panel',
+        placement: 'panel',
+        reason: 'workspace-displayed',
+        pinned: false,
+        mounts: false,
+      },
       { tabId: 'shown-hidden', placement: 'hidden', reason: null, pinned: true, mounts: true },
-      { tabId: 'bg-user', placement: 'panel', reason: 'claimed-by-panel', pinned: false, mounts: false },
+      {
+        tabId: 'bg-user',
+        placement: 'panel',
+        reason: 'claimed-by-panel',
+        pinned: false,
+        mounts: false,
+      },
       { tabId: 'bg-owned', placement: 'panel', reason: null, pinned: true, mounts: true },
       { tabId: 'bg-shell', placement: 'hidden', reason: 'no-url', pinned: true, mounts: false },
     ]);
@@ -178,7 +188,56 @@ describe('diffOffscreenDecisions', () => {
     ]);
 
     const closed = diffOffscreenDecisions(filled.next, decide({ w: layout([]) }));
-    expect(closed.changes).toEqual([{ tabId: 't', workspaceId: 'w', from: 'eligible', to: 'gone' }]);
+    expect(closed.changes).toEqual([
+      { tabId: 't', workspaceId: 'w', from: 'eligible', to: 'gone' },
+    ]);
     expect(closed.next.size).toBe(0);
+  });
+});
+
+describe('diagnoseOffscreenTab', () => {
+  const base = {
+    workspaceId: 'w',
+    tabId: 'tab-1',
+    ownClientId: OWN,
+    leasedTabIds: {},
+    workspaceDisplayed: false,
+    backgroundHosted: false,
+    registry: { phase: 'applied', reported: { 'tab-1': {} }, unresolved: {} },
+    offscreenElement: false,
+  };
+
+  it('names a URL-less hidden shell as the reason no guest mounted', () => {
+    const shell = browserTab({ hostClientId: OWN, browserUrl: undefined, ownerAgentId: 'agent-1' });
+    expect(diagnoseOffscreenTab({ ...base, layout: layout([], [shell]) })).toMatchObject({
+      location: 'hidden',
+      decision: 'no-url',
+      hasUrl: false,
+      owned: true,
+      hostClientId: OWN,
+      registryReported: true,
+      offscreenElement: false,
+    });
+  });
+
+  it('separates a tab the layout never received from a workspace with no layout', () => {
+    expect(diagnoseOffscreenTab({ ...base, layout: layout([]) })).toMatchObject({
+      location: 'absent',
+      decision: null,
+    });
+    expect(diagnoseOffscreenTab({ ...base, layout: undefined, registry: null })).toMatchObject({
+      location: 'no-layout',
+      restoreStatus: null,
+      registryPhase: null,
+    });
+  });
+
+  it('reports an eligible tab whose guest is missing as eligible without an element', () => {
+    const tab = browserTab({ hostClientId: OWN });
+    expect(diagnoseOffscreenTab({ ...base, layout: layout([tab]) })).toMatchObject({
+      location: 'panel',
+      decision: 'eligible',
+      offscreenElement: false,
+    });
   });
 });

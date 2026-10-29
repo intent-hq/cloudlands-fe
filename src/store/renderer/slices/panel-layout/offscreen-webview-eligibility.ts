@@ -1,16 +1,13 @@
 /**
  * Whether the OffscreenWebviewHost keeps a browser tab's guest mounted, and
- * if not, why (intent-hq/intent#7855). Pure so the host, its diagnostics and
+ * if not, why (intent-hq/intent#7855). Pure so the OffscreenWebviewHost, its diagnostics and
  * the registration-timeout dump all read the same decision.
  */
-import { BROWSER_PROTOCOLS } from '../../../shared/constants';
-import type {
-  PanelTab,
-  WorkspacePanelLayoutState,
-} from '$store/renderer/slices/panel-layout/panel-layout-types';
+import { BROWSER_PROTOCOLS } from '$shared/constants';
+import type { PanelTab, WorkspacePanelLayoutState } from './panel-layout-types';
 
 /** Why a browser tab gets no offscreen guest. */
-export type OffscreenSkipReason =
+type OffscreenSkipReason =
   /** Not a browser tab. */
   | 'not-browser'
   /** A visible panel tab of the workspace this window displays: its panel renders it. */
@@ -24,9 +21,10 @@ export type OffscreenSkipReason =
   /** The registry homes the tab on another client (or this client's id is unknown). */
   | 'hosted-elsewhere';
 
-export type OffscreenEligibility = { eligible: true } | { eligible: false; reason: OffscreenSkipReason };
+export type OffscreenEligibility =
+  { eligible: true } | { eligible: false; reason: OffscreenSkipReason };
 
-export type OffscreenTabPlacement = 'panel' | 'hidden';
+type OffscreenTabPlacement = 'panel' | 'hidden';
 
 export interface OffscreenEligibilityContext {
   ownClientId: string | null;
@@ -38,7 +36,7 @@ export interface OffscreenEligibilityContext {
 }
 
 /** A URL a mounted guest may hold; `about:blank` lets a later navigation leave the neutral page. */
-export function isOffscreenKeepAliveUrl(url: string): boolean {
+function isOffscreenKeepAliveUrl(url: string): boolean {
   if (url === 'about:blank') return true;
   try {
     return BROWSER_PROTOCOLS.NAVIGATION_ALLOWED.includes(new URL(url).protocol);
@@ -179,4 +177,87 @@ export function diffOffscreenDecisions(
     if (!next.has(tabId)) changes.push({ tabId, workspaceId, from: label, to: 'gone' });
   }
   return { changes, next };
+}
+
+/** One window's view of a tab whose registration timed out (intent-hq/intent#7855). */
+export interface OffscreenTabDiagnosis {
+  workspaceId: string;
+  tabId: string;
+  /** Where the tab sits in this window's layout for the workspace. */
+  location: 'panel' | 'hidden' | 'absent' | 'no-layout';
+  restoreStatus: string | null;
+  hasUrl: boolean;
+  hasRequestedUrl: boolean;
+  owned: boolean;
+  hostClientId: string | null;
+  ownClientId: string | null;
+  leased: boolean;
+  workspaceDisplayed: boolean;
+  backgroundHosted: boolean;
+  /** `eligible` or the reason the offscreen host skips it; null when absent. */
+  decision: OffscreenDecisionLabel | null;
+  registryPhase: string | null;
+  registryReported: boolean;
+  registryUnresolved: boolean;
+  offscreenElement: boolean;
+}
+
+export function diagnoseOffscreenTab(input: {
+  workspaceId: string;
+  tabId: string;
+  layout: WorkspacePanelLayoutState | undefined;
+  ownClientId: string | null;
+  leasedTabIds: Readonly<Record<string, unknown>>;
+  workspaceDisplayed: boolean;
+  backgroundHosted: boolean;
+  registry: {
+    phase: string;
+    reported: Readonly<Record<string, unknown>>;
+    unresolved: Readonly<Record<string, unknown>>;
+  } | null;
+  offscreenElement: boolean;
+}): OffscreenTabDiagnosis {
+  const { workspaceId, tabId, layout } = input;
+  const inPanel = layout
+    ? Object.values(layout.panels)
+        .flatMap((panel) => panel.tabs)
+        .find((tab) => tab.id === tabId)
+    : undefined;
+  const inHidden = !inPanel && layout ? layout.hiddenTabs?.map[tabId] : undefined;
+  const tab = inPanel ?? inHidden;
+  const placement: OffscreenTabPlacement | undefined = inPanel
+    ? 'panel'
+    : inHidden
+      ? 'hidden'
+      : undefined;
+  const leased = Boolean(input.leasedTabIds[tabId]);
+  let decision: OffscreenDecisionLabel | null = null;
+  if (tab && placement) {
+    const eligibility = classifyOffscreenTab(tab, {
+      ownClientId: input.ownClientId,
+      leased,
+      placement,
+      workspaceDisplayed: input.workspaceDisplayed,
+    });
+    decision = eligibility.eligible ? 'eligible' : eligibility.reason;
+  }
+  return {
+    workspaceId,
+    tabId,
+    location: !layout ? 'no-layout' : (placement ?? 'absent'),
+    restoreStatus: layout?.restoreStatus ?? null,
+    hasUrl: Boolean(tab?.browserUrl),
+    hasRequestedUrl: Boolean(tab?.browserRequestedUrl),
+    owned: typeof tab?.ownerAgentId === 'string' && tab.ownerAgentId.length > 0,
+    hostClientId: tab?.hostClientId ?? null,
+    ownClientId: input.ownClientId,
+    leased,
+    workspaceDisplayed: input.workspaceDisplayed,
+    backgroundHosted: input.backgroundHosted,
+    decision,
+    registryPhase: input.registry?.phase ?? null,
+    registryReported: Boolean(input.registry?.reported[tabId]),
+    registryUnresolved: Boolean(input.registry?.unresolved[tabId]),
+    offscreenElement: input.offscreenElement,
+  };
 }

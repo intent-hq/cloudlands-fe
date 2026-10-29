@@ -47,13 +47,21 @@ import {
   updateTabBrowserUrl,
 } from '../../panel-layout/panel-layout-slice';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
-import { selectWorkspaceTabOrder } from '../../tab-state/tab-state-selectors';
+import {
+  selectMountedBrowserTabLeases,
+  selectWorkspaceTabOrder,
+} from '../../tab-state/tab-state-selectors';
 import {
   observeBrowserTabNavigation,
   requestBrowserTabNavigation,
   requestBrowserTabRecovery,
 } from '../../tab-state/tab-state-slice';
-import { selectIsBrowserTabRegistryTornDown } from '../../browser-tab-registry/browser-tab-registry-selectors';
+import {
+  selectBrowserTabRegistryWorkspace,
+  selectIsBrowserTabRegistryTornDown,
+} from '../../browser-tab-registry/browser-tab-registry-selectors';
+import { selectOwnClientId } from '../../browser-clients/browser-clients-selectors';
+import { diagnoseOffscreenTab } from '../../panel-layout/offscreen-webview-eligibility';
 import { workspaceDeleted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
 import { focusBrowserTabRequested } from '../app-layout-slice';
@@ -740,6 +748,44 @@ function* openBrowserWithBreadcrumb(data: BrowserOpenTabPayload | null): SagaGen
   });
 }
 
+/**
+ * Main's wait for this tab's webview timed out (intent-hq/intent#7855): log
+ * this window's whole view of the tab in one line — where the layout holds
+ * it, whether it has a URL and host, why the offscreen host would skip it,
+ * the registry's phase for the workspace, and whether a guest element exists.
+ */
+/** `browser:diagnose-tab` payload (main → renderer), validated on arrival. */
+type BrowserDiagnoseTabPayload = { workspaceId?: unknown; tabId?: unknown; stage?: unknown };
+
+function* diagnoseTab(data: BrowserDiagnoseTabPayload | null): SagaGenerator<void> {
+  const tabId = data?.tabId;
+  const stage = data?.stage;
+  if (!isWorkspaceCommandPayload(data)) return;
+  if (typeof tabId !== 'string' || tabId.length === 0) return;
+  const { workspaceId } = data;
+  const registry = yield* selectBrowserTabRegistryWorkspace.effect(workspaceId);
+  const offscreenElement =
+    typeof document !== 'undefined' &&
+    [...document.querySelectorAll('[data-offscreen-webview-tab]')].some(
+      (element) => element.getAttribute('data-offscreen-webview-tab') === tabId,
+    );
+  const diagnosis = diagnoseOffscreenTab({
+    workspaceId,
+    tabId,
+    layout: (yield* selectPanelLayoutWorkspaces.effect())[workspaceId],
+    ownClientId: yield* selectOwnClientId.effect(),
+    leasedTabIds: (yield* selectMountedBrowserTabLeases.effect()) ?? {},
+    workspaceDisplayed: routedWorkspaceId() === workspaceId,
+    backgroundHosted: backgroundHostedWorkspaces.has(workspaceId),
+    registry,
+    offscreenElement,
+  });
+  hostingLogger.info('tab diagnosis', {
+    ...diagnosis,
+    stage: typeof stage === 'string' ? stage : undefined,
+  });
+}
+
 export function* browserIpcSaga(): SagaGenerator<void> {
   if (!isElectron() || running) return;
   running = true;
@@ -757,6 +803,16 @@ export function* browserIpcSaga(): SagaGenerator<void> {
         },
       ),
       yield* takeEvery(workspaceDeleted, forgetBackgroundHostedWorkspace),
+      yield* takeEveryFromElectronChannel<BrowserDiagnoseTabPayload | null>(
+        'browser:diagnose-tab',
+        diagnoseTab,
+        {
+          bufferPolicy: {
+            kind: 'lossless',
+            rationale: 'A diagnosis request is rare and each one names a distinct stuck tab.',
+          },
+        },
+      ),
       yield* takeEveryFromElectronChannel<BrowserOpenTabPayload | null>(
         'browser:open-tab',
         openBrowserWithBreadcrumb,

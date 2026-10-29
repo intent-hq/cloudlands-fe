@@ -1,5 +1,4 @@
 import { takeEveryFromSelector } from '@themislib/themis/saga';
-import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { createLogger } from '$lib/utils/client-logger';
 import {
   selectAllWorkspaceScriptEntries,

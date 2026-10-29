@@ -600,6 +600,8 @@ export const IPC_CHANNELS = {
     LIST_TABS_RESPONSE: 'browser:list-tabs-response',
     /** Open a browser tab in a panel - main->renderer event */
     OPEN_TAB: 'browser:open-tab',
+    /** A tab's registration timed out: log this window's view of it (intent-hq/intent#7855) - main->renderer event */
+    DIAGNOSE_TAB: 'browser:diagnose-tab',
     /** Close a browser tab in a panel - main->renderer event */
     CLOSE_TAB: 'browser:close-tab',
     /** Main navigated an existing tab (agent navigate/reuse) - main->renderer event */
@@ -1276,6 +1278,8 @@ export const EVENT_CHANNELS = [
   'browser:capture-drawing',
   // Browser tab open request from main process (agent wants to open a browser tab)
   'browser:open-tab',
+  // A tab's registration timed out; the renderer logs its view of the tab (intent-hq/intent#7855)
+  'browser:diagnose-tab',
   // Browser tab close request from main process (agent wants to close a browser tab)
   'browser:close-tab',
   // Main navigated an existing browser tab (agent navigate/reuse) so the

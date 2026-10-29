@@ -118,6 +118,7 @@ describe('browserIpcSaga', () => {
     await duplicate.toPromise();
     expect(on.mock.calls).toEqual([
       ['browser:host-workspace', handlers['browser:host-workspace']],
+      ['browser:diagnose-tab', handlers['browser:diagnose-tab']],
       ['browser:open-tab', handlers['browser:open-tab']],
       ['browser:close-tab', handlers['browser:close-tab']],
       ['browser:focus-tab', handlers['browser:focus-tab']],
@@ -131,6 +132,7 @@ describe('browserIpcSaga', () => {
     await first.toPromise();
     expect(offById.mock.calls).toEqual([
       ['browser:host-workspace', 'browser:host-workspace-listener'],
+      ['browser:diagnose-tab', 'browser:diagnose-tab-listener'],
       ['browser:open-tab', 'browser:open-tab-listener'],
       ['browser:close-tab', 'browser:close-tab-listener'],
       ['browser:focus-tab', 'browser:focus-tab-listener'],
@@ -141,9 +143,68 @@ describe('browserIpcSaga', () => {
     ]);
 
     const restarted = start();
-    expect(on).toHaveBeenCalledTimes(16);
+    expect(on).toHaveBeenCalledTimes(18);
     restarted.cancel();
     await restarted.toPromise();
+  });
+
+  // intent-hq/intent#7855: main's registration wait timed out; the window
+  // logs its whole view of the tab so a packaged build names the cause.
+  it('logs a URL-less hidden shell as skipped for no-url when main asks for a diagnosis', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    state = {
+      ...state,
+      browserClients: { ownClientId: 'client-own' },
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': {
+            ...persistedLayout([]),
+            restoreStatus: 'restored',
+            hiddenTabs: createCollection('id', [
+              {
+                id: 'tab-shell',
+                type: 'browser',
+                title: 'Browser',
+                closable: true,
+                hostClientId: 'client-own',
+                ownerAgentId: 'agent-1',
+              },
+            ]),
+          },
+        },
+      },
+    };
+    const task = start();
+
+    await emit({ workspaceId: 'ws-1', tabId: 'tab-shell', stage: 'open' }, 'browser:diagnose-tab');
+
+    const diagnoses = info.mock.calls.filter(([line]) =>
+      String(line).includes('[BrowserHosting] tab diagnosis'),
+    );
+    expect(diagnoses).toHaveLength(1);
+    expect(diagnoses[0][1]).toMatchObject({
+      workspaceId: 'ws-1',
+      tabId: 'tab-shell',
+      stage: 'open',
+      location: 'hidden',
+      decision: 'no-url',
+      hasUrl: false,
+      hostClientId: 'client-own',
+      ownClientId: 'client-own',
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('ignores a diagnosis request without a tab id', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const task = start();
+
+    await emit({ workspaceId: 'ws-1' }, 'browser:diagnose-tab');
+
+    expect(info.mock.calls.some(([line]) => String(line).includes('tab diagnosis'))).toBe(false);
+    task.cancel();
+    await task.toPromise();
   });
 
   it('maps every position and replacement branch exactly without leaking wire-only fields', async () => {
