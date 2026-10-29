@@ -582,7 +582,7 @@
           {/each}
         </div>
       {:else if searchResults.length === 0}
-        <div class="px-2 py-2 type-caption text-muted-foreground/80 dark:text-muted-foreground/70">
+        <div class="px-2 py-2 type-caption text-muted-foreground">
           {m.fileExplorer_treeView_noFiles_label()}
         </div>
       {:else}

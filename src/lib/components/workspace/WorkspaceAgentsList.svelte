@@ -705,7 +705,7 @@
     message={hasActiveSearch
       ? m.workspace_agentsList_noSearchResults_label()
       : m.workspace_agentsList_empty_label()}
-    class="min-h-0 px-2 py-2 text-left text-muted-foreground/80 dark:text-muted-foreground/70"
+    class="min-h-0 px-2 py-2 text-left text-muted-foreground"
     role="status"
     aria-live="polite"
   />

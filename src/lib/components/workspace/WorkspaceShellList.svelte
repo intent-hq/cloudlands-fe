@@ -222,9 +222,7 @@
               </div>
             </div>
           {:else}
-            <p
-              class="px-2 py-1.5 type-caption font-normal text-muted-foreground/80 dark:text-muted-foreground/70"
-            >
+            <p class="px-2 py-1.5 type-caption font-normal text-muted-foreground">
               {m.terminal_sidebar_noTerminals_label()}
             </p>
           {/each}
@@ -439,7 +437,7 @@
             </div>
           {:else if $scriptPage$.loading || !$scriptsInitialized$}
             <div class="flex flex-col items-start gap-1 px-2 py-1.5 type-caption" role="status">
-              <p class="font-normal text-muted-foreground/80 dark:text-muted-foreground/70">
+              <p class="font-normal text-muted-foreground">
                 {m.terminal_sidebar_loadingScripts_label()}
               </p>
               {#if !$scriptPage$.loading}
@@ -453,9 +451,7 @@
               {/if}
             </div>
           {:else}
-            <p
-              class="px-2 py-1.5 type-caption font-normal text-muted-foreground/80 dark:text-muted-foreground/70"
-            >
+            <p class="px-2 py-1.5 type-caption font-normal text-muted-foreground">
               {m.terminal_quakeOverlay_noScriptsYet_label()}
             </p>
           {/if}

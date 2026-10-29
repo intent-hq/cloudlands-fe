@@ -147,12 +147,7 @@
         class={cn(
           'relative min-w-0 gap-0 px-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
           orientation === 'horizontal'
-            ? cn(
-                'w-full',
-                selected === tab.id
-                  ? 'text-foreground'
-                  : 'text-muted-foreground dark:text-muted-foreground/70',
-              )
+            ? cn('w-full', selected === tab.id ? 'text-foreground' : 'text-muted-foreground')
             : cn(
                 'size-9 rounded-(--radius-medium) border-0',
                 selected === tab.id && 'bg-selected dark:bg-surface-4',

@@ -440,7 +440,7 @@
       />
     </div>
   {:else}
-    <p class="px-2 py-2 type-caption text-muted-foreground/80 dark:text-muted-foreground/70">
+    <p class="px-2 py-2 type-caption text-muted-foreground">
       {m.workspace_filesPanel_noFolderLinked_label()}
     </p>
   {/if}

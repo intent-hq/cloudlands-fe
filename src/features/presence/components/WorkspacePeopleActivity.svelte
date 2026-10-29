@@ -184,7 +184,7 @@
   {:else if rows.length === 0}
     <EmptyState density="compact">
       {#snippet description()}
-        <span class="text-muted-foreground/80 dark:text-muted-foreground/70">
+        <span class="text-muted-foreground">
           {$endReached$
             ? m.workspace_peopleActivity_empty_label()
             : m.workspace_peopleActivity_recentEmpty_label()}

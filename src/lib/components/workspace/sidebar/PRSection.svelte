@@ -600,10 +600,7 @@
           onsaved={native.startNativeRead}
         />
         {#if native.remoteSaving}
-          <p
-            role="status"
-            class="type-caption font-normal text-muted-foreground/80 dark:text-muted-foreground/70"
-          >
+          <p role="status" class="type-caption font-normal text-muted-foreground">
             {m.repository_prRemote_saving_label()}
           </p>
         {:else if native.nativeMode}
@@ -790,7 +787,7 @@
       </DividerButton>
     {:else if !isDiverged && !isBehind && (isOwner || !(hasUnpushedCommits && unpushedCount > 0))}
       <span
-        class="relative flex h-8 items-center gap-1 px-2 type-caption font-normal text-muted-foreground/80 dark:text-muted-foreground/70"
+        class="relative flex h-8 items-center gap-1 px-2 type-caption font-normal text-muted-foreground"
       >
         <Fa icon={faCheck} size="xs" />
         <span>{m.workspace_prSection_synced_label()}</span>

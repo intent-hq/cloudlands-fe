@@ -359,7 +359,7 @@
     {#if hasActiveSearch && !loading && !hasSearchResults}
       <ListEmpty
         message={m.workspace_contextPanel_noSearchResults_label()}
-        class="min-h-14 px-2 py-3 text-muted-foreground/80 dark:text-muted-foreground/70"
+        class="min-h-14 px-2 py-3 text-muted-foreground"
         role="status"
         aria-live="polite"
       />
