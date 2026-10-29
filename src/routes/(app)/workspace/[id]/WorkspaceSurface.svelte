@@ -78,6 +78,7 @@
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
 
   import { selectPanelLayoutRoot } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import { selectWorkspaceTabsHydrated } from '$store/renderer/slices/tab-state/tab-state-selectors';
 
   // Onboarding
   import OnboardingPage from '$features/onboarding/OnboardingPage.svelte';
@@ -489,7 +490,11 @@
   // ============================================================================
   // Tab Management
   // ============================================================================
+  const workspaceTabsHydrated$ = selectWorkspaceTabsHydrated();
   const tabManagement = useTabManagement({
+    get tabsHydrated() {
+      return $workspaceTabsHydrated$;
+    },
     get workspaceId() {
       return workspaceId;
     },

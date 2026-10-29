@@ -88,6 +88,7 @@ import {
 import { shouldDeferTranscriptReveal } from '$lib/components/chat/chat-panel-visibility';
 import { selectSubscriptionSnapshotStatus } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-selectors';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import { startWorkspaceNotesSagaFixture } from '../../test/fixtures/workspace-notes-saga-fixture';
 
 const WS = 'read-workspace';
@@ -170,13 +171,28 @@ describe('background reads through the real store, sagas, clients and event brid
     );
   }
 
+  function receiveLocalBackend() {
+    store.dispatch(
+      connectionsListReceived({
+        connections: [],
+        activeId: LOCAL_CONNECTION_ID,
+        windowBackendId: LOCAL_CONNECTION_ID,
+      }),
+    );
+  }
+
+  function restoreLocalTabs() {
+    receiveLocalBackend();
+    store.dispatch(workspaceTabsHydrated(LOCAL_CONNECTION_ID));
+  }
+
   it.each(['pending', 'completed'] as const)(
     'prefetches on workspace selection and shares %s demand with chat mounting',
     async (timing) => {
       const pending = deferred<ReturnType<typeof empty>>();
       backend.onRequest('agent.getSubscriptions', () => pending.promise);
       conversationLayout();
-      store.dispatch(workspaceTabsHydrated(LOCAL_CONNECTION_ID));
+      restoreLocalTabs();
       expect(reads('agent.getSubscriptions')).toHaveLength(0);
       store.dispatch(openWorkspaceTab(WS));
       expect(reads('agent.getSubscriptions')).toEqual([
@@ -216,7 +232,7 @@ describe('background reads through the real store, sagas, clients and event brid
   );
 
   it('waits for the destination layout and refreshes only newly displayed conversations', async () => {
-    store.dispatch(workspaceTabsHydrated(LOCAL_CONNECTION_ID));
+    restoreLocalTabs();
     store.dispatch(openWorkspaceTab(WS));
     expect(reads('agent.getSubscriptions')).toHaveLength(0);
     conversationLayout('inactive-workspace', 'inactive-agent');
@@ -239,7 +255,7 @@ describe('background reads through the real store, sagas, clients and event brid
 
   it('starts demand when delayed sessions resolve the initial conversation through the layout saga', async () => {
     cancel.push(store.runSaga(panelLayoutSaga));
-    store.dispatch(workspaceTabsHydrated(LOCAL_CONNECTION_ID));
+    restoreLocalTabs();
     store.dispatch(openWorkspaceTab(WS));
     store.dispatch(bootstrapNewWorkspaceLayout(WS, null, 'Initial agent'));
     expect(reads('agent.getSubscriptions')).toHaveLength(0);
@@ -296,7 +312,7 @@ describe('background reads through the real store, sagas, clients and event brid
         columnCount: 3,
       }),
     );
-    store.dispatch(workspaceTabsHydrated(LOCAL_CONNECTION_ID));
+    restoreLocalTabs();
     store.dispatch(openWorkspaceTab(WS));
     await settle();
     expect(reads('agent.getSubscriptions').map((r) => r.params)).toEqual([
@@ -309,7 +325,7 @@ describe('background reads through the real store, sagas, clients and event brid
     const pending = deferred<ReturnType<typeof empty>>();
     backend.onRequest('agent.getSubscriptions', () => pending.promise);
     conversationLayout();
-    store.dispatch(workspaceTabsHydrated(LOCAL_CONNECTION_ID));
+    restoreLocalTabs();
     store.dispatch(openWorkspaceTab(WS));
     store.dispatch(initializeChatRequested(AGENT, { wsId: WS }));
     store.dispatch(transcriptHydrationStarted(AGENT));
@@ -334,7 +350,7 @@ describe('background reads through the real store, sagas, clients and event brid
     );
     conversationLayout();
     conversationLayout('second-workspace', 'second-agent');
-    store.dispatch(workspaceTabsHydrated(LOCAL_CONNECTION_ID));
+    restoreLocalTabs();
     store.dispatch(openWorkspaceTab(WS));
     store.dispatch(openWorkspaceTab('second-workspace'));
     store.dispatch(openWorkspaceTab(WS));
@@ -357,6 +373,7 @@ describe('background reads through the real store, sagas, clients and event brid
   });
 
   it('does not prefetch the previous backend tab strip before hydration', async () => {
+    receiveLocalBackend();
     conversationLayout();
     store.dispatch(openWorkspaceTab(WS));
     store.dispatch(workspaceTabsHydrated('other-backend'));
@@ -367,6 +384,29 @@ describe('background reads through the real store, sagas, clients and event brid
       { method: 'agent.getSubscriptions', params: { workspaceId: WS, agentId: AGENT } },
     ]);
   });
+
+  it.each(['connections', 'tabs'] as const)(
+    'waits for both backend identity and restored tabs with %s arriving first',
+    async (first) => {
+      conversationLayout();
+      store.dispatch(openWorkspaceTab(WS));
+      const restoreTabs = () => store.dispatch(workspaceTabsHydrated(LOCAL_CONNECTION_ID));
+      const events =
+        first === 'connections'
+          ? [receiveLocalBackend, restoreTabs]
+          : [restoreTabs, receiveLocalBackend];
+
+      events[0]();
+      await settle();
+      expect(reads('agent.getSubscriptions')).toEqual([]);
+
+      events[1]();
+      await settle();
+      expect(reads('agent.getSubscriptions')).toEqual([
+        { method: 'agent.getSubscriptions', params: { workspaceId: WS, agentId: AGENT } },
+      ]);
+    },
+  );
 
   it('settles concurrent note content demand through one shared transport read', async () => {
     const pending = deferred<{ note: ReturnType<typeof note> }>();

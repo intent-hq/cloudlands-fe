@@ -46,6 +46,7 @@ export interface ParsedContent {
     | 'diagram'
     | 'digest'
     | 'mermaid'
+    | 'html'
     | 'workspace_card'
     | 'nav_link'
     | 'video'
@@ -68,6 +69,7 @@ export interface ParsedContent {
     diagramError?: string;
     rawSource?: string;
     fenceStart?: number;
+    fenceClosed?: boolean;
     workspaceCardData?: { workspaceIds: string[] };
     navLinkData?: { target: string; label?: string };
     videoData?: {
@@ -830,6 +832,23 @@ export function parseAgentMessage(
 
   const fences = scanMessageFences(content);
   for (const fence of fences) {
+    if (fence.language === 'ws-block:html') {
+      specialBlocks.push({
+        start: fence.start,
+        end: fence.end,
+        block: {
+          type: 'html',
+          content: fence.source,
+          metadata: {
+            rawSource: fence.source,
+            fenceStart: fence.start,
+            fenceClosed: fence.closed,
+            isStreaming: Boolean(options?.isStreaming && !fence.closed),
+          },
+        },
+      });
+      continue;
+    }
     if (!['mermaid', 'diagram', 'ws-block:diagram'].includes(fence.language)) continue;
     if (!fence.closed && !options) continue;
     const metadata: ParsedContent['metadata'] = {

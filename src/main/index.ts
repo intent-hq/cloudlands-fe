@@ -144,6 +144,7 @@ import {
 } from './utils/graceful-shutdown-runner';
 import { handleUncaughtException, handleUnhandledRejection } from './utils/process-error-handlers';
 import { isWebviewPopupWindow, setupWebviewSecurity } from './webview-security';
+import { getAppWindows, isOffscreenWindow } from './offscreen-window';
 import { attachAppCommandHistoryNavigation } from './app-command-navigation';
 import { attachSwipeHistoryNavigation } from './swipe-navigation';
 import { attachRendererHangMonitor } from './renderer-hang-monitor';
@@ -684,6 +685,7 @@ const bootFlow = app.whenReady().then(async () => {
   });
 
   app.on('browser-window-created', (_event: Electron.Event, window: BrowserWindowType) => {
+    if (isOffscreenWindow(window)) return;
     stampWindowWithBackend(window);
     window.on('resize', debouncedSaveWindowSessions);
     window.on('move', debouncedSaveWindowSessions);
@@ -2152,7 +2154,7 @@ app.on('activate', async () => {
   // IPC-readiness wait lives inside the creators (see ./app-activate.ts).
   await handleActivate<BrowserWindowType>({
     whenBootWindowsReady: () => bootWindowsGate.ready,
-    getAllWindows: () => BrowserWindow.getAllWindows(),
+    getAllWindows: getAppWindows,
     getMainWindow,
     getClaimedWindow: () => getActivationFocusClaim<BrowserWindowType>(),
     focusWindow: (targetWindow) => {

@@ -18,6 +18,7 @@ const logger = createLogger('tab-management');
 
 export interface UseTabManagementOptions {
   workspaceId: string;
+  tabsHydrated: boolean;
   workspaceState: WorkspacePageStateManager | null;
   previousWorkspaceId: string | null;
   onTransitionDetected?: () => void;
@@ -35,6 +36,7 @@ export function useTabManagement(options: UseTabManagementOptions) {
 
   // Open tab when workspace loads with proper cleanup
   $effect(() => {
+    if (!options.tabsHydrated) return;
     const { workspaceId, previousWorkspaceId } = options;
 
     if (workspaceId && !tabOpened) {

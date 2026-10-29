@@ -262,7 +262,7 @@ function* createManualAgent(
     // active provider. A specialist swaps in its effective coding agent and its
     // explicit model override (undefined ⇒ the daemon resolves the default in
     // that provider's context).
-    let model: string | undefined = yield* selectContextSelectedModel.effect(wsId);
+    let model: string | undefined = (yield* selectContextSelectedModel.effect(wsId)) || undefined;
     let provider: string = yield* selectEffectiveDefaultProviderId.effect(wsId);
     let behaviorPrompt: string | undefined;
     let reasoningEffort: string | undefined;
