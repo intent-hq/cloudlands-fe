@@ -404,6 +404,14 @@
     return fileTreeRef?.getHasExpandedDirectories() ?? false;
   }
 
+  export function revealPath(path: string): Promise<HTMLElement | null> {
+    return fileTreeRef?.revealPath(path) ?? Promise.resolve(null);
+  }
+
+  export function cancelReveal() {
+    fileTreeRef?.cancelReveal();
+  }
+
   // Export startCreatingFile for parent components to trigger inline file creation
   export function startCreatingFile(dirPath?: string) {
     fileTreeRef?.startCreatingFile(dirPath);

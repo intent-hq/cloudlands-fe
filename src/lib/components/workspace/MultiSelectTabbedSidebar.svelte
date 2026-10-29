@@ -60,7 +60,8 @@
   import { buildWorkspacePRPresentationModel } from './sidebar/workspace-pr-presentation';
   import { constructPrUrl, legacyWorkspacePullRequest } from './sidebar/sidebar-changes-utils';
   import { selectReviewMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
-  import { onMount, type Snippet } from 'svelte';
+  import { onMount, untrack, type Snippet } from 'svelte';
+  import { prefersReducedMotion } from '$lib/utils/reduced-motion';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import CreateAgentSection from './CreateAgentSection.svelte';
@@ -448,6 +449,7 @@
   let showOnlyChangedFiles = $state(false);
   let fileSearchQuery = $state('');
   let filesPanelRef: FilesPanel | null = $state(null);
+  let agentsListRef: WorkspaceAgentsList | null = $state(null);
   let filesExpandedTick = $state(0);
 
   const hasExpandedDirectories = $derived.by(() => {
@@ -501,48 +503,151 @@
     if (!pending || !active) return;
     if (pending.workspaceId !== workspaceId) return;
 
-    const { sidebarTabId, type, noteId, filePath, agentId } = pending.target;
+    return untrack(() => {
+      const { sidebarTabId, type, noteId, filePath, agentId, terminalId, scriptId } =
+        pending.target;
 
-    // Switch to the appropriate sidebar tab
-    const targetTab = mapSidebarTabId(sidebarTabId);
-    if (targetTab && !(isCollaborator && OWNER_ONLY_TAB_IDS.has(targetTab))) {
-      persistSelectedTabs(new Set([targetTab]));
-    }
-
-    // Scroll to the item after a short delay to allow tab switch to render
-    const timeoutId = setTimeout(() => {
-      let selector: string | null = null;
-
-      switch (type) {
-        case 'note':
-          if (noteId) selector = `[data-note-id="${noteId}"]`;
-          break;
-        case 'file':
-        case 'diff':
-          if (filePath) selector = `[data-file-path="${CSS.escape(filePath)}"]`;
-          break;
-        case 'agent':
-          if (agentId) selector = `[data-agent-id="${agentId}"]`;
-          break;
+      // Managers may reach saved scripts through Shells; raw terminals stay owner-only.
+      const targetTab = mapSidebarTabId(sidebarTabId);
+      const allowed =
+        !!targetTab &&
+        !(
+          isCollaborator &&
+          OWNER_ONLY_TAB_IDS.has(targetTab) &&
+          !(targetTab === 'shell' && $scriptContext$ && scriptId)
+        );
+      if (!targetTab || !allowed) {
+        appStore.dispatch(locateItemInSidebarConsumed(workspaceId));
+        return;
       }
+      persistSelectedTabs(new Set([targetTab]));
 
-      if (selector && sidebarElement) {
-        const element = sidebarElement.querySelector(selector);
-        if (element) {
-          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // A collapsed sidebar only shows content in the flyout; open it on the target's rail tab.
+      const revealFlyout = () => {
+        if (!panelOnly || !flyout) return;
+        const railTab = sidebarElement
+          ?.closest('[data-workspace-sidebar-shell]')
+          ?.querySelector<HTMLElement>(
+            `[data-workspace-sidebar-rail] [data-sidebar-section-tab="${targetTab}"]`,
+          );
+        if (!railTab) return;
+        railTab.scrollIntoView({ block: 'nearest' });
+        flyout.preview(targetTab, railTab);
+      };
+      revealFlyout();
+
+      // Scroll to the item after a short delay to allow tab switch to render
+      let cancelled = false;
+      let cancelFileReveal: (() => void) | undefined;
+      let cancelAgentReveal: (() => void) | undefined;
+      const timeoutId = setTimeout(() => {
+        // The context menu may have returned focus to the panel tab and dismissed the flyout.
+        revealFlyout();
+        let selector: string | null = null;
+
+        switch (type) {
+          case 'note':
+            if (noteId) selector = `[data-note-id="${CSS.escape(noteId)}"]`;
+            break;
+          case 'file':
+          case 'diff':
+            if (filePath) selector = `[data-file-path="${CSS.escape(filePath)}"]`;
+            break;
+          case 'agent':
+            if (agentId) selector = `[data-agent-id="${CSS.escape(agentId)}"]`;
+            break;
+          case 'terminal':
+            if (scriptId) selector = `[data-sidebar-shell-script="${CSS.escape(scriptId)}"]`;
+            else if (terminalId)
+              selector = `[data-sidebar-shell-terminal="${CSS.escape(terminalId)}"]`;
+            break;
+        }
+
+        const highlight = (element: HTMLElement, scroll: boolean) => {
+          if (scroll)
+            element.scrollIntoView({
+              behavior: prefersReducedMotion() ? 'instant' : 'smooth',
+              block: 'center',
+            });
+          // Keep focus inside the flyout so it stays open after the menu closes.
+          if (panelOnly) {
+            const focusTarget = element.matches('button, a[href], [tabindex]')
+              ? element
+              : element.querySelector<HTMLElement>('button, a[href], [tabindex]');
+            focusTarget?.focus({ preventScroll: true });
+          }
           // Add a brief highlight effect
           element.classList.add('sidebar-locate-highlight');
           setTimeout(() => {
             element.classList.remove('sidebar-locate-highlight');
           }, 1500);
-        }
-      }
-      appStore.dispatch(locateItemInSidebarConsumed(workspaceId));
-    }, 150);
+        };
 
-    return () => {
-      clearTimeout(timeoutId);
-    };
+        // Files live in a virtualized tree: wait until expansion renders the row.
+        // Consuming the request reruns this effect, so it happens after the reveal settles.
+        const files = filesPanelRef;
+        if (type === 'file' && filePath && files) {
+          cancelFileReveal = () => files.cancelReveal();
+          const deadline = setTimeout(cancelFileReveal, 3000);
+          void files.revealPath(filePath).then((row) => {
+            clearTimeout(deadline);
+            if (cancelled) return;
+            cancelFileReveal = undefined;
+            if (row) highlight(row, false);
+            appStore.dispatch(locateItemInSidebarConsumed(workspaceId));
+          });
+          return;
+        }
+        // Agents may sit in collapsed bins, lazy groups, or virtual rows: open them, then
+        // wait for the row (or its lazy placeholder) to render.
+        const agentsList = agentsListRef;
+        const root =
+          sidebarElement?.querySelector<HTMLElement>('[data-sidebar-section="agents"]') ??
+          sidebarElement;
+        if (type === 'agent' && agentId && agentsList && root) {
+          if (!agentsList.revealAgent(agentId)) {
+            appStore.dispatch(locateItemInSidebarConsumed(workspaceId));
+            return;
+          }
+          const agentSelector = `[data-agent-id="${CSS.escape(agentId)}"], [data-lazy-agent-card="${CSS.escape(agentId)}"]`;
+          const finish = (element: HTMLElement | null) => {
+            observer.disconnect();
+            clearTimeout(deadline);
+            cancelAgentReveal = undefined;
+            agentsList.cancelReveal();
+            if (element) highlight(element, true);
+            appStore.dispatch(locateItemInSidebarConsumed(workspaceId));
+          };
+          const observer = new MutationObserver(() => {
+            const element = root.querySelector<HTMLElement>(agentSelector);
+            if (element) finish(element);
+          });
+          const deadline = setTimeout(() => finish(null), 3000);
+          cancelAgentReveal = () => {
+            observer.disconnect();
+            clearTimeout(deadline);
+            agentsList.cancelReveal();
+          };
+          const existing = root.querySelector<HTMLElement>(agentSelector);
+          if (existing) finish(existing);
+          else observer.observe(root, { childList: true, subtree: true });
+          return;
+        }
+        const element = selector ? sidebarElement?.querySelector<HTMLElement>(selector) : null;
+        if (element) highlight(element, true);
+        appStore.dispatch(locateItemInSidebarConsumed(workspaceId));
+      }, 150);
+
+      return () => {
+        cancelled = true;
+        clearTimeout(timeoutId);
+        cancelFileReveal?.();
+        cancelAgentReveal?.();
+        // Leaving a workspace cancels its request; a newer request must survive cleanup.
+        if (selectPendingLocateInSidebar.select(appStore.state) === pending)
+          appStore.dispatch(locateItemInSidebarConsumed(pending.workspaceId));
+      };
+    });
   });
   // Refresh unread notes — only dispatch when note data actually changes
   let lastRefreshKey: string | undefined;
@@ -751,6 +856,7 @@
               {:else if tabId === 'agents'}
                 <div class="min-w-0" data-testid="agent-panel">
                   <WorkspaceAgentsList
+                    bind:this={agentsListRef}
                     agents={$allWorkspaceAgents}
                     loading={$agentsLoading}
                     searchQuery={agentSearchQuery}

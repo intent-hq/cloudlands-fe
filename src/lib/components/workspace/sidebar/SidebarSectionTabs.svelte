@@ -228,10 +228,14 @@
       >
         <Tabs.List
           aria-label={m.workspace_layout_ariaLabel()}
-          class="w-max min-w-full max-w-none justify-between gap-1 overflow-visible bg-selected dark:bg-surface-4"
+          class="w-max min-w-full max-w-none justify-start gap-1 overflow-visible bg-selected dark:bg-surface-4"
         >
           {#each tabs as tab (tab.id)}
-            <Tooltip content={tab.label} delayDuration={400} class="flex size-10 shrink-0">
+            <Tooltip
+              content={tab.label}
+              delayDuration={400}
+              class="flex h-10 min-w-10 max-w-16 flex-1"
+            >
               {@render trigger(tab)}
             </Tooltip>
           {/each}

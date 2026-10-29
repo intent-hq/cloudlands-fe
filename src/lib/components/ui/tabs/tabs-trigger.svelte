@@ -1,7 +1,7 @@
 <script lang="ts">
   import { cn } from '$lib/utils';
   import { Tabs as TabsPrimitive } from 'bits-ui';
-  import { getContext, untrack, type Snippet } from 'svelte';
+  import { getContext, onDestroy, untrack, type Snippet } from 'svelte';
   import type { HTMLButtonAttributes } from 'svelte/elements';
   import { TABS_CONTEXT, type TabsContext } from './context';
 
@@ -27,10 +27,8 @@
   let element = $state<HTMLElement | null>(null);
 
   $effect(() => context.state.update(index, value, disabled || context.disabled));
-  $effect(() => {
-    context.state.register(index, element);
-    return () => context.state.register(index, null);
-  });
+  $effect(() => context.state.register(index, element));
+  onDestroy(() => context.state.release(index));
 
   function handleFocus(event: FocusEvent & { currentTarget: EventTarget & HTMLButtonElement }) {
     context.state.activate(index);

@@ -3,6 +3,7 @@
   import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
   import { onMount, tick, untrack } from 'svelte';
+  import { prefersReducedMotion } from '$lib/utils/reduced-motion';
   import { writable } from 'svelte/store';
   import type {
     FileExplorerDisplayNode as FileNode,
@@ -1102,9 +1103,53 @@
     const index = effectiveNodes.findIndex((n) => pathMatches(n.node.path, path));
     if (index >= 0 && scrollEl) {
       const targetScrollTop = index * itemHeight - measuredHeight / 2 + itemHeight / 2;
-      scrollEl.scrollTo({ top: Math.max(0, targetScrollTop), behavior: 'smooth' });
+      scrollEl.scrollTo({
+        top: Math.max(0, targetScrollTop),
+        behavior: prefersReducedMotion() ? 'instant' : 'smooth',
+      });
     }
   }
+
+  // A reveal target waits until expansion flattens its row into the rendered window.
+  let pendingReveal = $state.raw<{
+    path: string;
+    scrolled: boolean;
+    resolve: (row: HTMLElement | null) => void;
+  } | null>(null);
+
+  /** Resolves with the rendered row, or null when cancelled, replaced, or unmounted. */
+  export function revealPath(path: string): Promise<HTMLElement | null> {
+    cancelReveal();
+    return new Promise((resolve) => {
+      pendingReveal = { path, scrolled: false, resolve };
+    });
+  }
+
+  export function cancelReveal() {
+    const pending = pendingReveal;
+    pendingReveal = null;
+    pending?.resolve(null);
+  }
+
+  $effect(() => () => untrack(cancelReveal));
+
+  $effect(() => {
+    const pending = pendingReveal;
+    if (!pending || !scrollEl) return;
+    const index = effectiveNodes.findIndex((n) => pathMatches(n.node.path, pending.path));
+    if (index < 0) return;
+    if (!pending.scrolled) {
+      pending.scrolled = true;
+      scrollToPath(pending.path);
+    }
+    if (index < startIndex || index >= endIndex) return;
+    const row = scrollEl.querySelector<HTMLElement>(
+      `[data-file-path="${CSS.escape(effectiveNodes[index].node.path)}"]`,
+    );
+    if (!row) return;
+    pendingReveal = null;
+    pending.resolve(row);
+  });
 
   /**
    * Returns whether external files are currently being dragged over the tree.

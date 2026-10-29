@@ -500,6 +500,74 @@
     return rows;
   });
   const delegatedSectionRows = $derived(buildRows(delegatedSectionAgents));
+
+  // Reveal in Sidebar: open the collapsed bins and groups that hide a loaded
+  // agent, then bring its virtual row into the rendered window.
+  let virtualList = $state<VirtualList>();
+  let retiredVirtualList = $state<VirtualList>();
+  let pendingRevealId = $state<string | null>(null);
+
+  /** Returns false when the agent is not loaded or cannot be listed. */
+  export function revealAgent(agentId: string): boolean {
+    pendingRevealId = null;
+    const agent = agents.find((candidate) => candidate.id === agentId);
+    if (!agent) return false;
+    if (isRetiredAgent(agent)) {
+      if (!showRetiredAgents) toggleRetiredBin();
+      pendingRevealId = agentId;
+      return true;
+    }
+    const index = flatAgentRows.findIndex((row) => row.agent.id === agentId);
+    if (index < 0) return false;
+    const ancestors: AgentSession[] = [];
+    for (let i = index - 1, depth = flatAgentRows[index].depth; i >= 0 && depth > 0; i -= 1) {
+      if (flatAgentRows[i].depth >= depth) continue;
+      ancestors.unshift(flatAgentRows[i].agent);
+      depth = flatAgentRows[i].depth;
+    }
+    const root = ancestors[0] ?? agent;
+    if (isOrphanDelegatedAgent(root)) {
+      if (!showDelegatedAgents) toggleDelegatedBin();
+    } else if (ancestors.length > 0 && !delegatedRowsVisible && !hasDelegatedCounts) {
+      toggleDelegatedBin();
+    }
+    if (
+      standaloneBackgroundAgents.some((candidate) => candidate.id === root.id) &&
+      !isBackgroundRowRendered(root)
+    ) {
+      toggleBackgroundBin();
+    }
+    for (const ancestor of ancestors) {
+      if (!isDelegationExpanded(ancestor.id)) toggleDelegation(ancestor.id);
+    }
+    pendingRevealId = agentId;
+    return true;
+  }
+
+  export function cancelReveal() {
+    pendingRevealId = null;
+  }
+
+  $effect(() => {
+    const id = pendingRevealId;
+    if (!id) return;
+    const rowIndex = shouldUseVirtual
+      ? listRows.findIndex((row) => row.kind === 'agent' && row.agent.id === id)
+      : -1;
+    if (rowIndex >= 0 && virtualList) {
+      virtualList.scrollToIndex(rowIndex);
+      pendingRevealId = null;
+      return;
+    }
+    const retiredIndex = shouldVirtualizeRetired
+      ? retiredAgents.findIndex((agent) => agent.id === id)
+      : -1;
+    if (retiredIndex >= 0 && retiredVirtualList) {
+      retiredVirtualList.scrollToIndex(retiredIndex);
+      pendingRevealId = null;
+    }
+    // Nested rows are always in the DOM once their group opens; the caller scrolls them.
+  });
 </script>
 
 <!-- The one row renderer. Both the nested list (`rowList`) and the flat
@@ -646,6 +714,7 @@
        uniform-height slots; large lists without a coordinator). -->
   <div class="h-full max-h-150 overflow-hidden">
     <VirtualList
+      bind:this={virtualList}
       items={listRows}
       {itemHeight}
       {containerHeight}
@@ -773,6 +842,7 @@
       <!-- Virtual scrolling for large retired sets (flat, uniform-height rows) -->
       <div class="max-h-150 overflow-hidden pt-1" data-agent-retired-section>
         <VirtualList
+          bind:this={retiredVirtualList}
           items={retiredAgents}
           {itemHeight}
           {containerHeight}

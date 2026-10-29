@@ -1,7 +1,7 @@
 <script lang="ts">
   import { logger } from '$lib/utils/client-logger';
 
-  import { tick } from 'svelte';
+  import { onDestroy, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
 
   import { Button } from '$lib/components/ui/button';
@@ -415,6 +415,50 @@
   export function getHasExpandedDirectories(): boolean {
     return selectHasExpandedDirectories.select(appStore.state, effectiveWsId);
   }
+
+  let pendingReveal = $state.raw<{
+    path: string;
+    workspaceId: string;
+    started: boolean;
+    resolve: (row: HTMLElement | null) => void;
+  } | null>(null);
+
+  /** Expand ancestors of a path; resolves with its virtual row once rendered. */
+  export function revealPath(path: string): Promise<HTMLElement | null> {
+    cancelReveal();
+    return new Promise((resolve) => {
+      pendingReveal = { path, workspaceId: effectiveWsId, started: false, resolve };
+    });
+  }
+
+  export function cancelReveal() {
+    const pending = pendingReveal;
+    pendingReveal = null;
+    if (pending?.started) virtualizedTreeRef?.cancelReveal();
+    pending?.resolve(null);
+  }
+
+  $effect(() => {
+    const pending = pendingReveal;
+    const tree = virtualizedTreeRef;
+    if (!pending) return;
+    if (pending.workspaceId !== effectiveWsId) {
+      untrack(cancelReveal);
+      return;
+    }
+    if (!tree || pending.started) return;
+    pending.started = true;
+    untrack(() => {
+      appStore.dispatch(expandToPathRequested(pending.workspaceId, pending.path));
+      void tree.revealPath(pending.path).then((row) => {
+        if (pendingReveal !== pending) return;
+        pendingReveal = null;
+        pending.resolve(row);
+      });
+    });
+  });
+
+  onDestroy(() => untrack(cancelReveal));
 
   // Export startCreatingFile for parent components to trigger inline creation
   export function startCreatingFile(dirPath?: string) {

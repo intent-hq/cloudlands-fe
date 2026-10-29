@@ -7,6 +7,7 @@ export type SidebarLocateTarget = {
   filePath?: string;
   agentId?: string;
   terminalId?: string;
+  scriptId?: string;
 };
 
 export type PendingSidebarLocate = {

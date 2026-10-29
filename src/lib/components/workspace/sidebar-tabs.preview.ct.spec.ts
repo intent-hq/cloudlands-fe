@@ -416,6 +416,16 @@ test('content-sized hover panels keep long virtual lists reachable', async ({ mo
   await rail.getByRole('tab', { name: 'Files', exact: true }).hover();
   const tree = flyout.getByRole('tree');
   await expect(tree.locator('[data-file-path]').first()).toBeVisible();
+  // The long panel fills its available height before keyboard scrolling is measured.
+  await expect
+    .poll(() =>
+      flyout.evaluate((node) =>
+        Math.abs(
+          node.getBoundingClientRect().height - parseFloat(getComputedStyle(node).maxHeight),
+        ),
+      ),
+    )
+    .toBeLessThan(1);
   await tree.focus();
   const fileScrollState = () =>
     tree.evaluate((root) => {

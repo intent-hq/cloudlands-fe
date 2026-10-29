@@ -15,6 +15,7 @@
   } from '$store/renderer/slices/context/context-slice';
   import { selectTopLevelContextItems } from '$store/renderer/slices/context/context-selectors';
   import { selectWorkspaceContextAttachments } from '$store/renderer/slices/context/context-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import ContextAttachmentsSection from '$features/context/components/ContextAttachmentsSection.svelte';
   import { v4 as uuidv4 } from 'uuid';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
@@ -34,6 +35,7 @@
   import McpServersSection from './McpServersSection.svelte';
   import SkillsSection from './SkillsSection.svelte';
   import NotesPanel from './NotesPanel.svelte';
+  import WorkspaceStatusImage from './WorkspaceStatusImage.svelte';
   import { ContextPickerModal } from './context-picker';
   import { ListEmpty } from '$lib/components/ui/list';
   import { filterContextItems, filterContextNotes } from './sidebar-search';
@@ -96,6 +98,7 @@
   // Get context items that aren't linked to any note
   const topLevelItems$ = selectTopLevelContextItems(workspaceIdStore);
   const contextAttachments$ = selectWorkspaceContextAttachments(workspaceIdStore);
+  const workspace$ = selectWorkspaceById(workspaceIdStore);
   const filteredNotes = $derived(filterContextNotes(notes, searchQuery));
   const filteredTopLevelItems = $derived(filterContextItems($topLevelItems$, searchQuery));
   const hasActiveSearch = $derived(Boolean(searchQuery.trim()));
@@ -334,6 +337,10 @@
       {loading}
       flush
     />
+
+    {#if !hasActiveSearch}
+      <WorkspaceStatusImage {workspaceId} assetId={$workspace$?.statusImageAssetId} />
+    {/if}
 
     <!-- Standalone context items (rendered in same list flow) -->
     {#if filteredTopLevelItems.length > 0}

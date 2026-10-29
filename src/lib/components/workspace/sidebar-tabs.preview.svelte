@@ -1,8 +1,10 @@
 <script module lang="ts">
   import { definePreview } from '$lib/component-catalog/preview-definition';
+  import type { SidebarLocateTarget } from '$store/renderer/slices/app-layout/app-layout-types';
 
   interface Props {
     side?: 'left' | 'right';
+    active?: boolean;
     collapsed?: boolean;
     width?: number;
     height?: number;
@@ -10,6 +12,16 @@
     items?: number;
     loading?: boolean;
     collaborator?: boolean;
+    manager?: boolean;
+    terminals?: number;
+    locate?: SidebarLocateTarget;
+    /** Loaded delegated children nested under one top-level agent's collapsed group. */
+    delegated?: number;
+    delegatedParent?: number;
+    /** Delays the initial file tree, as on a cold explorer. */
+    treeDelay?: number;
+    /** Simulated folder-expansion latency for file reveal. */
+    revealDelay?: number;
     filesError?: boolean;
     initialSection?: string;
     extraFiles?: number;
@@ -31,6 +43,7 @@
       empty: { props: { items: 0 } },
       loading: { props: { items: 0, loading: true } },
       collaborator: { props: { collaborator: true, collapsed: true } },
+      manager: { props: { manager: true, terminals: 1, collapsed: true } },
       'files-error': { props: { filesError: true } },
       'last-section': { props: { initialSection: 'shell' } },
       'tabs-narrow': { props: { width: 360, sidebarWidth: 280 } },
@@ -46,9 +59,13 @@
 
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
-  import { startSidebarNavigationPreview } from './sidebar-tabs.preview-fixtures';
+  import {
+    startFileRevealPreview,
+    startSidebarNavigationPreview,
+  } from './sidebar-tabs.preview-fixtures';
   import type { AgentSession, FileNode } from '$shared/types';
   import { Textarea } from '$lib/components/ui/textarea';
+  import { Button } from '$lib/components/ui/button';
   import WorkspaceLayout from './WorkspaceLayout.svelte';
   import MultiSelectTabbedSidebar from './MultiSelectTabbedSidebar.svelte';
   import { store } from '$store/renderer/store';
@@ -56,11 +73,15 @@
   import {
     setWorkspaceEntity,
     removeWorkspaceEntity,
+    setWorkspaceHasLoaded,
   } from '$store/renderer/slices/workspace/workspace-slice';
   import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
   import {
     setAgents,
+    setDelegatedCounts,
+    setDelegatedParentLoaded,
     setIsLoadingAgents,
+    setScopeCounts,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { loadWorkspaceNotesSucceeded } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import {
@@ -85,12 +106,17 @@
     setScriptsInitialized,
     setScriptListState,
   } from '$store/renderer/slices/scripts/scripts-slice';
+  import { loadWorkspaceTerminals } from '$store/renderer/slices/terminals/terminals-slice';
+  import { locateItemInSidebarRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { principalReceived } from '$store/renderer/slices/principal/principal-slice';
+  import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
   import { ChangeStage } from '$features/file-tracking/types';
   import { installChangesSummaryMocks } from './sidebar/changes-summary.preview-fixtures';
   import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 
   let {
     side = 'left',
+    active = true,
     collapsed = false,
     width = 1040,
     height = 680,
@@ -98,6 +124,13 @@
     items = 12,
     loading = false,
     collaborator = false,
+    manager = false,
+    terminals = 0,
+    locate,
+    revealDelay,
+    treeDelay,
+    delegated = 0,
+    delegatedParent = 1,
     filesError = false,
     initialSection = 'overview',
     extraFiles = 0,
@@ -110,15 +143,48 @@
   let activationCount = $state(0);
   const activeTab$ = selectActiveTab(workspaceId);
   const dispose = startRootStoreLifecycle(store, {
-    startSagas: () =>
-      navigationEnabled ? startSidebarNavigationPreview(() => (activationCount += 1)) : [],
+    startSagas: () => [
+      ...(navigationEnabled ? startSidebarNavigationPreview(() => (activationCount += 1)) : []),
+      ...(revealDelay === undefined ? [] : [startFileRevealPreview(root, revealDelay)]),
+    ],
   });
   const initialCollapsed = store.state.uiLayout.sidebarCollapsed;
   const restoreMocks = untrack(() => installChangesSummaryMocks(workspaceId, 'feat/sidebar-tabs'));
+  let treeTimer: ReturnType<typeof setTimeout> | undefined;
   let draft = $state('Keep the navigation quiet and give the work room to breathe.');
 
   untrack(() => {
-    admitLegacyPrincipal(collaborator ? 'guest' : 'owner');
+    admitLegacyPrincipal(collaborator || manager ? 'guest' : 'owner');
+    if (manager) {
+      const { context, snapshot, invalidation, presentationVersion } = store.state.principal;
+      if (!context || !snapshot) throw new Error('Preview principal was not admitted');
+      store.dispatch(
+        principalReceived(
+          { context, invalidation, presentationVersion },
+          {
+            ...snapshot,
+            principal: {
+              ...snapshot.principal,
+              hostRole: 'guest',
+              isAdministrator: false,
+              hostMembershipRevision: 1,
+            },
+            capabilities: {
+              ...snapshot.capabilities,
+              hostMembership: true,
+              workspaceGuestRoles: true,
+            },
+          },
+        ),
+      );
+      store.dispatch(
+        setWorkspaceHasLoaded(
+          true,
+          store.state.connections.windowBackendId,
+          selectPrincipalActionContext.select(store.state),
+        ),
+      );
+    }
     store.dispatch(
       setWorkspaceEntity({
         id: workspaceId,
@@ -132,7 +198,7 @@
         path: root,
         branch: 'feat/sidebar-tabs',
         baseRef: 'main',
-        myRole: collaborator ? 'collaborator' : 'owner',
+        myRole: manager ? 'manager' : collaborator ? 'collaborator' : 'owner',
         status: 'active',
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -173,8 +239,32 @@
       createdAt: timestamp,
       updatedAt: timestamp,
     })) as unknown as AgentSession[];
-    store.dispatch(bulkUpsertSessions(agents, { preserveExplicitRuntimeFlags: false }));
-    store.dispatch(setAgents(workspaceId, agents));
+    const parentId = `sidebar-preview-agent-${delegatedParent}`;
+    const children = Array.from({ length: delegated }, (_, index) => ({
+      id: `sidebar-preview-delegate-${index}`,
+      workspaceId,
+      name: `Delegate ${index + 1}`,
+      parentAgentId: parentId,
+      status: 'idle',
+      messages: [],
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })) as unknown as AgentSession[];
+    store.dispatch(
+      bulkUpsertSessions([...agents, ...children], { preserveExplicitRuntimeFlags: false }),
+    );
+    store.dispatch(setAgents(workspaceId, [...agents, ...children]));
+    if (delegated > 0) {
+      // Per-parent mode: the group renders collapsed from its count with children already loaded.
+      store.dispatch(setScopeCounts(workspaceId, { topLevel: items, delegated, background: 0 }));
+      store.dispatch(
+        setDelegatedCounts(workspaceId, {
+          running: 0,
+          byParent: { [parentId]: { total: delegated, running: 0 } },
+        }),
+      );
+      store.dispatch(setDelegatedParentLoaded(workspaceId, parentId, true));
+    }
     store.dispatch(setIsLoadingAgents(workspaceId, loading));
     store.dispatch(
       loadWorkspaceNotesSucceeded([workspaceId], {
@@ -250,31 +340,35 @@
     );
     store.dispatch(setHasLoadedInitialData(workspaceId, true));
     store.dispatch(setFileExplorerWorkspacePath(workspaceId, root));
-    store.dispatch(
-      setRootNode(workspaceId, {
-        name: 'sidebar-tabs',
-        path: root,
-        type: 'directory',
-        children: [
-          {
-            name: 'src',
-            path: `${root}/src`,
-            type: 'directory',
-            children: [
-              { name: 'Sidebar.svelte', path: `${root}/src/Sidebar.svelte`, type: 'file' },
-            ],
-          },
-          { name: 'package.json', path: `${root}/package.json`, type: 'file' },
-          { name: 'README.md', path: `${root}/README.md`, type: 'file' },
-          ...Array.from({ length: extraFiles }, (_, index) => ({
-            name: `file-${index}.ts`,
-            path: `${root}/file-${index}.ts`,
-            type: 'file',
-          })),
-        ],
-      } as FileNode),
-    );
-    store.dispatch(setFileExplorerInitialized(workspaceId, true));
+    const loadTree = () => {
+      store.dispatch(
+        setRootNode(workspaceId, {
+          name: 'sidebar-tabs',
+          path: root,
+          type: 'directory',
+          children: [
+            {
+              name: 'src',
+              path: `${root}/src`,
+              type: 'directory',
+              children: [
+                { name: 'Sidebar.svelte', path: `${root}/src/Sidebar.svelte`, type: 'file' },
+              ],
+            },
+            { name: 'package.json', path: `${root}/package.json`, type: 'file' },
+            { name: 'README.md', path: `${root}/README.md`, type: 'file' },
+            ...Array.from({ length: extraFiles }, (_, index) => ({
+              name: `file-${index}.ts`,
+              path: `${root}/file-${index}.ts`,
+              type: 'file',
+            })),
+          ],
+        } as FileNode),
+      );
+      store.dispatch(setFileExplorerInitialized(workspaceId, true));
+    };
+    if (treeDelay === undefined) loadTree();
+    else treeTimer = setTimeout(loadTree, treeDelay);
     if (filesError)
       store.dispatch(setFileExplorerError(workspaceId, 'The workspace files could not be loaded.'));
     store.dispatch(
@@ -288,6 +382,7 @@
                 name: 'Preview server',
                 command: 'pnpm dev',
                 mode: 'service',
+                purpose: 'saved',
                 category: 'dev',
                 source: 'user',
                 createdAt: timestamp,
@@ -301,9 +396,23 @@
       setScriptsInitialized(workspaceId, scriptsState === 'ready' || scriptsState === 'empty'),
     );
     store.dispatch(setScriptListState(workspaceId, scriptsState === 'loading'));
+    store.dispatch(
+      loadWorkspaceTerminals(
+        workspaceId,
+        Array.from({ length: terminals }, (_, index) => ({
+          id: `sidebar-preview-terminal-${index}`,
+          name: index === 0 ? 'Preview terminal' : `Terminal ${index + 1}`,
+          workspaceId,
+          createdAt: timestamp,
+        })),
+        { isOpen: false, activeTerminalId: null },
+        'sidebar-tabs-preview',
+      ),
+    );
   });
 
   onDestroy(() => {
+    clearTimeout(treeTimer);
     restoreMocks();
     store.dispatch(setCollapsed(initialCollapsed));
     store.dispatch(clearPanelLayout(workspaceId));
@@ -313,7 +422,12 @@
 </script>
 
 {#snippet sidebar()}
-  <MultiSelectTabbedSidebar {workspaceId} onCreateNote={() => {}} onCreateAgent={() => {}} />
+  <MultiSelectTabbedSidebar
+    {workspaceId}
+    {active}
+    onCreateNote={() => {}}
+    onCreateAgent={() => {}}
+  />
 {/snippet}
 
 {#snippet content()}
@@ -334,6 +448,17 @@
         class="min-h-36 resize-none bg-transparent text-sm leading-relaxed"
         data-sidebar-preview-draft
       />
+      {#if locate}
+        <Button
+          variant="ghost"
+          size="sm"
+          class="mt-4"
+          data-sidebar-preview-locate
+          onclick={() => store.dispatch(locateItemInSidebarRequested(workspaceId, locate))}
+        >
+          Reveal in sidebar
+        </Button>
+      {/if}
     </div>
   </div>
 {/snippet}

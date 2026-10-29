@@ -17,23 +17,27 @@
   } = $props();
 </script>
 
-<div
-  class="flex h-full w-12 min-h-0 flex-col items-center gap-3 overflow-y-auto pt-5 pb-3"
-  data-workspace-sidebar-rail
->
-  <Button
-    variant="ghost"
-    size="icon"
-    iconOnly
-    aria-label={m.layout_titleBar_toggleSidebar_ariaLabel()}
-    tooltip={m.layout_titleBar_toggleSidebar_ariaLabel()}
-    {tooltipDisabled}
-    data-sidebar-rail-expand
-    onclick={onExpand}
-  >
-    <SidebarIcon size={18} {side} />
-  </Button>
+<div class="flex h-full w-12 min-h-0 flex-col items-center gap-3 pt-5" data-workspace-sidebar-rail>
+  <div class="shrink-0" data-sidebar-rail-header>
+    <Button
+      variant="ghost"
+      size="icon"
+      iconOnly
+      aria-label={m.layout_titleBar_toggleSidebar_ariaLabel()}
+      tooltip={m.layout_titleBar_toggleSidebar_ariaLabel()}
+      {tooltipDisabled}
+      data-sidebar-rail-expand
+      onclick={onExpand}
+    >
+      <SidebarIcon size={18} {side} />
+    </Button>
+  </div>
   {#if workspaceId}
-    <SidebarSectionTabs {workspaceId} orientation="vertical" />
+    <div
+      class="flex min-h-0 w-full flex-1 flex-col items-center overflow-y-auto pb-3"
+      data-sidebar-rail-scroll
+    >
+      <SidebarSectionTabs {workspaceId} orientation="vertical" />
+    </div>
   {/if}
 </div>

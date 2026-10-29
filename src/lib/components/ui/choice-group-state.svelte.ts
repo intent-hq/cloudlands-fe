@@ -27,9 +27,23 @@ export class ChoiceGroupState {
   }
 
   allocate(value: string): number {
-    const index = this.#entries.length;
-    this.#entries.push({ value, element: null, disabled: false });
-    return index;
+    return untrack(() => {
+      const entry = { value, element: null, disabled: false };
+      const free = this.#entries.indexOf(undefined);
+      if (free < 0) return this.#entries.push(entry) - 1;
+      this.#entries[free] = entry;
+      return free;
+    });
+  }
+
+  /** Frees a slot for reuse once its item unmounts; mounted items keep their indexes. */
+  release(index: number): void {
+    untrack(() => {
+      if (!this.#entries[index]) return;
+      this.#entries[index] = undefined;
+      if (this.hover?.activeIndex === index) this.hover.setActiveIndex(null);
+      this.hover?.registerItem(index, null);
+    });
   }
 
   update(index: number, value: string, disabled: boolean): void {

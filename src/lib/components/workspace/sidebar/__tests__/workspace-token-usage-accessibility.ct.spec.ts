@@ -84,9 +84,9 @@ test('bridges the body portal in logical keyboard order and exits non-modally', 
 });
 
 for (const scenario of [
-  { name: 'all-cost workspace', costOnly: 'all', costAmount: 2.5, costText: 'Cost $2.50' },
-  { name: 'reported-zero workspace', costOnly: 'all', costAmount: 0, costText: 'Cost $0.00' },
-  { name: 'mixed matrix', costOnly: 'mixed', costAmount: 2.5, costText: 'Cost $2.50' },
+  { name: 'all-cost workspace', costOnly: 'all', costAmount: 2.5 },
+  { name: 'reported-zero workspace', costOnly: 'all', costAmount: 0 },
+  { name: 'mixed matrix', costOnly: 'mixed', costAmount: 2.5 },
 ] as const) {
   test(`keeps keyboard navigation on token-bearing scopes in ${scenario.name}`, async ({
     mount,
@@ -103,34 +103,33 @@ for (const scenario of [
     const disclosure = component.getByTestId('token-usage-disclosure');
     const details = page.getByTestId('token-usage-details');
     const cost = page.getByTestId('token-usage-total-cost');
-    const mixed = scenario.costOnly === 'mixed';
-    await expect(disclosure).toHaveAccessibleDescription(`${mixed ? 100 : 0} tokens used`);
+    if (scenario.costOnly === 'all') {
+      await expect(disclosure).toHaveCount(0);
+      await component.getByTestId('preceding-workspace-control').focus();
+      await page.keyboard.press('Tab');
+      await expect(component.getByTestId('following-workspace-control')).toBeFocused();
+      return;
+    }
+    await expect(disclosure).toHaveAccessibleDescription('100 tokens used');
     await expect(cost).toHaveCount(0);
     await disclosure.focus();
     await page.keyboard.press('Enter');
     await expect(details).toBeVisible();
-    if (mixed) {
-      for (const name of ['By agent', 'By model']) {
-        await page.keyboard.press('Tab');
-        const control = details.getByRole('radiogroup', { name }).getByRole('radio');
-        await expect(control).toHaveCount(1);
-        await expect(control).toBeFocused();
-        await page.keyboard.press('End');
-        await expect(control).toBeFocused();
-        await expect(control).toBeChecked();
-      }
-      await expect(cost).toHaveCount(0);
-    } else {
-      await expect(details.getByRole('radiogroup')).toHaveCount(0);
-      await expect(cost).toHaveText(scenario.costText);
+    for (const name of ['By agent', 'By model']) {
+      await page.keyboard.press('Tab');
+      const control = details.getByRole('radiogroup', { name }).getByRole('radio');
+      await expect(control).toHaveCount(1);
+      await expect(control).toBeFocused();
+      await page.keyboard.press('End');
+      await expect(control).toBeFocused();
+      await expect(control).toBeChecked();
     }
-    await expect(details.locator('.token-summary .animated-number-value')).toHaveText(
-      mixed ? '100' : '0',
-    );
+    await expect(cost).toHaveCount(0);
+    await expect(details.locator('.token-summary .animated-number-value')).toHaveText('100');
     await expect(details.locator('.message-composition-label .animated-number-value')).toHaveText(
       '0 human and 0 agent messages',
     );
-    await expect(disclosure).toHaveAccessibleDescription(`${mixed ? 100 : 0} tokens used`);
+    await expect(disclosure).toHaveAccessibleDescription('100 tokens used');
     await page.keyboard.press('Tab');
     await expect(component.getByTestId('following-workspace-control')).toBeFocused();
     await expect(cost).toHaveCount(0);
