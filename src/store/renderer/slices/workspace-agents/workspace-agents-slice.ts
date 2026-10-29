@@ -182,9 +182,12 @@ export interface SaveAgentSessionOptions {
     specialist: string | null;
     rememberSpecialist?: boolean;
     model?: string | null;
+    provider?: string;
     systemPrompt?: string | null;
   };
-  specialistRollback?: Pick<AgentSessionUpdate, 'metadataPatch' | 'model'> & { metadata?: never };
+  specialistRollback?: Pick<AgentSessionUpdate, 'metadataPatch' | 'model' | 'provider'> & {
+    metadata?: never;
+  };
 }
 
 function reconcileWorkspaceAgentSnapshot(
