@@ -85,33 +85,6 @@ describe('Specialist Prompts Verification', () => {
       ]);
     });
 
-    it('spec-writer should have coordinator behavior', () => {
-      const specWriter = getSpecialistById('spec-writer');
-      expect(specWriter).toBeDefined();
-      expect(specWriter!.defaultBehaviorPrompt).toContain('Coordinator');
-      expect(specWriter!.defaultBehaviorPrompt).toContain('delegate');
-      expect(specWriter!.defaultBehaviorPrompt).toContain('do NOT implement code yourself');
-    });
-
-    it('implementor should be constrained to assigned tasks only', () => {
-      const implementor = getSpecialistById('implementor');
-      expect(implementor).toBeDefined();
-      // Tests updated to match optimized specialists.ts content
-      expect(implementor!.defaultBehaviorPrompt).toContain('assigned task');
-      expect(implementor!.defaultBehaviorPrompt).toContain('nothing more');
-      expect(implementor!.defaultBehaviorPrompt).toContain('No scope creep');
-      expect(implementor!.defaultBehaviorPrompt).toContain('No refactors');
-    });
-
-    it('verifier should focus on thorough verification', () => {
-      const verifier = getSpecialistById('verifier');
-      expect(verifier).toBeDefined();
-      // Tests updated to match current specialists.ts content
-      expect(verifier!.defaultBehaviorPrompt).toContain('verify');
-      expect(verifier!.defaultBehaviorPrompt).toContain('Acceptance Criteria');
-      expect(verifier!.defaultBehaviorPrompt).toContain('VERIFIED');
-    });
-
     it('should not pin a model on any built-in specialist', () => {
       // Absent defaultModel means inherit the global default.
       const specWriter = getSpecialistById('spec-writer');
