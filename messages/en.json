@@ -7864,5 +7864,11 @@
   "desktop_os_checklist_blocked": "Waits for the items above",
   "desktop_os_checklist_checking": "Checking",
   "desktop_os_checklist_ready": "Ready",
-  "desktop_os_checklist_unconfirmed": "Not confirmed"
+  "desktop_os_checklist_unconfirmed": "Not confirmed",
+  "specialists_builtin_developerLegacy_name": "Developer (Legacy)",
+  "specialists_builtin_coordinatorLegacy_name": "Coordinator (Legacy)",
+  "specialists_builtin_implementorLegacy_name": "Implementor (Legacy)",
+  "specialists_builtin_verifierLegacy_name": "Verifier (Legacy)",
+  "specialists_builtin_developerLegacy_description": "Plans then implements by itself",
+  "specialists_builtin_coordinatorLegacy_description": "Plans work, breaks down tasks, coordinates sub-agents"
 }

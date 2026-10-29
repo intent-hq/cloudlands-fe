@@ -179,6 +179,10 @@ describe('Specialist Configuration', () => {
         'vulnerability-scanner',
         'ui-designer',
         'developer',
+        'developer-legacy',
+        'coordinator-legacy',
+        'implementor-legacy',
+        'verifier-legacy',
         'chief-of-staff',
       ];
 

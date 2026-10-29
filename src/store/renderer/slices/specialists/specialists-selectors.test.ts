@@ -192,6 +192,47 @@ describe('specialists selectors', () => {
       expect(orchestrator?.teamAgents).toEqual(['implementor', 'verifier']);
     });
 
+    it('keeps Lead as the default with an alphabetically loaded legacy coordinator', () => {
+      const state = mockState({
+        bundledSpecialistsLoaded: true,
+        bundledSpecialists: [...SPECIALISTS].sort((a, b) => a.id.localeCompare(b.id)),
+      });
+      expect(selectOrchestratorSpecialist.select(state)?.id).toBe('spec-writer');
+      const pickable = filterPickableSpecialists(selectSpecialists.select(state), false);
+      expect(pickable.map(({ id }) => id)).toEqual(
+        expect.arrayContaining([
+          'developer-legacy',
+          'coordinator-legacy',
+          'implementor-legacy',
+          'verifier-legacy',
+        ]),
+      );
+      expect(pickable.find(({ id }) => id === 'coordinator-legacy')).toMatchObject({
+        role: 'orchestrator',
+        teamAgents: ['implementor-legacy', 'verifier-legacy'],
+      });
+    });
+
+    it('does not replace a custom orchestrator with the opt-in legacy coordinator', () => {
+      const legacy = SPECIALISTS.find(({ id }) => id === 'coordinator-legacy')!;
+      const state = mockState({
+        bundledSpecialists: [legacy],
+        fileSpecialists: createCollection('id', [
+          {
+            id: 'custom-team',
+            name: 'Custom team',
+            description: '',
+            model: '',
+            behaviorPrompt: '',
+            filePath: '/fixture/custom-team.md',
+            source: 'user' as const,
+            role: 'orchestrator' as const,
+          },
+        ]),
+      });
+      expect(selectOrchestratorSpecialist.select(state)?.id).toBe('custom-team');
+    });
+
     it.each(['lead', 'orchestrator'] as const)('finds a custom %s with a different id', (role) => {
       const state = mockState({
         fileSpecialists: createCollection('id', [

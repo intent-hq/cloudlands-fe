@@ -71,8 +71,8 @@ describe('Specialist Prompts Verification', () => {
   });
 
   describe('Specialist Definitions', () => {
-    it('should have exactly 8 specialists defined', () => {
-      expect(SPECIALISTS).toHaveLength(8);
+    it('includes current and opt-in legacy specialists', () => {
+      expect(SPECIALISTS).toHaveLength(12);
       expect(SPECIALISTS.map((s) => s.id)).toEqual([
         'spec-writer',
         'implementor',
@@ -81,6 +81,10 @@ describe('Specialist Prompts Verification', () => {
         'ui-designer',
         'vulnerability-scanner',
         'developer',
+        'developer-legacy',
+        'coordinator-legacy',
+        'implementor-legacy',
+        'verifier-legacy',
         'chief-of-staff',
       ]);
     });

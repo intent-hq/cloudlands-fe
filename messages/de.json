@@ -7864,5 +7864,11 @@
   "desktop_os_checklist_blocked": "Wartet auf die Punkte oben",
   "desktop_os_checklist_checking": "Wird geprüft",
   "desktop_os_checklist_ready": "Bereit",
-  "desktop_os_checklist_unconfirmed": "Nicht bestätigt"
+  "desktop_os_checklist_unconfirmed": "Nicht bestätigt",
+  "specialists_builtin_developerLegacy_name": "Entwickler (Legacy)",
+  "specialists_builtin_coordinatorLegacy_name": "Koordinator (Legacy)",
+  "specialists_builtin_implementorLegacy_name": "Implementierer (Legacy)",
+  "specialists_builtin_verifierLegacy_name": "Prüfer (Legacy)",
+  "specialists_builtin_developerLegacy_description": "Plant und implementiert anschließend selbstständig",
+  "specialists_builtin_coordinatorLegacy_description": "Plant die Arbeit, teilt Aufgaben auf und koordiniert Unteragenten"
 }
