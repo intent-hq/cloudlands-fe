@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.250.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.250.1...v2.250.2) (2026-10-29)
+
+
+### 🐛 Bug Fixes
+
+* **browser:** show the primary client as offline when its tab host is gone ([#3824](https://github.com/intent-hq/cloudlands-fe/issues/3824)) ([e6b2201](https://github.com/intent-hq/cloudlands-fe/commit/e6b22010be2e1aaec2d00e267dc78845faed7766))
+* bump intentd sidecar to v0.11.72 ([#3827](https://github.com/intent-hq/cloudlands-fe/issues/3827)) ([e901339](https://github.com/intent-hq/cloudlands-fe/commit/e901339013af3aa0330801a8883503567134cec5))
+* **model-picker:** show the Codex install notice only for cli-missing ([#3823](https://github.com/intent-hq/cloudlands-fe/issues/3823)) ([9c676f8](https://github.com/intent-hq/cloudlands-fe/commit/9c676f8f6b04d711159e6a5bccf8cc0b188a6457))
+
 ## [2.250.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.250.0...v2.250.1) (2026-10-29)
 
 
