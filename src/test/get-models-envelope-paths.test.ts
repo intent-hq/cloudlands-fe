@@ -6,8 +6,8 @@
  * reaches the desktop and web builds alike.
  *
  * The builder is wrapped to forward a stand-in "next field" from the wire
- * result; if either path rebuilds the envelope by hand, the field is lost on
- * that path and this test fails.
+ * result; if either path rebuilds the envelope by hand — or the renderer
+ * client copies labels field by field — the field is lost and this test fails.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -16,7 +16,12 @@ const mocks = vi.hoisted(() => ({
   clientRequest: vi.fn(),
 }));
 
+vi.unmock('$lib/electron-bridge');
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.backendRequest }));
+vi.mock('$store/renderer/store', () => ({ store: { state: {} } }));
+vi.mock('$store/renderer/slices/provider-catalog/provider-catalog-selectors', () => ({
+  selectProviderDisplayName: { select: () => 'Codex' },
+}));
 vi.mock('../features/backend/main/backend.ipc', () => ({
   getBackendClientForIpcEvent: () => ({ client: { request: mocks.clientRequest } }),
 }));
@@ -33,6 +38,7 @@ vi.mock('$shared/models/wire-model-info', async (importOriginal) => {
 
 import { mockInvoke } from '$shared/ipc-mock-router';
 import { getProviderModelsEnvelope } from '../main/utils/daemon-model-catalog';
+import { getProviderModels } from '$features/providers/provider-models.client';
 import type { WireModelsListResult } from '$shared/models/wire-model-info';
 
 const WIRE_RESULT: WireModelsListResult & { nextField: string } = {
@@ -62,6 +68,7 @@ describe('get-models envelope parity across build paths', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('a field added to toGetModelsEnvelope reaches the desktop and web replies alike', async () => {
@@ -86,5 +93,28 @@ describe('get-models envelope parity across build paths', () => {
 
     expect(desktop).toEqual({ success: false, error: 'daemon unreachable' });
     expect(web).toEqual(desktop);
+  });
+
+  // Electron: the preload bridge reaches the main-process handler; web: no
+  // bridge, so the mock router serves the channel from the bridge seeder.
+  it.each([
+    [
+      'Electron',
+      {
+        electronAPI: {
+          invoke: (_channel: string, params?: { forceRefresh?: boolean }) =>
+            getProviderModelsEnvelope('codex', params),
+          versions: { node: '20.0.0', chrome: '120.0.0', electron: '30.0.0' },
+        },
+      },
+    ],
+    ['web', {}],
+  ])('the field also reaches getProviderModels via %s', async (_transport, windowStub) => {
+    mocks.clientRequest.mockResolvedValue(WIRE_RESULT);
+    mocks.backendRequest.mockResolvedValue(WIRE_RESULT);
+    vi.stubGlobal('window', windowStub);
+
+    const { success: _success, data, ...labels } = EXPECTED;
+    await expect(getProviderModels('codex')).resolves.toEqual({ ...labels, models: data });
   });
 });
