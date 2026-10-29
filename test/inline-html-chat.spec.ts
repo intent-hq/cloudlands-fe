@@ -6,6 +6,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 import { prepareRootHarnessModules } from './root-harness-import';
+import {
+  INLINE_HTML_HARNESS_DOCUMENT,
+  inlineHtmlHarnessDocument,
+} from './inline-html-harness-document';
 import { inlineHtmlDemo, inlineHtmlMessage } from './fixtures/inline-html-demo';
 import { polishedClampDemo, polishedEscalatorDemo } from './fixtures/inline-html-polished-demo';
 
@@ -30,10 +34,12 @@ const appPolicy = readFileSync(resolve('src/app.html'), 'utf8').match(
 )![1];
 
 test.describe.configure({ mode: 'default', timeout: 90_000 });
-test.beforeAll(async () => {
-  if (baseUrl) return;
+test.beforeAll(async ({}, workerInfo) => {
+  if (process.env.UI_PREVIEW_BASE_URL) return;
   server = await createServer({
-    cacheDir: viteHarnessCacheDir('inline-html-chat'),
+    cacheDir: viteHarnessCacheDir('inline-html-chat', { workerIndex: workerInfo.workerIndex }),
+    optimizeDeps: { entries: ['test/fixtures/InlineHtmlChatHost.svelte'] },
+    plugins: [inlineHtmlHarnessDocument()],
     server: { host: '127.0.0.1', port: 0, strictPort: false, watch: { ignored: ['**/*'] } },
   });
   await server.listen();
@@ -58,10 +64,12 @@ async function openChat(
 ) {
   await page.setViewportSize({ width, height: 840 });
   await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
-  await prepareRootHarnessModules(page, `${baseUrl}/`, [
-    '/@id/svelte',
-    '/test/fixtures/InlineHtmlChatHost.svelte',
-  ]);
+  await prepareRootHarnessModules(
+    page,
+    `${baseUrl}/`,
+    ['/@id/svelte', '/test/fixtures/InlineHtmlChatHost.svelte'],
+    { documentPath: server ? INLINE_HTML_HARNESS_DOCUMENT : undefined },
+  );
   await page.evaluate((policy) => {
     if (document.querySelector('meta[http-equiv="Content-Security-Policy"]')) return;
     const meta = document.createElement('meta');

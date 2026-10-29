@@ -6,6 +6,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 import { prepareRootHarnessModules } from './root-harness-import';
+import {
+  INLINE_HTML_HARNESS_DOCUMENT,
+  inlineHtmlHarnessDocument,
+} from './inline-html-harness-document';
 import { workflowClampDemo } from './fixtures/inline-html-workflow-demo';
 
 let server: ViteDevServer | undefined;
@@ -20,10 +24,12 @@ test.use({ trace: 'on' });
 test.beforeEach(async ({ page }) => {
   page.on('pageerror', (error) => console.error(error.message));
 });
-test.beforeAll(async () => {
-  if (baseUrl) return;
+test.beforeAll(async ({}, workerInfo) => {
+  if (process.env.UI_PREVIEW_BASE_URL) return;
   server = await createServer({
-    cacheDir: viteHarnessCacheDir('inline-html-workflows'),
+    cacheDir: viteHarnessCacheDir('inline-html-workflows', { workerIndex: workerInfo.workerIndex }),
+    optimizeDeps: { entries: ['test/fixtures/InlineHtmlWorkflowHost.svelte'] },
+    plugins: [inlineHtmlHarnessDocument()],
     server: { host: '127.0.0.1', port: 0, strictPort: false, watch: { ignored: ['**/*'] } },
   });
   await server.listen();
@@ -52,10 +58,12 @@ async function open(
 ) {
   await page.setViewportSize({ width: width * viewers + (viewers - 1) * 16, height: 1100 });
   await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
-  await prepareRootHarnessModules(page, `${baseUrl}/`, [
-    '/@id/svelte',
-    '/test/fixtures/InlineHtmlWorkflowHost.svelte',
-  ]);
+  await prepareRootHarnessModules(
+    page,
+    `${baseUrl}/`,
+    ['/@id/svelte', '/test/fixtures/InlineHtmlWorkflowHost.svelte'],
+    { documentPath: server ? INLINE_HTML_HARNESS_DOCUMENT : undefined },
+  );
   await page.evaluate((policy) => {
     if (document.querySelector('meta[http-equiv="Content-Security-Policy"]')) return;
     const meta = document.createElement('meta');
