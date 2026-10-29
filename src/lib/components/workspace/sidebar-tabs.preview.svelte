@@ -15,6 +15,7 @@
     manager?: boolean;
     terminals?: number;
     locate?: SidebarLocateTarget;
+    nestedNote?: boolean;
     /** Loaded delegated children nested under one top-level agent's collapsed group. */
     delegated?: number;
     delegatedParent?: number;
@@ -128,6 +129,7 @@
     manager = false,
     terminals = 0,
     locate,
+    nestedNote = false,
     revealDelay,
     treeDelay,
     delegated = 0,
@@ -287,6 +289,10 @@
           tags: [],
           isPinned: index === 0,
           isArchived: false,
+          parentId:
+            nestedNote && (index === 8 || index === 9)
+              ? `sidebar-preview-note-${index - 1}`
+              : undefined,
           visibility: 'private',
           createdAt: timestamp,
           updatedAt: timestamp,

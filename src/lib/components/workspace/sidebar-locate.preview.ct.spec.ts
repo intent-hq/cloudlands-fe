@@ -17,6 +17,37 @@ const script = {
   scriptId: 'sidebar-dev-server',
 };
 
+for (const collapsed of [false, true]) {
+  test(`reveal opens a note's folded ancestor chain (${collapsed ? 'collapsed' : 'pinned'})`, async ({
+    mount,
+  }) => {
+    const component = await mount(SidebarTabsPreview, {
+      props: { collapsed, nestedNote: true, locate: note },
+    });
+    const context = component.getByRole('tab', { name: 'Context', exact: true });
+    if (collapsed) await context.hover();
+    else await context.click();
+    const parent = component.locator('[data-note-id="sidebar-preview-note-8"]');
+    const ancestor = component.locator('[data-note-id="sidebar-preview-note-7"]');
+    await parent.hover();
+    await parent.getByRole('button', { name: 'Collapse', exact: true }).click();
+    await ancestor.hover();
+    await ancestor.getByRole('button', { name: 'Collapse', exact: true }).click();
+    const row = component.locator(`[data-note-id="${note.noteId}"]`);
+    await expect(row).toHaveCount(0);
+    await component.locator('[data-sidebar-preview-locate]').click();
+    await expect(row).toBeInViewport();
+    await expect(row).toHaveClass(/sidebar-locate-highlight/);
+    await expect(parent.getByRole('button', { name: 'Collapse', exact: true })).toBeVisible();
+    await expect(ancestor.getByRole('button', { name: 'Collapse', exact: true })).toBeVisible();
+    if (collapsed)
+      await expect
+        .poll(() => row.evaluate((node) => node.contains(document.activeElement)))
+        .toBe(true);
+    await expect(component.locator('[data-sidebar-section="context"]')).toBeVisible();
+  });
+}
+
 test('reveal opens the collapsed flyout on the target and keeps it open', async ({
   mount,
   page,

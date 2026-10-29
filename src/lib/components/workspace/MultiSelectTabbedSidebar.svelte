@@ -100,8 +100,14 @@
   } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { openWorkspaceDiff } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { createTerminalRequested } from '$store/renderer/slices/terminals/terminals-slice';
-  import { setMultiSelectSidebarSelectedTabs } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-  import { selectMultiSelectSidebarSelectedTabIds } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
+  import {
+    setMultiSelectSidebarSelectedTabs,
+    toggleWorkspaceCollapsedNote,
+  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+  import {
+    selectMultiSelectSidebarSelectedTabIds,
+    selectWorkspaceCollapsedNoteIds,
+  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { selectIsCollapsed } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import {
@@ -477,6 +483,25 @@
     return mapping[registryTabId] ?? null;
   }
 
+  function revealNoteAncestors(noteId: string): boolean {
+    const notesById = new Map($notes.map((note) => [note.id as string, note]));
+    const collapsed = new Set(selectWorkspaceCollapsedNoteIds.select(appStore.state, workspaceId));
+    const visited = new Set([noteId]);
+    let note = notesById.get(noteId);
+    let expanded = false;
+    while (note && !isSpecNote(note.id) && note.parentId && !visited.has(note.parentId)) {
+      const parentId = note.parentId;
+      visited.add(parentId);
+      note = notesById.get(parentId);
+      if (!note) break;
+      if (collapsed.has(parentId)) {
+        appStore.dispatch(toggleWorkspaceCollapsedNote(workspaceId, parentId));
+        expanded = true;
+      }
+    }
+    return expanded;
+  }
+
   onMount(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!active) return;
@@ -568,8 +593,12 @@
             break;
         }
 
-        // A folded Shells group must render its target before we look up the row.
-        if (type === 'terminal' && shellsListRef?.revealTarget({ terminalId, scriptId })) {
+        // Folded note ancestors and Shells groups must render before we look up the row.
+        const expandedGroup =
+          type === 'note' && noteId
+            ? revealNoteAncestors(noteId)
+            : type === 'terminal' && shellsListRef?.revealTarget({ terminalId, scriptId });
+        if (expandedGroup) {
           await tick();
           if (cancelled) return;
         }
