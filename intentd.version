@@ -2,4 +2,4 @@
 # Bump by PR: update this version to a released intent-hq/intentd tag (vX.Y.Z or
 # vX.Y.Z-beta.N), then verify with `node scripts/fetch-sidecar.cjs` and regenerate
 # src/test/current-protocol-version.ts with `node scripts/sync-intentd-protocol-version.mjs`.
-0.11.75
+0.11.76
