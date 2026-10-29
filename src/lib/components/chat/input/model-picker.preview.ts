@@ -256,6 +256,9 @@ export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>(
     open: {
       props: {
         initialOpen: true,
+        captureMenu: true,
+        portal: false,
+        collisionBoundary: 'body',
         selectedModel: null,
         defaultModelId: 'codex-preview-balanced',
         showDefaultOption: true,
@@ -268,6 +271,9 @@ export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>(
     reasoning: {
       props: {
         initialOpen: true,
+        captureMenu: true,
+        portal: false,
+        collisionBoundary: 'body',
         selectedModel: 'codex-preview-balanced',
         showReasoning: true,
         reasoningEffort: 'medium',
@@ -280,6 +286,9 @@ export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>(
     recovery: {
       props: {
         initialOpen: true,
+        captureMenu: true,
+        portal: false,
+        collisionBoundary: 'body',
         selectedModel: 'codex-preview-balanced',
         agentId: 'preview-recovery-agent',
         showReasoning: true,
