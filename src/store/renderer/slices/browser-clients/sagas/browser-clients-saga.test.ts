@@ -197,6 +197,64 @@ describe('browserClientsSaga', () => {
     await run.task.toPromise();
   });
 
+  it('queues a re-read for a route input that arrives while a refresh is in flight', async () => {
+    const claimedOn = (tabId: string, hostClientId: string) => ({
+      tabId,
+      workspaceId: 'ws-1',
+      hostClientId,
+      ownerAgentId: 'a-1',
+      url: 'https://example.com/',
+      visibility: 'visible' as const,
+      createdAt: '2026-09-07T00:00:00.000Z',
+      updatedAt: '2026-09-07T00:00:00.000Z',
+    });
+    mocks.getBrowserClient.mockResolvedValueOnce({
+      source: 'default',
+      resolved: null,
+      target: { clientId: 'host-a', via: 'tabs' },
+    });
+    const run = startWithReducer();
+    run.dispatch(mountBrowserConsumer('ws-1'));
+    await settle();
+    const reads = mocks.getBrowserClient.mock.calls.length;
+
+    // Closing A starts a read that will observe B as the oldest claimed host.
+    const afterA = deferred<unknown>();
+    mocks.getBrowserClient.mockReturnValueOnce(afterA.promise);
+    mocks.getBrowserClient.mockResolvedValue({
+      source: 'default',
+      resolved: { clientId: 'cli-desk' },
+    });
+    run.dispatch(
+      browserRouteInputChanged('ws-1', {
+        kind: 'tab',
+        tab: claimedOn('a', 'host-a'),
+        change: 'closed',
+      }),
+    );
+    await settle();
+    expect(mocks.getBrowserClient).toHaveBeenCalledTimes(reads + 1);
+    // B closes before that reply lands: the stored answer still says A.
+    run.dispatch(
+      browserRouteInputChanged('ws-1', {
+        kind: 'tab',
+        tab: claimedOn('b', 'host-b'),
+        change: 'closed',
+      }),
+    );
+    afterA.resolve({
+      source: 'default',
+      resolved: null,
+      target: { clientId: 'host-b', via: 'tabs' },
+    });
+    await settle();
+    await settle();
+    expect(mocks.getBrowserClient).toHaveBeenCalledTimes(reads + 2);
+    expect(run.sidebar('ws-1').mode).toBe('here');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('queues a re-read for a route input that arrives before the first answer', async () => {
     const first = deferred<unknown>();
     mocks.getBrowserClient.mockReturnValueOnce(first.promise);

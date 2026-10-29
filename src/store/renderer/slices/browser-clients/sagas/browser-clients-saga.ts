@@ -51,6 +51,13 @@ import {
   workspaceBrowserClientPinReceived,
 } from '../browser-clients-slice';
 
+/**
+ * Resolution reads running per workspace. While one is in flight the stored
+ * answer may predate an earlier route input, so inputs cannot be filtered
+ * against it; they queue the lane's trailing read instead.
+ */
+const readsInFlight: Record<string, number> = {};
+
 /** Whether `input` can change the route `current` reports (see `BrowserRouteInput`). */
 function routeMayMove(current: WorkspaceBrowserClient, input: BrowserRouteInput): boolean {
   if (current.source === 'workspace') return false;
@@ -213,6 +220,7 @@ function* readWorkspaceBrowserClient(
 ): SagaGenerator<void> {
   if (action.type !== fetchWorkspaceBrowserClientRequested.type) return;
   const [wsId] = action.payload;
+  readsInFlight[wsId] = (readsInFlight[wsId] ?? 0) + 1;
   try {
     const epoch = epochs[wsId] ?? 0;
     // The lane owns workspace teardown; racing it here would release a queued
@@ -236,6 +244,9 @@ function* readWorkspaceBrowserClient(
       wsId,
       error: error instanceof Error ? error.message : error,
     });
+  } finally {
+    readsInFlight[wsId] = (readsInFlight[wsId] ?? 1) - 1;
+    if (readsInFlight[wsId] <= 0) delete readsInFlight[wsId];
   }
 }
 
@@ -372,9 +383,9 @@ export function* browserClientsSaga(): SagaGenerator<void> {
   yield* takeEvery(browserRouteInputChanged, function* ({ payload: [wsId, input] }) {
     if (!connection.mounted.has(wsId)) return;
     const current = yield* selectWorkspaceBrowserClient.effect(wsId);
-    // No answer yet: a read may be in flight from before this event, so queue
-    // its trailing re-read rather than drop the input.
-    if (current && !routeMayMove(current, input)) return;
+    // No answer yet, or a read in flight that may predate this event: queue
+    // the trailing re-read rather than judge the input against a stale route.
+    if (current && !readsInFlight[wsId] && !routeMayMove(current, input)) return;
     yield* put(fetchWorkspaceBrowserClientRequested(wsId));
   });
   yield* takeEvery(browserClientsConsumerMounted, function* ({ payload: [wsId] }) {
