@@ -25,7 +25,7 @@
    * visible-panel guests) is left to a follow-up slice.
    */
   import { untrack } from 'svelte';
-  import { BROWSER_PANEL_PARTITION, BROWSER_PROTOCOLS } from '../../../shared/constants';
+  import { BROWSER_PANEL_PARTITION } from '../../../shared/constants';
   import { selectOwnClientId } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
   import {
     selectBrowserTabRecoveryRequests,
@@ -38,8 +38,8 @@
   } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { store as appStore } from '$store/renderer/store';
   import { selectPanelLayoutWorkspaces } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { offscreenWebview } from './offscreen-webview-action';
+  import { collectOffscreenTabDecisions } from './offscreen-webview-eligibility';
   import {
     areOffscreenWebviewCachesEqual,
     MAX_OFFSCREEN_WEBVIEWS,
@@ -66,72 +66,30 @@
     recoveryKeys = { ...recoveryKeys, [tabId]: requestId };
   }
 
-  function isKeepAliveUrl(url: string): boolean {
-    // Navigation needs a mounted guest before it can leave the neutral document.
-    if (url === 'about:blank') return true;
-    try {
-      return BROWSER_PROTOCOLS.NAVIGATION_ALLOWED.includes(new URL(url).protocol);
-    } catch {
-      return false;
-    }
-  }
+  const decisions = $derived(
+    collectOffscreenTabDecisions($layouts$, {
+      ownClientId: $ownClientId$,
+      leasedTabIds: $mountedBrowserTabLeases$,
+      displayedWorkspaceIds: excludedWorkspaceIds,
+    }),
+  );
 
-  // Only the tab's host mounts a guest (REV-2 §5.45); a tab the registry
-  // homes on another client is a mirror here and never gets a webview.
-  function isHostedHere(tab: PanelTab, ownClientId: string | null): boolean {
-    return tab.hostClientId === undefined || tab.hostClientId === ownClientId;
-  }
-
-  const candidates = $derived.by(() => {
-    const out: OffscreenWebviewCandidate[] = [];
-    const ownClientId = $ownClientId$;
-    const mountedTabs = $mountedBrowserTabLeases$;
-    for (const [workspaceId, layout] of Object.entries($layouts$)) {
-      if (!excludedWorkspaceIds.has(workspaceId)) {
-        for (const panel of Object.values(layout.panels)) {
-          for (const tab of panel.tabs) {
-            if (
-              tab.type !== 'browser' ||
-              mountedTabs[tab.id] ||
-              !tab.browserUrl ||
-              !isKeepAliveUrl(tab.browserUrl) ||
-              !isHostedHere(tab, ownClientId)
-            ) {
-              continue;
-            }
-            // Agent-owned tabs stay mounted for the agent's lifetime:
-            // pinned entries are exempt from the cap (monorepo#2857).
-            const pinned =
-              typeof tab.ownerAgentId === 'string' && tab.ownerAgentId.length > 0
-                ? { pinned: true }
-                : {};
-            out.push({ tabId: tab.id, workspaceId, url: tab.browserUrl, ...pinned });
-          }
-        }
-      }
-      // Hidden (user-closed) owned tabs have no visible EmbeddedBrowser even
-      // in the displayed workspace, so they mount here after any outgoing panel
-      // mount releases its lease — pinned, kept
-      // alive until agent deletion or workspace archive/delete
-      // (monorepo#2857). hiddenTabs is a Collection; read its ids/map here
-      // since components must not import collection-utils.
-      for (const id of layout.hiddenTabs?.ids ?? []) {
-        const tab = layout.hiddenTabs.map[id];
-        if (
-          !tab ||
-          tab.type !== 'browser' ||
-          mountedTabs[tab.id] ||
-          !tab.browserUrl ||
-          !isKeepAliveUrl(tab.browserUrl) ||
-          !isHostedHere(tab, ownClientId)
-        ) {
-          continue;
-        }
-        out.push({ tabId: tab.id, workspaceId, url: tab.browserUrl, pinned: true });
-      }
-    }
-    return out;
-  });
+  const candidates = $derived(
+    decisions.flatMap((decision): OffscreenWebviewCandidate[] =>
+      decision.eligibility.eligible && decision.url
+        ? [
+            {
+              tabId: decision.tabId,
+              workspaceId: decision.workspaceId,
+              url: decision.url,
+              // Agent-owned and hidden tabs stay mounted for the agent's
+              // lifetime: pinned entries are exempt from the cap (monorepo#2857).
+              ...(decision.pinned ? { pinned: true } : {}),
+            },
+          ]
+        : [],
+    ),
+  );
 
   let cache = $state<Map<string, number>>(new Map());
   // URL/workspace frozen when a tab enters the keep-alive set, so later
