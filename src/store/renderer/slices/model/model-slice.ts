@@ -55,13 +55,14 @@ function buildLoadingState(
     nextState.stale = true;
   }
 
-  // The kind follows its warning's lifecycle and never outlives it.
+  // The kind follows its warning's lifecycle and never outlives it: a new
+  // warning brings its own kind (or none), never the previous one's.
   const warningKind =
-    updates.status === 'success'
+    updates.status === 'success' || updates.warning !== undefined
       ? updates.warningKind
       : updates.status === 'error'
         ? undefined
-        : (updates.warningKind ?? previous?.warningKind);
+        : previous?.warningKind;
   if (warning !== undefined && warningKind !== undefined) {
     nextState.warningKind = warningKind;
   }

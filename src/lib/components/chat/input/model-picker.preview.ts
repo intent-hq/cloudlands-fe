@@ -74,7 +74,7 @@ function setupModels(
     const previousDefault = selectEffectiveDefaultProviderId.select(appStore.state);
     const previousCollapsed = selectModelPickerCollapsedGroups.select(appStore.state);
     const restoreProviders = setupPreviewProviders();
-    if (fallbackWarning) {
+    if (fallbackWarning || fallbackWarningKind) {
       // The daemon's Codex catalog entry carries this docs link; the notice
       // shows it as "Setup docs". restoreProviders() puts the old rows back.
       appStore.dispatch(
@@ -114,17 +114,15 @@ function setupModels(
       // a failed probe); Retry then gets the real rows.
       const failed =
         degraded || (diagnostic && providerId === 'codex')
-          ? { data: [], warning: diagnostic ?? 'Temporary model catalog failure' }
+          ? {
+              data: [],
+              warning: diagnostic ?? 'Temporary model catalog failure',
+              ...(providerId === 'codex' && fallbackWarningKind
+                ? { warningKind: fallbackWarningKind }
+                : {}),
+            }
           : undefined;
-      restoreModelHandlers.push(
-        setupModelPickerPreviewHandler(
-          providerId,
-          rows,
-          warning,
-          failed,
-          warning ? fallbackWarningKind : undefined,
-        ),
-      );
+      restoreModelHandlers.push(setupModelPickerPreviewHandler(providerId, rows, warning, failed));
       if (providerId === 'codex')
         appStore.dispatch(setAvailableModels(degraded ? [] : rows, providerId));
     }
@@ -331,9 +329,10 @@ export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>(
         ].join('\n'),
       ),
     },
-    // Codex CLI missing: the daemon's real missing-CLI warning, labeled
-    // `warningKind: "cli-missing"` (§5.30), and the open menu's footer shows
-    // the install notice above Retry.
+    // Codex CLI missing, as the daemon reports it (§5.30): an empty Codex
+    // catalog with the real missing-CLI warning labeled `warningKind:
+    // "cli-missing"`; the open menu's footer shows the install notice above
+    // Retry, which (CLI installed) then loads the real rows.
     'codex-fallback': {
       props: {
         initialOpen: true,
@@ -350,8 +349,8 @@ export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>(
       setup: setupModels(
         true,
         false,
-        undefined,
         'codex: Install codex on the execution host and make it available on PATH, then retry. Intent requires the installed CLI; no bundled runtime replaces a missing one.',
+        undefined,
         'cli-missing',
       ),
     },

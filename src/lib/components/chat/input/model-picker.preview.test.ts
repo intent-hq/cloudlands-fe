@@ -12,7 +12,6 @@ import {
 } from '$store/renderer/slices/provider-models/provider-models-selectors';
 import { providerModelsRequested } from '$store/renderer/slices/provider-models/provider-models-slice';
 import { setLoadingStateForProvider } from '$store/renderer/slices/model/model-slice';
-import { getModelsForProviderForLoadingState } from '$store/renderer/slices/model/model-utils';
 import { preview } from './model-picker.preview';
 
 vi.mock('./ModelPickerPreview.svelte', () => ({ default: vi.fn() }));
@@ -50,27 +49,30 @@ async function settled(...providerIds: string[]) {
 }
 
 describe('model picker codex-fallback preview state', () => {
-  it('serves the built-in Codex list with a fallback warning, then tears it down', async () => {
+  it('serves the daemon missing-CLI answer that Retry recovers, then tears it down', async () => {
     const cleanup = setup('codex-fallback');
     await settled('codex', 'claude-code');
 
-    // The open picker's install notice needs the warning, the usable models
-    // and the Codex docs link together (not the blocking "Failed to load" path).
+    // The daemon's missing-CLI answer: an empty catalog, the real warning and
+    // `warningKind: "cli-missing"`, which the open picker's install notice
+    // keys on, plus the Codex docs link the notice shows.
     const warning = selectAllProviderWarnings.select(store.state).codex;
-    expect(warning).toBeTruthy();
-    // The daemon's real missing-CLI answer: the notice keys on warningKind.
     expect(warning).toMatch(/make it available on PATH/);
     expect(selectAllProviderWarningKinds.select(store.state).codex).toBe('cli-missing');
     const cache = selectProviderModelsCacheMap.select(store.state);
     expect(cache.codex?.warning).toBe(warning);
-    expect(cache.codex?.models.length).toBeGreaterThan(0);
+    expect(cache.codex?.warningKind).toBe('cli-missing');
+    expect(cache.codex?.models).toEqual([]);
     expect(selectResolvedProviderCatalogEntry.select(store.state, 'codex')?.loginDocsUrl).toMatch(
       /^https:\/\//,
     );
-    // Retry refetches through the preview's IPC handler; the warning survives it.
-    const refetched = await getModelsForProviderForLoadingState('codex', { forceRefresh: true });
-    expect(refetched.warning).toBe(warning);
-    expect(refetched.models.length).toBeGreaterThan(0);
+    // Retry after installing the CLI loads the real rows and clears both.
+    store.dispatch(providerModelsRequested('codex', 'retry'));
+    await vi.waitFor(() => {
+      expect(selectProviderModelsCacheMap.select(store.state).codex?.models.length).toBe(3);
+    });
+    expect(selectAllProviderWarnings.select(store.state).codex).toBeUndefined();
+    expect(selectAllProviderWarningKinds.select(store.state).codex).toBeUndefined();
 
     cleanup?.();
     expect(selectAllProviderWarnings.select(store.state).codex).toBeUndefined();

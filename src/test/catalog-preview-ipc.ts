@@ -20,12 +20,11 @@ export function setupModelPickerPreviewHandler(
   rows: ProviderModelInfo[],
   warning?: string,
   first?: ModelCatalogResponse,
-  warningKind?: ModelWarningKind,
 ) {
   const channel = `${providerId}:get-models`;
   let pending = first;
   return overrideMockIpcHandler(channel, () => {
-    const served = pending ?? { data: rows, warning, warningKind };
+    const served: ModelCatalogResponse = pending ?? { data: rows, warning };
     pending = undefined;
     return {
       success: true,

@@ -64,9 +64,12 @@ export interface WireModelsListResult {
  * the provider CLI is not installed on the execution host;
  * `prerequisite-missing` — Node.js with `npx` is missing for the adapter.
  */
-export type ModelWarningKind = 'cli-missing' | 'prerequisite-missing';
+const MODEL_WARNING_KINDS = ['cli-missing', 'prerequisite-missing'] as const;
+export type ModelWarningKind = (typeof MODEL_WARNING_KINDS)[number];
 
-const MODEL_WARNING_KINDS: readonly string[] = ['cli-missing', 'prerequisite-missing'];
+function isModelWarningKind(value: unknown): value is ModelWarningKind {
+  return MODEL_WARNING_KINDS.some((kind) => kind === value);
+}
 
 /**
  * The response's `warningKind` when it is a known value that qualifies a
@@ -76,11 +79,8 @@ const MODEL_WARNING_KINDS: readonly string[] = ['cli-missing', 'prerequisite-mis
 export function readWarningKind(
   result: WireModelsListResult | null | undefined,
 ): ModelWarningKind | undefined {
-  const kind = result?.warningKind;
   if (typeof result?.warning !== 'string' || !result.warning) return undefined;
-  return typeof kind === 'string' && MODEL_WARNING_KINDS.includes(kind)
-    ? (kind as ModelWarningKind)
-    : undefined;
+  return isModelWarningKind(result.warningKind) ? result.warningKind : undefined;
 }
 
 /** Map a wire row to the FE model shape; `null` when key fields are missing. */

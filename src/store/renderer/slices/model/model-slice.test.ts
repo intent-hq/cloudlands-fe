@@ -173,6 +173,17 @@ describe('modelReducer', () => {
       setLoadingStateForProvider({ providerId: 'codex', status: 'error', error: 'boom' }),
     );
     expect(failed.loadingState.codex.warningKind).toBeUndefined();
+    // A new warning during loading never inherits the previous warning's kind.
+    const replaced = modelReducer(
+      missing,
+      setLoadingStateForProvider({
+        providerId: 'codex',
+        status: 'loading',
+        warning: 'adapter exited before reporting models',
+      }),
+    );
+    expect(replaced.loadingState.codex.warning).toBe('adapter exited before reporting models');
+    expect(replaced.loadingState.codex.warningKind).toBeUndefined();
     // A kind never outlives (or arrives without) its warning.
     const kindOnly = modelReducer(
       initialState,
