@@ -138,6 +138,18 @@ export const browserTabClosed = createAction<[wsId: string, tabId: string]>(
   'browserClients/browserTabClosed',
 );
 
+/**
+ * A daemon event that can move an unpinned workspace's routed browser client
+ * (`workspace.getBrowserClient` `target`): a tab opened/updated/closed or a
+ * desktop-control session start/end. The browser-clients saga decides whether
+ * to re-read; the reducer ignores it.
+ */
+export type BrowserRouteInput =
+  { kind: 'tab'; tab: BrowserTab; closed: boolean } | { kind: 'desktop-session' };
+export const browserRouteInputChanged = createAction<[wsId: string, input: BrowserRouteInput]>(
+  'browserClients/browserRouteInputChanged',
+);
+
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------

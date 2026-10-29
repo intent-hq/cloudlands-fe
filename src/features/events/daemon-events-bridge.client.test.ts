@@ -508,6 +508,37 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
     expect(appStore.state.desktopControl.byKey[desktopKey(WS, AGENT)]?.pending).toEqual(data);
   });
 
+  it('desktop:session-changed also feeds the routed-client refresh for its workspace', async () => {
+    const { browserRouteInputChanged } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-slice');
+    await primeBridge();
+    const dispatchSpy = vi.fn(appStore.dispatch);
+    const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
+    capturedHandlers[0]!({
+      method: 'events.event',
+      params: {
+        subscriptionId: 'sub-1',
+        event: {
+          id: 'desktop-session-ended',
+          type: 'desktop:session-changed',
+          workspaceId: WS,
+          data: {
+            workspaceId: WS,
+            agentId: AGENT,
+            sessionId: 'session-1',
+            computerId: 'computer-1',
+            computerName: 'Desk',
+            status: 'ended',
+          },
+        },
+      },
+    });
+    expect(dispatchSpy).toHaveBeenCalledWith(
+      browserRouteInputChanged(WS, { kind: 'desktop-session' }),
+    );
+    dispatchGetterSpy.mockRestore();
+  });
+
   it('agent:idle notification flips selectAgentIsResponding from true → false', async () => {
     // Optimistic chatSendStarted-style flag: the FE reducer marks isStreaming
     // true while the user message is being sent.
@@ -14614,6 +14645,16 @@ describe('daemonEventsBridge (REV-2 §5.17 — client:* / browser:tab-* / browse
     handler(tabNotification('browser:tab-closed', { tab: moved }));
     expect(dispatchSpy).toHaveBeenCalledWith(browserTabClosed(WS_BC, TAB.tabId));
     expect(selectWorkspaceBrowserTabsRevision.select(appStore.state, WS_BC)).toBe(3);
+
+    // Each event also feeds the routed-client refresh with the row it carried.
+    const { browserRouteInputChanged } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-slice');
+    expect(dispatchSpy).toHaveBeenCalledWith(
+      browserRouteInputChanged(WS_BC, { kind: 'tab', tab: TAB as never, closed: false }),
+    );
+    expect(dispatchSpy).toHaveBeenCalledWith(
+      browserRouteInputChanged(WS_BC, { kind: 'tab', tab: moved as never, closed: true }),
+    );
 
     // Self-sufficient payloads: no browser.listTabs refetch is issued.
     expect(backendRequestSpy.mock.calls.filter(([m]) => m === 'browser.listTabs')).toEqual([]);
