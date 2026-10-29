@@ -18,10 +18,8 @@
  */
 import { Logger } from '../../shared/logger';
 import {
-  readWarningKind,
-  wireModelsToProviderModels,
-  type ModelWarningKind,
-  type ProviderModelInfo,
+  toGetModelsEnvelope,
+  type GetModelsEnvelope,
   type WireModelsListResult,
 } from '../../shared/models/wire-model-info';
 import { getBackendClientForIpcEvent } from '../../features/backend/main/backend.ipc';
@@ -30,29 +28,19 @@ import { modelsListProviderId } from '../../shared/provider-profiles';
 
 const logger = new Logger('DaemonModelCatalog');
 
-interface ProviderModelCatalog {
-  models: ProviderModelInfo[];
-  /** The provider id, or `"static"` on tier-table fallback. */
-  source?: string;
-  /** Present and `true` when the daemon served last-good data after a failed probe. */
-  stale?: boolean;
-  /** Human-readable reason for fallback/stale/empty data. */
-  warning?: string;
-  /** Machine-readable cause of `warning` (§5.30). */
-  warningKind?: ModelWarningKind;
-}
-
 /**
- * Fetch the daemon-resolved model catalog for one provider. Rejects with the
- * RPC error on wire/transport failure so callers can surface an honest error
- * state; probe/CLI failures never reject — the daemon degrades them to
- * last-good + `stale: true` or a static fallback with a `warning` (§6.7).
+ * Fetch the daemon-resolved model catalog for one provider as the shared
+ * `GET_MODELS` envelope (`toGetModelsEnvelope`, also used by the daemon/web
+ * bridge seeder). Rejects with the RPC error on wire/transport failure so
+ * callers can surface an honest error state; probe/CLI failures never
+ * reject — the daemon degrades them to last-good + `stale: true` or a static
+ * fallback with a `warning` (§6.7).
  */
 async function listProviderModels(
   client: JsonRpcClient,
   providerId: string,
   options: { forceRefresh?: boolean; workspaceId?: string } = {},
-): Promise<ProviderModelCatalog> {
+): Promise<GetModelsEnvelope> {
   const params: { providerId: string; forceRefresh?: boolean; workspaceId?: string } = {
     providerId,
   };
@@ -63,15 +51,7 @@ async function listProviderModels(
 
   try {
     const result = await client.request<WireModelsListResult>('models.list', params);
-    const catalog: ProviderModelCatalog = {
-      models: wireModelsToProviderModels(result),
-    };
-    if (typeof result?.source === 'string') catalog.source = result.source;
-    if (result?.stale === true) catalog.stale = true;
-    if (typeof result?.warning === 'string' && result.warning) catalog.warning = result.warning;
-    const warningKind = readWarningKind(result);
-    if (warningKind) catalog.warningKind = warningKind;
-    return catalog;
+    return toGetModelsEnvelope(result);
   } catch (error) {
     logger.debug('models.list request failed', {
       providerId,
@@ -79,20 +59,6 @@ async function listProviderModels(
     });
     throw error;
   }
-}
-
-/**
- * Envelope shared by every provider's `GET_MODELS` IPC handler. Mirrors the
- * historical per-provider shape (`success`/`data`/`warning`/`error`) plus the
- * daemon's `stale` flag so the renderer can label stale-served lists.
- */
-export interface GetModelsEnvelope {
-  success: boolean;
-  data?: ProviderModelInfo[];
-  warning?: string;
-  stale?: boolean;
-  warningKind?: ModelWarningKind;
-  error?: string;
 }
 
 /**
@@ -112,15 +78,10 @@ export async function getProviderModelsEnvelope(
     const { client } = getBackendClientForIpcEvent(event);
     // A named profile's catalog (§5.54) is listed under its own reference.
     const catalogProviderId = modelsListProviderId(providerId, params?.providerRef);
-    const catalog = await listProviderModels(client, catalogProviderId, {
+    return await listProviderModels(client, catalogProviderId, {
       forceRefresh: params?.forceRefresh === true,
       workspaceId: params?.workspaceId,
     });
-    const envelope: GetModelsEnvelope = { success: true, data: catalog.models };
-    if (catalog.warning) envelope.warning = catalog.warning;
-    if (catalog.stale) envelope.stale = true;
-    if (catalog.warningKind) envelope.warningKind = catalog.warningKind;
-    return envelope;
   } catch (error) {
     return {
       success: false,

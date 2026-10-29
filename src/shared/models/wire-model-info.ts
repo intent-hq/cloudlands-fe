@@ -76,11 +76,54 @@ function isModelWarningKind(value: unknown): value is ModelWarningKind {
  * `warning`; `undefined` otherwise, so an unknown or orphan kind reads as a
  * generic load failure.
  */
-export function readWarningKind(
+function readWarningKind(
   result: WireModelsListResult | null | undefined,
 ): ModelWarningKind | undefined {
   if (typeof result?.warning !== 'string' || !result.warning) return undefined;
   return isModelWarningKind(result.warningKind) ? result.warningKind : undefined;
+}
+
+/**
+ * Reply envelope of every provider's `<provider>:get-models` channel — the
+ * single declaration shared by the Electron main-process handlers
+ * (`daemon-model-catalog.ts`), the daemon/web-build bridge
+ * (`model-catalog-bridge-seeder.ts`), and the renderer client
+ * (`provider-models.client.ts`). Build success replies only with
+ * `toGetModelsEnvelope` so a new field reaches both build paths at once.
+ *
+ * `success: false` (with `error`) means only a wire/transport failure; probe
+ * or CLI failures arrive as `success: true` with daemon-labeled `warning` /
+ * `stale` / `warningKind` (PROTOCOL §6.7, §5.30).
+ */
+export interface GetModelsEnvelope {
+  success: boolean;
+  data?: ProviderModelInfo[];
+  /** Daemon-provided reason for fallback/stale/empty data. */
+  warning?: string;
+  /** Present and `true` when the daemon served last-good data after a failed probe. */
+  stale?: boolean;
+  /** Machine-readable cause of `warning` (PROTOCOL §5.30 "Warning kind"). */
+  warningKind?: ModelWarningKind;
+  error?: string;
+}
+
+/**
+ * Convert a `models.list` result into the success `GetModelsEnvelope`: mapped
+ * rows, plus `warning` (non-empty only), `stale` (only when `true`), and a
+ * known `warningKind` that qualifies a `warning` (`readWarningKind`).
+ */
+export function toGetModelsEnvelope(
+  result: WireModelsListResult | null | undefined,
+): GetModelsEnvelope {
+  const envelope: GetModelsEnvelope = {
+    success: true,
+    data: result ? wireModelsToProviderModels(result) : [],
+  };
+  if (typeof result?.warning === 'string' && result.warning) envelope.warning = result.warning;
+  if (result?.stale === true) envelope.stale = true;
+  const warningKind = readWarningKind(result);
+  if (warningKind) envelope.warningKind = warningKind;
+  return envelope;
 }
 
 /** Map a wire row to the FE model shape; `null` when key fields are missing. */

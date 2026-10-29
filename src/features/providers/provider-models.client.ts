@@ -26,23 +26,16 @@ import { selectProviderDisplayName } from '$store/renderer/slices/provider-catal
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
 import { isProviderProfileRef, providerRefBaseId } from '$shared/provider-profiles';
-import type { ModelWarningKind } from '$shared/models/wire-model-info';
+import type {
+  GetModelsEnvelope,
+  ModelWarningKind,
+  ProviderModelInfo,
+} from '$shared/models/wire-model-info';
 
 const logger = createLogger('ProviderModelsClient');
 
 /** Model row shape shared by every provider's get-models envelope. */
-export interface ProviderModelEntry {
-  value: string;
-  label: string;
-  description?: string;
-  modelGroupPriority?: number;
-  costTier?: number;
-  badges?: Array<{ color: string; label: string; variant?: string }>;
-  effortLevels?: string[];
-  isDefault?: boolean;
-  isLegacyModel?: boolean;
-  priority?: number;
-}
+export type ProviderModelEntry = ProviderModelInfo;
 
 export interface ProviderModelsResult {
   models: ProviderModelEntry[];
@@ -52,15 +45,6 @@ export interface ProviderModelsResult {
   stale?: boolean;
   /** Machine-readable cause of `warning` (PROTOCOL §5.30). */
   warningKind?: ModelWarningKind;
-}
-
-interface GetModelsEnvelope {
-  success: boolean;
-  data?: ProviderModelEntry[];
-  warning?: string;
-  stale?: boolean;
-  warningKind?: ModelWarningKind;
-  error?: string;
 }
 
 /**
