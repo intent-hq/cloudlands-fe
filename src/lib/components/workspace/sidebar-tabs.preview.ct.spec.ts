@@ -404,7 +404,10 @@ test('a wide pinned sidebar fits a narrow window and expands when space returns'
   });
 });
 
-test('content-sized hover panels keep long virtual lists reachable', async ({ mount }) => {
+test('content-sized hover panels keep long virtual lists reachable after growing taller', async ({
+  mount,
+  page,
+}, testInfo) => {
   const component = await mount(SidebarTabsPreview, {
     props: { collapsed: true, height: 360, items: 200, extraFiles: 200 },
   });
@@ -468,6 +471,29 @@ test('content-sized hover panels keep long virtual lists reachable', async ({ mo
   await expect.poll(() => scroll.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
   await expect.poll(() => names.allTextContents()).not.toEqual(before);
   expect(await names.count()).toBeLessThan(200);
+  // These fixture agents share timestamps; the stable ID ordering ends at agent 99.
+  const lastAgent = agents.locator(
+    '[data-agent-id="sidebar-preview-agent-99"] [data-agent-row-name]',
+  );
+  await expect(lastAgent).toBeInViewport({ ratio: 0.95 });
+  const shortViewportHeight = await scroll.evaluate((node) => node.clientHeight);
+  await page.setViewportSize({ width: 1040, height: 1320 });
+  await component.update({
+    props: { collapsed: true, height: 1200, items: 200, extraFiles: 200 },
+  });
+  await rail.getByRole('tab', { name: 'Agents', exact: true }).hover();
+  await expect
+    .poll(() => scroll.evaluate((node) => node.clientHeight))
+    .toBeGreaterThan(shortViewportHeight);
+  await scroll.evaluate((node) => {
+    node.scrollTop = node.scrollHeight;
+  });
+  await expect(lastAgent).toBeInViewport({ ratio: 0.95 });
+  expect(await names.count()).toBeLessThan(200);
   await expect(agents.locator('[data-sidebar-section-header]')).toBeVisible();
   await expect(draft).toHaveValue('Keep my draft while the preview resizes.');
+  await testInfo.attach('tall-hover-agent-list', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
 });

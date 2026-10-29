@@ -80,7 +80,7 @@
 
 <div
   class="relative overflow-hidden"
-  style="height: var(--virtual-viewport-height, {containerHeight}px); --virtual-content-height: {totalHeight}px;"
+  style="--virtual-container-height: {containerHeight}px; --virtual-content-height: {totalHeight}px; height: var(--virtual-viewport-height, var(--virtual-container-height));"
   data-virtual-viewport
 >
   <div

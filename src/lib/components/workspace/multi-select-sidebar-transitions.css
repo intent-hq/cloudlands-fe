@@ -53,6 +53,7 @@
 [data-sidebar-panels][data-floating='true'] [data-virtual-viewport] {
   --virtual-viewport-height: min(
     var(--virtual-content-height),
+    var(--virtual-container-height, var(--floating-max-height)),
     var(--sidebar-virtual-max-height, var(--floating-max-height))
   );
 }
