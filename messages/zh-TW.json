@@ -6656,6 +6656,7 @@
   "workspace_drivingClient_menu_label": "主要用戶端",
   "workspace_drivingClient_noBrowserReason_description": "無法執行代理程式瀏覽器分頁。",
   "workspace_drivingClient_offline_description": "在主要用戶端重新連線之前，代理程式瀏覽器分頁和通道將無法使用。",
+  "workspace_drivingClient_offlineTabHost_description": "代理程式瀏覽器分頁位於未連線的用戶端上。選擇「本應用程式」即可將其移到這裡。",
   "workspace_drivingClient_offline_label": "離線",
   "workspace_drivingClient_setPrimaryDialog_cancel_label": "取消",
   "workspace_drivingClient_setPrimaryDialog_close_ariaLabel": "關閉",

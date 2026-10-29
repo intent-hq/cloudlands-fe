@@ -10,6 +10,7 @@
     checked?: boolean;
     detail?: string;
     detailTone?: 'danger';
+    note?: string;
     disabledReason?: string;
     submenu?: Action[];
   }
@@ -40,6 +41,7 @@
     data-disabled-reason={action.disabledReason}
     data-detail={action.detail}
     data-detail-tone={action.detailTone}
+    data-note={action.note}
     data-icon-name={action.icon?.iconName ?? ''}
     onclick={() => {
       action.onClick();

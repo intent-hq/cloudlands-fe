@@ -33,6 +33,7 @@ describe('primary client menu preview', () => {
       'here',
       'offline',
       'offline-closed',
+      'offline-tab-host',
       'long-name',
       'no-browser',
       'guest',
@@ -52,6 +53,13 @@ describe('primary client menu preview', () => {
       canSwitchHere: false,
     });
     expect(resolveDrivingClientSwitch(seededClients('offline'))).toMatchObject({
+      mode: 'offline',
+      canSwitchHere: true,
+    });
+    const tabHost = seededClients('offline-tab-host');
+    expect(tabHost.routedVia).toBe('tabs');
+    expect(tabHost.pinnedClientId).toBeNull();
+    expect(resolveDrivingClientSwitch(tabHost)).toMatchObject({
       mode: 'offline',
       canSwitchHere: true,
     });

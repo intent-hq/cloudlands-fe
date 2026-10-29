@@ -94,6 +94,13 @@
     resolved: null,
   };
 
+  /** Unpinned, routed to the host of agent tabs that is no longer connected. */
+  const offlineTabHost: WorkspaceBrowserClient = {
+    source: 'default',
+    resolved: null,
+    target: { clientId: OFFLINE_CLIENT_ID, via: 'tabs' },
+  };
+
   export const preview = definePreview<PrimaryClientMenuPreviewProps>({
     id: 'primary-client-menu',
     title: 'Primary client menu',
@@ -121,6 +128,10 @@
       'offline-closed': {
         props: { width: 300 },
         setup: seed([ownClient], offlinePin),
+      },
+      'offline-tab-host': {
+        props: { width: 300, menuOpen: true },
+        setup: seed([ownClient, otherClient], offlineTabHost),
       },
       'long-name': {
         props: { width: 300, menuOpen: true },

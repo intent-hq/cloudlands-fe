@@ -233,6 +233,40 @@ describe('browserClientsReducer', () => {
     expect(selectWorkspaceDrivingClient.select(asState(state), 'ws-1').driving).toBeNull();
   });
 
+  it('reports an unpinned route to a disconnected tab host as an offline primary', () => {
+    let state = browserClientsReducer(initialState, ownClientIdReceived('cli-desk'));
+    state = browserClientsReducer(state, liveClientsReceived([desk, laptop], 'ws-1'));
+    state = browserClientsReducer(
+      state,
+      workspaceBrowserClientReceived('ws-1', {
+        source: 'default',
+        resolved: null,
+        target: { clientId: 'legacy-host', via: 'tabs' },
+      }),
+    );
+    const clients = selectWorkspaceDrivingClient.select(asState(state), 'ws-1');
+    expect(clients.driving).toEqual({ clientId: 'legacy-host', connected: false });
+    expect(clients.pinnedClientId).toBeNull();
+    expect(clients.routedVia).toBe('tabs');
+    expect(resolveDrivingClientSwitch(clients)).toMatchObject({
+      mode: 'offline',
+      canSwitchHere: true,
+    });
+
+    // A live routed client keeps the resolved summary.
+    state = browserClientsReducer(
+      state,
+      workspaceBrowserClientReceived('ws-1', {
+        source: 'default',
+        resolved: { clientId: 'cli-laptop', name: 'Intent Desktop' },
+        target: { clientId: 'cli-laptop', via: 'desktop' },
+      }),
+    );
+    expect(
+      resolveDrivingClientSwitch(selectWorkspaceDrivingClient.select(asState(state), 'ws-1')),
+    ).toMatchObject({ mode: 'elsewhere' });
+  });
+
   it('names the primary client or offline recovery regardless of client count', () => {
     let state = browserClientsReducer(initialState, ownClientIdReceived('cli-desk'));
     state = browserClientsReducer(state, liveClientsReceived([desk, laptop], 'ws-1'));

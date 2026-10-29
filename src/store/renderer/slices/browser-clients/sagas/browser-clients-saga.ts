@@ -12,6 +12,7 @@ import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import { call, put, race, take, takeEvery, fork, type SagaGenerator } from 'typed-redux-saga';
+import { browserClientRouteTarget } from '$shared/types/browser-clients';
 
 import {
   takeLatestByWorkspace,
@@ -26,11 +27,14 @@ import {
   selectBrowserClientConsumerWorkspaceIds,
   selectLiveClientsLoaded,
   selectOwnClientIdConfirmed,
+  selectWorkspaceBrowserClient,
 } from '../browser-clients-selectors';
 import {
   browserClientsConsumerMounted,
   browserClientsConsumerUnmounted,
   browserClientReadsReleased,
+  browserTabClosed,
+  browserTabUpserted,
   closeBrowserTabRequested,
   fetchWorkspaceBrowserClientRequested,
   hydrateBrowserClientsRequested,
@@ -344,6 +348,27 @@ export function* browserClientsSaga(): SagaGenerator<void> {
     const [wsId] = action.payload;
     pinWriteEpochs[wsId] = (pinWriteEpochs[wsId] ?? 0) + 1;
     if (connection.mounted.has(wsId)) yield* put(fetchWorkspaceBrowserClientRequested(wsId));
+  });
+  // Unpinned, the oldest claimed tab's host drives the workspace; re-read only
+  // when a tab change can move that route (not on every navigation).
+  function* unpinnedRoute(wsId: string) {
+    if (!connection.mounted.has(wsId)) return null;
+    const current = yield* selectWorkspaceBrowserClient.effect(wsId);
+    if (!current || current.source === 'workspace') return null;
+    return { target: browserClientRouteTarget(current) };
+  }
+  yield* takeEvery(browserTabClosed, function* ({ payload: [wsId] }) {
+    const route = yield* unpinnedRoute(wsId);
+    if (route?.target?.via === 'tabs') yield* put(fetchWorkspaceBrowserClientRequested(wsId));
+  });
+  yield* takeEvery(browserTabUpserted, function* ({ payload: [wsId, tab] }) {
+    const route = yield* unpinnedRoute(wsId);
+    if (!route) return;
+    const { target } = route;
+    const mayMove = tab.ownerAgentId
+      ? tab.hostClientId !== target?.clientId
+      : target?.via === 'tabs' && tab.hostClientId === target.clientId;
+    if (mayMove) yield* put(fetchWorkspaceBrowserClientRequested(wsId));
   });
   yield* takeEvery(browserClientsConsumerMounted, function* ({ payload: [wsId] }) {
     if (connection.mounted.has(wsId)) return;

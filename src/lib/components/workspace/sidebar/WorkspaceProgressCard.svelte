@@ -549,7 +549,9 @@
           : undefined,
     detailTone: primaryClientOffline ? 'danger' : undefined,
     note: primaryClientOffline
-      ? m.workspace_drivingClient_offline_description()
+      ? $drivingClient$.routedVia === 'tabs'
+        ? m.workspace_drivingClient_offlineTabHost_description()
+        : m.workspace_drivingClient_offline_description()
       : m.workspace_drivingClient_menu_description(),
     selection: 'single',
     onClick: () => {},

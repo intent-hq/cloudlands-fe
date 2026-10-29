@@ -48,6 +48,7 @@ import {
   browserClientsConsumerMounted,
   browserClientsReducer,
   browserTabClosed,
+  browserTabUpserted,
   closeBrowserTabRequested,
   fetchWorkspaceBrowserClientRequested,
   hydrateBrowserClientsRequested,
@@ -138,6 +139,51 @@ describe('browserClientsSaga', () => {
     vi.resetAllMocks();
     mocks.list.mockResolvedValue([desk]);
     mocks.ownClientId.mockResolvedValue('cli-desk');
+  });
+
+  it('re-reads the primary client when tab changes can move an unpinned route', async () => {
+    const staleRoute = {
+      source: 'default',
+      resolved: null,
+      target: { clientId: 'legacy-host', via: 'tabs' },
+    };
+    mocks.getBrowserClient.mockResolvedValue(staleRoute);
+    const run = startWithReducer();
+    run.dispatch(mountBrowserConsumer('ws-1'));
+    await settle();
+    expect(run.sidebar('ws-1').mode).toBe('offline');
+    const reads = mocks.getBrowserClient.mock.calls.length;
+
+    const tab = {
+      tabId: 'user-tab',
+      workspaceId: 'ws-1',
+      hostClientId: 'cli-desk',
+      url: 'https://example.com/',
+      visibility: 'visible' as const,
+      createdAt: '2026-09-07T00:00:00.000Z',
+      updatedAt: '2026-09-07T00:00:00.000Z',
+    };
+    // A user tab elsewhere never routes: no read.
+    run.dispatch(browserTabUpserted('ws-1', tab));
+    await settle();
+    expect(mocks.getBrowserClient).toHaveBeenCalledTimes(reads);
+
+    // Closing a tab can retire the claimed-tab route.
+    mocks.getBrowserClient.mockResolvedValue({
+      source: 'default',
+      resolved: { clientId: 'cli-desk' },
+    });
+    run.dispatch(browserTabClosed('ws-1', 'stale-tab'));
+    await settle();
+    expect(mocks.getBrowserClient).toHaveBeenCalledTimes(reads + 1);
+    expect(run.sidebar('ws-1').mode).toBe('here');
+
+    // A newly claimed tab on another host can create a route.
+    run.dispatch(browserTabUpserted('ws-1', { ...tab, tabId: 'agent-tab', ownerAgentId: 'a-1' }));
+    await settle();
+    expect(mocks.getBrowserClient).toHaveBeenCalledTimes(reads + 2);
+    run.task.cancel();
+    await run.task.toPromise();
   });
 
   it('identity hydration does not read a roster without browser consumers', async () => {

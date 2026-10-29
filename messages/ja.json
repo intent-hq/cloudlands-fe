@@ -6656,6 +6656,7 @@
   "workspace_drivingClient_menu_label": "プライマリクライアント",
   "workspace_drivingClient_noBrowserReason_description": "エージェントのブラウザタブを実行できません。",
   "workspace_drivingClient_offline_description": "プライマリクライアントが再接続するまで、エージェントのブラウザタブとトンネルは失敗します。",
+  "workspace_drivingClient_offlineTabHost_description": "エージェントのブラウザタブは接続されていないクライアント上にあります。「このアプリ」を選ぶとここに移動します。",
   "workspace_drivingClient_offline_label": "オフライン",
   "workspace_drivingClient_setPrimaryDialog_cancel_label": "キャンセル",
   "workspace_drivingClient_setPrimaryDialog_close_ariaLabel": "閉じる",
