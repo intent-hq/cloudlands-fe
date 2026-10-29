@@ -2,8 +2,8 @@
  * @vitest-environment jsdom
  *
  * Archiving settings (PROTOCOL §5.12):
- * - `workspace.autoArchiveIdleAfterDays`: absent reads as the default 7 (on),
- *   `0` means off.
+ * - `workspace.autoArchiveIdleAfterDays`: `0` (the default) or absent means
+ *   off, a positive integer number of days means on.
  * - `workspace.purgeArchivedAfterDays`: absent/null means off, a positive
  *   integer number of days means on.
  */
@@ -75,10 +75,14 @@ function findDays(name: string) {
   return waitFor(() => screen.getByRole('spinbutton', { name }) as HTMLInputElement);
 }
 
-function listWith(values: Record<string, unknown>) {
+function listWith(values: Record<string, unknown>, defaults: Record<string, unknown> = {}) {
   mocks.mockSettingsList.mockResolvedValue([
     ...baseSettings,
-    ...Object.entries(values).map(([path, value]) => ({ path, value })),
+    ...Object.entries(values).map(([path, value]) => ({
+      path,
+      value,
+      ...(path in defaults ? { defaultValue: defaults[path] } : {}),
+    })),
   ]);
 }
 
@@ -96,17 +100,35 @@ afterEach(() => {
 });
 
 describe('GitWorkspaceSettings — Archiving section', () => {
-  it('shows auto-archive on at 7 days by default and purge off', async () => {
-    listWith({ [AUTO_ARCHIVE_PATH]: 7, [PURGE_PATH]: null });
+  it('shows auto-archive and purge off by default', async () => {
+    listWith({ [AUTO_ARCHIVE_PATH]: 0, [PURGE_PATH]: null }, { [AUTO_ARCHIVE_PATH]: 0 });
     render(GitWorkspaceSettings);
 
     const archive = await findToggle(rows.archive.toggle());
     expect(screen.getByText(m.settings_section_archiving())).toBeTruthy();
-    expect(archive.getAttribute('aria-checked')).toBe('true');
-    expect((await findDays(rows.archive.days())).value).toBe('7');
+    expect(archive.getAttribute('aria-checked')).toBe('false');
+    expect(screen.queryByRole('spinbutton', { name: rows.archive.days() })).toBeNull();
     const purge = await findToggle(rows.purge.toggle());
     expect(purge.getAttribute('aria-checked')).toBe('false');
     expect(screen.queryByRole('spinbutton', { name: rows.purge.days() })).toBeNull();
+  });
+
+  it('reads an absent auto-archive value as off', async () => {
+    listWith({ [AUTO_ARCHIVE_PATH]: null, [PURGE_PATH]: null });
+    render(GitWorkspaceSettings);
+
+    const archive = await findToggle(rows.archive.toggle());
+    expect(archive.getAttribute('aria-checked')).toBe('false');
+    expect(screen.queryByRole('spinbutton', { name: rows.archive.days() })).toBeNull();
+  });
+
+  it('shows auto-archive on with its configured days', async () => {
+    listWith({ [AUTO_ARCHIVE_PATH]: 7, [PURGE_PATH]: null });
+    render(GitWorkspaceSettings);
+
+    const archive = await findToggle(rows.archive.toggle());
+    expect(archive.getAttribute('aria-checked')).toBe('true');
+    expect((await findDays(rows.archive.days())).value).toBe('7');
   });
 
   it('reads auto-archive 0 as off', async () => {
@@ -246,8 +268,32 @@ describe('GitWorkspaceSettings — Archiving section', () => {
     );
   });
 
-  it('resetToDefaults turns auto-archive back on at 7 days and purge off', async () => {
-    listWith({ [AUTO_ARCHIVE_PATH]: 0, [PURGE_PATH]: 7 });
+  it('resetToDefaults turns both auto-archive and purge off', async () => {
+    listWith({ [AUTO_ARCHIVE_PATH]: 14, [PURGE_PATH]: 7 }, { [AUTO_ARCHIVE_PATH]: 0 });
+    mocks.mockSettingsUpdate.mockImplementation(async (changes) => changes);
+
+    const { component } = render(GitWorkspaceSettings);
+    const archive = await findToggle(rows.archive.toggle());
+    const purge = await findToggle(rows.purge.toggle());
+    expect(archive.getAttribute('aria-checked')).toBe('true');
+    expect(purge.getAttribute('aria-checked')).toBe('true');
+
+    component.resetToDefaults();
+
+    await waitFor(() =>
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          { path: AUTO_ARCHIVE_PATH, value: 0 },
+          { path: PURGE_PATH, value: null },
+        ]),
+      ),
+    );
+    await waitFor(() => expect(purge.getAttribute('aria-checked')).toBe('false'));
+    await waitFor(() => expect(archive.getAttribute('aria-checked')).toBe('false'));
+  });
+
+  it('resetToDefaults keeps an older daemon at its advertised 7-day default', async () => {
+    listWith({ [AUTO_ARCHIVE_PATH]: 0, [PURGE_PATH]: 7 }, { [AUTO_ARCHIVE_PATH]: 7 });
     mocks.mockSettingsUpdate.mockImplementation(async (changes) => changes);
 
     const { component } = render(GitWorkspaceSettings);

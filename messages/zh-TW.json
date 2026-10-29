@@ -4866,7 +4866,7 @@
   "settings_gitWorkspace_purgeDays_description": "工作區保持封存狀態直到其資料夾被清除的天數。",
   "settings_gitWorkspace_archivingDays_invalid": "請輸入 1 或更大的整數天數。",
   "settings_gitWorkspace_autoArchiveDays_label": "閒置天數",
-  "settings_gitWorkspace_autoArchive_description": "工作區閒置達下方天數後將其封存。封存會停止其代理與掛鉤；取消封存或傳送訊息即可繼續。",
+  "settings_gitWorkspace_autoArchive_description": "工作區閒置達下方天數後將其封存。有未提交變更或未推送提交的工作區會被略過。封存會停止其代理與掛鉤；取消封存或傳送訊息即可繼續。",
   "settings_gitWorkspace_autoArchive_label": "封存閒置的工作區",
   "settings_gitWorkspace_branchPrefix_description_before": "新工作區分支的字首（例如",
   "settings_gitWorkspace_branchPrefix_invalid": "無效的分支字首",

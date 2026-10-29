@@ -4866,7 +4866,7 @@
   "settings_gitWorkspace_purgeDays_description": "フォルダーが削除されるまで、ワークスペースがアーカイブされたままになる日数。",
   "settings_gitWorkspace_archivingDays_invalid": "1 以上の整数の日数を入力してください。",
   "settings_gitWorkspace_autoArchiveDays_label": "アイドル期間（日）",
-  "settings_gitWorkspace_autoArchive_description": "下の日数の間アイドル状態のワークスペースをアーカイブします。アーカイブするとエージェントとフックが停止します。続けるには、アーカイブを解除するかメッセージを送信してください。",
+  "settings_gitWorkspace_autoArchive_description": "下の日数の間アイドル状態のワークスペースをアーカイブします。未コミットの変更や未プッシュのコミットがあるワークスペースはスキップされます。アーカイブするとエージェントとフックが停止します。続けるには、アーカイブを解除するかメッセージを送信してください。",
   "settings_gitWorkspace_autoArchive_label": "アイドル状態のワークスペースをアーカイブする",
   "settings_gitWorkspace_branchPrefix_description_before": "新しいワークスペースブランチの接頭辞（例:",
   "settings_gitWorkspace_branchPrefix_invalid": "無効なブランチ接頭辞です",
