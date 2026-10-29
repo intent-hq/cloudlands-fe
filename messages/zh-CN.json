@@ -4866,7 +4866,7 @@
   "settings_gitWorkspace_purgeDays_description": "工作区保持归档状态直到其文件夹被清除的天数。",
   "settings_gitWorkspace_archivingDays_invalid": "请输入 1 或更大的整数天数。",
   "settings_gitWorkspace_autoArchiveDays_label": "空闲天数",
-  "settings_gitWorkspace_autoArchive_description": "工作区空闲达到下方天数后将其归档。归档会停止其代理和钩子；取消归档或发送消息即可继续。",
+  "settings_gitWorkspace_autoArchive_description": "工作区空闲达到下方天数后将其归档。有未提交更改或未推送提交的工作区会被跳过。归档会停止其代理和钩子；取消归档或发送消息即可继续。",
   "settings_gitWorkspace_autoArchive_label": "归档空闲的工作区",
   "settings_gitWorkspace_branchPrefix_description_before": "新工作区分支的前缀（例如",
   "settings_gitWorkspace_branchPrefix_invalid": "无效的分支前缀",

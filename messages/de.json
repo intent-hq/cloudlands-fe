@@ -4866,7 +4866,7 @@
   "settings_gitWorkspace_purgeDays_description": "Tage, die ein Arbeitsbereich archiviert bleibt, bevor sein Ordner bereinigt wird.",
   "settings_gitWorkspace_archivingDays_invalid": "Gib eine ganze Zahl von Tagen ein, 1 oder mehr.",
   "settings_gitWorkspace_autoArchiveDays_label": "Inaktiv seit (Tage)",
-  "settings_gitWorkspace_autoArchive_description": "Archiviert einen Arbeitsbereich, der die unten angegebene Anzahl von Tagen inaktiv war. Das Archivieren stoppt seine Agenten und Hooks; hole ihn aus dem Archiv oder sende eine Nachricht, um fortzufahren.",
+  "settings_gitWorkspace_autoArchive_description": "Archiviert einen Arbeitsbereich, der die unten angegebene Anzahl von Tagen inaktiv war. Arbeitsbereiche mit nicht committeten Änderungen oder nicht gepushten Commits werden übersprungen. Das Archivieren stoppt seine Agenten und Hooks; hole ihn aus dem Archiv oder sende eine Nachricht, um fortzufahren.",
   "settings_gitWorkspace_autoArchive_label": "Inaktive Arbeitsbereiche archivieren",
   "settings_gitWorkspace_branchPrefix_description_before": "Präfix für neue Arbeitsbereich-Branches (z. B.",
   "settings_gitWorkspace_branchPrefix_invalid": "Ungültiges Branch-Präfix",

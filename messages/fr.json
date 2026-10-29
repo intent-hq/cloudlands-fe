@@ -4866,7 +4866,7 @@
   "settings_gitWorkspace_purgeDays_description": "Jours pendant lesquels un espace de travail reste archivé avant la purge de son dossier.",
   "settings_gitWorkspace_archivingDays_invalid": "Saisissez un nombre entier de jours, 1 ou plus.",
   "settings_gitWorkspace_autoArchiveDays_label": "Inactif depuis (jours)",
-  "settings_gitWorkspace_autoArchive_description": "Archive un espace de travail inactif depuis le nombre de jours ci-dessous. L'archivage arrête ses agents et ses hooks ; désarchivez-le ou envoyez un message pour continuer.",
+  "settings_gitWorkspace_autoArchive_description": "Archive un espace de travail inactif depuis le nombre de jours ci-dessous. Les espaces avec des modifications non validées ou des commits non poussés sont ignorés. L'archivage arrête ses agents et ses hooks ; désarchivez-le ou envoyez un message pour continuer.",
   "settings_gitWorkspace_autoArchive_label": "Archiver les espaces de travail inactifs",
   "settings_gitWorkspace_branchPrefix_description_before": "Préfixe des nouvelles branches d'espace de travail (p. ex.",
   "settings_gitWorkspace_branchPrefix_invalid": "Préfixe de branche non valide",

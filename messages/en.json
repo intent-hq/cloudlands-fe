@@ -4866,7 +4866,7 @@
   "settings_gitWorkspace_purgeDays_description": "Days a workspace stays archived before its folder is purged.",
   "settings_gitWorkspace_archivingDays_invalid": "Enter a whole number of days, 1 or more.",
   "settings_gitWorkspace_autoArchiveDays_label": "Idle for (days)",
-  "settings_gitWorkspace_autoArchive_description": "Archive a workspace after it has been idle for the number of days below. Archiving stops its agents and hooks; unarchive it or send a message to continue.",
+  "settings_gitWorkspace_autoArchive_description": "Archive a workspace after it has been idle for the number of days below. Workspaces with uncommitted changes or unpushed commits are skipped. Archiving stops its agents and hooks; unarchive it or send a message to continue.",
   "settings_gitWorkspace_autoArchive_label": "Archive idle workspaces",
   "settings_gitWorkspace_branchPrefix_description_before": "Prefix for new workspace branches (e.g.,",
   "settings_gitWorkspace_branchPrefix_invalid": "Invalid branch prefix",
