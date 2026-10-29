@@ -208,17 +208,17 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
     lastRegisteredWebContentsId = undefined;
   };
 
+  hostingLogger.info('offscreen guest created', {
+    tabId: entry.tabId,
+    workspaceId: entry.workspaceId,
+    url: describeUrlForLog(entry.url),
+  });
   // NOT { once: true }: reparenting the <webview> makes Electron destroy
   // and re-create the guest webContents, and the new guest fires dom-ready
   // again — registration (gated on webContentsId above) and muting must
   // follow the live guest (monorepo#3170). Same-guest navigations re-run
   // the handler harmlessly: the id gate skips registerTab and muting is
   // idempotent on the webContents.
-  hostingLogger.info('offscreen guest created', {
-    tabId: entry.tabId,
-    workspaceId: entry.workspaceId,
-    url: describeUrlForLog(entry.url),
-  });
   webview.addEventListener('dom-ready', handleDomReady);
   webview.addEventListener('did-navigate', handleDidNavigate);
   // Hash/history navigation does not fire did-navigate; the visible

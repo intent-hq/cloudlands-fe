@@ -42,6 +42,7 @@
   import {
     collectOffscreenTabDecisions,
     diffOffscreenDecisions,
+    isDiagnosticDecisionChange,
     type OffscreenDecisionLabel,
   } from '$store/renderer/slices/panel-layout/offscreen-webview-eligibility';
   import { createLogger } from '$lib/utils/client-logger';
@@ -79,14 +80,17 @@
     }),
   );
 
-  // Packaged-build breadcrumb (intent-hq/intent#7855): log each tab's mount
-  // decision when it changes, so a guest that never mounts names its reason.
+  // Packaged-build breadcrumb (intent-hq/intent#7855): log a tab's mount
+  // decision when it enters or leaves a reason that blocks the mount, so a
+  // guest that never mounts names its reason.
   const hostingLogger = createLogger('BrowserHosting');
   let loggedDecisions = new Map<string, { label: OffscreenDecisionLabel; workspaceId: string }>();
   $effect(() => {
     const { changes, next } = diffOffscreenDecisions(loggedDecisions, decisions);
     loggedDecisions = next;
-    for (const change of changes) hostingLogger.info('offscreen decision', change);
+    for (const change of changes) {
+      if (isDiagnosticDecisionChange(change)) hostingLogger.info('offscreen decision', change);
+    }
   });
 
   const candidates = $derived(
@@ -204,6 +208,7 @@
   aria-hidden="true"
   inert
   data-offscreen-webview-host
+  data-offscreen-excluded-workspaces={[...excludedWorkspaceIds].join(' ')}
 >
   <div class="relative h-[800px] w-[1280px]">
     {#each entries as entry (entry.tabId)}

@@ -586,7 +586,6 @@ class EmbeddedBrowserCdpService {
           if (pending.size === 0) this.registrationWaiters.delete(tabId);
         }
         logger.warn('Timed out waiting for browser tab registration', { tabId, timeoutMs });
-        hostingLogger.info('tab registration timed out', { tabId, timeoutMs });
         settle(false);
       }, timeoutMs);
       waiters.add(settle);
@@ -952,7 +951,18 @@ class EmbeddedBrowserCdpService {
     // Success means "the tab is now addressable": already-mounted tabs
     // resolve immediately, unmounted-but-listed tabs resolve when the
     // remounted webview registers, and nonexistent tabs time out to false.
-    return this.waitForTabRegistration(tabId);
+    const registered = await this.waitForTabRegistration(tabId);
+    if (!registered) {
+      // Ask the hosting windows to log their view of the stuck tab
+      // (intent-hq/intent#7855). Diagnostics only.
+      sendToWorkspaceWindows(
+        workspaceId,
+        IPC_CHANNELS.BROWSER.DIAGNOSE_TAB,
+        { workspaceId, tabId, stage: 'focus' },
+        ANY_HOST,
+      );
+    }
+    return registered;
   }
 
   /**

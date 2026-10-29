@@ -51,6 +51,8 @@ import type { BrowserTabListing } from '../../../shared/types/browser-clients';
 const logger = new Logger('BrowserIPC');
 /** Packaged-build breadcrumbs for agent background hosting (intent-hq/intent#7855). */
 const hostingLogger = new Logger('BrowserHosting');
+/** Last background-hosting state logged per workspace (log on change only). */
+const lastLoggedHostingState = new Map<string, string>();
 
 /** Confirm renderer reporting reached the same daemon that will route follow-up actions. */
 async function waitForDaemonTab(
@@ -531,16 +533,23 @@ function ensureBrowserWorkspaceHost(
   if (!touchesTabs) return;
   const { windowId, adopted } = adoptWorkspaceForBackgroundHosting(payload.workspaceId, backendId);
   if (adopted) embeddedBrowserCdp.noteWorkspaceAdopted(payload.workspaceId);
-  if (windowId === undefined) {
-    hostingLogger.info('no window can host workspace', {
-      workspaceId: payload.workspaceId,
-      backendId,
-    });
-  } else if (adopted) {
-    hostingLogger.info('workspace adopted for background hosting', {
-      workspaceId: payload.workspaceId,
-      windowId,
-    });
+  // Log the hosting state per workspace only when it changes: agents retry
+  // browser actions in loops, and an unchanged state adds nothing.
+  const hostingState =
+    windowId === undefined ? 'none' : adopted ? `adopted:${windowId}` : `hosted:${windowId}`;
+  if (lastLoggedHostingState.get(payload.workspaceId) !== hostingState) {
+    lastLoggedHostingState.set(payload.workspaceId, hostingState);
+    if (windowId === undefined) {
+      hostingLogger.info('no window can host workspace', {
+        workspaceId: payload.workspaceId,
+        backendId,
+      });
+    } else if (adopted) {
+      hostingLogger.info('workspace adopted for background hosting', {
+        workspaceId: payload.workspaceId,
+        windowId,
+      });
+    }
   }
 }
 

@@ -80,6 +80,9 @@ let running = false;
  */
 const backgroundHostedWorkspaces = new Map<string, string>();
 
+/** Tab ids whose browser:open-tab is still being applied (diagnostics, #7855). */
+const opensInFlight = new Set<string>();
+
 /** Report the background-hosted set so main confirms (or drops) its adoptions. */
 function* reportBackgroundHostedWorkspaces(): SagaGenerator<void> {
   try {
@@ -729,9 +732,16 @@ function* tabOwnerChanged(data: BrowserTabOwnerChangedPayload | null): SagaGener
  * otherwise leaves no trace in a packaged build.
  */
 function* openBrowserWithBreadcrumb(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
-  yield* call(openBrowser, data);
-  if (!isWorkspaceCommandPayload(data) || typeof data.tabId !== 'string') return;
-  const { workspaceId, tabId } = data;
+  const tabId = typeof data?.tabId === 'string' ? data.tabId : undefined;
+  if (tabId) opensInFlight.add(tabId);
+  try {
+    yield* call(openBrowser, data);
+  } finally {
+    if (tabId) opensInFlight.delete(tabId);
+  }
+  // openBrowser drops a payload without a workspace or URL; nothing landed.
+  if (!isWorkspaceCommandPayload(data) || typeof data.url !== 'string' || !tabId) return;
+  const { workspaceId } = data;
   const visible = (yield* selectAllTabs.effect(workspaceId)).find((tab) => tab.id === tabId);
   const hidden = visible
     ? undefined
@@ -748,15 +758,15 @@ function* openBrowserWithBreadcrumb(data: BrowserOpenTabPayload | null): SagaGen
   });
 }
 
+/** `browser:diagnose-tab` payload (main → renderer), validated on arrival. */
+type BrowserDiagnoseTabPayload = { workspaceId?: unknown; tabId?: unknown; stage?: unknown };
+
 /**
  * Main's wait for this tab's webview timed out (intent-hq/intent#7855): log
  * this window's whole view of the tab in one line — where the layout holds
  * it, whether it has a URL and host, why the offscreen host would skip it,
  * the registry's phase for the workspace, and whether a guest element exists.
  */
-/** `browser:diagnose-tab` payload (main → renderer), validated on arrival. */
-type BrowserDiagnoseTabPayload = { workspaceId?: unknown; tabId?: unknown; stage?: unknown };
-
 function* diagnoseTab(data: BrowserDiagnoseTabPayload | null): SagaGenerator<void> {
   const tabId = data?.tabId;
   const stage = data?.stage;
@@ -764,24 +774,40 @@ function* diagnoseTab(data: BrowserDiagnoseTabPayload | null): SagaGenerator<voi
   if (typeof tabId !== 'string' || tabId.length === 0) return;
   const { workspaceId } = data;
   const registry = yield* selectBrowserTabRegistryWorkspace.effect(workspaceId);
+  const host =
+    typeof document === 'undefined'
+      ? null
+      : document.querySelector('[data-offscreen-webview-host]');
+  // The host's own exclusion (the route workspace it renders panels for), so
+  // the logged decision is the one the host made, not a re-derivation.
+  const hostExcluded = host
+    ?.getAttribute('data-offscreen-excluded-workspaces')
+    ?.split(' ')
+    .filter(Boolean);
   const offscreenElement =
-    typeof document !== 'undefined' &&
-    [...document.querySelectorAll('[data-offscreen-webview-tab]')].some(
-      (element) => element.getAttribute('data-offscreen-webview-tab') === tabId,
-    );
+    host !== null &&
+    (typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+      ? host.querySelector(`[data-offscreen-webview-tab="${CSS.escape(tabId)}"]`) !== null
+      : [...host.querySelectorAll('[data-offscreen-webview-tab]')].some(
+          (element) => element.getAttribute('data-offscreen-webview-tab') === tabId,
+        ));
   const diagnosis = diagnoseOffscreenTab({
     workspaceId,
     tabId,
     layout: (yield* selectPanelLayoutWorkspaces.effect())[workspaceId],
     ownClientId: yield* selectOwnClientId.effect(),
     leasedTabIds: (yield* selectMountedBrowserTabLeases.effect()) ?? {},
-    workspaceDisplayed: routedWorkspaceId() === workspaceId,
+    workspaceDisplayed: hostExcluded
+      ? hostExcluded.includes(workspaceId)
+      : routedWorkspaceId() === workspaceId,
     backgroundHosted: backgroundHostedWorkspaces.has(workspaceId),
     registry,
     offscreenElement,
   });
   hostingLogger.info('tab diagnosis', {
     ...diagnosis,
+    // An open still settling (layout hydration) explains an 'absent' tab.
+    openInFlight: opensInFlight.has(tabId),
     stage: typeof stage === 'string' ? stage : undefined,
   });
 }

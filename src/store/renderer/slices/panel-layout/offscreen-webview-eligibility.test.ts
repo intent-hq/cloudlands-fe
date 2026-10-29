@@ -7,6 +7,7 @@ import {
   collectOffscreenTabDecisions,
   diagnoseOffscreenTab,
   diffOffscreenDecisions,
+  isDiagnosticDecisionChange,
   type OffscreenEligibilityContext,
 } from './offscreen-webview-eligibility';
 
@@ -239,5 +240,28 @@ describe('diagnoseOffscreenTab', () => {
       decision: 'eligible',
       offscreenElement: false,
     });
+  });
+});
+
+describe('isDiagnosticDecisionChange', () => {
+  const change = (from: string | undefined, to: string) =>
+    ({ tabId: 't', workspaceId: 'w', from, to }) as Parameters<
+      typeof isDiagnosticDecisionChange
+    >[0];
+
+  it('logs entering and leaving a reason that blocks the mount', () => {
+    expect(isDiagnosticDecisionChange(change(undefined, 'no-url'))).toBe(true);
+    expect(isDiagnosticDecisionChange(change('eligible', 'hosted-elsewhere'))).toBe(true);
+    expect(isDiagnosticDecisionChange(change('no-url', 'eligible'))).toBe(true);
+    expect(isDiagnosticDecisionChange(change('url-not-loadable', 'gone'))).toBe(true);
+  });
+
+  it('stays quiet for ordinary workspace switches and mounts', () => {
+    expect(isDiagnosticDecisionChange(change(undefined, 'eligible'))).toBe(false);
+    expect(isDiagnosticDecisionChange(change('eligible', 'workspace-displayed'))).toBe(false);
+    expect(isDiagnosticDecisionChange(change('workspace-displayed', 'claimed-by-panel'))).toBe(
+      false,
+    );
+    expect(isDiagnosticDecisionChange(change('eligible', 'gone'))).toBe(false);
   });
 });

@@ -196,6 +196,58 @@ describe('browserIpcSaga', () => {
     await task.toPromise();
   });
 
+  it("diagnoses with the offscreen host's own displayed workspace, not a re-derivation", async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const host = document.createElement('div');
+    host.setAttribute('data-offscreen-webview-host', '');
+    host.setAttribute('data-offscreen-excluded-workspaces', 'ws-1');
+    document.body.appendChild(host);
+    state = {
+      ...state,
+      browserClients: { ownClientId: 'client-own' },
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': {
+            ...persistedLayout([{ ...TAB('http://127.0.0.1:5173/'), id: 'tab-panel' }]),
+            restoreStatus: 'restored',
+            hiddenTabs: createCollection('id', []),
+          },
+        },
+      },
+    };
+    const task = start();
+    try {
+      await emit(
+        { workspaceId: 'ws-1', tabId: 'tab-panel', stage: 'mount' },
+        'browser:diagnose-tab',
+      );
+
+      const diagnosis = info.mock.calls.find(([line]) => String(line).includes('tab diagnosis'));
+      expect(diagnosis?.[1]).toMatchObject({
+        location: 'panel',
+        decision: 'workspace-displayed',
+        workspaceDisplayed: true,
+        offscreenElement: false,
+        openInFlight: false,
+      });
+    } finally {
+      host.remove();
+      task.cancel();
+      await task.toPromise();
+    }
+  });
+
+  it('logs no open-tab breadcrumb for a payload openBrowser rejects', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const task = start();
+
+    await emit({ workspaceId: 'ws-1', tabId: 'tab-bad' });
+
+    expect(info.mock.calls.some(([line]) => String(line).includes('open-tab handled'))).toBe(false);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('ignores a diagnosis request without a tab id', async () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => {});
     const task = start();

@@ -261,3 +261,23 @@ export function diagnoseOffscreenTab(input: {
     offscreenElement: input.offscreenElement,
   };
 }
+
+/** Skip reasons that mean a guest can never mount here until something else changes. */
+const FAILURE_REASONS: ReadonlySet<OffscreenDecisionLabel> = new Set([
+  'no-url',
+  'url-not-loadable',
+  'hosted-elsewhere',
+]);
+
+/**
+ * Whether a decision change is worth a packaged-build log line: entering or
+ * leaving a failure reason. Ordinary workspace switches flip panel tabs
+ * between `eligible`, `workspace-displayed` and `claimed-by-panel` and would
+ * otherwise log every tab on every switch.
+ */
+export function isDiagnosticDecisionChange(change: OffscreenDecisionChange): boolean {
+  return (
+    FAILURE_REASONS.has(change.to) ||
+    (change.from !== undefined && FAILURE_REASONS.has(change.from))
+  );
+}
