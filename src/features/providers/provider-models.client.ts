@@ -26,6 +26,7 @@ import { selectProviderDisplayName } from '$store/renderer/slices/provider-catal
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
 import { isProviderProfileRef, providerRefBaseId } from '$shared/provider-profiles';
+import type { ModelWarningKind } from '$shared/models/wire-model-info';
 
 const logger = createLogger('ProviderModelsClient');
 
@@ -49,6 +50,8 @@ export interface ProviderModelsResult {
   warning?: string;
   /** Present and `true` when the daemon served last-good data after a failed probe. */
   stale?: boolean;
+  /** Machine-readable cause of `warning` (PROTOCOL §5.30). */
+  warningKind?: ModelWarningKind;
 }
 
 interface GetModelsEnvelope {
@@ -56,6 +59,7 @@ interface GetModelsEnvelope {
   data?: ProviderModelEntry[];
   warning?: string;
   stale?: boolean;
+  warningKind?: ModelWarningKind;
   error?: string;
 }
 
@@ -171,6 +175,7 @@ export async function getProviderModels(
     const outcome: ProviderModelsResult = { models };
     if (result.warning) outcome.warning = result.warning;
     if (result.stale === true) outcome.stale = true;
+    if (result.warning && result.warningKind) outcome.warningKind = result.warningKind;
     return outcome;
   } catch (error) {
     logger.warn('Failed to get provider models', { providerId, error });

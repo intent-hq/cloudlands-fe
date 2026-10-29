@@ -225,6 +225,7 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectLoadError: () => writable(null),
   selectAllProviderWarnings: () => providerWarnings$,
   selectAllProviderStaleFlags: () => writable({}),
+  selectAllProviderWarningKinds: () => writable({}),
   selectAgentModelEffortLevels: () => writable(undefined),
 }));
 
@@ -1032,6 +1033,7 @@ vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', a
     selectWorkspaceCatalogEpoch: () => readable(0),
     selectContextProviderWarnings: () => providerWarnings$,
     selectContextProviderStaleFlags: () => readable({}),
+    selectContextProviderWarningKinds: () => readable({}),
   };
 });
 

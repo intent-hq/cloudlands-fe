@@ -101,6 +101,7 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectLoadError: () => mocks.readable(null),
   selectAllProviderWarnings: () => mocks.readable({}),
   selectAllProviderStaleFlags: () => mocks.readable({}),
+  selectAllProviderWarningKinds: () => mocks.readable({}),
   selectModelEffortLevels: {
     select: (_state: unknown, modelId: string | undefined) =>
       mocks.models.find((model) => model.value === modelId)?.effortLevels,
@@ -1246,6 +1247,7 @@ vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', a
     selectContextReadinessLoaded: availability.selectHasCheckedOnce,
     selectContextProviderWarnings: models.selectAllProviderWarnings,
     selectContextProviderStaleFlags: models.selectAllProviderStaleFlags,
+    selectContextProviderWarningKinds: models.selectAllProviderWarningKinds,
     selectContextSpecialists: specialists.selectSpecialists,
   };
 });
