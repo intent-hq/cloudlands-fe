@@ -54,6 +54,13 @@
       'shell-empty': { props: { initialSection: 'shell', scriptsState: 'empty' } },
       'shell-loading': { props: { initialSection: 'shell', scriptsState: 'loading' } },
       'shell-retry': { props: { initialSection: 'shell', scriptsState: 'retry' } },
+      'reveal-nested-note': {
+        props: {
+          nestedNote: true,
+          initialSection: 'context',
+          locate: { sidebarTabId: 'notes', type: 'note', noteId: 'sidebar-preview-note-9' },
+        },
+      },
     },
   });
 </script>

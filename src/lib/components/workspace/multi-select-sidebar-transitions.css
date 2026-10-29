@@ -1,4 +1,4 @@
-.sidebar-locate-highlight {
+[data-sidebar-locate-highlight] {
   animation: sidebar-locate-pulse var(--motion-slow) var(--ease-standard);
 }
 
@@ -79,7 +79,7 @@
 
 @container style(--motion-reduced: 1) {
   .sidebar-section[data-active='true'],
-  .sidebar-locate-highlight {
+  [data-sidebar-locate-highlight] {
     animation: none;
   }
 

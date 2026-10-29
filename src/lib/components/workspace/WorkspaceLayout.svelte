@@ -374,6 +374,7 @@
             class="sidebar-rail-shell h-full shrink-0 overflow-hidden transition-[width] duration-spring-slow ease-spring-slow motion-reduce:transition-none"
             style:width={collapsed ? '48px' : '0px'}
             inert={!collapsed}
+            aria-hidden={!collapsed}
             data-workspace-sidebar-rail-shell
           >
             <WorkspaceSidebarRail

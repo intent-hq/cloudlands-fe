@@ -35,9 +35,11 @@ for (const collapsed of [false, true]) {
     await ancestor.getByRole('button', { name: 'Collapse', exact: true }).click();
     const row = component.locator(`[data-note-id="${note.noteId}"]`);
     await expect(row).toHaveCount(0);
-    await component.locator('[data-sidebar-preview-locate]').click();
+    const reveal = component.locator('[data-sidebar-preview-locate]');
+    await reveal.focus();
+    await reveal.press('Enter');
     await expect(row).toBeInViewport();
-    await expect(row).toHaveClass(/sidebar-locate-highlight/);
+    await expect(row).toHaveAttribute('data-sidebar-locate-highlight', 'true');
     await expect(parent.getByRole('button', { name: 'Collapse', exact: true })).toBeVisible();
     await expect(ancestor.getByRole('button', { name: 'Collapse', exact: true })).toBeVisible();
     if (collapsed)
@@ -61,7 +63,7 @@ test('reveal opens the collapsed flyout on the target and keeps it open', async 
   await expect(flyout).toHaveAttribute('data-workspace-sidebar-flyout', 'true');
   const row = flyout.locator(`[data-note-id="${note.noteId}"]`);
   await expect(row).toBeInViewport();
-  await expect(row).toHaveClass(/sidebar-locate-highlight/);
+  await expect(row).toHaveAttribute('data-sidebar-locate-highlight', 'true');
   await expect(
     component
       .locator('[data-workspace-sidebar-rail]')
@@ -104,10 +106,12 @@ for (const [name, target, selector, groupName] of [
       await group.click();
       await expect(group).toHaveAttribute('aria-expanded', 'false');
       await expect(component.locator(selector)).toHaveCount(0);
-      await component.locator('[data-sidebar-preview-locate]').click();
+      const reveal = component.locator('[data-sidebar-preview-locate]');
+      await reveal.focus();
+      await reveal.press('Enter');
       const row = component.locator(selector);
       await expect(row).toBeInViewport();
-      await expect(row).toHaveClass(/sidebar-locate-highlight/);
+      await expect(row).toHaveAttribute('data-sidebar-locate-highlight', 'true');
       await expect(group).toHaveAttribute('aria-expanded', 'true');
       await expect(component.locator('[data-sidebar-section="shell"]')).toBeVisible();
       await testInfo.attach(`${name}-${collapsed ? 'collapsed' : 'pinned'}`, {
@@ -127,8 +131,9 @@ test('managers reveal saved scripts but not raw terminals', async ({ mount, page
   await scriptView.locator('[data-sidebar-preview-locate]').click();
   const flyout = scriptView.locator('[data-workspace-sidebar-flyout]');
   await expect(flyout).toHaveAttribute('data-workspace-sidebar-flyout', 'true');
-  await expect(flyout.locator(`[data-sidebar-shell-script="${script.scriptId}"]`)).toHaveClass(
-    /sidebar-locate-highlight/,
+  await expect(flyout.locator(`[data-sidebar-shell-script="${script.scriptId}"]`)).toHaveAttribute(
+    'data-sidebar-locate-highlight',
+    'true',
   );
   await expect(flyout.locator('[data-sidebar-shell-terminal]')).toHaveCount(0);
   await testInfo.attach('manager-script', {
@@ -207,7 +212,7 @@ for (const collapsed of [false, true]) {
     await expect(row).toHaveCount(0);
     await component.locator('[data-sidebar-preview-locate]').click();
     await expect(row).toBeInViewport();
-    await expect(row).toHaveClass(/sidebar-locate-highlight/);
+    await expect(row).toHaveAttribute('data-sidebar-locate-highlight', 'true');
     await testInfo.attach(`virtual-file-${collapsed ? 'collapsed' : 'pinned'}`, {
       body: await page.screenshot(),
       contentType: 'image/png',
@@ -235,7 +240,7 @@ test('reveal waits for a slow folder expansion before highlighting a nested file
   await expect(flyout).toHaveAttribute('data-workspace-sidebar-flyout', 'true');
   await expect(row).toHaveCount(0);
   await expect(row).toBeInViewport();
-  await expect(row).toHaveClass(/sidebar-locate-highlight/);
+  await expect(row).toHaveAttribute('data-sidebar-locate-highlight', 'true');
   await testInfo.attach('slow-nested-file', {
     body: await page.screenshot(),
     contentType: 'image/png',
@@ -268,7 +273,7 @@ for (const [name, props] of [
     await expect(row).toHaveCount(0);
     await component.locator('[data-sidebar-preview-locate]').click();
     await expect(row).toBeInViewport();
-    await expect(row).toHaveClass(/sidebar-locate-highlight/);
+    await expect(row).toHaveAttribute('data-sidebar-locate-highlight', 'true');
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
     await testInfo.attach(`delegated-${name}`, {
       body: await page.screenshot(),
@@ -288,7 +293,7 @@ test('reveal of an agent that is not loaded consumes safely', async ({ mount, pa
   await component.locator('[data-sidebar-preview-locate]').click();
   await expect(component.locator('[data-sidebar-section="agents"]')).toBeVisible();
   await page.waitForTimeout(300);
-  await expect(component.locator('.sidebar-locate-highlight')).toHaveCount(0);
+  await expect(component.locator('[data-sidebar-locate-highlight]')).toHaveCount(0);
   await expect(
     component.locator('[data-agent-delegation-toggle="sidebar-preview-agent-1"]'),
   ).toHaveAttribute('aria-expanded', 'false');
@@ -316,7 +321,7 @@ test('reveal waits for a cold file tree before highlighting a nested file', asyn
   await expect(flyout).toHaveAttribute('data-workspace-sidebar-flyout', 'true');
   await expect(tree).toHaveCount(0);
   await expect(row).toBeInViewport();
-  await expect(row).toHaveClass(/sidebar-locate-highlight/);
+  await expect(row).toHaveAttribute('data-sidebar-locate-highlight', 'true');
   await testInfo.attach('cold-tree-file', {
     body: await page.screenshot(),
     contentType: 'image/png',
@@ -344,7 +349,7 @@ test('a new reveal cancels a pending file reveal without taking focus back', asy
   await component.locator('[data-sidebar-preview-locate]').click();
   const row = component.locator(`[data-note-id="${note.noteId}"]`);
   await expect(row).toBeInViewport();
-  await expect(row).toHaveClass(/sidebar-locate-highlight/);
+  await expect(row).toHaveAttribute('data-sidebar-locate-highlight', 'true');
   // Let the superseded expansion land; it must not steal the selection or focus.
   await page.waitForTimeout(1100);
   await expect(component.locator('[data-sidebar-section="context"]')).toBeVisible();
@@ -378,6 +383,6 @@ test('a cancelled file reveal does not replay after returning to the workspace',
   await expect(row).toBeVisible();
   // Allow the superseded request's row observer to run if it was incorrectly retained.
   await page.waitForTimeout(300);
-  await expect(row).not.toHaveClass(/sidebar-locate-highlight/);
+  await expect(row).not.toHaveAttribute('data-sidebar-locate-highlight', 'true');
   await expect(draft).toBeFocused();
 });

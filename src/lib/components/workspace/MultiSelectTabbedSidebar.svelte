@@ -469,6 +469,7 @@
   });
 
   let sidebarElement: HTMLDivElement | null = $state(null);
+  const locateHighlights = new Map<HTMLElement, ReturnType<typeof setTimeout>>();
 
   // Map registry sidebar tab IDs to MultiSelectTabbedSidebar tab IDs
   function mapSidebarTabId(registryTabId: string): TabId | null {
@@ -524,6 +525,11 @@
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
+      for (const [element, timer] of locateHighlights) {
+        clearTimeout(timer);
+        element.removeAttribute('data-sidebar-locate-highlight');
+      }
+      locateHighlights.clear();
     };
   });
 
@@ -569,8 +575,14 @@
       // Scroll to the item after a short delay to allow tab switch to render
       let cancelled = false;
       let cancelFileReveal: (() => void) | undefined;
-      let cancelAgentReveal: (() => void) | undefined;
+      let cancelRowReveal: (() => void) | undefined;
+      const isCurrent = () =>
+        !cancelled &&
+        active &&
+        workspaceId === pending.workspaceId &&
+        selectPendingLocateInSidebar.select(appStore.state) === pending;
       const timeoutId = setTimeout(async () => {
+        if (!isCurrent()) return;
         // The context menu may have returned focus to the panel tab and dismissed the flyout.
         revealFlyout();
         let selector: string | null = null;
@@ -593,14 +605,11 @@
             break;
         }
 
-        // Folded note ancestors and Shells groups must render before we look up the row.
-        const expandedGroup =
-          type === 'note' && noteId
-            ? revealNoteAncestors(noteId)
-            : type === 'terminal' && shellsListRef?.revealTarget({ terminalId, scriptId });
-        if (expandedGroup) {
+        if (type === 'note' && noteId) revealNoteAncestors(noteId);
+        // Shells groups use local state, so a tick renders their newly opened rows.
+        if (type === 'terminal' && shellsListRef?.revealTarget({ terminalId, scriptId })) {
           await tick();
-          if (cancelled) return;
+          if (!isCurrent()) return;
         }
 
         const highlight = (element: HTMLElement, scroll: boolean) => {
@@ -616,12 +625,58 @@
               : element.querySelector<HTMLElement>('button, a[href], [tabindex]');
             focusTarget?.focus({ preventScroll: true });
           }
-          // Add a brief highlight effect
-          element.classList.add('sidebar-locate-highlight');
-          setTimeout(() => {
-            element.classList.remove('sidebar-locate-highlight');
-          }, 1500);
+          // Row components own their class binding; a separate attribute survives their renders.
+          const previous = locateHighlights.get(element);
+          if (previous) clearTimeout(previous);
+          element.setAttribute('data-sidebar-locate-highlight', 'true');
+          locateHighlights.set(
+            element,
+            setTimeout(() => {
+              element.removeAttribute('data-sidebar-locate-highlight');
+              locateHighlights.delete(element);
+            }, 1500),
+          );
         };
+
+        const waitForRow = (root: HTMLElement, rowSelector: string, onSettled?: () => void) => {
+          let settled = false;
+          const cleanup = () => {
+            observer.disconnect();
+            clearTimeout(deadline);
+            onSettled?.();
+          };
+          const finish = (element: HTMLElement | null) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            cancelRowReveal = undefined;
+            if (!isCurrent()) return;
+            if (element) highlight(element, true);
+            appStore.dispatch(locateItemInSidebarConsumed(workspaceId));
+          };
+          const observer = new MutationObserver(() => {
+            const element = root.querySelector<HTMLElement>(rowSelector);
+            if (element) finish(element);
+          });
+          const deadline = setTimeout(() => finish(null), 3000);
+          cancelRowReveal = () => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+          };
+          const existing = root.querySelector<HTMLElement>(rowSelector);
+          if (existing) finish(existing);
+          else observer.observe(root, { childList: true, subtree: true });
+        };
+
+        // Note collapse state comes through selector readables, which may update after tick().
+        if (type === 'note' && noteId && selector && sidebarElement) {
+          const contextRoot =
+            sidebarElement.querySelector<HTMLElement>('[data-sidebar-section="context"]') ??
+            sidebarElement;
+          waitForRow(contextRoot, selector);
+          return;
+        }
 
         // Files live in a virtualized tree: wait until expansion renders the row.
         // Consuming the request reruns this effect, so it happens after the reveal settles.
@@ -631,7 +686,7 @@
           const deadline = setTimeout(cancelFileReveal, 3000);
           void files.revealPath(filePath).then((row) => {
             clearTimeout(deadline);
-            if (cancelled) return;
+            if (!isCurrent()) return;
             cancelFileReveal = undefined;
             if (row) highlight(row, false);
             appStore.dispatch(locateItemInSidebarConsumed(workspaceId));
@@ -650,27 +705,7 @@
             return;
           }
           const agentSelector = `[data-agent-id="${CSS.escape(agentId)}"], [data-lazy-agent-card="${CSS.escape(agentId)}"]`;
-          const finish = (element: HTMLElement | null) => {
-            observer.disconnect();
-            clearTimeout(deadline);
-            cancelAgentReveal = undefined;
-            agentsList.cancelReveal();
-            if (element) highlight(element, true);
-            appStore.dispatch(locateItemInSidebarConsumed(workspaceId));
-          };
-          const observer = new MutationObserver(() => {
-            const element = root.querySelector<HTMLElement>(agentSelector);
-            if (element) finish(element);
-          });
-          const deadline = setTimeout(() => finish(null), 3000);
-          cancelAgentReveal = () => {
-            observer.disconnect();
-            clearTimeout(deadline);
-            agentsList.cancelReveal();
-          };
-          const existing = root.querySelector<HTMLElement>(agentSelector);
-          if (existing) finish(existing);
-          else observer.observe(root, { childList: true, subtree: true });
+          waitForRow(root, agentSelector, () => agentsList.cancelReveal());
           return;
         }
         const element = selector ? sidebarElement?.querySelector<HTMLElement>(selector) : null;
@@ -682,7 +717,7 @@
         cancelled = true;
         clearTimeout(timeoutId);
         cancelFileReveal?.();
-        cancelAgentReveal?.();
+        cancelRowReveal?.();
         // Leaving a workspace cancels its request; a newer request must survive cleanup.
         if (selectPendingLocateInSidebar.select(appStore.state) === pending)
           appStore.dispatch(locateItemInSidebarConsumed(pending.workspaceId));
