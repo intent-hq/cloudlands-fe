@@ -3566,10 +3566,24 @@ function handleBrowserTabEvent(
     logger.warn(`${type} with malformed payload`, { workspaceId, data });
     return;
   }
-  const closed = type === 'browser:tab-closed';
-  if (closed) appStore.dispatch(browserTabClosed(workspaceId, tab.tabId));
+  if (type === 'browser:tab-closed') appStore.dispatch(browserTabClosed(workspaceId, tab.tabId));
   else appStore.dispatch(browserTabUpserted(workspaceId, tab));
-  appStore.dispatch(browserRouteInputChanged(workspaceId, { kind: 'tab', tab, closed }));
+  // Only claim, release, re-home, and claimed-tab open/close can move the routed client.
+  const changes = (data as { changes?: unknown }).changes;
+  const rehomed =
+    type === 'browser:tab-updated' &&
+    typeof changes === 'object' &&
+    changes !== null &&
+    ('hostClientId' in changes || 'ownerAgentId' in changes);
+  const change = rehomed
+    ? 'rehomed'
+    : type !== 'browser:tab-updated' && tab.ownerAgentId
+      ? type === 'browser:tab-opened'
+        ? 'opened'
+        : 'closed'
+      : null;
+  if (change)
+    appStore.dispatch(browserRouteInputChanged(workspaceId, { kind: 'tab', tab, change }));
 }
 
 function handleMcpServerStatusChangedEvent(event: WorkspaceEvent): void {

@@ -163,12 +163,14 @@ describe('browserClientsSaga', () => {
       createdAt: '2026-09-07T00:00:00.000Z',
       updatedAt: '2026-09-07T00:00:00.000Z',
     };
-    // A user tab elsewhere never routes: no read.
-    run.dispatch(browserRouteInputChanged('ws-1', { kind: 'tab', tab, closed: false }));
+    const claimed = { ...tab, ownerAgentId: 'a-1' };
+    // A newer claimed tab, or a close on another host, never displaces the oldest host.
+    run.dispatch(browserRouteInputChanged('ws-1', { kind: 'tab', tab: claimed, change: 'opened' }));
+    run.dispatch(browserRouteInputChanged('ws-1', { kind: 'tab', tab: claimed, change: 'closed' }));
     await settle();
     expect(mocks.getBrowserClient).toHaveBeenCalledTimes(reads);
 
-    // Closing a tab can retire the claimed-tab route.
+    // Closing a tab on the routed host can retire the claimed-tab route.
     mocks.getBrowserClient.mockResolvedValue({
       source: 'default',
       resolved: { clientId: 'cli-desk' },
@@ -176,24 +178,61 @@ describe('browserClientsSaga', () => {
     run.dispatch(
       browserRouteInputChanged('ws-1', {
         kind: 'tab',
-        tab: { ...tab, tabId: 'stale-tab', hostClientId: 'legacy-host', ownerAgentId: 'a-0' },
-        closed: true,
+        tab: { ...claimed, tabId: 'stale-tab', hostClientId: 'legacy-host' },
+        change: 'closed',
       }),
     );
     await settle();
     expect(mocks.getBrowserClient).toHaveBeenCalledTimes(reads + 1);
     expect(run.sidebar('ws-1').mode).toBe('here');
 
-    // A newly claimed tab on another host can create a route.
+    // With no routed client, a newly claimed tab can create a route; a re-home always can.
+    run.dispatch(browserRouteInputChanged('ws-1', { kind: 'tab', tab: claimed, change: 'opened' }));
+    await settle();
+    expect(mocks.getBrowserClient).toHaveBeenCalledTimes(reads + 2);
+    run.dispatch(browserRouteInputChanged('ws-1', { kind: 'tab', tab, change: 'rehomed' }));
+    await settle();
+    expect(mocks.getBrowserClient).toHaveBeenCalledTimes(reads + 3);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('queues a re-read for a route input that arrives before the first answer', async () => {
+    const first = deferred<unknown>();
+    mocks.getBrowserClient.mockReturnValueOnce(first.promise);
+    mocks.getBrowserClient.mockResolvedValue({
+      source: 'default',
+      resolved: { clientId: 'cli-desk' },
+    });
+    const run = startWithReducer();
+    run.dispatch(mountBrowserConsumer('ws-1'));
+    await settle();
+    const reads = mocks.getBrowserClient.mock.calls.length;
     run.dispatch(
       browserRouteInputChanged('ws-1', {
         kind: 'tab',
-        tab: { ...tab, tabId: 'agent-tab', ownerAgentId: 'a-1' },
-        closed: false,
+        tab: {
+          tabId: 'stale-tab',
+          workspaceId: 'ws-1',
+          hostClientId: 'legacy-host',
+          ownerAgentId: 'a-0',
+          url: 'https://example.com/',
+          visibility: 'visible',
+          createdAt: '2026-09-07T00:00:00.000Z',
+          updatedAt: '2026-09-07T00:00:00.000Z',
+        },
+        change: 'closed',
       }),
     );
+    first.resolve({
+      source: 'default',
+      resolved: null,
+      target: { clientId: 'legacy-host', via: 'tabs' },
+    });
     await settle();
-    expect(mocks.getBrowserClient).toHaveBeenCalledTimes(reads + 2);
+    await settle();
+    expect(mocks.getBrowserClient.mock.calls.length).toBeGreaterThan(reads);
+    expect(run.sidebar('ws-1').mode).toBe('here');
     run.task.cancel();
     await run.task.toPromise();
   });

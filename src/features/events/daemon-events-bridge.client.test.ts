@@ -14646,15 +14646,33 @@ describe('daemonEventsBridge (REV-2 §5.17 — client:* / browser:tab-* / browse
     expect(dispatchSpy).toHaveBeenCalledWith(browserTabClosed(WS_BC, TAB.tabId));
     expect(selectWorkspaceBrowserTabsRevision.select(appStore.state, WS_BC)).toBe(3);
 
-    // Each event also feeds the routed-client refresh with the row it carried.
+    // Unclaimed opens/closes and navigation-only updates cannot move the routed client.
     const { browserRouteInputChanged } =
       await import('$store/renderer/slices/browser-clients/browser-clients-slice');
-    expect(dispatchSpy).toHaveBeenCalledWith(
-      browserRouteInputChanged(WS_BC, { kind: 'tab', tab: TAB as never, closed: false }),
+    const routeInputs = () =>
+      dispatchSpy.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action.type === browserRouteInputChanged.type);
+    expect(routeInputs()).toEqual([]);
+
+    const claimed = { ...TAB, tabId: 'tab-2', ownerAgentId: 'agent-1' };
+    handler(tabNotification('browser:tab-opened', { tab: claimed }));
+    handler(
+      tabNotification('browser:tab-updated', {
+        tab: { ...claimed, hostClientId: 'cli-laptop' },
+        changes: { hostClientId: 'cli-laptop' },
+      }),
     );
-    expect(dispatchSpy).toHaveBeenCalledWith(
-      browserRouteInputChanged(WS_BC, { kind: 'tab', tab: moved as never, closed: true }),
-    );
+    handler(tabNotification('browser:tab-closed', { tab: claimed }));
+    expect(routeInputs()).toEqual([
+      browserRouteInputChanged(WS_BC, { kind: 'tab', tab: claimed as never, change: 'opened' }),
+      browserRouteInputChanged(WS_BC, {
+        kind: 'tab',
+        tab: { ...claimed, hostClientId: 'cli-laptop' } as never,
+        change: 'rehomed',
+      }),
+      browserRouteInputChanged(WS_BC, { kind: 'tab', tab: claimed as never, change: 'closed' }),
+    ]);
 
     // Self-sufficient payloads: no browser.listTabs refetch is issued.
     expect(backendRequestSpy.mock.calls.filter(([m]) => m === 'browser.listTabs')).toEqual([]);

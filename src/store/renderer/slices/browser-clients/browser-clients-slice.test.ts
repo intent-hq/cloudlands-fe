@@ -233,6 +233,24 @@ describe('browserClientsReducer', () => {
     expect(selectWorkspaceDrivingClient.select(asState(state), 'ws-1').driving).toBeNull();
   });
 
+  it('drops an unpinned route once a pin event lands ahead of its re-read', () => {
+    let state = browserClientsReducer(initialState, ownClientIdReceived('cli-desk'));
+    state = browserClientsReducer(state, liveClientsReceived([desk], 'ws-1'));
+    state = browserClientsReducer(
+      state,
+      workspaceBrowserClientReceived('ws-1', {
+        source: 'default',
+        resolved: null,
+        target: { clientId: 'legacy-host', via: 'tabs' },
+      }),
+    );
+    state = browserClientsReducer(state, workspaceBrowserClientPinReceived('ws-1', 'cli-desk'));
+    const clients = selectWorkspaceDrivingClient.select(asState(state), 'ws-1');
+    expect(clients.pinnedClientId).toBe('cli-desk');
+    expect(clients.driving).toBeNull();
+    expect(clients.routedVia).toBeUndefined();
+  });
+
   it('reports an unpinned route to a disconnected tab host as an offline primary', () => {
     let state = browserClientsReducer(initialState, ownClientIdReceived('cli-desk'));
     state = browserClientsReducer(state, liveClientsReceived([desk, laptop], 'ws-1'));

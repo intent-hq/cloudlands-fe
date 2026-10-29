@@ -91,7 +91,15 @@ export const selectWorkspaceDrivingClient = store.createSelector(
       .map(liveClientSummary);
     const browserClient = (slice.byWorkspaceId[wsId] ?? emptyWorkspaceBrowserClientsState)
       .browserClient;
-    const target = browserClientRouteTarget(browserClient);
+    const workspace = slice.byWorkspaceId[wsId];
+    const pinnedClientId =
+      workspace?.pinnedClientId !== undefined
+        ? workspace.pinnedClientId
+        : browserClient?.source === 'workspace'
+          ? browserClient.clientId
+          : null;
+    // A pin event can land before its follow-up read; an unpinned route is then stale.
+    const target = pinnedClientId === null ? browserClientRouteTarget(browserClient) : undefined;
     let driving: BrowserClientSummary | null = null;
     if (browserClient?.resolved) {
       const live = getItem(clients, browserClient.resolved.clientId);
@@ -107,12 +115,7 @@ export const selectWorkspaceDrivingClient = store.createSelector(
       ownClientId: slice.ownClientId ?? '',
       routedVia: browserClient?.source === 'default' ? target?.via : undefined,
       driving,
-      pinnedClientId:
-        slice.byWorkspaceId[wsId]?.pinnedClientId !== undefined
-          ? slice.byWorkspaceId[wsId].pinnedClientId
-          : browserClient?.source === 'workspace'
-            ? browserClient.clientId
-            : null,
+      pinnedClientId,
     };
   },
 );

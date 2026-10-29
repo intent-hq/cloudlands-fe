@@ -1136,6 +1136,19 @@ describe('WorkspaceProgressCard primary browser client', () => {
     expect(thisApp.disabled).toBe(false);
   });
 
+  it('keeps the generic offline note when this app cannot take over the tab host', async () => {
+    mocks.role.hidesOwnerActions = true;
+    seedBrowserClients([liveClient(OWN, 'laptop')], {
+      source: 'default',
+      resolved: null,
+      target: { clientId: OTHER, via: 'tabs' },
+    });
+    const { container } = await renderDrivingCard();
+    const row = await openPrimaryClientMenu(container);
+    expect(row.dataset.detail).toBe('Offline');
+    expect(row.dataset.note).toBe(m.workspace_drivingClient_offline_description());
+  });
+
   it('names the other primary client, even without browser tabs, and asks before switching', async () => {
     seedBrowserClients([liveClient(OWN, 'laptop'), liveClient(OTHER, 'desktop')], {
       source: 'default',

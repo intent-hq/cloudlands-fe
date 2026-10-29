@@ -549,7 +549,7 @@
           : undefined,
     detailTone: primaryClientOffline ? 'danger' : undefined,
     note: primaryClientOffline
-      ? $drivingClient$.routedVia === 'tabs'
+      ? $drivingClient$.routedVia === 'tabs' && canSetPrimaryClient
         ? m.workspace_drivingClient_offlineTabHost_description()
         : m.workspace_drivingClient_offline_description()
       : m.workspace_drivingClient_menu_description(),

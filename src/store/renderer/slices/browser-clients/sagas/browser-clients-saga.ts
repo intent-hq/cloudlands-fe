@@ -12,7 +12,10 @@ import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import { call, put, race, take, takeEvery, fork, type SagaGenerator } from 'typed-redux-saga';
-import { browserClientRouteTarget } from '$shared/types/browser-clients';
+import {
+  browserClientRouteTarget,
+  type WorkspaceBrowserClient,
+} from '$shared/types/browser-clients';
 
 import {
   takeLatestByWorkspace,
@@ -34,6 +37,7 @@ import {
   browserClientsConsumerUnmounted,
   browserClientReadsReleased,
   browserRouteInputChanged,
+  type BrowserRouteInput,
   closeBrowserTabRequested,
   fetchWorkspaceBrowserClientRequested,
   hydrateBrowserClientsRequested,
@@ -46,6 +50,21 @@ import {
   workspaceBrowserClientReceived,
   workspaceBrowserClientPinReceived,
 } from '../browser-clients-slice';
+
+/** Whether `input` can change the route `current` reports (see `BrowserRouteInput`). */
+function routeMayMove(current: WorkspaceBrowserClient, input: BrowserRouteInput): boolean {
+  if (current.source === 'workspace') return false;
+  if (input.kind === 'desktop-session') return true;
+  const target = browserClientRouteTarget(current);
+  if (target?.via === 'desktop') return false;
+  if (input.change === 'rehomed') return true;
+  if (target?.via === 'tabs') {
+    // A newer claimed tab never displaces the oldest; only the host's own close can.
+    return input.change === 'closed' && input.tab.hostClientId === target.clientId;
+  }
+  // No routed client yet: a newly opened claimed tab can create one.
+  return input.change === 'opened';
+}
 
 const logger = createLogger('BrowserClientsSaga');
 const LIVE_CLIENTS_CONTEXT = 'live-clients';
@@ -348,25 +367,15 @@ export function* browserClientsSaga(): SagaGenerator<void> {
     pinWriteEpochs[wsId] = (pinWriteEpochs[wsId] ?? 0) + 1;
     if (connection.mounted.has(wsId)) yield* put(fetchWorkspaceBrowserClientRequested(wsId));
   });
-  // Unpinned, a desktop session or the oldest claimed tab's host drives the
-  // workspace; re-read only when an input can move that route (not on every
-  // tab navigation).
+  // Unpinned, a desktop session (ahead of tabs) or the oldest claimed tab's
+  // host drives the workspace; re-read only when an input can move that route.
   yield* takeEvery(browserRouteInputChanged, function* ({ payload: [wsId, input] }) {
     if (!connection.mounted.has(wsId)) return;
     const current = yield* selectWorkspaceBrowserClient.effect(wsId);
-    if (!current || current.source === 'workspace') return;
-    const target = browserClientRouteTarget(current);
-    const byTabs = target?.via === 'tabs';
-    let mayMove = true;
-    if (input.kind === 'tab') {
-      const { tab, closed } = input;
-      mayMove = closed
-        ? byTabs
-        : tab.ownerAgentId
-          ? tab.hostClientId !== target?.clientId
-          : byTabs && tab.hostClientId === target?.clientId;
-    }
-    if (mayMove) yield* put(fetchWorkspaceBrowserClientRequested(wsId));
+    // No answer yet: a read may be in flight from before this event, so queue
+    // its trailing re-read rather than drop the input.
+    if (current && !routeMayMove(current, input)) return;
+    yield* put(fetchWorkspaceBrowserClientRequested(wsId));
   });
   yield* takeEvery(browserClientsConsumerMounted, function* ({ payload: [wsId] }) {
     if (connection.mounted.has(wsId)) return;
