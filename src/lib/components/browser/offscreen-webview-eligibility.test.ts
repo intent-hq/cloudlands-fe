@@ -8,6 +8,7 @@ import type {
 import {
   classifyOffscreenTab,
   collectOffscreenTabDecisions,
+  diffOffscreenDecisions,
   type OffscreenEligibilityContext,
 } from './offscreen-webview-eligibility';
 
@@ -147,5 +148,37 @@ describe('collectOffscreenTabDecisions', () => {
       { tabId: 'bg-owned', placement: 'panel', reason: null, pinned: true, mounts: true },
       { tabId: 'bg-shell', placement: 'hidden', reason: 'no-url', pinned: true, mounts: false },
     ]);
+  });
+});
+
+describe('diffOffscreenDecisions', () => {
+  const decide = (layouts: Record<string, WorkspacePanelLayoutState>) =>
+    collectOffscreenTabDecisions(layouts, {
+      ownClientId: OWN,
+      leasedTabIds: {},
+      displayedWorkspaceIds: new Set(),
+    });
+
+  it('reports a tab once when it appears, again only when its decision changes, and when it leaves', () => {
+    const shell = browserTab({ id: 't', hostClientId: OWN, browserUrl: undefined });
+    const first = diffOffscreenDecisions(new Map(), decide({ w: layout([], [shell]) }));
+    expect(first.changes).toEqual([
+      { tabId: 't', workspaceId: 'w', placement: 'hidden', from: undefined, to: 'no-url' },
+    ]);
+
+    const unchanged = diffOffscreenDecisions(first.next, decide({ w: layout([], [shell]) }));
+    expect(unchanged.changes).toEqual([]);
+
+    const filled = diffOffscreenDecisions(
+      unchanged.next,
+      decide({ w: layout([], [{ ...shell, browserUrl: 'http://127.0.0.1:5173/' }]) }),
+    );
+    expect(filled.changes).toEqual([
+      { tabId: 't', workspaceId: 'w', placement: 'hidden', from: 'no-url', to: 'eligible' },
+    ]);
+
+    const closed = diffOffscreenDecisions(filled.next, decide({ w: layout([]) }));
+    expect(closed.changes).toEqual([{ tabId: 't', workspaceId: 'w', from: 'eligible', to: 'gone' }]);
+    expect(closed.next.size).toBe(0);
   });
 });

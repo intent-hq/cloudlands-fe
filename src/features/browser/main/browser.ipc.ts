@@ -13,6 +13,7 @@ import { BROWSER_PROTOCOLS } from '../../../shared/constants';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import { workspaceCommandPayload } from '../../../shared/ipc/workspace-command-payloads';
 import { Logger } from '../../../shared/logger';
+import { describeUrlForLog } from '../../../shared/utils/sanitize-credentials';
 import { executeActions, type ExecutionResult } from './browser-action-executor';
 import type { BrowserExecutionBackendContext } from './browser-exec-reverse';
 import { embeddedBrowserCdp } from './embedded-browser-cdp-service';
@@ -48,6 +49,8 @@ import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
 import type { BrowserTabListing } from '../../../shared/types/browser-clients';
 
 const logger = new Logger('BrowserIPC');
+/** Packaged-build breadcrumbs for agent background hosting (intent-hq/intent#7855). */
+const hostingLogger = new Logger('BrowserHosting');
 
 /** Confirm renderer reporting reached the same daemon that will route follow-up actions. */
 async function waitForDaemonTab(
@@ -199,6 +202,14 @@ function openBrowserTab(
     };
   }
   logger.info('Sent browser:open-tab', { url, position, workspaceId, tabId, allowDuplicate, pin });
+  hostingLogger.info('open-tab sent', {
+    tabId,
+    workspaceId,
+    windows: delivery.windowCount,
+    hidden: visible === false,
+    owned: ownerAgentId !== undefined,
+    url: describeUrlForLog(url),
+  });
   // i18n-ignore (agent-facing protocol message, not user-facing)
   return { success: true, message: `Opening browser tab with URL: ${url}`, tabId };
 }
@@ -518,8 +529,16 @@ function ensureBrowserWorkspaceHost(
     return typeof name === 'string' && !TAB_FREE_ACTIONS.has(name);
   });
   if (!touchesTabs) return;
-  const { adopted } = adoptWorkspaceForBackgroundHosting(payload.workspaceId, backendId);
+  const { windowId, adopted } = adoptWorkspaceForBackgroundHosting(payload.workspaceId, backendId);
   if (adopted) embeddedBrowserCdp.noteWorkspaceAdopted(payload.workspaceId);
+  if (windowId === undefined) {
+    hostingLogger.info('no window can host workspace', { workspaceId: payload.workspaceId, backendId });
+  } else if (adopted) {
+    hostingLogger.info('workspace adopted for background hosting', {
+      workspaceId: payload.workspaceId,
+      windowId,
+    });
+  }
 }
 
 /**

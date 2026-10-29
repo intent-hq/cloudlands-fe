@@ -131,3 +131,52 @@ export function collectOffscreenTabDecisions(
   }
   return out;
 }
+
+/** A tab's offscreen decision as logged: `eligible`, a skip reason, or `gone` (no longer in any layout). */
+export type OffscreenDecisionLabel = 'eligible' | OffscreenSkipReason | 'gone';
+
+export interface OffscreenDecisionChange {
+  tabId: string;
+  workspaceId: string;
+  placement?: OffscreenTabPlacement;
+  from: OffscreenDecisionLabel | undefined;
+  to: OffscreenDecisionLabel;
+}
+
+/**
+ * Compare the latest decisions with the labels last seen per tab and return
+ * only what changed, plus the labels to remember — so diagnostics log a tab
+ * when it enters, changes decision or leaves, never on every reactive pass.
+ * Non-browser tabs are ignored.
+ */
+export function diffOffscreenDecisions(
+  previous: ReadonlyMap<string, { label: OffscreenDecisionLabel; workspaceId: string }>,
+  decisions: readonly OffscreenTabDecision[],
+): {
+  changes: OffscreenDecisionChange[];
+  next: Map<string, { label: OffscreenDecisionLabel; workspaceId: string }>;
+} {
+  const changes: OffscreenDecisionChange[] = [];
+  const next = new Map<string, { label: OffscreenDecisionLabel; workspaceId: string }>();
+  for (const decision of decisions) {
+    const label: OffscreenDecisionLabel = decision.eligibility.eligible
+      ? 'eligible'
+      : decision.eligibility.reason;
+    if (label === 'not-browser' || next.has(decision.tabId)) continue;
+    next.set(decision.tabId, { label, workspaceId: decision.workspaceId });
+    const before = previous.get(decision.tabId)?.label;
+    if (before !== label) {
+      changes.push({
+        tabId: decision.tabId,
+        workspaceId: decision.workspaceId,
+        placement: decision.placement,
+        from: before,
+        to: label,
+      });
+    }
+  }
+  for (const [tabId, { label, workspaceId }] of previous) {
+    if (!next.has(tabId)) changes.push({ tabId, workspaceId, from: label, to: 'gone' });
+  }
+  return { changes, next };
+}

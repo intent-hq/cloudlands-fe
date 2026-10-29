@@ -89,6 +89,8 @@ function* isBackgroundHosted(workspaceId: string): SagaGenerator<boolean> {
 }
 
 const logger = createLogger('BrowserIpcSaga');
+/** Packaged-build breadcrumbs for agent background hosting (intent-hq/intent#7855). */
+const hostingLogger = createLogger('BrowserHosting');
 
 function browserTab(
   url: string,
@@ -234,6 +236,10 @@ function* hostWorkspace(data: BrowserHostWorkspacePayload | null): SagaGenerator
       : yield* selectActiveBackendId();
   backgroundHostedWorkspaces.set(workspaceId, backendId);
   const readiness = yield* call(ensureWorkspaceLayoutForRequest, workspaceId);
+  hostingLogger.info('hosting workspace in background', {
+    workspaceId,
+    readiness: readiness.status,
+  });
   if (readiness.status === 'hydration-failed') {
     // Stay hosted: requests for the workspace are answered with the
     // truthful hydration error instead of a silent timeout.
@@ -709,6 +715,31 @@ function* tabOwnerChanged(data: BrowserTabOwnerChangedPayload | null): SagaGener
   );
 }
 
+/**
+ * Open the tab, then log where it landed (intent-hq/intent#7855): a tab that
+ * main waits on but the layout never received, or received without a URL,
+ * otherwise leaves no trace in a packaged build.
+ */
+function* openBrowserWithBreadcrumb(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
+  yield* call(openBrowser, data);
+  if (!isWorkspaceCommandPayload(data) || typeof data.tabId !== 'string') return;
+  const { workspaceId, tabId } = data;
+  const visible = (yield* selectAllTabs.effect(workspaceId)).find((tab) => tab.id === tabId);
+  const hidden = visible
+    ? undefined
+    : (yield* selectHiddenTabs.effect(workspaceId)).find((tab) => tab.id === tabId);
+  const tab = visible ?? hidden;
+  const layout = (yield* selectPanelLayoutWorkspaces.effect())[workspaceId];
+  hostingLogger.info('open-tab handled', {
+    workspaceId,
+    tabId,
+    location: visible ? 'panel' : hidden ? 'hidden' : 'absent',
+    hasUrl: Boolean(tab?.browserUrl),
+    restoreStatus: layout?.restoreStatus ?? 'none',
+    backgroundHosted: backgroundHostedWorkspaces.has(workspaceId),
+  });
+}
+
 export function* browserIpcSaga(): SagaGenerator<void> {
   if (!isElectron() || running) return;
   running = true;
@@ -728,7 +759,7 @@ export function* browserIpcSaga(): SagaGenerator<void> {
       yield* takeEvery(workspaceDeleted, forgetBackgroundHostedWorkspace),
       yield* takeEveryFromElectronChannel<BrowserOpenTabPayload | null>(
         'browser:open-tab',
-        openBrowser,
+        openBrowserWithBreadcrumb,
         {
           bufferPolicy: {
             kind: 'lossless',

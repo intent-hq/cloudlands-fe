@@ -23,6 +23,8 @@ import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
 import { ANY_HOST } from '../../system/main/window-workspace-tracking';
 
 const logger = new Logger('EmbeddedBrowserCdp');
+/** Packaged-build breadcrumbs for agent background hosting (intent-hq/intent#7855). */
+const hostingLogger = new Logger('BrowserHosting');
 
 /**
  * Default emulated viewport for agent-owned tabs whose size is unknown
@@ -512,6 +514,7 @@ class EmbeddedBrowserCdpService {
     logger.info('Registering browser tab', { tabId, webContentsId });
     if (this.tabRegistry.get(tabId) !== webContentsId) {
       this.tabsWithDeviceMetricsOverride.delete(tabId);
+      hostingLogger.info('tab registered', { tabId, webContentsId });
     }
     this.tabRegistry.set(tabId, webContentsId);
 
@@ -583,6 +586,7 @@ class EmbeddedBrowserCdpService {
           if (pending.size === 0) this.registrationWaiters.delete(tabId);
         }
         logger.warn('Timed out waiting for browser tab registration', { tabId, timeoutMs });
+        hostingLogger.info('tab registration timed out', { tabId, timeoutMs });
         settle(false);
       }, timeoutMs);
       waiters.add(settle);

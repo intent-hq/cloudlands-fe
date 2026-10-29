@@ -39,7 +39,12 @@
   import { store as appStore } from '$store/renderer/store';
   import { selectPanelLayoutWorkspaces } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { offscreenWebview } from './offscreen-webview-action';
-  import { collectOffscreenTabDecisions } from './offscreen-webview-eligibility';
+  import {
+    collectOffscreenTabDecisions,
+    diffOffscreenDecisions,
+    type OffscreenDecisionLabel,
+  } from './offscreen-webview-eligibility';
+  import { createLogger } from '$lib/utils/client-logger';
   import {
     areOffscreenWebviewCachesEqual,
     MAX_OFFSCREEN_WEBVIEWS,
@@ -73,6 +78,16 @@
       displayedWorkspaceIds: excludedWorkspaceIds,
     }),
   );
+
+  // Packaged-build breadcrumb (intent-hq/intent#7855): log each tab's mount
+  // decision when it changes, so a guest that never mounts names its reason.
+  const hostingLogger = createLogger('BrowserHosting');
+  let loggedDecisions = new Map<string, { label: OffscreenDecisionLabel; workspaceId: string }>();
+  $effect(() => {
+    const { changes, next } = diffOffscreenDecisions(loggedDecisions, decisions);
+    loggedDecisions = next;
+    for (const change of changes) hostingLogger.info('offscreen decision', change);
+  });
 
   const candidates = $derived(
     decisions.flatMap((decision): OffscreenWebviewCandidate[] =>
