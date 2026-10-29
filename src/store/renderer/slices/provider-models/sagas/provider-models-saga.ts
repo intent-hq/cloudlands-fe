@@ -94,6 +94,7 @@ export function* providerModelsSaga() {
                 status: 'success',
                 warning: result.warning,
                 stale: result.stale,
+                warningKind: result.warningKind,
               }),
             );
           }

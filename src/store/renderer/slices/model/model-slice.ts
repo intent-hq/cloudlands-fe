@@ -3,6 +3,7 @@ import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
+import type { ModelWarningKind } from '$shared/models/wire-model-info';
 import { toBareProviderModels } from './model-selection-utils';
 import type {
   ModelFallbackInfo,
@@ -21,6 +22,7 @@ function buildLoadingState(
     error?: string;
     warning?: string;
     stale?: boolean;
+    warningKind?: ModelWarningKind;
   },
 ): ModelLoadingState {
   const nextState: ModelLoadingState = {
@@ -51,6 +53,18 @@ function buildLoadingState(
         : (updates.stale ?? previous?.stale);
   if (stale) {
     nextState.stale = true;
+  }
+
+  // The kind follows its warning's lifecycle and never outlives it: a new
+  // warning brings its own kind (or none), never the previous one's.
+  const warningKind =
+    updates.status === 'success' || updates.warning !== undefined
+      ? updates.warningKind
+      : updates.status === 'error'
+        ? undefined
+        : previous?.warningKind;
+  if (warning !== undefined && warningKind !== undefined) {
+    nextState.warningKind = warningKind;
   }
 
   return nextState;
@@ -92,6 +106,7 @@ export const setLoadingStateForProvider = createAction<
       error?: string;
       warning?: string;
       stale?: boolean;
+      warningKind?: ModelWarningKind;
     },
   ]
 >('model/setLoadingStateForProvider');
@@ -160,7 +175,10 @@ modelReducer.with(setAvailableModels, (state, { payload: [models, providerId] })
 }));
 modelReducer.with(
   setLoadingStateForProvider,
-  (state, { payload: [{ providerId, status, retryAttempt, error, warning, stale }] }) => ({
+  (
+    state,
+    { payload: [{ providerId, status, retryAttempt, error, warning, stale, warningKind }] },
+  ) => ({
     ...state,
     loadingState: {
       ...state.loadingState,
@@ -170,6 +188,7 @@ modelReducer.with(
         error,
         warning,
         stale,
+        warningKind,
       }),
     },
   }),

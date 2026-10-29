@@ -3,9 +3,13 @@
 import { overrideMockIpcHandler } from '$shared/ipc-mock-router';
 import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
 import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
-import type { ProviderModelInfo } from '$shared/models/wire-model-info';
+import type { ModelWarningKind, ProviderModelInfo } from '$shared/models/wire-model-info';
 
-type ModelCatalogResponse = { data: ProviderModelInfo[]; warning?: string };
+type ModelCatalogResponse = {
+  data: ProviderModelInfo[];
+  warning?: string;
+  warningKind?: ModelWarningKind;
+};
 
 /**
  * Serves `<provider>:get-models`. `first`, when given, answers only the first
@@ -20,9 +24,14 @@ export function setupModelPickerPreviewHandler(
   const channel = `${providerId}:get-models`;
   let pending = first;
   return overrideMockIpcHandler(channel, () => {
-    const { data, warning: served } = pending ?? { data: rows, warning };
+    const served: ModelCatalogResponse = pending ?? { data: rows, warning };
     pending = undefined;
-    return { success: true, data, ...(served ? { warning: served } : {}) };
+    return {
+      success: true,
+      data: served.data,
+      ...(served.warning ? { warning: served.warning } : {}),
+      ...(served.warning && served.warningKind ? { warningKind: served.warningKind } : {}),
+    };
   });
 }
 

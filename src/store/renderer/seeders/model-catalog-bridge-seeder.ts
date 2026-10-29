@@ -32,7 +32,9 @@ import {
   UNSLOTH_CHANNELS,
 } from '$shared/ipc/channels';
 import {
+  readWarningKind,
   wireModelsToProviderModels,
+  type ModelWarningKind,
   type ProviderModelInfo,
   type WireModelsListResult,
 } from '$shared/models/wire-model-info';
@@ -44,6 +46,7 @@ type GetModelsEnvelope = {
   data?: ProviderModelInfo[];
   warning?: string;
   stale?: boolean;
+  warningKind?: ModelWarningKind;
   error?: string;
 };
 
@@ -82,6 +85,8 @@ for (const [providerId, channel] of PROVIDER_MODEL_CHANNELS) {
         envelope.warning = result.warning;
       }
       if (result?.stale === true) envelope.stale = true;
+      const warningKind = readWarningKind(result);
+      if (warningKind) envelope.warningKind = warningKind;
       return envelope;
     } catch (error) {
       return { success: false, error: errorMessage(error) };

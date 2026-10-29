@@ -24,6 +24,7 @@ type Envelope = {
   data?: Array<{ value: string; label: string; isDefault?: boolean; isLegacyModel?: boolean }>;
   warning?: string;
   stale?: boolean;
+  warningKind?: string;
   error?: string;
 };
 
@@ -145,6 +146,32 @@ describe('model-catalog-bridge-seeder', () => {
     ]);
     expect(response.warning).toBe('Codex not installed; using static model list');
     expect(response.stale).toBe(true);
+  });
+
+  it.each([
+    ['cli-missing', 'cli-missing'],
+    ['prerequisite-missing', 'prerequisite-missing'],
+    ['some-future-kind', undefined],
+  ] as const)('forwards a known daemon warningKind (%s)', async (wire, expected) => {
+    mockedRequest.mockResolvedValue({
+      providerId: 'codex',
+      models: [],
+      source: 'static',
+      warning: 'codex: Install codex on the execution host',
+      warningKind: wire,
+    });
+    const response = await mockInvoke<Envelope>('codex:get-models');
+    expect(response.warningKind).toBe(expected);
+  });
+
+  it('drops a warningKind that arrives without a warning', async () => {
+    mockedRequest.mockResolvedValue({
+      providerId: 'codex',
+      models: [],
+      warningKind: 'cli-missing',
+    });
+    const response = await mockInvoke<Envelope>('codex:get-models');
+    expect(response.warningKind).toBeUndefined();
   });
 
   it('returns an honest empty-with-warning envelope for a degraded static fallback', async () => {
