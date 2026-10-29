@@ -42,8 +42,9 @@
 
   const buttonClass = $derived(
     cn(
-      'relative z-20 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer flex items-center gap-1.5 py-1.5 px-3 rounded-md border border-border hover:border-border bg-background -mb-px',
-      'disabled:bg-sidebar disabled:cursor-default disabled:hover:text-muted-foreground/50 disabled:text-muted-foreground',
+      'relative h-8 type-caption font-normal text-muted-foreground hover:text-foreground transition-colors cursor-pointer flex items-center gap-1.5 px-2 rounded-md hover:bg-muted',
+      'disabled:cursor-default disabled:text-muted-foreground',
+      expanded && 'bg-muted text-foreground',
     ),
   );
 </script>

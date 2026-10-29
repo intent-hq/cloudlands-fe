@@ -12,6 +12,7 @@ vi.mock('../../../utils/safe-local-storage-saga', () => ({
 }));
 
 import {
+  cancelSidebarSectionNavigation,
   CHIEF_ACTIVE_AGENT_ID_KEY,
   hydrateSidebarNav,
   hydrateWorkspaceSidebarUi,
@@ -207,7 +208,7 @@ describe('sidebarNavSaga', () => {
       await task.toPromise();
     });
 
-    it('persists selected tabs, note order, and collapsed notes under workspace-scoped keys', async () => {
+    it('cancels pending content navigation on selection and persists workspace-scoped preferences', async () => {
       storage.getJSON.mockReturnValue(undefined);
       const state = {
         ...current,
@@ -219,7 +220,8 @@ describe('sidebarNavSaga', () => {
         },
       };
       const channel = stdChannel();
-      const task = runSaga({ channel, dispatch: vi.fn(), getState: () => state }, sidebarNavSaga);
+      const dispatch = vi.fn();
+      const task = runSaga({ channel, dispatch, getState: () => state }, sidebarNavSaga);
       await settle();
 
       channel.put(setMultiSelectSidebarSelectedTabs('ws-1', ['context', 'overview']));
@@ -232,6 +234,7 @@ describe('sidebarNavSaga', () => {
         [NOTE_ORDER_KEY, ['note-2', 'note-1']],
         [COLLAPSED_NOTES_KEY, ['note-1']],
       ]);
+      expect(dispatch).toHaveBeenCalledWith(cancelSidebarSectionNavigation('ws-1'));
       task.cancel();
       await task.toPromise();
     });

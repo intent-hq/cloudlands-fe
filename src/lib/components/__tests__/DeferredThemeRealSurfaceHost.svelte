@@ -9,7 +9,7 @@
   import ChatPanelOperationalGeometryHost from '$lib/components/chat/__tests__/ChatPanelOperationalGeometryHost.svelte';
   import ChiefCard from '$lib/components/layout/sidebar-nav/cards/ChiefCard.svelte';
   import PanelEmptyState from '$lib/components/layout/panel-system/PanelEmptyState.svelte';
-  import SidebarBrowserLauncher from '$lib/components/workspace/SidebarBrowserLauncher.svelte';
+  import SidebarSectionTabs from '$lib/components/workspace/sidebar/SidebarSectionTabs.svelte';
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import NoteContentSurface from '$features/layout/tab-types/NoteContentSurface.svelte';
@@ -91,7 +91,7 @@
       class="grid gap-3 rounded-lg border border-border bg-sidebar p-3"
       data-real-surface="sidebar"
     >
-      <SidebarBrowserLauncher {workspaceId} panelLayoutId={workspaceId} onExpand={() => {}} />
+      <SidebarSectionTabs {workspaceId} />
       <div class="flex flex-wrap items-center gap-3">
         <div data-real-surface="model-picker">
           <ModelPicker

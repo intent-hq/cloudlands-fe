@@ -1,7 +1,7 @@
 <script lang="ts">
   import { logger } from '$lib/utils/client-logger';
 
-  import { tick } from 'svelte';
+  import { onDestroy, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
 
   import { Button } from '$lib/components/ui/button';
@@ -416,6 +416,50 @@
     return selectHasExpandedDirectories.select(appStore.state, effectiveWsId);
   }
 
+  let pendingReveal = $state.raw<{
+    path: string;
+    workspaceId: string;
+    started: boolean;
+    resolve: (row: HTMLElement | null) => void;
+  } | null>(null);
+
+  /** Expand ancestors of a path; resolves with its virtual row once rendered. */
+  export function revealPath(path: string): Promise<HTMLElement | null> {
+    cancelReveal();
+    return new Promise((resolve) => {
+      pendingReveal = { path, workspaceId: effectiveWsId, started: false, resolve };
+    });
+  }
+
+  export function cancelReveal() {
+    const pending = pendingReveal;
+    pendingReveal = null;
+    if (pending?.started) virtualizedTreeRef?.cancelReveal();
+    pending?.resolve(null);
+  }
+
+  $effect(() => {
+    const pending = pendingReveal;
+    const tree = virtualizedTreeRef;
+    if (!pending) return;
+    if (pending.workspaceId !== effectiveWsId) {
+      untrack(cancelReveal);
+      return;
+    }
+    if (!tree || pending.started) return;
+    pending.started = true;
+    untrack(() => {
+      appStore.dispatch(expandToPathRequested(pending.workspaceId, pending.path));
+      void tree.revealPath(pending.path).then((row) => {
+        if (pendingReveal !== pending) return;
+        pendingReveal = null;
+        pending.resolve(row);
+      });
+    });
+  });
+
+  onDestroy(() => untrack(cancelReveal));
+
   // Export startCreatingFile for parent components to trigger inline creation
   export function startCreatingFile(dirPath?: string) {
     virtualizedTreeRef?.startCreatingFile(dirPath);
@@ -508,16 +552,16 @@
        virtualization by giving the inner scroll container an unconstrained height. -->
   <div class="flex-1 min-h-0 overflow-hidden">
     {#if $feError$}
-      <div class="flex flex-col items-center gap-2 px-3 py-6 text-center">
-        <p class="text-xs text-danger">{$feError$}</p>
-        <Button variant="outline" size="xs" onclick={retryInitialization}
+      <div class="flex flex-col items-start gap-2 px-2 py-2 text-left">
+        <p class="type-caption text-danger">{$feError$}</p>
+        <Button variant="ghost" size="compact" onclick={retryInitialization}
           >{m.fileExplorer_treeView_retry_label()}</Button
         >
       </div>
     {:else if $feIsLoading$ || externalLoading || !$feIsInitialized$}
       <!-- Skeleton loaders for file tree -->
       <ScrollArea class="h-full">
-        <div class="space-y-1 py-2 px-2">
+        <div class="space-y-1 py-2 px-2 opacity-60">
           {#each Array(6) as { }}
             <div class="flex items-center gap-2 py-1">
               <Skeleton class="h-3 w-3 rounded shrink-0" />
@@ -529,7 +573,7 @@
     {:else if searchQuery && searchQuery.trim()}
       <!-- Search results - flat list -->
       {#if isSearching}
-        <div class="space-y-1 py-2 px-2">
+        <div class="space-y-1 py-2 px-2 opacity-60">
           {#each Array(4) as { }}
             <div class="flex items-center gap-2 py-1">
               <Skeleton class="h-3 w-3 rounded shrink-0" />
@@ -538,7 +582,7 @@
           {/each}
         </div>
       {:else if searchResults.length === 0}
-        <div class="text-xs text-subtle py-4 text-center">
+        <div class="px-2 py-2 type-caption text-muted-foreground">
           {m.fileExplorer_treeView_noFiles_label()}
         </div>
       {:else}
@@ -551,7 +595,7 @@
                     active={selectedFile === result.path}
                     selected={searchSelectedIndex === i}
                     title={result.name}
-                    titleClass="type-body font-normal leading-(--text-body-line-height)"
+                    titleClass="type-caption font-normal leading-(--text-caption-line-height)"
                     subtitle={result.relativePath}
                     onclick={(event) => {
                       selectedFile = result.path;

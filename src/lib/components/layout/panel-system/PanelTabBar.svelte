@@ -1262,6 +1262,7 @@
         filePath: tab.filePath,
         agentId: tab.agentId,
         terminalId: tab.terminalId,
+        scriptId: tab.scriptId,
       }),
     );
   }

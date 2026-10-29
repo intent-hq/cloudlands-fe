@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { collapsiblePanelProductMetadata } from '../CollapsiblePanel.meta';
 import { parseUiComponentMetadata } from '../component-metadata';
 import { smartCornerTabsProductMetadata } from '../smart-corner-tabs/smart-corner-tabs.meta';
+import TabsDynamicHarness from './TabsDynamicHarness.svelte';
 import TabsHarness from './TabsHarness.svelte';
 import { createTabsIndicatorSprings, retargetTabsIndicator } from './tabs-indicator-motion.svelte';
 import { tabsMetadata } from './tabs.meta';
@@ -23,6 +24,34 @@ describe('Tabs', () => {
     expect(document.activeElement).toBe(activity);
     expect(activity.getAttribute('aria-selected')).toBe('true');
     expect(queryByText('Activity panel')).not.toBeNull();
+  });
+
+  it('restores the selected indicator each time a removed selected trigger returns', async () => {
+    const { getByRole, queryByRole, rerender } = render(TabsDynamicHarness);
+    const indicator = () => document.querySelector('[data-tabs-indicator]');
+    expect(indicator()).not.toBeNull();
+
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      await rerender({ showPeople: false });
+      expect(queryByRole('tab', { name: 'People' })).toBeNull();
+      expect(indicator()).toBeNull();
+
+      await rerender({ showPeople: true });
+      expect(getByRole('tab', { name: 'People' }).getAttribute('aria-selected')).toBe('true');
+      expect(indicator()).not.toBeNull();
+    }
+  });
+
+  it('clears proximity state for a removed trigger so its replacement starts idle', async () => {
+    const { getByRole, rerender } = render(TabsDynamicHarness);
+    const people = getByRole('tab', { name: 'People' });
+    await fireEvent.focus(people);
+    expect(people.dataset.proximityActive).toBe('true');
+
+    await rerender({ showPeople: false });
+    await rerender({ showPeople: true });
+    expect(getByRole('tab', { name: 'People' }).dataset.proximityActive).toBeUndefined();
+    expect(document.querySelectorAll('[data-proximity-active]')).toHaveLength(0);
   });
 
   it('retargets one moderate indicator spring while it is in flight', () => {

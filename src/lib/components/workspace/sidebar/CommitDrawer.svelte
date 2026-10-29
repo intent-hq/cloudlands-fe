@@ -111,7 +111,7 @@
   </div>
   <DividerPanel open={commitDrawerOpen}>
     {#if hasStaged}
-      <p class="text-xs text-subtle">
+      <p class="type-caption font-normal text-muted-foreground">
         {stagedChanges.length === 1
           ? m.workspace_commitDrawer_stagedWillCommit_one()
           : m.workspace_commitDrawer_stagedWillCommit_many({
@@ -135,7 +135,7 @@
         minHeight={60}
         maxHeight={150}
         readonly={isGenerating}
-        class="text-sm {isGenerating ? 'border-primary-ink/40 bg-muted/20' : ''}"
+        class="type-caption font-normal {isGenerating ? 'border-primary-ink/40 bg-muted/20' : ''}"
       />
     </div>
     <div class="flex items-center gap-2 flex-wrap w-full">

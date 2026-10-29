@@ -61,14 +61,12 @@ export async function assertSidebarListRows(component: Locator, page: Page) {
     expect(rendered.textHeight).toBeLessThanOrEqual(rendered.rowHeight);
   }
 
-  const geometry = await component.evaluate((node) => {
-    return {
-      overflow: [...node.querySelectorAll('[data-row-card]')].some(
-        (card) => card.scrollWidth > card.clientWidth,
-      ),
-    };
-  });
-  expect(geometry.overflow).toBe(false);
+  const overflowing = await component.evaluate((node) =>
+    [...node.querySelectorAll('[data-row-card]')].some(
+      (card) => card.scrollWidth > card.clientWidth,
+    ),
+  );
+  expect(overflowing).toBe(false);
 
   const selection = component.locator('[data-row-selection]');
   const note = component.locator('[data-note-id="row-reference"] [data-slot="list-item"]');
@@ -78,6 +76,7 @@ export async function assertSidebarListRows(component: Locator, page: Page) {
   await agent.press('Enter');
   await expect(agent).toHaveAttribute('aria-current', 'true');
   await expect(selection).toContainText('"selectedAgentId":"sidebar-row-agent-0"');
+
   const tree = component.getByRole('tree');
   await tree.focus();
   await expect(tree).toBeFocused();

@@ -17,7 +17,7 @@
   let root = $state<HTMLElement | null>(null);
 
   $effect(() => {
-    if (!root) return;
+    if (!root || context.variant === 'underline') return;
     context.state.connect(root);
     return () => context.state.disconnect();
   });
@@ -29,14 +29,20 @@
     'relative isolate inline-flex max-w-full items-center gap-0.5 select-none',
     context.variant === 'default'
       ? 'rounded-(--radius-medium) bg-muted/40'
-      : 'max-w-full overflow-x-auto px-1',
+      : context.variant === 'icon'
+        ? 'gap-2 rounded-(--radius-large) bg-muted/60 p-1 dark:bg-surface-4'
+        : 'max-w-full overflow-x-auto px-1',
     className,
   )}
   {...restProps as any}
 >
   {#if context.state.hover}
-    {#if context.variant === 'default'}
-      <TabsIndicator store={context.state.hover} selectedIndexes={context.state.selectedIndexes} />
+    {#if context.variant === 'default' || context.variant === 'icon'}
+      <TabsIndicator
+        store={context.state.hover}
+        selectedIndexes={context.state.selectedIndexes}
+        variant={context.variant}
+      />
       {#if !context.state.selectedIndexes.includes(context.state.hover.activeIndex ?? -1)}
         <ProximityHighlight store={context.state.hover} selectedIndexes={[]} />
       {/if}

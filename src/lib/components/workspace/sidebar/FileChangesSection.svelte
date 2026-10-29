@@ -543,7 +543,7 @@
       <!-- Auto-commit toggle (workspace.setAutoCommit is owner-only) -->
       {#if isOwner}
         <div
-          class="-my-0.5 ml-auto flex min-w-0 items-center justify-end gap-2"
+          class="ml-auto flex min-w-0 items-center justify-end gap-2"
           data-testid="auto-commit-toggle"
         >
           <Tooltip
@@ -556,7 +556,7 @@
             disableHoverableContent={false}
             disableCloseOnTriggerClick={true}
           >
-            <span class="text-ui min-w-0 truncate text-subtle">
+            <span class="type-caption min-w-0 truncate text-subtle">
               {m.workspace_commitDrawer_autoCommit_label()}
             </span>
             <Switch
@@ -588,13 +588,13 @@
             {@const queuePos = getGroupQueuePosition(group, 'unstaged')}
             <div class="space-y-px">
               <!-- Agent header -->
-              <div class="relative group/agent-header flex h-7 items-center gap-1.5 px-2">
+              <div class="relative group/agent-header flex h-8 items-center gap-1.5 px-2">
                 <Button
                   variant="ghost"
                   type="button"
                   size="compact"
                   wrapContent={false}
-                  class="group/row flex h-7 items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded px-2 -mx-2"
+                  class="group/row flex h-8 items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded-md px-2 -mx-2 type-caption font-normal"
                   onclick={() => toggleAgentGroup(group.agentId)}
                 >
                   {#if isLocked}
@@ -606,7 +606,7 @@
                     </Tooltip>
                   {/if}
                   <span
-                    class="text-ui flex-1 truncate text-muted-foreground {isLocked
+                    class="type-caption flex-1 truncate text-muted-foreground {isLocked
                       ? 'opacity-40'
                       : ''}"
                   >
@@ -615,7 +615,7 @@
                   {#if group.agentId}
                     {@const hasAnyActions = !isLocked || getLinkedNoteId(group.agentId)}
                     <AgentAvatar
-                      class="-mt-0.5 {hasAnyActions ? 'group-hover/agent-header:opacity-0' : ''}"
+                      class={hasAnyActions ? 'group-hover/agent-header:opacity-0' : ''}
                       agentId={group.agentId}
                       size={15}
                     />
@@ -684,7 +684,7 @@
                           cancelGroupCommit(group, 'unstaged');
                         }}
                       >
-                        <span class="text-ui font-semibold text-primary-ink leading-none"
+                        <span class="type-caption font-normal text-primary-ink leading-none"
                           >{queuePos}</span
                         >
                       </Button>
@@ -708,10 +708,11 @@
               </div>
               <!-- Files in group -->
               {#if !isCollapsed}
-                <div class="pl-1" transition:slide={{ tier: 'moderate' }}>
+                <div class="min-w-0" transition:slide={{ tier: 'moderate' }}>
                   {#each group.files as file (file.path)}
                     {@const panelState = getFilePanelState(file.path)}
                     <div
+                      class="[&>div]:h-8 [&>div]:border-0 [&>div]:rounded-md"
                       data-file-key="unstaged:{file.path}"
                       in:receive|global={{ key: file.path }}
                       out:send|global={{ key: file.path }}
@@ -749,6 +750,7 @@
           {#each unstagedChanges as change (change.id)}
             {@const panelState = getFilePanelState(change.relativePath)}
             <div
+              class="[&>div]:h-8 [&>div]:border-0 [&>div]:rounded-md"
               data-file-key="unstaged:{change.relativePath}"
               in:receive|global={{ key: change.relativePath }}
               out:send|global={{ key: change.relativePath }}
@@ -831,23 +833,23 @@
             {@const queuePos = getGroupQueuePosition(group, 'staged')}
             <div class="space-y-px">
               <!-- Agent header -->
-              <div class="relative group/agent-header flex h-7 items-center gap-1.5 px-2">
+              <div class="relative group/agent-header flex h-8 items-center gap-1.5 px-2">
                 <Button
                   variant="ghost"
                   type="button"
                   size="compact"
                   wrapContent={false}
-                  class="group/row flex h-7 items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded px-2 -mx-2"
+                  class="group/row flex h-8 items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded-md px-2 -mx-2 type-caption font-normal"
                   onclick={() => toggleAgentGroup(group.agentId)}
                 >
-                  <span class="text-ui flex-1 truncate text-muted-foreground">
+                  <span class="type-caption flex-1 truncate text-muted-foreground">
                     {getAgentDisplayName(group)}
                   </span>
 
                   {#if group.agentId}
                     {@const hasAnyActions = !isLocked || getLinkedNoteId(group.agentId)}
                     <AgentAvatar
-                      class="-mt-0.5 {hasAnyActions ? 'group-hover/agent-header:opacity-0' : ''}"
+                      class={hasAnyActions ? 'group-hover/agent-header:opacity-0' : ''}
                       agentId={group.agentId}
                       size={15}
                     />
@@ -916,7 +918,7 @@
                           cancelGroupCommit(group, 'staged');
                         }}
                       >
-                        <span class="text-ui font-semibold text-primary-ink leading-none"
+                        <span class="type-caption font-normal text-primary-ink leading-none"
                           >{queuePos}</span
                         >
                       </Button>
@@ -940,10 +942,11 @@
               </div>
               <!-- Files in group -->
               {#if !isCollapsed}
-                <div class="pl-1" transition:slide={{ tier: 'moderate' }}>
+                <div class="min-w-0" transition:slide={{ tier: 'moderate' }}>
                   {#each group.files as file (file.path)}
                     {@const panelState = getFilePanelState(file.path)}
                     <div
+                      class="[&>div]:h-8 [&>div]:border-0 [&>div]:rounded-md"
                       data-file-key="staged:{file.path}"
                       in:receive|global={{ key: file.path }}
                       out:send|global={{ key: file.path }}
@@ -979,6 +982,7 @@
           {#each stagedChanges as change (change.id)}
             {@const panelState = getFilePanelState(change.relativePath)}
             <div
+              class="[&>div]:h-8 [&>div]:border-0 [&>div]:rounded-md"
               data-file-key="staged:{change.relativePath}"
               in:receive|global={{ key: change.relativePath }}
               out:send|global={{ key: change.relativePath }}

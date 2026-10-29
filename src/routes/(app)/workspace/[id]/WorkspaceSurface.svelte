@@ -928,6 +928,7 @@
       >
         {#snippet children()}
           <WorkspaceLayout
+            {workspaceId}
             {active}
             sidebar={sidebarContent}
             content={mainContent}

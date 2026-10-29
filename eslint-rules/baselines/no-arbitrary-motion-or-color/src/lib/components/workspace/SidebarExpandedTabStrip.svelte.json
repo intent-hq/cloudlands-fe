@@ -1,5 +1,0 @@
-{
-  "owner": "design-system",
-  "reason": "Existing physical colors are counted per file and must be replaced with semantic tokens over time",
-  "count": 1
-}

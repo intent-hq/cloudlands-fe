@@ -122,7 +122,7 @@
 </script>
 
 {#if serverRows.length > 0}
-  <div class="mt-3 {className ?? ''}">
+  <div class="mt-2 {className ?? ''}">
     <SidebarGroupHeader
       title={m.workspace_mcpServers_title()}
       meta={m.workspace_mcpServers_enabledCount_label({ count: formatInteger(enabledServerCount) })}
@@ -132,14 +132,16 @@
     />
 
     {#if isExpanded}
-      <div class="space-y-0.5 mt-1" transition:slide={{ axis: 'y', tier: 'moderate' }}>
+      <div class="mt-0.5" transition:slide={{ axis: 'y', tier: 'moderate' }}>
         {#each serverRows as { server, enabled, error } (getMcpServerKey(server))}
           {@const serverKey = getMcpServerKey(server)}
           {@const isEnabled = enabled}
           {@const serverError = error}
           {@const faviconUrl = getFaviconUrl(server)}
           {@const showFallback = !faviconUrl || faviconErrors[serverKey]}
-          <div class="flex h-7 items-center gap-1.5 px-2 rounded-md transition-colors group">
+          <div
+            class="flex h-8 min-w-0 items-center gap-2 px-2 rounded-md hover:bg-hover transition-colors group"
+          >
             <!-- Server Icon - Favicon for HTTP/SSE, terminal icon for command -->
             <div
               class="size-3.5 rounded flex items-center justify-center shrink-0 {isEnabled
@@ -150,7 +152,7 @@
                 <Fa
                   icon={server.type === 'stdio' ? faTerminal : faPlug}
                   size="xs"
-                  class={isEnabled ? 'text-primary-ink' : 'text-muted-foreground'}
+                  class="text-muted-foreground"
                 />
               {:else if faviconUrl}
                 <img
@@ -166,7 +168,7 @@
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-1.5">
                 <span
-                  class="type-body font-normal truncate {isEnabled
+                  class="type-caption font-normal truncate {isEnabled
                     ? 'text-foreground'
                     : 'text-subtle'}"
                 >
@@ -208,10 +210,10 @@
           variant="ghost"
           type="button"
           size="compact"
-          class="h-7 w-full flex items-center justify-start gap-1.5 px-2 mt-1 text-sm text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
+          class="h-8 w-full flex items-center justify-start gap-2 px-2 mt-0.5 type-caption font-normal text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
           onclick={() => navigateToSettings({ hash: 'mcp-servers' })}
         >
-          <Fa icon={faGear} size={13} class="opacity-50 mx-[2px]" />
+          <Fa icon={faGear} size={13} class="text-muted-foreground" />
           <span>{m.workspace_mcpServers_manageServers_label()}</span>
         </Button>
       </div>
