@@ -24,6 +24,8 @@ export interface ChatSearchOptions {
   collapseToolRuns?: boolean;
   /** Owning workspace, so video normalization (and its dedupe) matches the renderer. */
   workspaceId?: string;
+  /** Mirror the renderer's thinking-as-prose presentation for the agent. */
+  reasoningAsText?: boolean;
 }
 
 export interface ChatSearchMatch {
@@ -69,6 +71,7 @@ function buildMessageSearchBlocks(
       role: message.role,
       workspaceId: options.workspaceId,
       isStreaming,
+      reasoningAsText: options.reasoningAsText,
     }),
     isStreaming,
     !!options.collapseToolRuns,

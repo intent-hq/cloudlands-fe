@@ -427,6 +427,7 @@
 
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
+  import { rendersReasoningAsText } from './prepare-message-blocks';
   import ModelChangeNotice from './ModelChangeNotice.svelte';
   import EffortChangeNotice from './EffortChangeNotice.svelte';
   import { getModelChangeNotice } from './model-change-notice';
@@ -1511,9 +1512,11 @@
   // current-match turn (and its neighbors) can be force-rendered through the
   // LazyTurn virtualization while searching.
   // Everything search needs to prepare blocks exactly like the rendered rows.
+  const reasoningAsText = $derived(rendersReasoningAsText($agentSession$));
   const chatSearchOptions: ChatSearchOptions = $derived({
     collapseToolRuns: $collapseToolRuns$,
     workspaceId: workspace?.id ? String(workspace.id) : undefined,
+    reasoningAsText,
   });
   const allSearchMatches = $derived.by(() => {
     return findChatSearchMatches(
@@ -7226,6 +7229,7 @@
                   {@const compactOperationalTurnBoundary = hasOperationalAssistantTurnBoundary(
                     turn,
                     nextTurn,
+                    reasoningAsText,
                   )}
                   {@const zeroOperationalTurnBoundary = compactOperationalTurnBoundary}
                   {@const attentionQuestionAnswerTurnSeam = isAttentionQuestionAnswerSeam(
@@ -7457,10 +7461,12 @@
                         hasOperationalAssistantMessageBoundary(
                           turn.bodyMessages[bodyIndex - 1],
                           message,
+                          reasoningAsText,
                         )}
                       {@const compactNextMessageBoundary = hasOperationalAssistantMessageBoundary(
                         message,
                         turn.bodyMessages[bodyIndex + 1],
+                        reasoningAsText,
                       )}
                       {@const turnNumber = getMessageTurnNumber(message.id)}
                       {@const globalIndex = getMessageIndex(message.id)}

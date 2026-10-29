@@ -36,12 +36,21 @@ export function isToolOnlyAssistantMessage(message?: AgentMessage | null): boole
   return visibleBlocks.length > 0 && visibleBlocks.every((block) => block.type === 'tool_use');
 }
 
-export function isOperationalOnlyAssistantMessage(message?: AgentMessage | null): boolean {
+/** `reasoningAsText`: the agent's non-empty thinking renders as prose, not an operational row. */
+export function isOperationalOnlyAssistantMessage(
+  message?: AgentMessage | null,
+  reasoningAsText = false,
+): boolean {
   if (message?.role !== 'assistant') return false;
   const visibleBlocks = (message.contentBlocks ?? []).filter(isVisibleTranscriptBlock);
   return (
     visibleBlocks.length > 0 &&
-    visibleBlocks.every((block) => block.type === 'tool_use' || block.type === 'thinking')
+    visibleBlocks.every(
+      (block) =>
+        block.type === 'tool_use' ||
+        (block.type === 'thinking' &&
+          !(reasoningAsText && (block.text ?? block.content ?? '').trim())),
+    )
   );
 }
 
@@ -55,8 +64,12 @@ export function hasToolOnlyAssistantMessageBoundary(
 export function hasOperationalAssistantMessageBoundary(
   previous?: AgentMessage | null,
   current?: AgentMessage | null,
+  reasoningAsText = false,
 ): boolean {
-  return isOperationalOnlyAssistantMessage(previous) && isOperationalOnlyAssistantMessage(current);
+  return (
+    isOperationalOnlyAssistantMessage(previous, reasoningAsText) &&
+    isOperationalOnlyAssistantMessage(current, reasoningAsText)
+  );
 }
 
 export function hasToolOnlyAssistantTurnBoundary(
@@ -73,11 +86,13 @@ export function hasToolOnlyAssistantTurnBoundary(
 export function hasOperationalAssistantTurnBoundary(
   current: ConversationTurn,
   next?: ConversationTurn | null,
+  reasoningAsText = false,
 ): boolean {
   if (!next || next.userMessage || next.noticeMessages.length > 0) return false;
   return hasOperationalAssistantMessageBoundary(
     current.bodyMessages[current.bodyMessages.length - 1],
     next.bodyMessages[0],
+    reasoningAsText,
   );
 }
 
