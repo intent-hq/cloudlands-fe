@@ -71,7 +71,7 @@ export function groupProviderEntries<T extends OrderableProviderEntry>(
   };
 
   for (const entry of orderProviderEntries(entries, hiddenProviderIds)) {
-    if (isProviderEnabled(entry.id) || (activeProviderId && entry.id === activeProviderId)) {
+    if (isProviderEnabled(entry.id)) {
       groups.enabled.push(entry);
     } else if (availabilityByProviderId[entry.id]?.available === true) {
       groups.discovered.push(entry);

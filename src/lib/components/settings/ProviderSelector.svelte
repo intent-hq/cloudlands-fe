@@ -15,7 +15,6 @@
     selectEnabledProviders,
     selectProviderPaths,
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
-  import { selectProviderInUseReasons } from '$store/renderer/slices/provider-settings/provider-in-use-selectors';
   import {
     setProviderEnabled,
     providerSettingsSessionOpened,
@@ -36,10 +35,7 @@
     selectProviderDiscoveryError,
   } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
 
-  import {
-    selectProviderCatalogEntries,
-    selectProviderDisplayName,
-  } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { selectProviderCatalogEntries } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import {
     selectIsProviderEnabled,
     selectProviderDefaultConfigs,
@@ -59,7 +55,6 @@
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import {
     Button,
@@ -89,7 +84,6 @@
   const discoveryError$ = selectProviderDiscoveryError();
   const activeProviderId = selectActiveProviderId();
   const enabledProviders$ = selectEnabledProviders();
-  const providerInUseReasons$ = selectProviderInUseReasons();
   const catalogEntries$ = selectProviderCatalogEntries();
   // Shared per-provider status pipeline (agent-availability slice), fed by
   // the CHECK_SINGLE fan-out so each row settles on its own probe.
@@ -257,18 +251,6 @@
       !selectAntigravitySetupPolicy.select(appStore.state).canEnable
     )
       return;
-    if (!enabled) {
-      const reason = $providerInUseReasons$[providerId];
-      if (reason) {
-        notify.error(
-          m.settings_providers_cannotDisable({
-            name: selectProviderDisplayName.select(appStore.state, providerId),
-          }),
-          { description: reason },
-        );
-        return;
-      }
-    }
     appStore.dispatch(
       setProviderEnabled({ providerId, enabled }, { id: crypto.randomUUID(), sessionId }),
     );
@@ -332,15 +314,12 @@
           <!-- Rows render immediately from the catalog; each row's status area fills
                in independently as its own probe settles. -->
           {#each group.providers as provider (provider.id)}
-            {@const isActive = $activeProviderId === provider.id}
             {@const isEnabled = isProviderEnabled(provider.id)}
             {@const isReady = isProviderReadyForUse(provider.id)}
             {@const canManageEnablement = canManageProviderEnablement(provider.id)}
-            {@const inUseReason = $providerInUseReasons$[provider.id] ?? null}
-            {@const canDisable = canManageEnablement && !isActive && isEnabled}
+            {@const canDisable = canManageEnablement && isEnabled}
             {@const canEnable =
               canManageEnablement &&
-              !isActive &&
               !isEnabled &&
               isReady &&
               (provider.id !== 'antigravity' || $antigravitySetupPolicy$.canEnable)}
@@ -591,8 +570,6 @@
                             <Menu.Separator />
                             <Menu.Item
                               class="cursor-pointer text-foreground"
-                              disabled={!!inUseReason}
-                              title={inUseReason ?? undefined}
                               onSelect={() => {
                                 handleToggleProvider(provider.id, false);
                               }}

@@ -102,15 +102,15 @@ describe('groupProviderEntries', () => {
     expect(result.supported.map((provider) => provider.id)).toEqual(['supported-a', 'supported-z']);
   });
 
-  it('groups an available active provider as enabled even when it is not enabled explicitly', () => {
+  it('groups a disabled default provider as discovered', () => {
     const result = groupProviderEntries([entry('auggie', 'Augment Auggie')], {
       isProviderEnabled: () => false,
       availabilityByProviderId: { auggie: { available: true } },
       activeProviderId: 'auggie',
     });
 
-    expect(result.enabled.map((provider) => provider.id)).toEqual(['auggie']);
-    expect(result.discovered).toEqual([]);
+    expect(result.enabled).toEqual([]);
+    expect(result.discovered.map((provider) => provider.id)).toEqual(['auggie']);
   });
 
   it('pins the active provider first while keeping the remaining enabled providers alphabetical', () => {

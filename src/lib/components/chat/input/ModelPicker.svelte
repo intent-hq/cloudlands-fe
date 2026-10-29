@@ -569,12 +569,8 @@
       isProviderDisabledInSettings($enabledProviders$, effectiveProviderId),
   );
 
-  // Providers whose models the picker may offer. The available+enabled set
-  // always admits the default provider (`model.defaultProvider`) even when it
-  // was disabled in settings, so its catalog keeps loading for the fetch and
-  // warning paths — but the daemon refuses every turn on a disabled provider
-  // and a disabled default has no re-home target, so its rows must not be
-  // selectable (intent#5737). Same settings blind spot as above for guests.
+  // Disabled providers cannot supply selectable rows, including the default
+  // (intent#5737). Guest pickers use the host's enabled-provider receipt.
   const selectableProviderIds = $derived(
     $availableEnabledProviderIds$.filter(
       (pid) =>

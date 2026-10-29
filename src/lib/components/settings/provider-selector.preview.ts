@@ -25,6 +25,8 @@ import {
 import { selectEnabledProviders } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 import { loadEnabledProvidersFromStorage } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 import ProviderSelector from './ProviderSelector.svelte';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
+import { setFileSpecialists } from '$store/renderer/slices/specialists/specialists-slice';
 
 export const previewProviders = [
   {
@@ -112,11 +114,58 @@ function setupProviderSelector() {
   };
 }
 
+export function setupProviderDisablePreview(
+  status: 'signed-out' | 'pending' | 'unavailable' = 'signed-out',
+) {
+  const restoreProviders = setupProviderSelector();
+  const specialists = getItems(appStore.state.specialists.fileSpecialists);
+  const auggie = {
+    id: 'auggie',
+    displayName: 'Augment Auggie',
+    shortName: 'Auggie',
+    command: 'auggie',
+    canBeDisabled: true,
+    visible: true,
+    loginCommandHint: 'auggie login',
+    loginDocsUrl: 'https://docs.augmentcode.com/cli/overview',
+  };
+  appStore.dispatch(providerCatalogLoaded({ providers: [...previewProviders, auggie] }));
+  appStore.dispatch(
+    loadEnabledProvidersFromStorage({ codex: true, 'claude-code': true, auggie: true }),
+  );
+  if (status !== 'pending')
+    appStore.dispatch(
+      checkSingleProviderSuccess('auggie', {
+        available: status !== 'unavailable',
+        authenticated: false,
+      }),
+    );
+  appStore.dispatch(
+    setFileSpecialists([
+      {
+        id: 'pinned-provider',
+        name: 'Pinned specialist',
+        description: '',
+        codingAgent: 'auggie',
+        model: '',
+        behaviorPrompt: '',
+        filePath: '/fixture/specialists/pinned.md',
+        source: 'user',
+      },
+    ]),
+  );
+  return () => {
+    appStore.dispatch(setFileSpecialists(specialists));
+    restoreProviders();
+  };
+}
+
 export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
   id: 'provider-selector',
   title: 'Provider selector',
   defaultState: 'mixed',
   states: {
+    'disable-in-use': { props: {}, setup: () => setupProviderDisablePreview() },
     mixed: { props: {}, setup: setupProviderSelector },
     profiles: {
       props: {},

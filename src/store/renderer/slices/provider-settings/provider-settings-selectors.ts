@@ -88,9 +88,10 @@ export const selectEnabledProviderIds = store.createSelector((state): string[] =
   const enabled = new Set(
     catalogEntries.filter((p) => selectIsProviderEnabled.select(state, p.id)).map((p) => p.id),
   );
-  // A default profile reference (§5.54) keeps its base provider listed.
+  // Preserve the startup default fallback, but honor an explicit disable.
   const activeProviderId = selectActiveProviderId.select(state);
-  if (activeProviderId) enabled.add(providerRefBaseId(activeProviderId));
+  const activeBaseId = providerRefBaseId(activeProviderId);
+  if (activeBaseId && enabledProviders[activeBaseId] !== false) enabled.add(activeBaseId);
 
   for (const [providerId, isEnabled] of Object.entries(enabledProviders)) {
     if (isEnabled) {
@@ -147,9 +148,8 @@ export const selectAvailableEnabledProviderIds = store.createSelector((state): s
  * Droid / Auggie with `{ available: true, authenticated: false }` would
  * otherwise be offered as a dead-end retry target. Unknown auth (no
  * `authenticated` flag reported) stays offered, matching
- * `isProviderAuthenticationReady`. The picker gate also always admits the
- * active `defaultProviderId` even when explicitly disabled; a retry target
- * must be genuinely enabled or the daemon's setModel gate rejects the switch.
+ * `isProviderAuthenticationReady`. A retry target must be explicitly enabled
+ * or the daemon's setModel gate rejects the switch.
  * Does not change the generic picker policy.
  */
 export const selectQuotaRetryProviderIds = store.createSelector(
