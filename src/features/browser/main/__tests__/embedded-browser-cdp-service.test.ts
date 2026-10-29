@@ -107,6 +107,14 @@ describe('embedded browser CDP workspace routing', () => {
       const pending = embeddedBrowserCdp.focusTab('tab-nonexistent', 'ws-2');
       await vi.advanceTimersByTimeAsync(15_000);
       await expect(pending).resolves.toBe(false);
+      // The hosting windows are asked to log their view of the stuck tab
+      // (intent-hq/intent#7855).
+      expect(mocks.sendToWorkspaceWindows).toHaveBeenLastCalledWith(
+        'ws-2',
+        IPC_CHANNELS.BROWSER.DIAGNOSE_TAB,
+        { workspaceId: 'ws-2', tabId: 'tab-nonexistent', stage: 'focus' },
+        ANY_HOST,
+      );
     } finally {
       vi.useRealTimers();
     }

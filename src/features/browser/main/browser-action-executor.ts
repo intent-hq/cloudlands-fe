@@ -29,10 +29,34 @@ import {
 import { resolveRewrittenRemoteTarget, type TunnelProvider } from './loopback-url-resolver';
 // Visibility checks use ANY_HOST: the executor has no host for the workspace
 // (the embedded browser service keys tabs by workspace id alone).
-import { getWindowIdForWorkspace, getWindowIdsForWorkspace } from '../../system/main/system.ipc';
+import {
+  getWindowIdForWorkspace,
+  getWindowIdsForWorkspace,
+  sendToWorkspaceWindows,
+} from '../../system/main/system.ipc';
 import { ANY_HOST } from '../../system/main/window-workspace-tracking';
+import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 
 const logger = new Logger('BrowserActionExecutor');
+
+/**
+ * Ask the windows hosting `workspaceId` to log their view of a tab whose
+ * webview did not register in time (intent-hq/intent#7855): where it sits in
+ * the layout, its URL and host, and why the offscreen host skips it.
+ * Diagnostics only — never affects the action's result.
+ */
+function requestTabDiagnosis(workspaceId: string, tabId: string, stage: 'open' | 'mount'): void {
+  try {
+    sendToWorkspaceWindows(
+      workspaceId,
+      IPC_CHANNELS.BROWSER.DIAGNOSE_TAB,
+      { workspaceId, tabId, stage },
+      ANY_HOST,
+    );
+  } catch (err) {
+    logger.debug('browser:diagnose-tab could not be sent', { workspaceId, tabId, err });
+  }
+}
 
 /**
  * Registration-wait budget for the capture-path mount-on-demand
@@ -492,6 +516,7 @@ async function ensureCaptureTabMounted(
   if (mountBudgetMs <= 0) return exhaustedBeforeMount();
   const mounted = await embeddedBrowserCdp.waitForTabRegistration(tabId, mountBudgetMs);
   if (!mounted) {
+    requestTabDiagnosis(workspaceId, tabId, 'mount');
     const notVisible = getWindowIdForWorkspace(workspaceId, ANY_HOST) === undefined;
     const deadlineBound = mountBudgetMs < CAPTURE_MOUNT_TIMEOUT_MS;
     const registryUrl = listed.tabs.find((t) => t.tabId === tabId)?.url;
@@ -1582,6 +1607,7 @@ async function executeAction(
         if (result.success && effectiveTabId) {
           const registered = await embeddedBrowserCdp.waitForTabRegistration(effectiveTabId);
           if (!registered) {
+            if (workspaceId) requestTabDiagnosis(workspaceId, effectiveTabId, 'open');
             return {
               action: 'openTab',
               success: false,

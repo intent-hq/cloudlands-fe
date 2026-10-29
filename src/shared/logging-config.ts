@@ -128,6 +128,12 @@ export const LOGGING_CONFIG: LoggingConfig = {
     // which builds produced a packaged-app log file.
     BuildInfo: LogLevel.INFO,
 
+    // Agent browser background hosting (intent-hq/intent#7855): which window
+    // hosts a workspace, where open-tab goes, the offscreen mount decision per
+    // tab and registration. Pinned to INFO so packaged builds keep these —
+    // a tab that never registers is otherwise undiagnosable from the logs.
+    BrowserHosting: LogLevel.INFO,
+
     // UI components - reduce noise during normal operation
     TipTapEditor: LogLevel.WARN,
     ContextPicker: LogLevel.WARN,

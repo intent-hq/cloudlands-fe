@@ -23,6 +23,8 @@ import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
 import { ANY_HOST } from '../../system/main/window-workspace-tracking';
 
 const logger = new Logger('EmbeddedBrowserCdp');
+/** Packaged-build breadcrumbs for agent background hosting (intent-hq/intent#7855). */
+const hostingLogger = new Logger('BrowserHosting');
 
 /**
  * Default emulated viewport for agent-owned tabs whose size is unknown
@@ -512,6 +514,7 @@ class EmbeddedBrowserCdpService {
     logger.info('Registering browser tab', { tabId, webContentsId });
     if (this.tabRegistry.get(tabId) !== webContentsId) {
       this.tabsWithDeviceMetricsOverride.delete(tabId);
+      hostingLogger.info('tab registered', { tabId, webContentsId });
     }
     this.tabRegistry.set(tabId, webContentsId);
 
@@ -948,7 +951,18 @@ class EmbeddedBrowserCdpService {
     // Success means "the tab is now addressable": already-mounted tabs
     // resolve immediately, unmounted-but-listed tabs resolve when the
     // remounted webview registers, and nonexistent tabs time out to false.
-    return this.waitForTabRegistration(tabId);
+    const registered = await this.waitForTabRegistration(tabId);
+    if (!registered) {
+      // Ask the hosting windows to log their view of the stuck tab
+      // (intent-hq/intent#7855). Diagnostics only.
+      sendToWorkspaceWindows(
+        workspaceId,
+        IPC_CHANNELS.BROWSER.DIAGNOSE_TAB,
+        { workspaceId, tabId, stage: 'focus' },
+        ANY_HOST,
+      );
+    }
+    return registered;
   }
 
   /**

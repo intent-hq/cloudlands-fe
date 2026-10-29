@@ -1,4 +1,5 @@
 import { takeEveryFromSelector } from '@themislib/themis/saga';
+import { createLogger } from '$lib/utils/client-logger';
 import {
   selectAllWorkspaceScriptEntries,
   selectCanReadScriptDefinition,
@@ -754,6 +755,28 @@ function* reconcileRestoredPanelColumns(wsId: string): SagaGenerator<boolean> {
   return true;
 }
 
+/** Packaged-build breadcrumbs for agent background hosting (intent-hq/intent#7855). */
+const hostingLogger = createLogger('BrowserHosting');
+
+/**
+ * Log the browser tabs a storage restore left without a URL. Registry-hosted
+ * tabs persist as geometry shells (stripRegistryHeldFields) until the
+ * browser-tab registry re-applies its rows; until then the offscreen host
+ * cannot mount them (intent-hq/intent#7855).
+ */
+function* logUrlLessRestoredBrowserTabs(wsId: string, source: string): SagaGenerator<void> {
+  const layout = yield* selectPanelLayoutWorkspace.effect(wsId);
+  const tabIds = [
+    ...Object.values(layout.panels).flatMap((panel) => panel.tabs),
+    ...getItems(layout.hiddenTabs),
+  ]
+    .filter((tab) => tab.type === 'browser' && !tab.browserUrl)
+    .map((tab) => tab.id);
+  if (tabIds.length > 0) {
+    hostingLogger.info('layout restored with URL-less browser tabs', { wsId, source, tabIds });
+  }
+}
+
 function isSettledRestoreStatus(status: PanelLayoutRestoreStatus): boolean {
   return status === 'restored' || status === 'empty' || status === 'invalid';
 }
@@ -856,6 +879,7 @@ function* handleWorkspaceMountedRestore(
         yield* put(preparePanelLayoutBackendRestore(wsId));
       }
       yield* put(initializeLayout(wsId, normalized));
+      yield* call(logUrlLessRestoredBrowserTabs, wsId, 'mount');
       yield* call(stripOwnerOnlyTabsForCollaborator, wsId);
       repairedColumns = yield* call(reconcileRestoredPanelColumns, wsId);
       yield* put(setRestoreStatus(wsId, 'restored'));
@@ -1275,6 +1299,7 @@ function* restoreAfterBackendSwitch(wsId: string | null): SagaGenerator<void> {
       const normalized = normalizeLayoutForWorkspace(wsId, stored);
       repairedLayout = !deepEqual(normalized, stored);
       yield* put(initializeLayout(wsId, normalized));
+      yield* call(logUrlLessRestoredBrowserTabs, wsId, 'backend-switch');
       yield* call(stripOwnerOnlyTabsForCollaborator, wsId);
       repairedColumns = yield* call(reconcileRestoredPanelColumns, wsId);
       yield* put(setRestoreStatus(wsId, 'restored'));
