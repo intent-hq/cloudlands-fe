@@ -1,6 +1,6 @@
 <script lang="ts">
   import NativeReviewAttempt from '$features/accept-changes/components/NativeReviewAttempt.svelte';
-  import { selectLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { selectNativeReviewEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
     prCreatorRequested,
     prWorkflowRequested,
@@ -44,9 +44,9 @@
   const workspaceId$ = toStore(() => workspaceId ?? '');
   const workspace$ = selectWorkspaceById(workspaceId$);
 
-  const labs = selectLabsMultiplayerEnabled();
+  const nativeReview = selectNativeReviewEnabled();
   let legacyEligibility = $state.raw<() => boolean>(() => false);
-  const legacyAllowed = () => !$labs || legacyEligibility();
+  const legacyAllowed = () => !$nativeReview || legacyEligibility();
 
   const workflow$ = selectPRWorkflow(workspaceId$);
   const draft$ = selectAcceptChangesState(workspaceId$);
@@ -275,7 +275,7 @@
   </div>
 {/snippet}
 
-{#if $labs}
+{#if $nativeReview}
   {#if workspaceId}
     {#key workspaceId}
       <NativeReviewAttempt

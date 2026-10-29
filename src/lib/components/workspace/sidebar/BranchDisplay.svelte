@@ -19,7 +19,7 @@
   import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
   import { invoke } from '$shared/generated/ipc-client';
   import type { WorkspaceId } from '$shared/types/branded-ids';
-  import { faCheck } from '@fortawesome/free-solid-svg-icons';
+  import { faArrowRight, faCheck } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { tick } from 'svelte';
   import { writable } from 'svelte/store';
@@ -178,12 +178,12 @@
 </script>
 
 <!-- Branch display/edit with trunk branch picker -->
-<div class="flex min-w-0 flex-col gap-3 mt-1 mb-3" data-branch-summary>
-  <div class="flex min-w-0 flex-col gap-1">
-    <p
-      id={`${fieldId}-working`}
-      class="branch-label text-subtle leading-snug type-caption font-normal"
-    >
+<div
+  class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,0.6fr)] items-center gap-1 mb-2"
+  data-branch-summary
+>
+  <div class="min-w-0">
+    <p id={`${fieldId}-working`} class="sr-only">
       {m.workspace_sidebarChanges_codeLivesIn_label()}
     </p>
 
@@ -219,17 +219,17 @@
                   })}</span
             ><br /><span class="text-ghost">{m.workspace_branchDisplay_shiftClickCopy_label()}</span
             >{#if branchCopy.copiedWorking}<span
-                class="text-green-500 ml-1.5 inline-flex items-center gap-1"
+                class="text-success ml-1.5 inline-flex items-center gap-1"
                 ><Fa icon={faCheck} size="xs" /></span
               >{/if}{/snippet}
           <Button
-            variant="outline"
-            size="sm"
+            variant="ghost"
+            size="compact"
             data-testid="branch-name-button"
             aria-labelledby={`${fieldId}-working ${fieldId}-working-value`}
-            class="w-full min-w-0 {isOwner
+            class="h-8 w-full min-w-0 {isOwner
               ? 'cursor-text'
-              : 'cursor-default'} justify-start text-left text-ui font-normal"
+              : 'cursor-default'} justify-start px-2 text-left type-caption font-normal"
             onclick={(e) => {
               if (e.shiftKey && $workspace?.branch) {
                 navigator.clipboard.writeText($workspace.branch);
@@ -257,12 +257,9 @@
     </div>
   </div>
 
-  <!-- Trunk branch picker -->
-  <div class="flex min-w-0 flex-col gap-1" data-branch-field="target">
-    <p
-      id={`${fieldId}-target`}
-      class="branch-label text-subtle leading-snug type-caption font-normal"
-    >
+  <Fa icon={faArrowRight} class="size-3 shrink-0 text-muted-foreground" />
+  <div class="min-w-0" data-branch-field="target">
+    <p id={`${fieldId}-target`} class="sr-only">
       {m.workspace_sidebarChanges_mergedInto_label()}
     </p>
     <Tooltip
@@ -277,7 +274,7 @@
           >{:else}<span>{m.workspace_branchDisplay_trunkLocked_tooltip()}</span>{/if}<br /><span
           class="text-ghost">{m.workspace_branchDisplay_shiftClickCopy_label()}</span
         >{#if branchCopy.copiedTrunk}<span
-            class="text-green-500 ml-1.5 inline-flex items-center gap-1"
+            class="text-success ml-1.5 inline-flex items-center gap-1"
             ><Fa icon={faCheck} size="xs" /></span
           >{/if}{/snippet}
       <div
@@ -307,7 +304,7 @@
             {repoType}
             dropUp={false}
             portal={true}
-            triggerClass="h-(--control-height-small) text-ui font-normal text-foreground"
+            triggerClass="h-8 justify-start border-transparent bg-transparent px-2 type-caption font-normal text-foreground shadow-none hover:bg-muted"
             hasTriggerIcon={false}
             onchange={async (e) => {
               // BranchSelector also reports its initial auto-selection; only a
@@ -332,7 +329,7 @@
             size="compact"
             aria-labelledby={`${fieldId}-target`}
             value={trunkBranch || m.workspace_branchSelector_noBranchSelected_label()}
-            class="text-ui font-normal cursor-default"
+            class="h-8 border-transparent bg-transparent px-2 type-caption font-normal cursor-default shadow-none"
           />
         {/if}
       </div>

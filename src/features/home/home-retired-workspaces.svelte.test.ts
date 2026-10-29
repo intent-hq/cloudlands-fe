@@ -50,11 +50,11 @@ describe('homeRetiredWorkspaces', () => {
     return state;
   }
 
-  it('loads once on entering Retired; list responses do not trigger another load', () => {
+  it('loads once on entering Archived; list responses do not trigger another load', () => {
     const state = mount('all');
     expect(loads()).toBe(0);
 
-    state.filter = 'retired';
+    state.filter = 'archived';
     flushSync();
     expect(loads()).toBe(1);
 
@@ -66,18 +66,18 @@ describe('homeRetiredWorkspaces', () => {
     expect(loads()).toBe(1);
   });
 
-  it('reloads on leaving and re-entering Retired', () => {
-    const state = mount('retired');
+  it('reloads on leaving and re-entering Archived', () => {
+    const state = mount('archived');
     expect(loads()).toBe(1);
     state.filter = 'all';
     flushSync();
-    state.filter = 'retired';
+    state.filter = 'archived';
     flushSync();
     expect(loads()).toBe(2);
   });
 
-  it('reloads when an ordinary refresh drops the retired rows while on Retired', () => {
-    const state = mount('retired');
+  it('reloads when an ordinary refresh drops the retired rows while on Archived', () => {
+    const state = mount('archived');
     state.workspaces = [row('a'), row('r', WorkspaceStatusEnum.Retired)];
     flushSync();
     expect(loads()).toBe(1);
@@ -87,18 +87,18 @@ describe('homeRetiredWorkspaces', () => {
   });
 
   it('never loads in preview mode', () => {
-    const state = mount('retired');
+    const state = mount('archived');
     dispatch.mockClear();
     state.preview = true;
     state.filter = 'all';
     flushSync();
-    state.filter = 'retired';
+    state.filter = 'archived';
     flushSync();
     expect(loads()).toBe(0);
   });
 
-  it('reloads once when admission recovers while Retired stays selected', () => {
-    const state = mount('retired');
+  it('reloads once when admission recovers while Archived stays selected', () => {
+    const state = mount('archived');
     expect(loads()).toBe(1);
     // The first read failed or was discarded: nothing retired is loaded.
     admission.set(null);

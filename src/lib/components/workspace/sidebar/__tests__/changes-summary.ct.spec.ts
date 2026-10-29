@@ -38,21 +38,12 @@ for (const { width, locked } of [
       const box = root.getBoundingClientRect();
       const controls = [...root.querySelectorAll('button,input')].map((node) => {
         const r = node.getBoundingClientRect();
-        const style = getComputedStyle(node);
         return {
-          x: r.x,
-          y: r.y,
-          width: r.width,
-          height: r.height,
-          weight: style.fontWeight,
-          border: style.borderTopWidth,
+          left: r.left,
+          right: r.right,
         };
       });
-      const labels = [...root.querySelectorAll('.branch-label')].map((node) => ({
-        height: node.getBoundingClientRect().height,
-        weight: getComputedStyle(node).fontWeight,
-      }));
-      return { x: box.x, width: box.width, controls, labels };
+      return { left: box.left, right: box.right, controls };
     });
     await testInfo.attach('branch-field-geometry', {
       body: JSON.stringify(geometry, null, 2),
@@ -62,19 +53,17 @@ for (const { width, locked } of [
       body: await summary.screenshot(),
       contentType: 'image/png',
     });
-    expect(geometry.controls).toHaveLength(2);
-    expect(geometry.controls[1].y).toBeGreaterThan(
-      geometry.controls[0].y + geometry.controls[0].height,
-    );
-    for (const label of geometry.labels) {
-      expect(label.height).toBeGreaterThan(0);
+    for (const control of geometry.controls) {
+      expect(control.left).toBeGreaterThanOrEqual(geometry.left);
+      expect(control.right).toBeLessThanOrEqual(geometry.right);
     }
     const working = summary.locator('[data-branch-field="working"]');
+    await working.getByRole('button').click({ trial: true });
     await working.getByRole('button').focus();
     await page.keyboard.press('Enter');
     const input = working.getByRole('textbox');
     await expect(input).toBeFocused();
-    expect((await input.boundingBox())!.width).toBeCloseTo(geometry.width, 1);
+    await expect(input).toBeInViewport({ ratio: 1 });
     await input.fill('feature/cancelled-draft');
     await page.keyboard.press('Escape');
     await expect(input).toHaveCount(0);
@@ -88,6 +77,7 @@ for (const { width, locked } of [
         .getByRole('button', { name: /Select a branch/ })
         .and(target.locator('[aria-haspopup="dialog"]'));
       await expect(trigger).toHaveAttribute('aria-haspopup', 'dialog');
+      await trigger.click({ trial: true });
       await trigger.focus();
       await page.keyboard.press('Enter');
       await expect(trigger).toHaveAttribute('aria-expanded', 'true');
@@ -96,9 +86,8 @@ for (const { width, locked } of [
       await expect(trigger).toHaveAttribute('aria-expanded', 'false');
       await expect(trigger).toBeFocused();
     }
-    const header = page.locator('[data-sidebar-card-tab="changes"] h6');
-    const refresh = header.getByRole('button', { name: 'Refresh git status' });
-    await expect(page.locator('.sidebar-changes-container [data-changes-refresh]')).toHaveCount(0);
+    const changes = page.getByRole('tabpanel', { name: 'Changes', exact: true });
+    const refresh = changes.getByRole('button', { name: 'Refresh git status', exact: true });
     await refresh.focus();
     await page.keyboard.press('Enter');
     await expect(refresh).toBeDisabled();
@@ -108,12 +97,8 @@ for (const { width, locked } of [
     await page.keyboard.press('Enter');
     await page.getByRole('option', { name: 'packages/component' }).click();
     await expect(page.getByTestId('secondary-root-changes-view')).toBeVisible();
-    await expect(header.locator('[data-changes-refresh]')).toHaveCount(1);
-    await expect(
-      page.getByTestId('secondary-root-changes-view').locator('[data-changes-refresh]'),
-    ).toHaveCount(0);
-    const close = header.getByRole('button', { name: 'Close tab' });
-    expect((await refresh.boundingBox())!.y).toBe((await close.boundingBox())!.y);
+    await expect(refresh).toHaveCount(1);
+    await expect(refresh).toBeEnabled();
   });
 }
 

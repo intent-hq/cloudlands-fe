@@ -159,9 +159,12 @@ const RENDERER_CONSOLE_MAX_MESSAGE_CHARS = 4096;
  * Info is dropped by default to keep the log bounded, but a diagnostic whose
  * entire purpose is to populate a debug bundle is useless if it never reaches
  * the file. Entries here must be low-rate and periodic — `[RetentionFingerprint]`
- * emits one line per five minutes. Anything chatty belongs at debug instead.
+ * emits one line per five minutes; `[BrowserHosting]` (intent-hq/intent#7855)
+ * logs agent browser background-hosting steps only when a tab's mount
+ * decision changes or a registration times out. Anything chatty belongs at
+ * debug instead.
  */
-const FORWARDED_RENDERER_INFO_MARKERS = ['[RetentionFingerprint]'] as const;
+const FORWARDED_RENDERER_INFO_MARKERS = ['[RetentionFingerprint]', '[BrowserHosting]'] as const;
 
 function isForwardedInfoMessage(level: string, message: string): boolean {
   return level === 'info' && FORWARDED_RENDERER_INFO_MARKERS.some((m) => message.includes(m));

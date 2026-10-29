@@ -8,10 +8,9 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const preference = vi.hoisted(() => ({ enabled: false, persisted: false, dispatch: vi.fn() }));
-vi.mock('$lib/utils/safe-storage', () => ({
-  safeLocalStorage: { getJSON: () => preference.persisted },
-}));
+const preference = vi.hoisted(() => ({ enabled: true, dispatch: vi.fn() }));
+const storage = vi.hoisted(() => ({ getJSON: vi.fn(), setJSON: vi.fn() }));
+vi.mock('$lib/utils/safe-storage', () => ({ safeLocalStorage: storage }));
 const loggerMocks = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
@@ -32,6 +31,7 @@ vi.mock('$shared/logger', () => ({
 }));
 
 import {
+  ADMISSION_STALL_MS,
   cancelInviteProgress,
   retryInviteProgress,
   installInviteProgressService,
@@ -67,13 +67,20 @@ describe('invite-progress-service', () => {
   let onDismiss: ReturnType<typeof vi.fn>;
   let dispose: () => void;
 
+  function reinstall(onRecoveryState: ReturnType<typeof vi.fn>) {
+    dispose();
+    getHandlers(INVITE_PROGRESS_CHANNELS.SHOW).length = 0;
+    getHandlers(INVITE_PROGRESS_CHANNELS.UPDATE).length = 0;
+    getHandlers(INVITE_PROGRESS_CHANNELS.DISMISS).length = 0;
+    dispose = installInviteProgressService({ onShow, onUpdate, onDismiss, onRecoveryState });
+    invoke.mockClear();
+  }
+
   beforeEach(() => {
-    preference.enabled = false;
-    preference.persisted = false;
-    preference.dispatch.mockReset().mockImplementation(() => {
-      preference.enabled = true;
-      preference.persisted = true;
-    });
+    preference.enabled = true;
+    preference.dispatch.mockReset();
+    storage.getJSON.mockReset();
+    storage.setJSON.mockReset();
     invoke = (window as any).electronAPI.invoke;
     invoke.mockReset().mockResolvedValue({ ok: true });
     loggerMocks.warn.mockClear();
@@ -113,10 +120,41 @@ describe('invite-progress-service', () => {
     });
   });
 
-  it('persists explicit enable and publishes policy before continuing the same invitation', async () => {
-    invoke.mockResolvedValue({ ok: true });
+  it('continues an admission request automatically without any enable step or preference write', async () => {
+    const onRecoveryState = vi.fn();
+    reinstall(onRecoveryState);
     emit(INVITE_PROGRESS_CHANNELS.SHOW, { ...SHOW_PAYLOAD, phase: 'admission' });
-    invoke.mockClear();
+    await vi.waitFor(() =>
+      expect(invoke).toHaveBeenLastCalledWith(INVITE_PROGRESS_CHANNELS.RESPONSE, {
+        requestId: SHOW_PAYLOAD.requestId,
+        action: 'retry',
+      }),
+    );
+    expect(invoke.mock.calls.map(([channel]) => channel)).toEqual([
+      INVITE_PROGRESS_CHANNELS.ACK,
+      COLLABORATION_AUTH.POLICY,
+      INVITE_PROGRESS_CHANNELS.RESPONSE,
+    ]);
+    expect(preference.dispatch).not.toHaveBeenCalled();
+    expect(storage.getJSON).not.toHaveBeenCalled();
+    expect(storage.setJSON).not.toHaveBeenCalled();
+    expect(onDismiss).not.toHaveBeenCalled();
+    expect(onRecoveryState).toHaveBeenLastCalledWith({ busy: false, failed: false });
+  });
+
+  it('reports a failed automatic continue and lets Try again continue the same invitation', async () => {
+    const onRecoveryState = vi.fn();
+    reinstall(onRecoveryState);
+    invoke.mockImplementation(async (channel: string) =>
+      channel === COLLABORATION_AUTH.POLICY ? { ok: false } : { ok: true },
+    );
+    emit(INVITE_PROGRESS_CHANNELS.SHOW, { ...SHOW_PAYLOAD, phase: 'admission' });
+    await vi.waitFor(() =>
+      expect(onRecoveryState).toHaveBeenLastCalledWith({ busy: false, failed: true }),
+    );
+    expect(invoke).not.toHaveBeenCalledWith(INVITE_PROGRESS_CHANNELS.RESPONSE, expect.anything());
+
+    invoke.mockReset().mockResolvedValue({ ok: true });
     await retryInviteProgress();
     expect(invoke.mock.calls.map(([channel]) => channel)).toEqual([
       COLLABORATION_AUTH.POLICY,
@@ -126,19 +164,71 @@ describe('invite-progress-service', () => {
       requestId: SHOW_PAYLOAD.requestId,
       action: 'retry',
     });
-    expect(onDismiss).not.toHaveBeenCalled();
-    expect(preference.dispatch).toHaveBeenCalledWith(expect.objectContaining({ payload: [true] }));
+    expect(onRecoveryState).toHaveBeenLastCalledWith({ busy: false, failed: false });
+    expect(preference.dispatch).not.toHaveBeenCalled();
   });
 
+  it('keeps the failure (and so Try again) visible while Try again is running', async () => {
+    const onRecoveryState = vi.fn();
+    reinstall(onRecoveryState);
+    invoke.mockImplementation(async (channel: string) =>
+      channel === COLLABORATION_AUTH.POLICY ? { ok: false } : { ok: true },
+    );
+    emit(INVITE_PROGRESS_CHANNELS.SHOW, { ...SHOW_PAYLOAD, phase: 'admission' });
+    await vi.waitFor(() =>
+      expect(onRecoveryState).toHaveBeenLastCalledWith({ busy: false, failed: true }),
+    );
+    const pending = Promise.withResolvers<{ ok: boolean }>();
+    invoke.mockImplementation((channel: string) =>
+      channel === COLLABORATION_AUTH.POLICY ? pending.promise : Promise.resolve({ ok: true }),
+    );
+    const retrying = retryInviteProgress();
+    expect(onRecoveryState).toHaveBeenLastCalledWith({ busy: true, failed: true });
+    pending.resolve({ ok: true });
+    await retrying;
+    expect(onRecoveryState).toHaveBeenLastCalledWith({ busy: false, failed: false });
+  });
+
+  it.each([
+    ['still shows the admission', false],
+    ['moved on to connecting', true],
+  ] as const)(
+    'after an accepted automatic retry, offers Try again only if main %s',
+    async (_label, movedOn) => {
+      vi.useFakeTimers();
+      try {
+        const onRecoveryState = vi.fn();
+        reinstall(onRecoveryState);
+        emit(INVITE_PROGRESS_CHANNELS.SHOW, { ...SHOW_PAYLOAD, phase: 'admission' });
+        await vi.waitFor(() =>
+          expect(invoke).toHaveBeenCalledWith(INVITE_PROGRESS_CHANNELS.RESPONSE, {
+            requestId: SHOW_PAYLOAD.requestId,
+            action: 'retry',
+          }),
+        );
+        await vi.waitFor(() =>
+          expect(onRecoveryState).toHaveBeenLastCalledWith({ busy: false, failed: false }),
+        );
+        if (movedOn) emit(INVITE_PROGRESS_CHANNELS.UPDATE, SHOW_PAYLOAD);
+        await vi.advanceTimersByTimeAsync(ADMISSION_STALL_MS);
+        expect(onRecoveryState).toHaveBeenLastCalledWith({ busy: false, failed: !movedOn });
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
   it.each(['cancel', 'replacement', 'policy-failure'] as const)(
-    'does not retry after %s while policy publication is pending',
+    'does not continue after %s while policy publication is pending',
     async (mode) => {
-      emit(INVITE_PROGRESS_CHANNELS.SHOW, { ...SHOW_PAYLOAD, phase: 'admission' });
       const pending = Promise.withResolvers<{ ok: boolean }>();
       invoke.mockImplementation((channel: string) =>
         channel === COLLABORATION_AUTH.POLICY ? pending.promise : Promise.resolve({ ok: true }),
       );
-      const retrying = retryInviteProgress();
+      emit(INVITE_PROGRESS_CHANNELS.SHOW, { ...SHOW_PAYLOAD, phase: 'admission' });
+      await vi.waitFor(() =>
+        expect(invoke).toHaveBeenCalledWith(COLLABORATION_AUTH.POLICY, expect.anything()),
+      );
       if (mode === 'cancel') cancelInviteProgress();
       if (mode === 'replacement')
         emit(INVITE_PROGRESS_CHANNELS.SHOW, {
@@ -147,7 +237,7 @@ describe('invite-progress-service', () => {
           phase: 'admission',
         });
       pending.resolve({ ok: mode !== 'policy-failure' });
-      await retrying;
+      await new Promise((resolve) => setTimeout(resolve, 0));
       expect(
         invoke.mock.calls.filter(
           ([channel, input]) =>

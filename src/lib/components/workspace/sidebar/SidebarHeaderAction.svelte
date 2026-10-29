@@ -25,9 +25,9 @@
   {...restProps}
   bind:ref
   iconOnly
-  variant="plain"
+  variant="ghost"
   size="icon-compact"
-  class="{className} expanded-card-action rounded-md! border-0! bg-transparent! p-0! text-foreground shadow-none! outline-none transition-colors hover:bg-muted/50! focus-visible:border-transparent! focus-visible:bg-muted! motion-reduce:transition-none forced-colors:hover:outline forced-colors:focus-visible:outline"
+  class="shrink-0 text-muted-foreground hover:text-foreground {className}"
   tooltip={label}
   tooltipSide="top"
   tooltipDelayDuration={300}

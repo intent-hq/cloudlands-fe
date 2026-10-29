@@ -6,11 +6,11 @@ import type { Locator } from '@playwright/test';
 test.use({ contextOptions: { reducedMotion: 'reduce' } });
 
 async function revealPeople(component: Locator) {
-  const card = component.locator('[data-sidebar-card-tab="people"]');
-  if (!(await card.isVisible())) {
-    await component.getByRole('button', { name: 'People', exact: true }).click();
+  const section = component.getByRole('tabpanel', { name: 'People', exact: true });
+  if (!(await section.isVisible())) {
+    await component.getByRole('tab', { name: 'People', exact: true }).click();
   }
-  await expect(card).toBeVisible();
+  await expect(section).toBeVisible();
 }
 
 const calls = async (component: Locator) =>
@@ -79,7 +79,9 @@ test('People plus retains a local composer, creates an everyone discussion on fi
   mount,
 }) => {
   const component = await mount(MultipleDiscussionHost);
-  const plus = component.locator('[data-sidebar-card-tab="people"] [data-sidebar-action="plus"]');
+  const plus = component
+    .getByRole('tabpanel', { name: 'People', exact: true })
+    .getByRole('button', { name: 'New discussion', exact: true });
   await plus.click();
   await expect(component.getByRole('combobox', { name: 'Discussion recipients' })).toHaveCount(0);
   const composer = component.getByRole('textbox', { name: 'Message', exact: true });
@@ -121,7 +123,9 @@ test('People plus retains a local composer, creates an everyone discussion on fi
   await revealPeople(component);
   await component.locator(`[data-workspace-discussion-open="${conversationId}"]`).click();
   await expect(component.getByRole('log')).toContainText('Let’s review the new flow together.');
-  await expect(component.locator('[data-sidebar-card-tab="people"]')).toContainText('Activity');
+  await expect(component.getByRole('tabpanel', { name: 'People', exact: true })).toContainText(
+    'Activity',
+  );
 });
 
 test('narrow everyone composer sends with the keyboard without selecting recipients', async ({
@@ -177,7 +181,10 @@ test('failed first send retries the same everyone discussion while retaining a n
   mount,
 }) => {
   const component = await mount(MultipleDiscussionHost, { props: { failSend: true } });
-  await component.locator('[data-sidebar-card-tab="people"] [data-sidebar-action="plus"]').click();
+  await component
+    .getByRole('tabpanel', { name: 'People', exact: true })
+    .getByRole('button', { name: 'New discussion', exact: true })
+    .click();
   const composer = component.getByRole('textbox', { name: 'Message', exact: true });
   await composer.fill('First message');
   await composer.press('Enter');
@@ -202,7 +209,9 @@ test('first-send completion promotes a closed composer before a fresh discussion
   mount,
 }) => {
   const component = await mount(MultipleDiscussionHost, { props: { deferSend: true } });
-  const plus = component.locator('[data-sidebar-card-tab="people"] [data-sidebar-action="plus"]');
+  const plus = component
+    .getByRole('tabpanel', { name: 'People', exact: true })
+    .getByRole('button', { name: 'New discussion', exact: true });
   await plus.click();
   const composer = component.getByRole('textbox', { name: 'Message', exact: true });
   await composer.fill('Sent while the pane closes');
@@ -245,7 +254,8 @@ for (const rejection of ['invalid', 'forbidden'] as const) {
   }) => {
     const component = await mount(MultipleDiscussionHost, { props: { rejectSend: rejection } });
     await component
-      .locator('[data-sidebar-card-tab="people"] [data-sidebar-action="plus"]')
+      .getByRole('tabpanel', { name: 'People', exact: true })
+      .getByRole('button', { name: 'New discussion', exact: true })
       .click();
     const composer = component.getByRole('textbox', { name: 'Message', exact: true });
     await composer.fill('Keep my message');

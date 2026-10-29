@@ -10,7 +10,7 @@
     findToolResult,
     getStandaloneToolResultPresentation,
     getToolResultPayload,
-    getToolResultText,
+    resolveToolState,
     isStandaloneToolResult,
   } from './tool-result-pairing';
   import { isHydrationPending, mergeHydratedContent } from './block-hydration';
@@ -170,24 +170,7 @@
       if (block.type === 'tool_use') {
         const toolBlock = block as ToolUseBlock;
         const result = findToolResult(toolResultsMap, toolBlock);
-        if (result) {
-          // Check both snake_case and camelCase for error flag
-          const isError = result.is_error || result.isError;
-          // Also detect errors from the result payload text (§7.1 `output`,
-          // legacy `content` fallback; e.g., "Error:" prefix or "Tool Error:")
-          // Note: We no longer check for ❌ emoji as it may be used as a visual indicator in content
-          const contentText = getToolResultText(result);
-          const hasErrorInContent =
-            // i18n-ignore (wire-content sniffing of tool result payloads, not rendered)
-            contentText.startsWith('Error:') || contentText.includes('Tool Error:');
-          states.set(toolBlock.id, isError || hasErrorInContent ? 'error' : 'completed');
-        } else if (!isStreaming) {
-          // Not streaming and no result - mark as completed
-          states.set(toolBlock.id, 'completed');
-        } else {
-          // Still streaming
-          states.set(toolBlock.id, 'running');
-        }
+        states.set(toolBlock.id, resolveToolState(toolBlock, result, isStreaming));
       }
     }
     return states;

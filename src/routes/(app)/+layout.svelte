@@ -103,7 +103,10 @@
     selectBackendSetupGate,
   } from '$store/renderer/slices/setup-prompt/setup-prompt-selectors';
   import { bootRouteGateResolved } from '$store/renderer/slices/setup-prompt/setup-prompt-slice';
-  import { selectCurrentConnection } from '$store/renderer/slices/connections/connections-selectors';
+  import {
+    selectConnectionsLoaded,
+    selectCurrentConnection,
+  } from '$store/renderer/slices/connections/connections-selectors';
   import { selectShellTransparencyEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { connectionShellTint } from '$lib/utils/connection-accents';
   import {
@@ -184,6 +187,7 @@
   const currentWorkspaceTabId = selectCurrentWorkspaceTabId();
   const workspaceTabsHydrated = selectWorkspaceTabsHydrated();
   const workspaceTabOrder = selectWorkspaceTabOrder();
+  const connectionsLoaded$ = selectConnectionsLoaded();
   const showReleaseNotesModal$ = selectShowReleaseNotesModal();
   const releaseNotes$ = selectReleaseNotes();
   const showCreateModal$ = selectShowCreateModal();
@@ -269,6 +273,19 @@
   // bootHoldTimedOut flips and decideBootRoute resolves best-effort instead
   // of holding a blank surface indefinitely.
   let bootHoldTimedOut = $state(false);
+  let bootWorkspaceRouteSettled = $state(false);
+  $effect(() => {
+    if (bootWorkspaceRouteSettled || !$connectionsLoaded$ || !$workspaceTabsHydrated) return;
+    bootWorkspaceRouteSettled = true;
+    // The first backend binding can replace tabs opened before its saved strip
+    // loads. Register the direct route afterward so cleanup cannot strand it.
+    untrack(() => {
+      if (workspaceId) {
+        appStore.dispatch(openWorkspaceTab(workspaceId, $page.state?.presenceFollowRequestId));
+        appStore.dispatch(recordWorkspaceView(workspaceId, Date.now()));
+      }
+    });
+  });
   $effect(() => {
     if ($bootGateResolved) return;
     const timer = setTimeout(() => {
@@ -478,10 +495,6 @@
 
     loadData();
 
-    // The workspace surface opens direct-route tabs after backend tab hydration.
-    if (workspaceId) {
-      appStore.dispatch(recordWorkspaceView(workspaceId, Date.now()));
-    }
     // Register global palette shortcuts (config-driven later)
     paletteShortcuts = new KeyboardShortcutManager();
     const isMac =

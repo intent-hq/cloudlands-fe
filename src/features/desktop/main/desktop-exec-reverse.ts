@@ -4,7 +4,7 @@ import type { ConnectionStatus, JsonRpcClient } from '../../backend/main/json-rp
 import { DesktopExecutor, type DesktopConnection } from './desktop-executor';
 import { getDesktopNativeAdapter, desktopNativeAvailable } from './desktop-native';
 import { desktopFailure } from './desktop-validation';
-import { getDesktopOverlay } from './desktop-overlay';
+import { getDesktopForegroundTracker, getDesktopOverlay } from './desktop-overlay';
 import { DesktopReportStore } from './desktop-stop-reports';
 
 let runtime: { executor: DesktopExecutor; reports: DesktopReportStore } | undefined;
@@ -17,7 +17,13 @@ function getRuntime() {
           body: m.desktop_stopReportFailed_description(),
         }).show();
     });
-    const executor = new DesktopExecutor(getDesktopNativeAdapter(), getDesktopOverlay(), reports);
+    const executor = new DesktopExecutor(
+      getDesktopNativeAdapter(),
+      getDesktopOverlay(),
+      reports,
+      undefined,
+      getDesktopForegroundTracker(),
+    );
     runtime = { executor, reports };
     const suspended = () => {
       void executor.invalidate('unsupported_environment').catch(() => {});

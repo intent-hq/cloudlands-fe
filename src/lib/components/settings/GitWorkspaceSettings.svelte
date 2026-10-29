@@ -75,43 +75,95 @@
   );
   let branchPrefixError = $state('');
 
-  // Auto-retire (PROTOCOL §5.12 `workspace.autoRetireArchivedAfterDays`): a
-  // positive integer number of days means on; absent/null means off. Shown
-  // only when the daemon reports the setting, so older daemons never get it.
-  const AUTO_RETIRE_PATH = 'workspace.autoRetireArchivedAfterDays';
-  const AUTO_RETIRE_DEFAULT_DAYS = 7;
-  const autoRetireSupported = $derived($entries$[AUTO_RETIRE_PATH] !== undefined);
-  const autoRetireDays = $derived.by(() => {
+  // Archiving (PROTOCOL §5.12). Archive is the only lifecycle action users
+  // see; two automatic options sit in the Archiving section:
+  // - `workspace.autoArchiveIdleAfterDays`: archive idle workspaces. `0`
+  //   (the default) or absent means off; 7 is suggested when turning it on.
+  //   Reset writes the daemon's advertised default (older daemons: 7).
+  // - `workspace.purgeArchivedAfterDays`: purge the folders of archived
+  //   workspaces (the daemon's retire). Absent/null means off; 7 is suggested
+  //   when turning it on.
+  // Each row shows only when the daemon reports its setting, so older daemons
+  // never get it.
+  const AUTO_ARCHIVE_PATH = 'workspace.autoArchiveIdleAfterDays';
+  const PURGE_PATH = 'workspace.purgeArchivedAfterDays';
+  const DEFAULT_ARCHIVING_DAYS = 7;
+  function draftOrEntry(path: string): unknown {
     const drafts = $form$?.drafts ?? {};
-    const value =
-      AUTO_RETIRE_PATH in drafts ? drafts[AUTO_RETIRE_PATH] : $entries$[AUTO_RETIRE_PATH]?.value;
+    return path in drafts ? drafts[path] : $entries$[path]?.value;
+  }
+  const autoArchiveSupported = $derived($entries$[AUTO_ARCHIVE_PATH] !== undefined);
+  const autoArchiveDays = $derived.by(() => {
+    const value = draftOrEntry(AUTO_ARCHIVE_PATH);
     return typeof value === 'number' && value > 0 ? value : null;
   });
-  const autoRetireOn = $derived(autoRetireDays !== null);
-  // The days field edits a local value; only a valid integer ≥ 1 becomes a
+  const autoArchiveOn = $derived(autoArchiveDays !== null);
+  const purgeSupported = $derived($entries$[PURGE_PATH] !== undefined);
+  const purgeDays = $derived.by(() => {
+    const value = draftOrEntry(PURGE_PATH);
+    return typeof value === 'number' && value > 0 ? value : null;
+  });
+  const purgeOn = $derived(purgeDays !== null);
+  // Each days field edits a local value; only a valid integer ≥ 1 becomes a
   // form draft, so a rejected value can never ride along on another save.
-  let autoRetireDaysInput = $state<number | null>(null);
-  let autoRetireDaysError = $state('');
+  let autoArchiveDaysInput = $state<number | null>(null);
+  let autoArchiveDaysError = $state('');
+  let purgeDaysInput = $state<number | null>(null);
+  let purgeDaysError = $state('');
 
-  function setAutoRetire(on: boolean) {
-    autoRetireDaysInput = null;
-    autoRetireDaysError = '';
+  function setAutoArchive(on: boolean) {
+    autoArchiveDaysInput = null;
+    autoArchiveDaysError = '';
     appStore.dispatch(
-      settingsFormDraftChanged(identity, AUTO_RETIRE_PATH, on ? AUTO_RETIRE_DEFAULT_DAYS : null),
+      settingsFormDraftChanged(identity, AUTO_ARCHIVE_PATH, on ? DEFAULT_ARCHIVING_DAYS : 0),
     );
     handleSave();
   }
 
-  function commitAutoRetireDays() {
-    if (autoRetireDaysInput === null) return;
-    const days = autoRetireDaysInput;
-    if (!Number.isInteger(days) || days < 1) {
-      autoRetireDaysError = m.settings_gitWorkspace_autoRetireDays_invalid();
+  function setPurge(on: boolean) {
+    purgeDaysInput = null;
+    purgeDaysError = '';
+    appStore.dispatch(
+      settingsFormDraftChanged(identity, PURGE_PATH, on ? DEFAULT_ARCHIVING_DAYS : null),
+    );
+    handleSave();
+  }
+
+  /** The daemon's advertised auto-archive default; `0` (off) when it has none. */
+  function autoArchiveDefault(advertised: unknown): number {
+    return typeof advertised === 'number' && Number.isInteger(advertised) && advertised >= 0
+      ? advertised
+      : 0;
+  }
+
+  /** A whole number of days, 1 or more; `null` = invalid. */
+  function validDays(days: number | null): number | null {
+    return days !== null && Number.isInteger(days) && days >= 1 ? days : null;
+  }
+
+  function commitAutoArchiveDays() {
+    if (autoArchiveDaysInput === null) return;
+    const days = validDays(autoArchiveDaysInput);
+    if (days === null) {
+      autoArchiveDaysError = m.settings_gitWorkspace_archivingDays_invalid();
       return;
     }
-    autoRetireDaysError = '';
-    autoRetireDaysInput = null;
-    appStore.dispatch(settingsFormDraftChanged(identity, AUTO_RETIRE_PATH, days));
+    autoArchiveDaysError = '';
+    autoArchiveDaysInput = null;
+    appStore.dispatch(settingsFormDraftChanged(identity, AUTO_ARCHIVE_PATH, days));
+    handleSave();
+  }
+
+  function commitPurgeDays() {
+    if (purgeDaysInput === null) return;
+    const days = validDays(purgeDaysInput);
+    if (days === null) {
+      purgeDaysError = m.settings_gitWorkspace_archivingDays_invalid();
+      return;
+    }
+    purgeDaysError = '';
+    purgeDaysInput = null;
+    appStore.dispatch(settingsFormDraftChanged(identity, PURGE_PATH, days));
     handleSave();
   }
   const settingsError = $derived($error$);
@@ -230,13 +282,18 @@
       ...(entries[SETTING_PATHS.exposeGitCredential]
         ? { [SETTING_PATHS.exposeGitCredential]: true }
         : {}),
-      ...(entries[AUTO_RETIRE_PATH] ? { [AUTO_RETIRE_PATH]: null } : {}),
+      ...(entries[AUTO_ARCHIVE_PATH]
+        ? { [AUTO_ARCHIVE_PATH]: autoArchiveDefault(entries[AUTO_ARCHIVE_PATH].defaultValue) }
+        : {}),
+      ...(entries[PURGE_PATH] ? { [PURGE_PATH]: null } : {}),
     };
     for (const [path, value] of Object.entries(defaults))
       appStore.dispatch(settingsFormDraftChanged(identity, path, value));
     branchPrefixError = '';
-    autoRetireDaysInput = null;
-    autoRetireDaysError = '';
+    autoArchiveDaysInput = null;
+    autoArchiveDaysError = '';
+    purgeDaysInput = null;
+    purgeDaysError = '';
     handleSave();
   }
 
@@ -336,30 +393,62 @@
               experimental: true,
               when: () => Boolean(showCowToggle),
             },
+          ],
+        },
+        {
+          id: 'archiving',
+          title: m.settings_section_archiving(),
+          when: () => Boolean(autoArchiveSupported || purgeSupported),
+          entries: [
             {
               kind: 'switch',
-              id: 'auto-retire',
-              label: m.settings_gitWorkspace_autoRetire_label(),
-              description: m.settings_gitWorkspace_autoRetire_description(),
-              when: () => Boolean(autoRetireSupported),
-              get: () => Boolean(autoRetireOn),
-              set: (value: boolean) => setAutoRetire(value),
+              id: 'auto-archive',
+              label: m.settings_gitWorkspace_autoArchive_label(),
+              description: m.settings_gitWorkspace_autoArchive_description(),
+              when: () => Boolean(autoArchiveSupported),
+              get: () => Boolean(autoArchiveOn),
+              set: (value: boolean) => setAutoArchive(value),
             },
             {
               kind: 'number',
-              id: 'auto-retire-days',
-              label: m.settings_gitWorkspace_autoRetireDays_label(),
-              description: m.settings_gitWorkspace_autoRetireDays_description(),
+              id: 'auto-archive-days',
+              label: m.settings_gitWorkspace_autoArchiveDays_label(),
+              description: m.settings_gitWorkspace_autoArchiveDays_description(),
               min: 1,
               step: 1,
-              when: () => Boolean(autoRetireSupported && autoRetireOn),
-              get: () => autoRetireDaysInput ?? autoRetireDays ?? AUTO_RETIRE_DEFAULT_DAYS,
+              when: () => Boolean(autoArchiveSupported && autoArchiveOn),
+              get: () => autoArchiveDaysInput ?? autoArchiveDays ?? DEFAULT_ARCHIVING_DAYS,
               set: (value: number) => {
-                autoRetireDaysInput = value;
-                autoRetireDaysError = '';
+                autoArchiveDaysInput = value;
+                autoArchiveDaysError = '';
               },
-              onBlur: commitAutoRetireDays,
-              error: () => autoRetireDaysError || undefined,
+              onBlur: commitAutoArchiveDays,
+              error: () => autoArchiveDaysError || undefined,
+            },
+            {
+              kind: 'switch',
+              id: 'purge-archived',
+              label: m.settings_gitWorkspace_purge_label(),
+              description: m.settings_gitWorkspace_purge_description(),
+              when: () => Boolean(purgeSupported),
+              get: () => Boolean(purgeOn),
+              set: (value: boolean) => setPurge(value),
+            },
+            {
+              kind: 'number',
+              id: 'purge-archived-days',
+              label: m.settings_gitWorkspace_purgeDays_label(),
+              description: m.settings_gitWorkspace_purgeDays_description(),
+              min: 1,
+              step: 1,
+              when: () => Boolean(purgeSupported && purgeOn),
+              get: () => purgeDaysInput ?? purgeDays ?? DEFAULT_ARCHIVING_DAYS,
+              set: (value: number) => {
+                purgeDaysInput = value;
+                purgeDaysError = '';
+              },
+              onBlur: commitPurgeDays,
+              error: () => purgeDaysError || undefined,
             },
           ],
         },

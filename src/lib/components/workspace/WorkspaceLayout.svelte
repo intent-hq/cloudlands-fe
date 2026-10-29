@@ -11,9 +11,15 @@
    * while maintaining consistent layout behavior.
    */
 
-  import type { Snippet } from 'svelte';
-  import { springIn, crispOut } from '$lib/motion';
+  import { onDestroy, setContext, tick, type Snippet } from 'svelte';
+  import { spring, Spring } from '$lib/motion';
+  import { scheduleLayoutRead, scheduleLayoutWrite } from '$lib/utils/layout-phases';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import WorkspaceSidebarRail from './sidebar/WorkspaceSidebarRail.svelte';
+  import {
+    SIDEBAR_FLYOUT_CONTEXT,
+    type SidebarFlyoutContext,
+  } from './sidebar/sidebar-flyout-context';
   import { store as appStore } from '$store/renderer/store';
   import { toggleSidebar } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
@@ -27,6 +33,7 @@
   // Props
   interface Props {
     // Snippets for each section
+    workspaceId?: string;
     sidebar: Snippet;
     content: Snippet;
     terminalOverlay?: Snippet;
@@ -58,6 +65,7 @@
   }
 
   let {
+    workspaceId,
     sidebar,
     content,
     terminalOverlay,
@@ -76,6 +84,257 @@
 
   const workspaceLogger = new Logger('WorkspaceLayout');
   const sidebarIsCollapsed = selectIsCollapsed();
+  let floatingOpen = $state(false);
+  let shell: HTMLDivElement | undefined = $state();
+  let rail: HTMLDivElement | undefined = $state();
+  let previewTabId = $state<string>();
+  let previewAnchor = $state<HTMLElement>();
+  const floatingBounds = new Spring({ top: 0, height: 0 }, 'moderate');
+  let contentHeight = 0;
+  let snapNextSize = true;
+  let availableWidth = $state(0);
+  let availableHeight = $state(0);
+  let contentMaxHeight = $state<number>();
+  let expandedWidth = $state(0);
+  let suppressFocusReveal = false;
+  let suppressRailToggleTooltip = $state(false);
+  let closeTimer: ReturnType<typeof setTimeout> | undefined;
+  let cancelAlignmentRead: (() => void) | undefined;
+  let cancelAlignmentWrite: (() => void) | undefined;
+  let snapAlignment = false;
+  let railPointer: { x: number; y: number } | undefined;
+  const collapsed = $derived($sidebarIsCollapsed && !startCollapsed);
+  const sidebarWidthLimit = $derived(
+    availableWidth > 0 ? Math.min(sidebarMaxWidth, availableWidth) : sidebarMaxWidth,
+  );
+  const sidebarMinimumWidth = $derived(Math.min(sidebarMinWidth, sidebarWidthLimit));
+  const floatingWidth = $derived(
+    Math.min(expandedWidth || sidebarDefaultWidth, Math.max(0, availableWidth - 48)),
+  );
+
+  function cancelDismiss() {
+    clearTimeout(closeTimer);
+    closeTimer = undefined;
+  }
+
+  setContext<SidebarFlyoutContext>(SIDEBAR_FLYOUT_CONTEXT, {
+    get collapsed() {
+      return collapsed;
+    },
+    get open() {
+      return floatingOpen && collapsed && active;
+    },
+    get tabId() {
+      return previewTabId;
+    },
+    get maxHeight() {
+      return contentMaxHeight ?? Math.max(0, availableHeight - 12);
+    },
+    preview: reveal,
+    resize(height) {
+      if (contentHeight === height && !snapNextSize) return;
+      contentHeight = height;
+      scheduleAlignment(snapNextSize);
+      snapNextSize = false;
+    },
+  });
+
+  function cancelAlignment() {
+    cancelAlignmentRead?.();
+    cancelAlignmentWrite?.();
+    cancelAlignmentRead = undefined;
+    cancelAlignmentWrite = undefined;
+    snapAlignment = false;
+  }
+
+  function scheduleAlignment(instant = false) {
+    snapAlignment ||= instant;
+    if (cancelAlignmentRead) return;
+    cancelAlignmentRead = scheduleLayoutRead(() => {
+      cancelAlignmentRead = undefined;
+      const container = shell;
+      const anchor = previewAnchor;
+      if (!container || !anchor || !active || !collapsed || !floatingOpen) return;
+      const bounds = container.getBoundingClientRect();
+      const containerHeight = container.clientHeight;
+      const scale = bounds.height / containerHeight || 1;
+      const anchorBounds = anchor.getBoundingClientRect();
+      const anchorCenter = (anchorBounds.top + anchorBounds.height / 2 - bounds.top) / scale;
+      const heading = container.querySelector<HTMLElement>(
+        '[data-sidebar-section][data-active] [data-sidebar-section-header] h6',
+      );
+      // Layout offsets exclude the section's entrance transform.
+      const headingCenter = heading
+        ? heading.offsetTop + heading.offsetHeight / 2
+        : anchorBounds.height / 2 / scale;
+      const alignedTop = Math.max(0, anchorCenter - headingCenter);
+      const availableBelow = Math.max(0, containerHeight - alignedTop - 12);
+      const maxHeight = Math.min(Math.max(0, containerHeight - 12), Math.max(availableBelow, 240));
+      const height = Math.min(contentHeight, maxHeight);
+      const top = Math.max(0, Math.min(alignedTop, containerHeight - height - 12));
+      cancelAlignmentWrite?.();
+      cancelAlignmentWrite = scheduleLayoutWrite(() => {
+        cancelAlignmentWrite = undefined;
+        if (!floatingOpen || anchor !== previewAnchor) return;
+        contentMaxHeight = maxHeight;
+        const instant = snapAlignment;
+        snapAlignment = false;
+        if (floatingBounds.target.top !== top || floatingBounds.target.height !== height || instant)
+          void floatingBounds.set({ top, height }, { instant });
+      });
+    });
+  }
+
+  function reveal(tabId: string, anchor: HTMLElement, fromFocus = false) {
+    if (!active || !collapsed || (fromFocus && suppressFocusReveal && anchor === previewAnchor))
+      return;
+    cancelDismiss();
+    suppressFocusReveal = false;
+    if (floatingOpen && tabId === previewTabId && anchor === previewAnchor) return;
+    const opening = !floatingOpen;
+    if (!floatingOpen) snapNextSize = tabId !== previewTabId;
+    previewTabId = tabId;
+    previewAnchor = anchor;
+    floatingOpen = true;
+    scheduleAlignment(opening);
+  }
+
+  function isSidebarTarget(target: EventTarget | null) {
+    return target instanceof Node && !!shell?.contains(target);
+  }
+
+  function isOverlayTarget(target: EventTarget | null) {
+    return (
+      target instanceof Element &&
+      !!target.closest(
+        '[role="menu"], [role="dialog"], [role="tooltip"], [data-popover-content], [data-tooltip-content], [role="listbox"]',
+      )
+    );
+  }
+
+  function dismiss() {
+    cancelDismiss();
+    cancelAlignment();
+    floatingOpen = false;
+  }
+
+  function scheduleDismiss() {
+    if (!floatingOpen || closeTimer !== undefined) return;
+    closeTimer = setTimeout(() => {
+      closeTimer = undefined;
+      if (isSidebarTarget(document.activeElement) || isOverlayTarget(document.activeElement))
+        return;
+      dismiss();
+    }, spring.fast.settleMs);
+  }
+
+  function handlePointerMove(event: PointerEvent) {
+    railPointer = rail?.contains(event.target as Node)
+      ? { x: event.clientX, y: event.clientY }
+      : undefined;
+    if (!floatingOpen) return;
+    if (isSidebarTarget(event.target) || isOverlayTarget(event.target)) cancelDismiss();
+    else scheduleDismiss();
+  }
+
+  function handleFocusIn(event: FocusEvent) {
+    if (isSidebarTarget(event.target)) {
+      cancelDismiss();
+    } else if (!isOverlayTarget(event.target)) {
+      suppressFocusReveal = false;
+      dismiss();
+    }
+  }
+
+  function handlePointerDown(event: PointerEvent) {
+    if (!isSidebarTarget(event.target) && !isOverlayTarget(event.target)) dismiss();
+  }
+
+  function rememberWidth(width: number) {
+    if (width > 0) expandedWidth = width;
+  }
+
+  $effect(() => {
+    if (!active || !collapsed) dismiss();
+  });
+
+  $effect(() => {
+    const container = shell;
+    const railElement = rail;
+    if (!active || !collapsed || !floatingOpen || !container || !railElement) return;
+    const align = () => scheduleAlignment();
+    const handleScroll = () => {
+      const tab = railPointer
+        ? document
+            .elementFromPoint(railPointer.x, railPointer.y)
+            ?.closest<HTMLElement>('[data-sidebar-section-tab]')
+        : undefined;
+      if (tab && railElement.contains(tab) && tab.dataset.sidebarSectionTab)
+        reveal(tab.dataset.sidebarSectionTab, tab);
+      else align();
+    };
+    const observer = new ResizeObserver(align);
+    observer.observe(container);
+    observer.observe(railElement);
+    const tabs = railElement.querySelector('[role="tablist"]');
+    if (tabs) observer.observe(tabs);
+    railElement.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('resize', align);
+    return () => {
+      observer.disconnect();
+      railElement.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('resize', align);
+    };
+  });
+
+  $effect(() => {
+    if (!active || !collapsed) return;
+    document.addEventListener('pointermove', handlePointerMove, { passive: true });
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('focusin', handleFocusIn);
+    return () => {
+      document.removeEventListener('pointermove', handlePointerMove);
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('focusin', handleFocusIn);
+    };
+  });
+
+  async function restoreRailFocus() {
+    suppressRailToggleTooltip = true;
+    try {
+      // Disable help before moving focus so the replacement control does not reopen it.
+      await tick();
+      if (active && collapsed && !floatingOpen)
+        (previewAnchor ?? rail?.querySelector<HTMLElement>('button'))?.focus();
+    } finally {
+      suppressRailToggleTooltip = false;
+    }
+  }
+
+  $effect(() => {
+    if (!active || !collapsed || floatingOpen) return;
+    if (isSidebarTarget(document.activeElement) && !rail?.contains(document.activeElement)) {
+      suppressFocusReveal = true;
+      void restoreRailFocus();
+    }
+  });
+
+  $effect(() => {
+    if (!active || !collapsed || !floatingOpen) return;
+    return pushEscapeLayer(() => {
+      suppressFocusReveal = true;
+      if (isSidebarTarget(document.activeElement)) {
+        (previewAnchor ?? rail?.querySelector<HTMLElement>('button'))?.focus();
+      }
+      dismiss();
+    });
+  });
+
+  onDestroy(() => {
+    cancelDismiss();
+    cancelAlignment();
+    void floatingBounds.set(floatingBounds.current, { instant: true });
+  });
 </script>
 
 <ErrorBoundary logger={workspaceLogger}>
@@ -85,7 +344,11 @@
     aria-label={m.workspace_layout_ariaLabel()}
   >
     <!-- Upper Area: Sidebar + Content (shrinks when terminal is open) -->
-    <div class="upper-area flex-1 flex min-h-0">
+    <div
+      class="upper-area flex-1 flex min-h-0"
+      bind:clientWidth={availableWidth}
+      bind:clientHeight={availableHeight}
+    >
       {#if sidebarSide === 'right'}
         <!-- Main Content Area (Panel Layout) - rendered first when sidebar is on right -->
         <div class="main-content-area flex h-full min-w-0 z-10 bg-sidebar pl-2 sm:pl-3">
@@ -93,54 +356,66 @@
         </div>
       {/if}
 
-      <!-- Sidebar -->
-      {#if !startCollapsed && active}
-        <div
-          class="relative z-20 h-full shrink-0 overflow-visible transition-[width] duration-spring-slow ease-spring-slow motion-reduce:transition-none"
-          style:width={$sidebarIsCollapsed ? '48px' : '0px'}
-          inert={!$sidebarIsCollapsed}
-          data-workspace-sidebar-rail-shell
-        >
-          {#if $sidebarIsCollapsed}
-            <div
-              class="h-full w-12"
-              in:springIn={{ tier: 'moderate', x: -12, y: 0, scale: 1 }}
-              out:crispOut={{ tier: 'fast', x: -12, y: 0, scale: 1 }}
-            >
-              <WorkspaceSidebarRail onExpand={() => appStore.dispatch(toggleSidebar())} />
-            </div>
-          {/if}
-        </div>
-      {/if}
-      <ResizablePanel
-        {active}
-        resizable={!$sidebarIsCollapsed}
-        side={sidebarSide}
-        minWidth={sidebarMinWidth}
-        maxWidth={sidebarMaxWidth}
-        defaultWidth={sidebarDefaultWidth}
-        defaultExpandedWidth={sidebarDefaultExpandedWidth}
-        storageKey={sidebarStorageKey}
-        expandedStorageKey={sidebarExpandedStorageKey}
-        percentageWeight={sidebarPercentageWeight}
-        initiallyCollapsed={startCollapsed}
-        className="workspace-sidebar-panel workspace-sidebar-{sidebarSide} flex-none h-full min-w-0 bg-sidebar {sidebarSide ===
-        'left'
-          ? 'mr-auto ml-0'
-          : 'ml-auto mr-0'}"
+      <div
+        bind:this={shell}
+        class="sidebar-shell relative z-20 flex h-full shrink-0 min-w-0"
+        class:sidebar-collapsed={collapsed}
+        class:sidebar-floating={floatingOpen && collapsed && active}
+        class:sidebar-right={sidebarSide === 'right'}
+        style:--floating-width={`${floatingWidth}px`}
+        style:--floating-max-height={`${Math.max(0, availableHeight - 12)}px`}
+        onpointerenter={cancelDismiss}
+        onpointerleave={scheduleDismiss}
+        data-workspace-sidebar-shell
       >
-        {#if !$sidebarIsCollapsed || startCollapsed}
+        {#if !startCollapsed && active}
           <div
-            class="h-full"
-            style:min-width={`${sidebarMinWidth}px`}
-            inert={$sidebarIsCollapsed}
-            in:springIn={{ tier: 'moderate', x: 12, y: 0, scale: 1 }}
-            out:crispOut={{ tier: 'fast', x: 12, y: 0, scale: 1 }}
+            bind:this={rail}
+            class="sidebar-rail-shell h-full shrink-0 overflow-hidden transition-[width] duration-spring-slow ease-spring-slow motion-reduce:transition-none"
+            style:width={collapsed ? '48px' : '0px'}
+            inert={!collapsed}
+            aria-hidden={!collapsed}
+            data-workspace-sidebar-rail-shell
+          >
+            <WorkspaceSidebarRail
+              {workspaceId}
+              side={sidebarSide}
+              onExpand={() => appStore.dispatch(toggleSidebar())}
+              tooltipDisabled={suppressRailToggleTooltip}
+            />
+          </div>
+        {/if}
+        <ResizablePanel
+          {active}
+          resizable={!$sidebarIsCollapsed}
+          side={sidebarSide}
+          minWidth={sidebarMinimumWidth}
+          maxWidth={sidebarWidthLimit}
+          defaultWidth={sidebarDefaultWidth}
+          defaultExpandedWidth={sidebarDefaultExpandedWidth}
+          storageKey={sidebarStorageKey}
+          expandedStorageKey={sidebarExpandedStorageKey}
+          percentageWeight={sidebarPercentageWeight}
+          initiallyCollapsed={startCollapsed}
+          onWidthChange={rememberWidth}
+          className="workspace-sidebar-panel workspace-sidebar-{sidebarSide} flex-none h-full min-w-0 bg-sidebar"
+        >
+          <div
+            class="sidebar-content h-full min-h-0 overflow-hidden bg-sidebar"
+            style:min-width={collapsed ? undefined : `${sidebarMinimumWidth}px`}
+            style:height={collapsed ? `${floatingBounds.current.height}px` : undefined}
+            style:max-height={collapsed
+              ? `${contentMaxHeight ?? Math.max(0, availableHeight - 12)}px`
+              : undefined}
+            style:translate={collapsed ? `0 ${floatingBounds.current.top}px` : undefined}
+            inert={!active || ($sidebarIsCollapsed && (!collapsed || !floatingOpen))}
+            aria-hidden={!active || ($sidebarIsCollapsed && (!collapsed || !floatingOpen))}
+            data-workspace-sidebar-flyout={collapsed ? floatingOpen : undefined}
           >
             {@render sidebar()}
           </div>
-        {/if}
-      </ResizablePanel>
+        </ResizablePanel>
+      </div>
 
       {#if sidebarSide === 'left'}
         <!-- Main Content Area (Panel Layout) - rendered after when sidebar is on left -->
@@ -173,18 +448,61 @@
     flex: 1;
   }
 
+  .sidebar-collapsed :global(.workspace-sidebar-panel) {
+    position: static;
+    overflow: visible !important;
+  }
+
+  .sidebar-collapsed :global(.workspace-sidebar-panel > div) {
+    opacity: 1 !important;
+  }
+
+  .sidebar-collapsed .sidebar-content {
+    position: absolute;
+    top: 0;
+    max-height: var(--floating-max-height);
+    left: 48px;
+    width: var(--floating-width);
+    pointer-events: none;
+    opacity: 0;
+    transform: translateX(-0.5rem);
+    border-radius: var(--radius-large);
+    box-shadow: var(--surface-shadow-4);
+    transition:
+      opacity var(--motion-standard) var(--ease-standard),
+      transform var(--motion-standard) var(--ease-standard);
+  }
+
+  .sidebar-right.sidebar-collapsed .sidebar-content {
+    left: auto;
+    right: 48px;
+    transform: translateX(0.5rem);
+  }
+
+  .sidebar-floating.sidebar-collapsed .sidebar-content {
+    pointer-events: auto;
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  @container style(--motion-reduced: 1) {
+    .sidebar-content {
+      transition: none;
+    }
+  }
+
   @media (max-width: 639px) {
-    .upper-area :global(.workspace-sidebar-panel) {
+    .sidebar-shell:not(.sidebar-collapsed) {
       position: absolute;
       inset-block: 0;
       z-index: 20;
     }
 
-    .upper-area :global(.workspace-sidebar-left) {
+    .sidebar-shell:not(.sidebar-right) {
       left: 0;
     }
 
-    .upper-area :global(.workspace-sidebar-right) {
+    .sidebar-shell.sidebar-right {
       right: 0;
     }
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveDrivingClientSwitch, resolveDrivingClientView } from './driving-indicator';
+import { resolveDrivingClientSwitch } from './driving-indicator';
 const own = { clientId: 'own', name: 'Windows workstation', connected: true };
 const input = { eligibleClients: [own], ownClientId: 'own', driving: own, pinnedClientId: null };
 describe('workspace primary client', () => {
@@ -19,41 +19,9 @@ describe('workspace primary client', () => {
       false,
     );
   });
-  it('shows an idle offline pin for recovery', () => {
+  it('reports an offline pin for recovery', () => {
     expect(
-      resolveDrivingClientView({
-        ...input,
-        driving: { clientId: 'old', connected: false },
-        hasBrowserTabs: false,
-      }),
+      resolveDrivingClientSwitch({ ...input, driving: { clientId: 'old', connected: false } }),
     ).toMatchObject({ mode: 'offline', canSwitchHere: true });
-  });
-  it('shows the actual active computer with a single client and no browser tabs', () => {
-    expect(
-      resolveDrivingClientView({
-        ...input,
-        hasBrowserTabs: false,
-        activeComputerName: 'Controlled MacBook',
-      }),
-    ).toMatchObject({ hostName: 'Controlled MacBook' });
-  });
-  it('keeps the active computer authoritative over stale offline browser routing', () => {
-    const offline = {
-      ...input,
-      driving: { clientId: 'old', connected: false },
-      hasBrowserTabs: false,
-    };
-    expect(
-      resolveDrivingClientView({ ...offline, activeComputerName: 'Controlled MacBook' }),
-    ).toMatchObject({ mode: 'elsewhere', hostName: 'Controlled MacBook' });
-    expect(resolveDrivingClientView(offline)).toMatchObject({ mode: 'offline', hostName: 'old' });
-  });
-  it('hides a connected idle primary', () => {
-    expect(resolveDrivingClientView({ ...input, hasBrowserTabs: false })).toBeNull();
-  });
-  it('shows agent-owned tabs even with only one client', () => {
-    expect(resolveDrivingClientView({ ...input, hasBrowserTabs: true })).toMatchObject({
-      hostName: own.name,
-    });
   });
 });

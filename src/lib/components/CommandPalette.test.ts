@@ -1,6 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
+import { m } from '$shared/paraglide/messages.js';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tick } from 'svelte';
@@ -692,32 +693,23 @@ describe('CommandPalette new actions', () => {
   });
 
   it.each([false, true])(
-    'changes experimental multiplayer from enabled=%s through command search without a workspace',
+    'offers no command to turn multiplayer on or off (saved state=%s): it is always on',
     async (enabled) => {
       multiplayerState.enabled = enabled;
-      const onClose = vi.fn();
-      render(CommandPalette, { props: { isOpen: true, onClose } });
+      render(CommandPalette, { props: { isOpen: true, onClose: vi.fn() } });
       const input = screen.getByRole('textbox');
 
+      await fireEvent.input(input, { target: { value: 'experimental' } });
+      await screen.findByRole('button', { name: /Enable experimental remote agents/i });
+      expect(screen.queryByRole('button', { name: /experimental multiplayer/i })).toBeNull();
+
       await fireEvent.input(input, { target: { value: 'multiplayer' } });
-      const command = await screen.findByRole('button', {
-        name: enabled ? /Disable experimental multiplayer/i : /Enable experimental multiplayer/i,
-      });
-      expect(
-        screen.queryByRole('button', {
-          name: enabled ? /Enable experimental multiplayer/i : /Disable experimental multiplayer/i,
-        }),
-      ).toBeNull();
-
-      reduxDispatchMock.mockClear();
-      if (enabled) await fireEvent.click(command);
-      else await fireEvent.keyDown(input, { key: 'Enter' });
-
-      expect(reduxDispatchMock).toHaveBeenCalledWith({
-        type: 'userPreferences/setLabsMultiplayerEnabled',
-        payload: [!enabled],
-      });
-      expect(onClose).toHaveBeenCalledOnce();
+      await waitFor(() =>
+        expect(
+          screen.queryByRole('button', { name: /Enable experimental remote agents/i }),
+        ).toBeNull(),
+      );
+      expect(screen.queryByRole('button', { name: /experimental multiplayer/i })).toBeNull();
     },
   );
 
@@ -988,7 +980,7 @@ describe('CommandPalette workspace activity recency', () => {
     expect(old.textContent).not.toContain('just now');
   });
 
-  it('lists retired workspaces with a Retired badge and opts in to loading them', async () => {
+  it('lists purged (retired) workspaces with the Archived badge and opts in to loading them', async () => {
     workspaceItemsState.value = [
       {
         id: 'live',
@@ -1012,8 +1004,9 @@ describe('CommandPalette workspace activity recency', () => {
 
     const retired = await screen.findByRole('button', { name: /Old Importer Space/i });
     const live = screen.getByRole('button', { name: /Live Space/i });
-    expect(retired.textContent).toContain('Retired');
-    expect(live.textContent).not.toContain('Retired');
+    expect(retired.textContent).toContain(m.lib_commandPalette_archivedWorkspace_pill());
+    expect(retired.textContent).not.toContain('Retired');
+    expect(live.textContent).not.toContain(m.lib_commandPalette_archivedWorkspace_pill());
     expect(retiredLoads()).toBe(1);
   });
 

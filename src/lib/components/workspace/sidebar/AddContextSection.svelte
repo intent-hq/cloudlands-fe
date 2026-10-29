@@ -139,16 +139,16 @@
     onclick={() => onAddNote?.()}
   />
 {:else}
-  <div class="w-full px-1 -mt-1">
+  <div class="w-full">
     <!-- Toggle Button -->
     <Button
       bind:ref={triggerRef}
-      variant="ghost-light"
+      variant="ghost"
       size="sm"
-      class="w-full justify-start px-0! gap-1.5 font-normal text-sm"
+      class="h-8 w-full justify-start px-2 gap-2 font-normal type-caption text-muted-foreground hover:text-foreground"
       onclick={() => (isExpanded = !isExpanded)}
     >
-      <Fa icon={faPlus} size="xs" class="opacity-60 ml-1.75 mr-1.25" />
+      <Fa icon={faPlus} size="xs" class="text-muted-foreground" />
       {m.workspace_addContext_addContext_label()}
     </Button>
   </div>
@@ -159,7 +159,7 @@
   <Portal zIndex={10000}>
     <div
       bind:this={contentRef}
-      class="fixed z-[10000] bg-popover border border-border shadow-lg overflow-hidden"
+      class="fixed z-[10000] rounded-md bg-popover border border-border shadow-lg overflow-hidden p-1"
       style={portalStyle}
       transition:scale={{ distance: 0.05, tier: 'moderate' }}
     >
@@ -174,7 +174,7 @@
             <ProviderIcon provider="internal" size={12} class="opacity-70" />
           </div>
           <div class="flex-1 min-w-0">
-            <div class="text-sm font-medium">{m.workspace_addContext_note_label()}</div>
+            <div class="text-sm font-normal">{m.workspace_addContext_note_label()}</div>
             <div class="text-xs text-subtle">{m.workspace_addContext_note_description()}</div>
           </div>
         </Button>
@@ -191,7 +191,7 @@
             <Fa icon={faPuzzlePiece} size="xs" class="opacity-70" />
           </div>
           <div class="flex-1 min-w-0">
-            <div class="text-sm font-medium">Integrations</div>
+            <div class="text-sm font-normal">Integrations</div>
             <div class="text-xs text-subtle">Linear, GitHub, Sentry</div>
           </div>
         </Button> -->
@@ -206,7 +206,7 @@
             <Fa icon={faGlobe} size="xs" class="opacity-70" />
           </div>
           <div class="flex-1 min-w-0">
-            <div class="text-sm font-medium">{m.workspace_multiSelectSidebar_browser_label()}</div>
+            <div class="text-sm font-normal">{m.workspace_multiSelectSidebar_browser_label()}</div>
             <div class="text-xs text-subtle">{m.workspace_addContext_browser_description()}</div>
           </div>
         </Button>

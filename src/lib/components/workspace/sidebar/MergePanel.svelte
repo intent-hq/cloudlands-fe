@@ -166,11 +166,11 @@
 
 <!-- Via PR / Via git toggle - only show when there's an open PR -->
 {#if hasOpenPR && hasRemote}
-  <div class="flex items-center rounded-md border border-border overflow-hidden w-fit">
+  <div class="flex w-fit max-w-full items-center gap-1 rounded-md bg-muted p-1">
     <Button
       variant="ghost"
-      class="px-2.5 py-1 text-xs font-medium transition-colors {mergeOptions.viaPR
-        ? 'bg-primary text-primary-foreground'
+      class="h-8 px-2 type-caption font-normal transition-colors {mergeOptions.viaPR
+        ? 'bg-background text-foreground shadow-xs'
         : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted'}"
       onclick={() => appStore.dispatch(setMergeOptions(workspaceId, { viaPR: true }))}
     >
@@ -178,8 +178,8 @@
     </Button>
     <Button
       variant="ghost"
-      class="px-2.5 py-1 text-xs font-medium transition-colors border-l border-border {!mergeOptions.viaPR
-        ? 'bg-primary text-primary-foreground'
+      class="h-8 px-2 type-caption font-normal transition-colors {!mergeOptions.viaPR
+        ? 'bg-background text-foreground shadow-xs'
         : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted'}"
       onclick={() => appStore.dispatch(setMergeOptions(workspaceId, { viaPR: false }))}
     >
@@ -192,10 +192,10 @@
   <!-- GitHub merge: merge the PR via the GitHub API -->
   {@const openPR = pullRequests.find((pr) => pr.status === 'open' || pr.status === 'draft')}
   {#if openPR}
-    <p class="text-xs text-subtle">
+    <p class="type-caption text-subtle">
       {m.workspace_mergePanel_prMergedInto_before({ number: openPR.number })}
       <!-- i18n-ignore (intentional default branch fallback) -->
-      <span class="font-medium text-foreground">{targetBranch || trunkBranch || 'main'}</span>.
+      <span class="font-normal text-foreground">{targetBranch || trunkBranch || 'main'}</span>.
     </p>
 
     <!-- Squash toggle -->
@@ -210,7 +210,7 @@
         align="start"
         contentClass="w-[14rem]"
       >
-        <div class="flex items-center gap-1.5">
+        <div class="flex min-h-8 items-center gap-2">
           <Switch
             id="squash-merge-github-toggle"
             checked={mergeOptions.squash}
@@ -221,7 +221,7 @@
           />
           <label
             for="squash-merge-github-toggle"
-            class="text-xs text-subtle cursor-pointer select-none"
+            class="type-caption text-subtle cursor-pointer select-none"
           >
             {m.workspace_mergePanel_squashCommits_label()}
           </label>
@@ -230,7 +230,7 @@
     {/if}
 
     {#if hasStaged}
-      <p class="text-xs text-warning-ink">
+      <p class="type-caption text-warning-ink">
         {m.workspace_mergePanel_stagedNotIncluded_label()}
       </p>
     {/if}
@@ -271,11 +271,11 @@
     : ''}
   {@const mergeParts = [mergeStaged, mergeCommits].filter(Boolean)}
   {#if mergeParts.length > 0}
-    <p class="text-xs text-subtle">
+    <p class="type-caption text-subtle">
       {m.workspace_mergePanel_willBeMergedInto_before({
         parts: mergeParts.join(m.workspace_prSection_and_separator()),
       })}
-      <span class="font-medium text-foreground"
+      <span class="font-normal text-foreground"
         >{targetBranch || trunkBranch || m.workspace_mergePanel_trunkFallback_label()}</span
       >.
     </p>
@@ -284,7 +284,7 @@
   <!-- Commit message for staged changes -->
   {#if hasStaged}
     <div>
-      <span class="text-xs text-subtle mb-1 block"
+      <span class="type-caption text-subtle mb-1 block"
         >{m.workspace_mergePanel_commitMessage_label()}</span
       >
       <div class="relative">
@@ -305,7 +305,7 @@
           minHeight={60}
           maxHeight={150}
           readonly={isGeneratingMerge}
-          class="text-sm {isGeneratingMerge ? 'border-primary-ink/40 bg-muted/20' : ''}"
+          class="text-sm {isGeneratingMerge ? 'bg-muted' : ''}"
         />
       </div>
     </div>
@@ -313,7 +313,9 @@
 
   <!-- Target Branch -->
   <div>
-    <span class="text-xs text-subtle mb-1 block">{m.workspace_prSection_targetBranch_label()}</span>
+    <span class="type-caption text-subtle mb-1 block"
+      >{m.workspace_prSection_targetBranch_label()}</span
+    >
     <BranchSelector
       variant="default"
       value={targetBranch}
@@ -338,7 +340,7 @@
         align="start"
         contentClass="w-[14rem]"
       >
-        <div class="flex items-center gap-1.5">
+        <div class="flex min-h-8 items-center gap-2">
           <Switch
             id="squash-merge-toggle"
             checked={mergeOptions.squash}
@@ -347,7 +349,10 @@
             disabled={isMergingToTrunk || (isGeneratingMerge && $mergeWhenReady$)}
             size="sm"
           />
-          <label for="squash-merge-toggle" class="text-xs text-subtle cursor-pointer select-none">
+          <label
+            for="squash-merge-toggle"
+            class="type-caption text-subtle cursor-pointer select-none"
+          >
             {m.workspace_mergePanel_squashCommits_label()}
           </label>
         </div>
@@ -362,7 +367,7 @@
         align="start"
         contentClass="w-[14rem]"
       >
-        <div class="flex items-center gap-1.5">
+        <div class="flex min-h-8 items-center gap-2">
           <Switch
             id="push-after-merge-toggle"
             checked={mergeOptions.pushAfter}
@@ -373,7 +378,7 @@
           />
           <label
             for="push-after-merge-toggle"
-            class="text-xs text-subtle cursor-pointer select-none"
+            class="type-caption text-subtle cursor-pointer select-none"
           >
             {m.workspace_mergePanel_pushToRemote_label()}
           </label>

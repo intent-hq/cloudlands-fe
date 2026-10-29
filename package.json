@@ -1,6 +1,6 @@
 {
   "name": "intent",
-  "version": "2.241.0",
+  "version": "2.251.2",
   "description": "Intent",
   "type": "module",
   "main": "dist/main/index.js",
@@ -104,6 +104,7 @@
     "test:playwright:manual:baseline": "playwright test --config=playwright.manual.config.ts test/current-main-baseline.spec.ts",
     "test:playwright:manual:browser-lifetime": "playwright test --config=playwright.manual.config.ts test/electron-browser-lifetime.spec.ts",
     "test:ct": "node scripts/run-ct-tests.mjs",
+    "test:ct:full": "node scripts/run-ct-full.mjs",
     "ct:failures": "node scripts/ct-run-failures.mjs",
     "test:playwright:ui": "playwright test --ui",
     "test:playwright:headed": "playwright test --headed",

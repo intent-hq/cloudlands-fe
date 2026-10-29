@@ -13,7 +13,7 @@ type ClientCapabilities = Record<string, unknown> & { browserExec?: boolean };
 /**
  * One connected logical client (`client.list` row). `hostname` /
  * `prettyHostname` / `deviceKind` are the hello host triple, present only
- * when the client sent them; the sidebar indicator displays
+ * when the client sent them; the primary-client menu displays
  * `prettyHostname ?? hostname ?? name`.
  */
 export interface LiveClient {
@@ -49,15 +49,49 @@ interface ResolvedBrowserClient {
 }
 
 /**
+ * The client an unpinned workspace is routed to when the desktop-session or
+ * claimed-tab rule chose it (§5.1, additive: detect by presence). `via` may
+ * carry a rule this app does not know yet.
+ */
+export interface BrowserClientRouteTarget {
+  clientId: string;
+  via: 'desktop' | 'tabs' | (string & {});
+}
+
+/**
  * `workspace.getBrowserClient` / `workspace.setBrowserClient` result.
  * `clientId` is the persisted pin, present exactly when `source:
  * "workspace"` and absent when unpinned (`source: "default"`); `resolved`
  * is `null` when the pin is offline or, unpinned, no eligible client is
- * connected.
+ * connected. `target` names the routed client of an unpinned workspace, so
+ * `target` with `resolved: null` reads "routed to a client that is offline".
  */
 export type WorkspaceBrowserClient =
-  | { source: 'workspace'; clientId: string; resolved: ResolvedBrowserClient | null }
-  | { source: 'default'; clientId?: undefined; resolved: ResolvedBrowserClient | null };
+  | {
+      source: 'workspace';
+      clientId: string;
+      resolved: ResolvedBrowserClient | null;
+      target?: BrowserClientRouteTarget;
+    }
+  | {
+      source: 'default';
+      clientId?: undefined;
+      resolved: ResolvedBrowserClient | null;
+      target?: BrowserClientRouteTarget;
+    };
+
+/** The routed client of `browserClient`, or undefined when absent or malformed. */
+export function browserClientRouteTarget(
+  browserClient: WorkspaceBrowserClient | null | undefined,
+): BrowserClientRouteTarget | undefined {
+  const target: unknown = browserClient?.target;
+  return isRecord(target) &&
+    typeof target.clientId === 'string' &&
+    target.clientId.length > 0 &&
+    typeof target.via === 'string'
+    ? { clientId: target.clientId, via: target.via }
+    : undefined;
+}
 
 type BrowserTabVisibility = 'visible' | 'hidden';
 

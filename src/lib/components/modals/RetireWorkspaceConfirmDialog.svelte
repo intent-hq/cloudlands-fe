@@ -26,9 +26,9 @@
 <DestructiveConfirm
   bind:open
   static={staticPosition}
-  title={m.workspace_retire_confirm_title({ title: workspaceTitle })}
-  description={m.workspace_retire_confirm_description()}
-  confirmLabel={m.workspace_retire_confirm_action()}
+  title={m.workspace_purge_confirm_title({ title: workspaceTitle })}
+  description={m.workspace_purge_confirm_description()}
+  confirmLabel={m.workspace_purge_confirm_action()}
   cancelLabel={m.modals_bulkActionConfirm_cancel_label()}
   focusSubmit={false}
   focusCancel

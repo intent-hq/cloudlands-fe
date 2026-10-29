@@ -9,6 +9,8 @@ import {
 import { DesktopNativeAdapter } from './desktop-native';
 import { desktopFailure, parseDesktopRequest } from './desktop-validation';
 import type { DesktopAction } from '../../../shared/types/desktop';
+import type { NativeWindowState } from './desktop-windows';
+import type { DesktopForegroundTracker } from './desktop-foreground';
 
 const binding = {
   workspaceId: 'ws',
@@ -56,6 +58,9 @@ function setup() {
     validateExclusion: vi.fn(async () => {}),
     layout: vi.fn(async () => [{ ...display }]),
     capture: vi.fn(async () => [{ ...display, data: 'png' }]),
+    windows: vi.fn(async (): Promise<NativeWindowState> => ({ windows: [] })),
+    focusWindow: vi.fn(async () => {}),
+    frontmostPid: vi.fn(async () => undefined),
     input: vi.fn(async (_a, _d, check) => {
       check(true);
     }),
@@ -64,6 +69,8 @@ function setup() {
     activate: vi.fn(async () => {}),
     deactivate: vi.fn(async () => {}),
     pulse: vi.fn(),
+    agentInput: vi.fn(),
+    restoreFocus: vi.fn(async () => {}),
     excludedWindows: () => ['123'],
   };
   const reports: DesktopStopReports = {
@@ -554,6 +561,7 @@ describe('desktop executor authority and command tickets', () => {
       expect.any(Function),
       expect.any(AbortSignal),
       [display],
+      undefined,
     );
     vi.mocked(t.native.layout).mockResolvedValue([{ ...display, scaleFactor: 1 }]);
     await expect(t.prepare(action)).rejects.toMatchObject(
@@ -938,5 +946,481 @@ describe('native adapter observable step behavior', () => {
       ),
     ).rejects.toThrow();
     expect(request.mock.calls.map((c) => c[0])).toEqual(['move', 'button', 'move', 'releaseInput']);
+  });
+});
+
+describe('window-targeted actions', () => {
+  // Frames in the selected display's image pixels, front-to-back.
+  const w = (handle: string, pid: number, x: number, y: number, width: number, height: number) => ({
+    handle,
+    pid,
+    appName: `app-${pid}`,
+    x,
+    y,
+    width,
+    height,
+  });
+  const safari = w('1', 411, 200, 100, 1600, 1000);
+  const slack = w('2', 522, -120, 50, 1400, 900);
+  const safari2 = w('3', 411, -120, 50, 1400, 900);
+  const safariFront: NativeWindowState = {
+    frontmost: { appName: 'Safari', pid: 411, focusedHandle: '1' },
+    windows: [safari, slack, safari2],
+  };
+  const slackFront: NativeWindowState = {
+    frontmost: { appName: 'Slack', pid: 522, focusedHandle: '2' },
+    windows: [slack, safari, safari2],
+  };
+  async function targeted() {
+    const t = setup();
+    const ops: string[] = [];
+    const request = vi.fn(async (op: string) => {
+      ops.push(op);
+      return {};
+    });
+    const adapter = new DesktopNativeAdapter(request);
+    t.native.input = adapter.input.bind(adapter);
+    vi.mocked(t.native.windows).mockResolvedValue(safariFront);
+    await t.activate();
+    const shot = (await t.handle(await t.prepare({ kind: 'screenshot' }))) as {
+      result: { windows: { windowId: string; pid: number }[]; frontmost: { windowId: string } };
+    };
+    const [safariId, slackId, safari2Id] = shot.result.windows.map((x) => x.windowId);
+    ops.length = 0;
+    vi.mocked(t.native.windows).mockClear();
+    const injected = () => ops.filter((op) => !['validateKey', 'releaseInput'].includes(op));
+    return { ...t, ops, injected, safariId, slackId, safari2Id, shot: shot.result };
+  }
+  const mismatch = (reason: string, execution: string) => ({
+    data: {
+      code: 'desktop-target-mismatch',
+      reason,
+      execution,
+      detail:
+        'The target window is not ready for input. Call ws.desktop.focusWindow({ windowId }) if needed, take a new screenshot to confirm the target, then retry.',
+    },
+    code: -32602,
+  });
+
+  it('samples overlay-excluded window metadata on the captured display after capture', async () => {
+    const t = await targeted();
+    expect(t.shot.frontmost).toEqual({ appName: 'Safari', pid: 411, windowId: t.safariId });
+    expect(t.shot.windows.map((x) => x.pid)).toEqual([411, 522, 411]);
+    expect(new Set([t.safariId, t.slackId, t.safari2Id]).size).toBe(3);
+    await t.executor.invalidate('agent_end');
+  });
+  it('samples windows after the capture and before publishing the asset', async () => {
+    const t = setup();
+    await t.activate();
+    await t.handle(await t.prepare({ kind: 'screenshot' }));
+    const order = (f: unknown) => vi.mocked(f as () => void).mock.invocationCallOrder[0];
+    expect(order(t.native.windows)).toBeGreaterThan(order(t.native.capture));
+    expect(order(t.native.windows)).toBeLessThan(order(t.connection.saveAsset));
+    expect(t.native.windows).toHaveBeenCalledWith(['123'], display, [display]);
+    await t.executor.invalidate('agent_end');
+  });
+  it('fails a screenshot when window enumeration fails instead of returning a partial list', async () => {
+    const t = setup();
+    await t.activate();
+    vi.mocked(t.native.windows).mockRejectedValue(
+      desktopFailure('desktop-execution-failed', 'Window enumeration failed', 'partial'),
+    );
+    await expect(t.handle(await t.prepare({ kind: 'screenshot' }))).rejects.toMatchObject(
+      error('desktop-execution-failed', 'partial'),
+    );
+    expect(t.connection.saveAsset).not.toHaveBeenCalled();
+    expect(t.overlay.pulse).not.toHaveBeenCalled();
+  });
+  it('types into the frontmost target and refuses with nothing typed when another app is in front', async () => {
+    const t = await targeted();
+    await expect(
+      t.handle(await t.prepare({ kind: 'type', text: 'ok', windowId: t.safariId })),
+    ).resolves.toMatchObject({ result: { ok: true } });
+    expect(t.injected()).toEqual(['text', 'text']);
+    t.ops.length = 0;
+    vi.mocked(t.native.windows).mockResolvedValue(slackFront);
+    await expect(
+      t.handle(await t.prepare({ kind: 'type', text: 'Safari', windowId: t.safariId })),
+    ).rejects.toMatchObject(mismatch('not_frontmost', 'not_started'));
+    await expect(
+      t.handle(await t.prepare({ kind: 'keypress', key: 'Enter', windowId: t.safariId })),
+    ).rejects.toMatchObject(mismatch('not_frontmost', 'not_started'));
+    expect(t.injected()).toEqual([]);
+    expect(t.native.focusWindow).not.toHaveBeenCalled();
+    // A mismatch is recoverable: the session stays active.
+    expect(t.overlay.deactivate).not.toHaveBeenCalled();
+    await expect(
+      t.handle(await t.prepare({ kind: 'type', text: 'x', windowId: t.slackId })),
+    ).resolves.toMatchObject({ result: { ok: true } });
+    await t.executor.invalidate('agent_end');
+  });
+  it('refuses unknown and other-session window ids as unavailable', async () => {
+    const t = await targeted();
+    const other = await targeted();
+    for (const windowId of ['win-closed', other.safariId])
+      await expect(
+        t.handle(
+          await t.prepare({ kind: 'click', x: 300, y: 200, layoutId: await layoutOf(t), windowId }),
+        ),
+      ).rejects.toMatchObject(mismatch('window_unavailable', 'not_started'));
+    expect(t.injected()).toEqual([]);
+    await t.executor.invalidate('agent_end');
+  });
+  it.each([
+    ['outside_window', { x: 100, y: 50 }, 'safari'],
+    ['outside_window', { x: 1800, y: 200 }, 'safari'],
+    ['obscured', { x: 300, y: 200 }, 'safari2'],
+    ['not_frontmost', { x: 50, y: 100 }, 'slack'],
+  ] as const)(
+    'refuses a %s pointer target with no pointer movement',
+    async (reason, point, which) => {
+      const t = await targeted();
+      const windowId = { safari: t.safariId, slack: t.slackId, safari2: t.safari2Id }[which];
+      const layoutId = await layoutOf(t);
+      for (const action of [
+        { kind: 'click', ...point, layoutId, windowId },
+        { kind: 'move', ...point, layoutId, windowId },
+        { kind: 'scroll', ...point, deltaX: 0, deltaY: 10, layoutId, windowId },
+        { kind: 'drag', from: point, to: { x: 400, y: 400 }, layoutId, windowId },
+      ] as DesktopAction[])
+        await expect(t.handle(await t.prepare(action))).rejects.toMatchObject(
+          mismatch(reason, 'not_started'),
+        );
+      expect(t.injected()).toEqual([]);
+      expect(t.native.windows).toHaveBeenCalledWith(['123'], display, [display]);
+      await t.executor.invalidate('agent_end');
+    },
+  );
+  it('lets a drag start in the target and end over another app', async () => {
+    const t = await targeted();
+    await t.handle(
+      await t.prepare({
+        kind: 'drag',
+        from: { x: 300, y: 300 },
+        to: { x: 10, y: 200 },
+        layoutId: await layoutOf(t),
+        windowId: t.safariId,
+      }),
+    );
+    // Checked before the first move and before the press, not per continuation.
+    expect(t.native.windows).toHaveBeenCalledTimes(2);
+    expect(t.injected().filter((op) => op === 'button')).toHaveLength(2);
+    await t.executor.invalidate('agent_end');
+  });
+  it('stops typing and releases input when focus is stolen mid-type', async () => {
+    const t = await targeted();
+    vi.mocked(t.native.windows)
+      .mockResolvedValueOnce(safariFront)
+      .mockResolvedValueOnce(slackFront);
+    await expect(
+      t.handle(await t.prepare({ kind: 'type', text: 'hello world', windowId: t.safariId })),
+    ).rejects.toMatchObject(mismatch('not_frontmost', 'partial'));
+    expect(t.injected()).toEqual(['text']);
+    expect(t.ops.at(-1)).toBe('releaseInput');
+    expect(t.overlay.deactivate).not.toHaveBeenCalled();
+    await t.executor.invalidate('agent_end');
+  });
+  it('rechecks before the keypress key-down after holding modifiers', async () => {
+    const t = await targeted();
+    vi.mocked(t.native.windows)
+      .mockResolvedValueOnce(safariFront)
+      .mockResolvedValueOnce(slackFront);
+    await expect(
+      t.handle(
+        await t.prepare({ kind: 'keypress', key: 'a', modifiers: ['Meta'], windowId: t.safariId }),
+      ),
+    ).rejects.toMatchObject(mismatch('not_frontmost', 'partial'));
+    expect(t.injected()).toEqual(['key']);
+    expect(t.ops.at(-1)).toBe('releaseInput');
+    await t.executor.invalidate('agent_end');
+  });
+  it('never enumerates windows for untargeted input', async () => {
+    const t = await targeted();
+    await t.handle(await t.prepare({ kind: 'type', text: 'hi' }));
+    await t.handle(await t.prepare({ kind: 'click', x: 10, y: 10, layoutId: await layoutOf(t) }));
+    expect(t.native.windows).not.toHaveBeenCalled();
+    await t.executor.invalidate('agent_end');
+  });
+
+  describe('focusWindow', () => {
+    it('activates and verifies the window without synthetic input', async () => {
+      const t = await targeted();
+      vi.mocked(t.native.windows)
+        .mockResolvedValueOnce(safariFront)
+        .mockResolvedValueOnce(slackFront);
+      await expect(
+        t.handle(await t.prepare({ kind: 'focusWindow', windowId: t.slackId })),
+      ).resolves.toMatchObject({ result: { ok: true } });
+      expect(t.native.focusWindow).toHaveBeenCalledWith({ handle: '2', pid: 522 }, ['123']);
+      expect(t.ops).toEqual([]);
+      await t.executor.invalidate('agent_end');
+    });
+    it('marks the activation as agent-driven so the switch is not taken for the user', async () => {
+      const t = await targeted();
+      vi.mocked(t.native.windows)
+        .mockResolvedValueOnce(safariFront)
+        .mockResolvedValueOnce(slackFront);
+      vi.mocked(t.native.focusWindow).mockImplementationOnce(async () => {
+        expect(t.overlay.agentInput).toHaveBeenLastCalledWith('session', true);
+      });
+      await t.handle(await t.prepare({ kind: 'focusWindow', windowId: t.slackId }));
+      expect(vi.mocked(t.overlay.agentInput).mock.calls).toEqual([
+        ['session', true],
+        ['session', false],
+      ]);
+      await t.executor.invalidate('agent_end');
+    });
+    it('refuses an unknown window before acting', async () => {
+      const t = await targeted();
+      await expect(
+        t.handle(await t.prepare({ kind: 'focusWindow', windowId: 'win-closed' })),
+      ).rejects.toMatchObject(mismatch('window_unavailable', 'not_started'));
+      vi.mocked(t.native.windows).mockResolvedValue({ ...safariFront, windows: [safari] });
+      await expect(
+        t.handle(await t.prepare({ kind: 'focusWindow', windowId: t.slackId })),
+      ).rejects.toMatchObject(mismatch('window_unavailable', 'not_started'));
+      expect(t.native.focusWindow).not.toHaveBeenCalled();
+      await t.executor.invalidate('agent_end');
+    });
+    it('reports an OS-refused activation as partial not_frontmost and keeps the session', async () => {
+      const t = await targeted();
+      await expect(
+        t.handle(await t.prepare({ kind: 'focusWindow', windowId: t.slackId })),
+      ).rejects.toMatchObject(mismatch('not_frontmost', 'partial'));
+      expect(t.overlay.deactivate).not.toHaveBeenCalled();
+      expect(t.ops).toEqual([]);
+      await t.executor.invalidate('agent_end');
+    });
+    it('reports not_focused when another window of the app keeps focus', async () => {
+      const t = await targeted();
+      await expect(
+        t.handle(await t.prepare({ kind: 'focusWindow', windowId: t.safari2Id })),
+      ).rejects.toMatchObject(mismatch('not_focused', 'partial'));
+      await t.executor.invalidate('agent_end');
+    });
+  });
+
+  async function layoutOf(t: {
+    handle: (p: unknown) => Promise<unknown>;
+    prepare: (a: DesktopAction) => Promise<unknown>;
+  }) {
+    const listed = (await t.handle(await t.prepare({ kind: 'listDisplay' }))) as {
+      result: { layoutId: string };
+    };
+    return listed.result.layoutId;
+  }
+});
+
+describe('window target validation', () => {
+  it.each([
+    { kind: 'type', text: 'x', windowId: '' },
+    { kind: 'click', x: 1, y: 1, layoutId: 'layout', windowId: null },
+    { kind: 'keypress', key: 'a', windowId: 7 },
+    { kind: 'screenshot', windowId: 'w' },
+    { kind: 'focusWindow' },
+    { kind: 'focusWindow', windowId: '' },
+    ...['x', 'y', 'layoutId', 'displayId', 'text', 'key', 'button', 'agentId'].map((extra) => ({
+      kind: 'focusWindow',
+      windowId: 'w',
+      [extra]: extra === 'x' || extra === 'y' ? 1 : 'v',
+    })),
+  ])('refuses malformed window targets (case %#)', (action) => {
+    expect(() =>
+      parseDesktopRequest({
+        operation: 'prepareCommand',
+        ...session,
+        commandId: 'c',
+        sequence: 1,
+        action,
+      }),
+    ).toThrow();
+  });
+  it('accepts windowId on every input action and focusWindow', () => {
+    for (const action of [
+      { kind: 'move', x: 1, y: 1, layoutId: 'l', windowId: 'w' },
+      { kind: 'click', x: 1, y: 1, layoutId: 'l', windowId: 'w' },
+      { kind: 'scroll', x: 1, y: 1, deltaX: 0, deltaY: 1, layoutId: 'l', windowId: 'w' },
+      { kind: 'drag', from: { x: 1, y: 1 }, to: { x: 2, y: 2 }, layoutId: 'l', windowId: 'w' },
+      { kind: 'type', text: 'x', windowId: 'w' },
+      { kind: 'keypress', key: 'Enter', windowId: 'w' },
+      { kind: 'focusWindow', windowId: 'w' },
+    ])
+      expect(
+        parseDesktopRequest({
+          operation: 'prepareCommand',
+          ...session,
+          commandId: 'c',
+          sequence: 1,
+          action,
+        }),
+      ).toMatchObject({ action });
+  });
+});
+
+describe('desktop agent input bracketing', () => {
+  it('marks native input as agent-driven for its whole duration', async () => {
+    const t = setup();
+    await t.activate();
+    vi.mocked(t.native.input).mockImplementationOnce(async (_a, _d, check) => {
+      expect(t.overlay.agentInput).toHaveBeenLastCalledWith('session', true);
+      check(true);
+    });
+    const listed = (await t.handle(await t.prepare({ kind: 'listDisplay' }))) as {
+      result: { layoutId: string };
+    };
+    await t.handle(
+      await t.prepare({ kind: 'click', x: 1, y: 2, layoutId: listed.result.layoutId }),
+    );
+    expect(vi.mocked(t.overlay.agentInput).mock.calls).toEqual([
+      ['session', true],
+      ['session', false],
+    ]);
+    await t.executor.invalidate('agent_end');
+  });
+  it('closes the bracket when native input fails', async () => {
+    const t = setup();
+    await t.activate();
+    vi.mocked(t.native.input).mockRejectedValueOnce(new Error('boom'));
+    await expect(t.handle(await t.prepare({ kind: 'keypress', key: 'a' }))).rejects.toThrow();
+    expect(vi.mocked(t.overlay.agentInput).mock.calls).toEqual([
+      ['session', true],
+      ['session', false],
+    ]);
+  });
+  it('does not bracket screenshots or display listing', async () => {
+    const t = setup();
+    await t.activate();
+    await t.handle(await t.prepare({ kind: 'listDisplay' }));
+    await t.handle(await t.prepare({ kind: 'screenshot' }));
+    expect(t.overlay.agentInput).not.toHaveBeenCalled();
+    await t.executor.invalidate('agent_end');
+  });
+});
+
+describe('desktop focus hand-back ordering', () => {
+  it.each([
+    ['agent end', (t: ReturnType<typeof setup>) => t.executor.invalidate('agent_end', false)],
+    ['user Stop', (t: ReturnType<typeof setup>) => t.executor.stop('session')],
+    ['lease expiry', (t: ReturnType<typeof setup>) => t.executor.invalidate('lease_expired')],
+  ])('restores focus only after native release drains input on %s', async (_name, end) => {
+    const t = setup();
+    await t.activate();
+    const release = deferred<void>();
+    vi.mocked(t.native.release).mockReturnValueOnce(release.promise);
+    const ending = end(t);
+    await Promise.resolve();
+    expect(t.overlay.deactivate).toHaveBeenCalledWith('session');
+    expect(t.overlay.restoreFocus).not.toHaveBeenCalled();
+    release.resolve();
+    await ending;
+    expect(t.overlay.restoreFocus).toHaveBeenCalledExactlyOnceWith('session');
+  });
+  it('skips the refocus when native cleanup cannot be confirmed', async () => {
+    const t = setup();
+    await t.activate();
+    vi.mocked(t.native.release).mockRejectedValueOnce(new Error('helper gone'));
+    await expect(t.executor.invalidate('agent_end', false)).rejects.toThrow();
+    expect(t.overlay.restoreFocus).not.toHaveBeenCalled();
+  });
+});
+
+describe('user app switch tracking', () => {
+  function tracked() {
+    const calls: string[] = [];
+    const foreground = {
+      begin: vi.fn(async (id: string) => void calls.push(`begin:${id}`)),
+      beforeAgentAction: vi.fn(async () => void calls.push('before')),
+      afterAgentAction: vi.fn(async () => void calls.push('after')),
+      userSwitched: vi.fn(async () => undefined),
+    };
+    return { foreground, calls };
+  }
+  async function withTracker() {
+    const base = setup();
+    const { foreground, calls } = tracked();
+    const executor = new DesktopExecutor(
+      base.native,
+      base.overlay,
+      base.reports,
+      () => 100,
+      foreground as unknown as DesktopForegroundTracker,
+    );
+    const handle = (p: unknown) => executor.handle(base.connection, p);
+    await handle({ operation: 'prepare', ...binding });
+    await handle(start);
+    let sequence = 0;
+    const run = async (action: DesktopAction) => {
+      const seq = ++sequence;
+      const r = (await handle({
+        operation: 'prepareCommand',
+        ...session,
+        commandId: `c${seq}`,
+        sequence: seq,
+        action,
+      })) as { deadlineId: string };
+      return handle({
+        operation: 'execute',
+        ...session,
+        commandId: `c${seq}`,
+        sequence: seq,
+        deadlineId: r.deadlineId,
+      });
+    };
+    return { ...base, executor, run, foreground, calls };
+  }
+  it('takes a baseline at start and samples around every input action', async () => {
+    const t = await withTracker();
+    expect(t.calls).toEqual(['begin:session']);
+    vi.mocked(t.native.input).mockImplementationOnce(async (_a, _d, check) => {
+      t.calls.push('input');
+      check(true);
+    });
+    await t.run({ kind: 'type', text: 'hi' });
+    expect(t.calls).toEqual(['begin:session', 'before', 'input', 'after']);
+    await t.run({ kind: 'screenshot' });
+    expect(t.calls).toHaveLength(4);
+    await t.executor.invalidate('agent_end');
+  });
+  it('samples after failed input too', async () => {
+    const t = await withTracker();
+    vi.mocked(t.native.input).mockRejectedValueOnce(new Error('boom'));
+    await expect(t.run({ kind: 'keypress', key: 'a' })).rejects.toThrow();
+    expect(t.calls.slice(1)).toEqual(['before', 'after']);
+  });
+  it('treats focusWindow as agent-caused for both blur and frontmost tracking', async () => {
+    const t = await withTracker();
+    const state: NativeWindowState = {
+      frontmost: { appName: 'Safari', pid: 411, focusedHandle: '1' },
+      windows: [{ handle: '1', pid: 411, appName: 'Safari', x: 0, y: 0, width: 10, height: 10 }],
+    };
+    vi.mocked(t.native.windows).mockResolvedValue(state);
+    const shot = (await t.run({ kind: 'screenshot' })) as {
+      result: { windows: { windowId: string }[] };
+    };
+    vi.mocked(t.native.focusWindow).mockImplementationOnce(async () => {
+      expect(t.overlay.agentInput).toHaveBeenLastCalledWith('session', true);
+      t.calls.push('focus');
+    });
+    await t.run({ kind: 'focusWindow', windowId: shot.result.windows[0].windowId });
+    expect(t.calls.slice(1)).toEqual(['before', 'focus', 'after']);
+    expect(vi.mocked(t.overlay.agentInput).mock.calls).toEqual([
+      ['session', true],
+      ['session', false],
+    ]);
+    await t.executor.invalidate('agent_end');
+  });
+});
+
+describe('native frontmost pid', () => {
+  it('parses a pid, no frontmost app, and rejects extra fields', async () => {
+    const reply = vi.fn<(op: string) => Promise<unknown>>();
+    const adapter = new DesktopNativeAdapter(reply);
+    reply.mockResolvedValueOnce({ pid: 411 });
+    await expect(adapter.frontmostPid()).resolves.toBe(411);
+    reply.mockResolvedValueOnce({});
+    await expect(adapter.frontmostPid()).resolves.toBeUndefined();
+    reply.mockResolvedValueOnce({ pid: 411, title: 'Secret' });
+    await expect(adapter.frontmostPid()).rejects.toThrow();
+    expect(reply).toHaveBeenCalledWith('frontmost');
   });
 });

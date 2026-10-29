@@ -30,6 +30,7 @@ export const textareaMetadata = parseUiComponentMetadata({
     'src/lib/components/ui/tooltip/tooltip-audit.preview.svelte',
     'src/lib/components/workspace/PullRequestCreator.svelte',
     'src/lib/components/workspace/WorkspaceSidebarHeader.svelte',
+    'src/lib/components/workspace/sidebar-tabs.preview.svelte',
     'src/lib/components/workspace/sidebar/CommitDrawer.svelte',
     'src/lib/components/workspace/sidebar/MergePanel.svelte',
     'src/lib/components/workspace/sidebar/PRSection.svelte',

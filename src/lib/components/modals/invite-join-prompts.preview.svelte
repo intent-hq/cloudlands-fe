@@ -8,10 +8,7 @@
    */
   import { definePreview } from '$lib/component-catalog/preview-definition';
   import { store as appStore } from '$store/renderer/store';
-  import {
-    setLabsGitLabEnabled,
-    setLabsMultiplayerEnabled,
-  } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import { setLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import type { InviteConsentShowPayload } from '$shared/ipc/invite-consent';
   import type { InviteNoticeShowPayload } from '$shared/ipc/invite-notice';
   import type { InviteProgressShowPayload } from '$shared/ipc/invite-progress';
@@ -21,7 +18,7 @@
     consent?: InviteConsentShowPayload;
     notice?: InviteNoticeShowPayload;
     progress?: InviteProgressShowPayload;
-    onEnable?: () => void;
+    onRetry?: () => void;
     busy?: boolean;
     failed?: boolean;
   }
@@ -42,16 +39,6 @@
     };
   }
 
-  function setupMultiplayerRecovery() {
-    const before = appStore.state.userPreferences.labsMultiplayerEnabled;
-    appStore.dispatch(setLabsMultiplayerEnabled(false));
-    appStore.dispatch(closePalette());
-    return () => {
-      appStore.dispatch(closePalette());
-      appStore.dispatch(setLabsMultiplayerEnabled(before));
-    };
-  }
-
   const GITLAB_HOST = 'gitlab.example.com';
   const base = {
     requestId: 'preview-request',
@@ -64,9 +51,14 @@
     title: 'Invite join prompts (identity seam)',
     defaultState: 'prove-gitlab',
     states: {
-      'multiplayer-recovery': {
-        setup: setupMultiplayerRecovery,
-        props: { progress: { requestId: 'controlled-recovery', phase: 'admission' } },
+      'admission-continuing': {
+        props: { progress: { requestId: 'controlled-admission', phase: 'admission' } },
+      },
+      'admission-failed': {
+        props: {
+          progress: { requestId: 'controlled-admission', phase: 'admission' },
+          failed: true,
+        },
       },
       'prove-gitlab': {
         props: {
@@ -142,7 +134,7 @@
     selectPaletteQuery,
   } from '$store/renderer/slices/palette/palette-selectors';
 
-  let { consent, notice, progress, onEnable, busy, failed }: InviteJoinPromptsProps = $props();
+  let { consent, notice, progress, onRetry, busy, failed }: InviteJoinPromptsProps = $props();
   let progressOpen = $state(true);
   const isPaletteOpen$ = selectIsPaletteOpen();
   const paletteQuery$ = selectPaletteQuery();
@@ -156,7 +148,7 @@
     <InviteNoticeModal open payload={notice} />
   {/if}
   {#if progress}
-    <InviteProgressModal bind:open={progressOpen} payload={progress} {onEnable} {busy} {failed} />
+    <InviteProgressModal bind:open={progressOpen} payload={progress} {onRetry} {busy} {failed} />
   {/if}
   <CommandPalette
     isOpen={$isPaletteOpen$}

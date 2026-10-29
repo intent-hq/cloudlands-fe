@@ -75,12 +75,25 @@ export const selectReduceMotionOnBattery = store.createSelector((state) => {
   return state.userPreferences?.reduceMotionOnBattery ?? false;
 });
 
+export const selectPauseAnimationsWhenUnfocused = store.createSelector((state) => {
+  return state.userPreferences?.pauseAnimationsWhenUnfocused ?? false;
+});
+
 export const selectLabsSettingsVisible = store.createSelector((state) => {
   return state.userPreferences?.labsSettingsVisible ?? false;
 });
 
 export const selectLabsMultiplayerEnabled = store.createSelector((state) => {
-  return state.userPreferences?.labsMultiplayerEnabled ?? false;
+  return state.userPreferences?.labsMultiplayerEnabled ?? true;
+});
+
+export const selectUserPreferencesHydrated = store.createSelector((state) => {
+  return state.userPreferences?.preferencesHydrated === true;
+});
+
+/** Native review PR flow; independent of Multiplayer and off unless a test or preview enables it. */
+export const selectNativeReviewEnabled = store.createSelector((state) => {
+  return state.userPreferences?.nativeReviewEnabled === true;
 });
 
 export const selectLabsGitLabEnabled = store.createSelector((state) => {

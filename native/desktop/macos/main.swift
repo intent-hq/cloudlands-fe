@@ -12,8 +12,15 @@ struct Refusal: Error {
     let code: String
     let detail: String
     var execution: String = "not_started"
+    var reason: String? = nil
 }
 func refused(_ detail: String) -> Refusal { Refusal(code: "desktop-unsupported-operation", detail: detail) }
+let targetDetail = "The target window is not ready for input. Call ws.desktop.focusWindow({ windowId }) if needed, take a new screenshot to confirm the target, then retry."
+
+// Maps an AX window element to its CGWindowID. Private but long-stable SPI; it is
+// the only reliable link between the AX focused window and the CG window list.
+@_silgen_name("_AXUIElementGetWindow")
+func _AXUIElementGetWindow(_ element: AXUIElement, _ identifier: UnsafeMutablePointer<CGWindowID>) -> AXError
 
 // Runs on one actor. Pipe EOF releases held input and the flock; each input
 // request is a single OS step, so main can cancel between any down/up pair.
@@ -112,6 +119,109 @@ actor Desktop {
         event.setIntegerValueField(.mouseEventClickState, value: count); event.flags = flags; event.post(tap: .cghidEventTap)
         if down { buttons.insert(name) } else { buttons.remove(name) }
     }
+    func eligibleWindows(_ exclusions: Set<UInt32>) throws -> [WindowEntry] {
+        guard let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+            throw Refusal(code: "desktop-execution-failed", detail: "Window enumeration failed")
+        }
+        return WindowList.eligible(info, excluding: exclusions)
+    }
+    func axWindows(_ app: AXUIElement) -> [AXUIElement] {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value) == .success else { return [] }
+        return value as? [AXUIElement] ?? []
+    }
+    func windowNumber(_ element: AXUIElement) -> CGWindowID? {
+        var id: CGWindowID = 0
+        return _AXUIElementGetWindow(element, &id) == .success && id != 0 ? id : nil
+    }
+    func application(_ pid: pid_t) -> AXUIElement {
+        let app = AXUIElementCreateApplication(pid)
+        // An unresponsive app must not stall the helper past the command deadline.
+        AXUIElementSetMessagingTimeout(app, 0.5)
+        return app
+    }
+    /// The application's focused window, as a CG window number.
+    func focusedWindow(_ pid: pid_t) -> CGWindowID? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(application(pid), kAXFocusedWindowAttribute as CFString, &value) == .success,
+              let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        return windowNumber(value as! AXUIElement)
+    }
+    /// NSWorkspace updates frontmostApplication from main-thread notifications
+    /// (serviced by RunLoop.main below), so read it there.
+    func frontmostPid() async -> pid_t? {
+        await MainActor.run { NSWorkspace.shared.frontmostApplication?.processIdentifier }
+    }
+    func appName(_ app: NSRunningApplication?, _ fallback: String?) -> String {
+        for name in [app?.localizedName, fallback, app?.executableURL?.lastPathComponent] {
+            if let name, !name.isEmpty { return name }
+        }
+        return "Unknown application"
+    }
+    /// Frontmost app plus eligible windows front-to-back. With a display, frames
+    /// are in its image pixels; otherwise only identity and z-order are meaningful.
+    func windowState(_ p: [String: Any]) async throws -> [String: Any] {
+        let exclusions = Set((p["excludedWindows"] as? [String] ?? []).compactMap(UInt32.init))
+        var origin = CGPoint.zero, scale = 1.0
+        if let d = p["display"] as? [String: Any] {
+            guard let text = d["displayId"] as? String, let id = UInt32(text), try displays().contains(id),
+                  NSDictionary(dictionary: description(id)).isEqual(to: d) else {
+                throw Refusal(code: "desktop-stale-layout", detail: "Display geometry changed")
+            }
+            origin = CGDisplayBounds(id).origin
+            scale = (d["scaleFactor"] as? NSNumber)?.doubleValue ?? 1
+        }
+        let frontPid = await frontmostPid()
+        var apps = [pid_t: NSRunningApplication]()
+        let windows = try eligibleWindows(exclusions).map { w -> [String: Any] in
+            let app = apps[w.pid] ?? NSRunningApplication(processIdentifier: w.pid)
+            apps[w.pid] = app
+            var entry: [String: Any] = ["handle": String(w.handle), "pid": Int(w.pid), "appName": appName(app, w.ownerName)]
+            for (key, value) in WindowList.pixels(w.bounds, displayOrigin: origin, scale: scale) { entry[key] = value }
+            if let bundle = app?.bundleIdentifier, !bundle.isEmpty { entry["bundleId"] = bundle }
+            if let title = w.title { entry["title"] = title }
+            return entry
+        }
+        var result: [String: Any] = ["windows": windows]
+        if let frontPid, let front = NSRunningApplication(processIdentifier: frontPid) {
+            var app: [String: Any] = ["appName": appName(front, nil), "pid": Int(front.processIdentifier)]
+            if let bundle = front.bundleIdentifier, !bundle.isEmpty { app["bundleId"] = bundle }
+            if let focused = focusedWindow(front.processIdentifier) { app["focusedHandle"] = String(focused) }
+            result["frontmost"] = app
+        }
+        return result
+    }
+    /// Activates the owner and raises the window via AX. Never posts input events;
+    /// the executor verifies frontmost app and focused window afterwards.
+    func focus(_ p: [String: Any]) async throws {
+        guard let text = p["handle"] as? String, let handle = UInt32(text),
+              let pid = (p["pid"] as? NSNumber)?.int32Value else { throw refused("Invalid window target") }
+        let exclusions = Set((p["excludedWindows"] as? [String] ?? []).compactMap(UInt32.init))
+        guard try eligibleWindows(exclusions).contains(where: { $0.handle == handle && $0.pid == pid }),
+              let running = NSRunningApplication(processIdentifier: pid) else {
+            throw Refusal(code: "desktop-target-mismatch", detail: targetDetail, reason: "window_unavailable")
+        }
+        let app = application(pid)
+        func raise() {
+            guard let window = axWindows(app).first(where: { windowNumber($0) == handle }) else { return }
+            AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
+            AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+        }
+        raise()
+        AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
+        running.activate(options: [])
+        // Activation is asynchronous; wait briefly, raising again once the app is
+        // in front so its own key-window restoration does not win.
+        var raisedInFront = false
+        for _ in 0..<20 {
+            if await frontmostPid() == pid {
+                if focusedWindow(pid) == handle { return }
+                if !raisedInFront { raise(); raisedInFront = true }
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+            try ready()
+        }
+    }
     func releaseInput() {
         for code in Array(keys) { try? key(code, false) }
         for name in Array(buttons) { try? button(name, false) }
@@ -166,6 +276,12 @@ actor Desktop {
             }
             return ["accessibility": accessibility, "screenRecording": screenRecording, "screenCapture": permissionReadiness.status(for: requestId)]
         }
+        // Lock-free and pid-only (no titles): read at session end, after release,
+        // to tell whether the user switched apps during the session.
+        if op == "frontmost" {
+            guard let pid = await frontmostPid() else { return [String: Any]() }
+            return ["pid": Int(pid)]
+        }
         if op == "release" { release(); return ["ok": true] }
         if op == "releaseInput" { releaseInput(); return ["ok": true] }
         if op == "acquire" {
@@ -183,6 +299,8 @@ actor Desktop {
         switch op {
         case "check": return ["ok": true]
         case "layout": return try displays().map(description)
+        case "windows": return try await windowState(p)
+        case "focusWindow": try await focus(p)
         case "capture", "validateExclusion":
             let exclusions = Set((p["excludedWindows"] as? [String] ?? []).compactMap(UInt32.init))
             guard !exclusions.isEmpty else { throw refused("Desktop indicator exclusion is unavailable") }
@@ -268,7 +386,9 @@ if #available(macOS 14.0, *) {
             } catch {
                 await desktop.releaseInput()
                 let failure = error as? Refusal ?? Refusal(code: "desktop-execution-failed", detail: "The native macOS operation failed", execution: "unknown")
-                reply = ["id": id, "error": ["code": failure.code, "detail": failure.detail, "execution": failure.execution]]
+                var detail: [String: Any] = ["code": failure.code, "detail": failure.detail, "execution": failure.execution]
+                if let reason = failure.reason { detail["reason"] = reason }
+                reply = ["id": id, "error": detail]
             }
             if let data = try? JSONSerialization.data(withJSONObject: reply) {
                 let line = data + Data([10])

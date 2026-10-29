@@ -105,6 +105,26 @@ describe('renderer console forwarding', () => {
     expect(getLogLevel('RendererConsole')).toBeLessThanOrEqual(LOGGING_CONFIG.defaultLevel);
   });
 
+  it('forwards browser background-hosting breadcrumbs (intent-hq/intent#7855)', () => {
+    const emit = attachForwarder();
+
+    emit({
+      level: 'info',
+      message:
+        '[2026-10-29T04:40:00.000Z] [INFO] [BrowserHosting] offscreen decision {"tabId":"tab-1","to":"no-url"}',
+    });
+
+    const forwarded = logged.filter((line) => line.includes('[BrowserHosting]'));
+    expect(forwarded).toHaveLength(1);
+    expect(forwarded[0]).toContain('"to":"no-url"');
+  });
+
+  it('keeps main-process BrowserHosting lines at the production log level', () => {
+    expect(LOGGING_CONFIG.categories.BrowserHosting).toBe(LogLevel.INFO);
+    expect(getLogLevel('BrowserHosting')).toBeLessThanOrEqual(LogLevel.INFO);
+    expect(getLogLevel('BrowserHosting')).toBeLessThanOrEqual(LOGGING_CONFIG.defaultLevel);
+  });
+
   it('still drops ordinary info and debug chatter', () => {
     const emit = attachForwarder();
 

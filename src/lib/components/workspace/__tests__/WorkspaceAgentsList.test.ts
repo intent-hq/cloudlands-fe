@@ -106,8 +106,6 @@ describe('WorkspaceAgentsList single-line rows', () => {
     const longRow = view.container.querySelector<HTMLElement>(
       `[data-agent-panel-row="${longName.id}"]`,
     );
-    expect(longRow?.className).toContain('bg-transparent');
-    expect(longRow?.className).not.toContain('hover:bg-muted');
     expect(longRow?.getAttribute('aria-current')).toBe('true');
     expect(longRow?.querySelector('[data-agent-row-name]')?.className).toContain('flex-1');
     expect(longRow?.querySelector('[data-panel-open-state]')).toBeNull();

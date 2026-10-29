@@ -1,7 +1,7 @@
 <script lang="ts">
   import { cn } from '$lib/utils';
   import { Tabs as TabsPrimitive } from 'bits-ui';
-  import { getContext, untrack, type Snippet } from 'svelte';
+  import { getContext, onDestroy, untrack, type Snippet } from 'svelte';
   import type { HTMLButtonAttributes } from 'svelte/elements';
   import { TABS_CONTEXT, type TabsContext } from './context';
 
@@ -27,10 +27,8 @@
   let element = $state<HTMLElement | null>(null);
 
   $effect(() => context.state.update(index, value, disabled || context.disabled));
-  $effect(() => {
-    context.state.register(index, element);
-    return () => context.state.register(index, null);
-  });
+  $effect(() => context.state.register(index, element));
+  onDestroy(() => context.state.release(index));
 
   function handleFocus(event: FocusEvent & { currentTarget: EventTarget & HTMLButtonElement }) {
     context.state.activate(index);
@@ -53,6 +51,9 @@
     context.variant === 'underline' &&
       'h-12 shrink-0 rounded-none border-b-2 border-transparent px-1 whitespace-nowrap hover:text-foreground',
     context.variant === 'underline' && selected && 'border-foreground',
+    context.variant === 'icon' &&
+      'size-10 shrink-0 rounded-(--radius-large) px-0 text-muted-foreground/70 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring',
+    context.variant === 'icon' && selected && 'text-foreground',
     className,
   )}
   {...restProps as any}

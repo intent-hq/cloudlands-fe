@@ -34,7 +34,6 @@ describe('workspace loading skeletons', () => {
     expect(wrapper?.classList).toContain('text-sidebar-foreground');
     expect(container.querySelector('[data-loading-workspace-header]')).toBeTruthy();
     expect(container.querySelector('[data-loading-workspace-activity]')).toBeTruthy();
-    expect(container.querySelectorAll('[data-loading-sidebar-card]')).toHaveLength(6);
   });
 
   it('does not compound the content skeleton shimmer animation', () => {

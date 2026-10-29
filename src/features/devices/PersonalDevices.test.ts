@@ -468,15 +468,14 @@ describe('Devices current-person UI through the actual store and IPC transport',
     expect(qr).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog')).toBeNull();
   });
-  it('missing preference keeps the personal surface closed despite admitted server capabilities', () => {
+  it('opens the personal surface with no saved preference: Multiplayer is always on', async () => {
     stop();
     store.dispose();
     store.init();
     stop = store.runSaga(personalDevicesSaga);
     admit();
     render(PersonalDevices);
-    expect(screen.queryByRole('button', { name: m.settings_wsApi_showQrCode() })).toBeNull();
-    expect(rpc).not.toHaveBeenCalled();
+    expect(await screen.findByRole('button', { name: m.settings_wsApi_showQrCode() })).toBeTruthy();
   });
   it.each([
     ['rekey', false],

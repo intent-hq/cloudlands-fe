@@ -11,6 +11,7 @@ import {
   type Collection,
 } from '@themislib/themis/utils/collections/collection-utils';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
+import type { ModelWarningKind } from '$shared/models/wire-model-info';
 import { getAgentProvider } from '$shared/types/agent-session';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import { modelIdForDisplay, resolveModelDisplayName } from '$shared/utils/model-display-name';
@@ -180,6 +181,24 @@ export const selectAllProviderStaleFlags = store.createSelector(
     }
 
     return stale;
+  },
+);
+
+/**
+ * Provider ids whose current `warning` has a machine-readable cause
+ * (PROTOCOL §5.30 `warningKind`), e.g. `cli-missing`.
+ */
+export const selectAllProviderWarningKinds = store.createSelector(
+  (state): Record<string, ModelWarningKind> => {
+    const kinds: Record<string, ModelWarningKind> = {};
+
+    for (const [providerId, loadingState] of Object.entries(state.model.loadingState)) {
+      if (loadingState.warning && loadingState.warningKind) {
+        kinds[providerId] = loadingState.warningKind;
+      }
+    }
+
+    return kinds;
   },
 );
 

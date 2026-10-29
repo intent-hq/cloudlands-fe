@@ -306,7 +306,7 @@ describe('Settings migration', () => {
     expect(support.getAttribute('target')).toBe('_blank');
     expect(support.getAttribute('rel')).toBe('noopener noreferrer');
     appStore.dispatch(simulateSetState({ status: 'downloaded' }));
-    const update = await screen.findByRole('button', { name: 'Update available' });
+    const update = await screen.findByRole('button', { name: 'Restart to update' });
     const recorder = installDispatchRecorder();
     await fireEvent.click(update);
     expect(recorder.calls).toContainEqual(installUpdate());

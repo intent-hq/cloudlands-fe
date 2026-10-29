@@ -39,17 +39,17 @@ describe('composed text-entry keyboard focus', () => {
     expect(trigger.className).not.toMatch(/(?:^|\s)(?:focus-visible:)?outline-none(?:\s|$)/);
   });
 
-  it('restores an indicated search trigger after leaving the quiet editable field', async () => {
+  it('returns focus to the search trigger after closing the editable field', async () => {
     const view = render(SidebarExpandableSearch, {
       props: { placeholder: 'Search', scope: 'agents' },
     });
     await fireEvent.click(view.getByRole('button', { name: 'Search' }));
     const input = view.getByRole('searchbox');
-    expect(input.classList.contains('focus-visible:outline-none')).toBe(true);
+    expect(document.activeElement).toBe(input);
     await fireEvent.keyDown(input, { key: 'Escape' });
+    expect(view.queryByRole('searchbox')).toBeNull();
     const trigger = view.getByRole('button', { name: 'Search' });
     expect(document.activeElement).toBe(trigger);
-    expect(trigger.classList.contains('focus-visible:outline-solid')).toBe(true);
   });
 
   it('uses the focus token for the address trigger while editing remains quiet', async () => {

@@ -2,8 +2,6 @@
  * Text utilities for extracting and processing text content
  */
 
-// Re-export stripMarkdownFormatting from shared utils
-export { stripMarkdownFormatting } from '$shared/utils-client';
 import { stripInternalDeliveryNotes } from './user-message-presentation';
 import { memberMentionsToText } from '$lib/utils/member-mention-token';
 

@@ -47,6 +47,11 @@ jobs:
         run: |
           xcrun swiftc native/desktop/macos/PermissionPrompts.swift native/desktop/tests/macos/main.swift -o /tmp/desktop-permission-tests
           /tmp/desktop-permission-tests
+      - name: Verify macOS window list policy
+        if: runner.os == 'macOS'
+        run: |
+          xcrun swiftc -parse-as-library native/desktop/macos/WindowList.swift native/desktop/tests/macos/WindowListTests.swift -o /tmp/desktop-window-tests
+          /tmp/desktop-window-tests
       - name: Compile macOS cursor movement functional test
         if: runner.os == 'macOS'
         run: xcrun swiftc -parse-as-library native/desktop/tests/macos/PointerMove.swift -o /tmp/desktop-pointer-tests

@@ -15,6 +15,7 @@
  */
 import type { LearnedModelNames } from './model-name-cache';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
+import type { ModelWarningKind } from '$shared/models/wire-model-info';
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 
 export type ProviderModelsRequestMode = 'background' | 'refresh' | 'retry' | 'silentRetry';
@@ -44,6 +45,8 @@ export interface ProviderModelsFetchResult {
   warning?: string;
   /** True when the daemon served last-good data after a failed probe. */
   stale?: boolean;
+  /** Machine-readable cause of `warning` (PROTOCOL §5.30 "Warning kind"). */
+  warningKind?: ModelWarningKind;
 }
 
 /** One cached catalog: the fetch result plus its write timestamp. */

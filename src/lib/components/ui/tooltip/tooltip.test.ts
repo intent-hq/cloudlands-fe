@@ -64,6 +64,24 @@ describe('Tooltip', () => {
     expect(screen.getByLabelText('Tooltip open state').textContent).toBe('true');
   });
 
+  it('honors the opt-out from dismissal on trigger activation', async () => {
+    const { rerender } = render(tooltipApi.Tooltip, {
+      props: { content: 'Activation help', open: true, disableCloseOnTriggerClick: true },
+    });
+    const trigger = screen.getByRole('button');
+    const tooltip = await screen.findByRole('tooltip', { hidden: true });
+    await fireEvent.pointerDown(trigger, { pointerType: 'mouse' });
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await fireEvent.keyDown(trigger, { key: ' ' });
+    await fireEvent.click(trigger);
+    expect(screen.getByRole('tooltip', { hidden: true })).toBe(tooltip);
+
+    await rerender({ content: 'Activation help', open: true, disableCloseOnTriggerClick: false });
+    expect(screen.getByRole('tooltip', { hidden: true })).toBe(tooltip);
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await waitFor(() => expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull());
+  });
+
   it('uses each wrapped button as the only interactive trigger and preserves keyboard dismissal', async () => {
     render(TooltipHarness);
     const simpleCase = screen.getByTestId('wrapped-tooltip');

@@ -17,13 +17,13 @@
  *    double-send.
  * 4. On `invite-progress:dismiss`: closes the modal for the active request
  *    (its phase ended, or main gave up waiting for the ack).
+ * 5. On an `admission` request (an invite that arrived before this window
+ *    published its collaboration policy): republishes the policy and answers
+ *    `retry` automatically. Multiplayer is always on, so there is no enable
+ *    step; `retryInviteProgress()` only re-runs this after a failure.
  *
  * Payload contract: `src/shared/ipc/invite-progress.ts`.
  */
-import { store as appStore } from '$store/renderer/store';
-import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
-import { selectLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-import { safeLocalStorage } from '$lib/utils/safe-storage';
 import { Logger } from '$shared/logger';
 import { electronAPI } from '$lib/client/live/backend-transport';
 import { INVITE_PROGRESS_CHANNELS } from '$shared/ipc/channels';
@@ -51,7 +51,14 @@ export interface InviteProgressHandlers {
 
 let activeRequestId: string | null = null;
 let retryable = false;
-let recovery: { requestId: string; busy: boolean; attempted: boolean } | null = null;
+let recovery: { requestId: string; busy: boolean; attempted: boolean; failed: boolean } | null =
+  null;
+/**
+ * Main answers `retry` with success even when it ignores it (stale request, policy changed).
+ * An admission still showing this long after an accepted retry is treated as failed so the
+ * user gets Try again instead of an indefinite spinner.
+ */
+export const ADMISSION_STALL_MS = 3_000;
 let handlers: InviteProgressHandlers | null = null;
 
 function isProgressPayload(payload: unknown): payload is InviteProgressShowPayload {
@@ -88,7 +95,7 @@ export function installInviteProgressService(newHandlers: InviteProgressHandlers
       return;
     }
     if (activeRequestId !== payload.requestId) {
-      recovery = { requestId: payload.requestId, busy: false, attempted: false };
+      recovery = { requestId: payload.requestId, busy: false, attempted: false, failed: false };
       handlers?.onRecoveryState?.({ busy: false, failed: false });
     }
     activeRequestId = payload.requestId;
@@ -108,10 +115,8 @@ export function installInviteProgressService(newHandlers: InviteProgressHandlers
       phase: payload.phase,
     });
     handlers?.onShow(payload);
-    // No preference mutation here: an already-enabled originating renderer can
-    // acknowledge readiness after initial hydration without another user action.
-    if (retryable && recovery && !recovery.attempted && multiplayerEnabled())
-      void continueInvite(false);
+    // Readiness is acknowledged without any user action; Try again only follows a failure.
+    if (retryable && recovery && !recovery.attempted) void continueInvite();
   });
 
   const updateListenerId = api.on(INVITE_PROGRESS_CHANNELS.UPDATE, (payload: unknown) => {
@@ -172,16 +177,12 @@ export function cancelInviteProgress(): void {
   });
 }
 
-/** Explicit positive action: persist SET true, then acknowledge this window's readiness. */
+/** Try again after a failed automatic readiness acknowledgement for the same invitation. */
 export async function retryInviteProgress(): Promise<void> {
-  await continueInvite(true);
+  await continueInvite();
 }
 
-function multiplayerEnabled(): boolean {
-  return selectLabsMultiplayerEnabled.select(appStore.state);
-}
-
-async function continueInvite(enable: boolean): Promise<void> {
+async function continueInvite(): Promise<void> {
   const api = electronAPI();
   const request = recovery;
   if (!api || !request || activeRequestId !== request.requestId || !retryable || request.busy)
@@ -189,31 +190,29 @@ async function continueInvite(enable: boolean): Promise<void> {
   request.busy = true;
   request.attempted = true;
   const current = () => recovery === request && activeRequestId === request.requestId && retryable;
-  handlers?.onRecoveryState?.({ busy: true, failed: false });
+  // Keep a previous failure visible while Try again runs, so its (disabled) button stays mounted.
+  handlers?.onRecoveryState?.({ busy: true, failed: request.failed });
   let failed = false;
   try {
-    if (enable) {
-      // The canonical preference action and its root-owned saga perform the
-      // synchronous localStorage write. Read back its result: that saga deliberately
-      // swallows storage errors, so dispatch alone is not proof of persistence.
-      appStore.dispatch(setLabsMultiplayerEnabled(true));
-      if (safeLocalStorage.getJSON('labs:multiplayerEnabled') !== true)
-        throw new Error('persistence-failed');
-    }
     // Let the main show call finish installing its handle before policy can replay it.
     await Promise.resolve();
     if (!current()) return;
     if (!(await syncCollaborationPolicy())) throw new Error('policy-failed');
     if (!current()) return;
-    if (!multiplayerEnabled()) throw new Error('readiness-changed');
     await api.invoke(INVITE_PROGRESS_CHANNELS.RESPONSE, {
       requestId: request.requestId,
       action: 'retry',
     });
+    setTimeout(() => {
+      if (!current() || request.busy || request.failed) return;
+      request.failed = true;
+      handlers?.onRecoveryState?.({ busy: false, failed: true });
+    }, ADMISSION_STALL_MS);
   } catch {
     failed = true;
   } finally {
     request.busy = false;
+    request.failed = failed;
     if (current()) handlers?.onRecoveryState?.({ busy: false, failed });
   }
 }

@@ -731,7 +731,7 @@
       class="flex w-full min-w-0 max-w-full text-left gap-2 transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none {isEditing
         ? 'overflow-visible'
         : 'overflow-hidden'} {isEditing ? 'cursor-text' : 'cursor-pointer'} group border {panelRow
-        ? 'h-10 items-center rounded-md border-transparent border-l-0 bg-transparent pl-0 pr-2 py-2 type-body font-normal text-foreground hover:bg-transparent active:bg-transparent focus-visible:-outline-offset-2 focus-visible:bg-transparent focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-0'
+        ? `h-10 items-center rounded-md border-transparent px-2 py-2 type-caption font-normal text-foreground dark:hover:bg-muted/60 focus-visible:-outline-offset-2 focus-visible:bg-selected dark:focus-visible:bg-muted focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-0 ${selected ? 'bg-selected dark:bg-muted' : 'bg-transparent hover:bg-hover'}`
         : inline
           ? `type-body items-center rounded-md ${inlineRowClass}`
           : 'px-1.75 pt-1.25 pb-1.5'} {panelRow
@@ -832,14 +832,14 @@
                   onpastecapture={isolateEditEvent}
                   noFocusStyle
                   class="inline-edit-input relative z-10 min-w-0 flex-1 truncate border-none bg-transparent hover:bg-transparent {panelRow
-                    ? 'type-body font-normal'
+                    ? 'type-caption font-normal'
                     : 'text-sm'} text-foreground outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
                 />
               {:else}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <h3
                   class="relative z-10 cursor-inherit whitespace-nowrap {panelRow
-                    ? 'min-w-0 flex-1 truncate type-body font-normal text-foreground'
+                    ? 'min-w-0 flex-1 truncate type-caption font-normal text-foreground'
                     : inline
                       ? typographyClass
                         ? 'shrink-0 type-body font-normal text-muted-foreground!'
@@ -872,7 +872,9 @@
             {/if}
             {#if effectiveStatusLabel}
               <span
-                class="type-body shrink-0 truncate whitespace-nowrap font-normal text-muted-foreground"
+                class="{panelRow
+                  ? 'type-caption'
+                  : 'type-body'} shrink-0 truncate whitespace-nowrap font-normal text-muted-foreground"
                 data-testid="agent-card-status"
               >
                 {effectiveStatusLabel}
@@ -880,9 +882,9 @@
             {/if}
             {#if delegatedByName && (!inline || panelRow)}
               <span
-                class="delegated-by-text min-w-0 shrink truncate whitespace-nowrap text-ui text-subtle {panelRow
-                  ? 'max-w-[40%]'
-                  : 'ml-1'}"
+                class="delegated-by-text min-w-0 shrink truncate whitespace-nowrap {panelRow
+                  ? 'type-caption'
+                  : 'text-ui'} text-subtle {panelRow ? 'max-w-[40%]' : 'ml-1'}"
               >
                 {m.chat_agentCard_delegatedBy_label({ name: delegatedByName })}
               </span>
@@ -936,7 +938,7 @@
                   <RelativeTime
                     date={updatedAt}
                     compact
-                    class="text-ui text-subtle {panelRow ? 'tabular-nums' : ''}"
+                    class="{panelRow ? 'type-caption tabular-nums' : 'text-ui'} text-subtle"
                   />
                 </span>
               {/if}

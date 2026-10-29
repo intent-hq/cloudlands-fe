@@ -40,7 +40,10 @@ export function toSidebarActions(
     if (entry.submenu) {
       // Explicit radio groups avoid guessing whether independent checked items are exclusive.
       if (entry.selection === 'single') {
-        const children: RadioAction[] = entry.submenu.map((child) => ({
+        // Children without `checked` are commands (e.g. "New label…") listed after the choices.
+        const choices = entry.submenu.filter((child) => child.checked !== undefined);
+        const commands = entry.submenu.filter((child) => child.checked === undefined);
+        const children: RadioAction[] = choices.map((child) => ({
           kind: 'radio',
           id: child.id,
           value: child.id,
@@ -55,13 +58,18 @@ export function toSidebarActions(
           ...base,
           kind: 'submenu',
           children: [
-            {
-              kind: 'radio-group',
-              id: `${entry.id}-selection`,
-              label: entry.label,
-              value: entry.submenu.find((child) => child.checked)?.id ?? '',
-              children,
-            },
+            ...(children.length > 0
+              ? [
+                  {
+                    kind: 'radio-group' as const,
+                    id: `${entry.id}-selection`,
+                    label: entry.label,
+                    value: choices.find((child) => child.checked)?.id ?? '',
+                    children,
+                  },
+                ]
+              : []),
+            ...toSidebarActions(commands),
           ],
         });
       } else {
