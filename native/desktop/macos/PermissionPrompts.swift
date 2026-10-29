@@ -1,22 +1,23 @@
 // Pure prompt policy: checks never imply grants; only a new local Allow gesture
-// calls this policy. Request one missing permission at a time and never loop on
-// denial. macOS owns its dialogs and any required relaunch.
+// calls this policy. One gesture asks for every missing permission (Accessibility,
+// then Screen Recording) so the user relaunches at most once; each permission is
+// requested once per helper and denial never loops. macOS owns its dialogs and
+// any required relaunch. The SCK readiness probe follows once both are granted.
 struct PermissionPrompts {
     enum Prompt { case accessibility, screenRecording }
     private var accessibilityRequested = false
     private var screenRecordingRequested = false
-    mutating func next(accessibility: Bool, screenRecording: Bool) -> Prompt? {
-        if !accessibility {
-            guard !accessibilityRequested else { return nil }
+    mutating func due(accessibility: Bool, screenRecording: Bool) -> [Prompt] {
+        var prompts: [Prompt] = []
+        if !accessibility && !accessibilityRequested {
             accessibilityRequested = true
-            return .accessibility
+            prompts.append(.accessibility)
         }
-        if !screenRecording {
-            guard !screenRecordingRequested else { return nil }
+        if !screenRecording && !screenRecordingRequested {
             screenRecordingRequested = true
-            return .screenRecording
+            prompts.append(.screenRecording)
         }
-        return nil
+        return prompts
     }
 }
 

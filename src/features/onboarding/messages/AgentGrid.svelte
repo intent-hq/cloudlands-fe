@@ -304,8 +304,10 @@
 
 <div class="flex gap-4 w-full">
   {#each visibleProviders as provider (provider.id)}
+    <!-- w-66 fixes the intrinsic width, so a fit-content parent never sizes cards by their text. -->
     <div
-      class="overflow-hidden transition-all flex flex-col flex-1 min-w-66"
+      data-provider-id={provider.id}
+      class="overflow-hidden transition-all flex flex-col flex-1 w-66 min-w-66"
       in:fly={{ tier: 'slow', distance: 20 }}
       animate:flip={{ duration: 300 }}
     >

@@ -47,7 +47,7 @@
       options?: { line?: number; openInAdjacentPanel?: boolean; sourcePanelId?: string },
     ) => void;
     taskBlockRenderMode?: 'placeholder' | 'content';
-    /** Chat transcript only: render inline workspace-file images as fixed square thumbnails. */
+    /** Chat transcript only: cap images at half the viewport and thumbnail unsized workspace files. */
     chatImageThumbnails?: boolean;
     /** Open all http(s) links directly in the external browser (e.g. release notes). */
     forceExternalLinks?: boolean;
@@ -890,13 +890,22 @@
     cursor: zoom-in;
   }
 
+  .markdown-viewer.chat-image-thumbnails :global(img) {
+    max-height: 50vh;
+    object-fit: contain;
+  }
+
+  .markdown-viewer.chat-image-thumbnails :global(.markdown-image-frame) {
+    max-width: min(100%, calc(50vh * var(--image-aspect-ratio)));
+  }
+
   /* Chat transcript: inline workspace file images render as fixed square
      bordered thumbnails (cropped), matching ChatImageBlock. Images sized from
      the text block's media sidecar keep their own frame instead. */
   .markdown-viewer.chat-image-thumbnails
     :global(img[src^='workspace-file://']:not([data-image-sized])) {
-    width: 10rem;
-    height: 10rem;
+    width: min(10rem, 50vh);
+    height: min(10rem, 50vh);
     object-fit: cover;
     border: 1px solid hsl(var(--border));
     border-radius: 0.5rem;

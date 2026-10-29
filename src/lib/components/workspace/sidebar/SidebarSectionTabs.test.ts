@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentSession } from '$shared/types';
+import type { WorkspaceInvite } from '$features/workspace-sharing/types';
 import { setMultiSelectSidebarSelectedTabs } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import SidebarSectionTabs from './SidebarSectionTabs.svelte';
 
@@ -13,6 +14,7 @@ const live = await vi.hoisted(async () => {
     collaborator: writable(false),
     scriptContext: writable<string | null>('owner-context'),
     people: writable([]),
+    invites: writable<WorkspaceInvite[]>([]),
     dispatch: vi.fn(),
   };
 });
@@ -44,6 +46,10 @@ vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
   selectWorkspacePeopleTilePeople: () => live.people,
 }));
 
+vi.mock('$store/renderer/slices/workspace-share/workspace-share-selectors', () => ({
+  selectWorkspacePeopleInvites: () => live.invites,
+}));
+
 function agent(id: string, overrides: Partial<AgentSession> = {}): AgentSession {
   return {
     id,
@@ -63,12 +69,31 @@ beforeEach(() => {
   live.collaborator.set(false);
   live.scriptContext.set('owner-context');
   live.people.set([]);
+  live.invites.set([]);
   live.dispatch.mockClear();
 });
 
 afterEach(cleanup);
 
 describe('sidebar main-agent identity', () => {
+  it('keeps People reachable for a pending invitation without live people', async () => {
+    live.selected.set(['people']);
+    live.invites.set([{ id: 'pending-invite' } as WorkspaceInvite]);
+    const view = render(SidebarSectionTabs, { props: { workspaceId: 'workspace' } });
+    await waitFor(() =>
+      expect(
+        view.getByRole('tab', { name: 'People', exact: true }).getAttribute('aria-selected'),
+      ).toBe('true'),
+    );
+    live.invites.set([]);
+    await waitFor(() =>
+      expect(view.queryByRole('tab', { name: 'People', exact: true })).toBeNull(),
+    );
+    expect(
+      view.getByRole('tab', { name: 'Agents', exact: true }).getAttribute('aria-selected'),
+    ).toBe('true');
+  });
+
   it('keeps the coordinator identity across section changes and follows its live state', async () => {
     const ordinary = agent('conversation');
     const main = agent('main', {

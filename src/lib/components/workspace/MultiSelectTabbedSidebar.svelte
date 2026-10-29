@@ -73,7 +73,9 @@
   import SidebarHeaderAction from './sidebar/SidebarHeaderAction.svelte';
   import WorkspaceProgressCard from './sidebar/WorkspaceProgressCard.svelte';
   import WorkspacePeopleActivity from '$features/presence/components/WorkspacePeopleActivity.svelte';
-  import WorkspacePeopleTile from '$features/presence/components/WorkspacePeopleTile.svelte';
+  import WorkspacePeopleRoster from '$features/presence/components/WorkspacePeopleRoster.svelte';
+  import { selectWorkspacePeopleInvites } from '$store/renderer/slices/workspace-share/workspace-share-selectors';
+  import { selectDiscussionCanCreate } from '$store/renderer/slices/workspace-discussion/workspace-discussion-selectors';
   import WorkspaceDiscussionRow from '$features/discussions/components/WorkspaceDiscussionRow.svelte';
   import { selectWorkspacePeopleTilePeople } from '$store/renderer/slices/presence/presence-selectors';
   import { openWorkspaceDiscussion } from '$features/discussions/discussion-navigation';
@@ -235,6 +237,7 @@
   const pendingLocateInSidebar$ = selectPendingLocateInSidebar();
 
   const workspace = selectWorkspaceById(workspaceIdStore);
+  const canCreateDiscussion$ = selectDiscussionCanCreate(workspaceIdStore);
   const activePullRequest$ = selectWorkspaceActivePullRequest(workspaceIdStore);
   const prMonitors$ = selectReviewMonitors(workspaceIdStore);
   // Every PR attributable to the workspace (branch PRs, cross-repo entries,
@@ -278,7 +281,8 @@
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
   const isCollaborator = $derived($isCollaborator$);
   const presencePeople$ = selectWorkspacePeopleTilePeople(workspaceIdStore);
-  const showPeople = $derived($presencePeople$.length > 0);
+  const peopleInvites$ = selectWorkspacePeopleInvites(workspaceIdStore);
+  const showPeople = $derived($presencePeople$.length > 0 || $peopleInvites$.length > 0);
   const selectedTabIds = selectMultiSelectSidebarSelectedTabIds(workspaceIdStore);
   const selectedTabs = $derived(
     normalizeSelectedTabs($selectedTabIds, isCollaborator, showPeople, !!$scriptContext$),
@@ -724,7 +728,7 @@
               <h6 class="flex min-h-7 items-center gap-2 text-sm font-medium text-foreground">
                 <span class="min-w-0 truncate">{tab.label}</span>
                 <span class="ml-auto flex min-w-0 items-center gap-1">
-                  {#if tabId === 'people'}
+                  {#if tabId === 'people' && $canCreateDiscussion$}
                     <SidebarHeaderAction
                       icon="plus"
                       label={m.workspace_discussion_new_title()}
@@ -850,7 +854,7 @@
               }}
             >
               {#if tabId === 'people'}
-                <WorkspacePeopleTile {workspaceId} compact />
+                <WorkspacePeopleRoster people={$presencePeople$} invites={$peopleInvites$} />
                 <WorkspaceDiscussionRow {workspaceId} {panelLayoutId} />
                 <WorkspacePeopleActivity {workspaceId} {panelLayoutId} />
               {:else if tabId === 'agents'}

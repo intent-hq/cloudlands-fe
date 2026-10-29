@@ -4904,29 +4904,6 @@ describe('daemonEventsBridge (legacy mock-IPC relay — daemon events → listen
     expect(gitSeen).toEqual([]);
   });
 
-  it('re-emits line-attribution:updated with { workspaceId, noteId, attributions } for the gutter', async () => {
-    // PROTOCOL §5.2.1 / §6.5 — daemon emits the self-sufficient payload; the
-    // bridge forwards it so LineAttributionGutter's listenSync path fires.
-    await primeBridge();
-    const seen = listenOn('line-attribution:updated');
-
-    const attributions = {
-      '1': {
-        timestamp: 1720193696000,
-        author: { id: 'system', name: 'intentd', type: 'system' as const },
-      },
-    };
-    capturedHandlers[0]!(
-      notification('line-attribution:updated', {
-        workspaceId: WS,
-        noteId: 'note-abc',
-        attributions,
-      }),
-    );
-
-    expect(seen).toEqual([{ workspaceId: WS, noteId: 'note-abc', attributions }]);
-  });
-
   it('re-emits workspace:updated with the event data as changes', async () => {
     await primeBridge();
     const seen = listenOn('workspace:updated');
@@ -9713,6 +9690,28 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     const ws = await readWorkspace();
     expect(ws.statusImageAssetId).toBe('asset-abc123');
     // Unrelated fields on the entity stay intact.
+    expect(ws.branch).toBe('main');
+  });
+
+  it('applies, replaces and clears a workspace label delta (PROTOCOL §5.1 labels)', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(updatedNotification({ label: 'pinned' }));
+    expect((await readWorkspace()).label).toBe('pinned');
+
+    handler(updatedNotification({ label: 'For Later' }));
+    expect((await readWorkspace()).label).toBe('For Later');
+
+    // A delta without the key leaves the label untouched.
+    handler(updatedNotification({ title: 'Renamed' }));
+    expect((await readWorkspace()).label).toBe('For Later');
+
+    // The explicit wire null clears it.
+    handler(updatedNotification({ label: null }));
+    const ws = await readWorkspace();
+    expect(ws.label).toBeUndefined();
     expect(ws.branch).toBe('main');
   });
 

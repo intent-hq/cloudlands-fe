@@ -69,18 +69,6 @@ describe('Import Fixes Verification', () => {
   // `agent-backend-handler.service.ts` import-shape guard was retired in
   // C1d-7 alongside the handler file itself (adapter now goes daemon-direct).
 
-  describe('line-to-block-mapper.ts', () => {
-    it('should have proper imports and structure', () => {
-      const filePath = join(projectRoot, 'src/lib/components/tiptap/line-to-block-mapper.ts');
-      const content = readFileSync(filePath, 'utf-8');
-
-      // Check for proper logger import
-      expect(content).toContain("import { logger } from '$lib/utils/client-logger'");
-      // Check for proper type imports
-      expect(content).toContain("import type { Editor } from '@tiptap/core'");
-    });
-  });
-
   // Note: ContextualMenu.svelte tests removed - component was deleted as unused
 
   describe('FileActionsDropdown.svelte', () => {
@@ -113,10 +101,7 @@ describe('Import Fixes Verification', () => {
 
   describe('All fixed files compile without errors', () => {
     it('should not have syntax errors in TypeScript files', () => {
-      const tsFiles = [
-        'src/features/comments/comment-manager-v2.ts',
-        'src/lib/components/tiptap/line-to-block-mapper.ts',
-      ];
+      const tsFiles = ['src/features/comments/comment-manager-v2.ts'];
 
       tsFiles.forEach((file) => {
         const filePath = join(projectRoot, file);

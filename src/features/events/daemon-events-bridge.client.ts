@@ -6,15 +6,19 @@ import type { Note, WorkspaceTask, WorkspaceTaskStats } from '$shared/types';
 import { workspaceTasksPushed } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import { workspaceTaskStatsPushed } from '$store/renderer/slices/workspace/workspace-slice';
 import {
+  isDiscussionConversationEvent,
+  isDiscussionDeletedEvent,
   isDiscussionMessageEvent,
   isDiscussionAgentActivityEvent,
   hasDiscussionAgentActivity,
   hasDiscussionAgentMentions,
+  hasDiscussionPrincipalMentions,
   isDiscussionReactionEvent,
   hasDiscussionMessageActions,
   DEFAULT_DISCUSSION_ID,
 } from '$shared/types/workspace-discussion';
 import {
+  discussionConversationDeleted,
   discussionMessageReceived,
   discussionAgentActivityReceived,
   discussionReactionReceived,
@@ -2765,6 +2769,13 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   } else if (raw.statusImageAssetId === null) {
     changes.statusImageAssetId = undefined;
   }
+  // `label` is clearable the same way (PROTOCOL §5.1 "Workspace labels"):
+  // a string sets it, an explicit JSON null clears it, missing is untouched.
+  if (typeof raw.label === 'string') {
+    changes.label = raw.label;
+  } else if (raw.label === null) {
+    changes.label = undefined;
+  }
   if (typeof raw.branch === 'string') changes.branch = raw.branch;
   if (typeof raw.baseRef === 'string') changes.baseRef = raw.baseRef;
   if (typeof raw.baseCommitSha === 'string') changes.baseCommitSha = raw.baseCommitSha;
@@ -3403,10 +3414,6 @@ function handleTerminalExitEvent(event: WorkspaceEvent, workspaceId: string): vo
  * - `task:ready-tasks-changed` → WorkspaceProgressCard reads
  *   `payload.workspaceId` + `payload.data.readyTaskIds`; the daemon event
  *   envelope (§5.4 TS-parity payload) already has exactly that shape.
- * - `line-attribution:updated` (§5.2.1 / §6.5) → forwarded as
- *   `{ workspaceId, noteId, attributions }` so the tiptap
- *   the workspace-notes read saga's `takeEveryFromListenSync` listener
- *   reload path fires without touching the daemon transport directly.
  * - `workspace:updated` → forwarded as `{ workspaceId, changes: data }`.
  *
  * `pr:linked`/`pr:updated`/`pr:unlinked` (§7.6) are no longer relayed here —
@@ -3421,13 +3428,6 @@ function relayLegacyIpcEvent(type: string, event: WorkspaceEvent, workspaceId: s
   switch (type) {
     case 'task:ready-tasks-changed':
       emitMockIpcEvent('task:ready-tasks-changed', event);
-      return;
-    case 'line-attribution:updated':
-      emitMockIpcEvent('line-attribution:updated', {
-        workspaceId,
-        noteId: data.noteId,
-        attributions: data.attributions,
-      });
       return;
     case 'workspace:updated':
       emitMockIpcEvent('workspace:updated', { workspaceId, changes: data });
@@ -3908,6 +3908,31 @@ export function routeDaemonEventsNotification(
     return;
   }
 
+  if (
+    type === 'discussion:created' ||
+    type === 'discussion:updated' ||
+    type === 'discussion:deleted'
+  ) {
+    const data = (event as { data?: unknown }).data;
+    const context = selectDiscussionContext.select(appStore.state);
+    if (
+      !context ||
+      appStore.state.workspaceDiscussion.managementSupported !== true ||
+      !isDiscussionDeletedEvent(data)
+    )
+      return;
+    const envelopeWorkspaceId = workspaceIdOf(event);
+    if (envelopeWorkspaceId && envelopeWorkspaceId !== data.workspaceId) return;
+    if (type === 'discussion:deleted') {
+      appStore.dispatch(
+        discussionConversationDeleted(context, data.workspaceId, data.conversationId),
+      );
+    } else if (isDiscussionConversationEvent(data) && data.conversation.kind === 'workspace') {
+      appStore.dispatch(discussionConversationReceived(context, data.conversation));
+    }
+    return;
+  }
+
   if (type === 'discussion:activity') {
     const data = (event as { data?: unknown }).data;
     if (
@@ -3949,6 +3974,8 @@ export function routeDaemonEventsNotification(
     const data = (event as { data?: unknown }).data;
     if (
       isDiscussionMessageEvent(data) &&
+      (appStore.state.workspaceDiscussion.principalMentionsSupported !== true ||
+        hasDiscussionPrincipalMentions(data.message)) &&
       (appStore.state.workspaceDiscussion.agentActivitySupported !== true ||
         (hasDiscussionAgentActivity(data.message) && hasDiscussionAgentMentions(data.message))) &&
       (appStore.state.workspaceDiscussion.messageActionsSupported !== true ||
@@ -3961,10 +3988,11 @@ export function routeDaemonEventsNotification(
       if (!context) return;
       if (
         conversationId !== DEFAULT_DISCUSSION_ID &&
-        (appStore.state.workspaceDiscussion.conversationsSupported !== true ||
-          !data.conversation?.participants.some(
-            (p) => p.principalId === appStore.state.principal.snapshot?.principal.id,
-          ))
+        (appStore.state.workspaceDiscussion.conversationsSupported === false ||
+          (data.conversation?.kind !== 'workspace' &&
+            !data.conversation?.participants.some(
+              (p) => p.principalId === appStore.state.principal.snapshot?.principal.id,
+            )))
       )
         return;
       if (data.conversation)
@@ -4747,7 +4775,6 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // agent-lock snapshot folded into the agent-lock slice; without the
   // subscribe filter the gating in FileChangesSection never engages live.
   'changes:agent-locks',
-  'line-attribution:updated',
   'pr:*',
   // `gitRoot:*` (§6.5) — a submodule PR's status / merge-queue change only
   // arrives as `gitRoot:updated`; without it Home badges for root-tracked PRs
@@ -4789,6 +4816,9 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   'discussion:message',
   'discussion:reaction',
   'discussion:activity',
+  'discussion:created',
+  'discussion:updated',
+  'discussion:deleted',
   'host:members-changed',
   'host:invites-changed',
   'host:execution-context-changed',

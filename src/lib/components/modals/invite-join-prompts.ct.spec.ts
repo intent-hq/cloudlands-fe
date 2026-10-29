@@ -2,60 +2,42 @@ import { expect, test } from '../../../test/ct-test';
 import InviteJoinPromptsPreview from './invite-join-prompts.preview.svelte';
 
 for (const width of [420, 900]) {
-  test(`Multiplayer recovery enables once and remains keyboard cancellable at ${width}px`, async ({
+  test(`an invite awaiting window readiness shows only connecting progress at ${width}px`, async ({
     mount,
     page,
   }, testInfo) => {
     await page.setViewportSize({ width, height: 608 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    let enables = 0;
-    const component = await mount(InviteJoinPromptsPreview, {
+    let retries = 0;
+    await mount(InviteJoinPromptsPreview, {
       props: {
-        progress: { requestId: 'controlled-recovery', phase: 'admission' },
-        onEnable: () => {
-          enables++;
+        progress: { requestId: 'controlled-admission', phase: 'admission' },
+        onRetry: () => {
+          retries++;
         },
       },
     });
-    const recovery = page.getByRole('alertdialog');
-    const enable = recovery.getByRole('button', { name: 'Enable Multiplayer', exact: true });
-    const cancel = recovery.getByRole('button', { name: 'Cancel', exact: true });
-    // Two footer actions plus the accessible close control.
-    await expect(recovery.getByRole('button')).toHaveCount(3);
-    await enable.focus();
-    await enable.press('Tab');
-    await expect(recovery.getByRole('button', { name: /dismiss|cancel/i }).first()).toBeFocused();
-    await enable.focus();
-    await enable.press('Enter');
-    await expect.poll(() => enables).toBe(1);
-    await cancel.focus();
-    await component.update({
-      props: {
-        progress: { requestId: 'controlled-recovery', phase: 'admission' },
-        busy: true,
-      },
-    });
-    await expect(enable).toBeDisabled();
-    await expect(cancel).toBeEnabled();
-    await expect(recovery).toHaveAttribute('aria-busy', 'true');
-    await cancel.focus();
-    await cancel.press('Tab');
-    await expect(
-      recovery.getByRole('button', { name: 'Cancel joining', exact: true }),
-    ).toBeFocused();
-    await cancel.focus();
-    const box = (await enable.boundingBox())!;
+    const progress = page.getByRole('alertdialog');
+    await expect(progress).toContainText('Connecting…');
+    await expect(progress).not.toContainText(/Multiplayer/i);
+    await expect(progress).toHaveAttribute('aria-busy', 'true');
+    await expect(progress.getByRole('alert')).toHaveCount(0);
+    // Footer Cancel plus the accessible close control; no enable or retry action.
+    await expect(progress.getByRole('button')).toHaveCount(2);
+    await expect(progress.getByRole('button', { name: /enable|try again/i })).toHaveCount(0);
+    const cancel = progress.getByRole('button', { name: 'Cancel', exact: true });
+    const box = (await cancel.boundingBox())!;
     expect(box.x).toBeGreaterThanOrEqual(0);
     expect(box.x + box.width).toBeLessThanOrEqual(width);
-    expect(box.y + box.height).toBeLessThanOrEqual(page.viewportSize()!.height);
-    await page.screenshot({ path: testInfo.outputPath(`multiplayer-recovery-${width}.png`) });
+    await page.screenshot({ path: testInfo.outputPath(`admission-continuing-${width}.png`) });
+    await cancel.focus();
     await cancel.press('Escape');
-    await expect(recovery).toHaveCount(0);
-    expect(enables).toBe(1);
+    await expect(progress).toHaveCount(0);
+    expect(retries).toBe(0);
   });
 }
 
-test('failed recovery keeps both actions usable and restores keyboard focus on cancellation', async ({
+test('a failed readiness step offers Try again once, disables it while busy, and restores focus on cancel', async ({
   mount,
   page,
 }) => {
@@ -65,26 +47,36 @@ test('failed recovery keeps both actions usable and restores keyboard focus on c
     document.body.append(opener);
     opener.focus();
   });
-  let enables = 0;
-  await mount(InviteJoinPromptsPreview, {
+  let retries = 0;
+  const component = await mount(InviteJoinPromptsPreview, {
     props: {
-      progress: { requestId: 'failed-recovery', phase: 'admission' },
+      progress: { requestId: 'failed-admission', phase: 'admission' },
       failed: true,
-      onEnable: () => {
-        enables++;
+      onRetry: () => {
+        retries++;
       },
     },
   });
-  const recovery = page.getByRole('alertdialog');
-  await expect(recovery.getByRole('alert')).toBeVisible();
-  await expect(recovery.getByRole('button')).toHaveCount(3);
-  const enable = recovery.getByRole('button', { name: 'Enable Multiplayer', exact: true });
-  await enable.focus();
-  await enable.press('Enter');
-  await expect.poll(() => enables).toBe(1);
-  await recovery.getByRole('button', { name: 'Cancel', exact: true }).click();
-  await expect(recovery).toHaveCount(0);
+  const progress = page.getByRole('alertdialog');
+  await expect(progress.getByRole('alert')).toBeVisible();
+  await expect(progress).not.toContainText(/Multiplayer/i);
+  await expect(progress.getByRole('button')).toHaveCount(3);
+  const retry = progress.getByRole('button', { name: 'Try again', exact: true });
+  await retry.focus();
+  await retry.press('Enter');
+  await expect.poll(() => retries).toBe(1);
+  await component.update({
+    props: {
+      progress: { requestId: 'failed-admission', phase: 'admission' },
+      failed: true,
+      busy: true,
+    },
+  });
+  await expect(retry).toBeDisabled();
+  await progress.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(progress).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Open controlled invitation' })).toBeFocused();
+  expect(retries).toBe(1);
 });
 
 test('host consent names host-wide access and keeps cancellation available during joining', async ({

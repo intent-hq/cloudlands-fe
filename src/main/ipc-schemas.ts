@@ -228,6 +228,8 @@ export const WorkspaceUpdateSchema = z.object({
   id: WorkspaceIdSchema,
   title: z.string().optional(),
   statusMessage: WorkspaceStatusMessageSchema.optional(),
+  // Workspace label: undefined = untouched, null = clear, string = set.
+  label: z.string().nullable().optional(),
   branch: z.string().optional(),
   baseRef: z.string().optional(),
   baseCommitSha: z.string().optional(),

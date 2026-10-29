@@ -332,14 +332,6 @@
     defaultReasoningEffort?: string | null;
     onReasoningChange?: (effort: string | null) => boolean | void | Promise<boolean | void>;
     reasoningDisabled?: boolean;
-    showProviderWarningNotice?: boolean;
-    /**
-     * Extra classes for the provider notice boxes. Callers that render the
-     * picker inside a flex row use this to let the notice break onto its own
-     * full-width line (e.g. `basis-full w-full max-w-full` + `flex-wrap` on
-     * the row) instead of sitting inline next to the trigger.
-     */
-    noticeClass?: string;
   }
 
   let {
@@ -379,8 +371,6 @@
     defaultReasoningEffort,
     onReasoningChange,
     reasoningDisabled = false,
-    showProviderWarningNotice,
-    noticeClass,
   }: Props = $props();
 
   const workspaceIdStore = writable(untrack(() => workspaceId) ?? '');
@@ -430,12 +420,6 @@
     void $workspaceCatalogEpoch$;
     if (workspaceId) appStore.dispatch(ensureWorkspaceCatalogRequested(workspaceId));
   });
-
-  // `default`-variant pickers stack the notice directly under a full-width
-  // trigger, so give it a default top margin; callers can still override it.
-  const resolvedNoticeClass = $derived(
-    variant === 'default' ? cn('mt-2', noticeClass) : noticeClass,
-  );
 
   const agentSession$ = useAgentSession(() => agentId);
 
@@ -515,14 +499,6 @@
   });
 
   import { store as appStore } from '$store/renderer/store';
-
-  function getProviderWarningNotice(
-    providerId: string,
-    warnings: Record<string, string>,
-  ): ProviderWarningNotice | null {
-    const normalizedId = normalizeProviderId(providerId);
-    return createProviderWarningNotice(normalizedId, warnings[normalizedId]);
-  }
 
   // The saga owns the catalog and request generations. Read-through cache rows
   // render synchronously on remount while the owner revalidates in the background.
@@ -1289,33 +1265,6 @@
       : [],
   );
 
-  const providerFallbackWarnings = $derived.by<ProviderWarningNotice[]>(() => {
-    const warnings = $allProviderWarnings$;
-    return $availableEnabledProviderIds$
-      .map((pid) => getProviderWarningNotice(pid, warnings))
-      .filter((warning): warning is ProviderWarningNotice => Boolean(warning));
-  });
-
-  // A stale warning (PROTOCOL §5.30 `stale: true`) accompanies the daemon's
-  // last-known-good list after a transient probe failure: the models on screen
-  // are real and usable, so the "install Codex CLI" notice would be wrong.
-  // The notice stays for the degraded case (warning with no codex models).
-  // Named Codex profiles (§5.54) have their own catalogs and get the same rule.
-  function hasCatalogModels(providerId: string): boolean {
-    return (
-      (allProviderModels[providerId]?.length ?? 0) > 0 ||
-      (normalizeProviderId(effectiveProviderId) === providerId &&
-        (agentProviderModels?.length ?? 0) > 0)
-    );
-  }
-  const codexFallbackWarning = $derived(
-    providerFallbackWarnings.find(
-      (warning) =>
-        providerRefBaseId(warning.providerId) === 'codex' &&
-        !($allProviderStaleFlags$[warning.providerId] && hasCatalogModels(warning.providerId)),
-    ) ?? null,
-  );
-
   // D1(B): when no provider is available at all, never fall back to a
   // default provider/model — surface an explicit failure instead.
   // Per-provider fetch failures / a single unavailable effective provider
@@ -1550,6 +1499,40 @@
       providerBrowseChanged = false;
     }
   });
+
+  // The "install Codex CLI" notice lives inside the open picker and only on
+  // the Codex tab being browsed: it concerns Codex's list alone, so it must not
+  // repeat under every closed picker or on other providers' tabs.
+  // A stale warning (PROTOCOL §5.30 `stale: true`) accompanies the daemon's
+  // last-known-good list after a transient probe failure: the models on screen
+  // are real and usable, so the notice would be wrong there.
+  // The notice stays for the degraded case (warning with no codex models).
+  // Named Codex profiles (§5.54) have their own catalogs and get the same rule.
+  function hasCatalogModels(providerId: string): boolean {
+    return (
+      (allProviderModels[providerId]?.length ?? 0) > 0 ||
+      (normalizeProviderId(effectiveProviderId) === providerId &&
+        (agentProviderModels?.length ?? 0) > 0)
+    );
+  }
+  // Same browsed provider as `activeProviderIssue` (falls back to the
+  // preferred tab before the first browse), limited to enabled providers.
+  const codexFallbackWarning = $derived.by<ProviderWarningNotice | null>(() => {
+    const providerId = normalizeProviderId(activeBrowseProviderId || preferredBrowseProviderId);
+    if (!providerId || providerRefBaseId(providerId) !== 'codex') return null;
+    if (!$availableEnabledProviderIds$.some((id) => normalizeProviderId(id) === providerId))
+      return null;
+    if ($allProviderStaleFlags$[providerId] && hasCatalogModels(providerId)) return null;
+    return createProviderWarningNotice(providerId, $allProviderWarnings$[providerId]);
+  });
+  // The notice restates the catalog's fallback warning, so drop the generic
+  // row for it; a request error on the same provider still gets its own row.
+  const footerProviderWarnings = $derived(
+    codexFallbackWarning &&
+      !$providerRequests$[activeBrowseProviderId || preferredBrowseProviderId]?.error
+      ? []
+      : nonBlockingProviderWarnings,
+  );
 
   // Display groups — every picker browses one provider at a time.
   const displayGroups = $derived.by(() => {
@@ -1823,6 +1806,7 @@
   const refreshProviderId = $derived(activeBrowseProviderId || preferredBrowseProviderId);
   const showDropdownFooter = $derived(
     showReasoningFooter ||
+      codexFallbackWarning !== null ||
       (!allProvidersLoaded && Object.keys(allProviderModels).length > 0) ||
       activeProviderIssue !== null ||
       refreshingProviders.has(refreshProviderId),
@@ -2398,15 +2382,26 @@
   {/snippet}
 
   {#snippet dropdownFooter()}
+    {#if codexFallbackWarning}
+      <div class="px-3 py-2">
+        <ModelPickerProviderNotice
+          warning={codexFallbackWarning.message}
+          docsUrl={codexFallbackWarning.docsUrl}
+          show={true}
+          variant="warning"
+          class="max-w-none"
+        />
+      </div>
+    {/if}
     {#if !allProvidersLoaded && Object.keys(allProviderModels).length > 0}
       <div class="px-3 py-2 flex items-center gap-2 text-xs text-muted-foreground">
         <IntentMarkLoader size={12} />
         <span>{m.chat_modelPicker_loadingMore_label()}</span>
       </div>
     {/if}
-    {#if nonBlockingProviderWarnings.length > 0}
+    {#if footerProviderWarnings.length > 0}
       <div class="px-3 py-2 space-y-1.5 text-xs">
-        {#each nonBlockingProviderWarnings as warning (warning.providerId)}
+        {#each footerProviderWarnings as warning (warning.providerId)}
           <div class="flex items-start gap-2 text-muted-foreground" role="status">
             <ModelProviderErrorItem
               providerId={warning.providerId}
@@ -2741,14 +2736,6 @@
       />
     {/snippet}
   </Dropdown>
-
-  <ModelPickerProviderNotice
-    warning={codexFallbackWarning?.message}
-    docsUrl={codexFallbackWarning?.docsUrl}
-    show={(showProviderWarningNotice ?? variant === 'default') && Boolean(codexFallbackWarning)}
-    variant="warning"
-    class={resolvedNoticeClass}
-  />
 {/if}
 
 <ContentDialog

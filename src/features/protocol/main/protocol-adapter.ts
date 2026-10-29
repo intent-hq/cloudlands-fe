@@ -133,6 +133,8 @@ export class ProtocolAdapter {
     id: string;
     title?: string;
     statusMessage?: string;
+    /** Workspace label: missing = untouched, `null` = clear, string = set. */
+    label?: string | null;
     branch?: string;
     baseRef?: string;
     status?: string;

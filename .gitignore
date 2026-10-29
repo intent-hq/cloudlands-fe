@@ -74,6 +74,7 @@ test-results-quarantine
 test-reports
 playwright-report
 playwright-report-quarantine
+ct-full-runs
 test-harness-report.json
 .demo-artifacts/
 

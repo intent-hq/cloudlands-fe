@@ -440,8 +440,9 @@
       getDisplayTitle: (pr) => pr.title,
     });
   });
-  // Rows are sorted earliest-in-flow first (draft → open → merged → closed);
-  // the compact row shows only that PR so the sidebar stays scannable.
+  // Rows are sorted merge-queued first, then earliest-in-flow (draft → open →
+  // merged → closed); the compact row shows only that PR so the sidebar stays
+  // scannable.
   const primaryPr = $derived<WorkspacePRPresentationRow | undefined>(workspacePrRows[0]);
   function getWorkspacePrLabel(pr: WorkspacePRPresentationRow): string {
     const identity =

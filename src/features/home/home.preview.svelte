@@ -23,6 +23,7 @@
         setPullRequests: (id: string, pulls: PullRequestInfo[], total?: number) => void;
         setPullRequest: (id: string, pullRequest: PullRequestInfo) => void;
         setStatus: (id: string, status: WorkspaceDisplayStatus) => void;
+        setLabel: (id: string, label: string | null) => void;
         setFlags: (
           id: string,
           flags: { waiting?: boolean; scriptsRunning?: boolean; backgroundTasksRunning?: boolean },
@@ -39,7 +40,8 @@
       | 'untitled'
       | 'status-icons'
       | 'status-grouping'
-      | 'retired'
+      | 'labels'
+      | 'purged'
       | 'pr-status-list'
       | 'board-pr-status'
       | 'board'
@@ -73,7 +75,8 @@
       untitled: { props: { scenario: 'untitled' } },
       'status-icons': { props: { scenario: 'status-icons' } },
       'status-grouping': { props: { scenario: 'status-grouping' } },
-      retired: { props: { scenario: 'retired' } },
+      labels: { props: { scenario: 'labels' } },
+      purged: { props: { scenario: 'purged' } },
       'pr-status-list': { props: { scenario: 'pr-status-list', height: 1120 } },
       'board-pr-status': { props: { scenario: 'board-pr-status', height: 1120 } },
       board: { props: { scenario: 'board' } },
@@ -178,6 +181,12 @@
         id: WorkspaceId(item.id),
       }) as Workspace,
   );
+  // i18n-ignore (fixture labels: "pinned" is the wire value, "For Later" user data)
+  const labelFixtures: Record<string, string> = {
+    'home-complete': 'pinned',
+    'home-unread': 'For Later',
+    'home-ready': 'For Later',
+  };
   const statusFixtures: Workspace[] = [
     ...fixtures.filter((workspace) => workspace.status === WorkspaceStatus.Active),
     {
@@ -382,6 +391,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import HomePage from './HomePage.svelte';
+  import HomeNewLabelHost from './HomeNewLabelHost.svelte';
   import { homeIntegrationsFixtures } from './home-integrations-fixtures';
   import { store } from '$store/renderer/store';
   import { startHomePreviewFixtures } from './home-preview-lifecycle';
@@ -475,6 +485,10 @@
       store.dispatch(
         bulkUpdateWorkspaceEntities([updateWorkspaceEntity(id, { displayStatus: status })]),
       ),
+    setLabel: (id, label) =>
+      store.dispatch(
+        bulkUpdateWorkspaceEntities([updateWorkspaceEntity(id, { label: label ?? undefined })]),
+      ),
     setFlags: (id, flags) =>
       store.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(id, flags)])),
     navigation: () => ({
@@ -504,8 +518,9 @@
       store.dispatch(removeSession(id));
     },
   };
-  // A retired workspace (PROTOCOL §5.1) as the Retired chip's opt-in fetch
-  // leaves it in the store; every other chip must still hide it.
+  // An archived workspace whose folder was purged (`Retired`, PROTOCOL §5.1)
+  // as the Archived chip's opt-in fetch leaves it in the store; it shows only
+  // under Archived, like any other archived workspace.
   const retiredFixture: Workspace = {
     ...fixtures[0],
     id: WorkspaceId('home-retired'),
@@ -517,10 +532,13 @@
     archived: true,
     archivedAt: '2026-09-10T00:00:00Z',
     retiredAt: '2026-09-20T00:00:00Z',
-    statusMessage: 'Retired after the importer rewrite shipped.',
+    statusMessage: 'Workspace folder purged to free disk space.',
   };
   $effect.pre(() => {
-    admitLegacyPrincipal(scenario === 'collaborator' ? 'guest' : 'owner');
+    admitLegacyPrincipal(
+      scenario === 'collaborator' ? 'guest' : 'owner',
+      scenario === 'labels' ? { workspaceLabels: 1 } : {},
+    );
     store.dispatch(closePanel());
     store.dispatch(resetHomeWorkspaceView());
     store.dispatch(
@@ -528,7 +546,7 @@
         pinnedWorkspaceIds:
           scenario === 'status-icons' || scenario === 'board-pinned'
             ? ['home-complete']
-            : scenario === 'status-grouping'
+            : scenario === 'status-grouping' || scenario === 'labels'
               ? []
               : previousPinnedIds,
       }),
@@ -572,12 +590,13 @@
                 ? statusFixtures
                 : scenario === 'status-grouping'
                   ? statusGroupingFixtures
-                  : scenario === 'retired'
+                  : scenario === 'purged'
                     ? [...fixtures, retiredFixture]
                     : fixtures
             ).map((workspace) => ({
               ...workspace,
               myRole: scenario === 'collaborator' ? 'collaborator' : 'owner',
+              ...(scenario === 'labels' ? { label: labelFixtures[workspace.id] } : {}),
               ...(scenario === 'untitled' && workspace.id === 'home-running'
                 ? { title: '' }
                 : scenario === 'untitled' && workspace.id === 'home-review'
@@ -728,5 +747,6 @@
         ? { linear: homeIntegrationsFixtures.disconnected }
         : undefined}
   />
+  <HomeNewLabelHost />
   <output class="sr-only" data-create-workspace-requested>{$showCreateModal$}</output>
 </div>

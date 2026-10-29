@@ -4,7 +4,7 @@
   type State =
     | 'mentions'
     | 'new'
-    | 'direct'
+    | 'named'
     | 'unread'
     | 'sending'
     | 'failed'
@@ -18,11 +18,11 @@
   export const preview = definePreview<Props>({
     id: 'discussion-states',
     title: 'Discussion states',
-    defaultState: 'direct',
+    defaultState: 'named',
     states: {
       mentions: { props: { state: 'mentions' } },
       new: { props: { state: 'new' } },
-      direct: { props: { state: 'direct' } },
+      named: { props: { state: 'named' } },
       unread: { props: { state: 'unread' } },
       sending: { props: { state: 'sending' } },
       failed: { props: { state: 'failed' } },
@@ -43,11 +43,10 @@
   import { registerAllTabTypes } from '$features/layout/tab-types/register-all';
   import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import * as Menu from '$lib/components/ui/menu';
-  import DiscussionRecipients from './DiscussionRecipients.svelte';
   import DiscussionThread from './DiscussionThread.svelte';
   import type { DiscussionPendingDisplay, DiscussionReactionDisplay } from './discussion-display';
   registerAllTabTypes();
-  let { state: previewState = 'direct' }: Props = $props();
+  let { state: previewState = 'named' }: Props = $props();
   const workspaceId = 'discussion-design-preview';
   const sam = { principalId: 'sam', displayName: 'Sam Breed', login: 'sam', avatarUrl: null };
   const alex = { principalId: 'alex', displayName: 'Alex', login: 'alex', avatarUrl: null };
@@ -82,7 +81,6 @@
   let reactions = $state<Record<string, DiscussionReactionDisplay[]>>({});
   let draft = $state('');
   let reply = $state<DiscussionMessage | null>(null);
-  let recipients = $state(['alex', 'jordan']);
   let unreadCount = $state(0);
   let firstUnreadSequence = $state<number | null>(null);
   let sharingOff = $state(false);
@@ -124,7 +122,7 @@
         message(5, '@sambreed2 hello world', sam, 36),
       ];
     }
-    if (next === 'direct')
+    if (next === 'named')
       messages = [
         message(1, 'Can you review the sidebar?', alex, 2, true),
         message(2, 'Looking now.', sam, 14),
@@ -246,7 +244,7 @@
     ];
     draft = '';
     reply = null;
-    if (scene === 'new') scene = 'direct';
+    if (scene === 'new') scene = 'named';
   }
   function react(id: string, emoji: string) {
     const prior = reactions[id] ?? [];
@@ -264,10 +262,10 @@
         : [...prior, { emoji, count: 1, reacted: true }],
     };
   }
-  const activeTabId = $derived(scene === 'new' ? 'new' : scene === 'direct' ? 'direct' : 'default');
+  const activeTabId = $derived(scene === 'new' ? 'new' : scene === 'named' ? 'named' : 'default');
   const tabs = $derived<PanelTab[]>([
     { id: 'default', type: 'discussion', title: 'Feature UI', closable: true },
-    { id: 'direct', type: 'discussion', title: 'Alex', closable: true },
+    { id: 'named', type: 'discussion', title: 'Design review', closable: true },
     ...(scene === 'new'
       ? [
           {
@@ -298,21 +296,16 @@
       panelId="discussion-preview"
       {workspaceId}
       contentActions={{ actions: discussionActions }}
-      onTabClick={(id) => reset(id === 'direct' ? 'direct' : id === 'new' ? 'new' : 'reactions')}
+      onTabClick={(id) => reset(id === 'named' ? 'named' : id === 'new' ? 'new' : 'reactions')}
       onTabClose={() => (closed = true)}
     />
     <div class="min-h-0 flex-1">
       <DiscussionThread
         {workspaceId}
-        conversationId={scene === 'new' ? 'new' : scene === 'direct' ? 'direct' : 'default'}
+        conversationId={scene === 'new' ? 'new' : scene === 'named' ? 'named' : 'default'}
         {messages}
         mentionUsers={[sam, alex, jordan]}
         {draft}
-        composerPlaceholder={scene === 'direct'
-          ? m.workspace_discussion_composerPerson_placeholder({ name: 'Alex' })
-          : scene === 'new'
-            ? m.workspace_discussion_composerPair_placeholder({ first: 'Alex', second: 'Jordan' })
-            : undefined}
         pendingMessages={pending}
         reactionsByMessage={reactions}
         {unreadCount}
@@ -330,7 +323,7 @@
         focusComposer={false}
         isPanelFocused
         canCompose={!sharingOff}
-        canSend={!sharingOff && scene !== 'loading' && (scene !== 'new' || recipients.length > 0)}
+        canSend={!sharingOff && scene !== 'loading'}
         onDraftChange={(value) => (draft = value)}
         onSend={send}
         onRetry={() => reset(scene)}
@@ -349,11 +342,13 @@
           }
         }}
       >
-        {#snippet header()}{#if scene === 'new'}<DiscussionRecipients
-              members={[alex, jordan]}
-              selectedIds={recipients}
-              onChange={(ids) => (recipients = ids)}
-            />{/if}{/snippet}
+        {#snippet header()}
+          {#if scene === 'new'}
+            <p class="px-4 py-3 type-caption text-muted-foreground" data-discussion-audience>
+              {m.workspace_discussion_everyone_label()}
+            </p>
+          {/if}
+        {/snippet}
       </DiscussionThread>
     </div>
   {/if}

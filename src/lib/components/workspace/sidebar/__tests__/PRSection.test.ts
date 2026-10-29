@@ -115,7 +115,7 @@ vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({
 }));
 
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
-  selectLabsMultiplayerEnabled: mocks.selector(() => false),
+  selectNativeReviewEnabled: mocks.selector(() => false),
 }));
 
 vi.mock(

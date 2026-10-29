@@ -6,6 +6,7 @@ import { routeDaemonEventsNotification } from '$features/events/daemon-events-br
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Workspace } from '$shared/types';
 import type {
+  DiscussionConversation,
   DiscussionMessage,
   DiscussionAgentActivity,
 } from '$shared/types/workspace-discussion';
@@ -22,8 +23,13 @@ import {
   selectPrincipalActionContext,
 } from '../../principal/principal-selectors';
 import {
+  discussionManagementCapabilityReceived,
+  discussionRenameRequested,
+  discussionDeleteRequested,
   discussionReadThrough,
   discussionAgentSelected,
+  discussionPrincipalSelected,
+  discussionPrincipalMentionsCapabilityReceived,
   discussionAgentControlRequested,
   discussionAgentRemoved,
   discussionAgentCapabilityReceived,
@@ -43,6 +49,13 @@ import {
   discussionMembershipInvalidated,
 } from '../workspace-discussion-slice';
 import {
+  selectDiscussionDefaultVisible,
+  selectDiscussionCanTargetAgents,
+  selectDiscussionCanRename,
+  selectDiscussionCanDelete,
+  selectDiscussionManagementPending,
+  selectDiscussionManagement,
+  selectDiscussionReadOnly,
   selectDiscussionUnread,
   selectDiscussionCanSend,
   selectDiscussionCanInteract,
@@ -136,6 +149,8 @@ describe('workspace discussion transport', () => {
     vi.spyOn(workspaceDiscussionClient, 'supportsReactions').mockResolvedValue(false);
     vi.spyOn(workspaceDiscussionClient, 'supportsAgentMessaging').mockResolvedValue(false);
     vi.spyOn(workspaceDiscussionClient, 'supportsAgentActivity').mockResolvedValue(false);
+    vi.spyOn(workspaceDiscussionClient, 'supportsPrincipalMentions').mockResolvedValue(false);
+    vi.spyOn(workspaceDiscussionClient, 'supportsManagement').mockResolvedValue(true);
     wire.readSetting.mockReset().mockResolvedValue({ value: true });
     wire.request.mockReset().mockResolvedValue({ messages: [], hasMore: false });
     store.dispatch(
@@ -395,6 +410,63 @@ describe('workspace discussion transport', () => {
     expect(messages()[0].agentMentions).toEqual(selected);
     expect(row().draft).toBe('Keep my new draft');
     expect(pending()).toHaveLength(0);
+  });
+  it('sends selected people by identity and retries the original selection without consuming a newer draft', async () => {
+    await open();
+    store.dispatch(
+      discussionPrincipalMentionsCapabilityReceived(
+        selectDiscussionTarget.select(store.state, 'ws')!.context,
+        true,
+      ),
+    );
+    store.dispatch(discussionDraftChanged('ws', 'Hi '));
+    store.dispatch(discussionPrincipalSelected('ws', 'alex-id', 'Alex', 3, 3));
+    wire.request.mockRejectedValueOnce(new Error('lost acknowledgment'));
+    store.dispatch(discussionSendRequested('ws'));
+    await settle();
+    const first = wire.request.mock.calls.find(([method]) => method === 'discussion.send')![1];
+    expect(first).toEqual({
+      workspaceId: 'ws',
+      messageId: expect.any(String),
+      body: 'Hi @Alex ',
+      principalMentions: [{ principalId: 'alex-id', name: 'Alex', start: 3, end: 8 }],
+    });
+    store.dispatch(discussionDraftChanged('ws', 'Another thought '));
+    store.dispatch(discussionPrincipalSelected('ws', 'jordan-id', 'Jordan', 16, 16));
+    wire.request.mockResolvedValueOnce({
+      message: {
+        ...message(1, 'ws', 'Hi @Alex '),
+        principalMentions: [{ principalId: 'alex-id', name: 'Alex', start: 3, end: 8 }],
+      },
+    });
+    store.dispatch(discussionRetryRequested('ws', first.messageId));
+    await settle();
+    const sends = wire.request.mock.calls.filter(([method]) => method === 'discussion.send');
+    expect(sends[1]).toEqual(sends[0]);
+    expect(messages()[0].principalMentions).toEqual([
+      { principalId: 'alex-id', name: 'Alex', start: 3, end: 8 },
+    ]);
+    expect(row()).toMatchObject({
+      draft: 'Another thought @Jordan ',
+      principalMentions: [{ principalId: 'jordan-id', name: 'Jordan', start: 16, end: 23 }],
+    });
+    expect(pending()).toHaveLength(0);
+  });
+  it('does not silently drop a selected person when notification capability is lost', async () => {
+    await open();
+    const context = selectDiscussionTarget.select(store.state, 'ws')!.context;
+    store.dispatch(discussionPrincipalMentionsCapabilityReceived(context, true));
+    store.dispatch(discussionPrincipalSelected('ws', 'alex-id', 'Alex', 0, 0));
+    store.dispatch(discussionPrincipalMentionsCapabilityReceived(context, false));
+    wire.request.mockClear();
+    store.dispatch(discussionSendRequested('ws'));
+    await settle();
+    expect(wire.request).not.toHaveBeenCalled();
+    expect(pending()[0]).toMatchObject({
+      error: 'unsupported',
+      sentPrincipalMentions: [{ principalId: 'alex-id', name: 'Alex', start: 0, end: 5 }],
+    });
+    expect(row().draft).toBe('@Alex ');
   });
   it('retains exact mention retry metadata when a reconnect loses the required capability', async () => {
     vi.mocked(workspaceDiscussionClient.supportsAgentActivity).mockResolvedValue(true);
@@ -1003,6 +1075,7 @@ describe('workspace discussion transport', () => {
     await settle();
     expect(row().initialized).toBe(true);
     expect(messages()).toEqual([message(1)]);
+    expect(selectDiscussionReady.select(store.state, 'ws', 'new')).toBe(true);
   });
   it('keeps draft and history visible during reconnect admission while sending stays disabled', async () => {
     wire.request.mockResolvedValueOnce(page(1, 1));
@@ -1100,7 +1173,9 @@ describe('workspace discussion transport', () => {
       if (method === 'discussion.send')
         return {
           message: { ...privateMessage(params.conversationId ?? 'created'), body: params.body },
-          conversation: conversation(params.conversationId ?? 'created'),
+          conversation: params.createConversation
+            ? { ...conversation('created'), kind: 'workspace', participants: [] }
+            : conversation(params.conversationId ?? 'created'),
         };
       throw new Error(`Unexpected ${method}`);
     });
@@ -1108,7 +1183,6 @@ describe('workspace discussion transport', () => {
   async function openNew() {
     store.dispatch(discussionRequested('ws', 'new'));
     await settle();
-    store.dispatch(discussionRecipientsChanged('ws', ['other']));
     store.dispatch(discussionDraftChanged('ws', 'hello', 'new'));
   }
   it('isolates overlapping sequences, drafts and default legacy events across conversations', async () => {
@@ -1154,7 +1228,10 @@ describe('workspace discussion transport', () => {
     store.dispatch(discussionSendRequested('ws', 'new'));
     await settle();
     const failed = selectDiscussionPending.select(store.state, 'ws', 'new')[0];
-    expect(failed.recipientPrincipalIds).toEqual(['other']);
+    expect(failed.recipientPrincipalIds).toBeUndefined();
+    expect(
+      wire.request.mock.calls.find(([method]) => method === 'discussion.send')?.[1],
+    ).toMatchObject({ createConversation: true });
     store.dispatch(discussionRecipientsChanged('ws', []));
     store.dispatch(discussionDraftChanged('ws', 'next message', 'new'));
     store.dispatch(discussionSendRequested('ws', 'new'));
@@ -1177,6 +1254,13 @@ describe('workspace discussion transport', () => {
     );
   });
   it('does not fall back to default when an old daemon ignores new parameters', async () => {
+    vi.mocked(workspaceDiscussionClient.supportsManagement).mockResolvedValue(false);
+    store.dispatch(
+      discussionManagementCapabilityReceived(
+        selectPrincipalActionContext.select(store.state)!,
+        false,
+      ),
+    );
     wire.request.mockResolvedValue({ messages: [], hasMore: false });
     await openNew();
     store.dispatch(discussionSendRequested('ws', 'new'));
@@ -1224,7 +1308,53 @@ describe('workspace discussion transport', () => {
       'c2',
     ]);
   });
-  it('retains selected offline recipient profiles across searches and ignores late query replies', async () => {
+  it('counts unopened live mentions without accepting malformed metadata or nonparticipant events', async () => {
+    multiWire();
+    await openNew();
+    const context = selectDiscussionTarget.select(store.state, 'ws', 'new')!.context;
+    store.dispatch(discussionPrincipalMentionsCapabilityReceived(context, true));
+    const incoming = {
+      ...privateMessage('unopened', 12),
+      author: author('other'),
+      body: 'Hi @Sam',
+      principalMentions: [{ principalId: 'me', name: 'Sam', start: 3, end: 7 }],
+    };
+    const emit = (participants = conversation('unopened').participants, start = 3) =>
+      routeDaemonEventsNotification(
+        'events.event',
+        {
+          subscriptionId: 'current',
+          event: {
+            id: 'live-person-mention',
+            type: 'discussion:message',
+            workspaceId: 'ws',
+            data: {
+              workspaceId: 'ws',
+              conversationId: 'unopened',
+              conversation: { ...conversation('unopened'), participants },
+              message: {
+                ...incoming,
+                principalMentions: [{ ...incoming.principalMentions[0], start }],
+              },
+            },
+          },
+        },
+        ['current'],
+      );
+    emit([author('other')]);
+    emit(undefined, 0);
+    expect(selectDiscussionTarget.select(store.state, 'ws', 'unopened')).toBeNull();
+    emit();
+    emit();
+    expect(selectDiscussionMessages.select(store.state, 'ws', 'unopened')).toEqual([incoming]);
+    expect(selectDiscussionUnread.select(store.state, 'ws', 'unopened')).toEqual({
+      count: 1,
+      firstSequence: 12,
+    });
+    store.dispatch(discussionMembershipInvalidated('ws'));
+    expect(selectDiscussionUnread.select(store.state, 'ws', 'unopened').count).toBe(0);
+  });
+  it('searches mention candidates and ignores late query replies', async () => {
     multiWire();
     await openNew();
     const late = deferred<{ members: ReturnType<typeof author>[]; hasMore: boolean }>();
@@ -1244,7 +1374,7 @@ describe('workspace discussion transport', () => {
     const recipients = selectDiscussionRecipients.select(store.state, 'ws');
     expect(recipients.query).toBe('new');
     expect(recipients.members.map((m) => m.principalId)).toEqual(['new']);
-    expect(recipients.selectedMembers.map((m) => m.principalId)).toEqual(['other']);
+    expect(recipients.selectedMembers).toEqual([]);
   });
   it('hides private cached history during reauthorization and discards it after access denial', async () => {
     multiWire();
@@ -1268,6 +1398,20 @@ describe('workspace discussion transport', () => {
       sending: false,
     });
     expect(store.state.workspaceDiscussion.byWorkspaceId.ws.c1.draft).toBe('');
+  });
+  it('keeps initialized private history visible while the same owner is offline', async () => {
+    multiWire();
+    store.dispatch(discussionRequested('ws', 'c1'));
+    await settle();
+    store.dispatch(discussionDraftChanged('ws', 'private draft', 'c1'));
+    store.dispatch(connectionStatusChanged('disconnected'));
+    store.dispatch(principalContextChanged(null));
+    await settle();
+    expect(selectDiscussionMessages.select(store.state, 'ws', 'c1')).toEqual([
+      privateMessage('c1'),
+    ]);
+    expect(selectWorkspaceDiscussion.select(store.state, 'ws', 'c1').draft).toBe('private draft');
+    expect(selectDiscussionReady.select(store.state, 'ws', 'c1')).toBe(false);
   });
   it('promotes a closed composer before a fresh composer opens, so restore keeps the created thread', async () => {
     multiWire();
@@ -1296,7 +1440,7 @@ describe('workspace discussion transport', () => {
     );
     const reply = deferred<{
       message: ReturnType<typeof privateMessage>;
-      conversation: ReturnType<typeof conversation>;
+      conversation: DiscussionConversation;
     }>();
     const normal = wire.request.getMockImplementation()!;
     wire.request.mockImplementation((method, params) =>
@@ -1305,7 +1449,10 @@ describe('workspace discussion transport', () => {
     store.dispatch(discussionSendRequested('ws', 'new'));
     await settle();
     store.dispatch(closeTab('layout', 'new-tab'));
-    reply.resolve({ message: privateMessage('created'), conversation: conversation('created') });
+    reply.resolve({
+      message: privateMessage('created'),
+      conversation: { ...conversation('created'), kind: 'workspace', participants: [] },
+    });
     await settle();
     expect(
       store.state.panelLayout.byWorkspaceId.layout.recentlyClosed[0].tab.data?.conversationId,
@@ -1891,5 +2038,307 @@ describe('workspace discussion transport', () => {
     await settle();
     expect(messages()).toEqual([]);
     expect(store.state.workspaceDiscussion.byWorkspaceId.ws).toBeUndefined();
+  });
+  const sharedConversation = (id = 'default'): DiscussionConversation => ({
+    id,
+    workspaceId: 'ws',
+    kind: 'workspace',
+    participants: [],
+    name: 'Planning',
+    createdAt: '2026-10-16T00:00:00Z',
+  });
+  async function openManaged(role: 'owner' | 'manager' | 'collaborator' = 'owner', id = 'default') {
+    store.dispatch(
+      replaceWorkspaceList([
+        {
+          ...workspace(),
+          myRole: role,
+          canManage: role !== 'collaborator',
+          ownerPrincipalId: role === 'owner' ? 'me' : 'someone-else',
+        },
+      ]),
+    );
+    wire.request.mockImplementation(async (method, params) => {
+      if (method === 'system.capabilities')
+        return { discussionConversations: 1, discussionManagement: 1 };
+      if (method === 'discussion.list')
+        return {
+          messages: [],
+          hasMore: false,
+          conversation: sharedConversation(params.conversationId ?? 'default'),
+        };
+      if (method === 'discussion.rename')
+        return {
+          conversation: { ...sharedConversation(params.conversationId), name: params.name },
+        };
+      if (method === 'discussion.delete')
+        return { deleted: true, conversationId: params.conversationId };
+      throw new Error(`Unexpected ${method}`);
+    });
+    store.dispatch(discussionRequested('ws', id));
+    await settle();
+  }
+  function managementEvent(type: string, conversationId: string, extra = {}) {
+    routeDaemonEventsNotification(
+      'events.event',
+      {
+        subscriptionId: 'current',
+        event: {
+          id: 'management',
+          type,
+          workspaceId: 'ws',
+          data: { workspaceId: 'ws', conversationId, ...extra },
+        },
+      },
+      ['current'],
+    );
+  }
+  it('enables agent mentions from a named discussion history without loading the directory', async () => {
+    vi.mocked(workspaceDiscussionClient.supportsAgentMessaging).mockResolvedValue(true);
+    vi.mocked(workspaceDiscussionClient.supportsAgentActivity).mockResolvedValue(true);
+    await openManaged('owner', 'named');
+    expect(selectDiscussionCanTargetAgents.select(store.state, 'ws', 'named')).toBe(true);
+    store.dispatch(discussionAgentSelected('ws', 'agent-a', 'Reviewer', 0, 0, 'named'));
+    expect(selectWorkspaceDiscussion.select(store.state, 'ws', 'named').agentMentions).toEqual([
+      { agentId: 'agent-a', name: 'Reviewer', start: 0, end: 9 },
+    ]);
+    expect(wire.request.mock.calls.some(([method]) => method === 'discussion.conversations')).toBe(
+      false,
+    );
+  });
+  it.each([true, false])(
+    'resolves default visibility only after all directory pages (present=%s)',
+    async (present) => {
+      const firstPage = deferred<unknown>();
+      wire.request.mockImplementation(async (method, params) => {
+        if (method === 'system.capabilities')
+          return { discussionConversations: 1, discussionManagement: 1 };
+        if (method === 'discussion.conversations')
+          return params.beforeId
+            ? { conversations: [sharedConversation('c1')], hasMore: false }
+            : firstPage.promise;
+        throw new Error(`Unexpected ${method}`);
+      });
+      store.dispatch(discussionDirectoryRequested('ws'));
+      await settle();
+      expect(selectDiscussionDefaultVisible.select(store.state, 'ws')).toBe(true);
+      firstPage.resolve({
+        conversations: [sharedConversation(present ? 'default' : 'c2')],
+        hasMore: true,
+      });
+      await settle();
+      expect(selectDiscussionDefaultVisible.select(store.state, 'ws')).toBe(true);
+      store.dispatch(discussionDirectoryRequested('ws', true));
+      await settle();
+      expect(selectDiscussionDefaultVisible.select(store.state, 'ws')).toBe(present);
+      if (present) {
+        managementEvent('discussion:deleted', 'default');
+        expect(selectDiscussionDefaultVisible.select(store.state, 'ws')).toBe(false);
+      }
+    },
+  );
+  it('retains the default fallback for daemons without discussion management', async () => {
+    vi.mocked(workspaceDiscussionClient.supportsManagement).mockResolvedValue(false);
+    store.dispatch(
+      discussionManagementCapabilityReceived(
+        selectPrincipalActionContext.select(store.state)!,
+        false,
+      ),
+    );
+    multiWire();
+    store.dispatch(discussionDirectoryRequested('ws'));
+    await settle();
+    expect(selectDiscussionDefaultVisible.select(store.state, 'ws')).toBe(true);
+  });
+  it.each(['owner', 'manager', 'collaborator'] as const)(
+    'enforces %s management permissions before sending wire requests',
+    async (role) => {
+      await openManaged(role);
+      expect(selectDiscussionCanRename.select(store.state, 'ws', 'default')).toBe(
+        role !== 'collaborator',
+      );
+      expect(selectDiscussionCanDelete.select(store.state, 'ws', 'default')).toBe(role === 'owner');
+      const rename = discussionRenameRequested('ws', 'default', 'Design');
+      store.dispatch(rename);
+      await settle();
+      if (role === 'collaborator') await expect(rename.promise).rejects.toThrow();
+      else {
+        await expect(rename.promise).resolves.toBeUndefined();
+        expect(wire.request).toHaveBeenCalledWith('discussion.rename', {
+          workspaceId: 'ws',
+          conversationId: 'default',
+          name: 'Design',
+        });
+        expect(selectDiscussionConversations.select(store.state, 'ws')[0].name).toBe('Design');
+      }
+      const remove = discussionDeleteRequested('ws', 'default');
+      store.dispatch(remove);
+      await settle();
+      if (role === 'owner') {
+        await expect(remove.promise).resolves.toBeUndefined();
+        expect(wire.request).toHaveBeenCalledWith('discussion.delete', {
+          workspaceId: 'ws',
+          conversationId: 'default',
+        });
+        expect(selectDiscussionConversations.select(store.state, 'ws')).toEqual([]);
+        expect(selectDiscussionReady.select(store.state, 'ws')).toBe(false);
+        expect(selectDiscussionCanCreate.select(store.state, 'ws')).toBe(true);
+      } else {
+        await expect(remove.promise).rejects.toThrow();
+        expect(wire.request.mock.calls.some(([method]) => method === 'discussion.delete')).toBe(
+          false,
+        );
+      }
+    },
+  );
+  it('keeps original private history readable while blocking sends, reactions and management', async () => {
+    multiWire();
+    store.dispatch(discussionRequested('ws', 'c1'));
+    await settle();
+    expect(selectDiscussionMessages.select(store.state, 'ws', 'c1')).toHaveLength(1);
+    expect(selectDiscussionReadOnly.select(store.state, 'ws', 'c1')).toBe(true);
+    expect(selectDiscussionCanSend.select(store.state, 'ws', 'c1')).toBe(false);
+    expect(selectDiscussionCanInteract.select(store.state, 'ws', 'c1')).toBe(false);
+    expect(selectDiscussionCanRename.select(store.state, 'ws', 'c1')).toBe(false);
+    store.dispatch(discussionDraftChanged('ws', 'new private message', 'c1'));
+    store.dispatch(discussionSendRequested('ws', 'c1'));
+    await settle();
+    expect(wire.request.mock.calls.some(([method]) => method === 'discussion.send')).toBe(false);
+  });
+  it('rejects overlapping management promises and cancels the admitted request on access loss', async () => {
+    await openManaged();
+    const reply = deferred<{ conversation: DiscussionConversation }>();
+    wire.request.mockReturnValue(reply.promise);
+    const first = discussionRenameRequested('ws', 'default', 'Design');
+    store.dispatch(first);
+    await settle();
+    expect(selectDiscussionManagementPending.select(store.state, 'ws', 'default')).toBe(true);
+    const second = discussionDeleteRequested('ws', 'default');
+    store.dispatch(second);
+    await settle();
+    await expect(second.promise).rejects.toThrow();
+    store.dispatch(discussionMembershipInvalidated('ws'));
+    await settle();
+    await expect(first.promise).rejects.toThrow();
+    reply.resolve({ conversation: { ...sharedConversation(), name: 'Design' } });
+    await settle();
+    expect(selectDiscussionConversations.select(store.state, 'ws')).toEqual([]);
+    expect(selectDiscussionManagementPending.select(store.state, 'ws')).toBe(false);
+  });
+  it('rejects a failed rename promise and preserves the confirmed name for retry', async () => {
+    await openManaged();
+    wire.request.mockRejectedValueOnce({ rpcCode: -32003 });
+    const request = discussionRenameRequested('ws', 'default', 'Design');
+    store.dispatch(request);
+    await settle();
+    await expect(request.promise).rejects.toThrow();
+    expect(selectDiscussionManagement.select(store.state, 'ws')).toMatchObject({
+      pending: null,
+      error: 'forbidden',
+    });
+    expect(selectDiscussionConversations.select(store.state, 'ws')[0].name).toBe('Planning');
+  });
+  it('consumes remote lifecycle events and prevents a pending rename acknowledgement restoring a deleted discussion', async () => {
+    await openManaged('owner', 'shared');
+    managementEvent('discussion:updated', 'shared', {
+      conversation: { ...sharedConversation('shared'), name: 'Remote' },
+    });
+    expect(selectDiscussionConversations.select(store.state, 'ws')[0].name).toBe('Remote');
+    const reply = deferred<{ conversation: DiscussionConversation }>();
+    wire.request.mockReturnValue(reply.promise);
+    const request = discussionRenameRequested('ws', 'shared', 'Local');
+    store.dispatch(request);
+    await settle();
+    managementEvent('discussion:deleted', 'shared');
+    reply.resolve({ conversation: { ...sharedConversation('shared'), name: 'Local' } });
+    await settle();
+    expect(selectDiscussionConversations.select(store.state, 'ws')).toEqual([]);
+    expect(selectDiscussionTarget.select(store.state, 'ws', 'shared')).toBeNull();
+    managementEvent('discussion:created', 'shared', { conversation: sharedConversation('shared') });
+    expect(selectDiscussionConversations.select(store.state, 'ws')).toEqual([]);
+  });
+  it('sends selected agents on first creation and controls them in the returned workspace conversation', async () => {
+    vi.mocked(workspaceDiscussionClient.supportsAgentMessaging).mockResolvedValue(true);
+    vi.mocked(workspaceDiscussionClient.supportsAgentActivity).mockResolvedValue(true);
+    wire.request.mockImplementation(async (method, params) => {
+      if (method === 'system.capabilities')
+        return { discussionConversations: 1, discussionManagement: 1 };
+      if (method === 'discussion.send')
+        return {
+          conversation: sharedConversation('shared'),
+          message: {
+            ...addressed(),
+            conversationId: 'shared',
+            body: params.body,
+            agentMentions: params.agentMentions,
+          },
+        };
+      if (method === 'discussion.stopAgent') return { activity: activity('stopped', 2) };
+      throw new Error(`Unexpected ${method}`);
+    });
+    store.dispatch(discussionRequested('ws', 'new'));
+    await settle();
+    expect(selectDiscussionCanTargetAgents.select(store.state, 'ws', 'new')).toBe(true);
+    store.dispatch(discussionAgentSelected('ws', 'agent-a', 'Reviewer', 0, 0, 'new'));
+    store.dispatch(discussionSendRequested('ws', 'new'));
+    await settle();
+    expect(selectDiscussionCreatedId.select(store.state, 'ws')).toBe('shared');
+    expect(wire.request).toHaveBeenCalledWith('discussion.send', {
+      workspaceId: 'ws',
+      messageId: expect.any(String),
+      body: '@Reviewer ',
+      createConversation: true,
+      recipientAgentIds: ['agent-a'],
+      agentMentions: [{ agentId: 'agent-a', name: 'Reviewer', start: 0, end: 9 }],
+    });
+    store.dispatch(
+      discussionAgentControlRequested('ws', 'server-1', 'agent-a', 1, 'stop', 'shared'),
+    );
+    await settle();
+    expect(wire.request).toHaveBeenCalledWith('discussion.stopAgent', {
+      workspaceId: 'ws',
+      conversationId: 'shared',
+      messageId: 'server-1',
+      agentId: 'agent-a',
+      attempt: 1,
+    });
+    expect(
+      selectDiscussionMessages.select(store.state, 'ws', 'shared')[0].agentActivity?.[0].state,
+    ).toBe('stopped');
+    managementEvent('discussion:activity', 'shared', {
+      messageId: 'server-1',
+      activity: activity('completed', 3),
+    });
+    expect(
+      selectDiscussionMessages.select(store.state, 'ws', 'shared')[0].agentActivity?.[0].state,
+    ).toBe('completed');
+  });
+  it('does not promote a first-send acknowledgement after its conversation was deleted live', async () => {
+    multiWire();
+    await openNew();
+    const reply = deferred<{ message: DiscussionMessage; conversation: DiscussionConversation }>();
+    const normal = wire.request.getMockImplementation()!;
+    wire.request.mockImplementation((method, params) =>
+      method === 'discussion.send' ? reply.promise : normal(method, params),
+    );
+    store.dispatch(discussionSendRequested('ws', 'new'));
+    await settle();
+    managementEvent('discussion:created', 'created', {
+      conversation: sharedConversation('created'),
+    });
+    managementEvent('discussion:deleted', 'created');
+    reply.resolve({
+      message: privateMessage('created'),
+      conversation: sharedConversation('created'),
+    });
+    await settle();
+    expect(selectDiscussionCreatedId.select(store.state, 'ws')).toBeNull();
+    expect(selectDiscussionTarget.select(store.state, 'ws', 'created')).toBeNull();
+    expect(selectDiscussionMessages.select(store.state, 'ws', 'created')).toEqual([]);
+    expect(selectWorkspaceDiscussion.select(store.state, 'ws', 'new')).toMatchObject({
+      draft: 'hello',
+      sending: false,
+      sendError: 'forbidden',
+    });
   });
 });

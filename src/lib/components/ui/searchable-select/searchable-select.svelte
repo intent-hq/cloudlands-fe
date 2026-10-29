@@ -73,7 +73,7 @@
   ariaLabel={ariaLabel ?? placeholder}
   {ariaLabelledby}
   {ariaDescribedby}
-  portal={false}
+  portal="dialog"
   {staticPosition}
   onchange={handleChange}
 />

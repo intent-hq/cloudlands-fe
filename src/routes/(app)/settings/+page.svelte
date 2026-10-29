@@ -30,6 +30,7 @@
   import KeyboardShortcutsSettings from '$lib/components/settings/KeyboardShortcutsSettings.svelte';
   import ColorThemeSettings from '$lib/components/settings/ColorThemeSettings.svelte';
   import ReduceMotionOnBatterySettings from '$lib/components/settings/ReduceMotionOnBatterySettings.svelte';
+  import PauseAnimationsWhenUnfocusedSettings from '$lib/components/settings/PauseAnimationsWhenUnfocusedSettings.svelte';
   import NotificationSettings from '$lib/components/settings/NotificationSettings.svelte';
   import RtkSettings from '$lib/components/settings/RtkSettings.svelte';
   import HardwareConsoleSettings from '$lib/components/settings/HardwareConsoleSettings.svelte';
@@ -175,6 +176,7 @@
     'chat-aurora': 'display',
     'collapse-tool-runs': 'display',
     'translucent-window': 'display',
+    'pause-animations-when-unfocused': 'display',
     'font-style': 'display',
     'color-theme': 'display',
     'note-font': 'display',
@@ -546,7 +548,7 @@
           class="type-body cursor-pointer border-none bg-transparent p-0 font-medium text-primary-ink underline hover:text-primary-ink/80"
           onclick={() => appStore.dispatch(installUpdate())}
         >
-          {m.settings_footer_updateAvailable()}
+          {m.settings_footer_restartToUpdate_label()}
         </Button>
       {:else if $autoUpdateStatus$ === 'not-available' || $autoUpdateStatus$ === 'idle'}
         <span>{m.settings_footer_upToDate()}</span>
@@ -762,6 +764,15 @@
                 class="px-6 py-4"
               >
                 <ReduceMotionOnBatterySettings />
+              </section>
+              <section
+                id="pause-animations-when-unfocused"
+                data-highlight-id="pause-animations-when-unfocused"
+                use:highlightTarget
+                data-slot="settings-section-body"
+                class="px-6 py-4"
+              >
+                <PauseAnimationsWhenUnfocusedSettings />
               </section>
             </div>
           </div>

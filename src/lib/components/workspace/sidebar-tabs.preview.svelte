@@ -110,6 +110,7 @@
   import { locateItemInSidebarRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { principalReceived } from '$store/renderer/slices/principal/principal-slice';
   import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
+  import { setUserPreference } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { ChangeStage } from '$features/file-tracking/types';
   import { installChangesSummaryMocks } from './sidebar/changes-summary.preview-fixtures';
   import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
@@ -141,11 +142,14 @@
   const timestamp = '2026-10-20T12:00:00Z';
   const root = '/preview/sidebar-tabs';
   let activationCount = $state(0);
+  let fileRevealCount = $state(0);
   const activeTab$ = selectActiveTab(workspaceId);
   const dispose = startRootStoreLifecycle(store, {
     startSagas: () => [
       ...(navigationEnabled ? startSidebarNavigationPreview(() => (activationCount += 1)) : []),
-      ...(revealDelay === undefined ? [] : [startFileRevealPreview(root, revealDelay)]),
+      ...(revealDelay === undefined
+        ? []
+        : [startFileRevealPreview(root, revealDelay, () => (fileRevealCount += 1))]),
     ],
   });
   const initialCollapsed = store.state.uiLayout.sidebarCollapsed;
@@ -156,6 +160,7 @@
   untrack(() => {
     admitLegacyPrincipal(collaborator || manager ? 'guest' : 'owner');
     if (manager) {
+      store.dispatch(setUserPreference('labsMultiplayerEnabled', true));
       const { context, snapshot, invalidation, presentationVersion } = store.state.principal;
       if (!context || !snapshot) throw new Error('Preview principal was not admitted');
       store.dispatch(
@@ -469,6 +474,7 @@
   class="overflow-hidden bg-sidebar"
   data-sidebar-tabs-preview
   data-sidebar-activation-count={activationCount}
+  data-sidebar-file-reveal-count={fileRevealCount}
   data-sidebar-destination-type={$activeTab$?.type}
   data-sidebar-destination-id={$activeTab$?.agentId ?? $activeTab$?.noteId ?? $activeTab$?.id}
 >

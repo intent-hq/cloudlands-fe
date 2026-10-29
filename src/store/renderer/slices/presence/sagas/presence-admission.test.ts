@@ -18,7 +18,11 @@ import {
   principalReceived,
 } from '../../principal/principal-slice';
 import { selectPrincipalConnectionContext } from '../../principal/principal-selectors';
-import { selectWorkspacePresencePeople, selectAgentTypingPeople } from '../presence-selectors';
+import {
+  selectWorkspacePresencePeople,
+  selectWorkspacePeopleTilePeople,
+  selectAgentTypingPeople,
+} from '../presence-selectors';
 import { presenceRosterReceived, presenceMembershipChanged } from '../presence-slice';
 import { presenceSaga } from './presence-saga';
 
@@ -147,6 +151,37 @@ describe('presence admission and avatar policy', () => {
       ['member', true, false],
       ['guest', false, false],
     ]);
+  });
+  it('keeps accepted People members through focus and connection changes, then clears on admission loss', async () => {
+    start();
+    await settle();
+    const people = () => selectWorkspacePeopleTilePeople.select(store.state, 'ws');
+    expect(people()).toMatchObject([
+      { principalId: 'me', self: true, viewing: true },
+      { principalId: 'host', online: true, viewing: false },
+      { principalId: 'away', online: false, viewing: false },
+      { principalId: 'guest', online: false, viewing: false },
+    ]);
+    const active: PresenceRoster = roster();
+    active.members[1].focus = [{ workspaceId: 'ws' }];
+    store.dispatch(presenceRosterReceived(active));
+    expect(people().find((p) => p.principalId === 'host')?.viewing).toBe(true);
+    store.dispatch(presenceRosterReceived({ workspaceId: 'ws', members: [] }));
+    expect(people().map((p) => p.principalId)).toEqual(['me', 'host', 'away', 'guest']);
+    expect(
+      people()
+        .slice(1)
+        .every((p) => !p.online && !p.viewing),
+    ).toBe(true);
+    store.dispatch(
+      hostMembershipChanged({
+        revision: 2,
+        principalId: 'me',
+        hostRole: 'guest',
+        action: 'removed',
+      }),
+    );
+    expect(people()).toEqual([]);
   });
   it('re-reads the effective roster after a same-count role change', async () => {
     start();

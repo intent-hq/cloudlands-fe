@@ -1,6 +1,7 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tick } from 'svelte';
+import { m } from '$shared/paraglide/messages.js';
 const mock = vi.hoisted(() => ({ state: {} as any, dispatch: vi.fn() }));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
@@ -43,6 +44,61 @@ describe('connected consent prompt', () => {
     expect(screen.getByRole('status').textContent).toContain('Accessibility');
     expect(screen.getByRole('button', { name: 'Allow once' }).hasAttribute('disabled')).toBe(false);
     expect(mock.dispatch).not.toHaveBeenCalled();
+  });
+  it('shows every macOS permission as one checklist with a single relaunch hint', async () => {
+    mock.state.desktopControl = desktopControlReducer(
+      mock.state.desktopControl,
+      desktopEntryPatched('workspace', 'agent', 0, {
+        submitting: true,
+        settingUp: true,
+        error: m.desktop_os_setup_description(),
+        osChecklist: { accessibility: true, screenRecording: false, screenCapture: 'unavailable' },
+      }),
+    );
+    render(DesktopConsentToast, {
+      workspaceId: 'workspace',
+      agentId: 'agent',
+      requestId: 'request',
+    });
+    const items = within(screen.getByRole('list', { name: 'macOS permissions' })).getAllByRole(
+      'listitem',
+    );
+    expect(
+      items.map((item) => [item.dataset.state, item.textContent?.replace(/\s+/g, ' ').trim()]),
+    ).toEqual([
+      ['done', 'Accessibility Allowed'],
+      ['waiting', 'Screen Recording Not allowed yet'],
+      ['waiting', 'Screen capture check Waits for the items above'],
+    ]);
+    expect(screen.getAllByText(/quit and reopen Intent/)).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Deny' }).hasAttribute('disabled')).toBe(false);
+    mock.state.desktopControl = desktopControlReducer(
+      mock.state.desktopControl,
+      desktopEntryPatched('workspace', 'agent', 0, {
+        osChecklist: { accessibility: true, screenRecording: true, screenCapture: 'pending' },
+      }),
+    );
+    (store as unknown as { emitState(): void }).emitState();
+    await tick();
+    expect(screen.getAllByRole('listitem').at(-1)?.textContent).toContain('Checking');
+    mock.state.desktopControl = desktopControlReducer(
+      mock.state.desktopControl,
+      desktopEntryPatched('workspace', 'agent', 0, {
+        osChecklist: { accessibility: true, screenRecording: true, screenCapture: 'unavailable' },
+      }),
+    );
+    (store as unknown as { emitState(): void }).emitState();
+    await tick();
+    expect(screen.getAllByRole('listitem').at(-1)?.dataset.state).toBe('failed');
+    expect(mock.dispatch).not.toHaveBeenCalled();
+  });
+  it('shows no checklist before an Allow gesture', () => {
+    render(DesktopConsentToast, {
+      workspaceId: 'workspace',
+      agentId: 'agent',
+      requestId: 'request',
+    });
+    expect(screen.queryByRole('list', { name: 'macOS permissions' })).toBeNull();
   });
   it('dispatches the exact request identity and disables all copies while submitting', async () => {
     render(DesktopConsentToast, {

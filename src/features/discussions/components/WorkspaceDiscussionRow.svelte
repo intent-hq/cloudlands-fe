@@ -9,6 +9,7 @@
     selectDiscussionContext,
     selectDiscussionDirectory,
     selectDiscussionConversations,
+    selectDiscussionDefaultVisible,
   } from '$store/renderer/slices/workspace-discussion/workspace-discussion-selectors';
   import { discussionDirectoryRequested } from '$store/renderer/slices/workspace-discussion/workspace-discussion-slice';
   import { openWorkspaceDiscussion } from '../discussion-navigation';
@@ -25,18 +26,24 @@
   const directory$ = selectDiscussionDirectory(workspaceId$);
   const conversations$ = selectDiscussionConversations(workspaceId$);
   const principal$ = selectPrincipalSnapshot();
+  const defaultVisible$ = selectDiscussionDefaultVisible(workspaceId$);
+  const defaultConversation = $derived($conversations$.find((item) => item.id === 'default'));
   const rows = $derived([
-    { id: 'default', title: m.workspace_discussion_title() },
+    ...($defaultVisible$
+      ? [
+          {
+            id: 'default',
+            title: defaultConversation
+              ? discussionTitle(defaultConversation)
+              : m.workspace_discussion_title(),
+          },
+        ]
+      : []),
     ...$conversations$
       .filter((item) => item.id !== 'default')
       .map((item) => ({
         id: item.id,
         title: discussionTitle(item, $principal$?.principal.id),
-        avatarUrl:
-          item.kind === 'direct'
-            ? item.participants.find((person) => person.principalId !== $principal$?.principal.id)
-                ?.avatarUrl
-            : null,
       })),
   ]);
   $effect(() => {
@@ -47,6 +54,7 @@
 
 {#if $multiplayer$}
   <DiscussionList
+    {workspaceId}
     {rows}
     onOpen={(id, title) => openWorkspaceDiscussion(workspaceId, panelLayoutId, id, title)}
     loading={$directory$.status === 'loading'}

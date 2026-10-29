@@ -7,10 +7,7 @@ vi.mock('svelte', async (importOriginal) => ({
 }));
 
 import type { BrowserTab, LiveClient } from '$shared/types/browser-clients';
-import {
-  resolveDrivingClientSwitch,
-  resolveDrivingClientView,
-} from '$lib/components/workspace/driving-indicator';
+import { resolveDrivingClientSwitch } from '$lib/components/workspace/driving-indicator';
 import type { StoreState } from '../../types';
 import { removeWorkspaceEntity } from '../workspace/workspace-slice';
 import {
@@ -178,7 +175,7 @@ describe('browserClientsReducer', () => {
     expect(selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-1')).toBe(1);
   });
 
-  it('derives the driving-client indicator input from the live list and the workspace pin', () => {
+  it('derives the primary-client menu input from the live list and the workspace pin', () => {
     expect(selectWorkspaceDrivingClient.select(asState(initialState), 'ws-1')).toEqual({
       eligibleClients: [],
       ownClientId: '',
@@ -236,7 +233,7 @@ describe('browserClientsReducer', () => {
     expect(selectWorkspaceDrivingClient.select(asState(state), 'ws-1').driving).toBeNull();
   });
 
-  it('shows agent activity or offline recovery regardless of client count', () => {
+  it('names the primary client or offline recovery regardless of client count', () => {
     let state = browserClientsReducer(initialState, ownClientIdReceived('cli-desk'));
     state = browserClientsReducer(state, liveClientsReceived([desk, laptop], 'ws-1'));
     state = browserClientsReducer(
@@ -247,20 +244,12 @@ describe('browserClientsReducer', () => {
       }),
     );
     const twoClients = selectWorkspaceDrivingClient.select(asState(state), 'ws-1');
-    // Two clients, no browser tabs: hidden — but the switch stays offered.
-    expect(resolveDrivingClientView({ ...twoClients, hasBrowserTabs: false })).toBeNull();
     expect(resolveDrivingClientSwitch(twoClients)).toMatchObject({
-      mode: 'elsewhere',
-      canSwitchHere: true,
-    });
-    // Two clients with a browser tab: shown.
-    expect(resolveDrivingClientView({ ...twoClients, hasBrowserTabs: true })).toMatchObject({
       mode: 'elsewhere',
       hostName: 'Intent Desktop',
       canSwitchHere: true,
     });
 
-    // One client with agent browser activity: shown.
     state = browserClientsReducer(state, liveClientsReceived([desk], 'ws-1'));
     state = browserClientsReducer(
       state,
@@ -270,11 +259,8 @@ describe('browserClientsReducer', () => {
       }),
     );
     const oneClient = selectWorkspaceDrivingClient.select(asState(state), 'ws-1');
-    expect(resolveDrivingClientView({ ...oneClient, hasBrowserTabs: true })).toMatchObject({
-      mode: 'here',
-    });
+    expect(resolveDrivingClientSwitch(oneClient)).toMatchObject({ mode: 'here' });
 
-    // An idle offline pin keeps recovery visible.
     state = browserClientsReducer(
       state,
       workspaceBrowserClientReceived('ws-1', {
@@ -284,18 +270,11 @@ describe('browserClientsReducer', () => {
       }),
     );
     const offlinePin = selectWorkspaceDrivingClient.select(asState(state), 'ws-1');
-    expect(resolveDrivingClientView({ ...offlinePin, hasBrowserTabs: false })).toEqual({
+    expect(resolveDrivingClientSwitch(offlinePin)).toEqual({
       mode: 'offline',
       hostName: 'cli-travel',
       canSwitchHere: true,
     });
-    expect(
-      resolveDrivingClientView({
-        ...offlinePin,
-        hasBrowserTabs: false,
-        activeComputerName: 'Controlled MacBook',
-      }),
-    ).toEqual({ mode: 'elsewhere', hostName: 'Controlled MacBook', canSwitchHere: true });
   });
 
   it('advances the per-workspace tabsRevision on every browser:tab-* event', () => {

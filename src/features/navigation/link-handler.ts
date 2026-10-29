@@ -213,7 +213,9 @@ async function handleIntentLink(url: string, options: LinkHandlerOptions): Promi
     const targetWorkspaceId = info.workspaceId
       ? WorkspaceId(info.workspaceId)
       : options.workspaceId;
-    if (info.valid) await activateLinkWorkspace(targetWorkspaceId, options);
+    // A workspace link navigates to its workspace itself.
+    if (info.valid && info.type !== 'workspace')
+      await activateLinkWorkspace(targetWorkspaceId, options);
     focusSourcePanel(options);
     return await handleIntent(url, {
       workspaceId: options.openInWorkspace ? targetWorkspaceId : options.workspaceId,

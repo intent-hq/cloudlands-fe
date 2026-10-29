@@ -105,39 +105,55 @@ describe('native permission check responses', () => {
         screenCapture: 'unavailable',
       },
     });
-    const guidance = await desktopClient.requestPermissions(
+    const setup = await desktopClient.requestPermissions(
       'workspace',
       'agent',
       'request',
       'allow_once',
     );
+    expect(setup?.checklist).toEqual({
+      accessibility: true,
+      screenRecording: true,
+      screenCapture: 'unavailable',
+    });
+    const guidance = setup?.guidance;
     expect(guidance).toContain('Deny this request');
     expect(guidance).toContain('new session');
     expect(guidance).not.toContain('Waiting for macOS');
   });
 
   it.each([
-    [true, false, 'Screen Recording'],
-    [false, true, 'Accessibility'],
+    [true, false, 'ready'],
+    [false, true, 'ready'],
+    [false, false, 'unavailable'],
+    [true, true, 'pending'],
   ] as const)(
-    'names only the missing permission (%s, %s)',
-    async (accessibility, screenRecording, missing) => {
+    'returns the observed checklist with one relaunch hint (%s, %s, %s)',
+    async (accessibility, screenRecording, screenCapture) => {
       localPermissions.mockResolvedValue({
         ok: true,
-        result: { platform: 'macos', accessibility, screenRecording, screenCapture: 'ready' },
+        result: { platform: 'macos', accessibility, screenRecording, screenCapture },
       });
-      const text = await desktopClient.requestPermissions(
+      const setup = await desktopClient.requestPermissions(
         'workspace',
         'agent',
         'request',
         'allow_once',
       );
-      expect(text).toContain(`macOS ${missing} access is missing.`);
-      expect(text).not.toContain(
-        `macOS ${missing === 'Accessibility' ? 'Screen Recording' : 'Accessibility'} access is missing.`,
-      );
+      expect(setup?.checklist).toEqual({ accessibility, screenRecording, screenCapture });
+      expect(setup?.guidance).toContain('Control has not started');
+      expect(setup?.guidance.match(/quit and reopen Intent/g)).toHaveLength(1);
     },
   );
+  it.each([
+    { platform: 'windows' },
+    { platform: 'macos', accessibility: true, screenRecording: true, screenCapture: 'ready' },
+  ])('reports no setup once ready %j', async (result) => {
+    localPermissions.mockResolvedValue({ ok: true, result });
+    expect(
+      await desktopClient.requestPermissions('workspace', 'agent', 'request', 'allow_once'),
+    ).toBeUndefined();
+  });
   it.each([
     null,
     {},

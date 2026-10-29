@@ -1,7 +1,7 @@
 import type { AgentMessage, ContentBlock, PendingProposalRef } from '$shared/types';
 import type { WorkspaceCreateProposal } from '$shared/types/proposal';
 import { createProposalResource } from '$shared/types/proposal-resource';
-import { expect, test } from '../../../../test/ct-test';
+import { expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
 import ChatPanelOperationalGeometryHost from './ChatPanelOperationalGeometryHost.svelte';
 
 test.setTimeout(120_000);
@@ -236,8 +236,9 @@ test('scrolls to the pending proposal and restores the chip when returning to li
   await expect(chip).toBeVisible();
 
   // A native scroll gesture must also hide the chip when its proposal enters view.
-  await scroll.hover();
-  await page.mouse.wheel(0, -(await scroll.evaluate((node) => node.scrollHeight)));
+  await wheelUntilScrolled(scroll, {
+    deltaY: -(await scroll.evaluate((node) => node.scrollHeight)),
+  });
   await expect(card).toBeInViewport();
   await expect(chip).toHaveCount(0);
 });

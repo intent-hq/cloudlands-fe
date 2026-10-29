@@ -118,7 +118,7 @@ describe('presence selectors', () => {
   ]);
 
   describe('workspace people (sidebar presence row)', () => {
-    it('starts the tile with the viewer and retains offline identities for activity photos', () => {
+    it('starts the tile with the viewer and retains offline accepted host members', () => {
       const state = stateWith(
         reduce(
           presenceMembersReceived('ws-1', [
@@ -130,6 +130,7 @@ describe('presence selectors', () => {
       );
       expect(selectWorkspacePeopleTilePeople.select(state, 'ws-1')).toMatchObject([
         { principalId: 'me', self: true, avatarUrl: 'https://example.com/me.png' },
+        { principalId: 'away', self: false, online: false, viewing: false },
       ]);
       expect(selectWorkspacePeopleIdentities.select(state, 'ws-1')).toMatchObject([
         { principalId: 'me', avatarUrl: 'https://example.com/me.png' },
@@ -138,6 +139,54 @@ describe('presence selectors', () => {
       const stale = { ...state, presence: { ...state.presence, context: 'expired' } };
       expect(selectWorkspacePeopleTilePeople.select(stale, 'ws-1')).toEqual([]);
       expect(selectWorkspacePeopleIdentities.select(stale, 'ws-1')).toEqual([]);
+    });
+
+    it('distinguishes viewing this workspace from being connected elsewhere and keeps people after disconnect', () => {
+      const members = presenceMembersReceived('ws-1', [
+        accepted('me', 'owner'),
+        { ...accepted('viewer'), hostRole: 'member' },
+        { ...accepted('elsewhere'), hostRole: 'member' },
+        { ...accepted('offline'), hostRole: 'guest' },
+      ]);
+      const connected = presenceRosterReceived({
+        workspaceId: 'ws-1',
+        members: [
+          member('viewer', { focus: [{ workspaceId: 'ws-1' }] }),
+          member('elsewhere', { focus: [{ workspaceId: 'ws-2' }] }),
+        ],
+      });
+      const before = stateWith(reduce(members, connected, presenceOwnPrincipalReceived('me')));
+      expect(selectWorkspacePeopleTilePeople.select(before, 'ws-1')).toMatchObject([
+        { principalId: 'me', self: true },
+        { principalId: 'viewer', online: true, viewing: true },
+        { principalId: 'elsewhere', online: true, viewing: false },
+        { principalId: 'offline', online: false, viewing: false },
+      ]);
+      const after = stateWith(reduce(members, presenceOwnPrincipalReceived('me')));
+      expect(ids(selectWorkspacePeopleTilePeople.select(after, 'ws-1'))).toEqual([
+        'me',
+        'viewer',
+        'elsewhere',
+        'offline',
+      ]);
+      expect(selectWorkspacePeopleTilePeople.select(after, 'ws-1').slice(1)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ principalId: 'viewer', online: false, viewing: false }),
+        ]),
+      );
+      // The live-presence projection keeps its narrower contract.
+      expect(ids(selectWorkspacePresencePeople.select(after, 'ws-1'))).toEqual(['offline']);
+      const removed = stateWith(
+        reduce(
+          presenceMembersReceived('ws-1', [accepted('me', 'owner'), accepted('offline')]),
+          connected,
+          presenceOwnPrincipalReceived('me'),
+        ),
+      );
+      expect(ids(selectWorkspacePeopleTilePeople.select(removed, 'ws-1'))).toEqual([
+        'me',
+        'offline',
+      ]);
     });
 
     it('shows the admitted viewer while membership is loading, without using another session', () => {

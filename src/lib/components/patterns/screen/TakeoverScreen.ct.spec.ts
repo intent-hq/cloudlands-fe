@@ -1,4 +1,4 @@
-import { expect, test } from '../../../../test/ct-test';
+import { expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
 import TakeoverScrollHarness from './TakeoverScrollHarness.svelte';
 
 test('a bounded takeover scrolls to its last row while its body height is animating', async ({
@@ -14,8 +14,7 @@ test('a bounded takeover scrolls to its last row while its body height is animat
     .poll(() => viewport.evaluate((node) => node.scrollHeight > node.clientHeight))
     .toBe(true);
 
-  await viewport.hover();
-  await page.mouse.wheel(0, 10000);
+  await wheelUntilScrolled(viewport, { deltaY: 10_000 });
   await expect(page.locator('[data-scroll-row]').last()).toBeInViewport();
 
   // Removing rows retargets the real spring. Sample on animation frames, not a timed midpoint.
@@ -42,7 +41,9 @@ test('a bounded takeover scrolls to its last row while its body height is animat
   expect(sample.animating).toBe(true);
   expect(sample.bounded).toBe(true);
   expect(sample.scrollTop).toBeGreaterThan(0);
-  await viewport.hover();
-  await page.mouse.wheel(0, 10000);
+  // The sample already pinned the body to the bottom while the spring shrinks it, so this
+  // wheel usually has nothing left to scroll; the last-row check below is the assertion.
+  // eslint-disable-next-line intent/no-raw-mouse-wheel-in-ct -- already at the bottom; the wheel need not scroll
+  await page.mouse.wheel(0, 10_000);
   await expect(page.locator('[data-scroll-row]').last()).toBeInViewport();
 });

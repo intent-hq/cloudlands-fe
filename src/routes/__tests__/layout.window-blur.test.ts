@@ -14,6 +14,7 @@ vi.mock('$lib/actions/pause-window-animations', () => ({
   pauseWindowAnimations: () => ({ destroy() {} }),
 }));
 import { store as appStore } from '$store/renderer/store';
+import { setPauseAnimationsWhenUnfocused } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import RootLayout from '../+layout.svelte';
 
 describe('root +layout.svelte window focus lifecycle', () => {
@@ -21,6 +22,7 @@ describe('root +layout.svelte window focus lifecycle', () => {
 
   beforeEach(() => {
     appStore.init();
+    appStore.dispatch(setPauseAnimationsWhenUnfocused(true));
     delete (window as Partial<Window>).electronAPI;
   });
 
@@ -47,6 +49,32 @@ describe('root +layout.svelte window focus lifecycle', () => {
     expect(document.documentElement.hasAttribute('data-window-blurred')).toBe(false);
     window.dispatchEvent(new FocusEvent('blur'));
     expect(document.documentElement.hasAttribute('data-window-blurred')).toBe(false);
+  });
+
+  it('keeps motion running on blur while the pause preference is off (default)', () => {
+    appStore.dispatch(setPauseAnimationsWhenUnfocused(false));
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    render(RootLayout);
+
+    expect(document.documentElement.hasAttribute('data-window-blurred')).toBe(false);
+    window.dispatchEvent(new FocusEvent('blur'));
+    expect(document.documentElement.hasAttribute('data-window-blurred')).toBe(false);
+  });
+
+  it('applies a preference change to an already unfocused window', async () => {
+    appStore.dispatch(setPauseAnimationsWhenUnfocused(false));
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    render(RootLayout);
+    expect(document.documentElement.hasAttribute('data-window-blurred')).toBe(false);
+
+    appStore.dispatch(setPauseAnimationsWhenUnfocused(true));
+    await vi.waitFor(() =>
+      expect(document.documentElement.hasAttribute('data-window-blurred')).toBe(true),
+    );
+    appStore.dispatch(setPauseAnimationsWhenUnfocused(false));
+    await vi.waitFor(() =>
+      expect(document.documentElement.hasAttribute('data-window-blurred')).toBe(false),
+    );
   });
 
   it('uses DOM focus events when the production browser mock is installed', async () => {

@@ -168,7 +168,8 @@ import {
 } from '../../workspace-agents/workspace-agents-selectors';
 import {
   selectOlderEventsNextToken,
-  selectOlderEventsEndReached,
+  selectPeopleEventsStreams,
+  selectPeopleEventsStreamsToRead,
   selectPeopleEventsInitialized,
   selectWorkspaceEvents,
 } from '../../workspace-events/workspace-events-selectors';
@@ -183,6 +184,7 @@ import {
   olderEventsLoadFailed,
   peopleEventsLoadStarted,
   peopleEventsLoadFinished,
+  peopleEventsPageLoaded,
 } from '../../workspace-events/workspace-events-slice';
 import {
   acquireWorkspaceTasksDemand,
@@ -1441,6 +1443,7 @@ function* countPeopleEvents(workspaceId: string): SagaGenerator<number> {
     workspaceId,
     yield* selectWorkspaceEvents.effect(workspaceId),
     yield* selectWorkspacePeopleIdentities.effect(workspaceId),
+    (yield* selectWorkspaceById.effect(workspaceId))?.ownerPrincipalId,
   ).length;
 }
 
@@ -1474,21 +1477,44 @@ function* refreshPeopleEvents(
       if (!(yield* isCurrent())) return;
       const target =
         PEOPLE_ROWS_PER_REQUEST + (mode === 'more' ? yield* countPeopleEvents(workspaceId) : 0);
+      const streams = ['user', 'message'] as const;
+      const stalled = new Set<(typeof streams)[number]>();
       for (let pageIndex = 0; pageIndex < PEOPLE_MAX_PAGES_PER_REQUEST; pageIndex += 1) {
-        const nextToken = yield* selectOlderEventsNextToken.effect(workspaceId);
-        if (yield* selectOlderEventsEndReached.effect(workspaceId)) break;
-        // Establish a cursor even when a live-only cache already has enough rows.
-        if (nextToken && (yield* countPeopleEvents(workspaceId)) >= target) break;
+        const cursors = yield* selectPeopleEventsStreams.effect(workspaceId);
+        // A dense user page cannot hide newer human messages behind machine-authored messages.
+        const needed = yield* selectPeopleEventsStreamsToRead.effect(workspaceId, target);
+        const stream = [
+          streams[pageIndex % streams.length],
+          streams[(pageIndex + 1) % streams.length],
+        ].find((key) => !stalled.has(key) && needed.includes(key));
+        if (!stream) break;
+        const before = cursors[stream];
+        const filter =
+          stream === 'user' ? { actorType: 'user' as const } : { eventType: 'agent:message' };
         const page: Awaited<ReturnType<typeof appClient.events.queryPage>> = yield* call(
           [appClient.events, appClient.events.queryPage],
           workspaceId,
-          nextToken ? { limit: EVENTS_PAGE_LIMIT, nextToken } : { limit: EVENTS_PAGE_LIMIT },
+          {
+            limit: EVENTS_PAGE_LIMIT,
+            ...filter,
+            ...(before.nextToken ? { nextToken: before.nextToken } : {}),
+          },
         );
         if (!(yield* isCurrent())) return;
-        // Merge even the first page: the cache may already contain newer live events.
-        yield* put(olderEventsLoaded(workspaceId, [...page.items].reverse(), page.nextToken));
+        // One canonical collection deduplicates overlapping user-stamped messages and live events.
+        yield* put(
+          peopleEventsPageLoaded(
+            workspaceId,
+            requestId,
+            stream,
+            [...page.items].reverse(),
+            page.nextToken,
+          ),
+        );
         // Invalid pages or a non-advancing server cursor must not spin or hide continuation.
-        if ((yield* selectOlderEventsNextToken.effect(workspaceId)) === nextToken) break;
+        const after = (yield* selectPeopleEventsStreams.effect(workspaceId))[stream];
+        if (after === before || (before.initialized && after.nextToken === before.nextToken))
+          stalled.add(stream);
       }
       initialized = true;
     });

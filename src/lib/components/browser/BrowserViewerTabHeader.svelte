@@ -3,7 +3,7 @@
    * Toolbar of a viewer (mirror) browser tab — a tab whose live webview runs
    * on another client (REV-2, spec Model 3). Mirrors the EmbeddedBrowser
    * toolbar: navigation controls and the page identity / editable address.
-   * Which client drives the tab is shown by the sidebar indicator, not here.
+   * Which client drives the tab is shown in the workspace menu, not here.
    * While the host is offline the controls are disabled and a banner explains
    * why. Presentational — no wire calls.
    */

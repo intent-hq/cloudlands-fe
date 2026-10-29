@@ -5,7 +5,7 @@ test.use({ viewport: { width: 720, height: 480 }, reducedMotion: 'reduce' });
 
 // Both themes matter: the semantic surfaces use different color tokens.
 for (const theme of ['light', 'dark'] as const) {
-  for (const variant of ['browser', 'default', 'info', 'success', 'warning', 'error'] as const) {
+  for (const variant of ['default', 'info', 'success', 'warning', 'error'] as const) {
     test(`${theme} ${variant} tooltip receives input over status text and remains keyboard accessible`, async ({
       mount,
       page,
@@ -55,7 +55,7 @@ for (const theme of ['light', 'dark'] as const) {
         body: await page.screenshot(),
         contentType: 'image/png',
       });
-      // Long host labels must wrap inside the surface rather than escape it.
+      // Text must wrap inside the surface rather than escape it.
       const contained = await tooltip.evaluate((node) => {
         const bounds = node.getBoundingClientRect();
         return Array.from(node.querySelectorAll('h4, p')).every((text) => {

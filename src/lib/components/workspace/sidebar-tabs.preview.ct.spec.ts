@@ -1,4 +1,4 @@
-import { expect, test } from '../../../test/ct-test';
+import { expect, test, wheelUntilScrolled } from '../../../test/ct-test';
 import SidebarTabsPreview from './sidebar-tabs.preview.svelte';
 
 test('collapse does not reopen toggle help when focus moves to the rail', async ({
@@ -137,8 +137,7 @@ test('overflowing icon tabs reveal restored, keyboard-selected, and resized sect
   await expect.poll(selectedIsVisible).toBe(true);
   const scrolled = await viewport.evaluate((node) => node.scrollLeft);
   expect(scrolled).toBeGreaterThan(0);
-  await viewport.hover();
-  await page.mouse.wheel(-160, 0);
+  await wheelUntilScrolled(viewport, { deltaX: -160 });
   await expect.poll(() => viewport.evaluate((node) => node.scrollLeft)).toBeLessThan(scrolled);
   await expect(shell).toHaveAttribute('aria-selected', 'true');
   await shell.press('Home');

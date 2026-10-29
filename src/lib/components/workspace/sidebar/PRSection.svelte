@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { Input } from '$lib/components/ui/input';
-  import { selectLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { selectNativeReviewEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { createNativeSidebarReview } from '$features/accept-changes/native-sidebar-review.svelte';
   import NativeSidebarReview from '$features/accept-changes/components/NativeSidebarReview.svelte';
   import PrRepositorySelect from '$features/accept-changes/components/PrRepositorySelect.svelte';
@@ -197,7 +197,7 @@
   // Redux selectors
   const workspaceIdStore = toStore(() => workspaceId);
   const hostOperationContext$ = selectWorkspaceActionContext(workspaceIdStore);
-  const nativeEnabled$ = selectLabsMultiplayerEnabled();
+  const nativeEnabled$ = selectNativeReviewEnabled();
   const remoteSaving$ = selectRepositorySelectionPending(workspaceIdStore);
   const nativeAdmission$ = selectPrincipalActionContext();
   const canHostOperations = $derived(isOwner && !!$hostOperationContext$);

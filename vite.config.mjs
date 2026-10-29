@@ -534,6 +534,7 @@ export default defineConfig(({ command, mode, isPreview }, testOverrides = {}) =
           '**/ios/**',
           '**/.augment/**',
           '**/playwright-report/**',
+          '**/ct-full-runs/**',
           '**/test-results/**',
           // Tests are not part of the running renderer module graph. Vite falls back to
           // a full page reload when they change, which destroys in-progress app state

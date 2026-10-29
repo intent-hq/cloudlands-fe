@@ -6,6 +6,7 @@
    */
   import { writable } from 'svelte/store';
   import { selectAgentTypingPeople } from '$store/renderer/slices/presence/presence-selectors';
+  import { OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS } from '$lib/components/chat/operational-disclosure-row';
   import PresenceAvatarStack from './PresenceAvatarStack.svelte';
   import { presenceTypingLabel } from './presence-person';
 
@@ -32,14 +33,18 @@
 
 {#if label}
   <div
-    class="type-caption flex min-w-0 items-center gap-1.5 text-muted-foreground {className}"
+    class="{OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} flex h-4 min-w-0 items-center gap-[var(--operational-leading-gap)] px-[var(--operational-row-inline-padding)] font-family-child font-normal text-muted-foreground text-[11px] leading-4 {className} /* a11y-ignore: user-requested compact typing status in the composer gap */"
     role="status"
     aria-live="polite"
     data-presence-typing-indicator
   >
-    <PresenceAvatarStack people={$typing$} size={14} decorative />
+    <span
+      class="inline-flex min-w-[var(--operational-leading-slot-size)] shrink-0 items-center justify-center"
+    >
+      <PresenceAvatarStack people={$typing$} size={12} decorative />
+    </span>
     <span class="min-w-0 truncate">{label}</span>
-    <span class="inline-flex items-center gap-0.5" aria-hidden="true">
+    <span class="inline-flex shrink-0 items-center gap-0.5" aria-hidden="true">
       <span class="typing-dot size-1 rounded-full bg-current"></span>
       <span class="typing-dot size-1 rounded-full bg-current" style="animation-delay: 0.2s"></span>
       <span class="typing-dot size-1 rounded-full bg-current" style="animation-delay: 0.4s"></span>

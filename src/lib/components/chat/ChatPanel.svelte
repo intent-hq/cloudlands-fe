@@ -1,7 +1,6 @@
 <script lang="ts">
   import { submitChatMessage } from '$features/agent/chat-submission';
   import { requestChatMessageRetry } from '$features/agent/chat-submission-retry';
-  import RetiredSendConfirm from './RetiredSendConfirm.svelte';
   import {
     selectQueueMutationBlocked,
     selectAgentSubmissionDisplay,
@@ -185,12 +184,7 @@
   import { selectTasksForAgent } from '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors';
   import type { TaskAgentAssociation } from '$store/renderer/slices/task-agent-associations/task-agent-associations-types';
   import type { Workspace, PendingProposalRef } from '$shared/types';
-  import {
-    extractAllContent,
-    type SuggestedPrompt,
-    AgentStatus,
-    WorkspaceStatus,
-  } from '$shared/types';
+  import { extractAllContent, type SuggestedPrompt, AgentStatus } from '$shared/types';
   import type { ContextItem } from './input/context-api';
   import {
     appendContextItemContent,
@@ -671,30 +665,9 @@
   // Retired sessions (PROTOCOL §5.5 soft retire, retiredAt set) are read-only: the transcript
   // stays viewable but the composer is replaced with a restore affordance.
   const isRetiredSession = $derived(!!$agentSession$?.retiredAt);
-  // A retired workspace (PROTOCOL §5.1) is read-only: its folder is gone and
-  // the view offers "Restore as blank workspace" instead of a live composer.
-  const isRetiredWorkspace = $derived(workspace?.status === WorkspaceStatus.Retired);
-  // A send to a retired workspace revives it as a fresh blank checkout
-  // (daemon-side, agent.sendMessage). Every submission is held until the user
-  // confirms; confirming sends the composer's current draft so text, context
-  // and cleanup all refer to the same draft. A suggested prompt is placed in
-  // the composer first rather than sent directly.
-  let heldRetiredSend = $state<{ force: boolean } | null>(null);
-  function sendOrConfirmRetired(text: string, force = false) {
-    if (isRetiredWorkspace) {
-      heldRetiredSend = { force };
-      return;
-    }
-    if (force) handleForceSubmit(text);
-    else handleSend(text);
-  }
-  function confirmRetiredSend() {
-    const held = heldRetiredSend;
-    heldRetiredSend = null;
-    if (!held) return;
-    if (held.force) handleForceSubmit(inputValue);
-    else handleSend(inputValue);
-  }
+  // An archived workspace whose folder was purged (`Retired`, PROTOCOL §5.1)
+  // behaves like any archived workspace: a send unarchives it (daemon-side,
+  // as a fresh checkout) and the daemon tells the agent the folder was purged.
 
   // Derive error state: combine transient chatError with persisted agent status.
   // After a reload, chatError is null but agent status may be Error — use
@@ -6162,10 +6135,6 @@
 
   // Handle selecting a suggested prompt - sends immediately
   function handleSelectSuggestedPrompt(prompt: string) {
-    if (isRetiredWorkspace) {
-      void handleEditSuggestedPrompt(prompt).then(() => sendOrConfirmRetired(prompt));
-      return;
-    }
     handleSend(prompt);
   }
 
@@ -7841,6 +7810,7 @@
     >
       <div
         class="composer-prompt-lane chat-content-measure mx-auto w-full min-w-0"
+        class:regular-chat-content-inset={!isChiefWorkspace}
         data-testid="chat-composer-lane"
       >
         <div
@@ -7913,49 +7883,45 @@
                 {#if draftManager.gateVisible}
                   <ChatDraftLoadingGate />
                 {/if}
-                {#if isRetiredWorkspace && heldRetiredSend}
-                  <RetiredSendConfirm
-                    onConfirm={confirmRetiredSend}
-                    onCancel={() => (heldRetiredSend = null)}
-                  />
-                {/if}
-                {#if workspace && agentId}
-                  <PresenceTypingIndicator
-                    workspaceId={workspace.id}
+                <div class="relative min-w-0">
+                  {#if workspace && agentId}
+                    <PresenceTypingIndicator
+                      workspaceId={workspace.id}
+                      {agentId}
+                      class="pointer-events-none absolute inset-x-0 bottom-full mb-1"
+                    />
+                  {/if}
+                  <SimpleRichInput
+                    bind:this={inputComponent}
+                    bind:contextItems={getContextItems, setContextItems}
+                    bind:value={inputValue}
+                    onvaluechange={(value) => {
+                      scheduleDraftWrite(value);
+                      reportTypingActivity(value);
+                    }}
+                    onsubmit={(text: string) => handleSend(text)}
+                    onforcesubmit={(text: string) => handleForceSubmit(text)}
+                    onstop={handleStop}
+                    onHistoryPrev={handleHistoryPrev}
+                    onHistoryNext={handleHistoryNext}
+                    disabled={!workspace || !$agentSession$}
+                    inputLocked={draftManager.gateActive}
+                    isStreaming={$agentSessionIsStreaming$}
+                    isResponding={$agentIsResponding$}
+                    {workspace}
+                    currentContext={currentMainPanelContext}
                     {agentId}
-                    class={isChiefWorkspace ? 'px-3 pb-1' : 'regular-composer-content-inset pb-1'}
+                    selectedModel={hydratedInputModel}
+                    compactMode={isCompactMode}
+                    editorClassName={`${COMPOSER_INSET_CLASS} w-full`}
+                    contentInsetClassName={`${COMPOSER_INSET_CLASS} w-full`}
+                    actionBarEndClassName={COMPOSER_INSET_CLASS}
+                    edgeDocked
+                    externalDropTarget
+                    requiresModelSwitchConfirmation={!canChangeProvider}
+                    providerId={inputProviderId}
                   />
-                {/if}
-                <SimpleRichInput
-                  bind:this={inputComponent}
-                  bind:contextItems={getContextItems, setContextItems}
-                  bind:value={inputValue}
-                  onvaluechange={(value) => {
-                    scheduleDraftWrite(value);
-                    reportTypingActivity(value);
-                  }}
-                  onsubmit={(text: string) => sendOrConfirmRetired(text)}
-                  onforcesubmit={(text: string) => sendOrConfirmRetired(text, true)}
-                  onstop={handleStop}
-                  onHistoryPrev={handleHistoryPrev}
-                  onHistoryNext={handleHistoryNext}
-                  disabled={!workspace || !$agentSession$}
-                  inputLocked={draftManager.gateActive}
-                  isStreaming={$agentSessionIsStreaming$}
-                  isResponding={$agentIsResponding$}
-                  {workspace}
-                  currentContext={currentMainPanelContext}
-                  {agentId}
-                  selectedModel={hydratedInputModel}
-                  compactMode={isCompactMode}
-                  editorClassName={`${COMPOSER_INSET_CLASS} w-full`}
-                  contentInsetClassName={`${COMPOSER_INSET_CLASS} w-full`}
-                  actionBarEndClassName={COMPOSER_INSET_CLASS}
-                  edgeDocked
-                  externalDropTarget
-                  requiresModelSwitchConfirmation={!canChangeProvider}
-                  providerId={inputProviderId}
-                />
+                </div>
               {/if}
             </QuestionComposer>
           {/if}
@@ -8053,8 +8019,10 @@
     animation: input-flash calc(var(--spring-slow) * 2.5) var(--spring-exit-ease);
   }
 
+  /* Reserve the status outside the scroll viewport even while nobody is typing.
+     Presence never resizes the composer or overlays scrolled transcript text. */
   .composer-prompt-lane {
-    padding-block: 0.5rem var(--chat-content-inset);
+    padding-block: 1.25rem var(--chat-content-inset);
   }
 
   .chief-chat-panel .composer-prompt-lane {

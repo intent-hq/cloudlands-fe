@@ -11,7 +11,6 @@ export const comboboxMetadata = parseUiComponentMetadata({
   owner: '007-B6',
   callers: [
     'src/features/discussions/components/DiscussionReferencePicker.svelte',
-    'src/features/discussions/components/DiscussionRecipients.svelte',
     'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
     'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
   ],

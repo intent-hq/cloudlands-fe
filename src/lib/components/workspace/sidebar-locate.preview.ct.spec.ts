@@ -320,6 +320,10 @@ test('a cancelled file reveal does not replay after returning to the workspace',
   const component = await mount(SidebarTabsPreview, { props });
   await component.locator('[data-sidebar-preview-locate]').click();
   await expect(component.locator('[data-sidebar-section="files"]')).toBeVisible();
+  await expect(component.locator('[data-sidebar-tabs-preview]')).toHaveAttribute(
+    'data-sidebar-file-reveal-count',
+    '1',
+  );
   await component.update({ props: { ...props, active: false } });
   const draft = component.getByRole('textbox', { name: 'Workspace draft' });
   await draft.focus();

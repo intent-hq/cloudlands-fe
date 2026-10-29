@@ -19,6 +19,7 @@
     selectWorkspaceSavedScriptContext,
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectWorkspacePeopleTilePeople } from '$store/renderer/slices/presence/presence-selectors';
+  import { selectWorkspacePeopleInvites } from '$store/renderer/slices/workspace-share/workspace-share-selectors';
   import {
     resolveExistingWorkspaceDefaultAgent,
     selectAllWorkspaceAgents,
@@ -55,20 +56,20 @@
   const collaborator$ = selectIsWorkspaceCollaborator(workspaceId$);
   const scriptContext$ = selectWorkspaceSavedScriptContext(workspaceId$);
   const people$ = selectWorkspacePeopleTilePeople(workspaceId$);
+  const invites$ = selectWorkspacePeopleInvites(workspaceId$);
+  const showPeople = $derived($people$.length > 0 || $invites$.length > 0);
   const unread$ = selectWorkspaceHasUnreadForegroundAgents(workspaceId$);
   const agents$ = selectAllWorkspaceAgents(workspaceId$);
   const mainAgent = $derived(resolveExistingWorkspaceDefaultAgent($agents$, workspaceId));
   const tabs = $derived(
     TAB_DEFINITIONS.filter(
       ({ id }) =>
-        (id !== 'people' || $people$.length > 0) &&
+        (id !== 'people' || showPeople) &&
         !($collaborator$ && OWNER_ONLY_TAB_IDS.has(id) && !(id === 'shell' && $scriptContext$)),
     ),
   );
   const savedSelection = $derived(
-    [
-      ...normalizeSelectedTabs($selected$, $collaborator$, $people$.length > 0, !!$scriptContext$),
-    ][0],
+    [...normalizeSelectedTabs($selected$, $collaborator$, showPeople, !!$scriptContext$)][0],
   );
   const selected = $derived(
     orientation === 'vertical' && flyout?.open && tabs.some((tab) => tab.id === flyout?.tabId)

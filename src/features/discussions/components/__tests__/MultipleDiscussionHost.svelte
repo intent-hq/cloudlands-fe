@@ -1,6 +1,11 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { Button } from '$lib/components/ui/button';
+  import { ConfirmHost } from '$lib/components/patterns/confirm';
+  import {
+    bulkUpdateWorkspaceEntities,
+    updateWorkspaceEntity,
+  } from '$store/renderer/slices/workspace/workspace-slice';
   import PanelTabBar from '$lib/components/layout/panel-system/PanelTabBar.svelte';
   import { registerAllTabTypes } from '$features/layout/tab-types/register-all';
   import { createPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
@@ -26,15 +31,28 @@
     failSend = false,
     deferSend = false,
     rejectSend,
-  }: { failSend?: boolean; deferSend?: boolean; rejectSend?: 'invalid' | 'forbidden' } = $props();
+    role = 'owner',
+    failRename = false,
+    failDelete = false,
+    legacyHistory = false,
+  }: {
+    failSend?: boolean;
+    deferSend?: boolean;
+    rejectSend?: 'invalid' | 'forbidden';
+    role?: 'owner' | 'manager' | 'collaborator';
+    failRename?: boolean;
+    failDelete?: boolean;
+    legacyHistory?: boolean;
+  } = $props();
   const workspaceId = 'people-tile-preview';
   const { actions } = createPanelHeaderContext();
   let requests = $state<Array<{ method: string; params: unknown }>>([]);
+  let panelFocused = $state(true);
   const backend = installDiscussionTestBackend(
     workspaceId,
     () => failSend,
     (calls) => (requests = calls),
-    { deferSend, rejectSend },
+    { deferSend, rejectSend, failRename, failDelete, legacyHistory },
   );
   const dispose = startRootStoreLifecycle(store, { startSagas: () => [] });
   store.dispatch(
@@ -49,6 +67,9 @@
   const closed$ = selectRecentlyClosed(workspaceId);
   let stop: (() => void) | undefined;
   onMount(() => {
+    store.dispatch(
+      bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { myRole: role })]),
+    );
     stop = startDiscussionTestSaga();
   });
   onDestroy(() => {
@@ -58,6 +79,8 @@
     backend.restore();
   });
 </script>
+
+<ConfirmHost />
 
 <div
   class="flex h-[720px] w-full max-w-[1000px] border border-border"
@@ -84,7 +107,7 @@
           {workspaceId}
           layoutId={workspaceId}
           isActive
-          isPanelFocused
+          isPanelFocused={panelFocused}
         />
       </div>
     {/if}
@@ -99,3 +122,10 @@
   >Reopen closed discussion</Button
 >
 <output data-discussion-closed>{JSON.stringify($closed$)}</output>
+<Button onclick={() => backend.receiveMessage('0199e991-0000-7000-8000-000000000001')}
+  >Receive Planning message</Button
+>
+<Button onclick={() => backend.receiveMessage('0199e991-0000-7000-8000-000000000001', true)}
+  >Receive own Planning message</Button
+>
+<Button onclick={() => (panelFocused = !panelFocused)}>Toggle pane focus</Button>

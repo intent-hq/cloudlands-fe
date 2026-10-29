@@ -1,4 +1,9 @@
-import { expect, expectAnimationsToSettle, test } from '../../../../../test/ct-test';
+import {
+  expect,
+  expectAnimationsToSettle,
+  test,
+  wheelUntilScrolled,
+} from '../../../../../test/ct-test';
 import { expectDismissibleLayerArmed } from '../../../../../test/dismissible-layer';
 import type { Locator, Page } from '@playwright/test';
 import ModelPickerGeometryHost from './ModelPickerGeometryHost.svelte';
@@ -161,9 +166,7 @@ test('provider rail, immediately visible search and bottom-footer effort remain 
   const controlBox = (await effort.boundingBox())!;
   expect(labelBox.x + labelBox.width).toBeLessThan(controlBox.x);
 
-  await list.hover();
-  await page.mouse.wheel(0, 2000);
-  await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  await wheelUntilScrolled(list, { deltaY: 2000 });
   expect(await section.boundingBox()).toEqual(sectionBox);
   await expectHitTarget(effort);
   await page.keyboard.type('Model 20');
@@ -448,8 +451,7 @@ for (const placement of ['settings', 'composer', 'modal'] as const) {
       const last = inner.getByRole('option').last();
       if (constrained) {
         expect(await viewport.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
-        await viewport.hover();
-        await page.mouse.wheel(0, 2000);
+        await wheelUntilScrolled(viewport, { deltaY: 2000 });
       }
       await expectHitTarget(last);
       // Nested scrolling must not move the footer by scrolling or resizing
@@ -535,8 +537,7 @@ for (const placement of ['settings', 'composer', 'modal'] as const) {
       // The model list still scrolls and selects independently of effort.
       await trigger.click();
       const modelViewport = outer.locator('[data-scroll-container]');
-      await modelViewport.hover();
-      await page.mouse.wheel(0, 2000);
+      await wheelUntilScrolled(modelViewport, { deltaY: 2000 });
       const lastModel = outer.getByRole('option', { name: 'Model 20', exact: true });
       await expectHitTarget(lastModel);
       await lastModel.click();

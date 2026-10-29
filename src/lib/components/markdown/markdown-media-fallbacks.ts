@@ -114,6 +114,7 @@ export function markdownMediaFallbacks(node: HTMLElement, options: MediaFallback
     const frame = document.createElement('span');
     frame.className = IMAGE_FRAME_CLASS;
     frame.style.aspectRatio = `${width} / ${height}`;
+    frame.style.setProperty('--image-aspect-ratio', `${width} / ${height}`);
     frame.style.width = `min(${width}px, 100%)`;
     frame.dataset.loaded = 'false';
     image.replaceWith(frame);

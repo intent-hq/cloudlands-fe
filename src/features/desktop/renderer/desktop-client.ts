@@ -3,6 +3,7 @@ import { m } from '$shared/paraglide/messages.js';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { BackendError } from '$lib/client/live/backend-transport-types';
 import { backendRequest, electronAPI } from '$lib/client/live/backend-transport';
+import type { DesktopOsChecklist } from '$shared/types/desktop';
 import type {
   DesktopDecision,
   DesktopEvent,
@@ -94,7 +95,7 @@ export const desktopClient = {
     agentId: string,
     requestId: string,
     decision: 'allow_once' | 'allow_future',
-  ): Promise<string | undefined> {
+  ): Promise<{ guidance: string; checklist: DesktopOsChecklist } | undefined> {
     const api = electronAPI();
     if (!api) throw new Error(m.desktop_consent_failed());
     const response = await api.invoke(IPC_CHANNELS.BACKEND.DESKTOP_PERMISSIONS, {
@@ -118,20 +119,17 @@ export const desktopClient = {
         }),
       ])
       .parse(response.result);
-    if (
-      result.platform === 'windows' ||
-      (result.accessibility && result.screenRecording && result.screenCapture === 'ready')
-    )
-      return;
-    if (result.accessibility && result.screenRecording && result.screenCapture === 'unavailable')
-      return m.desktop_os_captureRetry_description();
-    return [
-      !result.accessibility ? m.desktop_os_accessibility_description() : undefined,
-      !result.screenRecording ? m.desktop_os_screenRecording_description() : undefined,
-      m.desktop_os_setup_description(),
-    ]
-      .filter(Boolean)
-      .join(' ');
+    if (result.platform === 'windows') return;
+    const { accessibility, screenRecording, screenCapture } = result;
+    if (accessibility && screenRecording && screenCapture === 'ready') return;
+    // The checklist names each permission; the guidance carries one relaunch hint.
+    return {
+      checklist: { accessibility, screenRecording, screenCapture },
+      guidance:
+        accessibility && screenRecording && screenCapture === 'unavailable'
+          ? m.desktop_os_captureRetry_description()
+          : m.desktop_os_setup_description(),
+    };
   },
   async getState(workspaceId: string, agentId: string): Promise<DesktopSnapshot> {
     const hello = await backendRequest<{

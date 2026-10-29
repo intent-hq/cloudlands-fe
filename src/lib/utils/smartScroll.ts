@@ -899,7 +899,7 @@ export interface ScrollAnchor {
   offsetFromViewport: number;
   /** Original scroll position (fallback) */
   scrollTop: number;
-  /** Whether we're near the bottom (skip anchoring if true) */
+  /** Whether the capture was within the bottom proximity threshold. */
   isNearBottom: boolean;
   /**
    * First visible message row, the fallback when `element` is replaced
@@ -921,8 +921,9 @@ export function captureScrollAnchor(
   const containerRect = container.getBoundingClientRect();
   const isNearBottom = isScrollNearBottom(container, 100);
 
-  // Skip anchoring if near bottom - auto-scroll will handle it
-  if (isNearBottom) {
+  // Proximity only delegates to auto-scroll while follow is still enabled.
+  // An upward wheel releases follow immediately, even inside this threshold.
+  if (isNearBottom && bottomFollowers.get(container)?.isFollowing() !== false) {
     return { element: null, offsetFromViewport: 0, scrollTop, isNearBottom };
   }
 
@@ -984,15 +985,10 @@ function resolveScrollAnchorTarget(
 
 /** True when {@link restoreScrollAnchor} has a rendered element to restore against. */
 export function canRestoreScrollAnchor(container: HTMLElement, anchor: ScrollAnchor): boolean {
-  return !anchor.isNearBottom && resolveScrollAnchorTarget(container, anchor) !== null;
+  return resolveScrollAnchorTarget(container, anchor) !== null;
 }
 
 export function restoreScrollAnchor(container: HTMLElement, anchor: ScrollAnchor): void {
-  // Skip if we were near bottom - let auto-scroll handle it
-  if (anchor.isNearBottom) {
-    return;
-  }
-
   // Restore relative to the recorded message row when it is rendered (it
   // survives turn regrouping and index-keyed wrapper reuse), otherwise to the
   // anchor element (e.g. the row is now a LazyTurn placeholder).

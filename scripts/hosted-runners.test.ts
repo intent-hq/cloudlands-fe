@@ -452,16 +452,16 @@ describe('GitHub-hosted CI runners', () => {
     const job = read('.github/workflows/intent-pr.yml').jobs['test-portable-fixtures'];
     expect(job.needs).toContain('route');
     expect(job['runs-on']).toBe(
-      `\${{ fromJSON(needs.route.outputs.cloud || '{}')['macos-26-xlarge'] || fromJSON('["warp-macos-26-arm64-12x"]') }}`,
+      `\${{ fromJSON(needs.route.outputs.cloud || '{}')['macos-26-xlarge'] || fromJSON('["warp-macos-26-arm64-6x"]') }}`,
     );
     expect(read('.github/workflows/intent-pr.yml').jobs.route.outputs.cloud).toBe(
       '${{ steps.decide.outputs.cloud }}',
     );
     const on = await route({});
-    expect(on.cloud['macos-26-xlarge']).toEqual(['warp-macos-26-arm64-12x']);
+    expect(on.cloud['macos-26-xlarge']).toEqual(['warp-macos-26-arm64-6x']);
     // Even the retired kill switch no longer sends it to a GitHub larger runner.
     const off = await route({ env: { WARPBUILD_DISABLED: 'true' } });
-    expect(off.cloud['macos-26-xlarge']).toEqual(['warp-macos-26-arm64-12x']);
+    expect(off.cloud['macos-26-xlarge']).toEqual(['warp-macos-26-arm64-6x']);
   });
 
   it('never routes to tinybox', () => {
@@ -493,7 +493,7 @@ describe('GitHub-hosted CI runners', () => {
     );
     // A failed route falls back to the WarpBuild label, never a GitHub larger runner.
     expect(compile.strategy.matrix.include).toEqual([
-      { runner: 'macos-15-xlarge', warp: 'warp-macos-15-arm64-12x', platform: 'darwin' },
+      { runner: 'macos-15-xlarge', warp: 'warp-macos-15-arm64-6x', platform: 'darwin' },
       { runner: 'windows-2025', warp: 'windows-2025', platform: 'win32' },
     ]);
   });
@@ -510,7 +510,7 @@ describe('GitHub-hosted CI runners', () => {
         }
         if (file === 'manual-signed-build.yml' && id === 'replay-isolated-macos') {
           expect(runner).toBe(
-            `\${{ fromJSON(needs.runner-route.outputs.cloud || '{}')['macos-15-xlarge'] || fromJSON('["warp-macos-15-arm64-12x"]') }}`,
+            `\${{ fromJSON(needs.runner-route.outputs.cloud || '{}')['macos-15-xlarge'] || fromJSON('["warp-macos-15-arm64-6x"]') }}`,
           );
           expect((job as { needs?: string[] }).needs).toContain('runner-route');
           continue;

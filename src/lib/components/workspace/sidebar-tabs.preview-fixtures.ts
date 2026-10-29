@@ -23,10 +23,11 @@ export function startSidebarNavigationPreview(onActivate: () => void) {
 }
 
 /** Expand a revealed file's loaded ancestors after a deliberately slow, daemon-like delay. */
-export function startFileRevealPreview(root: string, delayMs: number) {
+export function startFileRevealPreview(root: string, delayMs: number, onRequested?: () => void) {
   return store.runSaga(function* () {
     yield* takeEvery(expandToPathRequested, function* (action) {
       const [wsId, target] = action.payload;
+      onRequested?.();
       yield* delay(delayMs);
       const parts = target.slice(root.length).split('/').filter(Boolean).slice(0, -1);
       let current = root;

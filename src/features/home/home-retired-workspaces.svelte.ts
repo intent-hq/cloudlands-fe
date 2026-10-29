@@ -4,7 +4,8 @@ import { retiredWorkspacesOptIn } from '$lib/utils/retired-workspaces-opt-in.sve
 import type { HomeFilter } from './home-model';
 
 /**
- * The Home Retired chip is the only Home path that opts in to retired rows. It
+ * The Home Archived chip is the only Home path that opts in to retired rows
+ * (archived workspaces whose folder was purged, PROTOCOL §5.1). It
  * re-reads when the principal admission (connection) changes while the chip
  * stays selected, so a read that failed or was discarded across a reconnect
  * recovers without reselecting the chip. Call during component initialisation.
@@ -19,7 +20,7 @@ export function homeRetiredWorkspaces(
   retiredWorkspacesOptIn({
     active: () => {
       const { filter, preview } = view();
-      return filter === 'retired' && !preview;
+      return filter === 'archived' && !preview;
     },
     workspaces: () => workspaces.current,
     key: () => admission.current,

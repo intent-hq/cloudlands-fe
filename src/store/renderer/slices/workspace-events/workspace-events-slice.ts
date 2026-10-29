@@ -24,6 +24,10 @@ export type WorkspaceEventsWorkspaceState = {
   peopleRequestId: string | null;
   peopleInitialized: boolean;
   peopleError: string | null;
+  peopleStreams: Record<
+    'user' | 'message',
+    { initialized: boolean; nextToken: string | null; oldestEventId: string | null }
+  >;
 };
 
 export type WorkspaceEventsState = {
@@ -53,6 +57,10 @@ export const emptyWorkspaceEventsState: WorkspaceEventsWorkspaceState = {
   peopleRequestId: null,
   peopleInitialized: false,
   peopleError: null,
+  peopleStreams: {
+    user: { initialized: false, nextToken: null, oldestEventId: null },
+    message: { initialized: false, nextToken: null, oldestEventId: null },
+  },
 };
 
 export const initialState: WorkspaceEventsState = {
@@ -133,6 +141,15 @@ export const peopleEventsLoadStarted = createAction<[workspaceId: string, reques
 export const peopleEventsLoadFinished = createAction<
   [workspaceId: string, requestId: string, initialized: boolean, error: string | null]
 >('workspaceEvents/peopleEventsLoadFinished');
+export const peopleEventsPageLoaded = createAction<
+  [
+    workspaceId: string,
+    requestId: string,
+    stream: 'user' | 'message',
+    events: WorkspaceEvent[],
+    nextToken: string | null,
+  ]
+>('workspaceEvents/peopleEventsPageLoaded');
 export const olderEventsLoaded = createAction<
   [workspaceId: string, events: WorkspaceEvent[], nextToken: string | null]
 >('workspaceEvents/olderEventsLoaded');
@@ -272,6 +289,7 @@ workspaceEventsReducer.with(
       nextToken,
       endReached: nextToken === null,
       peopleInitialized: false,
+      peopleStreams: emptyWorkspaceEventsState.peopleStreams,
     });
   },
 );
@@ -332,6 +350,7 @@ workspaceEventsReducer.with(workspaceUnmounted, (state, { payload: [workspaceId]
     endReached: false,
     peopleRequestId: null,
     peopleInitialized: false,
+    peopleStreams: emptyWorkspaceEventsState.peopleStreams,
     peopleError: null,
   });
 });
@@ -339,6 +358,29 @@ workspaceEventsReducer.with(setEventsLoading, (state, { payload: [workspaceId, l
   const wsState = getWorkspaceState(state, workspaceId);
   return setWorkspaceState(state, workspaceId, { ...wsState, loading });
 });
+workspaceEventsReducer.with(
+  peopleEventsPageLoaded,
+  (state, { payload: [workspaceId, requestId, stream, events, nextToken] }) => {
+    const wsState = getWorkspaceState(state, workspaceId);
+    if (wsState.peopleRequestId !== requestId) return state;
+    const merged = mergeEventPage(wsState.events, events, workspaceId, null);
+    return setWorkspaceState(state, workspaceId, {
+      ...wsState,
+      events: merged.events,
+      historyExpanded: merged.retainedPage || wsState.historyExpanded,
+      peopleStreams: merged.retainedPage
+        ? {
+            ...wsState.peopleStreams,
+            [stream]: {
+              initialized: true,
+              nextToken,
+              oldestEventId: events[0]?.id ?? wsState.peopleStreams[stream].oldestEventId,
+            },
+          }
+        : wsState.peopleStreams,
+    });
+  },
+);
 workspaceEventsReducer.with(
   peopleEventsLoadStarted,
   (state, { payload: [workspaceId, requestId] }) => {

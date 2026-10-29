@@ -33,7 +33,7 @@ vi.mock('$lib/client', () => ({
 vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: mocks.toastError } }));
 
 import type { LiveClient } from '$shared/types/browser-clients';
-import { resolveDrivingClientView } from '$lib/components/workspace/driving-indicator';
+import { resolveDrivingClientSwitch } from '$lib/components/workspace/driving-indicator';
 import type { StoreAction } from '@themislib/themis/types';
 import type { StoreState } from '../../../types';
 import { removeWorkspaceEntity } from '../../workspace/workspace-slice';
@@ -105,12 +105,11 @@ function startWithReducer() {
     dispatch,
     task,
     entry: (wsId: string) => state.browserClients.byWorkspaceId[wsId],
-    /** The sidebar indicator with agent-owned browser activity in this workspace. */
+    /** The workspace menu's primary client. */
     sidebar: (wsId: string) =>
-      resolveDrivingClientView({
-        ...selectWorkspaceDrivingClient.select(state as unknown as StoreState, wsId),
-        hasBrowserTabs: true,
-      }),
+      resolveDrivingClientSwitch(
+        selectWorkspaceDrivingClient.select(state as unknown as StoreState, wsId),
+      ),
   };
 }
 
@@ -423,7 +422,7 @@ describe('browserClientsSaga', () => {
       task.cancel();
 
       expect(entry('ws-1').browserClient).toEqual({ source: 'default', resolved: desk });
-      // Agent activity remains visible with one client; fallback is still unpinned.
+      // One client still names its primary; fallback is still unpinned.
       expect(sidebar('ws-1')).toMatchObject({
         mode: 'here',
         hostName: 'Intent Desktop',

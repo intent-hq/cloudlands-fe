@@ -1,4 +1,4 @@
-import { expect, test } from '../../../../test/ct-test';
+import { expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
 import type { Locator, Page } from '@playwright/test';
 import Pickers from './initializer-pickers.preview.svelte';
 import InitialAgentPicker from './initial-agent-picker.preview.svelte';
@@ -285,9 +285,7 @@ for (const { name, width, height, position } of [
     await expect(menu.getByRole('option', { name: 'feature/task-29', exact: true })).toBeAttached();
     const results = menu.getByRole('region', { name: 'Select a branch' });
     await expect.poll(() => results.evaluate((e) => e.scrollHeight > e.clientHeight)).toBe(true);
-    await results.hover();
-    await page.mouse.wheel(0, 300);
-    await expect.poll(() => results.evaluate((e) => e.scrollTop)).toBeGreaterThan(0);
+    await wheelUntilScrolled(results, { deltaY: 300 });
     await search.fill('feature/task-29');
     await search.press('Enter');
     await expect(page.getByTestId('initializer-selection')).toContainText(
@@ -463,9 +461,7 @@ for (const initialMode of ['direct', 'reopened-direct'] as const) {
         await expect
           .poll(() => results.evaluate((e) => e.scrollHeight > e.clientHeight))
           .toBe(true);
-        await results.hover();
-        await page.mouse.wheel(0, 300);
-        await expect.poll(() => results.evaluate((e) => e.scrollTop)).toBeGreaterThan(0);
+        await wheelUntilScrolled(results, { deltaY: 300 });
       }
     }
     await page.setViewportSize({ width: 360, height: 500 });

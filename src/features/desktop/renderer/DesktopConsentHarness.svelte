@@ -24,12 +24,9 @@
           computerName: missingPermissions ? 'MacBook' : request.computerName,
           claimsPrimary,
         },
-        guidance: missingPermissions
-          ? [
-              m.desktop_os_accessibility_description(),
-              m.desktop_os_screenRecording_description(),
-              m.desktop_os_setup_description(),
-            ].join(' ')
+        guidance: missingPermissions ? m.desktop_os_setup_description() : undefined,
+        checklist: missingPermissions
+          ? { accessibility: false, screenRecording: false, screenCapture: 'unavailable' }
           : undefined,
         onDecision: (value: string) => (decision = value),
       },

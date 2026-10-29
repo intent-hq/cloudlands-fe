@@ -62,6 +62,7 @@
 
   import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import PanelHeaderAgentAvatar from './PanelHeaderAgentAvatar.svelte';
+  import DiscussionUnreadBadge from '$features/discussions/components/DiscussionUnreadBadge.svelte';
   import BrowserFavicon from './BrowserFavicon.svelte';
   import {
     selectIsWorkspaceHostLocal,
@@ -1580,7 +1581,9 @@
               aria-current={current ? 'page' : undefined}
               aria-label={attentionPaneIds.has(tab.id)
                 ? m.layout_panelTabBar_paneMenuAttention_ariaLabel({ title: getTabTitle(tab) })
-                : getTabTitle(tab)}
+                : tab.type === 'discussion'
+                  ? undefined
+                  : getTabTitle(tab)}
               onclick={() => activatePane(tab.id)}
               data-pane-stack-item={tab.id}
               data-attention={attentionPaneIds.has(tab.id) ? '' : undefined}
@@ -1598,6 +1601,14 @@
                 </span>
               {/snippet}
               <span class="min-w-0 flex-1 truncate">{getTabTitle(tab)}</span>
+              {#if tab.type === 'discussion' && !current}
+                <DiscussionUnreadBadge
+                  workspaceId={tab.workspaceId ?? workspaceId}
+                  conversationId={typeof tab.data?.conversationId === 'string'
+                    ? tab.data.conversationId
+                    : 'default'}
+                />
+              {/if}
               {#if attentionPaneIds.has(tab.id)}
                 <span class="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true"></span>
               {/if}
@@ -1745,6 +1756,14 @@
                 >
               {/if}
 
+              {#if tab.type === 'discussion' && !isActive}
+                <DiscussionUnreadBadge
+                  workspaceId={tab.workspaceId ?? workspaceId}
+                  conversationId={typeof tab.data?.conversationId === 'string'
+                    ? tab.data.conversationId
+                    : 'default'}
+                />
+              {/if}
               {#if isBackgroundAgent(tab)}
                 <span class="text-ui font-medium text-muted-foreground bg-muted px-1 py-0.5 rounded"
                   >{m.layout_panelTabBar_bgBadge_label()}</span

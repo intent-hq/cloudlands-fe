@@ -3,7 +3,6 @@
   import BubbleMenu from '$lib/components/tiptap/BubbleMenu.svelte';
   import CommentDialog from '$lib/components/tiptap/CommentDialog.svelte';
   import CommentsSidebar from '$lib/components/tiptap/CommentsSidebar.svelte';
-  import LineAttributionGutter from '$lib/components/tiptap/LineAttributionGutter.svelte';
   import NoteVersionHistory from '$lib/components/workspace/NoteVersionHistory.svelte';
   import RawNoteCodeEditor from '$lib/components/workspace/RawNoteCodeEditor.svelte';
   import SuggestionTooltip from '$lib/components/tiptap/SuggestionTooltip.svelte';
@@ -59,7 +58,6 @@
   } from './note-with-comments/comment-manager-content-change-handlers';
   import { setupCommentMarkClickHandlerV2 } from './note-with-comments/comment-mark-click-handler';
   import { Editor } from '@tiptap/core';
-  import { NoteId } from '$shared/types/branded-ids';
 
   import { selectCommentsForNote } from '$store/renderer/slices/comments/comments-selectors';
   import {
@@ -2221,16 +2219,6 @@
         class:with-comments={hasActiveComments}
         class:raw-code-editor-container={shouldShowRawNoteView}
       >
-        <!-- Line Attribution Gutter (PoC) -->
-        {#if editor && noteId && !shouldShowRawNoteView}
-          <LineAttributionGutter
-            {editor}
-            workspaceId={workspace.id}
-            noteId={NoteId(noteId)}
-            markdown={currentNoteContent}
-          />
-        {/if}
-
         <!-- Loading skeleton shown while editor content is being processed -->
         {#if isNoteLoading}
           <div class="absolute inset-x-0 top-0 p-4 space-y-4" aria-hidden="true">

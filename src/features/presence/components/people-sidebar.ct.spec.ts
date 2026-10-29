@@ -101,17 +101,25 @@ test('guests can read the feed and lose the panel when multiplayer is disabled',
   await expect(component.locator('[data-sidebar-people-tile]')).toHaveCount(0);
 });
 
-test('older human activity appears with its historical author', async ({ mount }) => {
-  const component = await mount(PeopleSidebarHost, { props: { older: true } });
-  await component.getByRole('tab', { name: 'People', exact: true }).click();
-  const panel = component.getByRole('tabpanel', { name: 'People', exact: true });
-  await expect(panel.getByRole('button', { name: /load more/i })).toBeVisible();
-  await panel.getByRole('button', { name: /load more/i }).click();
-  await component.getByRole('button', { name: 'Receive older activity', exact: true }).click();
-  await expect(panel).toContainText('Casey');
-  await expect(panel).toContainText('Earlier plan');
-  await expect(panel.getByRole('button', { name: /load more/i })).toHaveCount(0);
-});
+for (const emptyOlder of [false, true]) {
+  test(`People pagination finds older activity independently of raw event pagination (${emptyOlder ? 'empty' : 'populated'})`, async ({
+    mount,
+  }) => {
+    const component = await mount(PeopleSidebarHost, { props: { older: true, emptyOlder } });
+    await component.getByRole('tab', { name: 'People', exact: true }).click();
+    const panel = component.getByRole('tabpanel', { name: 'People', exact: true });
+    if (emptyOlder)
+      await expect(panel).toContainText('No activity from people in these recent events.');
+    // The fixture's raw event cursor is exhausted, but People still has older pages.
+    await expect(panel.getByRole('button', { name: /load more/i })).toBeVisible();
+    await panel.getByRole('button', { name: /load more/i }).click();
+    await component.getByRole('button', { name: 'Receive older activity', exact: true }).click();
+    await expect(panel).toContainText('Casey');
+    await expect(panel).toContainText('Earlier plan');
+    // Receiving the People result leaves a raw cursor; it must not keep this button visible.
+    await expect(panel.getByRole('button', { name: /load more/i })).toHaveCount(0);
+  });
+}
 
 test('discussion opens once in the focused pane and leaves People activity available', async ({
   mount,
@@ -136,4 +144,84 @@ test('discussion opens once in the focused pane and leaves People activity avail
   await row.click();
   await expect(navigation).toHaveText(opened!);
   await expect(component.locator('[data-people-activity]')).toBeVisible();
+});
+
+for (const guest of [false, true]) {
+  test(`grouped activity keeps the named accessible sentence and keyboard navigation for ${guest ? 'guests' : 'owners'}`, async ({
+    mount,
+  }) => {
+    const component = await mount(PeopleSidebarHost, { props: { guest } });
+    await component.getByRole('tab', { name: 'People', exact: true }).click();
+    const panel = component.getByRole('tabpanel', { name: 'People', exact: true });
+    const items = panel.locator('[data-people-activity] [data-slot="list-view-item"]');
+    const note = panel.locator(
+      '[data-slot="list-view-item"]:has([data-people-activity-id="people-activity-note"])',
+    );
+    // The continuation still identifies its historical author to assistive technology.
+    expect(await note.ariaSnapshot()).toMatch(/Luke.*Sidebar mockup/);
+    await items.first().focus();
+    await items.first().press('ArrowDown');
+    await expect(note).toBeFocused();
+    await note.press('Space');
+    const navigation = component.locator('[data-people-navigation]');
+    await expect
+      .poll(async () => JSON.parse((await navigation.textContent()) || '{}'))
+      .toMatchObject({
+        focusedPanel: 'current',
+        panels: {
+          current: { tabs: [{ id: 'original' }, { type: 'note', noteId: 'sidebar-mockup' }] },
+        },
+      });
+    const opened = await navigation.textContent();
+    await note.press('Enter');
+    await expect(navigation).toHaveText(opened!);
+    await expect(note).toBeFocused();
+    await expect(panel).toBeVisible();
+  });
+}
+
+test('a named invitation exposes People before a second member joins and supports keyboard opening', async ({
+  mount,
+}) => {
+  const component = await mount(PeopleSidebarHost, { props: { roster: 'pending' } });
+  const people = component.getByRole('tab', { name: 'People', exact: true });
+  await people.focus();
+  await people.press('Enter');
+  const panel = component.getByRole('tabpanel', { name: 'People', exact: true });
+  const invitation = panel.locator('[data-people-roster-id="invite:amelia-invite"]');
+  await expect(invitation).toBeVisible();
+  await expect(invitation).toContainText('@amelia');
+  await expect(invitation).toContainText(/invited/i);
+  await expect(invitation.getByRole('button')).toHaveCount(0);
+  await expect(people).toBeFocused();
+  await component.getByRole('button', { name: 'Disable multiplayer', exact: true }).click();
+  await expect(people).toHaveCount(0);
+  await expect(component.locator('[data-sidebar-people-tile]')).toHaveCount(0);
+});
+
+test('member rows stay keyboard reachable when workspace presence disconnects', async ({
+  mount,
+}) => {
+  const component = await mount(PeopleSidebarHost, { props: { roster: 'mixed' } });
+  await component.getByRole('tab', { name: 'People', exact: true }).click();
+  const roster = component.locator('[data-people-roster]');
+  const sam = roster.locator('[data-people-roster-id="member:person-0"]');
+  const luke = roster.locator('[data-people-roster-id="member:person-1"]');
+  const morgan = roster.locator('[data-people-roster-id="member:person-2"]');
+  await expect(sam).toContainText(/viewing this workspace/i);
+  await expect(luke).toContainText(/not viewing this workspace/i);
+  await expect(morgan).toContainText(/offline/i);
+  await component.getByRole('button', { name: 'Disconnect people', exact: true }).click();
+  // The local viewer stays in this workspace when remote presence disconnects.
+  await expect(sam).toContainText(/viewing this workspace/i);
+  await expect(luke).toContainText(/offline/i);
+  const rows = roster.getByRole('listitem');
+  await rows.first().focus();
+  await rows.first().press('ArrowDown');
+  await expect(rows.nth(1)).toBeFocused();
+  await rows.nth(1).press('ArrowDown');
+  await expect(rows.nth(2)).toBeFocused();
+  await expect(roster.locator('[data-people-roster-id="invite:amelia-invite"]')).toContainText(
+    /invited/i,
+  );
 });

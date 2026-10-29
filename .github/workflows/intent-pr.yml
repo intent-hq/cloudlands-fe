@@ -159,7 +159,7 @@ jobs:
             const free = ['ubuntu-22.04', 'ubuntu-24.04', 'ubuntu-latest', 'ubuntu-24.04-arm', 'windows-2022', 'windows-2025'];
             // The paid sizes jobs ask for and the WarpBuild runner each bursts to.
             // GitHub's larger runners are off, so a paid size never runs on GitHub
-            // (same cores except Macs, which get 12 because every Mac job is CPU-bound;
+            // (same cores; Macs stay on 6, as 12 cost twice as much for at most 1.25x;
             // Windows stays on Server 2022, macOS 15 keeps signed builds off macOS 26).
             const warp = {
               'gh-linux-8x': 'warp-ubuntu-2404-x64-8x',
@@ -167,8 +167,8 @@ jobs:
               'gh-linux-arm64-8x': 'warp-ubuntu-2404-arm64-8x',
               'gh-windows-8x': 'warp-windows-2022-x64-8x',
               'gh-windows-16x': 'warp-windows-2022-x64-16x',
-              'macos-26-xlarge': 'warp-macos-26-arm64-12x',
-              'macos-15-xlarge': 'warp-macos-15-arm64-12x',
+              'macos-26-xlarge': 'warp-macos-26-arm64-6x',
+              'macos-15-xlarge': 'warp-macos-15-arm64-6x',
             };
             // Fork pull requests never spend WarpBuild minutes: a paid size runs on
             // the free standard runner of its OS instead.
@@ -925,6 +925,7 @@ jobs:
           sparse-checkout: |
             /docs/protocol/fixtures/backend-keychain/v1/
             /scripts/backend-keychain-contract.mjs
+            /scripts/lib/fixture-copy.mjs
       - name: Verify backend Keychain fixture provenance
         env:
           SOURCE_COMMIT: ${{ steps.backend-keychain-fixtures.outputs.sourceCommit }}
@@ -946,6 +947,7 @@ jobs:
           sparse-checkout: |
             /docs/protocol/fixtures/suggested-prompts/v1/
             /scripts/suggested-prompts-contract.mjs
+            /scripts/lib/fixture-copy.mjs
       - name: Verify suggested-prompts case provenance
         env:
           SOURCE_COMMIT: ${{ steps.suggested-prompts-cases.outputs.sourceCommit }}
@@ -975,7 +977,7 @@ jobs:
     # if the route job failed); never the persistent self-hosted Mac.
     needs: [route, release-fast-path]
     if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.release-fast-path.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' && needs.release-fast-path.outputs.portable_fixtures_required != 'false' }}
-    runs-on: ${{ fromJSON(needs.route.outputs.cloud || '{}')['macos-26-xlarge'] || fromJSON('["warp-macos-26-arm64-12x"]') }}
+    runs-on: ${{ fromJSON(needs.route.outputs.cloud || '{}')['macos-26-xlarge'] || fromJSON('["warp-macos-26-arm64-6x"]') }}
     timeout-minutes: 15
     permissions:
       contents: read
