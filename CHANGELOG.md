@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.250.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.250.0...v2.250.1) (2026-10-29)
+
+
+### 🐛 Bug Fixes
+
+* **preview:** draw open model-picker menus inside the screenshot frame ([#3819](https://github.com/intent-hq/cloudlands-fe/issues/3819)) ([b4fa9a9](https://github.com/intent-hq/cloudlands-fe/commit/b4fa9a90b854a448354c13b6b312dc4a04d7a8e9))
+
 ## [2.250.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.249.0...v2.250.0) (2026-10-28)
 
 
