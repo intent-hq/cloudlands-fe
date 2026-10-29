@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.253.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.252.0...v2.253.0) (2026-10-29)
+
+
+### 🚀 Features
+
+* add persistent chat visuals with author previews ([#3623](https://github.com/intent-hq/cloudlands-fe/issues/3623)) ([c7362fd](https://github.com/intent-hq/cloudlands-fe/commit/c7362fd4359f95439b461c75a349a4047096d7a5))
+
+
+### 🐛 Bug Fixes
+
+* **menu:** draw menu dividers as borders so they match the menu edge ([#3840](https://github.com/intent-hq/cloudlands-fe/issues/3840)) ([05fa6ae](https://github.com/intent-hq/cloudlands-fe/commit/05fa6ae81891157030a416299e8c1bc6dc8cc878))
+
 ## [2.252.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.251.2...v2.252.0) (2026-10-29)
 
 
