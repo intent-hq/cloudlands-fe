@@ -1,5 +1,5 @@
 import { call, take, type SagaGenerator } from 'typed-redux-saga';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentSession, Workspace } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import type { HostRole } from '$shared/types/principal';
@@ -52,7 +52,11 @@ vi.mock('$lib/client/live/backend-transport', () => ({
     return () => wire.listeners.delete(fn);
   },
 }));
-vi.mock('$app/navigation', () => ({ goto: wire.goto }));
+vi.mock('$app/navigation', async () => {
+  const { landingNavigation } =
+    await import('$store/renderer/utils/test-helpers/landing-navigation');
+  return { goto: landingNavigation(wire.goto) };
+});
 vi.mock('../../panel-layout/sagas/panel-layout-saga', () => ({
   hydrateWorkspaceLayout: wire.hydrate,
 }));
@@ -203,6 +207,12 @@ const views = () =>
     (action) =>
       action.type === openAgentTabRequested.type || action.type === openWorkspaceNote.type,
   );
+
+// Load the (async) navigation mock once up front so the first follow's
+// lazy `$app/navigation` import is not slower than `settle()`.
+beforeAll(async () => {
+  await import('$app/navigation');
+});
 
 describe('following authorized presence', () => {
   it.each(['owner', 'member', 'guest'] as const)(

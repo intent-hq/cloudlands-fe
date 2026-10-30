@@ -11,7 +11,11 @@ const mocks = vi.hoisted(() => ({
   handleLink: vi.fn(() => Promise.resolve(true)),
 }));
 
-vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
+vi.mock('$app/navigation', async () => {
+  const { landingNavigation } =
+    await import('$store/renderer/utils/test-helpers/landing-navigation');
+  return { goto: landingNavigation(mocks.goto) };
+});
 vi.mock('$store/renderer/store', () => ({
   store: {
     dispatch: mocks.dispatch,

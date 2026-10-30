@@ -50,14 +50,11 @@ vi.mock('$lib/components/patterns/notify', () => ({ notify: { info: mocks.toast 
 vi.mock('$features/notifications/notification-sound-gate', () => ({
   playNotificationSoundPerSettings: mocks.sound,
 }));
-// Like the real goto, the window ends up on the route; the workspace helper
-// opens the tab only once the route has landed.
-vi.mock('$lib/utils/navigation.client', () => ({
-  navigateToRoute: (route: string) => {
-    window.history.pushState({}, '', route);
-    return mocks.route(route);
-  },
-}));
+vi.mock('$lib/utils/navigation.client', async () => {
+  const { landingNavigation } =
+    await import('$store/renderer/utils/test-helpers/landing-navigation');
+  return { navigateToRoute: landingNavigation(mocks.route) };
+});
 vi.mock('$features/discussions/discussion-navigation', () => ({
   openWorkspaceDiscussion: mocks.open,
 }));

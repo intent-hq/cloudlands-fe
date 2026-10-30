@@ -12,9 +12,13 @@ vi.mock('$lib/client', () => ({ appClient: { agents: { retry: mocks.retry } } })
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: { agentFailure: mocks.agentFailure, dismiss: mocks.dismiss },
 }));
-vi.mock('$lib/utils/navigation.client', () => ({
-  navigateToRoute: mocks.navigateToRoute,
-}));
+vi.mock('$lib/utils/navigation.client', async () => {
+  const { landingNavigation } =
+    await import('$store/renderer/utils/test-helpers/landing-navigation');
+  return {
+    navigateToRoute: landingNavigation(mocks.navigateToRoute),
+  };
+});
 vi.mock('$features/hardware-console/assignment/connected-key-slot', () => ({
   resolveConnectedWorkspaceKeySlot: mocks.resolveKeySlot,
 }));

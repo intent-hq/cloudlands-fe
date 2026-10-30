@@ -29,7 +29,11 @@ const makeDerivedReadable = <S, T>(
 ) => ({
   subscribe: (run: (value: T) => void) => source.subscribe((value) => run(project(value))),
 });
-vi.mock('$lib/utils/navigation.client', () => ({ navigateToRoute: navigateToRouteSpy }));
+vi.mock('$lib/utils/navigation.client', async () => {
+  const { landingNavigation } =
+    await import('$store/renderer/utils/test-helpers/landing-navigation');
+  return { navigateToRoute: landingNavigation(navigateToRouteSpy) };
+});
 const mockStreamingContent = new Map<string, string>();
 const mockIsResponding = new Map<string, boolean>();
 const mockHasStreamOwnedMessage = new Map<string, boolean>();

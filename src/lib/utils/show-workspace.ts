@@ -89,7 +89,6 @@ interface Jump {
   workspaceId: string;
   /** Navigation epoch just after this jump's navigation started. */
   epoch: number;
-  startPathname: string | null;
   startTabId: string | null;
 }
 
@@ -106,10 +105,9 @@ async function runJump(
   state: App.PageState | undefined,
   startTabId: string | null,
 ): Promise<Jump> {
-  const startPathname = currentPathname();
   bumpNavigationEpoch();
   const navigation = navigate(route, state);
-  const jump = { workspaceId, epoch: navigationEpoch(), startPathname, startTabId };
+  const jump = { workspaceId, epoch: navigationEpoch(), startTabId };
   await navigation;
   return jump;
 }
@@ -124,17 +122,15 @@ function skipJump(workspaceId: string): boolean {
  * - no later navigation started through this module or `navigateToRoute`;
  * - no other workspace tab was selected meanwhile (a tab-strip click selects
  *   its tab before navigating);
- * - the window is on the target workspace. A window still on a non-workspace
- *   start route also counts (navigation stubs in tests do not move the URL);
- *   one on another route was overtaken by a different navigation.
+ * - the window is on the target workspace route; on any other route a
+ *   different navigation (even a raw `goto`, such as the sidebar Home
+ *   button) overtook it.
  */
 function jumpLanded(jump: Jump, tabId: string | null): boolean {
   if (navigationEpoch() !== jump.epoch) return false;
   if (tabId !== jump.startTabId && tabId !== jump.workspaceId) return false;
   const pathname = currentPathname();
-  if (pathname === null) return true;
-  if (parseWorkspaceRoute(pathname) === jump.workspaceId) return true;
-  return pathname === jump.startPathname && parseWorkspaceRoute(pathname) === null;
+  return pathname === null || parseWorkspaceRoute(pathname) === jump.workspaceId;
 }
 
 async function showAt(

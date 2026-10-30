@@ -58,10 +58,14 @@ vi.mock('$lib/components/ui/toast', () => ({
   AgentAttentionToast: 'AgentAttentionToast',
 }));
 
-vi.mock('$lib/utils/navigation.client', () => ({
-  navigateToRoute: navigateToRouteMock,
-  isHudWindowRenderer: () => false,
-}));
+vi.mock('$lib/utils/navigation.client', async () => {
+  const { landingNavigation } =
+    await import('$store/renderer/utils/test-helpers/landing-navigation');
+  return {
+    navigateToRoute: landingNavigation(navigateToRouteMock),
+    isHudWindowRenderer: () => false,
+  };
+});
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =

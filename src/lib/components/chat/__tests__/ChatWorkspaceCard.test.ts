@@ -52,7 +52,11 @@ const mocks = vi.hoisted(() => {
   };
 });
 
-vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
+vi.mock('$app/navigation', async () => {
+  const { landingNavigation } =
+    await import('$store/renderer/utils/test-helpers/landing-navigation');
+  return { goto: landingNavigation(mocks.goto) };
+});
 vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/') } }));
 
 vi.mock('$store/renderer/store', async () => {

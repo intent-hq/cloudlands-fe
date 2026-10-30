@@ -12,14 +12,11 @@ import { handleNotificationNavigate } from './notification-navigation';
 const mocks = vi.hoisted(() => ({
   route: vi.fn<(route: string) => Promise<void>>(async () => {}),
 }));
-// Like the real goto, the window ends up on the route; the workspace helper
-// opens the tab only once the route has landed.
-vi.mock('$lib/utils/navigation.client', () => ({
-  navigateToRoute: (route: string) => {
-    window.history.pushState({}, '', route);
-    return mocks.route(route);
-  },
-}));
+vi.mock('$lib/utils/navigation.client', async () => {
+  const { landingNavigation } =
+    await import('$store/renderer/utils/test-helpers/landing-navigation');
+  return { navigateToRoute: landingNavigation(mocks.route) };
+});
 
 describe('handleNotificationNavigate', () => {
   let dispose: () => void;

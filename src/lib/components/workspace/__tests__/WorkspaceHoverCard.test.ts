@@ -92,7 +92,11 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
   selectCurrentWorkspaceTabId: { select: vi.fn(() => mocks.currentWorkspaceTabId) },
 }));
 
-vi.mock('$lib/utils/navigation.client', () => ({ navigateToRoute: mocks.navigateToRoute }));
+vi.mock('$lib/utils/navigation.client', async () => {
+  const { landingNavigation } =
+    await import('$store/renderer/utils/test-helpers/landing-navigation');
+  return { navigateToRoute: landingNavigation(mocks.navigateToRoute) };
+});
 
 vi.mock('$features/navigation/link-handler', () => ({ handleLink: mocks.handleLink }));
 

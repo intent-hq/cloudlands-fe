@@ -69,7 +69,11 @@ vi.mock('$lib/utils/clipboard', () => ({
 }));
 
 const gotoMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
-vi.mock('$app/navigation', () => ({ goto: gotoMock }));
+vi.mock('$app/navigation', async () => {
+  const { landingNavigation } =
+    await import('$store/renderer/utils/test-helpers/landing-navigation');
+  return { goto: landingNavigation(gotoMock) };
+});
 
 // Workspace entity lookup used to relativize absolute paths
 const workspaceRoots = vi.hoisted(() => ({
@@ -105,6 +109,13 @@ vi.mock('$store/renderer/store', async () => {
     }),
     dispatch: reduxDispatchMock,
   });
+});
+
+// The navigation fakes land on their route (see landingNavigation); start
+// every test from the same URL, since file links resolve against it.
+const initialHref = window.location.href;
+beforeEach(() => {
+  window.history.replaceState({}, '', initialHref);
 });
 
 describe.each(['Assistant', 'workspace preview'] as const)('Home GitHub links in %s', (surface) => {

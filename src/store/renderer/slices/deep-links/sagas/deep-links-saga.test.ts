@@ -14,7 +14,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('$lib/electron-bridge', () => ({ isElectron: mocks.isElectron, invoke: mocks.invoke }));
-vi.mock('$lib/utils/navigation.client', () => ({ navigateToRoute: mocks.navigateToRoute }));
+vi.mock('$lib/utils/navigation.client', async () => {
+  const { landingNavigation } =
+    await import('$store/renderer/utils/test-helpers/landing-navigation');
+  return { navigateToRoute: landingNavigation(mocks.navigateToRoute) };
+});
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ warn: vi.fn(), debug: vi.fn(), info: vi.fn() }),
 }));

@@ -38,7 +38,11 @@ vi.mock('../../workspace/utils/workspace.client', () => ({
 vi.mock('$features/workspace/navigate-away-if-viewing', () => ({
   navigateAwayIfViewing: mocks.navigate,
 }));
-vi.mock('$lib/utils/navigation.client', () => ({ navigateToRoute: mocks.navigateToRoute }));
+vi.mock('$lib/utils/navigation.client', async () => {
+  const { landingNavigation } =
+    await import('$store/renderer/utils/test-helpers/landing-navigation');
+  return { navigateToRoute: landingNavigation(mocks.navigateToRoute) };
+});
 vi.mock('$lib/utils/delete-warning-utils', () => ({
   getActiveWorkNames: mocks.getActiveWorkNames,
 }));

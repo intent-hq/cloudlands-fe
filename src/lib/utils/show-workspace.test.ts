@@ -224,12 +224,14 @@ describe('superseded jumps and string routes', () => {
     expect(selectWorkspaceTabOrder.select(store.state)).toEqual([]);
   });
 
-  it('opens the tab when the stubbed navigation leaves a non-workspace start route', async () => {
-    mocks.route.mockResolvedValueOnce(undefined);
+  it('opens no tab when a raw goto back to the start route replaced the jump', async () => {
+    // Start a slow jump from Home, then click the sidebar Home button: its
+    // raw goto('/') replaces the jump without touching the navigation epoch.
+    mocks.route.mockImplementationOnce(async () => land('/'));
 
-    await expect(openAndShowWorkspace('landed-ws')).resolves.toBe(true);
+    await expect(openAndShowWorkspace('skipped-ws')).resolves.toBe(false);
 
-    expect(selectCurrentWorkspaceTabId.select(store.state)).toBe('landed-ws');
+    expect(selectWorkspaceTabOrder.select(store.state)).toEqual([]);
   });
 
   it('navigates a workspace route unchanged and opens its tab', async () => {
@@ -250,7 +252,7 @@ describe('superseded jumps and string routes', () => {
 describe('showWorkspaceSaga', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.route.mockResolvedValue(undefined);
+    mocks.route.mockImplementation(land);
     window.history.replaceState({}, '', '/');
   });
 
@@ -278,6 +280,15 @@ describe('showWorkspaceSaga', () => {
     mocks.route.mockImplementationOnce(async () => {
       sagaState = { tabState: { currentTabId: 'picked-ws' } };
     });
+
+    const { result, dispatched } = await run('ws-1');
+
+    expect(result).toBe(false);
+    expect(dispatched).toEqual([]);
+  });
+
+  it('puts nothing when a raw goto back to the start route replaced the jump', async () => {
+    mocks.route.mockImplementationOnce(async () => land('/'));
 
     const { result, dispatched } = await run('ws-1');
 
