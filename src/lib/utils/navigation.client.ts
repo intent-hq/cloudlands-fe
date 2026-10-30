@@ -6,6 +6,7 @@
  * The main-process build excludes this via tsconfig.main.json patterns.
  */
 import { createLogger } from './client-logger';
+import { isHudWindowRenderer } from './hud-window';
 
 const logger = createLogger('Navigation');
 
@@ -16,15 +17,7 @@ export function isSettingsRoute(route: string): boolean {
   return /^\/settings(?:[/?#]|$)/.test(route);
 }
 
-/**
- * Whether this renderer is the chrome-less HUD pop-out window.
- *
- * The HUD window registers the same IPC listeners and services as every
- * renderer; navigation must never replace its /hud route with another view.
- */
-export function isHudWindowRenderer(): boolean {
-  return typeof window !== 'undefined' && window.location.pathname.startsWith('/hud');
-}
+export { isHudWindowRenderer };
 
 /**
  * Navigate to an arbitrary route.

@@ -87,7 +87,8 @@ describe('workspace-navigation', () => {
     // Reset all mocks before each test
     vi.clearAllMocks();
 
-    // Reset search params
+    // Reset the route and search params
+    mockPage.url.pathname = '/workspace/test-workspace-id';
     mockPage.url.searchParams = new URLSearchParams();
     mockWorkspaceItems.value = [];
 
@@ -376,12 +377,20 @@ describe('workspace-navigation', () => {
     });
   });
 
+  /** Make the next goto land on its route, like the real one (the tab opens only then). */
+  function gotoLands() {
+    vi.mocked(goto).mockImplementationOnce(async (url) => {
+      mockPage.url.pathname = String(url);
+    });
+  }
+
   describe('navigateToFirstWorkspace', () => {
     it('navigates to the first active workspace', async () => {
       mockWorkspaceItems.value = [
         { id: 'archived-workspace', status: 'Archived' },
         { id: 'active-workspace', status: 'Active' },
       ];
+      gotoLands();
 
       await navigateToFirstWorkspace();
 
@@ -413,6 +422,7 @@ describe('workspace-navigation', () => {
         { id: 'removed-workspace', status: 'Active' },
         { id: 'remaining-workspace', status: 'Active' },
       ];
+      gotoLands();
 
       await navigateAfterWorkspaceRemoval('removed-workspace');
 

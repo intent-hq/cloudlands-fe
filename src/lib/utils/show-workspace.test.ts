@@ -17,6 +17,11 @@ import {
 const mocks = vi.hoisted(() => ({
   route: vi.fn<(route: string, options?: { state?: App.PageState }) => Promise<void>>(),
 }));
+
+/** Like the real `goto`: the window ends up on the route. */
+async function land(route: string): Promise<void> {
+  window.history.pushState({}, '', route);
+}
 vi.mock('./navigation.client', () => ({ navigateToRoute: mocks.route }));
 
 describe('workspaceRoute', () => {
@@ -62,7 +67,7 @@ describe('openAndShowWorkspace', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.route.mockResolvedValue(undefined);
+    mocks.route.mockImplementation(land);
     window.history.replaceState({}, '', '/workspace/open-ws');
     dispose = store.init();
     store.dispatch(openWorkspaceTab('open-ws'));
@@ -75,8 +80,9 @@ describe('openAndShowWorkspace', () => {
 
   it('navigates, then opens and focuses the tab of a workspace that is not open', async () => {
     let tabsDuringNavigation: string[] = [];
-    mocks.route.mockImplementationOnce(async () => {
+    mocks.route.mockImplementationOnce(async (route) => {
       tabsDuringNavigation = [...selectWorkspaceTabOrder.select(store.state)];
+      await land(route);
     });
 
     await expect(openAndShowWorkspace('closed-ws')).resolves.toBe(true);
@@ -154,7 +160,7 @@ describe('superseded jumps and string routes', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.route.mockResolvedValue(undefined);
+    mocks.route.mockImplementation(land);
     window.history.replaceState({}, '', '/');
     dispose = store.init();
   });
@@ -178,6 +184,36 @@ describe('superseded jumps and string routes', () => {
 
     await expect(first).resolves.toBe(false);
     expect(selectWorkspaceTabOrder.select(store.state)).toEqual(['landed-ws']);
+    expect(selectCurrentWorkspaceTabId.select(store.state)).toBe('landed-ws');
+  });
+
+  it('opens no tab when another navigation left the window elsewhere', async () => {
+    // SvelteKit resolves a goto that a later navigation abandoned.
+    mocks.route.mockImplementationOnce(async () => land('/settings'));
+
+    await expect(openAndShowWorkspace('skipped-ws')).resolves.toBe(false);
+
+    expect(selectWorkspaceTabOrder.select(store.state)).toEqual([]);
+  });
+
+  it('opens no tab when another workspace tab was picked during navigation', async () => {
+    store.dispatch(openWorkspaceTab('open-ws'));
+    mocks.route.mockImplementationOnce(async () => {
+      // A tab-strip click selects its tab before navigating.
+      store.dispatch(openWorkspaceTab('picked-ws'));
+    });
+
+    await expect(openAndShowWorkspace('skipped-ws')).resolves.toBe(false);
+
+    expect(selectWorkspaceTabOrder.select(store.state)).toEqual(['open-ws', 'picked-ws']);
+    expect(selectCurrentWorkspaceTabId.select(store.state)).toBe('picked-ws');
+  });
+
+  it('opens the tab when the stubbed navigation leaves a non-workspace start route', async () => {
+    mocks.route.mockResolvedValueOnce(undefined);
+
+    await expect(openAndShowWorkspace('landed-ws')).resolves.toBe(true);
+
     expect(selectCurrentWorkspaceTabId.select(store.state)).toBe('landed-ws');
   });
 
