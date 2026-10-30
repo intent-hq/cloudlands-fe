@@ -60,6 +60,7 @@ import type {
   WorkspaceDiskUsage,
   WorkspaceTask,
   WorkspaceTaskStats,
+  WorkspaceCreateProposalOutcome,
 } from '$shared/types';
 import type { CommitInfo, TrackedChange } from '$features/file-tracking/types';
 import type { WorkspaceEvent } from '$features/events/types';
@@ -379,6 +380,8 @@ export interface WorkspaceUpdateResult extends MutationResult {
 export interface WorkspaceCreateResult extends MutationResult {
   workspace?: Workspace;
   initialAgent?: { id: string } & Record<string, unknown>;
+  /** The daemon's handling of the request's `origin` (PROTOCOL §5.1). */
+  proposalOrigin?: WorkspaceCreateProposalOutcome;
   /**
    * Machine-readable code for a failed create, surfaced from the transport
    * error's `data.code`. Only daemon-authored codes (e.g.

@@ -29,6 +29,7 @@ import {
   clearProposalLifecycle,
   proposalApplyStarted,
   proposalApplySucceeded,
+  proposalCreateOutcomeReported,
   proposalFailed,
   proposalResolutionReconciled,
   proposalUndoStarted,
@@ -59,8 +60,14 @@ function isProposalApplyResult(value: unknown): value is ProposalApplyResult {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const candidate = value as Partial<ProposalApplyResult>;
   const transfer = candidate.transfer;
+  const origin = candidate.proposalOrigin;
   return (
     (candidate.workspaceId === undefined || typeof candidate.workspaceId === 'string') &&
+    (origin === undefined ||
+      (!!origin &&
+        typeof origin === 'object' &&
+        typeof origin.proposalId === 'string' &&
+        typeof origin.outcome === 'string')) &&
     (transfer === undefined ||
       (!!transfer &&
         typeof transfer === 'object' &&
@@ -277,6 +284,7 @@ function* watchProposalLifecyclePersistenceSaga(): SagaGenerator<void> {
   yield* takeLatest(
     [
       proposalApplySucceeded,
+      proposalCreateOutcomeReported,
       proposalUndoSucceeded,
       proposalFailed,
       proposalResolutionReconciled,
