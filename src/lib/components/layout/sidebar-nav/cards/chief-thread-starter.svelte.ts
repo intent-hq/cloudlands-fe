@@ -1,5 +1,5 @@
 import { onDestroy } from 'svelte';
-import { fromStore } from 'svelte/store';
+import { fromStore, type Readable } from 'svelte/store';
 import { m } from '$shared/paraglide/messages.js';
 import { createAgentTypeId } from '$shared/types/agent.types';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -16,7 +16,7 @@ import {
   createAgentFromConfigRequested,
   setActiveAgentId,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
-import { selectAgentCreationOutcome } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+import type { selectAgentCreationOutcome } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
 import { selectContextSelectedModel } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
 import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import {
@@ -25,16 +25,21 @@ import {
 } from '$store/renderer/slices/specialists/specialists-selectors';
 import { formatChiefThreadName } from './chief-thread-name';
 
+export const CHIEF_THREAD_RESOURCE_ID = 'chief-thread';
+
 /**
- * Starts Assistant threads for one component. Call during component init.
- * Every starter shares one creation resource, so concurrent requests from the
- * sidebar and the auto-start coalesce into a single new thread.
+ * Starts Assistant threads for one component. Call during component init with
+ * the component's `selectAgentCreationOutcome(consumerId, CHIEF_WORKSPACE_ID,
+ * CHIEF_THREAD_RESOURCE_ID)` readable. Every starter shares one creation
+ * resource, so concurrent requests from the sidebar and the auto-start
+ * coalesce into a single new thread.
  */
-export function createChiefThreadStarter() {
-  const consumer = { id: crypto.randomUUID(), resourceId: 'chief-thread' };
-  const outcome = fromStore(
-    selectAgentCreationOutcome(consumer.id, CHIEF_WORKSPACE_ID, consumer.resourceId),
-  );
+export function createChiefThreadStarter(
+  consumerId: string,
+  creationOutcome: Readable<ReturnType<typeof selectAgentCreationOutcome.select>>,
+) {
+  const consumer = { id: consumerId, resourceId: CHIEF_THREAD_RESOURCE_ID };
+  const outcome = fromStore(creationOutcome);
   const pending = $derived(outcome.current?.status === 'pending');
   onDestroy(() => appStore.dispatch(clearAgentCreationOutcome(consumer.id)));
 

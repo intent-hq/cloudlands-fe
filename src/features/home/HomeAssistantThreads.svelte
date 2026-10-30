@@ -5,7 +5,10 @@
   import { ListRow, ListView } from '$lib/components/patterns/collection';
   import { Button } from '$lib/components/ui/button';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
-  import { createChiefThreadStarter } from '$lib/components/layout/sidebar-nav/cards/chief-thread-starter.svelte';
+  import {
+    CHIEF_THREAD_RESOURCE_ID,
+    createChiefThreadStarter,
+  } from '$lib/components/layout/sidebar-nav/cards/chief-thread-starter.svelte';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
@@ -16,6 +19,7 @@
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
   import { setActiveAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { selectAgentCreationOutcome } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import {
     backgroundHooksSubscribeRequested,
     backgroundHooksUnsubscribeRequested,
@@ -33,7 +37,11 @@
   const threads$ = selectChiefThreads();
   const activeAgentId$ = selectChiefActiveAgentId();
   const hidesThreadActions$ = selectHidesAgentLifecycleActions(CHIEF_WORKSPACE_ID);
-  const threadStarter = createChiefThreadStarter();
+  const threadConsumerId = crypto.randomUUID();
+  const threadStarter = createChiefThreadStarter(
+    threadConsumerId,
+    selectAgentCreationOutcome(threadConsumerId, CHIEF_WORKSPACE_ID, CHIEF_THREAD_RESOURCE_ID),
+  );
   const selectedKeys = $derived($activeAgentId$ ? [$activeAgentId$] : []);
 
   onMount(() => {
@@ -60,7 +68,7 @@
 {#if !$hidesThreadActions$}
   <Button
     variant="ghost"
-    class="mb-3 h-9 w-full shrink-0 justify-start gap-2 px-2 text-muted-foreground hover:text-foreground focus-visible:-outline-offset-1"
+    class="h-9 w-full shrink-0 justify-start gap-2 px-2 text-muted-foreground hover:text-foreground focus-visible:-outline-offset-1"
     labelClass="text-left"
     aria-disabled={threadStarter.pending || undefined}
     aria-busy={threadStarter.pending || undefined}

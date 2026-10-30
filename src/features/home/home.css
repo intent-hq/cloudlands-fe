@@ -147,7 +147,15 @@
 
 .home-sidebar-header {
   height: var(--home-header-height);
-  margin-bottom: var(--home-content-gap);
+}
+
+/* Workspaces lines up with the main content; Assistant rows sit just under the tabs. */
+.home-sidebar-header + .home-sidebar-contents > [data-value='workspaces'] {
+  margin-top: var(--home-content-gap);
+}
+
+.home-sidebar-header + .home-sidebar-contents > [data-value='assistant'] {
+  margin-top: 0.25rem;
 }
 
 .home-sidebar-contents {
@@ -268,12 +276,12 @@
   .home-layout.home-assistant {
     overflow: hidden;
   }
-  /* 3rem keeps the thread list's space below the New chat row. */
+  /* New chat row minus the smaller top gap, so the thread list keeps its space. */
   .home-layout.home-assistant .home-sidebar-resizable {
-    height: min(13rem, calc(25% + 3rem));
+    height: min(11.5rem, calc(25% + 1.5rem));
   }
   .home-layout.home-assistant .home-sidebar {
-    max-height: 13rem;
+    max-height: 11.5rem;
   }
   .home-layout.home-assistant .home-surface {
     min-height: 0;

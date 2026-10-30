@@ -29,20 +29,30 @@
     deleteAgentWithUndoRequested,
     setActiveAgentId,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
-  import { selectAgentsLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+  import {
+    selectAgentCreationOutcome,
+    selectAgentsLoaded,
+  } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectHasResolvableProvider } from '$store/renderer/slices/model/model-selectors';
   import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectAgentMutationUi } from '$store/renderer/slices/agent-mutation-ui/agent-mutation-ui-selectors';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { WorkspaceStatus, type Workspace } from '$shared/types';
-  import { createChiefThreadStarter } from './chief-thread-starter.svelte';
+  import {
+    CHIEF_THREAD_RESOURCE_ID,
+    createChiefThreadStarter,
+  } from './chief-thread-starter.svelte';
   import { resolveChiefThreadOnExpansion } from './chief-thread-selection';
 
   const chiefThreads$ = selectChiefThreads();
   const currentChiefThread$ = selectCurrentChiefThread();
   const chiefActiveAgentId$ = selectChiefActiveAgentId();
   const chiefAgentsLoaded$ = selectAgentsLoaded(CHIEF_WORKSPACE_ID);
-  const threadStarter = createChiefThreadStarter();
+  const threadConsumerId = crypto.randomUUID();
+  const threadStarter = createChiefThreadStarter(
+    threadConsumerId,
+    selectAgentCreationOutcome(threadConsumerId, CHIEF_WORKSPACE_ID, CHIEF_THREAD_RESOURCE_ID),
+  );
   const hasResolvableProvider$ = selectHasResolvableProvider();
   // Chief threads are agents: creating / deleting one is refused (-32003) for
   // a collaborator connection, so the affordances (and the auto-start) are
