@@ -28,6 +28,25 @@ export const proposalApplySucceeded = createAction<
   [payload: { proposalId: string; completedAt: number; result?: ProposalApplyResult }]
 >('proposalLifecycle/proposalApplySucceeded');
 
+/**
+ * A workspace-create card's `workspace.create` succeeded and the daemon
+ * reported what it did with the card (`proposalOrigin`, PROTOCOL §5.1). The
+ * workspace exists either way, so `result` is kept; the card follows the
+ * daemon's outcome: `applied`, `dismissed` (resolved elsewhere first), or
+ * `notResolved` — declined, so the card returns to idle and stays pending
+ * and re-appliable instead of showing a false terminal state.
+ */
+export const proposalCreateOutcomeReported = createAction<
+  [
+    payload: {
+      proposalId: string;
+      completedAt: number;
+      outcome: 'applied' | 'dismissed' | 'notResolved';
+      result: ProposalApplyResult;
+    },
+  ]
+>('proposalLifecycle/proposalCreateOutcomeReported');
+
 export const proposalTransferProgress = createAction<
   [payload: { proposalId: string; phase: 'building' | 'relaying' | 'committing' }]
 >('proposalLifecycle/proposalTransferProgress');
@@ -142,6 +161,21 @@ proposalLifecycleReducer.with(
       completedAt,
       lastAction: 'apply',
       ...(result !== undefined ? { result } : {}),
+    },
+  }),
+);
+proposalLifecycleReducer.with(
+  proposalCreateOutcomeReported,
+  (state, { payload: [{ proposalId, completedAt, outcome, result }] }) => ({
+    ...state,
+    [proposalId]: {
+      ...state[proposalId],
+      status: outcome === 'notResolved' ? 'idle' : outcome,
+      error: undefined,
+      errorCode: undefined,
+      completedAt,
+      lastAction: 'apply',
+      result,
     },
   }),
 );

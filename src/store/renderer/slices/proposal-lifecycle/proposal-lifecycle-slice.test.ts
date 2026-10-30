@@ -1,13 +1,15 @@
+import { createWorkspaceId } from '$shared/types';
 import { describe, expect, it } from 'vitest';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import {
   initialState,
-  pruneAppliedProposalLifecycleEntries,
   proposalApplyStarted,
   proposalApplySucceeded,
+  proposalCreateOutcomeReported,
   proposalFailed,
   proposalLifecycleReducer,
   proposalResolutionReconciled,
+  pruneAppliedProposalLifecycleEntries,
 } from './proposal-lifecycle-slice';
 
 describe('proposalLifecycleReducer', () => {
@@ -140,6 +142,37 @@ describe('proposalLifecycleReducer', () => {
       applied: { status: 'applied', completedAt: now },
       dismissed: { status: 'dismissed', completedAt: now, lastAction: 'dismiss' },
     });
+  });
+
+  it('follows the daemon-reported create outcome and persists only terminal ones (intent-hq/intent#8086)', () => {
+    const now = 1_000;
+    const report = (proposalId: string, outcome: 'applied' | 'dismissed' | 'notResolved') =>
+      proposalCreateOutcomeReported({
+        proposalId,
+        completedAt: now,
+        outcome,
+        result: {
+          workspaceId: createWorkspaceId(`ws-${proposalId}`),
+          proposalOrigin: { proposalId, outcome },
+        },
+      });
+    let state = proposalLifecycleReducer(
+      initialState,
+      proposalApplyStarted({ proposalId: 'declined', startedAt: 1 }),
+    );
+    state = proposalLifecycleReducer(state, report('declined', 'notResolved'));
+    state = proposalLifecycleReducer(state, report('dismissed', 'dismissed'));
+    state = proposalLifecycleReducer(state, report('applied', 'applied'));
+
+    expect(state.declined?.status).toBe('idle');
+    expect(state.declined?.result?.workspaceId).toBe('ws-declined');
+    expect(state.dismissed?.status).toBe('dismissed');
+    expect(state.applied?.status).toBe('applied');
+    // A declined card is pending recovery state, never persisted as history.
+    expect(Object.keys(pruneAppliedProposalLifecycleEntries(state, now)).sort()).toEqual([
+      'applied',
+      'dismissed',
+    ]);
   });
 
   it('reconciles a daemon dismissed resolution into the dismissed status', () => {

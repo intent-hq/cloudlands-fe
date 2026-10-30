@@ -15,7 +15,10 @@ const state = vi.hoisted(() => ({
       status: 'idle' | 'applying' | 'applied' | 'undoing' | 'failed' | 'dismissed';
       error?: string;
       completedAt?: number;
-      result?: { workspaceId?: string };
+      result?: {
+        workspaceId?: string;
+        proposalOrigin?: { proposalId: string; outcome: string };
+      };
     }
   >,
   cardStatus: 'idle' as 'idle' | 'applying' | 'applied' | 'undoing' | 'failed',
@@ -420,6 +423,29 @@ describe('InlineProposal', () => {
         proposalId: title,
         outcome: 'applied',
       });
+    });
+  });
+
+  it('keeps a daemon-declined card pending and interactive (intent-hq/intent#8086)', async () => {
+    const proposal = makeWorkspaceProposal('tool-declined');
+    state.pendingProposals = [{ proposalId: 'tool-declined', messageId: 'message-inline' }];
+    state.lifecycle = {
+      'tool-declined': {
+        status: 'idle',
+        completedAt: 30,
+        result: {
+          workspaceId: 'ws-declined',
+          proposalOrigin: { proposalId: 'tool-declined', outcome: 'notResolved' },
+        },
+      },
+    };
+    renderProposal(proposal);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Dismiss proposal' }));
+    expect(actionMocks.resolve).toHaveBeenCalledWith(AGENT_ID, WORKSPACE_ID, {
+      proposalId: 'tool-declined',
+      outcome: 'dismissed',
     });
   });
 

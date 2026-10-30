@@ -51,9 +51,18 @@ export function getProposalLifecycleEntry(
   return { ...local, ...scoped, result: scoped.result ?? local.result };
 }
 
+// The daemon rejects a blank or over-256-byte origin id with -32602 before
+// creating anything (PROTOCOL §5.1 "Proposal origin"). A title-keyed card can
+// carry such a key; send no origin for it and keep the chat fallback instead.
+const MAX_ORIGIN_ID_BYTES = 256;
+function isSendableOriginId(id: string): boolean {
+  return id.trim() !== '' && new TextEncoder().encode(id).length <= MAX_ORIGIN_ID_BYTES;
+}
+
 export function applyProposal(agentId: string, detail: ProposalActionDetail): void {
   const { proposal } = detail;
-  rememberProposalIdentity(agentId, pendingProposalKeyOf(proposal), proposal);
+  const proposalId = pendingProposalKeyOf(proposal);
+  rememberProposalIdentity(agentId, proposalId, proposal);
   if (proposal.kind === 'workspace-transfer') {
     appStore.dispatch(
       applyProposalRequested({ proposalId: getProposalId(proposal), kind: proposal.kind, detail }),
@@ -66,6 +75,11 @@ export function applyProposal(agentId: string, detail: ProposalActionDetail): vo
         proposal,
         editedFields: detail.editedFields,
         selectedBulkItemIds: detail.selectedBulkItemIds,
+        // The daemon resolves the card as part of the create (intent-hq/intent#8086),
+        // so the proposing agent hears about it even when this chat is closed.
+        ...(proposal.kind === 'workspace-create' && agentId && isSendableOriginId(proposalId)
+          ? { origin: { kind: 'proposal' as const, agentId, proposalId } }
+          : {}),
       }),
     );
     return;
@@ -135,6 +149,11 @@ export function reconcileAppliedProposals(input: {
     const applied =
       scoped?.status === 'applied' ? scoped : local?.status === 'applied' ? local : null;
     if (!applied) continue;
+    // A daemon that handles `workspace.create` `origin` reports it on the
+    // result: it resolved the card itself, or declined it on purpose (e.g. a
+    // replay naming another card) — resolving it here would undo that.
+    // Only an older daemon (no report) needs this client-side fallback.
+    if (applied.result?.proposalOrigin ?? local?.result?.proposalOrigin) continue;
     const workspaceId = applied.result?.workspaceId ?? local?.result?.workspaceId;
     // i18n-ignore (wire detail appended to the model notice, not UI copy)
     const detail = workspaceId ? `Created workspace ${workspaceId}.` : undefined;
