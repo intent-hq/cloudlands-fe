@@ -52,6 +52,7 @@ import {
   openWorkspaceFile,
   openWorkspaceNote,
 } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 
 describe('workspace-navigation', () => {
   it.each(['span', 'svg', 'path'])(
@@ -385,12 +386,16 @@ describe('workspace-navigation', () => {
       await navigateToFirstWorkspace();
 
       expect(goto).toHaveBeenCalledWith('/workspace/active-workspace');
+      expect(mockDispatch).toHaveBeenCalledWith(openWorkspaceTab('active-workspace'));
     });
 
     it('navigates to workspace creation when no workspace is available', async () => {
       await navigateToFirstWorkspace();
 
       expect(goto).toHaveBeenCalledWith('/workspace/new');
+      expect(mockDispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'tabState/openWorkspaceTab' }),
+      );
     });
 
     it('navigates to workspace creation when only archived workspaces exist', async () => {
@@ -412,6 +417,7 @@ describe('workspace-navigation', () => {
       await navigateAfterWorkspaceRemoval('removed-workspace');
 
       expect(goto).toHaveBeenCalledWith('/workspace/remaining-workspace');
+      expect(mockDispatch).toHaveBeenCalledWith(openWorkspaceTab('remaining-workspace'));
     });
 
     it('uses the empty-window destination when no workspace remains', async () => {

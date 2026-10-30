@@ -141,14 +141,16 @@ beforeEach(() => {
 });
 
 describe('focusWorkspaceSlot — first press (workspace not active)', () => {
-  it('navigates and lands on the first agent tab with a pending attention request', () => {
+  it('navigates and lands on the first agent tab with a pending attention request', async () => {
     seedLayout('panel-1', { 'panel-1': 't1', 'panel-2': 't4' });
     mockState.agentSessions.byAgentId = { 'agent-b': { attentionRequestKind: 'discussion' } };
 
     focusWorkspaceSlot(WS);
 
     expect(navigateToRoute).toHaveBeenCalledWith('/workspace/ws-1');
-    expect(openWorkspaceTabCalls()).toEqual([[WS]]);
+    // openAndShowWorkspace opens the workspace tab once navigation resolves.
+    expect(openWorkspaceTabCalls()).toEqual([]);
+    await vi.waitFor(() => expect(openWorkspaceTabCalls()).toEqual([[WS]]));
     expect(setActiveTabCalls()).toEqual([
       expect.objectContaining({ wsId: WS, tabId: 't3', panelId: 'panel-1' }),
     ]);
@@ -195,13 +197,13 @@ describe('focusWorkspaceSlot — first press (workspace not active)', () => {
     ]);
   });
 
-  it('keeps the current tab when no agent needs attention', () => {
+  it('keeps the current tab when no agent needs attention', async () => {
     seedLayout('panel-1', { 'panel-1': 't2', 'panel-2': 't4' });
 
     focusWorkspaceSlot(WS);
 
     expect(navigateToRoute).toHaveBeenCalledWith('/workspace/ws-1');
-    expect(openWorkspaceTabCalls()).toEqual([[WS]]);
+    await vi.waitFor(() => expect(openWorkspaceTabCalls()).toEqual([[WS]]));
     expect(setActiveTabCalls()).toEqual([]);
     expect(focusPanelCalls()).toEqual([]);
   });
@@ -216,7 +218,7 @@ describe('focusWorkspaceSlot — first press (workspace not active)', () => {
     ]);
   });
 
-  it('opens the first top-level agent when the workspace has no open tabs', () => {
+  it('opens the first top-level agent when the workspace has no open tabs', async () => {
     mockState.workspaceAgents.byWorkspaceId[WS] = {
       foregroundAgentIds: ['agent-a', 'agent-b'],
     };
@@ -224,11 +226,8 @@ describe('focusWorkspaceSlot — first press (workspace not active)', () => {
     focusWorkspaceSlot(WS, { focusComposer });
 
     expect(navigateToRoute).toHaveBeenCalledWith('/workspace/ws-1');
+    await vi.waitFor(() => expect(openWorkspaceTabCalls()).toEqual([[WS]]));
     expect(dispatched).toEqual([
-      expect.objectContaining({
-        type: 'tabState/openWorkspaceTab',
-        payload: [WS],
-      }),
       expect.objectContaining({
         type: 'workspaceAgents/setActiveAgentId',
         payload: [WS, 'agent-a'],
@@ -237,14 +236,29 @@ describe('focusWorkspaceSlot — first press (workspace not active)', () => {
         type: 'appLayout/openAgentTabRequested',
         payload: [WS, { agentId: 'agent-a' }],
       }),
+      expect.objectContaining({
+        type: 'tabState/openWorkspaceTab',
+        payload: [WS],
+      }),
     ]);
     expect(focusComposer).toHaveBeenCalledWith('agent-a');
   });
 
-  it('opens the workspace tab and navigates when the workspace has no open tabs and no agents', () => {
+  it('does not open the workspace tab when navigation fails', async () => {
+    vi.mocked(navigateToRoute).mockRejectedValueOnce(new Error('goto stalled'));
+
     focusWorkspaceSlot(WS, { focusComposer });
 
     expect(navigateToRoute).toHaveBeenCalledWith('/workspace/ws-1');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(openWorkspaceTabCalls()).toEqual([]);
+  });
+
+  it('opens the workspace tab and navigates when the workspace has no open tabs and no agents', async () => {
+    focusWorkspaceSlot(WS, { focusComposer });
+
+    expect(navigateToRoute).toHaveBeenCalledWith('/workspace/ws-1');
+    await vi.waitFor(() => expect(openWorkspaceTabCalls()).toEqual([[WS]]));
     expect(dispatched).toEqual([
       expect.objectContaining({ type: 'tabState/openWorkspaceTab', payload: [WS] }),
     ]);

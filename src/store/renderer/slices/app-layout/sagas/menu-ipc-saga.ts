@@ -10,6 +10,7 @@ import {
 import { createLogger } from '$lib/utils/client-logger';
 import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
 import { navigateToRoute } from '$lib/utils/navigation.client';
+import { parseWorkspaceRoute, showWorkspaceSaga } from '$lib/utils/show-workspace';
 import { dispatchWindowEvent } from '$lib/utils/window-events';
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
 import { browserTabZoomRequested } from '../../browser/browser-slice';
@@ -43,8 +44,11 @@ function* navigate(path: string | null): SagaGenerator<void> {
     yield* put(setShowCreateModal(true));
     return;
   }
+  // Window ▸ Recent Workspaces sends a workspace route: open its tab too.
+  const workspaceId = parseWorkspaceRoute(path);
   try {
-    yield* call(navigateToRoute, path);
+    if (workspaceId) yield* call(showWorkspaceSaga, workspaceId);
+    else yield* call(navigateToRoute, path);
   } catch (error) {
     logger.warn('Failed to navigate from menu IPC', { path, error });
   }

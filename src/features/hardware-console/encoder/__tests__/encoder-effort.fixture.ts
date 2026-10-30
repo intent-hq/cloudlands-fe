@@ -262,11 +262,13 @@ export function manager(model: HardwareDeviceModel = 'codex-micro') {
     statuses,
   };
   const navigate = vi.fn(async () => {});
+  const showWorkspace = vi.fn(async (_workspaceId: string) => true);
   const dispose = installHardwareConsoleEncoder(fake as unknown as HardwareConsoleManager, {
     navigate,
+    showWorkspace,
   });
   disposers.push(dispose);
-  return { ...fake, navigate, dispose };
+  return { ...fake, navigate, showWorkspace, dispose };
 }
 export function deferred<T>() {
   let resolve!: (value: T) => void;
