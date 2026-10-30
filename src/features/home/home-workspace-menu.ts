@@ -10,11 +10,14 @@ import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
 import { m } from '$shared/paraglide/messages.js';
 import { store } from '$store/renderer/store';
 import {
+  setWorkspaceAutoArchiveDisabled,
   setWorkspaceLabel,
   togglePinWorkspace,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import {
+  selectCanSetWorkspaceAutoArchive,
   selectCanSetWorkspaceLabel,
+  selectWorkspaceAutoArchiveDisabled,
   selectLabelsSupported,
   selectWorkspaceLabel,
   selectWorkspaceLabelsInUse,
@@ -160,8 +163,24 @@ export function createHomeWorkspaceMenu(
     // still has its folder.
     const retired = workspace.status === WorkspaceStatusEnum.Retired;
     const archived = retired || workspace.status === WorkspaceStatusEnum.Archived;
+    items.push({ type: 'separator' });
+    // Per-workspace opt-out from the daemon's auto-archive sweep (PROTOCOL
+    // §5.1); owner-only, offered on daemons that advertise it.
+    if (selectCanSetWorkspaceAutoArchive.select(store.state, workspace.id)) {
+      items.push({
+        id: 'disable-auto-archive',
+        label: m.home_workspace_disableAutoArchive_label(),
+        checked: selectWorkspaceAutoArchiveDisabled.select(store.state, workspace.id),
+        closeOnSelect: true,
+        onClick: () => {
+          onClose();
+          // Read at click time: the flag may have changed while the menu was open.
+          const disabled = selectWorkspaceAutoArchiveDisabled.select(store.state, workspace.id);
+          store.dispatch(setWorkspaceAutoArchiveDisabled(workspace.id, !disabled));
+        },
+      });
+    }
     items.push(
-      { type: 'separator' },
       {
         id: 'archive',
         label: archived
