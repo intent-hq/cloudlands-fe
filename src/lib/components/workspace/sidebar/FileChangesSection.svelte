@@ -42,7 +42,7 @@
   import { faNote } from '$lib/icons/faNote';
   import { logger } from '$lib/utils/client-logger';
   import { faCodeCommit, faLock, faMinus, faPlus, faUser } from '@fortawesome/free-solid-svg-icons';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { flip } from 'svelte/animate';
@@ -60,6 +60,9 @@
     isFileFocused as isFileFocusedUtil,
     isAgentGroupCollapsed as isAgentGroupCollapsedUtil,
     toUIFileChange,
+    limitDisplayedChanges,
+    limitGroupedChanges,
+    formatHiddenChangesNotice,
   } from './sidebar-changes-utils';
   import TimelineDivider from './TimelineDivider.svelte';
   import TimelineSection from './TimelineSection.svelte';
@@ -85,6 +88,9 @@
      * `git.unstage` / `git.discard`) renders only when true; a collaborator
      * gets the read-only change list. */
     isOwner?: boolean;
+    /** Reports the rendered file rows in on-screen order (unstaged first),
+     * so parent keyboard navigation only reaches rows that exist. */
+    onVisibleFilesChange?: (files: Array<{ path: string; staged: boolean }>) => void;
   }
 
   let {
@@ -99,6 +105,7 @@
     openPanelTabs = [],
     activePanelTab,
     isOwner = true,
+    onVisibleFilesChange,
   }: Props = $props();
 
   // Transition functions matching parent's animation coordination
@@ -141,6 +148,15 @@
   const hasUnstaged = $derived(unstagedChanges.length > 0);
   const hasStaged = $derived(stagedChanges.length > 0);
 
+  // Rendering every row freezes the panel on workspaces with thousands of
+  // changes, so each section renders at most SIDEBAR_CHANGES_DISPLAY_LIMIT
+  // rows (flat view below; grouped view after agent grouping). Bulk and
+  // per-agent group actions still use the full lists.
+  const unstagedDisplay = $derived(limitDisplayedChanges(unstagedChanges));
+  const stagedDisplay = $derived(limitDisplayedChanges(stagedChanges));
+  const visibleUnstagedChanges = $derived(unstagedDisplay.visible);
+  const visibleStagedChanges = $derived(stagedDisplay.visible);
+
   // Get panel layout manager for opening file tabs
   const panelLayoutManager = $derived(getPanelLayoutManager(workspaceId));
 
@@ -174,6 +190,43 @@
 
   // Collapsed state for agent groups
   let collapsedAgentGroups = $state(new Set<string>());
+
+  // Grouped view: cap rows in rendered (group) order; collapsed groups use no budget.
+  const unstagedGroupDisplay = $derived(
+    limitGroupedChanges(unstagedByAgent, (g) => isAgentGroupCollapsed(g.agentId)),
+  );
+  const stagedGroupDisplay = $derived(
+    limitGroupedChanges(stagedByAgent, (g) => isAgentGroupCollapsed(g.agentId)),
+  );
+  const unstagedHiddenNotice = $derived(
+    formatHiddenChangesNotice(hasAnyAgentAttribution ? unstagedGroupDisplay : unstagedDisplay),
+  );
+  const stagedHiddenNotice = $derived(
+    formatHiddenChangesNotice(hasAnyAgentAttribution ? stagedGroupDisplay : stagedDisplay),
+  );
+
+  function renderedRows(section: 'unstaged' | 'staged'): Array<{ path: string; staged: boolean }> {
+    const staged = section === 'staged';
+    if (!(staged ? stagedExpanded : unstagedExpanded)) return [];
+    if (hasAnyAgentAttribution) {
+      const display = staged ? stagedGroupDisplay : unstagedGroupDisplay;
+      return display.groups.flatMap((entry) =>
+        entry.visibleFiles.map((file) => ({ path: file.path, staged })),
+      );
+    }
+    const visible = staged ? visibleStagedChanges : visibleUnstagedChanges;
+    return visible.map((change) => ({ path: change.relativePath, staged }));
+  }
+
+  const visibleFileRows = $derived([...renderedRows('unstaged'), ...renderedRows('staged')]);
+
+  $effect(() => {
+    const rows = visibleFileRows;
+    // The parent's handler reads and writes its own state; keep it out of
+    // this effect's dependencies.
+    untrack(() => onVisibleFilesChange?.(rows));
+  });
+  onDestroy(() => onVisibleFilesChange?.([]));
 
   // Multi-select state
   let selectedFiles = $state(new Set<string>());
@@ -581,7 +634,8 @@
       {#if hasAnyAgentAttribution}
         <!-- Grouped view with agent headers -->
         <div class="space-y-1">
-          {#each unstagedByAgent as group (group.agentId ?? 'manual')}
+          {#each unstagedGroupDisplay.groups as entry (entry.group.agentId ?? 'manual')}
+            {@const group = entry.group}
             {@const isCollapsed = isAgentGroupCollapsed(group.agentId)}
             {@const isLocked = isAgentGroupLocked(group.agentId)}
             {@const commitState = getGroupCommitState(group, 'unstaged')}
@@ -709,7 +763,7 @@
               <!-- Files in group -->
               {#if !isCollapsed}
                 <div class="min-w-0" transition:slide={{ tier: 'moderate' }}>
-                  {#each group.files as file (file.path)}
+                  {#each entry.visibleFiles as file (file.path)}
                     {@const panelState = getFilePanelState(file.path)}
                     <div
                       class="[&>div]:h-8 [&>div]:border-0 [&>div]:rounded-md"
@@ -747,7 +801,7 @@
       {:else}
         <!-- Flat view when no agent attribution -->
         <div class="space-y-px">
-          {#each unstagedChanges as change (change.id)}
+          {#each visibleUnstagedChanges as change (change.id)}
             {@const panelState = getFilePanelState(change.relativePath)}
             <div
               class="[&>div]:h-8 [&>div]:border-0 [&>div]:rounded-md"
@@ -780,6 +834,17 @@
             </div>
           {/each}
         </div>
+      {/if}
+      {#if unstagedHiddenNotice}
+        <p
+          class="px-2 pt-2 type-caption text-muted-foreground"
+          data-testid="hidden-changes-notice-unstaged"
+        >
+          {unstagedHiddenNotice}
+          {#if isOwner}
+            {m.workspace_fileChanges_hiddenFilesStageAll_hint()}
+          {/if}
+        </p>
       {/if}
     {/if}
   </TimelineSection>
@@ -826,7 +891,8 @@
       {#if hasAnyAgentAttribution}
         <!-- Grouped view with agent headers -->
         <div class="space-y-1">
-          {#each stagedByAgent as group (group.agentId ?? 'manual')}
+          {#each stagedGroupDisplay.groups as entry (entry.group.agentId ?? 'manual')}
+            {@const group = entry.group}
             {@const isCollapsed = isAgentGroupCollapsed(group.agentId)}
             {@const isLocked = isAgentGroupLocked(group.agentId)}
             {@const commitState = getGroupCommitState(group, 'staged')}
@@ -943,7 +1009,7 @@
               <!-- Files in group -->
               {#if !isCollapsed}
                 <div class="min-w-0" transition:slide={{ tier: 'moderate' }}>
-                  {#each group.files as file (file.path)}
+                  {#each entry.visibleFiles as file (file.path)}
                     {@const panelState = getFilePanelState(file.path)}
                     <div
                       class="[&>div]:h-8 [&>div]:border-0 [&>div]:rounded-md"
@@ -979,7 +1045,7 @@
       {:else}
         <!-- Flat view when no agent attribution -->
         <div class="space-y-px">
-          {#each stagedChanges as change (change.id)}
+          {#each visibleStagedChanges as change (change.id)}
             {@const panelState = getFilePanelState(change.relativePath)}
             <div
               class="[&>div]:h-8 [&>div]:border-0 [&>div]:rounded-md"
@@ -1007,6 +1073,17 @@
             </div>
           {/each}
         </div>
+      {/if}
+      {#if stagedHiddenNotice}
+        <p
+          class="px-2 pt-2 type-caption text-muted-foreground"
+          data-testid="hidden-changes-notice-staged"
+        >
+          {stagedHiddenNotice}
+          {#if isOwner}
+            {m.workspace_fileChanges_hiddenFilesUnstageAll_hint()}
+          {/if}
+        </p>
       {/if}
     {/if}
   </TimelineSection>

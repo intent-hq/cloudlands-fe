@@ -524,12 +524,22 @@
   // Reference to the changes panel container for focus management
   let changesPanelContainer: HTMLDivElement | undefined = $state(undefined);
 
-  // Get all files as a flat list for keyboard navigation
-  // Order: unstaged files first, then staged files
-  const allFilesFlat = $derived([
-    ...unstagedChanges.map((c) => ({ path: c.relativePath, staged: false })),
-    ...stagedChanges.map((c) => ({ path: c.relativePath, staged: true })),
-  ]);
+  // File rows FileChangesSection actually renders, in on-screen order
+  // (unstaged first). It caps each section at SIDEBAR_CHANGES_DISPLAY_LIMIT
+  // rows, so keyboard navigation and select-all only reach rendered rows.
+  let allFilesFlat = $state<Array<{ path: string; staged: boolean }>>([]);
+
+  function isRenderedFile(file: { path: string; staged: boolean } | null): boolean {
+    return !!file && allFilesFlat.some((f) => f.path === file.path && f.staged === file.staged);
+  }
+
+  // A refresh or group expansion can push the focused file past the cap; drop
+  // focus (and the shift-range anchor) so keys never act on a row that is gone.
+  function handleVisibleFilesChange(files: Array<{ path: string; staged: boolean }>) {
+    allFilesFlat = files;
+    if (focusedFile && !isRenderedFile(focusedFile)) focusedFile = null;
+    if (lastClickedFile && !isRenderedFile(lastClickedFile)) lastClickedFile = null;
+  }
 
   // Get the index of the focused file in the flat list
   const focusedIndex = $derived(() => {
@@ -639,7 +649,7 @@
       case ' ': {
         // Open the focused file
         e.preventDefault();
-        if (focusedFile) {
+        if (focusedFile && isRenderedFile(focusedFile)) {
           const change = focusedFile.staged
             ? stagedChanges.find((c) => c.relativePath === focusedFile!.path)
             : unstagedChanges.find((c) => c.relativePath === focusedFile!.path);
@@ -719,12 +729,11 @@
 
   // Select all files in a section (staged or unstaged)
   function selectAllInSection(staged: boolean) {
-    const changes = staged ? stagedChanges : unstagedChanges;
     const newSelection = new Set(selectedFiles);
 
-    for (const change of changes) {
-      const key = `${staged ? 'staged' : 'unstaged'}:${change.relativePath}`;
-      newSelection.add(key);
+    for (const file of allFilesFlat) {
+      if (file.staged !== staged) continue;
+      newSelection.add(`${staged ? 'staged' : 'unstaged'}:${file.path}`);
     }
 
     selectedFiles = newSelection;
@@ -985,6 +994,7 @@
               {openPanelTabs}
               {activePanelTab}
               {isOwner}
+              onVisibleFilesChange={handleVisibleFilesChange}
               onFileClicked={(path, staged) => {
                 focusedFile = { path, staged };
                 if (selectedFiles.size > 0) {
