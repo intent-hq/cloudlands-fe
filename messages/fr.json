@@ -5312,6 +5312,7 @@
   "settings_providerProfileKinds_signInApiKey_label": "Se connecter avec une clé d'API",
   "settings_providerProfileKinds_signInChatGpt_label": "Se connecter avec ChatGPT",
   "settings_providerProfileKinds_signedInAs_label": "Connecté en tant que {email}",
+  "settings_providerProfileKinds_signedOut_label": "Déconnecté",
   "settings_providerProfileKinds_signedIn_label": "Connecté",
   "settings_providerProfileKinds_startsFreshClaude_description": "Ce dossier part de zéro : votre CLAUDE.md, vos réglages, serveurs MCP, skills et plugins de ~/.claude ne sont pas repris.",
   "settings_providerProfileKinds_startsFreshCodex_description": "Ce dossier part de zéro : votre AGENTS.md, vos réglages, serveurs MCP et skills de ~/.codex ne sont pas repris.",

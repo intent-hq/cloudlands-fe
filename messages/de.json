@@ -5312,6 +5312,7 @@
   "settings_providerProfileKinds_signInApiKey_label": "Mit einem API-Schlüssel anmelden",
   "settings_providerProfileKinds_signInChatGpt_label": "Mit ChatGPT anmelden",
   "settings_providerProfileKinds_signedInAs_label": "Angemeldet als {email}",
+  "settings_providerProfileKinds_signedOut_label": "Abgemeldet",
   "settings_providerProfileKinds_signedIn_label": "Angemeldet",
   "settings_providerProfileKinds_startsFreshClaude_description": "Dieser Ordner beginnt leer: Deine CLAUDE.md, Einstellungen, MCP-Server, Skills und Plugins aus ~/.claude werden nicht übernommen.",
   "settings_providerProfileKinds_startsFreshCodex_description": "Dieser Ordner beginnt leer: Deine AGENTS.md, Einstellungen, MCP-Server und Skills aus ~/.codex werden nicht übernommen.",

@@ -60,7 +60,7 @@ export function signInCommand(
   return loginCommand(provider, method, !remoteDaemon);
 }
 
-/** A profile row's status, as ProviderProfiles shows it ('error' reads "Not signed in"). */
+/** A profile row's status, as ProviderProfiles shows it ('error' reads "Signed out"). */
 export type MockProfileStatus = 'checking' | 'ready' | 'error' | 'configured';
 
 /** Fake profile row data for the rows mock-up. */

@@ -241,7 +241,7 @@
       {m.settings_providerProfiles_statusReady_label()}
     {:else if status === 'error'}
       <Fa icon={faTriangleExclamation} class="size-3" />
-      {m.settings_providerProfiles_statusError_label()}
+      {m.settings_providerProfileKinds_signedOut_label()}
     {:else}
       {m.settings_providerProfiles_statusConfigured_label()}
     {/if}

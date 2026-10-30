@@ -5312,6 +5312,7 @@
   "settings_providerProfileKinds_signInApiKey_label": "API 키로 로그인",
   "settings_providerProfileKinds_signInChatGpt_label": "ChatGPT로 로그인",
   "settings_providerProfileKinds_signedInAs_label": "{email}(으)로 로그인됨",
+  "settings_providerProfileKinds_signedOut_label": "로그아웃됨",
   "settings_providerProfileKinds_signedIn_label": "로그인됨",
   "settings_providerProfileKinds_startsFreshClaude_description": "이 폴더는 빈 상태로 시작합니다. ~/.claude의 CLAUDE.md, 설정, MCP 서버, 스킬, 플러그인은 옮겨지지 않습니다.",
   "settings_providerProfileKinds_startsFreshCodex_description": "이 폴더는 빈 상태로 시작합니다. ~/.codex의 AGENTS.md, 설정, MCP 서버, 스킬은 옮겨지지 않습니다.",

@@ -5312,6 +5312,7 @@
   "settings_providerProfileKinds_signInApiKey_label": "Sign in with an API key",
   "settings_providerProfileKinds_signInChatGpt_label": "Sign in with ChatGPT",
   "settings_providerProfileKinds_signedInAs_label": "Signed in as {email}",
+  "settings_providerProfileKinds_signedOut_label": "Signed out",
   "settings_providerProfileKinds_signedIn_label": "Signed in",
   "settings_providerProfileKinds_startsFreshClaude_description": "This folder starts fresh: your CLAUDE.md, settings, MCP servers, skills and plugins from ~/.claude don't carry over.",
   "settings_providerProfileKinds_startsFreshCodex_description": "This folder starts fresh: your AGENTS.md, settings, MCP servers and skills from ~/.codex don't carry over.",

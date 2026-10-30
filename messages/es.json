@@ -5312,6 +5312,7 @@
   "settings_providerProfileKinds_signInApiKey_label": "Iniciar sesión con una clave de API",
   "settings_providerProfileKinds_signInChatGpt_label": "Iniciar sesión con ChatGPT",
   "settings_providerProfileKinds_signedInAs_label": "Sesión iniciada como {email}",
+  "settings_providerProfileKinds_signedOut_label": "Sesión cerrada",
   "settings_providerProfileKinds_signedIn_label": "Sesión iniciada",
   "settings_providerProfileKinds_startsFreshClaude_description": "Esta carpeta empieza vacía: tu CLAUDE.md, ajustes, servidores MCP, skills y plugins de ~/.claude no se trasladan.",
   "settings_providerProfileKinds_startsFreshCodex_description": "Esta carpeta empieza vacía: tu AGENTS.md, ajustes, servidores MCP y skills de ~/.codex no se trasladan.",

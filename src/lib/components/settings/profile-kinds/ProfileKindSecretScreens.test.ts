@@ -172,7 +172,8 @@ describe('profile rows and delete confirmation (mock-up)', () => {
     const identities = screen.getAllByTestId('provider-profile-identity');
     expect(identities).toHaveLength(1);
     expect(identities[0]!.textContent).toContain('work@acme.com');
-    expect(screen.getByText(m.settings_providerProfiles_statusError_label())).toBeTruthy();
+    expect(screen.getByText(m.settings_providerProfileKinds_signedOut_label())).toBeTruthy();
+    expect(screen.queryByText(m.settings_providerProfiles_statusError_label())).toBeNull();
   });
 
   it('offers ⋯ → Log In for Different-login rows only', () => {

@@ -5312,6 +5312,7 @@
   "settings_providerProfileKinds_signInApiKey_label": "API キーでサインイン",
   "settings_providerProfileKinds_signInChatGpt_label": "ChatGPT でサインイン",
   "settings_providerProfileKinds_signedInAs_label": "{email} としてサインイン済み",
+  "settings_providerProfileKinds_signedOut_label": "サインアウト済み",
   "settings_providerProfileKinds_signedIn_label": "サインイン済み",
   "settings_providerProfileKinds_startsFreshClaude_description": "このフォルダーは空の状態から始まります。~/.claude の CLAUDE.md、設定、MCP サーバー、スキル、プラグインは引き継がれません。",
   "settings_providerProfileKinds_startsFreshCodex_description": "このフォルダーは空の状態から始まります。~/.codex の AGENTS.md、設定、MCP サーバー、スキルは引き継がれません。",

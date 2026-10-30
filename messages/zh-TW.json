@@ -5312,6 +5312,7 @@
   "settings_providerProfileKinds_signInApiKey_label": "使用 API 金鑰登入",
   "settings_providerProfileKinds_signInChatGpt_label": "使用 ChatGPT 登入",
   "settings_providerProfileKinds_signedInAs_label": "已登入為 {email}",
+  "settings_providerProfileKinds_signedOut_label": "已登出",
   "settings_providerProfileKinds_signedIn_label": "已登入",
   "settings_providerProfileKinds_startsFreshClaude_description": "此資料夾從空白開始：~/.claude 中的 CLAUDE.md、設定、MCP 伺服器、技能和外掛不會沿用。",
   "settings_providerProfileKinds_startsFreshCodex_description": "此資料夾從空白開始：~/.codex 中的 AGENTS.md、設定、MCP 伺服器和技能不會沿用。",
