@@ -23,6 +23,8 @@ interface MentionMeta {
   fullUrl?: string;
   isExternalLink?: boolean;
   workspaceId?: string;
+  /** Note candidates: false when the note lives in a sibling workspace. */
+  isCurrentWorkspace?: boolean;
   principalId?: string;
   identity?: WorkspaceMember['identity'];
   avatarUrl?: string;

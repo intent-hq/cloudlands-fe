@@ -9,8 +9,10 @@
  */
 
 import { memberMentionLabel, parseMemberMention } from '$lib/utils/member-mention-token';
+import { NOTE_MENTION_BODY_SOURCE, parseNoteMention } from '$lib/utils/note-mention-token';
 
 // --- Regex patterns ---
+const noteBracketRe = new RegExp(`@${NOTE_MENTION_BODY_SOURCE}`, 'g');
 const noteRe = /@note\/([A-Za-z0-9\-_]+)/g;
 const rulesRe = /@\.augment\/rules\/[^\s<>()'\"]+/g;
 const fileRe = /@\/[^\s<>()'\"]+/g;
@@ -28,6 +30,7 @@ const contextMentionRe = /@context\[([A-Za-z0-9+/=]+|[^\[\]]*(?:\[[^\]]*\][^\[\]
 
 const allPatterns: Array<{ re: RegExp; kind: string }> = [
   { re: /@member\[[^\]\s]*\]/g, kind: 'member' },
+  { re: noteBracketRe, kind: 'note-bracket' },
   { re: noteRe, kind: 'note' },
   { re: rulesRe, kind: 'rule' },
   { re: fileRe, kind: 'file' },
@@ -44,6 +47,15 @@ const allPatterns: Array<{ re: RegExp; kind: string }> = [
 // --- Helper: escape HTML attribute values ---
 const escAttr = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+// --- Helper: decode the entities escAttr produces (HTML text -> plain text) ---
+const unescapeHtmlText = (s: string): string =>
+  s
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&');
 
 // --- Helper: build mention span HTML string ---
 function mentionSpanHtml(attrs: {
@@ -91,6 +103,18 @@ function matchToHtml(kind: string, value: string, groups: string[]): string {
   if (kind === 'member') {
     const member = parseMemberMention(value);
     return member ? mentionSpanHtml(member) : value;
+  } else if (kind === 'note-bracket') {
+    // Input is HTML text, so entities in the title are still escaped.
+    const note = parseNoteMention(unescapeHtmlText(value));
+    if (!note) return value;
+    return mentionSpanHtml({
+      type: 'note',
+      id: note.id,
+      label: note.title,
+      meta: note.workspaceId
+        ? { workspaceId: note.workspaceId, isCurrentWorkspace: false }
+        : undefined,
+    });
   } else if (kind === 'note') {
     const id = groups[0] || '';
     return mentionSpanHtml({ type: 'note', id, label: id });

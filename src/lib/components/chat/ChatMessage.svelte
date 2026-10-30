@@ -56,6 +56,8 @@
   import { shouldShowStoppedIndicator as resolveShouldShowStoppedIndicator } from './message-display-utils';
   import { splitTextByUrls } from './message-link-utils';
   import { findInlineMentions } from './mention-match-utils';
+  import { parseNoteMention } from '$lib/utils/note-mention-token';
+  import { noteUrl } from '$shared/constants/intent-links';
   import { USER_MESSAGE_SURFACE_CLASS, USER_MESSAGE_TEXT_CLASS } from './user-message-surface';
   import {
     isQuestionOnlyContent,
@@ -625,7 +627,7 @@
   }
 
   // Parse text into segments with inline mentions rendered as chips
-  // Matches @note/..., @file paths, @context[...], etc.
+  // Matches @note[...], @note/..., @file paths, @context[...], etc.
   // refsByIdentifier: Map of identifier -> context reference (for URL lookup)
   function parseInlineMentions(
     text: string,
@@ -720,6 +722,26 @@
           id: identifier || title,
           icon,
           url,
+        });
+      } else if (captured.startsWith('note[') && parseNoteMention(captured)) {
+        // Note mention: @note[{noteId}|{title}(|{workspaceId})]. The id drives
+        // lookup/navigation; the saved title is the fallback label.
+        const note = parseNoteMention(captured)!;
+        const owningWsId = getOwningWorkspaceId() ?? '';
+        const crossWorkspace = !!note.workspaceId && note.workspaceId !== owningWsId;
+        const lookupWsId = crossWorkspace ? note.workspaceId! : owningWsId;
+        const matchingNote =
+          selectAllNotes.select(appStore.state, lookupWsId).find((n) => n.id === note.id) ?? null;
+        const isSpec = note.id === 'spec' && !crossWorkspace;
+
+        segments.push({
+          type: 'mention',
+          mentionType: isSpec ? 'spec' : 'note',
+          label: matchingNote?.title || note.title,
+          id: note.id,
+          icon: isSpec ? faClipboard : faNoteSticky,
+          noteId: note.id,
+          url: crossWorkspace ? noteUrl(note.id, note.workspaceId) : undefined,
         });
       } else if (captured.startsWith('note/')) {
         // Note mention: @note/{noteId}

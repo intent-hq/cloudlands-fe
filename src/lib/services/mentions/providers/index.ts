@@ -219,7 +219,7 @@ export class NoteProvider implements Provider {
           const body = note.content || note.contentPreview;
 
           const candidate = {
-            id: note.id || `note-${note.id}`,
+            id: note.id,
             type: 'note' as MentionType,
             label: note.title || note.id || m.chat_mentions_untitledNote_label(),
             subtitle,
@@ -229,6 +229,7 @@ export class NoteProvider implements Provider {
             meta: {
               preview: body?.substring(0, 200) || '',
               workspaceId,
+              isCurrentWorkspace,
             },
           } satisfies MentionCandidate;
           return { candidate, score };

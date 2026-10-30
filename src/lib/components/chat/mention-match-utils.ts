@@ -4,7 +4,8 @@
  *
  * Matches:
  * - @context[provider|identifier|title] — context mentions (Linear, GitHub, etc.)
- * - @note/{noteId} — note mentions
+ * - @note[{noteId}|{title}(|{workspaceId})] — note mentions (current form)
+ * - @note/{noteId} — legacy note mentions
  * - @{path} — file/folder mentions (paths with / or file extensions)
  *
  * The `@` must not be preceded by an email-local-part character (letters,
@@ -26,7 +27,7 @@ export interface InlineMentionMatch {
 }
 
 const MENTION_REGEX =
-  /(?<![A-Za-z0-9._%+-])@(member\[[^\]\s]*\]|context\[[^\]]+\]|note\/[^\s]+|[^\s@]+\.[a-zA-Z]+(?::\d+(?::\d+)?|#L\d+(?:-\d+)?|:L\d+(?:-\d+)?)?|[^\s@]*\/[^\s]+(?::\d+(?::\d+)?|#L\d+(?:-\d+)?)?)/g;
+  /(?<![A-Za-z0-9._%+-])@(member\[[^\]\s]*\]|context\[[^\]]+\]|note\[[A-Za-z0-9_-]+\|[^\]\n]*\]|note\/[^\s]+|[^\s@]+\.[a-zA-Z]+(?::\d+(?::\d+)?|#L\d+(?:-\d+)?|:L\d+(?:-\d+)?)?|[^\s@]*\/[^\s]+(?::\d+(?::\d+)?|#L\d+(?:-\d+)?)?)/g;
 
 /** Find all inline @mentions in `text`, in order of appearance. */
 export function findInlineMentions(text: string): InlineMentionMatch[] {

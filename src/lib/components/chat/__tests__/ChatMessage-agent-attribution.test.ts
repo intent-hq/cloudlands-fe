@@ -209,6 +209,43 @@ describe('ChatMessage user message text rendering', () => {
     expect(spans.some((el) => el.textContent === ' now')).toBe(true);
   });
 
+  it('renders a multi-word @note[id|title] mention as one chip that opens the note by id', async () => {
+    dispatchMock.mockClear();
+    const { container } = render(ChatMessage, {
+      props: {
+        message: userTextMessage('@note[n-123|Meeting with Andre Oct 30 2026] Read the transcript'),
+        workspace: { id: 'ws-1' } as any,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Meeting with Andre Oct 30 2026' }));
+
+    expect(dispatchMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'workspaceNavigation/openWorkspaceNote',
+        payload: ['ws-1', 'n-123', expect.anything()],
+      }),
+    );
+    const spans = Array.from(container.querySelectorAll('span.whitespace-pre-wrap'));
+    expect(spans.some((el) => el.textContent === ' Read the transcript')).toBe(true);
+  });
+
+  it('opens a cross-workspace @note mention through its workspace-qualified link', async () => {
+    render(ChatMessage, {
+      props: {
+        message: userTextMessage('@note[n-9|Other plan|ws-2]'),
+        workspace: { id: 'ws-1' } as any,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Other plan' }));
+
+    expect(handleLinkMock).toHaveBeenCalledWith(
+      'intent://local/ws-2/note/n-9',
+      expect.objectContaining({ workspaceId: 'ws-1' }),
+    );
+  });
+
   it('opens an inline file mention at its captured line', async () => {
     dispatchMock.mockClear();
     render(ChatMessage, {
