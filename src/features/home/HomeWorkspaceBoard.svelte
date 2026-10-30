@@ -3,7 +3,15 @@
   import * as Tooltip from '$lib/components/ui/tooltip';
   import { Button } from '$lib/components/ui/button';
   import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
-  import { faThumbtack } from '$lib/icons/phosphor-icons';
+  import {
+    faArrowDown,
+    faArrowUp,
+    faChevronDown,
+    faChevronRight,
+    faThumbtack,
+  } from '$lib/icons/phosphor-icons';
+  import { formatInteger } from '$lib/i18n/format';
+  import { HOME_SET_ASIDE_GROUP } from './home-set-aside';
   import HomeWorkspaceStatus from './HomeWorkspaceStatus.svelte';
   import HomeWorkspacePullBadge from './HomeWorkspacePullBadge.svelte';
   import HomeActivityTime from './HomeActivityTime.svelte';
@@ -26,6 +34,10 @@
     showRepository = true,
     showRepositoryOwner = true,
     groups,
+    aside = [],
+    asideExpanded = false,
+    onasideexpanded,
+    ontoggleaside,
   }: {
     workspaces: Workspace[];
     pinnedIds?: readonly string[];
@@ -39,7 +51,13 @@
     showRepository?: boolean;
     showRepositoryOwner?: boolean;
     groups?: { id: string; label: string; items: Workspace[] }[];
+    /** Set-aside work in the current scope, shown in a collapsible shelf below the board. */
+    aside?: Workspace[];
+    asideExpanded?: boolean;
+    onasideexpanded?: (expanded: boolean) => void;
+    ontoggleaside?: (workspace: Workspace) => void;
   } = $props();
+  const asideIds = $derived(new Set(aside.map((workspace) => workspace.id)));
   function column(workspace: Workspace): string {
     // A Retired workspace (its folder was purged, PROTOCOL §5.1) is archived.
     if (
@@ -73,6 +91,128 @@
   );
 </script>
 
+{#snippet card(workspace: Workspace)}
+  {@const pinned = pinnedIds.includes(workspace.id)}
+  {@const displayTitle = workspace.title.trim()
+    ? workspace.title
+    : m.workspace_links_untitled_label()}
+  {@const repositoryLabel =
+    [showRepositoryOwner ? workspace.repositoryOwner : undefined, workspace.repositoryName]
+      .filter(Boolean)
+      .join('/') || workspace.repositoryPath}
+  <div class="home-board-item">
+    <Button
+      data-home-workspace={workspace.id}
+      variant="outline"
+      active={selectedId === workspace.id}
+      aria-pressed={selectedId === workspace.id}
+      wrapContent={false}
+      class="h-auto min-w-0 w-full shrink-0 flex-col items-stretch whitespace-normal rounded-xl border-border bg-background gap-0 p-3 text-left shadow-xs"
+      onclick={(event) => {
+        doubleClick.arm(event, workspace.id);
+        if (!openHomeWorkspaceFromEvent(event, workspace.id, onopen)) onselect(workspace.id);
+      }}
+      oncontextmenu={(event) => oncontextmenu?.(event, workspace)}
+      onkeydown={(event) => {
+        oncontextmenu?.(event, workspace);
+        if (!event.defaultPrevented) openHomeWorkspaceFromEvent(event, workspace.id, onopen);
+      }}
+      aria-label={displayTitle}
+      aria-describedby={pinned ? `home-board-pinned-${workspace.id}` : undefined}
+    >
+      <span class="flex items-start justify-between gap-3">
+        <WorkspaceMicroKeySlot workspaceId={workspace.id} />
+        <Tooltip.Provider
+          ><Tooltip.Root
+            ><Tooltip.Trigger
+              >{#snippet child({ props: homeTooltipProps })}<span
+                  {...homeTooltipProps}
+                  class="min-w-0 flex-1 line-clamp-2 [overflow-wrap:anywhere] font-medium"
+                >
+                  {displayTitle}
+                </span>{/snippet}</Tooltip.Trigger
+            ><Tooltip.Content>{displayTitle}</Tooltip.Content></Tooltip.Root
+          ></Tooltip.Provider
+        >
+        <span class="mt-0.5 flex shrink-0 items-center gap-2">
+          {#if pinned}
+            <span
+              class="inline-flex size-4 shrink-0 items-center justify-center text-muted-foreground"
+              data-home-workspace-pin
+              aria-hidden="true"
+            >
+              <Fa icon={faThumbtack} class="size-3" />
+            </span>
+            <span id="home-board-pinned-{workspace.id}" class="sr-only">
+              {m.layout_activeCard_pinned_header()}
+            </span>
+          {/if}
+          <HomeWorkspaceStatus {workspace} />
+        </span>
+      </span>
+      {#if workspace.statusMessage}
+        <span
+          class="home-workspace-summary mt-2 line-clamp-2 [overflow-wrap:anywhere] type-caption text-muted-foreground"
+        >
+          {workspace.statusMessage}
+        </span>
+      {/if}
+      <span
+        class="mt-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 type-caption text-muted-foreground"
+      >
+        {#if showRepository && repositoryLabel}
+          <Tooltip.Provider
+            ><Tooltip.Root
+              ><Tooltip.Trigger
+                >{#snippet child({ props: homeTooltipProps })}<span
+                    {...homeTooltipProps}
+                    class="flex min-w-0 max-w-[min(70%,16rem)] items-center gap-1.5"
+                  >
+                    {#if workspace.repositoryOwner}
+                      <GitHubAvatar
+                        identity={workspace.repositoryOwner}
+                        class="shrink-0 rounded-sm"
+                      />
+                    {/if}
+                    <span class="truncate" data-home-workspace-repository>{repositoryLabel}</span>
+                  </span>{/snippet}</Tooltip.Trigger
+              ><Tooltip.Content>{repositoryLabel}</Tooltip.Content></Tooltip.Root
+            ></Tooltip.Provider
+          >
+        {/if}
+        {#if workspace.pullRequests?.length || workspace.activePullRequest}
+          <HomeWorkspacePullBadge {workspace} />
+        {/if}
+        <span class="ml-auto shrink-0" data-home-card-time>
+          <HomeActivityTime {workspace} />
+        </span>
+      </span>
+    </Button>
+    {#if ontoggleaside && !archived && column(workspace) !== 'archived'}
+      {@const label = asideIds.has(workspace.id)
+        ? m.home_setAside_bringBack_label()
+        : m.home_setAside_action_label()}
+      <span class="home-aside-control"
+        ><Button
+          variant="plain"
+          size="icon-compact"
+          iconOnly
+          type="button"
+          class="home-aside-action"
+          aria-label={label}
+          tooltip={label}
+          data-home-set-aside-action={workspace.id}
+          onclick={() => ontoggleaside(workspace)}
+          ><Fa
+            icon={asideIds.has(workspace.id) ? faArrowUp : faArrowDown}
+            class="size-3.5"
+          /></Button
+        ></span
+      >
+    {/if}
+  </div>
+{/snippet}
+
 <div
   class="min-h-0 min-w-0 flex-1 overflow-auto px-6 pb-5"
   data-home-board
@@ -89,110 +229,9 @@
         >
           {group.label}
         </h3>
-        <div class="flex flex-col gap-2 pb-2">
+        <div class="flex flex-col gap-2 pb-2" data-home-workspace-list>
           {#each items as workspace (workspace.id)}
-            {@const pinned = pinnedIds.includes(workspace.id)}
-            {@const displayTitle = workspace.title.trim()
-              ? workspace.title
-              : m.workspace_links_untitled_label()}
-            {@const repositoryLabel =
-              [
-                showRepositoryOwner ? workspace.repositoryOwner : undefined,
-                workspace.repositoryName,
-              ]
-                .filter(Boolean)
-                .join('/') || workspace.repositoryPath}
-            <Button
-              data-home-workspace={workspace.id}
-              variant="outline"
-              active={selectedId === workspace.id}
-              aria-pressed={selectedId === workspace.id}
-              wrapContent={false}
-              class="h-auto min-w-0 w-full shrink-0 flex-col items-stretch whitespace-normal rounded-xl border-border bg-background gap-0 p-3 text-left shadow-xs"
-              onclick={(event) => {
-                doubleClick.arm(event, workspace.id);
-                if (!openHomeWorkspaceFromEvent(event, workspace.id, onopen))
-                  onselect(workspace.id);
-              }}
-              oncontextmenu={(event) => oncontextmenu?.(event, workspace)}
-              onkeydown={(event) => {
-                oncontextmenu?.(event, workspace);
-                if (!event.defaultPrevented)
-                  openHomeWorkspaceFromEvent(event, workspace.id, onopen);
-              }}
-              aria-label={displayTitle}
-              aria-describedby={pinned ? `home-board-pinned-${workspace.id}` : undefined}
-            >
-              <span class="flex items-start justify-between gap-3">
-                <WorkspaceMicroKeySlot workspaceId={workspace.id} />
-                <Tooltip.Provider
-                  ><Tooltip.Root
-                    ><Tooltip.Trigger
-                      >{#snippet child({ props: homeTooltipProps })}<span
-                          {...homeTooltipProps}
-                          class="min-w-0 flex-1 line-clamp-2 [overflow-wrap:anywhere] font-medium"
-                        >
-                          {displayTitle}
-                        </span>{/snippet}</Tooltip.Trigger
-                    ><Tooltip.Content>{displayTitle}</Tooltip.Content></Tooltip.Root
-                  ></Tooltip.Provider
-                >
-                <span class="mt-0.5 flex shrink-0 items-center gap-2">
-                  {#if pinned}
-                    <span
-                      class="inline-flex size-4 shrink-0 items-center justify-center text-muted-foreground"
-                      data-home-workspace-pin
-                      aria-hidden="true"
-                    >
-                      <Fa icon={faThumbtack} class="size-3" />
-                    </span>
-                    <span id="home-board-pinned-{workspace.id}" class="sr-only">
-                      {m.layout_activeCard_pinned_header()}
-                    </span>
-                  {/if}
-                  <HomeWorkspaceStatus {workspace} />
-                </span>
-              </span>
-              {#if workspace.statusMessage}
-                <span
-                  class="home-workspace-summary mt-2 line-clamp-2 [overflow-wrap:anywhere] type-caption text-muted-foreground"
-                >
-                  {workspace.statusMessage}
-                </span>
-              {/if}
-              <span
-                class="mt-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 type-caption text-muted-foreground"
-              >
-                {#if showRepository && repositoryLabel}
-                  <Tooltip.Provider
-                    ><Tooltip.Root
-                      ><Tooltip.Trigger
-                        >{#snippet child({ props: homeTooltipProps })}<span
-                            {...homeTooltipProps}
-                            class="flex min-w-0 max-w-[min(70%,16rem)] items-center gap-1.5"
-                          >
-                            {#if workspace.repositoryOwner}
-                              <GitHubAvatar
-                                identity={workspace.repositoryOwner}
-                                class="shrink-0 rounded-sm"
-                              />
-                            {/if}
-                            <span class="truncate" data-home-workspace-repository
-                              >{repositoryLabel}</span
-                            >
-                          </span>{/snippet}</Tooltip.Trigger
-                      ><Tooltip.Content>{repositoryLabel}</Tooltip.Content></Tooltip.Root
-                    ></Tooltip.Provider
-                  >
-                {/if}
-                {#if workspace.pullRequests?.length || workspace.activePullRequest}
-                  <HomeWorkspacePullBadge {workspace} />
-                {/if}
-                <span class="ml-auto shrink-0">
-                  <HomeActivityTime {workspace} />
-                </span>
-              </span>
-            </Button>
+            {@render card(workspace)}
           {:else}
             <p class="sr-only">
               {m.home_board_empty_column()}
@@ -202,4 +241,42 @@
       </section>
     {/each}
   </div>
+  {#if aside.length > 0}
+    <section class="pt-3" data-home-set-aside aria-label={m.home_setAside_action_label()}>
+      <h3 class="flex min-h-8 items-center" data-home-group={HOME_SET_ASIDE_GROUP}>
+        <Button
+          variant="plain"
+          size="sm"
+          class="justify-start gap-1.5 px-2"
+          labelClass="flex-initial"
+          data-home-set-aside-toggle
+          aria-expanded={asideExpanded}
+          aria-label={m.home_setAside_action_label()}
+          onclick={() => onasideexpanded?.(!asideExpanded)}
+        >
+          <span class="text-left type-caption font-medium text-muted-foreground"
+            >{m.home_setAside_action_label()}</span
+          >
+          {#if !asideExpanded}<span class="type-caption tabular-nums text-muted-foreground"
+              >{formatInteger(aside.length)}</span
+            >{/if}
+          {#snippet trailingIcon()}<Fa
+              icon={asideExpanded ? faChevronDown : faChevronRight}
+              class="size-3 text-muted-foreground"
+            />{/snippet}
+        </Button>
+      </h3>
+      {#if asideExpanded}
+        <div
+          class="home-board-shelf grid w-full content-start gap-x-3 gap-y-2 pt-1"
+          style:--home-board-columns={Math.max(1, displayColumns.length)}
+          data-home-workspace-list
+        >
+          {#each aside as workspace (workspace.id)}
+            {@render card(workspace)}
+          {/each}
+        </div>
+      {/if}
+    </section>
+  {/if}
 </div>
