@@ -2695,6 +2695,7 @@
   "home_navigation_label": "ホーム",
   "home_needs_you_badge_many": "{count} 件のワークスペースで対応が必要です",
   "home_needs_you_badge_one": "{count} 件のワークスペースで対応が必要です",
+  "home_new_chat": "新しいチャット",
   "home_new_workspace": "新しいワークスペース",
   "home_no_matches": "一致するワークスペースがありません",
   "home_no_matches_description": "検索条件、リポジトリ、または対応状況のフィルターを変更してください。",

@@ -2695,6 +2695,7 @@
   "home_navigation_label": "Home",
   "home_needs_you_badge_many": "{count} workspaces need you",
   "home_needs_you_badge_one": "{count} workspace needs you",
+  "home_new_chat": "New chat",
   "home_new_workspace": "New workspace",
   "home_no_matches": "No matching workspaces",
   "home_no_matches_description": "Try another search, repository, or attention filter.",
