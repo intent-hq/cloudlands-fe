@@ -351,6 +351,7 @@ import {
 } from '../features/backend/main/backend.ipc';
 import { registerWorkspaceTransferHandlers } from '../features/backend/main/workspace-transfer.ipc';
 import { registerWorkspaceImportHandlers } from '../features/backend/main/workspace-import.ipc';
+import { registerRemoteMachinesHandlers } from '../features/backend/main/remote-machines.ipc';
 import { getConnectionMode, getDaemonVersionInfo } from '../features/backend/main/connection-mode';
 import { list as listGuestSessions } from '../features/backend/main/guest-sessions-store';
 import { getActiveId, list as listConnections } from '../features/backend/main/connections-store';
@@ -1627,6 +1628,7 @@ const bootFlow = app.whenReady().then(async () => {
   registerBackendHandlers(); // Needed for live JSON-RPC transport (workspaces domain)
   registerWorkspaceTransferHandlers(); // Workspace transfer relay (wizard steps 3–4)
   registerWorkspaceImportHandlers(); // Import Workspace from File (File menu)
+  registerRemoteMachinesHandlers(); // Make a machine available to the current backend
 
   // Every critical handler a renderer invokes on boot now exists: let the
   // window creators in ./window.ts proceed (they all await this gate).
