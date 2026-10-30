@@ -141,6 +141,32 @@ test('keeps editor Escape local, discards cancelled edits, and applies Done', as
   await expect(saved).toHaveText('echo fixture-saved');
 });
 
+// intent-hq/intent#8068: Monaco types through EditContext, so the dialog's form
+// must not treat the editor's div input as a single-line field and swallow Enter.
+test('inserts new lines with Enter without submitting the dialog', async ({ mount, page }) => {
+  await mount(SetupScriptModalPreview);
+  const selectAll = await page.evaluate(() =>
+    navigator.userAgent.includes('Macintosh') ? 'Meta+A' : 'Control+A',
+  );
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.locator('.monaco-editor')).toBeVisible();
+  const input = await focusEditor(dialog);
+  await input.press(selectAll);
+  await page.keyboard.type('echo first');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('echo second');
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Enter');
+  // Modified Enter belongs to Monaco (insert line below) and never submits the dialog.
+  await page.keyboard.press('ControlOrMeta+Enter');
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: /Save.*Done/i }).click();
+  await expect(dialog).toHaveCount(0);
+  // toHaveText collapses whitespace; compare raw text so the newlines are asserted.
+  expect(await page.getByTestId('saved-script').textContent()).toBe('\necho first\n\necho second');
+});
+
 test('replaces generator status with an adjacent result and applies the safe draft', async ({
   mount,
   page,

@@ -58,6 +58,38 @@ describe('form pattern', () => {
     expect(onSubmit).toHaveBeenCalledTimes(2);
   });
 
+  // intent-hq/intent#8068: Monaco types through the EditContext API, so its focus
+  // target is a plain div (not a textarea or contenteditable) marked as an ARIA
+  // multiline textbox. Enter must reach it as a newline, never a submit.
+  it.each([
+    [
+      'an ARIA multiline textbox',
+      (el: HTMLElement) => {
+        el.setAttribute('role', 'textbox');
+        el.setAttribute('aria-multiline', 'true');
+      },
+    ],
+    [
+      'an element that owns an EditContext',
+      (el: HTMLElement) => {
+        Object.defineProperty(el, 'editContext', { value: {}, configurable: true });
+      },
+    ],
+  ])('preserves Enter as a newline in %s', async (_label, mark) => {
+    const onSubmit = vi.fn();
+    const { container } = render(FormHarness, { onSubmit });
+    await fireEvent.input(screen.getByLabelText('Name'), { target: { value: 'Intent' } });
+    const editor = document.createElement('div');
+    editor.tabIndex = 0;
+    mark(editor);
+    container.querySelector('form')!.append(editor);
+
+    expect(await fireEvent.keyDown(editor, { key: 'Enter' })).toBe(true);
+    expect(onSubmit).not.toHaveBeenCalled();
+    await fireEvent.keyDown(editor, { key: 'Enter', ctrlKey: true });
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
   it('announces and disables the form while submit work is pending', async () => {
     let finish = () => {};
     const onSubmit = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
