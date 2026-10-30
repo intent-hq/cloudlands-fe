@@ -1,5 +1,6 @@
 import type { AgentMessage } from '$shared/types';
 import { getAttentionNotice } from './attention-notice';
+import { renderedBlockText } from './prepare-message-blocks';
 
 export interface ConversationTurn {
   userMessage: AgentMessage | null;
@@ -48,8 +49,7 @@ export function isOperationalOnlyAssistantMessage(
     visibleBlocks.every(
       (block) =>
         block.type === 'tool_use' ||
-        (block.type === 'thinking' &&
-          !(reasoningAsText && (block.text ?? block.content ?? '').trim())),
+        (block.type === 'thinking' && !(reasoningAsText && renderedBlockText(block).trim())),
     )
   );
 }

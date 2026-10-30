@@ -1,4 +1,4 @@
-import type { AgentSession, ContentBlock, MessageRole } from '$shared/types';
+import type { AgentSession, ContentBlock, MessageRole, SuggestedPrompt } from '$shared/types';
 import { dedupeAgentVideoContentBlocks, normalizeAgentVideoContentBlocks } from '$shared/types';
 import { isQuestionResourceBlock } from '$shared/types/question-resource';
 import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
@@ -43,6 +43,21 @@ function reasoningToText(content: readonly ContentBlock[]): readonly ContentBloc
     const text = renderedBlockText(block);
     return text.trim() ? { ...block, type: 'text', text } : block;
   });
+}
+
+/**
+ * The suggested prompts a message offers, read from the same blocks the
+ * renderer shows as text. With `reasoningAsText`, a prompts block inside a
+ * thinking block is stripped from the rendered prose, so its chips must come
+ * from the converted blocks too.
+ */
+export function suggestedPromptsFromBlocks(
+  content: readonly ContentBlock[],
+  reasoningAsText: boolean,
+): SuggestedPrompt[] {
+  return parseSuggestedPromptsFromContentBlocks(
+    reasoningAsText ? reasoningToText(content) : content,
+  ).prompts;
 }
 
 function hasVisibleText(block: ContentBlock): boolean {

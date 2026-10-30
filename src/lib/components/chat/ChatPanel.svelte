@@ -335,7 +335,6 @@
     mergeUserMessageNavigationItems,
     type ChatNavigationState,
   } from './chat-message-navigation';
-  import { parseSuggestedPromptsFromContentBlocks } from '$lib/utils/messageParser';
   import { isBatchedDeliverySeam } from '$lib/utils/queue-info';
   import { isEventWakeMessage } from './event-wake-summary';
   import {
@@ -427,7 +426,7 @@
 
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
-  import { rendersReasoningAsText } from './prepare-message-blocks';
+  import { rendersReasoningAsText, suggestedPromptsFromBlocks } from './prepare-message-blocks';
   import ModelChangeNotice from './ModelChangeNotice.svelte';
   import EffortChangeNotice from './EffortChangeNotice.svelte';
   import { getModelChangeNotice } from './model-change-notice';
@@ -561,6 +560,9 @@
   // Broad selector rationale: ChatPanel passes the materialized session to
   // helpers/components that need model, metadata, provider, and prompt-handled state.
   const agentSession$ = selectAgentSession(agentIdStore);
+  // Claude Code agents' thinking renders as prose (see rendersReasoningAsText);
+  // search, prompt chips and operational spacing follow the same rule.
+  const reasoningAsText = $derived(rendersReasoningAsText($agentSession$));
   const agentSessionIsStreaming$ = selectAgentSessionIsStreaming(agentIdStore);
   const agentMessages$ = selectAgentMessages(agentIdStore);
   const submissionDisplay$ = selectAgentSubmissionDisplay(agentIdStore, workspaceIdStore);
@@ -1107,7 +1109,7 @@
     if (pendingQuestions) {
       return [];
     }
-    return parseSuggestedPromptsFromContentBlocks(lastAssistantMessage.contentBlocks ?? []).prompts;
+    return suggestedPromptsFromBlocks(lastAssistantMessage.contentBlocks ?? [], reasoningAsText);
   });
 
   // Agent Q&A: the daemon's pending marker is authoritative when present, so
@@ -1512,7 +1514,6 @@
   // current-match turn (and its neighbors) can be force-rendered through the
   // LazyTurn virtualization while searching.
   // Everything search needs to prepare blocks exactly like the rendered rows.
-  const reasoningAsText = $derived(rendersReasoningAsText($agentSession$));
   const chatSearchOptions: ChatSearchOptions = $derived({
     collapseToolRuns: $collapseToolRuns$,
     workspaceId: workspace?.id ? String(workspace.id) : undefined,

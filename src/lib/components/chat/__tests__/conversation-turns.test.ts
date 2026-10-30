@@ -316,6 +316,35 @@ describe('conversation turn indexing', () => {
     ).toBe(false);
   });
 
+  it('counts thinking the renderer shows as prose as prose when reasoningAsText is on', () => {
+    const tool = {
+      ...message('tool', 'assistant'),
+      contentBlocks: [{ type: 'tool_use', id: 'tool-call', name: 'view', input: {} }],
+    } as AgentMessage;
+    const update = {
+      ...message('update', 'assistant'),
+      contentBlocks: [{ type: 'thinking', id: 'thinking', text: 'Found it; fixing now.' }],
+    } as AgentMessage;
+    const legacyUpdate = {
+      ...message('legacy', 'assistant'),
+      contentBlocks: [{ type: 'thinking', id: 'thinking', text: '', content: 'Legacy update' }],
+    } as AgentMessage;
+    const emptyThinking = {
+      ...message('empty', 'assistant'),
+      contentBlocks: [{ type: 'thinking', id: 'thinking', text: '  ' }],
+    } as AgentMessage;
+    const turn = (assistant: AgentMessage) => groupIntoTurns([assistant])[0];
+
+    expect(isOperationalOnlyAssistantMessage(update, true)).toBe(false);
+    expect(isOperationalOnlyAssistantMessage(legacyUpdate, true)).toBe(false);
+    expect(isOperationalOnlyAssistantMessage(emptyThinking, true)).toBe(true);
+    expect(isOperationalOnlyAssistantMessage(update)).toBe(true);
+    expect(hasOperationalAssistantMessageBoundary(tool, update, true)).toBe(false);
+    expect(hasOperationalAssistantMessageBoundary(tool, update)).toBe(true);
+    expect(hasOperationalAssistantTurnBoundary(turn(tool), turn(legacyUpdate), true)).toBe(false);
+    expect(hasOperationalAssistantTurnBoundary(turn(tool), turn(emptyThinking), true)).toBe(true);
+  });
+
   it('keeps consecutive notices while excluding unknown and non-system notice lookalikes', () => {
     const turns = groupIntoTurns([
       message('user', 'user'),
