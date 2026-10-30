@@ -39,7 +39,8 @@ import { createMentionSuggestionRenderer } from '$lib/components/chat/input/ment
 import { getMentionSystem, type SearchContext } from '$lib/services/mentions';
 import { toPromptToken } from '$lib/services/mentions/format';
 import { noteUrl } from '$shared/constants/intent-links';
-import { memberMentionLabel } from '$lib/utils/member-mention-token';
+import { mentionChipDisplayLabel } from '$lib/utils/note-mention-label';
+import { storeNoteTitleLookup } from '$lib/utils/store-note-title-lookup';
 import { m } from '$shared/paraglide/messages.js';
 
 // Import note primitives extensions
@@ -491,8 +492,13 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
                   class: 'mention-chip',
                 },
                 renderHTML({ node }: any) {
-                  // Ensure we always have a non-empty label for the mention
-                  const label = node.attrs.label || node.attrs.id || 'mention';
+                  // Note chips show the note's live title; data-label and the
+                  // saved token keep the original, so nothing is rewritten.
+                  const displayLabel = mentionChipDisplayLabel(
+                    node.attrs,
+                    workspace?.id,
+                    storeNoteTitleLookup,
+                  );
                   return [
                     'span',
                     {
@@ -505,7 +511,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
                       class: 'mention-chip',
                       tabindex: '0',
                     },
-                    node.attrs.type === 'member' ? memberMentionLabel(label) : label,
+                    displayLabel,
                   ];
                 },
                 renderText: mentionRenderText,
@@ -910,8 +916,13 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
                 },
                 suggestion: mentionSuggestion,
                 renderHTML({ node }: any) {
-                  // Ensure we always have a non-empty label for the mention
-                  const label = node.attrs.label || node.attrs.id || 'mention';
+                  // Note chips show the note's live title; data-label and the
+                  // saved token keep the original, so nothing is rewritten.
+                  const displayLabel = mentionChipDisplayLabel(
+                    node.attrs,
+                    workspace?.id,
+                    storeNoteTitleLookup,
+                  );
                   return [
                     'span',
                     {
@@ -924,7 +935,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
                       class: 'mention-chip',
                       tabindex: '0',
                     },
-                    node.attrs.type === 'member' ? memberMentionLabel(label) : label,
+                    displayLabel,
                   ];
                 },
                 renderText: mentionRenderText,
