@@ -1826,6 +1826,7 @@ describe('captured repository socket dispatch', () => {
           rawScreenshotRetention: 1,
           chiefAttachments: 1,
           noteTruncatedRead: 1,
+          remoteMachines: 1,
         },
       },
     });
@@ -1838,6 +1839,7 @@ describe('captured repository socket dispatch', () => {
       rawScreenshotRetention: 1,
       chiefAttachments: 1,
       noteTruncatedRead: 1,
+      remoteMachines: 1,
     });
     expect(client.getRepositoryConnection()).toBe(connection);
     expect(sockets[0].writes).toHaveLength(1);
@@ -1845,7 +1847,8 @@ describe('captured repository socket dispatch', () => {
     expect(client.getNodeCapabilities()).toBeNull();
     await vi.waitFor(() => expect(sockets[0].writes).toHaveLength(2));
     sockets[0].receive(
-      '{"id":2,"result":{"clientId":"confirmed-client","server":{"capabilities":{"agentNodes":"1","localNodeIsolation":true,"workspaceMembershipEvents":"1","rawScreenshotRetention":true,"chiefAttachments":"1","noteTruncatedRead":"1"}}}}\n',
+      '{"id":2,"result":{"clientId":"confirmed-client","server":{"capabilities":{"agentNodes":"1","localNodeIsolation":true,"workspaceMembershipEvents":"1","rawScreenshotRetention":true,"chiefAttachments":"1","noteTruncatedRead":"1","remoteMachines":"1"}}}}
+',
     );
     await hello;
     // Non-integer advertisements (boolean true, string '1') never enable a capability.
@@ -1857,6 +1860,7 @@ describe('captured repository socket dispatch', () => {
       rawScreenshotRetention: 0,
       chiefAttachments: 0,
       noteTruncatedRead: 0,
+      remoteMachines: 0,
     });
     client.dispose();
     expect(client.getNodeCapabilities()).toBeNull();

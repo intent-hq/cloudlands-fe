@@ -703,6 +703,8 @@ export class JsonRpcClient extends EventEmitter {
       chiefAttachments: capabilities?.chiefAttachments === 1 ? 1 : 0,
       // Truncated note reads (§5.2): gates maxContentBytes / baseContentBytes.
       noteTruncatedRead: capabilities?.noteTruncatedRead === 1 ? 1 : 0,
+      // Daemon-to-daemon remote machines: gates "Make available to <backend>".
+      remoteMachines: capabilities?.remoteMachines === 1 ? 1 : 0,
     });
     this.acknowledgedHelloIdentity = Object.freeze({
       clientId: result.clientId,
