@@ -6,6 +6,8 @@
   import type { HTMLButtonAttributes } from 'svelte/elements';
   import { TABS_CONTEXT, type TabsContext } from './context';
 
+  type MultiSelectTriggerProps = { props: Record<string, unknown> };
+
   interface Props extends HTMLButtonAttributes {
     value: string;
     disabled?: boolean;
@@ -63,7 +65,7 @@
   {@render children?.()}
 </TabsPrimitive.Trigger>
 
-{#snippet multiSelectTrigger({ props }: { props: Record<string, unknown> })}
+{#snippet multiSelectTrigger({ props }: MultiSelectTriggerProps)}
   <Button
     {...props}
     variant="plain"
