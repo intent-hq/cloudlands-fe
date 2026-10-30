@@ -333,11 +333,17 @@
       out:exitState
     >
       <CollapsedCardChip
-        title={m.chat_questionWizard_title()}
+        heading={m.chat_questionWizard_title()}
         count={questions.length}
-        expandLabel={m.chat_questionWizard_clickToExpand_label()}
+        hint={m.chat_questionWizard_clickToExpand_label()}
         onExpand={() => onToggleCollapsed?.(false)}
-        action={onDismiss ? dismissAction : undefined}
+        dismiss={onDismiss
+          ? {
+              label: m.chat_questionWizard_dismiss_label(),
+              tooltip: m.chat_questionWizard_dismiss_tooltip(),
+              onDismiss: () => (confirmingDismiss = true),
+            }
+          : undefined}
       />
     </div>
   {:else}

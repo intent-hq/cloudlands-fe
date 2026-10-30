@@ -8,7 +8,6 @@
    * card; a new request expands it again. Values never pass through here.
    */
   import { untrack } from 'svelte';
-  import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
   import {
     secretAnswerRequested,
@@ -69,6 +68,7 @@
     name: string;
   } | null>(null);
   let stackElement = $state<HTMLDivElement>();
+  let chipExpandButton = $state<HTMLElement | null>(null);
   let focusAfter = $state<'chip' | 'cards' | null>(null);
 
   $effect(() => {
@@ -96,11 +96,12 @@
     const root = stackElement;
     void collapsed;
     if (!target || !root) return;
-    const selector =
+    const element =
       target === 'chip'
-        ? '[data-testid="secret-request-expand"]'
-        : '[data-testid="secret-request-input"]:not([disabled]), [data-testid="secret-request-card"] button';
-    const element = root.querySelector<HTMLElement>(selector);
+        ? chipExpandButton
+        : root.querySelector<HTMLElement>(
+            '[data-testid="secret-request-input"]:not([disabled]), [data-testid="secret-request-card"] button',
+          );
     if (element) {
       element.focus();
       focusAfter = null;
@@ -163,19 +164,6 @@
   });
 </script>
 
-{#snippet chipDismissAction()}
-  <Button
-    variant="ghost"
-    size="compact"
-    class="text-danger"
-    title={m.chat_secretRequest_dismiss_tooltip()}
-    onclick={openChipDismiss}
-    data-testid="secret-request-chip-dismiss"
-  >
-    {m.chat_secretRequest_dismiss_label()}
-  </Button>
-{/snippet}
-
 {#if visible.length > 0}
   <div
     bind:this={stackElement}
@@ -184,14 +172,22 @@
   >
     {#if collapsed}
       <CollapsedCardChip
+        bind:expandButton={chipExpandButton}
         data-testid="secret-request-chip"
-        title={awaiting.length === 1
+        heading={awaiting.length === 1
           ? m.chat_secretRequest_collapsed_one({ name: awaiting[0].request.name })
           : m.chat_secretRequest_collapsed_many({ count: awaiting.length })}
-        expandLabel={m.chat_secretRequest_clickToExpand_label()}
+        hint={m.chat_secretRequest_clickToExpand_label()}
         onExpand={expand}
         expandTestId="secret-request-expand"
-        action={chipRequest ? chipDismissAction : undefined}
+        dismiss={chipRequest
+          ? {
+              label: m.chat_secretRequest_dismiss_label(),
+              tooltip: m.chat_secretRequest_dismiss_tooltip(),
+              onDismiss: openChipDismiss,
+              testId: 'secret-request-chip-dismiss',
+            }
+          : undefined}
       />
     {:else}
       {#each visible as { request, state } (request.requestId)}

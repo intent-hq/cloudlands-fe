@@ -2,66 +2,57 @@
  * @vitest-environment jsdom
  */
 import { fireEvent, render, screen } from '@testing-library/svelte';
-import { createRawSnippet } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import CollapsedCardChip from '../CollapsedCardChip.svelte';
 
-function actionSnippet(onAction: () => void) {
-  return createRawSnippet(() => ({
-    render: () => '<button type="button" data-testid="chip-action">Act</button>',
-    setup: (node: Element) => {
-      node.addEventListener('click', onAction);
-      return () => node.removeEventListener('click', onAction);
-    },
-  }));
-}
-
-function setup(props: { count?: number; action?: ReturnType<typeof actionSnippet> } = {}) {
+function setup(props: { heading?: string; count?: number; withDismiss?: boolean } = {}) {
   const onExpand = vi.fn();
+  const onDismiss = vi.fn();
   render(CollapsedCardChip, {
     props: {
-      title: 'Card title',
-      expandLabel: 'Open card',
+      heading: props.heading ?? 'Card heading',
+      count: props.count,
+      hint: 'Open card',
       onExpand,
-      expandTestId: 'chip-expand',
-      'data-testid': 'chip-root',
-      ...props,
+      dismiss: props.withDismiss
+        ? { label: 'Dismiss card', tooltip: 'Dismiss this card', onDismiss }
+        : undefined,
     },
   });
-  return { onExpand, expand: screen.getByTestId('chip-expand') };
+  return { onExpand, onDismiss };
 }
 
 describe('CollapsedCardChip', () => {
   it('expands on click and reports itself as collapsed', async () => {
-    const { onExpand, expand } = setup();
+    const { onExpand } = setup();
+    const expand = screen.getByRole('button', { name: 'Card heading Open card' });
     expect(expand.getAttribute('aria-expanded')).toBe('false');
     await fireEvent.click(expand);
     expect(onExpand).toHaveBeenCalledTimes(1);
   });
 
-  it('shows the count only when one is given', () => {
-    setup({ count: 3 });
-    expect(screen.getByTestId('chip-expand').textContent).toContain('3');
+  it('includes the count in the expand button name only when one is given', () => {
+    setup({ heading: 'Heading 2', count: 3 });
+    expect(screen.getByRole('button', { name: 'Heading 2 3 Open card' })).toBeTruthy();
   });
 
-  it('omits the count when none is given', () => {
-    setup();
-    expect(screen.getByTestId('chip-expand').textContent).not.toMatch(/\d/);
+  it('leaves the count out of the expand button name when none is given', () => {
+    setup({ heading: 'Heading 2' });
+    expect(screen.getByRole('button', { name: 'Heading 2 Open card' })).toBeTruthy();
   });
 
-  it('renders the action as a separate control that does not expand', async () => {
-    const onAction = vi.fn();
-    const { onExpand, expand } = setup({ action: actionSnippet(onAction) });
-    const action = screen.getByTestId('chip-action');
-    expect(expand.contains(action)).toBe(false);
-    expect(expand.querySelector('button, a, input')).toBeNull();
-    await fireEvent.click(action);
-    expect(onAction).toHaveBeenCalledTimes(1);
+  it('offers Dismiss as its own control that does not expand', async () => {
+    const { onExpand, onDismiss } = setup({ withDismiss: true });
+    const expand = screen.getByRole('button', { name: 'Card heading Open card' });
+    const dismiss = screen.getByRole('button', { name: 'Dismiss card' });
+    expect(expand.contains(dismiss)).toBe(false);
+    await fireEvent.click(dismiss);
+    expect(onDismiss).toHaveBeenCalledTimes(1);
     expect(onExpand).not.toHaveBeenCalled();
   });
 
-  it('renders only the expand button without an action', () => {
+  it('offers no Dismiss control when none is given', () => {
     setup();
-    expect(screen.getByTestId('chip-root').querySelectorAll('button')).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: /dismiss/i })).toBeNull();
   });
 });
