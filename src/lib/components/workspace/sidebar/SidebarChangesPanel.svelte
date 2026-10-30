@@ -66,7 +66,6 @@
     mapWorkspacePRs,
     orderPRSectionsForSelection,
     sectionPRs,
-    limitDisplayedChanges,
   } from './sidebar-changes-utils';
   import { selectReviewMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import {
@@ -525,17 +524,10 @@
   // Reference to the changes panel container for focus management
   let changesPanelContainer: HTMLDivElement | undefined = $state(undefined);
 
-  // FileChangesSection renders at most SIDEBAR_CHANGES_DISPLAY_LIMIT rows per
-  // section; keyboard navigation and select-all only reach those rows.
-  const visibleUnstagedChanges = $derived(limitDisplayedChanges(unstagedChanges).visible);
-  const visibleStagedChanges = $derived(limitDisplayedChanges(stagedChanges).visible);
-
-  // Get all visible files as a flat list for keyboard navigation
-  // Order: unstaged files first, then staged files
-  const allFilesFlat = $derived([
-    ...visibleUnstagedChanges.map((c) => ({ path: c.relativePath, staged: false })),
-    ...visibleStagedChanges.map((c) => ({ path: c.relativePath, staged: true })),
-  ]);
+  // File rows FileChangesSection actually renders, in on-screen order
+  // (unstaged first). It caps each section at SIDEBAR_CHANGES_DISPLAY_LIMIT
+  // rows, so keyboard navigation and select-all only reach rendered rows.
+  let allFilesFlat = $state<Array<{ path: string; staged: boolean }>>([]);
 
   // Get the index of the focused file in the flat list
   const focusedIndex = $derived(() => {
@@ -725,12 +717,11 @@
 
   // Select all files in a section (staged or unstaged)
   function selectAllInSection(staged: boolean) {
-    const changes = staged ? visibleStagedChanges : visibleUnstagedChanges;
     const newSelection = new Set(selectedFiles);
 
-    for (const change of changes) {
-      const key = `${staged ? 'staged' : 'unstaged'}:${change.relativePath}`;
-      newSelection.add(key);
+    for (const file of allFilesFlat) {
+      if (file.staged !== staged) continue;
+      newSelection.add(`${staged ? 'staged' : 'unstaged'}:${file.path}`);
     }
 
     selectedFiles = newSelection;
@@ -991,6 +982,7 @@
               {openPanelTabs}
               {activePanelTab}
               {isOwner}
+              onVisibleFilesChange={(files) => (allFilesFlat = files)}
               onFileClicked={(path, staged) => {
                 focusedFile = { path, staged };
                 if (selectedFiles.size > 0) {

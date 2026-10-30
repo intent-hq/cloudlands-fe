@@ -61,6 +61,7 @@
     isAgentGroupCollapsed as isAgentGroupCollapsedUtil,
     toUIFileChange,
     limitDisplayedChanges,
+    limitGroupedChanges,
     formatHiddenChangesNotice,
   } from './sidebar-changes-utils';
   import TimelineDivider from './TimelineDivider.svelte';
@@ -87,6 +88,9 @@
      * `git.unstage` / `git.discard`) renders only when true; a collaborator
      * gets the read-only change list. */
     isOwner?: boolean;
+    /** Reports the rendered file rows in on-screen order (unstaged first),
+     * so parent keyboard navigation only reaches rows that exist. */
+    onVisibleFilesChange?: (files: Array<{ path: string; staged: boolean }>) => void;
   }
 
   let {
@@ -101,6 +105,7 @@
     openPanelTabs = [],
     activePanelTab,
     isOwner = true,
+    onVisibleFilesChange,
   }: Props = $props();
 
   // Transition functions matching parent's animation coordination
@@ -145,13 +150,12 @@
 
   // Rendering every row freezes the panel on workspaces with thousands of
   // changes, so each section renders at most SIDEBAR_CHANGES_DISPLAY_LIMIT
-  // rows. Bulk and per-agent group actions still use the full lists above.
+  // rows (flat view below; grouped view after agent grouping). Bulk and
+  // per-agent group actions still use the full lists.
   const unstagedDisplay = $derived(limitDisplayedChanges(unstagedChanges));
   const stagedDisplay = $derived(limitDisplayedChanges(stagedChanges));
   const visibleUnstagedChanges = $derived(unstagedDisplay.visible);
   const visibleStagedChanges = $derived(stagedDisplay.visible);
-  const unstagedHiddenNotice = $derived(formatHiddenChangesNotice(unstagedDisplay));
-  const stagedHiddenNotice = $derived(formatHiddenChangesNotice(stagedDisplay));
 
   // Get panel layout manager for opening file tabs
   const panelLayoutManager = $derived(getPanelLayoutManager(workspaceId));
@@ -164,8 +168,7 @@
     });
   }
 
-  // Agent grouping: full groups back the group actions; visible groups only
-  // hold the rendered (capped) rows.
+  // Agent grouping
   const unstagedByAgent = $derived<AgentChangeGroup[]>(
     groupFilesByAgent(unstagedChanges.map((c) => toUIFileChange(c, false))),
   );
@@ -173,27 +176,6 @@
   const stagedByAgent = $derived<AgentChangeGroup[]>(
     groupFilesByAgent(stagedChanges.map((c) => toUIFileChange(c, true))),
   );
-
-  const visibleUnstagedByAgent = $derived<AgentChangeGroup[]>(
-    unstagedDisplay.hiddenCount > 0
-      ? groupFilesByAgent(visibleUnstagedChanges.map((c) => toUIFileChange(c, false)))
-      : unstagedByAgent,
-  );
-
-  const visibleStagedByAgent = $derived<AgentChangeGroup[]>(
-    stagedDisplay.hiddenCount > 0
-      ? groupFilesByAgent(visibleStagedChanges.map((c) => toUIFileChange(c, true)))
-      : stagedByAgent,
-  );
-
-  /** Resolve a rendered (possibly capped) group to its full file list. */
-  function resolveFullGroup(
-    group: AgentChangeGroup,
-    section: 'unstaged' | 'staged',
-  ): AgentChangeGroup {
-    const groups = section === 'staged' ? stagedByAgent : unstagedByAgent;
-    return groups.find((g) => g.agentId === group.agentId) ?? group;
-  }
 
   const hasAnyAgentAttribution = $derived(
     unstagedChanges.some((c) => c.attribution?.agent) ||
@@ -208,6 +190,40 @@
 
   // Collapsed state for agent groups
   let collapsedAgentGroups = $state(new Set<string>());
+
+  // Grouped view: cap rows in rendered (group) order; collapsed groups use no budget.
+  const unstagedGroupDisplay = $derived(
+    limitGroupedChanges(unstagedByAgent, (g) => isAgentGroupCollapsed(g.agentId)),
+  );
+  const stagedGroupDisplay = $derived(
+    limitGroupedChanges(stagedByAgent, (g) => isAgentGroupCollapsed(g.agentId)),
+  );
+  const unstagedHiddenNotice = $derived(
+    formatHiddenChangesNotice(hasAnyAgentAttribution ? unstagedGroupDisplay : unstagedDisplay),
+  );
+  const stagedHiddenNotice = $derived(
+    formatHiddenChangesNotice(hasAnyAgentAttribution ? stagedGroupDisplay : stagedDisplay),
+  );
+
+  function renderedRows(section: 'unstaged' | 'staged'): Array<{ path: string; staged: boolean }> {
+    const staged = section === 'staged';
+    if (!(staged ? stagedExpanded : unstagedExpanded)) return [];
+    if (hasAnyAgentAttribution) {
+      const display = staged ? stagedGroupDisplay : unstagedGroupDisplay;
+      return display.groups.flatMap((entry) =>
+        entry.visibleFiles.map((file) => ({ path: file.path, staged })),
+      );
+    }
+    const visible = staged ? visibleStagedChanges : visibleUnstagedChanges;
+    return visible.map((change) => ({ path: change.relativePath, staged }));
+  }
+
+  const visibleFileRows = $derived([...renderedRows('unstaged'), ...renderedRows('staged')]);
+
+  $effect(() => {
+    onVisibleFilesChange?.(visibleFileRows);
+  });
+  onDestroy(() => onVisibleFilesChange?.([]));
 
   // Multi-select state
   let selectedFiles = $state(new Set<string>());
@@ -499,8 +515,7 @@
     }
   }
 
-  function handleStageGroup(visibleGroup: AgentChangeGroup) {
-    const group = resolveFullGroup(visibleGroup, 'unstaged');
+  function handleStageGroup(group: AgentChangeGroup) {
     if (group.agentId && group.agentId in $lockedAgentIds$) {
       logger.warn('Cannot stage locked agent group', { agentId: group.agentId });
       return;
@@ -515,8 +530,7 @@
     );
   }
 
-  function handleUnstageGroup(visibleGroup: AgentChangeGroup) {
-    const group = resolveFullGroup(visibleGroup, 'staged');
+  function handleUnstageGroup(group: AgentChangeGroup) {
     if (group.agentId && group.agentId in $lockedAgentIds$) {
       logger.warn('Cannot unstage locked agent group', { agentId: group.agentId });
       return;
@@ -532,8 +546,7 @@
   }
 
   // --- Group commit queue ---
-  function enqueueGroupCommit(visibleGroup: AgentChangeGroup, section: 'unstaged' | 'staged') {
-    const group = resolveFullGroup(visibleGroup, section);
+  function enqueueGroupCommit(group: AgentChangeGroup, section: 'unstaged' | 'staged') {
     const key = getGroupKey(group, section);
     if (getGroupCommitState(group, section) !== 'idle') return;
     if (group.agentId && group.agentId in $lockedAgentIds$) return;
@@ -618,7 +631,8 @@
       {#if hasAnyAgentAttribution}
         <!-- Grouped view with agent headers -->
         <div class="space-y-1">
-          {#each visibleUnstagedByAgent as group (group.agentId ?? 'manual')}
+          {#each unstagedGroupDisplay.groups as entry (entry.group.agentId ?? 'manual')}
+            {@const group = entry.group}
             {@const isCollapsed = isAgentGroupCollapsed(group.agentId)}
             {@const isLocked = isAgentGroupLocked(group.agentId)}
             {@const commitState = getGroupCommitState(group, 'unstaged')}
@@ -746,7 +760,7 @@
               <!-- Files in group -->
               {#if !isCollapsed}
                 <div class="min-w-0" transition:slide={{ tier: 'moderate' }}>
-                  {#each group.files as file (file.path)}
+                  {#each entry.visibleFiles as file (file.path)}
                     {@const panelState = getFilePanelState(file.path)}
                     <div
                       class="[&>div]:h-8 [&>div]:border-0 [&>div]:rounded-md"
@@ -874,7 +888,8 @@
       {#if hasAnyAgentAttribution}
         <!-- Grouped view with agent headers -->
         <div class="space-y-1">
-          {#each visibleStagedByAgent as group (group.agentId ?? 'manual')}
+          {#each stagedGroupDisplay.groups as entry (entry.group.agentId ?? 'manual')}
+            {@const group = entry.group}
             {@const isCollapsed = isAgentGroupCollapsed(group.agentId)}
             {@const isLocked = isAgentGroupLocked(group.agentId)}
             {@const commitState = getGroupCommitState(group, 'staged')}
@@ -991,7 +1006,7 @@
               <!-- Files in group -->
               {#if !isCollapsed}
                 <div class="min-w-0" transition:slide={{ tier: 'moderate' }}>
-                  {#each group.files as file (file.path)}
+                  {#each entry.visibleFiles as file (file.path)}
                     {@const panelState = getFilePanelState(file.path)}
                     <div
                       class="[&>div]:h-8 [&>div]:border-0 [&>div]:rounded-md"

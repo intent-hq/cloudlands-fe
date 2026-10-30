@@ -888,13 +888,17 @@ export function toUIFileChange(change: TrackedChange, staged: boolean): UIFileCh
  */
 export const SIDEBAR_CHANGES_DISPLAY_LIMIT = 500;
 
-export interface DisplayLimitedList<T> {
+/** Rendered vs cap-hidden row counts for one changes section. */
+export interface HiddenRowsSummary {
+  /** Rows actually rendered. */
+  shown: number;
+  /** Rows not rendered because of the display cap. */
+  hiddenCount: number;
+}
+
+export interface DisplayLimitedList<T> extends HiddenRowsSummary {
   /** The first `limit` items, in their original order. */
   visible: readonly T[];
-  /** Length of the full list. */
-  total: number;
-  /** How many items are not rendered (`total - visible.length`). */
-  hiddenCount: number;
 }
 
 /** Keep only the first `limit` items of a changes list for rendering. */
@@ -904,24 +908,62 @@ export function limitDisplayedChanges<T>(
 ): DisplayLimitedList<T> {
   const cap = Math.max(0, Math.floor(limit));
   if (items.length <= cap) {
-    return { visible: items, total: items.length, hiddenCount: 0 };
+    return { visible: items, shown: items.length, hiddenCount: 0 };
   }
-  return { visible: items.slice(0, cap), total: items.length, hiddenCount: items.length - cap };
+  return { visible: items.slice(0, cap), shown: cap, hiddenCount: items.length - cap };
+}
+
+interface LimitedAgentGroup {
+  /** The full group; group actions (stage/commit) use all of its files. */
+  group: AgentChangeGroup;
+  /** The rows rendered for this group (empty when collapsed or over the cap). */
+  visibleFiles: readonly UIFileChange[];
+}
+
+export interface LimitedAgentGroups extends HiddenRowsSummary {
+  groups: LimitedAgentGroup[];
+}
+
+/**
+ * Apply the display cap to agent groups in their rendered order, so rows are
+ * trimmed from the bottom of the section. Every group keeps its header (and
+ * its actions); collapsed groups render no rows and use none of the budget.
+ */
+export function limitGroupedChanges(
+  groups: readonly AgentChangeGroup[],
+  isCollapsed: (group: AgentChangeGroup) => boolean,
+  limit: number = SIDEBAR_CHANGES_DISPLAY_LIMIT,
+): LimitedAgentGroups {
+  let budget = Math.max(0, Math.floor(limit));
+  let shown = 0;
+  let hiddenCount = 0;
+  const limited = groups.map((group) => {
+    if (isCollapsed(group)) return { group, visibleFiles: [] };
+    const take = Math.min(budget, group.files.length);
+    budget -= take;
+    shown += take;
+    hiddenCount += group.files.length - take;
+    return {
+      group,
+      visibleFiles: take === group.files.length ? group.files : group.files.slice(0, take),
+    };
+  });
+  return { groups: limited, shown, hiddenCount };
 }
 
 /**
  * "Showing X of Y files…" notice for a truncated changes list; empty string
  * when nothing is hidden.
  */
-export function formatHiddenChangesNotice(list: DisplayLimitedList<unknown>): string {
-  if (list.hiddenCount <= 0) return '';
-  const shown = formatInteger(list.visible.length);
-  const total = formatInteger(list.total);
-  return list.hiddenCount === 1
+export function formatHiddenChangesNotice(summary: HiddenRowsSummary): string {
+  if (summary.hiddenCount <= 0) return '';
+  const shown = formatInteger(summary.shown);
+  const total = formatInteger(summary.shown + summary.hiddenCount);
+  return summary.hiddenCount === 1
     ? m.workspace_fileChanges_hiddenFiles_one({ shown, total })
     : m.workspace_fileChanges_hiddenFiles_many({
         shown,
         total,
-        count: formatInteger(list.hiddenCount),
+        count: formatInteger(summary.hiddenCount),
       });
 }

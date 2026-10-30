@@ -479,18 +479,28 @@ describe('FileChangesSection', () => {
       );
     });
 
-    it('caps the agent-grouped view and keeps group commits on every file', async () => {
-      const first = manyChanges(450, 'a1', { agentId: 'agent-1', agentName: 'A1' });
-      const second = manyChanges(100, 'a2', { agentId: 'agent-2', agentName: 'A2' });
-      mocks.unstaged.push(...first, ...second);
+    it('caps the agent-grouped view in rendered order, keeping the newest agent visible', async () => {
+      const older = manyChanges(2000, 'm');
+      const newest = manyChanges(300, 'a2', {
+        agentId: 'agent-2',
+        agentName: 'A2',
+        attribution: {
+          timestamp: Date.now() + 60_000,
+          agent: { agentId: 'agent-2', agentName: 'A2' },
+        } as TrackedChange['attribution'],
+      });
+      mocks.unstaged.push(...older, ...newest);
       const { container, getAllByTestId, getByTestId } = await renderSection();
 
-      expect(rowPaths(container, 'a1')).toHaveLength(450);
-      expect(rowPaths(container, 'a2')).toHaveLength(50);
+      // The newest agent's group sorts first, so its rows survive the cap even
+      // though they come last in store order; manual changes are trimmed.
+      expect(rowPaths(container, 'a2')).toHaveLength(300);
+      expect(rowPaths(container, 'm')).toHaveLength(200);
       expect(getByTestId('hidden-changes-notice-unstaged').textContent).toContain(
-        'Showing 500 of 550 files. 50 more files are hidden',
+        'Showing 500 of 2,300 files. 1,800 more files are hidden',
       );
 
+      // Group commit still sends every file of the group, hidden ones included.
       await fireEvent.click(getAllByTestId('group-commit-button')[1]);
       expect(mocks.reduxDispatch).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -501,12 +511,43 @@ describe('FileChangesSection', () => {
             expect.objectContaining({
               kind: 'partialCommit',
               section: 'unstaged',
-              agentId: 'agent-2',
-              paths: second.map((c) => c.relativePath),
+              agentId: null,
+              paths: older.map((c) => c.relativePath),
             }),
           ],
         }),
       );
+    });
+
+    it('frees the cap for other groups when a large group is collapsed', async () => {
+      const big = manyChanges(480, 'a1', {
+        agentId: 'agent-1',
+        attribution: {
+          timestamp: Date.now() + 60_000,
+          agent: { agentId: 'agent-1', agentName: 'A1' },
+        } as TrackedChange['attribution'],
+      });
+      const next = manyChanges(300, 'a2', { agentId: 'agent-2', agentName: 'A2' });
+      mocks.unstaged.push(...big, ...next);
+      mocks.setAgents([
+        { id: 'agent-1', name: 'Big agent' },
+        { id: 'agent-2', name: 'Next agent' },
+      ]);
+      const onVisibleFilesChange = vi.fn();
+      const { container, getByText, queryByTestId } = await renderSection({
+        onVisibleFilesChange,
+      });
+      expect(rowPaths(container, 'a2')).toHaveLength(20);
+      expect(onVisibleFilesChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ length: 500 }),
+      );
+
+      await fireEvent.click(getByText('Big agent'));
+      await waitFor(() => expect(rowPaths(container, 'a2')).toHaveLength(300));
+      expect(queryByTestId('hidden-changes-notice-unstaged')).toBeNull();
+      const reported = onVisibleFilesChange.mock.lastCall?.[0] as Array<{ path: string }>;
+      expect(reported).toHaveLength(300);
+      expect(reported[0]).toEqual({ path: 'a2/f0.ts', staged: false });
     });
 
     it('omits the Stage all hint for read-only collaborators', async () => {

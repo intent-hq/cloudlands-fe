@@ -39,6 +39,7 @@ import {
   toPullRequestStatus,
   SIDEBAR_CHANGES_DISPLAY_LIMIT,
   limitDisplayedChanges,
+  limitGroupedChanges,
   formatHiddenChangesNotice,
 } from '../sidebar-changes-utils';
 
@@ -2135,7 +2136,7 @@ describe('limitDisplayedChanges', () => {
     const items = [1, 2, 3];
     const result = limitDisplayedChanges(items, 3);
     expect(result.visible).toBe(items);
-    expect(result.total).toBe(3);
+    expect(result.shown).toBe(3);
     expect(result.hiddenCount).toBe(0);
   });
 
@@ -2145,12 +2146,43 @@ describe('limitDisplayedChanges', () => {
     expect(result.visible).toHaveLength(500);
     expect(result.visible[0]).toBe(0);
     expect(result.visible[499]).toBe(499);
-    expect(result.total).toBe(5000);
+    expect(result.shown).toBe(500);
     expect(result.hiddenCount).toBe(4500);
   });
 
   it('handles empty lists', () => {
-    expect(limitDisplayedChanges([])).toEqual({ visible: [], total: 0, hiddenCount: 0 });
+    expect(limitDisplayedChanges([])).toEqual({ visible: [], shown: 0, hiddenCount: 0 });
+  });
+});
+
+describe('limitGroupedChanges', () => {
+  const group = (agentId: string | null, count: number): AgentChangeGroup => ({
+    agentId,
+    agentName: agentId ?? 'Manual',
+    files: Array.from({ length: count }, (_, i) => ({
+      path: `${agentId ?? 'manual'}/f${i}.ts`,
+      additions: 1,
+      deletions: 0,
+    })),
+    stats: { fileCount: count, additions: count, deletions: 0 },
+  });
+
+  it('trims rows from the bottom of the rendered group order and keeps every header', () => {
+    const groups = [group('newest', 300), group('older', 400), group(null, 100)];
+    const result = limitGroupedChanges(groups, () => false, 500);
+    expect(result.groups.map((entry) => entry.group)).toEqual(groups);
+    expect(result.groups.map((entry) => entry.visibleFiles.length)).toEqual([300, 200, 0]);
+    expect(result.groups[0].visibleFiles).toBe(groups[0].files);
+    expect(result.shown).toBe(500);
+    expect(result.hiddenCount).toBe(300);
+  });
+
+  it('gives collapsed groups no rows and no share of the budget', () => {
+    const groups = [group('big', 480), group('next', 300)];
+    const result = limitGroupedChanges(groups, (g) => g.agentId === 'big', 500);
+    expect(result.groups.map((entry) => entry.visibleFiles.length)).toEqual([0, 300]);
+    expect(result.shown).toBe(300);
+    expect(result.hiddenCount).toBe(0);
   });
 });
 
