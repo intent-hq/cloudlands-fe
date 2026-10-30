@@ -36,8 +36,9 @@ registerMockSeeder('agents', async ({ store, client, workspaceId, getWorkspaceId
       (agent) => !agent.pendingDeleteAt && !isAgentDeletionPending(String(agent.id)),
     );
   } catch (error) {
+    // Like the agent-list read saga, a failed read leaves `agentsLoaded` unset:
+    // the flag means the rows and sessions are stored.
     console.error(`Agents seeder: client.agents.list(${wsId}) failed:`, error);
-    store.dispatch(setAgentsLoaded(wsId, true));
     return;
   }
 

@@ -144,6 +144,15 @@ describe('findFirstUnreadForegroundAgentId', () => {
     expect(findFirstUnreadForegroundAgentId(WS)).toBeNull();
   });
 
+  it('withholds the first-agent fallback while a re-read lands rows before sessions', () => {
+    // `agentsLoaded` stays true after the first read; a re-read's `setAgents`
+    // lands before its `bulkUpsertSessions`, so a new foreground agent can
+    // briefly lack a session under a true flag.
+    seedAgents(['agent-a', 'agent-b'], true);
+    seedSessions({ 'agent-a': { lastMessageRole: 'user' } });
+    expect(findFirstUnreadForegroundAgentId(WS)).toBeNull();
+  });
+
   it('returns null when the workspace has no foreground agents', () => {
     seedAgents([], true);
     seedSessions({ 'agent-bg': { lastMessageRole: 'assistant' } });

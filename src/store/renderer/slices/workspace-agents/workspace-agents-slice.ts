@@ -36,9 +36,10 @@ export interface WorkspaceAgentState {
   /** Ordered list of foreground agent IDs belonging to this workspace. */
   foregroundAgentIds: AgentId[];
   /**
-   * True once a full agent-list read has stored its rows, counts and sessions; the
-   * read sets it last, so readers can trust the list without extra checks. It stays
-   * true across later reads.
+   * True once a full agent-list read has stored its rows, counts and sessions: the
+   * read sets it last, so when it first turns on the list is complete. It stays true
+   * across later reads, which replace rows (`setAgents`) before their sessions land;
+   * use `agentsReadRevision` to tell when a later read has finished.
    */
   agentsLoaded: boolean;
   /**

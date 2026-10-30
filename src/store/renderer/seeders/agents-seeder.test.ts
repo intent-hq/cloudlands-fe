@@ -122,7 +122,7 @@ describe('agents-seeder', () => {
       expect(seenAtLoaded).toEqual({ agentIds: ['agent-a'], hasSession: true });
     });
 
-    it('still sets agentsLoaded when the agent list read fails', async () => {
+    it('leaves agentsLoaded unset when the agent list read fails', async () => {
       mockedClient.agents.list.mockRejectedValueOnce(new Error('offline'));
       const error = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -130,7 +130,9 @@ describe('agents-seeder', () => {
       await seedMockStore(store, appClient, 'ws-failed');
       error.mockRestore();
 
-      expect(store.state.workspaceAgents.byWorkspaceId['ws-failed']?.agentsLoaded).toBe(true);
+      expect(store.state.workspaceAgents.byWorkspaceId['ws-failed']?.agentsLoaded ?? false).toBe(
+        false,
+      );
     });
   });
 

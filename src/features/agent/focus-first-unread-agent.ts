@@ -117,13 +117,25 @@ export function findFirstUnreadForegroundAgentId(workspaceId: string): string | 
 }
 
 /**
- * True once the workspace's agent hydration has landed in the store. Every
- * agent-list read sets `agentsLoaded` only after its rows and sessions are
- * stored, so the flag alone is enough. Until then the only exit is the
- * timeout, which is also what a genuinely agent-less workspace falls back to.
+ * True once the workspace's agent hydration has landed in the store.
+ *
+ * Every agent-list read sets `agentsLoaded` only after its rows and sessions
+ * are stored, so the first hydration needs nothing more. The flag stays true
+ * across later reads, though, and a re-read's `setAgents` lands before its
+ * `bulkUpsertSessions` — so a foreground agent new to that read can briefly
+ * have no session under a true flag. Requiring a session for every foreground
+ * agent keeps the tier-3 fallback from settling early in that window. Until
+ * then the only exit is the timeout, which is also what a genuinely agent-less
+ * workspace falls back to.
  */
 function areAgentsLoaded(workspaceId: string): boolean {
-  return appStore.state.workspaceAgents?.byWorkspaceId[workspaceId]?.agentsLoaded === true;
+  const state = appStore.state;
+  const workspaceState = state.workspaceAgents?.byWorkspaceId[workspaceId];
+  if (workspaceState?.agentsLoaded !== true) return false;
+  const sessions = state.agentSessions?.byAgentId ?? {};
+  return (workspaceState.foregroundAgentIds ?? []).every(
+    (agentId) => sessions[agentId] !== undefined,
+  );
 }
 
 /** The workspace's currently selected agent, or null when none is set. */
