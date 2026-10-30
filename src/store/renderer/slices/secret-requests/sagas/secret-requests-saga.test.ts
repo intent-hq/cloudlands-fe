@@ -67,10 +67,15 @@ const tasks: ReturnType<typeof runSaga>[] = [];
 
 function start(getState: () => StoreState = () => admittedState()) {
   const channel = stdChannel();
+  const subscribers = new Set<() => void>();
+  const send = (action: Action) => {
+    for (const subscriber of subscribers) subscriber();
+    channel.put(action as never);
+  };
   const dispatched: Action[] = [];
   const dispatch = (action: Action) => {
     dispatched.push(action);
-    channel.put(action as never);
+    send(action);
     return action;
   };
   renderer.store = {
@@ -84,11 +89,20 @@ function start(getState: () => StoreState = () => admittedState()) {
       channel,
       dispatch,
       getState,
+      context: {
+        reduxStore: {
+          getState,
+          subscribe: (subscriber: () => void) => {
+            subscribers.add(subscriber);
+            return () => subscribers.delete(subscriber);
+          },
+        },
+      },
     },
     secretRequestsSaga,
   );
   tasks.push(task);
-  return { channel, dispatched, task };
+  return { channel: { put: send }, dispatched, task };
 }
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));

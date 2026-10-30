@@ -1,21 +1,11 @@
 import { call, fork, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 import { channel, type Channel } from 'redux-saga';
+import { takeEveryFromSelector } from '@themislib/themis/saga';
 import { appClient } from '$lib/client';
 import { resolveBackendTransport } from '$lib/client/live/backend-transport-factory';
 import { getRendererStore, type RendererStoreBridge } from '$store/renderer/renderer-store-bridge';
 import { getPrincipalActionContext } from '../../principal/principal-context';
-import {
-  hostMembershipChanged,
-  principalContextChanged,
-  principalIdentityChanged,
-  principalReadFailed,
-  principalReceived,
-} from '../../principal/principal-slice';
-import { backendReconnected } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import {
-  setLabsMultiplayerEnabled,
-  toggleLabsMultiplayer,
-} from '../../user-preferences/user-preferences-slice';
+import { selectPrincipalActionContext } from '../../principal/principal-selectors';
 import { takeSecretValue } from '$lib/components/chat/secrets/secret-value-handoff';
 import {
   secretAnswerRequested,
@@ -109,17 +99,8 @@ export function* secretRequestsSaga(): SagaGenerator<void> {
     );
   }
 
-  yield* takeEvery(
-    [
-      principalContextChanged,
-      principalReceived,
-      principalReadFailed,
-      principalIdentityChanged,
-      hostMembershipChanged,
-      backendReconnected,
-      setLabsMultiplayerEnabled,
-      toggleLabsMultiplayer,
-    ],
+  yield* takeEveryFromSelector(
+    selectPrincipalActionContext,
     function* onAdmissionChanged(): SagaGenerator<void> {
       yield* call(admittedOwner);
     },
