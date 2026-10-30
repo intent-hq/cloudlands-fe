@@ -43,6 +43,8 @@
    * Inputs whose plain Enter inserts a newline. Code editors such as Monaco type
    * through the EditContext API, so their focus target is a plain element marked
    * as an ARIA multiline textbox rather than a textarea (intent-hq/intent#8068).
+   * Chromium exposes `editContext` as `null` on every element, so only an attached
+   * EditContext counts.
    */
   function isMultilineInput(target: HTMLElement): boolean {
     return (
@@ -50,7 +52,8 @@
       target.isContentEditable ||
       ('editContext' in target && target.editContext != null) ||
       (target.getAttribute('role') === 'textbox' &&
-        target.getAttribute('aria-multiline') === 'true')
+        target.getAttribute('aria-multiline') === 'true' &&
+        target.getAttribute('aria-readonly') !== 'true')
     );
   }
 

@@ -90,6 +90,37 @@ describe('form pattern', () => {
     expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    [
+      'a text input whose editContext is null (Chromium default)',
+      (_form: HTMLFormElement) => {
+        const name = screen.getByLabelText('Name');
+        Object.defineProperty(name, 'editContext', { value: null, configurable: true });
+        return name;
+      },
+    ],
+    [
+      'a read-only ARIA multiline textbox',
+      (form: HTMLFormElement) => {
+        const el = document.createElement('div');
+        el.tabIndex = 0;
+        el.setAttribute('role', 'textbox');
+        el.setAttribute('aria-multiline', 'true');
+        el.setAttribute('aria-readonly', 'true');
+        form.append(el);
+        return el;
+      },
+    ],
+  ])('still submits on Enter from %s', async (_label, pick) => {
+    const onSubmit = vi.fn();
+    const { container } = render(FormHarness, { onSubmit });
+    await fireEvent.input(screen.getByLabelText('Name'), { target: { value: 'Intent' } });
+    const target = pick(container.querySelector('form')!);
+
+    expect(await fireEvent.keyDown(target, { key: 'Enter' })).toBe(false);
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
   it('announces and disables the form while submit work is pending', async () => {
     let finish = () => {};
     const onSubmit = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));

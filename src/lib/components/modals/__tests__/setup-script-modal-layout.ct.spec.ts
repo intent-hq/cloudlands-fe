@@ -145,21 +145,22 @@ test('keeps editor Escape local, discards cancelled edits, and applies Done', as
 // must not treat the editor's div input as a single-line field and swallow Enter.
 test('inserts new lines with Enter without submitting the dialog', async ({ mount, page }) => {
   await mount(SetupScriptModalPreview);
-  const selectAll = await page.evaluate(() =>
-    navigator.userAgent.includes('Macintosh') ? 'Meta+A' : 'Control+A',
+  // Monaco resolves its keybindings from the browser UA, not the Playwright host OS.
+  const primary = await page.evaluate(() =>
+    navigator.userAgent.includes('Macintosh') ? 'Meta' : 'Control',
   );
   const dialog = page.getByRole('dialog');
   await expect(dialog.locator('.monaco-editor')).toBeVisible();
   const input = await focusEditor(dialog);
-  await input.press(selectAll);
+  await input.press(`${primary}+A`);
   await page.keyboard.type('echo first');
   await page.keyboard.press('Enter');
   await page.keyboard.type('echo second');
   await page.keyboard.press('ArrowUp');
   await page.keyboard.press('Home');
   await page.keyboard.press('Enter');
-  // Modified Enter belongs to Monaco (insert line below) and never submits the dialog.
-  await page.keyboard.press('ControlOrMeta+Enter');
+  // Monaco owns modified Enter (insert line below); the dialog stays open.
+  await page.keyboard.press(`${primary}+Enter`);
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: /Save.*Done/i }).click();
   await expect(dialog).toHaveCount(0);
