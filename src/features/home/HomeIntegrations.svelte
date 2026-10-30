@@ -16,7 +16,7 @@
   import HomeWorkspaceDetail from './HomeWorkspaceDetail.svelte';
   import { onDestroy, untrack, tick, type Snippet } from 'svelte';
   import { goto } from '$app/navigation';
-  import { openAndShowWorkspace } from '$lib/utils/show-workspace.client';
+  import { openAndShowWorkspace } from '$lib/utils/show-workspace';
   import { createHomeDoubleClickOpener } from './home-workspace-opening';
   import { handleLink } from '$features/navigation/link-handler';
   import { WorkspaceId } from '$shared/types/branded-ids';

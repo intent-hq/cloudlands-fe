@@ -15,7 +15,7 @@ vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () =
   default: (await import('$lib/components/chat/__tests__/mocks/AgentAvatar.svelte')).default,
 }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
-vi.mock('$lib/utils/show-workspace.client', () => ({ openAndShowWorkspace: mocks.show }));
+vi.mock('$lib/utils/show-workspace', () => ({ openAndShowWorkspace: mocks.show }));
 vi.mock('$features/workspace/workspace-detail-hydration', () => ({
   ensureWorkspaceDetail: vi.fn(async () => undefined),
 }));

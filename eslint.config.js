@@ -1031,7 +1031,7 @@ export default [
   // `openAndShowWorkspace` is the only allowed workspace jump.
   {
     files: ['src/**/*.{js,ts,svelte}'],
-    ignores: [...productionModuleIgnores, 'src/lib/utils/show-workspace.client.ts'],
+    ignores: [...productionModuleIgnores, 'src/lib/utils/show-workspace.ts'],
     plugins: { intent: intentPlugin },
     rules: { 'intent/no-raw-workspace-navigation': 'error' },
   },

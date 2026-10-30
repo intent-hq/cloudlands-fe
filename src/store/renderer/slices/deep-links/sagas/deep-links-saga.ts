@@ -22,7 +22,7 @@ import { notify } from '$lib/components/patterns/notify';
 import { invoke, isElectron } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { navigateToRoute } from '$lib/utils/navigation.client';
-import { showWorkspaceSaga } from '$lib/utils/show-workspace.client';
+import { showWorkspaceSaga } from '$lib/utils/show-workspace';
 import { DEEP_LINK_CHANNELS } from '$shared/ipc/channels';
 import { m } from '$shared/paraglide/messages.js';
 import type { Workspace } from '$shared/types';

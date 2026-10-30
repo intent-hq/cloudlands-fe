@@ -3,7 +3,7 @@ import { actionChannel, call, flush, put, race, take } from 'typed-redux-saga';
 
 import type { GitHubAuthRequiredEvent } from '$features/github-auth/types';
 import { isElectron } from '$lib/electron-bridge';
-import { openAndShowWorkspace } from '$lib/utils/show-workspace.client';
+import { openAndShowWorkspace } from '$lib/utils/show-workspace';
 import {
   openGitCredentialsModal,
   openGitHubAuthModal,

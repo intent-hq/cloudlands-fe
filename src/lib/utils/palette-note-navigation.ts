@@ -2,7 +2,7 @@
 import { store as appStore } from '$store/renderer/store';
 import { openWorkspaceNote } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import { recordPaletteMruItem } from '$store/renderer/slices/palette/palette-slice';
-import { openAndShowWorkspace, workspaceRoute } from './show-workspace.client';
+import { openAndShowWorkspace, workspaceRoute } from './show-workspace';
 import { createLogger } from './client-logger';
 
 const logger = createLogger('PaletteNoteNavigation');

@@ -423,7 +423,7 @@ async function navigateToWorkspace(workspaceId: string): Promise<void> {
   const { appClient } = await import('$lib/client');
   const workspace = await appClient.workspaces.get(workspaceId).catch(() => null);
   if (!workspace) throw new NotFoundError(m.workspace_loader_notFound_title());
-  const { openAndShowWorkspace } = await import('./show-workspace.client');
+  const { openAndShowWorkspace } = await import('./show-workspace');
   await openAndShowWorkspace(workspaceId);
 }
 
@@ -455,7 +455,7 @@ async function navigateToNote(
     if (isCrossWorkspace) {
       // Show the target workspace and its tab; the route's `?note=` deep link
       // opens the note once the workspace is ready (no-op in the HUD window).
-      const { openAndShowWorkspace } = await import('./show-workspace.client');
+      const { openAndShowWorkspace } = await import('./show-workspace');
       await openAndShowWorkspace(info.workspaceId, { query: { note: info.resourceId } });
     } else {
       // Same workspace - navigate to the note directly
@@ -510,7 +510,7 @@ async function navigateToFile(
     if (isCrossWorkspace) {
       // Show the target workspace and its tab first, then open the file there.
       // The HUD window never navigates, so it opens nothing.
-      const { openAndShowWorkspace } = await import('./show-workspace.client');
+      const { openAndShowWorkspace } = await import('./show-workspace');
       if (!(await openAndShowWorkspace(info.workspaceId))) return;
     }
 

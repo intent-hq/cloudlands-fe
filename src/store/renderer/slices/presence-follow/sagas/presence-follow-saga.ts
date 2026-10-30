@@ -14,7 +14,7 @@ import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/
 import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
 import { isViewSelection, workspaceSelectionTypes } from './presence-follow-navigation';
 import { isHudWindowRenderer } from '$lib/utils/navigation.client';
-import { showWorkspaceSaga } from '$lib/utils/show-workspace.client';
+import { showWorkspaceSaga } from '$lib/utils/show-workspace';
 import {
   createPresenceFocusChannel,
   type FocusFrame,

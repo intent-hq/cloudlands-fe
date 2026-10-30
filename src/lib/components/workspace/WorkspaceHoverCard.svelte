@@ -16,7 +16,7 @@
   import type { AgentSession, PullRequestInfo, Workspace } from '$shared/types';
   import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
   import { createLogger } from '$lib/utils/client-logger';
-  import { openAndShowWorkspace } from '$lib/utils/show-workspace.client';
+  import { openAndShowWorkspace } from '$lib/utils/show-workspace';
   import { classifyAgentScope } from '$shared/utils/agent-scope';
   import { onMount } from 'svelte';
   import { writable } from 'svelte/store';

@@ -36,7 +36,7 @@
   import ProposalCardHeader from './ProposalCardHeader.svelte';
   import { getProposalId } from './proposal-id';
   import type { ProposalCardDraft } from './proposal-draft-storage';
-  import { openAndShowWorkspace } from '$lib/utils/show-workspace.client';
+  import { openAndShowWorkspace } from '$lib/utils/show-workspace';
   import {
     selectProposalError,
     selectProposalErrorCode,

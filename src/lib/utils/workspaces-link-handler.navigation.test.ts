@@ -25,7 +25,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 }));
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.backendRequest }));
 vi.mock('./navigation.client', () => ({ navigateToRoute: mocks.navigateToRoute }));
-vi.mock('./show-workspace.client', () => ({ openAndShowWorkspace: mocks.show }));
+vi.mock('./show-workspace', () => ({ openAndShowWorkspace: mocks.show }));
 vi.mock('./open-message', () => ({ openMessage: mocks.openMessage }));
 vi.mock('$lib/client', () => ({ appClient: { workspaces: { get: mocks.getWorkspace } } }));
 

@@ -1,5 +1,5 @@
 import { navigateToRoute } from '$lib/utils/navigation.client';
-import { openAndShowWorkspace } from '$lib/utils/show-workspace.client';
+import { openAndShowWorkspace } from '$lib/utils/show-workspace';
 import { store } from '$store/renderer/store';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import {

@@ -5,8 +5,8 @@ const mocks = vi.hoisted(() => ({
   show: vi.fn<(workspaceId: string) => Promise<boolean>>(),
   dispatch: vi.fn(),
 }));
-vi.mock('./show-workspace.client', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('./show-workspace.client')>()),
+vi.mock('./show-workspace', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./show-workspace')>()),
   openAndShowWorkspace: mocks.show,
 }));
 vi.mock('$store/renderer/store', async () => {

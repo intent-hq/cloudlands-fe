@@ -30,7 +30,7 @@
   import { backendRequest } from '$lib/client/live/backend-transport';
   import { openMessage } from '$lib/utils/open-message';
   import { openPaletteNote } from '$lib/utils/palette-note-navigation';
-  import { openAndShowWorkspace } from '$lib/utils/show-workspace.client';
+  import { openAndShowWorkspace } from '$lib/utils/show-workspace';
   import { createTranscriptQuery } from '$lib/utils/palette-transcript-search';
   import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';

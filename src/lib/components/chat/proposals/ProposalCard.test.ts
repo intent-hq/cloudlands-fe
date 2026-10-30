@@ -167,7 +167,7 @@ vi.mock('$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors'
 vi.mock('$app/navigation', () => ({
   goto: navigationMocks.goto,
 }));
-vi.mock('$lib/utils/show-workspace.client', () => ({
+vi.mock('$lib/utils/show-workspace', () => ({
   openAndShowWorkspace: navigationMocks.showWorkspace,
 }));
 vi.mock('$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-selectors', () => ({

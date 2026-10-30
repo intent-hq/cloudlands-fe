@@ -13,7 +13,7 @@
 import { all, call, put, takeEvery, takeLeading, type SagaGenerator } from 'typed-redux-saga';
 
 import { createLogger } from '$lib/utils/client-logger';
-import { showWorkspaceSaga } from '$lib/utils/show-workspace.client';
+import { showWorkspaceSaga } from '$lib/utils/show-workspace';
 import { m } from '$shared/paraglide/messages.js';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import type {

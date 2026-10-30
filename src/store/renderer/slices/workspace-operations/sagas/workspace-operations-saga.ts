@@ -37,7 +37,7 @@ import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import { isBulkOperationProposal, isWorkspaceCreateProposal } from '$shared/types/proposal';
 import { navigateAwayIfViewing } from '$features/workspace/navigate-away-if-viewing';
-import { showWorkspaceSaga } from '$lib/utils/show-workspace.client';
+import { showWorkspaceSaga } from '$lib/utils/show-workspace';
 import { removeRepo } from '../../known-repos/known-repos-slice';
 import { restoreWorkspaceTab } from '../../tab-state/tab-state-slice';
 import {

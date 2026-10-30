@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 
 const mocks = vi.hoisted(() => ({ show: vi.fn(async () => true) }));
-vi.mock('$lib/utils/show-workspace.client', () => ({ openAndShowWorkspace: mocks.show }));
+vi.mock('$lib/utils/show-workspace', () => ({ openAndShowWorkspace: mocks.show }));
 
 import { page } from '$app/stores';
 import WorkspaceLinks from '$lib/components/workspace/WorkspaceLinks.svelte';

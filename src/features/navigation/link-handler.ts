@@ -305,7 +305,7 @@ async function activateLinkWorkspace(
   options: LinkHandlerOptions,
 ): Promise<void> {
   if (!options.openInWorkspace || !workspaceId) return;
-  const { openAndShowWorkspace } = await import('$lib/utils/show-workspace.client');
+  const { openAndShowWorkspace } = await import('$lib/utils/show-workspace');
   try {
     await openAndShowWorkspace(workspaceId);
   } catch (error) {

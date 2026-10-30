@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
   callbacks: {} as Record<string, (data: any) => void>,
 }));
 vi.mock('$lib/electron-bridge', () => ({ isElectron: mocks.isElectron }));
-vi.mock('$lib/utils/show-workspace.client', () => ({ openAndShowWorkspace: mocks.show }));
+vi.mock('$lib/utils/show-workspace', () => ({ openAndShowWorkspace: mocks.show }));
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: { warning: mocks.warning, error: mocks.error },
 }));

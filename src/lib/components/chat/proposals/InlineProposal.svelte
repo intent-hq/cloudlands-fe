@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { openAndShowWorkspace } from '$lib/utils/show-workspace.client';
+  import { openAndShowWorkspace } from '$lib/utils/show-workspace';
   import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
   import type { Proposal } from '$shared/types/proposal';

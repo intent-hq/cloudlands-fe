@@ -7,7 +7,7 @@
 // then git/agent toasts, the command palette, workspace links and proposals.
 //
 // `openAndShowWorkspace` / `showWorkspaceSaga` in
-// `src/lib/utils/show-workspace.client.ts` navigate and then open the tab. This
+// `src/lib/utils/show-workspace.ts` navigate and then open the tab. This
 // rule flags a hand-written `goto(...)`, `navigateToRoute(...)` or saga
 // `call(goto | navigateToRoute, ...)` whose route is built from a `/workspace/`
 // template or string concatenation (either branch of a ternary counts).
@@ -92,7 +92,7 @@ export default {
       rawWorkspaceNavigation:
         '`{{navigator}}` to a `/workspace/` route shows the page but never opens the workspace tab ' +
         '(cloudlands-fe#3850). Use `openAndShowWorkspace(id, { query })` (or `showWorkspaceSaga` in a saga) ' +
-        'from `$lib/utils/show-workspace.client`, which navigates and then opens the tab.',
+        'from `$lib/utils/show-workspace`, which navigates and then opens the tab.',
     },
   },
   create(context) {

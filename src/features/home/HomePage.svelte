@@ -5,7 +5,7 @@
   import { homeWorkspaceMotion } from './home-workspace-motion.svelte';
   import { homeSidebarMotion } from './home-sidebar-motion';
   import './home.css';
-  import { openAndShowWorkspace } from '$lib/utils/show-workspace.client';
+  import { openAndShowWorkspace } from '$lib/utils/show-workspace';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import SidebarOverflowMenu from '$lib/components/ui/sidebar-context-menu/SidebarOverflowMenu.svelte';
   import {

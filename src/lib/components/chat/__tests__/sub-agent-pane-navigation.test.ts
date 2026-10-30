@@ -24,8 +24,8 @@ import {
 import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 
 const navigation = vi.hoisted(() => ({ show: vi.fn(async () => true) }));
-vi.mock('$lib/utils/show-workspace.client', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('$lib/utils/show-workspace.client')>()),
+vi.mock('$lib/utils/show-workspace', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/utils/show-workspace')>()),
   openAndShowWorkspace: navigation.show,
 }));
 

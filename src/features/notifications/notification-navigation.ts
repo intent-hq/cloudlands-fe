@@ -18,7 +18,7 @@ import { openWorkspaceDiscussion } from '$features/discussions/discussion-naviga
 import { selectDiscussionMentionAdmission } from '$store/renderer/slices/notifications/notifications-selectors';
 import type { DiscussionTarget } from '$store/renderer/slices/workspace-discussion/workspace-discussion-slice';
 import { navigateToRoute } from '$lib/utils/navigation.client';
-import { openAndShowWorkspace } from '$lib/utils/show-workspace.client';
+import { openAndShowWorkspace } from '$lib/utils/show-workspace';
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';

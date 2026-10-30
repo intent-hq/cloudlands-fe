@@ -98,7 +98,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
-  import { openAndShowWorkspace } from '$lib/utils/show-workspace.client';
+  import { openAndShowWorkspace } from '$lib/utils/show-workspace';
   import { findSourcePanelId } from '$lib/utils/workspace-navigation';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
   import { dispatchWindowEvent } from '$lib/utils/window-events';

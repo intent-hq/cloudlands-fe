@@ -6,7 +6,7 @@ import {
   selectWorkspaceTabOrder,
 } from '$store/renderer/slices/tab-state/tab-state-selectors';
 import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
-import { openAndShowWorkspace, showWorkspaceSaga, workspaceRoute } from './show-workspace.client';
+import { openAndShowWorkspace, showWorkspaceSaga, workspaceRoute } from './show-workspace';
 
 const mocks = vi.hoisted(() => ({
   route: vi.fn<(route: string, options?: { state?: App.PageState }) => Promise<void>>(),

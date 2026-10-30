@@ -13,7 +13,7 @@ import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
 import { resetHomeWorkspaceView } from './home-workspaces-slice';
 
 const mocks = vi.hoisted(() => ({ show: vi.fn(async () => true) }));
-vi.mock('$lib/utils/show-workspace.client', () => ({ openAndShowWorkspace: mocks.show }));
+vi.mock('$lib/utils/show-workspace', () => ({ openAndShowWorkspace: mocks.show }));
 
 import HomePage from './HomePage.svelte';
 

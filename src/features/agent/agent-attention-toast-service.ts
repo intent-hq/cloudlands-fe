@@ -156,7 +156,7 @@ export async function switchToAttentionAgent(workspaceId: string, agentId: strin
 /** Show the workspace and its tab, then open/focus the agent's conversation tab. */
 async function openAgentConversation(workspaceId: string, agentId: string): Promise<void> {
   try {
-    const { openAndShowWorkspace } = await import('$lib/utils/show-workspace.client');
+    const { openAndShowWorkspace } = await import('$lib/utils/show-workspace');
     await openAndShowWorkspace(workspaceId);
   } catch (error) {
     logger.warn('Switch To navigation failed', { workspaceId, agentId, error });

@@ -17,7 +17,7 @@
     homePreviewEligibleAgents,
     resolveHomePreviewAgent,
   } from './home-preview-agent';
-  import { openAndShowWorkspace } from '$lib/utils/show-workspace.client';
+  import { openAndShowWorkspace } from '$lib/utils/show-workspace';
   import { Button } from '$lib/components/ui/button';
   import { Select } from '$lib/components/ui/select';
   import Fa from 'svelte-fa';

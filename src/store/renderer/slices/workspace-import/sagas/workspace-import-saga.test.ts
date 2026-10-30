@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
     return true;
   }),
 }));
-vi.mock('$lib/utils/show-workspace.client', () => ({ showWorkspaceSaga: mocks.showWorkspace }));
+vi.mock('$lib/utils/show-workspace', () => ({ showWorkspaceSaga: mocks.showWorkspace }));
 
 import {
   closeImportModal,

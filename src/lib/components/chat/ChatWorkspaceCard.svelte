@@ -1,7 +1,7 @@
 <script lang="ts">
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { showAssistantContent } from '$features/home/assistant-panels';
-  import { openAndShowWorkspace } from '$lib/utils/show-workspace.client';
+  import { openAndShowWorkspace } from '$lib/utils/show-workspace';
   import { untrack } from 'svelte';
   import {
     faArrowUpRightFromSquare,

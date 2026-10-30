@@ -2,7 +2,7 @@
   import { logger } from '$lib/utils/client-logger';
 
   import { page } from '$app/stores';
-  import { openAndShowWorkspace } from '$lib/utils/show-workspace.client';
+  import { openAndShowWorkspace } from '$lib/utils/show-workspace';
   import { invoke } from '$lib/electron-bridge';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { Button } from '$lib/components/ui/button';

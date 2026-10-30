@@ -2,7 +2,7 @@ import { END, buffers, eventChannel, type EventChannel } from 'redux-saga';
 import { call, take } from 'typed-redux-saga';
 
 import { isElectron } from '$lib/electron-bridge';
-import { openAndShowWorkspace } from '$lib/utils/show-workspace.client';
+import { openAndShowWorkspace } from '$lib/utils/show-workspace';
 
 type AgentAuthRequiredEvent = {
   workspaceId?: string;

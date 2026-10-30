@@ -130,7 +130,7 @@ vi.mock('$store/renderer/store', () => ({
   },
 }));
 vi.mock('$app/navigation', () => ({ goto: actionMocks.goto }));
-vi.mock('$lib/utils/show-workspace.client', () => ({
+vi.mock('$lib/utils/show-workspace', () => ({
   openAndShowWorkspace: actionMocks.showWorkspace,
 }));
 vi.mock('$lib/components/workspace/initializer/RepoAndBranchPicker.svelte', async () => ({

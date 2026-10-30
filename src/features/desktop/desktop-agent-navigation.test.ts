@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ navigate: vi.fn(), show: vi.fn(), dispatch: vi.fn() }));
 vi.mock('$lib/utils/navigation.client', () => ({ navigateToRoute: mocks.navigate }));
-vi.mock('$lib/utils/show-workspace.client', () => ({ openAndShowWorkspace: mocks.show }));
+vi.mock('$lib/utils/show-workspace', () => ({ openAndShowWorkspace: mocks.show }));
 vi.mock('$store/renderer/store', () => ({ store: { dispatch: mocks.dispatch } }));
 import { navigateToDesktopAgent } from './desktop-agent-navigation';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';

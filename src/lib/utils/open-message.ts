@@ -49,7 +49,7 @@ import { selectChatAgentState } from '$store/renderer/slices/chat-state/chat-sta
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { dispatchWindowEvent } from './window-events';
 import { navigateToRoute } from './navigation.client';
-import { openAndShowWorkspace, workspaceRoute } from './show-workspace.client';
+import { openAndShowWorkspace, workspaceRoute } from './show-workspace';
 
 const logger = new Logger('OpenMessage');
 

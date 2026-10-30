@@ -34,7 +34,7 @@ describe('no-raw-workspace-navigation guidance', () => {
     const message = rule.meta.messages.rawWorkspaceNavigation;
     expect(message).toContain('openAndShowWorkspace');
     expect(message).toContain('showWorkspaceSaga');
-    expect(message).toContain('$lib/utils/show-workspace.client');
+    expect(message).toContain('$lib/utils/show-workspace');
     expect(message).toContain('cloudlands-fe#3850');
   });
 
