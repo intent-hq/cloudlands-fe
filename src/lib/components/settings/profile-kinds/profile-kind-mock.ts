@@ -36,6 +36,9 @@ export type ProfileSignInState =
   | { status: 'keyWorks' }
   | { status: 'keyRejected' };
 
+/** What Save does with a saved Custom endpoint (`ANTHROPIC_BASE_URL`, masked on read). */
+export type BaseUrlAction = 'keep' | 'replace' | 'remove';
+
 /** Failures after the profile was saved (the profile itself stays). */
 export type ProfileSetupError = { kind: 'folderFailed'; path: string } | { kind: 'terminalFailed' };
 
@@ -55,4 +58,20 @@ export function signInCommand(
   remoteDaemon: boolean,
 ): string {
   return loginCommand(provider, method, !remoteDaemon);
+}
+
+/** A profile row's status, as ProviderProfiles shows it ('error' reads "Not signed in"). */
+export type MockProfileStatus = 'checking' | 'ready' | 'error' | 'configured';
+
+/** Fake profile row data for the rows mock-up. */
+export interface MockProfileRow {
+  id: string;
+  name: string;
+  kind: ProfileKindChoice;
+  status: MockProfileStatus;
+  /** Claude identity, shown as "Signed in as <email>" when Ready. */
+  email?: string;
+  backup?: boolean;
+  /** Different login: the folder saved on the profile. */
+  folderPath?: string;
 }
