@@ -111,7 +111,17 @@ for (const chief of [false, true]) {
     await scroll.evaluate((node) => {
       node.scrollTop = node.scrollHeight;
     });
-    await scroll.hover();
+    await expect
+      .poll(async () => {
+        const viewport = (await scroll.boundingBox())!;
+        const prompt = (await component.locator('.rich-input-container').boundingBox())!;
+        return Math.abs(viewport.y + viewport.height - prompt.y);
+      }, 'the transcript reaches the prompt box without an inert gap')
+      .toBeLessThanOrEqual(1);
+    const scrollBounds = (await scroll.boundingBox())!;
+    await scroll.hover({
+      position: { x: scrollBounds.width / 2, y: scrollBounds.height - 4 },
+    });
     const baseline = await settledScrollBaseline(component);
     await wheelUntilScrolled(scroll, { deltaY: -180, pointer: 'current' });
     await expect
