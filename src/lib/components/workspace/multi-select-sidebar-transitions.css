@@ -14,6 +14,21 @@
   --sidebar-section-offset: -12px;
 }
 
+/* Cmd-click stacks sections: rows share the panel, short ones stop at their content. */
+[data-sidebar-panels][data-stacked] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: minmax(7.5rem, max-content);
+  overflow-y: auto;
+  scrollbar-width: none;
+  --sidebar-section-offset: 0px;
+  --sidebar-section-rise: 6px;
+}
+
+[data-sidebar-panels][data-stacked] .sidebar-section[data-active] ~ .sidebar-section[data-active] {
+  border-top: 1px solid hsl(var(--border) / 0.5);
+}
+
 [data-sidebar-panels][data-floating='true'] .sidebar-section {
   position: absolute;
   inset: 0 0 auto;
@@ -61,11 +76,11 @@
 @keyframes sidebar-section-enter {
   from {
     opacity: 0;
-    transform: translateX(var(--sidebar-section-offset, 0px));
+    transform: translate(var(--sidebar-section-offset, 0px), var(--sidebar-section-rise, 0px));
   }
   to {
     opacity: 1;
-    transform: translateX(0);
+    transform: translate(0, 0);
   }
 }
 

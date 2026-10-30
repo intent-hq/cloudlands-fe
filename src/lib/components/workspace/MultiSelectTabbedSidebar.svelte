@@ -300,6 +300,13 @@
       ? [...normalizeSelectedTabs([flyout.tabId], isCollaborator, showPeople, !!$scriptContext$)][0]
       : ([...selectedTabs][0] ?? 'agents'),
   );
+  // Docked sections stack in tab order; the collapsed flyout shows one section.
+  const shownTabIds = $derived<string[]>(
+    panelOnly
+      ? [activeTabId]
+      : TAB_DEFINITIONS.map(({ id }) => id).filter((id) => selectedTabs.has(id)),
+  );
+  const stacked = $derived(shownTabIds.length > 1);
   const panelId = $props.id();
   let mountedTabIds = $state<string[]>([]);
   let direction = $state<'left' | 'right'>('right');
@@ -307,7 +314,8 @@
 
   $effect(() => {
     const id = activeTabId;
-    if (!mountedTabIds.includes(id)) mountedTabIds = [...mountedTabIds, id];
+    const unmounted = [id, ...shownTabIds].filter((tabId) => !mountedTabIds.includes(tabId));
+    if (unmounted.length > 0) mountedTabIds = [...mountedTabIds, ...new Set(unmounted)];
     if (previousTabId && previousTabId !== id) {
       const order = TAB_DEFINITIONS.map((tab) => tab.id);
       direction = order.indexOf(id) > order.indexOf(previousTabId) ? 'right' : 'left';
@@ -556,7 +564,7 @@
         appStore.dispatch(locateItemInSidebarConsumed(workspaceId));
         return;
       }
-      persistSelectedTabs(new Set([targetTab]));
+      if (!selectedTabs.has(targetTab)) persistSelectedTabs(new Set([targetTab]));
 
       // A collapsed sidebar only shows content in the flyout; open it on the target's rail tab.
       const revealFlyout = () => {
@@ -771,10 +779,13 @@
     )}
     data-sidebar-panels
     data-floating={panelOnly || undefined}
+    data-stacked={stacked || undefined}
     data-direction={direction}
+    use:scrollFade={{ enabled: active && stacked }}
   >
     {#each TAB_DEFINITIONS.filter(({ id }) => (id !== 'people' || showPeople) && !(isCollaborator && OWNER_ONLY_TAB_IDS.has(id) && !(id === 'shell' && $scriptContext$))) as tab (tab.id)}
       {@const tabId = tab.id}
+      {@const shown = shownTabIds.includes(tabId)}
       <section
         id={`${panelId}-${tabId}`}
         role="tabpanel"
@@ -782,16 +793,16 @@
         tabindex="0"
         class="sidebar-section h-full min-h-0 flex-col outline-none"
         style:max-height={panelOnly ? `${flyout?.maxHeight}px` : undefined}
-        style:display={panelOnly || tabId === activeTabId ? 'flex' : 'none'}
-        hidden={!panelOnly && tabId !== activeTabId}
-        aria-hidden={tabId !== activeTabId}
-        inert={tabId !== activeTabId}
+        style:display={panelOnly || shown ? 'flex' : 'none'}
+        hidden={!panelOnly && !shown}
+        aria-hidden={!shown}
+        inert={!shown}
         data-position={TAB_DEFINITIONS.findIndex((tab) => tab.id === tabId) <
         TAB_DEFINITIONS.findIndex((tab) => tab.id === activeTabId)
           ? 'before'
           : 'after'}
         data-sidebar-section={tabId}
-        data-active={tabId === activeTabId || undefined}
+        data-active={shown || undefined}
       >
         {#if mountedTabIds.includes(tabId)}
           {#if tab && !tab.hideHeader}
@@ -809,7 +820,7 @@
                     <WorkspaceTokenUsage {workspaceId} />
                     <SidebarExpandableSearch
                       bind:query={agentSearchQuery}
-                      active={active && activeTabId === 'agents'}
+                      active={active && shown}
                       scope="agents"
                       placeholder={m.workspace_multiSelectSidebar_searchAgents_placeholder()}
                     />
@@ -823,7 +834,7 @@
                   {:else if tabId === 'context'}
                     <SidebarExpandableSearch
                       bind:query={contextSearchQuery}
-                      active={active && activeTabId === 'context'}
+                      active={active && shown}
                       scope="context"
                       placeholder={m.workspace_multiSelectSidebar_searchContext_placeholder()}
                     />
@@ -843,7 +854,7 @@
                   {:else if tabId === 'files'}
                     <ExpandableFileSearch
                       bind:query={fileSearchQuery}
-                      active={active && activeTabId === 'files'}
+                      active={active && shown}
                       onKeydown={(event) => filesPanelRef?.handleSearchKeyDown(event)}
                     />
                     <Button
@@ -921,7 +932,7 @@
                 : 'overflow-y-auto'}"
               data-sidebar-section-scroll={tabId}
               use:scrollFade={{
-                enabled: active && tabId === activeTabId && (!panelOnly || !!flyout?.open),
+                enabled: active && shown && (!panelOnly || !!flyout?.open),
               }}
             >
               {#if tabId === 'people'}
@@ -990,7 +1001,7 @@
                   <div class="min-h-0 w-full flex-1">
                     <SidebarChangesPanel
                       {workspaceId}
-                      active={active && tabId === activeTabId}
+                      active={active && shown}
                       onRefreshActionChange={(action) => (changesRefreshAction = action)}
                       activeFilePath={effectiveActiveFilePath}
                       activeFileStaged={effectiveActiveFileStaged}

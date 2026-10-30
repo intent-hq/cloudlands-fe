@@ -114,5 +114,19 @@ export function normalizeSelectedTabs(
         !(tabId === 'shell' && canOperateScripts)
       ),
   );
-  return new Set([(normalized[0] as TabId | undefined) ?? 'agents']);
+  return new Set(normalized.length > 0 ? (normalized as TabId[]) : ['agents']);
+}
+
+/**
+ * A plain click selects only `tabId`. An additive (Cmd/Ctrl) click adds `tabId` to the
+ * stacked sections, or removes it while another section stays open.
+ */
+export function getNextSelectedTabs(
+  current: readonly TabId[],
+  tabId: TabId,
+  additive: boolean,
+): TabId[] {
+  if (!additive) return [tabId];
+  if (!current.includes(tabId)) return [...current, tabId];
+  return current.length > 1 ? current.filter((id) => id !== tabId) : [...current];
 }

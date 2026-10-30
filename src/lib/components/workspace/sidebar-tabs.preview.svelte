@@ -24,6 +24,7 @@
     /** Simulated folder-expansion latency for file reveal. */
     revealDelay?: number;
     filesError?: boolean;
+    /** Comma-separated section ids; several stack in the docked sidebar. */
     initialSection?: string;
     extraFiles?: number;
     scriptsState?: 'ready' | 'empty' | 'loading' | 'retry';
@@ -47,6 +48,10 @@
       manager: { props: { manager: true, terminals: 1, collapsed: true } },
       'files-error': { props: { filesError: true } },
       'last-section': { props: { initialSection: 'shell' } },
+      stacked: { props: { initialSection: 'agents,context' } },
+      'stacked-three': { props: { initialSection: 'agents,context,changes' } },
+      'stacked-files': { props: { initialSection: 'context,files' } },
+      'stacked-short': { props: { initialSection: 'agents,context,changes', height: 420 } },
       'tabs-narrow': { props: { width: 360, sidebarWidth: 280 } },
       'long-files': { props: { collapsed: true, extraFiles: 200 } },
       'short-collapsed': { props: { collapsed: true, height: 360, items: 200 } },
@@ -336,7 +341,7 @@
         focusedPanelId: 'sidebar-preview-panel',
       }),
     );
-    store.dispatch(setMultiSelectSidebarSelectedTabs(workspaceId, [initialSection]));
+    store.dispatch(setMultiSelectSidebarSelectedTabs(workspaceId, initialSection.split(',')));
     store.dispatch(setCollapsed(collapsed));
     store.dispatch(
       setChangesData(

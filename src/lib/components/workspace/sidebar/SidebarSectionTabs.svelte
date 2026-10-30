@@ -8,6 +8,7 @@
   import { writable } from 'svelte/store';
   import { prefersReducedMotion } from '$lib/utils/reduced-motion';
   import { scrollFade } from '$lib/actions/scroll-fade';
+  import { isCmdClickModifier } from '$shared/utils/link-helpers';
   import { store } from '$store/renderer/store';
   import { selectMultiSelectSidebarSelectedTabIds } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import {
@@ -28,7 +29,9 @@
   import {
     TAB_DEFINITIONS,
     OWNER_ONLY_TAB_IDS,
+    getNextSelectedTabs,
     normalizeSelectedTabs,
+    type TabId,
   } from '../multi-select-sidebar-tabs';
   import { m } from '$shared/paraglide/messages.js';
   import { getSidebarFlyout } from './sidebar-flyout-context';
@@ -68,9 +71,12 @@
         !($collaborator$ && OWNER_ONLY_TAB_IDS.has(id) && !(id === 'shell' && $scriptContext$)),
     ),
   );
-  const savedSelection = $derived(
-    [...normalizeSelectedTabs($selected$, $collaborator$, showPeople, !!$scriptContext$)][0],
-  );
+  const selection = $derived([
+    ...normalizeSelectedTabs($selected$, $collaborator$, showPeople, !!$scriptContext$),
+  ]);
+  const savedSelection = $derived(selection[0]);
+  // Cmd-click stacks sections in the docked sidebar; the collapsed rail previews one at a time.
+  const stacked = $derived(orientation === 'horizontal' && selection.length > 1);
   const selected = $derived(
     orientation === 'vertical' && flyout?.open && tabs.some((tab) => tab.id === flyout?.tabId)
       ? (flyout.tabId ?? savedSelection)
@@ -117,8 +123,19 @@
     store.dispatch(setMultiSelectSidebarSelectedTabs(workspaceId, [tabId]));
   }
 
-  function activate(tabId: string) {
-    const alreadySelected = savedSelection === tabId;
+  function activate(tabId: string, event?: MouseEvent | KeyboardEvent) {
+    if (orientation === 'horizontal' && event && isCmdClickModifier({ event })) {
+      // Keep the primary tab; bits-ui would otherwise move its selection to this tab.
+      event.preventDefault();
+      store.dispatch(
+        setMultiSelectSidebarSelectedTabs(
+          workspaceId,
+          getNextSelectedTabs(selection, tabId as TabId, true),
+        ),
+      );
+      return;
+    }
+    const alreadySelected = selection.length === 1 && savedSelection === tabId;
     selectSection(tabId);
     if (orientation === 'horizontal' && !alreadySelected) return;
     store.dispatch(activateSidebarSectionRequested(workspaceId, tabId, panelLayoutId));
@@ -147,7 +164,11 @@
         class={cn(
           'relative min-w-0 gap-0 px-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
           orientation === 'horizontal'
-            ? cn('w-full', selected === tab.id ? 'text-foreground' : 'text-muted-foreground')
+            ? cn(
+                'w-full',
+                selection.includes(tab.id) ? 'text-foreground' : 'text-muted-foreground',
+                stacked && tab.id !== selected && selection.includes(tab.id) && 'bg-background',
+              )
             : cn(
                 'size-9 rounded-(--radius-medium) border-0',
                 selected === tab.id && 'bg-selected dark:bg-surface-4',
@@ -160,17 +181,18 @@
         }}
         onfocus={(event) => {
           if (orientation === 'vertical') flyout?.preview(tab.id, event.currentTarget, true);
-          else if (event.currentTarget.matches(':focus-visible')) selectSection(tab.id);
+          else if (event.currentTarget.matches(':focus-visible') && !selection.includes(tab.id))
+            selectSection(tab.id);
         }}
         onkeydown={(event) => {
           if (event.key !== 'Enter' && event.key !== ' ') return;
           event.preventDefault();
           if (orientation === 'vertical') flyout?.preview(tab.id, event.currentTarget);
-          activate(tab.id);
+          activate(tab.id, event);
         }}
         onclick={(event) => {
           if (orientation === 'vertical') flyout?.preview(tab.id, event.currentTarget);
-          activate(tab.id);
+          activate(tab.id, event);
         }}
       >
         {#if tab.id === 'agents' && mainAgent}
