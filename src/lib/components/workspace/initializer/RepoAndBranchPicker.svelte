@@ -278,7 +278,7 @@
         gitlabSelected={repoType === 'gitlab'}
         value={repoOnlyValue}
         onchange={handleRepoChange}
-        triggerClass="w-full min-w-0 h-auto min-h-10 px-2.5 py-2 text-sm leading-5 font-normal"
+        triggerClass="w-full min-w-0 h-auto min-h-10 px-2.5 pr-2 py-2 text-sm leading-5 font-normal"
         displayValue={metadataRepoName || undefined}
         triggerValueClass="text-foreground"
         triggerContentClass="gap-2"
@@ -296,7 +296,7 @@
             {#if gitlabBranch}
               <GitLabBranchPicker
                 {...gitlabBranch}
-                triggerClass="w-full min-w-0 h-auto min-h-10 justify-start px-2.5 py-2 text-sm leading-5 font-normal text-foreground"
+                triggerClass="w-full min-w-0 h-auto min-h-10 justify-start px-2.5 pr-2 py-2 text-sm leading-5 font-normal text-foreground"
                 showTriggerChevron
                 triggerChevronClass="ml-auto size-3! shrink-0 text-muted-foreground"
               />
@@ -308,7 +308,7 @@
           {:else}
             <BranchSelector
               variant="ghost"
-              triggerClass="w-full min-w-0 h-auto min-h-10 px-2.5 py-2 text-sm leading-5 font-normal text-foreground"
+              triggerClass="w-full min-w-0 h-auto min-h-10 px-2.5 pr-2 py-2 text-sm leading-5 font-normal text-foreground"
               value={branch}
               repoPath={branchRepoPath}
               repoType={repoType as 'local' | 'github'}

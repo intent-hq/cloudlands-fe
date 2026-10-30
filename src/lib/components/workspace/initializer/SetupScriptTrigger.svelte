@@ -39,7 +39,7 @@
     type="button"
     variant={presentation === 'form' ? 'ghost' : 'outline'}
     class="w-full min-w-0 gap-2 font-normal {presentation === 'form'
-      ? 'h-auto min-h-10 justify-between px-2.5 py-2 text-left text-sm leading-5'
+      ? 'h-auto min-h-10 justify-between px-2.5 pr-2 py-2 text-left text-sm leading-5'
       : 'justify-between text-left'}"
     aria-label={m.workspace_setupScriptEditor_setupScript_label()}
     aria-haspopup="dialog"
@@ -52,6 +52,8 @@
         >
       {:else}<span class="truncate">{value}</span>{/if}
     </span>
-    <Fa icon={faChevronRight} class="size-3 shrink-0 text-muted-foreground" />
+    {#if presentation !== 'form'}
+      <Fa icon={faChevronRight} class="size-3 shrink-0 text-muted-foreground" />
+    {/if}
   </Button>
 </div>

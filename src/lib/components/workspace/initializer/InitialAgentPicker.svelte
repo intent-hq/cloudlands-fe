@@ -74,7 +74,7 @@
   const agentValueId = `${uid}-agent-value`;
   // Matches the form's other settings rows: 40px hit height, body text.
   const SETTINGS_TRIGGER_CLASS =
-    'w-full min-w-0 h-auto min-h-10 justify-start gap-2 px-2.5! py-2! text-sm leading-5 font-normal text-foreground';
+    'w-full min-w-0 h-auto min-h-10 justify-start gap-2 px-2.5! pr-2! py-2! text-sm leading-5 font-normal text-foreground';
   // The menu content is the only scroller: a nested scroll box let the last
   // row's highlight overflow the menu (a second vertical bar) and clipped the
   // separator into a horizontal bar. Capped by the space Bits UI measures.

@@ -102,6 +102,38 @@
 </ContentDialog>
 
 <style>
+  :global([data-new-space-modal] > .dialog-layout > [data-slot='dialog-header']) {
+    padding-top: 1rem;
+  }
+
+  :global(
+    [data-new-space-modal]
+      > .dialog-layout
+      > [data-slot='dialog-header']
+      > [data-slot='dialog-title']
+  ) {
+    font-size: var(--text-body-size);
+    line-height: var(--text-body-line-height);
+    font-weight: var(--text-body-strong-weight);
+  }
+
+  :global([data-new-space-modal] > .dialog-layout > [data-slot='dialog-body']) {
+    padding-top: 0.75rem;
+    padding-bottom: 1rem;
+  }
+
+  :global([data-new-space-modal] > .dialog-close-button) {
+    top: calc(anchor(--dialog-title top, 1rem) + var(--text-body-line-height) / 2);
+  }
+
+  .workspace-form :global(.prompt-pane) {
+    padding-block: 0;
+  }
+
+  .workspace-form :global(.settings-pane) {
+    padding: 0 0 0 2rem;
+  }
+
   .workspace-sidebar-surface {
     display: none;
     position: absolute;
@@ -126,10 +158,14 @@
   }
 
   @container (max-width: 47.99rem) {
+    .workspace-form :global(.initializer-layout.expanded) {
+      row-gap: 1rem;
+    }
+
     .workspace-form :global(.settings-pane) {
       margin-inline: -1.5rem;
-      margin-bottom: -1.5rem;
-      padding-inline: 1.5rem;
+      margin-bottom: -1rem;
+      padding: 1rem 1.5rem 1rem 2rem;
       border-end-start-radius: var(--radius-medium);
       border-end-end-radius: var(--radius-medium);
     }
