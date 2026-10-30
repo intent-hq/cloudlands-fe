@@ -467,6 +467,7 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
     const origin = { kind: 'proposal' as const, agentId: 'agent-1', proposalId: 'tc-1' };
     const forged = makeProposal({
       title: 'Follow-up',
+      idempotencyKey: 'card-key',
       origin: { kind: 'proposal', agentId: 'someone-else', proposalId: 'their-card' },
     });
 
@@ -475,5 +476,10 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
         .origin,
     ).toEqual(origin);
     expect(buildCreateWorkspaceRequestFromProposal(forged, undefined)).not.toHaveProperty('origin');
+    // The daemon binds the origin to the card's own key, so it must travel too.
+    expect(
+      buildCreateWorkspaceRequestFromProposal(forged, undefined, { resolveAgentName, origin })
+        .idempotencyKey,
+    ).toBe('card-key');
   });
 });
