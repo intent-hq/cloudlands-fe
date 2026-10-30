@@ -40,6 +40,7 @@ import noRawWorkspaceNavigationRule from './eslint-rules/no-raw-workspace-naviga
 import noOneShotAnimationCountRule from './eslint-rules/no-one-shot-animation-count.js';
 import noUnarmedOutsideClickInCtRule from './eslint-rules/no-unarmed-outside-click-in-ct.js';
 import noRawMouseWheelInCtRule from './eslint-rules/no-raw-mouse-wheel-in-ct.js';
+import noHandWrittenTypingCheckRule from './eslint-rules/no-hand-written-typing-check.js';
 import noDirectReducedMotionQueryRule, {
   SOURCE_OF_TRUTH_FILES as reducedMotionSourceOfTruthFiles,
   TEST_FILE_GLOBS as reducedMotionTestFileGlobs,
@@ -70,6 +71,7 @@ const intentPlugin = {
     'no-raw-mouse-wheel-in-ct': noRawMouseWheelInCtRule,
     'no-direct-reduced-motion-query': noDirectReducedMotionQueryRule,
     'no-raw-workspace-navigation': noRawWorkspaceNavigationRule,
+    'no-hand-written-typing-check': noHandWrittenTypingCheckRule,
   },
 };
 
@@ -1034,6 +1036,19 @@ export default [
     ignores: [...productionModuleIgnores, 'src/lib/utils/show-workspace.ts'],
     plugins: { intent: intentPlugin },
     rules: { 'intent/no-raw-workspace-navigation': 'error' },
+  },
+  // A keyboard handler that decides "is the user typing?" from tag names, contenteditable
+  // or an input/textarea selector misses Monaco, which types through an EditContext
+  // `<div role="textbox">`, so its shortcut fires while the user types in the code
+  // editor (intent-hq/intent#8068 via cloudlands-fe#3848; intent-hq/intent#8115 via
+  // cloudlands-fe#3865). isTextEntryTarget / isMultilineTextEntryTarget in
+  // src/lib/utils/text-entry.ts are the one check. A non-typing use disables the rule on
+  // its line with a reason. No baseline: enforced at zero.
+  {
+    files: ['src/**/*.{js,ts,svelte}'],
+    ignores: [...productionModuleIgnores, 'src/lib/utils/text-entry.ts'],
+    plugins: { intent: intentPlugin },
+    rules: { 'intent/no-hand-written-typing-check': 'error' },
   },
   // flushSync from an $effect cleanup, onDestroy callback, or action destroy()
   // flushes unrelated effects mid-teardown; any component mounted by that flush
